@@ -53,7 +53,8 @@ function createTestContext(userId = 1): TrpcContext {
       email: "test@example.com",
       name: "Test User",
       loginMethod: "manus",
-      role: "user",
+      role: "product_dev",
+      defaultWorkspaceId: 1,
       createdAt: new Date(),
       updatedAt: new Date(),
       lastSignedIn: new Date(),
@@ -65,6 +66,7 @@ function createTestContext(userId = 1): TrpcContext {
     res: {
       clearCookie: vi.fn(),
     } as unknown as TrpcContext["res"],
+    workspaceId: 1,
   };
 }
 

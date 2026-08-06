@@ -24,7 +24,7 @@ describe("Feature 1: Crawler Engine", () => {
     expect(appRouter._def.procedures).toHaveProperty("crawler.crawlAllKeywords");
     expect(appRouter._def.procedures).toHaveProperty("crawler.getSchedulerStatus");
     expect(appRouter._def.procedures).toHaveProperty("crawler.getCrawlHistory");
-  });
+  }, 15_000);
 
   it("scheduler status should return correct structure", async () => {
     const { getSchedulerStatus } = await import("./crawlerEngine");

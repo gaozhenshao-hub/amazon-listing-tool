@@ -27,7 +27,14 @@ function readRepoFile(repoPath: string) {
 
 describe("domain boundary v1", () => {
   it("declares domain boundaries with router, service, repository, schema, and types", () => {
-    expect(DOMAIN_BOUNDARIES.map((domain) => domain.slug)).toEqual(["ai_os", "listing", "image", "ops"]);
+    expect(DOMAIN_BOUNDARIES.map((domain) => domain.slug)).toEqual([
+      "ai_os",
+      "listing",
+      "image",
+      "ops",
+      "ads",
+      "product_development",
+    ]);
     for (const domain of DOMAIN_BOUNDARIES) {
       expect(fs.existsSync(path.join(root, domain.router))).toBe(true);
       expect(fs.existsSync(path.join(root, domain.repository))).toBe(true);
@@ -35,7 +42,13 @@ describe("domain boundary v1", () => {
       expect(fs.existsSync(path.join(root, domain.types))).toBe(true);
     }
     expect(getDomainBoundary("ai_os")?.layer).toBe("platform");
-    expect(listBusinessDomains().map((domain) => domain.slug)).toEqual(["listing", "image", "ops"]);
+    expect(listBusinessDomains().map((domain) => domain.slug)).toEqual([
+      "listing",
+      "image",
+      "ops",
+      "ads",
+      "product_development",
+    ]);
   });
 
   it("keeps legacy router and service entrypoints as thin compatibility wrappers", () => {

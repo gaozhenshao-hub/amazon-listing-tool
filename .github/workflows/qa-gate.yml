@@ -40,8 +40,8 @@ jobs:
           node-version: 22
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      - name: Build client and compare bundle budget
-        run: pnpm build:client
+      - name: Build Web, Worker and Scheduler and compare bundle budget
+        run: pnpm build
         env:
           BUNDLE_REPORT_PATH: artifacts/bundle-report.json
       - name: Install Chromium
@@ -88,4 +88,5 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:migrate
-      - run: pnpm test:real-db
+      - name: Run migrated MySQL, Worker and lifecycle integration tests
+        run: pnpm test:real-db

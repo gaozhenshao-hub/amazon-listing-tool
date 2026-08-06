@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as devDb from "../devDb";
+import { resolveDevProjectAccess } from "../domains/product_development/security/productDevelopmentAccess";
 
 const PROFILE_SECTIONS = [
   "appearance", "function", "cost", "package", "packageDesign",
@@ -32,19 +34,6 @@ const SECTION_LABELS: Record<SectionKey, { cn: string; en: string }> = {
   usageScenarios: { cn: "使用场景", en: "Usage Scenarios" },
   productMap: { cn: "产品地图", en: "Product Map" },
 };
-
-
-// Helper: resolve dev project access based on user role
-async function resolveDevProjectAccess(projectId: number, user: { id: number; role: string }) {
-  if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
-    const project = await devDb.getDevProjectByIdAdmin(projectId);
-    if (!project) throw new Error("Project not found");
-    return project;
-  }
-  const project = await devDb.getDevProjectById(projectId, user.id);
-  if (!project) throw new Error("Project not found");
-  return project;
-}
 
 export const devProfileRouter = router({
   get: protectedProcedure
@@ -144,7 +133,7 @@ export const devProfileRouter = router({
       section: z.enum(PROFILE_SECTIONS),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
+      const project = await resolveDevProjectAccess(input.projectId, ctx);
       if (!project) throw new Error("Project not found");
 
       const products = await devDb.getDevProductsByProject(input.projectId);
@@ -161,7 +150,7 @@ export const devProfileRouter = router({
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",
@@ -202,7 +191,7 @@ export const devProfileRouter = router({
       existingData: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
+      const project = await resolveDevProjectAccess(input.projectId, ctx);
       if (!project) throw new Error("Project not found");
 
       const products = await devDb.getDevProductsByProject(input.projectId);
@@ -218,7 +207,7 @@ export const devProfileRouter = router({
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",

@@ -110,9 +110,9 @@ vi.mock("./lingxingAdapter", () => ({
   }),
 }));
 
-// Mock LLM
-vi.mock("./_core/llm", () => ({
-  invokeLLM: vi.fn().mockResolvedValue({
+// Mock the governed Emperor business Skill boundary.
+vi.mock("./domains/ai_os/services/businessSkillGateway", () => ({
+  invokeBusinessSkill: vi.fn().mockResolvedValue({
     choices: [{
       message: {
         content: JSON.stringify({

@@ -27,7 +27,7 @@ const {
   ensureWriteAccess,
   executeListingSkill,
   generateChineseTranslation,
-  invokeLLM,
+  invokeBusinessSkill,
   loadEnrichedData,
   parseJsonOrThrow,
   protectedProcedure,
@@ -288,7 +288,7 @@ export const listingEditingProcedures = {
         });
       }
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         max_tokens: 3072,
         messages: [
           { role: "system", content: SINGLE_BULLET_PROMPT },
@@ -374,7 +374,7 @@ ${contextSnippet || "No additional product context available."}
 
 Please expand this keyword/theme into a complete selling point core with FABE direction.`;
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: EXPAND_KEYWORD_TO_FABE_PROMPT },
           { role: "user", content: userMessage },
@@ -518,7 +518,7 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       })),
     }))
     .mutation(async ({ input }) => {
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: input.messages,
       });
       const content = response.choices[0].message.content;

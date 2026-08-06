@@ -76,6 +76,42 @@ export const ATTRIBUTE_ANALYSIS_PROMPT = `你是亚马逊产品策略专家。�
   "summary": "200字以内的属性分析总结"
 }`;
 
+export const TAG_CROSS_ANALYSIS_PROMPT = `你是亚马逊产品策略专家。基于已确认的项目标签体系、产品标签统计和属性交叉数据，给出产品开发方向建议。
+
+**分析要求：**
+1. **主流产品形态**：识别当前市场最畅销的标签组合
+2. **差异化机会**：发现竞争较少但有潜力的标签组合（蓝海区域）
+3. **标签洞察**：逐个解释已确认标签分类的市场含义和开发建议
+4. **产品方向推荐**：推荐3-5个值得开发的具体产品方向
+5. **红海警告**：标注需要避开的高竞争标签组合
+
+**输出格式（严格JSON）：**
+{
+  "mainstreamProducts": [
+    { "combo": "标签组合描述", "salesShare": "销额占比", "reason": "畅销原因" }
+  ],
+  "differentiationOpportunities": [
+    { "combo": "标签组合描述", "competitionLevel": "低|中", "potential": "高|中", "reason": "机会描述" }
+  ],
+  "tagInsights": [
+    { "category": "标签分类", "insight": "市场洞察", "recommendation": "开发建议" }
+  ],
+  "recommendedDirections": [
+    {
+      "direction": "产品方向名称",
+      "attributes": { "维度1": "值1", "维度2": "值2" },
+      "estimatedPriceRange": "$XX-$XX",
+      "targetAudience": "目标用户",
+      "reason": "推荐理由",
+      "priority": 1
+    }
+  ],
+  "redOceanWarnings": [
+    { "combo": "标签组合描述", "reason": "避开原因" }
+  ],
+  "summary": "200字以内的标签交叉分析总结"
+}`;
+
 // ─── Stage 3: Price Analysis AI ───────────────────────────────
 
 export const PRICE_ANALYSIS_PROMPT = `你是亚马逊定价策略专家。基于以下价格段分析数据（含竞对数量、近半年上新、标签分布），给出定价策略建议和各价格段推荐产品标签配置。

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import * as db from "../repositories";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { protectedProcedure, router } from "../_core/trpc";
 import {
   KEYWORD_SEMANTIC_FILTER_PROMPT,
@@ -156,7 +156,7 @@ export const keywordAiRouter = router({
           .replace("{keywords}", kwList);
 
         try {
-          const response = await invokeLLM({
+          const response = await invokeBusinessSkill({
             messages: [
               { role: "system", content: "You are an Amazon advertising strategist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
               { role: "user", content: prompt },
@@ -246,7 +246,7 @@ export const keywordAiRouter = router({
         .replace("{strategyMatrix}", strategyMatrix || "No strategy matrix data");
 
       // Emperor Skill 优先，降级到内置 LLM
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "You are an Amazon Listing optimization expert. Respond only in valid JSON. CRITICAL: All keyword fields must contain the exact original English keywords from the input. Never translate keywords." },
           { role: "user", content: prompt },
@@ -286,7 +286,7 @@ export const keywordAiRouter = router({
           const kwData = chunk.map(k => `${k.keyword} | ${k.monthlySearchVolume || "N/A"} | ${k.spr || "N/A"}`).join("\n");
           const prompt = KEYWORD_TRAFFIC_COMPETITION_CLASSIFY_PROMPT.replace("{productContext}", productContext).replace("{keywordsData}", kwData);
           try {
-            const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon keyword data analyst. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
+            const resp = await invokeBusinessSkill({ messages: [{ role: "system", content: "You are an Amazon keyword data analyst. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
             const parsed = JSON.parse(String(resp.choices?.[0]?.message?.content || "{}"));
             if (parsed.analysis) tcThresholds = parsed.analysis;
             for (const r of (parsed.results || [])) {
@@ -309,7 +309,7 @@ export const keywordAiRouter = router({
         const kwList = chunk.map(k => k.keyword).join("\n");
         const prompt = KEYWORD_SEMANTIC_FILTER_PROMPT.replace("{productContext}", productContext).replace("{keywords}", kwList);
         try {
-          const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon keyword specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
+          const resp = await invokeBusinessSkill({ messages: [{ role: "system", content: "You are an Amazon keyword specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
           const parsed = JSON.parse(String(resp.choices?.[0]?.message?.content || "{}"));
           for (const r of (parsed.results || [])) {
             const kw = chunk.find(k => k.keyword.toLowerCase() === r.keyword?.toLowerCase());
@@ -334,7 +334,7 @@ export const keywordAiRouter = router({
         const kwList = chunk.map(k => k.keyword).join("\n");
         const prompt = KEYWORD_SCENE_TAG_PROMPT.replace("{productContext}", productContext).replace("{keywords}", kwList);
         try {
-          const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon COSMO algorithm specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
+          const resp = await invokeBusinessSkill({ messages: [{ role: "system", content: "You are an Amazon COSMO algorithm specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
           const parsed = JSON.parse(String(resp.choices?.[0]?.message?.content || "{}"));
           for (const r of (parsed.results || [])) {
             const kw = chunk.find(k => k.keyword.toLowerCase() === r.keyword?.toLowerCase());
@@ -353,7 +353,7 @@ export const keywordAiRouter = router({
         const kwList = chunk.map(k => k.keyword).join("\n");
         const prompt = KEYWORD_ROOT_CLASSIFY_PROMPT.replace("{productContext}", productContext).replace("{keywords}", kwList);
         try {
-          const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon SEO expert. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
+          const resp = await invokeBusinessSkill({ messages: [{ role: "system", content: "You are an Amazon SEO expert. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
           const parsed = JSON.parse(String(resp.choices?.[0]?.message?.content || "{}"));
           for (const r of (parsed.results || [])) {
             const kw = chunk.find(k => k.keyword.toLowerCase() === r.keyword?.toLowerCase());
@@ -372,7 +372,7 @@ export const keywordAiRouter = router({
         const kwList = chunk.map(k => `${k.keyword} | traffic: ${k.trafficLevel} | relevance: ${k.relevance} | competition: ${k.competition} | SPR: ${k.spr || "N/A"} | monthly_search: ${k.monthlySearchVolume || "N/A"}`).join("\n");
         const prompt = KEYWORD_STRATEGY_MATRIX_PROMPT.replace("{productContext}", productContext).replace("{keywords}", kwList);
         try {
-          const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon advertising strategist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
+          const resp = await invokeBusinessSkill({ messages: [{ role: "system", content: "You are an Amazon advertising strategist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
           const parsed = JSON.parse(String(resp.choices?.[0]?.message?.content || "{}"));
           for (const r of (parsed.results || [])) {
             const kw = chunk.find(k => k.keyword.toLowerCase() === r.keyword?.toLowerCase());
@@ -446,7 +446,7 @@ export const keywordAiRouter = router({
           .replace("{keywordsData}", kwData);
 
         try {
-          const response = await invokeLLM({
+          const response = await invokeBusinessSkill({
             messages: [
               { role: "system", content: "You are an Amazon keyword data analyst. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
               { role: "user", content: prompt },

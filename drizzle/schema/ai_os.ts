@@ -33,6 +33,8 @@ export const aiJobs = mysqlTable("ai_jobs", {
   lastHeartbeatAt: timestamp("lastHeartbeatAt"),
   deadLetterAt: timestamp("deadLetterAt"),
   deadLetterReason: text("deadLetterReason"),
+  recoveryOfRunId: varchar("recoveryOfRunId", { length: 80 }),
+  recoveryReason: text("recoveryReason"),
   startedAt: timestamp("startedAt"),
   completedAt: timestamp("completedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -42,6 +44,28 @@ export const aiJobs = mysqlTable("ai_jobs", {
 export type AiJob = typeof aiJobs.$inferSelect;
 
 export type InsertAiJob = typeof aiJobs.$inferInsert;
+
+export const aiOperationalAlerts = mysqlTable("ai_operational_alerts", {
+  id: int("id").autoincrement().primaryKey(),
+  alertId: varchar("alertId", { length: 80 }).notNull().unique(),
+  fingerprint: varchar("fingerprint", { length: 191 }).notNull().unique(),
+  category: varchar("category", { length: 64 }).notNull(),
+  severity: mysqlEnum("severity", ["warning", "critical"]).default("warning").notNull(),
+  status: mysqlEnum("status", ["open", "resolved"]).default("open").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  occurrenceCount: int("occurrenceCount").default(1).notNull(),
+  firstOccurredAt: timestamp("firstOccurredAt").defaultNow().notNull(),
+  lastOccurredAt: timestamp("lastOccurredAt").defaultNow().notNull(),
+  notifiedAt: timestamp("notifiedAt"),
+  resolvedAt: timestamp("resolvedAt"),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AiOperationalAlert = typeof aiOperationalAlerts.$inferSelect;
+export type InsertAiOperationalAlert = typeof aiOperationalAlerts.$inferInsert;
 
 export const aiJobWorkers = mysqlTable("ai_job_workers", {
   id: int("id").autoincrement().primaryKey(),
@@ -166,6 +190,50 @@ export type AiArtifact = typeof aiArtifacts.$inferSelect;
 
 export type InsertAiArtifact = typeof aiArtifacts.$inferInsert;
 
+export const aiArtifactSelectionEvents = mysqlTable("ai_artifact_selection_events", {
+  id: int("id").autoincrement().primaryKey(),
+  selectionId: varchar("selectionId", { length: 80 }).unique().notNull(),
+  workspaceId: int("workspaceId"),
+  projectId: int("projectId"),
+  artifactKey: varchar("artifactKey", { length: 128 }).notNull(),
+  sourceTable: varchar("sourceTable", { length: 128 }),
+  sourceRowId: varchar("sourceRowId", { length: 128 }),
+  fromArtifactId: varchar("fromArtifactId", { length: 80 }),
+  fromVersion: int("fromVersion"),
+  toArtifactId: varchar("toArtifactId", { length: 80 }).notNull(),
+  toVersion: int("toVersion").notNull(),
+  action: mysqlEnum("action", ["select", "rollback", "confirm"]).notNull(),
+  userId: int("userId"),
+  reason: text("reason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AiArtifactSelectionEvent = typeof aiArtifactSelectionEvents.$inferSelect;
+
+export type InsertAiArtifactSelectionEvent = typeof aiArtifactSelectionEvents.$inferInsert;
+
+export const aiArtifactConsumptions = mysqlTable("ai_artifact_consumptions", {
+  id: int("id").autoincrement().primaryKey(),
+  consumptionId: varchar("consumptionId", { length: 80 }).unique().notNull(),
+  workspaceId: int("workspaceId"),
+  projectId: int("projectId"),
+  artifactId: varchar("artifactId", { length: 80 }).notNull(),
+  artifactKey: varchar("artifactKey", { length: 128 }).notNull(),
+  artifactVersion: int("artifactVersion").notNull(),
+  artifactRef: varchar("artifactRef", { length: 192 }).notNull(),
+  consumerDomain: mysqlEnum("consumerDomain", ["listing", "image", "ads", "video", "agent", "project", "file", "ops", "tool", "other"]).notNull(),
+  consumerType: mysqlEnum("consumerType", ["agent_node", "ai_job", "skill_run", "business_operation"]).notNull(),
+  consumerId: varchar("consumerId", { length: 128 }).notNull(),
+  runId: varchar("runId", { length: 80 }),
+  nodeId: varchar("nodeId", { length: 128 }),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AiArtifactConsumption = typeof aiArtifactConsumptions.$inferSelect;
+
+export type InsertAiArtifactConsumption = typeof aiArtifactConsumptions.$inferInsert;
+
 export const aiDataArchiveRuns = mysqlTable("ai_data_archive_runs", {
   id: int("id").autoincrement().primaryKey(),
   workspaceId: int("workspaceId"),
@@ -256,6 +324,10 @@ export const emperorSkillRuns = mysqlTable("emperor_skill_runs", {
   runId: varchar("runId", { length: 64 }).unique().notNull(),
   skillSlug: varchar("skillSlug", { length: 128 }).notNull(),
   skillName: varchar("skillName", { length: 255 }),
+  skillVersion: int("skillVersion"),
+  skillPromptHash: varchar("skillPromptHash", { length: 64 }),
+  skillManifestHash: varchar("skillManifestHash", { length: 64 }),
+  migrationSource: varchar("migrationSource", { length: 255 }),
   userId: int("userId"),
   // 运行输入/输出（JSON）
   input: json("input"),
@@ -265,6 +337,7 @@ export const emperorSkillRuns = mysqlTable("emperor_skill_runs", {
   errorMessage: text("errorMessage"),
   // 用量统计
   modelSlug: varchar("modelSlug", { length: 128 }),
+  provider: varchar("provider", { length: 64 }),
   inputTokens: int("inputTokens").default(0),
   outputTokens: int("outputTokens").default(0),
   durationMs: int("durationMs").default(0),
@@ -702,6 +775,9 @@ export const emperorModelProviders = mysqlTable("emperor_model_providers", {
   isDefault: int("isDefault").default(0).notNull(),
   isActive: int("isActive").default(1).notNull(),
   capabilityTags: json("capabilityTags"),
+  costPer1kInputTokens: decimal("costPer1kInputTokens", { precision: 12, scale: 6 }).default("0").notNull(),
+  costPer1kOutputTokens: decimal("costPer1kOutputTokens", { precision: 12, scale: 6 }).default("0").notNull(),
+  maxContextTokens: int("maxContextTokens").default(128000).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

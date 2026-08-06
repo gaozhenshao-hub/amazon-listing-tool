@@ -6,7 +6,7 @@ import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
 import { productOpsPlans, productOpsDailyRecords, keywordTrackings, keywordDailyRecords, competitorAdBenchmarks, promotionPhases } from "../../drizzle/schema";
 import { eq, and, desc, asc } from "drizzle-orm";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 
 export const opsProductPlanRouter = router({
 
@@ -297,7 +297,7 @@ export const opsProductPlanRouter = router({
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",
@@ -480,7 +480,7 @@ export const opsProductPlanRouter = router({
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",
@@ -655,7 +655,7 @@ export const opsProductPlanRouter = router({
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",

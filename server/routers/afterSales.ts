@@ -4,7 +4,7 @@ import { opsWorkspaceCondition } from "../repositories/ops";
 import { z } from "zod";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { getDb } from "../repositories/dbClient";
 import {
   reviewRecords, reviewReplies, emailTemplates, emailReplies,
@@ -97,7 +97,7 @@ export const afterSalesRouter = router({
 
 
 
-      const resp = await invokeLLM({
+      const resp = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是亚马逊售后运营AI助手，输出严格JSON格式。" },
           { role: "user", content: prompt },
@@ -186,7 +186,7 @@ export const afterSalesRouter = router({
 
 
 
-      const resp = await invokeLLM({
+      const resp = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是亚马逊售后AI助手，输出严格JSON格式。" },
           { role: "user", content: prompt },
@@ -375,7 +375,7 @@ ${input.voiceOfBuyerData ? JSON.stringify(input.voiceOfBuyerData, null, 2) : '�
 
 
 
-      const resp = await invokeLLM({
+      const resp = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是亚马逊退货分析AI专家，输出严格JSON格式。" },
           { role: "user", content: prompt },
@@ -476,7 +476,7 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
 
 
 
-      const resp = await invokeLLM({
+      const resp = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是亚马逊客服AI助手，输出严格JSON格式。" },
           { role: "user", content: prompt },
@@ -648,7 +648,7 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
 
 
 
-      const resp = await invokeLLM({
+      const resp = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是亚马逊客服模板AI专家，输出严格JSON格式。" },
           { role: "user", content: prompt },

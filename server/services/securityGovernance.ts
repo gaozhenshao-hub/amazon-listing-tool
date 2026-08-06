@@ -279,7 +279,8 @@ export async function recordSecurityAuditLog(input: SecurityAuditInput): Promise
         input.riskLevel || "medium",
         req?.ip || req?.socket?.remoteAddress || null,
         req?.headers?.["user-agent"] ? String(req.headers["user-agent"]).slice(0, 512) : null,
-        req?.headers?.["x-request-id"] ? String(req.headers["x-request-id"]).slice(0, 128) : null,
+        input.ctx?.requestId
+          || (req?.headers?.["x-request-id"] ? String(req.headers["x-request-id"]).slice(0, 128) : null),
         input.reason || null,
         jsonOrNull(input.beforeSnapshot),
         jsonOrNull(input.afterSnapshot),

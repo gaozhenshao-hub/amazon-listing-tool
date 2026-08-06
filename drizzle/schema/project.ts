@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
 // Projects table - each project represents one product listing task
 export const projects = mysqlTable("projects", {
@@ -161,6 +161,7 @@ export type InsertAnalysisVersion = typeof analysisVersions.$inferInsert;
 // 产品开发项目
 export const devProjects = mysqlTable("dev_projects", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   userId: int("userId").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -173,7 +174,10 @@ export const devProjects = mysqlTable("dev_projects", {
   approvedScore: int("approvedScore"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceStatusIdx: index("idx_dev_projects_workspace_status").on(table.workspaceId, table.status, table.updatedAt),
+  workspaceOwnerIdx: index("idx_dev_projects_workspace_owner").on(table.workspaceId, table.userId, table.updatedAt),
+}));
 
 export type DevProject = typeof devProjects.$inferSelect;
 
@@ -182,6 +186,7 @@ export type InsertDevProject = typeof devProjects.$inferInsert;
 // 上传文件记录
 export const devUploadedFiles = mysqlTable("dev_uploaded_files", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   fileType: mysqlEnum("fileType", ["sales", "bullet_points", "reviews", "history_sales"]).notNull(),
@@ -196,7 +201,9 @@ export const devUploadedFiles = mysqlTable("dev_uploaded_files", {
   errorMessage: text("errorMessage"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_files_workspace_project").on(table.workspaceId, table.projectId, table.createdAt),
+}));
 
 export type DevUploadedFile = typeof devUploadedFiles.$inferSelect;
 
@@ -205,6 +212,7 @@ export type InsertDevUploadedFile = typeof devUploadedFiles.$inferInsert;
 // 产品数据
 export const devProducts = mysqlTable("dev_products", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   asin: varchar("asin", { length: 20 }),
   title: text("title"),
@@ -263,7 +271,9 @@ export const devProducts = mysqlTable("dev_products", {
   packageSizeTier: varchar("packageSizeTier", { length: 100 }), // 包装尺寸分段
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_products_workspace_project").on(table.workspaceId, table.projectId, table.createdAt),
+}));
 
 export type DevProduct = typeof devProducts.$inferSelect;
 
@@ -272,6 +282,7 @@ export type InsertDevProduct = typeof devProducts.$inferInsert;
 // 评论数据
 export const devReviews = mysqlTable("dev_reviews", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   asin: varchar("asin", { length: 20 }),
   title: text("title"),
@@ -287,7 +298,9 @@ export const devReviews = mysqlTable("dev_reviews", {
   hasVideo: int("hasVideo").default(0), // 含视频
   reviewerName: varchar("reviewerName", { length: 255 }), // 评论人
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_reviews_workspace_project").on(table.workspaceId, table.projectId, table.createdAt),
+}));
 
 export type DevReview = typeof devReviews.$inferSelect;
 
@@ -296,13 +309,16 @@ export type InsertDevReview = typeof devReviews.$inferInsert;
 // 自定义标签维度
 export const devTagDimensions = mysqlTable("dev_tag_dimensions", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   userId: int("userId").notNull(),
   name: varchar("name", { length: 100 }).notNull(),
   category: varchar("category", { length: 100 }),
   description: text("description"),
   isDefault: int("isDefault").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, table => ({
+  workspaceUserIdx: index("idx_dev_dimensions_workspace_user").on(table.workspaceId, table.userId, table.createdAt),
+}));
 
 export type DevTagDimension = typeof devTagDimensions.$inferSelect;
 
@@ -311,6 +327,7 @@ export type InsertDevTagDimension = typeof devTagDimensions.$inferInsert;
 // 分析阶段状态表 (Phase 1 优化)
 export const devAnalysisStages = mysqlTable("dev_analysis_stages", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   stageType: mysqlEnum("stageType", [
@@ -323,18 +340,51 @@ export const devAnalysisStages = mysqlTable("dev_analysis_stages", {
   rawResult: text("rawResult"), // AI生成的原始结果(JSON)
   editedResult: text("editedResult"), // 用户编辑后的结果(JSON)
   chartConfig: text("chartConfig"), // 图表配置(JSON)
+  runId: varchar("runId", { length: 96 }),
+  runProgress: int("runProgress").default(0).notNull(),
+  runError: text("runError"),
+  runStartedAt: timestamp("runStartedAt"),
+  runCompletedAt: timestamp("runCompletedAt"),
+  rowVersion: int("rowVersion").default(0).notNull(),
+  lastMutationKey: varchar("lastMutationKey", { length: 128 }),
   confirmedAt: timestamp("confirmedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  runIdx: index("idx_dev_analysis_stages_run").on(table.runId),
+  runtimeIdx: index("idx_dev_analysis_stages_runtime").on(table.stageType, table.status, table.updatedAt),
+  workspaceProjectIdx: index("idx_dev_stages_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+  workspaceProjectTypeUnique: uniqueIndex("uniq_dev_stages_workspace_project_type").on(table.workspaceId, table.projectId, table.stageType),
+  projectTypeUnique: uniqueIndex("uniq_dev_stages_project_type").on(table.projectId, table.stageType),
+}));
 
 export type DevAnalysisStage = typeof devAnalysisStages.$inferSelect;
 
 export type InsertDevAnalysisStage = typeof devAnalysisStages.$inferInsert;
 
+export const devAnalysisStageConflicts = mysqlTable("dev_analysis_stage_conflicts", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  projectId: int("projectId").notNull(),
+  stageType: varchar("stageType", { length: 64 }).notNull(),
+  keptStageId: int("keptStageId").notNull(),
+  duplicateStageId: int("duplicateStageId").notNull(),
+  duplicateSnapshot: json("duplicateSnapshot").notNull(),
+  resolution: varchar("resolution", { length: 64 }).default("deduplicated_before_unique_key").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  duplicateStageUnique: uniqueIndex("uniq_dev_stage_conflicts_duplicate").on(table.duplicateStageId),
+  projectStageIdx: index("idx_dev_stage_conflicts_project_type").on(table.projectId, table.stageType, table.createdAt),
+}));
+
+export type DevAnalysisStageConflict = typeof devAnalysisStageConflicts.$inferSelect;
+
+export type InsertDevAnalysisStageConflict = typeof devAnalysisStageConflicts.$inferInsert;
+
 // 产品属性标签表 (Phase 1 优化)
 export const devProductTags = mysqlTable("dev_product_tags", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   asin: varchar("asin", { length: 20 }).notNull(),
   dimensionName: varchar("dimensionName", { length: 100 }).notNull(), // 属性维度名称
@@ -342,7 +392,9 @@ export const devProductTags = mysqlTable("dev_product_tags", {
   source: mysqlEnum("source", ["ai", "manual", "specification"]).default("ai"), // 标签来源
   confirmed: int("confirmed").default(0), // 是否已确认
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_product_tags_workspace_project").on(table.workspaceId, table.projectId, table.createdAt),
+}));
 
 export type DevProductTag = typeof devProductTags.$inferSelect;
 
@@ -351,6 +403,7 @@ export type InsertDevProductTag = typeof devProductTags.$inferInsert;
 // 站外数据记录
 export const devExternalData = mysqlTable("dev_external_data", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   dataType: mysqlEnum("dataType", [
@@ -363,7 +416,9 @@ export const devExternalData = mysqlTable("dev_external_data", {
   status: mysqlEnum("status", ["fetching", "analyzing", "completed", "failed"]).default("fetching").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_external_workspace_project").on(table.workspaceId, table.projectId, table.createdAt),
+}));
 
 export type DevExternalData = typeof devExternalData.$inferSelect;
 
@@ -372,6 +427,7 @@ export type InsertDevExternalData = typeof devExternalData.$inferInsert;
 // 分析报告
 export const devAnalysisReports = mysqlTable("dev_analysis_reports", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   reportType: mysqlEnum("reportType", [
@@ -385,7 +441,9 @@ export const devAnalysisReports = mysqlTable("dev_analysis_reports", {
   errorMessage: text("errorMessage"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_reports_workspace_project").on(table.workspaceId, table.projectId, table.createdAt),
+}));
 
 export type DevAnalysisReport = typeof devAnalysisReports.$inferSelect;
 
@@ -394,6 +452,7 @@ export type InsertDevAnalysisReport = typeof devAnalysisReports.$inferInsert;
 // 立项评分
 export const devProjectScores = mysqlTable("dev_project_scores", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   marketCapacity: int("marketCapacity").default(0), // 0-20
@@ -407,7 +466,9 @@ export const devProjectScores = mysqlTable("dev_project_scores", {
   recommendation: mysqlEnum("recommendation", ["approve", "review", "reject"]).default("review").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_scores_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevProjectScore = typeof devProjectScores.$inferSelect;
 
@@ -416,6 +477,7 @@ export type InsertDevProjectScore = typeof devProjectScores.$inferInsert;
 // 产品画像
 export const devProductProfiles = mysqlTable("dev_product_profiles", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   // 8 sub-modules: each has aiSuggestion + userEdit + confirmed flag
@@ -446,7 +508,9 @@ export const devProductProfiles = mysqlTable("dev_product_profiles", {
   status: mysqlEnum("status", ["draft", "confirmed"]).default("draft").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_profiles_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevProductProfile = typeof devProductProfiles.$inferSelect;
 
@@ -455,6 +519,7 @@ export type InsertDevProductProfile = typeof devProductProfiles.$inferInsert;
 // 产品说明书 - 三步流程: AI生成9章节 → 编辑确认+上传素材 → 双语HTML+PDF
 export const devProductManuals = mysqlTable("dev_product_manuals", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   brandName: varchar("brandName", { length: 255 }),
@@ -479,7 +544,9 @@ export const devProductManuals = mysqlTable("dev_product_manuals", {
   referenceManualNotes: text("referenceManualNotes"), // AI analysis notes from reference
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_manuals_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevProductManual = typeof devProductManuals.$inferSelect;
 
@@ -488,6 +555,7 @@ export type InsertDevProductManual = typeof devProductManuals.$inferInsert;
 // 测试报告 - 8类测试(安装/使用/跌落/运输/功能/耐久性/安全/包装) + 状态追踪 + Excel导出
 export const devTestReports = mysqlTable("dev_test_reports", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   // JSON: array of { category, nameEn, nameCn, descEn, descCn, requirement, passStandard, testMethod, testStatus: 'pass'|'fail'|'pending', actualResult, notes }
@@ -497,7 +565,9 @@ export const devTestReports = mysqlTable("dev_test_reports", {
   status: mysqlEnum("status", ["draft", "editing", "confirmed"]).default("draft").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_tests_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevTestReport = typeof devTestReports.$inferSelect;
 
@@ -506,6 +576,7 @@ export type InsertDevTestReport = typeof devTestReports.$inferInsert;
 // BOM物料清单
 export const devBomItems = mysqlTable("dev_bom_items", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   parentId: int("parentId"), // null = top-level, otherwise references parent BOM item
@@ -523,7 +594,9 @@ export const devBomItems = mysqlTable("dev_bom_items", {
   sortOrder: int("sortOrder").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_bom_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevBomItem = typeof devBomItems.$inferSelect;
 
@@ -532,6 +605,7 @@ export type InsertDevBomItem = typeof devBomItems.$inferInsert;
 // 模具费用
 export const devMoldCosts = mysqlTable("dev_mold_costs", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   partName: varchar("partName", { length: 255 }).notNull(),
@@ -543,7 +617,9 @@ export const devMoldCosts = mysqlTable("dev_mold_costs", {
   remark: text("remark"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_molds_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevMoldCost = typeof devMoldCosts.$inferSelect;
 
@@ -552,6 +628,7 @@ export type InsertDevMoldCost = typeof devMoldCosts.$inferInsert;
 // 时间规划
 export const devTimePlans = mysqlTable("dev_time_plans", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   phaseName: varchar("phaseName", { length: 255 }).notNull(),
@@ -564,7 +641,9 @@ export const devTimePlans = mysqlTable("dev_time_plans", {
   sortOrder: int("sortOrder").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_time_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevTimePlan = typeof devTimePlans.$inferSelect;
 
@@ -573,6 +652,7 @@ export type InsertDevTimePlan = typeof devTimePlans.$inferInsert;
 // 项目供应商
 export const devSuppliers = mysqlTable("dev_suppliers", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -588,7 +668,9 @@ export const devSuppliers = mysqlTable("dev_suppliers", {
   specialties: text("specialties"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_suppliers_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevSupplier = typeof devSuppliers.$inferSelect;
 
@@ -597,6 +679,7 @@ export type InsertDevSupplier = typeof devSuppliers.$inferInsert;
 // BOM成本汇总
 export const devBomSummary = mysqlTable("dev_bom_summary", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   materialCost: varchar("materialCost", { length: 50 }),
@@ -610,7 +693,9 @@ export const devBomSummary = mysqlTable("dev_bom_summary", {
   targetPrice: varchar("targetPrice", { length: 50 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_bom_summary_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevBomSummary = typeof devBomSummary.$inferSelect;
 
@@ -619,6 +704,7 @@ export type InsertDevBomSummary = typeof devBomSummary.$inferInsert;
 // 利润计算记录
 export const devProfitCalculations = mysqlTable("dev_profit_calculations", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   userId: int("userId").notNull(),
   projectId: int("projectId"), // optional, can be standalone
   name: varchar("name", { length: 255 }),
@@ -633,7 +719,9 @@ export const devProfitCalculations = mysqlTable("dev_profit_calculations", {
   roi: varchar("roi", { length: 20 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_profit_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevProfitCalculation = typeof devProfitCalculations.$inferSelect;
 
@@ -642,6 +730,7 @@ export type InsertDevProfitCalculation = typeof devProfitCalculations.$inferInse
 // 全局供应商库
 export const devGlobalSuppliers = mysqlTable("dev_global_suppliers", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   userId: int("userId").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   contactPerson: varchar("contactPerson", { length: 100 }),
@@ -655,7 +744,9 @@ export const devGlobalSuppliers = mysqlTable("dev_global_suppliers", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceUserIdx: index("idx_dev_global_suppliers_workspace_user").on(table.workspaceId, table.userId, table.updatedAt),
+}));
 
 export type DevGlobalSupplier = typeof devGlobalSuppliers.$inferSelect;
 
@@ -664,6 +755,7 @@ export type InsertDevGlobalSupplier = typeof devGlobalSuppliers.$inferInsert;
 // Off-site analysis table - stores analysis tasks for external platforms
 export const devOffsiteAnalyses = mysqlTable("dev_offsite_analyses", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("project_id").notNull(),
   userId: varchar("user_id", { length: 255 }).notNull(),
   sourceType: mysqlEnum("source_type", [
@@ -679,7 +771,9 @@ export const devOffsiteAnalyses = mysqlTable("dev_offsite_analyses", {
   errorMessage: text("error_message"),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
   updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_offsite_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevOffsiteAnalysis = typeof devOffsiteAnalyses.$inferSelect;
 
@@ -692,6 +786,7 @@ export type InsertDevOffsiteAnalysis = typeof devOffsiteAnalyses.$inferInsert;
 // 全景分析表确认状态
 export const devPanoramaStatus = mysqlTable("dev_panorama_status", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   confirmed: int("confirmed").default(0).notNull(), // 0=未确认, 1=已确认
@@ -700,7 +795,9 @@ export const devPanoramaStatus = mysqlTable("dev_panorama_status", {
   totalProducts: int("totalProducts").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_panorama_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevPanoramaStatus = typeof devPanoramaStatus.$inferSelect;
 
@@ -709,6 +806,7 @@ export type InsertDevPanoramaStatus = typeof devPanoramaStatus.$inferInsert;
 // 项目级标签分类表（每个项目独立的7类标签分类）
 export const devProjectTagCategories = mysqlTable("dev_project_tag_categories", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   categoryKey: varchar("categoryKey", { length: 50 }).notNull(), // e.g. "basic", "material", "function", "parameter", "installation", "certification", "special"
@@ -719,7 +817,9 @@ export const devProjectTagCategories = mysqlTable("dev_project_tag_categories", 
   confirmedAt: timestamp("confirmedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_tag_categories_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevProjectTagCategory = typeof devProjectTagCategories.$inferSelect;
 
@@ -728,6 +828,7 @@ export type InsertDevProjectTagCategory = typeof devProjectTagCategories.$inferI
 // 项目级标签项表（每个分类下的具体标签）
 export const devProjectTagItems = mysqlTable("dev_project_tag_items", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   categoryId: int("categoryId").notNull(), // 关联 devProjectTagCategories.id
   projectId: int("projectId").notNull(),
   tagName: varchar("tagName", { length: 255 }).notNull(), // 标签名称
@@ -737,7 +838,9 @@ export const devProjectTagItems = mysqlTable("dev_project_tag_items", {
   sortOrder: int("sortOrder").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_tag_items_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevProjectTagItem = typeof devProjectTagItems.$inferSelect;
 
@@ -746,6 +849,7 @@ export type InsertDevProjectTagItem = typeof devProjectTagItems.$inferInsert;
 // 子模块锁定状态 - 每个项目的每个子模块独立锁定
 export const devModuleLocks = mysqlTable("dev_module_locks", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   moduleName: mysqlEnum("moduleName", ["profile", "bom", "manual", "test", "profit"]).notNull(),
@@ -754,7 +858,9 @@ export const devModuleLocks = mysqlTable("dev_module_locks", {
   unlockedAt: timestamp("unlockedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_locks_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
 
 export type DevModuleLock = typeof devModuleLocks.$inferSelect;
 
@@ -763,6 +869,7 @@ export type InsertDevModuleLock = typeof devModuleLocks.$inferInsert;
 // 说明书素材 - 独立存储各类素材
 export const devManualAssets = mysqlTable("dev_manual_assets", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   assetType: mysqlEnum("assetType", ["logo", "cover", "content_bg", "qrcode", "chapter_image", "reference", "other"]).notNull(),
@@ -771,7 +878,9 @@ export const devManualAssets = mysqlTable("dev_manual_assets", {
   fileUrl: text("fileUrl").notNull(), // S3 URL
   sortOrder: int("sortOrder").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, table => ({
+  workspaceProjectIdx: index("idx_dev_assets_workspace_project").on(table.workspaceId, table.projectId, table.createdAt),
+}));
 
 export type DevManualAsset = typeof devManualAssets.$inferSelect;
 

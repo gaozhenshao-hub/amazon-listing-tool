@@ -1,4 +1,6 @@
 import { currentOpsWorkspaceId } from "../workspaceContext";
+import { requireOpsDb } from "../legacy/repository";
+import { runOpsSkill } from "../legacy/service";
 import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
@@ -31,7 +33,7 @@ const {
   getToday,
   getYesterday,
   inArray,
-  invokeLLM,
+  invokeBusinessSkill,
   isNull,
   keywordMonitors,
   keywordSnapshots,
@@ -63,7 +65,6 @@ const {
   users,
   z,
 } = shared;
-const getDb = (...args: Parameters<typeof shared.getDb>) => shared.getDb(...args);
 
 export const opsImportProcedures = {
 
@@ -193,7 +194,7 @@ export const opsImportProcedures = {
       })).optional(),
     }))
     .mutation(async ({ input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '数据库连接失败' });
       const { comparisonId, asin, productData, keywordData, reviewData } = input;
       const upperAsin = asin.toUpperCase();
@@ -356,7 +357,7 @@ export const opsImportProcedures = {
       marketplace: z.string().default("ALL"),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
 
       // Get distinct parent ASINs with latest product info
@@ -512,7 +513,7 @@ export const opsImportProcedures = {
       fileData: z.string(), // base64
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const XLSX = await import("xlsx");
 
       // Parse Excel
@@ -664,7 +665,7 @@ export const opsImportProcedures = {
       marketplace: z.string().default("ALL"),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
 
       // Get distinct parent ASINs with latest product info
@@ -788,7 +789,7 @@ export const opsImportProcedures = {
       fileData: z.string(), // base64
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const XLSX = await import("xlsx");
 
       // Parse Excel
@@ -927,7 +928,7 @@ export const opsImportProcedures = {
       importType: z.enum(["plan", "review"]),
     }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
 
       const history = await db!.select().from(opsImportHistory)
@@ -951,7 +952,7 @@ export const opsImportProcedures = {
       historyId: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
 
       // Get the history record

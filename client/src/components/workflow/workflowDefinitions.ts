@@ -243,6 +243,8 @@ export const DEV_ANALYSIS_WORKFLOW_STEPS: WorkflowStepDefinition[] = [
   { id: "decision_dashboard", label: "综合决策", shortLabel: "决策", icon: Gauge, description: "综合看板与立项建议", artifactKey: "dev.analysis.decision_dashboard" },
 ];
 
+export const PRODUCT_ANALYSIS_AGENT_SLUG = "product-development.analysis.workflow";
+
 export const WORKFLOW_FRAMEWORK_MODULES = {
   listing: LISTING_AGENT_WORKFLOW_STEPS,
   image: IMAGE_SUGGESTION_WORKFLOW_STEPS,

@@ -9,7 +9,7 @@
  * - 支持动态增删改调度、连续失败自动暂停、采集日志记录
  */
 import { getDb } from "./repositories/dbClient";
-import { invokeLLM } from "./_core/llm";
+import { invokeBusinessSkill } from "./domains/ai_os/services/businessSkillGateway";
 import { notifyOwner } from "./_core/notification";
 import {
   kbIntelSources,
@@ -747,7 +747,7 @@ export async function collectFromSource(
 
 
 
-            const evalResponse = await invokeLLM({
+            const evalResponse = await invokeBusinessSkill({
               messages: [
                 { role: "system", content: "你是亚马逊运营内容质量评估专家。请严格输出JSON格式。" },
                 { role: "user", content: buildQualityEvalPrompt(title, source.name, content) },

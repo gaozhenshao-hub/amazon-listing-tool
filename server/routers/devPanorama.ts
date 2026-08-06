@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
+import {
+  productDevelopmentWorkspaceId,
+  recordProductDevelopmentAudit,
+} from "../domains/product_development/security/productDevelopmentAccess";
 import { getDb } from "../repositories/dbClient";
 import { devProducts, devPanoramaStatus, devProjectTagCategories, devProjectTagItems, devProductTags } from "../../drizzle/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -129,6 +134,7 @@ export const devPanoramaRouter = router({
           .where(eq(devProductTags.id, existing[0].id));
       } else {
         await db.insert(devProductTags).values({
+          workspaceId: productDevelopmentWorkspaceId(ctx),
           projectId: input.projectId,
           asin: input.asin,
           dimensionName: input.dimensionName,
@@ -161,6 +167,7 @@ export const devPanoramaRouter = router({
         }).where(eq(devPanoramaStatus.id, existing[0].id));
       } else {
         await db.insert(devPanoramaStatus).values({
+          workspaceId: productDevelopmentWorkspaceId(ctx),
           projectId: input.projectId,
           userId: ctx.user.id,
           confirmed: 1,
@@ -169,6 +176,14 @@ export const devPanoramaRouter = router({
           totalProducts: total,
         });
       }
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.panorama.confirm",
+        projectId: input.projectId,
+        resourceType: "dev_panorama",
+        resourceId: input.projectId,
+        afterSnapshot: { confirmed: true, totalProducts: total },
+      });
       return { success: true };
     }),
 
@@ -185,6 +200,15 @@ export const devPanoramaRouter = router({
         eq(devPanoramaStatus.projectId, input.projectId),
         eq(devPanoramaStatus.userId, ctx.user.id)
       ));
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.panorama.unlock",
+        projectId: input.projectId,
+        resourceType: "dev_panorama",
+        resourceId: input.projectId,
+        riskLevel: "high",
+        afterSnapshot: { confirmed: false },
+      });
       return { success: true };
     }),
 

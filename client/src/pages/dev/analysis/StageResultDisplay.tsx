@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { ArrowRight, BarChart3, Brain, Check, Edit3, Loader2, Lock, Unlock, Play, RefreshCw, TrendingUp, DollarSign, Building2, MessageSquare, LayoutDashboard, Grid3X3, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, BarChart3, Brain, Check, Edit3, Loader2, Lock, Unlock, Play, RefreshCw, TrendingUp, DollarSign, Building2, MessageSquare, LayoutDashboard, Grid3X3, Sparkles } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ScatterChart, Scatter, ZAxis, LineChart, Line } from "recharts";
 import { CHART_COLORS, DEV_ANALYSIS_STAGES as STAGES, type DevAnalysisStageKey as StageKey } from "./stageDefinitions";
@@ -57,6 +57,12 @@ export function StageResultDisplay({ stageKey, stageData, productCount, gatingIn
               <Icon className="h-12 w-12 mb-4 opacity-20" />
               <p className="text-sm font-medium">{stage.label}</p>
               <p className="text-xs mt-1">{stage.desc}</p>
+              {stageData?.runError && (
+                <div className="mt-4 flex max-w-lg items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-left text-xs text-red-700">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{stageData.runError}</span>
+                </div>
+              )}
               <p className="text-xs mt-3">点击左侧“开始分析”按钮执行此阶段</p>
             </>
           )}
@@ -66,12 +72,31 @@ export function StageResultDisplay({ stageKey, stageData, productCount, gatingIn
   }
 
   if (stageData.status === "running" || stageData.status === "generating") {
+    const progress = Math.min(Math.max(Number(stageData.runProgress || 10), 5), 95);
+    const stage = STAGES.find((item) => item.key === stageKey);
     return (
       <Card>
         <CardContent className="flex flex-col items-center justify-center py-20">
           <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
-          <p className="text-sm font-medium">正在分析中...</p>
-          <p className="text-xs text-muted-foreground mt-1">AI正在处理数据，请稍候</p>
+          <p className="text-sm font-medium">{stage?.label || "当前阶段"}正在后台分析</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            可以切换或关闭此页面，任务会继续执行，返回后将自动恢复进度
+          </p>
+          <div className="mt-5 w-full max-w-md">
+            <div className="mb-1.5 flex items-center justify-between text-xs text-muted-foreground">
+              <span>皇帝 Skill / AI Job</span>
+              <span>{progress}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+            </div>
+            {stageData.runError && (
+              <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-left text-xs text-amber-800">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{stageData.runError}</span>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
     );
@@ -93,18 +118,30 @@ export function StageResultDisplay({ stageKey, stageData, productCount, gatingIn
     );
   }
 
-  // Render based on stage type
+  let resultContent: React.ReactNode;
   switch (stageKey) {
     // attribute_tagging has been moved to a separate tab
-    case "market_overview": return <MarketOverviewResult result={result} productCount={productCount} />;
-    case "attribute_cross": return <AttributeCrossResult result={result} />;
-    case "price_analysis": return <PriceAnalysisResult result={result} />;
-    case "brand_competition": return <BrandCompetitionResult result={result} />;
-    case "review_kano": return <ReviewKanoResult result={result} />;
-    case "information_summary": return <InformationSummaryResult result={result} />;
-    case "decision_dashboard": return <DecisionDashboardResult result={result} />;
-    default: return <GenericResult result={result} />;
+    case "market_overview": resultContent = <MarketOverviewResult result={result} productCount={productCount} />; break;
+    case "attribute_cross": resultContent = <AttributeCrossResult result={result} />; break;
+    case "price_analysis": resultContent = <PriceAnalysisResult result={result} />; break;
+    case "brand_competition": resultContent = <BrandCompetitionResult result={result} />; break;
+    case "review_kano": resultContent = <ReviewKanoResult result={result} />; break;
+    case "information_summary": resultContent = <InformationSummaryResult result={result} />; break;
+    case "decision_dashboard": resultContent = <DecisionDashboardResult result={result} />; break;
+    default: resultContent = <GenericResult result={result} />;
   }
+
+  return (
+    <div className="space-y-3">
+      {stageData.runError && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{stageData.runError}</span>
+        </div>
+      )}
+      {resultContent}
+    </div>
+  );
 }
 
 /* ─── 1. Attribute Tagging Result (Removed - now in separate tab) ─── */

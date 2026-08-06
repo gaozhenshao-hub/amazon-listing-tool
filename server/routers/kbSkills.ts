@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { storagePut } from "../storage";
 // @ts-ignore - pdf-parse v2 uses named export
@@ -114,7 +114,7 @@ export const kbSkillsRouter = router({
 
 
 
-            const response = await invokeLLM({
+            const response = await invokeBusinessSkill({
               messages: [
                 { role: "system", content: `你是一位亚马逊运营SOP专家。请分析这张图片中的运营知识内容，提取关键信息和操作步骤。` },
                 { role: "user", content: [{ type: "image_url" as const, image_url: { url: fileUrl } }, { type: "text" as const, text: "请提取这张图片中的运营知识内容" }] }
@@ -136,7 +136,7 @@ export const kbSkillsRouter = router({
 
 
 
-          const response = await invokeLLM({
+          const response = await invokeBusinessSkill({
             messages: [
               { role: "system", content: `你是一位资深的亚马逊运营专家。请对以下运营知识内容进行智能摘要分析，返回JSON格式：
 {
@@ -211,7 +211,7 @@ export const kbSkillsRouter = router({
 
 
 
-            const response = await invokeLLM({
+            const response = await invokeBusinessSkill({
               messages: [
                 { role: "system", content: `你是亚马逊运营专家。对运营知识内容进行智能摘要，返回JSON: { title, summary, keyPoints, actionSteps, applicableScenarios, difficultyLevel, categories, tags, practicalityScore(1-10), briefSummary }` },
                 { role: "user", content: `文件: ${file.fileName}\n内容:\n${extractedContent.slice(0, 6000)}` }
@@ -296,7 +296,7 @@ export const kbSkillsRouter = router({
                   const contentType = imgResp.headers.get("content-type") || "image/jpeg";
                   const base64 = imgResp.body.toString("base64");
                   const dataUrl = `data:${contentType};base64,${base64}`;
-                  const ocrResp = await invokeLLM({
+                  const ocrResp = await invokeBusinessSkill({
                     messages: [{
                       role: "user",
                       content: [
@@ -336,7 +336,7 @@ export const kbSkillsRouter = router({
 
 
 
-          const aiResponse = await invokeLLM({
+          const aiResponse = await invokeBusinessSkill({
             messages: [
               { role: "system", content: `你是亚马逊运营专家。对运营知识内容进行智能摘要，返回JSON: { title, summary, keyPoints, actionSteps, applicableScenarios, difficultyLevel, categories, tags, practicalityScore(1-10), briefSummary }` },
               { role: "user", content: `URL: ${input.url}\n文章文字内容:\n${text.slice(0, 5000)}${imageOcrText ? "\n\n" + imageOcrText.slice(0, 3000) : ""}` }
@@ -377,7 +377,7 @@ export const kbSkillsRouter = router({
       const ocrResults = await Promise.allSettled(
         input.images.map(async (img, idx) => {
           const dataUrl = `data:${img.mimeType};base64,${img.base64}`;
-          const ocrResp = await invokeLLM({
+          const ocrResp = await invokeBusinessSkill({
             messages: [{
               role: "user",
               content: [
@@ -442,7 +442,7 @@ export const kbSkillsRouter = router({
 
 
 
-          const aiResponse = await invokeLLM({
+          const aiResponse = await invokeBusinessSkill({
             messages: [
               { role: "system", content: `你是亚马逊运营专家。对运营知识内容进行智能摘要（包含图片识别内容），返回JSON: { title, summary, keyPoints, actionSteps, applicableScenarios, difficultyLevel, categories, tags, practicalityScore(1-10), briefSummary }` },
               { role: "user", content: `标题: ${item.title}\n内容（含图片识别）:\n${newContent.slice(0, 8000)}` }
@@ -489,7 +489,7 @@ export const kbSkillsRouter = router({
       const ocrResults = await Promise.allSettled(
         input.images.map(async (img, idx) => {
           const dataUrl = `data:${img.mimeType};base64,${img.base64}`;
-          const ocrResp = await invokeLLM({
+          const ocrResp = await invokeBusinessSkill({
             messages: [{
               role: "user",
               content: [
@@ -535,7 +535,7 @@ export const kbSkillsRouter = router({
 
 
 
-          const aiResponse = await invokeLLM({
+          const aiResponse = await invokeBusinessSkill({
             messages: [
               { role: "system", content: `你是亚马逊运营专家。对运营知识内容进行智能摘要（包含图片识别内容），返回JSON: { title, summary, keyPoints, actionSteps, applicableScenarios, difficultyLevel, categories, tags, practicalityScore(1-10), briefSummary }` },
               { role: "user", content: `标题: ${item.title}\n内容（含图片识别）:\n${newContent.slice(0, 8000)}` }
@@ -581,7 +581,7 @@ export const kbSkillsRouter = router({
 
 
 
-          const response = await invokeLLM({
+          const response = await invokeBusinessSkill({
             messages: [
               { role: "system", content: `你是亚马逊运营专家。对运营知识内容进行智能摘要，返回JSON: { title, summary, keyPoints, actionSteps, applicableScenarios, difficultyLevel, categories, tags, practicalityScore(1-10), briefSummary }` },
               { role: "user", content: `标题: ${input.title}\n内容:\n${input.content.slice(0, 8000)}` }
@@ -703,7 +703,7 @@ export const kbSkillsRouter = router({
 
 
 
-          const response = await invokeLLM({
+          const response = await invokeBusinessSkill({
             messages: [
               {
                 role: "system",

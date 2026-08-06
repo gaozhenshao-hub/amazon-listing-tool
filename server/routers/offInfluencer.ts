@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as offDb from "../offsiteDb";
 import { INFLUENCER_MATCHING_PROMPT } from "./offsitePrompts";
 
@@ -52,7 +52,7 @@ export const offInfluencerRouter = router({
 
 
 
-    const resp = await invokeLLM({
+    const resp = await invokeBusinessSkill({
       messages: [
         { role: "system", content: INFLUENCER_MATCHING_PROMPT },
         { role: "user", content: `产品: ${JSON.stringify(input)}\n达人库: ${JSON.stringify(influencers.map(i => ({ id: i.id, name: i.displayName || i.handle, platform: i.platform, followers: i.followerCount, engagement: i.engagementRate, category: i.category })))}` },

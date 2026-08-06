@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as devDb from "../devDb";
 import { getDb } from "../repositories/dbClient";
 import {
@@ -10,6 +11,7 @@ import {
   devProductTags,
 } from "../../drizzle/schema";
 import { eq, and, asc } from "drizzle-orm";
+import { productDevelopmentWorkspaceId } from "../domains/product_development/security/productDevelopmentAccess";
 
 /**
  * 属性标注路由 — 与标签管理打通
@@ -156,6 +158,7 @@ ${dimensionText}
       // 4. 分批处理产品（每批5个）
       const batchSize = 5;
       const allTags: Array<{
+        workspaceId: number | null;
         projectId: number;
         asin: string;
         dimensionName: string;
@@ -192,7 +195,7 @@ ${dimensionText}
 
 
 
-          const response = await invokeLLM({
+          const response = await invokeBusinessSkill({
             messages: [
               { role: "system", content: systemPrompt },
               {
@@ -251,6 +254,7 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
                 const value = (item.dimensions?.[key] || "").trim();
                 if (value) {
                   allTags.push({
+                    workspaceId: productDevelopmentWorkspaceId(ctx),
                     projectId: input.projectId,
                     asin,
                     dimensionName: d.dimensionName,
@@ -352,6 +356,7 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
       const db = await getDb();
       if (!db) throw new Error("Database not available");
       const [result] = await db.insert(devProductTags).values({
+        workspaceId: productDevelopmentWorkspaceId(ctx),
         projectId: input.projectId,
         asin: input.asin,
         dimensionName: input.dimensionName,
@@ -576,7 +581,7 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
 
   // Legacy: Tag dimensions CRUD (kept for backward compatibility)
   getTagDimensions: protectedProcedure.query(async ({ ctx }) => {
-    return devDb.getDevTagDimensions(ctx.user.id);
+    return devDb.getDevTagDimensions(ctx.user.id, productDevelopmentWorkspaceId(ctx));
   }),
 
   addTagDimension: protectedProcedure
@@ -587,6 +592,7 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
     }))
     .mutation(async ({ ctx, input }) => {
       return devDb.createDevTagDimension({
+        workspaceId: productDevelopmentWorkspaceId(ctx),
         userId: ctx.user.id,
         name: input.name,
         category: input.category ?? null,
@@ -597,6 +603,6 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
   deleteTagDimension: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      return devDb.deleteDevTagDimension(input.id, ctx.user.id);
+      return devDb.deleteDevTagDimension(input.id, ctx.user.id, productDevelopmentWorkspaceId(ctx));
     }),
 });

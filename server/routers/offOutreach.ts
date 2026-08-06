@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as offDb from "../offsiteDb";
 import { OUTREACH_EMAIL_PROMPT } from "./offsitePrompts";
 
@@ -39,7 +39,7 @@ export const offOutreachRouter = router({
 
 
 
-    const resp = await invokeLLM({
+    const resp = await invokeBusinessSkill({
       messages: [
         { role: "system", content: OUTREACH_EMAIL_PROMPT },
         { role: "user", content: `达人: ${JSON.stringify(influencer)}\n产品: ${input.productName}\n描述: ${input.productDescription || ""}\n合作类型: ${input.collaborationType || "product_review"}` },

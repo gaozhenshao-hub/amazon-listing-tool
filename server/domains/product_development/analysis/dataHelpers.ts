@@ -1,4 +1,4 @@
-import { invokeLLM } from "../../../_core/llm";
+import { invokeBusinessSkill } from "../../ai_os/services/businessSkillGateway";
 import type { ProductData } from "../../../devStatsEngine";
 
 // ─── Helper Functions ────────────────────────────────────────
@@ -40,7 +40,7 @@ export async function generateExternalSummary(rawData: unknown, prompt: string):
 
 
 
-  const response = await invokeLLM({
+  const response = await invokeBusinessSkill({
     messages: [
       { role: "system", content: "你是一个跨境电商市场分析专家。请根据提供的数据进行分析总结。" },
       { role: "user", content: `数据:\n${JSON.stringify(rawData).substring(0, 3000)}\n\n${prompt}` },

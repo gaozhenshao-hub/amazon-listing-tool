@@ -6,7 +6,7 @@
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { getDb } from "../repositories/dbClient";
 import {
   kbIntelSources,
@@ -194,7 +194,7 @@ export const kbIntelRouter = router({
         let suggestedType: "sop" | "listing" | "product" | "image" | "video" = "sop";
 
         try {
-          const evalResponse = await invokeLLM({
+          const evalResponse = await invokeBusinessSkill({
             messages: [
               { role: "system", content: "你是亚马逊运营内容质量评估专家。请严格输出JSON格式。" },
               { role: "user", content: buildQualityEvalPrompt(article.title, source.name, article.rawContent) },
@@ -403,7 +403,7 @@ export const kbIntelRouter = router({
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是亚马逊运营SOP编写专家。请严格输出JSON格式。" },
           { role: "user", content: prompt },

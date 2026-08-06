@@ -1,5 +1,5 @@
 import { failUnavailableDataSource } from "@shared/_core/errors";
-import { z, invokeLLM, protectedProcedure, router, getDb, eq, desc, and, sql, budgetTracking, ClassificationThresholds, DEFAULT_THRESHOLDS, TWELVE_CATEGORIES, classifySearchTerm, anonymizeForAI, deAnonymizeResults, _queryCache, CACHE_TTL, getCached, setCache, parallelBatch, getDateNDaysAgo, getDatesInRange, resolveDateRange, getAllSellerSids, MARKETPLACE_MAP, filterSidsByMarketplace } from "./context";
+import { z, invokeBusinessSkill, protectedProcedure, router, getDb, eq, desc, and, sql, budgetTracking, ClassificationThresholds, DEFAULT_THRESHOLDS, TWELVE_CATEGORIES, classifySearchTerm, anonymizeForAI, deAnonymizeResults, _queryCache, CACHE_TTL, getCached, setCache, parallelBatch, getDateNDaysAgo, getDatesInRange, resolveDateRange, getAllSellerSids, MARKETPLACE_MAP, filterSidsByMarketplace } from "./context";
 
 export const campaignsProcedures = {
 // ─── Multi-Campaign Search Terms Aggregation ──────────────────
@@ -635,7 +635,7 @@ export const campaignsProcedures = {
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",

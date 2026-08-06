@@ -10,7 +10,7 @@
  * - A+图片：模块一致性、品牌调性、信息层次、视觉吸引力
  */
 
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import type { ProductImage } from "../scraper";
 
 // ─── Types ───
@@ -171,7 +171,7 @@ export async function analyzeImage(
   const prompt = getPromptForImageType(imageType);
 
 
-  const response = await invokeLLM({
+  const response = await invokeBusinessSkill({
     messages: [
       {
         role: "system",

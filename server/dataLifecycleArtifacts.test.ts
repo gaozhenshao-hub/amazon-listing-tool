@@ -19,6 +19,8 @@ function readRepoFile(repoPath: string) {
 describe("data lifecycle and unified artifact system v1", () => {
   it("exports unified artifact, storage, and archive schema tables", () => {
     expect(aiOsSchema.aiArtifacts).toBeDefined();
+    expect(aiOsSchema.aiArtifactSelectionEvents).toBeDefined();
+    expect(aiOsSchema.aiArtifactConsumptions).toBeDefined();
     expect(aiOsSchema.aiStorageObjects).toBeDefined();
     expect(aiOsSchema.aiDataArchiveRuns).toBeDefined();
     expect(aiOsSchema.aiDataArchiveItems).toBeDefined();
@@ -87,6 +89,6 @@ describe("data lifecycle and unified artifact system v1", () => {
     expect(projectFileRouter).toContain("analysisArtifactId");
     expect(agentRunner).toContain("registerAgentArtifactLifecycleIndex");
     expect(observabilityRouter).toContain("runLifecycleSweep");
-    expect(docs).toContain("ai-artifact://{artifactId}@current");
+    expect(docs).toContain("ai-artifact-scope://{base64url(scope)}@current");
   });
 });

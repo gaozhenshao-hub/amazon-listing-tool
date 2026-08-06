@@ -4,9 +4,13 @@ import { join } from "path";
 
 // Read the source files for testing
 const stageGatingPolicy = readFileSync(join(__dirname, "domains/product_development/analysis/stageGating.ts"), "utf-8");
+const productDevelopmentRouter = readFileSync(join(__dirname, "domains/product_development/router.ts"), "utf-8");
+const productDevelopmentService = readFileSync(join(__dirname, "domains/product_development/service.ts"), "utf-8");
 const stageResultDisplay = readFileSync(join(__dirname, "../client/src/pages/dev/analysis/StageResultDisplay.tsx"), "utf-8");
 const devAnalysisRouter = [
   readFileSync(join(__dirname, "routers/devAnalysis.ts"), "utf-8"),
+  productDevelopmentRouter,
+  productDevelopmentService,
   stageGatingPolicy,
 ].join("\n");
 const devAnalysisFlow = [
@@ -69,39 +73,21 @@ describe("Stage Gating Mechanism", () => {
       expect(devAnalysisRouter).not.toContain("runAttributeTagging:");
     });
 
-    it("should have gate check in runMarketOverview", () => {
-      const section = devAnalysisRouter.split("runMarketOverview")[1]?.split("runAttributeCross")[0] || "";
-      expect(section).toContain("checkStageGating");
-    });
-
-    it("should have gate check in runAttributeCross", () => {
-      const section = devAnalysisRouter.split("runAttributeCross")[1]?.split("runPriceAnalysis")[0] || "";
-      expect(section).toContain("checkStageGating");
-    });
-
-    it("should have gate check in runPriceAnalysis", () => {
-      const section = devAnalysisRouter.split("runPriceAnalysis")[1]?.split("runBrandCompetition")[0] || "";
-      expect(section).toContain("checkStageGating");
-    });
-
-    it("should have gate check in runBrandCompetition", () => {
-      const section = devAnalysisRouter.split("runBrandCompetition")[1]?.split("runReviewKano")[0] || "";
-      expect(section).toContain("checkStageGating");
-    });
-
-    it("should have gate check in runReviewKano", () => {
-      const section = devAnalysisRouter.split("runReviewKano")[1]?.split("runInformationSummary")[0] || "";
-      expect(section).toContain("checkStageGating");
-    });
-
-    it("should have gate check in runInformationSummary", () => {
-      const section = devAnalysisRouter.split("runInformationSummary")[1]?.split("runDecisionDashboard")[0] || "";
-      expect(section).toContain("checkStageGating");
-    });
-
-    it("should have gate check in runDecisionDashboard", () => {
-      const section = devAnalysisRouter.split("runDecisionDashboard")[1]?.split("confirmStage")[0] || "";
-      expect(section).toContain("checkStageGating");
+    it("routes all active handlers through the centralized service gate", () => {
+      expect(productDevelopmentService).toContain("async function requireStageGate");
+      expect(productDevelopmentService).toContain("checkStageGating(projectId, stage)");
+      for (const handler of [
+        "runMarketOverview",
+        "runAttributeCross",
+        "runPriceAnalysis",
+        "runBrandCompetition",
+        "runReviewKano",
+        "runInformationSummary",
+        "runDecisionDashboard",
+      ]) {
+        expect(productDevelopmentRouter).toContain(`service.${handler}`);
+        expect(productDevelopmentService).toContain(handler);
+      }
     });
   });
 
@@ -111,7 +97,7 @@ describe("Stage Gating Mechanism", () => {
     });
 
     it("should accept projectId as input", () => {
-      const section = devAnalysisRouter.split("getStageGating")[1]?.split("})")[0] || "";
+      const section = productDevelopmentRouter.split("getStageGating")[1]?.split(")),")[0] || "";
       expect(section).toContain("projectId");
     });
 

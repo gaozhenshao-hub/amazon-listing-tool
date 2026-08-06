@@ -143,6 +143,7 @@ export interface ModulePermission {
 // Security governance v1: resource/action permission model.
 export const SECURITY_RESOURCES = [
   'project',
+  'product_development',
   'file',
   'tool',
   'agent',
@@ -171,6 +172,7 @@ export type SecurityAction = typeof SECURITY_ACTIONS[number];
 
 export const SECURITY_RESOURCE_MODULES: Record<SecurityResource, { moduleId: string; subModuleId?: string }> = {
   project: { moduleId: 'listing', subModuleId: 'listing_projects' },
+  product_development: { moduleId: 'dev', subModuleId: 'dev_projects' },
   file: { moduleId: 'listing', subModuleId: 'listing_data_files' },
   tool: { moduleId: 'emperor', subModuleId: 'emperor_mcp' },
   agent: { moduleId: 'emperor', subModuleId: 'emperor_agents' },
@@ -198,6 +200,7 @@ export const SECURITY_ACTION_OPERATION: Record<SecurityAction, PermissionOperati
 export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityResource, SecurityAction[]>>> = {
   super_admin: {
     project: [...SECURITY_ACTIONS],
+    product_development: [...SECURITY_ACTIONS],
     file: [...SECURITY_ACTIONS],
     tool: [...SECURITY_ACTIONS],
     agent: [...SECURITY_ACTIONS],
@@ -205,6 +208,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
   },
   admin: {
     project: ['read', 'create', 'update', 'delete', 'assign'],
+    product_development: ['read', 'create', 'update', 'delete', 'upload', 'import', 'export', 'run', 'confirm', 'cancel', 'assign'],
     file: ['read', 'upload', 'update', 'delete', 'export'],
     tool: ['read', 'create', 'update', 'delete', 'invoke', 'manage_secret', 'rotate_secret'],
     agent: ['read', 'create', 'update', 'delete', 'run', 'confirm', 'cancel'],
@@ -226,6 +230,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
   },
   product_dev: {
     project: ['read', 'create', 'update'],
+    product_development: ['read', 'create', 'update', 'delete', 'upload', 'import', 'export', 'run', 'confirm', 'cancel'],
     file: ['read', 'upload', 'update', 'export'],
     tool: ['read'],
     agent: ['read', 'run', 'confirm'],
@@ -241,6 +246,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
   },
   designer: {
     project: ['read'],
+    product_development: ['read'],
     file: ['read', 'upload', 'update', 'export'],
     agent: ['read'],
   },

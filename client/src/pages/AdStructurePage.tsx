@@ -1,8 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { WorkflowStepProgress } from "@/components/workflow";
-import { EmbeddedAgentRunPanel } from "@/components/workflow";
+import { AiJobHistoryPanel, BusinessArtifactVersionPicker, EmbeddedAgentRunPanel, WorkflowStepProgress } from "@/components/workflow";
 import { AD_STRUCTURE_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -527,6 +526,18 @@ export default function AdStructurePage() {
   return (
     <div className="space-y-6">
       <EmbeddedAgentRunPanel title="广告架构 Agent Run / Checkpoint" projectId={projectId} />
+      <AiJobHistoryPanel module="adAnalysis" projectId={projectId} title="广告分析后台任务历史" />
+      <BusinessArtifactVersionPicker
+        scope={latestStructure && projectId ? {
+          domain: "ads",
+          artifactKey: "ads.structure",
+          sourceTable: "adStructures",
+          sourceRowId: latestStructure.id,
+          projectId,
+        } : null}
+        label="广告架构下游版本"
+        onVersionChanged={() => structuresQuery.refetch()}
+      />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

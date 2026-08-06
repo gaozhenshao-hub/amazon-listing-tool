@@ -9,7 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import ProjectSelector from "@/components/ProjectSelector";
 import { useProject } from "@/contexts/ProjectContext";
-import { WorkflowShell } from "@/components/workflow";
+import { AiJobHistoryPanel, BusinessArtifactVersionPicker, WorkflowShell } from "@/components/workflow";
 import { IMAGE_SUGGESTION_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import { trpc } from "@/lib/trpc";
 import {
@@ -1492,6 +1492,22 @@ export default function ImageWorkflowPage() {
         </>
       }
     >
+
+      <AiJobHistoryPanel module="imageWorkflow" projectId={selectedProjectId} title="图片工作流后台任务历史" />
+
+      {session && (
+        <BusinessArtifactVersionPicker
+          scope={{
+            domain: "image",
+            artifactKey: `image.workflow.step.${currentStep}`,
+            sourceTable: "image_workflow_sessions",
+            sourceRowId: session.id,
+            projectId: selectedProjectId,
+          }}
+          label={`步骤 ${currentStep} 版本`}
+          onVersionChanged={() => sessionQuery.refetch()}
+        />
+      )}
 
       {!session && (
         <Card>

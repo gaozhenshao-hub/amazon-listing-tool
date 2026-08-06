@@ -1,5 +1,6 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
+import { BadRequestError, NotFoundError } from "@shared/_core/errors";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -37,6 +38,7 @@ const {
   registerAiJobHandler,
   resolveProjectAccess,
   resolveSessionAccess,
+  resolveSessionForExecution,
   router,
   runStep5GenerationJob,
   serializeStep5Error,
@@ -45,6 +47,15 @@ const {
   storagePut,
   z,
 } = shared;
+
+function compactPromptText(value: unknown, maxChars: number) {
+  const text = String(value || "").trim();
+  if (text.length <= maxChars) return text;
+
+  const tailChars = Math.min(1_500, Math.floor(maxChars * 0.2));
+  const headChars = maxChars - tailChars;
+  return `${text.slice(0, headChars)}\n\n[上下文已压缩，省略${text.length - maxChars}字符]\n\n${text.slice(-tailChars)}`;
+}
 
 export const imageWorkflowStepProcedures = {
 
@@ -108,20 +119,20 @@ export const imageWorkflowStepProcedures = {
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
-      if (!project) throw new Error("Project not found");
+      if (!project) throw NotFoundError("项目不存在");
       ensureWriteAccess(project, ctx.user);
 
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
-      if (!session) throw new Error("No workflow session found");
-      if (!session.step1Confirmed) throw new Error("Step 1 not confirmed yet");
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step2.generate:${input.projectId}`);
+      if (!session) throw NotFoundError("图片建议工作流不存在");
+      if (!session.step1Confirmed) throw BadRequestError("请先确认 Step 1 卖点梳理");
 
-      const sellingPoints = session.step1UserEdit || session.step1AiResult;
-      const context = await buildImageWorkflowContext(input.projectId);
+      const sellingPoints = compactPromptText(session.step1UserEdit || session.step1AiResult, 8_000);
+      const context = compactPromptText(await buildImageWorkflowContext(input.projectId), 12_000);
 
 
       // Load Step0 competitor summary if available
       const step0Summary = session.step0AiResult
-        ? `\n\n--- 竞品图片分析总结 ---\n${session.step0AiResult.substring(0, 2000)}`
+        ? `\n\n--- 竞品图片分析总结 ---\n${compactPromptText(session.step0AiResult, 3_000)}`
         : "";
 
       const contextHint2 = context.trim()
@@ -137,13 +148,27 @@ export const imageWorkflowStepProcedures = {
         systemPrompt: STEP2_IMAGE_OUTLINE_PROMPT,
         context: userMsg2,
         validate: (value) => {
-          const imageNumbers = Array.isArray(value?.secondaryImages)
-            ? value.secondaryImages.map((image: any) => Number(image?.imageNumber))
-            : [];
-          if (imageNumbers.length !== 6 || imageNumbers.some((imageNumber: number, index: number) => imageNumber !== index + 2)) {
+          const rawSecondaryImages = Array.isArray(value?.secondaryImages) ? value.secondaryImages : [];
+          const substantiveImages = rawSecondaryImages.filter((image: any) =>
+            String(image?.purpose || "").trim() || String(image?.contentBrief || "").trim(),
+          );
+          const validImageNumbers = new Set(
+            substantiveImages
+              .map((image: any) => Number(image?.imageNumber))
+              .filter((imageNumber: number) => imageNumber >= 2 && imageNumber <= 7),
+          );
+          if (substantiveImages.length < 5 || validImageNumbers.size < 5) {
             throw new Error("图片大纲必须完整包含辅图2-7");
           }
-          return normalizeImageOutline(value, { forceDefaultAplus: true });
+          const normalized = normalizeImageOutline(value, {
+            forceDefaultAplus: true,
+            recoverMissingSecondaryContent: true,
+          });
+          const incompleteImage = normalized.secondaryImages.find((image: any) =>
+            !String(image?.purpose || "").trim() || !String(image?.contentBrief || "").trim(),
+          );
+          if (incompleteImage) throw new Error(`图片大纲缺少辅图${incompleteImage.imageNumber}的完整内容`);
+          return normalized;
         },
       });
       await db.updateImageWorkflowSession(session.id, {
@@ -163,21 +188,23 @@ export const imageWorkflowStepProcedures = {
     }))
     .mutation(async ({ ctx, input }) => {
       const session = await resolveSessionAccess(input.projectId, ctx.user);
-      if (!session) throw new Error("No workflow session found");
+      if (!session) throw NotFoundError("图片建议工作流不存在");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
 
       let parsed: any;
       try {
         parsed = JSON.parse(input.userEdit);
       } catch {
-        throw new Error("图片大纲不是有效JSON");
+        throw BadRequestError("图片大纲数据格式无效，请重新生成后再确认");
       }
       const normalized = normalizeImageOutline(parsed);
       const incompleteImage = normalized.secondaryImages.find((image: any) =>
         !String(image?.purpose || "").trim() || !String(image?.contentBrief || "").trim(),
       );
       if (incompleteImage) {
-        throw new Error(`请补全辅图${incompleteImage.imageNumber}的目的和内容后再确认`);
+        throw BadRequestError(`请补全辅图${incompleteImage.imageNumber}的目的和内容后再确认`, {
+          imageNumber: incompleteImage.imageNumber,
+        });
       }
 
       await db.updateImageWorkflowSession(session.id, {
@@ -202,7 +229,7 @@ export const imageWorkflowStepProcedures = {
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step2.aplus.optimize:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
       if (session.step2Confirmed) throw new Error("请先解锁图片大纲，再调整A+模块");
 
@@ -298,7 +325,7 @@ export const imageWorkflowStepProcedures = {
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step3.generate:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
       if (!session.step2Confirmed) throw new Error("Step 2 not confirmed yet");
 
@@ -367,7 +394,7 @@ export const imageWorkflowStepProcedures = {
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step4.generate:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
       if (!session.step3Confirmed) throw new Error("Step 3 not confirmed yet");
 

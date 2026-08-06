@@ -12,9 +12,8 @@ import { opsWorkspaceCondition } from "../repositories/ops";
 import { z } from "zod";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
-import { getDb } from "../repositories/dbClient";
-import { registerAdArtifact } from "../domains/ai_os/services/businessArtifactRegistry";
-import { invokeLLM } from "../_core/llm";
+import { requireAdsDb } from "../domains/ads/legacyAnalysis/repository";
+import { captureAdArtifact, runAdsSkill } from "../domains/ads/legacyAnalysis/service";
 import {
   adDailyPlacementReports,
   adDailySearchTermReports,
@@ -30,36 +29,9 @@ import {
 } from "../../drizzle/schema";
 import { eq, and, inArray, gte, lte, desc, sql } from "drizzle-orm";
 
-async function getDbInstance() {
-  const d = await getDb();
-  if (!d) throw new Error("数据库未连接");
-  return d;
-}
-
 function n(v: any): number { return Number(v) || 0; }
 function safePct(num: number, den: number): number {
   return den > 0 ? Math.round(num / den * 10000) / 100 : 0;
-}
-
-async function captureAdArtifact(
-  ctx: { user: { id: number }; workspaceId: number },
-  artifactKey: string,
-  sourceTable: string,
-  sourceRowId: number | string,
-  content: unknown,
-  sourceType: "ai_output" | "user_edit" = "ai_output",
-  status: "draft" | "final" = "draft",
-) {
-  await registerAdArtifact({
-    artifactKey,
-    sourceTable,
-    sourceRowId,
-    workspaceId: ctx.workspaceId,
-    userId: ctx.user.id,
-    content,
-    sourceType,
-    status,
-  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -555,7 +527,7 @@ export const adDeepAnalysisRouter = router({
       dateEnd: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       // Fetch placement + search term data for stage diagnosis
       const placementData = await d.select().from(adDailyPlacementReports).where(
         opsWorkspaceCondition(adDailyPlacementReports, currentOpsWorkspaceId(), and(eq(adDailyPlacementReports.userId, ctx.user.id), inArray(adDailyPlacementReports.portfolioName, input.portfolioNames), gte(adDailyPlacementReports.reportDate, input.dateStart), lte(adDailyPlacementReports.reportDate, input.dateEnd)))
@@ -567,7 +539,7 @@ export const adDeepAnalysisRouter = router({
       const dataSummary = `## 广告位数据\n${summarizePlacementData(placementData)}\n\n## 搜索词数据\n${summarizeSearchTermData(searchTermData)}`;
 
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages: [
           { role: "system", content: STAGE_DIAGNOSIS_PROMPT },
           { role: "user", content: `请分析以下数据并判断产品阶段:\n\n${dataSummary}` },
@@ -605,7 +577,7 @@ export const adDeepAnalysisRouter = router({
       dateEnd: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const searchTermData = await d.select().from(adDailySearchTermReports).where(
         opsWorkspaceCondition(adDailySearchTermReports, currentOpsWorkspaceId(), and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd)))
       );
@@ -613,7 +585,7 @@ export const adDeepAnalysisRouter = router({
       const dataSummary = summarizeSearchTermData(searchTermData);
 
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages: [
           { role: "system", content: KEYWORD_TIER_PROMPT },
           { role: "user", content: `请分析以下搜索词数据并进行关键词分级:\n\n${dataSummary}` },
@@ -662,7 +634,7 @@ export const adDeepAnalysisRouter = router({
       dateEnd: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const [placementData, searchTermData, impressionData, sbData, businessData] = await Promise.all([
         d.select().from(adDailyPlacementReports).where(opsWorkspaceCondition(adDailyPlacementReports, currentOpsWorkspaceId(), and(eq(adDailyPlacementReports.userId, ctx.user.id), inArray(adDailyPlacementReports.portfolioName, input.portfolioNames), gte(adDailyPlacementReports.reportDate, input.dateStart), lte(adDailyPlacementReports.reportDate, input.dateEnd)))),
         d.select().from(adDailySearchTermReports).where(opsWorkspaceCondition(adDailySearchTermReports, currentOpsWorkspaceId(), and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd)))),
@@ -674,7 +646,7 @@ export const adDeepAnalysisRouter = router({
       const dataSummary = `## 广告位数据\n${summarizePlacementData(placementData)}\n\n## 搜索词数据\n${summarizeSearchTermData(searchTermData)}\n\n## 展示量份额数据\n${summarizeImpressionShareData(impressionData)}\n\n## SB Benchmark数据\n${summarizeSbBenchmarkData(sbData)}\n\n## 业务×广告交叉数据\n${summarizeBusinessCrossData(businessData, searchTermData)}`;
 
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages: [
           { role: "system", content: CROSS_DIAGNOSIS_PROMPT },
           { role: "user", content: `请综合分析以下5份报告数据:\n\n${dataSummary}` },
@@ -708,13 +680,13 @@ export const adDeepAnalysisRouter = router({
       dateEnd: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const data = await d.select().from(adDailyPlacementReports).where(
         opsWorkspaceCondition(adDailyPlacementReports, currentOpsWorkspaceId(), and(eq(adDailyPlacementReports.userId, ctx.user.id), inArray(adDailyPlacementReports.portfolioName, input.portfolioNames), gte(adDailyPlacementReports.reportDate, input.dateStart), lte(adDailyPlacementReports.reportDate, input.dateEnd)))
       );
       const dataSummary = summarizePlacementData(data);
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages: [{ role: "system", content: PLACEMENT_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下广告位数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
       });
@@ -736,13 +708,13 @@ export const adDeepAnalysisRouter = router({
       dateEnd: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const data = await d.select().from(adDailySearchTermReports).where(
         opsWorkspaceCondition(adDailySearchTermReports, currentOpsWorkspaceId(), and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd)))
       );
       const dataSummary = summarizeSearchTermData(data);
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages: [{ role: "system", content: SEARCH_TERM_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下搜索词数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
       });
@@ -764,13 +736,13 @@ export const adDeepAnalysisRouter = router({
       dateEnd: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const data = await d.select().from(adDailyImpressionShareReports).where(
         opsWorkspaceCondition(adDailyImpressionShareReports, currentOpsWorkspaceId(), and(eq(adDailyImpressionShareReports.userId, ctx.user.id), inArray(adDailyImpressionShareReports.portfolioName, input.portfolioNames), gte(adDailyImpressionShareReports.reportDate, input.dateStart), lte(adDailyImpressionShareReports.reportDate, input.dateEnd)))
       );
       const dataSummary = summarizeImpressionShareData(data);
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages: [{ role: "system", content: IMPRESSION_SHARE_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下展示量份额数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
       });
@@ -792,13 +764,13 @@ export const adDeepAnalysisRouter = router({
       dateEnd: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const data = await d.select().from(adDailySbBenchmarkReports).where(
         opsWorkspaceCondition(adDailySbBenchmarkReports, currentOpsWorkspaceId(), and(eq(adDailySbBenchmarkReports.userId, ctx.user.id), gte(adDailySbBenchmarkReports.reportDate, input.dateStart), lte(adDailySbBenchmarkReports.reportDate, input.dateEnd)))
       );
       const dataSummary = summarizeSbBenchmarkData(data);
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages: [{ role: "system", content: SB_BENCHMARK_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下SB Benchmark数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
       });
@@ -820,14 +792,14 @@ export const adDeepAnalysisRouter = router({
       dateEnd: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const [businessData, adData] = await Promise.all([
         d.select().from(adDailyBusinessReports).where(opsWorkspaceCondition(adDailyBusinessReports, currentOpsWorkspaceId(), and(eq(adDailyBusinessReports.userId, ctx.user.id), gte(adDailyBusinessReports.reportDate, input.dateStart), lte(adDailyBusinessReports.reportDate, input.dateEnd)))),
         d.select().from(adDailySearchTermReports).where(opsWorkspaceCondition(adDailySearchTermReports, currentOpsWorkspaceId(), and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd)))),
       ]);
       const dataSummary = summarizeBusinessCrossData(businessData, adData);
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages: [{ role: "system", content: BUSINESS_CROSS_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下业务×广告交叉数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
       });
@@ -849,7 +821,7 @@ export const adDeepAnalysisRouter = router({
       limit: z.number().default(20),
     }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const conditions: any[] = [eq(adReportAnalysisRecords.userId, ctx.user.id)];
       if (input.reportType) conditions.push(eq(adReportAnalysisRecords.reportType, input.reportType));
       return d.select().from(adReportAnalysisRecords).where(opsWorkspaceCondition(adReportAnalysisRecords, currentOpsWorkspaceId(), and(...conditions))).orderBy(desc(adReportAnalysisRecords.createdAt)).limit(input.limit);
@@ -863,7 +835,7 @@ export const adDeepAnalysisRouter = router({
       status: z.enum(["draft", "confirmed", "archived"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const updates: any = { userEdits: input.userEdits };
       if (input.status) updates.status = input.status;
       await d.update(adReportAnalysisRecords).set(updates).where(opsWorkspaceCondition(adReportAnalysisRecords, currentOpsWorkspaceId(), and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id))));
@@ -888,7 +860,7 @@ export const adDeepAnalysisRouter = router({
       sourceAnalysisIds: z.array(z.number()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       // Gather recent analysis results as context
       const recentAnalyses = await d.select().from(adReportAnalysisRecords).where(
         opsWorkspaceCondition(adReportAnalysisRecords, currentOpsWorkspaceId(), and(eq(adReportAnalysisRecords.userId, ctx.user.id), eq(adReportAnalysisRecords.status, "confirmed")))
@@ -907,7 +879,7 @@ export const adDeepAnalysisRouter = router({
       });
 
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages: [
           { role: "system", content: SOP_GENERATION_PROMPT },
           { role: "user", content: `请根据以下分析结果生成SOP任务清单:\n\n${context}` },
@@ -948,7 +920,7 @@ export const adDeepAnalysisRouter = router({
       period: z.enum(["daily", "weekly", "monthly"]).optional(),
     }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const conditions: any[] = [eq(adSopTasks.userId, ctx.user.id)];
       if (input.status) conditions.push(eq(adSopTasks.status, input.status));
       if (input.period) conditions.push(eq(adSopTasks.period, input.period));
@@ -963,7 +935,7 @@ export const adDeepAnalysisRouter = router({
       completedNote: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const updates: any = { status: input.status };
       if (input.status === "completed") updates.completedAt = new Date();
       if (input.completedNote) updates.completedNote = input.completedNote;
@@ -982,7 +954,7 @@ export const adDeepAnalysisRouter = router({
       additionalContext: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       // Gather relevant data based on symptom
       let dataContext = "";
       if (input.dateStart && input.dateEnd && input.portfolioNames.length > 0) {
@@ -994,7 +966,7 @@ export const adDeepAnalysisRouter = router({
       }
 
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages: [
           { role: "system", content: CLINIC_DIAGNOSIS_PROMPT },
           { role: "user", content: `## 患者症状\n类别: ${input.symptomCategory}\n描述: ${input.symptomDescription}\n${input.additionalContext ? `补充信息: ${input.additionalContext}` : ""}${dataContext}` },
@@ -1025,7 +997,7 @@ export const adDeepAnalysisRouter = router({
   listClinicRecords: protectedProcedure
     .input(z.object({ limit: z.number().default(20) }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       return d.select().from(adClinicRecords).where(opsWorkspaceCondition(adClinicRecords, currentOpsWorkspaceId(), eq(adClinicRecords.userId, ctx.user.id))).orderBy(desc(adClinicRecords.createdAt)).limit(input.limit);
     }),
 
@@ -1037,7 +1009,7 @@ export const adDeepAnalysisRouter = router({
       status: z.enum(["consulting", "diagnosed", "treating", "resolved", "archived"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const updates: any = {};
       if (input.userEdits) updates.userEdits = input.userEdits;
       if (input.status) updates.status = input.status;
@@ -1058,7 +1030,7 @@ export const adDeepAnalysisRouter = router({
   getStageHistory: protectedProcedure
     .input(z.object({ limit: z.number().default(10) }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       return d.select().from(adProductStages).where(opsWorkspaceCondition(adProductStages, currentOpsWorkspaceId(), eq(adProductStages.userId, ctx.user.id))).orderBy(desc(adProductStages.createdAt)).limit(input.limit);
     }),
 
@@ -1070,7 +1042,7 @@ export const adDeepAnalysisRouter = router({
       status: z.enum(["draft", "confirmed", "archived"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const updates: any = {};
       if (input.userEdits) updates.userEdits = input.userEdits;
       if (input.status) updates.status = input.status;
@@ -1082,7 +1054,7 @@ export const adDeepAnalysisRouter = router({
   getKeywordTierHistory: protectedProcedure
     .input(z.object({ batchId: z.number().optional(), limit: z.number().default(50) }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const conditions: any[] = [eq(adKeywordTiers.userId, ctx.user.id)];
       if (input.batchId) conditions.push(eq(adKeywordTiers.batchId, input.batchId));
       return d.select().from(adKeywordTiers).where(opsWorkspaceCondition(adKeywordTiers, currentOpsWorkspaceId(), and(...conditions))).orderBy(desc(adKeywordTiers.createdAt)).limit(input.limit);
@@ -1096,7 +1068,7 @@ export const adDeepAnalysisRouter = router({
       status: z.enum(["pending", "confirmed", "ignored"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const updates: any = { userEdited: 1 };
       if (input.userAction) updates.userAction = input.userAction;
       if (input.status) updates.status = input.status;
@@ -1108,7 +1080,7 @@ export const adDeepAnalysisRouter = router({
   getDiagnosisHistory: protectedProcedure
     .input(z.object({ limit: z.number().default(10) }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       return d.select().from(adDiagnoses).where(opsWorkspaceCondition(adDiagnoses, currentOpsWorkspaceId(), eq(adDiagnoses.userId, ctx.user.id))).orderBy(desc(adDiagnoses.createdAt)).limit(input.limit);
     }),
 
@@ -1119,7 +1091,7 @@ export const adDeepAnalysisRouter = router({
       confirmedActions: z.string(), // JSON array of confirmed action items with user edits
     }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       await d.update(adReportAnalysisRecords).set({
         actionItems: input.confirmedActions,
         userEdits: input.confirmedActions,
@@ -1132,7 +1104,7 @@ export const adDeepAnalysisRouter = router({
   getAnalysisDetail: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const [record] = await d.select().from(adReportAnalysisRecords).where(
         opsWorkspaceCondition(adReportAnalysisRecords, currentOpsWorkspaceId(), and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id)))
       ).limit(1);
@@ -1143,7 +1115,7 @@ export const adDeepAnalysisRouter = router({
   archiveAnalysis: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       await d.update(adReportAnalysisRecords).set({ status: "archived" })
         .where(opsWorkspaceCondition(adReportAnalysisRecords, currentOpsWorkspaceId(), and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id))));
       return { success: true };

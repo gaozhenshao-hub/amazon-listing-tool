@@ -44,6 +44,15 @@ const supplementalMigrations = [
   "0119_listing_competitor_emperor_skills.sql",
   "0120_image_workflow_outline_contract.sql",
   "0121_dev_information_summary_emperor_skills.sql",
+  "0122_image_outline_reliability.sql",
+  "0123_dev_information_summary_jobs.sql",
+  "0124_product_development_workspace_security.sql",
+  "0125_dev_stage_consistency.sql",
+  "0126_product_analysis_stage_jobs.sql",
+  "0127_product_development_analysis_agent.sql",
+  "0128_artifact_source_of_truth.sql",
+  "0129_business_skill_governance.sql",
+  "0130_ai_operations_runtime.sql",
 ];
 
 const retiredMigrationFiles = new Set([

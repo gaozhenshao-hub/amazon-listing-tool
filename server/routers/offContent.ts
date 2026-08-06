@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as offDb from "../offsiteDb";
 import { CONTENT_REVIEW_PROMPT } from "./offsitePrompts";
 
@@ -36,7 +36,7 @@ export const offContentRouter = router({
 
 
 
-    const resp = await invokeLLM({
+    const resp = await invokeBusinessSkill({
       messages: [
         { role: "system", content: CONTENT_REVIEW_PROMPT },
         { role: "user", content: `内容: ${JSON.stringify(submission)}\n品牌指南: ${input.brandGuidelines || "无"}\n产品信息: ${input.productInfo || "无"}` },

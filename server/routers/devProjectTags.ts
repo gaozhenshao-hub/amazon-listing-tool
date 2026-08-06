@@ -1,9 +1,11 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { getDb } from "../repositories/dbClient";
 import { devProjectTagCategories, devProjectTagItems, devProducts } from "../../drizzle/schema";
 import { eq, and, asc } from "drizzle-orm";
+import { productDevelopmentWorkspaceId } from "../domains/product_development/security/productDevelopmentAccess";
 
 async function ensureDb() {
   const d = await getDb();
@@ -84,6 +86,7 @@ export const devProjectTagsRouter = router({
 
       for (const cat of DEFAULT_CATEGORIES) {
         await db.insert(devProjectTagCategories).values({
+          workspaceId: productDevelopmentWorkspaceId(ctx),
           projectId: input.projectId,
           userId: ctx.user.id,
           categoryKey: cat.key,
@@ -142,6 +145,7 @@ export const devProjectTagsRouter = router({
       const maxOrder = Math.max(0, ...existing.map((c: any) => c.sortOrder));
 
       const [result] = await db.insert(devProjectTagCategories).values({
+        workspaceId: productDevelopmentWorkspaceId(ctx),
         projectId: input.projectId,
         userId: ctx.user.id,
         categoryKey: `custom_${Date.now()}`,
@@ -177,6 +181,7 @@ export const devProjectTagsRouter = router({
       const maxOrder = Math.max(0, ...existing.map((i: any) => i.sortOrder));
 
       const [result] = await db.insert(devProjectTagItems).values({
+        workspaceId: productDevelopmentWorkspaceId(ctx),
         categoryId: input.categoryId,
         projectId: input.projectId,
         tagName: input.tagName,
@@ -333,6 +338,7 @@ export const devProjectTagsRouter = router({
       if (categories.length === 0) {
         for (const cat of DEFAULT_CATEGORIES) {
           await db.insert(devProjectTagCategories).values({
+            workspaceId: productDevelopmentWorkspaceId(ctx),
             projectId: input.projectId,
             userId: ctx.user.id,
             categoryKey: cat.key,
@@ -372,6 +378,7 @@ export const devProjectTagsRouter = router({
           // Create new category
           const maxOrder = Math.max(0, ...categories.map((c: any) => c.sortOrder));
           const [result] = await db.insert(devProjectTagCategories).values({
+            workspaceId: productDevelopmentWorkspaceId(ctx),
             projectId: input.projectId,
             userId: ctx.user.id,
             categoryKey: `import_${Date.now()}_${newCategories}`,
@@ -397,6 +404,7 @@ export const devProjectTagsRouter = router({
             continue;
           }
           await db.insert(devProjectTagItems).values({
+            workspaceId: productDevelopmentWorkspaceId(ctx),
             categoryId: (category as any).id,
             projectId: input.projectId,
             tagName: tag.tagName,
@@ -507,7 +515,7 @@ export const devProjectTagsRouter = router({
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",
@@ -639,6 +647,7 @@ ${JSON.stringify(productContext, null, 2)}
         for (let i = 0; i < (catData.tags || []).length; i++) {
           const tag = catData.tags[i];
           await db.insert(devProjectTagItems).values({
+            workspaceId: productDevelopmentWorkspaceId(ctx),
             categoryId: category.id,
             projectId: input.projectId,
             tagName: tag.tagName,
@@ -714,7 +723,7 @@ ${JSON.stringify(productContext, null, 2)}
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",
@@ -792,6 +801,7 @@ ${JSON.stringify(productContext, null, 2)}
       for (let i = 0; i < (parsed.tags || []).length; i++) {
         const tag = parsed.tags[i];
         await db.insert(devProjectTagItems).values({
+          workspaceId: productDevelopmentWorkspaceId(ctx),
           categoryId: input.categoryId,
           projectId: input.projectId,
           tagName: tag.tagName,

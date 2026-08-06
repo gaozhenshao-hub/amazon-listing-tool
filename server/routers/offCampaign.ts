@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as offDb from "../offsiteDb";
 import { CAMPAIGN_ANALYSIS_PROMPT } from "./offsitePrompts";
 
@@ -65,7 +65,7 @@ export const offCampaignRouter = router({
 
 
 
-    const resp = await invokeLLM({
+    const resp = await invokeBusinessSkill({
       messages: [
         { role: "system", content: CAMPAIGN_ANALYSIS_PROMPT },
         { role: "user", content: `活动: ${JSON.stringify(campaign)}\n合作: ${JSON.stringify(collabs)}\n数据: ${JSON.stringify(analytics)}` },

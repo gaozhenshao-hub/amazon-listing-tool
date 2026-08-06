@@ -3,7 +3,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../repositories/dbClient";
 import { buyerQuestions } from "../../drizzle/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 
 // ─── Buyer Questions Router ─────────────────────────────────────────────────
 export const buyerQuestionsRouter = router({
@@ -162,7 +162,7 @@ ${input.searchTerms.slice(0, 200).join("\n")}
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "You are an Amazon advertising data analyst. Extract buyer questions from search terms. Return only valid JSON array." },
           { role: "user", content: prompt },
@@ -249,7 +249,7 @@ ${activeQuestions.map((q, i) => `${i + 1}. ${q.question}`).join("\n")}
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "You are an Amazon Listing quality auditor. Check question coverage. Return only valid JSON array." },
           { role: "user", content: prompt },

@@ -159,16 +159,3 @@ export async function checkStageGating(projectId: number, stageType: StageType):
     missingPrereqs: missing,
   };
 }
-
-
-// Helper: resolve dev project access based on user role
-export async function resolveDevProjectAccess(projectId: number, user: { id: number; role: string }) {
-  if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
-    const project = await devDb.getDevProjectByIdAdmin(projectId);
-    if (!project) throw new Error("Project not found");
-    return project;
-  }
-  const project = await devDb.getDevProjectById(projectId, user.id);
-  if (!project) throw new Error("Project not found");
-  return project;
-}

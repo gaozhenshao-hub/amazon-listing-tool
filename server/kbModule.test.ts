@@ -146,31 +146,31 @@ describe("KB - File structure", () => {
 describe("KB - AI prompts in routers", () => {
   it("kbProducts should contain product innovation AI analysis", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/kbProducts.ts"), "utf-8");
-    expect(code).toContain("invokeLLM");
+    expect(code).toContain("invokeBusinessSkill");
     expect(code).toContain("创意");
   });
 
   it("kbListings should contain listing copywriting AI analysis", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/kbListings.ts"), "utf-8");
-    expect(code).toContain("invokeLLM");
+    expect(code).toContain("invokeBusinessSkill");
     expect(code).toContain("文案");
   });
 
   it("kbImages should contain image visual AI analysis with 4 dimensions", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/kbImages.ts"), "utf-8");
-    expect(code).toContain("invokeLLM");
+    expect(code).toContain("invokeBusinessSkill");
     expect(code).toMatch(/类目|色系|图片类型|设计风格/);
   });
 
   it("kbSkills should contain SOP AI summary generation", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/kbSkills.ts"), "utf-8");
-    expect(code).toContain("invokeLLM");
+    expect(code).toContain("invokeBusinessSkill");
     expect(code).toContain("运营");
   });
 
   it("kbVideos should contain video content AI analysis", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/kbVideos.ts"), "utf-8");
-    expect(code).toContain("invokeLLM");
+    expect(code).toContain("invokeBusinessSkill");
     expect(code).toContain("视频");
   });
 });

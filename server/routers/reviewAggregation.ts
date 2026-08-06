@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as db from "../repositories";
 
 const KANO_AGGREGATION_PROMPT = `You are an expert Amazon product analyst specializing in customer review analysis using the Kano Model framework.
@@ -112,7 +112,7 @@ export const reviewAggregationRouter = router({
 
 
 
-        const response = await invokeLLM({
+        const response = await invokeBusinessSkill({
           messages: [
             { role: "system", content: KANO_AGGREGATION_PROMPT },
             {

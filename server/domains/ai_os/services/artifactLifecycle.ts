@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "crypto";
 import { sql as drizzleSql } from "drizzle-orm";
-import { getDb } from "../../../repositories/dbClient";
-import { buildStorageUri, parseStorageUri, type StorageProvider } from "../../../storage";
+import { getDb, withDbTransaction, type DbExecutor } from "../../../repositories/dbClient";
+import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
+import { buildStorageUri, parseStorageUri, storageGet, storagePut, type StorageProvider } from "../../../storage";
 
 export type ArtifactDomain = "listing" | "image" | "ads" | "video" | "agent" | "project" | "file" | "ops" | "tool" | "other";
 export type UnifiedArtifactType = "json" | "text" | "markdown" | "html" | "image" | "file" | "table" | "video" | "audio" | "other";
@@ -13,8 +14,32 @@ export type RegisteredArtifact = {
   id?: number;
   artifactId: string;
   ref: string;
+  versionRef: string;
+  currentRef: string;
   version: number;
   storageObjectId?: number | null;
+};
+
+export type UnifiedArtifactScope = {
+  workspaceId?: number | null;
+  domain: ArtifactDomain;
+  artifactKey: string;
+  sourceTable?: string | null;
+  sourceRowId?: string | number | null;
+  projectId?: number | null;
+  runId?: string | null;
+  nodeId?: string | null;
+};
+
+export type UnifiedArtifactRecord = Record<string, any> & {
+  artifactId: string;
+  artifactKey: string;
+  version: number;
+  isCurrent: number;
+  status: string;
+  content: unknown;
+  ref: string;
+  currentRef: string;
 };
 
 export type DataLifecyclePolicy = {
@@ -125,8 +150,12 @@ function isMissingLifecycleSchema(error: unknown) {
   return /doesn't exist|unknown column|no such table|no such column/i.test(String((error as Error).message));
 }
 
-async function rawExecute(sqlStr: string, params: unknown[] = []): Promise<any[]> {
-  const db = await getDb();
+async function rawExecute(
+  sqlStr: string,
+  params: unknown[] = [],
+  executor?: DbExecutor,
+): Promise<any[]> {
+  const db = executor || await getDb();
   if (!db) throw new Error("Database not available");
 
   let result: any;
@@ -232,8 +261,81 @@ function normalizeSourceType(value: unknown): ArtifactSourceType {
     : "ai_output";
 }
 
-function artifactRef(artifactId: string, version: number | "current" = "current") {
+export function buildUnifiedArtifactRef(artifactId: string, version: number | "current" = "current") {
   return `ai-artifact://${artifactId}@${version}`;
+}
+
+export function buildUnifiedArtifactCurrentRef(scope: UnifiedArtifactScope) {
+  const encodedScope = Buffer.from(JSON.stringify({
+    workspaceId: scope.workspaceId ?? null,
+    domain: scope.domain,
+    artifactKey: scope.artifactKey,
+    sourceTable: scope.sourceTable ?? null,
+    sourceRowId: scope.sourceRowId === undefined || scope.sourceRowId === null ? null : String(scope.sourceRowId),
+    runId: scope.runId ?? null,
+    nodeId: scope.nodeId ?? null,
+  }), "utf8").toString("base64url");
+  return `ai-artifact-scope://${encodedScope}@current`;
+}
+
+export function parseUnifiedArtifactRef(ref: string):
+  | { kind: "version"; artifactId: string; version: number | "current" }
+  | { kind: "current"; scope: UnifiedArtifactScope }
+  | null {
+  const versionMatch = /^ai-artifact:\/\/([^@]+)@(current|[1-9]\d*)$/.exec(ref);
+  if (versionMatch) {
+    return {
+      kind: "version",
+      artifactId: versionMatch[1],
+      version: versionMatch[2] === "current" ? "current" : Number(versionMatch[2]),
+    };
+  }
+  const currentMatch = /^ai-artifact-scope:\/\/([^@]+)@current$/.exec(ref);
+  if (!currentMatch) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(currentMatch[1], "base64url").toString("utf8"));
+    if (!decoded?.domain || !decoded?.artifactKey) return null;
+    return {
+      kind: "current",
+      scope: {
+        workspaceId: decoded.workspaceId ?? null,
+        domain: normalizeArtifactDomain(decoded.domain),
+        artifactKey: String(decoded.artifactKey),
+        sourceTable: decoded.sourceTable ?? null,
+        sourceRowId: decoded.sourceRowId ?? null,
+        runId: decoded.runId ?? null,
+        nodeId: decoded.nodeId ?? null,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+function safeArtifactPathPart(value: unknown) {
+  return String(value || "artifact")
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 96) || "artifact";
+}
+
+function artifactStorageKey(input: {
+  workspaceId?: number | null;
+  domain: ArtifactDomain;
+  artifactKey: string;
+  contentHash: string;
+  artifactType: UnifiedArtifactType;
+}) {
+  const extension = input.artifactType === "text" || input.artifactType === "markdown" || input.artifactType === "html"
+    ? "txt"
+    : "json";
+  return [
+    "ai-artifacts",
+    safeArtifactPathPart(input.workspaceId ?? "global"),
+    safeArtifactPathPart(input.domain),
+    safeArtifactPathPart(input.artifactKey),
+    `${input.contentHash}.${extension}`,
+  ].join("/");
 }
 
 function exactNullableClause(column: string, value: unknown, params: unknown[]) {
@@ -285,6 +387,7 @@ export async function registerStorageObject(input: {
   sourceId?: string | number | null;
   metadata?: unknown;
   createdBy?: number | null;
+  executor?: DbExecutor;
 }) {
   if (!lifecycleStoreAvailable) return null;
   const parsedUri = input.storageUri ? parseStorageUri(input.storageUri) : null;
@@ -328,8 +431,13 @@ export async function registerStorageObject(input: {
         input.metadata === undefined ? null : safeStringify(input.metadata),
         input.createdBy || null,
       ],
+      input.executor,
     );
-    const rows = await rawExecute("SELECT id,storageId,storageUri FROM ai_storage_objects WHERE storageId=? LIMIT 1", [storageId]);
+    const rows = await rawExecute(
+      "SELECT id,storageId,storageUri FROM ai_storage_objects WHERE storageId=? LIMIT 1",
+      [storageId],
+      input.executor,
+    );
     return rows[0] || { storageId, storageUri };
   } catch (error) {
     if (isMissingLifecycleSchema(error)) lifecycleStoreAvailable = false;
@@ -356,6 +464,7 @@ export async function registerUnifiedArtifact(input: {
   status?: "draft" | "final" | "superseded" | "archived" | "deleted";
   version?: number | null;
   isCurrent?: boolean;
+  parentArtifactId?: string | null;
   selectedBy?: number | null;
   content?: unknown;
   searchableText?: string | null;
@@ -370,13 +479,32 @@ export async function registerUnifiedArtifact(input: {
   metadata?: unknown;
   sourceSkillRunId?: string | null;
   sourceAiJobRunId?: string | null;
+  executor?: DbExecutor;
+  failOnError?: boolean;
 }): Promise<RegisteredArtifact | null> {
-  if (!lifecycleStoreAvailable) return null;
+  if (!lifecycleStoreAvailable) {
+    if (input.failOnError) throw new Error("Artifact lifecycle store is unavailable");
+    return null;
+  }
+  if (!input.executor) {
+    try {
+      return await withDbTransaction("Register unified Artifact", (tx) => registerUnifiedArtifact({
+        ...input,
+        executor: tx,
+        failOnError: true,
+      }));
+    } catch (error) {
+      if (input.failOnError) throw error;
+      if (isMissingLifecycleSchema(error)) lifecycleStoreAvailable = false;
+      else console.warn("[Artifact Lifecycle] Failed to register artifact:", error);
+      return null;
+    }
+  }
   const domain = normalizeArtifactDomain(input.domain || "other");
   const artifactType = normalizeArtifactType(input.artifactType || "json");
   const sourceType = normalizeSourceType(input.sourceType || "ai_output");
   const status = input.status || "final";
-  const isCurrent = input.isCurrent ?? status === "final";
+  const isCurrent = status === "final" && (input.isCurrent ?? true);
   const contentHash = input.contentHash || createContentHash(input.content ?? input.storageUri ?? input.summary ?? null);
   const scopeParams: unknown[] = [];
   const scopeWhere = artifactScopeWhere({
@@ -390,9 +518,54 @@ export async function registerUnifiedArtifact(input: {
   }, scopeParams);
 
   try {
+    const matching = input.content !== undefined
+      ? (await rawExecute(
+        `SELECT id,artifactId,version,isCurrent,status,storageObjectId FROM ai_artifacts
+         WHERE ${scopeWhere} AND contentHash=?
+         ORDER BY version DESC LIMIT 1`,
+        [...scopeParams, contentHash],
+        input.executor,
+      ))[0]
+      : null;
+    if (matching) {
+      if (isCurrent) {
+        await rawExecute(
+          `UPDATE ai_artifacts SET status='superseded',isCurrent=0,updatedAt=NOW()
+           WHERE ${scopeWhere} AND isCurrent=1 AND artifactId<>?`,
+          [...scopeParams, matching.artifactId],
+          input.executor,
+        );
+        await rawExecute(
+          "UPDATE ai_artifacts SET status='final',isCurrent=1,currentSince=NOW(),selectedBy=?,updatedAt=NOW() WHERE artifactId=?",
+          [input.selectedBy ?? input.userId ?? null, matching.artifactId],
+          input.executor,
+        );
+      }
+      const version = Number(matching.version || 1);
+      const currentRef = buildUnifiedArtifactCurrentRef({
+        workspaceId: input.workspaceId ?? null,
+        domain,
+        artifactKey: input.artifactKey,
+        sourceTable: input.sourceTable || null,
+        sourceRowId: input.sourceRowId ?? input.sourceId ?? null,
+        runId: input.runId || null,
+        nodeId: input.nodeId || null,
+      });
+      return {
+        id: matching.id,
+        artifactId: matching.artifactId,
+        version,
+        storageObjectId: matching.storageObjectId ?? null,
+        ref: buildUnifiedArtifactRef(matching.artifactId, version),
+        currentRef,
+        versionRef: buildUnifiedArtifactRef(matching.artifactId, version),
+      };
+    }
+
     const version = input.version || Number((await rawExecute(
       `SELECT COALESCE(MAX(version),0)+1 as nextVersion FROM ai_artifacts WHERE ${scopeWhere}`,
       scopeParams,
+      input.executor,
     ))[0]?.nextVersion || 1);
     const artifactId = input.artifactId || buildStableId("art", [
       input.workspaceId ?? "global",
@@ -402,22 +575,75 @@ export async function registerUnifiedArtifact(input: {
       input.artifactKey,
       version,
     ]);
+    const previousCurrent = (await rawExecute(
+      `SELECT artifactId FROM ai_artifacts WHERE ${scopeWhere} AND isCurrent=1 ORDER BY version DESC LIMIT 1`,
+      scopeParams,
+      input.executor,
+    ))[0];
+
+    let storageObjectId = input.storageObjectId ?? null;
+    let storageUri = input.storageUri || null;
+    let inlineContent = input.content;
+    let storagePending = false;
+    if (input.content !== undefined && !shouldInlineArtifactContent(input.content) && storageUri) {
+      inlineContent = undefined;
+    } else if (input.content !== undefined && !shouldInlineArtifactContent(input.content)) {
+      const serialized = safeStringify(input.content);
+      const objectKey = artifactStorageKey({
+        workspaceId: input.workspaceId,
+        domain,
+        artifactKey: input.artifactKey,
+        contentHash,
+        artifactType,
+      });
+      try {
+        const stored = await storagePut(
+          objectKey,
+          serialized,
+          artifactType === "text" || artifactType === "markdown" || artifactType === "html"
+            ? "text/plain; charset=utf-8"
+            : "application/json",
+        );
+        const storage = await registerStorageObject({
+          workspaceId: input.workspaceId ?? null,
+          storageUri: stored.storageUri,
+          publicUrl: stored.url,
+          objectKey: stored.key,
+          mimeType: artifactType === "text" || artifactType === "markdown" || artifactType === "html"
+            ? "text/plain; charset=utf-8"
+            : "application/json",
+          fileName: `${safeArtifactPathPart(input.artifactKey)}-${contentHash.slice(0, 12)}.${artifactType === "text" ? "txt" : "json"}`,
+          sizeBytes: Buffer.byteLength(serialized, "utf8"),
+          contentHash,
+          sourceDomain: domain,
+          sourceType,
+          sourceId: input.sourceRowId ?? input.sourceId ?? input.runId ?? null,
+          metadata: { artifactId, artifactKey: input.artifactKey, version },
+          createdBy: input.userId ?? null,
+          executor: input.executor,
+        });
+        storageUri = stored.storageUri;
+        storageObjectId = storage?.id ?? null;
+        inlineContent = undefined;
+      } catch (error) {
+        storagePending = true;
+        console.warn(`[Artifact Lifecycle] Storage upload deferred for ${input.artifactKey}@${version}:`, error);
+      }
+    }
 
     if (isCurrent) {
       await rawExecute(
         `UPDATE ai_artifacts SET status='superseded',isCurrent=0,updatedAt=NOW() WHERE ${scopeWhere} AND isCurrent=1 AND artifactId<>?`,
         [...scopeParams, artifactId],
+        input.executor,
       );
     }
 
-    const inlineContent = input.content !== undefined && shouldInlineArtifactContent(input.content)
-      ? input.content
-      : null;
     await rawExecute(
       `INSERT INTO ai_artifacts
-       (workspaceId,artifactId,domain,artifactKey,artifactType,sourceType,sourceId,sourceTable,sourceRowId,runId,agentSlug,nodeId,projectId,userId,status,version,isCurrent,currentSince,selectedBy,contentJson,searchableText,summary,contentHash,storageObjectId,storageUri,mimeType,fileName,fileSizeBytes,retentionClass,archiveAfter,deleteAfter,metadata,sourceSkillRunId,sourceAiJobRunId)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,DATE_ADD(NOW(), INTERVAL 365 DAY),DATE_ADD(NOW(), INTERVAL 1095 DAY),?,?,?)
-       ON DUPLICATE KEY UPDATE status=VALUES(status),isCurrent=VALUES(isCurrent),currentSince=VALUES(currentSince),selectedBy=VALUES(selectedBy),contentJson=VALUES(contentJson),searchableText=VALUES(searchableText),summary=VALUES(summary),contentHash=VALUES(contentHash),storageObjectId=VALUES(storageObjectId),storageUri=VALUES(storageUri),metadata=VALUES(metadata),updatedAt=NOW()`,
+       (workspaceId,artifactId,domain,artifactKey,artifactType,sourceType,sourceId,sourceTable,sourceRowId,runId,agentSlug,nodeId,projectId,userId,status,version,isCurrent,parentArtifactId,currentSince,selectedBy,contentJson,searchableText,summary,contentHash,storageObjectId,storageUri,mimeType,fileName,fileSizeBytes,retentionClass,archiveAfter,deleteAfter,metadata,sourceSkillRunId,sourceAiJobRunId)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,DATE_ADD(NOW(), INTERVAL 365 DAY),DATE_ADD(NOW(), INTERVAL 1095 DAY),?,?,?)
+       ON DUPLICATE KEY UPDATE artifactId=VALUES(artifactId)`,
       [
         input.workspaceId ?? null,
         artifactId,
@@ -436,36 +662,457 @@ export async function registerUnifiedArtifact(input: {
         status,
         version,
         isCurrent ? 1 : 0,
+        input.parentArtifactId || previousCurrent?.artifactId || null,
         isCurrent ? new Date() : null,
         isCurrent ? input.selectedBy ?? input.userId ?? null : null,
-        inlineContent === null ? null : safeStringify(inlineContent),
+        inlineContent === undefined ? null : safeStringify(inlineContent),
         input.searchableText ?? searchableText(input.content),
         input.summary || summarizeArtifactPayload(input.content ?? input.storageUri ?? null),
         contentHash,
-        input.storageObjectId ?? null,
-        input.storageUri || null,
+        storageObjectId,
+        storageUri,
         input.mimeType || null,
         input.fileName || null,
         input.fileSizeBytes ?? null,
         input.retentionClass || "hot",
-        input.metadata === undefined ? null : safeStringify(input.metadata),
+        safeStringify({ ...toRecord(input.metadata), storagePending }),
         input.sourceSkillRunId || null,
         input.sourceAiJobRunId || null,
       ],
+      input.executor,
     );
-    const rows = await rawExecute("SELECT id,artifactId,version,storageObjectId FROM ai_artifacts WHERE artifactId=? LIMIT 1", [artifactId]);
+    const rows = await rawExecute(
+      "SELECT id,artifactId,version,storageObjectId,contentHash FROM ai_artifacts WHERE artifactId=? LIMIT 1",
+      [artifactId],
+      input.executor,
+    );
+    if (rows[0] && String(rows[0].contentHash || "") !== contentHash) {
+      if (input.artifactId) {
+        throw new Error(`Artifact ${artifactId} already exists with different immutable content`);
+      }
+      return registerUnifiedArtifact({
+        ...input,
+        artifactId: undefined,
+        version: version + 1,
+        executor: input.executor,
+        failOnError: true,
+      });
+    }
     return {
       id: rows[0]?.id,
       artifactId,
       version,
-      storageObjectId: rows[0]?.storageObjectId ?? input.storageObjectId ?? null,
-      ref: artifactRef(artifactId, "current"),
+      storageObjectId: rows[0]?.storageObjectId ?? storageObjectId,
+      ref: buildUnifiedArtifactRef(artifactId, version),
+      currentRef: buildUnifiedArtifactCurrentRef({
+        workspaceId: input.workspaceId ?? null,
+        domain,
+        artifactKey: input.artifactKey,
+        sourceTable: input.sourceTable || null,
+        sourceRowId: input.sourceRowId ?? input.sourceId ?? null,
+        runId: input.runId || null,
+        nodeId: input.nodeId || null,
+      }),
+      versionRef: buildUnifiedArtifactRef(artifactId, version),
     };
   } catch (error) {
+    if (input.failOnError) throw error;
     if (isMissingLifecycleSchema(error)) lifecycleStoreAvailable = false;
     else console.warn("[Artifact Lifecycle] Failed to register artifact:", error);
     return null;
   }
+}
+
+function unifiedArtifactScopeFromRow(row: Record<string, any>): UnifiedArtifactScope {
+  return {
+    workspaceId: row.workspaceId ?? null,
+    domain: normalizeArtifactDomain(row.domain),
+    artifactKey: String(row.artifactKey),
+    sourceTable: row.sourceTable || null,
+    sourceRowId: row.sourceRowId ?? row.sourceId ?? null,
+    runId: row.runId || null,
+    nodeId: row.nodeId || null,
+  };
+}
+
+function unifiedArtifactQueryWhere(input: UnifiedArtifactScope & {
+  artifactId?: string | null;
+  version?: number | null;
+  currentOnly?: boolean;
+  confirmedOnly?: boolean;
+}, params: unknown[]) {
+  if (input.artifactId) {
+    params.push(input.artifactId);
+    const clauses = ["a.`artifactId`=?"];
+    if (input.workspaceId !== undefined) clauses.push(exactNullableClause("workspaceId", input.workspaceId, params).replace("`workspaceId`", "a.`workspaceId`"));
+    return clauses.join(" AND ");
+  }
+  const clauses: string[] = [];
+  if (input.workspaceId !== undefined) {
+    clauses.push(exactNullableClause("workspaceId", input.workspaceId, params).replace("`workspaceId`", "a.`workspaceId`"));
+  }
+  params.push(input.domain, input.artifactKey);
+  clauses.push("a.`domain`=?", "a.`artifactKey`=?");
+  if (input.sourceTable !== undefined) {
+    clauses.push(exactNullableClause("sourceTable", input.sourceTable, params).replace("`sourceTable`", "a.`sourceTable`"));
+  }
+  if (input.sourceRowId !== undefined) {
+    clauses.push(exactNullableClause(
+      "sourceRowId",
+      input.sourceRowId === null ? null : String(input.sourceRowId),
+      params,
+    ).replace("`sourceRowId`", "a.`sourceRowId`"));
+  }
+  if (input.projectId !== undefined) {
+    clauses.push(exactNullableClause("projectId", input.projectId, params).replace("`projectId`", "a.`projectId`"));
+  }
+  if (input.runId !== undefined) {
+    clauses.push(exactNullableClause("runId", input.runId, params).replace("`runId`", "a.`runId`"));
+  }
+  if (input.nodeId !== undefined) {
+    clauses.push(exactNullableClause("nodeId", input.nodeId, params).replace("`nodeId`", "a.`nodeId`"));
+  }
+  if (input.version) {
+    params.push(input.version);
+    clauses.push("a.`version`=?");
+  }
+  if (input.currentOnly !== false && !input.version) clauses.push("a.`isCurrent`=1");
+  if (input.confirmedOnly !== false) clauses.push("a.`status` IN ('final','superseded')");
+  return clauses.join(" AND ");
+}
+
+async function resolveStoredArtifactContent(row: Record<string, any>) {
+  if (row.contentJson !== undefined && row.contentJson !== null) {
+    return parseJson(row.contentJson, row.contentJson);
+  }
+  const parsedUri = row.storageUri ? parseStorageUri(String(row.storageUri)) : null;
+  let downloadUrl = row.storagePublicUrl || row.publicUrl || null;
+  if (!downloadUrl && parsedUri?.provider === "forge") {
+    downloadUrl = (await storageGet(parsedUri.key)).url;
+  }
+  if (!downloadUrl && /^https?:\/\//i.test(String(row.storageUri || ""))) {
+    downloadUrl = row.storageUri;
+  }
+  if (!downloadUrl) return null;
+  const url = new URL(downloadUrl);
+  const response = await safeHttpRequest(url, {
+    method: "GET",
+    timeoutMs: 60_000,
+    maxResponseBytes: 50 * 1024 * 1024,
+    allowedHosts: [url.hostname],
+    auditContext: {
+      workspaceId: row.workspaceId ?? null,
+      operation: "artifact.storage.read",
+    },
+  });
+  if (!response.ok) throw new Error(`Artifact storage read failed (${response.status})`);
+  const content = await response.text();
+  return ["json", "table", "file", "image", "video", "audio", "other"].includes(String(row.artifactType))
+    ? parseJson(content, content)
+    : content;
+}
+
+async function hydrateUnifiedArtifactRow(row: Record<string, any> | null): Promise<UnifiedArtifactRecord | null> {
+  if (!row) return null;
+  const content = await resolveStoredArtifactContent(row);
+  return {
+    ...row,
+    version: Number(row.version || 1),
+    isCurrent: Number(row.isCurrent || 0),
+    content,
+    ref: buildUnifiedArtifactRef(row.artifactId, Number(row.version || 1)),
+    currentRef: buildUnifiedArtifactCurrentRef(unifiedArtifactScopeFromRow(row)),
+  } as UnifiedArtifactRecord;
+}
+
+export async function resolveUnifiedArtifact(input: UnifiedArtifactScope & {
+  artifactId?: string | null;
+  version?: number | null;
+  currentOnly?: boolean;
+  confirmedOnly?: boolean;
+  executor?: DbExecutor;
+}): Promise<UnifiedArtifactRecord | null> {
+  const params: unknown[] = [];
+  const where = unifiedArtifactQueryWhere(input, params);
+  const rows = await rawExecute(
+    `SELECT a.*,s.publicUrl AS storagePublicUrl,s.storageId
+     FROM ai_artifacts a
+     LEFT JOIN ai_storage_objects s ON s.id=a.storageObjectId
+     WHERE ${where}
+     ORDER BY a.isCurrent DESC,a.version DESC LIMIT 1`,
+    params,
+    input.executor,
+  );
+  return hydrateUnifiedArtifactRow(rows[0] || null);
+}
+
+export async function resolveUnifiedArtifactRef(
+  ref: string,
+  options?: { workspaceId?: number | null; confirmedOnly?: boolean },
+) {
+  const parsed = parseUnifiedArtifactRef(ref);
+  if (!parsed) throw new Error(`Invalid unified Artifact reference: ${ref}`);
+  if (parsed.kind === "current") {
+    return resolveUnifiedArtifact({
+      ...parsed.scope,
+      workspaceId: options?.workspaceId === undefined ? parsed.scope.workspaceId : options.workspaceId,
+      currentOnly: true,
+      confirmedOnly: options?.confirmedOnly ?? true,
+    });
+  }
+  const artifact = await resolveUnifiedArtifact({
+    artifactId: parsed.artifactId,
+    workspaceId: options?.workspaceId,
+    domain: "other",
+    artifactKey: "reference",
+    currentOnly: false,
+    confirmedOnly: options?.confirmedOnly ?? true,
+  });
+  if (!artifact) return null;
+  if (parsed.version !== "current" && artifact.version !== parsed.version) return null;
+  if (parsed.version === "current") {
+    return resolveUnifiedArtifact({
+      ...unifiedArtifactScopeFromRow(artifact),
+      workspaceId: options?.workspaceId === undefined ? artifact.workspaceId : options.workspaceId,
+      currentOnly: true,
+      confirmedOnly: options?.confirmedOnly ?? true,
+    });
+  }
+  return artifact;
+}
+
+export async function listUnifiedArtifactVersions(input: UnifiedArtifactScope & {
+  confirmedOnly?: boolean;
+  includeContent?: boolean;
+  limit?: number;
+  executor?: DbExecutor;
+}) {
+  const params: unknown[] = [];
+  const where = unifiedArtifactQueryWhere({
+    ...input,
+    currentOnly: false,
+    confirmedOnly: input.confirmedOnly ?? false,
+  }, params);
+  params.push(Math.min(Math.max(input.limit || 50, 1), 200));
+  const rows = await rawExecute(
+    `SELECT a.*,s.publicUrl AS storagePublicUrl,s.storageId
+     FROM ai_artifacts a
+     LEFT JOIN ai_storage_objects s ON s.id=a.storageObjectId
+     WHERE ${where}
+     ORDER BY a.version DESC LIMIT ?`,
+    params,
+    input.executor,
+  );
+  if (input.includeContent) return Promise.all(rows.map((row) => hydrateUnifiedArtifactRow(row)));
+  return rows.map((row) => ({
+    ...row,
+    version: Number(row.version || 1),
+    isCurrent: Number(row.isCurrent || 0),
+    content: null,
+    ref: buildUnifiedArtifactRef(row.artifactId, Number(row.version || 1)),
+    currentRef: buildUnifiedArtifactCurrentRef(unifiedArtifactScopeFromRow(row)),
+  }) as UnifiedArtifactRecord);
+}
+
+async function recordArtifactSelectionEvent(input: {
+  executor: DbExecutor;
+  workspaceId?: number | null;
+  projectId?: number | null;
+  artifactKey: string;
+  sourceTable?: string | null;
+  sourceRowId?: string | null;
+  fromArtifactId?: string | null;
+  fromVersion?: number | null;
+  toArtifactId: string;
+  toVersion: number;
+  action: "select" | "rollback" | "confirm";
+  userId?: number | null;
+  reason?: string | null;
+}) {
+  try {
+    await rawExecute(
+      `INSERT INTO ai_artifact_selection_events
+       (selectionId,workspaceId,projectId,artifactKey,sourceTable,sourceRowId,fromArtifactId,fromVersion,toArtifactId,toVersion,action,userId,reason)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        `asel_${randomUUID().replace(/-/g, "")}`,
+        input.workspaceId ?? null,
+        input.projectId ?? null,
+        input.artifactKey,
+        input.sourceTable || null,
+        input.sourceRowId || null,
+        input.fromArtifactId || null,
+        input.fromVersion ?? null,
+        input.toArtifactId,
+        input.toVersion,
+        input.action,
+        input.userId ?? null,
+        input.reason || null,
+      ],
+      input.executor,
+    );
+  } catch (error) {
+    if (!isMissingLifecycleSchema(error)) throw error;
+  }
+}
+
+export async function selectUnifiedArtifactVersion(input: {
+  artifactId: string;
+  workspaceId?: number | null;
+  userId?: number | null;
+  action?: "select" | "rollback" | "confirm";
+  reason?: string | null;
+}) {
+  const selectedId = await withDbTransaction("Select unified Artifact version", async (tx) => {
+    const params: unknown[] = [input.artifactId];
+    const workspaceClause = input.workspaceId === undefined
+      ? ""
+      : ` AND ${exactNullableClause("workspaceId", input.workspaceId, params)}`;
+    const target = (await rawExecute(
+      `SELECT * FROM ai_artifacts WHERE artifactId=?${workspaceClause} FOR UPDATE`,
+      params,
+      tx,
+    ))[0];
+    if (!target) throw new Error("Artifact version not found");
+    if (!["final", "superseded"].includes(String(target.status))) {
+      throw new Error("只有已确认的 Artifact 版本可以设为下游当前版本");
+    }
+    const scope = unifiedArtifactScopeFromRow(target);
+    const scopeParams: unknown[] = [];
+    const scopeWhere = artifactScopeWhere(scope, scopeParams);
+    const previous = (await rawExecute(
+      `SELECT artifactId,version FROM ai_artifacts WHERE ${scopeWhere} AND isCurrent=1 FOR UPDATE`,
+      scopeParams,
+      tx,
+    ))[0];
+    await rawExecute(
+      `UPDATE ai_artifacts SET status='superseded',isCurrent=0,updatedAt=NOW() WHERE ${scopeWhere} AND isCurrent=1`,
+      scopeParams,
+      tx,
+    );
+    await rawExecute(
+      "UPDATE ai_artifacts SET status='final',isCurrent=1,currentSince=NOW(),selectedBy=?,updatedAt=NOW() WHERE artifactId=?",
+      [input.userId ?? null, target.artifactId],
+      tx,
+    );
+    await recordArtifactSelectionEvent({
+      executor: tx,
+      workspaceId: target.workspaceId,
+      projectId: target.projectId,
+      artifactKey: target.artifactKey,
+      sourceTable: target.sourceTable,
+      sourceRowId: target.sourceRowId,
+      fromArtifactId: previous?.artifactId || null,
+      fromVersion: previous?.version ? Number(previous.version) : null,
+      toArtifactId: target.artifactId,
+      toVersion: Number(target.version),
+      action: input.action || "select",
+      userId: input.userId,
+      reason: input.reason,
+    });
+    return String(target.artifactId);
+  });
+  return resolveUnifiedArtifact({
+    artifactId: selectedId,
+    workspaceId: input.workspaceId,
+    domain: "other",
+    artifactKey: "selected",
+    currentOnly: false,
+    confirmedOnly: false,
+  });
+}
+
+export async function rollbackUnifiedArtifactVersion(input: {
+  scope: UnifiedArtifactScope;
+  targetVersion?: number | null;
+  userId?: number | null;
+  reason?: string | null;
+}) {
+  const versions = await listUnifiedArtifactVersions({ ...input.scope, confirmedOnly: true, limit: 200 });
+  const current = versions.find((artifact) => artifact?.isCurrent === 1);
+  const target = input.targetVersion
+    ? versions.find((artifact) => artifact?.version === input.targetVersion)
+    : versions.find((artifact) => current && artifact && artifact.version < current.version);
+  if (!target) throw new Error("没有可回滚的 Artifact 历史版本");
+  return selectUnifiedArtifactVersion({
+    artifactId: target.artifactId,
+    workspaceId: input.scope.workspaceId,
+    userId: input.userId,
+    action: "rollback",
+    reason: input.reason,
+  });
+}
+
+export async function recordUnifiedArtifactConsumption(input: {
+  workspaceId?: number | null;
+  artifact: Pick<UnifiedArtifactRecord, "artifactId" | "artifactKey" | "version" | "ref">;
+  consumerDomain: ArtifactDomain;
+  consumerType: "agent_node" | "ai_job" | "skill_run" | "business_operation";
+  consumerId: string;
+  projectId?: number | null;
+  runId?: string | null;
+  nodeId?: string | null;
+  metadata?: Record<string, unknown>;
+  executor?: DbExecutor;
+}) {
+  try {
+    await rawExecute(
+      `INSERT INTO ai_artifact_consumptions
+       (consumptionId,workspaceId,projectId,artifactId,artifactKey,artifactVersion,artifactRef,consumerDomain,consumerType,consumerId,runId,nodeId,metadata)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        `acons_${randomUUID().replace(/-/g, "")}`,
+        input.workspaceId ?? null,
+        input.projectId ?? null,
+        input.artifact.artifactId,
+        input.artifact.artifactKey,
+        input.artifact.version,
+        input.artifact.ref,
+        input.consumerDomain,
+        input.consumerType,
+        input.consumerId,
+        input.runId || null,
+        input.nodeId || null,
+        safeStringify(input.metadata || {}),
+      ],
+      input.executor,
+    );
+  } catch (error) {
+    if (!isMissingLifecycleSchema(error)) throw error;
+  }
+}
+
+export async function resolveCurrentProjectArtifacts(input: {
+  projectId: number;
+  workspaceId?: number | null;
+  domains?: ArtifactDomain[];
+  artifactKeys?: string[];
+  limit?: number;
+}) {
+  const params: unknown[] = [input.projectId];
+  const clauses = ["a.projectId=?", "a.status='final'", "a.isCurrent=1"];
+  if (input.workspaceId !== undefined) {
+    clauses.push(exactNullableClause("workspaceId", input.workspaceId, params).replace("`workspaceId`", "a.`workspaceId`"));
+  }
+  if (input.domains?.length) {
+    clauses.push(`a.domain IN (${input.domains.map(() => "?").join(",")})`);
+    params.push(...input.domains);
+  }
+  if (input.artifactKeys?.length) {
+    clauses.push(`a.artifactKey IN (${input.artifactKeys.map(() => "?").join(",")})`);
+    params.push(...input.artifactKeys);
+  }
+  params.push(Math.min(Math.max(input.limit || 100, 1), 500));
+  const rows = await rawExecute(
+    `SELECT a.*,s.publicUrl AS storagePublicUrl,s.storageId
+     FROM ai_artifacts a
+     LEFT JOIN ai_storage_objects s ON s.id=a.storageObjectId
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY a.currentSince DESC,a.version DESC LIMIT ?`,
+    params,
+  );
+  return (await Promise.all(rows.map((row) => hydrateUnifiedArtifactRow(row))))
+    .filter((artifact): artifact is UnifiedArtifactRecord => Boolean(artifact));
 }
 
 function projectFileArtifactType(fileType: string): UnifiedArtifactType {
@@ -531,13 +1178,17 @@ export async function registerProjectFileArtifactBundle(input: {
       userId: input.userId,
       content: input.rawContent || null,
       contentHash: rawHash,
-      storageObjectId: rawStorage?.id ?? null,
-      storageUri: rawStorageUri || input.fileUrl || null,
+      storageObjectId: input.rawContent ? null : rawStorage?.id ?? null,
+      storageUri: input.rawContent ? null : rawStorageUri || input.fileUrl || null,
       mimeType: "text/plain",
       fileName: input.filename,
       fileSizeBytes: input.fileSizeBytes ?? null,
       retentionClass: "warm",
-      metadata: { fileType: input.fileType, role: "raw_upload" },
+      metadata: {
+        fileType: input.fileType,
+        role: "raw_upload",
+        originalStorageUri: rawStorageUri || input.fileUrl || null,
+      },
     })
     : null;
 

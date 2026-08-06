@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  buildInformationSummaryAiContext,
   buildInformationSummarySeed,
   mergeInformationSummaryAi,
   recalculateEconomics,
@@ -93,27 +94,76 @@ describe("decision information summary", () => {
     expect(validateInformationSummaryForConfirmation(projection).competitors).toHaveLength(3);
   });
 
+  it("compacts a large competitor set for Emperor without dropping final evidence", () => {
+    const value = buildInformationSummarySeed({
+      project: { name: "空气套件", targetMarket: "US", keywords: "air line kit" },
+      ownerName: "Gavin",
+      products: Array.from({ length: 177 }, (_, index) => ({
+        id: index + 1,
+        asin: `ASIN${String(index + 1).padStart(6, "0")}`,
+        title: `Competitor ${index + 1} ${"feature ".repeat(20)}`,
+        price: String(99 + index),
+        rating: String(4 + (index % 10) / 10),
+        reviewCount: String(100 + index * 5),
+        monthlySales: 2_000 - index,
+        tags: JSON.stringify(["耐压", "防漏", "易安装"]),
+      })),
+      stages: [
+        confirmed("market_overview", { growthTrend: "稳定增长", seasonality: "Q4略高" }),
+        confirmed("attribute_cross", { differentiationOpportunities: [{ direction: "更易安装" }] }),
+        confirmed("price_analysis", { bestPriceRange: { min: 119, max: 149 } }),
+        confirmed("brand_competition", { summary: "品牌集中度中等" }),
+        confirmed("review_kano", { kanoAnalysis: { painPoints: [{ theme: "漏气" }] } }),
+      ],
+    });
+    const context = buildInformationSummaryAiContext(value);
+    expect(value.competitors).toHaveLength(177);
+    expect(context.competitorEvidence.totalCount).toBe(177);
+    expect(context.competitorEvidence.includedCount).toBe(24);
+    expect(context.competitorEvidence.omittedCount).toBe(153);
+    expect(JSON.stringify(context).length).toBeLessThan(35_000);
+  });
+
   it("publishes matching database prompts and explicit Emperor skill slugs", () => {
     const migration = fs.readFileSync(repoPath("drizzle/0121_dev_information_summary_emperor_skills.sql"), "utf8");
+    const stageMigration = fs.readFileSync(repoPath("drizzle/0126_product_analysis_stage_jobs.sql"), "utf8");
     const service = fs.readFileSync(repoPath("server/domains/product_development/analysis/informationSummaryService.ts"), "utf8");
+    const stageService = fs.readFileSync(repoPath("server/domains/product_development/analysis/analysisStageJobService.ts"), "utf8");
     expect(migration).toContain(INFORMATION_SUMMARY_PROMPT);
-    expect(migration).toContain(DECISION_DASHBOARD_PROMPT);
-    expect(service).toContain('slug: "dev.analysis.information_summary"');
-    expect(service).toContain('slug: "dev.analysis.decision_dashboard"');
-    expect(service).toContain("resolveCurrentDevAnalysisArtifact");
+    expect(stageMigration).toContain(DECISION_DASHBOARD_PROMPT);
+    expect(service).toContain('skillSlug: "dev.analysis.information_summary"');
+    expect(stageService).toContain('skillSlug: "dev.analysis.decision_dashboard"');
+    expect(stageService).toContain("resolveCurrentDevAnalysisArtifact");
+  });
+
+  it("runs information summary through the recoverable AI Job worker", () => {
+    const service = fs.readFileSync(repoPath("server/domains/product_development/analysis/informationSummaryService.ts"), "utf8");
+    const worker = fs.readFileSync(repoPath("server/_core/aiWorker.ts"), "utf8");
+    const migration = fs.readFileSync(repoPath("drizzle/0123_dev_information_summary_jobs.sql"), "utf8");
+    expect(service).toContain('id: "productDevelopment.informationSummary"');
+    expect(service).toContain('kind: "dev.analysis.informationSummary"');
+    expect(service).toContain("maxModelAttempts: 1");
+    expect(worker).toContain('import "../domains/product_development/analysis/informationSummaryService"');
+    expect(migration).toContain("此前的信息汇总任务已中断");
+    expect(migration).toContain("`runProgress`");
   });
 
   it("wires the human review stage before decision without removing existing controls", () => {
     const definitions = fs.readFileSync(repoPath("client/src/pages/dev/analysis/stageDefinitions.ts"), "utf8");
     const editor = fs.readFileSync(repoPath("client/src/pages/dev/analysis/InformationSummaryEditor.tsx"), "utf8");
     const flow = fs.readFileSync(repoPath("client/src/pages/dev/DevAnalysisFlow.tsx"), "utf8");
-    const router = fs.readFileSync(repoPath("server/routers/devAnalysis.ts"), "utf8");
+    const service = fs.readFileSync(repoPath("server/domains/product_development/service.ts"), "utf8");
+    const consistency = fs.readFileSync(
+      repoPath("server/domains/product_development/analysis/stageConsistency.ts"),
+      "utf8",
+    );
     expect(definitions.indexOf('key: "information_summary"')).toBeLessThan(definitions.indexOf('key: "decision_dashboard"'));
     expect(editor).toContain("对标竞品选择");
     expect(editor).toContain("专利与合规");
     expect(editor).toContain("供应商初步报价");
     expect(flow).toContain("确认锁定");
     expect(flow).toContain("解锁重新分析");
-    expect(router).toContain('invalidate.push("information_summary", "decision_dashboard")');
+    expect(service).toContain("confirmDevAnalysisStageConsistently");
+    expect(consistency).toContain('return ["information_summary", "decision_dashboard"]');
   });
 });

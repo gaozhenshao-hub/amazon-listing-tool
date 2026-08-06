@@ -1,4 +1,6 @@
 import { currentOpsWorkspaceId } from "../workspaceContext";
+import { requireOpsDb } from "../legacy/repository";
+import { runOpsSkill } from "../legacy/service";
 import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
@@ -31,7 +33,7 @@ const {
   getToday,
   getYesterday,
   inArray,
-  invokeLLM,
+  invokeBusinessSkill,
   isNull,
   keywordMonitors,
   keywordSnapshots,
@@ -63,7 +65,6 @@ const {
   users,
   z,
 } = shared;
-const getDb = (...args: Parameters<typeof shared.getDb>) => shared.getDb(...args);
 
 export const opsPlanProcedures = {
 
@@ -72,7 +73,7 @@ export const opsPlanProcedures = {
   // ═══════════════════════════════════════════════════════
 
   listPlans: protectedProcedure.input(z.object({ productProfileId: z.number(), parentAsin: z.string().optional() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const { MANAGER_ROLES } = await import("../../../../shared/const");
     const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
     const conditions: any[] = [];
@@ -95,7 +96,7 @@ export const opsPlanProcedures = {
 
 
   getPlan: protectedProcedure.input(z.object({ planId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const { MANAGER_ROLES } = await import("../../../../shared/const");
     const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
     const conditions = [eq(opsPlans.id, input.planId)];
@@ -117,7 +118,7 @@ export const opsPlanProcedures = {
     projectMembers: z.string().optional(),
     gamePlanner: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const [result] = await db!.insert(opsPlans).values({
       userId: ctx.user.id,
       productProfileId: input.productProfileId,
@@ -170,7 +171,7 @@ export const opsPlanProcedures = {
     targetRatingScore: z.string().optional(),
     targetRatingCount: z.number().optional(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const { planId, ...updates } = input;
     const cleanUpdates: Record<string, any> = {};
     for (const [k, v] of Object.entries(updates)) {
@@ -186,7 +187,7 @@ export const opsPlanProcedures = {
 
 
   deletePlan: protectedProcedure.input(z.object({ planId: z.number() })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const { MANAGER_ROLES } = await import("../../../../shared/const");
     const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
     await db!.delete(opsPlanActions).where(opsWorkspaceCondition(opsPlanActions, currentOpsWorkspaceId(), eq(opsPlanActions.planId, input.planId)));
@@ -201,7 +202,7 @@ export const opsPlanProcedures = {
   // ─── Plan Actions CRUD (with todo linkage) ───
 
   listPlanActions: protectedProcedure.input(z.object({ planId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const actions = await db!.select().from(opsPlanActions)
       .where(opsWorkspaceCondition(opsPlanActions, currentOpsWorkspaceId(), eq(opsPlanActions.planId, input.planId)))
       .orderBy(asc(opsPlanActions.sortOrder));
@@ -229,7 +230,7 @@ export const opsPlanProcedures = {
     autoCreateTodo: z.boolean().optional(),
     productProfileId: z.number().optional(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     let linkedTodoId: number | null = null;
 
     // Auto-create linked todo if requested
@@ -272,7 +273,7 @@ export const opsPlanProcedures = {
     assignee: z.string().optional(),
     status: z.enum(["not_started", "in_progress", "completed", "delayed"]).optional(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const { actionId, ...updates } = input;
     const cleanUpdates: Record<string, any> = {};
     for (const [k, v] of Object.entries(updates)) {
@@ -296,7 +297,7 @@ export const opsPlanProcedures = {
 
 
   deletePlanAction: protectedProcedure.input(z.object({ actionId: z.number() })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     await db!.delete(opsPlanActions).where(opsWorkspaceCondition(opsPlanActions, currentOpsWorkspaceId(), eq(opsPlanActions.id, input.actionId)));
     return { success: true };
   }),
@@ -305,7 +306,7 @@ export const opsPlanProcedures = {
   // ─── Plan Summaries CRUD ───
 
   listPlanSummaries: protectedProcedure.input(z.object({ planId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     return db!.select().from(opsPlanSummaries)
       .where(opsWorkspaceCondition(opsPlanSummaries, currentOpsWorkspaceId(), eq(opsPlanSummaries.planId, input.planId)))
       .orderBy(desc(opsPlanSummaries.createdAt));
@@ -328,7 +329,7 @@ export const opsPlanProcedures = {
     actualRanking: z.number().optional(),
     actualRating: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const [result] = await db!.insert(opsPlanSummaries).values({
       planId: input.planId,
       userId: ctx.user.id,
@@ -365,7 +366,7 @@ export const opsPlanProcedures = {
     actualRanking: z.number().optional(),
     actualRating: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const { summaryId, ...updates } = input;
     const cleanUpdates: Record<string, any> = {};
     for (const [k, v] of Object.entries(updates)) {
@@ -384,7 +385,7 @@ export const opsPlanProcedures = {
       weekCount: z.number().default(1), // 1=最近1周, 2=最近2周, 4=最近4周(约1个月)
     }))
       .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [plan] = await db!.select().from(opsPlans).where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), eq(opsPlans.id, input.planId)));
       if (!plan) throw new TRPCError({ code: 'NOT_FOUND', message: '计划不存在' });
       // Use resolveDataUserId to handle non-admin users querying admin-imported data
@@ -508,7 +509,7 @@ export const opsPlanProcedures = {
       weekIndices: z.array(z.number()).min(1), // 选中的周度索引（0=最近一周，1=上上周...）
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [plan] = await db!.select().from(opsPlans).where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), eq(opsPlans.id, input.planId)));
       if (!plan) throw new TRPCError({ code: 'NOT_FOUND', message: '计划不存在' });
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
@@ -612,7 +613,7 @@ export const opsPlanProcedures = {
       parentAsin: z.string(),
     }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       // Use resolveDataUserId to handle non-admin users querying admin-imported data
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       const weeklyRows = await db!.selectDistinct({

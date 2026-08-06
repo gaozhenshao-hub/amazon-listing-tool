@@ -421,6 +421,48 @@ export function buildInformationSummarySeed(input: {
   return recalculateEconomics({ ...result, completeness: calculateInformationSummaryCompleteness(result) });
 }
 
+export function buildInformationSummaryAiContext(
+  seed: InformationSummary,
+  options: { maxCompetitors?: number } = {},
+) {
+  const maxCompetitors = Math.min(Math.max(options.maxCompetitors || 24, 5), 40);
+  const competitors = [...seed.competitors]
+    .sort((left, right) =>
+      Number(right.isBenchmark || right.aiRecommendedBenchmark) - Number(left.isBenchmark || left.aiRecommendedBenchmark) ||
+      (right.monthlySales || 0) - (left.monthlySales || 0) ||
+      (right.reviewCount || 0) - (left.reviewCount || 0),
+    )
+    .slice(0, maxCompetitors)
+    .map((competitor) => ({
+      asin: competitor.asin,
+      title: competitor.title.slice(0, 180),
+      variantSpec: competitor.variantSpec.slice(0, 180),
+      competitorStatus: competitor.competitorStatus,
+      primaryTags: competitor.primaryTags.slice(0, 6),
+      priceTier: competitor.priceTier,
+      monthlySales: competitor.monthlySales,
+      price: competitor.price,
+      rating: competitor.rating,
+      reviewCount: competitor.reviewCount,
+      fulfillment: competitor.fulfillment,
+    }));
+
+  return {
+    schemaVersion: seed.schemaVersion,
+    project: seed.project,
+    competitorEvidence: {
+      totalCount: seed.competitors.length,
+      includedCount: competitors.length,
+      omittedCount: Math.max(0, seed.competitors.length - competitors.length),
+      selectionRule: "人工/AI对标优先，其次按月销量和评论数排序",
+      competitors,
+    },
+    marketEvidence: seed.marketEvidence,
+    productOpportunity: seed.productOpportunity,
+    provenance: seed.provenance,
+  };
+}
+
 export function mergeInformationSummaryAi(seed: InformationSummary, ai: InformationSummaryAi): InformationSummary {
   const recommendations = new Map((ai.benchmarkRecommendations || [])
     .filter((item) => item.asin)

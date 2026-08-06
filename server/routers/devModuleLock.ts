@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
+import {
+  productDevelopmentWorkspaceId,
+  recordProductDevelopmentAudit,
+} from "../domains/product_development/security/productDevelopmentAccess";
 import { getDb } from "../repositories/dbClient";
 import { devModuleLocks } from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
@@ -64,6 +69,7 @@ export const devModuleLockRouter = router({
           .where(eq(devModuleLocks.id, existing[0].id));
       } else {
         await db.insert(devModuleLocks).values({
+          workspaceId: productDevelopmentWorkspaceId(ctx),
           projectId: input.projectId,
           userId: ctx.user.id,
           moduleName: input.moduleName,
@@ -72,6 +78,16 @@ export const devModuleLockRouter = router({
           unlockedAt: null,
         });
       }
+
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: input.lock ? "product_development.module.lock" : "product_development.module.unlock",
+        projectId: input.projectId,
+        resourceType: "dev_module",
+        resourceId: input.moduleName,
+        riskLevel: input.lock ? "medium" : "high",
+        afterSnapshot: { isLocked: input.lock },
+      });
 
       return { success: true, moduleName: input.moduleName, isLocked: input.lock };
     }),
@@ -112,6 +128,7 @@ export const devModuleLockRouter = router({
             .where(eq(devModuleLocks.id, existing[0].id));
         } else {
           await db.insert(devModuleLocks).values({
+            workspaceId: productDevelopmentWorkspaceId(ctx),
             projectId: input.projectId,
             userId: ctx.user.id,
             moduleName: mod.moduleName,
@@ -122,6 +139,16 @@ export const devModuleLockRouter = router({
         }
         results.push({ moduleName: mod.moduleName, isLocked: mod.lock });
       }
+
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.module.batch_toggle",
+        projectId: input.projectId,
+        resourceType: "dev_module",
+        resourceId: input.projectId,
+        riskLevel: input.modules.some((module) => !module.lock) ? "high" : "medium",
+        afterSnapshot: { modules: results },
+      });
 
       return { success: true, results };
     }),

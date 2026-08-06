@@ -6,6 +6,7 @@ import {
 } from "../todoReminder";
 import { createSchedulerLeaderLock } from "./leaderLock";
 import { assertStartupConfig } from "./startupValidation";
+import { startAiOsOperationalScheduler } from "../domains/ai_os/services/operationalScheduler";
 
 const shutdownGraceMs = Math.min(
   Math.max(Number(process.env.SCHEDULER_SHUTDOWN_GRACE_MS || 10_000), 1_000),
@@ -48,6 +49,7 @@ async function main() {
 
   intelScheduler.start();
   startTodoReminderScheduler();
+  const stopAiOsOperationalScheduler = startAiOsOperationalScheduler();
 
   const stop = async (signal: string) => {
     if (stopped) return;
@@ -56,6 +58,7 @@ async function main() {
     try {
       intelScheduler.stop();
       stopTodoReminderScheduler();
+      stopAiOsOperationalScheduler();
       await sleep(Math.min(shutdownGraceMs, 5_000));
       await releaseLock?.();
       console.log("[Scheduler] stopped");

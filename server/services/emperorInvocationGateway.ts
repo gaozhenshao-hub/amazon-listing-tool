@@ -56,7 +56,8 @@ function getCallerFileFromStack(): string {
     .find((entry) =>
       entry.includes("/server/") &&
       !entry.includes("/server/_core/llm.ts") &&
-      !entry.includes("/server/services/emperorInvocationGateway.ts")
+      !entry.includes("/server/services/emperorInvocationGateway.ts") &&
+      !entry.includes("/server/domains/ai_os/services/businessSkillGateway.ts")
     );
   return line?.match(/\/server\/[^):]+/)?.[0] || "";
 }
@@ -161,12 +162,23 @@ function inferSkillSlug(params: InvokeParams, callerFile: string, text: string):
   if (callerFile.endsWith("imageWorkflow.ts") || callerFile.includes("/domains/image/")) {
     return { slug: inferImageWorkflowSkill(text), source };
   }
-  if (callerFile.endsWith("listing.ts")) return { slug: inferListingSkill(text), source };
-  if (callerFile.endsWith("keywordAi.ts")) return { slug: inferKeywordSkill(text), source };
-  if (callerFile.includes("/routers/ad") || callerFile.endsWith("adStructure.ts")) return { slug: inferAdSkill(callerFile, text), source };
+  if (callerFile.endsWith("listing.ts") || callerFile.includes("/domains/listing/")) {
+    return { slug: inferListingSkill(text), source };
+  }
+  if (callerFile.includes("/domains/ops/") || callerFile.endsWith("opsProductPlan.ts")) {
+    return { slug: inferOpsSkill(callerFile, text), source };
+  }
+  if (callerFile.endsWith("keywordAi.ts") || callerFile.includes("keyword")) {
+    return { slug: inferKeywordSkill(text), source };
+  }
+  if (callerFile.includes("/routers/ad") || callerFile.includes("/domains/ads/") || callerFile.endsWith("adStructure.ts")) {
+    return { slug: inferAdSkill(callerFile, text), source };
+  }
   if (callerFile.includes("/routers/off")) return { slug: inferOffsiteSkill(callerFile), source };
   if (callerFile.endsWith("videoScript.ts")) return { slug: inferVideoSkill(text), source };
-  if (callerFile.includes("/routers/dev")) return { slug: inferDevSkill(), source };
+  if (callerFile.includes("/routers/dev") || callerFile.includes("/domains/product_development/")) {
+    return { slug: inferDevSkill(), source };
+  }
   if (callerFile.includes("/routers/kb") || callerFile.endsWith("imageAiAnalyzer.ts")) return { slug: inferKbSkill(callerFile, text), source };
   if (callerFile.endsWith("afterSales.ts")) {
     if (hasAny(text, ["退货", "return"])) return { slug: "aftersales.return.diagnosis", source };
@@ -182,6 +194,7 @@ function inferSkillSlug(params: InvokeParams, callerFile: string, text: string):
     return { slug: "analysis.comparison.summary", source };
   }
   if (
+    callerFile.includes("/domains/ops/") ||
     callerFile.endsWith("operations.ts") ||
     callerFile.endsWith("productOps.ts") ||
     callerFile.endsWith("dashboardUpgrade.ts") ||
@@ -197,12 +210,12 @@ function inferSkillSlug(params: InvokeParams, callerFile: string, text: string):
 
 function toInvokeResult(
   content: string,
-  skillSlug: string,
+  runId: string,
   modelSlug: string,
   usage: { inputTokens: number; outputTokens: number },
 ): InvokeResult {
   return {
-    id: `emperor_${skillSlug}_${Date.now()}`,
+    id: runId,
     created: Math.floor(Date.now() / 1000),
     model: modelSlug,
     choices: [
@@ -246,16 +259,17 @@ export async function invokeViaEmperorSkill(params: InvokeParams): Promise<Invok
   const result = await runEmperorSkill<string>({
     skillSlug: inferred.slug,
     userId: params.emperorSkill?.userId ?? params.userId ?? 0,
+    workspaceId: params.emperorSkill?.workspaceId ?? null,
     context: params.emperorSkill?.context ?? legacyContext,
     emphasis: params.emperorSkill?.emphasis,
     variables,
     attachments: collectAttachments(params.messages),
     legacySystemPrompt,
-    migrationSource: inferred.source,
+    migrationSource: params.emperorSkill?.migrationSource || inferred.source,
     validate: (content) => content,
   });
 
-  return toInvokeResult(result.content, inferred.slug, result.modelSlug, {
+  return toInvokeResult(result.content, result.runId, result.modelSlug, {
     inputTokens: result.inputTokens,
     outputTokens: result.outputTokens,
   });

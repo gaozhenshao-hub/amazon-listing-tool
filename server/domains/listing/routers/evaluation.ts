@@ -27,7 +27,7 @@ const {
   ensureWriteAccess,
   executeListingSkill,
   generateChineseTranslation,
-  invokeLLM,
+  invokeBusinessSkill,
   loadEnrichedData,
   parseJsonOrThrow,
   protectedProcedure,
@@ -57,7 +57,7 @@ export const listingEvaluationProcedures = {
     .mutation(async ({ input }) => {
       const bulletText = `${input.subtitle} ${input.fullText}`;
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: EVALUATE_BULLET_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate this Amazon bullet point (Bullet #${input.bulletIndex + 1}):\n\n${bulletText}` },
@@ -107,7 +107,7 @@ export const listingEvaluationProcedures = {
       title: z.string(),
     }))
     .mutation(async ({ input }) => {
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: EVALUATE_TITLE_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate this Amazon product title:\n\n${input.title}\n\nCharacter count: ${input.title.length}` },
@@ -126,7 +126,7 @@ export const listingEvaluationProcedures = {
       description: z.string(),
     }))
     .mutation(async ({ input }) => {
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: EVALUATE_DESCRIPTION_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate this Amazon product description:\n\n${input.description}\n\nCharacter count: ${input.description.length}` },
@@ -155,7 +155,7 @@ export const listingEvaluationProcedures = {
       userMsg += `\n\nByte count: ${new TextEncoder().encode(input.searchTerms).length}`;
       if (input.title) userMsg += `\n\nProduct Title (for duplication check):\n${input.title}`;
       if (input.bulletPoints) userMsg += `\n\nBullet Points (for long-tail coverage check):\n${input.bulletPoints}`;
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: EVALUATE_SEARCH_TERMS_CHECKLIST_PROMPT },
           { role: "user", content: userMsg },
@@ -187,7 +187,7 @@ export const listingEvaluationProcedures = {
           ).join("\n\n");
         }
       } catch {}
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: EVALUATE_QA_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate these Amazon Q&A pairs:\n\n${qaText}` },

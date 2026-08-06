@@ -24,7 +24,7 @@ const {
   ensureWriteAccess,
   generateStep5RunId,
   getKBReference,
-  invokeLLM,
+  invokeBusinessSkill,
   isActiveStep5Run,
   kbDb,
   parseLLMJson,
@@ -167,7 +167,7 @@ export const imageExpressionGroupProcedures = {
         userContent.push({ type: "text", text: `竞品: ${img.competitorName || "未知"}` });
       }
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: STEP0_COMPETITOR_IMAGE_ANALYSIS_PROMPT },
           { role: "user", content: userContent },

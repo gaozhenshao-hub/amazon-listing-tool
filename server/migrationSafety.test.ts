@@ -32,7 +32,7 @@ describe("database migration safety", () => {
     expect(migrationNames).not.toContain("ops_plan_migration_fix.sql");
     expect(migrationNames.indexOf("0102a_emperor_core_registry.sql"))
       .toBeLessThan(migrationNames.indexOf("0103_emperor_agent_workflow.sql"));
-    expect(plan.at(-1)?.fileName).toBe("0121_dev_information_summary_emperor_skills.sql");
+    expect(plan.at(-1)?.fileName).toBe("0130_ai_operations_runtime.sql");
     expect(plan.every((item: any) => /^[a-f0-9]{64}$/.test(item.checksum))).toBe(true);
   });
 

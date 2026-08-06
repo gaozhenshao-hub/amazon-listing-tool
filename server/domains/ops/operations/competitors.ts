@@ -1,10 +1,12 @@
-import { z, TRPCError, protectedProcedure, router, getDb, invokeLLM, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo } from "./context";
+import { z, TRPCError, protectedProcedure, router, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo } from "./context";
+import { requireOpsDb } from "../legacy/repository";
+import { runOpsSkill } from "../legacy/service";
 import { opsWorkspaceCondition, withOpsWorkspace, workspaceIdFromContext } from "./context";
 
 export const competitorsProcedures = {
 // ============== Competitor Module ==============
   getCompetitorMonitors: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     return db!.select().from(competitorMonitors)
       .where(opsWorkspaceCondition(competitorMonitors, workspaceIdFromContext(ctx), eq(competitorMonitors.userId, ctx.user.id)))
       .orderBy(desc(competitorMonitors.createdAt));
@@ -23,7 +25,7 @@ saveCompetitorMonitor: protectedProcedure
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       if (input.id) {
         await db!.update(competitorMonitors)
           .set({ ...input, userId: ctx.user.id })
@@ -41,7 +43,7 @@ saveCompetitorMonitor: protectedProcedure
 deleteCompetitorMonitor: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       await db!.delete(competitorMonitors)
         .where(opsWorkspaceCondition(competitorMonitors, workspaceIdFromContext(ctx), and(eq(competitorMonitors.id, input.id), eq(competitorMonitors.userId, ctx.user.id))));
       return { deleted: true };
@@ -61,7 +63,7 @@ deleteCompetitorMonitor: protectedProcedure
       dealInfo: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [result] = await db!.insert(competitorSnapshots).values(withOpsWorkspace(workspaceIdFromContext(ctx), {
         monitorId: input.monitorId,
         snapshotDate: getToday(),
@@ -83,7 +85,7 @@ getCompetitorSnapshots: protectedProcedure
       limit: z.number().optional().default(30),
     }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       return db!.select().from(competitorSnapshots)
         .where(opsWorkspaceCondition(competitorSnapshots, workspaceIdFromContext(ctx), eq(competitorSnapshots.monitorId, input.monitorId)))
         .orderBy(desc(competitorSnapshots.snapshotDate))
@@ -97,7 +99,7 @@ getCompetitorSnapshots: protectedProcedure
       reportType: z.enum(["comparison", "trend", "opportunity", "threat"]).optional().default("comparison"),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       // Get monitors and their snapshots
       const monitors = await db!.select().from(competitorMonitors)
         .where(opsWorkspaceCondition(competitorMonitors, workspaceIdFromContext(ctx), eq(competitorMonitors.userId, ctx.user.id)));
@@ -124,7 +126,7 @@ getCompetitorSnapshots: protectedProcedure
       };
 
 
-      const response = await invokeLLM({
+      const response = await runOpsSkill({
         messages: [
           { role: "system", content: "你是亚马逊竞品分析AI专家。请输出结构化JSON分析报告。" },
           { role: "user", content: `${typePrompts[input.reportType]}\n\n竞品数据：${JSON.stringify(snapshotData)}` },
@@ -191,7 +193,7 @@ getCompetitorSnapshots: protectedProcedure
     }),
 
 getCompetitorReports: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     return db!.select().from(competitorReports)
       .where(opsWorkspaceCondition(competitorReports, workspaceIdFromContext(ctx), eq(competitorReports.userId, ctx.user.id)))
       .orderBy(desc(competitorReports.createdAt));

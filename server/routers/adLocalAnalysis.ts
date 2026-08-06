@@ -9,7 +9,7 @@ import { opsWorkspaceCondition } from "../repositories/ops";
 import { z } from "zod";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
-import { getDb } from "../repositories/dbClient";
+import { requireAdsDb } from "../domains/ads/legacyAnalysis/repository";
 import {
   adSearchTermReports,
   adCampaignReports,
@@ -20,15 +20,9 @@ import {
   adDspReports,
 } from "../../drizzle/schema";
 import { eq, and, inArray, gte, lte, desc, sql } from "drizzle-orm";
-import { invokeLLM } from "../_core/llm";
+import { runAdsSkill } from "../domains/ads/legacyAnalysis/service";
 
 // ─── Helpers ────────────────────────────────────────────────────
-async function getDbInstance() {
-  const d = await getDb();
-  if (!d) throw new Error("数据库未连接");
-  return d;
-}
-
 /** Generate a stable numeric-like ID from campaign name */
 function campaignNameToId(name: string): string {
   let hash = 0;
@@ -140,7 +134,7 @@ export const adLocalAnalysisRouter = router({
       adState: z.enum(['all', 'enabled', 'paused', 'archived']).optional().default('all'),
     }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
       if (input.parentAsin) conditions.push(eq(adCampaignReports.parentAsin, input.parentAsin));
       if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
@@ -254,7 +248,7 @@ export const adLocalAnalysisRouter = router({
       }).optional(),
     }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const adType = input.adType || "SP";
 
       const conditions: any[] = [eq(adSearchTermReports.userId, ctx.user.id)];
@@ -404,7 +398,7 @@ export const adLocalAnalysisRouter = router({
       adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
     }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const conditions: any[] = [eq(adPlacementReports.userId, ctx.user.id)];
       if (input.parentAsin) conditions.push(eq(adPlacementReports.parentAsin, input.parentAsin));
       if (input.adType) conditions.push(eq(adPlacementReports.adType, input.adType));
@@ -458,7 +452,7 @@ export const adLocalAnalysisRouter = router({
       sortDir: z.enum(["asc", "desc"]).optional().default("desc"),
     }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
 
       // Strategy: Use adHourlyReports which has both targetingValue (real keyword) and placementClassification
       // Fallback to adPlacementReports (by campaignName) if no hourly data exists
@@ -633,7 +627,7 @@ export const adLocalAnalysisRouter = router({
       adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
     }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const conditions: any[] = [eq(adHourlyReports.userId, ctx.user.id)];
       if (input.parentAsin) conditions.push(eq(adHourlyReports.parentAsin, input.parentAsin));
       if (input.campaignNames && input.campaignNames.length > 0) {
@@ -674,7 +668,7 @@ export const adLocalAnalysisRouter = router({
       parentAsin: z.string().optional(),
     }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const conditions: any[] = [eq(adOrderHourly.userId, ctx.user.id)];
       if (input.parentAsin) conditions.push(eq(adOrderHourly.parentAsin, input.parentAsin));
 
@@ -718,7 +712,7 @@ export const adLocalAnalysisRouter = router({
       adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
     }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const conditions: any[] = [eq(adSearchTermReports.userId, ctx.user.id)];
       if (input.parentAsin) conditions.push(eq(adSearchTermReports.parentAsin, input.parentAsin));
       if (input.adType) conditions.push(eq(adSearchTermReports.adType, input.adType));
@@ -797,7 +791,7 @@ export const adLocalAnalysisRouter = router({
       adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
     }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const conditions: any[] = [eq(adSearchTermReports.userId, ctx.user.id)];
       if (input.parentAsin) conditions.push(eq(adSearchTermReports.parentAsin, input.parentAsin));
       if (input.adType) conditions.push(eq(adSearchTermReports.adType, input.adType));
@@ -891,7 +885,7 @@ export const adLocalAnalysisRouter = router({
       adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
     }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const conditions: any[] = [eq(adSearchTermReports.userId, ctx.user.id)];
       if (input.parentAsin) conditions.push(eq(adSearchTermReports.parentAsin, input.parentAsin));
       if (input.adType) conditions.push(eq(adSearchTermReports.adType, input.adType));
@@ -965,7 +959,7 @@ export const adLocalAnalysisRouter = router({
       weekEndDate: z.string().optional(),
     }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
       const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
       if (input.parentAsin) conditions.push(eq(adCampaignReports.parentAsin, input.parentAsin));
       if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
@@ -1046,7 +1040,7 @@ export const adLocalAnalysisRouter = router({
       topN: z.number().optional().default(20),
     }))
     .query(async ({ ctx, input }) => {
-      const d = await getDbInstance();
+      const d = await requireAdsDb();
 
       if (!input.periods || input.periods.length === 0) {
         return { trendData: [], periodTotals: [], isMock: false, isLocalData: true };
@@ -1133,7 +1127,7 @@ export const adLocalAnalysisRouter = router({
       weekEndDate: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDbInstance();
+      const db = await requireAdsDb();
       const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
       if (input.campaignNames?.length) conditions.push(inArray(adCampaignReports.campaignName, input.campaignNames));
       if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
@@ -1157,7 +1151,7 @@ export const adLocalAnalysisRouter = router({
 
 
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages: [
           { role: "system", content: `你是亚马逊广告诊断专家。基于广告整体数据，从6个维度评估广告健康度并给出诊断建议。\n6个维度：花费效率(ACoS/ROAS)、流量质量(CTR)、转化能力(CVR)、出价合理性(CPC)、预算利用率、广告结构合理性。\n每个维度评分0-100分，并给出具体问题和改进建议。输出严格JSON格式。` },
           { role: "user", content: `诊断以下广告数据（本地上传数据汇总）：\n${JSON.stringify(metrics)}\n请从6个维度评分并给出诊断：` },
@@ -1193,7 +1187,7 @@ export const adLocalAnalysisRouter = router({
       targetAcos: z.number().optional().default(25),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDbInstance();
+      const db = await requireAdsDb();
       const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
       if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
       if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
@@ -1228,7 +1222,7 @@ export const adLocalAnalysisRouter = router({
 
 
 
-        const llmRes = await invokeLLM({
+        const llmRes = await runAdsSkill({
           messages: [
             { role: 'system', content: '你是亚马逊广告预算优化AI助手。请严格按JSON格式输出分析结果。' },
             { role: 'user', content: `你是资深亚马逊广告优化专家。基于以下本地上传数据提供预算调整建议。\n\n总预算:$${totalCurrentBudget}/天 | 总花费:$${totalCost} | 总销售:$${totalSales} | ACoS:${overallAcos}% | 目标ACoS:${input.targetAcos}%\n\n各活动:\n${campaignSummaries.map((c,i) => `${i+1}. [${c.name}] ASIN:${c.asin||'未知'} | 预算:$${c.currentBudget}/天 | 花费:$${c.cost} | 销售:$${c.sales} | ACoS:${c.acos}% | ROAS:${c.roas}x | 订单:${c.orders}`).join('\n')}\n\n调整原则：1.ACoS低且出单好→加预算 2.ACoS远超目标→减预算或暂停 3.数据不足→维持观察 4.总预算变动控制在±20%` },
@@ -1263,7 +1257,7 @@ export const adLocalAnalysisRouter = router({
   evaluateBudgetEffectLocal: protectedProcedure
     .input(z.object({ trackingId: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const db = await getDbInstance();
+      const db = await requireAdsDb();
       const [record] = await db.select().from(budgetTracking)
         .where(opsWorkspaceCondition(budgetTracking, currentOpsWorkspaceId(), and(eq(budgetTracking.id, input.trackingId), eq(budgetTracking.userId, ctx.user.id))))
         .limit(1);
@@ -1289,7 +1283,7 @@ export const adLocalAnalysisRouter = router({
 
 
 
-        const llmRes = await invokeLLM({
+        const llmRes = await runAdsSkill({
           messages: [
             { role: 'system', content: '你是亚马逊广告效果评估专家。请严格按JSON格式输出。' },
             { role: 'user', content: `请评估以下预算调整的执行效果（基于本地上传数据）：\n\n基线数据：花费$${Number(record.baselineSpend)||0} | 销售$${Number(record.baselineSales)||0} | ACoS:${baseAcos}% | ROAS:${baseRoas}x\n执行后：花费$${Math.round(totalSpend*100)/100} | 销售$${Math.round(totalSales*100)/100} | ACoS:${followupAcos}% | ROAS:${followupRoas}x\n变化：ACoS ${acosChange>0?'+':''}${acosChange}% | ROAS ${roasChange>0?'+':''}${roasChange}%\n活动数:${campaignNames.length} | 订单:${totalOrders}\n\n请给出简短评价(100字内)和评分(1-100)。` },
@@ -1322,7 +1316,7 @@ export const adLocalAnalysisRouter = router({
   getCrossChannelDataLocal: protectedProcedure
     .input(z.object({ weekStartDate: z.string().optional(), weekEndDate: z.string().optional() }))
     .query(async ({ ctx, input }) => {
-      const db = await getDbInstance();
+      const db = await requireAdsDb();
       const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
       if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
       if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
@@ -1394,7 +1388,7 @@ export const adLocalAnalysisRouter = router({
     .mutation(async ({ ctx, input }) => {
       let contextData = "";
       if (input.campaignNames?.length) {
-        const db = await getDbInstance();
+        const db = await requireAdsDb();
         const rows = await db.select().from(adCampaignReports)
           .where(opsWorkspaceCondition(adCampaignReports, currentOpsWorkspaceId(), and(eq(adCampaignReports.userId, ctx.user.id), inArray(adCampaignReports.campaignName, input.campaignNames))));
         if (rows.length > 0) {
@@ -1418,7 +1412,7 @@ export const adLocalAnalysisRouter = router({
 
 
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages,
         response_format: {
           type: "json_schema",
@@ -1445,7 +1439,7 @@ export const adLocalAnalysisRouter = router({
   getDspReportLocal: protectedProcedure
     .input(z.object({ weekStartDate: z.string().optional(), weekEndDate: z.string().optional() }))
     .query(async ({ ctx, input }) => {
-      const db = await getDbInstance();
+      const db = await requireAdsDb();
       const conditions: any[] = [eq(adDspReports.userId, ctx.user.id)];
       if (input.weekStartDate) conditions.push(gte(adDspReports.weekStartDate, input.weekStartDate));
       if (input.weekEndDate) conditions.push(lte(adDspReports.weekEndDate, input.weekEndDate));
@@ -1510,7 +1504,7 @@ export const adLocalAnalysisRouter = router({
   aiDspStrategyLocal: protectedProcedure
     .input(z.object({ question: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDbInstance();
+      const db = await requireAdsDb();
       const rows = await db.select().from(adDspReports).where(opsWorkspaceCondition(adDspReports, currentOpsWorkspaceId(), eq(adDspReports.userId, ctx.user.id)));
 
       if (rows.length === 0) {
@@ -1532,7 +1526,7 @@ export const adLocalAnalysisRouter = router({
 
 
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages: [
           { role: 'system', content: '你是亚马逊DSP广告策略专家。基于DSP数据给出优化建议。输出严格JSON格式。' },
           { role: 'user', content: `DSP数据分析：\n${summary}\n${input.question ? `\n用户问题：${input.question}` : ''}\n\n请给出DSP广告优化策略建议。` },
@@ -1570,7 +1564,7 @@ export const adLocalAnalysisRouter = router({
       question: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDbInstance();
+      const db = await requireAdsDb();
       const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
       if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
       if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
@@ -1588,7 +1582,7 @@ export const adLocalAnalysisRouter = router({
 
 
 
-      const response = await invokeLLM({
+      const response = await runAdsSkill({
         messages: [
           { role: 'system', content: '你是亚马逊跨渠道广告策略专家。基于SP/SB/SD各渠道数据给出预算分配和策略建议。输出严格JSON格式。' },
           { role: 'user', content: `基于本地上传数据的跨渠道分析：\n${summary}\n${input.question ? `\n用户问题：${input.question}` : ''}\n\n请给出跨渠道预算分配建议和策略优化方向。` },

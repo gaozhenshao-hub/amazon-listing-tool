@@ -1,4 +1,4 @@
-# Data Lifecycle & Artifact System v1
+# Data Lifecycle & Artifact System v2
 
 ## 目标
 
@@ -8,7 +8,7 @@
 - `ai_storage_objects`: 文件、图片、长文本、归档包的统一 Storage 引用
 - `ai_data_archive_runs` / `ai_data_archive_items`: 高增长数据归档执行记录
 
-旧字段继续保留，用于兼容当前业务页面；新写入会同步登记 Artifact/Storage，后续业务读取可以逐步切换。
+业务表保留最终业务快照和短预览；已确认/current Artifact 是下游 AI 的真实输入源。
 
 ## Artifact 规范
 
@@ -31,8 +31,8 @@ Artifact 是可复用资产，不只是 checkpoint 附属字段。
 引用格式：
 
 ```text
-ai-artifact://{artifactId}@current
 ai-artifact://{artifactId}@{version}
+ai-artifact-scope://{base64url(scope)}@current
 storage://forge/{objectKey}
 ```
 
@@ -51,6 +51,17 @@ storage://forge/{objectKey}
 - ProjectFile AI 分析：analysis artifact，AI 输出版本化
 - ProjectFile 人工编辑/恢复：user_edit artifact，更新 current 指针
 - Agent Artifact：镜像登记到 `ai_artifacts`
+- 产品开发、Listing、图片、广告、视频：统一解析 confirmed/current Artifact
+- `ai_artifact_selection_events`：记录选择、确认和回滚指针历史
+- `ai_artifact_consumptions`：记录每次 Job/Skill/业务操作实际消费的精确版本
+
+`@current` 使用稳定谱系引用，切换版本后会跟随 current 指针。运行审计始终保存
+`ai-artifact://{artifactId}@{version}` 精确引用，保证历史结果可复现。
+
+## 上线
+
+先执行 `pnpm db:migrate` 应用 `0128_artifact_source_of_truth.sql`，再同时重启 Web、AI Worker 和 Scheduler。
+上线后检查草稿版本均为 `isCurrent=0`，并观察 `ai_artifact_consumptions` 是否随下游重跑持续写入。
 
 ## 归档策略
 
@@ -90,11 +101,33 @@ emperor.observability.runLifecycleSweep({
 ## 上线顺序
 
 1. 备份生产数据库。
-2. 先部署兼容代码，再执行 `drizzle/0115_data_lifecycle_artifacts_v1.sql`。
+2. 先部署兼容代码，再按受控迁移顺序执行到 `drizzle/0130_ai_operations_runtime.sql`。
 3. 重启 Web、AI Worker、Scheduler。
 4. 上传一个 Listing 数据文件，确认 `ai_storage_objects`、`ai_artifacts` 有新增记录。
 5. 执行 `runLifecycleSweep({ dryRun: true })`，确认 `ai_data_archive_runs` 有 dry-run 记录。
-6. 观察 1 到 2 天后，再配置定时归档任务。
+6. 确认 Scheduler 领导者锁正常后，观察自动归档、Worker 心跳和告警记录 1 到 2 天。
+
+## 运行告警与自动归档
+
+Scheduler 会自动执行数据生命周期归档和 AI OS 健康检查，也可以通过带
+`SCHEDULED_TASK_SECRET` 的受保护接口由外部调度器触发：
+
+- `POST /api/scheduled/data-lifecycle-sweep`
+- `POST /api/scheduled/ai-os-operational-health`
+
+生产环境建议显式配置：
+
+| 环境变量 | 建议值 | 说明 |
+| --- | --- | --- |
+| `REQUIRE_AI_JOB_WORKER` | `true` | 没有健康 Worker 时产生严重告警 |
+| `AI_OS_HEALTH_CHECK_INTERVAL_MS` | `300000` | Worker、失败任务和归档健康检查周期 |
+| `DATA_LIFECYCLE_SWEEP_INTERVAL_MS` | `86400000` | 自动归档周期 |
+| `DATA_LIFECYCLE_BATCH_SIZE` | `1000` | 单策略单次归档上限 |
+| `AI_OS_FAILED_JOB_ALERT_THRESHOLD` | `1` | 一小时内死信告警阈值 |
+| `AI_OS_ALERT_COOLDOWN_MS` | `21600000` | 相同告警再次通知的冷却时间 |
+
+`ai_operational_alerts` 保存当前和历史告警，皇帝可观测页面展示未恢复告警。
+Owner 通知还需要部署环境提供 Forge 通知配置；通知失败不会阻断告警入库。
 
 ## 已知边界
 

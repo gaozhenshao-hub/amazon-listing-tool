@@ -40,6 +40,9 @@ describe("Generic AI Job infrastructure", () => {
     expect(schema.aiJobs.lastHeartbeatAt).toBeDefined();
     expect(schema.aiJobs.deadLetterAt).toBeDefined();
     expect(schema.aiJobs.deadLetterReason).toBeDefined();
+    expect(schema.aiJobs.recoveryOfRunId).toBeDefined();
+    expect(schema.aiJobs.recoveryReason).toBeDefined();
+    expect(schema.aiOperationalAlerts).toBeDefined();
     expect(schema.aiJobWorkers).toBeDefined();
     expect(schema.aiJobDeadLetters).toBeDefined();
   });
@@ -114,6 +117,8 @@ describe("Generic AI Job infrastructure", () => {
     expect(handlers).toContain("ops.replenishmentPlan");
     expect(handlers).toContain("imageWorkflow.step5FinalSuggestion");
     expect(handlers).toContain("emperorAgent.nodeSkill");
+    expect(handlers).toContain("productDevelopment.informationSummary");
+    expect(handlers).toContain("productDevelopment.analysisStage");
 
     const now = new Date();
     const handler = resolveAiJobHandler({
@@ -156,6 +161,8 @@ describe("Generic AI Job infrastructure", () => {
     expect(procedures["aiJobs.workerHealth"]).toBeDefined();
     expect(procedures["aiJobs.deadLetters"]).toBeDefined();
     expect(procedures["aiJobs.cancel"]).toBeDefined();
+    expect(procedures["aiJobs.retry"]).toBeDefined();
+    expect(procedures["aiJobs.operationalAlerts"]).toBeDefined();
     expect(procedures["aiJobs.startListingFiveSteps"]).toBeDefined();
     expect(procedures["aiJobs.startAdSearchTermAdvice"]).toBeDefined();
     expect(procedures["aiJobs.startOpsReplenishmentPlan"]).toBeDefined();

@@ -1,4 +1,6 @@
 import { currentOpsWorkspaceId } from "../workspaceContext";
+import { requireOpsDb } from "../legacy/repository";
+import { runOpsSkill } from "../legacy/service";
 import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
@@ -31,7 +33,7 @@ const {
   getToday,
   getYesterday,
   inArray,
-  invokeLLM,
+  invokeBusinessSkill,
   isNull,
   keywordMonitors,
   keywordSnapshots,
@@ -63,7 +65,6 @@ const {
   users,
   z,
 } = shared;
-const getDb = (...args: Parameters<typeof shared.getDb>) => shared.getDb(...args);
 
 export const opsExecutionReviewProcedures = {
 
@@ -75,7 +76,7 @@ export const opsExecutionReviewProcedures = {
   listExecutionReviews: protectedProcedure
     .input(z.object({ productProfileId: z.number(), parentAsin: z.string().optional() }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const { MANAGER_ROLES } = await import("../../../../shared/const");
       const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
       const conditions: any[] = [];
@@ -117,7 +118,7 @@ export const opsExecutionReviewProcedures = {
       targetWeekEnd: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const { baselineWeeks, targetWeeks, baselineWeekStart, baselineWeekEnd, targetWeekStart, targetWeekEnd, ...rest } = input;
 
       // Resolve baseline weeks: prefer new multi-select array, fallback to old single pair
@@ -274,7 +275,7 @@ export const opsExecutionReviewProcedures = {
       aiAnalysis: z.string().optional(), aiAnalysisLocked: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const { MANAGER_ROLES } = await import("../../../../shared/const");
       const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
       const { reviewId, ...updates } = input;
@@ -291,7 +292,7 @@ export const opsExecutionReviewProcedures = {
   deleteExecutionReview: protectedProcedure
     .input(z.object({ reviewId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const { MANAGER_ROLES } = await import("../../../../shared/const");
       const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
       const conds = [eq(executionReviews.id, input.reviewId)];
@@ -304,7 +305,7 @@ export const opsExecutionReviewProcedures = {
   aiReviewAnalysis: protectedProcedure
     .input(z.object({ reviewId: z.number() }))
     .mutation(async ({ input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [review] = await db!.select().from(executionReviews).where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), eq(executionReviews.id, input.reviewId)));
       if (!review) throw new TRPCError({ code: "NOT_FOUND" });
       if (review.aiAnalysisLocked) return { analysis: review.aiAnalysis };
@@ -346,7 +347,7 @@ export const opsExecutionReviewProcedures = {
   "nextPeriodFocus": ["下期重点1", "下期重点2"]
 }`;
 
-      const resp = await invokeLLM({
+      const resp = await runOpsSkill({
         messages: [
           { role: "system", content: "你是一位资深亚马逊运营分析师，擅长数据分析和运营策略。请始终输出有效的JSON格式。" },
           { role: "user", content: prompt }
@@ -426,7 +427,7 @@ export const opsExecutionReviewProcedures = {
       planId: z.number().optional(), // 可选：从运营计划自动带入基线和目标
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
 
       const [review] = await db!.select().from(executionReviews).where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), eq(executionReviews.id, input.reviewId)));
       if (!review) throw new TRPCError({ code: 'NOT_FOUND', message: '复盘记录不存在' });
@@ -547,8 +548,8 @@ export const opsExecutionReviewProcedures = {
       productTitle: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      // invokeLLM already imported at top of file
+      const db = await requireOpsDb();
+      // invokeBusinessSkill already imported at top of file
 
       const [review] = await db!.select().from(executionReviews).where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), eq(executionReviews.id, input.reviewId)));
       if (!review) throw new TRPCError({ code: 'NOT_FOUND', message: '复盘记录不存在' });
@@ -595,7 +596,7 @@ export const opsExecutionReviewProcedures = {
 
 
 
-        const response = await invokeLLM({
+        const response = await runOpsSkill({
           messages: [
             { role: 'system', content: '你是一位资深亚马逊运营分析师，擅长数据分析和运营策略。请始终输出有效的JSON格式。' },
             { role: 'user', content: prompt },

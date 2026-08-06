@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
 import { callDataApi } from "../_core/dataApi";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import {
   createOffsiteAnalysis,
   getOffsiteAnalysesByProject,
@@ -229,7 +230,7 @@ export const offsiteAnalysisRouter = router({
 
 
 
-        const aiResponse = await invokeLLM({
+        const aiResponse = await invokeBusinessSkill({
           messages: [
             { role: "system", content: prompt },
             {
@@ -327,7 +328,7 @@ export const offsiteAnalysisRouter = router({
 
 
 
-      const aiResponse = await invokeLLM({
+      const aiResponse = await invokeBusinessSkill({
         messages: [
           { role: "system", content: OFFSITE_SUMMARY_PROMPT },
           {
@@ -358,7 +359,7 @@ export const offsiteAnalysisRouter = router({
 
 
 
-      const aiResponse = await invokeLLM({
+      const aiResponse = await invokeBusinessSkill({
         messages: [
           { role: "system", content: prompt },
           {

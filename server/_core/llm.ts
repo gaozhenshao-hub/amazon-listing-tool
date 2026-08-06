@@ -77,6 +77,11 @@ export type InvokeParams = {
    * code should not set this; it prevents Skill -> invokeLLM recursion.
    */
   bypassEmperor?: boolean;
+  /** Required audit reason whenever platform infrastructure bypasses Emperor. */
+  emperorBypassReason?:
+    | "skill_runner_provider_call"
+    | "model_health_check"
+    | "platform_diagnostics";
   /**
    * Optional explicit Skill routing hint. When omitted, the gateway will infer
    * a Skill from the caller file and legacy prompt.
@@ -86,8 +91,10 @@ export type InvokeParams = {
   emperorSkill?: {
     slug?: string;
     userId?: number;
+    workspaceId?: number | null;
     context?: string;
     emphasis?: string;
+    migrationSource?: string;
     variables?: Record<string, unknown>;
     fallbackToLegacy?: boolean;
   };
@@ -398,6 +405,9 @@ export async function invokeRawLLM(params: InvokeParams): Promise<InvokeResult> 
 }
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
+  if (params.bypassEmperor && !params.emperorBypassReason) {
+    throw new Error("Emperor bypass requires an approved emperorBypassReason");
+  }
   if (params.bypassEmperor || process.env.EMPEROR_SKILL_GATEWAY === "disabled") {
     return invokeRawLLM(params);
   }

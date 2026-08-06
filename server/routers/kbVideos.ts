@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { resourceConflictError } from "@shared/_core/errors";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { transcribeAudio } from "../_core/voiceTranscription";
 
 export const kbVideosRouter = router({
@@ -71,7 +71,7 @@ export const kbVideosRouter = router({
 
 
 
-          const response = await invokeLLM({
+          const response = await invokeBusinessSkill({
             messages: [
               { role: "system", content: `你是一位资深的亚马逊视频营销分析专家。请分析以下视频内容，返回JSON格式：
 {
@@ -149,7 +149,7 @@ export const kbVideosRouter = router({
 
 
 
-            const response = await invokeLLM({
+            const response = await invokeBusinessSkill({
               messages: [
                 { role: "system", content: `你是亚马逊视频营销分析专家。分析视频内容，返回JSON: { contentSummary, videoType, targetAudience, sellingPoints, emotionalAppeal, scriptStructure, visualTechniques, audioStrategy, callToAction, competitiveAdvantage, improvementSuggestions, applicableScenarios, tags, overallScore(1-100), summary }` },
                 { role: "user", content: `标题: ${video.videoTitle || "未知"}\nASIN: ${video.asin || "未知"}\n转写: ${transcriptText.slice(0, 6000)}` }
@@ -211,7 +211,7 @@ export const kbVideosRouter = router({
 
 
 
-            const response = await invokeLLM({
+            const response = await invokeBusinessSkill({
               messages: [
                 { role: "system", content: `你是亚马逊视频营销分析专家。分析产品视频，返回JSON: { contentSummary, videoType, sellingPoints, tags, overallScore(1-100), summary }` },
                 { role: "user", content: `ASIN: ${asin}\n转写: ${transcriptText.slice(0, 6000)}` }
@@ -262,7 +262,7 @@ export const kbVideosRouter = router({
 
 
 
-          const response = await invokeLLM({
+          const response = await invokeBusinessSkill({
             messages: [
               { role: "system", content: `你是亚马逊视频营销分析专家。分析产品视频，返回JSON: { contentSummary, videoType, sellingPoints, tags, overallScore(1-100), summary }` },
               { role: "user", content: `ASIN: ${asin}\n转写: ${transcriptText.slice(0, 6000)}` }

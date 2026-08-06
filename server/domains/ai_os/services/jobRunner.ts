@@ -46,13 +46,19 @@ export type AiJobSnapshot = {
   lastHeartbeatAt: Date | null;
   deadLetterAt: Date | null;
   deadLetterReason: string | null;
+  recoveryOfRunId: string | null;
+  recoveryReason: string | null;
   startedAt: Date | null;
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
 
-export type AiJobHandler<T = unknown> = (job: AiJobSnapshot) => Promise<T>;
+export type AiJobHandlerContext = {
+  signal: AbortSignal;
+};
+
+export type AiJobHandler<T = unknown> = (job: AiJobSnapshot, context: AiJobHandlerContext) => Promise<T>;
 
 export type AiJobMutationGuard = {
   expectedWorkerId?: string;
@@ -347,6 +353,8 @@ export function buildAiJobSnapshot(job: AiJob): AiJobSnapshot {
     lastHeartbeatAt: (job as any).lastHeartbeatAt || null,
     deadLetterAt: (job as any).deadLetterAt || null,
     deadLetterReason: (job as any).deadLetterReason || null,
+    recoveryOfRunId: (job as any).recoveryOfRunId || null,
+    recoveryReason: (job as any).recoveryReason || null,
     startedAt: job.startedAt || null,
     completedAt: job.completedAt || null,
     createdAt: job.createdAt,
@@ -370,6 +378,8 @@ export async function createAiJobRun(input: {
   maxAttempts?: number;
   timeoutSeconds?: number;
   nextRunAt?: Date | null;
+  recoveryOfRunId?: string | null;
+  recoveryReason?: string | null;
 }) {
   const runId = input.runId || generateAiJobRunId(input.module);
   const job = await createAiJob({
@@ -391,6 +401,8 @@ export async function createAiJobRun(input: {
     input: input.input ?? null,
     output: null,
     errorMessage: null,
+    recoveryOfRunId: input.recoveryOfRunId || null,
+    recoveryReason: input.recoveryReason || null,
     nextRunAt: input.nextRunAt || null,
     leaseUntil: null,
     lockedBy: null,
@@ -409,6 +421,22 @@ export async function markAiJobRunning(runId: string, progress = 10) {
     workerId: WORKER_ID,
     leaseSeconds: existing?.timeoutSeconds || DEFAULT_WORKER_LEASE_SECONDS,
     progress,
+  });
+  return job ? buildAiJobSnapshot(job) : null;
+}
+
+export async function updateAiJobProgress(
+  runId: string,
+  progress: number,
+  guard: AiJobMutationGuard = {},
+) {
+  const existing = await getAiJobRun(runId);
+  if (!existing || existing.status !== "running") return existing;
+  if (!aiJobMutationAllowed(existing, guard)) return existing;
+
+  const job = await updateAiJobByRunId(runId, {
+    progress: Math.min(Math.max(Math.floor(progress), 0), 99),
+    lastHeartbeatAt: new Date(),
   });
   return job ? buildAiJobSnapshot(job) : null;
 }
@@ -561,6 +589,45 @@ export async function cancelAiJob(runId: string, reason = "AI job canceled") {
   return job ? buildAiJobSnapshot(job) : null;
 }
 
+export async function recoverAiJob(runId: string, reason = "User requested failure recovery") {
+  const existing = await getAiJobRun(runId);
+  if (!existing) throw new Error("AI job not found");
+  if (existing.status !== "failed" && existing.status !== "canceled") {
+    throw new Error("Only failed or canceled AI jobs can be recovered");
+  }
+
+  const recovered = await startRegisteredAiJob({
+    kind: existing.kind,
+    module: existing.module,
+    procedure: existing.procedure,
+    workspaceId: existing.workspaceId,
+    userId: existing.userId,
+    projectId: existing.projectId,
+    skillSlug: existing.skillSlug,
+    input: existing.input,
+    progress: 0,
+    priority: existing.priority,
+    queueName: existing.queueName,
+    maxAttempts: existing.maxAttempts,
+    timeoutSeconds: existing.timeoutSeconds,
+    recoveryOfRunId: existing.runId,
+    recoveryReason: reason,
+  });
+  void recordAiOsMetric({
+    entityType: "job",
+    entityId: recovered.runId,
+    metricName: "job.manual_recovery",
+    metricValue: 1,
+    status: recovered.status,
+    workspaceId: recovered.workspaceId,
+    userId: recovered.userId,
+    projectId: recovered.projectId,
+    skillSlug: recovered.skillSlug,
+    metadata: { recoveryOfRunId: existing.runId, reason },
+  });
+  return recovered;
+}
+
 export async function getAiJobRun(runId: string) {
   const job = await getAiJobByRunId(runId);
   return job ? buildAiJobSnapshot(job) : null;
@@ -594,12 +661,16 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
     }, Math.min(Math.max(Math.floor(leaseSeconds * 1000 / 3), 5_000), 60_000));
 
     const timeout = new Promise<never>((_, reject) => {
-      timeoutHandle = setTimeout(() => reject(new Error(`AI job timed out after ${leaseSeconds}s`)), leaseSeconds * 1000);
+      timeoutHandle = setTimeout(() => {
+        const error = new Error(`AI job timed out after ${leaseSeconds}s`);
+        abortController.abort(error);
+        reject(error);
+      }, leaseSeconds * 1000);
     });
     const canceled = new Promise<never>((_, reject) => {
       abortController.signal.addEventListener("abort", () => reject(new Error(String(abortController.signal.reason || "AI job canceled"))), { once: true });
     });
-    const output = await Promise.race([handler(current), timeout, canceled]);
+    const output = await Promise.race([handler(current, { signal: abortController.signal }), timeout, canceled]);
     return await completeAiJob(runId, output, { expectedWorkerId: WORKER_ID, expectedAttempt: current.attempt });
   } catch (error) {
     await retryAiJob(runId, error, { expectedWorkerId: WORKER_ID, expectedAttempt: current?.attempt });

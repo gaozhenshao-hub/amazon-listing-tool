@@ -1,9 +1,11 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as devDb from "../devDb";
 import { storagePut } from "../storage";
 import { generateThemedManualHtml, THEME_PRESETS, FONT_PRESETS } from "../manualTemplates";
+import { resolveDevProjectAccess } from "../domains/product_development/security/productDevelopmentAccess";
 
 const MANUAL_CHAPTERS = [
   { key: "overview", titleEn: "Product Overview", titleEs: "Descripcion del Producto" },
@@ -18,18 +20,6 @@ const MANUAL_CHAPTERS = [
 ] as const;
 
 // 说明书生成与测试报告管理路由
-
-// Helper: resolve dev project access based on user role
-async function resolveDevProjectAccess(projectId: number, user: { id: number; role: string }) {
-  if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
-    const project = await devDb.getDevProjectByIdAdmin(projectId);
-    if (!project) throw new Error("Project not found");
-    return project;
-  }
-  const project = await devDb.getDevProjectById(projectId, user.id);
-  if (!project) throw new Error("Project not found");
-  return project;
-}
 
 export const devManualRouter = router({
   // ─── Get Manual ────────────────────────────────────────────
@@ -100,7 +90,7 @@ export const devManualRouter = router({
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",
@@ -155,7 +145,7 @@ Return JSON:
   generateManual: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
+      const project = await resolveDevProjectAccess(input.projectId, ctx);
       if (!project) throw new Error("Project not found");
 
       const products = await devDb.getDevProductsByProject(input.projectId);
@@ -184,7 +174,7 @@ BOM Components: ${bom.map((b: any) => b.partName).join(", ")}${refContext}`;
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",
@@ -427,7 +417,7 @@ IMPORTANT: Spanish content must be natural, professional Spanish - not literal t
   generateTestReport: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
+      const project = await resolveDevProjectAccess(input.projectId, ctx);
       if (!project) throw new Error("Project not found");
 
       const products = await devDb.getDevProductsByProject(input.projectId);
@@ -455,7 +445,7 @@ ${bom.map((b: any) => `${b.partName} | 材质:${b.material || "未知"} | 工艺
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",

@@ -7,7 +7,7 @@ import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
 import { customerProfiles } from "../../drizzle/schema";
 import { eq, desc, like, and, sql } from "drizzle-orm";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 
 export const customerProfileRouter = router({
   // 客户列表
@@ -169,7 +169,7 @@ ${JSON.stringify(data, null, 2)}
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是亚马逊客户分析专家，输出严格JSON。" },
           { role: "user", content: prompt },

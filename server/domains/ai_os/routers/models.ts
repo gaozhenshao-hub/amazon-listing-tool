@@ -32,8 +32,8 @@ export const emperorModelsRouter = router({
       const slug = input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) + "-" + Date.now().toString(36);
       if (input.isDefault) await rawExecute("UPDATE emperor_model_providers SET isDefault=0");
       await rawExecute(
-        `INSERT INTO emperor_model_providers (slug,name,provider,modelId,displayName,baseUrl,apiKeyRef,isDefault,isActive,capabilityTags) VALUES (?,?,?,?,?,?,?,?,1,?)`,
-        [slug, input.name, input.provider, input.modelId, input.name, input.apiBaseUrl||null, input.apiKey||null, input.isDefault?1:0, JSON.stringify(input.capabilityTags)]
+        `INSERT INTO emperor_model_providers (slug,name,provider,modelId,displayName,baseUrl,apiKeyRef,isDefault,isActive,capabilityTags,costPer1kInputTokens,costPer1kOutputTokens,maxContextTokens) VALUES (?,?,?,?,?,?,?,?,1,?,?,?,?)`,
+        [slug, input.name, input.provider, input.modelId, input.name, input.apiBaseUrl||null, input.apiKey||null, input.isDefault?1:0, JSON.stringify(input.capabilityTags), input.costPer1kInputTokens, input.costPer1kOutputTokens, input.maxContextTokens]
       );
       return { success: true, slug };
     }),
@@ -45,6 +45,9 @@ export const emperorModelsRouter = router({
       apiBaseUrl: z.string().optional(),
       apiKey: z.string().optional(),
       capabilityTags: z.array(z.string()).optional(),
+      costPer1kInputTokens: z.number().min(0).optional(),
+      costPer1kOutputTokens: z.number().min(0).optional(),
+      maxContextTokens: z.number().min(1).optional(),
       isDefault: z.boolean().optional(),
       isActive: z.boolean().optional(),
     }))
@@ -55,6 +58,9 @@ export const emperorModelsRouter = router({
       if (rest.apiBaseUrl !== undefined) { sets.push("baseUrl=?"); vals.push(rest.apiBaseUrl); }
       if (rest.apiKey !== undefined) { sets.push("apiKeyRef=?"); vals.push(rest.apiKey); }
       if (rest.capabilityTags !== undefined) { sets.push("capabilityTags=?"); vals.push(JSON.stringify(rest.capabilityTags)); }
+      if (rest.costPer1kInputTokens !== undefined) { sets.push("costPer1kInputTokens=?"); vals.push(rest.costPer1kInputTokens); }
+      if (rest.costPer1kOutputTokens !== undefined) { sets.push("costPer1kOutputTokens=?"); vals.push(rest.costPer1kOutputTokens); }
+      if (rest.maxContextTokens !== undefined) { sets.push("maxContextTokens=?"); vals.push(rest.maxContextTokens); }
       if (rest.isDefault !== undefined) {
         if (rest.isDefault) await rawExecute("UPDATE emperor_model_providers SET isDefault=0");
         sets.push("isDefault=?"); vals.push(rest.isDefault?1:0);
@@ -103,17 +109,17 @@ export const emperorModelsRouter = router({
     .input(z.object({ days: z.number().min(1).max(90).optional().default(30) }))
     .query(async ({ input }) => {
       const rows = await rawExecute(
-        `SELECT DATE(createdAt) as date, COUNT(*) as calls, SUM(inputTokens) as inputTokens, SUM(outputTokens) as outputTokens FROM emperor_skill_runs WHERE createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY) GROUP BY DATE(createdAt) ORDER BY date ASC`,
+        `SELECT DATE(createdAt) as date, COUNT(*) as calls, SUM(inputTokens) as inputTokens, SUM(outputTokens) as outputTokens, SUM(costCents) as costCents FROM emperor_skill_runs WHERE createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY) GROUP BY DATE(createdAt) ORDER BY date ASC`,
         [input.days]
       );
       const daily = rows.map((r: any) => ({
-        date: r.date, calls: Number(r.calls), inputTokens: Number(r.inputTokens||0), outputTokens: Number(r.outputTokens||0), costUsd: 0,
+        date: r.date, calls: Number(r.calls), inputTokens: Number(r.inputTokens||0), outputTokens: Number(r.outputTokens||0), costUsd: Number(r.costCents||0) / 100,
       }));
       const totals = daily.reduce((acc: any, r: any) => ({
         totalCalls: acc.totalCalls + r.calls,
         totalInputTokens: acc.totalInputTokens + r.inputTokens,
         totalOutputTokens: acc.totalOutputTokens + r.outputTokens,
-        totalCostUsd: 0,
+        totalCostUsd: acc.totalCostUsd + r.costUsd,
       }), { totalCalls: 0, totalInputTokens: 0, totalOutputTokens: 0, totalCostUsd: 0 });
       return { daily, totals };
     }),
@@ -139,11 +145,14 @@ export const emperorModelsRouter = router({
       isDefault: z.boolean().optional().default(false),
       isActive: z.boolean().optional().default(true),
       capabilityTags: z.array(z.string()).optional(),
+      costPer1kInputTokens: z.number().min(0).optional().default(0),
+      costPer1kOutputTokens: z.number().min(0).optional().default(0),
+      maxContextTokens: z.number().min(1).optional().default(128000),
     }))
     .mutation(async ({ input }) => {
       await rawExecute(
-        `INSERT INTO emperor_model_providers (slug,name,provider,modelId,displayName,baseUrl,apiKeyRef,isDefault,isActive,capabilityTags) VALUES (?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),provider=VALUES(provider),modelId=VALUES(modelId),displayName=VALUES(displayName),baseUrl=VALUES(baseUrl),apiKeyRef=VALUES(apiKeyRef),isDefault=VALUES(isDefault),isActive=VALUES(isActive),capabilityTags=VALUES(capabilityTags)`,
-        [input.slug, input.name, input.provider, input.modelId, input.displayName||null, input.baseUrl||null, input.apiKeyRef||null, input.isDefault?1:0, input.isActive?1:0, input.capabilityTags ? JSON.stringify(input.capabilityTags) : null]
+        `INSERT INTO emperor_model_providers (slug,name,provider,modelId,displayName,baseUrl,apiKeyRef,isDefault,isActive,capabilityTags,costPer1kInputTokens,costPer1kOutputTokens,maxContextTokens) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),provider=VALUES(provider),modelId=VALUES(modelId),displayName=VALUES(displayName),baseUrl=VALUES(baseUrl),apiKeyRef=VALUES(apiKeyRef),isDefault=VALUES(isDefault),isActive=VALUES(isActive),capabilityTags=VALUES(capabilityTags),costPer1kInputTokens=VALUES(costPer1kInputTokens),costPer1kOutputTokens=VALUES(costPer1kOutputTokens),maxContextTokens=VALUES(maxContextTokens)`,
+        [input.slug, input.name, input.provider, input.modelId, input.displayName||null, input.baseUrl||null, input.apiKeyRef||null, input.isDefault?1:0, input.isActive?1:0, input.capabilityTags ? JSON.stringify(input.capabilityTags) : null, input.costPer1kInputTokens, input.costPer1kOutputTokens, input.maxContextTokens]
       );
       return { success: true };
     }),
@@ -162,7 +171,11 @@ export const emperorModelsRouter = router({
       if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
       try {
         const start = Date.now();
-        const res = await invokeLLM({ messages: [{ role: "user", content: "Reply with exactly: OK" }] });
+        const res = await invokeLLM({
+          messages: [{ role: "user", content: "Reply with exactly: OK" }],
+          bypassEmperor: true,
+          emperorBypassReason: "model_health_check",
+        });
         const ms = Date.now() - start;
         const content = res?.choices?.[0]?.message?.content || "";
         return { success: true, latencyMs: ms, response: content.slice(0, 100) };

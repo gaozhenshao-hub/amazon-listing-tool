@@ -156,31 +156,34 @@ describe("Module 1 - File structure", () => {
 describe("Module 1 - AI prompts in routers", () => {
   it("devTagging should contain AI tagging prompt", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/devTagging.ts"), "utf-8");
-    expect(code).toContain("invokeLLM");
+    expect(code).toContain("invokeBusinessSkill");
     expect(code).toContain("标签");
   });
 
   it("devAnalysis should contain AI analysis prompt", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/devAnalysis.ts"), "utf-8");
-    expect(code).toContain("invokeLLM");
+    const code = fs.readFileSync(
+      path.resolve(__dirname, "domains/product_development/service.ts"),
+      "utf-8",
+    );
+    expect(code).toContain("invokeBusinessSkill");
     expect(code).toContain("分析");
   });
 
   it("devScoring should contain multi-dimension scoring logic", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/devScoring.ts"), "utf-8");
-    expect(code).toContain("invokeLLM");
+    expect(code).toContain("invokeBusinessSkill");
     expect(code).toMatch(/市场|竞争|利润|供应链|合规|创新/);
   });
 
   it("devProfile should contain product profile AI generation", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/devProfile.ts"), "utf-8");
-    expect(code).toContain("invokeLLM");
+    expect(code).toContain("invokeBusinessSkill");
     expect(code).toContain("产品画像");
   });
 
   it("devManual should contain manual and test report AI generation", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/devManual.ts"), "utf-8");
-    expect(code).toContain("invokeLLM");
+    expect(code).toContain("invokeBusinessSkill");
     expect(code).toContain("说明书");
     expect(code).toContain("测试报告");
   });

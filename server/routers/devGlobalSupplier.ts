@@ -1,6 +1,8 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
 import * as devDb from "../devDb";
+import { productDevelopmentWorkspaceId } from "../domains/product_development/security/productDevelopmentAccess";
 
 /**
  * 全局供应商库路由
@@ -22,7 +24,7 @@ export const devGlobalSupplierRouter = router({
       category: z.string().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
-      const suppliers = await devDb.getDevGlobalSuppliers(ctx.user.id);
+      const suppliers = await devDb.getDevGlobalSuppliers(ctx.user.id, productDevelopmentWorkspaceId(ctx));
       let filtered = suppliers;
 
       if (input?.search) {
@@ -49,7 +51,7 @@ export const devGlobalSupplierRouter = router({
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const suppliers = await devDb.getDevGlobalSuppliers(ctx.user.id);
+      const suppliers = await devDb.getDevGlobalSuppliers(ctx.user.id, productDevelopmentWorkspaceId(ctx));
       return suppliers.find((s: any) => s.id === input.id) || null;
     }),
 
@@ -69,6 +71,7 @@ export const devGlobalSupplierRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       return devDb.saveDevGlobalSupplier({
+        workspaceId: productDevelopmentWorkspaceId(ctx),
         userId: ctx.user.id,
         name: input.name,
         contactPerson: input.contactPerson ?? null,
@@ -100,7 +103,12 @@ export const devGlobalSupplierRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, categories, ...rest } = input;
-      const updateData: any = { id, ...rest };
+      const updateData: any = {
+        id,
+        workspaceId: productDevelopmentWorkspaceId(ctx),
+        userId: ctx.user.id,
+        ...rest,
+      };
       if (categories !== undefined) {
         updateData.categories = JSON.stringify(categories);
       }
@@ -111,7 +119,7 @@ export const devGlobalSupplierRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await devDb.deleteDevGlobalSupplier(input.id, ctx.user.id);
+      await devDb.deleteDevGlobalSupplier(input.id, ctx.user.id, productDevelopmentWorkspaceId(ctx));
       return { success: true };
     }),
 
@@ -139,6 +147,7 @@ export const devGlobalSupplierRouter = router({
       for (const supplier of input.suppliers) {
         try {
           await devDb.saveDevGlobalSupplier({
+            workspaceId: productDevelopmentWorkspaceId(ctx),
             userId: ctx.user.id,
             name: supplier.name,
             contactPerson: supplier.contactPerson ?? null,

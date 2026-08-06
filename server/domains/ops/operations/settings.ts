@@ -1,5 +1,7 @@
 import { failUnavailableDataSource } from "@shared/_core/errors";
-import { z, TRPCError, protectedProcedure, router, getDb, invokeLLM, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo } from "./context";
+import { requireOpsDb } from "../legacy/repository";
+import { runOpsSkill } from "../legacy/service";
+import { z, TRPCError, protectedProcedure, router, getDb, invokeBusinessSkill, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo } from "./context";
 import { opsWorkspaceCondition, withOpsWorkspace, workspaceIdFromContext } from "./context";
 
 export const settingsProcedures = {
@@ -22,7 +24,7 @@ export const settingsProcedures = {
   }),
 
 getUserSettings: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const rows = await db!.select().from(userSettings)
       .where(opsWorkspaceCondition(userSettings, workspaceIdFromContext(ctx), eq(userSettings.userId, ctx.user.id)));
     const result: Record<string, string> = {};
@@ -35,7 +37,7 @@ getUserSettings: protectedProcedure.query(async ({ ctx }) => {
 saveUserSetting: protectedProcedure
     .input(z.object({ key: z.string(), value: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const now = Date.now();
       // Upsert: try to find existing, then insert or update
       const existing = await db!.select().from(userSettings)
@@ -58,7 +60,7 @@ saveUserSetting: protectedProcedure
 
 // ============== ASIN Status Management ==============
   getAsinStatuses: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const rows = await db!.select().from(asinStatusCache)
       .where(opsWorkspaceCondition(asinStatusCache, workspaceIdFromContext(ctx)));
     return rows.map(r => ({
@@ -71,7 +73,7 @@ saveUserSetting: protectedProcedure
   }),
 
 syncAsinStatuses: protectedProcedure.mutation(async ({ ctx }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const { sids: allSids } = await getAllSellerSids();
     let synced = 0;
     const now = Date.now();

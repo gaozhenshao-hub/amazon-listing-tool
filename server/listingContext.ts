@@ -7,6 +7,10 @@
  * Module 4: A9 Keywords (keywords.strategyCategory + listingPlacement)
  */
 import * as db from "./repositories";
+import {
+  recordBusinessArtifactUse,
+  resolveCurrentBusinessArtifact,
+} from "./domains/ai_os/services/businessArtifactRegistry";
 
 // ─── Type Definitions ────────────────────────────────────────────
 
@@ -89,12 +93,29 @@ function safeParseJSON(str: string | null | undefined, fallback: any = null): an
   try { return JSON.parse(str); } catch { return fallback; }
 }
 
-async function buildModule1(projectId: number): Promise<RufusAttributes | null> {
+async function buildModule1(projectId: number, consumerId: string): Promise<RufusAttributes | null> {
   const files = await db.getProjectFilesByProject(projectId);
   const attrFile = files.find(f => f.fileType === "product_attributes" && f.status === "completed" && f.analysisResult);
   if (!attrFile) return null;
 
-  const parsed = safeParseJSON(attrFile.analysisResult);
+  const artifact = await resolveCurrentBusinessArtifact({
+    domain: "listing",
+    artifactKey: `project_file.${attrFile.fileType}.analysis`,
+    sourceTable: "projectFiles",
+    sourceRowId: attrFile.id,
+    projectId,
+  }).catch(() => null);
+  if (artifact) {
+    await recordBusinessArtifactUse({
+      artifact,
+      consumerDomain: "listing",
+      consumerType: "business_operation",
+      consumerId,
+      projectId,
+      metadata: { module: "product_attributes" },
+    });
+  }
+  const parsed = artifact?.content || safeParseJSON(attrFile.analysisResult);
   if (!parsed) return null;
 
   return {
@@ -109,8 +130,29 @@ async function buildModule1(projectId: number): Promise<RufusAttributes | null> 
   };
 }
 
-async function buildModule2(projectId: number): Promise<CompetitorInsights | null> {
-  const analyses = await db.getCompetitorAnalysesByProject(projectId);
+async function buildModule2(projectId: number, consumerId: string): Promise<CompetitorInsights | null> {
+  const analysisRows = await db.getCompetitorAnalysesByProject(projectId);
+  const analyses = await Promise.all(analysisRows.map(async (analysis) => {
+    const artifact = await resolveCurrentBusinessArtifact({
+      domain: "listing",
+      artifactKey: `listing.competitor_analysis.${analysis.asin}`,
+      sourceTable: "competitorAnalyses",
+      sourceRowId: analysis.id,
+      projectId,
+    }).catch(() => null);
+    if (!artifact) return analysis;
+    await recordBusinessArtifactUse({
+      artifact,
+      consumerDomain: "listing",
+      consumerType: "business_operation",
+      consumerId,
+      projectId,
+      metadata: { module: "competitor_analysis", asin: analysis.asin },
+    });
+    return artifact.content && typeof artifact.content === "object"
+      ? { ...analysis, ...(artifact.content as Record<string, unknown>) }
+      : analysis;
+  }));
   const reviewAgg = await db.getReviewAggregationByProject(projectId);
 
   if (analyses.length === 0 && !reviewAgg) return null;
@@ -292,10 +334,13 @@ async function buildModule4(projectId: number): Promise<KeywordStrategy | null> 
 
 // ─── Main Entry Point ────────────────────────────────────────────
 
-export async function buildListingContext(projectId: number): Promise<ListingContext> {
+export async function buildListingContext(
+  projectId: number,
+  consumerId = `listing-context:${projectId}`,
+): Promise<ListingContext> {
   const [m1, m2, m3, m4] = await Promise.all([
-    buildModule1(projectId),
-    buildModule2(projectId),
+    buildModule1(projectId, consumerId),
+    buildModule2(projectId, consumerId),
     buildModule3(projectId),
     buildModule4(projectId),
   ]);

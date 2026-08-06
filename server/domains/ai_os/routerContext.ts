@@ -49,6 +49,8 @@ export interface ResolvedModel {
   provider: string;
   baseUrl?: string;
   apiKeyRef?: string;
+  costPer1kInputTokens?: number;
+  costPer1kOutputTokens?: number;
 }
 
 export async function resolveModel(skill: any, modelOverrideSlug?: string): Promise<ResolvedModel> {
@@ -57,6 +59,8 @@ export async function resolveModel(skill: any, modelOverrideSlug?: string): Prom
     provider: row.provider,
     baseUrl: row.baseUrl || undefined,
     apiKeyRef: row.apiKeyRef || undefined,
+    costPer1kInputTokens: Number(row.costPer1kInputTokens || 0),
+    costPer1kOutputTokens: Number(row.costPer1kOutputTokens || 0),
   });
   if (modelOverrideSlug) {
     const rows = await rawExecute("SELECT * FROM emperor_model_providers WHERE slug = ? AND isActive = 1 LIMIT 1", [modelOverrideSlug]);

@@ -13,6 +13,13 @@ const trpcToAppCode: Partial<Record<TRPC_ERROR_CODE_KEY, AppErrorCode>> = {
   INTERNAL_SERVER_ERROR: APP_ERROR_CODES.INTERNAL_ERROR,
 };
 
+const retryableAppCodes = new Set<AppErrorCode>([
+  APP_ERROR_CODES.DATABASE_UNAVAILABLE,
+  APP_ERROR_CODES.EXTERNAL_SERVICE_FAILED,
+  APP_ERROR_CODES.REQUEST_TIMEOUT,
+  APP_ERROR_CODES.RATE_LIMITED,
+]);
+
 function statusForTrpcCode(code: TRPC_ERROR_CODE_KEY) {
   if (code === "UNAUTHORIZED") return 401;
   if (code === "FORBIDDEN") return 403;
@@ -38,7 +45,18 @@ function trpcCodeForStatus(statusCode: number): TRPC_ERROR_CODE_KEY {
 }
 
 export function normalizeAppError(error: unknown): AppError {
-  if (error instanceof AppError) return error;
+  if (error instanceof AppError) {
+    if (error.retryable || !retryableAppCodes.has(error.code)) return error;
+    return new AppError({
+      code: error.code,
+      statusCode: error.statusCode,
+      message: error.message,
+      retryable: true,
+      details: error.details,
+      expose: error.expose,
+      cause: error.cause,
+    });
+  }
   if (error instanceof TRPCError) {
     if (error.cause instanceof AppError) return error.cause;
     return new AppError({

@@ -1,6 +1,6 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../repositories/dbClient";
-import { aiArtifacts } from "../../../../drizzle/schema/ai_os";
+import type { DbExecutor } from "../../../repositories/dbClient";
 import {
   competitorAnalyses,
   competitorComparisonReports,
@@ -30,17 +30,33 @@ import {
   videoScripts,
   videoSpvSegments,
 } from "../../../../drizzle/schema/video";
-import { registerUnifiedArtifact, type ArtifactSourceType, type RegisteredArtifact } from "./artifactLifecycle";
+import {
+  listUnifiedArtifactVersions,
+  recordUnifiedArtifactConsumption,
+  registerUnifiedArtifact,
+  resolveUnifiedArtifact,
+  rollbackUnifiedArtifactVersion,
+  selectUnifiedArtifactVersion,
+  type ArtifactDomain,
+  type ArtifactSourceType,
+  type RegisteredArtifact,
+  type UnifiedArtifactRecord,
+  type UnifiedArtifactScope,
+} from "./artifactLifecycle";
 
-async function projectScope(projectId: number, domain: "listing" | "image" | "ads" | "video" | "project") {
-  const db = await getDb();
+async function projectScope(
+  projectId: number,
+  domain: "listing" | "image" | "ads" | "video" | "project",
+  executor?: DbExecutor,
+) {
+  const db = executor || await getDb();
   if (!db) return null;
   if (domain === "project") {
-    const [project] = await db.select({ userId: devProjects.userId })
+    const [project] = await db.select({ workspaceId: devProjects.workspaceId, userId: devProjects.userId })
       .from(devProjects)
       .where(eq(devProjects.id, projectId))
       .limit(1);
-    return project ? { workspaceId: null, userId: project.userId } : null;
+    return project || null;
   }
   const [project] = await db.select({
     workspaceId: projects.workspaceId,
@@ -61,8 +77,10 @@ async function registerBusinessArtifact(input: {
   sourceType: ArtifactSourceType;
   status?: "draft" | "final";
   metadata?: Record<string, unknown>;
+  executor?: DbExecutor;
+  failOnError?: boolean;
 }): Promise<RegisteredArtifact | null> {
-  const scope = input.projectId ? await projectScope(input.projectId, input.domain) : null;
+  const scope = input.projectId ? await projectScope(input.projectId, input.domain, input.executor) : null;
   return registerUnifiedArtifact({
     workspaceId: input.workspaceId ?? scope?.workspaceId ?? null,
     domain: input.domain,
@@ -74,9 +92,11 @@ async function registerBusinessArtifact(input: {
     projectId: input.projectId ?? null,
     userId: input.userId ?? scope?.userId ?? null,
     status: input.status || "final",
-    isCurrent: true,
+    isCurrent: (input.status || "final") === "final",
     content: input.content,
     metadata: { businessArtifact: true, projectId: input.projectId ?? null, ...input.metadata },
+    executor: input.executor,
+    failOnError: input.failOnError,
   });
 }
 
@@ -189,13 +209,20 @@ export function compactDevAnalysisContent(stageType: string, content: unknown): 
 export async function registerDevAnalysisArtifact(
   stageId: number,
   sourceType: ArtifactSourceType = "ai_output",
+  options?: { executor?: DbExecutor; failOnError?: boolean },
 ) {
-  const db = await getDb();
-  if (!db) return null;
+  const db = options?.executor || await getDb();
+  if (!db) {
+    if (options?.failOnError) throw new Error("Artifact database is unavailable");
+    return null;
+  }
   const [stage] = await db.select().from(devAnalysisStages)
     .where(eq(devAnalysisStages.id, stageId))
     .limit(1);
-  if (!stage) return null;
+  if (!stage) {
+    if (options?.failOnError) throw new Error(`Analysis stage ${stageId} does not exist`);
+    return null;
+  }
   const content = compactDevAnalysisContent(
     String(stage.stageType),
     parseArtifactContent(stage.editedResult || stage.rawResult || null),
@@ -216,24 +243,33 @@ export async function registerDevAnalysisArtifact(
       confirmedAt: stage.confirmedAt,
       schemaVersion: stage.stageType === "information_summary" ? "1.0" : null,
     },
+    executor: options?.executor,
+    failOnError: options?.failOnError,
   });
 }
 
-export async function resolveCurrentDevAnalysisArtifact(stageId: number) {
-  const db = await getDb();
+export async function resolveCurrentDevAnalysisArtifact(
+  stageId: number,
+  options?: { executor?: DbExecutor },
+) {
+  const db = options?.executor || await getDb();
   if (!db) return null;
-  const [artifact] = await db.select().from(aiArtifacts).where(and(
-    eq(aiArtifacts.sourceTable, "dev_analysis_stages"),
-    eq(aiArtifacts.sourceRowId, String(stageId)),
-    eq(aiArtifacts.status, "final"),
-    eq(aiArtifacts.isCurrent, 1),
-  )).orderBy(desc(aiArtifacts.version)).limit(1);
-  if (!artifact) return null;
-  return {
-    ...artifact,
-    content: parseArtifactContent(artifact.contentJson),
-    ref: `ai-artifact://${artifact.artifactId}@${artifact.version}`,
-  };
+  const [stage] = await db.select({
+    stageType: devAnalysisStages.stageType,
+    projectId: devAnalysisStages.projectId,
+  }).from(devAnalysisStages).where(eq(devAnalysisStages.id, stageId)).limit(1);
+  if (!stage) return null;
+  return resolveUnifiedArtifact({
+    domain: "project",
+    artifactKey: `dev.analysis.${stage.stageType}`,
+    sourceTable: "dev_analysis_stages",
+    sourceRowId: stageId,
+    projectId: stage.projectId,
+    artifactId: null,
+    currentOnly: true,
+    confirmedOnly: true,
+    executor: options?.executor,
+  });
 }
 
 export async function registerAdArtifact(input: {
@@ -360,6 +396,34 @@ export async function registerImageWorkflowArtifact(sessionId: number, sourceTyp
     db.select().from(expressionGroups).where(eq(expressionGroups.projectId, session.projectId)),
     db.select().from(expressionGroupImages).where(eq(expressionGroupImages.projectId, session.projectId)),
   ]);
+  const stepDefinitions = [
+    { step: 0, content: session.step0UserEdit || session.step0AiResult, confirmed: session.step0Confirmed },
+    { step: 1, content: session.step1UserEdit || session.step1AiResult, confirmed: session.step1Confirmed },
+    { step: 2, content: session.step2UserEdit || session.step2AiResult, confirmed: session.step2Confirmed },
+    { step: 3, content: session.step3UserEdit || session.step3AiResult, confirmed: session.step3Confirmed },
+    { step: 4, content: session.step4UserEdit || session.step4AiResult, confirmed: session.step4Confirmed },
+    { step: 5, content: session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult, confirmed: session.step5Confirmed },
+    { step: 6, content: session.step6UserEdit || session.step6AiResult, confirmed: session.step6Confirmed },
+  ];
+  await Promise.all(stepDefinitions
+    .filter((definition) => Boolean(definition.content))
+    .map((definition) => registerBusinessArtifact({
+      domain: "image",
+      artifactKey: `image.workflow.step.${definition.step}`,
+      sourceTable: "image_workflow_sessions",
+      sourceRowId: session.id,
+      projectId: session.projectId,
+      userId: session.userId,
+      content: parseArtifactContent(definition.content),
+      sourceType,
+      status: definition.confirmed === 1 ? "final" : "draft",
+      metadata: {
+        step: definition.step,
+        confirmed: definition.confirmed === 1,
+        currentStep: session.currentStep,
+      },
+    })));
+
   return registerBusinessArtifact({
     domain: "image",
     artifactKey: "image.workflow",
@@ -372,6 +436,60 @@ export async function registerImageWorkflowArtifact(sessionId: number, sourceTyp
     status: session.status === "completed" ? "final" : "draft",
     metadata: { currentStep: session.currentStep, workflowStatus: session.status },
   });
+}
+
+function artifactContentString(content: unknown) {
+  return typeof content === "string" ? content : JSON.stringify(content ?? null);
+}
+
+export async function resolveCurrentImageWorkflowStepArtifact(sessionId: number, step: number) {
+  return resolveUnifiedArtifact({
+    domain: "image",
+    artifactKey: `image.workflow.step.${step}`,
+    sourceTable: "image_workflow_sessions",
+    sourceRowId: sessionId,
+    currentOnly: true,
+    confirmedOnly: true,
+  });
+}
+
+export async function hydrateImageWorkflowSessionFromArtifacts<T extends Record<string, any>>(
+  session: T,
+  consumer?: {
+    consumerType: "agent_node" | "ai_job" | "skill_run" | "business_operation";
+    consumerId: string;
+    runId?: string | null;
+    nodeId?: string | null;
+  },
+  options?: { onlyBusinessConfirmedSteps?: boolean },
+): Promise<T & { artifactProvenance: Array<{ step: number; artifactRef: string }> }> {
+  const artifacts = await Promise.all(
+    [0, 1, 2, 3, 4, 5, 6].map((step) => resolveCurrentImageWorkflowStepArtifact(Number(session.id), step)),
+  );
+  const hydrated: Record<string, any> = { ...session };
+  const provenance: Array<{ step: number; artifactRef: string }> = [];
+  for (let step = 0; step < artifacts.length; step += 1) {
+    if (options?.onlyBusinessConfirmedSteps && Number(session[`step${step}Confirmed`] || 0) !== 1) continue;
+    const artifact = artifacts[step];
+    if (!artifact) continue;
+    hydrated[`step${step}UserEdit`] = artifactContentString(artifact.content);
+    hydrated[`step${step}Confirmed`] = 1;
+    provenance.push({ step, artifactRef: artifact.ref });
+    if (consumer) {
+      await recordUnifiedArtifactConsumption({
+        workspaceId: artifact.workspaceId ?? null,
+        artifact,
+        consumerDomain: "image",
+        consumerType: consumer.consumerType,
+        consumerId: consumer.consumerId,
+        projectId: session.projectId ?? null,
+        runId: consumer.runId || null,
+        nodeId: consumer.nodeId || null,
+        metadata: { imageWorkflowSessionId: session.id, step },
+      });
+    }
+  }
+  return { ...hydrated, artifactProvenance: provenance } as T & { artifactProvenance: Array<{ step: number; artifactRef: string }> };
 }
 
 export async function registerAdStructureArtifact(structureId: number, sourceType: ArtifactSourceType = "ai_output") {
@@ -393,7 +511,11 @@ export async function registerAdStructureArtifact(structureId: number, sourceTyp
   });
 }
 
-export async function registerVideoArtifact(videoScriptId: number, sourceType: ArtifactSourceType = "ai_output") {
+export async function registerVideoArtifact(
+  videoScriptId: number,
+  sourceType: ArtifactSourceType = "ai_output",
+  options?: { confirmed?: boolean },
+) {
   const db = await getDb();
   if (!db) return null;
   const [script] = await db.select().from(videoScripts).where(eq(videoScripts.id, videoScriptId)).limit(1);
@@ -417,7 +539,67 @@ export async function registerVideoArtifact(videoScriptId: number, sourceType: A
     userId: script.userId,
     content: { script, sections, subtopics, shots, editScripts, spvSegments },
     sourceType,
-    status: script.status === "completed" ? "final" : "draft",
+    status: options?.confirmed || script.status === "completed" ? "final" : "draft",
     metadata: { currentStage: script.currentStage, scriptVersion: script.version },
+  });
+}
+
+export async function resolveCurrentBusinessArtifact(input: {
+  domain: ArtifactDomain;
+  artifactKey: string;
+  projectId?: number | null;
+  workspaceId?: number | null;
+  sourceTable?: string | null;
+  sourceRowId?: string | number | null;
+}) {
+  return resolveUnifiedArtifact({
+    ...input,
+    currentOnly: true,
+    confirmedOnly: true,
+  });
+}
+
+export async function listBusinessArtifactVersions(input: UnifiedArtifactScope & { limit?: number }) {
+  return listUnifiedArtifactVersions({ ...input, confirmedOnly: false, limit: input.limit });
+}
+
+export async function selectBusinessArtifactVersion(input: {
+  artifactId: string;
+  workspaceId?: number | null;
+  userId?: number | null;
+  reason?: string | null;
+}) {
+  return selectUnifiedArtifactVersion({ ...input, action: "select" });
+}
+
+export async function rollbackBusinessArtifactVersion(input: {
+  scope: UnifiedArtifactScope;
+  targetVersion?: number | null;
+  userId?: number | null;
+  reason?: string | null;
+}) {
+  return rollbackUnifiedArtifactVersion(input);
+}
+
+export async function recordBusinessArtifactUse(input: {
+  artifact: UnifiedArtifactRecord;
+  consumerDomain: ArtifactDomain;
+  consumerType: "agent_node" | "ai_job" | "skill_run" | "business_operation";
+  consumerId: string;
+  projectId?: number | null;
+  runId?: string | null;
+  nodeId?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  return recordUnifiedArtifactConsumption({
+    workspaceId: input.artifact.workspaceId ?? null,
+    artifact: input.artifact,
+    consumerDomain: input.consumerDomain,
+    consumerType: input.consumerType,
+    consumerId: input.consumerId,
+    projectId: input.projectId,
+    runId: input.runId,
+    nodeId: input.nodeId,
+    metadata: input.metadata,
   });
 }

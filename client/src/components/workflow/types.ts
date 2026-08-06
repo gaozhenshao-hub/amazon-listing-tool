@@ -68,6 +68,7 @@ export interface WorkflowArtifactLike {
 export interface WorkflowRunLike {
   runId?: string;
   agentSlug?: string;
+  templateVersion?: string | null;
   status?: string;
   progress?: number;
   currentNodeId?: string | null;

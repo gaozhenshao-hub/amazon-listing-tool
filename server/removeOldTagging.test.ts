@@ -5,8 +5,8 @@ import path from "path";
 // ═══════════════════════════════════════════════════════════════
 // Verify runAttributeTagging and related code removed from devAnalysis.ts
 // ═══════════════════════════════════════════════════════════════
-describe("runAttributeTagging removal from devAnalysis.ts", () => {
-  const routerPath = path.join(__dirname, "routers/devAnalysis.ts");
+describe("runAttributeTagging removal from product-development analysis router", () => {
+  const routerPath = path.join(__dirname, "domains/product_development/router.ts");
   const routerSrc = fs.readFileSync(routerPath, "utf-8");
   const gatingSrc = fs.readFileSync(
     path.join(__dirname, "domains/product_development/analysis/stageGating.ts"),
