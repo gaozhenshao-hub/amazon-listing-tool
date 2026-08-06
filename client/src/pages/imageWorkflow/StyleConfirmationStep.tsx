@@ -15,6 +15,93 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { toast } from "sonner";
 
 import { KbImagePickerDialog } from "./KnowledgeImagePickerDialog";
+// ─── ASIN Set Picker Dialog ──────────────────────────────────────
+function AsinSetPickerDialog({
+  open,
+  onOpenChange,
+  onSelect,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelect: (styles: any[]) => void;
+}) {
+  const [selectedSetIds, setSelectedSetIds] = useState<Set<number>>(new Set());
+  const { data: sets, isLoading } = trpc.kbImages.listSets.useQuery({ scope: "all" }, { enabled: open });
+
+  const toggleSet = (id: number) => {
+    setSelectedSetIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleConfirm = () => {
+    if (!sets) return;
+    const selected = (sets as any[]).filter((s: any) => selectedSetIds.has(s.id));
+    // Convert each ASIN set to a style option
+    const styleOptions = selected.map((s: any, idx: number) => ({
+      id: 9000 + idx,
+      name: s.title || s.asin || `ASIN集 ${s.id}`,
+      description: `参考 ASIN: ${s.asin}${s.title ? ` - ${s.title}` : ""}`,
+      source: "kb_asin" as const,
+      asinSetId: s.id,
+      asin: s.asin,
+      thumbnailUrl: s.thumbnailUrl,
+      colorPalette: null,
+      typography: null,
+      overallTone: s.tagDesignStyle || "",
+      whyRecommend: "来自知识库ASIN集，手动选择作为风格参考",
+      suitability: null,
+    }));
+    onSelect(styleOptions);
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>从知识库ASIN集选择风格参考</DialogTitle>
+          <DialogDescription>选择一个或多个ASIN图片集作为风格参考</DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="flex-1 min-h-0">
+          {isLoading ? (
+            <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>
+          ) : !sets || (sets as any[]).length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">知识库中暂无ASIN集，请先在知识库中导入ASIN图片</div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 p-1">
+              {(sets as any[]).map((s: any) => (
+                <div
+                  key={s.id}
+                  className={`border rounded-lg p-3 cursor-pointer transition-all ${selectedSetIds.has(s.id) ? "ring-2 ring-primary border-primary bg-primary/5" : "hover:border-primary/50"}`}
+                  onClick={() => toggleSet(s.id)}
+                >
+                  <div className="flex items-start gap-3">
+                    {s.thumbnailUrl && <img src={s.thumbnailUrl} alt={s.asin} className="w-14 h-14 object-cover rounded flex-shrink-0" />}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{s.title || s.asin}</p>
+                      <p className="text-xs text-muted-foreground">ASIN: {s.asin}</p>
+                      {s.tagDesignStyle && <Badge variant="secondary" className="text-xs mt-1">{s.tagDesignStyle}</Badge>}
+                      <p className="text-xs text-muted-foreground mt-1">{s.imageCount || 0} 张图片</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </ScrollArea>
+        <div className="flex justify-end gap-2 pt-2 border-t">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+          <Button onClick={handleConfirm} disabled={selectedSetIds.size === 0}>
+            确认选择 ({selectedSetIds.size})
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── Step 3: Style Confirmation ──────────────────────────────────
@@ -38,6 +125,10 @@ export function Step3StyleConfirm({
   const [kbPickerOpen, setKbPickerOpen] = useState(false);
   const [kbPickerTargetStyleId, setKbPickerTargetStyleId] = useState<number | null>(null);
   const [styleKbImages, setStyleKbImages] = useState<Record<number, Array<{ id: number; imageUrl: string; imagePosition: string; tagCategory: string; tagImageType: string; tagDesignStyle: string; tagColorScheme: string }>>>({});
+  // Manual selection state
+  const [kbStylePickerOpen, setKbStylePickerOpen] = useState(false);
+  const [asinSetPickerOpen, setAsinSetPickerOpen] = useState(false);
+  const [manualStyles, setManualStyles] = useState<any[]>([]);
 
   useEffect(() => {
     if (session?.step3UserEdit) {
@@ -94,7 +185,7 @@ export function Step3StyleConfirm({
       return;
     }
     try {
-      const selectedStyles = aiResult?.styleOptions?.filter((s: any) => selectedIds.includes(s.id)) || [];
+      const selectedStyles = allStyleOptions.filter((s: any) => selectedIds.includes(s.id));
       await confirmMutation.mutateAsync({
         projectId,
         userEdit: JSON.stringify({ selectedIds, selectedStyles, styleKbImages }),
@@ -120,6 +211,46 @@ export function Step3StyleConfirm({
     });
     toast.success(`已添加 ${images.length} 张参考图到风格方案`);
   };
+
+  // Handle manual KB style selection (pick images, extract unique styles)
+  const handleKbStyleSelect = (images: Array<{ id: number; imageUrl: string; imagePosition: string; tagCategory: string; tagImageType: string; tagDesignStyle: string; tagColorScheme: string }>) => {
+    const styleGroups: Record<string, typeof images> = {};
+    images.forEach(img => {
+      const style = img.tagDesignStyle || "未分类";
+      if (!styleGroups[style]) styleGroups[style] = [];
+      styleGroups[style].push(img);
+    });
+    const newStyles = Object.entries(styleGroups).map(([styleName, imgs], idx) => ({
+      id: 8000 + idx + manualStyles.length,
+      name: styleName,
+      description: `来自知识库：${imgs.length} 张参考图`,
+      source: "kb_manual" as const,
+      colorPalette: null,
+      typography: null,
+      overallTone: imgs[0]?.tagCategory || "",
+      whyRecommend: "手动从知识库选择的风格参考",
+      suitability: null,
+      kbImages: imgs,
+    }));
+    setManualStyles(prev => [...prev, ...newStyles]);
+    // Also add images to styleKbImages for display
+    newStyles.forEach(s => {
+      setStyleKbImages(prev => ({ ...prev, [s.id]: s.kbImages }));
+    });
+    toast.success(`已从知识库添加 ${newStyles.length} 个风格方案`);
+  };
+
+  // Handle ASIN set selection
+  const handleAsinSetSelect = (styles: any[]) => {
+    setManualStyles(prev => [...prev, ...styles]);
+    toast.success(`已添加 ${styles.length} 个ASIN集风格参考`);
+  };
+
+  // Merge AI result styles with manual styles
+  const allStyleOptions = [
+    ...(aiResult?.styleOptions || []),
+    ...manualStyles,
+  ];
 
   const removeKbImageFromStyle = (styleId: number, imgIdx: number) => {
     setStyleKbImages(prev => {
@@ -156,6 +287,16 @@ export function Step3StyleConfirm({
                   AI推荐风格
                 </Button>
               )}
+              {!isConfirmed && (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => setKbStylePickerOpen(true)}>
+                    <BookOpen className="w-4 h-4 mr-1" /> 知识库风格
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setAsinSetPickerOpen(true)}>
+                    <Grid3X3 className="w-4 h-4 mr-1" /> ASIN集
+                  </Button>
+                </>
+              )}
               {aiResult && !isConfirmed && (
                 <>
                   <Button variant="outline" onClick={handleGenerate} disabled={generateMutation.isPending}>
@@ -191,9 +332,22 @@ export function Step3StyleConfirm({
         )}
       </Card>
 
-      {aiResult?.styleOptions && !generateMutation.isPending && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {aiResult.styleOptions.map((style: any) => {
+      {(allStyleOptions.length > 0) && !generateMutation.isPending && (
+        <div className="space-y-4">
+          {/* 模式提示横幅 */}
+          {aiResult.mode === "kb" ? (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-sm text-blue-700">
+              <span>📚</span>
+              <span>已从<strong>知识库风格</strong>中匹配推荐，风格名称与知识库保持一致</span>
+            </div>
+          ) : aiResult.mode === "ai_creative" ? (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-sm text-amber-700">
+              <span>✨</span>
+              <span><strong>AI创意推荐</strong>：知识库暂无该类目风格，已基于产品特性自由推荐。添加参考图片后可获得更精准的风格建议</span>
+            </div>
+          ) : null}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {allStyleOptions.map((style: any) => {
             const isSelected = selectedIds.includes(style.id);
             return (
               <Card
@@ -212,6 +366,18 @@ export function Step3StyleConfirm({
                     <CardTitle className="text-base">{style.name}</CardTitle>
                     <div className="flex items-center gap-2">
                       {style.suitability && <Badge variant="outline" className="text-xs">适合度: {style.suitability}/10</Badge>}
+                      {style.source === "kb" && (
+                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">📚 知识库</Badge>
+                      )}
+                      {style.source === "ai_creative" && (
+                        <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">✨ AI创意</Badge>
+                      )}
+                      {style.source === "kb_manual" && (
+                        <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">📚 手动选择</Badge>
+                      )}
+                      {style.source === "kb_asin" && (
+                        <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">🏷️ ASIN集</Badge>
+                      )}
                       {isSelected && <Badge className="bg-primary text-primary-foreground">已选</Badge>}
                     </div>
                   </div>
@@ -291,6 +457,7 @@ export function Step3StyleConfirm({
               </Card>
             );
           })}
+          </div>
         </div>
       )}
 
@@ -309,6 +476,18 @@ export function Step3StyleConfirm({
         open={kbPickerOpen}
         onOpenChange={setKbPickerOpen}
         onSelect={handleKbImageSelectForStyle}
+      />
+      {/* KB Style Picker - for manual style selection */}
+      <KbImagePickerDialog
+        open={kbStylePickerOpen}
+        onOpenChange={setKbStylePickerOpen}
+        onSelect={handleKbStyleSelect}
+      />
+      {/* ASIN Set Picker */}
+      <AsinSetPickerDialog
+        open={asinSetPickerOpen}
+        onOpenChange={setAsinSetPickerOpen}
+        onSelect={handleAsinSetSelect}
       />
     </div>
   );
