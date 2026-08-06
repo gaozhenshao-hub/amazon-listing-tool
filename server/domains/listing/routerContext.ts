@@ -23,6 +23,12 @@ import {
   EVALUATE_QA_CHECKLIST_PROMPT,
 } from "../../prompts";
 import { buildListingContext, checkDataReadiness, contextToPromptText } from "./service";
+import {
+  ensureListingAgentRun,
+  syncGenerationToAgent,
+  syncStepLockToAgent,
+  syncStepUnlockToAgent,
+} from "./listingAgentBridge";
 export {
   BULLET_POINTS_PROMPT,
   CHINESE_TRANSLATION_PROMPT,
@@ -50,6 +56,10 @@ export {
   router,
   runEmperorSkill,
   z,
+  ensureListingAgentRun,
+  syncGenerationToAgent,
+  syncStepLockToAgent,
+  syncStepUnlockToAgent,
 };
 
 export const MAX_RETRIES = 2;

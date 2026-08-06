@@ -1,4 +1,5 @@
 import * as shared from "../routerContext";
+import { syncGenerationToAgent, syncStepLockToAgent, syncStepUnlockToAgent } from "../listingAgentBridge";
 
 const {
   BULLET_POINTS_PROMPT,
@@ -133,6 +134,33 @@ export const listingEditingProcedures = {
       return db.updateListing(listing.id, {
         lockedSteps: JSON.stringify(input.lockedSteps),
       });
+      // Sync locked/unlocked steps to Agent DAG (best-effort)
+      const prevLocked: number[] = listing.lockedSteps ? JSON.parse(listing.lockedSteps) : [];
+      const newLocked = input.lockedSteps;
+      // Newly locked steps
+      for (const step of newLocked) {
+        if (!prevLocked.includes(step)) {
+          void syncStepLockToAgent({
+            agentRunId: listing.agentRunId,
+            stepNumber: step,
+            projectId: input.projectId,
+            userId: ctx.user.id,
+            workspaceId: ctx.workspaceId ?? null,
+          });
+        }
+      }
+      // Newly unlocked steps
+      for (const step of prevLocked) {
+        if (!newLocked.includes(step)) {
+          void syncStepUnlockToAgent({
+            agentRunId: listing.agentRunId,
+            stepNumber: step,
+            projectId: input.projectId,
+            userId: ctx.user.id,
+            workspaceId: ctx.workspaceId ?? null,
+          });
+        }
+      }
     }),
 
 
@@ -503,6 +531,15 @@ Please expand this keyword/theme into a complete selling point core with FABE di
           { ...listing, qaContent: JSON.stringify(parsed) },
           ctx.user.id, "generate", "AI生成QA问答"
         );
+        // Sync to Agent DAG: G5 QA node waiting for user review
+        void syncGenerationToAgent({
+          agentRunId: listing.agentRunId,
+          nodeKey: "qa",
+          projectId: input.projectId,
+          userId: ctx.user.id,
+          workspaceId: ctx.workspaceId ?? null,
+          aiOutput: parsed,
+        });
       }
 
       return parsed;

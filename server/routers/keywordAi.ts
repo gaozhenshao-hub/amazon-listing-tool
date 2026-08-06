@@ -2,6 +2,7 @@ import { z } from "zod";
 import * as db from "../repositories";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { protectedProcedure, router } from "../_core/trpc";
+import { syncFullPipelineToAgent } from "../domains/keyword/keywordAgentBridge";
 import {
   KEYWORD_SEMANTIC_FILTER_PROMPT,
   KEYWORD_SCENE_TAG_PROMPT,
@@ -387,8 +388,20 @@ export const keywordAiRouter = router({
             categorized++;
           }
         } catch (e) { console.error("Pipeline matrix error:", e); }
-      }
-
+      };
+      // Sync full pipeline completion to Agent DAG (best-effort)
+      void syncFullPipelineToAgent({
+        projectId: input.projectId,
+        userId: ctx.user!.id,
+        workspaceId: (ctx as any).workspaceId ?? null,
+        pipelineResult: {
+          trafficCompetition: { classified: tcClassified, thresholds: tcThresholds },
+          filter: { filtered: rawKws.length, kept, removed },
+          tag: { tagged },
+          classify: { classified },
+          matrix: { categorized },
+        },
+      });
       return {
         trafficCompetition: { classified: tcClassified, thresholds: tcThresholds },
         filter: { filtered: rawKws.length, kept, removed },

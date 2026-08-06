@@ -1,4 +1,5 @@
 import * as shared from "../routerContext";
+import { syncGenerationToAgent } from "../listingAgentBridge";
 
 const {
   BULLET_POINTS_PROMPT,
@@ -42,6 +43,7 @@ const {
   validateBullets,
   validateTitles,
   z,
+  ensureListingAgentRun,
 } = shared;
 
 export const listingGenerationProcedures = {
@@ -76,6 +78,16 @@ export const listingGenerationProcedures = {
           validation = validateTitles(parsed);
         }
       }
+      // Sync to Agent DAG: G2 title node waiting for user review
+      const titleListing = await db.getActiveListingByProject(input.projectId);
+      void syncGenerationToAgent({
+        agentRunId: titleListing?.agentRunId,
+        nodeKey: "title",
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        aiOutput: parsed,
+      });
       return parsed;
     }),
 
@@ -108,6 +120,16 @@ export const listingGenerationProcedures = {
           validation = validateBullets(parsed);
         }
       }
+      // Sync to Agent DAG: G1 sellingPoints node waiting for user review
+      const bpListing = await db.getActiveListingByProject(input.projectId);
+      void syncGenerationToAgent({
+        agentRunId: bpListing?.agentRunId,
+        nodeKey: "sellingPoints",
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        aiOutput: parsed,
+      });
       return parsed;
     }),
 
@@ -133,6 +155,16 @@ export const listingGenerationProcedures = {
         { project, analyses, enrichedData },
         input.emphasis,
       );
+      // Sync to Agent DAG: G3 description node waiting for user review
+      const descListing = await db.getActiveListingByProject(input.projectId);
+      void syncGenerationToAgent({
+        agentRunId: descListing?.agentRunId,
+        nodeKey: "description",
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        aiOutput: descParsed,
+      });
       return descParsed;
     }),
 
@@ -168,6 +200,16 @@ export const listingGenerationProcedures = {
         { project, analyses, enrichedData, existingTitle: input.existingTitle || "" },
         input.emphasis,
       );
+      // Sync to Agent DAG: G4 searchTerms node waiting for user review
+      const stListing = await db.getActiveListingByProject(input.projectId);
+      void syncGenerationToAgent({
+        agentRunId: stListing?.agentRunId,
+        nodeKey: "searchTerms",
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        aiOutput: stParsed,
+      });
       return stParsed;
     }),
 

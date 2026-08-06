@@ -23,6 +23,7 @@ export const listings = mysqlTable("listings", {
   // Lock & checklist state
   lockedSteps: text("lockedSteps"), // JSON array of locked step numbers e.g. [1,2,3]
   checklistScores: text("checklistScores"), // JSON: { [bulletIndex]: { checkListScores, aiSemanticRelations } }
+  agentRunId: varchar("agentRunId", { length: 80 }),  // Emperor Agent Run ID for DAG tracking
   version: int("version").default(1).notNull(),
   isActive: int("isActive").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
