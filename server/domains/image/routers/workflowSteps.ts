@@ -86,7 +86,7 @@ export const imageWorkflowStepProcedures = {
 
       const userMsg = `请为以下产品梳理卖点体系：\n\n产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n${contextHint}`;
 
-      let result = await callLLMWithRetry(STEP1_SELLING_POINTS_PROMPT, userMsg);
+      let result = await callLLMWithRetry(STEP1_SELLING_POINTS_PROMPT, userMsg, 2, "image.step1.sellingpoints");
       await db.updateImageWorkflowSession(session.id, {
         step1AiResult: JSON.stringify(result),
         currentStep: 1,
@@ -390,7 +390,7 @@ export const imageWorkflowStepProcedures = {
 
       const userMsg3 = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n${colorInfo}\n\n--- 已确认的卖点 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}${kbRef2}${kbStylesText}\n\n请参考知识库中同类目高分图片的风格分布，推荐3-4个适合的视觉风格方案。`;
       console.log(`[Step3] prompt length: ${userMsg3.length}, step2: ${step2Content.length}, kbRef: ${kbRef2.length}, kbStyles: ${kbStylesText.length}`);
-      const result = await callLLMWithRetry(STEP3_STYLE_PROMPT, userMsg3);
+      const result = await callLLMWithRetry(STEP3_STYLE_PROMPT, userMsg3, 2, "image.step3.style");
       await db.updateImageWorkflowSession(session.id, {
         step3AiResult: JSON.stringify(result),
         currentStep: 3,

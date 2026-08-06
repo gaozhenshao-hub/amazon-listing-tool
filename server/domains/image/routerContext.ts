@@ -419,7 +419,7 @@ export async function callImageWorkflowSkill<T = any>(input: {
 }
 
 // ─── Helper: Call LLM with automatic retry on empty/invalid response ─────
-export async function callLLMWithRetry(systemPrompt: string, userMessage: string, maxRetries = 2): Promise<any> {
+export async function callLLMWithRetry(systemPrompt: string, userMessage: string, maxRetries = 2, skillSlug?: string): Promise<any> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const response = await invokeBusinessSkill({
       messages: [
@@ -427,6 +427,7 @@ export async function callLLMWithRetry(systemPrompt: string, userMessage: string
         { role: "user", content: userMessage },
       ],
       response_format: { type: "json_object" },
+      ...(skillSlug ? { emperorSkill: { slug: skillSlug } } : {}),
     });
     const result = parseLLMJson(response);
     // If result has 'raw' field, it means LLM returned invalid/empty JSON - retry
@@ -446,6 +447,7 @@ export async function callLLMWithRetry(systemPrompt: string, userMessage: string
       { role: "system", content: systemPrompt + "\n\n重要：你必须只输出纯JSON格式，不要有任何其他文字，不要使用markdown代码块。" },
       { role: "user", content: userMessage },
     ],
+    ...(skillSlug ? { emperorSkill: { slug: skillSlug } } : {}),
   });
   return parseLLMJson(fallbackResponse);
 }
