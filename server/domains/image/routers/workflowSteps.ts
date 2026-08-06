@@ -1,6 +1,7 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
 import { BadRequestError, NotFoundError } from "@shared/_core/errors";
+import { syncStepConfirmToAgent } from "../imageWorkflowAgentBridge";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -109,7 +110,15 @@ export const imageWorkflowStepProcedures = {
         step1Confirmed: 1,
         currentStep: 2,
       });
-
+      void syncStepConfirmToAgent({
+        agentRunId: session.agentRunId,
+        stepNumber: 1,
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        aiResult: session.step1AiResult ? JSON.parse(session.step1AiResult) : null,
+        userEdit: JSON.parse(input.userEdit),
+      });
       return { success: true };
     }),
 
@@ -212,7 +221,15 @@ export const imageWorkflowStepProcedures = {
         step2Confirmed: 1,
         currentStep: 3,
       });
-
+      void syncStepConfirmToAgent({
+        agentRunId: session.agentRunId,
+        stepNumber: 2,
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        aiResult: session.step2AiResult ? JSON.parse(session.step2AiResult) : null,
+        userEdit: normalized,
+      });
       return { success: true };
     }),
 
@@ -381,7 +398,15 @@ export const imageWorkflowStepProcedures = {
         step3Confirmed: 1,
         currentStep: 4,
       });
-
+      void syncStepConfirmToAgent({
+        agentRunId: session.agentRunId,
+        stepNumber: 3,
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        aiResult: session.step3AiResult ? JSON.parse(session.step3AiResult) : null,
+        userEdit: JSON.parse(input.userEdit),
+      });
       return { success: true };
     }),
 
@@ -456,7 +481,15 @@ export const imageWorkflowStepProcedures = {
         step4Confirmed: 1,
         currentStep: 5,
       });
-
+      void syncStepConfirmToAgent({
+        agentRunId: session.agentRunId,
+        stepNumber: 4,
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        aiResult: session.step4AiResult ? JSON.parse(session.step4AiResult) : null,
+        userEdit: JSON.parse(input.userEdit),
+      });
       return { success: true };
     }),
 };

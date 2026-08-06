@@ -1,5 +1,6 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
+import { syncStepConfirmToAgent } from "../imageWorkflowAgentBridge";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -204,7 +205,15 @@ export const imageStep5Procedures = {
         step5Confirmed: 1,
         status: "completed",
       });
-
+      void syncStepConfirmToAgent({
+        agentRunId: session.agentRunId,
+        stepNumber: 5,
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        aiResult: session.step5AiResult ? JSON.parse(session.step5AiResult) : null,
+        userEdit: parsed,
+      });
       return { success: true };
     }),
 

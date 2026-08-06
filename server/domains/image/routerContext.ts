@@ -34,6 +34,11 @@ import {
   registerAiJobHandler,
   startRegisteredAiJob,
 } from "./service";
+import {
+  ensureBusinessManagedRun,
+  markBusinessManagedNodeWaitingHuman,
+  markBusinessManagedNodeConfirmed,
+} from "../ai_os/services/businessManagedAgent";
 export {
   IMAGE_ADVICE_TRANSLATION_PROMPT,
   STEP0_COMPETITOR_IMAGE_ANALYSIS_PROMPT,
@@ -62,6 +67,9 @@ export {
   normalizeImageOutline,
   normalizeSecondaryImageSlots,
   z,
+  ensureBusinessManagedRun,
+  markBusinessManagedNodeWaitingHuman,
+  markBusinessManagedNodeConfirmed,
 };
 
 export const APLUS_MODULE_STYLE_GUIDE = [

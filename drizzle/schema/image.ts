@@ -118,6 +118,8 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
   step5AiResultCn: text("step5AiResultCn"),    // AI final image suggestions JSON (Chinese)
   step5UserEdit: text("step5UserEdit"),        // User edited final suggestions JSON
   step5Confirmed: int("step5Confirmed").default(0).notNull(),
+  // Agent DAG integration
+  agentRunId: varchar("agentRunId", { length: 80 }),  // Emperor Agent Run ID for DAG tracking
   // Step 5 async generation state
   step5RunId: varchar("step5RunId", { length: 80 }),
   step5RunStatus: mysqlEnum("step5RunStatus", ["idle", "queued", "running", "succeeded", "failed", "canceled"]).default("idle").notNull(),

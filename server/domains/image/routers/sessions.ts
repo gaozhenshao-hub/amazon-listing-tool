@@ -1,5 +1,6 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
+import { ensureImageWorkflowAgentRun } from "../imageWorkflowAgentBridge";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -70,11 +71,27 @@ export const imageSessionProcedures = {
       if (existing) {
         await db.deleteImageWorkflowSession(existing.id);
       }
-      return db.createImageWorkflowSession({
+      // Create session
+      const session = await db.createImageWorkflowSession({
         projectId: input.projectId,
         userId: ctx.user.id,
         currentStep: 1,
       });
+      // Start Agent Run for DAG tracking (non-blocking, best-effort)
+      try {
+        const agentRunId = await ensureImageWorkflowAgentRun({
+          projectId: input.projectId,
+          userId: ctx.user.id,
+          workspaceId: ctx.workspaceId ?? null,
+        });
+        if (agentRunId) {
+          await db.updateImageWorkflowSession(session.id, { agentRunId });
+          return { ...session, agentRunId };
+        }
+      } catch (err) {
+        console.warn("[ImageWorkflow] Failed to start Agent Run:", err);
+      }
+      return session;
     }),
 
 

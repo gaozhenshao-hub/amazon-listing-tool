@@ -1,5 +1,6 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
+import { syncStepConfirmToAgent } from "../imageWorkflowAgentBridge";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -214,7 +215,16 @@ export const imageCompetitorProcedures = {
         step0Confirmed: 1,
         currentStep: 1,
       });
-
+      // Sync to Agent DAG (best-effort)
+      void syncStepConfirmToAgent({
+        agentRunId: session.agentRunId,
+        stepNumber: 0,
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        aiResult: summaryResult,
+        userEdit: input.userEdit ? JSON.parse(input.userEdit) : summaryResult,
+      });
       return { success: true, summary: summaryResult };
     }),
 };
