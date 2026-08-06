@@ -1,6 +1,10 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../dbClient";
-import { registerAdStructureArtifact, registerListingArtifact } from "../../domains/ai_os/services/businessArtifactRegistry";
+import {
+  registerAdStructureArtifact,
+  registerListingArtifact,
+  resolveCurrentBusinessArtifact,
+} from "../../domains/ai_os/services/businessArtifactRegistry";
 import { InsertAdStructure, InsertKeyword, InsertListing, InsertListingVersion, InsertNegativeKeyword, InsertReviewAggregation, adStructures, keywords, listings, listingVersions, negativeKeywords, reviewAggregations } from "../../../drizzle/schema/listing";
 
 async function captureListingProject(projectId: number | null | undefined) {
@@ -34,14 +38,36 @@ export async function getActiveListingByProject(projectId: number) {
     .where(and(eq(listings.projectId, projectId), eq(listings.isActive, 1)))
     .orderBy(desc(listings.version))
     .limit(1);
-  return rows[0] ?? null;
+  const snapshot = rows[0] ?? null;
+  if (!snapshot) return null;
+  const artifact = await resolveCurrentBusinessArtifact({
+    domain: "listing",
+    artifactKey: "listing.content",
+    projectId,
+  }).catch(() => null);
+  const selected = artifact?.content && typeof artifact.content === "object"
+    ? (artifact.content as any).listing
+    : null;
+  return selected ? { ...snapshot, ...selected, id: snapshot.id, projectId: snapshot.projectId } : snapshot;
 }
 
 export async function getListingById(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const rows = await db.select().from(listings).where(eq(listings.id, id)).limit(1);
-  return rows[0] ?? null;
+  const snapshot = rows[0] ?? null;
+  if (!snapshot) return null;
+  const artifact = await resolveCurrentBusinessArtifact({
+    domain: "listing",
+    artifactKey: "listing.content",
+    sourceTable: "listings",
+    sourceRowId: id,
+    projectId: snapshot.projectId,
+  }).catch(() => null);
+  const selected = artifact?.content && typeof artifact.content === "object"
+    ? (artifact.content as any).listing
+    : null;
+  return selected ? { ...snapshot, ...selected, id: snapshot.id, projectId: snapshot.projectId } : snapshot;
 }
 
 export async function updateListing(id: number, data: Partial<InsertListing>) {
@@ -203,14 +229,37 @@ export async function createAdStructure(data: InsertAdStructure) {
 export async function getAdStructuresByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.select().from(adStructures).where(eq(adStructures.projectId, projectId)).orderBy(desc(adStructures.createdAt));
+  const rows = await db.select().from(adStructures).where(eq(adStructures.projectId, projectId)).orderBy(desc(adStructures.createdAt));
+  return Promise.all(rows.map(async (row) => {
+    const artifact = await resolveCurrentBusinessArtifact({
+      domain: "ads",
+      artifactKey: "ads.structure",
+      sourceTable: "adStructures",
+      sourceRowId: row.id,
+      projectId,
+    }).catch(() => null);
+    return artifact?.content && typeof artifact.content === "object"
+      ? { ...row, ...(artifact.content as Record<string, unknown>), id: row.id, projectId: row.projectId }
+      : row;
+  }));
 }
 
 export async function getAdStructureById(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const rows = await db.select().from(adStructures).where(eq(adStructures.id, id));
-  return rows[0] || null;
+  const snapshot = rows[0] || null;
+  if (!snapshot) return null;
+  const artifact = await resolveCurrentBusinessArtifact({
+    domain: "ads",
+    artifactKey: "ads.structure",
+    sourceTable: "adStructures",
+    sourceRowId: id,
+    projectId: snapshot.projectId,
+  }).catch(() => null);
+  return artifact?.content && typeof artifact.content === "object"
+    ? { ...snapshot, ...(artifact.content as Record<string, unknown>), id: snapshot.id, projectId: snapshot.projectId }
+    : snapshot;
 }
 
 export async function updateAdStructure(id: number, data: Partial<InsertAdStructure>) {

@@ -17,6 +17,8 @@
     "check": "tsc --noEmit",
     "lint": "eslint client/src server shared scripts vite.config.ts vitest.config.ts --max-warnings=83",
     "audit:emperor-prompts": "node scripts/audit-emperor-prompt-consistency.mjs",
+    "audit:business-skills": "node scripts/check-business-skill-boundaries.mjs",
+    "audit:domain-layers": "node scripts/check-domain-layer-boundaries.mjs",
     "format": "prettier --write .",
     "test": "vitest run",
     "test:unit": "vitest run",
@@ -24,7 +26,7 @@
     "test:network-isolation": "ALLOW_REAL_NETWORK_IN_TESTS=0 vitest run server/networkEgressArchitecture.test.ts server/safeHttpClient.test.ts server/nextsls/nextsls.test.ts",
     "test:e2e": "playwright test",
     "test:real-db": "RUN_REAL_DB_TESTS=1 vitest run --passWithNoTests \"server/**/*.real.test.ts\"",
-    "qa:gate": "pnpm lint && pnpm check && pnpm test:unit && pnpm test:coverage && pnpm test:network-isolation",
+    "qa:gate": "pnpm audit:business-skills && pnpm audit:domain-layers && pnpm lint && pnpm check && pnpm test:unit && pnpm test:coverage && pnpm test:network-isolation",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/run-database-migrations.mjs",
     "db:migrate:plan": "node scripts/run-database-migrations.mjs --plan",
@@ -161,13 +163,5 @@
     "vite-plugin-manus-runtime": "^0.0.57",
     "vitest": "^2.1.4"
   },
-  "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af",
-  "pnpm": {
-    "patchedDependencies": {
-      "wouter@3.7.1": "patches/wouter@3.7.1.patch"
-    },
-    "overrides": {
-      "tailwindcss>nanoid": "3.3.7"
-    }
-  }
+  "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af"
 }

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import ProjectSelector from "@/components/ProjectSelector";
+import { BusinessArtifactVersionPicker } from "@/components/workflow";
 import { useProject } from "@/contexts/ProjectContext";
 import {
   FileText,
@@ -426,6 +427,18 @@ export default function PreviewPage() {
           )}
         </div>
       </div>
+
+      <BusinessArtifactVersionPicker
+        scope={listing && selectedProjectId ? {
+          domain: "listing",
+          artifactKey: "listing.content",
+          sourceTable: "listings",
+          sourceRowId: listing.id,
+          projectId: selectedProjectId,
+        } : null}
+        label="Listing 下游版本"
+        onVersionChanged={() => utils.listing.getActive.invalidate({ projectId: selectedProjectId! })}
+      />
 
       {!selectedProjectId ? (
         <Card className="border-dashed">

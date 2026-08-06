@@ -24,7 +24,7 @@ const {
   ensureWriteAccess,
   generateStep5RunId,
   getKBReference,
-  invokeLLM,
+  invokeBusinessSkill,
   isActiveStep5Run,
   kbDb,
   parseLLMJson,
@@ -34,6 +34,7 @@ const {
   registerAiJobHandler,
   resolveProjectAccess,
   resolveSessionAccess,
+  resolveSessionForDisplay,
   router,
   runStep5GenerationJob,
   serializeStep5Error,
@@ -52,7 +53,7 @@ export const imageSessionProcedures = {
     .query(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForDisplay(input.projectId, ctx.user);
       return session;
     }),
 

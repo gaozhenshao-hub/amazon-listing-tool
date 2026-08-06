@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { invokeLLM } from "../../../_core/llm";
+import { invokeBusinessSkill } from "../../ai_os/services/businessSkillGateway";
 
 import { router } from "../../../_core/trpc";
 import { protectedProcedure } from "../../ops/workspaceProcedure";
@@ -275,4 +275,4 @@ function filterSidsByMarketplace(sellers: any[], marketplaceCode?: string): stri
 // Export cache helpers for cross-module ASIN mapping reuse
 export { getCached as getAdAnalysisCache, setCache as setAdAnalysisCache };
 
-export { z, invokeLLM, protectedProcedure, router, getDb, eq, desc, and, sql, budgetTracking, workspaceIdFromContext, opsWorkspaceCondition, withOpsWorkspace, ClassificationThresholds, DEFAULT_THRESHOLDS, TWELVE_CATEGORIES, classifySearchTerm, anonymizeForAI, deAnonymizeResults, _queryCache, CACHE_TTL, getCached, setCache, parallelBatch, getDateNDaysAgo, getDatesInRange, resolveDateRange, getAllSellerSids, MARKETPLACE_MAP, filterSidsByMarketplace };
+export { z, invokeBusinessSkill, protectedProcedure, router, getDb, eq, desc, and, sql, budgetTracking, workspaceIdFromContext, opsWorkspaceCondition, withOpsWorkspace, ClassificationThresholds, DEFAULT_THRESHOLDS, TWELVE_CATEGORIES, classifySearchTerm, anonymizeForAI, deAnonymizeResults, _queryCache, CACHE_TTL, getCached, setCache, parallelBatch, getDateNDaysAgo, getDatesInRange, resolveDateRange, getAllSellerSids, MARKETPLACE_MAP, filterSidsByMarketplace };

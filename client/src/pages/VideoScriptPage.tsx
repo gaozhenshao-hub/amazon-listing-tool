@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { EmbeddedAgentRunPanel, WorkflowStepProgress } from "@/components/workflow";
+import { AiJobHistoryPanel, BusinessArtifactVersionPicker, EmbeddedAgentRunPanel, WorkflowStepProgress } from "@/components/workflow";
 import { VIDEO_SCRIPT_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -159,6 +159,7 @@ function VideoScriptList() {
         title="视频脚本 Agent Run / Checkpoint"
         projectId={selectedProject}
       />
+      <AiJobHistoryPanel module="videoScript" projectId={selectedProject} title="视频脚本后台任务历史" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">视频脚本生成</h1>
@@ -549,6 +550,18 @@ function VideoScriptEditor({ scriptId }: { scriptId: number }) {
       <EmbeddedAgentRunPanel
         title="视频脚本 Agent Run / Checkpoint"
         projectId={script.data.projectId}
+      />
+      <AiJobHistoryPanel module="videoScript" projectId={script.data.projectId} title="视频脚本后台任务历史" />
+      <BusinessArtifactVersionPicker
+        scope={{
+          domain: "video",
+          artifactKey: "video.script",
+          sourceTable: "video_scripts",
+          sourceRowId: scriptId,
+          projectId: script.data.projectId,
+        }}
+        label="视频脚本下游版本"
+        onVersionChanged={() => script.refetch()}
       />
       {/* Header */}
       <div className="flex items-center justify-between">

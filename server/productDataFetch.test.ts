@@ -1,36 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
+import { matchSellerAccount } from "./domains/ops/sellerMatching";
 
 // Test the helper functions and data filtering logic
 
 describe("Product Data Fetch - ASIN Filtering", () => {
   
   describe("findMatchedSid helper", () => {
-    it("should match seller by storeName", async () => {
-      // Import after mocks
-      vi.mock("./repositories/dbClient", () => ({
-        getDb: vi.fn(() => Promise.resolve({
-          select: vi.fn().mockReturnThis(),
-          from: vi.fn().mockReturnThis(),
-          where: vi.fn().mockReturnThis(),
-          orderBy: vi.fn().mockReturnThis(),
-          limit: vi.fn().mockReturnValue(Promise.resolve([])),
-        })),
-      }));
-      vi.mock("./lingxingAdapter", () => ({
-        getLingxingAdapter: vi.fn(() => ({
-          isMockMode: () => true,
-          request: vi.fn().mockResolvedValue({ code: 0, data: [], msg: "ok" }),
-        })),
-      }));
-      vi.mock("./_core/llm", () => ({
-        invokeLLM: vi.fn().mockResolvedValue({
-          choices: [{ message: { content: JSON.stringify({ analysis: "test" }) } }],
-        }),
-      }));
+    it("should match seller by storeName", () => {
+      const result = matchSellerAccount(
+        [{ sid: 42, mid: 2, name: "Canada Store" }],
+        { storeName: "Canada Store", marketplace: "CA" },
+      );
 
-      // The findMatchedSid function is internal, so we test via the router module
-      const mod = await import("./routers/productOps");
-      expect(mod.productOpsRouter).toBeDefined();
+      expect(result).toEqual({ matchedSid: 42, matchedMid: 2 });
     });
   });
 

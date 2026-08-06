@@ -2,6 +2,8 @@ import { relations } from "drizzle-orm";
 import {
   adStructures,
   aiJobDeadLetters,
+  aiArtifactConsumptions,
+  aiArtifactSelectionEvents,
   aiArtifacts,
   aiDataArchiveItems,
   aiDataArchiveRuns,
@@ -11,6 +13,9 @@ import {
   competitorAnalyses,
   competitorComparisonReports,
   competitorImageAnalyses,
+  devAnalysisStageConflicts,
+  devAnalysisStages,
+  devProjects,
   emperorAgentArtifacts,
   emperorAgentCheckpoints,
   emperorAgentEvents,
@@ -147,6 +152,51 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   reviewAggregations: many(reviewAggregations),
   reviewImports: many(reviewImports),
   sellingPointDrafts: many(sellingPointDrafts),
+}));
+
+export const devProjectsRelations = relations(devProjects, ({ one, many }) => ({
+  owner: one(users, {
+    fields: [devProjects.userId],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [devProjects.workspaceId],
+    references: [workspaces.id],
+  }),
+  analysisStages: many(devAnalysisStages),
+  stageConflicts: many(devAnalysisStageConflicts),
+}));
+
+export const devAnalysisStagesRelations = relations(devAnalysisStages, ({ one, many }) => ({
+  project: one(devProjects, {
+    fields: [devAnalysisStages.projectId],
+    references: [devProjects.id],
+  }),
+  owner: one(users, {
+    fields: [devAnalysisStages.userId],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [devAnalysisStages.workspaceId],
+    references: [workspaces.id],
+  }),
+  deduplicatedRows: many(devAnalysisStageConflicts, { relationName: "keptAnalysisStage" }),
+}));
+
+export const devAnalysisStageConflictsRelations = relations(devAnalysisStageConflicts, ({ one }) => ({
+  project: one(devProjects, {
+    fields: [devAnalysisStageConflicts.projectId],
+    references: [devProjects.id],
+  }),
+  keptStage: one(devAnalysisStages, {
+    fields: [devAnalysisStageConflicts.keptStageId],
+    references: [devAnalysisStages.id],
+    relationName: "keptAnalysisStage",
+  }),
+  workspace: one(workspaces, {
+    fields: [devAnalysisStageConflicts.workspaceId],
+    references: [workspaces.id],
+  }),
 }));
 
 export const loginLogsRelations = relations(loginLogs, ({ one }) => ({
@@ -407,7 +457,7 @@ export const aiStorageObjectsRelations = relations(aiStorageObjects, ({ one, man
   }),
 }));
 
-export const aiArtifactsRelations = relations(aiArtifacts, ({ one }) => ({
+export const aiArtifactsRelations = relations(aiArtifacts, ({ one, many }) => ({
   project: one(projects, {
     fields: [aiArtifacts.projectId],
     references: [projects.id],
@@ -426,6 +476,33 @@ export const aiArtifactsRelations = relations(aiArtifacts, ({ one }) => ({
   }),
   workspace: one(workspaces, {
     fields: [aiArtifacts.workspaceId],
+    references: [workspaces.id],
+  }),
+  consumptions: many(aiArtifactConsumptions),
+}));
+
+export const aiArtifactSelectionEventsRelations = relations(aiArtifactSelectionEvents, ({ one }) => ({
+  selectedArtifact: one(aiArtifacts, {
+    fields: [aiArtifactSelectionEvents.toArtifactId],
+    references: [aiArtifacts.artifactId],
+  }),
+  user: one(users, {
+    fields: [aiArtifactSelectionEvents.userId],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [aiArtifactSelectionEvents.workspaceId],
+    references: [workspaces.id],
+  }),
+}));
+
+export const aiArtifactConsumptionsRelations = relations(aiArtifactConsumptions, ({ one }) => ({
+  artifact: one(aiArtifacts, {
+    fields: [aiArtifactConsumptions.artifactId],
+    references: [aiArtifacts.artifactId],
+  }),
+  workspace: one(workspaces, {
+    fields: [aiArtifactConsumptions.workspaceId],
     references: [workspaces.id],
   }),
 }));

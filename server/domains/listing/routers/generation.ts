@@ -27,7 +27,7 @@ const {
   ensureWriteAccess,
   executeListingSkill,
   generateChineseTranslation,
-  invokeLLM,
+  invokeBusinessSkill,
   loadEnrichedData,
   parseJsonOrThrow,
   protectedProcedure,

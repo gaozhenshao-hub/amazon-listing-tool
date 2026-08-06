@@ -1,4 +1,6 @@
 import { failUnavailableDataSource } from "@shared/_core/errors";
+import { requireOpsDb } from "../legacy/repository";
+import { runOpsSkill } from "../legacy/service";
 import { currentOpsWorkspaceId } from "../workspaceContext";
 import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
@@ -32,7 +34,7 @@ const {
   getToday,
   getYesterday,
   inArray,
-  invokeLLM,
+  invokeBusinessSkill,
   isNull,
   keywordMonitors,
   keywordSnapshots,
@@ -64,7 +66,6 @@ const {
   users,
   z,
 } = shared;
-const getDb = (...args: Parameters<typeof shared.getDb>) => shared.getDb(...args);
 
 export const opsWeeklyProcedures = {
 
@@ -77,7 +78,7 @@ export const opsWeeklyProcedures = {
   getProductBasicInfo: protectedProcedure
     .input(z.object({ productId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [info] = await db!.select().from(productBasicInfo)
         .where(opsWorkspaceCondition(productBasicInfo, currentOpsWorkspaceId(), and(eq(productBasicInfo.productId, input.productId), eq(productBasicInfo.userId, ctx.user.id))));
       return info || null;
@@ -111,7 +112,7 @@ export const opsWeeklyProcedures = {
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [existing] = await db!.select().from(productBasicInfo)
         .where(opsWorkspaceCondition(productBasicInfo, currentOpsWorkspaceId(), and(eq(productBasicInfo.productId, input.productId), eq(productBasicInfo.userId, ctx.user.id))));
       const { productId, ...data } = input;
@@ -133,7 +134,7 @@ export const opsWeeklyProcedures = {
       offset: z.number().default(0),
     }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const rows = await db!.select().from(productWeeklyOps)
         .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(eq(productWeeklyOps.productId, input.productId), eq(productWeeklyOps.userId, ctx.user.id))))
         .orderBy(desc(productWeeklyOps.weekStartDate))
@@ -174,7 +175,7 @@ export const opsWeeklyProcedures = {
       returnRate: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [existing] = await db!.select().from(productWeeklyOps)
         .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(
           eq(productWeeklyOps.productId, input.productId),
@@ -196,7 +197,7 @@ export const opsWeeklyProcedures = {
   deleteWeeklyOps: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       await db!.delete(productWeeklyOps)
         .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(eq(productWeeklyOps.id, input.id), eq(productWeeklyOps.userId, ctx.user.id))));
       return { success: true };
@@ -210,7 +211,7 @@ export const opsWeeklyProcedures = {
       limit: z.number().default(12),
     }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const rows = await db!.select().from(productMonthlySummary)
         .where(opsWorkspaceCondition(productMonthlySummary, currentOpsWorkspaceId(), and(eq(productMonthlySummary.productId, input.productId), eq(productMonthlySummary.userId, ctx.user.id))))
         .orderBy(desc(productMonthlySummary.yearMonth))
@@ -234,7 +235,7 @@ export const opsWeeklyProcedures = {
       avgRating: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [existing] = await db!.select().from(productMonthlySummary)
         .where(opsWorkspaceCondition(productMonthlySummary, currentOpsWorkspaceId(), and(
           eq(productMonthlySummary.productId, input.productId),
@@ -259,7 +260,7 @@ export const opsWeeklyProcedures = {
       months: z.number().default(6),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [product] = await db!.select().from(productProfiles)
         .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
@@ -518,7 +519,7 @@ export const opsWeeklyProcedures = {
   autoFillBasicInfo: protectedProcedure
     .input(z.object({ productId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [product] = await db!.select().from(productProfiles)
         .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
@@ -612,7 +613,7 @@ export const opsWeeklyProcedures = {
       productIds: z.array(z.number()),
     }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       if (input.productIds.length === 0) return [];
 
       // For each product, get the latest weekly ops record
@@ -658,7 +659,7 @@ export const opsWeeklyProcedures = {
       weeks: z.number().default(1),
     }).optional())
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const weeks = input?.weeks || 1;
 
       // Get all active US products for this user (avoid syncing too much data)
@@ -890,7 +891,7 @@ export const opsWeeklyProcedures = {
       weeks: z.number().default(4), // how many weeks to show
     }).optional())
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const marketplace = input?.marketplace || "US";
       const statusFilter = input?.statusFilter || "active";
       const weeksToShow = input?.weeks || 4;

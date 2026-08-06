@@ -4,6 +4,12 @@ import type { TrpcContext } from "./_core/context";
 
 // Mock devDb module
 vi.mock("./devDb", () => ({
+  getDevProjectByWorkspace: vi.fn(async (projectId: number, _workspaceId: number | null, actorUserId: number) => ({
+    id: projectId,
+    workspaceId: null,
+    userId: actorUserId,
+    name: "Test project",
+  })),
   getDevProductProfile: vi.fn(),
   getDevBomItems: vi.fn(),
   getDevMoldCosts: vi.fn(),
@@ -12,6 +18,18 @@ vi.mock("./devDb", () => ({
   getDevGlobalSuppliers: vi.fn(),
   saveDevGlobalSupplier: vi.fn(),
   deleteDevGlobalSupplier: vi.fn(),
+}));
+
+vi.mock("./repositories/dbClient", () => ({
+  getDb: vi.fn(async () => ({
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn(async () => [{ projectId: 1 }]),
+        })),
+      })),
+    })),
+  })),
 }));
 
 import * as devDb from "./devDb";

@@ -80,6 +80,8 @@ export type EmperorAgentDag = {
   version?: string;
   workflowType?: string;
   description?: string;
+  executionOwner?: string;
+  businessRoute?: string;
   nodes: EmperorAgentNode[];
   edges: EmperorAgentEdge[];
 };

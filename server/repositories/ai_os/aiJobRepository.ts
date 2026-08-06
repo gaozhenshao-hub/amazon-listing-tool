@@ -113,12 +113,13 @@ export async function retryAiJobByRunId(
 
 export async function listAiJobsForUser(
   userId: number,
-  opts: { module?: string; status?: InsertAiJob["status"]; limit?: number } = {},
+  opts: { module?: string; projectId?: number; status?: InsertAiJob["status"]; limit?: number } = {},
 ) {
   const db = await requireDb("AI Job repository");
   const conditions = [
     eq(aiJobs.userId, userId),
     opts.module ? eq(aiJobs.module, opts.module) : undefined,
+    opts.projectId ? eq(aiJobs.projectId, opts.projectId) : undefined,
     opts.status ? eq(aiJobs.status, opts.status) : undefined,
   ].filter(Boolean) as any[];
   const where = conditions.length === 1 ? conditions[0] : and(...conditions);

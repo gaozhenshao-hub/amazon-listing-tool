@@ -1,5 +1,7 @@
 import { failUnavailableDataSource } from "@shared/_core/errors";
-import { z, TRPCError, protectedProcedure, router, getDb, invokeLLM, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo } from "./context";
+import { requireOpsDb } from "../legacy/repository";
+import { runOpsSkill } from "../legacy/service";
+import { z, TRPCError, protectedProcedure, router, getDb, invokeBusinessSkill, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo } from "./context";
 import { opsWorkspaceCondition, withOpsWorkspace, workspaceIdFromContext } from "./context";
 
 export const inventoryProcedures = {
@@ -7,7 +9,7 @@ export const inventoryProcedures = {
   getDashboardOverview: protectedProcedure
     .input(z.object({ marketplace: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const mp = input?.marketplace || 'ALL';
 
     // ── Profit & Sales data: from imported Excel (lingxing_product_weekly) ──
@@ -254,7 +256,7 @@ toggleMockMode: protectedProcedure
 
       // Enrich with operator and store info from product_profiles
       try {
-        const db = await getDb();
+        const db = await requireOpsDb();
         // Get all product profiles for this user
         const profiles = await db!.select({
           parentAsin: productProfiles.parentAsin,
@@ -325,7 +327,7 @@ getReplenishmentSuggestions: protectedProcedure
       
       // Filter out discontinued/inactive ASINs from replenishment suggestions
       // Check asinStatusCache for status, also filter items with 0 daily sales and 0 inventory
-      const db = await getDb();
+      const db = await requireOpsDb();
       const asinStatuses = db ? await db.select().from(asinStatusCache)
         .where(opsWorkspaceCondition(asinStatusCache, workspaceIdFromContext(ctx))) : [];
       const discontinuedAsins = new Set(
@@ -349,7 +351,7 @@ getReplenishmentSuggestions: protectedProcedure
 getInventoryConfig: protectedProcedure
     .input(z.object({ sellerSku: z.string() }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const configs = await db!.select().from(inventoryConfig)
         .where(opsWorkspaceCondition(inventoryConfig, workspaceIdFromContext(ctx), and(
           eq(inventoryConfig.userId, ctx.user.id),
@@ -372,7 +374,7 @@ saveInventoryConfig: protectedProcedure
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const existing = await db!.select().from(inventoryConfig)
         .where(opsWorkspaceCondition(inventoryConfig, workspaceIdFromContext(ctx), and(
           eq(inventoryConfig.userId, ctx.user.id),
@@ -423,7 +425,7 @@ ${JSON.stringify(input.skuData, null, 2)}
 请以JSON数组格式返回，每个元素对应一个SKU。`;
 
 
-      const response = await invokeLLM({
+      const response = await runOpsSkill({
         messages: [
           { role: "system", content: "你是亚马逊FBA库存管理AI助手，输出严格的JSON格式。" },
           { role: "user", content: prompt },
@@ -644,7 +646,7 @@ ${activeSkus.map((s, i) => `
 - priority_score: 1-10优先级评分`;
 
 
-      const response = await invokeLLM({
+      const response = await runOpsSkill({
         messages: [
           { role: "system", content: "你是亚马逊FBA全渠道库存管理AI助手，输出严格的JSON格式。" },
           { role: "user", content: prompt },

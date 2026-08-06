@@ -161,7 +161,7 @@ function installAnalytics() {
 
 installAnalytics();
 
-const application = import.meta.env.MODE === "e2e" ? <App /> : (
+const application = (
   <ProjectProvider>
     <MarketplaceProvider>
       <App />

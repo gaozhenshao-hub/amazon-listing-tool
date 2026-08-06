@@ -287,7 +287,7 @@ describe("KBVideos Router - batchImportAsins Endpoint", () => {
   it("creates video entries and triggers async analysis", () => {
     content = fs.readFileSync(routerPath, "utf-8");
     expect(content).toMatch(/createVideo/);
-    expect(content).toMatch(/invokeLLM/);
+    expect(content).toMatch(/invokeBusinessSkill/);
   });
 
   it("returns imported count and items", () => {

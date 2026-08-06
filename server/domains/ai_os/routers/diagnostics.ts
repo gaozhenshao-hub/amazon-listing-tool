@@ -16,7 +16,11 @@ export const emperorDiagnosticsRouter = router({
 
     try {
       const start = Date.now();
-      await invokeLLM({ messages: [{ role: "user", content: "ping" }] });
+      await invokeLLM({
+        messages: [{ role: "user", content: "ping" }],
+        bypassEmperor: true,
+        emperorBypassReason: "platform_diagnostics",
+      });
       checks.llm = { status: "ok", latencyMs: Date.now() - start };
     } catch (e: any) {
       checks.llm = { status: "error", message: e.message };

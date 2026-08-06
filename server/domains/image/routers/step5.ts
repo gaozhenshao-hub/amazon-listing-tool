@@ -24,7 +24,7 @@ const {
   ensureWriteAccess,
   generateStep5RunId,
   getKBReference,
-  invokeLLM,
+  invokeBusinessSkill,
   isActiveStep5Run,
   kbDb,
   parseLLMJson,
@@ -35,6 +35,7 @@ const {
   registerAiJobHandler,
   resolveProjectAccess,
   resolveSessionAccess,
+  resolveSessionForExecution,
   router,
   runStep5GenerationJob,
   serializeStep5Error,
@@ -55,7 +56,7 @@ export const imageStep5Procedures = {
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.generate:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
       if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
 
@@ -119,7 +120,7 @@ export const imageStep5Procedures = {
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.generate-sync:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
       if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
 

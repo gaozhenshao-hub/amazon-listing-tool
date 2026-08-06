@@ -1,5 +1,7 @@
 import { failUnavailableDataSource } from "@shared/_core/errors";
-import { z, TRPCError, protectedProcedure, router, getDb, invokeLLM, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo } from "./context";
+import { requireOpsDb } from "../legacy/repository";
+import { runOpsSkill } from "../legacy/service";
+import { z, TRPCError, protectedProcedure, router, getDb, invokeBusinessSkill, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo } from "./context";
 import { opsWorkspaceCondition, withOpsWorkspace, workspaceIdFromContext } from "./context";
 
 export const advertisingProcedures = {
@@ -608,7 +610,7 @@ aiSearchTermAnalysis: protectedProcedure
     }))
     .mutation(async ({ input }) => {
 
-      const response = await invokeLLM({
+      const response = await runOpsSkill({
         messages: [
           { role: "system", content: "你是亚马逊PPC广告优化AI专家。分析搜索词数据并给出操作建议。输出严格JSON格式。" },
           { role: "user", content: `分析以下搜索词数据（已按花费降序排列），为每个搜索词给出操作建议。
@@ -704,7 +706,7 @@ ${JSON.stringify(input.searchTerms.map(t => ({
       analysisTaskId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const values = input.actions.map(a => withOpsWorkspace(workspaceIdFromContext(ctx), {
         userId: ctx.user.id,
         analysisTaskId: input.analysisTaskId,
@@ -726,7 +728,7 @@ ${JSON.stringify(input.searchTerms.map(t => ({
 
 // Ad automation rules CRUD
   getAdRules: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     return db!.select().from(adAutomationRules)
       .where(opsWorkspaceCondition(adAutomationRules, workspaceIdFromContext(ctx), eq(adAutomationRules.userId, ctx.user.id)))
       .orderBy(desc(adAutomationRules.createdAt));
@@ -743,7 +745,7 @@ saveAdRule: protectedProcedure
       isActive: z.number().optional().default(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       if (input.id) {
         await db!.update(adAutomationRules)
           .set({
@@ -773,7 +775,7 @@ saveAdRule: protectedProcedure
 deleteAdRule: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       await db!.delete(adAutomationRules)
         .where(opsWorkspaceCondition(adAutomationRules, workspaceIdFromContext(ctx), and(eq(adAutomationRules.id, input.id), eq(adAutomationRules.userId, ctx.user.id))));
       return { deleted: true };

@@ -11,7 +11,7 @@
  * 核心理念："AI是助手，人是决策者" — AI评分仅作为初始建议，用户可编辑确认
  */
 
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import type { ConversionCrawlData } from "./conversionDataCollector";
 
 // ═══════════════════════════════════════════════════════════════
@@ -439,7 +439,7 @@ async function aiScoreBatch(
 
 
 
-    const response = await invokeLLM({
+    const response = await invokeBusinessSkill({
       messages: [
         {
           role: "system",

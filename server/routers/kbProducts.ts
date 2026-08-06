@@ -5,7 +5,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct } from "../scraper";
 import { getScraperConfig } from "./systemSettings";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 
 export const kbProductsRouter = router({
   list: protectedProcedure
@@ -60,7 +60,7 @@ export const kbProductsRouter = router({
 
 
 
-          const response = await invokeLLM({
+          const response = await invokeBusinessSkill({
             messages: [
               {
                 role: "system",
@@ -146,7 +146,7 @@ export const kbProductsRouter = router({
 
 
 
-            const response = await invokeLLM({
+            const response = await invokeBusinessSkill({
               messages: [
                 { role: "system", content: `你是亚马逊产品创意分析专家。分析产品创意的优秀之处，返回JSON格式包含: marketPositioning, functionalHighlights, designDifferentiation, painPointSolutions, pricingStrategy, competitiveAdvantages, inspiringElements, overallScore(1-10), summary` },
                 { role: "user", content: `标题: ${data.title}\n品牌: ${data.brand}\n价格: ${data.price}\n评分: ${data.rating}\n五点: ${data.bulletPoints.join("; ")}` }
@@ -200,7 +200,7 @@ export const kbProductsRouter = router({
 
 
 
-          const response = await invokeLLM({
+          const response = await invokeBusinessSkill({
             messages: [
               { role: "system", content: `你是亚马逊产品创意分析专家。分析产品创意的优秀之处，返回JSON: { marketPositioning, functionalHighlights, designDifferentiation, painPointSolutions, pricingStrategy, competitiveAdvantages, inspiringElements, overallScore(1-10), summary }` },
               { role: "user", content: `标题: ${data.title}\n品牌: ${data.brand}\n价格: ${data.price}\n评分: ${data.rating}\n五点: ${data.bulletPoints.join("; ")}` }

@@ -27,8 +27,10 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   LISTING_AGENT_WORKFLOW_STEPS,
+  AiJobHistoryPanel,
   WorkflowStatusBadge,
   WorkflowStepProgress,
+  buildListingAgentRunPresentation,
   buildListingAgentNodeUrl,
   useAgentWorkflowRun,
 } from "@/components/workflow";
@@ -873,6 +875,17 @@ export default function WorkflowCanvasPage() {
       ),
     [runListQuery.data, selectedProjectId],
   );
+  const activeListingAgentRun = useMemo(
+    () => listingAgentRuns.find((run: any) => run.runId === activeAgentRunId)
+      || (agentRun.run?.runId === activeAgentRunId ? agentRun.run : null),
+    [activeAgentRunId, agentRun.run, listingAgentRuns],
+  );
+  const activeRunPresentation = useMemo(
+    () => activeListingAgentRun
+      ? buildListingAgentRunPresentation(activeListingAgentRun as any, project?.name)
+      : null,
+    [activeListingAgentRun, project?.name],
+  );
   const listingWorkflowSteps = LISTING_AGENT_WORKFLOW_STEPS;
   const checkpointByNodeId = useMemo(() => {
     const map = new Map<string, WorkflowCheckpointLike>();
@@ -1038,6 +1051,10 @@ export default function WorkflowCanvasPage() {
       </div>
 
       {selectedProjectId && (
+        <AiJobHistoryPanel module="listing" projectId={selectedProjectId} title="Listing 后台任务历史" />
+      )}
+
+      {selectedProjectId && (
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="p-4">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1066,15 +1083,42 @@ export default function WorkflowCanvasPage() {
                   onValueChange={(value) => persistActiveRunId(value)}
                   disabled={runListQuery.isLoading}
                 >
-                  <SelectTrigger className="w-[240px] bg-background">
-                    <SelectValue placeholder="选择历史 Agent Run" />
+                  <SelectTrigger
+                    className="min-h-12 w-[340px] max-w-full bg-background py-1.5 text-left data-[size=default]:h-auto"
+                    aria-label="选择 Agent 运行记录"
+                  >
+                    {activeRunPresentation ? (
+                      <span className="min-w-0 flex-1 leading-tight">
+                        <span className="block truncate text-sm font-medium">
+                          {activeRunPresentation.primary}
+                        </span>
+                        <span className="mt-1 block truncate text-[11px] text-muted-foreground">
+                          {activeRunPresentation.secondary}
+                        </span>
+                      </span>
+                    ) : (
+                      <SelectValue placeholder="选择 Agent 运行记录" />
+                    )}
                   </SelectTrigger>
-                  <SelectContent>
-                    {listingAgentRuns.map((run: any) => (
-                      <SelectItem key={run.runId} value={run.runId}>
-                        {run.runId} · {run.status}
-                      </SelectItem>
-                    ))}
+                  <SelectContent className="w-[360px] max-w-[calc(100vw-2rem)]">
+                    {listingAgentRuns.map((run: any) => {
+                      const presentation = buildListingAgentRunPresentation(run, project?.name);
+                      return (
+                        <SelectItem
+                          key={run.runId}
+                          value={run.runId}
+                          textValue={`${presentation.primary} ${presentation.secondary}`}
+                          className="py-2"
+                        >
+                          <span className="min-w-0 pr-2 leading-tight">
+                            <span className="block truncate font-medium">{presentation.primary}</span>
+                            <span className="mt-1 block truncate text-xs text-muted-foreground">
+                              {presentation.secondary}
+                            </span>
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
                 <Button

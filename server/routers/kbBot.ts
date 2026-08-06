@@ -6,7 +6,7 @@
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { getDb } from "../repositories/dbClient";
 import {
   kbBotConversations,
@@ -219,7 +219,7 @@ async function performKbSearch(
 
 
 
-    const selectionResponse = await invokeLLM({
+    const selectionResponse = await invokeBusinessSkill({
       messages: [
         {
           role: "system",
@@ -315,7 +315,7 @@ ${l1Prompt}`,
 
 
 
-    const l2SelectionResponse = await invokeLLM({
+    const l2SelectionResponse = await invokeBusinessSkill({
       messages: [
         {
           role: "system",
@@ -397,7 +397,7 @@ ${l2Prompt}`,
 
 
 
-  const answerResponse = await invokeLLM({
+  const answerResponse = await invokeBusinessSkill({
     messages: [
       {
         role: "system",

@@ -1,261 +1,357 @@
 import * as devDb from "../../../devDb";
-import { invokeLLM } from "../../../_core/llm";
-import { DECISION_DASHBOARD_PROMPT, INFORMATION_SUMMARY_PROMPT } from "../../../devAnalysisPrompts";
+import { INFORMATION_SUMMARY_PROMPT } from "../../../devAnalysisPrompts";
+import { z } from "zod";
 import {
-  registerDevAnalysisArtifact,
+  recordBusinessArtifactUse,
   resolveCurrentDevAnalysisArtifact,
 } from "../../ai_os/services/businessArtifactRegistry";
 import {
+  cancelAiJob,
+  generateAiJobRunId,
+  registerAiJobHandler,
+  startRegisteredAiJob,
+} from "../../ai_os/services/jobRunner";
+import { runEmperorSkill, safeParseSkillJSON } from "../../ai_os/services/skillRunner";
+import {
+  buildInformationSummaryAiContext,
   buildInformationSummarySeed,
   mergeInformationSummaryAi,
   validateInformationSummaryForConfirmation,
   type InformationSummaryAi,
 } from "./informationSummary";
+import {
+  completeDevAnalysisStageRunConsistently,
+  StaleDevAnalysisRunError,
+} from "./stageConsistency";
+import {
+  syncProductAnalysisNodeCompleted,
+  syncProductAnalysisNodeFailure,
+  syncProductAnalysisNodeProgress,
+  syncProductAnalysisNodeRunning,
+} from "./productAnalysisAgent";
 
-type ProjectContext = {
-  name: string;
-  targetMarket?: string | null;
-  keywords?: string | null;
-  createdAt?: Date | string | null;
-};
+const informationSummaryJobInput = z.object({
+  projectId: z.number().int().positive(),
+  ownerName: z.string().nullable().optional(),
+  agentRunId: z.string().max(80).optional(),
+});
 
-export async function generateInformationSummary(input: {
+const INFORMATION_SUMMARY_STALE_MS = 12 * 60_000;
+
+function serializeRunError(error: unknown) {
+  return (error instanceof Error ? error.message : String(error || "信息汇总生成失败")).slice(0, 1_000);
+}
+
+export async function queueInformationSummaryGeneration(input: {
   projectId: number;
   userId: number;
+  workspaceId?: number | null;
   ownerName?: string | null;
-  project: ProjectContext;
 }) {
-  await devDb.upsertDevAnalysisStage({
-    projectId: input.projectId,
-    userId: input.userId,
-    stageType: "information_summary",
-    status: "running",
-    rawResult: null,
-    editedResult: null,
-    confirmedAt: null,
-  });
-
-  const [products, stages] = await Promise.all([
-    devDb.getDevProductsByProject(input.projectId),
-    devDb.getDevAnalysisStages(input.projectId),
-  ]);
-  const seed = buildInformationSummarySeed({
-    project: input.project,
-    products,
-    stages,
-    ownerName: input.ownerName,
-  });
-  const emperorContext = JSON.stringify({
-    project: {
-      name: input.project.name,
-      targetMarket: input.project.targetMarket,
-      keywords: input.project.keywords,
-    },
-    informationSummarySeed: seed,
-  }, null, 2);
-
-  let aiResult: InformationSummaryAi = {};
-  try {
-    const response = await invokeLLM({
-      messages: [
-        { role: "system", content: INFORMATION_SUMMARY_PROMPT },
-        { role: "user", content: emperorContext },
-      ],
-      response_format: { type: "json_object" },
-      emperorSkill: {
-        slug: "dev.analysis.information_summary",
-        userId: input.userId,
-        context: emperorContext,
-        variables: { schemaVersion: "1.0", informationSummarySeed: seed },
-      },
+  const current = await devDb.getDevAnalysisStage(input.projectId, "information_summary");
+  const currentAgeMs = current?.updatedAt ? Date.now() - new Date(current.updatedAt).getTime() : Number.POSITIVE_INFINITY;
+  if (current?.status === "running" && current.runId && currentAgeMs < INFORMATION_SUMMARY_STALE_MS) {
+    const linked = await syncProductAnalysisNodeRunning({
+      projectId: input.projectId,
+      stageType: "information_summary",
+      userId: input.userId,
+      workspaceId: input.workspaceId,
+      aiJobRunId: current.runId,
     });
-    const content = response.choices?.[0]?.message?.content;
-    aiResult = content ? JSON.parse(content as string) as InformationSummaryAi : {};
-  } catch (error) {
-    // Keep the structured system evidence editable when Emperor is temporarily unavailable.
-    aiResult = {
-      missingFields: [`皇帝 Skill 暂未完成AI归纳: ${error instanceof Error ? error.message : String(error)}`],
+    return {
+      runId: current.runId,
+      agentRunId: linked?.agentRunId || null,
+      status: "running" as const,
+      progress: current.runProgress || 0,
+      alreadyRunning: true,
     };
   }
 
-  const result = mergeInformationSummaryAi(seed, aiResult);
-  const completedStage = await devDb.upsertDevAnalysisStage({
+  if (current?.runId && (current.status === "running" || current.status === "generating")) {
+    await cancelAiJob(current.runId, "信息汇总任务已超时，由新的运行接管").catch(() => null);
+  }
+
+  const runId = generateAiJobRunId("dev_information_summary");
+  const claim = await devDb.claimDevAnalysisStageRun({
     projectId: input.projectId,
     userId: input.userId,
     stageType: "information_summary",
-    status: "completed",
-    rawResult: JSON.stringify(result),
-    editedResult: null,
-    confirmedAt: null,
+    runId,
+    staleAfterSeconds: INFORMATION_SUMMARY_STALE_MS / 1_000,
   });
-  await registerDevAnalysisArtifact(completedStage.id, "ai_output");
-  return result;
+  if (!claim.claimed) {
+    return {
+      runId: claim.runId || runId,
+      status: "running" as const,
+      progress: claim.runProgress || 0,
+      alreadyRunning: true,
+    };
+  }
+
+  let agentRunId = "";
+  try {
+    const linked = await syncProductAnalysisNodeRunning({
+      projectId: input.projectId,
+      stageType: "information_summary",
+      userId: input.userId,
+      workspaceId: input.workspaceId,
+      aiJobRunId: runId,
+    });
+    agentRunId = linked?.agentRunId || "";
+    await startRegisteredAiJob({
+      runId,
+      kind: "dev.analysis.informationSummary",
+      module: "productDevelopment",
+      procedure: "devAnalysis.runInformationSummary",
+      workspaceId: input.workspaceId ?? null,
+      userId: input.userId,
+      projectId: input.projectId,
+      skillSlug: "dev.analysis.information_summary",
+      input: { projectId: input.projectId, ownerName: input.ownerName || null, agentRunId: agentRunId || undefined },
+      progress: 5,
+      priority: 20,
+      queueName: "analysis",
+      maxAttempts: 2,
+      timeoutSeconds: 240,
+    });
+  } catch (error) {
+    await devDb.failDevAnalysisStageRun(input.projectId, "information_summary", runId, error);
+    if (agentRunId) {
+      await syncProductAnalysisNodeFailure({
+        agentRunId,
+        stageType: "information_summary",
+        aiJobRunId: runId,
+        aiJobAttempt: 0,
+        finalAttempt: true,
+        error,
+      }).catch(() => null);
+    }
+    throw error;
+  }
+
+  return { runId, agentRunId: agentRunId || null, status: "queued" as const, progress: 5, alreadyRunning: false };
 }
 
-const decisionResponseFormat = {
-  type: "json_schema" as const,
-  json_schema: {
-    name: "decision_dashboard_ai",
-    strict: true,
-    schema: {
-      type: "object",
-      properties: {
-        feasibilityScore: {
-          type: "object",
-          properties: {
-            overall: { type: "number" },
-            dimensions: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  score: { type: "number" },
-                  reason: { type: "string" },
-                },
-                required: ["name", "score", "reason"],
-                additionalProperties: false,
-              },
-            },
-            recommendation: { type: "string" },
-          },
-          required: ["overall", "dimensions", "recommendation"],
-          additionalProperties: false,
-        },
-        productPositioning: {
-          type: "object",
-          properties: {
-            targetAttributes: { type: "object", additionalProperties: { type: "string" } },
-            priceRange: {
-              type: "object",
-              properties: { min: { type: "number" }, max: { type: "number" } },
-              required: ["min", "max"],
-              additionalProperties: false,
-            },
-            differentiationDirection: { type: "string" },
-            targetAudience: { type: "string" },
-            uniqueSellingPoints: { type: "array", items: { type: "string" } },
-          },
-          required: ["targetAttributes", "priceRange", "differentiationDirection", "targetAudience", "uniqueSellingPoints"],
-          additionalProperties: false,
-        },
-        swotAnalysis: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              competitor: { type: "string" },
-              strengths: { type: "array", items: { type: "string" } },
-              weaknesses: { type: "array", items: { type: "string" } },
-              opportunities: { type: "array", items: { type: "string" } },
-              threats: { type: "array", items: { type: "string" } },
-            },
-            required: ["competitor", "strengths", "weaknesses", "opportunities", "threats"],
-            additionalProperties: false,
-          },
-        },
-        launchPlan: {
-          type: "object",
-          properties: {
-            specifications: { type: "string" },
-            targetPrice: { type: "number" },
-            bestLaunchMonth: { type: "string" },
-            initialOrderQuantity: { type: "number" },
-            targetMonthlySales: { type: "number" },
-            estimatedBreakEvenMonths: { type: "number" },
-            keyMilestones: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: { month: { type: "number" }, milestone: { type: "string" } },
-                required: ["month", "milestone"],
-                additionalProperties: false,
-              },
-            },
-          },
-          required: ["specifications", "targetPrice", "bestLaunchMonth", "initialOrderQuantity", "targetMonthlySales", "estimatedBreakEvenMonths", "keyMilestones"],
-          additionalProperties: false,
-        },
-        risks: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              risk: { type: "string" },
-              probability: { type: "string" },
-              impact: { type: "string" },
-              mitigation: { type: "string" },
-            },
-            required: ["risk", "probability", "impact", "mitigation"],
-            additionalProperties: false,
-          },
-        },
-        summary: { type: "string" },
-      },
-      required: ["feasibilityScore", "productPositioning", "swotAnalysis", "launchPlan", "risks", "summary"],
-      additionalProperties: false,
-    },
-  },
-};
-
-export async function generateDecisionDashboard(input: {
+async function runInformationSummaryGeneration(input: {
+  runId: string;
   projectId: number;
   userId: number;
-  project: ProjectContext;
+  workspaceId?: number | null;
+  ownerName?: string | null;
+  agentRunId?: string | null;
+  signal?: AbortSignal;
+  attempt: number;
+  maxAttempts: number;
 }) {
-  await devDb.upsertDevAnalysisStage({
-    projectId: input.projectId,
-    userId: input.userId,
-    stageType: "decision_dashboard",
-    status: "running",
-    rawResult: null,
-    editedResult: null,
-    confirmedAt: null,
-  });
+  let agentRunId = input.agentRunId || "";
+  const updateIfCurrent = (data: Parameters<typeof devDb.updateDevAnalysisStageForRun>[3]) =>
+    devDb.updateDevAnalysisStageForRun(input.projectId, "information_summary", input.runId, data);
 
   try {
-    const informationStage = await devDb.getDevAnalysisStage(input.projectId, "information_summary");
-    if (!informationStage || informationStage.status !== "confirmed") throw new Error("信息汇总尚未确认锁定");
-    const artifact = await resolveCurrentDevAnalysisArtifact(informationStage.id);
-    if (!artifact?.content) throw new Error("已确认的信息汇总 Artifact 不可用，请解锁后重新确认");
-    const informationSummary = validateInformationSummaryForConfirmation(artifact.content);
-    const emperorContext = `项目: ${input.project.name}\n目标市场: ${input.project.targetMarket}\nArtifact: ${artifact.ref}\n\n已确认信息汇总 Artifact:\n${JSON.stringify(informationSummary, null, 2)}`;
-    const response = await invokeLLM({
-      messages: [
-        { role: "system", content: DECISION_DASHBOARD_PROMPT },
-        { role: "user", content: emperorContext },
-      ],
-      emperorSkill: {
-        slug: "dev.analysis.decision_dashboard",
+    if (!agentRunId) {
+      const linked = await syncProductAnalysisNodeRunning({
+        projectId: input.projectId,
+        stageType: "information_summary",
         userId: input.userId,
+        workspaceId: input.workspaceId,
+        aiJobRunId: input.runId,
+      });
+      agentRunId = linked?.agentRunId || "";
+    }
+    const claimed = await updateIfCurrent({
+      status: "running",
+      runProgress: 15,
+      runError: null,
+      runCompletedAt: null,
+    });
+    if (!claimed) return { skipped: true, reason: "信息汇总任务已被新的运行替代" };
+    if (agentRunId) {
+      await syncProductAnalysisNodeProgress({
+        agentRunId,
+        stageType: "information_summary",
+        aiJobRunId: input.runId,
+        aiJobAttempt: input.attempt,
+        progress: 15,
+      });
+    }
+
+    const project = await devDb.getDevProjectByWorkspace(
+      input.projectId,
+      input.workspaceId ?? null,
+      input.userId,
+    );
+    if (!project) throw new Error("产品开发项目不存在");
+
+    const [products, stages] = await Promise.all([
+      devDb.getDevProductsByProject(input.projectId),
+      devDb.getDevAnalysisStages(input.projectId),
+    ]);
+    const stageArtifacts = await Promise.all(stages.map(async (stage) => {
+      if (stage.status !== "confirmed") return null;
+      const artifact = await resolveCurrentDevAnalysisArtifact(stage.id);
+      if (!artifact) return null;
+      await recordBusinessArtifactUse({
+        artifact,
+        consumerDomain: "project",
+        consumerType: "ai_job",
+        consumerId: input.runId,
+        projectId: input.projectId,
+        runId: input.runId,
+        nodeId: "information_summary",
+        metadata: { stageType: stage.stageType },
+      });
+      return { stageId: stage.id, artifact };
+    }));
+    const artifactByStageId = new Map(stageArtifacts
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+      .map((entry) => [entry.stageId, entry.artifact]));
+    const stagesFromArtifacts = stages.map((stage) => {
+      const artifact = artifactByStageId.get(stage.id);
+      if (!artifact) return stage;
+      return {
+        ...stage,
+        rawResult: null,
+        editedResult: typeof artifact.content === "string"
+          ? artifact.content
+          : JSON.stringify(artifact.content),
+      };
+    });
+    const seed = buildInformationSummarySeed({
+      project,
+      products,
+      stages: stagesFromArtifacts,
+      ownerName: input.ownerName,
+    });
+    const aiContext = buildInformationSummaryAiContext(seed);
+    const emperorContext = JSON.stringify(aiContext);
+    if (!await updateIfCurrent({ runProgress: 45 })) {
+      return { skipped: true, reason: "信息汇总任务已被新的运行替代" };
+    }
+    if (agentRunId) {
+      await syncProductAnalysisNodeProgress({
+        agentRunId,
+        stageType: "information_summary",
+        aiJobRunId: input.runId,
+        aiJobAttempt: input.attempt,
+        progress: 45,
+      });
+    }
+
+    let aiResult: InformationSummaryAi = {};
+    let runWarning: string | null = null;
+    try {
+      const skillResult = await runEmperorSkill<InformationSummaryAi>({
+        skillSlug: "dev.analysis.information_summary",
+        userId: input.userId,
+        workspaceId: input.workspaceId ?? null,
         context: emperorContext,
-        variables: { schemaVersion: "1.0", informationSummary },
-      },
-      response_format: decisionResponseFormat,
-    });
-    const content = response.choices?.[0]?.message?.content;
-    const result = { ai: content ? JSON.parse(content as string) : {} };
-    const completedStage = await devDb.upsertDevAnalysisStage({
-      projectId: input.projectId,
-      userId: input.userId,
-      stageType: "decision_dashboard",
-      status: "completed",
-      rawResult: JSON.stringify(result),
-      editedResult: null,
-      confirmedAt: null,
-    });
-    await registerDevAnalysisArtifact(completedStage.id, "ai_output");
-    return result;
+        variables: {
+          schemaVersion: "1.0",
+          totalCompetitors: seed.competitors.length,
+          includedCompetitors: aiContext.competitorEvidence.includedCount,
+        },
+        legacySystemPrompt: INFORMATION_SUMMARY_PROMPT,
+        migrationSource: "drizzle/0121_dev_information_summary_emperor_skills.sql",
+        maxModelAttempts: 1,
+        signal: input.signal,
+        validate: (content) => {
+          const parsed = safeParseSkillJSON<InformationSummaryAi>(content);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || "raw" in parsed) {
+            throw new Error("皇帝 Skill 未返回有效的信息汇总 JSON");
+          }
+          return parsed;
+        },
+      });
+      aiResult = skillResult.parsed;
+    } catch (error) {
+      if (input.signal?.aborted) throw error;
+      runWarning = `皇帝 Skill 暂未完成AI归纳，已生成可编辑的基础汇总：${serializeRunError(error)}`;
+      aiResult = { missingFields: [runWarning] };
+    }
+
+    const result = mergeInformationSummaryAi(seed, aiResult);
+    let completedStage;
+    try {
+      const completed = await completeDevAnalysisStageRunConsistently({
+        projectId: input.projectId,
+        stageType: "information_summary",
+        runId: input.runId,
+        rawResult: JSON.stringify(result),
+        runError: runWarning,
+      });
+      completedStage = completed.stage;
+      if (agentRunId) {
+        await syncProductAnalysisNodeCompleted({
+          agentRunId,
+          projectId: input.projectId,
+          stageType: "information_summary",
+          aiJobRunId: input.runId,
+          aiJobAttempt: input.attempt,
+          output: result,
+          invalidated: completed.invalidated,
+          warning: runWarning,
+        });
+      }
+    } catch (error) {
+      if (error instanceof StaleDevAnalysisRunError) {
+        return { skipped: true, reason: "信息汇总任务完成前已被新的运行替代" };
+      }
+      throw error;
+    }
+    return {
+      stageId: completedStage.id,
+      competitorCount: result.competitors.length,
+      warning: runWarning,
+    };
   } catch (error) {
-    await devDb.upsertDevAnalysisStage({
-      projectId: input.projectId,
-      userId: input.userId,
-      stageType: "decision_dashboard",
-      status: "pending",
-      rawResult: null,
-      editedResult: null,
-      confirmedAt: null,
-    });
+    const abortReason = input.signal?.aborted ? String(input.signal.reason || "") : "";
+    const retryableTimeout = /timed?\s*out|timeout/i.test(abortReason);
+    const finalAttempt = input.attempt >= input.maxAttempts || (Boolean(input.signal?.aborted) && !retryableTimeout);
+    if (finalAttempt) {
+      await devDb.failDevAnalysisStageRun(
+        input.projectId,
+        "information_summary",
+        input.runId,
+        error,
+      );
+    } else {
+      await updateIfCurrent({
+        status: "running",
+        runProgress: 15,
+        runError: `本次调用失败，后台将自动重试（${input.attempt}/${input.maxAttempts}）：${serializeRunError(error)}`,
+        runCompletedAt: null,
+      });
+    }
+    if (agentRunId) {
+      await syncProductAnalysisNodeFailure({
+        agentRunId,
+        stageType: "information_summary",
+        aiJobRunId: input.runId,
+        aiJobAttempt: input.attempt,
+        finalAttempt,
+        error,
+        failureKind: Boolean(input.signal?.aborted) ? (retryableTimeout ? "timeout" : "cancel") : "error",
+      }).catch((syncError) => console.warn("[Product Analysis Agent] Failed to sync information-summary failure", syncError));
+    }
     throw error;
   }
 }
+
+registerAiJobHandler({
+  id: "productDevelopment.informationSummary",
+  match: (job) => job.kind === "dev.analysis.informationSummary",
+  handler: (job, context) => {
+    const parsed = informationSummaryJobInput.parse(job.input);
+    return runInformationSummaryGeneration({
+      runId: job.runId,
+      projectId: parsed.projectId,
+      userId: job.userId,
+      workspaceId: job.workspaceId,
+      ownerName: parsed.ownerName,
+      agentRunId: parsed.agentRunId,
+      signal: context.signal,
+      attempt: job.attempt,
+      maxAttempts: job.maxAttempts,
+    });
+  },
+});

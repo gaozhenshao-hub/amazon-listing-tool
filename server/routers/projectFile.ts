@@ -1,9 +1,14 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { storagePut } from "../storage";
 import * as db from "../repositories";
-import { createContentHash, registerProjectFileArtifactBundle, type ArtifactSourceType } from "../domains/ai_os/services/artifactLifecycle";
+import {
+  createContentHash,
+  registerProjectFileArtifactBundle,
+  resolveUnifiedArtifact,
+  type ArtifactSourceType,
+} from "../domains/ai_os/services/artifactLifecycle";
 import { actorFromContext, assertResourceAction, recordSecurityAuditLog, workspaceIdFromContext, type SecurityAction } from "../services/securityGovernance";
 import { parse as csvParse } from "csv-parse/sync";
 import {
@@ -21,6 +26,44 @@ import { getDb } from "../repositories/dbClient";
 function parseTxtContent(content: string): string {
   // Clean up the text: normalize line endings, trim
   return content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+}
+
+function databaseTextPreview(content: string) {
+  return content.slice(0, 4_000);
+}
+
+function databaseParsedPreview(value: any) {
+  const serialized = JSON.stringify(value ?? null);
+  if (serialized.length <= 12_000) return serialized;
+  return JSON.stringify({
+    type: value?.type || "structured",
+    headers: Array.isArray(value?.headers) ? value.headers : [],
+    rowCount: Number(value?.rowCount || value?.rows?.length || 0),
+    storageBacked: true,
+  });
+}
+
+async function hydrateProjectFileForAnalysis(file: any, workspaceId: number | null) {
+  const scope = {
+    workspaceId,
+    domain: "listing" as const,
+    sourceTable: "projectFiles",
+    sourceRowId: file.id,
+    projectId: file.projectId,
+    currentOnly: true,
+    confirmedOnly: true,
+  };
+  const [rawArtifact, parsedArtifact] = await Promise.all([
+    resolveUnifiedArtifact({ ...scope, artifactKey: `project_file.${file.fileType}.raw` }).catch(() => null),
+    resolveUnifiedArtifact({ ...scope, artifactKey: `project_file.${file.fileType}.parsed` }).catch(() => null),
+  ]);
+  return {
+    ...file,
+    rawContent: typeof rawArtifact?.content === "string" ? rawArtifact.content : file.rawContent,
+    parsedData: parsedArtifact?.content === undefined || parsedArtifact?.content === null
+      ? file.parsedData
+      : JSON.stringify(parsedArtifact.content),
+  };
 }
 
 function parseCsvContent(content: string): { headers: string[]; rows: Record<string, string>[]; rawRows: string[][] } {
@@ -120,7 +163,7 @@ async function analyzeRufusAttributes(rawContent: string): Promise<any> {
 
 
 
-  const response = await invokeLLM({
+  const response = await invokeBusinessSkill({
     messages: [
       { role: "system", content: RUFUS_ATTRIBUTE_PROMPT },
       {
@@ -150,7 +193,7 @@ async function analyzeCompetitorListings(rawContent: string): Promise<any> {
 
 
 
-  const response = await invokeLLM({
+  const response = await invokeBusinessSkill({
     messages: [
       { role: "system", content: MULTI_COMPETITOR_ANALYSIS_PROMPT },
       {
@@ -192,7 +235,7 @@ async function analyzeCosmoScenes(parsedData: any): Promise<any> {
 
 
 
-  const response = await invokeLLM({
+  const response = await invokeBusinessSkill({
     messages: [
       { role: "system", content: COSMO_SCENE_MAPPING_PROMPT },
       {
@@ -233,7 +276,7 @@ async function analyzeA9Keywords(parsedData: any): Promise<any> {
 
 
 
-  const response = await invokeLLM({
+  const response = await invokeBusinessSkill({
     messages: [
       { role: "system", content: A9_KEYWORD_GRADING_PROMPT },
       {
@@ -364,7 +407,7 @@ export const projectFileRouter = router({
           fileSize: buffer.length,
           rawStorageUri: rawStorageUri || null,
           rawContentHash: createContentHash(textContent),
-          rawContent: textContent.substring(0, 65000), // Limit to 65KB for TEXT column
+          rawContent: databaseTextPreview(textContent),
           status: "failed",
           errorMessage: err.message || "Parse failed",
         });
@@ -418,8 +461,8 @@ export const projectFileRouter = router({
         parsedStorageUri: parsedUpload?.storageUri || null,
         rawContentHash: createContentHash(rawContent),
         parsedDataHash: createContentHash(parsedData),
-        rawContent: rawContent.substring(0, 65000),
-        parsedData: JSON.stringify(parsedData),
+        rawContent: databaseTextPreview(rawContent),
+        parsedData: databaseParsedPreview(parsedData),
         status: "parsed",
       });
       await registerProjectFileArtifacts({
@@ -456,7 +499,9 @@ export const projectFileRouter = router({
   analyze: protectedProcedure
     .input(z.object({ fileId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const { file, workspaceId } = await assertFileAccess(ctx, input.fileId, "update");
+      const access = await assertFileAccess(ctx, input.fileId, "update");
+      const workspaceId = access.workspaceId;
+      const file = await hydrateProjectFileForAnalysis(access.file, workspaceId);
 
       if (!file.rawContent && !file.parsedData) {
         throw new Error("File has no parsed content. Please re-upload.");
@@ -624,8 +669,8 @@ export const projectFileRouter = router({
         parsedStorageUri: parsedUpload?.storageUri || null,
         rawContentHash: createContentHash(rawContent),
         parsedDataHash: createContentHash(parsedData),
-        rawContent: rawContent.substring(0, 65000),
-        parsedData: JSON.stringify(parsedData),
+        rawContent: databaseTextPreview(rawContent),
+        parsedData: databaseParsedPreview(parsedData),
         status: "analyzing",
       });
       await registerProjectFileArtifacts({
@@ -988,8 +1033,8 @@ export const projectFileRouter = router({
         fileSize: Buffer.byteLength(profileText, "utf-8"),
         rawContentHash: createContentHash(profileText),
         parsedDataHash: createContentHash(parsedProfileData),
-        rawContent: profileText.substring(0, 65000),
-        parsedData: JSON.stringify(parsedProfileData),
+        rawContent: databaseTextPreview(profileText),
+        parsedData: databaseParsedPreview(parsedProfileData),
         status: "completed",
         analysisResult: JSON.stringify(analysisResult),
       });

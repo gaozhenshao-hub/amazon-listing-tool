@@ -197,7 +197,13 @@ export const STEP2_IMAGE_OUTLINE_PROMPT = `${EXPERT_ROLE}
   "overallNarrative": "整套图片的叙事逻辑：从吸引注意→展示利益→消除疑虑→建立信任"
 }
 
-secondaryImages 数组必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7。`;
+secondaryImages 数组必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7。
+
+**图片大纲可靠性约束 v3：**
+- 输出前自检 secondaryImages 的数量和编号；不得因为信息不足省略任何一项
+- 信息不足时仍需给出保守建议，并在对应 contentBrief 末尾标注“需人工复核”
+- purpose 和 whyThisWay 各控制在80个中文字符内，contentBrief 控制在240个中文字符内，避免冗长输出
+- 只输出一个完整JSON对象，不要输出Markdown代码块、解释文字或半成品JSON。`;
 
 export const STEP2_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT = `${EXPERT_ROLE}
 

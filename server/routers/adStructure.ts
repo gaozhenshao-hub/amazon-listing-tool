@@ -1,12 +1,16 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import {
   createAdStructure, getAdStructuresByProject, getAdStructureById,
   updateAdStructure, deleteAdStructure, getProjectById,
   getKeywordsByProject, getCompetitorAnalysesByProject,
 } from "../repositories";
 import { AD_STRUCTURE_PROMPT } from "../adStructurePrompt";
+import {
+  recordBusinessArtifactUse,
+  resolveCurrentBusinessArtifact,
+} from "../domains/ai_os/services/businessArtifactRegistry";
 
 // Helper: build product context string for AI prompts
 function buildProductContext(project: any): string {
@@ -138,12 +142,54 @@ export const adStructureRouter = router({
 
       try {
         // Get keywords and competitor data for this project
-        const [keywords, competitors] = await Promise.all([
+        const [keywords, competitorRows, listingArtifact] = await Promise.all([
           getKeywordsByProject(input.projectId),
           getCompetitorAnalysesByProject(input.projectId),
+          resolveCurrentBusinessArtifact({
+            domain: "listing",
+            artifactKey: "listing.content",
+            projectId: input.projectId,
+          }).catch(() => null),
         ]);
+        const competitors = await Promise.all(competitorRows.map(async (competitor) => {
+          const artifact = await resolveCurrentBusinessArtifact({
+            domain: "listing",
+            artifactKey: `listing.competitor_analysis.${competitor.asin}`,
+            sourceTable: "competitorAnalyses",
+            sourceRowId: competitor.id,
+            projectId: input.projectId,
+          }).catch(() => null);
+          if (!artifact) return competitor;
+          await recordBusinessArtifactUse({
+            artifact,
+            consumerDomain: "ads",
+            consumerType: "business_operation",
+            consumerId: `ads.structure.generate:${record.id}`,
+            projectId: input.projectId,
+            metadata: { source: "competitor_analysis", asin: competitor.asin },
+          });
+          return artifact.content && typeof artifact.content === "object"
+            ? { ...competitor, ...(artifact.content as Record<string, unknown>) }
+            : competitor;
+        }));
 
-        const productContext = buildProductContext(project);
+        if (listingArtifact) {
+          await recordBusinessArtifactUse({
+            artifact: listingArtifact,
+            consumerDomain: "ads",
+            consumerType: "business_operation",
+            consumerId: `ads.structure.generate:${record.id}`,
+            projectId: input.projectId,
+            metadata: { source: "listing.content" },
+          });
+        }
+        const selectedListing = listingArtifact?.content && typeof listingArtifact.content === "object"
+          ? (listingArtifact.content as any).listing
+          : null;
+        const productContext = [
+          buildProductContext(project),
+          selectedListing ? `已确认 Listing:\n${JSON.stringify(selectedListing).slice(0, 8_000)}` : "",
+        ].filter(Boolean).join("\n\n");
         const keywordData = buildKeywordSummary(keywords);
         const competitorSummary = buildCompetitorSummary(project, competitors);
 
@@ -153,7 +199,7 @@ export const adStructureRouter = router({
           .replace("{competitorSummary}", competitorSummary);
 
 
-        const response = await invokeLLM({
+        const response = await invokeBusinessSkill({
           messages: [
             { role: "system", content: "你是一位资深亚马逊PPC广告专家，擅长设计广告架构和关键词投放策略。请严格按照JSON格式输出。所有keyword字段和negativeKeywords字段必须保留英文原文，严禁翻译成中文。" },
             { role: "user", content: prompt },

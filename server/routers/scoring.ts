@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as db from "../repositories";
 import { scoreListing } from "../scoringEngine";
 
@@ -331,7 +331,7 @@ export const scoringRouter = router({
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "You are an expert Amazon listing optimizer. Return only the optimized content as requested, no explanations." },
           { role: "user", content: prompt },

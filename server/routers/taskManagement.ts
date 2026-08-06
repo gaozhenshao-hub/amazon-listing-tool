@@ -7,7 +7,7 @@ import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
 import { teamTasks, meetingRecords, users, productProfiles } from "../../drizzle/schema";
 import { eq, desc, asc, and, inArray, like, or, sql, isNull } from "drizzle-orm";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { transcribeAudio } from "../_core/voiceTranscription";
 import { storagePut } from "../storage";
 
@@ -413,7 +413,7 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
 
 
 
-        const response = await invokeLLM({
+        const response = await invokeBusinessSkill({
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: `请从以下会议记录中提取行动任务：\n\n${input.transcript}` },
@@ -535,7 +535,7 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
 
 
 
-        const response = await invokeLLM({
+        const response = await invokeBusinessSkill({
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: `请从以下文本中提取行动任务：\n\n${input.text}` },

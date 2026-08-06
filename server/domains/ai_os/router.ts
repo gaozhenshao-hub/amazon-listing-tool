@@ -1,5 +1,6 @@
 import { router } from "../../_core/trpc";
 import { emperorAgentsRouter } from "./routers/agents";
+import { emperorArtifactsRouter } from "./routers/artifacts";
 import { emperorDiagnosticsRouter } from "./routers/diagnostics";
 import { emperorKnowledgeRouter } from "./routers/knowledge";
 import { emperorMcpRouter } from "./routers/mcp";
@@ -11,6 +12,7 @@ import { emperorSkillsRouter } from "./routers/skills";
 import { emperorToolsRouter } from "./routers/tools";
 
 export { emperorAgentsRouter } from "./routers/agents";
+export { emperorArtifactsRouter } from "./routers/artifacts";
 export { emperorDiagnosticsRouter } from "./routers/diagnostics";
 export { emperorKnowledgeRouter } from "./routers/knowledge";
 export { emperorMcpRouter } from "./routers/mcp";
@@ -29,6 +31,7 @@ export const emperorRouter = router({
   mcp: emperorMcpRouter,
   tools: emperorToolsRouter,
   agents: emperorAgentsRouter,
+  artifacts: emperorArtifactsRouter,
   scheduled: emperorScheduledRouter,
   diagnostics: emperorDiagnosticsRouter,
   knowledge: emperorKnowledgeRouter,

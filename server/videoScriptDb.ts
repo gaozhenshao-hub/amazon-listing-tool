@@ -12,7 +12,31 @@ import {
   videoScriptVersions, InsertVideoScriptVersion,
   videoSpvSegments, InsertVideoSpvSegment,
 } from "../drizzle/schema";
-import { registerVideoArtifact } from "./domains/ai_os/services/businessArtifactRegistry";
+import {
+  listBusinessArtifactVersions,
+  registerVideoArtifact,
+  resolveCurrentBusinessArtifact,
+} from "./domains/ai_os/services/businessArtifactRegistry";
+
+async function selectedVideoArtifact(videoScriptId: number) {
+  const versions = await listBusinessArtifactVersions({
+    workspaceId: undefined,
+    domain: "video",
+    artifactKey: "video.script",
+    sourceTable: "video_scripts",
+    sourceRowId: videoScriptId,
+    limit: 1,
+  }).catch(() => []);
+  // A newer draft means the user is actively editing. Keep showing the working
+  // copy until it is explicitly confirmed and promoted to current.
+  if (versions[0]?.status === "draft") return null;
+  return resolveCurrentBusinessArtifact({
+    domain: "video",
+    artifactKey: "video.script",
+    sourceTable: "video_scripts",
+    sourceRowId: videoScriptId,
+  }).catch(() => null);
+}
 
 async function videoScriptIdForSection(sectionId: number) {
   const db = await getDb();
@@ -47,16 +71,29 @@ export async function createVideoScript(data: InsertVideoScript) {
 export async function getVideoScriptsByProject(projectId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(videoScripts)
+  const rows = await db.select().from(videoScripts)
     .where(eq(videoScripts.projectId, projectId))
     .orderBy(desc(videoScripts.updatedAt));
+  return Promise.all(rows.map(async (row) => {
+    const artifact = await selectedVideoArtifact(row.id);
+    const selected = artifact?.content && typeof artifact.content === "object"
+      ? (artifact.content as any).script
+      : null;
+    return selected ? { ...row, ...selected, id: row.id, projectId: row.projectId } : row;
+  }));
 }
 
 export async function getVideoScriptById(id: number) {
   const db = await getDb();
   if (!db) return null;
   const rows = await db.select().from(videoScripts).where(eq(videoScripts.id, id));
-  return rows[0] ?? null;
+  const snapshot = rows[0] ?? null;
+  if (!snapshot) return null;
+  const artifact = await selectedVideoArtifact(id);
+  const selected = artifact?.content && typeof artifact.content === "object"
+    ? (artifact.content as any).script
+    : null;
+  return selected ? { ...snapshot, ...selected, id: snapshot.id, projectId: snapshot.projectId } : snapshot;
 }
 
 export async function updateVideoScript(id: number, data: Partial<InsertVideoScript>) {
@@ -201,6 +238,11 @@ export async function saveSections(videoScriptId: number, sections: InsertVideoS
 export async function getSections(videoScriptId: number) {
   const db = await getDb();
   if (!db) return [];
+  const artifact = await selectedVideoArtifact(videoScriptId);
+  const selected = artifact?.content && typeof artifact.content === "object"
+    ? (artifact.content as any).sections
+    : null;
+  if (Array.isArray(selected)) return selected;
   return db.select().from(videoScriptSections)
     .where(eq(videoScriptSections.videoScriptId, videoScriptId))
     .orderBy(asc(videoScriptSections.sortOrder));
@@ -241,6 +283,15 @@ export async function saveSubtopics(sectionId: number, subtopics: InsertVideoScr
 export async function getSubtopicsBySection(sectionId: number) {
   const db = await getDb();
   if (!db) return [];
+  const videoScriptId = await videoScriptIdForSection(sectionId);
+  const artifact = videoScriptId ? await selectedVideoArtifact(videoScriptId) : null;
+  const selected = artifact?.content && typeof artifact.content === "object"
+    ? (artifact.content as any).subtopics
+    : null;
+  if (Array.isArray(selected)) {
+    return selected.filter((subtopic: any) => Number(subtopic.sectionId) === sectionId)
+      .sort((left: any, right: any) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0));
+  }
   return db.select().from(videoScriptSubtopics)
     .where(eq(videoScriptSubtopics.sectionId, sectionId))
     .orderBy(asc(videoScriptSubtopics.sortOrder));
@@ -249,6 +300,11 @@ export async function getSubtopicsBySection(sectionId: number) {
 export async function getSubtopicsByVideoScript(videoScriptId: number) {
   const db = await getDb();
   if (!db) return [];
+  const artifact = await selectedVideoArtifact(videoScriptId);
+  const selected = artifact?.content && typeof artifact.content === "object"
+    ? (artifact.content as any).subtopics
+    : null;
+  if (Array.isArray(selected)) return selected;
   const sections = await getSections(videoScriptId);
   const allSubtopics = [];
   for (const sec of sections) {
@@ -281,6 +337,15 @@ export async function saveShots(subtopicId: number, sectionId: number, shots: In
 export async function getShotsBySubtopic(subtopicId: number) {
   const db = await getDb();
   if (!db) return [];
+  const videoScriptId = await videoScriptIdForSubtopic(subtopicId);
+  const artifact = videoScriptId ? await selectedVideoArtifact(videoScriptId) : null;
+  const selected = artifact?.content && typeof artifact.content === "object"
+    ? (artifact.content as any).shots
+    : null;
+  if (Array.isArray(selected)) {
+    return selected.filter((shot: any) => Number(shot.subtopicId) === subtopicId)
+      .sort((left: any, right: any) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0));
+  }
   return db.select().from(videoScriptShots)
     .where(eq(videoScriptShots.subtopicId, subtopicId))
     .orderBy(asc(videoScriptShots.sortOrder));
@@ -289,6 +354,11 @@ export async function getShotsBySubtopic(subtopicId: number) {
 export async function getShotsByVideoScript(videoScriptId: number) {
   const db = await getDb();
   if (!db) return [];
+  const artifact = await selectedVideoArtifact(videoScriptId);
+  const selected = artifact?.content && typeof artifact.content === "object"
+    ? (artifact.content as any).shots
+    : null;
+  if (Array.isArray(selected)) return selected;
   return db.select().from(videoScriptShots)
     .where(eq(videoScriptShots.sectionId, videoScriptId))
     .orderBy(asc(videoScriptShots.sortOrder));
@@ -352,6 +422,11 @@ export async function saveEditScripts(videoScriptId: number, editScripts: Insert
 export async function getEditScripts(videoScriptId: number) {
   const db = await getDb();
   if (!db) return [];
+  const artifact = await selectedVideoArtifact(videoScriptId);
+  const selected = artifact?.content && typeof artifact.content === "object"
+    ? (artifact.content as any).editScripts
+    : null;
+  if (Array.isArray(selected)) return selected;
   return db.select().from(videoEditScripts)
     .where(eq(videoEditScripts.videoScriptId, videoScriptId))
     .orderBy(asc(videoEditScripts.sortOrder));
@@ -412,6 +487,11 @@ export async function saveSpvSegments(videoScriptId: number, segments: InsertVid
 export async function getSpvSegments(videoScriptId: number) {
   const db = await getDb();
   if (!db) return [];
+  const artifact = await selectedVideoArtifact(videoScriptId);
+  const selected = artifact?.content && typeof artifact.content === "object"
+    ? (artifact.content as any).spvSegments
+    : null;
+  if (Array.isArray(selected)) return selected;
   return db.select().from(videoSpvSegments)
     .where(eq(videoSpvSegments.videoScriptId, videoScriptId))
     .orderBy(asc(videoSpvSegments.sortOrder));

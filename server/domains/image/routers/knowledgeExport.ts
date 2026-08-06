@@ -24,7 +24,7 @@ const {
   ensureWriteAccess,
   generateStep5RunId,
   getKBReference,
-  invokeLLM,
+  invokeBusinessSkill,
   isActiveStep5Run,
   kbDb,
   parseLLMJson,
@@ -34,6 +34,7 @@ const {
   registerAiJobHandler,
   resolveProjectAccess,
   resolveSessionAccess,
+  resolveSessionForExecution,
   router,
   runStep5GenerationJob,
   serializeStep5Error,
@@ -95,7 +96,7 @@ export const imageKnowledgeExportProcedures = {
   exportPdf: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.export.pdf:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");

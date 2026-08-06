@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { invokeLLM } from "../../_core/llm";
+import { invokeBusinessSkill } from "../ai_os/services/businessSkillGateway";
 import * as db from "./repository";
 import { runEmperorSkill } from "./service";
 import {
@@ -45,7 +45,7 @@ export {
   checkDataReadiness,
   contextToPromptText,
   db,
-  invokeLLM,
+  invokeBusinessSkill,
   protectedProcedure,
   router,
   runEmperorSkill,
@@ -287,7 +287,7 @@ Return the CORRECTED bullet points in the same JSON format:
   "totalCharacterCount": 0
 }`;
 
-  const response = await invokeLLM({
+  const response = await invokeBusinessSkill({
     messages: [
       { role: "system", content: `You are an expert Amazon listing copywriter. Your ONLY job right now is to fix character count issues in bullet points. Each bullet (subtitle + space + fullText) MUST be 200-280 characters. Count precisely.` },
       { role: "user", content: refinementPrompt },
@@ -339,7 +339,7 @@ Return the CORRECTED titles in the same JSON format:
   "reasoning": ""
 }`;
 
-  const response = await invokeLLM({
+  const response = await invokeBusinessSkill({
     messages: [
       { role: "system", content: `You are an expert Amazon listing copywriter. Your ONLY job right now is to fix character count issues in two-stage titles. Layer 1 (title) MUST be ≤75 chars. Layer 2 (itemHighlights) MUST be ≤125 chars. Count precisely.` },
       { role: "user", content: refinementPrompt },
@@ -408,7 +408,7 @@ export async function generateChineseTranslation(
 export async function translateImageAdviceToChinese(imageAdviceJson: string): Promise<string | null> {
   try {
     const imageAdvice = JSON.parse(imageAdviceJson);
-    const response = await invokeLLM({
+    const response = await invokeBusinessSkill({
       messages: [
         { role: "system", content: IMAGE_ADVICE_TRANSLATION_PROMPT },
         { role: "user", content: `Please translate the following Amazon product image advice into Chinese:\n\n${JSON.stringify(imageAdvice, null, 2)}` },

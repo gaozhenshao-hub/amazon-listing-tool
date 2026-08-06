@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,13 +27,16 @@ import {
   LayoutDashboard,
   Grid3X3,
   Sparkles,
+  Square,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { WorkflowStepProgress } from "@/components/workflow/WorkflowStepProgress";
 import { EmbeddedAgentRunPanel } from "@/components/workflow/EmbeddedAgentRunPanel";
-import { DEV_ANALYSIS_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
+import { BusinessArtifactVersionPicker } from "@/components/workflow/BusinessArtifactVersionPicker";
+import { AiJobHistoryPanel } from "@/components/workflow/AiJobHistoryPanel";
+import { DEV_ANALYSIS_WORKFLOW_STEPS, PRODUCT_ANALYSIS_AGENT_SLUG } from "@/components/workflow/workflowDefinitions";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -63,9 +66,26 @@ export default function DevAnalysisFlow() {
   const [editFormData, setEditFormData] = useState<any>(null);
   const utils = trpc.useUtils();
 
+  useEffect(() => {
+    const requestedStage = new URLSearchParams(window.location.search).get("stage") || "";
+    if (STAGES.some((stage) => stage.key === requestedStage)) {
+      setActiveStage(requestedStage as StageKey);
+    }
+  }, []);
+
   // ─── Queries ───
   const { data: project, isLoading: projLoading } = trpc.devProject.getById.useQuery({ id: projectId });
-  const { data: stages, isLoading: stagesLoading } = trpc.devAnalysis.getStages.useQuery({ projectId });
+  const { data: stages, isLoading: stagesLoading } = trpc.devAnalysis.getStages.useQuery(
+    { projectId },
+    {
+      refetchInterval: (query) => {
+        const currentStages = query.state.data as any[] | undefined;
+        return currentStages?.some((stage) => stage.status === "running" || stage.status === "generating")
+          ? 2_000
+          : false;
+      },
+    },
+  );
   const { data: products } = trpc.devProject.getProducts.useQuery({ projectId });
 
   // ─── Stage Gating Query ───
@@ -87,37 +107,41 @@ export default function DevAnalysisFlow() {
   const invalidateAll = () => {
     utils.devAnalysis.getStages.invalidate({ projectId });
     utils.devAnalysis.getStageGating.invalidate({ projectId });
+    utils.emperor.agents.listProjectRuns.invalidate({ projectId, agentSlug: PRODUCT_ANALYSIS_AGENT_SLUG, limit: 10 });
   };
   const marketMutation = trpc.devAnalysis.runMarketOverview.useMutation({
-    onSuccess: () => { toast.success("市场大盘分析完成"); invalidateAll(); },
+    onSuccess: (result: any) => { toast.success(result?.alreadyRunning ? "市场大盘仍在后台分析" : "市场大盘已提交后台分析"); invalidateAll(); },
     onError: (e: any) => toast.error(`市场分析失败: ${e.message}`),
   });
   const crossMutation = trpc.devAnalysis.runAttributeCross.useMutation({
-    onSuccess: () => { toast.success("属性交叉分析完成"); invalidateAll(); },
+    onSuccess: (result: any) => { toast.success(result?.alreadyRunning ? "属性交叉仍在后台分析" : "属性交叉已提交后台分析"); invalidateAll(); },
     onError: (e: any) => toast.error(`属性交叉分析失败: ${e.message}`),
   });
   const tagCrossMutation = trpc.devAnalysis.runTagCrossAnalysis.useMutation({
-    onSuccess: () => { toast.success("标签交叉分析完成"); invalidateAll(); utils.devAnalysis.getConfirmedProjectTags.invalidate({ projectId }); },
+    onSuccess: (result: any) => { toast.success(result?.alreadyRunning ? "标签交叉仍在后台分析" : "标签交叉已提交后台分析"); invalidateAll(); utils.devAnalysis.getConfirmedProjectTags.invalidate({ projectId }); },
     onError: (e: any) => toast.error(`标签交叉分析失败: ${e.message}`),
   });
   const priceMutation = trpc.devAnalysis.runPriceAnalysis.useMutation({
-    onSuccess: () => { toast.success("价格段分析完成"); invalidateAll(); },
+    onSuccess: (result: any) => { toast.success(result?.alreadyRunning ? "价格段仍在后台分析" : "价格段已提交后台分析"); invalidateAll(); },
     onError: (e: any) => toast.error(`价格分析失败: ${e.message}`),
   });
   const brandMutation = trpc.devAnalysis.runBrandCompetition.useMutation({
-    onSuccess: () => { toast.success("品牌竞争分析完成"); invalidateAll(); },
+    onSuccess: (result: any) => { toast.success(result?.alreadyRunning ? "品牌竞争仍在后台分析" : "品牌竞争已提交后台分析"); invalidateAll(); },
     onError: (e: any) => toast.error(`品牌分析失败: ${e.message}`),
   });
   const reviewMutation = trpc.devAnalysis.runReviewKano.useMutation({
-    onSuccess: () => { toast.success("评论深度分析完成"); invalidateAll(); },
+    onSuccess: (result: any) => { toast.success(result?.alreadyRunning ? "评论深度仍在后台分析" : "评论深度已提交后台分析"); invalidateAll(); },
     onError: (e: any) => toast.error(`评论分析失败: ${e.message}`),
   });
   const informationSummaryMutation = trpc.devAnalysis.runInformationSummary.useMutation({
-    onSuccess: () => { toast.success("信息汇总生成完成，请补充并确认关键字段"); invalidateAll(); },
+    onSuccess: (result: any) => {
+      toast.success(result?.alreadyRunning ? "信息汇总仍在后台执行" : "信息汇总已提交后台分析");
+      invalidateAll();
+    },
     onError: (e: any) => toast.error(`信息汇总失败: ${e.message}`),
   });
   const dashboardMutation = trpc.devAnalysis.runDecisionDashboard.useMutation({
-    onSuccess: () => { toast.success("综合决策看板生成完成"); invalidateAll(); },
+    onSuccess: (result: any) => { toast.success(result?.alreadyRunning ? "综合决策仍在后台生成" : "综合决策已提交后台生成"); invalidateAll(); },
     onError: (e: any) => toast.error(`决策看板生成失败: ${e.message}`),
   });
   const confirmMutation = trpc.devAnalysis.confirmStage.useMutation({
@@ -125,15 +149,22 @@ export default function DevAnalysisFlow() {
     onError: (e: any) => toast.error(`确认失败: ${e.message}`),
   });
   const editMutation = trpc.devAnalysis.editStage.useMutation({
-    onSuccess: () => { toast.success("编辑已保存"); utils.devAnalysis.getStages.invalidate({ projectId }); setEditingStage(null); },
+    onSuccess: () => { toast.success("编辑已保存"); invalidateAll(); setEditingStage(null); },
     onError: (e: any) => toast.error(`保存失败: ${e.message}`),
   });
   const unlockMutation = trpc.devAnalysis.unlockStage.useMutation({
     onSuccess: () => { toast.success("阶段已解锁，可重新分析或编辑"); invalidateAll(); },
     onError: (e: any) => toast.error(`解锁失败: ${e.message}`),
   });
+  const cancelMutation = trpc.devAnalysis.cancelStage.useMutation({
+    onSuccess: (result: any) => {
+      toast.success(result?.canceled ? "后台分析已取消" : result?.reason || "当前没有正在执行的任务");
+      invalidateAll();
+    },
+    onError: (e: any) => toast.error(`取消失败: ${e.message}`),
+  });
 
-  const isAnyMutating = marketMutation.isPending || crossMutation.isPending || tagCrossMutation.isPending || priceMutation.isPending || brandMutation.isPending || reviewMutation.isPending || informationSummaryMutation.isPending || dashboardMutation.isPending;
+  const isAnyMutating = marketMutation.isPending || crossMutation.isPending || tagCrossMutation.isPending || priceMutation.isPending || brandMutation.isPending || reviewMutation.isPending || informationSummaryMutation.isPending || dashboardMutation.isPending || cancelMutation.isPending;
 
   // ─── Run stage ───
   const runStage = useCallback((key: StageKey) => {
@@ -231,7 +262,15 @@ export default function DevAnalysisFlow() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-5 p-4">
-      <EmbeddedAgentRunPanel title="产品分析 Agent Run / Checkpoint" projectId={projectId} />
+      <EmbeddedAgentRunPanel
+        title="产品开发 · 七阶段 Agent"
+        projectId={projectId}
+        agentSlug={PRODUCT_ANALYSIS_AGENT_SLUG}
+        managedByBusinessPage
+        businessUrl={`/dev/project/${projectId}/analysis`}
+        onManagedNodeSelect={(nodeId) => setActiveStage(nodeId as StageKey)}
+      />
+      <AiJobHistoryPanel module="productDevelopment" projectId={projectId} title="七阶段后台任务历史" />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -405,6 +444,11 @@ export default function DevAnalysisFlow() {
                   const isConfirmed = status === "confirmed";
                   const currentGating = gating?.[activeStage];
                   const isCurrentGated = currentGating && !currentGating.canRun;
+                  const runStartedAt = stageData?.runStartedAt ? new Date(stageData.runStartedAt).getTime() : 0;
+                  const canRecoverRun = isRunning && (
+                    !stageData?.runId ||
+                    (runStartedAt > 0 && Date.now() - runStartedAt > 12 * 60_000)
+                  );
 
                   return (
                     <>
@@ -435,10 +479,12 @@ export default function DevAnalysisFlow() {
                         size="sm"
                         className="w-full gap-2"
                         onClick={() => runStage(activeStage)}
-                        disabled={isAnyMutating || isConfirmed || (isCurrentGated && !hasResult)}
+                        disabled={isAnyMutating || isConfirmed || (isCurrentGated && !hasResult) || (isRunning && !canRecoverRun)}
                       >
-                        {isRunning ? (
+                        {isRunning && !canRecoverRun ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : canRecoverRun ? (
+                          <RefreshCw className="h-3.5 w-3.5" />
                         ) : (isCurrentGated && !hasResult) ? (
                           <Lock className="h-3.5 w-3.5" />
                         ) : hasResult ? (
@@ -446,8 +492,23 @@ export default function DevAnalysisFlow() {
                         ) : (
                           <Play className="h-3.5 w-3.5" />
                         )}
-                        {isRunning ? "分析中..." : (isCurrentGated && !hasResult) ? "未解锁" : hasResult ? "重新分析" : "开始分析"}
+                        {isRunning
+                          ? canRecoverRun ? "恢复中断的分析" : "后台分析中..."
+                          : (isCurrentGated && !hasResult) ? "未解锁" : hasResult ? "重新分析" : "开始分析"}
                       </Button>
+
+                      {isRunning && stageData?.runId && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                          onClick={() => cancelMutation.mutate({ projectId, stageType: activeStage })}
+                          disabled={cancelMutation.isPending}
+                        >
+                          {cancelMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
+                          取消后台分析
+                        </Button>
+                      )}
 
                       {/* Edit */}
                       {hasResult && !isConfirmed && (
@@ -510,6 +571,19 @@ export default function DevAnalysisFlow() {
                   );
                 })()}
               </div>
+              <BusinessArtifactVersionPicker
+                scope={stageMap[activeStage]?.id ? {
+                  domain: "project",
+                  artifactKey: `dev.analysis.${activeStage}`,
+                  sourceTable: "dev_analysis_stages",
+                  sourceRowId: stageMap[activeStage].id,
+                  projectId,
+                } : null}
+                label={`${STAGES[currentIdx].label}版本`}
+                onVersionChanged={() => {
+                  invalidateAll();
+                }}
+              />
               <Separator />
               {/* Navigation */}
               <div className="flex gap-2">

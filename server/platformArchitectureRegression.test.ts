@@ -143,6 +143,7 @@ describe("platform architecture regression", () => {
       "server/repositories/listing/listingRepository.ts",
       "server/repositories/image/imageRepository.ts",
       "server/routers/adDeepAnalysis.ts",
+      "server/domains/ads/legacyAnalysis/service.ts",
       "server/videoScriptDb.ts",
     );
     expect(sources).toContain("registerListingArtifact");

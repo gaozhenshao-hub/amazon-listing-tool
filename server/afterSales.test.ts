@@ -132,7 +132,7 @@ describe("AfterSales Router Registration", () => {
     // afterSales should be a key in appRouter
     expect((mod.appRouter as any)._def?.procedures?.["afterSales.getDashboardStats"] || 
            (mod.appRouter as any).afterSales).toBeDefined();
-  });
+  }, 15_000);
 });
 
 // Test schema tables

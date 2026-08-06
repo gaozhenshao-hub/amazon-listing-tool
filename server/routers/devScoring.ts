@@ -1,26 +1,18 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as devDb from "../devDb";
-
-
-// Helper: resolve dev project access based on user role
-async function resolveDevProjectAccess(projectId: number, user: { id: number; role: string }) {
-  if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
-    const project = await devDb.getDevProjectByIdAdmin(projectId);
-    if (!project) throw new Error("Project not found");
-    return project;
-  }
-  const project = await devDb.getDevProjectById(projectId, user.id);
-  if (!project) throw new Error("Project not found");
-  return project;
-}
+import {
+  recordProductDevelopmentAudit,
+  resolveDevProjectAccess,
+} from "../domains/product_development/security/productDevelopmentAccess";
 
 export const devScoringRouter = router({
   generate: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
+      const project = await resolveDevProjectAccess(input.projectId, ctx);
       if (!project) throw new Error("Project not found");
 
       const products = await devDb.getDevProductsByProject(input.projectId);
@@ -46,7 +38,7 @@ ${products.slice(0, 10).map(p => `${p.asin} | ${p.title} | $${p.price} | ${p.rat
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",
@@ -152,6 +144,20 @@ ${products.slice(0, 10).map(p => `${p.asin} | ${p.title} | $${p.price} | ${p.rat
         status: "completed" as any,
       });
 
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.project.approve",
+        projectId: input.projectId,
+        resourceType: "dev_project",
+        resourceId: input.projectId,
+        riskLevel: "high",
+        afterSnapshot: {
+          phase: "project_execution",
+          approvedScore: score.totalScore,
+          status: "completed",
+        },
+      });
+
       return { success: true, totalScore: score.totalScore };
     }),
 
@@ -165,6 +171,19 @@ ${products.slice(0, 10).map(p => `${p.asin} | ${p.title} | $${p.price} | ${p.rat
         approvedAt: null as any,
         approvedScore: null as any,
         status: "scoring" as any,
+      });
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.project.revoke_approval",
+        projectId: input.projectId,
+        resourceType: "dev_project",
+        resourceId: input.projectId,
+        riskLevel: "critical",
+        afterSnapshot: {
+          phase: "market_analysis",
+          approvedScore: null,
+          status: "scoring",
+        },
       });
       return { success: true };
     }),

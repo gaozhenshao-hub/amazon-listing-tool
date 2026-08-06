@@ -33,15 +33,31 @@ export function Step2ImageOutline({
   const [editData, setEditData] = useState<any>(null);
   const [isLocked, setIsLocked] = useState(!!session?.step2Confirmed);
   const [optimizingModuleIndex, setOptimizingModuleIndex] = useState<number | null>(null);
+  const [generationSeconds, setGenerationSeconds] = useState(0);
 
   useEffect(() => {
     if (session?.step2UserEdit) {
       try { setEditData(normalizeImageOutline(JSON.parse(session.step2UserEdit))); } catch {}
     } else if (session?.step2AiResult) {
-      try { setEditData(normalizeImageOutline(JSON.parse(session.step2AiResult), { forceDefaultAplus: true })); } catch {}
+      try {
+        setEditData(normalizeImageOutline(JSON.parse(session.step2AiResult), {
+          forceDefaultAplus: true,
+          recoverMissingSecondaryContent: true,
+        }));
+      } catch {}
     }
     setIsLocked(!!session?.step2Confirmed);
   }, [session?.step2AiResult, session?.step2UserEdit, session?.step2Confirmed]);
+
+  useEffect(() => {
+    if (!generateMutation.isPending) {
+      setGenerationSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => setGenerationSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1_000);
+    return () => window.clearInterval(timer);
+  }, [generateMutation.isPending]);
 
   const handleUnlock = async () => {
     try {
@@ -57,7 +73,10 @@ export function Step2ImageOutline({
   const handleGenerate = async () => {
     try {
       const result = await generateMutation.mutateAsync({ projectId });
-      setEditData(normalizeImageOutline(result, { forceDefaultAplus: true }));
+      setEditData(normalizeImageOutline(result, {
+        forceDefaultAplus: true,
+        recoverMissingSecondaryContent: true,
+      }));
       toast.success("图片大纲生成完成");
     } catch (err: any) {
       toast.error(err.message || "生成失败");
@@ -68,6 +87,13 @@ export function Step2ImageOutline({
     if (!editData) return;
     try {
       const normalizedData = normalizeImageOutline(editData);
+      const incompleteImage = normalizedData.secondaryImages.find((image: any) =>
+        !String(image?.purpose || "").trim() || !String(image?.contentBrief || "").trim(),
+      );
+      if (incompleteImage) {
+        toast.error(`请补全辅图${incompleteImage.imageNumber}的目的和内容后再确认`);
+        return;
+      }
       setEditData(normalizedData);
       await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(normalizedData) });
       toast.success("图片大纲已确认");
@@ -162,7 +188,7 @@ export function Step2ImageOutline({
           <CardContent>
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-primary mr-3" />
-              <span className="text-muted-foreground">AI正在规划图片大纲...</span>
+              <span className="text-muted-foreground">皇帝 Skill 正在规划图片大纲，已用时 {generationSeconds} 秒...</span>
             </div>
           </CardContent>
         )}
@@ -229,6 +255,11 @@ export function Step2ImageOutline({
                 <CardTitle className="text-base flex items-center gap-2">
                   <Image className="w-4 h-4 text-blue-500" /> 辅图 {img.imageNumber || idx + 2}
                   {img.priority && <Badge variant="outline" className="text-xs">{img.priority}</Badge>}
+                  {img.contractRecovered && (
+                    <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-700">
+                      系统补全，请复核
+                    </Badge>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">

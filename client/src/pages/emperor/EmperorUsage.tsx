@@ -37,15 +37,17 @@ export default function EmperorUsage() {
   const isLoading = dayLoading || skillLoading || userLoading;
 
   // Day-level data: { date, totalTokens, runCount }
-  const byDay = (dayData as Array<{ date: string; totalTokens: number; runCount: number }> | undefined) || [];
+  const byDay = (dayData as Array<{ date: string; totalTokens: number; costCents: number; failedRuns: number; runCount: number }> | undefined) || [];
   // Skill-level data: { skillSlug, skillName, totalTokens, runCount, avgDurationMs }
-  const bySkill = (skillData as Array<{ skillSlug: string; skillName: string; totalTokens: number; runCount: number; avgDurationMs: number }> | undefined) || [];
+  const bySkill = (skillData as Array<{ skillSlug: string; skillName: string; latestSkillVersion: number; totalTokens: number; costCents: number; failedRuns: number; runCount: number; avgDurationMs: number }> | undefined) || [];
   // User-level data: { userId, userName, totalTokens, runCount }
   const byUser = (userData as Array<{ userId: number; userName: string; totalTokens: number; runCount: number }> | undefined) || [];
 
   const totalRuns = byDay.reduce((s, d) => s + Number(d.runCount || 0), 0);
   const totalTokens = byDay.reduce((s, d) => s + Number(d.totalTokens || 0), 0);
   const totalSkillRuns = bySkill.reduce((s, d) => s + Number(d.runCount || 0), 0);
+  const totalCostCents = byDay.reduce((s, d) => s + Number(d.costCents || 0), 0);
+  const totalFailedRuns = byDay.reduce((s, d) => s + Number(d.failedRuns || 0), 0);
 
   if (isLoading) {
     return (
@@ -79,7 +81,7 @@ export default function EmperorUsage() {
         </div>
 
         {/* Summary cards */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-5 gap-4">
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
@@ -89,6 +91,20 @@ export default function EmperorUsage() {
                 <div>
                   <p className="text-xs text-muted-foreground">总运行次数</p>
                   <p className="text-2xl font-bold">{totalRuns.toLocaleString()}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-red-500/10 flex items-center justify-center">
+                  <BarChart3 className="h-5 w-5 text-red-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">成本 / 失败</p>
+                  <p className="text-xl font-bold">${(totalCostCents / 100).toFixed(2)}</p>
+                  <p className="text-xs text-muted-foreground">{totalFailedRuns} 次失败</p>
                 </div>
               </div>
             </CardContent>
@@ -246,11 +262,15 @@ export default function EmperorUsage() {
                   <span className="text-xs text-muted-foreground w-5 text-right font-mono">{idx + 1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium truncate">{item.skillName || item.skillSlug}</span>
+                      <span className="text-sm font-medium truncate">
+                        {item.skillName || item.skillSlug}{item.latestSkillVersion ? ` · v${item.latestSkillVersion}` : ""}
+                      </span>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground flex-shrink-0">
                         <span>{Number(item.runCount).toLocaleString()} 次</span>
                         <span>{(Number(item.totalTokens) / 1000).toFixed(1)}K tokens</span>
                         <span>{(Number(item.avgDurationMs) / 1000).toFixed(1)}s avg</span>
+                        <span>${(Number(item.costCents || 0) / 100).toFixed(2)}</span>
+                        <span>{Number(item.failedRuns || 0)} 失败</span>
                       </div>
                     </div>
                     <div className="h-1.5 bg-muted rounded-full overflow-hidden">

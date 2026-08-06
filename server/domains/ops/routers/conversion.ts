@@ -1,4 +1,6 @@
 import { currentOpsWorkspaceId } from "../workspaceContext";
+import { requireOpsDb } from "../legacy/repository";
+import { runOpsSkill } from "../legacy/service";
 import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
@@ -31,7 +33,7 @@ const {
   getToday,
   getYesterday,
   inArray,
-  invokeLLM,
+  invokeBusinessSkill,
   isNull,
   keywordMonitors,
   keywordSnapshots,
@@ -63,7 +65,6 @@ const {
   users,
   z,
 } = shared;
-const getDb = (...args: Parameters<typeof shared.getDb>) => shared.getDb(...args);
 
 export const opsConversionProcedures = {
 
@@ -73,7 +74,7 @@ export const opsConversionProcedures = {
   // ═══════════════════════════════════════════════════════
 
   listComparisons: protectedProcedure.input(z.object({ productProfileId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     return db!.select().from(conversionComparisons)
       .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), and(eq(conversionComparisons.userId, ctx.user.id), eq(conversionComparisons.productProfileId, input.productProfileId))))
       .orderBy(desc(conversionComparisons.updatedAt));
@@ -81,7 +82,7 @@ export const opsConversionProcedures = {
 
 
   getComparison: protectedProcedure.input(z.object({ comparisonId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const [comp] = await db!.select().from(conversionComparisons)
       .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), and(eq(conversionComparisons.id, input.comparisonId), eq(conversionComparisons.userId, ctx.user.id))));
     if (!comp) throw new TRPCError({ code: "NOT_FOUND", message: "Comparison not found" });
@@ -95,7 +96,7 @@ export const opsConversionProcedures = {
     ownAsin: z.string().min(1),
     competitorAsins: z.array(z.string()).optional(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const [result] = await db!.insert(conversionComparisons).values({
       userId: ctx.user.id,
       productProfileId: input.productProfileId,
@@ -108,7 +109,7 @@ export const opsConversionProcedures = {
 
 
   deleteComparison: protectedProcedure.input(z.object({ comparisonId: z.number() })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     await db!.delete(conversionScores).where(opsWorkspaceCondition(conversionScores, currentOpsWorkspaceId(), eq(conversionScores.comparisonId, input.comparisonId)));
     await db!.delete(conversionSuggestions).where(opsWorkspaceCondition(conversionSuggestions, currentOpsWorkspaceId(), eq(conversionSuggestions.comparisonId, input.comparisonId)));
     await db!.delete(conversionComparisons).where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), and(eq(conversionComparisons.id, input.comparisonId), eq(conversionComparisons.userId, ctx.user.id))));
@@ -119,7 +120,7 @@ export const opsConversionProcedures = {
   // ─── Check Items (fixed template + user custom) ───
 
   getCheckItems: protectedProcedure.input(z.object({ includeHidden: z.boolean().optional() }).optional()).query(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     // Auto-initialize default check items if none exist
     const existing = await db!.select({ count: sql<number>`count(*)` }).from(conversionCheckItems)
       .where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), isNull(conversionCheckItems.userId)));
@@ -159,7 +160,7 @@ export const opsConversionProcedures = {
 
 
   initDefaultCheckItems: protectedProcedure.mutation(async ({ ctx }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const existing = await db!.select({ count: sql<number>`count(*)` }).from(conversionCheckItems)
       .where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), isNull(conversionCheckItems.userId)));
     if (Number(existing[0]?.count) > 0) return { message: "Default items already exist", count: Number(existing[0]?.count) };
@@ -173,7 +174,7 @@ export const opsConversionProcedures = {
 
   // Force reset: delete all system check items + overrides + scores + suggestions, then re-init
   resetAndReinitCheckItems: protectedProcedure.mutation(async ({ ctx }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     // 1. Delete all system default check items (userId IS NULL)
     await db!.delete(conversionCheckItems).where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), isNull(conversionCheckItems.userId)));
     // 2. Delete all user overrides (they reference old check item IDs)
@@ -193,7 +194,7 @@ export const opsConversionProcedures = {
     subDimension: z.string(),
     standard: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const [result] = await db!.insert(conversionCheckItems).values({
       userId: ctx.user.id,
       categoryIndex: input.categoryIndex,
@@ -211,7 +212,7 @@ export const opsConversionProcedures = {
     subDimension: z.string().optional(),
     standard: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     // Check if item exists
     const [item] = await db!.select().from(conversionCheckItems).where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), eq(conversionCheckItems.id, input.checkItemId)));
     if (!item) throw new TRPCError({ code: 'NOT_FOUND', message: '检查项不存在' });
@@ -251,7 +252,7 @@ export const opsConversionProcedures = {
     checkItemId: z.number(),
     isHidden: z.boolean(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     // Check if item exists
     const [item] = await db!.select().from(conversionCheckItems).where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), eq(conversionCheckItems.id, input.checkItemId)));
     if (!item) throw new TRPCError({ code: 'NOT_FOUND', message: '检查项不存在' });
@@ -279,7 +280,7 @@ export const opsConversionProcedures = {
   resetCheckItemOverride: protectedProcedure.input(z.object({
     checkItemId: z.number(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     await db!.delete(checkItemOverrides)
       .where(opsWorkspaceCondition(checkItemOverrides, currentOpsWorkspaceId(), and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.checkItemId))));
     return { success: true };
@@ -287,7 +288,7 @@ export const opsConversionProcedures = {
 
 
   removeCustomCheckItem: protectedProcedure.input(z.object({ itemId: z.number() })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     // Also remove any overrides for this item
     await db!.delete(checkItemOverrides)
       .where(opsWorkspaceCondition(checkItemOverrides, currentOpsWorkspaceId(), and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.itemId))));
@@ -300,7 +301,7 @@ export const opsConversionProcedures = {
   // ─── Conversion Scores CRUD ───
 
   getScores: protectedProcedure.input(z.object({ comparisonId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     return db!.select().from(conversionScores)
       .where(opsWorkspaceCondition(conversionScores, currentOpsWorkspaceId(), eq(conversionScores.comparisonId, input.comparisonId)));
   }),
@@ -312,7 +313,7 @@ export const opsConversionProcedures = {
     reason: z.string().optional(),
     isLocked: z.boolean().optional(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const updates: Record<string, any> = {};
     if (input.score !== undefined) {
       updates.score = input.score;
@@ -333,7 +334,7 @@ export const opsConversionProcedures = {
       isLocked: z.boolean().optional(),
     })),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     for (const s of input.scores) {
       const updates: Record<string, any> = {};
       if (s.score !== undefined) {
@@ -353,7 +354,7 @@ export const opsConversionProcedures = {
   triggerAiScoring: protectedProcedure.input(z.object({
     comparisonId: z.number(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const [comp] = await db!.select().from(conversionComparisons)
       .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), eq(conversionComparisons.id, input.comparisonId)));
     if (!comp) throw new TRPCError({ code: "NOT_FOUND" });
@@ -480,7 +481,7 @@ export const opsConversionProcedures = {
   generateSuggestions: protectedProcedure.input(z.object({
     comparisonId: z.number(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const [comp] = await db!.select().from(conversionComparisons)
       .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), eq(conversionComparisons.id, input.comparisonId)));
     if (!comp) throw new TRPCError({ code: "NOT_FOUND" });
@@ -539,7 +540,7 @@ export const opsConversionProcedures = {
 
 
 
-        const response = await invokeLLM({
+        const response = await runOpsSkill({
           messages: [
             { role: "system", content: `你是一位资深亚马逊运营专家和转化率优化顾问（游戏策划师角色）。请根据己品和竞品在"${cat}"维度的评分数据，给出专业的优化建议。
 
@@ -605,7 +606,7 @@ export const opsConversionProcedures = {
 
 
   getSuggestions: protectedProcedure.input(z.object({ comparisonId: z.number() })).query(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     return db!.select().from(conversionSuggestions)
       .where(opsWorkspaceCondition(conversionSuggestions, currentOpsWorkspaceId(), eq(conversionSuggestions.comparisonId, input.comparisonId)))
       .orderBy(asc(conversionSuggestions.categoryName));
@@ -620,7 +621,7 @@ export const opsConversionProcedures = {
     expectedEffect: z.string().optional(),
     isLocked: z.boolean().optional(),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const { suggestionId, ...updates } = input;
     const cleanUpdates: Record<string, any> = {};
     for (const [k, v] of Object.entries(updates)) {
@@ -644,7 +645,7 @@ export const opsConversionProcedures = {
     mode: z.enum(["selected", "locked_low_score", "all_locked"]).optional().default("selected"),
     scoreThreshold: z.number().optional().default(3),
   })).mutation(async ({ ctx, input }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     let suggestions;
 
     if (input.mode === "locked_low_score") {

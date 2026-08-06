@@ -167,7 +167,7 @@ describe("Replenishment Engine", () => {
   });
 
   it("should use LLM for AI suggestions", () => {
-    expect(engineCode).toContain("invokeLLM");
+    expect(engineCode).toContain("invokeBusinessSkill");
   });
 
   it("should calculate full cycle days from step durations", () => {

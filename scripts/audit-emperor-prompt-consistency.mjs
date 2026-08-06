@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { createHash } from "crypto";
-import { readFileSync } from "fs";
+import { readdirSync, readFileSync } from "fs";
 import { relative, resolve } from "path";
 import mysql from "mysql2/promise";
 import ts from "typescript";
@@ -57,6 +57,20 @@ const BUSINESS_GLOBS = [
   "server/replenishmentEngine.ts",
   "server/scheduledHandlers.ts",
 ];
+
+function discoverBusinessSkillFiles(directory = resolve(ROOT, "server")) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const absolute = resolve(directory, entry.name);
+    if (entry.isDirectory()) return discoverBusinessSkillFiles(absolute);
+    if (!entry.name.endsWith(".ts") || entry.name.endsWith(".test.ts") || /\s+\d+\.ts$/.test(entry.name)) return [];
+    const source = readFileSync(absolute, "utf8");
+    return source.includes("invokeBusinessSkill") ? [relative(ROOT, absolute)] : [];
+  });
+}
+
+for (const file of discoverBusinessSkillFiles()) {
+  if (!BUSINESS_GLOBS.includes(file)) BUSINESS_GLOBS.push(file);
+}
 
 function hash(value) {
   return createHash("sha256").update(value || "").digest("hex").slice(0, 16);
@@ -119,10 +133,16 @@ function inferAdSkill(file, text) {
 
 function inferSkill(file, text, explicitSlug) {
   if (explicitSlug) return explicitSlug;
-  if (file.endsWith("imageWorkflow.ts")) return inferImageWorkflowSkill(text);
-  if (file.endsWith("listing.ts")) return inferListingSkill(text);
-  if (file.endsWith("keywordAi.ts")) return inferKeywordSkill(text);
-  if (file.includes("/routers/ad") || file.endsWith("adStructure.ts")) return inferAdSkill(file, text);
+  if (file.endsWith("imageWorkflow.ts") || file.includes("/domains/image/")) return inferImageWorkflowSkill(text);
+  if (file.endsWith("listing.ts") || file.includes("/domains/listing/")) return inferListingSkill(text);
+  if (file.includes("/domains/ops/") || file.endsWith("opsProductPlan.ts")) {
+    if (hasAny(text, ["库存", "补货", "inventory", "stock"])) return "ops.inventory.analysis";
+    if (hasAny(text, ["搜索词", "关键词", "search term"])) return "ops.searchterm.advice";
+    if (hasAny(text, ["竞品", "competitor"])) return "ops.competitor.analysis";
+    return "ops.profit.analysis";
+  }
+  if (file.endsWith("keywordAi.ts") || file.includes("keyword")) return inferKeywordSkill(text);
+  if (file.includes("/routers/ad") || file.includes("/domains/ads/") || file.endsWith("adStructure.ts")) return inferAdSkill(file, text);
   if (file.endsWith("offSocial.ts")) return "off.social.content";
   if (file.endsWith("offOutreach.ts")) return "off.outreach.email";
   if (file.endsWith("offInfluencer.ts")) return "off.influencer.match";
@@ -135,7 +155,7 @@ function inferSkill(file, text, explicitSlug) {
     if (hasAny(text, ["竞品视频", "video.competitor"])) return "video.competitor.analysis";
     return "video.section.plan";
   }
-  if (file.includes("/routers/dev")) return "dev.analysis.product";
+  if (file.includes("/routers/dev") || file.includes("/domains/product_development/")) return "dev.analysis.product";
   if (file.endsWith("kbImages.ts") || file.endsWith("imageAiAnalyzer.ts") || hasAny(text, ["OCR", "图片", "image_url"])) return "analysis.image.recognition";
   if (file.endsWith("kbListings.ts")) return "listing.competitor.analyze";
   if (file.endsWith("kbVideos.ts")) return "video.competitor.analysis";
@@ -184,7 +204,7 @@ function findCallsites(file) {
   const callsites = [];
 
   function visit(node) {
-    if (ts.isCallExpression(node) && node.expression.getText(sf) === "invokeLLM") {
+    if (ts.isCallExpression(node) && ["invokeLLM", "invokeBusinessSkill"].includes(node.expression.getText(sf))) {
       const arg = node.arguments[0];
       let systemPrompt = "";
       let explicitSlug = "";

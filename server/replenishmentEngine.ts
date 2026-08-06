@@ -12,7 +12,7 @@ import { getDb } from "./repositories/dbClient";
 import { shippingBatches, batchStepConfigs, stepTimeHistory, replenishmentPredictions, batchProducts } from "../drizzle/schema";
 import { eq, and, sql, desc, gte, isNotNull } from "drizzle-orm";
 // Lingxing API removed - inventory data now comes from Excel uploads
-import { invokeLLM } from "./_core/llm";
+import { invokeBusinessSkill } from "./domains/ai_os/services/businessSkillGateway";
 import { getMappedStepDaysForRoute, type MappedStepDays } from "./nextsls/transitTimeService";
 import { nextSlsAdapter } from "./nextsls/adapter";
 
@@ -355,7 +355,7 @@ ${historicalLeadTimesStr}
 
 
 
-    const response = await invokeLLM({
+    const response = await invokeBusinessSkill({
       messages: [
         { role: "system", content: "你是一位资深的亚马逊FBA库存管理专家。请以JSON格式输出补货建议。" },
         { role: "user", content: prompt },

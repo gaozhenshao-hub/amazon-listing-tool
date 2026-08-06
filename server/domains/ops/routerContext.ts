@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { router } from "../../_core/trpc";
 import { protectedProcedure } from "./workspaceProcedure";
 import { getDb } from "./repository";
-import { invokeLLM } from "../../_core/llm";
+import { invokeBusinessSkill } from "../ai_os/services/businessSkillGateway";
 import { collectConversionData, collectMultipleAsins, type ConversionCrawlData } from "./service";
 import { scoreAllCheckItems, type CheckItemScore } from "./service";
 import { parseSellerSpriteData, parseSellerSpriteXlsx, mergeSellerSpriteWithCrawlData, buildCrawlDataFromSellerSprite, type SellerSpriteProductData, type ImportResult } from "./service";
@@ -25,6 +25,7 @@ import { users } from "../../../drizzle/schema/auth";
 import { eq, desc, and, or, sql, asc, isNull, inArray } from "drizzle-orm";
 import { ContextScopedCache } from "../../infrastructure/cache/scopedCache";
 import { currentOpsCacheScope } from "./workspaceContext";
+import { MARKETPLACE_MID_MAP, matchSellerAccount } from "./sellerMatching";
 
 export {
   TRPCError,
@@ -45,7 +46,7 @@ export {
   executionReviews,
   getDb,
   inArray,
-  invokeLLM,
+  invokeBusinessSkill,
   isNull,
   keywordMonitors,
   keywordSnapshots,
@@ -123,24 +124,11 @@ export async function getCachedSellers(adapter: any): Promise<any[]> {
   }
 }
 
-export const MARKETPLACE_MID_MAP: Record<string, number[]> = {
-  'US': [1], 'UK': [4], 'DE': [5], 'FR': [6], 'IT': [7], 'ES': [8], 'JP': [9], 'AU': [10], 'CA': [2], 'MX': [3],
-};
+export { MARKETPLACE_MID_MAP };
 
 export async function findMatchedSid(adapter: any, product: { storeName: string | null; marketplace: string | null }): Promise<{ matchedSid: number | string; matchedMid: number; sellers: any[] }> {
   const sellers = await getCachedSellers(adapter);
-  let matchedSid: number | string = 1;
-  let matchedMid: number = 1; // default US
-  const matched = sellers.find((s: any) =>
-    (product.storeName && (s.name === product.storeName || s.wname === product.storeName || s.account_name === product.storeName)) ||
-    (product.marketplace && (s.marketplace === product.marketplace || (MARKETPLACE_MID_MAP[product.marketplace] || []).includes(s.mid)))
-  );
-  if (matched) {
-    matchedSid = matched.sid;
-    matchedMid = matched.mid || (product.marketplace ? (MARKETPLACE_MID_MAP[product.marketplace]?.[0] || 1) : 1);
-  } else if (product.marketplace) {
-    matchedMid = MARKETPLACE_MID_MAP[product.marketplace]?.[0] || 1;
-  }
+  const { matchedSid, matchedMid } = matchSellerAccount(sellers, product);
   return { matchedSid, matchedMid, sellers };
 }
 

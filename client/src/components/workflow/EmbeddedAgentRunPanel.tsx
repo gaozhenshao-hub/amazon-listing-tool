@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Link2, Pause, Play, RefreshCw, Square } from "lucide-react";
+import { Bot, ExternalLink, Pause, Play, RefreshCw, Square } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { WorkflowArtifactVersionPicker } from "./WorkflowArtifactVersionPicker";
@@ -11,6 +10,7 @@ import { WorkflowStatusBadge } from "./WorkflowStepProgress";
 import { useAgentWorkflowRun } from "./useAgentWorkflowRun";
 import { getWorkflowRunProgress } from "./workflowUtils";
 import { trpc } from "@/lib/trpc";
+import { useLocation } from "wouter";
 
 function queryRunId() {
   if (typeof window === "undefined") return "";
@@ -20,26 +20,37 @@ function queryRunId() {
 export function EmbeddedAgentRunPanel({
   title = "Agent 执行记录",
   projectId,
+  agentSlug,
+  managedByBusinessPage = false,
+  businessUrl,
+  onManagedNodeSelect,
   className,
 }: {
   title?: string;
   projectId?: number | null;
+  agentSlug?: string;
+  managedByBusinessPage?: boolean;
+  businessUrl?: string;
+  onManagedNodeSelect?: (nodeId: string) => void;
   className?: string;
 }) {
-  const [runId, setRunId] = useState(queryRunId);
-  const [draftRunId, setDraftRunId] = useState(queryRunId);
+  const [, setLocation] = useLocation();
+  const initialRunId = agentSlug ? "" : queryRunId();
+  const [runId, setRunId] = useState(initialRunId);
   const projectRuns = trpc.emperor.agents.listProjectRuns.useQuery(
-    { projectId: projectId || 0, limit: 10 },
-    { enabled: !runId && Boolean(projectId) },
+    { projectId: projectId || 0, agentSlug, limit: 10 },
+    {
+      enabled: Boolean(projectId) && (Boolean(agentSlug) || !runId),
+      refetchInterval: managedByBusinessPage ? 2_500 : false,
+    },
   );
 
   useEffect(() => {
     const latestRunId = String((projectRuns.data?.[0] as any)?.runId || "");
-    if (!runId && latestRunId) {
+    if (latestRunId && (!runId || (agentSlug && latestRunId !== runId))) {
       setRunId(latestRunId);
-      setDraftRunId(latestRunId);
     }
-  }, [projectRuns.data, runId]);
+  }, [agentSlug, projectRuns.data, runId]);
   const workflow = useAgentWorkflowRun(runId);
   const checkpoint = useMemo(
     () => workflow.checkpoints.find((item) => item.status === "waiting_human")
@@ -50,17 +61,9 @@ export function EmbeddedAgentRunPanel({
   );
   const checkpointArtifacts = workflow.artifacts.filter((artifact) => !checkpoint || artifact.nodeId === checkpoint.nodeId);
   const progress = getWorkflowRunProgress(workflow.detail);
-
-  const attachRun = () => {
-    const nextRunId = draftRunId.trim();
-    setRunId(nextRunId);
-    if (typeof window !== "undefined") {
-      const url = new URL(window.location.href);
-      if (nextRunId) url.searchParams.set("agentRunId", nextRunId);
-      else url.searchParams.delete("agentRunId");
-      window.history.replaceState({}, "", url);
-    }
-  };
+  const runLabel = workflow.run
+    ? `项目分析 · ${workflow.run.templateVersion || "当前版本"} · ${workflow.run.createdAt ? new Date(workflow.run.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}`
+    : "";
 
   return (
     <section className={cn("space-y-3 rounded-lg border bg-background p-4", className)}>
@@ -69,21 +72,26 @@ export function EmbeddedAgentRunPanel({
           <Bot className="h-4 w-4 text-primary" />
           <span className="text-sm font-semibold">{title}</span>
           {workflow.run?.status && <WorkflowStatusBadge status={workflow.run.status} />}
-          {runId && <Badge variant="outline" className="max-w-56 truncate rounded-md">{runId}</Badge>}
+          {runId && <Badge variant="outline" className="max-w-72 truncate rounded-md">{runLabel || "已关联运行"}</Badge>}
         </div>
-        <div className="flex min-w-64 flex-1 items-center justify-end gap-2 sm:flex-none">
-          <Input
-            value={draftRunId}
-            onChange={(event) => setDraftRunId(event.target.value)}
-            placeholder="输入 Agent Run ID"
-            className="h-8 max-w-72"
-          />
-          <Button size="sm" variant="outline" onClick={attachRun}>
-            <Link2 className="h-4 w-4" />
-            连接
+        {agentSlug ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!runId}
+            onClick={() => runId && setLocation(`/emperor/agents/${encodeURIComponent(agentSlug)}/canvas?runId=${encodeURIComponent(runId)}`)}
+          >
+            <ExternalLink className="h-4 w-4" />
+            Agent 画布
           </Button>
-        </div>
+        ) : null}
       </div>
+
+      {!runId && (
+        <div className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
+          首次启动业务流程后，系统会自动创建并关联执行记录，无需输入运行编号。
+        </div>
+      )}
 
       {runId && (
         <>
@@ -95,7 +103,7 @@ export function EmbeddedAgentRunPanel({
               </div>
               <Progress value={progress} className="h-1.5" />
             </div>
-            <div className="flex items-center gap-2">
+            {!managedByBusinessPage && <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 variant="outline"
@@ -117,10 +125,30 @@ export function EmbeddedAgentRunPanel({
               <Button size="sm" variant="outline" onClick={() => workflow.actions.cancelRun.mutate({ runId })}>
                 <Square className="h-4 w-4" />取消
               </Button>
-            </div>
+            </div>}
           </div>
 
-          {checkpoint && (
+          {managedByBusinessPage && workflow.checkpoints.length > 0 && (
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {workflow.checkpoints.map((item) => (
+                <button
+                  type="button"
+                  key={item.nodeId}
+                  className="flex min-w-0 items-center justify-between gap-2 rounded-md border px-3 py-2 text-left hover:bg-muted/50"
+                  onClick={() => {
+                    if (onManagedNodeSelect) onManagedNodeSelect(item.nodeId);
+                    else if (businessUrl) setLocation(`${businessUrl}?stage=${encodeURIComponent(item.nodeId)}`);
+                  }}
+                  title={businessUrl ? "前往对应业务阶段" : item.nodeLabel || item.nodeId}
+                >
+                  <span className="truncate text-xs font-medium">{item.nodeLabel || item.nodeId}</span>
+                  <WorkflowStatusBadge status={item.status} />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!managedByBusinessPage && checkpoint && (
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
               <WorkflowCheckpointControls
                 runId={runId}

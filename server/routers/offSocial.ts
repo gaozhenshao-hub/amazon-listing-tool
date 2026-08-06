@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as offDb from "../offsiteDb";
 import { CONTENT_CALENDAR_PROMPT, SOCIAL_CONTENT_GENERATION_PROMPT, MATRIX_CONTENT_VARIATION_PROMPT } from "./offsitePrompts";
 
@@ -59,7 +59,7 @@ export const offSocialRouter = router({
 
 
 
-    const resp = await invokeLLM({
+    const resp = await invokeBusinessSkill({
       messages: [
         { role: "system", content: CONTENT_CALENDAR_PROMPT },
         { role: "user", content: `产品: ${input.productName}\n平台: ${input.platforms.join(", ")}\n时间: ${input.startDate} ~ ${input.endDate}\n频率: ${input.frequency || "每周3次"}` },
@@ -83,7 +83,7 @@ export const offSocialRouter = router({
 
 
 
-    const resp = await invokeLLM({
+    const resp = await invokeBusinessSkill({
       messages: [
         { role: "system", content: SOCIAL_CONTENT_GENERATION_PROMPT },
         { role: "user", content: `平台: ${input.platform}\n产品: ${input.productName}\n类型: ${input.contentType || "post"}\n风格: ${input.tone || "专业"}\n受众: ${input.targetAudience || "亚马逊买家"}` },
@@ -127,7 +127,7 @@ export const offSocialRouter = router({
 
 
 
-    const resp = await invokeLLM({
+    const resp = await invokeBusinessSkill({
       messages: [
         { role: "system", content: MATRIX_CONTENT_VARIATION_PROMPT },
         { role: "user", content: `原始脚本: ${input.originalScript}\n账号人设: ${input.accountProfiles.join(", ")}\n产品: ${input.productName || ""}\nASIN: ${input.targetAsin || ""}` },

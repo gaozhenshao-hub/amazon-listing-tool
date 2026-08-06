@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { protectedProcedure, router } from "../../../_core/trpc";
 import { invokeLLM } from "../../../_core/llm";
@@ -34,10 +35,12 @@ export const emperorRunRouter = router({
       }
       const userPromptTemplate = impl.userPromptTemplate || "{{context}}";
       const userPrompt = renderSkillTemplate(userPromptTemplate, templateVars);
+      const promptHash = createHash("sha256").update(systemPrompt).digest("hex");
+      const manifestHash = createHash("sha256").update(JSON.stringify(skill.manifest || {})).digest("hex");
 
       await rawExecute(
-        "INSERT INTO emperor_skill_runs (runId,skillSlug,skillName,userId,input,status,modelSlug,startedAt) VALUES (?,?,?,?,?,?,?,?)",
-        [runId, input.skillSlug, skill.name, ctx.user.id, JSON.stringify({ context: input.context, emphasis: input.emphasis }), "running", modelInfo.modelId, startedAt]
+        "INSERT INTO emperor_skill_runs (workspaceId,runId,skillSlug,skillName,skillVersion,skillPromptHash,skillManifestHash,migrationSource,userId,input,status,modelSlug,provider,startedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [(ctx.user as any).defaultWorkspaceId || null, runId, input.skillSlug, skill.name, Number(skill.version) || 1, promptHash, manifestHash, "emperor.run.run", ctx.user.id, JSON.stringify({ context: input.context, emphasis: input.emphasis }), "running", modelInfo.modelId, modelInfo.provider, startedAt]
       );
 
       try {
@@ -96,6 +99,7 @@ export const emperorRunRouter = router({
           if (impl.temperature !== undefined) llmParams.temperature = impl.temperature;
           if (impl.maxTokens) llmParams.max_tokens = impl.maxTokens;
           llmParams.bypassEmperor = true;
+          llmParams.emperorBypassReason = "skill_runner_provider_call";
           const response = await invokeLLM(llmParams);
           const rawContent = response?.choices?.[0]?.message?.content;
           content = typeof rawContent === "string" ? rawContent : (rawContent ? JSON.stringify(rawContent) : "");
@@ -105,10 +109,14 @@ export const emperorRunRouter = router({
         const durationMs = completedAt.getTime() - startedAt.getTime();
         const inputTok = usage.prompt_tokens || 0;
         const outputTok = usage.completion_tokens || 0;
+        const costCents = Math.max(0, Math.round(
+          ((inputTok * Number(modelInfo.costPer1kInputTokens || 0))
+            + (outputTok * Number(modelInfo.costPer1kOutputTokens || 0))) / 10,
+        ));
 
         await rawExecute(
-          "UPDATE emperor_skill_runs SET status=?,output=?,inputTokens=?,outputTokens=?,durationMs=?,completedAt=? WHERE runId=?",
-          ["succeeded", JSON.stringify({ content }), inputTok, outputTok, durationMs, completedAt, runId]
+          "UPDATE emperor_skill_runs SET status=?,output=?,inputTokens=?,outputTokens=?,durationMs=?,costCents=?,completedAt=? WHERE runId=?",
+          ["succeeded", JSON.stringify({ content, skillVersion: Number(skill.version) || 1, skillPromptHash: promptHash, skillManifestHash: manifestHash }), inputTok, outputTok, durationMs, costCents, completedAt, runId]
         );
         await rawExecute("UPDATE emperor_skills SET callCount = callCount + 1 WHERE slug = ?", [input.skillSlug]);
         void recordAiOsEvaluation({
@@ -149,7 +157,7 @@ export const emperorRunRouter = router({
           metadata: { inputTokens: inputTok, outputTokens: outputTok, source: "emperor.run.run" },
         });
 
-        return { runId, status: "succeeded", content, durationMs, inputTokens: inputTok, outputTokens: outputTok };
+        return { runId, status: "succeeded", content, durationMs, inputTokens: inputTok, outputTokens: outputTok, costCents, skillVersion: Number(skill.version) || 1 };
       } catch (err: any) {
         const completedAt = new Date();
         const durationMs = completedAt.getTime() - startedAt.getTime();
@@ -188,7 +196,7 @@ export const emperorRunRouter = router({
       pageSize: z.number().default(20),
     }))
     .query(async ({ input, ctx }) => {
-      let sql = "SELECT id,runId,skillSlug,skillName,userId,status,errorMessage,modelSlug,inputTokens,outputTokens,durationMs,startedAt,completedAt,createdAt FROM emperor_skill_runs WHERE 1=1";
+      let sql = "SELECT id,runId,skillSlug,skillName,skillVersion,skillPromptHash,skillManifestHash,migrationSource,userId,status,errorMessage,modelSlug,provider,inputTokens,outputTokens,durationMs,costCents,startedAt,completedAt,createdAt FROM emperor_skill_runs WHERE 1=1";
       const params: any[] = [];
       if (input.skillSlug) { sql += " AND skillSlug = ?"; params.push(input.skillSlug); }
       if (input.status) { sql += " AND status = ?"; params.push(input.status); }
@@ -224,12 +232,12 @@ export const emperorRunRouter = router({
       const userFilter = isAdmin ? "" : `AND userId = ${ctx.user.id}`;
       if (input.groupBy === "day") {
         return rawExecute(
-          `SELECT DATE(createdAt) as date, SUM(inputTokens+outputTokens) as totalTokens, COUNT(*) as runCount FROM emperor_skill_runs WHERE createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY) ${userFilter} GROUP BY DATE(createdAt) ORDER BY date ASC`,
+          `SELECT DATE(createdAt) as date, SUM(inputTokens+outputTokens) as totalTokens, SUM(costCents) as costCents, SUM(status='failed') as failedRuns, COUNT(*) as runCount FROM emperor_skill_runs WHERE createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY) ${userFilter} GROUP BY DATE(createdAt) ORDER BY date ASC`,
           [input.days]
         );
       } else if (input.groupBy === "skill") {
         return rawExecute(
-          `SELECT skillSlug, skillName, SUM(inputTokens+outputTokens) as totalTokens, COUNT(*) as runCount, AVG(durationMs) as avgDurationMs FROM emperor_skill_runs WHERE createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY) ${userFilter} GROUP BY skillSlug, skillName ORDER BY totalTokens DESC LIMIT 20`,
+          `SELECT skillSlug, skillName, MAX(skillVersion) as latestSkillVersion, SUM(inputTokens+outputTokens) as totalTokens, SUM(costCents) as costCents, SUM(status='failed') as failedRuns, COUNT(*) as runCount, AVG(durationMs) as avgDurationMs FROM emperor_skill_runs WHERE createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY) ${userFilter} GROUP BY skillSlug, skillName ORDER BY totalTokens DESC LIMIT 20`,
           [input.days]
         );
       } else {

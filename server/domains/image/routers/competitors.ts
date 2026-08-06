@@ -24,7 +24,7 @@ const {
   ensureWriteAccess,
   generateStep5RunId,
   getKBReference,
-  invokeLLM,
+  invokeBusinessSkill,
   isActiveStep5Run,
   kbDb,
   parseLLMJson,
@@ -107,7 +107,7 @@ export const imageCompetitorProcedures = {
       const image = images.find((img) => img.id === input.imageId);
       if (!image) throw new Error("Image not found");
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: STEP0_COMPETITOR_IMAGE_ANALYSIS_PROMPT },
           {
@@ -194,7 +194,7 @@ export const imageCompetitorProcedures = {
       }).join("\n\n");
 
       // Generate overall summary via LLM
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: STEP0_COMPETITOR_SUMMARY_PROMPT },
           {

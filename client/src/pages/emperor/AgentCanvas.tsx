@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
@@ -16,7 +16,7 @@ import {
   BookOpen, LogOut, LogIn, Bot, RotateCcw,
   Globe, UserCheck, Loader2, CheckCircle2, Circle,
   AlertTriangle, FileText, SkipForward, History,
-  GitCommit, Rocket, Undo2, SlidersHorizontal, GitCompare, ChevronRight
+  GitCommit, Rocket, Undo2, SlidersHorizontal, GitCompare, ChevronRight, ExternalLink
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -389,11 +389,19 @@ function NodePropertyPanel({
 
 // ─── Run Panel ────────────────────────────────────────────────────────────────
 
-function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => void }) {
-  const [runId, setRunId] = useState<string | null>(null);
+function RunPanel({ agentSlug, onClose, businessManaged = false }: { agentSlug: string; onClose: () => void; businessManaged?: boolean }) {
+  const [, navigate] = useLocation();
+  const requestedRunId = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("runId");
+  const [runId, setRunId] = useState<string | null>(requestedRunId);
   const [inputs, setInputs] = useState("{}");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [draft, setDraft] = useState("{}");
+  const runsQuery = trpc.emperor.agents.listRuns.useQuery({ slug: agentSlug, limit: 20 });
+  const availableRuns = useMemo(() => (runsQuery.data as any[]) || [], [runsQuery.data]);
+
+  useEffect(() => {
+    if (!runId && availableRuns[0]?.runId) setRunId(availableRuns[0].runId);
+  }, [availableRuns, runId]);
 
   const runMutation = trpc.emperor.agents.run.useMutation({
     onSuccess: (data: any) => {
@@ -506,7 +514,28 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
         <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={14} /></button>
       </div>
       <div className="flex-1 p-4 space-y-4 overflow-auto">
-        <div>
+        {availableRuns.length > 0 && (
+          <div>
+            <Label className="text-slate-400 text-xs">运行记录</Label>
+            <Select value={runId || ""} onValueChange={setRunId}>
+              <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white h-9 text-xs">
+                <SelectValue placeholder="选择运行记录" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0d1117] border-white/10">
+                {availableRuns.map((item: any) => (
+                  <SelectItem key={item.runId} value={item.runId} className="text-slate-300 focus:bg-white/10 text-xs">
+                    项目 #{item.projectId || "-"} · {item.templateVersion || "当前版本"} · {item.status} · {item.createdAt ? new Date(item.createdAt).toLocaleString("zh-CN") : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {businessManaged ? (
+          <div className="rounded-lg border border-violet-500/20 bg-violet-500/10 p-3 text-xs text-violet-200">
+            该工作流由产品分析页面托管。这里展示同一份 Run、Checkpoint、Artifact 与事件记录；运行、编辑、确认、解锁和取消请在业务页面操作。
+          </div>
+        ) : <div>
           <Label className="text-slate-400 text-xs">输入参数（JSON）</Label>
           <Textarea
             value={inputs}
@@ -514,8 +543,8 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
             rows={5}
             className="mt-1.5 bg-white/5 border-white/10 text-white text-xs font-mono resize-none"
           />
-        </div>
-        <Button
+        </div>}
+        {!businessManaged && <Button
           onClick={() => {
             try {
               const parsed = JSON.parse(inputs);
@@ -529,7 +558,7 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
         >
           {runMutation.isPending ? <Loader2 size={14} className="animate-spin mr-2" /> : <Play size={14} className="mr-2" />}
           运行 Agent
-        </Button>
+        </Button>}
         {run && (
           <div className="rounded-lg bg-white/5 border border-white/8 p-3 space-y-2">
             <div className="flex items-center justify-between">
@@ -538,11 +567,23 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
                 {run.status === "running" ? <><Loader2 size={10} className="animate-spin inline mr-1" />运行中</> : run.status === "completed" ? "已完成" : run.status === "waiting_human" ? "等待人工" : run.status === "canceled" ? "已取消" : "失败"}
               </Badge>
             </div>
-            <div className="text-xs text-slate-500 font-mono break-all">{run.runId}</div>
+            <div className="text-xs text-slate-500">
+              项目 #{run.projectId || "-"} · {run.templateVersion || "当前版本"} · {run.createdAt ? new Date(run.createdAt).toLocaleString("zh-CN") : ""}
+            </div>
             <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
               <div className="h-full bg-emerald-500" style={{ width: `${Number(run.progress || 0)}%` }} />
             </div>
-            <div className="grid grid-cols-4 gap-2 pt-1">
+            {businessManaged && run.projectId && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => navigate(`/dev/project/${run.projectId}/analysis`)}
+                className="w-full h-8 text-xs border-violet-500/30 text-violet-200 hover:bg-violet-500/10"
+              >
+                <ExternalLink size={12} className="mr-1" />前往产品分析页面
+              </Button>
+            )}
+            {!businessManaged && <div className="grid grid-cols-4 gap-2 pt-1">
               <Button
                 size="sm"
                 variant="outline"
@@ -577,7 +618,7 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
               >
                 <X size={11} className="mr-1" />取消
               </Button>
-            </div>
+            </div>}
           </div>
         )}
         {checkpoints.length > 0 && (
@@ -643,12 +684,13 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
                     </Label>
                     <Textarea
                       value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
+                      onChange={(e) => !businessManaged && setDraft(e.target.value)}
+                      readOnly={businessManaged}
                       rows={12}
                       className="mt-1.5 bg-black/30 border-white/10 text-slate-100 text-[11px] font-mono resize-y"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  {!businessManaged && <div className="grid grid-cols-2 gap-2">
                     {(selectedCheckpoint.status === "ready" || selectedCheckpoint.status === "failed") && (
                       <Button
                         size="sm"
@@ -702,7 +744,7 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
                         <SkipForward size={12} className="mr-1" />跳过
                       </Button>
                     )}
-                  </div>
+                  </div>}
                   <div>
                     <Label className="text-slate-400 text-xs flex items-center gap-1">
                       <History size={11} />历史
@@ -748,6 +790,7 @@ function AgentCanvasInner({ slug }: { slug: string }) {
 
   const { data: agentData, isLoading } = trpc.emperor.agents.get.useQuery({ slug });
   const agent = agentData as any;
+  const businessManaged = Boolean(agent?.dagDefinition?.executionOwner && agent.dagDefinition.executionOwner !== "agent_runtime");
 
   const { data: skillsData } = trpc.emperor.agents.getAvailableSkills.useQuery();
   const { data: modelsData } = trpc.emperor.agents.getAvailableModels.useQuery();
@@ -928,7 +971,7 @@ function AgentCanvasInner({ slug }: { slug: string }) {
             onClick={() => { setShowRunPanel(v => !v); setSelectedNode(null); setShowVersionPanel(false); }}
             className="h-7 text-xs border-white/10 text-slate-300 hover:bg-white/5"
           >
-            <Play size={12} className="mr-1.5" />运行测试
+            <Play size={12} className="mr-1.5" />{businessManaged ? "运行记录" : "运行测试"}
           </Button>
           <Button
             size="sm"
@@ -1020,7 +1063,7 @@ function AgentCanvasInner({ slug }: { slug: string }) {
           />
         )}
         {showRunPanel && !selectedNode && !showVersionPanel && (
-          <RunPanel agentSlug={slug} onClose={() => setShowRunPanel(false)} />
+          <RunPanel agentSlug={slug} onClose={() => setShowRunPanel(false)} businessManaged={businessManaged} />
         )}
         {showVersionPanel && (
           <div className="w-80 flex-shrink-0 bg-[#0d1117] border-l border-white/8 flex flex-col overflow-hidden">

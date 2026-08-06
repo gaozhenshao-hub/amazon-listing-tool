@@ -17,8 +17,13 @@ import {
   STEP5_APLUS_COMBO_RECOMMEND_PROMPT,
 } from "../../imageWorkflowPrompts";
 import { IMAGE_ADVICE_TRANSLATION_PROMPT } from "../../prompts";
-import { invokeLLM, storagePut } from "./service";
+import { invokeBusinessSkill, storagePut } from "./service";
 import { runEmperorSkill, safeParseSkillJSON } from "../ai_os/services/skillRunner";
+import {
+  hydrateImageWorkflowSessionFromArtifacts,
+  recordBusinessArtifactUse,
+  resolveCurrentBusinessArtifact,
+} from "../ai_os/services/businessArtifactRegistry";
 import {
   applyImageWorkflowAplusStyle,
   findImageWorkflowAplusModule,
@@ -45,7 +50,7 @@ export {
   STEP5_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT,
   db,
   devDb,
-  invokeLLM,
+  invokeBusinessSkill,
   kbDb,
   protectedProcedure,
   registerAiJobHandler,
@@ -98,7 +103,24 @@ export async function buildImageWorkflowContext(projectId: number) {
   for (const file of files) {
     if (file.status !== "completed" || !file.analysisResult) continue;
     try {
-      const parsed = JSON.parse(file.analysisResult);
+      const artifact = await resolveCurrentBusinessArtifact({
+        domain: "listing",
+        artifactKey: `project_file.${file.fileType}.analysis`,
+        sourceTable: "projectFiles",
+        sourceRowId: file.id,
+        projectId,
+      }).catch(() => null);
+      if (artifact) {
+        await recordBusinessArtifactUse({
+          artifact,
+          consumerDomain: "image",
+          consumerType: "business_operation",
+          consumerId: `image.context:${projectId}`,
+          projectId,
+          metadata: { source: "project_file", fileType: file.fileType },
+        });
+      }
+      const parsed = artifact?.content || JSON.parse(file.analysisResult);
       if (file.fileType === "product_attributes") {
         parts.push("--- 产品属性 ---");
         if (parsed.uniqueSellingPoints?.length) {
@@ -117,7 +139,27 @@ export async function buildImageWorkflowContext(projectId: number) {
   // Load competitor analyses
   if (analyses.length > 0) {
     parts.push("\n--- 竞品分析 ---");
-    for (const a of analyses) {
+    for (const row of analyses) {
+      const artifact = await resolveCurrentBusinessArtifact({
+        domain: "listing",
+        artifactKey: `listing.competitor_analysis.${row.asin}`,
+        sourceTable: "competitorAnalyses",
+        sourceRowId: row.id,
+        projectId,
+      }).catch(() => null);
+      if (artifact) {
+        await recordBusinessArtifactUse({
+          artifact,
+          consumerDomain: "image",
+          consumerType: "business_operation",
+          consumerId: `image.context:${projectId}`,
+          projectId,
+          metadata: { source: "competitor_analysis", asin: row.asin },
+        });
+      }
+      const a = artifact?.content && typeof artifact.content === "object"
+        ? { ...row, ...(artifact.content as Record<string, unknown>) }
+        : row;
       parts.push(`竞品 ASIN: ${a.asin}`);
       if (a.title) parts.push(`标题: ${a.title}`);
       if (a.rawData) {
@@ -354,7 +396,9 @@ export async function callImageWorkflowSkill<T = any>(input: {
     variables: {},
     attachments: input.attachments,
     legacySystemPrompt: input.systemPrompt,
-    migrationSource: "drizzle/0120_image_workflow_outline_contract.sql",
+    migrationSource: input.skillSlug === "image.step2.outline"
+      ? "drizzle/0122_image_outline_reliability.sql"
+      : "drizzle/0120_image_workflow_outline_contract.sql",
     validate: (content) => {
       const parsed = safeParseSkillJSON<any>(content);
       if (parsed && typeof parsed === "object" && "raw" in parsed) {
@@ -369,7 +413,7 @@ export async function callImageWorkflowSkill<T = any>(input: {
 // ─── Helper: Call LLM with automatic retry on empty/invalid response ─────
 export async function callLLMWithRetry(systemPrompt: string, userMessage: string, maxRetries = 2): Promise<any> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const response = await invokeLLM({
+    const response = await invokeBusinessSkill({
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
@@ -389,7 +433,7 @@ export async function callLLMWithRetry(systemPrompt: string, userMessage: string
   }
   // Last attempt without json_object mode as fallback
   console.warn('[LLM Retry] All json_object attempts failed, trying without response_format...');
-  const fallbackResponse = await invokeLLM({
+  const fallbackResponse = await invokeBusinessSkill({
     messages: [
       { role: "system", content: systemPrompt + "\n\n重要：你必须只输出纯JSON格式，不要有任何其他文字，不要使用markdown代码块。" },
       { role: "user", content: userMessage },
@@ -416,6 +460,27 @@ export async function resolveSessionAccess(projectId: number, user: { id: number
     return db.getImageWorkflowSessionByProject(projectId);
   }
   return db.getImageWorkflowSession(projectId, user.id);
+}
+
+export async function resolveSessionForExecution(
+  projectId: number,
+  user: { id: number; role: string },
+  consumerId: string,
+) {
+  const session = await resolveSessionAccess(projectId, user);
+  if (!session) return null;
+  return hydrateImageWorkflowSessionFromArtifacts(session, {
+    consumerType: "business_operation",
+    consumerId,
+  });
+}
+
+export async function resolveSessionForDisplay(projectId: number, user: { id: number; role: string }) {
+  const session = await resolveSessionAccess(projectId, user);
+  if (!session) return null;
+  return hydrateImageWorkflowSessionFromArtifacts(session, undefined, {
+    onlyBusinessConfirmedSteps: true,
+  });
 }
 
 // Helper: ensure write access for imageWorkflow mutations
@@ -530,7 +595,13 @@ export async function runStep5GenerationJob(args: {
     const project = await db.getProjectByIdAdmin(projectId);
     if (!project) throw new Error("Project not found");
 
-    const result = await buildStep5FinalSuggestion(project, session, userId);
+    const selectedSession = await hydrateImageWorkflowSessionFromArtifacts(session, {
+      consumerType: "ai_job",
+      consumerId: runId,
+      runId,
+      nodeId: "image_suggestion",
+    });
+    const result = await buildStep5FinalSuggestion(project, selectedSession, userId);
     const resultStr = JSON.stringify(result);
 
     const updated = await updateIfCurrent({

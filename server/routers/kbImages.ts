@@ -4,7 +4,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct, type ProductImage } from "../scraper";
 import { getScraperConfig } from "./systemSettings";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { storagePut } from "../storage";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { resourceConflictError } from "@shared/_core/errors";
@@ -155,7 +155,7 @@ async function processImport(setId: number, asin: string, userId: number, runAna
 
 
 
-          const response = await invokeLLM({
+          const response = await invokeBusinessSkill({
             messages: [
               { role: "system", content: buildSingleImageAnalysisPrompt() },
               { role: "user", content: [{ type: "image_url" as const, image_url: { url: img.imageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}，图片位置: ${img.imagePosition}` }] }
@@ -194,7 +194,7 @@ async function processImport(setId: number, asin: string, userId: number, runAna
       const aplusImgs = allDbImages.filter(i => i.imagePosition === "aplus");
       const brandImgs = allDbImages.filter(i => i.imagePosition === "brand_story");
 
-      const overallResponse = await invokeLLM({
+      const overallResponse = await invokeBusinessSkill({
         messages: [
           { role: "system", content: `你是亚马逊产品图片策略分析专家。请对这组产品图片进行整体评估。
 
@@ -326,7 +326,7 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
 
 
 
-        const response = await invokeLLM({
+        const response = await invokeBusinessSkill({
           messages: [
             { role: "system", content: buildSingleImageAnalysisPrompt() },
             { role: "user", content: [{ type: "image_url" as const, image_url: { url: img.imageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}，图片位置: ${img.imagePosition}` }] }
@@ -376,7 +376,7 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
       style: (i as any).tagDesignStyleV2 || (i as any).tagDesignStyle || "",
     }));
 
-    const overallResponse = await invokeLLM({
+    const overallResponse = await invokeBusinessSkill({
       messages: [
         { role: "system", content: `你是亚马逊产品图片策略分析专家。请对这组产品图片进行整体评估。
 
@@ -456,7 +456,7 @@ async function runSummaryOnly(setId: number, asin: string, userId: number) {
       style: (i as any).tagDesignStyleV2 || (i as any).tagDesignStyle || "",
     }));
 
-    const overallResponse = await invokeLLM({
+    const overallResponse = await invokeBusinessSkill({
       messages: [
         { role: "system", content: `你是亚马逊产品图片策略分析专家。请对这组产品图片进行整体评估。\n\n评估维度：\n1. 图片类型覆盖率：是否涵盖了对比/细节/场景/特效/必要信息等关键类型\n2. 卖点覆盖率：图片是否充分展示了产品的各类卖点（质量/功能/设计/操作/安全/附加值）\n3. 构图多样性：是否使用了多种构图方式避免单调\n4. 风格一致性：套图整体风格是否统一\n5. 叙事流逻辑：副图排序是否有清晰的叙事逻辑\n\n返回JSON：\n{\n  "overallStrategy": "整体图片策略评价",\n  "mainImageAssessment": "主图评估",\n  "secondaryImageFlow": "副图叙事流评估",\n  "aplusAssessment": "A+内容图片评估（如有）",\n  "brandStoryAssessment": "品牌故事图片评估（如有）",\n  "tagCoverageAnalysis": {\n    "imageTypeCoverage": "图片类型覆盖分析",\n    "sellingPointCoverage": "卖点覆盖分析",\n    "compositionDiversity": "构图多样性分析",\n    "styleConsistency": "风格一致性分析"\n  },\n  "recommendedStyle": "建议的套图风格名称",\n  "setCategory": "产品类目",\n  "setPrimaryColor": "主颜色",\n  "setAccentColor": "提亮色",\n  "missingImageTypes": ["缺少的图片类型"],\n  "improvementSuggestions": ["改进建议"],\n  "overallScore": 75,\n  "summary": ""\n}` },
         { role: "user", content: `ASIN: ${asin}\n产品图: ${productImgs.length}张 (${productImgs.map(i => `${i.imagePosition}#${i.positionIndex}: ${i.singleImageScore}/10`).join(", ")})\nA+图: ${aplusImgs.length}张\n品牌故事图: ${brandImgs.length}张\n\n各图标签详情:\n${JSON.stringify(tagCoverage, null, 1)}` }

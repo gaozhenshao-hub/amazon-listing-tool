@@ -93,7 +93,7 @@ export function WorkflowShell({
               <span className="truncate text-sm font-medium">{detail?.run?.agentSlug || "Agent Run"}</span>
               {detail?.run?.runId && (
                 <Badge variant="outline" className="rounded-md text-xs">
-                  {detail.run.runId}
+                  {detail.run.createdAt ? `执行于 ${new Date(detail.run.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "已关联执行记录"}
                 </Badge>
               )}
             </div>

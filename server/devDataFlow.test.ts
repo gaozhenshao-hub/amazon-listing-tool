@@ -4,6 +4,12 @@ import type { TrpcContext } from "./_core/context";
 
 // Mock devDb module
 vi.mock("./devDb", () => ({
+  getDevProjectByWorkspace: vi.fn(async (projectId: number, _workspaceId: number | null, actorUserId: number) => ({
+    id: projectId,
+    workspaceId: null,
+    userId: actorUserId,
+    name: "Test project",
+  })),
   getDevProductProfile: vi.fn(),
   getDevBomItems: vi.fn(),
   getDevMoldCosts: vi.fn(),

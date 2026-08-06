@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { WorkflowStepProgress } from "@/components/workflow/WorkflowStepProgress";
 import { EmbeddedAgentRunPanel } from "@/components/workflow/EmbeddedAgentRunPanel";
-import { DEV_PRODUCT_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
+import { DEV_PRODUCT_WORKFLOW_STEPS, PRODUCT_ANALYSIS_AGENT_SLUG } from "@/components/workflow/workflowDefinitions";
 import DevDataUpload from "./DevDataUpload";
 import PanoramaTable from "./PanoramaTable";
 import AttributeTagging from "./AttributeTagging";
@@ -247,7 +247,13 @@ export default function DevProjectDetail() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-5">
-      <EmbeddedAgentRunPanel title="产品开发 Agent Run / Checkpoint" projectId={projectId} />
+      <EmbeddedAgentRunPanel
+        title="产品开发 · 七阶段 Agent"
+        projectId={projectId}
+        agentSlug={PRODUCT_ANALYSIS_AGENT_SLUG}
+        managedByBusinessPage
+        businessUrl={`/dev/project/${projectId}/analysis`}
+      />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">

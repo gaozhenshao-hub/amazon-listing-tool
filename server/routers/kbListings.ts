@@ -5,7 +5,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct } from "../scraper";
 import { getScraperConfig } from "./systemSettings";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 
 export const kbListingsRouter = router({
   list: protectedProcedure
@@ -48,7 +48,7 @@ export const kbListingsRouter = router({
 
 
 
-          const response = await invokeLLM({
+          const response = await invokeBusinessSkill({
             messages: [
               { role: "system", content: `你是一位资深的亚马逊Listing文案分析专家。请从以下维度分析这个Listing文案的优劣：
 1. 标题结构分析（关键词布局、品牌词位置、字符数）
@@ -118,7 +118,7 @@ export const kbListingsRouter = router({
 
 
 
-            const response = await invokeLLM({
+            const response = await invokeBusinessSkill({
               messages: [
                 { role: "system", content: `你是亚马逊Listing文案分析专家。分析文案优劣，返回JSON: { titleAnalysis: {structure,keywords,score}, bulletPointsAnalysis: {highlights,keywordDensity,structure,score}, descriptionAnalysis: {storytelling,seoOptimization,score}, keywordCoverage: {primaryKeywords,missingKeywords,score}, conversionTips, competitiveHighlights, copywritingTechniques, overallScore(1-100), summary }` },
                 { role: "user", content: `ASIN: ${asin}\n标题: ${data.title}\n五点: ${data.bulletPoints.join("; ")}\n描述: ${data.description?.slice(0, 500)}` }
@@ -166,7 +166,7 @@ export const kbListingsRouter = router({
 
 
 
-          const response = await invokeLLM({
+          const response = await invokeBusinessSkill({
             messages: [
               { role: "system", content: `你是亚马逊Listing文案分析专家。分析文案优劣，返回JSON: { titleAnalysis, bulletPointsAnalysis, descriptionAnalysis, keywordCoverage, conversionTips, competitiveHighlights, copywritingTechniques, overallScore(1-100), summary }` },
               { role: "user", content: `ASIN: ${asin}\n标题: ${data.title}\n五点: ${data.bulletPoints.join("; ")}\n描述: ${data.description?.slice(0, 500)}` }

@@ -52,7 +52,7 @@ export function ListingAgentNodeWorkbench({
               <span className="text-sm font-semibold">{step?.label || context.nodeId}</span>
               {checkpoint?.status && <WorkflowStatusBadge status={checkpoint.status} />}
               <Badge variant="outline" className="max-w-[280px] truncate rounded-md text-xs">
-                Run {context.runId}
+                已关联执行记录
               </Badge>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">

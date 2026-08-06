@@ -3,10 +3,16 @@ import { getDb } from "../dbClient";
 import { registerImageWorkflowArtifact } from "../../domains/ai_os/services/businessArtifactRegistry";
 import { InsertCompetitorImageAnalysis, InsertExpressionGroup, InsertExpressionGroupImage, InsertImageWorkflowSession, competitorImageAnalyses, expressionGroupImages, expressionGroups, imageWorkflowSessions } from "../../../drizzle/schema/image";
 
+function scheduleImageWorkflowArtifactSync(sessionId: number, sourceType: "ai_output" | "user_edit") {
+  void registerImageWorkflowArtifact(sessionId, sourceType).catch((error) => {
+    console.warn(`[Image Workflow] Artifact sync failed for session ${sessionId}:`, error);
+  });
+}
+
 async function captureImageProject(projectId: number | null | undefined) {
   if (!projectId) return;
   const session = await getImageWorkflowSessionByProject(projectId);
-  if (session) await registerImageWorkflowArtifact(session.id, "user_edit");
+  if (session) scheduleImageWorkflowArtifactSync(session.id, "user_edit");
 }
 
 export async function getImageWorkflowSession(projectId: number, userId: number) {
@@ -42,7 +48,7 @@ export async function createImageWorkflowSession(data: InsertImageWorkflowSessio
   if (!db) throw new Error("DB not available");
   const [result] = await db.insert(imageWorkflowSessions).values(data);
   const rows = await db.select().from(imageWorkflowSessions).where(eq(imageWorkflowSessions.id, result.insertId)).limit(1);
-  await registerImageWorkflowArtifact(result.insertId, "ai_output");
+  scheduleImageWorkflowArtifactSync(result.insertId, "ai_output");
   return rows[0];
 }
 
@@ -51,7 +57,12 @@ export async function updateImageWorkflowSession(id: number, data: Partial<Inser
   if (!db) throw new Error("DB not available");
   await db.update(imageWorkflowSessions).set(data).where(eq(imageWorkflowSessions.id, id));
   const rows = await db.select().from(imageWorkflowSessions).where(eq(imageWorkflowSessions.id, id)).limit(1);
-  await registerImageWorkflowArtifact(id, "user_edit");
+  const confirmsStep = Object.entries(data).some(([key, value]) => /^step\d+Confirmed$/.test(key) && Number(value) === 1);
+  if (confirmsStep) {
+    await registerImageWorkflowArtifact(id, "user_edit");
+  } else {
+    scheduleImageWorkflowArtifactSync(id, "user_edit");
+  }
   return rows[0];
 }
 

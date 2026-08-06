@@ -25,8 +25,13 @@ interface RunRecord {
   runId: string;
   skillSlug: string;
   skillName: string;
+  skillVersion?: number;
+  skillPromptHash?: string;
+  skillManifestHash?: string;
+  migrationSource?: string;
   status: string;
   modelSlug?: string;
+  provider?: string;
   model?: string;
   output?: string;
   errorMessage: string | null;
@@ -35,6 +40,7 @@ interface RunRecord {
   promptTokens?: number;
   completionTokens?: number;
   durationMs: number;
+  costCents?: number;
   createdAt: string | Date;
   userId: number;
   userName?: string;
@@ -77,6 +83,7 @@ export default function EmperorTrace() {
   const getModelName = (run: RunRecord) => run.modelSlug || run.model || "-";
   const getPromptTokens = (run: RunRecord) => run.inputTokens || run.promptTokens || 0;
   const getCompletionTokens = (run: RunRecord) => run.outputTokens || run.completionTokens || 0;
+  const isSucceeded = (status: string) => status === "succeeded" || status === "success";
 
   const renderDetailOutput = () => {
     if (detailLoading) {
@@ -125,13 +132,18 @@ export default function EmperorTrace() {
         <div className="space-y-3 text-sm">
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: "Run ID", value: detail.runId },
               { label: "Skill Slug", value: detail.skillSlug },
+              { label: "Skill 版本", value: detail.skillVersion ? `v${detail.skillVersion}` : "-" },
               { label: "模型", value: getModelName(detail as RunRecord) },
+              { label: "Provider", value: detail.provider || "-" },
               { label: "状态", value: detail.status },
               { label: "开始时间", value: detail.startedAt ? formatTime(detail.startedAt as string) : "-" },
               { label: "完成时间", value: detail.completedAt ? formatTime(detail.completedAt as string) : "-" },
               { label: "耗时", value: formatDuration(detail.durationMs) },
+              { label: "成本", value: `$${(Number(detail.costCents || 0) / 100).toFixed(4)}` },
+              { label: "迁移来源", value: detail.migrationSource || "-" },
+              { label: "Prompt Hash", value: detail.skillPromptHash || "-" },
+              { label: "Manifest Hash", value: detail.skillManifestHash || "-" },
               { label: "Prompt Tokens", value: String(getPromptTokens(detail as RunRecord)) },
               { label: "Completion Tokens", value: String(getCompletionTokens(detail as RunRecord)) },
               { label: "总 Tokens", value: String(getPromptTokens(detail as RunRecord) + getCompletionTokens(detail as RunRecord)) },
@@ -189,7 +201,7 @@ export default function EmperorTrace() {
                     )}
                   >
                     <div className="flex items-start gap-2">
-                      {run.status === "success" ? (
+                      {isSucceeded(run.status) ? (
                         <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0 mt-0.5" />
                       ) : (
                         <XCircle className="h-3.5 w-3.5 text-red-500 flex-shrink-0 mt-0.5" />
@@ -211,7 +223,9 @@ export default function EmperorTrace() {
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1 truncate">{getModelName(run)}</p>
+                    <p className="text-xs text-muted-foreground mt-1 truncate">
+                      {run.skillVersion ? `v${run.skillVersion} · ` : ""}{getModelName(run)}
+                    </p>
                   </button>
                 ))}
               </div>
@@ -247,15 +261,15 @@ export default function EmperorTrace() {
               {/* Detail header */}
               <div className="p-4 border-b">
                 <div className="flex items-center gap-3 mb-3">
-                  {selectedRun.status === "success" ? (
+                  {isSucceeded(selectedRun.status) ? (
                     <Badge className="bg-green-500/10 text-green-600 border-green-200 border">成功</Badge>
                   ) : (
                     <Badge className="bg-red-500/10 text-red-600 border-red-200 border">失败</Badge>
                   )}
                   <h2 className="font-semibold">{selectedRun.skillName || selectedRun.skillSlug}</h2>
-                  <span className="text-xs text-muted-foreground font-mono">{selectedRun.runId?.slice(0, 16)}...</span>
+                  <span className="text-xs text-muted-foreground">{formatTime(selectedRun.createdAt)}</span>
                 </div>
-                <div className="grid grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-5 gap-4 text-sm">
                   <div>
                     <p className="text-xs text-muted-foreground">运行时间</p>
                     <p className="font-medium">{formatTime(selectedRun.createdAt)}</p>
@@ -266,7 +280,13 @@ export default function EmperorTrace() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">模型</p>
-                    <p className="font-medium text-xs truncate">{getModelName(selectedRun)}</p>
+                    <p className="font-medium text-xs truncate">
+                      {selectedRun.skillVersion ? `v${selectedRun.skillVersion} · ` : ""}{getModelName(selectedRun)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">成本</p>
+                    <p className="font-medium">${(Number(selectedRun.costCents || 0) / 100).toFixed(4)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Token 用量</p>

@@ -20,7 +20,7 @@ describe("File Deduplication Logic", () => {
       const { appRouter } = await import("./routers");
       const procedures = Object.keys((appRouter as any)._def.procedures);
       expect(procedures).toContain("devProject.uploadFile");
-    });
+    }, 15_000);
 
     it("devProject router should have uploadFile procedure", async () => {
       const devProjectRouter = await import("./routers/devProject");

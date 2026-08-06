@@ -101,6 +101,7 @@ export default function EmperorObservability() {
   const [days, setDays] = useState(30);
   const utils = trpc.useUtils();
   const { data, isLoading, isFetching, error } = trpc.emperor.observability.dashboard.useQuery({ days });
+  const alertsQuery = trpc.aiJobs.operationalAlerts.useQuery({ status: "open", limit: 20 });
   const snapshotMutation = trpc.emperor.observability.recordDatabaseBaselineSnapshot.useMutation({
     onSuccess: (result) => {
       toast.success(`数据库基线已记录：${result.rowCountSamples} 个表，${result.explainSamples} 个 EXPLAIN，${result.slowQuerySampling.sampleCount} 个慢查询摘要`);
@@ -175,6 +176,31 @@ export default function EmperorObservability() {
             </Button>
           </div>
         </div>
+
+        {(alertsQuery.data || []).length > 0 && (
+          <Card className="border-rose-200 bg-rose-50/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base text-rose-900">
+                <AlertTriangle className="h-4 w-4" />
+                当前运维告警
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              {(alertsQuery.data || []).map((alert) => (
+                <div key={alert.alertId} className="rounded-md border border-rose-200 bg-background p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">{alert.title}</p>
+                    <Badge variant="outline" className={alert.severity === "critical" ? "border-rose-300 text-rose-700" : "border-amber-300 text-amber-700"}>
+                      {alert.severity === "critical" ? "严重" : "警告"}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">{alert.message}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">发生 {formatNumber(alert.occurrenceCount)} 次</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard
@@ -319,7 +345,7 @@ export default function EmperorObservability() {
                 {(worker?.deadLetters || []).slice(0, 6).map((item) => (
                   <div key={item.runId} className="rounded-lg border p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate font-mono text-xs">{item.runId}</span>
+                      <span className="truncate text-xs font-medium">{item.skillSlug || item.procedure || item.kind || "AI Job"}</span>
                       <Badge variant="outline">{item.module}</Badge>
                     </div>
                     <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{item.errorMessage || "无错误详情"}</p>

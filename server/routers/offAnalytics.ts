@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as offDb from "../offsiteDb";
 import { ATTRIBUTION_ANALYSIS_PROMPT } from "./offsitePrompts";
 
@@ -64,7 +64,7 @@ export const offAnalyticsRouter = router({
 
 
 
-    const resp = await invokeLLM({
+    const resp = await invokeBusinessSkill({
       messages: [
         { role: "system", content: ATTRIBUTION_ANALYSIS_PROMPT },
         { role: "user", content: `活动列表: ${JSON.stringify(campaigns)}\n归因链接: ${JSON.stringify(links)}\n分析范围: ${input.dateRange || "最近30天"}` },

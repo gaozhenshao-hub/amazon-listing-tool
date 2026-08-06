@@ -1,21 +1,13 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as devDb from "../devDb";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
-
-
-// Helper: resolve dev project access based on user role
-async function resolveDevProjectAccess(projectId: number, user: { id: number; role: string }) {
-  if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
-    const project = await devDb.getDevProjectByIdAdmin(projectId);
-    if (!project) throw new Error("Project not found");
-    return project;
-  }
-  const project = await devDb.getDevProjectById(projectId, user.id);
-  if (!project) throw new Error("Project not found");
-  return project;
-}
+import {
+  productDevelopmentWorkspaceId,
+  resolveDevProjectAccess,
+} from "../domains/product_development/security/productDevelopmentAccess";
 
 export const devBomRouter = router({
   // ─── BOM CRUD ──────────────────────────────────────────────
@@ -111,7 +103,7 @@ export const devBomRouter = router({
   aiSuggest: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
+      const project = await resolveDevProjectAccess(input.projectId, ctx);
       if (!project) throw new Error("Project not found");
 
       const products = await devDb.getDevProductsByProject(input.projectId);
@@ -140,7 +132,7 @@ ${existingBom.length > 0 ? `已有BOM: ${existingBom.map(b => `${b.partName}(${b
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",
@@ -242,7 +234,7 @@ ${existingBom.length > 0 ? `已有BOM: ${existingBom.map(b => `${b.partName}(${b
     .mutation(async ({ ctx, input }) => {
       const bomItems = await devDb.getDevBomItems(input.projectId);
       const moldCosts = await devDb.getDevMoldCosts(input.projectId);
-      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
+      const project = await resolveDevProjectAccess(input.projectId, ctx);
 
       const context = `项目: ${project?.name || "未命名"}
 BOM物料清单:
@@ -256,7 +248,7 @@ ${moldCosts.map(m => `${m.partName} | ${m.moldType || ""} | ${m.moldMaterial || 
 
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",
@@ -341,6 +333,7 @@ ${moldCosts.map(m => `${m.partName} | ${m.moldType || ""} | ${m.moldMaterial || 
 
       // Save to profit analysis
       await devDb.saveDevProfitCalculation({
+        workspaceId: productDevelopmentWorkspaceId(ctx),
         userId: ctx.user.id,
         projectId: input.projectId,
         name: `Project ${input.projectId} Profit`,
@@ -374,7 +367,11 @@ ${moldCosts.map(m => `${m.partName} | ${m.moldType || ""} | ${m.moldMaterial || 
   getProfitAnalysis: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      return devDb.getDevProfitCalculations(ctx.user.id);
+      return devDb.getDevProfitCalculations(
+        ctx.user.id,
+        productDevelopmentWorkspaceId(ctx),
+        input.projectId,
+      );
     }),
 
   // BOM cost summary - auto-calculate from BOM items
@@ -499,7 +496,7 @@ ${moldCosts.map(m => `${m.partName} | ${m.moldType || ""} | ${m.moldMaterial || 
   getProjectReportData: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
+      const project = await resolveDevProjectAccess(input.projectId, ctx);
       if (!project) throw new Error("Project not found");
 
       const products = await devDb.getDevProductsByProject(input.projectId);

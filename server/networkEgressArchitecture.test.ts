@@ -12,6 +12,7 @@ function productionTypeScriptFiles(directory: string): string[] {
     if (entry.isDirectory()) return productionTypeScriptFiles(target);
     if (!entry.isFile() || !entry.name.endsWith(".ts")) return [];
     if (/\.(?:test|spec)\.ts$/.test(entry.name)) return [];
+    if (/\s+\d+\.ts$/.test(entry.name)) return [];
     return [target];
   });
 }

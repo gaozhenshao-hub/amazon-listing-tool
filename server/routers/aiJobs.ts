@@ -9,10 +9,13 @@ import {
   getAiJobRuntimeStatus,
   getAiJobWorkerHealth,
   listAiJobDeadLetterRuns,
+  recoverAiJob,
   registerAiJobHandler,
   startRegisteredAiJob,
 } from "../services/aiJobRunner";
 import { runEmperorSkill, safeParseSkillJSON } from "../services/emperorSkillRunner";
+import { listAiOsOperationalAlerts } from "../domains/ai_os/services/operationalScheduler";
+import { recordSecurityAuditLog } from "../services/securityGovernance";
 
 const DEFAULT_FALLBACK_MODELS = [
   "claude-sonnet-5",
@@ -340,9 +343,17 @@ export const aiJobsRouter = router({
       return listAiJobDeadLetterRuns({ limit: input?.limit });
     }),
 
+  operationalAlerts: adminProcedure
+    .input(z.object({
+      status: z.enum(["open", "resolved"]).optional(),
+      limit: z.number().min(1).max(200).optional(),
+    }).optional())
+    .query(({ input }) => listAiOsOperationalAlerts(input || {})),
+
   list: protectedProcedure
     .input(z.object({
       module: z.string().optional(),
+      projectId: z.number().int().positive().optional(),
       status: jobStatusSchema.optional(),
       limit: z.number().min(1).max(100).optional(),
     }).optional())
@@ -360,7 +371,44 @@ export const aiJobsRouter = router({
       const job = await getAiJobRun(input.runId);
       if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "AI job not found" });
       assertCanReadJob(ctx.user, job);
-      return cancelAiJob(input.runId, input.reason || "User canceled AI job");
+      const result = await cancelAiJob(input.runId, input.reason || "User canceled AI job");
+      await recordSecurityAuditLog({
+        ctx,
+        workspaceId: job.workspaceId,
+        action: "ai_job.cancel",
+        resourceType: "ai_job",
+        resourceId: job.runId,
+        projectId: job.projectId,
+        status: "success",
+        riskLevel: "medium",
+        reason: input.reason,
+      });
+      return result;
+    }),
+
+  retry: protectedProcedure
+    .input(z.object({
+      runId: z.string().min(1),
+      reason: z.string().trim().min(1).max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const job = await getAiJobRun(input.runId);
+      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "AI job not found" });
+      assertCanReadJob(ctx.user, job);
+      const result = await recoverAiJob(input.runId, input.reason || "User requested failure recovery");
+      await recordSecurityAuditLog({
+        ctx,
+        workspaceId: job.workspaceId,
+        action: "ai_job.recover",
+        resourceType: "ai_job",
+        resourceId: result.runId,
+        projectId: job.projectId,
+        status: "success",
+        riskLevel: "medium",
+        reason: input.reason,
+        metadata: { recoveryOfRunId: job.runId },
+      });
+      return result;
     }),
 
   startListingFiveSteps: protectedProcedure

@@ -1,49 +1,28 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
 import * as devDb from "../devDb";
 import { storagePut } from "../storage";
-
-// Helper: resolve dev project access based on user role
-// designer, admin, super_admin can access any project
-async function resolveDevProjectAccess(projectId: number, user: { id: number; role: string }) {
-  if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
-    const project = await devDb.getDevProjectByIdAdmin(projectId);
-    if (!project) throw new Error("Project not found");
-    return project;
-  }
-  const project = await devDb.getDevProjectById(projectId, user.id);
-  if (!project) throw new Error("Project not found");
-  return project;
-}
-
-// Helper: ensure write access - designer cannot modify other users' projects
-function ensureDevWriteAccess(project: { userId: number }, user: { id: number; role: string }) {
-  if (user.role === 'super_admin' || user.role === 'admin') return;
-  if (user.role === 'designer' && project.userId !== user.id) {
-    throw new Error("Designer角色只能查看他人项目，不能修改");
-  }
-}
+import {
+  productDevelopmentWorkspaceId,
+  recordProductDevelopmentAudit,
+  resolveDevProjectAccess,
+} from "../domains/product_development/security/productDevelopmentAccess";
 
 export const devProjectRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
-    // super_admin, admin, and designer can see all dev projects
-    if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
-      return devDb.getAllDevProjects();
-    }
-    return devDb.getDevProjectsByUser(ctx.user.id);
+    const includeWorkspaceProjects = ["super_admin", "admin", "designer"].includes(ctx.user.role);
+    return devDb.getDevProjectsForWorkspace(
+      productDevelopmentWorkspaceId(ctx),
+      ctx.user.id,
+      includeWorkspaceProjects,
+    );
   }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      // super_admin, admin, and designer can access any project
-      let project;
-      if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
-        project = await devDb.getDevProjectByIdAdmin(input.id);
-      } else {
-        project = await devDb.getDevProjectById(input.id, ctx.user.id);
-      }
-      if (!project) throw new Error("Project not found");
+      const project = await resolveDevProjectAccess(input.id, ctx, "read");
       // Load related data
       const [files, products, reviews, reports, score] = await Promise.all([
         devDb.getDevFilesByProject(input.id),
@@ -64,7 +43,8 @@ export const devProjectRouter = router({
       keywords: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      return devDb.createDevProject({
+      const project = await devDb.createDevProject({
+        workspaceId: productDevelopmentWorkspaceId(ctx),
         userId: ctx.user.id,
         name: input.name,
         description: input.description ?? null,
@@ -72,6 +52,15 @@ export const devProjectRouter = router({
         platform: input.platform ?? "amazon",
         keywords: input.keywords ?? null,
       });
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.project.create",
+        projectId: project.id,
+        resourceId: project.id,
+        resourceName: input.name,
+        afterSnapshot: { name: input.name, targetMarket: input.targetMarket, platform: input.platform },
+      });
+      return project;
     }),
 
   update: protectedProcedure
@@ -86,33 +75,43 @@ export const devProjectRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      // Admin can update any project; designer cannot update others' projects
-      if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
-        const project = await devDb.getDevProjectByIdAdmin(id);
-        if (!project) throw new Error("Project not found");
-        return devDb.updateDevProject(id, project.userId, data as any);
-      }
-      return devDb.updateDevProject(id, ctx.user.id, data as any);
+      const project = await resolveDevProjectAccess(id, ctx, "update");
+      const result = await devDb.updateDevProject(id, project.userId, data as any);
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.project.update",
+        projectId: id,
+        resourceId: id,
+        resourceName: project.name,
+        beforeSnapshot: project,
+        afterSnapshot: data,
+      });
+      return result;
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      // Admin can delete any project; designer cannot delete others' projects
-      if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
-        const project = await devDb.getDevProjectByIdAdmin(input.id);
-        if (!project) throw new Error("Project not found");
-        return devDb.deleteDevProject(input.id, project.userId);
-      }
-      return devDb.deleteDevProject(input.id, ctx.user.id);
+      const project = await resolveDevProjectAccess(input.id, ctx, "update");
+      const result = await devDb.deleteDevProject(input.id, project.userId);
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.project.delete",
+        projectId: input.id,
+        resourceId: input.id,
+        resourceName: project.name,
+        riskLevel: "high",
+        beforeSnapshot: project,
+      });
+      return result;
     }),
 
   stats: protectedProcedure.query(async ({ ctx }) => {
-    // admin/super_admin/designer see all project stats
-    if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
-      return devDb.getDevProjectStats(null as any);
-    }
-    return devDb.getDevProjectStats(ctx.user.id);
+    return devDb.getDevProjectStatsForWorkspace(
+      productDevelopmentWorkspaceId(ctx),
+      ctx.user.id,
+      ["super_admin", "admin", "designer"].includes(ctx.user.role),
+    );
   }),
 
   // File upload - accepts base64 encoded file data
@@ -125,8 +124,7 @@ export const devProjectRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       // Verify project access and write permission
-      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
-      ensureDevWriteAccess(project, ctx.user);
+      const project = await resolveDevProjectAccess(input.projectId, ctx, "update");
 
       // Delete old files with same name in same project & type
       const deletedCount = await devDb.deleteOldFilesByName(
@@ -143,11 +141,23 @@ export const devProjectRouter = router({
 
       // Create file record
       const result = await devDb.createDevUploadedFile({
+        workspaceId: project.workspaceId,
         projectId: input.projectId,
         userId: ctx.user.id,
         filename: input.fileName,
         fileUrl: url,
         fileType: input.fileType,
+      });
+
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.file.upload",
+        projectId: input.projectId,
+        resourceType: "dev_uploaded_file",
+        resourceId: result.id,
+        resourceName: input.fileName,
+        riskLevel: "high",
+        metadata: { fileType: input.fileType, replacedFiles: deletedCount },
       });
 
       return { id: result.id, url, replacedFiles: deletedCount };
@@ -170,7 +180,7 @@ export const devProjectRouter = router({
       await devDb.updateDevFile(input.fileId, {
         parsedData: input.parsedData,
         status: "parsed",
-      });
+      }, input.projectId);
       return { success: true };
     }),
 
@@ -235,7 +245,9 @@ export const devProjectRouter = router({
       })),
     }))
     .mutation(async ({ ctx, input }) => {
+      const project = await resolveDevProjectAccess(input.projectId, ctx, "update");
       await devDb.upsertDevProducts(input.projectId, input.products.map(p => ({
+        workspaceId: project.workspaceId,
         projectId: input.projectId,
         asin: p.asin,
         title: p.title ?? null,
@@ -315,7 +327,9 @@ export const devProjectRouter = router({
       })),
     }))
     .mutation(async ({ ctx, input }) => {
+      const project = await resolveDevProjectAccess(input.projectId, ctx, "update");
       await devDb.insertDevReviews(input.reviews.map(r => ({
+        workspaceId: project.workspaceId,
         projectId: input.projectId,
         asin: r.asin ?? null,
         title: r.title ?? null,
@@ -348,9 +362,16 @@ export const devProjectRouter = router({
       fileType: z.enum(["sales", "bullet_points", "reviews", "history_sales"]),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
-      ensureDevWriteAccess(project, ctx.user);
+      await resolveDevProjectAccess(input.projectId, ctx, "update");
       await devDb.confirmDevFilesByType(input.projectId, input.fileType);
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.data.confirm",
+        projectId: input.projectId,
+        resourceType: "dev_uploaded_file",
+        riskLevel: "high",
+        metadata: { fileType: input.fileType },
+      });
       return { success: true };
     }),
 
@@ -360,9 +381,16 @@ export const devProjectRouter = router({
       fileType: z.enum(["sales", "bullet_points", "reviews", "history_sales"]),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
-      ensureDevWriteAccess(project, ctx.user);
+      await resolveDevProjectAccess(input.projectId, ctx, "update");
       await devDb.unconfirmDevFilesByType(input.projectId, input.fileType);
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.data.unlock",
+        projectId: input.projectId,
+        resourceType: "dev_uploaded_file",
+        riskLevel: "high",
+        metadata: { fileType: input.fileType },
+      });
       return { success: true };
     }),
 
@@ -374,8 +402,7 @@ export const devProjectRouter = router({
       totalRows: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
-      ensureDevWriteAccess(project, ctx.user);
+      await resolveDevProjectAccess(input.projectId, ctx, "update");
       await devDb.updateDevFileRowsByType(input.projectId, input.fileType, input.totalRows);
       return { success: true };
     }),

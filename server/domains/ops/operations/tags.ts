@@ -1,4 +1,6 @@
-import { z, TRPCError, protectedProcedure, router, getDb, invokeLLM, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo } from "./context";
+import { z, TRPCError, protectedProcedure, router, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo } from "./context";
+import { requireOpsDb } from "../legacy/repository";
+import { runOpsSkill } from "../legacy/service";
 import { opsWorkspaceCondition, withOpsWorkspace, workspaceIdFromContext } from "./context";
 
 export const tagsProcedures = {
@@ -8,7 +10,7 @@ export const tagsProcedures = {
     .mutation(async ({ input }) => {
       try {
 
-        const response = await invokeLLM({
+        const response = await runOpsSkill({
           messages: [
             {
               role: "system",
@@ -52,7 +54,7 @@ export const tagsProcedures = {
 
 // ============== ASIN Tag Management ==============
   listTagDefinitions: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     return db!.select().from(asinTagDefinitions)
       .where(opsWorkspaceCondition(asinTagDefinitions, workspaceIdFromContext(ctx), eq(asinTagDefinitions.userId, ctx.user.id)));
   }),
@@ -64,7 +66,7 @@ createTagDefinition: protectedProcedure
       hideFromInventory: z.number().min(0).max(1).default(0),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [result] = await db!.insert(asinTagDefinitions).values(withOpsWorkspace(workspaceIdFromContext(ctx), {
         userId: ctx.user.id,
         name: input.name,
@@ -82,7 +84,7 @@ updateTagDefinition: protectedProcedure
       hideFromInventory: z.number().min(0).max(1).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const updateData: any = {};
       if (input.name !== undefined) updateData.name = input.name;
       if (input.color !== undefined) updateData.color = input.color;
@@ -96,7 +98,7 @@ updateTagDefinition: protectedProcedure
 deleteTagDefinition: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       // Delete all assignments first
       await db!.delete(asinTagAssignments)
         .where(opsWorkspaceCondition(asinTagAssignments, workspaceIdFromContext(ctx), and(eq(asinTagAssignments.tagId, input.id), eq(asinTagAssignments.userId, ctx.user.id))));
@@ -107,7 +109,7 @@ deleteTagDefinition: protectedProcedure
     }),
 
 listTagAssignments: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     return db!.select().from(asinTagAssignments)
       .where(opsWorkspaceCondition(asinTagAssignments, workspaceIdFromContext(ctx), eq(asinTagAssignments.userId, ctx.user.id)));
   }),
@@ -120,7 +122,7 @@ assignTag: protectedProcedure
       sid: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       // Check if already assigned
       const existing = await db!.select().from(asinTagAssignments)
         .where(opsWorkspaceCondition(asinTagAssignments, workspaceIdFromContext(ctx), and(
@@ -145,7 +147,7 @@ removeTag: protectedProcedure
       asin: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       await db!.delete(asinTagAssignments)
         .where(opsWorkspaceCondition(asinTagAssignments, workspaceIdFromContext(ctx), and(
           eq(asinTagAssignments.userId, ctx.user.id),
@@ -165,7 +167,7 @@ batchAssignTag: protectedProcedure
       })),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       let count = 0;
       for (const item of input.asins) {
         const existing = await db!.select().from(asinTagAssignments)

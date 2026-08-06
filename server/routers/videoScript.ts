@@ -1,10 +1,15 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as vsDb from "../videoScriptDb";
 import * as db from "../repositories";
 import { generateVideoScriptExcel } from "../videoScriptExcel";
 import { storagePut } from "../storage";
+import {
+  registerVideoArtifact,
+  recordBusinessArtifactUse,
+  resolveCurrentBusinessArtifact,
+} from "../domains/ai_os/services/businessArtifactRegistry";
 import { getL1Index, getL2Summary, formatForPrompt, logKbCallBatch } from "../kbContextEngine";
 import {
   COMPETITOR_SCRIPT_ANALYSIS_PROMPT,
@@ -54,7 +59,24 @@ async function buildProductContext(projectId: number): Promise<string> {
   for (const file of files) {
     if (file.status !== "completed" || !file.analysisResult) continue;
     try {
-      const parsed = JSON.parse(file.analysisResult);
+      const artifact = await resolveCurrentBusinessArtifact({
+        domain: "listing",
+        artifactKey: `project_file.${file.fileType}.analysis`,
+        sourceTable: "projectFiles",
+        sourceRowId: file.id,
+        projectId,
+      }).catch(() => null);
+      if (artifact) {
+        await recordBusinessArtifactUse({
+          artifact,
+          consumerDomain: "video",
+          consumerType: "business_operation",
+          consumerId: `video.context:${projectId}`,
+          projectId,
+          metadata: { source: "project_file", fileType: file.fileType },
+        });
+      }
+      const parsed = artifact?.content || JSON.parse(file.analysisResult);
       if (file.fileType === "product_attributes") {
         parts.push("--- 产品属性 ---");
         if (parsed.uniqueSellingPoints?.length) {
@@ -71,7 +93,27 @@ async function buildProductContext(projectId: number): Promise<string> {
   const analyses = await db.getCompetitorAnalysesByProject(projectId);
   if (analyses.length > 0) {
     parts.push("\n--- 竞品分析 ---");
-    for (const a of analyses) {
+    for (const row of analyses) {
+      const artifact = await resolveCurrentBusinessArtifact({
+        domain: "listing",
+        artifactKey: `listing.competitor_analysis.${row.asin}`,
+        sourceTable: "competitorAnalyses",
+        sourceRowId: row.id,
+        projectId,
+      }).catch(() => null);
+      if (artifact) {
+        await recordBusinessArtifactUse({
+          artifact,
+          consumerDomain: "video",
+          consumerType: "business_operation",
+          consumerId: `video.context:${projectId}`,
+          projectId,
+          metadata: { source: "competitor_analysis", asin: row.asin },
+        });
+      }
+      const a = artifact?.content && typeof artifact.content === "object"
+        ? { ...row, ...(artifact.content as Record<string, unknown>) }
+        : row;
       parts.push(`竞品 ASIN: ${a.asin}`);
       if (a.title) parts.push(`标题: ${a.title}`);
       if (a.bulletPoints) parts.push(`五点: ${a.bulletPoints}`);
@@ -79,7 +121,24 @@ async function buildProductContext(projectId: number): Promise<string> {
   }
 
   // Load listings
-  const listings = await db.getListingsByProject(projectId);
+  const listingArtifact = await resolveCurrentBusinessArtifact({
+    domain: "listing",
+    artifactKey: "listing.content",
+    projectId,
+  }).catch(() => null);
+  const listings = listingArtifact?.content && typeof listingArtifact.content === "object"
+    ? [(listingArtifact.content as any).listing].filter(Boolean)
+    : await db.getListingsByProject(projectId);
+  if (listingArtifact) {
+    await recordBusinessArtifactUse({
+      artifact: listingArtifact,
+      consumerDomain: "video",
+      consumerType: "business_operation",
+      consumerId: `video.context:${projectId}`,
+      projectId,
+      metadata: { source: "listing.content" },
+    });
+  }
   if (listings.length > 0) {
     parts.push("\n--- Listing内容 ---");
     for (const l of listings) {
@@ -212,7 +271,7 @@ export const videoScriptRouter = router({
       const prompt = COMPETITOR_SCRIPT_ANALYSIS_PROMPT.replace("{competitor_content}", input.rawContent);
       // [Emperor] 通用 Skill 调用（已迁移）
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是一位资深的亚马逊产品视频分析师。请严格输出JSON格式。" },
           { role: "user", content: prompt },
@@ -267,7 +326,7 @@ export const videoScriptRouter = router({
       const prompt = COMPETITOR_SUMMARY_PROMPT.replace("{competitor_analyses}", JSON.stringify(analysesData, null, 2));
       // [Emperor] 通用 Skill 调用（已迁移）
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是一位资深的亚马逊视频策略分析师。请严格输出JSON格式。" },
           { role: "user", content: prompt },
@@ -309,7 +368,7 @@ export const videoScriptRouter = router({
       const prompt = PRODUCT_INFO_EXTRACTION_PROMPT.replace("{product_data}", productContext);
       // [Emperor] 通用 Skill 调用（已迁移）
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是一位亚马逊产品视频策划专家。请严格输出JSON格式。" },
           { role: "user", content: prompt },
@@ -422,7 +481,7 @@ export const videoScriptRouter = router({
 
       // [Emperor] 通用 Skill 调用（已迁移）
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是一位资深的亚马逊产品视频编导。请严格输出JSON格式。" },
           { role: "user", content: prompt },
@@ -499,7 +558,7 @@ export const videoScriptRouter = router({
 
       // [Emperor] 通用 Skill 调用（已迁移）
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是一位亚马逊产品视频的分镜师。请严格输出JSON格式。" },
           { role: "user", content: prompt },
@@ -608,7 +667,7 @@ export const videoScriptRouter = router({
 
       // [Emperor] 通用 Skill 调用（已迁移）
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是一位专业的亚马逊产品视频分镜师。请严格输出JSON格式，每个镜头包含完整的14字段数据。" },
           { role: "user", content: prompt },
@@ -722,7 +781,7 @@ export const videoScriptRouter = router({
       const prompt = EDIT_SCRIPT_PROMPT.replace("{sections_with_shots}", JSON.stringify(sectionsWithShots, null, 2));
       // [Emperor] 通用 Skill 调用（已迁移）
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: "你是一位资深的亚马逊视频剪辑策划师。请严格输出JSON格式。" },
           { role: "user", content: prompt },
@@ -841,6 +900,7 @@ export const videoScriptRouter = router({
         version: currentVersion + 1,
         versionNote: input.versionNote,
       } as any);
+      await registerVideoArtifact(input.videoScriptId, "user_edit", { confirmed: true });
       return { id, version: currentVersion };
     }),
 
@@ -861,6 +921,7 @@ export const videoScriptRouter = router({
       if (snapshot.sections) {
         await vsDb.saveSections(version.videoScriptId, snapshot.sections);
       }
+      await registerVideoArtifact(version.videoScriptId, "user_edit", { confirmed: true });
       return { success: true, restoredVersion: version.version };
     }),
 
@@ -949,6 +1010,7 @@ export const videoScriptRouter = router({
       await vsDb.updateVideoScript(input.videoScriptId, {
         stageStatus: JSON.stringify(stageStatus),
       });
+      await registerVideoArtifact(input.videoScriptId, "user_edit", { confirmed: true });
       return { success: true };
     }),
 

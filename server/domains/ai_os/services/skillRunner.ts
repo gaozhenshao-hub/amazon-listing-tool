@@ -4,7 +4,7 @@ import { createHash } from "crypto";
 import Handlebars from "handlebars";
 import { getDb } from "../../../repositories/dbClient";
 import { buildWorkspaceScopeFilter } from "../../../services/securityGovernance";
-import { invokeLLM, type Message, type MessageContent } from "../../../_core/llm";
+import { invokeLLM, type InvokeResult, type Message, type MessageContent } from "../../../_core/llm";
 import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { recordAiOsEvaluation, recordAiOsMetric } from "./observability";
 
@@ -19,6 +19,7 @@ export type SkillRunErrorCode =
   | "PROMPT_MISSING"
   | "SKILL_VERSION_MISMATCH"
   | "DATABASE_ERROR"
+  | "CANCELED"
   | "UNKNOWN";
 
 export class SkillRunError extends Error {
@@ -53,6 +54,8 @@ type ModelRow = {
   baseUrl?: string | null;
   apiKeyRef?: string | null;
   isActive?: number | boolean;
+  costPer1kInputTokens?: string | number | null;
+  costPer1kOutputTokens?: string | number | null;
 };
 
 type SkillManifest = {
@@ -81,6 +84,8 @@ export type RunSkillInput<T> = {
   skillVersionPolicy?: SkillVersionPolicy;
   expectedSkillVersion?: string | number;
   expectedSkillPromptHash?: string;
+  maxModelAttempts?: number;
+  signal?: AbortSignal;
   validate?: (content: string) => T;
 };
 
@@ -96,6 +101,7 @@ export type RunSkillResult<T = string> = {
   modelSlug: string;
   provider: string;
   durationMs: number;
+  costCents: number;
   inputTokens: number;
   outputTokens: number;
   fallbackCount: number;
@@ -404,6 +410,12 @@ function classifyProviderError(error: unknown): SkillRunError {
     return new SkillRunError("PROVIDER_TIMEOUT", "AI provider timed out", true, error);
   }
   const message = error instanceof Error ? error.message : String(error);
+  if (/timed?\s*out|timeout/i.test(message)) {
+    return new SkillRunError("PROVIDER_TIMEOUT", "AI provider timed out", true, error);
+  }
+  if (/abort|cancel/i.test(message)) {
+    return new SkillRunError("CANCELED", "Skill execution canceled", false, error);
+  }
   if (/429|rate.?limit/i.test(message)) {
     return new SkillRunError("PROVIDER_RATE_LIMIT", "AI provider rate limited the request", true, error);
   }
@@ -487,6 +499,7 @@ async function callModel(
   messages: Message[],
   implementation: NonNullable<SkillManifest["implementation"]>,
   timeoutSeconds: number,
+  signal?: AbortSignal,
 ): Promise<{ content: string; inputTokens: number; outputTokens: number }> {
   if (model.provider === "custom" && model.baseUrl && model.apiKeyRef) {
     const payload: Record<string, unknown> = {
@@ -505,6 +518,7 @@ async function callModel(
         authorization: `Bearer ${model.apiKeyRef}`,
       },
       body: JSON.stringify(payload),
+      signal,
       timeoutMs: timeoutSeconds * 1000,
       maxResponseBytes: 20 * 1024 * 1024,
       allowedHosts: [new URL(apiUrl).hostname],
@@ -531,13 +545,29 @@ async function callModel(
     };
   }
 
-  const params: any = {
-    messages,
-    max_tokens: implementation.maxTokens || 4096,
-    bypassEmperor: true,
-  };
-  if (implementation.supportsJsonMode) params.response_format = { type: "json_object" };
-  const result = await invokeLLM(params);
+  const timeoutController = new AbortController();
+  const abortFromParent = () => timeoutController.abort(signal?.reason || new Error("Skill execution canceled"));
+  if (signal?.aborted) abortFromParent();
+  else signal?.addEventListener("abort", abortFromParent, { once: true });
+  const timeout = setTimeout(
+    () => timeoutController.abort(new Error(`Skill model timed out after ${timeoutSeconds}s`)),
+    timeoutSeconds * 1000,
+  );
+  let result: InvokeResult;
+  try {
+    const params: any = {
+      messages,
+      max_tokens: implementation.maxTokens || 4096,
+      bypassEmperor: true,
+      emperorBypassReason: "skill_runner_provider_call",
+      signal: timeoutController.signal,
+    };
+    if (implementation.supportsJsonMode) params.response_format = { type: "json_object" };
+    result = await invokeLLM(params);
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortFromParent);
+  }
   const rawContent = result?.choices?.[0]?.message?.content;
   const content = typeof rawContent === "string" ? rawContent : "";
   if (!content.trim()) {
@@ -582,18 +612,22 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
     input.fallbackModels || DEFAULT_FALLBACKS,
     input.workspaceId ?? skill.workspaceId ?? null,
   );
+  const modelAttempts = models.slice(0, Math.min(Math.max(input.maxModelAttempts || models.length, 1), models.length));
 
   const runId = generateRunId();
   const startedAt = new Date();
   await rawExecute(
-    "INSERT INTO emperor_skill_runs (workspaceId,runId,skillSlug,skillName,userId,input,status,modelSlug,startedAt) VALUES (?,?,?,?,?,?,?,?,?)",
-    [input.workspaceId ?? skill.workspaceId ?? null, runId, skill.slug, skill.name, input.userId, JSON.stringify(executionVariables), "running", models[0].slug, startedAt],
+    "INSERT INTO emperor_skill_runs (workspaceId,runId,skillSlug,skillName,skillVersion,skillPromptHash,skillManifestHash,migrationSource,userId,input,status,modelSlug,provider,startedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    [input.workspaceId ?? skill.workspaceId ?? null, runId, skill.slug, skill.name, Number(skillSnapshot.version) || 1, skillSnapshot.systemPromptHash, skillSnapshot.manifestHash, input.migrationSource || null, input.userId, JSON.stringify(executionVariables), "running", models[0].slug, models[0].provider, startedAt],
   );
 
   let lastError: SkillRunError | null = null;
-  for (let index = 0; index < models.length; index += 1) {
-    const model = models[index];
+  for (let index = 0; index < modelAttempts.length; index += 1) {
+    const model = modelAttempts[index];
     try {
+      if (input.signal?.aborted) {
+        throw new SkillRunError("CANCELED", "Skill execution canceled", false, input.signal.reason);
+      }
       const response = await callModel(
         model,
         [
@@ -607,6 +641,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
         ],
         implementation,
         timeoutSeconds,
+        input.signal,
       );
       let parsed: T;
       try {
@@ -618,8 +653,12 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
       const completedAt = new Date();
       const durationMs = completedAt.getTime() - startedAt.getTime();
       const totalTokens = response.inputTokens + response.outputTokens;
+      const costCents = Math.max(0, Math.round(
+        ((response.inputTokens * Number(model.costPer1kInputTokens || 0))
+          + (response.outputTokens * Number(model.costPer1kOutputTokens || 0))) / 10,
+      ));
       await rawExecute(
-        "UPDATE emperor_skill_runs SET status=?,output=?,modelSlug=?,inputTokens=?,outputTokens=?,durationMs=?,completedAt=? WHERE runId=?",
+        "UPDATE emperor_skill_runs SET status=?,output=?,modelSlug=?,provider=?,inputTokens=?,outputTokens=?,durationMs=?,costCents=?,completedAt=? WHERE runId=?",
         [
           "succeeded",
           JSON.stringify({
@@ -630,9 +669,11 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
             skillManifestHash: skillSnapshot.manifestHash,
           }),
           model.slug,
+          model.provider,
           response.inputTokens,
           response.outputTokens,
           durationMs,
+          costCents,
           completedAt,
           runId,
         ],
@@ -656,6 +697,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
           inputTokens: response.inputTokens,
           outputTokens: response.outputTokens,
           durationMs,
+          costCents,
         },
       });
       void recordAiOsMetric({
@@ -692,13 +734,16 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
         modelSlug: model.slug,
         provider: model.provider,
         durationMs,
+        costCents,
         inputTokens: response.inputTokens,
         outputTokens: response.outputTokens,
         fallbackCount: index,
       };
     } catch (error) {
-      lastError = classifyProviderError(error);
-      if (!lastError.retryable || index === models.length - 1) break;
+      lastError = input.signal?.aborted
+        ? new SkillRunError("CANCELED", "Skill execution canceled", false, input.signal.reason || error)
+        : classifyProviderError(error);
+      if (!lastError.retryable || index === modelAttempts.length - 1) break;
     }
   }
 
@@ -716,7 +761,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
     workspaceId: input.workspaceId ?? skill.workspaceId ?? null,
     userId: input.userId,
     skillSlug: skill.slug,
-    retryCount: models.length - 1,
+    retryCount: modelAttempts.length - 1,
     metadata: { skillName: skill.name, retryable: lastError?.retryable ?? false },
   });
   void recordAiOsMetric({

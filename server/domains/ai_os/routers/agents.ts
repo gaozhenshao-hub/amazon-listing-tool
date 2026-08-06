@@ -52,6 +52,27 @@ async function assertAgentAction(ctx: TrpcContext, action: SecurityAction, resou
   });
 }
 
+async function assertAgentRuntimeOwnsExecution(runId: string) {
+  const rows = await rawExecute(
+    `SELECT a.dagDefinition
+     FROM emperor_agent_runs r
+     JOIN emperor_agents a ON a.slug=r.agentSlug
+     WHERE r.runId=?
+     ORDER BY a.workspaceId IS NULL ASC
+     LIMIT 1`,
+    [runId],
+  );
+  const dag = rows[0]?.dagDefinition && typeof rows[0].dagDefinition === "string"
+    ? JSON.parse(rows[0].dagDefinition)
+    : rows[0]?.dagDefinition;
+  if (dag?.executionOwner && dag.executionOwner !== "agent_runtime") {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "该 Agent 由业务页面托管，请在对应业务阶段执行、编辑、确认或取消",
+    });
+  }
+}
+
 async function auditAgentAction(input: {
   ctx: TrpcContext;
   action: string;
@@ -491,8 +512,13 @@ export const emperorAgentsRouter = router({
     .input(z.object({ runId: z.string() }))
     .query(async ({ input, ctx }) => {
       await assertAgentAction(ctx, "read", input.runId);
-      const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
-      return getAgentRun(input.runId, isAdmin ? undefined : ctx.user.id, isAdmin);
+      const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
+      const visible = await rawExecute(
+        `SELECT runId FROM emperor_agent_runs WHERE runId=? AND ${scope.clause} LIMIT 1`,
+        [input.runId, ...scope.params],
+      );
+      if (!visible[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Agent run not found" });
+      return getAgentRun(input.runId, undefined, true);
     }),
 
   listArtifacts: protectedProcedure
@@ -632,24 +658,20 @@ export const emperorAgentsRouter = router({
     }),
 
   listProjectRuns: protectedProcedure
-    .input(z.object({ projectId: z.number().int().positive(), limit: z.number().int().min(1).max(50).optional().default(10) }))
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      agentSlug: z.string().max(128).optional(),
+      limit: z.number().int().min(1).max(50).optional().default(10),
+    }))
     .query(async ({ input, ctx }) => {
       await assertAgentAction(ctx, "read", String(input.projectId));
-      const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
       const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
-      if (isAdmin) {
-        return rawExecute(
-          `SELECT * FROM emperor_agent_runs
-           WHERE projectId=? AND ${scope.clause}
-           ORDER BY createdAt DESC LIMIT ?`,
-          [input.projectId, ...scope.params, input.limit],
-        );
-      }
+      const slugClause = input.agentSlug ? " AND agentSlug=?" : "";
       return rawExecute(
         `SELECT * FROM emperor_agent_runs
-         WHERE projectId=? AND userId=? AND ${scope.clause}
+         WHERE projectId=? AND ${scope.clause}${slugClause}
          ORDER BY createdAt DESC LIMIT ?`,
-        [input.projectId, ctx.user.id, ...scope.params, input.limit],
+        [input.projectId, ...scope.params, ...(input.agentSlug ? [input.agentSlug] : []), input.limit],
       );
     }),
 
@@ -657,6 +679,7 @@ export const emperorAgentsRouter = router({
     .input(z.object({ runId: z.string(), nodeId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       await assertAgentAction(ctx, "run", input.runId);
+      await assertAgentRuntimeOwnsExecution(input.runId);
       const result = await executeAgentNode({ runId: input.runId, nodeId: input.nodeId, userId: ctx.user.id });
       await auditAgentAction({
         ctx,
@@ -675,6 +698,7 @@ export const emperorAgentsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertAgentAction(ctx, "run", input.runId);
+      await assertAgentRuntimeOwnsExecution(input.runId);
       const result = await scheduleAgentRun({ runId: input.runId, userId: ctx.user.id, mode: input.mode });
       await auditAgentAction({
         ctx,
@@ -694,6 +718,7 @@ export const emperorAgentsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertAgentAction(ctx, "cancel", input.runId);
+      await assertAgentRuntimeOwnsExecution(input.runId);
       const result = await cancelAgentRun({ runId: input.runId, userId: ctx.user.id, reason: input.reason });
       await auditAgentAction({
         ctx,
@@ -713,6 +738,7 @@ export const emperorAgentsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertAgentAction(ctx, "cancel", input.runId);
+      await assertAgentRuntimeOwnsExecution(input.runId);
       const result = await pauseAgentRun({ runId: input.runId, userId: ctx.user.id, reason: input.reason });
       await auditAgentAction({
         ctx,
@@ -731,6 +757,7 @@ export const emperorAgentsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertAgentAction(ctx, "run", input.runId);
+      await assertAgentRuntimeOwnsExecution(input.runId);
       const result = await resumeAgentRun({ runId: input.runId, userId: ctx.user.id });
       await auditAgentAction({
         ctx,
@@ -764,6 +791,7 @@ export const emperorAgentsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertAgentAction(ctx, "run", input.runId);
+      await assertAgentRuntimeOwnsExecution(input.runId);
       const result = await rerunAgentNode({
         runId: input.runId,
         nodeId: input.nodeId,
@@ -789,6 +817,7 @@ export const emperorAgentsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertAgentAction(ctx, "update", input.runId);
+      await assertAgentRuntimeOwnsExecution(input.runId);
       const result = await updateAgentNodeDraft({
         runId: input.runId,
         nodeId: input.nodeId,
@@ -815,6 +844,7 @@ export const emperorAgentsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertAgentAction(ctx, "confirm", input.runId);
+      await assertAgentRuntimeOwnsExecution(input.runId);
       const result = await confirmAgentNode({
         runId: input.runId,
         nodeId: input.nodeId,

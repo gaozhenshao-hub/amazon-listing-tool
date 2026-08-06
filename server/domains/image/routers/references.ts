@@ -24,7 +24,7 @@ const {
   ensureWriteAccess,
   generateStep5RunId,
   getKBReference,
-  invokeLLM,
+  invokeBusinessSkill,
   isActiveStep5Run,
   kbDb,
   parseLLMJson,
@@ -34,6 +34,7 @@ const {
   registerAiJobHandler,
   resolveProjectAccess,
   resolveSessionAccess,
+  resolveSessionForExecution,
   router,
   runStep5GenerationJob,
   serializeStep5Error,
@@ -91,7 +92,7 @@ export const imageReferenceProcedures = {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step4.refs.optimize:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
 
       // Build context with reference images
@@ -123,7 +124,7 @@ export const imageReferenceProcedures = {
       messages.push({ role: "user", content: userContent });
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages,
         response_format: { type: "json_object" },
       });
@@ -148,7 +149,7 @@ export const imageReferenceProcedures = {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.references.regenerate-all:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
 
       // Build multimodal messages with all reference images + notes
@@ -207,7 +208,7 @@ ${session.step3UserEdit || session.step3AiResult}
       ];
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages,
         response_format: { type: "json_object" },
       });
@@ -240,7 +241,7 @@ ${session.step3UserEdit || session.step3AiResult}
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.references.regenerate-one:${input.projectId}:${input.imageIndex}`);
       if (!session) throw new Error("No workflow session found");
 
       // Parse current step4 result to get the specific image info
@@ -288,7 +289,7 @@ ${session.step3UserEdit || session.step3AiResult}
       }
 
       const singleImagePrompt = STEP4_REFERENCE_PROMPT + "\n\n注意：本次只需输出单张图的方案，直接返回一个 imageReference 对象（JSON），不要包裹在数组中。";
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: singleImagePrompt },
           { role: "user", content: userContent },
@@ -327,14 +328,14 @@ ${session.step3UserEdit || session.step3AiResult}
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.aplus.optimize:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
 
       const currentSuggestions = session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult;
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: STEP5_APLUS_MODULE_OPTIMIZE_PROMPT },
           {
@@ -373,7 +374,7 @@ ${session.step3UserEdit || session.step3AiResult}
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.aplus.optimize-one:${input.projectId}:${input.sectionIndex}`);
       if (!session) throw new Error("No workflow session found");
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
 
@@ -385,7 +386,7 @@ ${session.step3UserEdit || session.step3AiResult}
       if (!currentSection) throw new Error(`A+ section at index ${input.sectionIndex} not found`);
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: STEP5_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT },
           {
@@ -442,7 +443,7 @@ ${session.step3UserEdit || session.step3AiResult}
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.aplus.recommend:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
 
       // Gather product context
@@ -454,7 +455,7 @@ ${session.step3UserEdit || session.step3AiResult}
       } catch { spCount = 5; }
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: STEP5_APLUS_COMBO_RECOMMEND_PROMPT },
           {
@@ -524,7 +525,11 @@ ${session.step3UserEdit || session.step3AiResult}
       lockedFields: z.array(z.string()).optional(), // fields to keep unchanged
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionForExecution(
+        input.projectId,
+        ctx.user,
+        `image.refine:${input.projectId}:${input.imageType}:${input.imageIndex ?? 0}`,
+      );
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
 
@@ -541,7 +546,7 @@ ${session.step3UserEdit || session.step3AiResult}
         : "";
 
 
-      const response = await invokeLLM({
+      const response = await invokeBusinessSkill({
         messages: [
           {
             role: "system",

@@ -1,4 +1,6 @@
 import { failUnavailableDataSource } from "@shared/_core/errors";
+import { requireOpsDb } from "../legacy/repository";
+import { runOpsSkill } from "../legacy/service";
 import { currentOpsWorkspaceId } from "../workspaceContext";
 import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
@@ -32,7 +34,7 @@ const {
   getToday,
   getYesterday,
   inArray,
-  invokeLLM,
+  invokeBusinessSkill,
   isNull,
   keywordMonitors,
   keywordSnapshots,
@@ -64,7 +66,6 @@ const {
   users,
   z,
 } = shared;
-const getDb = (...args: Parameters<typeof shared.getDb>) => shared.getDb(...args);
 
 export const opsProductProcedures = {
 
@@ -81,7 +82,7 @@ export const opsProductProcedures = {
     const period = input?.period || "month";
     const marketplace = input?.marketplace || "US";
     const statusFilter = input?.statusFilter || "active";
-    const db = await getDb();
+    const db = await requireOpsDb();
 
     // Resolve effective userId and role-based filtering
     const { MANAGER_ROLES } = await import("../../../../shared/const");
@@ -212,7 +213,7 @@ export const opsProductProcedures = {
   getProduct: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [product] = await db!.select().from(productProfiles)
         .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.id), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "产品不存在" });
@@ -248,7 +249,7 @@ export const opsProductProcedures = {
       })).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [result] = await db!.insert(productProfiles).values({
         userId: ctx.user.id,
         parentAsin: input.parentAsin,
@@ -300,7 +301,7 @@ export const opsProductProcedures = {
       storeName: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const { id, ...updates } = input;
       // Filter out undefined values
       const cleanUpdates = Object.fromEntries(
@@ -317,7 +318,7 @@ export const opsProductProcedures = {
   deleteProduct: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       // Delete related data first
       await db!.delete(productVariants).where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, input.id)));
       await db!.delete(productTodos).where(opsWorkspaceCondition(productTodos, currentOpsWorkspaceId(), eq(productTodos.productId, input.id)));
@@ -348,7 +349,7 @@ export const opsProductProcedures = {
       variationAttributes: z.record(z.string(), z.string()).optional(),
     }))
     .mutation(async ({ input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [result] = await db!.insert(productVariants).values({
         productId: input.productId,
         childAsin: input.childAsin,
@@ -364,7 +365,7 @@ export const opsProductProcedures = {
   removeVariant: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       await db!.delete(productVariants).where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.id, input.id)));
       return { deleted: true };
     }),
@@ -378,7 +379,7 @@ export const opsProductProcedures = {
       mode: z.enum(["replace", "add", "remove"]).default("replace"),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const { MANAGER_ROLES } = await import("../../../../shared/const");
       const isManagerOrAbove = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
       const effectiveUserId = isManagerOrAbove ? await resolveDataUserId(db!, ctx.user) : ctx.user.id;
@@ -416,7 +417,7 @@ export const opsProductProcedures = {
 
   // ─── 获取所有运营人员列表（已分配过的 + 团队成员） ───
   listOperators: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     // 1. 已分配过的运营名称
     const assigned = await db!.selectDistinct({ operator: productProfiles.operator })
       .from(productProfiles)
@@ -440,7 +441,7 @@ export const opsProductProcedures = {
 
   // ─── 获取团队成员详情列表 ───
   listTeamMembers: protectedProcedure.query(async () => {
-    const db = await getDb();
+    const db = await requireOpsDb();
     const members = await db!.select({
       id: users.id,
       name: users.name,

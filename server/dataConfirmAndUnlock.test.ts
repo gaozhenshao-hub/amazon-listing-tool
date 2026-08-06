@@ -22,7 +22,10 @@ describe("Data Confirmation - Schema", () => {
 
 // ─── Test: Data Confirmation DB Functions ───────────────────────
 describe("Data Confirmation - DB Functions", () => {
-  const dbPath = path.join(__dirname, "devDb.ts");
+  const dbPath = path.join(
+    __dirname,
+    "domains/product_development/repositories/legacyDevRepository.ts",
+  );
   const dbCode = fs.readFileSync(dbPath, "utf-8");
 
   it("should export confirmDevFilesByType function", () => {
@@ -84,7 +87,10 @@ describe("Data Confirmation - Router Endpoints", () => {
 
 // ─── Test: Stage Unlock DB Function ─────────────────────────────
 describe("Stage Unlock - DB Function", () => {
-  const dbPath = path.join(__dirname, "devDb.ts");
+  const dbPath = path.join(
+    __dirname,
+    "domains/product_development/repositories/legacyDevRepository.ts",
+  );
   const dbCode = fs.readFileSync(dbPath, "utf-8");
 
   it("should export unlockDevAnalysisStage function", () => {
@@ -108,8 +114,11 @@ describe("Stage Unlock - DB Function", () => {
 
 // ─── Test: Stage Unlock Router Endpoint ─────────────────────────
 describe("Stage Unlock - Router Endpoint", () => {
-  const routerPath = path.join(__dirname, "routers/devAnalysis.ts");
-  const routerCode = fs.readFileSync(routerPath, "utf-8");
+  const routerCode = [
+    fs.readFileSync(path.join(__dirname, "domains/product_development/router.ts"), "utf-8"),
+    fs.readFileSync(path.join(__dirname, "domains/product_development/schema.ts"), "utf-8"),
+    fs.readFileSync(path.join(__dirname, "domains/product_development/service.ts"), "utf-8"),
+  ].join("\n");
 
   it("should have unlockStage endpoint", () => {
     expect(routerCode).toContain("unlockStage:");

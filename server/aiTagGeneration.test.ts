@@ -113,7 +113,10 @@ describe("AI Tag Generation from Bullet Points Data", () => {
   });
 
   describe("upsertDevProducts - non-destructive update", () => {
-    const dbCode = readFileSync("server/devDb.ts", "utf-8");
+    const dbCode = readFileSync(
+      "server/domains/product_development/repositories/legacyDevRepository.ts",
+      "utf-8",
+    );
 
     it("should only update non-null non-empty fields on existing products", () => {
       expect(dbCode).toContain("Only update fields that have non-null, non-empty values");

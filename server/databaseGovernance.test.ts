@@ -42,6 +42,7 @@ describe("database governance v1", () => {
     ]);
     expect(listDomainTables("ai_os")).toContain("ai_jobs");
     expect(listDomainTables("project")).toContain("projects");
+    expect(listDomainTables("project")).toContain("dev_analysis_stages");
   });
 
   it("keeps core repositories callable from direct and aggregate exports", () => {
@@ -69,6 +70,9 @@ describe("database governance v1", () => {
     expect(aiOsSchema.aiJobs).toBeDefined();
     expect(aiOsSchema.emperorAgentRuns).toBeDefined();
     expect(relations.projectsRelations).toBeDefined();
+    expect(relations.devProjectsRelations).toBeDefined();
+    expect(relations.devAnalysisStagesRelations).toBeDefined();
+    expect(relations.devAnalysisStageConflictsRelations).toBeDefined();
     expect(relations.emperorAgentRunsRelations).toBeDefined();
     expect(relations.emperorAgentArtifactsRelations).toBeDefined();
   });
@@ -80,6 +84,7 @@ describe("database governance v1", () => {
         expect.objectContaining({ table: "listings", column: "projectId", referencesTable: "projects" }),
         expect.objectContaining({ table: "ai_jobs", column: "projectId", referencesTable: "projects" }),
         expect.objectContaining({ table: "emperor_agent_checkpoints", column: "runId", referencesTable: "emperor_agent_runs" }),
+        expect.objectContaining({ table: "dev_analysis_stages", column: "projectId", referencesTable: "dev_projects" }),
       ]),
     );
     const projectOwnerPolicy = SOFT_FOREIGN_KEYS.find(
@@ -97,6 +102,9 @@ describe("database governance v1", () => {
     );
     expect(listIndexBaselinesByDomain("ai_os").map((baseline) => baseline.indexName)).toContain(
       "idx_agent_runs_user_status_created",
+    );
+    expect(listIndexBaselinesByDomain("project").map((baseline) => baseline.indexName)).toContain(
+      "uniq_dev_stages_project_type",
     );
   });
 
@@ -133,6 +141,7 @@ describe("database governance v1", () => {
         "ai_os_metrics_entity",
         "archive_runs_policy_status",
         "artifacts_current_source",
+        "dev_analysis_stage_project_type",
       ]),
     );
     const queueBaseline = DATABASE_PERFORMANCE_BASELINES.find((baseline) => baseline.slug === "ai_jobs_queue_due")!;
@@ -150,6 +159,8 @@ describe("database governance v1", () => {
         "0115_data_lifecycle_artifacts_v1.sql",
         "0116_ops_workspace_isolation.sql",
         "0117_database_runtime_observability.sql",
+        "0125_dev_stage_consistency.sql",
+        "0128_artifact_source_of_truth.sql",
       ]),
     );
     expect(MIGRATION_REGRESSION_BASELINE.requiredTables).toEqual(
@@ -160,9 +171,13 @@ describe("database governance v1", () => {
         "emperor_ai_os_evaluations",
         "ai_data_archive_runs",
         "database_slow_query_samples",
+        "dev_analysis_stage_conflicts",
+        "ai_artifact_selection_events",
+        "ai_artifact_consumptions",
       ]),
     );
     expect(MIGRATION_REGRESSION_BASELINE.requiredIndexes).toContain("idx_ai_jobs_queue_due");
+    expect(MIGRATION_REGRESSION_BASELINE.requiredIndexes).toContain("idx_ai_artifacts_lineage_version");
     expect(MIGRATION_REGRESSION_BASELINE.requiredChecks.map((item) => item.slug)).toContain("archive_health");
     expect(MIGRATION_REGRESSION_BASELINE.requiredChecks.map((item) => item.slug)).toContain("slow_query_sampling");
   });

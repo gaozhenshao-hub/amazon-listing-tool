@@ -27,7 +27,7 @@ const {
   ensureWriteAccess,
   executeListingSkill,
   generateChineseTranslation,
-  invokeLLM,
+  invokeBusinessSkill,
   loadEnrichedData,
   parseJsonOrThrow,
   protectedProcedure,
@@ -117,7 +117,7 @@ export const listingAbTestingProcedures = {
         const variant: any = { id: style.id, name: style.name, nameEn: style.nameEn, description: style.description };
 
         if (input.components.includes("title")) {
-          const titleResponse = await invokeLLM({
+          const titleResponse = await invokeBusinessSkill({
             messages: [
               { role: "system", content: TITLE_GENERATION_PROMPT },
               {
@@ -148,7 +148,7 @@ export const listingAbTestingProcedures = {
         }
 
         if (input.components.includes("bulletPoints")) {
-          const bulletResponse = await invokeLLM({
+          const bulletResponse = await invokeBusinessSkill({
             messages: [
               { role: "system", content: BULLET_POINTS_PROMPT },
               {

@@ -11,7 +11,7 @@ import { Request, Response } from "express";
 import { getDb } from "./repositories/dbClient";
 import { lingxingProductWeekly, saihuProductWeekly, productProfiles } from "../drizzle/schema";
 import { desc, eq, gte } from "drizzle-orm";
-import { invokeLLM } from "./_core/llm";
+import { invokeBusinessSkill } from "./domains/ai_os/services/businessSkillGateway";
 import { notifyOwner } from "./_core/notification";
 import { authorizeScheduledRequest } from "./_core/scheduledRequestGuard";
 
@@ -107,7 +107,7 @@ export async function weeklyReportHandler(req: Request, res: Response) {
 
 
 
-    const llmResponse = await invokeLLM({
+    const llmResponse = await invokeBusinessSkill({
       messages: [
         {
           role: "system",
@@ -257,5 +257,29 @@ export async function databaseObservabilitySnapshotHandler(req: Request, res: Re
       error: String((error as Error)?.message || error),
       timestamp: new Date().toISOString(),
     });
+  }
+}
+
+export async function dataLifecycleSweepHandler(req: Request, res: Response) {
+  const taskUid = authorizeScheduledRequest(req, res);
+  if (!taskUid) return;
+  try {
+    const { runScheduledDataLifecycleSweep } = await import("./domains/ai_os/services/operationalScheduler");
+    return res.json({ ok: true, taskUid, ...(await runScheduledDataLifecycleSweep()) });
+  } catch (error) {
+    console.error("[DataLifecycle] Scheduled sweep failed:", error);
+    return res.status(500).json({ ok: false, error: String((error as Error)?.message || error) });
+  }
+}
+
+export async function aiOsOperationalHealthHandler(req: Request, res: Response) {
+  const taskUid = authorizeScheduledRequest(req, res);
+  if (!taskUid) return;
+  try {
+    const { runAiOsOperationalHealthCheck } = await import("./domains/ai_os/services/operationalScheduler");
+    return res.json({ ok: true, taskUid, ...(await runAiOsOperationalHealthCheck()) });
+  } catch (error) {
+    console.error("[AI OS] Scheduled health check failed:", error);
+    return res.status(500).json({ ok: false, error: String((error as Error)?.message || error) });
   }
 }

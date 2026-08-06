@@ -7,7 +7,7 @@ import { protectedProcedure } from "../workspaceProcedure";
 
 import { getDb } from "../../../repositories/dbClient";
 
-import { invokeLLM } from "../../../_core/llm";
+import { invokeBusinessSkill } from "../../ai_os/services/businessSkillGateway";
 
 import {
   inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules,
@@ -121,4 +121,4 @@ function getDateNDaysAgo(n: number): string {
   return d.toISOString().split("T")[0];
 }
 
-export { z, TRPCError, protectedProcedure, router, getDb, invokeLLM, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, workspaceIdFromContext, opsWorkspaceCondition, withOpsWorkspace, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo };
+export { z, TRPCError, protectedProcedure, router, getDb, invokeBusinessSkill, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, workspaceIdFromContext, opsWorkspaceCondition, withOpsWorkspace, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo };

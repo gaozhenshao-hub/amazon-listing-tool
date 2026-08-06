@@ -1,4 +1,6 @@
 import { failUnavailableDataSource } from "@shared/_core/errors";
+import { requireOpsDb } from "../legacy/repository";
+import { runOpsSkill } from "../legacy/service";
 import { currentOpsWorkspaceId } from "../workspaceContext";
 import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
@@ -32,7 +34,7 @@ const {
   getToday,
   getYesterday,
   inArray,
-  invokeLLM,
+  invokeBusinessSkill,
   isNull,
   keywordMonitors,
   keywordSnapshots,
@@ -64,7 +66,6 @@ const {
   users,
   z,
 } = shared;
-const getDb = (...args: Parameters<typeof shared.getDb>) => shared.getDb(...args);
 
 export const opsMarketplaceSummaryProcedures = {
 
@@ -74,7 +75,7 @@ export const opsMarketplaceSummaryProcedures = {
   getProductProfitSummary: protectedProcedure
     .input(z.object({ productId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [product] = await db!.select().from(productProfiles)
         .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
@@ -243,7 +244,7 @@ export const opsMarketplaceSummaryProcedures = {
   getProductInventorySummary: protectedProcedure
     .input(z.object({ productId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [product] = await db!.select().from(productProfiles)
         .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
@@ -360,7 +361,7 @@ export const opsMarketplaceSummaryProcedures = {
   getProductAdsSummary: protectedProcedure
     .input(z.object({ productId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [product] = await db!.select().from(productProfiles)
         .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
@@ -595,7 +596,7 @@ export const opsMarketplaceSummaryProcedures = {
   getProductCompetitors: protectedProcedure
     .input(z.object({ productId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [product] = await db!.select().from(productProfiles)
         .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
@@ -627,7 +628,7 @@ export const opsMarketplaceSummaryProcedures = {
       period: z.enum(["day", "week", "month"]).default("month"),
     }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
 
       // Get user's products
       const whereClause = input.marketplace
@@ -768,7 +769,7 @@ export const opsMarketplaceSummaryProcedures = {
       customEndDate: z.string().optional(),
     }))
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
+      const db = await requireOpsDb();
       const [product] = await db!.select().from(productProfiles)
         .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: '产品不存在' });
@@ -794,7 +795,7 @@ export const opsMarketplaceSummaryProcedures = {
         let data = { revenue: 0, profit: 0, adSpend: 0, orders: 0, units: 0, sessions: 0, convRate: 0, avgPrice: 0, ratingCount: 0, ratingScore: 0 };
         try {
           // Get child ASINs for searchValue
-          const opVariants = await (await getDb())!.select().from(productVariants)
+          const opVariants = await (await requireOpsDb())!.select().from(productVariants)
             .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, input.productId)));
           const opChildAsins = opVariants.map(v => v.childAsin).filter(Boolean);
           const res = failUnavailableDataSource();
@@ -821,7 +822,7 @@ export const opsMarketplaceSummaryProcedures = {
               const rawMsku = mskuRes.data || [];
               const allItems = Array.isArray(rawMsku) ? rawMsku : (rawMsku as any).records || (rawMsku as any).list || [];
               // Get variants for filtering
-              const variants = await (await getDb())!.select().from(productVariants)
+              const variants = await (await requireOpsDb())!.select().from(productVariants)
                 .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, input.productId)));
               const childAsins = variants.map(v => v.childAsin).filter(Boolean);
               const skuList = variants.map(v => v.sku).filter(Boolean) as string[];

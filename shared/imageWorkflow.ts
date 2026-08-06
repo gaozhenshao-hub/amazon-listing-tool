@@ -1,5 +1,49 @@
 export const IMAGE_WORKFLOW_SECONDARY_IMAGE_NUMBERS = [2, 3, 4, 5, 6, 7] as const;
 
+const SECONDARY_IMAGE_CONTRACT_FALLBACKS: Record<number, {
+  purpose: string;
+  contentBrief: string;
+  expressionType: string;
+  whyThisWay: string;
+}> = {
+  2: {
+    purpose: "优先展示首要购买理由和核心优势",
+    contentBrief: "围绕已确认的第一核心卖点安排产品特写、关键结构或使用结果，并用精炼文案说明用户可获得的价值。",
+    expressionType: "直接展示",
+    whyThisWay: "在主图之后快速承接用户注意力，建立产品与核心需求的直接关联。",
+  },
+  3: {
+    purpose: "解释关键功能、结构或工作原理",
+    contentBrief: "拆解与核心性能相关的结构、材质或工作原理，使用局部放大、标注和必要的数据说明。",
+    expressionType: "原理展示",
+    whyThisWay: "用可理解的证据支撑卖点，减少用户对功能真实性的疑虑。",
+  },
+  4: {
+    purpose: "展示产品在主要场景中的使用价值",
+    contentBrief: "选择与目标用户高度相关的使用场景，展示产品、人物或环境之间的关系，并突出使用后的实际收益。",
+    expressionType: "场景暗示",
+    whyThisWay: "帮助用户代入真实使用情境，强化需求匹配和购买意愿。",
+  },
+  5: {
+    purpose: "回应用户痛点并体现差异化优势",
+    contentBrief: "围绕已确认的用户痛点制作使用前后或解决方案对比，清楚说明产品如何降低风险、成本或操作难度。",
+    expressionType: "解决痛点",
+    whyThisWay: "把抽象优势转换为可比较的解决效果，降低用户决策门槛。",
+  },
+  6: {
+    purpose: "补充规格、适配范围或套装信息",
+    contentBrief: "以参数、尺寸、兼容性或包装清单为主，使用图标和结构化信息帮助用户快速确认是否适合购买。",
+    expressionType: "数据对比",
+    whyThisWay: "在用户形成购买兴趣后补齐理性决策信息，减少误购和售后风险。",
+  },
+  7: {
+    purpose: "补齐购买决策信息并完成视觉收尾",
+    contentBrief: "展示已确认的产品规格、套装内容、认证、质保或售后支持，并简洁回顾核心优势；不得添加未经确认的证明。",
+    expressionType: "直接展示",
+    whyThisWay: "作为最后一张辅图补齐购买前关键信息，降低决策疑虑并承接后续A+内容。",
+  },
+};
+
 export const DEFAULT_OUTLINE_APLUS_MODULE_ID = "premium_full_image";
 
 export const IMAGE_WORKFLOW_APLUS_MODULES = [
@@ -88,23 +132,60 @@ export function normalizeSecondaryImageSlots<T extends Record<string, any>>(
 
 export function normalizeImageOutline(
   value: Record<string, any>,
-  options: { forceDefaultAplus?: boolean } = {},
+  options: { forceDefaultAplus?: boolean; recoverMissingSecondaryContent?: boolean } = {},
 ) {
+  const sourceSecondaryImages = Array.isArray(value?.secondaryImages) ? value.secondaryImages : [];
+  const canRecoverLegacyContract = options.recoverMissingSecondaryContent && sourceSecondaryImages.length >= 5;
+  const secondaryImages = normalizeSecondaryImageSlots(
+    sourceSecondaryImages,
+    (imageNumber) => ({
+      imageNumber,
+      purpose: "",
+      sellingPointRefs: [],
+      contentBrief: "",
+      expressionType: "",
+      whyThisWay: "",
+      priority: "中",
+      referenceHighlights: [],
+    }),
+  ).map((image) => {
+    if (!canRecoverLegacyContract) return image;
+
+    const fallback = SECONDARY_IMAGE_CONTRACT_FALLBACKS[image.imageNumber];
+    const recoveredFields: string[] = [];
+    const recoverText = (field: keyof typeof fallback) => {
+      const current = String(image?.[field] || "").trim();
+      if (current) return image[field];
+      recoveredFields.push(field);
+      return fallback[field];
+    };
+    const sellingPointRefs = Array.isArray(image.sellingPointRefs) && image.sellingPointRefs.length > 0
+      ? image.sellingPointRefs
+      : (recoveredFields.push("sellingPointRefs"), ["已确认卖点体系"]);
+    const purpose = recoverText("purpose");
+    const contentBrief = recoverText("contentBrief");
+    const expressionType = recoverText("expressionType");
+    const whyThisWay = recoverText("whyThisWay");
+
+    if (recoveredFields.length === 0) return image;
+
+    return {
+      ...image,
+      purpose,
+      contentBrief,
+      expressionType,
+      whyThisWay,
+      sellingPointRefs,
+      priority: image.priority || "中",
+      referenceHighlights: Array.isArray(image.referenceHighlights) ? image.referenceHighlights : [],
+      contractRecovered: true,
+      contractRecoveryFields: recoveredFields,
+    };
+  });
+
   return {
     ...value,
-    secondaryImages: normalizeSecondaryImageSlots(
-      value?.secondaryImages,
-      (imageNumber) => ({
-        imageNumber,
-        purpose: "",
-        sellingPointRefs: [],
-        contentBrief: "",
-        expressionType: "",
-        whyThisWay: "",
-        priority: "中",
-        referenceHighlights: [],
-      }),
-    ),
+    secondaryImages,
     aPlusModules: (Array.isArray(value?.aPlusModules) ? value.aPlusModules : []).map((module: Record<string, any>) =>
       normalizeImageWorkflowAplusStyle(module, { forceDefault: options.forceDefaultAplus }),
     ),

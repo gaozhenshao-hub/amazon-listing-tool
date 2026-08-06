@@ -95,7 +95,8 @@ describe("Custom Todo Reminder Feature", () => {
   describe("ProductOps Router - Reminder Fields", () => {
     const router = readRepoSources(
       "server/domains/ops/routers/todosLogs.ts",
-      "server/domains/ops/routers/teamTasks.ts"
+      "server/domains/ops/routers/teamTasks.ts",
+      "server/domains/ops/workManagement/schema.ts",
     );
 
     it("createTodo accepts reminderDays parameter", () => {
