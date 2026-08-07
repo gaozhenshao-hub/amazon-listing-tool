@@ -461,6 +461,7 @@ export const imageWorkflowStepProcedures = {
         workspaceId: ctx.workspaceId,
         systemPrompt: STEP4_REFERENCE_PROMPT,
         context: step4Context,
+        maxModelAttempts: 3,
         validate: (value) => {
           const references = Array.isArray(value?.imageReferences) ? value.imageReferences : [];
           const secondaryNumbers = new Set(
@@ -470,7 +471,7 @@ export const imageWorkflowStepProcedures = {
           );
           const missingNumbers = [2, 3, 4, 5, 6, 7].filter((imageNumber) => !secondaryNumbers.has(imageNumber));
           if (missingNumbers.length > 0) {
-            console.warn(`[Step4] 构图参考缺少辅图: ${missingNumbers.join(", ")}，宽松模式继续`);
+            throw new Error(`构图参考必须完整覆盖辅图2-7，当前缺少辅图: ${missingNumbers.join(", ")}`);
           }
           return value;
         },
