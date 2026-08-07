@@ -130,7 +130,28 @@ export const imageReferenceProcedures = {
         emperorSkill: { slug: "image.step4.reoptimize" },
       });
 
-      return parseLLMJson(response);
+      // Parse AI result and merge with the existing image ref to preserve client-side fields
+      const aiResult = parseLLMJson(response);
+      // Get the current image ref from session to preserve uploaded URLs
+      const currentStep4 = parseStoredJson(session.step4UserEdit || session.step4AiResult || "{}") as Record<string, any> | null;
+      const imageRefs: any[] = (currentStep4 as any)?.imageReferences || [];
+      const targetKey = input.imageKey; // e.g. "step4-ref-2"
+      // Find the matching ref by imageKey or by index extracted from key
+      const idxMatch = targetKey.match(/step4-ref-(\d+)/);
+      const targetIdx = idxMatch ? parseInt(idxMatch[1], 10) : -1;
+      const existingRef = targetIdx >= 0 ? imageRefs[targetIdx] : null;
+      // Merge: AI fields override, but preserve client-side image URLs
+      const merged = {
+        ...(existingRef || {}),
+        ...aiResult,
+        compositionRefImageUrl: existingRef?.compositionRefImageUrl,
+        effectRefImageUrl: existingRef?.effectRefImageUrl,
+        kbReferenceImages: existingRef?.kbReferenceImages,
+        imageNumber: existingRef?.imageNumber ?? aiResult?.imageNumber,
+        imageType: existingRef?.imageType ?? aiResult?.imageType,
+        purpose: existingRef?.purpose ?? aiResult?.purpose,
+      };
+      return merged;
     }),
 
 
@@ -305,7 +326,16 @@ ${session.step3UserEdit || session.step3AiResult}
       const updatedRefs = [...imageRefs];
       const mergedRef = newImageRef.imageReferences?.[0] || newImageRef;
       mergedRef.imageNumber = targetImage.imageNumber ?? (input.imageIndex + 1);
-      updatedRefs[input.imageIndex] = mergedRef;
+      // Preserve client-side fields that AI doesn't return
+      updatedRefs[input.imageIndex] = {
+        ...mergedRef,
+        compositionRefImageUrl: targetImage.compositionRefImageUrl,
+        effectRefImageUrl: targetImage.effectRefImageUrl,
+        kbReferenceImages: targetImage.kbReferenceImages,
+        imageNumber: targetImage.imageNumber ?? mergedRef.imageNumber ?? (input.imageIndex + 1),
+        imageType: targetImage.imageType ?? mergedRef.imageType,
+        purpose: targetImage.purpose ?? mergedRef.purpose,
+      };
 
       const updatedResult = { ...currentStep4, imageReferences: updatedRefs };
       await db.updateImageWorkflowSession(session.id, {

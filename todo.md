@@ -304,3 +304,10 @@
 - [x] 修复1：dialog.tsx 将 DialogOverlay 和 DialogContent 的 z-index 从 z-50 提升到 z-[200]，解决被 sticky header（backdrop-blur 创建新 stacking context）遮挡的问题
 - [x] 修复2：KnowledgeImagePickerDialog 改用原生 overflow-y-auto 替换 ScrollArea，确保图片网格可以正常向下滚动
 - [x] 修复3：KnowledgeImagePickerDialog 改为 p-0 布局，header/filter/footer 分别设置 padding，图片区域独立滚动
+
+## Step4 参考图重新优化后消失和其他辅图内容清空修复（2026-08-07）
+- [x] 根因：reoptimize 后 AI 返回对象 spread 覆盖了 compositionRefImageUrl/effectRefImageUrl；regenerateSingle 直接用后端 updatedResult 替换整个 editData 导致其他辅图的前端状态丢失
+- [x] 前端修复：handleReoptimize 合并时保留原有图片 URL 和 kbReferenceImages；handleRegenerateSingle 只更新对应 idx 的 AI 字段，保留其他辅图的完整前端状态
+- [x] 后端修复：reoptimizeStep4WithRefs 返回结果时从 session 读取原有字段并保留；regenerateSingleImageFromRef 合并时保留 compositionRefImageUrl/effectRefImageUrl/kbReferenceImages
+- [x] 皇帝 Skill 同步：更新 image.step4.reoptimize 的 manifest.implementation.systemPrompt，明确不返回前端管理字段
+- [x] 知识库：写入"AI修复规范：代码修复必须同步皇帝平台 Skill"规则到 emperor_knowledge 表

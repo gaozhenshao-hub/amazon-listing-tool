@@ -112,7 +112,16 @@ export function Step4References({
       });
       // Merge the re-optimized result into editData
       const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
-      newData.imageReferences[idx] = { ...newData.imageReferences[idx], ...result };
+      // Preserve client-side fields (uploaded ref images, KB selections) that AI doesn't return
+      const preserved = {
+        compositionRefImageUrl: ref.compositionRefImageUrl,
+        effectRefImageUrl: ref.effectRefImageUrl,
+        kbReferenceImages: ref.kbReferenceImages,
+        imageNumber: ref.imageNumber,
+        imageType: ref.imageType,
+        purpose: ref.purpose,
+      };
+      newData.imageReferences[idx] = { ...newData.imageReferences[idx], ...result, ...preserved };
       setEditData(newData);
       toast.success("已根据参考图重新优化");
     } catch (err: any) {
@@ -245,7 +254,22 @@ export function Step4References({
         compositionRefUrl: ref.compositionRefImageUrl || undefined,
         effectRefUrl: ref.effectRefImageUrl || undefined,
       });
-      setEditData(result.updatedResult);
+      // Merge only the regenerated single image's AI fields into current editData,
+      // preserving all other images' client-side state (kbReferenceImages, ref URLs, etc.)
+      const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
+      const newRef = result.newImageRef || {};
+      // Preserve client-side fields for the regenerated image too
+      newData.imageReferences[idx] = {
+        ...newData.imageReferences[idx],
+        ...newRef,
+        compositionRefImageUrl: ref.compositionRefImageUrl,
+        effectRefImageUrl: ref.effectRefImageUrl,
+        kbReferenceImages: ref.kbReferenceImages,
+        imageNumber: ref.imageNumber ?? newRef.imageNumber,
+        imageType: ref.imageType ?? newRef.imageType,
+        purpose: ref.purpose ?? newRef.purpose,
+      };
+      setEditData(newData);
       toast.success(`第${idx + 1}张图已根据参考图重新生成`);
     } catch (err: any) {
       toast.error(err.message || "重新生成失败");
