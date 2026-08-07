@@ -16,6 +16,118 @@ import { toast } from "sonner";
 
 import { KbImagePickerDialog } from "./KnowledgeImagePickerDialog";
 // ─── ASIN Set Picker Dialog ──────────────────────────────────────
+// ─── KB Style Tag Picker Dialog ──────────────────────────────────
+function KbStyleTagPickerDialog({
+  open,
+  onOpenChange,
+  onSelect,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelect: (styles: any[]) => void;
+}) {
+  const [selectedValues, setSelectedValues] = useState<Set<string>>(new Set());
+  const { data: tags, isLoading } = trpc.kbTags.listAllForDimension.useQuery(
+    { dimension: "designStyle" },
+    { enabled: open }
+  );
+
+  const toggleTag = (value: string) => {
+    setSelectedValues(prev => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value); else next.add(value);
+      return next;
+    });
+  };
+
+  const handleConfirm = () => {
+    if (!tags) return;
+    const selected = (tags as any[]).filter((t: any) => selectedValues.has(t.value));
+    const styleOptions = selected.map((t: any, idx: number) => {
+      let meta: any = {};
+      try { meta = t.metadata ? JSON.parse(t.metadata) : {}; } catch {}
+      return {
+        id: 7000 + idx,
+        name: t.value,
+        description: meta.description || `知识库风格：${t.value}`,
+        source: "kb_style_tag" as const,
+        colorPalette: meta.colorPalette || null,
+        typography: meta.typography || null,
+        overallTone: meta.overallTone || t.value,
+        whyRecommend: meta.whyRecommend || "来自知识库设计风格标签，手动选择",
+        suitability: null,
+        lightSource: meta.lightSource || meta["光源"] || null,
+        colorTemp: meta.colorTemp || meta["色温"] || null,
+        materials: meta.materials || meta["材质"] || null,
+        forbidden: meta.forbidden || meta["禁忌"] || null,
+        referenceBrands: meta.referenceBrands || meta["参考品牌"] || null,
+        aiKeywords: meta.aiKeywords || meta["AI关键词"] || null,
+      };
+    });
+    onSelect(styleOptions);
+    onOpenChange(false);
+    setSelectedValues(new Set());
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>从知识库选择设计风格</DialogTitle>
+          <DialogDescription>选择已定义的设计风格作为参考方案</DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="flex-1 min-h-0">
+          {isLoading ? (
+            <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>
+          ) : !tags || (tags as any[]).length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">知识库中暂无设计风格标签，请先在知识库标签管理中添加</div>
+          ) : (
+            <div className="space-y-2 p-1">
+              {(tags as any[]).map((t: any) => {
+                let meta: any = {};
+                try { meta = t.metadata ? JSON.parse(t.metadata) : {}; } catch {}
+                const isSelected = selectedValues.has(t.value);
+                return (
+                  <div
+                    key={t.id}
+                    className={`border rounded-lg p-3 cursor-pointer transition-all ${isSelected ? "ring-2 ring-primary border-primary bg-primary/5" : "hover:border-primary/50"}`}
+                    onClick={() => toggleTag(t.value)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold">{t.value}</p>
+                          {isSelected && <Badge className="bg-primary text-primary-foreground text-xs">已选</Badge>}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5">
+                          {(meta.lightSource || meta["光源"]) && <span className="text-xs text-muted-foreground">💡 {meta.lightSource || meta["光源"]}</span>}
+                          {(meta.colorTemp || meta["色温"]) && <span className="text-xs text-muted-foreground">🌡 {meta.colorTemp || meta["色温"]}</span>}
+                          {(meta.materials || meta["材质"]) && <span className="text-xs text-muted-foreground">🧱 {meta.materials || meta["材质"]}</span>}
+                          {(meta.referenceBrands || meta["参考品牌"]) && <span className="text-xs text-muted-foreground">🏷 {meta.referenceBrands || meta["参考品牌"]}</span>}
+                        </div>
+                        {(meta.aiKeywords || meta["AI关键词"]) && (
+                          <p className="text-xs text-muted-foreground mt-1 truncate">🔑 {meta.aiKeywords || meta["AI关键词"]}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </ScrollArea>
+        <div className="flex justify-end gap-2 pt-2 border-t">
+          <Button variant="outline" onClick={() => { onOpenChange(false); setSelectedValues(new Set()); }}>取消</Button>
+          <Button onClick={handleConfirm} disabled={selectedValues.size === 0}>
+            确认选择 ({selectedValues.size})
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── ASIN Set Picker Dialog ──────────────────────────────────────
 function AsinSetPickerDialog({
   open,
   onOpenChange,
@@ -39,7 +151,6 @@ function AsinSetPickerDialog({
   const handleConfirm = () => {
     if (!sets) return;
     const selected = (sets as any[]).filter((s: any) => selectedSetIds.has(s.id));
-    // Convert each ASIN set to a style option
     const styleOptions = selected.map((s: any, idx: number) => ({
       id: 9000 + idx,
       name: s.title || s.asin || `ASIN集 ${s.id}`,
@@ -56,6 +167,7 @@ function AsinSetPickerDialog({
     }));
     onSelect(styleOptions);
     onOpenChange(false);
+    setSelectedSetIds(new Set());
   };
 
   return (
@@ -63,7 +175,7 @@ function AsinSetPickerDialog({
       <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>从知识库ASIN集选择风格参考</DialogTitle>
-          <DialogDescription>选择一个或多个ASIN图片集作为风格参考</DialogDescription>
+          <DialogDescription>选择ASIN图片集作为风格参考（全部共享）</DialogDescription>
         </DialogHeader>
         <ScrollArea className="flex-1 min-h-0">
           {isLoading ? (
@@ -79,12 +191,21 @@ function AsinSetPickerDialog({
                   onClick={() => toggleSet(s.id)}
                 >
                   <div className="flex items-start gap-3">
-                    {s.thumbnailUrl && <img src={s.thumbnailUrl} alt={s.asin} className="w-14 h-14 object-cover rounded flex-shrink-0" />}
-                    <div className="min-w-0">
+                    {s.thumbnailUrl ? (
+                      <img src={s.thumbnailUrl} alt={s.asin} className="w-16 h-16 object-cover rounded flex-shrink-0" />
+                    ) : (
+                      <div className="w-16 h-16 bg-muted rounded flex-shrink-0 flex items-center justify-center">
+                        <ImageIcon className="w-6 h-6 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium truncate">{s.title || s.asin}</p>
                       <p className="text-xs text-muted-foreground">ASIN: {s.asin}</p>
+                      {s.overallScore != null && (
+                        <p className="text-xs text-amber-600 font-medium mt-0.5">{s.overallScore}分</p>
+                      )}
                       {s.tagDesignStyle && <Badge variant="secondary" className="text-xs mt-1">{s.tagDesignStyle}</Badge>}
-                      <p className="text-xs text-muted-foreground mt-1">{s.imageCount || 0} 张图片</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{s.imageCount || 0} 张图片</p>
                     </div>
                   </div>
                 </div>
@@ -93,7 +214,7 @@ function AsinSetPickerDialog({
           )}
         </ScrollArea>
         <div className="flex justify-end gap-2 pt-2 border-t">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+          <Button variant="outline" onClick={() => { onOpenChange(false); setSelectedSetIds(new Set()); }}>取消</Button>
           <Button onClick={handleConfirm} disabled={selectedSetIds.size === 0}>
             确认选择 ({selectedSetIds.size})
           </Button>
@@ -103,7 +224,6 @@ function AsinSetPickerDialog({
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════
 // ─── Step 3: Style Confirmation ──────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 export function Step3StyleConfirm({
@@ -212,32 +332,10 @@ export function Step3StyleConfirm({
     toast.success(`已添加 ${images.length} 张参考图到风格方案`);
   };
 
-  // Handle manual KB style selection (pick images, extract unique styles)
-  const handleKbStyleSelect = (images: Array<{ id: number; imageUrl: string; imagePosition: string; tagCategory: string; tagImageType: string; tagDesignStyle: string; tagColorScheme: string }>) => {
-    const styleGroups: Record<string, typeof images> = {};
-    images.forEach(img => {
-      const style = img.tagDesignStyle || "未分类";
-      if (!styleGroups[style]) styleGroups[style] = [];
-      styleGroups[style].push(img);
-    });
-    const newStyles = Object.entries(styleGroups).map(([styleName, imgs], idx) => ({
-      id: 8000 + idx + manualStyles.length,
-      name: styleName,
-      description: `来自知识库：${imgs.length} 张参考图`,
-      source: "kb_manual" as const,
-      colorPalette: null,
-      typography: null,
-      overallTone: imgs[0]?.tagCategory || "",
-      whyRecommend: "手动从知识库选择的风格参考",
-      suitability: null,
-      kbImages: imgs,
-    }));
-    setManualStyles(prev => [...prev, ...newStyles]);
-    // Also add images to styleKbImages for display
-    newStyles.forEach(s => {
-      setStyleKbImages(prev => ({ ...prev, [s.id]: s.kbImages }));
-    });
-    toast.success(`已从知识库添加 ${newStyles.length} 个风格方案`);
+  // Handle manual KB style tag selection (from KbStyleTagPickerDialog)
+  const handleKbStyleSelect = (styles: any[]) => {
+    setManualStyles(prev => [...prev, ...styles]);
+    toast.success(`已从知识库添加 ${styles.length} 个风格方案`);
   };
 
   // Handle ASIN set selection
@@ -477,8 +575,8 @@ export function Step3StyleConfirm({
         onOpenChange={setKbPickerOpen}
         onSelect={handleKbImageSelectForStyle}
       />
-      {/* KB Style Picker - for manual style selection */}
-      <KbImagePickerDialog
+      {/* KB Style Tag Picker - for manual style selection from tag library */}
+      <KbStyleTagPickerDialog
         open={kbStylePickerOpen}
         onOpenChange={setKbStylePickerOpen}
         onSelect={handleKbStyleSelect}
