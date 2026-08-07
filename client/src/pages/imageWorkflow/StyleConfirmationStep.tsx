@@ -77,7 +77,7 @@ function KbStyleTagPickerDialog({
           <DialogTitle>从知识库选择设计风格</DialogTitle>
           <DialogDescription>选择已定义的设计风格作为参考方案</DialogDescription>
         </DialogHeader>
-        <ScrollArea className="flex-1 min-h-0">
+        <ScrollArea className="flex-1 min-h-0 max-h-[55vh] overflow-y-auto">
           {isLoading ? (
             <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>
           ) : !tags || (tags as any[]).length === 0 ? (
@@ -178,7 +178,7 @@ function AsinSetPickerDialog({
           <DialogTitle>从知识库ASIN集选择风格参考</DialogTitle>
           <DialogDescription>选择ASIN图片集作为风格参考（全部共享）</DialogDescription>
         </DialogHeader>
-        <ScrollArea className="flex-1 min-h-0">
+        <ScrollArea className="flex-1 min-h-0 max-h-[55vh] overflow-y-auto">
           {isLoading ? (
             <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>
           ) : !sets || (sets as any[]).length === 0 ? (
