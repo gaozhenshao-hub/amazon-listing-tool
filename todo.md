@@ -293,3 +293,9 @@
 - [x] Gap 3 - EmperorObservability 观测页面：创建 /emperor/observability 页面，注册路由，移除重复 DashboardLayout 嵌套，添加侧边栏导航项"AI 观测中心"
 - [x] 修复 ai_jobs 表缺失列：补充 priority、queueName、timeoutSeconds、leaseUntil、lockedBy、claimedAt、lastHeartbeatAt、deadLetterAt、deadLetterReason、nextRunAt 列
 - [x] 修复 phase2.test.ts appRouter 集成测试超时（5s → 15s），全量 3505 测试通过
+
+## Step4 参考图内容为空修复（2026-08-07）
+- [x] 根因确认：皇帝 Skill image.step4.reference 的 systemPrompt 使用旧版字段名（compositionGuide/visualEffectDescription），前台期望新版字段名（compositionReference/effectReference）
+- [x] 修复1：通过 SQL 更新皇帝 Skill image.step4.reference 的 systemPrompt，改为新版字段名
+- [x] 修复2：在 shared/imageWorkflow.ts 添加 normalizeStep4References 函数，兼容旧版字段名
+- [x] 修复3：ReferenceImagesStep.tsx 引入 normalizeStep4References，在 useEffect 中对旧数据进行规范化

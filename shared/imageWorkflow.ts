@@ -191,3 +191,57 @@ export function normalizeImageOutline(
     ),
   };
 }
+
+// ─── Step 4: Normalize reference images (handles legacy field names) ──────────
+/**
+ * Normalize a single imageReference item.
+ * Old AI output used: compositionGuide / visualEffectDescription / aiPromptSuggestion
+ * New contract uses:  compositionReference / effectReference
+ * This function maps old → new so the frontend always sees the new shape.
+ */
+function normalizeImageReference(ref: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = { ...ref };
+
+  // Migrate compositionGuide → compositionReference
+  if (!out.compositionReference && out.compositionGuide) {
+    const g = out.compositionGuide as Record<string, any>;
+    out.compositionReference = {
+      compositionType: g.layout || "",          // best-effort mapping
+      layout: g.elementPlacement || g.layout || "",
+      focalPoint: g.focalPoint || "",
+      visualFlow: "",
+      proportions: g.whiteSpaceUsage || "",
+    };
+    delete out.compositionGuide;
+  }
+
+  // Migrate visualEffectDescription / aiPromptSuggestion → effectReference
+  if (!out.effectReference && (out.visualEffectDescription || out.aiPromptSuggestion)) {
+    out.effectReference = {
+      colorApplication: out.visualEffectDescription || "",
+      typographyApplication: "",
+      iconApplication: "",
+      atmosphere: out.visualEffectDescription || "",
+      lightingStyle: "",
+      textureStyle: out.referenceStyle || "",
+    };
+    delete out.visualEffectDescription;
+    delete out.aiPromptSuggestion;
+    delete out.referenceStyle;
+  }
+
+  return out;
+}
+
+/**
+ * Normalize the full Step 4 payload.
+ * Safe to call on both old-shape and new-shape data.
+ */
+export function normalizeStep4References(value: Record<string, any> | null | undefined): Record<string, any> | null {
+  if (!value || typeof value !== "object") return null;
+  const refs = Array.isArray(value.imageReferences) ? value.imageReferences : [];
+  return {
+    ...value,
+    imageReferences: refs.map((ref: Record<string, any>) => normalizeImageReference(ref)),
+  };
+}

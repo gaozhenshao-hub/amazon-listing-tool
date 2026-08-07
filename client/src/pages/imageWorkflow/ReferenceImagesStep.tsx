@@ -15,6 +15,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { toast } from "sonner";
 
 import { KbImagePickerDialog } from "./KnowledgeImagePickerDialog";
+import { normalizeStep4References } from "@shared/imageWorkflow";
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── Step 4: Reference Images (含知识库图片选择) ─────────────────
@@ -45,9 +46,9 @@ export function Step4References({
 
   useEffect(() => {
     if (session?.step4UserEdit) {
-      try { setEditData(JSON.parse(session.step4UserEdit)); } catch {}
+      try { setEditData(normalizeStep4References(JSON.parse(session.step4UserEdit))); } catch {}
     } else if (session?.step4AiResult) {
-      try { setEditData(JSON.parse(session.step4AiResult)); } catch {}
+      try { setEditData(normalizeStep4References(JSON.parse(session.step4AiResult))); } catch {}
     }
     setIsLocked(!!session?.step4Confirmed);
   }, [session?.step4AiResult, session?.step4UserEdit, session?.step4Confirmed]);

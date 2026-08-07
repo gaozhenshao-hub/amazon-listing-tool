@@ -394,6 +394,7 @@ export async function callImageWorkflowSkill<T = any>(input: {
   systemPrompt: string;
   context: string;
   attachments?: any[];
+  maxModelAttempts?: number;
   validate?: (value: any) => T;
 }): Promise<T> {
   const result = await runEmperorSkill<T>({
@@ -403,6 +404,7 @@ export async function callImageWorkflowSkill<T = any>(input: {
     context: input.context,
     variables: {},
     attachments: input.attachments,
+    maxModelAttempts: input.maxModelAttempts,
     legacySystemPrompt: input.systemPrompt,
     migrationSource: input.skillSlug === "image.step2.outline"
       ? "drizzle/0122_image_outline_reliability.sql"
