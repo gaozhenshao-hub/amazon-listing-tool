@@ -189,7 +189,7 @@ export function KbImagePickerDialog({
         </div>
 
         {/* Image Grid */}
-        <ScrollArea className="flex-1 min-h-0">
+        <ScrollArea className="flex-1 min-h-0 max-h-[52vh]">
           {kbImages.isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-6 h-6 animate-spin text-primary mr-2" />
