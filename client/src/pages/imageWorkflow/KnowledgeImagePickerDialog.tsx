@@ -92,7 +92,8 @@ export function KbImagePickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] flex flex-col p-0 gap-0">
+        <div className="px-6 pt-6 shrink-0">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-primary" />
@@ -102,9 +103,10 @@ export function KbImagePickerDialog({
             从图片知识库中筛选并选择参考图片，支持按类目、色系、图片类型、设计风格筛选
           </DialogDescription>
         </DialogHeader>
+        </div>
 
         {/* Scope + Filter Bar */}
-        <div className="flex flex-wrap gap-2 py-2 border-b">
+        <div className="flex flex-wrap gap-2 py-2 border-b px-6 shrink-0">
           {/* Scope toggle */}
           <div className="flex rounded-md border overflow-hidden text-xs mr-1">
             <button
@@ -189,7 +191,7 @@ export function KbImagePickerDialog({
         </div>
 
         {/* Image Grid */}
-        <ScrollArea className="flex-1 min-h-0 max-h-[52vh]">
+        <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1">
           {kbImages.isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-6 h-6 animate-spin text-primary mr-2" />
@@ -247,10 +249,10 @@ export function KbImagePickerDialog({
               })}
             </div>
           )}
-        </ScrollArea>
+        </div>
 
         {/* Footer with selection count and confirm */}
-        <div className="flex items-center justify-between pt-3 border-t">
+        <div className="flex items-center justify-between px-6 py-3 border-t shrink-0">
           <div className="text-sm text-muted-foreground">
             {kbImages.data?.length || 0} 张图片
             {selectedIds.size > 0 && (

@@ -299,3 +299,8 @@
 - [x] 修复1：通过 SQL 更新皇帝 Skill image.step4.reference 的 systemPrompt，改为新版字段名
 - [x] 修复2：在 shared/imageWorkflow.ts 添加 normalizeStep4References 函数，兼容旧版字段名
 - [x] 修复3：ReferenceImagesStep.tsx 引入 normalizeStep4References，在 useEffect 中对旧数据进行规范化
+
+## 知识库选图弹窗遮挡和滚动修复（2026-08-07）
+- [x] 修复1：dialog.tsx 将 DialogOverlay 和 DialogContent 的 z-index 从 z-50 提升到 z-[200]，解决被 sticky header（backdrop-blur 创建新 stacking context）遮挡的问题
+- [x] 修复2：KnowledgeImagePickerDialog 改用原生 overflow-y-auto 替换 ScrollArea，确保图片网格可以正常向下滚动
+- [x] 修复3：KnowledgeImagePickerDialog 改为 p-0 布局，header/filter/footer 分别设置 padding，图片区域独立滚动
