@@ -127,6 +127,7 @@ export const imageReferenceProcedures = {
       const response = await invokeBusinessSkill({
         messages,
         response_format: { type: "json_object" },
+        emperorSkill: { slug: "image.step4.reoptimize" },
       });
 
       return parseLLMJson(response);
@@ -211,6 +212,7 @@ ${session.step3UserEdit || session.step3AiResult}
       const response = await invokeBusinessSkill({
         messages,
         response_format: { type: "json_object" },
+        emperorSkill: { slug: "image.step4.reference" },
       });
 
       const result = parseLLMJson(response);
@@ -295,6 +297,7 @@ ${session.step3UserEdit || session.step3AiResult}
           { role: "user", content: userContent },
         ],
         response_format: { type: "json_object" },
+        emperorSkill: { slug: "image.step4.reference" },
       });
       const newImageRef = parseLLMJson(response);
 

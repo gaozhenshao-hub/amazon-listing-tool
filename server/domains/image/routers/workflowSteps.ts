@@ -468,8 +468,9 @@ export const imageWorkflowStepProcedures = {
               .filter((reference: any) => !String(reference?.imageType || "").toLowerCase().includes("a+"))
               .map((reference: any) => Number(reference?.imageNumber)),
           );
-          if ([2, 3, 4, 5, 6, 7].some((imageNumber) => !secondaryNumbers.has(imageNumber))) {
-            throw new Error("构图参考必须完整覆盖辅图2-7");
+          const missingNumbers = [2, 3, 4, 5, 6, 7].filter((imageNumber) => !secondaryNumbers.has(imageNumber));
+          if (missingNumbers.length > 0) {
+            console.warn(`[Step4] 构图参考缺少辅图: ${missingNumbers.join(", ")}，宽松模式继续`);
           }
           return value;
         },
