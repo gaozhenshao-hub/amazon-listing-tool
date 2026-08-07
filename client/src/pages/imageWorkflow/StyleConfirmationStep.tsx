@@ -56,12 +56,13 @@ function KbStyleTagPickerDialog({
         overallTone: meta.overallTone || t.value,
         whyRecommend: meta.whyRecommend || "来自知识库设计风格标签，手动选择",
         suitability: null,
-        lightSource: meta.lightSource || meta["光源"] || null,
-        colorTemp: meta.colorTemp || meta["色温"] || null,
-        materials: meta.materials || meta["材质"] || null,
-        forbidden: meta.forbidden || meta["禁忌"] || null,
-        referenceBrands: meta.referenceBrands || meta["参考品牌"] || null,
-        aiKeywords: meta.aiKeywords || meta["AI关键词"] || null,
+        lightType: meta.lightType || null,
+        colorTemp: meta.colorTemp || null,
+        materialKeywords: meta.materialKeywords || null,
+        colorTone: meta.colorTone || null,
+        tabooElements: meta.tabooElements || null,
+        refBrands: meta.refBrands || null,
+        aiKeywords: meta.aiKeywords || null,
       };
     });
     onSelect(styleOptions);
@@ -100,13 +101,13 @@ function KbStyleTagPickerDialog({
                           {isSelected && <Badge className="bg-primary text-primary-foreground text-xs">已选</Badge>}
                         </div>
                         <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5">
-                          {(meta.lightSource || meta["光源"]) && <span className="text-xs text-muted-foreground">💡 {meta.lightSource || meta["光源"]}</span>}
-                          {(meta.colorTemp || meta["色温"]) && <span className="text-xs text-muted-foreground">🌡 {meta.colorTemp || meta["色温"]}</span>}
-                          {(meta.materials || meta["材质"]) && <span className="text-xs text-muted-foreground">🧱 {meta.materials || meta["材质"]}</span>}
-                          {(meta.referenceBrands || meta["参考品牌"]) && <span className="text-xs text-muted-foreground">🏷 {meta.referenceBrands || meta["参考品牌"]}</span>}
+                          {meta.lightType && <span className="text-xs text-muted-foreground">💡 {meta.lightType}</span>}
+                          {meta.colorTemp && <span className="text-xs text-muted-foreground">🌡 {meta.colorTemp}</span>}
+                          {meta.materialKeywords && <span className="text-xs text-muted-foreground">🧱 {meta.materialKeywords}</span>}
+                          {meta.refBrands && <span className="text-xs text-muted-foreground">🏷 {meta.refBrands}</span>}
                         </div>
-                        {(meta.aiKeywords || meta["AI关键词"]) && (
-                          <p className="text-xs text-muted-foreground mt-1 truncate">🔑 {meta.aiKeywords || meta["AI关键词"]}</p>
+                        {meta.aiKeywords && (
+                          <p className="text-xs text-muted-foreground mt-1 truncate">🔑 {meta.aiKeywords}</p>
                         )}
                       </div>
                     </div>
@@ -153,15 +154,15 @@ function AsinSetPickerDialog({
     const selected = (sets as any[]).filter((s: any) => selectedSetIds.has(s.id));
     const styleOptions = selected.map((s: any, idx: number) => ({
       id: 9000 + idx,
-      name: s.title || s.asin || `ASIN集 ${s.id}`,
-      description: `参考 ASIN: ${s.asin}${s.title ? ` - ${s.title}` : ""}`,
+      name: s.productTitle || s.asin || `ASIN集 ${s.id}`,
+      description: `参考 ASIN: ${s.asin}${s.productTitle ? ` - ${s.productTitle}` : ""}`,
       source: "kb_asin" as const,
       asinSetId: s.id,
       asin: s.asin,
-      thumbnailUrl: s.thumbnailUrl,
+      thumbnailUrl: s.thumbnailImages?.[0]?.imageUrl || null,
       colorPalette: null,
       typography: null,
-      overallTone: s.tagDesignStyle || "",
+      overallTone: s.setStyle || "",
       whyRecommend: "来自知识库ASIN集，手动选择作为风格参考",
       suitability: null,
     }));
@@ -191,21 +192,21 @@ function AsinSetPickerDialog({
                   onClick={() => toggleSet(s.id)}
                 >
                   <div className="flex items-start gap-3">
-                    {s.thumbnailUrl ? (
-                      <img src={s.thumbnailUrl} alt={s.asin} className="w-16 h-16 object-cover rounded flex-shrink-0" />
+                    {s.thumbnailImages?.[0]?.imageUrl ? (
+                      <img src={s.thumbnailImages[0].imageUrl} alt={s.asin} className="w-16 h-16 object-cover rounded flex-shrink-0" />
                     ) : (
                       <div className="w-16 h-16 bg-muted rounded flex-shrink-0 flex items-center justify-center">
                         <ImageIcon className="w-6 h-6 text-muted-foreground" />
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{s.title || s.asin}</p>
+                      <p className="text-sm font-medium truncate">{s.productTitle || s.asin}</p>
                       <p className="text-xs text-muted-foreground">ASIN: {s.asin}</p>
                       {s.overallScore != null && (
                         <p className="text-xs text-amber-600 font-medium mt-0.5">{s.overallScore}分</p>
                       )}
-                      {s.tagDesignStyle && <Badge variant="secondary" className="text-xs mt-1">{s.tagDesignStyle}</Badge>}
-                      <p className="text-xs text-muted-foreground mt-0.5">{s.imageCount || 0} 张图片</p>
+                      {s.setStyle && <Badge variant="secondary" className="text-xs mt-1">{s.setStyle}</Badge>}
+                      <p className="text-xs text-muted-foreground mt-0.5">{s.thumbnailImages?.length || 0}+ 张图片</p>
                     </div>
                   </div>
                 </div>
