@@ -11,7 +11,7 @@ import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
 import { dataImports, lingxingProductWeekly, saihuProductWeekly, operatorNameMappings, users, productionConfig } from "../../drizzle/schema";
 import { MANAGER_ROLES } from "../../shared/const";
-import { eq, desc, and, sql, or } from "drizzle-orm";
+import { eq, desc, and, sql, or, isNull } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
 import { storagePut } from "../storage";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
@@ -653,7 +653,13 @@ async function buildOverviewFromLingxing(db: any, userId: number, weeksToShow: n
     weekEndDate: lingxingProductWeekly.weekEndDate,
   })
     .from(lingxingProductWeekly)
-    .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, userId)))
+    .where(or(
+      isNull(lingxingProductWeekly.workspaceId),
+      opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), or(
+        eq(lingxingProductWeekly.userId, userId),
+        isNull(lingxingProductWeekly.userId)
+      ))
+    ))
     .orderBy(desc(lingxingProductWeekly.weekStartDate))
     .limit(weeksToShow + 1); // +1 for WoW comparison
 
@@ -661,10 +667,16 @@ async function buildOverviewFromLingxing(db: any, userId: number, weeksToShow: n
 
   // Get all data for these weeks
   const allData = await db.select().from(lingxingProductWeekly)
-    .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
-      eq(lingxingProductWeekly.userId, userId),
+    .where(and(
+      or(
+        isNull(lingxingProductWeekly.workspaceId),
+        opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), or(
+          eq(lingxingProductWeekly.userId, userId),
+          isNull(lingxingProductWeekly.userId)
+        ))
+      ),
       sql`${lingxingProductWeekly.weekStartDate} IN (${sql.join(weekRanges.map((w: any) => sql`${w.weekStartDate}`), sql`,`)})`
-    )))
+    ))
     .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
   // Filter by marketplace (country field)
@@ -821,7 +833,13 @@ async function buildOverviewFromSaihu(db: any, userId: number, weeksToShow: numb
     weekEndDate: saihuProductWeekly.weekEndDate,
   })
     .from(saihuProductWeekly)
-    .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), eq(saihuProductWeekly.userId, userId)))
+    .where(or(
+      isNull(saihuProductWeekly.workspaceId),
+      opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), or(
+        eq(saihuProductWeekly.userId, userId),
+        isNull(saihuProductWeekly.userId)
+      ))
+    ))
     .orderBy(desc(saihuProductWeekly.weekStartDate))
     .limit(weeksToShow + 1);
 
@@ -829,10 +847,16 @@ async function buildOverviewFromSaihu(db: any, userId: number, weeksToShow: numb
 
   // Get all data for these weeks
   const allData = await db.select().from(saihuProductWeekly)
-    .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), and(
-      eq(saihuProductWeekly.userId, userId),
+    .where(and(
+      or(
+        isNull(saihuProductWeekly.workspaceId),
+        opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), or(
+          eq(saihuProductWeekly.userId, userId),
+          isNull(saihuProductWeekly.userId)
+        ))
+      ),
       sql`${saihuProductWeekly.weekStartDate} IN (${sql.join(weekRanges.map((w: any) => sql`${w.weekStartDate}`), sql`,`)})`
-    )))
+    ))
     .orderBy(desc(saihuProductWeekly.weekStartDate));
 
   // Filter by marketplace (site field)
