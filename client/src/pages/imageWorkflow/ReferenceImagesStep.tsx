@@ -102,6 +102,7 @@ export function Step4References({
   // Re-optimize Step 4 based on uploaded reference images
   const handleReoptimize = async (idx: number) => {
     if (!editData) return;
+    setReoptimizingIdx(idx);
     try {
       const ref = editData.imageReferences[idx];
       const result = await reoptimizeMutation.mutateAsync({
@@ -126,6 +127,8 @@ export function Step4References({
       toast.success("已根据参考图重新优化");
     } catch (err: any) {
       toast.error(err.message || "优化失败");
+    } finally {
+      setReoptimizingIdx(null);
     }
   };
 
@@ -322,7 +325,7 @@ export function Step4References({
                     title="根据已选参考图和备注，重新生成所有图片的构图和效果方案"
                   >
                     {regenerateAllMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                    根据参考图重新生成
+                    {regenerateAllMutation.isPending ? "AI 正在分析参考图..." : "根据参考图重新生成"}
                   </Button>
                   <Button onClick={handleConfirm} disabled={confirmMutation.isPending}>
                     {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
@@ -352,6 +355,17 @@ export function Step4References({
             </div>
           </CardContent>
         )}
+        {regenerateAllMutation.isPending && (
+          <CardContent>
+            <div className="flex flex-col items-center justify-center py-8 gap-3">
+              <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+              <div className="text-center">
+                <p className="text-sm font-medium text-emerald-700">Claude 正在分析所有参考图...</p>
+                <p className="text-xs text-muted-foreground mt-1">正在深度分析参考图的构图布局与视觉效果特征，预计需要 30-90 秒，请耐心等待</p>
+              </div>
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       {editData?.imageReferences && !generateMutation.isPending && editData.imageReferences.map((ref: any, idx: number) => (
@@ -378,7 +392,7 @@ export function Step4References({
                       title="根据此图的参考图单独重新生成方案"
                     >
                       {regeneratingSingleIdx === idx ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
-                      单独重新生成
+                      {regeneratingSingleIdx === idx ? "AI 分析中..." : "单独重新生成"}
                     </Button>
                   )}
                 </div>
@@ -513,11 +527,23 @@ export function Step4References({
 
             {/* AI Re-optimize button when both ref images are uploaded */}
             {(ref.compositionRefImageUrl || ref.effectRefImageUrl) && !isConfirmed && (
-              <div className="mb-4 flex justify-center">
-                <Button variant="outline" size="sm" onClick={() => handleReoptimize(idx)} disabled={reoptimizeMutation.isPending} className="text-xs">
-                  {reoptimizeMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1" />}
-                  根据参考图重新优化构图和效果方案
+              <div className="mb-4 flex flex-col items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleReoptimize(idx)}
+                  disabled={reoptimizingIdx !== null}
+                  className="text-xs"
+                >
+                  {reoptimizingIdx === idx ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1" />}
+                  {reoptimizingIdx === idx ? "AI 正在分析参考图..." : "根据参考图重新优化构图和效果方案"}
                 </Button>
+                {reoptimizingIdx === idx && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5">
+                    <Loader2 className="w-3 h-3 animate-spin text-amber-500 shrink-0" />
+                    <span>Claude 正在深度分析参考图的构图与效果特征，预计需要 30-60 秒，请耐心等待...</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -603,3 +629,4 @@ export function Step4References({
 // ═══════════════════════════════════════════════════════════════════
 // ─── Step 5: Final Suggestions (reuse existing display) ──────────
 // ═══════════════════════════════════════════════════════════════════
+  const [reoptimizingIdx, setReoptimizingIdx] = useState<number | null>(null);
