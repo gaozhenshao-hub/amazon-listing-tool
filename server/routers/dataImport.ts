@@ -367,7 +367,13 @@ export const dataImportRouter = router({
           weekEndDate: lingxingProductWeekly.weekEndDate,
         })
           .from(lingxingProductWeekly)
-          .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)))
+          .where(or(
+            isNull(lingxingProductWeekly.workspaceId),
+            opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), or(
+              eq(lingxingProductWeekly.userId, effectiveUserId),
+              isNull(lingxingProductWeekly.userId)
+            ))
+          ))
           .orderBy(desc(lingxingProductWeekly.weekStartDate))
           .limit(input.weeks);
 
@@ -375,10 +381,16 @@ export const dataImportRouter = router({
 
         // Get all data for these weeks
         const data = await db!.select().from(lingxingProductWeekly)
-          .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
-            eq(lingxingProductWeekly.userId, effectiveUserId),
+          .where(and(
+            or(
+              isNull(lingxingProductWeekly.workspaceId),
+              opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), or(
+                eq(lingxingProductWeekly.userId, effectiveUserId),
+                isNull(lingxingProductWeekly.userId)
+              ))
+            ),
             sql`${lingxingProductWeekly.weekStartDate} IN (${sql.join(weekRanges.map((w: { weekStartDate: string }) => sql`${w.weekStartDate}`), sql`,`)})`
-          )))
+          ))
           .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
         return { weeks: weekRanges, data };
@@ -388,17 +400,29 @@ export const dataImportRouter = router({
           weekEndDate: saihuProductWeekly.weekEndDate,
         })
           .from(saihuProductWeekly)
-          .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), eq(saihuProductWeekly.userId, effectiveUserId)))
+          .where(or(
+            isNull(saihuProductWeekly.workspaceId),
+            opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), or(
+              eq(saihuProductWeekly.userId, effectiveUserId),
+              isNull(saihuProductWeekly.userId)
+            ))
+          ))
           .orderBy(desc(saihuProductWeekly.weekStartDate))
           .limit(input.weeks);
 
         if (weekRanges.length === 0) return { weeks: [], data: [] };
 
         const data = await db!.select().from(saihuProductWeekly)
-          .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), and(
-            eq(saihuProductWeekly.userId, effectiveUserId),
+          .where(and(
+            or(
+              isNull(saihuProductWeekly.workspaceId),
+              opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), or(
+                eq(saihuProductWeekly.userId, effectiveUserId),
+                isNull(saihuProductWeekly.userId)
+              ))
+            ),
             sql`${saihuProductWeekly.weekStartDate} IN (${sql.join(weekRanges.map((w: { weekStartDate: string }) => sql`${w.weekStartDate}`), sql`,`)})`
-          )))
+          ))
           .orderBy(desc(saihuProductWeekly.weekStartDate));
 
         return { weeks: weekRanges, data };
@@ -420,7 +444,7 @@ export const dataImportRouter = router({
         weekEndDate: table.weekEndDate,
       })
         .from(table)
-        .where(eq(table.userId, effectiveUserId))
+        .where(or(isNull(table.userId), eq(table.userId, effectiveUserId)))
         .orderBy(desc(table.weekStartDate));
 
       return ranges;
@@ -434,19 +458,19 @@ export const dataImportRouter = router({
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       const [lingxingCount] = await db!.select({ count: sql<number>`count(DISTINCT week_start_date)` })
         .from(lingxingProductWeekly)
-        .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)));
+        .where(or(isNull(lingxingProductWeekly.workspaceId), opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), or(eq(lingxingProductWeekly.userId, effectiveUserId), isNull(lingxingProductWeekly.userId)))));
 
       const [saihuCount] = await db!.select({ count: sql<number>`count(DISTINCT week_start_date)` })
         .from(saihuProductWeekly)
-        .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), eq(saihuProductWeekly.userId, effectiveUserId)));
+        .where(or(isNull(saihuProductWeekly.workspaceId), opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), or(eq(saihuProductWeekly.userId, effectiveUserId), isNull(saihuProductWeekly.userId)))));
 
       const [lingxingProducts] = await db!.select({ count: sql<number>`count(DISTINCT parent_asin)` })
         .from(lingxingProductWeekly)
-        .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)));
+        .where(or(isNull(lingxingProductWeekly.workspaceId), opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), or(eq(lingxingProductWeekly.userId, effectiveUserId), isNull(lingxingProductWeekly.userId)))));
 
       const [saihuProducts] = await db!.select({ count: sql<number>`count(DISTINCT parent_asin)` })
         .from(saihuProductWeekly)
-        .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), eq(saihuProductWeekly.userId, effectiveUserId)));
+        .where(or(isNull(saihuProductWeekly.workspaceId), opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), or(eq(saihuProductWeekly.userId, effectiveUserId), isNull(saihuProductWeekly.userId)))));
 
       const [latestImport] = await db!.select().from(dataImports)
         .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), and(eq(dataImports.userId, effectiveUserId), eq(dataImports.status, "completed"))))
@@ -1053,10 +1077,16 @@ function calcChange(current: number, previous: number): { value: number; pct: nu
 async function buildProductDetailFromLingxing(db: any, userId: number, parentAsin: string, marketplace: string) {
   // Get all data for this parentAsin
   const allData = await db.select().from(lingxingProductWeekly)
-    .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
-      eq(lingxingProductWeekly.userId, userId),
+    .where(and(
+      or(
+        isNull(lingxingProductWeekly.workspaceId),
+        opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), or(
+          eq(lingxingProductWeekly.userId, userId),
+          isNull(lingxingProductWeekly.userId)
+        ))
+      ),
       eq(lingxingProductWeekly.parentAsin, parentAsin),
-    )))
+    ))
     .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
   // Filter by marketplace if specified
@@ -1188,10 +1218,16 @@ async function buildProductDetailFromLingxing(db: any, userId: number, parentAsi
 async function buildProductDetailFromSaihu(db: any, userId: number, parentAsin: string, marketplace: string) {
   // Get all data for this parentAsin
   const allData = await db.select().from(saihuProductWeekly)
-    .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), and(
-      eq(saihuProductWeekly.userId, userId),
+    .where(and(
+      or(
+        isNull(saihuProductWeekly.workspaceId),
+        opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), or(
+          eq(saihuProductWeekly.userId, userId),
+          isNull(saihuProductWeekly.userId)
+        ))
+      ),
       eq(saihuProductWeekly.parentAsin, parentAsin),
-    )))
+    ))
     .orderBy(desc(saihuProductWeekly.weekStartDate));
 
   // Filter by marketplace
