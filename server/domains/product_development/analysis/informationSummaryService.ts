@@ -4,7 +4,9 @@ import { z } from "zod";
 import {
   recordBusinessArtifactUse,
   resolveCurrentDevAnalysisArtifact,
+  resolveCurrentPanoramaMarketInsightArtifact,
 } from "../../ai_os/services/businessArtifactRegistry";
+import { getMarketInsight } from "../panorama/marketInsightRepository";
 import {
   cancelAiJob,
   generateAiJobRunId,
@@ -29,6 +31,7 @@ import {
   syncProductAnalysisNodeProgress,
   syncProductAnalysisNodeRunning,
 } from "./productAnalysisAgent";
+import { normalizeParentMarketMetrics } from "../panorama/marketMetrics";
 
 const informationSummaryJobInput = z.object({
   projectId: z.number().int().positive(),
@@ -182,9 +185,10 @@ async function runInformationSummaryGeneration(input: {
     );
     if (!project) throw new Error("产品开发项目不存在");
 
-    const [products, stages] = await Promise.all([
+    const [products, stages, panoramaInsight] = await Promise.all([
       devDb.getDevProductsByProject(input.projectId),
       devDb.getDevAnalysisStages(input.projectId),
+      getMarketInsight(input.projectId).catch(() => null),
     ]);
     const stageArtifacts = await Promise.all(stages.map(async (stage) => {
       if (stage.status !== "confirmed") return null;
@@ -218,11 +222,31 @@ async function runInformationSummaryGeneration(input: {
     });
     const seed = buildInformationSummarySeed({
       project,
-      products,
+      products: normalizeParentMarketMetrics(products),
       stages: stagesFromArtifacts,
       ownerName: input.ownerName,
     });
-    const aiContext = buildInformationSummaryAiContext(seed);
+    let confirmedPanoramaMarketInsight: unknown = null;
+    if (panoramaInsight?.status === "confirmed") {
+      const artifact = await resolveCurrentPanoramaMarketInsightArtifact(panoramaInsight.id);
+      if (artifact) {
+        await recordBusinessArtifactUse({
+          artifact,
+          consumerDomain: "project",
+          consumerType: "ai_job",
+          consumerId: input.runId,
+          projectId: input.projectId,
+          runId: input.runId,
+          nodeId: "information_summary",
+          metadata: { source: "dev.panorama.market_insights" },
+        });
+        confirmedPanoramaMarketInsight = artifact.content;
+      }
+    }
+    const aiContext = {
+      ...buildInformationSummaryAiContext(seed),
+      confirmedPanoramaMarketInsight,
+    };
     const emperorContext = JSON.stringify(aiContext);
     if (!await updateIfCurrent({ runProgress: 45 })) {
       return { skipped: true, reason: "信息汇总任务已被新的运行替代" };

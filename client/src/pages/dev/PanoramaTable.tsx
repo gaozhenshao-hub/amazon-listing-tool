@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { Fragment, useState, useMemo, useCallback, useRef } from "react";
+import MajorCompetitorAnalysis from "./MajorCompetitorAnalysis";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -53,13 +54,16 @@ const FIXED_COLUMNS: ColumnDef[] = [
   { key: "bsr", label: "BSR", group: "排名", width: 80, type: "number", editable: true },
   { key: "bsrGrowthRate", label: "BSR增长率", group: "排名", width: 100, editable: true },
   { key: "price", label: "价格($)", group: "价格利润", width: 80, editable: true },
+  { key: "priceBandLabel", label: "价格标签", group: "价格利润", width: 130 },
   { key: "fbaFee", label: "FBA费用", group: "价格利润", width: 80, editable: true },
   { key: "grossMargin", label: "毛利率", group: "价格利润", width: 80, editable: true },
-  { key: "monthlySales", label: "月销量", group: "销量", width: 80, type: "number", editable: true },
+  { key: "monthlySales", label: "父体月销量", group: "销量", width: 90, type: "number", editable: true },
   { key: "monthlySalesGrowth", label: "月销量增长率", group: "销量", width: 110, editable: true },
-  { key: "monthlyRevenue", label: "月销售额($)", group: "销量", width: 100, type: "number", editable: true },
-  { key: "childSales", label: "子体销量", group: "销量", width: 80, type: "number", editable: true },
-  { key: "childRevenue", label: "子体销售额", group: "销量", width: 100, type: "number", editable: true },
+  { key: "monthlyRevenue", label: "父体月销售额($)", group: "销量", width: 120, type: "number", editable: true },
+  { key: "salesTier", label: "销量标签", group: "销量", width: 80 },
+  { key: "parentSalesRepresentative", label: "父体计入行", group: "销量", width: 85, type: "boolean" },
+  { key: "childSales", label: "子体销量(不计)", group: "原始参考", width: 100, type: "number", editable: true },
+  { key: "childRevenue", label: "子体销售额(不计)", group: "原始参考", width: 120, type: "number", editable: true },
   { key: "variantCount", label: "变体数", group: "销量", width: 70, type: "number", editable: true },
   { key: "reviewCount", label: "评分数", group: "评论", width: 80, editable: true },
   { key: "monthlyNewReviews", label: "月新增评分", group: "评论", width: 100, type: "number", editable: true },
@@ -77,6 +81,7 @@ const FIXED_COLUMNS: ColumnDef[] = [
   { key: "sellerLocation", label: "卖家所属地", group: "卖家", width: 100, editable: true },
   { key: "listingDate", label: "上架时间", group: "时间", width: 100, editable: true },
   { key: "listingDays", label: "上架天数", group: "时间", width: 80, type: "number", editable: true },
+  { key: "listingAgeLabel", label: "上架年份标签", group: "时间", width: 110 },
   { key: "productWeight", label: "商品重量", group: "物流", width: 90, editable: true },
   { key: "productSize", label: "商品尺寸", group: "物流", width: 120, editable: true },
   { key: "packageWeight", label: "包装重量", group: "物流", width: 90, editable: true },
@@ -386,8 +391,8 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
   const [filterOpen, setFilterOpen] = useState(false);
   // tagFilters: { [categoryName]: Set<selectedValue> }
   const [tagFilters, setTagFilters] = useState<Record<string, Set<string>>>({});
-  // Group by tag
-  const [groupByTag, setGroupByTag] = useState<string | null>(null);
+  // Group by a fixed field or a dynamic project tag.
+  const [groupByField, setGroupByField] = useState<string | null>(null);
   const [showGroupCharts, setShowGroupCharts] = useState(true);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupSortField, setGroupSortField] = useState<string>("count");
@@ -533,6 +538,34 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
     return product[col.key] ?? "";
   }, [data]);
 
+  const groupOptions = useMemo(() => [
+    { value: "field:listingAgeLabel", label: "上架年份标签" },
+    { value: "field:salesTier", label: "销量标签" },
+    { value: "field:priceBandLabel", label: "价格标签" },
+    { value: "field:brand", label: "品牌" },
+    { value: "field:category", label: "大类目" },
+    { value: "field:fulfillment", label: "配送方式" },
+    ...(data?.tagCategories || []).map((category: { key: string; name: string }) => ({
+      value: `tag:${category.name}`,
+      label: `属性 · ${category.name}`,
+    })),
+  ], [data?.tagCategories]);
+
+  const groupByLabel = useMemo(() => (
+    groupOptions.find((option) => option.value === groupByField)?.label || ""
+  ), [groupByField, groupOptions]);
+
+  const getGroupValue = useCallback((product: any) => {
+    if (!groupByField) return "";
+    if (groupByField.startsWith("tag:")) {
+      const tagName = groupByField.slice(4);
+      return data?.tagMap?.[product.asin]?.[tagName] || "(未标注)";
+    }
+    const field = groupByField.replace(/^field:/, "");
+    const value = product[field];
+    return value === null || value === undefined || value === "" ? "(未标注)" : String(value);
+  }, [data?.tagMap, groupByField]);
+
   const filteredProducts = useMemo(() => {
     if (!data?.products) return [];
     let products = [...data.products];
@@ -575,7 +608,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
   const totalPages = Math.ceil(filteredProducts.length / PAGE_SIZE);
   const pagedProducts = filteredProducts.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-  // ── Group by tag logic ──
+  // ── Multi-dimensional grouping ──
   interface GroupSummary {
     tagValue: string;
     products: any[];
@@ -588,13 +621,12 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
     bsrAvg: number;
   }
   const groupedData = useMemo<GroupSummary[]>(() => {
-    if (!groupByTag || !data?.tagMap) return [];
+    if (!groupByField) return [];
     const groups: Record<string, any[]> = {};
     for (const p of filteredProducts) {
-      const asinTags = data.tagMap[p.asin as string] || {};
-      const tagVal = asinTags[groupByTag!] || "(未标注)";
-      if (!groups[tagVal]) groups[tagVal] = [];
-      groups[tagVal].push(p);
+      const groupValue = getGroupValue(p);
+      if (!groups[groupValue]) groups[groupValue] = [];
+      groups[groupValue].push(p);
     }
     const summaries: GroupSummary[] = Object.entries(groups).map(([tagValue, products]) => {
       const count = products.length;
@@ -624,7 +656,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
       return groupSortDir === "desc" ? vb - va : va - vb;
     });
     return summaries;
-  }, [filteredProducts, groupByTag, data?.tagMap, groupSortField, groupSortDir]);
+  }, [filteredProducts, groupByField, getGroupValue, groupSortField, groupSortDir]);
 
   const toggleGroupCollapse = (tagValue: string) => {
     setCollapsedGroups(prev => {
@@ -858,6 +890,9 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
               <Table2 className="h-5 w-5 text-primary" />
               <CardTitle className="text-lg">竞品全景分析表</CardTitle>
               <Badge variant="outline" className="text-xs">{totalProducts} 个产品</Badge>
+              <Badge variant="outline" className="text-xs">
+                价格段: {data?.priceBandSource === "ai_confirmed" ? "AI已确认" : data?.priceBandSource === "ai_draft" ? "AI待确认" : "自适应"}
+              </Badge>
               {isConfirmed ? (
                 <Badge className="bg-emerald-500/10 text-emerald-600 text-xs gap-1">
                   <Lock className="h-3 w-3" />已确认
@@ -929,29 +964,29 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                 <XCircle className="h-3.5 w-3.5" />清除全部筛选
               </Button>
             )}
-            {/* Group by tag selector */}
-            {Object.keys(tagValueOptions).length > 0 && (
+            {/* Feishu-style field grouping selector */}
+            {groupOptions.length > 0 && (
               <div className="flex items-center gap-1.5">
                 <Layers className="h-3.5 w-3.5 text-muted-foreground" />
                 <Select
-                  value={groupByTag || "__none__"}
+                  value={groupByField || "__none__"}
                   onValueChange={(v) => {
-                    setGroupByTag(v === "__none__" ? null : v);
+                    setGroupByField(v === "__none__" ? null : v);
                     setCollapsedGroups(new Set());
                     setPage(0);
                   }}
                 >
-                  <SelectTrigger className="h-8 w-[140px] text-xs">
-                    <SelectValue placeholder="按标签分组" />
+                  <SelectTrigger className="h-8 w-[170px] text-xs">
+                    <SelectValue placeholder="选择分组字段" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">不分组</SelectItem>
-                    {(data?.tagCategories || []).map((tc: { key: string; name: string }) => (
-                      <SelectItem key={tc.key} value={tc.name}>{tc.name}</SelectItem>
+                    {groupOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {groupByTag && (
+                {groupByField && (
                   <>
                     <Select value={groupSortField} onValueChange={setGroupSortField}>
                       <SelectTrigger className="h-8 w-[110px] text-xs">
@@ -1089,13 +1124,13 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
           ) : (
             <>
               {/* Group Charts - only show in grouped mode */}
-              {groupByTag && groupedData.length > 0 && (
+              {groupByField && groupedData.length > 0 && (
                 <div className="space-y-3 mb-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <BarChart3 className="h-4 w-4 text-primary" />
                       <span className="text-sm font-medium">分组可视化分析</span>
-                      <Badge variant="secondary" className="text-[10px]">按「{groupByTag}」分组</Badge>
+                      <Badge variant="secondary" className="text-[10px]">按「{groupByLabel}」分组</Badge>
                     </div>
                     <Button size="sm" variant="ghost" className="h-7 text-xs gap-1"
                       onClick={() => setShowGroupCharts(!showGroupCharts)}>
@@ -1232,42 +1267,10 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                   </thead>
                   <tbody>
                     {/* Grouped mode */}
-                    {groupByTag && groupedData.length > 0 && groupedData.map((group, gIdx) => {
+                    {groupByField && groupedData.length > 0 && groupedData.map((group, gIdx) => {
                       const isCollapsed = collapsedGroups.has(group.tagValue);
                       return (
-                        <>
-                          {/* Group summary row */}
-                          <tr key={`group-${gIdx}`}
-                            ref={(el) => { groupRowRefs.current[group.tagValue] = el; }}
-                            className={`cursor-pointer border-b-2 transition-all duration-500 ${
-                              highlightedGroup === group.tagValue
-                                ? 'bg-primary/20 border-primary/40 ring-2 ring-primary/30 ring-inset'
-                                : 'bg-primary/5 hover:bg-primary/10 border-primary/20'
-                            }`}
-                            onClick={() => toggleGroupCollapse(group.tagValue)}>
-                            <td colSpan={visibleColumns.length}
-                              className="px-3 py-2">
-                              <div className="flex items-center gap-3 flex-wrap">
-                                <div className="flex items-center gap-1.5">
-                                  {isCollapsed ? <FolderClosed className="h-4 w-4 text-primary" /> : <FolderOpen className="h-4 w-4 text-primary" />}
-                                  <Badge className="bg-primary/10 text-primary border-primary/20 text-xs font-semibold">
-                                    {group.tagValue}
-                                  </Badge>
-                                </div>
-                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                  <span className="font-medium text-foreground">
-                                    <Tag className="h-3 w-3 inline mr-0.5" />{group.count} 个产品
-                                  </span>
-                                  <span>月销量合计: <strong className="text-foreground">{group.monthlySalesSum.toLocaleString()}</strong></span>
-                                  <span>月销售额: <strong className="text-foreground">${group.monthlyRevenueSum.toLocaleString()}</strong></span>
-                                  <span>均价: <strong className="text-foreground">${group.priceAvg.toFixed(2)}</strong></span>
-                                  <span>平均评分: <strong className="text-foreground">{group.ratingAvg.toFixed(1)}</strong></span>
-                                  <span>评论合计: <strong className="text-foreground">{group.reviewCountSum.toLocaleString()}</strong></span>
-                                  {group.bsrAvg > 0 && <span>平均BSR: <strong className="text-foreground">{Math.round(group.bsrAvg).toLocaleString()}</strong></span>}
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
+                        <Fragment key={`group-block-${gIdx}`}>
                           {/* Group products */}
                           {!isCollapsed && group.products.map((product: any, rowIdx: number) => (
                             <tr key={product.id} className={`${
@@ -1278,11 +1281,40 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                               {renderProductCells(product)}
                             </tr>
                           ))}
-                        </>
+                          {/* Group summary is intentionally the last row, like a multi-dimensional table subtotal. */}
+                          <tr key={`group-${gIdx}`}
+                            ref={(el) => { groupRowRefs.current[group.tagValue] = el; }}
+                            className={`cursor-pointer border-b-2 transition-all duration-500 ${
+                              highlightedGroup === group.tagValue
+                                ? 'bg-primary/20 border-primary/40 ring-2 ring-primary/30 ring-inset'
+                                : 'bg-primary/5 hover:bg-primary/10 border-primary/20'
+                            }`}
+                            onClick={() => toggleGroupCollapse(group.tagValue)}>
+                            <td colSpan={visibleColumns.length} className="px-3 py-2">
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <div className="flex items-center gap-1.5">
+                                  {isCollapsed ? <FolderClosed className="h-4 w-4 text-primary" /> : <FolderOpen className="h-4 w-4 text-primary" />}
+                                  <Badge className="bg-primary/10 text-primary border-primary/20 text-xs font-semibold">
+                                    {group.tagValue} · 汇总
+                                  </Badge>
+                                </div>
+                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                  <span className="font-medium text-foreground"><Tag className="h-3 w-3 inline mr-0.5" />{group.count} 个产品</span>
+                                  <span>父体月销量: <strong className="text-foreground">{group.monthlySalesSum.toLocaleString()}</strong></span>
+                                  <span>父体月销售额: <strong className="text-foreground">${group.monthlyRevenueSum.toLocaleString()}</strong></span>
+                                  <span>均价: <strong className="text-foreground">${group.priceAvg.toFixed(2)}</strong></span>
+                                  <span>平均评分: <strong className="text-foreground">{group.ratingAvg.toFixed(1)}</strong></span>
+                                  <span>评论合计: <strong className="text-foreground">{group.reviewCountSum.toLocaleString()}</strong></span>
+                                  {group.bsrAvg > 0 && <span>平均BSR: <strong className="text-foreground">{Math.round(group.bsrAvg).toLocaleString()}</strong></span>}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        </Fragment>
                       );
                     })}
                     {/* Ungrouped mode (original) */}
-                    {!groupByTag && pagedProducts.map((product: any, rowIdx: number) => (
+                    {!groupByField && pagedProducts.map((product: any, rowIdx: number) => (
                       <tr key={product.id} className={`${rowIdx % 2 === 0 ? "bg-background" : "bg-muted/20"} hover:bg-accent/30 transition-colors`}>
                         {visibleColumns.map(col => {
                           const value = getCellValue(product, col);
@@ -1408,7 +1440,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
               {/* Pagination */}
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>
-                  {groupByTag ? (
+                  {groupByField ? (
                     <>共 {filteredProducts.length} 个产品，分为 {groupedData.length} 个分组{(searchTerm || activeFilterCount > 0) && ` (筛选自 ${totalProducts} 个)`}</>
                   ) : (
                     <>显示 {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, filteredProducts.length)} / 共 {filteredProducts.length} 个产品
@@ -1416,7 +1448,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                   )}
                 </span>
                 <div className="flex items-center gap-2">
-                  {!groupByTag && <><Button size="sm" variant="outline" className="h-6 text-xs px-2"
+                  {!groupByField && <><Button size="sm" variant="outline" className="h-6 text-xs px-2"
                     disabled={page === 0} onClick={() => setPage(p => p - 1)}>
                     <ChevronLeft className="h-3 w-3" />上一页
                   </Button>
@@ -1449,6 +1481,8 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
           </CardContent>
         </Card>
       )}
+
+      {hasData && <MajorCompetitorAnalysis projectId={projectId} />}
 
       {/* Sales Trend Dialog */}
       <SalesTrendDialog

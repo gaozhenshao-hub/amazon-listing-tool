@@ -120,6 +120,7 @@ export const DATABASE_DOMAINS: DatabaseDomain[] = [
       "reviewImports",
       "competitorAnalyses",
       "dev_projects",
+      "dev_project_progress",
       "dev_analysis_stages",
       "dev_analysis_stage_conflicts",
     ],
@@ -327,6 +328,26 @@ export const SOFT_FOREIGN_KEYS: SoftForeignKeyPolicy[] = [
   {
     domain: "project",
     table: "dev_projects",
+    column: "workspaceId",
+    referencesTable: "workspaces",
+    referencesColumn: "id",
+    required: false,
+    onDelete: "preserve_history",
+    enforcement: "repository_check",
+  },
+  {
+    domain: "project",
+    table: "dev_project_progress",
+    column: "projectId",
+    referencesTable: "dev_projects",
+    referencesColumn: "id",
+    required: true,
+    onDelete: "cascade",
+    enforcement: "repository_check",
+  },
+  {
+    domain: "project",
+    table: "dev_project_progress",
     column: "workspaceId",
     referencesTable: "workspaces",
     referencesColumn: "id",
@@ -547,6 +568,22 @@ export const SOFT_FOREIGN_KEYS: SoftForeignKeyPolicy[] = [
 ];
 
 export const INDEX_BASELINES: IndexBaseline[] = [
+  {
+    domain: "project",
+    table: "dev_project_progress",
+    indexName: "uniq_dev_project_progress_project",
+    fields: ["projectId"],
+    purpose: "保证每个产品开发项目只有一份项目列表人工维护资料",
+    migration: "0132_dev_project_progress_list.sql",
+  },
+  {
+    domain: "project",
+    table: "dev_project_progress",
+    indexName: "idx_dev_project_progress_workspace_project",
+    fields: ["workspaceId", "projectId", "updatedAt"],
+    purpose: "项目列表按工作区批量汇总进度资料",
+    migration: "0132_dev_project_progress_list.sql",
+  },
   {
     domain: "project",
     table: "dev_analysis_stages",
@@ -1145,6 +1182,8 @@ export const MIGRATION_REGRESSION_BASELINE: MigrationRegressionBaseline = {
     "0125_dev_stage_consistency.sql",
     "0128_artifact_source_of_truth.sql",
     "0130_ai_operations_runtime.sql",
+    "0131_dev_panorama_market_insights.sql",
+    "0132_dev_project_progress_list.sql",
   ],
   requiredTables: [
     "ai_jobs",
@@ -1158,6 +1197,8 @@ export const MIGRATION_REGRESSION_BASELINE: MigrationRegressionBaseline = {
     "emperor_tool_secrets",
     "emperor_ai_os_metrics",
     "emperor_ai_os_evaluations",
+    "dev_panorama_market_insights",
+    "dev_project_progress",
     "ai_artifacts",
     "ai_artifact_selection_events",
     "ai_artifact_consumptions",

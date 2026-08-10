@@ -4,6 +4,7 @@ import "../routers/imageWorkflow";
 import "../services/emperorAgentRunner";
 import "../domains/product_development/analysis/informationSummaryService";
 import "../domains/product_development/analysis/analysisStageJobService";
+import "../domains/product_development/panorama/marketInsightService";
 import {
   drainAiJobQueue,
   getAiJobWorkerId,

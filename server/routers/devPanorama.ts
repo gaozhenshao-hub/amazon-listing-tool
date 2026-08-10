@@ -8,6 +8,19 @@ import {
 import { getDb } from "../repositories/dbClient";
 import { devProducts, devPanoramaStatus, devProjectTagCategories, devProjectTagItems, devProductTags } from "../../drizzle/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
+import {
+  buildAdaptivePriceBands,
+  normalizeParentMarketMetrics,
+  sanitizePriceBands,
+} from "../domains/product_development/panorama/marketMetrics";
+import {
+  cancelPanoramaMarketInsight,
+  confirmPanoramaMarketInsight,
+  getPanoramaMarketInsight,
+  queuePanoramaMarketInsight,
+  savePanoramaMarketInsight,
+  unlockPanoramaMarketInsight,
+} from "../domains/product_development/panorama/marketInsightService";
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── Panorama (竞品全景分析表) Router ────────────────────────────
@@ -85,13 +98,22 @@ export const devPanoramaRouter = router({
         name: c.categoryName,
       }));
 
+      const marketInsight = await getPanoramaMarketInsight(input.projectId).catch(() => null);
+      const fallbackPriceBands = buildAdaptivePriceBands(products);
+      const priceBands = sanitizePriceBands(marketInsight?.result?.priceBands, fallbackPriceBands);
+      const marketProducts = normalizeParentMarketMetrics(products, { priceBands });
+
       return {
-        products,
+        products: marketProducts,
         tagMap,
         tagCategories: tagCategoryNames,
         tagItems,
         status,
         historyCols,
+        priceBands,
+        priceBandSource: marketInsight?.result?.priceBands
+          ? (marketInsight.status === "confirmed" ? "ai_confirmed" as const : "ai_draft" as const)
+          : "adaptive" as const,
       };
     }),
 
@@ -225,6 +247,57 @@ export const devPanoramaRouter = router({
       return { confirmed: rows[0]?.confirmed === 1, status: rows[0] || null };
     }),
 
+  getMarketInsight: protectedProcedure
+    .input(z.object({ projectId: z.number().int().positive() }))
+    .query(({ input }) => getPanoramaMarketInsight(input.projectId)),
+
+  generateMarketInsight: protectedProcedure
+    .input(z.object({ projectId: z.number().int().positive() }))
+    .mutation(({ ctx, input }) => queuePanoramaMarketInsight({
+      projectId: input.projectId,
+      userId: ctx.user.id,
+      workspaceId: productDevelopmentWorkspaceId(ctx),
+    })),
+
+  saveMarketInsight: protectedProcedure
+    .input(z.object({ projectId: z.number().int().positive(), result: z.unknown() }))
+    .mutation(({ ctx, input }) => savePanoramaMarketInsight(input.projectId, ctx.user.id, input.result)),
+
+  confirmMarketInsight: protectedProcedure
+    .input(z.object({ projectId: z.number().int().positive(), result: z.unknown() }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await confirmPanoramaMarketInsight(input.projectId, ctx.user.id, input.result);
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.panorama.market_insight.confirm",
+        projectId: input.projectId,
+        resourceType: "dev_panorama_market_insight",
+        resourceId: result?.id || input.projectId,
+        afterSnapshot: { status: "confirmed", version: result?.version },
+      });
+      return result;
+    }),
+
+  unlockMarketInsight: protectedProcedure
+    .input(z.object({ projectId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await unlockPanoramaMarketInsight(input.projectId, ctx.user.id);
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.panorama.market_insight.unlock",
+        projectId: input.projectId,
+        resourceType: "dev_panorama_market_insight",
+        resourceId: result?.id || input.projectId,
+        riskLevel: "high",
+        afterSnapshot: { status: "editing", version: result?.version },
+      });
+      return result;
+    }),
+
+  cancelMarketInsight: protectedProcedure
+    .input(z.object({ projectId: z.number().int().positive() }))
+    .mutation(({ input }) => cancelPanoramaMarketInsight(input.projectId)),
+
   // Export panorama as CSV
   exportCsv: protectedProcedure
     .input(z.object({ projectId: z.number() }))
@@ -232,9 +305,15 @@ export const devPanoramaRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Database not available");
 
-      const products = await db.select().from(devProducts)
+      const rawProducts = await db.select().from(devProducts)
         .where(eq(devProducts.projectId, input.projectId))
         .orderBy(devProducts.searchRank);
+      const marketInsight = await getPanoramaMarketInsight(input.projectId).catch(() => null);
+      const priceBands = sanitizePriceBands(
+        marketInsight?.result?.priceBands,
+        buildAdaptivePriceBands(rawProducts),
+      );
+      const products = normalizeParentMarketMetrics(rawProducts, { priceBands });
 
       const tagCategories = await db.select().from(devProjectTagCategories)
         .where(eq(devProjectTagCategories.projectId, input.projectId))
@@ -272,9 +351,9 @@ export const devPanoramaRouter = router({
         "ASIN", "父ASIN", "SKU", "品牌", "商品链接", "主图链接",
         "大类目", "类目路径", "小类目", "大类BSR", "小类BSR", "大类BSR增长率",
         "商品标题", "产品卖点(五点)",
-        "价格($)", "FBA费用($)", "毛利率",
+        "价格($)", "价格标签", "FBA费用($)", "毛利率",
         "月销量", "月销量增长率", "月销售额($)", "子体销量", "子体销售额($)", "变体数",
-        "评分数", "月新增评分数", "评分", "留评率", "LQS", "卖家数", "配送方式", "上架时间", "上架天数",
+        "销量标签", "父体销量代表行", "评分数", "月新增评分数", "评分", "留评率", "LQS", "卖家数", "配送方式", "上架时间", "上架天数", "上架年份标签",
         "Buybox卖家", "BuyBox类型", "卖家所属地",
         "A+页面", "视频介绍", "品牌故事", "Amazon's Choice",
         "商品重量", "商品尺寸", "包装重量", "包装尺寸", "包装尺寸分段",
@@ -302,9 +381,10 @@ export const devPanoramaRouter = router({
           p.asin, p.parentAsin, p.sku, p.brand, p.productLink, p.imageUrl,
           p.category, p.categoryPath, p.subcategory, p.bsrLarge, p.bsrSmall, p.bsrGrowthRate,
           p.title, p.bulletPoints,
-          p.price, p.fbaFee, p.grossMargin,
+          p.price, p.priceBandLabel, p.fbaFee, p.grossMargin,
           p.monthlySales, p.monthlySalesGrowth, p.monthlyRevenue, p.childSales, p.childRevenue, p.variantCount,
-          p.reviewCount, p.monthlyNewReviews, p.rating, p.reviewRate, p.lqs, p.sellerCount, p.fulfillment, p.listingDate, p.listingDays,
+          p.salesTier, p.parentSalesRepresentative ? "是" : "否",
+          p.reviewCount, p.monthlyNewReviews, p.rating, p.reviewRate, p.lqs, p.sellerCount, p.fulfillment, p.listingDate, p.listingDays, p.listingAgeLabel,
           p.buyboxSeller, p.buyboxType, p.sellerLocation,
           p.hasAPlus ? "是" : "否", p.hasVideo ? "是" : "否", p.hasBrandStory ? "是" : "否", p.hasAmazonChoice ? "是" : "否",
           p.productWeight, p.productSize, p.packageWeight, p.packageSize, p.packageSizeTier,

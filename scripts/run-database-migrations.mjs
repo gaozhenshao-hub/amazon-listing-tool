@@ -53,6 +53,8 @@ const supplementalMigrations = [
   "0128_artifact_source_of_truth.sql",
   "0129_business_skill_governance.sql",
   "0130_ai_operations_runtime.sql",
+  "0131_dev_panorama_market_insights.sql",
+  "0132_dev_project_progress_list.sql",
 ];
 
 const retiredMigrationFiles = new Set([

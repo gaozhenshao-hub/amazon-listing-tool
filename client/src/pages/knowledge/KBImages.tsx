@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Edit3, Trash2, Sparkles, Search, Grid3X3, LayoutGrid, Package, Eye, Tag, Send, RefreshCw, UploadCloud, X, RotateCcw, Palette, FileText } from "lucide-react";
+import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Edit3, Trash2, Sparkles, Search, Grid3X3, LayoutGrid, Package, Send, RefreshCw, UploadCloud, X, RotateCcw, Palette, FileText, ListTree } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
@@ -27,6 +27,8 @@ import { useKBTagOptions } from "@/hooks/useKBTagOptions";
 import { Settings2 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useQueryClient } from "@tanstack/react-query";
+import { KbAsinSetGrid } from "./KbAsinSetGrid";
+import { ASIN_SET_GROUP_OPTIONS, type AsinSetGroupBy } from "./kbImageSetGrouping";
 
 type ViewMode = "asin" | "waterfall" | "grid";
 
@@ -113,6 +115,7 @@ export default function KBImages() {
   const [filterColorV2, setFilterColorV2] = useState("all");
   const [filterAccentColor, setFilterAccentColor] = useState("all");
   const [filterStyleV2, setFilterStyleV2] = useState("all");
+  const [asinSetGroupBy, setAsinSetGroupBy] = useState<AsinSetGroupBy>("none");
   const [useV2Filters, setUseV2Filters] = useState(true);
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
   const [scope, setScope] = useState<KBScope>("shared");
@@ -372,7 +375,9 @@ export default function KBImages() {
       if (filterStyleV2 !== "all" && s.setStyle !== filterStyleV2) return false;
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
-      return (s.asin || "").toLowerCase().includes(q) || (s.productTitle || "").toLowerCase().includes(q) || (s.brand || "").toLowerCase().includes(q);
+      return (s.asin || "").toLowerCase().includes(q)
+        || (s.productTitle || "").toLowerCase().includes(q)
+        || (s.brand || "").toLowerCase().includes(q);
     });
   }, [sets, searchQuery, filterCategory, filterColorV2, filterAccentColor, filterStyleV2]);
 
@@ -611,7 +616,18 @@ export default function KBImages() {
             </Select>
           </div>
         )}
-        <div className="ml-auto flex gap-1">
+        {viewMode === "asin" && (
+          <Select value={asinSetGroupBy} onValueChange={(value) => setAsinSetGroupBy(value as AsinSetGroupBy)}>
+            <SelectTrigger className="ml-auto h-9 w-[160px] gap-2 text-xs">
+              <ListTree className="h-4 w-4" />
+              <SelectValue placeholder="分组" />
+            </SelectTrigger>
+            <SelectContent align="end">
+              {ASIN_SET_GROUP_OPTIONS.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+        <div className={viewMode === "asin" ? "flex gap-1" : "ml-auto flex gap-1"}>
           <Button variant={viewMode === "asin" ? "default" : "outline"} size="sm" className="h-9 gap-1.5" onClick={() => setViewMode("asin")}>
             <Package className="h-4 w-4" /> ASIN集
           </Button>
@@ -642,38 +658,12 @@ export default function KBImages() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredSets.map((set: any) => {
-              const status = statusMap[set.status] || { label: set.status, variant: "secondary" as const };
-              return (
-                <Card key={set.id} className="group cursor-pointer hover:shadow-lg transition-all overflow-hidden" onClick={() => { setDetailSetId(set.id); setEditingAnalysis(""); }}>
-                  {/* Thumbnail strip - show first 4 images from the set */}
-                  <div className="relative h-40 bg-muted overflow-hidden">
-                    <AsinThumbnailStrip thumbnailImages={(set as any).thumbnailImages} />
-                    <div className="absolute top-2 right-2">
-                      <Badge variant={status.variant} className="text-[10px] shadow-sm">{status.label}</Badge>
-                    </div>
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
-                      <span className="text-white text-xs font-medium flex items-center gap-1"><Eye className="h-3 w-3" /> 查看详情</span>
-                    </div>
-                  </div>
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Badge variant="outline" className="font-mono text-xs">{set.asin}</Badge>
-                      {set.brand && <Badge variant="secondary" className="text-[10px]">{set.brand}</Badge>}
-                    </div>
-                    <h3 className="text-sm font-medium line-clamp-2 mb-2">{set.productTitle || "未命名产品"}</h3>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{set.category || "未分类"}</span>
-                      {set.overallScore && (
-                        <span className="font-medium text-primary">{set.overallScore}分</span>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+          <KbAsinSetGrid
+            sets={filteredSets}
+            groupBy={asinSetGroupBy}
+            statusMap={statusMap}
+            onOpen={(id) => { setDetailSetId(id); setEditingAnalysis(""); }}
+          />
         )
       )}
 
@@ -1306,39 +1296,6 @@ export default function KBImages() {
       </Dialog>
       </>
       )}
-    </div>
-  );
-}
-
-/** Thumbnail strip for ASIN card - uses pre-fetched thumbnailImages from listSets */
-function AsinThumbnailStrip({ thumbnailImages }: { thumbnailImages?: { id: number; imageUrl: string; imagePosition: string; positionIndex?: number | null }[] }) {
-  const displayImages = (thumbnailImages || []).slice(0, 5);
-
-  if (displayImages.length === 0) {
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-muted">
-        <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
-      </div>
-    );
-  }
-
-  if (displayImages.length === 1) {
-    return <img src={displayImages[0].imageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />;
-  }
-
-  // Show main image large + secondary images small
-  return (
-    <div className="flex h-full gap-0.5">
-      <div className="flex-1 min-w-0">
-        <img src={displayImages[0].imageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
-      </div>
-      <div className="w-20 flex flex-col gap-0.5">
-        {displayImages.slice(1, 5).map((img: any, i: number) => (
-          <div key={i} className="flex-1 min-h-0">
-            <img src={img.imageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

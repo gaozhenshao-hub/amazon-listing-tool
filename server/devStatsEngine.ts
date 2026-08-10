@@ -7,6 +7,7 @@
 
 export interface ProductData {
   asin: string;
+  parentAsin?: string | null;
   title: string | null;
   brand: string | null;
   price: string | null;
