@@ -21,6 +21,7 @@ import {
   savePanoramaMarketInsight,
   unlockPanoramaMarketInsight,
 } from "../domains/product_development/panorama/marketInsightService";
+import { panoramaCompetitorAsinsSchema } from "../domains/product_development/panorama/marketInsightSchema";
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── Panorama (竞品全景分析表) Router ────────────────────────────
@@ -252,11 +253,15 @@ export const devPanoramaRouter = router({
     .query(({ input }) => getPanoramaMarketInsight(input.projectId)),
 
   generateMarketInsight: protectedProcedure
-    .input(z.object({ projectId: z.number().int().positive() }))
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      competitorAsins: panoramaCompetitorAsinsSchema,
+    }))
     .mutation(({ ctx, input }) => queuePanoramaMarketInsight({
       projectId: input.projectId,
       userId: ctx.user.id,
       workspaceId: productDevelopmentWorkspaceId(ctx),
+      competitorAsins: input.competitorAsins,
     })),
 
   saveMarketInsight: protectedProcedure

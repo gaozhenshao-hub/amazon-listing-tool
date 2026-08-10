@@ -13,7 +13,11 @@ import { runEmperorSkill, safeParseSkillJSON } from "../../ai_os/services/skillR
 import { registerPanoramaMarketInsightArtifact } from "../../ai_os/services/businessArtifactRegistry";
 import { mapToProductData } from "../analysis/dataHelpers";
 import { buildAdaptivePriceBands, normalizeParentMarketMetrics, sanitizePriceBands } from "./marketMetrics";
-import { panoramaMarketInsightResultSchema, type PanoramaMarketInsightResult } from "./marketInsightSchema";
+import {
+  panoramaCompetitorAsinsSchema,
+  panoramaMarketInsightResultSchema,
+  type PanoramaMarketInsightResult,
+} from "./marketInsightSchema";
 import {
   claimMarketInsightRun,
   getMarketInsight,
@@ -21,7 +25,10 @@ import {
   updateMarketInsightForRun,
 } from "./marketInsightRepository";
 
-const marketInsightJobInput = z.object({ projectId: z.number().int().positive() });
+const marketInsightJobInput = z.object({
+  projectId: z.number().int().positive(),
+  competitorAsins: panoramaCompetitorAsinsSchema,
+});
 const ACTIVE_STATUSES = new Set(["queued", "running"]);
 
 function parseStoredResult(value: unknown): PanoramaMarketInsightResult | null {
@@ -45,7 +52,9 @@ export async function queuePanoramaMarketInsight(input: {
   projectId: number;
   userId: number;
   workspaceId?: number | null;
+  competitorAsins: string[];
 }) {
+  const competitorAsins = panoramaCompetitorAsinsSchema.parse(input.competitorAsins);
   const current = await getMarketInsight(input.projectId);
   if (current?.runId && ACTIVE_STATUSES.has(current.status)) {
     const job = await getAiJobRun(current.runId).catch(() => null);
@@ -66,7 +75,7 @@ export async function queuePanoramaMarketInsight(input: {
       userId: input.userId,
       projectId: input.projectId,
       skillSlug: "dev.panorama.market_insights",
-      input: { projectId: input.projectId },
+      input: { projectId: input.projectId, competitorAsins },
       progress: 5,
       priority: 20,
       queueName: "analysis",
@@ -85,7 +94,7 @@ export async function queuePanoramaMarketInsight(input: {
 }
 
 async function runPanoramaMarketInsight(job: AiJobSnapshot, signal: AbortSignal) {
-  const { projectId } = marketInsightJobInput.parse(job.input);
+  const { projectId, competitorAsins } = marketInsightJobInput.parse(job.input);
   const progress = async (value: number, error: string | null = null) => {
     const current = await updateMarketInsightForRun(projectId, job.runId, {
       status: "running",
@@ -114,6 +123,20 @@ async function runPanoramaMarketInsight(job: AiJobSnapshot, signal: AbortSignal)
     const representatives = normalized
       .filter((product) => product.parentSalesRepresentative)
       .sort((left, right) => (right.monthlySales || 0) - (left.monthlySales || 0));
+    const representativeByAsin = new Map(
+      representatives
+        .filter((product) => product.asin)
+        .map((product) => [String(product.asin).toUpperCase(), product]),
+    );
+    const selectedRepresentatives = competitorAsins.map((asin) => representativeByAsin.get(asin));
+    const unavailableAsins = competitorAsins.filter((_, index) => !selectedRepresentatives[index]);
+    if (unavailableAsins.length > 0) {
+      throw new Error(`以下竞品已不在全景分析代表产品中，请重新选择：${unavailableAsins.join("、")}`);
+    }
+    const selectedProducts = selectedRepresentatives.filter(
+      (product): product is NonNullable<typeof product> => Boolean(product),
+    );
+    const selectedSet = new Set(competitorAsins);
     const deterministicBands = buildAdaptivePriceBands(normalized);
     const tagMap = new Map<string, Record<string, string>>();
     for (const tag of tags) {
@@ -121,12 +144,15 @@ async function runPanoramaMarketInsight(job: AiJobSnapshot, signal: AbortSignal)
       current[tag.dimensionName] = tag.dimensionValue;
       tagMap.set(tag.asin, current);
     }
-    const reviewSamples = reviews.slice(0, 160).map((review) => ({
-      asin: review.asin,
-      rating: review.rating,
-      title: review.title,
-      content: String(review.content || "").slice(0, 600),
-    }));
+    const reviewSamples = reviews
+      .filter((review) => selectedSet.has(String(review.asin || "").toUpperCase()))
+      .slice(0, 160)
+      .map((review) => ({
+        asin: review.asin,
+        rating: review.rating,
+        title: review.title,
+        content: String(review.content || "").slice(0, 600),
+      }));
     const context = {
       schemaVersion: "1.0",
       metricPolicy: {
@@ -134,8 +160,13 @@ async function runPanoramaMarketInsight(job: AiJobSnapshot, signal: AbortSignal)
         representativeRule: "highest_reported_parent_sales_row_per_parent_asin",
         childSalesExcluded: true,
       },
+      selectionPolicy: {
+        selectedByUser: true,
+        selectedCompetitorAsins: competitorAsins,
+        exactMatchRequired: true,
+      },
       fallbackPriceBands: deterministicBands,
-      competitors: representatives.slice(0, 16).map((product) => ({
+      competitors: selectedProducts.map((product) => ({
         asin: product.asin,
         parentAsin: product.parentAsin,
         title: product.title,
@@ -157,8 +188,13 @@ async function runPanoramaMarketInsight(job: AiJobSnapshot, signal: AbortSignal)
       userId: job.userId,
       workspaceId: job.workspaceId,
       context: JSON.stringify(context),
-      variables: { schemaVersion: "1.0", maxCompetitors: 3, priceBandCount: "4-5" },
-      migrationSource: "drizzle/0131_dev_panorama_market_insights.sql",
+      variables: {
+        schemaVersion: "1.1",
+        selectedCompetitorAsins: competitorAsins.join(","),
+        competitorCount: competitorAsins.length,
+        priceBandCount: "4-5",
+      },
+      migrationSource: "drizzle/0133_dev_panorama_competitor_selection.sql",
       maxModelAttempts: 1,
       signal,
       validate: (content) => {
@@ -166,8 +202,18 @@ async function runPanoramaMarketInsight(job: AiJobSnapshot, signal: AbortSignal)
         if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || "raw" in parsed) {
           throw new Error("皇帝 Skill dev.panorama.market_insights 未返回有效 JSON");
         }
+        const parsedCompetitors = new Map(
+          ((parsed as any).competitors || []).map((competitor: any) => [String(competitor.asin || "").toUpperCase(), competitor]),
+        );
+        const returnedAsins = Array.from(parsedCompetitors.keys());
+        const exactSelection = returnedAsins.length === competitorAsins.length
+          && competitorAsins.every((asin) => parsedCompetitors.has(asin));
+        if (!exactSelection) {
+          throw new Error("皇帝 Skill 返回的竞争对手与用户勾选结果不一致");
+        }
         const withSafeBands = {
           ...parsed,
+          competitors: competitorAsins.map((asin) => parsedCompetitors.get(asin)),
           priceBands: sanitizePriceBands((parsed as any).priceBands, deterministicBands),
         };
         return panoramaMarketInsightResultSchema.parse(withSafeBands);

@@ -55,6 +55,7 @@ const supplementalMigrations = [
   "0130_ai_operations_runtime.sql",
   "0131_dev_panorama_market_insights.sql",
   "0132_dev_project_progress_list.sql",
+  "0133_dev_panorama_competitor_selection.sql",
 ];
 
 const retiredMigrationFiles = new Set([
