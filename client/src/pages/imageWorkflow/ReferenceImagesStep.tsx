@@ -43,6 +43,7 @@ export function Step4References({
   const [kbPickerTargetIdx, setKbPickerTargetIdx] = useState<number | null>(null);
   const [kbPickerTargetType, setKbPickerTargetType] = useState<string>("");
   const [uploadingRef, setUploadingRef] = useState<{idx: number; type: 'composition'|'effect'} | null>(null);
+  const [reoptimizingIdx, setReoptimizingIdx] = useState<number | null>(null);
 
   useEffect(() => {
     if (session?.step4UserEdit) {
@@ -629,4 +630,3 @@ export function Step4References({
 // ═══════════════════════════════════════════════════════════════════
 // ─── Step 5: Final Suggestions (reuse existing display) ──────────
 // ═══════════════════════════════════════════════════════════════════
-  const [reoptimizingIdx, setReoptimizingIdx] = useState<number | null>(null);
