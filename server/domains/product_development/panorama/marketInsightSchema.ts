@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+export const panoramaCompetitorAsinsSchema = z.array(
+  z.string().trim().min(1).max(20).transform((asin) => asin.toUpperCase()),
+).min(2, "请至少选择 2 个主要竞争对手")
+  .max(4, "主要竞争对手最多选择 4 个")
+  .superRefine((asins, context) => {
+    if (new Set(asins).size !== asins.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "不能重复选择同一个竞争对手" });
+    }
+  });
+
 export const panoramaPriceBandSchema = z.object({
   label: z.string().min(1).max(80),
   min: z.number().nonnegative(),

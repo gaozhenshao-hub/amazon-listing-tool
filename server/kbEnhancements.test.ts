@@ -48,6 +48,15 @@ describe("KBImages ASIN Grouped View", () => {
     content = fs.readFileSync(kbImagesPath, "utf-8");
     expect(content).toMatch(/ASIN导入|链接导入|批量/);
   });
+
+  it("keeps select menus above the raised image detail dialog", () => {
+    const selectPath = path.join(__dirname, "../client/src/components/ui/select.tsx");
+    const dialogPath = path.join(__dirname, "../client/src/components/ui/dialog.tsx");
+    const selectContent = fs.readFileSync(selectPath, "utf-8");
+    const dialogContent = fs.readFileSync(dialogPath, "utf-8");
+    expect(dialogContent).toContain("z-[200]");
+    expect(selectContent).toContain("z-[300]");
+  });
 });
 
 describe("KBOverview Enhanced Value Chain", () => {

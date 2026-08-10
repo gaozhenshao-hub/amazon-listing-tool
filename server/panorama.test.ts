@@ -36,6 +36,17 @@ describe("devPanorama router", () => {
     expect(routerSrc).toContain("updateProductTag:");
   });
 
+  it("should have transactional product deletion procedure", () => {
+    const repositoryPath = path.join(__dirname, "domains/product_development/panorama/panoramaProductRepository.ts");
+    const repositorySrc = fs.readFileSync(repositoryPath, "utf-8");
+    expect(routerSrc).toContain("deleteProduct:");
+    expect(repositorySrc).toContain("withDbTransaction");
+    expect(repositorySrc).toContain("tx.delete(devProducts)");
+    expect(repositorySrc).toContain("tx.delete(devProductTags)");
+    expect(repositorySrc).toContain("tx.delete(devReviews)");
+    expect(repositorySrc).toContain("全景产品已删除，请基于最新数据重新分析");
+  });
+
   it("should have exportCsv procedure", () => {
     expect(routerSrc).toContain("exportCsv:");
   });
@@ -174,6 +185,12 @@ describe("PanoramaTable frontend component", () => {
     expect(componentSrc).toContain("editingCell");
     expect(componentSrc).toContain("startEdit");
     expect(componentSrc).toContain("saveEdit");
+  });
+
+  it("should allow deleting unlocked panorama rows", () => {
+    expect(componentSrc).toContain("trpc.devPanorama.deleteProduct");
+    expect(componentSrc).toContain("requestDeleteProduct");
+    expect(componentSrc).toContain("请先解锁全景分析表再删除产品");
   });
 
   it("should have pagination", () => {

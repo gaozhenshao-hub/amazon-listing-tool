@@ -21,6 +21,8 @@ import {
   savePanoramaMarketInsight,
   unlockPanoramaMarketInsight,
 } from "../domains/product_development/panorama/marketInsightService";
+import { panoramaCompetitorAsinsSchema } from "../domains/product_development/panorama/marketInsightSchema";
+import { deletePanoramaProduct } from "../domains/product_development/panorama/panoramaProductService";
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── Panorama (竞品全景分析表) Router ────────────────────────────
@@ -100,7 +102,9 @@ export const devPanoramaRouter = router({
 
       const marketInsight = await getPanoramaMarketInsight(input.projectId).catch(() => null);
       const fallbackPriceBands = buildAdaptivePriceBands(products);
-      const priceBands = sanitizePriceBands(marketInsight?.result?.priceBands, fallbackPriceBands);
+      const marketInsightInvalidated = Boolean(marketInsight?.runError?.includes("全景产品已删除"));
+      const insightPriceBands = marketInsightInvalidated ? null : marketInsight?.result?.priceBands;
+      const priceBands = sanitizePriceBands(insightPriceBands, fallbackPriceBands);
       const marketProducts = normalizeParentMarketMetrics(products, { priceBands });
 
       return {
@@ -111,8 +115,8 @@ export const devPanoramaRouter = router({
         status,
         historyCols,
         priceBands,
-        priceBandSource: marketInsight?.result?.priceBands
-          ? (marketInsight.status === "confirmed" ? "ai_confirmed" as const : "ai_draft" as const)
+        priceBandSource: insightPriceBands
+          ? (marketInsight?.status === "confirmed" ? "ai_confirmed" as const : "ai_draft" as const)
           : "adaptive" as const,
       };
     }),
@@ -131,6 +135,33 @@ export const devPanoramaRouter = router({
         .set({ [input.field]: input.value })
         .where(eq(devProducts.id, input.productId));
       return { success: true };
+    }),
+
+  deleteProduct: protectedProcedure
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      productId: z.number().int().positive(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await deletePanoramaProduct(input);
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.panorama.product.delete",
+        projectId: input.projectId,
+        resourceType: "dev_product",
+        resourceId: input.productId,
+        resourceName: result.asin || result.title || `product-${input.productId}`,
+        riskLevel: "high",
+        beforeSnapshot: { id: input.productId, asin: result.asin, title: result.title },
+        afterSnapshot: {
+          deleted: true,
+          deletedTags: result.deletedTags,
+          deletedReviews: result.deletedReviews,
+          totalProducts: result.totalProducts,
+          canceledRuns: result.canceledRuns,
+        },
+      });
+      return result;
     }),
 
   // Update product tag (set dimension value for an ASIN)
@@ -252,11 +283,15 @@ export const devPanoramaRouter = router({
     .query(({ input }) => getPanoramaMarketInsight(input.projectId)),
 
   generateMarketInsight: protectedProcedure
-    .input(z.object({ projectId: z.number().int().positive() }))
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      competitorAsins: panoramaCompetitorAsinsSchema,
+    }))
     .mutation(({ ctx, input }) => queuePanoramaMarketInsight({
       projectId: input.projectId,
       userId: ctx.user.id,
       workspaceId: productDevelopmentWorkspaceId(ctx),
+      competitorAsins: input.competitorAsins,
     })),
 
   saveMarketInsight: protectedProcedure
@@ -309,8 +344,11 @@ export const devPanoramaRouter = router({
         .where(eq(devProducts.projectId, input.projectId))
         .orderBy(devProducts.searchRank);
       const marketInsight = await getPanoramaMarketInsight(input.projectId).catch(() => null);
+      const insightPriceBands = marketInsight?.runError?.includes("全景产品已删除")
+        ? null
+        : marketInsight?.result?.priceBands;
       const priceBands = sanitizePriceBands(
-        marketInsight?.result?.priceBands,
+        insightPriceBands,
         buildAdaptivePriceBands(rawProducts),
       );
       const products = normalizeParentMarketMetrics(rawProducts, { priceBands });

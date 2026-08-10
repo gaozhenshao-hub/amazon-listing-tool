@@ -57,7 +57,17 @@ function displayCell(value?: string) {
   return value || <span className="text-muted-foreground/40">-</span>;
 }
 
-export default function MajorCompetitorAnalysis({ projectId }: { projectId: number }) {
+export default function MajorCompetitorAnalysis({
+  projectId,
+  panoramaConfirmed,
+  selectedCompetitorAsins,
+  onSelectedCompetitorAsinsChange,
+}: {
+  projectId: number;
+  panoramaConfirmed: boolean;
+  selectedCompetitorAsins: string[];
+  onSelectedCompetitorAsinsChange: (asins: string[]) => void;
+}) {
   const utils = trpc.useUtils();
   const query = trpc.devPanorama.getMarketInsight.useQuery(
     { projectId },
@@ -76,6 +86,16 @@ export default function MajorCompetitorAnalysis({ projectId }: { projectId: numb
     if (insight?.result) setDraft(cloneResult(insight.result as InsightResult));
     if (insight?.status === "confirmed") setEditing(false);
   }, [insight?.result, insight?.status, insight?.version]);
+
+  useEffect(() => {
+    if (selectedCompetitorAsins.length > 0 || !insight?.result || insight.runError?.includes("全景产品已删除")) return;
+    const analyzedAsins = (insight.result as InsightResult).competitors
+      .map((competitor) => String(competitor.asin || "").trim().toUpperCase())
+      .filter(Boolean);
+    if (analyzedAsins.length >= 2 && analyzedAsins.length <= 4) {
+      onSelectedCompetitorAsinsChange(analyzedAsins);
+    }
+  }, [insight?.result, insight?.runError, onSelectedCompetitorAsinsChange, selectedCompetitorAsins.length]);
 
   const refresh = async () => {
     await Promise.all([
@@ -108,6 +128,15 @@ export default function MajorCompetitorAnalysis({ projectId }: { projectId: numb
   const confirmed = insight?.status === "confirmed";
   const progress = insight?.job?.progress ?? insight?.runProgress ?? 0;
   const busy = generate.isPending || cancel.isPending || save.isPending || confirm.isPending || unlock.isPending;
+  const validSelection = selectedCompetitorAsins.length >= 2 && selectedCompetitorAsins.length <= 4;
+  const canGenerate = panoramaConfirmed && validSelection;
+  const analysisInvalidated = Boolean(insight?.runError?.includes("全景产品已删除"));
+  const analyzedCompetitorAsins = useMemo(
+    () => (draft?.competitors || []).map((competitor) => String(competitor.asin || "").trim().toUpperCase()),
+    [draft?.competitors],
+  );
+  const selectionMatchesDraft = analyzedCompetitorAsins.length === selectedCompetitorAsins.length
+    && analyzedCompetitorAsins.every((asin) => selectedCompetitorAsins.includes(asin));
   const sectionTone = useMemo(() => ({
     selling_points: "bg-emerald-50 text-emerald-800",
     parameters: "bg-sky-50 text-sky-800",
@@ -153,6 +182,16 @@ export default function MajorCompetitorAnalysis({ projectId }: { projectId: numb
     });
   };
 
+  const runAnalysis = () => {
+    if (!canGenerate) {
+      toast.error(!panoramaConfirmed
+        ? "请先确认锁定全景分析表"
+        : "请先在全景分析表勾选 2-4 个主要竞争对手");
+      return;
+    }
+    generate.mutate({ projectId, competitorAsins: selectedCompetitorAsins });
+  };
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -183,16 +222,16 @@ export default function MajorCompetitorAnalysis({ projectId }: { projectId: numb
                     <Pencil className="h-4 w-4 mr-1" />编辑
                   </Button>
                 )}
-                <Button size="sm" onClick={() => confirm.mutate({ projectId, result: draft })} disabled={busy}>
+                <Button size="sm" onClick={() => confirm.mutate({ projectId, result: draft })} disabled={busy || !selectionMatchesDraft || analysisInvalidated}>
                   <Lock className="h-4 w-4 mr-1" />确认锁定
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => generate.mutate({ projectId })} disabled={busy}>
-                  <Sparkles className="h-4 w-4 mr-1" />重新分析
+                <Button size="sm" variant="ghost" onClick={runAnalysis} disabled={busy || !canGenerate}>
+                  <Sparkles className="h-4 w-4 mr-1" />分析已选 {selectedCompetitorAsins.length} 个
                 </Button>
               </>
             ) : (
-              <Button size="sm" onClick={() => generate.mutate({ projectId })} disabled={busy}>
-                <Sparkles className="h-4 w-4 mr-1" />生成分析
+              <Button size="sm" onClick={runAnalysis} disabled={busy || !canGenerate}>
+                <Sparkles className="h-4 w-4 mr-1" />分析已选 {selectedCompetitorAsins.length} 个
               </Button>
             )}
           </div>
@@ -209,6 +248,25 @@ export default function MajorCompetitorAnalysis({ projectId }: { projectId: numb
       </CardHeader>
 
       <CardContent className="space-y-5">
+        <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/20 px-3 py-2">
+          <div>
+            <p className="text-sm font-medium">已从全景分析表选择 {selectedCompetitorAsins.length} 个竞争对手</p>
+            <p className="text-xs text-muted-foreground">
+              {panoramaConfirmed ? "请在上方表格“主要竞品”列勾选 2-4 个父体销量计入行。" : "删除或编辑后，请先重新确认锁定全景分析表。"}
+            </p>
+          </div>
+          <div className="flex max-w-[55%] flex-wrap justify-end gap-1">
+            {selectedCompetitorAsins.map((asin) => <Badge key={asin} variant="outline">{asin}</Badge>)}
+          </div>
+        </div>
+        {draft && (!selectionMatchesDraft || analysisInvalidated) ? (
+          <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+            {analysisInvalidated
+              ? "产品数据已发生变化，请重新确认全景表并执行主要竞争对手分析。"
+              : `当前勾选与现有分析版本不一致，请先点击“分析已选 ${selectedCompetitorAsins.length} 个”，生成完成后再确认锁定。`}
+          </div>
+        ) : null}
         {!draft && !running ? (
           <div className="border border-dashed rounded-md py-12 text-center text-sm text-muted-foreground">
             价格结构与主要竞品矩阵尚未生成
