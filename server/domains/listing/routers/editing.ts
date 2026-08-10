@@ -131,7 +131,7 @@ export const listingEditingProcedures = {
           searchTerms: "",
         });
       }
-      return db.updateListing(listing.id, {
+      const updateResult = await db.updateListing(listing.id, {
         lockedSteps: JSON.stringify(input.lockedSteps),
       });
       // Sync locked/unlocked steps to Agent DAG (best-effort)
@@ -161,6 +161,7 @@ export const listingEditingProcedures = {
           });
         }
       }
+      return updateResult;
     }),
 
 
