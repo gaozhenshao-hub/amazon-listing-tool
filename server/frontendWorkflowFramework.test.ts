@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const root = path.resolve(__dirname, "..");
@@ -9,6 +10,30 @@ function read(relativePath: string): string {
 }
 
 describe("frontend workflow framework", () => {
+  it("does not execute React hooks at image workflow module scope", () => {
+    const fileName = "client/src/pages/imageWorkflow/ReferenceImagesStep.tsx";
+    const sourceFile = ts.createSourceFile(
+      fileName,
+      read(fileName),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    const moduleScopeHooks: string[] = [];
+
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && /^use[A-Z]/.test(node.expression.text)) {
+        let parent: ts.Node | undefined = node.parent;
+        while (parent && !ts.isSourceFile(parent) && !ts.isFunctionLike(parent)) parent = parent.parent;
+        if (!parent || ts.isSourceFile(parent)) moduleScopeHooks.push(node.expression.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+
+    expect(moduleScopeHooks).toEqual([]);
+  });
+
   it("keeps multi-page workspace tabs global across dashboard and full-screen Agent routes", () => {
     const dashboard = read("client/src/components/DashboardLayout.tsx");
     const agentCanvas = read("client/src/pages/emperor/AgentCanvas.tsx");
