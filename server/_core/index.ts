@@ -22,9 +22,9 @@ import { kbExternalApiRouter } from "../kbExternalApi";
 import { imageUploadRouter } from "../imageUploadRouter";
 import {
   getRuntimeRole,
+  shouldProcessAiJobs,
   shouldStartSchedulerTasks,
   shouldStartWebLocalTasks,
-  shouldStartWorkerTasks,
 } from "./runtime";
 import { assertStartupConfig } from "./startupValidation";
 import { registerRuntimeHealthRoutes } from "./runtimeHealth";
@@ -135,7 +135,7 @@ async function startServer() {
     import("../cronJobs")
       .then(m => m.initCronJobs())
       .catch(err => console.error("[AutoSync] Failed to init:", err));
-    if (shouldStartWorkerTasks(role)) {
+    if (shouldProcessAiJobs(role)) {
       // Recover durable AI jobs that were queued/running before a restart.
       import("../services/aiJobRunner")
         .then(m => m.recoverActiveAiJobs())
@@ -166,7 +166,7 @@ async function startServer() {
         );
     } else {
       console.log(
-        "[AI Job] Recovery not started in Web process; use pnpm start:worker:ai for production jobs."
+        "[AI Job] Processing is disabled in this Web process; start pnpm start:worker:ai for production jobs."
       );
     }
   });

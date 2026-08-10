@@ -53,10 +53,11 @@ export const inventoryProcedures = {
       if (!isManagerOrAbove && ctx.user.name) {
         // Need to apply operator name mappings first
         const allMappings = await db!.select().from(operatorNameMappings)
-          .where(opsWorkspaceCondition(operatorNameMappings, workspaceIdFromContext(ctx), and(
-            eq(operatorNameMappings.userId, effectiveUserId),
+          .where(opsWorkspaceCondition(
+            operatorNameMappings,
+            workspaceIdFromContext(ctx),
             eq(operatorNameMappings.isConfirmed, 1),
-          )));
+          ));
         const mappingLookup = new Map<string, string>();
         for (const m of allMappings) {
           if (m.externalName && m.systemUserName) {

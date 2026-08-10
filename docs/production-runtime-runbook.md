@@ -67,6 +67,10 @@ REQUIRE_AI_JOB_WORKER=true
 
 生产 Web 不应在请求进程中执行 AI 长任务。
 
+对于只能启动单个进程的托管环境，可以不设置 `REQUIRE_AI_JOB_WORKER` 和
+`AI_JOB_IN_PROCESS=false`，Web 会启用可恢复的内嵌 AI Job 消费者，避免任务
+永久停在排队中。具备多进程能力时仍优先采用独立 Worker。
+
 ### Worker 建议配置
 
 ```bash

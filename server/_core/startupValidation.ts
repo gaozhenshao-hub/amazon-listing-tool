@@ -1,4 +1,8 @@
-import { getRuntimeRole, type RuntimeRole } from "./runtime";
+import {
+  getRuntimeRole,
+  shouldProcessAiJobs,
+  type RuntimeRole,
+} from "./runtime";
 
 export type StartupEntrypoint = "web" | "worker" | "scheduler";
 export type StartupIssueSeverity = "error" | "warning";
@@ -156,12 +160,12 @@ export function getStartupValidationReport(input: {
 
   validateToolSecret(env, isProduction, issues);
 
-  if (role === "web" && isProduction && env.AI_JOB_IN_PROCESS !== "false") {
+  if (role === "web" && isProduction && shouldProcessAiJobs(role, env)) {
     pushIssue(
       issues,
       "warning",
-      "web_in_process_ai_jobs",
-      "Production Web defaults to API-only. Set AI_JOB_IN_PROCESS=false and run a dedicated Worker for long AI jobs."
+      "embedded_ai_job_worker",
+      "Production Web is using the embedded AI Job consumer. For independent scaling, set AI_JOB_IN_PROCESS=false and run a dedicated Worker."
     );
   }
 

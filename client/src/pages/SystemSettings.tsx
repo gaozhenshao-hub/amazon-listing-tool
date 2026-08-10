@@ -974,7 +974,7 @@ function OperatorMappingSettings() {
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>
             <strong>自动匹配：</strong>每次导入Excel数据时，系统会自动从导出的运营人员名称中提取核心名称，
-            与系统用户进行模糊匹配。匹配度高于80%的会自动建议，低于80%的需要手动确认。
+            与系统用户进行模糊匹配。匹配度达到70%的会自动建议，低于70%的需要手动选择。
           </p>
           <p>
             <strong>映射记忆：</strong>确认过的映射关系会被记住，下次导入相同名称时自动使用已确认的映射，无需重复确认。

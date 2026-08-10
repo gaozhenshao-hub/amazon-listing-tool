@@ -1,8 +1,17 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Upload,
   FileSpreadsheet,
@@ -19,6 +28,7 @@ import {
   Lock,
   Unlock,
   Database,
+  Plus,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -26,6 +36,7 @@ import { toast } from "sonner";
 interface Props {
   projectId: number;
   onDataUploaded?: () => void;
+  addProductRequestSignal?: number;
 }
 
 const FILE_TYPES = [
@@ -73,7 +84,26 @@ interface UploadState {
   error?: string;
 }
 
-export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
+const EMPTY_MANUAL_PRODUCT = {
+  asin: "",
+  parentAsin: "",
+  title: "",
+  brand: "",
+  price: "",
+  monthlySales: "",
+  monthlyRevenue: "",
+  rating: "",
+  reviewCount: "",
+  listingDate: "",
+  imageUrl: "",
+  productLink: "",
+  category: "",
+  subcategory: "",
+};
+
+export default function DevDataUpload({ projectId, onDataUploaded, addProductRequestSignal = 0 }: Props) {
+  const [manualProductOpen, setManualProductOpen] = useState(false);
+  const [manualProduct, setManualProduct] = useState(EMPTY_MANUAL_PRODUCT);
   const [uploadStates, setUploadStates] = useState<Record<FileType, UploadState>>({
     sales: { status: "idle" },
     bullet_points: { status: "idle" },
@@ -82,6 +112,23 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
   });
 
   const utils = trpc.useUtils();
+  const addProductMutation = trpc.devPanorama.addProduct.useMutation({
+    onSuccess: async (result) => {
+      await Promise.all([
+        utils.devProject.getProducts.invalidate({ projectId }),
+        utils.devProject.getById.invalidate({ id: projectId }),
+        utils.devPanorama.getData.invalidate({ projectId }),
+        utils.devPanorama.getStatus.invalidate({ projectId }),
+        utils.devPanorama.getMarketInsight.invalidate({ projectId }),
+        utils.devAnalysis.getStages.invalidate({ projectId }),
+      ]);
+      setManualProduct(EMPTY_MANUAL_PRODUCT);
+      setManualProductOpen(false);
+      onDataUploaded?.();
+      toast.success(`已新增 ${result.asin}，全景表及旧分析已解锁待重新确认`);
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const uploadFileMutation = trpc.devProject.uploadFile.useMutation();
   const saveProductsMutation = trpc.devProject.saveProducts.useMutation();
   const saveReviewsMutation = trpc.devProject.saveReviews.useMutation();
@@ -102,6 +149,44 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
 
   // Query data confirmation status
   const { data: dataStatus } = trpc.devProject.getDataStatus.useQuery({ projectId });
+
+  useEffect(() => {
+    if (addProductRequestSignal > 0) setManualProductOpen(true);
+  }, [addProductRequestSignal]);
+
+  const updateManualProduct = (field: keyof typeof EMPTY_MANUAL_PRODUCT, value: string) => {
+    setManualProduct((current) => ({ ...current, [field]: value }));
+  };
+
+  const submitManualProduct = () => {
+    const asin = manualProduct.asin.trim().toUpperCase();
+    if (!/^[A-Z0-9]{10}$/.test(asin)) {
+      toast.error("ASIN 必须为 10 位字母或数字");
+      return;
+    }
+    if (!manualProduct.title.trim()) {
+      toast.error("请填写商品标题");
+      return;
+    }
+    const optionalNumber = (value: string) => value.trim() === "" ? undefined : Number(value);
+    addProductMutation.mutate({
+      projectId,
+      asin,
+      parentAsin: manualProduct.parentAsin.trim() || undefined,
+      title: manualProduct.title.trim(),
+      brand: manualProduct.brand.trim() || undefined,
+      price: manualProduct.price.trim() || undefined,
+      monthlySales: optionalNumber(manualProduct.monthlySales),
+      monthlyRevenue: optionalNumber(manualProduct.monthlyRevenue),
+      rating: manualProduct.rating.trim() || undefined,
+      reviewCount: optionalNumber(manualProduct.reviewCount),
+      listingDate: manualProduct.listingDate.trim() || undefined,
+      imageUrl: manualProduct.imageUrl.trim() || undefined,
+      productLink: manualProduct.productLink.trim() || undefined,
+      category: manualProduct.category.trim() || undefined,
+      subcategory: manualProduct.subcategory.trim() || undefined,
+    });
+  };
 
   const updateState = useCallback((fileType: FileType, update: Partial<UploadState>) => {
     setUploadStates(prev => ({ ...prev, [fileType]: { ...prev[fileType], ...update } }));
@@ -461,6 +546,9 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setManualProductOpen(true)}>
+            <Plus className="h-3.5 w-3.5" />补录缺失产品
+          </Button>
           {confirmedCount > 0 && (
             <Badge variant="default" className="text-xs bg-emerald-600 gap-1">
               <Database className="h-3 w-3" />
@@ -703,6 +791,91 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
           );
         })}
       </div>
+
+      <Dialog open={manualProductOpen} onOpenChange={setManualProductOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>补录缺失产品</DialogTitle>
+            <DialogDescription>新增原始导入数据中没有的产品。ASIN 已存在时不会重复创建。</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-4 py-2 sm:grid-cols-2">
+            <label className="space-y-1.5 text-sm font-medium">
+              ASIN <span className="text-destructive">*</span>
+              <Input value={manualProduct.asin} maxLength={10} placeholder="B0XXXXXXXX"
+                onChange={(event) => updateManualProduct("asin", event.target.value.toUpperCase())} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium">
+              父 ASIN
+              <Input value={manualProduct.parentAsin} maxLength={20} placeholder="可选"
+                onChange={(event) => updateManualProduct("parentAsin", event.target.value.toUpperCase())} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium sm:col-span-2">
+              商品标题 <span className="text-destructive">*</span>
+              <Input value={manualProduct.title} placeholder="输入商品标题"
+                onChange={(event) => updateManualProduct("title", event.target.value)} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium">
+              品牌
+              <Input value={manualProduct.brand} onChange={(event) => updateManualProduct("brand", event.target.value)} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium">
+              价格（USD）
+              <Input type="number" min="0" step="0.01" value={manualProduct.price}
+                onChange={(event) => updateManualProduct("price", event.target.value)} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium">
+              父体月销量
+              <Input type="number" min="0" step="1" value={manualProduct.monthlySales}
+                onChange={(event) => updateManualProduct("monthlySales", event.target.value)} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium">
+              父体月销售额（USD）
+              <Input type="number" min="0" step="0.01" value={manualProduct.monthlyRevenue}
+                onChange={(event) => updateManualProduct("monthlyRevenue", event.target.value)} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium">
+              评分
+              <Input type="number" min="0" max="5" step="0.1" value={manualProduct.rating}
+                onChange={(event) => updateManualProduct("rating", event.target.value)} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium">
+              评分数
+              <Input type="number" min="0" step="1" value={manualProduct.reviewCount}
+                onChange={(event) => updateManualProduct("reviewCount", event.target.value)} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium">
+              大类目
+              <Input value={manualProduct.category} onChange={(event) => updateManualProduct("category", event.target.value)} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium">
+              小类目
+              <Input value={manualProduct.subcategory} onChange={(event) => updateManualProduct("subcategory", event.target.value)} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium">
+              上架时间
+              <Input type="date" value={manualProduct.listingDate}
+                onChange={(event) => updateManualProduct("listingDate", event.target.value)} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium">
+              商品链接
+              <Input type="url" value={manualProduct.productLink} placeholder="https://..."
+                onChange={(event) => updateManualProduct("productLink", event.target.value)} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium sm:col-span-2">
+              主图链接
+              <Input type="url" value={manualProduct.imageUrl} placeholder="https://..."
+                onChange={(event) => updateManualProduct("imageUrl", event.target.value)} />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManualProductOpen(false)} disabled={addProductMutation.isPending}>取消</Button>
+            <Button onClick={submitManualProduct} disabled={addProductMutation.isPending}>
+              {addProductMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              新增产品
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

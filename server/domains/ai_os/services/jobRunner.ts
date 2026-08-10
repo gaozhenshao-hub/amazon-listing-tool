@@ -15,7 +15,7 @@ import {
   retryAiJobByRunId,
   updateAiJobByRunId,
 } from "../../../repositories/ai_os";
-import { shouldStartWorkerTasks } from "../../../_core/runtime";
+import { shouldProcessAiJobs } from "../../../_core/runtime";
 import { recordAiOsMetric } from "./observability";
 
 export type AiJobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
@@ -135,9 +135,8 @@ export function getAiJobWorkerId() {
 
 export function isAiJobSchedulingEnabled() {
   return !aiJobQueueDraining
-    && shouldStartWorkerTasks()
-    && process.env.AI_JOB_RUNNER_MODE !== "external"
-    && process.env.AI_JOB_IN_PROCESS !== "false";
+    && shouldProcessAiJobs()
+    && process.env.AI_JOB_RUNNER_MODE !== "external";
 }
 
 export function getMaxConcurrentAiJobs() {

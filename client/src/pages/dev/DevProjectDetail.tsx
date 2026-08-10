@@ -70,6 +70,7 @@ export default function DevProjectDetail() {
   const params = useParams<{ id: string }>();
   const projectId = Number(params.id);
   const [activeTab, setActiveTab] = useState("overview");
+  const [addProductRequestSignal, setAddProductRequestSignal] = useState(0);
   const utils = trpc.useUtils();
 
   const { data: project, isLoading } = trpc.devProject.getById.useQuery({ id: projectId });
@@ -478,7 +479,11 @@ export default function DevProjectDetail() {
 
         {/* Data Management */}
         <TabsContent value="data" className="space-y-4">
-          <DevDataUpload projectId={projectId} onDataUploaded={() => utils.devProject.getById.invalidate({ id: projectId })} />
+          <DevDataUpload
+            projectId={projectId}
+            addProductRequestSignal={addProductRequestSignal}
+            onDataUploaded={() => utils.devProject.getById.invalidate({ id: projectId })}
+          />
         </TabsContent>
 
         {/* Tag Management */}
@@ -493,7 +498,13 @@ export default function DevProjectDetail() {
 
         {/* Panorama Table */}
         <TabsContent value="panorama" className="space-y-4">
-          <PanoramaTable projectId={projectId} />
+          <PanoramaTable
+            projectId={projectId}
+            onAddProduct={() => {
+              setActiveTab("data");
+              setAddProductRequestSignal((value) => value + 1);
+            }}
+          />
         </TabsContent>
 
         {/* Analysis Report */}

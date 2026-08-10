@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getRuntimeRole,
+  shouldProcessAiJobs,
   shouldStartSchedulerTasks,
   shouldStartWebServer,
   shouldStartWorkerTasks,
@@ -23,6 +24,28 @@ describe("runtime bootstrap guardrails", () => {
     expect(shouldStartWebServer("all")).toBe(true);
     expect(shouldStartWorkerTasks("all")).toBe(true);
     expect(shouldStartSchedulerTasks("all")).toBe(true);
+  });
+
+  it("keeps jobs consumable in dedicated and single-process deployments", () => {
+    expect(shouldProcessAiJobs("worker", {
+      AI_JOB_IN_PROCESS: "false",
+    } as any)).toBe(true);
+    expect(shouldProcessAiJobs("web", {
+      NODE_ENV: "production",
+    } as any)).toBe(true);
+    expect(shouldProcessAiJobs("web", {
+      NODE_ENV: "production",
+      AI_JOB_IN_PROCESS: "false",
+    } as any)).toBe(false);
+    expect(shouldProcessAiJobs("web", {
+      NODE_ENV: "production",
+      REQUIRE_AI_JOB_WORKER: "true",
+    } as any)).toBe(false);
+    expect(shouldProcessAiJobs("web", {
+      NODE_ENV: "production",
+      REQUIRE_AI_JOB_WORKER: "true",
+      AI_JOB_IN_PROCESS: "true",
+    } as any)).toBe(true);
   });
 
   it("requires production database, session secret, and stable tool secret", () => {

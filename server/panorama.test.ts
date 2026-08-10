@@ -47,6 +47,16 @@ describe("devPanorama router", () => {
     expect(repositorySrc).toContain("全景产品已删除，请基于最新数据重新分析");
   });
 
+  it("should add only missing products and invalidate derived analysis", () => {
+    const repositoryPath = path.join(__dirname, "domains/product_development/panorama/panoramaProductRepository.ts");
+    const repositorySrc = fs.readFileSync(repositoryPath, "utf-8");
+    expect(routerSrc).toContain("addProduct:");
+    expect(repositorySrc).toContain("resourceConflictError");
+    expect(repositorySrc).toContain("该 ASIN 已存在于当前项目");
+    expect(repositorySrc).toContain("tx.insert(devProducts)");
+    expect(repositorySrc).toContain("全景产品已新增，请基于最新数据重新分析");
+  });
+
   it("should have exportCsv procedure", () => {
     expect(routerSrc).toContain("exportCsv:");
   });
@@ -193,6 +203,11 @@ describe("PanoramaTable frontend component", () => {
     expect(componentSrc).toContain("请先解锁全景分析表再删除产品");
   });
 
+  it("should route product additions through data management", () => {
+    expect(componentSrc).toContain("onAddProduct");
+    expect(componentSrc).toContain("前往数据管理添加产品");
+  });
+
   it("should have pagination", () => {
     expect(componentSrc).toContain("PAGE_SIZE");
     expect(componentSrc).toContain("pagedProducts");
@@ -247,6 +262,8 @@ describe("DevProjectDetail panorama tab", () => {
 
   it("should render PanoramaTable in panorama tab", () => {
     expect(detailSrc).toContain("<PanoramaTable");
+    expect(detailSrc).toContain("setActiveTab(\"data\")");
+    expect(detailSrc).toContain("setAddProductRequestSignal");
   });
 });
 
@@ -261,5 +278,11 @@ describe("parseBulletPointsData column mapping", () => {
 
   it("should support 详细参数 column name", () => {
     expect(uploadSrc).toContain("详细参数");
+  });
+
+  it("should open the missing-product form from panorama", () => {
+    expect(uploadSrc).toContain("addProductRequestSignal");
+    expect(uploadSrc).toContain("trpc.devPanorama.addProduct");
+    expect(uploadSrc).toContain("补录缺失产品");
   });
 });
