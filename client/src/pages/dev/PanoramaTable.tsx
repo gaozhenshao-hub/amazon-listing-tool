@@ -13,7 +13,7 @@ import {
   CheckCircle2, AlertCircle, Download, Lock, Unlock, Save, X,
   FileText, Search, ChevronLeft, ChevronRight, ArrowUpDown,
   Table2, Eye, EyeOff, TrendingUp, BarChart3, Filter, XCircle,
-  ChevronDown, ChevronUp, Tag, Layers, FolderOpen, FolderClosed,
+  ChevronDown, ChevronUp, Tag, Layers, FolderOpen, FolderClosed, Trash2,
 } from "lucide-react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -410,6 +410,19 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
     onSuccess: () => { utils.devPanorama.getData.invalidate({ projectId }); toast.success("已更新"); },
     onError: (e: any) => toast.error("更新失败: " + e.message),
   });
+  const deleteProductMutation = trpc.devPanorama.deleteProduct.useMutation({
+    onSuccess: async (result) => {
+      const asin = String(result.asin || "").toUpperCase();
+      setSelectedCompetitorAsins((current) => current.filter((item) => item !== asin));
+      await Promise.all([
+        utils.devPanorama.getData.invalidate({ projectId }),
+        utils.devPanorama.getStatus.invalidate({ projectId }),
+        utils.devPanorama.getMarketInsight.invalidate({ projectId }),
+      ]);
+      toast.success(`已删除 ${result.asin || result.title || "产品行"}，相关分析已标记为需重新确认`);
+    },
+    onError: (error) => toast.error(`删除失败: ${error.message}`),
+  });
   const updateTagMutation = trpc.devPanorama.updateProductTag.useMutation({
     onSuccess: () => { utils.devPanorama.getData.invalidate({ projectId }); toast.success("标签已更新"); },
     onError: (e: any) => toast.error("标签更新失败: " + e.message),
@@ -697,11 +710,21 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
   };
 
   // Shared cell renderer for both grouped and ungrouped modes
+  const requestDeleteProduct = (product: any) => {
+    if (isConfirmed) {
+      toast.info("请先解锁全景分析表再删除产品");
+      return;
+    }
+    const identity = product.asin || product.title || `#${product.id}`;
+    if (!window.confirm(`确定删除产品 ${identity}？该 ASIN 的标签和评论样本也会删除，已有分析需重新确认。`)) return;
+    deleteProductMutation.mutate({ projectId, productId: product.id });
+  };
+
   const renderProductCells = (product: any) => {
     const asin = String(product?.asin || "").trim().toUpperCase();
     const eligible = Boolean(asin && product?.parentSalesRepresentative);
     const selectionCell = (
-      <td key="majorCompetitorSelection" className="px-2 py-1 border-r border-b text-center bg-inherit"
+      <td key="majorCompetitorSelection" className="sticky left-0 z-10 px-2 py-1 border-r border-b text-center bg-inherit"
         style={{ width: 76, minWidth: 76, maxWidth: 76 }}>
         <Checkbox
           checked={eligible && selectedCompetitorAsins.includes(asin)}
@@ -713,7 +736,23 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
         />
       </td>
     );
-    return [selectionCell, ...visibleColumns.map(col => {
+    const actionCell = (
+      <td key="panoramaProductActions" className="sticky left-[76px] z-10 px-1 py-1 border-r border-b text-center bg-inherit"
+        style={{ width: 48, minWidth: 48, maxWidth: 48 }}>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+          disabled={isConfirmed || deleteProductMutation.isPending}
+          title={isConfirmed ? "请先解锁全景分析表" : `删除 ${asin || "产品"}`}
+          onClick={(event) => { event.stopPropagation(); requestDeleteProduct(product); }}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </td>
+    );
+    return [selectionCell, actionCell, ...visibleColumns.map(col => {
       const value = getCellValue(product, col);
       const isEditing = editingCell?.productId === product.id && editingCell?.field === col.key;
       const canEdit = col.editable && !isConfirmed;
@@ -1261,7 +1300,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
               {/* Table */}
               <div ref={tableRef} className="border rounded-lg overflow-auto max-h-[calc(100vh-320px)]"
                 style={{ position: "relative" }}>
-                <table className="text-xs border-collapse" style={{ minWidth: visibleColumns.reduce((s, c) => s + c.width, 76) }}>
+                <table className="text-xs border-collapse" style={{ minWidth: visibleColumns.reduce((s, c) => s + c.width, 124) }}>
                   {/* Group Header */}
                   <thead className="sticky top-0 z-20 bg-muted/95 backdrop-blur">
                     <tr>
@@ -1272,6 +1311,11 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                         <Badge variant="outline" className="mt-1 h-4 px-1 text-[9px] font-normal">
                           {selectedCompetitorAsins.length}/4
                         </Badge>
+                      </th>
+                      <th rowSpan={2}
+                        className="sticky left-[76px] z-30 px-1 py-1 text-[10px] font-semibold border-b border-r bg-muted text-center"
+                        style={{ width: 48, minWidth: 48 }}>
+                        操作
                       </th>
                       {(() => {
                         const groups: { name: string; span: number }[] = [];
@@ -1331,7 +1375,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                                 : 'bg-primary/5 hover:bg-primary/10 border-primary/20'
                             }`}
                             onClick={() => toggleGroupCollapse(group.tagValue)}>
-                            <td colSpan={visibleColumns.length + 1} className="px-3 py-2">
+                            <td colSpan={visibleColumns.length + 2} className="px-3 py-2">
                               <div className="flex items-center gap-3 flex-wrap">
                                 <div className="flex items-center gap-1.5">
                                   {isCollapsed ? <FolderClosed className="h-4 w-4 text-primary" /> : <FolderOpen className="h-4 w-4 text-primary" />}
@@ -1373,6 +1417,20 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                               />
                             );
                           })()}
+                        </td>
+                        <td className="sticky left-[76px] z-10 px-1 py-1 border-r border-b text-center bg-inherit"
+                          style={{ width: 48, minWidth: 48, maxWidth: 48 }}>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            disabled={isConfirmed || deleteProductMutation.isPending}
+                            title={isConfirmed ? "请先解锁全景分析表" : `删除 ${product.asin || "产品"}`}
+                            onClick={(event) => { event.stopPropagation(); requestDeleteProduct(product); }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         </td>
                         {visibleColumns.map(col => {
                           const value = getCellValue(product, col);
@@ -1543,6 +1601,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
       {hasData && (
         <MajorCompetitorAnalysis
           projectId={projectId}
+          panoramaConfirmed={isConfirmed}
           selectedCompetitorAsins={selectedCompetitorAsins}
           onSelectedCompetitorAsinsChange={setSelectedCompetitorAsins}
         />
