@@ -5,6 +5,7 @@ import {
   competitorAnalyses,
   competitorComparisonReports,
   devAnalysisStages,
+  devPanoramaMarketInsights,
   devProjects,
   projects,
 } from "../../../../drizzle/schema/project";
@@ -269,6 +270,54 @@ export async function resolveCurrentDevAnalysisArtifact(
     currentOnly: true,
     confirmedOnly: true,
     executor: options?.executor,
+  });
+}
+
+export async function registerPanoramaMarketInsightArtifact(
+  insightId: number,
+  sourceType: ArtifactSourceType = "ai_output",
+) {
+  const db = await getDb();
+  if (!db) return null;
+  const [insight] = await db.select().from(devPanoramaMarketInsights)
+    .where(eq(devPanoramaMarketInsights.id, insightId)).limit(1);
+  if (!insight) return null;
+  return registerBusinessArtifact({
+    domain: "project",
+    artifactKey: "dev.panorama.market_insights",
+    sourceTable: "dev_panorama_market_insights",
+    sourceRowId: insight.id,
+    workspaceId: insight.workspaceId,
+    projectId: insight.projectId,
+    userId: insight.userId,
+    content: insight.editedResult || insight.rawResult,
+    sourceType,
+    status: insight.status === "confirmed" ? "final" : "draft",
+    metadata: {
+      insightStatus: insight.status,
+      version: insight.version,
+      confirmedAt: insight.confirmedAt,
+      salesPolicy: "deduplicated_parent_asin_only",
+    },
+  });
+}
+
+export async function resolveCurrentPanoramaMarketInsightArtifact(insightId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [insight] = await db.select({ projectId: devPanoramaMarketInsights.projectId })
+    .from(devPanoramaMarketInsights)
+    .where(eq(devPanoramaMarketInsights.id, insightId)).limit(1);
+  if (!insight) return null;
+  return resolveUnifiedArtifact({
+    domain: "project",
+    artifactKey: "dev.panorama.market_insights",
+    sourceTable: "dev_panorama_market_insights",
+    sourceRowId: insightId,
+    projectId: insight.projectId,
+    artifactId: null,
+    currentOnly: true,
+    confirmedOnly: true,
   });
 }
 

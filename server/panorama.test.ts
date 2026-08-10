@@ -189,10 +189,18 @@ describe("PanoramaTable frontend component", () => {
   });
 
   it("should define all required column groups", () => {
-    const requiredGroups = ["基础信息", "类目", "排名", "价格利润", "销量", "评论", "Listing", "卖家", "时间", "物流", "内容"];
+    const requiredGroups = ["基础信息", "类目", "排名", "价格利润", "销量", "原始参考", "评论", "Listing", "卖家", "时间", "物流", "内容"];
     for (const group of requiredGroups) {
       expect(componentSrc).toContain(`"${group}"`);
     }
+  });
+
+  it("should expose listing age, sales tier and AI price-band grouping", () => {
+    expect(componentSrc).toContain("listingAgeLabel");
+    expect(componentSrc).toContain("salesTier");
+    expect(componentSrc).toContain("priceBandLabel");
+    expect(componentSrc).toContain("选择分组字段");
+    expect(componentSrc).toContain("· 汇总");
   });
 
   it("should handle history columns dynamically", () => {

@@ -25,6 +25,7 @@ import {
   resolveDevProjectAccess,
 } from "./security/productDevelopmentAccess";
 import { productDevelopmentRepository as repository } from "./repository";
+import { normalizeParentMarketMetrics } from "./panorama/marketMetrics";
 import type {
   ExternalAnalysisType,
   ProductAnalysisStageType,
@@ -361,7 +362,7 @@ export const productDevelopmentService = {
           role: "system",
           content: "你是一个资深的亚马逊产品开发分析专家。请根据提供的数据生成专业的分析报告。返回JSON格式，包含summary和chartData。",
         },
-        { role: "user", content: buildReportContext(reportType, products, reviewStats, project) },
+        { role: "user", content: buildReportContext(reportType, normalizeParentMarketMetrics(products), reviewStats, project) },
       ],
       response_format: reportResponseFormat,
     });

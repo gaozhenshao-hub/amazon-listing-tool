@@ -8,6 +8,11 @@ import {
   recordProductDevelopmentAudit,
   resolveDevProjectAccess,
 } from "../domains/product_development/security/productDevelopmentAccess";
+import {
+  listProjectProgress,
+  updateProjectProgress,
+} from "../domains/product_development/projects/projectListService";
+import type { ProductDevelopmentContext } from "../domains/product_development/types";
 
 export const devProjectRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -18,6 +23,25 @@ export const devProjectRouter = router({
       includeWorkspaceProjects,
     );
   }),
+
+  listProgress: protectedProcedure.query(async ({ ctx }) => {
+    const includeWorkspaceProjects = ["super_admin", "admin", "designer"].includes(ctx.user.role);
+    return listProjectProgress(ctx as ProductDevelopmentContext, includeWorkspaceProjects);
+  }),
+
+  updateProgress: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      primaryCompetitorAsin: z.string().max(20).nullable().optional(),
+      selectorName: z.string().max(100).nullable().optional(),
+      landingProgress: z.number().int().min(0).max(100).optional(),
+      reviewStatus: z.enum(["unreviewed", "reviewing", "approved", "rejected"]).optional(),
+      assistantName: z.string().max(100).nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { projectId, ...patch } = input;
+      return updateProjectProgress(ctx as ProductDevelopmentContext, projectId, patch);
+    }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))

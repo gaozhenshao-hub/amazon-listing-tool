@@ -15,6 +15,7 @@ import {
   competitorImageAnalyses,
   devAnalysisStageConflicts,
   devAnalysisStages,
+  devProjectProgress,
   devProjects,
   emperorAgentArtifacts,
   emperorAgentCheckpoints,
@@ -164,7 +165,23 @@ export const devProjectsRelations = relations(devProjects, ({ one, many }) => ({
     references: [workspaces.id],
   }),
   analysisStages: many(devAnalysisStages),
+  progress: one(devProjectProgress),
   stageConflicts: many(devAnalysisStageConflicts),
+}));
+
+export const devProjectProgressRelations = relations(devProjectProgress, ({ one }) => ({
+  project: one(devProjects, {
+    fields: [devProjectProgress.projectId],
+    references: [devProjects.id],
+  }),
+  updatedByUser: one(users, {
+    fields: [devProjectProgress.updatedBy],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [devProjectProgress.workspaceId],
+    references: [workspaces.id],
+  }),
 }));
 
 export const devAnalysisStagesRelations = relations(devAnalysisStages, ({ one, many }) => ({

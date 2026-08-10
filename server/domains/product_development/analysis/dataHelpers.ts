@@ -4,22 +4,17 @@ import type { ProductData } from "../../../devStatsEngine";
 // ─── Helper Functions ────────────────────────────────────────
 
 export function mapToProductData(p: any): ProductData {
-  // 优先使用子ASIN数据（childSales/childRevenue），如果存在则覆盖父ASIN数据
-  // 这确保品牌竞争分析等统计使用更精确的子体级别数据
-  const effectiveSales = (p.childSales != null && p.childSales > 0) ? p.childSales : p.monthlySales;
-  const effectiveRevenue = (p.childRevenue != null && parseFloat(p.childRevenue) > 0)
-    ? String(p.childRevenue)
-    : p.monthlyRevenue;
   return {
     asin: p.asin ?? "",
+    parentAsin: p.parentAsin,
     title: p.title,
     brand: p.brand,
     price: p.price,
     rating: p.rating,
     reviewCount: p.reviewCount,
-    monthlySales: effectiveSales,
+    monthlySales: p.monthlySales,
     bsr: p.bsr,
-    monthlyRevenue: effectiveRevenue,
+    monthlyRevenue: p.monthlyRevenue,
     listingDate: p.listingDate,
     fulfillment: p.fulfillment,
     sellerName: p.sellerName,

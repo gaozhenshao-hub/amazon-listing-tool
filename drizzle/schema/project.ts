@@ -183,6 +183,31 @@ export type DevProject = typeof devProjects.$inferSelect;
 
 export type InsertDevProject = typeof devProjects.$inferInsert;
 
+// Project-list operating fields. Source-backed metrics stay in their domain tables;
+// this table only stores the small set of values maintained by people in the list.
+export const devProjectProgress = mysqlTable("dev_project_progress", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  projectId: int("projectId").notNull(),
+  primaryCompetitorAsin: varchar("primaryCompetitorAsin", { length: 20 }),
+  selectorName: varchar("selectorName", { length: 100 }),
+  landingProgress: int("landingProgress").default(0).notNull(),
+  reviewStatus: mysqlEnum("reviewStatus", ["unreviewed", "reviewing", "approved", "rejected"])
+    .default("unreviewed")
+    .notNull(),
+  assistantName: varchar("assistantName", { length: 100 }),
+  updatedBy: int("updatedBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  projectUniqueIdx: uniqueIndex("uniq_dev_project_progress_project").on(table.projectId),
+  workspaceProjectIdx: index("idx_dev_project_progress_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+}));
+
+export type DevProjectProgress = typeof devProjectProgress.$inferSelect;
+
+export type InsertDevProjectProgress = typeof devProjectProgress.$inferInsert;
+
 // 上传文件记录
 export const devUploadedFiles = mysqlTable("dev_uploaded_files", {
   id: int("id").autoincrement().primaryKey(),
@@ -802,6 +827,35 @@ export const devPanoramaStatus = mysqlTable("dev_panorama_status", {
 export type DevPanoramaStatus = typeof devPanoramaStatus.$inferSelect;
 
 export type InsertDevPanoramaStatus = typeof devPanoramaStatus.$inferInsert;
+
+// AI-generated market structure and major-competitor matrix shown after panorama.
+export const devPanoramaMarketInsights = mysqlTable("dev_panorama_market_insights", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  status: mysqlEnum("status", ["pending", "queued", "running", "ready", "editing", "confirmed", "failed", "canceled"])
+    .default("pending").notNull(),
+  rawResult: json("rawResult"),
+  editedResult: json("editedResult"),
+  runId: varchar("runId", { length: 96 }),
+  runProgress: int("runProgress").default(0).notNull(),
+  runError: text("runError"),
+  version: int("version").default(1).notNull(),
+  confirmedBy: int("confirmedBy"),
+  confirmedAt: timestamp("confirmedAt"),
+  runStartedAt: timestamp("runStartedAt"),
+  runCompletedAt: timestamp("runCompletedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  projectUnique: uniqueIndex("uniq_dev_panorama_market_insights_project").on(table.projectId),
+  workspaceProjectIdx: index("idx_dev_panorama_market_insights_workspace_project").on(table.workspaceId, table.projectId, table.updatedAt),
+  runIdx: index("idx_dev_panorama_market_insights_run").on(table.runId),
+}));
+
+export type DevPanoramaMarketInsight = typeof devPanoramaMarketInsights.$inferSelect;
+export type InsertDevPanoramaMarketInsight = typeof devPanoramaMarketInsights.$inferInsert;
 
 // 项目级标签分类表（每个项目独立的7类标签分类）
 export const devProjectTagCategories = mysqlTable("dev_project_tag_categories", {

@@ -2,6 +2,7 @@ import { eq, and, desc, sql, inArray, isNull, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   devProjects, InsertDevProject, DevProject,
+  devProjectProgress,
   devUploadedFiles, InsertDevUploadedFile,
   devProducts, InsertDevProduct,
   devReviews, InsertDevReview,
@@ -138,6 +139,7 @@ export async function updateDevProjectAdmin(id: number, data: Partial<InsertDevP
 export async function deleteDevProject(id: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  await db.delete(devProjectProgress).where(eq(devProjectProgress.projectId, id));
   await db.delete(devProjects).where(and(eq(devProjects.id, id), eq(devProjects.userId, userId)));
   return { success: true };
 }

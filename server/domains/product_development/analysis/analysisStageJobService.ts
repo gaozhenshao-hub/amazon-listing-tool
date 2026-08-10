@@ -37,6 +37,7 @@ import {
 } from "../../ai_os/services/businessArtifactRegistry";
 import { runEmperorSkill, safeParseSkillJSON } from "../../ai_os/services/skillRunner";
 import { mapToProductData } from "./dataHelpers";
+import { normalizeParentMarketMetrics } from "../panorama/marketMetrics";
 import { validateInformationSummaryForConfirmation } from "./informationSummary";
 import {
   completeDevAnalysisStageRunConsistently,
@@ -268,7 +269,7 @@ async function buildStageEvidence(
 
   const products = await devDb.getDevProductsByProject(input.projectId);
   if (products.length === 0) throw new Error("未找到竞品数据，请先上传并解析数据");
-  const productData = products.map(mapToProductData);
+  const productData = normalizeParentMarketMetrics(products.map(mapToProductData));
 
   if (input.stage === "market_overview") {
     const stats = calcMarketOverview(productData);

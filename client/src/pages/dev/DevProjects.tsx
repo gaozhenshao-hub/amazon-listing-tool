@@ -1,7 +1,6 @@
 import { useState, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -23,17 +22,13 @@ import {
   FolderOpen,
   PlusCircle,
   Search,
-  Trash2,
-  ArrowRight,
-  Calendar,
-  Globe,
   BarChart3,
   Rocket,
-  CheckCircle2,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { usePermissions } from "@/hooks/usePermissions";
+import { DevProjectProgressTable, type DevProjectListRow } from "./DevProjectProgressTable";
 
 const statusOptions = [
   { value: "all", label: "全部状态" },
@@ -51,20 +46,6 @@ const phaseOptions = [
   { value: "project_execution", label: "项目落地" },
 ];
 
-const statusLabel: Record<string, { text: string; color: string }> = {
-  draft: { text: "草稿", color: "bg-gray-500/10 text-gray-600" },
-  data_collection: { text: "数据采集", color: "bg-blue-500/10 text-blue-600" },
-  analyzing: { text: "分析中", color: "bg-amber-500/10 text-amber-600" },
-  scoring: { text: "评分中", color: "bg-purple-500/10 text-purple-600" },
-  completed: { text: "已完成", color: "bg-emerald-500/10 text-emerald-600" },
-  archived: { text: "已归档", color: "bg-gray-500/10 text-gray-500" },
-};
-
-const phaseLabel: Record<string, { text: string; icon: any; color: string }> = {
-  market_analysis: { text: "市场分析", icon: BarChart3, color: "bg-blue-500/10 text-blue-700 border-blue-200" },
-  project_execution: { text: "项目落地", icon: Rocket, color: "bg-emerald-500/10 text-emerald-700 border-emerald-200" },
-};
-
 export default function DevProjects() {
   const [, setLocation] = useLocation();
   const { canDelete } = usePermissions();
@@ -75,12 +56,13 @@ export default function DevProjects() {
   const [phaseFilter, setPhaseFilter] = useState("all");
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
-  const { data: projects, isLoading } = trpc.devProject.list.useQuery();
+  const { data: projects, isLoading } = trpc.devProject.listProgress.useQuery();
   const utils = trpc.useUtils();
 
   const deleteMutation = trpc.devProject.delete.useMutation({
     onSuccess: () => {
       utils.devProject.list.invalidate();
+      utils.devProject.listProgress.invalidate();
       utils.devProject.stats.invalidate();
       toast.success("项目已删除");
       setDeleteId(null);
@@ -112,7 +94,7 @@ export default function DevProjects() {
   }, [projects]);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-5">
+    <div className="mx-auto max-w-[1600px] space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">项目列表</h1>
         <Button onClick={() => setLocation("/dev/new-project")} className="gap-2">
@@ -211,78 +193,11 @@ export default function DevProjects() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2">
-          {filtered.map(p => {
-            const st = statusLabel[p.status] ?? { text: p.status, color: "" };
-            const projectPhase = (p as any).phase || "market_analysis";
-            const ph = phaseLabel[projectPhase] ?? phaseLabel.market_analysis;
-            const PhaseIcon = ph.icon;
-            const isApproved = !!(p as any).approvedAt;
-            return (
-              <Card
-                key={p.id}
-                className="cursor-pointer hover:shadow-md transition-all"
-                onClick={() => setLocation(`/dev/project/${p.id}`)}
-              >
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-4 min-w-0 flex-1">
-                    <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                      <FolderOpen className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold truncate">{p.name}</p>
-                        {isApproved && (
-                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                        {p.targetMarket && (
-                          <span className="flex items-center gap-1">
-                            <Globe className="h-3 w-3" />
-                            {p.targetMarket}
-                          </span>
-                        )}
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {new Date(p.createdAt).toLocaleDateString()}
-                        </span>
-                        {p.description && (
-                          <span className="truncate max-w-[200px]">{p.description}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {/* Phase Badge */}
-                    <Badge variant="outline" className={`text-xs gap-1 ${ph.color}`}>
-                      <PhaseIcon className="h-3 w-3" />
-                      {ph.text}
-                    </Badge>
-                    {/* Status Badge */}
-                    <Badge variant="secondary" className={`text-xs ${st.color}`}>
-                      {st.text}
-                    </Badge>
-                    {allowDelete && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={e => {
-                          e.stopPropagation();
-                          setDeleteId(p.id);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
-                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+        <DevProjectProgressTable
+          rows={filtered as DevProjectListRow[]}
+          allowDelete={allowDelete}
+          onDelete={setDeleteId}
+        />
       )}
 
       {/* Delete confirmation */}
