@@ -28,7 +28,6 @@ import {
 } from "./runtime";
 import { assertStartupConfig } from "./startupValidation";
 import { registerRuntimeHealthRoutes } from "./runtimeHealth";
-
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
     const server = net.createServer();
@@ -147,6 +146,43 @@ async function startServer() {
           }
         })
         .catch(err => console.error("[AI Job] Recovery failed:", err));
+      // In-process Worker: poll the AI Job queue on a fixed interval so that
+      // newly created Jobs are consumed without a separate Worker process.
+      // Only activated when AI_JOB_IN_PROCESS=true (single-process deployment).
+      if (process.env.AI_JOB_IN_PROCESS === "true") {
+        const pollMs = Math.min(
+          Math.max(Number(process.env.AI_JOB_WORKER_POLL_MS || 5000), 1000),
+          60000
+        );
+        console.log(`[AI Worker] In-process mode enabled, polling every ${pollMs}ms`);
+        let workerRunning = false;
+        const workerInterval = setInterval(async () => {
+          if (workerRunning) return;
+          workerRunning = true;
+          try {
+            const [aiJobs, agentNodes] = await Promise.all([
+              import("../services/aiJobRunner").then(m => m.drainAiJobQueue({ limit: 10 })),
+              import("../services/emperorAgentRunner").then(m => m.recoverTimedOutAgentNodes({ limit: 20 })),
+            ]);
+            if (
+              aiJobs.scheduled > 0 ||
+              aiJobs.skippedWithoutHandler > 0 ||
+              agentNodes.retried > 0 ||
+              agentNodes.failed > 0
+            ) {
+              console.log(
+                `[AI Worker] jobs scanned=${aiJobs.scanned}, scheduled=${aiJobs.scheduled}, skipped=${aiJobs.skippedWithoutHandler}; ` +
+                `nodes retried=${agentNodes.retried}, failed=${agentNodes.failed}`
+              );
+            }
+          } catch (err) {
+            console.error("[AI Worker] In-process tick failed:", err);
+          } finally {
+            workerRunning = false;
+          }
+        }, pollMs);
+        workerInterval.unref(); // Don't prevent process exit
+      }
       import("../services/emperorAgentRunner")
         .then(m => m.recoverTimedOutAgentNodes())
         .then(result => {
