@@ -23,6 +23,7 @@ export async function updateProjectProgress(
     normalizedPatch.primaryCompetitorAsin = patch.primaryCompetitorAsin?.trim().toUpperCase() || null;
   }
   if ("selectorName" in patch) normalizedPatch.selectorName = patch.selectorName?.trim() || null;
+  if ("operatorName" in patch) normalizedPatch.operatorName = patch.operatorName?.trim() || null;
   if ("assistantName" in patch) normalizedPatch.assistantName = patch.assistantName?.trim() || null;
   const result = await upsertProjectProgress({
     projectId,

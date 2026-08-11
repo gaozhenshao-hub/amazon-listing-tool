@@ -782,7 +782,7 @@ export default function PanoramaTable({
       return (
         <td key={col.key}
           className={`px-2 py-1 border-r border-b truncate ${canEdit ? "cursor-pointer hover:bg-primary/5" : ""}`}
-          style={{ width: col.width, minWidth: col.width, maxWidth: col.width }}
+          style={{ width: col.width, minWidth: col.width }}
           onClick={() => canEdit && startEdit(product.id, col.key, value)}
           title={String(value || "")}>
           {value !== null && value !== undefined && value !== "" ? (
@@ -959,9 +959,9 @@ export default function PanoramaTable({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="w-full min-w-0 space-y-4">
       {/* Header */}
-      <Card>
+      <Card className="w-full min-w-0">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -1310,9 +1310,12 @@ export default function PanoramaTable({
               )}
 
               {/* Table */}
-              <div ref={tableRef} className="border rounded-lg overflow-auto max-h-[calc(100vh-320px)]"
+              <div ref={tableRef} className="w-full max-w-full border rounded-lg overflow-auto max-h-[calc(100vh-320px)]"
                 style={{ position: "relative" }}>
-                <table className="text-xs border-collapse" style={{ minWidth: visibleColumns.reduce((s, c) => s + c.width, 124) }}>
+                <table
+                  className="w-full table-auto text-xs border-collapse"
+                  style={{ minWidth: visibleColumns.reduce((sum, column) => sum + column.width, 124) }}
+                >
                   {/* Group Header */}
                   <thead className="sticky top-0 z-20 bg-muted/95 backdrop-blur">
                     <tr>
@@ -1535,7 +1538,7 @@ export default function PanoramaTable({
                             return (
                               <td key={col.key}
                                 className={`px-2 py-1 border-r border-b ${canEdit ? "cursor-pointer hover:bg-primary/5" : ""}`}
-                                style={{ width: col.width, minWidth: col.width, maxWidth: col.width }}
+                                style={{ width: col.width, minWidth: col.width }}
                                 onClick={() => canEdit && startEdit(product.id, col.key, value)}>
                                 <Badge variant="secondary" className="text-[10px] font-normal truncate max-w-full">
                                   {String(value)}
@@ -1548,7 +1551,7 @@ export default function PanoramaTable({
                           return (
                             <td key={col.key}
                               className={`px-2 py-1 border-r border-b truncate ${canEdit ? "cursor-pointer hover:bg-primary/5" : ""}`}
-                              style={{ width: col.width, minWidth: col.width, maxWidth: col.width }}
+                              style={{ width: col.width, minWidth: col.width }}
                               onClick={() => canEdit && startEdit(product.id, col.key, value)}
                               title={String(value || "")}>
                               {value !== null && value !== undefined && value !== "" ? (

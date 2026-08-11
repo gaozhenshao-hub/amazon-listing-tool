@@ -252,7 +252,9 @@ export default function DevProjectDetail() {
   const PhaseIcon = ph.icon;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-5">
+    <div className={activeTab === "panorama"
+      ? "w-full max-w-none min-w-0 space-y-5"
+      : "max-w-6xl mx-auto min-w-0 space-y-5"}>
       <EmbeddedAgentRunPanel
         title="产品开发 · 七阶段 Agent"
         projectId={projectId}

@@ -191,6 +191,9 @@ export const devProjectProgress = mysqlTable("dev_project_progress", {
   projectId: int("projectId").notNull(),
   primaryCompetitorAsin: varchar("primaryCompetitorAsin", { length: 20 }),
   selectorName: varchar("selectorName", { length: 100 }),
+  operatorName: varchar("operatorName", { length: 255 }),
+  landingStage: varchar("landingStage", { length: 40 }),
+  // Retained for backward compatibility; the project list uses landingStage instead of a percentage.
   landingProgress: int("landingProgress").default(0).notNull(),
   reviewStatus: mysqlEnum("reviewStatus", ["unreviewed", "reviewing", "approved", "rejected"])
     .default("unreviewed")
