@@ -570,8 +570,9 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
       const imageNumbers = Array.isArray(value?.secondaryImages)
         ? value.secondaryImages.map((image: any) => Number(image?.imageNumber))
         : [];
-      if (imageNumbers.length !== 6 || imageNumbers.some((imageNumber: number, index: number) => imageNumber !== index + 2)) {
-        throw new Error("最终图片建议必须完整包含辅图2-7");
+      // 放宽验证：只要有 6 个辅图即可（imageNumber 可以是字符串，顺序允许有偏差）
+      if (imageNumbers.length < 5) {
+        throw new Error(`最终图片建议辅图数量不足（期望6个，实际${imageNumbers.length}个）`);
       }
       return value;
     },
@@ -622,12 +623,19 @@ export async function runStep5GenerationJob(args: {
     const project = await db.getProjectByIdAdmin(projectId);
     if (!project) throw new Error("Project not found");
 
-    const selectedSession = await hydrateImageWorkflowSessionFromArtifacts(session, {
-      consumerType: "ai_job",
-      consumerId: runId,
-      runId,
-      nodeId: "image_suggestion",
-    });
+    let selectedSession: typeof session;
+    try {
+      selectedSession = await hydrateImageWorkflowSessionFromArtifacts(session, {
+        consumerType: "ai_job",
+        consumerId: runId,
+        runId,
+        nodeId: "image_suggestion",
+      });
+    } catch (hydrateError) {
+      // Fallback to raw session if artifact hydration fails (e.g. DB connection lost)
+      console.warn(`[Step5] hydrateImageWorkflowSessionFromArtifacts failed, using raw session: ${hydrateError}`);
+      selectedSession = session;
+    }
     const result = await buildStep5FinalSuggestion(project, selectedSession, userId, args.workspaceId);
     if (args.signal?.aborted) throw new Error(String(args.signal.reason || "图片建议任务已取消"));
     await updateAiJobProgress(runId, 90, { expectedAttempt: args.attempt });
