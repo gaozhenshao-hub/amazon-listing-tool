@@ -69,7 +69,18 @@ queryClient.getQueryCache().subscribe(event => {
 
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
-    redirectToLoginIfUnauthorized(error);
+    const queryKey = event.query.queryKey;
+    const keyStr = JSON.stringify(queryKey);
+    const isAuthMeQuery = keyStr.includes('"auth"') && keyStr.includes('"me"');
+    // If auth.me itself returns UNAUTHORIZED after exhausting retries, redirect immediately.
+    // This handles the case where the session has expired and auth.me never resolves.
+    if (isAuthMeQuery && isAuthRequiredError(error) && event.query.state.fetchFailureCount >= 1) {
+      if (window.location.pathname !== '/login') {
+        window.location.href = getLoginUrl();
+      }
+    } else {
+      redirectToLoginIfUnauthorized(error);
+    }
     console.error("[API Query Error]", error);
   }
 });
