@@ -21,7 +21,7 @@ describe("image Step 5 Agent binding", () => {
       "utf8",
     );
 
-    expect(routeSource).toContain("agentRunId: agentRunId || undefined");
+    expect(routeSource).toMatch(/input:\s*{[\s\S]*?agentRunId,[\s\S]*?agentNodeId: "step5_skill"/);
     expect(routeSource).toContain("await syncStepJobQueuedToAgent");
     expect(routeSource).toContain("cancelStep5Generation");
     expect(routeSource).toContain('failureKind: "cancel"');

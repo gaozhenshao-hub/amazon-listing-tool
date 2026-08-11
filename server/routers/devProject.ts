@@ -34,6 +34,11 @@ export const devProjectRouter = router({
       projectId: z.number(),
       primaryCompetitorAsin: z.string().max(20).nullable().optional(),
       selectorName: z.string().max(100).nullable().optional(),
+      operatorName: z.string().max(255).nullable().optional(),
+      landingStage: z.enum([
+        "research", "decoding", "copying", "sample_sourcing", "solution_design",
+        "first_prototype", "supplier_selection", "production", "shipped", "completed",
+      ]).nullable().optional(),
       landingProgress: z.number().int().min(0).max(100).optional(),
       reviewStatus: z.enum(["unreviewed", "reviewing", "approved", "rejected"]).optional(),
       assistantName: z.string().max(100).nullable().optional(),

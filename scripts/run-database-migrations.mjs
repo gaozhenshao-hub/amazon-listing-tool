@@ -59,6 +59,8 @@ const supplementalMigrations = [
   "0134_round4_business_agent_bindings.sql",
   "0135_video_job_checkpoint_binder.sql",
   "0136_business_job_binding_qa.sql",
+  "0137_dev_project_operator_stage.sql",
+  "0138_dev_project_landing_stage.sql",
 ];
 
 const retiredMigrationFiles = new Set([

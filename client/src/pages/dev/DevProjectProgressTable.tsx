@@ -22,6 +22,17 @@ import {
 import { trpc } from "@/lib/trpc";
 
 type ReviewStatus = "unreviewed" | "reviewing" | "approved" | "rejected";
+type LandingStage =
+  | "research"
+  | "decoding"
+  | "copying"
+  | "sample_sourcing"
+  | "solution_design"
+  | "first_prototype"
+  | "supplier_selection"
+  | "production"
+  | "shipped"
+  | "completed";
 
 export type DevProjectListRow = {
   id: number;
@@ -37,6 +48,7 @@ export type DevProjectListRow = {
   selectorName: string | null;
   developerNames: string[];
   operatorNames: string[];
+  landingStage: LandingStage | null;
   landingProgress: number;
   expectedLandingDate: string | null;
   reviewStatus: ReviewStatus;
@@ -49,7 +61,8 @@ export type DevProjectListRow = {
 type EditableProgress = {
   primaryCompetitorAsin: string;
   selectorName: string;
-  landingProgress: number;
+  operatorName: string;
+  landingStage: LandingStage | "";
   reviewStatus: ReviewStatus;
   assistantName: string;
 };
@@ -70,11 +83,29 @@ const statusLabels: Record<string, string> = {
   archived: "已归档",
 };
 
+const landingStageOptions: Array<{ value: LandingStage; label: string; className: string }> = [
+  { value: "research", label: "数据调研", className: "bg-blue-100 text-blue-700" },
+  { value: "decoding", label: "解密中", className: "bg-sky-100 text-sky-700" },
+  { value: "copying", label: "抄板中", className: "bg-cyan-100 text-cyan-700" },
+  { value: "sample_sourcing", label: "样品采购", className: "bg-teal-100 text-teal-700" },
+  { value: "solution_design", label: "方案设计", className: "bg-indigo-100 text-indigo-700" },
+  { value: "first_prototype", label: "首版打样", className: "bg-amber-100 text-amber-700" },
+  { value: "supplier_selection", label: "供应商选择", className: "bg-orange-100 text-orange-700" },
+  { value: "production", label: "下单生产中", className: "bg-violet-100 text-violet-700" },
+  { value: "shipped", label: "发货", className: "bg-fuchsia-100 text-fuchsia-700" },
+  { value: "completed", label: "已完成", className: "bg-emerald-100 text-emerald-700" },
+];
+
+const landingStageLabels = Object.fromEntries(
+  landingStageOptions.map((stage) => [stage.value, stage]),
+) as Record<LandingStage, (typeof landingStageOptions)[number]>;
+
 function editableFromRow(row: DevProjectListRow): EditableProgress {
   return {
     primaryCompetitorAsin: row.primaryCompetitorAsin ?? "",
     selectorName: row.selectorName ?? "",
-    landingProgress: row.landingProgress,
+    operatorName: row.operatorNames.join("、"),
+    landingStage: row.landingStage ?? "",
     reviewStatus: row.reviewStatus,
     assistantName: row.assistantName ?? "",
   };
@@ -134,7 +165,8 @@ export function DevProjectProgressTable({
       projectId,
       primaryCompetitorAsin: draft.primaryCompetitorAsin || null,
       selectorName: draft.selectorName || null,
-      landingProgress: draft.landingProgress,
+      operatorName: draft.operatorName || null,
+      landingStage: draft.landingStage || null,
       reviewStatus: draft.reviewStatus,
       assistantName: draft.assistantName || null,
     });
@@ -152,7 +184,7 @@ export function DevProjectProgressTable({
               <th className="w-[120px] border-b px-3 py-3 font-medium">选品人</th>
               <th className="w-[150px] border-b px-3 py-3 font-medium">开发人员</th>
               <th className="w-[150px] border-b px-3 py-3 font-medium">运营人员</th>
-              <th className="w-[170px] border-b px-3 py-3 font-medium">产品落地进度</th>
+              <th className="w-[150px] border-b px-3 py-3 font-medium">所属阶段</th>
               <th className="w-[130px] border-b px-3 py-3 font-medium">预期落地时间</th>
               <th className="w-[130px] border-b px-3 py-3 font-medium">产品审核进度</th>
               <th className="w-[130px] border-b px-3 py-3 font-medium">产品协助人</th>
@@ -215,30 +247,38 @@ export function DevProjectProgressTable({
                     ) : <TextOrDash>{row.selectorName}</TextOrDash>}
                   </td>
                   <td className="px-3 py-3"><TextOrDash>{row.developerNames.join("、")}</TextOrDash></td>
-                  <td className="px-3 py-3"><TextOrDash>{row.operatorNames.join("、")}</TextOrDash></td>
                   <td className="px-3 py-3" onClick={(event) => event.stopPropagation()}>
                     {editing ? (
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={draft.landingProgress}
-                          className="h-8 w-20"
-                          onChange={(event) => setDraft({
-                            ...draft,
-                            landingProgress: Math.min(100, Math.max(0, Number(event.target.value) || 0)),
-                          })}
-                        />
-                        <span className="text-muted-foreground">%</span>
-                      </div>
+                      <Input
+                        value={draft.operatorName}
+                        maxLength={255}
+                        className="h-8"
+                        placeholder="填写运营人员，多人用顿号分隔"
+                        onChange={(event) => setDraft({ ...draft, operatorName: event.target.value })}
+                      />
+                    ) : <TextOrDash>{row.operatorNames.join("、")}</TextOrDash>}
+                  </td>
+                  <td className="px-3 py-3" onClick={(event) => event.stopPropagation()}>
+                    {editing ? (
+                      <Select
+                        value={draft.landingStage || undefined}
+                        onValueChange={(value: LandingStage) => setDraft({ ...draft, landingStage: value })}
+                      >
+                        <SelectTrigger className="h-8 min-w-[130px]">
+                          <SelectValue placeholder="选择阶段" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {landingStageOptions.map((stage) => (
+                            <SelectItem key={stage.value} value={stage.value}>{stage.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : row.landingStage ? (
+                      <Badge variant="secondary" className={landingStageLabels[row.landingStage].className}>
+                        {landingStageLabels[row.landingStage].label}
+                      </Badge>
                     ) : (
-                      <div className="space-y-1.5">
-                        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                          <div className="h-full bg-emerald-500" style={{ width: `${row.landingProgress}%` }} />
-                        </div>
-                        <span className="text-xs text-muted-foreground">{row.landingProgress}%</span>
-                      </div>
+                      <span className="text-muted-foreground">未设置阶段</span>
                     )}
                   </td>
                   <td className="px-3 py-3 tabular-nums">{formatDate(row.expectedLandingDate)}</td>

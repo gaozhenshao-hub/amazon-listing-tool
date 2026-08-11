@@ -25,6 +25,10 @@ function uniqueNames(names: Array<string | null | undefined>) {
   return Array.from(new Set(names.map((name) => name?.trim()).filter(Boolean) as string[]));
 }
 
+function splitNames(value: string | null | undefined) {
+  return uniqueNames((value || "").split(/[\/、,，]+/));
+}
+
 export function buildProjectListRows(source: ProjectListSourceData) {
   const progressByProject = new Map(source.progress.map((row) => [row.projectId, row]));
   const latestProfitByProject = latestByProject(source.profits);
@@ -36,11 +40,13 @@ export function buildProjectListRows(source: ProjectListSourceData) {
       project.ownerName,
       ...projectMembers.filter((member) => member.role === "product_dev").map((member) => member.name),
     ]);
-    const operatorNames = uniqueNames(
+    const assignedOperatorNames = uniqueNames(
       projectMembers
         .filter((member) => member.role === "ops_manager" || member.role === "ops_specialist")
         .map((member) => member.name),
     );
+    const manualOperatorNames = splitNames(progress?.operatorName);
+    const operatorNames = manualOperatorNames.length > 0 ? manualOperatorNames : assignedOperatorNames;
     const asin = progress?.primaryCompetitorAsin?.trim().toUpperCase() || null;
     const competitor = asin
       ? source.products.find((product) => product.projectId === project.id && product.asin?.toUpperCase() === asin)
@@ -55,6 +61,8 @@ export function buildProjectListRows(source: ProjectListSourceData) {
       selectorName: progress?.selectorName ?? null,
       developerNames,
       operatorNames,
+      landingStage: progress?.landingStage
+        ?? (project.status === "completed" ? "completed" : project.phase === "market_analysis" ? "research" : null),
       landingProgress: progress?.landingProgress ?? 0,
       expectedLandingDate: calculateExpectedLandingDate(project.createdAt, plans),
       reviewStatus: project.approvedAt ? "approved" as const : progress?.reviewStatus ?? "unreviewed" as const,
