@@ -121,6 +121,22 @@ function normalizeFinalImageSuggestions(data: any) {
   }
   return {
     ...data,
+    // Normalize designGuidelines: map AI field names to frontend expected names
+    designGuidelines: data.designGuidelines ? {
+      ...data.designGuidelines,
+      fontRecommendation: safeStr(data.designGuidelines.fontRecommendation || data.designGuidelines.typography || data.designGuidelines.font || data.designGuidelines.fontStyle || ""),
+      overallColorPalette: safeStr(data.designGuidelines.overallColorPalette || data.designGuidelines.colorPalette || data.designGuidelines.colorScheme || ""),
+      brandTone: safeStr(data.designGuidelines.brandTone || data.designGuidelines.visualTheme || data.designGuidelines.tone || ""),
+      mobileOptimization: safeStr(data.designGuidelines.mobileOptimization || data.designGuidelines.mobile || data.designGuidelines.compositionStyle || ""),
+    } : data.designGuidelines,
+    // Normalize aPlusContent: map AI field names to frontend expected names
+    aPlusContent: data.aPlusContent ? {
+      ...data.aPlusContent,
+      overallStrategy: safeStr(data.aPlusContent.overallStrategy || data.aPlusContent.strategy || ""),
+      overallStory: safeStr(data.aPlusContent.overallStory || data.aPlusContent.story || ""),
+      consistency: safeStr(data.aPlusContent.consistency || ""),
+      modularDesign: safeStr(data.aPlusContent.modularDesign || ""),
+    } : data.aPlusContent,
     mainImage: data.mainImage ? {
       ...data.mainImage,
       title: safeStr(data.mainImage.title),
