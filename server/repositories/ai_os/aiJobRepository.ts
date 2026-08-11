@@ -211,9 +211,9 @@ export async function createAiJobDeadLetter(input: {
   await withDbTransaction("AI Job dead letter", async (tx: DbExecutor) => {
     await tx.execute(sql`
       INSERT INTO ai_job_dead_letters
-        (workspaceId, runId, kind, module, procedure, status, attempt, maxAttempts, userId, projectId, skillSlug, errorMessage, input, metadata)
+        (workspaceId, runId, kind, module, \`procedure\`, status, attempt, maxAttempts, userId, projectId, skillSlug, errorMessage, input, metadata)
       VALUES
-        (${(input.job as any).workspaceId ?? null}, ${input.job.runId}, ${input.job.kind}, ${input.job.module}, ${input.job.procedure || null}, ${input.job.status},
+        (${(input.job as any).workspaceId ?? null}, ${input.job.runId}, ${input.job.kind}, ${input.job.module}, ${(input.job as any).procedure || null}, ${input.job.status},
          ${input.job.attempt || 0}, ${input.job.maxAttempts || 1}, ${input.job.userId}, ${input.job.projectId || null},
          ${input.job.skillSlug || null}, ${input.reason}, ${JSON.stringify(input.job.input ?? null)}, ${metadata})
       ON DUPLICATE KEY UPDATE

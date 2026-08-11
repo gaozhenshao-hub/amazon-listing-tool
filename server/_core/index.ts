@@ -1,4 +1,12 @@
 import "dotenv/config";
+// AI Job Handler registrations — must be imported so registerAiJobHandler() runs
+// in the Web process when AI_JOB_IN_PROCESS=true (in-process Worker mode).
+import "../domains/listing/services/generationJob";
+import "../domains/product_development/analysis/informationSummaryService";
+import "../domains/product_development/analysis/analysisStageJobService";
+import "../domains/product_development/panorama/marketInsightService";
+import "../domains/keyword/keywordGenerationJob";
+import "../domains/video/videoGenerationJob";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
