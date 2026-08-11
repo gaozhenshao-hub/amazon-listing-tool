@@ -394,7 +394,11 @@ export const opsImportProcedures = {
       if (!isManagerOrAbove && ctx.user.name) {
         // Apply operator name mapping
         const mappings = await db!.select().from(operatorNameMappings)
-          .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), eq(operatorNameMappings.userId, effectiveUserId)));
+          .where(opsWorkspaceCondition(
+            operatorNameMappings,
+            currentOpsWorkspaceId(),
+            eq(operatorNameMappings.isConfirmed, 1),
+          ));
         const nameMap = new Map(mappings.map((m: any) => [m.externalName, m.systemUserName]));
         products = products.filter((p: any) => {
           const mappedName = nameMap.get(p.operator) || p.operator;
@@ -701,7 +705,11 @@ export const opsImportProcedures = {
       let products = Array.from(asinMap.values());
       if (!isManagerOrAbove && ctx.user.name) {
         const mappings = await db!.select().from(operatorNameMappings)
-          .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), eq(operatorNameMappings.userId, effectiveUserId)));
+          .where(opsWorkspaceCondition(
+            operatorNameMappings,
+            currentOpsWorkspaceId(),
+            eq(operatorNameMappings.isConfirmed, 1),
+          ));
         const nameMap = new Map(mappings.map((m: any) => [m.externalName, m.systemUserName]));
         products = products.filter((p: any) => {
           const mappedName = nameMap.get(p.operator) || p.operator;

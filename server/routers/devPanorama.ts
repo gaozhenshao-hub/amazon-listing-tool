@@ -22,7 +22,7 @@ import {
   unlockPanoramaMarketInsight,
 } from "../domains/product_development/panorama/marketInsightService";
 import { panoramaCompetitorAsinsSchema } from "../domains/product_development/panorama/marketInsightSchema";
-import { deletePanoramaProduct } from "../domains/product_development/panorama/panoramaProductService";
+import { addPanoramaProduct, deletePanoramaProduct } from "../domains/product_development/panorama/panoramaProductService";
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── Panorama (竞品全景分析表) Router ────────────────────────────
@@ -102,7 +102,7 @@ export const devPanoramaRouter = router({
 
       const marketInsight = await getPanoramaMarketInsight(input.projectId).catch(() => null);
       const fallbackPriceBands = buildAdaptivePriceBands(products);
-      const marketInsightInvalidated = Boolean(marketInsight?.runError?.includes("全景产品已删除"));
+      const marketInsightInvalidated = Boolean(marketInsight?.runError?.includes("全景产品已"));
       const insightPriceBands = marketInsightInvalidated ? null : marketInsight?.result?.priceBands;
       const priceBands = sanitizePriceBands(insightPriceBands, fallbackPriceBands);
       const marketProducts = normalizeParentMarketMetrics(products, { priceBands });
@@ -157,6 +157,46 @@ export const devPanoramaRouter = router({
           deleted: true,
           deletedTags: result.deletedTags,
           deletedReviews: result.deletedReviews,
+          totalProducts: result.totalProducts,
+          canceledRuns: result.canceledRuns,
+        },
+      });
+      return result;
+    }),
+
+  addProduct: protectedProcedure
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      asin: z.string().trim().regex(/^[A-Za-z0-9]{10}$/, "ASIN 必须为 10 位字母或数字").transform((value) => value.toUpperCase()),
+      parentAsin: z.string().trim().max(20).optional(),
+      title: z.string().trim().min(1, "请填写商品标题").max(2000),
+      brand: z.string().trim().max(255).optional(),
+      price: z.string().trim().max(50).optional(),
+      monthlySales: z.number().int().nonnegative().optional(),
+      monthlyRevenue: z.number().nonnegative().optional(),
+      rating: z.string().trim().max(10).optional(),
+      reviewCount: z.number().int().nonnegative().optional(),
+      listingDate: z.string().trim().max(50).optional(),
+      imageUrl: z.string().trim().url("主图链接格式不正确").optional().or(z.literal("")),
+      productLink: z.string().trim().url("商品链接格式不正确").optional().or(z.literal("")),
+      category: z.string().trim().max(255).optional(),
+      subcategory: z.string().trim().max(255).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await addPanoramaProduct(input);
+      await recordProductDevelopmentAudit({
+        ctx,
+        action: "product_development.panorama.product.add",
+        projectId: input.projectId,
+        resourceType: "dev_product",
+        resourceId: result.productId,
+        resourceName: result.asin,
+        riskLevel: "medium",
+        beforeSnapshot: null,
+        afterSnapshot: {
+          id: result.productId,
+          asin: result.asin,
+          title: result.title,
           totalProducts: result.totalProducts,
           canceledRuns: result.canceledRuns,
         },
@@ -344,7 +384,7 @@ export const devPanoramaRouter = router({
         .where(eq(devProducts.projectId, input.projectId))
         .orderBy(devProducts.searchRank);
       const marketInsight = await getPanoramaMarketInsight(input.projectId).catch(() => null);
-      const insightPriceBands = marketInsight?.runError?.includes("全景产品已删除")
+      const insightPriceBands = marketInsight?.runError?.includes("全景产品已")
         ? null
         : marketInsight?.result?.priceBands;
       const priceBands = sanitizePriceBands(

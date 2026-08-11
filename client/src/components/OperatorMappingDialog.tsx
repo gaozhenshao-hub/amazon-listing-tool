@@ -3,7 +3,7 @@
  * Shows after data import to map external operator names to system users
  * Supports: auto-matched (green), suggested (yellow), unmatched (red)
  */
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -59,6 +59,12 @@ export default function OperatorMappingDialog({
   // Local state for user selections (overrides for suggested/unmatched)
   const [selections, setSelections] = useState<Record<string, { userId: number | null; userName: string | null }>>({});
   const [saving, setSaving] = useState(false);
+  const operatorNamesRef = useRef(operatorNames);
+  const resolveMutationRef = useRef<(input: {
+    externalNames: string[];
+    sourceType: "lingxing" | "saihu";
+  }) => void>(() => undefined);
+  operatorNamesRef.current = operatorNames;
 
   // Resolve operator names mutation
   const resolveMutation = trpc.operatorMapping.resolveOperatorNames.useMutation({
@@ -77,6 +83,20 @@ export default function OperatorMappingDialog({
       toast.error("解析运营人员名称失败", { description: err.message });
     },
   });
+  resolveMutationRef.current = resolveMutation.mutate;
+
+  const operatorNamesKey = useMemo(
+    () => JSON.stringify(operatorNames.map((name) => name.trim()).filter(Boolean)),
+    [operatorNames],
+  );
+
+  useEffect(() => {
+    const names = operatorNamesRef.current;
+    if (!open || names.length === 0) return;
+    setResolvedData(null);
+    setSelections({});
+    resolveMutationRef.current({ externalNames: names, sourceType });
+  }, [open, operatorNamesKey, sourceType]);
 
   // Bulk upsert mutation
   const bulkUpsertMutation = trpc.operatorMapping.bulkUpsertMappings.useMutation({
@@ -96,20 +116,12 @@ export default function OperatorMappingDialog({
 
   // Trigger resolve when dialog opens
   const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen && operatorNames.length > 0 && !resolvedData) {
-      resolveMutation.mutate({ externalNames: operatorNames, sourceType });
-    }
     if (!isOpen) {
       setResolvedData(null);
       setSelections({});
     }
     onOpenChange(isOpen);
   };
-
-  // Also trigger on mount if already open
-  if (open && operatorNames.length > 0 && !resolvedData && !resolveMutation.isPending) {
-    resolveMutation.mutate({ externalNames: operatorNames, sourceType });
-  }
 
   // Handle user selection change
   const handleSelectionChange = (externalName: string, userIdStr: string, systemUsers: SystemUser[]) => {

@@ -101,7 +101,6 @@ function filterByOperatorPermission(
  */
 async function applyOperatorMappings(
   db: any,
-  userId: number,
   items: { operator: string | null }[],
   sourceType: "lingxing" | "saihu"
 ): Promise<void> {
@@ -110,12 +109,13 @@ async function applyOperatorMappings(
   const uniqueNames = [...new Set(allRawNames)];
   if (uniqueNames.length === 0) return;
 
-  // Load all confirmed mappings for this user
+  // Operator mappings are shared by the current workspace.
   const allMappings = await db.select().from(operatorNameMappings)
-    .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), and(
-      eq(operatorNameMappings.userId, userId),
+    .where(opsWorkspaceCondition(
+      operatorNameMappings,
+      currentOpsWorkspaceId(),
       eq(operatorNameMappings.isConfirmed, 1),
-    )));
+    ));
 
   // Build a lookup map: externalName -> systemUserName
   const mappingLookup = new Map<string, string>();
@@ -841,7 +841,7 @@ async function buildOverviewFromLingxing(db: any, userId: number, weeksToShow: n
   });
 
   // Apply operator name mappings (replace external names with system user names)
-  await applyOperatorMappings(db, userId, result, "lingxing");
+  await applyOperatorMappings(db, result, "lingxing");
 
   return result;
 }
@@ -988,7 +988,7 @@ async function buildOverviewFromSaihu(db: any, userId: number, weeksToShow: numb
   });
 
   // Apply operator name mappings (replace external names with system user names)
-  await applyOperatorMappings(db, userId, result, "saihu");
+  await applyOperatorMappings(db, result, "saihu");
 
   return result;
 }
@@ -1189,7 +1189,7 @@ async function buildProductDetailFromLingxing(db: any, userId: number, parentAsi
     storeName: latestRow.storeName || null,
     variants,
   };
-  await applyOperatorMappings(db, userId, [productObj], "lingxing");
+  await applyOperatorMappings(db, [productObj], "lingxing");
 
   return {
     product: productObj,
@@ -1330,7 +1330,7 @@ async function buildProductDetailFromSaihu(db: any, userId: number, parentAsin: 
     storeName: infoRow.storeName || null,
     variants,
   };
-  await applyOperatorMappings(db, userId, [productObj], "saihu");
+  await applyOperatorMappings(db, [productObj], "saihu");
 
   return {
     product: productObj,

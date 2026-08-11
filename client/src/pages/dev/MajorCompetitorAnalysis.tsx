@@ -88,7 +88,7 @@ export default function MajorCompetitorAnalysis({
   }, [insight?.result, insight?.status, insight?.version]);
 
   useEffect(() => {
-    if (selectedCompetitorAsins.length > 0 || !insight?.result || insight.runError?.includes("全景产品已删除")) return;
+    if (selectedCompetitorAsins.length > 0 || !insight?.result || insight.runError?.includes("全景产品已")) return;
     const analyzedAsins = (insight.result as InsightResult).competitors
       .map((competitor) => String(competitor.asin || "").trim().toUpperCase())
       .filter(Boolean);
@@ -130,7 +130,7 @@ export default function MajorCompetitorAnalysis({
   const busy = generate.isPending || cancel.isPending || save.isPending || confirm.isPending || unlock.isPending;
   const validSelection = selectedCompetitorAsins.length >= 2 && selectedCompetitorAsins.length <= 4;
   const canGenerate = panoramaConfirmed && validSelection;
-  const analysisInvalidated = Boolean(insight?.runError?.includes("全景产品已删除"));
+  const analysisInvalidated = Boolean(insight?.runError?.includes("全景产品已"));
   const analyzedCompetitorAsins = useMemo(
     () => (draft?.competitors || []).map((competitor) => String(competitor.asin || "").trim().toUpperCase()),
     [draft?.competitors],

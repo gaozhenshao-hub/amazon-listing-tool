@@ -3,6 +3,11 @@
  * Tests: extractCoreName, fuzzyMatchUsers, stringSimilarity
  */
 import { describe, it, expect } from "vitest";
+import {
+  OPERATOR_MATCH_THRESHOLD,
+  extractNameAliases as extractProductionNameAliases,
+  fuzzyMatchUsers as fuzzyMatchProductionUsers,
+} from "./routers/operatorMapping";
 
 // We need to test the helper functions directly
 // Since they are not exported, we'll re-implement them here for testing
@@ -185,6 +190,33 @@ describe("fuzzyMatchUsers", () => {
     for (let i = 1; i < matches.length; i++) {
       expect(matches[i].score).toBeLessThanOrEqual(matches[i - 1].score);
     }
+  });
+});
+
+describe("production operator alias matching", () => {
+  it("treats a Chinese name with an English alias as an exact match", () => {
+    const matches = fuzzyMatchProductionUsers("郭国远", [
+      { id: 1, name: "郭国远（Alan）" },
+    ]);
+    expect(matches[0]).toMatchObject({
+      userId: 1,
+      score: 1,
+      matchType: "exact_alias",
+    });
+  });
+
+  it("extracts both display name and parenthetical alias", () => {
+    expect(extractProductionNameAliases("董静静（zoy）")).toEqual(
+      expect.arrayContaining(["董静静", "zoy"]),
+    );
+  });
+
+  it("uses seventy percent as the suggestion threshold", () => {
+    expect(OPERATOR_MATCH_THRESHOLD).toBe(0.7);
+    const matches = fuzzyMatchProductionUsers("郭国远", [
+      { id: 1, name: "郭国远团队" },
+    ]);
+    expect(matches[0].score).toBe(OPERATOR_MATCH_THRESHOLD);
   });
 });
 

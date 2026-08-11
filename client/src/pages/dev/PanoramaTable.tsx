@@ -13,7 +13,7 @@ import {
   CheckCircle2, AlertCircle, Download, Lock, Unlock, Save, X,
   FileText, Search, ChevronLeft, ChevronRight, ArrowUpDown,
   Table2, Eye, EyeOff, TrendingUp, BarChart3, Filter, XCircle,
-  ChevronDown, ChevronUp, Tag, Layers, FolderOpen, FolderClosed, Trash2,
+  ChevronDown, ChevronUp, Tag, Layers, FolderOpen, FolderClosed, Trash2, Plus,
 } from "lucide-react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -379,7 +379,13 @@ function SalesTrendDialog({
 // ─── PanoramaTable Component ─────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 
-export default function PanoramaTable({ projectId }: { projectId: number }) {
+export default function PanoramaTable({
+  projectId,
+  onAddProduct,
+}: {
+  projectId: number;
+  onAddProduct: () => void;
+}) {
   const [searchTerm, setSearchTerm] = useState("");
   const [editingCell, setEditingCell] = useState<{ productId: number; field: string } | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -976,6 +982,9 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
               )}
             </div>
             <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={onAddProduct}>
+                <Plus className="h-3.5 w-3.5" />添加产品
+              </Button>
               {hasData && (
                 <Button size="sm" variant="outline" className="gap-1.5 text-xs"
                   onClick={() => { setSelectedTrendAsins(allAsins.slice(0, 5)); setTrendOpen(true); }}>
@@ -1192,6 +1201,9 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
               <FileText className="h-12 w-12 text-muted-foreground/30 mb-4" />
               <p className="text-sm font-medium text-muted-foreground">暂无产品数据</p>
               <p className="text-xs text-muted-foreground mt-1">请先在「数据管理」中上传搜索结果/销量数据、标题五点数据和历史月销量数据</p>
+              <Button size="sm" variant="outline" className="mt-4 gap-1.5" onClick={onAddProduct}>
+                <Plus className="h-3.5 w-3.5" />前往数据管理添加产品
+              </Button>
             </div>
           ) : (
             <>
