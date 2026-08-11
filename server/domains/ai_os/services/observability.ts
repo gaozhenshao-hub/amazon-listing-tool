@@ -12,6 +12,10 @@ import {
   listDatabaseSlowQuerySamples,
   sampleDatabaseSlowQueries,
 } from "../../../repositories/database";
+import {
+  BUSINESS_AI_JOB_MODULES,
+  readBusinessJobAgentBinding,
+} from "./businessJobBindingPolicy";
 
 const METRIC_STORE_RETRY_MS = 60_000;
 let aiOsMetricStoreUnavailableUntil = 0;
@@ -521,6 +525,98 @@ export async function buildWorkerQueueHealth(days = 30) {
   };
 }
 
+type BusinessJobBindingRow = {
+  runId?: unknown;
+  module?: unknown;
+  kind?: unknown;
+  status?: unknown;
+  input?: unknown;
+  checkpointRunId?: unknown;
+  checkpointNodeId?: unknown;
+};
+
+export function summarizeActiveBusinessJobBindings(rows: BusinessJobBindingRow[]) {
+  const jobs = new Map<string, {
+    runId: string;
+    module: string;
+    kind: string;
+    status: string;
+    binding: ReturnType<typeof readBusinessJobAgentBinding>;
+    checkpoints: Array<{ runId: string; nodeId: string }>;
+  }>();
+
+  for (const row of rows) {
+    const runId = String(row.runId || "");
+    if (!runId) continue;
+    const current = jobs.get(runId) || {
+      runId,
+      module: String(row.module || ""),
+      kind: String(row.kind || ""),
+      status: String(row.status || ""),
+      binding: readBusinessJobAgentBinding(parseJson(row.input, {})),
+      checkpoints: [],
+    };
+    if (row.checkpointRunId && row.checkpointNodeId) {
+      current.checkpoints.push({
+        runId: String(row.checkpointRunId),
+        nodeId: String(row.checkpointNodeId),
+      });
+    }
+    jobs.set(runId, current);
+  }
+
+  const issues: Array<{
+    runId: string;
+    module: string;
+    kind: string;
+    status: string;
+    binding: ReturnType<typeof readBusinessJobAgentBinding>;
+    reason: "missing_job_binding" | "checkpoint_mismatch";
+  }> = [];
+  for (const job of jobs.values()) {
+    if (!job.binding) {
+      issues.push({ ...job, reason: "missing_job_binding" });
+      continue;
+    }
+    const checkpointMatches = job.checkpoints.some((checkpoint) => (
+      checkpoint.runId === job.binding?.agentRunId
+      && checkpoint.nodeId === job.binding?.agentNodeId
+    ));
+    if (!checkpointMatches) issues.push({ ...job, reason: "checkpoint_mismatch" });
+  }
+
+  return {
+    activeJobs: jobs.size,
+    boundActiveJobs: jobs.size - issues.length,
+    unboundActiveJobs: issues.length,
+    healthy: issues.length === 0,
+    issues: issues.slice(0, 50).map((issue) => ({
+      runId: issue.runId,
+      module: issue.module,
+      kind: issue.kind,
+      status: issue.status,
+      agentRunId: issue.binding?.agentRunId || null,
+      agentNodeId: issue.binding?.agentNodeId || null,
+      reason: issue.reason,
+    })),
+  };
+}
+
+export async function buildActiveBusinessJobBindingHealth() {
+  const placeholders = BUSINESS_AI_JOB_MODULES.map(() => "?").join(",");
+  const rows = await queryRows(
+    `SELECT j.runId,j.module,j.kind,j.status,j.input,
+            c.runId AS checkpointRunId,c.nodeId AS checkpointNodeId
+     FROM ai_jobs j
+     LEFT JOIN emperor_agent_checkpoints c ON c.aiJobRunId=j.runId
+     WHERE j.status IN ('queued','running')
+       AND j.module IN (${placeholders})
+     ORDER BY j.createdAt DESC`,
+    [...BUSINESS_AI_JOB_MODULES],
+  );
+  return summarizeActiveBusinessJobBindings(rows);
+}
+
 async function buildArchiveHealth(days: number) {
   const rows = await queryRows(
     `SELECT COUNT(*) as totalRuns,
@@ -801,6 +897,7 @@ export async function buildAiOsObservabilityDashboard(input: {
   const weightedScore = evaluationRows.reduce((sum, row) => sum + numeric(row.avgScore) * numeric(row.evaluationCount), 0);
   const lowQualitySamples = evaluationRows.reduce((sum, row) => sum + numeric(row.lowScoreCount), 0);
   const workerQueue = await buildWorkerQueueHealth(days);
+  const bindingHealth = await buildActiveBusinessJobBindingHealth();
   const database = await buildDatabaseObservabilitySection(days);
 
   return {
@@ -845,6 +942,7 @@ export async function buildAiOsObservabilityDashboard(input: {
         failureRate: percentage(numeric(job.failedJobs), totalJobs),
         retryRate: percentage(numeric(job.attemptCount), totalJobs),
         avgDurationMs: Math.round(numeric(job.avgDurationMs)),
+        unboundActiveJobs: bindingHealth.unboundActiveJobs,
       },
       tool: {
         totalRuns: totalToolRuns,
@@ -881,6 +979,7 @@ export async function buildAiOsObservabilityDashboard(input: {
       count: numeric(row.count),
     })),
     workerQueue,
+    bindingHealth,
     database,
     generatedAt: new Date().toISOString(),
   };

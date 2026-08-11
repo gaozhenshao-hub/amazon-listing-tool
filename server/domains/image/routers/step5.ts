@@ -1,6 +1,19 @@
+import { TRPCError } from "@trpc/server";
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
-import { syncStepConfirmToAgent } from "../imageWorkflowAgentBridge";
+import {
+  ensureImageWorkflowAgentRun,
+  syncStepConfirmToAgent,
+  syncStepJobFailedToAgent,
+  syncStepJobQueuedToAgent,
+  syncStepJobRunningToAgent,
+} from "../imageWorkflowAgentBridge";
+import {
+  cancelAiJob,
+  createAiJobRun,
+  getAiJobRun,
+  scheduleAiJobRun,
+} from "../../ai_os/services/jobRunner";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -33,15 +46,11 @@ const {
   normalizeSecondaryImageSlots,
   persistStep5ListingAdvice,
   protectedProcedure,
-  registerAiJobHandler,
   resolveProjectAccess,
   resolveSessionAccess,
   resolveSessionForExecution,
   router,
-  runStep5GenerationJob,
   serializeStep5Error,
-  startRegisteredAiJob,
-  step5JobInput,
   storagePut,
   z,
 } = shared;
@@ -57,12 +66,48 @@ export const imageStep5Procedures = {
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
-      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.generate:${input.projectId}`);
-      if (!session) throw new Error("No workflow session found");
+      const resolvedSession = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.generate:${input.projectId}`);
+      if (!resolvedSession) throw new Error("No workflow session found");
+      let session = resolvedSession;
       if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
 
       if (session.step5RunId && isActiveStep5Run(session.step5RunStatus)) {
-        return buildStep5RunSnapshot(session);
+        const activeJob = await getAiJobRun(session.step5RunId).catch(() => null);
+        if (activeJob && isActiveStep5Run(activeJob.status)) {
+          const syncActiveJob = activeJob.status === "running"
+            ? syncStepJobRunningToAgent
+            : syncStepJobQueuedToAgent;
+          await syncActiveJob({
+            agentRunId: session.agentRunId,
+            stepNumber: 5,
+            projectId: input.projectId,
+            userId: ctx.user.id,
+            workspaceId: ctx.workspaceId ?? null,
+            aiJobRunId: activeJob.runId,
+            aiJobAttempt: activeJob.attempt,
+            aiJobMaxAttempts: activeJob.maxAttempts,
+            progress: activeJob.progress,
+          });
+          return {
+            ...buildStep5RunSnapshot(session),
+            attempt: activeJob.attempt,
+            maxAttempts: activeJob.maxAttempts,
+            nextRunAt: activeJob.nextRunAt,
+          };
+        }
+      }
+
+      const agentRunId = session.agentRunId || await ensureImageWorkflowAgentRun({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+      });
+      if (!agentRunId) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "图片工作流无法创建 Agent Run，最终建议任务未入队" });
+      }
+      if (agentRunId && agentRunId !== session.agentRunId) {
+        await db.updateImageWorkflowSession(session.id, { agentRunId });
+        session = { ...session, agentRunId };
       }
 
       const runId = generateStep5RunId();
@@ -78,22 +123,93 @@ export const imageStep5Procedures = {
         currentStep: 5,
         status: "in_progress",
       });
-      await startRegisteredAiJob({
-        runId,
-        kind: "image.step5.finalSuggestion",
-        module: "imageWorkflow",
-        procedure: "imageWorkflow.startStep5Generation",
-        userId: ctx.user.id,
-        projectId: input.projectId,
-        skillSlug: "image.step5.final.suggestion",
-        input: {
+      let job: Awaited<ReturnType<typeof createAiJobRun>>;
+      try {
+        job = await createAiJobRun({
+          runId,
+          kind: "image.step5.finalSuggestion",
+          module: "imageWorkflow",
+          procedure: "imageWorkflow.startStep5Generation",
+          workspaceId: ctx.workspaceId ?? null,
+          userId: ctx.user.id,
           projectId: input.projectId,
-          sessionId: session.id,
-        },
-        progress: 5,
-      });
+          skillSlug: "image.step5.final.suggestion",
+          input: {
+            projectId: input.projectId,
+            sessionId: session.id,
+            agentRunId,
+            agentNodeId: "step5_skill",
+          },
+          progress: 5,
+          maxAttempts: 3,
+          timeoutSeconds: 15 * 60,
+        });
+      } catch (error) {
+        await db.updateImageWorkflowSession(session.id, {
+          step5RunStatus: "failed",
+          step5RunProgress: 100,
+          step5RunError: serializeStep5Error(error),
+          step5RunCompletedAt: new Date(),
+        });
+        await syncStepJobFailedToAgent({
+          agentRunId,
+          stepNumber: 5,
+          projectId: input.projectId,
+          userId: ctx.user.id,
+          workspaceId: ctx.workspaceId ?? null,
+          aiJobRunId: runId,
+          aiJobAttempt: 0,
+          aiJobMaxAttempts: 3,
+          progress: 100,
+          errorMessage: serializeStep5Error(error),
+          finalAttempt: true,
+        });
+        throw error;
+      }
 
-      return buildStep5RunSnapshot(queuedSession);
+      await syncStepJobQueuedToAgent({
+        agentRunId,
+        stepNumber: 5,
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        aiJobRunId: job.runId,
+        aiJobAttempt: job.attempt,
+        aiJobMaxAttempts: job.maxAttempts,
+        progress: job.progress,
+      });
+      try {
+        await scheduleAiJobRun(job.runId);
+      } catch (error) {
+        await cancelAiJob(job.runId, "最终图片建议任务调度失败").catch(() => null);
+        await db.updateImageWorkflowSession(session.id, {
+          step5RunStatus: "failed",
+          step5RunProgress: 100,
+          step5RunError: serializeStep5Error(error),
+          step5RunCompletedAt: new Date(),
+        });
+        await syncStepJobFailedToAgent({
+          agentRunId,
+          stepNumber: 5,
+          projectId: input.projectId,
+          userId: ctx.user.id,
+          workspaceId: ctx.workspaceId ?? null,
+          aiJobRunId: job.runId,
+          aiJobAttempt: job.attempt,
+          aiJobMaxAttempts: job.maxAttempts,
+          progress: 100,
+          errorMessage: serializeStep5Error(error),
+          finalAttempt: true,
+        });
+        throw error;
+      }
+
+      return {
+        ...buildStep5RunSnapshot(queuedSession),
+        attempt: job.attempt,
+        maxAttempts: job.maxAttempts,
+        nextRunAt: job.nextRunAt,
+      };
     }),
 
 
@@ -106,10 +222,88 @@ export const imageStep5Procedures = {
       await resolveProjectAccess(input.projectId, ctx.user);
       const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
+      const job = session.step5RunId
+        ? await getAiJobRun(session.step5RunId).catch(() => null)
+        : null;
+      let effectiveSession = session;
+      if (
+        job &&
+        isActiveStep5Run(session.step5RunStatus) &&
+        (job.status === "failed" || job.status === "canceled")
+      ) {
+        const recoveredStatus = job.status === "canceled" ? "canceled" : "failed";
+        const recoveredError = job.error || (job.status === "canceled" ? "任务已取消" : "图片建议生成失败");
+        const updated = await db.updateImageWorkflowSession(session.id, {
+          step5RunStatus: recoveredStatus,
+          step5RunProgress: 100,
+          step5RunError: recoveredError,
+          step5RunCompletedAt: job.completedAt || new Date(),
+        });
+        if (updated) effectiveSession = { ...session, ...updated };
+        await syncStepJobFailedToAgent({
+          agentRunId: session.agentRunId,
+          stepNumber: 5,
+          projectId: input.projectId,
+          userId: ctx.user.id,
+          workspaceId: ctx.workspaceId ?? null,
+          aiJobRunId: job.runId,
+          aiJobAttempt: job.attempt,
+          aiJobMaxAttempts: job.maxAttempts,
+          progress: 100,
+          errorMessage: recoveredError,
+          finalAttempt: true,
+          failureKind: job.status === "canceled" ? "cancel" : "error",
+        });
+      }
       return {
-        ...buildStep5RunSnapshot(session),
-        isCurrent: !input.runId || session.step5RunId === input.runId,
+        ...buildStep5RunSnapshot(effectiveSession),
+        isCurrent: !input.runId || effectiveSession.step5RunId === input.runId,
+        attempt: job?.attempt ?? 0,
+        maxAttempts: job?.maxAttempts ?? 0,
+        nextRunAt: job?.nextRunAt ?? null,
+        jobStatus: job?.status ?? null,
       };
+    }),
+
+
+  cancelStep5Generation: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+      if (!session.step5RunId || !isActiveStep5Run(session.step5RunStatus)) {
+        return buildStep5RunSnapshot(session);
+      }
+
+      const reason = "用户取消最终图片建议任务";
+      const job = await getAiJobRun(session.step5RunId).catch(() => null);
+      await cancelAiJob(session.step5RunId, reason);
+      const latestSession = await db.getImageWorkflowSessionById(session.id);
+      const updated = latestSession?.step5RunId === session.step5RunId
+        ? await db.updateImageWorkflowSession(session.id, {
+            step5RunStatus: "canceled",
+            step5RunProgress: 100,
+            step5RunError: reason,
+            step5RunCompletedAt: new Date(),
+          })
+        : latestSession;
+
+      await syncStepJobFailedToAgent({
+        agentRunId: session.agentRunId,
+        stepNumber: 5,
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        aiJobRunId: session.step5RunId,
+        aiJobAttempt: job?.attempt ?? null,
+        aiJobMaxAttempts: job?.maxAttempts ?? null,
+        progress: 100,
+        errorMessage: reason,
+        finalAttempt: true,
+        failureKind: "cancel",
+      });
+      return buildStep5RunSnapshot(updated || session);
     }),
 
 

@@ -738,7 +738,7 @@ function NodeCard({
 
       {agentCheckpoint && (
         <span className="absolute right-3 top-7">
-          <WorkflowStatusBadge status={agentCheckpoint.status} />
+          <WorkflowStatusBadge checkpoint={agentCheckpoint} />
         </span>
       )}
 

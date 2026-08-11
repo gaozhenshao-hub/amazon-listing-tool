@@ -1,5 +1,7 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
+import { ensureImageWorkflowAgentRun } from "../imageWorkflowAgentBridge";
+import { startImageStepGenerationJob } from "../services/stepGenerationJob";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -152,31 +154,29 @@ export const imageExpressionGroupProcedures = {
       groupId: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      ensureWriteAccess(project, ctx.user);
       const groups = await db.getExpressionGroupsByProject(input.projectId);
       const group = groups.find(g => g.id === input.groupId);
       if (!group) throw new Error("Group not found");
       if (group.images.length === 0) throw new Error("请先上传图片");
-
-      // Build multi-image message
-      const userContent: any[] = [
-        { type: "text", text: `请分析以下${group.images.length}张竞品图片，它们都属于同一卖点表达方向：「${group.expressionName}」。请从构图方式、配色方案、卖点表达方式、亮点等维度进行综合分析，输出JSON格式结果。` },
-      ];
-      for (const img of group.images) {
-        userContent.push({ type: "image_url", image_url: { url: img.imageUrl, detail: "high" } });
-        userContent.push({ type: "text", text: `竞品: ${img.competitorName || "未知"}` });
-      }
-
-      const response = await invokeBusinessSkill({
-        messages: [
-          { role: "system", content: STEP0_COMPETITOR_IMAGE_ANALYSIS_PROMPT },
-          { role: "user", content: userContent },
-        ],
-        response_format: { type: "json_object" },
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      const agentRunId = session.agentRunId || await ensureImageWorkflowAgentRun({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
       });
-
-      const result = parseLLMJson(response);
-      await db.updateExpressionGroup(input.groupId, { aiAnalysis: JSON.stringify(result) });
-      return result;
+      if (agentRunId && agentRunId !== session.agentRunId) {
+        await db.updateImageWorkflowSession(session.id, { agentRunId });
+      }
+      return startImageStepGenerationJob({
+        projectId: input.projectId,
+        sessionId: session.id,
+        step: 0,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId,
+        agentRunId,
+      });
     }),
 };

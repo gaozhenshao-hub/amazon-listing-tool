@@ -477,6 +477,7 @@ function Step5FinalSuggestions({
   onConfirm: () => void;
 }) {
   const generateMutation = trpc.imageWorkflow.startStep5Generation.useMutation();
+  const cancelMutation = trpc.imageWorkflow.cancelStep5Generation.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep5.useMutation();
   const unlockMutation = trpc.imageWorkflow.unlockStep5.useMutation();
   const utils = trpc.useUtils();
@@ -493,11 +494,10 @@ function Step5FinalSuggestions({
   const sessionRunStatus = session?.step5RunStatus || "idle";
   const sessionActiveRunId = session?.step5RunId || null;
   const isRunActive = (status?: string | null) => status === "queued" || status === "running";
-  const hasActiveRun = isRunActive(sessionRunStatus) || !!activeRunId;
   const step5RunQuery = trpc.imageWorkflow.getStep5Run.useQuery(
     { projectId, runId: activeRunId || sessionActiveRunId || undefined },
     {
-      enabled: hasActiveRun,
+      enabled: Boolean(activeRunId || sessionActiveRunId),
       refetchInterval: (query) => {
         const data = query.state.data as any;
         const status = data?.status || sessionRunStatus;
@@ -507,6 +507,9 @@ function Step5FinalSuggestions({
   );
   const runStatus = step5RunQuery.data?.status || sessionRunStatus;
   const runProgress = Number(step5RunQuery.data?.progress ?? session?.step5RunProgress ?? 0);
+  const runAttempt = Number(step5RunQuery.data?.attempt || 0);
+  const runMaxAttempts = Number(step5RunQuery.data?.maxAttempts || 0);
+  const runError = step5RunQuery.data?.error || session?.step5RunError || null;
   const isGenerating = generateMutation.isPending || isRunActive(runStatus);
 
   // Amazon Premium A+ Module Types - comprehensive list matching backend prompt
@@ -646,6 +649,11 @@ function Step5FinalSuggestions({
       setActiveRunId(null);
       utils.imageWorkflow.getSession.invalidate({ projectId });
       toast.error(run.error || "生成失败");
+    } else if (run.status === "canceled") {
+      handledRunIdsRef.current.add(`${run.runId}:${run.status}`);
+      setActiveRunId(null);
+      utils.imageWorkflow.getSession.invalidate({ projectId });
+      toast.info("图片建议任务已取消");
     }
   }, [projectId, step5RunQuery.data, utils.imageWorkflow.getSession]);
 
@@ -695,6 +703,22 @@ function Step5FinalSuggestions({
       }
     } catch (err: any) {
       toast.error(err.message || "生成失败");
+    }
+  };
+
+  const handleCancelGeneration = async () => {
+    try {
+      const canceledRunId = activeRunId || sessionActiveRunId;
+      await cancelMutation.mutateAsync({ projectId });
+      if (canceledRunId) handledRunIdsRef.current.add(`${canceledRunId}:canceled`);
+      setActiveRunId(null);
+      await Promise.all([
+        utils.imageWorkflow.getSession.invalidate({ projectId }),
+        step5RunQuery.refetch(),
+      ]);
+      toast.info("图片建议任务已取消");
+    } catch (err: any) {
+      toast.error(err.message || "取消任务失败");
     }
   };
 
@@ -895,14 +919,14 @@ function Step5FinalSuggestions({
               {!enData && (
                 <Button onClick={handleGenerate} disabled={isGenerating}>
                   {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-                  {isGenerating ? "生成中..." : "生成最终建议"}
+                  {isGenerating ? (runStatus === "queued" ? "排队中..." : "生成中...") : "生成最终建议"}
                 </Button>
               )}
               {enData && !isConfirmed && (
                 <>
                   <Button variant="outline" onClick={handleGenerate} disabled={isGenerating}>
                     {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RotateCcw className="w-4 h-4 mr-2" />}
-                    {isGenerating ? "生成中..." : "重新生成"}
+                    {isGenerating ? (runStatus === "queued" ? "排队中..." : "生成中...") : "重新生成"}
                   </Button>
                   <Button variant="outline" onClick={handleExportHtml}>
                     <Download className="w-4 h-4 mr-2" /> 导出HTML
@@ -943,16 +967,41 @@ function Step5FinalSuggestions({
             <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
               <div>
-                <p className="text-sm font-medium">AI 正在后台生成最终图片建议</p>
+                <p className="text-sm font-medium">
+                  {runStatus === "queued" ? "AI 任务正在排队" : "AI 正在后台生成最终图片建议"}
+                </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   进度 {Math.max(5, Math.min(100, runProgress || 5))}% · 可以切换页面，回来后会自动恢复
                 </p>
-                {(activeRunId || sessionActiveRunId) && (
-                  <p className="mt-1 font-mono text-[10px] text-muted-foreground">
-                    {activeRunId || sessionActiveRunId}
+                {runMaxAttempts > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    执行尝试 {Math.max(runAttempt, 0)}/{runMaxAttempts}
                   </p>
                 )}
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCancelGeneration}
+                disabled={cancelMutation.isPending}
+              >
+                {cancelMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                取消任务
+              </Button>
+            </div>
+          </CardContent>
+        )}
+        {!isGenerating && (runStatus === "failed" || runStatus === "canceled") && (
+          <CardContent>
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <p className="font-medium">{runStatus === "canceled" ? "任务已取消" : "图片建议生成失败"}</p>
+              <p className="mt-1 text-xs">{runError || "任务未能完成，请重试"}</p>
+              {runMaxAttempts > 0 && (
+                <p className="mt-1 text-xs">已执行 {runAttempt}/{runMaxAttempts} 次</p>
+              )}
+              <Button variant="outline" size="sm" className="mt-3" onClick={handleGenerate} disabled={generateMutation.isPending}>
+                <RotateCcw className="h-4 w-4" />重新生成
+              </Button>
             </div>
           </CardContent>
         )}
@@ -1351,7 +1400,7 @@ function Step5FinalSuggestions({
 export default function ImageWorkflowPage() {
   const { selectedProjectId } = useProject();
   const [currentStep, setCurrentStep] = useState(1);
-  const agentRunId = useMemo(() => new URLSearchParams(window.location.search).get("agentRunId"), []);
+  const queryAgentRunId = useMemo(() => new URLSearchParams(window.location.search).get("agentRunId"), []);
 
   const sessionQuery = trpc.imageWorkflow.getSession.useQuery(
     { projectId: selectedProjectId! },
@@ -1361,6 +1410,7 @@ export default function ImageWorkflowPage() {
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
 
   const session = sessionQuery.data;
+  const agentRunId = queryAgentRunId || session?.agentRunId || null;
   const confirmedStepIds = useMemo(() => {
     if (!session) return new Set<number>();
     return new Set(
@@ -1373,14 +1423,7 @@ export default function ImageWorkflowPage() {
         session.step5Confirmed ? 5 : null,
       ].filter((step): step is number => typeof step === "number"),
     );
-  }, [
-    session?.step0Confirmed,
-    session?.step1Confirmed,
-    session?.step2Confirmed,
-    session?.step3Confirmed,
-    session?.step4Confirmed,
-    session?.step5Confirmed,
-  ]);
+  }, [session]);
 
   // Sync current step from session
   useEffect(() => {

@@ -336,12 +336,22 @@ export const devPanoramaRouter = router({
 
   saveMarketInsight: protectedProcedure
     .input(z.object({ projectId: z.number().int().positive(), result: z.unknown() }))
-    .mutation(({ ctx, input }) => savePanoramaMarketInsight(input.projectId, ctx.user.id, input.result)),
+    .mutation(({ ctx, input }) => savePanoramaMarketInsight(
+      input.projectId,
+      ctx.user.id,
+      input.result,
+      productDevelopmentWorkspaceId(ctx),
+    )),
 
   confirmMarketInsight: protectedProcedure
     .input(z.object({ projectId: z.number().int().positive(), result: z.unknown() }))
     .mutation(async ({ ctx, input }) => {
-      const result = await confirmPanoramaMarketInsight(input.projectId, ctx.user.id, input.result);
+      const result = await confirmPanoramaMarketInsight(
+        input.projectId,
+        ctx.user.id,
+        input.result,
+        productDevelopmentWorkspaceId(ctx),
+      );
       await recordProductDevelopmentAudit({
         ctx,
         action: "product_development.panorama.market_insight.confirm",
@@ -356,7 +366,11 @@ export const devPanoramaRouter = router({
   unlockMarketInsight: protectedProcedure
     .input(z.object({ projectId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const result = await unlockPanoramaMarketInsight(input.projectId, ctx.user.id);
+      const result = await unlockPanoramaMarketInsight(
+        input.projectId,
+        ctx.user.id,
+        productDevelopmentWorkspaceId(ctx),
+      );
       await recordProductDevelopmentAudit({
         ctx,
         action: "product_development.panorama.market_insight.unlock",
@@ -371,7 +385,11 @@ export const devPanoramaRouter = router({
 
   cancelMarketInsight: protectedProcedure
     .input(z.object({ projectId: z.number().int().positive() }))
-    .mutation(({ input }) => cancelPanoramaMarketInsight(input.projectId)),
+    .mutation(({ ctx, input }) => cancelPanoramaMarketInsight(
+      input.projectId,
+      ctx.user.id,
+      productDevelopmentWorkspaceId(ctx),
+    )),
 
   // Export panorama as CSV
   exportCsv: protectedProcedure

@@ -22,6 +22,7 @@ import {
   ArrowUp,
   ArrowDown,
 } from "lucide-react";
+import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
 
 // ─── QA 8 Dimensions Definition ─────────────────────────────────────
 const QA_CHECKLIST_DIMENSIONS = [
@@ -112,8 +113,11 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
     }
   }, [savedContent]);
 
-  const generateQA = trpc.listing.generateQA.useMutation({
-    onSuccess: (data: any) => {
+  const qaJob = useListingGenerationJob({
+    projectId,
+    nodeId: "G5",
+    operation: "qa",
+    onSucceeded: (data: any) => {
       try {
         const content = data.qa || data;
         let items: QAItem[] = [];
@@ -153,7 +157,6 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
         toast.error("QA解析失败");
       }
     },
-    onError: (err) => toast.error("QA生成失败: " + err.message),
   });
 
   const updateListing = trpc.listing.updateByProject.useMutation({
@@ -167,8 +170,7 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
   });
 
   const handleGenerate = () => {
-    generateQA.mutate({
-      projectId,
+    void qaJob.start({
       emphasis: emphasis.trim() || undefined,
     });
   };
@@ -320,9 +322,9 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
           <Button
             className="w-full"
             onClick={handleGenerate}
-            disabled={generateQA.isPending}
+            disabled={qaJob.isGenerating}
           >
-            {generateQA.isPending ? (
+            {qaJob.isGenerating ? (
               <><Loader2 className="h-4 w-4 mr-2 animate-spin" />正在生成QA问答...</>
             ) : generated ? (
               <><RotateCcw className="h-4 w-4 mr-2" />重新生成QA</>
@@ -332,7 +334,14 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
           </Button>
         )}
 
-        {generateQA.isPending && (
+        <ListingGenerationJobStatus
+          run={qaJob.run}
+          isGenerating={qaJob.isGenerating}
+          isCanceling={qaJob.isCanceling}
+          onCancel={() => void qaJob.cancel()}
+          onRetry={handleGenerate}
+        />
+        {qaJob.isGenerating && (
           <p className="text-xs text-muted-foreground text-center">
             AI正在基于竞品评论痛点和产品卖点生成QA问答...
           </p>

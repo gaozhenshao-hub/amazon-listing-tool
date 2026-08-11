@@ -1,5 +1,5 @@
 // Router split: keyword CRUD on trpc.keyword, AI procedures on trpc.keywordAi
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -14,11 +14,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import { EmbeddedAgentRunPanel } from "@/components/workflow/EmbeddedAgentRunPanel";
+import { AiJobHistoryPanel } from "@/components/workflow/AiJobHistoryPanel";
 import { toast } from "sonner";
 import {
   Upload, Plus, Trash2, Filter, Tag, GitBranch, LayoutGrid, Ban,
   Play, Search, Download, RefreshCw, Zap, FileText, ChevronDown,
-  ChevronUp, ArrowUpDown, Loader2, X, AlertTriangle, Edit2, CheckCircle2, Copy, BarChart3, Undo2, Star
+  ChevronUp, ArrowUpDown, Loader2, X, AlertTriangle, Edit2, CheckCircle2, Copy, BarChart3, Undo2, Star,
+  Square, RotateCcw
 } from "lucide-react";
 
 // Strategy category labels
@@ -72,6 +75,13 @@ export default function KeywordPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("keywords");
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedProjectId = Number(params.get("projectId"));
+    if (Number.isInteger(requestedProjectId) && requestedProjectId > 0) setSelectedProjectId(requestedProjectId);
+    if (params.get("tab") === "pipeline") setActiveTab("pipeline");
+  }, []);
 
   // Project list
   const projectsQuery = trpc.project.list.useQuery();
@@ -763,42 +773,73 @@ function ImportTab({ projectId }: { projectId: number }) {
 function PipelineTab({ projectId }: { projectId: number }) {
   const [pipelineStep, setPipelineStep] = useState<string | null>(null);
   const utils = trpc.useUtils();
+  const jobsQuery = trpc.keywordAi.listGenerationRuns.useQuery(
+    { projectId, limit: 20 },
+    {
+      refetchInterval: (query) => (query.state.data || []).some((job) => job.status === "queued" || job.status === "running")
+        ? 2_000
+        : false,
+    },
+  );
+  const jobs = jobsQuery.data || [];
+  const latestJob = jobs[0];
+  const activeJob = jobs.find((job) => job.status === "queued" || job.status === "running");
+  const latestJobOutput = latestJob?.output && typeof latestJob.output === "object"
+    ? latestJob.output as Record<string, any>
+    : null;
+  const trafficClassificationResult = latestJobOutput?.trafficComp || latestJobOutput;
+  const trafficThresholds = trafficClassificationResult?.thresholds?.trafficThresholds;
+  const competitionThresholds = trafficClassificationResult?.thresholds?.competitionThresholds;
+  const handleQueued = (data: any, label: string) => {
+    toast.success(data.alreadyRunning ? `${label}仍在后台执行` : `${label}已进入后台队列`);
+    setPipelineStep(null);
+    void jobsQuery.refetch();
+  };
 
   const trafficCompMut = trpc.keywordAi.aiClassifyTrafficCompetition.useMutation({
-    onSuccess: (data) => {
-      const msg = data.thresholds
-        ? `流量/竞争度智能分类完成：${data.classified}个关键词（流量阈值: ≥${data.thresholds.trafficThresholds?.highMin}高/≥${data.thresholds.trafficThresholds?.mediumMin}中，SPR阈值: ≤${data.thresholds.competitionThresholds?.lowMax}低/≤${data.thresholds.competitionThresholds?.mediumMax}中）`
-        : `流量/竞争度分类完成：${data.classified}个关键词`;
-      toast.success(msg);
-      utils.keyword.list.invalidate(); utils.keyword.stats.invalidate(); setPipelineStep(null);
-    },
+    onSuccess: (data) => handleQueued(data, "流量/竞争度分类"),
     onError: (err) => { toast.error(err.message); setPipelineStep(null); },
   });
   const filterMut = trpc.keywordAi.aiSemanticFilter.useMutation({
-    onSuccess: (data) => { toast.success(`语义过滤完成：保留${data.kept}个，移除${data.removed}个`); utils.keyword.list.invalidate(); utils.keyword.stats.invalidate(); setPipelineStep(null); },
+    onSuccess: (data) => handleQueued(data, "语义过滤"),
     onError: (err) => { toast.error(err.message); setPipelineStep(null); },
   });
   const tagMut = trpc.keywordAi.aiSceneTag.useMutation({
-    onSuccess: (data) => { toast.success(`场景打标完成：${data.tagged}个关键词`); utils.keyword.list.invalidate(); setPipelineStep(null); },
+    onSuccess: (data) => handleQueued(data, "场景打标"),
     onError: (err) => { toast.error(err.message); setPipelineStep(null); },
   });
   const classifyMut = trpc.keywordAi.aiRootClassify.useMutation({
-    onSuccess: (data) => { toast.success(`词根分类完成：${data.classified}个关键词`); utils.keyword.list.invalidate(); setPipelineStep(null); },
+    onSuccess: (data) => handleQueued(data, "词根分类"),
     onError: (err) => { toast.error(err.message); setPipelineStep(null); },
   });
   const matrixMut = trpc.keywordAi.aiStrategyMatrix.useMutation({
-    onSuccess: (data) => { toast.success(`策略矩阵完成：${data.categorized}个关键词`); utils.keyword.list.invalidate(); utils.keyword.stats.invalidate(); setPipelineStep(null); },
+    onSuccess: (data) => handleQueued(data, "策略矩阵"),
     onError: (err) => { toast.error(err.message); setPipelineStep(null); },
   });
   const fullPipelineMut = trpc.keywordAi.runFullPipeline.useMutation({
-    onSuccess: (data) => {
-      toast.success(`全流程完成！流量/竞争度分类${data.trafficCompetition.classified}，过滤保留${data.filter.kept}/移除${data.filter.removed}，场景打标${data.tag.tagged}，词根分类${data.classify.classified}，策略矩阵${data.matrix.categorized}`);
-      utils.keyword.list.invalidate(); utils.keyword.stats.invalidate(); setPipelineStep(null);
-    },
+    onSuccess: (data) => handleQueued(data, "关键词全流程"),
     onError: (err) => { toast.error(err.message); setPipelineStep(null); },
   });
+  const cancelMut = trpc.keywordAi.cancelGenerationJob.useMutation({
+    onSuccess: () => { toast.success("关键词任务已取消"); void jobsQuery.refetch(); },
+    onError: (error) => toast.error(error.message),
+  });
+  const retryMut = trpc.keywordAi.retryGenerationJob.useMutation({
+    onSuccess: () => { toast.success("关键词任务已重新进入队列"); void jobsQuery.refetch(); },
+    onError: (error) => toast.error(error.message),
+  });
+  const confirmMut = trpc.keywordAi.confirmGenerationResult.useMutation({
+    onSuccess: () => { toast.success("关键词结果已确认并写入 Agent Artifact"); void jobsQuery.refetch(); },
+    onError: (error) => toast.error(error.message),
+  });
 
-  const isRunning = trafficCompMut.isPending || filterMut.isPending || tagMut.isPending || classifyMut.isPending || matrixMut.isPending || fullPipelineMut.isPending;
+  useEffect(() => {
+    if (latestJob?.status !== "succeeded") return;
+    void utils.keyword.list.invalidate();
+    void utils.keyword.stats.invalidate();
+  }, [latestJob?.runId, latestJob?.status, utils]);
+
+  const isRunning = Boolean(activeJob) || trafficCompMut.isPending || filterMut.isPending || tagMut.isPending || classifyMut.isPending || matrixMut.isPending || fullPipelineMut.isPending;
 
   const steps = [
     { id: "trafficComp", title: "Step 0: 流量/竞争度智能分类", desc: "AI根据整体数据分布自动划分流量等级（月搜索量）和竞争度（SPR）", icon: BarChart3, action: () => { setPipelineStep("trafficComp"); trafficCompMut.mutate({ projectId }); } },
@@ -810,6 +851,60 @@ function PipelineTab({ projectId }: { projectId: number }) {
 
   return (
     <div className="space-y-6">
+      <EmbeddedAgentRunPanel
+        title="关键词分析 Agent Run / Checkpoint"
+        projectId={projectId}
+        agentSlug="keyword.analysis.workflow"
+        managedByBusinessPage
+        businessUrl={`/listing/keywords?projectId=${projectId}&tab=pipeline`}
+      />
+      <AiJobHistoryPanel module="keywordWorkflow" projectId={projectId} title="关键词后台任务历史" />
+
+      {latestJob && (
+        <section className="rounded-lg border bg-background p-4" data-testid="keyword-current-job">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold">当前任务</span>
+                <Badge variant="outline">
+                  {latestJob.status === "queued" ? "排队中" : latestJob.status === "running" ? "执行中" : latestJob.status === "succeeded" ? "待确认" : latestJob.status === "failed" ? "失败" : "已取消"}
+                </Badge>
+                <span className="text-xs text-muted-foreground">第 {latestJob.attempt}/{latestJob.maxAttempts} 次尝试</span>
+              </div>
+              {(latestJob.status === "queued" || latestJob.status === "running") && <Progress value={latestJob.progress} className="h-1.5" />}
+              {latestJob.error && <p className="rounded-md bg-red-50 p-2 text-xs text-red-700">{latestJob.error}</p>}
+              {latestJob.status === "succeeded" && (trafficThresholds || competitionThresholds) && (
+                <div className="flex flex-wrap gap-x-5 gap-y-1 rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
+                  {trafficThresholds && (
+                    <span>流量阈值：高 ≥ {trafficThresholds.highMin ?? "-"}，中 ≥ {trafficThresholds.mediumMin ?? "-"}</span>
+                  )}
+                  {competitionThresholds && (
+                    <span>竞争阈值：低 ≤ {competitionThresholds.lowMax ?? "-"}，中 ≤ {competitionThresholds.mediumMax ?? "-"}</span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {(latestJob.status === "queued" || latestJob.status === "running") && (
+                <Button size="sm" variant="outline" onClick={() => cancelMut.mutate({ runId: latestJob.runId })} disabled={cancelMut.isPending}>
+                  <Square className="mr-1 h-3.5 w-3.5" />取消
+                </Button>
+              )}
+              {(latestJob.status === "failed" || latestJob.status === "canceled") && (
+                <Button size="sm" variant="outline" onClick={() => retryMut.mutate({ runId: latestJob.runId })} disabled={retryMut.isPending}>
+                  <RotateCcw className="mr-1 h-3.5 w-3.5" />重试
+                </Button>
+              )}
+              {latestJob.status === "succeeded" && (
+                <Button size="sm" onClick={() => confirmMut.mutate({ runId: latestJob.runId })} disabled={confirmMut.isPending}>
+                  <CheckCircle2 className="mr-1 h-3.5 w-3.5" />确认结果
+                </Button>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Full Pipeline */}
       <Card className="border-primary/30">
         <CardHeader>
@@ -818,7 +913,7 @@ function PipelineTab({ projectId }: { projectId: number }) {
         </CardHeader>
         <CardContent>
           <Button size="lg" onClick={() => { setPipelineStep("full"); fullPipelineMut.mutate({ projectId }); }} disabled={isRunning}>
-            {fullPipelineMut.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />全流程分析中（可能需要数分钟）...</> : <><Play className="h-4 w-4 mr-2" />启动全流程分析</>}
+            {activeJob ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{activeJob.status === "queued" ? "后台排队中..." : "后台分析中..."}</> : <><Play className="h-4 w-4 mr-2" />启动全流程分析</>}
           </Button>
         </CardContent>
       </Card>
@@ -849,11 +944,17 @@ function PipelineTab({ projectId }: { projectId: number }) {
 // ─── Listing Layout Suggestion Card ────────────────────────────
 
 function ListingLayoutCard({ projectId }: { projectId: number }) {
-  const [layout, setLayout] = useState<any>(null);
+  const jobsQuery = trpc.keywordAi.listGenerationRuns.useQuery(
+    { projectId, limit: 20 },
+    { refetchInterval: (query) => (query.state.data || []).some((job) => job.status === "queued" || job.status === "running") ? 2_000 : false },
+  );
+  const layoutJob = (jobsQuery.data || []).find((job) => (job.input as any)?.operation === "layout");
+  const layout = layoutJob?.status === "succeeded" ? layoutJob.output as any : null;
   const layoutMut = trpc.keywordAi.aiListingLayout.useMutation({
-    onSuccess: (data) => { setLayout(data); toast.success("Listing布局建议已生成"); },
+    onSuccess: () => { toast.success("Listing 布局建议已进入后台队列"); void jobsQuery.refetch(); },
     onError: (err) => toast.error(err.message),
   });
+  const layoutRunning = layoutJob?.status === "queued" || layoutJob?.status === "running";
 
   return (
     <Card>
@@ -862,9 +963,11 @@ function ListingLayoutCard({ projectId }: { projectId: number }) {
         <CardDescription>基于词根分类和策略矩阵，生成标题公式、五点结构、A+关键词和后台ST建议</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Button onClick={() => layoutMut.mutate({ projectId })} disabled={layoutMut.isPending}>
-          {layoutMut.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />生成中...</> : <><Zap className="h-4 w-4 mr-2" />生成Listing布局建议</>}
+        <Button onClick={() => layoutMut.mutate({ projectId })} disabled={layoutMut.isPending || layoutRunning}>
+          {layoutMut.isPending || layoutRunning ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{layoutJob?.status === "queued" ? "排队中..." : "生成中..."}</> : <><Zap className="h-4 w-4 mr-2" />生成Listing布局建议</>}
         </Button>
+
+        {layoutJob?.error && <p className="rounded-md bg-red-50 p-2 text-xs text-red-700">{layoutJob.error}</p>}
 
         {layout && (
           <div className="space-y-4 mt-4">

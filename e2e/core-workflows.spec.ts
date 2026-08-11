@@ -1,10 +1,12 @@
 import { expect, test } from "@playwright/test";
 
 const workflows = [
-  { slug: "listing", title: "Listing 核心工作流" },
-  { slug: "image", title: "图片核心工作流" },
-  { slug: "ads", title: "广告核心工作流" },
-  { slug: "product-development", title: "产品开发核心工作流" },
+  { slug: "listing", title: "Listing 核心工作流", agentSlug: "listing.full.workflow" },
+  { slug: "image", title: "图片核心工作流", agentSlug: "image.workflow" },
+  { slug: "ads", title: "广告核心工作流", agentSlug: "ads.search-term.workflow" },
+  { slug: "product-development", title: "产品开发核心工作流", agentSlug: "product-development.analysis.workflow" },
+  { slug: "operations", title: "运营核心工作流", agentSlug: "ops.replenishment.workflow" },
+  { slug: "video", title: "视频核心工作流", agentSlug: "video.script.workflow" },
 ];
 
 for (const workflow of workflows) {
@@ -17,6 +19,7 @@ for (const workflow of workflows) {
 
     await page.goto(`/__qa__/workflows/${workflow.slug}`);
     await expect(page.getByRole("heading", { level: 1, name: workflow.title })).toBeVisible();
+    await expect(page.getByTestId("agent-binding")).toContainText(workflow.agentSlug);
     await expect(page.getByTestId("workflow-status")).toHaveText("等待人工确认");
 
     const artifact = page.getByRole("textbox", { name: "节点产物内容" });

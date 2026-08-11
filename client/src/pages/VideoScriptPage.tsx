@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { AiJobHistoryPanel, BusinessArtifactVersionPicker, EmbeddedAgentRunPanel, WorkflowStepProgress } from "@/components/workflow";
@@ -101,6 +101,92 @@ function parseJson(val: any): any {
   try { return typeof val === "string" ? JSON.parse(val) : val; } catch { return null; }
 }
 
+type VideoJobOperation = "competitor_analysis" | "competitor_summary" | "product_info" | "sections" | "subtopics" | "shots" | "edit_scripts";
+
+function useVideoGenerationJob(input: {
+  scriptId: number;
+  operation: VideoJobOperation;
+  onSucceeded?: () => void;
+}) {
+  const handledRunId = useRef("");
+  const onSucceeded = input.onSucceeded;
+  const jobs = trpc.aiJobs.list.useQuery(
+    { module: "videoScript", limit: 100 },
+    { refetchInterval: (query) => {
+      const rows = (query.state.data || []) as any[];
+      const hasActive = rows.some((job) => {
+        const jobInput = job.input as any;
+        return jobInput?.videoScriptId === input.scriptId
+          && jobInput?.operation === input.operation
+          && ["queued", "running"].includes(job.status);
+      });
+      return hasActive ? 2_000 : 8_000;
+    } },
+  );
+  const latest = useMemo(() => ((jobs.data || []) as any[]).find((job) => {
+    const jobInput = job.input as any;
+    return jobInput?.videoScriptId === input.scriptId && jobInput?.operation === input.operation;
+  }) || null, [input.operation, input.scriptId, jobs.data]);
+  const cancel = trpc.aiJobs.cancel.useMutation({ onSuccess: () => jobs.refetch() });
+  const retry = trpc.aiJobs.retry.useMutation({ onSuccess: () => jobs.refetch() });
+
+  useEffect(() => {
+    if (latest?.status !== "succeeded" || handledRunId.current === latest.runId) return;
+    handledRunId.current = latest.runId;
+    onSucceeded?.();
+  }, [latest?.runId, latest?.status, onSucceeded]);
+
+  const metadata = (latest?.input || {}) as any;
+  const isActive = latest?.status === "queued" || latest?.status === "running";
+  const isRetrying = latest?.status === "queued" && Number(latest?.attempt || 0) > 0 && Boolean(latest?.error);
+  return {
+    latest,
+    metadata,
+    isActive,
+    isRetrying,
+    cancel,
+    retry,
+    refresh: jobs.refetch,
+  };
+}
+
+function VideoJobFeedback({ job }: { job: ReturnType<typeof useVideoGenerationJob> }) {
+  const latest = job.latest;
+  if (!latest || latest.status === "succeeded") return null;
+  const label = latest.status === "queued"
+    ? (job.isRetrying ? "等待重试" : "排队中")
+    : latest.status === "running"
+      ? "执行中"
+      : latest.status === "failed"
+        ? "执行失败"
+        : "已取消";
+  return (
+    <div className={`flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm ${latest.status === "failed" ? "border-destructive/40 bg-destructive/5" : "bg-muted/30"}`}>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          {job.isActive && <Loader2 className="h-4 w-4 animate-spin" />}
+          <span className="font-medium">{label}</span>
+          <Badge variant="outline">{Math.round(latest.progress || 0)}%</Badge>
+          <span className="text-xs text-muted-foreground">第 {latest.attempt || 0}/{latest.maxAttempts || 1} 次</span>
+        </div>
+        {latest.error && <p className="mt-1 max-w-3xl truncate text-xs text-destructive" title={latest.error}>{latest.error}</p>}
+      </div>
+      <div className="flex items-center gap-2">
+        {job.isActive && (
+          <Button size="sm" variant="outline" disabled={job.cancel.isPending} onClick={() => job.cancel.mutate({ runId: latest.runId, reason: "用户取消视频生成任务" })}>
+            <X className="h-4 w-4" />取消
+          </Button>
+        )}
+        {["failed", "canceled"].includes(latest.status) && (
+          <Button size="sm" variant="outline" disabled={job.retry.isPending} onClick={() => job.retry.mutate({ runId: latest.runId, reason: "从视频阶段页面恢复任务" })}>
+            <RotateCcw className="h-4 w-4" />重试
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ─────────────────────────────────────────────
 
 export default function VideoScriptPage() {
@@ -158,6 +244,8 @@ function VideoScriptList() {
       <EmbeddedAgentRunPanel
         title="视频脚本 Agent Run / Checkpoint"
         projectId={selectedProject}
+        agentSlug="video.script.workflow"
+        managedByBusinessPage
       />
       <AiJobHistoryPanel module="videoScript" projectId={selectedProject} title="视频脚本后台任务历史" />
       <div className="flex items-center justify-between">
@@ -550,6 +638,21 @@ function VideoScriptEditor({ scriptId }: { scriptId: number }) {
       <EmbeddedAgentRunPanel
         title="视频脚本 Agent Run / Checkpoint"
         projectId={script.data.projectId}
+        agentSlug="video.script.workflow"
+        managedByBusinessPage
+        runScope={{ key: "videoScriptId", value: scriptId }}
+        onManagedNodeSelect={(nodeId) => {
+          const stageByNode: Record<string, string> = {
+            competitor_analysis: "stage_0a",
+            product_information: "stage_0b",
+            section_planning: "stage_1",
+            subtopic_expansion: "stage_2",
+            shot_storyboard: "stage_3",
+            edit_script: "stage_4",
+          };
+          const stage = stageByNode[nodeId];
+          if (stage) updateMutation.mutate({ id: scriptId, currentStage: stage as any }, { onSuccess: () => script.refetch() });
+        }}
       />
       <AiJobHistoryPanel module="videoScript" projectId={script.data.projectId} title="视频脚本后台任务历史" />
       <BusinessArtifactVersionPicker
@@ -733,6 +836,22 @@ function Stage0A({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
 
   const competitors = trpc.videoScript.getCompetitorScripts.useQuery({ videoScriptId: scriptId });
   const summary = trpc.videoScript.getCompetitorSummary.useQuery({ videoScriptId: scriptId });
+  const competitorJob = useVideoGenerationJob({
+    scriptId,
+    operation: "competitor_analysis",
+    onSucceeded: () => {
+      toast.success("竞品脚本分析完成");
+      competitors.refetch();
+    },
+  });
+  const summaryJob = useVideoGenerationJob({
+    scriptId,
+    operation: "competitor_summary",
+    onSucceeded: () => {
+      toast.success("竞品汇总分析完成");
+      summary.refetch();
+    },
+  });
   const addMutation = trpc.videoScript.addCompetitorScript.useMutation({
     onSuccess: () => {
       toast.success("竞品脚本已添加");
@@ -745,15 +864,15 @@ function Stage0A({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
   });
   const analyzeMutation = trpc.videoScript.analyzeCompetitorScript.useMutation({
     onSuccess: () => {
-      toast.success("AI分析完成");
-      competitors.refetch();
+      toast.success("竞品分析已进入后台队列");
+      competitorJob.refresh();
     },
     onError: (err) => toast.error(`分析失败: ${err.message}`),
   });
   const summaryMutation = trpc.videoScript.generateCompetitorSummary.useMutation({
     onSuccess: () => {
-      toast.success("汇总分析完成");
-      summary.refetch();
+      toast.success("汇总分析已进入后台队列");
+      summaryJob.refresh();
     },
   });
   const deleteMutation = trpc.videoScript.deleteCompetitorScript.useMutation({
@@ -778,6 +897,8 @@ function Stage0A({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <VideoJobFeedback job={competitorJob} />
+          <VideoJobFeedback job={summaryJob} />
           {/* Input Sources */}
           <div className="grid grid-cols-4 gap-3">
             {[
@@ -874,10 +995,10 @@ function Stage0A({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
                             size="sm"
                             variant="outline"
                             onClick={() => analyzeMutation.mutate({ competitorScriptId: c.id, rawContent: c.rawContent })}
-                            disabled={analyzeMutation.isPending}
+                            disabled={analyzeMutation.isPending || competitorJob.isActive}
                           >
-                            {analyzeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
-                            AI分析
+                            {(analyzeMutation.isPending || competitorJob.isActive) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
+                            {competitorJob.latest?.status === "queued" ? "排队中" : competitorJob.latest?.status === "running" ? "分析中" : "AI分析"}
                           </Button>
                         )}
                         <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate({ id: c.id })}>
@@ -914,12 +1035,12 @@ function Stage0A({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
               {competitorList.filter((c: any) => c.structureAnalysis).length >= 2 && (
                 <Button
                   onClick={() => summaryMutation.mutate({ videoScriptId: scriptId })}
-                  disabled={summaryMutation.isPending}
+                  disabled={summaryMutation.isPending || summaryJob.isActive}
                   className="w-full"
                   variant="outline"
                 >
-                  {summaryMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-                  生成多竞品汇总分析
+                  {(summaryMutation.isPending || summaryJob.isActive) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                  {summaryJob.latest?.status === "queued" ? "汇总排队中" : summaryJob.latest?.status === "running" ? "汇总分析中" : "生成多竞品汇总分析"}
                 </Button>
               )}
 
@@ -962,10 +1083,18 @@ function Stage0B({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
   scriptId: number; projectId: number; onAdvance: () => void; onConfirm: () => void; isConfirmed: boolean;
 }) {
   const snapshot = trpc.videoScript.getProductSnapshot.useQuery({ videoScriptId: scriptId });
-  const extractMutation = trpc.videoScript.extractProductInfo.useMutation({
-    onSuccess: () => {
+  const extractionJob = useVideoGenerationJob({
+    scriptId,
+    operation: "product_info",
+    onSucceeded: () => {
       toast.success("产品信息提取完成");
       snapshot.refetch();
+    },
+  });
+  const extractMutation = trpc.videoScript.extractProductInfo.useMutation({
+    onSuccess: () => {
+      toast.success("产品信息提取已进入后台队列");
+      extractionJob.refresh();
     },
     onError: (err) => toast.error(`提取失败: ${err.message}`),
   });
@@ -985,6 +1114,7 @@ function Stage0B({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <VideoJobFeedback job={extractionJob} />
           <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
             <Database className="w-8 h-8 text-primary" />
             <div className="flex-1">
@@ -995,10 +1125,10 @@ function Stage0B({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
             </div>
             <Button
               onClick={() => extractMutation.mutate({ videoScriptId: scriptId, projectId })}
-              disabled={extractMutation.isPending}
+              disabled={extractMutation.isPending || extractionJob.isActive}
             >
-              {extractMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-              {snapshotData ? "重新提取" : "开始提取"}
+              {(extractMutation.isPending || extractionJob.isActive) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+              {extractionJob.latest?.status === "queued" ? "排队中" : extractionJob.latest?.status === "running" ? "提取中" : snapshotData ? "重新提取" : "开始提取"}
             </Button>
           </div>
 
@@ -1093,10 +1223,18 @@ function Stage1({ scriptId, projectId, videoType, targetDuration, onAdvance, onC
   scriptId: number; projectId: number; videoType: string; targetDuration: number; onAdvance: () => void; onConfirm: () => void; isConfirmed: boolean;
 }) {
   const sections = trpc.videoScript.getSections.useQuery({ videoScriptId: scriptId });
-  const generateMutation = trpc.videoScript.generateSections.useMutation({
-    onSuccess: () => {
+  const sectionJob = useVideoGenerationJob({
+    scriptId,
+    operation: "sections",
+    onSucceeded: () => {
       toast.success("段落规划完成");
       sections.refetch();
+    },
+  });
+  const generateMutation = trpc.videoScript.generateSections.useMutation({
+    onSuccess: () => {
+      toast.success("段落规划已进入后台队列");
+      sectionJob.refresh();
     },
     onError: (err) => toast.error(`生成失败: ${err.message}`),
   });
@@ -1131,13 +1269,14 @@ function Stage1({ scriptId, projectId, videoType, targetDuration, onAdvance, onC
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <VideoJobFeedback job={sectionJob} />
           <div className="flex items-center gap-3">
             <Button
               onClick={() => generateMutation.mutate({ videoScriptId: scriptId, projectId })}
-              disabled={generateMutation.isPending}
+              disabled={generateMutation.isPending || sectionJob.isActive}
             >
-              {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-              {sectionList.length > 0 ? "重新生成段落" : "AI生成段落规划"}
+              {(generateMutation.isPending || sectionJob.isActive) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+              {sectionJob.latest?.status === "queued" ? "段落排队中" : sectionJob.latest?.status === "running" ? "段落生成中" : sectionList.length > 0 ? "重新生成段落" : "AI生成段落规划"}
             </Button>
             <Badge variant="outline" className="text-xs">
               {VIDEO_TYPE_LABELS[videoType]} · {targetDuration}s
@@ -1226,10 +1365,18 @@ function Stage2({ scriptId, onAdvance, onConfirm, isConfirmed }: {
 }) {
   const sections = trpc.videoScript.getSections.useQuery({ videoScriptId: scriptId });
   const subtopics = trpc.videoScript.getSubtopics.useQuery({ videoScriptId: scriptId });
-  const generateMutation = trpc.videoScript.generateSubtopics.useMutation({
-    onSuccess: () => {
+  const subtopicJob = useVideoGenerationJob({
+    scriptId,
+    operation: "subtopics",
+    onSucceeded: () => {
       toast.success("子主题展开完成");
       subtopics.refetch();
+    },
+  });
+  const generateMutation = trpc.videoScript.generateSubtopics.useMutation({
+    onSuccess: () => {
+      toast.success("子主题任务已进入后台队列");
+      subtopicJob.refresh();
     },
     onError: (err) => toast.error(`生成失败: ${err.message}`),
   });
@@ -1250,12 +1397,13 @@ function Stage2({ scriptId, onAdvance, onConfirm, isConfirmed }: {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <VideoJobFeedback job={subtopicJob} />
           <Button
             onClick={() => generateMutation.mutate({ videoScriptId: scriptId })}
-            disabled={generateMutation.isPending}
+            disabled={generateMutation.isPending || subtopicJob.isActive}
           >
-            {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-            {subtopicList.length > 0 ? "重新生成子主题" : "AI展开子主题"}
+            {(generateMutation.isPending || subtopicJob.isActive) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+            {subtopicJob.latest?.status === "queued" ? "子主题排队中" : subtopicJob.latest?.status === "running" ? "子主题生成中" : subtopicList.length > 0 ? "重新生成子主题" : "AI展开子主题"}
           </Button>
 
           {sectionList.map((sec: any) => {
@@ -1318,10 +1466,18 @@ function Stage3({ scriptId, videoType, targetDuration, onAdvance, onConfirm, isC
   const [showCnFields, setShowCnFields] = useState(false);
   const [expandedShot, setExpandedShot] = useState<number | null>(null);
   const shots = trpc.videoScript.getShots.useQuery({ videoScriptId: scriptId });
-  const generateMutation = trpc.videoScript.generateShots.useMutation({
-    onSuccess: () => {
+  const shotJob = useVideoGenerationJob({
+    scriptId,
+    operation: "shots",
+    onSucceeded: () => {
       toast.success("镜头明细生成完成");
       shots.refetch();
+    },
+  });
+  const generateMutation = trpc.videoScript.generateShots.useMutation({
+    onSuccess: () => {
+      toast.success("镜头生成已进入后台队列");
+      shotJob.refresh();
     },
     onError: (err) => toast.error(`生成失败: ${err.message}`),
   });
@@ -1379,6 +1535,7 @@ function Stage3({ scriptId, videoType, targetDuration, onAdvance, onConfirm, isC
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <VideoJobFeedback job={shotJob} />
           {/* Video Type Spec Info */}
           <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 text-sm">
             <Info className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -1392,10 +1549,10 @@ function Stage3({ scriptId, videoType, targetDuration, onAdvance, onConfirm, isC
           <div className="flex items-center gap-3">
             <Button
               onClick={() => generateMutation.mutate({ videoScriptId: scriptId })}
-              disabled={generateMutation.isPending}
+              disabled={generateMutation.isPending || shotJob.isActive}
             >
-              {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-              {shotList.length > 0 ? "重新生成镜头" : "AI生成镜头明细"}
+              {(generateMutation.isPending || shotJob.isActive) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+              {shotJob.latest?.status === "queued" ? "镜头排队中" : shotJob.latest?.status === "running" ? "镜头生成中" : shotList.length > 0 ? "重新生成镜头" : "AI生成镜头明细"}
             </Button>
             {shotList.length > 0 && (
               <>
@@ -1647,10 +1804,18 @@ function Stage4({ scriptId, onConfirm, isConfirmed }: {
   scriptId: number; onConfirm: () => void; isConfirmed: boolean;
 }) {
   const editScripts = trpc.videoScript.getEditScripts.useQuery({ videoScriptId: scriptId });
-  const generateMutation = trpc.videoScript.generateEditScripts.useMutation({
-    onSuccess: () => {
+  const editJob = useVideoGenerationJob({
+    scriptId,
+    operation: "edit_scripts",
+    onSucceeded: () => {
       toast.success("剪辑脚本生成完成");
       editScripts.refetch();
+    },
+  });
+  const generateMutation = trpc.videoScript.generateEditScripts.useMutation({
+    onSuccess: () => {
+      toast.success("剪辑脚本已进入后台队列");
+      editJob.refresh();
     },
     onError: (err) => toast.error(`生成失败: ${err.message}`),
   });
@@ -1695,12 +1860,13 @@ function Stage4({ scriptId, onConfirm, isConfirmed }: {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <VideoJobFeedback job={editJob} />
           <Button
             onClick={() => generateMutation.mutate({ videoScriptId: scriptId })}
-            disabled={generateMutation.isPending}
+            disabled={generateMutation.isPending || editJob.isActive}
           >
-            {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-            {editList.length > 0 ? "重新生成剪辑方案" : "AI生成剪辑脚本"}
+            {(generateMutation.isPending || editJob.isActive) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+            {editJob.latest?.status === "queued" ? "剪辑脚本排队中" : editJob.latest?.status === "running" ? "剪辑脚本生成中" : editList.length > 0 ? "重新生成剪辑方案" : "AI生成剪辑脚本"}
           </Button>
 
           {editList.length > 0 && (

@@ -10,7 +10,9 @@ import type {
 export const WORKFLOW_STATUS_LABELS: Record<WorkflowCheckpointStatus, string> = {
   pending: "等待依赖",
   ready: "可执行",
+  queued: "排队中",
   running: "执行中",
+  retrying: "等待重试",
   waiting_human: "待确认",
   confirmed: "已确认",
   skipped: "已跳过",
@@ -33,7 +35,9 @@ export function normalizeCheckpointStatus(status?: string | null): WorkflowCheck
     case "completed":
       return "confirmed";
     case "ready":
+    case "queued":
     case "running":
+    case "retrying":
     case "waiting_human":
     case "confirmed":
     case "skipped":
@@ -45,6 +49,41 @@ export function normalizeCheckpointStatus(status?: string | null): WorkflowCheck
     default:
       return "pending";
   }
+}
+
+export function getWorkflowCheckpointMetadata(checkpoint?: WorkflowCheckpointLike | null): Record<string, unknown> {
+  const metadata = checkpoint?.metadata;
+  if (!metadata) return {};
+  if (typeof metadata === "object" && !Array.isArray(metadata)) return metadata as Record<string, unknown>;
+  if (typeof metadata !== "string") return {};
+  try {
+    const parsed = JSON.parse(metadata);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+export function getWorkflowCheckpointDisplayStatus(
+  checkpoint?: WorkflowCheckpointLike | null,
+): WorkflowCheckpointStatus {
+  const normalized = normalizeCheckpointStatus(checkpoint?.status);
+  const metadata = getWorkflowCheckpointMetadata(checkpoint);
+  const businessJobStatus = String(metadata.businessJobStatus || "");
+  if (businessJobStatus === "canceled" || (normalized === "failed" && checkpoint?.lastFailureKind === "cancel")) {
+    return "canceled";
+  }
+  if (normalized === "failed") return "failed";
+  if (normalized === "waiting_human") return "waiting_human";
+  if (normalized === "confirmed" || normalized === "skipped" || normalized === "locked") return normalized;
+  if (businessJobStatus === "queued") return "queued";
+  if (businessJobStatus === "retrying" || metadata.retryPending === true) return "retrying";
+  if (businessJobStatus === "failed") return "failed";
+  if (businessJobStatus === "waiting_human") return "waiting_human";
+  if (businessJobStatus === "running" && normalized === "running") return "running";
+  return normalized;
 }
 
 export function isWorkflowStepDone(status: WorkflowCheckpointStatus): boolean {

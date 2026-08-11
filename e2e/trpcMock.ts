@@ -28,6 +28,7 @@ function fixtureFor(procedure: string): unknown {
     "adStructure.estimateTargeting": null,
     "videoScript.list": [],
     "aiJobs.list": [],
+    "aiJobs.bindingIntegrity": { total: 0, bound: 0, mismatched: 0, healthy: true, issues: [] },
     "emperor.agents.listProjectRuns": [],
     "emperor.agents.listRuns": [],
   };

@@ -52,6 +52,10 @@ export function AiJobHistoryPanel({
     { module, projectId: projectId || undefined, limit: 20 },
     { refetchInterval: open ? 4_000 : false },
   );
+  const bindingIntegrity = trpc.aiJobs.bindingIntegrity.useQuery(
+    { module, projectId: projectId || undefined, limit: 100 },
+    { enabled: open, refetchInterval: open ? 8_000 : false },
+  );
   const cancelJob = trpc.aiJobs.cancel.useMutation({
     onSuccess: async () => {
       toast.success("任务已取消");
@@ -110,6 +114,21 @@ export function AiJobHistoryPanel({
               <RefreshCw className={cn("h-4 w-4", jobsQuery.isFetching && "animate-spin")} />
             </Button>
           </div>
+          {bindingIntegrity.data && !bindingIntegrity.data.healthy && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <div className="flex items-center gap-2 font-medium">
+                <AlertCircle className="h-4 w-4" />
+                检测到 {bindingIntegrity.data.mismatched} 个 Job / Checkpoint 绑定异常
+              </div>
+              <div className="mt-2 space-y-1">
+                {bindingIntegrity.data.issues.slice(0, 5).map((issue) => (
+                  <p key={issue.aiJobRunId}>
+                    {issue.aiJobRunId}：Job {issue.jobStatus}，Checkpoint {issue.checkpointStatus || "未绑定"}，期望 {issue.expectedCheckpointStatuses.join("/") || "未知"}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
           {jobs.map((job) => {
             const active = job.status === "queued" || job.status === "running";
             const recoverable = job.status === "failed" || job.status === "canceled";

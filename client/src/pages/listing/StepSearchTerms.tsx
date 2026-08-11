@@ -17,6 +17,7 @@ import {
   Search,
   AlertCircle,
 } from "lucide-react";
+import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
 
 // ─── Search Terms 5 Dimensions Definition ─────────────────────────────────
 const SEARCH_TERMS_CHECKLIST_DIMENSIONS = [
@@ -71,8 +72,11 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
     evaluateCheck.mutate({ searchTerms });
   };
 
-  const generateSearchTerms = trpc.listing.generateSearchTerms.useMutation({
-    onSuccess: (data: any) => {
+  const searchTermsJob = useListingGenerationJob({
+    projectId,
+    nodeId: "G4",
+    operation: "searchTerms",
+    onSucceeded: (data: any) => {
       try {
         const content = data.searchTerms || data;
         let text = "";
@@ -109,7 +113,6 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
         toast.success("搜索词已生成");
       }
     },
-    onError: (err) => toast.error("搜索词生成失败: " + err.message),
   });
 
   const updateListing = trpc.listing.updateByProject.useMutation({
@@ -123,8 +126,7 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
   });
 
   const handleGenerate = () => {
-    generateSearchTerms.mutate({
-      projectId,
+    void searchTermsJob.start({
       emphasis: emphasis.trim() || undefined,
     });
   };
@@ -216,9 +218,9 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
           <Button
             className="w-full"
             onClick={handleGenerate}
-            disabled={generateSearchTerms.isPending}
+            disabled={searchTermsJob.isGenerating}
           >
-            {generateSearchTerms.isPending ? (
+            {searchTermsJob.isGenerating ? (
               <><Loader2 className="h-4 w-4 mr-2 animate-spin" />正在生成搜索词...</>
             ) : generated ? (
               <><RotateCcw className="h-4 w-4 mr-2" />重新生成搜索词</>
@@ -228,7 +230,14 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
           </Button>
         )}
 
-        {generateSearchTerms.isPending && (
+        <ListingGenerationJobStatus
+          run={searchTermsJob.run}
+          isGenerating={searchTermsJob.isGenerating}
+          isCanceling={searchTermsJob.isCanceling}
+          onCancel={() => void searchTermsJob.cancel()}
+          onRetry={handleGenerate}
+        />
+        {searchTermsJob.isGenerating && (
           <p className="text-xs text-muted-foreground text-center">
             AI正在基于关键词策略矩阵生成搜索词，自动排除标题已用词...
           </p>

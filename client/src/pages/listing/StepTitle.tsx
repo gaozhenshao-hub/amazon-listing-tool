@@ -22,6 +22,7 @@ import {
   AlertCircle,
   Layers,
 } from "lucide-react";
+import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
 
 // ─── Title 10 Dimensions Definition (Updated for Two-Stage) ─────────────────
 const TITLE_CHECKLIST_DIMENSIONS = [
@@ -133,8 +134,11 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
     evaluateTitleCheck.mutate({ title: titleForCheck });
   };
 
-  const generateTitle = trpc.listing.generateTitle.useMutation({
-    onSuccess: (data: any) => {
+  const titleJob = useListingGenerationJob({
+    projectId,
+    nodeId: "G2",
+    operation: "title",
+    onSucceeded: (data: any) => {
       try {
         const content = data.title || data;
         let parsed: any;
@@ -190,7 +194,6 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
         toast.success("标题已生成");
       }
     },
-    onError: (err) => toast.error("标题生成失败: " + err.message),
   });
 
   const updateListing = trpc.listing.updateByProject.useMutation({
@@ -208,8 +211,7 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
   });
 
   const handleGenerate = () => {
-    generateTitle.mutate({
-      projectId,
+    void titleJob.start({
       emphasis: [emphasis, holidayTerm].filter(Boolean).join("; ") || undefined,
     });
   };
@@ -355,9 +357,9 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
           <Button
             className="w-full"
             onClick={handleGenerate}
-            disabled={generateTitle.isPending}
+            disabled={titleJob.isGenerating}
           >
-            {generateTitle.isPending ? (
+            {titleJob.isGenerating ? (
               <><Loader2 className="h-4 w-4 mr-2 animate-spin" />正在生成候选标题...</>
             ) : candidates.length > 0 ? (
               <><RotateCcw className="h-4 w-4 mr-2" />重新生成标题</>
@@ -367,7 +369,14 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
           </Button>
         )}
 
-        {generateTitle.isPending && (
+        <ListingGenerationJobStatus
+          run={titleJob.run}
+          isGenerating={titleJob.isGenerating}
+          isCanceling={titleJob.isCanceling}
+          onCancel={() => void titleJob.cancel()}
+          onRetry={handleGenerate}
+        />
+        {titleJob.isGenerating && (
           <p className="text-xs text-muted-foreground text-center">
             AI正在基于4大数据源生成两段式候选标题...
           </p>

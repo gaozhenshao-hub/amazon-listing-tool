@@ -1,10 +1,13 @@
 import "dotenv/config";
 import "../routers/aiJobs";
 import "../routers/imageWorkflow";
+import "../domains/listing/services/generationJob";
 import "../services/emperorAgentRunner";
 import "../domains/product_development/analysis/informationSummaryService";
 import "../domains/product_development/analysis/analysisStageJobService";
 import "../domains/product_development/panorama/marketInsightService";
+import "../domains/keyword/keywordGenerationJob";
+import "../domains/video/videoGenerationJob";
 import {
   drainAiJobQueue,
   getAiJobWorkerId,

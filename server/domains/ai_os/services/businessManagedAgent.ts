@@ -33,6 +33,7 @@ type BusinessManagedNodeInput = {
   progress?: number;
   errorMessage?: string | null;
   metadata?: Record<string, unknown>;
+  allowJobReplacement?: boolean;
   resetNodeIds?: string[];
   userId?: number;
 };
@@ -82,7 +83,7 @@ async function ensureNodeCanRun(input: BusinessManagedNodeInput) {
     checkpoint = await getCheckpoint(input.runId, input.nodeId);
   }
   if (checkpoint.status === "waiting_human") return checkpoint;
-  if (!["ready", "failed"].includes(checkpoint.status)) {
+  if (!["ready", "failed", "canceled"].includes(checkpoint.status)) {
     throw new Error(`业务托管节点 ${input.nodeId} 当前状态不可执行：${checkpoint.status}`);
   }
 
@@ -99,7 +100,7 @@ async function ensureNodeCanRun(input: BusinessManagedNodeInput) {
     lockToken,
     lockedAt: now,
     timeoutAt: new Date(now.getTime() + 30 * 60_000),
-    allowedFromStatuses: [checkpoint.status as "ready" | "failed"],
+    allowedFromStatuses: [checkpoint.status as "ready" | "failed" | "canceled"],
     action: "claim business-managed node",
   }));
   if (input.aiJobRunId) {
@@ -156,7 +157,17 @@ export async function ensureBusinessManagedRun(input: BusinessManagedRunInput & 
 }
 
 export async function markBusinessManagedNodeRunning(input: BusinessManagedNodeInput) {
-  let checkpoint = await ensureNodeCanRun(input);
+  let checkpoint = await getCheckpoint(input.runId, input.nodeId);
+  if (
+    (checkpoint.status === "running" || checkpoint.status === "waiting_human") &&
+    input.aiJobRunId &&
+    checkpoint.aiJobRunId &&
+    checkpoint.aiJobRunId !== input.aiJobRunId &&
+    !input.allowJobReplacement
+  ) {
+    return false;
+  }
+  checkpoint = await ensureNodeCanRun(input);
   if (checkpoint.status === "waiting_human") {
     await withAgentStateMachine((stateMachine) => stateMachine.claimNodeRunning({
       runId: input.runId,
@@ -183,6 +194,7 @@ export async function markBusinessManagedNodeRunning(input: BusinessManagedNodeI
     aiJobRunId: input.aiJobRunId || null,
   });
   await refreshRunAfterCheckpoint(input.runId, input.dag);
+  return true;
 }
 
 export async function markBusinessManagedNodeProgress(input: BusinessManagedNodeInput) {
@@ -213,6 +225,14 @@ export async function markBusinessManagedNodeProgress(input: BusinessManagedNode
 }
 
 export async function markBusinessManagedNodeWaitingHuman(input: BusinessManagedNodeInput) {
+  const currentCheckpoint = await getCheckpoint(input.runId, input.nodeId);
+  if (
+    input.aiJobRunId &&
+    currentCheckpoint.aiJobRunId &&
+    currentCheckpoint.aiJobRunId !== input.aiJobRunId
+  ) {
+    return false;
+  }
   let checkpoint = await ensureNodeCanRun(input);
   if (checkpoint.status === "waiting_human") {
     await rawExecute(
@@ -257,6 +277,7 @@ export async function markBusinessManagedNodeWaitingHuman(input: BusinessManaged
   });
   await addEvent(input.runId, runRow(detail).agentSlug, input.nodeId, "node.business_waiting_human", `业务结果已生成，等待页面确认`);
   await refreshRunAfterCheckpoint(input.runId, input.dag);
+  return true;
 }
 
 export async function markBusinessManagedNodeConfirmed(input: BusinessManagedNodeInput) {
@@ -275,6 +296,10 @@ export async function markBusinessManagedNodeConfirmed(input: BusinessManagedNod
     reviewerUserId: input.userId || 0,
     confirmedAt: new Date(),
   }));
+  await rawExecute(
+    "UPDATE emperor_agent_checkpoints SET metadata=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+    [stringifyJson({ ...checkpointMetadata(checkpoint), ...(input.metadata || {}), businessProgress: 100 }), input.runId, input.nodeId],
+  );
   await resetNodes(input.runId, input.resetNodeIds);
   const detail = await getAgentRun(input.runId, undefined, true);
   await persistAgentArtifact({
@@ -326,6 +351,19 @@ export async function markBusinessManagedNodeFailed(input: BusinessManagedNodeIn
   failureKind?: "error" | "timeout" | "cancel";
 }) {
   let checkpoint = await getCheckpoint(input.runId, input.nodeId);
+  if (
+    input.aiJobRunId &&
+    checkpoint.aiJobRunId &&
+    checkpoint.aiJobRunId !== input.aiJobRunId
+  ) {
+    return false;
+  }
+  if (
+    checkpoint.status === "failed" &&
+    (!input.aiJobRunId || checkpoint.aiJobRunId === input.aiJobRunId)
+  ) {
+    return true;
+  }
   if (!input.finalAttempt) {
     return markBusinessManagedNodeProgress({
       ...input,
@@ -337,6 +375,10 @@ export async function markBusinessManagedNodeFailed(input: BusinessManagedNodeIn
     await markBusinessManagedNodeRunning(input);
     checkpoint = await getCheckpoint(input.runId, input.nodeId);
   }
+  await markBusinessManagedNodeProgress({
+    ...input,
+    progress: input.progress ?? 100,
+  });
   await withAgentStateMachine((stateMachine) => stateMachine.failNode({
     runId: input.runId,
     nodeId: input.nodeId,
@@ -350,6 +392,30 @@ export async function markBusinessManagedNodeFailed(input: BusinessManagedNodeIn
     aiJobRunId: input.aiJobRunId || null,
   });
   await refreshRunAfterCheckpoint(input.runId, input.dag);
+  return true;
+}
+
+export async function markBusinessManagedNodeCanceled(input: BusinessManagedNodeInput) {
+  const checkpoint = await getCheckpoint(input.runId, input.nodeId);
+  if (input.aiJobRunId && checkpoint.aiJobRunId && checkpoint.aiJobRunId !== input.aiJobRunId) {
+    return false;
+  }
+  if (checkpoint.status === "canceled") return true;
+  if (!["running", "waiting_human"].includes(checkpoint.status)) {
+    await markBusinessManagedNodeRunning(input);
+  }
+  await withAgentStateMachine((stateMachine) => stateMachine.cancelNode({
+    runId: input.runId,
+    nodeId: input.nodeId,
+    message: input.errorMessage || "业务任务已取消",
+    completedAt: new Date(),
+    sourceAiJobRunId: input.aiJobRunId || null,
+  }));
+  await addEvent(input.runId, checkpoint.agentSlug, input.nodeId, "node.business_canceled", input.errorMessage || "业务任务已取消", {
+    aiJobRunId: input.aiJobRunId || null,
+  });
+  await refreshRunAfterCheckpoint(input.runId, input.dag);
+  return true;
 }
 
 export function parseBusinessManagedOutput(value: unknown) {

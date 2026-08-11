@@ -14,7 +14,7 @@ import {
   PieChart, Pie, Cell,
 } from "recharts";
 import { Input } from "@/components/ui/input";
-import { EmbeddedAgentRunPanel } from "@/components/workflow";
+import { AiJobHistoryPanel, EmbeddedAgentRunPanel } from "@/components/workflow";
 import {
   Target, RefreshCw, Search, DollarSign,
   Eye, TrendingUp, Zap, BarChart3, Clock, XCircle, Activity, Crosshair,
@@ -492,7 +492,13 @@ export default function OpsAds() {
 
   return (
     <div className="space-y-4">
-      <EmbeddedAgentRunPanel title="广告分析 Agent Run / Checkpoint" />
+      <EmbeddedAgentRunPanel
+        title="广告搜索词 Agent Run / Checkpoint"
+        agentSlug="ads.search-term.workflow"
+        managedByBusinessPage
+        businessUrl="/ops/ads?tab=search-terms"
+      />
+      <AiJobHistoryPanel module="adAnalysis" title="广告搜索词后台任务历史" />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

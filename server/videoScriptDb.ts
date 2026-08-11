@@ -141,6 +141,13 @@ export async function getCompetitorScriptsByVideoScript(videoScriptId: number) {
     .orderBy(asc(videoCompetitorScripts.id));
 }
 
+export async function getCompetitorScriptById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db.select().from(videoCompetitorScripts).where(eq(videoCompetitorScripts.id, id)).limit(1);
+  return row || null;
+}
+
 export async function updateCompetitorScript(id: number, data: Partial<InsertVideoCompetitorScript>) {
   const db = await getDb();
   if (!db) return;

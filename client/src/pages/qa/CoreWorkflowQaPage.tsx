@@ -8,6 +8,8 @@ import { useMemo, useState } from "react";
 type WorkflowFixture = {
   title: string;
   initialOutput: string;
+  agentSlug: string;
+  agentNodeId: string;
   steps: WorkflowStepDefinition[];
 };
 
@@ -15,6 +17,8 @@ const FIXTURES: Record<string, WorkflowFixture> = {
   listing: {
     title: "Listing 核心工作流",
     initialOutput: "围绕核心关键词生成的 Listing 标题草稿",
+    agentSlug: "listing.full.workflow",
+    agentNodeId: "G2",
     steps: [
       { id: "selling-points", label: "卖点精雕", description: "AI 生成卖点并等待人工确认" },
       { id: "title", label: "标题生成", description: "使用已确认卖点生成标题" },
@@ -24,6 +28,8 @@ const FIXTURES: Record<string, WorkflowFixture> = {
   image: {
     title: "图片核心工作流",
     initialOutput: "主图突出产品结构，第二张图展示核心利益点",
+    agentSlug: "image.workflow",
+    agentNodeId: "step4_skill",
     steps: [
       { id: "selling-points", label: "卖点梳理", description: "确认图片表达重点" },
       { id: "outline", label: "图片大纲", description: "确定模块和轮播图片数量" },
@@ -33,6 +39,8 @@ const FIXTURES: Record<string, WorkflowFixture> = {
   ads: {
     title: "广告核心工作流",
     initialOutput: "自动广告采词，手动精准广告承接高转化词",
+    agentSlug: "ads.search-term.workflow",
+    agentNodeId: "search_term_advice",
     steps: [
       { id: "analysis", label: "广告分析", description: "读取关键词和投放数据" },
       { id: "strategy", label: "策略生成", description: "生成预算与竞价策略" },
@@ -42,10 +50,34 @@ const FIXTURES: Record<string, WorkflowFixture> = {
   "product-development": {
     title: "产品开发核心工作流",
     initialOutput: "综合市场容量、差异化机会和供应链风险的分析结论",
+    agentSlug: "product-development.analysis.workflow",
+    agentNodeId: "market_overview",
     steps: [
       { id: "analysis", label: "市场分析", description: "生成市场与竞品洞察" },
       { id: "score", label: "机会评分", description: "人工校准评分与结论" },
       { id: "report", label: "开发报告", description: "输出 BOM、利润与测试报告" },
+    ],
+  },
+  operations: {
+    title: "运营核心工作流",
+    initialOutput: "结合可售库存、在途数量和销量趋势生成补货计划",
+    agentSlug: "ops.replenishment.workflow",
+    agentNodeId: "replenishment_plan",
+    steps: [
+      { id: "inventory", label: "库存分析", description: "读取库存和销量趋势" },
+      { id: "replenishment", label: "补货计划", description: "生成补货数量和到货节奏" },
+      { id: "review", label: "人工复核", description: "确认后进入运营计划" },
+    ],
+  },
+  video: {
+    title: "视频核心工作流",
+    initialOutput: "围绕产品核心卖点生成章节、分镜和剪辑脚本",
+    agentSlug: "video.script.workflow",
+    agentNodeId: "shot_storyboard",
+    steps: [
+      { id: "sections", label: "章节生成", description: "生成视频章节结构" },
+      { id: "shots", label: "分镜生成", description: "生成镜头与画面说明" },
+      { id: "script", label: "剪辑脚本", description: "确认最终剪辑脚本" },
     ],
   },
 };
@@ -96,6 +128,9 @@ export default function CoreWorkflowQaPage() {
           <p className="text-sm font-medium text-primary">Human-in-the-loop workflow contract</p>
           <h1 className="text-3xl font-bold">{fixture.title}</h1>
           <p className="text-sm text-muted-foreground">AI 生成、人工编辑、版本保存、确认锁定和重跑使用同一套交互约束。</p>
+          <p className="font-mono text-xs text-muted-foreground" data-testid="agent-binding">
+            {fixture.agentSlug} / {fixture.agentNodeId}
+          </p>
         </header>
 
         <WorkflowStepProgress

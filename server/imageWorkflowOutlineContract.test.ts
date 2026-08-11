@@ -91,10 +91,12 @@ describe("image workflow outline contract", () => {
 
   it("routes Step 2 and A+ re-optimization through explicit Emperor Skills", () => {
     const backend = fs.readFileSync(repoPath("server/domains/image/routers/workflowSteps.ts"), "utf8");
+    const worker = fs.readFileSync(repoPath("server/domains/image/services/stepGenerationJob.ts"), "utf8");
     const frontend = fs.readFileSync(repoPath("client/src/pages/imageWorkflow/ImageOutlineStep.tsx"), "utf8");
     const gateway = fs.readFileSync(repoPath("server/services/emperorInvocationGateway.ts"), "utf8");
 
-    expect(backend).toContain('skillSlug: "image.step2.outline"');
+    expect(backend).toContain("startImageStepGenerationJob");
+    expect(worker).toContain('skillSlug: "image.step2.outline"');
     expect(backend).toContain('skillSlug: "image.step2.aplus.single.optimize"');
     expect(frontend).toContain("optimizeStep2AplusModule");
     expect(frontend).toContain("皇帝 Skill 正在按新模块结构重新优化");

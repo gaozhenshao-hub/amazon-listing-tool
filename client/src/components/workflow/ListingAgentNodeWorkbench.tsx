@@ -50,7 +50,7 @@ export function ListingAgentNodeWorkbench({
             <div className="flex flex-wrap items-center gap-2">
               <Bot className="h-4 w-4 text-primary" />
               <span className="text-sm font-semibold">{step?.label || context.nodeId}</span>
-              {checkpoint?.status && <WorkflowStatusBadge status={checkpoint.status} />}
+              {checkpoint?.status && <WorkflowStatusBadge checkpoint={checkpoint} />}
               <Badge variant="outline" className="max-w-[280px] truncate rounded-md text-xs">
                 已关联执行记录
               </Badge>

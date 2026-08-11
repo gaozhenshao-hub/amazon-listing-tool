@@ -10,6 +10,7 @@ import { getMarketInsight } from "../panorama/marketInsightRepository";
 import {
   cancelAiJob,
   generateAiJobRunId,
+  getAiJobRun,
   registerAiJobHandler,
   startRegisteredAiJob,
 } from "../../ai_os/services/jobRunner";
@@ -29,6 +30,7 @@ import {
   syncProductAnalysisNodeCompleted,
   syncProductAnalysisNodeFailure,
   syncProductAnalysisNodeProgress,
+  syncProductAnalysisNodeQueued,
   syncProductAnalysisNodeRunning,
 } from "./productAnalysisAgent";
 import { normalizeParentMarketMetrics } from "../panorama/marketMetrics";
@@ -37,6 +39,7 @@ const informationSummaryJobInput = z.object({
   projectId: z.number().int().positive(),
   ownerName: z.string().nullable().optional(),
   agentRunId: z.string().max(80).optional(),
+  agentNodeId: z.string().max(80).optional(),
 });
 
 const INFORMATION_SUMMARY_STALE_MS = 12 * 60_000;
@@ -54,17 +57,27 @@ export async function queueInformationSummaryGeneration(input: {
   const current = await devDb.getDevAnalysisStage(input.projectId, "information_summary");
   const currentAgeMs = current?.updatedAt ? Date.now() - new Date(current.updatedAt).getTime() : Number.POSITIVE_INFINITY;
   if (current?.status === "running" && current.runId && currentAgeMs < INFORMATION_SUMMARY_STALE_MS) {
-    const linked = await syncProductAnalysisNodeRunning({
+    const currentJob = await getAiJobRun(current.runId).catch(() => null);
+    const linked = currentJob?.status === "queued" ? await syncProductAnalysisNodeQueued({
       projectId: input.projectId,
       stageType: "information_summary",
       userId: input.userId,
       workspaceId: input.workspaceId,
       aiJobRunId: current.runId,
+      aiJobAttempt: currentJob.attempt,
+      maxAttempts: currentJob.maxAttempts,
+    }) : await syncProductAnalysisNodeRunning({
+      projectId: input.projectId,
+      stageType: "information_summary",
+      userId: input.userId,
+      workspaceId: input.workspaceId,
+      aiJobRunId: current.runId,
+      aiJobAttempt: currentJob?.attempt,
     });
     return {
       runId: current.runId,
       agentRunId: linked?.agentRunId || null,
-      status: "running" as const,
+      status: currentJob?.status === "queued" ? "queued" as const : "running" as const,
       progress: current.runProgress || 0,
       alreadyRunning: true,
     };
@@ -93,12 +106,14 @@ export async function queueInformationSummaryGeneration(input: {
 
   let agentRunId = "";
   try {
-    const linked = await syncProductAnalysisNodeRunning({
+    const linked = await syncProductAnalysisNodeQueued({
       projectId: input.projectId,
       stageType: "information_summary",
       userId: input.userId,
       workspaceId: input.workspaceId,
       aiJobRunId: runId,
+      aiJobAttempt: 0,
+      maxAttempts: 2,
     });
     agentRunId = linked?.agentRunId || "";
     await startRegisteredAiJob({
@@ -110,7 +125,12 @@ export async function queueInformationSummaryGeneration(input: {
       userId: input.userId,
       projectId: input.projectId,
       skillSlug: "dev.analysis.information_summary",
-      input: { projectId: input.projectId, ownerName: input.ownerName || null, agentRunId: agentRunId || undefined },
+      input: {
+        projectId: input.projectId,
+        ownerName: input.ownerName || null,
+        agentRunId: agentRunId || undefined,
+        agentNodeId: "information_summary",
+      },
       progress: 5,
       priority: 20,
       queueName: "analysis",

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
@@ -159,37 +160,61 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
   const aiAdvice = trpc.aiJobs.startAdSearchTermAdvice.useMutation({
     onSuccess: (job) => {
       setAiAdviceRunId(job.runId);
-      toast.success("AI分析任务已开始");
+      void adviceJobs.refetch();
+      toast.success("AI分析任务已进入后台队列");
     },
     onError: (err) => toast.error("AI分析失败", { description: err.message }),
   });
+  const adviceJobs = trpc.aiJobs.list.useQuery(
+    { module: "adAnalysis", limit: 30 },
+    { refetchInterval: (query) => (query.state.data || []).some((job) => job.status === "queued" || job.status === "running") ? 2_000 : false },
+  );
+  const restoredAdviceJob = (adviceJobs.data || []).find((job) => (
+    job.kind === "ad.searchTermAdvice"
+    && (!campaignId || !(job.input as any)?.campaignId || (job.input as any).campaignId === campaignId)
+  ));
+  const effectiveAdviceRunId = aiAdviceRunId || restoredAdviceJob?.runId || null;
   const aiAdviceJob = trpc.aiJobs.get.useQuery(
-    { runId: aiAdviceRunId || "" },
+    { runId: effectiveAdviceRunId || "" },
     {
-      enabled: !!aiAdviceRunId,
+      enabled: !!effectiveAdviceRunId,
       refetchInterval: (query) => {
         const status = (query.state.data as any)?.status;
         return status === "queued" || status === "running" ? 2000 : false;
       },
     }
   );
-  const aiAdviceStatus = aiAdviceJob.data?.status;
+  const currentAdviceJob = aiAdviceJob.data || restoredAdviceJob;
+  const aiAdviceStatus = currentAdviceJob?.status;
   const aiAdvicePending = aiAdvice.isPending || aiAdviceStatus === "queued" || aiAdviceStatus === "running";
-  const aiAdviceData = aiAdviceResult;
+  const storedAdviceOutput = currentAdviceJob?.output && typeof currentAdviceJob.output === "object" && "parsed" in (currentAdviceJob.output as any)
+    ? (currentAdviceJob.output as any).parsed
+    : currentAdviceJob?.output;
+  const aiAdviceData = aiAdviceResult || storedAdviceOutput;
+  const cancelAdvice = trpc.aiJobs.cancel.useMutation({
+    onSuccess: () => { toast.success("广告搜索词任务已取消"); void adviceJobs.refetch(); void aiAdviceJob.refetch(); },
+    onError: (error) => toast.error(error.message),
+  });
+  const retryAdvice = trpc.aiJobs.retry.useMutation({
+    onSuccess: (job) => { setAiAdviceRunId(job.runId); toast.success("广告搜索词任务已重新排队"); void adviceJobs.refetch(); },
+    onError: (error) => toast.error(error.message),
+  });
+  const confirmAdvice = trpc.aiJobs.confirmBusinessOutput.useMutation({
+    onSuccess: () => { toast.success("广告搜索词建议已确认并生成 Artifact"); void adviceJobs.refetch(); },
+    onError: (error) => toast.error(error.message),
+  });
 
   useEffect(() => {
-    const job = aiAdviceJob.data as any;
-    if (!job || !aiAdviceRunId) return;
+    const job = currentAdviceJob as any;
+    if (!job) return;
+    const inputCategoryId = Number(job.input?.categoryId);
+    if (Number.isInteger(inputCategoryId) && inputCategoryId > 0) setAiCategoryId(inputCategoryId);
+    if (job.status === "queued" || job.status === "running") setShowAiDialog(true);
     if (job.status === "succeeded") {
       const output = job.output?.parsed || job.output;
       setAiAdviceResult(output);
-      setAiAdviceRunId(null);
-      toast.success("AI分析完成");
-    } else if (job.status === "failed") {
-      setAiAdviceRunId(null);
-      toast.error("AI分析失败", { description: job.error || "请稍后重试" });
     }
-  }, [aiAdviceJob.data, aiAdviceRunId]);
+  }, [currentAdviceJob]);
 
   const categoryStats = data?.categoryStats || {};
   const categories = categoryDefs?.categories || [];
@@ -849,7 +874,24 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
             <div className="flex flex-col items-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-3" />
               <p className="text-sm text-gray-500">AI正在后台分析该分类的搜索词数据...</p>
-              {aiAdviceRunId && <p className="text-xs text-gray-400 mt-2">任务ID: {aiAdviceRunId}</p>}
+              <Badge variant="outline" className="mt-2">{aiAdviceStatus === "queued" ? "排队中" : `执行中 ${currentAdviceJob?.progress || 0}%`}</Badge>
+              <Progress value={currentAdviceJob?.progress || 0} className="mt-3 h-1.5 w-full max-w-sm" />
+              {effectiveAdviceRunId && (
+                <Button className="mt-4" size="sm" variant="outline" onClick={() => cancelAdvice.mutate({ runId: effectiveAdviceRunId, reason: "用户取消广告搜索词分析" })} disabled={cancelAdvice.isPending}>
+                  <XCircle className="mr-1 h-3.5 w-3.5" />取消任务
+                </Button>
+              )}
+            </div>
+          ) : aiAdviceStatus === "failed" || aiAdviceStatus === "canceled" ? (
+            <div className="space-y-4 py-8 text-center">
+              <AlertTriangle className="mx-auto h-8 w-8 text-red-500" />
+              <p className="text-sm font-medium">{aiAdviceStatus === "failed" ? "AI 分析失败" : "任务已取消"}</p>
+              {currentAdviceJob?.error && <p className="rounded-md bg-red-50 p-3 text-xs text-red-700">{currentAdviceJob.error}</p>}
+              {effectiveAdviceRunId && (
+                <Button size="sm" onClick={() => retryAdvice.mutate({ runId: effectiveAdviceRunId, reason: "用户重试广告搜索词分析" })} disabled={retryAdvice.isPending}>
+                  <RotateCcw className="mr-1 h-3.5 w-3.5" />重新排队
+                </Button>
+              )}
             </div>
           ) : aiAdviceData ? (
             <div className="space-y-4">
@@ -934,6 +976,19 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
                   );
                 })}
               </div>
+              {effectiveAdviceRunId && (
+                <DialogFooter>
+                  <Button
+                    onClick={() => confirmAdvice.mutate({
+                      runId: effectiveAdviceRunId,
+                      output: { ...(aiAdviceData as any), userDecisions },
+                    })}
+                    disabled={confirmAdvice.isPending}
+                  >
+                    <CheckCircle2 className="mr-1 h-4 w-4" />确认建议
+                  </Button>
+                </DialogFooter>
+              )}
             </div>
           ) : null}
         </DialogContent>

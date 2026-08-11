@@ -4,6 +4,8 @@ import {
   formatWorkflowDate,
   getArtifactsForStep,
   getCheckpointForStep,
+  getWorkflowCheckpointDisplayStatus,
+  getWorkflowCheckpointMetadata,
   getWorkflowRunProgress,
   isWorkflowStepDone,
   normalizeCheckpointStatus,
@@ -27,6 +29,32 @@ describe("workflowUtils", () => {
     expect(normalizeCheckpointStatus("running")).toBe("running");
     expect(normalizeCheckpointStatus("unexpected")).toBe("pending");
     expect(normalizeCheckpointStatus(null)).toBe("pending");
+  });
+
+  it("derives queued, retrying and canceled states from checkpoint metadata", () => {
+    const queued = {
+      nodeId: "step5_skill",
+      status: "running",
+      metadata: { businessJobStatus: "queued" },
+    };
+    expect(getWorkflowCheckpointMetadata(queued)).toEqual({ businessJobStatus: "queued" });
+    expect(getWorkflowCheckpointDisplayStatus(queued)).toBe("queued");
+    expect(getWorkflowCheckpointDisplayStatus({
+      nodeId: "step5_skill",
+      status: "running",
+      metadata: JSON.stringify({ businessJobStatus: "retrying", retryPending: true }),
+    })).toBe("retrying");
+    expect(getWorkflowCheckpointDisplayStatus({
+      nodeId: "step5_skill",
+      status: "failed",
+      lastFailureKind: "cancel",
+      metadata: { businessJobStatus: "running" },
+    })).toBe("canceled");
+    expect(getWorkflowCheckpointDisplayStatus({
+      nodeId: "step5_skill",
+      status: "failed",
+      metadata: { businessJobStatus: "queued" },
+    })).toBe("failed");
   });
 
   it("recognizes terminal human workflow states", () => {

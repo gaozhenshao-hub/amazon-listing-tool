@@ -1,6 +1,9 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../dbClient";
-import { registerImageWorkflowArtifact } from "../../domains/ai_os/services/businessArtifactRegistry";
+import {
+  registerImageWorkflowArtifact,
+  registerImageWorkflowStepArtifact,
+} from "../../domains/ai_os/services/businessArtifactRegistry";
 import { InsertCompetitorImageAnalysis, InsertExpressionGroup, InsertExpressionGroupImage, InsertImageWorkflowSession, competitorImageAnalyses, expressionGroupImages, expressionGroups, imageWorkflowSessions } from "../../../drizzle/schema/image";
 
 function scheduleImageWorkflowArtifactSync(sessionId: number, sourceType: "ai_output" | "user_edit") {
@@ -9,10 +12,23 @@ function scheduleImageWorkflowArtifactSync(sessionId: number, sourceType: "ai_ou
   });
 }
 
-async function captureImageProject(projectId: number | null | undefined) {
+function scheduleImageWorkflowStepArtifactSync(
+  sessionId: number,
+  step: number,
+  sourceType: "ai_output" | "user_edit",
+) {
+  void registerImageWorkflowStepArtifact(sessionId, step, sourceType).catch((error) => {
+    console.warn(`[Image Workflow] Step ${step} artifact sync failed for session ${sessionId}:`, error);
+  });
+}
+
+async function captureImageProject(
+  projectId: number | null | undefined,
+  sourceType: "ai_output" | "user_edit" = "user_edit",
+) {
   if (!projectId) return;
   const session = await getImageWorkflowSessionByProject(projectId);
-  if (session) scheduleImageWorkflowArtifactSync(session.id, "user_edit");
+  if (session) scheduleImageWorkflowArtifactSync(session.id, sourceType);
 }
 
 export async function getImageWorkflowSession(projectId: number, userId: number) {
@@ -57,11 +73,22 @@ export async function updateImageWorkflowSession(id: number, data: Partial<Inser
   if (!db) throw new Error("DB not available");
   await db.update(imageWorkflowSessions).set(data).where(eq(imageWorkflowSessions.id, id));
   const rows = await db.select().from(imageWorkflowSessions).where(eq(imageWorkflowSessions.id, id)).limit(1);
-  const confirmsStep = Object.entries(data).some(([key, value]) => /^step\d+Confirmed$/.test(key) && Number(value) === 1);
-  if (confirmsStep) {
-    await registerImageWorkflowArtifact(id, "user_edit");
-  } else {
-    scheduleImageWorkflowArtifactSync(id, "user_edit");
+  const changedKeys = Object.keys(data);
+  const changedSteps = [...new Set(changedKeys.flatMap((key) => {
+    const match = key.match(/^step(\d+)(AiResult|OptimizedResult|UserEdit|Confirmed)/);
+    return match ? [Number(match[1])] : [];
+  }))];
+  for (const step of changedSteps) {
+    const confirmsStep = Number((data as any)[`step${step}Confirmed`] || 0) === 1;
+    const changesUserOutput = changedKeys.includes(`step${step}UserEdit`);
+    const sourceType = confirmsStep || changesUserOutput ? "user_edit" : "ai_output";
+    if (confirmsStep) {
+      await registerImageWorkflowStepArtifact(id, step, sourceType);
+    } else if (sourceType === "ai_output") {
+      await registerImageWorkflowStepArtifact(id, step, sourceType);
+    } else {
+      scheduleImageWorkflowStepArtifactSync(id, step, sourceType);
+    }
   }
   return rows[0];
 }
@@ -142,7 +169,10 @@ export async function updateExpressionGroup(id: number, data: Partial<InsertExpr
   if (!db) throw new Error("Database not available");
   const [existing] = await db.select({ projectId: expressionGroups.projectId }).from(expressionGroups).where(eq(expressionGroups.id, id));
   await db.update(expressionGroups).set(data).where(eq(expressionGroups.id, id));
-  await captureImageProject(data.projectId ?? existing?.projectId);
+  await captureImageProject(
+    data.projectId ?? existing?.projectId,
+    data.aiAnalysis !== undefined && data.userEdit === undefined ? "ai_output" : "user_edit",
+  );
 }
 
 export async function deleteExpressionGroup(id: number) {

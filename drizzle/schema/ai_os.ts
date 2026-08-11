@@ -443,7 +443,7 @@ export const emperorAgentCheckpoints = mysqlTable("emperor_agent_checkpoints", {
   nodeId: varchar("nodeId", { length: 128 }).notNull(),
   nodeLabel: varchar("nodeLabel", { length: 255 }),
   nodeType: varchar("nodeType", { length: 64 }).notNull(),
-  status: mysqlEnum("status", ["pending", "ready", "running", "waiting_human", "confirmed", "skipped", "failed"]).default("pending").notNull(),
+  status: mysqlEnum("status", ["pending", "ready", "running", "waiting_human", "confirmed", "skipped", "failed", "canceled"]).default("pending").notNull(),
   attempt: int("attempt").default(0).notNull(),
   maxAttempts: int("maxAttempts").default(1).notNull(),
   input: json("input"),

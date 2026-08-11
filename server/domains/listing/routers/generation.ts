@@ -1,5 +1,6 @@
 import * as shared from "../routerContext";
 import { syncGenerationToAgent } from "../listingAgentBridge";
+import { startListingJobForContext } from "./jobControl";
 
 const {
   BULLET_POINTS_PROMPT,
@@ -46,7 +47,7 @@ const {
   ensureListingAgentRun,
 } = shared;
 
-export const listingGenerationProcedures = {
+const legacyListingGenerationProcedures = {
 
 
   // Generate title with AI retry
@@ -453,4 +454,35 @@ export const listingGenerationProcedures = {
         listing: updated,
       };
     }),
+};
+
+async function queueListingJob(ctx: any, input: { projectId: number; emphasis?: string; existingTitle?: string }, operation: "bullets" | "title" | "description" | "searchTerms" | "batch", nodeId: "G1" | "G2" | "G3" | "G4") {
+  const project = await resolveProjectAccess(input.projectId, ctx.user);
+  ensureWriteAccess(project, ctx.user);
+  return startListingJobForContext({
+    ...input,
+    operation,
+    nodeId,
+    userId: ctx.user.id,
+    workspaceId: ctx.workspaceId ?? null,
+  });
+}
+
+export const listingGenerationProcedures = {
+  ...legacyListingGenerationProcedures,
+  generateTitle: protectedProcedure
+    .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
+    .mutation(({ ctx, input }) => queueListingJob(ctx, input, "title", "G2")),
+  generateBulletPoints: protectedProcedure
+    .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
+    .mutation(({ ctx, input }) => queueListingJob(ctx, input, "bullets", "G1")),
+  generateDescription: protectedProcedure
+    .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
+    .mutation(({ ctx, input }) => queueListingJob(ctx, input, "description", "G3")),
+  generateSearchTerms: protectedProcedure
+    .input(z.object({ projectId: z.number(), existingTitle: z.string().optional(), emphasis: z.string().optional() }))
+    .mutation(({ ctx, input }) => queueListingJob(ctx, input, "searchTerms", "G4")),
+  generateFull: protectedProcedure
+    .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
+    .mutation(({ ctx, input }) => queueListingJob(ctx, input, "batch", "G1")),
 };

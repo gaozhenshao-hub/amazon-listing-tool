@@ -2,6 +2,7 @@ import { AppError, APP_ERROR_CODES } from "@shared/_core/errors";
 import { callDataApi } from "../../_core/dataApi";
 import { productStageGatedError } from "../../_core/domainError";
 import { invokeBusinessSkill } from "../ai_os/services/businessSkillGateway";
+import { getAiJobRun } from "../ai_os/services/jobRunner";
 import { queueInformationSummaryGeneration } from "./analysis/informationSummaryService";
 import { validateInformationSummaryForConfirmation } from "./analysis/informationSummary";
 import { buildReportContext, getReportTitle } from "./analysis/reportContext";
@@ -223,7 +224,19 @@ const wordCloudResponseFormat = {
 };
 
 export const productDevelopmentService = {
-  getStages: (projectId: number) => repository.getStages(projectId),
+  async getStages(projectId: number) {
+    const stages = await repository.getStages(projectId);
+    return Promise.all(stages.map(async (stage) => {
+      const job = stage.runId ? await getAiJobRun(stage.runId).catch(() => null) : null;
+      return {
+        ...stage,
+        runtimeStatus: job?.status || null,
+        runtimeAttempt: job?.attempt || 0,
+        runtimeMaxAttempts: job?.maxAttempts || 0,
+        runtimeError: job?.error || stage.runError || null,
+      };
+    }));
+  },
 
   async getStageGating(projectId: number) {
     const result: Record<string, GatingResult> = {};
