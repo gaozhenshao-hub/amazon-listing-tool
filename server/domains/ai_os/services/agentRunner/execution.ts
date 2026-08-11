@@ -812,7 +812,12 @@ export async function confirmAgentNode(input: {
     return getAgentRun(input.runId, input.userId, true);
   }
   if (checkpoint.status !== "waiting_human") {
-    throw new TRPCError({ code: "BAD_REQUEST", message: `Node is not confirmable: ${checkpoint.status}` });
+    // Allow confirming from "ready" state (business-managed nodes that haven't been explicitly set to waiting_human)
+    // This matches the behavior of markBusinessManagedNodeConfirmed in businessManagedAgent.ts
+    if (checkpoint.status !== "ready") {
+      throw new TRPCError({ code: "BAD_REQUEST", message: `Node is not confirmable: ${checkpoint.status}` });
+    }
+    // For "ready" state: fall through to confirmNode below (state machine now allows ready -> confirmed)
   }
   await withAgentStateMachine((stateMachine) => stateMachine.confirmNode({
     runId: input.runId,

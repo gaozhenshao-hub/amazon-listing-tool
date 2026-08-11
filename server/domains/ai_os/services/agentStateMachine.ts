@@ -7,7 +7,9 @@ export type AgentRunStatus = "running" | "waiting_human" | "paused" | "completed
 
 export const NODE_STATUS_TRANSITIONS: Record<AgentNodeStatus, AgentNodeStatus[]> = {
   pending: ["ready", "skipped"],
-  ready: ["running", "skipped", "pending"],
+  // Business-managed nodes (Listing, image workflow) may go directly from ready to waiting_human/confirmed
+  // without going through the running state, since the AI job runs externally
+  ready: ["running", "skipped", "pending", "waiting_human", "confirmed"],
   running: ["waiting_human", "confirmed", "failed", "canceled", "pending"],
   waiting_human: ["confirmed", "skipped", "running", "canceled", "pending"],
   confirmed: ["ready", "pending"],

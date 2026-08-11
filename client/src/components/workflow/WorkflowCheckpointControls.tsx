@@ -63,8 +63,9 @@ export function WorkflowCheckpointControls({
   if (!runId || !checkpoint) return null;
 
   const canExecute = status === "ready" || status === "failed";
-  const canConfirm = status === "waiting_human";
-  const canEdit = status === "waiting_human" || status === "failed";
+  // Allow confirming from both "waiting_human" (AI output ready) and "ready" (business-managed nodes)
+  const canConfirm = status === "waiting_human" || status === "ready";
+  const canEdit = status === "waiting_human" || status === "ready" || status === "failed";
   const isBusy =
     executeNode?.isPending ||
     rerunNode?.isPending ||
