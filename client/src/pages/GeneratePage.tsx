@@ -170,6 +170,18 @@ export default function GeneratePage() {
     if (nodeId && nodeStepMap[nodeId]) setActiveStep(nodeStepMap[nodeId]);
   }, []);
 
+  // Sync activeStep -> URL nodeId via wouter (triggers DashboardLayout listingAgentNodeContext update)
+  useEffect(() => {
+    const stepNodeMap: Record<number, string> = { 1: "G1", 2: "G2", 3: "G3", 4: "G4", 5: "G5" };
+    const targetNodeId = stepNodeMap[activeStep];
+    if (!targetNodeId) return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get("agentRunId")) return; // Only update if we're in agent-linked mode
+    if (params.get("nodeId") === targetNodeId) return; // Already correct
+    params.set("nodeId", targetNodeId);
+    setLocation(`/listing/generate?${params.toString()}`, { replace: true });
+  }, [activeStep, setLocation]);
+
   const handleStepComplete = (step: number) => {
     setCompletedSteps(prev => { const n = new Set(prev); n.add(step); return n; });
     // Auto-advance to next step
