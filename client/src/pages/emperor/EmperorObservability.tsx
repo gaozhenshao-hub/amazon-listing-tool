@@ -259,6 +259,13 @@ export default function EmperorObservability() {
             sub={`命中率 ${formatPercent(database?.explainSummary?.passRate)}`}
             tone={Number(database?.explainSummary?.failedChecks || 0) > 0 ? "amber" : "green"}
           />
+          <MetricCard
+            icon={AlertTriangle}
+            label="未绑定 Agent 的活跃 Job"
+            value={formatNumber(data?.bindingHealth?.unboundActiveJobs)}
+            sub={`${formatNumber(data?.bindingHealth?.boundActiveJobs)} / ${formatNumber(data?.bindingHealth?.activeJobs)} 已正确绑定`}
+            tone={Number(data?.bindingHealth?.unboundActiveJobs || 0) > 0 ? "red" : "green"}
+          />
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">

@@ -1,5 +1,12 @@
 import * as shared from "../routerContext";
-import { syncGenerationToAgent, syncStepLockToAgent, syncStepUnlockToAgent } from "../listingAgentBridge";
+import {
+  LISTING_STEP_NODE_MAP,
+  syncGenerationToAgent,
+  syncListingNodeDraft,
+  syncStepLockToAgent,
+  syncStepUnlockToAgent,
+} from "../listingAgentBridge";
+import { startListingJobForContext } from "./jobControl";
 
 const {
   BULLET_POINTS_PROMPT,
@@ -45,7 +52,7 @@ const {
   z,
 } = shared;
 
-export const listingEditingProcedures = {
+const legacyListingEditingProcedures = {
 
 
   // Update a listing (for manual edits)
@@ -76,6 +83,30 @@ export const listingEditingProcedures = {
       if (result && ctx.user) {
         const fieldMap: Record<string, string> = { title: '标题', itemHighlights: '价值亮点', bulletPoints: '卖点', description: '描述', searchTerms: '搜索词', qaContent: 'QA问答', titleCn: '中文标题', itemHighlightsCn: '中文价值亮点', bulletPointsCn: '中文卖点', descriptionCn: '中文描述', searchTermsCn: '中文搜索词', qaContentCn: '中文QA问答' };
         await saveListingVersion(result, ctx.user.id, "manual_edit", `Step编辑: ${fieldMap[input.field] || input.field}`);
+        const fieldStepMap: Record<string, number> = {
+          bulletPoints: 1,
+          title: 2,
+          itemHighlights: 2,
+          description: 3,
+          searchTerms: 4,
+          qaContent: 5,
+        };
+        const stepNumber = fieldStepMap[input.field];
+        const nodeId = LISTING_STEP_NODE_MAP[stepNumber];
+        if (nodeId) {
+          await syncListingNodeDraft({
+            agentRunId: result.agentRunId,
+            nodeId: nodeId as `G${1 | 2 | 3 | 4 | 5}`,
+            projectId: input.projectId,
+            userId: ctx.user.id,
+            workspaceId: ctx.workspaceId ?? null,
+            userEdit: stepNumber === 2
+              ? { title: result.title || "", itemHighlights: result.itemHighlights || "" }
+              : input.field === "bulletPoints" || input.field === "qaContent"
+                ? safeParseJSON(input.value, input.value)
+                : input.value,
+          });
+        }
       }
       return result;
     }),
@@ -106,6 +137,36 @@ export const listingEditingProcedures = {
         const fieldMap: Record<string, string> = { title: '标题', itemHighlights: '价值亮点', bulletPoints: '卖点', description: '描述', searchTerms: '搜索词', qaContent: 'QA问答', titleCn: '中文标题', itemHighlightsCn: '中文价值亮点', bulletPointsCn: '中文卖点', descriptionCn: '中文描述', searchTermsCn: '中文搜索词', qaContentCn: '中文QA问答' };
         const fieldNames = updatedFields.map(f => fieldMap[f] || f).join('、');
         await saveListingVersion(result, ctx.user.id, "manual_edit", `手动编辑: ${fieldNames}`);
+        const fieldStepMap: Record<string, number> = {
+          bulletPoints: 1,
+          title: 2,
+          itemHighlights: 2,
+          description: 3,
+          searchTerms: 4,
+          qaContent: 5,
+        };
+        const changedSteps = [...new Set(updatedFields.map((field) => fieldStepMap[field]).filter(Boolean))];
+        for (const stepNumber of changedSteps) {
+          const nodeId = LISTING_STEP_NODE_MAP[stepNumber];
+          if (!nodeId) continue;
+          const userEdit = stepNumber === 1
+            ? safeParseJSON(result.bulletPoints || "[]", [])
+            : stepNumber === 2
+              ? { title: result.title || "", itemHighlights: result.itemHighlights || "" }
+              : stepNumber === 3
+                ? result.description || ""
+                : stepNumber === 4
+                  ? result.searchTerms || ""
+                  : safeParseJSON(result.qaContent || "[]", []);
+          await syncListingNodeDraft({
+            agentRunId: result.agentRunId,
+            nodeId: nodeId as `G${1 | 2 | 3 | 4 | 5}`,
+            projectId: result.projectId,
+            userId: ctx.user.id,
+            workspaceId: ctx.workspaceId ?? null,
+            userEdit,
+          });
+        }
       }
       return result;
     }),
@@ -137,22 +198,31 @@ export const listingEditingProcedures = {
       // Sync locked/unlocked steps to Agent DAG (best-effort)
       const prevLocked: number[] = listing.lockedSteps ? JSON.parse(listing.lockedSteps) : [];
       const newLocked = input.lockedSteps;
+      const stepOutput = (step: number) => {
+        if (step === 1) return safeParseJSON(listing.bulletPoints || "[]", []);
+        if (step === 2) return { title: listing.title || "", itemHighlights: listing.itemHighlights || "" };
+        if (step === 3) return listing.description || "";
+        if (step === 4) return listing.searchTerms || "";
+        if (step === 5) return safeParseJSON(listing.qaContent || "[]", []);
+        return null;
+      };
       // Newly locked steps
       for (const step of newLocked) {
         if (!prevLocked.includes(step)) {
-          void syncStepLockToAgent({
+          await syncStepLockToAgent({
             agentRunId: listing.agentRunId,
             stepNumber: step,
             projectId: input.projectId,
             userId: ctx.user.id,
             workspaceId: ctx.workspaceId ?? null,
+            userEdit: stepOutput(step),
           });
         }
       }
       // Newly unlocked steps
       for (const step of prevLocked) {
         if (!newLocked.includes(step)) {
-          void syncStepUnlockToAgent({
+          await syncStepUnlockToAgent({
             agentRunId: listing.agentRunId,
             stepNumber: step,
             projectId: input.projectId,
@@ -459,6 +529,14 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         if (updated) {
           await saveListingVersion(updated, ctx.user.id, "manual_edit", `同步分步卖点精雕结果 (${bullets.length}条)`);
         }
+        await syncListingNodeDraft({
+          agentRunId: listing.agentRunId,
+          nodeId: "G1",
+          projectId,
+          userId: ctx.user.id,
+          workspaceId: ctx.workspaceId ?? null,
+          userEdit: bullets,
+        });
         return { action: "updated", listingId: listing.id, bulletCount: bullets.length };
       } else {
         // Create new listing with only bulletPoints
@@ -470,6 +548,14 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         });
         if (newListing) {
           await saveListingVersion(newListing, ctx.user.id, "generate", `从分步卖点精雕创建 (${bullets.length}条)`);
+          await syncListingNodeDraft({
+            agentRunId: newListing.agentRunId,
+            nodeId: "G1",
+            projectId,
+            userId: ctx.user.id,
+            workspaceId: ctx.workspaceId ?? null,
+            userEdit: bullets,
+          });
         }
         return { action: "created", listingId: newListing?.id, bulletCount: bullets.length };
       }
@@ -564,4 +650,51 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         content: typeof content === "string" ? content : JSON.stringify(content),
       };
     }),
+};
+
+const sellingPointJobSchema = z.object({
+  index: z.number(),
+  theme: z.string(),
+  themeZh: z.string().optional(),
+  description: z.string(),
+  descriptionZh: z.string().optional(),
+  fabeDirection: z.object({
+    feature: z.string(),
+    advantage: z.string(),
+    benefit: z.string(),
+    evidence: z.string(),
+  }).optional(),
+  targetKeywords: z.array(z.string()).optional(),
+  addressesGap: z.string().optional(),
+});
+
+async function queueEditingJob(ctx: any, input: any, operation: "sellingPoints" | "singleBullet" | "qa") {
+  const project = await resolveProjectAccess(input.projectId, ctx.user);
+  ensureWriteAccess(project, ctx.user);
+  return startListingJobForContext({
+    ...input,
+    operation,
+    nodeId: operation === "qa" ? "G5" : "G1",
+    scopeKey: operation === "singleBullet" ? `bullet-${input.sellingPoint.index}` : "main",
+    userId: ctx.user.id,
+    workspaceId: ctx.workspaceId ?? null,
+  });
+}
+
+export const listingEditingProcedures = {
+  ...legacyListingEditingProcedures,
+  generateSellingPointsCores: protectedProcedure
+    .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
+    .mutation(({ ctx, input }) => queueEditingJob(ctx, input, "sellingPoints")),
+  generateSingleBullet: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      sellingPoint: sellingPointJobSchema,
+      previousBullets: z.array(z.object({ subtitle: z.string(), fullText: z.string() })).optional(),
+      emphasis: z.string().optional(),
+    }))
+    .mutation(({ ctx, input }) => queueEditingJob(ctx, input, "singleBullet")),
+  generateQA: protectedProcedure
+    .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
+    .mutation(({ ctx, input }) => queueEditingJob(ctx, input, "qa")),
 };

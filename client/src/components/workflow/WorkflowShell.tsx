@@ -186,7 +186,7 @@ export function WorkflowShell({
           {activeCheckpoint && (
             <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
               <span className="font-medium">{activeCheckpoint.nodeLabel || activeCheckpoint.nodeId}</span>
-              <WorkflowStatusBadge status={activeCheckpoint.status} />
+              <WorkflowStatusBadge checkpoint={activeCheckpoint} />
             </div>
           )}
           {renderedChildren}

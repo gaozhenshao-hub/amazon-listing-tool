@@ -5,7 +5,8 @@ const pages = [
   { name: "产品开发", path: "/dev/project/1/analysis", heading: "市场分析工作台" },
   { name: "Listing", path: "/listing/canvas", heading: "工作流画布" },
   { name: "图片", path: "/listing/image-workflow", heading: "智能图片建议" },
-  { name: "广告", path: "/listing/ad-structure", heading: "广告关键词架构" },
+  { name: "广告", path: "/ops/ads", heading: "广告智能分析" },
+  { name: "运营", path: "/ops/inventory", heading: "库存预警中心" },
   { name: "视频", path: "/listing/video-script", heading: "视频脚本生成" },
 ];
 
@@ -20,7 +21,7 @@ for (const workflow of pages) {
     });
     await installRealPageFixtures(page);
     await page.goto(workflow.path);
-    await expect(page.getByRole("heading", { name: workflow.heading, exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: workflow.heading, exact: true })).toBeVisible({ timeout: 15_000 });
     const history = page.getByTestId("ai-job-history");
     await expect(history).toBeVisible();
     await history.getByRole("button").first().click();

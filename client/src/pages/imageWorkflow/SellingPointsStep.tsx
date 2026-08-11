@@ -13,6 +13,7 @@ import { trpc } from "@/lib/trpc";
 import { AlertTriangle, Check, ChevronRight, Image, Loader2, Sparkles, Target, Layout, Palette, Eye, FileText, RotateCcw, Plus, Trash2, GripVertical, Download, Languages, Paintbrush, Camera, BarChart3, Layers, Lightbulb, Smartphone, TypeIcon, Copy, Search, ImageIcon, BookOpen, X, Filter, Wand2, Pencil, Send, Lock, Unlock, Upload, Zap, Grid3X3, LayoutGrid, RefreshCw } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { toast } from "sonner";
+import { ImageStepGenerationStatus, useImageStepGenerationJob } from "./useImageStepGenerationJob";
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── Step 1: Selling Points ──────────────────────────────────────
@@ -26,12 +27,19 @@ export function Step1SellingPoints({
   session: any;
   onConfirm: () => void;
 }) {
-  const generateMutation = trpc.imageWorkflow.generateStep1.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep1.useMutation();
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
   const [editData, setEditData] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isLocked, setIsLocked] = useState(!!session?.step1Confirmed);
+  const generationJob = useImageStepGenerationJob({
+    projectId,
+    step: 1,
+    onSucceeded: (result) => {
+      setEditData(result);
+      setIsEditing(true);
+    },
+  });
 
   // Load existing data
   useEffect(() => {
@@ -55,14 +63,7 @@ export function Step1SellingPoints({
   };
 
   const handleGenerate = async () => {
-    try {
-      const result = await generateMutation.mutateAsync({ projectId });
-      setEditData(result);
-      setIsEditing(true);
-      toast.success("卖点梳理完成，请检查并确认");
-    } catch (err: any) {
-      toast.error(err.message || "生成失败");
-    }
+    await generationJob.start();
   };
 
   const handleConfirm = async () => {
@@ -123,14 +124,14 @@ export function Step1SellingPoints({
             </div>
             <div className="flex gap-2">
               {!editData && !isConfirmed && (
-                <Button onClick={handleGenerate} disabled={generateMutation.isPending}>
-                  {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                <Button onClick={handleGenerate} disabled={generationJob.isGenerating}>
+                  {generationJob.isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
                   AI生成卖点
                 </Button>
               )}
               {editData && !isConfirmed && (
                 <>
-                  <Button variant="outline" onClick={handleGenerate} disabled={generateMutation.isPending}>
+                  <Button variant="outline" onClick={handleGenerate} disabled={generationJob.isGenerating}>
                     <RotateCcw className="w-4 h-4 mr-2" />
                     重新生成
                   </Button>
@@ -154,17 +155,16 @@ export function Step1SellingPoints({
             </div>
           </div>
         </CardHeader>
-        {generateMutation.isPending && (
-          <CardContent>
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-primary mr-3" />
-              <span className="text-muted-foreground">AI正在分析产品数据，梳理卖点体系...</span>
-            </div>
-          </CardContent>
-        )}
+        <ImageStepGenerationStatus
+          run={generationJob.run}
+          isGenerating={generationJob.isGenerating}
+          isCanceling={generationJob.isCanceling}
+          onCancel={generationJob.cancel}
+          onRetry={generationJob.start}
+        />
       </Card>
 
-      {editData && !generateMutation.isPending && (
+      {editData && !generationJob.isGenerating && (
         <>
           {/* Core Selling Points */}
           <Card>

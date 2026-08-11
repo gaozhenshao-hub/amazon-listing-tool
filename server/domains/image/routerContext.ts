@@ -34,6 +34,12 @@ import {
   registerAiJobHandler,
   startRegisteredAiJob,
 } from "./service";
+import { updateAiJobProgress } from "../ai_os/services/jobRunner";
+import {
+  syncStepJobFailedToAgent,
+  syncStepJobRunningToAgent,
+  syncStepJobWaitingHumanToAgent,
+} from "./imageWorkflowAgentBridge";
 import {
   ensureBusinessManagedRun,
   markBusinessManagedNodeWaitingHuman,
@@ -95,6 +101,7 @@ export const APLUS_MODULE_STYLE_GUIDE = [
 export const step5JobInput = z.object({
   projectId: z.number(),
   sessionId: z.number(),
+  agentRunId: z.string().max(80).optional(),
 });
 
 // ─── Helper: Build context from project data ─────────────────────
@@ -395,6 +402,7 @@ export async function callImageWorkflowSkill<T = any>(input: {
   context: string;
   attachments?: any[];
   maxModelAttempts?: number;
+  signal?: AbortSignal;
   validate?: (value: any) => T;
 }): Promise<T> {
   const result = await runEmperorSkill<T>({
@@ -405,6 +413,7 @@ export async function callImageWorkflowSkill<T = any>(input: {
     variables: {},
     attachments: input.attachments,
     maxModelAttempts: input.maxModelAttempts,
+    signal: input.signal,
     legacySystemPrompt: input.systemPrompt,
     migrationSource: input.skillSlug === "image.step2.outline"
       ? "drizzle/0122_image_outline_reliability.sql"
@@ -587,6 +596,10 @@ export async function runStep5GenerationJob(args: {
   projectId: number;
   sessionId: number;
   userId: number;
+  workspaceId?: number | null;
+  attempt?: number;
+  maxAttempts?: number;
+  signal?: AbortSignal;
 }) {
   const { runId, projectId, sessionId, userId } = args;
 
@@ -597,12 +610,14 @@ export async function runStep5GenerationJob(args: {
   };
 
   try {
+    if (args.signal?.aborted) throw new Error(String(args.signal.reason || "图片建议任务已取消"));
     const session = await updateIfCurrent({
       step5RunStatus: "running",
       step5RunProgress: 20,
       step5RunError: null,
     });
     if (!session) return { skipped: true, reason: "Step 5 run is no longer current" };
+    await updateAiJobProgress(runId, 20, { expectedAttempt: args.attempt });
 
     const project = await db.getProjectByIdAdmin(projectId);
     if (!project) throw new Error("Project not found");
@@ -613,7 +628,9 @@ export async function runStep5GenerationJob(args: {
       runId,
       nodeId: "image_suggestion",
     });
-    const result = await buildStep5FinalSuggestion(project, selectedSession, userId);
+    const result = await buildStep5FinalSuggestion(project, selectedSession, userId, args.workspaceId);
+    if (args.signal?.aborted) throw new Error(String(args.signal.reason || "图片建议任务已取消"));
+    await updateAiJobProgress(runId, 90, { expectedAttempt: args.attempt });
     const resultStr = JSON.stringify(result);
 
     const updated = await updateIfCurrent({
@@ -630,11 +647,15 @@ export async function runStep5GenerationJob(args: {
     await persistStep5ListingAdvice(projectId, resultStr);
     return buildStep5RunSnapshot(updated);
   } catch (error) {
+    const abortReason = args.signal?.aborted ? String(args.signal.reason || "") : "";
+    const isTimeout = /timed?\s*out|timeout/i.test(abortReason);
+    const isCanceled = Boolean(args.signal?.aborted && !isTimeout);
+    const finalAttempt = isCanceled || Number(args.attempt || 1) >= Number(args.maxAttempts || 1);
     await updateIfCurrent({
-      step5RunStatus: "failed",
-      step5RunProgress: 100,
+      step5RunStatus: isCanceled ? "canceled" : finalAttempt ? "failed" : "queued",
+      step5RunProgress: finalAttempt ? 100 : 20,
       step5RunError: serializeStep5Error(error),
-      step5RunCompletedAt: new Date(),
+      step5RunCompletedAt: finalAttempt ? new Date() : null,
     });
     throw error;
   }
@@ -643,13 +664,48 @@ export async function runStep5GenerationJob(args: {
 registerAiJobHandler({
   id: "imageWorkflow.step5FinalSuggestion",
   match: (job) => job.kind === "image.step5.finalSuggestion",
-  handler: (job) => {
+  handler: async (job, context) => {
     const input = step5JobInput.parse(job.input);
-    return runStep5GenerationJob({
-      runId: job.runId,
+    const fallbackSession = await db.getImageWorkflowSessionById(input.sessionId).catch(() => null);
+    const agentRunId = input.agentRunId || fallbackSession?.agentRunId || null;
+    const syncInput = {
+      agentRunId,
+      stepNumber: 5,
       projectId: input.projectId,
-      sessionId: input.sessionId,
       userId: job.userId,
-    });
+      workspaceId: job.workspaceId,
+      aiJobRunId: job.runId,
+      aiJobAttempt: job.attempt,
+      aiJobMaxAttempts: job.maxAttempts,
+    };
+
+    await syncStepJobRunningToAgent({ ...syncInput, progress: 20 });
+    try {
+      const result = await runStep5GenerationJob({
+        runId: job.runId,
+        projectId: input.projectId,
+        sessionId: input.sessionId,
+        userId: job.userId,
+        workspaceId: job.workspaceId,
+        attempt: job.attempt,
+        maxAttempts: job.maxAttempts,
+        signal: context.signal,
+      });
+      if (!(result as any)?.skipped) {
+        await syncStepJobWaitingHumanToAgent({ ...syncInput, output: (result as any)?.en ?? result });
+      }
+      return result;
+    } catch (error) {
+      const abortReason = context.signal.aborted ? String(context.signal.reason || "") : "";
+      const retryableTimeout = /timed?\s*out|timeout/i.test(abortReason);
+      const finalAttempt = job.attempt >= job.maxAttempts || (context.signal.aborted && !retryableTimeout);
+      await syncStepJobFailedToAgent({
+        ...syncInput,
+        finalAttempt,
+        errorMessage: serializeStep5Error(error),
+        failureKind: context.signal.aborted ? (retryableTimeout ? "timeout" : "cancel") : "error",
+      });
+      throw error;
+    }
   },
 });

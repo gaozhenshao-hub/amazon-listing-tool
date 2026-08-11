@@ -12,8 +12,16 @@ import {
   KEYWORD_TRAFFIC_COMPETITION_CLASSIFY_PROMPT,
 } from "../keywordPrompts";
 import { buildProductContext, chunkArray } from "./keywordHelpers";
+import {
+  cancelKeywordJob,
+  confirmKeywordJob,
+  KEYWORD_JOB_MODULE,
+  queueKeywordJob,
+  retryKeywordJob,
+} from "../domains/keyword/keywordGenerationJob";
+import { getAiJobRun, listAiJobRunsForUser } from "../domains/ai_os/services/jobRunner";
 
-export const keywordAiRouter = router({
+const legacyKeywordAiRouter = router({
   // ─── AI Semantic Filter (Step 5) ────────────────────────────
 
   aiSemanticFilter: protectedProcedure
@@ -499,3 +507,93 @@ export const keywordAiRouter = router({
       return { classified: classifiedCount, thresholds };
     }),
 });
+
+const keywordQueueInput = z.object({
+  projectId: z.number().int().positive(),
+  keywordIds: z.array(z.number().int().positive()).optional(),
+});
+
+async function assertKeywordProject(projectId: number, userId: number) {
+  const project = await db.getProjectById(projectId, userId);
+  if (!project) throw new Error("项目不存在或无权访问");
+}
+
+export const keywordAiRouter = router({
+  aiClassifyTrafficCompetition: protectedProcedure
+    .input(keywordQueueInput)
+    .mutation(async ({ ctx, input }) => {
+      await assertKeywordProject(input.projectId, ctx.user!.id);
+      return queueKeywordJob({ ...input, operation: "trafficComp", userId: ctx.user!.id, workspaceId: (ctx as any).workspaceId ?? null });
+    }),
+
+  aiSemanticFilter: protectedProcedure
+    .input(keywordQueueInput)
+    .mutation(async ({ ctx, input }) => {
+      await assertKeywordProject(input.projectId, ctx.user!.id);
+      return queueKeywordJob({ ...input, operation: "filter", userId: ctx.user!.id, workspaceId: (ctx as any).workspaceId ?? null });
+    }),
+
+  aiSceneTag: protectedProcedure
+    .input(keywordQueueInput)
+    .mutation(async ({ ctx, input }) => {
+      await assertKeywordProject(input.projectId, ctx.user!.id);
+      return queueKeywordJob({ ...input, operation: "tag", userId: ctx.user!.id, workspaceId: (ctx as any).workspaceId ?? null });
+    }),
+
+  aiRootClassify: protectedProcedure
+    .input(keywordQueueInput)
+    .mutation(async ({ ctx, input }) => {
+      await assertKeywordProject(input.projectId, ctx.user!.id);
+      return queueKeywordJob({ ...input, operation: "classify", userId: ctx.user!.id, workspaceId: (ctx as any).workspaceId ?? null });
+    }),
+
+  aiStrategyMatrix: protectedProcedure
+    .input(keywordQueueInput)
+    .mutation(async ({ ctx, input }) => {
+      await assertKeywordProject(input.projectId, ctx.user!.id);
+      return queueKeywordJob({ ...input, operation: "matrix", userId: ctx.user!.id, workspaceId: (ctx as any).workspaceId ?? null });
+    }),
+
+  aiListingLayout: protectedProcedure
+    .input(z.object({ projectId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      await assertKeywordProject(input.projectId, ctx.user!.id);
+      return queueKeywordJob({ ...input, operation: "layout", userId: ctx.user!.id, workspaceId: (ctx as any).workspaceId ?? null });
+    }),
+
+  runFullPipeline: protectedProcedure
+    .input(z.object({ projectId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      await assertKeywordProject(input.projectId, ctx.user!.id);
+      return queueKeywordJob({ ...input, operation: "full", userId: ctx.user!.id, workspaceId: (ctx as any).workspaceId ?? null });
+    }),
+
+  getGenerationRun: protectedProcedure
+    .input(z.object({ runId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const job = await getAiJobRun(input.runId);
+      if (!job || job.userId !== ctx.user!.id || job.module !== KEYWORD_JOB_MODULE) return null;
+      return job;
+    }),
+
+  listGenerationRuns: protectedProcedure
+    .input(z.object({ projectId: z.number().int().positive(), limit: z.number().int().min(1).max(50).optional() }))
+    .query(async ({ ctx, input }) => {
+      await assertKeywordProject(input.projectId, ctx.user!.id);
+      return listAiJobRunsForUser(ctx.user!.id, { module: KEYWORD_JOB_MODULE, projectId: input.projectId, limit: input.limit || 20 });
+    }),
+
+  cancelGenerationJob: protectedProcedure
+    .input(z.object({ runId: z.string().min(1) }))
+    .mutation(({ ctx, input }) => cancelKeywordJob({ ...input, userId: ctx.user!.id })),
+
+  retryGenerationJob: protectedProcedure
+    .input(z.object({ runId: z.string().min(1) }))
+    .mutation(({ ctx, input }) => retryKeywordJob({ ...input, userId: ctx.user!.id })),
+
+  confirmGenerationResult: protectedProcedure
+    .input(z.object({ runId: z.string().min(1), output: z.unknown().optional() }))
+    .mutation(({ ctx, input }) => confirmKeywordJob({ ...input, userId: ctx.user!.id })),
+});
+
+void legacyKeywordAiRouter;

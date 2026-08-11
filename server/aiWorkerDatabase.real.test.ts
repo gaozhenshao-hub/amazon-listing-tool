@@ -2,6 +2,9 @@ import { sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { requireDb } from "./repositories/dbClient";
 import {
+  completeAiJob,
+  createAiJobRun,
+  drainAiJobQueue,
   getAiJobRun,
   getAiJobWorkerHealth,
   recoverAiJob,
@@ -77,5 +80,41 @@ describe("real AI Worker and MySQL integration", () => {
     expect(await getAiJobRun(recovered.runId)).toMatchObject({ status: "succeeded" });
     const [rows] = await db.execute(sql`SELECT retentionClass FROM ai_jobs WHERE runId=${recovered.runId}`) as any;
     expect((Array.isArray(rows) ? rows[0] : null)?.retentionClass).toBe("archive");
+  }, 30_000);
+
+  it("recovers an expired Worker lease without accepting the old attempt result", async () => {
+    const job = await createAiJobRun({
+      kind,
+      module: "qa",
+      procedure: "qa.worker.restart-recovery",
+      userId: 1,
+      input: { scenario: "worker-restart" },
+      maxAttempts: 3,
+      timeoutSeconds: 30,
+    });
+    createdRunIds.push(job.runId);
+
+    const db = await requireDb("AI Worker restart fixture");
+    await db.execute(sql`
+      UPDATE ai_jobs
+      SET status='running', attempt=1, progress=25, lockedBy='stopped_worker',
+          leaseUntil=DATE_SUB(NOW(), INTERVAL 1 MINUTE), lastHeartbeatAt=DATE_SUB(NOW(), INTERVAL 2 MINUTE)
+      WHERE runId=${job.runId}
+    `);
+
+    const drained = await drainAiJobQueue({ limit: 20 });
+    expect(drained.scheduled).toBeGreaterThanOrEqual(1);
+    const recovered = await waitForTerminal(job.runId);
+    expect(recovered).toMatchObject({ status: "succeeded", attempt: 2 });
+
+    await completeAiJob(
+      job.runId,
+      { stale: true },
+      { expectedWorkerId: "stopped_worker", expectedAttempt: 1 },
+    );
+    const afterLateResult = await getAiJobRun(job.runId);
+    expect(afterLateResult).toMatchObject({ status: "succeeded", attempt: 2 });
+    expect(afterLateResult?.output).toMatchObject({ ok: true });
+    expect(afterLateResult?.output).not.toMatchObject({ stale: true });
   }, 30_000);
 });

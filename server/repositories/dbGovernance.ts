@@ -1185,6 +1185,9 @@ export const MIGRATION_REGRESSION_BASELINE: MigrationRegressionBaseline = {
     "0131_dev_panorama_market_insights.sql",
     "0132_dev_project_progress_list.sql",
     "0133_dev_panorama_competitor_selection.sql",
+    "0134_round4_business_agent_bindings.sql",
+    "0135_video_job_checkpoint_binder.sql",
+    "0136_business_job_binding_qa.sql",
   ],
   requiredTables: [
     "ai_jobs",

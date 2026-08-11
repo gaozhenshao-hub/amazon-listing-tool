@@ -1,6 +1,6 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
-import { ensureImageWorkflowAgentRun } from "../imageWorkflowAgentBridge";
+import { ensureImageWorkflowAgentRun, syncStepUnlockToAgent } from "../imageWorkflowAgentBridge";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -154,6 +154,13 @@ export const imageSessionProcedures = {
       clearData.status = "in_progress";
 
       await db.updateImageWorkflowSession(session.id, clearData);
+      void syncStepUnlockToAgent({
+        agentRunId: session.agentRunId,
+        stepNumber: input.step,
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+      });
       return { success: true };
     }),
 };

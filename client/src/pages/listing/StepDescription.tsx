@@ -18,6 +18,7 @@ import {
   Code,
   Eye,
 } from "lucide-react";
+import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
 
 // ─── Description 8 Dimensions Definition ─────────────────────────────────
 const DESCRIPTION_CHECKLIST_DIMENSIONS = [
@@ -75,8 +76,11 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
     evaluateCheck.mutate({ description });
   };
 
-  const generateDescription = trpc.listing.generateDescription.useMutation({
-    onSuccess: (data: any) => {
+  const descriptionJob = useListingGenerationJob({
+    projectId,
+    nodeId: "G3",
+    operation: "description",
+    onSucceeded: (data: any) => {
       try {
         const content = data.description || data;
         let text = "";
@@ -108,7 +112,6 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
         toast.success("产品描述已生成");
       }
     },
-    onError: (err) => toast.error("描述生成失败: " + err.message),
   });
 
   const updateListing = trpc.listing.updateByProject.useMutation({
@@ -122,8 +125,7 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
   });
 
   const handleGenerate = () => {
-    generateDescription.mutate({
-      projectId,
+    void descriptionJob.start({
       emphasis: emphasis.trim() || undefined,
     });
   };
@@ -198,9 +200,9 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
           <Button
             className="w-full"
             onClick={handleGenerate}
-            disabled={generateDescription.isPending}
+            disabled={descriptionJob.isGenerating}
           >
-            {generateDescription.isPending ? (
+            {descriptionJob.isGenerating ? (
               <><Loader2 className="h-4 w-4 mr-2 animate-spin" />正在生成产品描述...</>
             ) : generated ? (
               <><RotateCcw className="h-4 w-4 mr-2" />重新生成描述</>
@@ -210,7 +212,14 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
           </Button>
         )}
 
-        {generateDescription.isPending && (
+        <ListingGenerationJobStatus
+          run={descriptionJob.run}
+          isGenerating={descriptionJob.isGenerating}
+          isCanceling={descriptionJob.isCanceling}
+          onCancel={() => void descriptionJob.cancel()}
+          onRetry={handleGenerate}
+        />
+        {descriptionJob.isGenerating && (
           <p className="text-xs text-muted-foreground text-center">
             AI正在基于已确认的标题和卖点生成产品描述...
           </p>

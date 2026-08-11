@@ -48,13 +48,23 @@ import { DEV_ANALYSIS_STAGES as STAGES, type DevAnalysisStageKey as StageKey } f
 /* ─── Status Helpers ─── */
 const statusConfig: Record<string, { text: string; color: string }> = {
   pending: { text: "待执行", color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
+  queued: { text: "排队中", color: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400" },
   running: { text: "分析中", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
   generating: { text: "生成中", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
   completed: { text: "已生成", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
   generated: { text: "已生成", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
   editing: { text: "编辑中", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" },
   confirmed: { text: "已确认", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
+  failed: { text: "失败", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
+  canceled: { text: "已取消", color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
 };
+
+function effectiveStageStatus(stage?: any) {
+  if (["queued", "running", "failed", "canceled"].includes(stage?.runtimeStatus)) {
+    return stage.runtimeStatus as string;
+  }
+  return stage?.status || "pending";
+}
 
 export default function DevAnalysisFlow() {
   const [, setLocation] = useLocation();
@@ -80,7 +90,11 @@ export default function DevAnalysisFlow() {
     {
       refetchInterval: (query) => {
         const currentStages = query.state.data as any[] | undefined;
-        return currentStages?.some((stage) => stage.status === "running" || stage.status === "generating")
+        return currentStages?.some((stage) => (
+          ["queued", "running"].includes(stage.runtimeStatus)
+          || stage.status === "running"
+          || stage.status === "generating"
+        ))
           ? 2_000
           : false;
       },
@@ -268,7 +282,13 @@ export default function DevAnalysisFlow() {
         agentSlug={PRODUCT_ANALYSIS_AGENT_SLUG}
         managedByBusinessPage
         businessUrl={`/dev/project/${projectId}/analysis`}
-        onManagedNodeSelect={(nodeId) => setActiveStage(nodeId as StageKey)}
+        onManagedNodeSelect={(nodeId) => {
+          if (nodeId === "major_competitors") {
+            setLocation(`/dev/project/${projectId}?tab=panorama`);
+            return;
+          }
+          if (STAGES.some((stage) => stage.key === nodeId)) setActiveStage(nodeId as StageKey);
+        }}
       />
       <AiJobHistoryPanel module="productDevelopment" projectId={projectId} title="七阶段后台任务历史" />
       {/* Header */}
@@ -322,7 +342,7 @@ export default function DevAnalysisFlow() {
               {/* Status */}
               {(() => {
                 const stageData = stageMap[activeStage];
-                const status = stageData?.status || "pending";
+                const status = effectiveStageStatus(stageData);
                 const sc = statusConfig[status] || statusConfig.pending;
                 return (
                   <div className="space-y-2">
@@ -334,6 +354,17 @@ export default function DevAnalysisFlow() {
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-muted-foreground">确认时间</span>
                         <span className="text-xs">{new Date(stageData.confirmedAt).toLocaleString()}</span>
+                      </div>
+                    )}
+                    {stageData?.runtimeStatus && stageData.runtimeMaxAttempts > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">任务尝试</span>
+                        <span className="text-xs">{stageData.runtimeAttempt}/{stageData.runtimeMaxAttempts}</span>
+                      </div>
+                    )}
+                    {stageData?.runtimeError && ["failed", "canceled"].includes(status) && (
+                      <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+                        {stageData.runtimeError}
                       </div>
                     )}
                   </div>
@@ -438,10 +469,10 @@ export default function DevAnalysisFlow() {
               <div className="space-y-2">
                 {(() => {
                   const stageData = stageMap[activeStage];
-                  const status = stageData?.status || "pending";
-                  const isRunning = status === "running" || status === "generating";
-                  const hasResult = status === "completed" || status === "generated" || status === "editing" || status === "confirmed";
-                  const isConfirmed = status === "confirmed";
+                  const status = effectiveStageStatus(stageData);
+                  const isRunning = status === "queued" || status === "running" || status === "generating";
+                  const hasResult = ["completed", "generated", "editing", "confirmed"].includes(stageData?.status);
+                  const isConfirmed = stageData?.status === "confirmed";
                   const currentGating = gating?.[activeStage];
                   const isCurrentGated = currentGating && !currentGating.canRun;
                   const runStartedAt = stageData?.runStartedAt ? new Date(stageData.runStartedAt).getTime() : 0;
@@ -493,7 +524,7 @@ export default function DevAnalysisFlow() {
                           <Play className="h-3.5 w-3.5" />
                         )}
                         {isRunning
-                          ? canRecoverRun ? "恢复中断的分析" : "后台分析中..."
+                          ? canRecoverRun ? "恢复中断的分析" : status === "queued" ? "后台排队中..." : "后台分析中..."
                           : (isCurrentGated && !hasResult) ? "未解锁" : hasResult ? "重新分析" : "开始分析"}
                       </Button>
 

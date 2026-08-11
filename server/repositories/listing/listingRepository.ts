@@ -5,7 +5,7 @@ import {
   registerListingArtifact,
   resolveCurrentBusinessArtifact,
 } from "../../domains/ai_os/services/businessArtifactRegistry";
-import { InsertAdStructure, InsertKeyword, InsertListing, InsertListingVersion, InsertNegativeKeyword, InsertReviewAggregation, adStructures, keywords, listings, listingVersions, negativeKeywords, reviewAggregations } from "../../../drizzle/schema/listing";
+import { InsertAdStructure, InsertKeyword, InsertListing, InsertListingVersion, InsertNegativeKeyword, InsertReviewAggregation, adStructures, buyerQuestions, keywords, listings, listingVersions, negativeKeywords, reviewAggregations } from "../../../drizzle/schema/listing";
 
 async function captureListingProject(projectId: number | null | undefined) {
   if (!projectId) return;
@@ -346,4 +346,13 @@ export async function deleteReviewAggregation(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(reviewAggregations).where(eq(reviewAggregations.id, id));
+}
+
+export async function getActiveBuyerQuestionsByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(buyerQuestions)
+    .where(and(eq(buyerQuestions.projectId, projectId), eq(buyerQuestions.status, "active")))
+    .orderBy(desc(buyerQuestions.frequency), desc(buyerQuestions.createdAt))
+    .limit(30);
 }

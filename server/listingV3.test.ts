@@ -501,8 +501,10 @@ describe("PreviewPage - QA Section & Completion Progress", () => {
 describe("StepTitle - Check List Integration", () => {
   const stepTitle = fs.readFileSync(path.join(__dirname, "../client/src/pages/listing/StepTitle.tsx"), "utf-8");
 
-  it("should call listing.generateTitle API", () => {
-    expect(stepTitle).toContain("generateTitle");
+  it("should run title generation through the shared background job hook", () => {
+    expect(stepTitle).toContain("useListingGenerationJob");
+    expect(stepTitle).toContain('nodeId: "G2"');
+    expect(stepTitle).toContain('operation: "title"');
   });
 
   it("should display checkListScores", () => {
@@ -522,8 +524,10 @@ describe("StepTitle - Check List Integration", () => {
 describe("StepQA - Full CRUD", () => {
   const stepQA = fs.readFileSync(path.join(__dirname, "../client/src/pages/listing/StepQA.tsx"), "utf-8");
 
-  it("should call listing.generateQA API", () => {
-    expect(stepQA).toContain("generateQA");
+  it("should run QA generation through the shared background job hook", () => {
+    expect(stepQA).toContain("useListingGenerationJob");
+    expect(stepQA).toContain('nodeId: "G5"');
+    expect(stepQA).toContain('operation: "qa"');
   });
 
   it("should allow editing QA items", () => {

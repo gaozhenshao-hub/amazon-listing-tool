@@ -5,7 +5,9 @@ export type WorkflowId = string | number;
 export type WorkflowCheckpointStatus =
   | "pending"
   | "ready"
+  | "queued"
   | "running"
+  | "retrying"
   | "waiting_human"
   | "confirmed"
   | "skipped"
@@ -37,8 +39,11 @@ export interface WorkflowCheckpointLike {
   userEdit?: unknown;
   metadata?: unknown;
   retryCount?: number | null;
+  retryScheduledAt?: string | Date | null;
+  lastFailureKind?: string | null;
   errorMessage?: string | null;
   aiJobRunId?: string | null;
+  aiJobAttempt?: number | null;
   updatedAt?: string | Date | null;
   confirmedAt?: string | Date | null;
   completedAt?: string | Date | null;

@@ -8,6 +8,7 @@ import {
   heartbeatAiJobWorker,
   heartbeatAiJobLease,
   listAiJobDeadLetters,
+  listAiJobsForUser,
   listAiJobWorkers,
   listRecoverableAiJobs,
   markAiJobWorkerStopped,
@@ -17,6 +18,7 @@ import {
 } from "../../../repositories/ai_os";
 import { shouldProcessAiJobs } from "../../../_core/runtime";
 import { recordAiOsMetric } from "./observability";
+import { assertBusinessJobAgentBinding } from "./businessJobBindingPolicy";
 
 export type AiJobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
 
@@ -380,6 +382,11 @@ export async function createAiJobRun(input: {
   recoveryOfRunId?: string | null;
   recoveryReason?: string | null;
 }) {
+  assertBusinessJobAgentBinding({
+    module: input.module,
+    kind: input.kind,
+    input: input.input,
+  });
   const runId = input.runId || generateAiJobRunId(input.module);
   const job = await createAiJob({
     runId,
@@ -630,6 +637,14 @@ export async function recoverAiJob(runId: string, reason = "User requested failu
 export async function getAiJobRun(runId: string) {
   const job = await getAiJobByRunId(runId);
   return job ? buildAiJobSnapshot(job) : null;
+}
+
+export async function listAiJobRunsForUser(
+  userId: number,
+  opts: { module?: string; projectId?: number; status?: InsertAiJob["status"]; limit?: number } = {},
+) {
+  const jobs = await listAiJobsForUser(userId, opts);
+  return jobs.map(buildAiJobSnapshot);
 }
 
 export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<T>) {

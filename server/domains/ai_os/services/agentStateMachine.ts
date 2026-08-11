@@ -2,17 +2,18 @@ import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb } from "../../../repositories/dbClient";
 
-export type AgentNodeStatus = "pending" | "ready" | "running" | "waiting_human" | "confirmed" | "skipped" | "failed";
+export type AgentNodeStatus = "pending" | "ready" | "running" | "waiting_human" | "confirmed" | "skipped" | "failed" | "canceled";
 export type AgentRunStatus = "running" | "waiting_human" | "paused" | "completed" | "failed" | "canceled";
 
 export const NODE_STATUS_TRANSITIONS: Record<AgentNodeStatus, AgentNodeStatus[]> = {
   pending: ["ready", "skipped"],
   ready: ["running", "skipped", "pending"],
-  running: ["waiting_human", "confirmed", "failed", "pending"],
-  waiting_human: ["confirmed", "skipped", "running", "pending"],
+  running: ["waiting_human", "confirmed", "failed", "canceled", "pending"],
+  waiting_human: ["confirmed", "skipped", "running", "canceled", "pending"],
   confirmed: ["ready", "pending"],
   skipped: ["ready", "pending"],
   failed: ["ready", "running", "pending"],
+  canceled: ["ready", "running", "pending"],
 };
 
 export const RUN_STATUS_TRANSITIONS: Record<AgentRunStatus, AgentRunStatus[]> = {
@@ -381,6 +382,28 @@ export class AgentStateMachine {
     return { ignored: false, from, to: "failed" as AgentNodeStatus };
   }
 
+  async cancelNode(input: {
+    runId: string;
+    nodeId: string;
+    message: string;
+    completedAt: Date;
+    sourceAiJobRunId?: string | null;
+  }) {
+    const checkpoint = await this.getCheckpointForUpdate(input.runId, input.nodeId);
+    const from = String(checkpoint.status) as AgentNodeStatus;
+    if (input.sourceAiJobRunId && checkpoint.aiJobRunId !== input.sourceAiJobRunId) {
+      return { ignored: true, from, currentAiJobRunId: checkpoint.aiJobRunId || null };
+    }
+    if (from === "canceled") return { ignored: false, from, to: "canceled" as AgentNodeStatus };
+    assertNodeTransition(from, "canceled", "cancel node");
+    await rawExecute(
+      this.executor,
+      "UPDATE emperor_agent_checkpoints SET status='canceled',errorMessage=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,retryScheduledAt=NULL,lastFailureKind='cancel',updatedAt=NOW() WHERE runId=? AND nodeId=?",
+      [input.message, input.completedAt, input.runId, input.nodeId],
+    );
+    return { ignored: false, from, to: "canceled" as AgentNodeStatus };
+  }
+
   async updateNodeRetry(input: {
     runId: string;
     nodeId: string;
@@ -495,7 +518,7 @@ export class AgentStateMachine {
     assertRunTransition(String(run.status) as AgentRunStatus, "canceled", "cancel run");
     await rawExecute(
       this.executor,
-      "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,retryScheduledAt=NULL,lastFailureKind='cancel',updatedAt=NOW() WHERE runId=? AND status='running'",
+      "UPDATE emperor_agent_checkpoints SET status='canceled',errorMessage=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,retryScheduledAt=NULL,lastFailureKind='cancel',updatedAt=NOW() WHERE runId=? AND status='running'",
       [input.reason, input.completedAt, input.runId],
     );
     await rawExecute(

@@ -12,6 +12,16 @@ import {
 import { runEmperorSkill, safeParseSkillJSON } from "../../ai_os/services/skillRunner";
 import { registerPanoramaMarketInsightArtifact } from "../../ai_os/services/businessArtifactRegistry";
 import { mapToProductData } from "../analysis/dataHelpers";
+import {
+  ensureProductAnalysisAgentRun,
+  syncMajorCompetitorConfirmed,
+  syncMajorCompetitorDraft,
+  syncMajorCompetitorFailure,
+  syncMajorCompetitorProgress,
+  syncMajorCompetitorQueued,
+  syncMajorCompetitorUnlocked,
+  syncMajorCompetitorWaitingHuman,
+} from "../analysis/productAnalysisAgent";
 import { buildAdaptivePriceBands, normalizeParentMarketMetrics, sanitizePriceBands } from "./marketMetrics";
 import {
   panoramaCompetitorAsinsSchema,
@@ -28,6 +38,8 @@ import {
 const marketInsightJobInput = z.object({
   projectId: z.number().int().positive(),
   competitorAsins: panoramaCompetitorAsinsSchema,
+  agentRunId: z.string().min(1).optional(),
+  agentNodeId: z.string().min(1).optional(),
 });
 const ACTIVE_STATUSES = new Set(["queued", "running"]);
 
@@ -59,10 +71,24 @@ export async function queuePanoramaMarketInsight(input: {
   if (current?.runId && ACTIVE_STATUSES.has(current.status)) {
     const job = await getAiJobRun(current.runId).catch(() => null);
     if (job && ["queued", "running"].includes(job.status)) {
-      return { runId: current.runId, status: current.status, progress: job.progress, alreadyRunning: true };
+      const storedAgentRunId = marketInsightJobInput.safeParse(job.input).data?.agentRunId;
+      const agentRun = storedAgentRunId
+        ? { runId: storedAgentRunId }
+        : await ensureProductAnalysisAgentRun({ ...input, requireMutable: true });
+      const sync = job.status === "queued" ? syncMajorCompetitorQueued : syncMajorCompetitorProgress;
+      await sync({
+        ...input,
+        agentRunId: agentRun.runId,
+        aiJobRunId: job.runId,
+        aiJobAttempt: job.attempt,
+        maxAttempts: job.maxAttempts,
+        progress: job.progress,
+      }).catch((error) => console.warn("[Panorama Agent] Failed to restore active job state", error));
+      return { runId: current.runId, agentRunId: agentRun.runId, status: job.status, progress: job.progress, alreadyRunning: true };
     }
   }
 
+  const agentRun = await ensureProductAnalysisAgentRun({ ...input, requireMutable: true });
   const runId = generateAiJobRunId("dev_panorama_market");
   await claimMarketInsightRun({ ...input, runId });
   try {
@@ -75,7 +101,12 @@ export async function queuePanoramaMarketInsight(input: {
       userId: input.userId,
       projectId: input.projectId,
       skillSlug: "dev.panorama.market_insights",
-      input: { projectId: input.projectId, competitorAsins },
+      input: {
+        projectId: input.projectId,
+        competitorAsins,
+        agentRunId: agentRun.runId,
+        agentNodeId: "major_competitors",
+      },
       progress: 5,
       priority: 20,
       queueName: "analysis",
@@ -90,11 +121,26 @@ export async function queuePanoramaMarketInsight(input: {
     });
     throw error;
   }
-  return { runId, status: "queued" as const, progress: 5, alreadyRunning: false };
+  await syncMajorCompetitorQueued({
+    ...input,
+    agentRunId: agentRun.runId,
+    aiJobRunId: runId,
+    aiJobAttempt: 0,
+    maxAttempts: 2,
+    progress: 5,
+  }).catch((error) => console.warn("[Panorama Agent] Failed to sync queued state", error));
+  return { runId, agentRunId: agentRun.runId, status: "queued" as const, progress: 5, alreadyRunning: false };
 }
 
 async function runPanoramaMarketInsight(job: AiJobSnapshot, signal: AbortSignal) {
-  const { projectId, competitorAsins } = marketInsightJobInput.parse(job.input);
+  const parsedInput = marketInsightJobInput.parse(job.input);
+  const { projectId, competitorAsins } = parsedInput;
+  const agentRunId = parsedInput.agentRunId || (await ensureProductAnalysisAgentRun({
+    projectId,
+    userId: job.userId,
+    workspaceId: job.workspaceId,
+    requireMutable: true,
+  })).runId;
   const progress = async (value: number, error: string | null = null) => {
     const current = await updateMarketInsightForRun(projectId, job.runId, {
       status: "running",
@@ -106,6 +152,17 @@ async function runPanoramaMarketInsight(job: AiJobSnapshot, signal: AbortSignal)
         expectedWorkerId: job.lockedBy || undefined,
         expectedAttempt: job.attempt,
       });
+      await syncMajorCompetitorProgress({
+        projectId,
+        userId: job.userId,
+        workspaceId: job.workspaceId,
+        agentRunId,
+        aiJobRunId: job.runId,
+        aiJobAttempt: job.attempt,
+        maxAttempts: job.maxAttempts,
+        progress: value,
+        error,
+      }).catch((syncError) => console.warn("[Panorama Agent] Failed to sync progress", syncError));
     }
     return current;
   };
@@ -233,11 +290,22 @@ async function runPanoramaMarketInsight(job: AiJobSnapshot, signal: AbortSignal)
     if (completed) {
       const insight = await getMarketInsight(projectId);
       if (insight) await registerPanoramaMarketInsightArtifact(insight.id, "ai_output").catch(() => null);
+      await syncMajorCompetitorWaitingHuman({
+        projectId,
+        userId: job.userId,
+        workspaceId: job.workspaceId,
+        agentRunId,
+        aiJobRunId: job.runId,
+        aiJobAttempt: job.attempt,
+        output: skillResult.parsed,
+      }).catch((syncError) => console.warn("[Panorama Agent] Failed to sync completed output", syncError));
       return skillResult.parsed;
     }
     return { skipped: true, reason: "任务已被新的运行替代" };
   } catch (error) {
-    const finalAttempt = job.attempt >= job.maxAttempts || signal.aborted;
+    const abortReason = signal.aborted ? String(signal.reason || "") : "";
+    const retryableTimeout = /timed?\s*out|timeout/i.test(abortReason);
+    const finalAttempt = job.attempt >= job.maxAttempts || (signal.aborted && !retryableTimeout);
     await updateMarketInsightForRun(projectId, job.runId, {
       status: finalAttempt ? (signal.aborted ? "canceled" : "failed") : "running",
       runError: finalAttempt
@@ -245,11 +313,23 @@ async function runPanoramaMarketInsight(job: AiJobSnapshot, signal: AbortSignal)
         : `本次调用失败，后台将自动重试（${job.attempt}/${job.maxAttempts}）`,
       runCompletedAt: finalAttempt ? new Date() : null,
     });
+    await syncMajorCompetitorFailure({
+      projectId,
+      userId: job.userId,
+      workspaceId: job.workspaceId,
+      agentRunId,
+      aiJobRunId: job.runId,
+      aiJobAttempt: job.attempt,
+      maxAttempts: job.maxAttempts,
+      finalAttempt,
+      error,
+      failureKind: signal.aborted ? (retryableTimeout ? "timeout" : "cancel") : "error",
+    }).catch((syncError) => console.warn("[Panorama Agent] Failed to sync failure", syncError));
     throw error;
   }
 }
 
-export async function savePanoramaMarketInsight(projectId: number, userId: number, value: unknown) {
+export async function savePanoramaMarketInsight(projectId: number, userId: number, value: unknown, workspaceId?: number | null) {
   const parsed = panoramaMarketInsightResultSchema.parse(value);
   const current = await getMarketInsight(projectId);
   if (!current) throw new Error("请先生成主要竞争对手分析");
@@ -262,10 +342,11 @@ export async function savePanoramaMarketInsight(projectId: number, userId: numbe
     version: current.version + 1,
   });
   if (updated) await registerPanoramaMarketInsightArtifact(updated.id, "user_edit").catch(() => null);
+  if (updated) await syncMajorCompetitorDraft({ projectId, userId, workspaceId, output: parsed });
   return updated;
 }
 
-export async function confirmPanoramaMarketInsight(projectId: number, userId: number, value: unknown) {
+export async function confirmPanoramaMarketInsight(projectId: number, userId: number, value: unknown, workspaceId?: number | null) {
   const parsed = panoramaMarketInsightResultSchema.parse(value);
   const current = await getMarketInsight(projectId);
   if (!current) throw new Error("请先生成主要竞争对手分析");
@@ -278,24 +359,47 @@ export async function confirmPanoramaMarketInsight(projectId: number, userId: nu
     version: current.version + 1,
   });
   if (updated) await registerPanoramaMarketInsightArtifact(updated.id, "user_edit").catch(() => null);
+  if (updated) await syncMajorCompetitorConfirmed({ projectId, userId, workspaceId, output: parsed });
   return updated;
 }
 
-export async function unlockPanoramaMarketInsight(projectId: number, userId: number) {
+export async function unlockPanoramaMarketInsight(projectId: number, userId: number, workspaceId?: number | null) {
   const current = await getMarketInsight(projectId);
   if (!current) throw new Error("主要竞争对手分析不存在");
-  return updateMarketInsight(projectId, { userId, status: "editing", confirmedAt: null, confirmedBy: null });
+  const updated = await updateMarketInsight(projectId, { userId, status: "editing", confirmedAt: null, confirmedBy: null });
+  await syncMajorCompetitorUnlocked({
+    projectId,
+    userId,
+    workspaceId,
+    output: parseStoredResult(current.editedResult) || parseStoredResult(current.rawResult) || undefined,
+  });
+  return updated;
 }
 
-export async function cancelPanoramaMarketInsight(projectId: number) {
+export async function cancelPanoramaMarketInsight(projectId: number, userId: number, workspaceId?: number | null) {
   const current = await getMarketInsight(projectId);
   if (!current?.runId || !ACTIVE_STATUSES.has(current.status)) return current;
+  const job = await getAiJobRun(current.runId).catch(() => null);
   await cancelAiJob(current.runId, "用户取消主要竞争对手分析");
-  return updateMarketInsightForRun(projectId, current.runId, {
+  const updated = await updateMarketInsightForRun(projectId, current.runId, {
     status: "canceled",
     runError: "任务已取消",
     runCompletedAt: new Date(),
   });
+  const agentRunId = marketInsightJobInput.safeParse(job?.input).data?.agentRunId;
+  await syncMajorCompetitorFailure({
+    projectId,
+    userId,
+    workspaceId,
+    agentRunId,
+    aiJobRunId: current.runId,
+    aiJobAttempt: job?.attempt || 0,
+    maxAttempts: job?.maxAttempts || 2,
+    finalAttempt: true,
+    failureKind: "cancel",
+    error: "用户取消主要竞争对手分析",
+  }).catch((error) => console.warn("[Panorama Agent] Failed to sync cancellation", error));
+  return updated;
 }
 
 registerAiJobHandler({

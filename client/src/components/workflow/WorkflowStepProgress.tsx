@@ -14,6 +14,7 @@ import {
 import type { WorkflowCheckpointLike, WorkflowId, WorkflowStepDefinition } from "./types";
 import {
   getCheckpointForStep,
+  getWorkflowCheckpointDisplayStatus,
   isWorkflowStepDone,
   normalizeCheckpointStatus,
   toWorkflowIdSet,
@@ -21,13 +22,25 @@ import {
   WORKFLOW_STATUS_LABELS,
 } from "./workflowUtils";
 
-export function WorkflowStatusBadge({ status }: { status?: string | null }) {
-  const normalized = normalizeCheckpointStatus(status);
+export function WorkflowStatusBadge({
+  status,
+  checkpoint,
+}: {
+  status?: string | null;
+  checkpoint?: WorkflowCheckpointLike | null;
+}) {
+  const normalized = checkpoint
+    ? getWorkflowCheckpointDisplayStatus(checkpoint)
+    : normalizeCheckpointStatus(status);
   const tone =
     normalized === "failed"
       ? "border-red-200 bg-red-50 text-red-700"
       : normalized === "running"
       ? "border-blue-200 bg-blue-50 text-blue-700"
+      : normalized === "queued"
+      ? "border-sky-200 bg-sky-50 text-sky-700"
+      : normalized === "retrying"
+      ? "border-orange-200 bg-orange-50 text-orange-700"
       : normalized === "waiting_human"
       ? "border-amber-200 bg-amber-50 text-amber-700"
       : isWorkflowStepDone(normalized)
@@ -46,6 +59,8 @@ export function WorkflowStatusBadge({ status }: { status?: string | null }) {
 function StepStateIcon({ status, active }: { status: string; active: boolean }) {
   const normalized = normalizeCheckpointStatus(status);
   if (normalized === "running") return <Loader2 className="h-3.5 w-3.5 animate-spin" />;
+  if (normalized === "retrying") return <Loader2 className="h-3.5 w-3.5 animate-spin" />;
+  if (normalized === "queued") return <Clock3 className="h-3.5 w-3.5" />;
   if (normalized === "failed") return <AlertCircle className="h-3.5 w-3.5" />;
   if (normalized === "locked") return <Lock className="h-3.5 w-3.5" />;
   if (isWorkflowStepDone(normalized)) return <Check className="h-3.5 w-3.5" />;
@@ -90,7 +105,7 @@ export function WorkflowStepProgress({
         {steps.map((step, index) => {
           const stepKey = workflowIdKey(step.id);
           const checkpoint = getCheckpointForStep(step, checkpoints);
-          const checkpointStatus = normalizeCheckpointStatus(checkpoint?.status);
+          const checkpointStatus = getWorkflowCheckpointDisplayStatus(checkpoint);
           const isCompleted = completed.has(stepKey) || isWorkflowStepDone(checkpointStatus);
           const isLocked = locked.has(stepKey) || checkpointStatus === "locked";
           const isBlocked = blocked.has(stepKey) && !isCompleted && !isLocked;

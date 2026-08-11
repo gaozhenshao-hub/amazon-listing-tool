@@ -1,163 +1,42 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import * as vsDb from "../videoScriptDb";
-import * as db from "../repositories";
 import { generateVideoScriptExcel } from "../videoScriptExcel";
 import { storagePut } from "../storage";
 import {
   registerVideoArtifact,
-  recordBusinessArtifactUse,
-  resolveCurrentBusinessArtifact,
 } from "../domains/ai_os/services/businessArtifactRegistry";
-import { getL1Index, getL2Summary, formatForPrompt, logKbCallBatch } from "../kbContextEngine";
 import {
-  COMPETITOR_SCRIPT_ANALYSIS_PROMPT,
-  COMPETITOR_SUMMARY_PROMPT,
-  PRODUCT_INFO_EXTRACTION_PROMPT,
-  SECTION_PLANNING_PROMPT,
-  SUBTOPIC_EXPANSION_PROMPT,
-  SHOT_DETAIL_PROMPT,
-  EDIT_SCRIPT_PROMPT,
   VIDEO_TYPE_SPECS,
   STYLE_PRESETS,
-  getVideoTypeTemplate,
   getVideoTypeSpec,
-  buildStylePresetPrompt,
 } from "../videoScriptPrompts";
+import {
+  queueVideoGenerationJob,
+  type VideoGenerationOperation,
+} from "../domains/video/videoGenerationJob";
+import { confirmVideoStage, type VideoStage } from "../domains/video/videoAgent";
 
-// Helper: safely parse LLM JSON response
-function parseLLMJson(content: string): any {
-  try {
-    // Try to extract JSON from markdown code blocks
-    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) return JSON.parse(jsonMatch[1].trim());
-    return JSON.parse(content);
-  } catch {
-    return null;
-  }
-}
-
-// Helper: sanitize shooting method to valid enum value
-const VALID_SHOOTING_METHODS = ["model_narration", "live_action", "ai_generated", "mixed", "screen_recording"] as const;
-function sanitizeShootingMethod(value: string | undefined | null): string {
-  if (!value) return "live_action";
-  // If the value contains pipe separator (e.g. "live_action|mixed"), take the first one
-  const firstVal = value.split("|")[0].trim().toLowerCase();
-  if (VALID_SHOOTING_METHODS.includes(firstVal as any)) return firstVal;
-  // Try to find a partial match
-  const match = VALID_SHOOTING_METHODS.find(m => firstVal.includes(m));
-  return match || "live_action";
-}
-
-// Helper: build product context from project data
-async function buildProductContext(projectId: number): Promise<string> {
-  const parts: string[] = [];
-
-  // Load project files for product attributes
-  const files = await db.getProjectFilesByProject(projectId);
-  for (const file of files) {
-    if (file.status !== "completed" || !file.analysisResult) continue;
-    try {
-      const artifact = await resolveCurrentBusinessArtifact({
-        domain: "listing",
-        artifactKey: `project_file.${file.fileType}.analysis`,
-        sourceTable: "projectFiles",
-        sourceRowId: file.id,
-        projectId,
-      }).catch(() => null);
-      if (artifact) {
-        await recordBusinessArtifactUse({
-          artifact,
-          consumerDomain: "video",
-          consumerType: "business_operation",
-          consumerId: `video.context:${projectId}`,
-          projectId,
-          metadata: { source: "project_file", fileType: file.fileType },
-        });
-      }
-      const parsed = artifact?.content || JSON.parse(file.analysisResult);
-      if (file.fileType === "product_attributes") {
-        parts.push("--- 产品属性 ---");
-        if (parsed.uniqueSellingPoints?.length) {
-          parts.push(`独特卖点: ${parsed.uniqueSellingPoints.join("; ")}`);
-        }
-        if (parsed.coreSpecs?.length) {
-          parts.push(`核心参数: ${parsed.coreSpecs.map((s: any) => `${s.attribute}: ${s.value}`).join("; ")}`);
-        }
-      }
-    } catch {}
-  }
-
-  // Load competitor analyses
-  const analyses = await db.getCompetitorAnalysesByProject(projectId);
-  if (analyses.length > 0) {
-    parts.push("\n--- 竞品分析 ---");
-    for (const row of analyses) {
-      const artifact = await resolveCurrentBusinessArtifact({
-        domain: "listing",
-        artifactKey: `listing.competitor_analysis.${row.asin}`,
-        sourceTable: "competitorAnalyses",
-        sourceRowId: row.id,
-        projectId,
-      }).catch(() => null);
-      if (artifact) {
-        await recordBusinessArtifactUse({
-          artifact,
-          consumerDomain: "video",
-          consumerType: "business_operation",
-          consumerId: `video.context:${projectId}`,
-          projectId,
-          metadata: { source: "competitor_analysis", asin: row.asin },
-        });
-      }
-      const a = artifact?.content && typeof artifact.content === "object"
-        ? { ...row, ...(artifact.content as Record<string, unknown>) }
-        : row;
-      parts.push(`竞品 ASIN: ${a.asin}`);
-      if (a.title) parts.push(`标题: ${a.title}`);
-      if (a.bulletPoints) parts.push(`五点: ${a.bulletPoints}`);
-    }
-  }
-
-  // Load listings
-  const listingArtifact = await resolveCurrentBusinessArtifact({
-    domain: "listing",
-    artifactKey: "listing.content",
-    projectId,
-  }).catch(() => null);
-  const listings = listingArtifact?.content && typeof listingArtifact.content === "object"
-    ? [(listingArtifact.content as any).listing].filter(Boolean)
-    : await db.getListingsByProject(projectId);
-  if (listingArtifact) {
-    await recordBusinessArtifactUse({
-      artifact: listingArtifact,
-      consumerDomain: "video",
-      consumerType: "business_operation",
-      consumerId: `video.context:${projectId}`,
-      projectId,
-      metadata: { source: "listing.content" },
-    });
-  }
-  if (listings.length > 0) {
-    parts.push("\n--- Listing内容 ---");
-    for (const l of listings) {
-      if (l.title) parts.push(`标题: ${l.title}`);
-      if (l.bulletPoints) parts.push(`五点: ${l.bulletPoints}`);
-      if (l.description) parts.push(`描述: ${l.description}`);
-    }
-  }
-
-  // Load review aggregation
-  const review = await db.getReviewAggregationByProject(projectId);
-  if (review) {
-    parts.push("\n--- 评论分析 ---");
-    if (review.painPoints) parts.push(`痛点: ${review.painPoints}`);
-    if (review.keyThemes) parts.push(`关键主题: ${review.keyThemes}`);
-    if (review.overallSentiment) parts.push(`整体情感: ${review.overallSentiment}`);
-  }
-
-  return parts.join("\n");
+async function queueVideoJob(input: {
+  videoScriptId: number;
+  operation: VideoGenerationOperation;
+  userId: number;
+  workspaceId?: number | null;
+  projectId?: number;
+  competitorScriptId?: number;
+  rawContent?: string;
+}) {
+  const script = await vsDb.getVideoScriptById(input.videoScriptId);
+  if (!script) throw new Error("视频脚本不存在");
+  return queueVideoGenerationJob({
+    videoScriptId: input.videoScriptId,
+    projectId: input.projectId || script.projectId,
+    operation: input.operation,
+    competitorScriptId: input.competitorScriptId,
+    rawContent: input.rawContent,
+    userId: input.userId,
+    workspaceId: input.workspaceId ?? null,
+  });
 }
 
 export const videoScriptRouter = router({
@@ -267,33 +146,17 @@ export const videoScriptRouter = router({
       competitorScriptId: z.number(),
       rawContent: z.string(),
     }))
-    .mutation(async ({ input }) => {
-      const prompt = COMPETITOR_SCRIPT_ANALYSIS_PROMPT.replace("{competitor_content}", input.rawContent);
-      // [Emperor] 通用 Skill 调用（已迁移）
-
-      const response = await invokeBusinessSkill({
-        messages: [
-          { role: "system", content: "你是一位资深的亚马逊产品视频分析师。请严格输出JSON格式。" },
-          { role: "user", content: prompt },
-        ],
-        response_format: { type: "json_object" },
+    .mutation(async ({ input, ctx }) => {
+      const competitor = await vsDb.getCompetitorScriptById(input.competitorScriptId);
+      if (!competitor) throw new Error("竞品脚本不存在");
+      return queueVideoJob({
+        videoScriptId: competitor.videoScriptId,
+        operation: "competitor_analysis",
+        competitorScriptId: input.competitorScriptId,
+        rawContent: input.rawContent,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId,
       });
-      const content = typeof response.choices[0]?.message?.content === "string"
-        ? response.choices[0].message.content
-        : "";
-      const analysis = parseLLMJson(content);
-      if (analysis) {
-        await vsDb.updateCompetitorScript(input.competitorScriptId, {
-          rawContent: input.rawContent,
-          structureAnalysis: JSON.stringify(analysis.structure_analysis || {}),
-          visualLanguage: JSON.stringify(analysis.visual_language || {}),
-          copywritingAnalysis: JSON.stringify(analysis.copywriting_analysis || {}),
-          strengths: JSON.stringify(analysis.strengths || []),
-          weaknesses: JSON.stringify(analysis.weaknesses || []),
-          reusablePatterns: JSON.stringify(analysis.reusable_patterns || []),
-        });
-      }
-      return { analysis, raw: content };
     }),
 
   updateCompetitorScriptEdits: protectedProcedure
@@ -312,42 +175,13 @@ export const videoScriptRouter = router({
 
   generateCompetitorSummary: protectedProcedure
     .input(z.object({ videoScriptId: z.number() }))
-    .mutation(async ({ input }) => {
-      const competitors = await vsDb.getCompetitorScriptsByVideoScript(input.videoScriptId);
-      const analysesData = competitors.map(c => ({
-        name: c.competitorName,
-        asin: c.competitorAsin,
-        structure: c.structureAnalysis,
-        visual: c.visualLanguage,
-        copywriting: c.copywritingAnalysis,
-        strengths: c.strengths,
-        weaknesses: c.weaknesses,
-      }));
-      const prompt = COMPETITOR_SUMMARY_PROMPT.replace("{competitor_analyses}", JSON.stringify(analysesData, null, 2));
-      // [Emperor] 通用 Skill 调用（已迁移）
-
-      const response = await invokeBusinessSkill({
-        messages: [
-          { role: "system", content: "你是一位资深的亚马逊视频策略分析师。请严格输出JSON格式。" },
-          { role: "user", content: prompt },
-        ],
-        response_format: { type: "json_object" },
+    .mutation(async ({ input, ctx }) => {
+      return queueVideoJob({
+        videoScriptId: input.videoScriptId,
+        operation: "competitor_summary",
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId,
       });
-      const content = typeof response.choices[0]?.message?.content === "string"
-        ? response.choices[0].message.content
-        : "";
-      const summary = parseLLMJson(content);
-      if (summary) {
-        await vsDb.upsertCompetitorSummary({
-          videoScriptId: input.videoScriptId,
-          competitorScriptIds: JSON.stringify(competitors.map(c => c.id)),
-          commonStructure: JSON.stringify(summary.common_structure || {}),
-          optimalDurationAllocation: JSON.stringify(summary.optimal_duration_allocation || []),
-          differentiableOpportunities: JSON.stringify(summary.differentiable_opportunities || []),
-          recommendedStructure: JSON.stringify(summary.recommended_structure || {}),
-        });
-      }
-      return { summary, raw: content };
     }),
 
   getCompetitorSummary: protectedProcedure
@@ -363,34 +197,13 @@ export const videoScriptRouter = router({
       videoScriptId: z.number(),
       projectId: z.number(),
     }))
-    .mutation(async ({ input }) => {
-      const productContext = await buildProductContext(input.projectId);
-      const prompt = PRODUCT_INFO_EXTRACTION_PROMPT.replace("{product_data}", productContext);
-      // [Emperor] 通用 Skill 调用（已迁移）
-
-      const response = await invokeBusinessSkill({
-        messages: [
-          { role: "system", content: "你是一位亚马逊产品视频策划专家。请严格输出JSON格式。" },
-          { role: "user", content: prompt },
-        ],
-        response_format: { type: "json_object" },
+    .mutation(async ({ input, ctx }) => {
+      return queueVideoJob({
+        ...input,
+        operation: "product_info",
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId,
       });
-      const content = typeof response.choices[0]?.message?.content === "string"
-        ? response.choices[0].message.content
-        : "";
-      const productInfo = parseLLMJson(content);
-      if (productInfo) {
-        await vsDb.upsertProductSnapshot({
-          videoScriptId: input.videoScriptId,
-          basicInfo: JSON.stringify(productInfo.basic_info || {}),
-          sellingPointsHierarchy: JSON.stringify(productInfo.selling_points_hierarchy || []),
-          painPoints: JSON.stringify(productInfo.pain_points_from_reviews || []),
-          keywords: JSON.stringify(productInfo.keywords_for_overlay || []),
-          productSpecs: JSON.stringify(productInfo.key_specs || []),
-          dataSources: JSON.stringify({ projectId: input.projectId, extractedAt: new Date().toISOString() }),
-        });
-      }
-      return { productInfo, raw: content };
     }),
 
   getProductSnapshot: protectedProcedure
@@ -422,94 +235,12 @@ export const videoScriptRouter = router({
       projectId: z.number(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const script = await vsDb.getVideoScriptById(input.videoScriptId);
-      const snapshot = await vsDb.getProductSnapshot(input.videoScriptId);
-      const summary = await vsDb.getCompetitorSummary(input.videoScriptId);
-
-      const productInfo = snapshot ? JSON.stringify({
-        basicInfo: snapshot.basicInfo,
-        sellingPoints: snapshot.sellingPointsHierarchy,
-        painPoints: snapshot.painPoints,
-        keywords: snapshot.keywords,
-      }) : "无产品信息";
-
-      const competitorRef = summary ? JSON.stringify({
-        recommendedStructure: summary.recommendedStructure,
-        differentiableOpportunities: summary.differentiableOpportunities,
-      }) : "无竞品参考";
-
-      const videoType = script?.videoType || "main_video";
-      const stylePreset = (script as any)?.stylePreset || "minimal_white";
-
-      // ─── Knowledge Base Injection: fetch relevant video examples ───
-      let kbExamplesText = "暂无知识库案例";
-      try {
-        const kbL1 = await getL1Index({
-          userId: ctx.user.id,
-          types: ["video"],
-          keyword: script?.scriptName || "",
-          scope: "all",
-        });
-        if (kbL1.length > 0) {
-          // Load L2 summaries for top results
-          const topIds = kbL1.slice(0, 5).map(item => item.id);
-          const kbL2 = await getL2Summary(topIds, ["video"]);
-          kbExamplesText = formatForPrompt(kbL2.length > 0 ? kbL2 : kbL1, kbL2.length > 0 ? "L2" : "L1");
-          // Log KB call for tracking
-          await logKbCallBatch(topIds.map(id => ({
-            userId: ctx.user.id,
-            callerModule: "video_script",
-            callerAction: "generateSections",
-            kbItemId: id,
-            kbItemType: "video",
-            loadLevel: kbL2.length > 0 ? "L2" as const : "L1" as const,
-          })));
-        }
-      } catch (e) {
-        console.warn("[VideoScript] KB injection failed, continuing without KB context:", e);
-      }
-
-      const prompt = SECTION_PLANNING_PROMPT
-        .replace("{product_info}", productInfo)
-        .replace("{competitor_reference}", competitorRef)
-        .replace("{knowledge_base_examples}", kbExamplesText)
-        .replace("{video_type}", videoType)
-        .replace("{video_type_template}", getVideoTypeTemplate(videoType))
-        .replace("{style_preset}", buildStylePresetPrompt(stylePreset))
-        .replace("{target_duration}", script?.targetDuration?.toString() || "60")
-        .replace("{spv_segment_index}", "N/A");
-
-      // [Emperor] 通用 Skill 调用（已迁移）
-
-      const response = await invokeBusinessSkill({
-        messages: [
-          { role: "system", content: "你是一位资深的亚马逊产品视频编导。请严格输出JSON格式。" },
-          { role: "user", content: prompt },
-        ],
-        response_format: { type: "json_object" },
+      return queueVideoJob({
+        ...input,
+        operation: "sections",
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId,
       });
-      const content = typeof response.choices[0]?.message?.content === "string"
-        ? response.choices[0].message.content
-        : "";
-      const result = parseLLMJson(content);
-      if (result?.sections) {
-        const savedSections = await vsDb.saveSections(input.videoScriptId, result.sections.map((s: any, i: number) => ({
-          videoScriptId: input.videoScriptId,
-          sectionCode: s.section_code || `MBP${i + 1}`,
-          sectionName: s.section_name || s.scene_name,
-          sectionNameEn: s.section_name_en,
-          shootingMethod: sanitizeShootingMethod(s.shooting_method),
-          durationBudget: s.duration_budget?.toString(),
-          sellingPointRefs: JSON.stringify(s.selling_point_refs || []),
-          painPointRefs: JSON.stringify(s.pain_point_refs || []),
-          description: s.description || "",
-          shotTypeSuggestion: s.shot_type_suggestion || "",
-          propsSuggestion: JSON.stringify(s.props_suggestion || []),
-          sortOrder: i,
-        })));
-        return { sections: savedSections, raw: content };
-      }
-      return { sections: [], raw: content };
     }),
 
   getSections: protectedProcedure
@@ -545,48 +276,13 @@ export const videoScriptRouter = router({
 
   generateSubtopics: protectedProcedure
     .input(z.object({ videoScriptId: z.number() }))
-    .mutation(async ({ input }) => {
-      const sections = await vsDb.getSections(input.videoScriptId);
-      const snapshot = await vsDb.getProductSnapshot(input.videoScriptId);
-
-      const prompt = SUBTOPIC_EXPANSION_PROMPT
-        .replace("{sections}", JSON.stringify(sections))
-        .replace("{product_info}", snapshot ? JSON.stringify({
-          sellingPoints: snapshot.sellingPointsHierarchy,
-          painPoints: snapshot.painPoints,
-        }) : "无产品信息");
-
-      // [Emperor] 通用 Skill 调用（已迁移）
-
-      const response = await invokeBusinessSkill({
-        messages: [
-          { role: "system", content: "你是一位亚马逊产品视频的分镜师。请严格输出JSON格式。" },
-          { role: "user", content: prompt },
-        ],
-        response_format: { type: "json_object" },
+    .mutation(async ({ input, ctx }) => {
+      return queueVideoJob({
+        videoScriptId: input.videoScriptId,
+        operation: "subtopics",
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId,
       });
-      const content = typeof response.choices[0]?.message?.content === "string"
-        ? response.choices[0].message.content
-        : "";
-      const result = parseLLMJson(content);
-      if (result?.sections) {
-        for (const sec of result.sections) {
-          const dbSection = sections.find(s => s.sectionCode === sec.section_code);
-          if (dbSection && sec.subtopics) {
-            await vsDb.saveSubtopics(dbSection.id, sec.subtopics.map((sub: any, i: number) => ({
-              sectionId: dbSection.id,
-              subtopicName: sub.subtopic_name,
-              subtopicNameEn: sub.subtopic_name_en,
-              durationBudget: sub.duration_budget?.toString(),
-              shotCount: sub.shot_count || 1,
-              sellingPointRef: sub.selling_point_ref,
-              sortOrder: i,
-            })));
-          }
-        }
-      }
-      const allSubtopics = await vsDb.getSubtopicsByVideoScript(input.videoScriptId);
-      return { subtopics: allSubtopics, raw: content };
     }),
 
   getSubtopics: protectedProcedure
@@ -600,123 +296,12 @@ export const videoScriptRouter = router({
   generateShots: protectedProcedure
     .input(z.object({ videoScriptId: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const sections = await vsDb.getSections(input.videoScriptId);
-      const snapshot = await vsDb.getProductSnapshot(input.videoScriptId);
-      const summary = await vsDb.getCompetitorSummary(input.videoScriptId);
-
-      // Build subtopics structure
-      const subtopicsStructure = [];
-      for (const sec of sections) {
-        const subs = await vsDb.getSubtopicsBySection(sec.id);
-        subtopicsStructure.push({
-          section_code: sec.sectionCode,
-          section_name: sec.sectionName,
-          shooting_method: sec.shootingMethod,
-          subtopics: subs.map(s => ({
-            name: s.subtopicName,
-            name_en: s.subtopicNameEn,
-            duration: s.durationBudget,
-            shot_count: s.shotCount,
-          })),
-        });
-      }
-
-      const script = await vsDb.getVideoScriptById(input.videoScriptId);
-      const videoType = script?.videoType || "main_video";
-      const stylePreset = (script as any)?.stylePreset || "minimal_white";
-
-      // ─── Knowledge Base Injection for shot details ───
-      let kbShotRef = "";
-      try {
-        const kbL1 = await getL1Index({
-          userId: ctx.user.id,
-          types: ["video"],
-          keyword: script?.scriptName || "",
-          scope: "all",
-        });
-        if (kbL1.length > 0) {
-          const topIds = kbL1.slice(0, 3).map(item => item.id);
-          const kbL2 = await getL2Summary(topIds, ["video"]);
-          kbShotRef = kbL2.length > 0 ? `\n\n--- 知识库视频参考（镜头语言参考） ---\n${formatForPrompt(kbL2, "L2")}` : "";
-          await logKbCallBatch(topIds.map(id => ({
-            userId: ctx.user.id,
-            callerModule: "video_script",
-            callerAction: "generateShots",
-            kbItemId: id,
-            kbItemType: "video",
-            loadLevel: "L2" as const,
-          })));
-        }
-      } catch (e) {
-        console.warn("[VideoScript] KB injection for shots failed:", e);
-      }
-
-      const prompt = SHOT_DETAIL_PROMPT
-        .replace("{subtopics_structure}", JSON.stringify(subtopicsStructure, null, 2))
-        .replace("{product_info}", snapshot ? JSON.stringify({
-          basicInfo: snapshot.basicInfo,
-          sellingPoints: snapshot.sellingPointsHierarchy,
-          specs: snapshot.productSpecs,
-        }) : "无产品信息")
-        .replace("{competitor_reference}", (summary ? JSON.stringify({
-          recommendedStructure: summary.recommendedStructure,
-        }) : "无竞品参考") + kbShotRef)
-        .replace("{video_type}", videoType)
-        .replace("{video_type_template}", getVideoTypeTemplate(videoType))
-        .replace("{style_preset}", buildStylePresetPrompt(stylePreset));
-
-      // [Emperor] 通用 Skill 调用（已迁移）
-
-      const response = await invokeBusinessSkill({
-        messages: [
-          { role: "system", content: "你是一位专业的亚马逊产品视频分镜师。请严格输出JSON格式，每个镜头包含完整的14字段数据。" },
-          { role: "user", content: prompt },
-        ],
-        response_format: { type: "json_object" },
-        maxTokens: 8000,
+      return queueVideoJob({
+        videoScriptId: input.videoScriptId,
+        operation: "shots",
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId,
       });
-      const content = typeof response.choices[0]?.message?.content === "string"
-        ? response.choices[0].message.content
-        : "";
-      const result = parseLLMJson(content);
-      if (result?.shots) {
-        // Group shots by section and subtopic
-        for (const sec of sections) {
-          const subs = await vsDb.getSubtopicsBySection(sec.id);
-          for (const sub of subs) {
-            const matchingShots = result.shots.filter((s: any) =>
-              s.section_code === sec.sectionCode && s.subtopic_name === sub.subtopicName
-            );
-            if (matchingShots.length > 0) {
-              await vsDb.saveShots(sub.id, sec.id, matchingShots.map((s: any, i: number) => ({
-                subtopicId: sub.id,
-                sectionId: sec.id,
-                shotCode: s.shot_code,
-                duration: s.duration?.toString(),
-                shotDescription: s.shot_description,
-                sceneLocation: s.scene_location,
-                cameraAngle: s.camera_angle,
-                cameraMovement: s.camera_movement,
-                overlayTextEn: s.overlay_text_en,
-                overlayTextCn: s.overlay_text_cn,
-                narrationEn: s.narration_en,
-                narrationCn: s.narration_cn,
-                subtitleEn: s.subtitle_en || "",
-                subtitleCn: s.subtitle_cn || "",
-                narratorType: s.narrator_type || "voiceover",
-                generationStrategy: s.generation_strategy || "real_shoot",
-                reuseFromShotCode: s.reuse_from_shot_code,
-                colorScheme: s.color_scheme,
-                props: JSON.stringify(s.props || []),
-                notes: s.notes || "",
-                sortOrder: i,
-              })));
-            }
-          }
-        }
-      }
-      const allShots = await vsDb.getAllShotsByVideoScript(input.videoScriptId);
-      return { shots: allShots, raw: content };
     }),
 
   getShots: protectedProcedure
@@ -766,46 +351,13 @@ export const videoScriptRouter = router({
 
   generateEditScripts: protectedProcedure
     .input(z.object({ videoScriptId: z.number() }))
-    .mutation(async ({ input }) => {
-      const sections = await vsDb.getSections(input.videoScriptId);
-      const allShots = await vsDb.getAllShotsByVideoScript(input.videoScriptId);
-
-      const sectionsWithShots = sections.map(sec => ({
-        section_code: sec.sectionCode,
-        section_name: sec.sectionName,
-        duration: sec.durationBudget,
-        shooting_method: sec.shootingMethod,
-        shot_count: allShots.filter(s => s.sectionCode === sec.sectionCode).length,
-      }));
-
-      const prompt = EDIT_SCRIPT_PROMPT.replace("{sections_with_shots}", JSON.stringify(sectionsWithShots, null, 2));
-      // [Emperor] 通用 Skill 调用（已迁移）
-
-      const response = await invokeBusinessSkill({
-        messages: [
-          { role: "system", content: "你是一位资深的亚马逊视频剪辑策划师。请严格输出JSON格式。" },
-          { role: "user", content: prompt },
-        ],
-        response_format: { type: "json_object" },
+    .mutation(async ({ input, ctx }) => {
+      return queueVideoJob({
+        videoScriptId: input.videoScriptId,
+        operation: "edit_scripts",
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId,
       });
-      const content = typeof response.choices[0]?.message?.content === "string"
-        ? response.choices[0].message.content
-        : "";
-      const result = parseLLMJson(content);
-      if (result?.edit_scripts) {
-        const saved = await vsDb.saveEditScripts(input.videoScriptId, result.edit_scripts.map((es: any, i: number) => ({
-          videoScriptId: input.videoScriptId,
-          editName: es.edit_name,
-          videoPurpose: es.video_purpose || "main_listing",
-          maxDuration: es.max_duration?.toString(),
-          editStyle: es.edit_style,
-          sectionMapping: JSON.stringify(es.section_mapping || []),
-          description: es.description,
-          sortOrder: i,
-        })));
-        return { editScripts: saved, raw: content };
-      }
-      return { editScripts: [], raw: content };
     }),
 
   getEditScripts: protectedProcedure
@@ -1000,7 +552,7 @@ export const videoScriptRouter = router({
       videoScriptId: z.number(),
       stage: z.string(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const script = await vsDb.getVideoScriptById(input.videoScriptId);
       if (!script) throw new Error("Video script not found");
       const stageStatus = typeof script.stageStatus === "string"
@@ -1009,6 +561,13 @@ export const videoScriptRouter = router({
       stageStatus[input.stage] = "confirmed";
       await vsDb.updateVideoScript(input.videoScriptId, {
         stageStatus: JSON.stringify(stageStatus),
+      });
+      await confirmVideoStage({
+        videoScriptId: input.videoScriptId,
+        projectId: script.projectId,
+        stage: input.stage as VideoStage,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId,
       });
       await registerVideoArtifact(input.videoScriptId, "user_edit", { confirmed: true });
       return { success: true };

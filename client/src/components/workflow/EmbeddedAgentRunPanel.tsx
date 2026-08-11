@@ -23,6 +23,7 @@ export function EmbeddedAgentRunPanel({
   agentSlug,
   managedByBusinessPage = false,
   businessUrl,
+  runScope,
   onManagedNodeSelect,
   className,
 }: {
@@ -31,6 +32,7 @@ export function EmbeddedAgentRunPanel({
   agentSlug?: string;
   managedByBusinessPage?: boolean;
   businessUrl?: string;
+  runScope?: { key: string; value: string | number };
   onManagedNodeSelect?: (nodeId: string) => void;
   className?: string;
 }) {
@@ -38,19 +40,36 @@ export function EmbeddedAgentRunPanel({
   const initialRunId = agentSlug ? "" : queryRunId();
   const [runId, setRunId] = useState(initialRunId);
   const projectRuns = trpc.emperor.agents.listProjectRuns.useQuery(
-    { projectId: projectId || 0, agentSlug, limit: 10 },
+    { projectId: projectId || 0, agentSlug, limit: runScope ? 50 : 10 },
     {
       enabled: Boolean(projectId) && (Boolean(agentSlug) || !runId),
       refetchInterval: managedByBusinessPage ? 2_500 : false,
     },
   );
+  const userRuns = trpc.emperor.agents.listRuns.useQuery(
+    { slug: agentSlug || "", limit: 10 },
+    {
+      enabled: Boolean(agentSlug) && !projectId,
+      refetchInterval: managedByBusinessPage ? 2_500 : false,
+    },
+  );
 
   useEffect(() => {
-    const latestRunId = String((projectRuns.data?.[0] as any)?.runId || "");
+    const rows = (projectId ? projectRuns.data : userRuns.data) || [];
+    const scopedRows = runScope
+      ? rows.filter((row: any) => {
+          const rawInputs = row?.inputs;
+          let parsed = rawInputs;
+          try { parsed = typeof rawInputs === "string" ? JSON.parse(rawInputs) : rawInputs; } catch { parsed = {}; }
+          const value = parsed?.inputs?.[runScope.key] ?? parsed?.[runScope.key];
+          return String(value ?? "") === String(runScope.value);
+        })
+      : rows;
+    const latestRunId = String((scopedRows[0] as any)?.runId || "");
     if (latestRunId && (!runId || (agentSlug && latestRunId !== runId))) {
       setRunId(latestRunId);
     }
-  }, [agentSlug, projectRuns.data, runId]);
+  }, [agentSlug, projectId, projectRuns.data, runId, runScope, userRuns.data]);
   const workflow = useAgentWorkflowRun(runId);
   const checkpoint = useMemo(
     () => workflow.checkpoints.find((item) => item.status === "waiting_human")
@@ -137,12 +156,12 @@ export function EmbeddedAgentRunPanel({
                   className="flex min-w-0 items-center justify-between gap-2 rounded-md border px-3 py-2 text-left hover:bg-muted/50"
                   onClick={() => {
                     if (onManagedNodeSelect) onManagedNodeSelect(item.nodeId);
-                    else if (businessUrl) setLocation(`${businessUrl}?stage=${encodeURIComponent(item.nodeId)}`);
+                    else if (businessUrl) setLocation(`${businessUrl}${businessUrl.includes("?") ? "&" : "?"}stage=${encodeURIComponent(item.nodeId)}`);
                   }}
                   title={businessUrl ? "前往对应业务阶段" : item.nodeLabel || item.nodeId}
                 >
                   <span className="truncate text-xs font-medium">{item.nodeLabel || item.nodeId}</span>
-                  <WorkflowStatusBadge status={item.status} />
+                  <WorkflowStatusBadge checkpoint={item} />
                 </button>
               ))}
             </div>

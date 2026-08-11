@@ -15,6 +15,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { toast } from "sonner";
 
 import { OUTLINE_APLUS_CATEGORIES, OUTLINE_APLUS_MODULES, findOutlineAplusModule, normalizeImageOutline } from "./aplusModules";
+import { ImageStepGenerationStatus, useImageStepGenerationJob } from "./useImageStepGenerationJob";
 
 export function Step2ImageOutline({
   projectId,
@@ -25,7 +26,6 @@ export function Step2ImageOutline({
   session: any;
   onConfirm: () => void;
 }) {
-  const generateMutation = trpc.imageWorkflow.generateStep2.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep2.useMutation();
   const unlockMutation = trpc.imageWorkflow.unlockStep2.useMutation();
   const optimizeAplusMutation = trpc.imageWorkflow.optimizeStep2AplusModule.useMutation();
@@ -33,7 +33,14 @@ export function Step2ImageOutline({
   const [editData, setEditData] = useState<any>(null);
   const [isLocked, setIsLocked] = useState(!!session?.step2Confirmed);
   const [optimizingModuleIndex, setOptimizingModuleIndex] = useState<number | null>(null);
-  const [generationSeconds, setGenerationSeconds] = useState(0);
+  const generationJob = useImageStepGenerationJob({
+    projectId,
+    step: 2,
+    onSucceeded: (result) => setEditData(normalizeImageOutline(result, {
+      forceDefaultAplus: true,
+      recoverMissingSecondaryContent: true,
+    })),
+  });
 
   useEffect(() => {
     if (session?.step2UserEdit) {
@@ -49,16 +56,6 @@ export function Step2ImageOutline({
     setIsLocked(!!session?.step2Confirmed);
   }, [session?.step2AiResult, session?.step2UserEdit, session?.step2Confirmed]);
 
-  useEffect(() => {
-    if (!generateMutation.isPending) {
-      setGenerationSeconds(0);
-      return;
-    }
-    const startedAt = Date.now();
-    const timer = window.setInterval(() => setGenerationSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1_000);
-    return () => window.clearInterval(timer);
-  }, [generateMutation.isPending]);
-
   const handleUnlock = async () => {
     try {
       await unlockMutation.mutateAsync({ projectId });
@@ -71,16 +68,7 @@ export function Step2ImageOutline({
   };
 
   const handleGenerate = async () => {
-    try {
-      const result = await generateMutation.mutateAsync({ projectId });
-      setEditData(normalizeImageOutline(result, {
-        forceDefaultAplus: true,
-        recoverMissingSecondaryContent: true,
-      }));
-      toast.success("图片大纲生成完成");
-    } catch (err: any) {
-      toast.error(err.message || "生成失败");
-    }
+    await generationJob.start();
   };
 
   const handleConfirm = async () => {
@@ -154,14 +142,14 @@ export function Step2ImageOutline({
             </div>
             <div className="flex gap-2">
               {!editData && (
-                <Button onClick={handleGenerate} disabled={generateMutation.isPending}>
-                  {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                <Button onClick={handleGenerate} disabled={generationJob.isGenerating}>
+                  {generationJob.isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
                   AI生成大纲
                 </Button>
               )}
               {editData && !isConfirmed && (
                 <>
-                  <Button variant="outline" onClick={handleGenerate} disabled={generateMutation.isPending}>
+                  <Button variant="outline" onClick={handleGenerate} disabled={generationJob.isGenerating}>
                     <RotateCcw className="w-4 h-4 mr-2" /> 重新生成
                   </Button>
                   <Button onClick={handleConfirm} disabled={confirmMutation.isPending}>
@@ -184,17 +172,16 @@ export function Step2ImageOutline({
             </div>
           </div>
         </CardHeader>
-        {generateMutation.isPending && (
-          <CardContent>
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-primary mr-3" />
-              <span className="text-muted-foreground">皇帝 Skill 正在规划图片大纲，已用时 {generationSeconds} 秒...</span>
-            </div>
-          </CardContent>
-        )}
+        <ImageStepGenerationStatus
+          run={generationJob.run}
+          isGenerating={generationJob.isGenerating}
+          isCanceling={generationJob.isCanceling}
+          onCancel={generationJob.cancel}
+          onRetry={generationJob.start}
+        />
       </Card>
 
-      {editData && !generateMutation.isPending && (
+      {editData && !generationJob.isGenerating && (
         <>
           {/* Main Image */}
           <Card>

@@ -32,6 +32,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
+import { EmbeddedAgentRunPanel } from "@/components/workflow/EmbeddedAgentRunPanel";
+import { AiJobHistoryPanel } from "@/components/workflow/AiJobHistoryPanel";
 
 const ALERT_COLORS = {
   critical: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", badge: "destructive" as const, label: "紧急", fill: "#ef4444" },
@@ -56,7 +58,7 @@ export default function OpsInventory() {
   const [sortBy, setSortBy] = useState<SortBy>("days_of_supply");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [showAiDialog, setShowAiDialog] = useState(false);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(() => new URLSearchParams(window.location.search).get("tab") || "overview");
   const [showPredictionDetail, setShowPredictionDetail] = useState<any>(null);
   const [showTagManager, setShowTagManager] = useState(false);
   const [newTagName, setNewTagName] = useState("");
@@ -146,37 +148,56 @@ export default function OpsInventory() {
   const aiReplenish = trpc.aiJobs.startOpsReplenishmentPlan.useMutation({
     onSuccess: (job) => {
       setAiReplenishRunId(job.runId);
-      toast.success("AI补货建议任务已开始");
+      void replenishmentJobs.refetch();
+      toast.success("AI补货建议任务已进入后台队列");
     },
     onError: (err: any) => toast.error("生成失败", { description: err.message }),
   });
+  const replenishmentJobs = trpc.aiJobs.list.useQuery(
+    { module: "operations", limit: 30 },
+    { refetchInterval: (query) => (query.state.data || []).some((job) => job.status === "queued" || job.status === "running") ? 2_000 : false },
+  );
+  const restoredReplenishmentJob = (replenishmentJobs.data || []).find((job) => job.kind === "ops.replenishmentPlan");
+  const effectiveReplenishmentRunId = aiReplenishRunId || restoredReplenishmentJob?.runId || null;
   const aiReplenishJob = trpc.aiJobs.get.useQuery(
-    { runId: aiReplenishRunId || "" },
+    { runId: effectiveReplenishmentRunId || "" },
     {
-      enabled: !!aiReplenishRunId,
+      enabled: !!effectiveReplenishmentRunId,
       refetchInterval: (query) => {
         const status = (query.state.data as any)?.status;
         return status === "queued" || status === "running" ? 2000 : false;
       },
     }
   );
-  const aiReplenishStatus = aiReplenishJob.data?.status;
+  const currentReplenishmentJob = aiReplenishJob.data || restoredReplenishmentJob;
+  const aiReplenishStatus = currentReplenishmentJob?.status;
   const aiReplenishPending = aiReplenish.isPending || aiReplenishStatus === "queued" || aiReplenishStatus === "running";
-  const aiReplenishData = aiReplenishResult;
+  const storedReplenishmentOutput = currentReplenishmentJob?.output && typeof currentReplenishmentJob.output === "object" && "parsed" in (currentReplenishmentJob.output as any)
+    ? (currentReplenishmentJob.output as any).parsed
+    : currentReplenishmentJob?.output;
+  const aiReplenishData = aiReplenishResult || storedReplenishmentOutput;
+  const cancelReplenishment = trpc.aiJobs.cancel.useMutation({
+    onSuccess: () => { toast.success("补货建议任务已取消"); void replenishmentJobs.refetch(); void aiReplenishJob.refetch(); },
+    onError: (error) => toast.error(error.message),
+  });
+  const retryReplenishment = trpc.aiJobs.retry.useMutation({
+    onSuccess: (job) => { setAiReplenishRunId(job.runId); toast.success("补货建议任务已重新排队"); void replenishmentJobs.refetch(); },
+    onError: (error) => toast.error(error.message),
+  });
+  const confirmReplenishment = trpc.aiJobs.confirmBusinessOutput.useMutation({
+    onSuccess: () => { toast.success("补货计划已确认并生成 Artifact"); void replenishmentJobs.refetch(); },
+    onError: (error) => toast.error(error.message),
+  });
 
   useEffect(() => {
-    const job = aiReplenishJob.data as any;
-    if (!job || !aiReplenishRunId) return;
+    const job = currentReplenishmentJob as any;
+    if (!job) return;
+    if (job.status === "queued" || job.status === "running") setShowAiDialog(true);
     if (job.status === "succeeded") {
       const output = job.output?.parsed || job.output;
       setAiReplenishResult(output);
-      setAiReplenishRunId(null);
-      toast.success("AI补货建议已生成");
-    } else if (job.status === "failed") {
-      setAiReplenishRunId(null);
-      toast.error("生成失败", { description: job.error || "请稍后重试" });
     }
-  }, [aiReplenishJob.data, aiReplenishRunId]);
+  }, [currentReplenishmentJob]);
 
   const allItems = data?.items || [];
   const items = useMemo(() => {
@@ -260,6 +281,13 @@ export default function OpsInventory() {
 
   return (
     <div className="p-6 space-y-6">
+      <EmbeddedAgentRunPanel
+        title="运营补货 Agent Run / Checkpoint"
+        agentSlug="ops.replenishment.workflow"
+        managedByBusinessPage
+        businessUrl="/ops/inventory?tab=predictions"
+      />
+      <AiJobHistoryPanel module="operations" title="运营后台任务历史" />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -670,8 +698,24 @@ export default function OpsInventory() {
           {aiReplenishPending ? (
             <div className="flex flex-col items-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-3" />
-              <p className="text-sm text-gray-500">AI正在后台分析库存数据，生成补货建议...</p>
-              {aiReplenishRunId && <p className="text-xs text-gray-400 mt-2">任务ID: {aiReplenishRunId}</p>}
+              <p className="text-sm text-gray-500">{aiReplenishStatus === "queued" ? "任务正在排队，等待 Worker 执行..." : "AI正在后台分析库存数据，生成补货建议..."}</p>
+              <Badge variant="outline" className="mt-2">第 {currentReplenishmentJob?.attempt || 0}/{currentReplenishmentJob?.maxAttempts || 3} 次尝试</Badge>
+              {effectiveReplenishmentRunId && (
+                <Button className="mt-4" size="sm" variant="outline" onClick={() => cancelReplenishment.mutate({ runId: effectiveReplenishmentRunId, reason: "用户取消补货计划" })} disabled={cancelReplenishment.isPending}>
+                  <XCircle className="mr-1 h-3.5 w-3.5" />取消任务
+                </Button>
+              )}
+            </div>
+          ) : aiReplenishStatus === "failed" || aiReplenishStatus === "canceled" ? (
+            <div className="space-y-4 py-8 text-center">
+              <AlertTriangle className="mx-auto h-8 w-8 text-red-500" />
+              <p className="text-sm font-medium">{aiReplenishStatus === "failed" ? "补货建议生成失败" : "任务已取消"}</p>
+              {currentReplenishmentJob?.error && <p className="rounded-md bg-red-50 p-3 text-xs text-red-700">{currentReplenishmentJob.error}</p>}
+              {effectiveReplenishmentRunId && (
+                <Button size="sm" onClick={() => retryReplenishment.mutate({ runId: effectiveReplenishmentRunId, reason: "用户重试补货计划" })} disabled={retryReplenishment.isPending}>
+                  <RefreshCw className="mr-1 h-3.5 w-3.5" />重新排队
+                </Button>
+              )}
             </div>
           ) : aiReplenishData ? (
             <div className="space-y-4">
@@ -702,6 +746,16 @@ export default function OpsInventory() {
                   </CardContent>
                 </Card>
               ))}
+              {effectiveReplenishmentRunId && (
+                <DialogFooter>
+                  <Button
+                    onClick={() => confirmReplenishment.mutate({ runId: effectiveReplenishmentRunId, output: aiReplenishData })}
+                    disabled={confirmReplenishment.isPending}
+                  >
+                    <CheckCircle2 className="mr-1 h-4 w-4" />确认补货计划
+                  </Button>
+                </DialogFooter>
+              )}
             </div>
           ) : null}
         </DialogContent>

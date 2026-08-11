@@ -487,6 +487,35 @@ export async function registerImageWorkflowArtifact(sessionId: number, sourceTyp
   });
 }
 
+export async function registerImageWorkflowStepArtifact(
+  sessionId: number,
+  step: number,
+  sourceType: ArtifactSourceType = "ai_output",
+) {
+  const db = await getDb();
+  if (!db) return null;
+  const [session] = await db.select().from(imageWorkflowSessions).where(eq(imageWorkflowSessions.id, sessionId)).limit(1);
+  if (!session || step < 0 || step > 6) return null;
+  const content = step === 5
+    ? session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult
+    : session[`step${step}UserEdit` as keyof typeof session]
+      || session[`step${step}AiResult` as keyof typeof session];
+  if (!content) return null;
+  const confirmed = Number(session[`step${step}Confirmed` as keyof typeof session] || 0) === 1;
+  return registerBusinessArtifact({
+    domain: "image",
+    artifactKey: `image.workflow.step.${step}`,
+    sourceTable: "image_workflow_sessions",
+    sourceRowId: session.id,
+    projectId: session.projectId,
+    userId: session.userId,
+    content: parseArtifactContent(content),
+    sourceType,
+    status: confirmed ? "final" : "draft",
+    metadata: { step, confirmed, currentStep: session.currentStep },
+  });
+}
+
 function artifactContentString(content: unknown) {
   return typeof content === "string" ? content : JSON.stringify(content ?? null);
 }

@@ -15,7 +15,18 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { toast } from "sonner";
 
 import { KbImagePickerDialog } from "./KnowledgeImagePickerDialog";
+import { ReferenceImagesHeader } from "./ReferenceImagesHeader";
 import { normalizeStep4References } from "@shared/imageWorkflow";
+
+const isActiveStep4Run = (status?: string | null) => status === "queued" || status === "running";
+
+function formatStep4Error(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "参考图推荐失败");
+  if (/<!doctype\s+html|<html[\s>]/i.test(message)) {
+    return "参考图推荐被服务器网关中断，请重新提交；后台任务不会因切换页面而丢失";
+  }
+  return message.length > 300 ? `${message.slice(0, 300)}...` : message;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── Step 4: Reference Images (含知识库图片选择) ─────────────────
@@ -29,7 +40,7 @@ export function Step4References({
   session: any;
   onConfirm: () => void;
 }) {
-  const generateMutation = trpc.imageWorkflow.generateStep4.useMutation();
+  const generateMutation = trpc.imageWorkflow.startStep4Generation.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep4.useMutation();
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
   const uploadRefMutation = trpc.imageWorkflow.uploadStep4RefImage.useMutation();
@@ -44,6 +55,18 @@ export function Step4References({
   const [kbPickerTargetType, setKbPickerTargetType] = useState<string>("");
   const [uploadingRef, setUploadingRef] = useState<{idx: number; type: 'composition'|'effect'} | null>(null);
   const [reoptimizingIdx, setReoptimizingIdx] = useState<number | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const handledRunIdsRef = useRef<Set<string>>(new Set());
+  const utils = trpc.useUtils();
+  const step4RunQuery = trpc.imageWorkflow.getStep4Run.useQuery(
+    { projectId },
+    {
+      refetchInterval: (query) => isActiveStep4Run((query.state.data as any)?.status) ? 2_000 : false,
+    },
+  );
+  const step4Run = step4RunQuery.data as any;
+  const isGenerating = generateMutation.isPending || isActiveStep4Run(step4Run?.status);
+  const generationProgress = Number(step4Run?.progress || (generateMutation.isPending ? 5 : 0));
 
   useEffect(() => {
     if (session?.step4UserEdit) {
@@ -53,6 +76,31 @@ export function Step4References({
     }
     setIsLocked(!!session?.step4Confirmed);
   }, [session?.step4AiResult, session?.step4UserEdit, session?.step4Confirmed]);
+
+  useEffect(() => {
+    const run = step4RunQuery.data as any;
+    if (!run?.runId) return;
+    if (isActiveStep4Run(run.status)) {
+      setActiveRunId((current) => current || run.runId);
+      return;
+    }
+
+    const terminalKey = `${run.runId}:${run.status}`;
+    if (handledRunIdsRef.current.has(terminalKey)) return;
+    handledRunIdsRef.current.add(terminalKey);
+    const wasActive = activeRunId === run.runId;
+    setActiveRunId(null);
+
+    if (run.status === "succeeded" && run.output?.imageReferences) {
+      setEditData(normalizeStep4References(run.output));
+      void utils.imageWorkflow.getSession.invalidate({ projectId });
+      if (wasActive) toast.success("参考图推荐完成");
+    } else if (run.status === "failed") {
+      if (wasActive || !editData) toast.error(formatStep4Error(run.error));
+    } else if (run.status === "canceled" && wasActive) {
+      toast.info("参考图推荐任务已取消");
+    }
+  }, [activeRunId, editData, projectId, step4RunQuery.data, utils.imageWorkflow.getSession]);
 
   const handleUnlock = async () => {
     try {
@@ -135,11 +183,15 @@ export function Step4References({
 
   const handleGenerate = async () => {
     try {
-      const result = await generateMutation.mutateAsync({ projectId });
-      setEditData(result);
-      toast.success("参考图推荐完成");
+      const job = await generateMutation.mutateAsync({ projectId });
+      setActiveRunId(job.runId);
+      await Promise.all([
+        step4RunQuery.refetch(),
+        utils.imageWorkflow.getSession.invalidate({ projectId }),
+      ]);
+      toast.success(job.status === "running" ? "参考图推荐正在后台执行" : "参考图推荐已进入后台队列");
     } catch (err: any) {
-      toast.error(err.message || "生成失败");
+      toast.error(formatStep4Error(err));
     }
   };
 
@@ -296,80 +348,21 @@ export function Step4References({
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Eye className="w-5 h-5 text-primary" />
-                Step 4: 参考图确认
-              </CardTitle>
-              <CardDescription>每张图的构图参考和效果图参考，可从知识库直接选择参考图片</CardDescription>
-            </div>
-            <div className="flex gap-2">
-              {!editData && (
-                <Button onClick={handleGenerate} disabled={generateMutation.isPending}>
-                  {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-                  AI推荐参考
-                </Button>
-              )}
-              {editData && !isConfirmed && (
-                <>
-                  <Button variant="outline" onClick={handleGenerate} disabled={generateMutation.isPending}>
-                    <RotateCcw className="w-4 h-4 mr-2" /> 重新推荐
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleRegenerateAll}
-                    disabled={regenerateAllMutation.isPending}
-                    className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                    title="根据已选参考图和备注，重新生成所有图片的构图和效果方案"
-                  >
-                    {regenerateAllMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                    {regenerateAllMutation.isPending ? "AI 正在分析参考图..." : "根据参考图重新生成"}
-                  </Button>
-                  <Button onClick={handleConfirm} disabled={confirmMutation.isPending}>
-                    {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
-                    确认参考图
-                  </Button>
-                </>
-              )}
-              {isConfirmed && (
-                <div className="flex gap-2 items-center">
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                    <Lock className="w-3 h-3 mr-1" /> 已锁定
-                  </Badge>
-                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
-                    {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
-                    解锁编辑
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-        {generateMutation.isPending && (
-          <CardContent>
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-primary mr-3" />
-              <span className="text-muted-foreground">AI正在推荐构图和效果参考...</span>
-            </div>
-          </CardContent>
-        )}
-        {regenerateAllMutation.isPending && (
-          <CardContent>
-            <div className="flex flex-col items-center justify-center py-8 gap-3">
-              <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-              <div className="text-center">
-                <p className="text-sm font-medium text-emerald-700">Claude 正在分析所有参考图...</p>
-                <p className="text-xs text-muted-foreground mt-1">正在深度分析参考图的构图布局与视觉效果特征，预计需要 30-90 秒，请耐心等待</p>
-              </div>
-            </div>
-          </CardContent>
-        )}
-      </Card>
+      <ReferenceImagesHeader
+        hasData={!!editData}
+        isConfirmed={isConfirmed}
+        isGenerating={isGenerating}
+        generationProgress={generationProgress}
+        isRegeneratingAll={regenerateAllMutation.isPending}
+        isConfirming={confirmMutation.isPending}
+        isResetting={resetMutation.isPending}
+        onGenerate={handleGenerate}
+        onRegenerateAll={handleRegenerateAll}
+        onConfirm={handleConfirm}
+        onUnlock={handleUnlock}
+      />
 
-      {editData?.imageReferences && !generateMutation.isPending && editData.imageReferences.map((ref: any, idx: number) => (
+      {editData?.imageReferences && !isGenerating && editData.imageReferences.map((ref: any, idx: number) => (
         <Card key={idx}>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">

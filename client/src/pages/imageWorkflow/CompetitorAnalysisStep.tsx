@@ -13,6 +13,7 @@ import { trpc } from "@/lib/trpc";
 import { AlertTriangle, Check, ChevronRight, Image, Loader2, Sparkles, Target, Layout, Palette, Eye, FileText, RotateCcw, Plus, Trash2, GripVertical, Download, Languages, Paintbrush, Camera, BarChart3, Layers, Lightbulb, Smartphone, TypeIcon, Copy, Search, ImageIcon, BookOpen, X, Filter, Wand2, Pencil, Send, Lock, Unlock, Upload, Zap, Grid3X3, LayoutGrid, RefreshCw } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { toast } from "sonner";
+import { ImageStepGenerationStatus, useImageStepGenerationJob } from "./useImageStepGenerationJob";
 
 // 亮点标签预设类型
 const HIGHLIGHT_CATEGORIES = [
@@ -53,14 +54,12 @@ export function Step0CompetitorAnalysis({
   const deleteGroupMutation = trpc.imageWorkflow.deleteExpressionGroup.useMutation();
   const addImageMutation = trpc.imageWorkflow.addImageToGroup.useMutation();
   const removeImageMutation = trpc.imageWorkflow.removeImageFromGroup.useMutation();
-  const analyzeMutation = trpc.imageWorkflow.analyzeExpressionGroup.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep0.useMutation();
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
 
   // ── Local state ─────────────────────────────────────────────────
   const [newGroupName, setNewGroupName] = useState("");
   const [uploadingGroupId, setUploadingGroupId] = useState<number | null>(null);
-  const [analyzingGroupId, setAnalyzingGroupId] = useState<number | null>(null);
   const [isLocked, setIsLocked] = useState(!!session?.step0Confirmed);
   const [summaryData, setSummaryData] = useState<any>(null);
   // Per-group local edit state (for middle + right columns)
@@ -69,6 +68,12 @@ export function Step0CompetitorAnalysis({
   const [newHighlightCat, setNewHighlightCat] = useState<Record<number, string>>({});
   // Competitor name input per group (for image upload)
   const [competitorInputs, setCompetitorInputs] = useState<Record<number, string>>({});
+  const generationJob = useImageStepGenerationJob({
+    projectId,
+    step: 0,
+    onSucceeded: (result) => setSummaryData(result),
+    onRefresh: () => groupsQuery.refetch(),
+  });
 
   useEffect(() => {
     setIsLocked(!!session?.step0Confirmed);
@@ -160,15 +165,12 @@ export function Step0CompetitorAnalysis({
   };
 
   const handleAnalyzeGroup = async (groupId: number) => {
-    setAnalyzingGroupId(groupId);
-    try {
-      const result = await analyzeMutation.mutateAsync({ projectId, groupId });
-      // Merge AI result into local edit state
-      setEdit(groupId, result);
-      groupsQuery.refetch();
-      toast.success("AI分析完成");
-    } catch (err: any) { toast.error(err.message || "分析失败"); }
-    finally { setAnalyzingGroupId(null); }
+    const group = groups.find((item: any) => item.id === groupId);
+    if (!group?.images?.length) {
+      toast.error("请先上传图片");
+      return;
+    }
+    await generationJob.start();
   };
 
   const handleSaveGroupEdit = async (groupId: number) => {
@@ -200,6 +202,10 @@ export function Step0CompetitorAnalysis({
 
   const handleConfirm = async () => {
     if (groups.length === 0) { toast.error("请先创建至少一个表达方向并上传图片"); return; }
+    if (!summaryData) {
+      await generationJob.start();
+      return;
+    }
     // Save all pending edits first
     for (const g of groups) {
       if (groupEdits[g.id]) {
@@ -207,7 +213,7 @@ export function Step0CompetitorAnalysis({
       }
     }
     try {
-      const result = await confirmMutation.mutateAsync({ projectId });
+      const result = await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(summaryData) });
       setSummaryData(result.summary);
       setIsLocked(true);
       toast.success("竞品分析已确认，进入卖点梳理");
@@ -240,9 +246,14 @@ export function Step0CompetitorAnalysis({
               {!isLocked && (
                 <>
                   <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onConfirm}>跳过</Button>
-                  <Button onClick={handleConfirm} disabled={confirmMutation.isPending || groups.length === 0}>
-                    {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
-                    确认并生成总结
+                  {summaryData && (
+                    <Button variant="outline" onClick={generationJob.start} disabled={generationJob.isGenerating}>
+                      <RotateCcw className="w-4 h-4 mr-2" />重新分析
+                    </Button>
+                  )}
+                  <Button onClick={handleConfirm} disabled={confirmMutation.isPending || generationJob.isGenerating || groups.length === 0}>
+                    {confirmMutation.isPending || generationJob.isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : summaryData ? <Check className="w-4 h-4 mr-2" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                    {summaryData ? "确认分析总结" : "后台分析并生成总结"}
                   </Button>
                 </>
               )}
@@ -276,6 +287,13 @@ export function Step0CompetitorAnalysis({
             </div>
           </CardContent>
         )}
+        <ImageStepGenerationStatus
+          run={generationJob.run}
+          isGenerating={generationJob.isGenerating}
+          isCanceling={generationJob.isCanceling}
+          onCancel={generationJob.cancel}
+          onRetry={generationJob.start}
+        />
       </Card>
 
       {/* Empty state */}
@@ -294,7 +312,7 @@ export function Step0CompetitorAnalysis({
         const edit = getEdit(group.id);
         const highlights: Array<{ text: string; category: string }> = edit.highlights || [];
         const images = group.images || [];
-        const isAnalyzing = analyzingGroupId === group.id;
+        const isAnalyzing = generationJob.isGenerating;
         const isUploading = uploadingGroupId === group.id;
 
         return (
@@ -309,7 +327,7 @@ export function Step0CompetitorAnalysis({
                 <div className="flex gap-1.5">
                   <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAnalyzeGroup(group.id)} disabled={isAnalyzing || images.length === 0}>
                     {isAnalyzing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
-                    AI 分析此组
+                    后台分析全部
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleDeleteGroup(group.id)}>
                     <Trash2 className="w-3.5 h-3.5" />
@@ -400,7 +418,7 @@ export function Step0CompetitorAnalysis({
 
                 {isAnalyzing && (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />正在分析此组图片...
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />正在后台分析全部表达方向...
                   </div>
                 )}
 

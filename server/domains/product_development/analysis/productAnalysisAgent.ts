@@ -2,6 +2,7 @@ import * as devDb from "../../../devDb";
 import {
   ensureBusinessManagedRun,
   findLatestBusinessManagedRun,
+  markBusinessManagedNodeCanceled,
   markBusinessManagedNodeConfirmed,
   markBusinessManagedNodeDraft,
   markBusinessManagedNodeFailed,
@@ -14,15 +15,17 @@ import {
 import {
   getAgentRun,
   recordAgentTemplateVersion,
+  startAgentRun,
   type EmperorAgentDag,
   type EmperorAgentNode,
 } from "../../ai_os/services/agentRunner";
 import { rawExecute } from "../../ai_os/routerContext";
 import { downstreamDevAnalysisStages, type DevAnalysisStageType } from "./stageConsistency";
+import { getMarketInsight } from "../panorama/marketInsightRepository";
 
 export const PRODUCT_ANALYSIS_AGENT_SLUG = "product-development.analysis.workflow";
 
-export const PRODUCT_ANALYSIS_NODE_IDS = [
+export const PRODUCT_ANALYSIS_STAGE_NODE_IDS = [
   "market_overview",
   "attribute_cross",
   "price_analysis",
@@ -30,6 +33,11 @@ export const PRODUCT_ANALYSIS_NODE_IDS = [
   "review_kano",
   "information_summary",
   "decision_dashboard",
+] as const;
+
+export const PRODUCT_ANALYSIS_NODE_IDS = [
+  ...PRODUCT_ANALYSIS_STAGE_NODE_IDS,
+  "major_competitors",
 ] as const;
 
 export type ProductAnalysisAgentNodeId = typeof PRODUCT_ANALYSIS_NODE_IDS[number];
@@ -42,6 +50,7 @@ const nodeLabels: Record<ProductAnalysisAgentNodeId, string> = {
   review_kano: "05 · 评论深度",
   information_summary: "06 · 信息汇总",
   decision_dashboard: "07 · 综合决策",
+  major_competitors: "主要竞争对手分析",
 };
 
 const nodeSkills: Record<ProductAnalysisAgentNodeId, string> = {
@@ -52,6 +61,7 @@ const nodeSkills: Record<ProductAnalysisAgentNodeId, string> = {
   review_kano: "dev.analysis.review_kano",
   information_summary: "dev.analysis.information_summary",
   decision_dashboard: "dev.analysis.decision_dashboard",
+  major_competitors: "dev.panorama.market_insights",
 };
 
 export function getProductAnalysisAgentDag(): EmperorAgentDag {
@@ -63,6 +73,7 @@ export function getProductAnalysisAgentDag(): EmperorAgentDag {
     brand_competition: { x: 300, y: 260 },
     information_summary: { x: 300, y: 500 },
     decision_dashboard: { x: 300, y: 740 },
+    major_competitors: { x: 820, y: 260 },
   };
   const nodes: EmperorAgentNode[] = PRODUCT_ANALYSIS_NODE_IDS.map((id) => ({
     id,
@@ -73,25 +84,32 @@ export function getProductAnalysisAgentDag(): EmperorAgentDag {
     skillVersionPolicy: "snapshot",
     outputKey: id,
     humanGate: true,
-    required: id !== "review_kano",
+    required: id !== "review_kano" && id !== "major_competitors",
     scheduler: "manual",
     executionOwner: "product_development.analysis_page",
-    businessRoute: `/dev/project/{{projectId}}/analysis?stage=${id}`,
+    businessRoute: id === "major_competitors"
+      ? "/dev/project/{{projectId}}?tab=panorama"
+      : `/dev/project/{{projectId}}/analysis?stage=${id}`,
     x: positions[id].x,
     y: positions[id].y,
   }));
-  const edge = (source: ProductAnalysisAgentNodeId, target: ProductAnalysisAgentNodeId, label: string) => ({
+  const edge = (
+    source: ProductAnalysisAgentNodeId,
+    target: ProductAnalysisAgentNodeId,
+    label: string,
+    kind: "required" | "suggested" = "required",
+  ) => ({
     id: `${source}-${target}`,
     source,
     target,
     from: source,
     to: target,
     label,
-    kind: "required" as const,
-    required: true,
+    kind,
+    required: kind === "required",
   });
   return {
-    version: "1.0.0",
+    version: "1.1.0",
     workflowType: "human_in_loop_dag",
     description: "产品开发七阶段分析主链路。Skill 提供 AI 能力，业务页面负责运行与人工确认，Agent Run 统一记录状态。",
     executionOwner: "product_development.analysis_page",
@@ -101,6 +119,8 @@ export function getProductAnalysisAgentDag(): EmperorAgentDag {
       edge("market_overview", "price_analysis", "市场证据"),
       edge("market_overview", "brand_competition", "市场证据"),
       edge("market_overview", "information_summary", "已确认大盘"),
+      { ...edge("market_overview", "major_competitors", "全景竞品", "suggested"), required: false },
+      { ...edge("major_competitors", "information_summary", "竞品证据", "suggested"), required: false },
       edge("attribute_cross", "information_summary", "已确认属性"),
       edge("price_analysis", "information_summary", "已确认价格"),
       edge("brand_competition", "information_summary", "已确认品牌"),
@@ -126,28 +146,27 @@ export async function ensureProductAnalysisAgentTemplate() {
         JSON.stringify(dag),
       ],
     );
+  } else {
+    await rawExecute(
+      "UPDATE emperor_agents SET name=?,description=?,category=?,dagDefinition=?,status='active',updatedAt=NOW() WHERE slug=?",
+      ["产品开发 · 七阶段分析", "产品开发市场分析主链路，由业务页面托管执行与人工确认。", "产品开发", JSON.stringify(dag), PRODUCT_ANALYSIS_AGENT_SLUG],
+    );
   }
-  const defaults = await rawExecute(
-    "SELECT id FROM emperor_agent_template_versions WHERE agentSlug=? AND workspaceId IS NULL AND status='released' AND isDefault=1 LIMIT 1",
-    [PRODUCT_ANALYSIS_AGENT_SLUG],
-  );
-  if (!defaults[0]) {
-    await recordAgentTemplateVersion({
-      workspaceId: null,
-      agentSlug: PRODUCT_ANALYSIS_AGENT_SLUG,
-      agentName: "产品开发 · 七阶段分析",
-      dag,
-      status: "released",
-      releaseNotes: "产品开发七阶段 Agent 主链路 v1",
-      isDefault: true,
-      rolloutPercent: 100,
-    });
-  }
+  await recordAgentTemplateVersion({
+    workspaceId: null,
+    agentSlug: PRODUCT_ANALYSIS_AGENT_SLUG,
+    agentName: "产品开发 · 七阶段分析",
+    dag,
+    status: "released",
+    releaseNotes: "产品开发 Agent v1.1：主要竞争对手纳入主链路",
+    isDefault: true,
+    rolloutPercent: 100,
+  });
   return dag;
 }
 
 function nodeIdForStage(stageType: DevAnalysisStageType): ProductAnalysisAgentNodeId | null {
-  return PRODUCT_ANALYSIS_NODE_IDS.includes(stageType as ProductAnalysisAgentNodeId)
+  return PRODUCT_ANALYSIS_STAGE_NODE_IDS.includes(stageType as typeof PRODUCT_ANALYSIS_STAGE_NODE_IDS[number])
     ? stageType as ProductAnalysisAgentNodeId
     : null;
 }
@@ -189,7 +208,7 @@ async function seedCreatedRun(runId: string, dag: EmperorAgentDag, input: {
     devDb.getDataConfirmationStatus(input.projectId),
   ]);
   const byType = new Map(stages.map((stage: any) => [stage.stageType, stage]));
-  for (const nodeId of PRODUCT_ANALYSIS_NODE_IDS) {
+  for (const nodeId of PRODUCT_ANALYSIS_STAGE_NODE_IDS) {
     const stage = byType.get(nodeId) as any;
     if (!stage) {
       if (nodeId === "review_kano" && Number((dataStatus as any)?.reviews?.fileCount || 0) === 0) {
@@ -216,6 +235,36 @@ async function seedCreatedRun(runId: string, dag: EmperorAgentDag, input: {
       await markBusinessManagedNodeWaitingHuman({ runId, dag, nodeId, output, userEdit: output, errorMessage: stage.runError || null });
     }
   }
+  const insight = await getMarketInsight(input.projectId).catch(() => null);
+  if (!insight) return;
+  const insightOutput = parseBusinessManagedOutput(insight.editedResult || insight.rawResult || null);
+  if (insight.status === "queued" || insight.status === "running") {
+    await markBusinessManagedNodeRunning({
+      runId,
+      dag,
+      nodeId: "major_competitors",
+      aiJobRunId: insight.runId || null,
+      progress: insight.runProgress || 5,
+    });
+  } else if (insight.status === "confirmed") {
+    await markBusinessManagedNodeConfirmed({
+      runId,
+      dag,
+      nodeId: "major_competitors",
+      output: insightOutput,
+      userEdit: insightOutput,
+      userId: input.userId,
+    });
+  } else if (insightOutput) {
+    await markBusinessManagedNodeWaitingHuman({
+      runId,
+      dag,
+      nodeId: "major_competitors",
+      output: insightOutput,
+      userEdit: insight.editedResult ? insightOutput : undefined,
+      errorMessage: insight.runError || null,
+    });
+  }
 }
 
 export async function ensureProductAnalysisAgentRun(input: {
@@ -234,6 +283,17 @@ export async function ensureProductAnalysisAgentRun(input: {
     inputs: { workflow: "product_development.analysis", schemaVersion: "1.0" },
   });
   const detail = ensured.detail as any;
+  if (!detail.dag?.nodes?.some((node: any) => node.id === "major_competitors")) {
+    const replacement = await startAgentRun({
+      slug: PRODUCT_ANALYSIS_AGENT_SLUG,
+      inputs: { projectId: input.projectId, workflow: "product_development.analysis", schemaVersion: "1.1" },
+      userId: input.userId,
+      workspaceId: input.workspaceId ?? null,
+      projectId: input.projectId,
+    });
+    await seedCreatedRun((replacement as any).run.runId, dag, input);
+    return { runId: (replacement as any).run.runId, dag, created: true, detail: await getAgentRun((replacement as any).run.runId, undefined, true) };
+  }
   if (ensured.created) {
     await seedCreatedRun(detail.run.runId, dag, input);
     return { runId: detail.run.runId, dag, created: true, detail: await getAgentRun(detail.run.runId, undefined, true) };
@@ -247,12 +307,42 @@ export async function syncProductAnalysisNodeRunning(input: {
   userId: number;
   workspaceId?: number | null;
   aiJobRunId: string;
+  aiJobAttempt?: number;
 }) {
   const nodeId = nodeIdForStage(input.stageType);
   if (!nodeId) return null;
   const run = await ensureProductAnalysisAgentRun({ ...input, requireMutable: true });
-  await markBusinessManagedNodeRunning({ runId: run.runId, dag: run.dag, nodeId, aiJobRunId: input.aiJobRunId, progress: 5 });
+  await markBusinessManagedNodeRunning({ runId: run.runId, dag: run.dag, nodeId, aiJobRunId: input.aiJobRunId, aiJobAttempt: input.aiJobAttempt ?? 0, progress: 5 });
   return { agentRunId: run.runId, dag: run.dag };
+}
+
+export async function syncProductAnalysisNodeQueued(input: {
+  projectId: number;
+  stageType: DevAnalysisStageType;
+  userId: number;
+  workspaceId?: number | null;
+  aiJobRunId: string;
+  aiJobAttempt?: number;
+  maxAttempts?: number;
+}) {
+  const linked = await syncProductAnalysisNodeRunning(input);
+  if (!linked) return null;
+  await markBusinessManagedNodeProgress({
+    runId: linked.agentRunId,
+    dag: linked.dag,
+    nodeId: nodeIdForStage(input.stageType)!,
+    aiJobRunId: input.aiJobRunId,
+    aiJobAttempt: input.aiJobAttempt ?? 0,
+    progress: 5,
+    metadata: {
+      source: "product_analysis_job",
+      businessJobStatus: "queued",
+      businessJobAttempt: input.aiJobAttempt ?? 0,
+      businessJobMaxAttempts: input.maxAttempts ?? null,
+      retryPending: false,
+    },
+  });
+  return linked;
 }
 
 export async function syncProductAnalysisNodeProgress(input: {
@@ -273,6 +363,12 @@ export async function syncProductAnalysisNodeProgress(input: {
     aiJobAttempt: input.aiJobAttempt,
     progress: input.progress,
     errorMessage: input.errorMessage,
+    metadata: {
+      source: "product_analysis_job",
+      businessJobStatus: input.errorMessage ? "retrying" : "running",
+      businessJobAttempt: input.aiJobAttempt,
+      retryPending: Boolean(input.errorMessage),
+    },
   });
 }
 
@@ -317,16 +413,23 @@ export async function syncProductAnalysisNodeFailure(input: {
 }) {
   const nodeId = nodeIdForStage(input.stageType);
   if (!nodeId) return;
-  await markBusinessManagedNodeFailed({
+  const mutationInput = {
     runId: input.agentRunId,
     dag: getProductAnalysisAgentDag(),
     nodeId,
     aiJobRunId: input.aiJobRunId,
     aiJobAttempt: input.aiJobAttempt,
-    finalAttempt: input.finalAttempt,
     errorMessage: input.error instanceof Error ? input.error.message : String(input.error || "产品分析失败"),
-    failureKind: input.failureKind,
-  });
+  };
+  if (input.failureKind === "cancel") {
+    await markBusinessManagedNodeCanceled(mutationInput);
+  } else {
+    await markBusinessManagedNodeFailed({
+      ...mutationInput,
+      finalAttempt: input.finalAttempt,
+      failureKind: input.failureKind,
+    });
+  }
 }
 
 async function resolveRunForBusinessMutation(input: {
@@ -415,14 +518,167 @@ export async function syncProductAnalysisCancel(input: {
   const nodeId = nodeIdForStage(input.stageType);
   if (!nodeId) return;
   const run = await resolveRunForBusinessMutation({ ...input, requireMutable: true });
-  await markBusinessManagedNodeFailed({
+  await markBusinessManagedNodeCanceled({
     runId: run.runId,
     dag: run.dag,
     nodeId,
     aiJobRunId: input.aiJobRunId,
-    finalAttempt: true,
     errorMessage: input.reason,
-    failureKind: "cancel",
+  });
+}
+
+type MajorCompetitorAgentInput = {
+  projectId: number;
+  userId: number;
+  workspaceId?: number | null;
+  agentRunId?: string | null;
+  aiJobRunId?: string | null;
+  aiJobAttempt?: number | null;
+  maxAttempts?: number | null;
+  progress?: number;
+  output?: unknown;
+  error?: unknown;
+};
+
+async function resolveMajorCompetitorRun(input: MajorCompetitorAgentInput) {
+  if (input.agentRunId) return { runId: input.agentRunId, dag: getProductAnalysisAgentDag() };
+  return ensureProductAnalysisAgentRun({ ...input, requireMutable: true });
+}
+
+export async function syncMajorCompetitorQueued(input: MajorCompetitorAgentInput & { aiJobRunId: string }) {
+  const run = await resolveMajorCompetitorRun(input);
+  await markBusinessManagedNodeRunning({
+    runId: run.runId,
+    dag: run.dag,
+    nodeId: "major_competitors",
+    aiJobRunId: input.aiJobRunId,
+    aiJobAttempt: input.aiJobAttempt ?? 0,
+    progress: input.progress ?? 5,
+    allowJobReplacement: true,
+  });
+  await markBusinessManagedNodeProgress({
+    runId: run.runId,
+    dag: run.dag,
+    nodeId: "major_competitors",
+    aiJobRunId: input.aiJobRunId,
+    aiJobAttempt: input.aiJobAttempt ?? 0,
+    progress: input.progress ?? 5,
+    metadata: {
+      source: "panorama_market_insight_job",
+      businessJobStatus: "queued",
+      businessJobAttempt: input.aiJobAttempt ?? 0,
+      businessJobMaxAttempts: input.maxAttempts ?? null,
+      retryPending: false,
+    },
+  });
+  return run.runId;
+}
+
+export async function syncMajorCompetitorProgress(input: MajorCompetitorAgentInput & { aiJobRunId: string }) {
+  const run = await resolveMajorCompetitorRun(input);
+  await markBusinessManagedNodeRunning({
+    runId: run.runId,
+    dag: run.dag,
+    nodeId: "major_competitors",
+    aiJobRunId: input.aiJobRunId,
+    aiJobAttempt: input.aiJobAttempt ?? 1,
+    progress: input.progress ?? 15,
+  });
+  return markBusinessManagedNodeProgress({
+    runId: run.runId,
+    dag: run.dag,
+    nodeId: "major_competitors",
+    aiJobRunId: input.aiJobRunId,
+    aiJobAttempt: input.aiJobAttempt ?? 1,
+    progress: input.progress ?? 15,
+    metadata: {
+      source: "panorama_market_insight_job",
+      businessJobStatus: input.error ? "retrying" : "running",
+      businessJobAttempt: input.aiJobAttempt ?? 1,
+      businessJobMaxAttempts: input.maxAttempts ?? null,
+      retryPending: Boolean(input.error),
+    },
+  });
+}
+
+export async function syncMajorCompetitorWaitingHuman(input: MajorCompetitorAgentInput & { aiJobRunId: string }) {
+  const run = await resolveMajorCompetitorRun(input);
+  await markBusinessManagedNodeWaitingHuman({
+    runId: run.runId,
+    dag: run.dag,
+    nodeId: "major_competitors",
+    aiJobRunId: input.aiJobRunId,
+    aiJobAttempt: input.aiJobAttempt ?? null,
+    output: input.output,
+    metadata: { source: "panorama_market_insight_job", businessJobStatus: "waiting_human", retryPending: false },
+  });
+  return run.runId;
+}
+
+export async function syncMajorCompetitorFailure(input: MajorCompetitorAgentInput & {
+  aiJobRunId: string;
+  finalAttempt: boolean;
+  failureKind?: "error" | "timeout" | "cancel";
+}) {
+  const run = await resolveMajorCompetitorRun(input);
+  const mutationInput = {
+    runId: run.runId,
+    dag: run.dag,
+    nodeId: "major_competitors",
+    aiJobRunId: input.aiJobRunId,
+    aiJobAttempt: input.aiJobAttempt ?? null,
+    progress: input.progress ?? 15,
+    errorMessage: input.error instanceof Error ? input.error.message : String(input.error || "主要竞争对手分析失败"),
+    metadata: {
+      source: "panorama_market_insight_job",
+      businessJobStatus: input.failureKind === "cancel" ? "canceled" : input.finalAttempt ? "failed" : "retrying",
+      retryPending: !input.finalAttempt,
+    },
+  };
+  if (input.failureKind === "cancel") return markBusinessManagedNodeCanceled(mutationInput);
+  return markBusinessManagedNodeFailed({
+    ...mutationInput,
+    finalAttempt: input.finalAttempt,
+    failureKind: input.failureKind || "error",
+  });
+}
+
+export async function syncMajorCompetitorDraft(input: MajorCompetitorAgentInput & { output: unknown }) {
+  const run = await resolveMajorCompetitorRun(input);
+  return markBusinessManagedNodeDraft({
+    runId: run.runId,
+    dag: run.dag,
+    nodeId: "major_competitors",
+    output: input.output,
+    userEdit: input.output,
+    userId: input.userId,
+    metadata: { source: "panorama_market_insight_edit", projectId: input.projectId },
+  });
+}
+
+export async function syncMajorCompetitorConfirmed(input: MajorCompetitorAgentInput & { output: unknown }) {
+  const run = await resolveMajorCompetitorRun(input);
+  return markBusinessManagedNodeConfirmed({
+    runId: run.runId,
+    dag: run.dag,
+    nodeId: "major_competitors",
+    output: input.output,
+    userEdit: input.output,
+    userId: input.userId,
+    metadata: { source: "panorama_market_insight_confirm", projectId: input.projectId },
+  });
+}
+
+export async function syncMajorCompetitorUnlocked(input: MajorCompetitorAgentInput & { output?: unknown }) {
+  const run = await resolveMajorCompetitorRun(input);
+  return markBusinessManagedNodeWaitingHuman({
+    runId: run.runId,
+    dag: run.dag,
+    nodeId: "major_competitors",
+    output: input.output,
+    userEdit: input.output,
+    userId: input.userId,
+    metadata: { source: "panorama_market_insight_unlock", projectId: input.projectId },
   });
 }
 

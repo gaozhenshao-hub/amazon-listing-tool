@@ -104,39 +104,7 @@ export const imageCompetitorProcedures = {
     }))
     .mutation(async ({ ctx, input }) => {
       await resolveProjectAccess(input.projectId, ctx.user);
-      const images = await db.getCompetitorImagesByProject(input.projectId);
-      const image = images.find((img) => img.id === input.imageId);
-      if (!image) throw new Error("Image not found");
-
-      const response = await invokeBusinessSkill({
-        messages: [
-          { role: "system", content: STEP0_COMPETITOR_IMAGE_ANALYSIS_PROMPT },
-          {
-            role: "user",
-            content: [
-              {
-                type: "image_url",
-                image_url: { url: image.imageUrl, detail: "high" },
-              },
-              {
-                type: "text",
-                text: `请分析这张竞品图片（竞争对手: ${image.competitorName}），输出JSON格式的分析结果。`,
-              },
-            ],
-          },
-        ],
-        response_format: { type: "json_object" },
-      });
-
-      const result = parseLLMJson(response);
-      const resultStr = JSON.stringify(result);
-
-      await db.updateCompetitorImage(input.imageId, {
-        aiAnalysis: resultStr,
-        imageType: result.imageType || null,
-      });
-
-      return result;
+      throw new Error("旧版单图同步分析已停用，请在 Step 0 使用后台分析并生成总结");
     }),
 
 
@@ -179,38 +147,19 @@ export const imageCompetitorProcedures = {
     }))
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
-      if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
       const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
-
-      const images = await db.getCompetitorImagesByProject(input.projectId);
-      if (images.length === 0) throw new Error("No competitor images uploaded");
-
-      // Build summary from all analyzed images
-      const analyzedImages = images.filter((img) => img.aiAnalysis || img.userEdit);
-      const imagesSummary = analyzedImages.map((img) => {
-        const analysis = img.userEdit || img.aiAnalysis || "{}";
-        return `竞品: ${img.competitorName}, 图片类型: ${img.imageType || "未标注"}, 分析: ${analysis}`;
-      }).join("\n\n");
-
-      // Generate overall summary via LLM
-      const response = await invokeBusinessSkill({
-        messages: [
-          { role: "system", content: STEP0_COMPETITOR_SUMMARY_PROMPT },
-          {
-            role: "user",
-            content: `以下是对多个竞品图片的逐张分析结果，请生成整体总结报告：\n\n${imagesSummary}`,
-          },
-        ],
-        response_format: { type: "json_object" },
-      });
-
-      const summaryResult = parseLLMJson(response);
-      const summaryStr = input.userEdit || JSON.stringify(summaryResult);
+      if (!session.step0AiResult) throw new Error("请先运行竞品图片分析并等待总结生成完成");
+      let summaryResult: any;
+      try {
+        summaryResult = JSON.parse(input.userEdit || session.step0AiResult);
+      } catch {
+        throw new Error("竞品分析总结格式无效，请重新生成");
+      }
 
       await db.updateImageWorkflowSession(session.id, {
-        step0AiResult: JSON.stringify(summaryResult),
+        step0AiResult: session.step0AiResult,
         step0UserEdit: input.userEdit || null,
         step0Confirmed: 1,
         currentStep: 1,

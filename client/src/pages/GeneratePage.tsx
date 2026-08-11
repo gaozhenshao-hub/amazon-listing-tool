@@ -7,10 +7,10 @@ import ProjectSelector from "@/components/ProjectSelector";
 import { useProject } from "@/contexts/ProjectContext";
 import {
   Sparkles,
+  ArrowRight,
   Loader2,
   AlertTriangle,
   AlertCircle,
-  ArrowRight,
   Tag,
   GitBranch,
   LayoutGrid,
@@ -33,7 +33,6 @@ import {
   X,
   ArrowUpDown,
   ChevronRight,
-  MessageSquare,
   Lock,
   Unlock,
 } from "lucide-react";
@@ -43,7 +42,6 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import StepTitle from "./listing/StepTitle";
@@ -54,6 +52,11 @@ import BulletChecklistPanel from "@/components/BulletChecklistPanel";
 import LockedContentBar from "@/components/LockedContentBar";
 import { CharCountBadge, GeneratingProgress } from "./listing/GenerationIndicators";
 import { KeywordImportDialog } from "./listing/KeywordImportDialog";
+import {
+  ListingGenerationJobStatus,
+  useListingGenerationJob,
+} from "./listing/useListingGenerationJob";
+import { LISTING_STEPS, ListingWorkflowNavigation } from "./listing/ListingWorkflowNavigation";
 
 export default function GeneratePage() {
   const { selectedProjectId } = useProject();
@@ -161,6 +164,12 @@ export default function GeneratePage() {
   const [activeStep, setActiveStep] = useState(1);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
 
+  useEffect(() => {
+    const nodeId = new URLSearchParams(window.location.search).get("nodeId");
+    const nodeStepMap: Record<string, number> = { G1: 1, G2: 2, G3: 3, G4: 4, G5: 5 };
+    if (nodeId && nodeStepMap[nodeId]) setActiveStep(nodeStepMap[nodeId]);
+  }, []);
+
   const handleStepComplete = (step: number) => {
     setCompletedSteps(prev => { const n = new Set(prev); n.add(step); return n; });
     // Auto-advance to next step
@@ -220,9 +229,13 @@ export default function GeneratePage() {
     return { steps, completedSteps, total: steps.length, allDone: completedSteps === steps.length };
   })();
 
-  // Step-by-step bullet mutations
-  const generateCores = trpc.listing.generateSellingPointsCores.useMutation({
-    onSuccess: (data: any) => {
+  // Step-by-step bullet jobs
+  const sellingPointsJob = useListingGenerationJob({
+    projectId: selectedProjectId || 0,
+    nodeId: "G1",
+    operation: "sellingPoints",
+    scopeKey: "main",
+    onSucceeded: (data: any) => {
       // Normalize field name variants (backend may return selling_points / points / cores / themes)
       const points = data.sellingPoints ?? data.selling_points ?? data.points ?? data.bulletCores ?? data.cores ?? data.themes;
       if (Array.isArray(points) && points.length > 0) {
@@ -242,12 +255,71 @@ export default function GeneratePage() {
         toast.error("生成结果格式异常，请重试");
       }
     },
-    onError: (err) => toast.error("卖点核心生成失败: " + err.message),
   });
+  const startListingJob = trpc.listing.startGenerationJob.useMutation();
+  const cancelListingJob = trpc.listing.cancelGenerationJob.useMutation();
+  const handledBulletJobRuns = useRef(new Set<string>());
+  const g1JobsQuery = trpc.listing.listGenerationRuns.useQuery(
+    { projectId: selectedProjectId || 0, nodeId: "G1" },
+    {
+      enabled: !!selectedProjectId,
+      refetchInterval: (query) => ((query.state.data as any[]) || []).some((job) => job.status === "queued" || job.status === "running") ? 2_000 : false,
+    },
+  );
+  const g1Jobs = useMemo(() => (g1JobsQuery.data || []) as any[], [g1JobsQuery.data]);
+  const latestSingleBulletJob = g1Jobs.find((job) => {
+    const operation = (job.input as any)?.operation;
+    return operation === "singleBullet";
+  });
+  const activeSingleBulletJob = latestSingleBulletJob
+    && (latestSingleBulletJob.status === "queued" || latestSingleBulletJob.status === "running")
+    ? latestSingleBulletJob
+    : null;
+  const singleBulletGenerating = startListingJob.isPending || Boolean(activeSingleBulletJob);
 
-  const generateSingleBullet = trpc.listing.generateSingleBullet.useMutation({
-    onError: (err) => toast.error("卖点生成失败: " + err.message),
-  });
+  useEffect(() => {
+    const restoredScopes = new Set<string>();
+    for (const job of g1Jobs) {
+      if (job.status !== "succeeded" || !job.output || job.output.skipped || handledBulletJobRuns.current.has(job.runId)) continue;
+      const jobInput = (job.input || {}) as any;
+      if (jobInput.operation !== "singleBullet") continue;
+      const scopeKey = String(jobInput.scopeKey || "");
+      if (restoredScopes.has(scopeKey)) continue;
+      restoredScopes.add(scopeKey);
+      handledBulletJobRuns.current.add(job.runId);
+      if (scopeKey === "locked-add") {
+        setLockedAiResult({
+          subtitle: job.output.subtitle || jobInput.sellingPoint?.theme || "",
+          fullText: job.output.fullText || jobInput.sellingPoint?.description || "",
+        });
+        continue;
+      }
+      const match = scopeKey.match(/^bullet-(\d+)$/);
+      if (!match) continue;
+      const idx = Number(match[1]);
+      setGeneratedBullets((previous) => ({ ...previous, [idx]: job.output }));
+      toast.success(`卖点 ${idx + 1} 生成完成`);
+      if (job.output.subtitle && job.output.fullText) {
+        setEvaluatingChecklist((previous) => ({ ...previous, [idx]: true }));
+        void evaluateChecklist.mutateAsync({
+          subtitle: job.output.subtitle,
+          fullText: job.output.fullText,
+          bulletIndex: idx,
+        }).then((checkResult) => {
+          setGeneratedBullets((previous) => ({
+            ...previous,
+            [idx]: {
+              ...previous[idx],
+              checkListScores: checkResult.checkListScores,
+              aiSemanticRelations: checkResult.aiSemanticRelations,
+            },
+          }));
+        }).finally(() => {
+          setEvaluatingChecklist((previous) => ({ ...previous, [idx]: false }));
+        });
+      }
+    }
+  }, [evaluateChecklist, g1Jobs]);
 
   const handleGenerateCores = () => {
     if (!selectedProjectId) return;
@@ -263,7 +335,7 @@ export default function GeneratePage() {
       return;
     }
     setStepBulletPhase("idle");
-    generateCores.mutate({ projectId: selectedProjectId, emphasis: emphasis.trim() || undefined });
+    void sellingPointsJob.start({ emphasis: emphasis.trim() || undefined });
   };
 
   const handleConfirmCore = (idx: number) => {
@@ -478,37 +550,19 @@ export default function GeneratePage() {
       .map(b => ({ subtitle: b.subtitle || "", fullText: b.fullText || "" }));
 
     try {
-      const result = await generateSingleBullet.mutateAsync({
+      await startListingJob.mutateAsync({
         projectId: selectedProjectId,
+        nodeId: "G1",
+        operation: "singleBullet",
+        scopeKey: `bullet-${idx}`,
         sellingPoint: sp,
         previousBullets,
         emphasis: emphasis.trim() || undefined,
       });
-      setGeneratedBullets(prev => ({ ...prev, [idx]: result }));
-      toast.success(`卖点 ${idx + 1} 生成完成`);
-      // Auto-trigger 15-dimension checklist evaluation
-      if (result?.subtitle && result?.fullText) {
-        setEvaluatingChecklist(prev => ({ ...prev, [idx]: true }));
-        try {
-          const checkResult = await evaluateChecklist.mutateAsync({
-            subtitle: result.subtitle,
-            fullText: result.fullText,
-            bulletIndex: idx,
-          });
-          setGeneratedBullets(prev => ({
-            ...prev,
-            [idx]: {
-              ...prev[idx],
-              checkListScores: checkResult.checkListScores,
-              aiSemanticRelations: checkResult.aiSemanticRelations,
-            },
-          }));
-          toast.success(`卖点 ${idx + 1} 自检完成`);
-        } catch { /* silent fail for auto-check */ }
-        finally { setEvaluatingChecklist(prev => ({ ...prev, [idx]: false })); }
-      }
-    } catch {
-      // error handled by onError
+      await g1JobsQuery.refetch();
+      toast.success(`卖点 ${idx + 1} 已进入后台队列`);
+    } catch (error: any) {
+      toast.error(`卖点生成失败: ${error?.message || "未知错误"}`);
     }
   };
 
@@ -641,7 +695,14 @@ export default function GeneratePage() {
     onSuccess: (data) => {
       toast.success(`已成功同步 ${data.bulletCount} 条卖点并锁定`);
       // Auto-lock Step 1 after sync
-      setLockedSteps(prev => { const n = new Set(prev); n.add(1); return n; });
+      setLockedSteps(prev => {
+        const n = new Set(prev);
+        n.add(1);
+        if (selectedProjectId) {
+          updateLockedStepsMut.mutate({ projectId: selectedProjectId, lockedSteps: Array.from(n) });
+        }
+        return n;
+      });
       handleStepComplete(1);
     },
     onError: (err) => toast.error("同步失败: " + err.message),
@@ -704,8 +765,11 @@ export default function GeneratePage() {
         keyword: lockedAddKeyword.trim(),
       });
       // Step 2: Generate a full bullet point from the FABE
-      const bullet = await generateSingleBullet.mutateAsync({
+      await startListingJob.mutateAsync({
         projectId: selectedProjectId,
+        nodeId: "G1",
+        operation: "singleBullet",
+        scopeKey: "locked-add",
         sellingPoint: {
           index: currentBullets.length + 1,
           theme: fabe.theme,
@@ -718,11 +782,8 @@ export default function GeneratePage() {
         },
         previousBullets: currentBullets,
       });
-      setLockedAiResult({
-        subtitle: bullet.subtitle || fabe.theme,
-        fullText: bullet.fullText || fabe.description || "",
-      });
-      toast.success("AI已生成新卖点，请检查并确认");
+      await g1JobsQuery.refetch();
+      toast.success("新卖点已进入后台队列，完成后可检查并确认");
     } catch (err: any) {
       toast.error("AI生成失败: " + (err.message || "未知错误"));
     }
@@ -736,14 +797,6 @@ export default function GeneratePage() {
   const totalCoresCount = sellingPointCores?.length || 0;
   const manualCoresCount = sellingPointCores?.filter(sp => sp.isManual).length || 0;
   const canAddMore = totalCoresCount < 9;
-
-  const STEPS = [
-    { id: 1, label: "卖点精雕", icon: Target },
-    { id: 2, label: "标题生成", icon: Sparkles },
-    { id: 3, label: "产品描述", icon: FileText },
-    { id: 4, label: "搜索词", icon: Search },
-    { id: 5, label: "QA问答", icon: MessageSquare },
-  ];
 
   return (
     <div className="space-y-6">
@@ -770,7 +823,7 @@ export default function GeneratePage() {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-1">
-                {STEPS.map((step, idx) => {
+                {LISTING_STEPS.map((step, idx) => {
                   const StepIcon = step.icon;
                   const isActive = activeStep === step.id;
                   const isCompleted = completedSteps.has(step.id);
@@ -800,7 +853,7 @@ export default function GeneratePage() {
                         <span className="sm:hidden text-xs">{step.id}</span>
                         {isLocked && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-green-50 text-green-600 border-green-300 hidden md:inline-flex">已锁定</Badge>}
                       </button>
-                      {idx < STEPS.length - 1 && (
+                      {idx < LISTING_STEPS.length - 1 && (
                         <ChevronRight className={`h-4 w-4 mx-1 shrink-0 ${
                           isCompleted ? "text-green-500" : "text-muted-foreground/40"
                         }`} />
@@ -1327,9 +1380,9 @@ export default function GeneratePage() {
                   className="w-full"
                   variant="outline"
                   onClick={handleGenerateCores}
-                  disabled={generateCores.isPending}
+                  disabled={sellingPointsJob.isGenerating}
                 >
-                  {generateCores.isPending ? (
+                  {sellingPointsJob.isGenerating ? (
                     <><Loader2 className="h-4 w-4 mr-2 animate-spin" />正在分析卖点方向...</>
                   ) : (
                     <><Target className="h-4 w-4 mr-2" />Step 1: 生成7条卖点核心方向</>
@@ -1337,7 +1390,31 @@ export default function GeneratePage() {
                 </Button>
               )}
 
-              {generateCores.isPending && (
+              <ListingGenerationJobStatus
+                run={sellingPointsJob.run}
+                isGenerating={sellingPointsJob.isGenerating}
+                isCanceling={sellingPointsJob.isCanceling}
+                onCancel={() => void sellingPointsJob.cancel()}
+                onRetry={handleGenerateCores}
+              />
+              {latestSingleBulletJob && (
+                <ListingGenerationJobStatus
+                  run={latestSingleBulletJob}
+                  isGenerating={singleBulletGenerating}
+                  isCanceling={cancelListingJob.isPending}
+                  onCancel={() => void cancelListingJob.mutateAsync({
+                    projectId: selectedProjectId!,
+                    nodeId: "G1",
+                    scopeKey: String((latestSingleBulletJob.input as any)?.scopeKey || "main"),
+                  }).then(() => g1JobsQuery.refetch())}
+                  onRetry={() => {
+                    const scopeKey = String((latestSingleBulletJob.input as any)?.scopeKey || "");
+                    const match = scopeKey.match(/^bullet-(\d+)$/);
+                    if (match) void handleGenerateSingleBullet(Number(match[1]));
+                  }}
+                />
+              )}
+              {sellingPointsJob.isGenerating && (
                 <GeneratingProgress />
               )}
 
@@ -1705,9 +1782,9 @@ export default function GeneratePage() {
                               size="sm"
                               className="w-full"
                               onClick={() => handleGenerateSingleBullet(idx)}
-                              disabled={generateSingleBullet.isPending}
+                              disabled={singleBulletGenerating}
                             >
-                              {generateSingleBullet.isPending ? (
+                              {singleBulletGenerating ? (
                                 <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />生成中...</>
                               ) : (
                                 <><Sparkles className="h-3.5 w-3.5 mr-2" />生成第 {idx + 1} 条 Bullet Point</>
@@ -1796,7 +1873,7 @@ export default function GeneratePage() {
                                     <Button size="sm" variant="outline" onClick={() => handleStartEditBullet(idx)}>
                                       <Pencil className="h-3.5 w-3.5 mr-1" />编辑
                                     </Button>
-                                    <Button size="sm" variant="outline" onClick={() => handleGenerateSingleBullet(idx)} disabled={generateSingleBullet.isPending}>
+                                    <Button size="sm" variant="outline" onClick={() => handleGenerateSingleBullet(idx)} disabled={singleBulletGenerating}>
                                       <RotateCcw className="h-3.5 w-3.5 mr-1" />重新生成
                                     </Button>
                                   </>
@@ -1937,74 +2014,15 @@ export default function GeneratePage() {
             />
           )}
 
-          {/* Step Navigation Buttons */}
-          <div className="flex items-center justify-between pt-2">
-            <Button
-              variant="outline"
-              onClick={() => setActiveStep(Math.max(1, activeStep - 1))}
-              disabled={activeStep === 1}
-            >
-              上一步
-            </Button>
-            <div className="flex gap-2">
-              {activeStep < 5 && (
-                <Button
-                  onClick={() => setActiveStep(activeStep + 1)}
-                  variant="outline"
-                >
-                  跳过此步
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              )}
-              {completedSteps.size === 5 && (
-                <Button
-                  onClick={() => setLocation(`/listing/preview?project=${selectedProjectId}`)}
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  前往结果预览
-                </Button>
-              )}
-            </div>
-          </div>
-          {/* All Steps Locked Dialog */}
-          <Dialog open={showAllLockedDialog} onOpenChange={setShowAllLockedDialog}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-green-600" />
-                  全部步骤已锁定
-                </DialogTitle>
-                <DialogDescription>
-                  恭喜！您已完成全部 5 个步骤的内容确认并锁定。建议前往结果预览页进行最终审核和翻译。
-                </DialogDescription>
-              </DialogHeader>
-              <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 space-y-2">
-                {STEPS.map(step => (
-                  <div key={step.id} className="flex items-center gap-2 text-sm">
-                    <Lock className="h-3.5 w-3.5 text-green-600" />
-                    <span className="text-green-700 dark:text-green-300">Step {step.id}: {step.label}</span>
-                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-green-100 text-green-600 border-green-300 ml-auto">已锁定</Badge>
-                  </div>
-                ))}
-              </div>
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button variant="outline" onClick={() => setShowAllLockedDialog(false)}>
-                  继续编辑
-                </Button>
-                <Button
-                  className="bg-green-600 hover:bg-green-700"
-                  onClick={() => {
-                    setShowAllLockedDialog(false);
-                    setLocation(`/listing/preview?project=${selectedProjectId}`);
-                  }}
-                >
-                  <ArrowRight className="h-4 w-4 mr-2" />
-                  前往结果预览
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <ListingWorkflowNavigation
+            activeStep={activeStep}
+            completedCount={completedSteps.size}
+            projectId={selectedProjectId}
+            showAllLockedDialog={showAllLockedDialog}
+            onActiveStepChange={setActiveStep}
+            onDialogChange={setShowAllLockedDialog}
+            onPreview={(projectId) => setLocation(`/listing/preview?project=${projectId}`)}
+          />
         </div>
       )}
     </div>

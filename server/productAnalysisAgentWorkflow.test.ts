@@ -8,16 +8,16 @@ import {
 } from "./domains/product_development/analysis/productAnalysisAgent";
 
 describe("product-development analysis Agent workflow", () => {
-  it("defines the seven visible business stages as versioned Emperor Skill nodes", () => {
+  it("defines the seven visible stages and optional competitor evidence as versioned Emperor Skill nodes", () => {
     const dag = getProductAnalysisAgentDag();
     expect(PRODUCT_ANALYSIS_AGENT_SLUG).toBe("product-development.analysis.workflow");
-    expect(dag.version).toBe("1.0.0");
+    expect(dag.version).toBe("1.1.0");
     expect(dag.executionOwner).toBe("product_development.analysis_page");
     expect(dag.nodes.map((node) => node.id)).toEqual(PRODUCT_ANALYSIS_NODE_IDS);
-    expect(dag.nodes).toHaveLength(7);
+    expect(dag.nodes).toHaveLength(8);
     expect(dag.nodes.every((node) => (
       node.nodeType === "skill_node"
-      && String(node.skillSlug).startsWith("dev.analysis.")
+      && (String(node.skillSlug).startsWith("dev.analysis.") || node.skillSlug === "dev.panorama.market_insights")
       && node.humanGate === true
       && node.executionOwner === "product_development.analysis_page"
     ))).toBe(true);
@@ -26,7 +26,7 @@ describe("product-development analysis Agent workflow", () => {
   it("requires all confirmed evidence before information summary and decision", () => {
     const dag = getProductAnalysisAgentDag();
     const informationParents = dag.edges
-      .filter((edge) => edge.target === "information_summary")
+      .filter((edge) => edge.target === "information_summary" && edge.required !== false)
       .map((edge) => edge.source)
       .sort();
     expect(informationParents).toEqual([
@@ -41,10 +41,18 @@ describe("product-development analysis Agent workflow", () => {
       target: "decision_dashboard",
       required: true,
     }));
+    expect(dag.edges).toContainEqual(expect.objectContaining({
+      source: "major_competitors",
+      target: "information_summary",
+      required: false,
+    }));
   });
 
   it("registers a released migration-backed template", () => {
-    const sql = fs.readFileSync(repoPath("drizzle/0127_product_development_analysis_agent.sql"), "utf8");
+    const sql = [
+      "drizzle/0127_product_development_analysis_agent.sql",
+      "drizzle/0134_round4_business_agent_bindings.sql",
+    ].map((path) => fs.readFileSync(repoPath(path), "utf8")).join("\n");
     expect(sql).toContain(PRODUCT_ANALYSIS_AGENT_SLUG);
     expect(sql).toContain("emperor_agent_template_versions");
     expect(sql).toContain("product_development.analysis_page");

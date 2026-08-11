@@ -48,6 +48,31 @@ const NODE_COLORS: Record<string, { color: string; bg: string }> = Object.fromEn
   NODE_PALETTE.map(n => [n.type, { color: n.color, bg: n.bg }])
 );
 
+function checkpointMetadataValue(checkpoint: any): Record<string, any> {
+  if (!checkpoint?.metadata) return {};
+  if (typeof checkpoint.metadata === "object") return checkpoint.metadata;
+  try {
+    const parsed = JSON.parse(checkpoint.metadata);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function checkpointDisplayStatus(checkpoint: any): string {
+  const metadata = checkpointMetadataValue(checkpoint);
+  const businessJobStatus = metadata.businessJobStatus;
+  if (checkpoint?.status === "failed" && (businessJobStatus === "canceled" || checkpoint?.lastFailureKind === "cancel")) {
+    return "canceled";
+  }
+  if (checkpoint?.status === "failed") return "failed";
+  if (["waiting_human", "confirmed", "skipped"].includes(checkpoint?.status)) return checkpoint.status;
+  if (["queued", "retrying", "canceled", "failed", "waiting_human"].includes(businessJobStatus)) {
+    return businessJobStatus;
+  }
+  return checkpoint?.status || "pending";
+}
+
 // ─── Custom Node Component ────────────────────────────────────────────────────
 
 function AgentNode({ data, selected }: { data: any; selected?: boolean }) {
@@ -460,26 +485,35 @@ function RunPanel({ agentSlug, onClose, businessManaged = false }: { agentSlug: 
     || checkpoints.find((c) => c.status === "waiting_human")
     || checkpoints.find((c) => c.status === "ready")
     || checkpoints[0];
+  const selectedCheckpointStatus = checkpointDisplayStatus(selectedCheckpoint);
+  const selectedCheckpointMetadata = checkpointMetadataValue(selectedCheckpoint);
+  const selectedCheckpointProgress = Number(selectedCheckpointMetadata.businessProgress || 0);
   const busyNodeId = executeNode.variables?.nodeId || confirmNode.variables?.nodeId || rerunNode.variables?.nodeId || updateDraft.variables?.nodeId;
   const hasReadyNodes = checkpoints.some((checkpoint) => checkpoint.status === "ready");
   const isRunTerminal = run?.status === "completed" || run?.status === "canceled";
   const statusLabel: Record<string, string> = {
     pending: "待依赖",
     ready: "可执行",
+    queued: "排队中",
     running: "执行中",
+    retrying: "等待重试",
     waiting_human: "待确认",
     confirmed: "已确认",
     skipped: "已跳过",
     failed: "失败",
+    canceled: "已取消",
   };
   const statusClass: Record<string, string> = {
     pending: "bg-slate-500/15 text-slate-400",
     ready: "bg-blue-500/15 text-blue-300",
+    queued: "bg-sky-500/15 text-sky-300",
     running: "bg-amber-500/15 text-amber-300",
+    retrying: "bg-orange-500/15 text-orange-300",
     waiting_human: "bg-violet-500/15 text-violet-300",
     confirmed: "bg-emerald-500/15 text-emerald-300",
     skipped: "bg-slate-500/15 text-slate-400",
     failed: "bg-red-500/15 text-red-300",
+    canceled: "bg-slate-500/15 text-slate-300",
   };
   const parseDraft = () => {
     try {
@@ -633,6 +667,7 @@ function RunPanel({ agentSlug, onClose, businessManaged = false }: { agentSlug: 
               <div className="space-y-2">
                 {checkpoints.map((checkpoint: any) => {
                   const isSelected = selectedCheckpoint?.nodeId === checkpoint.nodeId;
+                  const displayStatus = checkpointDisplayStatus(checkpoint);
                   return (
                     <button
                       key={checkpoint.nodeId}
@@ -644,15 +679,15 @@ function RunPanel({ agentSlug, onClose, businessManaged = false }: { agentSlug: 
                           <CheckCircle2 size={13} className="mt-0.5 text-emerald-400" />
                         ) : checkpoint.status === "failed" ? (
                           <AlertTriangle size={13} className="mt-0.5 text-red-400" />
-                        ) : checkpoint.status === "running" ? (
+                        ) : displayStatus === "running" || displayStatus === "retrying" ? (
                           <Loader2 size={13} className="mt-0.5 text-amber-300 animate-spin" />
                         ) : (
                           <Circle size={13} className="mt-0.5 text-slate-500" />
                         )}
                         <div className="min-w-0 flex-1">
                           <div className="text-[11px] font-medium text-slate-200 truncate">{checkpoint.nodeLabel || checkpoint.nodeId}</div>
-                          <Badge className={`mt-1 text-[9px] px-1.5 py-0 ${statusClass[checkpoint.status] || statusClass.pending}`}>
-                            {statusLabel[checkpoint.status] || checkpoint.status}
+                          <Badge className={`mt-1 text-[9px] px-1.5 py-0 ${statusClass[displayStatus] || statusClass.pending}`}>
+                            {statusLabel[displayStatus] || displayStatus}
                           </Badge>
                         </div>
                       </div>
@@ -669,10 +704,32 @@ function RunPanel({ agentSlug, onClose, businessManaged = false }: { agentSlug: 
                       <div className="text-sm font-semibold text-white truncate">{selectedCheckpoint.nodeLabel || selectedCheckpoint.nodeId}</div>
                       <div className="text-[10px] text-slate-500 font-mono">attempt {selectedCheckpoint.attempt || 0} · {selectedCheckpoint.nodeId}</div>
                     </div>
-                    <Badge className={`text-[10px] ${statusClass[selectedCheckpoint.status] || statusClass.pending}`}>
-                      {statusLabel[selectedCheckpoint.status] || selectedCheckpoint.status}
+                    <Badge className={`text-[10px] ${statusClass[selectedCheckpointStatus] || statusClass.pending}`}>
+                      {statusLabel[selectedCheckpointStatus] || selectedCheckpointStatus}
                     </Badge>
                   </div>
+                  {selectedCheckpoint.aiJobRunId && (
+                    <div className="rounded-md border border-white/8 bg-black/20 p-2 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2 text-[10px]">
+                        <span className="text-slate-500">AI Job</span>
+                        <span className="font-mono text-slate-300 truncate" title={selectedCheckpoint.aiJobRunId}>
+                          {selectedCheckpoint.aiJobRunId}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-500">
+                        <span>
+                          尝试 {selectedCheckpointMetadata.businessJobAttempt ?? selectedCheckpoint.aiJobAttempt ?? 0}
+                          {selectedCheckpointMetadata.businessJobMaxAttempts
+                            ? `/${selectedCheckpointMetadata.businessJobMaxAttempts}`
+                            : ""}
+                        </span>
+                        <span>{selectedCheckpointProgress}%</span>
+                      </div>
+                      <div className="h-1 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-full bg-sky-400" style={{ width: `${Math.min(Math.max(selectedCheckpointProgress, 0), 100)}%` }} />
+                      </div>
+                    </div>
+                  )}
                   {selectedCheckpoint.errorMessage && (
                     <div className="rounded-md border border-red-500/20 bg-red-500/10 p-2 text-[11px] text-red-200">
                       {selectedCheckpoint.errorMessage}

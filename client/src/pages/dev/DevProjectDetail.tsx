@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +72,11 @@ export default function DevProjectDetail() {
   const [activeTab, setActiveTab] = useState("overview");
   const [addProductRequestSignal, setAddProductRequestSignal] = useState(0);
   const utils = trpc.useUtils();
+
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (requestedTab) setActiveTab(requestedTab);
+  }, []);
 
   const { data: project, isLoading } = trpc.devProject.getById.useQuery({ id: projectId });
   const { data: products } = trpc.devProject.getProducts.useQuery({ projectId });
@@ -254,6 +259,13 @@ export default function DevProjectDetail() {
         agentSlug={PRODUCT_ANALYSIS_AGENT_SLUG}
         managedByBusinessPage
         businessUrl={`/dev/project/${projectId}/analysis`}
+        onManagedNodeSelect={(nodeId) => {
+          if (nodeId === "major_competitors") {
+            setActiveTab("panorama");
+            return;
+          }
+          setLocation(`/dev/project/${projectId}/analysis?stage=${encodeURIComponent(nodeId)}`);
+        }}
       />
       {/* Header */}
       <div className="flex items-center justify-between">

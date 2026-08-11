@@ -7,6 +7,8 @@ import { Check, Loader2, Pencil, Play, RefreshCw, Save, SkipForward } from "luci
 import type { WorkflowCheckpointLike } from "./types";
 import {
   formatWorkflowDate,
+  getWorkflowCheckpointDisplayStatus,
+  getWorkflowCheckpointMetadata,
   normalizeCheckpointStatus,
   parseDraftText,
   safeJsonText,
@@ -43,6 +45,10 @@ export function WorkflowCheckpointControls({
   const [isEditing, setIsEditing] = useState(false);
   const [draftText, setDraftText] = useState("");
   const status = normalizeCheckpointStatus(checkpoint?.status);
+  const displayStatus = getWorkflowCheckpointDisplayStatus(checkpoint);
+  const checkpointMetadata = getWorkflowCheckpointMetadata(checkpoint);
+  const jobAttempt = Number(checkpointMetadata.businessJobAttempt ?? checkpoint?.aiJobAttempt ?? 0);
+  const jobMaxAttempts = Number(checkpointMetadata.businessJobMaxAttempts ?? 0);
   const nodeId = checkpoint?.nodeId;
 
   const sourceDraft = useMemo(
@@ -78,16 +84,17 @@ export function WorkflowCheckpointControls({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <p className="truncate text-sm font-semibold">{checkpoint.nodeLabel || checkpoint.nodeId}</p>
-            <WorkflowStatusBadge status={checkpoint.status} />
+            <WorkflowStatusBadge checkpoint={checkpoint} />
           </div>
           <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
             {checkpoint.aiJobRunId && <span>Job {checkpoint.aiJobRunId}</span>}
             {!!checkpoint.retryCount && <span>重试 {checkpoint.retryCount}</span>}
+            {jobMaxAttempts > 0 && <span>尝试 {jobAttempt}/{jobMaxAttempts}</span>}
             {checkpoint.updatedAt && <span>{formatWorkflowDate(checkpoint.updatedAt)}</span>}
           </div>
         </div>
         <Badge variant="secondary" className="rounded-md text-xs">
-          {WORKFLOW_STATUS_LABELS[status]}
+          {WORKFLOW_STATUS_LABELS[displayStatus]}
         </Badge>
       </div>
 

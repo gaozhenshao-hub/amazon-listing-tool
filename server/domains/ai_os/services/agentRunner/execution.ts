@@ -899,7 +899,7 @@ export async function executeAgentNode(input: {
     await addEvent(input.runId, run.agentSlug, input.nodeId, "node.execution_deduped", `节点 ${node.label || node.id} 已在执行中，忽略重复执行请求`);
     return getAgentRun(input.runId, input.userId, true);
   }
-  if (!["ready", "waiting_human", "failed"].includes(checkpoint.status)) {
+  if (!["ready", "waiting_human", "failed", "canceled"].includes(checkpoint.status)) {
     throw new TRPCError({ code: "BAD_REQUEST", message: `Node is not executable: ${checkpoint.status}` });
   }
 
@@ -919,7 +919,7 @@ export async function executeAgentNode(input: {
     lockToken,
     lockedAt,
     timeoutAt,
-    allowedFromStatuses: ["ready", "waiting_human", "failed"],
+    allowedFromStatuses: ["ready", "waiting_human", "failed", "canceled"],
     action: "execute node",
   }));
   await addEvent(input.runId, run.agentSlug, input.nodeId, "node.running", `节点 ${node.label || node.id} 开始执行`, { nodeInput });

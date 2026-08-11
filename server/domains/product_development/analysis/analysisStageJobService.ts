@@ -26,6 +26,7 @@ import { getDb } from "../../../repositories/dbClient";
 import {
   cancelAiJob,
   generateAiJobRunId,
+  getAiJobRun,
   registerAiJobHandler,
   startRegisteredAiJob,
   updateAiJobProgress,
@@ -49,6 +50,7 @@ import {
   syncProductAnalysisNodeCompleted,
   syncProductAnalysisNodeFailure,
   syncProductAnalysisNodeProgress,
+  syncProductAnalysisNodeQueued,
   syncProductAnalysisNodeRunning,
   syncProductAnalysisCancel,
 } from "./productAnalysisAgent";
@@ -76,6 +78,7 @@ const jobInputSchema = z.object({
   dim1CategoryId: z.number().int().positive().optional(),
   dim2CategoryId: z.number().int().positive().optional(),
   agentRunId: z.string().max(80).optional(),
+  agentNodeId: z.string().max(80).optional(),
 });
 
 type QueueInput = z.infer<typeof jobInputSchema> & {
@@ -500,17 +503,27 @@ export async function queueProductAnalysisStage(input: QueueInput) {
     ? Date.now() - new Date(current.updatedAt).getTime()
     : Number.POSITIVE_INFINITY;
   if ((current?.status === "running" || current?.status === "generating") && current.runId && currentAgeMs < PRODUCT_ANALYSIS_STALE_MS) {
-    const linked = await syncProductAnalysisNodeRunning({
+    const currentJob = await getAiJobRun(current.runId).catch(() => null);
+    const linked = currentJob?.status === "queued" ? await syncProductAnalysisNodeQueued({
       projectId: parsed.projectId,
       stageType: config.dbStage,
       userId: input.userId,
       workspaceId: input.workspaceId,
       aiJobRunId: current.runId,
+      aiJobAttempt: currentJob.attempt,
+      maxAttempts: currentJob.maxAttempts,
+    }) : await syncProductAnalysisNodeRunning({
+      projectId: parsed.projectId,
+      stageType: config.dbStage,
+      userId: input.userId,
+      workspaceId: input.workspaceId,
+      aiJobRunId: current.runId,
+      aiJobAttempt: currentJob?.attempt,
     });
     return {
       runId: current.runId,
       agentRunId: linked?.agentRunId || null,
-      status: "running" as const,
+      status: currentJob?.status === "queued" ? "queued" as const : "running" as const,
       progress: current.runProgress || 0,
       alreadyRunning: true,
     };
@@ -538,12 +551,14 @@ export async function queueProductAnalysisStage(input: QueueInput) {
 
   let agentRunId = "";
   try {
-    const linked = await syncProductAnalysisNodeRunning({
+    const linked = await syncProductAnalysisNodeQueued({
       projectId: parsed.projectId,
       stageType: config.dbStage,
       userId: input.userId,
       workspaceId: input.workspaceId,
       aiJobRunId: runId,
+      aiJobAttempt: 0,
+      maxAttempts: 3,
     });
     agentRunId = linked?.agentRunId || "";
     await startRegisteredAiJob({
@@ -555,7 +570,7 @@ export async function queueProductAnalysisStage(input: QueueInput) {
       userId: input.userId,
       projectId: parsed.projectId,
       skillSlug: config.skillSlug,
-      input: { ...parsed, agentRunId: agentRunId || undefined },
+      input: { ...parsed, agentRunId: agentRunId || undefined, agentNodeId: config.dbStage },
       progress: 5,
       priority: 20,
       queueName: "analysis",
