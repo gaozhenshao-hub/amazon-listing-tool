@@ -583,6 +583,10 @@ async function callModel(
 export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Promise<RunSkillResult<T>> {
   const skill = await getSkill(input.skillSlug, input.workspaceId ?? null);
   const manifest = parseJson<SkillManifest>(skill.manifest, {});
+  // DEBUG: log manifest type and systemPrompt for troubleshooting
+  if (input.skillSlug === 'image.step5.final.suggestion') {
+    console.log(`[SkillRunner DEBUG] slug=${skill.slug} manifestType=${typeof skill.manifest} manifestIsNull=${skill.manifest === null} manifestKeys=${typeof manifest === 'object' ? Object.keys(manifest as object).join(',') : 'N/A'} implKeys=${typeof (manifest as any)?.implementation === 'object' ? Object.keys((manifest as any).implementation).join(',') : 'N/A'} promptLen=${((manifest as any)?.implementation?.systemPrompt || '').length}`);
+  }
   const skillSnapshot = buildSkillRuntimeSnapshot(skill, manifest);
   assertSkillSnapshotCompatible(skillSnapshot, input);
   const implementation = manifest.implementation || {};

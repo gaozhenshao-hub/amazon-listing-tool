@@ -93,8 +93,23 @@ function normalizeFinalImageSuggestions(data: any) {
   if (!data) return data;
   return {
     ...data,
+    mainImage: data.mainImage ? {
+      ...data.mainImage,
+      title: typeof data.mainImage.title === 'object' ? JSON.stringify(data.mainImage.title) : (data.mainImage.title || ""),
+      concept: typeof data.mainImage.concept === 'object' ? JSON.stringify(data.mainImage.concept) : (data.mainImage.concept || ""),
+      composition: typeof data.mainImage.composition === 'object' ? JSON.stringify(data.mainImage.composition) : (data.mainImage.composition || ""),
+      shootingNotes: typeof data.mainImage.shootingNotes === 'object' ? JSON.stringify(data.mainImage.shootingNotes) : (data.mainImage.shootingNotes || ""),
+    } : data.mainImage,
     secondaryImages: normalizeSecondaryImageSlots(
-      data.secondaryImages,
+      (data.secondaryImages || []).map((img: any) => img ? {
+        ...img,
+        title: typeof img.title === 'object' ? JSON.stringify(img.title) : (img.title || ""),
+        focus: typeof img.focus === 'object' ? JSON.stringify(img.focus) : (img.focus || ""),
+        expressionMethod: typeof img.expressionMethod === 'object' ? JSON.stringify(img.expressionMethod) : (img.expressionMethod || ""),
+        composition: typeof img.composition === 'object' ? JSON.stringify(img.composition) : (img.composition || ""),
+        textOverlay: typeof img.textOverlay === 'object' ? JSON.stringify(img.textOverlay) : (img.textOverlay || ""),
+        dataVisualization: typeof img.dataVisualization === 'object' ? JSON.stringify(img.dataVisualization) : (img.dataVisualization || ""),
+      } : img),
       (imageNumber) => ({
         imageNumber,
         title: `辅图${imageNumber}`,
@@ -1305,7 +1320,7 @@ function Step5FinalSuggestions({
                             <Badge variant="outline" className="text-xs">English</Badge>
                             <p className="text-sm font-medium">{section.title}</p>
                             <p className="text-xs"><strong>Purpose:</strong> {section.purpose}</p>
-                            <p className="text-xs"><strong>Content:</strong> {section.content}</p>
+                            <p className="text-xs"><strong>Content:</strong> {typeof section.content === 'object' ? JSON.stringify(section.content) : section.content}</p>
                             {section.imageDescription && <p className="text-xs"><strong>Image:</strong> {section.imageDescription}</p>}
                             <FABEDisplay fabe={section.fabe} variant="en" />
                             {section.expressionMethod && <p className="text-xs"><strong>Expression:</strong> {section.expressionMethod}</p>}
