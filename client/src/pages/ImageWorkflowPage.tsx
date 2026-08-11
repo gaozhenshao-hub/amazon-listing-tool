@@ -91,24 +91,58 @@ function ColorSwatch({ color, label }: { color: any; label: string }) {
 
 function normalizeFinalImageSuggestions(data: any) {
   if (!data) return data;
+  // Helper: normalize fabe from fabenDescription or fabe
+  function normalizeFabe(img: any) {
+    const raw = img?.fabe || img?.fabenDescription || img?.faben || {};
+    if (!raw || typeof raw !== 'object') return { feature: "", advantage: "", benefit: "", evidence: "" };
+    return {
+      feature: typeof raw.feature === 'object' ? JSON.stringify(raw.feature) : (raw.feature || ""),
+      advantage: typeof raw.advantage === 'object' ? JSON.stringify(raw.advantage) : (raw.advantage || ""),
+      benefit: typeof raw.benefit === 'object' ? JSON.stringify(raw.benefit) : (raw.benefit || ""),
+      evidence: typeof raw.evidence === 'object' ? JSON.stringify(raw.evidence) : (raw.evidence || ""),
+    };
+  }
+  // Helper: normalize colorScheme (string or object)
+  function normalizeColorScheme(cs: any) {
+    if (!cs) return { primary: "", secondary: "", accent: "" };
+    if (typeof cs === 'string') return { primary: cs, secondary: "", accent: "" };
+    if (typeof cs === 'object') return {
+      primary: typeof cs.primary === 'object' ? JSON.stringify(cs.primary) : (cs.primary || ""),
+      secondary: typeof cs.secondary === 'object' ? JSON.stringify(cs.secondary) : (cs.secondary || ""),
+      accent: typeof cs.accent === 'object' ? JSON.stringify(cs.accent) : (cs.accent || ""),
+    };
+    return { primary: "", secondary: "", accent: "" };
+  }
+  // Helper: safe string
+  function safeStr(v: any): string {
+    if (v === null || v === undefined) return "";
+    if (typeof v === 'object') return JSON.stringify(v);
+    return String(v);
+  }
   return {
     ...data,
     mainImage: data.mainImage ? {
       ...data.mainImage,
-      title: typeof data.mainImage.title === 'object' ? JSON.stringify(data.mainImage.title) : (data.mainImage.title || ""),
-      concept: typeof data.mainImage.concept === 'object' ? JSON.stringify(data.mainImage.concept) : (data.mainImage.concept || ""),
-      composition: typeof data.mainImage.composition === 'object' ? JSON.stringify(data.mainImage.composition) : (data.mainImage.composition || ""),
-      shootingNotes: typeof data.mainImage.shootingNotes === 'object' ? JSON.stringify(data.mainImage.shootingNotes) : (data.mainImage.shootingNotes || ""),
+      title: safeStr(data.mainImage.title),
+      concept: safeStr(data.mainImage.concept),
+      composition: safeStr(data.mainImage.composition),
+      shootingNotes: safeStr(data.mainImage.shootingNotes),
+      fabe: normalizeFabe(data.mainImage),
+      colorScheme: normalizeColorScheme(data.mainImage.colorScheme),
     } : data.mainImage,
     secondaryImages: normalizeSecondaryImageSlots(
       (data.secondaryImages || []).map((img: any) => img ? {
         ...img,
-        title: typeof img.title === 'object' ? JSON.stringify(img.title) : (img.title || ""),
-        focus: typeof img.focus === 'object' ? JSON.stringify(img.focus) : (img.focus || ""),
-        expressionMethod: typeof img.expressionMethod === 'object' ? JSON.stringify(img.expressionMethod) : (img.expressionMethod || ""),
-        composition: typeof img.composition === 'object' ? JSON.stringify(img.composition) : (img.composition || ""),
-        textOverlay: typeof img.textOverlay === 'object' ? JSON.stringify(img.textOverlay) : (img.textOverlay || ""),
-        dataVisualization: typeof img.dataVisualization === 'object' ? JSON.stringify(img.dataVisualization) : (img.dataVisualization || ""),
+        title: safeStr(img.title),
+        focus: safeStr(img.focus),
+        expressionMethod: safeStr(img.expressionMethod),
+        composition: safeStr(img.composition),
+        textOverlay: safeStr(img.textOverlay),
+        dataVisualization: safeStr(img.dataVisualization),
+        fabe: normalizeFabe(img),
+        colorScheme: normalizeColorScheme(img.colorScheme),
+        icons: Array.isArray(img.icons) ? img.icons.map((ic: any) => safeStr(ic)) : [],
+        keyElements: Array.isArray(img.keyElements) ? img.keyElements.map((k: any) => safeStr(k)) : [],
       } : img),
       (imageNumber) => ({
         imageNumber,
