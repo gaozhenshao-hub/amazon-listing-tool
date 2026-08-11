@@ -444,7 +444,9 @@ export const STEP5_FINAL_SUGGESTION_PROMPT = `${EXPERT_ROLE}
       }
     ]
   }
-}`;
+}
+
+**严格要求：只输出上述JSON对象，不要有任何其他文字、解释、前言或后记。不要使用markdown代码块（不要用\`\`\`json）。直接以{开始，以}结束。**`;
 
 // ─── Step 5: Translation prompt ──────────────────────────────────
 export const STEP5_TRANSLATION_PROMPT = `你是一名专业的中英文翻译专家，精通亚马逊电商和视觉设计领域的术语。

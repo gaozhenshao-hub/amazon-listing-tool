@@ -418,13 +418,26 @@ export async function callImageWorkflowSkill<T = any>(input: {
     migrationSource: input.skillSlug === "image.step2.outline"
       ? "drizzle/0122_image_outline_reliability.sql"
       : "drizzle/0120_image_workflow_outline_contract.sql",
-    validate: (content) => {
-      const parsed = safeParseSkillJSON<any>(content);
-      if (parsed && typeof parsed === "object" && "raw" in parsed) {
-        throw new Error("皇帝 Skill 未返回有效 JSON");
-      }
-      return input.validate ? input.validate(parsed) : parsed as T;
-    },
+      validate: (content) => {
+        const parsed = safeParseSkillJSON<any>(content);
+        if (parsed && typeof parsed === "object" && "raw" in parsed) {
+          // 尝试更激进的 JSON 提取：找到最外层的 { } 对
+          const rawStr = (parsed as any).raw as string;
+          const firstBrace = rawStr.indexOf("{");
+          const lastBrace = rawStr.lastIndexOf("}");
+          if (firstBrace >= 0 && lastBrace > firstBrace) {
+            try {
+              const extracted = JSON.parse(rawStr.slice(firstBrace, lastBrace + 1));
+              return input.validate ? input.validate(extracted) : extracted as T;
+            } catch {
+              // 提取失败，继续报错
+            }
+          }
+          console.error(`[callImageWorkflowSkill] Skill ${input.skillSlug} returned non-JSON content (length=${rawStr.length}): ${rawStr.slice(0, 200)}`);
+          throw new Error(`皇帝 Skill 未返回有效 JSON (rawLen=${rawStr.length})`);
+        }
+        return input.validate ? input.validate(parsed) : parsed as T;
+      },
   });
   return result.parsed;
 }

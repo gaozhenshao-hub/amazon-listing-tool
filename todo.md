@@ -311,3 +311,12 @@
 - [x] 后端修复：reoptimizeStep4WithRefs 返回结果时从 session 读取原有字段并保留；regenerateSingleImageFromRef 合并时保留 compositionRefImageUrl/effectRefImageUrl/kbReferenceImages
 - [x] 皇帝 Skill 同步：更新 image.step4.reoptimize 的 manifest.implementation.systemPrompt，明确不返回前端管理字段
 - [x] 知识库：写入"AI修复规范：代码修复必须同步皇帝平台 Skill"规则到 emperor_knowledge 表
+
+## Step5 图片建议 AI output validation failed 修复（2026-08-11）
+- [x] 根因1：skillRunner.ts 只读取数据库 manifest.systemPrompt，TiDB JSON 字段 \n 转义字符被压缩（3874→2285 字符），systemPrompt 不完整
+- [x] 根因2：callImageWorkflowSkill validate 中 safeParseSkillJSON 返回 { raw } 时直接报错，没有尝试更激进的 JSON 提取
+- [x] 根因3：image.step5.final.suggestion 的 maxTokens 为 NULL（默认 4096），Step5 输出长（6辅图+A+），可能被截断
+- [x] 修复1：skillRunner.ts 改为 legacySystemPrompt?.trim() || implementation.systemPrompt（优先使用代码中的 prompt）
+- [x] 修复2：callImageWorkflowSkill validate 中添加更激进的 JSON 提取（从 raw 字符串中找 { } 对）
+- [x] 修复3：STEP5_FINAL_SUGGESTION_PROMPT 末尾添加强制 JSON 输出指令（不要 markdown 代码块）
+- [x] 修复4：数据库更新 image.step5.final.suggestion 的 maxTokens 为 8192

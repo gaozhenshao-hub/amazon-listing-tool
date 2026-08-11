@@ -596,11 +596,13 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
     emphasis: input.emphasis || "",
     ...input.variables,
   };
-  const systemPrompt = implementation.systemPrompt || "";
+  // 优先使用 legacySystemPrompt（代码中的 prompt），其次使用数据库 manifest 中的 systemPrompt
+  // 原因：数据库 JSON 字段在 TiDB 中 \n 转义字符会被 JSON.parse 压缩，导致长度不一致
+  const systemPrompt = input.legacySystemPrompt?.trim() || implementation.systemPrompt || "";
   if (!systemPrompt.trim()) {
     throw new SkillRunError("PROMPT_MISSING", `Skill '${skill.slug}' has empty systemPrompt`, false);
   }
-  const promptAudit = buildPromptAudit(skill.slug, systemPrompt, input.legacySystemPrompt, input.migrationSource);
+  const promptAudit = buildPromptAudit(skill.slug, implementation.systemPrompt || "", input.legacySystemPrompt, input.migrationSource);
   const executionVariables = {
     ...variables,
     __promptAudit: {
