@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
@@ -172,6 +173,7 @@ ${dimensionText}
         source: "ai" | "manual" | "specification";
         confirmed: number;
       }> = [];
+      const batchFailures: Array<{ batch: number; message: string }> = [];
 
       for (let i = 0; i < products.length; i += batchSize) {
         const batch = products.slice(i, i + batchSize);
@@ -249,32 +251,45 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
           });
 
           const content = response.choices?.[0]?.message?.content;
-          if (content) {
-            const parsed = JSON.parse(content as string);
-            for (const item of parsed.products || []) {
-              const asin = item.asin;
-              if (!asin) continue;
+          if (!content) throw new Error("AI 未返回属性标注内容");
+          const parsed = JSON.parse(content as string);
+          if (!Array.isArray(parsed.products) || parsed.products.length === 0) {
+            throw new Error("AI 未返回任何可用的属性标注结果");
+          }
+          for (const item of parsed.products) {
+            const asin = item.asin;
+            if (!asin) continue;
 
-              dimensionFramework.forEach((d, idx) => {
-                const key = `dim_${idx}`;
-                const value = (item.dimensions?.[key] || "").trim();
-                if (value) {
-                  allTags.push({
-                    workspaceId: productDevelopmentWorkspaceId(ctx),
-                    projectId: input.projectId,
-                    asin,
-                    dimensionName: d.dimensionName,
-                    dimensionValue: value,
-                    source: "ai",
-                    confirmed: 0,
-                  });
-                }
-              });
-            }
+            dimensionFramework.forEach((d, idx) => {
+              const key = `dim_${idx}`;
+              const value = (item.dimensions?.[key] || "").trim();
+              if (value) {
+                allTags.push({
+                  workspaceId: productDevelopmentWorkspaceId(ctx),
+                  projectId: input.projectId,
+                  asin,
+                  dimensionName: d.dimensionName,
+                  dimensionValue: value,
+                  source: "ai",
+                  confirmed: 0,
+                });
+              }
+            });
           }
         } catch (err) {
           console.error(`[DevTagging] Batch error at index ${i}:`, err);
+          batchFailures.push({
+            batch: Math.floor(i / batchSize) + 1,
+            message: err instanceof Error ? err.message : "未知 AI 标注错误",
+          });
         }
+      }
+
+      if (allTags.length === 0) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `属性标注失败：${batchFailures.map((failure) => `第${failure.batch}批 ${failure.message}`).join("；") || "未生成任何可用标签"}`,
+        });
       }
 
       // 5. 写入dev_product_tags表（先清除旧的AI标签，保留手动标签）
@@ -296,7 +311,9 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
       await invalidatePanoramaConfirmation(db, input.projectId);
 
       return {
-        success: true,
+        success: batchFailures.length === 0,
+        status: batchFailures.length > 0 ? "partial_failed" : "succeeded",
+        failedBatches: batchFailures,
         tagged: new Set(allTags.map(t => t.asin)).size,
         total: products.length,
         totalTags: allTags.length,
