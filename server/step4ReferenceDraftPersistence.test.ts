@@ -60,4 +60,11 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(page).toContain("解锁此图");
     expect(page).toContain("请先逐图点击“确认此图”。尚有");
   });
+
+  it("Step4 页面确认不会再调用旧 Agent 节点回调并回填历史 Artifact", () => {
+    expect(page).toContain("onConfirm: _onConfirm");
+    expect(page).toContain("setIsLocked(true);");
+    expect(page).toContain("utils.imageWorkflow.getSession.invalidate({ projectId })");
+    expect(page).not.toContain("onConfirm();");
+  });
 });

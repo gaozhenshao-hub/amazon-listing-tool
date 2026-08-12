@@ -34,7 +34,7 @@ function formatStep4Error(error: unknown) {
 export function Step4References({
   projectId,
   session,
-  onConfirm,
+  onConfirm: _onConfirm,
 }: {
   projectId: number;
   session: any;
@@ -254,8 +254,9 @@ export function Step4References({
     }
     try {
       await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(editData) });
+      setIsLocked(true);
+      await utils.imageWorkflow.getSession.invalidate({ projectId });
       toast.success("参考图已确认");
-      onConfirm();
     } catch (err: any) {
       toast.error(err.message || "确认失败");
     }
