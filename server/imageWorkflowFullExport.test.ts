@@ -18,9 +18,33 @@ describe("图片工作流六步完整方案导出", () => {
       imageLabel: "辅图 2",
       compositionRefImageUrl: "https://assets.example/composition.jpg",
       effectRefImageUrl: "https://assets.example/effect.jpg",
+      compositionReference: {
+        compositionType: "左图右文对比构图",
+        layout: "左侧产品剖面，右侧放大密封结构",
+        focalPoint: "O 型圈与 PTFE 胶带接缝",
+        visualFlow: "从产品主体引导至放大细节",
+        proportions: "产品 65%，文案 20%，留白 15%",
+        designNotes: "避免背景抢占产品细节",
+      },
+      effectReference: {
+        colorApplication: "深灰金属背景搭配工业蓝",
+        typographyApplication: "无衬线粗字体搭配高对比白字",
+        iconApplication: "使用放大镜与防漏图标",
+        atmosphere: "专业、硬核、可信赖",
+        lightingStyle: "右侧硬光突出金属边缘",
+      },
       kbReferenceImages: [{ id: 10, imageUrl: "https://assets.example/reference.jpg" }],
     }] }),
-    step5UserEdit: JSON.stringify({ mainImage: { title: "密封管件", concept: "工业级可靠性" } }),
+    step5UserEdit: JSON.stringify({
+      mainImage: { title: "密封管件", concept: "工业级可靠性" },
+      aPlusContent: {
+        overallStrategy: "先建立专业信任，再逐层证明密封能力",
+        overallStory: "主图吸引注意，辅图拆解技术，A+ 收束品牌承诺",
+        consistency: "全程沿用工业蓝与金属质感",
+        modularDesign: "每个模块承接上一张图片的疑问",
+        sections: [],
+      },
+    }),
     step5DesignerUploads: JSON.stringify([{ imageNumber: 2, imageUrl: "https://assets.example/designer.jpg", notes: "细节补充" }]),
   };
 
@@ -63,6 +87,25 @@ describe("图片工作流六步完整方案导出", () => {
     }
     expect(html).toContain("参考工业管件");
     expect(html).toContain("B0TESTASIN");
+  });
+
+  it("导出 Step4 构图/效果方案文字及 Step5 整套图片叙事逻辑", () => {
+    const html = buildFullPlanContent(session, undefined, undefined, assets);
+    for (const content of [
+      "左图右文对比构图",
+      "左侧产品剖面，右侧放大密封结构",
+      "O 型圈与 PTFE 胶带接缝",
+      "从产品主体引导至放大细节",
+      "深灰金属背景搭配工业蓝",
+      "使用放大镜与防漏图标",
+      "右侧硬光突出金属边缘",
+      "先建立专业信任，再逐层证明密封能力",
+      "主图吸引注意，辅图拆解技术，A+ 收束品牌承诺",
+      "全程沿用工业蓝与金属质感",
+    ]) {
+      expect(html).toContain(content);
+    }
+    expect(html).toContain("整套图片叙事逻辑");
   });
 
   it("通过后端导出包接口而不是页面缓存来取得完整资产", () => {

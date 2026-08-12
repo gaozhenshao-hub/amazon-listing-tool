@@ -273,19 +273,30 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
     if (refData?.imageReferences?.length) {
       refData.imageReferences.forEach((ref: any) => {
         s.push(`<div class="card">`);
-        s.push(`<h4>${ref.imageLabel || ''}</h4>`);
-        if (ref.compositionReference) {
-          s.push(`<p><strong>构图参考:</strong></p>`);
-          s.push(`<p>类型: ${ref.compositionReference.type || ''}</p>`);
-          s.push(`<p>描述: ${ref.compositionReference.description || ''}</p>`);
-          if (ref.compositionReference.source) s.push(`<p>来源: ${ref.compositionReference.source}</p>`);
+        s.push(`<h4>${safeText(ref.imageLabel || ref.label || ref.imageName || '图片参考')}</h4>`);
+        const composition = ref.compositionReference || {};
+        const effect = ref.effectReference || {};
+        if (Object.keys(composition).length) {
+          s.push(`<p><strong>构图方案:</strong></p>`);
+          if (composition.compositionType || composition.type) s.push(`<p><strong>构图方式:</strong> ${safeText(composition.compositionType || composition.type)}</p>`);
+          if (composition.layout || composition.description) s.push(`<p><strong>布局:</strong> ${safeText(composition.layout || composition.description)}</p>`);
+          if (composition.focalPoint || composition.focus) s.push(`<p><strong>焦点:</strong> ${safeText(composition.focalPoint || composition.focus)}</p>`);
+          if (composition.visualFlow || composition.visualGuide) s.push(`<p><strong>视觉引导:</strong> ${safeText(composition.visualFlow || composition.visualGuide)}</p>`);
+          if (composition.proportions || composition.ratio) s.push(`<p><strong>比例:</strong> ${safeText(composition.proportions || composition.ratio)}</p>`);
+          if (composition.designNotes || composition.notes) s.push(`<p><strong>设计注意事项:</strong> ${safeText(composition.designNotes || composition.notes)}</p>`);
+          if (composition.source) s.push(`<p class="source-line">来源: ${safeText(composition.source)}</p>`);
         }
         const compositionImageUrl = ref.compositionRefImageUrl || ref.compositionReference?.imageUrl || ref.compositionReference?.url;
         if (compositionImageUrl) s.push(`<div class="asset-grid">${renderImageAsset({ imageUrl: compositionImageUrl }, "Step4 构图参考图", ref.imageLabel || '')}</div>`);
-        if (ref.effectReference) {
-          s.push(`<p><strong>效果图参考:</strong></p>`);
-          s.push(`<p>风格: ${ref.effectReference.style || ''}</p>`);
-          s.push(`<p>描述: ${ref.effectReference.description || ''}</p>`);
+        if (Object.keys(effect).length) {
+          s.push(`<p><strong>效果方案:</strong></p>`);
+          if (effect.colorApplication || effect.colorScheme) s.push(`<p><strong>配色应用:</strong> ${safeText(effect.colorApplication || effect.colorScheme)}</p>`);
+          if (effect.typographyApplication || effect.typography) s.push(`<p><strong>字体应用:</strong> ${safeText(effect.typographyApplication || effect.typography)}</p>`);
+          if (effect.iconApplication || effect.icons) s.push(`<p><strong>图标应用:</strong> ${safeText(effect.iconApplication || effect.icons)}</p>`);
+          if (effect.atmosphere || effect.style) s.push(`<p><strong>氛围:</strong> ${safeText(effect.atmosphere || effect.style)}</p>`);
+          if (effect.lightingStyle || effect.lighting) s.push(`<p><strong>光影:</strong> ${safeText(effect.lightingStyle || effect.lighting)}</p>`);
+          if (effect.description) s.push(`<p><strong>效果说明:</strong> ${safeText(effect.description)}</p>`);
+          if (effect.designNotes || effect.notes) s.push(`<p><strong>设计注意事项:</strong> ${safeText(effect.designNotes || effect.notes)}</p>`);
         }
         const effectImageUrl = ref.effectRefImageUrl || ref.effectReference?.imageUrl || ref.effectReference?.url;
         if (effectImageUrl) s.push(`<div class="asset-grid">${renderImageAsset({ imageUrl: effectImageUrl }, "Step4 效果参考图", ref.imageLabel || '')}</div>`);
@@ -322,6 +333,16 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
       s.push(`<h3>辅图 ${img.imageNumber || idx + 2}</h3><div class="grid"><div class="en"><p><strong>${img.title || ''}</strong></p><p><strong>Focus:</strong> ${img.focus || ''}</p>${img.fabe ? `<div class="fabe"><strong>FABE:</strong> F: ${img.fabe.feature || ''} | A: ${img.fabe.advantage || ''} | B: ${img.fabe.benefit || ''} | E: ${img.fabe.evidence || ''}</div>` : ''}<p><strong>Expression:</strong> ${img.expressionMethod || ''}</p><p><strong>Composition:</strong> ${img.composition || ''}</p><p><strong>Text:</strong> ${img.textOverlay || ''}</p></div><div class="cn"><p><strong>${cnImg?.title || ''}</strong></p><p><strong>聚焦:</strong> ${cnImg?.focus || ''}</p>${cnImg?.fabe ? `<div class="fabe"><strong>FABE:</strong> F: ${cnImg.fabe.feature || ''} | A: ${cnImg.fabe.advantage || ''} | B: ${cnImg.fabe.benefit || ''} | E: ${cnImg.fabe.evidence || ''}</div>` : ''}<p><strong>表达:</strong> ${cnImg?.expressionMethod || ''}</p><p><strong>构图:</strong> ${cnImg?.composition || ''}</p><p><strong>文案:</strong> ${cnImg?.textOverlay || ''}</p></div></div>`);
     });
     if (en.aPlusContent?.sections) {
+      const narrative = en.aPlusContent;
+      if (narrative.overallStrategy || narrative.overallStory || narrative.consistency || narrative.modularDesign) {
+        s.push(`<h3>整套图片叙事逻辑 / Overall Image Story</h3>`);
+        s.push(`<div class="card card-selected">`);
+        if (narrative.overallStrategy) s.push(`<p><strong>叙事策略:</strong> ${safeText(narrative.overallStrategy)}</p>`);
+        if (narrative.overallStory) s.push(`<p><strong>故事线:</strong> ${safeText(narrative.overallStory)}</p>`);
+        if (narrative.consistency) s.push(`<p><strong>视觉一致性:</strong> ${safeText(narrative.consistency)}</p>`);
+        if (narrative.modularDesign) s.push(`<p><strong>模块化衔接:</strong> ${safeText(narrative.modularDesign)}</p>`);
+        s.push(`</div>`);
+      }
       s.push(`<h3>A+ Content</h3>`);
       en.aPlusContent.sections.forEach((sec: any, idx: number) => {
         const cnSec = cn?.aPlusContent?.sections?.[idx];
