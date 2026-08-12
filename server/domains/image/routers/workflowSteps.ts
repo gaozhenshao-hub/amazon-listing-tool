@@ -73,30 +73,27 @@ function mergeStep4CompleteSnapshot(
   currentDraftRaw: string,
   session: Record<string, any>,
 ) {
+  void session;
   const currentDraft = parseStoredJson(currentDraftRaw) as Record<string, any> | null;
-  const priorDraft = parseStoredJson(session.step4UserEdit || session.step4AiResult || "{}") as Record<string, any> | null;
-  const latestAi = parseStoredJson(session.step4AiResult || "{}") as Record<string, any> | null;
-  const compositionRefs = parseStoredJson(session.step4CompositionRefs || "{}") as Record<string, string> | null;
-  const effectRefs = parseStoredJson(session.step4EffectRefs || "{}") as Record<string, string> | null;
   if (!Array.isArray(currentDraft?.imageReferences)) throw new Error("Step4 确认数据缺少图片参考方案");
+  const unlockedImages = currentDraft.imageReferences
+    .map((ref: any, index: number) => ({ ref, index }))
+    .filter(({ ref }: any) => !ref?.isLocked || !ref?.lockedSnapshot);
+  if (unlockedImages.length > 0) {
+    const labels = unlockedImages
+      .map(({ ref, index }: any) => ref?.imageType ? `${ref.imageType}${ref.imageNumber ? `#${ref.imageNumber}` : ""}` : `第${index + 1}张图`)
+      .join("、");
+    throw new Error(`请先逐图点击“确认此图”后再确认整套方案。未确认：${labels}`);
+  }
 
-  const imageReferences = currentDraft.imageReferences.map((currentRef: any, index: number) => {
-    const priorRef = priorDraft?.imageReferences?.[index] || {};
-    const aiRef = latestAi?.imageReferences?.[index] || {};
-    const lockedSnapshot = currentRef.isLocked && currentRef.lockedSnapshot
-      ? currentRef.lockedSnapshot
-      : null;
-    return {
-      ...aiRef,
-      ...priorRef,
-      ...currentRef,
-      ...(lockedSnapshot || {}),
-      compositionRefImageUrl: currentRef.compositionRefImageUrl || priorRef.compositionRefImageUrl || aiRef.compositionRefImageUrl || compositionRefs?.[`step4-ref-${index}-composition`],
-      effectRefImageUrl: currentRef.effectRefImageUrl || priorRef.effectRefImageUrl || aiRef.effectRefImageUrl || effectRefs?.[`step4-ref-${index}-effect`],
-      kbReferenceImages: currentRef.kbReferenceImages?.length ? currentRef.kbReferenceImages : priorRef.kbReferenceImages?.length ? priorRef.kbReferenceImages : aiRef.kbReferenceImages || [],
-    };
-  });
-  return { ...latestAi, ...priorDraft, ...currentDraft, imageReferences };
+  // 整体确认只发布各图片的 lockedSnapshot；不读取、合并或覆盖任何旧 AI / 草稿字段。
+  const imageReferences = currentDraft.imageReferences.map((currentRef: any) => ({
+    ...currentRef.lockedSnapshot,
+    isLocked: true,
+    lockedAt: currentRef.lockedAt,
+    lockedSnapshot: currentRef.lockedSnapshot,
+  }));
+  return { ...currentDraft, imageReferences };
 }
 
 async function startGenerationForRequest(input: {

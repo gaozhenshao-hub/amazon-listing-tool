@@ -30,11 +30,12 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(page.match(/await persistStep4Draft\(/g)?.length).toBeGreaterThanOrEqual(5);
   });
 
-  it("重新锁定时将完整快照而非旧 Artifact 文本设为当前正式版本", () => {
+  it("整体确认只发布已锁定单图快照，不合并旧 AI 或草稿字段", () => {
     expect(workflowSteps).toContain("function mergeStep4CompleteSnapshot(");
-    expect(workflowSteps).toContain("compositionRefImageUrl:");
-    expect(workflowSteps).toContain("effectRefImageUrl:");
-    expect(workflowSteps).toContain("kbReferenceImages:");
+    expect(workflowSteps).toContain("请先逐图点击“确认此图”后再确认整套方案");
+    expect(workflowSteps).toContain("const imageReferences = currentDraft.imageReferences.map((currentRef: any) => ({");
+    expect(workflowSteps).toContain("...currentRef.lockedSnapshot");
+    expect(workflowSteps).toContain("整体确认只发布各图片的 lockedSnapshot");
     expect(workflowSteps).toContain("step4AiResult: completeUserEdit");
     expect(workflowSteps).toContain("step4UserEdit: completeUserEdit");
   });
@@ -57,7 +58,6 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(page).toContain("lockedSnapshot:");
     expect(page).toContain("确认此图");
     expect(page).toContain("解锁此图");
-    expect(workflowSteps).toContain("const lockedSnapshot = currentRef.isLocked && currentRef.lockedSnapshot");
-    expect(workflowSteps).toContain("...(lockedSnapshot || {})");
+    expect(page).toContain("请先逐图点击“确认此图”。尚有");
   });
 });

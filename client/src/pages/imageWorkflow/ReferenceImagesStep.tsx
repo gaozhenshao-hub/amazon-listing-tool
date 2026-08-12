@@ -247,6 +247,11 @@ export function Step4References({
 
   const handleConfirm = async () => {
     if (!editData) return;
+    const unlockedRefs = (editData.imageReferences || []).filter((ref: any) => !ref?.isLocked || !ref?.lockedSnapshot);
+    if (unlockedRefs.length > 0) {
+      toast.error(`请先逐图点击“确认此图”。尚有 ${unlockedRefs.length} 张图片未确认`);
+      return;
+    }
     try {
       await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(editData) });
       toast.success("参考图已确认");
