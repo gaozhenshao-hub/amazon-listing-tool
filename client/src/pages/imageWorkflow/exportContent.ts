@@ -45,7 +45,7 @@ export function buildFullPlanContent(session: any, enData?: any, cnData?: any, a
   s.push(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>产品图片设计完整方案</title>
 <style>
 * { box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; max-width: 960px; margin: 0 auto; padding: 24px; color: #333; line-height: 1.6; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; min-width: 1860px; margin: 0; padding: 24px; color: #333; line-height: 1.6; }
 h1 { color: #8B4513; border-bottom: 3px solid #8B4513; padding-bottom: 10px; font-size: 24px; }
 h2 { color: #8B4513; margin-top: 32px; padding: 8px 12px; background: #fdf2e9; border-left: 4px solid #8B4513; font-size: 18px; }
 h3 { color: #555; margin-top: 16px; font-size: 15px; }
@@ -78,6 +78,10 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
 .toc { background: #f9fafb; padding: 16px; border-radius: 8px; margin: 16px 0; }
 .toc a { color: #8B4513; text-decoration: none; }
 .toc a:hover { text-decoration: underline; }
+.six-step-waterfall { display: grid; grid-template-columns: repeat(6, minmax(280px, 1fr)); align-items: start; gap: 16px; min-width: 1800px; }
+.workflow-step { min-width: 0; padding: 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; break-inside: avoid; }
+.workflow-step h2 { margin-top: 0; font-size: 16px; }
+.workflow-step .divider { display: none; }
 .image-waterfall { margin-top: 16px; }
 .image-flow-card { background: #fff; border: 1px solid #d9e1ea; border-radius: 12px; padding: 18px; margin: 16px 0; break-inside: avoid; box-shadow: 0 2px 8px rgba(15,23,42,.05); }
 .image-flow-title { display: flex; align-items: baseline; gap: 8px; border-bottom: 2px solid #8B4513; padding-bottom: 8px; margin-bottom: 12px; }
@@ -85,7 +89,7 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
 .flow-stage { margin: 12px 0; padding: 12px; border-radius: 8px; background: #fafafa; border-left: 4px solid #d4a574; }
 .flow-stage h4 { margin: 0 0 7px; color: #8B4513; }
 .flow-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-@media print { body { max-width: 100%; padding: 12px; } h2 { break-before: auto; } }
+@media print { @page { size: landscape; margin: 8mm; } body { min-width: 0; padding: 0; } .six-step-waterfall { min-width: 0; gap: 6px; } .workflow-step { padding: 7px; } .workflow-step h2 { font-size: 12px; } .workflow-step p, .workflow-step td, .workflow-step th { font-size: 9px; } .workflow-step .asset-img { height: 88px; } h2 { break-before: auto; } }
 </style></head><body>`);
 
   s.push(`<h1>📷 产品图片设计完整方案</h1>`);
@@ -100,8 +104,10 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   s.push(`<a href="#step4">Step 4: 参考图确认</a><br/>`);
   s.push(`<a href="#step5">Step 5: 图片结构及内容建议</a>`);
   s.push(`</div>`);
+  s.push(`<div class="six-step-waterfall">`);
 
   // ===== Step 0: Competitor Image Analysis =====
+  s.push(`<section class="workflow-step">`);
   s.push(`<h2 id="step0"><span class="step-badge">Step 0</span>竞品图片分析</h2>`);
   s.push(`<p class="section-note">按卖点表达方向归档竞品图片、竞品名称和人工确认的分析结论，为后续卖点、图片大纲与视觉风格提供依据。</p>`);
   const step0Summary = safeJsonParse(session?.step0UserEdit || session?.step0AiResult);
@@ -120,9 +126,11 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   } else if (!step0Summary) {
     s.push(`<p style="color:#999;">未生成或未确认竞品图片分析</p>`);
   }
+  s.push(`</section>`);
 
   // ===== Step 1: Selling Points =====
   if (session) {
+    s.push(`<section class="workflow-step">`);
     s.push(`<h2 id="step1"><span class="step-badge">Step 1</span>卖点梳理</h2>`);
     const sp = safeJsonParse(session.step1UserEdit || session.step1AiResult);
     if (sp) {
@@ -167,11 +175,12 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
     } else {
       s.push(`<p style="color:#999;">未生成或未确认</p>`);
     }
+    s.push(`</section>`);
   }
 
   // ===== Step 2: Image Outline =====
   if (session) {
-    s.push(`<hr class="divider"/>`);
+    s.push(`<section class="workflow-step">`);
     s.push(`<h2 id="step2"><span class="step-badge">Step 2</span>图片大纲</h2>`);
     const outline = safeJsonParse(session.step2UserEdit || session.step2AiResult);
     const outlineImages = outline?.images || [
@@ -219,11 +228,12 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
     if (!outline) {
       s.push(`<p style="color:#999;">未生成或未确认</p>`);
     }
+    s.push(`</section>`);
   }
 
   // ===== Step 3: Style Confirmation =====
   if (session) {
-    s.push(`<hr class="divider"/>`);
+    s.push(`<section class="workflow-step">`);
     s.push(`<h2 id="step3"><span class="step-badge">Step 3</span>风格确认</h2>`);
     const styleData = safeJsonParse(session.step3UserEdit || session.step3AiResult);
     if (styleData?.selectedStyles?.length) {
@@ -278,11 +288,12 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
     if (!styleData) {
       s.push(`<p style="color:#999;">未生成或未确认</p>`);
     }
+    s.push(`</section>`);
   }
 
   // ===== Step 4: Reference Images =====
   if (session) {
-    s.push(`<hr class="divider"/>`);
+    s.push(`<section class="workflow-step">`);
     s.push(`<h2 id="step4"><span class="step-badge">Step 4</span>参考图确认</h2>`);
     const refData = safeJsonParse(session.step4UserEdit || session.step4AiResult);
     if (refData?.imageReferences?.length) {
@@ -326,10 +337,11 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
     if (!refData) {
       s.push(`<p style="color:#999;">未生成或未确认</p>`);
     }
+    s.push(`</section>`);
   }
 
   // ===== Step 5: Final Image Suggestions =====
-  s.push(`<hr class="divider"/>`);
+  s.push(`<section class="workflow-step">`);
   s.push(`<h2 id="step5"><span class="step-badge">Step 5</span>图片结构及内容建议</h2>`);
 
   const en = enData || (session ? safeJsonParse(session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult) : null);
@@ -375,9 +387,10 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   } else {
     s.push(`<p style="color:#999;">未生成或未确认</p>`);
   }
+  s.push(`</section></div>`);
 
   // ===== Designer waterfall: one image, one complete execution context =====
-  if (session) {
+  if (false && session) {
     const waterfallOutline = safeJsonParse(session.step2UserEdit || session.step2AiResult) || {};
     const waterfallRefs = safeJsonParse(session.step4UserEdit || session.step4AiResult) || {};
     const outlineItems = waterfallOutline.images || [
