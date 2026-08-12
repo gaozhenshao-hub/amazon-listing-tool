@@ -106,7 +106,10 @@ export function Step4References({
 
   const handleUnlock = async () => {
     try {
-      const result = await unlockMutation.mutateAsync({ projectId });
+      const result = await unlockMutation.mutateAsync({
+        projectId,
+        userEdit: editData ? JSON.stringify(editData) : undefined,
+      });
       setEditData(normalizeStep4References(JSON.parse(result.userEdit)));
       setIsLocked(false);
       await utils.imageWorkflow.getSession.invalidate({ projectId });

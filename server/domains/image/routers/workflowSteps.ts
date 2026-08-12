@@ -68,6 +68,32 @@ function compactPromptText(value: unknown, maxChars: number) {
   return `${text.slice(0, headChars)}\n\n[上下文已压缩，省略${text.length - maxChars}字符]\n\n${text.slice(-tailChars)}`;
 }
 
+function mergeStep4CompleteSnapshot(
+  currentDraftRaw: string,
+  session: Record<string, any>,
+) {
+  const currentDraft = parseStoredJson(currentDraftRaw) as Record<string, any> | null;
+  const priorDraft = parseStoredJson(session.step4UserEdit || session.step4AiResult || "{}") as Record<string, any> | null;
+  const latestAi = parseStoredJson(session.step4AiResult || "{}") as Record<string, any> | null;
+  const compositionRefs = parseStoredJson(session.step4CompositionRefs || "{}") as Record<string, string> | null;
+  const effectRefs = parseStoredJson(session.step4EffectRefs || "{}") as Record<string, string> | null;
+  if (!Array.isArray(currentDraft?.imageReferences)) throw new Error("Step4 确认数据缺少图片参考方案");
+
+  const imageReferences = currentDraft.imageReferences.map((currentRef: any, index: number) => {
+    const priorRef = priorDraft?.imageReferences?.[index] || {};
+    const aiRef = latestAi?.imageReferences?.[index] || {};
+    return {
+      ...aiRef,
+      ...priorRef,
+      ...currentRef,
+      compositionRefImageUrl: currentRef.compositionRefImageUrl || priorRef.compositionRefImageUrl || aiRef.compositionRefImageUrl || compositionRefs?.[`step4-ref-${index}-composition`],
+      effectRefImageUrl: currentRef.effectRefImageUrl || priorRef.effectRefImageUrl || aiRef.effectRefImageUrl || effectRefs?.[`step4-ref-${index}-effect`],
+      kbReferenceImages: currentRef.kbReferenceImages?.length ? currentRef.kbReferenceImages : priorRef.kbReferenceImages?.length ? priorRef.kbReferenceImages : aiRef.kbReferenceImages || [],
+    };
+  });
+  return { ...latestAi, ...priorDraft, ...currentDraft, imageReferences };
+}
+
 async function startGenerationForRequest(input: {
   projectId: number;
   step: ImageGenerationStep;
@@ -463,9 +489,12 @@ export const imageWorkflowStepProcedures = {
       const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
+      const completeSnapshot = mergeStep4CompleteSnapshot(input.userEdit, session);
+      const completeUserEdit = JSON.stringify(completeSnapshot);
 
       await db.updateImageWorkflowSession(session.id, {
-        step4UserEdit: input.userEdit,
+        step4AiResult: completeUserEdit,
+        step4UserEdit: completeUserEdit,
         step4Confirmed: 1,
         currentStep: 5,
       });
@@ -475,8 +504,8 @@ export const imageWorkflowStepProcedures = {
         projectId: input.projectId,
         userId: ctx.user.id,
         workspaceId: ctx.workspaceId ?? null,
-        aiResult: session.step4AiResult ? JSON.parse(session.step4AiResult) : null,
-        userEdit: JSON.parse(input.userEdit),
+        aiResult: completeSnapshot,
+        userEdit: completeSnapshot,
       });
       return { success: true };
     }),

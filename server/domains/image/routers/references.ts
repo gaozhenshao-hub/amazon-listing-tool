@@ -93,12 +93,15 @@ export const imageReferenceProcedures = {
 
   // ─── Step 4: Unlock while retaining the confirmed plan and selected refs ─
   unlockStep4ForEditing: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.number(), userEdit: z.string().min(2).optional() }))
     .mutation(async ({ ctx, input }) => {
       const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
-      const draft = mergeStep4DraftVersions(session.step4UserEdit, session.step4AiResult);
+      const visibleSnapshot = input.userEdit ? parseStoredJson(input.userEdit) as Record<string, any> | null : null;
+      const draft = visibleSnapshot?.imageReferences?.length
+        ? visibleSnapshot
+        : mergeStep4DraftVersions(session.step4UserEdit, session.step4AiResult);
       if (!draft) throw new Error("当前没有可编辑的参考图方案");
       const userEdit = JSON.stringify(draft);
 

@@ -6,6 +6,7 @@ const root = path.resolve(import.meta.dirname, "..");
 
 describe("Step4 参考图与方案版本保留", () => {
   const references = fs.readFileSync(path.join(root, "server/domains/image/routers/references.ts"), "utf8");
+  const workflowSteps = fs.readFileSync(path.join(root, "server/domains/image/routers/workflowSteps.ts"), "utf8");
   const page = fs.readFileSync(path.join(root, "client/src/pages/imageWorkflow/ReferenceImagesStep.tsx"), "utf8");
 
   it("提供非破坏性解锁和草稿保存接口", () => {
@@ -27,5 +28,14 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(page).toContain("trpc.imageWorkflow.saveStep4Draft.useMutation()");
     expect(page).toContain("已解锁，已保留当前方案与参考图");
     expect(page.match(/await persistStep4Draft\(/g)?.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("重新锁定时将完整快照而非旧 Artifact 文本设为当前正式版本", () => {
+    expect(workflowSteps).toContain("function mergeStep4CompleteSnapshot(");
+    expect(workflowSteps).toContain("compositionRefImageUrl:");
+    expect(workflowSteps).toContain("effectRefImageUrl:");
+    expect(workflowSteps).toContain("kbReferenceImages:");
+    expect(workflowSteps).toContain("step4AiResult: completeUserEdit");
+    expect(workflowSteps).toContain("step4UserEdit: completeUserEdit");
   });
 });
