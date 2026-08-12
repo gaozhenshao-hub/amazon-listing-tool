@@ -271,20 +271,20 @@
 - [x] 端到端测试验证（deepseek-v4-flash + claude-sonnet-5 均成功）
 - [x] 为全部 110 个 Skill 配置最适合的高性能模型（按任务类型分配）
 - [x] 创建 server/services/emperorSkillRunner.ts 统一 Skill 调用层（单元测试 4/4 通过 + 真实 LLM 流程测试通过）
-- [ ] 升级 renderTemplate 支持 Handlebars 条件语法
-- [ ] 迁移 generateSellingPointsCores → listing.sellingpoints.generate
-- [ ] 迁移 generateTitle → listing.title.generate
-- [ ] 迁移 generateBulletPoints → listing.bullets.generate
-- [ ] 迁移 generateDescription → listing.description.generate
-- [ ] 迁移 generateSearchTerms → listing.searchterms.generate
-- [ ] 迁移 generateQA → listing.qa.generate
-- [ ] 迁移辅助接口（翻译/图片建议/自检/AB测试）
-- [ ] 端到端测试验证
+- [x] 升级 renderTemplate 支持 Handlebars 条件语法（已使用 Handlebars.compile，并保留 #if/#each/#unless 回退实现）
+- [x] 迁移 generateSellingPointsCores → listing.sellingpoints.generate（经后台 Job 与 G1 节点执行）
+- [x] 迁移 generateTitle → listing.title.generate（经后台 Job 与 G2 节点执行）
+- [x] 迁移 generateBulletPoints → listing.bullets.generate（经后台 Job 与 G1 节点执行）
+- [x] 迁移 generateDescription → listing.description.generate（经后台 Job 与 G3 节点执行）
+- [x] 迁移 generateSearchTerms → listing.searchterms.generate（经后台 Job 与 G4 节点执行）
+- [x] 迁移 generateQA → listing.qa.generate（经后台 Job 与 G5 节点执行）
+- [x] 迁移辅助接口（翻译/图片建议/自检/AB测试）（图片建议 E1 同步、自检显式 Skill 路由、翻译与 A/B 走业务 Skill 网关）
+- [x] 端到端测试验证（Listing Job、Skill Runner、Agent/Skill 完整性回归共 20 项通过）
 
 ## AI 中台三个缺口修复（2026-08-03）
-- [ ] invokeLLM 添加 signal?: AbortSignal 参数，贯穿到 fetch 请求层
-- [ ] AgentCanvas 前台添加版本历史 UI（发布/回滚/灰度百分比/版本对比）
-- [ ] 皇帝前台新增 AI OS Observability Dashboard 页面（指标趋势/评测列表/质量评分）
+- [x] invokeLLM 添加 signal?: AbortSignal 参数，贯穿到 fetch 请求层（见同页 Gap 1 完成记录）
+- [x] AgentCanvas 前台添加版本历史 UI（发布/回滚/灰度百分比/版本对比）（见同页 Gap 2 完成记录）
+- [x] 皇帝前台新增 AI OS Observability Dashboard 页面（指标趋势/评测列表/质量评分）（见同页 Gap 3 完成记录）
 
 ## AI 中台底座三个缺口修复（2026-08-03）
 
@@ -320,3 +320,15 @@
 - [x] 修复2：callImageWorkflowSkill validate 中添加更激进的 JSON 提取（从 raw 字符串中找 { } 对）
 - [x] 修复3：STEP5_FINAL_SUGGESTION_PROMPT 末尾添加强制 JSON 输出指令（不要 markdown 代码块）
 - [x] 修复4：数据库更新 image.step5.final.suggestion 的 maxTokens 为 8192
+- [x] 后续修正：新皇帝运行时已恢复以数据库 manifest.systemPrompt 为权威来源；legacy prompt 仅用于审计对比
+- [x] 后续修正：数据库 Step5 Prompt 已补充“仅输出合法 JSON 对象”的约束，与 maxTokens=8192 一并生效
+
+## Listing 新皇帝 Agent / Skill 完整性审计（2026-08-12）
+- [x] 核对 Listing Agent DAG、节点依赖、数据流向和人工审核节点是否完整（v2.0.0 默认模板：16 节点、31 条连线）
+- [x] 核对 Listing 核心 Skill 的存在性、启用状态、模型策略、输入输出契约和 JSON 模式配置（6 个核心 Skill 均为 Released）
+- [x] 核对 Agent 节点与前台生成、编辑、确认、锁定及下一步解锁流程的一致性
+- [x] 补齐发现的 Agent、Skill、连接线、审核节点或业务映射缺口，并执行数据库同步
+- [x] 为完整性审计和关键迁移路径补充自动化测试并验证（20 项通过）
+- [x] 修复五类 Listing 自检接口的 Skill 显式路由，避免网关推断误命中综合评分 Skill
+- [x] 将最终结果预览页的人工确认同步至 O1 节点，并保存最终 Listing Preview Artifact
+- [x] 将 Listing 图片建议生成结果同步至 E1 节点，进入统一人工审核与 Artifact 链路

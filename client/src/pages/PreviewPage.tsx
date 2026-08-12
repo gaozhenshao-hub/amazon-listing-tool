@@ -104,6 +104,14 @@ export default function PreviewPage() {
     onError: (err: any) => toast.error("更新失败: " + err.message),
   });
 
+  const confirmPreview = trpc.listing.confirmPreview.useMutation({
+    onSuccess: () => {
+      setEditsConfirmed(true);
+      toast.success("最终 Listing 已审核确认，现在可以执行中英文翻译");
+    },
+    onError: (err: any) => toast.error("最终确认失败: " + err.message),
+  });
+
   const translateToChinese = trpc.listing.translateToChinese.useMutation({
     onSuccess: () => {
       utils.listing.getActive.invalidate({ projectId: selectedProjectId! });
@@ -373,8 +381,8 @@ export default function PreviewPage() {
   };
 
   const handleConfirmEdits = () => {
-    setEditsConfirmed(true);
-    toast.success("编辑已确认，现在可以执行中英文翻译");
+    if (!selectedProjectId) return;
+    confirmPreview.mutate({ projectId: selectedProjectId });
   };
 
   const handleTranslate = () => {

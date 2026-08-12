@@ -26,6 +26,8 @@ import { buildListingContext, checkDataReadiness, contextToPromptText } from "./
 import {
   ensureListingAgentRun,
   syncGenerationToAgent,
+  syncListingPreviewConfirmed,
+  syncListingPreviewWaitingHuman,
   syncStepLockToAgent,
   syncStepUnlockToAgent,
 } from "./listingAgentBridge";
@@ -58,6 +60,8 @@ export {
   z,
   ensureListingAgentRun,
   syncGenerationToAgent,
+  syncListingPreviewConfirmed,
+  syncListingPreviewWaitingHuman,
   syncStepLockToAgent,
   syncStepUnlockToAgent,
 };

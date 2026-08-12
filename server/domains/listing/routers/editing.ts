@@ -3,6 +3,8 @@ import {
   LISTING_STEP_NODE_MAP,
   syncGenerationToAgent,
   syncListingNodeDraft,
+  syncListingPreviewConfirmed,
+  syncListingPreviewWaitingHuman,
   syncStepLockToAgent,
   syncStepUnlockToAgent,
 } from "../listingAgentBridge";
@@ -171,6 +173,30 @@ const legacyListingEditingProcedures = {
       return result;
     }),
 
+  confirmPreview: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
+      const listing = await db.getActiveListingByProject(input.projectId);
+      if (!listing) throw new Error("请先生成并保存 Listing 内容");
+      const lockedSteps = safeParseJSON<number[]>(listing.lockedSteps || "[]", []);
+      const requiredSteps = [1, 2, 3, 4, 5];
+      if (!requiredSteps.every((step) => Array.isArray(lockedSteps) && lockedSteps.includes(step))) {
+        throw new Error("请先确认并锁定全部 5 个 Listing 步骤，再进行最终审核");
+      }
+      const output = buildListingPreviewOutput(listing);
+      await syncListingPreviewConfirmed({
+        agentRunId: listing.agentRunId,
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        output,
+      });
+      return { listing, output };
+    }),
+
 
   // ─── Lock State Persistence ───
   updateLockedSteps: protectedProcedure
@@ -230,6 +256,16 @@ const legacyListingEditingProcedures = {
             workspaceId: ctx.workspaceId ?? null,
           });
         }
+      }
+      if ([1, 2, 3, 4, 5].every((step) => newLocked.includes(step))) {
+        const previewListing = updateResult || listing;
+        await syncListingPreviewWaitingHuman({
+          agentRunId: previewListing.agentRunId,
+          projectId: input.projectId,
+          userId: ctx.user.id,
+          workspaceId: ctx.workspaceId ?? null,
+          output: buildListingPreviewOutput(previewListing),
+        });
       }
       return updateResult;
     }),
@@ -698,3 +734,18 @@ export const listingEditingProcedures = {
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(({ ctx, input }) => queueEditingJob(ctx, input, "qa")),
 };
+
+function buildListingPreviewOutput(listing: any) {
+  return {
+    listingId: listing.id,
+    projectId: listing.projectId,
+    title: listing.title || "",
+    itemHighlights: listing.itemHighlights || "",
+    bulletPoints: safeParseJSON(listing.bulletPoints || "[]", []),
+    description: listing.description || "",
+    searchTerms: listing.searchTerms || "",
+    qaContent: safeParseJSON(listing.qaContent || "[]", []),
+    lockedSteps: safeParseJSON(listing.lockedSteps || "[]", []),
+    version: listing.version || 1,
+  };
+}

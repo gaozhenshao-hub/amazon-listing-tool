@@ -58,6 +58,7 @@ export const listingEvaluationProcedures = {
       const bulletText = `${input.subtitle} ${input.fullText}`;
 
       const response = await invokeBusinessSkill({
+        emperorSkill: { slug: "listing.checklist.bullets" },
         messages: [
           { role: "system", content: EVALUATE_BULLET_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate this Amazon bullet point (Bullet #${input.bulletIndex + 1}):\n\n${bulletText}` },
@@ -108,6 +109,7 @@ export const listingEvaluationProcedures = {
     }))
     .mutation(async ({ input }) => {
       const response = await invokeBusinessSkill({
+        emperorSkill: { slug: "listing.checklist.title" },
         messages: [
           { role: "system", content: EVALUATE_TITLE_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate this Amazon product title:\n\n${input.title}\n\nCharacter count: ${input.title.length}` },
@@ -127,6 +129,7 @@ export const listingEvaluationProcedures = {
     }))
     .mutation(async ({ input }) => {
       const response = await invokeBusinessSkill({
+        emperorSkill: { slug: "listing.checklist.description" },
         messages: [
           { role: "system", content: EVALUATE_DESCRIPTION_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate this Amazon product description:\n\n${input.description}\n\nCharacter count: ${input.description.length}` },
@@ -156,6 +159,7 @@ export const listingEvaluationProcedures = {
       if (input.title) userMsg += `\n\nProduct Title (for duplication check):\n${input.title}`;
       if (input.bulletPoints) userMsg += `\n\nBullet Points (for long-tail coverage check):\n${input.bulletPoints}`;
       const response = await invokeBusinessSkill({
+        emperorSkill: { slug: "listing.checklist.searchterms" },
         messages: [
           { role: "system", content: EVALUATE_SEARCH_TERMS_CHECKLIST_PROMPT },
           { role: "user", content: userMsg },
@@ -188,6 +192,7 @@ export const listingEvaluationProcedures = {
         }
       } catch {}
       const response = await invokeBusinessSkill({
+        emperorSkill: { slug: "listing.checklist.qa" },
         messages: [
           { role: "system", content: EVALUATE_QA_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate these Amazon Q&A pairs:\n\n${qaText}` },

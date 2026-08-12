@@ -250,14 +250,15 @@ const legacyListingGenerationProcedures = {
         console.error("Image advice CN translation failed:", err);
       }
 
+      let savedImageAdviceListing;
       if (activeListing) {
-        await db.updateListing(activeListing.id, {
+        savedImageAdviceListing = await db.updateListing(activeListing.id, {
           imageAdvice: imageAdviceJsonStr,
           imageAdviceCn: imageAdviceCnStr || null,
         });
       } else {
         // Create a minimal listing to store image advice
-        await db.createListing({
+        savedImageAdviceListing = await db.createListing({
           projectId: input.projectId,
           imageAdvice: imageAdviceJsonStr,
           imageAdviceCn: imageAdviceCnStr || null,
@@ -265,6 +266,15 @@ const legacyListingGenerationProcedures = {
           isActive: 1,
         });
       }
+
+      void syncGenerationToAgent({
+        agentRunId: savedImageAdviceListing?.agentRunId,
+        nodeKey: "imageAdvice",
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId ?? null,
+        aiOutput: imageData,
+      });
 
       return imageData;
     }),

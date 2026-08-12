@@ -61,7 +61,7 @@ export const LISTING_GENERATION_NODE_MAP = {
 } as const;
 
 export type ListingGenerationNodeKey = keyof typeof LISTING_GENERATION_NODE_MAP;
-export type ListingAgentNodeId = `N${0 | 1 | 2 | 3 | 4 | 5}` | `G${1 | 2 | 3 | 4 | 5}`;
+export type ListingAgentNodeId = `N${0 | 1 | 2 | 3 | 4 | 5}` | `G${1 | 2 | 3 | 4 | 5}` | "E1" | "O1";
 
 /**
  * Ensure Agent Run exists for the listing project.
@@ -290,6 +290,7 @@ export async function syncListingNodeDraft(input: {
       nodeId: input.nodeId,
       userEdit: input.userEdit,
       userId: input.userId,
+      resetNodeIds: descendantNodeIds(context.dag, input.nodeId),
       metadata: { source: "listing_business_page_edit", projectId: input.projectId },
     });
   } catch (error) {
@@ -468,5 +469,54 @@ export async function syncStepUnlockToAgent(input: {
     });
   } catch (err) {
     console.warn(`[ListingBridge] syncStepUnlock(step${input.stepNumber}) failed:`, err);
+  }
+}
+
+export async function syncListingPreviewWaitingHuman(input: {
+  agentRunId?: string | null;
+  projectId: number;
+  userId: number;
+  workspaceId?: number | null;
+  output: unknown;
+}) {
+  try {
+    const context = await resolveListingNodeContext({ ...input, nodeId: "O1" });
+    if (!context) return;
+    await markBusinessManagedNodeWaitingHuman({
+      runId: context.runId,
+      dag: context.dag,
+      nodeId: "O1",
+      output: input.output,
+      resetNodeIds: descendantNodeIds(context.dag, "O1"),
+      userId: input.userId,
+      metadata: { source: "listing_preview_pending_confirmation", projectId: input.projectId },
+    });
+  } catch (error) {
+    console.warn("[ListingBridge] O1 preview waiting-human sync failed:", error);
+  }
+}
+
+export async function syncListingPreviewConfirmed(input: {
+  agentRunId?: string | null;
+  projectId: number;
+  userId: number;
+  workspaceId?: number | null;
+  output: unknown;
+}) {
+  try {
+    const context = await resolveListingNodeContext({ ...input, nodeId: "O1" });
+    if (!context) return;
+    await markBusinessManagedNodeConfirmed({
+      runId: context.runId,
+      dag: context.dag,
+      nodeId: "O1",
+      output: input.output,
+      userEdit: input.output,
+      resetNodeIds: descendantNodeIds(context.dag, "O1"),
+      userId: input.userId,
+      metadata: { source: "listing_preview_user_confirmed", projectId: input.projectId },
+    });
+  } catch (error) {
+    console.warn("[ListingBridge] O1 preview confirmation sync failed:", error);
   }
 }
