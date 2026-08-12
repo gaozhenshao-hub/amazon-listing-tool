@@ -335,7 +335,7 @@ export function normalizeSkillVersion(value: unknown): string {
 function buildSkillRuntimeSnapshot(skill: SkillRow, manifest: SkillManifest): SkillRuntimeSnapshot {
   const implementation = manifest.implementation || {};
   // 新皇帝 Skill 的数据库 manifest 是唯一运行时 Prompt 来源；legacy prompt 仅保留作审计对比。
-  const systemPrompt = implementation.systemPrompt || input.legacySystemPrompt?.trim() || "";
+  const systemPrompt = implementation.systemPrompt || "";
   const userPromptTemplate = implementation.userPromptTemplate || "";
   return {
     slug: skill.slug,

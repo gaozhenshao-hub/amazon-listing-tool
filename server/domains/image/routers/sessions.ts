@@ -45,6 +45,20 @@ const {
   z,
 } = shared;
 
+function parseExportJson(value: unknown) {
+  if (!value || typeof value !== "string") return {};
+  try { return JSON.parse(value); } catch { return {}; }
+}
+
+function selectedAsinSetIds(session: any): number[] {
+  const step3 = parseExportJson(session?.step3UserEdit || session?.step3AiResult);
+  const styles = Array.isArray(step3?.selectedStyles) ? step3.selectedStyles : [];
+  const ids = styles
+    .filter((style: any) => style?.source === "kb_asin" && Number.isFinite(Number(style?.asinSetId)))
+    .map((style: any) => Number(style.asinSetId)) as number[];
+  return [...new Set<number>(ids)];
+}
+
 export const imageSessionProcedures = {
 
 
@@ -56,6 +70,33 @@ export const imageSessionProcedures = {
       if (!project) throw new Error("Project not found");
       const session = await resolveSessionForDisplay(input.projectId, ctx.user);
       return session;
+    }),
+
+  // ─── Complete export bundle (Step0-5 + selected reference assets) ─────────
+  getExportBundle: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+      const session = await resolveSessionForDisplay(input.projectId, ctx.user);
+      if (!session) throw new Error("请先创建图片工作流");
+
+      const asinSetIds = selectedAsinSetIds(session);
+      const [expressionGroups, asinReferenceSets] = await Promise.all([
+        db.getExpressionGroupsByProject(input.projectId),
+        Promise.all(asinSetIds.map(async (setId) => {
+          const set = await kbDb.getImageSetById(setId);
+          if (!set) return null;
+          const images = await kbDb.listImagesBySetLight(setId);
+          return { ...set, images };
+        })),
+      ]);
+
+      return {
+        session,
+        expressionGroups,
+        asinReferenceSets: asinReferenceSets.filter(Boolean),
+      };
     }),
 
 

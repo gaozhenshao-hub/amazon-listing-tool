@@ -1471,6 +1471,10 @@ export default function ImageWorkflowPage() {
     { projectId: selectedProjectId! },
     { enabled: !!selectedProjectId }
   );
+  const exportBundleQuery = trpc.imageWorkflow.getExportBundle.useQuery(
+    { projectId: selectedProjectId! },
+    { enabled: false, retry: false }
+  );
   const createSessionMutation = trpc.imageWorkflow.createSession.useMutation();
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
 
@@ -1532,6 +1536,27 @@ export default function ImageWorkflowPage() {
     }
   };
 
+  const handleExportFullPlan = async () => {
+    if (!selectedProjectId || !session) return;
+    toast.info("正在汇总六步内容与参考图片...");
+    try {
+      const result = await exportBundleQuery.refetch();
+      const bundle = result.data;
+      if (!bundle?.session) throw new Error("完整方案数据获取失败");
+      const content = buildFullPlanContent(bundle.session, undefined, undefined, bundle);
+      const blob = new Blob([content], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `图片设计完整方案-Step0-5-${new Date().toISOString().slice(0, 10)}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("已导出六步完整方案，可在浏览器中打印为 PDF");
+    } catch (error: any) {
+      toast.error(error?.message || "导出失败");
+    }
+  };
+
   if (!selectedProjectId) {
     return (
       <div className="p-6 max-w-5xl mx-auto">
@@ -1573,23 +1598,9 @@ export default function ImageWorkflowPage() {
         <>
           <ProjectSelector />
           {session && session.step5Confirmed && (
-            <Button variant="outline" size="sm" onClick={() => {
-              toast.info("正在生成完整方案...");
-              try {
-                const content = buildFullPlanContent(session);
-                const blob = new Blob([content], { type: "text/html;charset=utf-8" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `图片设计完整方案-${new Date().toISOString().slice(0,10)}.html`;
-                a.click();
-                URL.revokeObjectURL(url);
-                toast.success("已导出完整方案，可在浏览器中打印为PDF");
-              } catch {
-                toast.error("导出失败");
-              }
-            }}>
-              <FileText className="w-3 h-3 mr-1" /> 导出完整方案
+            <Button variant="outline" size="sm" onClick={handleExportFullPlan} disabled={exportBundleQuery.isFetching}>
+              {exportBundleQuery.isFetching ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <FileText className="w-3 h-3 mr-1" />}
+              导出六步完整方案
             </Button>
           )}
           {session && (
