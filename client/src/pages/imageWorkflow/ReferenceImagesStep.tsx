@@ -45,6 +45,8 @@ export function Step4References({
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
   const uploadRefMutation = trpc.imageWorkflow.uploadStep4RefImage.useMutation();
   const saveDraftMutation = trpc.imageWorkflow.saveStep4Draft.useMutation();
+  const confirmImageVersionMutation = trpc.imageWorkflow.confirmStep4ImageVersion.useMutation();
+  const unlockImageVersionMutation = trpc.imageWorkflow.unlockStep4ImageVersion.useMutation();
   const unlockMutation = trpc.imageWorkflow.unlockStep4ForEditing.useMutation();
   const reoptimizeMutation = trpc.imageWorkflow.reoptimizeStep4WithRefs.useMutation();
   const regenerateAllMutation = trpc.imageWorkflow.regenerateAllFromReferences.useMutation();
@@ -136,6 +138,7 @@ export function Step4References({
       lockedAt: new Date().toISOString(),
       lockedSnapshot: { ...currentRef, isLocked: undefined, lockedSnapshot: undefined },
     };
+    await confirmImageVersionMutation.mutateAsync({ projectId, imageIndex: idx, content: JSON.stringify(newData.imageReferences[idx].lockedSnapshot) });
     setEditData(newData);
     await persistStep4Draft(newData);
     toast.success(`已确认并锁定第${idx + 1}张图`);
@@ -145,6 +148,7 @@ export function Step4References({
     if (!editData?.imageReferences?.[idx]) return;
     const newData = { ...editData, imageReferences: [...editData.imageReferences] };
     const currentRef = newData.imageReferences[idx];
+    await unlockImageVersionMutation.mutateAsync({ projectId, imageIndex: idx });
     newData.imageReferences[idx] = {
       ...(currentRef.lockedSnapshot || currentRef),
       isLocked: false,

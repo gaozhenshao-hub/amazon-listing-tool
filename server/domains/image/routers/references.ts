@@ -91,6 +91,28 @@ export const imageReferenceProcedures = {
       return { success: true };
     }),
 
+  confirmStep4ImageVersion: protectedProcedure
+    .input(z.object({ projectId: z.number(), imageIndex: z.number().int().min(0), content: z.string().min(2) }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+      const reference = parseStoredJson(input.content) as Record<string, any> | null;
+      if (!reference) throw new Error("单图确认内容无效");
+      const version = await db.confirmStep4ImageVersion({ sessionId: session.id, projectId: input.projectId, userId: ctx.user.id, imageIndex: input.imageIndex, imageKey: `step4-ref-${input.imageIndex}`, content: JSON.stringify(reference) });
+      return { success: true, version };
+    }),
+
+  unlockStep4ImageVersion: protectedProcedure
+    .input(z.object({ projectId: z.number(), imageIndex: z.number().int().min(0) }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+      await db.unlockStep4ImageVersion(session.id, input.imageIndex);
+      return { success: true };
+    }),
+
   // ─── Step 4: Unlock while retaining the confirmed plan and selected refs ─
   unlockStep4ForEditing: protectedProcedure
     .input(z.object({ projectId: z.number(), userEdit: z.string().min(2).optional() }))

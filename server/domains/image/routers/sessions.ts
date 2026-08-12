@@ -59,6 +59,20 @@ function selectedAsinSetIds(session: any): number[] {
   return [...new Set<number>(ids)];
 }
 
+async function applyCurrentStep4ImageVersions(session: any) {
+  if (!session) return session;
+  const versions = await db.getCurrentStep4ImageVersions(session.id);
+  if (!versions.length) return session;
+  const base = parseExportJson(session.step4UserEdit || session.step4AiResult);
+  const byIndex = new Map(versions.map((version: any) => [Number(version.imageIndex), parseExportJson(version.content)]));
+  const imageReferences = (base.imageReferences || []).map((reference: any, index: number) => {
+    const confirmed = byIndex.get(index);
+    return confirmed ? { ...reference, ...confirmed, isLocked: true, lockedSnapshot: confirmed, lockedAt: confirmed.lockedAt || confirmed.confirmedAt } : reference;
+  });
+  const snapshot = { ...base, imageReferences };
+  return { ...session, step4UserEdit: JSON.stringify(snapshot), step4AiResult: JSON.stringify(snapshot) };
+}
+
 export const imageSessionProcedures = {
 
 
@@ -69,7 +83,7 @@ export const imageSessionProcedures = {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
       const session = await resolveSessionForDisplay(input.projectId, ctx.user);
-      return session;
+      return applyCurrentStep4ImageVersions(session);
     }),
 
   // ─── Complete export bundle (Step0-5 + selected reference assets) ─────────
@@ -78,7 +92,7 @@ export const imageSessionProcedures = {
     .query(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
-      const session = await resolveSessionForDisplay(input.projectId, ctx.user);
+      const session = await applyCurrentStep4ImageVersions(await resolveSessionForDisplay(input.projectId, ctx.user));
       if (!session) throw new Error("请先创建图片工作流");
 
       const asinSetIds = selectedAsinSetIds(session);

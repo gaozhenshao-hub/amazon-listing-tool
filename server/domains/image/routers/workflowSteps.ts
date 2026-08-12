@@ -491,7 +491,17 @@ export const imageWorkflowStepProcedures = {
       const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
-      const completeSnapshot = mergeStep4CompleteSnapshot(input.userEdit, session);
+      const requestedSnapshot = parseStoredJson(input.userEdit) as Record<string, any> | null;
+      const requestedRefs = requestedSnapshot?.imageReferences || [];
+      const confirmedVersions = await db.getCurrentStep4ImageVersions(session.id);
+      const versionByIndex = new Map(confirmedVersions.map((version: any) => [Number(version.imageIndex), parseStoredJson(version.content)]));
+      if (!requestedRefs.length || requestedRefs.some((_: unknown, index: number) => !versionByIndex.get(index))) {
+        throw new Error("请先逐图点击“确认此图”，整体确认只会发布独立确认版本");
+      }
+      const completeSnapshot = { ...requestedSnapshot, imageReferences: requestedRefs.map((_: any, index: number) => {
+        const confirmed = versionByIndex.get(index) as Record<string, any>;
+        return { ...confirmed, isLocked: true, lockedSnapshot: confirmed };
+      }) };
       const completeUserEdit = JSON.stringify(completeSnapshot);
 
       await db.updateImageWorkflowSession(session.id, {

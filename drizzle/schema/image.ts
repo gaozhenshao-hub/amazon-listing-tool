@@ -159,6 +159,26 @@ export type ImageWorkflowSession = typeof imageWorkflowSessions.$inferSelect;
 
 export type InsertImageWorkflowSession = typeof imageWorkflowSessions.$inferInsert;
 
+// Step4 单图确认版本：与会话 JSON 和 Agent Artifact 解耦，作为每张图的唯一确认来源。
+export const imageWorkflowStep4ImageVersions = mysqlTable("image_workflow_step4_image_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  sessionId: int("sessionId").notNull(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  imageIndex: int("imageIndex").notNull(),
+  imageKey: varchar("imageKey", { length: 80 }).notNull(),
+  version: int("version").notNull(),
+  status: mysqlEnum("status", ["confirmed", "superseded", "unlocked"]).default("confirmed").notNull(),
+  isCurrent: int("isCurrent").default(1).notNull(),
+  content: text("content").notNull(),
+  confirmedAt: timestamp("confirmedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ImageWorkflowStep4ImageVersion = typeof imageWorkflowStep4ImageVersions.$inferSelect;
+export type InsertImageWorkflowStep4ImageVersion = typeof imageWorkflowStep4ImageVersions.$inferInsert;
+
 // Competitor image analyses for Step 0 of image workflow
 export const competitorImageAnalyses = mysqlTable("competitor_image_analyses", {
   id: int("id").autoincrement().primaryKey(),

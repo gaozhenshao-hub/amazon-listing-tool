@@ -4,7 +4,7 @@ import {
   registerImageWorkflowArtifact,
   registerImageWorkflowStepArtifact,
 } from "../../domains/ai_os/services/businessArtifactRegistry";
-import { InsertCompetitorImageAnalysis, InsertExpressionGroup, InsertExpressionGroupImage, InsertImageWorkflowSession, competitorImageAnalyses, expressionGroupImages, expressionGroups, imageWorkflowSessions } from "../../../drizzle/schema/image";
+import { ImageWorkflowStep4ImageVersion, InsertCompetitorImageAnalysis, InsertExpressionGroup, InsertExpressionGroupImage, InsertImageWorkflowSession, competitorImageAnalyses, expressionGroupImages, expressionGroups, imageWorkflowSessions, imageWorkflowStep4ImageVersions } from "../../../drizzle/schema/image";
 
 function scheduleImageWorkflowArtifactSync(sessionId: number, sourceType: "ai_output" | "user_edit") {
   void registerImageWorkflowArtifact(sessionId, sourceType).catch((error) => {
@@ -97,6 +97,35 @@ export async function deleteImageWorkflowSession(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(imageWorkflowSessions).where(eq(imageWorkflowSessions.id, id));
+}
+
+export async function getCurrentStep4ImageVersions(sessionId: number): Promise<ImageWorkflowStep4ImageVersion[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(imageWorkflowStep4ImageVersions)
+    .where(and(eq(imageWorkflowStep4ImageVersions.sessionId, sessionId), eq(imageWorkflowStep4ImageVersions.isCurrent, 1), eq(imageWorkflowStep4ImageVersions.status, "confirmed")))
+    .orderBy(imageWorkflowStep4ImageVersions.imageIndex, desc(imageWorkflowStep4ImageVersions.version));
+}
+
+export async function confirmStep4ImageVersion(input: { sessionId: number; projectId: number; userId: number; imageIndex: number; imageKey: string; content: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.transaction(async (tx) => {
+    const latest = await tx.select({ version: imageWorkflowStep4ImageVersions.version }).from(imageWorkflowStep4ImageVersions)
+      .where(and(eq(imageWorkflowStep4ImageVersions.sessionId, input.sessionId), eq(imageWorkflowStep4ImageVersions.imageIndex, input.imageIndex)))
+      .orderBy(desc(imageWorkflowStep4ImageVersions.version)).limit(1);
+    await tx.update(imageWorkflowStep4ImageVersions).set({ isCurrent: 0, status: "superseded" })
+      .where(and(eq(imageWorkflowStep4ImageVersions.sessionId, input.sessionId), eq(imageWorkflowStep4ImageVersions.imageIndex, input.imageIndex), eq(imageWorkflowStep4ImageVersions.isCurrent, 1)));
+    await tx.insert(imageWorkflowStep4ImageVersions).values({ ...input, version: Number(latest[0]?.version || 0) + 1, status: "confirmed", isCurrent: 1 });
+  });
+  return (await getCurrentStep4ImageVersions(input.sessionId)).find((row) => row.imageIndex === input.imageIndex) ?? null;
+}
+
+export async function unlockStep4ImageVersion(sessionId: number, imageIndex: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(imageWorkflowStep4ImageVersions).set({ isCurrent: 0, status: "unlocked" })
+    .where(and(eq(imageWorkflowStep4ImageVersions.sessionId, sessionId), eq(imageWorkflowStep4ImageVersions.imageIndex, imageIndex), eq(imageWorkflowStep4ImageVersions.isCurrent, 1)));
 }
 
 // ─── Competitor Image Analyses (Step 0 of Image Workflow) ─────────────────────

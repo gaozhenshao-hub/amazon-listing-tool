@@ -67,4 +67,14 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(page).toContain("utils.imageWorkflow.getSession.invalidate({ projectId })");
     expect(page).not.toContain("onConfirm();");
   });
+
+  it("单图确认版本使用独立数据库记录，整体确认只能从这些记录发布", () => {
+    const refsRouter = fs.readFileSync(path.join(root, "server/domains/image/routers/references.ts"), "utf8");
+    const sessionsRouter = fs.readFileSync(path.join(root, "server/domains/image/routers/sessions.ts"), "utf8");
+    expect(refsRouter).toContain("confirmStep4ImageVersion");
+    expect(refsRouter).toContain("unlockStep4ImageVersion");
+    expect(sessionsRouter).toContain("applyCurrentStep4ImageVersions");
+    expect(workflowSteps).toContain("getCurrentStep4ImageVersions(session.id)");
+    expect(workflowSteps).toContain("整体确认只会发布独立确认版本");
+  });
 });
