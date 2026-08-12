@@ -44,7 +44,72 @@ const {
   z,
 } = shared;
 
+function mergeStep4DraftVersions(confirmedRaw: unknown, latestRaw: unknown) {
+  const confirmed = parseStoredJson(String(confirmedRaw || "{}")) as Record<string, any> | null;
+  const latest = parseStoredJson(String(latestRaw || "{}")) as Record<string, any> | null;
+  if (!confirmed && !latest) return null;
+  if (!confirmed) return latest;
+  if (!latest) return confirmed;
+
+  const confirmedRefs: any[] = confirmed.imageReferences || [];
+  const latestRefs: any[] = latest.imageReferences || [];
+  const imageReferences = Array.from({ length: Math.max(confirmedRefs.length, latestRefs.length) }, (_, index) => {
+    const confirmedRef = confirmedRefs[index] || {};
+    const latestRef = latestRefs[index] || {};
+    return {
+      ...confirmedRef,
+      ...latestRef,
+      compositionRefImageUrl: confirmedRef.compositionRefImageUrl || latestRef.compositionRefImageUrl,
+      effectRefImageUrl: confirmedRef.effectRefImageUrl || latestRef.effectRefImageUrl,
+      kbReferenceImages: confirmedRef.kbReferenceImages || latestRef.kbReferenceImages,
+      imageNumber: confirmedRef.imageNumber ?? latestRef.imageNumber,
+      imageType: confirmedRef.imageType ?? latestRef.imageType,
+      purpose: confirmedRef.purpose ?? latestRef.purpose,
+    };
+  });
+  return { ...confirmed, ...latest, imageReferences };
+}
+
 export const imageReferenceProcedures = {
+
+  // ─── Step 4: Persist an editable draft without locking the step ─────────
+  saveStep4Draft: protectedProcedure
+    .input(z.object({ projectId: z.number(), userEdit: z.string().min(2) }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+      const draft = parseStoredJson(input.userEdit) as Record<string, any> | null;
+      if (!Array.isArray(draft?.imageReferences)) throw new Error("Step4 草稿缺少图片参考方案");
+
+      await db.updateImageWorkflowSession(session.id, {
+        step4UserEdit: input.userEdit,
+        step4Confirmed: 0,
+        currentStep: 4,
+        status: "in_progress",
+      });
+      return { success: true };
+    }),
+
+  // ─── Step 4: Unlock while retaining the confirmed plan and selected refs ─
+  unlockStep4ForEditing: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+      const draft = mergeStep4DraftVersions(session.step4UserEdit, session.step4AiResult);
+      if (!draft) throw new Error("当前没有可编辑的参考图方案");
+      const userEdit = JSON.stringify(draft);
+
+      await db.updateImageWorkflowSession(session.id, {
+        step4UserEdit: userEdit,
+        step4Confirmed: 0,
+        currentStep: 4,
+        status: "in_progress",
+      });
+      return { success: true, userEdit };
+    }),
 
 
   // ─── Step 4: Upload composition/effect reference images ────────
@@ -151,6 +216,14 @@ export const imageReferenceProcedures = {
         imageType: existingRef?.imageType ?? aiResult?.imageType,
         purpose: existingRef?.purpose ?? aiResult?.purpose,
       };
+      const updatedRefs = [...imageRefs];
+      if (targetIdx >= 0) updatedRefs[targetIdx] = merged;
+      const updatedResult = { ...(currentStep4 || {}), imageReferences: updatedRefs };
+      await db.updateImageWorkflowSession(session.id, {
+        step4AiResult: JSON.stringify(updatedResult),
+        step4UserEdit: JSON.stringify(updatedResult),
+        step4Confirmed: 0,
+      });
       return merged;
     }),
 

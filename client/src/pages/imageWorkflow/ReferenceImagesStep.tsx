@@ -44,6 +44,8 @@ export function Step4References({
   const confirmMutation = trpc.imageWorkflow.confirmStep4.useMutation();
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
   const uploadRefMutation = trpc.imageWorkflow.uploadStep4RefImage.useMutation();
+  const saveDraftMutation = trpc.imageWorkflow.saveStep4Draft.useMutation();
+  const unlockMutation = trpc.imageWorkflow.unlockStep4ForEditing.useMutation();
   const reoptimizeMutation = trpc.imageWorkflow.reoptimizeStep4WithRefs.useMutation();
   const regenerateAllMutation = trpc.imageWorkflow.regenerateAllFromReferences.useMutation();
   const regenerateSingleMutation = trpc.imageWorkflow.regenerateSingleImageFromRef.useMutation();
@@ -104,12 +106,21 @@ export function Step4References({
 
   const handleUnlock = async () => {
     try {
-      await resetMutation.mutateAsync({ projectId, step: 4 });
+      const result = await unlockMutation.mutateAsync({ projectId });
+      setEditData(normalizeStep4References(JSON.parse(result.userEdit)));
       setIsLocked(false);
-      toast.success("已解锁，可编辑参考图");
+      await utils.imageWorkflow.getSession.invalidate({ projectId });
+      toast.success("已解锁，已保留当前方案与参考图");
     } catch (err: any) {
       toast.error(err.message || "解锁失败");
     }
+  };
+
+  const persistStep4Draft = async (nextData: any) => {
+    await saveDraftMutation.mutateAsync({
+      projectId,
+      userEdit: JSON.stringify(nextData),
+    });
   };
 
   // Upload independent reference image (composition or effect)
@@ -137,6 +148,7 @@ export function Step4References({
           }
           newData.imageReferences[idx] = ref;
           setEditData(newData);
+          await persistStep4Draft(newData);
         }
         toast.success(`${refType === 'composition' ? '构图' : '效果'}参考图已上传`);
         setUploadingRef(null);
@@ -173,6 +185,7 @@ export function Step4References({
       };
       newData.imageReferences[idx] = { ...newData.imageReferences[idx], ...result, ...preserved };
       setEditData(newData);
+      await persistStep4Draft(newData);
       toast.success("已根据参考图重新优化");
     } catch (err: any) {
       toast.error(err.message || "优化失败");
@@ -226,7 +239,7 @@ export function Step4References({
   };
 
   // Handle KB image selection - attach selected images to the reference
-  const handleKbImageSelect = (images: Array<{ id: number; imageUrl: string; imagePosition: string; tagCategory: string; tagImageType: string; tagDesignStyle: string; tagColorScheme: string }>) => {
+  const handleKbImageSelect = async (images: Array<{ id: number; imageUrl: string; imagePosition: string; tagCategory: string; tagImageType: string; tagDesignStyle: string; tagColorScheme: string }>) => {
     if (kbPickerTargetIdx === null || !editData) return;
     const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
     const ref = { ...newData.imageReferences[kbPickerTargetIdx] };
@@ -245,6 +258,7 @@ export function Step4References({
     ref.kbReferenceImages = newKbImages;
     newData.imageReferences[kbPickerTargetIdx] = ref;
     setEditData(newData);
+    await persistStep4Draft(newData);
     toast.success(`已添加 ${images.length} 张知识库参考图`);
   };
 
@@ -280,7 +294,26 @@ export function Step4References({
         compositionRefUrl,
         effectRefUrl,
       });
-      setEditData(result);
+      const existingRefs = editData.imageReferences || [];
+      const mergedResult = {
+        ...editData,
+        ...result,
+        imageReferences: (result.imageReferences || []).map((generatedRef: any, imageIndex: number) => {
+          const existingRef = existingRefs[imageIndex] || {};
+          return {
+            ...existingRef,
+            ...generatedRef,
+            compositionRefImageUrl: existingRef.compositionRefImageUrl,
+            effectRefImageUrl: existingRef.effectRefImageUrl,
+            kbReferenceImages: existingRef.kbReferenceImages,
+            imageNumber: existingRef.imageNumber ?? generatedRef.imageNumber,
+            imageType: existingRef.imageType ?? generatedRef.imageType,
+            purpose: existingRef.purpose ?? generatedRef.purpose,
+          };
+        }),
+      };
+      setEditData(mergedResult);
+      await persistStep4Draft(mergedResult);
       toast.success("已根据参考图和备注重新生成方案");
     } catch (err: any) {
       toast.error(err.message || "重新生成失败");
@@ -326,6 +359,7 @@ export function Step4References({
         purpose: ref.purpose ?? newRef.purpose,
       };
       setEditData(newData);
+      await persistStep4Draft(newData);
       toast.success(`第${idx + 1}张图已根据参考图重新生成`);
     } catch (err: any) {
       toast.error(err.message || "重新生成失败");
@@ -335,7 +369,7 @@ export function Step4References({
   };
 
   // Remove a KB reference image
-  const removeKbImage = (refIdx: number, imgIdx: number) => {
+  const removeKbImage = async (refIdx: number, imgIdx: number) => {
     if (!editData) return;
     const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
     const ref = { ...newData.imageReferences[refIdx] };
@@ -344,6 +378,7 @@ export function Step4References({
     ref.kbReferenceImages = imgs;
     newData.imageReferences[refIdx] = ref;
     setEditData(newData);
+    await persistStep4Draft(newData);
   };
 
   return (
