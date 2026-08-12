@@ -117,4 +117,16 @@ describe("图片工作流六步完整方案导出", () => {
     expect(page).toContain("trpc.imageWorkflow.getExportBundle.useQuery");
     expect(page).toContain("buildFullPlanContent(bundle.session, undefined, undefined, bundle)");
   });
+
+  it("按图片编号输出设计师逐图瀑布流，并在同一卡片对应大纲、参考方案和图片建议", () => {
+    const html = buildFullPlanContent(session, undefined, undefined, assets);
+    expect(html).toContain("逐图瀑布流方案");
+    expect(html).toContain('id="image-2"');
+    expect(html).toContain("Step 2 · 图片大纲");
+    expect(html).toContain("Step 4 · 参考图方案");
+    expect(html).toContain("Step 5 · 图片建议");
+    expect(html).toContain("展示密封结构");
+    expect(html).toContain("构图参考图");
+    expect(html).toContain("效果参考图");
+  });
 });

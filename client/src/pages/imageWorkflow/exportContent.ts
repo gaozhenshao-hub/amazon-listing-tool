@@ -23,6 +23,14 @@ function parseObject(value: unknown): any {
   try { return JSON.parse(String(value)); } catch { return {}; }
 }
 
+function inferImageNumber(item: any, fallback: number): number {
+  const explicit = Number(item?.imageNumber);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const label = String(item?.imageLabel || item?.label || item?.imageName || "");
+  const matched = label.match(/(?:图片|辅图|主图|A\+\s*模块|#)\s*(\d+)/i);
+  return matched ? Number(matched[1]) : fallback;
+}
+
 function renderImageAsset(img: any, source: string, label?: string) {
   const url = safeText(img?.imageUrl || img?.url || img?.thumbnailUrl || "");
   if (!url) return "";
@@ -70,6 +78,13 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
 .toc { background: #f9fafb; padding: 16px; border-radius: 8px; margin: 16px 0; }
 .toc a { color: #8B4513; text-decoration: none; }
 .toc a:hover { text-decoration: underline; }
+.image-waterfall { margin-top: 16px; }
+.image-flow-card { background: #fff; border: 1px solid #d9e1ea; border-radius: 12px; padding: 18px; margin: 16px 0; break-inside: avoid; box-shadow: 0 2px 8px rgba(15,23,42,.05); }
+.image-flow-title { display: flex; align-items: baseline; gap: 8px; border-bottom: 2px solid #8B4513; padding-bottom: 8px; margin-bottom: 12px; }
+.image-flow-title strong { color: #8B4513; font-size: 17px; }
+.flow-stage { margin: 12px 0; padding: 12px; border-radius: 8px; background: #fafafa; border-left: 4px solid #d4a574; }
+.flow-stage h4 { margin: 0 0 7px; color: #8B4513; }
+.flow-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media print { body { max-width: 100%; padding: 12px; } h2 { break-before: auto; } }
 </style></head><body>`);
 
@@ -359,6 +374,90 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
     }
   } else {
     s.push(`<p style="color:#999;">未生成或未确认</p>`);
+  }
+
+  // ===== Designer waterfall: one image, one complete execution context =====
+  if (session) {
+    const waterfallOutline = safeJsonParse(session.step2UserEdit || session.step2AiResult) || {};
+    const waterfallRefs = safeJsonParse(session.step4UserEdit || session.step4AiResult) || {};
+    const outlineItems = waterfallOutline.images || [
+      waterfallOutline.mainImage ? { ...waterfallOutline.mainImage, imageNumber: 1, imageLabel: "主图", imageType: "主图", content: waterfallOutline.mainImage.contentBrief, sellingPoint: waterfallOutline.mainImage.sellingPointRef, expressionMethod: waterfallOutline.mainImage.purpose } : null,
+      ...(waterfallOutline.secondaryImages || []).map((item: any, idx: number) => ({ ...item, imageNumber: item.imageNumber || idx + 2, imageLabel: item.imageLabel || `辅图 ${item.imageNumber || idx + 2}`, imageType: "辅图", content: item.contentBrief || item.content, sellingPoint: item.sellingPointRefs || item.sellingPoint, expressionMethod: item.expressionType || item.expressionMethod })),
+    ].filter(Boolean);
+    const refs = waterfallRefs.imageReferences || [];
+    const finalSecondary = en?.secondaryImages || [];
+    const allNumbers = Array.from(new Set([
+      ...refs.map((item: any, idx: number) => inferImageNumber(item, idx + 1)),
+      ...outlineItems.map((item: any, idx: number) => inferImageNumber(item, idx + 1)),
+      ...(en?.mainImage ? [1] : []),
+      ...finalSecondary.map((item: any, idx: number) => inferImageNumber(item, idx + 2)),
+    ])).filter(Number.isFinite).sort((a, b) => a - b);
+
+    if (allNumbers.length) {
+      s.push(`<hr class="divider"/><h2 id="designer-waterfall"><span class="step-badge">设计师执行版</span>逐图瀑布流方案</h2>`);
+      s.push(`<p class="section-note">按图片编号纵向对应 Step2 图片大纲、Step4 参考图方案及 Step5 图片建议。每张卡片即为一张图片的完整设计执行单。</p><div class="image-waterfall">`);
+      allNumbers.forEach((imageNumber) => {
+        const ref = refs.find((item: any, idx: number) => inferImageNumber(item, idx + 1) === imageNumber) || {};
+        const outlineItem = outlineItems.find((item: any, idx: number) => inferImageNumber(item, idx + 1) === imageNumber) || {};
+        const finalItem = imageNumber === 1 ? en?.mainImage : finalSecondary.find((item: any, idx: number) => inferImageNumber(item, idx + 2) === imageNumber);
+        const aplusIndex = refs.filter((item: any) => String(item.imageType || "").includes("A+")).findIndex((item: any, idx: number) => inferImageNumber(item, idx + 1) === imageNumber);
+        const aplusItem = aplusIndex >= 0 ? en?.aPlusContent?.sections?.[aplusIndex] : null;
+        const displayName = ref.imageLabel || outlineItem.imageLabel || finalItem?.title || (aplusItem ? `A+ 模块 ${aplusIndex + 1}` : imageNumber === 1 ? "主图" : `辅图 ${imageNumber}`);
+        const displayType = ref.imageType || outlineItem.imageType || (aplusItem ? "A+ 模块" : imageNumber === 1 ? "主图" : "辅图");
+        const composition = ref.compositionReference || {};
+        const effect = ref.effectReference || {};
+        s.push(`<article class="image-flow-card" id="image-${imageNumber}"><div class="image-flow-title"><strong>图片 #${imageNumber} · ${safeText(displayName)}</strong><span class="badge">${safeText(displayType)}</span>${ref.purpose ? `<span style="font-size:12px;color:#667085;">${safeText(ref.purpose)}</span>` : ""}</div>`);
+
+        s.push(`<section class="flow-stage"><h4>Step 2 · 图片大纲</h4>`);
+        if (outlineItem.content || outlineItem.description) s.push(`<p><strong>内容规划：</strong>${safeText(outlineItem.content || outlineItem.description)}</p>`);
+        if (outlineItem.sellingPoint || outlineItem.linkedSellingPoint) s.push(`<p><strong>对应卖点：</strong>${safeText(Array.isArray(outlineItem.sellingPoint) ? outlineItem.sellingPoint.join("、") : outlineItem.sellingPoint || outlineItem.linkedSellingPoint)}</p>`);
+        if (outlineItem.expressionMethod) s.push(`<p><strong>表达方式：</strong>${safeText(outlineItem.expressionMethod)}</p>`);
+        if (!outlineItem.content && !outlineItem.description) s.push(`<p style="color:#888;">该图片未配置独立大纲，以下参考方案和图片建议可直接作为执行依据。</p>`);
+        s.push(`</section>`);
+
+        s.push(`<section class="flow-stage"><h4>Step 4 · 参考图方案</h4><div class="flow-columns"><div>`);
+        if (composition.compositionType || composition.type) s.push(`<p><strong>构图方式：</strong>${safeText(composition.compositionType || composition.type)}</p>`);
+        if (composition.layout || composition.description) s.push(`<p><strong>布局：</strong>${safeText(composition.layout || composition.description)}</p>`);
+        if (composition.focalPoint || composition.focus) s.push(`<p><strong>焦点：</strong>${safeText(composition.focalPoint || composition.focus)}</p>`);
+        if (composition.visualFlow || composition.visualGuide) s.push(`<p><strong>视觉引导：</strong>${safeText(composition.visualFlow || composition.visualGuide)}</p>`);
+        if (composition.proportions || composition.ratio) s.push(`<p><strong>比例：</strong>${safeText(composition.proportions || composition.ratio)}</p>`);
+        s.push(`</div><div>`);
+        if (effect.colorApplication || effect.colorScheme) s.push(`<p><strong>配色应用：</strong>${safeText(effect.colorApplication || effect.colorScheme)}</p>`);
+        if (effect.typographyApplication || effect.typography) s.push(`<p><strong>字体应用：</strong>${safeText(effect.typographyApplication || effect.typography)}</p>`);
+        if (effect.iconApplication || effect.icons) s.push(`<p><strong>图标应用：</strong>${safeText(effect.iconApplication || effect.icons)}</p>`);
+        if (effect.atmosphere || effect.style) s.push(`<p><strong>氛围：</strong>${safeText(effect.atmosphere || effect.style)}</p>`);
+        if (effect.lightingStyle || effect.lighting) s.push(`<p><strong>光影：</strong>${safeText(effect.lightingStyle || effect.lighting)}</p>`);
+        s.push(`</div></div>`);
+        const referenceAssets = [
+          ref.compositionRefImageUrl ? renderImageAsset({ imageUrl: ref.compositionRefImageUrl }, "构图参考图", displayName) : "",
+          ref.effectRefImageUrl ? renderImageAsset({ imageUrl: ref.effectRefImageUrl }, "效果参考图", displayName) : "",
+          ...(ref.kbReferenceImages || []).map((img: any) => renderImageAsset(img, `知识库参考图 #${img.id || ""}`, img.note || displayName)),
+        ].filter(Boolean);
+        if (referenceAssets.length) s.push(`<div class="asset-grid">${referenceAssets.join("")}</div>`);
+        if (ref.designNotes || composition.designNotes) s.push(`<p><strong>设计注意事项：</strong>${safeText(ref.designNotes || composition.designNotes)}</p>`);
+        s.push(`</section>`);
+
+        s.push(`<section class="flow-stage"><h4>Step 5 · 图片建议</h4>`);
+        if (finalItem) {
+          if (finalItem.title) s.push(`<p><strong>标题：</strong>${safeText(finalItem.title)}</p>`);
+          if (finalItem.concept || finalItem.focus) s.push(`<p><strong>核心表达：</strong>${safeText(finalItem.concept || finalItem.focus)}</p>`);
+          if (finalItem.expressionMethod) s.push(`<p><strong>表达方式：</strong>${safeText(finalItem.expressionMethod)}</p>`);
+          if (finalItem.composition) s.push(`<p><strong>建议构图：</strong>${safeText(finalItem.composition)}</p>`);
+          if (finalItem.textOverlay) s.push(`<p><strong>画面文案：</strong>${safeText(finalItem.textOverlay)}</p>`);
+          if (finalItem.shootingNotes) s.push(`<p><strong>拍摄提示：</strong>${safeText(finalItem.shootingNotes)}</p>`);
+          if (finalItem.fabe) s.push(`<div class="fabe"><strong>FABE：</strong>F: ${safeText(finalItem.fabe.feature)} | A: ${safeText(finalItem.fabe.advantage)} | B: ${safeText(finalItem.fabe.benefit)} | E: ${safeText(finalItem.fabe.evidence)}</div>`);
+        } else if (aplusItem) {
+          s.push(`<p><strong>${safeText(aplusItem.title || `A+ 模块 ${aplusIndex + 1}`)}</strong></p>`);
+          if (aplusItem.purpose) s.push(`<p><strong>目的：</strong>${safeText(aplusItem.purpose)}</p>`);
+          if (aplusItem.content) s.push(`<p><strong>内容：</strong>${safeText(aplusItem.content)}</p>`);
+          if (aplusItem.expressionMethod) s.push(`<p><strong>表达方式：</strong>${safeText(aplusItem.expressionMethod)}</p>`);
+        } else {
+          s.push(`<p style="color:#888;">该图片尚未生成 Step5 独立建议，可依据 Step2 大纲和 Step4 参考方案执行。</p>`);
+        }
+        s.push(`</section></article>`);
+      });
+      s.push(`</div>`);
+    }
   }
 
   s.push(`</body></html>`);
