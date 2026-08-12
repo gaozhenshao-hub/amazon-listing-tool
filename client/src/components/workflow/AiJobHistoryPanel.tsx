@@ -79,6 +79,17 @@ export function AiJobHistoryPanel({
     () => jobs.filter((job) => job.status === "failed").length,
     [jobs],
   );
+  const failedJobSummary = useMemo(() => {
+    const succeededAfterFailure = new Set(
+      jobs
+        .filter((job) => job.status === "succeeded")
+        .map((job) => job.skillSlug || job.procedure || job.kind),
+    );
+    const historical = jobs.filter((job) =>
+      job.status === "failed" && succeededAfterFailure.has(job.skillSlug || job.procedure || job.kind),
+    ).length;
+    return { historical, blocking: Math.max(0, failedCount - historical) };
+  }, [failedCount, jobs]);
 
   const toggleDetails = (runId: string) => {
     setExpandedJobs((current) => {
@@ -101,7 +112,12 @@ export function AiJobHistoryPanel({
           <History className="h-4 w-4 text-primary" />
           <span className="text-sm font-semibold">{title}</span>
           {activeCount > 0 && <Badge variant="outline">进行中 {activeCount}</Badge>}
-          {failedCount > 0 && <Badge variant="outline" className="border-red-200 text-red-700">失败 {failedCount}</Badge>}
+          {failedJobSummary.blocking > 0 && (
+            <Badge variant="outline" className="border-red-200 text-red-700">待处理失败 {failedJobSummary.blocking}</Badge>
+          )}
+          {failedJobSummary.historical > 0 && (
+            <Badge variant="outline" className="border-amber-200 text-amber-700">历史失败 {failedJobSummary.historical}</Badge>
+          )}
         </span>
         {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
       </button>
@@ -109,7 +125,7 @@ export function AiJobHistoryPanel({
       {open && (
         <div className="space-y-3 border-t px-4 py-3">
           <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">记录保留执行进度、重试次数、错误详情和恢复关系。</p>
+            <p className="text-xs text-muted-foreground">记录保留执行进度、重试次数、错误详情和恢复关系；已有同类成功任务的失败记录标为历史失败。</p>
             <Button size="icon" variant="ghost" title="刷新任务历史" onClick={() => jobsQuery.refetch()}>
               <RefreshCw className={cn("h-4 w-4", jobsQuery.isFetching && "animate-spin")} />
             </Button>

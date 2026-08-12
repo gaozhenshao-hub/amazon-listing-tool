@@ -65,6 +65,8 @@ export function WorkflowShell({
   const activeKey = workflowIdKey(activeStepId);
   const isRunLoading = isLoadingRun || agentRun.isLoading;
   const isTerminalRun = detail?.run?.status === "completed" || detail?.run?.status === "canceled";
+  // 业务步骤已锁定时，旧 Agent run 的失败记录只应作为历史诊断信息，不能误标当前工作流失败。
+  const displayRunStatus = detail?.run?.status === "failed" && locked.size > 0 ? "completed" : detail?.run?.status;
 
   const renderedChildren =
     typeof children === "function"
@@ -78,7 +80,7 @@ export function WorkflowShell({
           <div className="flex items-center gap-2">
             <Workflow className="h-5 w-5 text-primary" />
             <h1 className="truncate text-2xl font-bold tracking-tight">{title}</h1>
-            {detail?.run?.runId && <WorkflowStatusBadge status={detail.run.status} />}
+            {detail?.run?.runId && <WorkflowStatusBadge status={displayRunStatus} />}
           </div>
           {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
         </div>

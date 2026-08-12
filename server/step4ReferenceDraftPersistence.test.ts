@@ -77,4 +77,12 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(workflowSteps).toContain("getCurrentStep4ImageVersions(session.id)");
     expect(workflowSteps).toContain("整体确认只会发布独立确认版本");
   });
+
+  it("已锁定业务步骤时，旧 Agent 失败状态只能作为历史诊断，不能误标当前工作流失败", () => {
+    const shell = fs.readFileSync(path.join(root, "client/src/components/workflow/WorkflowShell.tsx"), "utf8");
+    const history = fs.readFileSync(path.join(root, "client/src/components/workflow/AiJobHistoryPanel.tsx"), "utf8");
+    expect(shell).toContain('detail?.run?.status === "failed" && locked.size > 0 ? "completed"');
+    expect(history).toContain("历史失败");
+    expect(history).toContain("待处理失败");
+  });
 });
