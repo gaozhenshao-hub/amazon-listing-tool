@@ -3,6 +3,9 @@ import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
 import * as devDb from "../devDb";
 import { storagePut } from "../storage";
+import { getDb } from "../repositories/dbClient";
+import { devPanoramaStatus } from "../../drizzle/schema";
+import { eq } from "drizzle-orm";
 import {
   productDevelopmentWorkspaceId,
   recordProductDevelopmentAudit,
@@ -13,6 +16,13 @@ import {
   updateProjectProgress,
 } from "../domains/product_development/projects/projectListService";
 import type { ProductDevelopmentContext } from "../domains/product_development/types";
+
+async function invalidatePanoramaConfirmation(projectId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(devPanoramaStatus).set({ confirmed: 0, confirmedAt: null })
+    .where(eq(devPanoramaStatus.projectId, projectId));
+}
 
 export const devProjectRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -331,6 +341,7 @@ export const devProjectRouter = router({
         packageSize: p.packageSize ?? null,
         packageSizeTier: p.packageSizeTier ?? null,
       })));
+      await invalidatePanoramaConfirmation(input.projectId);
       return { success: true, count: input.products.length };
     }),
 
@@ -393,6 +404,7 @@ export const devProjectRouter = router({
     .mutation(async ({ ctx, input }) => {
       await resolveDevProjectAccess(input.projectId, ctx, "update");
       await devDb.confirmDevFilesByType(input.projectId, input.fileType);
+      await invalidatePanoramaConfirmation(input.projectId);
       await recordProductDevelopmentAudit({
         ctx,
         action: "product_development.data.confirm",
@@ -412,6 +424,7 @@ export const devProjectRouter = router({
     .mutation(async ({ ctx, input }) => {
       await resolveDevProjectAccess(input.projectId, ctx, "update");
       await devDb.unconfirmDevFilesByType(input.projectId, input.fileType);
+      await invalidatePanoramaConfirmation(input.projectId);
       await recordProductDevelopmentAudit({
         ctx,
         action: "product_development.data.unlock",

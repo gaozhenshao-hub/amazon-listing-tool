@@ -818,6 +818,7 @@ export const devPanoramaStatus = mysqlTable("dev_panorama_status", {
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   confirmed: int("confirmed").default(0).notNull(), // 0=未确认, 1=已确认
+  currentVersionId: int("currentVersionId"),
   confirmedAt: timestamp("confirmedAt"),
   lastMergedAt: timestamp("lastMergedAt"),
   totalProducts: int("totalProducts").default(0),
@@ -830,6 +831,26 @@ export const devPanoramaStatus = mysqlTable("dev_panorama_status", {
 export type DevPanoramaStatus = typeof devPanoramaStatus.$inferSelect;
 
 export type InsertDevPanoramaStatus = typeof devPanoramaStatus.$inferInsert;
+
+// 人工确认后的 ASIN 竞品全景分析表快照。锁定态展示、下载和下游市场分析均应以该版本为准。
+export const devPanoramaVersions = mysqlTable("dev_panorama_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  version: int("version").notNull(),
+  snapshot: json("snapshot").notNull(),
+  sourceSummary: json("sourceSummary"),
+  status: mysqlEnum("status", ["confirmed", "superseded"]).default("confirmed").notNull(),
+  confirmedAt: timestamp("confirmedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  workspaceProjectVersionIdx: uniqueIndex("uq_dev_panorama_version").on(table.workspaceId, table.projectId, table.version),
+  projectStatusIdx: index("idx_dev_panorama_version_project_status").on(table.projectId, table.status, table.confirmedAt),
+}));
+
+export type DevPanoramaVersion = typeof devPanoramaVersions.$inferSelect;
 
 // AI-generated market structure and major-competitor matrix shown after panorama.
 export const devPanoramaMarketInsights = mysqlTable("dev_panorama_market_insights", {

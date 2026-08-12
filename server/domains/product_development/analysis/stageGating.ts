@@ -21,7 +21,7 @@ async function isPanoramaConfirmed(projectId: number): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
   const rows = await db.select().from(devPanoramaStatus).where(eq(devPanoramaStatus.projectId, projectId)).limit(1);
-  return rows.length > 0 && rows[0].confirmed === 1;
+  return rows.length > 0 && rows[0].confirmed === 1 && Boolean(rows[0].currentVersionId);
 }
 
 async function areProductTagsConfirmed(projectId: number): Promise<boolean> {

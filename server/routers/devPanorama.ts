@@ -6,7 +6,7 @@ import {
   recordProductDevelopmentAudit,
 } from "../domains/product_development/security/productDevelopmentAccess";
 import { getDb } from "../repositories/dbClient";
-import { devProducts, devPanoramaStatus, devProjectTagCategories, devProjectTagItems, devProductTags } from "../../drizzle/schema";
+import { devProducts, devPanoramaStatus, devPanoramaVersions, devProjectTagCategories, devProjectTagItems, devProductTags } from "../../drizzle/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import {
   buildAdaptivePriceBands,
@@ -37,12 +37,12 @@ export const devPanoramaRouter = router({
       if (!db) return { products: [], tags: {}, status: null, historyCols: [] };
 
       // 1. Get all products
-      const products = await db.select().from(devProducts)
+      let products = await db.select().from(devProducts)
         .where(eq(devProducts.projectId, input.projectId))
         .orderBy(devProducts.searchRank);
 
       // 2. Get all confirmed tag items for this project (from tag management)
-      const tagItems = await db.select({
+      let tagItems = await db.select({
         id: devProjectTagItems.id,
         categoryId: devProjectTagItems.categoryId,
         tagName: devProjectTagItems.tagName,
@@ -52,7 +52,7 @@ export const devPanoramaRouter = router({
         .where(eq(devProjectTagItems.projectId, input.projectId));
 
       // 3. Get tag categories
-      const tagCategories = await db.select().from(devProjectTagCategories)
+      let tagCategories = await db.select().from(devProjectTagCategories)
         .where(eq(devProjectTagCategories.projectId, input.projectId))
         .orderBy(devProjectTagCategories.sortOrder);
 
@@ -61,7 +61,7 @@ export const devPanoramaRouter = router({
         .where(eq(devProductTags.projectId, input.projectId));
 
       // Build tag map: asin → { dimensionName: dimensionValue }
-      const tagMap: Record<string, Record<string, string>> = {};
+      let tagMap: Record<string, Record<string, string>> = {};
       for (const pt of productTags) {
         if (!tagMap[pt.asin]) tagMap[pt.asin] = {};
         tagMap[pt.asin][pt.dimensionName] = pt.dimensionValue;
@@ -74,6 +74,17 @@ export const devPanoramaRouter = router({
           eq(devPanoramaStatus.userId, ctx.user.id)
         ));
       const status = statusRows[0] || null;
+      if (status?.confirmed === 1 && status.currentVersionId) {
+        const versionRows = await db.select().from(devPanoramaVersions)
+          .where(eq(devPanoramaVersions.id, status.currentVersionId)).limit(1);
+        const snapshot = versionRows[0]?.snapshot as any;
+        if (snapshot && Array.isArray(snapshot.products)) {
+          products = snapshot.products;
+          tagMap = snapshot.tagMap || {};
+          tagCategories = snapshot.tagCategories || [];
+          tagItems = snapshot.tagItems || [];
+        }
+      }
 
       // 6. Extract all unique history month columns
       const historyColSet = new Set<string>();
@@ -131,9 +142,14 @@ export const devPanoramaRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database not available");
+      const productRows = await db.select({ projectId: devProducts.projectId })
+        .from(devProducts).where(eq(devProducts.id, input.productId)).limit(1);
+      if (!productRows[0]) throw new Error("产品不存在");
       await db.update(devProducts)
         .set({ [input.field]: input.value })
         .where(eq(devProducts.id, input.productId));
+      await db.update(devPanoramaStatus).set({ confirmed: 0, confirmedAt: null })
+        .where(eq(devPanoramaStatus.projectId, productRows[0].projectId));
       return { success: true };
     }),
 
@@ -236,6 +252,8 @@ export const devPanoramaRouter = router({
           confirmed: 1,
         });
       }
+      await db.update(devPanoramaStatus).set({ confirmed: 0, confirmedAt: null })
+        .where(eq(devPanoramaStatus.projectId, input.projectId));
       return { success: true };
     }),
 
@@ -249,14 +267,42 @@ export const devPanoramaRouter = router({
         eq(devPanoramaStatus.projectId, input.projectId),
         eq(devPanoramaStatus.userId, ctx.user.id)
       ));
-      const productCount = await db.select({ count: sql<number>`count(*)` })
-        .from(devProducts).where(eq(devProducts.projectId, input.projectId));
-      const total = Number(productCount[0]?.count || 0);
+      const products = await db.select().from(devProducts)
+        .where(eq(devProducts.projectId, input.projectId)).orderBy(devProducts.searchRank);
+      const total = products.length;
+      if (total === 0) throw new Error("竞品全景分析表为空，无法确认");
+      const tagCategories = await db.select().from(devProjectTagCategories)
+        .where(eq(devProjectTagCategories.projectId, input.projectId)).orderBy(devProjectTagCategories.sortOrder);
+      const tagItems = await db.select().from(devProjectTagItems)
+        .where(eq(devProjectTagItems.projectId, input.projectId));
+      const productTags = await db.select().from(devProductTags)
+        .where(eq(devProductTags.projectId, input.projectId));
+      const tagMap: Record<string, Record<string, string>> = {};
+      for (const tag of productTags) {
+        if (!tagMap[tag.asin]) tagMap[tag.asin] = {};
+        tagMap[tag.asin][tag.dimensionName] = tag.dimensionValue;
+      }
+      const priorVersions = await db.select({ version: devPanoramaVersions.version })
+        .from(devPanoramaVersions)
+        .where(and(eq(devPanoramaVersions.projectId, input.projectId), eq(devPanoramaVersions.userId, ctx.user.id)))
+        .orderBy(desc(devPanoramaVersions.version)).limit(1);
+      const version = Number(priorVersions[0]?.version || 0) + 1;
+      const snapshot = { products, tagMap, tagCategories, tagItems, confirmedAt: new Date().toISOString() };
+      const insertedVersion = await db.insert(devPanoramaVersions).values({
+        workspaceId: productDevelopmentWorkspaceId(ctx), projectId: input.projectId, userId: ctx.user.id,
+        version, snapshot, sourceSummary: { totalProducts: total, tagCount: productTags.length }, status: "confirmed",
+      });
+      const versionId = Number((insertedVersion as any).insertId);
+      if (existing[0]?.currentVersionId) {
+        await db.update(devPanoramaVersions).set({ status: "superseded" })
+          .where(eq(devPanoramaVersions.id, existing[0].currentVersionId));
+      }
       if (existing.length > 0) {
         await db.update(devPanoramaStatus).set({
           confirmed: 1,
           confirmedAt: new Date(),
           totalProducts: total,
+          currentVersionId: versionId,
         }).where(eq(devPanoramaStatus.id, existing[0].id));
       } else {
         await db.insert(devPanoramaStatus).values({
@@ -267,6 +313,7 @@ export const devPanoramaRouter = router({
           confirmedAt: new Date(),
           lastMergedAt: new Date(),
           totalProducts: total,
+          currentVersionId: versionId,
         });
       }
       await recordProductDevelopmentAudit({
@@ -275,7 +322,7 @@ export const devPanoramaRouter = router({
         projectId: input.projectId,
         resourceType: "dev_panorama",
         resourceId: input.projectId,
-        afterSnapshot: { confirmed: true, totalProducts: total },
+        afterSnapshot: { confirmed: true, totalProducts: total, version, versionId },
       });
       return { success: true };
     }),
@@ -398,7 +445,7 @@ export const devPanoramaRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Database not available");
 
-      const rawProducts = await db.select().from(devProducts)
+      let rawProducts = await db.select().from(devProducts)
         .where(eq(devProducts.projectId, input.projectId))
         .orderBy(devProducts.searchRank);
       const marketInsight = await getPanoramaMarketInsight(input.projectId).catch(() => null);
@@ -411,17 +458,33 @@ export const devPanoramaRouter = router({
       );
       const products = normalizeParentMarketMetrics(rawProducts, { priceBands });
 
-      const tagCategories = await db.select().from(devProjectTagCategories)
+      let tagCategories = await db.select().from(devProjectTagCategories)
         .where(eq(devProjectTagCategories.projectId, input.projectId))
         .orderBy(devProjectTagCategories.sortOrder);
 
       const productTags = await db.select().from(devProductTags)
         .where(eq(devProductTags.projectId, input.projectId));
 
-      const tagMap: Record<string, Record<string, string>> = {};
+      let tagMap: Record<string, Record<string, string>> = {};
       for (const pt of productTags) {
         if (!tagMap[pt.asin]) tagMap[pt.asin] = {};
         tagMap[pt.asin][pt.dimensionName] = pt.dimensionValue;
+      }
+
+      const statusRows = await db.select().from(devPanoramaStatus).where(and(
+        eq(devPanoramaStatus.projectId, input.projectId),
+        eq(devPanoramaStatus.userId, ctx.user.id),
+      )).limit(1);
+      const currentVersionId = statusRows[0]?.confirmed === 1 ? statusRows[0]?.currentVersionId : null;
+      if (currentVersionId) {
+        const versionRows = await db.select().from(devPanoramaVersions)
+          .where(eq(devPanoramaVersions.id, currentVersionId)).limit(1);
+        const snapshot = versionRows[0]?.snapshot as any;
+        if (snapshot && Array.isArray(snapshot.products)) {
+          rawProducts = snapshot.products;
+          tagCategories = snapshot.tagCategories || [];
+          tagMap = snapshot.tagMap || {};
+        }
       }
 
       // Collect history columns

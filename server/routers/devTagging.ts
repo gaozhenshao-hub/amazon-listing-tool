@@ -7,11 +7,17 @@ import { getDb } from "../repositories/dbClient";
 import {
   devProjectTagCategories,
   devProjectTagItems,
+  devPanoramaStatus,
   devProducts,
   devProductTags,
 } from "../../drizzle/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { productDevelopmentWorkspaceId } from "../domains/product_development/security/productDevelopmentAccess";
+
+async function invalidatePanoramaConfirmation(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, projectId: number) {
+  await db.update(devPanoramaStatus).set({ confirmed: 0, confirmedAt: null })
+    .where(eq(devPanoramaStatus.projectId, projectId));
+}
 
 /**
  * 属性标注路由 — 与标签管理打通
@@ -287,6 +293,8 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
         }
       }
 
+      await invalidatePanoramaConfirmation(db, input.projectId);
+
       return {
         success: true,
         tagged: new Set(allTags.map(t => t.asin)).size,
@@ -336,9 +344,12 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database not available");
+      const tagRows = await db.select({ projectId: devProductTags.projectId }).from(devProductTags)
+        .where(eq(devProductTags.id, input.tagId)).limit(1);
       await db.update(devProductTags)
         .set({ dimensionValue: input.dimensionValue, source: "manual" })
         .where(eq(devProductTags.id, input.tagId));
+      if (tagRows[0]) await invalidatePanoramaConfirmation(db, tagRows[0].projectId);
       return { success: true };
     }),
 
@@ -364,6 +375,7 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
         source: "manual",
         confirmed: 0,
       });
+      await invalidatePanoramaConfirmation(db, input.projectId);
       return { success: true, id: result.insertId };
     }),
 
@@ -375,7 +387,10 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database not available");
+      const tagRows = await db.select({ projectId: devProductTags.projectId }).from(devProductTags)
+        .where(eq(devProductTags.id, input.tagId)).limit(1);
       await db.delete(devProductTags).where(eq(devProductTags.id, input.tagId));
+      if (tagRows[0]) await invalidatePanoramaConfirmation(db, tagRows[0].projectId);
       return { success: true };
     }),
 
@@ -446,6 +461,8 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       await devDb.confirmAllDevProductTags(input.projectId);
+      const db = await getDb();
+      if (db) await invalidatePanoramaConfirmation(db, input.projectId);
       // Sync: also confirm the attribute_tagging stage in devAnalysisStages for backward compat with gating
       try {
         await devDb.confirmDevAnalysisStage(input.projectId, "attribute_tagging", "");
@@ -464,6 +481,7 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
       await db.update(devProductTags)
         .set({ confirmed: 0 })
         .where(eq(devProductTags.projectId, input.projectId));
+      await invalidatePanoramaConfirmation(db, input.projectId);
       // Sync: also unlock the attribute_tagging stage
       try {
         await devDb.unlockDevAnalysisStage(input.projectId, "attribute_tagging");
