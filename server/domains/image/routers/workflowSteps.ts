@@ -83,10 +83,14 @@ function mergeStep4CompleteSnapshot(
   const imageReferences = currentDraft.imageReferences.map((currentRef: any, index: number) => {
     const priorRef = priorDraft?.imageReferences?.[index] || {};
     const aiRef = latestAi?.imageReferences?.[index] || {};
+    const lockedSnapshot = currentRef.isLocked && currentRef.lockedSnapshot
+      ? currentRef.lockedSnapshot
+      : null;
     return {
       ...aiRef,
       ...priorRef,
       ...currentRef,
+      ...(lockedSnapshot || {}),
       compositionRefImageUrl: currentRef.compositionRefImageUrl || priorRef.compositionRefImageUrl || aiRef.compositionRefImageUrl || compositionRefs?.[`step4-ref-${index}-composition`],
       effectRefImageUrl: currentRef.effectRefImageUrl || priorRef.effectRefImageUrl || aiRef.effectRefImageUrl || effectRefs?.[`step4-ref-${index}-effect`],
       kbReferenceImages: currentRef.kbReferenceImages?.length ? currentRef.kbReferenceImages : priorRef.kbReferenceImages?.length ? priorRef.kbReferenceImages : aiRef.kbReferenceImages || [],

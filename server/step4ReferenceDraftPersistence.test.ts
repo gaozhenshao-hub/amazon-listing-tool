@@ -50,4 +50,14 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(artifactRegistry).toContain("sessionRef.compositionRefImageUrl || artifactRef.compositionRefImageUrl");
     expect(artifactRegistry).toContain("step === 4 && session.step4UserEdit");
   });
+
+  it("单图重新生成可独立确认锁定，且全局确认会采用该图的锁定快照", () => {
+    expect(page).toContain("const handleLockSingle = async (idx: number)");
+    expect(page).toContain("const handleUnlockSingle = async (idx: number)");
+    expect(page).toContain("lockedSnapshot:");
+    expect(page).toContain("确认此图");
+    expect(page).toContain("解锁此图");
+    expect(workflowSteps).toContain("const lockedSnapshot = currentRef.isLocked && currentRef.lockedSnapshot");
+    expect(workflowSteps).toContain("...(lockedSnapshot || {})");
+  });
 });

@@ -126,6 +126,36 @@ export function Step4References({
     });
   };
 
+  const handleLockSingle = async (idx: number) => {
+    if (!editData?.imageReferences?.[idx]) return;
+    const newData = { ...editData, imageReferences: [...editData.imageReferences] };
+    const currentRef = { ...newData.imageReferences[idx] };
+    newData.imageReferences[idx] = {
+      ...currentRef,
+      isLocked: true,
+      lockedAt: new Date().toISOString(),
+      lockedSnapshot: { ...currentRef, isLocked: undefined, lockedSnapshot: undefined },
+    };
+    setEditData(newData);
+    await persistStep4Draft(newData);
+    toast.success(`已确认并锁定第${idx + 1}张图`);
+  };
+
+  const handleUnlockSingle = async (idx: number) => {
+    if (!editData?.imageReferences?.[idx]) return;
+    const newData = { ...editData, imageReferences: [...editData.imageReferences] };
+    const currentRef = newData.imageReferences[idx];
+    newData.imageReferences[idx] = {
+      ...(currentRef.lockedSnapshot || currentRef),
+      isLocked: false,
+      lockedAt: undefined,
+      lockedSnapshot: currentRef.lockedSnapshot,
+    };
+    setEditData(newData);
+    await persistStep4Draft(newData);
+    toast.success(`第${idx + 1}张图已解锁，可继续编辑或重新生成`);
+  };
+
   // Upload independent reference image (composition or effect)
   const handleRefImageUpload = async (idx: number, refType: 'composition' | 'effect', file: File) => {
     setUploadingRef({ idx, type: refType });
@@ -166,6 +196,10 @@ export function Step4References({
   // Re-optimize Step 4 based on uploaded reference images
   const handleReoptimize = async (idx: number) => {
     if (!editData) return;
+    if (editData.imageReferences?.[idx]?.isLocked) {
+      toast.error("请先解锁此图，再重新优化");
+      return;
+    }
     setReoptimizingIdx(idx);
     try {
       const ref = editData.imageReferences[idx];
@@ -226,6 +260,7 @@ export function Step4References({
 
   const updateRef = (idx: number, section: string, field: string, value: any) => {
     if (!editData) return;
+    if (editData.imageReferences?.[idx]?.isLocked) return;
     const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
     newData.imageReferences[idx] = {
       ...newData.imageReferences[idx],
@@ -328,6 +363,10 @@ export function Step4References({
     if (!editData) return;
     const ref = editData.imageReferences?.[idx];
     if (!ref) return;
+    if (ref.isLocked) {
+      toast.error("请先解锁此图，再单独重新生成");
+      return;
+    }
     const kbImages: Array<{ url: string; note?: string; position?: string }> = (ref.kbReferenceImages || []).map((kbImg: any) => ({
       url: kbImg.imageUrl,
       note: kbImg.note || undefined,
@@ -400,8 +439,10 @@ export function Step4References({
         onUnlock={handleUnlock}
       />
 
-      {editData?.imageReferences && !isGenerating && editData.imageReferences.map((ref: any, idx: number) => (
-        <Card key={idx}>
+      {editData?.imageReferences && !isGenerating && editData.imageReferences.map((ref: any, idx: number) => {
+        const isImageLocked = Boolean(ref.isLocked);
+        return (
+        <Card key={idx} className={isImageLocked ? "border-emerald-300 bg-emerald-50/20" : ""}>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
@@ -411,10 +452,10 @@ export function Step4References({
               </CardTitle>
               {!isConfirmed && (
                 <div className="flex gap-1.5">
-                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openKbPicker(idx, ref.imageType)}>
+                  {!isImageLocked && <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openKbPicker(idx, ref.imageType)}>
                     <BookOpen className="w-3.5 h-3.5 mr-1" /> 从知识库选图
-                  </Button>
-                  {(ref.kbReferenceImages?.length > 0 || ref.compositionRefImageUrl || ref.effectRefImageUrl) && (
+                  </Button>}
+                  {!isImageLocked && (ref.kbReferenceImages?.length > 0 || ref.compositionRefImageUrl || ref.effectRefImageUrl) && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -427,6 +468,15 @@ export function Step4References({
                       {regeneratingSingleIdx === idx ? "AI 分析中..." : "单独重新生成"}
                     </Button>
                   )}
+                  <Button
+                    variant={isImageLocked ? "outline" : "default"}
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => isImageLocked ? handleUnlockSingle(idx) : handleLockSingle(idx)}
+                  >
+                    {isImageLocked ? <Unlock className="w-3.5 h-3.5 mr-1" /> : <Lock className="w-3.5 h-3.5 mr-1" />}
+                    {isImageLocked ? "解锁此图" : "确认此图"}
+                  </Button>
                 </div>
               )}
             </div>
@@ -454,7 +504,7 @@ export function Step4References({
                       <div className="flex-1 min-w-0 space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-emerald-700 font-medium">参考图 {imgIdx + 1}</span>
-                          {!isConfirmed && (
+                          {!isConfirmed && !isImageLocked && (
                             <button
                               className="w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
                               onClick={() => removeKbImage(idx, imgIdx)}
@@ -463,7 +513,7 @@ export function Step4References({
                             </button>
                           )}
                         </div>
-                        {!isConfirmed ? (
+                        {!isConfirmed && !isImageLocked ? (
                           <Input
                             value={kbImg.note || ""}
                             onChange={(e) => {
@@ -498,7 +548,7 @@ export function Step4References({
                 {ref.compositionRefImageUrl ? (
                   <div className="relative group">
                     <img src={ref.compositionRefImageUrl} alt="构图参考" className="w-full h-32 object-cover rounded-lg border" />
-                    {!isConfirmed && (
+                    {!isConfirmed && !isImageLocked && (
                       <div className="absolute top-1 right-1 flex gap-1">
                         <label className="cursor-pointer bg-white/90 hover:bg-white rounded-full p-1 shadow-sm">
                           <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
@@ -531,7 +581,7 @@ export function Step4References({
                 {ref.effectRefImageUrl ? (
                   <div className="relative group">
                     <img src={ref.effectRefImageUrl} alt="效果参考" className="w-full h-32 object-cover rounded-lg border" />
-                    {!isConfirmed && (
+                    {!isConfirmed && !isImageLocked && (
                       <div className="absolute top-1 right-1 flex gap-1">
                         <label className="cursor-pointer bg-white/90 hover:bg-white rounded-full p-1 shadow-sm">
                           <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
@@ -558,7 +608,7 @@ export function Step4References({
             </div>
 
             {/* AI Re-optimize button when both ref images are uploaded */}
-            {(ref.compositionRefImageUrl || ref.effectRefImageUrl) && !isConfirmed && (
+            {(ref.compositionRefImageUrl || ref.effectRefImageUrl) && !isConfirmed && !isImageLocked && (
               <div className="mb-4 flex flex-col items-center gap-2">
                 <Button
                   variant="outline"
@@ -585,7 +635,7 @@ export function Step4References({
                 <h4 className="text-sm font-medium text-blue-700 mb-2 flex items-center gap-1">
                   <Layout className="w-3.5 h-3.5" /> 构图方案
                 </h4>
-                {isConfirmed ? (
+                {isConfirmed || isImageLocked ? (
                   <div className="space-y-1 text-xs">
                     <p><strong>构图方式:</strong> {ref.compositionReference?.compositionType}</p>
                     <p><strong>布局:</strong> {ref.compositionReference?.layout}</p>
@@ -609,7 +659,7 @@ export function Step4References({
                 <h4 className="text-sm font-medium text-amber-700 mb-2 flex items-center gap-1">
                   <Paintbrush className="w-3.5 h-3.5" /> 效果方案
                 </h4>
-                {isConfirmed ? (
+                {isConfirmed || isImageLocked ? (
                   <div className="space-y-1 text-xs">
                     <p><strong>配色应用:</strong> {ref.effectReference?.colorApplication}</p>
                     <p><strong>字体应用:</strong> {ref.effectReference?.typographyApplication}</p>
@@ -635,7 +685,8 @@ export function Step4References({
             )}
           </CardContent>
         </Card>
-      ))}
+        );
+      })}
 
       {editData?.overallConsistency && (
         <Card>
