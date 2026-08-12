@@ -512,9 +512,35 @@ export async function resolveSessionForExecution(
 export async function resolveSessionForDisplay(projectId: number, user: { id: number; role: string }) {
   const session = await resolveSessionAccess(projectId, user);
   if (!session) return null;
-  return hydrateImageWorkflowSessionFromArtifacts(session, undefined, {
+  const hydrated = await hydrateImageWorkflowSessionFromArtifacts(session, undefined, {
     onlyBusinessConfirmedSteps: true,
   });
+  // Step4 的用户确认快照包含构图图、效果图及知识库图等页面资产。
+  // 旧 Artifact 可能在补写前仍是 current；展示时以会话中刚确认的快照为文本权威，
+  // 再用 Artifact 仅补齐会话没有的图片资产，避免页面回退到旧方案。
+  if (Number(session.step4Confirmed) !== 1 || !session.step4UserEdit) return hydrated;
+  const sessionStep4 = parseStoredJson(session.step4UserEdit) as Record<string, any> | null;
+  const artifactStep4 = parseStoredJson(hydrated.step4UserEdit) as Record<string, any> | null;
+  if (!Array.isArray(sessionStep4?.imageReferences)) return hydrated;
+  const mergedReferences = sessionStep4.imageReferences.map((sessionRef: any, index: number) => {
+    const artifactRef = artifactStep4?.imageReferences?.[index] || {};
+    return {
+      ...artifactRef,
+      ...sessionRef,
+      compositionRefImageUrl: sessionRef.compositionRefImageUrl || artifactRef.compositionRefImageUrl,
+      effectRefImageUrl: sessionRef.effectRefImageUrl || artifactRef.effectRefImageUrl,
+      kbReferenceImages: sessionRef.kbReferenceImages?.length
+        ? sessionRef.kbReferenceImages
+        : artifactRef.kbReferenceImages || [],
+    };
+  });
+  const completeStep4 = { ...artifactStep4, ...sessionStep4, imageReferences: mergedReferences };
+  const completeStep4Json = JSON.stringify(completeStep4);
+  return {
+    ...hydrated,
+    step4AiResult: completeStep4Json,
+    step4UserEdit: completeStep4Json,
+  };
 }
 
 // Helper: ensure write access for imageWorkflow mutations

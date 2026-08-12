@@ -13,6 +13,7 @@ import {
   startImageStepGenerationJob,
   type ImageGenerationStep,
 } from "../services/stepGenerationJob";
+import { registerImageWorkflowStepArtifact } from "../../ai_os/services/businessArtifactRegistry";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -498,6 +499,12 @@ export const imageWorkflowStepProcedures = {
         step4Confirmed: 1,
         currentStep: 5,
       });
+      // Step4 锁定时必须等待完整快照成为当前正式 Artifact。
+      // 否则页面展示层会从较旧的已确认 Artifact 水合，覆盖刚确认的参考图与方案。
+      const artifact = await registerImageWorkflowStepArtifact(session.id, 4, "user_edit");
+      if (!artifact) {
+        console.warn(`[Step4] Complete snapshot was saved to the session but Artifact registration was unavailable: session=${session.id}`);
+      }
       void syncStepConfirmToAgent({
         agentRunId: session.agentRunId,
         stepNumber: 4,

@@ -38,4 +38,12 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(workflowSteps).toContain("step4AiResult: completeUserEdit");
     expect(workflowSteps).toContain("step4UserEdit: completeUserEdit");
   });
+
+  it("锁定态展示以会话确认快照为权威，并只用 Artifact 补齐缺失图片资产", () => {
+    const context = fs.readFileSync(path.join(root, "server/domains/image/routerContext.ts"), "utf8");
+    expect(workflowSteps).toContain("await registerImageWorkflowStepArtifact(session.id, 4, \"user_edit\")");
+    expect(context).toContain("const completeStep4 = { ...artifactStep4, ...sessionStep4, imageReferences: mergedReferences }");
+    expect(context).toContain("compositionRefImageUrl: sessionRef.compositionRefImageUrl || artifactRef.compositionRefImageUrl");
+    expect(context).toContain("kbReferenceImages: sessionRef.kbReferenceImages?.length");
+  });
 });
