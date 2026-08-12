@@ -33,6 +33,8 @@ describe("图片工作流六步完整方案导出", () => {
         atmosphere: "专业、硬核、可信赖",
         lightingStyle: "右侧硬光突出金属边缘",
       },
+      designNotes: "图中所有数据必须与产品参数一致",
+      designerNotes: ["保留金属质感", "避免背景抢占产品细节"],
       kbReferenceImages: [{ id: 10, imageUrl: "https://assets.example/reference.jpg" }],
     }] }),
     step5UserEdit: JSON.stringify({
@@ -106,6 +108,15 @@ describe("图片工作流六步完整方案导出", () => {
       expect(html).toContain(content);
     }
     expect(html).toContain("整套图片叙事逻辑");
+  });
+
+  it("为每条参考图导出对应图片序号与完整设计师注意事项", () => {
+    const html = buildFullPlanContent(session, undefined, undefined, assets);
+    expect(html).toContain("辅图 2");
+    expect(html).toContain("设计师注意事项：");
+    expect(html).toContain("图中所有数据必须与产品参数一致");
+    expect(html).toContain("保留金属质感");
+    expect(html).toContain("避免背景抢占产品细节");
   });
 
   it("通过后端导出包接口而不是页面缓存来取得完整资产", () => {

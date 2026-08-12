@@ -31,6 +31,18 @@ function inferImageNumber(item: any, fallback: number): number {
   return matched ? Number(matched[1]) : fallback;
 }
 
+function readableDetail(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "";
+  if (Array.isArray(value)) return value.map(readableDetail).filter(Boolean).join("；");
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, detail]) => `${key}：${readableDetail(detail)}`)
+      .filter((item) => !item.endsWith("："))
+      .join("；");
+  }
+  return String(value);
+}
+
 function renderImageAsset(img: any, source: string, label?: string) {
   const url = safeText(img?.imageUrl || img?.url || img?.thumbnailUrl || "");
   if (!url) return "";
@@ -297,9 +309,16 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
     s.push(`<h2 id="step4"><span class="step-badge">Step 4</span>参考图确认</h2>`);
     const refData = safeJsonParse(session.step4UserEdit || session.step4AiResult);
     if (refData?.imageReferences?.length) {
-      refData.imageReferences.forEach((ref: any) => {
+      refData.imageReferences.forEach((ref: any, index: number) => {
         s.push(`<div class="card">`);
-        s.push(`<h4>${safeText(ref.imageLabel || ref.label || ref.imageName || '图片参考')}</h4>`);
+        const imageNumber = inferImageNumber(ref, index + 1);
+        const imageType = String(ref.imageType || "");
+        const sequenceLabel = imageType.includes("A+") ? `A+ 模块 #${imageNumber}` : imageNumber === 1 ? "主图 #1" : `辅图 #${imageNumber}`;
+        const rawLabel = String(ref.imageLabel || ref.label || ref.imageName || "").trim();
+        const referenceTitle = rawLabel && rawLabel !== "图片参考"
+          ? (rawLabel.includes(String(imageNumber)) ? rawLabel : `${sequenceLabel} · ${rawLabel}`)
+          : sequenceLabel;
+        s.push(`<h4>${safeText(referenceTitle)}</h4>`);
         const composition = ref.compositionReference || {};
         const effect = ref.effectReference || {};
         if (Object.keys(composition).length) {
@@ -330,6 +349,19 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
         if (ref.kbReferenceImages?.length) {
           s.push(`<p><strong>知识库参考图:</strong></p>`);
           s.push(`<div class="asset-grid">${ref.kbReferenceImages.map((img: any) => renderImageAsset(img, `Step4 知识库参考图 #${img.id || ''}`)).join('')}</div>`);
+        }
+        const designerNotes = [
+          ref.designNotes,
+          ref.designerNotes,
+          ref.notes,
+          composition.designNotes,
+          composition.notes,
+          effect.designNotes,
+          effect.notes,
+        ].map(readableDetail).filter(Boolean);
+        const uniqueDesignerNotes = Array.from(new Set(designerNotes));
+        if (uniqueDesignerNotes.length) {
+          s.push(`<div class="fabe"><strong>设计师注意事项：</strong>${safeText(uniqueDesignerNotes.join("；"))}</div>`);
         }
         s.push(`</div>`);
       });
