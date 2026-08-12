@@ -520,6 +520,33 @@ function artifactContentString(content: unknown) {
   return typeof content === "string" ? content : JSON.stringify(content ?? null);
 }
 
+/**
+ * Step4 的会话确认快照包含用户刚完成的单图重新生成结果。锁定态水合时，
+ * Artifact 只能补齐会话中缺失的资产，绝不能用较早的 Artifact 文案覆盖它。
+ */
+function mergeStep4SessionSnapshotWithArtifact(sessionContent: unknown, artifactContent: unknown) {
+  const sessionSnapshot = parseArtifactContent(sessionContent) as Record<string, any> | null;
+  const artifactSnapshot = parseArtifactContent(artifactContent) as Record<string, any> | null;
+  if (!sessionSnapshot || typeof sessionSnapshot !== "object") return artifactContentString(artifactContent);
+  if (!artifactSnapshot || typeof artifactSnapshot !== "object") return JSON.stringify(sessionSnapshot);
+
+  const sessionRefs = Array.isArray(sessionSnapshot.imageReferences) ? sessionSnapshot.imageReferences : [];
+  const artifactRefs = Array.isArray(artifactSnapshot.imageReferences) ? artifactSnapshot.imageReferences : [];
+  const imageReferences = sessionRefs.map((sessionRef: Record<string, any>, index: number) => {
+    const artifactRef = artifactRefs[index] || {};
+    return {
+      ...artifactRef,
+      ...sessionRef,
+      compositionRefImageUrl: sessionRef.compositionRefImageUrl || artifactRef.compositionRefImageUrl,
+      effectRefImageUrl: sessionRef.effectRefImageUrl || artifactRef.effectRefImageUrl,
+      kbReferenceImages: sessionRef.kbReferenceImages?.length
+        ? sessionRef.kbReferenceImages
+        : artifactRef.kbReferenceImages || [],
+    };
+  });
+  return JSON.stringify({ ...artifactSnapshot, ...sessionSnapshot, imageReferences });
+}
+
 export async function resolveCurrentImageWorkflowStepArtifact(sessionId: number, step: number) {
   return resolveUnifiedArtifact({
     domain: "image",
@@ -550,7 +577,9 @@ export async function hydrateImageWorkflowSessionFromArtifacts<T extends Record<
     if (options?.onlyBusinessConfirmedSteps && Number(session[`step${step}Confirmed`] || 0) !== 1) continue;
     const artifact = artifacts[step];
     if (!artifact) continue;
-    hydrated[`step${step}UserEdit`] = artifactContentString(artifact.content);
+    hydrated[`step${step}UserEdit`] = step === 4 && session.step4UserEdit
+      ? mergeStep4SessionSnapshotWithArtifact(session.step4UserEdit, artifact.content)
+      : artifactContentString(artifact.content);
     hydrated[`step${step}Confirmed`] = 1;
     provenance.push({ step, artifactRef: artifact.ref });
     if (consumer) {
