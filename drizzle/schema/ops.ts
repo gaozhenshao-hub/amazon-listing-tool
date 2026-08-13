@@ -1794,6 +1794,36 @@ export const opsAsinDailySnapshots = mysqlTable("ops_asin_daily_snapshots", {
 export type OpsAsinDailySnapshot = typeof opsAsinDailySnapshots.$inferSelect;
 export type InsertOpsAsinDailySnapshot = typeof opsAsinDailySnapshots.$inferInsert;
 
+// Child-ASIN lifecycle status, derived from imported operational evidence and reversible by a human.
+export const opsAsinLifecycleStatuses = mysqlTable("ops_asin_lifecycle_statuses", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  storeName: varchar("store_name", { length: 200 }).notNull(),
+  country: varchar("country", { length: 50 }).notNull(),
+  status: mysqlEnum("status", ["active", "discontinued"]).default("active").notNull(),
+  reason: varchar("reason", { length: 80 }),
+  evidenceStartDate: varchar("evidence_start_date", { length: 10 }),
+  evidenceEndDate: varchar("evidence_end_date", { length: 10 }),
+  evidenceDays: int("evidence_days").default(0).notNull(),
+  evidenceSalesQty: int("evidence_sales_qty").default(0).notNull(),
+  evidenceProfit: decimal("evidence_profit", { precision: 14, scale: 2 }).default("0").notNull(),
+  evidenceMaxInventory: int("evidence_max_inventory").default(0).notNull(),
+  changedBy: int("changed_by"),
+  changedAt: timestamp("changed_at").defaultNow().notNull(),
+  restoredAt: timestamp("restored_at"),
+  restoreReason: varchar("restore_reason", { length: 500 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  asinStoreCountryIdx: index("ops_asin_lifecycle_asin_store_country_idx").on(table.workspaceId, table.asin, table.storeName, table.country),
+  statusIdx: index("ops_asin_lifecycle_status_idx").on(table.workspaceId, table.status),
+}));
+
+export type OpsAsinLifecycleStatus = typeof opsAsinLifecycleStatuses.$inferSelect;
+
 // User-entered local inventory is versioned and never overwrites an imported source snapshot.
 export const opsLocalInventoryAdjustments = mysqlTable("ops_local_inventory_adjustments", {
   workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
