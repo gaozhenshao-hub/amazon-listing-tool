@@ -46,6 +46,14 @@ describe("导入模式库存规划接口契约", () => {
     expect(routerSource).toContain("item.operator = operatorByParentKey.get");
   });
 
+  it("父 ASIN 可独立覆盖生产、物流和缓冲时间，并优先参与库存规划计算", () => {
+    expect(routerSource).toContain('item.scopeType === "parent_asin"');
+    expect(routerSource).toContain('scopeType: z.enum(["workspace", "store_country", "parent_asin", "asin"])');
+    expect(routerSource).toContain("parentAsin: latest.parentAsin");
+    expect(inventoryPageSource).toContain("产品独立货期");
+    expect(inventoryPageSource).toContain('scopeType: "parent_asin"');
+  });
+
   it("库存页以库存规划工作台替代旧预警主界面，并允许确认本地库存", () => {
     expect(inventoryPageSource).toContain("库存规划工作台");
     expect(inventoryPageSource).toContain("getInventoryPlanningFromImport");

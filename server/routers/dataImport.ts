@@ -629,6 +629,7 @@ export const dataImportRouter = router({
           .filter(item => item.asin === latest.asin && item.storeName === latest.storeName && item.country === latest.country && item.effectiveDate <= asOfDate)
           .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate) || b.id - a.id)[0];
         const parameter = parameters.find(item => item.scopeType === "asin" && item.asin === latest.asin && item.storeName === latest.storeName && item.country === latest.country)
+          || parameters.find(item => item.scopeType === "parent_asin" && item.parentAsin === latest.parentAsin && item.storeName === latest.storeName && item.country === latest.country)
           || parameters.find(item => item.scopeType === "store_country" && item.storeName === latest.storeName && item.country === latest.country)
           || parameters.find(item => item.scopeType === "workspace");
         const plan = calculateInventoryPlan({
@@ -644,7 +645,7 @@ export const dataImportRouter = router({
           moq: parameter?.moq ?? 0,
           packSize: parameter?.packSize ?? 1,
         });
-        return { asin: latest.asin, parentAsin: latest.parentAsin, storeName: latest.storeName, country: latest.country, title: latest.title || latest.productName, localInventory: local?.localQty || 0, localInventoryConfirmedAt: local?.confirmedAt || null, ...plan };
+        return { asin: latest.asin, parentAsin: latest.parentAsin, storeName: latest.storeName, country: latest.country, title: latest.title || latest.productName, localInventory: local?.localQty || 0, localInventoryConfirmedAt: local?.confirmedAt || null, parameterScope: parameter?.scopeType || "workspace", productionDays: parameter?.productionDays ?? 30, shippingDays: parameter?.shippingDays ?? 30, bufferDays: parameter?.bufferDays ?? 10, ...plan };
       });
       return { asOfDate, rows: planningRows };
     }),
@@ -666,11 +667,12 @@ export const dataImportRouter = router({
 
   saveInventoryPlanningParameters: protectedProcedure
     .input(z.object({
-      scopeType: z.enum(["workspace", "store_country", "asin"]),
-      asin: z.string().optional(), storeName: z.string().optional(), country: z.string().optional(),
+      scopeType: z.enum(["workspace", "store_country", "parent_asin", "asin"]),
+      asin: z.string().optional(), parentAsin: z.string().optional(), storeName: z.string().optional(), country: z.string().optional(),
       productionDays: z.number().int().min(0).max(365).default(30), shippingDays: z.number().int().min(0).max(365).default(30), bufferDays: z.number().int().min(0).max(365).default(10), targetCoverDays: z.number().int().min(1).max(365).default(30), moq: z.number().int().min(0).default(0), packSize: z.number().int().min(1).default(1),
     }).superRefine((value, issue) => {
       if (value.scopeType === "store_country" && (!value.storeName || !value.country)) issue.addIssue({ code: "custom", message: "店铺和国家不能为空" });
+      if (value.scopeType === "parent_asin" && (!value.parentAsin || !value.storeName || !value.country)) issue.addIssue({ code: "custom", message: "父 ASIN、店铺和国家不能为空" });
       if (value.scopeType === "asin" && (!value.asin || !value.storeName || !value.country)) issue.addIssue({ code: "custom", message: "ASIN、店铺和国家不能为空" });
     }))
     .mutation(async ({ ctx, input }) => {
@@ -679,6 +681,7 @@ export const dataImportRouter = router({
         .where(opsWorkspaceCondition(opsInventoryPlanningParameters, currentOpsWorkspaceId(), and(
           eq(opsInventoryPlanningParameters.userId, ctx.user.id), eq(opsInventoryPlanningParameters.scopeType, input.scopeType),
           input.asin ? eq(opsInventoryPlanningParameters.asin, input.asin) : isNull(opsInventoryPlanningParameters.asin),
+          input.parentAsin ? eq(opsInventoryPlanningParameters.parentAsin, input.parentAsin) : isNull(opsInventoryPlanningParameters.parentAsin),
           input.storeName ? eq(opsInventoryPlanningParameters.storeName, input.storeName) : isNull(opsInventoryPlanningParameters.storeName),
           input.country ? eq(opsInventoryPlanningParameters.country, input.country) : isNull(opsInventoryPlanningParameters.country),
         ))).limit(1);

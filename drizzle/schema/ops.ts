@@ -1816,13 +1816,14 @@ export const opsLocalInventoryAdjustments = mysqlTable("ops_local_inventory_adju
 export type OpsLocalInventoryAdjustment = typeof opsLocalInventoryAdjustments.$inferSelect;
 export type InsertOpsLocalInventoryAdjustment = typeof opsLocalInventoryAdjustments.$inferInsert;
 
-// Parameters are resolved in priority order: ASIN > store-country > workspace default.
+// Parameters are resolved in priority order: ASIN > parent ASIN > store-country > workspace default.
 export const opsInventoryPlanningParameters = mysqlTable("ops_inventory_planning_parameters", {
   workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
   id: int("id").autoincrement().primaryKey(),
   userId: int("user_id").notNull(),
-  scopeType: mysqlEnum("inventory_parameter_scope", ["workspace", "store_country", "asin"]).default("workspace").notNull(),
+  scopeType: mysqlEnum("inventory_parameter_scope", ["workspace", "store_country", "parent_asin", "asin"]).default("workspace").notNull(),
   asin: varchar("asin", { length: 20 }),
+  parentAsin: varchar("parent_asin", { length: 20 }),
   storeName: varchar("store_name", { length: 200 }),
   country: varchar("country", { length: 50 }),
   productionDays: int("production_days").default(30).notNull(),
