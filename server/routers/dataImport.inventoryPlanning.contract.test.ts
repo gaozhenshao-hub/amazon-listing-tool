@@ -28,6 +28,7 @@ describe("导入模式库存规划接口契约", () => {
   });
 
   it("产品总览和详情页均使用新的日粒度库存与变体销量接口", () => {
+    expect(productsPageSource).toContain("getLingxingDailyOverview");
     expect(productsPageSource).toContain("getInventoryPlanningFromImport");
     expect(productsPageSource).toContain("库存规划工作台");
     expect(detailPageSource).toContain("getLingxingDailyVariants");

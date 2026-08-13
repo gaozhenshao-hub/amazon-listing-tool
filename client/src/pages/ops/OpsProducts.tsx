@@ -869,6 +869,10 @@ export default function OpsProducts() {
     weeks: 4,
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "ALL",
   }, { enabled: dataSource !== "system" });
+  const { data: lingxingDailyOverview, isLoading: lingxingDailyLoading } = trpc.dataImport.getLingxingDailyOverview.useQuery({
+    weeks: weekFilter,
+    marketplace: marketplaceFilter,
+  }, { enabled: dataSource === "lingxing" });
 
   // Import stats for showing data availability
   const { data: importStats } = trpc.dataImport.getImportStats.useQuery();
@@ -889,7 +893,7 @@ export default function OpsProducts() {
 
   // Unified products & loading state
   const products = dataSource === "system" ? systemProducts : importProducts;
-  const isLoading = dataSource === "system" ? systemLoading : importLoading;
+  const isLoading = dataSource === "system" ? systemLoading : dataSource === "lingxing" ? lingxingDailyLoading : importLoading;
 
   const [form, setForm] = useState({
     parentAsin: "", title: "", brand: "", category: "", marketplace: "US",
@@ -1319,6 +1323,21 @@ export default function OpsProducts() {
             </p>
           </CardContent>
         </Card>
+      ) : dataSource === "lingxing" && lingxingDailyOverview?.length ? (
+        <div className="space-y-3">
+          {lingxingDailyOverview.map((product: any) => {
+            const latest = product.weeks?.[0];
+            return <Card key={`${product.parentAsin}-${product.storeName}-${product.country}`} className="overflow-hidden">
+              <CardContent className="p-0">
+                <button className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-muted/40" onClick={() => navigate(`/ops/products/import/lingxing/${encodeURIComponent(product.parentAsin)}`)}>
+                  <div className="min-w-0"><p className="truncate font-medium">{product.title || product.productName || product.parentAsin}</p><p className="mt-0.5 text-xs text-muted-foreground"><span className="font-mono">{product.parentAsin}</span> · {product.storeName} · {product.country} · 最近{weekFilter}周</p></div>
+                  <div className="grid shrink-0 grid-cols-4 gap-5 text-right text-xs"><div><p className="text-muted-foreground">销量</p><p className="font-semibold">{latest?.salesQty ?? 0}</p></div><div><p className="text-muted-foreground">销售额</p><p className="font-semibold">{fmtCurrency(latest?.salesAmount ?? 0)}</p></div><div><p className="text-muted-foreground">可售库存</p><p className="font-semibold">{latest?.fbaAvailable ?? 0}</p></div><div><p className="text-muted-foreground">在途库存</p><p className="font-semibold text-blue-600">{latest?.fbaInTransit ?? 0}</p></div></div>
+                </button>
+                <div className="border-t bg-muted/20 px-4 py-2 text-xs text-muted-foreground">周度数据：{product.weeks?.map((week: any) => `${fmtWeekDate(week.weekStartDate, week.weekEndDate)} ${week.salesQty}件`).join(" · ")}</div>
+              </CardContent>
+            </Card>;
+          })}
+        </div>
       ) : (
         <div className="space-y-3">
           {filtered.map(product => (
