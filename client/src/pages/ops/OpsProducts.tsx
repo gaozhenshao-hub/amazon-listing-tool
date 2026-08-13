@@ -230,7 +230,7 @@ function adaptDailyParentOverview(source: any[], weeksToShow: number): ProductOv
     return {
       id: productIndex + 1, parentAsin: product.parentAsin, title: product.title || product.productName || product.parentAsin,
       chineseName: null, brand: null, category: null, marketplace: product.country || null, imageUrl: null, status: "active",
-      operator: null, storeName: product.storeName || null, variantCount: 0, skus: [], basicInfo: null,
+      operator: product.operator || null, storeName: product.storeName || null, variantCount: 0, skus: [], basicInfo: null,
       inventory: latest ? { fbaAvailable: Number((product.weeks?.[0]?.fbaAvailable) || 0), fbaInbound: 0, fbaInTransit: Number((product.weeks?.[0]?.fbaInTransit) || 0), fbaTotal: Number((product.weeks?.[0]?.fbaAvailable) || 0) + Number((product.weeks?.[0]?.fbaInTransit) || 0), availableStock: Number((product.weeks?.[0]?.fbaAvailable) || 0), fbaDaysOfSupply: 0, stockoutDate: null, avgDailySales7d: latest.salesQty / Math.max(Number((product.weeks?.[0]?.activeDays) || 1), 1), daysOfStock: latest.salesQty > 0 ? Math.round(Number((product.weeks?.[0]?.fbaAvailable) || 0) / (latest.salesQty / Math.max(Number((product.weeks?.[0]?.activeDays) || 1), 1))) : 999 } : null,
       weeks, monthlySummaries: [],
     };

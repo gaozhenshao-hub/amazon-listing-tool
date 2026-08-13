@@ -49,6 +49,11 @@ describe("导入模式库存规划接口契约", () => {
     expect(routerSource).toContain("|| operatorByProfileKey.get");
   });
 
+  it("产品总览前端保留后端已经映射的运营字段，不将其重置为空", () => {
+    expect(productsPageSource).toContain("operator: product.operator || null");
+    expect(productsPageSource).not.toContain("operator: null, storeName: product.storeName");
+  });
+
   it("库存规划以子 ASIN 独立覆盖生产、物流和缓冲时间，父 ASIN 不参与计算覆盖", () => {
     expect(routerSource).toContain('item.scopeType === "asin" && item.asin === latest.asin');
     expect(routerSource).not.toContain('item.scopeType === "parent_asin" && item.parentAsin === latest.parentAsin');
