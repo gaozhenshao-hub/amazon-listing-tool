@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
-import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles } from "../../drizzle/schema";
+import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsAsinLifecycleStatuses, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles } from "../../drizzle/schema";
 import { MANAGER_ROLES } from "../../shared/const";
 import { eq, desc, and, sql, or, isNull, ne } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
@@ -18,6 +18,7 @@ import { storagePut } from "../storage";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { summarizeParentAsinWeeks, summarizeVariantSales } from "../domains/ops/productOverview/dailyAggregation";
 import { calculateInventoryPlan } from "../domains/ops/inventoryPlanning/calculator";
+import { evaluateThreeMonthZeroDiscontinuation } from "../domains/ops/lifecycle/zeroValueDiscontinuation";
 
 function matchesLingxingMarketplace(row: { country?: string | null; storeName?: string | null }, marketplace: string) {
   if (marketplace === "ALL") return true;
@@ -26,6 +27,34 @@ function matchesLingxingMarketplace(row: { country?: string | null; storeName?: 
   const storeName = (row.storeName || "").toUpperCase();
   const countryAliases: Record<string, string[]> = { US: ["US", "美国"], CA: ["CA", "加拿大"], UK: ["UK", "英国"], DE: ["DE", "德国"], FR: ["FR", "法国"], IT: ["IT", "意大利"], ES: ["ES", "西班牙"], JP: ["JP", "日本"] };
   return [requested, ...(countryAliases[requested] || [])].some(alias => country.includes(alias) || storeName.includes(`-${alias}`));
+}
+
+async function refreshZeroValueDiscontinuationStatuses(db: any, workspaceId: number) {
+  const snapshots = await db.select().from(opsAsinDailySnapshots)
+    .where(eq(opsAsinDailySnapshots.workspaceId, workspaceId));
+  const grouped = new Map<string, any[]>();
+  for (const row of snapshots) {
+    const key = `${row.asin}::${row.storeName}::${row.country}`;
+    grouped.set(key, [...(grouped.get(key) || []), row]);
+  }
+  for (const rows of grouped.values()) {
+    const latest = [...rows].sort((a, b) => a.reportDate.localeCompare(b.reportDate)).at(-1)!;
+    const decision = evaluateThreeMonthZeroDiscontinuation(rows.map(row => ({
+      reportDate: row.reportDate, salesQty: row.salesQty || 0, orderProfit: Number(row.orderProfit || 0),
+      totalInventory: (row.fbaAvailable || row.availableStock || 0) + (row.fbaInTransit || 0),
+    })));
+    if (!decision.shouldDiscontinue) continue;
+    const [existing] = await db.select().from(opsAsinLifecycleStatuses).where(and(
+      eq(opsAsinLifecycleStatuses.workspaceId, workspaceId), eq(opsAsinLifecycleStatuses.asin, latest.asin),
+      eq(opsAsinLifecycleStatuses.storeName, latest.storeName), eq(opsAsinLifecycleStatuses.country, latest.country),
+    )).limit(1);
+    const evidence = { status: "discontinued" as const, reason: "three_months_zero", parentAsin: latest.parentAsin,
+      evidenceStartDate: decision.evidenceStartDate, evidenceEndDate: decision.evidenceEndDate, evidenceDays: decision.evidenceDays,
+      evidenceSalesQty: decision.salesQty, evidenceProfit: String(decision.profit), evidenceMaxInventory: decision.maxInventory,
+      changedBy: null, changedAt: new Date(), restoredAt: null, restoreReason: null };
+    if (existing) await db.update(opsAsinLifecycleStatuses).set(evidence).where(eq(opsAsinLifecycleStatuses.id, existing.id));
+    else await db.insert(opsAsinLifecycleStatuses).values({ workspaceId, userId: latest.userId, asin: latest.asin, storeName: latest.storeName, country: latest.country, ...evidence });
+  }
 }
 
 /**
@@ -329,6 +358,10 @@ export const dataImportRouter = router({
             skippedRows,
           })
           .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), eq(dataImports.id, input.importId)));
+
+        if (result.sourceType === "lingxing" && result.dataGranularity === "daily") {
+          await refreshZeroValueDiscontinuationStatuses(db!, currentOpsWorkspaceId());
+        }
 
         return {
           success: true,
