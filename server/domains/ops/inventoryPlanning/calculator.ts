@@ -31,7 +31,12 @@ export function calculateInventoryPlan(input: InventoryPlanningInput) {
   const totalLeadDays = productionDays + shippingDays + bufferDays;
   const sales7 = averageActiveDailySales(input.salesHistory, 7, input.asOfDate);
   const sales30 = averageActiveDailySales(input.salesHistory, 30, input.asOfDate);
-  const weightedDailySales = input.manualDailySales ?? (sales7.value * 0.5 + sales30.value * 0.5);
+  // Inventory and all sales windows are anchored to the latest available product-overview date.
+  // When fewer than 30 active-day observations exist, do not dilute the usable 7-day signal with a partial 30-day average.
+  const forecastBasis = sales30.sampleDays >= 30 ? "weighted_7_30" : "recent_7_day";
+  const weightedDailySales = input.manualDailySales ?? (forecastBasis === "weighted_7_30"
+    ? sales7.value * 0.5 + sales30.value * 0.5
+    : sales7.value);
   const totalInventory = input.fbaAvailable + input.fbaInTransit + input.localInventory;
   const coverageDays = weightedDailySales > 0 ? totalInventory / weightedDailySales : null;
   const suggestedOrderDate = coverageDays === null ? null : addDays(input.asOfDate, Math.max(0, Math.floor(coverageDays - totalLeadDays)));
@@ -43,6 +48,7 @@ export function calculateInventoryPlan(input: InventoryPlanningInput) {
     sales7: { dailySales: round(sales7.value), sampleDays: sales7.sampleDays },
     sales30: { dailySales: round(sales30.value), sampleDays: sales30.sampleDays },
     weightedDailySales: round(weightedDailySales), manualOverrideApplied: input.manualDailySales != null,
+    forecastBasis: input.manualDailySales != null ? "manual" : forecastBasis,
     coverageDays: coverageDays === null ? null : round(coverageDays, 1), suggestedOrderDate,
     safetyStock: round(safetyStock), suggestedOrderQuantity: round(roundedQuantity),
     confirmedStockout: isConfirmedStockout(input.salesHistory, input.asOfDate),

@@ -18,6 +18,18 @@ describe("库存规划计算器", () => {
     expect(result.sales7.sampleDays).toBe(0);
   });
 
+  it("不足30天历史时以最近7天有效在售日销量作为预测主依据", () => {
+    const salesHistory = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date("2026-08-03T00:00:00Z");
+      date.setUTCDate(date.getUTCDate() + index);
+      return { reportDate: date.toISOString().slice(0, 10), salesQty: 3, totalInventory: 60, isActive: true };
+    });
+    const result = calculateInventoryPlan({ asOfDate: "2026-08-09", fbaAvailable: 60, fbaInTransit: 0, localInventory: 0, salesHistory });
+    expect(result.sales30.sampleDays).toBe(7);
+    expect(result.forecastBasis).toBe("recent_7_day");
+    expect(result.weightedDailySales).toBe(3);
+  });
+
   it("仅在连续三日均有零库存零销量证据时确认断货", () => {
     const records = ["2026-08-07", "2026-08-08", "2026-08-09"].map(reportDate => ({ reportDate, salesQty: 0, totalInventory: 0 }));
     expect(calculateInventoryPlan({ asOfDate: "2026-08-09", fbaAvailable: 0, fbaInTransit: 0, localInventory: 0, salesHistory: records }).confirmedStockout).toBe(true);
