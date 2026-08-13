@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 const routerSource = readFileSync(resolve(process.cwd(), "server/routers/dataImport.ts"), "utf8");
 const productsPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsProducts.tsx"), "utf8");
 const detailPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsProductDetail.tsx"), "utf8");
+const inventoryPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsInventory.tsx"), "utf8");
 
 describe("导入模式库存规划接口契约", () => {
   it("以 ASIN 日快照作为库存规划输入，而不是旧库存预警表", () => {
@@ -33,5 +34,12 @@ describe("导入模式库存规划接口契约", () => {
     expect(productsPageSource).toContain("库存规划工作台");
     expect(detailPageSource).toContain("getLingxingDailyVariants");
     expect(detailPageSource).toContain("近{week}周");
+  });
+
+  it("库存页以库存规划工作台替代旧预警主界面，并允许确认本地库存", () => {
+    expect(inventoryPageSource).toContain("库存规划工作台");
+    expect(inventoryPageSource).toContain("getInventoryPlanningFromImport");
+    expect(inventoryPageSource).toContain("confirmLocalInventory");
+    expect(inventoryPageSource).toContain("默认总货期");
   });
 });

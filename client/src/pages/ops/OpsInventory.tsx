@@ -121,6 +121,12 @@ export default function OpsInventory() {
     sortOrder,
     marketplace,
   });
+  const { data: planningData, isLoading: planningLoading, refetch: refetchPlanning } = trpc.dataImport.getInventoryPlanningFromImport.useQuery({ marketplace: marketplace || "ALL" });
+  const [localInventoryDrafts, setLocalInventoryDrafts] = useState<Record<string, string>>({});
+  const confirmLocalInventory = trpc.dataImport.confirmLocalInventory.useMutation({
+    onSuccess: () => { toast.success("本地库存已确认并计入库存规划"); void refetchPlanning(); },
+    onError: (error: any) => toast.error("本地库存确认失败", { description: error.message }),
+  });
 
   const pipelineQuery = trpc.shippingBatch.getInventoryPipelineSummary.useQuery(undefined, {
     retry: 1,
@@ -267,7 +273,7 @@ export default function OpsInventory() {
     aiReplenish.mutate({ skuData: criticalItems });
   };
 
-  if (isLoading) {
+  if (isLoading || planningLoading) {
     return (
       <div className="p-6 space-y-6">
         <Skeleton className="h-8 w-48" />
@@ -278,6 +284,15 @@ export default function OpsInventory() {
       </div>
     );
   }
+
+  // The inventory workbench is the single planning surface. Legacy warning data is not rendered.
+  return (
+    <div className="space-y-6 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold">库存规划工作台</h1><p className="mt-1 text-sm text-muted-foreground">唯一数据源：产品总览已上传的领星 ASIN 日粒度数据。总库存 = 可售 + 在途 + 已确认本地库存。</p></div><Button variant="outline" onClick={() => void refetchPlanning()}><RefreshCw className="mr-1 h-4 w-4" />刷新规划</Button></div>
+      <div className="grid gap-3 md:grid-cols-4"><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">规划数据截止日</p><p className="mt-1 text-xl font-semibold">{planningData?.asOfDate || "—"}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">ASIN 计划数</p><p className="mt-1 text-xl font-semibold">{planningData?.rows.length || 0}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">已确认断货</p><p className="mt-1 text-xl font-semibold text-red-600">{planningData?.rows.filter((row: any) => row.confirmedStockout).length || 0}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">默认总货期</p><p className="mt-1 text-xl font-semibold">70 天</p><p className="text-xs text-muted-foreground">生产30 + 物流30 + 缓冲10</p></CardContent></Card></div>
+      <Card><CardHeader><CardTitle className="text-base">ASIN 补货计划</CardTitle><CardDescription>人工填写本地库存后点击确认，系统保存可追溯版本并重新计算订货日期与建议量。</CardDescription></CardHeader><CardContent className="p-0"><div className="overflow-x-auto"><table className="min-w-[1200px] w-full text-sm"><thead><tr className="border-y bg-muted/40 text-left"><th className="p-3">ASIN / 店铺</th><th className="p-3 text-right">可售</th><th className="p-3 text-right">在途</th><th className="p-3">本地库存（人工）</th><th className="p-3 text-right">总库存</th><th className="p-3 text-right">7日 / 30日</th><th className="p-3 text-right">加权日销</th><th className="p-3 text-right">覆盖天数</th><th className="p-3">建议订货日</th><th className="p-3 text-right">建议量</th><th className="p-3">状态</th></tr></thead><tbody>{planningData?.rows.length ? planningData.rows.map((row: any) => { const key = `${row.asin}|${row.storeName}|${row.country}`; const draft = localInventoryDrafts[key] ?? String(row.localInventory); return <tr key={key} className="border-b hover:bg-muted/20"><td className="p-3"><p className="font-mono text-xs font-semibold">{row.asin}</p><p className="text-xs text-muted-foreground">{row.storeName} · {row.country}</p></td><td className="p-3 text-right">{row.totalInventory - row.localInventory - (row.fbaInTransit ?? 0)}</td><td className="p-3 text-right text-blue-600">{row.fbaInTransit ?? 0}</td><td className="p-3"><div className="flex gap-1"><Input className="h-8 w-20" type="number" min="0" value={draft} onChange={event => setLocalInventoryDrafts(current => ({ ...current, [key]: event.target.value }))}/><Button size="sm" className="h-8" disabled={confirmLocalInventory.isPending} onClick={() => confirmLocalInventory.mutate({ asin: row.asin, storeName: row.storeName, country: row.country, effectiveDate: planningData.asOfDate!, localQty: Math.max(0, Number(draft) || 0) })}>确认</Button></div></td><td className="p-3 text-right font-semibold">{row.totalInventory}</td><td className="p-3 text-right">{row.sales7.dailySales} / {row.sales30.dailySales}</td><td className="p-3 text-right">{row.weightedDailySales}</td><td className="p-3 text-right">{row.coverageDays ?? "—"}</td><td className="p-3">{row.suggestedOrderDate ?? "待补充销量"}</td><td className="p-3 text-right font-semibold">{row.suggestedOrderQuantity}</td><td className="p-3"><Badge variant={row.confirmedStockout ? "destructive" : "secondary"}>{row.confirmedStockout ? "已确认断货" : row.manualOverrideApplied ? "人工日销" : "待确认"}</Badge></td></tr>; }) : <tr><td colSpan={11} className="p-12 text-center text-muted-foreground">请先在产品总览上传领星 ASIN 日粒度产品表现表。</td></tr>}</tbody></table></div></CardContent></Card>
+    </div>
+  );
 
   return (
     <div className="p-6 space-y-6">
