@@ -40,6 +40,12 @@ describe("导入模式库存规划接口契约", () => {
     expect(detailPageSource).toContain("近{week}周");
   });
 
+  it("领星日粒度父 ASIN 汇总复用既有周度数据中的运营负责人映射", () => {
+    expect(routerSource).toContain("operatorByParentKey");
+    expect(routerSource).toContain("lingxingProductWeekly.operator");
+    expect(routerSource).toContain("item.operator = operatorByParentKey.get");
+  });
+
   it("库存页以库存规划工作台替代旧预警主界面，并允许确认本地库存", () => {
     expect(inventoryPageSource).toContain("库存规划工作台");
     expect(inventoryPageSource).toContain("getInventoryPlanningFromImport");

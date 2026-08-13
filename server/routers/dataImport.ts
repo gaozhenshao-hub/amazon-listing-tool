@@ -564,6 +564,21 @@ export const dataImportRouter = router({
         .where(opsWorkspaceCondition(opsAsinDailySnapshots, currentOpsWorkspaceId(), eq(opsAsinDailySnapshots.userId, effectiveUserId)));
       const filtered = input.marketplace === "ALL" ? rows : rows.filter(row => (row.country || "").toUpperCase().includes(input.marketplace.toUpperCase()));
       const overview = summarizeParentAsinWeeks(filtered as any, input.weeks);
+      const operatorRows = await db!.select({
+        parentAsin: lingxingProductWeekly.parentAsin,
+        storeName: lingxingProductWeekly.storeName,
+        country: lingxingProductWeekly.country,
+        operator: lingxingProductWeekly.operator,
+      }).from(lingxingProductWeekly).where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)));
+      const operatorByParentKey = new Map<string, string>();
+      for (const row of operatorRows) {
+        if (!row.operator) continue;
+        const key = [row.parentAsin, row.storeName, row.country].join("|");
+        if (!operatorByParentKey.has(key)) operatorByParentKey.set(key, row.operator);
+      }
+      for (const item of overview as Array<{ parentAsin: string; storeName: string; country: string; operator?: string | null }>) {
+        item.operator = operatorByParentKey.get([item.parentAsin, item.storeName, item.country].join("|")) || null;
+      }
       await applyOperatorMappings(db, overview as any, "lingxing");
       return filterByOperatorPermission(overview as any, ctx.user);
     }),
