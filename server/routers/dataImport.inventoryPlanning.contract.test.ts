@@ -57,7 +57,7 @@ describe("导入模式库存规划接口契约", () => {
   it("库存规划以子 ASIN 独立覆盖生产、物流和缓冲时间，父 ASIN 不参与计算覆盖", () => {
     expect(routerSource).toContain('item.scopeType === "asin" && item.asin === latest.asin');
     expect(routerSource).not.toContain('item.scopeType === "parent_asin" && item.parentAsin === latest.parentAsin');
-    expect(inventoryPageSource).toContain("子 ASIN 独立货期");
+    expect(inventoryPageSource).toContain("子 ASIN 库存规划表");
     expect(inventoryPageSource).toContain('scopeType: "asin"');
     expect(inventoryPageSource).not.toContain('scopeType: "parent_asin"');
   });
