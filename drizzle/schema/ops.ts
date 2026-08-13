@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 import { currentOpsWorkspaceId } from "../../server/domains/ops/workspaceContext";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1835,7 +1835,7 @@ export const opsLocalInventoryAdjustments = mysqlTable("ops_local_inventory_adju
   effectiveDate: varchar("effective_date", { length: 10 }).notNull(),
   localQty: int("local_qty").notNull(),
   reason: varchar("reason", { length: 500 }),
-  status: mysqlEnum("local_inventory_adjustment_status", ["draft", "confirmed", "superseded"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "confirmed", "superseded"]).default("draft").notNull(),
   confirmedBy: int("confirmed_by"),
   confirmedAt: timestamp("confirmed_at"),
   supersededById: int("superseded_by_id"),
@@ -1851,7 +1851,7 @@ export const opsInventoryPlanningParameters = mysqlTable("ops_inventory_planning
   workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
   id: int("id").autoincrement().primaryKey(),
   userId: int("user_id").notNull(),
-  scopeType: mysqlEnum("inventory_parameter_scope", ["workspace", "store_country", "parent_asin", "asin"]).default("workspace").notNull(),
+  scopeType: mysqlEnum("scope_type", ["workspace", "store_country", "parent_asin", "asin"]).default("workspace").notNull(),
   asin: varchar("asin", { length: 20 }),
   parentAsin: varchar("parent_asin", { length: 20 }),
   storeName: varchar("store_name", { length: 200 }),

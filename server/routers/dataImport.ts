@@ -684,20 +684,26 @@ export const dataImportRouter = router({
       const asOfDate = input.asOfDate || scopedSnapshots.reduce((latest, row) => row.reportDate > latest ? row.reportDate : latest, "");
       if (!asOfDate) return { asOfDate: null, rows: [] };
 
-      const [locals, parameters] = await Promise.all([
-        db!.select().from(opsLocalInventoryAdjustments)
-          .where(and(
-            eq(opsLocalInventoryAdjustments.workspaceId, workspaceId),
-            eq(opsLocalInventoryAdjustments.userId, ctx.user.id),
-            eq(opsLocalInventoryAdjustments.status, "confirmed"),
-          )),
-        db!.select().from(opsInventoryPlanningParameters)
-          .where(and(
-            eq(opsInventoryPlanningParameters.workspaceId, workspaceId),
-            eq(opsInventoryPlanningParameters.userId, ctx.user.id),
-            eq(opsInventoryPlanningParameters.isActive, 1),
-          )),
-      ]);
+      let locals: any[] = [];
+      let parameters: any[] = [];
+      try {
+        [locals, parameters] = await Promise.all([
+          db!.select().from(opsLocalInventoryAdjustments)
+            .where(and(
+              eq(opsLocalInventoryAdjustments.workspaceId, workspaceId),
+              eq(opsLocalInventoryAdjustments.userId, ctx.user.id),
+              eq(opsLocalInventoryAdjustments.status, "confirmed"),
+            )),
+          db!.select().from(opsInventoryPlanningParameters)
+            .where(and(
+              eq(opsInventoryPlanningParameters.workspaceId, workspaceId),
+              eq(opsInventoryPlanningParameters.userId, ctx.user.id),
+              eq(opsInventoryPlanningParameters.isActive, 1),
+            )),
+        ]);
+      } catch (error) {
+        console.error("[InventoryPlanning] optional local inventory or parameter query failed", { workspaceId, userId: ctx.user.id, error });
+      }
 
       const latestRows = scopedSnapshots.filter(row => row.reportDate === asOfDate);
       const planningRows = latestRows.map(latest => {
