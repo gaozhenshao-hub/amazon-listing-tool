@@ -78,6 +78,11 @@ export default function OpsProductDetail() {
     { parentAsin: importParentAsin || "", sourceType: sourceType || "lingxing", marketplace: "ALL" },
     { enabled: isImportMode && !!importParentAsin && !!sourceType }
   );
+  const [variantWeeks, setVariantWeeks] = useState(4);
+  const { data: dailyVariants } = trpc.dataImport.getLingxingDailyVariants.useQuery(
+    { parentAsin: importParentAsin || "", weeks: variantWeeks, marketplace: "ALL" },
+    { enabled: isImportMode && sourceType === "lingxing" && !!importParentAsin }
+  );
 
   // ─── System Mode Data Queries ───
   const { data: product, isLoading: loadingProduct, refetch: refetchProduct } = trpc.productOps.getProduct.useQuery(
@@ -376,11 +381,20 @@ export default function OpsProductDetail() {
 
           {/* Import Variants */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">子ASIN变体 ({derivedProduct.variants.length})</CardTitle>
+            <CardHeader className="flex-row items-center justify-between pb-3">
+              <CardTitle className="text-base">子ASIN变体销量 ({dailyVariants?.length ?? derivedProduct.variants.length})</CardTitle>
+              {sourceType === "lingxing" && (
+                <div className="flex rounded-md border p-0.5">
+                  {[1, 2, 3, 4].map(week => <Button key={week} size="sm" variant={variantWeeks === week ? "secondary" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setVariantWeeks(week)}>近{week}周</Button>)}
+                </div>
+              )}
             </CardHeader>
             <CardContent>
-              {derivedProduct.variants.length === 0 ? (
+              {sourceType === "lingxing" ? (
+                !dailyVariants?.length ? <p className="text-sm text-muted-foreground text-center py-4">暂无日粒度变体销量数据</p> : (
+                  <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-muted-foreground"><th className="text-left py-2 font-medium">子ASIN</th><th className="text-left py-2 font-medium">SKU</th><th className="text-right py-2 font-medium">最近{variantWeeks}周销量</th><th className="text-right py-2 font-medium">平均日销</th><th className="text-right py-2 font-medium">可售库存</th><th className="text-right py-2 font-medium">在途库存</th></tr></thead><tbody>{dailyVariants.map((v: any) => <tr key={`${v.asin}-${v.storeName}-${v.country}`} className="border-b last:border-0"><td className="py-2 font-mono text-xs">{v.asin}</td><td className="py-2 text-xs">{v.sku || "-"}</td><td className="py-2 text-right">{v.salesQty}</td><td className="py-2 text-right">{v.avgDailySales}</td><td className="py-2 text-right">{v.fbaAvailable}</td><td className="py-2 text-right">{v.fbaInTransit}</td></tr>)}</tbody></table></div>
+                )
+              ) : derivedProduct.variants.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">暂无变体数据</p>
               ) : (
                 <div className="overflow-x-auto">

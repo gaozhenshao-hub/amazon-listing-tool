@@ -873,6 +873,10 @@ export default function OpsProducts() {
   // Import stats for showing data availability
   const { data: importStats } = trpc.dataImport.getImportStats.useQuery();
 
+  const { data: inventoryPlanning } = trpc.dataImport.getInventoryPlanningFromImport.useQuery({
+    marketplace: marketplaceFilter,
+  }, { enabled: dataSource === "lingxing" });
+
   // Production config for inventory status
   const { data: productionConfigs } = trpc.dataImport.getProductionConfigs.useQuery({
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "US",
@@ -1033,6 +1037,39 @@ export default function OpsProducts() {
             <Upload className="h-3.5 w-3.5" /> 去导入
           </Button>
         </div>
+      )}
+
+      {dataSource === "lingxing" && inventoryPlanning?.asOfDate && (
+        <section className="rounded-xl border bg-card p-4 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-semibold">库存规划工作台</h2>
+              <p className="text-xs text-muted-foreground">ASIN 维度计算；总库存 = 可售 + 在途 + 已确认本地库存。数据截至 {inventoryPlanning.asOfDate}。</p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => navigate("/ops/inventory")}>进入完整规划</Button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-sm">
+              <thead className="border-b text-left text-xs text-muted-foreground">
+                <tr><th className="px-2 py-2">ASIN</th><th className="px-2 py-2">总库存</th><th className="px-2 py-2">7日 / 30日日销</th><th className="px-2 py-2">加权日销</th><th className="px-2 py-2">覆盖天数</th><th className="px-2 py-2">建议订货日</th><th className="px-2 py-2">建议订货量</th><th className="px-2 py-2">状态</th></tr>
+              </thead>
+              <tbody>
+                {inventoryPlanning.rows.slice(0, 12).map((row: any) => (
+                  <tr key={`${row.asin}-${row.storeName}-${row.country}`} className="border-b last:border-0">
+                    <td className="px-2 py-2 font-medium">{row.asin}<span className="ml-1 text-xs text-muted-foreground">{row.country}</span></td>
+                    <td className="px-2 py-2">{row.totalInventory}</td>
+                    <td className="px-2 py-2">{row.sales7.dailySales} / {row.sales30.dailySales}</td>
+                    <td className="px-2 py-2">{row.weightedDailySales}</td>
+                    <td className="px-2 py-2">{row.coverageDays ?? "—"}</td>
+                    <td className="px-2 py-2">{row.suggestedOrderDate ?? "待补充销量"}</td>
+                    <td className="px-2 py-2">{row.suggestedOrderQuantity}</td>
+                    <td className="px-2 py-2"><Badge variant={row.confirmedStockout ? "destructive" : "secondary"}>{row.confirmedStockout ? "已确认断货" : row.manualOverrideApplied ? "人工日销" : "待确认"}</Badge></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
 
       {/* Header */}

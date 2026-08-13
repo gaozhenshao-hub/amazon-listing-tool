@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const routerSource = readFileSync(resolve(process.cwd(), "server/routers/dataImport.ts"), "utf8");
+const productsPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsProducts.tsx"), "utf8");
+const detailPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsProductDetail.tsx"), "utf8");
 
 describe("导入模式库存规划接口契约", () => {
   it("以 ASIN 日快照作为库存规划输入，而不是旧库存预警表", () => {
@@ -23,5 +25,12 @@ describe("导入模式库存规划接口契约", () => {
     expect(routerSource).toContain("productionDays: parameter?.productionDays ?? 30");
     expect(routerSource).toContain("shippingDays: parameter?.shippingDays ?? 30");
     expect(routerSource).toContain("bufferDays: parameter?.bufferDays ?? 10");
+  });
+
+  it("产品总览和详情页均使用新的日粒度库存与变体销量接口", () => {
+    expect(productsPageSource).toContain("getInventoryPlanningFromImport");
+    expect(productsPageSource).toContain("库存规划工作台");
+    expect(detailPageSource).toContain("getLingxingDailyVariants");
+    expect(detailPageSource).toContain("近{week}周");
   });
 });
