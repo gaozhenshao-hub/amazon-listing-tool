@@ -115,13 +115,28 @@ export default function OpsInventory() {
     return set;
   }, [asinTagMap]);
 
-  const { data, isLoading, refetch } = trpc.operations.getInventoryList.useQuery({
-    alertFilter,
-    sortBy,
-    sortOrder,
-    marketplace,
-  });
   const { data: planningData, isLoading: planningLoading, refetch: refetchPlanning } = trpc.dataImport.getInventoryPlanningFromImport.useQuery({ marketplace: marketplace || "ALL" });
+  // 库存规划页面只依赖领星日粒度规划接口；保留兼容模型供下方历史视图复用，避免调用已停用的旧库存列表接口。
+  const data = useMemo(() => {
+    const rows = planningData?.rows || [];
+    return {
+      items: rows.map((row: any) => ({
+        asin: row.asin,
+        seller_sku: row.asin,
+        product_name: row.title || row.asin,
+        store_name: row.storeName,
+        operator: null,
+        fulfillable_qty: row.totalInventory - row.localInventory - (row.fbaInTransit ?? 0),
+        inbound_qty: row.fbaInTransit ?? 0,
+        avg_daily_sales: row.weightedDailySales,
+        days_of_supply: row.coverageDays,
+        alertLevel: row.confirmedStockout ? "critical" : row.coverageDays !== null && row.coverageDays <= 14 ? "low" : "normal",
+      })),
+      stats: { critical: rows.filter((row: any) => row.confirmedStockout).length, low: rows.filter((row: any) => !row.confirmedStockout && row.coverageDays !== null && row.coverageDays <= 14).length, normal: rows.filter((row: any) => row.coverageDays === null || row.coverageDays > 14).length, overstock: 0 },
+    };
+  }, [planningData]);
+  const isLoading = planningLoading;
+  const refetch = refetchPlanning;
   const [localInventoryDrafts, setLocalInventoryDrafts] = useState<Record<string, string>>({});
   const [leadTimeDrafts, setLeadTimeDrafts] = useState<Record<string, { productionDays: string; shippingDays: string; bufferDays: string }>>({});
   const confirmLocalInventory = trpc.dataImport.confirmLocalInventory.useMutation({
@@ -1173,11 +1188,26 @@ function InventoryPipelineView({ pipeline, onNavigate }: { pipeline: any; onNavi
     { enabled: !!showTrackingDialog }
   );
 
-  // Get inventory data for ASIN info
-  const inventoryQuery = trpc.operations.getInventoryList.useQuery(
-    { marketplace: "US" },
+  // ASIN详情复用日粒度库存规划数据，不再调用已停用的旧库存列表接口。
+  const inventoryPlanningQuery = trpc.dataImport.getInventoryPlanningFromImport.useQuery(
+    { marketplace: "ALL" },
     { enabled: viewMode === "asin" }
   );
+  const inventoryQuery = useMemo(() => ({
+    data: {
+      items: (inventoryPlanningQuery.data?.rows || []).map((row: any) => ({
+        asin: row.asin,
+        msku: row.asin,
+        title: row.title,
+        storeName: row.storeName,
+        operator: null,
+        fulfillableQty: row.totalInventory - row.localInventory - (row.fbaInTransit ?? 0),
+        inboundQty: row.fbaInTransit ?? 0,
+        avgDailySales: row.weightedDailySales,
+        daysOfSupply: row.coverageDays,
+      })),
+    },
+  }), [inventoryPlanningQuery.data]);
 
   const asinInfo = selectedAsin && inventoryQuery.data
     ? inventoryQuery.data.items?.find((item: any) => item.asin === selectedAsin)
