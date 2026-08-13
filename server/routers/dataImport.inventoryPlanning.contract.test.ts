@@ -32,6 +32,8 @@ describe("导入模式库存规划接口契约", () => {
     expect(productsPageSource).toContain("getLingxingDailyOverview");
     expect(productsPageSource).toContain("adaptDailyParentOverview");
     expect(productsPageSource).toContain("ProductBlock");
+    expect(productsPageSource).toContain("avgDailySales7d: latest.salesQty");
+    expect(productsPageSource).not.toContain("avgDailySales7d: salesQty /");
     expect(productsPageSource).toContain("getInventoryPlanningFromImport");
     expect(productsPageSource).toContain("库存规划工作台");
     expect(detailPageSource).toContain("getLingxingDailyVariants");
