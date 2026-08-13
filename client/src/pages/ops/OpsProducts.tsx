@@ -1074,14 +1074,14 @@ export default function OpsProducts() {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-base font-semibold">库存规划工作台</h2>
-              <p className="text-xs text-muted-foreground">ASIN 维度计算；总库存 = 可售 + 在途 + 已确认本地库存。数据截至 {inventoryPlanning.asOfDate}。</p>
+              <p className="text-xs text-muted-foreground">子 ASIN 维度计算；总库存 = 可售 + 在途 + 已确认本地库存。成本、售价及平手价与库存规划使用同一参数数据。数据截至 {inventoryPlanning.asOfDate}。</p>
             </div>
             <Button size="sm" variant="outline" onClick={() => navigate("/ops/inventory")}>进入完整规划</Button>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-sm">
+            <table className="w-full min-w-[1240px] text-sm">
               <thead className="border-b text-left text-xs text-muted-foreground">
-                <tr><th className="px-2 py-2">ASIN</th><th className="px-2 py-2">总库存</th><th className="px-2 py-2">7日 / 30日日销</th><th className="px-2 py-2">加权日销</th><th className="px-2 py-2">覆盖天数</th><th className="px-2 py-2">建议订货日</th><th className="px-2 py-2">建议订货量</th><th className="px-2 py-2">状态</th></tr>
+                <tr><th className="px-2 py-2">子 ASIN</th><th className="px-2 py-2">总库存</th><th className="px-2 py-2">7日 / 30日日销</th><th className="px-2 py-2">加权日销</th><th className="px-2 py-2">覆盖天数</th><th className="px-2 py-2">产品成本</th><th className="px-2 py-2">售价</th><th className="px-2 py-2">预估平手价</th><th className="px-2 py-2">实际平手价</th><th className="px-2 py-2">建议订货日</th><th className="px-2 py-2">建议订货量</th><th className="px-2 py-2">状态</th></tr>
               </thead>
               <tbody>
                 {inventoryPlanning.rows.slice(0, 12).map((row: any) => (
@@ -1091,6 +1091,10 @@ export default function OpsProducts() {
                     <td className="px-2 py-2">{row.sales7.dailySales} / {row.sales30.dailySales}</td>
                     <td className="px-2 py-2">{row.weightedDailySales}</td>
                     <td className="px-2 py-2">{row.coverageDays ?? "—"}</td>
+                    <td className="px-2 py-2 tabular-nums">{row.productCost == null ? <span className="text-amber-600">待录入</span> : `$${Number(row.productCost).toFixed(2)}`}</td>
+                    <td className="px-2 py-2 tabular-nums">{row.sellingPrice == null ? <span className="text-muted-foreground">—</span> : `$${Number(row.sellingPrice).toFixed(2)}`}</td>
+                    <td className="px-2 py-2 tabular-nums">{row.estimatedBreakEvenPrice == null ? <span className="text-muted-foreground">—</span> : `$${Number(row.estimatedBreakEvenPrice).toFixed(2)}`}</td>
+                    <td className="px-2 py-2 tabular-nums">{row.actualBreakEvenPrice == null ? <span className="text-muted-foreground">—</span> : `$${Number(row.actualBreakEvenPrice).toFixed(2)}`}</td>
                     <td className="px-2 py-2">{row.suggestedOrderDate ?? "待补充销量"}</td>
                     <td className="px-2 py-2">{row.suggestedOrderQuantity}</td>
                     <td className="px-2 py-2"><Badge variant={row.confirmedStockout ? "destructive" : "secondary"}>{row.confirmedStockout ? "已确认断货" : row.manualOverrideApplied ? "人工日销" : "待确认"}</Badge></td>

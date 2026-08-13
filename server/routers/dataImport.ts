@@ -727,7 +727,22 @@ export const dataImportRouter = router({
           moq: parameter?.moq ?? 0,
           packSize: parameter?.packSize ?? 1,
         });
-        return { asin: latest.asin, sku: latest.msku || latest.sku || null, parentAsin: latest.parentAsin, storeName: latest.storeName, country: latest.country, productName: latest.productName || latest.title || null, operator: latest.operator || null, localInventory: local?.localQty || 0, localInventoryConfirmedAt: local?.confirmedAt || null, parameterScope: parameter?.scopeType || "workspace", productionDays: parameter?.productionDays ?? 30, shippingDays: parameter?.shippingDays ?? 30, bufferDays: parameter?.bufferDays ?? 10, ...plan };
+        const productCost = Number(parameter?.productCost ?? 0);
+        const estimatedFirstLegCost = Number(parameter?.estimatedFirstLegCost ?? 0);
+        const actualFirstLegCost = Number(parameter?.actualFirstLegCost ?? 0);
+        const estimatedFbaFee = Number(parameter?.estimatedFbaFee ?? 0);
+        const actualFbaFee = Number(parameter?.actualFbaFee ?? 0);
+        const sellingPrice = Number(parameter?.sellingPrice ?? 0);
+        return {
+          asin: latest.asin, sku: latest.msku || latest.sku || null, parentAsin: latest.parentAsin, storeName: latest.storeName, country: latest.country,
+          productName: latest.productName || latest.title || null, operator: latest.operator || null, localInventory: local?.localQty || 0,
+          localInventoryConfirmedAt: local?.confirmedAt || null, parameterScope: parameter?.scopeType || "workspace",
+          productionDays: parameter?.productionDays ?? 30, shippingDays: parameter?.shippingDays ?? 30, bufferDays: parameter?.bufferDays ?? 10,
+          productCost, estimatedFirstLegCost, actualFirstLegCost, estimatedFbaFee, actualFbaFee, sellingPrice, currency: parameter?.currency ?? "USD",
+          estimatedBreakEven: sellingPrice * 0.85 - productCost - estimatedFirstLegCost - estimatedFbaFee,
+          actualBreakEven: sellingPrice * 0.85 - productCost - actualFirstLegCost - actualFbaFee,
+          ...plan,
+        };
       });
       await applyOperatorMappings(db, planningRows as any, "lingxing");
       return { asOfDate, rows: planningRows };
@@ -753,6 +768,7 @@ export const dataImportRouter = router({
       scopeType: z.enum(["workspace", "store_country", "parent_asin", "asin"]),
       asin: z.string().optional(), parentAsin: z.string().optional(), storeName: z.string().optional(), country: z.string().optional(),
       productionDays: z.number().int().min(0).max(365).default(30), shippingDays: z.number().int().min(0).max(365).default(30), bufferDays: z.number().int().min(0).max(365).default(10), targetCoverDays: z.number().int().min(1).max(365).default(30), moq: z.number().int().min(0).default(0), packSize: z.number().int().min(1).default(1),
+      productCost: z.number().min(0).optional(), estimatedFirstLegCost: z.number().min(0).optional(), actualFirstLegCost: z.number().min(0).optional(), estimatedFbaFee: z.number().min(0).optional(), actualFbaFee: z.number().min(0).optional(), sellingPrice: z.number().min(0).optional(), currency: z.literal("USD").default("USD"),
     }).superRefine((value, issue) => {
       if (value.scopeType === "store_country" && (!value.storeName || !value.country)) issue.addIssue({ code: "custom", message: "店铺和国家不能为空" });
       if (value.scopeType === "parent_asin" && (!value.parentAsin || !value.storeName || !value.country)) issue.addIssue({ code: "custom", message: "父 ASIN、店铺和国家不能为空" });
