@@ -18,7 +18,7 @@ import { storagePut } from "../storage";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { summarizeParentAsinWeeks, summarizeVariantSales } from "../domains/ops/productOverview/dailyAggregation";
 import { calculateInventoryPlan } from "../domains/ops/inventoryPlanning/calculator";
-import { evaluateThreeMonthZeroDiscontinuation } from "../domains/ops/lifecycle/zeroValueDiscontinuation";
+import { evaluateThreeMonthZeroDiscontinuation, evaluateThreeMonthZeroWeeklyDiscontinuation } from "../domains/ops/lifecycle/zeroValueDiscontinuation";
 
 function matchesLingxingMarketplace(row: { country?: string | null; storeName?: string | null }, marketplace: string) {
   if (marketplace === "ALL") return true;
@@ -32,6 +32,14 @@ function matchesLingxingMarketplace(row: { country?: string | null; storeName?: 
 async function refreshZeroValueDiscontinuationStatuses(db: any, workspaceId: number) {
   const snapshots = await db.select().from(opsAsinDailySnapshots)
     .where(eq(opsAsinDailySnapshots.workspaceId, workspaceId));
+  const legacyWeekly = await db.select().from(lingxingProductWeekly).where(or(
+    isNull(lingxingProductWeekly.workspaceId), eq(lingxingProductWeekly.workspaceId, workspaceId),
+  ));
+  const weeklyByKey = new Map<string, any[]>();
+  for (const row of legacyWeekly) {
+    const key = `${row.asin}::${row.storeName}::${row.country}`;
+    weeklyByKey.set(key, [...(weeklyByKey.get(key) || []), row]);
+  }
   const grouped = new Map<string, any[]>();
   for (const row of snapshots) {
     const key = `${row.asin}::${row.storeName}::${row.country}`;
@@ -39,10 +47,15 @@ async function refreshZeroValueDiscontinuationStatuses(db: any, workspaceId: num
   }
   for (const rows of grouped.values()) {
     const latest = [...rows].sort((a, b) => a.reportDate.localeCompare(b.reportDate)).at(-1)!;
-    const decision = evaluateThreeMonthZeroDiscontinuation(rows.map(row => ({
+    const dailyDecision = evaluateThreeMonthZeroDiscontinuation(rows.map(row => ({
       reportDate: row.reportDate, salesQty: row.salesQty || 0, orderProfit: Number(row.orderProfit || 0),
       totalInventory: (row.fbaAvailable || row.availableStock || 0) + (row.fbaInTransit || 0),
     })));
+    const weeklyDecision = evaluateThreeMonthZeroWeeklyDiscontinuation((weeklyByKey.get(`${latest.asin}::${latest.storeName}::${latest.country}`) || []).map(row => ({
+      weekStartDate: row.weekStartDate, weekEndDate: row.weekEndDate, salesQty: row.salesQty || 0,
+      orderProfit: Number(row.orderProfit || 0), totalInventory: (row.fbaAvailable || 0) + (row.fbaInTransit || 0),
+    })));
+    const decision = dailyDecision.shouldDiscontinue ? dailyDecision : weeklyDecision;
     if (!decision.shouldDiscontinue) continue;
     const [existing] = await db.select().from(opsAsinLifecycleStatuses).where(and(
       eq(opsAsinLifecycleStatuses.workspaceId, workspaceId), eq(opsAsinLifecycleStatuses.asin, latest.asin),

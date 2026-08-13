@@ -16,6 +16,14 @@ export type ZeroValueDiscontinuationResult = {
   maxInventory: number;
 };
 
+export type AsinWeeklyLifecycleEvidence = {
+  weekStartDate: string;
+  weekEndDate: string;
+  salesQty: number;
+  orderProfit: number;
+  totalInventory: number;
+};
+
 /**
  * Determines whether one child ASIN may be auto-discontinued. The date range must
  * cover 90 consecutive calendar days ending at the most recent import date; gaps
@@ -37,4 +45,19 @@ export function evaluateThreeMonthZeroDiscontinuation(records: AsinLifecycleEvid
   const hasContinuousEvidence = uniqueDates.size === 90 && window[0]?.reportDate === start;
   const reason = !hasContinuousEvidence ? "insufficient_history" : (salesQty === 0 && profit === 0 && maxInventory === 0 ? "three_months_zero" : "non_zero_evidence");
   return { shouldDiscontinue: reason === "three_months_zero", reason, evidenceStartDate: start, evidenceEndDate: end, evidenceDays: uniqueDates.size, salesQty, profit, maxInventory };
+}
+
+/** Accepts imported seven-day summaries when daily history is unavailable. */
+export function evaluateThreeMonthZeroWeeklyDiscontinuation(records: AsinWeeklyLifecycleEvidence[]): ZeroValueDiscontinuationResult {
+  const ordered = [...records].sort((a, b) => a.weekEndDate.localeCompare(b.weekEndDate));
+  if (!ordered.length) return { shouldDiscontinue: false, reason: "insufficient_history", evidenceStartDate: null, evidenceEndDate: null, evidenceDays: 0, salesQty: 0, profit: 0, maxInventory: 0 };
+  const start = ordered[0].weekStartDate;
+  const end = ordered.at(-1)!.weekEndDate;
+  const spanDays = Math.floor((new Date(`${end}T00:00:00Z`).getTime() - new Date(`${start}T00:00:00Z`).getTime()) / 86_400_000) + 1;
+  const salesQty = ordered.reduce((sum, row) => sum + Number(row.salesQty || 0), 0);
+  const profit = ordered.reduce((sum, row) => sum + Number(row.orderProfit || 0), 0);
+  const maxInventory = ordered.reduce((max, row) => Math.max(max, Number(row.totalInventory || 0)), 0);
+  const hasContinuousEvidence = ordered.length >= 13 && spanDays >= 90;
+  const reason = !hasContinuousEvidence ? "insufficient_history" : (salesQty === 0 && profit === 0 && maxInventory === 0 ? "three_months_zero" : "non_zero_evidence");
+  return { shouldDiscontinue: reason === "three_months_zero", reason, evidenceStartDate: start, evidenceEndDate: end, evidenceDays: spanDays, salesQty, profit, maxInventory };
 }
