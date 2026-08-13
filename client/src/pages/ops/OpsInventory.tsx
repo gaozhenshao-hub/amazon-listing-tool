@@ -174,7 +174,15 @@ export default function OpsInventory() {
       const bucket = months.find(month => month.key === monthKey);
       if (!bucket) return;
       const productCost = row.productCost == null ? null : Number(row.productCost);
-      bucket.rows.push({ ...row, quantity, productCost, purchaseAmount: productCost == null ? null : quantity * productCost });
+      bucket.rows.push({
+        ...row,
+        sourceAsin: row.asin,
+        asin: row.productName || "未提供品名",
+        productName: row.sku ? `SKU：${row.sku}` : "SKU：—",
+        quantity,
+        productCost,
+        purchaseAmount: productCost == null ? null : quantity * productCost,
+      });
     });
     return months.map(month => ({
       ...month,
@@ -183,6 +191,14 @@ export default function OpsInventory() {
       missingCostCount: month.rows.filter(row => row.productCost == null).length,
     }));
   }, [planningData]);
+  const downloadMonthlyPurchasePlan = () => {
+    const headers = ["采购月份", "品名", "SKU", "采购量", "单件成本(USD)", "采购金额(USD)"];
+    const records = monthlyPurchasePlans.flatMap(month => month.rows.map((row: any) => [month.key, row.productName || "—", row.sku || "—", row.quantity, row.productCost == null ? "待录入" : row.productCost.toFixed(2), row.purchaseAmount == null ? "—" : row.purchaseAmount.toFixed(2)]));
+    const csv = "\uFEFF" + [headers, ...records].map(line => line.map(value => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    const link = document.createElement("a");
+    link.href = url; link.download = `月度采购计划_${planningData?.asOfDate || "最新"}.csv`; link.click(); URL.revokeObjectURL(url);
+  };
   const confirmLocalInventory = trpc.dataImport.confirmLocalInventory.useMutation({
     onSuccess: () => { toast.success("本地库存已确认并计入库存规划"); void refetchPlanning(); },
     onError: (error: any) => toast.error("本地库存确认失败", { description: error.message }),
