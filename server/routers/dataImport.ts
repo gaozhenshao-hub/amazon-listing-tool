@@ -600,7 +600,8 @@ export const dataImportRouter = router({
         if (!operatorByParentKey.has(key)) operatorByParentKey.set(key, row.operator);
       }
       for (const item of overview as Array<{ parentAsin: string; storeName: string; country: string; operator?: string | null }>) {
-        item.operator = operatorByProfileKey.get([item.parentAsin, item.storeName || ""].join("|"))
+        item.operator = item.operator
+          || operatorByProfileKey.get([item.parentAsin, item.storeName || ""].join("|"))
           || operatorByParentKey.get([item.parentAsin, item.storeName, item.country].join("|"))
           || null;
       }

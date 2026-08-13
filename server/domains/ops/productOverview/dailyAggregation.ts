@@ -3,7 +3,7 @@ export type DailySnapshot = {
   salesQty: number; orderQty: number; salesAmount: number | string; orderProfit: number | string;
   adSpend: number | string; adSales: number | string; sessionsTotal: number;
   fbaAvailable: number; fbaInTransit: number; sourceLocalAvailable: number;
-  title?: string | null; productName?: string | null; sku?: string | null;
+  title?: string | null; productName?: string | null; sku?: string | null; operator?: string | null;
 };
 
 const numberOf = (value: number | string | null | undefined) => Number(value || 0) || 0;
@@ -52,7 +52,7 @@ export function summarizeParentAsinWeeks(records: DailySnapshot[], weeksToShow: 
       };
     });
     const latest = group.sort((a, b) => b.reportDate.localeCompare(a.reportDate))[0];
-    return { parentAsin: latest.parentAsin, storeName: latest.storeName, country: latest.country, title: latest.title || "", productName: latest.productName || null, weeks };
+    return { parentAsin: latest.parentAsin, storeName: latest.storeName, country: latest.country, title: latest.title || "", productName: latest.productName || null, operator: latest.operator || null, weeks };
   });
 }
 

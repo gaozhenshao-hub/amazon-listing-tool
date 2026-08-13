@@ -18,4 +18,9 @@ describe("领星日快照周汇总", () => {
     expect(variants.find(item => item.asin === "A1")).toMatchObject({ fbaAvailable: 8, weekly: [{ salesQty: 5, activeDays: 2 }] });
     expect(variants.find(item => item.asin === "A2")).toMatchObject({ fbaAvailable: 7, weekly: [{ salesQty: 4, activeDays: 1 }] });
   });
+
+  it("保留最新日快照中的上传运营人员以供名称映射", () => {
+    const [summary] = summarizeParentAsinWeeks([{ ...records[0], operator: "董静静" }], 1);
+    expect(summary.operator).toBe("董静静");
+  });
 });

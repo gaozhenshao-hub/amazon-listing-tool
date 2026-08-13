@@ -45,7 +45,8 @@ describe("导入模式库存规划接口契约", () => {
     expect(routerSource).toContain("lingxingProductWeekly.operator");
     expect(routerSource).toContain("productProfiles.operator");
     expect(routerSource).toContain("operatorByProfileKey");
-    expect(routerSource).toContain("item.operator = operatorByProfileKey.get");
+    expect(routerSource).toContain("item.operator = item.operator");
+    expect(routerSource).toContain("|| operatorByProfileKey.get");
   });
 
   it("库存规划以子 ASIN 独立覆盖生产、物流和缓冲时间，父 ASIN 不参与计算覆盖", () => {
