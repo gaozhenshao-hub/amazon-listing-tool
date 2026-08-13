@@ -43,7 +43,9 @@ describe("导入模式库存规划接口契约", () => {
   it("领星日粒度父 ASIN 汇总复用既有周度数据中的运营负责人映射", () => {
     expect(routerSource).toContain("operatorByParentKey");
     expect(routerSource).toContain("lingxingProductWeekly.operator");
-    expect(routerSource).toContain("item.operator = operatorByParentKey.get");
+    expect(routerSource).toContain("productProfiles.operator");
+    expect(routerSource).toContain("operatorByProfileKey");
+    expect(routerSource).toContain("item.operator = operatorByProfileKey.get");
   });
 
   it("父 ASIN 可独立覆盖生产、物流和缓冲时间，并优先参与库存规划计算", () => {

@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
-import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, saihuProductWeekly, operatorNameMappings, users, productionConfig } from "../../drizzle/schema";
+import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles } from "../../drizzle/schema";
 import { MANAGER_ROLES } from "../../shared/const";
 import { eq, desc, and, sql, or, isNull, ne } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
@@ -573,12 +573,26 @@ export const dataImportRouter = router({
         .where(opsWorkspaceCondition(opsAsinDailySnapshots, currentOpsWorkspaceId(), eq(opsAsinDailySnapshots.userId, effectiveUserId)));
       const filtered = rows.filter(row => matchesLingxingMarketplace(row, input.marketplace));
       const overview = summarizeParentAsinWeeks(filtered as any, input.weeks);
+      const profileOperatorRows = await db!.select({
+        parentAsin: productProfiles.parentAsin,
+        storeName: productProfiles.storeName,
+        operator: productProfiles.operator,
+      }).from(productProfiles).where(or(
+        isNull(productProfiles.workspaceId),
+        opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), eq(productProfiles.userId, effectiveUserId))
+      ));
       const operatorRows = await db!.select({
         parentAsin: lingxingProductWeekly.parentAsin,
         storeName: lingxingProductWeekly.storeName,
         country: lingxingProductWeekly.country,
         operator: lingxingProductWeekly.operator,
       }).from(lingxingProductWeekly).where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)));
+      const operatorByProfileKey = new Map<string, string>();
+      for (const row of profileOperatorRows) {
+        if (!row.operator) continue;
+        const key = [row.parentAsin, row.storeName || ""].join("|");
+        if (!operatorByProfileKey.has(key)) operatorByProfileKey.set(key, row.operator);
+      }
       const operatorByParentKey = new Map<string, string>();
       for (const row of operatorRows) {
         if (!row.operator) continue;
@@ -586,7 +600,9 @@ export const dataImportRouter = router({
         if (!operatorByParentKey.has(key)) operatorByParentKey.set(key, row.operator);
       }
       for (const item of overview as Array<{ parentAsin: string; storeName: string; country: string; operator?: string | null }>) {
-        item.operator = operatorByParentKey.get([item.parentAsin, item.storeName, item.country].join("|")) || null;
+        item.operator = operatorByProfileKey.get([item.parentAsin, item.storeName || ""].join("|"))
+          || operatorByParentKey.get([item.parentAsin, item.storeName, item.country].join("|"))
+          || null;
       }
       await applyOperatorMappings(db, overview as any, "lingxing");
       return filterByOperatorPermission(overview as any, ctx.user);
