@@ -277,7 +277,7 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 }
 
 // ─── Product Row Component ───
-function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort, isImportMode, productionConfig, onUpdateProductionConfig }: {
+function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort, isImportMode, productionConfig, onUpdateProductionConfig, planningRows, onSaveCostParameters }: {
   product: ProductOverview;
   onNavigate: (id: number) => void;
   onNavigateImport?: (parentAsin: string) => void;
@@ -292,6 +292,8 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
   isImportMode?: boolean;
   productionConfig?: { productionTimeDays: number; shippingTimeDays: number; notes: string | null };
   onUpdateProductionConfig?: (config: { productionTimeDays: number; shippingTimeDays: number; marketplace: string }) => void;
+  planningRows?: any[];
+  onSaveCostParameters?: (row: any, values: Record<string, string>) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -299,7 +301,15 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
   const [editingProduction, setEditingProduction] = useState(false);
   const [prodDays, setProdDays] = useState(productionConfig?.productionTimeDays ?? 15);
   const [shipDays, setShipDays] = useState(productionConfig?.shippingTimeDays ?? 30);
+  const [costPanelOpen, setCostPanelOpen] = useState(false);
+  const [costDrafts, setCostDrafts] = useState<Record<string, Record<string, string>>>({});
   const bi = product.basicInfo;
+  const productPlanningRows = useMemo(() => (planningRows || []).filter((row: any) => row.parentAsin === product.parentAsin), [planningRows, product.parentAsin]);
+
+  const getCostValue = (row: any, field: string) => costDrafts[row.asin]?.[field] ?? (row[field] == null ? "" : String(row[field]));
+  const updateCostDraft = (asin: string, field: string, value: string) => {
+    setCostDrafts(current => ({ ...current, [asin]: { ...(current[asin] || {}), [field]: value } }));
+  };
 
   // Compute inventory status
   const inventoryStatus = useMemo(() => {
@@ -610,8 +620,47 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
 
       {/* ═══ Weekly Data Table ═══ */}
       {expanded && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-[11px]">
+        <div>
+          {isImportMode && productPlanningRows.length > 0 && (
+            <section className="border-b bg-slate-50/70 px-3 py-2.5">
+              <button className="flex w-full items-center justify-between text-left" onClick={() => setCostPanelOpen(open => !open)}>
+                <span>
+                  <span className="text-xs font-semibold text-slate-700">产品基本信息（USD）</span>
+                  <span className="ml-2 text-[11px] text-muted-foreground">按子 ASIN 维护；成本会同步用于库存规划和月度采购资金。</span>
+                </span>
+                {costPanelOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+              </button>
+              {costPanelOpen && (
+                <div className="mt-2 overflow-x-auto rounded-md border bg-background">
+                  <table className="w-full min-w-[1130px] text-[11px]">
+                    <thead className="border-b bg-muted/40 text-muted-foreground">
+                      <tr><th className="px-2 py-1.5 text-left">子 ASIN / SKU</th><th className="px-2 py-1.5 text-right">产品成本</th><th className="px-2 py-1.5 text-right">预估头程</th><th className="px-2 py-1.5 text-right">实际头程</th><th className="px-2 py-1.5 text-right">预估 FBA</th><th className="px-2 py-1.5 text-right">实际 FBA</th><th className="px-2 py-1.5 text-right">售价</th><th className="px-2 py-1.5 text-right">预估平手价</th><th className="px-2 py-1.5 text-right">实际平手价</th><th className="px-2 py-1.5 text-center">操作</th></tr>
+                    </thead>
+                    <tbody>
+                      {productPlanningRows.map((row: any) => {
+                        const toNumber = (field: string) => Number(getCostValue(row, field) || 0);
+                        const sellingPrice = toNumber("sellingPrice");
+                        const estimatedBreakEven = sellingPrice * 0.85 - toNumber("productCost") - toNumber("estimatedFirstLegCost") - toNumber("estimatedFbaFee");
+                        const actualBreakEven = sellingPrice * 0.85 - toNumber("productCost") - toNumber("actualFirstLegCost") - toNumber("actualFbaFee");
+                        const fields = [
+                          ["productCost", "产品成本"], ["estimatedFirstLegCost", "预估头程"], ["actualFirstLegCost", "实际头程"], ["estimatedFbaFee", "预估 FBA"], ["actualFbaFee", "实际 FBA"], ["sellingPrice", "售价"],
+                        ] as const;
+                        return <tr key={`${row.asin}-${row.storeName}-${row.country}`} className="border-b last:border-0">
+                          <td className="px-2 py-1.5"><div className="font-medium">{row.asin}</div><div className="text-muted-foreground">{row.sku || "—"}</div></td>
+                          {fields.map(([field, label]) => <td key={field} className="px-1 py-1 text-right"><Input aria-label={`${row.asin}${label}`} type="number" min="0" step="0.01" className="h-7 w-[88px] text-right text-[11px]" value={getCostValue(row, field)} placeholder="0.00" onChange={event => updateCostDraft(row.asin, field, event.target.value)} /></td>)}
+                          <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${estimatedBreakEven < 0 ? "text-red-600" : "text-emerald-700"}`}>${estimatedBreakEven.toFixed(2)}</td>
+                          <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${actualBreakEven < 0 ? "text-red-600" : "text-emerald-700"}`}>${actualBreakEven.toFixed(2)}</td>
+                          <td className="px-2 py-1 text-center"><Button size="sm" className="h-7 text-[11px]" onClick={() => onSaveCostParameters?.(row, costDrafts[row.asin] || {})}>保存</Button></td>
+                        </tr>;
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
             <thead>
               <tr className="bg-muted/20 border-b">
                 {WEEKLY_COLS.map(col => (
@@ -776,7 +825,8 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
                 </tr>
               )}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -915,6 +965,13 @@ export default function OpsProducts() {
   // Update production config mutation
   const updateProductionMut = trpc.dataImport.updateProductionConfig.useMutation({
     onSuccess: () => { utils.dataImport.getProductionConfigs.invalidate(); toast.success("生产配置已更新"); },
+  });
+  const savePlanningParametersMut = trpc.dataImport.saveInventoryPlanningParameters.useMutation({
+    onSuccess: () => {
+      void utils.dataImport.getInventoryPlanningFromImport.invalidate();
+      toast.success("产品基本信息已保存，平手价和采购成本已同步更新");
+    },
+    onError: (error) => toast.error("产品基本信息保存失败", { description: error.message }),
   });
 
   // Unified products & loading state
@@ -1093,8 +1150,8 @@ export default function OpsProducts() {
                     <td className="px-2 py-2">{row.coverageDays ?? "—"}</td>
                     <td className="px-2 py-2 tabular-nums">{row.productCost == null ? <span className="text-amber-600">待录入</span> : `$${Number(row.productCost).toFixed(2)}`}</td>
                     <td className="px-2 py-2 tabular-nums">{row.sellingPrice == null ? <span className="text-muted-foreground">—</span> : `$${Number(row.sellingPrice).toFixed(2)}`}</td>
-                    <td className="px-2 py-2 tabular-nums">{row.estimatedBreakEvenPrice == null ? <span className="text-muted-foreground">—</span> : `$${Number(row.estimatedBreakEvenPrice).toFixed(2)}`}</td>
-                    <td className="px-2 py-2 tabular-nums">{row.actualBreakEvenPrice == null ? <span className="text-muted-foreground">—</span> : `$${Number(row.actualBreakEvenPrice).toFixed(2)}`}</td>
+                    <td className="px-2 py-2 tabular-nums">{row.estimatedBreakEven == null ? <span className="text-muted-foreground">—</span> : `$${Number(row.estimatedBreakEven).toFixed(2)}`}</td>
+                    <td className="px-2 py-2 tabular-nums">{row.actualBreakEven == null ? <span className="text-muted-foreground">—</span> : `$${Number(row.actualBreakEven).toFixed(2)}`}</td>
                     <td className="px-2 py-2">{row.suggestedOrderDate ?? "待补充销量"}</td>
                     <td className="px-2 py-2">{row.suggestedOrderQuantity}</td>
                     <td className="px-2 py-2"><Badge variant={row.confirmedStockout ? "destructive" : "secondary"}>{row.confirmedStockout ? "已确认断货" : row.manualOverrideApplied ? "人工日销" : "待确认"}</Badge></td>
@@ -1385,6 +1442,27 @@ export default function OpsProducts() {
               isImportMode={dataSource !== "system"}
               productionConfig={productionConfigs?.[product.parentAsin]}
               onUpdateProductionConfig={(config) => updateProductionMut.mutate({ parentAsin: product.parentAsin, ...config })}
+              planningRows={dataSource === "lingxing" ? inventoryPlanning?.rows : []}
+              onSaveCostParameters={(row, values) => savePlanningParametersMut.mutate({
+                scopeType: "asin",
+                asin: row.asin,
+                parentAsin: row.parentAsin,
+                storeName: row.storeName,
+                country: row.country,
+                productionDays: Number(row.productionDays ?? 30),
+                shippingDays: Number(row.shippingDays ?? 30),
+                bufferDays: Number(row.bufferDays ?? 10),
+                targetCoverDays: Number(row.targetCoverDays ?? 30),
+                moq: Number(row.moq ?? 0),
+                packSize: Number(row.packSize ?? 1),
+                productCost: Number(values.productCost ?? row.productCost ?? 0),
+                estimatedFirstLegCost: Number(values.estimatedFirstLegCost ?? row.estimatedFirstLegCost ?? 0),
+                actualFirstLegCost: Number(values.actualFirstLegCost ?? row.actualFirstLegCost ?? 0),
+                estimatedFbaFee: Number(values.estimatedFbaFee ?? row.estimatedFbaFee ?? 0),
+                actualFbaFee: Number(values.actualFbaFee ?? row.actualFbaFee ?? 0),
+                sellingPrice: Number(values.sellingPrice ?? row.sellingPrice ?? 0),
+                currency: "USD",
+              })}
             />
           ))}
         </div>

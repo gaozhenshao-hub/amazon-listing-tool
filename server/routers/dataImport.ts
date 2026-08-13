@@ -727,20 +727,25 @@ export const dataImportRouter = router({
           moq: parameter?.moq ?? 0,
           packSize: parameter?.packSize ?? 1,
         });
-        const productCost = Number(parameter?.productCost ?? 0);
-        const estimatedFirstLegCost = Number(parameter?.estimatedFirstLegCost ?? 0);
-        const actualFirstLegCost = Number(parameter?.actualFirstLegCost ?? 0);
-        const estimatedFbaFee = Number(parameter?.estimatedFbaFee ?? 0);
-        const actualFbaFee = Number(parameter?.actualFbaFee ?? 0);
-        const sellingPrice = Number(parameter?.sellingPrice ?? 0);
+        const productCost = parameter?.productCost == null ? null : Number(parameter.productCost);
+        const estimatedFirstLegCost = parameter?.estimatedFirstLegCost == null ? null : Number(parameter.estimatedFirstLegCost);
+        const actualFirstLegCost = parameter?.actualFirstLegCost == null ? null : Number(parameter.actualFirstLegCost);
+        const estimatedFbaFee = parameter?.estimatedFbaFee == null ? null : Number(parameter.estimatedFbaFee);
+        const actualFbaFee = parameter?.actualFbaFee == null ? null : Number(parameter.actualFbaFee);
+        const sellingPrice = parameter?.sellingPrice == null ? null : Number(parameter.sellingPrice);
+        const estimatedBreakEven = sellingPrice !== null && productCost !== null && estimatedFirstLegCost !== null && estimatedFbaFee !== null
+          ? sellingPrice * 0.85 - productCost - estimatedFirstLegCost - estimatedFbaFee
+          : null;
+        const actualBreakEven = sellingPrice !== null && productCost !== null && actualFirstLegCost !== null && actualFbaFee !== null
+          ? sellingPrice * 0.85 - productCost - actualFirstLegCost - actualFbaFee
+          : null;
         return {
           asin: latest.asin, sku: latest.msku || latest.sku || null, parentAsin: latest.parentAsin, storeName: latest.storeName, country: latest.country,
           productName: latest.productName || latest.title || null, operator: latest.operator || null, localInventory: local?.localQty || 0,
           localInventoryConfirmedAt: local?.confirmedAt || null, parameterScope: parameter?.scopeType || "workspace",
           productionDays: parameter?.productionDays ?? 30, shippingDays: parameter?.shippingDays ?? 30, bufferDays: parameter?.bufferDays ?? 10,
           productCost, estimatedFirstLegCost, actualFirstLegCost, estimatedFbaFee, actualFbaFee, sellingPrice, currency: parameter?.currency ?? "USD",
-          estimatedBreakEven: sellingPrice * 0.85 - productCost - estimatedFirstLegCost - estimatedFbaFee,
-          actualBreakEven: sellingPrice * 0.85 - productCost - actualFirstLegCost - actualFbaFee,
+          estimatedBreakEven, actualBreakEven,
           ...plan,
         };
       });

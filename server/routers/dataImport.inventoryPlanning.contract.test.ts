@@ -28,6 +28,23 @@ describe("导入模式库存规划接口契约", () => {
     expect(routerSource).toContain("bufferDays: parameter?.bufferDays ?? 10");
   });
 
+  it("子 ASIN 成本参数与产品总览基本信息使用同一保存契约和美元平手价口径", () => {
+    expect(routerSource).toContain("productCost: z.number().min(0).optional()");
+    expect(routerSource).toContain("estimatedFirstLegCost: z.number().min(0).optional()");
+    expect(routerSource).toContain("actualFirstLegCost: z.number().min(0).optional()");
+    expect(routerSource).toContain("estimatedFbaFee: z.number().min(0).optional()");
+    expect(routerSource).toContain("actualFbaFee: z.number().min(0).optional()");
+    expect(routerSource).toContain("sellingPrice: z.number().min(0).optional()");
+    expect(routerSource).toContain('currency: z.literal("USD")');
+    expect(routerSource).toContain("const estimatedBreakEven = sellingPrice !== null");
+    expect(routerSource).toContain("const actualBreakEven = sellingPrice !== null");
+    expect(productsPageSource).toContain("产品基本信息（USD）");
+    expect(productsPageSource).toContain("costPanelOpen");
+    expect(productsPageSource).toContain("saveInventoryPlanningParameters");
+    expect(productsPageSource).toContain("sellingPrice * 0.85");
+    expect(productsPageSource).toContain("产品基本信息已保存，平手价和采购成本已同步更新");
+  });
+
   it("产品总览和详情页均使用新的日粒度库存与变体销量接口", () => {
     expect(productsPageSource).toContain("getLingxingDailyOverview");
     expect(productsPageSource).toContain("adaptDailyParentOverview");
@@ -80,5 +97,14 @@ describe("导入模式库存规划接口契约", () => {
     expect(inventoryPageSource).toContain("getInventoryPlanningFromImport");
     expect(inventoryPageSource).toContain("confirmLocalInventory");
     expect(inventoryPageSource).toContain("默认总货期");
+  });
+
+  it("月度采购表按建议订货日归集三个月计划，并且只对已录入成本计算采购资金", () => {
+    expect(inventoryPageSource).toContain("monthlyPurchasePlans");
+    expect(inventoryPageSource).toContain('length: 3');
+    expect(inventoryPageSource).toContain("建议订货日归入本月、下月和后月");
+    expect(inventoryPageSource).toContain("purchaseAmount: productCost == null ? null : quantity * productCost");
+    expect(inventoryPageSource).toContain("待录入成本");
+    expect(inventoryPageSource).toContain("月度采购表与资金规划");
   });
 });
