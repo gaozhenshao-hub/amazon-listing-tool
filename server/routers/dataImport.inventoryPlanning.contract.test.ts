@@ -57,6 +57,12 @@ describe("导入模式库存规划接口契约", () => {
     expect(detailPageSource).toContain("近{week}周");
   });
 
+  it("产品总览卡片优先展示上传表品名，品名缺失时才回退到Listing标题", () => {
+    expect(productsPageSource).toContain("title: product.productName || product.title || product.parentAsin");
+    expect(productsPageSource).toContain("chineseName: product.productName || null");
+    expect(productsPageSource).toContain("product.chineseName || product.title");
+  });
+
   it("领星日粒度父 ASIN 汇总复用既有周度数据中的运营负责人映射", () => {
     expect(routerSource).toContain("operatorByParentKey");
     expect(routerSource).toContain("lingxingProductWeekly.operator");
