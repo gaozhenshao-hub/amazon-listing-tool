@@ -674,24 +674,30 @@ export const dataImportRouter = router({
     .input(z.object({ asOfDate: z.string().optional(), marketplace: z.string().default("ALL") }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
+      const workspaceId = ctx.user.defaultWorkspaceId ?? currentOpsWorkspaceId();
+      if (!workspaceId) return { asOfDate: null, rows: [] };
       // 产品总览上传的数据是同一工作空间共享的业务事实，不应因登录用户或导入人不同而分裂。
       // 规划始终使用工作空间内全部领星日快照，再以最新报告日期建立同一数据基准日。
       const snapshots = await db!.select().from(opsAsinDailySnapshots)
-        .where(eq(opsAsinDailySnapshots.workspaceId, currentOpsWorkspaceId()));
+        .where(eq(opsAsinDailySnapshots.workspaceId, workspaceId));
       const scopedSnapshots = snapshots.filter(row => matchesLingxingMarketplace(row, input.marketplace));
       const asOfDate = input.asOfDate || scopedSnapshots.reduce((latest, row) => row.reportDate > latest ? row.reportDate : latest, "");
       if (!asOfDate) return { asOfDate: null, rows: [] };
 
-      const locals = await db!.select().from(opsLocalInventoryAdjustments)
-        .where(opsWorkspaceCondition(opsLocalInventoryAdjustments, currentOpsWorkspaceId(), and(
-          eq(opsLocalInventoryAdjustments.userId, ctx.user.id),
-          eq(opsLocalInventoryAdjustments.status, "confirmed"),
-        )));
-      const parameters = await db!.select().from(opsInventoryPlanningParameters)
-        .where(opsWorkspaceCondition(opsInventoryPlanningParameters, currentOpsWorkspaceId(), and(
-          eq(opsInventoryPlanningParameters.userId, ctx.user.id),
-          eq(opsInventoryPlanningParameters.isActive, 1),
-        )));
+      const [locals, parameters] = await Promise.all([
+        db!.select().from(opsLocalInventoryAdjustments)
+          .where(and(
+            eq(opsLocalInventoryAdjustments.workspaceId, workspaceId),
+            eq(opsLocalInventoryAdjustments.userId, ctx.user.id),
+            eq(opsLocalInventoryAdjustments.status, "confirmed"),
+          )),
+        db!.select().from(opsInventoryPlanningParameters)
+          .where(and(
+            eq(opsInventoryPlanningParameters.workspaceId, workspaceId),
+            eq(opsInventoryPlanningParameters.userId, ctx.user.id),
+            eq(opsInventoryPlanningParameters.isActive, 1),
+          )),
+      ]);
 
       const latestRows = scopedSnapshots.filter(row => row.reportDate === asOfDate);
       const planningRows = latestRows.map(latest => {

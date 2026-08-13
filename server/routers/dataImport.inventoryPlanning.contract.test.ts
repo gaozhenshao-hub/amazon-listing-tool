@@ -70,7 +70,8 @@ describe("导入模式库存规划接口契约", () => {
 
   it("库存规划直接读取同工作空间共享的领星日快照，避免按登录用户拆分数据", () => {
     expect(routerSource).toContain("产品总览上传的数据是同一工作空间共享的业务事实");
-    expect(routerSource).toContain("eq(opsAsinDailySnapshots.workspaceId, currentOpsWorkspaceId())");
+    expect(routerSource).toContain("const workspaceId = ctx.user.defaultWorkspaceId ?? currentOpsWorkspaceId()");
+    expect(routerSource).toContain("eq(opsAsinDailySnapshots.workspaceId, workspaceId)");
     expect(routerSource).not.toContain("fallbackOwnerId");
   });
 
