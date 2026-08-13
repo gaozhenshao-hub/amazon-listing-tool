@@ -652,7 +652,6 @@ export const dataImportRouter = router({
           .filter(item => item.asin === latest.asin && item.storeName === latest.storeName && item.country === latest.country && item.effectiveDate <= asOfDate)
           .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate) || b.id - a.id)[0];
         const parameter = parameters.find(item => item.scopeType === "asin" && item.asin === latest.asin && item.storeName === latest.storeName && item.country === latest.country)
-          || parameters.find(item => item.scopeType === "parent_asin" && item.parentAsin === latest.parentAsin && item.storeName === latest.storeName && item.country === latest.country)
           || parameters.find(item => item.scopeType === "store_country" && item.storeName === latest.storeName && item.country === latest.country)
           || parameters.find(item => item.scopeType === "workspace");
         const plan = calculateInventoryPlan({

@@ -48,12 +48,12 @@ describe("导入模式库存规划接口契约", () => {
     expect(routerSource).toContain("item.operator = operatorByProfileKey.get");
   });
 
-  it("父 ASIN 可独立覆盖生产、物流和缓冲时间，并优先参与库存规划计算", () => {
-    expect(routerSource).toContain('item.scopeType === "parent_asin"');
-    expect(routerSource).toContain('scopeType: z.enum(["workspace", "store_country", "parent_asin", "asin"])');
-    expect(routerSource).toContain("parentAsin: latest.parentAsin");
-    expect(inventoryPageSource).toContain("产品独立货期");
-    expect(inventoryPageSource).toContain('scopeType: "parent_asin"');
+  it("库存规划以子 ASIN 独立覆盖生产、物流和缓冲时间，父 ASIN 不参与计算覆盖", () => {
+    expect(routerSource).toContain('item.scopeType === "asin" && item.asin === latest.asin');
+    expect(routerSource).not.toContain('item.scopeType === "parent_asin" && item.parentAsin === latest.parentAsin');
+    expect(inventoryPageSource).toContain("子 ASIN 独立货期");
+    expect(inventoryPageSource).toContain('scopeType: "asin"');
+    expect(inventoryPageSource).not.toContain('scopeType: "parent_asin"');
   });
 
   it("库存规划以市场代码筛选时可识别领星中文国家名和店铺站点后缀", () => {
