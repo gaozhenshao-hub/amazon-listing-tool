@@ -211,6 +211,32 @@ type ProductOverview = {
   }>;
 };
 
+function adaptDailyParentOverview(source: any[], weeksToShow: number): ProductOverview[] {
+  return source.map((product, productIndex) => {
+    const weeks = (product.weeks || []).slice(0, weeksToShow).map((week: any, weekIndex: number) => {
+      const salesAmount = Number(week.salesAmount || 0);
+      const orderProfit = Number(week.orderProfit || 0);
+      const salesQty = Number(week.salesQty || 0);
+      return {
+        id: productIndex * 100 + weekIndex + 1, weekStartDate: week.weekStartDate, weekEndDate: week.weekEndDate,
+        salesTrend: null, salesQty, orderQty: Number(week.orderQty || 0), salesAmount, orderProfit,
+        profitMargin: salesAmount > 0 ? orderProfit / salesAmount * 100 : 0, sessionTotal: Number(week.sessionsTotal || 0),
+        totalCvr: 0, adCvr: 0, organicCvr: 0, adOrders: 0, organicOrders: 0, adClicks: 0, ctr: 0,
+        adImpressions: 0, cpc: 0, adSpend: Number(week.adSpend || 0), acos: Number(week.adSales || 0) > 0 ? Number(week.adSpend || 0) / Number(week.adSales || 0) * 100 : 0,
+        rating: 0, reviewCount: 0, returnRate: 0, wow: null,
+      };
+    });
+    const latest = weeks[0];
+    return {
+      id: productIndex + 1, parentAsin: product.parentAsin, title: product.title || product.productName || product.parentAsin,
+      chineseName: null, brand: null, category: null, marketplace: product.country || null, imageUrl: null, status: "active",
+      operator: null, storeName: product.storeName || null, variantCount: 0, skus: [], basicInfo: null,
+      inventory: latest ? { fbaAvailable: Number((product.weeks?.[0]?.fbaAvailable) || 0), fbaInbound: 0, fbaInTransit: Number((product.weeks?.[0]?.fbaInTransit) || 0), fbaTotal: Number((product.weeks?.[0]?.fbaAvailable) || 0) + Number((product.weeks?.[0]?.fbaInTransit) || 0), availableStock: Number((product.weeks?.[0]?.fbaAvailable) || 0), fbaDaysOfSupply: 0, stockoutDate: null, avgDailySales7d: salesQty / Math.max(Number((product.weeks?.[0]?.activeDays) || 1), 1), daysOfStock: salesQty > 0 ? Math.round(Number((product.weeks?.[0]?.fbaAvailable) || 0) / (salesQty / Math.max(Number((product.weeks?.[0]?.activeDays) || 1), 1))) : 999 } : null,
+      weeks, monthlySummaries: [],
+    };
+  });
+}
+
 // ─── Sortable column keys (based on latest week data) ───
 type SortKey = "salesQty" | "orderQty" | "salesAmount" | "orderProfit" | "profitMargin" | "sessionTotal" | "totalCvr" | "adCvr" | "organicCvr" | "adOrders" | "organicOrders" | "adClicks" | "ctr" | "adImpressions" | "cpc" | "adSpend" | "acos" | "rating" | "reviewCount" | "returnRate" | null;
 type SortDir = "asc" | "desc";
@@ -892,7 +918,7 @@ export default function OpsProducts() {
   });
 
   // Unified products & loading state
-  const products = dataSource === "system" ? systemProducts : importProducts;
+  const products = dataSource === "system" ? systemProducts : dataSource === "lingxing" && lingxingDailyOverview ? adaptDailyParentOverview(lingxingDailyOverview as any[], weekFilter) : importProducts;
   const isLoading = dataSource === "system" ? systemLoading : dataSource === "lingxing" ? lingxingDailyLoading : importLoading;
 
   const [form, setForm] = useState({
@@ -1323,21 +1349,6 @@ export default function OpsProducts() {
             </p>
           </CardContent>
         </Card>
-      ) : dataSource === "lingxing" && lingxingDailyOverview?.length ? (
-        <div className="space-y-3">
-          {lingxingDailyOverview.map((product: any) => {
-            const latest = product.weeks?.[0];
-            return <Card key={`${product.parentAsin}-${product.storeName}-${product.country}`} className="overflow-hidden">
-              <CardContent className="p-0">
-                <button className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-muted/40" onClick={() => navigate(`/ops/products/import/lingxing/${encodeURIComponent(product.parentAsin)}`)}>
-                  <div className="min-w-0"><p className="truncate font-medium">{product.title || product.productName || product.parentAsin}</p><p className="mt-0.5 text-xs text-muted-foreground"><span className="font-mono">{product.parentAsin}</span> · {product.storeName} · {product.country} · 最近{weekFilter}周</p></div>
-                  <div className="grid shrink-0 grid-cols-4 gap-5 text-right text-xs"><div><p className="text-muted-foreground">销量</p><p className="font-semibold">{latest?.salesQty ?? 0}</p></div><div><p className="text-muted-foreground">销售额</p><p className="font-semibold">{fmtCurrency(latest?.salesAmount ?? 0)}</p></div><div><p className="text-muted-foreground">可售库存</p><p className="font-semibold">{latest?.fbaAvailable ?? 0}</p></div><div><p className="text-muted-foreground">在途库存</p><p className="font-semibold text-blue-600">{latest?.fbaInTransit ?? 0}</p></div></div>
-                </button>
-                <div className="border-t bg-muted/20 px-4 py-2 text-xs text-muted-foreground">周度数据：{product.weeks?.map((week: any) => `${fmtWeekDate(week.weekStartDate, week.weekEndDate)} ${week.salesQty}件`).join(" · ")}</div>
-              </CardContent>
-            </Card>;
-          })}
-        </div>
       ) : (
         <div className="space-y-3">
           {filtered.map(product => (
