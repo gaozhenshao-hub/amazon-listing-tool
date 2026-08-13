@@ -10,13 +10,14 @@ import { createHash } from "node:crypto";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
-import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, saihuProductWeekly, operatorNameMappings, users, productionConfig } from "../../drizzle/schema";
+import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, saihuProductWeekly, operatorNameMappings, users, productionConfig } from "../../drizzle/schema";
 import { MANAGER_ROLES } from "../../shared/const";
 import { eq, desc, and, sql, or, isNull, ne } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
 import { storagePut } from "../storage";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { summarizeParentAsinWeeks, summarizeVariantSales } from "../domains/ops/productOverview/dailyAggregation";
+import { calculateInventoryPlan } from "../domains/ops/inventoryPlanning/calculator";
 
 /**
  * Helper: Resolve the effective userId for data queries.
@@ -579,6 +580,99 @@ export const dataImportRouter = router({
         )));
       const filtered = input.marketplace === "ALL" ? rows : rows.filter(row => (row.country || "").toUpperCase().includes(input.marketplace.toUpperCase()));
       return summarizeVariantSales(filtered as any, input.weeks);
+    }),
+
+  // ─── Inventory Planning from Daily ASIN Snapshots ───
+  getInventoryPlanningFromImport: protectedProcedure
+    .input(z.object({ asOfDate: z.string().optional(), marketplace: z.string().default("ALL") }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
+      const snapshots = await db!.select().from(opsAsinDailySnapshots)
+        .where(opsWorkspaceCondition(opsAsinDailySnapshots, currentOpsWorkspaceId(), eq(opsAsinDailySnapshots.userId, effectiveUserId)));
+      const scopedSnapshots = input.marketplace === "ALL"
+        ? snapshots
+        : snapshots.filter(row => (row.country || "").toUpperCase().includes(input.marketplace.toUpperCase()));
+      const asOfDate = input.asOfDate || scopedSnapshots.reduce((latest, row) => row.reportDate > latest ? row.reportDate : latest, "");
+      if (!asOfDate) return { asOfDate: null, rows: [] };
+
+      const locals = await db!.select().from(opsLocalInventoryAdjustments)
+        .where(opsWorkspaceCondition(opsLocalInventoryAdjustments, currentOpsWorkspaceId(), and(
+          eq(opsLocalInventoryAdjustments.userId, ctx.user.id),
+          eq(opsLocalInventoryAdjustments.status, "confirmed"),
+        )));
+      const parameters = await db!.select().from(opsInventoryPlanningParameters)
+        .where(opsWorkspaceCondition(opsInventoryPlanningParameters, currentOpsWorkspaceId(), and(
+          eq(opsInventoryPlanningParameters.userId, ctx.user.id),
+          eq(opsInventoryPlanningParameters.isActive, 1),
+        )));
+
+      const latestRows = scopedSnapshots.filter(row => row.reportDate === asOfDate);
+      const planningRows = latestRows.map(latest => {
+        const history = scopedSnapshots.filter(row => row.asin === latest.asin && row.storeName === latest.storeName && row.country === latest.country);
+        const local = locals
+          .filter(item => item.asin === latest.asin && item.storeName === latest.storeName && item.country === latest.country && item.effectiveDate <= asOfDate)
+          .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate) || b.id - a.id)[0];
+        const parameter = parameters.find(item => item.scopeType === "asin" && item.asin === latest.asin && item.storeName === latest.storeName && item.country === latest.country)
+          || parameters.find(item => item.scopeType === "store_country" && item.storeName === latest.storeName && item.country === latest.country)
+          || parameters.find(item => item.scopeType === "workspace");
+        const plan = calculateInventoryPlan({
+          asOfDate,
+          fbaAvailable: latest.fbaAvailable || latest.availableStock || 0,
+          fbaInTransit: latest.fbaInTransit || 0,
+          localInventory: local?.localQty || 0,
+          salesHistory: history.map(row => ({ reportDate: row.reportDate, salesQty: row.salesQty || 0, totalInventory: (row.fbaAvailable || row.availableStock || 0) + (row.fbaInTransit || 0) + (local?.localQty || 0), isActive: true })),
+          productionDays: parameter?.productionDays ?? 30,
+          shippingDays: parameter?.shippingDays ?? 30,
+          bufferDays: parameter?.bufferDays ?? 10,
+          targetCoverDays: parameter?.targetCoverDays ?? 30,
+          moq: parameter?.moq ?? 0,
+          packSize: parameter?.packSize ?? 1,
+        });
+        return { asin: latest.asin, parentAsin: latest.parentAsin, storeName: latest.storeName, country: latest.country, title: latest.title || latest.productName, localInventory: local?.localQty || 0, localInventoryConfirmedAt: local?.confirmedAt || null, ...plan };
+      });
+      return { asOfDate, rows: planningRows };
+    }),
+
+  confirmLocalInventory: protectedProcedure
+    .input(z.object({ asin: z.string().min(1), storeName: z.string().min(1), country: z.string().min(1), effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), localQty: z.number().int().min(0), reason: z.string().max(500).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const current = await db!.select().from(opsLocalInventoryAdjustments)
+        .where(opsWorkspaceCondition(opsLocalInventoryAdjustments, currentOpsWorkspaceId(), and(
+          eq(opsLocalInventoryAdjustments.userId, ctx.user.id), eq(opsLocalInventoryAdjustments.asin, input.asin), eq(opsLocalInventoryAdjustments.storeName, input.storeName), eq(opsLocalInventoryAdjustments.country, input.country), eq(opsLocalInventoryAdjustments.effectiveDate, input.effectiveDate), eq(opsLocalInventoryAdjustments.status, "confirmed"),
+        )));
+      const [created] = await db!.insert(opsLocalInventoryAdjustments).values({ ...input, userId: ctx.user.id, status: "confirmed", confirmedBy: ctx.user.id, confirmedAt: new Date() }).$returningId();
+      if (current.length) {
+        await db!.update(opsLocalInventoryAdjustments).set({ status: "superseded", supersededById: created.id }).where(opsWorkspaceCondition(opsLocalInventoryAdjustments, currentOpsWorkspaceId(), inArray(opsLocalInventoryAdjustments.id, current.map(row => row.id))));
+      }
+      return { id: created.id, status: "confirmed" as const };
+    }),
+
+  saveInventoryPlanningParameters: protectedProcedure
+    .input(z.object({
+      scopeType: z.enum(["workspace", "store_country", "asin"]),
+      asin: z.string().optional(), storeName: z.string().optional(), country: z.string().optional(),
+      productionDays: z.number().int().min(0).max(365).default(30), shippingDays: z.number().int().min(0).max(365).default(30), bufferDays: z.number().int().min(0).max(365).default(10), targetCoverDays: z.number().int().min(1).max(365).default(30), moq: z.number().int().min(0).default(0), packSize: z.number().int().min(1).default(1),
+    }).superRefine((value, issue) => {
+      if (value.scopeType === "store_country" && (!value.storeName || !value.country)) issue.addIssue({ code: "custom", message: "店铺和国家不能为空" });
+      if (value.scopeType === "asin" && (!value.asin || !value.storeName || !value.country)) issue.addIssue({ code: "custom", message: "ASIN、店铺和国家不能为空" });
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const existing = await db!.select().from(opsInventoryPlanningParameters)
+        .where(opsWorkspaceCondition(opsInventoryPlanningParameters, currentOpsWorkspaceId(), and(
+          eq(opsInventoryPlanningParameters.userId, ctx.user.id), eq(opsInventoryPlanningParameters.scopeType, input.scopeType),
+          input.asin ? eq(opsInventoryPlanningParameters.asin, input.asin) : isNull(opsInventoryPlanningParameters.asin),
+          input.storeName ? eq(opsInventoryPlanningParameters.storeName, input.storeName) : isNull(opsInventoryPlanningParameters.storeName),
+          input.country ? eq(opsInventoryPlanningParameters.country, input.country) : isNull(opsInventoryPlanningParameters.country),
+        ))).limit(1);
+      if (existing[0]) {
+        await db!.update(opsInventoryPlanningParameters).set({ ...input, isActive: 1 }).where(opsWorkspaceCondition(opsInventoryPlanningParameters, currentOpsWorkspaceId(), eq(opsInventoryPlanningParameters.id, existing[0].id)));
+        return { id: existing[0].id, status: "updated" as const };
+      }
+      const [created] = await db!.insert(opsInventoryPlanningParameters).values({ ...input, userId: ctx.user.id, isActive: 1 }).$returningId();
+      return { id: created.id, status: "created" as const };
     }),
 
   // ─── Get/Set Production Config ───

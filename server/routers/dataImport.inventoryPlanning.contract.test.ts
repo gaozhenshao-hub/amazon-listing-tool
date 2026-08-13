@@ -1,0 +1,27 @@
+import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const routerSource = readFileSync(resolve(process.cwd(), "server/routers/dataImport.ts"), "utf8");
+
+describe("导入模式库存规划接口契约", () => {
+  it("以 ASIN 日快照作为库存规划输入，而不是旧库存预警表", () => {
+    expect(routerSource).toContain("getInventoryPlanningFromImport");
+    expect(routerSource).toContain("opsAsinDailySnapshots");
+    expect(routerSource).toContain("calculateInventoryPlan");
+  });
+
+  it("确认本地库存时保留历史版本并将旧确认记录标记为已替代", () => {
+    expect(routerSource).toContain("confirmLocalInventory");
+    expect(routerSource).toContain('status: "confirmed"');
+    expect(routerSource).toContain('status: "superseded"');
+    expect(routerSource).toContain("supersededById: created.id");
+  });
+
+  it("没有专属参数时使用确认的 30/30/10 默认货期", () => {
+    expect(routerSource).toContain("saveInventoryPlanningParameters");
+    expect(routerSource).toContain("productionDays: parameter?.productionDays ?? 30");
+    expect(routerSource).toContain("shippingDays: parameter?.shippingDays ?? 30");
+    expect(routerSource).toContain("bufferDays: parameter?.bufferDays ?? 10");
+  });
+});
