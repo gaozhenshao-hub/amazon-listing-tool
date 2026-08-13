@@ -54,6 +54,12 @@ describe("导入模式库存规划接口契约", () => {
     expect(inventoryPageSource).toContain('scopeType: "parent_asin"');
   });
 
+  it("库存规划以市场代码筛选时可识别领星中文国家名和店铺站点后缀", () => {
+    expect(routerSource).toContain("function matchesLingxingMarketplace");
+    expect(routerSource).toContain('US: ["US", "美国"]');
+    expect(routerSource).toContain("const scopedSnapshots = snapshots.filter(row => matchesLingxingMarketplace(row, input.marketplace))");
+  });
+
   it("库存页以库存规划工作台替代旧预警主界面，并允许确认本地库存", () => {
     expect(inventoryPageSource).toContain("库存规划工作台");
     expect(inventoryPageSource).toContain("getInventoryPlanningFromImport");

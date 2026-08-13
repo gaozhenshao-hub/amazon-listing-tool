@@ -19,6 +19,15 @@ import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { summarizeParentAsinWeeks, summarizeVariantSales } from "../domains/ops/productOverview/dailyAggregation";
 import { calculateInventoryPlan } from "../domains/ops/inventoryPlanning/calculator";
 
+function matchesLingxingMarketplace(row: { country?: string | null; storeName?: string | null }, marketplace: string) {
+  if (marketplace === "ALL") return true;
+  const requested = marketplace.toUpperCase();
+  const country = (row.country || "").toUpperCase();
+  const storeName = (row.storeName || "").toUpperCase();
+  const countryAliases: Record<string, string[]> = { US: ["US", "美国"], CA: ["CA", "加拿大"], UK: ["UK", "英国"], DE: ["DE", "德国"], FR: ["FR", "法国"], IT: ["IT", "意大利"], ES: ["ES", "西班牙"], JP: ["JP", "日本"] };
+  return [requested, ...(countryAliases[requested] || [])].some(alias => country.includes(alias) || storeName.includes(`-${alias}`));
+}
+
 /**
  * Helper: Resolve the effective userId for data queries.
  * Non-admin/manager users need to query data imported by admins, not their own userId.
@@ -562,7 +571,7 @@ export const dataImportRouter = router({
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       const rows = await db!.select().from(opsAsinDailySnapshots)
         .where(opsWorkspaceCondition(opsAsinDailySnapshots, currentOpsWorkspaceId(), eq(opsAsinDailySnapshots.userId, effectiveUserId)));
-      const filtered = input.marketplace === "ALL" ? rows : rows.filter(row => (row.country || "").toUpperCase().includes(input.marketplace.toUpperCase()));
+      const filtered = rows.filter(row => matchesLingxingMarketplace(row, input.marketplace));
       const overview = summarizeParentAsinWeeks(filtered as any, input.weeks);
       const operatorRows = await db!.select({
         parentAsin: lingxingProductWeekly.parentAsin,
@@ -593,7 +602,7 @@ export const dataImportRouter = router({
           eq(opsAsinDailySnapshots.userId, effectiveUserId),
           eq(opsAsinDailySnapshots.parentAsin, input.parentAsin),
         )));
-      const filtered = input.marketplace === "ALL" ? rows : rows.filter(row => (row.country || "").toUpperCase().includes(input.marketplace.toUpperCase()));
+      const filtered = rows.filter(row => matchesLingxingMarketplace(row, input.marketplace));
       return summarizeVariantSales(filtered as any, input.weeks);
     }),
 
@@ -605,9 +614,7 @@ export const dataImportRouter = router({
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       const snapshots = await db!.select().from(opsAsinDailySnapshots)
         .where(opsWorkspaceCondition(opsAsinDailySnapshots, currentOpsWorkspaceId(), eq(opsAsinDailySnapshots.userId, effectiveUserId)));
-      const scopedSnapshots = input.marketplace === "ALL"
-        ? snapshots
-        : snapshots.filter(row => (row.country || "").toUpperCase().includes(input.marketplace.toUpperCase()));
+      const scopedSnapshots = snapshots.filter(row => matchesLingxingMarketplace(row, input.marketplace));
       const asOfDate = input.asOfDate || scopedSnapshots.reduce((latest, row) => row.reportDate > latest ? row.reportDate : latest, "");
       if (!asOfDate) return { asOfDate: null, rows: [] };
 
