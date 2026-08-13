@@ -629,8 +629,17 @@ export const dataImportRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
-      const snapshots = await db!.select().from(opsAsinDailySnapshots)
+      let snapshots = await db!.select().from(opsAsinDailySnapshots)
         .where(opsWorkspaceCondition(opsAsinDailySnapshots, currentOpsWorkspaceId(), eq(opsAsinDailySnapshots.userId, effectiveUserId)));
+      // A user may own older/non-daily imports while the shared Lingxing ASIN snapshots were uploaded by another workspace member.
+      // When their selected source has no daily snapshots, safely fall back to the workspace's latest available daily snapshot owner.
+      if (!snapshots.length) {
+        const workspaceSnapshots = await db!.select().from(opsAsinDailySnapshots)
+          .where(eq(opsAsinDailySnapshots.workspaceId, currentOpsWorkspaceId()));
+        const fallbackOwnerId = workspaceSnapshots
+          .sort((a, b) => (b.updatedAt?.getTime?.() || 0) - (a.updatedAt?.getTime?.() || 0))[0]?.userId;
+        if (fallbackOwnerId) snapshots = workspaceSnapshots.filter(row => row.userId === fallbackOwnerId);
+      }
       const scopedSnapshots = snapshots.filter(row => matchesLingxingMarketplace(row, input.marketplace));
       const asOfDate = input.asOfDate || scopedSnapshots.reduce((latest, row) => row.reportDate > latest ? row.reportDate : latest, "");
       if (!asOfDate) return { asOfDate: null, rows: [] };
