@@ -68,10 +68,10 @@ describe("导入模式库存规划接口契约", () => {
     expect(routerSource).toContain("const scopedSnapshots = snapshots.filter(row => matchesLingxingMarketplace(row, input.marketplace))");
   });
 
-  it("当前用户无日快照时回退读取同工作空间最新可用的领星日快照", () => {
-    expect(routerSource).toContain("workspaceSnapshots");
-    expect(routerSource).toContain("fallbackOwnerId");
-    expect(routerSource).toContain("if (!snapshots.length)");
+  it("库存规划直接读取同工作空间共享的领星日快照，避免按登录用户拆分数据", () => {
+    expect(routerSource).toContain("产品总览上传的数据是同一工作空间共享的业务事实");
+    expect(routerSource).toContain("eq(opsAsinDailySnapshots.workspaceId, currentOpsWorkspaceId())");
+    expect(routerSource).not.toContain("fallbackOwnerId");
   });
 
   it("库存页以库存规划工作台替代旧预警主界面，并允许确认本地库存", () => {

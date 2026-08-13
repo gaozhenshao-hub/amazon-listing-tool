@@ -674,18 +674,10 @@ export const dataImportRouter = router({
     .input(z.object({ asOfDate: z.string().optional(), marketplace: z.string().default("ALL") }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
-      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
-      let snapshots = await db!.select().from(opsAsinDailySnapshots)
-        .where(opsWorkspaceCondition(opsAsinDailySnapshots, currentOpsWorkspaceId(), eq(opsAsinDailySnapshots.userId, effectiveUserId)));
-      // A user may own older/non-daily imports while the shared Lingxing ASIN snapshots were uploaded by another workspace member.
-      // When their selected source has no daily snapshots, safely fall back to the workspace's latest available daily snapshot owner.
-      if (!snapshots.length) {
-        const workspaceSnapshots = await db!.select().from(opsAsinDailySnapshots)
-          .where(eq(opsAsinDailySnapshots.workspaceId, currentOpsWorkspaceId()));
-        const fallbackOwnerId = workspaceSnapshots
-          .sort((a, b) => (b.updatedAt?.getTime?.() || 0) - (a.updatedAt?.getTime?.() || 0))[0]?.userId;
-        if (fallbackOwnerId) snapshots = workspaceSnapshots.filter(row => row.userId === fallbackOwnerId);
-      }
+      // 产品总览上传的数据是同一工作空间共享的业务事实，不应因登录用户或导入人不同而分裂。
+      // 规划始终使用工作空间内全部领星日快照，再以最新报告日期建立同一数据基准日。
+      const snapshots = await db!.select().from(opsAsinDailySnapshots)
+        .where(eq(opsAsinDailySnapshots.workspaceId, currentOpsWorkspaceId()));
       const scopedSnapshots = snapshots.filter(row => matchesLingxingMarketplace(row, input.marketplace));
       const asOfDate = input.asOfDate || scopedSnapshots.reduce((latest, row) => row.reportDate > latest ? row.reportDate : latest, "");
       if (!asOfDate) return { asOfDate: null, rows: [] };
