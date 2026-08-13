@@ -1,0 +1,24 @@
+flowchart LR
+    A[产品总览既有上传数据<br/>领星 / 赛狐] --> B[产品总览融合层<br/>父ASIN + 站点 + 店铺]
+    B --> C[库存规划事实快照<br/>库存、销量、数据时点]
+    D[人工参数中心<br/>生产 + 物流 + 缓冲 + 覆盖天数] --> E[确定性规划规则引擎]
+    F[人工日销量调整<br/>数值、原因、有效期] --> E
+    G[已确认补货计划<br/>数量、预计可售日] --> E
+    C --> E
+    E --> H[库存规划工作台<br/>筛选、明细、证据]
+    H --> I{运营审核}
+    I -->|编辑| D
+    I -->|调整日销| F
+    I -->|登记计划| G
+    I -->|确认| J[冻结规划版本<br/>可追溯、可比较]
+    J --> K[只读 AI 解释助手<br/>风险、证据、待确认项]
+    K --> H
+
+    classDef source fill:#e8f0fe,stroke:#1a73e8,color:#0b294d;
+    classDef human fill:#fff3e0,stroke:#ed6c02,color:#6f3400;
+    classDef engine fill:#e6f4ea,stroke:#34a853,color:#123a1a;
+    classDef output fill:#f3e8fd,stroke:#9334e6,color:#3f0e67;
+    class A,B,C source;
+    class D,F,G,I human;
+    class E engine;
+    class H,J,K output;
