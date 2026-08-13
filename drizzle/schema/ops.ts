@@ -1722,6 +1722,9 @@ export const dataImports = mysqlTable("data_imports", {
   fileUrl: text("file_url"), // S3 URL
   weekStartDate: varchar("week_start_date", { length: 10 }).notNull(), // YYYY-MM-DD
   weekEndDate: varchar("week_end_date", { length: 10 }).notNull(),   // YYYY-MM-DD
+  dataGranularity: mysqlEnum("data_granularity", ["weekly", "daily"]).default("weekly").notNull(),
+  replacesImportId: int("replaces_import_id"),
+  supersededAt: timestamp("superseded_at"),
   totalRows: int("total_rows").default(0),
   importedRows: int("imported_rows").default(0),
   skippedRows: int("skipped_rows").default(0),
@@ -1734,6 +1737,148 @@ export const dataImports = mysqlTable("data_imports", {
 export type DataImport = typeof dataImports.$inferSelect;
 
 export type InsertDataImport = typeof dataImports.$inferInsert;
+
+// ASIN daily snapshots are the source of truth for newly imported product-performance files.
+// Weekly views and inventory plans are derived from these immutable source snapshots.
+export const opsAsinDailySnapshots = mysqlTable("ops_asin_daily_snapshots", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  importId: int("import_id").notNull(),
+  userId: int("user_id").notNull(),
+  sourceType: varchar("source_type", { length: 20 }).default("lingxing").notNull(),
+  reportDate: varchar("report_date", { length: 10 }).notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  parentAsin: varchar("parent_asin", { length: 20 }).notNull(),
+  storeName: varchar("store_name", { length: 200 }).notNull(),
+  country: varchar("country", { length: 50 }).notNull(),
+  msku: varchar("msku", { length: 200 }),
+  sku: varchar("sku", { length: 200 }),
+  title: varchar("title", { length: 1000 }),
+  productName: varchar("product_name", { length: 500 }),
+  brand: varchar("brand", { length: 200 }),
+  category1: varchar("category1", { length: 200 }),
+  category2: varchar("category2", { length: 200 }),
+  category3: varchar("category3", { length: 200 }),
+  operator: varchar("operator", { length: 200 }),
+  createdTime: varchar("created_time", { length: 50 }),
+  salesQty: int("sales_qty").default(0).notNull(),
+  orderQty: int("order_qty").default(0).notNull(),
+  salesAmount: decimal("sales_amount", { precision: 14, scale: 2 }).default("0").notNull(),
+  netSalesAmount: decimal("net_sales_amount", { precision: 14, scale: 2 }).default("0").notNull(),
+  orderProfit: decimal("order_profit", { precision: 14, scale: 2 }).default("0").notNull(),
+  adSpend: decimal("ad_spend", { precision: 14, scale: 2 }).default("0").notNull(),
+  adSales: decimal("ad_sales", { precision: 14, scale: 2 }).default("0").notNull(),
+  adOrders: int("ad_orders").default(0).notNull(),
+  organicOrders: int("organic_orders").default(0).notNull(),
+  sessionsTotal: int("sessions_total").default(0).notNull(),
+  adClicks: int("ad_clicks").default(0).notNull(),
+  adImpressions: int("ad_impressions").default(0).notNull(),
+  returnQty: int("return_qty").default(0).notNull(),
+  fbaAvailable: int("fba_available").default(0).notNull(),
+  fbaInTransit: int("fba_in_transit").default(0).notNull(),
+  fbaPlanInbound: int("fba_plan_inbound").default(0).notNull(),
+  fbaTotal: int("fba_total").default(0).notNull(),
+  availableStock: int("available_stock").default(0).notNull(),
+  fbmAvailable: int("fbm_available").default(0).notNull(),
+  awdAvailable: int("awd_available").default(0).notNull(),
+  awdInTransit: int("awd_in_transit").default(0).notNull(),
+  overseasAvailable: int("overseas_available").default(0).notNull(),
+  sourceLocalAvailable: int("source_local_available").default(0).notNull(),
+  sourceRowHash: varchar("source_row_hash", { length: 64 }).notNull(),
+  isValid: int("is_valid").default(1).notNull(),
+  validationReason: text("validation_reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OpsAsinDailySnapshot = typeof opsAsinDailySnapshots.$inferSelect;
+export type InsertOpsAsinDailySnapshot = typeof opsAsinDailySnapshots.$inferInsert;
+
+// User-entered local inventory is versioned and never overwrites an imported source snapshot.
+export const opsLocalInventoryAdjustments = mysqlTable("ops_local_inventory_adjustments", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  storeName: varchar("store_name", { length: 200 }).notNull(),
+  country: varchar("country", { length: 50 }).notNull(),
+  effectiveDate: varchar("effective_date", { length: 10 }).notNull(),
+  localQty: int("local_qty").notNull(),
+  reason: varchar("reason", { length: 500 }),
+  status: mysqlEnum("local_inventory_adjustment_status", ["draft", "confirmed", "superseded"]).default("draft").notNull(),
+  confirmedBy: int("confirmed_by"),
+  confirmedAt: timestamp("confirmed_at"),
+  supersededById: int("superseded_by_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OpsLocalInventoryAdjustment = typeof opsLocalInventoryAdjustments.$inferSelect;
+export type InsertOpsLocalInventoryAdjustment = typeof opsLocalInventoryAdjustments.$inferInsert;
+
+// Parameters are resolved in priority order: ASIN > store-country > workspace default.
+export const opsInventoryPlanningParameters = mysqlTable("ops_inventory_planning_parameters", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  scopeType: mysqlEnum("inventory_parameter_scope", ["workspace", "store_country", "asin"]).default("workspace").notNull(),
+  asin: varchar("asin", { length: 20 }),
+  storeName: varchar("store_name", { length: 200 }),
+  country: varchar("country", { length: 50 }),
+  productionDays: int("production_days").default(30).notNull(),
+  shippingDays: int("shipping_days").default(30).notNull(),
+  bufferDays: int("buffer_days").default(10).notNull(),
+  targetCoverDays: int("target_cover_days").default(30).notNull(),
+  moq: int("moq").default(0).notNull(),
+  packSize: int("pack_size").default(1).notNull(),
+  isActive: int("is_active").default(1).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OpsInventoryPlanningParameter = typeof opsInventoryPlanningParameters.$inferSelect;
+export type InsertOpsInventoryPlanningParameter = typeof opsInventoryPlanningParameters.$inferInsert;
+
+// Confirmed future supply can be incorporated into the planning timeline only after its availability date is known.
+export const opsReplenishmentPlans = mysqlTable("ops_replenishment_plans", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  storeName: varchar("store_name", { length: 200 }).notNull(),
+  country: varchar("country", { length: 50 }).notNull(),
+  plannedQty: int("planned_qty").notNull(),
+  estimatedAvailableDate: varchar("estimated_available_date", { length: 10 }).notNull(),
+  notes: text("notes"),
+  status: mysqlEnum("replenishment_plan_status", ["draft", "confirmed", "cancelled", "completed"]).default("draft").notNull(),
+  confirmedBy: int("confirmed_by"),
+  confirmedAt: timestamp("confirmed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OpsReplenishmentPlan = typeof opsReplenishmentPlans.$inferSelect;
+export type InsertOpsReplenishmentPlan = typeof opsReplenishmentPlans.$inferInsert;
+
+// A confirmed planning version freezes source date, parameters, local inventory and calculation outputs together.
+export const opsInventoryPlanningVersions = mysqlTable("ops_inventory_planning_versions", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  version: int("version").notNull(),
+  sourceAsOfDate: varchar("source_as_of_date", { length: 10 }).notNull(),
+  status: mysqlEnum("inventory_planning_version_status", ["draft", "confirmed", "superseded"]).default("draft").notNull(),
+  inputSnapshot: json("input_snapshot").notNull(),
+  resultSnapshot: json("result_snapshot").notNull(),
+  confirmedBy: int("confirmed_by"),
+  confirmedAt: timestamp("confirmed_at"),
+  supersededAt: timestamp("superseded_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OpsInventoryPlanningVersion = typeof opsInventoryPlanningVersions.$inferSelect;
+export type InsertOpsInventoryPlanningVersion = typeof opsInventoryPlanningVersions.$inferInsert;
 
 // Lingxing product weekly data (领星产品表现 - 父ASIN维度)
 export const lingxingProductWeekly = mysqlTable("lingxing_product_weekly", {

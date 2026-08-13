@@ -6,15 +6,17 @@ import { opsWorkspaceCondition } from "../repositories/ops";
  * Lingxing (领星) and Saihu (赛狐) product data
  */
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
-import { dataImports, lingxingProductWeekly, saihuProductWeekly, operatorNameMappings, users, productionConfig } from "../../drizzle/schema";
+import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, saihuProductWeekly, operatorNameMappings, users, productionConfig } from "../../drizzle/schema";
 import { MANAGER_ROLES } from "../../shared/const";
-import { eq, desc, and, sql, or, isNull } from "drizzle-orm";
+import { eq, desc, and, sql, or, isNull, ne } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
 import { storagePut } from "../storage";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
+import { summarizeParentAsinWeeks, summarizeVariantSales } from "../domains/ops/productOverview/dailyAggregation";
 
 /**
  * Helper: Resolve the effective userId for data queries.
@@ -165,6 +167,7 @@ export const dataImportRouter = router({
         fileUrl,
         weekStartDate: result.dateRange.startDate,
         weekEndDate: result.dateRange.endDate,
+        dataGranularity: result.dataGranularity,
         totalRows: result.totalRows,
         status: "previewing",
       });
@@ -178,7 +181,8 @@ export const dataImportRouter = router({
 
       return {
         importId: importRecord.insertId,
-        sourceType: result.sourceType,
+          sourceType: result.sourceType,
+          dataGranularity: result.dataGranularity,
         dateRange: result.dateRange,
         totalRows: result.totalRows,
         previewRows: result.previewRows,
@@ -225,8 +229,33 @@ export const dataImportRouter = router({
         const buffer = response.body;
         const result = parseExcelBuffer(buffer, importRecord.fileName);
 
-        // Delete existing data for same user + source + date range (upsert behavior)
-        if (result.sourceType === "lingxing") {
+        // A repeated daily file replaces the active snapshot batch for the same source period,
+        // while the old import record and original file remain auditable.
+        if (result.sourceType === "lingxing" && result.dataGranularity === "daily") {
+          const [replacedImport] = await db!.select({ id: dataImports.id }).from(dataImports)
+            .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), and(
+              eq(dataImports.userId, ctx.user.id),
+              eq(dataImports.sourceType, "lingxing"),
+              eq(dataImports.dataGranularity, "daily"),
+              eq(dataImports.weekStartDate, result.dateRange.startDate),
+              eq(dataImports.weekEndDate, result.dateRange.endDate),
+              eq(dataImports.status, "completed"),
+              ne(dataImports.id, input.importId),
+            )))
+            .orderBy(desc(dataImports.createdAt))
+            .limit(1);
+          if (replacedImport) {
+            await db!.delete(opsAsinDailySnapshots).where(opsWorkspaceCondition(
+              opsAsinDailySnapshots,
+              currentOpsWorkspaceId(),
+              eq(opsAsinDailySnapshots.importId, replacedImport.id),
+            ));
+            await db!.update(dataImports).set({ supersededAt: new Date() })
+              .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), eq(dataImports.id, replacedImport.id)));
+            await db!.update(dataImports).set({ replacesImportId: replacedImport.id })
+              .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), eq(dataImports.id, input.importId)));
+          }
+        } else if (result.sourceType === "lingxing") {
           await db!.delete(lingxingProductWeekly).where(
             opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
               eq(lingxingProductWeekly.userId, ctx.user.id),
@@ -260,12 +289,22 @@ export const dataImportRouter = router({
           }));
 
           try {
-            if (result.sourceType === "lingxing") {
+            if (result.sourceType === "lingxing" && result.dataGranularity === "daily") {
+              const dailyRows = batch
+                .map(row => mapLingxingDailyRow(row, input.importId, ctx.user.id))
+                .filter((row): row is NonNullable<typeof row> => row !== null);
+              if (dailyRows.length > 0) {
+                await db!.insert(opsAsinDailySnapshots).values(dailyRows as any);
+                importedRows += dailyRows.length;
+              }
+              skippedRows += batch.length - dailyRows.length;
+            } else if (result.sourceType === "lingxing") {
               await db!.insert(lingxingProductWeekly).values(dbRows as any);
+              importedRows += batch.length;
             } else {
               await db!.insert(saihuProductWeekly).values(dbRows as any);
+              importedRows += batch.length;
             }
-            importedRows += batch.length;
           } catch (err: any) {
             console.error(`[DataImport] Batch insert error at row ${i}:`, err.message);
             skippedRows += batch.length;
@@ -515,6 +554,33 @@ export const dataImportRouter = router({
       return filterByOperatorPermission(result, ctx.user) as typeof result;
     }),
 
+  getLingxingDailyOverview: protectedProcedure
+    .input(z.object({ weeks: z.number().min(1).max(4).default(4), marketplace: z.string().default("ALL") }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
+      const rows = await db!.select().from(opsAsinDailySnapshots)
+        .where(opsWorkspaceCondition(opsAsinDailySnapshots, currentOpsWorkspaceId(), eq(opsAsinDailySnapshots.userId, effectiveUserId)));
+      const filtered = input.marketplace === "ALL" ? rows : rows.filter(row => (row.country || "").toUpperCase().includes(input.marketplace.toUpperCase()));
+      const overview = summarizeParentAsinWeeks(filtered as any, input.weeks);
+      await applyOperatorMappings(db, overview as any, "lingxing");
+      return filterByOperatorPermission(overview as any, ctx.user);
+    }),
+
+  getLingxingDailyVariants: protectedProcedure
+    .input(z.object({ parentAsin: z.string(), weeks: z.number().min(1).max(4).default(4), marketplace: z.string().default("ALL") }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
+      const rows = await db!.select().from(opsAsinDailySnapshots)
+        .where(opsWorkspaceCondition(opsAsinDailySnapshots, currentOpsWorkspaceId(), and(
+          eq(opsAsinDailySnapshots.userId, effectiveUserId),
+          eq(opsAsinDailySnapshots.parentAsin, input.parentAsin),
+        )));
+      const filtered = input.marketplace === "ALL" ? rows : rows.filter(row => (row.country || "").toUpperCase().includes(input.marketplace.toUpperCase()));
+      return summarizeVariantSales(filtered as any, input.weeks);
+    }),
+
   // ─── Get/Set Production Config ───
   getProductionConfigs: protectedProcedure
     .input(z.object({
@@ -665,6 +731,38 @@ export const dataImportRouter = router({
       }
     }),
 });
+
+function mapLingxingDailyRow(row: Record<string, any>, importId: number, userId: number) {
+  const reportDate = String(row.reportDate || "").trim();
+  const asin = String(row.asin || "").trim();
+  const parentAsin = String(row.parentAsin || asin).trim();
+  const storeName = String(row.storeName || "").trim();
+  const country = String(row.country || "").trim();
+  if (!reportDate || !asin || !parentAsin || !storeName || !country) return null;
+  const integer = (value: unknown) => Number.parseInt(String(value ?? 0), 10) || 0;
+  const decimal = (value: unknown) => String(Number.parseFloat(String(value ?? 0)) || 0);
+  const sourceRowHash = createHash("sha256")
+    .update([reportDate, asin, parentAsin, storeName, country, JSON.stringify(row)].join("|"))
+    .digest("hex");
+  return {
+    importId, userId, reportDate, asin, parentAsin, storeName, country, sourceRowHash,
+    msku: row.msku || null, sku: row.sku || null, title: row.title || null,
+    productName: row.productName || null, brand: row.brand || null,
+    category1: row.category1 || null, category2: row.category2 || null, category3: row.category3 || null,
+    operator: row.operator || null, createdTime: row.createdTime || null,
+    salesQty: integer(row.salesQty), orderQty: integer(row.orderQty),
+    salesAmount: decimal(row.salesAmount), netSalesAmount: decimal(row.netSalesAmount),
+    orderProfit: decimal(row.orderProfit), adSpend: decimal(row.adSpend), adSales: decimal(row.adSales),
+    adOrders: integer(row.adOrders), organicOrders: integer(row.organicOrders),
+    sessionsTotal: integer(row.sessionsTotal), adClicks: integer(row.adClicks), adImpressions: integer(row.adImpressions),
+    returnQty: integer(row.returnQty), fbaAvailable: integer(row.fbaAvailable),
+    fbaInTransit: integer(row.fbaInTransit), fbaPlanInbound: integer(row.fbaPlanInbound),
+    fbaTotal: integer(row.fbaTotal), availableStock: integer(row.availableStock),
+    fbmAvailable: integer(row.fbmAvailable), awdAvailable: integer(row.awdAvailable),
+    awdInTransit: integer(row.awdInTransit), overseasAvailable: integer(row.overseasAvailable),
+    sourceLocalAvailable: integer(row.localAvailable),
+  };
+}
 
 // ═══════════════════════════════════════════════════════
 // Helper: Build product overview from Lingxing imported data

@@ -8,6 +8,7 @@ import * as XLSX from "xlsx";
 
 // ─── Column Mapping: Lingxing Chinese Header → DB field ───
 const LINGXING_COLUMN_MAP: Record<string, string> = {
+  "日期": "reportDate",
   "ASIN": "asin",
   "父ASIN": "parentAsin",
   "MSKU": "msku",
@@ -406,7 +407,7 @@ type FieldType = "int" | "decimal" | "percent" | "currency" | "string";
 // Lingxing field types
 const LINGXING_FIELD_TYPES: Record<string, FieldType> = {
   // String fields
-  asin: "string", parentAsin: "string", msku: "string", storeName: "string",
+  reportDate: "string", asin: "string", parentAsin: "string", msku: "string", storeName: "string",
   country: "string", title: "string", price: "string", operator: "string",
   productName: "string", sku: "string", brand: "string",
   category1: "string", category2: "string", category3: "string",
@@ -545,6 +546,7 @@ function convertValue(val: any, fieldType: FieldType): any {
 export interface ParseResult {
   sourceType: SourceType;
   dateRange: DateRange;
+  dataGranularity: "weekly" | "daily";
   headers: string[];
   totalRows: number;
   previewRows: Record<string, any>[];  // First 5 rows for preview
@@ -579,6 +581,7 @@ export function parseExcelBuffer(buffer: Buffer, filename: string): ParseResult 
 
   const columnMap = sourceType === "lingxing" ? LINGXING_COLUMN_MAP : SAIHU_COLUMN_MAP;
   const fieldTypes = sourceType === "lingxing" ? LINGXING_FIELD_TYPES : SAIHU_FIELD_TYPES;
+  const dataGranularity = sourceType === "lingxing" && headers.includes("日期") ? "daily" : "weekly";
 
   // Build header index → field name mapping
   const headerMapping: { colIndex: number; fieldName: string }[] = [];
@@ -612,6 +615,7 @@ export function parseExcelBuffer(buffer: Buffer, filename: string): ParseResult 
   return {
     sourceType,
     dateRange,
+    dataGranularity,
     headers,
     totalRows: allRows.length,
     previewRows: allRows.slice(0, 5),
