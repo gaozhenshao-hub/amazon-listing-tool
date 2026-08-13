@@ -727,8 +727,9 @@ export const dataImportRouter = router({
           moq: parameter?.moq ?? 0,
           packSize: parameter?.packSize ?? 1,
         });
-        return { asin: latest.asin, sku: latest.msku || null, parentAsin: latest.parentAsin, storeName: latest.storeName, country: latest.country, title: latest.title || latest.productName, localInventory: local?.localQty || 0, localInventoryConfirmedAt: local?.confirmedAt || null, parameterScope: parameter?.scopeType || "workspace", productionDays: parameter?.productionDays ?? 30, shippingDays: parameter?.shippingDays ?? 30, bufferDays: parameter?.bufferDays ?? 10, ...plan };
+        return { asin: latest.asin, sku: latest.msku || latest.sku || null, parentAsin: latest.parentAsin, storeName: latest.storeName, country: latest.country, productName: latest.productName || latest.title || null, operator: latest.operator || null, localInventory: local?.localQty || 0, localInventoryConfirmedAt: local?.confirmedAt || null, parameterScope: parameter?.scopeType || "workspace", productionDays: parameter?.productionDays ?? 30, shippingDays: parameter?.shippingDays ?? 30, bufferDays: parameter?.bufferDays ?? 10, ...plan };
       });
+      await applyOperatorMappings(db, planningRows as any, "lingxing");
       return { asOfDate, rows: planningRows };
     }),
 
