@@ -32,6 +32,9 @@ import {
 import {
   Tooltip, TooltipContent, TooltipTrigger, TooltipProvider,
 } from "@/components/ui/tooltip";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
+} from "recharts";
 
 const MARKETPLACE_OPTIONS = [
   { value: "ALL", label: "全部站点" },
@@ -232,7 +235,7 @@ function adaptDailyParentOverview(source: any[], weeksToShow: number): ProductOv
       chineseName: product.productName || null, brand: null, category: null, marketplace: product.country || null, imageUrl: null, status: "active",
       operator: product.operator || null, storeName: product.storeName || null, variantCount: 0, skus: [], basicInfo: null,
       inventory: latest ? { fbaAvailable: Number((product.weeks?.[0]?.fbaAvailable) || 0), fbaInbound: 0, fbaInTransit: Number((product.weeks?.[0]?.fbaInTransit) || 0), fbaTotal: Number((product.weeks?.[0]?.fbaAvailable) || 0) + Number((product.weeks?.[0]?.fbaInTransit) || 0), availableStock: Number((product.weeks?.[0]?.fbaAvailable) || 0), fbaDaysOfSupply: 0, stockoutDate: null, avgDailySales7d: latest.salesQty / Math.max(Number((product.weeks?.[0]?.activeDays) || 1), 1), daysOfStock: latest.salesQty > 0 ? Math.round(Number((product.weeks?.[0]?.fbaAvailable) || 0) / (latest.salesQty / Math.max(Number((product.weeks?.[0]?.activeDays) || 1), 1))) : 999 } : null,
-      weeks, monthlySummaries: [],
+      weeks, monthlySummaries: product.monthlySummaries || [],
     };
   });
 }
@@ -304,6 +307,11 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
   const [costPanelOpen, setCostPanelOpen] = useState(false);
   const [costDrafts, setCostDrafts] = useState<Record<string, Record<string, string>>>({});
   const bi = product.basicInfo;
+  const profitTrend = useMemo(() => product.monthlySummaries.slice(-6).map(month => ({
+    month: month.yearMonth?.slice(2) || "—",
+    settlementProfit: Number(month.financialProfit || 0),
+    orderProfit: Number(month.orderProfitTotal || 0),
+  })), [product.monthlySummaries]);
   const productPlanningRows = useMemo(() => (planningRows || []).filter((row: any) => row.parentAsin === product.parentAsin), [planningRows, product.parentAsin]);
 
   const getCostValue = (row: any, field: string) => costDrafts[row.asin]?.[field] ?? (row[field] == null ? "" : String(row[field]));
@@ -428,73 +436,10 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
             </>
           )}
 
-          {/* Inventory Status */}
-          {product.inventory && (product.inventory.fbaAvailable > 0 || product.inventory.avgDailySales7d > 0) && (
-            <div className="flex items-center gap-2">
-              <div className="text-center">
-                <div className="text-[10px] text-muted-foreground">可售库存</div>
-                <div className="font-semibold">{product.inventory.fbaAvailable.toLocaleString()}</div>
-              </div>
-              <div className="text-center">
-                <div className="text-[10px] text-muted-foreground">在途</div>
-                <div className="font-semibold text-blue-600">{product.inventory.fbaInbound.toLocaleString()}</div>
-              </div>
-              <div className="text-center">
-                <div className="text-[10px] text-muted-foreground">可售天数</div>
-                <div className={`font-semibold ${
-                  product.inventory.daysOfStock <= 7 ? 'text-red-600' :
-                  product.inventory.daysOfStock <= 15 ? 'text-orange-600' :
-                  product.inventory.daysOfStock <= 30 ? 'text-amber-600' : 'text-emerald-600'
-                }`}>
-                  {product.inventory.daysOfStock >= 999 ? '999+' : product.inventory.daysOfStock}天
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-[10px] text-muted-foreground">日均销</div>
-                <div className="font-semibold">{product.inventory.avgDailySales7d}</div>
-              </div>
-              {/* Status Badge */}
-              {inventoryStatus && (
-                <div className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                  inventoryStatus.color === 'red' ? 'bg-red-100 text-red-700 border border-red-200' :
-                  inventoryStatus.color === 'orange' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
-                  inventoryStatus.color === 'amber' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
-                  'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                }`}>
-                  {inventoryStatus.label}
-                </div>
-              )}
-              {/* Production Time Editor */}
-              {isImportMode && (
-                <Popover open={editingProduction} onOpenChange={setEditingProduction}>
-                  <PopoverTrigger asChild>
-                    <button className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-muted-foreground/40 text-muted-foreground hover:bg-muted/50 transition-colors" onClick={e => e.stopPropagation()}>
-                      生产{productionConfig?.productionTimeDays ?? 15}d + 物流{productionConfig?.shippingTimeDays ?? 30}d
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-56 p-3" align="end" onClick={e => e.stopPropagation()}>
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium">生产物流配置</p>
-                      <div className="flex items-center gap-2">
-                        <label className="text-[11px] text-muted-foreground w-14">生产周期</label>
-                        <Input type="number" className="h-7 text-xs w-16" value={prodDays} onChange={e => setProdDays(Number(e.target.value))} min={0} max={365} />
-                        <span className="text-[11px] text-muted-foreground">天</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <label className="text-[11px] text-muted-foreground w-14">物流时间</label>
-                        <Input type="number" className="h-7 text-xs w-16" value={shipDays} onChange={e => setShipDays(Number(e.target.value))} min={0} max={365} />
-                        <span className="text-[11px] text-muted-foreground">天</span>
-                      </div>
-                      <Button size="sm" className="w-full h-7 text-xs" onClick={() => {
-                        onUpdateProductionConfig?.({ productionTimeDays: prodDays, shippingTimeDays: shipDays, marketplace: product.marketplace || 'US' });
-                        setEditingProduction(false);
-                      }}>保存</Button>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              )}
-            </div>
-          )}
+          <div className="h-14 w-[260px] shrink-0" onClick={e => e.stopPropagation()}>
+            <p className="mb-0.5 text-[10px] text-muted-foreground">近6个月结算利润 / 订单利润</p>
+            {profitTrend.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={profitTrend} margin={{ top: 0, right: 2, left: 2, bottom: 0 }}><XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} /><YAxis hide /><RechartsTooltip formatter={(value: number, name: string) => [`$${value.toFixed(2)}`, name]} /><Legend iconSize={7} wrapperStyle={{ fontSize: 9, paddingTop: 0 }} /><Line type="monotone" dataKey="settlementProfit" name="结算利润" stroke="#2563eb" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="orderProfit" name="订单利润" stroke="#10b981" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer> : <div className="flex h-9 items-center text-[10px] text-muted-foreground">暂无近六个月利润数据</div>}
+          </div>
 
           {/* Product Name (品名) */}
           {product.chineseName && (
