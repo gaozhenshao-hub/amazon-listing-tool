@@ -16,4 +16,9 @@ describe("A+单模块样式重新优化契约", () => {
     expect(source).toContain("selectedModuleStructure: normalizedStyle.structure");
     expect(routerContextSource).toContain("onlyBusinessConfirmedSteps: true");
   });
+
+  it("locks and publishes the normalized Step2 outline rather than the stale AI output", () => {
+    expect(workflowStepsSource).toContain("aiResult: normalized,");
+    expect(workflowStepsSource).toContain("userEdit: normalized,");
+  });
 });

@@ -260,7 +260,9 @@ export const imageWorkflowStepProcedures = {
         projectId: input.projectId,
         userId: ctx.user.id,
         workspaceId: ctx.workspaceId ?? null,
-        aiResult: session.step2AiResult ? JSON.parse(session.step2AiResult) : null,
+        // Step2 锁定后的业务确认版本（含多图 A+ 的 subModules）才是后续
+        // Artifact 水合的权威内容；不能继续向 skill 节点发布旧的原始 AI 结果。
+        aiResult: normalized,
         userEdit: normalized,
       });
       return { success: true };
