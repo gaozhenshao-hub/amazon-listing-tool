@@ -585,7 +585,7 @@ export default function GeneratePage() {
     setEditingBullet(null);
   };
 
-  const optimizeBulletMut = trpc.listing.generateSingleBullet.useMutation();
+  const optimizeBulletMut = trpc.listing.optimizeSingleBullet.useMutation();
   const handleOptimizeBullet = async (idx: number) => {
     const current = generatedBullets[idx];
     const candidates = bulletCandidates[idx] || (current ? [current] : []);
@@ -599,15 +599,8 @@ export default function GeneratePage() {
         const optimizedBullet = Array.isArray(optimized) ? optimized[0] : (optimized?.bullet || optimized?.bulletPoint || optimized);
         return { ...current, ...(typeof optimizedBullet === "object" ? optimizedBullet : {}), subtitle: optimizedBullet?.subtitle || optimizedBullet?.title || current.subtitle, fullText: optimizedBullet?.fullText || optimizedBullet?.bulletPoint || optimizedBullet?.text || optimizedBullet?.content || (typeof optimizedBullet === "string" ? optimizedBullet : current.fullText), optimizationNote: note };
       };
-      const baseInstruction = `这是“再次优化”，不是复述。必须严格执行优化方向，并输出与当前版本可见不同的新标题和新正文；不得原样返回。至少重写一个完整句子，保留核心事实但改变表达、结构或强调重点。\n当前卖点：${current.subtitle} — ${current.fullText}\n优化方向：${note}`;
-      let next = toCandidate(await optimizeBulletMut.mutateAsync({ projectId: selectedProjectId, sellingPoint: sellingPointCores[idx], emphasis: baseInstruction }));
-      if (next.subtitle === current.subtitle && next.fullText === current.fullText) {
-        next = toCandidate(await optimizeBulletMut.mutateAsync({ projectId: selectedProjectId, sellingPoint: sellingPointCores[idx], emphasis: `${baseInstruction}\n上一次输出与原文完全相同，判定不合格。现在必须重写标题和至少一句正文后再返回。` }));
-      }
-      if (next.subtitle === current.subtitle && next.fullText === current.fullText) {
-        toast.error("AI 两次均返回原文，未新增候选。请换更具体的优化方向后重试。");
-        return;
-      }
+      const previousBullets = Object.entries(generatedBullets).filter(([bulletIndex]) => Number(bulletIndex) !== idx).map(([, bullet]) => ({ subtitle: (bullet as any).subtitle || "", fullText: (bullet as any).fullText || "" })).filter((bullet) => bullet.subtitle && bullet.fullText);
+      const next = toCandidate(await optimizeBulletMut.mutateAsync({ projectId: selectedProjectId, sellingPoint: sellingPointCores[idx], currentBullet: { subtitle: current.subtitle || "", fullText: current.fullText || "" }, previousBullets, optimizationNote: note }));
       setBulletCandidates(prev => ({ ...prev, [idx]: [...candidates, next] }));
       setGeneratedBullets(prev => ({ ...prev, [idx]: next }));
       setBulletOptimizationNotes(prev => ({ ...prev, [idx]: "" }));

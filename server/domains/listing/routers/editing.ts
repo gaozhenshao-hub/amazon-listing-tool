@@ -730,6 +730,63 @@ export const listingEditingProcedures = {
       emphasis: z.string().optional(),
     }))
     .mutation(({ ctx, input }) => queueEditingJob(ctx, input, "singleBullet")),
+  optimizeSingleBullet: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      sellingPoint: sellingPointJobSchema,
+      currentBullet: z.object({ subtitle: z.string(), fullText: z.string() }),
+      previousBullets: z.array(z.object({ subtitle: z.string(), fullText: z.string() })).optional(),
+      optimizationNote: z.string().trim().min(1).max(4_000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "项目不存在" });
+      ensureWriteAccess(project, ctx.user);
+
+      const [analyses, enrichedData] = await Promise.all([
+        db.getCompetitorAnalysesByProject(input.projectId),
+        loadEnrichedData(input.projectId),
+      ]);
+      const current = input.currentBullet;
+      const context = `${buildProductContext(project, analyses, enrichedData)}
+
+--- 当前待优化卖点 ---
+标题：${current.subtitle}
+正文：${current.fullText}
+
+--- 用户优化方向 ---
+${input.optimizationNote}
+
+--- 必须遵守 ---
+仅输出一条新的 JSON 卖点。新标题与新正文不得同时与当前卖点相同；至少重写标题或正文中的一个完整句子。`;
+      const result = await runEmperorSkill<any>({
+        skillSlug: "listing.bullet.refine",
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId,
+        context,
+        emphasis: input.optimizationNote,
+        variables: {
+          context,
+          sellingPoint: input.sellingPoint,
+          currentBullet: current,
+          optimizationNote: input.optimizationNote,
+          previousBullets: input.previousBullets || [],
+        },
+        maxModelAttempts: 3,
+        validate: parseJsonOrThrow,
+      });
+      const parsed = result.parsed?.bullet || result.parsed?.bulletPoint || result.parsed;
+      const subtitle = String(parsed?.subtitle || parsed?.title || "").trim();
+      const fullText = String(parsed?.fullText || parsed?.text || parsed?.content || "").trim();
+      if (!subtitle || !fullText) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "卖点优化 Skill 返回格式异常" });
+      }
+      if (subtitle === current.subtitle.trim() && fullText === current.fullText.trim()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "卖点优化 Skill 未产生与原文不同的候选，请调整优化方向后重试" });
+      }
+      const characterCount = `${subtitle} ${fullText}`.length;
+      return { ...current, ...parsed, subtitle, fullText, characterCount, actualCharacterCount: characterCount, inRange: characterCount >= 200 && characterCount <= 280 };
+    }),
   generateQA: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(({ ctx, input }) => queueEditingJob(ctx, input, "qa")),
