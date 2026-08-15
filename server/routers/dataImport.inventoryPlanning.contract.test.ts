@@ -80,6 +80,13 @@ describe("导入模式库存规划接口契约", () => {
     expect(productsPageSource).not.toContain('dataKey="orderProfit" name="订单利润"');
   });
 
+  it("财务利润按滚动六个月回读，新增月份仅保存已填写数据", () => {
+    expect(productsPageSource).toContain("date.setMonth(date.getMonth() - 5 + index)");
+    expect(productsPageSource).toContain("financialProfits.find");
+    expect(productsPageSource).toContain("filter(item => item.financialProfit !== null)");
+    expect(routerSource).toContain("if (existing) await db!.update(opsMonthlyFinancialProfits)");
+  });
+
   it("领星日粒度父 ASIN 汇总复用既有周度数据中的运营负责人映射", () => {
     expect(routerSource).toContain("operatorByParentKey");
     expect(routerSource).toContain("lingxingProductWeekly.operator");
