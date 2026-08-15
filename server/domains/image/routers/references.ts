@@ -523,27 +523,39 @@ ${session.step3UserEdit || session.step3AiResult}
         throw new Error(`A+模块 ${input.sectionIndex + 1} 缺少可优化内容，请先生成完整图片建议后再试`);
       }
 
+      const styleGuide = (APLUS_MODULE_STYLE_GUIDE as Record<string, any>)[input.moduleType] || {};
+      const normalizedStyle = {
+        id: input.moduleType,
+        name: input.moduleName || styleGuide.name || input.moduleType,
+        category: styleGuide.category || currentSection.selectedModuleCategory || "A+内容模块",
+        specs: styleGuide.specs || styleGuide.size || currentSection.selectedModuleSpecs || null,
+        structure: styleGuide.structure || currentSection.selectedModuleStructure || null,
+      };
 
       const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: STEP5_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT },
           {
             role: "user",
-            content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 当前该模块的建议内容 ---\n${JSON.stringify(currentSection)}\n\n--- 用户为该模块选择的A+样式 ---\n模块类型: ${input.moduleType}\n模块名称: ${input.moduleName}\n模块位置: A+模块 ${input.sectionIndex + 1}\n\n请根据用户选择的A+模块样式，重新优化该模块的建议内容，严格按照模块规格要求（尺寸、字符数限制）来输出内容。`,
+            content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 当前该模块的建议内容 ---\n${JSON.stringify(currentSection)}\n\n--- 用户为该模块选择的A+样式（已归一化） ---\n${JSON.stringify(normalizedStyle)}\n模块位置: A+模块 ${input.sectionIndex + 1}\n\n请只返回一个可合并的A+模块JSON对象，保留原模块的moduleNumber、purpose、sellingPointRefs和position，并严格适配目标样式结构。`,
           },
         ],
         response_format: { type: "json_object" },
+        emperorSkill: { slug: "image.step2.aplus.single.optimize" },
       });
 
       const result = parseLLMJson(response);
-      const optimizedSectionEn = result.en || result;
+      const optimizedSectionEn = result.en || result.section || result.module || result;
       const optimizedSectionCn = result.cn || null;
       const sections = [...(currentData.aPlusContent?.sections || [])];
       sections[input.sectionIndex] = {
         ...sections[input.sectionIndex],
         ...optimizedSectionEn,
         selectedModuleType: input.moduleType,
-        selectedModuleName: input.moduleName,
+        selectedModuleName: normalizedStyle.name,
+        selectedModuleCategory: normalizedStyle.category,
+        selectedModuleSpecs: normalizedStyle.specs,
+        selectedModuleStructure: normalizedStyle.structure,
       };
       const nextData = { ...currentData, aPlusContent: { ...currentData.aPlusContent, sections } };
 
