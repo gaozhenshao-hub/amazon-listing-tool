@@ -506,6 +506,10 @@ export async function resolveSessionForExecution(
   return hydrateImageWorkflowSessionFromArtifacts(session, {
     consumerType: "business_operation",
     consumerId,
+  }, {
+    // 解锁后数据库中的stepConfirmed会变为0。只水合当前仍被确认的步骤，
+    // 避免历史current Artifact把已解锁的步骤重新覆盖为确认状态。
+    onlyBusinessConfirmedSteps: true,
   });
 }
 
