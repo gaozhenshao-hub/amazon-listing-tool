@@ -1883,6 +1883,19 @@ export const opsInventoryPlanningParameters = mysqlTable("ops_inventory_planning
 export type OpsInventoryPlanningParameter = typeof opsInventoryPlanningParameters.$inferSelect;
 export type InsertOpsInventoryPlanningParameter = typeof opsInventoryPlanningParameters.$inferInsert;
 
+export const opsMonthlyFinancialProfits = mysqlTable("ops_monthly_financial_profits", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  parentAsin: varchar("parent_asin", { length: 20 }).notNull(),
+  yearMonth: varchar("year_month", { length: 7 }).notNull(),
+  financialProfit: decimal("financial_profit", { precision: 14, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("ops_monthly_financial_profit_unique").on(table.workspaceId, table.userId, table.parentAsin, table.yearMonth),
+]);
+
 // Confirmed future supply can be incorporated into the planning timeline only after its availability date is known.
 export const opsReplenishmentPlans = mysqlTable("ops_replenishment_plans", {
   workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),

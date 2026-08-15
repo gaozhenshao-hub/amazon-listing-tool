@@ -280,7 +280,7 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 }
 
 // ─── Product Row Component ───
-function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort, isImportMode, productionConfig, onUpdateProductionConfig, planningRows, onSaveCostParameters }: {
+function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort, isImportMode, productionConfig, onUpdateProductionConfig, planningRows, financialProfits = [], onSaveCostParameters, onSaveFinancialProfits }: {
   product: ProductOverview;
   onNavigate: (id: number) => void;
   onNavigateImport?: (parentAsin: string) => void;
@@ -296,7 +296,9 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
   productionConfig?: { productionTimeDays: number; shippingTimeDays: number; notes: string | null };
   onUpdateProductionConfig?: (config: { productionTimeDays: number; shippingTimeDays: number; marketplace: string }) => void;
   planningRows?: any[];
+  financialProfits?: any[];
   onSaveCostParameters?: (row: any, values: Record<string, string>) => void;
+  onSaveFinancialProfits?: (parentAsin: string, entries: Array<{ yearMonth: string; financialProfit: number }>) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -306,12 +308,16 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
   const [shipDays, setShipDays] = useState(productionConfig?.shippingTimeDays ?? 30);
   const [costPanelOpen, setCostPanelOpen] = useState(false);
   const [costDrafts, setCostDrafts] = useState<Record<string, Record<string, string>>>({});
+  const [financialProfitOpen, setFinancialProfitOpen] = useState(false);
+  const [financialProfitDrafts, setFinancialProfitDrafts] = useState<Record<string, string>>({});
   const bi = product.basicInfo;
-  const profitTrend = useMemo(() => product.monthlySummaries.slice(-6).map(month => ({
-    month: month.yearMonth?.slice(2) || "—",
-    settlementProfit: Number(month.financialProfit || 0),
-    orderProfit: Number(month.orderProfitTotal || 0),
-  })), [product.monthlySummaries]);
+  const profitTrend = useMemo(() => Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(); date.setMonth(date.getMonth() - 5 + index);
+    const yearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const saved = financialProfits.find((item: any) => item.yearMonth === yearMonth);
+    const value = financialProfitDrafts[yearMonth] ?? (saved?.financialProfit == null ? "" : String(saved.financialProfit));
+    return { yearMonth, month: yearMonth.slice(2), financialProfit: value === "" ? null : Number(value) };
+  }), [financialProfits, financialProfitDrafts]);
   const productPlanningRows = useMemo(() => (planningRows || []).filter((row: any) => row.parentAsin === product.parentAsin), [planningRows, product.parentAsin]);
 
   const getCostValue = (row: any, field: string) => costDrafts[row.asin]?.[field] ?? (row[field] == null ? "" : String(row[field]));
@@ -437,8 +443,8 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
           )}
 
           <div className="h-14 w-[260px] shrink-0" onClick={e => e.stopPropagation()}>
-            <p className="mb-0.5 text-[10px] text-muted-foreground">近6个月结算利润 / 订单利润</p>
-            {profitTrend.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={profitTrend} margin={{ top: 0, right: 2, left: 2, bottom: 0 }}><XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} /><YAxis hide /><RechartsTooltip formatter={(value: number, name: string) => [`$${value.toFixed(2)}`, name]} /><Legend iconSize={7} wrapperStyle={{ fontSize: 9, paddingTop: 0 }} /><Line type="monotone" dataKey="settlementProfit" name="结算利润" stroke="#2563eb" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="orderProfit" name="订单利润" stroke="#10b981" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer> : <div className="flex h-9 items-center text-[10px] text-muted-foreground">暂无近六个月利润数据</div>}
+            <div className="flex items-center justify-between"><p className="mb-0.5 text-[10px] text-muted-foreground">近6个月财务利润</p><button className="text-[10px] text-primary hover:underline" onClick={() => setFinancialProfitOpen(open => !open)}>填写</button></div>
+            <ResponsiveContainer width="100%" height="100%"><LineChart data={profitTrend} margin={{ top: 0, right: 2, left: 2, bottom: 0 }}><XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} /><YAxis hide /><RechartsTooltip formatter={(value: number | null) => [value == null ? "待填写" : `$${value.toFixed(2)}`, "财务利润"]} /><Line connectNulls type="monotone" dataKey="financialProfit" name="财务利润" stroke="#7c3aed" strokeWidth={2} dot={{ r: 2 }} /></LineChart></ResponsiveContainer>
           </div>
 
           {/* Product Name (品名) */}
@@ -566,6 +572,7 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
       {/* ═══ Weekly Data Table ═══ */}
       {expanded && (
         <div>
+          {financialProfitOpen && <section className="border-b bg-violet-50/50 px-3 py-2.5"><div className="flex items-center justify-between gap-3"><div><span className="text-xs font-semibold text-violet-800">最近6个月财务利润（USD）</span><span className="ml-2 text-[11px] text-muted-foreground">按月手动填写；仅用于本卡片财务利润趋势。</span></div><Button size="sm" className="h-7 text-[11px]" onClick={() => onSaveFinancialProfits?.(product.parentAsin, profitTrend.filter(item => item.financialProfit !== null).map(item => ({ yearMonth: item.yearMonth, financialProfit: item.financialProfit! })))}>保存财务利润</Button></div><div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">{profitTrend.map(item => <label key={item.yearMonth} className="text-[11px] text-muted-foreground">{item.yearMonth}<Input type="number" step="0.01" className="mt-1 h-7 text-xs" value={financialProfitDrafts[item.yearMonth] ?? (item.financialProfit == null ? "" : String(item.financialProfit))} placeholder="0.00" onChange={event => setFinancialProfitDrafts(current => ({ ...current, [item.yearMonth]: event.target.value }))} /></label>)}</div></section>}
           {isImportMode && productPlanningRows.length > 0 && (
             <section className="border-b bg-slate-50/70 px-3 py-2.5">
               <button className="flex w-full items-center justify-between text-left" onClick={() => setCostPanelOpen(open => !open)}>
@@ -905,6 +912,7 @@ export default function OpsProducts() {
   const { data: inventoryPlanning } = trpc.dataImport.getInventoryPlanningFromImport.useQuery({
     marketplace: marketplaceFilter,
   }, { enabled: dataSource === "lingxing" });
+  const { data: monthlyFinancialProfits } = trpc.dataImport.getMonthlyFinancialProfits.useQuery(undefined, { enabled: dataSource === "lingxing" });
 
   // Production config for inventory status
   const { data: productionConfigs } = trpc.dataImport.getProductionConfigs.useQuery({
@@ -921,6 +929,10 @@ export default function OpsProducts() {
       toast.success("产品基本信息已保存，平手价和采购成本已同步更新");
     },
     onError: (error) => toast.error("产品基本信息保存失败", { description: error.message }),
+  });
+  const saveMonthlyFinancialProfitsMut = trpc.dataImport.saveMonthlyFinancialProfits.useMutation({
+    onSuccess: () => { void utils.dataImport.getMonthlyFinancialProfits.invalidate(); toast.success("财务利润已保存，趋势图已更新"); },
+    onError: (error) => toast.error("财务利润保存失败", { description: error.message }),
   });
 
   // Unified products & loading state
@@ -1392,6 +1404,8 @@ export default function OpsProducts() {
               productionConfig={productionConfigs?.[product.parentAsin]}
               onUpdateProductionConfig={(config) => updateProductionMut.mutate({ parentAsin: product.parentAsin, ...config })}
               planningRows={dataSource === "lingxing" ? inventoryPlanning?.rows : []}
+              financialProfits={(monthlyFinancialProfits || []).filter((item: any) => item.parentAsin === product.parentAsin)}
+              onSaveFinancialProfits={(parentAsin, entries) => saveMonthlyFinancialProfitsMut.mutate({ parentAsin, entries })}
               onSaveCostParameters={(row, values) => savePlanningParametersMut.mutate({
                 scopeType: "asin",
                 asin: row.asin,

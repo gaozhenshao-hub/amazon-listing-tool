@@ -71,6 +71,15 @@ describe("导入模式库存规划接口契约", () => {
     expect(productsPageSource).toContain("product.chineseName || product.title");
   });
 
+  it("产品总览仅展示人工维护的财务利润单线趋势", () => {
+    expect(routerSource).toContain("getMonthlyFinancialProfits");
+    expect(routerSource).toContain("saveMonthlyFinancialProfits");
+    expect(productsPageSource).toContain("最近6个月财务利润（USD）");
+    expect(productsPageSource).toContain('dataKey="financialProfit"');
+    expect(productsPageSource).not.toContain('dataKey="settlementProfit"');
+    expect(productsPageSource).not.toContain('dataKey="orderProfit" name="订单利润"');
+  });
+
   it("领星日粒度父 ASIN 汇总复用既有周度数据中的运营负责人映射", () => {
     expect(routerSource).toContain("operatorByParentKey");
     expect(routerSource).toContain("lingxingProductWeekly.operator");

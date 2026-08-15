@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
-import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsAsinLifecycleStatuses, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles } from "../../drizzle/schema";
+import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsAsinLifecycleStatuses, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, opsMonthlyFinancialProfits, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles } from "../../drizzle/schema";
 import { MANAGER_ROLES } from "../../shared/const";
 import { eq, desc, and, sql, or, isNull, ne } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
@@ -667,6 +667,26 @@ export const dataImportRouter = router({
         )));
       const filtered = rows.filter(row => matchesLingxingMarketplace(row, input.marketplace));
       return summarizeVariantSales(filtered as any, input.weeks);
+    }),
+
+  getMonthlyFinancialProfits: protectedProcedure
+    .query(async ({ ctx }) => {
+      const db = await getDb();
+      const workspaceId = ctx.user.defaultWorkspaceId ?? currentOpsWorkspaceId();
+      return db!.select().from(opsMonthlyFinancialProfits).where(and(eq(opsMonthlyFinancialProfits.workspaceId, workspaceId), eq(opsMonthlyFinancialProfits.userId, ctx.user.id))).orderBy(desc(opsMonthlyFinancialProfits.yearMonth));
+    }),
+
+  saveMonthlyFinancialProfits: protectedProcedure
+    .input(z.object({ parentAsin: z.string().min(1), entries: z.array(z.object({ yearMonth: z.string().regex(/^\d{4}-\d{2}$/), financialProfit: z.number() })).min(1).max(6) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const workspaceId = ctx.user.defaultWorkspaceId ?? currentOpsWorkspaceId();
+      for (const entry of input.entries) {
+        const [existing] = await db!.select().from(opsMonthlyFinancialProfits).where(and(eq(opsMonthlyFinancialProfits.workspaceId, workspaceId), eq(opsMonthlyFinancialProfits.userId, ctx.user.id), eq(opsMonthlyFinancialProfits.parentAsin, input.parentAsin), eq(opsMonthlyFinancialProfits.yearMonth, entry.yearMonth))).limit(1);
+        if (existing) await db!.update(opsMonthlyFinancialProfits).set({ financialProfit: String(entry.financialProfit) }).where(eq(opsMonthlyFinancialProfits.id, existing.id));
+        else await db!.insert(opsMonthlyFinancialProfits).values({ workspaceId, userId: ctx.user.id, parentAsin: input.parentAsin, yearMonth: entry.yearMonth, financialProfit: String(entry.financialProfit) });
+      }
+      return { status: "saved" as const, count: input.entries.length };
     }),
 
   // ─── Inventory Planning from Daily ASIN Snapshots ───
