@@ -595,7 +595,12 @@ export default function GeneratePage() {
     if (!note) { toast.error("请填写优化方向"); return; }
     try {
       const result: any = await optimizeBulletMut.mutateAsync({ projectId: selectedProjectId, sellingPoint: sellingPointCores[idx], emphasis: `基于当前卖点优化并保留核心事实。当前卖点：${current.subtitle} — ${current.fullText}\n优化方向：${note}` });
-      const next = { ...result, subtitle: result.subtitle || current.subtitle, fullText: result.fullText || result.bulletPoint || result.text || current.fullText, optimizationNote: note };
+      const optimized = result?.parsed || result?.data || result?.result || result;
+      const optimizedBullet = Array.isArray(optimized) ? optimized[0] : (optimized?.bullet || optimized?.bulletPoint || optimized);
+      const next = { ...current, ...(typeof optimizedBullet === "object" ? optimizedBullet : {}), subtitle: optimizedBullet?.subtitle || optimizedBullet?.title || current.subtitle, fullText: optimizedBullet?.fullText || optimizedBullet?.bulletPoint || optimizedBullet?.text || optimizedBullet?.content || (typeof optimizedBullet === "string" ? optimizedBullet : current.fullText), optimizationNote: note };
+      if (next.subtitle === current.subtitle && next.fullText === current.fullText) {
+        toast.warning("AI 返回内容与当前版本相同，已保留为候选；可更换更具体的优化方向后再次生成");
+      }
       setBulletCandidates(prev => ({ ...prev, [idx]: [...candidates, next] }));
       setGeneratedBullets(prev => ({ ...prev, [idx]: next }));
       setBulletOptimizationNotes(prev => ({ ...prev, [idx]: "" }));
