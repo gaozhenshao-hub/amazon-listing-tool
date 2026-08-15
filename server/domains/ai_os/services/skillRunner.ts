@@ -167,6 +167,42 @@ function parseJson<T>(value: unknown, fallback: T): T {
   }
 }
 
+function parseLenientJson<T>(candidate: string): T | null {
+  try {
+    return JSON.parse(candidate) as T;
+  } catch {
+    // Continue with a conservative repair for common LLM JSON defects.
+  }
+
+  let repaired = "";
+  let inString = false;
+  let escaped = false;
+  for (const char of candidate) {
+    if (inString && !escaped && char === "\n") {
+      repaired += "\\n";
+      continue;
+    }
+    if (inString && !escaped && char === "\r") {
+      repaired += "\\r";
+      continue;
+    }
+    if (inString && !escaped && char === "\t") {
+      repaired += "\\t";
+      continue;
+    }
+    repaired += char;
+    if (char === '"' && !escaped) inString = !inString;
+    escaped = char === "\\" && !escaped;
+    if (char !== "\\") escaped = false;
+  }
+  repaired = repaired.replace(/,\s*([}\]])/g, "$1");
+  try {
+    return JSON.parse(repaired) as T;
+  } catch {
+    return null;
+  }
+}
+
 export function safeParseSkillJSON<T = unknown>(raw: unknown, fallback?: T): T | { raw: string } {
   if (raw === undefined || raw === null) {
     if (fallback !== undefined) return fallback;
@@ -185,11 +221,8 @@ export function safeParseSkillJSON<T = unknown>(raw: unknown, fallback?: T): T |
     .replace(/\s*```\s*$/im, "")
     .trim();
 
-  try {
-    return JSON.parse(cleaned) as T;
-  } catch {
-    // Continue to extracting a JSON payload from provider prose.
-  }
+  const wholeDocument = parseLenientJson<T>(cleaned);
+  if (wholeDocument !== null) return wholeDocument;
 
   const candidates: Array<[number, number]> = [
     [cleaned.indexOf("{"), cleaned.lastIndexOf("}")],
@@ -198,11 +231,8 @@ export function safeParseSkillJSON<T = unknown>(raw: unknown, fallback?: T): T |
 
   for (const [start, end] of candidates) {
     if (start >= 0 && end > start) {
-      try {
-        return JSON.parse(cleaned.slice(start, end + 1)) as T;
-      } catch {
-        // Try the next candidate.
-      }
+      const extracted = parseLenientJson<T>(cleaned.slice(start, end + 1));
+      if (extracted !== null) return extracted;
     }
   }
 
