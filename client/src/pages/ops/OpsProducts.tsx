@@ -577,9 +577,9 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
               </button>
               {costPanelOpen && (
                 <div className="mt-2 overflow-x-auto rounded-md border bg-background">
-                  <table className="w-full min-w-[1130px] text-[11px]">
+                  <table className="w-full min-w-[1510px] text-[11px]">
                     <thead className="border-b bg-muted/40 text-muted-foreground">
-                      <tr><th className="px-2 py-1.5 text-left">子 ASIN / SKU</th><th className="px-2 py-1.5 text-right">产品成本</th><th className="px-2 py-1.5 text-right">预估头程</th><th className="px-2 py-1.5 text-right">实际头程</th><th className="px-2 py-1.5 text-right">预估 FBA</th><th className="px-2 py-1.5 text-right">实际 FBA</th><th className="px-2 py-1.5 text-right">售价</th><th className="px-2 py-1.5 text-right">预估平手价</th><th className="px-2 py-1.5 text-right">实际平手价</th><th className="px-2 py-1.5 text-center">操作</th></tr>
+                      <tr><th className="px-2 py-1.5 text-left">子 ASIN / SKU</th><th className="px-2 py-1.5 text-right">产品成本</th><th className="px-2 py-1.5 text-right">预估头程</th><th className="px-2 py-1.5 text-right">实际头程</th><th className="px-2 py-1.5 text-right">预估 FBA</th><th className="px-2 py-1.5 text-right">实际 FBA</th><th className="px-2 py-1.5 text-right">售价</th><th className="px-2 py-1.5 text-left">预估尺寸 (in/cm)</th><th className="px-2 py-1.5 text-left">实际尺寸 (in/cm)</th><th className="px-2 py-1.5 text-right">预估重量 (lb/kg)</th><th className="px-2 py-1.5 text-right">实际重量 (lb/kg)</th><th className="px-2 py-1.5 text-right">预估平手价</th><th className="px-2 py-1.5 text-right">实际平手价</th><th className="px-2 py-1.5 text-center">操作</th></tr>
                     </thead>
                     <tbody>
                       {productPlanningRows.map((row: any) => {
@@ -593,6 +593,10 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
                         return <tr key={`${row.asin}-${row.storeName}-${row.country}`} className="border-b last:border-0">
                           <td className="px-2 py-1.5"><div className="font-medium">{row.asin}</div><div className="text-muted-foreground">{row.sku || "—"}</div></td>
                           {fields.map(([field, label]) => <td key={field} className="px-1 py-1 text-right"><Input aria-label={`${row.asin}${label}`} type="number" min="0" step="0.01" className="h-7 w-[88px] text-right text-[11px]" value={getCostValue(row, field)} placeholder="0.00" onChange={event => updateCostDraft(row.asin, field, event.target.value)} /></td>)}
+                          <td className="px-1 py-1"><Input aria-label={`${row.asin}预估尺寸`} className="h-7 w-[120px] text-[11px]" value={getCostValue(row, "estimatedDimensions")} placeholder="长×宽×高" onChange={event => updateCostDraft(row.asin, "estimatedDimensions", event.target.value)} /></td>
+                          <td className="px-1 py-1"><Input aria-label={`${row.asin}实际尺寸`} className="h-7 w-[120px] text-[11px]" value={getCostValue(row, "actualDimensions")} placeholder="长×宽×高" onChange={event => updateCostDraft(row.asin, "actualDimensions", event.target.value)} /></td>
+                          <td className="px-1 py-1 text-right"><Input aria-label={`${row.asin}预估重量`} type="number" min="0" step="0.001" className="h-7 w-[92px] text-right text-[11px]" value={getCostValue(row, "estimatedWeight")} placeholder="0.000" onChange={event => updateCostDraft(row.asin, "estimatedWeight", event.target.value)} /></td>
+                          <td className="px-1 py-1 text-right"><Input aria-label={`${row.asin}实际重量`} type="number" min="0" step="0.001" className="h-7 w-[92px] text-right text-[11px]" value={getCostValue(row, "actualWeight")} placeholder="0.000" onChange={event => updateCostDraft(row.asin, "actualWeight", event.target.value)} /></td>
                           <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${estimatedBreakEven < 0 ? "text-red-600" : "text-emerald-700"}`}>${estimatedBreakEven.toFixed(2)}</td>
                           <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${actualBreakEven < 0 ? "text-red-600" : "text-emerald-700"}`}>${actualBreakEven.toFixed(2)}</td>
                           <td className="px-2 py-1 text-center"><Button size="sm" className="h-7 text-[11px]" onClick={() => onSaveCostParameters?.(row, costDrafts[row.asin] || {})}>保存</Button></td>
@@ -1406,6 +1410,12 @@ export default function OpsProducts() {
                 estimatedFbaFee: Number(values.estimatedFbaFee ?? row.estimatedFbaFee ?? 0),
                 actualFbaFee: Number(values.actualFbaFee ?? row.actualFbaFee ?? 0),
                 sellingPrice: Number(values.sellingPrice ?? row.sellingPrice ?? 0),
+                estimatedDimensions: String(values.estimatedDimensions ?? row.estimatedDimensions ?? "") || undefined,
+                actualDimensions: String(values.actualDimensions ?? row.actualDimensions ?? "") || undefined,
+                estimatedWeight: values.estimatedWeight === "" ? undefined : Number(values.estimatedWeight ?? row.estimatedWeight ?? 0),
+                actualWeight: values.actualWeight === "" ? undefined : Number(values.actualWeight ?? row.actualWeight ?? 0),
+                dimensionUnit: "in",
+                weightUnit: "lb",
                 currency: "USD",
               })}
             />

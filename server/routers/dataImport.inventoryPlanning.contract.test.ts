@@ -35,6 +35,10 @@ describe("导入模式库存规划接口契约", () => {
     expect(routerSource).toContain("estimatedFbaFee: z.number().min(0).optional()");
     expect(routerSource).toContain("actualFbaFee: z.number().min(0).optional()");
     expect(routerSource).toContain("sellingPrice: z.number().min(0).optional()");
+    expect(routerSource).toContain("estimatedDimensions: z.string().max(120).optional()");
+    expect(routerSource).toContain("actualDimensions: z.string().max(120).optional()");
+    expect(routerSource).toContain("estimatedWeight: z.number().min(0).optional()");
+    expect(routerSource).toContain("actualWeight: z.number().min(0).optional()");
     expect(routerSource).toContain('currency: z.literal("USD")');
     expect(routerSource).toContain("const estimatedBreakEven = sellingPrice !== null");
     expect(routerSource).toContain("const actualBreakEven = sellingPrice !== null");
@@ -43,6 +47,10 @@ describe("导入模式库存规划接口契约", () => {
     expect(productsPageSource).toContain("saveInventoryPlanningParameters");
     expect(productsPageSource).toContain("sellingPrice * 0.85");
     expect(productsPageSource).toContain("产品基本信息已保存，平手价和采购成本已同步更新");
+    expect(productsPageSource).toContain("预估尺寸 (in/cm)");
+    expect(productsPageSource).toContain("实际尺寸 (in/cm)");
+    expect(productsPageSource).toContain("预估重量 (lb/kg)");
+    expect(productsPageSource).toContain("实际重量 (lb/kg)");
   });
 
   it("产品总览和详情页均使用新的日粒度库存与变体销量接口", () => {

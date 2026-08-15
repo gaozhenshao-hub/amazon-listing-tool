@@ -733,6 +733,10 @@ export const dataImportRouter = router({
         const estimatedFbaFee = parameter?.estimatedFbaFee == null ? null : Number(parameter.estimatedFbaFee);
         const actualFbaFee = parameter?.actualFbaFee == null ? null : Number(parameter.actualFbaFee);
         const sellingPrice = parameter?.sellingPrice == null ? null : Number(parameter.sellingPrice);
+        const estimatedDimensions = parameter?.estimatedDimensions ?? null;
+        const actualDimensions = parameter?.actualDimensions ?? null;
+        const estimatedWeight = parameter?.estimatedWeight == null ? null : Number(parameter.estimatedWeight);
+        const actualWeight = parameter?.actualWeight == null ? null : Number(parameter.actualWeight);
         const estimatedBreakEven = sellingPrice !== null && productCost !== null && estimatedFirstLegCost !== null && estimatedFbaFee !== null
           ? sellingPrice * 0.85 - productCost - estimatedFirstLegCost - estimatedFbaFee
           : null;
@@ -744,7 +748,7 @@ export const dataImportRouter = router({
           productName: latest.productName || latest.title || null, operator: latest.operator || null, localInventory: local?.localQty || 0,
           localInventoryConfirmedAt: local?.confirmedAt || null, parameterScope: parameter?.scopeType || "workspace",
           productionDays: parameter?.productionDays ?? 30, shippingDays: parameter?.shippingDays ?? 30, bufferDays: parameter?.bufferDays ?? 10,
-          productCost, estimatedFirstLegCost, actualFirstLegCost, estimatedFbaFee, actualFbaFee, sellingPrice, currency: parameter?.currency ?? "USD",
+          productCost, estimatedFirstLegCost, actualFirstLegCost, estimatedFbaFee, actualFbaFee, sellingPrice, estimatedDimensions, actualDimensions, estimatedWeight, actualWeight, dimensionUnit: parameter?.dimensionUnit ?? "in", weightUnit: parameter?.weightUnit ?? "lb", currency: parameter?.currency ?? "USD",
           estimatedBreakEven, actualBreakEven,
           ...plan,
         };
@@ -773,7 +777,7 @@ export const dataImportRouter = router({
       scopeType: z.enum(["workspace", "store_country", "parent_asin", "asin"]),
       asin: z.string().optional(), parentAsin: z.string().optional(), storeName: z.string().optional(), country: z.string().optional(),
       productionDays: z.number().int().min(0).max(365).default(30), shippingDays: z.number().int().min(0).max(365).default(30), bufferDays: z.number().int().min(0).max(365).default(10), targetCoverDays: z.number().int().min(1).max(365).default(30), moq: z.number().int().min(0).default(0), packSize: z.number().int().min(1).default(1),
-      productCost: z.number().min(0).optional(), estimatedFirstLegCost: z.number().min(0).optional(), actualFirstLegCost: z.number().min(0).optional(), estimatedFbaFee: z.number().min(0).optional(), actualFbaFee: z.number().min(0).optional(), sellingPrice: z.number().min(0).optional(), currency: z.literal("USD").default("USD"),
+      productCost: z.number().min(0).optional(), estimatedFirstLegCost: z.number().min(0).optional(), actualFirstLegCost: z.number().min(0).optional(), estimatedFbaFee: z.number().min(0).optional(), actualFbaFee: z.number().min(0).optional(), sellingPrice: z.number().min(0).optional(), estimatedDimensions: z.string().max(120).optional(), actualDimensions: z.string().max(120).optional(), estimatedWeight: z.number().min(0).optional(), actualWeight: z.number().min(0).optional(), dimensionUnit: z.enum(["in", "cm"]).default("in"), weightUnit: z.enum(["lb", "kg"]).default("lb"), currency: z.literal("USD").default("USD"),
     }).superRefine((value, issue) => {
       if (value.scopeType === "store_country" && (!value.storeName || !value.country)) issue.addIssue({ code: "custom", message: "店铺和国家不能为空" });
       if (value.scopeType === "parent_asin" && (!value.parentAsin || !value.storeName || !value.country)) issue.addIssue({ code: "custom", message: "父 ASIN、店铺和国家不能为空" });
