@@ -384,6 +384,25 @@ export function Step2ImageOutline({
                           <p className="mt-1">规格：{mod.selectedModuleSpecs || selectedModule?.specs}</p>
                         </div>
                       )}
+                      {Array.isArray(mod.subModules) && mod.subModules.length > 0 && (
+                        <div className="space-y-3 rounded-lg border border-purple-200 bg-purple-50/30 p-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold text-purple-800">逐图子模块大纲</p>
+                            <Badge variant="outline" className="text-[10px]">{mod.subModules.length} 张子图</Badge>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground">锁定版本：后续参考图、构图效果与图片建议均按每张子图独立处理。</p>
+                          {mod.subModules.map((submodule: any, submoduleIndex: number) => (
+                            <div key={submoduleIndex} className="space-y-1.5 rounded-md border bg-background p-2.5 text-sm">
+                              <p className="text-xs font-medium">A+ 模块 {mod.moduleNumber || idx + 1}.{submodule.subModuleNumber || submoduleIndex + 1}</p>
+                              <p><strong>标题:</strong> {submodule.title || "—"}</p>
+                              <p><strong>目的:</strong> {submodule.purpose || "—"}</p>
+                              <p><strong>内容:</strong> {submodule.contentBrief || "—"}</p>
+                              {submodule.expressionType && <p><strong>表达方式:</strong> {submodule.expressionType}</p>}
+                              {submodule.whyThisWay && <p className="text-muted-foreground"><strong>理由:</strong> {submodule.whyThisWay}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </>
                   ) : (
                     <>

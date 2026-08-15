@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync("server/domains/image/routers/references.ts", "utf8");
 const workflowStepsSource = readFileSync("server/domains/image/routers/workflowSteps.ts", "utf8");
 const routerContextSource = readFileSync("server/domains/image/routerContext.ts", "utf8");
+const imageOutlineStepSource = readFileSync("client/src/pages/imageWorkflow/ImageOutlineStep.tsx", "utf8");
 
 describe("A+单模块样式重新优化契约", () => {
   it("统一调用皇帝专用Skill并传入归一化样式元数据", () => {
@@ -21,6 +22,11 @@ describe("A+单模块样式重新优化契约", () => {
     expect(routerContextSource).toContain("Number(session.step2Confirmed) === 1");
     expect(routerContextSource).toContain("session.step2UserEdit");
     expect(routerContextSource).toContain("step2AiResult: completeStep2Json");
+  });
+
+  it("renders multi-image A+ submodules in both editable and locked outline states", () => {
+    expect(imageOutlineStepSource).toContain("锁定版本：后续参考图、构图效果与图片建议均按每张子图独立处理。");
+    expect(imageOutlineStepSource).toContain("逐图子模块大纲");
   });
 
   it("locks and publishes the normalized Step2 outline rather than the stale AI output", () => {
