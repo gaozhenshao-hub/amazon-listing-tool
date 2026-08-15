@@ -1416,6 +1416,20 @@ function Step5FinalSuggestions({
                                 )}
                               </div>
                             )}
+                            {Array.isArray(section.subModules) && section.subModules.length > 0 && (
+                              <div className="mt-3 space-y-2 rounded border border-purple-200 bg-purple-50/50 p-2">
+                                <p className="text-xs font-semibold text-purple-800">逐图子模块（各自拥有独立参考图、构图与作图建议）</p>
+                                {section.subModules.map((subModule: any, subIndex: number) => (
+                                  <div key={subModule.subModuleNumber || subIndex} className="rounded border border-purple-100 bg-white p-2 text-xs">
+                                    <p className="font-medium text-purple-800">A+ 模块 {idx + 1}.{subModule.subModuleNumber || subIndex + 1} · {subModule.title || "子图"}</p>
+                                    {subModule.purpose && <p><strong>目的:</strong> {subModule.purpose}</p>}
+                                    {subModule.composition && <p><strong>构图:</strong> {subModule.composition}</p>}
+                                    {(subModule.imageDescription || subModule.designAdvice || subModule.content) && <p><strong>作图建议:</strong> {subModule.imageDescription || subModule.designAdvice || subModule.content}</p>}
+                                    {subModule.referenceImageKey && <p className="text-muted-foreground"><strong>参考图:</strong> {subModule.referenceImageKey}</p>}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           <DesignerUploadPanel
                             imageNumber={`aplus_section_${idx + 1}`}

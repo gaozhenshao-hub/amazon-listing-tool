@@ -46,6 +46,23 @@ const SECONDARY_IMAGE_CONTRACT_FALLBACKS: Record<number, {
 
 export const DEFAULT_OUTLINE_APLUS_MODULE_ID = "premium_full_image";
 
+/** 多图A+模块必须拆成逐图可执行的子模块，而非只保留一条笼统模块说明。 */
+export const IMAGE_WORKFLOW_APLUS_SUBMODULE_CONFIG: Record<string, { defaultCount: number; min: number; max: number }> = {
+  premium_four_image_text: { defaultCount: 4, min: 4, max: 4 },
+  premium_dual_image_text: { defaultCount: 2, min: 2, max: 2 },
+  premium_comparison_1: { defaultCount: 4, min: 4, max: 7 },
+  premium_comparison_2: { defaultCount: 2, min: 2, max: 3 },
+  premium_comparison_3: { defaultCount: 3, min: 2, max: 4 },
+  premium_nav_carousel: { defaultCount: 4, min: 2, max: 5 },
+  premium_rule_carousel: { defaultCount: 4, min: 2, max: 5 },
+  premium_simple_carousel: { defaultCount: 4, min: 2, max: 6 },
+  premium_video_carousel: { defaultCount: 3, min: 2, max: 6 },
+  premium_tech_specs: { defaultCount: 4, min: 3, max: 15 },
+  brand_highlight: { defaultCount: 4, min: 3, max: 4 },
+  standard_four_image: { defaultCount: 4, min: 4, max: 4 },
+  standard_comparison: { defaultCount: 3, min: 2, max: 5 },
+};
+
 export const IMAGE_WORKFLOW_APLUS_MODULES = [
   { id: "premium_full_image", name: "高级完整图片", desc: "全屏背景+文字覆盖", category: "全屏展示", specs: "1464x600px；标题800字符，正文300字符", structure: "单张全宽大图" },
   { id: "premium_text", name: "高级文本", desc: "纯文本模块", category: "文本", specs: "标题80字符，正文300字符", structure: "纯文字说明" },
@@ -102,7 +119,29 @@ export function normalizeImageWorkflowAplusStyle(
   const requested = options.forceDefault
     ? DEFAULT_OUTLINE_APLUS_MODULE_ID
     : module.selectedModuleType || module.recommendedModuleType || module.selectedModuleName || DEFAULT_OUTLINE_APLUS_MODULE_ID;
-  return applyImageWorkflowAplusStyle(module, requested);
+  const styled = applyImageWorkflowAplusStyle(module, requested) as Record<string, any>;
+  const config = IMAGE_WORKFLOW_APLUS_SUBMODULE_CONFIG[styled.selectedModuleType];
+  if (!config) return styled;
+  const existing = Array.isArray(styled.subModules) ? styled.subModules : [];
+  const requestedCount = Number(styled.subModuleCount || existing.length || config.defaultCount);
+  const subModuleCount = Math.min(config.max, Math.max(config.min, requestedCount));
+  return {
+    ...styled,
+    subModuleCount,
+    subModules: Array.from({ length: subModuleCount }, (_, index) => {
+      const child = existing[index] || {};
+      return {
+        subModuleNumber: index + 1,
+        title: child.title || `子图 ${index + 1}`,
+        purpose: child.purpose || "",
+        sellingPointRefs: Array.isArray(child.sellingPointRefs) ? child.sellingPointRefs : [],
+        contentBrief: child.contentBrief || "",
+        expressionType: child.expressionType || "",
+        whyThisWay: child.whyThisWay || "",
+        position: child.position || `A+模块 ${styled.moduleNumber || ""}.${index + 1}`,
+      };
+    }),
+  };
 }
 
 export function normalizeSecondaryImageSlots<T extends Record<string, any>>(
@@ -190,6 +229,41 @@ export function normalizeImageOutline(
       normalizeImageWorkflowAplusStyle(module, { forceDefault: options.forceDefaultAplus }),
     ),
   };
+}
+
+/** 将主图、辅图和多图A+模块统一展开为后续参考图/作图建议的独立执行目标。 */
+export function buildImageWorkflowReferenceTargets(value: Record<string, any>) {
+  const targets: Array<Record<string, any>> = [
+    { imageKey: "main-1", imageNumber: 1, imageType: "主图", purpose: value?.mainImage?.purpose || "主图展示" },
+    ...(Array.isArray(value?.secondaryImages) ? value.secondaryImages : []).map((image: any) => ({
+      imageKey: `secondary-${image.imageNumber}`,
+      imageNumber: image.imageNumber,
+      imageType: `辅图${image.imageNumber}`,
+      purpose: image.purpose || "",
+      outline: image,
+    })),
+  ];
+  for (const module of Array.isArray(value?.aPlusModules) ? value.aPlusModules : []) {
+    const parentModuleNumber = module.moduleNumber || "?";
+    const subModules = Array.isArray(module.subModules) && module.subModules.length > 0 ? module.subModules : [null];
+    subModules.forEach((subModule: any, index: number) => {
+      const subModuleNumber = subModule?.subModuleNumber || index + 1;
+      const suffix = subModule ? `.${subModuleNumber}` : "";
+      targets.push({
+        imageKey: `aplus-${parentModuleNumber}${suffix}`,
+        imageNumber: `${parentModuleNumber}${suffix}`,
+        imageType: `A+模块 ${parentModuleNumber}${suffix}`,
+        parentModuleNumber,
+        subModuleNumber: subModule ? subModuleNumber : null,
+        selectedModuleType: module.selectedModuleType,
+        selectedModuleName: module.selectedModuleName,
+        selectedModuleStructure: module.selectedModuleStructure,
+        purpose: subModule?.purpose || module.purpose || "",
+        outline: subModule || module,
+      });
+    });
+  }
+  return targets;
 }
 
 // ─── Step 4: Normalize reference images (handles legacy field names) ──────────

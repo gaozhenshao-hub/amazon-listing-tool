@@ -107,6 +107,17 @@ export function Step2ImageOutline({
     setEditData(newData);
   };
 
+  const updateAPlusSubmodule = (moduleIndex: number, submoduleIndex: number, field: string, value: any) => {
+    if (!editData) return;
+    const newData = { ...editData, aPlusModules: [...(editData.aPlusModules || [])] };
+    const module = { ...newData.aPlusModules[moduleIndex] };
+    const subModules = [...(module.subModules || [])];
+    subModules[submoduleIndex] = { ...subModules[submoduleIndex], [field]: value };
+    module.subModules = subModules;
+    newData.aPlusModules[moduleIndex] = module;
+    setEditData(newData);
+  };
+
   const updateAPlusModuleStyle = async (idx: number, moduleType: string) => {
     const selected = OUTLINE_APLUS_MODULES.find((m) => m.id === moduleType);
     if (!selected || !editData) return;
@@ -421,6 +432,25 @@ export function Step2ImageOutline({
                       <Input value={mod.purpose || ""} onChange={(e) => updateAPlusModule(idx, "purpose", e.target.value)} placeholder="模块目的" className="h-8 text-sm" />
                       <Textarea value={mod.contentBrief || ""} onChange={(e) => updateAPlusModule(idx, "contentBrief", e.target.value)} placeholder="内容简述" className="min-h-[50px] text-sm" />
                       <Input value={mod.position || ""} onChange={(e) => updateAPlusModule(idx, "position", e.target.value)} placeholder="位置逻辑" className="h-8 text-sm" />
+                      {Array.isArray(mod.subModules) && mod.subModules.length > 0 && (
+                        <div className="space-y-3 rounded-lg border border-purple-200 bg-purple-50/30 p-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold text-purple-800">逐图子模块大纲</p>
+                            <Badge variant="outline" className="text-[10px]">{mod.subModules.length} 张子图</Badge>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground">后续参考图、构图效果与图片建议会按每张子图分别生成和确认。</p>
+                          {mod.subModules.map((submodule: any, submoduleIndex: number) => (
+                            <div key={submoduleIndex} className="space-y-2 rounded-md border bg-background p-2.5">
+                              <p className="text-xs font-medium">A+ 模块 {mod.moduleNumber || idx + 1}.{submodule.subModuleNumber || submoduleIndex + 1}</p>
+                              <Input value={submodule.title || ""} onChange={(e) => updateAPlusSubmodule(idx, submoduleIndex, "title", e.target.value)} placeholder="子图标题" className="h-8 text-xs" />
+                              <Input value={submodule.purpose || ""} onChange={(e) => updateAPlusSubmodule(idx, submoduleIndex, "purpose", e.target.value)} placeholder="子图目的" className="h-8 text-xs" />
+                              <Textarea value={submodule.contentBrief || ""} onChange={(e) => updateAPlusSubmodule(idx, submoduleIndex, "contentBrief", e.target.value)} placeholder="子图独立大纲" className="min-h-[56px] text-xs" />
+                              <Input value={submodule.expressionType || ""} onChange={(e) => updateAPlusSubmodule(idx, submoduleIndex, "expressionType", e.target.value)} placeholder="表达方式" className="h-8 text-xs" />
+                              <Input value={submodule.whyThisWay || ""} onChange={(e) => updateAPlusSubmodule(idx, submoduleIndex, "whyThisWay", e.target.value)} placeholder="安排理由" className="h-8 text-xs" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </>
                   )}
                 </CardContent>

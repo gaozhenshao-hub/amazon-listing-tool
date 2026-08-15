@@ -11,6 +11,7 @@ import {
 import * as db from "../repository";
 import { kbDb } from "../repository";
 import { callImageWorkflowSkill } from "../routerContext";
+import { buildImageWorkflowReferenceTargets, normalizeImageOutline } from "@shared/imageWorkflow";
 import {
   syncStepJobFailedToAgent,
   syncStepJobQueuedToAgent,
@@ -89,9 +90,11 @@ export async function buildStep4ReferenceRecommendation(input: {
     console.warn("[Image Step 4] Failed to load knowledge-base references:", error);
   }
 
-  const outline = compactPromptText(input.session.step2UserEdit || input.session.step2AiResult, 9_000);
+  const outlineData = normalizeImageOutline(JSON.parse(input.session.step2UserEdit || input.session.step2AiResult || "{}"));
+  const outline = compactPromptText(JSON.stringify(outlineData), 9_000);
+  const referenceTargets = buildImageWorkflowReferenceTargets(outlineData);
   const style = compactPromptText(input.session.step3UserEdit || input.session.step3AiResult, 6_000);
-  const context = `产品名称: ${input.project.productName || input.project.name}\n品牌: ${input.project.brand || "未指定"}\n类目: ${input.project.category || "未指定"}\n\n--- 已确认的图片大纲 ---\n${outline}\n\n--- 已确认的风格方案 ---\n${style}\n${kbImageInfo}\n\n请为主图、全部辅图2-7和每个A+模块推荐构图参考和效果图参考，不得遗漏辅图7。若图片大纲中的A+模块包含selectedModuleType/selectedModuleName/selectedModuleStructure，必须按该模块结构生成参考：轮播模块拆成每个面板的构图/效果参考，四图模块拆成4张子图，热点模块包含底图和各热点位置，比较表模块包含产品列和特征行布局。`;
+  const context = `产品名称: ${input.project.productName || input.project.name}\n品牌: ${input.project.brand || "未指定"}\n类目: ${input.project.category || "未指定"}\n\n--- 已确认的图片大纲 ---\n${outline}\n\n--- 已确认的风格方案 ---\n${style}\n${kbImageInfo}\n\n--- 必须逐项输出参考方案的图片目标 ---\n${JSON.stringify(referenceTargets)}\n\n请为每个目标生成一项 imageReferences，并原样保留 imageKey、imageNumber、imageType、parentModuleNumber 和 subModuleNumber。不得遗漏辅图2-7。A+多图模块的每张子图是独立目标，例如A+模块8的四张轮播图必须分别输出A+模块8.1、8.2、8.3、8.4的构图和效果参考。`;
 
   return callImageWorkflowSkill({
     skillSlug: "image.step4.reference",

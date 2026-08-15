@@ -320,13 +320,14 @@ export const imageWorkflowStepProcedures = {
         moduleOptimizedForType: selectedModule.id,
       };
       outline.aPlusModules[input.moduleIndex] = applyImageWorkflowAplusStyle(mergedModule, selectedModule.id);
+      const normalizedOutline = normalizeImageOutline(outline);
 
       await db.updateImageWorkflowSession(session.id, {
-        step2UserEdit: JSON.stringify(outline),
+        step2UserEdit: JSON.stringify(normalizedOutline),
         currentStep: 2,
       });
 
-      return { outline, module: outline.aPlusModules[input.moduleIndex] };
+      return { outline: normalizedOutline, module: normalizedOutline.aPlusModules[input.moduleIndex] };
     }),
 
 

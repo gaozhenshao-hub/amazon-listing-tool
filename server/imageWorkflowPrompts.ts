@@ -145,7 +145,7 @@ export const STEP2_IMAGE_OUTLINE_PROMPT = `${EXPERT_ROLE}
 - A+内容需要讲述完整的品牌/产品故事
 - 首次生成图片大纲时，所有A+模块必须统一使用默认全宽模块 premium_full_image（高级完整图片，1464x600px，单张全宽大图），不得自行推荐其他模块
 - 用户之后选择其他A+模块时，系统会通过专用皇帝Skill只重新优化被选择的模块；selectedModuleName/selectedModuleStructure/selectedModuleSpecs 必须与用户选择同步
-- 如果A+模块样式是一组多图、多面板或交互结构（轮播、四图、双图、热点、比较表等），contentBrief 必须拆清楚每个面板/子图/热点/表格行列要生成什么
+- 如果A+模块样式是一组多图、多面板或交互结构（轮播、四图、双图、热点、比较表等），必须返回 subModules 数组为每张子图/面板建立独立大纲；不得只在 contentBrief 中笼统罗列
 
 **图片排序逻辑：**
 1. 主图：产品最佳展示角度
@@ -190,7 +190,9 @@ export const STEP2_IMAGE_OUTLINE_PROMPT = `${EXPERT_ROLE}
       "selectedModuleStructure": "单张全宽大图",
       "purpose": "模块目的",
       "sellingPointRefs": ["呼应的卖点"],
-      "contentBrief": "内容简述；多图/多面板模块需要逐项列出每个面板/子图/热点/表格的内容",
+      "contentBrief": "模块整体叙事与统一视觉要求",
+      "subModuleCount": "多图模块填写2-6的实际子图数，单图模块省略",
+      "subModules": [{ "subModuleNumber": 1, "title": "子图标题", "purpose": "子图目的", "sellingPointRefs": ["卖点"], "contentBrief": "这张子图独立的内容大纲", "expressionType": "表达方式", "whyThisWay": "为何安排为该子图", "position": "A+模块1.1" }],
       "position": "在A+中的位置逻辑"
     }
   ],
@@ -212,7 +214,7 @@ export const STEP2_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT = `${EXPERT_ROLE}
 **必须遵守：**
 1. 保留原模块的 moduleNumber、purpose、sellingPointRefs 和 position，除非新结构确实需要更清晰的表述。
 2. selectedModuleType、selectedModuleName、selectedModuleCategory、selectedModuleSpecs、selectedModuleStructure 必须完全使用用户给出的目标模块元数据。
-3. contentBrief 必须适配目标结构：轮播逐面板、四图/双图逐子图、热点逐热点、比较表逐产品列和特征行、视频模块给出脚本与封面要求。
+3. 多图目标结构必须返回 subModuleCount 和 subModules：轮播逐面板、四图/双图逐子图、热点逐热点、比较表逐产品列和特征行；每个子模块必须有独立 title、purpose、sellingPointRefs、contentBrief、expressionType、whyThisWay、position，编号使用“父模块号.子模块号”。单图模块不得伪造子模块。
 4. 返回单个A+模块JSON对象，不要返回完整图片大纲，不要使用Markdown代码块。
 
 输出结构：
@@ -226,7 +228,9 @@ export const STEP2_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT = `${EXPERT_ROLE}
   "selectedModuleStructure": "目标模块结构",
   "purpose": "模块目的",
   "sellingPointRefs": ["呼应的卖点"],
-  "contentBrief": "严格适配目标模块结构的完整内容安排",
+  "contentBrief": "模块整体内容安排",
+  "subModuleCount": 4,
+  "subModules": [{ "subModuleNumber": 1, "title": "子图标题", "purpose": "子图目的", "sellingPointRefs": ["呼应的卖点"], "contentBrief": "子图独立大纲", "expressionType": "表达方式", "whyThisWay": "安排理由", "position": "A+模块1.1" }],
   "position": "在A+中的位置逻辑"
 }`;
 
@@ -303,6 +307,7 @@ export const STEP4_REFERENCE_PROMPT = `${EXPERT_ROLE}
 - 注明参考了哪张参考图的哪个特征
 - 对A+模块必须继承图片大纲中的 selectedModuleType / selectedModuleName / selectedModuleStructure，并按该模块结构拆分构图参考
 - 轮播模块要为每个面板分别给出构图和效果参考；四图/双图模块要拆到每张子图；热点模块要包含底图布局和热点位置；比较表模块要给出产品列和特征行布局
+- 输入会给出“必须逐项输出参考方案的图片目标”；imageReferences 必须与目标一一对应并保留 imageKey、parentModuleNumber、subModuleNumber。A+模块8.1、8.2等是独立图片，不得合并成父模块8的一项
 
 **效果图参考要求：**
 - 基于确认的风格方案和参考图描述最终效果
@@ -355,7 +360,7 @@ export const STEP5_FINAL_SUGGESTION_PROMPT = `${EXPERT_ROLE}
 3. **配色方案** — 基于确认的风格，为每张图提供具体配色。
 4. **构图方式** — 基于确认的参考图，明确构图和元素摆放。
 5. **数据可视化** — 利用图表、图标、数据等可视化元素增强说服力。
-6. **A+模块结构继承** — A+ Content 的每个 sections 项必须继承图片大纲中已选的 selectedModuleType / selectedModuleName / selectedModuleStructure / selectedModuleSpecs；轮播、四图、双图、热点、比较表等模块必须在 moduleSpecificContent 中输出可执行的多面板/多子图/热点/表格结构。
+6. **A+模块结构继承** — A+ Content 的每个 sections 项必须继承图片大纲中已选的 selectedModuleType / selectedModuleName / selectedModuleStructure / selectedModuleSpecs；所有多图片或多面板模块必须返回 subModuleCount 和 subModules。每个子项须包含 subModuleNumber、title、purpose、composition、referenceImageKey、imageDescription、作图建议和独立构图/效果信息；A+模块8.1、8.2等必须逐图输出，不得只在父模块给笼统建议。
 7. **辅图数量固定** — secondaryImages 必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7，不得遗漏辅图7。
 
 请以JSON格式输出（与现有图片建议格式一致）：
