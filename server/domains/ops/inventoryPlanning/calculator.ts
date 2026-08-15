@@ -27,7 +27,6 @@ export function calculateInventoryPlan(input: InventoryPlanningInput) {
   const productionDays = input.productionDays ?? 30;
   const shippingDays = input.shippingDays ?? 30;
   const bufferDays = input.bufferDays ?? 10;
-  const targetCoverDays = input.targetCoverDays ?? 30;
   const totalLeadDays = productionDays + shippingDays + bufferDays;
   const sales7 = averageActiveDailySales(input.salesHistory, 7, input.asOfDate);
   const sales30 = averageActiveDailySales(input.salesHistory, 30, input.asOfDate);
@@ -41,7 +40,9 @@ export function calculateInventoryPlan(input: InventoryPlanningInput) {
   const coverageDays = weightedDailySales > 0 ? totalInventory / weightedDailySales : null;
   const suggestedOrderDate = coverageDays === null ? null : addDays(input.asOfDate, Math.max(0, Math.floor(coverageDays - totalLeadDays)));
   const safetyStock = weightedDailySales * totalLeadDays;
-  const rawSuggestedQuantity = Math.max(0, safetyStock + weightedDailySales * targetCoverDays - totalInventory);
+  // 只补足总货期内的库存缺口：需补覆盖天数 = 总货期 - 当前覆盖天数，最低为 0。
+  const targetCoverDays = coverageDays === null ? totalLeadDays : Math.max(0, totalLeadDays - coverageDays);
+  const rawSuggestedQuantity = Math.max(0, weightedDailySales * targetCoverDays);
   const roundedQuantity = roundToPack(Math.max(rawSuggestedQuantity, input.moq ?? 0), input.packSize ?? 1);
   return {
     totalInventory, productionDays, shippingDays, bufferDays, totalLeadDays, targetCoverDays,

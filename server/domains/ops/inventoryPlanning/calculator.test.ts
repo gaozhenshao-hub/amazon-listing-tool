@@ -9,7 +9,7 @@ describe("库存规划计算器", () => {
       return { reportDate: date.toISOString().slice(0, 10), salesQty: 2, totalInventory: 80 };
     });
     const result = calculateInventoryPlan({ asOfDate: "2026-08-09", fbaAvailable: 40, fbaInTransit: 20, localInventory: 10, salesHistory });
-    expect(result).toMatchObject({ totalInventory: 70, totalLeadDays: 70, weightedDailySales: 2, safetyStock: 140, suggestedOrderQuantity: 130 });
+    expect(result).toMatchObject({ totalInventory: 70, totalLeadDays: 70, weightedDailySales: 2, safetyStock: 140, targetCoverDays: 35, suggestedOrderQuantity: 70 });
   });
 
   it("人工日销覆盖加权结果，并只用在售日期计算样本", () => {
@@ -28,6 +28,14 @@ describe("库存规划计算器", () => {
     expect(result.sales30.sampleDays).toBe(7);
     expect(result.forecastBasis).toBe("recent_7_day");
     expect(result.weightedDailySales).toBe(3);
+  });
+
+  it("当前覆盖已达到总货期时不建议补货", () => {
+    const salesHistory = Array.from({ length: 7 }, (_, index) => ({ reportDate: `2026-08-0${index + 3}`, salesQty: 2, totalInventory: 140, isActive: true }));
+    const result = calculateInventoryPlan({ asOfDate: "2026-08-09", fbaAvailable: 140, fbaInTransit: 0, localInventory: 0, salesHistory });
+    expect(result.coverageDays).toBe(70);
+    expect(result.targetCoverDays).toBe(0);
+    expect(result.suggestedOrderQuantity).toBe(0);
   });
 
   it("仅在连续三日均有零库存零销量证据时确认断货", () => {
