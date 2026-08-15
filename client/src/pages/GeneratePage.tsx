@@ -594,12 +594,19 @@ export default function GeneratePage() {
     if (candidates.length >= 4) { toast.error("每条卖点最多可再优化三次"); return; }
     if (!note) { toast.error("请填写优化方向"); return; }
     try {
-      const result: any = await optimizeBulletMut.mutateAsync({ projectId: selectedProjectId, sellingPoint: sellingPointCores[idx], emphasis: `基于当前卖点优化并保留核心事实。当前卖点：${current.subtitle} — ${current.fullText}\n优化方向：${note}` });
-      const optimized = result?.parsed || result?.data || result?.result || result;
-      const optimizedBullet = Array.isArray(optimized) ? optimized[0] : (optimized?.bullet || optimized?.bulletPoint || optimized);
-      const next = { ...current, ...(typeof optimizedBullet === "object" ? optimizedBullet : {}), subtitle: optimizedBullet?.subtitle || optimizedBullet?.title || current.subtitle, fullText: optimizedBullet?.fullText || optimizedBullet?.bulletPoint || optimizedBullet?.text || optimizedBullet?.content || (typeof optimizedBullet === "string" ? optimizedBullet : current.fullText), optimizationNote: note };
+      const toCandidate = (response: any) => {
+        const optimized = response?.parsed || response?.data || response?.result || response;
+        const optimizedBullet = Array.isArray(optimized) ? optimized[0] : (optimized?.bullet || optimized?.bulletPoint || optimized);
+        return { ...current, ...(typeof optimizedBullet === "object" ? optimizedBullet : {}), subtitle: optimizedBullet?.subtitle || optimizedBullet?.title || current.subtitle, fullText: optimizedBullet?.fullText || optimizedBullet?.bulletPoint || optimizedBullet?.text || optimizedBullet?.content || (typeof optimizedBullet === "string" ? optimizedBullet : current.fullText), optimizationNote: note };
+      };
+      const baseInstruction = `这是“再次优化”，不是复述。必须严格执行优化方向，并输出与当前版本可见不同的新标题和新正文；不得原样返回。至少重写一个完整句子，保留核心事实但改变表达、结构或强调重点。\n当前卖点：${current.subtitle} — ${current.fullText}\n优化方向：${note}`;
+      let next = toCandidate(await optimizeBulletMut.mutateAsync({ projectId: selectedProjectId, sellingPoint: sellingPointCores[idx], emphasis: baseInstruction }));
       if (next.subtitle === current.subtitle && next.fullText === current.fullText) {
-        toast.warning("AI 返回内容与当前版本相同，已保留为候选；可更换更具体的优化方向后再次生成");
+        next = toCandidate(await optimizeBulletMut.mutateAsync({ projectId: selectedProjectId, sellingPoint: sellingPointCores[idx], emphasis: `${baseInstruction}\n上一次输出与原文完全相同，判定不合格。现在必须重写标题和至少一句正文后再返回。` }));
+      }
+      if (next.subtitle === current.subtitle && next.fullText === current.fullText) {
+        toast.error("AI 两次均返回原文，未新增候选。请换更具体的优化方向后重试。");
+        return;
       }
       setBulletCandidates(prev => ({ ...prev, [idx]: [...candidates, next] }));
       setGeneratedBullets(prev => ({ ...prev, [idx]: next }));
