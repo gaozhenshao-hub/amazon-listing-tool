@@ -281,7 +281,9 @@ export const imageWorkflowStepProcedures = {
 
       const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step2.aplus.optimize:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
-      if (session.step2Confirmed) throw new Error("请先解锁图片大纲，再调整A+模块");
+      if (session.step2Confirmed) {
+        throw BadRequestError("图片大纲已锁定，请先点击“解锁编辑”后再调整A+模块样式");
+      }
 
       const selectedModule = findImageWorkflowAplusModule(input.moduleType);
       if (!selectedModule) throw new Error("不支持的A+模块样式");

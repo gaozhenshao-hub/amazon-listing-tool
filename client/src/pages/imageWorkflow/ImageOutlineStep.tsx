@@ -110,6 +110,10 @@ export function Step2ImageOutline({
   const updateAPlusModuleStyle = async (idx: number, moduleType: string) => {
     const selected = OUTLINE_APLUS_MODULES.find((m) => m.id === moduleType);
     if (!selected || !editData) return;
+    if (isConfirmed) {
+      toast.error("图片大纲已锁定，请先点击“解锁编辑”后再调整A+模块样式");
+      return;
+    }
     if (editData.aPlusModules?.[idx]?.selectedModuleType === selected.id) return;
 
     setOptimizingModuleIndex(idx);
