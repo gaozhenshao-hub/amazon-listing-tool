@@ -531,17 +531,38 @@ ${session.step3UserEdit || session.step3AiResult}
         specs: styleGuide.specs || styleGuide.size || currentSection.selectedModuleSpecs || null,
         structure: styleGuide.structure || currentSection.selectedModuleStructure || null,
       };
+      const skillContext = `产品名称: ${project.productName || project.name}
+品牌: ${project.brand || '未指定'}
+类目: ${project.category || '未指定'}
+
+--- 已确认的卖点体系 ---
+${session.step1UserEdit || session.step1AiResult}
+
+--- 当前该模块的建议内容 ---
+${JSON.stringify(currentSection)}
+
+--- 用户为该模块选择的A+样式（已归一化） ---
+${JSON.stringify(normalizedStyle)}
+模块位置: A+模块 ${input.sectionIndex + 1}
+
+请只返回一个可合并的A+模块JSON对象，保留原模块的moduleNumber、purpose、sellingPointRefs和position，并严格适配目标样式结构。`;
 
       const response = await invokeBusinessSkill({
         messages: [
           { role: "system", content: STEP5_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT },
           {
             role: "user",
-            content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 当前该模块的建议内容 ---\n${JSON.stringify(currentSection)}\n\n--- 用户为该模块选择的A+样式（已归一化） ---\n${JSON.stringify(normalizedStyle)}\n模块位置: A+模块 ${input.sectionIndex + 1}\n\n请只返回一个可合并的A+模块JSON对象，保留原模块的moduleNumber、purpose、sellingPointRefs和position，并严格适配目标样式结构。`,
+            content: skillContext,
           },
         ],
         response_format: { type: "json_object" },
-        emperorSkill: { slug: "image.step2.aplus.single.optimize" },
+        emperorSkill: {
+          slug: "image.step2.aplus.single.optimize",
+          userId: ctx.user.id,
+          workspaceId: ctx.workspaceId ?? null,
+          context: skillContext,
+          variables: { currentSection, normalizedStyle, sectionIndex: input.sectionIndex },
+        },
       });
 
       const result = parseLLMJson(response);
