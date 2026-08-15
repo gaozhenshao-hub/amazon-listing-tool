@@ -13,7 +13,7 @@ import {
   startImageStepGenerationJob,
   type ImageGenerationStep,
 } from "../services/stepGenerationJob";
-import { registerImageWorkflowStepArtifact } from "../../ai_os/services/businessArtifactRegistry";
+import { registerImageWorkflowAplusSubmoduleArtifact, registerImageWorkflowStepArtifact } from "../../ai_os/services/businessArtifactRegistry";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -254,6 +254,8 @@ export const imageWorkflowStepProcedures = {
         step2Confirmed: 1,
         currentStep: 3,
       });
+      // 发布当前确认的大纲版本，避免Agent资产仍显示为空或读取较早快照。
+      await registerImageWorkflowStepArtifact(session.id, 2, "user_edit");
       void syncStepConfirmToAgent({
         agentRunId: session.agentRunId,
         stepNumber: 2,
@@ -266,6 +268,44 @@ export const imageWorkflowStepProcedures = {
         userEdit: normalized,
       });
       return { success: true };
+    }),
+
+  // ─── Step 2: Lock a single image of a multi-image A+ module ──────
+  lockStep2AplusSubmodule: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      moduleIndex: z.number().int().min(0),
+      submoduleIndex: z.number().int().min(0),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw NotFoundError("图片建议工作流不存在");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+      const outline = parseStoredJson(session.step2UserEdit || session.step2AiResult) as Record<string, any> | null;
+      const module = outline?.aPlusModules?.[input.moduleIndex];
+      const submodule = module?.subModules?.[input.submoduleIndex];
+      if (!outline || !module || !submodule) throw BadRequestError("A+子模块不存在，请重新生成图片大纲");
+
+      const updatedOutline = normalizeImageOutline({
+        ...outline,
+        aPlusModules: outline.aPlusModules.map((item: any, moduleIndex: number) => moduleIndex !== input.moduleIndex
+          ? item
+          : {
+              ...item,
+              subModules: item.subModules.map((child: any, submoduleIndex: number) => submoduleIndex !== input.submoduleIndex
+                ? child
+                : { ...child, isLocked: true, lockedAt: new Date().toISOString(), lockedBy: ctx.user.id }),
+            }),
+      });
+      await db.updateImageWorkflowSession(session.id, { step2UserEdit: JSON.stringify(updatedOutline) });
+      const artifact = await registerImageWorkflowAplusSubmoduleArtifact({
+        sessionId: session.id,
+        moduleIndex: input.moduleIndex,
+        submoduleIndex: input.submoduleIndex,
+        sourceType: "user_edit",
+        status: "final",
+      });
+      return { outline: updatedOutline, artifactRef: artifact?.ref || null };
     }),
 
 

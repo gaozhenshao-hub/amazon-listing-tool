@@ -516,6 +516,52 @@ export async function registerImageWorkflowStepArtifact(
   });
 }
 
+/** 发布多图A+模块中单张子图的独立资产版本。
+ * 父级Step2大纲继续完整保留；该资产仅作为逐图确认后的下游引用锚点。
+ */
+export async function registerImageWorkflowAplusSubmoduleArtifact(input: {
+  sessionId: number;
+  moduleIndex: number;
+  submoduleIndex: number;
+  sourceType?: ArtifactSourceType;
+  status?: "draft" | "final";
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const [session] = await db.select().from(imageWorkflowSessions).where(eq(imageWorkflowSessions.id, input.sessionId)).limit(1);
+  if (!session) return null;
+  const outline = parseArtifactContent(session.step2UserEdit || session.step2AiResult) as Record<string, any> | null;
+  const module = outline?.aPlusModules?.[input.moduleIndex];
+  const submodule = module?.subModules?.[input.submoduleIndex];
+  if (!module || !submodule) return null;
+  const moduleNumber = String(module.moduleNumber ?? input.moduleIndex + 1);
+  const submoduleNumber = String(submodule.subModuleNumber ?? input.submoduleIndex + 1);
+  return registerBusinessArtifact({
+    domain: "image",
+    artifactKey: `image.workflow.step.2.aplus.${moduleNumber}.${submoduleNumber}`,
+    sourceTable: "image_workflow_sessions",
+    sourceRowId: session.id,
+    projectId: session.projectId,
+    userId: session.userId,
+    content: {
+      parentModuleNumber: moduleNumber,
+      parentModuleType: module.moduleType || null,
+      selectedModuleType: module.selectedModuleType || null,
+      selectedModuleName: module.selectedModuleName || null,
+      submodule,
+    },
+    sourceType: input.sourceType || "user_edit",
+    status: input.status || (Number(session.step2Confirmed) === 1 ? "final" : "draft"),
+    metadata: {
+      step: 2,
+      moduleIndex: input.moduleIndex,
+      submoduleIndex: input.submoduleIndex,
+      parentArtifactKey: "image.workflow.step.2",
+      submoduleLocked: Boolean(submodule.isLocked),
+    },
+  });
+}
+
 function artifactContentString(content: unknown) {
   return typeof content === "string" ? content : JSON.stringify(content ?? null);
 }

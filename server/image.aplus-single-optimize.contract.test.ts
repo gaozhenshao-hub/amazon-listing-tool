@@ -32,5 +32,7 @@ describe("A+单模块样式重新优化契约", () => {
   it("locks and publishes the normalized Step2 outline rather than the stale AI output", () => {
     expect(workflowStepsSource).toContain("aiResult: normalized,");
     expect(workflowStepsSource).toContain("userEdit: normalized,");
+    expect(workflowStepsSource).toContain("registerImageWorkflowStepArtifact(session.id, 2, \"user_edit\")");
+    expect(workflowStepsSource).toContain("lockStep2AplusSubmodule");
   });
 });

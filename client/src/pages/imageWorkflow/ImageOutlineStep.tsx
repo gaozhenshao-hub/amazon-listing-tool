@@ -29,10 +29,12 @@ export function Step2ImageOutline({
   const confirmMutation = trpc.imageWorkflow.confirmStep2.useMutation();
   const unlockMutation = trpc.imageWorkflow.unlockStep2.useMutation();
   const optimizeAplusMutation = trpc.imageWorkflow.optimizeStep2AplusModule.useMutation();
+  const lockAplusSubmoduleMutation = trpc.imageWorkflow.lockStep2AplusSubmodule.useMutation();
   const utils = trpc.useUtils();
   const [editData, setEditData] = useState<any>(null);
   const [isLocked, setIsLocked] = useState(!!session?.step2Confirmed);
   const [optimizingModuleIndex, setOptimizingModuleIndex] = useState<number | null>(null);
+  const [lockingSubmoduleKey, setLockingSubmoduleKey] = useState<string | null>(null);
   const generationJob = useImageStepGenerationJob({
     projectId,
     step: 2,
@@ -116,6 +118,20 @@ export function Step2ImageOutline({
     module.subModules = subModules;
     newData.aPlusModules[moduleIndex] = module;
     setEditData(newData);
+  };
+
+  const lockAplusSubmodule = async (moduleIndex: number, submoduleIndex: number) => {
+    const key = `${moduleIndex}-${submoduleIndex}`;
+    setLockingSubmoduleKey(key);
+    try {
+      const result = await lockAplusSubmoduleMutation.mutateAsync({ projectId, moduleIndex, submoduleIndex });
+      setEditData(normalizeImageOutline(result.outline));
+      toast.success("子图已锁定并发布独立资产版本");
+    } catch (err: any) {
+      toast.error(err.message || "子图锁定失败");
+    } finally {
+      setLockingSubmoduleKey(null);
+    }
   };
 
   const updateAPlusModuleStyle = async (idx: number, moduleType: string) => {
@@ -460,7 +476,16 @@ export function Step2ImageOutline({
                           <p className="text-[10px] text-muted-foreground">后续参考图、构图效果与图片建议会按每张子图分别生成和确认。</p>
                           {mod.subModules.map((submodule: any, submoduleIndex: number) => (
                             <div key={submoduleIndex} className="space-y-2 rounded-md border bg-background p-2.5">
-                              <p className="text-xs font-medium">A+ 模块 {mod.moduleNumber || idx + 1}.{submodule.subModuleNumber || submoduleIndex + 1}</p>
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-medium">A+ 模块 {mod.moduleNumber || idx + 1}.{submodule.subModuleNumber || submoduleIndex + 1}</p>
+                                {submodule.isLocked ? (
+                                  <Badge variant="outline" className="text-[10px] border-green-300 bg-green-50 text-green-700"><Lock className="mr-1 h-3 w-3" />已锁定资产</Badge>
+                                ) : (
+                                  <Button type="button" size="sm" variant="outline" className="h-6 text-[10px]" disabled={lockingSubmoduleKey === `${idx}-${submoduleIndex}`} onClick={() => void lockAplusSubmodule(idx, submoduleIndex)}>
+                                    {lockingSubmoduleKey === `${idx}-${submoduleIndex}` ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Lock className="mr-1 h-3 w-3" />}锁定子图
+                                  </Button>
+                                )}
+                              </div>
                               <Input value={submodule.title || ""} onChange={(e) => updateAPlusSubmodule(idx, submoduleIndex, "title", e.target.value)} placeholder="子图标题" className="h-8 text-xs" />
                               <Input value={submodule.purpose || ""} onChange={(e) => updateAPlusSubmodule(idx, submoduleIndex, "purpose", e.target.value)} placeholder="子图目的" className="h-8 text-xs" />
                               <Textarea value={submodule.contentBrief || ""} onChange={(e) => updateAPlusSubmodule(idx, submoduleIndex, "contentBrief", e.target.value)} placeholder="子图独立大纲" className="min-h-[56px] text-xs" />
