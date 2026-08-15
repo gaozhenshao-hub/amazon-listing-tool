@@ -17,6 +17,12 @@ describe("A+单模块样式重新优化契约", () => {
     expect(routerContextSource).toContain("onlyBusinessConfirmedSteps: true");
   });
 
+  it("uses the confirmed Step2 session snapshot for locked multi-image A+ display", () => {
+    expect(routerContextSource).toContain("Number(session.step2Confirmed) === 1");
+    expect(routerContextSource).toContain("session.step2UserEdit");
+    expect(routerContextSource).toContain("step2AiResult: completeStep2Json");
+  });
+
   it("locks and publishes the normalized Step2 outline rather than the stale AI output", () => {
     expect(workflowStepsSource).toContain("aiResult: normalized,");
     expect(workflowStepsSource).toContain("userEdit: normalized,");

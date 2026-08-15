@@ -516,9 +516,22 @@ export async function resolveSessionForExecution(
 export async function resolveSessionForDisplay(projectId: number, user: { id: number; role: string }) {
   const session = await resolveSessionAccess(projectId, user);
   if (!session) return null;
-  const hydrated = await hydrateImageWorkflowSessionFromArtifacts(session, undefined, {
+  let hydrated = await hydrateImageWorkflowSessionFromArtifacts(session, undefined, {
     onlyBusinessConfirmedSteps: true,
   });
+  // Step2 的确认快照包含多图 A+ 的 subModules。旧 skill Artifact 可能仍是
+  // 父模块版本；锁定态展示必须以会话确认快照为权威，避免刷新后逐图内容消失。
+  if (Number(session.step2Confirmed) === 1 && session.step2UserEdit) {
+    const sessionStep2 = parseStoredJson(session.step2UserEdit);
+    if (sessionStep2 && typeof sessionStep2 === "object") {
+      const completeStep2Json = JSON.stringify(sessionStep2);
+      hydrated = {
+        ...hydrated,
+        step2AiResult: completeStep2Json,
+        step2UserEdit: completeStep2Json,
+      };
+    }
+  }
   // Step4 的用户确认快照包含构图图、效果图及知识库图等页面资产。
   // 旧 Artifact 可能在补写前仍是 current；展示时以会话中刚确认的快照为文本权威，
   // 再用 Artifact 仅补齐会话没有的图片资产，避免页面回退到旧方案。
