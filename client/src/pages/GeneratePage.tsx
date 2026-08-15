@@ -959,6 +959,20 @@ export default function GeneratePage() {
                   </div>
                 </div>
 
+                {Object.keys(bulletCandidates).length > 0 && (
+                  <div className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
+                    <div className="mb-2 flex items-center gap-2"><span className="text-xs font-medium text-violet-800">卖点优化候选记录</span><span className="text-[10px] text-muted-foreground">锁定仅影响同步版本，历史候选仍可查看</span></div>
+                    <div className="space-y-2">
+                      {Object.entries(bulletCandidates).map(([bulletIndex, candidates]) => (
+                        <div key={bulletIndex} className="rounded border bg-white/70 p-2"><p className="mb-1 text-[11px] font-medium">卖点 {Number(bulletIndex) + 1}</p><div className="space-y-1">{(candidates as any[]).map((candidate, candidateIndex) => {
+                          const locked = generatedBullets[Number(bulletIndex)] === candidate;
+                          return <div key={candidateIndex} className={`rounded px-2 py-1 text-[11px] ${locked ? "border border-green-400 bg-green-50" : "bg-muted/50"}`}><span className="font-medium">候选 {candidateIndex + 1}</span>{locked && <Badge className="ml-2 bg-green-600 text-[9px]">已锁定并同步</Badge>}<span className="ml-2 text-muted-foreground">{candidate.optimizationNote || "初始生成"}</span></div>;
+                        })}</div></div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Fine-tunable bullet list */}
                 <div className="space-y-2">
                   {savedBullets.map((bullet, idx) => (
