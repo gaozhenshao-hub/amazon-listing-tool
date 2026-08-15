@@ -124,6 +124,20 @@ export function serializeAiJobError(error: unknown): string {
   }
 }
 
+export type AiJobFailureKind = "provider" | "configuration" | "database" | "canceled" | "unknown";
+
+export function classifyAiJobFailure(error: unknown): { kind: AiJobFailureKind; retryable: boolean; message: string } {
+  const root = error && typeof error === "object" && "cause" in error ? (error as { cause?: unknown }).cause : error;
+  const code = root && typeof root === "object" && "code" in root ? String((root as { code?: unknown }).code || "") : "";
+  const message = serializeAiJobError(root || error);
+  const probe = `${code} ${message}`.toLowerCase();
+  if (/canceled|cancelled|abort/.test(probe)) return { kind: "canceled", retryable: false, message };
+  if (/prompt_missing|skill_version_mismatch|skill_not_found|model_not_found|empty systemprompt|prompt changed/.test(probe)) return { kind: "configuration", retryable: false, message };
+  if (/database_error|database operation failed|database not available/.test(probe)) return { kind: "database", retryable: false, message };
+  if (/provider_timeout|provider_rate_limit|provider_unavailable|ai provider|ai service|rate.?limit|timeout|gateway|unavailable|\b429\b|\b5\d\d\b/.test(probe)) return { kind: "provider", retryable: true, message };
+  return { kind: "unknown", retryable: false, message };
+}
+
 function aiJobMutationAllowed(job: AiJobSnapshot | null, guard: AiJobMutationGuard = {}) {
   if (!job) return false;
   if (guard.expectedWorkerId && job.lockedBy !== guard.expectedWorkerId) return false;
@@ -550,7 +564,20 @@ export async function retryAiJob(runId: string, error: unknown, guard: AiJobMuta
   if (!existing || existing.status === "canceled") return existing;
   if (!isActiveAiJob(existing.status)) return existing;
   if (!aiJobMutationAllowed(existing, guard)) return existing;
-  if (existing.attempt >= existing.maxAttempts) return failAiJob(runId, error, guard);
+  const failure = classifyAiJobFailure(error);
+  void recordAiOsMetric({
+    entityType: "job", entityId: existing.runId, metricName: "job.failure_classified", metricValue: null,
+    status: existing.status, workspaceId: existing.workspaceId, userId: existing.userId,
+    projectId: existing.projectId, skillSlug: existing.skillSlug,
+    metadata: { kind: existing.kind, failureKind: failure.kind, retryable: failure.retryable, attempt: existing.attempt },
+  });
+  // A Skill already attempts a fallback model within one job attempt. Do not spend
+  // another complete model run on known configuration/database failures; provider
+  // outages receive at most one additional whole-job retry.
+  const providerRetryExhausted = failure.kind === "provider" && existing.attempt >= Math.min(existing.maxAttempts, 2);
+  if (!failure.retryable || providerRetryExhausted || existing.attempt >= existing.maxAttempts) {
+    return failAiJob(runId, new Error(`[${failure.kind}] ${failure.message}`), guard);
+  }
 
   const delayMs = calculateAiJobRetryDelayMs(existing.attempt);
   const job = await retryAiJobByRunId(runId, {

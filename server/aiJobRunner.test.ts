@@ -3,6 +3,7 @@ import { appRouter } from "./routers";
 import {
   buildAiJobSnapshot,
   calculateAiJobRetryDelayMs,
+  classifyAiJobFailure,
   generateAiJobRunId,
   getAiJobRuntimeStatus,
   getAiJobWorkerId,
@@ -71,6 +72,12 @@ describe("Generic AI Job infrastructure", () => {
     expect(runtimeStatus.runningRunIds).toEqual(expect.any(Array));
     expect(runtimeStatus.pendingScheduleRunIds).toEqual(expect.any(Array));
     expect(runtimeStatus.registeredHandlers).toEqual(expect.any(Array));
+  });
+
+  it("should classify retryable provider failures separately from configuration and database failures", () => {
+    expect(classifyAiJobFailure(new Error("AI provider timed out"))).toMatchObject({ kind: "provider", retryable: true });
+    expect(classifyAiJobFailure(new Error("Skill 'image.step5.final.suggestion' has empty systemPrompt"))).toMatchObject({ kind: "configuration", retryable: false });
+    expect(classifyAiJobFailure(new Error("Database operation failed"))).toMatchObject({ kind: "database", retryable: false });
   });
 
   it("should build snapshots with parsed JSON payloads", () => {
