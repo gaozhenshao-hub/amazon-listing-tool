@@ -134,7 +134,7 @@ export const STEP2_IMAGE_OUTLINE_PROMPT = `${EXPERT_ROLE}
 你的任务：根据已确认的卖点体系，规划每张图片的内容大纲。
 
 **规划要求：**
-- 主图1张 + 辅图6张（固定编号为2、3、4、5、6、7，不得缺少辅图7）+ 品牌故事 + A+内容模块
+- 主图1张 + 辅图6张（固定编号为2、3、4、5、6、7，不得缺少辅图7）+ 1个独立品牌故事模块 + 7个超级A+内容模块
 - 每张图明确：做什么内容、呼应哪个卖点、为什么这样安排
 - 核心卖点需要通过不同图片多次表达，形成记忆点
 - 次要卖点可以合并展示
@@ -197,7 +197,7 @@ export const STEP2_IMAGE_OUTLINE_PROMPT = `${EXPERT_ROLE}
   "overallNarrative": "整套图片的叙事逻辑：从吸引注意→展示利益→消除疑虑→建立信任"
 }
 
-secondaryImages 数组必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7。
+secondaryImages 数组必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7。aPlusModules 数组必须恰好包含7项，moduleNumber依次为1、2、3、4、5、6、7；brandStory为独立品牌故事模块，不得计入这7个超级A+内容模块。
 
 **图片大纲可靠性约束 v3：**
 - 输出前自检 secondaryImages 的数量和编号；不得因为信息不足省略任何一项
