@@ -84,26 +84,9 @@ interface UploadState {
   error?: string;
 }
 
-const EMPTY_MANUAL_PRODUCT = {
-  asin: "",
-  parentAsin: "",
-  title: "",
-  brand: "",
-  price: "",
-  monthlySales: "",
-  monthlyRevenue: "",
-  rating: "",
-  reviewCount: "",
-  listingDate: "",
-  imageUrl: "",
-  productLink: "",
-  category: "",
-  subcategory: "",
-};
-
 export default function DevDataUpload({ projectId, onDataUploaded, addProductRequestSignal = 0 }: Props) {
-  const [manualProductOpen, setManualProductOpen] = useState(false);
-  const [manualProduct, setManualProduct] = useState(EMPTY_MANUAL_PRODUCT);
+  const [supplementUploadOpen, setSupplementUploadOpen] = useState(false);
+  const [supplementUploading, setSupplementUploading] = useState(false);
   const [uploadStates, setUploadStates] = useState<Record<FileType, UploadState>>({
     sales: { status: "idle" },
     bullet_points: { status: "idle" },
@@ -112,23 +95,6 @@ export default function DevDataUpload({ projectId, onDataUploaded, addProductReq
   });
 
   const utils = trpc.useUtils();
-  const addProductMutation = trpc.devPanorama.addProduct.useMutation({
-    onSuccess: async (result) => {
-      await Promise.all([
-        utils.devProject.getProducts.invalidate({ projectId }),
-        utils.devProject.getById.invalidate({ id: projectId }),
-        utils.devPanorama.getData.invalidate({ projectId }),
-        utils.devPanorama.getStatus.invalidate({ projectId }),
-        utils.devPanorama.getMarketInsight.invalidate({ projectId }),
-        utils.devAnalysis.getStages.invalidate({ projectId }),
-      ]);
-      setManualProduct(EMPTY_MANUAL_PRODUCT);
-      setManualProductOpen(false);
-      onDataUploaded?.();
-      toast.success(`已新增 ${result.asin}，全景表及旧分析已解锁待重新确认`);
-    },
-    onError: (error) => toast.error(error.message),
-  });
   const uploadFileMutation = trpc.devProject.uploadFile.useMutation();
   const saveProductsMutation = trpc.devProject.saveProducts.useMutation();
   const saveReviewsMutation = trpc.devProject.saveReviews.useMutation();
@@ -151,42 +117,8 @@ export default function DevDataUpload({ projectId, onDataUploaded, addProductReq
   const { data: dataStatus } = trpc.devProject.getDataStatus.useQuery({ projectId });
 
   useEffect(() => {
-    if (addProductRequestSignal > 0) setManualProductOpen(true);
+    if (addProductRequestSignal > 0) setSupplementUploadOpen(true);
   }, [addProductRequestSignal]);
-
-  const updateManualProduct = (field: keyof typeof EMPTY_MANUAL_PRODUCT, value: string) => {
-    setManualProduct((current) => ({ ...current, [field]: value }));
-  };
-
-  const submitManualProduct = () => {
-    const asin = manualProduct.asin.trim().toUpperCase();
-    if (!/^[A-Z0-9]{10}$/.test(asin)) {
-      toast.error("ASIN 必须为 10 位字母或数字");
-      return;
-    }
-    if (!manualProduct.title.trim()) {
-      toast.error("请填写商品标题");
-      return;
-    }
-    const optionalNumber = (value: string) => value.trim() === "" ? undefined : Number(value);
-    addProductMutation.mutate({
-      projectId,
-      asin,
-      parentAsin: manualProduct.parentAsin.trim() || undefined,
-      title: manualProduct.title.trim(),
-      brand: manualProduct.brand.trim() || undefined,
-      price: manualProduct.price.trim() || undefined,
-      monthlySales: optionalNumber(manualProduct.monthlySales),
-      monthlyRevenue: optionalNumber(manualProduct.monthlyRevenue),
-      rating: manualProduct.rating.trim() || undefined,
-      reviewCount: optionalNumber(manualProduct.reviewCount),
-      listingDate: manualProduct.listingDate.trim() || undefined,
-      imageUrl: manualProduct.imageUrl.trim() || undefined,
-      productLink: manualProduct.productLink.trim() || undefined,
-      category: manualProduct.category.trim() || undefined,
-      subcategory: manualProduct.subcategory.trim() || undefined,
-    });
-  };
 
   const updateState = useCallback((fileType: FileType, update: Partial<UploadState>) => {
     setUploadStates(prev => ({ ...prev, [fileType]: { ...prev[fileType], ...update } }));
@@ -333,6 +265,26 @@ export default function DevDataUpload({ projectId, onDataUploaded, addProductReq
         await saveProductsMutation.mutateAsync({ projectId, products: products.slice(i, i + 50) });
       }
     }
+  };
+
+  const handleSupplementUpload = async (file: File) => {
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) { toast.error("请上传 .xlsx、.xls 或 .csv 文件"); return; }
+    setSupplementUploading(true);
+    try {
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows: any[] = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+      const headers = Object.keys(rows[0] || {});
+      const hasAsin = headers.some(header => ["ASIN", "asin"].includes(header));
+      const hasTitle = headers.some(header => ["商品标题", "标题", "Title", "title"].includes(header));
+      if (!rows.length || !hasAsin || !hasTitle) throw new Error("表头不符合既有产品模板：必须包含 ASIN 和 商品标题/标题 列");
+      await parseSalesData(rows);
+      await Promise.all([utils.devProject.getProducts.invalidate({ projectId }), utils.devProject.getById.invalidate({ id: projectId }), utils.devPanorama.getData.invalidate({ projectId }), utils.devPanorama.getStatus.invalidate({ projectId }), utils.devAnalysis.getStages.invalidate({ projectId })]);
+      setSupplementUploadOpen(false); onDataUploaded?.();
+      toast.success(`产品表格导入成功，共读取 ${rows.length} 行；已有 ASIN 已按既有规则更新。`);
+    } catch (error: any) { toast.error("产品表格导入失败", { description: error.message || "请检查文件与表头" }); }
+    finally { setSupplementUploading(false); }
   };
 
   // ─── Parse Bullet Points Data ───
@@ -792,87 +744,20 @@ export default function DevDataUpload({ projectId, onDataUploaded, addProductReq
         })}
       </div>
 
-      <Dialog open={manualProductOpen} onOpenChange={setManualProductOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <Dialog open={supplementUploadOpen} onOpenChange={setSupplementUploadOpen}>
+        <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>补录缺失产品</DialogTitle>
-            <DialogDescription>新增原始导入数据中没有的产品。ASIN 已存在时不会重复创建。</DialogDescription>
+            <DialogTitle>上传产品表格</DialogTitle>
+            <DialogDescription>请使用与“搜索结果/销量数据”相同的既有产品表头。系统将校验 ASIN 与商品标题列，并按 ASIN 更新或补充产品。</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-1 gap-4 py-2 sm:grid-cols-2">
-            <label className="space-y-1.5 text-sm font-medium">
-              ASIN <span className="text-destructive">*</span>
-              <Input value={manualProduct.asin} maxLength={10} placeholder="B0XXXXXXXX"
-                onChange={(event) => updateManualProduct("asin", event.target.value.toUpperCase())} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium">
-              父 ASIN
-              <Input value={manualProduct.parentAsin} maxLength={20} placeholder="可选"
-                onChange={(event) => updateManualProduct("parentAsin", event.target.value.toUpperCase())} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium sm:col-span-2">
-              商品标题 <span className="text-destructive">*</span>
-              <Input value={manualProduct.title} placeholder="输入商品标题"
-                onChange={(event) => updateManualProduct("title", event.target.value)} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium">
-              品牌
-              <Input value={manualProduct.brand} onChange={(event) => updateManualProduct("brand", event.target.value)} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium">
-              价格（USD）
-              <Input type="number" min="0" step="0.01" value={manualProduct.price}
-                onChange={(event) => updateManualProduct("price", event.target.value)} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium">
-              父体月销量
-              <Input type="number" min="0" step="1" value={manualProduct.monthlySales}
-                onChange={(event) => updateManualProduct("monthlySales", event.target.value)} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium">
-              父体月销售额（USD）
-              <Input type="number" min="0" step="0.01" value={manualProduct.monthlyRevenue}
-                onChange={(event) => updateManualProduct("monthlyRevenue", event.target.value)} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium">
-              评分
-              <Input type="number" min="0" max="5" step="0.1" value={manualProduct.rating}
-                onChange={(event) => updateManualProduct("rating", event.target.value)} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium">
-              评分数
-              <Input type="number" min="0" step="1" value={manualProduct.reviewCount}
-                onChange={(event) => updateManualProduct("reviewCount", event.target.value)} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium">
-              大类目
-              <Input value={manualProduct.category} onChange={(event) => updateManualProduct("category", event.target.value)} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium">
-              小类目
-              <Input value={manualProduct.subcategory} onChange={(event) => updateManualProduct("subcategory", event.target.value)} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium">
-              上架时间
-              <Input type="date" value={manualProduct.listingDate}
-                onChange={(event) => updateManualProduct("listingDate", event.target.value)} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium">
-              商品链接
-              <Input type="url" value={manualProduct.productLink} placeholder="https://..."
-                onChange={(event) => updateManualProduct("productLink", event.target.value)} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium sm:col-span-2">
-              主图链接
-              <Input type="url" value={manualProduct.imageUrl} placeholder="https://..."
-                onChange={(event) => updateManualProduct("imageUrl", event.target.value)} />
-            </label>
-          </div>
+          <label className="flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed bg-muted/20 p-6 text-center hover:bg-muted/40">
+            <FileSpreadsheet className="mb-2 h-8 w-8 text-primary" />
+            <span className="text-sm font-medium">点击选择既有产品表格</span><span className="mt-1 text-xs text-muted-foreground">支持 .xlsx、.xls、.csv；必须包含 ASIN 和 商品标题/标题 列</span>
+            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={supplementUploading} onChange={event => { const file = event.target.files?.[0]; if (file) void handleSupplementUpload(file); event.currentTarget.value = ""; }} />
+          </label>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setManualProductOpen(false)} disabled={addProductMutation.isPending}>取消</Button>
-            <Button onClick={submitManualProduct} disabled={addProductMutation.isPending}>
-              {addProductMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              新增产品
-            </Button>
+            <Button variant="outline" onClick={() => setSupplementUploadOpen(false)} disabled={supplementUploading}>取消</Button>
+            {supplementUploading && <span className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />正在解析并导入…</span>}
           </DialogFooter>
         </DialogContent>
       </Dialog>
