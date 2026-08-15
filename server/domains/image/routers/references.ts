@@ -509,12 +509,19 @@ ${session.step3UserEdit || session.step3AiResult}
       if (!session) throw new Error("No workflow session found");
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
 
-      const currentSuggestions = session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult;
-      let currentData: any;
-      try { currentData = JSON.parse(currentSuggestions); } catch { throw new Error("Invalid step5 data"); }
-
-      const currentSection = currentData?.aPlusContent?.sections?.[input.sectionIndex];
-      if (!currentSection) throw new Error(`A+ section at index ${input.sectionIndex} not found`);
+      const storedCandidates = [session.step5UserEdit, session.step5OptimizedResult, session.step5AiResult].filter(Boolean);
+      let currentData: any = null;
+      let currentSection: any = null;
+      for (const stored of storedCandidates) {
+        try {
+          const parsed = JSON.parse(stored!);
+          const section = parsed?.aPlusContent?.sections?.[input.sectionIndex];
+          if (section) { currentData = parsed; currentSection = section; break; }
+        } catch { /* 尝试下一个完整版本 */ }
+      }
+      if (!currentData || !currentSection) {
+        throw new Error(`A+模块 ${input.sectionIndex + 1} 缺少可优化内容，请先生成完整图片建议后再试`);
+      }
 
 
       const response = await invokeBusinessSkill({
