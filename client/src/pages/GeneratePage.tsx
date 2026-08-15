@@ -68,6 +68,8 @@ export default function GeneratePage() {
   const [overallStrategy, setOverallStrategy] = useState<string>("");
   const [confirmedCores, setConfirmedCores] = useState<boolean[]>([]);
   const [generatedBullets, setGeneratedBullets] = useState<Record<number, any>>({});
+  const [bulletCandidates, setBulletCandidates] = useState<Record<number, any[]>>({});
+  const [bulletOptimizationNotes, setBulletOptimizationNotes] = useState<Record<number, string>>({});
   const [confirmedBullets, setConfirmedBullets] = useState<Record<number, boolean>>({});
   const [editingCore, setEditingCore] = useState<number | null>(null);
   const [editingBullet, setEditingBullet] = useState<number | null>(null);
@@ -581,6 +583,24 @@ export default function GeneratePage() {
   const handleConfirmBullet = (idx: number) => {
     setConfirmedBullets(prev => ({ ...prev, [idx]: true }));
     setEditingBullet(null);
+  };
+
+  const optimizeBulletMut = trpc.listing.generateSingleBullet.useMutation();
+  const handleOptimizeBullet = async (idx: number) => {
+    const current = generatedBullets[idx];
+    const candidates = bulletCandidates[idx] || (current ? [current] : []);
+    const note = bulletOptimizationNotes[idx]?.trim();
+    if (!selectedProjectId || !sellingPointCores || !current) return;
+    if (candidates.length >= 4) { toast.error("每条卖点最多可再优化三次"); return; }
+    if (!note) { toast.error("请填写优化方向"); return; }
+    try {
+      const result: any = await optimizeBulletMut.mutateAsync({ projectId: selectedProjectId, sellingPoint: sellingPointCores[idx], emphasis: `基于当前卖点优化并保留核心事实。当前卖点：${current.subtitle} — ${current.fullText}\n优化方向：${note}` });
+      const next = { ...result, subtitle: result.subtitle || current.subtitle, fullText: result.fullText || result.bulletPoint || result.text || current.fullText, optimizationNote: note };
+      setBulletCandidates(prev => ({ ...prev, [idx]: [...candidates, next] }));
+      setGeneratedBullets(prev => ({ ...prev, [idx]: next }));
+      setBulletOptimizationNotes(prev => ({ ...prev, [idx]: "" }));
+      toast.success(`已新增优化候选 ${candidates.length + 1}/4`);
+    } catch (error: any) { toast.error(`卖点优化失败: ${error?.message || "未知错误"}`); }
   };
 
   const handleStartEditBullet = (idx: number) => {
@@ -1874,6 +1894,11 @@ export default function GeneratePage() {
                                     onRunCheck={() => handleRunChecklist(idx)}
                                     isRunningCheck={!!evaluatingChecklist[idx]}
                                   />
+                                  <div className="mt-2 rounded-md border border-violet-200 bg-violet-50/50 p-2 space-y-2">
+                                    <div className="flex items-center justify-between gap-2"><Label className="text-xs text-violet-800">再次优化（最多3次）</Label><span className="text-[10px] text-muted-foreground">候选 {Math.max(1, (bulletCandidates[idx] || []).length)}/4</span></div>
+                                    <div className="flex gap-2"><Input className="h-7 text-xs" placeholder="填写优化方向，例如：突出安装便利性、压缩冗余表达" value={bulletOptimizationNotes[idx] || ""} onChange={event => setBulletOptimizationNotes(prev => ({ ...prev, [idx]: event.target.value }))} /><Button size="sm" className="h-7 text-xs" variant="outline" onClick={() => handleOptimizeBullet(idx)} disabled={optimizeBulletMut.isPending || (bulletCandidates[idx] || [generatedBullets[idx]]).length >= 4}>{optimizeBulletMut.isPending ? "优化中…" : "生成优化候选"}</Button></div>
+                                    {(bulletCandidates[idx] || []).length > 0 && <div className="space-y-1">{bulletCandidates[idx].map((candidate, candidateIndex) => <button key={candidateIndex} onClick={() => setGeneratedBullets(prev => ({ ...prev, [idx]: candidate }))} className={`w-full rounded border px-2 py-1 text-left text-[11px] ${generatedBullets[idx] === candidate ? "border-violet-500 bg-white" : "border-transparent hover:border-violet-200"}`}>候选 {candidateIndex + 1}{candidate.optimizationNote ? ` · ${candidate.optimizationNote}` : " · 初始生成"}</button>)}</div>}
+                                  </div>
                                 </div>
                               )}
                               <div className="flex gap-2">
