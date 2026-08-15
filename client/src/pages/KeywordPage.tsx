@@ -1279,6 +1279,7 @@ function RootsTab({ projectId }: { projectId: number }) {
                 }
                 if (roots.length === 0) return null;
                 const totalKws = roots.reduce((s, r) => s + r.keywords.length, 0);
+                const totalSearchVolume = roots.reduce((sum, root) => sum + root.keywords.reduce((rootSum: number, kw: any) => rootSum + Number(kw.monthlySearchVolume || 0), 0), 0);
                 // Strategy breakdown for this root category
                 const catStratStats: Record<string, number> = {};
                 for (const r of roots) {
@@ -1293,6 +1294,7 @@ function RootsTab({ projectId }: { projectId: number }) {
                       <span className="text-lg">{info.icon}</span>
                       <span>{info.label}</span>
                       <Badge variant="secondary">{totalKws}\u4e2a\u5173\u952e\u8bcd</Badge>
+                      <Badge variant="outline" className="text-xs">\u641c\u7d22\u91cf {totalSearchVolume.toLocaleString()}</Badge>
                       {/* Mini strategy breakdown */}
                       <span className="flex items-center gap-1 ml-2">
                         {Object.entries(catStratStats).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([sk, cnt]) => (
@@ -1312,14 +1314,14 @@ function RootsTab({ projectId }: { projectId: number }) {
                             <CardContent className="p-3">
                               <div className="flex items-center justify-between mb-2">
                                 <span className="font-medium text-sm">{root.rootWord}</span>
-                                <Badge variant="outline" className="text-xs">{root.keywords.length}</Badge>
+                                <div className="flex items-center gap-1"><Badge variant="outline" className="text-xs">{root.keywords.length}\u8bcd</Badge><Badge variant="secondary" className="text-xs">\u6d41\u91cf {root.keywords.reduce((sum: number, kw: any) => sum + Number(kw.monthlySearchVolume || 0), 0).toLocaleString()}</Badge></div>
                               </div>
                               <div className="flex flex-wrap gap-1">
                                 {root.keywords.slice(0, displayCount).map((kw: any) => {
                                   const sc = computeStrategyCategory(kw);
                                   return (
                                     <span key={kw.id} className="inline-flex items-center bg-secondary text-secondary-foreground rounded px-1.5 py-0.5 text-xs">
-                                      {kw.keyword}
+                                      {kw.keyword}<span className="ml-1 text-[10px] text-muted-foreground">{kw.monthlySearchVolume == null ? "\u2014" : Number(kw.monthlySearchVolume).toLocaleString()}</span>
                                       <StrategyBadge category={sc} />
                                     </span>
                                   );
