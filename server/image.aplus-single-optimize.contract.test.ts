@@ -35,4 +35,11 @@ describe("A+单模块样式重新优化契约", () => {
     expect(workflowStepsSource).toContain("registerImageWorkflowStepArtifact(session.id, 2, \"user_edit\")");
     expect(workflowStepsSource).toContain("lockStep2AplusSubmodule");
   });
+
+  it("hydrates locked child artifacts before Step4 and Step5 generation", () => {
+    const step4Source = readFileSync("server/domains/image/services/step4ReferenceJob.ts", "utf8");
+    expect(step4Source).toContain("hydrateLockedImageWorkflowAplusSubmodules");
+    expect(routerContextSource).toContain("hydrateLockedImageWorkflowAplusSubmodules");
+    expect(routerContextSource).toContain("已锁定A+子图资产");
+  });
 });

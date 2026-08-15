@@ -20,6 +20,7 @@ import { IMAGE_ADVICE_TRANSLATION_PROMPT } from "../../prompts";
 import { invokeBusinessSkill, storagePut } from "./service";
 import { runEmperorSkill, safeParseSkillJSON } from "../ai_os/services/skillRunner";
 import {
+  hydrateLockedImageWorkflowAplusSubmodules,
   hydrateImageWorkflowSessionFromArtifacts,
   recordBusinessArtifactUse,
   resolveCurrentBusinessArtifact,
@@ -609,12 +610,19 @@ export function buildStep5RunSnapshot(session: any) {
 export async function buildStep5FinalSuggestion(project: any, session: any, userId: number, workspaceId?: number | null) {
   const truncate = (s: string | null, maxLen = 3000) => s ? s.substring(0, maxLen) : "";
   const step1Content = truncate(session.step1UserEdit || session.step1AiResult, 4000);
-  const step2Content = truncate(session.step2UserEdit || session.step2AiResult, 4000);
+  const step2Draft = normalizeImageOutline(parseStoredJson(session.step2UserEdit || session.step2AiResult || "{}") || {});
+  const { outline: step2Outline, consumedRefs } = await hydrateLockedImageWorkflowAplusSubmodules({
+    sessionId: session.id,
+    projectId: project.id,
+    outline: step2Draft,
+  });
+  const step2Content = truncate(JSON.stringify(step2Outline), 4000);
   const step3Content = truncate(session.step3UserEdit || session.step3AiResult, 3000);
   const step4Content = truncate(session.step4UserEdit || session.step4AiResult, 3000);
 
   const kbReference = await getKBReference(project.category || "", userId);
-  const context = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。secondaryImages必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7，不得遗漏辅图7。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。`;
+  const lockedAssetNote = consumedRefs.length ? `\n--- 已锁定A+子图资产 ---\n以下子图必须严格使用已确认版本：${consumedRefs.join(", ")}` : "";
+  const context = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}${lockedAssetNote}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。secondaryImages必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7，不得遗漏辅图7。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。`;
 
   return callImageWorkflowSkill({
     skillSlug: "image.step5.final.suggestion",

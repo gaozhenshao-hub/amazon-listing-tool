@@ -12,6 +12,7 @@ import * as db from "../repository";
 import { kbDb } from "../repository";
 import { callImageWorkflowSkill } from "../routerContext";
 import { buildImageWorkflowReferenceTargets, normalizeImageOutline } from "@shared/imageWorkflow";
+import { hydrateLockedImageWorkflowAplusSubmodules } from "../../ai_os/services/businessArtifactRegistry";
 import {
   syncStepJobFailedToAgent,
   syncStepJobQueuedToAgent,
@@ -90,11 +91,17 @@ export async function buildStep4ReferenceRecommendation(input: {
     console.warn("[Image Step 4] Failed to load knowledge-base references:", error);
   }
 
-  const outlineData = normalizeImageOutline(JSON.parse(input.session.step2UserEdit || input.session.step2AiResult || "{}"));
+  const draftOutline = normalizeImageOutline(JSON.parse(input.session.step2UserEdit || input.session.step2AiResult || "{}"));
+  const { outline: outlineData, consumedRefs } = await hydrateLockedImageWorkflowAplusSubmodules({
+    sessionId: input.session.id,
+    projectId: input.project.id,
+    outline: draftOutline,
+  });
   const outline = compactPromptText(JSON.stringify(outlineData), 9_000);
   const referenceTargets = buildImageWorkflowReferenceTargets(outlineData);
   const style = compactPromptText(input.session.step3UserEdit || input.session.step3AiResult, 6_000);
-  const context = `产品名称: ${input.project.productName || input.project.name}\n品牌: ${input.project.brand || "未指定"}\n类目: ${input.project.category || "未指定"}\n\n--- 已确认的图片大纲 ---\n${outline}\n\n--- 已确认的风格方案 ---\n${style}\n${kbImageInfo}\n\n--- 必须逐项输出参考方案的图片目标 ---\n${JSON.stringify(referenceTargets)}\n\n请为每个目标生成一项 imageReferences，并原样保留 imageKey、imageNumber、imageType、parentModuleNumber 和 subModuleNumber。不得遗漏辅图2-7。A+多图模块的每张子图是独立目标，例如A+模块8的四张轮播图必须分别输出A+模块8.1、8.2、8.3、8.4的构图和效果参考。`;
+  const lockedAssetNote = consumedRefs.length ? `\n--- 已锁定A+子图资产 ---\n以下子图为用户确认版本，必须以其内容为准：${consumedRefs.join(", ")}` : "";
+  const context = `产品名称: ${input.project.productName || input.project.name}\n品牌: ${input.project.brand || "未指定"}\n类目: ${input.project.category || "未指定"}\n\n--- 已确认的图片大纲 ---\n${outline}${lockedAssetNote}\n\n--- 已确认的风格方案 ---\n${style}\n${kbImageInfo}\n\n--- 必须逐项输出参考方案的图片目标 ---\n${JSON.stringify(referenceTargets)}\n\n请为每个目标生成一项 imageReferences，并原样保留 imageKey、imageNumber、imageType、parentModuleNumber 和 subModuleNumber。不得遗漏辅图2-7。A+多图模块的每张子图是独立目标，例如A+模块8的四张轮播图必须分别输出A+模块8.1、8.2、8.3、8.4的构图和效果参考。`;
 
   return callImageWorkflowSkill({
     skillSlug: "image.step4.reference",

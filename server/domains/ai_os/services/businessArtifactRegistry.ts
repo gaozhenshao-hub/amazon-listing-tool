@@ -562,6 +562,42 @@ export async function registerImageWorkflowAplusSubmoduleArtifact(input: {
   });
 }
 
+/** 已锁定子图以Artifact当前版本为准，未锁定子图继续使用会话草稿。 */
+export async function hydrateLockedImageWorkflowAplusSubmodules(input: {
+  sessionId: number;
+  projectId: number;
+  outline: Record<string, any>;
+}) {
+  const scope = await projectScope(input.projectId, "image");
+  const moduleList = Array.isArray(input.outline.aPlusModules) ? input.outline.aPlusModules : [];
+  const consumedRefs: string[] = [];
+  const aPlusModules = await Promise.all(moduleList.map(async (module: any, moduleIndex: number) => {
+    const childList = Array.isArray(module?.subModules) ? module.subModules : [];
+    const subModules = await Promise.all(childList.map(async (submodule: any, submoduleIndex: number) => {
+      if (!submodule?.isLocked) return submodule;
+      const moduleNumber = String(module.moduleNumber ?? moduleIndex + 1);
+      const submoduleNumber = String(submodule.subModuleNumber ?? submoduleIndex + 1);
+      const artifact = await resolveUnifiedArtifact({
+        workspaceId: scope?.workspaceId ?? null,
+        domain: "image",
+        artifactKey: `image.workflow.step.2.aplus.${moduleNumber}.${submoduleNumber}`,
+        sourceTable: "image_workflow_sessions",
+        sourceRowId: input.sessionId,
+        currentOnly: true,
+        confirmedOnly: true,
+      });
+      const content = parseArtifactContent((artifact as any)?.contentJson ?? (artifact as any)?.content);
+      if ((content as any)?.submodule) {
+        if ((artifact as any)?.ref) consumedRefs.push((artifact as any).ref);
+        return { ...(content as any).submodule, isLocked: true, lockedArtifactRef: (artifact as any)?.ref || null };
+      }
+      return submodule;
+    }));
+    return { ...module, subModules };
+  }));
+  return { outline: { ...input.outline, aPlusModules }, consumedRefs };
+}
+
 function artifactContentString(content: unknown) {
   return typeof content === "string" ? content : JSON.stringify(content ?? null);
 }
