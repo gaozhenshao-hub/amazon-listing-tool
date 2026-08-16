@@ -119,7 +119,7 @@ export function Step2ImageOutline({
       ...(count ? { subModuleCount: Number(count) } : {}),
     };
     const normalized = normalizeImageOutline(newData);
-    const topics = remark.replace(/^\s*\d{1,2}\s*(?:种|个|张|组|项|场景|步骤|面板)\s*[:：]?\s*/, "")
+    const topics = remark.replace(/^\s*\d{1,2}\s*(?:种|个|张|组|项)?\s*(?:场景|步骤|面板)?\s*[:：]?\s*/, "")
       .split(/[、,，;；\n]/).map((item) => item.trim()).filter(Boolean);
     if (topics.length && normalized.aPlusModules?.[idx]?.subModules) {
       normalized.aPlusModules[idx].subModules = normalized.aPlusModules[idx].subModules.map((submodule: any, submoduleIndex: number) => {

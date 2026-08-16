@@ -120,7 +120,7 @@ export function getImageWorkflowAplusRemarkCount(remark?: string | null) {
 
 export function getImageWorkflowAplusRemarkTopics(remark: string | null | undefined, count: number) {
   const normalized = String(remark || "")
-    .replace(/^\s*\d{1,2}\s*(?:种|个|张|组|项|场景|步骤|面板)\s*[:：]?\s*/, "")
+    .replace(/^\s*\d{1,2}\s*(?:种|个|张|组|项)?\s*(?:场景|步骤|面板)?\s*[:：]?\s*/, "")
     .trim();
   const topics = normalized.split(/[、,，;；\n]/).map((item) => item.trim()).filter(Boolean).slice(0, count);
   const defaultPrefix = /场景/.test(String(remark || "")) ? "场景" : "子图";

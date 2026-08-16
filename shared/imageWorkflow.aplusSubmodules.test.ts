@@ -23,4 +23,15 @@ describe("多图A+模块逐图目标", () => {
       subModuleCount: 4,
     });
   });
+
+  it("把4种场景备注归一化为A+ 1.1至1.4，并逐项保留场景主题", () => {
+    const outline = normalizeImageOutline({
+      aPlusModules: [{ moduleNumber: 1, selectedModuleType: "premium_rule_carousel", subModuleRemark: "4种场景：车库、庭院、露营、工地" }],
+    });
+    const targets = buildImageWorkflowReferenceTargets(outline)
+      .filter((target) => target.parentModuleNumber === 1);
+    expect(targets).toHaveLength(4);
+    expect(targets.map((target) => target.imageType)).toEqual(["A+模块 1.1", "A+模块 1.2", "A+模块 1.3", "A+模块 1.4"]);
+    expect(targets.map((target) => target.subModuleTopic)).toEqual(["车库", "庭院", "露营", "工地"]);
+  });
 });
