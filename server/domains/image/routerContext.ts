@@ -706,23 +706,55 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
   const lockedAssetNote = consumedRefs.length ? `\n--- 已锁定A+子图资产 ---\n以下子图必须严格使用已确认版本：${consumedRefs.join(", ")}` : "";
   const context = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}${lockedAssetNote}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n--- A+备注驱动的逐图目标（必须逐项保留） ---\n${JSON.stringify(aplusSubmoduleTargets)}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。secondaryImages必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7，不得遗漏辅图7。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。对于A+子图，必须遵守subModuleRemark、subModuleCount与subModuleTopic，按每个目标分别输出独立构图和作图建议。`;
 
-  const result = await callImageWorkflowSkill({
-    skillSlug: "image.step5.final.suggestion",
-    userId,
-    workspaceId: workspaceId ?? project?.workspaceId ?? null,
-    systemPrompt: STEP5_FINAL_SUGGESTION_PROMPT,
-    context,
-    validate: (value) => {
-      const imageNumbers = Array.isArray(value?.secondaryImages)
-        ? value.secondaryImages.map((image: any) => Number(image?.imageNumber))
-        : [];
-      // 放宽验证：只要有 6 个辅图即可（imageNumber 可以是字符串，顺序允许有偏差）
-      if (imageNumbers.length < 5) {
-        throw new Error(`最终图片建议辅图数量不足（期望6个，实际${imageNumbers.length}个）`);
-      }
-      return value;
-    },
-  });
+  const skillArgs = { userId, workspaceId: workspaceId ?? project?.workspaceId ?? null };
+  let result: any;
+  try {
+    const [mainSegment, secondarySegment, aplusSegment] = await Promise.all([
+      callImageWorkflowSkill({
+        ...skillArgs,
+        skillSlug: "image.step5.main.segment",
+        systemPrompt: "只输出主图建议的结构化JSON，保留mainImage与designGuidelines字段。",
+        context: `${context}\n\n本次仅负责主图#1，不要输出secondaryImages或A+模块。`,
+      }),
+      callImageWorkflowSkill({
+        ...skillArgs,
+        skillSlug: "image.step5.secondary.segment",
+        systemPrompt: "只输出6张辅图建议的结构化JSON，保留secondaryImages字段。",
+        context: `${context}\n\n本次仅负责辅图#2至#7，必须输出6项secondaryImages。`,
+      }),
+      callImageWorkflowSkill({
+        ...skillArgs,
+        skillSlug: "image.step5.aplus.segment",
+        systemPrompt: "只输出A+模块和品牌故事的结构化JSON，保留aPlusModules与brandStory字段。",
+        context: `${context}\n\n本次仅负责A+模块与品牌故事。必须覆盖当前大纲的全部A+模块及独立品牌故事。`,
+      }),
+    ]);
+    if (!mainSegment?.mainImage || !Array.isArray(secondarySegment?.secondaryImages) || secondarySegment.secondaryImages.length < 5) {
+      throw new Error("分段Skill返回内容不完整");
+    }
+    result = {
+      ...mainSegment,
+      designGuidelines: mainSegment.designGuidelines || secondarySegment.designGuidelines || aplusSegment.designGuidelines,
+      secondaryImages: secondarySegment.secondaryImages,
+      aPlusModules: aplusSegment.aPlusModules || aplusSegment.aplusModules || [],
+      brandStory: aplusSegment.brandStory || aplusSegment.brand_story || null,
+      segmentedGeneration: { mode: "emperor_segments", groups: ["main", "secondary", "aplus"] },
+    };
+  } catch (segmentError) {
+    console.warn("[Step5] 分段Skill失败，回退完整Skill", segmentError);
+    result = await callImageWorkflowSkill({
+      skillSlug: "image.step5.final.suggestion",
+      ...skillArgs,
+      systemPrompt: STEP5_FINAL_SUGGESTION_PROMPT,
+      context,
+      validate: (value) => {
+        if (!Array.isArray(value?.secondaryImages) || value.secondaryImages.length < 5) {
+          throw new Error("最终图片建议辅图数量不足");
+        }
+        return value;
+      },
+    });
+  }
   const step4Snapshot = parseStoredJson(session.step4UserEdit || session.step4AiResult || "{}") as Record<string, any> | null;
   return enrichStep5AplusSubmodules({ result, outline: step2Outline, step4Snapshot });
 }

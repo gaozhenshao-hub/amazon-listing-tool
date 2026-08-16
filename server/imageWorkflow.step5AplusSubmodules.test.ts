@@ -3,6 +3,15 @@ import { enrichStep5AplusSubmodules } from "./domains/image/step5AplusSubmodules
 import { readFileSync } from "node:fs";
 
 describe("Step5多图A+子模块建议", () => {
+  it("使用皇帝主图、辅图和A+分段Skill编排，并保留完整Skill回退", () => {
+    const source = readFileSync("server/domains/image/routerContext.ts", "utf8");
+    expect(source).toContain('skillSlug: "image.step5.main.segment"');
+    expect(source).toContain('skillSlug: "image.step5.secondary.segment"');
+    expect(source).toContain('skillSlug: "image.step5.aplus.segment"');
+    expect(source).toContain('skillSlug: "image.step5.final.suggestion"');
+    expect(source).toContain('segmentedGeneration: { mode: "emperor_segments"');
+  });
+
   it("在模型仅返回父模块时，回填已锁定子图的独立建议与参考图键", () => {
     const result = enrichStep5AplusSubmodules({
       result: { aPlusContent: { sections: [{ title: "父模块", moduleSpecificContent: { panels: [] } }] } },
