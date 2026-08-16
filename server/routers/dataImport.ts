@@ -55,12 +55,14 @@ async function refreshZeroValueDiscontinuationStatuses(db: any, workspaceId: num
       weekStartDate: row.weekStartDate, weekEndDate: row.weekEndDate, salesQty: row.salesQty || 0,
       orderProfit: Number(row.orderProfit || 0), totalInventory: (row.fbaAvailable || 0) + (row.fbaInTransit || 0),
     })));
-    const decision = dailyDecision.shouldDiscontinue ? dailyDecision : weeklyDecision;
-    if (!decision.shouldDiscontinue) continue;
     const [existing] = await db.select().from(opsAsinLifecycleStatuses).where(and(
       eq(opsAsinLifecycleStatuses.workspaceId, workspaceId), eq(opsAsinLifecycleStatuses.asin, latest.asin),
       eq(opsAsinLifecycleStatuses.storeName, latest.storeName), eq(opsAsinLifecycleStatuses.country, latest.country),
     )).limit(1);
+    const decision = dailyDecision.shouldDiscontinue ? dailyDecision : weeklyDecision;
+    if (!decision.shouldDiscontinue) continue;
+    // 人工恢复为在售是明确的经营决策；后续同一批零值证据不应立即覆盖该决策。
+    if (existing?.status === "active" && existing.restoredAt) continue;
     const evidence = { status: "discontinued" as const, reason: "three_months_zero", parentAsin: latest.parentAsin,
       evidenceStartDate: decision.evidenceStartDate, evidenceEndDate: decision.evidenceEndDate, evidenceDays: decision.evidenceDays,
       evidenceSalesQty: decision.salesQty, evidenceProfit: String(decision.profit), evidenceMaxInventory: decision.maxInventory,
@@ -704,6 +706,10 @@ export const dataImportRouter = router({
       const asOfDate = input.asOfDate || scopedSnapshots.reduce((latest, row) => row.reportDate > latest ? row.reportDate : latest, "");
       if (!asOfDate) return { asOfDate: null, rows: [] };
 
+      const lifecycleStatuses = await db!.select().from(opsAsinLifecycleStatuses)
+        .where(eq(opsAsinLifecycleStatuses.workspaceId, workspaceId));
+      const lifecycleByKey = new Map(lifecycleStatuses.map(status => [`${status.asin}::${status.storeName}::${status.country}`, status]));
+
       let locals: any[] = [];
       let parameters: any[] = [];
       try {
@@ -727,6 +733,7 @@ export const dataImportRouter = router({
 
       const latestRows = scopedSnapshots.filter(row => row.reportDate === asOfDate);
       const planningRows = latestRows.map(latest => {
+        const lifecycle = lifecycleByKey.get(`${latest.asin}::${latest.storeName}::${latest.country}`);
         const history = scopedSnapshots.filter(row => row.asin === latest.asin && row.storeName === latest.storeName && row.country === latest.country);
         const local = locals
           .filter(item => item.asin === latest.asin && item.storeName === latest.storeName && item.country === latest.country && item.effectiveDate <= asOfDate)
@@ -770,11 +777,48 @@ export const dataImportRouter = router({
           productionDays: parameter?.productionDays ?? 30, shippingDays: parameter?.shippingDays ?? 30, bufferDays: parameter?.bufferDays ?? 10,
           productCost, estimatedFirstLegCost, actualFirstLegCost, estimatedFbaFee, actualFbaFee, sellingPrice, estimatedDimensions, actualDimensions, estimatedWeight, actualWeight, dimensionUnit: parameter?.dimensionUnit ?? "in", weightUnit: parameter?.weightUnit ?? "lb", currency: parameter?.currency ?? "USD",
           estimatedBreakEven, actualBreakEven,
+          lifecycleStatus: lifecycle?.status || "active",
+          lifecycleReason: lifecycle?.reason || null,
+          lifecycleEvidenceStartDate: lifecycle?.evidenceStartDate || null,
+          lifecycleEvidenceEndDate: lifecycle?.evidenceEndDate || null,
+          lifecycleEvidenceDays: lifecycle?.evidenceDays || 0,
+          lifecycleRestoredAt: lifecycle?.restoredAt || null,
+          lifecycleRestoreReason: lifecycle?.restoreReason || null,
           ...plan,
         };
       });
       await applyOperatorMappings(db, planningRows as any, "lingxing");
       return { asOfDate, rows: planningRows };
+    }),
+
+  restoreAsinLifecycleStatus: protectedProcedure
+    .input(z.object({
+      asin: z.string().min(1),
+      storeName: z.string().min(1),
+      country: z.string().min(1),
+      reason: z.string().trim().min(2, "请填写恢复在售的原因").max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const workspaceId = ctx.user.defaultWorkspaceId ?? currentOpsWorkspaceId();
+      const [existing] = await db!.select().from(opsAsinLifecycleStatuses).where(and(
+        eq(opsAsinLifecycleStatuses.workspaceId, workspaceId),
+        eq(opsAsinLifecycleStatuses.asin, input.asin),
+        eq(opsAsinLifecycleStatuses.storeName, input.storeName),
+        eq(opsAsinLifecycleStatuses.country, input.country),
+      )).limit(1);
+      if (!existing || existing.status !== "discontinued") {
+        throw new Error("未找到可恢复的停售状态记录");
+      }
+      const restoredAt = new Date();
+      await db!.update(opsAsinLifecycleStatuses).set({
+        status: "active",
+        changedBy: ctx.user.id,
+        changedAt: restoredAt,
+        restoredAt,
+        restoreReason: input.reason,
+      }).where(and(eq(opsAsinLifecycleStatuses.workspaceId, workspaceId), eq(opsAsinLifecycleStatuses.id, existing.id)));
+      return { restored: true, restoredAt };
     }),
 
   confirmLocalInventory: protectedProcedure
