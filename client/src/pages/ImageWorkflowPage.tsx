@@ -728,7 +728,7 @@ function Step5FinalSuggestions({
   }, [session?.step5Confirmed]);
 
   useEffect(() => {
-    if (sessionActiveRunId && isRunActive(sessionRunStatus)) {
+    if (sessionActiveRunId && isActiveStep5RunStatus(sessionRunStatus)) {
       setActiveRunId(sessionActiveRunId);
     }
   }, [sessionActiveRunId, sessionRunStatus]);
