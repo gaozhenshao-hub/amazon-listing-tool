@@ -74,7 +74,7 @@ async function applyCurrentStep4ImageVersions(session: any) {
   return { ...session, step4UserEdit: JSON.stringify(rebuildStep4DisplaySnapshot(session, snapshot)), step4AiResult: JSON.stringify(rebuildStep4DisplaySnapshot(session, snapshot)) };
 }
 
-function rebuildStep4DisplaySnapshot(session: any, snapshot: Record<string, any>) {
+export function rebuildStep4DisplaySnapshot(session: any, snapshot: Record<string, any>) {
   const outline = normalizeImageOutline(parseExportJson(session.step2UserEdit || session.step2AiResult));
   const targets = buildImageWorkflowReferenceTargets(outline || {}).filter((target: any) => target.imageType);
   if (!targets.length) return snapshot;
@@ -92,10 +92,42 @@ function rebuildStep4DisplaySnapshot(session: any, snapshot: Record<string, any>
         : isBrand
           ? historicalBrand
           : existing.find((reference: any) => String(reference?.imageType || "") === target.imageType) || existing[index];
+      const fallbackReference = !matched ? {
+        imageKey: target.imageKey,
+        compositionReference: isBrand
+          ? {
+            compositionType: "品牌叙事横幅构图",
+            focalPoint: target.purpose || "品牌核心价值",
+            layout: "以品牌核心场景为主视觉，辅以材料、服务或应用细节，形成从产品能力到品牌承诺的叙事路径",
+            proportions: "品牌主视觉60%，核心承诺25%，信任元素15%",
+            visualFlow: "品牌主视觉→核心承诺→信任与服务要素",
+          }
+          : {
+            compositionType: "基于大纲的重点构图",
+            focalPoint: target.purpose || "核心信息",
+            layout: "围绕当前图片大纲的核心目标组织产品、场景和说明元素",
+            proportions: "核心主体65%，说明元素20%，留白15%",
+            visualFlow: "核心主体→关键信息→补充说明",
+          },
+        effectReference: {
+          atmosphere: isBrand ? "专业、可信赖且具有品牌延续性的叙事氛围" : "与当前确认风格保持一致的专业视觉氛围",
+          colorApplication: "继承当前确认的品牌主色、辅色与强调色，保证系列一致性",
+          iconApplication: isBrand ? "品牌信任、材料或服务承诺图标" : "仅使用服务于核心卖点的简洁图标",
+          lightingStyle: "与整套图片保持统一的产品与场景光线风格",
+          textureStyle: "突出与卖点相关的材质和使用质感",
+          typographyApplication: "沿用整套图片的层级、字重和可读性规范",
+        },
+        designNotes: "此目标在历史参考图结果中缺失，系统已按当前大纲生成可编辑的基础参考方案；可使用单图重新生成进一步获取AI推荐。",
+        isBackfilledFromOutline: true,
+      } : {};
       return {
+        ...fallbackReference,
         ...(matched || {}),
+        imageKey: target.imageKey,
         imageType: target.imageType,
         imageNumber: isAplus || isBrand ? 0 : (target.imageNumber || matched?.imageNumber || 0),
+        parentModuleNumber: target.parentModuleNumber ?? matched?.parentModuleNumber ?? null,
+        subModuleNumber: target.subModuleNumber ?? matched?.subModuleNumber ?? null,
         purpose: matched?.purpose || target.purpose || target.contentBrief || "",
         ...(isBrand ? { isBrandStory: true } : {}),
       };
