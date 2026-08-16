@@ -27,7 +27,7 @@ describe("Step4锁定快照持久化", () => {
     const snapshot = {
       imageReferences: [
         { imageKey: "main-1", imageType: "主图", purpose: "主图旧方案" },
-        { imageKey: "aplus-2", imageType: "A+模块 2", imageNumber: 2, purpose: "模块二旧方案", compositionRefImageUrl: "https://example.com/composition.png", parentModuleNumber: 2 },
+        { imageKey: "aplus-2", imageType: "A+模块 2", imageNumber: 2, purpose: "模块二旧方案", compositionRefImageUrl: "https://example.com/composition.png", compositionRefNote: "保留左右分栏", parentModuleNumber: 2 },
         { imageKey: "brand-story", imageType: "品牌故事", purpose: "品牌故事旧方案" },
       ],
     };
@@ -41,6 +41,7 @@ describe("Step4锁定快照持久化", () => {
       purpose: "模块二旧方案",
       parentModuleNumber: 2,
       compositionRefImageUrl: "https://example.com/composition.png",
+      compositionRefNote: "保留左右分栏",
       compositionReference: { layout: "新的构图" },
     });
   });

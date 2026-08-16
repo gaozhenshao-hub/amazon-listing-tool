@@ -37,6 +37,8 @@ export function mergeSingleStep4Reference(snapshot: Record<string, any>, imageIn
     subModuleNumber: target.subModuleNumber ?? generated.subModuleNumber ?? null,
     compositionRefImageUrl: target.compositionRefImageUrl,
     effectRefImageUrl: target.effectRefImageUrl,
+    compositionRefNote: target.compositionRefNote,
+    effectRefNote: target.effectRefNote,
     kbReferenceImages: target.kbReferenceImages,
   };
   const nextReferences = [...imageReferences];

@@ -178,6 +178,8 @@ export const imageReferenceProcedures = {
       imageKey: z.string(),
       compositionRefUrl: z.string().optional(),
       effectRefUrl: z.string().optional(),
+      compositionRefNote: z.string().max(1_000).optional(),
+      effectRefNote: z.string().max(1_000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
@@ -202,14 +204,14 @@ export const imageReferenceProcedures = {
           type: "image_url",
           image_url: { url: input.compositionRefUrl, detail: "high" },
         });
-        userContent.push({ type: "text", text: "[上面是构图参考图]" });
+        userContent.push({ type: "text", text: `[上面是构图参考图${input.compositionRefNote?.trim() ? `，用户备注：${input.compositionRefNote.trim()}` : ""}]` });
       }
       if (input.effectRefUrl) {
         userContent.push({
           type: "image_url",
           image_url: { url: input.effectRefUrl, detail: "high" },
         });
-        userContent.push({ type: "text", text: "[上面是效果参考图]" });
+        userContent.push({ type: "text", text: `[上面是效果参考图${input.effectRefNote?.trim() ? `，用户备注：${input.effectRefNote.trim()}` : ""}]` });
       }
 
       messages.push({ role: "user", content: userContent });
@@ -237,6 +239,8 @@ export const imageReferenceProcedures = {
         ...aiResult,
         compositionRefImageUrl: existingRef?.compositionRefImageUrl,
         effectRefImageUrl: existingRef?.effectRefImageUrl,
+        compositionRefNote: existingRef?.compositionRefNote,
+        effectRefNote: existingRef?.effectRefNote,
         kbReferenceImages: existingRef?.kbReferenceImages,
         imageNumber: existingRef?.imageNumber ?? aiResult?.imageNumber,
         imageType: existingRef?.imageType ?? aiResult?.imageType,
@@ -265,6 +269,8 @@ export const imageReferenceProcedures = {
       })),
       compositionRefUrl: z.string().optional(),
       effectRefUrl: z.string().optional(),
+      compositionRefNote: z.string().max(1_000).optional(),
+      effectRefNote: z.string().max(1_000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
@@ -311,7 +317,7 @@ ${session.step3UserEdit || session.step3AiResult}
           type: "image_url",
           image_url: { url: input.compositionRefUrl, detail: "high" },
         });
-        userContent.push({ type: "text", text: "[构图参考图：请参考此图的构图布局]" });
+        userContent.push({ type: "text", text: `[构图参考图：请参考此图的构图布局${input.compositionRefNote?.trim() ? `；用户备注：${input.compositionRefNote.trim()}` : ""}]` });
       }
 
       // Add effect ref if provided
@@ -320,7 +326,7 @@ ${session.step3UserEdit || session.step3AiResult}
           type: "image_url",
           image_url: { url: input.effectRefUrl, detail: "high" },
         });
-        userContent.push({ type: "text", text: "[效果参考图：请参考此图的视觉效果和风格]" });
+        userContent.push({ type: "text", text: `[效果参考图：请参考此图的视觉效果和风格${input.effectRefNote?.trim() ? `；用户备注：${input.effectRefNote.trim()}` : ""}]` });
       }
 
       const messages: any[] = [
@@ -358,6 +364,8 @@ ${session.step3UserEdit || session.step3AiResult}
       })),
       compositionRefUrl: z.string().optional(),
       effectRefUrl: z.string().optional(),
+      compositionRefNote: z.string().max(1_000).optional(),
+      effectRefNote: z.string().max(1_000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
@@ -403,11 +411,11 @@ ${session.step3UserEdit || session.step3AiResult}
       }
       if (input.compositionRefUrl) {
         userContent.push({ type: "image_url", image_url: { url: input.compositionRefUrl, detail: "high" } });
-        userContent.push({ type: "text", text: "[构图参考图：请参考此图的构图布局]" });
+        userContent.push({ type: "text", text: `[构图参考图：请参考此图的构图布局${input.compositionRefNote?.trim() ? `；用户备注：${input.compositionRefNote.trim()}` : ""}]` });
       }
       if (input.effectRefUrl) {
         userContent.push({ type: "image_url", image_url: { url: input.effectRefUrl, detail: "high" } });
-        userContent.push({ type: "text", text: "[效果参考图：请参考此图的视觉效果和风格]" });
+        userContent.push({ type: "text", text: `[效果参考图：请参考此图的视觉效果和风格${input.effectRefNote?.trim() ? `；用户备注：${input.effectRefNote.trim()}` : ""}]` });
       }
 
       const singleImagePrompt = STEP4_REFERENCE_PROMPT + "\n\n注意：本次只需输出单张图的方案，直接返回一个 imageReference 对象（JSON），不要包裹在数组中。";

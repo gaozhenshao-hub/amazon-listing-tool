@@ -212,6 +212,8 @@ export function Step4References({
         imageKey: `step4-ref-${idx}`,
         compositionRefUrl: ref.compositionRefImageUrl || '',
         effectRefUrl: ref.effectRefImageUrl || '',
+        compositionRefNote: ref.compositionRefNote || undefined,
+        effectRefNote: ref.effectRefNote || undefined,
       });
       // Merge the re-optimized result into editData
       const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
@@ -219,6 +221,8 @@ export function Step4References({
       const preserved = {
         compositionRefImageUrl: ref.compositionRefImageUrl,
         effectRefImageUrl: ref.effectRefImageUrl,
+        compositionRefNote: ref.compositionRefNote,
+        effectRefNote: ref.effectRefNote,
         kbReferenceImages: ref.kbReferenceImages,
         imageNumber: ref.imageNumber,
         imageType: ref.imageType,
@@ -279,6 +283,13 @@ export function Step4References({
     setEditData(newData);
   };
 
+  const updateLocalReferenceNote = (idx: number, field: "compositionRefNote" | "effectRefNote", value: string) => {
+    if (!editData || editData.imageReferences?.[idx]?.isLocked) return;
+    const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
+    newData.imageReferences[idx] = { ...newData.imageReferences[idx], [field]: value };
+    setEditData(newData);
+  };
+
   // Open KB picker for a specific image reference
   const openKbPicker = (idx: number, imageType: string) => {
     setKbPickerTargetIdx(idx);
@@ -331,9 +342,17 @@ export function Step4References({
     // Collect composition/effect ref URLs (from first ref that has them)
     let compositionRefUrl: string | undefined;
     let effectRefUrl: string | undefined;
+    let compositionRefNote: string | undefined;
+    let effectRefNote: string | undefined;
     for (const ref of (editData.imageReferences || [])) {
-      if (!compositionRefUrl && ref.compositionRefImageUrl) compositionRefUrl = ref.compositionRefImageUrl;
-      if (!effectRefUrl && ref.effectRefImageUrl) effectRefUrl = ref.effectRefImageUrl;
+      if (!compositionRefUrl && ref.compositionRefImageUrl) {
+        compositionRefUrl = ref.compositionRefImageUrl;
+        compositionRefNote = ref.compositionRefNote || undefined;
+      }
+      if (!effectRefUrl && ref.effectRefImageUrl) {
+        effectRefUrl = ref.effectRefImageUrl;
+        effectRefNote = ref.effectRefNote || undefined;
+      }
     }
     try {
       const result = await regenerateAllMutation.mutateAsync({
@@ -341,6 +360,8 @@ export function Step4References({
         kbImages: allKbImages,
         compositionRefUrl,
         effectRefUrl,
+        compositionRefNote,
+        effectRefNote,
       });
       const existingRefs = editData.imageReferences || [];
       const mergedResult = {
@@ -353,6 +374,8 @@ export function Step4References({
             ...generatedRef,
             compositionRefImageUrl: existingRef.compositionRefImageUrl,
             effectRefImageUrl: existingRef.effectRefImageUrl,
+            compositionRefNote: existingRef.compositionRefNote,
+            effectRefNote: existingRef.effectRefNote,
             kbReferenceImages: existingRef.kbReferenceImages,
             imageNumber: existingRef.imageNumber ?? generatedRef.imageNumber,
             imageType: existingRef.imageType ?? generatedRef.imageType,
@@ -394,6 +417,8 @@ export function Step4References({
         kbImages,
         compositionRefUrl: ref.compositionRefImageUrl || undefined,
         effectRefUrl: ref.effectRefImageUrl || undefined,
+        compositionRefNote: ref.compositionRefNote || undefined,
+        effectRefNote: ref.effectRefNote || undefined,
       });
       // Merge only the regenerated single image's AI fields into current editData,
       // preserving all other images' client-side state (kbReferenceImages, ref URLs, etc.)
@@ -405,6 +430,8 @@ export function Step4References({
         ...newRef,
         compositionRefImageUrl: ref.compositionRefImageUrl,
         effectRefImageUrl: ref.effectRefImageUrl,
+        compositionRefNote: ref.compositionRefNote,
+        effectRefNote: ref.effectRefNote,
         kbReferenceImages: ref.kbReferenceImages,
         imageNumber: ref.imageNumber ?? newRef.imageNumber,
         imageType: ref.imageType ?? newRef.imageType,
@@ -581,6 +608,17 @@ export function Step4References({
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRefImageUpload(idx, 'composition', f); }} disabled={!!uploadingRef} />
                   </label>
                 )}
+                {ref.compositionRefImageUrl && (
+                  !isConfirmed && !isImageLocked ? (
+                    <Textarea
+                      value={ref.compositionRefNote || ""}
+                      onChange={(e) => updateLocalReferenceNote(idx, "compositionRefNote", e.target.value)}
+                      onBlur={() => void persistStep4Draft(editData)}
+                      placeholder="备注构图要参考的部分，例如：保留左右分栏和大标题位置"
+                      className="mt-2 min-h-[54px] text-xs bg-white/90"
+                    />
+                  ) : ref.compositionRefNote ? <p className="mt-2 text-xs text-muted-foreground">备注：{ref.compositionRefNote}</p> : null
+                )}
               </div>
 
               {/* Effect Reference Image Upload */}
@@ -614,6 +652,17 @@ export function Step4References({
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRefImageUpload(idx, 'effect', f); }} disabled={!!uploadingRef} />
                   </label>
                 )}
+                {ref.effectRefImageUrl && (
+                  !isConfirmed && !isImageLocked ? (
+                    <Textarea
+                      value={ref.effectRefNote || ""}
+                      onChange={(e) => updateLocalReferenceNote(idx, "effectRefNote", e.target.value)}
+                      onBlur={() => void persistStep4Draft(editData)}
+                      placeholder="备注效果要参考的部分，例如：沿用冷色光影和金属高光"
+                      className="mt-2 min-h-[54px] text-xs bg-white/90"
+                    />
+                  ) : ref.effectRefNote ? <p className="mt-2 text-xs text-muted-foreground">备注：{ref.effectRefNote}</p> : null
+                )}
               </div>
             </div>
 
@@ -628,7 +677,7 @@ export function Step4References({
                   className="text-xs"
                 >
                   {reoptimizingIdx === idx ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1" />}
-                  {reoptimizingIdx === idx ? "AI 正在分析参考图..." : "根据参考图重新优化构图和效果方案"}
+                  {reoptimizingIdx === idx ? "AI 正在分析参考图与备注..." : "根据参考图和备注重新优化构图和效果方案"}
                 </Button>
                 {reoptimizingIdx === idx && (
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5">
