@@ -615,10 +615,21 @@ export async function resolveSessionForDisplay(projectId: number, user: { id: nu
   });
   const completeStep4 = { ...artifactStep4, ...sessionStep4, imageReferences: mergedReferences };
   const completeStep4Json = JSON.stringify(completeStep4);
+  const step2Outline = parseStoredJson(session.step2UserEdit || hydrated.step2UserEdit) as Record<string, any> | null;
+  const step5Source = parseStoredJson(session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult) as Record<string, any> | null;
+  const completeStep5 = step2Outline && step5Source
+    ? enrichStep5AplusSubmodules({ result: step5Source, outline: step2Outline, step4Snapshot: completeStep4 })
+    : null;
+  const completeStep5Json = completeStep5 ? JSON.stringify(completeStep5) : null;
   return {
     ...hydrated,
     step4AiResult: completeStep4Json,
     step4UserEdit: completeStep4Json,
+    ...(completeStep5Json ? {
+      step5AiResult: completeStep5Json,
+      step5UserEdit: completeStep5Json,
+      step5OptimizedResult: completeStep5Json,
+    } : {}),
   };
 }
 
