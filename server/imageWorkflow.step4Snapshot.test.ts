@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compactStep4ReferenceForStorage, compactStep4SnapshotForStorage } from "./domains/image/step4Snapshot";
+import { compactStep4ReferenceForStorage, compactStep4SnapshotForStorage, mergeSingleStep4Reference } from "./domains/image/step4Snapshot";
 
 describe("Step4锁定快照持久化", () => {
   it("去除展示层lockedSnapshot并保留已锁定图的内容", () => {
@@ -21,5 +21,27 @@ describe("Step4锁定快照持久化", () => {
     });
 
     expect(result.imageReferences[0]).toEqual({ imageType: "A+模块 4.1" });
+  });
+
+  it("单图重新生成只替换目标参考图并保留其他图片和上传资产", () => {
+    const snapshot = {
+      imageReferences: [
+        { imageKey: "main-1", imageType: "主图", purpose: "主图旧方案" },
+        { imageKey: "aplus-2", imageType: "A+模块 2", imageNumber: 2, purpose: "模块二旧方案", compositionRefImageUrl: "https://example.com/composition.png", parentModuleNumber: 2 },
+        { imageKey: "brand-story", imageType: "品牌故事", purpose: "品牌故事旧方案" },
+      ],
+    };
+    const result = mergeSingleStep4Reference(snapshot, 1, { compositionReference: { layout: "新的构图" }, effectReference: { atmosphere: "新的效果" } });
+
+    expect(result.imageReferences[0]).toEqual(snapshot.imageReferences[0]);
+    expect(result.imageReferences[2]).toEqual(snapshot.imageReferences[2]);
+    expect(result.imageReferences[1]).toMatchObject({
+      imageKey: "aplus-2",
+      imageType: "A+模块 2",
+      purpose: "模块二旧方案",
+      parentModuleNumber: 2,
+      compositionRefImageUrl: "https://example.com/composition.png",
+      compositionReference: { layout: "新的构图" },
+    });
   });
 });

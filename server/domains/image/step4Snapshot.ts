@@ -18,3 +18,28 @@ export function compactStep4SnapshotForStorage(snapshot: Record<string, any>, fo
       : [],
   };
 }
+
+/**
+ * 单图重新生成只能替换目标索引；其余参考图和用户上传的参考资产必须原样保留。
+ */
+export function mergeSingleStep4Reference(snapshot: Record<string, any>, imageIndex: number, generated: Record<string, any>) {
+  const imageReferences = Array.isArray(snapshot?.imageReferences) ? snapshot.imageReferences : [];
+  const target = imageReferences[imageIndex];
+  if (!target) throw new Error(`Image at index ${imageIndex} not found`);
+
+  const merged = {
+    ...generated,
+    imageKey: target.imageKey || generated.imageKey,
+    imageNumber: target.imageNumber ?? generated.imageNumber ?? imageIndex + 1,
+    imageType: target.imageType ?? generated.imageType,
+    purpose: target.purpose ?? generated.purpose,
+    parentModuleNumber: target.parentModuleNumber ?? generated.parentModuleNumber ?? null,
+    subModuleNumber: target.subModuleNumber ?? generated.subModuleNumber ?? null,
+    compositionRefImageUrl: target.compositionRefImageUrl,
+    effectRefImageUrl: target.effectRefImageUrl,
+    kbReferenceImages: target.kbReferenceImages,
+  };
+  const nextReferences = [...imageReferences];
+  nextReferences[imageIndex] = merged;
+  return { ...snapshot, imageReferences: nextReferences };
+}

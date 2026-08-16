@@ -1,6 +1,6 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
-import { compactStep4ReferenceForStorage, compactStep4SnapshotForStorage } from "../step4Snapshot";
+import { compactStep4ReferenceForStorage, compactStep4SnapshotForStorage, mergeSingleStep4Reference } from "../step4Snapshot";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -421,24 +421,17 @@ ${session.step3UserEdit || session.step3AiResult}
       });
       const newImageRef = parseLLMJson(response);
 
-      // Merge back into the full step4 result
-      const updatedRefs = [...imageRefs];
       const mergedRef = newImageRef.imageReferences?.[0] || newImageRef;
-      mergedRef.imageNumber = targetImage.imageNumber ?? (input.imageIndex + 1);
-      // Preserve client-side fields that AI doesn't return
-      updatedRefs[input.imageIndex] = {
-        ...mergedRef,
-        compositionRefImageUrl: targetImage.compositionRefImageUrl,
-        effectRefImageUrl: targetImage.effectRefImageUrl,
-        kbReferenceImages: targetImage.kbReferenceImages,
-        imageNumber: targetImage.imageNumber ?? mergedRef.imageNumber ?? (input.imageIndex + 1),
-        imageType: targetImage.imageType ?? mergedRef.imageType,
-        purpose: targetImage.purpose ?? mergedRef.purpose,
-      };
-
-      const updatedResult = { ...currentStep4, imageReferences: updatedRefs };
+      // 同时更新AI结果和草稿。只写step4AiResult会导致刷新后优先读取旧step4UserEdit，
+      // 从而让用户看到重新生成前的历史参考图。
+      const updatedResult = mergeSingleStep4Reference(currentStep4, input.imageIndex, mergedRef);
+      const persistedDraft = compactStep4SnapshotForStorage(updatedResult);
       await db.updateImageWorkflowSession(session.id, {
-        step4AiResult: JSON.stringify(updatedResult),
+        step4AiResult: JSON.stringify(persistedDraft),
+        step4UserEdit: JSON.stringify(persistedDraft),
+        step4Confirmed: 0,
+        currentStep: 4,
+        status: "in_progress",
       });
       return { updatedResult, regeneratedIndex: input.imageIndex, newImageRef: mergedRef };
     }),
