@@ -707,6 +707,20 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
   const context = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}${lockedAssetNote}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n--- A+备注驱动的逐图目标（必须逐项保留） ---\n${JSON.stringify(aplusSubmoduleTargets)}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。secondaryImages必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7，不得遗漏辅图7。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。对于A+子图，必须遵守subModuleRemark、subModuleCount与subModuleTopic，按每个目标分别输出独立构图和作图建议。`;
 
   const skillArgs = { userId, workspaceId: workspaceId ?? project?.workspaceId ?? null };
+  const getAplusModules = (value: any) => Array.isArray(value?.aPlusModules)
+    ? value.aPlusModules
+    : Array.isArray(value?.aplusModules)
+      ? value.aplusModules
+      : Array.isArray(value?.aPlusContent?.sections)
+        ? value.aPlusContent.sections
+        : Array.isArray(value?.aplusContent?.sections)
+          ? value.aplusContent.sections
+          : [];
+  const getBrandStory = (value: any) => value?.brandStory
+    || value?.brand_story
+    || value?.aPlusContent?.brandStory
+    || value?.aplusContent?.brandStory
+    || null;
   let result: any;
   try {
     const [mainSegment, secondarySegment, aplusSegment] = await Promise.all([
@@ -736,13 +750,17 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
       ...mainSegment,
       designGuidelines: mainSegment.designGuidelines || secondarySegment.designGuidelines || aplusSegment.designGuidelines,
       secondaryImages: secondarySegment.secondaryImages,
-      aPlusModules: aplusSegment.aPlusModules || aplusSegment.aplusModules || [],
-      brandStory: aplusSegment.brandStory || aplusSegment.brand_story || null,
+      aPlusModules: getAplusModules(aplusSegment),
+      aPlusContent: {
+        ...(aplusSegment.aPlusContent || aplusSegment.aplusContent || {}),
+        sections: getAplusModules(aplusSegment),
+      },
+      brandStory: getBrandStory(aplusSegment),
       segmentedGeneration: { mode: "emperor_segments", groups: ["main", "secondary", "aplus"] },
     };
   } catch (segmentError) {
     console.warn("[Step5] 分段Skill失败，回退完整Skill", segmentError);
-    result = await callImageWorkflowSkill({
+    const completeResult = await callImageWorkflowSkill({
       skillSlug: "image.step5.final.suggestion",
       ...skillArgs,
       systemPrompt: STEP5_FINAL_SUGGESTION_PROMPT,
@@ -754,6 +772,18 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
         return value;
       },
     });
+    // 完整Skill的历史契约可能使用aPlusContent.sections而非顶层aPlusModules。
+    // 在进入统一回填前同步两种结构，避免分段失败回退后A+内容被前台判空。
+    result = {
+      ...completeResult,
+      aPlusModules: getAplusModules(completeResult),
+      aPlusContent: {
+        ...(completeResult?.aPlusContent || completeResult?.aplusContent || {}),
+        sections: getAplusModules(completeResult),
+      },
+      brandStory: getBrandStory(completeResult),
+      segmentedGeneration: { mode: "full_skill_fallback", failedGroup: "unknown" },
+    };
   }
   const step4Snapshot = parseStoredJson(session.step4UserEdit || session.step4AiResult || "{}") as Record<string, any> | null;
   return enrichStep5AplusSubmodules({ result, outline: step2Outline, step4Snapshot });

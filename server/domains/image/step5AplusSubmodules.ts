@@ -30,9 +30,17 @@ export function enrichStep5AplusSubmodules(input: {
   outline: JsonRecord;
   step4Snapshot: JsonRecord | null;
 }) {
-  const sections = Array.isArray(input.result?.aPlusContent?.sections)
-    ? input.result.aPlusContent.sections
-    : [];
+  // 分段Skill使用aPlusModules；旧完整Skill则使用aPlusContent.sections。
+  // 两种契约都必须参与回填，否则分段结果会被错误地替换为空大纲壳。
+  const sections = Array.isArray(input.result?.aPlusModules)
+    ? input.result.aPlusModules
+    : Array.isArray(input.result?.aplusModules)
+      ? input.result.aplusModules
+      : Array.isArray(input.result?.aPlusContent?.sections)
+        ? input.result.aPlusContent.sections
+        : Array.isArray(input.result?.aplusContent?.sections)
+          ? input.result.aplusContent.sections
+          : [];
   const sourceModules = Array.isArray(input.outline?.aPlusModules) ? input.outline.aPlusModules : [];
   const references = Array.isArray(input.step4Snapshot?.imageReferences) ? input.step4Snapshot.imageReferences : [];
 
@@ -99,17 +107,23 @@ export function enrichStep5AplusSubmodules(input: {
 
   const sourceBrandStory = input.outline?.brandStory || input.outline?.brandStoryModule || input.outline?.aPlusBrandStory;
   const brandReference = references.find((reference) => String(reference?.imageType || "").trim() === "品牌故事");
+  const generatedBrandStory = input.result?.brandStory
+    || input.result?.brand_story
+    || input.result?.aPlusContent?.brandStory
+    || input.result?.aplusContent?.brandStory
+    || {};
   const brandStory = sourceBrandStory && typeof sourceBrandStory === "object" ? {
-    ...(input.result.brandStory || input.result?.aPlusContent?.brandStory || {}),
-    title: input.result?.brandStory?.title || sourceBrandStory.title || "品牌故事",
-    purpose: input.result?.brandStory?.purpose || sourceBrandStory.purpose || sourceBrandStory.story || "品牌故事与品牌价值展示",
-    composition: input.result?.brandStory?.composition || brandReference?.compositionPlan?.layout || sourceBrandStory.contentBrief || "",
-    imageDescription: input.result?.brandStory?.imageDescription || brandReference?.effectPlan?.description || sourceBrandStory.contentBrief || "",
-    referenceImageKey: input.result?.brandStory?.referenceImageKey || brandReference?.imageType || "品牌故事",
-  } : input.result.brandStory;
+    ...generatedBrandStory,
+    title: generatedBrandStory.title || sourceBrandStory.title || "品牌故事",
+    purpose: generatedBrandStory.purpose || sourceBrandStory.purpose || sourceBrandStory.story || "品牌故事与品牌价值展示",
+    composition: generatedBrandStory.composition || brandReference?.compositionPlan?.layout || sourceBrandStory.contentBrief || "",
+    imageDescription: generatedBrandStory.imageDescription || brandReference?.effectPlan?.description || sourceBrandStory.contentBrief || "",
+    referenceImageKey: generatedBrandStory.referenceImageKey || brandReference?.imageType || "品牌故事",
+  } : (Object.keys(generatedBrandStory).length ? generatedBrandStory : input.result.brandStory);
 
   return {
     ...input.result,
+    aPlusModules: nextSections,
     ...(brandStory ? { brandStory } : {}),
     aPlusContent: {
       ...(input.result.aPlusContent || {}),

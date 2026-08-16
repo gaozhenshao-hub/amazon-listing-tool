@@ -1,0 +1,52 @@
+import { describe, expect, it } from "vitest";
+import { enrichStep5AplusSubmodules } from "./domains/image/step5AplusSubmodules";
+
+const outline = {
+  aPlusModules: [
+    { moduleNumber: 1, title: "核心卖点", purpose: "说明核心价值", contentBrief: "核心价值说明" },
+    { moduleNumber: 2, title: "使用场景", purpose: "说明使用环境", contentBrief: "场景价值说明" },
+  ],
+  brandStory: { title: "品牌故事", purpose: "建立品牌信任", contentBrief: "品牌使命与承诺" },
+};
+
+describe("Step5 A+输出结构兼容", () => {
+  it("保留分段Skill顶层aPlusModules中的模块级内容", () => {
+    const result = enrichStep5AplusSubmodules({
+      result: {
+        aPlusModules: [
+          { moduleNumber: 1, title: "卖点模块", purpose: "模型生成卖点", composition: "左右分栏", imageDescription: "场景实拍" },
+          { moduleNumber: 2, title: "场景模块", purpose: "模型生成场景", composition: "全幅横图", imageDescription: "户外场景" },
+        ],
+        brandStory: { title: "品牌故事", purpose: "模型生成品牌故事", composition: "品牌时间线", imageDescription: "品牌资产展示" },
+      },
+      outline,
+      step4Snapshot: null,
+    });
+
+    expect(result.aPlusModules).toHaveLength(2);
+    expect(result.aPlusModules[0]).toMatchObject({ moduleNumber: 1, purpose: "模型生成卖点", composition: "左右分栏", imageDescription: "场景实拍" });
+    expect(result.aPlusContent.sections[1]).toMatchObject({ moduleNumber: 2, purpose: "模型生成场景", composition: "全幅横图", imageDescription: "户外场景" });
+    expect(result.brandStory).toMatchObject({ purpose: "模型生成品牌故事", composition: "品牌时间线" });
+  });
+
+  it("兼容完整Skill在aPlusContent.sections内返回的A+内容", () => {
+    const result = enrichStep5AplusSubmodules({
+      result: {
+        aPlusContent: {
+          sections: [
+            { moduleNumber: 1, title: "完整Skill模块一", purpose: "完整结果一", composition: "居中构图", imageDescription: "卖点图标" },
+            { moduleNumber: 2, title: "完整Skill模块二", purpose: "完整结果二", composition: "三栏构图", imageDescription: "场景图" },
+          ],
+          brandStory: { title: "品牌故事", purpose: "完整Skill品牌内容", composition: "对比叙事", imageDescription: "品牌展示" },
+        },
+      },
+      outline,
+      step4Snapshot: null,
+    });
+
+    expect(result.aPlusModules).toHaveLength(2);
+    expect(result.aPlusModules[0]).toMatchObject({ moduleNumber: 1, purpose: "完整结果一", composition: "居中构图", imageDescription: "卖点图标" });
+    expect(result.aPlusContent.sections[1]).toMatchObject({ moduleNumber: 2, purpose: "完整结果二", composition: "三栏构图", imageDescription: "场景图" });
+    expect(result.brandStory).toMatchObject({ purpose: "完整Skill品牌内容", composition: "对比叙事" });
+  });
+});
