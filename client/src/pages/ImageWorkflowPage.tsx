@@ -66,6 +66,7 @@ import { Step3StyleConfirm } from "./imageWorkflow/StyleConfirmationStep";
 import { Step4References } from "./imageWorkflow/ReferenceImagesStep";
 import { OUTLINE_APLUS_CATEGORIES, OUTLINE_APLUS_MODULES, findOutlineAplusModule, normalizeAplusModuleStyle } from "./imageWorkflow/aplusModules";
 import { buildFullPlanContent, buildPdfContent, safeJsonParse } from "./imageWorkflow/exportContent";
+import { isActiveStep5RunStatus, resolveCurrentStep5RunId } from "./imageWorkflow/step5RunState";
 import { normalizeSecondaryImageSlots } from "@shared/imageWorkflow";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -569,11 +570,14 @@ function Step5FinalSuggestions({
   const [optimizingSectionIdx, setOptimizingSectionIdx] = useState<number | null>(null);
   const singleModuleOptimizeMutation = trpc.imageWorkflow.optimizeSingleAplusModule.useMutation();
   const sessionRunStatus = session?.step5RunStatus || "idle";
-  const isRunActive = (status?: string | null) => status === "queued" || status === "running";
   // 失败/取消运行仅用于展示历史诊断，不能继续作为轮询对象；否则页面会一直
   // 订阅旧runId，并将旧错误覆盖到用户刚发起的新生成任务上。
-  const sessionActiveRunId = isRunActive(sessionRunStatus) ? session?.step5RunId || null : null;
-  const effectiveRunId = activeRunId || sessionActiveRunId;
+  const sessionActiveRunId = isActiveStep5RunStatus(sessionRunStatus) ? session?.step5RunId || null : null;
+  const effectiveRunId = resolveCurrentStep5RunId({
+    activeRunId,
+    sessionRunId: sessionActiveRunId,
+    sessionRunStatus,
+  });
   const step5RunQuery = trpc.imageWorkflow.getStep5Run.useQuery(
     { projectId, runId: effectiveRunId || undefined },
     {
@@ -581,7 +585,7 @@ function Step5FinalSuggestions({
       refetchInterval: (query) => {
         const data = query.state.data as any;
         const status = data?.status || sessionRunStatus;
-        return isRunActive(status) ? 2000 : false;
+        return isActiveStep5RunStatus(status) ? 2000 : false;
       },
     }
   );
@@ -591,7 +595,7 @@ function Step5FinalSuggestions({
   const runAttempt = Number(currentRun?.attempt || 0);
   const runMaxAttempts = Number(currentRun?.maxAttempts || 0);
   const runError = currentRun?.error || session?.step5RunError || null;
-  const isGenerating = generateMutation.isPending || isRunActive(runStatus);
+  const isGenerating = generateMutation.isPending || isActiveStep5RunStatus(runStatus);
 
   // Amazon Premium A+ Module Types - comprehensive list matching backend prompt
   const APLUS_MODULES = [
@@ -771,7 +775,7 @@ function Step5FinalSuggestions({
   const handleGenerate = async () => {
     try {
       // 从失败记录重新生成时先脱离旧run查询，避免旧失败快照继续占用展示状态。
-      if (!isRunActive(sessionRunStatus)) setActiveRunId(null);
+      if (!isActiveStep5RunStatus(sessionRunStatus)) setActiveRunId(null);
       const result = await generateMutation.mutateAsync({ projectId });
       if (result.runId) setActiveRunId(result.runId);
       if (result.status === "succeeded") {
