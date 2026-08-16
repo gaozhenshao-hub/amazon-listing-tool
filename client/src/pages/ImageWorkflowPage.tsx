@@ -119,8 +119,16 @@ function normalizeFinalImageSuggestions(data: any) {
     if (typeof v === 'object') return JSON.stringify(v);
     return String(v);
   }
+  const rawSections = Array.isArray(data?.aPlusContent?.sections) ? data.aPlusContent.sections : [];
+  const embeddedBrandStory = rawSections.find((section: any) => /品牌故事|brand story/i.test(safeStr(section?.title)));
+  const canonicalSections = rawSections
+    .filter((section: any) => section !== embeddedBrandStory)
+    .slice(0, 7)
+    .map((section: any, index: number) => ({ ...section, moduleNumber: index + 1 }));
+  const normalizedBrandStory = data.brandStory || embeddedBrandStory;
   return {
     ...data,
+    ...(normalizedBrandStory ? { brandStory: normalizedBrandStory } : {}),
     // Normalize designGuidelines: map AI field names to frontend expected names
     designGuidelines: data.designGuidelines ? {
       ...data.designGuidelines,
@@ -132,6 +140,7 @@ function normalizeFinalImageSuggestions(data: any) {
     // Normalize aPlusContent: map AI field names to frontend expected names
     aPlusContent: data.aPlusContent ? {
       ...data.aPlusContent,
+      sections: canonicalSections,
       overallStrategy: safeStr(data.aPlusContent.overallStrategy || data.aPlusContent.strategy || ""),
       overallStory: safeStr(data.aPlusContent.overallStory || data.aPlusContent.story || ""),
       consistency: safeStr(data.aPlusContent.consistency || ""),
