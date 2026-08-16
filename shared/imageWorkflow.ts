@@ -369,7 +369,7 @@ export function normalizeStep4References(value: Record<string, any> | null | und
     if (/品牌故事/.test(rawType)) {
       return { ...normalized, imageType: "品牌故事", imageNumber: 0, isBrandStory: true };
     }
-    const match = rawType.match(/^A\+模块\s*(\d+)(?:\.(\d+))?/);
+    const match = rawType.match(/^A\+模块\s*#?\s*(\d+)(?:\.(\d+))?/);
     if (!match) return normalized;
     const rawParent = match[1];
     if (!parentNumberMap.has(rawParent)) parentNumberMap.set(rawParent, nextParentNumber++);
@@ -378,7 +378,8 @@ export function normalizeStep4References(value: Record<string, any> | null | und
     return {
       ...normalized,
       imageType: child ? `A+模块 ${parent}.${child}` : `A+模块 ${parent}`,
-      imageNumber: parent,
+      // A+编号已包含在imageType中；历史imageNumber会额外渲染“#13/#1”，因此清空。
+      imageNumber: 0,
       parentModuleNumber: parent,
     };
   };
