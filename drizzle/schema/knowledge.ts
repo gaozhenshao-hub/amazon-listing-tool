@@ -49,6 +49,7 @@ export type InsertRemoteUsageSnapshot = typeof remoteUsageSnapshots.$inferInsert
 export const kbProductInnovations = mysqlTable("kb_product_innovations", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
+  workspaceId: int("workspaceId").notNull(),
   asin: varchar("asin", { length: 20 }).notNull(),
   productUrl: varchar("productUrl", { length: 1024 }),
   productTitle: varchar("productTitle", { length: 512 }),
@@ -90,6 +91,7 @@ export type InsertKbProductInnovation = typeof kbProductInnovations.$inferInsert
 export const kbListingCopywriting = mysqlTable("kb_listing_copywriting", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
+  workspaceId: int("workspaceId").notNull(),
   asin: varchar("asin", { length: 20 }).notNull(),
   productTitle: varchar("productTitle", { length: 512 }),
   category: varchar("category", { length: 128 }),
@@ -129,6 +131,7 @@ export type InsertKbListingCopywriting = typeof kbListingCopywriting.$inferInser
 export const kbOperationSkills = mysqlTable("kb_operation_skills", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
+  workspaceId: int("workspaceId").notNull(),
   title: varchar("title", { length: 256 }).notNull(),
   sourceType: mysqlEnum("sourceType", [
     "upload_pdf", "upload_word", "upload_excel", "upload_ppt",
@@ -170,6 +173,7 @@ export type InsertKbOperationSkill = typeof kbOperationSkills.$inferInsert;
 export const kbVideos = mysqlTable("kb_videos", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
+  workspaceId: int("workspaceId").notNull(),
   asin: varchar("asin", { length: 20 }),
   videoUrl: varchar("videoUrl", { length: 1024 }).notNull(),
   videoTitle: varchar("videoTitle", { length: 512 }),

@@ -4,6 +4,7 @@ import { bigint, boolean, decimal, int, json, mysqlEnum, mysqlTable, text, times
 export const kbImageSets = mysqlTable("kb_image_sets", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
+  workspaceId: int("workspaceId").notNull(),
   asin: varchar("asin", { length: 20 }).notNull(),
   productTitle: varchar("productTitle", { length: 512 }),
   category: varchar("category", { length: 128 }),

@@ -1,23 +1,26 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { resourceConflictError } from "@shared/_core/errors";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router } from "../_core/trpc";
+import { workspaceScopedProcedure } from "../domains/ai_os/workspaceScopedProcedure";
 import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct } from "../scraper";
 import { getScraperConfig } from "./systemSettings";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 
+const protectedProcedure = workspaceScopedProcedure("knowledge");
+
 export const kbListingsRouter = router({
   list: protectedProcedure
     .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
     .query(async ({ ctx, input }) => {
-    return kbDb.listListingCopywriting(ctx.user.id, input?.scope ?? "mine");
+    return kbDb.listListingCopywriting(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
   }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      return kbDb.getListingCopywriting(input.id, ctx.user.id);
+      return kbDb.getListingCopywriting(input.id, ctx.user.id, ctx.workspaceId!);
     }),
 
   importByAsin: protectedProcedure
@@ -25,16 +28,16 @@ export const kbListingsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const asin = input.asin.trim().toUpperCase();
       // ASIN dedup: prevent duplicate entries
-      const dupListing = await kbDb.findListingCopywritingByAsin(asin);
+      const dupListing = await kbDb.findListingCopywritingByAsin(asin, ctx.workspaceId!);
       if (dupListing) {
         throw resourceConflictError(`ASIN ${asin} 已存在于 Listing 知识库中`, { existingId: dupListing.id, resource: "kb_listing", asin });
       }
-      const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, asin, status: "crawling" });
+      const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, workspaceId: ctx.workspaceId!, asin, status: "crawling" });
       (async () => {
         try {
           const scraperCfg = await getScraperConfig();
           const data = await scrapeAmazonProduct(asin, scraperCfg);
-          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, {
+          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, {
             productTitle: data.title, brand: data.brand, category: data.category,
             titleText: data.title,
             bulletPoints: JSON.stringify(data.bulletPoints),
@@ -77,12 +80,12 @@ export const kbListingsRouter = router({
           });
           const analysis = String(response.choices?.[0]?.message?.content || "{}");
           const parsed = JSON.parse(analysis);
-          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, {
+          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, {
             aiAnalysis: analysis, overallScore: parsed.overallScore ?? 70, status: "pending_review",
           });
         } catch (err: any) {
           console.error("[KB Listings] Import failed:", err.message);
-          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, { status: "archived" });
+          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
               }
       })();
       return { id: Number(id), asin };
@@ -96,18 +99,18 @@ export const kbListingsRouter = router({
         const asin = raw.trim().toUpperCase();
         if (!asin) continue;
         // ASIN dedup: skip if already exists
-        const dupListing = await kbDb.findListingCopywritingByAsin(asin);
+        const dupListing = await kbDb.findListingCopywritingByAsin(asin, ctx.workspaceId!);
         if (dupListing) {
           results.push({ asin, id: dupListing.id });
           continue;
         }
-        const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, asin, status: "crawling" });
+        const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, workspaceId: ctx.workspaceId!, asin, status: "crawling" });
         results.push({ asin, id: Number(id) });
         (async () => {
           try {
             const scraperCfg = await getScraperConfig();
           const data = await scrapeAmazonProduct(asin, scraperCfg);
-            await kbDb.updateListingCopywriting(Number(id), ctx.user.id, {
+            await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, {
               productTitle: data.title, brand: data.brand, category: data.category,
               titleText: data.title, bulletPoints: JSON.stringify(data.bulletPoints),
               longDescription: data.description, crawledData: JSON.stringify(data), status: "analyzing",
@@ -127,12 +130,12 @@ export const kbListingsRouter = router({
             });
             const analysis = String(response.choices?.[0]?.message?.content || "{}");
             const parsed = JSON.parse(analysis);
-            await kbDb.updateListingCopywriting(Number(id), ctx.user.id, {
+            await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, {
               aiAnalysis: analysis, overallScore: parsed.overallScore ?? 70, status: "pending_review",
             });
           } catch (err: any) {
             console.error(`[KB Listings] Batch import failed for ${asin}:`, err.message);
-            await kbDb.updateListingCopywriting(Number(id), ctx.user.id, { status: "archived" });
+            await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
                 }
         })();
       }
@@ -146,16 +149,16 @@ export const kbListingsRouter = router({
       const asin = asinMatch?.[1]?.toUpperCase() || "";
       if (!asin) throw new Error("无法从链接中提取ASIN");
       // ASIN dedup: prevent duplicate entries
-      const dupListing = await kbDb.findListingCopywritingByAsin(asin);
+      const dupListing = await kbDb.findListingCopywritingByAsin(asin, ctx.workspaceId!);
       if (dupListing) {
         throw resourceConflictError(`ASIN ${asin} 已存在于 Listing 知识库中`, { existingId: dupListing.id, resource: "kb_listing", asin });
       }
-      const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, asin, status: "crawling" });
+      const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, workspaceId: ctx.workspaceId!, asin, status: "crawling" });
       (async () => {
         try {
           const scraperCfg = await getScraperConfig();
           const data = await scrapeAmazonProduct(asin, scraperCfg);
-          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, {
+          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, {
             productTitle: data.title, brand: data.brand, category: data.category,
             titleText: data.title, bulletPoints: JSON.stringify(data.bulletPoints),
             longDescription: data.description, crawledData: JSON.stringify(data), status: "analyzing",
@@ -175,12 +178,12 @@ export const kbListingsRouter = router({
           });
           const analysis = String(response.choices?.[0]?.message?.content || "{}");
           const parsed = JSON.parse(analysis);
-          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, {
+          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, {
             aiAnalysis: analysis, overallScore: parsed.overallScore ?? 70, status: "pending_review",
           });
         } catch (err: any) {
           console.error("[KB Listings] Link import failed:", err.message);
-          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, { status: "archived" });
+          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
               }
       })();
       return { id: Number(id), asin };
@@ -191,28 +194,28 @@ export const kbListingsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const update: any = { status: "confirmed" as const, confirmedAt: new Date() };
       if (input.editedAnalysis) update.userEditedAnalysis = input.editedAnalysis;
-      await kbDb.updateListingCopywriting(input.id, ctx.user.id, update);
+      await kbDb.updateListingCopywriting(input.id, ctx.user.id, ctx.workspaceId!, update);
       return { success: true };
     }),
 
   updateTags: protectedProcedure
     .input(z.object({ id: z.number(), tags: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      await kbDb.updateListingCopywriting(input.id, ctx.user.id, { tags: input.tags });
+      await kbDb.updateListingCopywriting(input.id, ctx.user.id, ctx.workspaceId!, { tags: input.tags });
       return { success: true };
     }),
 
   updateScore: protectedProcedure
     .input(z.object({ id: z.number(), score: z.number().min(1).max(100) }))
     .mutation(async ({ ctx, input }) => {
-      await kbDb.updateListingCopywriting(input.id, ctx.user.id, { overallScore: input.score });
+      await kbDb.updateListingCopywriting(input.id, ctx.user.id, ctx.workspaceId!, { overallScore: input.score });
       return { success: true };
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await kbDb.deleteListingCopywriting(input.id, ctx.user.id);
+      await kbDb.deleteListingCopywriting(input.id, ctx.user.id, ctx.workspaceId!);
       return { success: true };
     }),
 });

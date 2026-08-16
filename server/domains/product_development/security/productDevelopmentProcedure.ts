@@ -13,10 +13,10 @@ import {
 } from "../../../../drizzle/schema";
 import { getDb } from "../../../repositories/dbClient";
 import { resolveDevProjectAccess } from "./productDevelopmentAccess";
+import { workspaceScopedProcedure } from "../../ai_os/workspaceScopedProcedure";
 import {
   actorFromContext,
   assertResourceAction,
-  recordSecurityAuditLog,
   type SecurityAction,
   workspaceIdFromContext,
 } from "../../../services/securityGovernance";
@@ -98,7 +98,7 @@ export function productDevelopmentActionFromProcedure(
 
 // Scope direct project IDs and recognized child records before a resolver can
 // read or mutate product-development data.
-export const protectedProcedure = baseProtectedProcedure.use(async ({ ctx, next, path, type, getRawInput }) => {
+export const protectedProcedure = workspaceScopedProcedure("product_development").use(async ({ ctx, next, path, type, getRawInput }) => {
   const input = await getRawInput();
   const action = productDevelopmentActionFromProcedure(path, type);
   let projectId = projectIdFromInput(input);
@@ -122,37 +122,5 @@ export const protectedProcedure = baseProtectedProcedure.use(async ({ ctx, next,
       workspaceId: workspaceIdFromContext(ctx),
     });
   }
-  try {
-    const result = await next();
-    if (type === "mutation") {
-      void recordSecurityAuditLog({
-        ctx,
-        workspaceId: workspaceIdFromContext(ctx),
-        projectId,
-        action: `product_development.${action}`,
-        resourceType: "product_development",
-        resourceId: projectId,
-        status: "success",
-        riskLevel: ["delete", "confirm", "import", "upload"].includes(action) ? "high" : "medium",
-        metadata: { path },
-      });
-    }
-    return result;
-  } catch (error) {
-    if (type === "mutation") {
-      void recordSecurityAuditLog({
-        ctx,
-        workspaceId: workspaceIdFromContext(ctx),
-        projectId,
-        action: `product_development.${action}`,
-        resourceType: "product_development",
-        resourceId: projectId,
-        status: "failed",
-        riskLevel: ["delete", "confirm", "import", "upload"].includes(action) ? "high" : "medium",
-        reason: error instanceof Error ? error.message : String(error),
-        metadata: { path },
-      });
-    }
-    throw error;
-  }
+  return next();
 });

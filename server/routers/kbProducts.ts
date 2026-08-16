@@ -1,23 +1,26 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { resourceConflictError } from "@shared/_core/errors";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router } from "../_core/trpc";
+import { workspaceScopedProcedure } from "../domains/ai_os/workspaceScopedProcedure";
 import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct } from "../scraper";
 import { getScraperConfig } from "./systemSettings";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 
+const protectedProcedure = workspaceScopedProcedure("knowledge");
+
 export const kbProductsRouter = router({
   list: protectedProcedure
     .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
     .query(async ({ ctx, input }) => {
-    return kbDb.listProductInnovations(ctx.user.id, input?.scope ?? "mine");
+    return kbDb.listProductInnovations(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
   }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      return kbDb.getProductInnovation(input.id, ctx.user.id);
+      return kbDb.getProductInnovation(input.id, ctx.user.id, ctx.workspaceId!);
     }),
 
   // Import by ASIN - single
@@ -26,12 +29,13 @@ export const kbProductsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const asin = input.asin.trim().toUpperCase();
       // ASIN dedup: prevent duplicate entries
-      const dupProduct = await kbDb.findProductInnovationByAsin(asin);
+      const dupProduct = await kbDb.findProductInnovationByAsin(asin, ctx.workspaceId!);
       if (dupProduct) {
         throw resourceConflictError(`ASIN ${asin} 已存在于产品知识库中`, { existingId: dupProduct.id, resource: "kb_product", asin });
       }
       const id = await kbDb.createProductInnovation({
         userId: ctx.user.id,
+        workspaceId: ctx.workspaceId!,
         asin,
         status: "crawling",
       });
@@ -40,7 +44,7 @@ export const kbProductsRouter = router({
         try {
           const scraperCfg = await getScraperConfig();
           const data = await scrapeAmazonProduct(asin, scraperCfg);
-          await kbDb.updateProductInnovation(Number(id), ctx.user.id, {
+          await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, {
             productTitle: data.title,
             brand: data.brand,
             price: data.price,
@@ -95,14 +99,14 @@ export const kbProductsRouter = router({
           });
           const analysis = String(response.choices?.[0]?.message?.content || "{}");
           const parsed = JSON.parse(analysis);
-          await kbDb.updateProductInnovation(Number(id), ctx.user.id, {
+          await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, {
             aiAnalysis: analysis,
             overallScore: parsed.overallScore ?? 7,
             status: "pending_review",
           });
         } catch (err: any) {
           console.error("[KB Products] Import failed:", err.message);
-          await kbDb.updateProductInnovation(Number(id), ctx.user.id, { status: "archived" });
+          await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
               }
       })();
       return { id: Number(id), asin };
@@ -117,13 +121,14 @@ export const kbProductsRouter = router({
         const asin = raw.trim().toUpperCase();
         if (!asin) continue;
         // ASIN dedup: skip if already exists
-        const dupProduct = await kbDb.findProductInnovationByAsin(asin);
+        const dupProduct = await kbDb.findProductInnovationByAsin(asin, ctx.workspaceId!);
         if (dupProduct) {
           results.push({ asin, id: dupProduct.id });
           continue;
         }
         const id = await kbDb.createProductInnovation({
           userId: ctx.user.id,
+          workspaceId: ctx.workspaceId!,
           asin,
           status: "crawling",
         });
@@ -133,7 +138,7 @@ export const kbProductsRouter = router({
           try {
             const scraperCfg = await getScraperConfig();
           const data = await scrapeAmazonProduct(asin, scraperCfg);
-            await kbDb.updateProductInnovation(Number(id), ctx.user.id, {
+            await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, {
               productTitle: data.title, brand: data.brand, price: data.price,
               rating: data.rating, reviewCount: data.reviewCount, category: data.category,
               bulletPoints: JSON.stringify(data.bulletPoints), imageUrls: JSON.stringify(data.imageUrls),
@@ -155,12 +160,12 @@ export const kbProductsRouter = router({
             });
             const analysis = String(response.choices?.[0]?.message?.content || "{}");
             const parsed = JSON.parse(analysis);
-            await kbDb.updateProductInnovation(Number(id), ctx.user.id, {
+            await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, {
               aiAnalysis: analysis, overallScore: parsed.overallScore ?? 7, status: "pending_review",
             });
           } catch (err: any) {
             console.error(`[KB Products] Batch import failed for ${asin}:`, err.message);
-            await kbDb.updateProductInnovation(Number(id), ctx.user.id, { status: "archived" });
+            await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
                 }
         })();
       }
@@ -176,19 +181,19 @@ export const kbProductsRouter = router({
       const asin = asinMatch?.[1]?.toUpperCase() || "";
       if (!asin) throw new Error("无法从链接中提取ASIN，请检查链接格式");
       // ASIN dedup: prevent duplicate entries
-      const dupProduct = await kbDb.findProductInnovationByAsin(asin);
+      const dupProduct = await kbDb.findProductInnovationByAsin(asin, ctx.workspaceId!);
       if (dupProduct) {
         throw resourceConflictError(`ASIN ${asin} 已存在于产品知识库中`, { existingId: dupProduct.id, resource: "kb_product", asin });
       }
       const id = await kbDb.createProductInnovation({
-        userId: ctx.user.id, asin, productUrl: input.url, status: "crawling",
+        userId: ctx.user.id, workspaceId: ctx.workspaceId!, asin, productUrl: input.url, status: "crawling",
       });
       // Same async flow as importByAsin
       (async () => {
         try {
           const scraperCfg = await getScraperConfig();
           const data = await scrapeAmazonProduct(asin, scraperCfg);
-          await kbDb.updateProductInnovation(Number(id), ctx.user.id, {
+          await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, {
             productTitle: data.title, brand: data.brand, price: data.price,
             rating: data.rating, reviewCount: data.reviewCount, category: data.category,
             bulletPoints: JSON.stringify(data.bulletPoints), imageUrls: JSON.stringify(data.imageUrls),
@@ -209,12 +214,12 @@ export const kbProductsRouter = router({
           });
           const analysis = String(response.choices?.[0]?.message?.content || "{}");
           const parsed = JSON.parse(analysis);
-          await kbDb.updateProductInnovation(Number(id), ctx.user.id, {
+          await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, {
             aiAnalysis: analysis, overallScore: parsed.overallScore ?? 7, status: "pending_review",
           });
         } catch (err: any) {
           console.error("[KB Products] Link import failed:", err.message);
-          await kbDb.updateProductInnovation(Number(id), ctx.user.id, { status: "archived" });
+          await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
               }
       })();
       return { id: Number(id), asin };
@@ -226,7 +231,7 @@ export const kbProductsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const update: any = { status: "confirmed" as const, confirmedAt: new Date() };
       if (input.editedAnalysis) update.userEditedAnalysis = input.editedAnalysis;
-      await kbDb.updateProductInnovation(input.id, ctx.user.id, update);
+      await kbDb.updateProductInnovation(input.id, ctx.user.id, ctx.workspaceId!, update);
       return { success: true };
     }),
 
@@ -234,21 +239,21 @@ export const kbProductsRouter = router({
   updateTags: protectedProcedure
     .input(z.object({ id: z.number(), tags: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      await kbDb.updateProductInnovation(input.id, ctx.user.id, { tags: input.tags });
+      await kbDb.updateProductInnovation(input.id, ctx.user.id, ctx.workspaceId!, { tags: input.tags });
       return { success: true };
     }),
 
   updateScore: protectedProcedure
     .input(z.object({ id: z.number(), score: z.number().min(1).max(10) }))
     .mutation(async ({ ctx, input }) => {
-      await kbDb.updateProductInnovation(input.id, ctx.user.id, { overallScore: input.score });
+      await kbDb.updateProductInnovation(input.id, ctx.user.id, ctx.workspaceId!, { overallScore: input.score });
       return { success: true };
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await kbDb.deleteProductInnovation(input.id, ctx.user.id);
+      await kbDb.deleteProductInnovation(input.id, ctx.user.id, ctx.workspaceId!);
       return { success: true };
     }),
 });

@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 import { currentOpsWorkspaceId } from "../../server/domains/ops/workspaceContext";
 
 // ═══════════════════════════════════════════════════════════════════════

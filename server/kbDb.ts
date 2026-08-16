@@ -20,35 +20,36 @@ import {
 // ═══════════════════════════════════════════════════
 type Scope = "mine" | "shared" | "all";
 
-function scopeCondition(table: any, userId: number, scope: Scope) {
-  if (scope === "mine") return eq(table.userId, userId);
-  if (scope === "shared") return eq(table.status, "confirmed");
-  // "all" — admin: show everything
-  return sql`1=1`;
+function scopeCondition(table: any, userId: number, workspaceId: number, scope: Scope) {
+  const workspace = eq(table.workspaceId, workspaceId);
+  if (scope === "mine") return and(workspace, eq(table.userId, userId));
+  if (scope === "shared") return and(workspace, eq(table.status, "confirmed"));
+  // "all" is reserved for callers whose route authorization has already been verified.
+  return workspace;
 }
 
 // ═══════════════════════════════════════════════════
 // ─── Product Innovations ──────────────────────────
 // ═══════════════════════════════════════════════════
-export async function listProductInnovations(userId: number, scope: Scope = "mine") {
+export async function listProductInnovations(userId: number, workspaceId: number, scope: Scope = "mine") {
   const _d = await db();
-  return _d.select().from(kbProductInnovations).where(scopeCondition(kbProductInnovations, userId, scope)).orderBy(desc(kbProductInnovations.updatedAt));
+  return _d.select().from(kbProductInnovations).where(scopeCondition(kbProductInnovations, userId, workspaceId, scope)).orderBy(desc(kbProductInnovations.updatedAt));
 }
-export async function getProductInnovation(id: number, userId: number) {
+export async function getProductInnovation(id: number, userId: number, workspaceId: number) {
   const _d = await db();
-  const rows = await _d.select().from(kbProductInnovations).where(and(eq(kbProductInnovations.id, id), eq(kbProductInnovations.userId, userId)));
+  const rows = await _d.select().from(kbProductInnovations).where(and(eq(kbProductInnovations.id, id), eq(kbProductInnovations.userId, userId), eq(kbProductInnovations.workspaceId, workspaceId)));
   return rows[0] ?? null;
 }
-export async function getProductInnovationById(id: number) {
+export async function getProductInnovationById(id: number, workspaceId: number) {
   const _d = await db();
-  const rows = await _d.select().from(kbProductInnovations).where(eq(kbProductInnovations.id, id));
+  const rows = await _d.select().from(kbProductInnovations).where(and(eq(kbProductInnovations.id, id), eq(kbProductInnovations.workspaceId, workspaceId)));
   return rows[0] ?? null;
 }
-export async function findProductInnovationByAsin(asin: string) {
+export async function findProductInnovationByAsin(asin: string, workspaceId: number) {
   const _d = await db();
   const rows = await _d.select({ id: kbProductInnovations.id })
     .from(kbProductInnovations)
-    .where(eq(kbProductInnovations.asin, asin))
+    .where(and(eq(kbProductInnovations.asin, asin), eq(kbProductInnovations.workspaceId, workspaceId)))
     .limit(1);
   return rows[0] ?? null;
 }
@@ -57,37 +58,37 @@ export async function createProductInnovation(data: InsertKbProductInnovation) {
   const [result] = await _d.insert(kbProductInnovations).values(data);
   return result.insertId;
 }
-export async function updateProductInnovation(id: number, userId: number, data: Partial<InsertKbProductInnovation>) {
+export async function updateProductInnovation(id: number, userId: number, workspaceId: number, data: Partial<InsertKbProductInnovation>) {
   const _d = await db();
-  await _d.update(kbProductInnovations).set(data).where(and(eq(kbProductInnovations.id, id), eq(kbProductInnovations.userId, userId)));
+  await _d.update(kbProductInnovations).set(data).where(and(eq(kbProductInnovations.id, id), eq(kbProductInnovations.userId, userId), eq(kbProductInnovations.workspaceId, workspaceId)));
 }
-export async function deleteProductInnovation(id: number, userId: number) {
+export async function deleteProductInnovation(id: number, userId: number, workspaceId: number) {
   const _d = await db();
-  await _d.delete(kbProductInnovations).where(and(eq(kbProductInnovations.id, id), eq(kbProductInnovations.userId, userId)));
+  await _d.delete(kbProductInnovations).where(and(eq(kbProductInnovations.id, id), eq(kbProductInnovations.userId, userId), eq(kbProductInnovations.workspaceId, workspaceId)));
 }
 
 // ═══════════════════════════════════════════════════
 // ─── Listing Copywriting ──────────────────────────
 // ═══════════════════════════════════════════════════
-export async function listListingCopywriting(userId: number, scope: Scope = "mine") {
+export async function listListingCopywriting(userId: number, workspaceId: number, scope: Scope = "mine") {
   const _d = await db();
-  return _d.select().from(kbListingCopywriting).where(scopeCondition(kbListingCopywriting, userId, scope)).orderBy(desc(kbListingCopywriting.updatedAt));
+  return _d.select().from(kbListingCopywriting).where(scopeCondition(kbListingCopywriting, userId, workspaceId, scope)).orderBy(desc(kbListingCopywriting.updatedAt));
 }
-export async function getListingCopywriting(id: number, userId: number) {
+export async function getListingCopywriting(id: number, userId: number, workspaceId: number) {
   const _d = await db();
-  const rows = await _d.select().from(kbListingCopywriting).where(and(eq(kbListingCopywriting.id, id), eq(kbListingCopywriting.userId, userId)));
+  const rows = await _d.select().from(kbListingCopywriting).where(and(eq(kbListingCopywriting.id, id), eq(kbListingCopywriting.userId, userId), eq(kbListingCopywriting.workspaceId, workspaceId)));
   return rows[0] ?? null;
 }
-export async function getListingCopywritingById(id: number) {
+export async function getListingCopywritingById(id: number, workspaceId: number) {
   const _d = await db();
-  const rows = await _d.select().from(kbListingCopywriting).where(eq(kbListingCopywriting.id, id));
+  const rows = await _d.select().from(kbListingCopywriting).where(and(eq(kbListingCopywriting.id, id), eq(kbListingCopywriting.workspaceId, workspaceId)));
   return rows[0] ?? null;
 }
-export async function findListingCopywritingByAsin(asin: string) {
+export async function findListingCopywritingByAsin(asin: string, workspaceId: number) {
   const _d = await db();
   const rows = await _d.select({ id: kbListingCopywriting.id })
     .from(kbListingCopywriting)
-    .where(eq(kbListingCopywriting.asin, asin))
+    .where(and(eq(kbListingCopywriting.asin, asin), eq(kbListingCopywriting.workspaceId, workspaceId)))
     .limit(1);
   return rows[0] ?? null;
 }
@@ -96,13 +97,13 @@ export async function createListingCopywriting(data: InsertKbListingCopywriting)
   const [result] = await _d.insert(kbListingCopywriting).values(data);
   return result.insertId;
 }
-export async function updateListingCopywriting(id: number, userId: number, data: Partial<InsertKbListingCopywriting>) {
+export async function updateListingCopywriting(id: number, userId: number, workspaceId: number, data: Partial<InsertKbListingCopywriting>) {
   const _d = await db();
-  await _d.update(kbListingCopywriting).set(data).where(and(eq(kbListingCopywriting.id, id), eq(kbListingCopywriting.userId, userId)));
+  await _d.update(kbListingCopywriting).set(data).where(and(eq(kbListingCopywriting.id, id), eq(kbListingCopywriting.userId, userId), eq(kbListingCopywriting.workspaceId, workspaceId)));
 }
-export async function deleteListingCopywriting(id: number, userId: number) {
+export async function deleteListingCopywriting(id: number, userId: number, workspaceId: number) {
   const _d = await db();
-  await _d.delete(kbListingCopywriting).where(and(eq(kbListingCopywriting.id, id), eq(kbListingCopywriting.userId, userId)));
+  await _d.delete(kbListingCopywriting).where(and(eq(kbListingCopywriting.id, id), eq(kbListingCopywriting.userId, userId), eq(kbListingCopywriting.workspaceId, workspaceId)));
 }
 
 // ═══════════════════════════════════════════════════
