@@ -436,6 +436,77 @@ export const devProjectRouter = router({
       return { success: true };
     }),
 
+  prepareImportBatch: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      uploadedFileId: z.number().optional(),
+      fileType: z.enum(["sales", "reviews"]),
+      fileName: z.string().min(1),
+      rows: z.array(z.record(z.string(), z.unknown())).max(20000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveDevProjectAccess(input.projectId, ctx, "update");
+      const checks = input.rows.map((row, index) => {
+        const asin = typeof row.asin === "string" ? row.asin.trim() : "";
+        const hasContent = input.fileType === "sales" ? Boolean(asin) : Boolean(asin || row.content || row.title);
+        return { row: index + 1, level: hasContent ? "valid" : "error", reason: hasContent ? null : input.fileType === "sales" ? "缺少ASIN" : "缺少ASIN或评论内容" };
+      });
+      const errorRows = checks.filter((check) => check.level === "error").length;
+      const batchId = await devDb.createDevImportBatch({
+        workspaceId: project.workspaceId!, projectId: input.projectId, userId: ctx.user.id,
+        uploadedFileId: input.uploadedFileId ?? null, fileType: input.fileType, fileName: input.fileName,
+        status: errorRows ? "rejected" : "validated", totalRows: input.rows.length,
+        validRows: input.rows.length - errorRows, warningRows: 0, errorRows,
+        validationSummary: JSON.stringify({ checks, blocking: errorRows > 0 }), normalizedRows: JSON.stringify(input.rows),
+      });
+      await recordProductDevelopmentAudit({ ctx, action: "product_development.import.validate", projectId: input.projectId, resourceType: "dev_import_batch", resourceId: batchId, riskLevel: "high", metadata: { fileType: input.fileType, totalRows: input.rows.length, errorRows } });
+      return { batchId, status: errorRows ? "rejected" : "validated", totalRows: input.rows.length, validRows: input.rows.length - errorRows, errorRows, checks };
+    }),
+
+  listImportBatches: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const project = await resolveDevProjectAccess(input.projectId, ctx, "read");
+      return devDb.listDevImportBatches(project.workspaceId!, input.projectId);
+    }),
+
+  applyImportBatch: protectedProcedure
+    .input(z.object({ projectId: z.number(), batchId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveDevProjectAccess(input.projectId, ctx, "update");
+      const batch = await devDb.getDevImportBatch(input.batchId, project.workspaceId!, input.projectId);
+      if (!batch || batch.status !== "validated" || !batch.normalizedRows || !batch.fileType) throw new Error("该导入批次不可应用，请先完成无阻断错误的校验");
+      const rows = JSON.parse(batch.normalizedRows) as any[];
+      const resourceType = batch.fileType === "sales" ? "products" : "reviews" as const;
+      const beforeSnapshot = JSON.stringify(resourceType === "products" ? await devDb.getDevProductsByProject(input.projectId) : await devDb.getDevReviewsByProject(input.projectId));
+      await devDb.createDevImportApplySnapshot({ workspaceId: project.workspaceId!, projectId: input.projectId, batchId: batch.id, resourceType, beforeSnapshot });
+      await devDb.updateDevImportBatch(batch.id, { status: "applying", confirmedBy: ctx.user.id, confirmedAt: new Date() });
+      if (resourceType === "products") await devDb.upsertDevProducts(input.projectId, rows.map((row) => ({ ...row, workspaceId: project.workspaceId, projectId: input.projectId })) as any);
+      else await devDb.insertDevReviews(rows.map((row) => ({ ...row, workspaceId: project.workspaceId, projectId: input.projectId })) as any);
+      await devDb.updateDevImportBatch(batch.id, { status: "applied", appliedBy: ctx.user.id, appliedAt: new Date() });
+      await invalidatePanoramaConfirmation(input.projectId);
+      await recordProductDevelopmentAudit({ ctx, action: "product_development.import.apply", projectId: input.projectId, resourceType: "dev_import_batch", resourceId: batch.id, riskLevel: "high", metadata: { fileType: batch.fileType, rows: rows.length } });
+      return { success: true, batchId: batch.id, appliedRows: rows.length };
+    }),
+
+  rollbackImportBatch: protectedProcedure
+    .input(z.object({ projectId: z.number(), batchId: z.number(), reason: z.string().min(3).max(1000) }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveDevProjectAccess(input.projectId, ctx, "update");
+      const batch = await devDb.getDevImportBatch(input.batchId, project.workspaceId!, input.projectId);
+      if (!batch || batch.status !== "applied") throw new Error("仅已应用批次可以回滚");
+      const batches = await devDb.listDevImportBatches(project.workspaceId!, input.projectId);
+      if (batches.some((item) => item.id !== batch.id && item.status === "applied" && item.appliedAt && batch.appliedAt && item.appliedAt > batch.appliedAt)) throw new Error("已有后续批次生效，不能自动回滚以免覆盖后续决策");
+      const snapshot = await devDb.getDevImportApplySnapshot(batch.id, project.workspaceId!, input.projectId);
+      if (!snapshot || snapshot.rolledBackAt) throw new Error("未找到可用的应用前快照");
+      await devDb.restoreDevImportSnapshot({ workspaceId: project.workspaceId!, projectId: input.projectId, resourceType: snapshot.resourceType, beforeSnapshot: snapshot.beforeSnapshot });
+      await devDb.markDevImportSnapshotRolledBack(snapshot.id, ctx.user.id);
+      await devDb.updateDevImportBatch(batch.id, { status: "rolled_back", rollbackReason: input.reason, rolledBackBy: ctx.user.id, rolledBackAt: new Date() });
+      await invalidatePanoramaConfirmation(input.projectId);
+      await recordProductDevelopmentAudit({ ctx, action: "product_development.import.rollback", projectId: input.projectId, resourceType: "dev_import_batch", resourceId: batch.id, riskLevel: "high", metadata: { reason: input.reason } });
+      return { success: true, batchId: batch.id };
+    }),
+
   // Update file record with totalRows after parsing
   updateFileRows: protectedProcedure
     .input(z.object({

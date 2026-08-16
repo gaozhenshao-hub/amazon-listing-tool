@@ -237,6 +237,64 @@ export type DevUploadedFile = typeof devUploadedFiles.$inferSelect;
 
 export type InsertDevUploadedFile = typeof devUploadedFiles.$inferInsert;
 
+// 模块一表格导入批次：上传文件解析后先进入校验与人工确认，不直接生效。
+export const devImportBatches = mysqlTable("dev_import_batches", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  status: mysqlEnum("status", ["draft", "validated", "confirmed", "applying", "applied", "superseded", "rolled_back", "rejected", "failed"]).default("draft").notNull(),
+  replacesBatchId: int("replacesBatchId"),
+  snapshot: text("snapshot"),
+  uploadedFileId: int("uploadedFileId"),
+  fileType: mysqlEnum("fileType", ["sales", "reviews"]).notNull(),
+  fileName: varchar("fileName", { length: 500 }).notNull(),
+  fileHash: varchar("fileHash", { length: 128 }),
+  totalRows: int("totalRows").default(0).notNull(),
+  validRows: int("validRows").default(0).notNull(),
+  warningRows: int("warningRows").default(0).notNull(),
+  errorRows: int("errorRows").default(0).notNull(),
+  validationSummary: text("validationSummary"),
+  normalizedRows: text("normalizedRows"),
+  confirmedBy: int("confirmedBy"),
+  confirmedAt: timestamp("confirmedAt"),
+  appliedBy: int("appliedBy"),
+  appliedAt: timestamp("appliedAt"),
+  rollbackReason: text("rollbackReason"),
+  rolledBackBy: int("rolledBackBy"),
+  rolledBackAt: timestamp("rolledBackAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  workspaceProjectStatusIdx: index("idx_dev_import_batches_workspace_project_status").on(table.workspaceId, table.projectId, table.status, table.createdAt),
+  uploadedFileIdx: index("idx_dev_import_batches_uploaded_file").on(table.uploadedFileId),
+  projectStatusIdx: index("idx_dev_import_batch_project_status").on(table.projectId, table.status),
+}));
+
+export type DevImportBatch = typeof devImportBatches.$inferSelect;
+export type InsertDevImportBatch = typeof devImportBatches.$inferInsert;
+
+// 每次应用前存储业务行快照。只允许对最新且未被后续写入覆盖的快照执行恢复。
+export const devImportApplySnapshots = mysqlTable("dev_import_apply_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  projectId: int("projectId").notNull(),
+  batchId: int("batchId").notNull(),
+  resourceType: mysqlEnum("resourceType", ["products", "reviews"]).notNull(),
+  beforeSnapshot: text("beforeSnapshot").notNull(),
+  appliedAt: timestamp("appliedAt").defaultNow().notNull(),
+  rolledBackAt: timestamp("rolledBackAt"),
+  rolledBackBy: int("rolledBackBy"),
+  rollbackBlockedReason: text("rollbackBlockedReason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  batchUniqueIdx: uniqueIndex("uniq_dev_import_snapshot_batch").on(table.batchId),
+  workspaceProjectIdx: index("idx_dev_import_snapshots_workspace_project").on(table.workspaceId, table.projectId, table.appliedAt),
+}));
+
+export type DevImportApplySnapshot = typeof devImportApplySnapshots.$inferSelect;
+export type InsertDevImportApplySnapshot = typeof devImportApplySnapshots.$inferInsert;
+
 // 产品数据
 export const devProducts = mysqlTable("dev_products", {
   id: int("id").autoincrement().primaryKey(),

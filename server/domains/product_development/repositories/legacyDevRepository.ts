@@ -4,6 +4,8 @@ import {
   devProjects, InsertDevProject, DevProject,
   devProjectProgress,
   devUploadedFiles, InsertDevUploadedFile,
+  devImportBatches, InsertDevImportBatch,
+  devImportApplySnapshots, InsertDevImportApplySnapshot,
   devProducts, InsertDevProduct,
   devReviews, InsertDevReview,
   devTagDimensions, InsertDevTagDimension,
@@ -337,6 +339,85 @@ export async function getDevReviewStats(projectId: number) {
     else negative += c;
   }
   return { total, positive, neutral, negative };
+}
+
+// ─── Import batch governance ────────────────────────────────────
+
+export async function createDevImportBatch(data: InsertDevImportBatch) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(devImportBatches).values(data);
+  return Number((result as any).insertId);
+}
+
+export async function getDevImportBatch(batchId: number, workspaceId: number, projectId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(devImportBatches).where(and(
+    eq(devImportBatches.id, batchId),
+    eq(devImportBatches.workspaceId, workspaceId),
+    eq(devImportBatches.projectId, projectId),
+  )).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function listDevImportBatches(workspaceId: number, projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(devImportBatches).where(and(
+    eq(devImportBatches.workspaceId, workspaceId),
+    eq(devImportBatches.projectId, projectId),
+  )).orderBy(desc(devImportBatches.createdAt));
+}
+
+export async function updateDevImportBatch(batchId: number, data: Partial<InsertDevImportBatch>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(devImportBatches).set(data).where(eq(devImportBatches.id, batchId));
+}
+
+export async function createDevImportApplySnapshot(data: InsertDevImportApplySnapshot) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(devImportApplySnapshots).values(data);
+  return Number((result as any).insertId);
+}
+
+export async function getDevImportApplySnapshot(batchId: number, workspaceId: number, projectId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(devImportApplySnapshots).where(and(
+    eq(devImportApplySnapshots.batchId, batchId),
+    eq(devImportApplySnapshots.workspaceId, workspaceId),
+    eq(devImportApplySnapshots.projectId, projectId),
+  )).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function restoreDevImportSnapshot(params: {
+  workspaceId: number;
+  projectId: number;
+  resourceType: "products" | "reviews";
+  beforeSnapshot: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = JSON.parse(params.beforeSnapshot) as Record<string, unknown>[];
+  await db.transaction(async (tx) => {
+    if (params.resourceType === "products") {
+      await tx.delete(devProducts).where(and(eq(devProducts.workspaceId, params.workspaceId), eq(devProducts.projectId, params.projectId)));
+      if (rows.length) await tx.insert(devProducts).values(rows.map(({ id: _id, ...row }) => row as InsertDevProduct));
+      return;
+    }
+    await tx.delete(devReviews).where(and(eq(devReviews.workspaceId, params.workspaceId), eq(devReviews.projectId, params.projectId)));
+    if (rows.length) await tx.insert(devReviews).values(rows.map(({ id: _id, ...row }) => row as InsertDevReview));
+  });
+}
+
+export async function markDevImportSnapshotRolledBack(snapshotId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(devImportApplySnapshots).set({ rolledBackAt: new Date(), rolledBackBy: userId }).where(eq(devImportApplySnapshots.id, snapshotId));
 }
 
 // ─── Dev Tag Dimensions ────────────────────────────────────────

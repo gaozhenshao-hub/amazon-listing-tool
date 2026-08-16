@@ -81,6 +81,7 @@ interface UploadState {
   status: "idle" | "reading" | "parsing" | "uploading" | "saving" | "done" | "error";
   fileName?: string;
   recordCount?: number;
+  batchId?: number;
   error?: string;
 }
 
@@ -98,6 +99,16 @@ export default function DevDataUpload({ projectId, onDataUploaded, addProductReq
   const uploadFileMutation = trpc.devProject.uploadFile.useMutation();
   const saveProductsMutation = trpc.devProject.saveProducts.useMutation();
   const saveReviewsMutation = trpc.devProject.saveReviews.useMutation();
+  const prepareImportBatchMutation = trpc.devProject.prepareImportBatch.useMutation();
+  const applyImportBatchMutation = trpc.devProject.applyImportBatch.useMutation({
+    onSuccess: () => {
+      utils.devProject.getDataStatus.invalidate({ projectId });
+      utils.devProject.listImportBatches.invalidate({ projectId });
+      utils.devProject.getProducts.invalidate({ projectId });
+      toast.success("导入批次已确认应用，并已保存可受控回滚快照");
+      onDataUploaded?.();
+    },
+  });
   const updateFileRowsMutation = trpc.devProject.updateFileRows.useMutation();
   const confirmDataMutation = trpc.devProject.confirmData.useMutation({
     onSuccess: () => {
@@ -162,11 +173,17 @@ export default function DevDataUpload({ projectId, onDataUploaded, addProductReq
       updateState(fileType, { status: "saving" });
 
       if (fileType === "sales") {
-        await parseSalesData(rows);
+        const products = await parseSalesData(rows, false);
+        const batch = await prepareImportBatchMutation.mutateAsync({ projectId, uploadedFileId: uploadResult.id, fileType, fileName: file.name, rows: products });
+        if (batch.errorRows) throw new Error(`校验未通过：${batch.errorRows} 行缺少 ASIN`);
+        updateState(fileType, { batchId: batch.batchId });
       } else if (fileType === "bullet_points") {
         await parseBulletPointsData(rows);
       } else if (fileType === "reviews") {
-        await parseReviewsData(rows);
+        const reviews = await parseReviewsData(rows, false);
+        const batch = await prepareImportBatchMutation.mutateAsync({ projectId, uploadedFileId: uploadResult.id, fileType, fileName: file.name, rows: reviews });
+        if (batch.errorRows) throw new Error(`校验未通过：${batch.errorRows} 行缺少 ASIN 或评论内容`);
+        updateState(fileType, { batchId: batch.batchId });
       } else if (fileType === "history_sales") {
         await parseHistorySalesData(rows, workbook);
       }
@@ -188,10 +205,10 @@ export default function DevDataUpload({ projectId, onDataUploaded, addProductReq
       updateState(fileType, { status: "error", error: err.message || "解析失败" });
       toast.error(`解析失败: ${err.message}`);
     }
-  }, [projectId, uploadFileMutation, saveProductsMutation, saveReviewsMutation, utils, onDataUploaded, updateState]);
+  }, [projectId, uploadFileMutation, saveProductsMutation, saveReviewsMutation, prepareImportBatchMutation, utils, onDataUploaded, updateState]);
 
   // ─── Parse Sales Data (Search results) ───
-  const parseSalesData = async (rows: any[]) => {
+  const parseSalesData = async (rows: any[], persist = true) => {
     const products = rows.map((r: any) => {
       const asin = r["ASIN"] || r["asin"] || "";
       if (!asin) return null;
@@ -260,11 +277,12 @@ export default function DevDataUpload({ projectId, onDataUploaded, addProductReq
         packageSizeTier: pick("包装尺寸分段", "Size Tier", "Package Size Tier"),
       };
     }).filter(Boolean) as any[];
-    if (products.length > 0) {
+    if (persist && products.length > 0) {
       for (let i = 0; i < products.length; i += 50) {
         await saveProductsMutation.mutateAsync({ projectId, products: products.slice(i, i + 50) });
       }
     }
+    return products;
   };
 
   const handleSupplementUpload = async (file: File) => {
@@ -334,7 +352,7 @@ export default function DevDataUpload({ projectId, onDataUploaded, addProductReq
   };
 
   // ─── Parse Reviews Data ───
-  const parseReviewsData = async (rows: any[]) => {
+  const parseReviewsData = async (rows: any[], persist = true) => {
     const reviews = rows.map((r: any) => ({
       asin: r["ASIN"] || r["asin"] || "",
       title: r["标题"] || r["Title"] || r["Review Title"] || "",
@@ -345,11 +363,12 @@ export default function DevDataUpload({ projectId, onDataUploaded, addProductReq
       variant: r["变体"] || r["Variant"] || r["Size"] || r["Color"] || r["颜色"] || r["尺寸"] || "",
       helpfulCount: Number(r["有用数"] || r["Helpful"] || r["Helpful Votes"] || 0),
     })).filter((r: any) => r.content || r.title);
-    if (reviews.length > 0) {
+    if (persist && reviews.length > 0) {
       for (let i = 0; i < reviews.length; i += 100) {
         await saveReviewsMutation.mutateAsync({ projectId, reviews: reviews.slice(i, i + 100) });
       }
     }
+    return reviews;
   };
 
   // ─── Parse History Sales Data ───
@@ -637,10 +656,13 @@ export default function DevDataUpload({ projectId, onDataUploaded, addProductReq
                     <Button
                       size="sm"
                       className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
-                      onClick={() => confirmDataMutation.mutate({ projectId, fileType: ft.key })}
-                      disabled={confirmDataMutation.isPending}
+                      onClick={() => {
+                        if (state.batchId) applyImportBatchMutation.mutate({ projectId, batchId: state.batchId });
+                        else confirmDataMutation.mutate({ projectId, fileType: ft.key });
+                      }}
+                      disabled={confirmDataMutation.isPending || applyImportBatchMutation.isPending}
                     >
-                      {confirmDataMutation.isPending ? (
+                      {confirmDataMutation.isPending || applyImportBatchMutation.isPending ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
                         <CheckCircle2 className="h-3.5 w-3.5" />
