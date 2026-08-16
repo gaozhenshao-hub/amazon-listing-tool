@@ -672,6 +672,9 @@ export function buildStep5RunSnapshot(session: any) {
     status,
     progress: Number(session?.step5RunProgress || (status === "succeeded" ? 100 : 0)),
     error: session?.step5RunError || null,
+    segments: parseStoredJson(session?.step5RunSegments) || [],
+    failedGroup: session?.step5RunFailedGroup || null,
+    failedModule: session?.step5RunFailedModule || null,
     startedAt: session?.step5RunStartedAt || null,
     completedAt: session?.step5RunCompletedAt || null,
     en: parseStoredJson(session?.step5UserEdit || session?.step5OptimizedResult || session?.step5AiResult),
@@ -679,12 +682,24 @@ export function buildStep5RunSnapshot(session: any) {
   };
 }
 
+type Step5SegmentStatus = "pending" | "running" | "succeeded" | "failed" | "fallback";
+type Step5RunSegment = {
+  id: string;
+  label: string;
+  group: "main" | "secondary" | "aplus" | "brand_story" | "merge";
+  status: Step5SegmentStatus;
+  error?: string;
+};
+
 export async function buildStep5FinalSuggestion(
   project: any,
   session: any,
   userId: number,
   workspaceId?: number | null,
-  options?: { onProgress?: (progress: number) => Promise<void> | void },
+  options?: {
+    onProgress?: (progress: number) => Promise<void> | void;
+    onSegmentsChange?: (segments: Step5RunSegment[], failure?: { group: string; module?: string | null }) => Promise<void> | void;
+  },
 ) {
   const reportProgress = async (progress: number) => {
     await options?.onProgress?.(progress);
@@ -734,9 +749,36 @@ export async function buildStep5FinalSuggestion(
     ? step2Outline.aPlusModules
     : [];
   const outlineBrandStory = step2Outline?.brandStory || step2Outline?.brandStoryModule || step2Outline?.aPlusBrandStory || null;
+  let segments: Step5RunSegment[] = [
+    { id: "main", label: "主图", group: "main", status: "pending" },
+    { id: "secondary", label: "辅图 2–7", group: "secondary", status: "pending" },
+    ...outlineAplusModules.map((module: any, index: number) => ({
+      id: `aplus_${Number(module?.moduleNumber || index + 1)}`,
+      label: `A+ ${Number(module?.moduleNumber || index + 1)}`,
+      group: "aplus" as const,
+      status: "pending" as const,
+    })),
+    ...(outlineBrandStory ? [{ id: "brand_story", label: "品牌故事", group: "brand_story" as const, status: "pending" as const }] : []),
+    { id: "merge", label: "合并与保存", group: "merge", status: "pending" },
+  ];
+  const publishSegments = async (failure?: { group: string; module?: string | null }) => {
+    await options?.onSegmentsChange?.(segments, failure);
+  };
+  const setSegment = async (id: string, status: Step5SegmentStatus, error?: unknown) => {
+    segments = segments.map((segment) => segment.id === id
+      ? { ...segment, status, ...(error ? { error: serializeStep5Error(error) } : {}) }
+      : segment);
+    await publishSegments(status === "failed" ? {
+      group: segments.find((segment) => segment.id === id)?.group || "unknown",
+      module: id.startsWith("aplus_") ? id.replace("aplus_", "A+ ") : id === "brand_story" ? "品牌故事" : null,
+    } : undefined);
+  };
+  await publishSegments();
   let result: any;
   try {
     await reportProgress(30);
+    await setSegment("main", "running");
+    await setSegment("secondary", "running");
     const [mainSegment, secondarySegment] = await Promise.all([
       callImageWorkflowSkill({
         ...skillArgs,
@@ -751,6 +793,8 @@ export async function buildStep5FinalSuggestion(
         context: `${context}\n\n本次仅负责辅图#2至#7，必须输出6项secondaryImages。`,
       }),
     ]);
+    await setSegment("main", "succeeded");
+    await setSegment("secondary", "succeeded");
     await reportProgress(55);
     // A+ 7个模块与品牌故事在一个响应中会被模型截断。按模块独立调用同一皇帝Skill，
     // 保持小JSON响应，并以图片大纲的模块编号作为唯一合并顺序。
@@ -767,14 +811,25 @@ export async function buildStep5FinalSuggestion(
       }] : []),
     ];
     await reportProgress(65);
-    const aplusSegments = await Promise.all(aplusRequests.map((request) => callImageWorkflowSkill({
-      ...skillArgs,
-      skillSlug: "image.step5.aplus.segment",
-      systemPrompt: request.kind === "brand_story"
-        ? "只输出独立品牌故事的结构化JSON，保留brandStory字段；aPlusModules必须为空数组。"
-        : "只输出一个A+模块的结构化JSON，aPlusModules必须为仅含一个对象的数组。",
-      context: request.context,
-    })));
+    const aplusSegments = await Promise.all(aplusRequests.map(async (request) => {
+      const segmentId = request.kind === "brand_story" ? "brand_story" : `aplus_${request.moduleNumber}`;
+      await setSegment(segmentId, "running");
+      try {
+        const segment = await callImageWorkflowSkill({
+          ...skillArgs,
+          skillSlug: "image.step5.aplus.segment",
+          systemPrompt: request.kind === "brand_story"
+            ? "只输出独立品牌故事的结构化JSON，保留brandStory字段；aPlusModules必须为空数组。"
+            : "只输出一个A+模块的结构化JSON，aPlusModules必须为仅含一个对象的数组。",
+          context: request.context,
+        });
+        await setSegment(segmentId, "succeeded");
+        return segment;
+      } catch (error) {
+        await setSegment(segmentId, "failed", error);
+        throw error;
+      }
+    }));
     const aplusModules = aplusSegments.flatMap((segment) => getAplusModules(segment));
     const brandStory = aplusSegments.map((segment) => getBrandStory(segment)).find(Boolean) || null;
     await reportProgress(82);
@@ -801,6 +856,13 @@ export async function buildStep5FinalSuggestion(
     };
   } catch (segmentError) {
     console.warn("[Step5] 分段Skill失败，回退完整Skill", segmentError);
+    const failedSegment = segments.find((segment) => segment.status === "failed");
+    const failure = failedSegment ? {
+      group: failedSegment.group,
+      module: failedSegment.id.startsWith("aplus_") ? failedSegment.id.replace("aplus_", "A+ ") : failedSegment.id === "brand_story" ? "品牌故事" : null,
+    } : { group: "unknown", module: null };
+    segments = segments.map((segment) => segment.status === "failed" ? { ...segment, status: "fallback" } : segment);
+    await publishSegments(failure);
     await reportProgress(70);
     const completeResult = await callImageWorkflowSkill({
       skillSlug: "image.step5.final.suggestion",
@@ -824,12 +886,15 @@ export async function buildStep5FinalSuggestion(
         sections: getAplusModules(completeResult),
       },
       brandStory: getBrandStory(completeResult),
-      segmentedGeneration: { mode: "full_skill_fallback", failedGroup: "unknown" },
+      segmentedGeneration: { mode: "full_skill_fallback", failedGroup: failure.group, failedModule: failure.module },
     };
   }
+  await setSegment("merge", "running");
   await reportProgress(90);
   const step4Snapshot = parseStoredJson(session.step4UserEdit || session.step4AiResult || "{}") as Record<string, any> | null;
-  return enrichStep5AplusSubmodules({ result, outline: step2Outline, step4Snapshot });
+  const enriched = enrichStep5AplusSubmodules({ result, outline: step2Outline, step4Snapshot });
+  await setSegment("merge", "succeeded");
+  return enriched;
 }
 
 export async function persistStep5ListingAdvice(projectId: number, resultStr: string) {
@@ -893,6 +958,15 @@ export async function runStep5GenerationJob(args: {
       onProgress: async (progress) => {
         await updateIfCurrent({ step5RunProgress: progress, step5RunError: null });
         await updateAiJobProgress(runId, progress, { expectedAttempt: args.attempt });
+      },
+      onSegmentsChange: async (segments, failure) => {
+        await updateIfCurrent({
+          step5RunSegments: JSON.stringify(segments),
+          ...(failure ? {
+            step5RunFailedGroup: failure.group,
+            step5RunFailedModule: failure.module || null,
+          } : {}),
+        });
       },
     });
     if (args.signal?.aborted) throw new Error(String(args.signal.reason || "图片建议任务已取消"));

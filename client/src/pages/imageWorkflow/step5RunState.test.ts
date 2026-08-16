@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveCurrentStep5RunId } from "./step5RunState";
+import { buildStep5SegmentStates, resolveCurrentStep5RunId } from "./step5RunState";
 
 describe("Step5当前运行选择", () => {
   it("不追踪失败会话遗留的旧runId", () => {
@@ -24,5 +24,16 @@ describe("Step5当前运行选择", () => {
       sessionRunId: "old_failed_run",
       sessionRunStatus: "failed",
     })).toBe("new_run");
+  });
+
+  it("按后台阶段进度展示主图、辅图、A+、品牌故事和合并状态", () => {
+    const inAplus = Object.fromEntries(buildStep5SegmentStates(70).map((item) => [item.key, item.status]));
+    expect(inAplus).toEqual({
+      main: "complete",
+      secondary: "complete",
+      aplus: "running",
+      brand: "running",
+      merge: "pending",
+    });
   });
 });

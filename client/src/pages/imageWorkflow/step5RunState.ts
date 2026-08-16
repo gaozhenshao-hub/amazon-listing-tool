@@ -14,3 +14,20 @@ export function resolveCurrentStep5RunId(input: {
   if (input.activeRunId) return input.activeRunId;
   return isActiveStep5RunStatus(input.sessionRunStatus) ? input.sessionRunId || null : null;
 }
+
+export type Step5SegmentState = "pending" | "running" | "complete";
+
+export const STEP5_SEGMENT_PROGRESS = [
+  { key: "main", label: "主图", start: 30, complete: 55 },
+  { key: "secondary", label: "辅图 2–7", start: 30, complete: 55 },
+  { key: "aplus", label: "A+ 1–7", start: 65, complete: 82 },
+  { key: "brand", label: "品牌故事", start: 65, complete: 82 },
+  { key: "merge", label: "合并与保存", start: 90, complete: 100 },
+] as const;
+
+export function buildStep5SegmentStates(progress: number) {
+  return STEP5_SEGMENT_PROGRESS.map((segment) => ({
+    ...segment,
+    status: (progress >= segment.complete ? "complete" : progress >= segment.start ? "running" : "pending") as Step5SegmentState,
+  }));
+}

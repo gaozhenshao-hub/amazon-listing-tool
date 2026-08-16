@@ -66,7 +66,7 @@ import { Step3StyleConfirm } from "./imageWorkflow/StyleConfirmationStep";
 import { Step4References } from "./imageWorkflow/ReferenceImagesStep";
 import { OUTLINE_APLUS_CATEGORIES, OUTLINE_APLUS_MODULES, findOutlineAplusModule, normalizeAplusModuleStyle } from "./imageWorkflow/aplusModules";
 import { buildFullPlanContent, buildPdfContent, safeJsonParse } from "./imageWorkflow/exportContent";
-import { isActiveStep5RunStatus, resolveCurrentStep5RunId } from "./imageWorkflow/step5RunState";
+import { buildStep5SegmentStates, isActiveStep5RunStatus, resolveCurrentStep5RunId } from "./imageWorkflow/step5RunState";
 import { normalizeSecondaryImageSlots } from "@shared/imageWorkflow";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -596,21 +596,20 @@ function Step5FinalSuggestions({
   const runMaxAttempts = Number(currentRun?.maxAttempts || 0);
   const runError = currentRun?.error || session?.step5RunError || null;
   const isGenerating = generateMutation.isPending || isActiveStep5RunStatus(runStatus);
-  const step5Segments = [
-    { key: "main", label: "主图", start: 30, complete: 55 },
-    { key: "secondary", label: "辅图 2–7", start: 30, complete: 55 },
-    { key: "aplus", label: "A+ 1–7", start: 65, complete: 82 },
-    { key: "brand", label: "品牌故事", start: 65, complete: 82 },
-    { key: "merge", label: "合并与保存", start: 90, complete: 100 },
-  ].map((segment) => ({
-    ...segment,
-    status: runProgress >= segment.complete ? "complete" : runProgress >= segment.start ? "running" : "pending",
-  }));
-  const failedSegmentHint = /a\+|品牌故事/i.test(runError || "")
+  const persistedStep5Segments = useMemo(() => {
+    const raw = currentRun?.segments || safeJsonParse(session?.step5RunSegments || "");
+    return Array.isArray(raw) ? raw : [];
+  }, [currentRun?.segments, session?.step5RunSegments]);
+  const step5Segments = persistedStep5Segments.length > 0
+    ? persistedStep5Segments
+    : buildStep5SegmentStates(runProgress);
+  const failedGroup = currentRun?.failedGroup || session?.step5RunFailedGroup || null;
+  const failedModule = currentRun?.failedModule || session?.step5RunFailedModule || null;
+  const failedSegmentHint = failedModule || (failedGroup === "aplus" ? "A+模块" : failedGroup === "brand_story" ? "品牌故事" : failedGroup === "main" ? "主图" : failedGroup === "secondary" ? "辅图" : null) || (/a\+|品牌故事/i.test(runError || "")
     ? "A+模块或品牌故事"
     : /主图|辅图/i.test(runError || "")
       ? "主图或辅图"
-      : null;
+      : null);
 
   // Amazon Premium A+ Module Types - comprehensive list matching backend prompt
   const APLUS_MODULES = [

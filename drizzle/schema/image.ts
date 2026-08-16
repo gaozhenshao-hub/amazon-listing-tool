@@ -126,6 +126,9 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
   step5RunStatus: mysqlEnum("step5RunStatus", ["idle", "queued", "running", "succeeded", "failed", "canceled"]).default("idle").notNull(),
   step5RunProgress: int("step5RunProgress").default(0).notNull(),
   step5RunError: longtext("step5RunError"),
+  step5RunSegments: longtext("step5RunSegments"), // JSON: per-group and per-module generation state
+  step5RunFailedGroup: varchar("step5RunFailedGroup", { length: 64 }),
+  step5RunFailedModule: varchar("step5RunFailedModule", { length: 128 }),
   step5RunStartedAt: timestamp("step5RunStartedAt"),
   step5RunCompletedAt: timestamp("step5RunCompletedAt"),
 
