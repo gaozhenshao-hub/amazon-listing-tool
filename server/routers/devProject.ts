@@ -16,6 +16,7 @@ import {
   updateProjectProgress,
 } from "../domains/product_development/projects/projectListService";
 import type { ProductDevelopmentContext } from "../domains/product_development/types";
+import { buildBusinessResourceRef } from "../domains/ai_os/services/businessTraceability";
 
 async function invalidatePanoramaConfirmation(projectId: number) {
   const db = await getDb();
@@ -459,7 +460,7 @@ export const devProjectRouter = router({
         validRows: input.rows.length - errorRows, warningRows: 0, errorRows,
         validationSummary: JSON.stringify({ checks, blocking: errorRows > 0 }), normalizedRows: JSON.stringify(input.rows),
       });
-      await recordProductDevelopmentAudit({ ctx, action: "product_development.import.validate", projectId: input.projectId, resourceType: "dev_import_batch", resourceId: batchId, riskLevel: "high", metadata: { fileType: input.fileType, totalRows: input.rows.length, errorRows } });
+      await recordProductDevelopmentAudit({ ctx, action: "product_development.import.validate", projectId: input.projectId, resourceType: "dev_import_batch", resourceId: batchId, riskLevel: "high", metadata: { resourceRef: buildBusinessResourceRef({ workspaceId: project.workspaceId, domain: "project", resourceType: "import_batch", resourceId: batchId }), fileType: input.fileType, totalRows: input.rows.length, errorRows } });
       return { batchId, status: errorRows ? "rejected" : "validated", totalRows: input.rows.length, validRows: input.rows.length - errorRows, errorRows, checks };
     }),
 
@@ -485,7 +486,7 @@ export const devProjectRouter = router({
       else await devDb.insertDevReviews(rows.map((row) => ({ ...row, workspaceId: project.workspaceId, projectId: input.projectId })) as any);
       await devDb.updateDevImportBatch(batch.id, { status: "applied", appliedBy: ctx.user.id, appliedAt: new Date() });
       await invalidatePanoramaConfirmation(input.projectId);
-      await recordProductDevelopmentAudit({ ctx, action: "product_development.import.apply", projectId: input.projectId, resourceType: "dev_import_batch", resourceId: batch.id, riskLevel: "high", metadata: { fileType: batch.fileType, rows: rows.length } });
+      await recordProductDevelopmentAudit({ ctx, action: "product_development.import.apply", projectId: input.projectId, resourceType: "dev_import_batch", resourceId: batch.id, riskLevel: "high", metadata: { resourceRef: buildBusinessResourceRef({ workspaceId: project.workspaceId, domain: "project", resourceType: "import_batch", resourceId: batch.id }), fileType: batch.fileType, rows: rows.length } });
       return { success: true, batchId: batch.id, appliedRows: rows.length };
     }),
 
@@ -503,7 +504,7 @@ export const devProjectRouter = router({
       await devDb.markDevImportSnapshotRolledBack(snapshot.id, ctx.user.id);
       await devDb.updateDevImportBatch(batch.id, { status: "rolled_back", rollbackReason: input.reason, rolledBackBy: ctx.user.id, rolledBackAt: new Date() });
       await invalidatePanoramaConfirmation(input.projectId);
-      await recordProductDevelopmentAudit({ ctx, action: "product_development.import.rollback", projectId: input.projectId, resourceType: "dev_import_batch", resourceId: batch.id, riskLevel: "high", metadata: { reason: input.reason } });
+      await recordProductDevelopmentAudit({ ctx, action: "product_development.import.rollback", projectId: input.projectId, resourceType: "dev_import_batch", resourceId: batch.id, riskLevel: "high", metadata: { resourceRef: buildBusinessResourceRef({ workspaceId: project.workspaceId, domain: "project", resourceType: "import_batch", resourceId: batch.id }), reason: input.reason } });
       return { success: true, batchId: batch.id };
     }),
 
