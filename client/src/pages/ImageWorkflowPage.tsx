@@ -1076,22 +1076,30 @@ function Step5FinalSuggestions({
                 </p>
                 <div className="mt-3 grid w-full max-w-xl grid-cols-2 gap-2 text-left sm:grid-cols-5">
                   {step5Segments.map((segment) => (
-                    <div
-                      key={segment.key}
-                      className={`rounded-md border px-2 py-1.5 text-[11px] ${
-                        segment.status === "complete"
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : segment.status === "running"
-                            ? "border-primary/30 bg-primary/5 text-primary"
-                            : "border-muted bg-muted/30 text-muted-foreground"
-                      }`}
-                    >
-                      <span className="mr-1">{segment.status === "complete" ? "✓" : segment.status === "running" ? "●" : "○"}</span>
-                      {segment.label}
-                      <span className="ml-1 opacity-75">
-                        {segment.status === "complete" ? "已完成" : segment.status === "running" ? "生成中" : "待执行"}
-                      </span>
-                    </div>
+                    (() => {
+                      const status = String(segment.status || "pending");
+                      const isComplete = status === "complete" || status === "succeeded";
+                      const isFailed = status === "failed";
+                      const isFallback = status === "fallback";
+                      const label = isComplete ? "已完成" : isFailed ? "失败" : isFallback ? "已回退" : status === "running" ? "生成中" : "待执行";
+                      const icon = isComplete ? "✓" : isFailed ? "!" : isFallback ? "↳" : status === "running" ? "●" : "○";
+                      const tone = isComplete
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : isFailed
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : isFallback
+                            ? "border-amber-200 bg-amber-50 text-amber-800"
+                            : status === "running"
+                              ? "border-primary/30 bg-primary/5 text-primary"
+                              : "border-muted bg-muted/30 text-muted-foreground";
+                      return (
+                        <div key={segment.key || segment.id} className={`rounded-md border px-2 py-1.5 text-[11px] ${tone}`}>
+                          <span className="mr-1">{icon}</span>
+                          {segment.label}
+                          <span className="ml-1 opacity-75">{label}</span>
+                        </div>
+                      );
+                    })()
                   ))}
                 </div>
                 {runMaxAttempts > 0 && (
@@ -1117,7 +1125,7 @@ function Step5FinalSuggestions({
             <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               <p className="font-medium">{runStatus === "canceled" ? "任务已取消" : "图片建议生成失败"}</p>
               <p className="mt-1 text-xs">{runError || "任务未能完成，请重试"}</p>
-              {failedSegmentHint && <p className="mt-1 text-xs">失败定位：{failedSegmentHint}</p>}
+              {(failedGroup || failedSegmentHint) && <p className="mt-1 text-xs">失败分组：{failedGroup || "未识别"}{failedSegmentHint ? `；失败模块：${failedSegmentHint}` : ""}</p>}
               {runMaxAttempts > 0 && (
                 <p className="mt-1 text-xs">已执行 {runAttempt}/{runMaxAttempts} 次</p>
               )}

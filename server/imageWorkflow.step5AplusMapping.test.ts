@@ -49,4 +49,33 @@ describe("Step5 A+输出结构兼容", () => {
     expect(result.aPlusContent.sections[1]).toMatchObject({ moduleNumber: 2, purpose: "完整结果二", composition: "三栏构图", imageDescription: "场景图" });
     expect(result.brandStory).toMatchObject({ purpose: "完整Skill品牌内容", composition: "对比叙事" });
   });
+
+  it("按大纲补齐A+ 1至7及独立品牌故事的模块级内容", () => {
+    const fullOutline = {
+      aPlusModules: Array.from({ length: 7 }, (_, index) => ({
+        moduleNumber: index + 1,
+        title: `模块 ${index + 1}`,
+        purpose: `用途 ${index + 1}`,
+        contentBrief: `内容 ${index + 1}`,
+      })),
+      brandStory: { title: "品牌故事", purpose: "品牌使命", contentBrief: "品牌承诺" },
+    };
+    const result = enrichStep5AplusSubmodules({
+      result: {
+        aPlusModules: fullOutline.aPlusModules.map((module) => ({
+          ...module,
+          content: `${module.contentBrief}的模型结果`,
+          composition: "模块化构图",
+          imageDescription: "完整图片建议",
+        })),
+        brandStory: { title: "品牌故事", purpose: "品牌使命", content: "品牌承诺的模型结果", composition: "品牌叙事", imageDescription: "品牌图片建议" },
+      },
+      outline: fullOutline,
+      step4Snapshot: null,
+    });
+
+    expect(result.aPlusModules).toHaveLength(7);
+    expect(result.aPlusModules.every((module: any) => module.title && module.purpose && module.content)).toBe(true);
+    expect(result.brandStory).toMatchObject({ title: "品牌故事", purpose: "品牌使命", content: "品牌承诺的模型结果" });
+  });
 });

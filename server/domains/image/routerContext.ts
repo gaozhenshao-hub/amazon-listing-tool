@@ -26,6 +26,7 @@ import {
   resolveCurrentBusinessArtifact,
 } from "../ai_os/services/businessArtifactRegistry";
 import { enrichStep5AplusSubmodules } from "./step5AplusSubmodules";
+import { describeStep5SegmentFailure } from "./step5SegmentFailure";
 import {
   applyImageWorkflowAplusStyle,
   buildImageWorkflowReferenceTargets,
@@ -768,33 +769,37 @@ export async function buildStep5FinalSuggestion(
     segments = segments.map((segment) => segment.id === id
       ? { ...segment, status, ...(error ? { error: serializeStep5Error(error) } : {}) }
       : segment);
-    await publishSegments(status === "failed" ? {
-      group: segments.find((segment) => segment.id === id)?.group || "unknown",
-      module: id.startsWith("aplus_") ? id.replace("aplus_", "A+ ") : id === "brand_story" ? "品牌故事" : null,
-    } : undefined);
+    await publishSegments(status === "failed" ? describeStep5SegmentFailure(segments.find((segment) => segment.id === id)) : undefined);
+  };
+  const runSegment = async <T,>(id: string, action: () => Promise<T>): Promise<T> => {
+    await setSegment(id, "running");
+    try {
+      const value = await action();
+      await setSegment(id, "succeeded");
+      return value;
+    } catch (error) {
+      await setSegment(id, "failed", error);
+      throw error;
+    }
   };
   await publishSegments();
   let result: any;
   try {
     await reportProgress(30);
-    await setSegment("main", "running");
-    await setSegment("secondary", "running");
     const [mainSegment, secondarySegment] = await Promise.all([
-      callImageWorkflowSkill({
+      runSegment("main", () => callImageWorkflowSkill({
         ...skillArgs,
         skillSlug: "image.step5.main.segment",
         systemPrompt: "只输出主图建议的结构化JSON，保留mainImage与designGuidelines字段。",
         context: `${context}\n\n本次仅负责主图#1，不要输出secondaryImages或A+模块。`,
-      }),
-      callImageWorkflowSkill({
+      })),
+      runSegment("secondary", () => callImageWorkflowSkill({
         ...skillArgs,
         skillSlug: "image.step5.secondary.segment",
         systemPrompt: "只输出6张辅图建议的结构化JSON，保留secondaryImages字段。",
         context: `${context}\n\n本次仅负责辅图#2至#7，必须输出6项secondaryImages。`,
-      }),
+      })),
     ]);
-    await setSegment("main", "succeeded");
-    await setSegment("secondary", "succeeded");
     await reportProgress(55);
     // A+ 7个模块与品牌故事在一个响应中会被模型截断。按模块独立调用同一皇帝Skill，
     // 保持小JSON响应，并以图片大纲的模块编号作为唯一合并顺序。
@@ -813,22 +818,14 @@ export async function buildStep5FinalSuggestion(
     await reportProgress(65);
     const aplusSegments = await Promise.all(aplusRequests.map(async (request) => {
       const segmentId = request.kind === "brand_story" ? "brand_story" : `aplus_${request.moduleNumber}`;
-      await setSegment(segmentId, "running");
-      try {
-        const segment = await callImageWorkflowSkill({
+      return runSegment(segmentId, () => callImageWorkflowSkill({
           ...skillArgs,
           skillSlug: "image.step5.aplus.segment",
           systemPrompt: request.kind === "brand_story"
             ? "只输出独立品牌故事的结构化JSON，保留brandStory字段；aPlusModules必须为空数组。"
             : "只输出一个A+模块的结构化JSON，aPlusModules必须为仅含一个对象的数组。",
           context: request.context,
-        });
-        await setSegment(segmentId, "succeeded");
-        return segment;
-      } catch (error) {
-        await setSegment(segmentId, "failed", error);
-        throw error;
-      }
+        }));
     }));
     const aplusModules = aplusSegments.flatMap((segment) => getAplusModules(segment));
     const brandStory = aplusSegments.map((segment) => getBrandStory(segment)).find(Boolean) || null;
@@ -857,10 +854,7 @@ export async function buildStep5FinalSuggestion(
   } catch (segmentError) {
     console.warn("[Step5] 分段Skill失败，回退完整Skill", segmentError);
     const failedSegment = segments.find((segment) => segment.status === "failed");
-    const failure = failedSegment ? {
-      group: failedSegment.group,
-      module: failedSegment.id.startsWith("aplus_") ? failedSegment.id.replace("aplus_", "A+ ") : failedSegment.id === "brand_story" ? "品牌故事" : null,
-    } : { group: "unknown", module: null };
+    const failure = describeStep5SegmentFailure(failedSegment);
     segments = segments.map((segment) => segment.status === "failed" ? { ...segment, status: "fallback" } : segment);
     await publishSegments(failure);
     await reportProgress(70);
