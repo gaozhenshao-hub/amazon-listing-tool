@@ -1088,6 +1088,9 @@ function Step5FinalSuggestions({
                     >
                       <span className="mr-1">{segment.status === "complete" ? "✓" : segment.status === "running" ? "●" : "○"}</span>
                       {segment.label}
+                      <span className="ml-1 opacity-75">
+                        {segment.status === "complete" ? "已完成" : segment.status === "running" ? "生成中" : "待执行"}
+                      </span>
                     </div>
                   ))}
                 </div>
