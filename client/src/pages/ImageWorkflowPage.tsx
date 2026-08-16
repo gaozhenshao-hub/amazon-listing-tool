@@ -596,6 +596,21 @@ function Step5FinalSuggestions({
   const runMaxAttempts = Number(currentRun?.maxAttempts || 0);
   const runError = currentRun?.error || session?.step5RunError || null;
   const isGenerating = generateMutation.isPending || isActiveStep5RunStatus(runStatus);
+  const step5Segments = [
+    { key: "main", label: "主图", start: 30, complete: 55 },
+    { key: "secondary", label: "辅图 2–7", start: 30, complete: 55 },
+    { key: "aplus", label: "A+ 1–7", start: 65, complete: 82 },
+    { key: "brand", label: "品牌故事", start: 65, complete: 82 },
+    { key: "merge", label: "合并与保存", start: 90, complete: 100 },
+  ].map((segment) => ({
+    ...segment,
+    status: runProgress >= segment.complete ? "complete" : runProgress >= segment.start ? "running" : "pending",
+  }));
+  const failedSegmentHint = /a\+|品牌故事/i.test(runError || "")
+    ? "A+模块或品牌故事"
+    : /主图|辅图/i.test(runError || "")
+      ? "主图或辅图"
+      : null;
 
   // Amazon Premium A+ Module Types - comprehensive list matching backend prompt
   const APLUS_MODULES = [
@@ -1060,6 +1075,23 @@ function Step5FinalSuggestions({
                 <p className="mt-1 text-xs text-muted-foreground">
                   进度 {Math.max(5, Math.min(100, runProgress || 5))}% · 可以切换页面，回来后会自动恢复
                 </p>
+                <div className="mt-3 grid w-full max-w-xl grid-cols-2 gap-2 text-left sm:grid-cols-5">
+                  {step5Segments.map((segment) => (
+                    <div
+                      key={segment.key}
+                      className={`rounded-md border px-2 py-1.5 text-[11px] ${
+                        segment.status === "complete"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : segment.status === "running"
+                            ? "border-primary/30 bg-primary/5 text-primary"
+                            : "border-muted bg-muted/30 text-muted-foreground"
+                      }`}
+                    >
+                      <span className="mr-1">{segment.status === "complete" ? "✓" : segment.status === "running" ? "●" : "○"}</span>
+                      {segment.label}
+                    </div>
+                  ))}
+                </div>
                 {runMaxAttempts > 0 && (
                   <p className="mt-1 text-xs text-muted-foreground">
                     执行尝试 {Math.max(runAttempt, 0)}/{runMaxAttempts}
@@ -1083,6 +1115,7 @@ function Step5FinalSuggestions({
             <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               <p className="font-medium">{runStatus === "canceled" ? "任务已取消" : "图片建议生成失败"}</p>
               <p className="mt-1 text-xs">{runError || "任务未能完成，请重试"}</p>
+              {failedSegmentHint && <p className="mt-1 text-xs">失败定位：{failedSegmentHint}</p>}
               {runMaxAttempts > 0 && (
                 <p className="mt-1 text-xs">已执行 {runAttempt}/{runMaxAttempts} 次</p>
               )}

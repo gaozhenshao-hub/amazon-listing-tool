@@ -679,7 +679,16 @@ export function buildStep5RunSnapshot(session: any) {
   };
 }
 
-export async function buildStep5FinalSuggestion(project: any, session: any, userId: number, workspaceId?: number | null) {
+export async function buildStep5FinalSuggestion(
+  project: any,
+  session: any,
+  userId: number,
+  workspaceId?: number | null,
+  options?: { onProgress?: (progress: number) => Promise<void> | void },
+) {
+  const reportProgress = async (progress: number) => {
+    await options?.onProgress?.(progress);
+  };
   const truncate = (s: string | null, maxLen = 3000) => s ? s.substring(0, maxLen) : "";
   const step1Content = truncate(session.step1UserEdit || session.step1AiResult, 4000);
   const step2Draft = normalizeImageOutline(parseStoredJson(session.step2UserEdit || session.step2AiResult || "{}") || {});
@@ -727,6 +736,7 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
   const outlineBrandStory = step2Outline?.brandStory || step2Outline?.brandStoryModule || step2Outline?.aPlusBrandStory || null;
   let result: any;
   try {
+    await reportProgress(30);
     const [mainSegment, secondarySegment] = await Promise.all([
       callImageWorkflowSkill({
         ...skillArgs,
@@ -741,6 +751,7 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
         context: `${context}\n\n本次仅负责辅图#2至#7，必须输出6项secondaryImages。`,
       }),
     ]);
+    await reportProgress(55);
     // A+ 7个模块与品牌故事在一个响应中会被模型截断。按模块独立调用同一皇帝Skill，
     // 保持小JSON响应，并以图片大纲的模块编号作为唯一合并顺序。
     const aplusRequests = [
@@ -755,6 +766,7 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
         context: `${context}\n\n本次只负责独立品牌故事，绝不输出任何A+模块、主图或辅图。\n${JSON.stringify(outlineBrandStory)}\n\n必须返回合法JSON：{"aPlusModules":[],"brandStory":{"title":"","purpose":"","content":"","composition":"","imageDescription":""}}`,
       }] : []),
     ];
+    await reportProgress(65);
     const aplusSegments = await Promise.all(aplusRequests.map((request) => callImageWorkflowSkill({
       ...skillArgs,
       skillSlug: "image.step5.aplus.segment",
@@ -765,6 +777,7 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
     })));
     const aplusModules = aplusSegments.flatMap((segment) => getAplusModules(segment));
     const brandStory = aplusSegments.map((segment) => getBrandStory(segment)).find(Boolean) || null;
+    await reportProgress(82);
     if (!mainSegment?.mainImage || !Array.isArray(secondarySegment?.secondaryImages) || secondarySegment.secondaryImages.length < 5) {
       throw new Error("分段Skill返回内容不完整");
     }
@@ -788,6 +801,7 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
     };
   } catch (segmentError) {
     console.warn("[Step5] 分段Skill失败，回退完整Skill", segmentError);
+    await reportProgress(70);
     const completeResult = await callImageWorkflowSkill({
       skillSlug: "image.step5.final.suggestion",
       ...skillArgs,
@@ -813,6 +827,7 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
       segmentedGeneration: { mode: "full_skill_fallback", failedGroup: "unknown" },
     };
   }
+  await reportProgress(90);
   const step4Snapshot = parseStoredJson(session.step4UserEdit || session.step4AiResult || "{}") as Record<string, any> | null;
   return enrichStep5AplusSubmodules({ result, outline: step2Outline, step4Snapshot });
 }
@@ -874,7 +889,12 @@ export async function runStep5GenerationJob(args: {
       console.warn(`[Step5] hydrateImageWorkflowSessionFromArtifacts failed, using raw session: ${hydrateError}`);
       selectedSession = session;
     }
-    const result = await buildStep5FinalSuggestion(project, selectedSession, userId, args.workspaceId);
+    const result = await buildStep5FinalSuggestion(project, selectedSession, userId, args.workspaceId, {
+      onProgress: async (progress) => {
+        await updateIfCurrent({ step5RunProgress: progress, step5RunError: null });
+        await updateAiJobProgress(runId, progress, { expectedAttempt: args.attempt });
+      },
+    });
     if (args.signal?.aborted) throw new Error(String(args.signal.reason || "图片建议任务已取消"));
     await updateAiJobProgress(runId, 90, { expectedAttempt: args.attempt });
     const resultStr = JSON.stringify(result);
