@@ -721,9 +721,13 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
     || value?.aPlusContent?.brandStory
     || value?.aplusContent?.brandStory
     || null;
+  const outlineAplusModules = Array.isArray(step2Outline?.aPlusModules)
+    ? step2Outline.aPlusModules
+    : [];
+  const outlineBrandStory = step2Outline?.brandStory || step2Outline?.brandStoryModule || step2Outline?.aPlusBrandStory || null;
   let result: any;
   try {
-    const [mainSegment, secondarySegment, aplusSegment] = await Promise.all([
+    const [mainSegment, secondarySegment] = await Promise.all([
       callImageWorkflowSkill({
         ...skillArgs,
         skillSlug: "image.step5.main.segment",
@@ -736,27 +740,51 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
         systemPrompt: "只输出6张辅图建议的结构化JSON，保留secondaryImages字段。",
         context: `${context}\n\n本次仅负责辅图#2至#7，必须输出6项secondaryImages。`,
       }),
-      callImageWorkflowSkill({
-        ...skillArgs,
-        skillSlug: "image.step5.aplus.segment",
-        systemPrompt: "只输出A+模块和品牌故事的结构化JSON，保留aPlusModules与brandStory字段。",
-        context: `${context}\n\n本次仅负责A+模块与品牌故事。必须覆盖当前大纲的全部A+模块及独立品牌故事。`,
-      }),
     ]);
+    // A+ 7个模块与品牌故事在一个响应中会被模型截断。按模块独立调用同一皇帝Skill，
+    // 保持小JSON响应，并以图片大纲的模块编号作为唯一合并顺序。
+    const aplusRequests = [
+      ...outlineAplusModules.map((module: any, index: number) => ({
+        kind: "module" as const,
+        moduleNumber: Number(module?.moduleNumber || index + 1),
+        context: `${context}\n\n本次只负责以下单个A+模块，绝不输出其他A+模块、主图或辅图。\n${JSON.stringify(module)}\n\n必须返回合法JSON：{"aPlusModules":[{"moduleNumber":${Number(module?.moduleNumber || index + 1)},"title":"","purpose":"","content":"","composition":"","imageDescription":""}],"brandStory":null}`,
+      })),
+      ...(outlineBrandStory ? [{
+        kind: "brand_story" as const,
+        moduleNumber: null,
+        context: `${context}\n\n本次只负责独立品牌故事，绝不输出任何A+模块、主图或辅图。\n${JSON.stringify(outlineBrandStory)}\n\n必须返回合法JSON：{"aPlusModules":[],"brandStory":{"title":"","purpose":"","content":"","composition":"","imageDescription":""}}`,
+      }] : []),
+    ];
+    const aplusSegments = await Promise.all(aplusRequests.map((request) => callImageWorkflowSkill({
+      ...skillArgs,
+      skillSlug: "image.step5.aplus.segment",
+      systemPrompt: request.kind === "brand_story"
+        ? "只输出独立品牌故事的结构化JSON，保留brandStory字段；aPlusModules必须为空数组。"
+        : "只输出一个A+模块的结构化JSON，aPlusModules必须为仅含一个对象的数组。",
+      context: request.context,
+    })));
+    const aplusModules = aplusSegments.flatMap((segment) => getAplusModules(segment));
+    const brandStory = aplusSegments.map((segment) => getBrandStory(segment)).find(Boolean) || null;
     if (!mainSegment?.mainImage || !Array.isArray(secondarySegment?.secondaryImages) || secondarySegment.secondaryImages.length < 5) {
       throw new Error("分段Skill返回内容不完整");
     }
+    if (aplusModules.length < outlineAplusModules.length || (outlineBrandStory && !brandStory)) {
+      throw new Error("A+子分段返回内容不完整");
+    }
     result = {
       ...mainSegment,
-      designGuidelines: mainSegment.designGuidelines || secondarySegment.designGuidelines || aplusSegment.designGuidelines,
+      designGuidelines: mainSegment.designGuidelines || secondarySegment.designGuidelines,
       secondaryImages: secondarySegment.secondaryImages,
-      aPlusModules: getAplusModules(aplusSegment),
+      aPlusModules: aplusModules,
       aPlusContent: {
-        ...(aplusSegment.aPlusContent || aplusSegment.aplusContent || {}),
-        sections: getAplusModules(aplusSegment),
+        sections: aplusModules,
       },
-      brandStory: getBrandStory(aplusSegment),
-      segmentedGeneration: { mode: "emperor_segments", groups: ["main", "secondary", "aplus"] },
+      brandStory,
+      segmentedGeneration: {
+        mode: "emperor_segments",
+        groups: ["main", "secondary", "aplus"],
+        aplusSubtasks: aplusRequests.map((request) => request.kind === "brand_story" ? "brand_story" : `module_${request.moduleNumber}`),
+      },
     };
   } catch (segmentError) {
     console.warn("[Step5] 分段Skill失败，回退完整Skill", segmentError);
