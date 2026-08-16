@@ -83,4 +83,26 @@ describe("Step4参考图显示快照重建", () => {
     ]);
     expect(rebuilt.imageReferences.at(-1)).toMatchObject({ imageKey: "brand-story", imageType: "品牌故事", isBrandStory: true });
   });
+
+  it("保留第七个A+模块并与独立品牌故事同时展示", () => {
+    const session = {
+      step2AiResult: JSON.stringify({
+        mainImage: { purpose: "主图" },
+        aPlusModules: Array.from({ length: 7 }, (_, index) => ({ moduleNumber: index + 1, purpose: `大纲模块${index + 1}` })),
+        brandStory: { purpose: "品牌故事使命" },
+      }),
+    };
+    const snapshot = {
+      imageReferences: [
+        { imageType: "主图", purpose: "主图参考" },
+        ...Array.from({ length: 7 }, (_, index) => ({ imageType: "A+模块", imageNumber: index + 8, purpose: `历史模块${index + 1}` })),
+      ],
+    };
+
+    const rebuilt = rebuildStep4DisplaySnapshot(session, snapshot);
+    const module7 = rebuilt.imageReferences.find((item: any) => item.imageKey === "aplus-7");
+    const brand = rebuilt.imageReferences.find((item: any) => item.imageKey === "brand-story");
+    expect(module7).toMatchObject({ imageType: "A+模块 7", parentModuleNumber: 7, purpose: "历史模块7" });
+    expect(brand).toMatchObject({ imageType: "品牌故事", isBrandStory: true, purpose: "品牌故事使命" });
+  });
 });

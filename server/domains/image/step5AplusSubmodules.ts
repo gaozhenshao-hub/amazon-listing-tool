@@ -8,17 +8,18 @@ function asText(value: unknown) {
 
 function findReference(references: JsonRecord[], moduleNumber: number, subModuleNumber: number) {
   const target = `A+模块 ${moduleNumber}.${subModuleNumber}`;
-  return references.find((reference) =>
-    String(reference?.imageType || "").trim() === target
-    || String(reference?.imageNumber || "").trim() === `${moduleNumber}.${subModuleNumber}`,
-  );
+  const targetKey = `aplus-${moduleNumber}.${subModuleNumber}`;
+  return references.find((reference) => String(reference?.imageKey || "").trim() === targetKey)
+    || references.find((reference) => String(reference?.imageType || "").trim() === target)
+    || references.find((reference) => /^A\+模块/.test(String(reference?.imageType || "")) && String(reference?.imageNumber || "").trim() === `${moduleNumber}.${subModuleNumber}`);
 }
 
 function findModuleReference(references: JsonRecord[], moduleNumber: number) {
-  return references.find((reference) =>
-    String(reference?.imageType || "").trim() === `A+模块 ${moduleNumber}`
-    || String(reference?.imageNumber || "").trim() === String(moduleNumber),
-  );
+  const target = `A+模块 ${moduleNumber}`;
+  const targetKey = `aplus-${moduleNumber}`;
+  return references.find((reference) => String(reference?.imageKey || "").trim() === targetKey)
+    || references.find((reference) => String(reference?.imageType || "").trim() === target)
+    || references.find((reference) => /^A\+模块/.test(String(reference?.imageType || "")) && String(reference?.imageNumber || "").trim() === String(moduleNumber));
 }
 
 /**
@@ -57,7 +58,7 @@ export function enrichStep5AplusSubmodules(input: {
         moduleNumber,
         title: section.title || sourceModule.title || `A+模块 ${moduleNumber}`,
         purpose: section.purpose || sourceModule.purpose || sourceModule.contentBrief || "",
-        referenceImageKey: section.referenceImageKey || reference?.imageType || `A+模块 ${moduleNumber}`,
+        referenceImageKey: section.referenceImageKey || reference?.imageKey || reference?.imageType || `aplus-${moduleNumber}`,
       };
     }
     const modelSubModules = Array.isArray(section?.subModules) ? section.subModules : [];
@@ -84,7 +85,7 @@ export function enrichStep5AplusSubmodules(input: {
         purpose: model.purpose || source.purpose || source.contentBrief || "",
         composition,
         imageDescription,
-        referenceImageKey: model.referenceImageKey || reference?.imageType || `A+模块 ${moduleNumber}.${subModuleNumber}`,
+        referenceImageKey: model.referenceImageKey || reference?.imageKey || reference?.imageType || `aplus-${moduleNumber}.${subModuleNumber}`,
         isLocked: Boolean(source.isLocked),
       };
     });
@@ -118,7 +119,7 @@ export function enrichStep5AplusSubmodules(input: {
     purpose: generatedBrandStory.purpose || sourceBrandStory.purpose || sourceBrandStory.story || "品牌故事与品牌价值展示",
     composition: generatedBrandStory.composition || brandReference?.compositionPlan?.layout || sourceBrandStory.contentBrief || "",
     imageDescription: generatedBrandStory.imageDescription || brandReference?.effectPlan?.description || sourceBrandStory.contentBrief || "",
-    referenceImageKey: generatedBrandStory.referenceImageKey || brandReference?.imageType || "品牌故事",
+    referenceImageKey: generatedBrandStory.referenceImageKey || brandReference?.imageKey || brandReference?.imageType || "brand-story",
   } : (Object.keys(generatedBrandStory).length ? generatedBrandStory : input.result.brandStory);
 
   return {
