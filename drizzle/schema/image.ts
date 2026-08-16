@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, int, json, longtext, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 // 智能图片知识库 - 图片集（以ASIN为单位）
 export const kbImageSets = mysqlTable("kb_image_sets", {
@@ -115,9 +115,9 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
   step4Confirmed: int("step4Confirmed").default(0).notNull(),
 
   // Step 5: 图片结构及内容建议
-  step5AiResult: text("step5AiResult"),        // AI final image suggestions JSON (English)
-  step5AiResultCn: text("step5AiResultCn"),    // AI final image suggestions JSON (Chinese)
-  step5UserEdit: text("step5UserEdit"),        // User edited final suggestions JSON
+  step5AiResult: longtext("step5AiResult"),    // Full AI final image suggestions JSON (English; A+ modules may exceed TEXT)
+  step5AiResultCn: longtext("step5AiResultCn"), // Full AI final image suggestions JSON (Chinese)
+  step5UserEdit: longtext("step5UserEdit"),    // User edited final suggestions JSON
   step5Confirmed: int("step5Confirmed").default(0).notNull(),
   // Agent DAG integration
   agentRunId: varchar("agentRunId", { length: 80 }),  // Emperor Agent Run ID for DAG tracking
@@ -125,7 +125,7 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
   step5RunId: varchar("step5RunId", { length: 80 }),
   step5RunStatus: mysqlEnum("step5RunStatus", ["idle", "queued", "running", "succeeded", "failed", "canceled"]).default("idle").notNull(),
   step5RunProgress: int("step5RunProgress").default(0).notNull(),
-  step5RunError: text("step5RunError"),
+  step5RunError: longtext("step5RunError"),
   step5RunStartedAt: timestamp("step5RunStartedAt"),
   step5RunCompletedAt: timestamp("step5RunCompletedAt"),
 
@@ -134,8 +134,8 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
   step4EffectRefs: text("step4EffectRefs"),            // JSON: { [imageKey]: url } per-image effect reference
   // Step 5: A+ module selection
   step5SelectedModule: text("step5SelectedModule"),    // JSON: selected A+ module type for re-optimization
-  step5OptimizedResult: text("step5OptimizedResult"),  // JSON: re-optimized result after module selection
-  step5OptimizedResultCn: text("step5OptimizedResultCn"), // JSON: Chinese version of re-optimized result
+  step5OptimizedResult: longtext("step5OptimizedResult"),  // JSON: re-optimized result after module selection
+  step5OptimizedResultCn: longtext("step5OptimizedResultCn"), // JSON: Chinese version of re-optimized result
   // Step 5: Designer uploads
   step5DesignerUploads: text("step5DesignerUploads"),  // JSON array: [{id, imageUrl, imageNumber, notes, uploadedAt}]
   // Step 6: AI提示词生成

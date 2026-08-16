@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, int, json, longtext, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 // Generic AI job runs for long-running Emperor Skill / LLM tasks.
 export const aiJobs = mysqlTable("ai_jobs", {
@@ -461,7 +461,7 @@ export const emperorAgentCheckpoints = mysqlTable("emperor_agent_checkpoints", {
   retryScheduledAt: timestamp("retryScheduledAt"),
   lastFailureKind: varchar("lastFailureKind", { length: 40 }),
   reviewerUserId: int("reviewerUserId"),
-  errorMessage: text("errorMessage"),
+  errorMessage: longtext("errorMessage"),
   startedAt: timestamp("startedAt"),
   completedAt: timestamp("completedAt"),
   confirmedAt: timestamp("confirmedAt"),
