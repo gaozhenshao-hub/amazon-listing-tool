@@ -120,9 +120,12 @@ function normalizeFinalImageSuggestions(data: any) {
     return String(v);
   }
   const rawSections = Array.isArray(data?.aPlusContent?.sections) ? data.aPlusContent.sections : [];
-  const embeddedBrandStory = rawSections.find((section: any) => /品牌故事|brand story/i.test(safeStr(section?.title)));
+  const embeddedBrandStory = rawSections.find((section: any) => {
+    const numericModule = Number(section?.moduleNumber);
+    return /品牌故事|brand story/i.test(safeStr(section?.title)) || numericModule > 7;
+  });
   const canonicalSections = rawSections
-    .filter((section: any) => section !== embeddedBrandStory)
+    .filter((section: any) => section !== embeddedBrandStory && Number(section?.moduleNumber || 0) <= 7)
     .slice(0, 7)
     .map((section: any, index: number) => ({ ...section, moduleNumber: index + 1 }));
   const normalizedBrandStory = data.brandStory || embeddedBrandStory;

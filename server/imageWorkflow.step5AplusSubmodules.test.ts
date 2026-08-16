@@ -67,5 +67,6 @@ describe("Step5多图A+子模块建议", () => {
     expect(source).toContain("enData.brandStory");
     expect(source).toContain("品牌故事");
     expect(source).toContain("Number(module?.moduleNumber) === Number(section?.moduleNumber)");
+    expect(source).toContain("numericModule > 7");
   });
 });
