@@ -34,4 +34,15 @@ describe("多图A+模块逐图目标", () => {
     expect(targets.map((target) => target.imageType)).toEqual(["A+模块 1.1", "A+模块 1.2", "A+模块 1.3", "A+模块 1.4"]);
     expect(targets.map((target) => target.subModuleTopic)).toEqual(["车库", "庭院", "露营", "工地"]);
   });
+
+  it("将已确认品牌故事展开为独立的下游生成目标", () => {
+    const targets = buildImageWorkflowReferenceTargets({
+      aPlusModules: [],
+      brandStory: { purpose: "讲述品牌使命与用户承诺" },
+    });
+
+    expect(targets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ imageKey: "brand-story", imageType: "品牌故事", isBrandStory: true }),
+    ]));
+  });
 });

@@ -1247,10 +1247,20 @@ function Step5FinalSuggestions({
                 </CardContent>
               </Card>
 
+              {enData.brandStory && (
+                <Card className="border-amber-200 bg-amber-50/30">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">品牌故事</CardTitle></CardHeader>
+                  <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div className="space-y-1"><Badge variant="outline">English</Badge><p className="font-medium">{enData.brandStory.title}</p><p><strong>Purpose:</strong> {enData.brandStory.purpose}</p><p><strong>Composition:</strong> {enData.brandStory.composition}</p><p><strong>Image:</strong> {enData.brandStory.imageDescription}</p></div>
+                    <div className="space-y-1 border-l pl-4"><Badge variant="outline">中文</Badge><p className="font-medium">{cnData?.brandStory?.title || "品牌故事"}</p><p>{cnData?.brandStory?.purpose || "暂无中文翻译"}</p></div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Draggable A+ sections with per-section module style selector */}
               {enData.aPlusContent.sections?.map((section: any, idx: number) => {
                 const cnSection = cnData?.aPlusContent?.sections?.[idx];
-                const outlineModule = outlineAplusModules[idx];
+                const outlineModule = outlineAplusModules.find((module: any) => Number(module?.moduleNumber) === Number(section?.moduleNumber)) || outlineAplusModules[idx];
                 const outlineSelectedModule = findOutlineAplusModule(
                   outlineModule?.selectedModuleType || outlineModule?.recommendedModuleType || outlineModule?.selectedModuleName
                 );

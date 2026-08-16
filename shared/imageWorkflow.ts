@@ -289,6 +289,17 @@ export function buildImageWorkflowReferenceTargets(value: Record<string, any>) {
       });
     });
   }
+  const brandStory = value?.brandStory || value?.brandStoryModule || value?.aPlusBrandStory;
+  if (brandStory && typeof brandStory === "object") {
+    targets.push({
+      imageKey: "brand-story",
+      imageNumber: "brand-story",
+      imageType: "品牌故事",
+      purpose: brandStory.purpose || brandStory.story || brandStory.description || "品牌故事与品牌价值展示",
+      outline: brandStory,
+      isBrandStory: true,
+    });
+  }
   return targets;
 }
 

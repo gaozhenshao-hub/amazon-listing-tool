@@ -34,4 +34,29 @@ describe("Step5多图A+子模块建议", () => {
     expect(source).toContain("subModuleCount: target.subModuleCount");
     expect(source).toContain("subModuleTopic: target.subModuleTopic");
   });
+
+  it("按大纲模块编号补齐模型漏掉的第七个A+模块和品牌故事", () => {
+    const result = enrichStep5AplusSubmodules({
+      result: { aPlusContent: { sections: [{ moduleNumber: 1, title: "模块1" }] } },
+      outline: {
+        aPlusModules: [
+          { moduleNumber: 1, title: "模块1", purpose: "第一模块" },
+          { moduleNumber: 7, title: "模块7", purpose: "第七模块" },
+        ],
+        brandStory: { title: "品牌故事", purpose: "品牌承诺" },
+      },
+      step4Snapshot: { imageReferences: [{ imageType: "品牌故事", compositionPlan: { layout: "品牌时间线" } }] },
+    });
+
+    expect(result.aPlusContent.sections.map((section: any) => section.moduleNumber)).toEqual([1, 7]);
+    expect(result.aPlusContent.sections[1]).toEqual(expect.objectContaining({ title: "模块7", purpose: "第七模块" }));
+    expect(result.brandStory).toEqual(expect.objectContaining({ title: "品牌故事", purpose: "品牌承诺", referenceImageKey: "品牌故事" }));
+  });
+
+  it("在Step5前台渲染品牌故事，并按模块编号而非数组下标映射A+样式", () => {
+    const source = readFileSync("client/src/pages/ImageWorkflowPage.tsx", "utf8");
+    expect(source).toContain("enData.brandStory");
+    expect(source).toContain("品牌故事");
+    expect(source).toContain("Number(module?.moduleNumber) === Number(section?.moduleNumber)");
+  });
 });

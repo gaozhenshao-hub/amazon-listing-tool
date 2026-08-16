@@ -13,4 +13,14 @@ describe("场景备注驱动的A+子图验收", () => {
     expect(targets.map((target) => target.subModuleTopic)).toEqual(["车库", "庭院", "露营", "工地"]);
     expect(targets.every((target) => target.subModuleRemark === "4种场景：车库、庭院、露营、工地")).toBe(true);
   });
+
+  it("将品牌故事纳入参考图和图片建议共用的独立下游目标", () => {
+    const targets = buildImageWorkflowReferenceTargets({
+      aPlusModules: [],
+      brandStory: { purpose: "讲述品牌使命与用户承诺" },
+    });
+    expect(targets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ imageKey: "brand-story", imageType: "品牌故事", isBrandStory: true }),
+    ]));
+  });
 });
