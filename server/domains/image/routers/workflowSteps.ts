@@ -14,6 +14,7 @@ import {
   type ImageGenerationStep,
 } from "../services/stepGenerationJob";
 import { registerImageWorkflowAplusSubmoduleArtifact, registerImageWorkflowStepArtifact } from "../../ai_os/services/businessArtifactRegistry";
+import { compactStep4ReferenceForStorage } from "../step4Snapshot";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -86,12 +87,10 @@ function mergeStep4CompleteSnapshot(
     throw new Error(`请先逐图点击“确认此图”后再确认整套方案。未确认：${labels}`);
   }
 
-  // 整体确认只发布各图片的 lockedSnapshot；不读取、合并或覆盖任何旧 AI / 草稿字段。
+  // 整体确认只发布各图片的 lockedSnapshot 内容；持久化时不可再次嵌入 lockedSnapshot，
+  // 否则客户端多次保存会让逐图状态递归增长并超出数据库或请求载荷上限。
   const imageReferences = currentDraft.imageReferences.map((currentRef: any) => ({
-    ...currentRef.lockedSnapshot,
-    isLocked: true,
-    lockedAt: currentRef.lockedAt,
-    lockedSnapshot: currentRef.lockedSnapshot,
+    ...compactStep4ReferenceForStorage(currentRef, true),
   }));
   return { ...currentDraft, imageReferences };
 }
@@ -545,7 +544,7 @@ export const imageWorkflowStepProcedures = {
       }
       const completeSnapshot = { ...requestedSnapshot, imageReferences: requestedRefs.map((_: any, index: number) => {
         const confirmed = versionByIndex.get(index) as Record<string, any>;
-        return { ...confirmed, isLocked: true, lockedSnapshot: confirmed };
+        return compactStep4ReferenceForStorage(confirmed, true);
       }) };
       const completeUserEdit = JSON.stringify(completeSnapshot);
 

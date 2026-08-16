@@ -1,5 +1,6 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
+import { compactStep4ReferenceForStorage, compactStep4SnapshotForStorage } from "../step4Snapshot";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -83,7 +84,7 @@ export const imageReferenceProcedures = {
       if (!Array.isArray(draft?.imageReferences)) throw new Error("Step4 草稿缺少图片参考方案");
 
       await db.updateImageWorkflowSession(session.id, {
-        step4UserEdit: input.userEdit,
+        step4UserEdit: JSON.stringify(compactStep4SnapshotForStorage(draft)),
         step4Confirmed: 0,
         currentStep: 4,
         status: "in_progress",
@@ -99,7 +100,7 @@ export const imageReferenceProcedures = {
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       const reference = parseStoredJson(input.content) as Record<string, any> | null;
       if (!reference) throw new Error("单图确认内容无效");
-      const version = await db.confirmStep4ImageVersion({ sessionId: session.id, projectId: input.projectId, userId: ctx.user.id, imageIndex: input.imageIndex, imageKey: `step4-ref-${input.imageIndex}`, content: JSON.stringify(reference) });
+      const version = await db.confirmStep4ImageVersion({ sessionId: session.id, projectId: input.projectId, userId: ctx.user.id, imageIndex: input.imageIndex, imageKey: `step4-ref-${input.imageIndex}`, content: JSON.stringify(compactStep4ReferenceForStorage(reference)) });
       return { success: true, version };
     }),
 

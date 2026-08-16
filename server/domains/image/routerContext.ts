@@ -25,6 +25,7 @@ import {
   recordBusinessArtifactUse,
   resolveCurrentBusinessArtifact,
 } from "../ai_os/services/businessArtifactRegistry";
+import { enrichStep5AplusSubmodules } from "./step5AplusSubmodules";
 import {
   applyImageWorkflowAplusStyle,
   findImageWorkflowAplusModule,
@@ -520,12 +521,34 @@ export async function resolveSessionForDisplay(projectId: number, user: { id: nu
   let hydrated = await hydrateImageWorkflowSessionFromArtifacts(session, undefined, {
     onlyBusinessConfirmedSteps: true,
   });
+  // 解锁编辑中的Step2草稿必须始终优先于旧的父级Artifact；否则刷新后会回退为旧单图样式。
+  if (Number(session.step2Confirmed) !== 1 && session.step2UserEdit) {
+    const sessionStep2 = parseStoredJson(session.step2UserEdit);
+    if (sessionStep2 && typeof sessionStep2 === "object") {
+      const { outline: completeStep2 } = await hydrateLockedImageWorkflowAplusSubmodules({
+        sessionId: session.id,
+        projectId: session.projectId,
+        outline: normalizeImageOutline(sessionStep2 as Record<string, any>),
+      });
+      const completeStep2Json = JSON.stringify(completeStep2);
+      hydrated = {
+        ...hydrated,
+        step2AiResult: completeStep2Json,
+        step2UserEdit: completeStep2Json,
+      };
+    }
+  }
   // Step2 的确认快照包含多图 A+ 的 subModules。旧 skill Artifact 可能仍是
   // 父模块版本；锁定态展示必须以会话确认快照为权威，避免刷新后逐图内容消失。
   if (Number(session.step2Confirmed) === 1 && session.step2UserEdit) {
     const sessionStep2 = parseStoredJson(session.step2UserEdit);
     if (sessionStep2 && typeof sessionStep2 === "object") {
-      const completeStep2Json = JSON.stringify(sessionStep2);
+      const { outline: completeStep2 } = await hydrateLockedImageWorkflowAplusSubmodules({
+        sessionId: session.id,
+        projectId: session.projectId,
+        outline: normalizeImageOutline(sessionStep2 as Record<string, any>),
+      });
+      const completeStep2Json = JSON.stringify(completeStep2);
       hydrated = {
         ...hydrated,
         step2AiResult: completeStep2Json,
@@ -624,7 +647,7 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
   const lockedAssetNote = consumedRefs.length ? `\n--- 已锁定A+子图资产 ---\n以下子图必须严格使用已确认版本：${consumedRefs.join(", ")}` : "";
   const context = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}${lockedAssetNote}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。secondaryImages必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7，不得遗漏辅图7。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。`;
 
-  return callImageWorkflowSkill({
+  const result = await callImageWorkflowSkill({
     skillSlug: "image.step5.final.suggestion",
     userId,
     workspaceId: workspaceId ?? project?.workspaceId ?? null,
@@ -641,6 +664,8 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
       return value;
     },
   });
+  const step4Snapshot = parseStoredJson(session.step4UserEdit || session.step4AiResult || "{}") as Record<string, any> | null;
+  return enrichStep5AplusSubmodules({ result, outline: step2Outline, step4Snapshot });
 }
 
 export async function persistStep5ListingAdvice(projectId: number, resultStr: string) {

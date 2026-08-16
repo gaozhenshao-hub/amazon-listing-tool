@@ -16,6 +16,14 @@ const STEP_LABELS: Record<ImageGenerationStep, string> = {
 
 const isActive = (status?: string | null) => status === "queued" || status === "running";
 
+export function shouldApplyCompletedImageStepOutput(input: {
+  wasActive: boolean;
+  status?: string | null;
+  output?: any;
+}) {
+  return input.wasActive && input.status === "succeeded" && Boolean(input.output) && !input.output?.skipped;
+}
+
 function formatError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "任务执行失败");
   if (/<!doctype\s+html|<html[\s>]/i.test(message)) return "上游服务返回异常页面，任务已按后台重试策略处理";
@@ -57,10 +65,14 @@ export function useImageStepGenerationJob(input: {
     const wasActive = activeRunId === run.runId;
     setActiveRunId(null);
     if (run.status === "succeeded" && run.output && !run.output.skipped) {
-      onSucceededRef.current(run.output);
-      void utils.imageWorkflow.getSession.invalidate({ projectId: input.projectId });
-      void onRefreshRef.current?.();
-      if (wasActive) toast.success(`${STEP_LABELS[input.step]}完成，请检查并确认`);
+      // 页面刷新后会读取到历史已完成任务。它们只能用于审计，不能重新写入本地编辑态，
+      // 否则会把用户后来保存的多图A+草稿覆盖成旧AI版本。
+      if (shouldApplyCompletedImageStepOutput({ wasActive, status: run.status, output: run.output })) {
+        onSucceededRef.current(run.output);
+        void utils.imageWorkflow.getSession.invalidate({ projectId: input.projectId });
+        void onRefreshRef.current?.();
+        toast.success(`${STEP_LABELS[input.step]}完成，请检查并确认`);
+      }
     } else if (run.status === "failed" && (wasActive || !run.output)) {
       toast.error(formatError(run.error));
     } else if (run.status === "canceled" && wasActive) {

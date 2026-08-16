@@ -139,6 +139,11 @@ export function normalizeImageWorkflowAplusStyle(
         expressionType: child.expressionType || "",
         whyThisWay: child.whyThisWay || "",
         position: child.position || `A+模块 ${styled.moduleNumber || ""}.${index + 1}`,
+        // 子图锁定是工作流状态，不得在样式切换、保存或水合归一化时被移除。
+        isLocked: Boolean(child.isLocked),
+        lockedAt: child.lockedAt || null,
+        lockedBy: child.lockedBy ?? null,
+        lockedArtifactRef: child.lockedArtifactRef || null,
       };
     }),
   };

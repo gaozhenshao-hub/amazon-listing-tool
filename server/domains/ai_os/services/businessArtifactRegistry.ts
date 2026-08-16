@@ -574,7 +574,6 @@ export async function hydrateLockedImageWorkflowAplusSubmodules(input: {
   const aPlusModules = await Promise.all(moduleList.map(async (module: any, moduleIndex: number) => {
     const childList = Array.isArray(module?.subModules) ? module.subModules : [];
     const subModules = await Promise.all(childList.map(async (submodule: any, submoduleIndex: number) => {
-      if (!submodule?.isLocked) return submodule;
       const moduleNumber = String(module.moduleNumber ?? moduleIndex + 1);
       const submoduleNumber = String(submodule.subModuleNumber ?? submoduleIndex + 1);
       const artifact = await resolveUnifiedArtifact({
@@ -589,6 +588,7 @@ export async function hydrateLockedImageWorkflowAplusSubmodules(input: {
       const content = parseArtifactContent((artifact as any)?.contentJson ?? (artifact as any)?.content);
       if ((content as any)?.submodule) {
         if ((artifact as any)?.ref) consumedRefs.push((artifact as any).ref);
+        // 历史版本可能在归一化时丢失 isLocked，但最终子图Artifact本身就是锁定事实来源。
         return { ...(content as any).submodule, isLocked: true, lockedArtifactRef: (artifact as any)?.ref || null };
       }
       return submodule;
