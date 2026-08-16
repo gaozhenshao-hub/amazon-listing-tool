@@ -934,6 +934,9 @@ export async function runStep5GenerationJob(args: {
       step5RunStatus: "running",
       step5RunProgress: 20,
       step5RunError: null,
+      step5RunSegments: null,
+      step5RunFailedGroup: null,
+      step5RunFailedModule: null,
     });
     if (!session) return { skipped: true, reason: "Step 5 run is no longer current" };
     await updateAiJobProgress(runId, 20, { expectedAttempt: args.attempt });
