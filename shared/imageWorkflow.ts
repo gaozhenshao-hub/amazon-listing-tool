@@ -245,12 +245,22 @@ export function normalizeImageOutline(
     };
   });
 
+  const rawAplusModules = Array.isArray(value?.aPlusModules) ? value.aPlusModules : [];
+  const embeddedBrandStory = rawAplusModules.find((module: Record<string, any>) => /品牌故事/.test(String(module?.title || module?.moduleName || module?.selectedModuleName || "")));
+  const aPlusModules = rawAplusModules
+    .filter((module: Record<string, any>) => module !== embeddedBrandStory)
+    .slice(0, 7)
+    .map((module: Record<string, any>, index: number) =>
+      normalizeImageWorkflowAplusStyle({ ...module, moduleNumber: index + 1 }, { forceDefault: options.forceDefaultAplus }),
+    );
+
   return {
     ...value,
     secondaryImages,
-    aPlusModules: (Array.isArray(value?.aPlusModules) ? value.aPlusModules : []).map((module: Record<string, any>) =>
-      normalizeImageWorkflowAplusStyle(module, { forceDefault: options.forceDefaultAplus }),
-    ),
+    aPlusModules,
+    ...(value?.brandStory || value?.brandStoryModule || value?.aPlusBrandStory || !embeddedBrandStory
+      ? {}
+      : { brandStory: embeddedBrandStory }),
   };
 }
 
@@ -351,8 +361,29 @@ function normalizeImageReference(ref: Record<string, any>): Record<string, any> 
 export function normalizeStep4References(value: Record<string, any> | null | undefined): Record<string, any> | null {
   if (!value || typeof value !== "object") return null;
   const refs = Array.isArray(value.imageReferences) ? value.imageReferences : [];
+  const parentNumberMap = new Map<string, number>();
+  let nextParentNumber = 1;
+  const normalizeReferenceLabel = (ref: Record<string, any>) => {
+    const normalized = normalizeImageReference(ref);
+    const rawType = String(normalized.imageType || "");
+    if (/品牌故事/.test(rawType)) {
+      return { ...normalized, imageType: "品牌故事", imageNumber: 0, isBrandStory: true };
+    }
+    const match = rawType.match(/^A\+模块\s*(\d+)(?:\.(\d+))?/);
+    if (!match) return normalized;
+    const rawParent = match[1];
+    if (!parentNumberMap.has(rawParent)) parentNumberMap.set(rawParent, nextParentNumber++);
+    const parent = parentNumberMap.get(rawParent)!;
+    const child = match[2];
+    return {
+      ...normalized,
+      imageType: child ? `A+模块 ${parent}.${child}` : `A+模块 ${parent}`,
+      imageNumber: parent,
+      parentModuleNumber: parent,
+    };
+  };
   return {
     ...value,
-    imageReferences: refs.map((ref: Record<string, any>) => normalizeImageReference(ref)),
+    imageReferences: refs.map(normalizeReferenceLabel),
   };
 }

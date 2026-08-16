@@ -83,6 +83,12 @@ export function enrichStep5AplusSubmodules(input: {
 
     return {
       ...section,
+      moduleNumber,
+      title: section.title || sourceModule.title || `A+模块 ${moduleNumber}`,
+      purpose: section.purpose || sourceModule.purpose || sourceModule.contentBrief || "",
+      content: section.content || sourceModule.contentBrief || sourceModule.purpose || "",
+      composition: section.composition || findModuleReference(references, moduleNumber)?.compositionPlan?.layout || "",
+      imageDescription: section.imageDescription || findModuleReference(references, moduleNumber)?.effectPlan?.description || "",
       subModules,
       moduleSpecificContent: {
         ...(section.moduleSpecificContent || {}),
