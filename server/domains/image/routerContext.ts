@@ -372,10 +372,8 @@ export async function getKBReference(category: string, userId: number): Promise<
 }
 
 // ─── Helper: Parse LLM JSON response ─────────────────────
-export function parseLLMJson(response: any): any {
-  let content = typeof response.choices[0].message.content === "string"
-    ? response.choices[0].message.content
-    : JSON.stringify(response.choices[0].message.content);
+export function parseLooseLlmJson(value: unknown): any {
+  let content = String(value || "");
   // Strip markdown code blocks (```json ... ``` or ``` ... ```)
   const mdMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (mdMatch) content = mdMatch[1].trim();
@@ -390,11 +388,46 @@ export function parseLLMJson(response: any): any {
   const lastBracket = content.lastIndexOf(']');
   const end = Math.max(lastBrace, lastBracket);
   if (end !== -1 && end < content.length - 1) content = content.slice(0, end + 1);
-  try {
-    return JSON.parse(content);
-  } catch {
-    return { raw: content };
+  // Models occasionally emit literal control characters inside JSON strings.
+  // Preserve the semantic value while escaping those characters before parsing.
+  let escaped = "";
+  let inString = false;
+  let escapedChar = false;
+  for (const char of content) {
+    if (escapedChar) {
+      escaped += char;
+      escapedChar = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped += char;
+      escapedChar = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      escaped += char;
+      continue;
+    }
+    if (inString && char.charCodeAt(0) < 0x20) {
+      escaped += char === "\n" ? "\\n" : char === "\r" ? "\\r" : char === "\t" ? "\\t" : "";
+      continue;
+    }
+    escaped += char;
   }
+  escaped = escaped.replace(/,\s*([}\]])/g, "$1");
+  try {
+    return JSON.parse(escaped);
+  } catch (error) {
+    return { raw: content, parseError: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export function parseLLMJson(response: any): any {
+  const content = typeof response.choices[0].message.content === "string"
+    ? response.choices[0].message.content
+    : JSON.stringify(response.choices[0].message.content);
+  return parseLooseLlmJson(content);
 }
 
 export async function callImageWorkflowSkill<T = any>(input: {
@@ -426,6 +459,10 @@ export async function callImageWorkflowSkill<T = any>(input: {
         if (parsed && typeof parsed === "object" && "raw" in parsed) {
           // 尝试更激进的 JSON 提取：找到最外层的 { } 对
           const rawStr = (parsed as any).raw as string;
+          const recovered = parseLooseLlmJson(rawStr);
+          if (recovered && typeof recovered === "object" && !("raw" in recovered)) {
+            return input.validate ? input.validate(recovered) : recovered as T;
+          }
           const firstBrace = rawStr.indexOf("{");
           const lastBrace = rawStr.lastIndexOf("}");
           if (firstBrace >= 0 && lastBrace > firstBrace) {
@@ -436,7 +473,7 @@ export async function callImageWorkflowSkill<T = any>(input: {
               // 提取失败，继续报错
             }
           }
-          console.error(`[callImageWorkflowSkill] Skill ${input.skillSlug} returned non-JSON content (length=${rawStr.length}): ${rawStr.slice(0, 200)}`);
+          console.error(`[callImageWorkflowSkill] Skill ${input.skillSlug} returned non-JSON content (length=${rawStr.length}, parseError=${(parsed as any).parseError || "unknown"}): head=${rawStr.slice(0, 200)} tail=${rawStr.slice(-200)}`);
           throw new Error(`皇帝 Skill 未返回有效 JSON (rawLen=${rawStr.length})`);
         }
         return input.validate ? input.validate(parsed) : parsed as T;
