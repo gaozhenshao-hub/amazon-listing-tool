@@ -27,6 +27,7 @@ import {
 } from "../ai_os/services/businessArtifactRegistry";
 import { enrichStep5AplusSubmodules } from "./step5AplusSubmodules";
 import { describeStep5SegmentFailure } from "./step5SegmentFailure";
+import { findIncompleteStep5Segment } from "./step5SegmentValidation";
 import {
   applyImageWorkflowAplusStyle,
   buildImageWorkflowReferenceTargets,
@@ -830,27 +831,22 @@ export async function buildStep5FinalSuggestion(
     const aplusModules = aplusSegments.flatMap((segment) => getAplusModules(segment));
     const brandStory = aplusSegments.map((segment) => getBrandStory(segment)).find(Boolean) || null;
     await reportProgress(82);
-    if (!mainSegment?.mainImage) {
-      const error = new Error("主图分段Skill返回内容不完整");
-      await setSegment("main", "failed", error);
-      throw error;
-    }
-    if (!Array.isArray(secondarySegment?.secondaryImages) || secondarySegment.secondaryImages.length < 5) {
-      const error = new Error("辅图分段Skill返回内容不完整");
-      await setSegment("secondary", "failed", error);
-      throw error;
-    }
-    const returnedAplusNumbers = new Set(aplusModules.map((module: any) => Number(module?.moduleNumber)).filter(Boolean));
-    const missingAplus = outlineAplusModules.find((module: any, index: number) => !returnedAplusNumbers.has(Number(module?.moduleNumber || index + 1)));
-    if (missingAplus) {
-      const moduleNumber = Number(missingAplus?.moduleNumber || outlineAplusModules.indexOf(missingAplus) + 1);
-      const error = new Error(`A+ ${moduleNumber}子分段返回内容不完整`);
-      await setSegment(`aplus_${moduleNumber}`, "failed", error);
-      throw error;
-    }
-    if (outlineBrandStory && !brandStory) {
-      const error = new Error("品牌故事子分段返回内容不完整");
-      await setSegment("brand_story", "failed", error);
+    const completenessFailure = findIncompleteStep5Segment({
+      mainSegment,
+      secondarySegment,
+      aplusModules,
+      outlineAplusModules,
+      requiresBrandStory: Boolean(outlineBrandStory),
+      brandStory,
+    });
+    if (completenessFailure) {
+      const segmentId = completenessFailure.module === "品牌故事"
+        ? "brand_story"
+        : completenessFailure.module?.startsWith("A+ ")
+          ? `aplus_${completenessFailure.module.replace("A+ ", "")}`
+          : completenessFailure.group;
+      const error = new Error(`${completenessFailure.module || completenessFailure.group}分段Skill返回内容不完整`);
+      await setSegment(segmentId, "failed", error);
       throw error;
     }
     result = {
