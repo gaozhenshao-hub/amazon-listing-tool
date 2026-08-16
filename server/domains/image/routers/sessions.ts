@@ -1,6 +1,7 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
 import { ensureImageWorkflowAgentRun, syncStepUnlockToAgent } from "../imageWorkflowAgentBridge";
+import { buildImageWorkflowReferenceTargets, normalizeImageOutline } from "@shared/imageWorkflow";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -70,7 +71,36 @@ async function applyCurrentStep4ImageVersions(session: any) {
     return confirmed ? { ...reference, ...confirmed, isLocked: true, lockedSnapshot: confirmed, lockedAt: confirmed.lockedAt || confirmed.confirmedAt } : reference;
   });
   const snapshot = { ...base, imageReferences };
-  return { ...session, step4UserEdit: JSON.stringify(snapshot), step4AiResult: JSON.stringify(snapshot) };
+  return { ...session, step4UserEdit: JSON.stringify(rebuildStep4DisplaySnapshot(session, snapshot)), step4AiResult: JSON.stringify(rebuildStep4DisplaySnapshot(session, snapshot)) };
+}
+
+function rebuildStep4DisplaySnapshot(session: any, snapshot: Record<string, any>) {
+  const outline = normalizeImageOutline(parseExportJson(session.step2UserEdit || session.step2AiResult));
+  const targets = buildImageWorkflowReferenceTargets(outline || {}).filter((target: any) => target.imageType);
+  if (!targets.length) return snapshot;
+  const existing = Array.isArray(snapshot.imageReferences) ? snapshot.imageReferences : [];
+  const historicalAplus = existing.filter((reference: any) => /^A\+模块/.test(String(reference?.imageType || "")));
+  const historicalBrand = existing.find((reference: any) => /品牌故事/.test(String(reference?.imageType || "")));
+  let aplusIndex = 0;
+  return {
+    ...snapshot,
+    imageReferences: targets.map((target: any, index: number) => {
+      const isAplus = /^A\+模块/.test(target.imageType);
+      const isBrand = /品牌故事/.test(target.imageType);
+      const matched = isAplus
+        ? historicalAplus[aplusIndex++]
+        : isBrand
+          ? historicalBrand
+          : existing.find((reference: any) => String(reference?.imageType || "") === target.imageType) || existing[index];
+      return {
+        ...(matched || {}),
+        imageType: target.imageType,
+        imageNumber: isAplus || isBrand ? 0 : (target.imageNumber || matched?.imageNumber || 0),
+        purpose: matched?.purpose || target.purpose || target.contentBrief || "",
+        ...(isBrand ? { isBrandStory: true } : {}),
+      };
+    }),
+  };
 }
 
 export const imageSessionProcedures = {
