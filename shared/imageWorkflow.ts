@@ -112,6 +112,21 @@ export function applyImageWorkflowAplusStyle(module: Record<string, unknown>, mo
   };
 }
 
+/** 从“4种场景”“3个步骤”等备注中提取期望子图数量。 */
+export function getImageWorkflowAplusRemarkCount(remark?: string | null) {
+  const matched = String(remark || "").match(/(?:^|\s)(\d{1,2})\s*(?:种|个|张|组|项|场景|步骤|面板)/);
+  return matched ? Number(matched[1]) : null;
+}
+
+export function getImageWorkflowAplusRemarkTopics(remark: string | null | undefined, count: number) {
+  const normalized = String(remark || "")
+    .replace(/^\s*\d{1,2}\s*(?:种|个|张|组|项|场景|步骤|面板)\s*[:：]?\s*/, "")
+    .trim();
+  const topics = normalized.split(/[、,，;；\n]/).map((item) => item.trim()).filter(Boolean).slice(0, count);
+  const defaultPrefix = /场景/.test(String(remark || "")) ? "场景" : "子图";
+  return Array.from({ length: count }, (_, index) => topics[index] || `${defaultPrefix}${index + 1}`);
+}
+
 export function normalizeImageWorkflowAplusStyle(
   module: Record<string, any>,
   options: { forceDefault?: boolean } = {},
@@ -123,17 +138,20 @@ export function normalizeImageWorkflowAplusStyle(
   const config = IMAGE_WORKFLOW_APLUS_SUBMODULE_CONFIG[styled.selectedModuleType];
   if (!config) return styled;
   const existing = Array.isArray(styled.subModules) ? styled.subModules : [];
-  const requestedCount = Number(styled.subModuleCount || existing.length || config.defaultCount);
+  const subModuleRemark = String(styled.subModuleRemark || "");
+  const requestedCount = Number(getImageWorkflowAplusRemarkCount(subModuleRemark) || styled.subModuleCount || existing.length || config.defaultCount);
   const subModuleCount = Math.min(config.max, Math.max(config.min, requestedCount));
+  const remarkTopics = getImageWorkflowAplusRemarkTopics(subModuleRemark, subModuleCount);
   return {
     ...styled,
+    subModuleRemark,
     subModuleCount,
     subModules: Array.from({ length: subModuleCount }, (_, index) => {
       const child = existing[index] || {};
       return {
         subModuleNumber: index + 1,
-        title: child.title || `子图 ${index + 1}`,
-        purpose: child.purpose || "",
+        title: child.title || remarkTopics[index],
+        purpose: child.purpose || (subModuleRemark ? `围绕“${remarkTopics[index]}”展开的独立A+子图` : ""),
         sellingPointRefs: Array.isArray(child.sellingPointRefs) ? child.sellingPointRefs : [],
         contentBrief: child.contentBrief || "",
         expressionType: child.expressionType || "",
@@ -263,6 +281,9 @@ export function buildImageWorkflowReferenceTargets(value: Record<string, any>) {
         selectedModuleType: module.selectedModuleType,
         selectedModuleName: module.selectedModuleName,
         selectedModuleStructure: module.selectedModuleStructure,
+        subModuleRemark: module.subModuleRemark || "",
+        subModuleCount: module.subModuleCount || subModules.length,
+        subModuleTopic: subModule?.title || "",
         purpose: subModule?.purpose || module.purpose || "",
         outline: subModule || module,
       });

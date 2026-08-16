@@ -6,7 +6,7 @@ describe("多图A+模块逐图目标", () => {
       secondaryImages: [2, 3, 4, 5, 6, 7].map((imageNumber) => ({ imageNumber, purpose: `辅图${imageNumber}` })),
       aPlusModules: [
         { moduleNumber: 8, selectedModuleType: "premium_four_image_text" },
-        { moduleNumber: 9, selectedModuleType: "premium_rule_carousel" },
+        { moduleNumber: 9, selectedModuleType: "premium_rule_carousel", subModuleRemark: "4种场景：车库、庭院、露营、工地" },
       ],
     });
     const targets = buildImageWorkflowReferenceTargets(outline);
@@ -16,6 +16,11 @@ describe("多图A+模块逐图目标", () => {
     expect(targets.find((target) => target.imageKey === "aplus-8.1")).toMatchObject({
       parentModuleNumber: 8,
       subModuleNumber: 1,
+    });
+    expect(targets.find((target) => target.imageKey === "aplus-9.1")).toMatchObject({
+      subModuleRemark: "4种场景：车库、庭院、露营、工地",
+      subModuleTopic: "车库",
+      subModuleCount: 4,
     });
   });
 });

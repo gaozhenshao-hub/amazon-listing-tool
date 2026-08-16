@@ -28,6 +28,7 @@ import {
 import { enrichStep5AplusSubmodules } from "./step5AplusSubmodules";
 import {
   applyImageWorkflowAplusStyle,
+  buildImageWorkflowReferenceTargets,
   findImageWorkflowAplusModule,
   normalizeImageOutline,
   normalizeSecondaryImageSlots,
@@ -642,10 +643,20 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
   const step2Content = truncate(JSON.stringify(step2Outline), 4000);
   const step3Content = truncate(session.step3UserEdit || session.step3AiResult, 3000);
   const step4Content = truncate(session.step4UserEdit || session.step4AiResult, 3000);
+  const aplusSubmoduleTargets = buildImageWorkflowReferenceTargets(step2Outline)
+    .filter((target) => target.subModuleNumber !== null && target.subModuleNumber !== undefined)
+    .map((target) => ({
+      imageKey: target.imageKey,
+      imageType: target.imageType,
+      subModuleRemark: target.subModuleRemark,
+      subModuleCount: target.subModuleCount,
+      subModuleTopic: target.subModuleTopic,
+      purpose: target.purpose,
+    }));
 
   const kbReference = await getKBReference(project.category || "", userId);
   const lockedAssetNote = consumedRefs.length ? `\n--- 已锁定A+子图资产 ---\n以下子图必须严格使用已确认版本：${consumedRefs.join(", ")}` : "";
-  const context = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}${lockedAssetNote}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。secondaryImages必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7，不得遗漏辅图7。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。`;
+  const context = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}${lockedAssetNote}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n--- A+备注驱动的逐图目标（必须逐项保留） ---\n${JSON.stringify(aplusSubmoduleTargets)}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。secondaryImages必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7，不得遗漏辅图7。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。对于A+子图，必须遵守subModuleRemark、subModuleCount与subModuleTopic，按每个目标分别输出独立构图和作图建议。`;
 
   const result = await callImageWorkflowSkill({
     skillSlug: "image.step5.final.suggestion",

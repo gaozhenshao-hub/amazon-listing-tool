@@ -109,6 +109,32 @@ export function Step2ImageOutline({
     setEditData(newData);
   };
 
+  const updateAPlusSubmoduleRemark = (idx: number, remark: string) => {
+    if (!editData) return;
+    const newData = { ...editData, aPlusModules: [...(editData.aPlusModules || [])] };
+    const count = remark.match(/(?:^|\s)(\d{1,2})\s*(?:种|个|张|组|项|场景|步骤|面板)/)?.[1];
+    newData.aPlusModules[idx] = {
+      ...newData.aPlusModules[idx],
+      subModuleRemark: remark,
+      ...(count ? { subModuleCount: Number(count) } : {}),
+    };
+    const normalized = normalizeImageOutline(newData);
+    const topics = remark.replace(/^\s*\d{1,2}\s*(?:种|个|张|组|项|场景|步骤|面板)\s*[:：]?\s*/, "")
+      .split(/[、,，;；\n]/).map((item) => item.trim()).filter(Boolean);
+    if (topics.length && normalized.aPlusModules?.[idx]?.subModules) {
+      normalized.aPlusModules[idx].subModules = normalized.aPlusModules[idx].subModules.map((submodule: any, submoduleIndex: number) => {
+        const topic = topics[submoduleIndex];
+        return topic ? {
+          ...submodule,
+          title: topic,
+          purpose: `围绕“${topic}”展开的独立A+子图`,
+          contentBrief: submodule.contentBrief || `展示产品在“${topic}”中的核心价值、使用方式或结果。`,
+        } : submodule;
+      });
+    }
+    setEditData(normalized);
+  };
+
   const updateAPlusSubmodule = (moduleIndex: number, submoduleIndex: number, field: string, value: any) => {
     if (!editData) return;
     const newData = { ...editData, aPlusModules: [...(editData.aPlusModules || [])] };
@@ -467,6 +493,21 @@ export function Step2ImageOutline({
                       <Input value={mod.purpose || ""} onChange={(e) => updateAPlusModule(idx, "purpose", e.target.value)} placeholder="模块目的" className="h-8 text-sm" />
                       <Textarea value={mod.contentBrief || ""} onChange={(e) => updateAPlusModule(idx, "contentBrief", e.target.value)} placeholder="内容简述" className="min-h-[50px] text-sm" />
                       <Input value={mod.position || ""} onChange={(e) => updateAPlusModule(idx, "position", e.target.value)} placeholder="位置逻辑" className="h-8 text-sm" />
+                      {Array.isArray(mod.subModules) && mod.subModules.length > 0 && (
+                        <div className="rounded-md border border-dashed border-purple-200 bg-purple-50/40 p-2.5">
+                          <p className="text-xs font-medium text-purple-900">子图备注 / 拆分说明</p>
+                          <Textarea value={mod.subModuleRemark || ""} onChange={(e) => updateAPlusSubmoduleRemark(idx, e.target.value)} placeholder="例如：4种场景：车库、庭院、露营、工地" className="mt-1 min-h-[54px] text-sm" />
+                          <div className="mt-2 flex items-center gap-2">
+                            <span className="text-[10px] text-purple-900">预期子图数量</span>
+                            <Input type="number" min={2} max={15} value={mod.subModuleCount || mod.subModules.length} onChange={(e) => {
+                              const newData = { ...editData, aPlusModules: [...(editData.aPlusModules || [])] };
+                              newData.aPlusModules[idx] = { ...newData.aPlusModules[idx], subModuleCount: Number(e.target.value || 0) };
+                              setEditData(normalizeImageOutline(newData));
+                            }} className="h-7 w-20 text-xs" />
+                          </div>
+                          <p className="mt-1 text-[10px] text-muted-foreground">备注中的数量优先；也可直接调整数量。冒号后列出每张图主题，后续参考图和图片建议会逐图继承。</p>
+                        </div>
+                      )}
                       {Array.isArray(mod.subModules) && mod.subModules.length > 0 && (
                         <div className="space-y-3 rounded-lg border border-purple-200 bg-purple-50/30 p-3">
                           <div className="flex items-center justify-between">

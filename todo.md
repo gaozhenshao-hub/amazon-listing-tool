@@ -21,6 +21,16 @@
 - [x] 前端 bundle 体积过大（index.js 9.8MB），建议拆分动态导入（已知问题，后续版本优化）
 - [x] 部分 offsite 表仍有冗余旧字段，可在后续版本清理（已知问题，后续版本优化）
 
+## 多图A+模块备注驱动拆分（2026-08-16）
+
+- [x] 为多图A+模块增加可编辑的子图备注与预期子图数量
+- [x] 按备注中的主题或数量重建A+ 1.1、1.2等子模块大纲
+- [x] 将子图备注和拆分结果传递至Step4参考图与Step5图片建议（Step4已完成）
+- [x] 补充备注驱动拆分与锁定子图回读的回归测试
+- [x] 在共享归一化结构中持久化subModuleRemark和subModuleCount，避免仅前端临时改写
+- [x] 让Step5显式读取subModuleRemark、subModuleCount和subModuleTopic并写入最终建议输入
+- [x] 为Step5备注驱动子图传递补充回归测试
+
 ## 独立账号密码登录（2026-07-08）
 
 - [x] users 表新增 password_hash、must_change_password 字段

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { enrichStep5AplusSubmodules } from "./domains/image/step5AplusSubmodules";
+import { readFileSync } from "node:fs";
 
 describe("Step5多图A+子模块建议", () => {
   it("在模型仅返回父模块时，回填已锁定子图的独立建议与参考图键", () => {
@@ -24,5 +25,13 @@ describe("Step5多图A+子模块建议", () => {
       isLocked: true,
     })]);
     expect(section.moduleSpecificContent.subImages).toHaveLength(1);
+  });
+
+  it("将备注驱动的子图数量和主题显式写入最终建议上下文", () => {
+    const source = readFileSync("server/domains/image/routerContext.ts", "utf8");
+    expect(source).toContain("A+备注驱动的逐图目标");
+    expect(source).toContain("subModuleRemark: target.subModuleRemark");
+    expect(source).toContain("subModuleCount: target.subModuleCount");
+    expect(source).toContain("subModuleTopic: target.subModuleTopic");
   });
 });
