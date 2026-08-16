@@ -569,12 +569,15 @@ function Step5FinalSuggestions({
   const [optimizingSectionIdx, setOptimizingSectionIdx] = useState<number | null>(null);
   const singleModuleOptimizeMutation = trpc.imageWorkflow.optimizeSingleAplusModule.useMutation();
   const sessionRunStatus = session?.step5RunStatus || "idle";
-  const sessionActiveRunId = session?.step5RunId || null;
   const isRunActive = (status?: string | null) => status === "queued" || status === "running";
+  // 失败/取消运行仅用于展示历史诊断，不能继续作为轮询对象；否则页面会一直
+  // 订阅旧runId，并将旧错误覆盖到用户刚发起的新生成任务上。
+  const sessionActiveRunId = isRunActive(sessionRunStatus) ? session?.step5RunId || null : null;
+  const effectiveRunId = activeRunId || sessionActiveRunId;
   const step5RunQuery = trpc.imageWorkflow.getStep5Run.useQuery(
-    { projectId, runId: activeRunId || sessionActiveRunId || undefined },
+    { projectId, runId: effectiveRunId || undefined },
     {
-      enabled: Boolean(activeRunId || sessionActiveRunId),
+      enabled: Boolean(effectiveRunId),
       refetchInterval: (query) => {
         const data = query.state.data as any;
         const status = data?.status || sessionRunStatus;
@@ -582,11 +585,12 @@ function Step5FinalSuggestions({
       },
     }
   );
-  const runStatus = step5RunQuery.data?.status || sessionRunStatus;
-  const runProgress = Number(step5RunQuery.data?.progress ?? session?.step5RunProgress ?? 0);
-  const runAttempt = Number(step5RunQuery.data?.attempt || 0);
-  const runMaxAttempts = Number(step5RunQuery.data?.maxAttempts || 0);
-  const runError = step5RunQuery.data?.error || session?.step5RunError || null;
+  const currentRun = effectiveRunId ? step5RunQuery.data : null;
+  const runStatus = currentRun?.status || sessionRunStatus;
+  const runProgress = Number(currentRun?.progress ?? session?.step5RunProgress ?? 0);
+  const runAttempt = Number(currentRun?.attempt || 0);
+  const runMaxAttempts = Number(currentRun?.maxAttempts || 0);
+  const runError = currentRun?.error || session?.step5RunError || null;
   const isGenerating = generateMutation.isPending || isRunActive(runStatus);
 
   // Amazon Premium A+ Module Types - comprehensive list matching backend prompt
@@ -766,6 +770,8 @@ function Step5FinalSuggestions({
 
   const handleGenerate = async () => {
     try {
+      // 从失败记录重新生成时先脱离旧run查询，避免旧失败快照继续占用展示状态。
+      if (!isRunActive(sessionRunStatus)) setActiveRunId(null);
       const result = await generateMutation.mutateAsync({ projectId });
       if (result.runId) setActiveRunId(result.runId);
       if (result.status === "succeeded") {
