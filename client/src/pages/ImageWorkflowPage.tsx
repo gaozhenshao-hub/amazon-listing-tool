@@ -66,7 +66,7 @@ import { Step3StyleConfirm } from "./imageWorkflow/StyleConfirmationStep";
 import { Step4References } from "./imageWorkflow/ReferenceImagesStep";
 import { OUTLINE_APLUS_CATEGORIES, OUTLINE_APLUS_MODULES, findOutlineAplusModule, normalizeAplusModuleStyle } from "./imageWorkflow/aplusModules";
 import { buildFullPlanContent, buildPdfContent, safeJsonParse } from "./imageWorkflow/exportContent";
-import { buildStep5SegmentStates, isActiveStep5RunStatus, resolveCurrentStep5RunId } from "./imageWorkflow/step5RunState";
+import { buildStep5SegmentStates, getStep5SegmentPresentation, isActiveStep5RunStatus, resolveCurrentStep5RunId } from "./imageWorkflow/step5RunState";
 import { normalizeSecondaryImageSlots } from "@shared/imageWorkflow";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1077,26 +1077,21 @@ function Step5FinalSuggestions({
                 <div className="mt-3 grid w-full max-w-xl grid-cols-2 gap-2 text-left sm:grid-cols-5">
                   {step5Segments.map((segment) => (
                     (() => {
-                      const status = String(segment.status || "pending");
-                      const isComplete = status === "complete" || status === "succeeded";
-                      const isFailed = status === "failed";
-                      const isFallback = status === "fallback";
-                      const label = isComplete ? "已完成" : isFailed ? "失败" : isFallback ? "已回退" : status === "running" ? "生成中" : "待执行";
-                      const icon = isComplete ? "✓" : isFailed ? "!" : isFallback ? "↳" : status === "running" ? "●" : "○";
-                      const tone = isComplete
+                      const presentation = getStep5SegmentPresentation(segment.status);
+                      const tone = presentation.tone === "success"
                         ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : isFailed
+                        : presentation.tone === "failure"
                           ? "border-red-200 bg-red-50 text-red-700"
-                          : isFallback
+                          : presentation.tone === "fallback"
                             ? "border-amber-200 bg-amber-50 text-amber-800"
-                            : status === "running"
+                            : presentation.tone === "running"
                               ? "border-primary/30 bg-primary/5 text-primary"
                               : "border-muted bg-muted/30 text-muted-foreground";
                       return (
                         <div key={segment.key || segment.id} className={`rounded-md border px-2 py-1.5 text-[11px] ${tone}`}>
-                          <span className="mr-1">{icon}</span>
+                          <span className="mr-1">{presentation.icon}</span>
                           {segment.label}
-                          <span className="ml-1 opacity-75">{label}</span>
+                          <span className="ml-1 opacity-75">{presentation.label}</span>
                         </div>
                       );
                     })()

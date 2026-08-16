@@ -830,11 +830,28 @@ export async function buildStep5FinalSuggestion(
     const aplusModules = aplusSegments.flatMap((segment) => getAplusModules(segment));
     const brandStory = aplusSegments.map((segment) => getBrandStory(segment)).find(Boolean) || null;
     await reportProgress(82);
-    if (!mainSegment?.mainImage || !Array.isArray(secondarySegment?.secondaryImages) || secondarySegment.secondaryImages.length < 5) {
-      throw new Error("分段Skill返回内容不完整");
+    if (!mainSegment?.mainImage) {
+      const error = new Error("主图分段Skill返回内容不完整");
+      await setSegment("main", "failed", error);
+      throw error;
     }
-    if (aplusModules.length < outlineAplusModules.length || (outlineBrandStory && !brandStory)) {
-      throw new Error("A+子分段返回内容不完整");
+    if (!Array.isArray(secondarySegment?.secondaryImages) || secondarySegment.secondaryImages.length < 5) {
+      const error = new Error("辅图分段Skill返回内容不完整");
+      await setSegment("secondary", "failed", error);
+      throw error;
+    }
+    const returnedAplusNumbers = new Set(aplusModules.map((module: any) => Number(module?.moduleNumber)).filter(Boolean));
+    const missingAplus = outlineAplusModules.find((module: any, index: number) => !returnedAplusNumbers.has(Number(module?.moduleNumber || index + 1)));
+    if (missingAplus) {
+      const moduleNumber = Number(missingAplus?.moduleNumber || outlineAplusModules.indexOf(missingAplus) + 1);
+      const error = new Error(`A+ ${moduleNumber}子分段返回内容不完整`);
+      await setSegment(`aplus_${moduleNumber}`, "failed", error);
+      throw error;
+    }
+    if (outlineBrandStory && !brandStory) {
+      const error = new Error("品牌故事子分段返回内容不完整");
+      await setSegment("brand_story", "failed", error);
+      throw error;
     }
     result = {
       ...mainSegment,

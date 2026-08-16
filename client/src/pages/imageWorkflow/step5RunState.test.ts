@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStep5SegmentStates, resolveCurrentStep5RunId } from "./step5RunState";
+import { buildStep5SegmentStates, getStep5SegmentPresentation, resolveCurrentStep5RunId } from "./step5RunState";
 
 describe("Step5当前运行选择", () => {
   it("不追踪失败会话遗留的旧runId", () => {
@@ -35,5 +35,11 @@ describe("Step5当前运行选择", () => {
       brand: "running",
       merge: "pending",
     });
+  });
+
+  it("将真实分段的失败和回退状态展示为明确文案，而非待执行", () => {
+    expect(getStep5SegmentPresentation("failed")).toMatchObject({ label: "失败", tone: "failure" });
+    expect(getStep5SegmentPresentation("fallback")).toMatchObject({ label: "已回退", tone: "fallback" });
+    expect(getStep5SegmentPresentation("succeeded")).toMatchObject({ label: "已完成", tone: "success" });
   });
 });

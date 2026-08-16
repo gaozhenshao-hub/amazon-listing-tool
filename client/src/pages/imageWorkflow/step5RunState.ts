@@ -31,3 +31,14 @@ export function buildStep5SegmentStates(progress: number) {
     status: (progress >= segment.complete ? "complete" : progress >= segment.start ? "running" : "pending") as Step5SegmentState,
   }));
 }
+
+export function getStep5SegmentPresentation(rawStatus?: string | null) {
+  const status = String(rawStatus || "pending");
+  if (status === "complete" || status === "succeeded") {
+    return { label: "已完成", icon: "✓", tone: "success" as const };
+  }
+  if (status === "failed") return { label: "失败", icon: "!", tone: "failure" as const };
+  if (status === "fallback") return { label: "已回退", icon: "↳", tone: "fallback" as const };
+  if (status === "running") return { label: "生成中", icon: "●", tone: "running" as const };
+  return { label: "待执行", icon: "○", tone: "pending" as const };
+}
