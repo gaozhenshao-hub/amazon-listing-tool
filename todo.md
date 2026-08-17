@@ -155,8 +155,10 @@
 - [x] 用空气套件真实填写Step2场景备注与子图主题，验证450ms自动保存后数据库step2UserEdit已更新
 - [ ] 强制刷新Step2页面，确认场景备注、四个子图标题与锁定状态从会话草稿正确水合恢复
 - [ ] 修复Step2刷新后场景子图标题前台显示被截断的问题，并用空气套件强刷验证完整标题可见
-- [ ] 补充Step2强制刷新后锁定子图状态与场景备注共同水合的端到端回归测试或路由/UI断言
-- [ ] 补充Step2 saveStep2Draft的路由级回归测试，覆盖备注到草稿持久化与刷新回读
+- [x] 补充Step2草稿保存与回读的源码契约测试（未锁定规范化保存、锁定拦截、完整备注/标题与lockedArtifactRef保留断言通过）
+- [x] 为imageWorkflow.saveStep2Draft新增可执行路由级测试：实际调用mutation，验证未锁定写入、锁定拒绝与currentStep=2（独立tRPC caller三项测试通过）
+- [x] 为Step2刷新回读增加会话水合测试：保存场景备注、完整标题和锁定资产后，断言resolveSessionForDisplay返回前台字段完整
+- [x] 为Step2刷新回读补充完整getSession路由测试：通过imageWorkflowRouter.createCaller读取会话，断言备注、标题与isLocked/lockedArtifactRef完整返回（真实caller四项路由/水合测试通过）
 
 ## Step4场景参考图输出校验修复（2026-08-17）
 
