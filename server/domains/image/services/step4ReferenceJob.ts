@@ -53,11 +53,11 @@ function normalizeStep4JobError(error: unknown) {
  * Agent DAG is observability only. A slow/blocked sync must never leave a
  * business AI Job running after its Step4 result has been safely persisted.
  */
-export async function settleStep4AgentSync(sync: Promise<void>, timeoutMs = 5_000): Promise<"synced" | "timed_out"> {
+export async function settleStep4AgentSync(sync: Promise<void> | void, timeoutMs = 5_000): Promise<"synced" | "timed_out"> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const outcome = await Promise.race([
-      sync.then(() => "synced" as const),
+      Promise.resolve(sync).then(() => "synced" as const),
       new Promise<"timed_out">((resolve) => {
         timer = setTimeout(() => resolve("timed_out"), timeoutMs);
       }),
@@ -272,7 +272,7 @@ export async function startStep4ReferenceJob(input: {
     const syncActiveJob = activeJob.status === "running"
       ? syncStepJobRunningToAgent
       : syncStepJobQueuedToAgent;
-    await syncActiveJob({
+    await settleStep4AgentSync(syncActiveJob({
       agentRunId: input.agentRunId,
       stepNumber: 4,
       projectId: input.projectId,
@@ -282,7 +282,7 @@ export async function startStep4ReferenceJob(input: {
       aiJobAttempt: activeJob.attempt,
       aiJobMaxAttempts: activeJob.maxAttempts,
       progress: activeJob.progress,
-    });
+    }));
     return activeJob;
   }
 
@@ -311,7 +311,7 @@ export async function startStep4ReferenceJob(input: {
     maxAttempts: 3,
     timeoutSeconds: 15 * 60,
   });
-  await syncStepJobQueuedToAgent({
+  await settleStep4AgentSync(syncStepJobQueuedToAgent({
     agentRunId,
     stepNumber: 4,
     projectId: input.projectId,
@@ -321,7 +321,7 @@ export async function startStep4ReferenceJob(input: {
     aiJobAttempt: job.attempt,
     aiJobMaxAttempts: job.maxAttempts,
     progress: job.progress,
-  });
+  }));
   await scheduleAiJobRun(job.runId);
   return job;
 }
