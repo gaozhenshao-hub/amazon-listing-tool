@@ -27,4 +27,12 @@ describe("Step4参考图缺项恢复", () => {
     expect(result.imageReferences[3].subModuleNumber).toBe(2);
     expect(result.imageReferences[4].imageType).toBe("品牌故事");
   });
+
+  it("在皇帝输出完全不可用时按当前大纲生成每个目标的可编辑基础参考", () => {
+    const result = validateStep4ReferenceResult({ imageReferences: [] }, targets);
+
+    expect(result.imageReferences).toHaveLength(targets.length);
+    expect(result.imageReferences.map((reference: any) => reference.imageKey)).toEqual(targets.map((target) => target.imageKey));
+    expect(result.imageReferences.every((reference: any) => reference.isBackfilledFromOutline)).toBe(true);
+  });
 });

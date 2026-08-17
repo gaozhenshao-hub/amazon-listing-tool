@@ -168,15 +168,26 @@ export async function buildStep4ReferenceRecommendation(input: {
   const lockedAssetNote = consumedRefs.length ? `\n--- 已锁定A+子图资产 ---\n以下子图为用户确认版本，必须以其内容为准：${consumedRefs.join(", ")}` : "";
   const context = `产品名称: ${input.project.productName || input.project.name}\n品牌: ${input.project.brand || "未指定"}\n类目: ${input.project.category || "未指定"}\n\n--- 已确认的图片大纲 ---\n${outline}${lockedAssetNote}\n\n--- 已确认的风格方案 ---\n${style}\n${kbImageInfo}\n\n--- 必须逐项输出参考方案的图片目标 ---\n${JSON.stringify(referenceTargets)}\n\n请为每个目标生成一项 imageReferences，并原样保留 imageKey、imageNumber、imageType、parentModuleNumber 和 subModuleNumber。不得遗漏辅图2-7。A+多图模块的每张子图是独立目标，例如A+模块8的四张轮播图必须分别输出A+模块8.1、8.2、8.3、8.4的构图和效果参考。`;
 
-  return callImageWorkflowSkill({
-    skillSlug: "image.step4.reference",
-    userId: input.userId,
-    workspaceId: input.workspaceId ?? input.project.workspaceId ?? null,
-    systemPrompt: STEP4_REFERENCE_PROMPT,
-    context,
-    maxModelAttempts: 3,
-    validate: (value) => validateStep4ReferenceResult(value, referenceTargets),
-  });
+  try {
+    return await callImageWorkflowSkill({
+      skillSlug: "image.step4.reference",
+      userId: input.userId,
+      workspaceId: input.workspaceId ?? input.project.workspaceId ?? null,
+      systemPrompt: STEP4_REFERENCE_PROMPT,
+      context,
+      maxModelAttempts: 3,
+      validate: (value) => validateStep4ReferenceResult(value, referenceTargets),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || "");
+    // 场景多图会显著放大Step4的JSON长度。若皇帝输出无法解析，仍需保留
+    // 当前大纲的完整下游目标，而不是让整套参考图失败或覆盖已有确认内容。
+    if (/未返回有效 JSON|AI output validation failed|INVALID_OUTPUT/i.test(message)) {
+      console.warn("[Step4] Emperor JSON invalid; returning outline-backed editable references", { targetCount: referenceTargets.length });
+      return validateStep4ReferenceResult({ imageReferences: [] }, referenceTargets);
+    }
+    throw error;
+  }
 }
 
 export async function startStep4ReferenceJob(input: {
