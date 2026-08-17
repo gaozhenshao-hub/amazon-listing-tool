@@ -15,6 +15,7 @@ import {
 } from "../services/stepGenerationJob";
 import { registerImageWorkflowAplusSubmoduleArtifact, registerImageWorkflowStepArtifact } from "../../ai_os/services/businessArtifactRegistry";
 import { buildStep4ConfirmedSnapshot } from "../step4Snapshot";
+import { preserveLockedAplusSubmodules } from "../step2AplusLockedSubmodules";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -335,8 +336,11 @@ export const imageWorkflowStepProcedures = {
         ...optimized,
         moduleNumber: currentModule.moduleNumber ?? input.moduleIndex + 1,
         moduleOptimizedForType: selectedModule.id,
+        subModuleRemark: currentModule.subModuleRemark ?? optimized.subModuleRemark,
+        subModuleCount: currentModule.subModuleCount ?? optimized.subModuleCount,
       };
-      outline.aPlusModules[input.moduleIndex] = applyImageWorkflowAplusStyle(mergedModule, selectedModule.id);
+      const styledModule = applyImageWorkflowAplusStyle(mergedModule, selectedModule.id);
+      outline.aPlusModules[input.moduleIndex] = preserveLockedAplusSubmodules(currentModule, styledModule);
       const normalizedOutline = normalizeImageOutline(outline);
 
       await db.updateImageWorkflowSession(session.id, {
