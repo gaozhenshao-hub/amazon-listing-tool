@@ -1,6 +1,12 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
-import { compactStep4ReferenceForStorage, compactStep4SnapshotForStorage, mergeSingleStep4Reference, mergeStep4LatestWithUserAssets } from "../step4Snapshot";
+import * as step4Snapshot from "../step4Snapshot";
+
+const {
+  compactStep4ReferenceForStorage,
+  compactStep4SnapshotForStorage,
+  mergeSingleStep4Reference,
+} = step4Snapshot;
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -52,7 +58,33 @@ function mergeStep4DraftVersions(confirmedRaw: unknown, latestRaw: unknown) {
   if (!confirmed) return latest;
   if (!latest) return confirmed;
 
-  return mergeStep4LatestWithUserAssets(confirmed, latest);
+  // 使用命名空间导入避免热更新或滚动发布期间的静态命名导出不一致，
+  // 并保留一份等价的兼容合并逻辑作为安全降级。
+  const mergeLatest = (step4Snapshot as Record<string, any>).mergeStep4LatestWithUserAssets;
+  if (typeof mergeLatest === "function") return mergeLatest(confirmed, latest);
+
+  const confirmedRefs = Array.isArray(confirmed.imageReferences) ? confirmed.imageReferences : [];
+  const latestRefs = Array.isArray(latest.imageReferences) ? latest.imageReferences : [];
+  const identity = (reference: Record<string, any>, index: number) => String(
+    reference?.imageKey
+    || `${reference?.imageType || "image"}:${reference?.parentModuleNumber ?? ""}:${reference?.subModuleNumber ?? ""}:${reference?.imageNumber ?? index}`,
+  );
+  const confirmedByKey = new Map(confirmedRefs.map((reference: Record<string, any>, index: number) => [identity(reference, index), reference]));
+  return {
+    ...confirmed,
+    ...latest,
+    imageReferences: latestRefs.map((latestReference: Record<string, any>, index: number) => {
+      const confirmedReference = confirmedByKey.get(identity(latestReference, index)) || confirmedRefs[index] || {};
+      return {
+        ...latestReference,
+        compositionRefImageUrl: confirmedReference.compositionRefImageUrl || latestReference.compositionRefImageUrl,
+        effectRefImageUrl: confirmedReference.effectRefImageUrl || latestReference.effectRefImageUrl,
+        compositionRefNote: confirmedReference.compositionRefNote || latestReference.compositionRefNote,
+        effectRefNote: confirmedReference.effectRefNote || latestReference.effectRefNote,
+        kbReferenceImages: confirmedReference.kbReferenceImages || latestReference.kbReferenceImages,
+      };
+    }),
+  };
 }
 
 export const imageReferenceProcedures = {
@@ -106,9 +138,12 @@ export const imageReferenceProcedures = {
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       const visibleSnapshot = input.userEdit ? parseStoredJson(input.userEdit) as Record<string, any> | null : null;
-      const draft = visibleSnapshot?.imageReferences?.length
-        ? visibleSnapshot
-        : mergeStep4DraftVersions(session.step4UserEdit, session.step4AiResult);
+      // 锁定页传来的可见快照可能仍是历史确认版本；它只提供本地图片和备注，
+      // 内容必须始终以最新 step4AiResult 的场景方案为基准，避免解锁后回退旧方案。
+      const draft = mergeStep4DraftVersions(
+        visibleSnapshot?.imageReferences?.length ? visibleSnapshot : session.step4UserEdit,
+        session.step4AiResult,
+      );
       if (!draft) throw new Error("当前没有可编辑的参考图方案");
       const userEdit = JSON.stringify(draft);
 

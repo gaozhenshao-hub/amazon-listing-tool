@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { buildStep4ConfirmedSnapshot, compactStep4ReferenceForStorage, compactStep4SnapshotForStorage, mergeSingleStep4Reference, mergeStep4LatestWithUserAssets } from "./domains/image/step4Snapshot";
 
 describe("Step4锁定快照持久化", () => {
+  it("向解锁路由提供可用的最新方案合并导出", () => {
+    expect(typeof mergeStep4LatestWithUserAssets).toBe("function");
+  });
+
   it("解锁时采用最新AI场景方案并保留本地参考图和备注", () => {
     const result = mergeStep4LatestWithUserAssets(
       { imageReferences: [{ imageKey: "aplus-5.1", designNotes: "旧车库方案", compositionRefImageUrl: "local://garage", compositionRefNote: "保留白色背景" }] },
@@ -12,6 +16,34 @@ describe("Step4锁定快照持久化", () => {
       compositionRefImageUrl: "local://garage",
       compositionRefNote: "保留白色背景",
       compositionReference: { layout: "车库场景" },
+    });
+  });
+
+  it("解锁时让四种场景内容保持最新，同时保留对应本地备注", () => {
+    const result = mergeStep4LatestWithUserAssets(
+      {
+        imageReferences: [
+          { imageKey: "aplus-5.1", title: "旧车库", compositionRefNote: "车库参考背景色。" },
+          { imageKey: "aplus-5.2", title: "旧庭院" },
+          { imageKey: "aplus-5.3", title: "旧露营" },
+          { imageKey: "aplus-5.4", title: "旧工地" },
+        ],
+      },
+      {
+        imageReferences: [
+          { imageKey: "aplus-5.1", title: "Garage", designNotes: "最新车库方案" },
+          { imageKey: "aplus-5.2", title: "Courtyard", designNotes: "最新庭院方案" },
+          { imageKey: "aplus-5.3", title: "Camping", designNotes: "最新露营方案" },
+          { imageKey: "aplus-5.4", title: "Jobsite", designNotes: "最新工地方案" },
+        ],
+      },
+    );
+
+    expect(result?.imageReferences).toHaveLength(4);
+    expect(result?.imageReferences.map((reference: any) => reference.title)).toEqual(["Garage", "Courtyard", "Camping", "Jobsite"]);
+    expect(result?.imageReferences[0]).toMatchObject({
+      designNotes: "最新车库方案",
+      compositionRefNote: "车库参考背景色。",
     });
   });
 
