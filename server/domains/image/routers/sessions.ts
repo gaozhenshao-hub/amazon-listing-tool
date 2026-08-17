@@ -64,10 +64,13 @@ function selectedAsinSetIds(session: any): number[] {
 async function applyCurrentStep4ImageVersions(session: any) {
   if (!session) return session;
   const versions = await db.getCurrentStep4ImageVersions(session.id);
-  const base = mergeStep4LatestWithUserAssets(
-    parseExportJson(session.step4UserEdit),
-    parseExportJson(session.step4AiResult),
-  ) || parseExportJson(session.step4UserEdit || session.step4AiResult);
+  const draftSnapshot = parseExportJson(session.step4UserEdit);
+  const aiSnapshot = parseExportJson(session.step4AiResult);
+  // 解锁接口已将最新成功任务方案与用户本地资产合并并写入step4UserEdit。
+  // 此时再用旧step4AiResult作“最新”内容合并，会把车库/庭院/露营/工地方案回退。
+  const base = !session.step4Confirmed && Array.isArray(draftSnapshot?.imageReferences) && draftSnapshot.imageReferences.length
+    ? draftSnapshot
+    : mergeStep4LatestWithUserAssets(draftSnapshot, aiSnapshot) || draftSnapshot || aiSnapshot;
   if (!versions.length || !session.step4Confirmed) {
     const rebuilt = rebuildStep4DisplaySnapshot(session, base);
     return { ...session, step4UserEdit: JSON.stringify(rebuilt), step4AiResult: JSON.stringify(rebuilt) };
