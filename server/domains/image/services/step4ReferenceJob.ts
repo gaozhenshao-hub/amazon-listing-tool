@@ -49,18 +49,83 @@ function normalizeStep4JobError(error: unknown) {
   return error instanceof Error ? error : new Error(message);
 }
 
-export function validateStep4ReferenceResult(value: any) {
-  const references = Array.isArray(value?.imageReferences) ? value.imageReferences : [];
+function buildStep4FallbackReference(target: any) {
+  const isBrand = /品牌故事/.test(String(target?.imageType || ""));
+  return {
+    imageKey: target.imageKey,
+    imageNumber: /A\+|品牌故事/.test(String(target?.imageType || "")) ? 0 : (target.imageNumber || 0),
+    imageType: target.imageType,
+    parentModuleNumber: target.parentModuleNumber ?? null,
+    subModuleNumber: target.subModuleNumber ?? null,
+    compositionReference: {
+      compositionType: isBrand ? "品牌叙事横幅构图" : "基于大纲的重点构图",
+      layout: "围绕当前图片大纲的核心目标组织产品、场景和说明元素",
+      focalPoint: target.purpose || "突出当前模块的核心价值",
+      visualFlow: "核心主体→关键信息→补充说明",
+      elementRatio: "核心主体65%，说明元素20%，留白15%",
+    },
+    effectReference: {
+      colorApplication: "继承当前确认的品牌主色、辅色与强调色，保证系列一致性",
+      typographyApplication: "沿用整套图片的层级、字重和可读性规范",
+      iconApplication: "仅使用服务于核心卖点的简洁图标",
+      visualMood: "与当前确认风格保持一致的专业视觉氛围",
+      lightingStyle: "与整套图片保持统一的产品与场景光线风格",
+    },
+    designNotes: "皇帝Skill未返回该目标的完整参考方案，系统已按当前大纲补齐可编辑基础方案；可对该图单独重新生成。",
+    isBackfilledFromOutline: true,
+  };
+}
+
+export function validateStep4ReferenceResult(value: any, referenceTargets?: any[]) {
+  const rawReferences = Array.isArray(value?.imageReferences)
+    ? value.imageReferences
+    : Array.isArray(value?.references)
+      ? value.references
+      : [];
+  const references = referenceTargets?.length
+    ? referenceTargets.map((target) => {
+        const targetType = String(target?.imageType || "");
+        const matched = rawReferences.find((reference: any) => String(reference?.imageKey || "") === String(target?.imageKey || ""))
+          || rawReferences.find((reference: any) =>
+            String(reference?.parentModuleNumber ?? "") === String(target?.parentModuleNumber ?? "")
+            && String(reference?.subModuleNumber ?? "") === String(target?.subModuleNumber ?? "")
+            && String(reference?.imageType || "") === targetType,
+          )
+          || rawReferences.find((reference: any) =>
+            !/A\+|品牌故事/.test(targetType)
+            && Number(reference?.imageNumber) === Number(target?.imageNumber)
+            && !/A\+|品牌故事/.test(String(reference?.imageType || "")),
+          );
+        return {
+          ...buildStep4FallbackReference(target),
+          ...(matched || {}),
+          imageKey: target.imageKey,
+          imageType: target.imageType,
+          imageNumber: /A\+|品牌故事/.test(targetType) ? 0 : (target.imageNumber || 0),
+          parentModuleNumber: target.parentModuleNumber ?? null,
+          subModuleNumber: target.subModuleNumber ?? null,
+        };
+      })
+    : rawReferences;
   const secondaryNumbers = new Set(
     references
       .filter((reference: any) => !String(reference?.imageType || "").toLowerCase().includes("a+"))
       .map((reference: any) => Number(reference?.imageNumber)),
   );
-  const missingNumbers = [2, 3, 4, 5, 6, 7].filter((imageNumber) => !secondaryNumbers.has(imageNumber));
+  const expectedSecondaryNumbers = referenceTargets?.length
+    ? referenceTargets
+        .filter((target: any) => !/A\+|品牌故事/.test(String(target?.imageType || "")))
+        .map((target: any) => Number(target?.imageNumber))
+        .filter((imageNumber) => imageNumber >= 2 && imageNumber <= 7)
+    : [2, 3, 4, 5, 6, 7];
+  const missingNumbers = expectedSecondaryNumbers.filter((imageNumber) => !secondaryNumbers.has(imageNumber));
   if (missingNumbers.length > 0) {
     throw new Error(`构图参考必须完整覆盖辅图2-7，当前缺少辅图: ${missingNumbers.join(", ")}`);
   }
-  return value;
+  return {
+    ...(value && typeof value === "object" ? value : {}),
+    imageReferences: references,
+  };
 }
 
 export async function getLatestStep4ReferenceJob(userId: number, projectId: number) {
@@ -110,7 +175,7 @@ export async function buildStep4ReferenceRecommendation(input: {
     systemPrompt: STEP4_REFERENCE_PROMPT,
     context,
     maxModelAttempts: 3,
-    validate: validateStep4ReferenceResult,
+    validate: (value) => validateStep4ReferenceResult(value, referenceTargets),
   });
 }
 
