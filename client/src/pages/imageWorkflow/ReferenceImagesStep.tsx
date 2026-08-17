@@ -20,6 +20,17 @@ import { normalizeStep4References } from "@shared/imageWorkflow";
 
 const isActiveStep4Run = (status?: string | null) => status === "queued" || status === "running";
 
+/**
+ * Step4逐图确认的权威状态来自服务端水合后的isLocked。
+ * lockedSnapshot仅是本地即时编辑时的辅助字段；从step4ImageVersions恢复的
+ * 已锁定版本不携带该字段，不能据此误判为“未确认”。
+ */
+export function getUnconfirmedStep4References(references: unknown[]): Array<Record<string, any>> {
+  return references.filter((reference): reference is Record<string, any> =>
+    !reference || !Boolean((reference as Record<string, any>).isLocked),
+  );
+}
+
 function formatStep4Error(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "参考图推荐失败");
   if (/<!doctype\s+html|<html[\s>]/i.test(message)) {
@@ -258,7 +269,7 @@ export function Step4References({
 
   const handleConfirm = async () => {
     if (!editData) return;
-    const unlockedRefs = (editData.imageReferences || []).filter((ref: any) => !ref?.isLocked || !ref?.lockedSnapshot);
+    const unlockedRefs = getUnconfirmedStep4References(editData.imageReferences || []);
     if (unlockedRefs.length > 0) {
       toast.error(`请先逐图点击“确认此图”。尚有 ${unlockedRefs.length} 张图片未确认`);
       return;
