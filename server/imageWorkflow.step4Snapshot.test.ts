@@ -156,6 +156,37 @@ describe("Step4锁定快照持久化", () => {
     });
   });
 
+  it("单图确认锁定后，全量参考图的稳定键、其余内容与品牌故事均保持不变", () => {
+    const keys = [
+      "main-1", "secondary-2", "secondary-3", "secondary-4", "secondary-5", "secondary-6", "secondary-7",
+      "aplus-1.1", "aplus-1.2", "aplus-1.3", "aplus-1.4", "aplus-2", "aplus-3",
+      "aplus-4.1", "aplus-4.2", "aplus-4.3", "aplus-4.4",
+      "aplus-5.1", "aplus-5.2", "aplus-5.3", "aplus-5.4", "aplus-6",
+      "aplus-7.1", "aplus-7.2", "aplus-7.3", "aplus-7.4", "brand-story",
+    ];
+    const before = {
+      imageReferences: keys.map((imageKey) => ({
+        imageKey,
+        imageType: imageKey === "brand-story" ? "品牌故事" : imageKey,
+        purpose: `${imageKey} 目的`,
+        compositionReference: { layout: `${imageKey} 构图` },
+        effectReference: { colorApplication: `${imageKey} 配色` },
+      })),
+    };
+    const after = {
+      ...before,
+      imageReferences: before.imageReferences.map((reference, index) => index === 0
+        ? { ...reference, isLocked: true, lockedSnapshot: { ...reference } }
+        : reference),
+    };
+
+    expect(after.imageReferences).toHaveLength(27);
+    expect(after.imageReferences.map((reference) => reference.imageKey)).toEqual(keys);
+    expect(after.imageReferences.slice(1)).toEqual(before.imageReferences.slice(1));
+    expect(after.imageReferences[0]).toMatchObject({ imageKey: "main-1", isLocked: true });
+    expect(after.imageReferences.find((reference) => reference.imageKey === "brand-story")).toEqual(before.imageReferences.at(-1));
+  });
+
   it("整体确认从逐图确认版本汇总时保留构图和效果备注", () => {
     const result = buildStep4ConfirmedSnapshot(
       { imageReferences: [{ imageType: "辅图 2" }, { imageType: "A+模块 7" }] },
