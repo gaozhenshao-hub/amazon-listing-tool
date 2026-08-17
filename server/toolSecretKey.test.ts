@@ -34,6 +34,24 @@ describe("TOOL_SECRET_KEY environment variable", () => {
     );
   });
 
+  it("accepts the configured runtime tool encryption key in production", () => {
+    expect(process.env.TOOL_SECRET_KEY?.length).toBeGreaterThanOrEqual(32);
+    const report = getStartupValidationReport({
+      entrypoint: "web",
+      role: "web",
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        DATABASE_URL: process.env.DATABASE_URL || "mysql://user:pass@localhost:3306/app",
+        JWT_SECRET: process.env.JWT_SECRET || "test-session-secret",
+      },
+    });
+
+    expect(report.errors.map(item => item.code)).not.toContain(
+      "tool_secret_key_missing"
+    );
+  });
+
   it("AI_JOB_IN_PROCESS should be set to false for worker-separated deployment", () => {
     const val = process.env.AI_JOB_IN_PROCESS;
     // Either false (worker separated) or undefined (in-process mode)
