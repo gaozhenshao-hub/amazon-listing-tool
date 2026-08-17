@@ -182,8 +182,13 @@ export async function buildStep4ReferenceRecommendation(input: {
     const message = error instanceof Error ? error.message : String(error || "");
     // 场景多图会显著放大Step4的JSON长度。若皇帝输出无法解析，仍需保留
     // 当前大纲的完整下游目标，而不是让整套参考图失败或覆盖已有确认内容。
-    if (/未返回有效 JSON|AI output validation failed|INVALID_OUTPUT/i.test(message)) {
-      console.warn("[Step4] Emperor JSON invalid; returning outline-backed editable references", { targetCount: referenceTargets.length });
+    // 皇帝运行器会将 INVALID_OUTPUT 包装为“AI 服务暂时不可用”，因此这里对
+    // 模型调用阶段的非取消异常统一降级；数据库、会话、权限等异常发生在此try之外。
+    if (!/取消|aborted/i.test(message)) {
+      console.warn("[Step4] Emperor response unavailable or invalid; returning outline-backed editable references", {
+        targetCount: referenceTargets.length,
+        message,
+      });
       return validateStep4ReferenceResult({ imageReferences: [] }, referenceTargets);
     }
     throw error;
