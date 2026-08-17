@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { safeParseSkillJSON } from "./domains/ai_os/services/skillRunner";
 import { describeStep5SegmentFailure } from "./domains/image/step5SegmentFailure";
 import { findIncompleteStep5Segment } from "./domains/image/step5SegmentValidation";
-import { buildStep5OutlineSafetyFallback, buildStep5RunSnapshot } from "./domains/image/routerContext";
+import { buildStep5OutlineSafetyFallback, buildStep5RunSnapshot, callStep5SkillWithinDeadline } from "./domains/image/routerContext";
 
 describe("Step5分段失败定位", () => {
   it("完整Skill返回不可解析长JSON时按已确认大纲构建可编辑安全回退", () => {
@@ -94,5 +94,14 @@ describe("Step5分段失败定位", () => {
       requiresBrandStory: true,
       brandStory: parsed.brandStory,
     })).toBeNull();
+  });
+
+  it("皇帝Skill长时间无输出时在有界等待后拒绝，让生成任务进入回退而非长期running", async () => {
+    vi.useFakeTimers();
+    const stalled = callStep5SkillWithinDeadline("主图", () => new Promise<never>(() => undefined));
+    const assertion = expect(stalled).rejects.toThrow("主图皇帝Skill超过120秒仍未返回");
+    await vi.advanceTimersByTimeAsync(120_000);
+    await assertion;
+    vi.useRealTimers();
   });
 });

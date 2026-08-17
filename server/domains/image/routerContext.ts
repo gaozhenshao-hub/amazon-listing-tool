@@ -838,6 +838,22 @@ type Step5RunSegment = {
   error?: string;
 };
 
+const STEP5_SKILL_TIMEOUT_MS = 120_000;
+
+export async function callStep5SkillWithinDeadline<T>(label: string, action: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      action(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label}皇帝Skill超过${Math.round(STEP5_SKILL_TIMEOUT_MS / 1000)}秒仍未返回`)), STEP5_SKILL_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function buildStep5FinalSuggestion(
   project: any,
   session: any,
@@ -933,18 +949,18 @@ export async function buildStep5FinalSuggestion(
   try {
     await reportProgress(30);
     const [mainSegment, secondarySegment] = await Promise.all([
-      runSegment("main", () => callImageWorkflowSkill({
+      runSegment("main", () => callStep5SkillWithinDeadline("主图", () => callImageWorkflowSkill({
         ...skillArgs,
         skillSlug: "image.step5.main.segment",
         systemPrompt: "只输出主图建议的结构化JSON，保留mainImage与designGuidelines字段。",
         context: `${context}\n\n本次仅负责主图#1，不要输出secondaryImages或A+模块。`,
-      })),
-      runSegment("secondary", () => callImageWorkflowSkill({
+      }))),
+      runSegment("secondary", () => callStep5SkillWithinDeadline("辅图 2–7", () => callImageWorkflowSkill({
         ...skillArgs,
         skillSlug: "image.step5.secondary.segment",
         systemPrompt: "只输出6张辅图建议的结构化JSON，保留secondaryImages字段。",
         context: `${context}\n\n本次仅负责辅图#2至#7，必须输出6项secondaryImages。`,
-      })),
+      }))),
     ]);
     await reportProgress(55);
     // A+ 7个模块与品牌故事在一个响应中会被模型截断。按模块独立调用同一皇帝Skill，
@@ -964,14 +980,14 @@ export async function buildStep5FinalSuggestion(
     await reportProgress(65);
     const aplusSegments = await Promise.all(aplusRequests.map(async (request) => {
       const segmentId = request.kind === "brand_story" ? "brand_story" : `aplus_${request.moduleNumber}`;
-      return runSegment(segmentId, () => callImageWorkflowSkill({
+      return runSegment(segmentId, () => callStep5SkillWithinDeadline(segmentId === "brand_story" ? "品牌故事" : `A+ ${request.moduleNumber}`, () => callImageWorkflowSkill({
           ...skillArgs,
           skillSlug: "image.step5.aplus.segment",
           systemPrompt: request.kind === "brand_story"
             ? "只输出独立品牌故事的结构化JSON，保留brandStory字段；aPlusModules必须为空数组。"
             : "只输出一个A+模块的结构化JSON，aPlusModules必须为仅含一个对象的数组。",
           context: request.context,
-        }));
+        })));
     }));
     const aplusModules = aplusSegments.flatMap((segment) => getAplusModules(segment));
     const brandStory = aplusSegments.map((segment) => getBrandStory(segment)).find(Boolean) || null;
@@ -1018,7 +1034,7 @@ export async function buildStep5FinalSuggestion(
     await reportProgress(70);
     let completeResult: any;
     try {
-      completeResult = await callImageWorkflowSkill({
+      completeResult = await callStep5SkillWithinDeadline("完整图片建议回退", () => callImageWorkflowSkill({
         skillSlug: "image.step5.final.suggestion",
         ...skillArgs,
         systemPrompt: STEP5_FINAL_SUGGESTION_PROMPT,
@@ -1029,7 +1045,7 @@ export async function buildStep5FinalSuggestion(
           }
           return value;
         },
-      });
+      }));
     } catch (finalSkillError) {
       console.error("[Step5] 完整Skill输出不可解析，使用已确认大纲构建可编辑安全回退", finalSkillError);
       completeResult = buildStep5OutlineSafetyFallback({
