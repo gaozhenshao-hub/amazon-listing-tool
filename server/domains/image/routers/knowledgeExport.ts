@@ -59,7 +59,7 @@ export const imageKnowledgeExportProcedures = {
     }).optional())
     .query(async ({ ctx, input }) => {
       const { scope = "all", ...filters } = input || {};
-      return kbDb.listAllImages(ctx.user.id, scope, filters);
+      return kbDb.listAllImages(ctx.user.id, ctx.workspaceId!, scope, filters);
     }),
 
 
@@ -68,7 +68,7 @@ export const imageKnowledgeExportProcedures = {
     .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional().default("all") }).optional())
     .query(async ({ ctx, input }) => {
       const scope = input?.scope ?? "all";
-      const allImages = await kbDb.listAllImages(ctx.user.id, scope);
+      const allImages = await kbDb.listAllImages(ctx.user.id, ctx.workspaceId!, scope);
       const categories = new Set<string>();
       const colorSchemes = new Set<string>();
       const imageTypes = new Set<string>();

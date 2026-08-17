@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getUnconfirmedStep4References } from "./ReferenceImagesStep";
+import { getUnconfirmedStep4References, resolveStep4ConfirmationData } from "./ReferenceImagesStep";
 
 describe("Step4逐图确认计数", () => {
   it("将服务端逐图版本水合的isLocked状态视为已确认，即使不存在客户端lockedSnapshot", () => {
@@ -16,5 +16,23 @@ describe("Step4逐图确认计数", () => {
 
   it("将缺少锁定状态的历史参考图识别为仍需确认", () => {
     expect(getUnconfirmedStep4References([{ imageKey: "step4-ref-0" }, null]).length).toBe(2);
+  });
+
+  it("整体确认优先使用已持久化且锁定更多图片的会话快照，避免本地旧状态误拦截", () => {
+    const localData = {
+      imageReferences: [
+        { imageKey: "step4-ref-0", isLocked: true },
+        { imageKey: "step4-ref-1", isLocked: false },
+      ],
+    };
+    const persistedUserEdit = JSON.stringify({
+      imageReferences: [
+        { imageKey: "step4-ref-0", isLocked: true },
+        { imageKey: "step4-ref-1", isLocked: true },
+      ],
+    });
+
+    const resolved = resolveStep4ConfirmationData(localData, persistedUserEdit);
+    expect(getUnconfirmedStep4References(resolved.imageReferences)).toHaveLength(0);
   });
 });

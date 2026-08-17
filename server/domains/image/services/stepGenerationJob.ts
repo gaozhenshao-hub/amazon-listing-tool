@@ -215,10 +215,11 @@ async function generateStep3(job: AiJobSnapshot, context: AiJobHandlerContext, p
   if (!session.step2Confirmed) throw new Error("请先确认 Step 2 图片大纲");
   const profile = await devDb.getDevProductProfile(Number(job.projectId));
   const colorInfo = profile?.appearanceColors ? `产品外观颜色: ${profile.appearanceColors}` : "";
-  const kbReference = compactText(await getKBReference(project.category || "", job.userId), 2_000);
+  const workspaceId = job.workspaceId ?? project.workspaceId ?? 1;
+  const kbReference = compactText(await getKBReference(project.category || "", job.userId, workspaceId), 2_000);
   let kbStylesText = "";
   try {
-    const images = await kbDb.listAllImages(job.userId, "all", { tagCategory: project.category || undefined });
+    const images = await kbDb.listAllImages(job.userId, workspaceId, "all", { tagCategory: project.category || undefined });
     const styles = [...new Set((images as any[]).map((image) => image.tagDesignStyleV2 || image.tagDesignStyle).filter(Boolean))].slice(0, 50);
     if (styles.length) kbStylesText = `\n\n--- 知识库现有设计风格（请优先推荐）---\n${styles.join("、")}`;
   } catch (error) {

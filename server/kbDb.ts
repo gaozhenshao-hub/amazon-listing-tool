@@ -109,9 +109,9 @@ export async function deleteListingCopywriting(id: number, userId: number, works
 // ═══════════════════════════════════════════════════
 // ─── Image Sets & Images ──────────────────────────
 // ═══════════════════════════════════════════════════
-export async function listImageSets(userId: number, scope: Scope = "mine") {
+export async function listImageSets(userId: number, workspaceId: number, scope: Scope = "mine") {
   const _d = await db();
-  return _d.select().from(kbImageSets).where(scopeCondition(kbImageSets, userId, scope)).orderBy(desc(kbImageSets.updatedAt));
+  return _d.select().from(kbImageSets).where(scopeCondition(kbImageSets, userId, workspaceId, scope)).orderBy(desc(kbImageSets.updatedAt));
 }
 
 /** Lightweight set fields for list views — excludes large text blobs */
@@ -149,9 +149,9 @@ const SET_LIST_FIELDS = {
   reviewNote: sql<string | null>`NULL`.as('reviewNote'),
 } as const;
 
-export async function listImageSetsWithThumbnails(userId: number, scope: Scope = "mine") {
+export async function listImageSetsWithThumbnails(userId: number, workspaceId: number, scope: Scope = "mine") {
   const _d = await db();
-  const sets = await _d.select(SET_LIST_FIELDS).from(kbImageSets).where(scopeCondition(kbImageSets, userId, scope)).orderBy(desc(kbImageSets.updatedAt));
+  const sets = await _d.select(SET_LIST_FIELDS).from(kbImageSets).where(scopeCondition(kbImageSets, userId, workspaceId, scope)).orderBy(desc(kbImageSets.updatedAt));
   if (sets.length === 0) return [];
   const setIds = sets.map(s => s.id);
   // Fetch first 5 images per set in a single query (ordered by positionIndex)
@@ -281,15 +281,16 @@ export async function reorderImages(imageOrders: { id: number; positionIndex: nu
     await _d.update(kbImages).set({ positionIndex: item.positionIndex }).where(eq(kbImages.id, item.id));
   }
 }
-export async function listAllImages(userId: number, scope: Scope = "mine", filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string; tagImageBelong?: string; tagImageBelongSub?: string; tagImageTypeMain?: string; tagImageTypeSub?: string; tagSellingPointCategory?: string; tagSellingPointDetail?: string; tagComposition?: string; tagColorSchemeV2?: string; tagDesignStyleV2?: string }) {
+export async function listAllImages(userId: number, workspaceId: number, scope: Scope = "mine", filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string; tagImageBelong?: string; tagImageBelongSub?: string; tagImageTypeMain?: string; tagImageTypeSub?: string; tagSellingPointCategory?: string; tagSellingPointDetail?: string; tagComposition?: string; tagColorSchemeV2?: string; tagDesignStyleV2?: string }) {
   const _d = await db();
   const conditions: any[] = [];
   if (scope === "mine") {
-    conditions.push(sql`${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE userId = ${userId})`);
+    conditions.push(sql`${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE userId = ${userId} AND workspaceId = ${workspaceId})`);
   } else if (scope === "shared") {
-    conditions.push(sql`${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE status = 'confirmed')`);
+    conditions.push(sql`${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE workspaceId = ${workspaceId} AND status = 'confirmed')`);
+  } else {
+    conditions.push(sql`${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE workspaceId = ${workspaceId})`);
   }
-  // "all" — no filter on ownership
   // tagCategory: check both single image AND parent set's setCategory
   if (filters?.tagCategory) {
     conditions.push(sql`(${kbImages.tagCategory} = ${filters.tagCategory} OR ${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE setCategory = ${filters.tagCategory}))`);

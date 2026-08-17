@@ -483,7 +483,7 @@ export const kbImagesRouter = router({
   listSets: protectedProcedure
     .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
     .query(async ({ ctx, input }) => {
-    return kbDb.listImageSetsWithThumbnails(ctx.user.id, input?.scope ?? "mine");
+    return kbDb.listImageSetsWithThumbnails(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
   }),
 
   // Get image set with all images (lightweight: excludes large analysis fields for fast load)
@@ -525,7 +525,7 @@ export const kbImagesRouter = router({
       tagDesignStyleV2: z.string().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
-      return kbDb.listAllImages(ctx.user.id, input?.scope ?? "mine", input);
+      return kbDb.listAllImages(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine", input);
     }),
 
   // Import by ASIN - crawl images and analyze

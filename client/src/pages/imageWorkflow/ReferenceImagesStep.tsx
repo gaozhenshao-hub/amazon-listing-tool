@@ -31,6 +31,27 @@ export function getUnconfirmedStep4References(references: unknown[]): Array<Reco
   );
 }
 
+/**
+ * 单图确认先保存版本再异步刷新会话。本地editData在这段时间可能仍带有旧的
+ * isLocked 状态；只有服务端快照确认了更多图片时才以它为准，避免丢弃用户尚未保存的编辑。
+ */
+export function resolveStep4ConfirmationData(localData: any, persistedUserEdit?: string | null) {
+  if (!persistedUserEdit) return localData;
+  try {
+    const persistedData = normalizeStep4References(JSON.parse(persistedUserEdit));
+    const persistedReferences = persistedData?.imageReferences || [];
+    const localReferences = localData?.imageReferences || [];
+    if (!persistedReferences.length || persistedReferences.length !== localReferences.length) {
+      return localData;
+    }
+    return getUnconfirmedStep4References(persistedReferences).length < getUnconfirmedStep4References(localReferences).length
+      ? persistedData
+      : localData;
+  } catch {
+    return localData;
+  }
+}
+
 function formatStep4Error(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "参考图推荐失败");
   if (/<!doctype\s+html|<html[\s>]/i.test(message)) {
@@ -269,13 +290,21 @@ export function Step4References({
 
   const handleConfirm = async () => {
     if (!editData) return;
-    const unlockedRefs = getUnconfirmedStep4References(editData.imageReferences || []);
+    let confirmationData = editData;
+    try {
+      const latestSession: any = await utils.imageWorkflow.getSession.fetch({ projectId });
+      confirmationData = resolveStep4ConfirmationData(editData, latestSession?.step4UserEdit);
+    } catch {
+      // 会话刷新异常时仍以当前编辑数据继续；服务端会保存完整确认快照。
+    }
+    const unlockedRefs = getUnconfirmedStep4References(confirmationData.imageReferences || []);
     if (unlockedRefs.length > 0) {
       toast.error(`请先逐图点击“确认此图”。尚有 ${unlockedRefs.length} 张图片未确认`);
       return;
     }
     try {
-      await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(editData) });
+      await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(confirmationData) });
+      setEditData(confirmationData);
       setIsLocked(true);
       await utils.imageWorkflow.getSession.invalidate({ projectId });
       toast.success("参考图已确认");

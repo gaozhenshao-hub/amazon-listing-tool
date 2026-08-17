@@ -215,7 +215,7 @@ export async function buildStep4ReferenceRecommendation(input: {
 }) {
   let kbImageInfo = "";
   try {
-    const kbImages = await kbDb.listAllImages(input.userId, "mine", {});
+    const kbImages = await kbDb.listAllImages(input.userId, input.workspaceId ?? input.project.workspaceId ?? 1, "mine", {});
     if (kbImages.length > 0) {
       const rows = kbImages.slice(0, 20).map((image: any) =>
         `[${image.tagImageType || "未分类"}] ${image.tagCategory || ""} - ${image.tagDesignStyle || ""} (${image.imagePosition || ""})`,

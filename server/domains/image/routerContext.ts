@@ -300,10 +300,10 @@ export async function buildImageWorkflowContext(projectId: number) {
 }
 
 // ─── Helper: Get KB reference for image workflow (Phase 7 联动) ─────
-export async function getKBReference(category: string, userId: number): Promise<string> {
+export async function getKBReference(category: string, userId: number, workspaceId: number = 1): Promise<string> {
   try {
     // 1. Get confirmed high-score image sets in the same category
-    const allSets = await kbDb.listImageSets(userId, "all");
+    const allSets = await kbDb.listImageSets(userId, workspaceId, "all");
     const relevantSets = (allSets as any[]).filter((s: any) =>
       s.status === "confirmed" &&
       s.category === category &&
@@ -318,7 +318,7 @@ export async function getKBReference(category: string, userId: number): Promise<
     });
 
     // 3. Get high-score individual images for type distribution
-    const allImages = await kbDb.listAllImages(userId, "all", { tagCategory: category });
+    const allImages = await kbDb.listAllImages(userId, workspaceId, "all", { tagCategory: category });
     const highScoreImages = (allImages as any[]).filter((i: any) => (i.singleImageScore ?? 0) >= 8);
     const imageTypeDistribution: Record<string, number> = {};
     highScoreImages.forEach((i: any) => {
@@ -873,7 +873,7 @@ export async function buildStep5FinalSuggestion(
       purpose: target.purpose,
     }));
 
-  const kbReference = await getKBReference(project.category || "", userId);
+  const kbReference = await getKBReference(project.category || "", userId, workspaceId ?? project.workspaceId ?? 1);
   const lockedAssetNote = consumedRefs.length ? `\n--- 已锁定A+子图资产 ---\n以下子图必须严格使用已确认版本：${consumedRefs.join(", ")}` : "";
   const context = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}${lockedAssetNote}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n--- A+备注驱动的逐图目标（必须逐项保留） ---\n${JSON.stringify(aplusSubmoduleTargets)}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。secondaryImages必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7，不得遗漏辅图7。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。对于A+子图，必须遵守subModuleRemark、subModuleCount与subModuleTopic，按每个目标分别输出独立构图和作图建议。`;
 
