@@ -82,6 +82,34 @@ describe("Step4锁定快照持久化", () => {
     expect(result?.imageReferences[1].compositionReference.layout).toBe("庭院场景");
   });
 
+  it("四种场景参考卡片水合后均保留非空构图、效果与可编辑说明", () => {
+    const sceneNames = ["Garage", "Courtyard", "Camping", "Jobsite"];
+    const latest = {
+      imageReferences: sceneNames.map((scene, index) => ({
+        imageKey: `aplus-5.${index + 1}`,
+        parentModuleNumber: 5,
+        subModuleNumber: index + 1,
+        title: scene,
+        designNotes: `${scene} 可编辑设计说明`,
+        compositionReference: { layout: `${scene} 构图方案`, focalPoint: `${scene} 焦点` },
+        effectReference: { colorApplication: `${scene} 配色方案`, visualMood: `${scene} 视觉氛围` },
+      })),
+    };
+
+    const hydrated = mergeStep4LatestWithUserAssets({ imageReferences: [] }, latest);
+    const scenes = hydrated?.imageReferences || [];
+
+    expect(scenes.map((reference: any) => reference.imageKey)).toEqual([
+      "aplus-5.1", "aplus-5.2", "aplus-5.3", "aplus-5.4",
+    ]);
+    scenes.forEach((reference: any, index: number) => {
+      expect(reference.title).toBe(sceneNames[index]);
+      expect(reference.designNotes).toBeTruthy();
+      expect(reference.compositionReference?.layout).toBeTruthy();
+      expect(reference.effectReference?.colorApplication).toBeTruthy();
+    });
+  });
+
   it("去除展示层lockedSnapshot并保留已锁定图的内容", () => {
     const result = compactStep4ReferenceForStorage({
       imageType: "A+模块 1.1",
