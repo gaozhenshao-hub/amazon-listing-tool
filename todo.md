@@ -182,7 +182,7 @@
 - [ ] 用空气套件前台确认Step4显示四种场景参考卡片且不再持续生成中
 - [ ] 定位Step4重新推荐Mutation持续pending但未创建AI Job的异步启动阻塞点
 - [ ] 为Step4重新推荐请求增加启动超时恢复与明确错误提示，避免前台无限生成中
-- [ ] 为startStep4Generation补充任务创建/去重行为的路由级测试
+- [x] 为startStep4Generation补充任务创建/去重行为的路由级测试（真实tRPC caller与任务服务测试覆盖Agent复用/补写、历史失败新建、queued去重，共4项通过）
 
 ## Step4结果保存后任务收尾阻塞修复（2026-08-17）
 
