@@ -19,6 +19,41 @@ export function compactStep4SnapshotForStorage(snapshot: Record<string, any>, fo
   };
 }
 
+function referenceIdentity(reference: Record<string, any>, index: number) {
+  return String(
+    reference?.imageKey
+    || `${reference?.imageType || "image"}:${reference?.parentModuleNumber ?? ""}:${reference?.subModuleNumber ?? ""}:${reference?.imageNumber ?? index}`,
+  );
+}
+
+/** 解锁时以最新AI方案为内容基准，仅保留用户上传的本地参考资产与备注。 */
+export function mergeStep4LatestWithUserAssets(confirmedRaw: unknown, latestRaw: unknown) {
+  const confirmed = confirmedRaw && typeof confirmedRaw === "object" ? confirmedRaw as Record<string, any> : null;
+  const latest = latestRaw && typeof latestRaw === "object" ? latestRaw as Record<string, any> : null;
+  if (!confirmed && !latest) return null;
+  if (!confirmed) return latest;
+  if (!latest) return confirmed;
+
+  const confirmedRefs: any[] = Array.isArray(confirmed.imageReferences) ? confirmed.imageReferences : [];
+  const latestRefs: any[] = Array.isArray(latest.imageReferences) ? latest.imageReferences : [];
+  const confirmedByKey = new Map(confirmedRefs.map((reference, index) => [referenceIdentity(reference, index), reference]));
+  return {
+    ...confirmed,
+    ...latest,
+    imageReferences: latestRefs.map((latestReference, index) => {
+      const confirmedReference = confirmedByKey.get(referenceIdentity(latestReference, index)) || confirmedRefs[index] || {};
+      return {
+        ...latestReference,
+        compositionRefImageUrl: confirmedReference.compositionRefImageUrl || latestReference.compositionRefImageUrl,
+        effectRefImageUrl: confirmedReference.effectRefImageUrl || latestReference.effectRefImageUrl,
+        compositionRefNote: confirmedReference.compositionRefNote || latestReference.compositionRefNote,
+        effectRefNote: confirmedReference.effectRefNote || latestReference.effectRefNote,
+        kbReferenceImages: confirmedReference.kbReferenceImages || latestReference.kbReferenceImages,
+      };
+    }),
+  };
+}
+
 /**
  * 单图重新生成只能替换目标索引；其余参考图和用户上传的参考资产必须原样保留。
  */

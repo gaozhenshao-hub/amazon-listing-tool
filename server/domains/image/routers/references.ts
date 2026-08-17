@@ -1,6 +1,6 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
-import { compactStep4ReferenceForStorage, compactStep4SnapshotForStorage, mergeSingleStep4Reference } from "../step4Snapshot";
+import { compactStep4ReferenceForStorage, compactStep4SnapshotForStorage, mergeSingleStep4Reference, mergeStep4LatestWithUserAssets } from "../step4Snapshot";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -52,23 +52,7 @@ function mergeStep4DraftVersions(confirmedRaw: unknown, latestRaw: unknown) {
   if (!confirmed) return latest;
   if (!latest) return confirmed;
 
-  const confirmedRefs: any[] = confirmed.imageReferences || [];
-  const latestRefs: any[] = latest.imageReferences || [];
-  const imageReferences = Array.from({ length: Math.max(confirmedRefs.length, latestRefs.length) }, (_, index) => {
-    const confirmedRef = confirmedRefs[index] || {};
-    const latestRef = latestRefs[index] || {};
-    return {
-      ...confirmedRef,
-      ...latestRef,
-      compositionRefImageUrl: confirmedRef.compositionRefImageUrl || latestRef.compositionRefImageUrl,
-      effectRefImageUrl: confirmedRef.effectRefImageUrl || latestRef.effectRefImageUrl,
-      kbReferenceImages: confirmedRef.kbReferenceImages || latestRef.kbReferenceImages,
-      imageNumber: confirmedRef.imageNumber ?? latestRef.imageNumber,
-      imageType: confirmedRef.imageType ?? latestRef.imageType,
-      purpose: confirmedRef.purpose ?? latestRef.purpose,
-    };
-  });
-  return { ...confirmed, ...latest, imageReferences };
+  return mergeStep4LatestWithUserAssets(confirmed, latest);
 }
 
 export const imageReferenceProcedures = {

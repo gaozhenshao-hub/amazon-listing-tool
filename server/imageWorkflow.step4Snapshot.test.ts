@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { buildStep4ConfirmedSnapshot, compactStep4ReferenceForStorage, compactStep4SnapshotForStorage, mergeSingleStep4Reference } from "./domains/image/step4Snapshot";
+import { buildStep4ConfirmedSnapshot, compactStep4ReferenceForStorage, compactStep4SnapshotForStorage, mergeSingleStep4Reference, mergeStep4LatestWithUserAssets } from "./domains/image/step4Snapshot";
 
 describe("Step4锁定快照持久化", () => {
+  it("解锁时采用最新AI场景方案并保留本地参考图和备注", () => {
+    const result = mergeStep4LatestWithUserAssets(
+      { imageReferences: [{ imageKey: "aplus-5.1", designNotes: "旧车库方案", compositionRefImageUrl: "local://garage", compositionRefNote: "保留白色背景" }] },
+      { imageReferences: [{ imageKey: "aplus-5.1", designNotes: "新车库场景方案", compositionReference: { layout: "车库场景" } }] },
+    );
+    expect(result?.imageReferences[0]).toMatchObject({
+      designNotes: "新车库场景方案",
+      compositionRefImageUrl: "local://garage",
+      compositionRefNote: "保留白色背景",
+      compositionReference: { layout: "车库场景" },
+    });
+  });
+
   it("去除展示层lockedSnapshot并保留已锁定图的内容", () => {
     const result = compactStep4ReferenceForStorage({
       imageType: "A+模块 1.1",

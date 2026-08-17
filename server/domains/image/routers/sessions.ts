@@ -2,6 +2,7 @@ import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
 import { ensureImageWorkflowAgentRun, syncStepUnlockToAgent } from "../imageWorkflowAgentBridge";
 import { buildImageWorkflowReferenceTargets, normalizeImageOutline } from "@shared/imageWorkflow";
+import { mergeStep4LatestWithUserAssets } from "../step4Snapshot";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -63,8 +64,14 @@ function selectedAsinSetIds(session: any): number[] {
 async function applyCurrentStep4ImageVersions(session: any) {
   if (!session) return session;
   const versions = await db.getCurrentStep4ImageVersions(session.id);
-  if (!versions.length) return session;
-  const base = parseExportJson(session.step4UserEdit || session.step4AiResult);
+  const base = mergeStep4LatestWithUserAssets(
+    parseExportJson(session.step4UserEdit),
+    parseExportJson(session.step4AiResult),
+  ) || parseExportJson(session.step4UserEdit || session.step4AiResult);
+  if (!versions.length || !session.step4Confirmed) {
+    const rebuilt = rebuildStep4DisplaySnapshot(session, base);
+    return { ...session, step4UserEdit: JSON.stringify(rebuilt), step4AiResult: JSON.stringify(rebuilt) };
+  }
   const byIndex = new Map(versions.map((version: any) => [Number(version.imageIndex), parseExportJson(version.content)]));
   const imageReferences = (base.imageReferences || []).map((reference: any, index: number) => {
     const confirmed = byIndex.get(index);
