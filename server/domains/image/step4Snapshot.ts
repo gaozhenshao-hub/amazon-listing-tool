@@ -45,3 +45,25 @@ export function mergeSingleStep4Reference(snapshot: Record<string, any>, imageIn
   nextReferences[imageIndex] = merged;
   return { ...snapshot, imageReferences: nextReferences };
 }
+
+/**
+ * 整体确认只汇总每张图的当前确认版本，避免页面草稿或历史AI结果覆盖逐图锁定内容。
+ */
+export function buildStep4ConfirmedSnapshot(
+  requestedSnapshot: Record<string, any> | null,
+  confirmedByIndex: Map<number, Record<string, any> | null>,
+) {
+  const requestedRefs = requestedSnapshot?.imageReferences;
+  if (!Array.isArray(requestedRefs) || requestedRefs.length === 0) {
+    throw new Error("Step4 确认数据缺少图片参考方案");
+  }
+  if (requestedRefs.some((_: unknown, index: number) => !confirmedByIndex.get(index))) {
+    throw new Error("请先逐图点击“确认此图”，整体确认只会发布独立确认版本");
+  }
+  return {
+    ...requestedSnapshot,
+    imageReferences: requestedRefs.map((_: unknown, index: number) =>
+      compactStep4ReferenceForStorage(confirmedByIndex.get(index) as Record<string, any>, true),
+    ),
+  };
+}

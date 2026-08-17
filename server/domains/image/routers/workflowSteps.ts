@@ -14,7 +14,7 @@ import {
   type ImageGenerationStep,
 } from "../services/stepGenerationJob";
 import { registerImageWorkflowAplusSubmoduleArtifact, registerImageWorkflowStepArtifact } from "../../ai_os/services/businessArtifactRegistry";
-import { compactStep4ReferenceForStorage } from "../step4Snapshot";
+import { buildStep4ConfirmedSnapshot } from "../step4Snapshot";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -70,30 +70,6 @@ function compactPromptText(value: unknown, maxChars: number) {
   return `${text.slice(0, headChars)}\n\n[上下文已压缩，省略${text.length - maxChars}字符]\n\n${text.slice(-tailChars)}`;
 }
 
-function mergeStep4CompleteSnapshot(
-  currentDraftRaw: string,
-  session: Record<string, any>,
-) {
-  void session;
-  const currentDraft = parseStoredJson(currentDraftRaw) as Record<string, any> | null;
-  if (!Array.isArray(currentDraft?.imageReferences)) throw new Error("Step4 确认数据缺少图片参考方案");
-  const unlockedImages = currentDraft.imageReferences
-    .map((ref: any, index: number) => ({ ref, index }))
-    .filter(({ ref }: any) => !ref?.isLocked || !ref?.lockedSnapshot);
-  if (unlockedImages.length > 0) {
-    const labels = unlockedImages
-      .map(({ ref, index }: any) => ref?.imageType ? `${ref.imageType}${ref.imageNumber ? `#${ref.imageNumber}` : ""}` : `第${index + 1}张图`)
-      .join("、");
-    throw new Error(`请先逐图点击“确认此图”后再确认整套方案。未确认：${labels}`);
-  }
-
-  // 整体确认只发布各图片的 lockedSnapshot 内容；持久化时不可再次嵌入 lockedSnapshot，
-  // 否则客户端多次保存会让逐图状态递归增长并超出数据库或请求载荷上限。
-  const imageReferences = currentDraft.imageReferences.map((currentRef: any) => ({
-    ...compactStep4ReferenceForStorage(currentRef, true),
-  }));
-  return { ...currentDraft, imageReferences };
-}
 
 async function startGenerationForRequest(input: {
   projectId: number;
@@ -541,13 +517,7 @@ export const imageWorkflowStepProcedures = {
       const requestedRefs = requestedSnapshot?.imageReferences || [];
       const confirmedVersions = await db.getCurrentStep4ImageVersions(session.id);
       const versionByIndex = new Map(confirmedVersions.map((version: any) => [Number(version.imageIndex), parseStoredJson(version.content)]));
-      if (!requestedRefs.length || requestedRefs.some((_: unknown, index: number) => !versionByIndex.get(index))) {
-        throw new Error("请先逐图点击“确认此图”，整体确认只会发布独立确认版本");
-      }
-      const completeSnapshot = { ...requestedSnapshot, imageReferences: requestedRefs.map((_: any, index: number) => {
-        const confirmed = versionByIndex.get(index) as Record<string, any>;
-        return compactStep4ReferenceForStorage(confirmed, true);
-      }) };
+      const completeSnapshot = buildStep4ConfirmedSnapshot(requestedSnapshot, versionByIndex);
       const completeUserEdit = JSON.stringify(completeSnapshot);
 
       await db.updateImageWorkflowSession(session.id, {
