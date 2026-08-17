@@ -693,6 +693,28 @@ export function serializeStep5Error(error: unknown): string {
   return String(error || "生成失败");
 }
 
+/**
+ * Agent DAG同步仅用于可观测性。同步服务异常或卡住时，不能阻塞Step5的
+ * 皇帝Skill调用、结果保存和AI Job终态提交。
+ */
+export async function settleStep5AgentSync(sync: Promise<void>, timeoutMs = 5_000): Promise<"synced" | "timed_out"> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const outcome = await Promise.race([
+      sync.then(() => "synced" as const),
+      new Promise<"timed_out">((resolve) => {
+        timer = setTimeout(() => resolve("timed_out"), timeoutMs);
+      }),
+    ]);
+    if (outcome === "timed_out") {
+      console.warn("[Step5] Agent sync exceeded timeout; continuing business AI Job without blocking");
+    }
+    return outcome;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export function parseStoredJson(value?: string | null): unknown {
   if (!value) return null;
   try {
@@ -1064,7 +1086,7 @@ registerAiJobHandler({
       aiJobMaxAttempts: job.maxAttempts,
     };
 
-    await syncStepJobRunningToAgent({ ...syncInput, progress: 20 });
+    await settleStep5AgentSync(syncStepJobRunningToAgent({ ...syncInput, progress: 20 }));
     try {
       const result = await runStep5GenerationJob({
         runId: job.runId,
@@ -1077,19 +1099,19 @@ registerAiJobHandler({
         signal: context.signal,
       });
       if (!(result as any)?.skipped) {
-        await syncStepJobWaitingHumanToAgent({ ...syncInput, output: (result as any)?.en ?? result });
+        await settleStep5AgentSync(syncStepJobWaitingHumanToAgent({ ...syncInput, output: (result as any)?.en ?? result }));
       }
       return result;
     } catch (error) {
       const abortReason = context.signal.aborted ? String(context.signal.reason || "") : "";
       const retryableTimeout = /timed?\s*out|timeout/i.test(abortReason);
       const finalAttempt = job.attempt >= job.maxAttempts || (context.signal.aborted && !retryableTimeout);
-      await syncStepJobFailedToAgent({
+      await settleStep5AgentSync(syncStepJobFailedToAgent({
         ...syncInput,
         finalAttempt,
         errorMessage: serializeStep5Error(error),
         failureKind: context.signal.aborted ? (retryableTimeout ? "timeout" : "cancel") : "error",
-      });
+      }));
       throw error;
     }
   },
