@@ -30,11 +30,13 @@ export function Step2ImageOutline({
   const unlockMutation = trpc.imageWorkflow.unlockStep2.useMutation();
   const optimizeAplusMutation = trpc.imageWorkflow.optimizeStep2AplusModule.useMutation();
   const lockAplusSubmoduleMutation = trpc.imageWorkflow.lockStep2AplusSubmodule.useMutation();
+  const saveDraftMutation = trpc.imageWorkflow.saveStep2Draft.useMutation();
   const utils = trpc.useUtils();
   const [editData, setEditData] = useState<any>(null);
   const [isLocked, setIsLocked] = useState(!!session?.step2Confirmed);
   const [optimizingModuleIndex, setOptimizingModuleIndex] = useState<number | null>(null);
   const [lockingSubmoduleKey, setLockingSubmoduleKey] = useState<string | null>(null);
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generationJob = useImageStepGenerationJob({
     projectId,
     step: 2,
@@ -57,6 +59,24 @@ export function Step2ImageOutline({
     }
     setIsLocked(!!session?.step2Confirmed);
   }, [session?.step2AiResult, session?.step2UserEdit, session?.step2Confirmed]);
+
+  useEffect(() => () => {
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+  }, []);
+
+  const scheduleDraftSave = (draft: any) => {
+    if (isLocked) return;
+    const normalizedDraft = normalizeImageOutline(draft);
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = setTimeout(() => {
+      void saveDraftMutation.mutateAsync({
+        projectId,
+        userEdit: JSON.stringify(normalizedDraft),
+      }).catch((error: any) => {
+        toast.error(error?.message || "图片大纲草稿自动保存失败");
+      });
+    }, 450);
+  };
 
   const handleUnlock = async () => {
     try {
@@ -133,6 +153,7 @@ export function Step2ImageOutline({
       });
     }
     setEditData(normalized);
+    scheduleDraftSave(normalized);
   };
 
   const updateAPlusSubmodule = (moduleIndex: number, submoduleIndex: number, field: string, value: any) => {
@@ -143,7 +164,9 @@ export function Step2ImageOutline({
     subModules[submoduleIndex] = { ...subModules[submoduleIndex], [field]: value };
     module.subModules = subModules;
     newData.aPlusModules[moduleIndex] = module;
-    setEditData(newData);
+    const normalized = normalizeImageOutline(newData);
+    setEditData(normalized);
+    scheduleDraftSave(normalized);
   };
 
   const lockAplusSubmodule = async (moduleIndex: number, submoduleIndex: number) => {
@@ -502,7 +525,9 @@ export function Step2ImageOutline({
                             <Input type="number" min={2} max={15} value={mod.subModuleCount || mod.subModules.length} onChange={(e) => {
                               const newData = { ...editData, aPlusModules: [...(editData.aPlusModules || [])] };
                               newData.aPlusModules[idx] = { ...newData.aPlusModules[idx], subModuleCount: Number(e.target.value || 0) };
-                              setEditData(normalizeImageOutline(newData));
+                              const normalized = normalizeImageOutline(newData);
+                              setEditData(normalized);
+                              scheduleDraftSave(normalized);
                             }} className="h-7 w-20 text-xs" />
                           </div>
                           <p className="mt-1 text-[10px] text-muted-foreground">备注中的数量优先；也可直接调整数量。冒号后列出每张图主题，后续参考图和图片建议会逐图继承。</p>

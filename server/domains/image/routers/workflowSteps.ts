@@ -198,6 +198,35 @@ export const imageWorkflowStepProcedures = {
     })),
 
 
+  // ─── Step 2: Save editable outline draft without confirming ─────
+  saveStep2Draft: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw NotFoundError("图片建议工作流不存在");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+      if (session.step2Confirmed) {
+        throw BadRequestError("图片大纲已锁定，请先点击“解锁编辑”后再保存草稿");
+      }
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(input.userEdit);
+      } catch {
+        throw BadRequestError("图片大纲草稿格式无效");
+      }
+      const normalized = normalizeImageOutline(parsed);
+      await db.updateImageWorkflowSession(session.id, {
+        step2UserEdit: JSON.stringify(normalized),
+        currentStep: 2,
+      });
+      return { outline: normalized };
+    }),
+
+
   // ─── Step 2: Save user edits and confirm ───────────────────────
   confirmStep2: protectedProcedure
     .input(z.object({
