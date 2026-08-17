@@ -77,7 +77,8 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(refsRouter).toContain("unlockStep4ImageVersion");
     expect(refsRouter).toContain("unlockAllStep4ImageVersions");
     expect(sessionsRouter).toContain("applyCurrentStep4ImageVersions");
-    expect(sessionsRouter).toContain("!session.step4Confirmed && Array.isArray(draftSnapshot?.imageReferences)");
+    expect(sessionsRouter).toContain("chooseStep4DisplayBase");
+    expect(sessionsRouter).toContain("latestJobSnapshot");
     expect(workflowSteps).toContain("getCurrentStep4ImageVersions(session.id)");
     expect(step4Snapshot).toContain("整体确认只会发布独立确认版本");
   });

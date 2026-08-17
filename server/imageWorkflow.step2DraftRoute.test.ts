@@ -19,9 +19,18 @@ vi.mock("./domains/ai_os/services/businessArtifactRegistry", async (importOrigin
   };
 });
 
+vi.mock("./domains/image/services/step4ReferenceJob", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./domains/image/services/step4ReferenceJob")>();
+  return {
+    ...actual,
+    getLatestStep4ReferenceJob: vi.fn(),
+  };
+});
+
 import { imageWorkflowRouter } from "./domains/image/router";
 import * as imageRepository from "./domains/image/repository";
 import { resolveSessionForDisplay } from "./domains/image/routerContext";
+import * as step4ReferenceJob from "./domains/image/services/step4ReferenceJob";
 
 const mockedRepository = vi.mocked(imageRepository);
 
@@ -66,6 +75,7 @@ describe("Step2草稿保存与会话水合路由", () => {
     vi.clearAllMocks();
     mockedRepository.getProjectByIdAdmin.mockResolvedValue({ id: 90001, userId: 1 } as any);
     mockedRepository.getCurrentStep4ImageVersions.mockResolvedValue([] as any);
+    vi.mocked(step4ReferenceJob.getLatestStep4ReferenceJob).mockResolvedValue(null);
   });
 
   it("实际调用saveStep2Draft会写入规范化草稿并保持currentStep=2", async () => {
@@ -146,5 +156,50 @@ describe("Step2草稿保存与会话水合路由", () => {
       isLocked: true,
       lockedArtifactRef: "artifact-step2-5-2",
     });
+  });
+
+  it("Step4原始字段为空时，getSession会使用最新成功任务的output.result恢复场景参考图", async () => {
+    const draft = buildDraft();
+    mockedRepository.getImageWorkflowSessionByProject.mockResolvedValue({
+      id: 780001,
+      projectId: 90001,
+      userId: 1,
+      step2Confirmed: 1,
+      step2UserEdit: JSON.stringify(draft),
+      step2AiResult: null,
+      step4Confirmed: 0,
+      step4UserEdit: null,
+      step4AiResult: null,
+    } as any);
+    vi.mocked(step4ReferenceJob.getLatestStep4ReferenceJob).mockResolvedValue({
+      status: "succeeded",
+      output: {
+        result: {
+          imageReferences: [{
+            imageKey: "aplus-5.1",
+            imageType: "A+模块 5.1",
+            parentModuleNumber: 5,
+            subModuleNumber: 1,
+            compositionReference: { layout: "展示车库环境中的气路系统" },
+            effectReference: { atmosphere: "明亮专业车库" },
+          }],
+        },
+      },
+    } as any);
+    const caller = imageWorkflowRouter.createCaller(createContext());
+
+    const session = await caller.getSession({ projectId: 90001 });
+    const step4 = JSON.parse(session!.step4AiResult);
+    const garageReference = step4.imageReferences.find((reference: any) =>
+      reference?.compositionReference?.layout === "展示车库环境中的气路系统",
+    );
+
+    expect(garageReference).toMatchObject({
+      parentModuleNumber: 5,
+      subModuleNumber: 1,
+      compositionReference: { layout: "展示车库环境中的气路系统" },
+      effectReference: { atmosphere: "明亮专业车库" },
+    });
+    expect(String(garageReference.designNotes || "")).not.toContain("历史参考图结果中缺失");
   });
 });

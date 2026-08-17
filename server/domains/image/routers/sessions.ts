@@ -2,7 +2,8 @@ import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
 import { ensureImageWorkflowAgentRun, syncStepUnlockToAgent } from "../imageWorkflowAgentBridge";
 import { buildImageWorkflowReferenceTargets, normalizeImageOutline } from "@shared/imageWorkflow";
-import { mergeStep4LatestWithUserAssets } from "../step4Snapshot";
+import { extractLatestStep4JobResult, mergeStep4LatestWithUserAssets } from "../step4Snapshot";
+import { getLatestStep4ReferenceJob } from "../services/step4ReferenceJob";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -52,6 +53,28 @@ function parseExportJson(value: unknown) {
   try { return JSON.parse(value); } catch { return {}; }
 }
 
+function hasStep4References(value: unknown): value is Record<string, any> {
+  return Boolean(value && typeof value === "object" && Array.isArray((value as Record<string, any>).imageReferences) && (value as Record<string, any>).imageReferences.length);
+}
+
+export function chooseStep4DisplayBase(input: {
+  step4Confirmed?: boolean | number;
+  draftSnapshot?: Record<string, any>;
+  aiSnapshot?: Record<string, any>;
+  latestJobSnapshot?: Record<string, any> | null;
+}) {
+  const draft = hasStep4References(input.draftSnapshot) ? input.draftSnapshot : {};
+  const ai = hasStep4References(input.aiSnapshot) ? input.aiSnapshot : {};
+  const latest = hasStep4References(input.latestJobSnapshot) ? input.latestJobSnapshot : {};
+  const latestContent = hasStep4References(ai) ? ai : latest;
+
+  if (!input.step4Confirmed && hasStep4References(draft)) return draft;
+  if (hasStep4References(draft) && hasStep4References(latestContent)) {
+    return mergeStep4LatestWithUserAssets(draft, latestContent) || latestContent;
+  }
+  return latestContent || draft || ai;
+}
+
 function selectedAsinSetIds(session: any): number[] {
   const step3 = parseExportJson(session?.step3UserEdit || session?.step3AiResult);
   const styles = Array.isArray(step3?.selectedStyles) ? step3.selectedStyles : [];
@@ -66,11 +89,18 @@ async function applyCurrentStep4ImageVersions(session: any) {
   const versions = await db.getCurrentStep4ImageVersions(session.id);
   const draftSnapshot = parseExportJson(session.step4UserEdit);
   const aiSnapshot = parseExportJson(session.step4AiResult);
+  const latestJob = await getLatestStep4ReferenceJob(session.userId, session.projectId).catch(() => null);
+  const latestJobSnapshot = latestJob?.status === "succeeded"
+    ? extractLatestStep4JobResult(latestJob.output)
+    : null;
   // 解锁接口已将最新成功任务方案与用户本地资产合并并写入step4UserEdit。
   // 此时再用旧step4AiResult作“最新”内容合并，会把车库/庭院/露营/工地方案回退。
-  const base = !session.step4Confirmed && Array.isArray(draftSnapshot?.imageReferences) && draftSnapshot.imageReferences.length
-    ? draftSnapshot
-    : mergeStep4LatestWithUserAssets(draftSnapshot, aiSnapshot) || draftSnapshot || aiSnapshot;
+  const base = chooseStep4DisplayBase({
+    step4Confirmed: session.step4Confirmed,
+    draftSnapshot,
+    aiSnapshot,
+    latestJobSnapshot,
+  });
   if (!versions.length || !session.step4Confirmed) {
     const rebuilt = rebuildStep4DisplaySnapshot(session, base);
     return { ...session, step4UserEdit: JSON.stringify(rebuilt), step4AiResult: JSON.stringify(rebuilt) };
