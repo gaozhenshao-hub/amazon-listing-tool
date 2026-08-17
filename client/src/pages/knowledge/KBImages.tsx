@@ -29,6 +29,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useQueryClient } from "@tanstack/react-query";
 import { KbAsinSetGrid } from "./KbAsinSetGrid";
 import { ASIN_SET_GROUP_OPTIONS, type AsinSetGroupBy } from "./kbImageSetGrouping";
+import { shouldRefreshImageBrowse } from "./kbImageBrowseRefresh";
 
 type ViewMode = "asin" | "waterfall" | "grid";
 
@@ -121,7 +122,10 @@ export default function KBImages() {
   const [scope, setScope] = useState<KBScope>("shared");
 
   // Use listSets for the ASIN-grouped view (default)
-  const { data: sets, isLoading } = trpc.kbImages.listSets.useQuery({ scope }, { staleTime: 30_000 });
+  const { data: sets, isLoading } = trpc.kbImages.listSets.useQuery({ scope }, {
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
   // Use listAllImages for image-level browsing (waterfall/grid) - supports both v1 and v2 filters
   const { data: allImages, isLoading: imagesLoading } = trpc.kbImages.listAllImages.useQuery({
     scope,
@@ -140,7 +144,21 @@ export default function KBImages() {
     tagComposition: (useV2Filters && filterComposition !== "all") ? filterComposition : undefined,
     tagColorSchemeV2: (useV2Filters && filterColorV2 !== "all") ? filterColorV2 : undefined,
     tagDesignStyleV2: (useV2Filters && filterStyleV2 !== "all") ? filterStyleV2 : undefined,
-  }, { enabled: viewMode !== "asin" });
+  }, {
+    enabled: viewMode !== "asin",
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+
+  // The ASIN view may be opened while a prior waterfall query is still cached as empty.
+  // Revalidate whenever image-level browsing or the ownership scope changes so the
+  // waterfall never keeps an obsolete zero-image result after imports/workspace fixes.
+  useEffect(() => {
+    void utils.kbImages.listSets.invalidate();
+    if (shouldRefreshImageBrowse(viewMode)) {
+      void utils.kbImages.listAllImages.invalidate();
+    }
+  }, [scope, viewMode, utils]);
   // Use listSets data as placeholder while getSet loads — shows ASIN/status/images immediately
   const detailSetPlaceholder = sets?.find((s: any) => s.id === detailSetId);
   const { data: detailSet, isLoading: detailSetLoading } = trpc.kbImages.getSet.useQuery(
