@@ -36,6 +36,8 @@ export function Step2ImageOutline({
   const [isLocked, setIsLocked] = useState(!!session?.step2Confirmed);
   const [optimizingModuleIndex, setOptimizingModuleIndex] = useState<number | null>(null);
   const [lockingSubmoduleKey, setLockingSubmoduleKey] = useState<string | null>(null);
+  const [isDraftSaving, setIsDraftSaving] = useState(false);
+  const [lastDraftSavedAt, setLastDraftSavedAt] = useState<number | null>(null);
   const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generationJob = useImageStepGenerationJob({
     projectId,
@@ -69,11 +71,16 @@ export function Step2ImageOutline({
     const normalizedDraft = normalizeImageOutline(draft);
     if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
     draftSaveTimerRef.current = setTimeout(() => {
+      setIsDraftSaving(true);
       void saveDraftMutation.mutateAsync({
         projectId,
         userEdit: JSON.stringify(normalizedDraft),
+      }).then(() => {
+        setLastDraftSavedAt(Date.now());
       }).catch((error: any) => {
         toast.error(error?.message || "图片大纲草稿自动保存失败");
+      }).finally(() => {
+        setIsDraftSaving(false);
       });
     }, 450);
   };
@@ -531,6 +538,9 @@ export function Step2ImageOutline({
                             }} className="h-7 w-20 text-xs" />
                           </div>
                           <p className="mt-1 text-[10px] text-muted-foreground">备注中的数量优先；也可直接调整数量。冒号后列出每张图主题，后续参考图和图片建议会逐图继承。</p>
+                          <p className="mt-1 text-[10px] text-purple-700">
+                            {isDraftSaving ? "正在自动保存草稿…" : lastDraftSavedAt ? "草稿已自动保存" : "编辑后将自动保存草稿"}
+                          </p>
                         </div>
                       )}
                       {Array.isArray(mod.subModules) && mod.subModules.length > 0 && (
