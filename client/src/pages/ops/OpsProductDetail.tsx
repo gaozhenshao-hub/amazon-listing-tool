@@ -64,13 +64,15 @@ function WowBadge({ wow }: { wow: { value: number; pct: number | null } | null |
 
 export default function OpsProductDetail() {
   // ─── Route Matching: detect import mode vs system mode ───
+  const [isErpRoute, erpParams] = useRoute("/ops/products/erp/:source/:parentAsin");
   const [isImportRoute, importParams] = useRoute("/ops/products/import/:source/:parentAsin");
   const [isSystemRoute, systemParams] = useRoute("/ops/products/:id");
   const [, navigate] = useLocation();
 
-  const isImportMode = !!isImportRoute;
-  const sourceType = importParams?.source as "lingxing" | "saihu" | undefined;
-  const importParentAsin = importParams?.parentAsin ? decodeURIComponent(importParams.parentAsin) : undefined;
+  const isImportMode = !!isErpRoute || !!isImportRoute;
+  const erpParamsOrLegacy = erpParams || importParams;
+  const sourceType = erpParamsOrLegacy?.source as "lingxing" | "saihu" | undefined;
+  const importParentAsin = erpParamsOrLegacy?.parentAsin ? decodeURIComponent(erpParamsOrLegacy.parentAsin) : undefined;
   const productId = isSystemRoute ? Number(systemParams?.id) : 0;
 
   // ─── Import Mode Data Query ───
@@ -245,9 +247,9 @@ export default function OpsProductDetail() {
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold truncate">{derivedProduct.title}</h1>
             {isImportMode && (
-              <Badge variant="outline" className={`text-xs ${sourceType === "lingxing" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-purple-50 text-purple-700 border-purple-200"}`}>
+              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
                 <Database className="h-3 w-3 mr-1" />
-                {sourceType === "lingxing" ? "领星数据" : "赛狐数据"}
+                ERP 数据
               </Badge>
             )}
           </div>

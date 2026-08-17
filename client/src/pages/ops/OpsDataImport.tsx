@@ -52,9 +52,9 @@ function StatusBadge({ status }: { status: string }) {
 // ─── Source Type Badge ───
 function SourceBadge({ source }: { source: string }) {
   if (source === "lingxing") {
-    return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800">领星</Badge>;
+    return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800">ERP · 领星格式</Badge>;
   }
-  return <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800">赛狐</Badge>;
+  return <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800">ERP · 赛狐格式</Badge>;
 }
 
 export default function OpsDataImport() {
@@ -192,9 +192,9 @@ export default function OpsDataImport() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">数据导入中心</h1>
+        <h1 className="text-2xl font-bold tracking-tight">ERP 数据导入中心</h1>
         <p className="text-muted-foreground mt-1">
-          上传领星产品表现或赛狐产品分析的导出表格，系统自动识别格式并按周存储数据
+          上传 ERP 产品数据导出表格，系统会自动识别领星和赛狐格式，并统一进入产品总览
         </p>
       </div>
 
@@ -207,9 +207,9 @@ export default function OpsDataImport() {
                 <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">领星数据</p>
-                <p className="text-xl font-bold">{stats?.lingxing.weekCount || 0} <span className="text-sm font-normal text-muted-foreground">周</span></p>
-                <p className="text-xs text-muted-foreground">{stats?.lingxing.productCount || 0} 个产品</p>
+                <p className="text-sm text-muted-foreground">ERP 数据</p>
+                <p className="text-xl font-bold">{(stats?.lingxing.productCount || 0) + (stats?.saihu.productCount || 0)} <span className="text-sm font-normal text-muted-foreground">条产品记录</span></p>
+                <p className="text-xs text-muted-foreground">产品总览会自动去重同店铺、同站点父 ASIN</p>
               </div>
             </div>
           </CardContent>
@@ -221,9 +221,9 @@ export default function OpsDataImport() {
                 <BarChart3 className="h-5 w-5 text-orange-600 dark:text-orange-400" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">赛狐数据</p>
-                <p className="text-xl font-bold">{stats?.saihu.weekCount || 0} <span className="text-sm font-normal text-muted-foreground">周</span></p>
-                <p className="text-xs text-muted-foreground">{stats?.saihu.productCount || 0} 个产品</p>
+                <p className="text-sm text-muted-foreground">ERP 数据周期</p>
+                <p className="text-xl font-bold">{(stats?.lingxing.weekCount || 0) + (stats?.saihu.weekCount || 0)} <span className="text-sm font-normal text-muted-foreground">个导入周期</span></p>
+                <p className="text-xs text-muted-foreground">兼容领星与赛狐两类产品报表</p>
               </div>
             </div>
           </CardContent>
@@ -259,8 +259,8 @@ export default function OpsDataImport() {
       {/* Main Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="wizard">导入向导</TabsTrigger>
-          <TabsTrigger value="upload">上传数据</TabsTrigger>
+          <TabsTrigger value="wizard">ERP 导入向导</TabsTrigger>
+          <TabsTrigger value="upload">ERP 数据上传</TabsTrigger>
           <TabsTrigger value="ad-report">广告报表</TabsTrigger>
           <TabsTrigger value="daily-report">每日报告</TabsTrigger>
           <TabsTrigger value="ops-plan">运营计划</TabsTrigger>
@@ -279,10 +279,10 @@ export default function OpsDataImport() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <ArrowUpFromLine className="h-5 w-5" />
-                上传产品数据表格
+                上传 ERP 产品数据
               </CardTitle>
               <CardDescription>
-                支持领星ERP"产品表现"和赛狐"产品分析"两种格式的Excel导出文件，系统会自动识别来源
+                支持 ERP 产品数据 Excel 导出文件，系统会自动识别领星“产品表现”和赛狐“产品分析”格式
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -322,10 +322,10 @@ export default function OpsDataImport() {
                     <p className="text-sm text-muted-foreground">支持 .xlsx / .xls 格式，最大 50MB</p>
                     <div className="flex gap-3 mt-2">
                       <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800">
-                        <FileSpreadsheet className="h-3 w-3 mr-1" /> 领星 · 产品表现
+                        <FileSpreadsheet className="h-3 w-3 mr-1" /> ERP 兼容 · 领星产品表现
                       </Badge>
                       <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800">
-                        <FileSpreadsheet className="h-3 w-3 mr-1" /> 赛狐 · 产品分析
+                        <FileSpreadsheet className="h-3 w-3 mr-1" /> ERP 兼容 · 赛狐产品分析
                       </Badge>
                     </div>
                   </div>

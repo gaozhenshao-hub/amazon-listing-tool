@@ -58,7 +58,7 @@ const EXACT_ROUTE_LABELS: Record<string, string> = {
   "/ops/custom-dashboard": "自定义看板",
   "/ops/crawler": "爬虫引擎",
   "/ops/logistics": "物流时效分析",
-  "/ops/data-import": "数据导入中心",
+  "/ops/data-import": "ERP 数据导入中心",
   "/ops/ad-mapping": "广告组合映射",
   "/ops/tasks": "任务管理",
   "/service": "售后仪表盘",
@@ -146,6 +146,7 @@ export function resolveWorkspaceTabLabel(href: string, preferredLabel?: string):
   if (/^\/dev\/project\/[^/]+$/.test(parsed.pathname)) return "产品开发项目";
   if (/^\/listing\/project\/[^/]+$/.test(parsed.pathname)) return "Listing项目详情";
   if (/^\/listing\/video-script\/[^/]+$/.test(parsed.pathname)) return "视频脚本详情";
+  if (/^\/ops\/products\/erp\/[^/]+\/[^/]+$/.test(parsed.pathname)) return "ERP 产品详情";
   if (/^\/ops\/products\/import\/[^/]+\/[^/]+$/.test(parsed.pathname)) return "导入产品详情";
   if (/^\/ops\/products\/[^/]+$/.test(parsed.pathname)) return "运营产品详情";
   if (/^\/ops\/shipping\/[^/]+$/.test(parsed.pathname)) return "物流批次详情";

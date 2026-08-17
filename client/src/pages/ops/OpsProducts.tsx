@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { MANAGER_ROLES } from "@shared/const";
+import { mergeErpProducts } from "@shared/erpProductMerge";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -212,6 +213,7 @@ type ProductOverview = {
     totalAdSpend: string | null;
     avgAcos: string | null;
   }>;
+  erpSource?: "lingxing" | "saihu";
 };
 
 function adaptDailyParentOverview(source: any[], weeksToShow: number): ProductOverview[] {
@@ -235,7 +237,7 @@ function adaptDailyParentOverview(source: any[], weeksToShow: number): ProductOv
       chineseName: product.productName || null, brand: null, category: null, marketplace: product.country || null, imageUrl: null, status: "active",
       operator: product.operator || null, storeName: product.storeName || null, variantCount: 0, skus: [], basicInfo: null,
       inventory: latest ? { fbaAvailable: Number((product.weeks?.[0]?.fbaAvailable) || 0), fbaInbound: 0, fbaInTransit: Number((product.weeks?.[0]?.fbaInTransit) || 0), fbaTotal: Number((product.weeks?.[0]?.fbaAvailable) || 0) + Number((product.weeks?.[0]?.fbaInTransit) || 0), availableStock: Number((product.weeks?.[0]?.fbaAvailable) || 0), fbaDaysOfSupply: 0, stockoutDate: null, avgDailySales7d: latest.salesQty / Math.max(Number((product.weeks?.[0]?.activeDays) || 1), 1), daysOfStock: latest.salesQty > 0 ? Math.round(Number((product.weeks?.[0]?.fbaAvailable) || 0) / (latest.salesQty / Math.max(Number((product.weeks?.[0]?.activeDays) || 1), 1))) : 999 } : null,
-      weeks, monthlySummaries: product.monthlySummaries || [],
+      weeks, monthlySummaries: product.monthlySummaries || [], erpSource: "lingxing",
     };
   });
 }
@@ -283,7 +285,7 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort, isImportMode, productionConfig, onUpdateProductionConfig, planningRows, financialProfits = [], onSaveCostParameters, onSaveFinancialProfits }: {
   product: ProductOverview;
   onNavigate: (id: number) => void;
-  onNavigateImport?: (parentAsin: string) => void;
+  onNavigateImport?: (parentAsin: string, source: "lingxing" | "saihu") => void;
   onDelete: (id: number) => void;
   onSync: (productId: number) => void;
   isSyncing: boolean;
@@ -544,7 +546,7 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-500 hover:text-blue-700"
-                    onClick={(e) => { e.stopPropagation(); onNavigateImport(product.parentAsin); }}>
+                    onClick={(e) => { e.stopPropagation(); onNavigateImport(product.parentAsin, product.erpSource || "lingxing"); }}>
                     <ExternalLink className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -789,7 +791,7 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
   );
 }
 
-type DataSource = "system" | "lingxing" | "saihu";
+type DataSource = "system" | "erp";
 
 // ─── Main Component ───
 export default function OpsProducts() {
@@ -798,7 +800,7 @@ export default function OpsProducts() {
   const isManagerOrAbove = user?.role && (MANAGER_ROLES as readonly string[]).includes(user.role);
   const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("active");
-  const [dataSource, setDataSource] = useState<DataSource>("lingxing");
+  const [dataSource, setDataSource] = useState<DataSource>("erp");
 
   // Mutations
   const utils = trpc.useUtils();
@@ -897,22 +899,22 @@ export default function OpsProducts() {
 
   // Import data query (lingxing or saihu)
   const { data: importProducts, isLoading: importLoading } = trpc.dataImport.getProductOverviewFromImport.useQuery({
-    sourceType: dataSource === "saihu" ? "saihu" : "lingxing",
+    sourceType: "erp",
     weeks: 4,
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "ALL",
   }, { enabled: dataSource !== "system" });
   const { data: lingxingDailyOverview, isLoading: lingxingDailyLoading } = trpc.dataImport.getLingxingDailyOverview.useQuery({
     weeks: weekFilter,
     marketplace: marketplaceFilter,
-  }, { enabled: dataSource === "lingxing" });
+  }, { enabled: dataSource === "erp" });
 
   // Import stats for showing data availability
   const { data: importStats } = trpc.dataImport.getImportStats.useQuery();
 
   const { data: inventoryPlanning } = trpc.dataImport.getInventoryPlanningFromImport.useQuery({
     marketplace: marketplaceFilter,
-  }, { enabled: dataSource === "lingxing" });
-  const { data: monthlyFinancialProfits } = trpc.dataImport.getMonthlyFinancialProfits.useQuery(undefined, { enabled: dataSource === "lingxing" });
+  }, { enabled: dataSource === "erp" });
+  const { data: monthlyFinancialProfits } = trpc.dataImport.getMonthlyFinancialProfits.useQuery(undefined, { enabled: dataSource === "erp" });
 
   // Production config for inventory status
   const { data: productionConfigs } = trpc.dataImport.getProductionConfigs.useQuery({
@@ -936,8 +938,11 @@ export default function OpsProducts() {
   });
 
   // Unified products & loading state
-  const products = dataSource === "system" ? systemProducts : dataSource === "lingxing" && lingxingDailyOverview ? adaptDailyParentOverview(lingxingDailyOverview as any[], weekFilter) : importProducts;
-  const isLoading = dataSource === "system" ? systemLoading : dataSource === "lingxing" ? lingxingDailyLoading : importLoading;
+  const products = dataSource === "system" ? systemProducts : mergeErpProducts([
+    { source: "lingxing", products: adaptDailyParentOverview((lingxingDailyOverview || []) as any[], weekFilter) },
+    { source: "saihu", products: (importProducts || []) as ProductOverview[] },
+  ]);
+  const isLoading = dataSource === "system" ? systemLoading : lingxingDailyLoading || importLoading;
 
   const [form, setForm] = useState({
     parentAsin: "", title: "", brand: "", category: "", marketplace: "US",
@@ -1005,7 +1010,7 @@ export default function OpsProducts() {
     if (!mappingsList || dataSource === "system") return new Set<string>();
     return new Set(
       mappingsList
-        .filter(m => m.sourceType === (dataSource === "saihu" ? "saihu" : "lingxing") || m.sourceType === "all")
+        .filter(m => m.sourceType === "lingxing" || m.sourceType === "saihu" || m.sourceType === "all")
         .map(m => m.systemUserName)
         .filter(Boolean)
     );
@@ -1041,29 +1046,15 @@ export default function OpsProducts() {
         </button>
         <button
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-            dataSource === "lingxing" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+            dataSource === "erp" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
           }`}
-          onClick={() => setDataSource("lingxing")}
+          onClick={() => setDataSource("erp")}
         >
           <FileSpreadsheet className="h-3.5 w-3.5" />
-          领星数据
-          {importStats?.lingxing && importStats.lingxing.weekCount > 0 && (
+          ERP 数据
+          {importStats && (importStats.lingxing.weekCount > 0 || importStats.saihu.weekCount > 0) && (
             <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-0.5">
-              {importStats.lingxing.weekCount}周 / {importStats.lingxing.productCount}品
-            </Badge>
-          )}
-        </button>
-        <button
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-            dataSource === "saihu" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-          }`}
-          onClick={() => setDataSource("saihu")}
-        >
-          <FileSpreadsheet className="h-3.5 w-3.5" />
-          赛狐数据
-          {importStats?.saihu && importStats.saihu.weekCount > 0 && (
-            <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-0.5">
-              {importStats.saihu.weekCount}周 / {importStats.saihu.productCount}品
+              {totalProducts} 品
             </Badge>
           )}
         </button>
@@ -1075,10 +1066,10 @@ export default function OpsProducts() {
           <Upload className="h-5 w-5 text-amber-600 shrink-0" />
           <div className="flex-1">
             <p className="text-sm font-medium text-amber-800">
-              {dataSource === "lingxing" ? "暂无领星导入数据" : "暂无赛狐导入数据"}
+              暂无 ERP 导入数据
             </p>
             <p className="text-xs text-amber-600 mt-0.5">
-              请先在"数据导入中心"上传{dataSource === "lingxing" ? "领星产品表现" : "赛狐产品分析"}的Excel文件
+              请先在“ERP 数据导入中心”上传产品数据 Excel 文件，系统会自动识别格式
             </p>
           </div>
           <Button variant="outline" size="sm" className="shrink-0 gap-1" onClick={() => navigate("/ops/data-import")}>
@@ -1087,7 +1078,7 @@ export default function OpsProducts() {
         </div>
       )}
 
-      {dataSource === "lingxing" && inventoryPlanning?.asOfDate && (
+      {dataSource === "erp" && inventoryPlanning?.asOfDate && (
         <section className="rounded-xl border bg-card p-4 shadow-sm">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -1129,9 +1120,9 @@ export default function OpsProducts() {
         <div>
           <h1 className="text-2xl font-bold">产品运营总览</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            {dataSource === "system" ? "按父ASIN维度管理，展示最近4周周度数据及同比变化" :
-             dataSource === "lingxing" ? "基于领星导入数据，按父ASIN维度展示最近4周周度数据" :
-             "基于赛狐导入数据，按父ASIN聚合展示最近4周周度数据"}
+            {dataSource === "system"
+              ? "按父ASIN维度管理，展示最近4周周度数据及同比变化"
+              : "基于 ERP 导入数据，兼容领星和赛狐格式，按父ASIN维度展示最近4周周度数据"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1367,7 +1358,7 @@ export default function OpsProducts() {
               {searchTerm || marketplaceFilter !== "ALL" || statusFilter !== "ALL"
                 ? "没有找到匹配的产品"
                 : dataSource === "system" ? "还没有添加产品，点击\"添加产品\"或在数据导入中心上传Excel开始"
-                : `暂无${dataSource === "lingxing" ? "领星" : "赛狐"}导入数据，请先在数据导入中心上传Excel文件`}
+                : "暂无 ERP 导入数据，请先在 ERP 数据导入中心上传 Excel 文件"}
             </p>
           </CardContent>
         </Card>
@@ -1375,10 +1366,10 @@ export default function OpsProducts() {
         <div className="space-y-3">
           {filtered.map(product => (
             <ProductBlock
-              key={product.id}
+              key={`${product.erpSource || "system"}-${product.parentAsin}-${product.storeName || ""}-${product.marketplace || ""}`}
               product={product}
               onNavigate={(id) => navigate(`/ops/products/${id}`)}
-              onNavigateImport={(parentAsin) => navigate(`/ops/products/import/${dataSource}/${encodeURIComponent(parentAsin)}`)}
+              onNavigateImport={(parentAsin, source) => navigate(`/ops/products/erp/${source}/${encodeURIComponent(parentAsin)}`)}
               onDelete={(id) => deleteMut.mutate({ id })}
               onSync={(id) => { setSyncingProductId(id); syncSingleProductMut.mutate({ productId: id }); }}
               isSyncing={syncingProductId === product.id && syncSingleProductMut.isPending}
@@ -1403,7 +1394,7 @@ export default function OpsProducts() {
               isImportMode={dataSource !== "system"}
               productionConfig={productionConfigs?.[product.parentAsin]}
               onUpdateProductionConfig={(config) => updateProductionMut.mutate({ parentAsin: product.parentAsin, ...config })}
-              planningRows={dataSource === "lingxing" ? inventoryPlanning?.rows : []}
+              planningRows={dataSource === "erp" ? inventoryPlanning?.rows : []}
               financialProfits={(monthlyFinancialProfits || []).filter((item: any) => item.parentAsin === product.parentAsin)}
               onSaveFinancialProfits={(parentAsin, entries) => saveMonthlyFinancialProfitsMut.mutate({ parentAsin, entries })}
               onSaveCostParameters={(row, values) => savePlanningParametersMut.mutate({

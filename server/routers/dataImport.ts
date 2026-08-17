@@ -19,6 +19,7 @@ import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { summarizeParentAsinWeeks, summarizeVariantSales } from "../domains/ops/productOverview/dailyAggregation";
 import { calculateInventoryPlan } from "../domains/ops/inventoryPlanning/calculator";
 import { evaluateThreeMonthZeroDiscontinuation, evaluateThreeMonthZeroWeeklyDiscontinuation } from "../domains/ops/lifecycle/zeroValueDiscontinuation";
+import { mergeErpProducts } from "@shared/erpProductMerge";
 
 function matchesLingxingMarketplace(row: { country?: string | null; storeName?: string | null }, marketplace: string) {
   if (marketplace === "ALL") return true;
@@ -592,7 +593,7 @@ export const dataImportRouter = router({
   // so the frontend can switch data sources seamlessly
   getProductOverviewFromImport: protectedProcedure
     .input(z.object({
-      sourceType: z.enum(["lingxing", "saihu"]),
+      sourceType: z.enum(["erp", "lingxing", "saihu"]),
       weeks: z.number().default(4),
       marketplace: z.string().default("US"),
     }))
@@ -602,8 +603,19 @@ export const dataImportRouter = router({
       // Resolve effective userId (non-admin users use admin's data)
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
 
-      let result;
-      if (input.sourceType === "lingxing") {
+      let result: any[];
+      if (input.sourceType === "erp") {
+        const [lingxingProducts, saihuProducts] = await Promise.all([
+          buildOverviewFromLingxing(db!, effectiveUserId, weeksToShow, input.marketplace),
+          buildOverviewFromSaihu(db!, effectiveUserId, weeksToShow, input.marketplace),
+        ]);
+        // 日粒度领星数据和赛狐周度数据统一呈现；同店铺、同站点的同父 ASIN
+        // 优先保留领星记录，避免双 ERP 导入时重复累计。
+        result = mergeErpProducts([
+          { source: "lingxing", products: lingxingProducts },
+          { source: "saihu", products: saihuProducts },
+        ]);
+      } else if (input.sourceType === "lingxing") {
         result = await buildOverviewFromLingxing(db!, effectiveUserId, weeksToShow, input.marketplace);
       } else {
         result = await buildOverviewFromSaihu(db!, effectiveUserId, weeksToShow, input.marketplace);

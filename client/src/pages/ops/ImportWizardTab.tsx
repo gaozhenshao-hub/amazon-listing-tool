@@ -14,8 +14,8 @@ interface ImportWizardTabProps {
 const IMPORT_STEPS = [
   {
     step: 1,
-    title: "产品周度数据",
-    description: "领星/赛狐产品表现Excel",
+    title: "ERP 产品周度数据",
+    description: "ERP 产品数据 Excel（自动识别格式）",
     tab: "upload",
     icon: Package,
     color: "blue",
@@ -90,7 +90,7 @@ export default function ImportWizardTab({ onNavigate }: ImportWizardTabProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-primary" />
-            数据导入向导
+            ERP 数据导入向导
           </CardTitle>
           <CardDescription className="text-base">
             本系统所有业务数据通过Excel表格导入。按照以下流程依次导入数据，即可解锁全部AI分析功能。
@@ -118,7 +118,7 @@ export default function ImportWizardTab({ onNavigate }: ImportWizardTabProps) {
       <div className="space-y-4">
         <h3 className="text-lg font-semibold flex items-center gap-2">
           <FileSpreadsheet className="h-5 w-5" />
-          数据导入流程（按优先级排序）
+          ERP 数据导入流程（按优先级排序）
         </h3>
 
         <div className="grid gap-4">
@@ -216,7 +216,7 @@ export default function ImportWizardTab({ onNavigate }: ImportWizardTabProps) {
                 </li>
                 <li className="flex items-start gap-1.5">
                   <CheckCircle2 className="h-3.5 w-3.5 text-green-500 mt-0.5 shrink-0" />
-                  系统自动识别领星/赛狐格式
+                  系统自动识别 ERP 文件的领星/赛狐格式
                 </li>
                 <li className="flex items-start gap-1.5">
                   <CheckCircle2 className="h-3.5 w-3.5 text-green-500 mt-0.5 shrink-0" />
