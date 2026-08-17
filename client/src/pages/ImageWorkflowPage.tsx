@@ -91,7 +91,7 @@ function ColorSwatch({ color, label }: { color: any; label: string }) {
   );
 }
 
-function normalizeFinalImageSuggestions(data: any) {
+export function normalizeFinalImageSuggestions(data: any) {
   if (!data) return data;
   // Helper: normalize fabe from fabenDescription or fabe
   function normalizeFabe(img: any) {
@@ -121,10 +121,19 @@ function normalizeFinalImageSuggestions(data: any) {
     if (typeof v === 'object') return JSON.stringify(v);
     return String(v);
   }
-  const rawSections = Array.isArray(data?.aPlusContent?.sections) ? data.aPlusContent.sections : [];
-  const embeddedBrandStory = rawSections.find((section: any) => {
+  // 新版分段结果使用aPlusContent.sections；历史结果只保留aPlusModules。
+  // 两者必须映射为同一展示契约，避免历史会话遗漏A+模块或品牌故事。
+  const rawSections = Array.isArray(data?.aPlusContent?.sections)
+    ? data.aPlusContent.sections
+    : Array.isArray(data?.aPlusModules)
+      ? data.aPlusModules
+      : [];
+  // 只有独立brandStory缺失时，才从非标准模块编号/无编号区块恢复历史内嵌品牌故事。
+  // 第7个A+模块可能在标题中带有“品牌故事与售后承诺”，但它仍是合法A+ 7，不能被剔除。
+  const embeddedBrandStory = data.brandStory ? undefined : rawSections.find((section: any) => {
     const numericModule = Number(section?.moduleNumber);
-    return /品牌故事|brand story/i.test(safeStr(section?.title)) || numericModule > 7;
+    const isStandardAplusModule = Number.isFinite(numericModule) && numericModule >= 1 && numericModule <= 7;
+    return !isStandardAplusModule && (/品牌故事|brand story/i.test(safeStr(section?.title)) || numericModule > 7);
   });
   const canonicalSections = rawSections
     .filter((section: any) => section !== embeddedBrandStory && Number(section?.moduleNumber || 0) <= 7)
@@ -143,14 +152,14 @@ function normalizeFinalImageSuggestions(data: any) {
       mobileOptimization: safeStr(data.designGuidelines.mobileOptimization || data.designGuidelines.mobile || data.designGuidelines.compositionStyle || ""),
     } : data.designGuidelines,
     // Normalize aPlusContent: map AI field names to frontend expected names
-    aPlusContent: data.aPlusContent ? {
-      ...data.aPlusContent,
+    aPlusContent: (data.aPlusContent || rawSections.length) ? {
+      ...(data.aPlusContent || {}),
       sections: canonicalSections,
-      overallStrategy: safeStr(data.aPlusContent.overallStrategy || data.aPlusContent.strategy || ""),
-      overallStory: safeStr(data.aPlusContent.overallStory || data.aPlusContent.story || ""),
-      consistency: safeStr(data.aPlusContent.consistency || ""),
-      modularDesign: safeStr(data.aPlusContent.modularDesign || ""),
-    } : data.aPlusContent,
+      overallStrategy: safeStr(data.aPlusContent?.overallStrategy || data.aPlusContent?.strategy || ""),
+      overallStory: safeStr(data.aPlusContent?.overallStory || data.aPlusContent?.story || ""),
+      consistency: safeStr(data.aPlusContent?.consistency || ""),
+      modularDesign: safeStr(data.aPlusContent?.modularDesign || ""),
+    } : undefined,
     mainImage: data.mainImage ? {
       ...data.mainImage,
       title: safeStr(data.mainImage.title),
@@ -216,6 +225,61 @@ function FABEDisplay({ fabe, variant = "en" }: { fabe: any; variant?: "en" | "cn
         ) : null
       ))}
     </div>
+  );
+}
+
+export function Step5AplusModuleDetails({ section, moduleNumber }: { section: any; moduleNumber: number }) {
+  return (
+    <>
+      <Badge variant="outline" className="text-xs">English</Badge>
+      <p className="text-sm font-medium">{section.title}</p>
+      <p className="text-xs"><strong>Purpose:</strong> {section.purpose}</p>
+      <p className="text-xs"><strong>Content:</strong> {typeof section.content === "object" ? JSON.stringify(section.content) : section.content}</p>
+      {section.imageDescription && <p className="text-xs"><strong>Image:</strong> {section.imageDescription}</p>}
+      <FABEDisplay fabe={section.fabe} variant="en" />
+      {section.expressionMethod && <p className="text-xs"><strong>Expression:</strong> {section.expressionMethod}</p>}
+      {section.composition && <p className="text-xs"><strong>Composition:</strong> {section.composition}</p>}
+      {section.dataVisualization && <p className="text-xs"><strong>Data Viz:</strong> {section.dataVisualization}</p>}
+      {section.icons?.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {section.icons.map((icon: string, index: number) => <Badge key={index} variant="secondary" className="text-xs">{icon}</Badge>)}
+        </div>
+      )}
+      {section.designTips?.length > 0 && (
+        <div className="mt-2 p-2 bg-amber-50 rounded text-xs">
+          <strong className="text-amber-700">设计提示:</strong>
+          <ul className="list-disc list-inside mt-1 text-amber-600">
+            {section.designTips.map((tip: string, index: number) => <li key={index}>{tip}</li>)}
+          </ul>
+        </div>
+      )}
+      {section.moduleSpecificContent && (
+        <div className="mt-2 p-2 bg-blue-50 rounded text-xs space-y-1">
+          <strong className="text-blue-700">模块专属内容:</strong>
+          {section.moduleSpecificContent.comparisons && <div><strong>对比数据:</strong> {JSON.stringify(section.moduleSpecificContent.comparisons).slice(0, 200)}...</div>}
+          {section.moduleSpecificContent.panels && <div><strong>面板:</strong> {section.moduleSpecificContent.panels.length}个面板</div>}
+          {section.moduleSpecificContent.subImages && <div><strong>子图:</strong> {section.moduleSpecificContent.subImages.length}张子图</div>}
+          {section.moduleSpecificContent.hotspots && <div><strong>热点:</strong> {section.moduleSpecificContent.hotspots.length}个热点</div>}
+          {section.moduleSpecificContent.comparisonRows && <div><strong>比较表:</strong> {section.moduleSpecificContent.comparisonRows.length}行</div>}
+          {section.moduleSpecificContent.qaItems && <div><strong>问答:</strong> {section.moduleSpecificContent.qaItems.length}个问答</div>}
+          {section.moduleSpecificContent.specs && <div><strong>规格:</strong> {section.moduleSpecificContent.specs.length}个规格项</div>}
+        </div>
+      )}
+      {Array.isArray(section.subModules) && section.subModules.length > 0 && (
+        <div className="mt-3 space-y-2 rounded border border-purple-200 bg-purple-50/50 p-2">
+          <p className="text-xs font-semibold text-purple-800">逐图子模块（各自拥有独立参考图、构图与作图建议）</p>
+          {section.subModules.map((subModule: any, subIndex: number) => (
+            <div key={subModule.subModuleNumber || subIndex} className="rounded border border-purple-100 bg-white p-2 text-xs">
+              <p className="font-medium text-purple-800">A+ 模块 {moduleNumber}.{subModule.subModuleNumber || subIndex + 1} · {subModule.title || "子图"}</p>
+              {subModule.purpose && <p><strong>目的:</strong> {subModule.purpose}</p>}
+              {subModule.composition && <p><strong>构图:</strong> {subModule.composition}</p>}
+              {(subModule.imageDescription || subModule.designAdvice || subModule.content) && <p><strong>作图建议:</strong> {subModule.imageDescription || subModule.designAdvice || subModule.content}</p>}
+              {subModule.referenceImageKey && <p className="text-muted-foreground"><strong>参考图:</strong> {subModule.referenceImageKey}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1438,69 +1502,7 @@ function Step5FinalSuggestions({
                         )}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2 border-r pr-4">
-                            <Badge variant="outline" className="text-xs">English</Badge>
-                            <p className="text-sm font-medium">{section.title}</p>
-                            <p className="text-xs"><strong>Purpose:</strong> {section.purpose}</p>
-                            <p className="text-xs"><strong>Content:</strong> {typeof section.content === 'object' ? JSON.stringify(section.content) : section.content}</p>
-                            {section.imageDescription && <p className="text-xs"><strong>Image:</strong> {section.imageDescription}</p>}
-                            <FABEDisplay fabe={section.fabe} variant="en" />
-                            {section.expressionMethod && <p className="text-xs"><strong>Expression:</strong> {section.expressionMethod}</p>}
-                            {section.composition && <p className="text-xs"><strong>Composition:</strong> {section.composition}</p>}
-                            {section.dataVisualization && <p className="text-xs"><strong>Data Viz:</strong> {section.dataVisualization}</p>}
-                            {section.icons?.length > 0 && (
-                              <div className="flex flex-wrap gap-1">
-                                {section.icons.map((icon: string, i: number) => <Badge key={i} variant="secondary" className="text-xs">{icon}</Badge>)}
-                              </div>
-                            )}
-                            {section.designTips?.length > 0 && (
-                              <div className="mt-2 p-2 bg-amber-50 rounded text-xs">
-                                <strong className="text-amber-700">设计提示:</strong>
-                                <ul className="list-disc list-inside mt-1 text-amber-600">
-                                  {section.designTips.map((tip: string, i: number) => <li key={i}>{tip}</li>)}
-                                </ul>
-                              </div>
-                            )}
-                            {/* Module-specific content display */}
-                            {section.moduleSpecificContent && (
-                              <div className="mt-2 p-2 bg-blue-50 rounded text-xs space-y-1">
-                                <strong className="text-blue-700">模块专属内容:</strong>
-                                {section.moduleSpecificContent.comparisons && (
-                                  <div><strong>对比数据:</strong> {JSON.stringify(section.moduleSpecificContent.comparisons).slice(0, 200)}...</div>
-                                )}
-                                {section.moduleSpecificContent.panels && (
-                                  <div><strong>面板:</strong> {section.moduleSpecificContent.panels.length}个面板</div>
-                                )}
-                                {section.moduleSpecificContent.subImages && (
-                                  <div><strong>子图:</strong> {section.moduleSpecificContent.subImages.length}张子图</div>
-                                )}
-                                {section.moduleSpecificContent.hotspots && (
-                                  <div><strong>热点:</strong> {section.moduleSpecificContent.hotspots.length}个热点</div>
-                                )}
-                                {section.moduleSpecificContent.comparisonRows && (
-                                  <div><strong>比较表:</strong> {section.moduleSpecificContent.comparisonRows.length}行</div>
-                                )}
-                                {section.moduleSpecificContent.qaItems && (
-                                  <div><strong>问答:</strong> {section.moduleSpecificContent.qaItems.length}个问答</div>
-                                )}
-                                {section.moduleSpecificContent.specs && (
-                                  <div><strong>规格:</strong> {section.moduleSpecificContent.specs.length}个规格项</div>
-                                )}
-                              </div>
-                            )}
-                            {Array.isArray(section.subModules) && section.subModules.length > 0 && (
-                              <div className="mt-3 space-y-2 rounded border border-purple-200 bg-purple-50/50 p-2">
-                                <p className="text-xs font-semibold text-purple-800">逐图子模块（各自拥有独立参考图、构图与作图建议）</p>
-                                {section.subModules.map((subModule: any, subIndex: number) => (
-                                  <div key={subModule.subModuleNumber || subIndex} className="rounded border border-purple-100 bg-white p-2 text-xs">
-                                    <p className="font-medium text-purple-800">A+ 模块 {idx + 1}.{subModule.subModuleNumber || subIndex + 1} · {subModule.title || "子图"}</p>
-                                    {subModule.purpose && <p><strong>目的:</strong> {subModule.purpose}</p>}
-                                    {subModule.composition && <p><strong>构图:</strong> {subModule.composition}</p>}
-                                    {(subModule.imageDescription || subModule.designAdvice || subModule.content) && <p><strong>作图建议:</strong> {subModule.imageDescription || subModule.designAdvice || subModule.content}</p>}
-                                    {subModule.referenceImageKey && <p className="text-muted-foreground"><strong>参考图:</strong> {subModule.referenceImageKey}</p>}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                            <Step5AplusModuleDetails section={section} moduleNumber={idx + 1} />
                           </div>
                           <DesignerUploadPanel
                             imageNumber={`aplus_section_${idx + 1}`}
