@@ -15,6 +15,7 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(references).toContain("unlockStep4ForEditing: protectedProcedure");
     expect(references).toContain("getLatestStep4ReferenceJob");
     expect(references).toContain("latestResult || session.step4AiResult");
+    expect(references).toContain('typeof value === "object" && !Array.isArray(value)');
     expect(references).toContain("step4Confirmed: 0");
   });
 

@@ -54,6 +54,19 @@ export function mergeStep4LatestWithUserAssets(confirmedRaw: unknown, latestRaw:
   };
 }
 
+/** 从AI Job的output或其result封装中取得可用于Step4解锁的完整参考方案。 */
+export function extractLatestStep4JobResult(outputRaw: unknown) {
+  let output = outputRaw;
+  if (typeof output === "string") {
+    try { output = JSON.parse(output); } catch { return null; }
+  }
+  if (!output || typeof output !== "object") return null;
+  const result = (output as Record<string, any>).result && typeof (output as Record<string, any>).result === "object"
+    ? (output as Record<string, any>).result
+    : output as Record<string, any>;
+  return Array.isArray((result as Record<string, any>).imageReferences) ? result : null;
+}
+
 /**
  * 单图重新生成只能替换目标索引；其余参考图和用户上传的参考资产必须原样保留。
  */

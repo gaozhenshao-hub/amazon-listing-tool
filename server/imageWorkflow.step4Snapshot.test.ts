@@ -1,9 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { buildStep4ConfirmedSnapshot, compactStep4ReferenceForStorage, compactStep4SnapshotForStorage, mergeSingleStep4Reference, mergeStep4LatestWithUserAssets } from "./domains/image/step4Snapshot";
+import { buildStep4ConfirmedSnapshot, compactStep4ReferenceForStorage, compactStep4SnapshotForStorage, extractLatestStep4JobResult, mergeSingleStep4Reference, mergeStep4LatestWithUserAssets } from "./domains/image/step4Snapshot";
 
 describe("Step4锁定快照持久化", () => {
   it("向解锁路由提供可用的最新方案合并导出", () => {
     expect(typeof mergeStep4LatestWithUserAssets).toBe("function");
+    expect(typeof extractLatestStep4JobResult).toBe("function");
+  });
+
+  it("解析最新Step4任务的嵌套output.result场景方案", () => {
+    const result = extractLatestStep4JobResult(JSON.stringify({
+      reconciledAfterAgentSyncTimeout: true,
+      result: {
+        imageReferences: [{ imageKey: "aplus-5.1", compositionReference: { layout: "展示车库环境" } }],
+      },
+    }));
+
+    expect(result?.imageReferences[0]).toMatchObject({
+      imageKey: "aplus-5.1",
+      compositionReference: { layout: "展示车库环境" },
+    });
   });
 
   it("解锁时采用最新AI场景方案并保留本地参考图和备注", () => {

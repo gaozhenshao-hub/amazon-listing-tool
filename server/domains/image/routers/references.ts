@@ -53,8 +53,14 @@ const {
 } = shared;
 
 function mergeStep4DraftVersions(confirmedRaw: unknown, latestRaw: unknown) {
-  const confirmed = parseStoredJson(String(confirmedRaw || "{}")) as Record<string, any> | null;
-  const latest = parseStoredJson(String(latestRaw || "{}")) as Record<string, any> | null;
+  const parseSnapshot = (value: unknown) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, any>;
+    return parseStoredJson(String(value || "{}")) as Record<string, any> | null;
+  };
+  const confirmed = parseSnapshot(confirmedRaw);
+  // 最新AI Job的output.result是对象。此前String(object)会变为“[object Object]”，
+  // 解析失败后错误回退到历史草稿，导致车库/庭院/露营/工地场景没有展示。
+  const latest = parseSnapshot(latestRaw);
   if (!confirmed && !latest) return null;
   if (!confirmed) return latest;
   if (!latest) return confirmed;
@@ -89,10 +95,8 @@ function mergeStep4DraftVersions(confirmedRaw: unknown, latestRaw: unknown) {
 }
 
 function getLatestSucceededStep4Result(job: { status?: string; output?: unknown } | null) {
-  if (job?.status !== "succeeded" || !job.output || typeof job.output !== "object") return null;
-  const output = job.output as Record<string, any>;
-  const result = output.result && typeof output.result === "object" ? output.result : output;
-  return Array.isArray((result as Record<string, any>).imageReferences) ? result : null;
+  if (job?.status !== "succeeded") return null;
+  return (step4Snapshot as Record<string, any>).extractLatestStep4JobResult(job.output);
 }
 
 export const imageReferenceProcedures = {
