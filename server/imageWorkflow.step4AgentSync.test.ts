@@ -10,4 +10,8 @@ describe("Step4 Agent sync completion boundary", () => {
     const stalled = new Promise<void>(() => undefined);
     await expect(settleStep4AgentSync(stalled, 5)).resolves.toBe("timed_out");
   });
+
+  it("does not let a rejected Agent sync block the job path", async () => {
+    await expect(settleStep4AgentSync(Promise.reject(new Error("agent unavailable")), 20)).resolves.toBe("failed");
+  });
 });

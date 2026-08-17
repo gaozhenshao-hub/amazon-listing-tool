@@ -53,11 +53,16 @@ function normalizeStep4JobError(error: unknown) {
  * Agent DAG is observability only. A slow/blocked sync must never leave a
  * business AI Job running after its Step4 result has been safely persisted.
  */
-export async function settleStep4AgentSync(sync: Promise<void> | void, timeoutMs = 5_000): Promise<"synced" | "timed_out"> {
+export async function settleStep4AgentSync(sync: Promise<void> | void, timeoutMs = 5_000): Promise<"synced" | "timed_out" | "failed"> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const outcome = await Promise.race([
-      Promise.resolve(sync).then(() => "synced" as const),
+      Promise.resolve(sync)
+        .then(() => "synced" as const)
+        .catch((error) => {
+          console.warn("[Step4] Agent sync failed; continuing business job without blocking", error);
+          return "failed" as const;
+        }),
       new Promise<"timed_out">((resolve) => {
         timer = setTimeout(() => resolve("timed_out"), timeoutMs);
       }),
