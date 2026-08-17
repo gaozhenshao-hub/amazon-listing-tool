@@ -17,6 +17,25 @@ import { toast } from "sonner";
 import { OUTLINE_APLUS_CATEGORIES, OUTLINE_APLUS_MODULES, findOutlineAplusModule, normalizeImageOutline } from "./aplusModules";
 import { ImageStepGenerationStatus, useImageStepGenerationJob } from "./useImageStepGenerationJob";
 
+export function Step2AplusSubmoduleEditor({
+  submodule,
+  onChange,
+}: {
+  submodule: any;
+  onChange: (field: string, value: string) => void;
+}) {
+  const isLocked = Boolean(submodule?.isLocked);
+  return (
+    <>
+      <Input disabled={isLocked} value={submodule.title || ""} onChange={(e) => onChange("title", e.target.value)} placeholder="子图标题" className="h-8 text-xs" />
+      <Input disabled={isLocked} value={submodule.purpose || ""} onChange={(e) => onChange("purpose", e.target.value)} placeholder="子图目的" className="h-8 text-xs" />
+      <Textarea disabled={isLocked} value={submodule.contentBrief || ""} onChange={(e) => onChange("contentBrief", e.target.value)} placeholder="子图独立大纲" className="min-h-[56px] text-xs" />
+      <Input disabled={isLocked} value={submodule.expressionType || ""} onChange={(e) => onChange("expressionType", e.target.value)} placeholder="表达方式" className="h-8 text-xs" />
+      <Input disabled={isLocked} value={submodule.whyThisWay || ""} onChange={(e) => onChange("whyThisWay", e.target.value)} placeholder="安排理由" className="h-8 text-xs" />
+    </>
+  );
+}
+
 export function Step2ImageOutline({
   projectId,
   session,
@@ -168,6 +187,7 @@ export function Step2ImageOutline({
     const newData = { ...editData, aPlusModules: [...(editData.aPlusModules || [])] };
     const module = { ...newData.aPlusModules[moduleIndex] };
     const subModules = [...(module.subModules || [])];
+    if (subModules[submoduleIndex]?.isLocked) return;
     subModules[submoduleIndex] = { ...subModules[submoduleIndex], [field]: value };
     module.subModules = subModules;
     newData.aPlusModules[moduleIndex] = module;
@@ -562,11 +582,10 @@ export function Step2ImageOutline({
                                   </Button>
                                 )}
                               </div>
-                              <Input value={submodule.title || ""} onChange={(e) => updateAPlusSubmodule(idx, submoduleIndex, "title", e.target.value)} placeholder="子图标题" className="h-8 text-xs" />
-                              <Input value={submodule.purpose || ""} onChange={(e) => updateAPlusSubmodule(idx, submoduleIndex, "purpose", e.target.value)} placeholder="子图目的" className="h-8 text-xs" />
-                              <Textarea value={submodule.contentBrief || ""} onChange={(e) => updateAPlusSubmodule(idx, submoduleIndex, "contentBrief", e.target.value)} placeholder="子图独立大纲" className="min-h-[56px] text-xs" />
-                              <Input value={submodule.expressionType || ""} onChange={(e) => updateAPlusSubmodule(idx, submoduleIndex, "expressionType", e.target.value)} placeholder="表达方式" className="h-8 text-xs" />
-                              <Input value={submodule.whyThisWay || ""} onChange={(e) => updateAPlusSubmodule(idx, submoduleIndex, "whyThisWay", e.target.value)} placeholder="安排理由" className="h-8 text-xs" />
+                              <Step2AplusSubmoduleEditor
+                                submodule={submodule}
+                                onChange={(field, value) => updateAPlusSubmodule(idx, submoduleIndex, field, value)}
+                              />
                             </div>
                           ))}
                         </div>
