@@ -66,6 +66,7 @@ import { Step3StyleConfirm } from "./imageWorkflow/StyleConfirmationStep";
 import { Step4References } from "./imageWorkflow/ReferenceImagesStep";
 import { OUTLINE_APLUS_CATEGORIES, OUTLINE_APLUS_MODULES, findOutlineAplusModule, normalizeAplusModuleStyle } from "./imageWorkflow/aplusModules";
 import { buildFullPlanContent, buildPdfContent, safeJsonParse } from "./imageWorkflow/exportContent";
+import { resolveImageWorkflowProjectId } from "./imageWorkflow/projectIdResolution";
 import { buildStep5SegmentStates, getStep5SegmentPresentation, isActiveStep5RunStatus, resolveCurrentStep5RunId } from "./imageWorkflow/step5RunState";
 import { normalizeSecondaryImageSlots } from "@shared/imageWorkflow";
 
@@ -1547,16 +1548,24 @@ function Step5FinalSuggestions({
 // ─── Main Page Component ─────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════════
 export default function ImageWorkflowPage() {
-  const { selectedProjectId } = useProject();
+  const { selectedProjectId, setSelectedProjectId } = useProject();
   const [currentStep, setCurrentStep] = useState(1);
   const queryAgentRunId = useMemo(() => new URLSearchParams(window.location.search).get("agentRunId"), []);
+  const queryProjectId = useMemo(() => resolveImageWorkflowProjectId(window.location.search, null), []);
+  const projectId = resolveImageWorkflowProjectId(window.location.search, selectedProjectId);
+
+  useEffect(() => {
+    if (queryProjectId && queryProjectId !== selectedProjectId) {
+      setSelectedProjectId(queryProjectId);
+    }
+  }, [queryProjectId, selectedProjectId, setSelectedProjectId]);
 
   const sessionQuery = trpc.imageWorkflow.getSession.useQuery(
-    { projectId: selectedProjectId! },
-    { enabled: !!selectedProjectId }
+    { projectId: projectId! },
+    { enabled: !!projectId }
   );
   const exportBundleQuery = trpc.imageWorkflow.getExportBundle.useQuery(
-    { projectId: selectedProjectId! },
+    { projectId: projectId! },
     { enabled: false, retry: false }
   );
   const createSessionMutation = trpc.imageWorkflow.createSession.useMutation();
@@ -1597,9 +1606,9 @@ export default function ImageWorkflowPage() {
   };
 
   const handleStartNew = async () => {
-    if (!selectedProjectId) return;
+    if (!projectId) return;
     try {
-      await createSessionMutation.mutateAsync({ projectId: selectedProjectId });
+      await createSessionMutation.mutateAsync({ projectId });
       sessionQuery.refetch();
       setCurrentStep(0);
       toast.success("新工作流已创建");
@@ -1609,9 +1618,9 @@ export default function ImageWorkflowPage() {
   };
 
   const handleReset = async (step: number) => {
-    if (!selectedProjectId) return;
+    if (!projectId) return;
     try {
-      await resetMutation.mutateAsync({ projectId: selectedProjectId, step });
+      await resetMutation.mutateAsync({ projectId, step });
       sessionQuery.refetch();
       setCurrentStep(step);
       toast.success(`已重置到步骤 ${step}`);
@@ -1621,7 +1630,7 @@ export default function ImageWorkflowPage() {
   };
 
   const handleExportFullPlan = async () => {
-    if (!selectedProjectId || !session) return;
+    if (!projectId || !session) return;
     toast.info("正在汇总六步内容与参考图片...");
     try {
       const result = await exportBundleQuery.refetch();
@@ -1641,7 +1650,7 @@ export default function ImageWorkflowPage() {
     }
   };
 
-  if (!selectedProjectId) {
+  if (!projectId) {
     return (
       <div className="p-6 max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-6">
@@ -1696,7 +1705,7 @@ export default function ImageWorkflowPage() {
       }
     >
 
-      <AiJobHistoryPanel module="imageWorkflow" projectId={selectedProjectId} title="图片工作流后台任务历史" />
+      <AiJobHistoryPanel module="imageWorkflow" projectId={projectId} title="图片工作流后台任务历史" />
 
       {session && (
         <BusinessArtifactVersionPicker
@@ -1705,7 +1714,7 @@ export default function ImageWorkflowPage() {
             artifactKey: `image.workflow.step.${currentStep}`,
             sourceTable: "image_workflow_sessions",
             sourceRowId: session.id,
-            projectId: selectedProjectId,
+            projectId,
           }}
           label={`步骤 ${currentStep} 版本`}
           onVersionChanged={() => sessionQuery.refetch()}
@@ -1731,22 +1740,22 @@ export default function ImageWorkflowPage() {
       )}
 
       {session && currentStep === 0 && (
-        <Step0CompetitorAnalysis projectId={selectedProjectId} session={session} onConfirm={handleStepConfirm} />
+        <Step0CompetitorAnalysis projectId={projectId} session={session} onConfirm={handleStepConfirm} />
       )}
       {session && currentStep === 1 && (
-        <Step1SellingPoints projectId={selectedProjectId} session={session} onConfirm={handleStepConfirm} />
+        <Step1SellingPoints projectId={projectId} session={session} onConfirm={handleStepConfirm} />
       )}
       {session && currentStep === 2 && (
-        <Step2ImageOutline projectId={selectedProjectId} session={session} onConfirm={handleStepConfirm} />
+        <Step2ImageOutline projectId={projectId} session={session} onConfirm={handleStepConfirm} />
       )}
       {session && currentStep === 3 && (
-        <Step3StyleConfirm projectId={selectedProjectId} session={session} onConfirm={handleStepConfirm} />
+        <Step3StyleConfirm projectId={projectId} session={session} onConfirm={handleStepConfirm} />
       )}
       {session && currentStep === 4 && (
-        <Step4References projectId={selectedProjectId} session={session} onConfirm={handleStepConfirm} />
+        <Step4References projectId={projectId} session={session} onConfirm={handleStepConfirm} />
       )}
       {session && currentStep === 5 && (
-        <Step5FinalSuggestions projectId={selectedProjectId} session={session} onConfirm={handleStepConfirm} />
+        <Step5FinalSuggestions projectId={projectId} session={session} onConfirm={handleStepConfirm} />
       )}
 
     </WorkflowShell>
