@@ -16,6 +16,7 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(references).toContain("getLatestStep4ReferenceJob");
     expect(references).toContain("latestResult || session.step4AiResult");
     expect(references).toContain('typeof value === "object" && !Array.isArray(value)');
+    expect(references).toContain("await db.unlockAllStep4ImageVersions(session.id)");
     expect(references).toContain("step4Confirmed: 0");
   });
 
@@ -74,10 +75,20 @@ describe("Step4 参考图与方案版本保留", () => {
     const sessionsRouter = fs.readFileSync(path.join(root, "server/domains/image/routers/sessions.ts"), "utf8");
     expect(refsRouter).toContain("confirmStep4ImageVersion");
     expect(refsRouter).toContain("unlockStep4ImageVersion");
+    expect(refsRouter).toContain("unlockAllStep4ImageVersions");
     expect(sessionsRouter).toContain("applyCurrentStep4ImageVersions");
     expect(sessionsRouter).toContain("!session.step4Confirmed && Array.isArray(draftSnapshot?.imageReferences)");
     expect(workflowSteps).toContain("getCurrentStep4ImageVersions(session.id)");
     expect(step4Snapshot).toContain("整体确认只会发布独立确认版本");
+  });
+
+  it("整体确认后刷新仍以完整确认快照为基准并叠加逐图锁定版本", () => {
+    const sessionsRouter = fs.readFileSync(path.join(root, "server/domains/image/routers/sessions.ts"), "utf8");
+    expect(workflowSteps).toContain("const completeSnapshot = buildStep4ConfirmedSnapshot(requestedSnapshot, versionByIndex)");
+    expect(workflowSteps).toContain("step4Confirmed: 1");
+    expect(sessionsRouter).toContain("const versions = await db.getCurrentStep4ImageVersions(session.id)");
+    expect(sessionsRouter).toContain("confirmed ? { ...reference, ...confirmed, isLocked: true");
+    expect(sessionsRouter).toContain("rebuildStep4DisplaySnapshot(session, snapshot)");
   });
 
   it("已锁定业务步骤时，旧 Agent 失败状态只能作为历史诊断，不能误标当前工作流失败", () => {

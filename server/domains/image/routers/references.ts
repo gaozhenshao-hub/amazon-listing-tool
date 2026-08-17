@@ -161,6 +161,9 @@ export const imageReferenceProcedures = {
       if (!draft) throw new Error("当前没有可编辑的参考图方案");
       const userEdit = JSON.stringify(draft);
 
+      // 整体解锁代表开始一轮新的人工编辑。若保留旧的逐图确认版本，
+      // 下一次整体确认会重新将它们叠加，覆盖本次最新场景方案。
+      await db.unlockAllStep4ImageVersions(session.id);
       await db.updateImageWorkflowSession(session.id, {
         step4UserEdit: userEdit,
         step4Confirmed: 0,

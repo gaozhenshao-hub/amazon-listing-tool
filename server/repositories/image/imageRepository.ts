@@ -128,6 +128,14 @@ export async function unlockStep4ImageVersion(sessionId: number, imageIndex: num
     .where(and(eq(imageWorkflowStep4ImageVersions.sessionId, sessionId), eq(imageWorkflowStep4ImageVersions.imageIndex, imageIndex), eq(imageWorkflowStep4ImageVersions.isCurrent, 1)));
 }
 
+/** 整体解锁时，历史逐图确认版本不能继续作为下一次整体确认的覆盖来源。 */
+export async function unlockAllStep4ImageVersions(sessionId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(imageWorkflowStep4ImageVersions).set({ isCurrent: 0, status: "unlocked" })
+    .where(and(eq(imageWorkflowStep4ImageVersions.sessionId, sessionId), eq(imageWorkflowStep4ImageVersions.isCurrent, 1)));
+}
+
 // ─── Competitor Image Analyses (Step 0 of Image Workflow) ─────────────────────
 
 export async function getCompetitorImagesByProject(projectId: number) {
