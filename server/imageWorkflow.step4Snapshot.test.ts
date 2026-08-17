@@ -140,4 +140,41 @@ describe("Step4锁定快照持久化", () => {
     expect(result.imageReferences[0]).toMatchObject({ compositionRefNote: "参考背景色", effectRefNote: "保留金属高光", isLocked: true });
     expect(result.imageReferences[1]).toMatchObject({ effectRefNote: "深蓝科技感", isLocked: true });
   });
+
+  it("多图A+模块、单图模块与品牌故事按稳定目标标识完整映射", () => {
+    const expectedKeys = [
+      "aplus-1.1", "aplus-1.2", "aplus-1.3", "aplus-1.4",
+      "aplus-2", "aplus-3",
+      "aplus-4.1", "aplus-4.2", "aplus-4.3", "aplus-4.4",
+      "aplus-5.1", "aplus-5.2", "aplus-5.3", "aplus-5.4",
+      "aplus-6",
+      "aplus-7.1", "aplus-7.2", "aplus-7.3", "aplus-7.4",
+      "brand-story",
+    ];
+    const latest = {
+      imageReferences: expectedKeys.map((imageKey) => {
+        const [prefix, parentAndSub] = imageKey.split("-");
+        const [parentPart, subPart] = (parentAndSub || "").split(".");
+        const parentModuleNumber = imageKey === "brand-story" ? null : Number(parentPart);
+        const subModuleNumber = subPart ? Number(subPart) : null;
+        return {
+          imageKey,
+          parentModuleNumber,
+          subModuleNumber,
+          compositionReference: { layout: `${imageKey} 构图` },
+          effectReference: { colorApplication: `${imageKey} 配色` },
+        };
+      }),
+    };
+
+    const result = mergeStep4LatestWithUserAssets({ imageReferences: [] }, latest);
+    const references = result?.imageReferences || [];
+
+    expect(references.map((reference: any) => reference.imageKey)).toEqual(expectedKeys);
+    expect(references.filter((reference: any) => reference.parentModuleNumber === 5).map((reference: any) => reference.subModuleNumber)).toEqual([1, 2, 3, 4]);
+    expect(references.find((reference: any) => reference.imageKey === "brand-story")).toMatchObject({
+      compositionReference: { layout: "brand-story 构图" },
+      effectReference: { colorApplication: "brand-story 配色" },
+    });
+  });
 });
