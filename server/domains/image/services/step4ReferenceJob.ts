@@ -49,6 +49,28 @@ function normalizeStep4JobError(error: unknown) {
   return error instanceof Error ? error : new Error(message);
 }
 
+/**
+ * Agent DAG is observability only. A slow/blocked sync must never leave a
+ * business AI Job running after its Step4 result has been safely persisted.
+ */
+export async function settleStep4AgentSync(sync: Promise<void>, timeoutMs = 5_000): Promise<"synced" | "timed_out"> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const outcome = await Promise.race([
+      sync.then(() => "synced" as const),
+      new Promise<"timed_out">((resolve) => {
+        timer = setTimeout(() => resolve("timed_out"), timeoutMs);
+      }),
+    ]);
+    if (outcome === "timed_out") {
+      console.warn("[Step4] Agent waiting-human sync exceeded timeout; completing business job without blocking");
+    }
+    return outcome;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function buildStep4FallbackReference(target: any) {
   const isBrand = /品牌故事/.test(String(target?.imageType || ""));
   return {
@@ -325,7 +347,7 @@ registerAiJobHandler({
     try {
       const result = await runStep4ReferenceJob(job, context);
       if (!(result as any)?.skipped) {
-        await syncStepJobWaitingHumanToAgent({ ...syncInput, output: result });
+        await settleStep4AgentSync(syncStepJobWaitingHumanToAgent({ ...syncInput, output: result }));
       }
       return result;
     } catch (error) {
