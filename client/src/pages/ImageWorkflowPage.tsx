@@ -283,6 +283,32 @@ export function Step5AplusModuleDetails({ section, moduleNumber }: { section: an
   );
 }
 
+export function Step5BrandStoryDetails({ story, chineseStory }: { story: any; chineseStory?: any }) {
+  return (
+    <Card className="border-amber-200 bg-amber-50/30">
+      <CardHeader className="pb-2"><CardTitle className="text-sm">品牌故事</CardTitle></CardHeader>
+      <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+        <div className="space-y-1"><Badge variant="outline">English</Badge><p className="font-medium">{story.title}</p><p><strong>Purpose:</strong> {story.purpose}</p><p><strong>Composition:</strong> {story.composition}</p><p><strong>Image:</strong> {story.imageDescription}</p></div>
+        <div className="space-y-1 border-l pl-4"><Badge variant="outline">中文</Badge><p className="font-medium">{chineseStory?.title || "品牌故事"}</p><p>{chineseStory?.purpose || "暂无中文翻译"}</p></div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function Step5AplusSectionTitle({ section, index, selectedModuleName }: { section: any; index: number; selectedModuleName?: string }) {
+  return (
+    <CardTitle className="text-sm flex items-center gap-2">
+      A+ 模块 {index + 1}
+      {section.type && <Badge variant="outline" className="text-xs">{section.type}</Badge>}
+      {selectedModuleName && (
+        <Badge variant="secondary" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+          {selectedModuleName}
+        </Badge>
+      )}
+    </CardTitle>
+  );
+}
+
 // ─── Lockable field definitions per image type ─────────────────────────
 const LOCKABLE_FIELDS: Record<string, { key: string; label: string; icon: string }[]> = {
   mainImage: [
@@ -1373,13 +1399,7 @@ function Step5FinalSuggestions({
               </Card>
 
               {enData.brandStory && (
-                <Card className="border-amber-200 bg-amber-50/30">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">品牌故事</CardTitle></CardHeader>
-                  <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                    <div className="space-y-1"><Badge variant="outline">English</Badge><p className="font-medium">{enData.brandStory.title}</p><p><strong>Purpose:</strong> {enData.brandStory.purpose}</p><p><strong>Composition:</strong> {enData.brandStory.composition}</p><p><strong>Image:</strong> {enData.brandStory.imageDescription}</p></div>
-                    <div className="space-y-1 border-l pl-4"><Badge variant="outline">中文</Badge><p className="font-medium">{cnData?.brandStory?.title || "品牌故事"}</p><p>{cnData?.brandStory?.purpose || "暂无中文翻译"}</p></div>
-                  </CardContent>
-                </Card>
+                <Step5BrandStoryDetails story={enData.brandStory} chineseStory={cnData?.brandStory} />
               )}
 
               {/* Draggable A+ sections with per-section module style selector */}
@@ -1406,15 +1426,7 @@ function Step5FinalSuggestions({
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           {!isConfirmed && <GripVertical className="w-4 h-4 text-gray-400" />}
-                          <CardTitle className="text-sm flex items-center gap-2">
-                            A+ 模块 {idx + 1}
-                            {section.type && <Badge variant="outline" className="text-xs">{section.type}</Badge>}
-                            {selectedModuleName && (
-                              <Badge variant="secondary" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
-                                {selectedModuleName}
-                              </Badge>
-                            )}
-                          </CardTitle>
+                          <Step5AplusSectionTitle section={section} index={idx} selectedModuleName={selectedModuleName} />
                         </div>
                         {!isConfirmed && (
                           <RefinePopover

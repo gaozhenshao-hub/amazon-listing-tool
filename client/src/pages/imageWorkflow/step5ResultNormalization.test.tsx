@@ -2,7 +2,12 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { normalizeFinalImageSuggestions, Step5AplusModuleDetails } from "../ImageWorkflowPage";
+import {
+  normalizeFinalImageSuggestions,
+  Step5AplusModuleDetails,
+  Step5AplusSectionTitle,
+  Step5BrandStoryDetails,
+} from "../ImageWorkflowPage";
 
 describe("Step5历史结果归一化", () => {
   it("将历史aPlusModules连续映射为前台A+ 1至7并保留独立品牌故事", () => {
@@ -73,5 +78,38 @@ describe("Step5历史结果归一化", () => {
     expect(screen.getByText("1464x600px导航轮播布局")).toBeInTheDocument();
     expect(screen.getByText("工业科技风作图建议")).toBeInTheDocument();
     expect(screen.getByText(/A\+ 模块 7\.1/)).toBeInTheDocument();
+  });
+
+  it("在组合视图中连续渲染A+ 1至7，并将品牌故事保持为独立卡片", () => {
+    const normalized = normalizeFinalImageSuggestions({
+      aPlusModules: [
+        ...Array.from({ length: 7 }, (_, index) => ({
+          moduleNumber: index + 1,
+          title: `模块${index + 1}`,
+          purpose: `模块${index + 1}目的`,
+          content: `模块${index + 1}内容`,
+        })),
+        { moduleNumber: 8, title: "独立品牌故事", purpose: "品牌价值", composition: "品牌构图", imageDescription: "品牌作图建议" },
+      ],
+    });
+
+    render(
+      <div>
+        <Step5BrandStoryDetails story={normalized.brandStory} />
+        {normalized.aPlusContent.sections.map((section: any, index: number) => (
+          <section key={section.moduleNumber}>
+            <Step5AplusSectionTitle section={section} index={index} />
+            <Step5AplusModuleDetails section={section} moduleNumber={index + 1} />
+          </section>
+        ))}
+      </div>,
+    );
+
+    expect(screen.getByText("独立品牌故事")).toBeInTheDocument();
+    for (let moduleNumber = 1; moduleNumber <= 7; moduleNumber += 1) {
+      expect(screen.getByText(`A+ 模块 ${moduleNumber}`)).toBeInTheDocument();
+      expect(screen.getByText(`模块${moduleNumber}内容`)).toBeInTheDocument();
+    }
+    expect(screen.queryByText("A+ 模块 8")).not.toBeInTheDocument();
   });
 });
