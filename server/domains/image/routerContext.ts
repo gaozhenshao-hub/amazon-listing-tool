@@ -374,22 +374,57 @@ export async function getKBReference(category: string, userId: number): Promise<
 }
 
 // ─── Helper: Parse LLM JSON response ─────────────────────
+function extractBalancedJsonBlock(content: string): string | null {
+  const firstObject = content.indexOf("{");
+  const firstArray = content.indexOf("[");
+  const start = firstObject === -1
+    ? firstArray
+    : firstArray === -1
+      ? firstObject
+      : Math.min(firstObject, firstArray);
+  if (start < 0) return null;
+
+  const opening = content[start];
+  const closing = opening === "{" ? "}" : "]";
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < content.length; index += 1) {
+    const char = content[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === opening) depth += 1;
+    if (char === closing) {
+      depth -= 1;
+      if (depth === 0) return content.slice(start, index + 1);
+    }
+  }
+  return null;
+}
+
 export function parseLooseLlmJson(value: unknown): any {
   let content = String(value || "");
+  content = content.replace(/^\uFEFF|\u200B/g, "");
   // Strip markdown code blocks (```json ... ``` or ``` ... ```)
   const mdMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (mdMatch) content = mdMatch[1].trim();
-  // Find first { or [ and last } or ] to extract JSON
-  const firstBrace = content.indexOf('{');
-  const firstBracket = content.indexOf('[');
-  let start = -1;
-  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) start = firstBrace;
-  else if (firstBracket !== -1) start = firstBracket;
-  if (start > 0) content = content.slice(start);
-  const lastBrace = content.lastIndexOf('}');
-  const lastBracket = content.lastIndexOf(']');
-  const end = Math.max(lastBrace, lastBracket);
-  if (end !== -1 && end < content.length - 1) content = content.slice(0, end + 1);
+  // Preserve only the first complete JSON value. Long skill responses sometimes
+  // append explanation text or an unclosed markdown fence after valid JSON.
+  const balanced = extractBalancedJsonBlock(content);
+  if (balanced) content = balanced;
   // Models occasionally emit literal control characters inside JSON strings.
   // Preserve the semantic value while escaping those characters before parsing.
   let escaped = "";
