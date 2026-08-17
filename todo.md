@@ -37,10 +37,13 @@
 - [ ] 记录用户对空气套件测试会话临时修改及恢复的授权与验收结果（待真实Step4/Step5验收完成）
 - [ ] 修复皇帝Skill返回代码围栏长JSON时的解析失败，再重跑隔离Step4/Step5真实场景验收
 - [ ] 修复Step5皇帝Skill超长输出未形成可解析闭合JSON的问题，并重跑空气套件隔离场景验收
-- [ ] 为image.step5.final.suggestion启用皇帝Skill严格JSON模式并验证模型实际遵守结构化输出
+- [x] 为image.step5.final.suggestion启用皇帝Skill JSON模式（运行时清单supportsJsonMode=true、maxTokens=8192、超时300秒；Skill运行器向模型传递json_object响应格式）
+- [x] 实际验证image.step5.final.suggestion的历史回退调用返回可解析结构化JSON（最近5条成功皇帝运行均JSON_VALID=1、secondaryImages=6，输出令牌5,577至11,560）
+- [x] 为runEmperorSkill补充supportsJsonMode响应格式测试（运行器向custom与内置模型一致传递json_object；13项皇帝JSON解析/请求配置测试通过）
+- [x] 为image.step5.final.suggestion完整Skill回退路径补充输出字段契约测试：secondaryImages、A+内容与brandStory均可解析且满足结构要求（完整回退样例经Skill解析与完整性校验通过；15项相关测试通过）
 - [x] 将Step5最终图片建议改为主图、辅图和A+模块的分段生成及服务端合并
 - [ ] 验证分段Step5在空气套件隔离场景中输出四个场景子图且无长JSON截断
-- [ ] 皇帝中台新增分段Step5 Skill与结构化提示词，后台编排调用并前台显示分段进度和失败位置
+- [x] 皇帝中台新增分段Step5 Skill与结构化提示词，后台编排调用并前台显示分段进度和失败位置（main/secondary/aplus三个Skill均启用JSON模式；后台按A+模块与品牌故事独立调用并持久化分段状态）
 - [x] 正式切换Step5为主图、辅图和A+分段Skill编排，保留完整Skill可回退路径
 - [ ] 在前台显示分段任务进度与失败分组，并保持现有审核锁定操作
 - [ ] 用空气套件验证正式分段Step5生成不会发生长JSON截断且保留A+1至7和品牌故事
@@ -57,6 +60,7 @@
 - [ ] 用空气套件真实验证Step5分段状态变化及失败定位展示（成功路径已验证；失败回退待专项验证）
 - [ ] 补充failedGroup/failedModule持久化与前台展示的回归测试或断言（快照、映射与前台状态语义已覆盖，待覆盖实际写入和完整性回退）
 - [x] 补充Step5失败分组归类与回退快照回归测试（主图、辅图、A+模块、品牌故事归类及fallback快照保留共3项测试通过）
+- [x] 补充Step5分段失败会话写入补丁测试（运行执行器使用同一补丁写入step5RunSegments、failedGroup与failedModule；4项快照/归类测试通过）
 - [x] 为主图/辅图/A+完整性校验失败映射明确的failedGroup与failedModule，避免unknown降级（主图、辅图、A+ 7及品牌故事完整性校验测试通过）
 
 ## Step5 A+ 7空内容回归修复（2026-08-16）

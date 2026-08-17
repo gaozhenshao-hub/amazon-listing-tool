@@ -69,6 +69,10 @@ type SkillManifest = {
   };
 };
 
+export function buildSkillJsonResponseFormat(supportsJsonMode?: boolean) {
+  return supportsJsonMode ? { type: "json_object" as const } : undefined;
+}
+
 export type RunSkillInput<T> = {
   skillSlug: string;
   userId: number;
@@ -539,7 +543,8 @@ async function callModel(
       max_tokens: implementation.maxTokens || 4096,
     };
     if (implementation.temperature !== undefined) payload.temperature = implementation.temperature;
-    if (implementation.supportsJsonMode) payload.response_format = { type: "json_object" };
+    const responseFormat = buildSkillJsonResponseFormat(implementation.supportsJsonMode);
+    if (responseFormat) payload.response_format = responseFormat;
 
     const apiUrl = `${model.baseUrl.replace(/\/$/, "")}/chat/completions`;
     const response = await safeHttpRequest(apiUrl, {
@@ -593,7 +598,8 @@ async function callModel(
       emperorBypassReason: "skill_runner_provider_call",
       signal: timeoutController.signal,
     };
-    if (implementation.supportsJsonMode) params.response_format = { type: "json_object" };
+    const responseFormat = buildSkillJsonResponseFormat(implementation.supportsJsonMode);
+    if (responseFormat) params.response_format = responseFormat;
     result = await invokeLLM(params);
   } finally {
     clearTimeout(timeout);

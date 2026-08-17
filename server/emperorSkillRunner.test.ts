@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderSkillTemplate, safeParseSkillJSON, SkillRunError } from "./services/emperorSkillRunner";
+import { buildSkillJsonResponseFormat, renderSkillTemplate, safeParseSkillJSON, SkillRunError } from "./services/emperorSkillRunner";
 
 describe("renderSkillTemplate", () => {
   it("renders scalar variables", () => {
@@ -54,6 +54,16 @@ describe("safeParseSkillJSON", () => {
 
   it("returns raw content when parsing fails", () => {
     expect(safeParseSkillJSON("not json")).toEqual({ raw: "not json" });
+  });
+});
+
+describe("皇帝Skill JSON模式请求契约", () => {
+  it("supportsJsonMode开启时向模型请求json_object响应", () => {
+    expect(buildSkillJsonResponseFormat(true)).toEqual({ type: "json_object" });
+  });
+
+  it("未开启JSON模式时不注入响应格式", () => {
+    expect(buildSkillJsonResponseFormat(false)).toBeUndefined();
   });
 });
 

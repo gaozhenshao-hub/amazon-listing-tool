@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStep5RunSnapshot } from "./domains/image/routerContext";
+import { buildStep5RunSnapshot, buildStep5SegmentPersistenceUpdate } from "./domains/image/routerContext";
 
 describe("Step5运行快照的分段失败定位", () => {
   it("返回持久化的分段状态、失败组和失败模块", () => {
@@ -25,6 +25,20 @@ describe("Step5运行快照的分段失败定位", () => {
     expect(snapshot.segments).toEqual([
       { id: "main", label: "主图", group: "main", status: "succeeded" },
       { id: "aplus_7", label: "A+ 7", group: "aplus", status: "failed" },
+    ]);
+  });
+
+  it("为会话写入构建失败分组、模块与完整分段列表", () => {
+    const patch = buildStep5SegmentPersistenceUpdate([
+      { id: "main", label: "主图", group: "main", status: "succeeded" },
+      { id: "aplus_7", label: "A+ 7", group: "aplus", status: "fallback", error: "JSON不完整" },
+    ], { group: "aplus", module: "A+ 7" });
+
+    expect(patch.step5RunFailedGroup).toBe("aplus");
+    expect(patch.step5RunFailedModule).toBe("A+ 7");
+    expect(JSON.parse(patch.step5RunSegments)).toEqual([
+      { id: "main", label: "主图", group: "main", status: "succeeded" },
+      { id: "aplus_7", label: "A+ 7", group: "aplus", status: "fallback", error: "JSON不完整" },
     ]);
   });
 });

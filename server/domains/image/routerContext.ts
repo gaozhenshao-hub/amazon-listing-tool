@@ -741,6 +741,19 @@ export function buildStep5RunSnapshot(session: any) {
   };
 }
 
+export function buildStep5SegmentPersistenceUpdate(
+  segments: Step5RunSegment[],
+  failure?: { group: string; module?: string | null },
+) {
+  return {
+    step5RunSegments: JSON.stringify(segments),
+    ...(failure ? {
+      step5RunFailedGroup: failure.group,
+      step5RunFailedModule: failure.module || null,
+    } : {}),
+  };
+}
+
 type Step5SegmentStatus = "pending" | "running" | "succeeded" | "failed" | "fallback";
 type Step5RunSegment = {
   id: string;
@@ -1027,13 +1040,7 @@ export async function runStep5GenerationJob(args: {
         await updateAiJobProgress(runId, progress, { expectedAttempt: args.attempt });
       },
       onSegmentsChange: async (segments, failure) => {
-        await updateIfCurrent({
-          step5RunSegments: JSON.stringify(segments),
-          ...(failure ? {
-            step5RunFailedGroup: failure.group,
-            step5RunFailedModule: failure.module || null,
-          } : {}),
-        });
+        await updateIfCurrent(buildStep5SegmentPersistenceUpdate(segments, failure));
       },
     });
     if (args.signal?.aborted) throw new Error(String(args.signal.reason || "图片建议任务已取消"));
