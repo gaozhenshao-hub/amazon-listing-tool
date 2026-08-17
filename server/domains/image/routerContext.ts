@@ -467,6 +467,81 @@ export function parseLLMJson(response: any): any {
   return parseLooseLlmJson(content);
 }
 
+/**
+ * 皇帝Skill输出在传输中真正截断时，JSON无法被安全修复。此处从已经人工确认的
+ * Step2大纲构建可编辑的最低可用建议，保障任务可完成、审核节点可继续工作；
+ * 下一次重新生成仍会优先使用皇帝Skill的完整结果。
+ */
+export function buildStep5OutlineSafetyFallback(input: {
+  productName?: string | null;
+  outline: Record<string, any>;
+  failedGroup?: string | null;
+  failedModule?: string | null;
+}) {
+  const outline = normalizeImageOutline(input.outline || {}, { recoverMissingSecondaryContent: true });
+  const mainOutline = outline?.mainImage || {};
+  const secondaryImages = normalizeSecondaryImageSlots(
+    Array.isArray(outline?.secondaryImages) ? outline.secondaryImages : [],
+    (imageNumber) => ({ imageNumber }),
+  ).map((image: any) => {
+    const focus = String(image?.contentBrief || image?.purpose || `辅图${image.imageNumber}核心信息`).trim();
+    return {
+      imageNumber: Number(image.imageNumber),
+      title: String(image?.purpose || `辅图${image.imageNumber}核心卖点`).trim(),
+      focus,
+      content: focus,
+      composition: String(image?.expressionType || "围绕核心卖点建立清晰视觉层级").trim(),
+      imageDescription: String(image?.whyThisWay || "按已确认图片大纲完成可编辑设计建议").trim(),
+      designNotes: String(image?.whyThisWay || "请在人工审核后补充具体文案与视觉细节").trim(),
+    };
+  });
+  const aPlusModules = (Array.isArray(outline?.aPlusModules) ? outline.aPlusModules : []).map((module: any, index: number) => {
+    const moduleNumber = Number(module?.moduleNumber || index + 1);
+    const purpose = String(module?.purpose || module?.selectedModuleName || `A+模块 ${moduleNumber}核心价值`).trim();
+    return {
+      moduleNumber,
+      title: String(module?.title || module?.selectedModuleName || `A+ 模块 ${moduleNumber}`).trim(),
+      purpose,
+      content: String(module?.contentBrief || purpose).trim(),
+      composition: String(module?.selectedModuleStructure || module?.selectedModuleType || "按已确认模块结构进行版式设计").trim(),
+      imageDescription: "请基于已确认图片大纲和参考图完成可编辑作图建议",
+      subModules: Array.isArray(module?.subModules) ? module.subModules : undefined,
+    };
+  });
+  const brandSource = outline?.brandStory || outline?.brandStoryModule || outline?.aPlusBrandStory || null;
+  const brandPurpose = String(brandSource?.purpose || brandSource?.story || "品牌故事与品牌价值展示").trim();
+  const brandStory = brandSource ? {
+    title: String(brandSource?.title || "品牌故事").trim(),
+    purpose: brandPurpose,
+    content: String(brandSource?.content || brandPurpose).trim(),
+    composition: String(brandSource?.composition || "以品牌场景、核心承诺与留白文案构建品牌收尾").trim(),
+    imageDescription: "请基于已确认品牌故事大纲完成可编辑作图建议",
+  } : null;
+
+  return {
+    mainImage: {
+      title: String(mainOutline?.title || `${input.productName || "产品"}主图`).trim(),
+      focus: String(mainOutline?.purpose || "清晰呈现产品主体与核心形态").trim(),
+      content: String(mainOutline?.contentBrief || mainOutline?.purpose || "清晰呈现产品主体与核心形态").trim(),
+      composition: String(mainOutline?.expressionType || "以产品主体为视觉中心，保留清晰留白").trim(),
+      imageDescription: String(mainOutline?.whyThisWay || "请按已确认主图大纲完成可编辑作图建议").trim(),
+    },
+    secondaryImages,
+    aPlusModules,
+    aPlusContent: { sections: aPlusModules },
+    brandStory,
+    designGuidelines: {
+      visualTone: "以已确认视觉风格和参考图为准",
+      note: "皇帝Skill完整JSON不可解析，已根据已确认大纲生成可编辑安全回退；请人工审核后再锁定。",
+    },
+    segmentedGeneration: {
+      mode: "outline_safety_fallback",
+      failedGroup: input.failedGroup || null,
+      failedModule: input.failedModule || null,
+    },
+  };
+}
+
 export async function callImageWorkflowSkill<T = any>(input: {
   skillSlug: string;
   userId: number;
@@ -941,18 +1016,29 @@ export async function buildStep5FinalSuggestion(
     segments = segments.map((segment) => segment.status === "failed" ? { ...segment, status: "fallback" } : segment);
     await publishSegments(failure);
     await reportProgress(70);
-    const completeResult = await callImageWorkflowSkill({
-      skillSlug: "image.step5.final.suggestion",
-      ...skillArgs,
-      systemPrompt: STEP5_FINAL_SUGGESTION_PROMPT,
-      context,
-      validate: (value) => {
-        if (!Array.isArray(value?.secondaryImages) || value.secondaryImages.length < 5) {
-          throw new Error("最终图片建议辅图数量不足");
-        }
-        return value;
-      },
-    });
+    let completeResult: any;
+    try {
+      completeResult = await callImageWorkflowSkill({
+        skillSlug: "image.step5.final.suggestion",
+        ...skillArgs,
+        systemPrompt: STEP5_FINAL_SUGGESTION_PROMPT,
+        context,
+        validate: (value) => {
+          if (!Array.isArray(value?.secondaryImages) || value.secondaryImages.length < 5) {
+            throw new Error("最终图片建议辅图数量不足");
+          }
+          return value;
+        },
+      });
+    } catch (finalSkillError) {
+      console.error("[Step5] 完整Skill输出不可解析，使用已确认大纲构建可编辑安全回退", finalSkillError);
+      completeResult = buildStep5OutlineSafetyFallback({
+        productName: project.productName || project.name,
+        outline: step2Outline,
+        failedGroup: failure.group,
+        failedModule: failure.module,
+      });
+    }
     // 完整Skill的历史契约可能使用aPlusContent.sections而非顶层aPlusModules。
     // 在进入统一回填前同步两种结构，避免分段失败回退后A+内容被前台判空。
     result = {

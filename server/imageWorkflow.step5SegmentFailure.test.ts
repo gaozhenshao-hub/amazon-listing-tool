@@ -2,9 +2,38 @@ import { describe, expect, it } from "vitest";
 import { safeParseSkillJSON } from "./domains/ai_os/services/skillRunner";
 import { describeStep5SegmentFailure } from "./domains/image/step5SegmentFailure";
 import { findIncompleteStep5Segment } from "./domains/image/step5SegmentValidation";
-import { buildStep5RunSnapshot } from "./domains/image/routerContext";
+import { buildStep5OutlineSafetyFallback, buildStep5RunSnapshot } from "./domains/image/routerContext";
 
 describe("Step5分段失败定位", () => {
+  it("完整Skill返回不可解析长JSON时按已确认大纲构建可编辑安全回退", () => {
+    const fallback = buildStep5OutlineSafetyFallback({
+      productName: "空气管道套件",
+      failedGroup: "aplus",
+      failedModule: "A+ 7",
+      outline: {
+        mainImage: { purpose: "展示套件全貌" },
+        secondaryImages: Array.from({ length: 6 }, (_, index) => ({
+          imageNumber: index + 2,
+          purpose: `辅图${index + 2}卖点`,
+          contentBrief: `辅图${index + 2}内容`,
+          expressionType: "信息图",
+        })),
+        aPlusModules: Array.from({ length: 7 }, (_, index) => ({
+          moduleNumber: index + 1,
+          selectedModuleName: `A+ ${index + 1}`,
+          purpose: `A+ ${index + 1}价值`,
+        })),
+        brandStory: { title: "品牌故事", purpose: "品牌承诺" },
+      },
+    });
+
+    expect(fallback.segmentedGeneration).toMatchObject({ mode: "outline_safety_fallback", failedGroup: "aplus", failedModule: "A+ 7" });
+    expect(fallback.secondaryImages.map((image: any) => image.imageNumber)).toEqual([2, 3, 4, 5, 6, 7]);
+    expect(fallback.secondaryImages.every((image: any) => image.title && image.focus && image.composition)).toBe(true);
+    expect(fallback.aPlusModules).toHaveLength(7);
+    expect(fallback.brandStory).toMatchObject({ title: "品牌故事", content: "品牌承诺" });
+  });
+
   it("为主图、辅图、A+模块与品牌故事生成稳定失败标识", () => {
     expect(describeStep5SegmentFailure({ id: "main", group: "main" })).toEqual({ group: "main", module: null });
     expect(describeStep5SegmentFailure({ id: "secondary", group: "secondary" })).toEqual({ group: "secondary", module: null });

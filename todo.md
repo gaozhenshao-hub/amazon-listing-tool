@@ -35,8 +35,8 @@
 - [x] 在空气套件真实会话验证Step4参考图和Step5最终建议逐图保留四个场景主题（Step4保留aplus-5.1至5.4，Step5保留对应4个场景子图）
 - [x] 助手执行真实验收时保存原始会话快照，并在验证后恢复测试会话
 - [ ] 记录用户对空气套件测试会话临时修改及恢复的授权与验收结果（待真实Step4/Step5验收完成）
-- [ ] 修复皇帝Skill返回代码围栏长JSON时的解析失败，再重跑隔离Step4/Step5真实场景验收
-- [ ] 修复Step5皇帝Skill超长输出未形成可解析闭合JSON的问题，并重跑空气套件隔离场景验收
+- [x] 修复皇帝Skill返回代码围栏长JSON时的解析失败（统一解析器通过字符串感知的平衡括号提取完整JSON，支持尾部说明与未闭合围栏；Step4/Step5回归覆盖）
+- [x] 修复Step5皇帝Skill超长输出未形成可解析闭合JSON时导致任务失败的问题（完整Skill不可解析时从已确认大纲构建可编辑安全回退；18项Step5/JSON回归测试通过）
 - [x] 为image.step5.final.suggestion启用皇帝Skill JSON模式（运行时清单supportsJsonMode=true、maxTokens=8192、超时300秒；Skill运行器向模型传递json_object响应格式）
 - [x] 实际验证image.step5.final.suggestion的历史回退调用返回可解析结构化JSON（最近5条成功皇帝运行均JSON_VALID=1、secondaryImages=6，输出令牌5,577至11,560）
 - [x] 为runEmperorSkill补充supportsJsonMode响应格式测试（运行器向custom与内置模型一致传递json_object；13项皇帝JSON解析/请求配置测试通过）
@@ -196,7 +196,7 @@
 - [x] 定位Step4重新推荐Mutation持续pending但未创建AI Job的异步启动阻塞点（启动路径同步等待Agent queued/running状态，慢同步会阻塞Mutation返回）
 - [x] 为Step4重新推荐请求增加启动超时与同步失败恢复，避免前台无限生成中或500（启动/复用路径均5秒有界等待；同步拒绝降级；7项Step4路由/任务/同步测试通过）
 - [ ] 在生产空气套件点击Step4重新推荐，确认Mutation及时返回、AI Job进入queued/running且前台显示明确状态
-- [x] 修复Step3未确认时Step4重新推荐返回500的问题，改为明确提示先确认视觉风格并禁止前台误触发（服务端返回tRPC BAD_REQUEST/HTTP 400；前台重新推荐按钮禁用并显示提示；10项组件/路由/任务测试通过）
+- [x] 修复Step3未确认时Step4重新推荐返回500的问题，改为明确提示先确认视觉风格并禁止前台误触发（服务端返回tRPC BAD_REQUEST/HTTP 400；生产前台按钮disabled=true并显示提示；10项组件/路由/任务测试通过）
 - [x] 为startStep4Generation补充任务创建/去重行为的路由级测试（真实tRPC caller与任务服务测试覆盖Agent复用/补写、历史失败新建、queued去重，共4项通过）
 
 ## Step4结果保存后任务收尾阻塞修复（2026-08-17）
