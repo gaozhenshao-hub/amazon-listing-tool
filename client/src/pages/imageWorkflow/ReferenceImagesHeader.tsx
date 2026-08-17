@@ -7,6 +7,8 @@ interface ReferenceImagesHeaderProps {
   hasData: boolean;
   isConfirmed: boolean;
   isGenerating: boolean;
+  canGenerate?: boolean;
+  generationBlockedReason?: string;
   generationProgress: number;
   isRegeneratingAll: boolean;
   isConfirming: boolean;
@@ -20,6 +22,8 @@ export function ReferenceImagesHeader({
   hasData,
   isConfirmed,
   isGenerating,
+  canGenerate = true,
+  generationBlockedReason,
   generationProgress,
   isRegeneratingAll,
   isConfirming,
@@ -42,14 +46,14 @@ export function ReferenceImagesHeader({
             </div>
             <div className="flex gap-2">
               {!hasData && (
-                <Button onClick={handleGenerate} disabled={isGenerating}>
+                <Button onClick={handleGenerate} disabled={isGenerating || !canGenerate} title={!canGenerate ? generationBlockedReason : undefined}>
                   {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
                   {isGenerating ? "后台推荐中" : "AI推荐参考"}
                 </Button>
               )}
               {hasData && !isConfirmed && (
                 <>
-                  <Button variant="outline" onClick={handleGenerate} disabled={isGenerating}>
+                  <Button variant="outline" onClick={handleGenerate} disabled={isGenerating || !canGenerate} title={!canGenerate ? generationBlockedReason : undefined}>
                     {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RotateCcw className="w-4 h-4 mr-2" />} 重新推荐
                   </Button>
                   <Button

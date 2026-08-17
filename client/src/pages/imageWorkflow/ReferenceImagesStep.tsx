@@ -239,6 +239,10 @@ export function Step4References({
   };
 
   const handleGenerate = async () => {
+    if (!session?.step3Confirmed) {
+      toast.error("请先在 Step 3 确认视觉风格，再生成或重新推荐参考图");
+      return;
+    }
     try {
       const job = await generateMutation.mutateAsync({ projectId });
       setActiveRunId(job.runId);
@@ -465,6 +469,8 @@ export function Step4References({
         hasData={!!editData}
         isConfirmed={isConfirmed}
         isGenerating={isGenerating}
+        canGenerate={Boolean(session?.step3Confirmed)}
+        generationBlockedReason="请先在 Step 3 确认视觉风格，再生成或重新推荐参考图"
         generationProgress={generationProgress}
         isRegeneratingAll={regenerateAllMutation.isPending}
         isConfirming={confirmMutation.isPending}

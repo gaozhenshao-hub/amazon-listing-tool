@@ -196,6 +196,7 @@
 - [x] 定位Step4重新推荐Mutation持续pending但未创建AI Job的异步启动阻塞点（启动路径同步等待Agent queued/running状态，慢同步会阻塞Mutation返回）
 - [x] 为Step4重新推荐请求增加启动超时与同步失败恢复，避免前台无限生成中或500（启动/复用路径均5秒有界等待；同步拒绝降级；7项Step4路由/任务/同步测试通过）
 - [ ] 在生产空气套件点击Step4重新推荐，确认Mutation及时返回、AI Job进入queued/running且前台显示明确状态
+- [x] 修复Step3未确认时Step4重新推荐返回500的问题，改为明确提示先确认视觉风格并禁止前台误触发（服务端返回tRPC BAD_REQUEST/HTTP 400；前台重新推荐按钮禁用并显示提示；10项组件/路由/任务测试通过）
 - [x] 为startStep4Generation补充任务创建/去重行为的路由级测试（真实tRPC caller与任务服务测试覆盖Agent复用/补写、历史失败新建、queued去重，共4项通过）
 
 ## Step4结果保存后任务收尾阻塞修复（2026-08-17）

@@ -1,6 +1,7 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
 import { BadRequestError, NotFoundError } from "@shared/_core/errors";
+import { TRPCError } from "@trpc/server";
 import { ensureImageWorkflowAgentRun, syncStepConfirmToAgent, syncStepUnlockToAgent } from "../imageWorkflowAgentBridge";
 import {
   buildStep4ReferenceRecommendation,
@@ -479,7 +480,12 @@ export const imageWorkflowStepProcedures = {
       const resolvedSession = await resolveSessionForExecution(input.projectId, ctx.user, `image.step4.generate:${input.projectId}`);
       if (!resolvedSession) throw new Error("No workflow session found");
       let session = resolvedSession;
-      if (!session.step3Confirmed) throw new Error("Step 3 not confirmed yet");
+      if (!session.step3Confirmed) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "请先在 Step 3 确认视觉风格，再生成或重新推荐参考图",
+        });
+      }
 
       const agentRunId = session.agentRunId || await ensureImageWorkflowAgentRun({
         projectId: input.projectId,
@@ -518,7 +524,10 @@ export const imageWorkflowStepProcedures = {
       const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step4.generate:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
       if (!session.step3Confirmed) {
-        throw BadRequestError("请先在 Step 3 确认视觉风格，再生成或重新推荐参考图");
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "请先在 Step 3 确认视觉风格，再生成或重新推荐参考图",
+        });
       }
 
       const result = await buildStep4ReferenceRecommendation({
