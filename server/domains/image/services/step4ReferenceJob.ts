@@ -150,6 +150,49 @@ export function validateStep4ReferenceResult(value: any, referenceTargets?: any[
   };
 }
 
+function parseStep4Snapshot(value: unknown): Record<string, any> | null {
+  if (!value || typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function preserveHistoricalStep4ReferencesOnFallback(
+  historical: Record<string, any> | null,
+  fallback: Record<string, any>,
+) {
+  if (!historical?.imageReferences?.length) return fallback;
+  const fallbackReferences = Array.isArray(fallback?.imageReferences) ? fallback.imageReferences : [];
+  if (!fallbackReferences.some((reference: any) => reference?.isBackfilledFromOutline)) return fallback;
+  const historicalReferences = Array.isArray(historical.imageReferences) ? historical.imageReferences : [];
+  const historicalByKey = new Map(
+    historicalReferences.map((reference: any, index: number) => [
+      String(reference?.imageKey || `${reference?.imageType || "image"}:${reference?.parentModuleNumber ?? ""}:${reference?.subModuleNumber ?? ""}:${index}`),
+      reference,
+    ]),
+  );
+  return {
+    ...fallback,
+    ...historical,
+    imageReferences: fallbackReferences.map((fallbackReference: any, index: number) => {
+      const key = String(fallbackReference?.imageKey || `${fallbackReference?.imageType || "image"}:${fallbackReference?.parentModuleNumber ?? ""}:${fallbackReference?.subModuleNumber ?? ""}:${index}`);
+      const previous = historicalByKey.get(key) || historicalReferences[index] || {};
+      return {
+        ...fallbackReference,
+        ...previous,
+        imageKey: fallbackReference.imageKey,
+        imageType: fallbackReference.imageType,
+        imageNumber: fallbackReference.imageNumber,
+        parentModuleNumber: fallbackReference.parentModuleNumber ?? null,
+        subModuleNumber: fallbackReference.subModuleNumber ?? null,
+      };
+    }),
+  };
+}
+
 export async function getLatestStep4ReferenceJob(userId: number, projectId: number) {
   const jobs = await listAiJobRunsForUser(userId, {
     module: STEP4_JOB_MODULE,
@@ -316,11 +359,13 @@ export async function runStep4ReferenceJob(
     return { skipped: true, reason: "Step 4 session is no longer writable" };
   }
 
+  const historicalSnapshot = parseStep4Snapshot(latestSession.step4UserEdit || latestSession.step4AiResult);
+  const persistedResult = preserveHistoricalStep4ReferencesOnFallback(historicalSnapshot, result);
   await db.updateImageWorkflowSession(input.sessionId, {
-    step4AiResult: JSON.stringify(result),
+    step4AiResult: JSON.stringify(persistedResult),
     currentStep: 4,
   });
-  return result;
+  return persistedResult;
 }
 
 registerAiJobHandler({
