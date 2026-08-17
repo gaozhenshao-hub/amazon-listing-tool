@@ -1,6 +1,7 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
 import * as step4Snapshot from "../step4Snapshot";
+import { getLatestStep4ReferenceJob } from "../services/step4ReferenceJob";
 
 const {
   compactStep4ReferenceForStorage,
@@ -87,6 +88,13 @@ function mergeStep4DraftVersions(confirmedRaw: unknown, latestRaw: unknown) {
   };
 }
 
+function getLatestSucceededStep4Result(job: { status?: string; output?: unknown } | null) {
+  if (job?.status !== "succeeded" || !job.output || typeof job.output !== "object") return null;
+  const output = job.output as Record<string, any>;
+  const result = output.result && typeof output.result === "object" ? output.result : output;
+  return Array.isArray((result as Record<string, any>).imageReferences) ? result : null;
+}
+
 export const imageReferenceProcedures = {
 
   // ─── Step 4: Persist an editable draft without locking the step ─────────
@@ -138,11 +146,13 @@ export const imageReferenceProcedures = {
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       const visibleSnapshot = input.userEdit ? parseStoredJson(input.userEdit) as Record<string, any> | null : null;
+      const latestJob = await getLatestStep4ReferenceJob(ctx.user.id, input.projectId).catch(() => null);
+      const latestResult = getLatestSucceededStep4Result(latestJob);
       // 锁定页传来的可见快照可能仍是历史确认版本；它只提供本地图片和备注，
       // 内容必须始终以最新 step4AiResult 的场景方案为基准，避免解锁后回退旧方案。
       const draft = mergeStep4DraftVersions(
         visibleSnapshot?.imageReferences?.length ? visibleSnapshot : session.step4UserEdit,
-        session.step4AiResult,
+        latestResult || session.step4AiResult,
       );
       if (!draft) throw new Error("当前没有可编辑的参考图方案");
       const userEdit = JSON.stringify(draft);

@@ -108,10 +108,9 @@ export function Step4References({
 
   const handleUnlock = async () => {
     try {
-      const result = await unlockMutation.mutateAsync({
-        projectId,
-        userEdit: editData ? JSON.stringify(editData) : undefined,
-      });
+      // 后台以最新成功的Step4任务为方案基准，并从已保存草稿合并本地参考图和备注。
+      // 不再回传锁定视图中的完整快照，避免历史数据或过大请求阻断解锁。
+      const result = await unlockMutation.mutateAsync({ projectId });
       setEditData(normalizeStep4References(JSON.parse(result.userEdit)));
       setIsLocked(false);
       await utils.imageWorkflow.getSession.invalidate({ projectId });

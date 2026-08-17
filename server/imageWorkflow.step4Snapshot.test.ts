@@ -47,6 +47,26 @@ describe("Step4锁定快照持久化", () => {
     });
   });
 
+  it("最新成功任务的场景方案可作为解锁内容基准", () => {
+    const latestJobResult = {
+      imageReferences: [
+        { imageKey: "aplus-5.1", imageType: "A+模块 5.1", compositionReference: { layout: "车库场景" } },
+        { imageKey: "aplus-5.2", imageType: "A+模块 5.2", compositionReference: { layout: "庭院场景" } },
+      ],
+    };
+    const result = mergeStep4LatestWithUserAssets(
+      { imageReferences: [{ imageKey: "aplus-5.1", compositionRefNote: "保留本地备注" }] },
+      latestJobResult,
+    );
+
+    expect(result?.imageReferences).toHaveLength(2);
+    expect(result?.imageReferences[0]).toMatchObject({
+      compositionReference: { layout: "车库场景" },
+      compositionRefNote: "保留本地备注",
+    });
+    expect(result?.imageReferences[1].compositionReference.layout).toBe("庭院场景");
+  });
+
   it("去除展示层lockedSnapshot并保留已锁定图的内容", () => {
     const result = compactStep4ReferenceForStorage({
       imageType: "A+模块 1.1",
