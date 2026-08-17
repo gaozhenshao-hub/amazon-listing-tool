@@ -148,12 +148,20 @@ export function normalizeImageWorkflowAplusStyle(
     subModuleCount,
     subModules: Array.from({ length: subModuleCount }, (_, index) => {
       const child = existing[index] || {};
+      const title = child.title || remarkTopics[index];
+      const legacySingleCharacterBrief = String(child.contentBrief || "").match(/^展示产品在“(.)”中的核心价值、使用方式或结果。$/);
+      const needsLegacyBriefRecovery = Boolean(
+        legacySingleCharacterBrief
+        && String(title || "").length > 1
+      );
       return {
         subModuleNumber: index + 1,
-        title: child.title || remarkTopics[index],
+        title,
         purpose: child.purpose || (subModuleRemark ? `围绕“${remarkTopics[index]}”展开的独立A+子图` : ""),
         sellingPointRefs: Array.isArray(child.sellingPointRefs) ? child.sellingPointRefs : [],
-        contentBrief: child.contentBrief || "",
+        contentBrief: needsLegacyBriefRecovery
+          ? `展示产品在“${title}”中的核心价值、使用方式或结果。`
+          : (child.contentBrief || ""),
         expressionType: child.expressionType || "",
         whyThisWay: child.whyThisWay || "",
         position: child.position || `A+模块 ${styled.moduleNumber || ""}.${index + 1}`,
