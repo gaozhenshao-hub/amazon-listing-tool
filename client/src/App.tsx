@@ -5,7 +5,29 @@ import { Route, Switch, Redirect } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, type ComponentType } from "react";
+
+function lazyWithRecovery<T extends ComponentType<any>>(
+  loader: () => Promise<{ default: T }>,
+  recoveryKey: string,
+) {
+  return lazy(async () => {
+    try {
+      const module = await loader();
+      window.sessionStorage.removeItem(recoveryKey);
+      return module;
+    } catch (error) {
+      // 发布会替换带哈希的模块文件；旧入口加载失败时自动刷新一次以取得最新入口。
+      if (!window.sessionStorage.getItem(recoveryKey)) {
+        window.sessionStorage.setItem(recoveryKey, "1");
+        window.location.reload();
+        return new Promise<{ default: T }>(() => undefined);
+      }
+      window.sessionStorage.removeItem(recoveryKey);
+      throw error;
+    }
+  });
+}
 
 // ─── Module 2: Listing (existing pages) ────────────────────────
 const Home = lazy(() => import("./pages/Home"));
@@ -18,7 +40,10 @@ const ReviewHistoryPage = lazy(() => import("./pages/ReviewHistoryPage"));
 const DataFilesPage = lazy(() => import("./pages/DataFilesPage"));
 const ScorePage = lazy(() => import("./pages/ScorePage"));
 const ImageSuggestionsPage = lazy(() => import("./pages/ImageSuggestionsPage"));
-const ImageWorkflowPage = lazy(() => import("./pages/ImageWorkflowPage"));
+const ImageWorkflowPage = lazyWithRecovery(
+  () => import("./pages/ImageWorkflowPage"),
+  "lazy-recovery:image-workflow",
+);
 const KeywordPage = lazy(() => import("./pages/KeywordPage"));
 const AdStructurePage = lazy(() => import("./pages/AdStructurePage"));
 const ReviewAggregationPage = lazy(() => import("./pages/ReviewAggregationPage"));
