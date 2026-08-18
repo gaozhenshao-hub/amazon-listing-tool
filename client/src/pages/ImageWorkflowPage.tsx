@@ -67,7 +67,7 @@ import { Step4References } from "./imageWorkflow/ReferenceImagesStep";
 import { OUTLINE_APLUS_CATEGORIES, OUTLINE_APLUS_MODULES, findOutlineAplusModule, normalizeAplusModuleStyle } from "./imageWorkflow/aplusModules";
 import { buildFullPlanContent, buildPdfContent, safeJsonParse } from "./imageWorkflow/exportContent";
 import { resolveImageWorkflowProjectId } from "./imageWorkflow/projectIdResolution";
-import { buildStep5SegmentStates, getStep5SegmentPresentation, isActiveStep5RunStatus, resolveCurrentStep5RunId } from "./imageWorkflow/step5RunState";
+import { buildStep5SegmentStates, getStep5FailurePresentation, getStep5SegmentPresentation, isActiveStep5RunStatus, resolveCurrentStep5RunId } from "./imageWorkflow/step5RunState";
 import { normalizeSecondaryImageSlots } from "@shared/imageWorkflow";
 
 // ═══════════════════════════════════════════════════════════════════
