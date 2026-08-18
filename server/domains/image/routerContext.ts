@@ -522,6 +522,14 @@ export function buildStep5OutlineSafetyFallback(input: {
     composition: String(brandSource?.composition || "以品牌场景、核心承诺与留白文案构建品牌收尾").trim(),
     imageDescription: "请基于已确认品牌故事大纲完成可编辑作图建议",
   } : null;
+  const aPlusTitles = aPlusModules.map((module: any) => module.title).filter(Boolean);
+  const aPlusPurposes = aPlusModules.map((module: any) => module.purpose).filter(Boolean);
+  const aPlusOverallStrategy = aPlusTitles.length
+    ? `围绕${aPlusTitles.join("、")}依次建立卖点证明、使用场景与品牌信任，形成从理解产品到确认购买的完整叙事。`
+    : "围绕已确认A+模块，按卖点证明、使用场景与品牌信任建立完整叙事。";
+  const aPlusOverallStory = aPlusPurposes.length
+    ? `以${aPlusPurposes.slice(0, 3).join("、")}为故事主线，逐层回应买家疑虑并在品牌故事中完成价值收尾。`
+    : "以已确认A+模块的核心价值为主线，逐层回应买家疑虑并完成品牌价值收尾。";
 
   return {
     mainImage: (() => {
@@ -544,9 +552,19 @@ export function buildStep5OutlineSafetyFallback(input: {
     })(),
     secondaryImages,
     aPlusModules,
-    aPlusContent: { sections: aPlusModules },
+    aPlusContent: {
+      sections: aPlusModules,
+      overallStrategy: aPlusOverallStrategy,
+      overallStory: aPlusOverallStory,
+      consistency: "统一沿用已确认视觉风格、产品主体、配色倾向与文案层级，确保各模块形成连续识别。",
+      modularDesign: "每个A+模块保持独立卖点与构图任务；多图模块的子图分别对应独立场景、参考图与作图建议。",
+    },
     brandStory,
     designGuidelines: {
+      fontRecommendation: "标题使用清晰有力的无衬线字体，正文保持高可读性；移动端优先使用短句和大字号层级。",
+      overallColorPalette: "以已确认视觉风格和参考图的主色、辅助色与点缀色为准；产品主体保持真实辨识度，文案区保持高对比。",
+      brandTone: "专业、可靠、清晰，以已确认视觉风格和参考图为准。",
+      mobileOptimization: "移动端优先保留产品主体、核心短文案和关键数据；避免密集小字，保证图文层级在窄屏可读。",
       visualTone: "以已确认视觉风格和参考图为准",
       note: "皇帝Skill完整JSON不可解析，已根据已确认大纲生成可编辑安全回退；请人工审核后再锁定。",
     },

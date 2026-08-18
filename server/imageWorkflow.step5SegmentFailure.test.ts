@@ -37,6 +37,18 @@ describe("Step5分段失败定位", () => {
     expect(fallback.secondaryImages.map((image: any) => image.imageNumber)).toEqual([2, 3, 4, 5, 6, 7]);
     expect(fallback.secondaryImages.every((image: any) => image.title && image.focus && image.composition && image.expression && image.primary && image.textOverlay)).toBe(true);
     expect(fallback.aPlusModules).toHaveLength(7);
+    expect(fallback.aPlusContent).toMatchObject({
+      overallStrategy: expect.stringContaining("A+ 1"),
+      overallStory: expect.stringContaining("A+ 1价值"),
+      consistency: expect.any(String),
+      modularDesign: expect.any(String),
+    });
+    expect(fallback.designGuidelines).toMatchObject({
+      fontRecommendation: expect.any(String),
+      overallColorPalette: expect.any(String),
+      brandTone: expect.any(String),
+      mobileOptimization: expect.any(String),
+    });
     expect(fallback.brandStory).toMatchObject({ title: "品牌故事", content: "品牌承诺" });
   });
 
