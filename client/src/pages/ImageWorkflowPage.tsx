@@ -91,6 +91,11 @@ function ColorSwatch({ color, label }: { color: any; label: string }) {
   );
 }
 
+export function hasDisplayableColorScheme(colorScheme: any) {
+  return [colorScheme?.primary, colorScheme?.secondary, colorScheme?.accent]
+    .some((value) => String(value || "").trim().length > 0);
+}
+
 export function normalizeFinalImageSuggestions(data: any) {
   if (!data) return data;
   // Helper: normalize fabe from fabenDescription or fabe
@@ -165,7 +170,7 @@ export function normalizeFinalImageSuggestions(data: any) {
       title: safeStr(data.mainImage.title),
       concept: safeStr(data.mainImage.concept),
       composition: safeStr(data.mainImage.composition),
-      shootingNotes: safeStr(data.mainImage.shootingNotes),
+      shootingNotes: safeStr(data.mainImage.shootingNotes || data.mainImage.shooting || data.mainImage.imageDescription),
       fabe: normalizeFabe(data.mainImage),
       colorScheme: normalizeColorScheme(data.mainImage.colorScheme),
     } : data.mainImage,
@@ -174,7 +179,7 @@ export function normalizeFinalImageSuggestions(data: any) {
         ...img,
         title: safeStr(img.title),
         focus: safeStr(img.focus),
-        expressionMethod: safeStr(img.expressionMethod),
+        expressionMethod: safeStr(img.expressionMethod || img.expression),
         composition: safeStr(img.composition),
         textOverlay: safeStr(img.textOverlay),
         dataVisualization: safeStr(img.dataVisualization),
@@ -1281,11 +1286,17 @@ function Step5FinalSuggestions({
                     <p className="text-sm font-medium">{enData.mainImage.title}</p>
                     <p className="text-xs"><strong>Concept:</strong> {enData.mainImage.concept}</p>
                     <p className="text-xs"><strong>Composition:</strong> {enData.mainImage.composition}</p>
-                    {enData.mainImage.colorScheme && (
+                    {hasDisplayableColorScheme(enData.mainImage.colorScheme) ? (
                       <div className="space-y-0.5">
                         <ColorSwatch color={enData.mainImage.colorScheme.primary || ""} label="Primary" />
                         <ColorSwatch color={enData.mainImage.colorScheme.secondary || ""} label="Secondary" />
                         <ColorSwatch color={enData.mainImage.colorScheme.accent || ""} label="Accent" />
+                      </div>
+                    ) : (
+                      <div className="space-y-0.5 text-xs">
+                        {enData.mainImage.primary && <p><strong>Primary:</strong> {enData.mainImage.primary}</p>}
+                        {enData.mainImage.secondary && <p><strong>Secondary:</strong> {enData.mainImage.secondary}</p>}
+                        {enData.mainImage.accent && <p><strong>Accent:</strong> {enData.mainImage.accent}</p>}
                       </div>
                     )}
                     <p className="text-xs"><strong>Shooting:</strong> {enData.mainImage.shootingNotes}</p>
@@ -1334,14 +1345,21 @@ function Step5FinalSuggestions({
                       <FABEDisplay fabe={img.fabe} variant="en" />
                       <p className="text-xs"><strong>Expression:</strong> {img.expressionMethod}</p>
                       <p className="text-xs"><strong>Composition:</strong> {img.composition}</p>
-                      {img.colorScheme && (
+                      {hasDisplayableColorScheme(img.colorScheme) ? (
                         <div className="space-y-0.5">
                           <ColorSwatch color={img.colorScheme.primary || ""} label="Primary" />
                           <ColorSwatch color={img.colorScheme.secondary || ""} label="Secondary" />
                           <ColorSwatch color={img.colorScheme.accent || ""} label="Accent" />
                         </div>
+                      ) : (
+                        <div className="space-y-0.5 text-xs">
+                          {img.primary && <p><strong>Primary:</strong> {img.primary}</p>}
+                          {img.secondary && <p><strong>Secondary:</strong> {img.secondary}</p>}
+                          {img.accent && <p><strong>Accent:</strong> {img.accent}</p>}
+                        </div>
                       )}
                       <p className="text-xs"><strong>Text Overlay:</strong> {img.textOverlay}</p>
+                      {img.shooting && <p className="text-xs"><strong>Shooting:</strong> {img.shooting}</p>}
                       {img.dataVisualization && <p className="text-xs"><strong>Data Viz:</strong> {img.dataVisualization}</p>}
                       {img.icons?.length > 0 && (
                         <div className="flex flex-wrap gap-1">
