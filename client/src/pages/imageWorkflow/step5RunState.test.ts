@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStep5SegmentStates, getStep5SegmentPresentation, resolveCurrentStep5RunId } from "./step5RunState";
+import { buildStep5SegmentStates, getStep5FailurePresentation, getStep5SegmentPresentation, resolveCurrentStep5RunId } from "./step5RunState";
 
 describe("Step5当前运行选择", () => {
   it("不追踪失败会话遗留的旧runId", () => {
@@ -41,5 +41,12 @@ describe("Step5当前运行选择", () => {
     expect(getStep5SegmentPresentation("failed")).toMatchObject({ label: "失败", tone: "failure" });
     expect(getStep5SegmentPresentation("fallback")).toMatchObject({ label: "已回退", tone: "fallback" });
     expect(getStep5SegmentPresentation("succeeded")).toMatchObject({ label: "已完成", tone: "success" });
+  });
+
+  it("在人审失败卡片中展示持久化的失败分组与具体模块", () => {
+    expect(getStep5FailurePresentation({ failedGroup: "aplus", failedModule: "A+ 7" }))
+      .toEqual({ shouldShow: true, groupLabel: "A+模块", moduleLabel: "A+ 7" });
+    expect(getStep5FailurePresentation({ error: "品牌故事生成超时" }))
+      .toEqual({ shouldShow: true, groupLabel: "未识别", moduleLabel: "A+模块或品牌故事" });
   });
 });

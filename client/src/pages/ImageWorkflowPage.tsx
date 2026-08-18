@@ -715,11 +715,11 @@ function Step5FinalSuggestions({
     : buildStep5SegmentStates(runProgress);
   const failedGroup = currentRun?.failedGroup || session?.step5RunFailedGroup || null;
   const failedModule = currentRun?.failedModule || session?.step5RunFailedModule || null;
-  const failedSegmentHint = failedModule || (failedGroup === "aplus" ? "A+模块" : failedGroup === "brand_story" ? "品牌故事" : failedGroup === "main" ? "主图" : failedGroup === "secondary" ? "辅图" : null) || (/a\+|品牌故事/i.test(runError || "")
-    ? "A+模块或品牌故事"
-    : /主图|辅图/i.test(runError || "")
-      ? "主图或辅图"
-      : null);
+  const step5FailurePresentation = getStep5FailurePresentation({
+    failedGroup,
+    failedModule,
+    error: runError,
+  });
 
   // Amazon Premium A+ Module Types - comprehensive list matching backend prompt
   const APLUS_MODULES = [
@@ -1230,7 +1230,7 @@ function Step5FinalSuggestions({
             <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               <p className="font-medium">{runStatus === "canceled" ? "任务已取消" : "图片建议生成失败"}</p>
               <p className="mt-1 text-xs">{runError || "任务未能完成，请重试"}</p>
-              {(failedGroup || failedSegmentHint) && <p className="mt-1 text-xs">失败分组：{failedGroup || "未识别"}{failedSegmentHint ? `；失败模块：${failedSegmentHint}` : ""}</p>}
+              {step5FailurePresentation.shouldShow && <p className="mt-1 text-xs">失败分组：{step5FailurePresentation.groupLabel}{step5FailurePresentation.moduleLabel ? `；失败模块：${step5FailurePresentation.moduleLabel}` : ""}</p>}
               {runMaxAttempts > 0 && (
                 <p className="mt-1 text-xs">已执行 {runAttempt}/{runMaxAttempts} 次</p>
               )}
