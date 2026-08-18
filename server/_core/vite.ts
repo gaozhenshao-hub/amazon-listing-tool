@@ -66,6 +66,14 @@ export function serveStatic(app: Express) {
     },
   }));
 
+  // 构建产物使用内容哈希。若旧入口请求的模块已被替换，必须明确返回404，
+  // 而不是错误回退为HTML入口（该响应无法作为JavaScript模块执行）。
+  app.use("/assets", (_req, res) => {
+    res.status(404)
+      .setHeader("Cache-Control", "no-store, max-age=0, must-revalidate");
+    res.type("text/plain").send("Asset not found");
+  });
+
   // fall through to index.html if the file doesn't exist
   app.use("*", (_req, res) => {
     res.setHeader("Cache-Control", "no-store, max-age=0, must-revalidate");
