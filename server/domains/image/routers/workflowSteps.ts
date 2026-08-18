@@ -17,6 +17,7 @@ import { startImageStepGenerationForUser } from "../services/startImageStepGener
 import { registerImageWorkflowAplusSubmoduleArtifact, registerImageWorkflowStepArtifact } from "../../ai_os/services/businessArtifactRegistry";
 import { buildStep4ConfirmedSnapshot } from "../step4Snapshot";
 import { preserveLockedAplusSubmodules } from "../step2AplusLockedSubmodules";
+import { rebuildStep4DisplaySnapshot } from "./sessions";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -108,6 +109,16 @@ async function startGenerationForRequest(input: {
   workspaceId?: number | null;
 }) {
   return startImageStepGenerationForUser(input);
+}
+
+/**
+ * 整体确认必须与Step4展示层使用同一套当前目标。
+ * 历史任务可能包含已从当前Step2大纲移除的参考图；这些图没有确认按钮，
+ * 因此不能进入整体确认的“逐图已确认”校验集合。
+ */
+export function buildCurrentStep4ConfirmationSnapshot(session: any, requestedSnapshot: Record<string, any> | null) {
+  if (!requestedSnapshot) return null;
+  return rebuildStep4DisplaySnapshot(session, requestedSnapshot);
 }
 
 export const imageWorkflowStepProcedures = {
@@ -559,10 +570,10 @@ export const imageWorkflowStepProcedures = {
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       const requestedSnapshot = parseStoredJson(input.userEdit) as Record<string, any> | null;
-      const requestedRefs = requestedSnapshot?.imageReferences || [];
+      const currentSnapshot = buildCurrentStep4ConfirmationSnapshot(session, requestedSnapshot);
       const confirmedVersions = await db.getCurrentStep4ImageVersions(session.id);
       const versionByIndex = new Map(confirmedVersions.map((version: any) => [Number(version.imageIndex), parseStoredJson(version.content)]));
-      const completeSnapshot = buildStep4ConfirmedSnapshot(requestedSnapshot, versionByIndex);
+      const completeSnapshot = buildStep4ConfirmedSnapshot(currentSnapshot, versionByIndex);
       const completeUserEdit = JSON.stringify(completeSnapshot);
 
       await db.updateImageWorkflowSession(session.id, {
