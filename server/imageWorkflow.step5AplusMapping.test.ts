@@ -78,4 +78,45 @@ describe("Step5 A+输出结构兼容", () => {
     expect(result.aPlusModules.every((module: any) => module.title && module.purpose && module.content)).toBe(true);
     expect(result.brandStory).toMatchObject({ title: "品牌故事", purpose: "品牌使命", content: "品牌承诺的模型结果" });
   });
+
+  it("将超时回退中的通用场景占位替换为已确认Step4参考图的构图和作图建议", () => {
+    const scenarioOutline = {
+      aPlusModules: [{
+        moduleNumber: 5,
+        title: "场景轮播",
+        purpose: "展示多种使用场景",
+        subModules: [{ subModuleNumber: 1, title: "车库", purpose: "车库场景", contentBrief: "车库场景价值" }],
+      }],
+    };
+    const result = enrichStep5AplusSubmodules({
+      result: {
+        aPlusModules: [{
+          moduleNumber: 5,
+          title: "场景轮播",
+          purpose: "展示多种使用场景",
+          subModules: [{
+            subModuleNumber: 1,
+            title: "车库",
+            purpose: "围绕“车库”展开的独立A+子图",
+            composition: "展示产品在“车库”中的核心价值、使用方式或结果。",
+            imageDescription: "展示产品在“车库”中的核心价值、使用方式或结果。",
+          }],
+        }],
+      },
+      outline: scenarioOutline,
+      step4Snapshot: {
+        imageReferences: [{
+          imageKey: "aplus-5.1",
+          compositionPlan: { layout: "车库墙面安装的管路走向与接头特写" },
+          effectPlan: { description: "冷蓝工业光、橙色重点标注与真实工具细节" },
+        }],
+      },
+    });
+
+    expect(result.aPlusModules[0].subModules[0]).toMatchObject({
+      purpose: "车库场景",
+      composition: "车库墙面安装的管路走向与接头特写",
+      imageDescription: "冷蓝工业光、橙色重点标注与真实工具细节",
+    });
+  });
 });

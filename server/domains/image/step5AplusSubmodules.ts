@@ -6,6 +6,12 @@ function asText(value: unknown) {
   return "";
 }
 
+function isGenericScenePlaceholder(value: unknown) {
+  const text = asText(value);
+  return /^展示产品在“[^”]+”中的核心价值、使用方式或结果。$/.test(text)
+    || /^围绕“[^”]+”展开的独立A\+子图$/.test(text);
+}
+
 function findReference(references: JsonRecord[], moduleNumber: number, subModuleNumber: number) {
   const target = `A+模块 ${moduleNumber}.${subModuleNumber}`;
   const targetKey = `aplus-${moduleNumber}.${subModuleNumber}`;
@@ -66,12 +72,12 @@ export function enrichStep5AplusSubmodules(input: {
       const subModuleNumber = Number(source?.subModuleNumber || subIndex + 1);
       const model = modelSubModules.find((item: JsonRecord) => Number(item?.subModuleNumber) === subModuleNumber) || {};
       const reference = findReference(references, moduleNumber, subModuleNumber);
-      const composition = asText(model.composition)
+      const composition = (isGenericScenePlaceholder(model.composition) ? "" : asText(model.composition))
         || asText(reference?.compositionPlan?.layout)
         || asText(reference?.compositionScheme?.layout)
         || asText(reference?.composition)
         || asText(source.contentBrief);
-      const imageDescription = asText(model.imageDescription)
+      const imageDescription = (isGenericScenePlaceholder(model.imageDescription) ? "" : asText(model.imageDescription))
         || asText(model.designAdvice)
         || asText(reference?.effectPlan?.description)
         || asText(reference?.effectScheme?.visualEffects)
@@ -82,7 +88,10 @@ export function enrichStep5AplusSubmodules(input: {
         ...model,
         subModuleNumber,
         title: model.title || source.title || `子图 ${subModuleNumber}`,
-        purpose: model.purpose || source.purpose || source.contentBrief || "",
+        purpose: (isGenericScenePlaceholder(model.purpose) ? "" : asText(model.purpose))
+          || asText(source.purpose)
+          || asText(reference?.compositionPlan?.layout)
+          || asText(source.contentBrief),
         composition,
         imageDescription,
         referenceImageKey: model.referenceImageKey || reference?.imageKey || reference?.imageType || `aplus-${moduleNumber}.${subModuleNumber}`,

@@ -493,6 +493,11 @@ export function buildStep5OutlineSafetyFallback(input: {
       composition: String(image?.expressionType || "围绕核心卖点建立清晰视觉层级").trim(),
       imageDescription: String(image?.whyThisWay || "按已确认图片大纲完成可编辑设计建议").trim(),
       designNotes: String(image?.whyThisWay || "请在人工审核后补充具体文案与视觉细节").trim(),
+      expression: String(image?.expressionType || "产品特写与场景化信息图结合").trim(),
+      primary: focus,
+      secondary: "以已确认参考图的材质、场景和功能细节为辅助信息",
+      accent: "保留清晰的信息层级、可读文案区与产品细节特写",
+      textOverlay: String(image?.title || image?.purpose || `辅图${image.imageNumber}核心信息`).trim(),
     };
   });
   const aPlusModules = (Array.isArray(outline?.aPlusModules) ? outline.aPlusModules : []).map((module: any, index: number) => {
@@ -519,13 +524,24 @@ export function buildStep5OutlineSafetyFallback(input: {
   } : null;
 
   return {
-    mainImage: {
-      title: String(mainOutline?.title || `${input.productName || "产品"}主图`).trim(),
-      focus: String(mainOutline?.purpose || "清晰呈现产品主体与核心形态").trim(),
-      content: String(mainOutline?.contentBrief || mainOutline?.purpose || "清晰呈现产品主体与核心形态").trim(),
-      composition: String(mainOutline?.expressionType || "以产品主体为视觉中心，保留清晰留白").trim(),
-      imageDescription: String(mainOutline?.whyThisWay || "请按已确认主图大纲完成可编辑作图建议").trim(),
-    },
+    mainImage: (() => {
+      const focus = String(mainOutline?.purpose || "清晰呈现产品主体与核心形态").trim();
+      const content = String(mainOutline?.contentBrief || mainOutline?.purpose || "清晰呈现产品主体与核心形态").trim();
+      const composition = String(mainOutline?.expressionType || "以产品主体为视觉中心，保留清晰留白").trim();
+      const imageDescription = String(mainOutline?.whyThisWay || "请按已确认主图大纲完成可编辑作图建议").trim();
+      return {
+        title: String(mainOutline?.title || `${input.productName || "产品"}主图`).trim(),
+        focus,
+        content,
+        concept: content,
+        composition,
+        primary: focus,
+        secondary: "以产品核心功能、关键部件和已确认卖点作为辅助说明",
+        accent: "保持亚马逊主图清晰留白与高可读性",
+        shooting: imageDescription,
+        imageDescription,
+      };
+    })(),
     secondaryImages,
     aPlusModules,
     aPlusContent: { sections: aPlusModules },
@@ -1048,6 +1064,17 @@ export async function buildStep5FinalSuggestion(
         validate: (value) => {
           if (!Array.isArray(value?.secondaryImages) || value.secondaryImages.length < 5) {
             throw new Error("最终图片建议辅图数量不足");
+          }
+          const completeFailure = findIncompleteStep5Segment({
+            mainSegment: value,
+            secondarySegment: value,
+            aplusModules: getAplusModules(value),
+            outlineAplusModules,
+            requiresBrandStory: Boolean(outlineBrandStory),
+            brandStory: getBrandStory(value),
+          });
+          if (completeFailure) {
+            throw new Error(`${completeFailure.module || completeFailure.group}完整Skill回退内容不完整`);
           }
           return value;
         },
