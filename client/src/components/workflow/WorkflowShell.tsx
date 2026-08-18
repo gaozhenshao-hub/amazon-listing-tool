@@ -31,6 +31,10 @@ function chooseDisplayCheckpoint(
   );
 }
 
+export function shouldRenderAgentRuntimePanel(showAgentPanel: boolean, hasRunOrLoading: boolean) {
+  return showAgentPanel && hasRunOrLoading;
+}
+
 export function WorkflowShell({
   title,
   subtitle,
@@ -87,7 +91,7 @@ export function WorkflowShell({
         {headerActions && <div className="flex flex-wrap items-center gap-2">{headerActions}</div>}
       </div>
 
-      {(detail?.run || isRunLoading) && (
+      {shouldRenderAgentRuntimePanel(showAgentPanel, Boolean(detail?.run || isRunLoading)) && (
         <div className="rounded-lg border bg-background p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
