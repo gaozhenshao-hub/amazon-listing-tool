@@ -155,7 +155,9 @@ export const imageStep5Procedures = {
           },
           progress: 5,
           maxAttempts: 3,
-          timeoutSeconds: 15 * 60,
+          // 7个A+模块并行、单段120秒有界等待，完整回退再预留120秒；
+          // 5分钟足以覆盖正常与回退路径，避免异常分段令会话长期停留running。
+          timeoutSeconds: 5 * 60,
         });
       } catch (error) {
         await db.updateImageWorkflowSession(session.id, {
