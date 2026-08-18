@@ -862,6 +862,61 @@ type Step5RunSegment = {
 
 const STEP5_SKILL_TIMEOUT_MS = 120_000;
 
+function textOrEmpty(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function joinAdvice(...values: unknown[]) {
+  return values.map(textOrEmpty).filter(Boolean).join("；");
+}
+
+export function normalizeStep5MainSegment(segment: any) {
+  const mainImage = segment?.mainImage || {};
+  const layout = mainImage?.layout || {};
+  const elements = mainImage?.elements || {};
+  const visualStyle = mainImage?.visualStyle || {};
+  return {
+    ...segment,
+    mainImage: {
+      ...mainImage,
+      title: textOrEmpty(mainImage.title) || textOrEmpty(mainImage.imageType) || "主图",
+      concept: textOrEmpty(mainImage.concept) || textOrEmpty(mainImage.purpose) || textOrEmpty(mainImage.designNotes),
+      composition: textOrEmpty(mainImage.composition) || textOrEmpty(layout.composition),
+      primary: textOrEmpty(mainImage.primary) || textOrEmpty(elements.product) || textOrEmpty(layout.focalPoint),
+      secondary: textOrEmpty(mainImage.secondary) || textOrEmpty(elements.props) || textOrEmpty(layout.visualFlow),
+      accent: textOrEmpty(mainImage.accent) || textOrEmpty(elements.badges),
+      shooting: textOrEmpty(mainImage.shooting) || joinAdvice(visualStyle.lighting, visualStyle.background, visualStyle.tone, mainImage.designNotes),
+      colorScheme: textOrEmpty(mainImage.colorScheme) || joinAdvice(visualStyle.colorPalette, visualStyle.background),
+    },
+  };
+}
+
+export function normalizeStep5SecondarySegment(segment: any) {
+  const secondaryImages = Array.isArray(segment?.secondaryImages) ? segment.secondaryImages : [];
+  return {
+    ...segment,
+    secondaryImages: secondaryImages.map((image: any, index: number) => {
+      const compositionReference = image?.compositionReference || {};
+      const effectReference = image?.effectReference || {};
+      return {
+        ...image,
+        imageNumber: Number(image?.imageNumber || index + 2),
+        title: textOrEmpty(image?.title) || textOrEmpty(image?.imageType) || `辅图 ${index + 2}`,
+        focus: textOrEmpty(image?.focus) || textOrEmpty(image?.purpose) || textOrEmpty(compositionReference.focalPoint),
+        fabe: textOrEmpty(image?.fabe) || textOrEmpty(image?.purpose),
+        expression: textOrEmpty(image?.expression) || textOrEmpty(image?.expressionMethod) || textOrEmpty(compositionReference.compositionType),
+        composition: textOrEmpty(image?.composition) || textOrEmpty(compositionReference.layout),
+        primary: textOrEmpty(image?.primary) || textOrEmpty(compositionReference.focalPoint),
+        secondary: textOrEmpty(image?.secondary) || textOrEmpty(compositionReference.visualFlow),
+        accent: textOrEmpty(image?.accent) || textOrEmpty(effectReference.colorApplication),
+        textOverlay: textOrEmpty(image?.textOverlay) || textOrEmpty(effectReference.typographyApplication) || textOrEmpty(image?.purpose),
+        colorScheme: textOrEmpty(image?.colorScheme) || textOrEmpty(effectReference.colorApplication),
+        shooting: textOrEmpty(image?.shooting) || joinAdvice(effectReference.lightingStyle, effectReference.atmosphere, image?.designNotes),
+      };
+    }),
+  };
+}
+
 export async function callStep5SkillWithinDeadline<T>(label: string, action: () => Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -1014,9 +1069,11 @@ export async function buildStep5FinalSuggestion(
     const aplusModules = aplusSegments.flatMap((segment) => getAplusModules(segment));
     const brandStory = aplusSegments.map((segment) => getBrandStory(segment)).find(Boolean) || null;
     await reportProgress(82);
+    const normalizedMainSegment = normalizeStep5MainSegment(mainSegment);
+    const normalizedSecondarySegment = normalizeStep5SecondarySegment(secondarySegment);
     const completenessFailure = findIncompleteStep5Segment({
-      mainSegment,
-      secondarySegment,
+      mainSegment: normalizedMainSegment,
+      secondarySegment: normalizedSecondarySegment,
       aplusModules,
       outlineAplusModules,
       requiresBrandStory: Boolean(outlineBrandStory),
@@ -1033,9 +1090,9 @@ export async function buildStep5FinalSuggestion(
       throw error;
     }
     result = {
-      ...mainSegment,
-      designGuidelines: mainSegment.designGuidelines || secondarySegment.designGuidelines,
-      secondaryImages: secondarySegment.secondaryImages,
+      ...normalizedMainSegment,
+      designGuidelines: normalizedMainSegment.designGuidelines || normalizedSecondarySegment.designGuidelines,
+      secondaryImages: normalizedSecondarySegment.secondaryImages,
       aPlusModules: aplusModules,
       aPlusContent: {
         sections: aplusModules,
@@ -1090,14 +1147,15 @@ export async function buildStep5FinalSuggestion(
     }
     // 完整Skill的历史契约可能使用aPlusContent.sections而非顶层aPlusModules。
     // 在进入统一回填前同步两种结构，避免分段失败回退后A+内容被前台判空。
+    const normalizedCompleteResult = normalizeStep5SecondarySegment(normalizeStep5MainSegment(completeResult));
     result = {
-      ...completeResult,
-      aPlusModules: getAplusModules(completeResult),
+      ...normalizedCompleteResult,
+      aPlusModules: getAplusModules(normalizedCompleteResult),
       aPlusContent: {
-        ...(completeResult?.aPlusContent || completeResult?.aplusContent || {}),
-        sections: getAplusModules(completeResult),
+        ...(normalizedCompleteResult?.aPlusContent || normalizedCompleteResult?.aplusContent || {}),
+        sections: getAplusModules(normalizedCompleteResult),
       },
-      brandStory: getBrandStory(completeResult),
+      brandStory: getBrandStory(normalizedCompleteResult),
       segmentedGeneration: { mode: "full_skill_fallback", failedGroup: failure.group, failedModule: failure.module },
     };
   }

@@ -68,8 +68,21 @@ describe("Step5分段失败定位", () => {
 
   it("完整Skill回退输出可解析且满足辅图、A+与品牌故事字段契约", () => {
     const raw = JSON.stringify({
-      mainImage: { title: "主图", focus: "套件全貌" },
-      secondaryImages: [2, 3, 4, 5, 6, 7].map((imageNumber) => ({ imageNumber, title: `辅图${imageNumber}`, focus: "卖点" })),
+      mainImage: {
+        title: "主图",
+        concept: "展示套件全貌",
+        composition: "白底居中构图",
+        primary: "完整产品套件",
+        shooting: "明亮棚拍光线",
+      },
+      secondaryImages: [2, 3, 4, 5, 6, 7].map((imageNumber) => ({
+        imageNumber,
+        title: `辅图${imageNumber}`,
+        focus: "核心卖点",
+        expression: "场景与结构结合展示",
+        composition: "左图右文构图",
+        textOverlay: "核心参数与短文案",
+      })),
       aPlusModules: [1, 2, 3, 4, 5, 6, 7].map((moduleNumber) => ({
         moduleNumber,
         title: `A+ ${moduleNumber}`,
