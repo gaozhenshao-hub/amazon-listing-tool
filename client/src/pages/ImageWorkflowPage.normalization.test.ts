@@ -17,4 +17,24 @@ describe("Step5最终人审字段归一化", () => {
     expect(hasDisplayableColorScheme({ primary: "", secondary: "", accent: "" })).toBe(false);
     expect(hasDisplayableColorScheme({ primary: "#0B5FFF", secondary: "", accent: "" })).toBe(true);
   });
+
+  it("为历史安全回退的设计指南与A+整体内容即时补齐可编辑显示字段", () => {
+    const result = normalizeFinalImageSuggestions({
+      designGuidelines: { visualTone: "工业专业风格", note: "安全回退" },
+      aPlusContent: { sections: [{ moduleNumber: 1, title: "零泄漏", purpose: "建立密封信任" }] },
+    });
+
+    expect(result.designGuidelines).toMatchObject({
+      fontRecommendation: expect.any(String),
+      overallColorPalette: expect.any(String),
+      brandTone: "工业专业风格",
+      mobileOptimization: expect.any(String),
+    });
+    expect(result.aPlusContent).toMatchObject({
+      overallStrategy: expect.stringContaining("零泄漏"),
+      overallStory: expect.stringContaining("建立密封信任"),
+      consistency: expect.any(String),
+      modularDesign: expect.any(String),
+    });
+  });
 });

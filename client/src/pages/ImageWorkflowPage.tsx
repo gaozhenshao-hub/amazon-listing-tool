@@ -145,25 +145,39 @@ export function normalizeFinalImageSuggestions(data: any) {
     .slice(0, 7)
     .map((section: any, index: number) => ({ ...section, moduleNumber: index + 1 }));
   const normalizedBrandStory = data.brandStory || embeddedBrandStory;
+  const fallbackDesignGuidelines = {
+    fontRecommendation: "标题使用清晰有力的无衬线字体，正文保持高可读性；移动端优先使用短句和大字号层级。",
+    overallColorPalette: "以已确认视觉风格和参考图的主色、辅助色与点缀色为准；产品主体保持真实辨识度，文案区保持高对比。",
+    brandTone: "专业、可靠、清晰，以已确认视觉风格和参考图为准。",
+    mobileOptimization: "移动端优先保留产品主体、核心短文案和关键数据；避免密集小字，保证图文层级在窄屏可读。",
+  };
+  const aPlusTitles = canonicalSections.map((section: any) => safeStr(section.title)).filter(Boolean);
+  const aPlusPurposes = canonicalSections.map((section: any) => safeStr(section.purpose)).filter(Boolean);
+  const fallbackAPlusStrategy = aPlusTitles.length
+    ? `围绕${aPlusTitles.join("、")}依次建立卖点证明、使用场景与品牌信任，形成从理解产品到确认购买的完整叙事。`
+    : "围绕已确认A+模块，按卖点证明、使用场景与品牌信任建立完整叙事。";
+  const fallbackAPlusStory = aPlusPurposes.length
+    ? `以${aPlusPurposes.slice(0, 3).join("、")}为故事主线，逐层回应买家疑虑并在品牌故事中完成价值收尾。`
+    : "以已确认A+模块的核心价值为主线，逐层回应买家疑虑并完成品牌价值收尾。";
   return {
     ...data,
     ...(normalizedBrandStory ? { brandStory: normalizedBrandStory } : {}),
     // Normalize designGuidelines: map AI field names to frontend expected names
     designGuidelines: data.designGuidelines ? {
       ...data.designGuidelines,
-      fontRecommendation: safeStr(data.designGuidelines.fontRecommendation || data.designGuidelines.typography || data.designGuidelines.font || data.designGuidelines.fontStyle || ""),
-      overallColorPalette: safeStr(data.designGuidelines.overallColorPalette || data.designGuidelines.colorPalette || data.designGuidelines.colorScheme || ""),
-      brandTone: safeStr(data.designGuidelines.brandTone || data.designGuidelines.visualTheme || data.designGuidelines.tone || ""),
-      mobileOptimization: safeStr(data.designGuidelines.mobileOptimization || data.designGuidelines.mobile || data.designGuidelines.compositionStyle || ""),
+      fontRecommendation: safeStr(data.designGuidelines.fontRecommendation || data.designGuidelines.typography || data.designGuidelines.font || data.designGuidelines.fontStyle || fallbackDesignGuidelines.fontRecommendation),
+      overallColorPalette: safeStr(data.designGuidelines.overallColorPalette || data.designGuidelines.colorPalette || data.designGuidelines.colorScheme || fallbackDesignGuidelines.overallColorPalette),
+      brandTone: safeStr(data.designGuidelines.brandTone || data.designGuidelines.visualTheme || data.designGuidelines.tone || data.designGuidelines.visualTone || fallbackDesignGuidelines.brandTone),
+      mobileOptimization: safeStr(data.designGuidelines.mobileOptimization || data.designGuidelines.mobile || data.designGuidelines.compositionStyle || fallbackDesignGuidelines.mobileOptimization),
     } : data.designGuidelines,
     // Normalize aPlusContent: map AI field names to frontend expected names
     aPlusContent: (data.aPlusContent || rawSections.length) ? {
       ...(data.aPlusContent || {}),
       sections: canonicalSections,
-      overallStrategy: safeStr(data.aPlusContent?.overallStrategy || data.aPlusContent?.strategy || ""),
-      overallStory: safeStr(data.aPlusContent?.overallStory || data.aPlusContent?.story || ""),
-      consistency: safeStr(data.aPlusContent?.consistency || ""),
-      modularDesign: safeStr(data.aPlusContent?.modularDesign || ""),
+      overallStrategy: safeStr(data.aPlusContent?.overallStrategy || data.aPlusContent?.strategy || fallbackAPlusStrategy),
+      overallStory: safeStr(data.aPlusContent?.overallStory || data.aPlusContent?.story || fallbackAPlusStory),
+      consistency: safeStr(data.aPlusContent?.consistency || "统一沿用已确认视觉风格、产品主体、配色倾向与文案层级，确保各模块形成连续识别。"),
+      modularDesign: safeStr(data.aPlusContent?.modularDesign || "每个A+模块保持独立卖点与构图任务；多图模块的子图分别对应独立场景、参考图与作图建议。"),
     } : undefined,
     mainImage: data.mainImage ? {
       ...data.mainImage,
