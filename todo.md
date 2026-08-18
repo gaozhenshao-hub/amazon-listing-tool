@@ -2,7 +2,7 @@
 
 ## 智能图片建议加载与Step4锁定链路修复（2026-08-18）
 
-- [ ] 修复生产环境动态导入ImageWorkflowPage资源失败导致“An unexpected error occurred”的进入页面报错，并验证旧前端缓存可自动恢复
+- [x] 修复生产环境动态导入ImageWorkflowPage资源失败导致“An unexpected error occurred”的进入页面报错，并验证旧前端缓存可自动恢复（入口响应返回no-cache/no-store/must-revalidate，生产页已无动态导入错误）
 - [ ] 核验Step4「确认并锁定」是否将最新参考图方案登记为锁定资产，并确保后续Step5仅读取已锁定的参考图资产
 - [ ] 核验Step4待确认状态与正在执行的Step5之间的状态机约束，避免未锁定参考图被后续任务错误使用
 

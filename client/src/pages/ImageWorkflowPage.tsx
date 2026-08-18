@@ -1699,6 +1699,9 @@ export default function ImageWorkflowPage() {
       completedStepIds={confirmedStepIds}
       lockedStepIds={confirmedStepIds}
       runId={agentRunId}
+      // 图片工作流的编辑、逐图确认和整体锁定均由各Step前台完成；
+      // 不展示独立Agent审核卡片，避免历史Checkpoint的待确认状态与当前会话锁定状态冲突。
+      showAgentPanel={false}
       onStepClick={(stepId) => handleStepClick(Number(stepId))}
       className="max-w-6xl"
       headerActions={
