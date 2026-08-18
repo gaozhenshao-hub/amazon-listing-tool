@@ -43,3 +43,33 @@ export async function recoverStaleStep5Run<T extends {
   await input.persist(input.session.id, update);
   return { recovered: true, session: { ...input.session, ...update } };
 }
+
+export async function resolveStep5Restart<T extends {
+  id: number;
+  step5RunId: string | null;
+  step5RunStatus: string | null;
+  step5RunStartedAt: Date | string | null;
+}, TJob>(input: {
+  session: T;
+  cancelRun: (runId: string, reason: string) => Promise<unknown>;
+  persist: (sessionId: number, update: Record<string, unknown>) => Promise<unknown>;
+  getRun: (runId: string) => Promise<TJob | null>;
+  isActiveJob: (job: TJob) => boolean;
+}) {
+  const staleRecovery = await recoverStaleStep5Run({
+    session: input.session,
+    cancelRun: input.cancelRun,
+    persist: input.persist,
+  });
+  if (staleRecovery.recovered) {
+    return { kind: "recovered" as const, session: staleRecovery.session, staleRunId: input.session.step5RunId };
+  }
+  if (!input.session.step5RunId) {
+    return { kind: "start" as const, session: input.session };
+  }
+  const activeJob = await input.getRun(input.session.step5RunId).catch(() => null);
+  if (activeJob && input.isActiveJob(activeJob)) {
+    return { kind: "active" as const, session: input.session, activeJob };
+  }
+  return { kind: "start" as const, session: input.session };
+}

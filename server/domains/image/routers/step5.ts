@@ -14,7 +14,7 @@ import {
   getAiJobRun,
   scheduleAiJobRun,
 } from "../../ai_os/services/jobRunner";
-import { recoverStaleStep5Run, STALE_STEP5_RUN_ERROR } from "../step5StaleRecovery";
+import { resolveStep5Restart, STALE_STEP5_RUN_ERROR } from "../step5StaleRecovery";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -83,14 +83,16 @@ export const imageStep5Procedures = {
       if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
 
       if (session.step5RunId && isActiveStep5Run(session.step5RunStatus)) {
-        const staleRecovery = await recoverStaleStep5Run({
+        const restartGuard = await resolveStep5Restart({
           session,
           cancelRun: cancelAiJob,
           persist: db.updateImageWorkflowSession,
+          getRun: async (runId) => getAiJobRun(runId).catch(() => null),
+          isActiveJob: (job) => isActiveStep5Run(job.status),
         });
-        if (staleRecovery.recovered) {
+        if (restartGuard.kind === "recovered") {
           const staleRunId = session.step5RunId;
-          session = staleRecovery.session as typeof session;
+          session = restartGuard.session as typeof session;
           await syncStep5AgentSafely("卡住任务自动回收同步", () => syncStepJobFailedToAgent({
             agentRunId: session.agentRunId,
             stepNumber: 5,
@@ -104,9 +106,8 @@ export const imageStep5Procedures = {
             errorMessage: STALE_STEP5_RUN_ERROR,
             finalAttempt: true,
           }));
-        } else {
-        const activeJob = await getAiJobRun(session.step5RunId).catch(() => null);
-        if (activeJob && isActiveStep5Run(activeJob.status)) {
+        } else if (restartGuard.kind === "active") {
+          const activeJob = restartGuard.activeJob;
           const syncActiveJob = activeJob.status === "running"
             ? syncStepJobRunningToAgent
             : syncStepJobQueuedToAgent;
@@ -127,7 +128,6 @@ export const imageStep5Procedures = {
             maxAttempts: activeJob.maxAttempts,
             nextRunAt: activeJob.nextRunAt,
           };
-        }
         }
       }
 
