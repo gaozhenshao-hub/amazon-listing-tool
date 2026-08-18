@@ -51,9 +51,19 @@ const {
   resolveSessionForExecution,
   router,
   serializeStep5Error,
+  settleStep5AgentSync,
   storagePut,
   z,
 } = shared;
+
+const STEP5_AGENT_SYNC_TIMEOUT_MS = 5_000;
+
+async function syncStep5AgentSafely(label: string, task: () => Promise<unknown>): Promise<void> {
+  const outcome = await settleStep5AgentSync(task() as Promise<void>, STEP5_AGENT_SYNC_TIMEOUT_MS);
+  if (outcome !== "synced") {
+    console.warn(`[Step5] ${label}${outcome === "timed_out" ? "超时" : "失败"}，已降级继续业务任务`);
+  }
+}
 
 export const imageStep5Procedures = {
 
@@ -77,7 +87,7 @@ export const imageStep5Procedures = {
           const syncActiveJob = activeJob.status === "running"
             ? syncStepJobRunningToAgent
             : syncStepJobQueuedToAgent;
-          await syncActiveJob({
+          await syncStep5AgentSafely("活动任务同步", () => syncActiveJob({
             agentRunId: session.agentRunId,
             stepNumber: 5,
             projectId: input.projectId,
@@ -87,7 +97,7 @@ export const imageStep5Procedures = {
             aiJobAttempt: activeJob.attempt,
             aiJobMaxAttempts: activeJob.maxAttempts,
             progress: activeJob.progress,
-          });
+          }));
           return {
             ...buildStep5RunSnapshot(session),
             attempt: activeJob.attempt,
@@ -154,7 +164,7 @@ export const imageStep5Procedures = {
           step5RunError: serializeStep5Error(error),
           step5RunCompletedAt: new Date(),
         });
-        await syncStepJobFailedToAgent({
+        await syncStep5AgentSafely("创建失败同步", () => syncStepJobFailedToAgent({
           agentRunId,
           stepNumber: 5,
           projectId: input.projectId,
@@ -166,11 +176,11 @@ export const imageStep5Procedures = {
           progress: 100,
           errorMessage: serializeStep5Error(error),
           finalAttempt: true,
-        });
+        }));
         throw error;
       }
 
-      await syncStepJobQueuedToAgent({
+      await syncStep5AgentSafely("排队同步", () => syncStepJobQueuedToAgent({
         agentRunId,
         stepNumber: 5,
         projectId: input.projectId,
@@ -180,7 +190,7 @@ export const imageStep5Procedures = {
         aiJobAttempt: job.attempt,
         aiJobMaxAttempts: job.maxAttempts,
         progress: job.progress,
-      });
+      }));
       try {
         await scheduleAiJobRun(job.runId);
       } catch (error) {
@@ -191,7 +201,7 @@ export const imageStep5Procedures = {
           step5RunError: serializeStep5Error(error),
           step5RunCompletedAt: new Date(),
         });
-        await syncStepJobFailedToAgent({
+        await syncStep5AgentSafely("调度失败同步", () => syncStepJobFailedToAgent({
           agentRunId,
           stepNumber: 5,
           projectId: input.projectId,
@@ -203,7 +213,7 @@ export const imageStep5Procedures = {
           progress: 100,
           errorMessage: serializeStep5Error(error),
           finalAttempt: true,
-        });
+        }));
         throw error;
       }
 

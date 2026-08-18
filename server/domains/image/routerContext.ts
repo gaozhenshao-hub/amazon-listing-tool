@@ -772,11 +772,17 @@ export function serializeStep5Error(error: unknown): string {
  * Agent DAG同步仅用于可观测性。同步服务异常或卡住时，不能阻塞Step5的
  * 皇帝Skill调用、结果保存和AI Job终态提交。
  */
-export async function settleStep5AgentSync(sync: Promise<void>, timeoutMs = 5_000): Promise<"synced" | "timed_out"> {
+export async function settleStep5AgentSync(sync: Promise<void>, timeoutMs = 5_000): Promise<"synced" | "timed_out" | "failed"> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const outcome = await Promise.race([
-      sync.then(() => "synced" as const),
+      sync.then(
+        () => "synced" as const,
+        (error) => {
+          console.warn("[Step5] Agent sync failed; continuing business AI Job without blocking", error);
+          return "failed" as const;
+        },
+      ),
       new Promise<"timed_out">((resolve) => {
         timer = setTimeout(() => resolve("timed_out"), timeoutMs);
       }),

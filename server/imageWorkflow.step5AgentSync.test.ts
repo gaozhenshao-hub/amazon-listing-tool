@@ -10,4 +10,8 @@ describe("Step5 Agent同步边界", () => {
     const pending = new Promise<void>(() => undefined);
     await expect(settleStep5AgentSync(pending, 5)).resolves.toBe("timed_out");
   });
+
+  it("同步拒绝会降级为failed，不阻塞Step5业务任务", async () => {
+    await expect(settleStep5AgentSync(Promise.reject(new Error("Agent unavailable")), 50)).resolves.toBe("failed");
+  });
 });
