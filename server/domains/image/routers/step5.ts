@@ -14,6 +14,7 @@ import {
   getAiJobRun,
   scheduleAiJobRun,
 } from "../../ai_os/services/jobRunner";
+import { recoverStaleStep5Run, STALE_STEP5_RUN_ERROR } from "../step5StaleRecovery";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -82,6 +83,28 @@ export const imageStep5Procedures = {
       if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
 
       if (session.step5RunId && isActiveStep5Run(session.step5RunStatus)) {
+        const staleRecovery = await recoverStaleStep5Run({
+          session,
+          cancelRun: cancelAiJob,
+          persist: db.updateImageWorkflowSession,
+        });
+        if (staleRecovery.recovered) {
+          const staleRunId = session.step5RunId;
+          session = staleRecovery.session as typeof session;
+          await syncStep5AgentSafely("卡住任务自动回收同步", () => syncStepJobFailedToAgent({
+            agentRunId: session.agentRunId,
+            stepNumber: 5,
+            projectId: input.projectId,
+            userId: ctx.user.id,
+            workspaceId: ctx.workspaceId ?? null,
+            aiJobRunId: staleRunId!,
+            aiJobAttempt: 0,
+            aiJobMaxAttempts: 3,
+            progress: 100,
+            errorMessage: STALE_STEP5_RUN_ERROR,
+            finalAttempt: true,
+          }));
+        } else {
         const activeJob = await getAiJobRun(session.step5RunId).catch(() => null);
         if (activeJob && isActiveStep5Run(activeJob.status)) {
           const syncActiveJob = activeJob.status === "running"
@@ -104,6 +127,7 @@ export const imageStep5Procedures = {
             maxAttempts: activeJob.maxAttempts,
             nextRunAt: activeJob.nextRunAt,
           };
+        }
         }
       }
 
