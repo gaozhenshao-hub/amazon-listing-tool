@@ -22,6 +22,14 @@ function scheduleImageWorkflowStepArtifactSync(
   });
 }
 
+/**
+ * Step4 会在确认路由中执行带超时边界的正式 Artifact 注册。
+ * 此处不能再同步等待同一注册，否则会在业务确认写入之前造成前台 Mutation 长时间卡住。
+ */
+export function shouldDeferImageWorkflowStepArtifactRegistration(step: number, confirmsStep: boolean) {
+  return step === 4 && confirmsStep;
+}
+
 async function captureImageProject(
   projectId: number | null | undefined,
   sourceType: "ai_output" | "user_edit" = "user_edit",
@@ -82,7 +90,9 @@ export async function updateImageWorkflowSession(id: number, data: Partial<Inser
     const confirmsStep = Number((data as any)[`step${step}Confirmed`] || 0) === 1;
     const changesUserOutput = changedKeys.includes(`step${step}UserEdit`);
     const sourceType = confirmsStep || changesUserOutput ? "user_edit" : "ai_output";
-    if (confirmsStep) {
+    if (shouldDeferImageWorkflowStepArtifactRegistration(step, confirmsStep)) {
+      scheduleImageWorkflowStepArtifactSync(id, step, sourceType);
+    } else if (confirmsStep) {
       await registerImageWorkflowStepArtifact(id, step, sourceType);
     } else if (sourceType === "ai_output") {
       await registerImageWorkflowStepArtifact(id, step, sourceType);

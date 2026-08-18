@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { awaitStep4ArtifactRegistration } from "./domains/image/routers/workflowSteps";
+import { shouldDeferImageWorkflowStepArtifactRegistration } from "./repositories/image/imageRepository";
 
 describe("Step4 Artifact registration boundary", () => {
+  it("defers the generic Step4 confirmation registration so the route can apply its bounded registration", () => {
+    expect(shouldDeferImageWorkflowStepArtifactRegistration(4, true)).toBe(true);
+    expect(shouldDeferImageWorkflowStepArtifactRegistration(4, false)).toBe(false);
+    expect(shouldDeferImageWorkflowStepArtifactRegistration(3, true)).toBe(false);
+  });
+
   it("returns the completed artifact without reporting a timeout", async () => {
     const result = await awaitStep4ArtifactRegistration({
       registration: Promise.resolve({ ref: "artifact:step4" }),
