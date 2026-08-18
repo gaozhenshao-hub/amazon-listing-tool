@@ -74,8 +74,14 @@ export function serveStatic(app: Express) {
     res.type("text/plain").send("Asset not found");
   });
 
-  // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
+  // 仅业务页面可回退到入口HTML；缺失构建资源必须保持404，供前台恢复逻辑识别。
+  app.use("*", (req, res) => {
+    if (req.path.startsWith("/assets/")) {
+      res.status(404)
+        .setHeader("Cache-Control", "no-store, max-age=0, must-revalidate");
+      res.type("text/plain").send("Asset not found");
+      return;
+    }
     res.setHeader("Cache-Control", "no-store, max-age=0, must-revalidate");
     res.sendFile(path.resolve(distPath, "index.html"));
   });

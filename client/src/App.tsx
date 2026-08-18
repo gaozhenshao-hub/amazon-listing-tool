@@ -1,5 +1,6 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { claimLazyRecovery } from "@/lib/lazyRecovery";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, Redirect } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -18,12 +19,10 @@ function lazyWithRecovery<T extends ComponentType<any>>(
       return module;
     } catch (error) {
       // 发布会替换带哈希的模块文件；旧入口加载失败时自动刷新一次以取得最新入口。
-      if (!window.sessionStorage.getItem(recoveryKey)) {
-        window.sessionStorage.setItem(recoveryKey, "1");
+      if (claimLazyRecovery(window.sessionStorage, recoveryKey)) {
         window.location.reload();
         return new Promise<{ default: T }>(() => undefined);
       }
-      window.sessionStorage.removeItem(recoveryKey);
       throw error;
     }
   });
