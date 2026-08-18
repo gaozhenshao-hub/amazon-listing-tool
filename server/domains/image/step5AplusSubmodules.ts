@@ -28,6 +28,31 @@ function findModuleReference(references: JsonRecord[], moduleNumber: number) {
     || references.find((reference) => /^A\+模块/.test(String(reference?.imageType || "")) && String(reference?.imageNumber || "").trim() === String(moduleNumber));
 }
 
+function getReferenceComposition(reference: JsonRecord | undefined) {
+  return asText(reference?.compositionPlan?.layout)
+    || asText(reference?.compositionScheme?.layout)
+    || asText(reference?.compositionReference?.layout)
+    || asText(reference?.lockedSnapshot?.compositionReference?.layout)
+    || asText(reference?.composition);
+}
+
+function getReferenceImageDescription(reference: JsonRecord | undefined) {
+  const direct = asText(reference?.effectPlan?.description)
+    || asText(reference?.effectScheme?.visualEffects)
+    || asText(reference?.effect);
+  if (direct) return direct;
+
+  const effect = reference?.effectReference || reference?.lockedSnapshot?.effectReference;
+  if (!effect || typeof effect !== "object") return "";
+  return [
+    asText(effect.atmosphere),
+    asText(effect.colorApplication),
+    asText(effect.lightingStyle),
+    asText(effect.textureStyle),
+    asText(effect.typographyApplication),
+  ].filter(Boolean).join("；");
+}
+
 /**
  * Step5 模型有时会保留父级多图模块，却遗漏 subModules。
  * 此处将已确认的Step2子图和Step4逐图参考回填到最终结果，确保每张子图始终可编辑、可追溯。
@@ -73,15 +98,11 @@ export function enrichStep5AplusSubmodules(input: {
       const model = modelSubModules.find((item: JsonRecord) => Number(item?.subModuleNumber) === subModuleNumber) || {};
       const reference = findReference(references, moduleNumber, subModuleNumber);
       const composition = (isGenericScenePlaceholder(model.composition) ? "" : asText(model.composition))
-        || asText(reference?.compositionPlan?.layout)
-        || asText(reference?.compositionScheme?.layout)
-        || asText(reference?.composition)
+        || getReferenceComposition(reference)
         || asText(source.contentBrief);
       const imageDescription = (isGenericScenePlaceholder(model.imageDescription) ? "" : asText(model.imageDescription))
         || asText(model.designAdvice)
-        || asText(reference?.effectPlan?.description)
-        || asText(reference?.effectScheme?.visualEffects)
-        || asText(reference?.effect)
+        || getReferenceImageDescription(reference)
         || asText(source.contentBrief);
 
       return {
@@ -105,8 +126,8 @@ export function enrichStep5AplusSubmodules(input: {
       title: section.title || sourceModule.title || `A+模块 ${moduleNumber}`,
       purpose: section.purpose || sourceModule.purpose || sourceModule.contentBrief || "",
       content: section.content || sourceModule.contentBrief || sourceModule.purpose || "",
-      composition: section.composition || findModuleReference(references, moduleNumber)?.compositionPlan?.layout || "",
-      imageDescription: section.imageDescription || findModuleReference(references, moduleNumber)?.effectPlan?.description || "",
+      composition: section.composition || getReferenceComposition(findModuleReference(references, moduleNumber)) || "",
+      imageDescription: section.imageDescription || getReferenceImageDescription(findModuleReference(references, moduleNumber)) || "",
       subModules,
       moduleSpecificContent: {
         ...(section.moduleSpecificContent || {}),

@@ -119,4 +119,46 @@ describe("Step5 A+输出结构兼容", () => {
       imageDescription: "冷蓝工业光、橙色重点标注与真实工具细节",
     });
   });
+
+  it("兼容生产Step4锁定快照的compositionReference和effectReference字段", () => {
+    const scenarioOutline = {
+      aPlusModules: [{
+        moduleNumber: 5,
+        title: "场景轮播",
+        purpose: "展示多种使用场景",
+        subModules: [{ subModuleNumber: 1, title: "车库", purpose: "车库场景", contentBrief: "车库场景价值" }],
+      }],
+    };
+    const result = enrichStep5AplusSubmodules({
+      result: {
+        aPlusModules: [{
+          moduleNumber: 5,
+          subModules: [{
+            subModuleNumber: 1,
+            title: "车库",
+            purpose: "围绕“车库”展开的独立A+子图",
+            composition: "展示产品在“车库”中的核心价值、使用方式或结果。",
+            imageDescription: "展示产品在“车库”中的核心价值、使用方式或结果。",
+          }],
+        }],
+      },
+      outline: scenarioOutline,
+      step4Snapshot: {
+        imageReferences: [{
+          imageKey: "aplus-5.1",
+          compositionReference: { layout: "车库中气路系统连接气动扳手的真实使用场景" },
+          effectReference: {
+            atmosphere: "专业汽修、硬核车库",
+            colorApplication: "灰银车库基调与蓝色管材点缀",
+            lightingStyle: "顶灯照明与金属反光",
+          },
+        }],
+      },
+    });
+
+    expect(result.aPlusModules[0].subModules[0]).toMatchObject({
+      composition: "车库中气路系统连接气动扳手的真实使用场景",
+      imageDescription: "专业汽修、硬核车库；灰银车库基调与蓝色管材点缀；顶灯照明与金属反光",
+    });
+  });
 });

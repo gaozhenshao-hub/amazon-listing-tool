@@ -50,6 +50,7 @@
 - [ ] 生产触发Step5分段生成，核验运行进度、A+ 1至7、品牌故事与失败定位的终态展示
 - [ ] 修复Step5真实运行主图/辅图字段为空、A+ 5场景子图回退为通用占位的问题，确保超时回退生成完整可编辑的构图、文案和作图建议
 - [x] 为Step5安全回退补齐主图concept/primary/shooting、辅图表达与文案字段，并以Step4已确认参考方案替换场景通用占位（9项Step5回退/映射测试及ESLint通过）
+- [x] 兼容生产Step4参考图的compositionReference/effectReference锁定快照结构，确保A+场景子图超时回退读取真实构图、氛围、色彩与光线建议（10项Step5回退/映射测试及ESLint通过）
 - [x] 修复皇帝Skill返回代码围栏长JSON时的解析失败（统一解析器通过字符串感知的平衡括号提取完整JSON，支持尾部说明与未闭合围栏；Step4/Step5回归覆盖）
 - [x] 修复Step5皇帝Skill超长输出未形成可解析闭合JSON时导致任务失败的问题（完整Skill不可解析时从已确认大纲构建可编辑安全回退；18项Step5/JSON回归测试通过）
 - [x] 为image.step5.final.suggestion启用皇帝Skill JSON模式（运行时清单supportsJsonMode=true、maxTokens=8192、超时300秒；Skill运行器向模型传递json_object响应格式）
