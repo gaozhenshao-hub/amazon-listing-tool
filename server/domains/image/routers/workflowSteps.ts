@@ -72,6 +72,34 @@ function compactPromptText(value: unknown, maxChars: number) {
   return `${text.slice(0, headChars)}\n\n[上下文已压缩，省略${text.length - maxChars}字符]\n\n${text.slice(-tailChars)}`;
 }
 
+const STEP4_ARTIFACT_REGISTRATION_TIMEOUT_MS = 5_000;
+
+export async function awaitStep4ArtifactRegistration<T>(input: {
+  registration: Promise<T>;
+  timeoutMs?: number;
+  onError?: (error: unknown) => void;
+}): Promise<{ artifact: T | null; timedOut: boolean }> {
+  const registration = input.registration
+    .then((artifact) => ({ kind: "completed" as const, artifact }))
+    .catch((error) => {
+      input.onError?.(error);
+      return { kind: "failed" as const, artifact: null };
+    });
+  const timeoutMs = input.timeoutMs ?? STEP4_ARTIFACT_REGISTRATION_TIMEOUT_MS;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<{ kind: "timeout"; artifact: null }>((resolve) => {
+    timeoutId = setTimeout(() => resolve({ kind: "timeout", artifact: null }), timeoutMs);
+  });
+  const result = await Promise.race([registration, timeout]);
+  if (timeoutId) clearTimeout(timeoutId);
+  if (result.kind === "timeout") {
+    // registration 已绑定错误处理；保留其后台完成机会，避免短暂的Artifact存储延迟阻塞业务确认。
+    void registration;
+    return { artifact: null, timedOut: true };
+  }
+  return { artifact: result.artifact, timedOut: false };
+}
+
 
 async function startGenerationForRequest(input: {
   projectId: number;
@@ -570,9 +598,14 @@ export const imageWorkflowStepProcedures = {
       });
       // Step4 锁定时必须等待完整快照成为当前正式 Artifact。
       // 否则页面展示层会从较旧的已确认 Artifact 水合，覆盖刚确认的参考图与方案。
-      const artifact = await registerImageWorkflowStepArtifact(session.id, 4, "user_edit");
-      if (!artifact) {
-        console.warn(`[Step4] Complete snapshot was saved to the session but Artifact registration was unavailable: session=${session.id}`);
+      const artifactResult = await awaitStep4ArtifactRegistration({
+        registration: registerImageWorkflowStepArtifact(session.id, 4, "user_edit"),
+        onError: (error) => console.warn(`[Step4] Artifact registration failed after session confirmation: session=${session.id}`, error),
+      });
+      if (!artifactResult.artifact) {
+        console.warn(
+          `[Step4] Complete snapshot was saved to the session but Artifact registration ${artifactResult.timedOut ? "timed out" : "was unavailable"}: session=${session.id}`,
+        );
       }
       void syncStepConfirmToAgent({
         agentRunId: session.agentRunId,
