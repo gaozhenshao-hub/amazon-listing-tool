@@ -90,8 +90,15 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(workflowSteps).toContain("const completeSnapshot = buildStep4ConfirmedSnapshot(requestedSnapshot, versionByIndex)");
     expect(workflowSteps).toContain("step4Confirmed: 1");
     expect(sessionsRouter).toContain("const versions = await db.getCurrentStep4ImageVersions(session.id)");
-    expect(sessionsRouter).toContain("confirmed ? { ...reference, ...confirmed, isLocked: true");
+    expect(sessionsRouter).toContain("if (confirmed) {");
+    expect(sessionsRouter).toContain("return { ...reference, ...confirmed, isLocked: true");
     expect(sessionsRouter).toContain("rebuildStep4DisplaySnapshot(session, snapshot)");
+  });
+
+  it("逐图解锁后会清除过期展示锁定标记，恢复重新确认入口", () => {
+    const sessionsRouter = fs.readFileSync(path.join(root, "server/domains/image/routers/sessions.ts"), "utf8");
+    expect(sessionsRouter).toContain("const { isLocked: _isLocked, lockedSnapshot: _lockedSnapshot, lockedAt: _lockedAt, ...unlockedReference }");
+    expect(sessionsRouter).toContain("return { ...unlockedReference, isLocked: false };");
   });
 
   it("已锁定业务步骤时，旧 Agent 失败状态只能作为历史诊断，不能误标当前工作流失败", () => {

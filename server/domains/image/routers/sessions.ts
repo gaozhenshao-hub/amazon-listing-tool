@@ -101,14 +101,14 @@ async function applyCurrentStep4ImageVersions(session: any) {
     aiSnapshot,
     latestJobSnapshot,
   });
-  if (!versions.length || !session.step4Confirmed) {
-    const rebuilt = rebuildStep4DisplaySnapshot(session, base);
-    return { ...session, step4UserEdit: JSON.stringify(rebuilt), step4AiResult: JSON.stringify(rebuilt) };
-  }
   const byIndex = new Map(versions.map((version: any) => [Number(version.imageIndex), parseExportJson(version.content)]));
   const imageReferences = (base.imageReferences || []).map((reference: any, index: number) => {
     const confirmed = byIndex.get(index);
-    return confirmed ? { ...reference, ...confirmed, isLocked: true, lockedSnapshot: confirmed, lockedAt: confirmed.lockedAt || confirmed.confirmedAt } : reference;
+    if (confirmed) {
+      return { ...reference, ...confirmed, isLocked: true, lockedSnapshot: confirmed, lockedAt: confirmed.lockedAt || confirmed.confirmedAt };
+    }
+    const { isLocked: _isLocked, lockedSnapshot: _lockedSnapshot, lockedAt: _lockedAt, ...unlockedReference } = reference || {};
+    return { ...unlockedReference, isLocked: false };
   });
   const snapshot = { ...base, imageReferences };
   return { ...session, step4UserEdit: JSON.stringify(rebuildStep4DisplaySnapshot(session, snapshot)), step4AiResult: JSON.stringify(rebuildStep4DisplaySnapshot(session, snapshot)) };
