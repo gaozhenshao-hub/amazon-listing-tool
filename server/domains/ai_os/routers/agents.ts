@@ -42,6 +42,40 @@ import {
 } from "../services/agentRunner";
 import { listEmperorTools } from "../services/toolGateway";
 import { rawExecute } from "../routerContext";
+import { startImageStepGenerationForUser } from "../../image/services/startImageStepGeneration";
+
+const IMAGE_WORKFLOW_SKILL_NODE_STEP: Record<string, 0 | 1 | 2 | 3> = {
+  step0_skill: 0,
+  step1_skill: 1,
+  step2_skill: 2,
+  step3_skill: 3,
+};
+
+export async function delegateImageWorkflowSkillNode(input: {
+  runId: string;
+  nodeId: string;
+  user: { id: number; role: string };
+  workspaceId?: number | null;
+  getRunDetail?: typeof getAgentRun;
+  startGeneration?: typeof startImageStepGenerationForUser;
+}) {
+  const step = IMAGE_WORKFLOW_SKILL_NODE_STEP[input.nodeId];
+  if (step === undefined) return null;
+  const detail = await (input.getRunDetail || getAgentRun)(input.runId, input.user.id);
+  if (detail.run.agentSlug !== "image.workflow") return null;
+  const projectId = Number(detail.run.projectId || detail.run.inputs?.projectId);
+  if (!Number.isInteger(projectId) || projectId <= 0) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "图片工作流Agent缺少项目上下文，无法执行该节点" });
+  }
+  const job = await (input.startGeneration || startImageStepGenerationForUser)({
+    projectId,
+    step,
+    user: input.user,
+    workspaceId: input.workspaceId ?? null,
+    agentRunId: input.runId,
+  });
+  return { delegated: true, businessProcedure: "imageWorkflow.startStepGeneration", step, job };
+}
 
 async function assertAgentAction(ctx: TrpcContext, action: SecurityAction, resourceId?: string | null) {
   await assertResourceAction({
@@ -679,6 +713,13 @@ export const emperorAgentsRouter = router({
     .input(z.object({ runId: z.string(), nodeId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       await assertAgentAction(ctx, "run", input.runId);
+      const delegated = await delegateImageWorkflowSkillNode({
+        runId: input.runId,
+        nodeId: input.nodeId,
+        user: ctx.user,
+        workspaceId: ctx.workspaceId,
+      });
+      if (delegated) return delegated;
       await assertAgentRuntimeOwnsExecution(input.runId);
       const result = await executeAgentNode({ runId: input.runId, nodeId: input.nodeId, userId: ctx.user.id });
       await auditAgentAction({
@@ -791,6 +832,13 @@ export const emperorAgentsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertAgentAction(ctx, "run", input.runId);
+      const delegated = await delegateImageWorkflowSkillNode({
+        runId: input.runId,
+        nodeId: input.nodeId,
+        user: ctx.user,
+        workspaceId: ctx.workspaceId,
+      });
+      if (delegated) return delegated;
       await assertAgentRuntimeOwnsExecution(input.runId);
       const result = await rerunAgentNode({
         runId: input.runId,

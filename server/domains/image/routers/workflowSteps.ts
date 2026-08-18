@@ -11,9 +11,9 @@ import {
 import {
   cancelImageStepGenerationJob,
   getLatestImageStepGenerationJob,
-  startImageStepGenerationJob,
   type ImageGenerationStep,
 } from "../services/stepGenerationJob";
+import { startImageStepGenerationForUser } from "../services/startImageStepGeneration";
 import { registerImageWorkflowAplusSubmoduleArtifact, registerImageWorkflowStepArtifact } from "../../ai_os/services/businessArtifactRegistry";
 import { buildStep4ConfirmedSnapshot } from "../step4Snapshot";
 import { preserveLockedAplusSubmodules } from "../step2AplusLockedSubmodules";
@@ -107,32 +107,7 @@ async function startGenerationForRequest(input: {
   user: { id: number; role: string };
   workspaceId?: number | null;
 }) {
-  const project = await resolveProjectAccess(input.projectId, input.user);
-  ensureWriteAccess(project, input.user);
-  let session = await resolveSessionAccess(input.projectId, input.user);
-  if (!session) {
-    session = await db.createImageWorkflowSession({
-      projectId: input.projectId,
-      userId: input.user.id,
-      currentStep: input.step,
-    });
-  }
-  const agentRunId = session.agentRunId || await ensureImageWorkflowAgentRun({
-    projectId: input.projectId,
-    userId: input.user.id,
-    workspaceId: input.workspaceId ?? null,
-  });
-  if (agentRunId && agentRunId !== session.agentRunId) {
-    await db.updateImageWorkflowSession(session.id, { agentRunId });
-  }
-  return startImageStepGenerationJob({
-    projectId: input.projectId,
-    sessionId: session.id,
-    step: input.step,
-    userId: input.user.id,
-    workspaceId: input.workspaceId,
-    agentRunId,
-  });
+  return startImageStepGenerationForUser(input);
 }
 
 export const imageWorkflowStepProcedures = {
