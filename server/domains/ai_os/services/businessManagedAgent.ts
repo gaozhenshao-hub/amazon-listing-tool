@@ -38,6 +38,19 @@ type BusinessManagedNodeInput = {
   userId?: number;
 };
 
+export function hasConflictingBusinessJob(
+  status: string,
+  existingAiJobRunId: string | null | undefined,
+  requestedAiJobRunId: string | null | undefined,
+  allowJobReplacement?: boolean,
+) {
+  return status === "running"
+    && Boolean(requestedAiJobRunId)
+    && Boolean(existingAiJobRunId)
+    && existingAiJobRunId !== requestedAiJobRunId
+    && !allowJobReplacement;
+}
+
 function workspaceClause(workspaceId?: number | null) {
   return workspaceId === null || workspaceId === undefined
     ? { clause: "workspaceId IS NULL", params: [] as unknown[] }
@@ -89,20 +102,29 @@ async function ensureNodeCanRun(input: BusinessManagedNodeInput) {
 
   const now = new Date();
   const lockToken = `business_${randomUUID()}`;
-  await withAgentStateMachine((stateMachine) => stateMachine.claimNodeRunning({
-    runId: input.runId,
-    nodeId: input.nodeId,
-    nodeInput: {
-      source: "business_page",
-      projectStage: input.nodeId,
-      aiJobRunId: input.aiJobRunId || null,
-    },
-    lockToken,
-    lockedAt: now,
-    timeoutAt: new Date(now.getTime() + 30 * 60_000),
-    allowedFromStatuses: [checkpoint.status as "ready" | "failed" | "canceled"],
-    action: "claim business-managed node",
-  }));
+  try {
+    await withAgentStateMachine((stateMachine) => stateMachine.claimNodeRunning({
+      runId: input.runId,
+      nodeId: input.nodeId,
+      nodeInput: {
+        source: "business_page",
+        projectStage: input.nodeId,
+        aiJobRunId: input.aiJobRunId || null,
+      },
+      lockToken,
+      lockedAt: now,
+      timeoutAt: new Date(now.getTime() + 30 * 60_000),
+      allowedFromStatuses: [checkpoint.status as "ready" | "failed" | "canceled"],
+      action: "claim business-managed node",
+    }));
+  } catch (error) {
+    // A concurrent worker may claim the same ready node between the read above and
+    // the locked transition. Re-read it and treat an already-running node as an
+    // idempotent claim instead of surfacing a false "not executable" failure.
+    const latest = await getCheckpoint(input.runId, input.nodeId);
+    if (latest.status === "running") return latest;
+    throw error;
+  }
   if (input.aiJobRunId) {
     await withAgentStateMachine((stateMachine) => stateMachine.attachNodeAiJob({
       runId: input.runId,
@@ -159,15 +181,30 @@ export async function ensureBusinessManagedRun(input: BusinessManagedRunInput & 
 export async function markBusinessManagedNodeRunning(input: BusinessManagedNodeInput) {
   let checkpoint = await getCheckpoint(input.runId, input.nodeId);
   if (
-    (checkpoint.status === "running" || checkpoint.status === "waiting_human") &&
-    input.aiJobRunId &&
-    checkpoint.aiJobRunId &&
-    checkpoint.aiJobRunId !== input.aiJobRunId &&
-    !input.allowJobReplacement
+    hasConflictingBusinessJob(
+      checkpoint.status,
+      checkpoint.aiJobRunId,
+      input.aiJobRunId,
+      input.allowJobReplacement,
+    ) || (
+      checkpoint.status === "waiting_human"
+      && input.aiJobRunId
+      && checkpoint.aiJobRunId
+      && checkpoint.aiJobRunId !== input.aiJobRunId
+      && !input.allowJobReplacement
+    )
   ) {
     return false;
   }
   checkpoint = await ensureNodeCanRun(input);
+  if (hasConflictingBusinessJob(
+    checkpoint.status,
+    checkpoint.aiJobRunId,
+    input.aiJobRunId,
+    input.allowJobReplacement,
+  )) {
+    return false;
+  }
   if (checkpoint.status === "waiting_human") {
     await withAgentStateMachine((stateMachine) => stateMachine.claimNodeRunning({
       runId: input.runId,
