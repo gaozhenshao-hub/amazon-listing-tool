@@ -42,6 +42,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { shouldShowProjectFileError } from "./dataFiles/displayState";
 import { getRufusIdentityEntries } from "./dataFiles/rufusIdentity";
+import { getRufusUsageScenarios } from "./dataFiles/rufusUsageScenarios";
 
 type FileType = "product_attributes";
 
@@ -479,6 +480,7 @@ function AnalysisResultCard({
 
   const data = editing ? editData : result;
   const rufusIdentityEntries = getRufusIdentityEntries(data?.productIdentity);
+  const rufusUsageScenarios = getRufusUsageScenarios(data?.usageScenarios);
 
   // ─── View Mode Renderers ──────────────────────────────────────
   const renderViewContent = () => {
@@ -516,6 +518,18 @@ function AnalysisResultCard({
                     <span key={i} className="text-muted-foreground">
                       <strong>{s.attribute}:</strong> {s.value}
                     </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {rufusUsageScenarios.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-blue-700 mb-1">使用场景</p>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  {rufusUsageScenarios.map((item, index) => (
+                    <p key={`${item.scenario}-${index}`}>
+                      <strong>{item.scenario || "适用说明"}:</strong> {item.detail || "未填写详情"}
+                    </p>
                   ))}
                 </div>
               </div>
@@ -597,6 +611,15 @@ function AnalysisResultCard({
                 onChange={(items) => setEditData({ ...editData, coreSpecs: items })}
                 attrKey="attribute"
                 valKey="value"
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-blue-700 mb-1.5">使用场景</p>
+              <EditableSpecList
+                items={editData.usageScenarios || []}
+                onChange={(items) => setEditData({ ...editData, usageScenarios: items })}
+                attrKey="scenario"
+                valKey="detail"
               />
             </div>
             <div>

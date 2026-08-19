@@ -11,3 +11,9 @@
 06:58 已将最新成功记录（`projectFiles.id=630016`）中不应存在的旧错误字段更正为 `NULL`。刷新生产页面后，属性表仍为“分析完成 / 已就绪”，历史错误文本已消失，且可正常展开分析结果。
 
 已解析并展示：品牌 `LndscLaser`、产品名 `WH22X37840 Main Control Board`、类目 `Washer Parts & Accessories`、九项核心规格、GE 洗衣机维修/替换使用场景，以及五条独特卖点。源文件中的 `ASIN: B0HDSTQ7B9` 尚未进入当前皇帝 Skill 的结构化结果；该字段缺口已单独列为待修复项，不能将其误判为完整字段验收通过。
+
+## Rufus v2 ASIN验收
+
+已将 `analysis.rufus.attribute` 升级至 v2，启用 JSON 模式，并在皇帝 Skill 的输出契约中强制要求 `productIdentity.brand`、`productIdentity.productName`、`productIdentity.asin` 和 `productIdentity.category`。使用同一份7840源文件执行真实技能运行，v2返回 `ASIN: B0HDSTQ7B9`，同时包含7项核心规格、1个使用场景及4条卖点。
+
+后端将源文件身份字段作为最终回填依据，前端新增“产品标识”人工审核区。生产页面最终展开验证已显示品牌、完整产品名称、`B0HDSTQ7B9`、类目、核心规格、使用场景和卖点；记录状态保持“分析完成”，无历史路由错误文本。产品标识支持通过页面“编辑”操作人工修订后保存。
