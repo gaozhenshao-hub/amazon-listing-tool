@@ -41,6 +41,7 @@ import {
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { shouldShowProjectFileError } from "./dataFiles/displayState";
+import { getRufusIdentityEntries } from "./dataFiles/rufusIdentity";
 
 type FileType = "product_attributes";
 
@@ -477,6 +478,7 @@ function AnalysisResultCard({
   if (!result) return null;
 
   const data = editing ? editData : result;
+  const rufusIdentityEntries = getRufusIdentityEntries(data?.productIdentity);
 
   // ─── View Mode Renderers ──────────────────────────────────────
   const renderViewContent = () => {
@@ -484,6 +486,18 @@ function AnalysisResultCard({
       case "product_attributes":
         return (
           <div className="space-y-3">
+            {rufusIdentityEntries.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-blue-700 mb-1">产品标识</p>
+                <div className="grid grid-cols-2 gap-1 text-xs">
+                  {rufusIdentityEntries.map((entry) => (
+                    <span key={entry.key} className="text-muted-foreground">
+                      <strong>{entry.label}:</strong> {entry.value}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {data.uniqueSellingPoints?.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-blue-700 mb-1">独特卖点 (USP)</p>
@@ -539,11 +553,34 @@ function AnalysisResultCard({
   // ─── Edit Mode Renderers ──────────────────────────────────────
   const renderEditContent = () => {
     if (!editData) return null;
+    const productIdentity = editData.productIdentity || {};
 
     switch (fileType) {
       case "product_attributes":
         return (
           <div className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-blue-700 mb-1.5">产品标识</p>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ["brand", "品牌"],
+                  ["productName", "产品名称"],
+                  ["asin", "ASIN"],
+                  ["category", "产品类目"],
+                ] as const).map(([key, label]) => (
+                  <Input
+                    key={key}
+                    value={productIdentity[key] || ""}
+                    placeholder={label}
+                    className="h-7 text-xs"
+                    onChange={(event) => setEditData({
+                      ...editData,
+                      productIdentity: { ...productIdentity, [key]: event.target.value },
+                    })}
+                  />
+                ))}
+              </div>
+            </div>
             <div>
               <p className="text-xs font-semibold text-blue-700 mb-1.5">独特卖点 (USP)</p>
               <EditableTagList

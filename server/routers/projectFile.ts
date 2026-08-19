@@ -22,6 +22,7 @@ import { projectAssignments, devProjects, devProductProfiles } from "../../drizz
 import { getDb } from "../repositories/dbClient";
 import { buildProjectFileEmperorSkill } from "./projectFileSkillRoutes";
 import { buildCompletedAnalysisUpdate } from "./projectFileAnalysisState";
+import { normalizeRufusProductIdentity } from "./projectFileRufusIdentity";
 
 // ─── File Parsers ─────────────────────────────────────────────────
 
@@ -159,12 +160,7 @@ async function registerProjectFileArtifacts(input: {
 // ─── AI Analysis Functions ────────────────────────────────────────
 
 async function analyzeRufusAttributes(rawContent: string): Promise<any> {
-      // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
-
-
-
-
-
+  // [Emperor] 显式调用已发布的analysis.rufus.attribute Skill。
   const response = await invokeBusinessSkill({
     emperorSkill: buildProjectFileEmperorSkill("product_attributes"),
     messages: [
@@ -183,7 +179,7 @@ async function analyzeRufusAttributes(rawContent: string): Promise<any> {
       : JSON.stringify(response.choices[0].message.content);
 
   try {
-    return JSON.parse(content);
+    return normalizeRufusProductIdentity(rawContent, JSON.parse(content));
   } catch {
     return { raw: content };
   }

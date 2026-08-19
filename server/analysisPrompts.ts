@@ -19,9 +19,11 @@ Your task: Deep-read the product attribute table (本品属性表) and extract A
    - **Usage Scenarios (使用场景)**: Recommended use cases from the attribute data
 4. **Flag Rufus-friendly attributes**: Attributes that Amazon's Rufus AI would prioritize for conversational search
 5. **Identify keyword-rich attributes**: Specs that contain high-search-volume terms
+6. **Preserve product identity exactly**: Extract the source table's brand, product name, ASIN, and category without inventing or omitting values. If a field is absent in the source, return an empty string for that field.
 
 Respond in JSON format:
 {
+  "productIdentity": { "brand": "", "productName": "", "asin": "", "category": "" },
   "coreSpecs": [{ "attribute": "", "value": "", "keywordRelevance": "high/medium/low" }],
   "materialBuild": [{ "attribute": "", "value": "", "sellingPoint": "" }],
   "performance": [{ "metric": "", "value": "", "competitiveAdvantage": "" }],
