@@ -68,6 +68,7 @@ import { OUTLINE_APLUS_CATEGORIES, OUTLINE_APLUS_MODULES, findOutlineAplusModule
 import { buildFullPlanContent, buildPdfContent, safeJsonParse } from "./imageWorkflow/exportContent";
 import { resolveImageWorkflowProjectId } from "./imageWorkflow/projectIdResolution";
 import { buildStep5SegmentStates, getStep5FailurePresentation, getStep5SegmentPresentation, isActiveStep5RunStatus, resolveCurrentStep5RunId } from "./imageWorkflow/step5RunState";
+import { updateStep5AplusStrategy } from "./imageWorkflow/step5AplusStrategy";
 import { normalizeSecondaryImageSlots } from "@shared/imageWorkflow";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1411,12 +1412,31 @@ function Step5FinalSuggestions({
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div className="space-y-1 border-r pr-4">
-                      <Badge variant="outline" className="text-xs">English</Badge>
-                      <p className="text-xs"><strong>Strategy:</strong> {enData.aPlusContent.overallStrategy}</p>
-                      <p className="text-xs"><strong>Story:</strong> {enData.aPlusContent.overallStory}</p>
-                      <p className="text-xs"><strong>Consistency:</strong> {enData.aPlusContent.consistency}</p>
-                      <p className="text-xs"><strong>Modular Design:</strong> {enData.aPlusContent.modularDesign}</p>
+                    <div className="space-y-3 border-r pr-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge variant="outline" className="text-xs">English</Badge>
+                        {!isConfirmed && <span className="text-[11px] text-muted-foreground">可编辑，确认锁定时一并保存</span>}
+                      </div>
+                      {([
+                        ["overallStrategy", "A+ 整体策略 / Strategy"],
+                        ["overallStory", "叙事主线 / Story"],
+                        ["consistency", "视觉一致性 / Consistency"],
+                        ["modularDesign", "模块化设计 / Modular Design"],
+                      ] as const).map(([field, label]) => (
+                        <div key={field} className="space-y-1">
+                          <p className="text-xs font-medium">{label}</p>
+                          {isConfirmed ? (
+                            <p className="text-xs text-muted-foreground whitespace-pre-wrap">{enData.aPlusContent[field]}</p>
+                          ) : (
+                            <Textarea
+                              value={enData.aPlusContent[field] || ""}
+                              onChange={(event) => setEnData((previous: any) => updateStep5AplusStrategy(previous, field, event.target.value))}
+                              className="min-h-[64px] text-xs"
+                              aria-label={label}
+                            />
+                          )}
+                        </div>
+                      ))}
                     </div>
                     <DesignerUploadPanel
                       imageNumber="aplus_overview"
