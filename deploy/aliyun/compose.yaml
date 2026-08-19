@@ -1,0 +1,47 @@
+name: amz-fullchain
+x-app-base: &app-base
+  image: amz-fullchain:local
+  build:
+    context: ../..
+    dockerfile: deploy/aliyun/Dockerfile
+  env_file:
+    - .env
+  restart: unless-stopped
+  networks:
+    - app-internal
+
+services:
+  web:
+    <<: *app-base
+    command: ["node", "dist/index.js"]
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
+
+  ai-worker:
+    <<: *app-base
+    command: ["node", "dist/aiWorker.js"]
+    environment:
+      APP_PROCESS_ROLE: worker
+      AI_JOB_RUNNER_MODE: worker
+
+  scheduler:
+    <<: *app-base
+    command: ["node", "dist/scheduler.js"]
+    environment:
+      APP_PROCESS_ROLE: scheduler
+
+networks:
+  app-internal:
+    driver: bridge

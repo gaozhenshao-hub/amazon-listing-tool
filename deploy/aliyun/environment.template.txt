@@ -1,0 +1,45 @@
+# Copy this file to deploy/aliyun/.env only on the ECS host.
+# Never commit the generated .env file or replace these placeholders with production values in Git.
+
+NODE_ENV=production
+PORT=3000
+DATABASE_URL=mysql://APP_USER:CHANGE_ME@RDS_PRIVATE_ENDPOINT:3306/amz_fullchain?ssl={"rejectUnauthorized":true}
+JWT_SECRET=GENERATE_A_LONG_RANDOM_SECRET
+
+# Independent local authentication: email/password + JWT, no Manus OAuth UI.
+AUTH_MODE=local
+VITE_AUTH_MODE=local
+
+# Aliyun OSS private bucket via its S3-compatible endpoint.
+STORAGE_PROVIDER=oss
+S3_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
+S3_REGION=cn-hangzhou
+S3_BUCKET=amz-fullchain-private
+S3_ACCESS_KEY_ID=REPLACE_WITH_RAM_ACCESS_KEY_ID
+S3_SECRET_ACCESS_KEY=REPLACE_WITH_RAM_ACCESS_KEY_SECRET
+S3_FORCE_PATH_STYLE=false
+STORAGE_PRESIGN_EXPIRES_SECONDS=900
+
+# Existing OpenAI-compatible model gateway. Do not place these values in source control.
+LLM_PROVIDER=external
+EXTERNAL_LLM_BASE_URL=https://YOUR_LLM_GATEWAY/v1
+EXTERNAL_LLM_API_KEY=REPLACE_WITH_MODEL_GATEWAY_KEY
+EXTERNAL_LLM_MODEL=YOUR_DEFAULT_MODEL
+
+# AI job worker. Keep web, worker and scheduler on the same RDS instance.
+AI_JOB_IN_PROCESS=false
+AI_JOB_RUNNER_MODE=worker
+AI_JOB_WORKER_CONCURRENCY=2
+AI_JOB_WORKER_HEARTBEAT_MS=15000
+AI_JOB_WORKER_POLL_MS=3000
+AI_JOB_WORKER_SHUTDOWN_GRACE_MS=30000
+AI_JOB_WORKER_STALE_MS=300000
+
+# These must remain unset in independent mode.
+BUILT_IN_FORGE_API_URL=
+BUILT_IN_FORGE_API_KEY=
+VITE_FRONTEND_FORGE_API_URL=
+VITE_FRONTEND_FORGE_API_KEY=
+VITE_OAUTH_PORTAL_URL=
+VITE_APP_ID=
+OAUTH_SERVER_URL=
