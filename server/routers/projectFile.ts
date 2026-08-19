@@ -21,6 +21,7 @@ import { eq, and, desc, inArray } from "drizzle-orm";
 import { projectAssignments, devProjects, devProductProfiles } from "../../drizzle/schema";
 import { getDb } from "../repositories/dbClient";
 import { buildProjectFileEmperorSkill } from "./projectFileSkillRoutes";
+import { buildCompletedAnalysisUpdate } from "./projectFileAnalysisState";
 
 // ─── File Parsers ─────────────────────────────────────────────────
 
@@ -536,10 +537,7 @@ export const projectFileRouter = router({
             throw new Error(`Unknown file type: ${file.fileType}`);
         }
 
-        const updated = await db.updateProjectFile(file.id, {
-          analysisResult: JSON.stringify(analysisResult),
-          status: "completed",
-        });
+        const updated = await db.updateProjectFile(file.id, buildCompletedAnalysisUpdate(analysisResult));
         const artifactBundle = await registerProjectFileArtifacts({
           workspaceId,
           projectId: file.projectId,
@@ -709,10 +707,7 @@ export const projectFileRouter = router({
             break;
         }
 
-        const updated = await db.updateProjectFile(record.id, {
-          analysisResult: JSON.stringify(analysisResult),
-          status: "completed",
-        });
+        const updated = await db.updateProjectFile(record.id, buildCompletedAnalysisUpdate(analysisResult));
         const artifactBundle = await registerProjectFileArtifacts({
           workspaceId,
           projectId: input.projectId,
@@ -1037,8 +1032,7 @@ export const projectFileRouter = router({
         parsedDataHash: createContentHash(parsedProfileData),
         rawContent: databaseTextPreview(profileText),
         parsedData: databaseParsedPreview(parsedProfileData),
-        status: "completed",
-        analysisResult: JSON.stringify(analysisResult),
+        ...buildCompletedAnalysisUpdate(analysisResult),
       });
       await registerProjectFileArtifacts({
         workspaceId,
