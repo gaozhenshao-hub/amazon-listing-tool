@@ -23,7 +23,8 @@ describe("Step4 参考图与方案版本保留", () => {
   it("单图重新优化会保存完整合并结果，而非只返回内存对象", () => {
     expect(references).toContain("const updatedResult = { ...(currentStep4 || {}), imageReferences: updatedRefs };");
     expect(references).toContain("step4UserEdit: JSON.stringify(updatedResult)");
-    expect(references).toContain("compositionRefImageUrl: existingRef?.compositionRefImageUrl");
+    expect(references).toContain("compositionRefImageUrl: input.compositionRefUrl || existingRef?.compositionRefImageUrl");
+    expect(references).toContain("compositionRefNote: input.compositionRefNote?.trim() || existingRef?.compositionRefNote");
     expect(references).toContain("kbReferenceImages: existingRef?.kbReferenceImages");
   });
 

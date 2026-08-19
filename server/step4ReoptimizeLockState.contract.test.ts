@@ -10,5 +10,7 @@ describe("Step4单图优化锁定状态契约", () => {
     expect(referencesRouter).toContain('import { clearStep4ReferenceLocks } from "../step4ReferenceLockState"');
     expect(referencesRouter).toContain("const updatedRefs = clearStep4ReferenceLocks(imageRefs)");
     expect(referencesRouter).toContain("step4Confirmed: 0");
+    expect(referencesRouter).toContain("compositionRefNote: input.compositionRefNote?.trim() || existingRef?.compositionRefNote");
+    expect(referencesRouter).toContain("effectRefNote: input.effectRefNote?.trim() || existingRef?.effectRefNote");
   });
 });
