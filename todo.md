@@ -11,7 +11,7 @@
 
 ## 独立部署迁移（2026-08-18）
 
-- [ ] 对青岛ECS执行只读环境预检，核验系统资源、Docker/Compose、端口、域名解析、时间同步与现有服务冲突
+- [x] 对青岛ECS执行只读环境预检，核验系统资源、Docker/Compose、端口、域名解析、时间同步与现有服务冲突（Ubuntu 24.04、约6.6GB可用内存、初始仅SSH服务；Docker/Compose/Nginx/Certbot已安装，部署目录与运行记录已创建）
 - [ ] 将独立部署配置切换至青岛OSS地域，准备不含明文密钥的生产环境文件并校验私网MySQL、内网OSS与浏览器预签名端点
 - [ ] 在青岛ECS部署私网MySQL、Web、AI Worker、Scheduler和Nginx，执行受控生产迁移且不覆盖Manus现有生产数据
 - [ ] 以无敏感测试数据演练加密MySQL备份与恢复，核验私有OSS对象、校验和与恢复后健康状态
