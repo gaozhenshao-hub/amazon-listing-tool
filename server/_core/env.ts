@@ -14,6 +14,7 @@ export const ENV = {
   externalLlmModel: process.env.EXTERNAL_LLM_MODEL ?? "",
   storageProvider: (process.env.STORAGE_PROVIDER ?? "forge").trim().toLowerCase(),
   s3Endpoint: process.env.S3_ENDPOINT ?? "",
+  s3PublicEndpoint: process.env.S3_PUBLIC_ENDPOINT ?? "",
   s3Region: process.env.S3_REGION ?? "",
   s3Bucket: process.env.S3_BUCKET ?? "",
   s3AccessKeyId: process.env.S3_ACCESS_KEY_ID ?? "",
