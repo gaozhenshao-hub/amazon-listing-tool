@@ -2,6 +2,7 @@ import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
 import * as step4Snapshot from "../step4Snapshot";
 import { getLatestStep4ReferenceJob } from "../services/step4ReferenceJob";
+import { clearStep4ReferenceLocks } from "../step4ReferenceLockState";
 
 const {
   compactStep4ReferenceForStorage,
@@ -282,7 +283,7 @@ export const imageReferenceProcedures = {
         imageType: existingRef?.imageType ?? aiResult?.imageType,
         purpose: existingRef?.purpose ?? aiResult?.purpose,
       };
-      const updatedRefs = [...imageRefs];
+      const updatedRefs = clearStep4ReferenceLocks(imageRefs);
       if (targetIdx >= 0) updatedRefs[targetIdx] = merged;
       const updatedResult = { ...(currentStep4 || {}), imageReferences: updatedRefs };
       await db.updateImageWorkflowSession(session.id, {

@@ -98,8 +98,11 @@ describe("Step4 参考图与方案版本保留", () => {
 
   it("逐图解锁后会清除过期展示锁定标记，恢复重新确认入口", () => {
     const sessionsRouter = fs.readFileSync(path.join(root, "server/domains/image/routers/sessions.ts"), "utf8");
-    expect(sessionsRouter).toContain("const { isLocked: _isLocked, lockedSnapshot: _lockedSnapshot, lockedAt: _lockedAt, ...unlockedReference }");
-    expect(sessionsRouter).toContain("return { ...unlockedReference, isLocked: false };");
+    const lockState = fs.readFileSync(path.join(root, "server/domains/image/step4ReferenceLockState.ts"), "utf8");
+    expect(sessionsRouter).toContain('import { clearStep4ReferenceLock } from "../step4ReferenceLockState"');
+    expect(sessionsRouter).toContain("return clearStep4ReferenceLock(reference);");
+    expect(lockState).toContain("lockedSnapshot: _lockedSnapshot");
+    expect(lockState).toContain("return { ...unlockedReference, isLocked: false };");
   });
 
   it("已锁定业务步骤时，旧 Agent 失败状态只能作为历史诊断，不能误标当前工作流失败", () => {

@@ -4,6 +4,7 @@ import { ensureImageWorkflowAgentRun, syncStepUnlockToAgent } from "../imageWork
 import { buildImageWorkflowReferenceTargets, normalizeImageOutline } from "@shared/imageWorkflow";
 import { extractLatestStep4JobResult, mergeStep4LatestWithUserAssets } from "../step4Snapshot";
 import { getLatestStep4ReferenceJob } from "../services/step4ReferenceJob";
+import { clearStep4ReferenceLock } from "../step4ReferenceLockState";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -107,8 +108,7 @@ async function applyCurrentStep4ImageVersions(session: any) {
     if (confirmed) {
       return { ...reference, ...confirmed, isLocked: true, lockedSnapshot: confirmed, lockedAt: confirmed.lockedAt || confirmed.confirmedAt };
     }
-    const { isLocked: _isLocked, lockedSnapshot: _lockedSnapshot, lockedAt: _lockedAt, ...unlockedReference } = reference || {};
-    return { ...unlockedReference, isLocked: false };
+    return clearStep4ReferenceLock(reference);
   });
   const snapshot = { ...base, imageReferences };
   return { ...session, step4UserEdit: JSON.stringify(rebuildStep4DisplaySnapshot(session, snapshot)), step4AiResult: JSON.stringify(rebuildStep4DisplaySnapshot(session, snapshot)) };
