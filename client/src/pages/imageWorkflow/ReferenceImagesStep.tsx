@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { KbImagePickerDialog } from "./KnowledgeImagePickerDialog";
 import { ReferenceImagesHeader } from "./ReferenceImagesHeader";
 import { getStep4KbReferenceCardKey, getStep4ReferenceCardKey } from "./referenceCardIdentity";
+import { shouldApplyStep4RunOutput } from "./step4RunHydration";
 import { normalizeStep4References } from "@shared/imageWorkflow";
 
 const isActiveStep4Run = (status?: string | null) => status === "queued" || status === "running";
@@ -129,10 +130,14 @@ export function Step4References({
     const wasActive = activeRunId === run.runId;
     setActiveRunId(null);
 
-    if (run.status === "succeeded" && run.output?.imageReferences) {
+    if (shouldApplyStep4RunOutput({
+      status: run.status,
+      wasStartedInCurrentView: wasActive,
+      hasImageReferences: Boolean(run.output?.imageReferences),
+    })) {
       setEditData(normalizeStep4References(run.output));
       void utils.imageWorkflow.getSession.invalidate({ projectId });
-      if (wasActive) toast.success("参考图推荐完成");
+      toast.success("参考图推荐完成");
     } else if (run.status === "failed") {
       if (wasActive || !editData) toast.error(formatStep4Error(run.error));
     } else if (run.status === "canceled" && wasActive) {
