@@ -27,7 +27,8 @@
 - [x] 在预算说明中分别列出固定月费、OSS/流量可变费用、备份/快照费用及模型API/域名备案等未包含项（详见低成本部署方案的固定项与可变项拆分表）
 - [x] 确认阿里云中国大陆部署地域，优先采用华东1（杭州）并要求ECS、本机MySQL和OSS同地域部署
 - [ ] 调研并确定阿里云ECS、RDS MySQL、OSS、带宽、安全组和备份的采购规格，满足应用Web、AI Worker、Scheduler与前端构建负载
-- [ ] 审计当前amazon-listing-tool对Manus OAuth、Forge API、数据库、存储、AI Job与部署环境的专属依赖，形成迁移风险清单
+- [x] 审计当前amazon-listing-tool对Manus OAuth、Forge API、数据库、存储、AI Job与部署环境的专属依赖，形成迁移风险清单（独立部署评估已覆盖本地认证、MySQL、OSS、外部皇帝Skill模型以及图片/语音/地图/通知/Heartbeat的Forge替代边界）
+- [ ] 在独立上线前为Forge专属图片生成、语音转写、地图、数据API、通知与Heartbeat逐项配置替代服务或显式禁用入口，避免独立环境静默失败
 - [x] 确认独立运行核心选型：邮箱密码认证、独立MySQL 8、阿里云OSS私有Bucket及复用当前模型API（2026-08-18用户确认）
 - [x] 设计独立运行架构：应用服务器、独立MySQL 8、阿里云OSS私有Bucket、身份认证、现有模型API、后台任务与域名/HTTPS（Compose、环境模板、反向代理、备份恢复说明和升级路径已形成）
 - [ ] 在独立服务器配置应用运行环境、数据迁移与生产进程管理，不改变现有图片工作流页面结构、业务流程或AI逻辑
