@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
+import { shouldShowProjectFileError } from "./dataFiles/displayState";
 
 type FileType = "product_attributes";
 
@@ -1144,7 +1145,7 @@ function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId
               </div>
             </div>
 
-            {latestFile.errorMessage && (
+            {shouldShowProjectFileError(latestFile.status, latestFile.errorMessage) && (
               <p className="text-xs text-red-500">{latestFile.errorMessage}</p>
             )}
 
