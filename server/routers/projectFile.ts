@@ -20,6 +20,7 @@ import {
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { projectAssignments, devProjects, devProductProfiles } from "../../drizzle/schema";
 import { getDb } from "../repositories/dbClient";
+import { buildProjectFileEmperorSkill } from "./projectFileSkillRoutes";
 
 // ─── File Parsers ─────────────────────────────────────────────────
 
@@ -164,6 +165,7 @@ async function analyzeRufusAttributes(rawContent: string): Promise<any> {
 
 
   const response = await invokeBusinessSkill({
+    emperorSkill: buildProjectFileEmperorSkill("product_attributes"),
     messages: [
       { role: "system", content: RUFUS_ATTRIBUTE_PROMPT },
       {
