@@ -42,6 +42,8 @@ required_keys=(
   MYSQL_APP_PASSWORD
   MYSQL_ROOT_PASSWORD
   JWT_SECRET
+  TOOL_SECRET_KEY
+  SCHEDULED_TASK_SECRET
   AUTH_MODE
   VITE_AUTH_MODE
   STORAGE_PROVIDER
@@ -71,6 +73,8 @@ grep -qE '^DATABASE_URL=mysql://[^@]+@mysql:3306/.+' "${ENV_FILE}" || fail "DATA
 grep -qE '^S3_ENDPOINT=https://oss-[a-z0-9-]+-internal\.aliyuncs\.com$' "${ENV_FILE}" || fail "S3_ENDPOINT must use an Aliyun internal OSS endpoint for ECS service traffic"
 grep -qE '^S3_PUBLIC_ENDPOINT=https://oss-[a-z0-9-]+\.aliyuncs\.com$' "${ENV_FILE}" || fail "S3_PUBLIC_ENDPOINT must use an Aliyun public OSS endpoint for browser presigned URLs"
 ! grep -qE 'REPLACE_WITH|CHANGE_ME|YOUR_LLM_GATEWAY|GENERATE_A_LONG' "${ENV_FILE}" || fail "Environment file still contains template placeholders"
+tool_secret_key="$(sed -n 's/^TOOL_SECRET_KEY=//p' "${ENV_FILE}" | tail -1)"
+[[ "${#tool_secret_key}" -ge 32 ]] || fail "TOOL_SECRET_KEY must contain at least 32 characters"
 backup_retention_days="$(sed -n 's/^BACKUP_RETENTION_DAYS=//p' "${ENV_FILE}" | tail -1)"
 [[ "${backup_retention_days}" =~ ^[0-9]+$ ]] && (( backup_retention_days >= 7 )) || fail "BACKUP_RETENTION_DAYS must be an integer of at least 7"
 pass "Independent authentication, OSS and external LLM settings are present"

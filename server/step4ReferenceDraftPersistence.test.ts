@@ -35,7 +35,7 @@ describe("Step4 参考图与方案版本保留", () => {
   });
 
   it("整体确认只发布已锁定单图快照，不合并旧 AI 或草稿字段", () => {
-    expect(workflowSteps).toContain("buildStep4ConfirmedSnapshot(requestedSnapshot, versionByIndex)");
+    expect(workflowSteps).toContain("buildStep4ConfirmedSnapshot(currentSnapshot, versionByIndex)");
     expect(step4Snapshot).toContain("请先逐图点击“确认此图”，整体确认只会发布独立确认版本");
     expect(step4Snapshot).toContain("compactStep4ReferenceForStorage(confirmedByIndex.get(index)");
     expect(workflowSteps).toContain("step4AiResult: completeUserEdit");
@@ -87,7 +87,8 @@ describe("Step4 参考图与方案版本保留", () => {
 
   it("整体确认后刷新仍以完整确认快照为基准并叠加逐图锁定版本", () => {
     const sessionsRouter = fs.readFileSync(path.join(root, "server/domains/image/routers/sessions.ts"), "utf8");
-    expect(workflowSteps).toContain("const completeSnapshot = buildStep4ConfirmedSnapshot(requestedSnapshot, versionByIndex)");
+    expect(workflowSteps).toContain("const currentSnapshot = buildCurrentStep4ConfirmationSnapshot(session, requestedSnapshot)");
+    expect(workflowSteps).toContain("const completeSnapshot = buildStep4ConfirmedSnapshot(currentSnapshot, versionByIndex)");
     expect(workflowSteps).toContain("step4Confirmed: 1");
     expect(sessionsRouter).toContain("const versions = await db.getCurrentStep4ImageVersions(session.id)");
     expect(sessionsRouter).toContain("if (confirmed) {");

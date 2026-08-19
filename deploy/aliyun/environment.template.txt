@@ -11,18 +11,22 @@ MYSQL_APP_PASSWORD=CHANGE_ME_APP_PASSWORD
 MYSQL_ROOT_PASSWORD=CHANGE_ME_ROOT_PASSWORD
 DATABASE_URL=mysql://amz_app:CHANGE_ME_URL_ENCODED_APP_PASSWORD@mysql:3306/amz_fullchain
 JWT_SECRET=GENERATE_A_LONG_RANDOM_SECRET
+# Generate with: openssl rand -base64 48. Required by production startup validation.
+TOOL_SECRET_KEY=GENERATE_A_SEPARATE_LONG_TOOL_SECRET
+# Shared secret for external cron invocations; keep blank only if no scheduled HTTP trigger is used.
+SCHEDULED_TASK_SECRET=GENERATE_A_SCHEDULED_TASK_SECRET
 
 # Independent local authentication: email/password + JWT, no Manus OAuth UI.
 AUTH_MODE=local
 VITE_AUTH_MODE=local
 
 # Aliyun OSS private bucket via its S3-compatible endpoints.
-# Server-side upload/download calls use the same-region internal endpoint.
+# Server-side upload/download calls use the Qingdao same-region internal endpoint.
 # S3_PUBLIC_ENDPOINT is used only to sign browser-facing upload/download URLs.
 STORAGE_PROVIDER=oss
-S3_ENDPOINT=https://oss-cn-hangzhou-internal.aliyuncs.com
-S3_PUBLIC_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
-S3_REGION=cn-hangzhou
+S3_ENDPOINT=https://oss-cn-qingdao-internal.aliyuncs.com
+S3_PUBLIC_ENDPOINT=https://oss-cn-qingdao.aliyuncs.com
+S3_REGION=cn-qingdao
 S3_BUCKET=amz-fullchain-private
 S3_ACCESS_KEY_ID=REPLACE_WITH_RAM_ACCESS_KEY_ID
 S3_SECRET_ACCESS_KEY=REPLACE_WITH_RAM_ACCESS_KEY_SECRET

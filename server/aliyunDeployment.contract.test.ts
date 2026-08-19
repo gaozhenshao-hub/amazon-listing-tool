@@ -42,10 +42,13 @@ describe("Aliyun low-cost single-node deployment package", () => {
     ]);
 
     expect(env).toContain("DATABASE_URL=mysql://amz_app:CHANGE_ME_URL_ENCODED_APP_PASSWORD@mysql:3306/amz_fullchain");
-    expect(env).toContain("S3_ENDPOINT=https://oss-cn-hangzhou-internal.aliyuncs.com");
-    expect(env).toContain("S3_PUBLIC_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com");
+    expect(env).toContain("S3_ENDPOINT=https://oss-cn-qingdao-internal.aliyuncs.com");
+    expect(env).toContain("S3_PUBLIC_ENDPOINT=https://oss-cn-qingdao.aliyuncs.com");
+    expect(env).toContain("TOOL_SECRET_KEY=GENERATE_A_SEPARATE_LONG_TOOL_SECRET");
+    expect(env).toContain("SCHEDULED_TASK_SECRET=GENERATE_A_SCHEDULED_TASK_SECRET");
     expect(env).toContain("BACKUP_ENCRYPTION_KEY=");
     expect(preflight).toContain("DATABASE_URL must target the private mysql Compose service");
+    expect(preflight).toContain("TOOL_SECRET_KEY must contain at least 32 characters");
     expect(preflight).toContain("MySQL backup script must be executable");
     expect(readme).toContain("-e ALLOW_PRODUCTION_MIGRATIONS=true web node scripts/run-database-migrations.mjs");
     expect(env).not.toContain("ALLOW_PRODUCTION_MIGRATIONS=true");

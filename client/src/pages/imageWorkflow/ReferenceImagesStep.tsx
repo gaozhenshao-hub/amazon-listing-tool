@@ -16,6 +16,7 @@ import { toast } from "sonner";
 
 import { KbImagePickerDialog } from "./KnowledgeImagePickerDialog";
 import { ReferenceImagesHeader } from "./ReferenceImagesHeader";
+import { getStep4KbReferenceCardKey, getStep4ReferenceCardKey } from "./referenceCardIdentity";
 import { normalizeStep4References } from "@shared/imageWorkflow";
 
 const isActiveStep4Run = (status?: string | null) => status === "queued" || status === "running";
@@ -523,8 +524,9 @@ export function Step4References({
 
       {editData?.imageReferences && !isGenerating && editData.imageReferences.map((ref: any, idx: number) => {
         const isImageLocked = Boolean(ref.isLocked);
+        const referenceCardKey = getStep4ReferenceCardKey(ref, idx);
         return (
-        <Card key={idx} className={isImageLocked ? "border-emerald-300 bg-emerald-50/20" : ""}>
+        <Card key={referenceCardKey} translate="no" className={isImageLocked ? "border-emerald-300 bg-emerald-50/20" : ""}>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
@@ -546,8 +548,10 @@ export function Step4References({
                       disabled={regeneratingSingleIdx === idx}
                       title="根据此图的参考图单独重新生成方案"
                     >
-                      {regeneratingSingleIdx === idx ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
-                      {regeneratingSingleIdx === idx ? "AI 分析中..." : "单独重新生成"}
+                      <span className="inline-flex" aria-hidden="true">
+                        {regeneratingSingleIdx === idx ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+                      </span>
+                      <span translate="no">{regeneratingSingleIdx === idx ? "AI 分析中..." : "单独重新生成"}</span>
                     </Button>
                   )}
                   <Button
@@ -572,7 +576,7 @@ export function Step4References({
                 </h4>
                 <div className="flex flex-wrap gap-2">
                   {ref.kbReferenceImages.map((kbImg: any, imgIdx: number) => (
-                    <div key={imgIdx} className="flex gap-2 items-start border rounded-lg p-2 bg-white">
+                    <div key={getStep4KbReferenceCardKey(referenceCardKey, kbImg, imgIdx)} className="flex gap-2 items-start border rounded-lg p-2 bg-white">
                       <div className="relative shrink-0">
                         <div className="w-16 h-16 rounded-lg overflow-hidden border border-emerald-200">
                           <img src={kbImg.imageUrl} alt={`KB ref ${imgIdx}`} className="w-full h-full object-cover" />
@@ -721,8 +725,10 @@ export function Step4References({
                   disabled={reoptimizingIdx !== null}
                   className="text-xs"
                 >
-                  {reoptimizingIdx === idx ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1" />}
-                  {reoptimizingIdx === idx ? "AI 正在分析参考图与备注..." : "根据参考图和备注重新优化构图和效果方案"}
+                  <span className="inline-flex" aria-hidden="true">
+                    {reoptimizingIdx === idx ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1" />}
+                  </span>
+                  <span translate="no">{reoptimizingIdx === idx ? "AI 正在分析参考图与备注..." : "根据参考图和备注重新优化构图和效果方案"}</span>
                 </Button>
                 {reoptimizingIdx === idx && (
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5">
