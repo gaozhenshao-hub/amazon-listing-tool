@@ -35,4 +35,22 @@ describe("Step4逐图确认计数", () => {
     const resolved = resolveStep4ConfirmationData(localData, persistedUserEdit);
     expect(getUnconfirmedStep4References(resolved.imageReferences)).toHaveLength(0);
   });
+
+  it("逐图解锁后使用服务端未锁定快照覆盖旧本地锁定状态", () => {
+    const localData = {
+      imageReferences: [
+        { imageKey: "step4-ref-0", isLocked: true },
+        { imageKey: "step4-ref-1", isLocked: true },
+      ],
+    };
+    const persistedUserEdit = JSON.stringify({
+      imageReferences: [
+        { imageKey: "step4-ref-0", isLocked: false },
+        { imageKey: "step4-ref-1", isLocked: false },
+      ],
+    });
+
+    const resolved = resolveStep4ConfirmationData(localData, persistedUserEdit);
+    expect(getUnconfirmedStep4References(resolved.imageReferences)).toHaveLength(2);
+  });
 });

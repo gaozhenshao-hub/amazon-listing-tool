@@ -33,8 +33,9 @@ export function getUnconfirmedStep4References(references: unknown[]): Array<Reco
 }
 
 /**
- * 单图确认先保存版本再异步刷新会话。本地editData在这段时间可能仍带有旧的
- * isLocked 状态；只有服务端快照确认了更多图片时才以它为准，避免丢弃用户尚未保存的编辑。
+ * 单图确认或解锁都会先改变服务端版本，再异步刷新会话。本地editData在这段时间
+ * 可能仍带有旧的isLocked状态；只要逐图确认数量发生变化，就以服务端快照为准。
+ * 未保存的编辑不会改变确认数量，因此不会被这条状态同步规则覆盖。
  */
 export function resolveStep4ConfirmationData(localData: any, persistedUserEdit?: string | null) {
   if (!persistedUserEdit) return localData;
@@ -45,7 +46,7 @@ export function resolveStep4ConfirmationData(localData: any, persistedUserEdit?:
     if (!persistedReferences.length || persistedReferences.length !== localReferences.length) {
       return localData;
     }
-    return getUnconfirmedStep4References(persistedReferences).length < getUnconfirmedStep4References(localReferences).length
+    return getUnconfirmedStep4References(persistedReferences).length !== getUnconfirmedStep4References(localReferences).length
       ? persistedData
       : localData;
   } catch {
