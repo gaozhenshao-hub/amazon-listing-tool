@@ -1,5 +1,15 @@
 # Amazon Listing Tool - TODO
 
+## 独立部署迁移（2026-08-18）
+
+- [x] 确认阿里云中国大陆部署地域，优先采用华东1（杭州）并要求ECS、RDS MySQL与OSS同地域同VPC
+- [ ] 调研并确定阿里云ECS、RDS MySQL、OSS、带宽、安全组和备份的采购规格，满足应用Web、AI Worker、Scheduler与前端构建负载
+- [ ] 审计当前amazon-listing-tool对Manus OAuth、Forge API、数据库、存储、AI Job与部署环境的专属依赖，形成迁移风险清单
+- [x] 确认独立运行核心选型：邮箱密码认证、独立MySQL 8、阿里云OSS私有Bucket及复用当前模型API（2026-08-18用户确认）
+- [ ] 设计独立运行架构：应用服务器、独立MySQL 8、阿里云OSS私有Bucket、身份认证、现有模型API、后台任务与域名/HTTPS
+- [ ] 在独立服务器配置应用运行环境、数据迁移与生产进程管理，不改变现有图片工作流页面结构、业务流程或AI逻辑
+- [ ] 完成独立域名/HTTPS、健康检查、数据备份和访问验证后再切换入口，保留Manus部署作为回滚入口
+
 ## 智能图片建议加载与Step4锁定链路修复（2026-08-18）
 
 - [x] 修复生产环境动态导入ImageWorkflowPage资源失败导致“An unexpected error occurred”的进入页面报错（入口响应返回no-cache/no-store/must-revalidate，生产页已无动态导入错误）
