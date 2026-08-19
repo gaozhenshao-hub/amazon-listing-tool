@@ -12,6 +12,9 @@
 - [ ] 对deploy/aliyun/Dockerfile执行无密钥构建级验证，确认多阶段镜像和生产入口可正确解析
 - [ ] 对deploy/aliyun/compose.yaml执行docker compose config校验，确认Web、AI Worker与Scheduler编排可被解析
 - [x] 补充独立部署包的自动化一致性回归，覆盖环境模板、Nginx反代目标和三个服务入口命令（11项独立认证、OSS、模型网关与部署包回归测试通过）
+- [x] 添加阿里云ECS只读部署前置检查脚本，核验Docker、Compose、环境文件与端口占用，不执行迁移或写入（12项独立部署/认证/存储/模型网关回归通过）
+- [x] 为deploy/aliyun/preflight.sh增加可选健康检查参数（已运行时探测http://127.0.0.1:3000/health）并补充回归测试（部署包与前置检查共5项回归和ESLint通过）
+- [ ] 在具备Docker/Compose的实际阿里云ECS环境执行preflight.sh，记录Docker、Compose、环境、端口和可选健康检查证据
 - [x] 为独立环境增加STORAGE_PROVIDER=oss的阿里云OSS S3兼容基础适配，默认继续使用当前Forge存储（提供商选择、URI与解析共3项定向测试通过）
 - [x] 补充OSS/S3兼容分支的执行契约测试：覆盖storagePut上传、storageGet预签名下载、默认Forge提供商选择不回归及缺少配置时的明确错误（5项OSS/独立认证定向测试与ESLint通过）
 - [ ] 在阿里云环境配置OSS私有Bucket及S3兼容凭据，验证上传、短期签名下载和历史存储URI迁移
