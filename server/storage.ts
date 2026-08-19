@@ -3,9 +3,21 @@
 
 import { ENV } from './_core/env';
 import { safeHttpRequest } from './infrastructure/http/safeHttpClient';
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 type StorageConfig = { baseUrl: string; apiKey: string };
-export type StorageProvider = "forge" | "s3" | "local" | "external";
+export type StorageProvider = "forge" | "s3" | "oss" | "local" | "external";
+type S3CompatibleStorageConfig = {
+  provider: "s3" | "oss";
+  endpoint?: string;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  forcePathStyle: boolean;
+  presignExpiresSeconds: number;
+};
 
 export function buildStorageUri(key: string, provider: StorageProvider = "forge"): string {
   return `storage://${provider}/${normalizeKey(key)}`;
@@ -28,6 +40,60 @@ function getStorageConfig(): StorageConfig {
   }
 
   return { baseUrl: baseUrl.replace(/\/+$/, ""), apiKey };
+}
+
+export function getActiveStorageProvider(): StorageProvider {
+  const provider = ENV.storageProvider;
+  if (provider === "forge" || provider === "s3" || provider === "oss" || provider === "local" || provider === "external") {
+    return provider;
+  }
+  throw new Error(`Unsupported STORAGE_PROVIDER: ${provider}`);
+}
+
+function getS3CompatibleStorageConfig(): S3CompatibleStorageConfig {
+  const provider = getActiveStorageProvider();
+  if (provider !== "s3" && provider !== "oss") {
+    throw new Error(`S3-compatible storage is unavailable for provider: ${provider}`);
+  }
+
+  const required = {
+    S3_REGION: ENV.s3Region,
+    S3_BUCKET: ENV.s3Bucket,
+    S3_ACCESS_KEY_ID: ENV.s3AccessKeyId,
+    S3_SECRET_ACCESS_KEY: ENV.s3SecretAccessKey,
+  };
+  const missing = Object.entries(required)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+  if (missing.length > 0) {
+    throw new Error(`S3-compatible storage credentials missing: ${missing.join(", ")}`);
+  }
+
+  const expires = Number.isFinite(ENV.storagePresignExpiresSeconds)
+    ? Math.min(Math.max(Math.floor(ENV.storagePresignExpiresSeconds), 60), 7 * 24 * 60 * 60)
+    : 3600;
+  return {
+    provider,
+    endpoint: ENV.s3Endpoint || undefined,
+    region: ENV.s3Region,
+    bucket: ENV.s3Bucket,
+    accessKeyId: ENV.s3AccessKeyId,
+    secretAccessKey: ENV.s3SecretAccessKey,
+    forcePathStyle: ENV.s3ForcePathStyle,
+    presignExpiresSeconds: expires,
+  };
+}
+
+function createS3CompatibleClient(config: S3CompatibleStorageConfig): S3Client {
+  return new S3Client({
+    region: config.region,
+    endpoint: config.endpoint,
+    forcePathStyle: config.forcePathStyle,
+    credentials: {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+    },
+  });
 }
 
 function buildUploadUrl(baseUrl: string, relKey: string): URL {
@@ -88,6 +154,28 @@ export async function storagePut(
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream"
 ): Promise<{ key: string; url: string; storageUri: string }> {
+  const provider = getActiveStorageProvider();
+  if (provider === "s3" || provider === "oss") {
+    const config = getS3CompatibleStorageConfig();
+    const key = normalizeKey(relKey);
+    const client = createS3CompatibleClient(config);
+    await client.send(new PutObjectCommand({
+      Bucket: config.bucket,
+      Key: key,
+      Body: data,
+      ContentType: contentType,
+    }));
+    const url = await getSignedUrl(
+      client,
+      new GetObjectCommand({ Bucket: config.bucket, Key: key }),
+      { expiresIn: config.presignExpiresSeconds }
+    );
+    return { key, url, storageUri: buildStorageUri(key, provider) };
+  }
+
+  if (provider !== "forge") {
+    throw new Error(`storagePut is not configured for provider: ${provider}`);
+  }
   const { baseUrl, apiKey } = getStorageConfig();
   const key = normalizeKey(relKey);
   const uploadUrl = buildUploadUrl(baseUrl, key);
@@ -113,6 +201,21 @@ export async function storagePut(
 }
 
 export async function storageGet(relKey: string): Promise<{ key: string; url: string; }> {
+  const provider = getActiveStorageProvider();
+  if (provider === "s3" || provider === "oss") {
+    const config = getS3CompatibleStorageConfig();
+    const key = normalizeKey(relKey);
+    const url = await getSignedUrl(
+      createS3CompatibleClient(config),
+      new GetObjectCommand({ Bucket: config.bucket, Key: key }),
+      { expiresIn: config.presignExpiresSeconds }
+    );
+    return { key, url };
+  }
+
+  if (provider !== "forge") {
+    throw new Error(`storageGet is not configured for provider: ${provider}`);
+  }
   const { baseUrl, apiKey } = getStorageConfig();
   const key = normalizeKey(relKey);
   return {

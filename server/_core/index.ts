@@ -12,6 +12,7 @@ import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
+import { ENV } from "./env";
 import { appRouter } from "../routers";
 import { expressAppErrorHandler, requestContextMiddleware } from "./requestContext";
 import { syncRouter } from "../syncRoutes";
@@ -66,8 +67,10 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  // OAuth callback under /api/oauth/callback
-  registerOAuthRoutes(app);
+  // 独立部署使用本地密码认证；仅在Manus认证模式下注册OAuth回调。
+  if (ENV.authMode !== "local") {
+    registerOAuthRoutes(app);
+  }
   // Knowledge base P2P sync routes
   app.use("/api/sync", syncRouter);
   // Knowledge base external API for Emperor platform (no OAuth, uses EMPEROR_KB_API_KEY)

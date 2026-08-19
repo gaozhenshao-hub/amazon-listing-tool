@@ -7,11 +7,12 @@ import { Separator } from "@/components/ui/separator";
 import { trpc } from "@/lib/trpc";
 import { getAppErrorInfo } from "@/lib/appError";
 import { APP_ERROR_CODES } from "@shared/_core/errors";
-import { getLoginUrl } from "@/const";
+import { getLoginUrl, isLocalAuthMode } from "@/const";
 import { toast } from "sonner";
 import { Sparkles, Eye, EyeOff, Loader2, Shield } from "lucide-react";
 
 export default function LoginPage() {
+  const isLocalAuth = isLocalAuthMode();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -219,27 +220,29 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          {/* Divider */}
-          <div className="relative">
-            <Separator />
-            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-3 text-xs text-muted-foreground">
-              或
-            </span>
-          </div>
+          {!isLocalAuth && (
+            <>
+              <div className="relative">
+                <Separator />
+                <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-3 text-xs text-muted-foreground">
+                  或
+                </span>
+              </div>
 
-          {/* OAuth Login */}
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => { window.location.href = getLoginUrl(); }}
-          >
-            <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-              <polyline points="10 17 15 12 10 7" />
-              <line x1="15" y1="12" x2="3" y2="12" />
-            </svg>
-            使用 Manus 账号登录
-          </Button>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => { window.location.href = getLoginUrl(); }}
+              >
+                <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                  <polyline points="10 17 15 12 10 7" />
+                  <line x1="15" y1="12" x2="3" y2="12" />
+                </svg>
+                使用 Manus 账号登录
+              </Button>
+            </>
+          )}
 
           <p className="text-xs text-center text-muted-foreground">
             如果您是新员工，请联系管理员创建账号

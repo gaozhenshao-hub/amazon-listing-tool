@@ -1,7 +1,13 @@
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
+export const isLocalAuthMode = () =>
+  String(import.meta.env.VITE_AUTH_MODE ?? "manus").trim().toLowerCase() === "local";
+
 // Generate login URL at runtime so redirect URI reflects the current origin.
 export const getLoginUrl = () => {
+  if (isLocalAuthMode()) {
+    return "/login";
+  }
   const oauthPortalUrl = String(import.meta.env.VITE_OAUTH_PORTAL_URL ?? "").trim();
   const appId = String(import.meta.env.VITE_APP_ID ?? "").trim();
   if (!oauthPortalUrl || !appId) {
