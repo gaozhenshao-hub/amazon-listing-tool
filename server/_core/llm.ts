@@ -241,16 +241,44 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
-
-const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
-  }
+export type LlmRuntimeConfig = {
+  provider: "forge" | "external";
+  apiUrl: string;
+  apiKey: string;
+  model: string;
 };
+
+export function resolveLlmRuntimeConfig(): LlmRuntimeConfig {
+  if (ENV.llmProvider === "external") {
+    const baseUrl = ENV.externalLlmBaseUrl.replace(/\/+$/, "");
+    if (!baseUrl || !ENV.externalLlmApiKey || !ENV.externalLlmModel) {
+      throw new Error(
+        "External LLM configuration missing: set EXTERNAL_LLM_BASE_URL, EXTERNAL_LLM_API_KEY and EXTERNAL_LLM_MODEL"
+      );
+    }
+    return {
+      provider: "external",
+      apiUrl: baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl}/chat/completions`,
+      apiKey: ENV.externalLlmApiKey,
+      model: ENV.externalLlmModel,
+    };
+  }
+
+  if (ENV.llmProvider !== "forge") {
+    throw new Error(`Unsupported LLM_PROVIDER: ${ENV.llmProvider}`);
+  }
+  if (!ENV.forgeApiKey) {
+    throw new Error("BUILT_IN_FORGE_API_KEY is not configured");
+  }
+  return {
+    provider: "forge",
+    apiUrl: ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
+      ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
+      : "https://forge.manus.im/v1/chat/completions",
+    apiKey: ENV.forgeApiKey,
+    model: "gemini-2.5-flash",
+  };
+}
 
 const normalizeResponseFormat = ({
   responseFormat,
@@ -298,7 +326,7 @@ const normalizeResponseFormat = ({
 };
 
 export async function invokeRawLLM(params: InvokeParams): Promise<InvokeResult> {
-  assertApiKey();
+  const runtime = resolveLlmRuntimeConfig();
 
   const {
     messages,
@@ -314,7 +342,7 @@ export async function invokeRawLLM(params: InvokeParams): Promise<InvokeResult> 
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: runtime.model,
     messages: messages.map(normalizeMessage),
   };
 
@@ -368,19 +396,19 @@ export async function invokeRawLLM(params: InvokeParams): Promise<InvokeResult> 
     payload.thinking = { budget_tokens: 128 };
   }
 
-  const apiUrl = resolveApiUrl();
+  const apiUrl = runtime.apiUrl;
   const response = await safeHttpRequest(apiUrl, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${runtime.apiKey}`,
     },
     body: JSON.stringify(payload),
     signal: params.signal,
     timeoutMs: 120_000,
     maxResponseBytes: 20 * 1024 * 1024,
     allowedHosts: [new URL(apiUrl).hostname],
-    auditContext: { operation: "forge.llm" },
+    auditContext: { operation: `${runtime.provider}.llm` },
   });
 
   if (!response.ok) {

@@ -13,6 +13,8 @@
 - [ ] 在阿里云环境配置OSS私有Bucket及S3兼容凭据，验证上传、短期签名下载和历史存储URI迁移
 - [x] 增加独立部署AUTH_MODE=local认证开关，复用现有邮箱密码登录与JWT会话，并在独立环境隐藏Manus OAuth入口（独立模式登录跳转与服务入口回归通过，默认Manus模式保持不变）
 - [ ] 在阿里云独立环境配置AUTH_MODE=local与VITE_AUTH_MODE=local，验证邮箱密码登录、会话、改密和Manus OAuth入口隐藏
+- [x] 增加LLM_PROVIDER=external的OpenAI兼容网关配置，复用现有模型API密钥并保持皇帝Skill/Agent编排不变（外部网关地址、模型与缺失凭据错误共2项回归通过）
+- [ ] 在阿里云独立环境配置EXTERNAL_LLM_BASE_URL、EXTERNAL_LLM_API_KEY和EXTERNAL_LLM_MODEL，验证皇帝Skill真实调用不依赖Forge
 - [ ] 完成独立域名/HTTPS、健康检查、数据备份和访问验证后再切换入口，保留Manus部署作为回滚入口
 
 ## 智能图片建议加载与Step4锁定链路修复（2026-08-18）
