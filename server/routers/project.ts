@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { actorFromContext, assertResourceAction, recordSecurityAuditLog, workspaceIdFromContext } from "../services/securityGovernance";
+import { actorFromContext, assertResourceAction, hasResourceAction, recordSecurityAuditLog, workspaceIdFromContext } from "../services/securityGovernance";
 import {
   createProject,
   deleteProject,
@@ -14,7 +14,12 @@ import {
 export const projectRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     const workspaceId = workspaceIdFromContext(ctx);
-    await assertResourceAction({ actor: actorFromContext(ctx), resource: "project", action: "read", workspaceId });
+    const actor = actorFromContext(ctx);
+    const canReadProject = await hasResourceAction({ actor, resource: "project", action: "read", workspaceId });
+    const canReadImageWorkflow = !canReadProject && await hasResourceAction({ actor, resource: "image_workflow", action: "read", workspaceId });
+    if (!canReadProject && !canReadImageWorkflow) {
+      await assertResourceAction({ actor, resource: "project", action: "read", workspaceId });
+    }
     // super_admin, admin, and designer can see all projects with owner info
     // designer needs read-only access to all projects for image suggestions
     if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
@@ -27,11 +32,16 @@ export const projectRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
       const workspaceId = workspaceIdFromContext(ctx);
+      const actor = actorFromContext(ctx);
+      const canReadProject = await hasResourceAction({ actor, resource: "project", action: "read", workspaceId, projectId: input.id, resourceId: input.id });
+      const canReadImageWorkflow = !canReadProject && await hasResourceAction({ actor, resource: "image_workflow", action: "read", workspaceId, projectId: input.id, resourceId: input.id });
+      if (!canReadProject && !canReadImageWorkflow) {
+        await assertResourceAction({ actor, resource: "project", action: "read", workspaceId, projectId: input.id, resourceId: input.id });
+      }
       // super_admin, admin, and designer can access any project (designer: read-only for image suggestions)
       if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
         const project = await getProjectByIdAdmin(input.id, workspaceId);
         if (!project) throw new Error("Project not found");
-        await assertResourceAction({ actor: actorFromContext(ctx), resource: "project", action: "read", workspaceId, projectId: input.id, resourceId: input.id, ownerUserId: project.userId });
         return project;
       }
       const project = await getProjectById(input.id, ctx.user.id, workspaceId);

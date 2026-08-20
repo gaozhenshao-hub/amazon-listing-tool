@@ -143,6 +143,7 @@ export interface ModulePermission {
 // Security governance v1: resource/action permission model.
 export const SECURITY_RESOURCES = [
   'project',
+  'image_workflow',
   'product_development',
   'knowledge',
   'file',
@@ -173,6 +174,7 @@ export type SecurityAction = typeof SECURITY_ACTIONS[number];
 
 export const SECURITY_RESOURCE_MODULES: Record<SecurityResource, { moduleId: string; subModuleId?: string }> = {
   project: { moduleId: 'listing', subModuleId: 'listing_projects' },
+  image_workflow: { moduleId: 'listing', subModuleId: 'listing_image_workflow' },
   product_development: { moduleId: 'dev', subModuleId: 'dev_projects' },
   knowledge: { moduleId: 'knowledge' },
   file: { moduleId: 'listing', subModuleId: 'listing_data_files' },
@@ -253,6 +255,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
   },
   designer: {
     project: ['read'],
+    image_workflow: ['read'],
     product_development: ['read'],
     knowledge: ['read', 'create', 'update', 'upload', 'import', 'export'],
     file: ['read', 'upload', 'update', 'export'],
