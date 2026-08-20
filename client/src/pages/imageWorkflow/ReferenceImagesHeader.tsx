@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Check, Eye, Loader2, Lock, RefreshCw, RotateCcw, Sparkles, Unlock } from "lucide-react";
 
 interface ReferenceImagesHeaderProps {
+  canEdit?: boolean;
   hasData: boolean;
   isConfirmed: boolean;
   isGenerating: boolean;
@@ -19,6 +20,7 @@ interface ReferenceImagesHeaderProps {
   onUnlock: () => void;
 }
 export function ReferenceImagesHeader({
+  canEdit = true,
   hasData,
   isConfirmed,
   isGenerating,
@@ -45,13 +47,13 @@ export function ReferenceImagesHeader({
               <CardDescription>每张图的构图参考和效果图参考，可从知识库直接选择参考图片</CardDescription>
             </div>
             <div className="flex gap-2">
-              {!hasData && (
+              {canEdit && !hasData && (
                 <Button onClick={handleGenerate} disabled={isGenerating || !canGenerate} title={!canGenerate ? generationBlockedReason : undefined}>
                   {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
                   {isGenerating ? "后台推荐中" : "AI推荐参考"}
                 </Button>
               )}
-              {hasData && !isConfirmed && (
+              {canEdit && hasData && !isConfirmed && (
                 <>
                   <Button variant="outline" onClick={handleGenerate} disabled={isGenerating || !canGenerate} title={!canGenerate ? generationBlockedReason : undefined}>
                     {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RotateCcw className="w-4 h-4 mr-2" />} 重新推荐
@@ -77,10 +79,10 @@ export function ReferenceImagesHeader({
                   <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                     <Lock className="w-3 h-3 mr-1" /> 已锁定
                   </Badge>
-                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={isResetting}>
+                  {canEdit && <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={isResetting}>
                     {isResetting ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
                     解锁编辑
-                  </Button>
+                  </Button>}
                 </div>
               )}
             </div>

@@ -70,10 +70,12 @@ export function Step4References({
   projectId,
   session,
   onConfirm: _onConfirm,
+  canEdit = true,
 }: {
   projectId: number;
   session: any;
   onConfirm: () => void;
+  canEdit?: boolean;
 }) {
   const generateMutation = trpc.imageWorkflow.startStep4Generation.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep4.useMutation();
@@ -88,7 +90,8 @@ export function Step4References({
   const regenerateSingleMutation = trpc.imageWorkflow.regenerateSingleImageFromRef.useMutation();
   const [regeneratingSingleIdx, setRegeneratingSingleIdx] = useState<number | null>(null);
   const [editData, setEditData] = useState<any>(null);
-  const [isLocked, setIsLocked] = useState(!!session?.step4Confirmed);
+  const [isLockedState, setIsLocked] = useState(!!session?.step4Confirmed);
+  const isLocked = isLockedState || !canEdit;
   const [kbPickerOpen, setKbPickerOpen] = useState(false);
   const [kbPickerTargetIdx, setKbPickerTargetIdx] = useState<number | null>(null);
   const [kbPickerTargetType, setKbPickerTargetType] = useState<string>("");
@@ -513,7 +516,8 @@ export function Step4References({
   return (
     <div className="space-y-4">
       <ReferenceImagesHeader
-        hasData={!!editData}
+        canEdit={canEdit}
+        hasData={hasData}
         isConfirmed={isConfirmed}
         isGenerating={isGenerating}
         canGenerate={Boolean(session?.step3Confirmed)}

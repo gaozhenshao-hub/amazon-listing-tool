@@ -40,10 +40,12 @@ export function Step2ImageOutline({
   projectId,
   session,
   onConfirm,
+  canEdit = true,
 }: {
   projectId: number;
   session: any;
   onConfirm: () => void;
+  canEdit?: boolean;
 }) {
   const confirmMutation = trpc.imageWorkflow.confirmStep2.useMutation();
   const unlockMutation = trpc.imageWorkflow.unlockStep2.useMutation();
@@ -52,7 +54,8 @@ export function Step2ImageOutline({
   const saveDraftMutation = trpc.imageWorkflow.saveStep2Draft.useMutation();
   const utils = trpc.useUtils();
   const [editData, setEditData] = useState<any>(null);
-  const [isLocked, setIsLocked] = useState(!!session?.step2Confirmed);
+  const [isLockedState, setIsLocked] = useState(!!session?.step2Confirmed);
+  const isLocked = isLockedState || !canEdit;
   const [optimizingModuleIndex, setOptimizingModuleIndex] = useState<number | null>(null);
   const [lockingSubmoduleKey, setLockingSubmoduleKey] = useState<string | null>(null);
   const [isDraftSaving, setIsDraftSaving] = useState(false);
@@ -244,7 +247,7 @@ export function Step2ImageOutline({
               <CardDescription>规划每张图片的内容、呼应的卖点和安排理由</CardDescription>
             </div>
             <div className="flex gap-2">
-              {!editData && (
+              {canEdit && !editData && (
                 <Button onClick={handleGenerate} disabled={generationJob.isGenerating}>
                   {generationJob.isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
                   AI生成大纲
@@ -266,10 +269,10 @@ export function Step2ImageOutline({
                   <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                     <Lock className="w-3 h-3 mr-1" /> 已锁定
                   </Badge>
-                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={unlockMutation.isPending}>
+                  {canEdit && <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={unlockMutation.isPending}>
                     {unlockMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
                     解锁编辑
-                  </Button>
+                  </Button>}
                 </div>
               )}
             </div>

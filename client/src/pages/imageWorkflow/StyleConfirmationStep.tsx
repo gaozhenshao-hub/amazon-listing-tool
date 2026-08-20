@@ -15,15 +15,18 @@ export function Step3StyleConfirm({
   projectId,
   session,
   onConfirm,
+  canEdit = true,
 }: {
   projectId: number;
   session: any;
   onConfirm: () => void;
+  canEdit?: boolean;
 }) {
   const confirmMutation = trpc.imageWorkflow.confirmStep3.useMutation();
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
   const [aiResult, setAiResult] = useState<any>(null);
-  const [isLocked, setIsLocked] = useState(!!session?.step3Confirmed);
+  const [isLockedState, setIsLocked] = useState(!!session?.step3Confirmed);
+  const isLocked = isLockedState || !canEdit;
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   // KB image picker state for style references
   const [kbPickerOpen, setKbPickerOpen] = useState(false);
@@ -162,13 +165,13 @@ export function Step3StyleConfirm({
               <CardDescription>AI推荐视觉风格方案，选择1-2个确认</CardDescription>
             </div>
             <div className="flex gap-2">
-              {!aiResult && (
+              {canEdit && !aiResult && (
                 <Button onClick={handleGenerate} disabled={generationJob.isGenerating}>
                   {generationJob.isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
                   AI推荐风格
                 </Button>
               )}
-              {!isConfirmed && (
+              {canEdit && !isConfirmed && (
                 <>
                   <Button variant="outline" size="sm" onClick={() => setKbStylePickerOpen(true)}>
                     <BookOpen className="w-4 h-4 mr-1" /> 知识库风格
@@ -194,10 +197,10 @@ export function Step3StyleConfirm({
                   <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                     <Lock className="w-3 h-3 mr-1" /> 已锁定
                   </Badge>
-                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
+                  {canEdit && <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
                     {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
                     解锁编辑
-                  </Button>
+                  </Button>}
                 </div>
               )}
             </div>

@@ -42,10 +42,12 @@ export function Step0CompetitorAnalysis({
   projectId,
   session,
   onConfirm,
+  canEdit = true,
 }: {
   projectId: number;
   session: any;
   onConfirm: () => void;
+  canEdit?: boolean;
 }) {
   // ── tRPC hooks ──────────────────────────────────────────────────
   const groupsQuery = trpc.imageWorkflow.getExpressionGroups.useQuery({ projectId });
@@ -60,7 +62,8 @@ export function Step0CompetitorAnalysis({
   // ── Local state ─────────────────────────────────────────────────
   const [newGroupName, setNewGroupName] = useState("");
   const [uploadingGroupId, setUploadingGroupId] = useState<number | null>(null);
-  const [isLocked, setIsLocked] = useState(!!session?.step0Confirmed);
+  const [isLockedState, setIsLocked] = useState(!!session?.step0Confirmed);
+  const isLocked = isLockedState || !canEdit;
   const [summaryData, setSummaryData] = useState<any>(null);
   // Per-group local edit state (for middle + right columns)
   const [groupEdits, setGroupEdits] = useState<Record<number, any>>({});
@@ -260,9 +263,9 @@ export function Step0CompetitorAnalysis({
               {isLocked && (
                 <div className="flex gap-2 items-center">
                   <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200"><Lock className="w-3 h-3 mr-1" />已确认</Badge>
-                  <Button variant="ghost" size="sm" className="text-xs text-amber-600" onClick={handleUnlock} disabled={resetMutation.isPending}>
+                  {canEdit && <Button variant="ghost" size="sm" className="text-xs text-amber-600" onClick={handleUnlock} disabled={resetMutation.isPending}>
                     <Unlock className="w-3 h-3 mr-1" />解锁编辑
-                  </Button>
+                  </Button>}
                 </div>
               )}
             </div>

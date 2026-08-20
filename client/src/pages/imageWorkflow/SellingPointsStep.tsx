@@ -22,10 +22,12 @@ export function Step1SellingPoints({
   projectId,
   session,
   onConfirm,
+  canEdit = true,
 }: {
   projectId: number;
   session: any;
   onConfirm: () => void;
+  canEdit?: boolean;
 }) {
   const confirmMutation = trpc.imageWorkflow.confirmStep1.useMutation();
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
@@ -108,7 +110,7 @@ export function Step1SellingPoints({
     setEditData(newData);
   };
 
-  const isConfirmed = isLocked;
+  const isConfirmed = isLocked || !canEdit;
 
   return (
     <div className="space-y-4">
@@ -146,10 +148,10 @@ export function Step1SellingPoints({
                   <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                     <Lock className="w-3 h-3 mr-1" /> 已锁定
                   </Badge>
-                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
+                  {canEdit && <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
                     {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
                     解锁编辑
-                  </Button>
+                  </Button>}
                 </div>
               )}
             </div>

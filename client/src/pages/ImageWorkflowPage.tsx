@@ -1871,19 +1871,19 @@ export default function ImageWorkflowPage() {
       )}
 
       {session && currentStep === 0 && (
-        <Step0CompetitorAnalysis projectId={projectId} session={session} onConfirm={handleStepConfirm} />
+        <Step0CompetitorAnalysis projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />
       )}
       {session && currentStep === 1 && (
-        <Step1SellingPoints projectId={projectId} session={session} onConfirm={handleStepConfirm} />
+        <Step1SellingPoints projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />
       )}
       {session && currentStep === 2 && (
-        <Step2ImageOutline projectId={projectId} session={session} onConfirm={handleStepConfirm} />
+        <Step2ImageOutline projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />
       )}
       {session && currentStep === 3 && (
-        <Step3StyleConfirm projectId={projectId} session={session} onConfirm={handleStepConfirm} />
+        <Step3StyleConfirm projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />
       )}
       {session && currentStep === 4 && (
-        <Step4References projectId={projectId} session={session} onConfirm={handleStepConfirm} />
+        <Step4References projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />
       )}
       {session && currentStep === 5 && (
         <Step5FinalSuggestions projectId={projectId} session={session} onConfirm={handleStepConfirm} />
