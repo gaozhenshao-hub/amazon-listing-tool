@@ -24,7 +24,7 @@ export const DOMAIN_BOUNDARIES: DomainBoundary[] = [
     schema: "server/domains/ai_os/schema.ts",
     types: "server/domains/ai_os/types.ts",
     allowedPlatformImports: [],
-    notes: "Owns Skill, Agent, Tool, Job, Run, Checkpoint, Artifact, Event and observability runtime.",
+    notes: "Owns Skill, Agent, Tool, Job, Run, Checkpoint, Artifact, Event and observability runtime; may invoke the image workflow Step3 delegation service from an explicit Agent command.",
   },
   {
     slug: "listing",
@@ -93,12 +93,12 @@ export const DOMAIN_BOUNDARIES: DomainBoundary[] = [
 ];
 
 /**
- * Directional domain dependencies. The platform must never depend on a
- * business domain; business domains may consume AI OS through its public
- * services, and ads may reuse the workspace boundary owned by ops.
+ * Directional domain dependencies. Business domains consume AI OS through
+ * public services. AI OS may invoke only the explicit image Step3 delegation
+ * service to execute an Agent Canvas command against an existing image session.
  */
 export const DOMAIN_DEPENDENCY_RULES: Record<DomainDependencySlug, readonly DomainDependencySlug[]> = {
-  ai_os: [],
+  ai_os: ["image"],
   listing: ["ai_os"],
   image: ["ai_os"],
   ops: ["ai_os"],
