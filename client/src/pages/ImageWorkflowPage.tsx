@@ -1748,6 +1748,10 @@ export default function ImageWorkflowPage() {
   };
 
   const handleReset = async (step: number) => {
+    if (!canEditImageWorkflow) {
+      toast.error("您仅拥有图片建议查看权限，无法重置工作流");
+      return;
+    }
     if (!projectId) return;
     try {
       await resetMutation.mutateAsync({ projectId, step });
@@ -1829,7 +1833,7 @@ export default function ImageWorkflowPage() {
               导出六步完整方案
             </Button>
           )}
-          {session && (
+          {canEditImageWorkflow && session && (
             <Button variant="outline" size="sm" onClick={handleStartNew} disabled={createSessionMutation.isPending}>
               <RotateCcw className="w-3 h-3 mr-1" /> 重新开始
             </Button>

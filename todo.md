@@ -88,6 +88,7 @@
 - [ ] 留存全部受影响历史项目的迁移清单，至少包含项目ID、名称、owner及workspaceId回填依据
 - [ ] 使用designer角色抽样多个非空气套件历史项目，验证回填后按工作空间可读且不突破既有项目操作权限
 - [ ] 收口图片工作流Step1至Step4的编辑入口：designer仅有listing_image_workflow查看权限时，不得显示或执行前置步骤的AI生成、编辑、确认、解锁、上传或重新开始操作
+- [ ] 隐藏并阻断图片工作流全局“重新开始”操作，确保只读designer不能重置任何历史会话
 - [ ] 修复ImageWorkflowPage向Step0至Step4传递只读权限时引用了Step5局部变量canEditStep5导致生产页面崩溃的问题
 - [ ] 修复仅授予listing_image_workflow读取权限的美工调用project.list被project.read拒绝的问题，允许其在既有工作空间范围内选择项目而不授予项目编辑权限
 - [x] 核验生产图片工作流已返回有效会话却显示“开始工作流”的观察（实际tRPC会话、React DOM与Step4/Step5操作均正常；仅自动化视图短暂未同步，不构成用户侧会话加载缺陷）

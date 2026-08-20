@@ -13,6 +13,7 @@ describe("图片工作流只读权限契约", () => {
     expect(source).toContain("<Step2ImageOutline projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditImageWorkflow} />");
     expect(source).toContain("<Step3StyleConfirm projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditImageWorkflow} />");
     expect(source).toContain("<Step4References projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditImageWorkflow} />");
+    expect(source).toContain("{canEditImageWorkflow && session && (");
   });
 
   it("在只读会话中将Step0至Step4视为锁定，且参考图头部不渲染写入操作", () => {
@@ -23,5 +24,6 @@ describe("图片工作流只读权限契约", () => {
     expect(page("ReferenceImagesStep.tsx")).toContain("const isLocked = isLockedState || !canEdit;");
     expect(page("ReferenceImagesHeader.tsx")).toContain("{canEdit && !hasData && (");
     expect(page("ReferenceImagesHeader.tsx")).toContain("{canEdit && hasData && !isConfirmed && (");
+    expect(readFileSync(resolve(process.cwd(), "client/src/pages/ImageWorkflowPage.tsx"), "utf8")).toContain("您仅拥有图片建议查看权限，无法重置工作流");
   });
 });
