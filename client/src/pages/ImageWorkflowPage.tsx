@@ -1677,6 +1677,8 @@ function Step5FinalSuggestions({
 // ══════════════════════════════════════════════════════════════════
 export default function ImageWorkflowPage() {
   const { selectedProjectId, setSelectedProjectId } = useProject();
+  const { canEdit } = usePermissions();
+  const canEditImageWorkflow = canEdit("listing", "listing_image_workflow");
   const [currentStep, setCurrentStep] = useState(1);
   const queryAgentRunId = useMemo(() => new URLSearchParams(window.location.search).get("agentRunId"), []);
   const queryProjectId = useMemo(() => resolveImageWorkflowProjectId(window.location.search, null), []);
@@ -1871,19 +1873,19 @@ export default function ImageWorkflowPage() {
       )}
 
       {session && currentStep === 0 && (
-        <Step0CompetitorAnalysis projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />
+        <Step0CompetitorAnalysis projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditImageWorkflow} />
       )}
       {session && currentStep === 1 && (
-        <Step1SellingPoints projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />
+        <Step1SellingPoints projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditImageWorkflow} />
       )}
       {session && currentStep === 2 && (
-        <Step2ImageOutline projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />
+        <Step2ImageOutline projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditImageWorkflow} />
       )}
       {session && currentStep === 3 && (
-        <Step3StyleConfirm projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />
+        <Step3StyleConfirm projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditImageWorkflow} />
       )}
       {session && currentStep === 4 && (
-        <Step4References projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />
+        <Step4References projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditImageWorkflow} />
       )}
       {session && currentStep === 5 && (
         <Step5FinalSuggestions projectId={projectId} session={session} onConfirm={handleStepConfirm} />

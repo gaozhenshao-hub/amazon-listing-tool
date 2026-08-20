@@ -7,11 +7,12 @@ const page = (name: string) => readFileSync(resolve(process.cwd(), "client/src/p
 describe("图片工作流只读权限契约", () => {
   it("将统一编辑权限传递给Step0至Step4", () => {
     const source = readFileSync(resolve(process.cwd(), "client/src/pages/ImageWorkflowPage.tsx"), "utf8");
-    expect(source).toContain("<Step0CompetitorAnalysis projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />");
-    expect(source).toContain("<Step1SellingPoints projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />");
-    expect(source).toContain("<Step2ImageOutline projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />");
-    expect(source).toContain("<Step3StyleConfirm projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />");
-    expect(source).toContain("<Step4References projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditStep5} />");
+    expect(source).toContain('const canEditImageWorkflow = canEdit("listing", "listing_image_workflow");');
+    expect(source).toContain("<Step0CompetitorAnalysis projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditImageWorkflow} />");
+    expect(source).toContain("<Step1SellingPoints projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditImageWorkflow} />");
+    expect(source).toContain("<Step2ImageOutline projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditImageWorkflow} />");
+    expect(source).toContain("<Step3StyleConfirm projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditImageWorkflow} />");
+    expect(source).toContain("<Step4References projectId={projectId} session={session} onConfirm={handleStepConfirm} canEdit={canEditImageWorkflow} />");
   });
 
   it("在只读会话中将Step0至Step4视为锁定，且参考图头部不渲染写入操作", () => {
