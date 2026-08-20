@@ -28,6 +28,8 @@ encrypted_path="${archive_path}.enc"
 object_key="${backup_prefix}/${MYSQL_DATABASE}-${timestamp}.sql.gz.enc"
 
 export MYSQL_PWD="${MYSQL_APP_PASSWORD}"
+export AWS_REQUEST_CHECKSUM_CALCULATION="${AWS_REQUEST_CHECKSUM_CALCULATION:-when_required}"
+export AWS_RESPONSE_CHECKSUM_VALIDATION="${AWS_RESPONSE_CHECKSUM_VALIDATION:-when_required}"
 echo "[INFO] Creating consistent logical MySQL backup for ${MYSQL_DATABASE}"
 mysqldump \
   --protocol=TCP \

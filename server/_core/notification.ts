@@ -70,6 +70,12 @@ export async function notifyOwner(
   const { title, content } = validatePayload(payload);
 
   if (!ENV.forgeApiUrl) {
+    if (ENV.authMode === "local") {
+      console.info(
+        "[Notification] Disabled in local authentication mode because no notification provider is configured."
+      );
+      return false;
+    }
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
       message: "Notification service URL is not configured.",
@@ -77,6 +83,12 @@ export async function notifyOwner(
   }
 
   if (!ENV.forgeApiKey) {
+    if (ENV.authMode === "local") {
+      console.info(
+        "[Notification] Disabled in local authentication mode because no notification provider is configured."
+      );
+      return false;
+    }
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
       message: "Notification service API key is not configured.",

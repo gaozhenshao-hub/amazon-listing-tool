@@ -28,9 +28,13 @@ describe("Aliyun low-cost single-node deployment package", () => {
     expect(backup).toContain("openssl enc -aes-256-cbc -pbkdf2");
     expect(backup).toContain("aws s3 cp");
     expect(backup).toContain("BACKUP_RETENTION_DAYS");
+    expect(backup).toContain("AWS_REQUEST_CHECKSUM_CALCULATION");
     expect(restore).toContain("--confirm-restore");
     expect(restore).toContain("DROP DATABASE IF EXISTS");
     expect(restore).toContain("--user=root");
+    expect(restore).toContain("MYSQL_ROOT_SOCKET_AUTH");
+    expect(restore).toContain("unset MYSQL_HOST");
+    expect(restore).toContain("AWS_REQUEST_CHECKSUM_CALCULATION");
     expect(compose).toContain('MYSQL_ROOT_HOST: "%"');
   });
 

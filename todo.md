@@ -12,36 +12,41 @@
 ## 关键词工作流执行状态修复（2026-08-19）
 
 - [ ] 修复keywordWorkflow任务将状态为running的皇帝节点判定为不可执行的问题，确保关键词生成任务可由队列正常恢复或重试
+- [x] 修复独立MySQL中AI Worker查询保留字procedure未转义导致的心跳SQL错误，确保后台任务健康检查兼容MySQL 8（死信查询已转义并保留别名；真实ECS重新构建后Worker日志未再出现该SQL解析错误）
 
 ## 独立部署迁移（2026-08-18）
 
-- [ ] 放弃ACR企业版付费实例，改用青岛ECS本机Node 22、MySQL 8与systemd守护Web/Worker/Scheduler，确保不新增ACR月费
-- [ ] 在本机MySQL隔离实例恢复Manus TiDB一致性快照并校验233张表、对象存储URI和核心业务记录
-- [ ] 验证本机Node服务使用外部模型网关、青岛私有OSS和本地认证运行，保留Manus站点作为迁移期间回滚入口
-- [ ] 为独立ECS运行增加Web回环监听配置，避免应用端口3000直接暴露公网并由Nginx统一代理HTTPS入口
+- [x] 放弃ACR企业版付费实例，改用青岛ECS本机Node 22、MySQL 8与systemd守护Web/Worker/Scheduler，确保不新增ACR月费（真实ECS为4核8GB，未创建约636元/月的ACR企业版实例）
+- [x] 在本机MySQL隔离实例恢复Manus TiDB一致性快照并校验233张表、对象存储URI和核心业务记录（TLS Dumpling快照已在隔离库恢复；233张表、13名用户、30个项目、24个图片工作流会话和43条含历史URI项目文件均已只读核验，抽样URI HTTP 200）
+- [x] 在真实青岛ECS对独立生产MySQL执行加密逻辑备份、上传私有OSS并恢复至隔离校验库，验证数据回滚闭环（AES-256-CBC+PBKDF2加密备份已上传；隔离恢复表数233后已删除隔离库）
+- [x] 验证本机Node服务使用外部模型网关、青岛私有OSS和本地认证运行，保留Manus站点作为迁移期间回滚入口（Teamorouter无业务数据请求HTTP 200；OSS上传/预签名下载/删除通过；本地密码登录通过）
+- [x] 为独立ECS运行增加Web回环监听配置，避免应用端口3000直接暴露公网并由Nginx统一代理HTTPS入口（HOST=127.0.0.1，外网仅经kuahaixing.com Nginx HTTPS访问）
 - [x] 修复kuahaixing.com本地密码登录成功后在登录页与未登录首页之间循环跳转的问题，统一HTTPS代理协议、会话Cookie和前端鉴权状态（独立JWT缺少appId导致auth.me拒绝；本地模式现签发appId=local，真实登录成功）
 - [x] 修复AUTH_MODE=local时登录页仍显示“使用Manus账号登录”入口的问题，独立站仅展示邮箱/手机号密码认证（真实ECS构建时注入VITE_AUTH_MODE=local，生产登录页已仅显示本地密码表单）
 - [x] 对青岛ECS执行只读环境预检，核验系统资源、Docker/Compose、端口、域名解析、时间同步与现有服务冲突（Ubuntu 24.04、约6.6GB可用内存、初始仅SSH服务；Docker/Compose/Nginx/Certbot已安装，部署目录与运行记录已创建）
-- [ ] 将独立部署配置切换至青岛OSS地域，准备不含明文密钥的生产环境文件并校验私网MySQL、内网OSS与浏览器预签名端点
-- [ ] 在青岛ECS部署私网MySQL、Web、AI Worker、Scheduler和Nginx，执行受控生产迁移且不覆盖Manus现有生产数据
-- [ ] 以无敏感测试数据演练加密MySQL备份与恢复，核验私有OSS对象、校验和与恢复后健康状态
-- [ ] 验证邮箱密码登录、外部皇帝Skill调用、OSS上传/预签名下载、后台任务和健康检查后配置kuahaixing.com HTTPS入口
-- [ ] 将独立部署方案调整为低成本单机模式：一台ECS运行应用、MySQL、AI Worker与Scheduler，保留私有OSS并设计后续拆分RDS升级路径（部署包、采购清单、升级阈值和运行说明已同步；待ECS实机验证内网OSS与备份恢复闭环）
+- [x] 将独立部署配置切换至青岛OSS地域，准备不含明文密钥的生产环境文件并校验私网MySQL、内网OSS与浏览器预签名端点（服务端内网Endpoint、浏览器公网预签名Endpoint均已真实验证）
+- [x] 在青岛ECS部署私网MySQL、Web、AI Worker、Scheduler和Nginx，执行受控生产迁移且不覆盖Manus现有生产数据（四项服务均通过systemd运行；Manus源库只读导出后保留不变）
+- [x] 以无敏感测试数据演练加密MySQL备份与恢复，核验私有OSS对象、校验和与恢复后健康状态（隔离验证对象自动删除；数据库恢复后表数一致并清理隔离库）
+- [x] 验证邮箱密码登录、外部皇帝Skill调用、OSS上传/预签名下载、后台任务和健康检查后配置kuahaixing.com HTTPS入口（登录、HTTPS、三服务、OSS、外部模型completion及analysis.rufus.attribute真实结构化Skill调用均已通过）
+- [x] 将独立部署方案调整为低成本单机模式：一台ECS运行应用、MySQL、AI Worker与Scheduler，保留私有OSS并设计后续拆分RDS升级路径（真实青岛ECS已按本机Node/MySQL/systemd运行，不新增ACR企业版月费）
 - [x] 在阿里云Compose编排中加入不暴露公网端口的MySQL 8、持久化卷、健康检查和应用启动依赖（MySQL 8.4、mysql-data卷、服务健康门控和静态契约测试通过）
-- [ ] 增加可加密上传至私有OSS的本机MySQL逻辑备份、恢复校验与保留策略脚本（AES-256-CBC+PBKDF2、对象校验、14天默认保留、受控root恢复路径与静态回归已完成；待ECS无敏感数据恢复演练）
+- [x] 增加可加密上传至私有OSS的本机MySQL逻辑备份、恢复校验与保留策略脚本（AES-256-CBC+PBKDF2、对象校验、14天默认保留、root socket恢复路径与真实ECS隔离恢复演练通过）
 - [x] 更新独立部署环境模板、前置检查和说明，使本机数据库、备份密钥和恢复前提可在ECS上被校验（包含公网预签名Endpoint与仅供备份使用的内网Endpoint分层）
-- [ ] 以阿里云官方计费页为依据拆分杭州单机方案的固定月费与可变费用，并切换ECS到同地域OSS的内网Endpoint（成本表与端点分层代码已完成：服务器使用S3_ENDPOINT内网、浏览器预签名使用S3_PUBLIC_ENDPOINT公网；待ECS实机验证）
+- [x] 以阿里云官方计费页为依据拆分低成本单机方案的固定月费与可变费用，并切换ECS到同地域OSS的内网Endpoint（成本表已留存；真实青岛ECS服务器使用内网Endpoint、浏览器预签名使用公网Endpoint）
 - [x] 形成杭州低成本单机方案的初步预算口径：基础设施经验估算约360–540元/月，明确不含模型API、域名/备案和一次性迁移费用
 - [x] 补充杭州地域低成本单机方案的可复核报价依据：分别记录ECS 4核8GB、100GB ESSD、3–5Mbps带宽和私有OSS的当前官方价格来源（已写入成本表并附官方计费页链接）
 - [ ] 将活动价波动范围量化为按量价、包年包月价和活动页价，并更新预算总表与低成本部署说明
 - [x] 在预算说明中分别列出固定月费、OSS/流量可变费用、备份/快照费用及模型API/域名备案等未包含项（详见低成本部署方案的固定项与可变项拆分表）
-- [x] 确认阿里云中国大陆部署地域，优先采用华东1（杭州）并要求ECS、本机MySQL和OSS同地域部署
-- [ ] 调研并确定阿里云ECS、RDS MySQL、OSS、带宽、安全组和备份的采购规格，满足应用Web、AI Worker、Scheduler与前端构建负载
+- [x] 确认阿里云中国大陆部署地域为华北1（青岛），要求ECS、本机MySQL和OSS同地域部署（用户实际已创建青岛ECS与私有Bucket）
+- [x] 调研并确定阿里云ECS、MySQL、OSS、带宽、安全组和备份的采购规格，满足应用Web、AI Worker、Scheduler与前端构建负载（实际4核8GB ECS、本机MySQL、私有OSS、Nginx HTTPS和加密逻辑备份已验证）
 - [x] 审计当前amazon-listing-tool对Manus OAuth、Forge API、数据库、存储、AI Job与部署环境的专属依赖，形成迁移风险清单（独立部署评估已覆盖本地认证、MySQL、OSS、外部皇帝Skill模型以及图片/语音/地图/通知/Heartbeat的Forge替代边界）
 - [ ] 在独立上线前为Forge专属图片生成、语音转写、地图、数据API、通知与Heartbeat逐项配置替代服务或显式禁用入口，避免独立环境静默失败
+- [x] 修复独立AI Worker因未配置Manus通知服务而循环告警的问题：AUTH_MODE=local时通知返回未投递状态并保留运行告警记录，不再抛出Forge配置异常（单元测试、真实ECS构建、三服务重启和日志回归已通过）
+- [x] 在青岛ECS补充迁移后数据抽样核验：只读检查历史对象存储URI映射和至少一组用户、项目、图片工作流会话核心记录（13/30/24/43基线与URI HTTP 200已记录）
+- [x] 在独立环境执行一次真实皇帝Skill调用回归，记录技能运行成功、结构化结果返回与日志证据后再完成模型链路验收（analysis.rufus.attribute以合成属性运行成功，custom Teamorouter模型约9秒返回结构化输出）
 - [x] 确认独立运行核心选型：邮箱密码认证、独立MySQL 8、阿里云OSS私有Bucket及复用当前模型API（2026-08-18用户确认）
 - [x] 设计独立运行架构：应用服务器、独立MySQL 8、阿里云OSS私有Bucket、身份认证、现有模型API、后台任务与域名/HTTPS（Compose、环境模板、反向代理、备份恢复说明和升级路径已形成）
-- [ ] 在独立服务器配置应用运行环境、数据迁移与生产进程管理，不改变现有图片工作流页面结构、业务流程或AI逻辑
+- [x] 在独立服务器配置应用运行环境、数据迁移与生产进程管理，不改变现有图片工作流页面结构、业务流程或AI逻辑（真实ECS本机Node服务与迁移数据已运行，Manus站点仍为回滚入口）
 - [x] 创建deploy/aliyun独立部署包：多阶段Docker镜像、Web/AI Worker/Scheduler编排、环境模板和Nginx反向代理（Prettier与关键配置静态校验通过；无根目录Dockerfile或真实密钥）
 - [ ] 对deploy/aliyun/Dockerfile执行无密钥构建级验证，确认多阶段镜像和生产入口可正确解析
 - [ ] 对deploy/aliyun/compose.yaml执行docker compose config校验，确认Web、AI Worker与Scheduler编排可被解析
@@ -52,6 +57,9 @@
 - [x] 为独立环境增加STORAGE_PROVIDER=oss的阿里云OSS S3兼容基础适配，默认继续使用当前Forge存储（提供商选择、URI与解析共3项定向测试通过）
 - [x] 补充OSS/S3兼容分支的执行契约测试：覆盖storagePut上传、storageGet预签名下载、默认Forge提供商选择不回归及缺少配置时的明确错误（5项OSS/独立认证定向测试与ESLint通过）
 - [ ] 在阿里云环境配置OSS私有Bucket及S3兼容凭据，验证上传、短期签名下载和历史存储URI迁移
+- [ ] 修复青岛OSS S3兼容访问的path-style配置错误，改用虚拟主机风格并通过隔离对象上传、预签名下载与删除验证
+- [ ] 修复AWS CLI向青岛OSS备份上传时使用不兼容的流式校验编码问题，配置请求校验仅在必需时启用并完成备份恢复演练
+- [ ] 修复青岛本机MySQL root使用socket认证时恢复脚本仍以TCP密码登录被拒绝的问题，完成隔离恢复验收
 - [x] 增加独立部署AUTH_MODE=local认证开关，复用现有邮箱密码登录与JWT会话，并在独立环境隐藏Manus OAuth入口（独立模式登录跳转与服务入口回归通过，默认Manus模式保持不变）
 - [ ] 在阿里云独立环境配置AUTH_MODE=local与VITE_AUTH_MODE=local，验证邮箱密码登录、会话、改密和Manus OAuth入口隐藏
 - [x] 增加LLM_PROVIDER=external的OpenAI兼容网关配置，复用现有模型API密钥并保持皇帝Skill/Agent编排不变（外部网关地址、模型与缺失凭据错误共2项回归通过）
