@@ -10,6 +10,10 @@ function nodeRequiresHumanGate(node: EmperorAgentNode): boolean {
 
 type AgentNodeJobFailureKind = "error" | "timeout" | "cancel";
 
+export function shouldFinalizeTimedOutNodeForTerminalJob(status?: string | null) {
+  return status === "failed" || status === "canceled";
+}
+
 function agentErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
@@ -767,6 +771,17 @@ export async function recoverTimedOutAgentNodes(opts: { limit?: number } = {}) {
         jobStatus: job.status,
       });
       result.skippedStale += 1;
+      continue;
+    }
+
+    if (job && shouldFinalizeTimedOutNodeForTerminalJob(job.status)) {
+      await failNodeExecution({
+        run,
+        node,
+        error: new Error(`关联AI任务已${job.status === "failed" ? "失败" : "取消"}，不再重复恢复：${job.error || message}`),
+        failureKind: job.status === "canceled" ? "cancel" : "timeout",
+      });
+      result.failed += 1;
       continue;
     }
 

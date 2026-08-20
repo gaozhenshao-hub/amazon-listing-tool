@@ -12,6 +12,8 @@
 ## 关键词工作流执行状态修复（2026-08-19）
 
 - [ ] 修复keywordWorkflow任务将状态为running的皇帝节点判定为不可执行的问题，确保关键词生成任务可由队列正常恢复或重试
+- [x] 排查托管开发环境AI Worker持续输出failed=1的任务来源，区分历史失败记录与当前Worker异常并处理可恢复项（根因是历史keyword.analysis.workflow的K1仍为running但关联任务已failed；恢复器已将终态任务节点收敛为failed，真实节点与Run均已转终态）
+- [x] 在K1历史失败节点收敛后跨至少两个托管AI Worker轮询周期抓取日志，确认不再持续输出nodes failed=1并留存前后状态证据（UTC 09:45:04–09:45:17窗口内无failed=1；最近三条历史failed=1停留在09:42:42，K1节点与Run均为failed终态）
 - [x] 修复独立MySQL中AI Worker查询保留字procedure未转义导致的心跳SQL错误，确保后台任务健康检查兼容MySQL 8（死信查询已转义并保留别名；真实ECS重新构建后Worker日志未再出现该SQL解析错误）
 
 ## 独立部署迁移（2026-08-18）
