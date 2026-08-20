@@ -95,7 +95,7 @@ describe("image workflow outline contract", () => {
     const frontend = fs.readFileSync(repoPath("client/src/pages/imageWorkflow/ImageOutlineStep.tsx"), "utf8");
     const gateway = fs.readFileSync(repoPath("server/services/emperorInvocationGateway.ts"), "utf8");
 
-    expect(backend).toContain("startImageStepGenerationJob");
+    expect(backend).toContain("startImageStepGenerationForUser");
     expect(worker).toContain('skillSlug: "image.step2.outline"');
     expect(backend).toContain('skillSlug: "image.step2.aplus.single.optimize"');
     expect(frontend).toContain("optimizeStep2AplusModule");
