@@ -9,6 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import ProjectSelector from "@/components/ProjectSelector";
 import { useProject } from "@/contexts/ProjectContext";
+import { usePermissions } from "@/hooks/usePermissions";
 import { AiJobHistoryPanel, BusinessArtifactVersionPicker, WorkflowShell } from "@/components/workflow";
 import { IMAGE_SUGGESTION_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import { trpc } from "@/lib/trpc";
@@ -594,6 +595,8 @@ function DesignerUploadPanel({
   isUploading,
   onUpload,
   onRemove,
+  canUpload,
+  canRemove,
 }: {
   imageNumber: string;
   label: string;
@@ -601,6 +604,8 @@ function DesignerUploadPanel({
   isUploading: boolean;
   onUpload: (file: File) => void;
   onRemove: () => void;
+  canUpload: boolean;
+  canRemove: boolean;
 }) {
   return (
     <div className="flex flex-col gap-2 min-h-[120px]">
@@ -623,17 +628,19 @@ function DesignerUploadPanel({
                 <Eye className="w-3 h-3 mr-1" /> 查看
               </Button>
             </a>
-            <Button
-              size="sm"
-              variant="destructive"
-              className="h-7 text-xs"
-              onClick={onRemove}
-            >
-              <Trash2 className="w-3 h-3 mr-1" /> 删除
-            </Button>
+            {canRemove && (
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-7 text-xs"
+                onClick={onRemove}
+              >
+                <Trash2 className="w-3 h-3 mr-1" /> 删除
+              </Button>
+            )}
           </div>
         </div>
-      ) : (
+      ) : canUpload ? (
         <label className={`flex flex-col items-center justify-center min-h-[120px] rounded-lg border-2 border-dashed border-emerald-300 cursor-pointer hover:bg-emerald-50/50 transition-colors ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
           {isUploading ? (
             <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
@@ -652,6 +659,12 @@ function DesignerUploadPanel({
             disabled={isUploading}
           />
         </label>
+      ) : (
+        <div className="flex min-h-[120px] flex-col items-center justify-center rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 px-3 text-center">
+          <Eye className="mb-1 h-5 w-5 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">暂未上传成品图片</span>
+          <span className="mt-0.5 text-[11px] text-muted-foreground">您拥有查看权限</span>
+        </div>
       )}
     </div>
   );
@@ -671,6 +684,9 @@ function Step5FinalSuggestions({
   const confirmMutation = trpc.imageWorkflow.confirmStep5.useMutation();
   const unlockMutation = trpc.imageWorkflow.unlockStep5.useMutation();
   const utils = trpc.useUtils();
+  const { canEdit, canDelete } = usePermissions();
+  const canEditStep5 = canEdit("listing", "listing_image_workflow");
+  const canDeleteStep5 = canDelete("listing", "listing_image_workflow");
   const [enData, setEnData] = useState<any>(null);
   const [cnData, setCnData] = useState<any>(null);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
@@ -786,6 +802,10 @@ function Step5FinalSuggestions({
 
   // Handle per-section module style optimize
   const handleSingleModuleOptimize = async (sectionIdx: number) => {
+    if (!canEditStep5) {
+      toast.error("您仅拥有图片建议查看权限，无法优化模块");
+      return;
+    }
     const moduleId = sectionModuleStyles[sectionIdx];
     if (!moduleId) {
       toast.error("请先选择一个A+模块样式");
@@ -869,6 +889,10 @@ function Step5FinalSuggestions({
   }, [projectId, step5RunQuery.data, utils.imageWorkflow.getSession]);
 
   const handleUnlock = async () => {
+    if (!canEditStep5) {
+      toast.error("您仅拥有图片建议查看权限，无法解锁");
+      return;
+    }
     try {
       await unlockMutation.mutateAsync({ projectId });
       await utils.imageWorkflow.getSession.invalidate({ projectId });
@@ -899,6 +923,10 @@ function Step5FinalSuggestions({
   ]);
 
   const handleGenerate = async () => {
+    if (!canEditStep5) {
+      toast.error("您仅拥有图片建议查看权限，无法重新生成");
+      return;
+    }
     try {
       // 从失败记录重新生成时先脱离旧run查询，避免旧失败快照继续占用展示状态。
       if (!isActiveStep5RunStatus(sessionRunStatus)) setActiveRunId(null);
@@ -920,6 +948,10 @@ function Step5FinalSuggestions({
   };
 
   const handleCancelGeneration = async () => {
+    if (!canEditStep5) {
+      toast.error("您仅拥有图片建议查看权限，无法取消任务");
+      return;
+    }
     try {
       const canceledRunId = activeRunId || sessionActiveRunId;
       await cancelMutation.mutateAsync({ projectId });
@@ -936,6 +968,10 @@ function Step5FinalSuggestions({
   };
 
   const handleConfirm = async () => {
+    if (!canEditStep5) {
+      toast.error("您仅拥有图片建议查看权限，无法确认锁定");
+      return;
+    }
     if (isGenerating) return;
     if (!enData) return;
     try {
@@ -1059,6 +1095,10 @@ function Step5FinalSuggestions({
   const removeDesignerMutation = trpc.imageWorkflow.removeDesignerUpload.useMutation();
 
   const handleDesignerUpload = async (imageNumber: string, file: File) => {
+    if (!canEditStep5) {
+      toast.error("您仅拥有图片建议查看权限，无法上传成品图片");
+      return;
+    }
     setUploadingDesigner(imageNumber);
     try {
       const formData = new FormData();
@@ -1079,6 +1119,10 @@ function Step5FinalSuggestions({
   };
 
   const handleDesignerRemove = async (imageNumber: string) => {
+    if (!canDeleteStep5) {
+      toast.error("您没有删除美工成品图片的权限");
+      return;
+    }
     try {
       await removeDesignerMutation.mutateAsync({ projectId, imageNumber });
       setDesignerUploads(prev => { const n = { ...prev }; delete n[imageNumber]; return n; });
@@ -1090,7 +1134,7 @@ function Step5FinalSuggestions({
 
   return (
     <div className={`space-y-4 ${enData && !isConfirmed && !isGenerating ? "pb-24" : ""}`}>
-      {enData && !isConfirmed && !isGenerating && (
+      {canEditStep5 && enData && !isConfirmed && !isGenerating && (
         <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-sm">
@@ -1129,13 +1173,13 @@ function Step5FinalSuggestions({
               <CardDescription>综合所有确认结果，输出最终图片建议（中英文对照）</CardDescription>
             </div>
             <div className="flex gap-2">
-              {!enData && (
+              {!enData && canEditStep5 && (
                 <Button onClick={handleGenerate} disabled={isGenerating}>
                   {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
                   {isGenerating ? (runStatus === "queued" ? "排队中..." : "生成中...") : "生成最终建议"}
                 </Button>
               )}
-              {enData && !isConfirmed && (
+              {enData && !isConfirmed && canEditStep5 && (
                 <>
                   <Button variant="outline" onClick={handleGenerate} disabled={isGenerating}>
                     {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RotateCcw className="w-4 h-4 mr-2" />}
@@ -1165,10 +1209,12 @@ function Step5FinalSuggestions({
                     <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                       <Lock className="w-3 h-3 mr-1" /> 已锁定
                     </Badge>
-                    <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={unlockMutation.isPending}>
-                      {unlockMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
-                      解锁编辑
-                    </Button>
+                    {canEditStep5 && (
+                      <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={unlockMutation.isPending}>
+                        {unlockMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
+                        解锁编辑
+                      </Button>
+                    )}
                   </div>
                 </>
               )}
@@ -1215,15 +1261,17 @@ function Step5FinalSuggestions({
                   </p>
                 )}
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCancelGeneration}
-                disabled={cancelMutation.isPending}
-              >
-                {cancelMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
-                取消任务
-              </Button>
+              {canEditStep5 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCancelGeneration}
+                  disabled={cancelMutation.isPending}
+                >
+                  {cancelMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                  取消任务
+                </Button>
+              )}
             </div>
           </CardContent>
         )}
@@ -1236,9 +1284,11 @@ function Step5FinalSuggestions({
               {runMaxAttempts > 0 && (
                 <p className="mt-1 text-xs">已执行 {runAttempt}/{runMaxAttempts} 次</p>
               )}
-              <Button variant="outline" size="sm" className="mt-3" onClick={handleGenerate} disabled={generateMutation.isPending}>
-                <RotateCcw className="h-4 w-4" />重新生成
-              </Button>
+              {canEditStep5 && (
+                <Button variant="outline" size="sm" className="mt-3" onClick={handleGenerate} disabled={generateMutation.isPending}>
+                  <RotateCcw className="h-4 w-4" />重新生成
+                </Button>
+              )}
             </div>
           </CardContent>
         )}
@@ -1270,6 +1320,8 @@ function Step5FinalSuggestions({
                     isUploading={uploadingDesigner === "design_guidelines"}
                     onUpload={(f) => handleDesignerUpload("design_guidelines", f)}
                     onRemove={() => handleDesignerRemove("design_guidelines")}
+                    canUpload={canEditStep5}
+                    canRemove={canDeleteStep5}
                   />
                 </div>
               </CardContent>
@@ -1284,7 +1336,7 @@ function Step5FinalSuggestions({
                   <CardTitle className="text-base flex items-center gap-2">
                     <Camera className="w-4 h-4 text-primary" /> 主图 (Main Image)
                   </CardTitle>
-                  {!isConfirmed && enData.mainImage && (
+                  {canEditStep5 && !isConfirmed && enData.mainImage && (
                     <RefinePopover
                       projectId={projectId}
                       imageType="mainImage"
@@ -1324,6 +1376,8 @@ function Step5FinalSuggestions({
                     isUploading={uploadingDesigner === "main_image"}
                     onUpload={(f) => handleDesignerUpload("main_image", f)}
                     onRemove={() => handleDesignerRemove("main_image")}
+                    canUpload={canEditStep5}
+                    canRemove={canDeleteStep5}
                   />
                 </div>
               </CardContent>
@@ -1340,7 +1394,7 @@ function Step5FinalSuggestions({
                     <CardTitle className="text-base flex items-center gap-2">
                       <Image className="w-4 h-4 text-blue-500" /> 辅图 {img.imageNumber || idx + 2}
                     </CardTitle>
-                    {!isConfirmed && (
+                    {canEditStep5 && !isConfirmed && (
                       <RefinePopover
                         projectId={projectId}
                         imageType="secondaryImage"
@@ -1390,6 +1444,8 @@ function Step5FinalSuggestions({
                       isUploading={uploadingDesigner === `secondary_${idx + 1}`}
                       onUpload={(f) => handleDesignerUpload(`secondary_${idx + 1}`, f)}
                       onRemove={() => handleDesignerRemove(`secondary_${idx + 1}`)}
+                      canUpload={canEditStep5}
+                      canRemove={canDeleteStep5}
                     />
                   </div>
                 </CardContent>
@@ -1406,7 +1462,7 @@ function Step5FinalSuggestions({
                     <CardTitle className="text-base flex items-center gap-2">
                       <Layers className="w-4 h-4 text-purple-500" /> A+ Content
                     </CardTitle>
-                    {!isConfirmed && (
+                    {canEditStep5 && !isConfirmed && (
                       <Badge variant="outline" className="text-xs">拖拽模块可调整顺序</Badge>
                     )}
                   </div>
@@ -1416,7 +1472,7 @@ function Step5FinalSuggestions({
                     <div className="space-y-3 border-r pr-4">
                       <div className="flex items-center justify-between gap-2">
                         <Badge variant="outline" className="text-xs">English</Badge>
-                        {!isConfirmed && <span className="text-[11px] text-muted-foreground">可编辑，确认锁定时一并保存</span>}
+                        {canEditStep5 && !isConfirmed && <span className="text-[11px] text-muted-foreground">可编辑，确认锁定时一并保存</span>}
                       </div>
                       {([
                         ["overallStrategy", "A+ 整体策略 / Strategy"],
@@ -1426,7 +1482,7 @@ function Step5FinalSuggestions({
                       ] as const).map(([field, label]) => (
                         <div key={field} className="space-y-1">
                           <p className="text-xs font-medium">{label}</p>
-                          {isConfirmed ? (
+                          {isConfirmed || !canEditStep5 ? (
                             <p className="text-xs text-muted-foreground whitespace-pre-wrap">{enData.aPlusContent[field]}</p>
                           ) : (
                             <Textarea
@@ -1446,6 +1502,8 @@ function Step5FinalSuggestions({
                       isUploading={uploadingDesigner === "aplus_overview"}
                       onUpload={(f) => handleDesignerUpload("aplus_overview", f)}
                       onRemove={() => handleDesignerRemove("aplus_overview")}
+                      canUpload={canEditStep5}
+                      canRemove={canDeleteStep5}
                     />
                   </div>
                 </CardContent>
@@ -1470,19 +1528,19 @@ function Step5FinalSuggestions({
                   <Card
                     key={getStep5AplusSectionCardKey(section, idx)}
                     translate="no"
-                    draggable={!isConfirmed}
+                    draggable={canEditStep5 && !isConfirmed}
                     onDragStart={() => handleDragStart(idx)}
                     onDragOver={(e) => handleDragOver(e, idx)}
                     onDragEnd={handleDragEnd}
-                    className={`transition-all ${draggedIdx === idx ? "opacity-50 scale-95" : ""} ${!isConfirmed ? "cursor-grab active:cursor-grabbing" : ""}`}
+                    className={`transition-all ${draggedIdx === idx ? "opacity-50 scale-95" : ""} ${canEditStep5 && !isConfirmed ? "cursor-grab active:cursor-grabbing" : ""}`}
                   >
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          {!isConfirmed && <GripVertical className="w-4 h-4 text-gray-400" />}
+                          {canEditStep5 && !isConfirmed && <GripVertical className="w-4 h-4 text-gray-400" />}
                           <Step5AplusSectionTitle section={section} index={idx} selectedModuleName={selectedModuleName} />
                         </div>
-                        {!isConfirmed && (
+                        {canEditStep5 && !isConfirmed && (
                           <RefinePopover
                             projectId={projectId}
                             imageType="aPlusSection"
@@ -1494,7 +1552,7 @@ function Step5FinalSuggestions({
                         )}
                       </div>
                       {/* Per-section A+ module style selector */}
-                      {!isConfirmed && (
+                      {canEditStep5 && !isConfirmed && (
                         <div className="mt-3 p-3 bg-purple-50/50 rounded-lg border border-purple-100">
                           <div className="flex items-center gap-2 mb-2">
                             <Layers className="w-3.5 h-3.5 text-purple-500" />
@@ -1577,6 +1635,8 @@ function Step5FinalSuggestions({
                             isUploading={uploadingDesigner === `aplus_section_${idx + 1}`}
                             onUpload={(f) => handleDesignerUpload(`aplus_section_${idx + 1}`, f)}
                             onRemove={() => handleDesignerRemove(`aplus_section_${idx + 1}`)}
+                            canUpload={canEditStep5}
+                            canRemove={canDeleteStep5}
                           />
                         </div>
                       </CardContent>
@@ -1587,7 +1647,7 @@ function Step5FinalSuggestions({
             </>
           )}
 
-          {!isConfirmed && (
+          {canEditStep5 && !isConfirmed && (
             <Card className="border-emerald-200 bg-emerald-50/40">
               <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-start gap-3">
