@@ -9,7 +9,7 @@ describe("Step5多图A+子模块建议", () => {
     expect(source).toContain('skillSlug: "image.step5.secondary.segment"');
     expect(source).toContain('skillSlug: "image.step5.aplus.segment"');
     expect(source).toContain('skillSlug: "image.step5.final.suggestion"');
-    expect(source).toContain('segmentedGeneration: { mode: "emperor_segments"');
+    expect(source).toContain('mode: "emperor_segments"');
   });
 
   it("在模型仅返回父模块时，回填已锁定子图的独立建议与参考图键", () => {

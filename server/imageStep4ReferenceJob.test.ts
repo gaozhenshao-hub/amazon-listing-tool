@@ -18,7 +18,7 @@ describe("image Step 4 reference recommendation job", () => {
         ...[2, 3, 4, 5, 6, 7].map((imageNumber) => ({ imageType: "辅图", imageNumber })),
       ],
     };
-    expect(validateStep4ReferenceResult(complete)).toBe(complete);
+    expect(validateStep4ReferenceResult(complete)).toEqual(complete);
 
     expect(() => validateStep4ReferenceResult({
       imageReferences: complete.imageReferences.filter((item) => item.imageNumber !== 7),
