@@ -280,9 +280,9 @@ describe("parseBulletPointsData column mapping", () => {
     expect(uploadSrc).toContain("详细参数");
   });
 
-  it("should open the missing-product form from panorama", () => {
+  it("should open the missing-product spreadsheet upload flow from panorama", () => {
     expect(uploadSrc).toContain("addProductRequestSignal");
-    expect(uploadSrc).toContain("trpc.devPanorama.addProduct");
-    expect(uploadSrc).toContain("补录缺失产品");
+    expect(uploadSrc).toContain("handleSupplementUpload");
+    expect(uploadSrc).toContain("上传产品表格");
   });
 });

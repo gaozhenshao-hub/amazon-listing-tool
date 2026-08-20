@@ -2,8 +2,22 @@ import { describe, expect, it } from "vitest";
 import { findIncompleteStep5Segment } from "./step5SegmentValidation";
 
 const completeInput = {
-  mainSegment: { mainImage: {} },
-  secondarySegment: { secondaryImages: Array.from({ length: 6 }, () => ({})) },
+  mainSegment: {
+    mainImage: {
+      concept: "主图概念",
+      composition: "主图构图",
+      primary: "主视觉",
+      shooting: "拍摄说明",
+    },
+  },
+  secondarySegment: {
+    secondaryImages: Array.from({ length: 6 }, () => ({
+      focus: "卖点焦点",
+      expression: "表达方式",
+      composition: "画面构图",
+      textOverlay: "图中文字",
+    })),
+  },
   aplusModules: Array.from({ length: 7 }, (_, index) => ({ moduleNumber: index + 1 })),
   outlineAplusModules: Array.from({ length: 7 }, (_, index) => ({ moduleNumber: index + 1 })),
   requiresBrandStory: true,

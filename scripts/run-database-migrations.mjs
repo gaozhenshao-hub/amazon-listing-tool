@@ -61,6 +61,19 @@ const supplementalMigrations = [
   "0136_business_job_binding_qa.sql",
   "0137_dev_project_operator_stage.sql",
   "0138_dev_project_landing_stage.sql",
+  "0139_step4_image_version_records.sql",
+  "0140_dev_panorama_versions.sql",
+  "0141_dev_import_batches_base.sql",
+  "0142_ops_asin_daily_inventory_planning.sql",
+  "0143_ops_inventory_parent_asin_parameters.sql",
+  "0144_ops_asin_lifecycle_status.sql",
+  "0145_ops_inventory_product_cost_parameters.sql",
+  "0146_ops_inventory_size_weight_parameters.sql",
+  "0147_ops_monthly_financial_profits.sql",
+  "0148_knowledge_workspace_scope.sql",
+  "0149_dev_import_batch_governance.sql",
+  "0150_step5_complete_result_longtext.sql",
+  "0151_step5_segment_run_status.sql",
 ];
 
 const retiredMigrationFiles = new Set([

@@ -17,7 +17,9 @@ describe("security tenant governance v1", () => {
   it("defines resource-action permissions for tenant controlled surfaces", () => {
     expect(SECURITY_RESOURCES).toEqual([
       "project",
+      "image_workflow",
       "product_development",
+      "knowledge",
       "file",
       "tool",
       "agent",

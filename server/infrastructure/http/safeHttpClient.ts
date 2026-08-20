@@ -334,6 +334,10 @@ function createSafeHeaders(values: Record<string, string>): SafeHttpHeaders {
   }) as SafeHttpHeaders;
 }
 
+function isUnitTestEnvironment() {
+  return process.env.NODE_ENV === "test" || Boolean(process.env.VITEST);
+}
+
 export async function safeHttpRequest(rawUrl: string | URL, options: SafeHttpRequestOptions = {}): Promise<SafeHttpResponse> {
   const release = await acquireRequestSlot();
   const timeoutMs = Math.min(Math.max(1, options.timeoutMs || DEFAULT_TIMEOUT_MS), 120_000);
@@ -360,7 +364,7 @@ export async function safeHttpRequest(rawUrl: string | URL, options: SafeHttpReq
   }
 
   if (
-    process.env.NODE_ENV === "test"
+    isUnitTestEnvironment()
     && process.env.ALLOW_REAL_NETWORK_IN_TESTS !== "1"
     && !options.allowTestNetwork
     && !options.resolver

@@ -68,7 +68,10 @@ async function refreshZeroValueDiscontinuationStatuses(db: any, workspaceId: num
       evidenceStartDate: decision.evidenceStartDate, evidenceEndDate: decision.evidenceEndDate, evidenceDays: decision.evidenceDays,
       evidenceSalesQty: decision.salesQty, evidenceProfit: String(decision.profit), evidenceMaxInventory: decision.maxInventory,
       changedBy: null, changedAt: new Date(), restoredAt: null, restoreReason: null };
-    if (existing) await db.update(opsAsinLifecycleStatuses).set(evidence).where(eq(opsAsinLifecycleStatuses.id, existing.id));
+    if (existing) await db.update(opsAsinLifecycleStatuses).set(evidence).where(and(
+      eq(opsAsinLifecycleStatuses.id, existing.id),
+      eq(opsAsinLifecycleStatuses.workspaceId, workspaceId),
+    ));
     else await db.insert(opsAsinLifecycleStatuses).values({ workspaceId, userId: latest.userId, asin: latest.asin, storeName: latest.storeName, country: latest.country, ...evidence });
   }
 }
@@ -697,7 +700,10 @@ export const dataImportRouter = router({
       const workspaceId = ctx.user.defaultWorkspaceId ?? currentOpsWorkspaceId();
       for (const entry of input.entries) {
         const [existing] = await db!.select().from(opsMonthlyFinancialProfits).where(and(eq(opsMonthlyFinancialProfits.workspaceId, workspaceId), eq(opsMonthlyFinancialProfits.userId, ctx.user.id), eq(opsMonthlyFinancialProfits.parentAsin, input.parentAsin), eq(opsMonthlyFinancialProfits.yearMonth, entry.yearMonth))).limit(1);
-        if (existing) await db!.update(opsMonthlyFinancialProfits).set({ financialProfit: String(entry.financialProfit) }).where(eq(opsMonthlyFinancialProfits.id, existing.id));
+        if (existing) await db!.update(opsMonthlyFinancialProfits).set({ financialProfit: String(entry.financialProfit) }).where(and(
+          eq(opsMonthlyFinancialProfits.id, existing.id),
+          eq(opsMonthlyFinancialProfits.workspaceId, workspaceId),
+        ));
         else await db!.insert(opsMonthlyFinancialProfits).values({ workspaceId, userId: ctx.user.id, parentAsin: input.parentAsin, yearMonth: entry.yearMonth, financialProfit: String(entry.financialProfit) });
       }
       return { status: "saved" as const, count: input.entries.length };

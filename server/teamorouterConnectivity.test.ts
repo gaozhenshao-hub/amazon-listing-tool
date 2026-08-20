@@ -23,5 +23,5 @@ describe("Teamorouter external model gateway", () => {
     const payload = (await response.json()) as { data?: Array<{ id?: string }> };
     expect(Array.isArray(payload.data)).toBe(true);
     expect(payload.data?.some(model => model.id === "gpt-5.6-sol")).toBe(true);
-  });
+  }, 20_000);
 });

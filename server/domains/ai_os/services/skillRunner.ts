@@ -633,9 +633,8 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
     emphasis: input.emphasis || "",
     ...input.variables,
   };
-  // 优先使用 legacySystemPrompt（代码中的 prompt），其次使用数据库 manifest 中的 systemPrompt
-  // 原因：数据库 JSON 字段在 TiDB 中 \n 转义字符会被 JSON.parse 压缩，导致长度不一致
-  const systemPrompt = input.legacySystemPrompt?.trim() || implementation.systemPrompt || "";
+  // 皇帝Skill数据库manifest是运行时唯一的首选Prompt来源；旧代码提示词只在迁移兼容时回退。
+  const systemPrompt = implementation.systemPrompt || input.legacySystemPrompt?.trim() || "";
   if (!systemPrompt.trim()) {
     throw new SkillRunError("PROMPT_MISSING", `Skill '${skill.slug}' has empty systemPrompt`, false);
   }
