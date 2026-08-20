@@ -15,6 +15,12 @@
 
 ## 独立部署迁移（2026-08-18）
 
+- [ ] 放弃ACR企业版付费实例，改用青岛ECS本机Node 22、MySQL 8与systemd守护Web/Worker/Scheduler，确保不新增ACR月费
+- [ ] 在本机MySQL隔离实例恢复Manus TiDB一致性快照并校验233张表、对象存储URI和核心业务记录
+- [ ] 验证本机Node服务使用外部模型网关、青岛私有OSS和本地认证运行，保留Manus站点作为迁移期间回滚入口
+- [ ] 为独立ECS运行增加Web回环监听配置，避免应用端口3000直接暴露公网并由Nginx统一代理HTTPS入口
+- [x] 修复kuahaixing.com本地密码登录成功后在登录页与未登录首页之间循环跳转的问题，统一HTTPS代理协议、会话Cookie和前端鉴权状态（独立JWT缺少appId导致auth.me拒绝；本地模式现签发appId=local，真实登录成功）
+- [x] 修复AUTH_MODE=local时登录页仍显示“使用Manus账号登录”入口的问题，独立站仅展示邮箱/手机号密码认证（真实ECS构建时注入VITE_AUTH_MODE=local，生产登录页已仅显示本地密码表单）
 - [x] 对青岛ECS执行只读环境预检，核验系统资源、Docker/Compose、端口、域名解析、时间同步与现有服务冲突（Ubuntu 24.04、约6.6GB可用内存、初始仅SSH服务；Docker/Compose/Nginx/Certbot已安装，部署目录与运行记录已创建）
 - [ ] 将独立部署配置切换至青岛OSS地域，准备不含明文密钥的生产环境文件并校验私网MySQL、内网OSS与浏览器预签名端点
 - [ ] 在青岛ECS部署私网MySQL、Web、AI Worker、Scheduler和Nginx，执行受控生产迁移且不覆盖Manus现有生产数据

@@ -22,7 +22,7 @@
 
 ## 二、推荐独立架构
 
-已创建的目标环境为阿里云华北1（青岛，`cn-qingdao`）ECS，采用本机Docker MySQL 8、青岛私有OSS Bucket和现有自定义OpenAI兼容模型网关。该方案不要求拆分现有图片工作流页面，也不改变现有 Step0–5、Skill、Agent、人审确认或锁定逻辑。
+已创建的目标环境为阿里云华北1（青岛，`cn-qingdao`）ECS，采用本机MySQL 8、青岛私有OSS Bucket和现有自定义OpenAI兼容模型网关。应用将使用ECS本机Node 22与systemd运行，不购买ACR企业版，因此不增加仅为托管基础镜像而产生的固定月费。该方案不要求拆分现有图片工作流页面，也不改变现有 Step0–5、Skill、Agent、人审确认或锁定逻辑。
 
 ```text
 Internet
@@ -34,7 +34,7 @@ Nginx + Let's Encrypt
    ├── AI Worker (Node.js)
    └── Scheduler (Node.js + systemd timer)
           │
-          ├── MySQL 8（Docker私有网络）
+          ├── MySQL 8（本机仅回环监听）
           ├── 阿里云OSS（青岛私有Bucket）
           └── 外部 AI 网关（LLM、图片、语音、通知）
 ```
@@ -53,6 +53,12 @@ Nginx + Let's Encrypt
 | 托管Heartbeat | `server/_core/heartbeat.ts` | 由Compose Scheduler和系统cron替代；任何Forge Heartbeat调用应停用或替换 | 定时任务需在ECS连续运行中验证 |
 
 > 当前图片工作流的文本/结构化分析已遵循皇帝Skill调用链；独立环境只要为皇帝Skill配置外部模型网关，即不需要为这一主流程重写前台、Agent或业务路由。
+
+### 已确认的低成本运行决策
+
+青岛ECS将不购买ACR企业版实例。该实例仅为托管/订阅Node与MySQL基础镜像而设，并非业务运行所必需；应用改为使用ECS本机安装的Node 22、本机MySQL 8与systemd守护Web、AI Worker和Scheduler，从而不引入额外的ACR固定月费。Docker保留为可选工具，不作为首期应用运行依赖。
+
+外部模型网关采用TeamoRouter的OpenAI兼容接口：基础地址为`https://api.teamorouter.com/v1`，通用聊天端点为`/chat/completions`，模型列表可由`GET /v1/models`读取。受管连接测试已验证默认模型`gpt-5.6-sol`可用；密钥仅保存在受管密钥与真实ECS的权限600运行配置中，绝不写入本文件或版本库。[1]
 
 ## 四、迁移前必须确认的选择
 
@@ -75,4 +81,8 @@ Nginx + Let's Encrypt
 
 ## 六、当前可立即执行与受限事项
 
-青岛ECS的Docker、Compose、Nginx、Certbot、Node.js和pnpm已经完成预检与构建环境准备；它已成功用于高内存前端生产构建。当前实际部署只阻塞于用户提供账号专属ACR镜像加速地址、OSS RAM最小权限凭据、外部模型网关凭据，以及需要保留历史数据时的数据库迁移来源。上述凭据就绪前，不启动容器、不执行迁移、不修改DNS入口或防火墙。
+真实青岛ECS已核验为4核、约7.1GiB内存和99GB磁盘。Node 22、本机MySQL 8、Nginx、Certbot及pnpm均已准备完成；Manus托管TiDB已做只读一致性导出，并在隔离MySQL恢复校验后提升至独立生产库。当前仍不得切换DNS或关闭Manus站点，直至完成本机Node服务、OSS、外部模型、备份恢复与HTTPS的端到端验证。
+
+## 参考资料
+
+[1] [TeamoRouter API 接入文档](https://teamorouter.com/zh/docs/api-integration)

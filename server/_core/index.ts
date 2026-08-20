@@ -37,6 +37,7 @@ import {
 } from "./runtime";
 import { assertStartupConfig } from "./startupValidation";
 import { registerRuntimeHealthRoutes } from "./runtimeHealth";
+import { resolveListenHost } from "./listenHost";
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
     const server = net.createServer();
@@ -112,12 +113,13 @@ async function startServer() {
 
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
+  const listenHost = resolveListenHost();
 
   if (port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
-  server.listen(port, () => {
+  server.listen(port, listenHost, () => {
     console.log(`Server running on http://localhost:${port}/ role=${role}`);
     // Start usage tracking background flush
     if (shouldStartWebLocalTasks(role)) {

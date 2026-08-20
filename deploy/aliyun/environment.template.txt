@@ -3,6 +3,8 @@
 
 NODE_ENV=production
 PORT=3000
+# Bind the Node process to loopback; Nginx is the only public HTTP/HTTPS entry.
+HOST=127.0.0.1
 # MySQL runs on the private Docker network and is never published to the ECS network.
 # URL-encode MYSQL_APP_PASSWORD in DATABASE_URL if it contains @, :, /, ?, # or %.
 MYSQL_DATABASE=amz_fullchain

@@ -38,6 +38,7 @@ import {
   INVALID_CREDENTIALS_MSG, MUST_CHANGE_PASSWORD_MSG,
 } from "@shared/const";
 import type { UserRole } from "../../drizzle/schema";
+import { buildPasswordSessionIdentity } from "./passwordSessionIdentity";
 
 // ─── Password Login Router ─────────────────────────────────────────
 export const userAuthRouter = router({
@@ -127,7 +128,8 @@ export const userAuthRouter = router({
       await loginUpdates;
 
       // Create session token using a pseudo openId for password users
-      const sessionOpenId = user.openId || `pwd_${user.id}`;
+      const sessionIdentity = buildPasswordSessionIdentity(user, process.env.VITE_APP_ID);
+      const sessionOpenId = sessionIdentity.openId;
 
       // CRITICAL: persist the pseudo openId so auth.me can find this user later
       if (!user.openId) {
@@ -135,7 +137,7 @@ export const userAuthRouter = router({
       }
 
       const sessionToken = await sdk.signSession(
-        { openId: sessionOpenId, appId: process.env.VITE_APP_ID || "", name: user.name || "" },
+        sessionIdentity,
         { expiresInMs: ONE_YEAR_MS }
       );
 
