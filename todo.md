@@ -16,6 +16,8 @@
 
 ## 独立部署迁移（2026-08-18）
 
+- [x] 核验Manus自动发布与青岛独立站的代码同步关系，并说明备案期间暂停kuahaixing.com及www解析对访问、服务运行和部署更新的影响（Manus检查点仅自动发布托管域名；青岛ECS需SSH手动同步/构建/重启。暂停解析中断域名访问但不影响ECS进程、数据、SSH部署或Manus回滚入口）
+- [ ] 备案期间暂停常规青岛ECS代码同步；待用户明日确认后汇总Manus检查点差异，受控同步至独立站并执行构建、服务和健康核验
 - [x] 放弃ACR企业版付费实例，改用青岛ECS本机Node 22、MySQL 8与systemd守护Web/Worker/Scheduler，确保不新增ACR月费（真实ECS为4核8GB，未创建约636元/月的ACR企业版实例）
 - [x] 在本机MySQL隔离实例恢复Manus TiDB一致性快照并校验233张表、对象存储URI和核心业务记录（TLS Dumpling快照已在隔离库恢复；233张表、13名用户、30个项目、24个图片工作流会话和43条含历史URI项目文件均已只读核验，抽样URI HTTP 200）
 - [x] 在真实青岛ECS对独立生产MySQL执行加密逻辑备份、上传私有OSS并恢复至隔离校验库，验证数据回滚闭环（AES-256-CBC+PBKDF2加密备份已上传；隔离恢复表数233后已删除隔离库）
@@ -43,6 +45,8 @@
 - [x] 审计当前amazon-listing-tool对Manus OAuth、Forge API、数据库、存储、AI Job与部署环境的专属依赖，形成迁移风险清单（独立部署评估已覆盖本地认证、MySQL、OSS、外部皇帝Skill模型以及图片/语音/地图/通知/Heartbeat的Forge替代边界）
 - [ ] 在独立上线前为Forge专属图片生成、语音转写、地图、数据API、通知与Heartbeat逐项配置替代服务或显式禁用入口，避免独立环境静默失败（通知已降级为未投递状态；图片、语音、地图、数据API和Heartbeat已统一返回明确未配置语义，待完成真实前台交互与日志验收）
 - [x] 修复独立AI Worker因未配置Manus通知服务而循环告警的问题：AUTH_MODE=local时通知返回未投递状态并保留运行告警记录，不再抛出Forge配置异常（单元测试、真实ECS构建、三服务重启和日志回归已通过）
+- [ ] 修复AI观测查询中MySQL保留字procedure的别名未转义问题，消除Worker/Scheduler每5分钟的指标查询SQL语法错误并在青岛ECS日志回归（字段及别名均使用反引号、单元测试通过、三服务active；待跨越完整观测周期后完成日志证据）
+- [ ] 在真实青岛ECS等待至少一个完整AI观测周期后，记录Worker与Scheduler无procedure/ER_PARSE_ERROR或Metric store temporarily unavailable错误的日志证据
 - [x] 审计并为独立模式下的图片生成、语音转写、地图、数据API与Heartbeat建立统一的“能力未配置”可用性契约（统一错误码INDEPENDENT_CAPABILITY_UNAVAILABLE）
 - [x] 为仍可由用户触发的Forge专属前台操作提供明确的独立环境反馈，避免请求在后台静默失败（视频知识库与站外分析在创建记录前拦截；地图组件明确显示不可用状态）
 - [ ] 在真实青岛ECS回归未配置Forge专属能力时的错误语义、核心页面可用性及Worker/Scheduler日志（五类能力均以无业务数据脚本验证为明确不可用，三服务保持active；待前台交互与日志验收）

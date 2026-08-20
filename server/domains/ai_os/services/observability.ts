@@ -457,7 +457,7 @@ export async function buildWorkerQueueHealth(days = 30) {
     [boundedDays(days)],
   );
   const deadLetterRows = await queryRows(
-    `SELECT runId, kind, module, \`procedure\` AS procedure, status, attempt, maxAttempts, userId, projectId, skillSlug, errorMessage, createdAt
+    `SELECT runId, kind, module, \`procedure\` AS \`procedure\`, status, attempt, maxAttempts, userId, projectId, skillSlug, errorMessage, createdAt
      FROM ai_job_dead_letters
      ORDER BY createdAt DESC
      LIMIT 20`,
