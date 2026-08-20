@@ -76,7 +76,7 @@
 
 /// <reference types="@types/google.maps" />
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePersistFn } from "@/hooks/usePersistFn";
 import { cn } from "@/lib/utils";
 
@@ -91,19 +91,23 @@ const FORGE_BASE_URL =
   import.meta.env.VITE_FRONTEND_FORGE_API_URL ||
   "https://forge.butterfly-effect.dev";
 const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
+const IS_INDEPENDENT_MODE = import.meta.env.VITE_AUTH_MODE?.toLowerCase() === "local";
+const MAPS_UNAVAILABLE_MESSAGE = "当前独立部署尚未配置地图服务，地图功能暂不可用。";
 
-function loadMapScript() {
-  return new Promise(resolve => {
+function loadMapScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;
     script.async = true;
     script.crossOrigin = "anonymous";
     script.onload = () => {
-      resolve(null);
+      resolve();
       script.remove(); // Clean up immediately
     };
     script.onerror = () => {
       console.error("Failed to load Google Maps script");
+      script.remove();
+      reject(new Error("地图服务加载失败"));
     };
     document.head.appendChild(script);
   });
@@ -124,9 +128,13 @@ export function MapView({
 }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<google.maps.Map | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const init = usePersistFn(async () => {
     await loadMapScript();
+    if (!window.google?.maps) {
+      throw new Error("地图服务加载失败");
+    }
     if (!mapContainer.current) {
       console.error("Map container not found");
       return;
@@ -146,8 +154,19 @@ export function MapView({
   });
 
   useEffect(() => {
-    init();
+    if (IS_INDEPENDENT_MODE) return;
+    void init().catch((error) => {
+      setLoadError(error instanceof Error ? error.message : "地图服务加载失败");
+    });
   }, [init]);
+
+  if (IS_INDEPENDENT_MODE) {
+    return <div role="alert" className={cn("flex h-[500px] items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground", className)}>{MAPS_UNAVAILABLE_MESSAGE}</div>;
+  }
+
+  if (loadError) {
+    return <div role="alert" className={cn("flex h-[500px] items-center justify-center rounded-md border border-dashed text-sm text-destructive", className)}>{loadError}</div>;
+  }
 
   return (
     <div ref={mapContainer} className={cn("w-full h-[500px]", className)} />

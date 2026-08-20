@@ -4,6 +4,7 @@ import { resourceConflictError } from "@shared/_core/errors";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
+import { assertForgeCapabilityAvailable } from "../_core/forgeCapability";
 import { transcribeAudio } from "../_core/voiceTranscription";
 
 export const kbVideosRouter = router({
@@ -28,6 +29,7 @@ export const kbVideosRouter = router({
       category: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      assertForgeCapabilityAvailable("voice_transcription");
       // ASIN dedup: only if ASIN is provided
       if (input.asin) {
         const asin = input.asin.trim().toUpperCase();
@@ -122,6 +124,7 @@ export const kbVideosRouter = router({
       })).min(1).max(20),
     }))
     .mutation(async ({ ctx, input }) => {
+      assertForgeCapabilityAvailable("voice_transcription");
       const results: { id: number; videoUrl: string }[] = [];
       for (const video of input.videos) {
         const id = await kbDb.createVideo({
@@ -177,6 +180,7 @@ export const kbVideosRouter = router({
       asins: z.array(z.string().min(1)).min(1).max(50),
     }))
     .mutation(async ({ ctx, input }) => {
+      assertForgeCapabilityAvailable("voice_transcription");
       const results: { id: number; asin: string }[] = [];
       for (const rawAsin of input.asins) {
         const asin = rawAsin.trim().toUpperCase();
@@ -237,6 +241,7 @@ export const kbVideosRouter = router({
   importByAsin: protectedProcedure
     .input(z.object({ asin: z.string().min(1), videoUrl: z.string().url() }))
     .mutation(async ({ ctx, input }) => {
+      assertForgeCapabilityAvailable("voice_transcription");
       const asin = input.asin.trim().toUpperCase();
       // ASIN dedup: prevent duplicate entries
       const dupVideo = await kbDb.findVideoByAsin(asin);

@@ -69,6 +69,7 @@ import { buildFullPlanContent, buildPdfContent, safeJsonParse } from "./imageWor
 import { resolveImageWorkflowProjectId } from "./imageWorkflow/projectIdResolution";
 import { buildStep5SegmentStates, getStep5FailurePresentation, getStep5SegmentPresentation, isActiveStep5RunStatus, resolveCurrentStep5RunId } from "./imageWorkflow/step5RunState";
 import { updateStep5AplusStrategy } from "./imageWorkflow/step5AplusStrategy";
+import { getStep5AplusSectionCardKey, getStep5SecondaryImageCardKey } from "./imageWorkflow/step5RenderIdentity";
 import { normalizeSecondaryImageSlots } from "@shared/imageWorkflow";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1333,7 +1334,7 @@ function Step5FinalSuggestions({
           {enData.secondaryImages?.map((img: any, idx: number) => {
             const cnImg = cnData?.secondaryImages?.[idx];
             return (
-              <Card key={idx}>
+              <Card key={getStep5SecondaryImageCardKey(img, idx)} translate="no">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base flex items-center gap-2">
@@ -1467,7 +1468,8 @@ function Step5FinalSuggestions({
                 const isOptimizing = optimizingSectionIdx === idx;
                 return (
                   <Card
-                    key={idx}
+                    key={getStep5AplusSectionCardKey(section, idx)}
+                    translate="no"
                     draggable={!isConfirmed}
                     onDragStart={() => handleDragStart(idx)}
                     onDragOver={(e) => handleDragOver(e, idx)}

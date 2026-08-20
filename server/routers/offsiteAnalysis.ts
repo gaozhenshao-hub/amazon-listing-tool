@@ -2,6 +2,7 @@ import { z } from "zod";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/product_development/security/productDevelopmentProcedure";
 import { callDataApi } from "../_core/dataApi";
+import { assertForgeCapabilityAvailable } from "../_core/forgeCapability";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import {
   createOffsiteAnalysis,
@@ -198,6 +199,7 @@ export const offsiteAnalysisRouter = router({
       keyword: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
+      assertForgeCapabilityAvailable("data_api");
       const now = Date.now();
       // Create record
       const id = await createOffsiteAnalysis({

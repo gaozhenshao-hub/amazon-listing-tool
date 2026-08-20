@@ -8,7 +8,7 @@
     "worker:ai": "AI_JOB_RUNNER_MODE=worker APP_PROCESS_ROLE=worker tsx server/_core/aiWorker.ts",
     "scheduler": "APP_PROCESS_ROLE=scheduler tsx server/_core/scheduler.ts",
     "build": "pnpm build:client && esbuild server/_core/index.ts server/_core/aiWorker.ts server/_core/scheduler.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-    "build:client": "vite build && pnpm bundle:check",
+    "build:client": "VITE_AUTH_MODE=\"${VITE_AUTH_MODE:-${AUTH_MODE:-manus}}\" vite build && pnpm bundle:check",
     "bundle:check": "node scripts/check-bundle-budget.mjs",
     "bundle:report": "BUNDLE_REPORT_PATH=artifacts/bundle-report.json node scripts/check-bundle-budget.mjs",
     "start": "NODE_ENV=production node dist/index.js",

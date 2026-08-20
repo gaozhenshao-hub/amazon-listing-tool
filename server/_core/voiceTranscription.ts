@@ -26,6 +26,10 @@
  * ```
  */
 import { ENV } from "./env";
+import {
+  assertForgeCapabilityAvailable,
+  ForgeCapabilityUnavailableError,
+} from "./forgeCapability";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 
 export type TranscribeOptions = {
@@ -76,19 +80,13 @@ export async function transcribeAudio(
 ): Promise<TranscriptionResponse | TranscriptionError> {
   try {
     // Step 1: Validate environment configuration
-    if (!ENV.forgeApiUrl) {
-      return {
-        error: "Voice transcription service is not configured",
-        code: "SERVICE_ERROR",
-        details: "BUILT_IN_FORGE_API_URL is not set"
-      };
-    }
-    if (!ENV.forgeApiKey) {
-      return {
-        error: "Voice transcription service authentication is missing",
-        code: "SERVICE_ERROR",
-        details: "BUILT_IN_FORGE_API_KEY is not set"
-      };
+    try {
+      assertForgeCapabilityAvailable("voice_transcription");
+    } catch (error) {
+      if (error instanceof ForgeCapabilityUnavailableError) {
+        return { error: error.message, code: "SERVICE_ERROR", details: error.capabilityCode };
+      }
+      throw error;
     }
 
     // Step 2: Download audio from URL
