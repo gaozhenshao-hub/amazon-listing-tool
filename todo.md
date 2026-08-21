@@ -21,6 +21,7 @@
 - [x] 核验Manus自动发布与青岛独立站的代码同步关系，并说明备案期间暂停kuahaixing.com及www解析对访问、服务运行和部署更新的影响（Manus检查点仅自动发布托管域名；青岛ECS需SSH手动同步/构建/重启。暂停解析中断域名访问但不影响ECS进程、数据、SSH部署或Manus回滚入口）
 - [x] 备案期间暂停常规青岛ECS代码同步；用户确认恢复后已汇总GitHub差异并受控同步至独立站，完成构建、服务和健康核验
 - [x] 绕过托管发布链路，直接同步主要竞品选择持久化与动态模块恢复修复至GitHub和青岛ECS，并完成0152迁移、构建与三服务健康核验（GitHub 1331b28；ECS本机健康端点正常、Worker/Scheduler近期无新增解析错误）
+- [x] 修复开发预览服务未热加载新增devPanorama.setMarketInsightSelection过程导致前台返回“No procedure found”的运行时缓存问题；项目180001已完成真实第四项勾选写入、数据库更新时间验证、取消选择并恢复原三项持久化选择
 - [x] 放弃ACR企业版付费实例，改用青岛ECS本机Node 22、MySQL 8与systemd守护Web/Worker/Scheduler，确保不新增ACR月费（真实ECS为4核8GB，未创建约636元/月的ACR企业版实例）
 - [x] 在本机MySQL隔离实例恢复Manus TiDB一致性快照并校验233张表、对象存储URI和核心业务记录（TLS Dumpling快照已在隔离库恢复；233张表、13名用户、30个项目、24个图片工作流会话和43条含历史URI项目文件均已只读核验，抽样URI HTTP 200）
 - [x] 在真实青岛ECS对独立生产MySQL执行加密逻辑备份、上传私有OSS并恢复至隔离校验库，验证数据回滚闭环（AES-256-CBC+PBKDF2加密备份已上传；隔离恢复表数233后已删除隔离库）
