@@ -5,69 +5,20 @@ import { ShieldX, ArrowLeft, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import { Loader2 } from "lucide-react";
+import { PERMISSION_MODULE_LABELS, PERMISSION_ROUTE_REGISTRY, type PermissionRouteRule } from "@shared/const";
 
 /**
  * Route-to-permission mapping table.
  * Maps URL path patterns to { moduleId, subModuleId } for permission checking.
  * Routes not listed here are considered public (no permission check).
  */
-export const ROUTE_PERMISSION_MAP: Record<string, { moduleId: string; subModuleId?: string }> = {
-  // === Module 1: 智能产品开发 (dev) ===
-  "/dev": { moduleId: "dev", subModuleId: "dev_dashboard" },
-  "/dev/new-project": { moduleId: "dev", subModuleId: "dev_new_project" },
-  "/dev/projects": { moduleId: "dev", subModuleId: "dev_projects" },
-  "/dev/project/:id": { moduleId: "dev", subModuleId: "dev_projects" },
-  "/dev/project/:id/analysis": { moduleId: "dev", subModuleId: "dev_projects" },
-  "/dev/project/:id/offsite": { moduleId: "dev", subModuleId: "dev_projects" },
-  "/dev/compare": { moduleId: "dev", subModuleId: "dev_compare" },
-  "/dev/supplier-library": { moduleId: "dev", subModuleId: "dev_supplier" },
-
-  // === Module 2: 智能Listing生成 (listing) ===
-  "/listing": { moduleId: "listing", subModuleId: "listing_projects" },
-  "/listing/analysis": { moduleId: "listing", subModuleId: "listing_analysis" },
-  "/listing/comparison": { moduleId: "listing", subModuleId: "listing_comparison" },
-  "/listing/review-history": { moduleId: "listing", subModuleId: "listing_review_history" },
-  "/listing/review-aggregation": { moduleId: "listing", subModuleId: "listing_review_aggregation" },
-  "/listing/keywords": { moduleId: "listing", subModuleId: "listing_keywords" },
-  "/listing/ad-structure": { moduleId: "listing", subModuleId: "listing_ad_structure" },
-  "/listing/data-files": { moduleId: "listing", subModuleId: "listing_data_files" },
-  "/listing/generate": { moduleId: "listing", subModuleId: "listing_generate" },
-  "/listing/preview": { moduleId: "listing", subModuleId: "listing_preview" },
-  "/listing/score": { moduleId: "listing", subModuleId: "listing_score" },
-  "/listing/image-suggestions": { moduleId: "listing", subModuleId: "listing_image_workflow" },
-  "/listing/image-workflow": { moduleId: "listing", subModuleId: "listing_image_workflow" },
-  "/listing/project/:id": { moduleId: "listing", subModuleId: "listing_projects" },
-
-  // === Module 3: 智能运营提效 (ops) ===
-  "/ops": { moduleId: "ops", subModuleId: "ops_dashboard" },
-
-  // === Module 4: 智能售后管理 (service) ===
-  "/service": { moduleId: "service", subModuleId: "service_dashboard" },
-
-  // === Module 5: 智能知识库 (knowledge) ===
-  "/knowledge": { moduleId: "knowledge", subModuleId: "kb_overview" },
-  "/knowledge/bot": { moduleId: "knowledge", subModuleId: "kb_bot" },
-  "/knowledge/products": { moduleId: "knowledge", subModuleId: "kb_products" },
-  "/knowledge/listings": { moduleId: "knowledge", subModuleId: "kb_listings" },
-  "/knowledge/images": { moduleId: "knowledge", subModuleId: "kb_images" },
-  "/knowledge/skills": { moduleId: "knowledge", subModuleId: "kb_skills" },
-  "/knowledge/videos": { moduleId: "knowledge", subModuleId: "kb_videos" },
-  "/knowledge/intel": { moduleId: "knowledge", subModuleId: "kb_intel" },
-
-  // === Module 6: 系统管理 (admin) ===
-  "/admin/users": { moduleId: "admin", subModuleId: "admin_users" },
-  "/admin/review": { moduleId: "admin", subModuleId: "admin_review" },
-  "/admin/assignments": { moduleId: "admin", subModuleId: "admin_projects" },
-  "/admin/sop-access": { moduleId: "admin", subModuleId: "admin_sop_access" },
-  "/admin/roles": { moduleId: "admin", subModuleId: "admin_roles" },
-  "/admin/sync": { moduleId: "admin", subModuleId: "admin_sync" },
-};
+export const ROUTE_PERMISSION_MAP = PERMISSION_ROUTE_REGISTRY;
 
 /**
  * Match a real path against the route permission map.
  * Handles dynamic segments like :id by converting patterns to regex.
  */
-function matchRoute(pathname: string): { moduleId: string; subModuleId?: string } | null {
+function matchRoute(pathname: string): PermissionRouteRule | null {
   // Try exact match first
   if (ROUTE_PERMISSION_MAP[pathname]) {
     return ROUTE_PERMISSION_MAP[pathname];
@@ -89,15 +40,6 @@ function matchRoute(pathname: string): { moduleId: string; subModuleId?: string 
 /**
  * Module display names for the 403 page
  */
-const MODULE_NAMES: Record<string, string> = {
-  dev: "智能产品开发",
-  listing: "智能Listing生成",
-  ops: "智能运营提效",
-  service: "智能售后管理",
-  knowledge: "智能知识库",
-  admin: "系统管理",
-};
-
 /**
  * 403 Forbidden page component
  */
@@ -111,7 +53,7 @@ function ForbiddenPage({ moduleId, subModuleId }: { moduleId: string; subModuleI
       </div>
       <h1 className="text-2xl font-bold text-foreground mb-2">无访问权限</h1>
       <p className="text-muted-foreground mb-1 max-w-md">
-        您没有访问<span className="font-medium text-foreground">「{MODULE_NAMES[moduleId] || moduleId}」</span>模块的权限
+        您没有访问<span className="font-medium text-foreground">「{PERMISSION_MODULE_LABELS[moduleId] || moduleId}」</span>模块的权限
       </p>
       {subModuleId && (
         <p className="text-sm text-muted-foreground mb-6">
@@ -169,7 +111,7 @@ export function PermissionGuard({
   const subModuleId = overrideSubModuleId || routeMatch?.subModuleId;
 
   // If no permission mapping found for this route, allow access (public route)
-  if (!moduleId) {
+  if (!moduleId || routeMatch?.enforcement === "catalog_only") {
     return <>{children}</>;
   }
 

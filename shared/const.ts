@@ -75,10 +75,18 @@ export const SUB_MODULES: Record<string, { id: string; label: string }[]> = {
   ],
   ops: [
     { id: 'ops_dashboard', label: '运营仪表盘' },
+    { id: 'ops_products', label: '产品总览' },
     { id: 'ops_profit', label: '利润分析' },
     { id: 'ops_inventory', label: '库存预警' },
     { id: 'ops_ads', label: '广告优化' },
     { id: 'ops_forecast', label: '销量预测' },
+    { id: 'ops_data_import', label: '运营数据导入' },
+    { id: 'ops_ad_mapping', label: '广告映射' },
+    { id: 'ops_ad_deep', label: '广告深度分析' },
+    { id: 'ops_tasks', label: '运营任务' },
+    { id: 'ops_logistics', label: '物流管理' },
+    { id: 'ops_crawler', label: '数据采集' },
+    { id: 'ops_custom_dashboard', label: '自定义看板' },
   ],
   service: [
     { id: 'service_dashboard', label: '售后仪表盘' },
@@ -127,8 +135,148 @@ export const SUB_MODULES: Record<string, { id: string; label: string }[]> = {
     { id: 'emperor_usage', label: 'Token 用量' },
     { id: 'emperor_diagnostics', label: '诊断中心' },
     { id: 'emperor_settings', label: '通用设置' },
+    { id: 'emperor_knowledge', label: '知识库' },
+    { id: 'emperor_observability', label: '可观测性' },
   ],
 };
+
+/**
+ * 单公司权限目录唯一来源。角色编辑页、前台路由守卫和资源级授权均应从此目录派生，
+ * 禁止再单独维护模块列表。
+ */
+export const PERMISSION_MODULES = [
+  { id: 'dev', label: '智能产品开发', description: '仪表盘、项目管理、产品对比、供应商库' },
+  { id: 'listing', label: '智能Listing生成', description: '竞品分析、关键词管理、广告架构、Listing生成、评分与图片工作流' },
+  { id: 'ops', label: '智能运营提效', description: '产品总览、库存、广告、物流、数据导入与运营任务' },
+  { id: 'service', label: '智能售后管理', description: '客户评价、退货分析、邮件模板与客户画像' },
+  { id: 'knowledge', label: '智能知识库', description: '产品创意、Listing、图片、SOP、视频与情报中心' },
+  { id: 'admin', label: '系统管理', description: '用户、审核、项目分配、SOP、角色与同步监控' },
+  { id: 'offsite', label: '站外营销', description: '达人、活动、外联、内容、社媒与归因分析' },
+  { id: 'emperor', label: '皇帝AI中台', description: 'Skill、Agent、模型、MCP、运行记录与诊断' },
+] as const;
+
+export const PERMISSION_MODULE_LABELS: Record<string, string> = Object.fromEntries(
+  PERMISSION_MODULES.map((module) => [module.id, module.label]),
+);
+
+export type PermissionRouteRule = {
+  moduleId: string;
+  subModuleId?: string;
+  /** catalog_only is a compatibility stage: displays and audits the directory without changing legacy route access. */
+  enforcement: 'enforced' | 'catalog_only';
+};
+
+/**
+ * Full UI route catalogue. Existing guarded routes remain enforced. Routes newly brought into
+ * the catalogue use catalog_only until role templates are explicitly reviewed, preventing an
+ * automatic change to current members' access during the directory-sync phase.
+ */
+export const PERMISSION_ROUTE_REGISTRY: Record<string, PermissionRouteRule> = {
+  '/dev': { moduleId: 'dev', subModuleId: 'dev_dashboard', enforcement: 'enforced' },
+  '/dev/new-project': { moduleId: 'dev', subModuleId: 'dev_new_project', enforcement: 'enforced' },
+  '/dev/projects': { moduleId: 'dev', subModuleId: 'dev_projects', enforcement: 'enforced' },
+  '/dev/project/:id': { moduleId: 'dev', subModuleId: 'dev_projects', enforcement: 'enforced' },
+  '/dev/project/:id/analysis': { moduleId: 'dev', subModuleId: 'dev_projects', enforcement: 'enforced' },
+  '/dev/project/:id/offsite': { moduleId: 'dev', subModuleId: 'dev_projects', enforcement: 'enforced' },
+  '/dev/compare': { moduleId: 'dev', subModuleId: 'dev_compare', enforcement: 'enforced' },
+  '/dev/supplier-library': { moduleId: 'dev', subModuleId: 'dev_supplier', enforcement: 'enforced' },
+
+  '/listing': { moduleId: 'listing', subModuleId: 'listing_projects', enforcement: 'enforced' },
+  '/listing/analysis': { moduleId: 'listing', subModuleId: 'listing_analysis', enforcement: 'enforced' },
+  '/listing/comparison': { moduleId: 'listing', subModuleId: 'listing_comparison', enforcement: 'enforced' },
+  '/listing/review-history': { moduleId: 'listing', subModuleId: 'listing_review_history', enforcement: 'enforced' },
+  '/listing/review-aggregation': { moduleId: 'listing', subModuleId: 'listing_review_aggregation', enforcement: 'enforced' },
+  '/listing/keywords': { moduleId: 'listing', subModuleId: 'listing_keywords', enforcement: 'enforced' },
+  '/listing/ad-structure': { moduleId: 'listing', subModuleId: 'listing_ad_structure', enforcement: 'enforced' },
+  '/listing/data-files': { moduleId: 'listing', subModuleId: 'listing_data_files', enforcement: 'enforced' },
+  '/listing/generate': { moduleId: 'listing', subModuleId: 'listing_generate', enforcement: 'enforced' },
+  '/listing/preview': { moduleId: 'listing', subModuleId: 'listing_preview', enforcement: 'enforced' },
+  '/listing/score': { moduleId: 'listing', subModuleId: 'listing_score', enforcement: 'enforced' },
+  '/listing/image-suggestions': { moduleId: 'listing', subModuleId: 'listing_image_workflow', enforcement: 'enforced' },
+  '/listing/image-workflow': { moduleId: 'listing', subModuleId: 'listing_image_workflow', enforcement: 'enforced' },
+  '/listing/project/:id': { moduleId: 'listing', subModuleId: 'listing_projects', enforcement: 'enforced' },
+
+  '/ops': { moduleId: 'ops', subModuleId: 'ops_dashboard', enforcement: 'enforced' },
+  '/ops/products': { moduleId: 'ops', subModuleId: 'ops_products', enforcement: 'catalog_only' },
+  '/ops/products/:id': { moduleId: 'ops', subModuleId: 'ops_products', enforcement: 'catalog_only' },
+  '/ops/products/erp/:source/:parentAsin': { moduleId: 'ops', subModuleId: 'ops_products', enforcement: 'catalog_only' },
+  '/ops/products/import/:source/:parentAsin': { moduleId: 'ops', subModuleId: 'ops_products', enforcement: 'catalog_only' },
+  '/ops/inventory': { moduleId: 'ops', subModuleId: 'ops_inventory', enforcement: 'catalog_only' },
+  '/ops/ads': { moduleId: 'ops', subModuleId: 'ops_ads', enforcement: 'catalog_only' },
+  '/ops/crawler': { moduleId: 'ops', subModuleId: 'ops_crawler', enforcement: 'catalog_only' },
+  '/ops/shipping/:id': { moduleId: 'ops', subModuleId: 'ops_logistics', enforcement: 'catalog_only' },
+  '/ops/logistics': { moduleId: 'ops', subModuleId: 'ops_logistics', enforcement: 'catalog_only' },
+  '/ops/dashboard-upgrade': { moduleId: 'ops', subModuleId: 'ops_dashboard', enforcement: 'catalog_only' },
+  '/ops/custom-dashboard': { moduleId: 'ops', subModuleId: 'ops_custom_dashboard', enforcement: 'catalog_only' },
+  '/ops/data-import': { moduleId: 'ops', subModuleId: 'ops_data_import', enforcement: 'catalog_only' },
+  '/ops/ad-mapping': { moduleId: 'ops', subModuleId: 'ops_ad_mapping', enforcement: 'catalog_only' },
+  '/ops/ad-deep': { moduleId: 'ops', subModuleId: 'ops_ad_deep', enforcement: 'catalog_only' },
+  '/ops/tasks': { moduleId: 'ops', subModuleId: 'ops_tasks', enforcement: 'catalog_only' },
+
+  '/service': { moduleId: 'service', subModuleId: 'service_dashboard', enforcement: 'enforced' },
+  '/service/reviews': { moduleId: 'service', subModuleId: 'service_reply', enforcement: 'catalog_only' },
+  '/service/returns': { moduleId: 'service', subModuleId: 'service_returns', enforcement: 'catalog_only' },
+  '/service/emails': { moduleId: 'service', subModuleId: 'service_templates', enforcement: 'catalog_only' },
+  '/service/profiles': { moduleId: 'service', subModuleId: 'service_profiles', enforcement: 'catalog_only' },
+
+  '/knowledge': { moduleId: 'knowledge', subModuleId: 'kb_overview', enforcement: 'enforced' },
+  '/knowledge/bot': { moduleId: 'knowledge', subModuleId: 'kb_bot', enforcement: 'enforced' },
+  '/knowledge/products': { moduleId: 'knowledge', subModuleId: 'kb_products', enforcement: 'enforced' },
+  '/knowledge/listings': { moduleId: 'knowledge', subModuleId: 'kb_listings', enforcement: 'enforced' },
+  '/knowledge/images': { moduleId: 'knowledge', subModuleId: 'kb_images', enforcement: 'enforced' },
+  '/knowledge/skills': { moduleId: 'knowledge', subModuleId: 'kb_skills', enforcement: 'enforced' },
+  '/knowledge/videos': { moduleId: 'knowledge', subModuleId: 'kb_videos', enforcement: 'enforced' },
+  '/knowledge/intel': { moduleId: 'knowledge', subModuleId: 'kb_intel', enforcement: 'enforced' },
+
+  '/admin/users': { moduleId: 'admin', subModuleId: 'admin_users', enforcement: 'enforced' },
+  '/admin/review': { moduleId: 'admin', subModuleId: 'admin_review', enforcement: 'enforced' },
+  '/admin/assignments': { moduleId: 'admin', subModuleId: 'admin_projects', enforcement: 'enforced' },
+  '/admin/sop-access': { moduleId: 'admin', subModuleId: 'admin_sop_access', enforcement: 'enforced' },
+  '/admin/roles': { moduleId: 'admin', subModuleId: 'admin_roles', enforcement: 'enforced' },
+  '/admin/sync': { moduleId: 'admin', subModuleId: 'admin_sync', enforcement: 'enforced' },
+
+  '/offsite': { moduleId: 'offsite', subModuleId: 'offsite_overview', enforcement: 'catalog_only' },
+  '/offsite/influencers': { moduleId: 'offsite', subModuleId: 'offsite_influencers', enforcement: 'catalog_only' },
+  '/offsite/campaigns': { moduleId: 'offsite', subModuleId: 'offsite_campaigns', enforcement: 'catalog_only' },
+  '/offsite/outreach': { moduleId: 'offsite', subModuleId: 'offsite_outreach', enforcement: 'catalog_only' },
+  '/offsite/content-review': { moduleId: 'offsite', subModuleId: 'offsite_content_review', enforcement: 'catalog_only' },
+  '/offsite/social-accounts': { moduleId: 'offsite', subModuleId: 'offsite_social', enforcement: 'catalog_only' },
+  '/offsite/content-calendar': { moduleId: 'offsite', subModuleId: 'offsite_calendar', enforcement: 'catalog_only' },
+  '/offsite/tiktok-matrix': { moduleId: 'offsite', subModuleId: 'offsite_tiktok', enforcement: 'catalog_only' },
+  '/offsite/attribution': { moduleId: 'offsite', subModuleId: 'offsite_attribution', enforcement: 'catalog_only' },
+  '/offsite/analytics': { moduleId: 'offsite', subModuleId: 'offsite_analytics', enforcement: 'catalog_only' },
+
+  '/emperor': { moduleId: 'emperor', subModuleId: 'emperor_skills', enforcement: 'catalog_only' },
+  '/emperor/skills': { moduleId: 'emperor', subModuleId: 'emperor_skills', enforcement: 'catalog_only' },
+  '/emperor/trace': { moduleId: 'emperor', subModuleId: 'emperor_trace', enforcement: 'catalog_only' },
+  '/emperor/models': { moduleId: 'emperor', subModuleId: 'emperor_models', enforcement: 'catalog_only' },
+  '/emperor/mcp': { moduleId: 'emperor', subModuleId: 'emperor_mcp', enforcement: 'catalog_only' },
+  '/emperor/agents': { moduleId: 'emperor', subModuleId: 'emperor_agents', enforcement: 'catalog_only' },
+  '/emperor/usage': { moduleId: 'emperor', subModuleId: 'emperor_usage', enforcement: 'catalog_only' },
+  '/emperor/diagnostics': { moduleId: 'emperor', subModuleId: 'emperor_diagnostics', enforcement: 'catalog_only' },
+  '/emperor/settings': { moduleId: 'emperor', subModuleId: 'emperor_settings', enforcement: 'catalog_only' },
+  '/emperor/scheduled': { moduleId: 'emperor', subModuleId: 'emperor_schedules', enforcement: 'catalog_only' },
+  '/emperor/knowledge': { moduleId: 'emperor', subModuleId: 'emperor_knowledge', enforcement: 'catalog_only' },
+  '/emperor/observability': { moduleId: 'emperor', subModuleId: 'emperor_observability', enforcement: 'catalog_only' },
+};
+
+/**
+ * Resource-to-directory registry used by server-side security governance.
+ * It remains in the same permission catalogue as roles and routes so resource checks cannot
+ * silently drift to a different module or sub-module definition.
+ */
+export const PERMISSION_RESOURCE_REGISTRY = {
+  project: { moduleId: 'listing', subModuleId: 'listing_projects' },
+  image_workflow: { moduleId: 'listing', subModuleId: 'listing_image_workflow' },
+  product_development: { moduleId: 'dev', subModuleId: 'dev_projects' },
+  knowledge: { moduleId: 'knowledge' },
+  file: { moduleId: 'listing', subModuleId: 'listing_data_files' },
+  tool: { moduleId: 'emperor', subModuleId: 'emperor_mcp' },
+  agent: { moduleId: 'emperor', subModuleId: 'emperor_agents' },
+  ops_data: { moduleId: 'ops', subModuleId: 'ops_dashboard' },
+  offsite_campaign: { moduleId: 'offsite', subModuleId: 'offsite_campaigns' },
+  emperor_skill: { moduleId: 'emperor', subModuleId: 'emperor_skills' },
+} as const;
 
 // Permission entry type for fine-grained control
 export interface ModulePermission {
@@ -141,17 +289,8 @@ export interface ModulePermission {
 }
 
 // Security governance v1: resource/action permission model.
-export const SECURITY_RESOURCES = [
-  'project',
-  'image_workflow',
-  'product_development',
-  'knowledge',
-  'file',
-  'tool',
-  'agent',
-  'ops_data',
-] as const;
-export type SecurityResource = typeof SECURITY_RESOURCES[number];
+export type SecurityResource = keyof typeof PERMISSION_RESOURCE_REGISTRY;
+export const SECURITY_RESOURCES = Object.keys(PERMISSION_RESOURCE_REGISTRY) as SecurityResource[];
 
 export const SECURITY_ACTIONS = [
   'read',
@@ -172,16 +311,8 @@ export const SECURITY_ACTIONS = [
 ] as const;
 export type SecurityAction = typeof SECURITY_ACTIONS[number];
 
-export const SECURITY_RESOURCE_MODULES: Record<SecurityResource, { moduleId: string; subModuleId?: string }> = {
-  project: { moduleId: 'listing', subModuleId: 'listing_projects' },
-  image_workflow: { moduleId: 'listing', subModuleId: 'listing_image_workflow' },
-  product_development: { moduleId: 'dev', subModuleId: 'dev_projects' },
-  knowledge: { moduleId: 'knowledge' },
-  file: { moduleId: 'listing', subModuleId: 'listing_data_files' },
-  tool: { moduleId: 'emperor', subModuleId: 'emperor_mcp' },
-  agent: { moduleId: 'emperor', subModuleId: 'emperor_agents' },
-  ops_data: { moduleId: 'ops', subModuleId: 'ops_dashboard' },
-};
+export const SECURITY_RESOURCE_MODULES: Record<SecurityResource, { moduleId: string; subModuleId?: string }> =
+  PERMISSION_RESOURCE_REGISTRY;
 
 export const SECURITY_ACTION_OPERATION: Record<SecurityAction, PermissionOperation> = {
   read: 'read',

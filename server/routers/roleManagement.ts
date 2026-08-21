@@ -2,16 +2,9 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../repositories";
-import { ADMIN_ROLES, ALL_ROLES, ROLE_LABELS, ROLE_MODULE_ACCESS, SUB_MODULES, type ModulePermission } from "@shared/const";
+import { ADMIN_ROLES, ALL_ROLES, PERMISSION_MODULES, ROLE_LABELS, ROLE_MODULE_ACCESS, SUB_MODULES, type ModulePermission } from "@shared/const";
 
-const ALL_MODULES = [
-  { id: "dev", label: "智能产品开发", description: "仪表盘、项目管理、产品对比、供应商库" },
-  { id: "listing", label: "智能Listing生成", description: "竞品分析、关键词管理、广告架构、Listing生成、评分" },
-  { id: "ops", label: "智能运营提效", description: "利润分析、库存预警、广告优化、销量预测" },
-  { id: "service", label: "智能售后管理", description: "AI客服回复、退货分析、邮件模板、客户画像" },
-  { id: "knowledge", label: "智能知识库", description: "产品创意库、Listing文案库、图片知识库、SOP库、视频库" },
-  { id: "admin", label: "系统管理", description: "用户管理、审核中心、项目分配、角色管理、同步监控" },
-];
+const ALL_MODULES = PERMISSION_MODULES;
 
 export const roleManagementRouter = router({
   // List all roles with their permissions (including detailed permissions)

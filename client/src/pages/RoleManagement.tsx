@@ -12,12 +12,13 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
   Shield, ShieldAlert, ShieldCheck, Edit3, Save, Loader2, ChevronDown, ChevronRight,
   Package, FileText, TrendingUp, Headphones, BookOpen, Users,
-  Eye, Pencil, Trash2, XCircle,
+  Eye, Pencil, Trash2, XCircle, Network, Route, Layers3, UserRoundCheck, AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -48,6 +49,7 @@ export default function RoleManagement() {
   const utils = trpc.useUtils();
   const { data: roles, isLoading } = trpc.roleManagement.list.useQuery();
   const { data: modules } = trpc.roleManagement.modules.useQuery();
+  const usersQuery = trpc.userManagement.list.useQuery();
   const [editingRole, setEditingRole] = useState<string | null>(null);
   const [editModules, setEditModules] = useState<string[]>([]);
   const [editDescription, setEditDescription] = useState("");
@@ -174,13 +176,20 @@ export default function RoleManagement() {
   };
 
   const stats = useMemo(() => {
-    if (!roles) return { total: 0, withAdmin: 0, avgModules: 0 };
+    const activeMembers = (usersQuery.data || []).filter((user) => user.status === "active").length;
+    const moduleCount = modules?.length || 0;
+    const subModuleCount = (modules || []).reduce((sum, module) => sum + (module.subModules?.length || 0), 0);
+    if (!roles) return { total: 0, withAdmin: 0, avgModules: 0, activeMembers, moduleCount, subModuleCount, customizedRoles: 0 };
     return {
       total: roles.length,
       withAdmin: roles.filter(r => r.modules.includes("admin")).length,
       avgModules: Math.round(roles.reduce((sum, r) => sum + r.modules.length, 0) / roles.length * 10) / 10,
+      activeMembers,
+      moduleCount,
+      subModuleCount,
+      customizedRoles: roles.filter((role) => role.detailedPermissions?.length).length,
     };
-  }, [roles]);
+  }, [roles, usersQuery.data, modules]);
 
   const editingRoleData = roles?.find(r => r.role === editingRole);
 
@@ -207,25 +216,35 @@ export default function RoleManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">角色权限管理</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            管理各角色的模块访问权限，支持操作级别（只读/编辑/删除）和二级模块的精细控制
-          </p>
+      <div className="rounded-2xl border bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 p-6 text-white shadow-sm">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="max-w-3xl">
+            <div className="mb-3 flex items-center gap-2 text-xs font-medium text-indigo-200">
+              <ShieldCheck className="h-4 w-4" />
+              单公司权限治理中心
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight">公司成员、角色模板与业务资源的统一授权</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              权限目录已统一覆盖模块、子模块、页面路由与资源映射。当前页面只展示与配置，不会自动改变任何成员的实际访问结果。
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-slate-200">
+            <div className="flex items-center gap-2 font-medium"><Network className="h-4 w-4 text-emerald-300" />统一目录已连接</div>
+            <p className="mt-1 text-xs text-slate-300">角色模板 → 路由目录 → 资源授权</p>
+          </div>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Card>
           <CardContent className="pt-4 pb-4 flex items-center gap-3">
             <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
               <Shield className="h-5 w-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{stats.total}</p>
-              <p className="text-xs text-muted-foreground">角色总数</p>
+              <p className="text-2xl font-bold">{stats.activeMembers}</p>
+              <p className="text-xs text-muted-foreground">活跃公司成员</p>
             </div>
           </CardContent>
         </Card>
@@ -235,8 +254,8 @@ export default function RoleManagement() {
               <ShieldAlert className="h-5 w-5 text-red-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{stats.withAdmin}</p>
-              <p className="text-xs text-muted-foreground">含管理权限</p>
+              <p className="text-2xl font-bold">{stats.total}</p>
+              <p className="text-xs text-muted-foreground">角色模板</p>
             </div>
           </CardContent>
         </Card>
@@ -246,13 +265,86 @@ export default function RoleManagement() {
               <Package className="h-5 w-5 text-green-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{stats.avgModules}</p>
-              <p className="text-xs text-muted-foreground">平均模块数</p>
+              <p className="text-2xl font-bold">{stats.moduleCount}</p>
+              <p className="text-xs text-muted-foreground">一级模块目录</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4 flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+              <Layers3 className="h-5 w-5 text-indigo-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{stats.subModuleCount}</p>
+              <p className="text-xs text-muted-foreground">二级权限目录</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl bg-muted/60 p-1">
+          <TabsTrigger value="overview" className="gap-1.5"><ShieldCheck className="h-3.5 w-3.5" />权限总览</TabsTrigger>
+          <TabsTrigger value="roles" className="gap-1.5"><Users className="h-3.5 w-3.5" />角色模板</TabsTrigger>
+          <TabsTrigger value="catalog" className="gap-1.5"><Route className="h-3.5 w-3.5" />权限目录</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">最终权限如何计算</CardTitle>
+                <CardDescription>所有成员位于同一公司，权限按固定顺序叠加并记录来源。</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-2 sm:grid-cols-4">
+                  {[
+                    ["1", "角色模板", "岗位的模块与操作基线"],
+                    ["2", "成员状态", "启用、禁用与角色归属"],
+                    ["3", "资源范围", "项目、ASIN与资产授权"],
+                    ["4", "例外策略", "单独允许或拒绝（拒绝优先）"],
+                  ].map(([step, title, description], index) => (
+                    <div key={title} className="relative rounded-xl border bg-muted/20 p-3">
+                      {index < 3 && <div className="absolute -right-3 top-1/2 hidden h-px w-6 bg-border sm:block" />}
+                      <span className="text-xs font-semibold text-primary">{step}</span>
+                      <p className="mt-1 text-sm font-medium">{title}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-amber-200 bg-amber-50/40">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base text-amber-900"><AlertTriangle className="h-4 w-4" />待治理关注项</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm text-amber-900">
+                <div className="flex justify-between gap-3"><span>含管理模块角色</span><strong>{stats.withAdmin}</strong></div>
+                <div className="flex justify-between gap-3"><span>存在细粒度配置的角色</span><strong>{stats.customizedRoles}</strong></div>
+                <p className="border-t border-amber-200 pt-2 text-xs leading-5 text-amber-800">目录同步阶段新增的路由目前处于“仅目录”模式，待管理员审核角色模板后再启用强制拦截。</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base"><UserRoundCheck className="h-4 w-4 text-primary" />成员授权入口</CardTitle>
+              <CardDescription>成员账户、状态与角色分配继续由“用户管理”维护；此处展示当前公司权限治理基线。</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              {(usersQuery.data || []).slice(0, 12).map((user) => (
+                <Badge key={user.id} variant="outline" className="gap-1.5 px-2.5 py-1">
+                  <span className={user.status === "active" ? "h-1.5 w-1.5 rounded-full bg-emerald-500" : "h-1.5 w-1.5 rounded-full bg-muted-foreground"} />
+                  {user.name || user.email || `用户 ${user.id}`} · {user.role}
+                </Badge>
+              ))}
+              {!usersQuery.isLoading && !(usersQuery.data || []).length && <span className="text-sm text-muted-foreground">暂无成员数据</span>}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="roles" className="space-y-4">
       {/* Role Permission Matrix */}
       <Card>
         <CardHeader>
@@ -348,6 +440,9 @@ export default function RoleManagement() {
         </CardContent>
       </Card>
 
+        </TabsContent>
+
+        <TabsContent value="catalog" className="space-y-4">
       {/* Module Legend */}
       <Card>
         <CardHeader>
@@ -385,6 +480,8 @@ export default function RoleManagement() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Edit Dialog - Fine-grained permissions */}
       <Dialog open={!!editingRole} onOpenChange={(open) => { if (!open) setEditingRole(null); }}>
