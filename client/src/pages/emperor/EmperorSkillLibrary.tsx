@@ -33,6 +33,7 @@ import {
   Search,
   Play,
   Loader2,
+  ChevronLeft,
   ChevronRight,
   Sparkles,
   Tag,
@@ -136,6 +137,8 @@ const STATUS_COLORS: Record<string, string> = {
   Released: "bg-green-100 text-green-700",
   Deprecated: "bg-red-100 text-red-600",
 };
+
+const SKILL_PAGE_SIZE = 30;
 
 function getCategoryColor(category: string): string {
   return CATEGORY_COLORS[category] || "bg-gray-500/10 text-gray-600 border-gray-200";
@@ -510,6 +513,7 @@ export default function EmperorSkillLibrary() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedSkill, setSelectedSkill] = useState<SkillRow | null>(null);
   const [context, setContext] = useState("");
   const [emphasis, setEmphasis] = useState("");
@@ -529,8 +533,8 @@ export default function EmperorSkillLibrary() {
   const { data: skillsData, isLoading: skillsLoading } = trpc.emperor.skills.list.useQuery({
     category: selectedCategory === "all" ? undefined : (selectedCategory || undefined),
     search: searchQuery || undefined,
-    page: 1,
-    pageSize: 500,
+    page: currentPage,
+    pageSize: SKILL_PAGE_SIZE,
   });
 
   // Fetch categories
@@ -581,6 +585,15 @@ export default function EmperorSkillLibrary() {
   const skills: SkillRow[] = useMemo(() => {
     return (skillsData?.skills || []) as SkillRow[];
   }, [skillsData]);
+
+  const totalSkills = skillsData?.total ?? skills.length;
+  const totalPages = Math.max(1, Math.ceil(totalSkills / SKILL_PAGE_SIZE));
+  const pageStart = totalSkills === 0 ? 0 : (currentPage - 1) * SKILL_PAGE_SIZE + 1;
+  const pageEnd = Math.min(currentPage * SKILL_PAGE_SIZE, totalSkills);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategory]);
 
   const categories = useMemo(() => {
     if (categoriesData) {
@@ -693,7 +706,7 @@ export default function EmperorSkillLibrary() {
               {skillsLoading ? "加载中..." : `${skillsData?.total ?? skills.length} 个技能`}
             </p>
           </div>
-          <ScrollArea className="flex-1">
+          <ScrollArea className="flex-1 min-h-0">
             <div className="p-2 space-y-0.5">
               <button
                 onClick={() => setSelectedCategory("all")}
@@ -731,7 +744,7 @@ export default function EmperorSkillLibrary() {
         </div>
 
         {/* ── Middle: Skill card list ── */}
-        <div className="flex-1 flex flex-col min-w-0 border-r">
+        <div className="flex-1 min-h-0 flex flex-col min-w-0 border-r">
           {/* Toolbar */}
           <div className="p-3 border-b bg-background space-y-2">
             <div className="relative">
@@ -763,7 +776,7 @@ export default function EmperorSkillLibrary() {
           </div>
 
           {/* Skill list */}
-          <ScrollArea className="flex-1">
+          <ScrollArea className="flex-1 min-h-0">
             {skillsLoading ? (
               <div className="flex items-center justify-center py-20">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -849,6 +862,37 @@ export default function EmperorSkillLibrary() {
               </div>
             )}
           </ScrollArea>
+
+          {!skillsLoading && totalSkills > 0 && (
+            <div className="flex items-center justify-between gap-2 border-t px-3 py-2 bg-background">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                显示 {pageStart}–{pageEnd} / 共 {totalSkills} 个 Skill
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                >
+                  <ChevronLeft className="h-3.5 w-3.5 mr-1" />上一页
+                </Button>
+                <span className="min-w-14 text-center text-xs tabular-nums text-muted-foreground">
+                  {currentPage} / {totalPages}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                >
+                  下一页<ChevronRight className="h-3.5 w-3.5 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Right: Run panel ── */}
