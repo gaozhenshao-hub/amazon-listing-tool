@@ -268,8 +268,12 @@ export default function MajorCompetitorAnalysis({
           </div>
         ) : null}
         {!draft && !running ? (
-          <div className="border border-dashed rounded-md py-12 text-center text-sm text-muted-foreground">
-            价格结构与主要竞品矩阵尚未生成
+          <div className="border border-dashed rounded-md py-10 text-center text-sm text-muted-foreground space-y-2">
+            <p>价格结构与主要竞品矩阵尚未生成</p>
+            {insight?.status === "failed" ? (
+              <p className="text-xs text-destructive">上次分析失败：{insight.runError || "请重新选择 2-4 个主要竞争对手后重试"}</p>
+            ) : null}
+            <p className="text-xs">主要竞品选择会自动保存；确认全景表后可重新发起分析。</p>
           </div>
         ) : null}
 

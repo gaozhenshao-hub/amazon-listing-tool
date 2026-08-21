@@ -1,4 +1,4 @@
-import { Fragment, useState, useMemo, useCallback, useRef } from "react";
+import { Fragment, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import MajorCompetitorAnalysis from "./MajorCompetitorAnalysis";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -412,6 +412,11 @@ export default function PanoramaTable({
 
   const { data, isLoading } = trpc.devPanorama.getData.useQuery({ projectId });
   const { data: statusData } = trpc.devPanorama.getStatus.useQuery({ projectId });
+  const selectionHydratedProjectRef = useRef<number | null>(null);
+  const saveCompetitorSelectionMutation = trpc.devPanorama.setMarketInsightSelection.useMutation({
+    onSuccess: () => utils.devPanorama.getStatus.invalidate({ projectId }),
+    onError: (error) => toast.error(`主要竞品选择保存失败: ${error.message}`),
+  });
   const updateFieldMutation = trpc.devPanorama.updateProductField.useMutation({
     onSuccess: () => { utils.devPanorama.getData.invalidate({ projectId }); toast.success("已更新"); },
     onError: (e: any) => toast.error("更新失败: " + e.message),
@@ -464,6 +469,16 @@ export default function PanoramaTable({
   });
 
   const isConfirmed = statusData?.confirmed ?? false;
+
+  useEffect(() => {
+    if (!statusData?.status || selectionHydratedProjectRef.current === projectId) return;
+    const stored = statusData.status.selectedCompetitorAsins;
+    const competitorAsins = Array.isArray(stored)
+      ? stored.map((asin) => String(asin || "").trim().toUpperCase()).filter(Boolean).slice(0, 4)
+      : [];
+    setSelectedCompetitorAsins(competitorAsins);
+    selectionHydratedProjectRef.current = projectId;
+  }, [projectId, statusData?.status]);
 
   // Build tag value options per category (for dropdown)
   const tagValueOptions = useMemo(() => {
@@ -930,14 +945,15 @@ export default function PanoramaTable({
       return;
     }
     setSelectedCompetitorAsins((current) => {
-      if (current.includes(asin)) return current.filter((item) => item !== asin);
-      if (current.length >= 4) {
+      const next = current.includes(asin) ? current.filter((item) => item !== asin) : [...current, asin];
+      if (!current.includes(asin) && current.length >= 4) {
         toast.info("主要竞争对手最多选择 4 个");
         return current;
       }
-      return [...current, asin];
+      saveCompetitorSelectionMutation.mutate({ projectId, competitorAsins: next });
+      return next;
     });
-  }, []);
+  }, [projectId, saveCompetitorSelectionMutation]);
 
   if (isLoading) {
     return (

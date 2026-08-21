@@ -13,6 +13,7 @@ import {
   normalizeParentMarketMetrics,
   sanitizePriceBands,
 } from "../domains/product_development/panorama/marketMetrics";
+import { mapToProductData } from "../domains/product_development/analysis/dataHelpers";
 import {
   cancelPanoramaMarketInsight,
   confirmPanoramaMarketInsight,
@@ -363,6 +364,45 @@ export const devPanoramaRouter = router({
         eq(devPanoramaStatus.userId, ctx.user.id)
       ));
       return { confirmed: rows[0]?.confirmed === 1, status: rows[0] || null };
+    }),
+
+  setMarketInsightSelection: protectedProcedure
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      competitorAsins: z.array(z.string().trim().min(1).max(20)).max(4),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const competitorAsins = [...new Set(input.competitorAsins.map((asin) => asin.toUpperCase()))];
+      const products = await db.select().from(devProducts)
+        .where(eq(devProducts.projectId, input.projectId));
+      const eligibleAsins = new Set(
+        normalizeParentMarketMetrics(products.map(mapToProductData))
+          .filter((product) => product.parentSalesRepresentative && product.asin)
+          .map((product) => String(product.asin).toUpperCase()),
+      );
+      const invalidAsins = competitorAsins.filter((asin) => !eligibleAsins.has(asin));
+      if (invalidAsins.length > 0) {
+        throw new Error(`只能选择父体销量计入行作为主要竞争对手：${invalidAsins.join("、")}`);
+      }
+      const workspaceId = productDevelopmentWorkspaceId(ctx);
+      const existing = await db.select().from(devPanoramaStatus).where(and(
+        eq(devPanoramaStatus.projectId, input.projectId),
+        eq(devPanoramaStatus.userId, ctx.user.id),
+      )).limit(1);
+      if (existing[0]) {
+        await db.update(devPanoramaStatus).set({ selectedCompetitorAsins: competitorAsins })
+          .where(eq(devPanoramaStatus.id, existing[0].id));
+      } else {
+        await db.insert(devPanoramaStatus).values({
+          workspaceId,
+          projectId: input.projectId,
+          userId: ctx.user.id,
+          selectedCompetitorAsins: competitorAsins,
+        });
+      }
+      return { competitorAsins };
     }),
 
   getMarketInsight: protectedProcedure

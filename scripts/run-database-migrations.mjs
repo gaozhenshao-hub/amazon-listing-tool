@@ -74,6 +74,7 @@ const supplementalMigrations = [
   "0149_dev_import_batch_governance.sql",
   "0150_step5_complete_result_longtext.sql",
   "0151_step5_segment_run_status.sql",
+  "0152_dev_panorama_competitor_selection_persistence.sql",
 ];
 
 const retiredMigrationFiles = new Set([

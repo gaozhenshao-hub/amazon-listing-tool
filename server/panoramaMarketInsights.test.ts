@@ -59,6 +59,7 @@ describe("panorama market insight contract", () => {
     const router = read("server/routers/devPanorama.ts");
     for (const procedure of [
       "generateMarketInsight",
+      "setMarketInsightSelection",
       "saveMarketInsight",
       "confirmMarketInsight",
       "unlockMarketInsight",
@@ -85,10 +86,12 @@ describe("panorama market insight contract", () => {
     expect(panorama).toContain("<MajorCompetitorAnalysis");
     expect(panorama).toContain("主要竞品");
     expect(panorama).toContain("selectedCompetitorAsins");
+    expect(panorama).toContain("setMarketInsightSelection");
     expect(panorama).toContain("<Checkbox");
     expect(matrix).toContain("主要竞争对手分析");
     expect(matrix).toContain("分析已选");
     expect(matrix).toContain("人工备注");
     expect(matrix).toContain("确认锁定");
+    expect(matrix).toContain("主要竞品选择会自动保存");
   });
 });

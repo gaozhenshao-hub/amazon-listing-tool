@@ -876,6 +876,7 @@ export const devPanoramaStatus = mysqlTable("dev_panorama_status", {
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   confirmed: int("confirmed").default(0).notNull(), // 0=未确认, 1=已确认
+  selectedCompetitorAsins: json("selectedCompetitorAsins"),
   currentVersionId: int("currentVersionId"),
   confirmedAt: timestamp("confirmedAt"),
   lastMergedAt: timestamp("lastMergedAt"),

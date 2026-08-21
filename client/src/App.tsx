@@ -61,7 +61,10 @@ const DevAnalysisFlow = lazy(() => import("./pages/dev/DevAnalysisFlow"));
 const DevOffsiteAnalysis = lazy(() => import("./pages/dev/DevOffsiteAnalysis"));
 
 // ─── Module 5: Knowledge Base ───────────────────────────────────
-const KBOverview = lazy(() => import("./pages/knowledge/KBOverview"));
+const KBOverview = lazyWithRecovery(
+  () => import("./pages/knowledge/KBOverview"),
+  "lazy-recovery:kb-overview",
+);
 const KBProducts = lazy(() => import("./pages/knowledge/KBProducts"));
 const KBListings = lazy(() => import("./pages/knowledge/KBListings"));
 const KBImages = lazy(() => import("./pages/knowledge/KBImages"));
@@ -107,7 +110,10 @@ const OffsiteAttribution = lazy(() => import("./pages/offsite/OffsiteAttribution
 const OffsiteAnalytics = lazy(() => import("./pages/offsite/OffsiteAnalytics"));
 
 // ─── Platform Home ──────────────────────────────────────────────
-const PlatformHome = lazy(() => import("./pages/PlatformHome"));
+const PlatformHome = lazyWithRecovery(
+  () => import("./pages/PlatformHome"),
+  "lazy-recovery:platform-home",
+);
 
 // ─── System Settings ────────────────────────────────────────────
 const SystemSettings = lazy(() => import("./pages/SystemSettings"));
