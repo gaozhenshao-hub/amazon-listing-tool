@@ -33,8 +33,10 @@
 - [x] 审计“皇帝 Harness 前台—后端适配性审计与优化方案”的原始条目、代码、迁移、测试和青岛ECS验收记录，区分已完成、部分完成、未开始与需独立站前台复验项（报告：`docs/audits/emperor-harness-frontend-backend-adaptation-audit-2026-08-22.md`）
 - [x] 对照LangGraph与LangChain当前官方架构能力，评估皇帝在状态图/检查点、持久化/记忆、人工介入、流式运行、工具治理、可观测性、评测与部署上的可优化空间
 - [x] 输出不绕过皇帝Skill、Agent、Tool Gateway、Run Ledger和人工审批治理边界的分级优化方案，并将确认后的实施项写入待办
-- [ ] P0：将青岛ECS已存在的`EmperorQualityGates`与`EmperorHarnessGovernance`接入统一权限目录、`/emperor/quality`和`/emperor/governance`路由及侧边栏入口，并补齐角色/前台可达性回归
-- [ ] P0：将生产已应用的0153–0156皇帝Harness前向迁移审阅并收敛至托管项目回滚源码；只校验和同步SQL，不重新执行历史迁移、不改写生产数据
+- [x] P0：将青岛ECS已存在的`EmperorQualityGates`与`EmperorHarnessGovernance`接入统一权限目录、`/emperor/quality`和`/emperor/governance`路由及侧边栏入口，并补齐角色/前台可达性回归
+- [x] P0：将生产已应用的0153–0156皇帝Harness前向迁移审阅并收敛至托管项目回滚源码；只校验和同步SQL，不重新执行历史迁移、不改写生产数据
+- [x] P0实施：为质量门禁与治理工作区补齐前台路由、统一权限资源、侧边栏入口和定向可达性回归；不新建平行控制台（定向契约2/2、生产构建及两个路由HTTP 200）
+- [x] P0实施：以青岛ECS已应用0153–0156SQL为只读基线，校验文件完整性后收敛到托管源码和迁移发布计划；不对数据库执行该四项历史迁移（计划135项；0153–0156位于125–128，无数据库变化）
 - [ ] P1：为Plan/Step/Agent运行建立版本化执行状态快照、恢复幂等键与补偿事件协议，继续由服务端重新校验权限、能力版本和审批状态
 - [ ] P1：将输入校验、风险/权限、Context Compiler、预算、模型/Tool执行、错误分类/有限重试、Run Ledger和评测收敛为受治理服务器端生命周期中间件链
 - [x] 执行一次对话任务管理器端到端受控验收：创建会话、上传文本附件、读取能力/知识候选、提交不执行的计划并归档验收会话（`conv_b08c42ce34034b9b9b6165b028547269`已归档；125项Skill、2项知识候选与`proposed`计划均通过受控路径验证）

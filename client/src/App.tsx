@@ -134,6 +134,8 @@ import { PermissionGuard } from "./components/PermissionGuard";
 const EmperorSkillLibrary = lazy(() => import("./pages/emperor/EmperorSkillLibrary"));
 const EmperorConversations = lazy(() => import("./pages/emperor/EmperorConversations"));
 const EmperorTrace = lazy(() => import("./pages/emperor/EmperorTrace"));
+const EmperorQualityGates = lazy(() => import("./pages/emperor/EmperorQualityGates"));
+const EmperorHarnessGovernance = lazy(() => import("./pages/emperor/EmperorHarnessGovernance"));
 const EmperorModels = lazy(() => import("./pages/emperor/EmperorModels"));
 const EmperorMCP = lazy(() => import("./pages/emperor/EmperorMCP"));
 const EmperorAgents = lazy(() => import("./pages/emperor/EmperorAgents"));
@@ -259,6 +261,8 @@ function Router() {
         <Route path="/emperor/skills">{() => <PermissionGuard><EmperorSkillLibrary /></PermissionGuard>}</Route>
         <Route path="/emperor/conversations">{() => <PermissionGuard><EmperorConversations /></PermissionGuard>}</Route>
         <Route path="/emperor/trace">{() => <PermissionGuard><EmperorTrace /></PermissionGuard>}</Route>
+        <Route path="/emperor/quality">{() => <PermissionGuard><EmperorQualityGates /></PermissionGuard>}</Route>
+        <Route path="/emperor/governance">{() => <PermissionGuard><EmperorHarnessGovernance /></PermissionGuard>}</Route>
         <Route path="/emperor/models">{() => <PermissionGuard><EmperorModels /></PermissionGuard>}</Route>
         <Route path="/emperor/mcp">{() => <PermissionGuard><EmperorMCP /></PermissionGuard>}</Route>
         <Route path="/emperor/agents">{() => <PermissionGuard><EmperorAgents /></PermissionGuard>}</Route>
