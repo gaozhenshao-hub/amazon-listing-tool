@@ -93,6 +93,7 @@ export async function createExecutionStateSnapshot(input: {
   targetType: string;
   targetId: string;
   stateVersion: number;
+  status?: string | null;
   planId?: string | null;
   planVersion?: number | null;
   capabilityType?: ConversationCapabilityType | null;
@@ -107,9 +108,9 @@ export async function createExecutionStateSnapshot(input: {
   const payload = sanitize(input.snapshot);
   await execute(
     `INSERT INTO emperor_execution_state_snapshots
-      (snapshotId,workspaceId,traceId,targetType,targetId,stateVersion,planId,planVersion,capabilityType,capabilitySlug,capabilityVersion,approvalState,contextManifestHash,inputHash,snapshot,createdBy)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [snapshotId, input.workspaceId ?? null, input.traceId ?? null, input.targetType, input.targetId, input.stateVersion, input.planId ?? null, input.planVersion ?? null, input.capabilityType ?? null, input.capabilitySlug ?? null, input.capabilityVersion ?? null, input.approvalState ?? null, input.contextManifestHash ?? null, executionHash(payload), canonicalJson(payload), input.createdBy ?? null],
+      (snapshotId,workspaceId,traceId,targetType,targetId,stateVersion,status,planId,planVersion,capabilityType,capabilitySlug,capabilityVersion,approvalState,contextManifestHash,inputHash,snapshot,createdBy)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [snapshotId, input.workspaceId ?? null, input.traceId ?? null, input.targetType, input.targetId, input.stateVersion, input.status ?? "captured", input.planId ?? null, input.planVersion ?? null, input.capabilityType ?? null, input.capabilitySlug ?? null, input.capabilityVersion ?? null, input.approvalState ?? null, input.contextManifestHash ?? null, executionHash(payload), canonicalJson(payload), input.createdBy ?? null],
   );
   return { snapshotId, inputHash: executionHash(payload) };
 }

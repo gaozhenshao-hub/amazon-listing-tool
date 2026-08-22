@@ -88,6 +88,7 @@ const supplementalMigrations = [
     "0162_emperor_conversation_planner_model_policy.sql",
     "0163_emperor_conversation_message_skill_run.sql",
     "0164_emperor_execution_recovery_lifecycle.sql",
+    "0165_emperor_agent_run_recovery_state.sql",
   ];
 
 const retiredMigrationFiles = new Set([

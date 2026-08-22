@@ -422,6 +422,8 @@ export const emperorAgentRuns = mysqlTable("emperor_agent_runs", {
   status: mysqlEnum("status", ["running", "waiting_human", "paused", "completed", "failed", "canceled"]).default("waiting_human").notNull(),
   currentNodeId: varchar("currentNodeId", { length: 128 }),
   progress: int("progress").default(0).notNull(),
+  stateVersion: int("stateVersion").default(0).notNull(),
+  recoverySnapshotId: varchar("recoverySnapshotId", { length: 80 }),
   inputs: json("inputs"),
   outputs: json("outputs"),
   errorMessage: text("errorMessage"),

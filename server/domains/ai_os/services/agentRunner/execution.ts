@@ -3,7 +3,12 @@ import { selectAgentTemplateVersionForRun, getAgentBySlug } from "./templateGove
 import { addEvent, getCheckpoints, getCheckpoint } from "./checkpointStore";
 import { persistAgentArtifact, listAgentArtifacts, estimateAgentHumanEditRate } from "./artifactStore";
 import { getRunRow, effectiveCheckpointOutput, refreshRunAfterCheckpoint, unlockChildren, buildNodeInput, buildSkillContext } from "./contextPackage";
-import { createExecutionStateSnapshot } from "../executionLifecycle";
+import {
+  buildRecoveryIdempotencyKey,
+  claimExecutionRecoveryRequest,
+  completeExecutionRecoveryRequest,
+  createExecutionStateSnapshot,
+} from "../executionLifecycle";
 import { appendRunLedgerEvent, ensureRunTrace } from "../runLedger";
 function nodeRequiresHumanGate(node: EmperorAgentNode): boolean {
   if (node.autoConfirm === true) return false;
@@ -791,6 +796,38 @@ export async function resumeAgentRun(input: {
     await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.resume_deduped", payload: { status: run.status } }).catch(() => undefined);
     return detail;
   }
+  const traceId = `agent_run_${input.runId}`;
+  const stateVersion = Number(run.stateVersion || 0);
+  const snapshot = await createExecutionStateSnapshot({
+    workspaceId: run.workspaceId ?? null,
+    traceId,
+    targetType: "agent_run",
+    targetId: input.runId,
+    stateVersion: stateVersion + 1,
+    approvalState: run.status,
+    snapshot: {
+      agentSlug: run.agentSlug,
+      status: run.status,
+      currentNodeId: run.currentNodeId ?? null,
+      dagHash: run.dagHash ?? null,
+      templateVersion: run.templateVersion ?? null,
+    },
+    createdBy: input.userId,
+  });
+  const recovery = await claimExecutionRecoveryRequest({
+    idempotencyKey: buildRecoveryIdempotencyKey({ snapshotId: snapshot.snapshotId, targetType: "agent_run", targetId: input.runId, expectedStateVersion: stateVersion, requestedAction: "resume" }),
+    snapshotId: snapshot.snapshotId,
+    traceId,
+    targetType: "agent_run",
+    targetId: input.runId,
+    requestedAction: "resume",
+    expectedStateVersion: stateVersion,
+    requestedBy: input.userId,
+  });
+  if (recovery.replayed && recovery.request.status === "completed") {
+    await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.recovery_deduped", payload: { recoveryId: recovery.request.recoveryId, stateVersion } }).catch(() => undefined);
+    return detail;
+  }
   const dag = normalizeAgentDag(detail.dag);
   const checkpoints = detail.checkpoints as CheckpointRow[];
   const allDone = checkpoints.length > 0 && checkpoints.every((checkpoint) => isConfirmedStatus(checkpoint.status));
@@ -802,8 +839,29 @@ export async function resumeAgentRun(input: {
     action: "resume run",
     clearError: true,
   }));
+  await rawExecute(
+    "UPDATE emperor_agent_runs SET stateVersion=stateVersion+1,recoverySnapshotId=? WHERE runId=? AND status=? AND stateVersion=?",
+    [snapshot.snapshotId, input.runId, nextStatus, stateVersion],
+  );
+  const [updated] = await rawExecute("SELECT stateVersion,status FROM emperor_agent_runs WHERE runId=? LIMIT 1", [input.runId]);
+  if (!updated || Number(updated.stateVersion) !== stateVersion + 1 || updated.status !== nextStatus) {
+    await completeExecutionRecoveryRequest({
+      recoveryId: recovery.request.recoveryId,
+      status: "compensation_required",
+      reasonCode: "AGENT_STATE_VERSION_CONFLICT",
+      result: { observedStatus: updated?.status ?? null, observedStateVersion: updated?.stateVersion ?? null },
+    });
+    await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.recovery_rejected", payload: { reasonCode: "AGENT_STATE_VERSION_CONFLICT" } }).catch(() => undefined);
+    throw new TRPCError({ code: "CONFLICT", message: "Agent 运行状态已变化，请刷新后重新确认恢复" });
+  }
+  await completeExecutionRecoveryRequest({
+    recoveryId: recovery.request.recoveryId,
+    status: "completed",
+    result: { nextStatus, stateVersion: stateVersion + 1, snapshotId: snapshot.snapshotId },
+  });
   await addEvent(input.runId, run.agentSlug, null, "run.resumed", "Agent Run 已恢复", { nextStatus });
   await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.resumed", payload: { nextStatus } }).catch(() => undefined);
+  await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.recovery_completed", payload: { recoveryId: recovery.request.recoveryId, snapshotId: snapshot.snapshotId, stateVersion: stateVersion + 1 } }).catch(() => undefined);
   await unlockReadyNodes(input.runId, dag);
   await refreshRunAfterCheckpoint(input.runId, dag);
   return getAgentRun(input.runId, input.userId, true);
