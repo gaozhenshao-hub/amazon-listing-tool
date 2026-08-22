@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,8 +63,16 @@ export default function EmperorTrace() {
     { enabled: !!selectedRunId }
   );
 
-  const runs: RunRecord[] = (data?.runs || []) as RunRecord[];
+  const runs = useMemo(() => (data?.runs || []) as RunRecord[], [data?.runs]);
   const selectedRun = runs.find(r => r.runId === selectedRunId) || null;
+
+  useEffect(() => {
+    const requestedRunId = new URLSearchParams(window.location.search).get("runId");
+    if (requestedRunId && runs.some((run) => run.runId === requestedRunId)) {
+      setSelectedRunId(requestedRunId);
+      setDetailTab("output");
+    }
+  }, [runs]);
 
   const formatTime = (ts: string | Date) => {
     try {

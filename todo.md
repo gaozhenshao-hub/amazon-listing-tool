@@ -12,12 +12,16 @@
 - [x] 将对话任务规划Skill的质量优先模型策略与青岛ECS已配置的`gpt-5.6-sol`对齐，解决生产规划Run的模型不可用并完成受控重验（受限Teamorouter出口隧道恢复后，生产规划Run `run_1787405556028_s3s9szj`返回1个L1白名单步骤）
 - [x] 实现皇帝中台对话任务管理器的基础工作台：多轮对话、文件/图片上传、可选择Skill/Agent/MCP、可编辑计划预览和人工确认
 - [x] 补充并验收对话任务运行时间线：仅执行无副作用的`emperor.conversation.plan`低风险Skill，验证会话、步骤状态、Skill Run ID与Run Ledger Trace时间线回写（归档验收会话`conv_5b79d351762649d8b9368da06dd6882f`；`run_1787405955415_cqpc8ez`；Trace完成且含started/succeeded事件与1条Context Manifest）
+- [x] 在对话计划中为已完成Skill步骤提供直达运行详情入口，并让运行历史页按`runId`自动选中当前页记录；入口只读，不重新执行能力
 - [ ] 明确将conversations路径接入上下文编译、审批协议与受控并行计划，或拆分为独立治理边界并补充代码与验收证据；继续禁止任意Shell或未登记写入工具
 - [x] 新增并注册通用“对话任务规划”皇帝Skill：由自然语言任务和受控附件摘要生成结构化、可编辑的Skill/Agent/Tool计划，所有模型调用沿用Skill Run审计（真实Skill Run返回2项候选步骤，均来自受控能力目录）
 - [x] 在对话任务Router接入规划Skill并校验每个候选步骤均来自当前工作空间已登记能力目录；无效建议不得进入可提交计划
 - [x] 以受控能力目录执行一次对话任务规划Skill真实验收，验证返回JSON可解析、候选步骤受能力白名单约束且不触发工具执行（`run_1787397604566_vdm4jry`返回`internal.lingxing.read`与`video.section.plan`，未执行任何工具）
 - [x] 为对话任务基础治理补充策略回归，部署青岛ECS并完成附件、能力、知识和未执行计划的端到端受控验收（策略回归6/6）
 - [ ] 新增前后端回归与受控集成回归，覆盖附件上传、能力白名单过滤、计划审批、步骤成功/失败、Trace展示或回写，以及suggestPlan/proposePlan/approveStep/runStep边界
+- [ ] 为conversations路径复用现有Context Compiler的受控知识检索契约，并将编译结果作为脱敏Context Manifest补充到规划与步骤运行Trace
+- [ ] 将对话计划的并发与审批决策映射到既有Harness受控并行计划/人审协议；默认串行，L2/L3及写入能力不得以并行参数绕过审批
+- [ ] 为conversations Router补充无业务数据的集成回归：L1计划批准后运行、L2/L3未批准拒绝、附件/知识上下文、Trace成功/失败事件及能力白名单边界
 - [x] 执行一次对话任务管理器端到端受控验收：创建会话、上传文本附件、读取能力/知识候选、提交不执行的计划并归档验收会话（`conv_b08c42ce34034b9b9b6165b028547269`已归档；125项Skill、2项知识候选与`proposed`计划均通过受控路径验证）
 - [x] 修复对话能力目录Tool风险等级查询以复用`governancePolicy`，确保会话创建、能力选择与端到端验收不再因不存在字段失败
 
