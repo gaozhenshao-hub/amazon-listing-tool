@@ -50,6 +50,12 @@ describe("领星运营同步预览契约", () => {
     expect(normalized.normalized).not.toHaveProperty("operation");
   });
 
+  it("兼容领星真实广告活动报表的name、spends和ads_type字段", () => {
+    const normalized = normalizeRow("ad_campaign", { name: "SP-Brand", spends: 12.5, ads_type: "sp", sales: 80, store_name: "示例店铺" }, { storeId: "123", profileId: "456", startDate: "2026-08-01", endDate: "2026-08-07" });
+    expect(normalized.validationErrors).toEqual([]);
+    expect(normalized.normalized).toMatchObject({ campaignName: "SP-Brand", adSpend: 12.5, adType: "sp", adSales: 80, storeName: "示例店铺" });
+  });
+
   it("未识别ASIN的产品表现行保持草稿并标为需人工核对", () => {
     const normalized = normalizeRow("product_performance", { local_name: "无ASIN产品" }, { storeId: "123", startDate: "2026-08-01", endDate: "2026-08-07" });
     expect(normalized.validationErrors).toHaveLength(1);

@@ -20,7 +20,7 @@ const domains = [
 type DraftEdit = Record<number, Record<string, unknown>>;
 
 function statusLabel(status: string) {
-  const map: Record<string, string> = { draft: "草稿", ready_for_review: "待人工确认", confirmed: "已确认，待应用", applied: "已应用", failed: "读取失败", new: "新增", needs_review: "需核对", skipped: "已跳过" };
+  const map: Record<string, string> = { draft: "草稿", empty: "该范围无数据", ready_for_review: "待人工确认", confirmed: "已确认，待应用", applied: "已应用", failed: "读取失败", new: "新增", changed: "有更新", unchanged: "无变化", needs_review: "需核对", skipped: "已跳过" };
   return map[status] || status;
 }
 
@@ -34,6 +34,7 @@ export default function OpsLingxingSync() {
   const [batchId, setBatchId] = useState<number | null>(null);
   const [edits, setEdits] = useState<DraftEdit>({});
   const storesQuery = trpc.lingxingSync.listStores.useQuery(undefined, { retry: false, staleTime: 5 * 60_000 });
+  const adProfilesQuery = trpc.lingxingSync.listAdProfiles.useQuery(undefined, { retry: false, staleTime: 5 * 60_000 });
   const historyQuery = trpc.lingxingSync.list.useQuery({ limit: 20 });
   const batchQuery = trpc.lingxingSync.get.useQuery({ batchId: batchId || 0 }, { enabled: Boolean(batchId) });
 
@@ -86,9 +87,16 @@ export default function OpsLingxingSync() {
     const current = { ...(row.normalizedData || {}), ...(edits[row.id]?.normalizedData || {}) };
     setRow(row.id, { normalizedData: { ...current, [key]: nextValue } });
   };
+  const isAdDomain = domain === "ad_campaign" || domain === "ad_keyword";
+  const selectAdProfile = (nextProfileId: string) => {
+    setProfileId(nextProfileId);
+    const profile = (adProfilesQuery.data || []).find((item) => item.profileId === nextProfileId);
+    if (profile?.sid) setStoreId(profile.sid);
+  };
   const runPreview = () => {
     if (!storeId.trim()) return toast.error("请选择或填写领星店铺 SID");
-    if ((domain === "product_performance" || domain.startsWith("ad_")) && (!startDate || !endDate)) return toast.error("请选择开始和结束日期");
+    if (isAdDomain && !profileId.trim()) return toast.error("请从官方广告授权店铺中选择 Profile ID");
+    if ((domain === "product_performance" || isAdDomain) && (!startDate || !endDate)) return toast.error("请选择开始和结束日期");
     previewMutation.mutate({ dataDomain: domain, scope: { storeId: storeId.trim(), profileId: profileId.trim() || undefined, startDate: startDate || undefined, endDate: endDate || undefined } });
   };
   const saveAndConfirm = async () => {
@@ -123,7 +131,7 @@ export default function OpsLingxingSync() {
       <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <div className="space-y-2"><Label>数据域</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={domain} onChange={(event) => setDomain(event.target.value as typeof domain)}>{domains.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
         <div className="space-y-2"><Label>领星店铺 SID</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={storeId} onChange={(event) => setStoreId(event.target.value)}><option value="">请选择店铺</option>{(storesQuery.data || []).map((store) => <option key={store.sid} value={store.sid}>{store.name} · {store.sid}</option>)}</select><Input value={storeId} onChange={(event) => setStoreId(event.target.value)} placeholder="无店铺列表时可填写 SID" /></div>
-        <div className="space-y-2"><Label>广告 Profile ID（广告报表必填）</Label><Input value={profileId} onChange={(event) => setProfileId(event.target.value)} placeholder="广告数据域请填写 Profile ID" /></div>
+        <div className="space-y-2"><Label>广告 Profile ID（广告报表必填）</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={profileId} onChange={(event) => selectAdProfile(event.target.value)} disabled={!isAdDomain || adProfilesQuery.isLoading}><option value="">{isAdDomain ? "请选择官方广告授权店铺" : "广告数据域时选择"}</option>{(adProfilesQuery.data || []).map((profile) => <option key={profile.profileId} value={profile.profileId}>{profile.name}{profile.country ? ` · ${profile.country}` : ""} · {profile.profileId}</option>)}</select>{isAdDomain && !adProfilesQuery.isLoading && !(adProfilesQuery.data || []).length ? <p className="text-xs text-amber-700">未读取到广告授权Profile；请检查领星广告授权范围。</p> : null}</div>
         <div className="space-y-2"><Label>开始日期</Label><Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></div>
         <div className="space-y-2"><Label>结束日期</Label><Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></div>
         <div className="flex items-end"><Button className="w-full" onClick={runPreview} disabled={previewMutation.isPending}>{previewMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}读取并生成预览</Button></div>

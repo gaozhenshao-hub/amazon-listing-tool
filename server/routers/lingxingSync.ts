@@ -143,10 +143,10 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
     salesAmount: value(source, ["sales_amount", "sales", "salesAmount", "revenue", "销售额"]),
     orderProfit: value(source, ["profit", "order_profit", "orderProfit", "订单利润"]),
     adSpend: value(source, ["ad_spend", "spend", "spends", "cost", "广告花费"]),
-    campaignName: value(source, ["campaign_name", "campaignName", "campaign", "广告活动", "广告活动名称"]),
+    campaignName: value(source, ["campaign_name", "campaignName", "campaign", "name", "广告活动", "广告活动名称"]),
     campaignId: value(source, ["campaign_id", "campaignId"]),
     portfolioName: value(source, ["portfolio_name", "portfolioName", "广告组合"]),
-    adType: value(source, ["ad_type", "adType", "广告类型"]),
+    adType: value(source, ["ad_type", "adType", "ads_type", "sponsored_type", "广告类型"]),
     keyword: value(source, ["keyword", "关键词", "targeting", "targeting_value"]),
     matchType: value(source, ["match_type", "matchType", "匹配方式"]),
     adImpressions: value(source, ["impressions", "曝光量"]),
@@ -191,6 +191,18 @@ export const lingxingSyncRouter = router({
       sid: String(value(record, ["sid", "shop_id", "shopId", "id"]) || ""),
       name: String(value(record, ["shop_name", "shopName", "name", "store_name"]) || "未命名店铺"),
     })).filter((store) => Boolean(store.sid));
+  }),
+
+  listAdProfiles: protectedProcedure.query(async ({ ctx }) => {
+    const workspaceId = ctx.user.defaultWorkspaceId!;
+    const execution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: { capability: "ad_auth_shops", arguments: {} }, userId: ctx.user.id, userRole: ctx.user.role, workspaceId });
+    const records = pickRecords(normalizeMcpPayload(execution.output));
+    return records.map((record) => ({
+      profileId: String(value(record, ["profile_id", "profileId", "profile", "id"]) || ""),
+      sid: String(value(record, ["sid", "shop_id", "shopId"]) || ""),
+      name: String(value(record, ["shop_name", "shopName", "name", "store_name", "seller_name"]) || "未命名广告店铺"),
+      country: String(value(record, ["country", "site", "marketplace"]) || ""),
+    })).filter((profile) => Boolean(profile.profileId));
   }),
 
   list: protectedProcedure.input(z.object({ limit: z.number().min(1).max(100).default(30) })).query(async ({ ctx, input }) => {
