@@ -556,6 +556,10 @@ export const emperorConversationsRouter = router({
       snapshotId: String(snapshot.snapshotId), targetType: "conversation_step", targetId: input.stepId,
       expectedStateVersion: input.expectedStateVersion, requestedAction: "restore_ready",
     });
+    const invalidatedSources = await rawExecute(
+      "SELECT sourceType,sourceKey FROM emperor_context_source_provenance WHERE traceId=? AND status='invalidated' ORDER BY id ASC LIMIT 20",
+      [traceId],
+    );
     const claim = await claimExecutionRecoveryRequest({
       idempotencyKey, snapshotId: String(snapshot.snapshotId), traceId, targetType: "conversation_step", targetId: input.stepId,
       requestedAction: "restore_ready", expectedStateVersion: input.expectedStateVersion, requestedBy: ctx.user.id,
@@ -567,6 +571,9 @@ export const emperorConversationsRouter = router({
       await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage: "recovery_rejected", payload: { recoveryId: claim.request.recoveryId, reasonCode } });
       throw new TRPCError({ code: "PRECONDITION_FAILED", message });
     };
+    if (invalidatedSources.length) {
+      return reject("context_source_invalidated", "关联上下文来源已失效；请重新编译上下文并再次人工确认后再运行");
+    }
     if (Number(step.stateVersion || 0) !== input.expectedStateVersion) {
       return reject("version_conflict", "步骤状态已变化；请刷新后重新确认恢复操作");
     }
