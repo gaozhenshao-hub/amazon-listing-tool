@@ -34,6 +34,10 @@ const roleUpdateSchema = z.object({
   detailedPermissions: z.array(detailedPermissionSchema).optional(),
 });
 
+const batchRoleUpdateSchema = z.object({
+  updates: z.array(roleUpdateSchema).min(1).max(ALL_ROLES.length),
+});
+
 function parseModulePermissions(value: string | null | undefined): ModulePermission[] | null {
   if (!value) return null;
   try { return JSON.parse(value) as ModulePermission[]; } catch { return null; }
@@ -206,31 +210,65 @@ export const roleManagementRouter = router({
 
   // Batch update multiple roles
   batchUpdate: protectedProcedure
-    .input(z.object({
-      updates: z.array(z.object({
-        role: z.string().min(1),
-        modules: z.array(z.string()),
-        description: z.string().optional(),
-      })),
-    }))
+    .input(batchRoleUpdateSchema)
     .mutation(async ({ ctx, input }) => {
       if (!ADMIN_ROLES.includes(ctx.user.role as any)) {
         throw new TRPCError({ code: "FORBIDDEN", message: "需要管理员权限" });
       }
 
-      for (const update of input.updates) {
+      const previews = await Promise.all(input.updates.map(async (update) => {
         if (update.role === "super_admin" && ctx.user.role !== "super_admin") {
-          continue;
+          throw new TRPCError({ code: "FORBIDDEN", message: "无法批量更新超级管理员权限" });
         }
+        return buildRolePreview(update);
+      }));
+      for (const [index, update] of input.updates.entries()) {
+        const preview = previews[index];
         await db.upsertRolePermission(
           update.role,
           update.modules,
           update.description || null,
-          ctx.user.id
+          ctx.user.id,
+          update.detailedPermissions || null,
         );
+        await recordSecurityAuditLog({
+          ctx,
+          action: "role_permission.batch_update",
+          resourceType: "role_permission",
+          resourceId: update.role,
+          resourceName: preview.roleLabel,
+          status: "success",
+          riskLevel: preview.riskLevel,
+          reason: "管理员批量更新角色模板",
+          beforeSnapshot: preview.before,
+          afterSnapshot: preview.after,
+          metadata: { affectedMemberCount: preview.affectedMemberCount, addedModules: preview.addedModules, removedModules: preview.removedModules, batchSize: previews.length, singleCompanyMode: true },
+        });
       }
 
-      return { success: true, updatedCount: input.updates.length };
+      return { success: true, updatedCount: previews.length, previews };
+    }),
+
+  batchPreview: protectedProcedure
+    .input(batchRoleUpdateSchema)
+    .query(async ({ ctx, input }) => {
+      if (!ADMIN_ROLES.includes(ctx.user.role as any)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "需要管理员权限" });
+      }
+      const previews = await Promise.all(input.updates.map(async (update) => {
+        if (update.role === "super_admin" && ctx.user.role !== "super_admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "无法预览超级管理员批量权限变更" });
+        }
+        return buildRolePreview(update);
+      }));
+      const riskWeight = { low: 1, medium: 2, high: 3, critical: 4 } as const;
+      const highestRisk = previews.reduce((current, preview) => riskWeight[preview.riskLevel] > riskWeight[current] ? preview.riskLevel : current, "low" as keyof typeof riskWeight);
+      return {
+        previews,
+        totalAffectedMemberCount: previews.reduce((total, preview) => total + preview.affectedMemberCount, 0),
+        highestRisk,
+        requiresExplicitConfirmation: previews.some(preview => preview.requiresExplicitConfirmation),
+      };
     }),
 
   // Get dynamic role module access (replaces static ROLE_MODULE_ACCESS)

@@ -61,6 +61,10 @@ export default function RoleManagement() {
   const [editDetailedPerms, setEditDetailedPerms] = useState<ModulePerm[]>([]);
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [changePreview, setChangePreview] = useState<any | null>(null);
+  const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false);
+  const [batchModules, setBatchModules] = useState<string[]>([]);
+  const [batchPreview, setBatchPreview] = useState<any | null>(null);
 
   const updateMutation = trpc.roleManagement.update.useMutation({
     onSuccess: () => {
@@ -77,6 +81,40 @@ export default function RoleManagement() {
     onSuccess: (preview) => setChangePreview(preview),
     onError: (err) => toast.error(err.message),
   });
+
+  const batchUpdateMutation = trpc.roleManagement.batchUpdate.useMutation({
+    onSuccess: () => {
+      toast.success("批量角色模板已更新");
+      utils.roleManagement.list.invalidate();
+      utils.roleManagement.governanceSnapshot.invalidate();
+      setSelectedRoles(new Set());
+      setBatchDialogOpen(false);
+      setBatchPreview(null);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const buildBatchPayload = () => ({
+    updates: (roles || []).filter(role => selectedRoles.has(role.role)).map(role => ({
+      role: role.role,
+      modules: batchModules,
+      description: role.description || undefined,
+    })),
+  });
+
+  const handleBatchPreview = async () => {
+    if (selectedRoles.size === 0) return;
+    try {
+      setBatchPreview(await utils.roleManagement.batchPreview.fetch(buildBatchPayload()));
+    } catch (error: any) {
+      toast.error(error?.message || "批量权限预览失败");
+    }
+  };
+
+  const toggleBatchModule = (moduleId: string) => {
+    setBatchPreview(null);
+    setBatchModules(previous => previous.includes(moduleId) ? previous.filter(item => item !== moduleId) : [...previous, moduleId]);
+  };
 
   const handleEdit = useCallback((role: any) => {
     setEditingRole(role.role);
@@ -449,6 +487,7 @@ export default function RoleManagement() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[42px]">选择</TableHead>
                 <TableHead className="w-[180px]">角色</TableHead>
                 <TableHead>可访问模块</TableHead>
                 <TableHead className="w-[100px]">细粒度</TableHead>
@@ -459,13 +498,13 @@ export default function RoleManagement() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8">
+                  <TableCell colSpan={6} className="text-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
                   </TableCell>
                 </TableRow>
               ) : !roles?.length ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                     暂无角色数据
                   </TableCell>
                 </TableRow>
@@ -474,6 +513,18 @@ export default function RoleManagement() {
                   const restrictedCount = getPermSummary(role);
                   return (
                     <TableRow key={role.role}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedRoles.has(role.role)}
+                          onCheckedChange={(checked) => setSelectedRoles(previous => {
+                            const next = new Set(previous);
+                            if (checked) next.add(role.role); else next.delete(role.role);
+                            setBatchPreview(null);
+                            return next;
+                          })}
+                          aria-label={`选择角色 ${role.label}`}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {role.role === "super_admin" && <ShieldAlert className="h-4 w-4 text-amber-500" />}
@@ -531,8 +582,49 @@ export default function RoleManagement() {
               )}
             </TableBody>
           </Table>
+          {selectedRoles.size > 0 && (
+            <div className="flex items-center justify-between gap-3 border-t bg-slate-50 px-4 py-3">
+              <p className="text-sm text-slate-700">已选择 <strong>{selectedRoles.size}</strong> 个角色。批量操作将覆盖所选角色的模块集合，提交前必须预览影响。</p>
+              <Button size="sm" onClick={() => { setBatchModules([]); setBatchPreview(null); setBatchDialogOpen(true); }}>
+                <Layers3 className="mr-1 h-4 w-4" />批量配置
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      <Dialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>批量配置角色模块</DialogTitle>
+            <DialogDescription>将统一替换已选角色的模块集合。操作不会自动修改成员角色；请先查看服务端计算的影响范围与风险。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-700">目标角色：{(roles || []).filter(role => selectedRoles.has(role.role)).map(role => role.label).join("、") || "未选择"}</p>
+            <div className="grid grid-cols-2 gap-2 rounded-md border p-3 sm:grid-cols-3">
+              {(modules || []).map(module => (
+                <label key={module.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                  <Checkbox checked={batchModules.includes(module.id)} onCheckedChange={() => toggleBatchModule(module.id)} />
+                  {module.label}
+                </label>
+              ))}
+            </div>
+            {batchPreview && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                <div className="flex items-center gap-2 font-medium"><AlertTriangle className="h-4 w-4" />最高风险：{batchPreview.highestRisk}；受影响成员：{batchPreview.totalAffectedMemberCount}</div>
+                <p className="mt-1 text-xs">已生成 {batchPreview.previews?.length || 0} 个角色的服务端预览。提交后会为每个角色写入脱敏安全审计。</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchDialogOpen(false)}>取消</Button>
+            <Button variant="secondary" onClick={handleBatchPreview}>查看影响</Button>
+            <Button disabled={!batchPreview || batchUpdateMutation.isPending} onClick={() => batchUpdateMutation.mutate(buildBatchPayload())}>
+              {batchUpdateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}确认批量更新
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
         </TabsContent>
 
