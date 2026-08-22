@@ -447,24 +447,74 @@ export const emperorConversationsRouter = router({
 
   approvePlan: protectedProcedure.input(z.object({ conversationId: z.string(), planId: z.string() })).mutation(async ({ ctx, input }) => {
     await getConversationForAction(ctx, input.conversationId, "confirm");
-    const rows = await rawExecute("SELECT status,version,planJson,riskSummary FROM emperor_conversation_plans WHERE planId=? AND conversationId=? LIMIT 1", [input.planId, input.conversationId]);
+    const rows = await rawExecute("SELECT status,version,stateVersion,planJson,riskSummary FROM emperor_conversation_plans WHERE planId=? AND conversationId=? LIMIT 1", [input.planId, input.conversationId]);
     if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "计划不存在" });
     if (rows[0].status !== "proposed") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "仅可批准待确认计划" });
-    await rawExecute("UPDATE emperor_conversation_plans SET status='approved',approvedBy=?,approvedAt=NOW() WHERE planId=?", [ctx.user.id, input.planId]);
+    const priorStateVersion = Number(rows[0].stateVersion || 0);
+    await rawExecute("UPDATE emperor_conversation_plans SET status='approved',stateVersion=stateVersion+1,approvedBy=?,approvedAt=NOW() WHERE planId=? AND status='proposed' AND stateVersion=?", [ctx.user.id, input.planId, priorStateVersion]);
+    const approvedRows = await rawExecute("SELECT status,stateVersion FROM emperor_conversation_plans WHERE planId=? LIMIT 1", [input.planId]);
+    if (approvedRows[0]?.status !== "approved" || Number(approvedRows[0]?.stateVersion) !== priorStateVersion + 1) {
+      throw new TRPCError({ code: "CONFLICT", message: "计划状态已变化；请刷新后重新确认" });
+    }
     await rawExecute("UPDATE emperor_conversation_plan_steps SET status=IF(approvalRequired=1,'waiting_human','ready') WHERE planId=?", [input.planId]);
     await rawExecute("UPDATE emperor_conversations SET status='waiting_human',activePlanId=? WHERE conversationId=?", [input.planId, input.conversationId]);
     const traceId = `conversation_plan_${input.planId}`;
     await ensureRunTrace({ runId: traceId, rootRunType: "conversation_plan", workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, metadata: { conversationId: input.conversationId, planId: input.planId, planVersion: Number(rows[0].version || 0) } });
     const planSnapshot = await createExecutionStateSnapshot({
       workspaceId: workspaceIdFromContext(ctx), traceId, targetType: "conversation_plan", targetId: input.planId,
-      stateVersion: Number(rows[0].version || 0), planId: input.planId, planVersion: Number(rows[0].version || 0),
+      stateVersion: priorStateVersion + 1, planId: input.planId, planVersion: Number(rows[0].version || 0),
       approvalState: "approved", createdBy: ctx.user.id,
       snapshot: { conversationId: input.conversationId, planId: input.planId, planVersion: rows[0].version, status: "approved", plan: parseJson(rows[0].planJson, {}), riskSummary: parseJson(rows[0].riskSummary, {}) },
     });
-    await appendRunLedgerEvent({ traceId, eventType: "lifecycle.snapshot_created", entityType: "system", entityId: input.planId, actorUserId: ctx.user.id, payload: { targetType: "conversation_plan", snapshotId: planSnapshot.snapshotId, stateVersion: rows[0].version } });
+    await appendRunLedgerEvent({ traceId, eventType: "lifecycle.snapshot_created", entityType: "system", entityId: input.planId, actorUserId: ctx.user.id, payload: { targetType: "conversation_plan", snapshotId: planSnapshot.snapshotId, stateVersion: priorStateVersion + 1 } });
     await completeRunTrace(traceId, "completed");
     await audit(ctx, { action: "conversation.plan.approve", conversationId: input.conversationId, riskLevel: "high", metadata: { planId: input.planId } });
     return { success: true };
+  }),
+
+  recoverPlan: protectedProcedure.input(z.object({
+    conversationId: z.string(),
+    planId: z.string(),
+    expectedStateVersion: z.number().int().nonnegative(),
+    idempotencyKey: z.string().min(16).max(128).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    await getConversationForAction(ctx, input.conversationId, "confirm");
+    const rows = await rawExecute(
+      "SELECT * FROM emperor_conversation_plans WHERE planId=? AND conversationId=? LIMIT 1",
+      [input.planId, input.conversationId],
+    );
+    const plan = rows[0];
+    if (!plan) throw new TRPCError({ code: "NOT_FOUND", message: "计划不存在" });
+    const traceId = `conversation_plan_${input.planId}`;
+    await ensureRunTrace({ runId: traceId, rootRunType: "conversation_plan", workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, metadata: { conversationId: input.conversationId, planId: input.planId, recovery: true } });
+    const snapshot = await createExecutionStateSnapshot({
+      workspaceId: workspaceIdFromContext(ctx), traceId, targetType: "conversation_plan", targetId: input.planId,
+      stateVersion: Number(plan.stateVersion || 0) + 1, planId: input.planId, planVersion: Number(plan.version || 0),
+      approvalState: plan.status, createdBy: ctx.user.id,
+      snapshot: { conversationId: input.conversationId, planId: input.planId, status: plan.status, sourceStateVersion: plan.stateVersion, targetStateVersion: Number(plan.stateVersion || 0) + 1, planVersion: plan.version, riskSummary: parseJson(plan.riskSummary, {}) },
+    });
+    const idempotencyKey = input.idempotencyKey || buildRecoveryIdempotencyKey({ snapshotId: snapshot.snapshotId, targetType: "conversation_plan", targetId: input.planId, expectedStateVersion: input.expectedStateVersion, requestedAction: "restore_proposed" });
+    const recovery = await claimExecutionRecoveryRequest({ idempotencyKey, snapshotId: snapshot.snapshotId, traceId, targetType: "conversation_plan", targetId: input.planId, requestedAction: "restore_proposed", expectedStateVersion: input.expectedStateVersion, requestedBy: ctx.user.id });
+    if (recovery.replayed) return { success: recovery.request.status === "completed", replayed: true, status: recovery.request.status, recoveryId: recovery.request.recoveryId };
+    const reject = async (status: "rejected" | "compensation_required", reasonCode: string, message: string) => {
+      await completeExecutionRecoveryRequest({ recoveryId: recovery.request.recoveryId, status, reasonCode, result: { planStatus: plan.status, stateVersion: plan.stateVersion } });
+      await appendRunLedgerEvent({ traceId, eventType: status === "compensation_required" ? "lifecycle.compensation_required" : "lifecycle.recovery_rejected", entityType: "system", entityId: input.planId, actorUserId: ctx.user.id, payload: { recoveryId: recovery.request.recoveryId, reasonCode, targetType: "conversation_plan" } });
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message });
+    };
+    if (Number(plan.stateVersion || 0) !== input.expectedStateVersion) return reject("rejected", "PLAN_STATE_VERSION_CONFLICT", "计划状态已变化；请刷新后重新确认恢复");
+    const steps = await rawExecute("SELECT status FROM emperor_conversation_plan_steps WHERE planId=?", [input.planId]);
+    const hasExecutedStep = steps.some((step: any) => ["running", "succeeded", "failed", "skipped", "canceled"].includes(String(step.status)));
+    if (plan.status !== "approved" || hasExecutedStep) return reject("compensation_required", "PLAN_EXECUTION_OR_RISK_REVIEW_REQUIRED", "计划已执行或不处于可恢复批准状态；已记录补偿审计，不会撤回或运行任何步骤");
+    await rawExecute("UPDATE emperor_conversation_plans SET status='proposed',stateVersion=stateVersion+1,recoverySnapshotId=?,approvedBy=NULL,approvedAt=NULL WHERE planId=? AND status='approved' AND stateVersion=?", [snapshot.snapshotId, input.planId, input.expectedStateVersion]);
+    await rawExecute("UPDATE emperor_conversation_plan_steps SET status='pending',approvalState=IF(approvalRequired=1,'pending','not_required') WHERE planId=?", [input.planId]);
+    const refreshed = await rawExecute("SELECT status,stateVersion FROM emperor_conversation_plans WHERE planId=? LIMIT 1", [input.planId]);
+    if (refreshed[0]?.status !== "proposed" || Number(refreshed[0]?.stateVersion) !== input.expectedStateVersion + 1) return reject("rejected", "PLAN_STATE_VERSION_CONFLICT", "计划状态在恢复期间已变化；未执行任何能力");
+    await rawExecute("UPDATE emperor_conversations SET status='awaiting_plan_confirmation',activePlanId=? WHERE conversationId=?", [input.planId, input.conversationId]);
+    await completeExecutionRecoveryRequest({ recoveryId: recovery.request.recoveryId, status: "completed", result: { restoredState: "proposed", stateVersion: refreshed[0].stateVersion, snapshotId: snapshot.snapshotId } });
+    await appendRunLedgerEvent({ traceId, eventType: "lifecycle.recovery_completed", entityType: "system", entityId: input.planId, actorUserId: ctx.user.id, payload: { recoveryId: recovery.request.recoveryId, targetType: "conversation_plan", snapshotId: snapshot.snapshotId, stateVersion: refreshed[0].stateVersion } });
+    await completeRunTrace(traceId, "completed");
+    await audit(ctx, { action: "conversation.plan.recover", conversationId: input.conversationId, riskLevel: "high", metadata: { planId: input.planId, recoveryId: recovery.request.recoveryId, snapshotId: snapshot.snapshotId } });
+    return { success: true, replayed: false, recoveryId: recovery.request.recoveryId, stateVersion: refreshed[0].stateVersion };
   }),
 
   approveStep: protectedProcedure.input(z.object({ conversationId: z.string(), stepId: z.string() })).mutation(async ({ ctx, input }) => {

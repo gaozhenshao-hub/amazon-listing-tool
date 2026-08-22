@@ -738,8 +738,22 @@ export async function cancelAgentRun(input: {
   const detail = await getAgentRun(input.runId, input.userId);
   const run = detail.run;
   if (run.status === "canceled") return detail;
+  const traceId = `agent_run_${input.runId}`;
+  const stateVersion = Number(run.stateVersion || 0);
+  const snapshot = await createExecutionStateSnapshot({
+    workspaceId: run.workspaceId ?? null,
+    traceId,
+    targetType: "agent_run",
+    targetId: input.runId,
+    stateVersion: stateVersion + 1,
+    approvalState: run.status,
+    snapshot: { agentSlug: run.agentSlug, status: run.status, currentNodeId: run.currentNodeId ?? null, dagHash: run.dagHash ?? null, cancelReason: input.reason || null },
+    createdBy: input.userId,
+  });
+  await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.snapshot_created", payload: { snapshotId: snapshot.snapshotId, targetType: "agent_run", stateVersion: stateVersion + 1, action: "cancel" } }).catch(() => undefined);
 
   const checkpoints = detail.checkpoints as CheckpointRow[];
+  const hasExecutionProgress = checkpoints.some((checkpoint) => ["running", "confirmed", "failed"].includes(checkpoint.status));
   const runningAiJobCheckpoints = checkpoints
     .filter((checkpoint) => checkpoint.status === "running" && checkpoint.aiJobRunId)
     .map((checkpoint) => ({ nodeId: checkpoint.nodeId, nodeLabel: checkpoint.nodeLabel || checkpoint.nodeId, aiJobRunId: checkpoint.aiJobRunId as string, aiJobAttempt: checkpoint.aiJobAttempt ?? null }));
@@ -748,6 +762,12 @@ export async function cancelAgentRun(input: {
     reason: input.reason || "Agent run canceled",
     completedAt: new Date(),
   }));
+  await rawExecute(
+    "UPDATE emperor_agent_runs SET stateVersion=stateVersion+1,recoverySnapshotId=? WHERE runId=? AND stateVersion=?",
+    [snapshot.snapshotId, input.runId, stateVersion],
+  );
+  const [updated] = await rawExecute("SELECT stateVersion,status FROM emperor_agent_runs WHERE runId=? LIMIT 1", [input.runId]);
+  const cancelVersionConflict = !updated || Number(updated.stateVersion) !== stateVersion + 1 || updated.status !== "canceled";
   await Promise.all(runningAiJobCheckpoints.map(async (checkpoint) => {
     await cancelAiJob(checkpoint.aiJobRunId, input.reason || "Agent run canceled").catch(() => null);
     await addEvent(input.runId, run.agentSlug, checkpoint.nodeId, "node.job_canceled", `节点 ${checkpoint.nodeLabel} 的 Job 已取消`, {
@@ -761,7 +781,10 @@ export async function cancelAgentRun(input: {
   await addEvent(input.runId, run.agentSlug, null, "run.canceled", "Agent Run 已取消", {
     reason: input.reason || null,
   });
-  await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.canceled", payload: { reason: input.reason || null } }).catch(() => undefined);
+  await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.canceled", payload: { reason: input.reason || null, snapshotId: snapshot.snapshotId, stateVersion: updated?.stateVersion ?? null, hadExecutionProgress: hasExecutionProgress } }).catch(() => undefined);
+  if (hasExecutionProgress || cancelVersionConflict) {
+    await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.compensation_required", payload: { reasonCode: cancelVersionConflict ? "AGENT_CANCEL_STATE_VERSION_CONFLICT" : "AGENT_CANCELED_AFTER_EXECUTION", snapshotId: snapshot.snapshotId, expectedStateVersion: stateVersion + 1, observedStateVersion: updated?.stateVersion ?? null } }).catch(() => undefined);
+  }
   return getAgentRun(input.runId, input.userId, true);
 }
 
@@ -844,15 +867,16 @@ export async function resumeAgentRun(input: {
     [snapshot.snapshotId, input.runId, nextStatus, stateVersion],
   );
   const [updated] = await rawExecute("SELECT stateVersion,status FROM emperor_agent_runs WHERE runId=? LIMIT 1", [input.runId]);
-  if (!updated || Number(updated.stateVersion) !== stateVersion + 1 || updated.status !== nextStatus) {
-    await completeExecutionRecoveryRequest({
-      recoveryId: recovery.request.recoveryId,
-      status: "compensation_required",
-      reasonCode: "AGENT_STATE_VERSION_CONFLICT",
-      result: { observedStatus: updated?.status ?? null, observedStateVersion: updated?.stateVersion ?? null },
-    });
-    await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.recovery_rejected", payload: { reasonCode: "AGENT_STATE_VERSION_CONFLICT" } }).catch(() => undefined);
-    throw new TRPCError({ code: "CONFLICT", message: "Agent 运行状态已变化，请刷新后重新确认恢复" });
+    if (!updated || Number(updated.stateVersion) !== stateVersion + 1 || updated.status !== nextStatus) {
+      await completeExecutionRecoveryRequest({
+        recoveryId: recovery.request.recoveryId,
+        status: "compensation_required",
+        reasonCode: "AGENT_STATE_VERSION_CONFLICT",
+        result: { observedStatus: updated?.status ?? null, observedStateVersion: updated?.stateVersion ?? null },
+      });
+      await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.compensation_required", payload: { reasonCode: "AGENT_STATE_VERSION_CONFLICT", recoveryId: recovery.request.recoveryId, expectedStateVersion: stateVersion, observedStateVersion: updated?.stateVersion ?? null } }).catch(() => undefined);
+      await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.recovery_rejected", payload: { reasonCode: "AGENT_STATE_VERSION_CONFLICT" } }).catch(() => undefined);
+      throw new TRPCError({ code: "CONFLICT", message: "Agent 运行状态已变化，请刷新后重新确认恢复" });
   }
   await completeExecutionRecoveryRequest({
     recoveryId: recovery.request.recoveryId,
@@ -1041,7 +1065,7 @@ export async function confirmAgentNode(input: {
     actorUserId: input.userId,
     eventType: input.skip ? "lifecycle.skipped" : "lifecycle.confirmed",
     entityId: `${input.runId}:${input.nodeId}`,
-    payload: { nodeId: input.nodeId, status: nextStatus },
+    payload: { nodeId: input.nodeId, status: nextStatus, skippedByHuman: input.skip === true, compensationRequired: false, stateVersion: Number(detail.run.stateVersion || 0) },
   }).catch(() => undefined);
   await unlockChildren(input.runId, dag, input.nodeId);
   await unlockReadyNodes(input.runId, dag);
