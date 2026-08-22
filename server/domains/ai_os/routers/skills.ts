@@ -76,12 +76,13 @@ export const emperorSkillsRouter = router({
   }),
 
   prepareRunRecovery: protectedProcedure
-    .input(z.object({ runId: z.string().min(1).max(80) }))
+    .input(z.object({ runId: z.string().min(1).max(80), expectedStateVersion: z.number().int().min(0).optional() }))
     .mutation(async ({ ctx, input }) => prepareSkillRunRecovery({
       runId: input.runId,
       userId: ctx.user.id,
       workspaceId: workspaceIdFromContext(ctx),
       isAdmin: (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin",
+      expectedStateVersion: input.expectedStateVersion,
     })),
 
   qualityOverview: protectedProcedure

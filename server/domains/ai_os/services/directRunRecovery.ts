@@ -62,7 +62,7 @@ async function appendRecoveryEvent(input: { traceId?: string | null; targetType:
   });
 }
 
-export async function prepareToolRunRecovery(input: { toolRunId: string; userId: number; workspaceId?: number | null }) {
+export async function prepareToolRunRecovery(input: { toolRunId: string; userId: number; workspaceId?: number | null; expectedStateVersion?: number }) {
   const rows = await rawExecute(
     `SELECT r.*,t.config,t.governancePolicy
        FROM emperor_tool_runs r
@@ -102,6 +102,15 @@ export async function prepareToolRunRecovery(input: { toolRunId: string; userId:
     snapshot: { toolSlug: run.toolSlug, status: run.status, riskLevel: run.riskLevel, attemptCount: stateVersion, failureKind: run.failureKind },
     createdBy: input.userId,
   })).snapshotId;
+  if (input.expectedStateVersion !== undefined && Number(input.expectedStateVersion) !== stateVersion) {
+    const recovery = await claimExecutionRecoveryRequest({
+      idempotencyKey: buildRecoveryIdempotencyKey({ snapshotId, targetType: "tool_run", targetId: input.toolRunId, expectedStateVersion: Number(input.expectedStateVersion), requestedAction: "manual_recovery_prepare" }),
+      snapshotId, traceId, targetType: "tool_run", targetId: input.toolRunId, requestedAction: "manual_recovery_prepare", expectedStateVersion: Number(input.expectedStateVersion), requestedBy: input.userId,
+    });
+    await completeExecutionRecoveryRequest({ recoveryId: recovery.request.recoveryId, status: "rejected", reasonCode: "TOOL_STATE_VERSION_CONFLICT", result: { expectedStateVersion: Number(input.expectedStateVersion), observedStateVersion: stateVersion } });
+    await appendRecoveryEvent({ traceId, targetType: "tool_run", runId: input.toolRunId, userId: input.userId, eventType: "lifecycle.recovery_rejected", payload: { reasonCode: "TOOL_STATE_VERSION_CONFLICT", expectedStateVersion: Number(input.expectedStateVersion), observedStateVersion: stateVersion } });
+    return { allowed: false, recoveryId: recovery.request.recoveryId, manualExecutionRequired: false, reasonCode: "TOOL_STATE_VERSION_CONFLICT" };
+  }
   const eligibility = resolveToolRecoveryEligibility(run, run);
   const recovery = await claimExecutionRecoveryRequest({
     idempotencyKey: buildRecoveryIdempotencyKey({ snapshotId, targetType: "tool_run", targetId: input.toolRunId, expectedStateVersion: stateVersion, requestedAction: "manual_recovery_prepare" }),
@@ -122,7 +131,7 @@ export async function prepareToolRunRecovery(input: { toolRunId: string; userId:
   return { allowed: true, recoveryId: recovery.request.recoveryId, manualExecutionRequired: true, toolRunId: input.toolRunId, snapshotId };
 }
 
-export async function prepareSkillRunRecovery(input: { runId: string; userId: number; workspaceId?: number | null; isAdmin: boolean }) {
+export async function prepareSkillRunRecovery(input: { runId: string; userId: number; workspaceId?: number | null; isAdmin: boolean; expectedStateVersion?: number }) {
   const rows = await rawExecute(
     `SELECT r.*,s.manifest,s.riskTier
        FROM emperor_skill_runs r
@@ -153,6 +162,15 @@ export async function prepareSkillRunRecovery(input: { runId: string; userId: nu
     snapshot: { skillSlug: run.skillSlug, status: run.status, skillVersion: run.skillVersion ?? null, skillManifestHash: run.skillManifestHash ?? null },
     createdBy: input.userId,
   })).snapshotId;
+  if (input.expectedStateVersion !== undefined && Number(input.expectedStateVersion) !== stateVersion) {
+    const recovery = await claimExecutionRecoveryRequest({
+      idempotencyKey: buildRecoveryIdempotencyKey({ snapshotId, targetType: "skill_run", targetId: input.runId, expectedStateVersion: Number(input.expectedStateVersion), requestedAction: "manual_recovery_prepare" }),
+      snapshotId, traceId: run.traceId ?? null, targetType: "skill_run", targetId: input.runId, requestedAction: "manual_recovery_prepare", expectedStateVersion: Number(input.expectedStateVersion), requestedBy: input.userId,
+    });
+    await completeExecutionRecoveryRequest({ recoveryId: recovery.request.recoveryId, status: "rejected", reasonCode: "SKILL_STATE_VERSION_CONFLICT", result: { expectedStateVersion: Number(input.expectedStateVersion), observedStateVersion: stateVersion } });
+    await appendRecoveryEvent({ traceId: run.traceId ?? null, targetType: "skill_run", runId: input.runId, userId: input.userId, eventType: "lifecycle.recovery_rejected", payload: { reasonCode: "SKILL_STATE_VERSION_CONFLICT", expectedStateVersion: Number(input.expectedStateVersion), observedStateVersion: stateVersion } });
+    return { allowed: false, recoveryId: recovery.request.recoveryId, manualExecutionRequired: false, reasonCode: "SKILL_STATE_VERSION_CONFLICT" };
+  }
   const eligibility = resolveSkillRecoveryEligibility(run, run);
   const recovery = await claimExecutionRecoveryRequest({
     idempotencyKey: buildRecoveryIdempotencyKey({ snapshotId, targetType: "skill_run", targetId: input.runId, expectedStateVersion: stateVersion, requestedAction: "manual_recovery_prepare" }),

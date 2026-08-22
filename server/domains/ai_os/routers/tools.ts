@@ -93,7 +93,7 @@ export const emperorToolsRouter = router({
     }),
 
   prepareRecovery: protectedProcedure
-    .input(z.object({ toolRunId: z.string().min(1).max(80) }))
+    .input(z.object({ toolRunId: z.string().min(1).max(80), expectedStateVersion: z.number().int().min(0).optional() }))
     .mutation(async ({ ctx, input }) => {
       await assertResourceAction({
         actor: actorFromContext(ctx),
@@ -106,6 +106,7 @@ export const emperorToolsRouter = router({
         toolRunId: input.toolRunId,
         userId: ctx.user.id,
         workspaceId,
+        expectedStateVersion: input.expectedStateVersion,
       });
       await recordSecurityAuditLog({
         ctx,
