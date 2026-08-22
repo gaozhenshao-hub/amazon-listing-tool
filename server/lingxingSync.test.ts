@@ -56,6 +56,12 @@ describe("领星运营同步预览契约", () => {
     expect(normalized.normalized).toMatchObject({ campaignName: "SP-Brand", adSpend: 12.5, adType: "sp", adSales: 80, storeName: "示例店铺" });
   });
 
+  it("兼容领星真实广告关键词报表的keyword_text、spends和ads_type字段", () => {
+    const normalized = normalizeRow("ad_keyword", { campaign_name: "SP-Brand", keyword_text: "cordless drill", match_type: "exact", spends: 12.5, ads_type: "sp", sales: 66 }, { storeId: "123", profileId: "456", startDate: "2026-08-01", endDate: "2026-08-07" });
+    expect(normalized.validationErrors).toEqual([]);
+    expect(normalized.normalized).toMatchObject({ campaignName: "SP-Brand", keyword: "cordless drill", matchType: "exact", adSpend: 12.5, adType: "sp", adSales: 66 });
+  });
+
   it("未识别ASIN的产品表现行保持草稿并标为需人工核对", () => {
     const normalized = normalizeRow("product_performance", { local_name: "无ASIN产品" }, { storeId: "123", startDate: "2026-08-01", endDate: "2026-08-07" });
     expect(normalized.validationErrors).toHaveLength(1);

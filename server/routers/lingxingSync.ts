@@ -155,7 +155,7 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
     campaignId: value(source, ["campaign_id", "campaignId"]),
     portfolioName: value(source, ["portfolio_name", "portfolioName", "广告组合"]),
     adType: value(source, ["ad_type", "adType", "ads_type", "sponsored_type", "广告类型"]),
-    keyword: value(source, ["keyword", "关键词", "targeting", "targeting_value"]),
+    keyword: value(source, ["keyword_text", "keyword", "关键词", "targeting_text", "targeting", "targeting_value"]),
     matchType: value(source, ["match_type", "matchType", "匹配方式"]),
     adImpressions: value(source, ["impressions", "曝光量"]),
     adClicks: value(source, ["clicks", "点击量"]),
