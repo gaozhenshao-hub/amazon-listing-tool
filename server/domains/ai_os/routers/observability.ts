@@ -11,6 +11,7 @@ import {
   recordDatabaseBaselineSnapshot,
   sampleDatabaseSlowQueries,
 } from "../services/observability";
+import { invalidateContextSource, listRunLedgerProjection } from "../services/contextProvenance";
 
 export const emperorObservabilityRouter = router({
   metrics: adminProcedure
@@ -144,6 +145,19 @@ export const emperorObservabilityRouter = router({
           result,
         },
       });
+      return result;
+    }),
+
+  runProjection: adminProcedure
+    .input(z.object({ traceId: z.string().min(1).max(80), afterId: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(300).optional() }))
+    .query(async ({ input }) => listRunLedgerProjection(input)),
+
+  invalidateContextSource: adminProcedure
+    .input(z.object({ sourceType: z.enum(["attachment", "knowledge"]), sourceKey: z.string().min(1).max(160), reason: z.string().min(3).max(512) }))
+    .mutation(async ({ ctx, input }) => {
+      const workspaceId = workspaceIdFromContext(ctx);
+      const result = await invalidateContextSource({ ...input, userId: ctx.user.id });
+      await recordSecurityAuditLog({ ctx, workspaceId, action: "context_source.invalidate", resourceType: "ai_os", status: "success", riskLevel: "medium", metadata: { sourceType: input.sourceType, sourceKey: input.sourceKey, invalidated: result.invalidated } });
       return result;
     }),
 });

@@ -83,13 +83,15 @@ export async function recordContextManifest(input: {
 }) {
   const manifest = sanitizeLedgerPayload(input.manifest);
   const contextHash = hash(manifest);
+  const manifestId = `manifest_${randomUUID()}`;
   await execute(
     `INSERT INTO emperor_context_manifests (manifestId,traceId,runId,nodeId,manifestVersion,contextHash,estimatedTokens,maxTokens,sourceCount,manifest)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [`manifest_${randomUUID()}`, input.traceId, input.runId, input.nodeId ?? null, "1.0", contextHash, input.estimatedTokens ?? null, input.maxTokens ?? null, input.sourceCount ?? 0, JSON.stringify(manifest)],
+    [manifestId, input.traceId, input.runId, input.nodeId ?? null, "1.0", contextHash, input.estimatedTokens ?? null, input.maxTokens ?? null, input.sourceCount ?? 0, JSON.stringify(manifest)],
   );
   await execute("UPDATE emperor_run_traces SET contextManifestHash=?,updatedAt=NOW() WHERE traceId=?", [contextHash, input.traceId]);
-  return contextHash;
+  await import("./contextProvenance").then(({ recordContextSourceProvenance }) => recordContextSourceProvenance({ manifestId, traceId: input.traceId, manifest })).catch((error) => console.warn("[RunLedger] Context provenance write skipped:", error instanceof Error ? error.message : String(error)));
+  return { contextHash, manifestId };
 }
 
 export async function listRunTraces(input: { limit?: number; projectId?: number } = {}) {
