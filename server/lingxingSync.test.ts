@@ -73,6 +73,12 @@ describe("领星运营同步预览契约", () => {
     expect(normalized.normalized).toMatchObject({ asin: "B012", parentAsin: "P012", sku: "SKU-1", fbaAvailable: 8, fbaReserved: 2, fbaInTransit: 8 });
   });
 
+  it("将订单利润报表的父ASIN、销量、销售额和毛利润归一化为产品总览草稿", () => {
+    const normalized = normalizeRow("order_profit", { parent_asins: ["P123"], asins: ["B123"], item_name: "产品A", volume: 12, amount: 345.6, gross_profit: 78.9, spend: 10.2 }, { storeId: "123", startDate: "2026-08-01", endDate: "2026-08-07" });
+    expect(normalized.validationErrors).toEqual([]);
+    expect(normalized.normalized).toMatchObject({ asin: "B123", parentAsin: "P123", productName: "产品A", salesQty: 12, salesAmount: 345.6, orderProfit: 78.9, adSpend: 10.2 });
+  });
+
   it("仅将实际变化字段列为差异，供人工确认新增或更新", () => {
     expect(calculateFieldDiffs({ salesQty: 3, sku: "A" }, { salesQty: 5, sku: "A" }, ["salesQty", "sku"])).toEqual([{ field: "salesQty", before: 3, after: 5 }]);
   });

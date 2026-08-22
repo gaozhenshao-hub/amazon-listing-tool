@@ -8,7 +8,7 @@ import { ensureAgentRunTrace } from "../domains/ai_os/services/runLedger";
 import { invokeEmperorTool } from "../domains/ai_os/services/toolGateway/executors";
 import { getDb } from "../repositories/dbClient";
 
-const domainSchema = z.enum(["product_performance", "fba_inventory", "ad_campaign", "ad_keyword"]);
+const domainSchema = z.enum(["product_performance", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword"]);
 const scopeSchema = z.object({
   storeId: z.string().trim().min(1),
   profileId: z.string().trim().optional(),
@@ -124,12 +124,16 @@ function sumValues(record: RecordValue, keys: string[]) {
   const values = keys.map((key) => value(record, [key])).filter((item) => item !== null);
   return values.length ? values.reduce((total, item) => total + asNumber(item), 0) : null;
 }
+function firstText(input: unknown) {
+  if (Array.isArray(input)) return asText(input[0]);
+  return asText(input).split(",")[0]?.trim() || "";
+}
 function todayIso() { return new Date().toISOString().slice(0, 10); }
 export function previewBatchStatusFor(sourceRowCount: number) { return sourceRowCount > 0 ? "ready_for_review" : "empty"; }
 
 export function normalizeRow(domain: z.infer<typeof domainSchema>, source: RecordValue, scope: z.infer<typeof scopeSchema>) {
   const asin = value(source, ["asin", "child_asin", "childAsin", "子ASIN"]);
-  const parentAsin = value(source, ["parent_asin_real", "parent_asin", "parentAsin", "p_asin", "父ASIN"]);
+  const parentAsin = value(source, ["parent_asin_real", "parent_asin", "parentAsin", "parent_asins", "p_asin", "父ASIN"]);
   const sku = value(source, ["sku", "local_sku", "seller_sku", "msku", "sellerSku", "SKU"]);
   const normalized: RecordValue = {
     sourceDomain: domain,
@@ -137,15 +141,15 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
     profileId: scope.profileId || null,
     periodStart: scope.startDate || null,
     periodEnd: scope.endDate || null,
-    asin: asin ? String(asin) : null,
-    parentAsin: parentAsin ? String(parentAsin) : null,
+    asin: asin ? firstText(asin) : firstText(value(source, ["asins"])),
+    parentAsin: parentAsin ? firstText(parentAsin) : null,
     sku: sku ? String(sku) : null,
     productName: value(source, ["local_name", "product_name", "item_name", "title", "name", "品名", "产品名称"]),
     storeName: value(source, ["shop_name", "store_name", "storeName", "seller_name"]) || `SID ${scope.storeId}`,
     country: value(source, ["country", "site", "marketplace"]) || scope.marketplace || "US",
     salesQty: value(source, ["volume", "sales_qty", "salesQty", "units", "quantity", "销量"]),
-    salesAmount: value(source, ["sales_amount", "sales", "salesAmount", "revenue", "销售额"]),
-    orderProfit: value(source, ["profit", "order_profit", "orderProfit", "订单利润"]),
+    salesAmount: value(source, ["sales_amount", "sales", "salesAmount", "revenue", "amount", "销售额"]),
+    orderProfit: value(source, ["profit", "order_profit", "orderProfit", "gross_profit", "订单利润"]),
     adSpend: value(source, ["ad_spend", "spend", "spends", "cost", "广告花费"]),
     campaignName: value(source, ["campaign_name", "campaignName", "campaign", "name", "广告活动", "广告活动名称"]),
     campaignId: value(source, ["campaign_id", "campaignId"]),
@@ -163,7 +167,7 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
   };
   const entityKey = [scope.storeId, domain, normalized.parentAsin || normalized.asin || "unmatched", normalized.sku || "", scope.startDate || "latest", scope.endDate || ""].join("|");
   const validationErrors: string[] = [];
-  if (domain === "product_performance" && !normalized.asin && !normalized.parentAsin) validationErrors.push("未识别ASIN或父ASIN，不能确认写入产品总览。");
+  if (["product_performance", "order_profit"].includes(domain) && !normalized.asin && !normalized.parentAsin) validationErrors.push("未识别ASIN或父ASIN，不能确认写入产品总览。");
   if (domain === "fba_inventory" && (!normalized.asin || !normalized.parentAsin)) validationErrors.push("库存快照需要子ASIN和父ASIN映射；请在草稿中补充或取消选择该行。");
   if (domain === "ad_campaign" && !normalized.campaignName) validationErrors.push("广告活动报表需要活动名称；请核对草稿后再确认。");
   if (domain === "ad_keyword" && (!normalized.keyword || !normalized.campaignName)) validationErrors.push("广告关键词报表需要关键词和活动名称；请核对草稿后再确认。");
@@ -181,6 +185,7 @@ export function calculateFieldDiffs(current: RecordValue, incoming: RecordValue,
 export function buildMcpArguments(domain: z.infer<typeof domainSchema>, scope: z.infer<typeof scopeSchema>) {
   const commonDate = { start_date: scope.startDate, end_date: scope.endDate };
   if (domain === "product_performance") return { capability: "query_product_performance_asin_lists", arguments: { sids: scope.storeId, offset: 0, length: 200, ...commonDate, date_type: "purchase", date_view_type: "week", date_view_order_type: 2, summary_field: "parent_asin", turn_on_summary: 1, query_order_profit: true, currency_code: "USD" } };
+  if (domain === "order_profit") return { capability: "query_order_profit_list", arguments: { sids: scope.storeId, ...commonDate, currency_type: "USD", external_service_mark: 1, source_service: "mcp", length: "200", offset: "0", sort_type: "desc", turn_on_summary: "1", search_type: 0, search_field: "parent_asin", summary_field: "parent_asin", date_summary_type: 2, query_order_gross_first: true } };
   if (domain === "fba_inventory") return { capability: "get_fba_stock_list", arguments: { sid: scope.storeId, offset: 0, length: 200, sort_field: "sku", sort_type: "asc", is_cost_page: "0", is_hide_zero_stock: 0, is_parant_asin_merge: "1" } };
   if (domain === "ad_campaign") return { capability: "ad_campaign_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: 200, sort_field: "spends", sort_type: "desc" } };
   return { capability: "ad_campaign_keyword_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: 200, sort_field: "spends", sort_type: "desc" } };
@@ -244,7 +249,7 @@ export const lingxingSyncRouter = router({
     const periodEnd = input.scope.endDate || periodStart;
     const parentAsins = [...new Set(stagedRows.map((item) => asText(item.normalized.normalized.parentAsin || item.normalized.normalized.asin)).filter(Boolean))];
     const childAsins = [...new Set(stagedRows.map((item) => asText(item.normalized.normalized.asin)).filter(Boolean))];
-    const existingProductRows = input.dataDomain === "product_performance" && parentAsins.length
+    const existingProductRows = ["product_performance", "order_profit"].includes(input.dataDomain) && parentAsins.length
       ? await db.select().from(lingxingProductWeekly).where(and(eq(lingxingProductWeekly.workspaceId, workspaceId), eq(lingxingProductWeekly.weekStartDate, periodStart), inArray(lingxingProductWeekly.parentAsin, parentAsins)))
       : [];
     const existingInventoryRows = input.dataDomain === "fba_inventory" && childAsins.length
@@ -266,7 +271,7 @@ export const lingxingSyncRouter = router({
       let current: RecordValue = {};
       let targetReference: RecordValue | null = null;
       let matchInfo: RecordValue | null = null;
-      if (input.dataDomain === "product_performance") {
+      if (["product_performance", "order_profit"].includes(input.dataDomain)) {
         const target = productByParentAsin.get(asText(output.parentAsin || output.asin));
         if (target) {
           current = target as unknown as RecordValue;
@@ -357,7 +362,7 @@ export const lingxingSyncRouter = router({
     const workspaceId = ctx.user.defaultWorkspaceId!;
     const [batch] = await db.select().from(opsExternalSyncBatches).where(and(eq(opsExternalSyncBatches.id, input.batchId), eq(opsExternalSyncBatches.workspaceId, workspaceId))).limit(1);
     if (!batch || batch.status !== "confirmed") throw new Error("请先完成人工确认；已应用或不在确认状态的批次不能重复写入。");
-    if (!["product_performance", "fba_inventory"].includes(batch.dataDomain)) throw new Error("当前应用入口仅支持产品表现和FBA库存草稿。");
+    if (!["product_performance", "order_profit", "fba_inventory"].includes(batch.dataDomain)) throw new Error("当前应用入口仅支持产品表现、订单利润和FBA库存草稿。");
     const selectedRows = await db.select().from(opsExternalSyncRows).where(and(eq(opsExternalSyncRows.batchId, input.batchId), eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.selected, 1)));
     if (!selectedRows.length) throw new Error("没有已选择的草稿行可应用。");
     const scope = object(batch.scope);
@@ -374,7 +379,7 @@ export const lingxingSyncRouter = router({
     for (const row of selectedRows) {
       const data = object(row.normalizedData);
       const source = object(row.sourceData);
-      if (batch.dataDomain === "product_performance") {
+      if (["product_performance", "order_profit"].includes(batch.dataDomain)) {
         const parentAsin = asText(data.parentAsin || data.asin);
         if (!parentAsin) { skippedRows += 1; continue; }
         await db.insert(lingxingProductWeekly).values({
