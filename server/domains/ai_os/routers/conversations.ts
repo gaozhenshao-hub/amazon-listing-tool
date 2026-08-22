@@ -16,6 +16,7 @@ import { runEmperorSkill } from "../../../services/emperorSkillRunner";
 import { safeParseSkillJSON } from "../services/skillRunner";
 import { storagePut } from "../../../storage";
 import { registerStorageObject, registerUnifiedArtifact } from "../services/artifactLifecycle";
+import { appendRunLedgerEvent, completeRunTrace, ensureRunTrace, recordContextManifest } from "../services/runLedger";
 import {
   CONVERSATION_PLANNER_MAX_ATTEMPTS,
   conversationPlannerRetryDelayMs,
@@ -477,6 +478,24 @@ export const emperorConversationsRouter = router({
       }
       return [];
     });
+    const traceId = `conversation_step_${input.stepId}`;
+    await ensureRunTrace({
+      runId: traceId,
+      rootRunType: "conversation_step",
+      workspaceId: workspaceIdFromContext(ctx),
+      agentSlug: `conversation.${step.capabilityType}`,
+      projectId: Number(payload.projectId) || null,
+      userId: ctx.user.id,
+      metadata: { conversationId: input.conversationId, stepId: input.stepId, capabilityType: step.capabilityType, capabilitySlug: step.capabilitySlug },
+    });
+    await recordContextManifest({
+      traceId,
+      runId: traceId,
+      nodeId: input.stepId,
+      sourceCount: attachmentRefs.length + knowledgeRefs.length,
+      manifest: { conversationId: input.conversationId, stepId: input.stepId, capability: { type: step.capabilityType, slug: step.capabilitySlug }, attachments: attachmentRefs, knowledgeReferences: knowledgeRefs },
+    });
+    await appendRunLedgerEvent({ traceId, eventType: "conversation.step.started", entityType: "system", entityId: input.stepId, skillSlug: step.capabilityType === "skill" ? step.capabilitySlug : null, toolSlug: step.capabilityType === "tool" ? step.capabilitySlug : null, actorUserId: ctx.user.id, payload: { capabilityType: step.capabilityType, riskLevel: step.riskLevel } });
     await rawExecute("UPDATE emperor_conversation_plan_steps SET status='running',startedAt=NOW() WHERE stepId=?", [input.stepId]);
     await rawExecute("UPDATE emperor_conversation_plans SET status='executing' WHERE planId=?", [step.planId]);
     await rawExecute("UPDATE emperor_conversations SET status='running' WHERE conversationId=?", [input.conversationId]);
@@ -495,10 +514,23 @@ export const emperorConversationsRouter = router({
         runRef = { toolRunId: (result as any).metadata?.toolRunId || null, success: (result as any).success };
         await rawExecute("UPDATE emperor_conversation_plan_steps SET status=?,toolRunId=?,completedAt=NOW(),metadata=? WHERE stepId=?", [(result as any).success ? "succeeded" : "failed", (result as any).metadata?.toolRunId || null, json({ status: (result as any).metadata?.status || null }), input.stepId]);
       }
+      await appendRunLedgerEvent({
+        traceId,
+        eventType: step.capabilityType === "agent" ? "conversation.step.dispatched" : "conversation.step.succeeded",
+        entityType: step.capabilityType === "agent" ? "agent_run" : step.capabilityType === "skill" ? "skill_run" : "tool_run",
+        entityId: String(runRef.agentRunId || runRef.skillRunId || runRef.toolRunId || input.stepId),
+        skillSlug: step.capabilityType === "skill" ? step.capabilitySlug : null,
+        toolSlug: step.capabilityType === "tool" ? step.capabilitySlug : null,
+        actorUserId: ctx.user.id,
+        payload: { stepId: input.stepId, capabilityType: step.capabilityType, success: runRef.success ?? true },
+      });
+      await completeRunTrace(traceId, step.capabilityType === "agent" ? "running" : "completed");
       await audit(ctx, { action: "conversation.step.run", conversationId: input.conversationId, riskLevel: step.riskLevel === "L3" ? "critical" : step.riskLevel === "L2" ? "high" : "medium", metadata: { stepId: input.stepId, capabilityType: step.capabilityType, capabilitySlug: step.capabilitySlug, ...runRef } });
       return { success: true, ...runRef };
     } catch (error) {
       await rawExecute("UPDATE emperor_conversation_plan_steps SET status='failed',errorMessage=?,completedAt=NOW() WHERE stepId=?", [error instanceof Error ? error.message : "步骤执行失败", input.stepId]);
+      await appendRunLedgerEvent({ traceId, eventType: "conversation.step.failed", entityType: "system", entityId: input.stepId, skillSlug: step.capabilityType === "skill" ? step.capabilitySlug : null, toolSlug: step.capabilityType === "tool" ? step.capabilitySlug : null, actorUserId: ctx.user.id, payload: { error: error instanceof Error ? error.message : "unknown" } }).catch(() => null);
+      await completeRunTrace(traceId, "failed").catch(() => null);
       await audit(ctx, { action: "conversation.step.run", conversationId: input.conversationId, status: "failed", riskLevel: "high", metadata: { stepId: input.stepId, error: error instanceof Error ? error.message : "unknown" } });
       throw error;
     }

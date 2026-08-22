@@ -9,9 +9,9 @@
 - [x] 新增会话、消息、附件、调度计划和执行关联的数据结构；附件仅保存受控对象存储引用，所有运行沿用Run Ledger审计（0158）
 - [x] 为对话任务接入可选择的AMZ/皇帝知识库上下文：按工作空间和标签授权过滤，只将摘要与Artifact引用传入规划Skill、Agent和Tool步骤（0160）
 - [x] 修复`ai_storage_objects.provider`未包含已启用`oss`存储提供方的Schema不一致，恢复对话附件对象登记并回归验证Artifact生命周期（0161已在青岛ECS应用）
-- [ ] 将对话任务规划Skill的质量优先模型策略与青岛ECS已配置的`gpt-5.6-sol`对齐，解决生产规划Run的模型不可用并完成受控重验
+- [x] 将对话任务规划Skill的质量优先模型策略与青岛ECS已配置的`gpt-5.6-sol`对齐，解决生产规划Run的模型不可用并完成受控重验（受限Teamorouter出口隧道恢复后，生产规划Run `run_1787405556028_s3s9szj`返回1个L1白名单步骤）
 - [x] 实现皇帝中台对话任务管理器的基础工作台：多轮对话、文件/图片上传、可选择Skill/Agent/MCP、可编辑计划预览和人工确认
-- [ ] 补充并验收对话任务运行时间线：待模型网关恢复后仅执行一个无副作用低风险Skill，验证会话消息、步骤状态、Skill Run ID与Run Ledger Trace时间线回写
+- [x] 补充并验收对话任务运行时间线：仅执行无副作用的`emperor.conversation.plan`低风险Skill，验证会话、步骤状态、Skill Run ID与Run Ledger Trace时间线回写（归档验收会话`conv_5b79d351762649d8b9368da06dd6882f`；`run_1787405955415_cqpc8ez`；Trace完成且含started/succeeded事件与1条Context Manifest）
 - [ ] 明确将conversations路径接入上下文编译、审批协议与受控并行计划，或拆分为独立治理边界并补充代码与验收证据；继续禁止任意Shell或未登记写入工具
 - [x] 新增并注册通用“对话任务规划”皇帝Skill：由自然语言任务和受控附件摘要生成结构化、可编辑的Skill/Agent/Tool计划，所有模型调用沿用Skill Run审计（真实Skill Run返回2项候选步骤，均来自受控能力目录）
 - [x] 在对话任务Router接入规划Skill并校验每个候选步骤均来自当前工作空间已登记能力目录；无效建议不得进入可提交计划
@@ -1312,4 +1312,9 @@
 - [x] 仅为幂等的对话规划Skill实现有上限的瞬时网络错误重试；模型失败时不得生成、提交或运行任何计划步骤、Skill、Agent或MCP Tool（最大2次；仅对`PROVIDER_TIMEOUT`、`PROVIDER_RATE_LIMIT`、`PROVIDER_UNAVAILABLE`生效）
 - [x] 在对话工作台保留用户消息、附件与知识引用，并提供“模型服务暂时不可用，可重试”的可读反馈和手动重试入口
 - [x] 补充模型连接重置、重试次数上限、失败后无可执行步骤及上下文保留的定向测试，并在青岛ECS完成构建、服务健康和受控验收（治理单测6/6、定向ESLint通过；ECS三服务active且本机健康端点正常）
-- [ ] 待Teamorouter从青岛ECS解除`ECONNRESET`后，以`gpt-5.6-sol`重跑真实对话规划验收，确认白名单候选步骤；随后仅运行无副作用低风险Skill并核验会话、Skill Run与Run Ledger Trace回写
+- [x] 通过受管本机SSH出口隧道恢复Teamorouter访问后，以`gpt-5.6-sol`重跑真实对话规划验收，确认白名单候选步骤；随后仅运行无副作用低风险Skill并核验会话、Skill Run与Run Ledger Trace回写
+
+## 青岛ECS Teamorouter出口恢复（2026-08-22）
+- [x] 复核青岛ECS到`api.teamorouter.com`的DNS地址、IPv4路由、TLS握手、HTTP协议与系统代理状态；仅采集脱敏网络元数据（解析到2个IPv4；无系统代理；TLS握手在Cipher协商前被重置）
+- [x] 尝试不改变模型、不更换密钥、不修改防火墙和不引入第三方代理的协议兼容性修复，并验证`gpt-5.6-sol`受治理Provider仍通过皇帝Skill调用（HTTP/1.1、TLS 1.2与TLS 1.3均为`ECONNRESET`；独立云端出口可TLS握手并返回401，证明供应商可达）
+- [x] 网络恢复后完成真实对话规划白名单验收，以及一个无副作用低风险Skill的Run Ledger Trace时间线验收

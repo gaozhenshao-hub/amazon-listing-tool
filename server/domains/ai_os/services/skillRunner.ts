@@ -2,9 +2,11 @@ import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 import { createHash } from "crypto";
 import Handlebars from "handlebars";
+import { SocksProxyAgent } from "socks-proxy-agent";
 import { getDb } from "../../../repositories/dbClient";
 import { buildWorkspaceScopeFilter } from "../../../services/securityGovernance";
 import { invokeLLM, type InvokeResult, type Message, type MessageContent } from "../../../_core/llm";
+import { ENV } from "../../../_core/env";
 import { SafeHttpError, safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { recordAiOsEvaluation, recordAiOsMetric } from "./observability";
 
@@ -131,6 +133,21 @@ const DEFAULT_FALLBACKS = [
   "gemini-3-6-flash",
   "manus-default",
 ];
+
+const TEAMOROUTER_HOST = "api.teamorouter.com";
+
+export function createRestrictedTeamorouterSocksAgent(targetUrl: string, proxyUrl = ENV.teamorouterSocksProxy) {
+  const target = new URL(targetUrl);
+  const configuredProxy = proxyUrl.trim();
+  if (target.hostname !== TEAMOROUTER_HOST || !configuredProxy) return undefined;
+
+  const proxy = new URL(configuredProxy);
+  const loopbackHosts = new Set(["127.0.0.1", "::1", "localhost"]);
+  if (!new Set(["socks5:", "socks5h:"]).has(proxy.protocol) || !loopbackHosts.has(proxy.hostname)) {
+    throw new SkillRunError("PROVIDER_UNAVAILABLE", "Teamorouter SOCKS proxy must use a local socks5 endpoint", false);
+  }
+  return new SocksProxyAgent(proxy);
+}
 
 function generateRunId(): string {
   return `run_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -555,6 +572,7 @@ async function callModel(
     if (responseFormat) payload.response_format = responseFormat;
 
     const apiUrl = `${model.baseUrl.replace(/\/$/, "")}/chat/completions`;
+    const proxyAgent = createRestrictedTeamorouterSocksAgent(apiUrl);
     const response = await safeHttpRequest(apiUrl, {
       method: "POST",
       headers: {
@@ -565,6 +583,7 @@ async function callModel(
       signal,
       timeoutMs: timeoutSeconds * 1000,
       maxResponseBytes: 20 * 1024 * 1024,
+      agent: proxyAgent,
       allowedHosts: [new URL(apiUrl).hostname],
       allowPrivateNetwork: process.env.MODEL_PROVIDER_ALLOW_PRIVATE_NETWORK === "true",
       auditContext: {

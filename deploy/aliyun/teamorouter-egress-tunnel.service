@@ -1,0 +1,17 @@
+[Unit]
+Description=Restricted Teamorouter egress tunnel for Emperor model calls
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=ecs-user
+Environment=HOME=/home/ecs-user
+ExecStart=/usr/bin/ssh -N -D 127.0.0.1:1088 -o ExitOnForwardFailure=yes -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ecs-user/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -i /home/ecs-user/.ssh/teamorouter_egress_ed25519 ubuntu@104.196.50.157
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
