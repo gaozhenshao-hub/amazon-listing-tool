@@ -12,6 +12,33 @@ function nodeRequiresHumanGate(node: EmperorAgentNode): boolean {
 
 type AgentNodeJobFailureKind = "error" | "timeout" | "cancel";
 
+async function appendAgentLifecycleEvent(input: {
+  run: any;
+  actorUserId?: number | null;
+  eventType: string;
+  entityId?: string | null;
+  payload?: Record<string, unknown>;
+}) {
+  const traceId = `agent_run_${input.run.runId}`;
+  await ensureRunTrace({
+    runId: traceId,
+    rootRunType: "agent_run",
+    workspaceId: input.run.workspaceId ?? null,
+    agentSlug: input.run.agentSlug,
+    projectId: input.run.projectId ?? null,
+    userId: input.run.userId ?? null,
+    metadata: { agentRunId: input.run.runId, lifecycleBackfill: true },
+  });
+  await appendRunLedgerEvent({
+    traceId,
+    eventType: input.eventType,
+    entityType: "agent_run",
+    entityId: input.entityId || input.run.runId,
+    actorUserId: input.actorUserId ?? input.run.userId ?? null,
+    payload: input.payload || {},
+  });
+}
+
 export function shouldFinalizeTimedOutNodeForTerminalJob(status?: string | null) {
   return status === "failed" || status === "canceled";
 }
@@ -315,6 +342,13 @@ async function failNodeExecution(input: {
     },
   });
   await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.failed", `节点 ${input.node.label || input.node.id} 执行失败`, { error: message });
+  await appendAgentLifecycleEvent({
+    run: input.run,
+    actorUserId: input.run.userId,
+    eventType: "lifecycle.error_classified",
+    entityId: `${input.run.runId}:${input.node.id}`,
+    payload: { nodeId: input.node.id, failureKind: input.failureKind || "error", requiresHumanReview: true },
+  }).catch(() => undefined);
 }
 
 async function recordAgentNodeJobFailure(input: {
@@ -722,6 +756,7 @@ export async function cancelAgentRun(input: {
   await addEvent(input.runId, run.agentSlug, null, "run.canceled", "Agent Run 已取消", {
     reason: input.reason || null,
   });
+  await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.canceled", payload: { reason: input.reason || null } }).catch(() => undefined);
   return getAgentRun(input.runId, input.userId, true);
 }
 
@@ -742,6 +777,7 @@ export async function pauseAgentRun(input: {
   await addEvent(input.runId, run.agentSlug, null, "run.paused", "Agent Run 已暂停", {
     reason: input.reason || null,
   });
+  await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.paused", payload: { reason: input.reason || null } }).catch(() => undefined);
   return getAgentRun(input.runId, input.userId, true);
 }
 
@@ -751,7 +787,10 @@ export async function resumeAgentRun(input: {
 }) {
   const detail = await getAgentRun(input.runId, input.userId);
   const run = detail.run;
-  if (run.status !== "paused") return detail;
+  if (run.status !== "paused") {
+    await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.resume_deduped", payload: { status: run.status } }).catch(() => undefined);
+    return detail;
+  }
   const dag = normalizeAgentDag(detail.dag);
   const checkpoints = detail.checkpoints as CheckpointRow[];
   const allDone = checkpoints.length > 0 && checkpoints.every((checkpoint) => isConfirmedStatus(checkpoint.status));
@@ -764,6 +803,7 @@ export async function resumeAgentRun(input: {
     clearError: true,
   }));
   await addEvent(input.runId, run.agentSlug, null, "run.resumed", "Agent Run 已恢复", { nextStatus });
+  await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.resumed", payload: { nextStatus } }).catch(() => undefined);
   await unlockReadyNodes(input.runId, dag);
   await refreshRunAfterCheckpoint(input.runId, dag);
   return getAgentRun(input.runId, input.userId, true);
@@ -938,6 +978,13 @@ export async function confirmAgentNode(input: {
     });
   }
   await addEvent(input.runId, checkpoint.agentSlug, input.nodeId, input.skip ? "node.skipped" : "node.confirmed", `节点 ${checkpoint.nodeLabel || input.nodeId} 已${input.skip ? "跳过" : "确认"}`);
+  await appendAgentLifecycleEvent({
+    run: detail.run,
+    actorUserId: input.userId,
+    eventType: input.skip ? "lifecycle.skipped" : "lifecycle.confirmed",
+    entityId: `${input.runId}:${input.nodeId}`,
+    payload: { nodeId: input.nodeId, status: nextStatus },
+  }).catch(() => undefined);
   await unlockChildren(input.runId, dag, input.nodeId);
   await unlockReadyNodes(input.runId, dag);
   await refreshRunAfterCheckpoint(input.runId, dag);

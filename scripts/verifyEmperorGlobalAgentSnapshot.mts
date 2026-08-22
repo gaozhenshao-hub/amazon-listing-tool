@@ -1,4 +1,4 @@
-import { cancelAgentRun, startAgentRun } from "../server/domains/ai_os/services/agentRunner";
+import { cancelAgentRun, pauseAgentRun, resumeAgentRun, startAgentRun } from "../server/domains/ai_os/services/agentRunner";
 import { rawExecute } from "../server/domains/ai_os/routerContext";
 
 async function main() {
@@ -26,8 +26,17 @@ async function main() {
     throw new Error("Global Agent trace or execution snapshot evidence is incomplete");
   }
   if (Number(jobRows[0]?.count || 0) !== 0) throw new Error("Verification unexpectedly scheduled an AI job");
+  await pauseAgentRun({ runId, userId: Number(user.id), reason: "P1 lifecycle verification; no node execution requested" });
+  await resumeAgentRun({ runId, userId: Number(user.id) });
+  await resumeAgentRun({ runId, userId: Number(user.id) });
+  const beforeCancelEvents = await rawExecute("SELECT eventType FROM emperor_run_ledger_events WHERE traceId=? ORDER BY id ASC", [traceId]);
+  for (const eventType of ["lifecycle.paused", "lifecycle.resumed", "lifecycle.resume_deduped"]) {
+    if (!beforeCancelEvents.some((row: any) => row.eventType === eventType)) throw new Error(`Expected lifecycle event is missing: ${eventType}`);
+  }
   await cancelAgentRun({ runId, userId: Number(user.id), reason: "P1 global Agent snapshot verification; no node execution requested" });
-  console.log(JSON.stringify({ runId, traceId, snapshotId: snapshotRows[0]?.snapshotId, agentSlug: agent.slug, status: "canceled", verification: "no-node-model-tool-mcp-executed" }));
+  const afterCancelEvents = await rawExecute("SELECT eventType FROM emperor_run_ledger_events WHERE traceId=? ORDER BY id ASC", [traceId]);
+  if (!afterCancelEvents.some((row: any) => row.eventType === "lifecycle.canceled")) throw new Error("Expected lifecycle event is missing: lifecycle.canceled");
+  console.log(JSON.stringify({ runId, traceId, snapshotId: snapshotRows[0]?.snapshotId, agentSlug: agent.slug, status: "canceled", lifecycleEvents: ["lifecycle.paused", "lifecycle.resumed", "lifecycle.resume_deduped", "lifecycle.canceled"], verification: "no-node-model-tool-mcp-executed" }));
 }
 
 main().then(() => process.exit(0)).catch((error) => {
