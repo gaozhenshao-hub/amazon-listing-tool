@@ -812,6 +812,7 @@ export async function pauseAgentRun(input: {
 export async function resumeAgentRun(input: {
   runId: string;
   userId: number;
+  expectedStateVersion?: number;
 }) {
   const detail = await getAgentRun(input.runId, input.userId);
   const run = detail.run;
@@ -820,7 +821,34 @@ export async function resumeAgentRun(input: {
     return detail;
   }
   const traceId = `agent_run_${input.runId}`;
-  const stateVersion = Number(run.stateVersion || 0);
+  const observedStateVersion = Number(run.stateVersion || 0);
+  const stateVersion = input.expectedStateVersion === undefined ? observedStateVersion : Number(input.expectedStateVersion);
+  if (stateVersion !== observedStateVersion) {
+    const snapshot = await createExecutionStateSnapshot({
+      workspaceId: run.workspaceId ?? null,
+      traceId,
+      targetType: "agent_run",
+      targetId: input.runId,
+      stateVersion: observedStateVersion,
+      approvalState: run.status,
+      snapshot: { agentSlug: run.agentSlug, status: run.status, expectedStateVersion: stateVersion, observedStateVersion },
+      createdBy: input.userId,
+    });
+    const recovery = await claimExecutionRecoveryRequest({
+      idempotencyKey: buildRecoveryIdempotencyKey({ snapshotId: snapshot.snapshotId, targetType: "agent_run", targetId: input.runId, expectedStateVersion: stateVersion, requestedAction: "resume" }),
+      snapshotId: snapshot.snapshotId,
+      traceId,
+      targetType: "agent_run",
+      targetId: input.runId,
+      requestedAction: "resume",
+      expectedStateVersion: stateVersion,
+      requestedBy: input.userId,
+    });
+    await completeExecutionRecoveryRequest({ recoveryId: recovery.request.recoveryId, status: "compensation_required", reasonCode: "AGENT_STATE_VERSION_CONFLICT", result: { observedStatus: run.status, observedStateVersion } });
+    await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.compensation_required", payload: { reasonCode: "AGENT_STATE_VERSION_CONFLICT", recoveryId: recovery.request.recoveryId, expectedStateVersion: stateVersion, observedStateVersion } }).catch(() => undefined);
+    await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.recovery_rejected", payload: { reasonCode: "AGENT_STATE_VERSION_CONFLICT", expectedStateVersion: stateVersion, observedStateVersion } }).catch(() => undefined);
+    throw new TRPCError({ code: "CONFLICT", message: "Agent 运行状态已变化，请刷新后重新确认恢复" });
+  }
   const snapshot = await createExecutionStateSnapshot({
     workspaceId: run.workspaceId ?? null,
     traceId,

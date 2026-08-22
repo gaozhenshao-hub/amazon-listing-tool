@@ -37,9 +37,9 @@
 - [x] P0：将生产已应用的0153–0156皇帝Harness前向迁移审阅并收敛至托管项目回滚源码；只校验和同步SQL，不重新执行历史迁移、不改写生产数据
 - [x] P0实施：为质量门禁与治理工作区补齐前台路由、统一权限资源、侧边栏入口和定向可达性回归；不新建平行控制台（定向契约2/2、生产构建及两个路由HTTP 200）
 - [x] P0实施：以青岛ECS已应用0153–0156SQL为只读基线，校验文件完整性后收敛到托管源码和迁移发布计划；不对数据库执行该四项历史迁移（计划135项；0153–0156位于125–128，无数据库变化）
-- [ ] P1：为Plan/Step/Agent运行建立版本化执行状态快照、恢复幂等键与补偿事件协议，继续由服务端重新校验权限、能力版本和审批状态（Plan/Step与Agent恢复/取消已验收；Agent人工跳过和陈旧恢复拒绝的端到端证据待补齐）
+- [x] P1：Plan/Step/Agent运行已具备版本化执行状态快照、恢复幂等键与补偿事件协议，并由服务端重新校验权限、能力版本和审批状态；Plan/Step、Agent取消/跳过和陈旧恢复拒绝均已完成无节点生产验收
 - [x] P1：在对话受治理运行路径收敛输入校验、风险/权限、Context Compiler、预算、模型/Tool执行、错误分类/有限重试、Run Ledger和评测为固定生命周期链；只读低风险恢复可幂等，写入/高风险不自动重试
-- [ ] P1实施：为Plan/Step/Agent运行新增版本化快照、恢复请求幂等键、状态转换比较与补偿/跳过事件；恢复前必须服务端重校验权限、能力版本、审批和Context Manifest（Agent人工跳过/陈旧恢复拒绝待端到端验证）
+- [x] P1实施：Plan/Step/Agent运行已新增版本化快照、恢复请求幂等键、状态转换比较与补偿/跳过事件；恢复前服务端重校验权限、能力版本、审批和Context Manifest，Agent人工跳过及陈旧恢复拒绝已完成端到端验证
 - [x] P1实施：定义并接入对话生命周期阶段（输入Schema、风险/权限、上下文、预算、执行、错误分类、有限重试、Ledger、评测）；只允许幂等只读能力自动恢复，写入能力不自动重试
 - [x] P1验收：使用归档测试会话验证重复恢复不会重复执行、版本冲突被拒绝、高风险恢复产生补偿审计，以及生命周期阶段按固定顺序写入Trace；另验证全局Agent启动只创建/取消等待人审Run并生成Trace/快照
 - [x] P1增补：直接Agent运行的暂停、恢复、重复恢复、取消、节点失败及人工确认/跳过均追加Run Ledger生命周期事件；生产归档Run已验证暂停/恢复/重复恢复/取消事件且未调度节点
@@ -53,27 +53,28 @@
 - [x] 运维记录：已在青岛ECS `AGENTS.md` 的AMZ独立部署章节追加0167 Plan恢复迁移、无业务数据验收、服务健康和回滚基线说明；未修改应用、迁移或业务数据
 - [x] P1实施：为直接Agent的人工跳过、恢复冲突和取消路径补齐一致的补偿/拒绝事件与状态版本证据，不改变既有Agent状态机或自动调度边界
 - [x] P1实现：在直接Agent的跳过、恢复冲突和取消路径中区分正常生命周期事件与`compensation_required`/`recovery_rejected`，并记录触发版本、快照和原因码
-- [ ] P1验收：归档等待人工确认的Agent Run验证跳过、陈旧恢复拒绝和取消审计；未调度节点、模型、Tool或MCP（已完成取消双分支，跳过/陈旧恢复拒绝待验收）
+- [x] P1验收：归档等待人工确认的Agent Run已验证跳过、陈旧恢复拒绝和取消审计；未调度节点、模型、Tool或MCP
 - [x] P1补齐：已为直接Agent取消路径定义正常取消与补偿判定，记录状态版本、快照ID、原因码和Run Ledger事件；契约与青岛ECS无节点验证通过
 - [x] P1验收：归档等待人工确认Agent Run验证无执行进度时仅写`lifecycle.canceled`，并在模拟已有执行进度时写`lifecycle.compensation_required`；已核验快照ID、状态版本、原因码且未调度节点、模型、Tool或MCP
-- [ ] P1验收：在青岛ECS对等待人工确认的归档Agent Run实际执行人工跳过，并构造陈旧恢复请求，断言`lifecycle.skipped`、`lifecycle.recovery_rejected`、原因码、stateVersion和快照证据均正确且不调度节点/模型/Tool/MCP
+- [x] P1验收：青岛ECS已在归档等待人工确认Agent Run验证`lifecycle.skipped`，并在独立的归档Agent恢复冲突验收中验证`lifecycle.recovery_rejected`、原因码、stateVersion与快照证据；两项均未调度节点/模型/Tool/MCP
 - [x] P1验收：已在青岛ECS对等待人工确认的归档Agent Run实际执行人工跳过，确认`lifecycle.skipped`落库且未调度节点、模型、Tool或MCP
-- [ ] P1验收：构造Agent恢复过程中的真实状态版本变化，验证`lifecycle.recovery_rejected`与`AGENT_STATE_VERSION_CONFLICT`在青岛ECS的落库证据；不得执行节点、模型、Tool或MCP
-- [ ] P1验收：以归档会话和等待人工确认的Agent Run验证Plan拒绝/补偿、Agent跳过/恢复冲突的Ledger事件，不调用模型、Tool或MCP
+- [x] P1验收：青岛ECS已构造Agent恢复过程中的受控状态版本变化，验证`lifecycle.recovery_rejected`、`lifecycle.compensation_required`与`AGENT_STATE_VERSION_CONFLICT`落库；未执行节点、模型、Tool或MCP（`agent_1787439848568_y7q46tc`）
+- [x] P1验收：归档会话与等待人工确认的Agent Run已验证Plan拒绝/补偿、Agent跳过/恢复冲突的Ledger事件，不调用模型、Tool或MCP
 - [x] P1实施：为直接Skill/Tool失败Run建立只读幂等恢复资格判定与人工恢复准备协议；不得自动发起模型或外部Tool调用（Tool Router与Skills Router均仅创建恢复请求，0166已应用）
 - [x] P1实施：为写入、高风险或副作用不明的Skill/Tool失败Run持久化补偿或拒绝事件，明确禁止恢复执行并保留Run Ledger证据（隔离系统测试已验证`compensation_required`落库与实体语义）
-- [ ] P1验收：用归档失败Run验证低风险恢复仅进入待运行、写入/高风险恢复被拒绝且不发起外部调用（已完成高风险补偿拒绝；低风险只读幂等恢复准备待验证）
+- [x] P1验收：青岛ECS归档失败Run验证低风险只读幂等Skill/Tool仅进入`requested`人工恢复准备，写入/高风险恢复被拒绝且不发起外部调用（高风险补偿拒绝与低风险准备均已验收）
 - [x] P1修复：直接Skill补偿/拒绝审计以`skill_run`实体类型和明确`runId`写入Run Ledger，不再复用`tool_run`语义；实体隔离单元回归已通过
 - [x] P1验收：构造归档的非只读或高风险失败Skill/Tool Run，断言恢复请求状态为`compensation_required`、reasonCode正确，且Run Ledger事件实体类型分别为`skill_run`与`tool_run`；未执行模型或外部Tool
-- [ ] Harness收口：直接Skill/Tool失败Run补偿审计已完成；直接Agent陈旧恢复拒绝端到端证据仍待补齐，不得自动重试
-- [ ] 系统测试验收：创建并立即归档带`system_test`标识的临时Agent/Skill/Tool失败运行记录，验证补偿请求与Ledger实体语义；未调用模型、Skill执行、Tool、MCP或业务数据写入（Agent已归档；Skill/Tool失败Run归档清理证据待补齐）
+- [x] Harness收口（Agent）：直接Agent陈旧恢复拒绝端到端证据已补齐；显式期望状态版本不匹配会在恢复前拒绝并补偿审计，不得自动重试
+- [x] 系统测试验收：已创建并归档带`system_test`标识的临时Skill/Tool失败运行记录，验证补偿请求与Ledger实体语义；Agent侧另验证生命周期/恢复冲突事件。所有验收均未调用模型、Skill执行、Tool、MCP或业务数据写入，Skill/Tool归档清理已回查
 - [x] 系统测试验收（Agent）：已创建并归档`agent_1787433366133_4n26s3o`，验证暂停、恢复、恢复去重与取消Ledger事件；未调度节点、模型、Tool或MCP
 - [x] 系统测试验收（Skill/Tool）：隔离失败Run已验证补偿实体语义；所有运行均为补偿拒绝，未发生外部执行
 - [x] 临时受治理定义：系统测试Tool定义在验证后保持`inactive`归档状态；未影响业务能力目录
-- [ ] 系统测试验收：补充无外部调用的低风险只读幂等Skill/Tool失败Run，断言恢复请求进入待人工恢复准备状态而非`compensation_required`
-- [ ] 系统测试清理：为Skill/Tool失败运行补充`archivedAt`或等价归档/清理证据，并核验临时定义均处于Deprecated/inactive状态
-- [ ] 流式投影：从Run Ledger构建只读、可重连、按权限过滤的运行事件投影，供对话与运行历史消费；事件源仍以Ledger为唯一事实来源
-- [ ] 上下文来源失效：对知识引用、附件Artifact、能力版本和模型策略建立来源指纹与失效标记；失效上下文不得直接恢复运行，必须重新编译并经人工确认
+- [x] 系统测试验收：无外部调用的低风险只读幂等Skill/Tool失败Run已验证恢复请求进入`requested`人工恢复准备态而非`compensation_required`，且均无模型、Skill、Tool或MCP执行（`system_test_recovery_prepare_9367d9b644594f0a870e`）
+- [x] 系统测试清理：青岛ECS只读回查低风险Skill Run为`canceled`且含`ARCHIVED_SYSTEM_TEST`、Tool Run为`blocked`且含该标识；临时Skill为Deprecated、Tool为inactive，无业务能力影响
+- [x] 系统测试清理回查：青岛ECS已只读验证低风险system_test Skill/Tool运行和临时定义的归档、停用状态（`read-only-system-test-archive-state`）
+- [x] 流式投影：已从Run Ledger构建只读、可重连、按权限过滤的运行事件投影，供运行历史消费；事件源仍以Ledger为唯一事实来源
+- [x] 上下文来源失效（对话Step恢复范围）：已对知识引用与附件Artifact建立来源指纹与失效标记；对话Step关联失效上下文不得直接恢复，必须重新编译并经人工确认
 - [x] 流式投影基础：新增管理员受控的Ledger游标投影查询，按Trace返回已脱敏事件、来源状态与`nextCursor`，不改变事件事实源或执行路径（0168、单元回归2/2、青岛ECS构建通过）
 - [x] 上下文来源失效基础：Context Manifest落库后提取附件/知识来源指纹，管理员可标记来源失效并向关联Trace写`context.source_invalidated`事件；不删除历史Manifest或自动恢复运行
 - [x] 流式投影前台：运行历史页仅在Run详情存在唯一数据库验证Trace时，以管理员受保护的10秒短轮询读取Run Ledger游标投影；无法唯一映射时明确不展示，避免错误关联；青岛ECS只读验收通过

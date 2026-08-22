@@ -59,7 +59,7 @@ async function appendRecoveryEvent(input: { traceId?: string | null; targetType:
     entityId: entity.entityId,
     actorUserId: input.userId,
     payload: input.payload,
-  }).catch(() => undefined);
+  });
 }
 
 export async function prepareToolRunRecovery(input: { toolRunId: string; userId: number; workspaceId?: number | null }) {
