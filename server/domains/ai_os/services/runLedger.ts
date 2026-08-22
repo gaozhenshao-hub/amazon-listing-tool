@@ -1,4 +1,5 @@
 import { randomUUID, createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb } from "../../../repositories/dbClient";
 
@@ -28,6 +29,10 @@ function sanitizeLedgerPayload(value: unknown, depth = 0): unknown {
 
 function json(value: unknown) { return JSON.stringify(sanitizeLedgerPayload(value ?? null)); }
 function hash(value: unknown) { return createHash("sha256").update(json(value)).digest("hex"); }
+function rowsOf(value: unknown): any[] {
+  if (Array.isArray(value) && Array.isArray(value[0])) return value[0] as any[];
+  return Array.isArray(value) ? value as any[] : [];
+}
 
 async function execute(sqlText: string, params: unknown[] = []) {
   const db = await getDb();
@@ -58,4 +63,39 @@ export async function appendRunLedgerEvent(input: RunLedgerEventInput) {
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [`ledger_${randomUUID()}`, input.traceId, input.eventType, input.entityType, input.entityId ?? null, input.nodeId ?? null, input.skillSlug ?? null, input.toolSlug ?? null, input.jobRunId ?? null, input.actorUserId ?? null, hash(payload), JSON.stringify(payload), input.visibility ?? "admin"],
   );
+}
+
+export async function recordContextManifest(input: {
+  traceId: string;
+  runId: string;
+  nodeId?: string | null;
+  manifest: unknown;
+  sourceCount?: number;
+  estimatedTokens?: number | null;
+  maxTokens?: number | null;
+}) {
+  const manifest = sanitizeLedgerPayload(input.manifest);
+  const contextHash = hash(manifest);
+  await execute(
+    `INSERT INTO emperor_context_manifests (manifestId,traceId,runId,nodeId,manifestVersion,contextHash,estimatedTokens,maxTokens,sourceCount,manifest)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [`manifest_${randomUUID()}`, input.traceId, input.runId, input.nodeId ?? null, "1.0", contextHash, input.estimatedTokens ?? null, input.maxTokens ?? null, input.sourceCount ?? 0, JSON.stringify(manifest)],
+  );
+  await execute("UPDATE emperor_run_traces SET contextManifestHash=?,updatedAt=NOW() WHERE traceId=?", [contextHash, input.traceId]);
+  return contextHash;
+}
+
+export async function listRunTraces(input: { limit?: number; projectId?: number } = {}) {
+  const limit = Math.min(Math.max(input.limit ?? 100, 1), 300);
+  const where = input.projectId ? "WHERE projectId=?" : "";
+  return rowsOf(await execute(`SELECT * FROM emperor_run_traces ${where} ORDER BY createdAt DESC LIMIT ${limit}`, input.projectId ? [input.projectId] : []));
+}
+
+export async function getRunTrace(traceId: string) {
+  const [traces, events, manifests] = await Promise.all([
+    execute("SELECT * FROM emperor_run_traces WHERE traceId=? LIMIT 1", [traceId]),
+    execute("SELECT * FROM emperor_run_ledger_events WHERE traceId=? ORDER BY id ASC", [traceId]),
+    execute("SELECT * FROM emperor_context_manifests WHERE traceId=? ORDER BY id ASC", [traceId]),
+  ]);
+  return { trace: rowsOf(traces)[0] ?? null, events: rowsOf(events), manifests: rowsOf(manifests) };
 }

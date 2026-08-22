@@ -73,9 +73,14 @@ const supplementalMigrations = [
   "0148_knowledge_workspace_scope.sql",
   "0149_dev_import_batch_governance.sql",
   "0150_step5_complete_result_longtext.sql",
-  "0151_step5_segment_run_status.sql",
-  "0152_dev_panorama_competitor_selection_persistence.sql",
-];
+    "0151_step5_segment_run_status.sql",
+    "0152_dev_panorama_competitor_selection_persistence.sql",
+    "0153_emperor_run_ledger_v2.sql",
+    "0154_emperor_skill_quality_gates.sql",
+    "0155_emperor_skill_feedback_rollouts.sql",
+    "0156_emperor_harness_completion.sql",
+    "0157_ops_external_sync_drafts.sql",
+  ];
 
 const retiredMigrationFiles = new Set([
   "0000_aberrant_black_panther.sql",
