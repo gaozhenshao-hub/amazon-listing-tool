@@ -127,6 +127,7 @@ export const SUB_MODULES: Record<string, { id: string; label: string }[]> = {
   ],
   emperor: [
     { id: 'emperor_skills', label: 'Skill 库' },
+    { id: 'emperor_conversations', label: '对话任务管理器' },
     { id: 'emperor_trace', label: '运行历史' },
     { id: 'emperor_agents', label: 'Agent 编排' },
     { id: 'emperor_models', label: '模型路由' },
@@ -248,6 +249,7 @@ export const PERMISSION_ROUTE_REGISTRY: Record<string, PermissionRouteRule> = {
 
   '/emperor': { moduleId: 'emperor', subModuleId: 'emperor_skills', enforcement: 'catalog_only' },
   '/emperor/skills': { moduleId: 'emperor', subModuleId: 'emperor_skills', enforcement: 'catalog_only' },
+  '/emperor/conversations': { moduleId: 'emperor', subModuleId: 'emperor_conversations', enforcement: 'catalog_only' },
   '/emperor/trace': { moduleId: 'emperor', subModuleId: 'emperor_trace', enforcement: 'catalog_only' },
   '/emperor/models': { moduleId: 'emperor', subModuleId: 'emperor_models', enforcement: 'catalog_only' },
   '/emperor/mcp': { moduleId: 'emperor', subModuleId: 'emperor_mcp', enforcement: 'catalog_only' },
@@ -276,6 +278,7 @@ export const PERMISSION_RESOURCE_REGISTRY = {
   ops_data: { moduleId: 'ops', subModuleId: 'ops_dashboard' },
   offsite_campaign: { moduleId: 'offsite', subModuleId: 'offsite_campaigns' },
   emperor_skill: { moduleId: 'emperor', subModuleId: 'emperor_skills' },
+  conversation: { moduleId: 'emperor', subModuleId: 'emperor_conversations' },
 } as const;
 
 // Permission entry type for fine-grained control
@@ -340,6 +343,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     file: [...SECURITY_ACTIONS],
     tool: [...SECURITY_ACTIONS],
     agent: [...SECURITY_ACTIONS],
+    conversation: [...SECURITY_ACTIONS],
     ops_data: [...SECURITY_ACTIONS],
   },
   admin: {
@@ -349,6 +353,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     file: ['read', 'upload', 'update', 'delete', 'export'],
     tool: ['read', 'create', 'update', 'delete', 'invoke', 'manage_secret', 'rotate_secret'],
     agent: ['read', 'create', 'update', 'delete', 'run', 'confirm', 'cancel'],
+    conversation: ['read', 'create', 'update', 'delete', 'upload', 'run', 'confirm', 'cancel'],
     ops_data: ['read', 'import', 'export', 'update', 'delete', 'sync'],
   },
   ops_manager: {
@@ -357,6 +362,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     file: ['read', 'upload', 'update', 'export'],
     tool: ['read', 'invoke'],
     agent: ['read', 'run', 'confirm', 'cancel'],
+    conversation: ['read', 'create', 'update', 'upload', 'run', 'confirm', 'cancel'],
     ops_data: ['read', 'import', 'export', 'update', 'sync'],
   },
   ops_specialist: {
@@ -365,6 +371,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     file: ['read', 'upload', 'update', 'export'],
     tool: ['read'],
     agent: ['read', 'run', 'confirm'],
+    conversation: ['read', 'create', 'update', 'upload', 'run', 'confirm'],
     ops_data: ['read'],
   },
   product_dev: {
@@ -374,6 +381,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     file: ['read', 'upload', 'update', 'export'],
     tool: ['read'],
     agent: ['read', 'run', 'confirm'],
+    conversation: ['read', 'create', 'update', 'upload', 'run', 'confirm'],
   },
   finance: {
     project: ['read'],

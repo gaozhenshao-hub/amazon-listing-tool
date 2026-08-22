@@ -5,7 +5,7 @@ import Handlebars from "handlebars";
 import { getDb } from "../../../repositories/dbClient";
 import { buildWorkspaceScopeFilter } from "../../../services/securityGovernance";
 import { invokeLLM, type InvokeResult, type Message, type MessageContent } from "../../../_core/llm";
-import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
+import { SafeHttpError, safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { recordAiOsEvaluation, recordAiOsMetric } from "./observability";
 
 export type SkillRunErrorCode =
@@ -441,6 +441,14 @@ function buildPromptAudit(skillSlug: string, dbSystemPrompt: string, legacySyste
 
 function classifyProviderError(error: unknown): SkillRunError {
   if (error instanceof SkillRunError) return error;
+  if (error instanceof SafeHttpError) {
+    if (error.reason === "timeout") {
+      return new SkillRunError("PROVIDER_TIMEOUT", "AI provider timed out", true, error);
+    }
+    if (error.reason === "network" || error.reason === "dns_resolution_failed") {
+      return new SkillRunError("PROVIDER_UNAVAILABLE", "AI provider network is temporarily unavailable", true, error);
+    }
+  }
   if (error instanceof DOMException && error.name === "TimeoutError") {
     return new SkillRunError("PROVIDER_TIMEOUT", "AI provider timed out", true, error);
   }
@@ -485,9 +493,9 @@ async function getModelBySlug(slug: string, workspaceId?: number | null): Promis
   const scope = workspaceId === undefined ? null : buildWorkspaceScopeFilter(workspaceId);
   const rows = await rawExecute(
     scope
-      ? `SELECT * FROM emperor_model_providers WHERE slug = ? AND isActive = 1 AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`
-      : "SELECT * FROM emperor_model_providers WHERE slug = ? AND isActive = 1 LIMIT 1",
-    scope ? [slug, ...scope.params] : [slug],
+      ? `SELECT * FROM emperor_model_providers WHERE (slug = ? OR modelId = ?) AND isActive = 1 AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`
+      : "SELECT * FROM emperor_model_providers WHERE (slug = ? OR modelId = ?) AND isActive = 1 LIMIT 1",
+    scope ? [slug, slug, ...scope.params] : [slug, slug],
   );
   return (rows[0] as ModelRow | undefined) ?? null;
 }

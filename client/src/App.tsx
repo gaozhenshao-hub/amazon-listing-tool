@@ -132,6 +132,7 @@ import { PermissionGuard } from "./components/PermissionGuard";
 
 // ─── Module 7: Emperor AI 能力中台 ────────────────────────────────────────────────────────
 const EmperorSkillLibrary = lazy(() => import("./pages/emperor/EmperorSkillLibrary"));
+const EmperorConversations = lazy(() => import("./pages/emperor/EmperorConversations"));
 const EmperorTrace = lazy(() => import("./pages/emperor/EmperorTrace"));
 const EmperorModels = lazy(() => import("./pages/emperor/EmperorModels"));
 const EmperorMCP = lazy(() => import("./pages/emperor/EmperorMCP"));
@@ -256,6 +257,7 @@ function Router() {
         {/* ─── Module 7: Emperor AI 能力中台 ─── */}
         <Route path="/emperor">{() => <PermissionGuard><EmperorSkillLibrary /></PermissionGuard>}</Route>
         <Route path="/emperor/skills">{() => <PermissionGuard><EmperorSkillLibrary /></PermissionGuard>}</Route>
+        <Route path="/emperor/conversations">{() => <PermissionGuard><EmperorConversations /></PermissionGuard>}</Route>
         <Route path="/emperor/trace">{() => <PermissionGuard><EmperorTrace /></PermissionGuard>}</Route>
         <Route path="/emperor/models">{() => <PermissionGuard><EmperorModels /></PermissionGuard>}</Route>
         <Route path="/emperor/mcp">{() => <PermissionGuard><EmperorMCP /></PermissionGuard>}</Route>

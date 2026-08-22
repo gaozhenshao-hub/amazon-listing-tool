@@ -80,6 +80,11 @@ const supplementalMigrations = [
     "0155_emperor_skill_feedback_rollouts.sql",
     "0156_emperor_harness_completion.sql",
     "0157_ops_external_sync_drafts.sql",
+    "0158_emperor_conversation_task_manager.sql",
+    "0159_emperor_conversation_planner_skill.sql",
+    "0160_emperor_conversation_knowledge_refs.sql",
+    "0161_ai_storage_objects_oss_provider.sql",
+    "0162_emperor_conversation_planner_model_policy.sql",
   ];
 
 const retiredMigrationFiles = new Set([
