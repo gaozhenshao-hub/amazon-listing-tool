@@ -27,6 +27,16 @@
 - [x] 添加仅使用归档测试会话的对话Router集成验收，覆盖L1批准/运行、L3未批准拒绝、能力白名单、编译上下文与Run Ledger事件
 - [x] 补充对话任务管理器前端契约与视觉回归：覆盖附件上传入口、模型失败重试提示、计划/步骤审批调用边界、已完成步骤Trace入口与运行历史按runId自动选中（前端契约测试3/3、双页面视觉验证与`docs/validation/emperor-conversation-governance-ui-2026-08-22.md`已保存）
 - [ ] 补充对话任务管理器真实前端交互级验收：实际验证计划批准后高风险步骤显示`waiting_human`、模型失败提示与手动重试按钮、已完成步骤Trace跳转和运行历史按`runId`自动选中；使用归档测试会话并保存可复核证据
+- [ ] 待跨海星独立站审核通过且可完成认证后，在青岛ECS独立站以归档测试会话执行上述真实前端点击验收；审核期间不以Manus托管站替代独立站验收
+
+## 皇帝Harness前后端适配性与LangGraph/LangChain对标审计（2026-08-22）
+- [x] 审计“皇帝 Harness 前台—后端适配性审计与优化方案”的原始条目、代码、迁移、测试和青岛ECS验收记录，区分已完成、部分完成、未开始与需独立站前台复验项（报告：`docs/audits/emperor-harness-frontend-backend-adaptation-audit-2026-08-22.md`）
+- [x] 对照LangGraph与LangChain当前官方架构能力，评估皇帝在状态图/检查点、持久化/记忆、人工介入、流式运行、工具治理、可观测性、评测与部署上的可优化空间
+- [x] 输出不绕过皇帝Skill、Agent、Tool Gateway、Run Ledger和人工审批治理边界的分级优化方案，并将确认后的实施项写入待办
+- [ ] P0：将青岛ECS已存在的`EmperorQualityGates`与`EmperorHarnessGovernance`接入统一权限目录、`/emperor/quality`和`/emperor/governance`路由及侧边栏入口，并补齐角色/前台可达性回归
+- [ ] P0：将生产已应用的0153–0156皇帝Harness前向迁移审阅并收敛至托管项目回滚源码；只校验和同步SQL，不重新执行历史迁移、不改写生产数据
+- [ ] P1：为Plan/Step/Agent运行建立版本化执行状态快照、恢复幂等键与补偿事件协议，继续由服务端重新校验权限、能力版本和审批状态
+- [ ] P1：将输入校验、风险/权限、Context Compiler、预算、模型/Tool执行、错误分类/有限重试、Run Ledger和评测收敛为受治理服务器端生命周期中间件链
 - [x] 执行一次对话任务管理器端到端受控验收：创建会话、上传文本附件、读取能力/知识候选、提交不执行的计划并归档验收会话（`conv_b08c42ce34034b9b9b6165b028547269`已归档；125项Skill、2项知识候选与`proposed`计划均通过受控路径验证）
 - [x] 修复对话能力目录Tool风险等级查询以复用`governancePolicy`，确保会话创建、能力选择与端到端验收不再因不存在字段失败
 
