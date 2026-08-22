@@ -120,12 +120,16 @@ function asNumber(input: unknown) {
   const parsed = Number(String(input ?? "").replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : 0;
 }
+function sumValues(record: RecordValue, keys: string[]) {
+  const values = keys.map((key) => value(record, [key])).filter((item) => item !== null);
+  return values.length ? values.reduce((total, item) => total + asNumber(item), 0) : null;
+}
 function todayIso() { return new Date().toISOString().slice(0, 10); }
 export function previewBatchStatusFor(sourceRowCount: number) { return sourceRowCount > 0 ? "ready_for_review" : "empty"; }
 
 export function normalizeRow(domain: z.infer<typeof domainSchema>, source: RecordValue, scope: z.infer<typeof scopeSchema>) {
   const asin = value(source, ["asin", "child_asin", "childAsin", "子ASIN"]);
-  const parentAsin = value(source, ["parent_asin", "parentAsin", "p_asin", "父ASIN"]);
+  const parentAsin = value(source, ["parent_asin_real", "parent_asin", "parentAsin", "p_asin", "父ASIN"]);
   const sku = value(source, ["sku", "local_sku", "seller_sku", "msku", "sellerSku", "SKU"]);
   const normalized: RecordValue = {
     sourceDomain: domain,
@@ -153,8 +157,8 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
     adClicks: value(source, ["clicks", "点击量"]),
     adSales: value(source, ["ad_sales", "sales", "广告销售额"]),
     fbaAvailable: value(source, ["afn_fulfillable_quantity", "fulfillable_qty", "available", "fba_available", "可售库存"]),
-    fbaReserved: value(source, ["reserved_qty", "reserved", "fba_reserved", "预留库存"]),
-    fbaInTransit: value(source, ["inbound_qty", "in_transit", "fba_in_transit", "在途库存"]),
+    fbaReserved: value(source, ["afn_reserved_quantity", "reserved_qty", "reserved", "fba_reserved", "预留库存"]),
+    fbaInTransit: sumValues(source, ["afn_inbound_receiving_quantity", "afn_inbound_shipped_quantity", "afn_inbound_working_quantity"]) ?? value(source, ["inbound_qty", "in_transit", "fba_in_transit", "在途库存"]),
     rawFieldNames: Object.keys(source).sort(),
   };
   const entityKey = [scope.storeId, domain, normalized.parentAsin || normalized.asin || "unmatched", normalized.sku || "", scope.startDate || "latest", scope.endDate || ""].join("|");
@@ -177,7 +181,7 @@ export function calculateFieldDiffs(current: RecordValue, incoming: RecordValue,
 export function buildMcpArguments(domain: z.infer<typeof domainSchema>, scope: z.infer<typeof scopeSchema>) {
   const commonDate = { start_date: scope.startDate, end_date: scope.endDate };
   if (domain === "product_performance") return { capability: "query_product_performance_asin_lists", arguments: { sids: scope.storeId, offset: 0, length: 200, ...commonDate, date_type: "purchase", date_view_type: "week", date_view_order_type: 2, summary_field: "parent_asin", turn_on_summary: 1, query_order_profit: true, currency_code: "USD" } };
-  if (domain === "fba_inventory") return { capability: "get_fba_stock_list", arguments: { sid: scope.storeId, offset: 0, length: 200, sort_field: "sku", sort_type: "asc", is_cost_page: "0", fulfillment_channel_type: "FBA" } };
+  if (domain === "fba_inventory") return { capability: "get_fba_stock_list", arguments: { sid: scope.storeId, offset: 0, length: 200, sort_field: "sku", sort_type: "asc", is_cost_page: "0", is_hide_zero_stock: 0, is_parant_asin_merge: "1" } };
   if (domain === "ad_campaign") return { capability: "ad_campaign_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: 200, sort_field: "spends", sort_type: "desc" } };
   return { capability: "ad_campaign_keyword_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: 200, sort_field: "spends", sort_type: "desc" } };
 }

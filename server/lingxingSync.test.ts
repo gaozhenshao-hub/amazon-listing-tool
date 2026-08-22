@@ -67,6 +67,12 @@ describe("领星运营同步预览契约", () => {
     expect(normalized.validationErrors[0]).toContain("父ASIN映射");
   });
 
+  it("兼容领星FBA库存真实字段并汇总三类在途库存", () => {
+    const normalized = normalizeRow("fba_inventory", { asin: "B012", parent_asin_real: "P012", seller_sku: "SKU-1", afn_fulfillable_quantity: 8, afn_reserved_quantity: 2, afn_inbound_receiving_quantity: 1, afn_inbound_shipped_quantity: 3, afn_inbound_working_quantity: 4 }, { storeId: "123" });
+    expect(normalized.validationErrors).toEqual([]);
+    expect(normalized.normalized).toMatchObject({ asin: "B012", parentAsin: "P012", sku: "SKU-1", fbaAvailable: 8, fbaReserved: 2, fbaInTransit: 8 });
+  });
+
   it("仅将实际变化字段列为差异，供人工确认新增或更新", () => {
     expect(calculateFieldDiffs({ salesQty: 3, sku: "A" }, { salesQty: 5, sku: "A" }, ["salesQty", "sku"])).toEqual([{ field: "salesQty", before: 3, after: 5 }]);
   });
