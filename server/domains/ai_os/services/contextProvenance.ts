@@ -36,6 +36,13 @@ export async function listRunLedgerProjection(input: { traceId: string; afterId?
   return { events: events.map((event: any) => ({ ...event, payload: parse(event.payload) })), provenance, nextCursor: events.length ? Number(events[events.length - 1].id) : Math.max(Number(input.afterId || 0), 0) };
 }
 
+export async function listInvalidatedContextSources(traceId: string) {
+  return rawExecute(
+    "SELECT sourceType,sourceKey,invalidationReason,invalidatedAt FROM emperor_context_source_provenance WHERE traceId=? AND status='invalidated' ORDER BY id ASC",
+    [traceId],
+  );
+}
+
 export async function invalidateContextSource(input: { sourceType: string; sourceKey: string; reason: string; userId: number }) {
   // rawExecute标准化为行集，不暴露UPDATE元数据；先计算仍为valid的匹配数，避免把空行集误判为0。
   const pendingRows = await rawExecute(

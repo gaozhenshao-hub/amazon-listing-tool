@@ -76,6 +76,7 @@
 - [x] 系统测试清理回查：青岛ECS已只读验证陈旧恢复冲突验收的临时Skill/Tool运行和能力定义已归档、停用，且未发生外部执行（`read-only-system-test-archive-state`）
 - [x] 流式投影：已从Run Ledger构建只读、可重连、按权限过滤的运行事件投影，供运行历史消费；事件源仍以Ledger为唯一事实来源
 - [x] 上下文来源失效（对话Step恢复范围）：已对知识引用与附件Artifact建立来源指纹与失效标记；对话Step关联失效上下文不得直接恢复，必须重新编译并经人工确认
+- [x] 上下文来源失效（直接Agent恢复范围）：可验证关联Trace来源指纹的直接Agent恢复会检查失效来源；失效时以`CONTEXT_SOURCE_INVALIDATED`拒绝恢复、写Ledger并要求重新编译与人工确认，不调度节点或外部能力。青岛ECS验收Run `agent_1787441455730_foaaqys`已归档回查
 - [x] 流式投影基础：新增管理员受控的Ledger游标投影查询，按Trace返回已脱敏事件、来源状态与`nextCursor`，不改变事件事实源或执行路径（0168、单元回归2/2、青岛ECS构建通过）
 - [x] 上下文来源失效基础：Context Manifest落库后提取附件/知识来源指纹，管理员可标记来源失效并向关联Trace写`context.source_invalidated`事件；不删除历史Manifest或自动恢复运行
 - [x] 流式投影前台：运行历史页仅在Run详情存在唯一数据库验证Trace时，以管理员受保护的10秒短轮询读取Run Ledger游标投影；无法唯一映射时明确不展示，避免错误关联；青岛ECS只读验收通过

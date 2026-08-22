@@ -10,6 +10,7 @@ import {
   createExecutionStateSnapshot,
 } from "../executionLifecycle";
 import { appendRunLedgerEvent, ensureRunTrace } from "../runLedger";
+import { listInvalidatedContextSources } from "../contextProvenance";
 function nodeRequiresHumanGate(node: EmperorAgentNode): boolean {
   if (node.autoConfirm === true) return false;
   return node.humanGate !== false;
@@ -848,6 +849,46 @@ export async function resumeAgentRun(input: {
     await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.compensation_required", payload: { reasonCode: "AGENT_STATE_VERSION_CONFLICT", recoveryId: recovery.request.recoveryId, expectedStateVersion: stateVersion, observedStateVersion } }).catch(() => undefined);
     await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.recovery_rejected", payload: { reasonCode: "AGENT_STATE_VERSION_CONFLICT", expectedStateVersion: stateVersion, observedStateVersion } }).catch(() => undefined);
     throw new TRPCError({ code: "CONFLICT", message: "Agent 运行状态已变化，请刷新后重新确认恢复" });
+  }
+  const invalidatedSources = await listInvalidatedContextSources(traceId);
+  if (invalidatedSources.length > 0) {
+    const existingSnapshots = await rawExecute(
+      "SELECT snapshotId FROM emperor_execution_state_snapshots WHERE targetType='agent_run' AND targetId=? AND stateVersion=? LIMIT 1",
+      [input.runId, stateVersion],
+    );
+    const snapshotId = existingSnapshots[0]?.snapshotId || (await createExecutionStateSnapshot({
+      workspaceId: run.workspaceId ?? null,
+      traceId,
+      targetType: "agent_run",
+      targetId: input.runId,
+      stateVersion,
+      approvalState: run.status,
+      snapshot: { agentSlug: run.agentSlug, status: run.status, contextSourceInvalidated: true, invalidatedSourceCount: invalidatedSources.length },
+      createdBy: input.userId,
+    })).snapshotId;
+    const recovery = await claimExecutionRecoveryRequest({
+      idempotencyKey: buildRecoveryIdempotencyKey({ snapshotId, targetType: "agent_run", targetId: input.runId, expectedStateVersion: stateVersion, requestedAction: "resume" }),
+      snapshotId,
+      traceId,
+      targetType: "agent_run",
+      targetId: input.runId,
+      requestedAction: "resume",
+      expectedStateVersion: stateVersion,
+      requestedBy: input.userId,
+    });
+    await completeExecutionRecoveryRequest({
+      recoveryId: recovery.request.recoveryId,
+      status: "rejected",
+      reasonCode: "CONTEXT_SOURCE_INVALIDATED",
+      result: { invalidatedSourceCount: invalidatedSources.length },
+    });
+    await appendAgentLifecycleEvent({
+      run,
+      actorUserId: input.userId,
+      eventType: "lifecycle.recovery_rejected",
+      payload: { reasonCode: "CONTEXT_SOURCE_INVALIDATED", recoveryId: recovery.request.recoveryId, invalidatedSourceCount: invalidatedSources.length },
+    }).catch(() => undefined);
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "关联上下文来源已失效，请重新编译上下文并再次人工确认后再恢复" });
   }
   const snapshot = await createExecutionStateSnapshot({
     workspaceId: run.workspaceId ?? null,
