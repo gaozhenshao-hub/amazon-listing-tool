@@ -5,7 +5,7 @@ import {
   completeExecutionRecoveryRequest,
   createExecutionStateSnapshot,
 } from "./executionLifecycle";
-import { appendRunLedgerEvent } from "./runLedger";
+import { appendRunLedgerEvent, ensureRunTrace } from "./runLedger";
 
 const parse = <T>(value: unknown, fallback: T): T => {
   if (typeof value !== "string") return (value as T) ?? fallback;
@@ -73,7 +73,17 @@ export async function prepareToolRunRecovery(input: { toolRunId: string; userId:
   );
   const run = rows[0];
   if (!run) throw new Error("Tool Run not found in the active workspace");
-  const traceId = run.agentRunId ? `agent_run_${run.agentRunId}` : null;
+  const traceId = run.agentRunId ? `agent_run_${run.agentRunId}` : `tool_run_${input.toolRunId}`;
+  if (!run.agentRunId) {
+    await ensureRunTrace({
+      runId: traceId,
+      rootRunType: "agent_run",
+      workspaceId: input.workspaceId ?? null,
+      agentSlug: "tool.recovery.audit",
+      userId: input.userId,
+      metadata: { targetType: "tool_run", targetId: input.toolRunId, recoveryOnly: true },
+    });
+  }
   const stateVersion = Number(run.attemptCount || 0);
   const existingSnapshots = await rawExecute(
     "SELECT snapshotId FROM emperor_execution_state_snapshots WHERE targetType='tool_run' AND targetId=? AND stateVersion=? LIMIT 1",

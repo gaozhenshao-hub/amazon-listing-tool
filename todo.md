@@ -61,15 +61,17 @@
 - [ ] P1验收：构造Agent恢复过程中的真实状态版本变化，验证`lifecycle.recovery_rejected`与`AGENT_STATE_VERSION_CONFLICT`在青岛ECS的落库证据；不得执行节点、模型、Tool或MCP
 - [ ] P1验收：以归档会话和等待人工确认的Agent Run验证Plan拒绝/补偿、Agent跳过/恢复冲突的Ledger事件，不调用模型、Tool或MCP
 - [x] P1实施：为直接Skill/Tool失败Run建立只读幂等恢复资格判定与人工恢复准备协议；不得自动发起模型或外部Tool调用（Tool Router与Skills Router均仅创建恢复请求，0166已应用）
-- [ ] P1实施：为写入、高风险或副作用不明的Skill/Tool失败Run持久化补偿或拒绝事件，明确禁止恢复执行并保留Run Ledger证据（实体语义已修复；实际`compensation_required`落库与Ledger证据待集成验收）
-- [ ] P1验收：用归档失败Run验证低风险恢复仅进入待运行、写入/高风险恢复被拒绝且不发起外部调用（当前单元回归3/3、青岛ECS生产构建和迁移计划通过；ECS当前无可用于无副作用验收的活跃用户/Skill/Tool组合，等待真实归档失败Run）
+- [x] P1实施：为写入、高风险或副作用不明的Skill/Tool失败Run持久化补偿或拒绝事件，明确禁止恢复执行并保留Run Ledger证据（隔离系统测试已验证`compensation_required`落库与实体语义）
+- [ ] P1验收：用归档失败Run验证低风险恢复仅进入待运行、写入/高风险恢复被拒绝且不发起外部调用（已完成高风险补偿拒绝；低风险只读幂等恢复准备待验证）
 - [x] P1修复：直接Skill补偿/拒绝审计以`skill_run`实体类型和明确`runId`写入Run Ledger，不再复用`tool_run`语义；实体隔离单元回归已通过
-- [ ] P1验收：构造归档的非只读或高风险失败Skill/Tool Run，断言恢复请求状态为`compensation_required`、reasonCode正确，且Run Ledger事件实体类型分别为`skill_run`与`tool_run`；全程不得执行模型或外部Tool
-- [ ] Harness收口：完成直接Agent陈旧恢复拒绝与直接Skill/Tool真实失败Run的无外部调用审计验收；不得伪造业务配置或自动重试
-- [ ] 系统测试验收：创建并立即归档带`system_test`标识的临时Agent/Skill/Tool失败运行记录，验证陈旧恢复拒绝、补偿请求与Ledger实体语义；不得调用模型、Skill执行、Tool、MCP或业务数据写入
+- [x] P1验收：构造归档的非只读或高风险失败Skill/Tool Run，断言恢复请求状态为`compensation_required`、reasonCode正确，且Run Ledger事件实体类型分别为`skill_run`与`tool_run`；未执行模型或外部Tool
+- [ ] Harness收口：直接Skill/Tool失败Run补偿审计已完成；直接Agent陈旧恢复拒绝端到端证据仍待补齐，不得自动重试
+- [ ] 系统测试验收：创建并立即归档带`system_test`标识的临时Agent/Skill/Tool失败运行记录，验证补偿请求与Ledger实体语义；未调用模型、Skill执行、Tool、MCP或业务数据写入（Agent已归档；Skill/Tool失败Run归档清理证据待补齐）
 - [x] 系统测试验收（Agent）：已创建并归档`agent_1787433366133_4n26s3o`，验证暂停、恢复、恢复去重与取消Ledger事件；未调度节点、模型、Tool或MCP
-- [ ] 系统测试验收（Skill/Tool）：当前环境缺少可安全组合，审计脚本已安全跳过且无外部执行；待创建仅系统测试的受治理定义后完成补偿实体语义验证
-- [ ] 临时受治理定义：创建仅`system_test`标识、无执行实现的低风险只读与高风险写入模拟Skill/Tool定义；验证结束后归档并清理，不影响业务能力目录
+- [x] 系统测试验收（Skill/Tool）：隔离失败Run已验证补偿实体语义；所有运行均为补偿拒绝，未发生外部执行
+- [x] 临时受治理定义：系统测试Tool定义在验证后保持`inactive`归档状态；未影响业务能力目录
+- [ ] 系统测试验收：补充无外部调用的低风险只读幂等Skill/Tool失败Run，断言恢复请求进入待人工恢复准备状态而非`compensation_required`
+- [ ] 系统测试清理：为Skill/Tool失败运行补充`archivedAt`或等价归档/清理证据，并核验临时定义均处于Deprecated/inactive状态
 - [ ] 流式投影：从Run Ledger构建只读、可重连、按权限过滤的运行事件投影，供对话与运行历史消费；事件源仍以Ledger为唯一事实来源
 - [ ] 上下文来源失效：对知识引用、附件Artifact、能力版本和模型策略建立来源指纹与失效标记；失效上下文不得直接恢复运行，必须重新编译并经人工确认
 - [x] 流式投影基础：新增管理员受控的Ledger游标投影查询，按Trace返回已脱敏事件、来源状态与`nextCursor`，不改变事件事实源或执行路径（0168、单元回归2/2、青岛ECS构建通过）
