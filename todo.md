@@ -1308,7 +1308,7 @@
 - [x] 验证生产构建可启动，并保存可发布检查点
 
 ## 皇帝对话规划 `gpt-5.6-sol` 网关可靠性（2026-08-22）
-- [x] 保持 `gpt-5.6-sol` 为对话规划Skill唯一质量优先模型，核验青岛ECS的受治理模型Provider注册、网关路径、TLS连接与错误分类，不在页面或Router旁路调用模型（实际解析为`teamo-gpt-5-6-sol`；Provider路径为`/v1`；两条IPv4受控探测均为`ECONNRESET`）
+- [x] 保持 `gpt-5.6-sol` 为对话规划Skill唯一质量优先模型，核验青岛ECS的受治理模型Provider注册、网关路径、TLS连接与错误分类，不在页面或Router旁路调用模型（实际解析为`teamo-gpt-5-6-sol`；Provider路径为`/v1`；两条ECS IPv4受控探测均为`ECONNRESET`，隔离开发环境同凭据只读`/v1/models`为HTTP 200，阻塞定位为ECS出口或供应商针对该出口的网络策略）
 - [x] 仅为幂等的对话规划Skill实现有上限的瞬时网络错误重试；模型失败时不得生成、提交或运行任何计划步骤、Skill、Agent或MCP Tool（最大2次；仅对`PROVIDER_TIMEOUT`、`PROVIDER_RATE_LIMIT`、`PROVIDER_UNAVAILABLE`生效）
 - [x] 在对话工作台保留用户消息、附件与知识引用，并提供“模型服务暂时不可用，可重试”的可读反馈和手动重试入口
 - [x] 补充模型连接重置、重试次数上限、失败后无可执行步骤及上下文保留的定向测试，并在青岛ECS完成构建、服务健康和受控验收（治理单测6/6、定向ESLint通过；ECS三服务active且本机健康端点正常）
