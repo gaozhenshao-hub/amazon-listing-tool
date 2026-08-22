@@ -13,6 +13,12 @@
 
 领星产品表现将 ASIN、父 ASIN、MSKU 维度的销量、库存、流量、广告与利润指标整合，并支持日、周、月查看；本项目保持现有产品总览的父 ASIN、周度展示结构，不将外部读取直接覆盖历史导入。[2]
 
+## 产品表现 ASIN360 实测边界
+
+2026-08-22已在青岛ECS按受治理、只读、QPS=1方式验证`query_product_performance_asin_lists`。在43个授权店铺、默认范围、指定2026-07-01至2026-08-22、ASIN/父ASIN汇总、`date_view_type=week`及`date_view_order_type=2`组合下，接口均返回HTTP 200但没有可归一化数据行。因此该响应不能解释为产品销量为零，也不会被写入产品总览。
+
+当前产品总览的真实领星来源继续采用`query_order_profit_list`，该工具已返回父ASIN、销量、销售额、毛利润与广告花费，并经草稿和人工确认后追加194条周度记录。既有Excel批次保持为历史权威来源；未来产品表现接口恢复返回数据后，可沿用同一草稿确认机制新增来源而不覆盖历史记录。
+
 ## References
 
 [1]: https://www.lingxing.com/help/article/mcp "领星MCP官方说明"
