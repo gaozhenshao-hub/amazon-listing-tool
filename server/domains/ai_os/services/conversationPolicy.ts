@@ -1,7 +1,25 @@
 export type ConversationRiskLevel = "L0" | "L1" | "L2" | "L3";
 
+const RISK_ORDER: Record<ConversationRiskLevel, number> = { L0: 0, L1: 1, L2: 2, L3: 3 };
+
+export function highestConversationRisk(...levels: Array<ConversationRiskLevel | null | undefined>): ConversationRiskLevel {
+  return levels.reduce<ConversationRiskLevel>((highest, value) => value && RISK_ORDER[value] > RISK_ORDER[highest] ? value : highest, "L0");
+}
+
 export function conversationStepRequiresApproval(input: { riskLevel: ConversationRiskLevel; approvalRequired?: boolean }) {
   return Boolean(input.approvalRequired || input.riskLevel === "L2" || input.riskLevel === "L3");
+}
+
+export function conversationExecutionPolicy(input: { riskLevel: ConversationRiskLevel; approvalRequired?: boolean; capabilityType?: "skill" | "agent" | "tool" }) {
+  const requiresApproval = conversationStepRequiresApproval(input);
+  return {
+    executionMode: "serial" as const,
+    allowParallel: false,
+    requiresPlanApproval: true,
+    requiresStepApproval: requiresApproval,
+    approvalProtocol: requiresApproval ? "plan_then_step_human_review" : "plan_human_review",
+    capabilityType: input.capabilityType || "skill",
+  };
 }
 
 export function conversationAttachmentContextPolicy(mimeType: string): "summary_only" | "extracted_text" | "image_vision" {

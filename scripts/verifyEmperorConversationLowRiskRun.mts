@@ -37,7 +37,7 @@ async function main() {
     await caller.approvePlan({ conversationId: created.conversationId, planId: plan.planId });
     const before = await caller.get({ conversationId: created.conversationId });
     const step = before.steps.find((item: any) => item.planId === plan.planId);
-    if (!step || step.status !== "ready") throw new Error("Low-risk conversation step was not ready for governed execution");
+    if (!step || step.status !== "ready" || plan.executionMode !== "serial") throw new Error("Low-risk conversation step was not ready for governed serial execution");
 
     const execution = await caller.runStep({ conversationId: created.conversationId, stepId: step.stepId });
     const after = await caller.get({ conversationId: created.conversationId });
@@ -46,13 +46,15 @@ async function main() {
     const [traceRows, eventRows, manifestRows] = await Promise.all([
       rawExecute("SELECT status,rootRunType FROM emperor_run_traces WHERE traceId=?", [traceId]),
       rawExecute("SELECT eventType FROM emperor_run_ledger_events WHERE traceId=? ORDER BY id ASC", [traceId]),
-      rawExecute("SELECT manifestId FROM emperor_context_manifests WHERE traceId=?", [traceId]),
+      rawExecute("SELECT manifestId,manifest FROM emperor_context_manifests WHERE traceId=?", [traceId]),
     ]);
     const eventTypes = eventRows.map((row: any) => row.eventType);
-    if (executedStep?.status !== "succeeded" || !execution.skillRunId || traceRows[0]?.status !== "completed" || traceRows[0]?.rootRunType !== "conversation_step" || !eventTypes.includes("conversation.step.started") || !eventTypes.includes("conversation.step.succeeded") || manifestRows.length !== 1) {
+    const rawManifest = manifestRows[0]?.manifest;
+    const manifest = rawManifest ? (typeof rawManifest === "string" ? JSON.parse(rawManifest) : rawManifest) : null;
+    if (executedStep?.status !== "succeeded" || !execution.skillRunId || traceRows[0]?.status !== "completed" || traceRows[0]?.rootRunType !== "conversation_step" || !eventTypes.includes("conversation.step.started") || !eventTypes.includes("conversation.step.succeeded") || manifestRows.length !== 1 || manifest?.schema !== "conversation.context_package" || manifest?.policy?.name !== "conversation.context_compiler" || manifest?.executionPolicy?.executionMode !== "serial") {
       throw new Error("Conversation low-risk execution did not produce the required step, Skill Run, or Run Ledger Trace evidence");
     }
-    console.log(JSON.stringify({ conversationId: created.conversationId, stepId: step.stepId, skillRunId: execution.skillRunId, traceId, traceStatus: traceRows[0].status, eventTypes, contextManifestCount: manifestRows.length }));
+    console.log(JSON.stringify({ conversationId: created.conversationId, stepId: step.stepId, skillRunId: execution.skillRunId, traceId, traceStatus: traceRows[0].status, eventTypes, executionMode: manifest.executionPolicy.executionMode, contextPolicy: manifest.policy.name, contextManifestCount: manifestRows.length }));
   } finally {
     await rawExecute("UPDATE emperor_conversations SET status='archived' WHERE conversationId=?", [created.conversationId]);
   }

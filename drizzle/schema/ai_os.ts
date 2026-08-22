@@ -792,6 +792,7 @@ export const emperorConversationMessages = mysqlTable("emperor_conversation_mess
   status: mysqlEnum("status", ["draft", "streaming", "completed", "failed", "canceled"]).default("completed").notNull(),
   content: text("content").notNull(),
   structuredContent: json("structuredContent"),
+  skillRunId: varchar("skillRunId", { length: 80 }),
   planId: varchar("planId", { length: 80 }),
   stepId: varchar("stepId", { length: 80 }),
   createdBy: int("createdBy"),

@@ -17,11 +17,14 @@ import { safeParseSkillJSON } from "../services/skillRunner";
 import { storagePut } from "../../../storage";
 import { registerStorageObject, registerUnifiedArtifact } from "../services/artifactLifecycle";
 import { appendRunLedgerEvent, completeRunTrace, ensureRunTrace, recordContextManifest } from "../services/runLedger";
+import { compileConversationContext } from "../services/conversationContext";
 import {
   CONVERSATION_PLANNER_MAX_ATTEMPTS,
+  conversationExecutionPolicy,
   conversationPlannerRetryDelayMs,
   conversationStepRequiresApproval,
   filterConversationPlanSteps,
+  highestConversationRisk,
   parseConversationStructuredJson,
   shouldRetryConversationPlannerError,
 } from "../services/conversationPolicy";
@@ -87,15 +90,22 @@ async function getConversationForAction(ctx: any, conversationId: string, action
   return conversation;
 }
 
-async function assertCapabilityVisible(ctx: any, type: typeof PLAN_STEP_TYPES[number], slug: string) {
+async function resolveCapabilityGovernance(ctx: any, type: typeof PLAN_STEP_TYPES[number], slug: string) {
   const workspaceId = workspaceIdFromContext(ctx);
   const scope = buildWorkspaceScopeFilter(workspaceId);
-  const table = type === "skill" ? "emperor_skills" : type === "agent" ? "emperor_agents" : "emperor_tools";
+  const source = type === "skill"
+    ? { table: "emperor_skills", risk: "COALESCE(NULLIF(riskTier,''),'L1')" }
+    : type === "agent"
+      ? { table: "emperor_agents", risk: "'L2'" }
+      : { table: "emperor_tools", risk: "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(governancePolicy,'$.riskLevel')),'L1')" };
   const rows = await rawExecute(
-    `SELECT slug FROM ${table} WHERE slug=? AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`,
+    `SELECT slug,${source.risk} AS riskLevel FROM ${source.table} WHERE slug=? AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`,
     [slug, ...scope.params],
   );
   if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: `未找到当前工作空间可用的${type}能力：${slug}` });
+  const rawRisk = String(rows[0].riskLevel || "L3");
+  const riskLevel = rawRisk === "L0" || rawRisk === "L1" || rawRisk === "L2" || rawRisk === "L3" ? rawRisk : "L3";
+  return { riskLevel };
 }
 
 export const emperorConversationsRouter = router({
@@ -255,12 +265,17 @@ export const emperorConversationsRouter = router({
         rawExecute(`SELECT slug,name,description,riskTier,'skill' AS capabilityType FROM emperor_skills WHERE status IN ('Approved','Released') AND slug<>'emperor.conversation.plan' AND ${scope.clause} ORDER BY workspaceId IS NULL ASC,name LIMIT 120`, scope.params),
         rawExecute(`SELECT slug,name,description,'L2' AS riskTier,'agent' AS capabilityType FROM emperor_agents WHERE status='active' AND ${scope.clause} ORDER BY workspaceId IS NULL ASC,name LIMIT 80`, scope.params),
         rawExecute(`SELECT slug,name,description,COALESCE(JSON_UNQUOTE(JSON_EXTRACT(governancePolicy,'$.riskLevel')),'L1') AS riskTier,'tool' AS capabilityType FROM emperor_tools WHERE isActive=1 AND ${scope.clause} ORDER BY workspaceId IS NULL ASC,name LIMIT 120`, scope.params),
-        rawExecute("SELECT fileName,mimeType,contextPolicy,contextSummary,artifactId FROM emperor_conversation_attachments WHERE conversationId=? AND scanStatus='ready' ORDER BY createdAt ASC", [input.conversationId]),
+        rawExecute("SELECT attachmentId,fileName,mimeType,contextPolicy,contextSummary,artifactId FROM emperor_conversation_attachments WHERE conversationId=? AND scanStatus='ready' ORDER BY createdAt ASC", [input.conversationId]),
         rawExecute("SELECT referenceId,sourceKind,title,contextSummary,tags FROM emperor_conversation_knowledge_refs WHERE conversationId=? ORDER BY createdAt ASC", [input.conversationId]),
       ]);
       const capabilityCatalog = [...skills, ...agents, ...tools].map((item: any) => ({
         capabilityType: item.capabilityType, slug: item.slug, name: item.name, description: item.description || "", riskLevel: item.riskTier || "L1",
       }));
+      const compiledContext = compileConversationContext({
+        goal: input.goal,
+        attachments: attachments as any[],
+        knowledgeReferences: knowledgeRefs.map((item: any) => ({ ...item, tags: parseJson(item.tags, []) })),
+      });
       let result: Awaited<ReturnType<typeof runEmperorSkill<string>>> | undefined;
       let lastError: unknown;
       for (let attemptIndex = 0; attemptIndex < CONVERSATION_PLANNER_MAX_ATTEMPTS; attemptIndex += 1) {
@@ -269,8 +284,8 @@ export const emperorConversationsRouter = router({
             skillSlug: "emperor.conversation.plan",
             userId: ctx.user.id,
             workspaceId: workspaceIdFromContext(ctx),
-            context: JSON.stringify({ userGoal: input.goal, attachments: attachments.map((item: any) => ({ fileName: item.fileName, mimeType: item.mimeType, contextPolicy: item.contextPolicy, contextSummary: item.contextSummary, artifactId: item.artifactId })), knowledgeReferences: knowledgeRefs.map((item: any) => ({ referenceId: item.referenceId, sourceKind: item.sourceKind, title: item.title, contextSummary: item.contextSummary, tags: parseJson(item.tags, []) })), capabilityCatalog }),
-            variables: { goal: input.goal, conversationId: input.conversationId, capabilityCatalog, attachments, knowledgeRefs },
+            context: JSON.stringify({ userGoal: input.goal, conversationContext: compiledContext.context, capabilityCatalog }),
+            variables: { goal: input.goal, conversationId: input.conversationId, capabilityCatalog, conversationContext: compiledContext.context, contextPolicyHash: compiledContext.policyHash },
             migrationSource: "emperor.conversations.plan",
             fallbackModels: [],
             maxModelAttempts: 1,
@@ -293,6 +308,10 @@ export const emperorConversationsRouter = router({
         }
       }
       if (!result) throw lastError instanceof Error ? lastError : new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "模型服务暂时不可用，请稍后重试。" });
+      await ensureRunTrace({ runId: result.runId, rootRunType: "skill_run", workspaceId: workspaceIdFromContext(ctx), agentSlug: "emperor.conversation.plan", userId: ctx.user.id, metadata: { conversationId: input.conversationId, contextPolicyHash: compiledContext.policyHash } });
+      await recordContextManifest({ traceId: result.runId, runId: result.runId, manifest: compiledContext.manifest, sourceCount: compiledContext.sourceCount, estimatedTokens: compiledContext.estimatedTokens, maxTokens: compiledContext.maxTokens });
+      await appendRunLedgerEvent({ traceId: result.runId, eventType: "conversation.plan.context_compiled", entityType: "skill_run", entityId: result.runId, skillSlug: "emperor.conversation.plan", actorUserId: ctx.user.id, payload: { conversationId: input.conversationId, sourceCount: compiledContext.sourceCount, estimatedTokens: compiledContext.estimatedTokens, policyHash: compiledContext.policyHash } });
+      await completeRunTrace(result.runId, "completed");
       const parsedCandidate = safeParseSkillJSON<Record<string, unknown>>(result.content, {});
       const candidateResult = suggestedPlanSchema.safeParse(parsedCandidate);
       if (!candidateResult.success) {
@@ -389,16 +408,22 @@ export const emperorConversationsRouter = router({
     .input(z.object({ conversationId: z.string(), goal: z.string().min(1).max(8_000), assumptions: z.array(z.string().max(1_000)).optional(), steps: z.array(planStepInput).min(1).max(20) }))
     .mutation(async ({ ctx, input }) => {
       const conversation = await getConversationForAction(ctx, input.conversationId, "update");
-      for (const step of input.steps) await assertCapabilityVisible(ctx, step.capabilityType, step.capabilitySlug);
+      const governedSteps = await Promise.all(input.steps.map(async (step) => {
+        const capability = await resolveCapabilityGovernance(ctx, step.capabilityType, step.capabilitySlug);
+        const riskLevel = highestConversationRisk(step.riskLevel, capability.riskLevel as any);
+        const execution = conversationExecutionPolicy({ riskLevel, approvalRequired: step.approvalRequired, capabilityType: step.capabilityType });
+        return { ...step, riskLevel, approvalRequired: execution.requiresStepApproval, execution };
+      }));
       const versionRows = await rawExecute("SELECT COALESCE(MAX(version),0) AS version FROM emperor_conversation_plans WHERE conversationId=?", [input.conversationId]);
       const version = Number(versionRows[0]?.version || 0) + 1;
       const planId = `plan_${randomUUID().replace(/-/g, "")}`;
-      const requiresApproval = input.steps.some((step) => conversationStepRequiresApproval(step));
+      const requiresApproval = governedSteps.some((step) => conversationStepRequiresApproval(step));
+      const highestRisk = governedSteps.reduce((risk, step) => highestConversationRisk(risk, step.riskLevel), "L0" as const);
       await rawExecute(
         `INSERT INTO emperor_conversation_plans (workspaceId,planId,conversationId,version,status,goal,assumptions,planJson,riskSummary,createdBy) VALUES (?,?,?,?, 'proposed',?,?,?,?,?)`,
-        [workspaceIdFromContext(ctx), planId, input.conversationId, version, input.goal, json(input.assumptions || []), json({ source: "user_editable_conversation_plan", steps: input.steps }), json({ requiresApproval, highestRisk: input.steps.map((s) => s.riskLevel).sort().at(-1) || "L0" }), ctx.user.id],
+        [workspaceIdFromContext(ctx), planId, input.conversationId, version, input.goal, json(input.assumptions || []), json({ source: "user_editable_conversation_plan", executionMode: "serial", steps: governedSteps }), json({ requiresApproval, highestRisk, executionMode: "serial", allowParallel: false }), ctx.user.id],
       );
-      for (const [index, step] of input.steps.entries()) {
+      for (const [index, step] of governedSteps.entries()) {
         const approvalRequired = conversationStepRequiresApproval(step);
         await rawExecute(
           `INSERT INTO emperor_conversation_plan_steps (workspaceId,stepId,planId,sequence,title,description,capabilityType,capabilitySlug,input,riskLevel,approvalRequired,approvalState,status)
@@ -407,8 +432,8 @@ export const emperorConversationsRouter = router({
         );
       }
       await rawExecute("UPDATE emperor_conversations SET status='awaiting_plan_confirmation', activePlanId=? WHERE conversationId=?", [planId, input.conversationId]);
-      await audit(ctx, { action: "conversation.plan.propose", conversationId: input.conversationId, riskLevel: requiresApproval ? "high" : "medium", metadata: { planId, version, stepCount: input.steps.length } });
-      return { planId, version, requiresApproval, conversationId: conversation.conversationId };
+      await audit(ctx, { action: "conversation.plan.propose", conversationId: input.conversationId, riskLevel: requiresApproval ? "high" : "medium", metadata: { planId, version, stepCount: governedSteps.length, executionMode: "serial", highestRisk } });
+      return { planId, version, requiresApproval, executionMode: "serial", conversationId: conversation.conversationId };
     }),
 
   approvePlan: protectedProcedure.input(z.object({ conversationId: z.string(), planId: z.string() })).mutation(async ({ ctx, input }) => {
@@ -445,7 +470,12 @@ export const emperorConversationsRouter = router({
     const step = rows[0];
     if (!step) throw new TRPCError({ code: "NOT_FOUND", message: "计划步骤不存在" });
     if (step.status !== "ready") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "步骤未准备就绪，可能尚待人工确认" });
-    await assertCapabilityVisible(ctx, step.capabilityType, step.capabilitySlug);
+    const capability = await resolveCapabilityGovernance(ctx, step.capabilityType, step.capabilitySlug);
+    const effectiveRisk = highestConversationRisk(step.riskLevel, capability.riskLevel as any);
+    const executionPolicy = conversationExecutionPolicy({ riskLevel: effectiveRisk, approvalRequired: Boolean(step.approvalRequired), capabilityType: step.capabilityType });
+    if (executionPolicy.requiresStepApproval && step.approvalState !== "approved") {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "高风险或写入步骤必须在计划批准后单独完成人工确认" });
+    }
     const payload = parseJson(step.input, {}) as Record<string, unknown>;
     const attachmentRows = await rawExecute(
       `SELECT a.attachmentId,a.fileName,a.mimeType,a.contextPolicy,a.contextSummary,a.artifactId,s.publicUrl
@@ -462,12 +492,13 @@ export const emperorConversationsRouter = router({
       mimeType: attachment.mimeType,
       contextPolicy: attachment.contextPolicy,
     }));
-    const attachmentContext = attachmentRows.map((attachment: any) =>
-      `[受控附件] ${attachment.fileName}（${attachment.mimeType}；策略：${attachment.contextPolicy}；${attachment.contextSummary || "仅可按受控引用使用"}）`,
-    ).join("\n");
     const knowledgeRefs = knowledgeRows.map((item: any) => ({ referenceId: item.referenceId, sourceKind: item.sourceKind, title: item.title, contextSummary: item.contextSummary, tags: parseJson(item.tags, []) }));
-    const knowledgeContext = knowledgeRefs.map((item: any) => `[受控知识] ${item.title}（${item.sourceKind}；${item.contextSummary}）`).join("\n");
-    const executionPayload = { ...payload, conversationId: input.conversationId, conversationAttachments: attachmentRefs, conversationKnowledgeReferences: knowledgeRefs };
+    const compiledContext = compileConversationContext({
+      explicitContext: String(payload.context || ""),
+      attachments: attachmentRows.map((attachment: any) => ({ attachmentId: attachment.attachmentId, artifactId: attachment.artifactId || null, fileName: attachment.fileName, mimeType: attachment.mimeType, contextPolicy: attachment.contextPolicy, contextSummary: attachment.contextSummary })),
+      knowledgeReferences: knowledgeRefs,
+    });
+    const executionPayload = { ...payload, conversationId: input.conversationId, conversationAttachments: attachmentRefs, conversationKnowledgeReferences: knowledgeRefs, conversationContext: compiledContext.context, contextPolicyHash: compiledContext.policyHash, executionPolicy };
     const skillAttachments: MessageContent[] = attachmentRows.flatMap((attachment: any) => {
       if (!attachment.publicUrl) return [];
       if (attachment.contextPolicy === "image_vision" && String(attachment.mimeType).startsWith("image/")) {
@@ -492,10 +523,12 @@ export const emperorConversationsRouter = router({
       traceId,
       runId: traceId,
       nodeId: input.stepId,
-      sourceCount: attachmentRefs.length + knowledgeRefs.length,
-      manifest: { conversationId: input.conversationId, stepId: input.stepId, capability: { type: step.capabilityType, slug: step.capabilitySlug }, attachments: attachmentRefs, knowledgeReferences: knowledgeRefs },
+      sourceCount: compiledContext.sourceCount,
+      estimatedTokens: compiledContext.estimatedTokens,
+      maxTokens: compiledContext.maxTokens,
+      manifest: { ...compiledContext.manifest, conversationId: input.conversationId, stepId: input.stepId, capability: { type: step.capabilityType, slug: step.capabilitySlug }, executionPolicy },
     });
-    await appendRunLedgerEvent({ traceId, eventType: "conversation.step.started", entityType: "system", entityId: input.stepId, skillSlug: step.capabilityType === "skill" ? step.capabilitySlug : null, toolSlug: step.capabilityType === "tool" ? step.capabilitySlug : null, actorUserId: ctx.user.id, payload: { capabilityType: step.capabilityType, riskLevel: step.riskLevel } });
+    await appendRunLedgerEvent({ traceId, eventType: "conversation.step.started", entityType: "system", entityId: input.stepId, skillSlug: step.capabilityType === "skill" ? step.capabilitySlug : null, toolSlug: step.capabilityType === "tool" ? step.capabilitySlug : null, actorUserId: ctx.user.id, payload: { capabilityType: step.capabilityType, riskLevel: effectiveRisk, executionMode: executionPolicy.executionMode, contextPolicyHash: compiledContext.policyHash } });
     await rawExecute("UPDATE emperor_conversation_plan_steps SET status='running',startedAt=NOW() WHERE stepId=?", [input.stepId]);
     await rawExecute("UPDATE emperor_conversation_plans SET status='executing' WHERE planId=?", [step.planId]);
     await rawExecute("UPDATE emperor_conversations SET status='running' WHERE conversationId=?", [input.conversationId]);
@@ -506,7 +539,7 @@ export const emperorConversationsRouter = router({
         runRef = { agentRunId: (result as any).runId };
         await rawExecute("UPDATE emperor_conversation_plan_steps SET status='running',agentRunId=? WHERE stepId=?", [(result as any).runId || null, input.stepId]);
       } else if (step.capabilityType === "skill") {
-        const result = await runEmperorSkill<string>({ skillSlug: step.capabilitySlug, userId: ctx.user.id, workspaceId: workspaceIdFromContext(ctx), context: [String(payload.context || ""), attachmentContext, knowledgeContext].filter(Boolean).join("\n\n"), variables: executionPayload, attachments: skillAttachments, migrationSource: "emperor.conversations", validate: (content) => content });
+        const result = await runEmperorSkill<string>({ skillSlug: step.capabilitySlug, userId: ctx.user.id, workspaceId: workspaceIdFromContext(ctx), context: compiledContext.contextText, variables: executionPayload, attachments: skillAttachments, migrationSource: "emperor.conversations", validate: (content) => content });
         runRef = { skillRunId: result.runId, output: result.content };
         await rawExecute("UPDATE emperor_conversation_plan_steps SET status='succeeded',skillRunId=?,completedAt=NOW(),metadata=? WHERE stepId=?", [result.runId, json({ outputPreview: String(result.content).slice(0, 2_000) }), input.stepId]);
       } else {

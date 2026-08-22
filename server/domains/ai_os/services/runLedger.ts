@@ -46,7 +46,7 @@ async function execute(sqlText: string, params: unknown[] = []) {
   return db.execute(drizzleSql.join(chunks, drizzleSql.raw("")));
 }
 
-export async function ensureRunTrace(input: { runId: string; rootRunType: "agent_run" | "conversation_step"; workspaceId?: number | null; agentSlug?: string | null; projectId?: number | null; userId?: number | null; metadata?: unknown }) {
+export async function ensureRunTrace(input: { runId: string; rootRunType: "agent_run" | "conversation_step" | "skill_run"; workspaceId?: number | null; agentSlug?: string | null; projectId?: number | null; userId?: number | null; metadata?: unknown }) {
   await execute(
     `INSERT INTO emperor_run_traces (workspaceId,traceId,rootRunId,rootRunType,agentSlug,projectId,userId,status,metadata)
      VALUES (?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE updatedAt=NOW()`,

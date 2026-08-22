@@ -13,15 +13,20 @@
 - [x] 实现皇帝中台对话任务管理器的基础工作台：多轮对话、文件/图片上传、可选择Skill/Agent/MCP、可编辑计划预览和人工确认
 - [x] 补充并验收对话任务运行时间线：仅执行无副作用的`emperor.conversation.plan`低风险Skill，验证会话、步骤状态、Skill Run ID与Run Ledger Trace时间线回写（归档验收会话`conv_5b79d351762649d8b9368da06dd6882f`；`run_1787405955415_cqpc8ez`；Trace完成且含started/succeeded事件与1条Context Manifest）
 - [x] 在对话计划中为已完成Skill步骤提供直达运行详情入口，并让运行历史页按`runId`自动选中当前页记录；入口只读，不重新执行能力
-- [ ] 明确将conversations路径接入上下文编译、审批协议与受控并行计划，或拆分为独立治理边界并补充代码与验收证据；继续禁止任意Shell或未登记写入工具
+- [x] 明确将conversations路径接入受控上下文编译与审批协议：复用Agent上下文裁剪/预算工具，默认串行；L2/L3与写入能力在服务端强制计划后步骤人审，继续禁止任意Shell或未登记写入工具
 - [x] 新增并注册通用“对话任务规划”皇帝Skill：由自然语言任务和受控附件摘要生成结构化、可编辑的Skill/Agent/Tool计划，所有模型调用沿用Skill Run审计（真实Skill Run返回2项候选步骤，均来自受控能力目录）
 - [x] 在对话任务Router接入规划Skill并校验每个候选步骤均来自当前工作空间已登记能力目录；无效建议不得进入可提交计划
 - [x] 以受控能力目录执行一次对话任务规划Skill真实验收，验证返回JSON可解析、候选步骤受能力白名单约束且不触发工具执行（`run_1787397604566_vdm4jry`返回`internal.lingxing.read`与`video.section.plan`，未执行任何工具）
 - [x] 为对话任务基础治理补充策略回归，部署青岛ECS并完成附件、能力、知识和未执行计划的端到端受控验收（策略回归6/6）
-- [ ] 新增前后端回归与受控集成回归，覆盖附件上传、能力白名单过滤、计划审批、步骤成功/失败、Trace展示或回写，以及suggestPlan/proposePlan/approveStep/runStep边界
-- [ ] 为conversations路径复用现有Context Compiler的受控知识检索契约，并将编译结果作为脱敏Context Manifest补充到规划与步骤运行Trace
-- [ ] 将对话计划的并发与审批决策映射到既有Harness受控并行计划/人审协议；默认串行，L2/L3及写入能力不得以并行参数绕过审批
-- [ ] 为conversations Router补充无业务数据的集成回归：L1计划批准后运行、L2/L3未批准拒绝、附件/知识上下文、Trace成功/失败事件及能力白名单边界
+- [x] 新增前后端回归与受控集成回归，覆盖附件上传、能力白名单过滤、计划审批、步骤成功/失败、Trace展示或回写，以及suggestPlan/proposePlan/approveStep/runStep边界（策略/编译单测10/10；三项归档会话生产验收通过）
+- [x] 为conversations路径复用Agent Context Package的裁剪、摘要和Token预算契约，并将独立的对话上下文编译结果作为脱敏Context Manifest补充到规划与步骤运行Trace
+- [x] 将对话计划的并发与审批决策映射为默认串行的Harness执行策略；L2/L3及写入能力不得以客户端风险或并行参数绕过计划后步骤人审
+- [x] 为conversations Router补充无业务数据的集成回归：L1计划批准后运行、L3未批准拒绝、能力白名单、编译上下文与Run Ledger事件均通过生产验收
+- [x] 审计并复用Agent Context Package的确定性裁剪、摘要与Manifest契约，为对话规划和步骤运行新增独立、可审计的上下文编译结果
+- [x] 将对话步骤显式映射为默认串行的Harness执行策略：L0/L1可在计划批准后运行，L2/L3或写入能力必须在服务端进入计划后步骤人审，拒绝客户端并行或跳过审批参数
+- [x] 添加仅使用归档测试会话的对话Router集成验收，覆盖L1批准/运行、L3未批准拒绝、能力白名单、编译上下文与Run Ledger事件
+- [x] 补充对话任务管理器前端契约与视觉回归：覆盖附件上传入口、模型失败重试提示、计划/步骤审批调用边界、已完成步骤Trace入口与运行历史按runId自动选中（前端契约测试3/3、双页面视觉验证与`docs/validation/emperor-conversation-governance-ui-2026-08-22.md`已保存）
+- [ ] 补充对话任务管理器真实前端交互级验收：实际验证计划批准后高风险步骤显示`waiting_human`、模型失败提示与手动重试按钮、已完成步骤Trace跳转和运行历史按`runId`自动选中；使用归档测试会话并保存可复核证据
 - [x] 执行一次对话任务管理器端到端受控验收：创建会话、上传文本附件、读取能力/知识候选、提交不执行的计划并归档验收会话（`conv_b08c42ce34034b9b9b6165b028547269`已归档；125项Skill、2项知识候选与`proposed`计划均通过受控路径验证）
 - [x] 修复对话能力目录Tool风险等级查询以复用`governancePolicy`，确保会话创建、能力选择与端到端验收不再因不存在字段失败
 

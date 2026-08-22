@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CONVERSATION_PLANNER_MAX_ATTEMPTS,
   conversationAttachmentContextPolicy,
+  conversationExecutionPolicy,
+  highestConversationRisk,
   conversationPlannerRetryDelayMs,
   conversationStepRequiresApproval,
   filterConversationPlanSteps,
@@ -18,6 +20,16 @@ describe("皇帝对话任务治理策略", () => {
   it("允许低风险只读步骤无额外批准，但尊重显式批准要求", () => {
     expect(conversationStepRequiresApproval({ riskLevel: "L1", approvalRequired: false })).toBe(false);
     expect(conversationStepRequiresApproval({ riskLevel: "L0", approvalRequired: true })).toBe(true);
+  });
+
+  it("默认串行，且客户端不能将高风险步骤标记为免审批或并行", () => {
+    expect(conversationExecutionPolicy({ riskLevel: "L1", capabilityType: "skill" })).toMatchObject({ executionMode: "serial", allowParallel: false, requiresPlanApproval: true, requiresStepApproval: false });
+    expect(conversationExecutionPolicy({ riskLevel: "L3", approvalRequired: false, capabilityType: "tool" })).toMatchObject({ executionMode: "serial", allowParallel: false, requiresStepApproval: true, approvalProtocol: "plan_then_step_human_review" });
+  });
+
+  it("以登记能力的实际风险作为客户端计划风险的最低值", () => {
+    expect(highestConversationRisk("L1", "L3")).toBe("L3");
+    expect(highestConversationRisk("L2", "L1")).toBe("L2");
   });
 
   it("根据MIME类型限制附件上下文策略", () => {

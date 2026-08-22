@@ -85,6 +85,7 @@ const supplementalMigrations = [
     "0160_emperor_conversation_knowledge_refs.sql",
     "0161_ai_storage_objects_oss_provider.sql",
     "0162_emperor_conversation_planner_model_policy.sql",
+    "0163_emperor_conversation_message_skill_run.sql",
   ];
 
 const retiredMigrationFiles = new Set([
