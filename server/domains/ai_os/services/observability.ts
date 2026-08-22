@@ -984,3 +984,18 @@ export async function buildAiOsObservabilityDashboard(input: {
     generatedAt: new Date().toISOString(),
   };
 }
+
+export async function buildAiOsSloSummary(input: { days?: number; agentSlug?: string } = {}) {
+  const dashboard = await buildAiOsObservabilityDashboard(input);
+  const summary: any = dashboard.summary;
+  const score = Number(summary.quality?.averageScore || 0);
+  const samples = Number(summary.quality?.totalSamples || 0);
+  const skillFailureRate = Number(summary.skill?.failureRate || 0);
+  const agentFailureRate = Number(summary.agent?.failureRate || 0);
+  const signals = [
+    { key: "evaluation_score", name: "人工/系统评测均分", observed: score, target: 75, comparator: "gte", samples, status: samples === 0 ? "insufficient_data" : score >= 75 ? "met" : "breached" },
+    { key: "skill_failure_rate", name: "Skill失败率", observed: skillFailureRate, target: 5, comparator: "lte", samples: Number(summary.skill?.totalRuns || 0), status: Number(summary.skill?.totalRuns || 0) === 0 ? "insufficient_data" : skillFailureRate <= 5 ? "met" : "breached" },
+    { key: "agent_failure_rate", name: "Agent失败率", observed: agentFailureRate, target: 5, comparator: "lte", samples: Number(summary.agent?.totalRuns || 0), status: Number(summary.agent?.totalRuns || 0) === 0 ? "insufficient_data" : agentFailureRate <= 5 ? "met" : "breached" },
+  ];
+  return { window: dashboard.window, signals, source: "emperor_ai_os_evaluations+runtime_tables", generatedAt: new Date().toISOString() };
+}

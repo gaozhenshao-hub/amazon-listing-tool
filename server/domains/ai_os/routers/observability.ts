@@ -4,6 +4,7 @@ import { recordSecurityAuditLog, workspaceIdFromContext } from "../../../service
 import { listDataLifecyclePolicies, runDataLifecycleSweep } from "../services/artifactLifecycle";
 import {
   buildAiOsObservabilityDashboard,
+  buildAiOsSloSummary,
   buildDatabaseObservabilitySection,
   buildWorkerQueueHealth,
   listAiOsEvaluations,
@@ -47,6 +48,15 @@ export const emperorObservabilityRouter = router({
         days: input?.days,
         agentSlug: input?.agentSlug,
       });
+    }),
+
+  slo: adminProcedure
+    .input(z.object({
+      days: z.number().int().min(1).max(365).optional().default(30),
+      agentSlug: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return buildAiOsSloSummary({ days: input?.days, agentSlug: input?.agentSlug });
     }),
 
   workerHealth: adminProcedure
