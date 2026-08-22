@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../../../_core/trpc";
+import { workspaceIdFromContext } from "../../../services/securityGovernance";
 import { getSkillBySlug, normalizeSkillVersionForDb, parseManifest, rawExecute } from "../routerContext";
 import {
   createSkillEvalCase,
@@ -30,6 +31,7 @@ import {
   resolveHarnessReviewRequest,
   seedExecutionPresets,
 } from "../services/harnessCompletion";
+import { prepareSkillRunRecovery } from "../services/directRunRecovery";
 
 export const emperorSkillsRouter = router({
   list: protectedProcedure
@@ -70,6 +72,15 @@ export const emperorSkillsRouter = router({
   categories: protectedProcedure.query(async () => {
     return rawExecute("SELECT category, COUNT(*) as count FROM emperor_skills GROUP BY category ORDER BY count DESC");
   }),
+
+  prepareRunRecovery: protectedProcedure
+    .input(z.object({ runId: z.string().min(1).max(80) }))
+    .mutation(async ({ ctx, input }) => prepareSkillRunRecovery({
+      runId: input.runId,
+      userId: ctx.user.id,
+      workspaceId: workspaceIdFromContext(ctx),
+      isAdmin: (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin",
+    })),
 
   qualityOverview: protectedProcedure
     .input(z.object({ skillSlug: z.string().optional(), skillVersion: z.string().optional() }).optional())

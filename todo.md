@@ -47,6 +47,11 @@
 - [ ] P1后续：将同一生命周期阶段与恢复请求协议推广到不经conversations进入的直接Skill/Tool/Agent运行入口；不得削弱已有Agent状态机、Tool Gateway审计或写入确认边界
 - [ ] P1缺口：为直接Skill/Tool运行入口补齐与conversations一致的恢复请求幂等、状态版本比较与补偿/拒绝事件，并完成无业务数据的生产验收（直接Agent恢复已完成）
 - [ ] P1缺口：为Plan与Agent维度补齐明确的lifecycle恢复、跳过和补偿事件及回归证据；完成后再标记Plan/Step/Agent总项完成
+- [x] P1实施：为直接Skill/Tool失败Run建立只读幂等恢复资格判定与人工恢复准备协议；不得自动发起模型或外部Tool调用（Tool Router与Skills Router均仅创建恢复请求，0166已应用）
+- [ ] P1实施：为写入、高风险或副作用不明的Skill/Tool失败Run持久化补偿或拒绝事件，明确禁止恢复执行并保留Run Ledger证据（实体语义已修复；实际`compensation_required`落库与Ledger证据待集成验收）
+- [ ] P1验收：用归档失败Run验证低风险恢复仅进入待运行、写入/高风险恢复被拒绝且不发起外部调用（当前单元回归3/3、青岛ECS生产构建和迁移计划通过；ECS当前无可用于无副作用验收的活跃用户/Skill/Tool组合，等待真实归档失败Run）
+- [x] P1修复：直接Skill补偿/拒绝审计以`skill_run`实体类型和明确`runId`写入Run Ledger，不再复用`tool_run`语义；实体隔离单元回归已通过
+- [ ] P1验收：构造归档的非只读或高风险失败Skill/Tool Run，断言恢复请求状态为`compensation_required`、reasonCode正确，且Run Ledger事件实体类型分别为`skill_run`与`tool_run`；全程不得执行模型或外部Tool
 - [x] 执行一次对话任务管理器端到端受控验收：创建会话、上传文本附件、读取能力/知识候选、提交不执行的计划并归档验收会话（`conv_b08c42ce34034b9b9b6165b028547269`已归档；125项Skill、2项知识候选与`proposed`计划均通过受控路径验证）
 - [x] 修复对话能力目录Tool风险等级查询以复用`governancePolicy`，确保会话创建、能力选择与端到端验收不再因不存在字段失败
 

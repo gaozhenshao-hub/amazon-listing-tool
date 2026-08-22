@@ -334,6 +334,8 @@ export const emperorSkillRuns = mysqlTable("emperor_skill_runs", {
   output: json("output"),
   // 运行状态
   status: mysqlEnum("status", ["queued", "running", "succeeded", "failed", "canceled"]).default("queued").notNull(),
+  stateVersion: int("stateVersion").default(0).notNull(),
+  recoverySnapshotId: varchar("recoverySnapshotId", { length: 80 }),
   errorMessage: text("errorMessage"),
   // 用量统计
   modelSlug: varchar("modelSlug", { length: 128 }),
