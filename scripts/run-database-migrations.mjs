@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createConnection } from "mysql2/promise";
+import { canRepairFailedMigrationChecksum } from "../server/services/migrationPolicy.mjs";
 
 const rootDir = join(dirname(fileURLToPath(import.meta.url)), "..");
 const drizzleDir = join(rootDir, "drizzle");
@@ -86,6 +87,7 @@ const supplementalMigrations = [
     "0161_ai_storage_objects_oss_provider.sql",
     "0162_emperor_conversation_planner_model_policy.sql",
     "0163_emperor_conversation_message_skill_run.sql",
+    "0164_emperor_execution_recovery_lifecycle.sql",
   ];
 
 const retiredMigrationFiles = new Set([
@@ -288,7 +290,7 @@ export async function applyMigrations(connection, plan, options = {}) {
   let applied = 0;
   for (const migration of plan) {
     const existing = ledger.get(migration.fileName);
-    if (existing && existing.checksum !== migration.checksum) {
+    if (!canRepairFailedMigrationChecksum(existing, migration.checksum, retryFailed) && existing && existing.checksum !== migration.checksum) {
       throw new Error(`Checksum mismatch for ${migration.fileName}; applied migrations are immutable`);
     }
     if (existing?.status === "succeeded" || existing?.status === "baselined") continue;
@@ -366,6 +368,7 @@ async function main() {
     await connection.end();
   }
 }
+
 
 if (fileURLToPath(import.meta.url) === process.argv[1]) {
   main().catch((error) => {

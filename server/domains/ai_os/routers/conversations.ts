@@ -19,6 +19,15 @@ import { registerStorageObject, registerUnifiedArtifact } from "../services/arti
 import { appendRunLedgerEvent, completeRunTrace, ensureRunTrace, recordContextManifest } from "../services/runLedger";
 import { compileConversationContext } from "../services/conversationContext";
 import {
+  EXECUTION_LIFECYCLE_STAGES,
+  appendConversationLifecycleStage,
+  buildRecoveryIdempotencyKey,
+  claimExecutionRecoveryRequest,
+  completeExecutionRecoveryRequest,
+  createExecutionStateSnapshot,
+  resolveConversationLifecyclePolicy,
+} from "../services/executionLifecycle";
+import {
   CONVERSATION_PLANNER_MAX_ATTEMPTS,
   conversationExecutionPolicy,
   conversationPlannerRetryDelayMs,
@@ -438,12 +447,22 @@ export const emperorConversationsRouter = router({
 
   approvePlan: protectedProcedure.input(z.object({ conversationId: z.string(), planId: z.string() })).mutation(async ({ ctx, input }) => {
     await getConversationForAction(ctx, input.conversationId, "confirm");
-    const rows = await rawExecute("SELECT status FROM emperor_conversation_plans WHERE planId=? AND conversationId=? LIMIT 1", [input.planId, input.conversationId]);
+    const rows = await rawExecute("SELECT status,version,planJson,riskSummary FROM emperor_conversation_plans WHERE planId=? AND conversationId=? LIMIT 1", [input.planId, input.conversationId]);
     if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "计划不存在" });
     if (rows[0].status !== "proposed") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "仅可批准待确认计划" });
     await rawExecute("UPDATE emperor_conversation_plans SET status='approved',approvedBy=?,approvedAt=NOW() WHERE planId=?", [ctx.user.id, input.planId]);
     await rawExecute("UPDATE emperor_conversation_plan_steps SET status=IF(approvalRequired=1,'waiting_human','ready') WHERE planId=?", [input.planId]);
     await rawExecute("UPDATE emperor_conversations SET status='waiting_human',activePlanId=? WHERE conversationId=?", [input.planId, input.conversationId]);
+    const traceId = `conversation_plan_${input.planId}`;
+    await ensureRunTrace({ runId: traceId, rootRunType: "conversation_plan", workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, metadata: { conversationId: input.conversationId, planId: input.planId, planVersion: Number(rows[0].version || 0) } });
+    const planSnapshot = await createExecutionStateSnapshot({
+      workspaceId: workspaceIdFromContext(ctx), traceId, targetType: "conversation_plan", targetId: input.planId,
+      stateVersion: Number(rows[0].version || 0), planId: input.planId, planVersion: Number(rows[0].version || 0),
+      approvalState: "approved", createdBy: ctx.user.id,
+      snapshot: { conversationId: input.conversationId, planId: input.planId, planVersion: rows[0].version, status: "approved", plan: parseJson(rows[0].planJson, {}), riskSummary: parseJson(rows[0].riskSummary, {}) },
+    });
+    await appendRunLedgerEvent({ traceId, eventType: "lifecycle.snapshot_created", entityType: "system", entityId: input.planId, actorUserId: ctx.user.id, payload: { targetType: "conversation_plan", snapshotId: planSnapshot.snapshotId, stateVersion: rows[0].version } });
+    await completeRunTrace(traceId, "completed");
     await audit(ctx, { action: "conversation.plan.approve", conversationId: input.conversationId, riskLevel: "high", metadata: { planId: input.planId } });
     return { success: true };
   }),
@@ -461,10 +480,74 @@ export const emperorConversationsRouter = router({
     return { success: true };
   }),
 
+  recoverStep: protectedProcedure.input(z.object({
+    conversationId: z.string(),
+    stepId: z.string(),
+    expectedStateVersion: z.number().int().nonnegative(),
+    idempotencyKey: z.string().min(16).max(128).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    await getConversationForAction(ctx, input.conversationId, "run");
+    const rows = await rawExecute(
+      `SELECT s.*,p.status AS planStatus,p.version AS planVersion
+       FROM emperor_conversation_plan_steps s JOIN emperor_conversation_plans p ON p.planId=s.planId
+       WHERE s.stepId=? AND p.conversationId=? LIMIT 1`,
+      [input.stepId, input.conversationId],
+    );
+    const step = rows[0];
+    if (!step) throw new TRPCError({ code: "NOT_FOUND", message: "计划步骤不存在" });
+    const traceId = String(step.traceId || `conversation_step_${input.stepId}`);
+    const snapshotRows = await rawExecute(
+      "SELECT * FROM emperor_execution_state_snapshots WHERE targetType='conversation_step' AND targetId=? ORDER BY stateVersion DESC,id DESC LIMIT 1",
+      [input.stepId],
+    );
+    const snapshot = snapshotRows[0];
+    if (!snapshot) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该步骤没有可恢复的状态快照，请重新生成计划后再执行" });
+    const idempotencyKey = input.idempotencyKey || buildRecoveryIdempotencyKey({
+      snapshotId: String(snapshot.snapshotId), targetType: "conversation_step", targetId: input.stepId,
+      expectedStateVersion: input.expectedStateVersion, requestedAction: "restore_ready",
+    });
+    const claim = await claimExecutionRecoveryRequest({
+      idempotencyKey, snapshotId: String(snapshot.snapshotId), traceId, targetType: "conversation_step", targetId: input.stepId,
+      requestedAction: "restore_ready", expectedStateVersion: input.expectedStateVersion, requestedBy: ctx.user.id,
+    });
+    if (claim.replayed) return { success: claim.request.status === "completed", replayed: true, status: claim.request.status, recoveryId: claim.request.recoveryId };
+    await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage: "recovery_requested", payload: { recoveryId: claim.request.recoveryId, expectedStateVersion: input.expectedStateVersion, snapshotId: snapshot.snapshotId } });
+    const reject = async (reasonCode: string, message: string) => {
+      await completeExecutionRecoveryRequest({ recoveryId: claim.request.recoveryId, status: "rejected", reasonCode, result: { currentStateVersion: step.stateVersion, status: step.status } });
+      await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage: "recovery_rejected", payload: { recoveryId: claim.request.recoveryId, reasonCode } });
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message });
+    };
+    if (Number(step.stateVersion || 0) !== input.expectedStateVersion) {
+      return reject("version_conflict", "步骤状态已变化；请刷新后重新确认恢复操作");
+    }
+    if (step.status !== "failed") return reject("invalid_state", "仅失败的步骤可以恢复至待运行状态");
+    const capability = await resolveCapabilityGovernance(ctx, step.capabilityType, step.capabilitySlug);
+    const effectiveRisk = highestConversationRisk(step.riskLevel, capability.riskLevel as any);
+    const lifecyclePolicy = resolveConversationLifecyclePolicy({ capabilityType: step.capabilityType, riskLevel: effectiveRisk, approvalRequired: Boolean(step.approvalRequired), approvalState: String(step.approvalState) });
+    if (!lifecyclePolicy.recoveryAllowed) {
+      const status = lifecyclePolicy.compensationRequiredOnFailure ? "compensation_required" : "rejected";
+      await completeExecutionRecoveryRequest({ recoveryId: claim.request.recoveryId, status, reasonCode: lifecyclePolicy.compensationRequiredOnFailure ? "human_compensation_required" : "human_approval_required", result: { capabilityType: step.capabilityType, riskLevel: effectiveRisk } });
+      await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage: lifecyclePolicy.compensationRequiredOnFailure ? "compensation_required" : "recovery_rejected", payload: { recoveryId: claim.request.recoveryId, capabilityType: step.capabilityType, riskLevel: effectiveRisk } });
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: lifecyclePolicy.compensationRequiredOnFailure ? "该步骤可能具有副作用，已记录补偿审计；请人工复核后新建或重新确认步骤" : "高风险步骤恢复必须重新经过人工确认" });
+    }
+    await rawExecute(
+      "UPDATE emperor_conversation_plan_steps SET status='ready',errorMessage=NULL,stateVersion=stateVersion+1,recoverySnapshotId=? WHERE stepId=? AND status='failed' AND stateVersion=?",
+      [snapshot.snapshotId, input.stepId, input.expectedStateVersion],
+    );
+    const refreshed = await rawExecute("SELECT stateVersion,status FROM emperor_conversation_plan_steps WHERE stepId=? LIMIT 1", [input.stepId]);
+    if (refreshed[0]?.status !== "ready" || Number(refreshed[0]?.stateVersion) !== input.expectedStateVersion + 1) {
+      return reject("version_conflict", "步骤状态在恢复期间已变化；未重新执行任何能力");
+    }
+    await completeExecutionRecoveryRequest({ recoveryId: claim.request.recoveryId, status: "completed", result: { restoredState: "ready", stateVersion: refreshed[0].stateVersion } });
+    await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage: "recovery_completed", payload: { recoveryId: claim.request.recoveryId, snapshotId: snapshot.snapshotId, stateVersion: refreshed[0].stateVersion } });
+    await audit(ctx, { action: "conversation.step.recover", conversationId: input.conversationId, riskLevel: "medium", metadata: { stepId: input.stepId, recoveryId: claim.request.recoveryId, snapshotId: snapshot.snapshotId } });
+    return { success: true, replayed: false, recoveryId: claim.request.recoveryId, stateVersion: refreshed[0].stateVersion };
+  }),
+
   runStep: protectedProcedure.input(z.object({ conversationId: z.string(), stepId: z.string() })).mutation(async ({ ctx, input }) => {
     await getConversationForAction(ctx, input.conversationId, "run");
     const rows = await rawExecute(
-      `SELECT s.*,p.status AS planStatus FROM emperor_conversation_plan_steps s JOIN emperor_conversation_plans p ON p.planId=s.planId WHERE s.stepId=? AND p.conversationId=? LIMIT 1`,
+      `SELECT s.*,p.status AS planStatus,p.version AS planVersion FROM emperor_conversation_plan_steps s JOIN emperor_conversation_plans p ON p.planId=s.planId WHERE s.stepId=? AND p.conversationId=? LIMIT 1`,
       [input.stepId, input.conversationId],
     );
     const step = rows[0];
@@ -473,6 +556,7 @@ export const emperorConversationsRouter = router({
     const capability = await resolveCapabilityGovernance(ctx, step.capabilityType, step.capabilitySlug);
     const effectiveRisk = highestConversationRisk(step.riskLevel, capability.riskLevel as any);
     const executionPolicy = conversationExecutionPolicy({ riskLevel: effectiveRisk, approvalRequired: Boolean(step.approvalRequired), capabilityType: step.capabilityType });
+    const lifecyclePolicy = resolveConversationLifecyclePolicy({ capabilityType: step.capabilityType, riskLevel: effectiveRisk, approvalRequired: Boolean(step.approvalRequired), approvalState: String(step.approvalState) });
     if (executionPolicy.requiresStepApproval && step.approvalState !== "approved") {
       throw new TRPCError({ code: "PRECONDITION_FAILED", message: "高风险或写入步骤必须在计划批准后单独完成人工确认" });
     }
@@ -528,24 +612,51 @@ export const emperorConversationsRouter = router({
       maxTokens: compiledContext.maxTokens,
       manifest: { ...compiledContext.manifest, conversationId: input.conversationId, stepId: input.stepId, capability: { type: step.capabilityType, slug: step.capabilitySlug }, executionPolicy },
     });
+    for (const stage of EXECUTION_LIFECYCLE_STAGES.slice(0, 5)) {
+      await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage, payload: { capabilityType: step.capabilityType, riskLevel: effectiveRisk, executionMode: "serial", stateVersion: Number(step.stateVersion || 0), contextPolicyHash: compiledContext.policyHash } });
+    }
+    const stateVersion = Number(step.stateVersion || 0);
+    const executionSnapshot = await createExecutionStateSnapshot({
+      workspaceId: workspaceIdFromContext(ctx), traceId, targetType: "conversation_step", targetId: input.stepId, stateVersion,
+      planId: step.planId, planVersion: Number(step.planVersion || 0), capabilityType: step.capabilityType, capabilitySlug: step.capabilitySlug,
+      approvalState: step.approvalState, contextManifestHash: compiledContext.policyHash, createdBy: ctx.user.id,
+      snapshot: { conversationId: input.conversationId, stepId: input.stepId, planId: step.planId, planVersion: step.planVersion, status: step.status, riskLevel: effectiveRisk, capability: { type: step.capabilityType, slug: step.capabilitySlug }, executionPolicy: lifecyclePolicy, contextPolicyHash: compiledContext.policyHash, input: payload },
+    });
+    await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage: "snapshot_created", payload: { snapshotId: executionSnapshot.snapshotId, stateVersion, inputHash: executionSnapshot.inputHash } });
     await appendRunLedgerEvent({ traceId, eventType: "conversation.step.started", entityType: "system", entityId: input.stepId, skillSlug: step.capabilityType === "skill" ? step.capabilitySlug : null, toolSlug: step.capabilityType === "tool" ? step.capabilitySlug : null, actorUserId: ctx.user.id, payload: { capabilityType: step.capabilityType, riskLevel: effectiveRisk, executionMode: executionPolicy.executionMode, contextPolicyHash: compiledContext.policyHash } });
-    await rawExecute("UPDATE emperor_conversation_plan_steps SET status='running',startedAt=NOW() WHERE stepId=?", [input.stepId]);
+    await rawExecute("UPDATE emperor_conversation_plan_steps SET status='running',stateVersion=stateVersion+1,traceId=?,recoverySnapshotId=?,startedAt=NOW() WHERE stepId=? AND status='ready' AND stateVersion=?", [traceId, executionSnapshot.snapshotId, input.stepId, stateVersion]);
+    const claimedStepRows = await rawExecute("SELECT status,stateVersion FROM emperor_conversation_plan_steps WHERE stepId=? LIMIT 1", [input.stepId]);
+    if (claimedStepRows[0]?.status !== "running" || Number(claimedStepRows[0]?.stateVersion) !== stateVersion + 1) {
+      await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage: "error_classified", payload: { reasonCode: "version_conflict", expectedStateVersion: stateVersion } }).catch(() => null);
+      await completeRunTrace(traceId, "failed").catch(() => null);
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "步骤状态已变化；未执行任何能力，请刷新后重试" });
+    }
+    await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage: "execution_started", payload: { snapshotId: executionSnapshot.snapshotId, stateVersion: stateVersion + 1, automaticRetryAllowed: lifecyclePolicy.automaticRetryAllowed } });
     await rawExecute("UPDATE emperor_conversation_plans SET status='executing' WHERE planId=?", [step.planId]);
     await rawExecute("UPDATE emperor_conversations SET status='running' WHERE conversationId=?", [input.conversationId]);
     try {
       let runRef: Record<string, unknown>;
       if (step.capabilityType === "agent") {
         const result = await startAgentRun({ slug: step.capabilitySlug, inputs: executionPayload, userId: ctx.user.id, workspaceId: workspaceIdFromContext(ctx), projectId: Number(payload.projectId) || null });
-        runRef = { agentRunId: (result as any).runId };
+        runRef = { agentRunId: (result as any).runId || null, status: (result as any).status || "queued" };
+        if (runRef.agentRunId) {
+          const agentSnapshot = await createExecutionStateSnapshot({
+            workspaceId: workspaceIdFromContext(ctx), traceId, targetType: "agent_run", targetId: String(runRef.agentRunId), stateVersion: 0,
+            planId: step.planId, planVersion: Number(step.planVersion || 0), capabilityType: "agent", capabilitySlug: step.capabilitySlug,
+            approvalState: step.approvalState, contextManifestHash: compiledContext.policyHash, createdBy: ctx.user.id,
+            snapshot: { conversationId: input.conversationId, stepId: input.stepId, agentRunId: runRef.agentRunId, status: runRef.status, capabilitySlug: step.capabilitySlug, executionPolicy: lifecyclePolicy, contextPolicyHash: compiledContext.policyHash },
+          });
+          await appendRunLedgerEvent({ traceId, eventType: "lifecycle.snapshot_created", entityType: "agent_run", entityId: String(runRef.agentRunId), actorUserId: ctx.user.id, payload: { targetType: "agent_run", snapshotId: agentSnapshot.snapshotId, stateVersion: 0 } });
+        }
         await rawExecute("UPDATE emperor_conversation_plan_steps SET status='running',agentRunId=? WHERE stepId=?", [(result as any).runId || null, input.stepId]);
       } else if (step.capabilityType === "skill") {
-        const result = await runEmperorSkill<string>({ skillSlug: step.capabilitySlug, userId: ctx.user.id, workspaceId: workspaceIdFromContext(ctx), context: compiledContext.contextText, variables: executionPayload, attachments: skillAttachments, migrationSource: "emperor.conversations", validate: (content) => content });
+        const result = await runEmperorSkill<string>({ skillSlug: step.capabilitySlug, userId: ctx.user.id, workspaceId: workspaceIdFromContext(ctx), context: compiledContext.contextText, variables: executionPayload, attachments: skillAttachments, migrationSource: "emperor.conversations", maxModelAttempts: lifecyclePolicy.maxAutomaticAttempts, validate: (content) => content });
         runRef = { skillRunId: result.runId, output: result.content };
-        await rawExecute("UPDATE emperor_conversation_plan_steps SET status='succeeded',skillRunId=?,completedAt=NOW(),metadata=? WHERE stepId=?", [result.runId, json({ outputPreview: String(result.content).slice(0, 2_000) }), input.stepId]);
+        await rawExecute("UPDATE emperor_conversation_plan_steps SET status='succeeded',stateVersion=stateVersion+1,skillRunId=?,completedAt=NOW(),metadata=? WHERE stepId=?", [result.runId, json({ outputPreview: String(result.content).slice(0, 2_000) }), input.stepId]);
       } else {
         const result = await invokeEmperorTool({ toolSlug: step.capabilitySlug, params: executionPayload, userId: ctx.user.id, userRole: ctx.user.role, workspaceId: workspaceIdFromContext(ctx) });
         runRef = { toolRunId: (result as any).metadata?.toolRunId || null, success: (result as any).success };
-        await rawExecute("UPDATE emperor_conversation_plan_steps SET status=?,toolRunId=?,completedAt=NOW(),metadata=? WHERE stepId=?", [(result as any).success ? "succeeded" : "failed", (result as any).metadata?.toolRunId || null, json({ status: (result as any).metadata?.status || null }), input.stepId]);
+        await rawExecute("UPDATE emperor_conversation_plan_steps SET status=?,stateVersion=stateVersion+1,toolRunId=?,completedAt=NOW(),metadata=? WHERE stepId=?", [(result as any).success ? "succeeded" : "failed", (result as any).metadata?.toolRunId || null, json({ status: (result as any).metadata?.status || null }), input.stepId]);
       }
       await appendRunLedgerEvent({
         traceId,
@@ -558,10 +669,21 @@ export const emperorConversationsRouter = router({
         payload: { stepId: input.stepId, capabilityType: step.capabilityType, success: runRef.success ?? true },
       });
       await completeRunTrace(traceId, step.capabilityType === "agent" ? "running" : "completed");
+      await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage: "completed", payload: { capabilityType: step.capabilityType, runRef } });
       await audit(ctx, { action: "conversation.step.run", conversationId: input.conversationId, riskLevel: step.riskLevel === "L3" ? "critical" : step.riskLevel === "L2" ? "high" : "medium", metadata: { stepId: input.stepId, capabilityType: step.capabilityType, capabilitySlug: step.capabilitySlug, ...runRef } });
       return { success: true, ...runRef };
     } catch (error) {
-      await rawExecute("UPDATE emperor_conversation_plan_steps SET status='failed',errorMessage=?,completedAt=NOW() WHERE stepId=?", [error instanceof Error ? error.message : "步骤执行失败", input.stepId]);
+      await rawExecute("UPDATE emperor_conversation_plan_steps SET status='failed',stateVersion=stateVersion+1,errorMessage=?,completedAt=NOW() WHERE stepId=?", [error instanceof Error ? error.message : "步骤执行失败", input.stepId]);
+      const failedStateVersion = stateVersion + 2;
+      const failureSnapshot = await createExecutionStateSnapshot({
+        workspaceId: workspaceIdFromContext(ctx), traceId, targetType: "conversation_step", targetId: input.stepId, stateVersion: failedStateVersion,
+        planId: step.planId, planVersion: Number(step.planVersion || 0), capabilityType: step.capabilityType, capabilitySlug: step.capabilitySlug,
+        approvalState: step.approvalState, contextManifestHash: compiledContext.policyHash, createdBy: ctx.user.id,
+        snapshot: { conversationId: input.conversationId, stepId: input.stepId, planId: step.planId, status: "failed", riskLevel: effectiveRisk, capability: { type: step.capabilityType, slug: step.capabilitySlug }, executionPolicy: lifecyclePolicy, contextPolicyHash: compiledContext.policyHash, failure: error instanceof Error ? error.message : "unknown" },
+      }).catch(() => null);
+      if (failureSnapshot) await rawExecute("UPDATE emperor_conversation_plan_steps SET recoverySnapshotId=? WHERE stepId=?", [failureSnapshot.snapshotId, input.stepId]);
+      await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage: "error_classified", payload: { error: error instanceof Error ? error.message : "unknown", recoveryAllowed: lifecyclePolicy.recoveryAllowed } }).catch(() => null);
+      if (lifecyclePolicy.compensationRequiredOnFailure) await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage: "compensation_required", payload: { capabilityType: step.capabilityType, riskLevel: effectiveRisk, automaticCompensation: false } }).catch(() => null);
       await appendRunLedgerEvent({ traceId, eventType: "conversation.step.failed", entityType: "system", entityId: input.stepId, skillSlug: step.capabilityType === "skill" ? step.capabilitySlug : null, toolSlug: step.capabilityType === "tool" ? step.capabilitySlug : null, actorUserId: ctx.user.id, payload: { error: error instanceof Error ? error.message : "unknown" } }).catch(() => null);
       await completeRunTrace(traceId, "failed").catch(() => null);
       await audit(ctx, { action: "conversation.step.run", conversationId: input.conversationId, status: "failed", riskLevel: "high", metadata: { stepId: input.stepId, error: error instanceof Error ? error.message : "unknown" } });

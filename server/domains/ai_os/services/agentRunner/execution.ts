@@ -3,6 +3,8 @@ import { selectAgentTemplateVersionForRun, getAgentBySlug } from "./templateGove
 import { addEvent, getCheckpoints, getCheckpoint } from "./checkpointStore";
 import { persistAgentArtifact, listAgentArtifacts, estimateAgentHumanEditRate } from "./artifactStore";
 import { getRunRow, effectiveCheckpointOutput, refreshRunAfterCheckpoint, unlockChildren, buildNodeInput, buildSkillContext } from "./contextPackage";
+import { createExecutionStateSnapshot } from "../executionLifecycle";
+import { appendRunLedgerEvent, ensureRunTrace } from "../runLedger";
 function nodeRequiresHumanGate(node: EmperorAgentNode): boolean {
   if (node.autoConfirm === true) return false;
   return node.humanGate !== false;
@@ -507,6 +509,45 @@ export async function startAgentRun(input: {
     templateVersionId: templateVersion?.id ?? null,
     templateVersion: templateVersion?.version ?? null,
     skillSnapshots: [...nodeMetadata.values()].filter((metadata) => metadata.skillSnapshot).map((metadata) => metadata.skillSnapshot),
+  });
+  const traceId = `agent_run_${runId}`;
+  await ensureRunTrace({
+    runId: traceId,
+    rootRunType: "agent_run",
+    workspaceId,
+    agentSlug: agent.slug,
+    projectId: input.projectId ?? null,
+    userId: input.userId,
+    metadata: { agentRunId: runId, templateVersion: templateVersion?.version ?? null, dagHash: runRuntime?.dagHash ?? templateVersion?.dagHash ?? null },
+  });
+  const snapshot = await createExecutionStateSnapshot({
+    workspaceId,
+    traceId,
+    targetType: "agent_run",
+    targetId: runId,
+    stateVersion: 0,
+    capabilityType: "agent",
+    capabilitySlug: agent.slug,
+    capabilityVersion: templateVersion?.version ? String(templateVersion.version) : null,
+    approvalState: "waiting_human",
+    createdBy: input.userId,
+    snapshot: {
+      agentRunId: runId,
+      agentSlug: agent.slug,
+      templateVersionId: templateVersion?.id ?? null,
+      templateVersion: templateVersion?.version ?? null,
+      dagHash: runRuntime?.dagHash ?? templateVersion?.dagHash ?? null,
+      state: "waiting_human",
+      inputHashScope: "stored_agent_run_inputs",
+    },
+  });
+  await appendRunLedgerEvent({
+    traceId,
+    eventType: "lifecycle.snapshot_created",
+    entityType: "agent_run",
+    entityId: runId,
+    actorUserId: input.userId,
+    payload: { targetType: "agent_run", snapshotId: snapshot.snapshotId, stateVersion: 0, executionMode: "serial" },
   });
   return getAgentRun(runId, input.userId, true);
 }

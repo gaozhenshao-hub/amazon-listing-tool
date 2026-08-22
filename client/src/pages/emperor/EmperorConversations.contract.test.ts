@@ -22,6 +22,14 @@ describe("皇帝对话任务前端治理契约", () => {
     expect(conversationsSource).toContain("runStep.mutate");
   });
 
+  it("仅为失败的低风险Skill提供恢复至待运行入口，并传递服务端状态版本", () => {
+    expect(conversationsSource).toContain("recoverStep.useMutation");
+    expect(conversationsSource).toContain('step.status === "failed" && step.capabilityType === "skill"');
+    expect(conversationsSource).toContain('step.riskLevel === "L0" || step.riskLevel === "L1"');
+    expect(conversationsSource).toContain("expectedStateVersion: Number(step.stateVersion || 0)");
+    expect(conversationsSource).toContain("恢复至待运行");
+  });
+
   it("为已完成Skill步骤提供只读Trace入口，并按URL runId自动选中运行详情", () => {
     expect(conversationsSource).toContain("step.skillRunId &&");
     expect(conversationsSource).toContain("/emperor/trace?runId=${encodeURIComponent(step.skillRunId)}");
