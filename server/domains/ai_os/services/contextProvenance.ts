@@ -37,11 +37,17 @@ export async function listRunLedgerProjection(input: { traceId: string; afterId?
 }
 
 export async function invalidateContextSource(input: { sourceType: string; sourceKey: string; reason: string; userId: number }) {
-  const result: any = await rawExecute(
+  // rawExecute标准化为行集，不暴露UPDATE元数据；先计算仍为valid的匹配数，避免把空行集误判为0。
+  const pendingRows = await rawExecute(
+    "SELECT COUNT(*) AS count FROM emperor_context_source_provenance WHERE sourceType=? AND sourceKey=? AND status='valid'",
+    [input.sourceType, input.sourceKey],
+  );
+  const invalidated = Number((pendingRows[0] as any)?.count || 0);
+  await rawExecute(
     "UPDATE emperor_context_source_provenance SET status='invalidated',invalidationReason=?,invalidatedBy=?,invalidatedAt=NOW() WHERE sourceType=? AND sourceKey=? AND status='valid'",
     [input.reason.slice(0, 512), input.userId, input.sourceType, input.sourceKey],
   );
   const rows = await rawExecute("SELECT DISTINCT traceId FROM emperor_context_source_provenance WHERE sourceType=? AND sourceKey=? AND status='invalidated'", [input.sourceType, input.sourceKey]);
   await Promise.all(rows.map((row: any) => appendRunLedgerEvent({ traceId: row.traceId, eventType: "context.source_invalidated", entityType: "system", entityId: `${input.sourceType}:${input.sourceKey}`, actorUserId: input.userId, payload: { sourceType: input.sourceType, sourceKey: input.sourceKey, reason: input.reason.slice(0, 512) }, visibility: "admin" })));
-  return { invalidated: Number(result?.affectedRows || 0) };
+  return { invalidated };
 }

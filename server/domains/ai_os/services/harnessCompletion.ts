@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { rawExecute } from "../routerContext";
+import { assessParallelDraftCandidates } from "./parallelDraftPolicy";
+import { appendRunLedgerEvent, ensureAgentRunTrace } from "./runLedger";
 
 export type HarnessReviewType = "review_required" | "approval_required" | "selection_required";
 export type ExecutionPresetMode = "standard" | "quality_first" | "batch_background" | "evaluation";
@@ -71,13 +73,44 @@ export async function getHarnessReviewRequest(reviewId: string) {
   };
 }
 
-export async function resolveHarnessReviewRequest(input: { reviewId: string; status: "approved" | "rejected" | "selected" | "canceled"; reason: string; decision?: unknown; userId: number }) {
-  const result: any = await rawExecute(
+export async function resolveHarnessReviewRequest(input: { reviewId: string; status: "approved" | "rejected" | "selected" | "canceled"; reason: string; decision?: unknown; userId: number; allowParallelPlanApproval?: boolean }) {
+  const currentRows = await rawExecute("SELECT status,candidateSummary FROM emperor_harness_review_requests WHERE reviewId=? LIMIT 1", [input.reviewId]);
+  const current: any = currentRows[0];
+  if (!current || current.status !== "open") throw new Error("人审请求已被处理或不再处于待决状态");
+  const candidateSummary = typeof current.candidateSummary === "string" ? JSON.parse(current.candidateSummary) : current.candidateSummary;
+  if (candidateSummary?.parallelPlanId && input.status === "approved" && !input.allowParallelPlanApproval) {
+    throw new Error("并行草稿必须使用专用批准协议，不能通过通用人审入口直接批准");
+  }
+  await rawExecute(
     "UPDATE emperor_harness_review_requests SET status=?,resolutionReason=?,decision=?,resolvedBy=?,resolvedAt=NOW() WHERE reviewId=? AND status='open'",
     [input.status, input.reason, encode(input.decision), input.userId, input.reviewId],
   );
-  if (Number(result?.affectedRows || 0) !== 1) throw new Error("人审请求已被处理或不再处于待决状态");
   return { reviewId: input.reviewId, status: input.status };
+}
+
+async function assessParallelPlanCandidate(input: { agentRunId: string; branchNodeIds: string[] }) {
+  const runRows = await rawExecute(
+    `SELECT r.workspaceId,r.agentSlug,r.projectId,r.userId,a.dagDefinition
+     FROM emperor_agent_runs r JOIN emperor_agents a ON a.slug=r.agentSlug
+     WHERE r.runId=? ORDER BY a.workspaceId IS NULL ASC LIMIT 1`,
+    [input.agentRunId],
+  );
+  const run: any = runRows[0];
+  if (!run) throw new Error("Agent Run不存在，不能创建并行草稿");
+  const dag = typeof run.dagDefinition === "string" ? JSON.parse(run.dagDefinition) : run.dagDefinition;
+  const nodes = Array.isArray(dag?.nodes) ? dag.nodes : [];
+  const edges = Array.isArray(dag?.edges) ? dag.edges : [];
+  const skillSlugs = [...new Set(nodes.filter((node: any) => input.branchNodeIds.includes(node.id) && node.skillSlug).map((node: any) => String(node.skillSlug)))];
+  const placeholders = skillSlugs.map(() => "?").join(",");
+  const skills = skillSlugs.length
+    ? await rawExecute(`SELECT slug,riskTier,allowed_tools AS allowedTools,execution_mode AS executionMode FROM emperor_skills WHERE slug IN (${placeholders})`, skillSlugs)
+    : [];
+  return { run, assessment: assessParallelDraftCandidates({ branchNodeIds: input.branchNodeIds, nodes, edges, skills }) };
+}
+
+export async function previewParallelPlan(input: { agentRunId: string; branchNodeIds: string[] }) {
+  const result = await assessParallelPlanCandidate(input);
+  return { agentRunId: input.agentRunId, ...result.assessment };
 }
 
 export async function recordHarnessFeedback(input: {
@@ -101,16 +134,42 @@ export function stableParallelBucket(input: { agentRunId: string; nodeId: string
 export async function createParallelPlan(input: { workspaceId?: number | null; agentRunId: string; parentNodeId?: string | null; mergeNodeId?: string | null; maxConcurrency: number; branchNodeIds: string[]; policy?: unknown; userId: number }) {
   const unique = [...new Set(input.branchNodeIds.filter(Boolean))].slice(0, 8);
   if (unique.length < 2) throw new Error("受控并行至少需要两个独立分支");
+  const { run, assessment } = await assessParallelPlanCandidate({ agentRunId: input.agentRunId, branchNodeIds: unique });
+  if (!assessment.eligible) throw new Error(`分支不满足受控并行条件：${assessment.reasons.map((reason) => reason.message).join("；")}`);
   const parallelPlanId = id("parallel_plan");
   const maxConcurrency = Math.min(Math.max(Math.floor(input.maxConcurrency || 1), 1), Math.min(4, unique.length));
+  const review = await createHarnessReviewRequest({
+    workspaceId: input.workspaceId ?? run.workspaceId ?? null,
+    agentRunId: input.agentRunId,
+    requestType: "approval_required",
+    title: `批准受控并行草稿 ${parallelPlanId}`,
+    candidateSummary: { parallelPlanId, branchNodeIds: unique, assessment, maxConcurrency, mergeNodeId: input.mergeNodeId ?? null },
+    requestedReason: "仅独立、低风险、无Tool、无共享输出的证据分支可建议并行；批准不触发执行。",
+    requestedBy: input.userId,
+  });
   await rawExecute(
     "INSERT INTO emperor_parallel_plans (parallelPlanId,workspaceId,agentRunId,parentNodeId,mergeNodeId,maxConcurrency,branchCount,policy,createdBy) VALUES (?,?,?,?,?,?,?,?,?)",
-    [parallelPlanId, input.workspaceId ?? null, input.agentRunId, input.parentNodeId ?? null, input.mergeNodeId ?? null, maxConcurrency, unique.length, encode({ ...(input.policy as Record<string, unknown> || {}), mode: "evidence_only", requireMerge: true }), input.userId],
+    [parallelPlanId, input.workspaceId ?? run.workspaceId ?? null, input.agentRunId, input.parentNodeId ?? null, input.mergeNodeId ?? null, maxConcurrency, unique.length, encode({ ...(input.policy as Record<string, unknown> || {}), ...assessment.constraints, mode: "draft_only", requireMerge: true, reviewId: review.reviewId, assessment }), input.userId],
   );
   for (const nodeId of unique) {
     await rawExecute("INSERT INTO emperor_parallel_branches (branchId,parallelPlanId,nodeId,status) VALUES (?,?,?,'pending')", [id("parallel_branch"), parallelPlanId, nodeId]);
   }
-  return { parallelPlanId, maxConcurrency, branchCount: unique.length, status: "draft" as const };
+  const traceId = await ensureAgentRunTrace({ runId: input.agentRunId, workspaceId: run.workspaceId, agentSlug: run.agentSlug, projectId: run.projectId, userId: input.userId, metadata: { controlledParallel: true } });
+  await appendRunLedgerEvent({ traceId, eventType: "parallel.draft_created", entityType: "agent_run", entityId: input.agentRunId, actorUserId: input.userId, payload: { parallelPlanId, reviewId: review.reviewId, branchNodeIds: unique, maxConcurrency, execution: "draft_only" } });
+  return { parallelPlanId, reviewId: review.reviewId, maxConcurrency, branchCount: unique.length, status: "draft" as const, assessment };
+}
+
+export async function approveParallelPlanDraft(input: { parallelPlanId: string; reviewId: string; reason: string; userId: number }) {
+  const rows = await rawExecute("SELECT * FROM emperor_parallel_plans WHERE parallelPlanId=? LIMIT 1", [input.parallelPlanId]);
+  const plan: any = rows[0];
+  if (!plan || plan.status !== "draft") throw new Error("并行计划不存在或不再处于草稿状态");
+  const policy = typeof plan.policy === "string" ? JSON.parse(plan.policy) : plan.policy || {};
+  if (policy.reviewId !== input.reviewId) throw new Error("审批请求与并行草稿不匹配");
+  await resolveHarnessReviewRequest({ reviewId: input.reviewId, status: "approved", reason: input.reason, decision: { parallelPlanId: input.parallelPlanId, execution: "approval_only_no_auto_dispatch" }, userId: input.userId, allowParallelPlanApproval: true });
+  await rawExecute("UPDATE emperor_parallel_plans SET status='approved',approvedBy=?,updatedAt=NOW() WHERE parallelPlanId=? AND status='draft'", [input.userId, input.parallelPlanId]);
+  const traceId = await ensureAgentRunTrace({ runId: plan.agentRunId, workspaceId: plan.workspaceId, userId: input.userId, metadata: { controlledParallel: true } });
+  await appendRunLedgerEvent({ traceId, eventType: "parallel.draft_approved", entityType: "agent_run", entityId: plan.agentRunId, actorUserId: input.userId, payload: { parallelPlanId: input.parallelPlanId, reviewId: input.reviewId, reason: input.reason, execution: "not_dispatched" } });
+  return { parallelPlanId: input.parallelPlanId, status: "approved" as const, dispatched: false };
 }
 
 export async function listParallelPlans(agentRunId?: string) {

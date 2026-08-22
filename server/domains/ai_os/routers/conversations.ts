@@ -18,6 +18,7 @@ import { storagePut } from "../../../storage";
 import { registerStorageObject, registerUnifiedArtifact } from "../services/artifactLifecycle";
 import { appendRunLedgerEvent, completeRunTrace, ensureRunTrace, recordContextManifest } from "../services/runLedger";
 import { compileConversationContext } from "../services/conversationContext";
+import { contextRecoveryBlock } from "../services/contextRecoveryPolicy";
 import {
   EXECUTION_LIFECYCLE_STAGES,
   appendConversationLifecycleStage,
@@ -571,8 +572,9 @@ export const emperorConversationsRouter = router({
       await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage: "recovery_rejected", payload: { recoveryId: claim.request.recoveryId, reasonCode } });
       throw new TRPCError({ code: "PRECONDITION_FAILED", message });
     };
-    if (invalidatedSources.length) {
-      return reject("context_source_invalidated", "关联上下文来源已失效；请重新编译上下文并再次人工确认后再运行");
+    const contextBlock = contextRecoveryBlock(invalidatedSources as Array<{ sourceType: string; sourceKey: string }>);
+    if (contextBlock.blocked) {
+      return reject(contextBlock.reasonCode!, contextBlock.message!);
     }
     if (Number(step.stateVersion || 0) !== input.expectedStateVersion) {
       return reject("version_conflict", "步骤状态已变化；请刷新后重新确认恢复操作");

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   Activity,
   AlertTriangle,
@@ -101,6 +102,8 @@ export default function EmperorObservability() {
   const [days, setDays] = useState(30);
   const utils = trpc.useUtils();
   const { data, isLoading, isFetching, error } = trpc.emperor.observability.dashboard.useQuery({ days });
+  const sloQuery = trpc.emperor.observability.slo.useQuery({ days });
+  const sloTrendQuery = trpc.emperor.observability.sloTrend.useQuery({ days });
   const alertsQuery = trpc.aiJobs.operationalAlerts.useQuery({ status: "open", limit: 20 });
   const snapshotMutation = trpc.emperor.observability.recordDatabaseBaselineSnapshot.useMutation({
     onSuccess: (result) => {
@@ -267,6 +270,42 @@ export default function EmperorObservability() {
             tone={Number(data?.bindingHealth?.unboundActiveJobs || 0) > 0 ? "red" : "green"}
           />
         </div>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base"><BarChart3 className="h-4 w-4" />真实评测 SLO 趋势</CardTitle>
+            <p className="text-xs text-muted-foreground">数据源：人工/系统评测记录、Skill Run 与 Agent Run。仅作提示，不会自动发布、回退或重试。</p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              {(sloQuery.data?.signals || []).map((signal: any) => {
+                const insufficient = signal.status === "insufficient_data";
+                const breached = signal.status === "breached";
+                return <div key={signal.key} className={`rounded-lg border p-3 ${breached ? "border-rose-200 bg-rose-50" : insufficient ? "border-slate-200 bg-slate-50" : "border-emerald-200 bg-emerald-50/60"}`}>
+                  <p className="text-xs text-muted-foreground">{signal.name}</p>
+                  <p className="mt-1 text-lg font-semibold">{insufficient ? "暂无样本" : `${Number(signal.observed).toFixed(1)}${signal.key.includes("rate") ? "%" : ""}`}</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">样本 {formatNumber(signal.samples)} · 目标 {signal.comparator === "gte" ? "≥" : "≤"}{signal.target}{signal.key.includes("rate") ? "%" : ""}</p>
+                </div>;
+              })}
+            </div>
+            {(sloTrendQuery.data?.points || []).length > 0 ? <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={sloTrendQuery.data?.points || []} margin={{ top: 8, right: 18, bottom: 4, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="score" domain={[0, 100]} tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="rate" orientation="right" domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
+                  <Tooltip formatter={(value: any, name: string) => [value === null ? "暂无样本" : Number(value).toFixed(1), name]} />
+                  <Legend />
+                  <Line yAxisId="score" type="monotone" dataKey="averageScore" name="评测均分" stroke="#4f46e5" strokeWidth={2} connectNulls={false} dot={false} />
+                  <Line yAxisId="rate" type="monotone" dataKey="skillFailureRate" name="Skill失败率" stroke="#dc2626" strokeWidth={2} connectNulls={false} dot={false} />
+                  <Line yAxisId="rate" type="monotone" dataKey="agentFailureRate" name="Agent失败率" stroke="#d97706" strokeWidth={2} connectNulls={false} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div> : <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">当前时间窗口暂无真实趋势样本；系统不会补造评分或曲线。</div>}
+            <p className="text-xs text-muted-foreground">人工评测来源：`emperor_ai_os_evaluations`；运行失败率来源：`emperor_skill_runs`、`emperor_agent_runs`。指标按所选时间窗口聚合。</p>
+          </CardContent>
+        </Card>
 
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <Card>

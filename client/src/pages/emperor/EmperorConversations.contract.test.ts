@@ -36,4 +36,18 @@ describe("皇帝对话任务前端治理契约", () => {
     expect(traceSource).toContain('URLSearchParams(window.location.search).get("runId")');
     expect(traceSource).toContain("setSelectedRunId(requestedRunId)");
   });
+
+  it("运行历史只对唯一可验证Trace读取Ledger投影，并将失效来源保持为人工重新确认提示", () => {
+    expect(traceSource).toContain("detail as any)?.traceId");
+    expect(traceSource).toContain("emperor.observability.runProjection.useQuery");
+    expect(traceSource).toContain("enabled: Boolean(isGovernanceAdmin && verifiedTraceId)");
+    expect(traceSource).toContain("10 秒轮询一次");
+    expect(traceSource).toContain("系统不会自动恢复；请重新编译上下文并再次人工确认");
+  });
+
+  it("SLO卡片只读取管理员受保护的真实汇总，不制造评分或自动动作", () => {
+    expect(traceSource).toContain("emperor.observability.slo.useQuery");
+    expect(traceSource).toContain("暂无样本");
+    expect(traceSource).toContain("受控运行投影与真实评测 SLO");
+  });
 });

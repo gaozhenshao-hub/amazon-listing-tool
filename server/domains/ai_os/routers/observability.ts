@@ -5,6 +5,7 @@ import { listDataLifecyclePolicies, runDataLifecycleSweep } from "../services/ar
 import {
   buildAiOsObservabilityDashboard,
   buildAiOsSloSummary,
+  buildAiOsSloTrend,
   buildDatabaseObservabilitySection,
   buildWorkerQueueHealth,
   listAiOsEvaluations,
@@ -58,6 +59,13 @@ export const emperorObservabilityRouter = router({
     .query(async ({ input }) => {
       return buildAiOsSloSummary({ days: input?.days, agentSlug: input?.agentSlug });
     }),
+
+  sloTrend: adminProcedure
+    .input(z.object({
+      days: z.number().int().min(1).max(365).optional().default(30),
+      agentSlug: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => buildAiOsSloTrend({ days: input?.days, agentSlug: input?.agentSlug })),
 
   workerHealth: adminProcedure
     .input(z.object({

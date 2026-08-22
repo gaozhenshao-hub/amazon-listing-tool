@@ -24,12 +24,14 @@ import {
 import {
   createHarnessReviewRequest,
   createParallelPlan,
+  approveParallelPlanDraft,
   listExecutionPresets,
   listHarnessReviewRequests,
   listParallelPlans,
   recordHarnessFeedback,
   resolveHarnessReviewRequest,
   seedExecutionPresets,
+  previewParallelPlan,
 } from "../services/harnessCompletion";
 import { prepareSkillRunRecovery } from "../services/directRunRecovery";
 
@@ -204,6 +206,10 @@ export const emperorSkillsRouter = router({
     .input(z.object({ agentRunId: z.string().optional() }).optional())
     .query(({ input }) => listParallelPlans(input?.agentRunId)),
 
+  previewParallelPlan: adminProcedure
+    .input(z.object({ agentRunId: z.string().min(1), branchNodeIds: z.array(z.string().min(1)).min(2).max(8) }))
+    .query(({ input }) => previewParallelPlan(input)),
+
   createParallelPlan: adminProcedure
     .input(z.object({
       agentRunId: z.string().min(1), parentNodeId: z.string().nullable().optional(), mergeNodeId: z.string().nullable().optional(),
@@ -212,6 +218,10 @@ export const emperorSkillsRouter = router({
     .mutation(({ ctx, input }) => createParallelPlan({
       ...input, workspaceId: (ctx.user as any).defaultWorkspaceId ?? null, userId: ctx.user.id,
     })),
+
+  approveParallelPlanDraft: adminProcedure
+    .input(z.object({ parallelPlanId: z.string().min(1), reviewId: z.string().min(1), reason: z.string().min(2).max(4000) }))
+    .mutation(({ ctx, input }) => approveParallelPlanDraft({ ...input, userId: ctx.user.id })),
 
   get: protectedProcedure
     .input(z.object({ slug: z.string() }))

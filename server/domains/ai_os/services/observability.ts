@@ -999,3 +999,57 @@ export async function buildAiOsSloSummary(input: { days?: number; agentSlug?: st
   ];
   return { window: dashboard.window, signals, source: "emperor_ai_os_evaluations+runtime_tables", generatedAt: new Date().toISOString() };
 }
+
+export async function buildAiOsSloTrend(input: { days?: number; agentSlug?: string } = {}) {
+  const days = boundedDays(input.days);
+  const agentFilter = input.agentSlug ? " AND agentSlug=?" : "";
+  const agentParams = input.agentSlug ? [days, input.agentSlug] : [days];
+  const [evaluationRows, skillRows, agentRows] = await Promise.all([
+    queryRows(
+      `SELECT DATE(createdAt) AS day,COUNT(*) AS samples,AVG(score) AS averageScore
+       FROM emperor_ai_os_evaluations
+       WHERE createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)${agentFilter}
+       GROUP BY DATE(createdAt) ORDER BY day ASC`,
+      agentParams,
+    ),
+    queryRows(
+      `SELECT DATE(createdAt) AS day,COUNT(*) AS totalRuns,SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failedRuns
+       FROM emperor_skill_runs WHERE createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)
+       GROUP BY DATE(createdAt) ORDER BY day ASC`,
+      [days],
+    ),
+    queryRows(
+      `SELECT DATE(createdAt) AS day,COUNT(*) AS totalRuns,SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failedRuns
+       FROM emperor_agent_runs WHERE createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)${agentFilter}
+       GROUP BY DATE(createdAt) ORDER BY day ASC`,
+      agentParams,
+    ),
+  ]);
+  const points = new Map<string, any>();
+  const pointFor = (day: unknown) => {
+    const key = String(day);
+    if (!points.has(key)) points.set(key, { day: key, evaluationSamples: 0, averageScore: null, skillRuns: 0, skillFailureRate: null, agentRuns: 0, agentFailureRate: null });
+    return points.get(key);
+  };
+  for (const row of evaluationRows) {
+    const point = pointFor(row.day);
+    point.evaluationSamples = numeric(row.samples);
+    point.averageScore = Math.round(numeric(row.averageScore) * 100) / 100;
+  }
+  for (const row of skillRows) {
+    const point = pointFor(row.day);
+    point.skillRuns = numeric(row.totalRuns);
+    point.skillFailureRate = point.skillRuns ? percentage(numeric(row.failedRuns), point.skillRuns) : null;
+  }
+  for (const row of agentRows) {
+    const point = pointFor(row.day);
+    point.agentRuns = numeric(row.totalRuns);
+    point.agentFailureRate = point.agentRuns ? percentage(numeric(row.failedRuns), point.agentRuns) : null;
+  }
+  return {
+    window: { days, agentSlug: input.agentSlug || null },
+    points: Array.from(points.values()).sort((left, right) => left.day.localeCompare(right.day)),
+    source: "emperor_ai_os_evaluations+emperor_skill_runs+emperor_agent_runs",
+    generatedAt: new Date().toISOString(),
+  };
+}
