@@ -41,7 +41,11 @@ export default function OpsLingxingSync() {
     onSuccess: (result) => {
       setBatchId(result.batchId);
       setEdits({});
-      toast.success("已生成领星同步预览", { description: `读取 ${result.totalRows} 行；请核对并确认，确认前不会写入业务数据。` });
+      if (result.totalRows === 0) {
+        toast.info("该范围没有可同步数据", { description: "已保留空结果审计批次。请更换有数据的店铺、实际业务周期或广告Profile ID后重新读取。" });
+      } else {
+        toast.success("已生成领星同步预览", { description: `读取 ${result.totalRows} 行；请核对并确认，确认前不会写入业务数据。` });
+      }
       void historyQuery.refetch();
     },
     onError: (error) => toast.error("领星读取失败", { description: error.message }),

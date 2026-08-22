@@ -121,6 +121,7 @@ function asNumber(input: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 function todayIso() { return new Date().toISOString().slice(0, 10); }
+export function previewBatchStatusFor(sourceRowCount: number) { return sourceRowCount > 0 ? "ready_for_review" : "empty"; }
 
 export function normalizeRow(domain: z.infer<typeof domainSchema>, source: RecordValue, scope: z.infer<typeof scopeSchema>) {
   const asin = value(source, ["asin", "child_asin", "childAsin", "子ASIN"]);
@@ -220,7 +221,7 @@ export const lingxingSyncRouter = router({
     const rawSnapshot = normalizeMcpPayload(execution.output);
     const sourceRows = pickRecords(rawSnapshot).slice(0, 500);
     const summary = { totalRead: sourceRows.length, selected: sourceRows.length, needsReview: 0, unmatched: 0 };
-    const [created] = await db.insert(opsExternalSyncBatches).values({ workspaceId, userId: ctx.user.id, source: "lingxing_mcp", dataDomain: input.dataDomain, status: "ready_for_review", scope: input.scope, toolRunId: execution.metadata.toolRunId, traceId: runId, rawResponseHash: createHash("sha256").update(JSON.stringify(rawSnapshot)).digest("hex"), rawSnapshot: rawSnapshot as any, summary }).$returningId();
+    const [created] = await db.insert(opsExternalSyncBatches).values({ workspaceId, userId: ctx.user.id, source: "lingxing_mcp", dataDomain: input.dataDomain, status: previewBatchStatusFor(sourceRows.length), scope: input.scope, toolRunId: execution.metadata.toolRunId, traceId: runId, rawResponseHash: createHash("sha256").update(JSON.stringify(rawSnapshot)).digest("hex"), rawSnapshot: rawSnapshot as any, summary }).$returningId();
     const batchId = created.id;
     const stagedRows = sourceRows.map((source) => ({ source, normalized: normalizeRow(input.dataDomain, source, input.scope) }));
     const periodStart = input.scope.startDate || todayIso();

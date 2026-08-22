@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMcpArguments, calculateFieldDiffs, normalizeMcpPayload, normalizeRow, pickRecords } from "./routers/lingxingSync";
+import { buildMcpArguments, calculateFieldDiffs, normalizeMcpPayload, normalizeRow, pickRecords, previewBatchStatusFor } from "./routers/lingxingSync";
 
 describe("领星运营同步预览契约", () => {
   it("产品表现使用官方sids范围且保留人工选择的周期", () => {
@@ -63,5 +63,10 @@ describe("领星运营同步预览契约", () => {
 
   it("仅将实际变化字段列为差异，供人工确认新增或更新", () => {
     expect(calculateFieldDiffs({ salesQty: 3, sku: "A" }, { salesQty: 5, sku: "A" }, ["salesQty", "sku"])).toEqual([{ field: "salesQty", before: 3, after: 5 }]);
+  });
+
+  it("官方读取零行时只保留empty审计批次，不进入人工确认", () => {
+    expect(previewBatchStatusFor(0)).toBe("empty");
+    expect(previewBatchStatusFor(1)).toBe("ready_for_review");
   });
 });
