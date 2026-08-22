@@ -1,6 +1,7 @@
 import { TRPCError, recordAiOsMetric, EmperorToolDefinition, EmperorToolInvocationInput, EmperorToolInvocationResult, EmperorToolNormalizedOutput, toRecord, buildUrl, generateToolRunId, sanitizeForAudit, serializeToolError, boundedToolAttempts, assertNoPlaintextSecrets, resolveSecretRefs, publicSecretRefs, assertToolPermission, assertToolRateLimit, incrementToolInFlight, buildToolGovernanceDecision, getToolCircuitState, assertToolCircuitClosed, recordToolCircuitSuccess, recordToolCircuitFailure, assertToolSchema, inferRequestUrl, inferToolRisk, assertHttpPolicy, createToolRunRecord, finishToolRunRecord, isPolicyBlock, classifyToolFailure, normalizeToolOutput, parseArrayConfig, captureInput, mergeOutputs, composeListingPreview, queryKnowledge } from "./governanceCore";
 import { getToolDefinition } from "./registry";
 import { safeHttpRequest } from "../../../../infrastructure/http/safeHttpClient";
+import { appendRunLedgerEvent } from "../runLedger";
 type ToolExecutorContext = {
   tool: EmperorToolDefinition & { source: "builtin" | "emperor_tools" | "mcp_connector" };
   params: unknown;
@@ -158,6 +159,8 @@ async function invokeHttpTool(tool: EmperorToolDefinition, params: unknown, reso
 }
 
 async function invokeMcpHttpTool(tool: EmperorToolDefinition, params: unknown, resolvedSecretRefs: string[] = [], workspaceId?: number | null): Promise<ToolExecutorResult> {
+  assertNoPlaintextSecrets(tool.config, "tool.config");
+  assertNoPlaintextSecrets(params, "tool.params");
   const config = toRecord(await resolveSecretRefs(tool.config, resolvedSecretRefs, 0, workspaceId ?? tool.workspaceId ?? null));
   const connectorConfig = toRecord(config.connectorConfig || config);
   const request = toRecord(await resolveSecretRefs(params, resolvedSecretRefs, 0, workspaceId ?? tool.workspaceId ?? null));
@@ -165,35 +168,48 @@ async function invokeMcpHttpTool(tool: EmperorToolDefinition, params: unknown, r
   if (!baseUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "MCP HTTP executor requires mcpEndpoint or baseUrl" });
   const method = String(request.method || "tools/call");
   const toolName = String(request.toolName || request.capability || connectorConfig.toolName || "");
+  if (!toolName && method === "tools/call") throw new TRPCError({ code: "BAD_REQUEST", message: "MCP tool call requires toolName or capability" });
+  const isDiscoveryRequest = method === "tools/list" && connectorConfig.allowToolDiscovery === true;
+  const allowedTools = parseArrayConfig(connectorConfig.allowedTools || connectorConfig.allowedToolNames);
+  if (!isDiscoveryRequest && allowedTools.length > 0 && !allowedTools.includes(toolName)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: `MCP tool ${toolName || "(empty)"} is not on this connector's read-only allowlist` });
+  }
+  const scopeExemptTools = parseArrayConfig(connectorConfig.scopeExemptTools);
+  if (!isDiscoveryRequest && connectorConfig.requireShopScope === true && !scopeExemptTools.includes(toolName)) {
+    const argumentsRecord = toRecord(request.arguments || request.params || request.payload || {});
+    const scopeKeys = parseArrayConfig(connectorConfig.shopScopeKeys).length > 0 ? parseArrayConfig(connectorConfig.shopScopeKeys) : ["shop_id", "shopId", "sid", "sids", "profile_id", "profileId", "profile_ids"];
+    if (!scopeKeys.some((key) => { const value = argumentsRecord[key]; return value !== undefined && value !== null && String(value).trim().length > 0; })) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: `MCP tool ${toolName} requires at least one shop scope parameter: ${scopeKeys.join(", ")}` });
+    }
+  }
   const url = new URL(baseUrl);
   const headers = mergeToolHeaders(
-    { "content-type": "application/json" },
+    { "content-type": "application/json", accept: "application/json, text/event-stream" },
     connectorConfig.headers,
     request.headers,
   ) as Record<string, string>;
   applyToolAuth({ url, headers, config: connectorConfig, request });
-  assertHttpPolicy({ ...tool, type: "api", config: connectorConfig }, url, "POST", Number(request.timeoutMs || connectorConfig.timeoutMs || 30000));
-  const rpcPayload = {
-    jsonrpc: "2.0",
-    id: request.id || generateToolRunId("mcp_rpc"),
-    method,
-    params: {
-      name: toolName,
-      arguments: request.arguments || request.params || request.payload || {},
-    },
-  };
   const timeoutMs = Number(request.timeoutMs || connectorConfig.timeoutMs || 30000);
+  assertHttpPolicy({ ...tool, type: "api", config: connectorConfig }, url, "POST", timeoutMs);
+  const requestOptions = { timeoutMs, maxRedirects: Number(connectorConfig.maxRedirects ?? 3), maxResponseBytes: Number(connectorConfig.maxResponseBytes ?? 5 * 1024 * 1024), allowedHosts: parseArrayConfig(connectorConfig.allowedHosts), allowedHostSuffixes: parseArrayConfig(connectorConfig.allowedHostSuffixes), allowPrivateNetwork: connectorConfig.allowPrivateNetwork === true, auditContext: { workspaceId: workspaceId ?? tool.workspaceId ?? null, toolSlug: tool.slug, operation: "tool.mcp_http" } };
+  if (connectorConfig.initializeBeforeCall === true && method !== "initialize") {
+    const initializeResponse = await safeHttpRequest(url, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: generateToolRunId("mcp_initialize"), method: "initialize", params: { protocolVersion: String(connectorConfig.protocolVersion || "2025-03-26"), capabilities: {}, clientInfo: { name: "amazon-listing-tool", version: "1.0" } } }), ...requestOptions });
+    const initializePayload = initializeResponse.headers["content-type"]?.includes("application/json") ? initializeResponse.json() : initializeResponse.text();
+    if (!initializeResponse.ok || toRecord(initializePayload).error) throw new TRPCError({ code: "BAD_REQUEST", message: "MCP initialize failed", cause: initializePayload });
+    const sessionId = initializeResponse.headers["mcp-session-id"];
+    if (sessionId) {
+      headers["mcp-session-id"] = sessionId;
+      await safeHttpRequest(url, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }), ...requestOptions });
+    }
+  }
+  const rpcPayload = method === "tools/call"
+    ? { jsonrpc: "2.0", id: request.id || generateToolRunId("mcp_rpc"), method, params: { name: toolName, arguments: request.arguments || request.params || request.payload || {} } }
+    : { jsonrpc: "2.0", id: request.id || generateToolRunId("mcp_rpc"), method, params: request.params || request.payload || {} };
   const response = await safeHttpRequest(url, {
     method: "POST",
     headers,
     body: JSON.stringify(request.rpcPayload || rpcPayload),
-    timeoutMs,
-    maxRedirects: Number(connectorConfig.maxRedirects ?? 3),
-    maxResponseBytes: Number(connectorConfig.maxResponseBytes ?? 5 * 1024 * 1024),
-    allowedHosts: parseArrayConfig(connectorConfig.allowedHosts),
-    allowedHostSuffixes: parseArrayConfig(connectorConfig.allowedHostSuffixes),
-    allowPrivateNetwork: connectorConfig.allowPrivateNetwork === true,
-    auditContext: { workspaceId: workspaceId ?? tool.workspaceId ?? null, toolSlug: tool.slug, operation: "tool.mcp_http" },
+    ...requestOptions,
   });
   const contentType = response.headers["content-type"] || "";
   const payload = contentType.includes("application/json") ? response.json() : response.text();
@@ -283,6 +299,27 @@ async function invokeInternalTool(slug: string, params: unknown, resolvedSecretR
         type: "api",
         config: {},
       }, params, resolvedSecretRefs, workspaceId);
+    case "internal.lingxing.read":
+      return invokeMcpHttpTool({
+        slug,
+        name: "领星官方MCP只读数据源",
+        type: "mcp",
+        config: {
+          mcpEndpoint: process.env.LINGXING_MCP_ENDPOINT || "https://openmcp.lingxing.com/mcp-servers/lingxing-mcp",
+          headers: { "X-Mcp-Key": "env:LINGXING_MCP_KEY" },
+          allowedHosts: ["openmcp.lingxing.com"],
+          timeoutMs: 30_000,
+          maxResponseBytes: 2 * 1024 * 1024,
+          rateLimitPolicy: { scope: "tool", perSecond: 1, perMinute: 60, concurrency: 1 },
+          initializeBeforeCall: true,
+          protocolVersion: "2025-03-26",
+          allowToolDiscovery: true,
+          requireShopScope: true,
+          shopScopeKeys: ["shop_id", "shopId", "sid", "sids", "profile_id", "profileId", "profile_ids"],
+          scopeExemptTools: ["get_my_sids"],
+          allowedTools: ["query_product_performance_asin_lists", "get_fba_stock_list", "query_order_profit_list", "get_my_sids", "erp_listing", "query_erp_keyword_ranking_keyword", "ad_campaign_report", "ad_campaign_keyword_report"],
+        },
+      }, params, resolvedSecretRefs, workspaceId);
     default:
       throw new TRPCError({ code: "BAD_REQUEST", message: `Unsupported internal tool: ${slug}` });
   }
@@ -324,6 +361,7 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
   const startedAt = Date.now();
   const tool = await getToolDefinition(input.toolSlug, input.workspaceId ?? null);
   const toolRunId = generateToolRunId();
+  const isLingxingOfficialRead = tool.slug === "internal.lingxing.read" || tool.slug === "mcp.lingxing-mcp";
   const riskLevel = inferToolRisk(tool, input.params);
   const publicRefs = [
     ...publicSecretRefs(tool.secretRefs),
@@ -348,6 +386,12 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
     requestHost: requestUrl?.hostname || null,
     governanceDecision,
   });
+  if (input.runId) {
+    await appendRunLedgerEvent({ traceId: input.runId, eventType: "tool.started", entityType: "tool_run", entityId: toolRunId, nodeId: input.nodeId || null, toolSlug: tool.slug, actorUserId: input.userId, payload: { type: tool.type, riskLevel, governanceDecision } }).catch(() => null);
+    if (isLingxingOfficialRead) {
+      await appendRunLedgerEvent({ traceId: input.runId, eventType: "tool.lingxing_mcp.start", entityType: "tool_run", entityId: toolRunId, nodeId: input.nodeId || null, toolSlug: tool.slug, actorUserId: input.userId, payload: { riskLevel, governanceDecision } }).catch(() => null);
+    }
+  }
 
   let output: unknown;
   let normalizedOutput: EmperorToolNormalizedOutput | null = null;
@@ -411,6 +455,9 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
       durationMs: Date.now() - startedAt,
       httpStatus: status,
     });
+    if (input.runId && isLingxingOfficialRead) {
+      await appendRunLedgerEvent({ traceId: input.runId, eventType: "tool.lingxing_mcp.success", entityType: "tool_run", entityId: toolRunId, nodeId: input.nodeId || null, toolSlug: tool.slug, actorUserId: input.userId, payload: { httpStatus: status, durationMs: Date.now() - startedAt, requestHost } }).catch(() => null);
+    }
     void recordAiOsMetric({
       entityType: "tool",
       entityId: toolRunId,
@@ -460,6 +507,9 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
       durationMs: Date.now() - startedAt,
       httpStatus: status,
     });
+    if (input.runId && isLingxingOfficialRead) {
+      await appendRunLedgerEvent({ traceId: input.runId, eventType: "tool.lingxing_mcp.failed", entityType: "tool_run", entityId: toolRunId, nodeId: input.nodeId || null, toolSlug: tool.slug, actorUserId: input.userId, payload: { httpStatus: status, durationMs: Date.now() - startedAt, requestHost, failureKind: classified.kind, error: serializeToolError(error) } }).catch(() => null);
+    }
     void recordAiOsMetric({
       entityType: "tool",
       entityId: toolRunId,

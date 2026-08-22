@@ -88,6 +88,7 @@ const OpsTaskManagement = lazy(() => import("./pages/ops/OpsTaskManagement"));
 const OpsDataImport = lazy(() => import("./pages/ops/OpsDataImport"));
 const OpsAdMapping = lazy(() => import("./pages/ops/OpsAdMapping"));
 const OpsAdDeep = lazy(() => import("./pages/ops/OpsAdDeep"));
+const OpsLingxingSync = lazy(() => import("./pages/ops/OpsLingxingSync"));
 
 // ─── Module 4: After-sales Management ──────────────────────────
 const ComingSoonPage = lazy(() => import("./pages/ComingSoonPage"));
@@ -228,6 +229,7 @@ function Router() {
         <Route path="/ops/dashboard-upgrade">{() => <PermissionGuard><OpsDashboardUpgrade /></PermissionGuard>}</Route>
         <Route path="/ops/custom-dashboard">{() => <PermissionGuard><OpsCustomDashboard /></PermissionGuard>}</Route>
         <Route path="/ops/data-import">{() => <PermissionGuard><OpsDataImport /></PermissionGuard>}</Route>
+        <Route path="/ops/lingxing-sync">{() => <PermissionGuard><OpsLingxingSync /></PermissionGuard>}</Route>
         <Route path="/ops/ad-mapping">{() => <PermissionGuard><OpsAdMapping /></PermissionGuard>}</Route>
         <Route path="/ops/ad-deep">{() => <PermissionGuard><OpsAdDeep /></PermissionGuard>}</Route>
         <Route path="/ops/tasks">{() => <PermissionGuard><OpsTaskManagement /></PermissionGuard>}</Route>

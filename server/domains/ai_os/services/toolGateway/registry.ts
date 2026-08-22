@@ -35,6 +35,18 @@ const BUILTIN_TOOLS: EmperorToolDefinition[] = [
     type: "internal",
     config: { handler: "http_request" },
   },
+  {
+    slug: "internal.lingxing.read",
+    name: "领星官方MCP只读数据源",
+    description: "仅通过领星官方MCP读取产品表现、FBA库存、订单利润、Listing、关键词与广告报表；强制店铺范围并拒绝写入、资金或提交操作。",
+    type: "internal",
+    config: {
+      handler: "lingxing_read",
+      capability: "read_only",
+      rateLimitPolicy: { scope: "tool", perSecond: 1, perMinute: 60, concurrency: 1 },
+      governancePolicy: { readOnly: true, requireShopScope: true },
+    },
+  },
 ];
 
 function builtinBySlug(slug: string) {

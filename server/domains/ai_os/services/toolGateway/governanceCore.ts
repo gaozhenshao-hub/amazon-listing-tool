@@ -409,6 +409,7 @@ function rateLimitScopeKey(tool: EmperorToolDefinition, invocation: EmperorToolI
 function assertToolRateLimit(tool: EmperorToolDefinition, invocation: EmperorToolInvocationInput) {
   const config = toRecord(tool.config);
   const policy = toolRateLimitPolicy(tool);
+  const secondLimit = Number(policy.perSecond || config.rateLimitPerSecond || 0);
   const limit = Number(policy.perMinute || config.rateLimitPerMinute || config.maxCallsPerMinute || 0);
   const hourLimit = Number(policy.perHour || config.rateLimitPerHour || config.maxCallsPerHour || 0);
   const concurrencyLimit = Number(policy.concurrency || config.concurrency || 0);
@@ -421,6 +422,9 @@ function assertToolRateLimit(tool: EmperorToolDefinition, invocation: EmperorToo
   }
   if (Number.isFinite(hourLimit) && hourLimit > 0) {
     assertWindowLimit(tool.slug, key, "hour", hourLimit, 3_600_000);
+  }
+  if (Number.isFinite(secondLimit) && secondLimit > 0) {
+    assertWindowLimit(tool.slug, key, "second", secondLimit, 1_000);
   }
   if (!Number.isFinite(limit) || limit <= 0) return;
   assertWindowLimit(tool.slug, key, "minute", limit, 60_000);

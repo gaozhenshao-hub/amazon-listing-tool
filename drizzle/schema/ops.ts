@@ -47,6 +47,65 @@ export const lingxingApiLogs = mysqlTable("lingxing_api_logs", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+// 官方MCP读取先保存为独立草稿批次；人工确认前绝不更新产品、库存或广告业务表。
+export const opsExternalSyncBatches = mysqlTable("ops_external_sync_batches", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  source: varchar("source", { length: 32 }).notNull(),
+  dataDomain: varchar("data_domain", { length: 48 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("draft"),
+  scope: json("scope").notNull(),
+  toolRunId: varchar("tool_run_id", { length: 128 }),
+  traceId: varchar("trace_id", { length: 128 }),
+  rawResponseHash: varchar("raw_response_hash", { length: 64 }),
+  rawSnapshot: json("raw_snapshot"),
+  normalizationVersion: varchar("normalization_version", { length: 32 }).notNull().default("v1"),
+  summary: json("summary"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewedBy: int("reviewed_by"),
+  appliedAt: timestamp("applied_at"),
+  appliedBy: int("applied_by"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_ops_external_sync_batches_workspace_status").on(table.workspaceId, table.status, table.createdAt),
+  index("idx_ops_external_sync_batches_domain").on(table.workspaceId, table.dataDomain, table.createdAt),
+]);
+
+export const opsExternalSyncRows = mysqlTable("ops_external_sync_rows", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  batchId: int("batch_id").notNull(),
+  entityKey: varchar("entity_key", { length: 512 }).notNull(),
+  rowStatus: varchar("row_status", { length: 32 }).notNull().default("needs_review"),
+  selected: int("selected").notNull().default(1),
+  sourceData: json("source_data").notNull(),
+  normalizedData: json("normalized_data").notNull(),
+  fieldDiffs: json("field_diffs"),
+  matchInfo: json("match_info"),
+  targetReference: json("target_reference"),
+  validationErrors: json("validation_errors"),
+  appliedAt: timestamp("applied_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_ops_external_sync_rows_batch").on(table.batchId, table.rowStatus),
+  index("idx_ops_external_sync_rows_entity").on(table.workspaceId, table.entityKey),
+]);
+
+export const opsExternalSyncConfirmations = mysqlTable("ops_external_sync_confirmations", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  batchId: int("batch_id").notNull(),
+  userId: int("user_id").notNull(),
+  action: varchar("action", { length: 32 }).notNull(),
+  selectedRowIds: json("selected_row_ids"),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [index("idx_ops_external_sync_confirmations_batch").on(table.batchId, table.createdAt)]);
+
 // Inventory configuration (per-SKU replenishment params)
 export const inventoryConfig = mysqlTable("inventory_config", {
   workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),

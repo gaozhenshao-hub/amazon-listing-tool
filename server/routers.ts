@@ -80,6 +80,7 @@ import { videoScriptRouter } from "./routers/videoScript";
 import { taskManagementRouter } from "./routers/taskManagement";
 // Data Import Center
 import { dataImportRouter } from "./routers/dataImport";
+import { lingxingSyncRouter } from "./routers/lingxingSync";
 import { operatorMappingRouter } from "./routers/operatorMapping";
 // Ad Keyword Tracking
 import { adTrackingRouter } from "./routers/adTracking";
@@ -184,6 +185,7 @@ export const appRouter = router({
   videoScript: videoScriptRouter,
   // Data Import Center
   dataImport: dataImportRouter,
+  lingxingSync: lingxingSyncRouter,
   operatorMapping: operatorMappingRouter,
   // Ad Keyword Tracking
   adTracking: adTrackingRouter,
