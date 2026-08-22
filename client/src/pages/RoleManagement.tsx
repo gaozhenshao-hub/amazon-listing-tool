@@ -19,12 +19,14 @@ import {
   Shield, ShieldAlert, ShieldCheck, Edit3, Save, Loader2, ChevronDown, ChevronRight,
   Package, FileText, TrendingUp, Headphones, BookOpen, Users,
   Eye, Pencil, Trash2, XCircle, Network, Route, Layers3, UserRoundCheck, AlertTriangle,
+  Globe2, Bot, DatabaseZap,
   type LucideIcon,
 } from "lucide-react";
 
 const MODULE_ICONS: Record<string, LucideIcon> = {
   dev: Package, listing: FileText, ops: TrendingUp,
   service: Headphones, knowledge: BookOpen, admin: Users,
+  offsite: Globe2, emperor: Bot,
 };
 
 const MODULE_COLORS: Record<string, string> = {
@@ -34,6 +36,8 @@ const MODULE_COLORS: Record<string, string> = {
   service: "bg-purple-100 text-purple-700",
   knowledge: "bg-amber-100 text-amber-700",
   admin: "bg-red-100 text-red-700",
+  offsite: "bg-cyan-100 text-cyan-700",
+  emperor: "bg-indigo-100 text-indigo-700",
 };
 
 const OP_ICONS: Record<string, LucideIcon> = { read: Eye, edit: Pencil, delete: Trash2 };
@@ -50,18 +54,27 @@ export default function RoleManagement() {
   const { data: roles, isLoading } = trpc.roleManagement.list.useQuery();
   const { data: modules } = trpc.roleManagement.modules.useQuery();
   const usersQuery = trpc.userManagement.list.useQuery();
+  const governanceQuery = trpc.roleManagement.governanceSnapshot.useQuery();
   const [editingRole, setEditingRole] = useState<string | null>(null);
   const [editModules, setEditModules] = useState<string[]>([]);
   const [editDescription, setEditDescription] = useState("");
   const [editDetailedPerms, setEditDetailedPerms] = useState<ModulePerm[]>([]);
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
+  const [changePreview, setChangePreview] = useState<any | null>(null);
 
   const updateMutation = trpc.roleManagement.update.useMutation({
     onSuccess: () => {
       toast.success("角色权限已更新");
       utils.roleManagement.list.invalidate();
+      utils.roleManagement.governanceSnapshot.invalidate();
       setEditingRole(null);
+      setChangePreview(null);
     },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const previewMutation = trpc.roleManagement.previewUpdate.useMutation({
+    onSuccess: (preview) => setChangePreview(preview),
     onError: (err) => toast.error(err.message),
   });
 
@@ -81,9 +94,11 @@ export default function RoleManagement() {
       })));
     }
     setExpandedModules(new Set());
+    setChangePreview(null);
   }, []);
 
   const handleToggleModule = useCallback((moduleId: string) => {
+    setChangePreview(null);
     setEditModules(prev => {
       const next = prev.includes(moduleId)
         ? prev.filter(m => m !== moduleId)
@@ -103,6 +118,7 @@ export default function RoleManagement() {
   }, []);
 
   const handleToggleModuleOp = useCallback((moduleId: string, op: string) => {
+    setChangePreview(null);
     setEditDetailedPerms(prev => prev.map(p => {
       if (p.moduleId !== moduleId) return p;
       const ops = p.operations.includes(op)
@@ -113,6 +129,7 @@ export default function RoleManagement() {
   }, []);
 
   const handleToggleSubModuleOp = useCallback((moduleId: string, subModuleId: string, op: string) => {
+    setChangePreview(null);
     setEditDetailedPerms(prev => prev.map(p => {
       if (p.moduleId !== moduleId) return p;
       const subs = p.subModules || [];
@@ -155,6 +172,7 @@ export default function RoleManagement() {
     })));
     // Expand all modules to show the result
     setExpandedModules(new Set(allModuleIds));
+    setChangePreview(null);
     toast.success("已授予所有模块及子模块的全部权限");
   }, [modules]);
 
@@ -162,17 +180,30 @@ export default function RoleManagement() {
     setEditModules([]);
     setEditDetailedPerms([]);
     setExpandedModules(new Set());
+    setChangePreview(null);
     toast.info("已清除所有模块权限");
   }, []);
 
+  const buildEditPayload = () => ({
+    role: editingRole || "",
+    modules: editModules,
+    description: editDescription || undefined,
+    detailedPermissions: editDetailedPerms as any,
+  });
+
+  const handlePreview = () => {
+    if (!editingRole) return;
+    previewMutation.mutate(buildEditPayload());
+  };
+
   const handleSave = () => {
     if (!editingRole) return;
-    updateMutation.mutate({
-      role: editingRole,
-      modules: editModules,
-      description: editDescription || undefined,
-      detailedPermissions: editDetailedPerms as any,
-    });
+    if (!changePreview) {
+      toast.info("请先查看变更影响与风险提示");
+      handlePreview();
+      return;
+    }
+    updateMutation.mutate(buildEditPayload());
   };
 
   const stats = useMemo(() => {
@@ -287,6 +318,8 @@ export default function RoleManagement() {
         <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl bg-muted/60 p-1">
           <TabsTrigger value="overview" className="gap-1.5"><ShieldCheck className="h-3.5 w-3.5" />权限总览</TabsTrigger>
           <TabsTrigger value="roles" className="gap-1.5"><Users className="h-3.5 w-3.5" />角色模板</TabsTrigger>
+          <TabsTrigger value="members" className="gap-1.5"><UserRoundCheck className="h-3.5 w-3.5" />成员影响</TabsTrigger>
+          <TabsTrigger value="resources" className="gap-1.5"><DatabaseZap className="h-3.5 w-3.5" />资源动作字典</TabsTrigger>
           <TabsTrigger value="catalog" className="gap-1.5"><Route className="h-3.5 w-3.5" />权限目录</TabsTrigger>
         </TabsList>
 
@@ -340,6 +373,67 @@ export default function RoleManagement() {
                 </Badge>
               ))}
               {!usersQuery.isLoading && !(usersQuery.data || []).length && <span className="text-sm text-muted-foreground">暂无成员数据</span>}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="members" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">成员与角色影响</CardTitle>
+              <CardDescription>所有成员属于同一公司默认工作空间。此视图只解释角色模板变更影响；成员角色调整仍由用户管理页面执行。</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {(governanceQuery.data?.roleMembers || []).map((item) => (
+                  <div key={item.role} className="rounded-xl border bg-muted/20 p-3">
+                    <p className="text-sm font-medium">{roles?.find(role => role.role === item.role)?.label || item.role}</p>
+                    <p className="mt-1 text-2xl font-semibold">{item.activeMemberCount}</p>
+                    <p className="text-xs text-muted-foreground">活跃成员 · 停用 {item.inactiveMemberCount}</p>
+                  </div>
+                ))}
+              </div>
+              <Table>
+                <TableHeader><TableRow><TableHead>成员</TableHead><TableHead>角色</TableHead><TableHead>部门/职务</TableHead><TableHead>状态</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {(governanceQuery.data?.members || []).map((member) => (
+                    <TableRow key={member.id}>
+                      <TableCell className="font-medium">{member.name || `成员 ${member.id}`}</TableCell>
+                      <TableCell>{roles?.find(role => role.role === member.role)?.label || member.role}</TableCell>
+                      <TableCell className="text-muted-foreground">{[member.department, member.jobTitle].filter(Boolean).join(" / ") || "—"}</TableCell>
+                      <TableCell><Badge variant={member.status === "active" ? "secondary" : "outline"}>{member.status === "active" ? "启用" : "停用"}</Badge></TableCell>
+                    </TableRow>
+                  ))}
+                  {!governanceQuery.isLoading && !(governanceQuery.data?.members || []).length && <TableRow><TableCell colSpan={4} className="py-8 text-center text-muted-foreground">暂无成员数据</TableCell></TableRow>}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="resources" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">服务端资源授权字典</CardTitle>
+              <CardDescription>后端资源动作会收敛为读、编辑或删除操作；此表仅解释授权语义，不展示密钥或业务对象。</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader><TableRow><TableHead>资源</TableHead><TableHead>所属模块</TableHead><TableHead>二级模块</TableHead><TableHead>动作映射</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {(governanceQuery.data?.resources || []).map((resource) => {
+                    const mappedActions = Object.entries(governanceQuery.data?.actionOperationMap || {}).reduce<Record<string, string[]>>((acc, [action, operation]) => {
+                      (acc[operation] ||= []).push(action); return acc;
+                    }, {});
+                    return <TableRow key={resource.resource}>
+                      <TableCell className="font-mono text-xs">{resource.resource}</TableCell>
+                      <TableCell>{modules?.find(module => module.id === resource.moduleId)?.label || resource.moduleId}</TableCell>
+                      <TableCell className="text-muted-foreground">{modules?.find(module => module.id === resource.moduleId)?.subModules?.find(sub => sub.id === resource.subModuleId)?.label || "模块级"}</TableCell>
+                      <TableCell><div className="flex flex-wrap gap-1">{Object.entries(mappedActions).map(([operation, actions]) => <Badge key={operation} variant="outline" className="text-xs">{OP_LABELS[operation]}：{actions.join("、")}</Badge>)}</div></TableCell>
+                    </TableRow>;
+                  })}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </TabsContent>
@@ -450,7 +544,12 @@ export default function RoleManagement() {
           <CardDescription>每个一级模块下包含多个二级子模块，可分别控制权限</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="mb-4 flex flex-wrap gap-2 text-xs">
+              <Badge variant="secondary">已强制 {(governanceQuery.data?.routes || []).filter(route => route.enforcement === "enforced").length} 条</Badge>
+              <Badge variant="outline">目录观察 {(governanceQuery.data?.routes || []).filter(route => route.enforcement === "catalog_only").length} 条</Badge>
+              <span className="self-center text-muted-foreground">目录观察态不会改变当前成员访问结果。</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {(modules || []).map(mod => {
               const Icon = MODULE_ICONS[mod.id] || Package;
               return (
@@ -497,9 +596,26 @@ export default function RoleManagement() {
               <Label>角色描述</Label>
               <Input
                 value={editDescription}
-                onChange={e => setEditDescription(e.target.value)}
+                onChange={e => { setEditDescription(e.target.value); setChangePreview(null); }}
                 placeholder="输入角色描述..."
               />
+            </div>
+            <div className="rounded-xl border border-dashed bg-muted/30 p-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="font-medium">变更影响预览</p>
+                  <p className="text-xs text-muted-foreground">先由服务端校验目录与风险；预览不会写入任何授权。</p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={handlePreview} disabled={previewMutation.isPending}>
+                  {previewMutation.isPending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}查看影响
+                </Button>
+              </div>
+              {changePreview && <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                <div className="rounded-lg bg-background p-2">影响成员 <strong>{changePreview.affectedMemberCount}</strong></div>
+                <div className="rounded-lg bg-background p-2">风险等级 <strong>{changePreview.riskLevel}</strong></div>
+                <div className="rounded-lg bg-background p-2">模块变更 <strong>+{changePreview.addedModules.length} / -{changePreview.removedModules.length}</strong></div>
+                {(changePreview.requiresExplicitConfirmation || changePreview.addedModules.length || changePreview.removedModules.length) && <p className="sm:col-span-3 text-amber-700">保存后会更新角色模板并写入脱敏审计；不会自动变更成员角色、项目或ASIN范围。</p>}
+              </div>}
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">

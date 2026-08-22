@@ -26,6 +26,7 @@ describe("security tenant governance v1", () => {
       "ops_data",
       "offsite_campaign",
       "emperor_skill",
+      "conversation",
     ]);
     expect(SECURITY_ACTIONS).toEqual(
       expect.arrayContaining([
