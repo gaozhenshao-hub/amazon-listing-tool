@@ -36,6 +36,7 @@ import {
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
 } from "recharts";
+import { asFiniteMetric, formatMetricFixed } from "./productOverviewMetricSafety";
 
 const MARKETPLACE_OPTIONS = [
   { value: "ALL", label: "全部站点" },
@@ -53,22 +54,25 @@ const MARKETPLACE_OPTIONS = [
 
 // ─── Utility functions ───
 function fmtCurrency(val: number | null | undefined) {
-  if (val == null) return "—";
-  if (Math.abs(val) >= 10000) return `$${(val / 1000).toFixed(1)}K`;
-  return `$${val.toFixed(2)}`;
+  const numeric = asFiniteMetric(val);
+  if (numeric == null) return "—";
+  if (Math.abs(numeric) >= 10000) return `$${(numeric / 1000).toFixed(1)}K`;
+  return `$${numeric.toFixed(2)}`;
 }
 function fmtNum(val: number | null | undefined) {
-  if (val == null) return "—";
-  if (val >= 10000) return `${(val / 1000).toFixed(1)}K`;
-  return val.toLocaleString();
+  const numeric = asFiniteMetric(val);
+  if (numeric == null) return "—";
+  if (numeric >= 10000) return `${(numeric / 1000).toFixed(1)}K`;
+  return numeric.toLocaleString();
 }
 function fmtPct(val: number | null | undefined, digits = 2) {
-  if (val == null) return "—";
-  return `${val.toFixed(digits)}%`;
+  const numeric = asFiniteMetric(val);
+  return numeric == null ? "—" : `${numeric.toFixed(digits)}%`;
 }
 function MetricValue({ value, formatter }: { value: number | null | undefined; formatter: (value: number | null | undefined) => string }) {
-  if (value == null) return <span className="text-muted-foreground" title="数据未提供">—</span>;
-  return <>{formatter(value)}</>;
+  const numeric = asFiniteMetric(value);
+  if (numeric == null) return <span className="text-muted-foreground" title="数据未提供">—</span>;
+  return <>{formatter(numeric)}</>;
 }
 function fmtWeekDate(startDate: string, endDate?: string) {
   // "2026-04-07", "2026-04-13" -> "4/07-4/13"
@@ -89,10 +93,11 @@ function TrendBadge({ trend }: { trend: string | null }) {
 }
 
 function WowArrow({ pct }: { pct: number | null | undefined }) {
-  if (pct === null || pct === undefined) return null;
-  if (Math.abs(pct) < 0.5) return <span className="text-[9px] text-gray-400 ml-0.5">-</span>;
-  if (pct > 0) return <span className="text-[9px] text-emerald-600 ml-0.5 whitespace-nowrap">↑{Math.abs(pct).toFixed(0)}%</span>;
-  return <span className="text-[9px] text-red-500 ml-0.5 whitespace-nowrap">↓{Math.abs(pct).toFixed(0)}%</span>;
+  const numeric = asFiniteMetric(pct);
+  if (numeric == null) return null;
+  if (Math.abs(numeric) < 0.5) return <span className="text-[9px] text-gray-400 ml-0.5">-</span>;
+  if (numeric > 0) return <span className="text-[9px] text-emerald-600 ml-0.5 whitespace-nowrap">↑{Math.abs(numeric).toFixed(0)}%</span>;
+  return <span className="text-[9px] text-red-500 ml-0.5 whitespace-nowrap">↓{Math.abs(numeric).toFixed(0)}%</span>;
 }
 
 function ProfitCell({ val }: { val: number }) {
@@ -103,17 +108,18 @@ function ProfitCell({ val }: { val: number }) {
 // ─── Alert Thresholds for Overview ───
 type AlertLevel = "normal" | "warn" | "danger";
 
-function getAlertLevel(key: string, value: number): AlertLevel {
-  if (isNaN(value)) return "normal";
+function getAlertLevel(key: string, value: number | null | undefined): AlertLevel {
+  const numeric = asFiniteMetric(value);
+  if (numeric == null) return "normal";
   if (key === "acos") {
-    if (value > 30) return "danger";
-    if (value > 25) return "warn";
+    if (numeric > 30) return "danger";
+    if (numeric > 25) return "warn";
   } else if (key === "profitMargin") {
-    if (value < 10 && value !== 0) return "danger";
-    if (value < 15 && value !== 0) return "warn";
+    if (numeric < 10 && numeric !== 0) return "danger";
+    if (numeric < 15 && numeric !== 0) return "warn";
   } else if (key === "returnRate") {
-    if (value > 5) return "danger";
-    if (value > 3) return "warn";
+    if (numeric > 5) return "danger";
+    if (numeric > 3) return "warn";
   }
   return "normal";
 }
@@ -124,17 +130,17 @@ function alertCellBg(level: AlertLevel): string {
   return "";
 }
 
-function getProductAlerts(product: { weeks: Array<{ acos: number; profitMargin: number; returnRate: number }> }): { level: AlertLevel; count: number; labels: string[] } {
+function getProductAlerts(product: { weeks: Array<{ acos: number | null; profitMargin: number | null; returnRate: number | null }> }): { level: AlertLevel; count: number; labels: string[] } {
   if (!product.weeks.length) return { level: "normal", count: 0, labels: [] };
   const latest = [...product.weeks].sort((a: any, b: any) => (b.weekStartDate || "").localeCompare(a.weekStartDate || ""))[0];
   const labels: string[] = [];
   let maxLevel: AlertLevel = "normal";
   const acosL = getAlertLevel("acos", latest.acos);
-  if (acosL !== "normal") { labels.push(`ACOS ${latest.acos.toFixed(0)}%`); maxLevel = acosL === "danger" ? "danger" : ["danger","warn"].includes(maxLevel) ? maxLevel : "warn"; }
+  if (acosL !== "normal") { labels.push(`ACOS ${formatMetricFixed(latest.acos, 0)}%`); maxLevel = acosL === "danger" ? "danger" : ["danger","warn"].includes(maxLevel) ? maxLevel : "warn"; }
   const profitL = getAlertLevel("profitMargin", latest.profitMargin);
-  if (profitL !== "normal") { labels.push(`利润率 ${latest.profitMargin.toFixed(0)}%`); maxLevel = profitL === "danger" ? "danger" : ["danger","warn"].includes(maxLevel) ? maxLevel : "warn"; }
+  if (profitL !== "normal") { labels.push(`利润率 ${formatMetricFixed(latest.profitMargin, 0)}%`); maxLevel = profitL === "danger" ? "danger" : ["danger","warn"].includes(maxLevel) ? maxLevel : "warn"; }
   const returnL = getAlertLevel("returnRate", latest.returnRate);
-  if (returnL !== "normal") { labels.push(`退货率 ${latest.returnRate.toFixed(1)}%`); maxLevel = returnL === "danger" ? "danger" : ["danger","warn"].includes(maxLevel) ? maxLevel : "warn"; }
+  if (returnL !== "normal") { labels.push(`退货率 ${formatMetricFixed(latest.returnRate, 1)}%`); maxLevel = returnL === "danger" ? "danger" : ["danger","warn"].includes(maxLevel) ? maxLevel : "warn"; }
   return { level: maxLevel, count: labels.length, labels };
 }
 
