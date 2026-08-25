@@ -2,6 +2,8 @@
 
 ## 领星MCP运营数据同步（2026-08-22）
 
+- [x] 输出领星MCP与现有运营系统的数据同步方案：明确数据域权威来源、系统表映射、同步频率、预览/确认/追加流程、审计Artifact、冲突与缺失值规则、异常处理和分阶段实施路径（文档：`docs/architecture/lingxing-mcp-system-sync-plan.md`）
+
 - [x] 修复`/ops/products`的ProductBlock空值渲染崩溃：所有可空日数据指标在调用`toFixed`前进行有限数值校验，缺失值显示“数据未提供”；8项可空格式化/日快照聚合回归与ESLint通过，产品总览页面视觉验证可正常加载
 
 - [x] 只读核对领星官方MCP是否可提供产品表现ASIN日粒度数据、需要的店铺/站点/日期参数及字段覆盖范围：`query_product_performance_asin_lists`支持`date_view_type=day`、ASIN维度、店铺/国家/日期筛选和分页；实际MCP读取仍须先指定店铺与日期范围
