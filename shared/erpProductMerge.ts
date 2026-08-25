@@ -47,3 +47,42 @@ export function mergeErpProducts<T extends ErpProductIdentity>(
 
   return Array.from(productsByKey.values());
 }
+
+type WeeklyProduct = ErpProductIdentity & {
+  weeks: Array<{ weekStartDate: string }>;
+  monthlySummaries?: unknown[];
+};
+
+/**
+ * Merges the richer daily-derived parent-ASIN weeks with older imported weekly data.
+ * A daily-derived week always wins for the same product identity and natural-week
+ * start date; older weekly rows are preserved only where no daily snapshot exists.
+ */
+export function mergeProductWeeksPreferPrimary<T extends WeeklyProduct>(
+  primaryProducts: T[],
+  fallbackProducts: T[],
+): T[] {
+  const fallbackByKey = new Map(fallbackProducts.map(product => [getErpProductKey(product), product]));
+  const merged: T[] = [];
+
+  for (const primary of primaryProducts) {
+    const key = getErpProductKey(primary);
+    const fallback = fallbackByKey.get(key);
+    if (!fallback) {
+      merged.push(primary);
+      continue;
+    }
+    const weeks = new Map<string, T["weeks"][number]>();
+    for (const week of fallback.weeks) weeks.set(week.weekStartDate, week);
+    for (const week of primary.weeks) weeks.set(week.weekStartDate, week);
+    merged.push({
+      ...fallback,
+      ...primary,
+      weeks: Array.from(weeks.values()).sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate)),
+      monthlySummaries: primary.monthlySummaries?.length ? primary.monthlySummaries : fallback.monthlySummaries,
+    });
+    fallbackByKey.delete(key);
+  }
+
+  return [...merged, ...fallbackByKey.values()];
+}

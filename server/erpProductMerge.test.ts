@@ -1,34 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { getErpProductKey, mergeErpProducts } from "../shared/erpProductMerge";
+import { mergeProductWeeksPreferPrimary } from "../shared/erpProductMerge";
 
-describe("ERP 产品来源合并", () => {
-  it("保留不同店铺或站点的同父 ASIN", () => {
-    const products = mergeErpProducts([
-      { source: "lingxing", products: [{ parentAsin: "B0TEST", storeName: "US-A", marketplace: "US" }] },
-      { source: "saihu", products: [{ parentAsin: "B0TEST", storeName: "US-B", marketplace: "US" }] },
+describe("领星日快照与历史周表合并", () => {
+  const historical = [{
+    parentAsin: "P1", storeName: "Store", marketplace: "US", erpSource: "lingxing" as const,
+    title: "历史标题", monthlySummaries: [{ yearMonth: "2026-08" }],
+    weeks: [{ weekStartDate: "2026-08-10", source: "weekly", salesQty: 99 }, { weekStartDate: "2026-08-03", source: "weekly", salesQty: 80 }],
+  }];
+  const daily = [{
+    parentAsin: "P1", storeName: "Store", marketplace: "US", erpSource: "lingxing" as const,
+    title: "日快照标题", monthlySummaries: [],
+    weeks: [{ weekStartDate: "2026-08-10", source: "daily", salesQty: 135 }],
+  }];
+
+  it("同一自然周由日快照覆盖，未覆盖周保留历史周表且不双重累计", () => {
+    const [product] = mergeProductWeeksPreferPrimary(daily, historical);
+    expect(product.title).toBe("日快照标题");
+    expect(product.weeks).toEqual([
+      expect.objectContaining({ weekStartDate: "2026-08-10", source: "daily", salesQty: 135 }),
+      expect.objectContaining({ weekStartDate: "2026-08-03", source: "weekly", salesQty: 80 }),
     ]);
-
-    expect(products).toHaveLength(2);
+    expect(product.monthlySummaries).toEqual([{ yearMonth: "2026-08" }]);
   });
 
-  it("对同父 ASIN、店铺和站点去重，并优先保留排在前面的数据源", () => {
-    const products = mergeErpProducts([
-      { source: "lingxing", products: [{ parentAsin: "B0TEST", storeName: "Store A", marketplace: "US", title: "领星汇总" }] },
-      { source: "saihu", products: [{ parentAsin: "b0test", storeName: " store a ", marketplace: "us", title: "赛狐汇总" }] },
-    ]);
-
-    expect(products).toEqual([
-      expect.objectContaining({ title: "领星汇总", erpSource: "lingxing" }),
-    ]);
-  });
-
-  it("为每个产品附加实际的 ERP 来源标识", () => {
-    const products = mergeErpProducts([
-      { source: "saihu", products: [{ parentAsin: "B0SAIHU", storeName: "Store", marketplace: "US" }] },
-    ]);
-
-    expect(products[0].erpSource).toBe("saihu");
-    expect(getErpProductKey(products[0])).toBe("B0SAIHU|STORE|US");
+  it("保留没有日快照的历史父ASIN", () => {
+    const merged = mergeProductWeeksPreferPrimary([], historical);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].parentAsin).toBe("P1");
   });
 });
-

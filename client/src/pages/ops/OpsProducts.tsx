@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { MANAGER_ROLES } from "@shared/const";
-import { mergeErpProducts } from "@shared/erpProductMerge";
+import { mergeProductWeeksPreferPrimary } from "@shared/erpProductMerge";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -52,16 +52,23 @@ const MARKETPLACE_OPTIONS = [
 ];
 
 // ─── Utility functions ───
-function fmtCurrency(val: number) {
+function fmtCurrency(val: number | null | undefined) {
+  if (val == null) return "—";
   if (Math.abs(val) >= 10000) return `$${(val / 1000).toFixed(1)}K`;
   return `$${val.toFixed(2)}`;
 }
-function fmtNum(val: number) {
+function fmtNum(val: number | null | undefined) {
+  if (val == null) return "—";
   if (val >= 10000) return `${(val / 1000).toFixed(1)}K`;
   return val.toLocaleString();
 }
-function fmtPct(val: number, digits = 2) {
+function fmtPct(val: number | null | undefined, digits = 2) {
+  if (val == null) return "—";
   return `${val.toFixed(digits)}%`;
+}
+function MetricValue({ value, formatter }: { value: number | null | undefined; formatter: (value: number | null | undefined) => string }) {
+  if (value == null) return <span className="text-muted-foreground" title="数据未提供">—</span>;
+  return <>{formatter(value)}</>;
 }
 function fmtWeekDate(startDate: string, endDate?: string) {
   // "2026-04-07", "2026-04-13" -> "4/07-4/13"
@@ -178,22 +185,22 @@ type ProductOverview = {
     orderQty: number;
     salesAmount: number;
     orderProfit: number;
-    profitMargin: number;
+    profitMargin: number | null;
     sessionTotal: number;
-    totalCvr: number;
-    adCvr: number;
-    organicCvr: number;
+    totalCvr: number | null;
+    adCvr: number | null;
+    organicCvr: number | null;
     adOrders: number;
     organicOrders: number;
     adClicks: number;
-    ctr: number;
+    ctr: number | null;
     adImpressions: number;
-    cpc: number;
+    cpc: number | null;
     adSpend: number;
-    acos: number;
-    rating: number;
-    reviewCount: number;
-    returnRate: number;
+    acos: number | null;
+    rating: number | null;
+    reviewCount: number | null;
+    returnRate: number | null;
     wow: {
       salesQty: { value: number; pct: number | null };
       salesAmount: { value: number; pct: number | null };
@@ -222,20 +229,22 @@ function adaptDailyParentOverview(source: any[], weeksToShow: number): ProductOv
       const salesAmount = Number(week.salesAmount || 0);
       const orderProfit = Number(week.orderProfit || 0);
       const salesQty = Number(week.salesQty || 0);
+      const nullableNumber = (value: unknown) => value == null ? null : Number(value);
       return {
         id: productIndex * 100 + weekIndex + 1, weekStartDate: week.weekStartDate, weekEndDate: week.weekEndDate,
         salesTrend: null, salesQty, orderQty: Number(week.orderQty || 0), salesAmount, orderProfit,
-        profitMargin: salesAmount > 0 ? orderProfit / salesAmount * 100 : 0, sessionTotal: Number(week.sessionsTotal || 0),
-        totalCvr: 0, adCvr: 0, organicCvr: 0, adOrders: 0, organicOrders: 0, adClicks: 0, ctr: 0,
-        adImpressions: 0, cpc: 0, adSpend: Number(week.adSpend || 0), acos: Number(week.adSales || 0) > 0 ? Number(week.adSpend || 0) / Number(week.adSales || 0) * 100 : 0,
-        rating: 0, reviewCount: 0, returnRate: 0, wow: null,
+        profitMargin: nullableNumber(week.profitMargin), sessionTotal: Number(week.sessionsTotal || 0),
+        totalCvr: nullableNumber(week.totalCvr), adCvr: nullableNumber(week.adCvr), organicCvr: nullableNumber(week.organicCvr),
+        adOrders: Number(week.adOrders || 0), organicOrders: Number(week.organicOrders || 0), adClicks: Number(week.adClicks || 0), ctr: nullableNumber(week.ctr),
+        adImpressions: Number(week.adImpressions || 0), cpc: nullableNumber(week.cpc), adSpend: Number(week.adSpend || 0), acos: nullableNumber(week.acos),
+        rating: nullableNumber(week.rating), reviewCount: nullableNumber(week.reviewCount), returnRate: nullableNumber(week.returnRate), wow: null,
       };
     });
     const latest = weeks[0];
     return {
       id: productIndex + 1, parentAsin: product.parentAsin, title: product.productName || product.title || product.parentAsin,
       chineseName: product.productName || null, brand: null, category: null, marketplace: product.country || null, imageUrl: null, status: "active",
-      operator: product.operator || null, storeName: product.storeName || null, variantCount: 0, skus: [], basicInfo: null,
+      operator: product.operator || null, storeName: product.storeName || null, variantCount: Number(product.variantCount || 0), skus: product.skus || [], basicInfo: null,
       inventory: latest ? { fbaAvailable: Number((product.weeks?.[0]?.fbaAvailable) || 0), fbaInbound: 0, fbaInTransit: Number((product.weeks?.[0]?.fbaInTransit) || 0), fbaTotal: Number((product.weeks?.[0]?.fbaAvailable) || 0) + Number((product.weeks?.[0]?.fbaInTransit) || 0), availableStock: Number((product.weeks?.[0]?.fbaAvailable) || 0), fbaDaysOfSupply: 0, stockoutDate: null, avgDailySales7d: latest.salesQty / Math.max(Number((product.weeks?.[0]?.activeDays) || 1), 1), daysOfStock: latest.salesQty > 0 ? Math.round(Number((product.weeks?.[0]?.fbaAvailable) || 0) / (latest.salesQty / Math.max(Number((product.weeks?.[0]?.activeDays) || 1), 1))) : 999 } : null,
       weeks, monthlySummaries: product.monthlySummaries || [], erpSource: "lingxing",
     };
@@ -698,30 +707,30 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
                           <WowArrow pct={w.wow?.salesAmount.pct} />
                         </td>
                         <td className="px-1.5 py-1 text-right"><ProfitCell val={w.orderProfit} /></td>
-                        <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("profitMargin", w.profitMargin))}`}>
+                        <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("profitMargin", w.profitMargin ?? 0))}`}>
                           {fmtPct(w.profitMargin, 1)}
                         </td>
                         <td className="px-1.5 py-1 text-right tabular-nums">{w.sessionTotal}</td>
-                        <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.totalCvr, 1)}</td>
-                        <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.adCvr, 1)}</td>
-                        <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.organicCvr, 1)}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.totalCvr} formatter={(value) => fmtPct(value, 1)} /></td>
+                        <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.adCvr} formatter={(value) => fmtPct(value, 1)} /></td>
+                        <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.organicCvr} formatter={(value) => fmtPct(value, 1)} /></td>
                         <td className="px-1.5 py-1 text-right tabular-nums">{w.adOrders}</td>
                         <td className="px-1.5 py-1 text-right tabular-nums">{w.organicOrders}</td>
                         <td className="px-1.5 py-1 text-right tabular-nums">{fmtNum(w.adClicks)}</td>
-                        <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.ctr, 2)}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.ctr} formatter={(value) => fmtPct(value, 2)} /></td>
                         <td className="px-1.5 py-1 text-right tabular-nums">{fmtNum(w.adImpressions)}</td>
-                        <td className="px-1.5 py-1 text-right tabular-nums">{fmtCurrency(w.cpc)}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.cpc} formatter={fmtCurrency} /></td>
                         <td className="px-1.5 py-1 text-right tabular-nums">
                           {fmtCurrency(w.adSpend)}
                           <WowArrow pct={w.wow?.adSpend.pct} />
                         </td>
-                        <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("acos", w.acos))}`}>
-                          {fmtPct(w.acos, 1)}
+                        <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("acos", w.acos ?? 0))}`}>
+                          <MetricValue value={w.acos} formatter={(value) => fmtPct(value, 1)} />
                         </td>
-                        <td className="px-1.5 py-1 text-right tabular-nums">{w.rating.toFixed(1)}</td>
-                        <td className="px-1.5 py-1 text-right tabular-nums">{w.reviewCount}</td>
-                        <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("returnRate", w.returnRate))}`}>
-                          {fmtPct(w.returnRate, 1)}
+                        <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.rating} formatter={(value) => value == null ? "—" : value.toFixed(1)} /></td>
+                        <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.reviewCount} formatter={fmtNum} /></td>
+                        <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("returnRate", w.returnRate ?? 0))}`}>
+                          <MetricValue value={w.returnRate} formatter={(value) => fmtPct(value, 1)} />
                         </td>
                       </tr>
                     );
@@ -746,30 +755,30 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
                     <WowArrow pct={w.wow?.salesAmount.pct} />
                   </td>
                   <td className="px-1.5 py-1 text-right"><ProfitCell val={w.orderProfit} /></td>
-                  <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("profitMargin", w.profitMargin))}`}>
+                  <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("profitMargin", w.profitMargin ?? 0))}`}>
                     {fmtPct(w.profitMargin, 1)}
                   </td>
                   <td className="px-1.5 py-1 text-right tabular-nums">{w.sessionTotal}</td>
-                  <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.totalCvr, 1)}</td>
-                  <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.adCvr, 1)}</td>
-                  <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.organicCvr, 1)}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.totalCvr} formatter={(value) => fmtPct(value, 1)} /></td>
+                  <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.adCvr} formatter={(value) => fmtPct(value, 1)} /></td>
+                  <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.organicCvr} formatter={(value) => fmtPct(value, 1)} /></td>
                   <td className="px-1.5 py-1 text-right tabular-nums">{w.adOrders}</td>
                   <td className="px-1.5 py-1 text-right tabular-nums">{w.organicOrders}</td>
                   <td className="px-1.5 py-1 text-right tabular-nums">{fmtNum(w.adClicks)}</td>
-                  <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.ctr, 2)}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.ctr} formatter={(value) => fmtPct(value, 2)} /></td>
                   <td className="px-1.5 py-1 text-right tabular-nums">{fmtNum(w.adImpressions)}</td>
-                  <td className="px-1.5 py-1 text-right tabular-nums">{fmtCurrency(w.cpc)}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.cpc} formatter={fmtCurrency} /></td>
                   <td className="px-1.5 py-1 text-right tabular-nums">
                     {fmtCurrency(w.adSpend)}
                     <WowArrow pct={w.wow?.adSpend.pct} />
                   </td>
-                  <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("acos", w.acos))}`}>
-                    {fmtPct(w.acos, 1)}
+                  <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("acos", w.acos ?? 0))}`}>
+                    <MetricValue value={w.acos} formatter={(value) => fmtPct(value, 1)} />
                   </td>
-                  <td className="px-1.5 py-1 text-right tabular-nums">{w.rating.toFixed(1)}</td>
-                  <td className="px-1.5 py-1 text-right tabular-nums">{w.reviewCount}</td>
-                  <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("returnRate", w.returnRate))}`}>
-                    {fmtPct(w.returnRate, 1)}
+                  <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.rating} formatter={(value) => value == null ? "—" : value.toFixed(1)} /></td>
+                  <td className="px-1.5 py-1 text-right tabular-nums"><MetricValue value={w.reviewCount} formatter={fmtNum} /></td>
+                  <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("returnRate", w.returnRate ?? 0))}`}>
+                    <MetricValue value={w.returnRate} formatter={(value) => fmtPct(value, 1)} />
                   </td>
                 </tr>
               ))}
@@ -938,10 +947,10 @@ export default function OpsProducts() {
   });
 
   // Unified products & loading state
-  const products = dataSource === "system" ? systemProducts : mergeErpProducts([
-    { source: "lingxing", products: adaptDailyParentOverview((lingxingDailyOverview || []) as any[], weekFilter) },
-    { source: "saihu", products: (importProducts || []) as ProductOverview[] },
-  ]);
+  const products = dataSource === "system" ? systemProducts : mergeProductWeeksPreferPrimary(
+    adaptDailyParentOverview((lingxingDailyOverview || []) as any[], weekFilter),
+    (importProducts || []) as ProductOverview[],
+  );
   const isLoading = dataSource === "system" ? systemLoading : lingxingDailyLoading || importLoading;
 
   const [form, setForm] = useState({
