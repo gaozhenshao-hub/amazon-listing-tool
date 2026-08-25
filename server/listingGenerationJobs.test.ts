@@ -25,6 +25,7 @@ describe("Listing generation job lifecycle", () => {
     for (const slug of [
       "listing.sellingpoints.generate",
       "listing.bullets.generate",
+      "listing.bullet.step.generate",
       "listing.title.generate",
       "listing.description.generate",
       "listing.searchterms.generate",
@@ -33,6 +34,9 @@ describe("Listing generation job lifecycle", () => {
       expect(jobService).toContain(slug);
     }
     expect(jobService).toContain("runEmperorSkill<any>");
+    expect(jobService).toContain('singleBullet: { nodeKey: "singleBullet", skillSlug: "listing.bullet.step.generate"');
+    expect(jobService).toContain("validateSingleBulletQuality");
+    expect(jobService).toContain("上次逐条卖点质量门禁未通过");
     expect(jobService).toContain("recoverable: true");
     expect(worker).toContain('domains/listing/services/generationJob');
   });

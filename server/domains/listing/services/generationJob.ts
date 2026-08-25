@@ -88,7 +88,8 @@ const OPERATION_CONFIG: Record<Exclude<ListingGenerationOperation, "batch">, {
   label: string;
 }> = {
   sellingPoints: { nodeKey: "sellingPoints", skillSlug: "listing.sellingpoints.generate", label: "卖点核心" },
-  singleBullet: { nodeKey: "singleBullet", skillSlug: "listing.bullets.generate", label: "单条五点描述" },
+  // 单条精雕必须走独立Skill，避免复用整套五点提示词并将所有清单维度强加给一条文案。
+  singleBullet: { nodeKey: "singleBullet", skillSlug: "listing.bullet.step.generate", label: "单条五点描述" },
   bullets: { nodeKey: "bullets", skillSlug: "listing.bullets.generate", label: "五点描述" },
   title: { nodeKey: "title", skillSlug: "listing.title.generate", label: "标题" },
   description: { nodeKey: "description", skillSlug: "listing.description.generate", label: "产品描述" },
@@ -102,6 +103,37 @@ function compactText(value: unknown, maxChars: number) {
   const text = typeof value === "string" ? value : JSON.stringify(value ?? null);
   if (text.length <= maxChars) return text;
   return `${text.slice(0, maxChars - 700)}\n\n[上下文已压缩，省略${text.length - maxChars}字符]\n\n${text.slice(-700)}`;
+}
+
+function normalizeBulletText(value: unknown) {
+  return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+export function validateSingleBulletQuality(bullet: any, input: ListingGenerationJobInput) {
+  const issues: string[] = [];
+  const subtitle = String(bullet?.subtitle || "").trim();
+  const fullText = String(bullet?.fullText || "").trim();
+  const combined = `${subtitle} ${fullText}`.trim();
+  if (!subtitle || !fullText) issues.push("必须同时提供subtitle和fullText");
+  if (/\r|\n/.test(subtitle) || /\r|\n/.test(fullText)) issues.push("逐条精雕只能输出一条英文Bullet段落，不得分段");
+  if (combined.length < 200 || combined.length > 280) issues.push(`总长度${combined.length}，必须在200–280字符之间`);
+
+  const normalized = normalizeBulletText(combined);
+  const previous = (input.previousBullets || []).map((item) => normalizeBulletText(`${item.subtitle} ${item.fullText}`));
+  if (normalized && previous.includes(normalized)) issues.push("与已确认卖点重复");
+
+  const targetKeywords = input.sellingPoint?.targetKeywords || [];
+  if (targetKeywords.length > 0 && !targetKeywords.some((keyword) => normalizeBulletText(combined).includes(normalizeBulletText(keyword)))) {
+    issues.push("未自然使用当前卖点核心指定的目标关键词");
+  }
+  if (input.sellingPoint?.fabeDirection?.evidence && (!Array.isArray(bullet?.evidenceUsed) || bullet.evidenceUsed.length === 0)) {
+    issues.push("未输出可追溯的事实依据evidenceUsed");
+  }
+  const audit = bullet?.qualityAudit;
+  for (const key of ["factsGrounded", "lengthInRange", "noKeywordStuffing", "oneClearBenefit"]) {
+    if (audit?.[key] !== true) issues.push(`qualityAudit.${key}必须为true`);
+  }
+  return { valid: issues.length === 0, issues, characterCount: combined.length };
 }
 
 export async function syncListingPreparationNodes(input: {
@@ -316,10 +348,22 @@ async function runOperation(
   let parsed = await callListingSkill(job, handlerContext, input, config.skillSlug, promptContext, variables);
   if (operation === "sellingPoints") return normalizeSellingPoints(parsed);
   if (operation === "singleBullet") {
-    const bullet = parsed?.bulletPoints?.[0] || parsed?.bullets?.[0] || parsed;
-    if (!bullet?.subtitle || !bullet?.fullText) throw new Error("单条五点描述返回格式异常");
-    const length = `${bullet.subtitle} ${bullet.fullText}`.length;
-    return { ...bullet, characterCount: length, actualCharacterCount: length, inRange: length >= 200 && length <= 280 };
+    let bullet = parsed?.bulletPoints?.[0] || parsed?.bullets?.[0] || parsed;
+    let quality = validateSingleBulletQuality(bullet, input);
+    for (let attempt = 0; attempt < MAX_RETRIES && !quality.valid; attempt += 1) {
+      parsed = await callListingSkill(
+        job,
+        handlerContext,
+        input,
+        config.skillSlug,
+        `${promptContext}\n\n上次逐条卖点质量门禁未通过：${quality.issues.join("；")}。请仅依据输入事实完整重写当前选中卖点的一条英文JSON Bullet，且不要解释。`,
+        { ...variables, previousOutput: bullet, qualityIssues: quality.issues },
+      );
+      bullet = parsed?.bulletPoints?.[0] || parsed?.bullets?.[0] || parsed;
+      quality = validateSingleBulletQuality(bullet, input);
+    }
+    if (!quality.valid) throw new Error(`单条五点描述质量验证未通过：${quality.issues.join("；")}`);
+    return { ...bullet, characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true };
   }
   if (operation === "title") {
     let validation = validateTitles(parsed);

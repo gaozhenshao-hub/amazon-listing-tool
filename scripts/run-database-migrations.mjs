@@ -92,6 +92,7 @@ const supplementalMigrations = [
     "0166_emperor_skill_run_recovery_state.sql",
     "0167_emperor_conversation_plan_recovery_state.sql",
     "0168_emperor_context_provenance_projection.sql",
+    "0171_listing_bullet_step_skill_v3.sql",
   ];
 
 const retiredMigrationFiles = new Set([
