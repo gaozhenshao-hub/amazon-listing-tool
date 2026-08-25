@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -14,6 +15,9 @@ import {
   RefreshCw,
   Code2,
   FileText,
+  Activity,
+  AlertTriangle,
+  ShieldAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Streamdown } from "streamdown";
@@ -49,6 +53,7 @@ interface RunRecord {
 type DetailTab = "output" | "input" | "meta";
 
 export default function EmperorTrace() {
+  const { user } = useAuth();
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [detailTab, setDetailTab] = useState<DetailTab>("output");
@@ -62,9 +67,27 @@ export default function EmperorTrace() {
     { runId: selectedRunId! },
     { enabled: !!selectedRunId }
   );
+  const isGovernanceAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const verifiedTraceId = typeof (detail as any)?.traceId === "string" ? String((detail as any).traceId) : null;
+  const projection = trpc.emperor.observability.runProjection.useQuery(
+    { traceId: verifiedTraceId || "", afterId: 0, limit: 100 },
+    { enabled: Boolean(isGovernanceAdmin && verifiedTraceId), refetchInterval: 10_000, refetchOnWindowFocus: false },
+  );
+  const slo = trpc.emperor.observability.slo.useQuery(
+    { days: 30 },
+    { enabled: isGovernanceAdmin, refetchInterval: 60_000, refetchOnWindowFocus: false },
+  );
 
-  const runs: RunRecord[] = (data?.runs || []) as RunRecord[];
+  const runs = useMemo(() => (data?.runs || []) as RunRecord[], [data?.runs]);
   const selectedRun = runs.find(r => r.runId === selectedRunId) || null;
+
+  useEffect(() => {
+    const requestedRunId = new URLSearchParams(window.location.search).get("runId");
+    if (requestedRunId && runs.some((run) => run.runId === requestedRunId)) {
+      setSelectedRunId(requestedRunId);
+      setDetailTab("output");
+    }
+  }, [runs]);
 
   const formatTime = (ts: string | Date) => {
     try {
@@ -84,6 +107,33 @@ export default function EmperorTrace() {
   const getPromptTokens = (run: RunRecord) => run.inputTokens || run.promptTokens || 0;
   const getCompletionTokens = (run: RunRecord) => run.outputTokens || run.completionTokens || 0;
   const isSucceeded = (status: string) => status === "succeeded" || status === "success";
+  const ledgerEvents = projection.data?.events || [];
+  const invalidatedSources = (projection.data?.provenance || []).filter((source: any) => source.status === "invalidated");
+
+  const renderGovernanceProjection = () => {
+    if (!isGovernanceAdmin) return null;
+    return (
+      <div className="space-y-3 border-b bg-slate-50/70 p-4">
+        <div className="flex items-center gap-2"><Activity className="h-4 w-4 text-violet-600" /><p className="text-sm font-semibold">受控运行投影与真实评测 SLO</p><Badge variant="outline" className="text-[10px]">只读</Badge></div>
+        <div className="grid gap-2 md:grid-cols-3">
+          {slo.data?.signals?.map((signal: any) => {
+            const insufficient = signal.status === "insufficient_data";
+            const breached = signal.status === "breached";
+            return <div key={signal.key} className={`rounded-lg border p-2.5 ${breached ? "border-rose-200 bg-rose-50" : insufficient ? "border-slate-200 bg-white" : "border-emerald-200 bg-emerald-50/60"}`}>
+              <p className="text-[11px] text-muted-foreground">{signal.name}</p>
+              <p className="mt-1 text-sm font-semibold">{insufficient ? "暂无样本" : `${Number(signal.observed).toFixed(1)}${signal.key.includes("rate") ? "%" : ""}`}</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">样本 {signal.samples} · 目标 {signal.comparator === "gte" ? "≥" : "≤"}{signal.target}{signal.key.includes("rate") ? "%" : ""}</p>
+            </div>;
+          }) || <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-muted-foreground md:col-span-3">暂无可展示的真实评测 SLO 数据。</div>}
+        </div>
+        {verifiedTraceId ? <details className="rounded-lg border border-slate-200 bg-white p-3" open={invalidatedSources.length > 0}>
+          <summary className="cursor-pointer text-xs font-medium text-slate-700">Ledger 只读投影 · Trace {verifiedTraceId} · 游标 {projection.data?.nextCursor ?? 0}</summary>
+          {invalidatedSources.length > 0 ? <div className="mt-2 flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />存在 {invalidatedSources.length} 个已失效上下文来源。系统不会自动恢复；请重新编译上下文并再次人工确认。</div> : null}
+          <div className="mt-2 space-y-1.5">{ledgerEvents.length ? ledgerEvents.slice(-12).map((event: any) => <div key={event.eventId} className="flex items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1.5 text-[11px]"><span className="font-mono text-slate-700">{event.eventType}</span><span className="shrink-0 text-slate-400">{formatTime(event.occurredAt)}</span></div>) : <p className="text-xs text-muted-foreground">暂无已审计事件；投影仅从 Run Ledger 读取，10 秒轮询一次。</p>}</div>
+        </details> : <div className="flex gap-2 rounded-lg border border-slate-200 bg-white p-3 text-xs text-muted-foreground"><ShieldAlert className="h-4 w-4 shrink-0" />当前运行没有唯一可验证的Trace映射，因此不展示Ledger投影，避免错误关联。</div>}
+      </div>
+    );
+  };
 
   const renderDetailOutput = () => {
     if (detailLoading) {
@@ -296,6 +346,8 @@ export default function EmperorTrace() {
                   </div>
                 </div>
               </div>
+
+              {renderGovernanceProjection()}
 
               {/* Detail tabs */}
               <div className="border-b px-4">

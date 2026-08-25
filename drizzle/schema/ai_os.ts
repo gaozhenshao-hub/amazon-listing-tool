@@ -334,6 +334,8 @@ export const emperorSkillRuns = mysqlTable("emperor_skill_runs", {
   output: json("output"),
   // 运行状态
   status: mysqlEnum("status", ["queued", "running", "succeeded", "failed", "canceled"]).default("queued").notNull(),
+  stateVersion: int("stateVersion").default(0).notNull(),
+  recoverySnapshotId: varchar("recoverySnapshotId", { length: 80 }),
   errorMessage: text("errorMessage"),
   // 用量统计
   modelSlug: varchar("modelSlug", { length: 128 }),
@@ -422,6 +424,8 @@ export const emperorAgentRuns = mysqlTable("emperor_agent_runs", {
   status: mysqlEnum("status", ["running", "waiting_human", "paused", "completed", "failed", "canceled"]).default("waiting_human").notNull(),
   currentNodeId: varchar("currentNodeId", { length: 128 }),
   progress: int("progress").default(0).notNull(),
+  stateVersion: int("stateVersion").default(0).notNull(),
+  recoverySnapshotId: varchar("recoverySnapshotId", { length: 80 }),
   inputs: json("inputs"),
   outputs: json("outputs"),
   errorMessage: text("errorMessage"),
@@ -759,6 +763,193 @@ export const emperorMcpConnectors = mysqlTable("emperor_mcp_connectors", {
 export type EmperorMcpConnector = typeof emperorMcpConnectors.$inferSelect;
 
 export type InsertEmperorMcpConnector = typeof emperorMcpConnectors.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 皇帝 · 通用对话式任务管理器（Conversation Task Manager）
+// 对话仅编排既有Skill / Agent / Tool与Run，不复制附件二进制或密钥。
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const emperorConversations = mysqlTable("emperor_conversations", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  conversationId: varchar("conversationId", { length: 80 }).notNull().unique(),
+  userId: int("userId").notNull(),
+  projectId: int("projectId"),
+  title: varchar("title", { length: 255 }).notNull(),
+  status: mysqlEnum("status", ["draft", "planning", "awaiting_plan_confirmation", "running", "waiting_human", "completed", "failed", "canceled", "archived"]).default("draft").notNull(),
+  activePlanId: varchar("activePlanId", { length: 80 }),
+  lastTraceId: varchar("lastTraceId", { length: 80 }),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EmperorConversation = typeof emperorConversations.$inferSelect;
+export type InsertEmperorConversation = typeof emperorConversations.$inferInsert;
+
+export const emperorConversationMessages = mysqlTable("emperor_conversation_messages", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  messageId: varchar("messageId", { length: 80 }).notNull().unique(),
+  conversationId: varchar("conversationId", { length: 80 }).notNull(),
+  role: mysqlEnum("role", ["user", "assistant", "system", "tool"]).notNull(),
+  status: mysqlEnum("status", ["draft", "streaming", "completed", "failed", "canceled"]).default("completed").notNull(),
+  content: text("content").notNull(),
+  structuredContent: json("structuredContent"),
+  skillRunId: varchar("skillRunId", { length: 80 }),
+  planId: varchar("planId", { length: 80 }),
+  stepId: varchar("stepId", { length: 80 }),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EmperorConversationMessage = typeof emperorConversationMessages.$inferSelect;
+export type InsertEmperorConversationMessage = typeof emperorConversationMessages.$inferInsert;
+
+export const emperorConversationAttachments = mysqlTable("emperor_conversation_attachments", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  attachmentId: varchar("attachmentId", { length: 80 }).notNull().unique(),
+  conversationId: varchar("conversationId", { length: 80 }).notNull(),
+  messageId: varchar("messageId", { length: 80 }),
+  storageObjectId: int("storageObjectId"),
+  artifactId: varchar("artifactId", { length: 80 }),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  mimeType: varchar("mimeType", { length: 128 }).notNull(),
+  sizeBytes: bigint("sizeBytes", { mode: "number" }),
+  contentHash: varchar("contentHash", { length: 64 }),
+  contextPolicy: mysqlEnum("contextPolicy", ["summary_only", "extracted_text", "image_vision", "blocked"]).default("summary_only").notNull(),
+  scanStatus: mysqlEnum("scanStatus", ["pending", "ready", "blocked", "failed"]).default("pending").notNull(),
+  contextSummary: text("contextSummary"),
+  metadata: json("metadata"),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EmperorConversationAttachment = typeof emperorConversationAttachments.$inferSelect;
+export type InsertEmperorConversationAttachment = typeof emperorConversationAttachments.$inferInsert;
+
+export const emperorConversationPlans = mysqlTable("emperor_conversation_plans", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  planId: varchar("planId", { length: 80 }).notNull().unique(),
+  conversationId: varchar("conversationId", { length: 80 }).notNull(),
+  version: int("version").default(1).notNull(),
+  status: mysqlEnum("status", ["draft", "proposed", "approved", "executing", "completed", "failed", "canceled", "superseded"]).default("draft").notNull(),
+  stateVersion: int("stateVersion").default(0).notNull(),
+  recoverySnapshotId: varchar("recoverySnapshotId", { length: 80 }),
+  goal: text("goal").notNull(),
+  assumptions: json("assumptions"),
+  planJson: json("planJson").notNull(),
+  riskSummary: json("riskSummary"),
+  approvedBy: int("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  canceledAt: timestamp("canceledAt"),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EmperorConversationPlan = typeof emperorConversationPlans.$inferSelect;
+export type InsertEmperorConversationPlan = typeof emperorConversationPlans.$inferInsert;
+
+export const emperorConversationPlanSteps = mysqlTable("emperor_conversation_plan_steps", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  stepId: varchar("stepId", { length: 80 }).notNull().unique(),
+  planId: varchar("planId", { length: 80 }).notNull(),
+  sequence: int("sequence").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  capabilityType: mysqlEnum("capabilityType", ["skill", "agent", "tool"]).notNull(),
+  capabilitySlug: varchar("capabilitySlug", { length: 128 }).notNull(),
+  input: json("input"),
+  riskLevel: mysqlEnum("riskLevel", ["L0", "L1", "L2", "L3"]).default("L1").notNull(),
+  approvalRequired: int("approvalRequired").default(0).notNull(),
+  approvalState: mysqlEnum("approvalState", ["not_required", "pending", "approved", "rejected", "skipped"]).default("not_required").notNull(),
+  status: mysqlEnum("status", ["pending", "ready", "running", "waiting_human", "succeeded", "skipped", "failed", "canceled"]).default("pending").notNull(),
+  stateVersion: int("stateVersion").default(0).notNull(),
+  skillRunId: varchar("skillRunId", { length: 80 }),
+  agentRunId: varchar("agentRunId", { length: 80 }),
+  toolRunId: varchar("toolRunId", { length: 80 }),
+  traceId: varchar("traceId", { length: 80 }),
+  recoverySnapshotId: varchar("recoverySnapshotId", { length: 80 }),
+  reviewRequestId: varchar("reviewRequestId", { length: 80 }),
+  errorMessage: text("errorMessage"),
+  metadata: json("metadata"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EmperorConversationPlanStep = typeof emperorConversationPlanSteps.$inferSelect;
+export type InsertEmperorConversationPlanStep = typeof emperorConversationPlanSteps.$inferInsert;
+
+export const emperorExecutionStateSnapshots = mysqlTable("emperor_execution_state_snapshots", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  snapshotId: varchar("snapshotId", { length: 80 }).notNull().unique(),
+  workspaceId: int("workspaceId"),
+  traceId: varchar("traceId", { length: 80 }),
+  targetType: varchar("targetType", { length: 40 }).notNull(),
+  targetId: varchar("targetId", { length: 128 }).notNull(),
+  stateVersion: int("stateVersion").notNull(),
+  status: varchar("status", { length: 40 }).default("captured").notNull(),
+  planId: varchar("planId", { length: 80 }),
+  planVersion: int("planVersion"),
+  capabilityType: varchar("capabilityType", { length: 24 }),
+  capabilitySlug: varchar("capabilitySlug", { length: 128 }),
+  capabilityVersion: varchar("capabilityVersion", { length: 80 }),
+  approvalState: varchar("approvalState", { length: 40 }),
+  contextManifestHash: varchar("contextManifestHash", { length: 64 }),
+  inputHash: varchar("inputHash", { length: 64 }),
+  snapshot: json("snapshot").notNull(),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const emperorExecutionRecoveryRequests = mysqlTable("emperor_execution_recovery_requests", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  recoveryId: varchar("recoveryId", { length: 80 }).notNull().unique(),
+  idempotencyKey: varchar("idempotencyKey", { length: 64 }).notNull().unique(),
+  snapshotId: varchar("snapshotId", { length: 80 }).notNull(),
+  traceId: varchar("traceId", { length: 80 }),
+  targetType: varchar("targetType", { length: 40 }).notNull(),
+  targetId: varchar("targetId", { length: 128 }).notNull(),
+  requestedAction: varchar("requestedAction", { length: 40 }).notNull(),
+  expectedStateVersion: int("expectedStateVersion").notNull(),
+  status: varchar("status", { length: 40 }).default("requested").notNull(),
+  reasonCode: varchar("reasonCode", { length: 80 }),
+  result: json("result"),
+  requestedBy: int("requestedBy"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EmperorExecutionStateSnapshot = typeof emperorExecutionStateSnapshots.$inferSelect;
+export type EmperorExecutionRecoveryRequest = typeof emperorExecutionRecoveryRequests.$inferSelect;
+
+// 对话任务的跨系统知识引用：仅保存授权后的摘要与来源定位，不复制原始知识正文。
+export const emperorConversationKnowledgeRefs = mysqlTable("emperor_conversation_knowledge_refs", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  referenceId: varchar("referenceId", { length: 80 }).notNull().unique(),
+  conversationId: varchar("conversationId", { length: 80 }).notNull(),
+  sourceKind: mysqlEnum("sourceKind", ["emperor_memory", "amz_ops_skill"]).notNull(),
+  sourceId: int("sourceId").notNull(),
+  title: varchar("title", { length: 512 }).notNull(),
+  contextSummary: text("contextSummary").notNull(),
+  tags: json("tags"),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EmperorConversationKnowledgeRef = typeof emperorConversationKnowledgeRefs.$inferSelect;
+export type InsertEmperorConversationKnowledgeRef = typeof emperorConversationKnowledgeRefs.$inferInsert;
 
 // 模型提供商配置表（多 LLM 路由）
 export const emperorModelProviders = mysqlTable("emperor_model_providers", {

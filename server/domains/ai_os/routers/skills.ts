@@ -1,7 +1,39 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../../../_core/trpc";
+import { workspaceIdFromContext } from "../../../services/securityGovernance";
 import { getSkillBySlug, normalizeSkillVersionForDb, parseManifest, rawExecute } from "../routerContext";
+import {
+  createSkillEvalCase,
+  getSkillReleaseGateDecision,
+  listSkillEvalCases,
+  listSkillReplayResults,
+  listSkillVersionSnapshots,
+  recordSkillEvalResult,
+  replaySkillEvalCase,
+  upsertSkillReleaseGate,
+} from "../services/skillQualityGates";
+import {
+  activateSkillRolloutPlan,
+  approveSkillRolloutPlan,
+  createSkillRolloutPlan,
+  listSkillRolloutDecisions,
+  listSkillRolloutPlans,
+  stopSkillRolloutPlan,
+} from "../services/skillRollout";
+import {
+  createHarnessReviewRequest,
+  createParallelPlan,
+  approveParallelPlanDraft,
+  listExecutionPresets,
+  listHarnessReviewRequests,
+  listParallelPlans,
+  recordHarnessFeedback,
+  resolveHarnessReviewRequest,
+  seedExecutionPresets,
+  previewParallelPlan,
+} from "../services/harnessCompletion";
+import { prepareSkillRunRecovery } from "../services/directRunRecovery";
 
 export const emperorSkillsRouter = router({
   list: protectedProcedure
@@ -43,6 +75,155 @@ export const emperorSkillsRouter = router({
     return rawExecute("SELECT category, COUNT(*) as count FROM emperor_skills GROUP BY category ORDER BY count DESC");
   }),
 
+  prepareRunRecovery: protectedProcedure
+    .input(z.object({ runId: z.string().min(1).max(80), expectedStateVersion: z.number().int().min(0).optional() }))
+    .mutation(async ({ ctx, input }) => prepareSkillRunRecovery({
+      runId: input.runId,
+      userId: ctx.user.id,
+      workspaceId: workspaceIdFromContext(ctx),
+      isAdmin: (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin",
+      expectedStateVersion: input.expectedStateVersion,
+    })),
+
+  qualityOverview: protectedProcedure
+    .input(z.object({ skillSlug: z.string().optional(), skillVersion: z.string().optional() }).optional())
+    .query(async ({ input }) => ({
+      cases: await listSkillEvalCases(input?.skillSlug, "approved"),
+      gate: input?.skillSlug ? await getSkillReleaseGateDecision(input.skillSlug, input.skillVersion) : null,
+    })),
+
+  evalCases: protectedProcedure
+    .input(z.object({ skillSlug: z.string().optional(), status: z.string().optional() }).optional())
+    .query(({ input }) => listSkillEvalCases(input?.skillSlug, input?.status)),
+
+  versionSnapshots: protectedProcedure
+    .input(z.object({ skillSlug: z.string().optional() }).optional())
+    .query(({ input }) => listSkillVersionSnapshots(input?.skillSlug)),
+
+  createEvalCase: adminProcedure
+    .input(z.object({
+      skillSlug: z.string().min(1), name: z.string().min(1).max(255), description: z.string().nullable().optional(),
+      status: z.enum(["draft", "approved", "retired"]).optional(), tags: z.array(z.string()).optional(),
+      inputContext: z.record(z.string(), z.any()), expectedConstraints: z.record(z.string(), z.any()).optional(), rubric: z.record(z.string(), z.any()),
+      sourceArtifactId: z.string().nullable().optional(), sourceRunId: z.string().nullable().optional(),
+    }))
+    .mutation(({ input, ctx }) => createSkillEvalCase({ ...input, userId: ctx.user.id })),
+
+  recordEvalResult: adminProcedure
+    .input(z.object({
+      caseId: z.string().min(1), skillSlug: z.string().min(1), snapshotId: z.string().nullable().optional(), skillVersion: z.string().nullable().optional(),
+      score: z.number().min(0).max(100).nullable().optional(), passed: z.boolean(), humanApproved: z.boolean().optional(), feedback: z.string().nullable().optional(),
+      dimensionScores: z.record(z.string(), z.number()).optional(), outputSummary: z.record(z.string(), z.any()).optional(), sourceArtifactId: z.string().nullable().optional(),
+    }))
+    .mutation(({ input, ctx }) => recordSkillEvalResult({ ...input, evaluatorUserId: ctx.user.id })),
+
+  replayEvalCase: adminProcedure
+    .input(z.object({ caseId: z.string().min(1), snapshotId: z.string().min(1) }))
+    .mutation(({ input, ctx }) => replaySkillEvalCase({ ...input, userId: ctx.user.id })),
+
+  replayResults: protectedProcedure
+    .input(z.object({ skillSlug: z.string().optional(), snapshotId: z.string().optional() }).optional())
+    .query(({ input }) => listSkillReplayResults(input?.skillSlug, input?.snapshotId)),
+
+  releaseGate: protectedProcedure
+    .input(z.object({ skillSlug: z.string().min(1), skillVersion: z.string().optional() }))
+    .query(({ input }) => getSkillReleaseGateDecision(input.skillSlug, input.skillVersion)),
+
+  updateReleaseGate: adminProcedure
+    .input(z.object({
+      skillSlug: z.string().min(1), mode: z.enum(["advisory", "enforced"]), minApprovedCases: z.number().int().min(0).max(100),
+      minAverageScore: z.number().min(0).max(100), minPassRate: z.number().min(0).max(100), requireHumanApproval: z.boolean(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSkillReleaseGate({ ...input, userId: ctx.user.id });
+      return getSkillReleaseGateDecision(input.skillSlug);
+    }),
+
+  rolloutPlans: protectedProcedure
+    .input(z.object({ skillSlug: z.string().optional() }).optional())
+    .query(({ input }) => listSkillRolloutPlans(input?.skillSlug)),
+
+  rolloutDecisions: protectedProcedure
+    .input(z.object({ planId: z.string().min(1) }))
+    .query(({ input }) => listSkillRolloutDecisions(input.planId)),
+
+  createRolloutPlan: adminProcedure
+    .input(z.object({
+      skillSlug: z.string().min(1), snapshotId: z.string().min(1), rolloutPercent: z.number().int().min(0).max(50).optional(),
+      allowedUserIds: z.array(z.number().int().positive()).max(100).optional(), allowedProjectIds: z.array(z.number().int().positive()).max(100).optional(),
+      decisionNote: z.string().min(5).max(4000),
+    }))
+    .mutation(({ input, ctx }) => createSkillRolloutPlan({ ...input, userId: ctx.user.id })),
+
+  approveRolloutPlan: adminProcedure
+    .input(z.object({ planId: z.string().min(1), decisionNote: z.string().min(5).max(4000) }))
+    .mutation(({ input, ctx }) => approveSkillRolloutPlan({ ...input, userId: ctx.user.id })),
+
+  activateRolloutPlan: adminProcedure
+    .input(z.object({ planId: z.string().min(1), rolloutPercent: z.number().int().min(1).max(50), decisionNote: z.string().min(5).max(4000) }))
+    .mutation(({ input, ctx }) => activateSkillRolloutPlan({ ...input, userId: ctx.user.id })),
+
+  stopRolloutPlan: adminProcedure
+    .input(z.object({ planId: z.string().min(1), status: z.enum(["paused", "rolled_back", "completed"]), decisionNote: z.string().min(5).max(4000) }))
+    .mutation(({ input, ctx }) => stopSkillRolloutPlan({ ...input, userId: ctx.user.id })),
+
+  executionPresets: protectedProcedure
+    .query(({ ctx }) => listExecutionPresets((ctx.user as any).defaultWorkspaceId ?? null)),
+
+  seedExecutionPresets: adminProcedure
+    .mutation(({ ctx }) => seedExecutionPresets(ctx.user.id)),
+
+  reviewRequests: protectedProcedure
+    .input(z.object({ agentRunId: z.string().optional() }).optional())
+    .query(({ ctx, input }) => listHarnessReviewRequests((ctx.user as any).defaultWorkspaceId ?? null, input?.agentRunId)),
+
+  createReviewRequest: adminProcedure
+    .input(z.object({
+      agentRunId: z.string().nullable().optional(), nodeId: z.string().nullable().optional(),
+      requestType: z.enum(["review_required", "approval_required", "selection_required"]).optional(),
+      title: z.string().min(2).max(255), candidateSummary: z.any().optional(), requestedReason: z.string().max(4000).nullable().optional(),
+    }))
+    .mutation(({ ctx, input }) => createHarnessReviewRequest({
+      ...input, workspaceId: (ctx.user as any).defaultWorkspaceId ?? null, requestedBy: ctx.user.id,
+    })),
+
+  resolveReviewRequest: adminProcedure
+    .input(z.object({
+      reviewId: z.string().min(1), status: z.enum(["approved", "rejected", "selected", "canceled"]), reason: z.string().min(2).max(4000), decision: z.any().optional(),
+    }))
+    .mutation(({ ctx, input }) => resolveHarnessReviewRequest({ ...input, userId: ctx.user.id })),
+
+  recordFeedbackSignal: protectedProcedure
+    .input(z.object({
+      projectId: z.number().int().positive().nullable().optional(), domain: z.string().min(1).max(32), artifactKey: z.string().nullable().optional(), selectionId: z.string().nullable().optional(),
+      selectedArtifactId: z.string().nullable().optional(), candidateArtifactIds: z.array(z.string()).max(100).optional(), editDiff: z.any().optional(), selectionReason: z.string().max(4000).nullable().optional(),
+      outcomeStatus: z.enum(["pending", "accepted", "revised", "rejected", "published"]).optional(), outcomeMetadata: z.any().optional(),
+    }))
+    .mutation(({ ctx, input }) => recordHarnessFeedback({
+      ...input, workspaceId: (ctx.user as any).defaultWorkspaceId ?? null, userId: ctx.user.id,
+    })),
+
+  parallelPlans: protectedProcedure
+    .input(z.object({ agentRunId: z.string().optional() }).optional())
+    .query(({ input }) => listParallelPlans(input?.agentRunId)),
+
+  previewParallelPlan: adminProcedure
+    .input(z.object({ agentRunId: z.string().min(1), branchNodeIds: z.array(z.string().min(1)).min(2).max(8) }))
+    .query(({ input }) => previewParallelPlan(input)),
+
+  createParallelPlan: adminProcedure
+    .input(z.object({
+      agentRunId: z.string().min(1), parentNodeId: z.string().nullable().optional(), mergeNodeId: z.string().nullable().optional(),
+      maxConcurrency: z.number().int().min(1).max(4), branchNodeIds: z.array(z.string().min(1)).min(2).max(8), policy: z.any().optional(),
+    }))
+    .mutation(({ ctx, input }) => createParallelPlan({
+      ...input, workspaceId: (ctx.user as any).defaultWorkspaceId ?? null, userId: ctx.user.id,
+    })),
+
+  approveParallelPlanDraft: adminProcedure
+    .input(z.object({ parallelPlanId: z.string().min(1), reviewId: z.string().min(1), reason: z.string().min(2).max(4000) }))
+    .mutation(({ ctx, input }) => approveParallelPlanDraft({ ...input, userId: ctx.user.id })),
+
   get: protectedProcedure
     .input(z.object({ slug: z.string() }))
     .query(async ({ input }) => {
@@ -69,7 +250,7 @@ export const emperorSkillsRouter = router({
       disallowedTools: z.array(z.string()).optional(),
       version: z.union([z.string(), z.number()]).optional().default(1),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const manifest = {
         implementation: {
           systemPrompt: input.systemPrompt || "",
@@ -89,6 +270,8 @@ export const emperorSkillsRouter = router({
           input.disallowedTools ? JSON.stringify(input.disallowedTools) : null,
         ]
       );
+      const created = await rawExecute("SELECT * FROM emperor_skills WHERE slug=? LIMIT 1", [input.slug]);
+      if (created[0]) await captureSkillVersionSnapshot({ skill: created[0], userId: ctx.user.id, source: "create" });
       return { success: true };
     }),
 
@@ -111,8 +294,17 @@ export const emperorSkillsRouter = router({
       disallowedTools: z.array(z.string()).nullable().optional(),
       version: z.union([z.string(), z.number()]).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { slug, systemPrompt, userPromptTemplate, whenToUse, timeoutSeconds, executionMode, allowedTools, disallowedTools, version, ...updates } = input;
+      const beforeRows = await rawExecute("SELECT * FROM emperor_skills WHERE slug=? LIMIT 1", [slug]);
+      if (!beforeRows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Skill not found" });
+      if (updates.status === "Released") {
+        const candidateVersion = version === undefined ? String(beforeRows[0].version ?? "1") : String(version);
+        const gate = await getSkillReleaseGateDecision(slug, candidateVersion);
+        if (gate.mode === "enforced" && !gate.allowed) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: `发布门禁未通过：${gate.reasons.join("；")}` });
+        }
+      }
       const sets: string[] = [];
       const params: any[] = [];
       if (updates.name !== undefined) { sets.push("name = ?"); params.push(updates.name); }
@@ -138,6 +330,8 @@ export const emperorSkillsRouter = router({
       if (sets.length === 0) return { success: true };
       params.push(slug);
       await rawExecute(`UPDATE emperor_skills SET ${sets.join(", ")} WHERE slug = ?`, params);
+      const updated = await rawExecute("SELECT * FROM emperor_skills WHERE slug=? LIMIT 1", [slug]);
+      if (updated[0]) await captureSkillVersionSnapshot({ skill: updated[0], userId: ctx.user.id, source: updates.status === "Released" ? "release" : "update" });
       return { success: true };
     }),
 

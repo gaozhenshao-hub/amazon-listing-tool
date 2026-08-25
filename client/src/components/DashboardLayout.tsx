@@ -261,7 +261,10 @@ const modules: ModuleDef[] = [
     enabled: true,
     items: [
       { icon: LayoutDashboard, label: "Skill 库", path: "/emperor" },
+      { icon: MessageSquareText, label: "对话任务管理器", path: "/emperor/conversations" },
       { icon: Zap, label: "运行历史", path: "/emperor/trace" },
+      { icon: ClipboardCheck, label: "质量门禁", path: "/emperor/quality" },
+      { icon: Shield, label: "Harness 治理", path: "/emperor/governance" },
       { icon: Network, label: "Agent 编排", path: "/emperor/agents" },
       { icon: Cpu, label: "模型路由", path: "/emperor/models" },
       { icon: Plug, label: "MCP 连接器", path: "/emperor/mcp" },

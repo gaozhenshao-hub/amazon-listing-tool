@@ -23,7 +23,9 @@ import {
   runEmperorSkill,
   safeParseSkillJSON,
   SkillRunError,
+  normalizeSkillExecutionPreset,
   type SkillRuntimeSnapshot,
+  type SkillExecutionPreset,
   type SkillVersionPolicy,
 } from "../skillRunner";
 
@@ -38,6 +40,7 @@ import { registerAgentArtifactLifecycleIndex } from "../artifactLifecycle";
 export { canTransitionNodeStatus, canTransitionRunStatus };
 
 export type { AgentNodeStatus, AgentRunStatus } from "../agentStateMachine";
+export type { SkillExecutionPreset } from "../skillRunner";
 
 export type EmperorAgentNode = {
   id: string;
@@ -181,15 +184,30 @@ export type AgentContextBudgetReport = {
 
 export type AgentContextProvenanceSource = {
   path: string;
-  sourceType: "run_input" | "checkpoint" | "artifact" | "artifact_ref";
+  sourceType: "run_input" | "checkpoint" | "artifact" | "artifact_ref" | "knowledge";
   nodeId?: string;
   artifactRef?: string;
   checkpointStatus?: string;
   artifactVersion?: number;
+  knowledgeId?: number;
+  source?: string | null;
+};
+
+export type AgentContextKnowledgeRef = {
+  knowledgeId: number;
+  title: string;
+  memoryType: string;
+  source?: string | null;
+  tags: string[];
+  confidence: number;
+  score: number;
+  matchedTerms: string[];
+  content: string;
+  updatedAt?: string | null;
 };
 
 export type AgentContextPackage = {
-  version: "1.0";
+  version: "1.0" | "1.1";
   schema: {
     name: "agent.context_package";
     version: "1.1";
@@ -214,6 +232,23 @@ export type AgentContextPackage = {
   parentOutputs: Record<string, unknown>;
   confirmedOutputs: Record<string, unknown>;
   artifacts: AgentContextArtifactRef[];
+  knowledge?: AgentContextKnowledgeRef[];
+  compiler?: {
+    name: "emperor.context_compiler";
+    version: string;
+    policy: AgentContextCompilerPolicy;
+    policyHash: string;
+    queryTokenCount: number;
+    selectedKnowledgeCount: number;
+    compiledAt: string;
+  };
+  toolPolicy?: {
+    mode: "catalog_only" | "governed_only";
+    shell: "denied";
+    execution: "tool_gateway_only" | "not_requested";
+    requestedToolSlug: string | null;
+    note: string;
+  };
   resourceRefs: Record<AgentContextResourceKind, AgentContextResourceRef[]>;
   contextBudget: AgentContextBudgetReport;
   provenance: {
@@ -235,6 +270,17 @@ export type AgentContextPackageOptions = {
   maxObjectKeys?: number;
   summaryStringLength?: number;
   sectionTokenBudgets?: Partial<Record<"runInputs" | "parentOutputs" | "confirmedOutputs" | "artifacts", number>>;
+  compilerPolicy?: AgentContextCompilerPolicy;
+};
+
+export type AgentContextCompilerPolicy = {
+  enabled?: boolean;
+  maxKnowledgeItems?: number;
+  maxKnowledgeItemChars?: number;
+  memoryTypes?: string[];
+  queries?: string[];
+  includeProjectKnowledge?: boolean;
+  toolStrategy?: "catalog_only" | "governed_only";
 };
 
 type CheckpointRow = {
@@ -673,4 +719,4 @@ async function buildNodeRunMetadata(node: EmperorAgentNode, workspaceId?: number
   return metadata;
 }
 
-export { TRPCError, createHash, drizzleSql, getDb, buildWorkspaceScopeFilter, assertNodeTransition, withAgentStateMachine, getEmperorSkillRuntimeSnapshot, normalizeSkillVersion, runEmperorSkill, safeParseSkillJSON, SkillRunError, SkillRuntimeSnapshot, SkillVersionPolicy, calculateAiJobRetryDelayMs, cancelAiJob, failAiJob, getAiJobRun, registerAiJobHandler, retryAiJob, startRegisteredAiJob, AiJobSnapshot, invokeEmperorTool, recordAiOsEvaluation, recordAiOsMetric, registerAgentArtifactLifecycleIndex, CheckpointRow, agentArtifactStoreState, hashJson, hashArtifactContent, assertRunMutable, rawExecute, parseJson, stringifyJson, stringifyJsonOrNull, toRecord, generateRunId, nodeMaxAttempts, nodeTimeoutAt, SUPPORTED_AGENT_NODE_TYPES, edgeId, addDagIssue, resolveNodeToolSlugForValidation, edgeSource, edgeTarget, parentIds, childIds, descendantIds, isConfirmedStatus, checkpointPayload, checkpointMetadata, buildNodeRunMetadata };
+export { TRPCError, createHash, drizzleSql, getDb, buildWorkspaceScopeFilter, assertNodeTransition, withAgentStateMachine, getEmperorSkillRuntimeSnapshot, normalizeSkillVersion, normalizeSkillExecutionPreset, runEmperorSkill, safeParseSkillJSON, SkillRunError, SkillRuntimeSnapshot, SkillVersionPolicy, calculateAiJobRetryDelayMs, cancelAiJob, failAiJob, getAiJobRun, registerAiJobHandler, retryAiJob, startRegisteredAiJob, AiJobSnapshot, invokeEmperorTool, recordAiOsEvaluation, recordAiOsMetric, registerAgentArtifactLifecycleIndex, CheckpointRow, agentArtifactStoreState, hashJson, hashArtifactContent, assertRunMutable, rawExecute, parseJson, stringifyJson, stringifyJsonOrNull, toRecord, generateRunId, nodeMaxAttempts, nodeTimeoutAt, SUPPORTED_AGENT_NODE_TYPES, edgeId, addDagIssue, resolveNodeToolSlugForValidation, edgeSource, edgeTarget, parentIds, childIds, descendantIds, isConfirmedStatus, checkpointPayload, checkpointMetadata, buildNodeRunMetadata };

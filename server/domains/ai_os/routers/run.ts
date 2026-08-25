@@ -219,7 +219,16 @@ export const emperorRunRouter = router({
       if (!isAdmin && run.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
       const output = typeof run.output === "string" ? JSON.parse(run.output) : run.output;
       const inputData = typeof run.input === "string" ? JSON.parse(run.input) : run.input;
-      return { ...run, output, input: inputData };
+      const [rootTraceRows, ledgerTraceRows] = await Promise.all([
+        rawExecute("SELECT traceId FROM emperor_run_traces WHERE rootRunId=? ORDER BY createdAt DESC LIMIT 2", [input.runId]),
+        rawExecute("SELECT DISTINCT traceId FROM emperor_run_ledger_events WHERE entityType='skill_run' AND entityId=? ORDER BY traceId ASC LIMIT 2", [input.runId]),
+      ]);
+      const traceCandidates = Array.from(new Set([
+        ...rootTraceRows.map((row: any) => String(row.traceId || "")).filter(Boolean),
+        ...ledgerTraceRows.map((row: any) => String(row.traceId || "")).filter(Boolean),
+      ])).slice(0, 2);
+      // 只有唯一、数据库可验证的Trace才交给前端投影；多候选保持未选择，避免错误拼接运行历史。
+      return { ...run, output, input: inputData, traceId: traceCandidates.length === 1 ? traceCandidates[0] : null, traceCandidates };
     }),
 
   tokenStats: protectedProcedure

@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb } from "../../../repositories/dbClient";
+import { createHarnessReviewRequest, normalizeReviewType } from "./harnessCompletion";
 
 export type AgentNodeStatus = "pending" | "ready" | "running" | "waiting_human" | "confirmed" | "skipped" | "failed" | "canceled";
 export type AgentRunStatus = "running" | "waiting_human" | "paused" | "completed" | "failed" | "canceled";
@@ -344,6 +345,21 @@ export class AgentStateMachine {
           [input.nodeId, input.runId],
         );
       }
+    }
+    if (input.to === "waiting_human") {
+      const metadata = (input.metadata && typeof input.metadata === "object" ? input.metadata : {}) as Record<string, any>;
+      const node = metadata.node && typeof metadata.node === "object" ? metadata.node : {};
+      const protocol = normalizeReviewType(node.approvalProtocol || metadata.approvalProtocol);
+      void createHarnessReviewRequest({
+        workspaceId: run.workspaceId ?? null,
+        agentRunId: input.runId,
+        nodeId: input.nodeId,
+        requestType: protocol,
+        title: `${node.label || checkpoint.nodeLabel || input.nodeId}：${protocol === "selection_required" ? "请选择候选结果" : protocol === "approval_required" ? "请批准继续执行" : "请审核结果"}`,
+        candidateSummary: { nodeType: node.nodeType || checkpoint.nodeType || null, output: input.output },
+        requestedReason: String(node.approvalReason || metadata.approvalReason || "节点已完成，等待人工决定"),
+        requestedBy: run.userId ?? null,
+      }).catch(() => null);
     }
     return { ignored: false, from, to: input.to };
   }

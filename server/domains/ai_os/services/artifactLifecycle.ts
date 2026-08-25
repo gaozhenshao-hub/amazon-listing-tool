@@ -3,6 +3,7 @@ import { sql as drizzleSql } from "drizzle-orm";
 import { getDb, withDbTransaction, type DbExecutor } from "../../../repositories/dbClient";
 import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { buildStorageUri, parseStorageUri, storageGet, storagePut, type StorageProvider } from "../../../storage";
+import { recordHarnessFeedback } from "./harnessCompletion";
 
 export type ArtifactDomain = "listing" | "image" | "ads" | "video" | "agent" | "project" | "file" | "ops" | "tool" | "other";
 export type UnifiedArtifactType = "json" | "text" | "markdown" | "html" | "image" | "file" | "table" | "video" | "audio" | "other";
@@ -963,7 +964,7 @@ export async function selectUnifiedArtifactVersion(input: {
   action?: "select" | "rollback" | "confirm";
   reason?: string | null;
 }) {
-  const selectedId = await withDbTransaction("Select unified Artifact version", async (tx) => {
+  const selection = await withDbTransaction("Select unified Artifact version", async (tx) => {
     const params: unknown[] = [input.artifactId];
     const workspaceClause = input.workspaceId === undefined
       ? ""
@@ -1010,10 +1011,31 @@ export async function selectUnifiedArtifactVersion(input: {
       userId: input.userId,
       reason: input.reason,
     });
-    return String(target.artifactId);
+    return {
+      artifactId: String(target.artifactId),
+      workspaceId: target.workspaceId ?? null,
+      projectId: target.projectId ?? null,
+      artifactKey: String(target.artifactKey || "artifact"),
+      previousArtifactId: previous?.artifactId ? String(previous.artifactId) : null,
+      selectedVersion: Number(target.version),
+      previousVersion: previous?.version ? Number(previous.version) : null,
+      action: input.action || "select",
+    };
   });
+  void recordHarnessFeedback({
+    workspaceId: selection.workspaceId,
+    projectId: selection.projectId,
+    domain: "artifact",
+    artifactKey: selection.artifactKey,
+    selectedArtifactId: selection.artifactId,
+    candidateArtifactIds: [selection.previousArtifactId, selection.artifactId].filter((value): value is string => Boolean(value)),
+    selectionReason: input.reason ?? null,
+    outcomeStatus: selection.action === "confirm" ? "accepted" : selection.action === "rollback" ? "revised" : "pending",
+    outcomeMetadata: { action: selection.action, fromVersion: selection.previousVersion, toVersion: selection.selectedVersion },
+    userId: input.userId ?? null,
+  }).catch(() => null);
   return resolveUnifiedArtifact({
-    artifactId: selectedId,
+    artifactId: selection.artifactId,
     workspaceId: input.workspaceId,
     domain: "other",
     artifactKey: "selected",

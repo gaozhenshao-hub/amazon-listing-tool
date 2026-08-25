@@ -3,6 +3,7 @@ import { adminProcedure, protectedProcedure, router } from "../../../_core/trpc"
 import { actorFromContext, assertResourceAction, recordSecurityAuditLog, workspaceIdFromContext } from "../../../services/securityGovernance";
 import { invokeEmperorTool, listEmperorToolRuns, listEmperorTools, rotateEmperorToolSecret, seedBuiltinTools, upsertEmperorTool, upsertEmperorToolSecret } from "../services/toolGateway";
 import { rawExecute } from "../routerContext";
+import { prepareToolRunRecovery } from "../services/directRunRecovery";
 
 export const emperorToolsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -86,6 +87,39 @@ export const emperorToolsRouter = router({
           failureKind: result.metadata.failureKind,
           retryable: result.metadata.retryable,
           secretRefs: result.metadata.secretRefs,
+        },
+      });
+      return result;
+    }),
+
+  prepareRecovery: protectedProcedure
+    .input(z.object({ toolRunId: z.string().min(1).max(80), expectedStateVersion: z.number().int().min(0).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      await assertResourceAction({
+        actor: actorFromContext(ctx),
+        resource: "tool",
+        action: "invoke",
+        resourceId: input.toolRunId,
+      });
+      const workspaceId = workspaceIdFromContext(ctx);
+      const result = await prepareToolRunRecovery({
+        toolRunId: input.toolRunId,
+        userId: ctx.user.id,
+        workspaceId,
+        expectedStateVersion: input.expectedStateVersion,
+      });
+      await recordSecurityAuditLog({
+        ctx,
+        workspaceId,
+        action: "tool.recovery_prepare",
+        resourceType: "tool_run",
+        resourceId: input.toolRunId,
+        status: result.allowed ? "success" : "denied",
+        riskLevel: result.allowed ? "medium" : "high",
+        metadata: {
+          recoveryId: result.recoveryId,
+          manualExecutionRequired: result.manualExecutionRequired,
+          reasonCode: result.reasonCode || null,
         },
       });
       return result;

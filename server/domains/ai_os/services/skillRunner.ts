@@ -2,10 +2,12 @@ import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 import { createHash } from "crypto";
 import Handlebars from "handlebars";
+import { SocksProxyAgent } from "socks-proxy-agent";
 import { getDb } from "../../../repositories/dbClient";
 import { buildWorkspaceScopeFilter } from "../../../services/securityGovernance";
 import { invokeLLM, type InvokeResult, type Message, type MessageContent } from "../../../_core/llm";
-import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
+import { ENV } from "../../../_core/env";
+import { SafeHttpError, safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { recordAiOsEvaluation, recordAiOsMetric } from "./observability";
 
 export type SkillRunErrorCode =
@@ -63,6 +65,9 @@ type SkillManifest = {
     systemPrompt?: string;
     userPromptTemplate?: string;
     modelPolicy?: string;
+    /** 只接受已登记模型Provider slug，禁止用Preset携带任意端点或密钥。 */
+    qualityModelPolicy?: string;
+    evaluationModelPolicy?: string;
     maxTokens?: number;
     temperature?: number;
     supportsJsonMode?: boolean;
@@ -88,6 +93,7 @@ export type RunSkillInput<T> = {
   skillVersionPolicy?: SkillVersionPolicy;
   expectedSkillVersion?: string | number;
   expectedSkillPromptHash?: string;
+  executionPreset?: SkillExecutionPreset;
   maxModelAttempts?: number;
   signal?: AbortSignal;
   validate?: (content: string) => T;
@@ -109,9 +115,19 @@ export type RunSkillResult<T = string> = {
   inputTokens: number;
   outputTokens: number;
   fallbackCount: number;
+  executionPreset: SkillExecutionPreset;
 };
 
 export type SkillVersionPolicy = "latest" | "snapshot" | "pinned";
+
+/** Harness执行模式只能调整受治理模型候选顺序，不能绕开Skill、模型Provider或Tool边界。 */
+export type SkillExecutionPreset = "standard" | "quality_first" | "batch_background" | "evaluation";
+
+export function normalizeSkillExecutionPreset(value: unknown): SkillExecutionPreset {
+  return value === "quality_first" || value === "batch_background" || value === "evaluation"
+    ? value
+    : "standard";
+}
 
 export type SkillRuntimeSnapshot = {
   slug: string;
@@ -131,6 +147,21 @@ const DEFAULT_FALLBACKS = [
   "gemini-3-6-flash",
   "manus-default",
 ];
+
+const TEAMOROUTER_HOST = "api.teamorouter.com";
+
+export function createRestrictedTeamorouterSocksAgent(targetUrl: string, proxyUrl = ENV.teamorouterSocksProxy) {
+  const target = new URL(targetUrl);
+  const configuredProxy = proxyUrl.trim();
+  if (target.hostname !== TEAMOROUTER_HOST || !configuredProxy) return undefined;
+
+  const proxy = new URL(configuredProxy);
+  const loopbackHosts = new Set(["127.0.0.1", "::1", "localhost"]);
+  if (!new Set(["socks5:", "socks5h:"]).has(proxy.protocol) || !loopbackHosts.has(proxy.hostname)) {
+    throw new SkillRunError("PROVIDER_UNAVAILABLE", "Teamorouter SOCKS proxy must use a local socks5 endpoint", false);
+  }
+  return new SocksProxyAgent(proxy);
+}
 
 function generateRunId(): string {
   return `run_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -441,6 +472,14 @@ function buildPromptAudit(skillSlug: string, dbSystemPrompt: string, legacySyste
 
 function classifyProviderError(error: unknown): SkillRunError {
   if (error instanceof SkillRunError) return error;
+  if (error instanceof SafeHttpError) {
+    if (error.reason === "timeout") {
+      return new SkillRunError("PROVIDER_TIMEOUT", "AI provider timed out", true, error);
+    }
+    if (error.reason === "network" || error.reason === "dns_resolution_failed") {
+      return new SkillRunError("PROVIDER_UNAVAILABLE", "AI provider network is temporarily unavailable", true, error);
+    }
+  }
   if (error instanceof DOMException && error.name === "TimeoutError") {
     return new SkillRunError("PROVIDER_TIMEOUT", "AI provider timed out", true, error);
   }
@@ -485,9 +524,9 @@ async function getModelBySlug(slug: string, workspaceId?: number | null): Promis
   const scope = workspaceId === undefined ? null : buildWorkspaceScopeFilter(workspaceId);
   const rows = await rawExecute(
     scope
-      ? `SELECT * FROM emperor_model_providers WHERE slug = ? AND isActive = 1 AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`
-      : "SELECT * FROM emperor_model_providers WHERE slug = ? AND isActive = 1 LIMIT 1",
-    scope ? [slug, ...scope.params] : [slug],
+      ? `SELECT * FROM emperor_model_providers WHERE (slug = ? OR modelId = ?) AND isActive = 1 AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`
+      : "SELECT * FROM emperor_model_providers WHERE (slug = ? OR modelId = ?) AND isActive = 1 LIMIT 1",
+    scope ? [slug, slug, ...scope.params] : [slug, slug],
   );
   return (rows[0] as ModelRow | undefined) ?? null;
 }
@@ -497,12 +536,19 @@ async function resolveModelCandidates(
   requestedModel: string | undefined,
   fallbackModels: string[],
   workspaceId?: number | null,
+  executionPreset: SkillExecutionPreset = "standard",
 ): Promise<ModelRow[]> {
   const manifest = parseJson<SkillManifest>(skill.manifest, {});
+  const configuredModel = skill.modelOverride || skill.model_override || manifest.implementation?.modelPolicy;
+  const qualityModel = executionPreset === "quality_first"
+    ? manifest.implementation?.qualityModelPolicy || configuredModel
+    : executionPreset === "evaluation"
+      ? manifest.implementation?.evaluationModelPolicy || configuredModel
+      : undefined;
   const preferred = [
     requestedModel,
-    skill.modelOverride || skill.model_override || undefined,
-    manifest.implementation?.modelPolicy,
+    qualityModel,
+    configuredModel,
   ].filter((value): value is string => Boolean(value));
 
   if (preferred.length === 0) {
@@ -547,6 +593,7 @@ async function callModel(
     if (responseFormat) payload.response_format = responseFormat;
 
     const apiUrl = `${model.baseUrl.replace(/\/$/, "")}/chat/completions`;
+    const proxyAgent = createRestrictedTeamorouterSocksAgent(apiUrl);
     const response = await safeHttpRequest(apiUrl, {
       method: "POST",
       headers: {
@@ -557,6 +604,7 @@ async function callModel(
       signal,
       timeoutMs: timeoutSeconds * 1000,
       maxResponseBytes: 20 * 1024 * 1024,
+      agent: proxyAgent,
       allowedHosts: [new URL(apiUrl).hostname],
       allowPrivateNetwork: process.env.MODEL_PROVIDER_ALLOW_PRIVATE_NETWORK === "true",
       auditContext: {
@@ -627,6 +675,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
   const skillSnapshot = buildSkillRuntimeSnapshot(skill, manifest);
   assertSkillSnapshotCompatible(skillSnapshot, input);
   const implementation = manifest.implementation || {};
+  const executionPreset = normalizeSkillExecutionPreset(input.executionPreset);
   const timeoutSeconds = skillSnapshot.timeoutSeconds;
   const variables = {
     context: input.context || "",
@@ -641,6 +690,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
   const promptAudit = buildPromptAudit(skill.slug, implementation.systemPrompt || "", input.legacySystemPrompt, input.migrationSource);
   const executionVariables = {
     ...variables,
+    __executionPreset: executionPreset,
     __promptAudit: {
       ...promptAudit,
       skillVersion: skillSnapshot.version,
@@ -653,6 +703,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
     input.modelOverride,
     input.fallbackModels || DEFAULT_FALLBACKS,
     input.workspaceId ?? skill.workspaceId ?? null,
+    executionPreset,
   );
   const modelAttempts = models.slice(0, Math.min(Math.max(input.maxModelAttempts || models.length, 1), models.length));
 
@@ -706,6 +757,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
           JSON.stringify({
             content: response.content,
             fallbackCount: index,
+            executionPreset,
             skillVersion: skillSnapshot.version,
             skillPromptHash: skillSnapshot.systemPromptHash,
             skillManifestHash: skillSnapshot.manifestHash,
@@ -736,6 +788,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
           skillVersion: skillSnapshot.version,
           modelSlug: model.slug,
           provider: model.provider,
+          executionPreset,
           inputTokens: response.inputTokens,
           outputTokens: response.outputTokens,
           durationMs,
@@ -751,7 +804,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
         workspaceId: input.workspaceId ?? skill.workspaceId ?? null,
         userId: input.userId,
         skillSlug: skill.slug,
-        metadata: { skillName: skill.name, modelSlug: model.slug, provider: model.provider, fallbackCount: index },
+        metadata: { skillName: skill.name, modelSlug: model.slug, provider: model.provider, fallbackCount: index, executionPreset },
       });
       void recordAiOsMetric({
         entityType: "skill",
@@ -762,7 +815,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
         workspaceId: input.workspaceId ?? skill.workspaceId ?? null,
         userId: input.userId,
         skillSlug: skill.slug,
-        metadata: { inputTokens: response.inputTokens, outputTokens: response.outputTokens, modelSlug: model.slug },
+        metadata: { inputTokens: response.inputTokens, outputTokens: response.outputTokens, modelSlug: model.slug, executionPreset },
       });
       return {
         runId,
@@ -780,6 +833,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
         inputTokens: response.inputTokens,
         outputTokens: response.outputTokens,
         fallbackCount: index,
+        executionPreset,
       };
     } catch (error) {
       lastError = input.signal?.aborted
@@ -804,7 +858,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
     userId: input.userId,
     skillSlug: skill.slug,
     retryCount: modelAttempts.length - 1,
-    metadata: { skillName: skill.name, retryable: lastError?.retryable ?? false },
+    metadata: { skillName: skill.name, retryable: lastError?.retryable ?? false, executionPreset },
   });
   void recordAiOsMetric({
     entityType: "skill",
@@ -815,7 +869,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
     workspaceId: input.workspaceId ?? skill.workspaceId ?? null,
     userId: input.userId,
     skillSlug: skill.slug,
-    metadata: { skillName: skill.name, errorCode: lastError?.code || "UNKNOWN", retryable: lastError?.retryable ?? false },
+    metadata: { skillName: skill.name, errorCode: lastError?.code || "UNKNOWN", retryable: lastError?.retryable ?? false, executionPreset },
   });
   throw new TRPCError({
     code: "INTERNAL_SERVER_ERROR",

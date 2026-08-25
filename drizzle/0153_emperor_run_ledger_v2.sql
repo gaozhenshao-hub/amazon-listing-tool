@@ -1,0 +1,62 @@
+CREATE TABLE IF NOT EXISTS `emperor_run_traces` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `workspaceId` INT NULL,
+  `traceId` VARCHAR(80) NOT NULL,
+  `rootRunId` VARCHAR(80) NOT NULL,
+  `rootRunType` VARCHAR(40) NOT NULL,
+  `agentSlug` VARCHAR(128) NULL,
+  `projectId` INT NULL,
+  `userId` INT NULL,
+  `status` VARCHAR(40) NOT NULL DEFAULT 'running',
+  `contextManifestHash` VARCHAR(64) NULL,
+  `metadata` JSON NULL,
+  `startedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `completedAt` TIMESTAMP NULL,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_emperor_run_traces_traceId` (`traceId`),
+  KEY `idx_emperor_run_traces_rootRunId` (`rootRunId`),
+  KEY `idx_emperor_run_traces_workspace_created` (`workspaceId`, `createdAt`),
+  KEY `idx_emperor_run_traces_agent_status` (`agentSlug`, `status`)
+);
+
+CREATE TABLE IF NOT EXISTS `emperor_run_ledger_events` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `eventId` VARCHAR(80) NOT NULL,
+  `traceId` VARCHAR(80) NOT NULL,
+  `eventType` VARCHAR(80) NOT NULL,
+  `entityType` VARCHAR(40) NOT NULL,
+  `entityId` VARCHAR(128) NULL,
+  `nodeId` VARCHAR(128) NULL,
+  `skillSlug` VARCHAR(128) NULL,
+  `toolSlug` VARCHAR(128) NULL,
+  `jobRunId` VARCHAR(80) NULL,
+  `actorUserId` INT NULL,
+  `payloadHash` VARCHAR(64) NULL,
+  `payload` JSON NULL,
+  `visibility` VARCHAR(24) NOT NULL DEFAULT 'admin',
+  `occurredAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_emperor_run_ledger_events_eventId` (`eventId`),
+  KEY `idx_emperor_run_ledger_events_trace` (`traceId`, `id`),
+  KEY `idx_emperor_run_ledger_events_entity` (`entityType`, `entityId`),
+  KEY `idx_emperor_run_ledger_events_occurred` (`occurredAt`)
+);
+
+CREATE TABLE IF NOT EXISTS `emperor_context_manifests` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `manifestId` VARCHAR(80) NOT NULL,
+  `traceId` VARCHAR(80) NOT NULL,
+  `runId` VARCHAR(80) NOT NULL,
+  `nodeId` VARCHAR(128) NULL,
+  `manifestVersion` VARCHAR(24) NOT NULL DEFAULT '1.0',
+  `contextHash` VARCHAR(64) NOT NULL,
+  `estimatedTokens` INT NULL,
+  `maxTokens` INT NULL,
+  `sourceCount` INT NOT NULL DEFAULT 0,
+  `manifest` JSON NOT NULL,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_emperor_context_manifests_manifestId` (`manifestId`),
+  KEY `idx_emperor_context_manifests_trace` (`traceId`, `id`),
+  KEY `idx_emperor_context_manifests_run_node` (`runId`, `nodeId`)
+);

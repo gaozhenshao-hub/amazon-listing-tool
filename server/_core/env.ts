@@ -12,6 +12,7 @@ export const ENV = {
   externalLlmBaseUrl: process.env.EXTERNAL_LLM_BASE_URL ?? "",
   externalLlmApiKey: process.env.EXTERNAL_LLM_API_KEY ?? "",
   externalLlmModel: process.env.EXTERNAL_LLM_MODEL ?? "",
+  teamorouterSocksProxy: process.env.TEAMOROUTER_SOCKS_PROXY ?? "",
   storageProvider: (process.env.STORAGE_PROVIDER ?? "forge").trim().toLowerCase(),
   s3Endpoint: process.env.S3_ENDPOINT ?? "",
   s3PublicEndpoint: process.env.S3_PUBLIC_ENDPOINT ?? "",

@@ -1,14 +1,49 @@
-import { TRPCError, assertNodeTransition, withAgentStateMachine, AgentNodeStatus, AgentRunStatus, runEmperorSkill, safeParseSkillJSON, SkillRuntimeSnapshot, SkillVersionPolicy, calculateAiJobRetryDelayMs, cancelAiJob, failAiJob, getAiJobRun, registerAiJobHandler, retryAiJob, startRegisteredAiJob, AiJobSnapshot, invokeEmperorTool, recordAiOsEvaluation, recordAiOsMetric, EmperorAgentNode, EmperorAgentDag, CheckpointRow, resolveAgentNodeSkillBinding, buildStoredAgentRunInputs, parseStoredAgentRunInputs, assertRunMutable, rawExecute, parseJson, stringifyJson, toRecord, generateRunId, normalizeAgentDag, nodeMaxAttempts, nodeTimeoutAt, assertValidAgentDag, parentIds, descendantIds, isConfirmedStatus, checkpointPayload, checkpointMetadata, buildNodeRunMetadata } from "./runtimeCore";
+import { TRPCError, assertNodeTransition, withAgentStateMachine, AgentNodeStatus, AgentRunStatus, runEmperorSkill, safeParseSkillJSON, SkillRuntimeSnapshot, SkillVersionPolicy, SkillExecutionPreset, normalizeSkillExecutionPreset, calculateAiJobRetryDelayMs, cancelAiJob, failAiJob, getAiJobRun, registerAiJobHandler, retryAiJob, startRegisteredAiJob, AiJobSnapshot, invokeEmperorTool, recordAiOsEvaluation, recordAiOsMetric, EmperorAgentNode, EmperorAgentDag, CheckpointRow, resolveAgentNodeSkillBinding, buildStoredAgentRunInputs, parseStoredAgentRunInputs, assertRunMutable, rawExecute, parseJson, stringifyJson, toRecord, generateRunId, normalizeAgentDag, nodeMaxAttempts, nodeTimeoutAt, assertValidAgentDag, parentIds, descendantIds, isConfirmedStatus, checkpointPayload, checkpointMetadata, buildNodeRunMetadata } from "./runtimeCore";
 import { selectAgentTemplateVersionForRun, getAgentBySlug } from "./templateGovernance";
 import { addEvent, getCheckpoints, getCheckpoint } from "./checkpointStore";
 import { persistAgentArtifact, listAgentArtifacts, estimateAgentHumanEditRate } from "./artifactStore";
 import { getRunRow, effectiveCheckpointOutput, refreshRunAfterCheckpoint, unlockChildren, buildNodeInput, buildSkillContext } from "./contextPackage";
+import {
+  buildRecoveryIdempotencyKey,
+  claimExecutionRecoveryRequest,
+  completeExecutionRecoveryRequest,
+  createExecutionStateSnapshot,
+} from "../executionLifecycle";
+import { appendRunLedgerEvent, ensureRunTrace } from "../runLedger";
+import { listInvalidatedContextSources } from "../contextProvenance";
 function nodeRequiresHumanGate(node: EmperorAgentNode): boolean {
   if (node.autoConfirm === true) return false;
   return node.humanGate !== false;
 }
 
 type AgentNodeJobFailureKind = "error" | "timeout" | "cancel";
+
+async function appendAgentLifecycleEvent(input: {
+  run: any;
+  actorUserId?: number | null;
+  eventType: string;
+  entityId?: string | null;
+  payload?: Record<string, unknown>;
+}) {
+  const traceId = `agent_run_${input.run.runId}`;
+  await ensureRunTrace({
+    runId: traceId,
+    rootRunType: "agent_run",
+    workspaceId: input.run.workspaceId ?? null,
+    agentSlug: input.run.agentSlug,
+    projectId: input.run.projectId ?? null,
+    userId: input.run.userId ?? null,
+    metadata: { agentRunId: input.run.runId, lifecycleBackfill: true },
+  });
+  await appendRunLedgerEvent({
+    traceId,
+    eventType: input.eventType,
+    entityType: "agent_run",
+    entityId: input.entityId || input.run.runId,
+    actorUserId: input.actorUserId ?? input.run.userId ?? null,
+    payload: input.payload || {},
+  });
+}
 
 export function shouldFinalizeTimedOutNodeForTerminalJob(status?: string | null) {
   return status === "failed" || status === "canceled";
@@ -313,6 +348,13 @@ async function failNodeExecution(input: {
     },
   });
   await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.failed", `节点 ${input.node.label || input.node.id} 执行失败`, { error: message });
+  await appendAgentLifecycleEvent({
+    run: input.run,
+    actorUserId: input.run.userId,
+    eventType: "lifecycle.error_classified",
+    entityId: `${input.run.runId}:${input.node.id}`,
+    payload: { nodeId: input.node.id, failureKind: input.failureKind || "error", requiresHumanReview: true },
+  }).catch(() => undefined);
 }
 
 async function recordAgentNodeJobFailure(input: {
@@ -508,6 +550,45 @@ export async function startAgentRun(input: {
     templateVersion: templateVersion?.version ?? null,
     skillSnapshots: [...nodeMetadata.values()].filter((metadata) => metadata.skillSnapshot).map((metadata) => metadata.skillSnapshot),
   });
+  const traceId = `agent_run_${runId}`;
+  await ensureRunTrace({
+    runId: traceId,
+    rootRunType: "agent_run",
+    workspaceId,
+    agentSlug: agent.slug,
+    projectId: input.projectId ?? null,
+    userId: input.userId,
+    metadata: { agentRunId: runId, templateVersion: templateVersion?.version ?? null, dagHash: runRuntime?.dagHash ?? templateVersion?.dagHash ?? null },
+  });
+  const snapshot = await createExecutionStateSnapshot({
+    workspaceId,
+    traceId,
+    targetType: "agent_run",
+    targetId: runId,
+    stateVersion: 0,
+    capabilityType: "agent",
+    capabilitySlug: agent.slug,
+    capabilityVersion: templateVersion?.version ? String(templateVersion.version) : null,
+    approvalState: "waiting_human",
+    createdBy: input.userId,
+    snapshot: {
+      agentRunId: runId,
+      agentSlug: agent.slug,
+      templateVersionId: templateVersion?.id ?? null,
+      templateVersion: templateVersion?.version ?? null,
+      dagHash: runRuntime?.dagHash ?? templateVersion?.dagHash ?? null,
+      state: "waiting_human",
+      inputHashScope: "stored_agent_run_inputs",
+    },
+  });
+  await appendRunLedgerEvent({
+    traceId,
+    eventType: "lifecycle.snapshot_created",
+    entityType: "agent_run",
+    entityId: runId,
+    actorUserId: input.userId,
+    payload: { targetType: "agent_run", snapshotId: snapshot.snapshotId, stateVersion: 0, executionMode: "serial" },
+  });
   return getAgentRun(runId, input.userId, true);
 }
 
@@ -658,8 +739,22 @@ export async function cancelAgentRun(input: {
   const detail = await getAgentRun(input.runId, input.userId);
   const run = detail.run;
   if (run.status === "canceled") return detail;
+  const traceId = `agent_run_${input.runId}`;
+  const stateVersion = Number(run.stateVersion || 0);
+  const snapshot = await createExecutionStateSnapshot({
+    workspaceId: run.workspaceId ?? null,
+    traceId,
+    targetType: "agent_run",
+    targetId: input.runId,
+    stateVersion: stateVersion + 1,
+    approvalState: run.status,
+    snapshot: { agentSlug: run.agentSlug, status: run.status, currentNodeId: run.currentNodeId ?? null, dagHash: run.dagHash ?? null, cancelReason: input.reason || null },
+    createdBy: input.userId,
+  });
+  await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.snapshot_created", payload: { snapshotId: snapshot.snapshotId, targetType: "agent_run", stateVersion: stateVersion + 1, action: "cancel" } }).catch(() => undefined);
 
   const checkpoints = detail.checkpoints as CheckpointRow[];
+  const hasExecutionProgress = checkpoints.some((checkpoint) => ["running", "confirmed", "failed"].includes(checkpoint.status));
   const runningAiJobCheckpoints = checkpoints
     .filter((checkpoint) => checkpoint.status === "running" && checkpoint.aiJobRunId)
     .map((checkpoint) => ({ nodeId: checkpoint.nodeId, nodeLabel: checkpoint.nodeLabel || checkpoint.nodeId, aiJobRunId: checkpoint.aiJobRunId as string, aiJobAttempt: checkpoint.aiJobAttempt ?? null }));
@@ -668,6 +763,12 @@ export async function cancelAgentRun(input: {
     reason: input.reason || "Agent run canceled",
     completedAt: new Date(),
   }));
+  await rawExecute(
+    "UPDATE emperor_agent_runs SET stateVersion=stateVersion+1,recoverySnapshotId=? WHERE runId=? AND stateVersion=?",
+    [snapshot.snapshotId, input.runId, stateVersion],
+  );
+  const [updated] = await rawExecute("SELECT stateVersion,status FROM emperor_agent_runs WHERE runId=? LIMIT 1", [input.runId]);
+  const cancelVersionConflict = !updated || Number(updated.stateVersion) !== stateVersion + 1 || updated.status !== "canceled";
   await Promise.all(runningAiJobCheckpoints.map(async (checkpoint) => {
     await cancelAiJob(checkpoint.aiJobRunId, input.reason || "Agent run canceled").catch(() => null);
     await addEvent(input.runId, run.agentSlug, checkpoint.nodeId, "node.job_canceled", `节点 ${checkpoint.nodeLabel} 的 Job 已取消`, {
@@ -681,6 +782,10 @@ export async function cancelAgentRun(input: {
   await addEvent(input.runId, run.agentSlug, null, "run.canceled", "Agent Run 已取消", {
     reason: input.reason || null,
   });
+  await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.canceled", payload: { reason: input.reason || null, snapshotId: snapshot.snapshotId, stateVersion: updated?.stateVersion ?? null, hadExecutionProgress: hasExecutionProgress } }).catch(() => undefined);
+  if (hasExecutionProgress || cancelVersionConflict) {
+    await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.compensation_required", payload: { reasonCode: cancelVersionConflict ? "AGENT_CANCEL_STATE_VERSION_CONFLICT" : "AGENT_CANCELED_AFTER_EXECUTION", snapshotId: snapshot.snapshotId, expectedStateVersion: stateVersion + 1, observedStateVersion: updated?.stateVersion ?? null } }).catch(() => undefined);
+  }
   return getAgentRun(input.runId, input.userId, true);
 }
 
@@ -701,16 +806,120 @@ export async function pauseAgentRun(input: {
   await addEvent(input.runId, run.agentSlug, null, "run.paused", "Agent Run 已暂停", {
     reason: input.reason || null,
   });
+  await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.paused", payload: { reason: input.reason || null } }).catch(() => undefined);
   return getAgentRun(input.runId, input.userId, true);
 }
 
 export async function resumeAgentRun(input: {
   runId: string;
   userId: number;
+  expectedStateVersion?: number;
 }) {
   const detail = await getAgentRun(input.runId, input.userId);
   const run = detail.run;
-  if (run.status !== "paused") return detail;
+  if (run.status !== "paused") {
+    await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.resume_deduped", payload: { status: run.status } }).catch(() => undefined);
+    return detail;
+  }
+  const traceId = `agent_run_${input.runId}`;
+  const observedStateVersion = Number(run.stateVersion || 0);
+  const stateVersion = input.expectedStateVersion === undefined ? observedStateVersion : Number(input.expectedStateVersion);
+  if (stateVersion !== observedStateVersion) {
+    const snapshot = await createExecutionStateSnapshot({
+      workspaceId: run.workspaceId ?? null,
+      traceId,
+      targetType: "agent_run",
+      targetId: input.runId,
+      stateVersion: observedStateVersion,
+      approvalState: run.status,
+      snapshot: { agentSlug: run.agentSlug, status: run.status, expectedStateVersion: stateVersion, observedStateVersion },
+      createdBy: input.userId,
+    });
+    const recovery = await claimExecutionRecoveryRequest({
+      idempotencyKey: buildRecoveryIdempotencyKey({ snapshotId: snapshot.snapshotId, targetType: "agent_run", targetId: input.runId, expectedStateVersion: stateVersion, requestedAction: "resume" }),
+      snapshotId: snapshot.snapshotId,
+      traceId,
+      targetType: "agent_run",
+      targetId: input.runId,
+      requestedAction: "resume",
+      expectedStateVersion: stateVersion,
+      requestedBy: input.userId,
+    });
+    await completeExecutionRecoveryRequest({ recoveryId: recovery.request.recoveryId, status: "compensation_required", reasonCode: "AGENT_STATE_VERSION_CONFLICT", result: { observedStatus: run.status, observedStateVersion } });
+    await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.compensation_required", payload: { reasonCode: "AGENT_STATE_VERSION_CONFLICT", recoveryId: recovery.request.recoveryId, expectedStateVersion: stateVersion, observedStateVersion } }).catch(() => undefined);
+    await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.recovery_rejected", payload: { reasonCode: "AGENT_STATE_VERSION_CONFLICT", expectedStateVersion: stateVersion, observedStateVersion } }).catch(() => undefined);
+    throw new TRPCError({ code: "CONFLICT", message: "Agent 运行状态已变化，请刷新后重新确认恢复" });
+  }
+  const invalidatedSources = await listInvalidatedContextSources(traceId);
+  if (invalidatedSources.length > 0) {
+    const existingSnapshots = await rawExecute(
+      "SELECT snapshotId FROM emperor_execution_state_snapshots WHERE targetType='agent_run' AND targetId=? AND stateVersion=? LIMIT 1",
+      [input.runId, stateVersion],
+    );
+    const snapshotId = existingSnapshots[0]?.snapshotId || (await createExecutionStateSnapshot({
+      workspaceId: run.workspaceId ?? null,
+      traceId,
+      targetType: "agent_run",
+      targetId: input.runId,
+      stateVersion,
+      approvalState: run.status,
+      snapshot: { agentSlug: run.agentSlug, status: run.status, contextSourceInvalidated: true, invalidatedSourceCount: invalidatedSources.length },
+      createdBy: input.userId,
+    })).snapshotId;
+    const recovery = await claimExecutionRecoveryRequest({
+      idempotencyKey: buildRecoveryIdempotencyKey({ snapshotId, targetType: "agent_run", targetId: input.runId, expectedStateVersion: stateVersion, requestedAction: "resume" }),
+      snapshotId,
+      traceId,
+      targetType: "agent_run",
+      targetId: input.runId,
+      requestedAction: "resume",
+      expectedStateVersion: stateVersion,
+      requestedBy: input.userId,
+    });
+    await completeExecutionRecoveryRequest({
+      recoveryId: recovery.request.recoveryId,
+      status: "rejected",
+      reasonCode: "CONTEXT_SOURCE_INVALIDATED",
+      result: { invalidatedSourceCount: invalidatedSources.length },
+    });
+    await appendAgentLifecycleEvent({
+      run,
+      actorUserId: input.userId,
+      eventType: "lifecycle.recovery_rejected",
+      payload: { reasonCode: "CONTEXT_SOURCE_INVALIDATED", recoveryId: recovery.request.recoveryId, invalidatedSourceCount: invalidatedSources.length },
+    }).catch(() => undefined);
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "关联上下文来源已失效，请重新编译上下文并再次人工确认后再恢复" });
+  }
+  const snapshot = await createExecutionStateSnapshot({
+    workspaceId: run.workspaceId ?? null,
+    traceId,
+    targetType: "agent_run",
+    targetId: input.runId,
+    stateVersion: stateVersion + 1,
+    approvalState: run.status,
+    snapshot: {
+      agentSlug: run.agentSlug,
+      status: run.status,
+      currentNodeId: run.currentNodeId ?? null,
+      dagHash: run.dagHash ?? null,
+      templateVersion: run.templateVersion ?? null,
+    },
+    createdBy: input.userId,
+  });
+  const recovery = await claimExecutionRecoveryRequest({
+    idempotencyKey: buildRecoveryIdempotencyKey({ snapshotId: snapshot.snapshotId, targetType: "agent_run", targetId: input.runId, expectedStateVersion: stateVersion, requestedAction: "resume" }),
+    snapshotId: snapshot.snapshotId,
+    traceId,
+    targetType: "agent_run",
+    targetId: input.runId,
+    requestedAction: "resume",
+    expectedStateVersion: stateVersion,
+    requestedBy: input.userId,
+  });
+  if (recovery.replayed && recovery.request.status === "completed") {
+    await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.recovery_deduped", payload: { recoveryId: recovery.request.recoveryId, stateVersion } }).catch(() => undefined);
+    return detail;
+  }
   const dag = normalizeAgentDag(detail.dag);
   const checkpoints = detail.checkpoints as CheckpointRow[];
   const allDone = checkpoints.length > 0 && checkpoints.every((checkpoint) => isConfirmedStatus(checkpoint.status));
@@ -722,7 +931,30 @@ export async function resumeAgentRun(input: {
     action: "resume run",
     clearError: true,
   }));
+  await rawExecute(
+    "UPDATE emperor_agent_runs SET stateVersion=stateVersion+1,recoverySnapshotId=? WHERE runId=? AND status=? AND stateVersion=?",
+    [snapshot.snapshotId, input.runId, nextStatus, stateVersion],
+  );
+  const [updated] = await rawExecute("SELECT stateVersion,status FROM emperor_agent_runs WHERE runId=? LIMIT 1", [input.runId]);
+    if (!updated || Number(updated.stateVersion) !== stateVersion + 1 || updated.status !== nextStatus) {
+      await completeExecutionRecoveryRequest({
+        recoveryId: recovery.request.recoveryId,
+        status: "compensation_required",
+        reasonCode: "AGENT_STATE_VERSION_CONFLICT",
+        result: { observedStatus: updated?.status ?? null, observedStateVersion: updated?.stateVersion ?? null },
+      });
+      await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.compensation_required", payload: { reasonCode: "AGENT_STATE_VERSION_CONFLICT", recoveryId: recovery.request.recoveryId, expectedStateVersion: stateVersion, observedStateVersion: updated?.stateVersion ?? null } }).catch(() => undefined);
+      await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.recovery_rejected", payload: { reasonCode: "AGENT_STATE_VERSION_CONFLICT" } }).catch(() => undefined);
+      throw new TRPCError({ code: "CONFLICT", message: "Agent 运行状态已变化，请刷新后重新确认恢复" });
+  }
+  await completeExecutionRecoveryRequest({
+    recoveryId: recovery.request.recoveryId,
+    status: "completed",
+    result: { nextStatus, stateVersion: stateVersion + 1, snapshotId: snapshot.snapshotId },
+  });
   await addEvent(input.runId, run.agentSlug, null, "run.resumed", "Agent Run 已恢复", { nextStatus });
+  await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.resumed", payload: { nextStatus } }).catch(() => undefined);
+  await appendAgentLifecycleEvent({ run, actorUserId: input.userId, eventType: "lifecycle.recovery_completed", payload: { recoveryId: recovery.request.recoveryId, snapshotId: snapshot.snapshotId, stateVersion: stateVersion + 1 } }).catch(() => undefined);
   await unlockReadyNodes(input.runId, dag);
   await refreshRunAfterCheckpoint(input.runId, dag);
   return getAgentRun(input.runId, input.userId, true);
@@ -897,6 +1129,13 @@ export async function confirmAgentNode(input: {
     });
   }
   await addEvent(input.runId, checkpoint.agentSlug, input.nodeId, input.skip ? "node.skipped" : "node.confirmed", `节点 ${checkpoint.nodeLabel || input.nodeId} 已${input.skip ? "跳过" : "确认"}`);
+  await appendAgentLifecycleEvent({
+    run: detail.run,
+    actorUserId: input.userId,
+    eventType: input.skip ? "lifecycle.skipped" : "lifecycle.confirmed",
+    entityId: `${input.runId}:${input.nodeId}`,
+    payload: { nodeId: input.nodeId, status: nextStatus, skippedByHuman: input.skip === true, compensationRequired: false, stateVersion: Number(detail.run.stateVersion || 0) },
+  }).catch(() => undefined);
   await unlockChildren(input.runId, dag, input.nodeId);
   await unlockReadyNodes(input.runId, dag);
   await refreshRunAfterCheckpoint(input.runId, dag);
@@ -926,6 +1165,7 @@ export async function executeAgentNode(input: {
   const nodeInput = buildNodeInput(run, dag, node, detail.checkpoints, detail.artifacts);
   const metadata = checkpointMetadata(checkpoint);
   const binding = resolveAgentNodeSkillBinding(node);
+  const executionPreset = normalizeSkillExecutionPreset((node as any).executionPreset || "standard");
   const skillSnapshot = metadata.skillSnapshot && typeof metadata.skillSnapshot === "object"
     ? metadata.skillSnapshot as SkillRuntimeSnapshot
     : null;
@@ -942,7 +1182,7 @@ export async function executeAgentNode(input: {
     allowedFromStatuses: ["ready", "waiting_human", "failed", "canceled"],
     action: "execute node",
   }));
-  await addEvent(input.runId, run.agentSlug, input.nodeId, "node.running", `节点 ${node.label || node.id} 开始执行`, { nodeInput });
+  await addEvent(input.runId, run.agentSlug, input.nodeId, "node.running", `节点 ${node.label || node.id} 开始执行`, { nodeInput, executionPreset });
 
   try {
     const toolResult = await executeToolBackedNode({ run, dag, node, nodeInput, userId: input.userId });
@@ -1005,6 +1245,7 @@ export async function executeAgentNode(input: {
         expectedSkillVersion: skillSnapshot?.version || binding.pinnedVersion || null,
         expectedSkillPromptHash: skillSnapshot?.systemPromptHash || null,
         skillSnapshot,
+        executionPreset,
         nodeInput,
       },
       progress: 5,
@@ -1033,6 +1274,7 @@ function parseAgentNodeJobInput(job: AiJobSnapshot): {
   nodeId: string;
   skillSlug: string;
   skillVersionPolicy: SkillVersionPolicy;
+  executionPreset: SkillExecutionPreset;
   expectedSkillVersion?: string | number | null;
   expectedSkillPromptHash?: string | null;
   skillSnapshot?: SkillRuntimeSnapshot | null;
@@ -1054,6 +1296,7 @@ function parseAgentNodeJobInput(job: AiJobSnapshot): {
     nodeId,
     skillSlug,
     skillVersionPolicy,
+    executionPreset: normalizeSkillExecutionPreset(payload?.executionPreset),
     expectedSkillVersion: payload?.expectedSkillVersion as string | number | null | undefined,
     expectedSkillPromptHash: payload?.expectedSkillPromptHash as string | null | undefined,
     skillSnapshot: payload?.skillSnapshot && typeof payload.skillSnapshot === "object"
@@ -1118,6 +1361,7 @@ async function runAgentNodeSkillJob(job: AiJobSnapshot) {
       skillVersionPolicy: payload.skillVersionPolicy,
       expectedSkillVersion: payload.expectedSkillVersion ?? undefined,
       expectedSkillPromptHash: payload.expectedSkillPromptHash || undefined,
+      executionPreset: payload.executionPreset,
       validate: (content) => safeParseSkillJSON(content),
     });
     await finalizeNodeOutput({
@@ -1131,6 +1375,7 @@ async function runAgentNodeSkillJob(job: AiJobSnapshot) {
       sourceAiJobAttempt: job.attempt,
       runtimeMetadata: {
         skillVersionPolicy: payload.skillVersionPolicy,
+        executionPreset: payload.executionPreset,
         skillSnapshot: payload.skillSnapshot || null,
         skillRun: {
           runId: result.runId,
@@ -1144,6 +1389,7 @@ async function runAgentNodeSkillJob(job: AiJobSnapshot) {
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
           fallbackCount: result.fallbackCount,
+          executionPreset: result.executionPreset,
         },
       },
       completedMessage: `节点 ${node.label || node.id} 已生成，等待人工确认`,

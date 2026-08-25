@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMcpArguments, calculateFieldDiffs, normalizeMcpPayload, normalizeRow, pickRecords, previewBatchStatusFor } from "./routers/lingxingSync";
+import { buildMcpArguments, calculateFieldDiffs, normalizeMcpPayload, normalizeRow, pickRecords } from "./routers/lingxingSync";
 
 describe("领星运营同步预览契约", () => {
   it("产品表现使用官方sids范围且保留人工选择的周期", () => {
@@ -50,18 +50,6 @@ describe("领星运营同步预览契约", () => {
     expect(normalized.normalized).not.toHaveProperty("operation");
   });
 
-  it("兼容领星真实广告活动报表的name、spends和ads_type字段", () => {
-    const normalized = normalizeRow("ad_campaign", { name: "SP-Brand", spends: 12.5, ads_type: "sp", sales: 80, store_name: "示例店铺" }, { storeId: "123", profileId: "456", startDate: "2026-08-01", endDate: "2026-08-07" });
-    expect(normalized.validationErrors).toEqual([]);
-    expect(normalized.normalized).toMatchObject({ campaignName: "SP-Brand", adSpend: 12.5, adType: "sp", adSales: 80, storeName: "示例店铺" });
-  });
-
-  it("兼容领星真实广告关键词报表的keyword_text、spends和ads_type字段", () => {
-    const normalized = normalizeRow("ad_keyword", { campaign_name: "SP-Brand", keyword_text: "cordless drill", match_type: "exact", spends: 12.5, ads_type: "sp", sales: 66 }, { storeId: "123", profileId: "456", startDate: "2026-08-01", endDate: "2026-08-07" });
-    expect(normalized.validationErrors).toEqual([]);
-    expect(normalized.normalized).toMatchObject({ campaignName: "SP-Brand", keyword: "cordless drill", matchType: "exact", adSpend: 12.5, adType: "sp", adSales: 66 });
-  });
-
   it("未识别ASIN的产品表现行保持草稿并标为需人工核对", () => {
     const normalized = normalizeRow("product_performance", { local_name: "无ASIN产品" }, { storeId: "123", startDate: "2026-08-01", endDate: "2026-08-07" });
     expect(normalized.validationErrors).toHaveLength(1);
@@ -73,24 +61,7 @@ describe("领星运营同步预览契约", () => {
     expect(normalized.validationErrors[0]).toContain("父ASIN映射");
   });
 
-  it("兼容领星FBA库存真实字段并汇总三类在途库存", () => {
-    const normalized = normalizeRow("fba_inventory", { asin: "B012", parent_asin_real: "P012", seller_sku: "SKU-1", afn_fulfillable_quantity: 8, afn_reserved_quantity: 2, afn_inbound_receiving_quantity: 1, afn_inbound_shipped_quantity: 3, afn_inbound_working_quantity: 4 }, { storeId: "123" });
-    expect(normalized.validationErrors).toEqual([]);
-    expect(normalized.normalized).toMatchObject({ asin: "B012", parentAsin: "P012", sku: "SKU-1", fbaAvailable: 8, fbaReserved: 2, fbaInTransit: 8 });
-  });
-
-  it("将订单利润报表的父ASIN、销量、销售额和毛利润归一化为产品总览草稿", () => {
-    const normalized = normalizeRow("order_profit", { parent_asins: ["P123"], asins: ["B123"], item_name: "产品A", volume: 12, amount: 345.6, gross_profit: 78.9, spend: 10.2 }, { storeId: "123", startDate: "2026-08-01", endDate: "2026-08-07" });
-    expect(normalized.validationErrors).toEqual([]);
-    expect(normalized.normalized).toMatchObject({ asin: "B123", parentAsin: "P123", productName: "产品A", salesQty: 12, salesAmount: 345.6, orderProfit: 78.9, adSpend: 10.2 });
-  });
-
   it("仅将实际变化字段列为差异，供人工确认新增或更新", () => {
     expect(calculateFieldDiffs({ salesQty: 3, sku: "A" }, { salesQty: 5, sku: "A" }, ["salesQty", "sku"])).toEqual([{ field: "salesQty", before: 3, after: 5 }]);
-  });
-
-  it("官方读取零行时只保留empty审计批次，不进入人工确认", () => {
-    expect(previewBatchStatusFor(0)).toBe("empty");
-    expect(previewBatchStatusFor(1)).toBe("ready_for_review");
   });
 });

@@ -231,6 +231,52 @@ function NodePropertyPanel({
                 className="mt-1.5 bg-white/5 border-white/10 text-white text-xs h-8"
               />
             </div>
+            <div>
+              <Label className="text-slate-400 text-xs">运行Preset（可选）</Label>
+              <Select value={d.executionPreset || "standard"} onValueChange={(v) => onUpdate(node.id, { executionPreset: v === "standard" ? null : v })}>
+                <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-[#0d1117] border-white/10">
+                  <SelectItem value="standard" className="text-slate-300 focus:bg-white/10 text-xs">标准业务（兼容现有配置）</SelectItem>
+                  <SelectItem value="quality_first" className="text-slate-300 focus:bg-white/10 text-xs">质量优先（扩大已授权上下文）</SelectItem>
+                  <SelectItem value="batch_background" className="text-slate-300 focus:bg-white/10 text-xs">批量后台（保守并发）</SelectItem>
+                  <SelectItem value="evaluation" className="text-slate-300 focus:bg-white/10 text-xs">评测（只读与人工批准）</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-slate-400 text-xs">人工审批协议（可选）</Label>
+              <Select value={d.approvalProtocol || "review_required"} onValueChange={(v) => onUpdate(node.id, { approvalProtocol: v })}>
+                <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-[#0d1117] border-white/10">
+                  <SelectItem value="review_required" className="text-slate-300 focus:bg-white/10 text-xs">需要审核</SelectItem>
+                  <SelectItem value="approval_required" className="text-slate-300 focus:bg-white/10 text-xs">需要批准</SelectItem>
+                  <SelectItem value="selection_required" className="text-slate-300 focus:bg-white/10 text-xs">需要候选选择</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-slate-500 mt-1">未进入人工节点时不改变状态机；进入人审后，治理中心可记录对应语义与人工决定。</p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 space-y-2">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={d.contextCompilerPolicy?.enabled === true}
+                  onChange={(event) => onUpdate(node.id, {
+                    contextCompilerPolicy: event.target.checked
+                      ? {
+                        enabled: true,
+                        includeProjectKnowledge: true,
+                        maxKnowledgeItems: 4,
+                        maxKnowledgeItemChars: 1600,
+                        toolStrategy: "governed_only",
+                      }
+                      : { ...(d.contextCompilerPolicy || {}), enabled: false },
+                  })}
+                  className="mt-0.5"
+                />
+                <span><span className="text-xs text-slate-200 font-medium">启用 Context Compiler</span><span className="block text-[10px] text-slate-500 mt-1">确定性编译当前项目/共享知识来源；实际Tool仍仅允许经受治理的Tool Gateway调用，Shell始终拒绝。</span></span>
+              </label>
+              {d.contextCompilerPolicy?.enabled === true ? <p className="text-[10px] text-emerald-400">已启用：默认最多引用4条知识，运行后可在执行轨迹查看来源和策略哈希。</p> : null}
+            </div>
           </>
         )}
 

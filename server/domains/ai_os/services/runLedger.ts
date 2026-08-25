@@ -1,4 +1,3 @@
-import { randomUUID, createHash } from "node:crypto";
 import { createHash, randomUUID } from "node:crypto";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb } from "../../../repositories/dbClient";
@@ -47,13 +46,21 @@ async function execute(sqlText: string, params: unknown[] = []) {
   return db.execute(drizzleSql.join(chunks, drizzleSql.raw("")));
 }
 
-export async function ensureAgentRunTrace(input: { runId: string; workspaceId?: number | null; agentSlug?: string | null; projectId?: number | null; userId?: number | null; metadata?: unknown }) {
+export async function ensureRunTrace(input: { runId: string; rootRunType: "agent_run" | "conversation_step" | "skill_run"; workspaceId?: number | null; agentSlug?: string | null; projectId?: number | null; userId?: number | null; metadata?: unknown }) {
   await execute(
     `INSERT INTO emperor_run_traces (workspaceId,traceId,rootRunId,rootRunType,agentSlug,projectId,userId,status,metadata)
      VALUES (?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE updatedAt=NOW()`,
-    [input.workspaceId ?? null, input.runId, input.runId, "agent_run", input.agentSlug ?? null, input.projectId ?? null, input.userId ?? null, "running", json(input.metadata)],
+    [input.workspaceId ?? null, input.runId, input.runId, input.rootRunType, input.agentSlug ?? null, input.projectId ?? null, input.userId ?? null, "running", json(input.metadata)],
   );
   return input.runId;
+}
+
+export async function ensureAgentRunTrace(input: { runId: string; workspaceId?: number | null; agentSlug?: string | null; projectId?: number | null; userId?: number | null; metadata?: unknown }) {
+  return ensureRunTrace({ ...input, rootRunType: "agent_run" });
+}
+
+export async function completeRunTrace(traceId: string, status: "completed" | "failed" | "running") {
+  await execute("UPDATE emperor_run_traces SET status=?,updatedAt=NOW() WHERE traceId=?", [status, traceId]);
 }
 
 export async function appendRunLedgerEvent(input: RunLedgerEventInput) {
@@ -76,13 +83,15 @@ export async function recordContextManifest(input: {
 }) {
   const manifest = sanitizeLedgerPayload(input.manifest);
   const contextHash = hash(manifest);
+  const manifestId = `manifest_${randomUUID()}`;
   await execute(
     `INSERT INTO emperor_context_manifests (manifestId,traceId,runId,nodeId,manifestVersion,contextHash,estimatedTokens,maxTokens,sourceCount,manifest)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [`manifest_${randomUUID()}`, input.traceId, input.runId, input.nodeId ?? null, "1.0", contextHash, input.estimatedTokens ?? null, input.maxTokens ?? null, input.sourceCount ?? 0, JSON.stringify(manifest)],
+    [manifestId, input.traceId, input.runId, input.nodeId ?? null, "1.0", contextHash, input.estimatedTokens ?? null, input.maxTokens ?? null, input.sourceCount ?? 0, JSON.stringify(manifest)],
   );
   await execute("UPDATE emperor_run_traces SET contextManifestHash=?,updatedAt=NOW() WHERE traceId=?", [contextHash, input.traceId]);
-  return contextHash;
+  await import("./contextProvenance").then(({ recordContextSourceProvenance }) => recordContextSourceProvenance({ manifestId, traceId: input.traceId, manifest })).catch((error) => console.warn("[RunLedger] Context provenance write skipped:", error instanceof Error ? error.message : String(error)));
+  return { contextHash, manifestId };
 }
 
 export async function listRunTraces(input: { limit?: number; projectId?: number } = {}) {

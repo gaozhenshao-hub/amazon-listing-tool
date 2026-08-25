@@ -403,7 +403,10 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
     ...toRecord(config.retry),
     ...toRecord(toRecord(tool.governancePolicy).retry),
   };
-  const maxAttempts = boundedToolAttempts(retryPolicy.maxAttempts || config.maxAttempts || config.retryAttempts || 1);
+  const automaticRetryAllowed = riskLevel === "low" && retryPolicy.idempotent === true;
+  const maxAttempts = automaticRetryAllowed
+    ? boundedToolAttempts(retryPolicy.maxAttempts || config.maxAttempts || config.retryAttempts || 1)
+    : 1;
   let releaseInFlight: (() => void) | null = null;
 
   try {

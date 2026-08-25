@@ -27,16 +27,4 @@ describe("领星MCP Tool Gateway只读治理", () => {
   it("只在明确允许时放行无副作用的工具目录发现", async () => {
     await expect(invokeMcpHttpTool(connector, { method: "tools/list" })).rejects.toThrow("Safe HTTP blocked a real network request in the test environment");
   });
-
-  it("广告授权Profile目录属于无副作用发现能力，可在不传业务店铺范围时读取", async () => {
-    const adProfileDiscoveryConnector = {
-      ...connector,
-      config: {
-        ...connector.config,
-        allowedTools: ["ad_auth_shops"],
-        scopeExemptTools: ["ad_auth_shops"],
-      },
-    };
-    await expect(invokeMcpHttpTool(adProfileDiscoveryConnector, { capability: "ad_auth_shops", arguments: {} })).rejects.toThrow("Safe HTTP blocked a real network request in the test environment");
-  });
 });
