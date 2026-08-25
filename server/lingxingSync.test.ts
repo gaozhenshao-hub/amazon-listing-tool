@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMcpArguments, calculateFieldDiffs, normalizeMcpPayload, normalizeRow, pickRecords } from "./routers/lingxingSync";
+import { buildMcpArguments, calculateFieldDiffs, dailySnapshotIdentityKey, isValidDailySnapshotForApply, normalizeDailyPreviewPage, normalizeMcpPayload, normalizeRow, pickRecords } from "./routers/lingxingSync";
 
 describe("领星运营同步预览契约", () => {
   it("产品表现使用官方sids范围且保留人工选择的周期", () => {
@@ -8,6 +8,12 @@ describe("领星运营同步预览契约", () => {
     expect(request.arguments.sids).toBe("123");
     expect(request.arguments.start_date).toBe("2026-08-01");
     expect(request.arguments.end_date).toBe("2026-08-07");
+  });
+
+  it("ASIN日产品表现固定使用日粒度、ASIN汇总与订单利润读取", () => {
+    const request = buildMcpArguments("product_performance_daily", { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-10" });
+    expect(request.capability).toBe("query_product_performance_asin_lists");
+    expect(request.arguments).toMatchObject({ sids: "7392", date_view_type: "day", summary_field: "asin", query_order_profit: true });
   });
 
   it("广告报表使用profile_ids范围，不借用产品店铺参数", () => {
@@ -54,6 +60,34 @@ describe("领星运营同步预览契约", () => {
     const normalized = normalizeRow("product_performance", { local_name: "无ASIN产品" }, { storeId: "123", startDate: "2026-08-01", endDate: "2026-08-07" });
     expect(normalized.validationErrors).toHaveLength(1);
     expect(normalized.normalized.productName).toBe("无ASIN产品");
+  });
+
+  it("ASIN日记录从MCP父ASIN数组和报告日期映射产品总览原子指标", () => {
+    const normalized = normalizeRow("product_performance_daily", { asin: "B012", parent_asins: [{ parent_asin: "P012" }], rdate: "2026-08-10", volume: 3, order_items: 2, amount: "58.20", gross_profit: "12.10", spend: "4.20", ad_sales_amount: "20.10", ad_order_quantity: 1, nature_order_items: 1, sessions_total: 20, clicks: 4, impressions: 100, return_count: 1 }, { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-10" });
+    expect(normalized.validationErrors).toEqual([]);
+    expect(normalized.normalized).toMatchObject({ asin: "B012", parentAsin: "P012", reportDate: "2026-08-10", salesQty: 3, orderQty: 2, adOrders: 1, organicOrders: 1, sessionsTotal: 20, adClicks: 4, adImpressions: 100, returnQty: 1 });
+  });
+
+  it("ASIN日占位行在人工确认前被阻断", () => {
+    const normalized = normalizeRow("product_performance_daily", { asin: "-", parent_asins: [{ parent_asin: "P012" }], rdate: "2026-08-10" }, { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-10" });
+    expect(normalized.validationErrors.join(" ")).toContain("占位ASIN");
+  });
+
+  it("ASIN日快照身份键区分同店铺SID下不同站点，避免跨站点误匹配", () => {
+    const us = dailySnapshotIdentityKey({ sourceStoreId: "7392", country: "US", asin: "B012", reportDate: "2026-08-10" });
+    const ca = dailySnapshotIdentityKey({ sourceStoreId: "7392", country: "CA", asin: "B012", reportDate: "2026-08-10" });
+    expect(us).not.toBe(ca);
+  });
+
+  it("ASIN日预览保留店铺与日期元数据并过滤占位ASIN", () => {
+    const preview = normalizeDailyPreviewPage([{ asin: "-" }, { asin: "B012", parent_asins: [{ parent_asin: "P012" }] }], { storeId: "7392", storeName: "2店-US", reportDate: "2026-08-10" });
+    expect(preview).toMatchObject({ placeholderRows: 1, rows: [{ asin: "B012", __lingxingSid: "7392", __lingxingStoreName: "2店-US", __reportDate: "2026-08-10" }] });
+  });
+
+  it("确认应用仅接受带有效父ASIN和报告日期的ASIN日快照", () => {
+    expect(isValidDailySnapshotForApply({ asin: "B012", parentAsin: "P012", reportDate: "2026-08-10" })).toBe(true);
+    expect(isValidDailySnapshotForApply({ asin: "-", parentAsin: "P012", reportDate: "2026-08-10" })).toBe(false);
+    expect(isValidDailySnapshotForApply({ asin: "B012", parentAsin: "P012", reportDate: "invalid" })).toBe(false);
   });
 
   it("FBA库存缺少父ASIN映射时不能被误写入子ASIN库存快照", () => {

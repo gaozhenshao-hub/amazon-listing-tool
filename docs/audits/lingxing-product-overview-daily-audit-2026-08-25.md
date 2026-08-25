@@ -36,3 +36,11 @@
 ## 验证证据
 
 `dailyAggregation.test.ts`、`erpProductMerge.test.ts`、`productOverviewDailyAdapter.contract.test.ts`、库存规划契约和总览汇总回归共44项通过；相关ESLint检查通过。完整TypeScript编译在当前高内存压力沙箱被SIGTERM终止，未产生具体类型诊断。
+
+## 领星MCP美国站只读预览
+
+经用户确认，预览范围为美国站全部授权店铺和2026-08-10至2026-08-16。店铺目录中共有9个美国站SID：7392、12507、7395、10261、10927、12262、13627、14088、10930。按照QPS=1逐店读取后，所有调用均返回成功结构；7个店铺首行返回有效ASIN，SID 13627与14088首行返回占位值 `asin="-"`，后续正式同步必须过滤该占位行并继续分页，不能作为产品记录写入。
+
+单日样本（2026-08-10）已确认返回的 `rdate` 与请求日一致。MCP同时提供销售额（`amount`）、销量（`volume`）、订单（`order_items`）、毛利（`gross_profit`）、总Session（`sessions_total`）、广告订单（`ad_order_quantity`）、广告销售额（`ad_sales_amount`）、广告花费（`spend`）、点击（`clicks`）、曝光（`impressions`）、自然点击（`nature_click`）、自然订单（`nature_order_items`）、评分（`avg_star`）、评论（`reviews_count`）、退货相关字段、库存与父ASIN数组。因此，MCP字段覆盖优于现有日快照；但本轮仅为只读预览，未创建导入批次、未写入日快照或产品总览。
+
+> 正式写入必须先呈现分页完整的行数、无效/占位行过滤结果、MCP字段到日快照字段的归一化映射以及与已有日快照的逐日差异；仅在人工确认后追加新的可审计批次。

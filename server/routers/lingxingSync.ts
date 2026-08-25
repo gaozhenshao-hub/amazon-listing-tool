@@ -8,7 +8,7 @@ import { ensureAgentRunTrace } from "../domains/ai_os/services/runLedger";
 import { invokeEmperorTool } from "../domains/ai_os/services/toolGateway/executors";
 import { getDb } from "../repositories/dbClient";
 
-const domainSchema = z.enum(["product_performance", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword"]);
+const domainSchema = z.enum(["product_performance", "product_performance_daily", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword"]);
 const scopeSchema = z.object({
   storeId: z.string().trim().min(1),
   profileId: z.string().trim().optional(),
@@ -128,29 +128,80 @@ function firstText(input: unknown) {
   if (Array.isArray(input)) return asText(input[0]);
   return asText(input).split(",")[0]?.trim() || "";
 }
+function nestedText(input: unknown, keys: string[]) {
+  if (Array.isArray(input)) {
+    for (const item of input) {
+      const found = value(object(item), keys);
+      if (found !== null) return asText(found);
+    }
+  }
+  return "";
+}
+function isoDates(startDate: string, endDate: string) {
+  const dates: string[] = [];
+  const current = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  while (current <= end) {
+    dates.push(current.toISOString().slice(0, 10));
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return dates;
+}
+function isUsStore(record: RecordValue) {
+  const country = asText(value(record, ["country", "site", "marketplace", "country_name"]));
+  return country === "US" || country === "美国" || /\bUS\b/i.test(country);
+}
+function isPlaceholderAsin(record: RecordValue) {
+  const asin = asText(value(record, ["asin", "child_asin", "childAsin"]));
+  return !asin || asin === "-";
+}
+export function dailySnapshotIdentityKey(input: { sourceStoreId?: unknown; country?: unknown; asin?: unknown; reportDate?: unknown }) {
+  return [asText(input.sourceStoreId), asText(input.country), asText(input.asin), asText(input.reportDate)].join("|");
+}
+export function normalizeDailyPreviewPage(pageRows: RecordValue[], context: { storeId: string; storeName: string; reportDate: string }) {
+  let placeholderRows = 0;
+  const rows: RecordValue[] = [];
+  for (const source of pageRows) {
+    if (isPlaceholderAsin(source)) { placeholderRows += 1; continue; }
+    rows.push({ ...source, __lingxingSid: context.storeId, __lingxingStoreName: context.storeName, __reportDate: context.reportDate });
+  }
+  return { rows, placeholderRows };
+}
+export function isValidDailySnapshotForApply(input: RecordValue) {
+  return asText(input.asin) !== "-" && Boolean(asText(input.asin)) && Boolean(asText(input.parentAsin)) && /^\d{4}-\d{2}-\d{2}$/.test(asText(input.reportDate));
+}
 function todayIso() { return new Date().toISOString().slice(0, 10); }
 export function previewBatchStatusFor(sourceRowCount: number) { return sourceRowCount > 0 ? "ready_for_review" : "empty"; }
 
 export function normalizeRow(domain: z.infer<typeof domainSchema>, source: RecordValue, scope: z.infer<typeof scopeSchema>) {
   const asin = value(source, ["asin", "child_asin", "childAsin", "子ASIN"]);
-  const parentAsin = value(source, ["parent_asin_real", "parent_asin", "parentAsin", "parent_asins", "p_asin", "父ASIN"]);
+  const parentAsin = value(source, ["parent_asin_real", "parent_asin", "parentAsin", "p_asin", "父ASIN"]) || nestedText(source.parent_asins, ["parent_asin", "asin"]);
   const sku = value(source, ["sku", "local_sku", "seller_sku", "msku", "sellerSku", "SKU"]);
+  const sourceStoreId = value(source, ["__lingxingSid", "sid", "store_id", "storeId"]) || scope.storeId;
+  const reportDate = value(source, ["rdate", "report_date", "reportDate", "__reportDate"]) || scope.endDate || scope.startDate;
   const normalized: RecordValue = {
     sourceDomain: domain,
-    storeId: scope.storeId,
+    storeId: sourceStoreId,
     profileId: scope.profileId || null,
     periodStart: scope.startDate || null,
     periodEnd: scope.endDate || null,
     asin: asin ? firstText(asin) : firstText(value(source, ["asins"])),
     parentAsin: parentAsin ? firstText(parentAsin) : null,
+    reportDate,
     sku: sku ? String(sku) : null,
     productName: value(source, ["local_name", "product_name", "item_name", "title", "name", "品名", "产品名称"]),
-    storeName: value(source, ["shop_name", "store_name", "storeName", "seller_name"]) || `SID ${scope.storeId}`,
+    storeName: value(source, ["__lingxingStoreName", "shop_name", "store_name", "storeName", "seller_name"]) || `SID ${sourceStoreId}`,
     country: value(source, ["country", "site", "marketplace"]) || scope.marketplace || "US",
     salesQty: value(source, ["volume", "sales_qty", "salesQty", "units", "quantity", "销量"]),
+    orderQty: value(source, ["order_items", "order_qty", "orderQty", "orders"]),
     salesAmount: value(source, ["sales_amount", "sales", "salesAmount", "revenue", "amount", "销售额"]),
+    netSalesAmount: value(source, ["net_amount", "net_sales_amount", "netSalesAmount"]),
     orderProfit: value(source, ["profit", "order_profit", "orderProfit", "gross_profit", "订单利润"]),
     adSpend: value(source, ["ad_spend", "spend", "spends", "cost", "广告花费"]),
+    adSales: value(source, ["ad_sales_amount", "ad_sales", "ads_sales", "sales", "广告销售额"]),
+    adOrders: value(source, ["ad_order_quantity", "ad_orders", "ads_sales_volume_quantity"]),
+    organicOrders: value(source, ["nature_order_items", "organic_orders"]),
+    sessionsTotal: value(source, ["sessions_total", "sessions"]),
     campaignName: value(source, ["campaign_name", "campaignName", "campaign", "name", "广告活动", "广告活动名称"]),
     campaignId: value(source, ["campaign_id", "campaignId"]),
     portfolioName: value(source, ["portfolio_name", "portfolioName", "广告组合"]),
@@ -159,15 +210,18 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
     matchType: value(source, ["match_type", "matchType", "匹配方式"]),
     adImpressions: value(source, ["impressions", "曝光量"]),
     adClicks: value(source, ["clicks", "点击量"]),
-    adSales: value(source, ["ad_sales", "sales", "广告销售额"]),
+    returnQty: value(source, ["return_count", "return_goods_count", "return_qty"]),
     fbaAvailable: value(source, ["afn_fulfillable_quantity", "fulfillable_qty", "available", "fba_available", "可售库存"]),
     fbaReserved: value(source, ["afn_reserved_quantity", "reserved_qty", "reserved", "fba_reserved", "预留库存"]),
     fbaInTransit: sumValues(source, ["afn_inbound_receiving_quantity", "afn_inbound_shipped_quantity", "afn_inbound_working_quantity"]) ?? value(source, ["inbound_qty", "in_transit", "fba_in_transit", "在途库存"]),
     rawFieldNames: Object.keys(source).sort(),
   };
-  const entityKey = [scope.storeId, domain, normalized.parentAsin || normalized.asin || "unmatched", normalized.sku || "", scope.startDate || "latest", scope.endDate || ""].join("|");
+  const entityKey = domain === "product_performance_daily"
+    ? [normalized.storeId, domain, normalized.asin || "unmatched", normalized.reportDate || "missing"].join("|")
+    : [normalized.storeId, domain, normalized.parentAsin || normalized.asin || "unmatched", normalized.sku || "", scope.startDate || "latest", scope.endDate || ""].join("|");
   const validationErrors: string[] = [];
-  if (["product_performance", "order_profit"].includes(domain) && !normalized.asin && !normalized.parentAsin) validationErrors.push("未识别ASIN或父ASIN，不能确认写入产品总览。");
+  if (["product_performance", "product_performance_daily", "order_profit"].includes(domain) && !normalized.asin && !normalized.parentAsin) validationErrors.push("未识别ASIN或父ASIN，不能确认写入产品总览。");
+  if (domain === "product_performance_daily" && (!normalized.asin || normalized.asin === "-" || !normalized.parentAsin || !normalized.reportDate)) validationErrors.push("ASIN日快照需要有效子ASIN、父ASIN和报告日期；占位ASIN不能写入。");
   if (domain === "fba_inventory" && (!normalized.asin || !normalized.parentAsin)) validationErrors.push("库存快照需要子ASIN和父ASIN映射；请在草稿中补充或取消选择该行。");
   if (domain === "ad_campaign" && !normalized.campaignName) validationErrors.push("广告活动报表需要活动名称；请核对草稿后再确认。");
   if (domain === "ad_keyword" && (!normalized.keyword || !normalized.campaignName)) validationErrors.push("广告关键词报表需要关键词和活动名称；请核对草稿后再确认。");
@@ -185,6 +239,7 @@ export function calculateFieldDiffs(current: RecordValue, incoming: RecordValue,
 export function buildMcpArguments(domain: z.infer<typeof domainSchema>, scope: z.infer<typeof scopeSchema>) {
   const commonDate = { start_date: scope.startDate, end_date: scope.endDate };
   if (domain === "product_performance") return { capability: "query_product_performance_asin_lists", arguments: { sids: scope.storeId, offset: 0, length: 200, ...commonDate, date_type: "purchase", date_view_type: "week", date_view_order_type: 2, summary_field: "parent_asin", turn_on_summary: 1, query_order_profit: true, currency_code: "USD" } };
+  if (domain === "product_performance_daily") return { capability: "query_product_performance_asin_lists", arguments: { sids: scope.storeId, offset: 0, length: 200, ...commonDate, date_type: "purchase", date_view_type: "day", date_view_order_type: 1, summary_field: "asin", turn_on_summary: 1, query_order_profit: true, currency_code: "USD" } };
   if (domain === "order_profit") return { capability: "query_order_profit_list", arguments: { sids: scope.storeId, ...commonDate, currency_type: "USD", external_service_mark: 1, source_service: "mcp", length: "200", offset: "0", sort_type: "desc", turn_on_summary: "1", search_type: 0, search_field: "parent_asin", summary_field: "parent_asin", date_summary_type: 2, query_order_gross_first: true } };
   if (domain === "fba_inventory") return { capability: "get_fba_stock_list", arguments: { sid: scope.storeId, offset: 0, length: 200, sort_field: "sku", sort_type: "asc", is_cost_page: "0", is_hide_zero_stock: 0, is_parant_asin_merge: "1" } };
   if (domain === "ad_campaign") return { capability: "ad_campaign_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: 200, sort_field: "spends", sort_type: "desc" } };
@@ -237,12 +292,56 @@ export const lingxingSyncRouter = router({
     const workspaceId = ctx.user.defaultWorkspaceId!;
     const runId = `ops_lingxing_sync_${Date.now()}_${ctx.user.id}`;
     await ensureAgentRunTrace({ runId, workspaceId, userId: ctx.user.id, agentSlug: "ops.lingxing_sync_preview", metadata: { dataDomain: input.dataDomain, scope: input.scope } }).catch(() => null);
-    const request = buildMcpArguments(input.dataDomain, input.scope);
-    const execution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_external_data" });
-    const rawSnapshot = normalizeMcpPayload(execution.output);
-    const sourceRows = pickRecords(rawSnapshot).slice(0, 500);
-    const summary = { totalRead: sourceRows.length, selected: sourceRows.length, needsReview: 0, unmatched: 0 };
-    const [created] = await db.insert(opsExternalSyncBatches).values({ workspaceId, userId: ctx.user.id, source: "lingxing_mcp", dataDomain: input.dataDomain, status: previewBatchStatusFor(sourceRows.length), scope: input.scope, toolRunId: execution.metadata.toolRunId, traceId: runId, rawResponseHash: createHash("sha256").update(JSON.stringify(rawSnapshot)).digest("hex"), rawSnapshot: rawSnapshot as any, summary }).$returningId();
+    let rawSnapshot: unknown;
+    let sourceRows: RecordValue[];
+    let toolRunId: string | null = null;
+    const summary: { totalRead: number; selected: number; needsReview: number; unmatched: number; [key: string]: unknown } = { totalRead: 0, selected: 0, needsReview: 0, unmatched: 0 };
+    if (input.dataDomain === "product_performance_daily") {
+      const storesExecution = input.scope.storeId === "ALL_US"
+        ? await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: { capability: "get_my_sids", arguments: {} }, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_us_store_directory" })
+        : null;
+      const stores = storesExecution
+        ? pickRecords(normalizeMcpPayload(storesExecution.output)).filter(isUsStore).map((record) => ({ sid: asText(value(record, ["sid", "id"])), name: asText(value(record, ["shop_name", "seller_name", "name"])) })).filter((store) => Boolean(store.sid))
+        : [{ sid: input.scope.storeId, name: "" }];
+      const dates = input.scope.startDate && input.scope.endDate ? isoDates(input.scope.startDate, input.scope.endDate) : [];
+      const rows: RecordValue[] = [];
+      const toolRunIds: string[] = [];
+      let placeholderRows = 0;
+      let pageTruncations = 0;
+      let capped = false;
+      for (const store of stores) {
+        for (const reportDate of dates) {
+          let exhausted = false;
+          for (let page = 0; page < 10 && !exhausted; page += 1) {
+            if (rows.length >= 5000) { capped = true; break; }
+            const request = buildMcpArguments("product_performance_daily", { ...input.scope, storeId: store.sid, startDate: reportDate, endDate: reportDate });
+            request.arguments.offset = page * 200;
+            const execution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: `read_asin_daily_${store.sid}_${reportDate}_${page}` });
+            toolRunId = execution.metadata.toolRunId || toolRunId;
+            if (execution.metadata.toolRunId) toolRunIds.push(execution.metadata.toolRunId);
+            const pageRows = pickRecords(normalizeMcpPayload(execution.output));
+            const normalizedPage = normalizeDailyPreviewPage(pageRows, { storeId: store.sid, storeName: store.name, reportDate });
+            placeholderRows += normalizedPage.placeholderRows;
+            for (const source of normalizedPage.rows) if (rows.length < 5000) rows.push(source);
+            exhausted = pageRows.length < 200;
+            if (page === 9 && !exhausted) pageTruncations += 1;
+          }
+          if (capped) break;
+        }
+        if (capped) break;
+      }
+      sourceRows = rows;
+      rawSnapshot = { source: "lingxing_mcp", dataDomain: input.dataDomain, stores, dates, rows, toolRunIds };
+      Object.assign(summary, { totalRead: sourceRows.length, selected: sourceRows.length, storesRead: stores.length, datesRead: dates.length, placeholderRows, pageTruncations, capped, toolRunIds });
+    } else {
+      const request = buildMcpArguments(input.dataDomain, input.scope);
+      const execution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_external_data" });
+      toolRunId = execution.metadata.toolRunId;
+      rawSnapshot = normalizeMcpPayload(execution.output);
+      sourceRows = pickRecords(rawSnapshot).slice(0, 500);
+      Object.assign(summary, { totalRead: sourceRows.length, selected: sourceRows.length });
+    }
+    const [created] = await db.insert(opsExternalSyncBatches).values({ workspaceId, userId: ctx.user.id, source: "lingxing_mcp", dataDomain: input.dataDomain, status: previewBatchStatusFor(sourceRows.length), scope: input.scope, toolRunId, traceId: runId, rawResponseHash: createHash("sha256").update(JSON.stringify(rawSnapshot)).digest("hex"), rawSnapshot: rawSnapshot as any, summary }).$returningId();
     const batchId = created.id;
     const stagedRows = sourceRows.map((source) => ({ source, normalized: normalizeRow(input.dataDomain, source, input.scope) }));
     const periodStart = input.scope.startDate || todayIso();
@@ -252,8 +351,8 @@ export const lingxingSyncRouter = router({
     const existingProductRows = ["product_performance", "order_profit"].includes(input.dataDomain) && parentAsins.length
       ? await db.select().from(lingxingProductWeekly).where(and(eq(lingxingProductWeekly.workspaceId, workspaceId), eq(lingxingProductWeekly.weekStartDate, periodStart), inArray(lingxingProductWeekly.parentAsin, parentAsins)))
       : [];
-    const existingInventoryRows = input.dataDomain === "fba_inventory" && childAsins.length
-      ? await db.select().from(opsAsinDailySnapshots).where(and(eq(opsAsinDailySnapshots.workspaceId, workspaceId), eq(opsAsinDailySnapshots.reportDate, periodEnd), inArray(opsAsinDailySnapshots.asin, childAsins)))
+    const existingInventoryRows = ["fba_inventory", "product_performance_daily"].includes(input.dataDomain) && childAsins.length
+      ? await db.select().from(opsAsinDailySnapshots).where(and(eq(opsAsinDailySnapshots.workspaceId, workspaceId), inArray(opsAsinDailySnapshots.asin, childAsins)))
       : [];
     const existingCampaignRows = input.dataDomain === "ad_campaign"
       ? await db.select().from(adCampaignReports).where(and(eq(adCampaignReports.workspaceId, workspaceId), eq(adCampaignReports.weekStartDate, periodStart), eq(adCampaignReports.weekEndDate, periodEnd)))
@@ -263,6 +362,7 @@ export const lingxingSyncRouter = router({
       : [];
     const productByParentAsin = new Map(existingProductRows.map((row) => [asText(row.parentAsin), row]));
     const inventoryByAsin = new Map(existingInventoryRows.map((row) => [asText(row.asin), row]));
+    const inventoryByAsinDate = new Map(existingInventoryRows.map((row) => [dailySnapshotIdentityKey({ sourceStoreId: row.sourceStoreId, country: row.country, asin: row.asin, reportDate: row.reportDate }), row]));
     const campaignByKey = new Map(existingCampaignRows.map((row) => [`${asText(row.campaignName)}|${asText(row.storeName)}`, row]));
     const keywordByKey = new Map(existingKeywordRows.map((row) => [`${asText(row.campaignName)}|${asText(row.keyword)}|${asText(row.matchType)}`, row]));
     const rows = stagedRows.map(({ source, normalized }) => {
@@ -292,6 +392,14 @@ export const lingxingSyncRouter = router({
           matchInfo = { strategy: "workspace_child_asin_latest_snapshot", confidence: "high", parentAsinResolved: Boolean(target.parentAsin) };
         }
       }
+      if (input.dataDomain === "product_performance_daily") {
+        const target = inventoryByAsinDate.get(dailySnapshotIdentityKey({ sourceStoreId: output.storeId, country: output.country, asin: output.asin, reportDate: output.reportDate }));
+        if (target) {
+          current = target as unknown as RecordValue;
+          targetReference = { table: "ops_asin_daily_snapshots", id: target.id, asin: target.asin, reportDate: target.reportDate };
+          matchInfo = { strategy: "workspace_child_asin_report_date", confidence: "high", sourcePriority: "lingxing_mcp" };
+        }
+      }
       if (input.dataDomain === "ad_campaign") {
         const target = campaignByKey.get(`${asText(output.campaignName)}|${asText(output.storeName)}`);
         if (target) {
@@ -308,14 +416,18 @@ export const lingxingSyncRouter = router({
           matchInfo = { strategy: "workspace_campaign_keyword_period", confidence: "high" };
         }
       }
-      const comparedFields = input.dataDomain === "fba_inventory"
+      const comparedFields = input.dataDomain === "product_performance_daily"
+        ? ["salesQty", "orderQty", "salesAmount", "orderProfit", "adSpend", "adSales", "adOrders", "sessionsTotal", "adClicks", "adImpressions", "returnQty"]
+        : input.dataDomain === "fba_inventory"
         ? ["fbaAvailable", "fbaInTransit", "fbaReserved", "sku", "productName"]
         : input.dataDomain === "ad_campaign"
           ? ["adImpressions", "adClicks", "adSpend", "adSales", "campaignName"]
           : input.dataDomain === "ad_keyword"
             ? ["adImpressions", "adClicks", "adSpend", "adSales", "keyword", "matchType"]
         : ["salesQty", "salesAmount", "orderProfit", "adSpend", "sku", "productName"];
-      const currentComparable: RecordValue = input.dataDomain === "fba_inventory"
+      const currentComparable: RecordValue = input.dataDomain === "product_performance_daily"
+        ? { salesQty: current.salesQty, orderQty: current.orderQty, salesAmount: current.salesAmount, orderProfit: current.orderProfit, adSpend: current.adSpend, adSales: current.adSales, adOrders: current.adOrders, sessionsTotal: current.sessionsTotal, adClicks: current.adClicks, adImpressions: current.adImpressions, returnQty: current.returnQty }
+        : input.dataDomain === "fba_inventory"
         ? { fbaAvailable: current.fbaAvailable, fbaInTransit: current.fbaInTransit, fbaReserved: current.fbaReserved, sku: current.sku, productName: current.productName }
         : input.dataDomain === "ad_campaign" || input.dataDomain === "ad_keyword"
           ? { adImpressions: current.impressions, adClicks: current.clicks, adSpend: current.spend, adSales: current.sales, campaignName: current.campaignName, keyword: current.keyword, matchType: current.matchType }
@@ -327,10 +439,10 @@ export const lingxingSyncRouter = router({
     });
     if (rows.length) await db.insert(opsExternalSyncRows).values(rows as any);
     await db.update(opsExternalSyncBatches).set({ summary }).where(eq(opsExternalSyncBatches.id, batchId));
-    return { batchId, totalRows: rows.length, toolRunId: execution.metadata.toolRunId, traceId: runId };
+    return { batchId, totalRows: rows.length, toolRunId, traceId: runId };
   }),
 
-  updateRows: protectedProcedure.input(z.object({ batchId: z.number().int().positive(), rows: z.array(z.object({ id: z.number().int().positive(), selected: z.boolean(), normalizedData: z.record(z.unknown()).optional(), rowStatus: z.enum(["new", "changed", "unchanged", "unmatched", "needs_review", "skipped"]).optional() })).min(1).max(500) })).mutation(async ({ ctx, input }) => {
+  updateRows: protectedProcedure.input(z.object({ batchId: z.number().int().positive(), rows: z.array(z.object({ id: z.number().int().positive(), selected: z.boolean(), normalizedData: z.record(z.unknown()).optional(), rowStatus: z.enum(["new", "changed", "unchanged", "unmatched", "needs_review", "skipped"]).optional() })).min(1).max(5000) })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("数据库不可用");
     const workspaceId = ctx.user.defaultWorkspaceId!;
@@ -343,7 +455,7 @@ export const lingxingSyncRouter = router({
     return { success: true };
   }),
 
-  confirm: protectedProcedure.input(z.object({ batchId: z.number().int().positive(), selectedRowIds: z.array(z.number().int().positive()).max(500), note: z.string().max(1000).optional() })).mutation(async ({ ctx, input }) => {
+  confirm: protectedProcedure.input(z.object({ batchId: z.number().int().positive(), selectedRowIds: z.array(z.number().int().positive()).max(5000), note: z.string().max(1000).optional() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("数据库不可用");
     const workspaceId = ctx.user.defaultWorkspaceId!;
@@ -362,7 +474,7 @@ export const lingxingSyncRouter = router({
     const workspaceId = ctx.user.defaultWorkspaceId!;
     const [batch] = await db.select().from(opsExternalSyncBatches).where(and(eq(opsExternalSyncBatches.id, input.batchId), eq(opsExternalSyncBatches.workspaceId, workspaceId))).limit(1);
     if (!batch || batch.status !== "confirmed") throw new Error("请先完成人工确认；已应用或不在确认状态的批次不能重复写入。");
-    if (!["product_performance", "order_profit", "fba_inventory"].includes(batch.dataDomain)) throw new Error("当前应用入口仅支持产品表现、订单利润和FBA库存草稿。");
+    if (!["product_performance", "product_performance_daily", "order_profit", "fba_inventory"].includes(batch.dataDomain)) throw new Error("当前应用入口仅支持产品表现、ASIN日产品表现、订单利润和FBA库存草稿。");
     const selectedRows = await db.select().from(opsExternalSyncRows).where(and(eq(opsExternalSyncRows.batchId, input.batchId), eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.selected, 1)));
     if (!selectedRows.length) throw new Error("没有已选择的草稿行可应用。");
     const scope = object(batch.scope);
@@ -370,7 +482,7 @@ export const lingxingSyncRouter = router({
     const periodEnd = asText(scope.endDate, periodStart);
     const [importRecord] = await db.insert(dataImports).values({
       workspaceId, userId: ctx.user.id, sourceType: "lingxing", fileName: `领星MCP-${batch.dataDomain}-批次${batch.id}`,
-      weekStartDate: periodStart, weekEndDate: periodEnd, dataGranularity: batch.dataDomain === "fba_inventory" ? "daily" : "weekly",
+      weekStartDate: periodStart, weekEndDate: periodEnd, dataGranularity: ["fba_inventory", "product_performance_daily"].includes(batch.dataDomain) ? "daily" : "weekly",
       totalRows: selectedRows.length, importedRows: 0, skippedRows: 0, status: "importing",
     }).$returningId();
     const importId = importRecord.id;
@@ -394,15 +506,20 @@ export const lingxingSyncRouter = router({
         const asin = asText(data.asin);
         const parentAsin = asText(data.parentAsin);
         if (!asin || !parentAsin) { skippedRows += 1; continue; }
+        const isDailyPerformance = batch.dataDomain === "product_performance_daily";
+        const reportDate = isDailyPerformance ? asText(data.reportDate) : periodEnd;
+        if (isDailyPerformance && !isValidDailySnapshotForApply({ ...data, reportDate })) { skippedRows += 1; continue; }
         const fbaAvailable = asNumber(data.fbaAvailable);
         const fbaInTransit = asNumber(data.fbaInTransit);
         const fbaReserved = asNumber(data.fbaReserved);
+        const fbaTotal = fbaAvailable + fbaInTransit + fbaReserved;
         await db.insert(opsAsinDailySnapshots).values({
-          workspaceId, importId, userId: ctx.user.id, sourceType: "lingxing_mcp", reportDate: periodEnd,
-          asin, parentAsin, storeName: asText(data.storeId, `SID ${asText(scope.storeId)}`), country: asText(scope.marketplace, "US"),
+          workspaceId, importId, userId: ctx.user.id, sourceType: "lingxing_mcp", reportDate,
+          sourceStoreId: asText(data.storeId), sourceBatchHash: asText(batch.rawResponseHash),
+          asin, parentAsin, storeName: asText(data.storeName, `SID ${asText(data.storeId || scope.storeId)}`), country: asText(data.country, "US"),
           msku: asText(data.sku), sku: asText(data.sku), title: asText(data.productName), productName: asText(data.productName),
-          salesQty: asNumber(data.salesQty), salesAmount: String(asNumber(data.salesAmount)), orderProfit: String(asNumber(data.orderProfit)), adSpend: String(asNumber(data.adSpend)),
-          fbaAvailable, fbaInTransit, fbaPlanInbound: 0, fbaTotal: fbaAvailable + fbaInTransit + fbaReserved, availableStock: fbaAvailable,
+          salesQty: asNumber(data.salesQty), orderQty: asNumber(data.orderQty), salesAmount: String(asNumber(data.salesAmount)), netSalesAmount: String(asNumber(data.netSalesAmount)), orderProfit: String(asNumber(data.orderProfit)), adSpend: String(asNumber(data.adSpend)), adSales: String(asNumber(data.adSales)), adOrders: asNumber(data.adOrders), organicOrders: asNumber(data.organicOrders), sessionsTotal: asNumber(data.sessionsTotal), adClicks: asNumber(data.adClicks), adImpressions: asNumber(data.adImpressions), returnQty: asNumber(data.returnQty),
+          fbaAvailable, fbaInTransit, fbaPlanInbound: 0, fbaTotal, availableStock: fbaAvailable,
           sourceRowHash: createHash("sha256").update(JSON.stringify(source)).digest("hex"), isValid: 1,
         });
         importedRows += 1;

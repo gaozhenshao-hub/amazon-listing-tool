@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { useMemo, useState } from "react";
 import { DatabaseZap, Eye, FileCheck2, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -14,6 +13,7 @@ import { LingxingDraftStatusFilter } from "./LingxingDraftStatusFilter";
 
 const domains = [
   { value: "product_performance", label: "产品表现", detail: "用于产品总览的ASIN、父ASIN、销量、销售额、订单利润和广告花费预览" },
+  { value: "product_performance_daily", label: "ASIN日产品表现（产品总览）", detail: "按子ASIN与报告日读取；支持美国站全店预览、占位ASIN过滤、人工确认后追加日快照，并由产品总览自动按父ASIN自然周汇总" },
   { value: "order_profit", label: "订单利润（产品总览备选）", detail: "产品表现零行时，使用订单利润报表的父ASIN周度销量、销售额、利润和广告花费生成预览" },
   { value: "fba_inventory", label: "FBA库存", detail: "用于子ASIN库存快照的可售、预留和在途库存预览" },
   { value: "ad_campaign", label: "广告活动报表", detail: "仅读取广告活动效果，绝不修改预算、竞价或投放状态" },
@@ -101,7 +101,7 @@ export default function OpsLingxingSync() {
   const runPreview = () => {
     if (!storeId.trim()) return toast.error("请选择或填写领星店铺 SID");
     if (isAdDomain && !profileId.trim()) return toast.error("请从官方广告授权店铺中选择 Profile ID");
-    if ((domain === "product_performance" || domain === "order_profit" || isAdDomain) && (!startDate || !endDate)) return toast.error("请选择开始和结束日期");
+    if ((domain === "product_performance" || domain === "product_performance_daily" || domain === "order_profit" || isAdDomain) && (!startDate || !endDate)) return toast.error("请选择开始和结束日期");
     previewMutation.mutate({ dataDomain: domain, scope: { storeId: storeId.trim(), profileId: profileId.trim() || undefined, startDate: startDate || undefined, endDate: endDate || undefined } });
   };
   const saveAndConfirm = async () => {
@@ -113,7 +113,7 @@ export default function OpsLingxingSync() {
   };
   const applyConfirmed = () => {
     if (!batchId) return;
-    if (!window.confirm("确认将已选择的草稿追加到现有运营数据链路吗？这会创建新的领星导入批次，但不会覆盖历史上传、本地库存或人工货期参数。")) return;
+    if (!window.confirm("确认将已选择的草稿追加到现有运营数据链路吗？这会创建新的领星导入批次；ASIN日产品表现会追加为新日快照，由产品总览优先使用，但不会覆盖历史上传、本地库存或人工货期参数。")) return;
     applyMutation.mutate({ batchId });
   };
   const applyConfirmedAds = () => {
@@ -135,7 +135,7 @@ export default function OpsLingxingSync() {
       <CardHeader><CardTitle className="flex items-center gap-2"><DatabaseZap className="h-5 w-5 text-primary" />创建同步预览</CardTitle><CardDescription>{chosenDomain.detail}</CardDescription></CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <div className="space-y-2"><Label>数据域</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={domain} onChange={(event) => setDomain(event.target.value as typeof domain)}>{domains.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
-        <div className="space-y-2"><Label>领星店铺 SID</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={storeId} onChange={(event) => setStoreId(event.target.value)}><option value="">请选择店铺</option>{(storesQuery.data || []).map((store) => <option key={store.sid} value={store.sid}>{store.name} · {store.sid}</option>)}</select><Input value={storeId} onChange={(event) => setStoreId(event.target.value)} placeholder="无店铺列表时可填写 SID" /></div>
+        <div className="space-y-2"><Label>领星店铺 SID</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={storeId} onChange={(event) => setStoreId(event.target.value)}><option value="">请选择店铺</option>{domain === "product_performance_daily" && <option value="ALL_US">美国站全部授权店铺（逐店逐日预览）</option>}{(storesQuery.data || []).map((store) => <option key={store.sid} value={store.sid}>{store.name} · {store.sid}</option>)}</select><Input value={storeId} onChange={(event) => setStoreId(event.target.value)} placeholder="无店铺列表时可填写 SID" /></div>
         <div className="space-y-2"><Label>广告 Profile ID（广告报表必填）</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={profileId} onChange={(event) => selectAdProfile(event.target.value)} disabled={!isAdDomain || adProfilesQuery.isLoading}><option value="">{isAdDomain ? "请选择官方广告授权店铺" : "广告数据域时选择"}</option>{(adProfilesQuery.data || []).map((profile) => <option key={profile.profileId} value={profile.profileId}>{profile.name}{profile.country ? ` · ${profile.country}` : ""} · {profile.profileId}</option>)}</select>{isAdDomain && !adProfilesQuery.isLoading && !(adProfilesQuery.data || []).length ? <p className="text-xs text-amber-700">未读取到广告授权Profile；请检查领星广告授权范围。</p> : null}</div>
         <div className="space-y-2"><Label>开始日期</Label><Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></div>
         <div className="space-y-2"><Label>结束日期</Label><Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></div>
@@ -143,13 +143,13 @@ export default function OpsLingxingSync() {
       </CardContent>
     </Card>
 
-      <Card className="border-amber-200 bg-amber-50/40"><CardContent className="flex gap-3 pt-6 text-sm text-amber-900"><FileCheck2 className="mt-0.5 h-5 w-5 shrink-0" /><p><b>人工确认边界：</b>领星读取只生成独立草稿批次。产品表现无行时可选择“订单利润（产品总览备选）”，但同样必须逐行勾选、编辑映射并确认；确认前不会写入产品总览、库存规划、月度采购或广告业务表，更不会修改广告投放设置。</p></CardContent></Card>
+      <Card className="border-amber-200 bg-amber-50/40"><CardContent className="flex gap-3 pt-6 text-sm text-amber-900"><FileCheck2 className="mt-0.5 h-5 w-5 shrink-0" /><p><b>人工确认边界：</b>领星读取只生成独立草稿批次。ASIN日产品表现会过滤`asin="-"`占位行，并显示销售、Session、广告、自然订单和库存字段；只有人工逐行确认后才会追加日快照，由产品总览按父ASIN自然周汇总。确认前不会写入产品总览、库存规划、月度采购或广告业务表，更不会修改广告投放设置。</p></CardContent></Card>
 
     {batchQuery.data && <Card>
-      <CardHeader className="flex-row items-start justify-between"><div><CardTitle>同步草稿 #{batchQuery.data.batch.id}</CardTitle><CardDescription>状态：{statusLabel(batchQuery.data.batch.status)} · 已读取 {rows.length} 行 · 已选择 {selectedCount} 行</CardDescription></div><Button variant="outline" size="sm" onClick={() => void batchQuery.refetch()}><RefreshCw className="mr-2 h-4 w-4" />刷新</Button></CardHeader>
+      <CardHeader className="flex-row items-start justify-between"><div><CardTitle>同步草稿 #{batchQuery.data.batch.id}</CardTitle><CardDescription>状态：{statusLabel(batchQuery.data.batch.status)} · 已读取 {rows.length} 行 · 已选择 {selectedCount} 行{batchQuery.data.batch.summary?.placeholderRows ? ` · 已过滤占位ASIN ${batchQuery.data.batch.summary.placeholderRows} 行` : ""}{batchQuery.data.batch.summary?.pageTruncations ? ` · 分页上限触发 ${batchQuery.data.batch.summary.pageTruncations} 次` : ""}</CardDescription></div><Button variant="outline" size="sm" onClick={() => void batchQuery.refetch()}><RefreshCw className="mr-2 h-4 w-4" />刷新</Button></CardHeader>
       <CardContent className="space-y-4"><LingxingDraftStatusFilter value={rowStatusFilter} total={rows.length} onChange={setRowStatusFilter} /><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>选择</TableHead><TableHead>状态</TableHead><TableHead>差异</TableHead><TableHead>ASIN</TableHead><TableHead>父ASIN</TableHead><TableHead>SKU</TableHead><TableHead>品名</TableHead><TableHead>销量</TableHead><TableHead>FBA可售</TableHead></TableRow></TableHeader><TableBody>{visibleRows.map((row: any) => <TableRow key={row.id}><TableCell><input aria-label={`选择草稿行 ${row.id}`} type="checkbox" checked={edits[row.id]?.selected ?? Boolean(row.selected)} onChange={(event) => setRow(row.id, { selected: event.target.checked })} /></TableCell><TableCell><Badge variant={row.rowStatus === "needs_review" ? "secondary" : "outline"}>{statusLabel(edits[row.id]?.rowStatus || row.rowStatus)}</Badge></TableCell><TableCell className="max-w-52 text-xs text-muted-foreground">{row.fieldDiffs?.length ? row.fieldDiffs.map((diff: any) => `${diff.field}: ${diff.before ?? "-"} → ${diff.after ?? "-"}`).join("；") : row.matchInfo?.strategy ? "与现有记录一致" : "新增记录"}{row.validationErrors?.length ? <p className="mt-1 text-amber-700">{row.validationErrors.join("；")}</p> : null}</TableCell>{["asin", "parentAsin", "sku", "productName", "salesQty", "fbaAvailable"].map((key) => <TableCell key={key}><Input className="h-8 min-w-28" value={field(row, key)} onChange={(event) => updateField(row, key, event.target.value)} /></TableCell>)}</TableRow>)}{!visibleRows.length && <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">{rows.length ? "当前筛选条件下没有草稿行。" : "此批次没有可预览的数据行。"}</TableCell></TableRow>}</TableBody></Table></div><div className="flex flex-wrap justify-end gap-2"><Button onClick={() => void saveAndConfirm()} disabled={!rows.length || updateMutation.isPending || confirmMutation.isPending || batchQuery.data.batch.status !== "ready_for_review"}>{(updateMutation.isPending || confirmMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}确认所选草稿（不写业务表）</Button>{["product_performance", "order_profit", "fba_inventory"].includes(batchQuery.data.batch.dataDomain) && <Button variant="secondary" onClick={applyConfirmed} disabled={applyMutation.isPending || batchQuery.data.batch.status !== "confirmed"}>{applyMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}确认后应用至现有运营数据</Button>}{["ad_campaign", "ad_keyword"].includes(batchQuery.data.batch.dataDomain) && <Button variant="secondary" onClick={applyConfirmedAds} disabled={applyAdsMutation.isPending || batchQuery.data.batch.status !== "confirmed"}>{applyAdsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}确认后追加广告报表</Button>}</div></CardContent>
     </Card>}
 
-    <Card><CardHeader><CardTitle>最近同步批次</CardTitle><CardDescription>保留领星读取范围、Tool Run与人工确认记录；历史表格导入不受影响。</CardDescription></CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>批次</TableHead><TableHead>数据域</TableHead><TableHead>状态</TableHead><TableHead>读取行数</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>{(historyQuery.data || []).map((batch: any) => <TableRow key={batch.id}><TableCell>#{batch.id}</TableCell><TableCell>{domains.find((item) => item.value === batch.dataDomain)?.label || batch.dataDomain}</TableCell><TableCell><Badge variant="outline">{statusLabel(batch.status)}</Badge></TableCell><TableCell>{batch.summary?.totalRead ?? "-"}</TableCell><TableCell><Button variant="ghost" size="sm" onClick={() => { setBatchId(batch.id); setEdits({}); }}>查看草稿</Button></TableCell></TableRow>)}</TableBody></Table></div></CardContent></Card>
+      <Card><CardHeader><CardTitle>最近同步批次</CardTitle><CardDescription>保留领星读取范围、Tool Run与人工确认记录；历史表格导入不受影响。</CardDescription></CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>批次</TableHead><TableHead>数据域</TableHead><TableHead>状态</TableHead><TableHead>读取行数</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>{(historyQuery.data || []).map((batch: any) => <TableRow key={batch.id}><TableCell>#{batch.id}</TableCell><TableCell>{domains.find((item) => item.value === batch.dataDomain)?.label || batch.dataDomain}</TableCell><TableCell><Badge variant="outline">{statusLabel(batch.status)}</Badge></TableCell><TableCell>{batch.summary?.totalRead ?? "-"}</TableCell><TableCell><Button variant="ghost" size="sm" onClick={() => { setBatchId(batch.id); setEdits({}); }}>查看草稿</Button></TableCell></TableRow>)}</TableBody></Table></div></CardContent></Card>
   </div>;
 }

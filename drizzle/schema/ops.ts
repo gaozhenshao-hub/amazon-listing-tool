@@ -1805,6 +1805,8 @@ export const opsAsinDailySnapshots = mysqlTable("ops_asin_daily_snapshots", {
   importId: int("import_id").notNull(),
   userId: int("user_id").notNull(),
   sourceType: varchar("source_type", { length: 20 }).default("lingxing").notNull(),
+  sourceStoreId: varchar("source_store_id", { length: 64 }),
+  sourceBatchHash: varchar("source_batch_hash", { length: 64 }),
   reportDate: varchar("report_date", { length: 10 }).notNull(),
   asin: varchar("asin", { length: 20 }).notNull(),
   parentAsin: varchar("parent_asin", { length: 20 }).notNull(),
@@ -1848,7 +1850,10 @@ export const opsAsinDailySnapshots = mysqlTable("ops_asin_daily_snapshots", {
   validationReason: text("validation_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  index("ops_asin_daily_source_identity_idx").on(table.workspaceId, table.sourceStoreId, table.country, table.asin, table.reportDate),
+  index("ops_asin_daily_batch_hash_idx").on(table.workspaceId, table.sourceBatchHash),
+]);
 
 export type OpsAsinDailySnapshot = typeof opsAsinDailySnapshots.$inferSelect;
 export type InsertOpsAsinDailySnapshot = typeof opsAsinDailySnapshots.$inferInsert;

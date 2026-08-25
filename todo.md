@@ -9,6 +9,20 @@
 - [x] 移除产品总览日数据适配层对广告/流量/转化字段的硬编码0；缺少自然点击、评分/评论等原始字段时改为“数据未提供”，不伪造0%
 - [x] 保持产品总览数据源优先级：已确认领星日快照覆盖其对应周；历史周度Excel仅用于无日快照历史周，禁止同父ASIN/店铺/站点/自然周双重累计
 - [ ] 在用户确认店铺、站点和日期范围后，通过领星官方MCP执行一次ASIN日数据只读预览，核验返回字段与日快照映射一致；预览未确认前不得写入产品总览
+- [ ] 在用户确认日期范围后，对美国站全部授权店铺按QPS=1逐店只读预览领星ASIN日数据，审计行数、分页、字段覆盖与现有日快照映射；绝不写入产品总览或覆盖历史导入
+- [x] 对美国站全部授权店铺执行2026-08-10至2026-08-16领星ASIN日数据只读预览：按QPS=1逐店最小预览，9个美国站SID均返回成功结构，7个店铺首行有效、2个店铺首行为`asin="-"`占位行；只生成审计结果，不创建导入批次或写入业务表。正式同步仍需完成全分页差异预览与人工确认
+- [x] 新增领星MCP ASIN日产品表现受治理同步链路：按店铺/站点/日期分页读取、过滤`asin="-"`占位行、以子ASIN+报告日生成差异预览、映射MCP日字段至`ops_asin_daily_snapshots`，仅经人工确认后追加可审计日快照；不得走现有“按周父ASIN写入`lingxing_product_weekly`”路径
+- [x] 支持美国站全店ASIN日数据的受治理预览：每店每日分页调用、QPS=1、最多读取10页/店/日和5000有效行、追踪Tool Run/Trace，并在预览中统计有效ASIN/占位ASIN/分页截断行数
+- [x] 将已确认的ASIN日草稿追加至`ops_asin_daily_snapshots`：按工作空间/店铺/站点/子ASIN/报告日进行差异匹配，保留原始MCP哈希与导入批次；历史Excel快照不覆盖，产品总览同日优先使用`lingxing_mcp`来源
+- [x] 为领星同步页面新增“ASIN日产品表现”入口、美国站全店范围提示、日快照字段覆盖摘要、占位行过滤提示以及确认前产品总览联动说明
+- [x] 修正ASIN日草稿差异匹配与去重键：按工作空间、店铺SID、站点、子ASIN和报告日匹配；0172–0174新增来源店铺SID与批次哈希字段及索引，跨站点身份键回归通过
+- [x] 为`product_performance_daily`补充预览→确认→追加行为回归：覆盖逐页元数据归一化、占位ASIN过滤、有效日快照写入校验和来源优先汇总；仅日快照分支包含日指标字段，不走周度父ASIN写入分支
+- [x] 为`product_performance_daily`增加路由级集成回归：覆盖`createPreview`分页汇总、`confirm`选择行、`applyConfirmedProductInventory`仅写入`ops_asin_daily_snapshots`且不写入`lingxing_product_weekly`（Mock Tool/DB路由集成回归通过）
+- [x] 验证日数据应用后写入`sourceStoreId`、`sourceBatchHash`、`sourceRowHash`与`importId`，并可通过批次`rawResponseHash`及Tool Run/Trace关联追溯（0172–0174Schema账本、索引和路由集成回归通过）
+- [x] 为`product_performance_daily`补充多页路由集成回归：验证预览累积多页有效ASIN、统计占位ASIN，并在页数上限/行数上限触发时写入`pageTruncations`与`capped`摘要（5000行、3日、25页Mock回归通过）
+- [x] 补充日快照追溯联查验证：明确断言`sourceBatchHash -> ops_external_sync_batches.rawResponseHash -> toolRunId/traceId`链路可查询（路由集成回归通过）
+- [x] 明确快照层对领星MCP原始响应的追溯方式：`ops_external_sync_batches.rawResponseHash`与Tool Run/Trace保留批次原始响应；日快照保存`sourceBatchHash`、每行`sourceRowHash`及`importId`，0172–0174账本与索引已只读验收
+- [ ] 在同步页对美国站全部授权店铺、2026-08-10至2026-08-16执行一次完整分页预览，核验行数、占位过滤、分页上限与产品总览差异摘要；生成草稿但不确认写入
 
 ## 皇帝中台通用对话式AI任务管理器（2026-08-22）
 

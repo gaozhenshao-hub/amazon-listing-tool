@@ -1,5 +1,5 @@
 export type DailySnapshot = {
-  reportDate: string; asin: string; parentAsin: string; storeName: string; country: string;
+  reportDate: string; asin: string; parentAsin: string; storeName: string; country: string; sourceType?: string | null;
   salesQty: number; orderQty: number; salesAmount: number | string; orderProfit: number | string;
   adSpend: number | string; adSales: number | string; sessionsTotal: number;
   adOrders?: number; organicOrders?: number; adClicks?: number; adImpressions?: number; returnQty?: number;
@@ -21,6 +21,15 @@ const sundayOf = (monday: string) => {
 };
 
 export function summarizeParentAsinWeeks(records: DailySnapshot[], weeksToShow: number) {
+  const preferredByDayAndAsin = new Map<string, DailySnapshot>();
+  for (const record of records) {
+    const key = [record.storeName, record.country, record.asin, record.reportDate].join("|");
+    const existing = preferredByDayAndAsin.get(key);
+    const priority = record.sourceType === "lingxing_mcp" ? 2 : 1;
+    const existingPriority = existing?.sourceType === "lingxing_mcp" ? 2 : 1;
+    if (!existing || priority >= existingPriority) preferredByDayAndAsin.set(key, record);
+  }
+  records = [...preferredByDayAndAsin.values()];
   const groups = new Map<string, DailySnapshot[]>();
   for (const record of records) {
     const key = [record.parentAsin, record.storeName, record.country].join("|");
@@ -90,6 +99,13 @@ export function summarizeParentAsinWeeks(records: DailySnapshot[], weeksToShow: 
 }
 
 export function summarizeVariantSales(records: DailySnapshot[], weeks: number) {
+  const preferredByDayAndAsin = new Map<string, DailySnapshot>();
+  for (const record of records) {
+    const key = [record.storeName, record.country, record.asin, record.reportDate].join("|");
+    const existing = preferredByDayAndAsin.get(key);
+    if (!existing || record.sourceType === "lingxing_mcp") preferredByDayAndAsin.set(key, record);
+  }
+  records = [...preferredByDayAndAsin.values()];
   const latestWeeks = [...new Set(records.map(row => mondayOf(row.reportDate)))].sort((a, b) => b.localeCompare(a)).slice(0, weeks);
   const rows = records.filter(row => latestWeeks.includes(mondayOf(row.reportDate)));
   const variants = new Map<string, DailySnapshot[]>();
