@@ -29,7 +29,8 @@
 - [x] 执行用户确认的美国站全店上周完整分页草稿预览：批次#3为`ready_for_review`，3759条草稿均为`new`且已选中，保留64个Tool Run、Trace与行级差异审计；未调用确认/应用入口，`ops_asin_daily_snapshots`写入数为0
 - [x] 修复美国站全店日数据预览店铺目录解析：`get_my_sids`文本型SID现可解析为店铺SID、店铺名与国家代码；9个美国站授权店铺已被识别并用于批次#3
 - [x] 修复美国站全店日数据草稿的大响应存储：完整原始响应转存为35MB受控Artifact（`ai-artifacts`对象，哈希`42f1e7688312…`），批次表只保存摘要、哈希与Artifact引用；行级草稿按250条分块写入
-- [ ] 批次#3待用户人工确认后才可应用：确认后仅追加3759条以内的`ops_asin_daily_snapshots`日快照，并以产品总览按父ASIN自然周汇总；不得覆盖历史Excel快照或写入`lingxing_product_weekly`
+- [x] 批次#3已按用户人工确认应用：追加3759条`ops_asin_daily_snapshots`日快照并以产品总览按父ASIN自然周汇总；历史Excel快照未覆盖，`lingxing_product_weekly`写入数为0
+- [x] 按用户确认应用批次#3当前3759条已选ASIN日数据草稿：已记录confirm/apply审计，创建领星导入批次#660001并追加3759条日快照；批次状态`applied`、64个Tool Run/Trace可追溯；日快照优先产品总览接口返回794个父ASIN，含多变体父ASIN的真实Session、广告和派生比率
 
 ## 皇帝中台通用对话式AI任务管理器（2026-08-22）
 
