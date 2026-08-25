@@ -81,6 +81,7 @@ vi.mock("./domains/ops/services/securityGovernance", () => ({
   assertResourceAction: async () => undefined, recordSecurityAuditLog: async () => undefined,
 }));
 vi.mock("./domains/ai_os/services/runLedger", () => ({ ensureAgentRunTrace: async () => undefined }));
+vi.mock("./domains/ai_os/services/artifactLifecycle", () => ({ registerUnifiedArtifact: async () => ({ ref: "artifact://ops/lingxing-raw", storageUri: "s3://ops/lingxing-raw.json" }) }));
 vi.mock("./domains/ai_os/services/toolGateway/executors", () => ({
   invokeEmperorTool: async () => {
     state.toolCallCount += 1;

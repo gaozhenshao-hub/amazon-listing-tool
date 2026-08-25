@@ -5,6 +5,7 @@ import { adCampaignReports, adKeywordWeekly, adReportImports, dataImports, lingx
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { ensureAgentRunTrace } from "../domains/ai_os/services/runLedger";
+import { registerUnifiedArtifact } from "../domains/ai_os/services/artifactLifecycle";
 import { invokeEmperorTool } from "../domains/ai_os/services/toolGateway/executors";
 import { getDb } from "../repositories/dbClient";
 
@@ -151,6 +152,16 @@ function isUsStore(record: RecordValue) {
   const country = asText(value(record, ["country", "site", "marketplace", "country_name"]));
   return country === "US" || country === "美国" || /\bUS\b/i.test(country);
 }
+export function normalizeLingxingStoreDirectoryRecord(record: RecordValue) {
+  const rawSid = asText(value(record, ["sid", "id"]));
+  const compact = rawSid.match(/^(\d+)\s*,\s*店铺名:\s*([^,]+),\s*国家:\s*.+?\(([A-Z]{2})\)\s*$/i);
+  if (compact) return { sid: compact[1], name: compact[2].trim(), country: compact[3].toUpperCase() };
+  return {
+    sid: rawSid,
+    name: asText(value(record, ["shop_name", "seller_name", "name"])),
+    country: asText(value(record, ["country", "site", "marketplace", "country_name"])),
+  };
+}
 function isPlaceholderAsin(record: RecordValue) {
   const asin = asText(value(record, ["asin", "child_asin", "childAsin"]));
   return !asin || asin === "-";
@@ -169,6 +180,9 @@ export function normalizeDailyPreviewPage(pageRows: RecordValue[], context: { st
 }
 export function isValidDailySnapshotForApply(input: RecordValue) {
   return asText(input.asin) !== "-" && Boolean(asText(input.asin)) && Boolean(asText(input.parentAsin)) && /^\d{4}-\d{2}-\d{2}$/.test(asText(input.reportDate));
+}
+export function shouldExternalizeSyncRawSnapshot(input: unknown) {
+  return Buffer.byteLength(JSON.stringify(input), "utf8") > 1_000_000;
 }
 function todayIso() { return new Date().toISOString().slice(0, 10); }
 export function previewBatchStatusFor(sourceRowCount: number) { return sourceRowCount > 0 ? "ready_for_review" : "empty"; }
@@ -301,7 +315,7 @@ export const lingxingSyncRouter = router({
         ? await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: { capability: "get_my_sids", arguments: {} }, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_us_store_directory" })
         : null;
       const stores = storesExecution
-        ? pickRecords(normalizeMcpPayload(storesExecution.output)).filter(isUsStore).map((record) => ({ sid: asText(value(record, ["sid", "id"])), name: asText(value(record, ["shop_name", "seller_name", "name"])) })).filter((store) => Boolean(store.sid))
+        ? pickRecords(normalizeMcpPayload(storesExecution.output)).map(normalizeLingxingStoreDirectoryRecord).filter(isUsStore).filter((store) => Boolean(store.sid))
         : [{ sid: input.scope.storeId, name: "" }];
       const dates = input.scope.startDate && input.scope.endDate ? isoDates(input.scope.startDate, input.scope.endDate) : [];
       const rows: RecordValue[] = [];
@@ -341,8 +355,32 @@ export const lingxingSyncRouter = router({
       sourceRows = pickRecords(rawSnapshot).slice(0, 500);
       Object.assign(summary, { totalRead: sourceRows.length, selected: sourceRows.length });
     }
-    const [created] = await db.insert(opsExternalSyncBatches).values({ workspaceId, userId: ctx.user.id, source: "lingxing_mcp", dataDomain: input.dataDomain, status: previewBatchStatusFor(sourceRows.length), scope: input.scope, toolRunId, traceId: runId, rawResponseHash: createHash("sha256").update(JSON.stringify(rawSnapshot)).digest("hex"), rawSnapshot: rawSnapshot as any, summary }).$returningId();
+    const rawResponseHash = createHash("sha256").update(JSON.stringify(rawSnapshot)).digest("hex");
+    const externalizeRawSnapshot = shouldExternalizeSyncRawSnapshot(rawSnapshot);
+    const compactRawSnapshot = externalizeRawSnapshot
+      ? { source: "lingxing_mcp", dataDomain: input.dataDomain, externalized: true, rawResponseHash, stores: object(rawSnapshot).stores || [], dates: object(rawSnapshot).dates || [], rowCount: sourceRows.length, toolRunIds: object(rawSnapshot).toolRunIds || [] }
+      : rawSnapshot;
+    Object.assign(summary, { rawResponseExternalized: externalizeRawSnapshot });
+    const [created] = await db.insert(opsExternalSyncBatches).values({ workspaceId, userId: ctx.user.id, source: "lingxing_mcp", dataDomain: input.dataDomain, status: previewBatchStatusFor(sourceRows.length), scope: input.scope, toolRunId, traceId: runId, rawResponseHash, rawSnapshot: compactRawSnapshot as any, summary }).$returningId();
     const batchId = created.id;
+    if (externalizeRawSnapshot) {
+      const artifact = await registerUnifiedArtifact({
+        workspaceId,
+        domain: "ops",
+        artifactKey: "ops.lingxing_sync.raw_response",
+        artifactType: "json",
+        sourceType: "tool_output",
+        sourceTable: "ops_external_sync_batches",
+        sourceRowId: batchId,
+        runId,
+        userId: ctx.user.id,
+        status: "draft",
+        content: rawSnapshot,
+        metadata: { batchId, dataDomain: input.dataDomain, rawResponseHash, toolRunId, traceId: runId, externalized: true },
+        failOnError: true,
+      });
+      await db.update(opsExternalSyncBatches).set({ rawSnapshot: { ...object(compactRawSnapshot), rawArtifactRef: artifact?.ref || null, rawArtifactUri: artifact?.storageUri || null } as any }).where(eq(opsExternalSyncBatches.id, batchId));
+    }
     const stagedRows = sourceRows.map((source) => ({ source, normalized: normalizeRow(input.dataDomain, source, input.scope) }));
     const periodStart = input.scope.startDate || todayIso();
     const periodEnd = input.scope.endDate || periodStart;
@@ -437,7 +475,9 @@ export const lingxingSyncRouter = router({
       if (rowStatus === "needs_review") summary.needsReview += 1;
       return { workspaceId, batchId, entityKey: normalized.entityKey, rowStatus, selected: ["new", "changed"].includes(rowStatus) ? 1 : 0, sourceData: source as any, normalizedData: output as any, fieldDiffs: fieldDiffs as any, matchInfo: matchInfo as any, targetReference: targetReference as any, validationErrors: errors as any };
     });
-    if (rows.length) await db.insert(opsExternalSyncRows).values(rows as any);
+    for (let offset = 0; offset < rows.length; offset += 250) {
+      await db.insert(opsExternalSyncRows).values(rows.slice(offset, offset + 250) as any);
+    }
     await db.update(opsExternalSyncBatches).set({ summary }).where(eq(opsExternalSyncBatches.id, batchId));
     return { batchId, totalRows: rows.length, toolRunId, traceId: runId };
   }),

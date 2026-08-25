@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMcpArguments, calculateFieldDiffs, dailySnapshotIdentityKey, isValidDailySnapshotForApply, normalizeDailyPreviewPage, normalizeMcpPayload, normalizeRow, pickRecords } from "./routers/lingxingSync";
+import { buildMcpArguments, calculateFieldDiffs, dailySnapshotIdentityKey, isValidDailySnapshotForApply, normalizeDailyPreviewPage, normalizeLingxingStoreDirectoryRecord, normalizeMcpPayload, normalizeRow, pickRecords, shouldExternalizeSyncRawSnapshot } from "./routers/lingxingSync";
 
 describe("领星运营同步预览契约", () => {
   it("产品表现使用官方sids范围且保留人工选择的周期", () => {
@@ -88,6 +88,15 @@ describe("领星运营同步预览契约", () => {
     expect(isValidDailySnapshotForApply({ asin: "B012", parentAsin: "P012", reportDate: "2026-08-10" })).toBe(true);
     expect(isValidDailySnapshotForApply({ asin: "-", parentAsin: "P012", reportDate: "2026-08-10" })).toBe(false);
     expect(isValidDailySnapshotForApply({ asin: "B012", parentAsin: "P012", reportDate: "invalid" })).toBe(false);
+  });
+
+  it("解析领星文本型店铺目录并保留可筛选的美国站SID", () => {
+    expect(normalizeLingxingStoreDirectoryRecord({ sid: "7392, 店铺名: 1店-US, 国家: 美国(US)" })).toEqual({ sid: "7392", name: "1店-US", country: "US" });
+  });
+
+  it("超大领星原始响应改为Artifact引用而非写入批次JSON", () => {
+    expect(shouldExternalizeSyncRawSnapshot({ payload: "x".repeat(1_000_001) })).toBe(true);
+    expect(shouldExternalizeSyncRawSnapshot({ payload: "x".repeat(100) })).toBe(false);
   });
 
   it("FBA库存缺少父ASIN映射时不能被误写入子ASIN库存快照", () => {
