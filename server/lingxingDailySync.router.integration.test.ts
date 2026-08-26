@@ -13,6 +13,7 @@ const state = {
   selectCount: 0,
   toolCallCount: 0,
   largePageMode: false,
+  failAtToolCall: 0,
 };
 
 function tableName(table: any) {
@@ -92,6 +93,7 @@ vi.mock("./domains/ai_os/services/artifactLifecycle", () => ({ registerUnifiedAr
 vi.mock("./domains/ai_os/services/toolGateway/executors", () => ({
   invokeEmperorTool: async () => {
     state.toolCallCount += 1;
+    if (state.failAtToolCall === state.toolCallCount) throw new Error("MCP窗口读取超时");
     const list = state.largePageMode
       ? Array.from({ length: 200 }, (_, index) => ({ asin: `B0PAGE${state.toolCallCount.toString().padStart(2, "0")}${index.toString().padStart(3, "0")}`, parent_asins: [{ parent_asin: `PARENT${state.toolCallCount}` }], volume: 1 }))
       : [
@@ -116,7 +118,7 @@ const { lingxingSyncRouter } = await import("./routers/lingxingSync");
 
 describe("领星ASIN日数据同步路由", () => {
   beforeEach(() => {
-    state.batch = null; state.rows = []; state.snapshots = []; state.weekly = []; state.imports = []; state.confirmations = []; state.schedules = []; state.heartbeatCreates = []; state.heartbeatUpdates = []; state.selectCount = 0; state.toolCallCount = 0; state.largePageMode = false;
+    state.batch = null; state.rows = []; state.snapshots = []; state.weekly = []; state.imports = []; state.confirmations = []; state.schedules = []; state.heartbeatCreates = []; state.heartbeatUpdates = []; state.selectCount = 0; state.toolCallCount = 0; state.largePageMode = false; state.failAtToolCall = 0;
   });
 
   it("预览、确认和应用仅追加可追溯日快照，过滤占位ASIN且不写周度产品表", async () => {
@@ -143,6 +145,17 @@ describe("领星ASIN日数据同步路由", () => {
     expect(preview.totalRows).toBe(5000);
     expect(state.rows).toHaveLength(5000);
     expect(state.batch.summary).toMatchObject({ totalRead: 5000, placeholderRows: 0, capped: true, pageTruncations: 2, datesRead: 3 });
+  });
+
+  it("单个MCP窗口失败时保留其他日期草稿并记录不可自动应用的失败摘要", async () => {
+    state.failAtToolCall = 2;
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+
+    const preview = await caller.createPreview({ dataDomain: "product_performance_daily", scope: { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-12", marketplace: "US" } });
+
+    expect(preview.totalRows).toBe(2);
+    expect(state.batch.summary).toMatchObject({ pageTruncations: 1, storeDateWindowsExpected: 3, storeDateWindowsRead: 2 });
+    expect(state.batch.summary.failedStoreDateWindows).toEqual([expect.objectContaining({ sid: "7392", reportDate: "2026-08-11", page: 0, error: "MCP窗口读取超时" })]);
   });
 
   it("计划管理创建、暂停和恢复同一Heartbeat任务，并固定为只生成草稿", async () => {

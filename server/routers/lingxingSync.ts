@@ -261,7 +261,7 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
     orderQty: value(source, ["order_items", "order_qty", "orderQty", "orders"]),
     salesAmount: value(source, ["sales_amount", "sales", "salesAmount", "revenue", "amount", "销售额"]),
     netSalesAmount: value(source, ["net_amount", "net_sales_amount", "netSalesAmount"]),
-    orderProfit: value(source, ["profit", "order_profit", "orderProfit", "gross_profit", "订单利润"]),
+    orderProfit: value(source, ["profit", "order_profit", "orderProfit", "predict_gross_profit", "gross_profit", "订单利润"]),
     adSpend: metricValue(source, ["ad_spend", "spend", "spends", "cost", "广告花费"]),
     adSales: metricValue(source, ["ad_sales_amount", "ad_sales", "ads_sales", "sales", "广告销售额"]),
     adOrders: metricValue(source, ["ad_order_quantity", "ad_orders", "ads_sales_volume_quantity", "orders"]),
@@ -447,6 +447,7 @@ export const lingxingSyncRouter = router({
       const rows: RecordValue[] = [];
       const toolRunIds: string[] = [];
       const completedStoreDateWindows = new Set<string>();
+      const failedStoreDateWindows: Array<{ sid: string; reportDate: string; page: number; error: string }> = [];
       let placeholderRows = 0;
       let pageTruncations = 0;
       let capped = false;
@@ -458,7 +459,16 @@ export const lingxingSyncRouter = router({
             if (rows.length >= 5000) { capped = true; windowComplete = false; break; }
             const request = buildMcpArguments("product_performance_daily", { ...input.scope, storeId: store.sid, startDate: reportDate, endDate: reportDate });
             request.arguments.offset = page * 200;
-            const execution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: `read_asin_daily_${store.sid}_${reportDate}_${page}` });
+            let execution;
+            try {
+              execution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: `read_asin_daily_${store.sid}_${reportDate}_${page}` });
+            } catch (error) {
+              windowComplete = false;
+              pageTruncations += 1;
+              failedStoreDateWindows.push({ sid: store.sid, reportDate, page, error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500) });
+              exhausted = true;
+              break;
+            }
             toolRunId = execution.metadata.toolRunId || toolRunId;
             if (execution.metadata.toolRunId) toolRunIds.push(execution.metadata.toolRunId);
             const pageRows = pickRecords(normalizeMcpPayload(execution.output));
@@ -484,6 +494,7 @@ export const lingxingSyncRouter = router({
         placeholderRows,
         pageTruncations,
         capped,
+        failedStoreDateWindows,
         toolRunIds,
       });
     } else {

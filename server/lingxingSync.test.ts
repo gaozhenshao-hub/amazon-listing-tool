@@ -68,6 +68,11 @@ describe("领星运营同步预览契约", () => {
     expect(normalized.normalized).toMatchObject({ asin: "B012", parentAsin: "P012", reportDate: "2026-08-10", salesQty: 3, orderQty: 2, adOrders: 1, organicOrders: 1, sessionsTotal: 20, adClicks: 4, adImpressions: 100, returnQty: 1 });
   });
 
+  it("ASIN日订单利润优先使用领星预测毛利润而非结算毛利润", () => {
+    const normalized = normalizeRow("product_performance_daily", { asin: "B012", parent_asins: [{ parent_asin: "P012" }], rdate: "2026-08-10", gross_profit: "12.10", predict_gross_profit: "8.75" }, { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-10" });
+    expect(normalized.normalized.orderProfit).toBe("8.75");
+  });
+
   it("ASIN日占位行在人工确认前被阻断", () => {
     const normalized = normalizeRow("product_performance_daily", { asin: "-", parent_asins: [{ parent_asin: "P012" }], rdate: "2026-08-10" }, { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-10" });
     expect(normalized.validationErrors.join(" ")).toContain("占位ASIN");

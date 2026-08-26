@@ -38,4 +38,22 @@ describe("领星日快照周汇总", () => {
     const [summary] = summarizeParentAsinWeeks([{ ...records[0], operator: "董静静" }], 1);
     expect(summary.operator).toBe("董静静");
   });
+
+  it("使用领星实际周一到周日窗口，周日与次日周一不得混入同一周", () => {
+    const boundaryRecords = [
+      { ...records[0], reportDate: "2026-08-23", salesQty: 5 },
+      { ...records[0], reportDate: "2026-08-24", salesQty: 8 },
+    ];
+    const [summary] = summarizeParentAsinWeeks(boundaryRecords, 2);
+    expect(summary.weeks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ weekStartDate: "2026-08-24", weekEndDate: "2026-08-30", salesQty: 8 }),
+      expect.objectContaining({ weekStartDate: "2026-08-17", weekEndDate: "2026-08-23", salesQty: 5 }),
+    ]));
+
+    const variants = summarizeVariantSales(boundaryRecords, 2);
+    expect(variants[0].weekly).toEqual(expect.arrayContaining([
+      expect.objectContaining({ weekStartDate: "2026-08-24", weekEndDate: "2026-08-30", salesQty: 8 }),
+      expect.objectContaining({ weekStartDate: "2026-08-17", weekEndDate: "2026-08-23", salesQty: 5 }),
+    ]));
+  });
 });

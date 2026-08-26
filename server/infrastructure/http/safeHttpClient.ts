@@ -231,14 +231,21 @@ function requestOnce(
 ) {
   return new Promise<{ status: number; headers: Record<string, string>; body: Buffer }>((resolve, reject) => {
     let settled = false;
+    let absoluteTimeout: ReturnType<typeof setTimeout> | undefined;
+    const clearAbsoluteTimeout = () => {
+      if (absoluteTimeout) clearTimeout(absoluteTimeout);
+      absoluteTimeout = undefined;
+    };
     const resolveOnce = (value: { status: number; headers: Record<string, string>; body: Buffer }) => {
       if (settled) return;
       settled = true;
+      clearAbsoluteTimeout();
       resolve(value);
     };
     const rejectOnce = (error: unknown) => {
       if (settled) return;
       settled = true;
+      clearAbsoluteTimeout();
       reject(error);
     };
     const transport = url.protocol === "https:" ? https : http;
@@ -286,6 +293,9 @@ function requestOnce(
     request.setTimeout(timeoutMs, () => {
       request.destroy(new SafeHttpError("Safe HTTP request timed out", "timeout", normalizedHostname(url), true));
     });
+    absoluteTimeout = setTimeout(() => {
+      request.destroy(new SafeHttpError("Safe HTTP request exceeded absolute timeout", "timeout", normalizedHostname(url), true));
+    }, timeoutMs);
     const abort = () => request.destroy(new SafeHttpError("Safe HTTP request aborted", "aborted", normalizedHostname(url), true));
     if (signal?.aborted) abort();
     else signal?.addEventListener("abort", abort, { once: true });

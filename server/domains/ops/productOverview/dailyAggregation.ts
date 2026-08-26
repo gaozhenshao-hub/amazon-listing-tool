@@ -113,7 +113,7 @@ export function summarizeVariantSales(records: DailySnapshot[], weeks: number) {
   return [...variants.entries()].map(([asin, variantRows]) => {
     const latest = variantRows.sort((a, b) => b.reportDate.localeCompare(a.reportDate))[0];
     const weekly = latestWeeks.map(weekStartDate => {
-      const periodRows = variantRows.filter(row => mondayOf(row.reportDate) === weekStartDate);
+        const periodRows = variantRows.filter(row => mondayOf(row.reportDate) === weekStartDate);
       return { weekStartDate, weekEndDate: sundayOf(weekStartDate), salesQty: periodRows.reduce((sum, row) => sum + numberOf(row.salesQty), 0), activeDays: new Set(periodRows.map(row => row.reportDate)).size };
     });
     return { asin, sku: latest.sku || null, title: latest.title || null, fbaAvailable: latest.fbaAvailable, fbaInTransit: latest.fbaInTransit, sourceLocalAvailable: latest.sourceLocalAvailable, weekly };
