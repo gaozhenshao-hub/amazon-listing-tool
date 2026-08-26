@@ -10,7 +10,7 @@ vi.mock("./routers/lingxingSync", () => ({
   lingxingSyncRouter: { createCaller: createCallerMock },
 }));
 
-import { runLingxingScheduledDraft, validateDailyAutoApplyIntegrity } from "./domains/ops/lingxingScheduledDrafts";
+import { runLingxingScheduledDraft, validateDailyAutoApplyIntegrity, validateHistoricalBackfillIntegrity } from "./domains/ops/lingxingScheduledDrafts";
 
 type ScheduleRow = {
   id: number;
@@ -129,6 +129,19 @@ describe("领星Heartbeat草稿运行", () => {
     expect(() => validateDailyAutoApplyIntegrity(batch, [base], { startDate: "2026-08-24", endDate: "2026-08-24" })).not.toThrow();
     expect(() => validateDailyAutoApplyIntegrity(batch, [{ ...base, normalizedData: { ...base.normalizedData, salesQty: -1 } }], { startDate: "2026-08-24", endDate: "2026-08-24" })).toThrow("salesQty存在无效或负数指标");
     expect(() => validateDailyAutoApplyIntegrity(batch, [{ ...base, normalizedData: { ...base.normalizedData, orderProfit: "NaN" } }], { startDate: "2026-08-24", endDate: "2026-08-24" })).toThrow("orderProfit存在无效指标");
+  });
+
+  it("历史回补仅在全店全日期覆盖、身份唯一且字段有效时自动应用", () => {
+    const batch = { id: 43, status: "ready_for_review", summary: { capped: false, pageTruncations: 0, datesRead: 2, storesExpected: 1, storesRead: 1, storeDateWindowsExpected: 2, storeDateWindowsRead: 2 }, scope: {} };
+    const rows = [
+      { id: 1, entityKey: "7392|US|B0HISTORY|2026-08-01", validationErrors: [], normalizedData: { storeId: "7392", country: "US", asin: "B0HISTORY", parentAsin: "PARENTHISTORY", reportDate: "2026-08-01", salesQty: 1, orderProfit: -2 }, sourceData: {} },
+      { id: 2, entityKey: "7392|US|B0HISTORY|2026-08-02", validationErrors: [], normalizedData: { storeId: "7392", country: "US", asin: "B0HISTORY", parentAsin: "PARENTHISTORY", reportDate: "2026-08-02", salesQty: 2, orderProfit: 1 }, sourceData: {} },
+    ];
+    expect(() => validateHistoricalBackfillIntegrity(batch, rows, { startDate: "2026-08-01", endDate: "2026-08-02" })).not.toThrow();
+    expect(() => validateHistoricalBackfillIntegrity({ ...batch, summary: { ...batch.summary, storeDateWindowsRead: 1 } }, rows, { startDate: "2026-08-01", endDate: "2026-08-02" })).toThrow("店铺日期窗口覆盖不完整");
+    expect(() => validateHistoricalBackfillIntegrity(batch, [{ ...rows[0], entityKey: rows[1].entityKey }, rows[1]], { startDate: "2026-08-01", endDate: "2026-08-02" })).toThrow("重复或缺失");
+    expect(() => validateHistoricalBackfillIntegrity({ ...batch, summary: { ...batch.summary, capped: true } }, rows, { startDate: "2026-08-01", endDate: "2026-08-02" })).toThrow("分页或行数截断");
+    expect(() => validateHistoricalBackfillIntegrity({ ...batch, summary: { ...batch.summary, pageTruncations: 1 } }, rows, { startDate: "2026-08-01", endDate: "2026-08-02" })).toThrow("分页或行数截断");
   });
 
   it("相同运行键成功后跳过重复运行，不再读取MCP或创建草稿", async () => {

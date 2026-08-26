@@ -38,6 +38,12 @@ describe("领星同步页面ASIN日数据契约", () => {
     expect(pageSource).toContain("库存、广告与Listing均不进入自动写入");
   });
 
+  it("明确同步与下载仅保留所选时间内有经营、广告或表现数据的商品", () => {
+    expect(pageSource).toContain("统计范围（同步与下载）");
+    expect(pageSource).toContain("有销量、广告或表现数据的商品");
+    expect(pageSource).toContain("全零商品保留在受控原始读取审计中");
+  });
+
   it("将受QPS限制的官方目录读取与纯数据库历史/计划查询分阶段发起", () => {
     expect(pageSource).toContain("directoryBootstrapSettled");
     expect(pageSource).toContain("避免同一批请求的局部429使页面误显示为空状态");

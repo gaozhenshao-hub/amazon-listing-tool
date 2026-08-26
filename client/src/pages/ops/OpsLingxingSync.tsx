@@ -14,7 +14,7 @@ import { getLingxingSyncRule, LINGXING_SYNC_RULES } from "@shared/lingxingSyncRu
 
 const domains = [
   { value: "product_performance", label: "产品表现", detail: "用于产品总览的ASIN、父ASIN、销量、销售额、订单利润和广告花费预览" },
-  { value: "product_performance_daily", label: "ASIN日产品表现（产品总览）", detail: "按子ASIN与报告日读取；支持美国站全店预览、占位ASIN过滤、人工确认后追加日快照，并由产品总览自动按父ASIN自然周汇总" },
+  { value: "product_performance_daily", label: "ASIN日产品表现（产品总览）", detail: "按子ASIN与报告日读取；完整读取美国站全店范围用于覆盖审计，但仅保留所选时间内有销量、广告或表现数据的商品进入草稿、下载与产品总览" },
   { value: "order_profit", label: "订单利润（产品总览备选）", detail: "产品表现零行时，使用订单利润报表的父ASIN周度销量、销售额、利润和广告花费生成预览" },
   { value: "fba_inventory", label: "FBA库存", detail: "用于子ASIN库存快照的可售、预留和在途库存预览" },
   { value: "ad_campaign", label: "广告活动报表", detail: "仅读取广告活动效果，绝不修改预算、竞价或投放状态" },
@@ -198,6 +198,7 @@ export default function OpsLingxingSync() {
     </Card>
 
       <Card className="border-amber-200 bg-amber-50/40"><CardContent className="flex gap-3 pt-6 text-sm text-amber-900"><FileCheck2 className="mt-0.5 h-5 w-5 shrink-0" /><p><b>人工确认与自动应用边界：</b>领星读取先生成独立草稿批次。手动预览须由人工逐行确认；仅已启用的每日ASIN日表现计划可在分页完整、店铺日期覆盖、身份去重、字段有效且无异常时自动确认并追加日快照。产品总览按父ASIN自然周汇总；库存、广告、Listing、月度采购和广告投放设置均不会由自动计划写入或修改。</p></CardContent></Card>
+      <Card className="border-emerald-200 bg-emerald-50/40"><CardContent className="flex gap-3 pt-5 text-sm text-emerald-900"><Filter className="mt-0.5 h-5 w-5 shrink-0" /><p><b>统计范围（同步与下载）：</b>系统会完整读取所选店铺和日期窗口，以校验店铺/日期覆盖；但仅将所选时间内有销量、广告或表现数据的商品写入同步草稿、下载结果与产品总览。全零商品保留在受控原始读取审计中，不进入业务日快照。</p></CardContent></Card>
 
       {selectedRule ? <Card className="border-sky-200 bg-sky-50/40"><CardHeader className="pb-2"><CardTitle className="text-base">{selectedRule.label} · 独立联动规则</CardTitle><CardDescription>{selectedRule.grain}；身份键：{selectedRule.identity}</CardDescription></CardHeader><CardContent className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4"><div><p className="text-xs text-muted-foreground">读取字段</p><p className="mt-1">{selectedRule.sourceFields.join("、")}</p></div><div><p className="text-xs text-muted-foreground">写入与下游联动</p><p className="mt-1">{selectedRule.target} → {selectedRule.downstream.join("、")}</p></div><div><p className="text-xs text-muted-foreground">节奏与确认</p><p className="mt-1">{selectedRule.cadence}；{selectedRule.confirmation}</p></div><div><p className="text-xs text-muted-foreground">保护与缺失值</p><p className="mt-1">保护：{selectedRule.protectedFields.join("、")}；{selectedRule.missingValue}</p></div></CardContent></Card> : null}
 

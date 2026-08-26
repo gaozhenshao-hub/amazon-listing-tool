@@ -129,6 +129,54 @@ export function validateDailyAutoApplyIntegrity(batch: AutoApplyBatch, rows: Aut
   }
 }
 
+/** 历史回补使用与每日计划等同的治理规则，但必须完整覆盖输入范围内的所有日期。 */
+export function validateHistoricalBackfillIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }, previousSnapshots: PreviousDailySnapshot[] = []) {
+  const summary = record(batch.summary);
+  if (batch.status !== "ready_for_review") throw new Error("历史回补校验未通过：草稿批次不处于待确认状态");
+  if (Boolean(summary.capped) || Number(summary.pageTruncations || 0) > 0) throw new Error("历史回补校验未通过：读取存在分页或行数截断");
+  const expectedDates: string[] = [];
+  for (let date = scope.startDate; date <= scope.endDate; date = addDays(date, 1)) expectedDates.push(date);
+  if (Number(summary.datesRead || 0) !== expectedDates.length) throw new Error("历史回补校验未通过：日期覆盖不完整");
+  if (Number(summary.storesRead || 0) < 1 || Number(summary.storesExpected || 0) !== Number(summary.storesRead || 0)) throw new Error("历史回补校验未通过：授权店铺覆盖不完整");
+  if (Number(summary.storeDateWindowsExpected || 0) !== Number(summary.storeDateWindowsRead || 0)) throw new Error("历史回补校验未通过：店铺日期窗口覆盖不完整");
+  if (!rows.length) throw new Error("历史回补校验未通过：不存在可追加的日快照草稿");
+
+  const snapshotsByIdentity = new Map(previousSnapshots.map((snapshot) => [dailyIdentity(snapshot), snapshot]));
+  const candidateByIdentity = new Map<string, AutoApplyRow>();
+  for (const row of rows) {
+    if (!row.entityKey || candidateByIdentity.has(row.entityKey)) throw new Error("历史回补校验未通过：存在重复或缺失的日快照身份键");
+    candidateByIdentity.set(row.entityKey, row);
+  }
+  for (const row of rows) {
+    const errors = Array.isArray(row.validationErrors) ? row.validationErrors : [];
+    if (errors.length) throw new Error("历史回补校验未通过：草稿包含字段校验错误");
+    const data = record(row.normalizedData);
+    const reportDate = text(data.reportDate);
+    if (!text(data.asin) || text(data.asin) === "-" || !text(data.parentAsin) || !expectedDates.includes(reportDate)) {
+      throw new Error("历史回补校验未通过：存在缺失ASIN、父ASIN或范围外报告日的草稿行");
+    }
+    for (const key of ["salesQty", "orderQty", "salesAmount", "adSpend", "adSales", "adOrders", "sessionsTotal", "adClicks", "adImpressions", "returnQty"]) {
+      const metric = numberOrNull(data[key]);
+      if (metric !== null && (!Number.isFinite(metric) || metric < 0)) throw new Error(`历史回补校验未通过：${key}存在无效或负数指标`);
+    }
+    const orderProfit = numberOrNull(data.orderProfit);
+    if (orderProfit !== null && !Number.isFinite(orderProfit)) throw new Error("历史回补校验未通过：orderProfit存在无效指标");
+    const previousDate = addDays(reportDate, -1);
+    const identity = dailyIdentity({ storeId: data.storeId, country: data.country, asin: data.asin, reportDate: previousDate });
+    const candidatePrevious = candidateByIdentity.get(identity);
+    const previousData = candidatePrevious ? record(candidatePrevious.normalizedData) : snapshotsByIdentity.get(identity);
+    if (previousData) {
+      for (const [key, previousValue] of [["salesQty", (previousData as any).salesQty], ["orderQty", (previousData as any).orderQty], ["salesAmount", (previousData as any).salesAmount], ["adSpend", (previousData as any).adSpend], ["sessionsTotal", (previousData as any).sessionsTotal]] as const) {
+        const currentValue = numberOrNull(data[key]);
+        const baseline = numberOrNull(previousValue);
+        if (currentValue !== null && baseline !== null && baseline > 0 && currentValue > Math.max(baseline * 20, baseline + 10_000)) {
+          throw new Error(`历史回补校验未通过：${key}相较前一日异常跃升，需人工复核`);
+        }
+      }
+    }
+  }
+}
+
 export async function runLingxingScheduledDraft(taskUid: string, now = new Date()) {
   const db = await getDb();
   if (!db) throw new Error("数据库不可用");

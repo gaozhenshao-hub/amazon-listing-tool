@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMcpArguments, calculateFieldDiffs, dailyReadCoverageSummary, dailySnapshotIdentityKey, isValidDailySnapshotForApply, normalizeDailyPreviewPage, normalizeLingxingStoreDirectoryRecord, normalizeMcpPayload, normalizeRow, pickRecords, shouldExternalizeSyncRawSnapshot } from "./routers/lingxingSync";
+import { buildMcpArguments, calculateFieldDiffs, dailyReadCoverageSummary, dailySnapshotIdentityKey, hasSelectedPeriodActivity, isValidDailySnapshotForApply, normalizeDailyPreviewPage, normalizeLingxingStoreDirectoryRecord, normalizeMcpPayload, normalizeRow, pickRecords, shouldExternalizeSyncRawSnapshot } from "./routers/lingxingSync";
 
 describe("领星运营同步预览契约", () => {
   it("产品表现使用官方sids范围且保留人工选择的周期", () => {
@@ -71,6 +71,26 @@ describe("领星运营同步预览契约", () => {
   it("ASIN日订单利润优先使用领星预测毛利润而非结算毛利润", () => {
     const normalized = normalizeRow("product_performance_daily", { asin: "B012", parent_asins: [{ parent_asin: "P012" }], rdate: "2026-08-10", gross_profit: "12.10", predict_gross_profit: "8.75" }, { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-10" });
     expect(normalized.normalized.orderProfit).toBe("8.75");
+  });
+
+  it("将领星广告指标的负哨兵值归一为缺失，不误作负数业务事实", () => {
+    const normalized = normalizeRow("product_performance_daily", {
+      asin: "B0SENTINEL", parent_asins: [{ parent_asin: "P0SENTINEL" }], rdate: "2026-02-26",
+      clicks: -1, impressions: -1, spend: -1, acos: -1, ctr: -0.0159,
+    }, { storeId: "12507", startDate: "2026-02-26", endDate: "2026-02-26" });
+    expect(normalized.normalized.adClicks).toBeNull();
+    expect(normalized.normalized.adImpressions).toBeNull();
+    expect(normalized.normalized.adSpend).toBeNull();
+    expect(normalized.normalized.adAcos).toBeNull();
+    expect(normalized.normalized.adCtr).toBeNull();
+  });
+
+  it("仅将所选时间内有销量、广告或表现指标的ASIN日行纳入系统应用", () => {
+    expect(hasSelectedPeriodActivity({ salesQty: 0, adSpend: 0, sessionsTotal: 0 })).toBe(false);
+    expect(hasSelectedPeriodActivity({ salesQty: 2 })).toBe(true);
+    expect(hasSelectedPeriodActivity({ adImpressions: 100 })).toBe(true);
+    expect(hasSelectedPeriodActivity({ sessionsTotal: 1 })).toBe(true);
+    expect(hasSelectedPeriodActivity({ orderProfit: -3.2 })).toBe(true);
   });
 
   it("ASIN日占位行在人工确认前被阻断", () => {

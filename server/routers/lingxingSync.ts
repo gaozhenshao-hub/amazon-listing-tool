@@ -144,7 +144,15 @@ function sumValues(record: RecordValue, keys: string[]) {
 }
 function metricValue(record: RecordValue, keys: string[]) {
   const raw = value(record, keys);
-  return asText(raw) === "99999999" ? null : raw;
+  const numeric = Number(raw);
+  return asText(raw) === "99999999" || (Number.isFinite(numeric) && numeric < 0) ? null : raw;
+}
+export function hasSelectedPeriodActivity(input: RecordValue) {
+  return ["salesQty", "orderQty", "salesAmount", "orderProfit", "adSpend", "adSales", "adOrders", "adClicks", "adImpressions", "sessionsTotal", "returnQty"]
+    .some((key) => {
+      const metric = Number(input[key]);
+      return Number.isFinite(metric) && metric !== 0;
+    });
 }
 function isPhase5PreviewDomain(domain: string) { return phase5PreviewDomains.has(domain); }
 function profileIdsFromScope(scope: z.infer<typeof scopeSchema>) {
@@ -550,10 +558,21 @@ export const lingxingSyncRouter = router({
       await db.update(opsExternalSyncBatches).set({ rawSnapshot: { ...object(compactRawSnapshot), rawArtifactRef: artifact?.ref || null, rawArtifactUri: artifact?.storageUri || null } as any }).where(eq(opsExternalSyncBatches.id, batchId));
     }
     const stagedRows = sourceRows.map((source) => ({ source, normalized: normalizeRow(input.dataDomain, source, input.scope) }));
+    const applicableRows = input.dataDomain === "product_performance_daily"
+      ? stagedRows.filter((item) => hasSelectedPeriodActivity(item.normalized.normalized))
+      : stagedRows;
+    if (input.dataDomain === "product_performance_daily") {
+      Object.assign(summary, {
+        activeProductRows: applicableRows.length,
+        filteredInactiveProductRows: stagedRows.length - applicableRows.length,
+        selected: applicableRows.length,
+        activeProductRule: "selected_period_has_sales_ads_or_performance_data",
+      });
+    }
     const periodStart = input.scope.startDate || todayIso();
     const periodEnd = input.scope.endDate || periodStart;
-    const parentAsins = [...new Set(stagedRows.map((item) => asText(item.normalized.normalized.parentAsin || item.normalized.normalized.asin)).filter(Boolean))];
-    const childAsins = [...new Set(stagedRows.map((item) => asText(item.normalized.normalized.asin)).filter(Boolean))];
+    const parentAsins = [...new Set(applicableRows.map((item) => asText(item.normalized.normalized.parentAsin || item.normalized.normalized.asin)).filter(Boolean))];
+    const childAsins = [...new Set(applicableRows.map((item) => asText(item.normalized.normalized.asin)).filter(Boolean))];
     const existingProductRows = ["product_performance", "order_profit"].includes(input.dataDomain) && parentAsins.length
       ? await db.select().from(lingxingProductWeekly).where(and(eq(lingxingProductWeekly.workspaceId, workspaceId), eq(lingxingProductWeekly.weekStartDate, periodStart), inArray(lingxingProductWeekly.parentAsin, parentAsins)))
       : [];
@@ -571,7 +590,7 @@ export const lingxingSyncRouter = router({
     const inventoryByAsinDate = new Map(existingInventoryRows.map((row) => [dailySnapshotIdentityKey({ sourceStoreId: row.sourceStoreId, country: row.country, asin: row.asin, reportDate: row.reportDate }), row]));
     const campaignByKey = new Map(existingCampaignRows.map((row) => [`${asText(row.campaignName)}|${asText(row.storeName)}`, row]));
     const keywordByKey = new Map(existingKeywordRows.map((row) => [`${asText(row.campaignName)}|${asText(row.keyword)}|${asText(row.matchType)}`, row]));
-    const rows = stagedRows.map(({ source, normalized }) => {
+    const rows = applicableRows.map(({ source, normalized }) => {
       const output = { ...normalized.normalized };
       const errors = [...normalized.validationErrors];
       let current: RecordValue = {};
@@ -646,7 +665,7 @@ export const lingxingSyncRouter = router({
     for (let offset = 0; offset < rows.length; offset += 250) {
       await db.insert(opsExternalSyncRows).values(rows.slice(offset, offset + 250) as any);
     }
-    await db.update(opsExternalSyncBatches).set({ summary }).where(eq(opsExternalSyncBatches.id, batchId));
+    await db.update(opsExternalSyncBatches).set({ summary, status: previewBatchStatusFor(rows.length) }).where(eq(opsExternalSyncBatches.id, batchId));
     return { batchId, totalRows: rows.length, toolRunId, traceId: runId };
   }),
 
