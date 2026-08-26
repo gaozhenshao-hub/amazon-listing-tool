@@ -4,6 +4,7 @@ import { getDb } from "../server/repositories/dbClient.js";
 import { lingxingSyncRouter } from "../server/routers/lingxingSync.js";
 import { validateHistoricalBackfillIntegrity } from "../server/domains/ops/lingxingScheduledDrafts.js";
 import { collectCompletedDailyBackfillDates, collectReviewRequiredDailyBackfillDates } from "../server/domains/ops/historicalBackfillCoverage.js";
+import { buildHistoricalBackfillTimeoutBatch } from "../server/domains/ops/historicalBackfillTimeout.js";
 
 const workspaceId = 1;
 const startDate = "2026-02-26";
@@ -72,6 +73,12 @@ for (const date of targetDates) {
     console.info(JSON.stringify({ phase: "applied", ...results.at(-1) }));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (!batchId && message.includes("窗口超时")) {
+      const [createdTimeoutBatch] = await db.insert(opsExternalSyncBatches)
+        .values(buildHistoricalBackfillTimeoutBatch({ workspaceId, userId: owner.id, date, error: message }))
+        .$returningId();
+      batchId = createdTimeoutBatch.id;
+    }
     results.push({ ...scope, batchId, status: "review_required", error: message });
     console.error(JSON.stringify({ phase: "review_required", ...results.at(-1) }));
     if (message.includes("窗口超时") || stage === "apply") break;
