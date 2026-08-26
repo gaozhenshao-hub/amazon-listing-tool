@@ -122,6 +122,15 @@ describe("领星Heartbeat草稿运行", () => {
     expect(() => validateDailyAutoApplyIntegrity(batch, rows, { startDate: "2026-08-24", endDate: "2026-08-24" }, previous as any)).toThrow("异常跃升");
   });
 
+  it("每日草稿允许负利润表示真实亏损，但持续拒绝负数业务事实和非有限利润", () => {
+    const batch = { id: 42, status: "ready_for_review", summary: { capped: false, pageTruncations: 0, datesRead: 1, storesExpected: 1, storesRead: 1, storeDateWindowsExpected: 1, storeDateWindowsRead: 1 }, scope: {} };
+    const base = { id: 101, entityKey: "7392|US|B0LOSS|2026-08-24", validationErrors: [], normalizedData: { storeId: "7392", country: "US", asin: "B0LOSS", parentAsin: "PARENTLOSS", reportDate: "2026-08-24", salesQty: 3, orderProfit: -12.5 }, sourceData: {} };
+
+    expect(() => validateDailyAutoApplyIntegrity(batch, [base], { startDate: "2026-08-24", endDate: "2026-08-24" })).not.toThrow();
+    expect(() => validateDailyAutoApplyIntegrity(batch, [{ ...base, normalizedData: { ...base.normalizedData, salesQty: -1 } }], { startDate: "2026-08-24", endDate: "2026-08-24" })).toThrow("salesQty存在无效或负数指标");
+    expect(() => validateDailyAutoApplyIntegrity(batch, [{ ...base, normalizedData: { ...base.normalizedData, orderProfit: "NaN" } }], { startDate: "2026-08-24", endDate: "2026-08-24" })).toThrow("orderProfit存在无效指标");
+  });
+
   it("相同运行键成功后跳过重复运行，不再读取MCP或创建草稿", async () => {
     const { db } = createMockDb([{ ...dailySchedule, lastRunKey: "daily:2026-08-24", lastStatus: "succeeded" }]);
     getDbMock.mockResolvedValue(db);

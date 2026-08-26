@@ -110,10 +110,12 @@ export function validateDailyAutoApplyIntegrity(batch: AutoApplyBatch, rows: Aut
     if (!text(data.asin) || text(data.asin) === "-" || !text(data.parentAsin) || text(data.reportDate) !== scope.startDate) {
       throw new Error("自动应用校验未通过：存在缺失ASIN、父ASIN或报告日的草稿行");
     }
-    for (const key of ["salesQty", "orderQty", "salesAmount", "orderProfit", "adSpend", "adSales", "adOrders", "sessionsTotal", "adClicks", "adImpressions", "returnQty"]) {
+    for (const key of ["salesQty", "orderQty", "salesAmount", "adSpend", "adSales", "adOrders", "sessionsTotal", "adClicks", "adImpressions", "returnQty"]) {
       const metric = numberOrNull(data[key]);
       if (metric !== null && (!Number.isFinite(metric) || metric < 0)) throw new Error(`自动应用校验未通过：${key}存在无效或负数指标`);
     }
+    const orderProfit = numberOrNull(data.orderProfit);
+    if (orderProfit !== null && !Number.isFinite(orderProfit)) throw new Error("自动应用校验未通过：orderProfit存在无效指标");
     const previous = priorByIdentity.get(dailyIdentity({ storeId: data.storeId, country: data.country, asin: data.asin, reportDate: previousDate }));
     if (previous) {
       for (const [key, previousValue] of [["salesQty", previous.salesQty], ["orderQty", previous.orderQty], ["salesAmount", previous.salesAmount], ["adSpend", previous.adSpend], ["sessionsTotal", previous.sessionsTotal]] as const) {
