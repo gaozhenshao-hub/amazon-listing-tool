@@ -56,7 +56,7 @@ for (const date of targetDates) {
   try {
     const preview = await withTimeout(
       caller.createPreview({ dataDomain: "product_performance_daily", scope: { storeId: "ALL_US", marketplace: "US", ...scope } }),
-      150_000,
+      930_000,
       date,
     );
     batchId = preview.batchId;

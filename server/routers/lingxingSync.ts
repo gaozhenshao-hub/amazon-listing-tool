@@ -36,6 +36,17 @@ const SCHEDULE_PRESETS = {
 
 type RecordValue = Record<string, unknown>;
 const phase5PreviewDomains = new Set(["listing_master", "ad_search_term", "ad_targeting"]);
+const MCP_STORE_DATE_WINDOW_TIMEOUT_MS = 95_000;
+
+export function withMcpStoreDateWindowTimeout<T>(promise: Promise<T>, label: string, timeoutMs = MCP_STORE_DATE_WINDOW_TIMEOUT_MS) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`MCP店铺日期窗口超时：${label}`)), timeoutMs);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
 
 function object(value: unknown): RecordValue { return value && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : {}; }
 
@@ -469,7 +480,10 @@ export const lingxingSyncRouter = router({
             request.arguments.offset = page * 200;
             let execution;
             try {
-              execution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: `read_asin_daily_${store.sid}_${reportDate}_${page}` });
+              execution = await withMcpStoreDateWindowTimeout(
+                invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: `read_asin_daily_${store.sid}_${reportDate}_${page}` }),
+                `${store.sid}|${reportDate}|${page}`,
+              );
             } catch (error) {
               windowComplete = false;
               pageTruncations += 1;
