@@ -6,6 +6,7 @@ const routerSource = readFileSync(resolve(process.cwd(), "server/routers/dataImp
 const productsPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsProducts.tsx"), "utf8");
 const detailPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsProductDetail.tsx"), "utf8");
 const inventoryPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsInventory.tsx"), "utf8");
+const purchasePlanningSource = readFileSync(resolve(process.cwd(), "shared/inventoryPurchasePlanning.ts"), "utf8");
 
 describe("导入模式库存规划接口契约", () => {
   it("以 ASIN 日快照作为库存规划输入，而不是旧库存预警表", () => {
@@ -130,10 +131,10 @@ describe("导入模式库存规划接口契约", () => {
   });
 
   it("月度采购表按建议订货日归集三个月计划，并且只对已录入成本计算采购资金", () => {
-    expect(inventoryPageSource).toContain("monthlyPurchasePlans");
-    expect(inventoryPageSource).toContain('length: 3');
+    expect(inventoryPageSource).toContain("buildMonthlyPurchasePlans");
+    expect(purchasePlanningSource).toContain('"本月采购", "下月采购", "后月采购"');
     expect(inventoryPageSource).toContain("建议订货日归入本月、下月和后月");
-    expect(inventoryPageSource).toContain("purchaseAmount: productCost == null ? null : quantity * productCost");
+    expect(purchasePlanningSource).toContain("purchaseAmount: productCost === null ? null : quantity * productCost");
     expect(inventoryPageSource).toContain("待录入成本");
     expect(inventoryPageSource).toContain("月度采购表与资金规划");
   });

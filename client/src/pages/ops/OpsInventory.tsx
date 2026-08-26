@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/popover";
 import { EmbeddedAgentRunPanel } from "@/components/workflow/EmbeddedAgentRunPanel";
 import { AiJobHistoryPanel } from "@/components/workflow/AiJobHistoryPanel";
+import { buildMonthlyPurchasePlans } from "@shared/inventoryPurchasePlanning";
 
 const ALERT_COLORS = {
   critical: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", badge: "destructive" as const, label: "紧急", fill: "#ef4444" },
@@ -161,39 +162,7 @@ export default function OpsInventory() {
     });
   }, [planningData, planningSearch, planningOperatorFilter, planningStatusFilter, planningSort]);
   const discontinuedRows = useMemo(() => (planningData?.rows || []).filter((row: any) => row.lifecycleStatus === "discontinued"), [planningData]);
-  const monthlyPurchasePlans = useMemo(() => {
-    const anchor = planningData?.asOfDate ? new Date(`${planningData.asOfDate}T00:00:00`) : new Date();
-    const months = Array.from({ length: 3 }, (_, offset) => {
-      const date = new Date(anchor.getFullYear(), anchor.getMonth() + offset, 1);
-      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-      return { key, label: offset === 0 ? "本月采购" : offset === 1 ? "下月采购" : "后月采购", rows: [] as any[] };
-    });
-    (planningData?.rows || []).forEach((row: any) => {
-      const quantity = Number(row.suggestedOrderQuantity || 0);
-      if (quantity <= 0) return;
-      const suggested = row.suggestedOrderDate ? new Date(`${row.suggestedOrderDate}T00:00:00`) : anchor;
-      const effective = suggested < anchor ? anchor : suggested;
-      const monthKey = `${effective.getFullYear()}-${String(effective.getMonth() + 1).padStart(2, "0")}`;
-      const bucket = months.find(month => month.key === monthKey);
-      if (!bucket) return;
-      const productCost = row.productCost == null ? null : Number(row.productCost);
-      bucket.rows.push({
-        ...row,
-        sourceAsin: row.asin,
-        asin: row.productName || "未提供品名",
-        productName: row.sku ? `SKU：${row.sku}` : "SKU：—",
-        quantity,
-        productCost,
-        purchaseAmount: productCost == null ? null : quantity * productCost,
-      });
-    });
-    return months.map(month => ({
-      ...month,
-      totalQuantity: month.rows.reduce((sum, row) => sum + row.quantity, 0),
-      knownAmount: month.rows.reduce((sum, row) => sum + (row.purchaseAmount ?? 0), 0),
-      missingCostCount: month.rows.filter(row => row.productCost == null).length,
-    }));
-  }, [planningData]);
+  const monthlyPurchasePlans = useMemo(() => buildMonthlyPurchasePlans(planningData?.rows || [], planningData?.asOfDate), [planningData]);
   const downloadMonthlyPurchasePlan = () => {
     const headers = ["采购月份", "品名", "SKU", "采购量", "单件成本(USD)", "采购金额(USD)"];
     const records = monthlyPurchasePlans.flatMap(month => month.rows.map((row: any) => [month.key, row.asin || "—", row.sku || "—", row.quantity, row.productCost == null ? "待录入" : row.productCost.toFixed(2), row.purchaseAmount == null ? "—" : row.purchaseAmount.toFixed(2)]));
@@ -319,7 +288,7 @@ export default function OpsInventory() {
     }
   }, [currentReplenishmentJob]);
 
-  const allItems = data?.items || [];
+  const allItems = useMemo(() => data?.items ?? [], [data?.items]);
   const items = useMemo(() => {
     let list = tagFilterMode === "hide"
       ? allItems.filter((item: any) => !hiddenAsins.has(item.asin))
@@ -399,8 +368,9 @@ export default function OpsInventory() {
     );
   }
 
-  // The inventory workbench is the single planning surface. Legacy warning data is not rendered.
-  return (
+  // The inventory workbench is the default planning surface. The historical panel is retained only for explicit migration diagnostics.
+  const showLegacyInventoryDiagnostics = new URLSearchParams(window.location.search).get("legacyInventoryDiagnostics") === "1";
+  if (!showLegacyInventoryDiagnostics) return (
     <div className="space-y-6 p-6">
       {discontinuedRows.length > 0 && <Card className="border-amber-200 bg-amber-50/40"><CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base text-amber-900"><AlertTriangle className="h-4 w-4" />停售 ASIN 管理</CardTitle><CardDescription>系统依据连续三个月销量、库存、利润均为零自动标记停售。恢复为在售前请填写经营依据，系统会保留原始证据和人工恢复记录。</CardDescription></CardHeader><CardContent className="space-y-2">{discontinuedRows.map((row: any) => <div key={`lifecycle-${row.asin}-${row.storeName}-${row.country}`} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-background p-3"><div className="min-w-0"><div className="flex items-center gap-2"><Badge variant="destructive">已停售</Badge><span className="font-mono text-xs font-semibold">{row.asin}</span><span className="truncate text-sm">{row.productName || row.sku || "未提供品名"}</span></div><p className="mt-1 text-xs text-muted-foreground">原因：连续三个月销量、库存、利润均为零 · 证据期：{row.lifecycleEvidenceStartDate || "—"} 至 {row.lifecycleEvidenceEndDate || "—"}（{row.lifecycleEvidenceDays || 0} 天）</p></div><Button size="sm" variant="outline" onClick={() => { setRestoreTarget(row); setRestoreReason(""); }}>恢复为在售</Button></div>)}</CardContent></Card>}
       <Dialog open={Boolean(restoreTarget)} onOpenChange={open => { if (!open) { setRestoreTarget(null); setRestoreReason(""); } }}><DialogContent><DialogHeader><DialogTitle>恢复为在售</DialogTitle><DialogDescription>将 {restoreTarget?.asin || "该子 ASIN"} 从停售状态恢复为在售。请说明恢复依据，便于后续审计。</DialogDescription></DialogHeader><div className="space-y-2"><Label htmlFor="restore-lifecycle-reason">恢复原因</Label><Textarea id="restore-lifecycle-reason" value={restoreReason} onChange={event => setRestoreReason(event.target.value)} placeholder="例如：新品重新备货、Listing 已修复、计划重新投放广告" /></div><DialogFooter><Button variant="outline" onClick={() => setRestoreTarget(null)}>取消</Button><Button disabled={!restoreTarget || restoreReason.trim().length < 2 || restoreLifecycleStatus.isPending} onClick={() => restoreTarget && restoreLifecycleStatus.mutate({ asin: restoreTarget.asin, storeName: restoreTarget.storeName, country: restoreTarget.country, reason: restoreReason.trim() })}>{restoreLifecycleStatus.isPending ? "恢复中…" : "确认恢复为在售"}</Button></DialogFooter></DialogContent></Dialog>
