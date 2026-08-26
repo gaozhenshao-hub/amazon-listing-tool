@@ -25,6 +25,7 @@ import {
   dataLifecycleSweepHandler,
   databaseObservabilitySnapshotHandler,
   dataCleanupHandler,
+  lingxingScheduledDraftHandler,
   weeklyReportHandler,
 } from "../scheduledHandlers";
 import { kbExternalApiRouter } from "../kbExternalApi";
@@ -86,6 +87,7 @@ async function startServer() {
   app.post("/api/scheduled/database-observability-snapshot", databaseObservabilitySnapshotHandler);
   app.post("/api/scheduled/data-lifecycle-sweep", dataLifecycleSweepHandler);
   app.post("/api/scheduled/ai-os-operational-health", aiOsOperationalHealthHandler);
+  app.post("/api/scheduled/lingxing-sync-draft", lingxingScheduledDraftHandler);
   // tRPC API
   app.use(
     "/api/trpc",

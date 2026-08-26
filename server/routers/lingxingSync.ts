@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
+import { parse as parseCookie } from "cookie";
 import { z } from "zod";
-import { adCampaignReports, adKeywordWeekly, adReportImports, dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncConfirmations, opsExternalSyncRows } from "../../drizzle/schema";
+import { adCampaignReports, adKeywordWeekly, adReportImports, dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncConfirmations, opsExternalSyncRows, opsLingxingSyncSchedules } from "../../drizzle/schema";
 import { router } from "../_core/trpc";
+import { createHeartbeatJob, updateHeartbeatJob } from "../_core/heartbeat";
+import { COOKIE_NAME } from "@shared/const";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { ensureAgentRunTrace } from "../domains/ai_os/services/runLedger";
 import { registerUnifiedArtifact } from "../domains/ai_os/services/artifactLifecycle";
@@ -17,6 +20,17 @@ const scopeSchema = z.object({
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   marketplace: z.string().trim().optional(),
 });
+const scheduledDomainSchema = z.enum(["product_performance_daily", "parent_asin_weekly_rollup"]);
+const SCHEDULE_PRESETS = {
+  product_performance_daily: {
+    cadence: "daily_previous_day", cronExpression: "0 0 9 * * *",
+    description: "北京时间每日17:00读取前一天美国站ASIN日数据，仅生成待审核草稿",
+  },
+  parent_asin_weekly_rollup: {
+    cadence: "weekly_parent_asin_rollup", cronExpression: "0 10 9 * * 1",
+    description: "北京时间每周一17:10汇总上一自然周已确认日快照，仅生成待审核父ASIN周汇总草稿",
+  },
+} as const;
 
 type RecordValue = Record<string, unknown>;
 
@@ -288,6 +302,59 @@ export const lingxingSyncRouter = router({
     if (!db) throw new Error("数据库不可用");
     const workspaceId = ctx.user.defaultWorkspaceId!;
     return db.select().from(opsExternalSyncBatches).where(eq(opsExternalSyncBatches.workspaceId, workspaceId)).orderBy(desc(opsExternalSyncBatches.createdAt)).limit(input.limit);
+  }),
+
+  listSchedules: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new Error("数据库不可用");
+    return db.select().from(opsLingxingSyncSchedules)
+      .where(eq(opsLingxingSyncSchedules.workspaceId, ctx.user.defaultWorkspaceId!))
+      .orderBy(desc(opsLingxingSyncSchedules.createdAt));
+  }),
+
+  setScheduleEnabled: protectedProcedure.input(z.object({
+    dataDomain: scheduledDomainSchema,
+    enabled: z.boolean(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("数据库不可用");
+    const workspaceId = ctx.user.defaultWorkspaceId!;
+    const preset = SCHEDULE_PRESETS[input.dataDomain];
+    const sessionToken = parseCookie(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+    const [existing] = await db.select().from(opsLingxingSyncSchedules).where(and(
+      eq(opsLingxingSyncSchedules.workspaceId, workspaceId),
+      eq(opsLingxingSyncSchedules.dataDomain, input.dataDomain),
+    )).limit(1);
+    let taskUid = existing?.scheduleCronTaskUid ?? null;
+    let nextExecutionAt: string | null | undefined;
+    if (!taskUid && input.enabled) {
+      const created = await createHeartbeatJob({
+        name: `ops-lingxing-${input.dataDomain}-workspace-${workspaceId}`,
+        cron: preset.cronExpression,
+        path: "/api/scheduled/lingxing-sync-draft",
+        payload: { domain: input.dataDomain },
+        description: preset.description,
+      }, sessionToken);
+      taskUid = created.taskUid;
+      nextExecutionAt = created.nextExecutionAt;
+    } else if (taskUid) {
+      const updated = await updateHeartbeatJob(taskUid, {
+        enable: input.enabled,
+        cron: preset.cronExpression,
+        path: "/api/scheduled/lingxing-sync-draft",
+        description: preset.description,
+      }, sessionToken);
+      nextExecutionAt = updated.nextExecutionAt;
+    }
+    const payload = {
+      workspaceId, dataDomain: input.dataDomain, cadence: preset.cadence, timezone: "Asia/Shanghai", cronExpression: preset.cronExpression,
+      enabled: input.enabled ? 1 : 0, scheduleCronTaskUid: taskUid, ownerUserId: ctx.user.id,
+      lastStatus: existing?.lastStatus ?? "idle", lastRunKey: existing?.lastRunKey ?? null, lastRunAt: existing?.lastRunAt ?? null,
+      lastBatchId: existing?.lastBatchId ?? null, lastError: existing?.lastError ?? null,
+    };
+    if (existing) await db.update(opsLingxingSyncSchedules).set(payload).where(eq(opsLingxingSyncSchedules.id, existing.id));
+    else await db.insert(opsLingxingSyncSchedules).values(payload);
+    return { dataDomain: input.dataDomain, enabled: input.enabled, taskUid, nextExecutionAt, writePolicy: "draft_only" as const };
   }),
 
   get: protectedProcedure.input(z.object({ batchId: z.number().int().positive() })).query(async ({ ctx, input }) => {

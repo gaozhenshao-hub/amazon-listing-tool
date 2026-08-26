@@ -283,3 +283,21 @@ export async function aiOsOperationalHealthHandler(req: Request, res: Response) 
     return res.status(500).json({ ok: false, error: String((error as Error)?.message || error) });
   }
 }
+
+/** 每日产品日草稿与每周父ASIN汇总草稿共用的Heartbeat回调；只创建待审核批次。 */
+export async function lingxingScheduledDraftHandler(req: Request, res: Response) {
+  const taskUid = authorizeScheduledRequest(req, res);
+  if (!taskUid) return;
+  try {
+    const { runLingxingScheduledDraft } = await import("./domains/ops/lingxingScheduledDrafts");
+    return res.json(await runLingxingScheduledDraft(taskUid));
+  } catch (error) {
+    console.error("[LingxingScheduledDraft] Failed", error);
+    return res.status(500).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+      context: { url: req.url, taskUid },
+      timestamp: new Date().toISOString(),
+    });
+  }
+}

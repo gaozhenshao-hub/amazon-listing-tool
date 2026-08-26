@@ -7,6 +7,9 @@ const state = {
   weekly: [] as any[],
   imports: [] as any[],
   confirmations: [] as any[],
+  schedules: [] as any[],
+  heartbeatCreates: [] as any[],
+  heartbeatUpdates: [] as any[],
   selectCount: 0,
   toolCallCount: 0,
   largePageMode: false,
@@ -25,8 +28,9 @@ function queryResult(rows: any[]) {
 
 const db = {
   select: () => ({
-    from: () => ({
+    from: (table: any) => ({
       where: () => {
+        if (tableName(table) === "ops_lingxing_sync_schedules") return queryResult(state.schedules);
         state.selectCount += 1;
         if (state.selectCount === 1) return queryResult([]); // existing day snapshots during preview
         if (state.selectCount === 2) return queryResult(state.batch ? [state.batch] : []); // confirm batch
@@ -54,6 +58,7 @@ const db = {
       if (name === "ops_asin_daily_snapshots") state.snapshots.push(input);
       if (name === "lingxing_product_weekly") state.weekly.push(input);
       if (name === "ops_external_sync_confirmations") state.confirmations.push(input);
+      if (name === "ops_lingxing_sync_schedules") state.schedules.push({ id: state.schedules.length + 1, ...input });
       return Promise.resolve(undefined);
     },
   }),
@@ -65,6 +70,7 @@ const db = {
         if (name === "ops_external_sync_rows" && patch.selected === 0) state.rows.forEach((row) => { row.selected = 0; row.rowStatus = "skipped"; });
         if (name === "ops_external_sync_rows" && patch.selected === 1) state.rows.forEach((row) => { row.selected = 1; });
         if (name === "ops_external_sync_rows" && patch.rowStatus === "applied") state.rows.forEach((row) => { row.rowStatus = "applied"; });
+        if (name === "ops_lingxing_sync_schedules" && state.schedules[0]) Object.assign(state.schedules[0], patch);
       },
     }),
   }),
@@ -94,12 +100,22 @@ vi.mock("./domains/ai_os/services/toolGateway/executors", () => ({
     return { output: { content: [{ type: "text", text: JSON.stringify({ list }) }] }, metadata: { toolRunId: `tool_daily_${state.toolCallCount}` } };
   },
 }));
+vi.mock("./_core/heartbeat", () => ({
+  createHeartbeatJob: async (input: any) => {
+    state.heartbeatCreates.push(input);
+    return { taskUid: "heartbeat_daily_1", nextExecutionAt: "2026-08-26T09:00:00.000Z" };
+  },
+  updateHeartbeatJob: async (taskUid: string, input: any) => {
+    state.heartbeatUpdates.push({ taskUid, input });
+    return { nextExecutionAt: "2026-08-27T09:00:00.000Z" };
+  },
+}));
 
 const { lingxingSyncRouter } = await import("./routers/lingxingSync");
 
 describe("领星ASIN日数据同步路由", () => {
   beforeEach(() => {
-    state.batch = null; state.rows = []; state.snapshots = []; state.weekly = []; state.imports = []; state.confirmations = []; state.selectCount = 0; state.toolCallCount = 0; state.largePageMode = false;
+    state.batch = null; state.rows = []; state.snapshots = []; state.weekly = []; state.imports = []; state.confirmations = []; state.schedules = []; state.heartbeatCreates = []; state.heartbeatUpdates = []; state.selectCount = 0; state.toolCallCount = 0; state.largePageMode = false;
   });
 
   it("预览、确认和应用仅追加可追溯日快照，过滤占位ASIN且不写周度产品表", async () => {
@@ -126,5 +142,18 @@ describe("领星ASIN日数据同步路由", () => {
     expect(preview.totalRows).toBe(5000);
     expect(state.rows).toHaveLength(5000);
     expect(state.batch.summary).toMatchObject({ totalRead: 5000, placeholderRows: 0, capped: true, pageTruncations: 2, datesRead: 3 });
+  });
+
+  it("计划管理创建、暂停和恢复同一Heartbeat任务，并固定为只生成草稿", async () => {
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null }, req: { headers: { cookie: "session=operator" } } } as any);
+    const enabled = await caller.setScheduleEnabled({ dataDomain: "product_performance_daily", enabled: true });
+    expect(enabled).toMatchObject({ enabled: true, taskUid: "heartbeat_daily_1", writePolicy: "draft_only" });
+    expect(state.heartbeatCreates[0]).toMatchObject({ cron: "0 0 9 * * *", path: "/api/scheduled/lingxing-sync-draft" });
+    expect(state.schedules[0]).toMatchObject({ dataDomain: "product_performance_daily", enabled: 1, scheduleCronTaskUid: "heartbeat_daily_1" });
+
+    await caller.setScheduleEnabled({ dataDomain: "product_performance_daily", enabled: false });
+    await caller.setScheduleEnabled({ dataDomain: "product_performance_daily", enabled: true });
+    expect(state.heartbeatCreates).toHaveLength(1);
+    expect(state.heartbeatUpdates.map((item) => item.input.enable)).toEqual([false, true]);
   });
 });

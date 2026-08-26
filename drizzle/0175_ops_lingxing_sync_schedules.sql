@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS `ops_lingxing_sync_schedules` (
+  `workspaceId` INT NULL,
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `data_domain` VARCHAR(48) NOT NULL,
+  `cadence` VARCHAR(24) NOT NULL,
+  `timezone` VARCHAR(64) NOT NULL DEFAULT 'Asia/Shanghai',
+  `cron_expression` VARCHAR(64) NOT NULL,
+  `enabled` INT NOT NULL DEFAULT 0,
+  `schedule_cron_task_uid` VARCHAR(65) NULL,
+  `owner_user_id` INT NOT NULL,
+  `last_run_key` VARCHAR(80) NULL,
+  `last_run_at` TIMESTAMP NULL,
+  `last_batch_id` INT NULL,
+  `last_status` VARCHAR(32) NOT NULL DEFAULT 'idle',
+  `last_error` TEXT NULL,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ops_lingxing_sync_schedules_workspace_domain` (`workspaceId`, `data_domain`),
+  KEY `idx_ops_lingxing_sync_schedules_task_uid` (`schedule_cron_task_uid`)
+);
