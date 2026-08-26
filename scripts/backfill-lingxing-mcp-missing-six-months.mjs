@@ -3,6 +3,7 @@ import { opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncRows, use
 import { getDb } from "../server/repositories/dbClient.js";
 import { lingxingSyncRouter } from "../server/routers/lingxingSync.js";
 import { validateHistoricalBackfillIntegrity } from "../server/domains/ops/lingxingScheduledDrafts.js";
+import { collectCompletedDailyBackfillDates } from "../server/domains/ops/historicalBackfillCoverage.js";
 
 const workspaceId = 1;
 const startDate = "2026-02-26";
@@ -33,22 +34,14 @@ if (!db) throw new Error("数据库不可用");
 const [owner] = await db.select({ id: users.id, role: users.role, organizationId: users.organizationId, defaultWorkspaceId: users.defaultWorkspaceId })
   .from(users).where(eq(users.id, 1)).limit(1);
 if (!owner) throw new Error("计划所有者不存在");
-const existing = await db.select().from(opsAsinDailySnapshots).where(and(
-  eq(opsAsinDailySnapshots.workspaceId, workspaceId),
-  eq(opsAsinDailySnapshots.sourceType, "lingxing_mcp"),
-  gte(opsAsinDailySnapshots.reportDate, startDate),
-  lte(opsAsinDailySnapshots.reportDate, endDate),
-));
-const existingStores = new Set(existing.map((row) => String(row.sourceStoreId || "")).filter(Boolean));
-const expectedStoreCount = existingStores.size || 8;
-const coverageByDate = new Map();
-for (const row of existing) {
-  const date = row.reportDate;
-  const stores = coverageByDate.get(date) || new Set();
-  if (row.sourceStoreId) stores.add(String(row.sourceStoreId));
-  coverageByDate.set(date, stores);
-}
-const missingDates = datesBetween(startDate, endDate).filter((date) => (coverageByDate.get(date)?.size || 0) < expectedStoreCount);
+const historicalBatches = await db.select({ status: opsExternalSyncBatches.status, scope: opsExternalSyncBatches.scope, summary: opsExternalSyncBatches.summary })
+  .from(opsExternalSyncBatches).where(and(
+    eq(opsExternalSyncBatches.workspaceId, workspaceId),
+    eq(opsExternalSyncBatches.dataDomain, "product_performance_daily"),
+    eq(opsExternalSyncBatches.source, "lingxing_mcp"),
+  ));
+const completedDates = collectCompletedDailyBackfillDates(historicalBatches, startDate, endDate);
+const missingDates = datesBetween(startDate, endDate).filter((date) => !completedDates.has(date));
 const maxDays = Number(process.env.BACKFILL_MAX_DAYS || 0);
 const targetDates = maxDays > 0 ? missingDates.slice(0, maxDays) : missingDates;
 const caller = lingxingSyncRouter.createCaller({ user: { ...owner, defaultWorkspaceId: workspaceId } });
@@ -56,7 +49,8 @@ const results = [];
 for (const date of targetDates) {
   const scope = { startDate: date, endDate: date };
   let batchId = null;
-  console.info(JSON.stringify({ phase: "starting", scope, expectedStoreCount }));
+  let stage = "preview";
+  console.info(JSON.stringify({ phase: "starting", scope, completedDates: completedDates.size }));
   try {
     const preview = await withTimeout(
       caller.createPreview({ dataDomain: "product_performance_daily", scope: { storeId: "ALL_US", marketplace: "US", ...scope } }),
@@ -67,8 +61,11 @@ for (const date of targetDates) {
     const [batch] = await db.select().from(opsExternalSyncBatches).where(and(eq(opsExternalSyncBatches.id, batchId), eq(opsExternalSyncBatches.workspaceId, workspaceId))).limit(1);
     const rows = await db.select().from(opsExternalSyncRows).where(and(eq(opsExternalSyncRows.batchId, batchId), eq(opsExternalSyncRows.workspaceId, workspaceId)));
     const snapshots = await db.select().from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, workspaceId));
+    stage = "validate";
     validateHistoricalBackfillIntegrity(batch, rows, scope, snapshots);
+    stage = "confirm";
     await caller.confirm({ batchId, selectedRowIds: rows.map((row) => row.id), note: "用户授权的六个月历史缺失数据自动回补：完整性校验通过" });
+    stage = "apply";
     const applied = await caller.applyConfirmedProductInventory({ batchId, note: "用户授权的六个月历史缺失数据自动追加日快照" });
     results.push({ ...scope, batchId, status: "applied", importedRows: applied.importedRows, importId: applied.importId });
     console.info(JSON.stringify({ phase: "applied", ...results.at(-1) }));
@@ -76,10 +73,7 @@ for (const date of targetDates) {
     const message = error instanceof Error ? error.message : String(error);
     results.push({ ...scope, batchId, status: "review_required", error: message });
     console.error(JSON.stringify({ phase: "review_required", ...results.at(-1) }));
-    if (message.includes("窗口超时")) {
-      console.log(JSON.stringify({ range: { startDate, endDate }, expectedStoreCount, missingDates: missingDates.length, targetedDates: targetDates.length, chunks: results }, null, 2));
-      process.exit(1);
-    }
+    if (message.includes("窗口超时") || stage === "apply") break;
   }
 }
-console.log(JSON.stringify({ range: { startDate, endDate }, expectedStoreCount, missingDates: missingDates.length, targetedDates: targetDates.length, chunks: results }, null, 2));
+console.log(JSON.stringify({ range: { startDate, endDate }, completedDates: completedDates.size, missingDates: missingDates.length, targetedDates: targetDates.length, chunks: results }, null, 2));
