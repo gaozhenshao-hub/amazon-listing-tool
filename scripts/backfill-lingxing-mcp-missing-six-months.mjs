@@ -3,7 +3,7 @@ import { opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncRows, use
 import { getDb } from "../server/repositories/dbClient.js";
 import { lingxingSyncRouter } from "../server/routers/lingxingSync.js";
 import { validateHistoricalBackfillIntegrity } from "../server/domains/ops/lingxingScheduledDrafts.js";
-import { collectCompletedDailyBackfillDates } from "../server/domains/ops/historicalBackfillCoverage.js";
+import { collectCompletedDailyBackfillDates, collectReviewRequiredDailyBackfillDates } from "../server/domains/ops/historicalBackfillCoverage.js";
 
 const workspaceId = 1;
 const startDate = "2026-02-26";
@@ -41,7 +41,8 @@ const historicalBatches = await db.select({ status: opsExternalSyncBatches.statu
     eq(opsExternalSyncBatches.source, "lingxing_mcp"),
   ));
 const completedDates = collectCompletedDailyBackfillDates(historicalBatches, startDate, endDate);
-const missingDates = datesBetween(startDate, endDate).filter((date) => !completedDates.has(date));
+const reviewRequiredDates = collectReviewRequiredDailyBackfillDates(historicalBatches, startDate, endDate);
+const missingDates = datesBetween(startDate, endDate).filter((date) => !completedDates.has(date) && !reviewRequiredDates.has(date));
 const maxDays = Number(process.env.BACKFILL_MAX_DAYS || 0);
 const targetDates = maxDays > 0 ? missingDates.slice(0, maxDays) : missingDates;
 const caller = lingxingSyncRouter.createCaller({ user: { ...owner, defaultWorkspaceId: workspaceId } });
@@ -50,7 +51,7 @@ for (const date of targetDates) {
   const scope = { startDate: date, endDate: date };
   let batchId = null;
   let stage = "preview";
-  console.info(JSON.stringify({ phase: "starting", scope, completedDates: completedDates.size }));
+  console.info(JSON.stringify({ phase: "starting", scope, completedDates: completedDates.size, reviewRequiredDates: reviewRequiredDates.size }));
   try {
     const preview = await withTimeout(
       caller.createPreview({ dataDomain: "product_performance_daily", scope: { storeId: "ALL_US", marketplace: "US", ...scope } }),
@@ -76,4 +77,4 @@ for (const date of targetDates) {
     if (message.includes("窗口超时") || stage === "apply") break;
   }
 }
-console.log(JSON.stringify({ range: { startDate, endDate }, completedDates: completedDates.size, missingDates: missingDates.length, targetedDates: targetDates.length, chunks: results }, null, 2));
+console.log(JSON.stringify({ range: { startDate, endDate }, completedDates: completedDates.size, reviewRequiredDates: reviewRequiredDates.size, missingDates: missingDates.length, targetedDates: targetDates.length, chunks: results }, null, 2));

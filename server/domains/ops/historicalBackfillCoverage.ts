@@ -46,3 +46,17 @@ export function collectCompletedDailyBackfillDates(batches: HistoricalBackfillBa
   }
   return completed;
 }
+
+/** 已产生待复核草稿的单日窗口已具备异常审计，不应在同一自动回补流程中被无限重试。 */
+export function collectReviewRequiredDailyBackfillDates(batches: HistoricalBackfillBatch[], startDate: string, endDate: string) {
+  const reviewRequired = new Set<string>();
+  for (const batch of batches) {
+    if (batch.status !== "ready_for_review") continue;
+    const scope = asRecord(batch.scope);
+    const scopeStartDate = typeof scope.startDate === "string" ? scope.startDate : "";
+    const scopeEndDate = typeof scope.endDate === "string" ? scope.endDate : "";
+    if (!scopeStartDate || scopeStartDate !== scopeEndDate || scopeStartDate < startDate || scopeStartDate > endDate) continue;
+    reviewRequired.add(scopeStartDate);
+  }
+  return reviewRequired;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectCompletedDailyBackfillDates } from "./historicalBackfillCoverage";
+import { collectCompletedDailyBackfillDates, collectReviewRequiredDailyBackfillDates } from "./historicalBackfillCoverage";
 
 describe("历史MCP回补完成断点", () => {
   const complete = {
@@ -32,5 +32,11 @@ describe("历史MCP回补完成断点", () => {
       { ...complete, scope: { startDate: "2026-02-26", endDate: "2026-02-27" }, summary: { ...complete.summary, datesRead: 1, storeDateWindowsExpected: 18, storeDateWindowsRead: 18 } },
     ];
     expect(collectCompletedDailyBackfillDates(invalid, "2026-02-26", "2026-02-28")).toEqual(new Set());
+  });
+
+  it("已创建待复核的单日异常草稿会被跳过，不阻塞后续完整日期", () => {
+    const reviewBatch = { ...complete, status: "ready_for_review", scope: { startDate: "2026-03-02", endDate: "2026-03-02" } };
+    const multiDay = { ...reviewBatch, scope: { startDate: "2026-03-03", endDate: "2026-03-04" } };
+    expect([...collectReviewRequiredDailyBackfillDates([reviewBatch, multiDay], "2026-03-01", "2026-03-05")]).toEqual(["2026-03-02"]);
   });
 });
