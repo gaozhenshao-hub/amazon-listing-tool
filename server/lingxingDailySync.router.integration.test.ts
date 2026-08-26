@@ -23,6 +23,7 @@ function queryResult(rows: any[]) {
   return {
     then: (resolve: (value: any[]) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(rows).then(resolve, reject),
     limit: async (count: number) => rows.slice(0, count),
+    orderBy: () => queryResult(rows),
   };
 }
 
@@ -147,7 +148,7 @@ describe("领星ASIN日数据同步路由", () => {
   it("计划管理创建、暂停和恢复同一Heartbeat任务，并固定为只生成草稿", async () => {
     const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null }, req: { headers: { cookie: "session=operator" } } } as any);
     const enabled = await caller.setScheduleEnabled({ dataDomain: "product_performance_daily", enabled: true });
-    expect(enabled).toMatchObject({ enabled: true, taskUid: "heartbeat_daily_1", writePolicy: "draft_only" });
+    expect(enabled).toMatchObject({ enabled: true, autoApply: true, taskUid: "heartbeat_daily_1", writePolicy: "validated_daily_auto_apply" });
     expect(state.heartbeatCreates[0]).toMatchObject({ cron: "0 0 9 * * *", path: "/api/scheduled/lingxing-sync-draft" });
     expect(state.schedules[0]).toMatchObject({ dataDomain: "product_performance_daily", enabled: 1, scheduleCronTaskUid: "heartbeat_daily_1" });
 
@@ -155,5 +156,20 @@ describe("领星ASIN日数据同步路由", () => {
     await caller.setScheduleEnabled({ dataDomain: "product_performance_daily", enabled: true });
     expect(state.heartbeatCreates).toHaveLength(1);
     expect(state.heartbeatUpdates.map((item) => item.input.enable)).toEqual([false, true]);
+  });
+
+  it("计划列表返回自动应用开关、远端任务UID与最近运行摘要", async () => {
+    state.schedules.push({ id: 1, workspaceId: 1, dataDomain: "product_performance_daily", cadence: "daily_previous_day", enabled: 1, autoApply: 1, scheduleCronTaskUid: "heartbeat_daily_1", lastStatus: "idle", lastBatchId: 660001 });
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+
+    await expect(caller.listSchedules()).resolves.toEqual([expect.objectContaining({ dataDomain: "product_performance_daily", autoApply: 1, scheduleCronTaskUid: "heartbeat_daily_1", lastStatus: "idle", lastBatchId: 660001 })]);
+  });
+
+  it("阻断Phase 5预览域的确认动作，避免Listing或广告事实被误写入", async () => {
+    state.batch = { id: 9901, workspaceId: 1, status: "ready_for_review", dataDomain: "ad_search_term" };
+    state.selectCount = 1;
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+    await expect(caller.confirm({ batchId: 9901, selectedRowIds: [] })).rejects.toThrow("仅提供字段对账草稿");
+    expect(state.confirmations).toEqual([]);
   });
 });

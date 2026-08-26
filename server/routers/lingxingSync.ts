@@ -12,7 +12,7 @@ import { registerUnifiedArtifact } from "../domains/ai_os/services/artifactLifec
 import { invokeEmperorTool } from "../domains/ai_os/services/toolGateway/executors";
 import { getDb } from "../repositories/dbClient";
 
-const domainSchema = z.enum(["product_performance", "product_performance_daily", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword"]);
+const domainSchema = z.enum(["product_performance", "product_performance_daily", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword", "listing_master", "ad_search_term", "ad_targeting"]);
 const scopeSchema = z.object({
   storeId: z.string().trim().min(1),
   profileId: z.string().trim().optional(),
@@ -24,15 +24,18 @@ const scheduledDomainSchema = z.enum(["product_performance_daily", "parent_asin_
 const SCHEDULE_PRESETS = {
   product_performance_daily: {
     cadence: "daily_previous_day", cronExpression: "0 0 9 * * *",
-    description: "北京时间每日17:00读取前一天美国站ASIN日数据，仅生成待审核草稿",
+    description: "北京时间每日17:00读取前一天美国站ASIN日数据；完整性校验通过后自动追加日快照，异常转人工",
+    autoApply: true,
   },
   parent_asin_weekly_rollup: {
     cadence: "weekly_parent_asin_rollup", cronExpression: "0 10 9 * * 1",
     description: "北京时间每周一17:10汇总上一自然周已确认日快照，仅生成待审核父ASIN周汇总草稿",
+    autoApply: false,
   },
 } as const;
 
 type RecordValue = Record<string, unknown>;
+const phase5PreviewDomains = new Set(["listing_master", "ad_search_term", "ad_targeting"]);
 
 function object(value: unknown): RecordValue { return value && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : {}; }
 
@@ -139,6 +142,29 @@ function sumValues(record: RecordValue, keys: string[]) {
   const values = keys.map((key) => value(record, [key])).filter((item) => item !== null);
   return values.length ? values.reduce((total, item) => total + asNumber(item), 0) : null;
 }
+function metricValue(record: RecordValue, keys: string[]) {
+  const raw = value(record, keys);
+  return asText(raw) === "99999999" ? null : raw;
+}
+function isPhase5PreviewDomain(domain: string) { return phase5PreviewDomains.has(domain); }
+function profileIdsFromScope(scope: z.infer<typeof scopeSchema>) {
+  return asText(scope.profileId).split(",").map((profileId) => profileId.trim()).filter(Boolean);
+}
+export function phase5IdentityError(domain: z.infer<typeof domainSchema>, source: RecordValue, scope: z.infer<typeof scopeSchema>) {
+  if (domain === "listing_master") return asText(value(source, ["asin", "amz_product_id"])) ? null : "缺少ASIN，不能建立Listing主数据草稿。";
+  const profileId = asText(value(source, ["profile_id", "profileId"])) || (profileIdsFromScope(scope).length === 1 ? profileIdsFromScope(scope)[0] : "");
+  if (!profileId) return "聚合行或空Profile ID，不能建立广告事实草稿。";
+  if (domain === "ad_search_term") {
+    if (!asText(value(source, ["record_id", "st_md5"]))) return "聚合行或空记录ID，不能建立广告搜索词草稿。";
+    if (!asText(value(source, ["query", "search_term", "searchTerm"]))) return "缺少搜索词，不能建立广告搜索词草稿。";
+  }
+  if (domain === "ad_targeting") {
+    if (!asText(value(source, ["record_id", "st_md5", "target_id", "key", "id"]))) return "聚合行或空记录ID，不能建立广告投放目标草稿。";
+    if (!asText(value(source, ["targeting", "targeting_text", "targeting_mark", "target_name"]))) return "缺少投放目标，不能建立广告投放目标草稿。";
+    if (!asText(value(source, ["campaign_id", "campaignId"])) || !asText(value(source, ["ad_group_id", "adGroupId"]))) return "缺少活动或广告组ID，不能建立广告投放目标草稿。";
+  }
+  return null;
+}
 function firstText(input: unknown) {
   if (Array.isArray(input)) return asText(input[0]);
   return asText(input).split(",")[0]?.trim() || "";
@@ -161,6 +187,16 @@ function isoDates(startDate: string, endDate: string) {
     current.setUTCDate(current.getUTCDate() + 1);
   }
   return dates;
+}
+
+export function dailyReadCoverageSummary(stores: Array<{ sid: string }>, dates: string[], completedStoreDateWindows: Set<string>) {
+  const completedStores = new Set(stores.filter((store) => dates.every((reportDate) => completedStoreDateWindows.has(`${store.sid}|${reportDate}`))).map((store) => store.sid));
+  return {
+    storesExpected: stores.length,
+    storesRead: completedStores.size,
+    storeDateWindowsExpected: stores.length * dates.length,
+    storeDateWindowsRead: completedStoreDateWindows.size,
+  };
 }
 function isUsStore(record: RecordValue) {
   const country = asText(value(record, ["country", "site", "marketplace", "country_name"]));
@@ -207,10 +243,11 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
   const sku = value(source, ["sku", "local_sku", "seller_sku", "msku", "sellerSku", "SKU"]);
   const sourceStoreId = value(source, ["__lingxingSid", "sid", "store_id", "storeId"]) || scope.storeId;
   const reportDate = value(source, ["rdate", "report_date", "reportDate", "__reportDate"]) || scope.endDate || scope.startDate;
+  const profileId = value(source, ["profile_id", "profileId", "profile"]) || (profileIdsFromScope(scope).length === 1 ? profileIdsFromScope(scope)[0] : null);
   const normalized: RecordValue = {
     sourceDomain: domain,
     storeId: sourceStoreId,
-    profileId: scope.profileId || null,
+    profileId,
     periodStart: scope.startDate || null,
     periodEnd: scope.endDate || null,
     asin: asin ? firstText(asin) : firstText(value(source, ["asins"])),
@@ -225,34 +262,53 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
     salesAmount: value(source, ["sales_amount", "sales", "salesAmount", "revenue", "amount", "销售额"]),
     netSalesAmount: value(source, ["net_amount", "net_sales_amount", "netSalesAmount"]),
     orderProfit: value(source, ["profit", "order_profit", "orderProfit", "gross_profit", "订单利润"]),
-    adSpend: value(source, ["ad_spend", "spend", "spends", "cost", "广告花费"]),
-    adSales: value(source, ["ad_sales_amount", "ad_sales", "ads_sales", "sales", "广告销售额"]),
-    adOrders: value(source, ["ad_order_quantity", "ad_orders", "ads_sales_volume_quantity"]),
+    adSpend: metricValue(source, ["ad_spend", "spend", "spends", "cost", "广告花费"]),
+    adSales: metricValue(source, ["ad_sales_amount", "ad_sales", "ads_sales", "sales", "广告销售额"]),
+    adOrders: metricValue(source, ["ad_order_quantity", "ad_orders", "ads_sales_volume_quantity", "orders"]),
     organicOrders: value(source, ["nature_order_items", "organic_orders"]),
     sessionsTotal: value(source, ["sessions_total", "sessions"]),
     campaignName: value(source, ["campaign_name", "campaignName", "campaign", "name", "广告活动", "广告活动名称"]),
     campaignId: value(source, ["campaign_id", "campaignId"]),
+    adGroupId: value(source, ["ad_group_id", "adGroupId"]),
     portfolioName: value(source, ["portfolio_name", "portfolioName", "广告组合"]),
     adType: value(source, ["ad_type", "adType", "ads_type", "sponsored_type", "广告类型"]),
     keyword: value(source, ["keyword_text", "keyword", "关键词", "targeting_text", "targeting", "targeting_value"]),
     matchType: value(source, ["match_type", "matchType", "匹配方式"]),
-    adImpressions: value(source, ["impressions", "曝光量"]),
-    adClicks: value(source, ["clicks", "点击量"]),
+    adImpressions: metricValue(source, ["impressions", "曝光量"]),
+    adClicks: metricValue(source, ["clicks", "点击量"]),
+    adAcos: metricValue(source, ["acos", "ACOS", "direct_acos"]),
+    adCpc: metricValue(source, ["cpc", "CPC"]),
+    adCtr: metricValue(source, ["ctr", "CTR"]),
+    adCvr: metricValue(source, ["cvr", "CVR"]),
+    recordId: value(source, ["record_id", "st_md5", "target_id", "key", "id_hash"]),
+    searchTerm: value(source, ["query", "search_term", "searchTerm"]),
+    sourceTarget: value(source, ["targeting_mark", "targeting", "targeting_text", "keyword_text", "keyword"]),
+    targetingEntity: value(source, ["targeting", "targeting_text", "targeting_mark", "target_name", "target"]),
+    listingStatus: value(source, ["status_text", "status"]),
+    marketplace: value(source, ["marketplace", "marketplace_id"]),
     returnQty: value(source, ["return_count", "return_goods_count", "return_qty"]),
     fbaAvailable: value(source, ["afn_fulfillable_quantity", "fulfillable_qty", "available", "fba_available", "可售库存"]),
     fbaReserved: value(source, ["afn_reserved_quantity", "reserved_qty", "reserved", "fba_reserved", "预留库存"]),
     fbaInTransit: sumValues(source, ["afn_inbound_receiving_quantity", "afn_inbound_shipped_quantity", "afn_inbound_working_quantity"]) ?? value(source, ["inbound_qty", "in_transit", "fba_in_transit", "在途库存"]),
     rawFieldNames: Object.keys(source).sort(),
   };
-  const entityKey = domain === "product_performance_daily"
-    ? [normalized.storeId, domain, normalized.asin || "unmatched", normalized.reportDate || "missing"].join("|")
-    : [normalized.storeId, domain, normalized.parentAsin || normalized.asin || "unmatched", normalized.sku || "", scope.startDate || "latest", scope.endDate || ""].join("|");
+  const entityKey = domain === "listing_master"
+    ? [normalized.storeId, domain, normalized.asin || "unmatched"].join("|")
+    : domain === "ad_search_term"
+      ? [normalized.profileId || "unmatched", domain, normalized.searchTerm || "missing", normalized.sourceTarget || "missing", scope.startDate || "latest", scope.endDate || ""].join("|")
+      : domain === "ad_targeting"
+        ? [normalized.profileId || "unmatched", domain, normalized.campaignId || "missing", normalized.adGroupId || "missing", normalized.targetingEntity || "missing", scope.startDate || "latest", scope.endDate || ""].join("|")
+        : domain === "product_performance_daily"
+          ? [normalized.storeId, domain, normalized.asin || "unmatched", normalized.reportDate || "missing"].join("|")
+          : [normalized.storeId, domain, normalized.parentAsin || normalized.asin || "unmatched", normalized.sku || "", scope.startDate || "latest", scope.endDate || ""].join("|");
   const validationErrors: string[] = [];
   if (["product_performance", "product_performance_daily", "order_profit"].includes(domain) && !normalized.asin && !normalized.parentAsin) validationErrors.push("未识别ASIN或父ASIN，不能确认写入产品总览。");
   if (domain === "product_performance_daily" && (!normalized.asin || normalized.asin === "-" || !normalized.parentAsin || !normalized.reportDate)) validationErrors.push("ASIN日快照需要有效子ASIN、父ASIN和报告日期；占位ASIN不能写入。");
   if (domain === "fba_inventory" && (!normalized.asin || !normalized.parentAsin)) validationErrors.push("库存快照需要子ASIN和父ASIN映射；请在草稿中补充或取消选择该行。");
   if (domain === "ad_campaign" && !normalized.campaignName) validationErrors.push("广告活动报表需要活动名称；请核对草稿后再确认。");
   if (domain === "ad_keyword" && (!normalized.keyword || !normalized.campaignName)) validationErrors.push("广告关键词报表需要关键词和活动名称；请核对草稿后再确认。");
+  if (domain === "listing_master" && !normalized.asin) validationErrors.push("Listing主数据需要有效ASIN。");
+  if (domain === "listing_master" && ["已删除", "2"].includes(asText(normalized.listingStatus))) validationErrors.push("源Listing已删除或归档；仅供人工差异审阅，不能覆盖现有主数据。");
   return { entityKey, normalized, validationErrors };
 }
 
@@ -271,7 +327,10 @@ export function buildMcpArguments(domain: z.infer<typeof domainSchema>, scope: z
   if (domain === "order_profit") return { capability: "query_order_profit_list", arguments: { sids: scope.storeId, ...commonDate, currency_type: "USD", external_service_mark: 1, source_service: "mcp", length: "200", offset: "0", sort_type: "desc", turn_on_summary: "1", search_type: 0, search_field: "parent_asin", summary_field: "parent_asin", date_summary_type: 2, query_order_gross_first: true } };
   if (domain === "fba_inventory") return { capability: "get_fba_stock_list", arguments: { sid: scope.storeId, offset: 0, length: 200, sort_field: "sku", sort_type: "asc", is_cost_page: "0", is_hide_zero_stock: 0, is_parant_asin_merge: "1" } };
   if (domain === "ad_campaign") return { capability: "ad_campaign_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: 200, sort_field: "spends", sort_type: "desc" } };
-  return { capability: "ad_campaign_keyword_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: 200, sort_field: "spends", sort_type: "desc" } };
+  if (domain === "ad_keyword") return { capability: "ad_campaign_keyword_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: 200, sort_field: "spends", sort_type: "desc" } };
+  if (domain === "listing_master") return { capability: "erp_listing", arguments: { pvi_ids: "", sids: scope.storeId, length: 200, offset: 0, sort_field: "asin", sort_type: "asc" } };
+  if (domain === "ad_search_term") return { capability: "ad_campaign_search_term_report", arguments: { profile_ids: profileIdsFromScope(scope), report_date: `${scope.startDate} - ${scope.endDate}`, country: [scope.marketplace || "US"], page: 1, length: 200, with_ring: false, sort_field: "spends", sort_type: "desc" } };
+  return { capability: "ad_campaign_targeting_report", arguments: { profile_ids: profileIdsFromScope(scope), report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: "200", with_ring: 0, sort_field: "spends", sort_type: "desc" } };
 }
 
 export const lingxingSyncRouter = router({
@@ -348,13 +407,13 @@ export const lingxingSyncRouter = router({
     }
     const payload = {
       workspaceId, dataDomain: input.dataDomain, cadence: preset.cadence, timezone: "Asia/Shanghai", cronExpression: preset.cronExpression,
-      enabled: input.enabled ? 1 : 0, scheduleCronTaskUid: taskUid, ownerUserId: ctx.user.id,
+      enabled: input.enabled ? 1 : 0, autoApply: preset.autoApply ? 1 : 0, scheduleCronTaskUid: taskUid, ownerUserId: ctx.user.id,
       lastStatus: existing?.lastStatus ?? "idle", lastRunKey: existing?.lastRunKey ?? null, lastRunAt: existing?.lastRunAt ?? null,
       lastBatchId: existing?.lastBatchId ?? null, lastError: existing?.lastError ?? null,
     };
     if (existing) await db.update(opsLingxingSyncSchedules).set(payload).where(eq(opsLingxingSyncSchedules.id, existing.id));
     else await db.insert(opsLingxingSyncSchedules).values(payload);
-    return { dataDomain: input.dataDomain, enabled: input.enabled, taskUid, nextExecutionAt, writePolicy: "draft_only" as const };
+    return { dataDomain: input.dataDomain, enabled: input.enabled, autoApply: preset.autoApply, taskUid, nextExecutionAt, writePolicy: preset.autoApply ? "validated_daily_auto_apply" as const : "draft_only" as const };
   }),
 
   get: protectedProcedure.input(z.object({ batchId: z.number().int().positive() })).query(async ({ ctx, input }) => {
@@ -387,14 +446,16 @@ export const lingxingSyncRouter = router({
       const dates = input.scope.startDate && input.scope.endDate ? isoDates(input.scope.startDate, input.scope.endDate) : [];
       const rows: RecordValue[] = [];
       const toolRunIds: string[] = [];
+      const completedStoreDateWindows = new Set<string>();
       let placeholderRows = 0;
       let pageTruncations = 0;
       let capped = false;
       for (const store of stores) {
         for (const reportDate of dates) {
           let exhausted = false;
+          let windowComplete = true;
           for (let page = 0; page < 10 && !exhausted; page += 1) {
-            if (rows.length >= 5000) { capped = true; break; }
+            if (rows.length >= 5000) { capped = true; windowComplete = false; break; }
             const request = buildMcpArguments("product_performance_daily", { ...input.scope, storeId: store.sid, startDate: reportDate, endDate: reportDate });
             request.arguments.offset = page * 200;
             const execution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: `read_asin_daily_${store.sid}_${reportDate}_${page}` });
@@ -405,22 +466,51 @@ export const lingxingSyncRouter = router({
             placeholderRows += normalizedPage.placeholderRows;
             for (const source of normalizedPage.rows) if (rows.length < 5000) rows.push(source);
             exhausted = pageRows.length < 200;
-            if (page === 9 && !exhausted) pageTruncations += 1;
+            if (page === 9 && !exhausted) { pageTruncations += 1; windowComplete = false; }
           }
+          if (windowComplete && exhausted) completedStoreDateWindows.add(`${store.sid}|${reportDate}`);
           if (capped) break;
         }
         if (capped) break;
       }
       sourceRows = rows;
       rawSnapshot = { source: "lingxing_mcp", dataDomain: input.dataDomain, stores, dates, rows, toolRunIds };
-      Object.assign(summary, { totalRead: sourceRows.length, selected: sourceRows.length, storesRead: stores.length, datesRead: dates.length, placeholderRows, pageTruncations, capped, toolRunIds });
+      const coverage = dailyReadCoverageSummary(stores, dates, completedStoreDateWindows);
+      Object.assign(summary, {
+        totalRead: sourceRows.length,
+        selected: sourceRows.length,
+        ...coverage,
+        datesRead: dates.length,
+        placeholderRows,
+        pageTruncations,
+        capped,
+        toolRunIds,
+      });
     } else {
-      const request = buildMcpArguments(input.dataDomain, input.scope);
+      const listingStoresExecution = input.dataDomain === "listing_master" && input.scope.storeId === "ALL_US"
+        ? await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: { capability: "get_my_sids", arguments: {} }, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_listing_us_store_directory" })
+        : null;
+      const listingStoreIds = listingStoresExecution
+        ? pickRecords(normalizeMcpPayload(listingStoresExecution.output)).map(normalizeLingxingStoreDirectoryRecord).filter(isUsStore).map((store) => store.sid).filter(Boolean).join(",")
+        : input.scope.storeId;
+      const request = buildMcpArguments(input.dataDomain, { ...input.scope, storeId: listingStoreIds });
       const execution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_external_data" });
       toolRunId = execution.metadata.toolRunId;
       rawSnapshot = normalizeMcpPayload(execution.output);
-      sourceRows = pickRecords(rawSnapshot).slice(0, 500);
-      Object.assign(summary, { totalRead: sourceRows.length, selected: sourceRows.length });
+      const sourceRecords = pickRecords(rawSnapshot);
+      const invalidRows = isPhase5PreviewDomain(input.dataDomain)
+        ? sourceRecords.filter((source) => Boolean(phase5IdentityError(input.dataDomain, source, input.scope)))
+        : [];
+      sourceRows = (isPhase5PreviewDomain(input.dataDomain)
+        ? sourceRecords.filter((source) => !phase5IdentityError(input.dataDomain, source, input.scope))
+        : sourceRecords).slice(0, 500);
+      Object.assign(summary, {
+        totalRead: sourceRows.length,
+        selected: isPhase5PreviewDomain(input.dataDomain) ? 0 : sourceRows.length,
+        filteredAggregateOrInvalidRows: invalidRows.length,
+        previewOnly: isPhase5PreviewDomain(input.dataDomain),
+        storesRead: listingStoresExecution ? listingStoreIds.split(",").filter(Boolean).length : undefined,
+      });
     }
     const rawResponseHash = createHash("sha256").update(JSON.stringify(rawSnapshot)).digest("hex");
     const externalizeRawSnapshot = shouldExternalizeSyncRawSnapshot(rawSnapshot);
@@ -538,9 +628,9 @@ export const lingxingSyncRouter = router({
           ? { adImpressions: current.impressions, adClicks: current.clicks, adSpend: current.spend, adSales: current.sales, campaignName: current.campaignName, keyword: current.keyword, matchType: current.matchType }
         : { salesQty: current.salesQty, salesAmount: current.salesAmount, orderProfit: current.orderProfit, adSpend: current.adSpend, sku: current.sku, productName: current.productName };
       const fieldDiffs = targetReference ? calculateFieldDiffs(currentComparable, output, comparedFields) : [];
-      const rowStatus = errors.length ? "needs_review" : !targetReference ? "new" : fieldDiffs.length ? "changed" : "unchanged";
+      const rowStatus = isPhase5PreviewDomain(input.dataDomain) ? "needs_review" : errors.length ? "needs_review" : !targetReference ? "new" : fieldDiffs.length ? "changed" : "unchanged";
       if (rowStatus === "needs_review") summary.needsReview += 1;
-      return { workspaceId, batchId, entityKey: normalized.entityKey, rowStatus, selected: ["new", "changed"].includes(rowStatus) ? 1 : 0, sourceData: source as any, normalizedData: output as any, fieldDiffs: fieldDiffs as any, matchInfo: matchInfo as any, targetReference: targetReference as any, validationErrors: errors as any };
+      return { workspaceId, batchId, entityKey: normalized.entityKey, rowStatus, selected: isPhase5PreviewDomain(input.dataDomain) ? 0 : ["new", "changed"].includes(rowStatus) ? 1 : 0, sourceData: source as any, normalizedData: output as any, fieldDiffs: fieldDiffs as any, matchInfo: matchInfo as any, targetReference: targetReference as any, validationErrors: errors as any };
     });
     for (let offset = 0; offset < rows.length; offset += 250) {
       await db.insert(opsExternalSyncRows).values(rows.slice(offset, offset + 250) as any);
@@ -568,6 +658,7 @@ export const lingxingSyncRouter = router({
     const workspaceId = ctx.user.defaultWorkspaceId!;
     const [batch] = await db.select().from(opsExternalSyncBatches).where(and(eq(opsExternalSyncBatches.id, input.batchId), eq(opsExternalSyncBatches.workspaceId, workspaceId))).limit(1);
     if (!batch || batch.status !== "ready_for_review") throw new Error("该同步批次不在可确认状态");
+    if (isPhase5PreviewDomain(batch.dataDomain)) throw new Error("Listing主数据、广告搜索词和投放目标当前仅提供字段对账草稿；尚未开放确认或业务写入。");
     await db.insert(opsExternalSyncConfirmations).values({ workspaceId, batchId: input.batchId, userId: ctx.user.id, action: "confirm", selectedRowIds: input.selectedRowIds, note: input.note || null });
     await db.update(opsExternalSyncRows).set({ selected: 0, rowStatus: "skipped" }).where(and(eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.batchId, input.batchId)));
     if (input.selectedRowIds.length) await db.update(opsExternalSyncRows).set({ selected: 1 }).where(and(eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.batchId, input.batchId), inArray(opsExternalSyncRows.id, input.selectedRowIds)));

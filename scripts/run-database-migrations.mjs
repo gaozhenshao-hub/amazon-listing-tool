@@ -97,6 +97,8 @@ const supplementalMigrations = [
     "0173_ops_asin_daily_source_provenance_indexes.sql",
     "0174_ops_asin_daily_source_provenance_indexes.sql",
     "0175_ops_lingxing_sync_schedules.sql",
+    "0176_ops_lingxing_daily_auto_apply.sql",
+    "0177_ops_lingxing_sync_schedule_cadence_length.sql",
   ];
 
 const retiredMigrationFiles = new Set([

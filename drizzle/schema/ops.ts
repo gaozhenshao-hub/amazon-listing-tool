@@ -106,15 +106,16 @@ export const opsExternalSyncConfirmations = mysqlTable("ops_external_sync_confir
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [index("idx_ops_external_sync_confirmations_batch").on(table.batchId, table.createdAt)]);
 
-// 按数据域管理Heartbeat计划：计划只能生成可审阅草稿，绝不自动确认或应用业务事实。
+// 按数据域管理Heartbeat计划：仅已授权且通过完整性校验的ASIN日表现可自动追加日快照；其余域保持草稿或人工确认。
 export const opsLingxingSyncSchedules = mysqlTable("ops_lingxing_sync_schedules", {
   workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
   id: int("id").autoincrement().primaryKey(),
   dataDomain: varchar("data_domain", { length: 48 }).notNull(),
-  cadence: varchar("cadence", { length: 24 }).notNull(),
+  cadence: varchar("cadence", { length: 64 }).notNull(),
   timezone: varchar("timezone", { length: 64 }).notNull().default("Asia/Shanghai"),
   cronExpression: varchar("cron_expression", { length: 64 }).notNull(),
   enabled: int("enabled").notNull().default(0),
+  autoApply: int("auto_apply").notNull().default(0),
   scheduleCronTaskUid: varchar("schedule_cron_task_uid", { length: 65 }),
   ownerUserId: int("owner_user_id").notNull(),
   lastRunKey: varchar("last_run_key", { length: 80 }),

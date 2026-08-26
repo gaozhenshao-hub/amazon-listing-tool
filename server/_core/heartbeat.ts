@@ -119,6 +119,13 @@ const stringifyPayload = (payload: unknown): string => {
   return JSON.stringify(payload);
 };
 
+export function isRetryableHeartbeatUpdateError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /RST_STREAM|CANCEL(?:LED)?|stream closed|ECONNRESET/i.test(message);
+}
+
+const wait = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
 const validateCallbackPath = (path: string): void => {
   if (!path || !path.startsWith("/api/scheduled/")) {
     throw new TRPCError({
@@ -170,11 +177,19 @@ export async function updateHeartbeatJob(
   }
   if (patch.description !== undefined) body.description = patch.description;
   if (patch.enable !== undefined) body.enable = patch.enable;
-  return callForge<{ nextExecutionAt?: string | null }>(
-    "UpdateHeartbeatJob",
-    body,
-    userSession
-  );
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await callForge<{ nextExecutionAt?: string | null }>(
+        "UpdateHeartbeatJob",
+        body,
+        userSession,
+      );
+    } catch (error) {
+      if (attempt === 2 || !isRetryableHeartbeatUpdateError(error)) throw error;
+      await wait(75 * (attempt + 1));
+    }
+  }
+  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Heartbeat UpdateHeartbeatJob exhausted retries" });
 }
 
 /** Delete a cron located by `taskUid`. Idempotent on caller side. */

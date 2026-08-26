@@ -29,11 +29,25 @@ describe("领星同步页面ASIN日数据契约", () => {
     expect(pageSource).toContain("保护与缺失值");
   });
 
-  it("提供每日与每周自动草稿计划管理，但明确不自动确认或写入业务数据", () => {
-    expect(pageSource).toContain("自动草稿计划");
+  it("提供每日校验后自动追加与每周仅草稿的独立计划治理", () => {
+    expect(pageSource).toContain("受治理自动计划");
     expect(pageSource).toContain("每天北京时间 17:00");
     expect(pageSource).toContain("每周一北京时间 17:10");
     expect(pageSource).toContain("lingxingSync.setScheduleEnabled");
-    expect(pageSource).toContain("不会自动确认、应用、覆盖历史数据");
+    expect(pageSource).toContain("校验通过自动追加日快照");
+    expect(pageSource).toContain("库存、广告与Listing均不进入自动写入");
+  });
+
+  it("将受QPS限制的官方目录读取与纯数据库历史/计划查询分阶段发起", () => {
+    expect(pageSource).toContain("directoryBootstrapSettled");
+    expect(pageSource).toContain("避免同一批请求的局部429使页面误显示为空状态");
+    expect(pageSource).toContain("enabled: directoryBootstrapSettled");
+  });
+
+  it("为Phase 5只读域提供美国站全店范围和不可确认的结构化字段对账提示", () => {
+    expect(pageSource).toContain("美国站全部授权店铺（只读预览）");
+    expect(pageSource).toContain("美国站全部广告授权Profile");
+    expect(pageSource).toContain("仅字段对账草稿，未开放确认或业务写入");
+    expect(pageSource).toContain("99999999");
   });
 });

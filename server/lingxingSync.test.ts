@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMcpArguments, calculateFieldDiffs, dailySnapshotIdentityKey, isValidDailySnapshotForApply, normalizeDailyPreviewPage, normalizeLingxingStoreDirectoryRecord, normalizeMcpPayload, normalizeRow, pickRecords, shouldExternalizeSyncRawSnapshot } from "./routers/lingxingSync";
+import { buildMcpArguments, calculateFieldDiffs, dailyReadCoverageSummary, dailySnapshotIdentityKey, isValidDailySnapshotForApply, normalizeDailyPreviewPage, normalizeLingxingStoreDirectoryRecord, normalizeMcpPayload, normalizeRow, pickRecords, shouldExternalizeSyncRawSnapshot } from "./routers/lingxingSync";
 
 describe("领星运营同步预览契约", () => {
   it("产品表现使用官方sids范围且保留人工选择的周期", () => {
@@ -82,6 +82,11 @@ describe("领星运营同步预览契约", () => {
   it("ASIN日预览保留店铺与日期元数据并过滤占位ASIN", () => {
     const preview = normalizeDailyPreviewPage([{ asin: "-" }, { asin: "B012", parent_asins: [{ parent_asin: "P012" }] }], { storeId: "7392", storeName: "2店-US", reportDate: "2026-08-10" });
     expect(preview).toMatchObject({ placeholderRows: 1, rows: [{ asin: "B012", __lingxingSid: "7392", __lingxingStoreName: "2店-US", __reportDate: "2026-08-10" }] });
+  });
+
+  it("ASIN日自动应用覆盖统计只计入实际完成全部日期窗口的店铺", () => {
+    const coverage = dailyReadCoverageSummary([{ sid: "7392" }, { sid: "7395" }], ["2026-08-10", "2026-08-11"], new Set(["7392|2026-08-10", "7392|2026-08-11", "7395|2026-08-10"]));
+    expect(coverage).toEqual({ storesExpected: 2, storesRead: 1, storeDateWindowsExpected: 4, storeDateWindowsRead: 3 });
   });
 
   it("确认应用仅接受带有效父ASIN和报告日期的ASIN日快照", () => {

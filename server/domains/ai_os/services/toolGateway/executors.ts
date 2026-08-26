@@ -317,7 +317,7 @@ async function invokeInternalTool(slug: string, params: unknown, resolvedSecretR
           requireShopScope: true,
           shopScopeKeys: ["shop_id", "shopId", "sid", "sids", "profile_id", "profileId", "profile_ids"],
           scopeExemptTools: ["get_my_sids", "ad_auth_shops"],
-          allowedTools: ["query_product_performance_asin_lists", "get_fba_stock_list", "query_order_profit_list", "get_my_sids", "ad_auth_shops", "erp_listing", "query_erp_keyword_ranking_keyword", "ad_campaign_report", "ad_campaign_keyword_report"],
+          allowedTools: ["query_product_performance_asin_lists", "get_fba_stock_list", "query_order_profit_list", "get_my_sids", "ad_auth_shops", "erp_listing", "query_erp_keyword_ranking_keyword", "ad_campaign_report", "ad_campaign_keyword_report", "ad_campaign_search_term_report", "ad_campaign_targeting_report"],
         },
       }, params, resolvedSecretRefs, workspaceId);
     default:

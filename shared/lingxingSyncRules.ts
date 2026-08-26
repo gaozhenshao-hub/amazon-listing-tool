@@ -187,6 +187,34 @@ export const LINGXING_SYNC_RULES: readonly LingxingSyncRule[] = [
   },
 ] as const;
 
+export type LingxingSyncGovernance = {
+  dedupeKey: string;
+  diffFields: readonly string[];
+  writePolicy: "manual_append" | "validated_daily_auto_apply" | "draft_only" | "preview_only" | "unavailable";
+  schedulePolicy: "manual" | "daily_17_shanghai" | "weekly_1710_shanghai" | "disabled_pending_source";
+  scopePolicy: string;
+  readWindowPolicy: string;
+};
+
+/** 规则目录的可执行治理补充；不得由页面或路由自行猜测重复键、写入及定时策略。 */
+export const LINGXING_SYNC_GOVERNANCE: Record<LingxingSyncDomain, LingxingSyncGovernance> = {
+  product_performance: { dedupeKey: "sourceStoreId|country|parentAsin|weekStart", diffFields: ["salesQty", "salesAmount", "orderProfit", "adSpend"], writePolicy: "manual_append", schedulePolicy: "manual", scopePolicy: "single-selected-store-and-marketplace", readWindowPolicy: "manual-complete-natural-week" },
+  product_performance_daily: { dedupeKey: "sourceStoreId|country|asin|reportDate", diffFields: ["salesQty", "orderQty", "salesAmount", "orderProfit", "adSpend", "adSales", "adOrders", "sessionsTotal", "adClicks", "adImpressions", "returnQty"], writePolicy: "validated_daily_auto_apply", schedulePolicy: "daily_17_shanghai", scopePolicy: "authorized-US-stores-or-single-selected-store", readWindowPolicy: "previous-calendar-day" },
+  parent_asin_weekly_rollup: { dedupeKey: "sourceStoreId|country|parentAsin|weekStart", diffFields: ["salesQty", "orderQty", "salesAmount", "adSpend", "sessionsTotal", "adOrders"], writePolicy: "draft_only", schedulePolicy: "weekly_1710_shanghai", scopePolicy: "confirmed-daily-snapshots-in-workspace", readWindowPolicy: "previous-complete-natural-week" },
+  fba_inventory: { dedupeKey: "sourceStoreId|country|asin|snapshotDate", diffFields: ["fbaAvailable", "fbaReserved", "fbaInTransit", "sku", "productName"], writePolicy: "manual_append", schedulePolicy: "manual", scopePolicy: "single-selected-store-and-marketplace", readWindowPolicy: "provider-current-inventory-snapshot" },
+  ad_campaign: { dedupeKey: "profileId|campaignId|reportStart|reportEnd", diffFields: ["adImpressions", "adClicks", "adSpend", "adSales", "adOrders", "adAcos", "adCpc"], writePolicy: "manual_append", schedulePolicy: "manual", scopePolicy: "single-selected-ad-profile", readWindowPolicy: "manual-closed-report-period" },
+  ad_keyword: { dedupeKey: "profileId|campaignId|keyword|matchType|weekStart", diffFields: ["adImpressions", "adClicks", "adSpend", "adSales", "adOrders", "adAcos", "adCpc", "adCtr"], writePolicy: "manual_append", schedulePolicy: "manual", scopePolicy: "single-selected-ad-profile", readWindowPolicy: "manual-complete-week" },
+  order_profit: { dedupeKey: "sourceStoreId|parentAsin|weekStart", diffFields: ["salesQty", "salesAmount", "orderProfit", "adSpend"], writePolicy: "manual_append", schedulePolicy: "manual", scopePolicy: "single-selected-store", readWindowPolicy: "manual-closed-settlement-week" },
+  listing_master: { dedupeKey: "sourceStoreId|country|asin", diffFields: ["productName", "sku", "parentAsin", "listingStatus", "marketplace"], writePolicy: "preview_only", schedulePolicy: "manual", scopePolicy: "authorized-US-stores-or-single-selected-store", readWindowPolicy: "provider-current-listing-page" },
+  ad_search_term: { dedupeKey: "profileId|searchTerm|sourceTarget|reportStart|reportEnd", diffFields: ["adImpressions", "adClicks", "adSpend", "adSales", "adOrders", "adAcos", "adCpc", "adCtr", "adCvr"], writePolicy: "preview_only", schedulePolicy: "manual", scopePolicy: "authorized-US-ad-profiles-or-selected-profile", readWindowPolicy: "manual-closed-report-period" },
+  ad_targeting: { dedupeKey: "profileId|campaignId|adGroupId|targetingEntity|reportStart|reportEnd", diffFields: ["adImpressions", "adClicks", "adSpend", "adSales", "adOrders", "adAcos", "adCpc", "adCtr", "adCvr"], writePolicy: "preview_only", schedulePolicy: "manual", scopePolicy: "authorized-US-ad-profiles-or-selected-profile", readWindowPolicy: "manual-closed-report-period" },
+  parent_asin_traffic: { dedupeKey: "sourceStoreId|country|parentAsin|reportDate", diffFields: ["sessionsTotal", "traffic", "conversion"], writePolicy: "unavailable", schedulePolicy: "disabled_pending_source", scopePolicy: "unavailable-until-official-parent-source-verified", readWindowPolicy: "unavailable-until-official-parent-source-verified" },
+};
+
 export function getLingxingSyncRule(domain: LingxingSyncDomain) {
   return LINGXING_SYNC_RULES.find((rule) => rule.domain === domain) || null;
+}
+
+export function getLingxingSyncGovernance(domain: LingxingSyncDomain) {
+  return LINGXING_SYNC_GOVERNANCE[domain];
 }
