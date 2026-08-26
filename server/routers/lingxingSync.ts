@@ -722,6 +722,45 @@ export const lingxingSyncRouter = router({
     const scope = object(batch.scope);
     const periodStart = asText(scope.startDate, todayIso());
     const periodEnd = asText(scope.endDate, periodStart);
+    if (batch.dataDomain === "product_performance_daily") {
+      const dailyRows = selectedRows
+        .map((row) => object(row.normalizedData))
+        .filter((data) => isValidDailySnapshotForApply(data));
+      const selectedKeys = new Set<string>();
+      const duplicateKeys = new Set<string>();
+      for (const data of dailyRows) {
+        const key = dailySnapshotIdentityKey({ sourceStoreId: data.storeId, country: data.country, asin: data.asin, reportDate: data.reportDate });
+        if (selectedKeys.has(key)) duplicateKeys.add(key);
+        selectedKeys.add(key);
+      }
+      const existingSnapshots = await db.select({
+        sourceStoreId: opsAsinDailySnapshots.sourceStoreId,
+        country: opsAsinDailySnapshots.country,
+        asin: opsAsinDailySnapshots.asin,
+        reportDate: opsAsinDailySnapshots.reportDate,
+      }).from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, workspaceId));
+      const existingKeys = new Set(existingSnapshots.map((snapshot) => dailySnapshotIdentityKey(snapshot)));
+      for (const key of selectedKeys) if (existingKeys.has(key)) duplicateKeys.add(key);
+      if (duplicateKeys.size) {
+        const duplicateIdentityKeys = [...duplicateKeys].sort();
+        const duplicateMessage = `日快照身份重复：${duplicateIdentityKeys.length}条。已回退为待复核，未创建导入记录。`;
+        await db.update(opsExternalSyncRows).set({ rowStatus: "needs_review" }).where(and(eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.batchId, input.batchId), eq(opsExternalSyncRows.selected, 1)));
+        // 旧版路径可能已在插入首条快照前创建importing状态的导入记录；只将同一批次的空导入显式标为失败，保留审计而不伪造完成导入。
+        await db.update(dataImports).set({ status: "failed", errorMessage: duplicateMessage }).where(and(
+          eq(dataImports.workspaceId, workspaceId),
+          eq(dataImports.fileName, `领星MCP-${batch.dataDomain}-批次${batch.id}`),
+          eq(dataImports.status, "importing"),
+        ));
+        await db.update(opsExternalSyncBatches).set({
+          status: "ready_for_review",
+          reviewedAt: null,
+          reviewedBy: null,
+          errorMessage: duplicateMessage,
+          summary: { ...object(batch.summary), applyBlocked: "duplicate_daily_snapshot_identity", duplicateDailySnapshotIdentities: duplicateIdentityKeys, duplicateDailySnapshotCount: duplicateIdentityKeys.length },
+        }).where(eq(opsExternalSyncBatches.id, input.batchId));
+        throw new Error(`日快照身份重复：${duplicateIdentityKeys.length}条；批次已回退为待复核，未创建导入记录。`);
+      }
+    }
     const [importRecord] = await db.insert(dataImports).values({
       workspaceId, userId: ctx.user.id, sourceType: "lingxing", fileName: `领星MCP-${batch.dataDomain}-批次${batch.id}`,
       weekStartDate: periodStart, weekEndDate: periodEnd, dataGranularity: ["fba_inventory", "product_performance_daily"].includes(batch.dataDomain) ? "daily" : "weekly",

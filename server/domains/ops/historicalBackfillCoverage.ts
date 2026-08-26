@@ -33,15 +33,21 @@ export function collectCompletedDailyBackfillDates(batches: HistoricalBackfillBa
     const scopeStartDate = typeof scope.startDate === "string" ? scope.startDate : "";
     const scopeEndDate = typeof scope.endDate === "string" ? scope.endDate : "";
     if (!scopeStartDate || !scopeEndDate || scopeStartDate > scopeEndDate) continue;
-    const storesExpected = numberOf(summary.storesExpected);
-    const windowsExpected = numberOf(summary.storeDateWindowsExpected);
+    // 0175以前的完整批次只记录了 storesRead / datesRead，没有店铺日期窗口字段。
+    // 对这类旧审计记录，仅在范围天数、店铺数、无截断三个证据同时成立时兼容认定完成。
+    const storesExpected = numberOf(summary.storesExpected) || numberOf(summary.storesRead);
+    const hasWindowMetadata = Object.prototype.hasOwnProperty.call(summary, "storeDateWindowsExpected")
+      || Object.prototype.hasOwnProperty.call(summary, "storeDateWindowsRead");
+    const scopedDates = datesInScope(scopeStartDate, scopeEndDate);
+    const windowsExpected = numberOf(summary.storeDateWindowsExpected) || (hasWindowMetadata ? 0 : storesExpected * scopedDates.length);
     if (storesExpected <= 0 || windowsExpected <= 0) continue;
     if (Boolean(summary.capped) || numberOf(summary.pageTruncations) > 0) continue;
-    const scopedDates = datesInScope(scopeStartDate, scopeEndDate);
     if (windowsExpected < storesExpected * scopedDates.length) continue;
     const datesRead = numberOf(summary.datesRead);
     if (datesRead > 0 && datesRead < scopedDates.length) continue;
-    if (numberOf(summary.storesRead) < storesExpected || numberOf(summary.storeDateWindowsRead) < windowsExpected) continue;
+    if (numberOf(summary.storesRead) < storesExpected) continue;
+    const windowsRead = numberOf(summary.storeDateWindowsRead) || (hasWindowMetadata ? 0 : windowsExpected);
+    if (windowsRead < windowsExpected) continue;
     for (const date of scopedDates) if (date >= startDate && date <= endDate) completed.add(date);
   }
   return completed;

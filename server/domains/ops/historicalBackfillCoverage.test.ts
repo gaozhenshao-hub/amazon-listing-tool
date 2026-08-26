@@ -23,6 +23,26 @@ describe("历史MCP回补完成断点", () => {
     ]);
   });
 
+  it("兼容旧版已应用多日批次的店铺数和日期数摘要，避免已覆盖自然周被重复写入", () => {
+    const legacyWeek = {
+      status: "applied",
+      scope: { startDate: "2026-08-10", endDate: "2026-08-16" },
+      summary: { storesRead: 9, datesRead: 7, capped: false, pageTruncations: 0 },
+    };
+    expect([...collectCompletedDailyBackfillDates([legacyWeek], "2026-08-01", "2026-08-20")]).toEqual([
+      "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16",
+    ]);
+  });
+
+  it("旧版多日批次日期数不足时不会被误认定为完整覆盖", () => {
+    const incompleteLegacyWeek = {
+      status: "applied",
+      scope: { startDate: "2026-08-10", endDate: "2026-08-16" },
+      summary: { storesRead: 9, datesRead: 6, capped: false, pageTruncations: 0 },
+    };
+    expect(collectCompletedDailyBackfillDates([incompleteLegacyWeek], "2026-08-01", "2026-08-20")).toEqual(new Set());
+  });
+
   it("截断、不完整窗口、未应用或多日批次不能作为单日回补断点", () => {
     const invalid = [
       { ...complete, status: "confirmed" },

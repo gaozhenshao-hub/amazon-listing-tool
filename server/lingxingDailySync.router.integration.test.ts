@@ -37,7 +37,9 @@ const db = {
         if (state.selectCount === 1) return queryResult([]); // existing day snapshots during preview
         if (state.selectCount === 2) return queryResult(state.batch ? [state.batch] : []); // confirm batch
         if (state.selectCount === 3) return queryResult(state.batch ? [state.batch] : []); // apply batch
-        return queryResult(state.rows.filter((row) => row.selected === 1)); // apply selected rows
+        if (state.selectCount === 4) return queryResult(state.rows.filter((row) => row.selected === 1)); // apply selected rows
+        if (state.selectCount === 5) return queryResult(state.snapshots); // duplicate identity preflight
+        return queryResult([]);
       },
     }),
   }),
@@ -69,9 +71,10 @@ const db = {
       where: async () => {
         const name = tableName(table);
         if (name === "ops_external_sync_batches" && state.batch) Object.assign(state.batch, patch);
+        if (name === "data_imports") state.imports.forEach((item) => Object.assign(item, patch));
         if (name === "ops_external_sync_rows" && patch.selected === 0) state.rows.forEach((row) => { row.selected = 0; row.rowStatus = "skipped"; });
         if (name === "ops_external_sync_rows" && patch.selected === 1) state.rows.forEach((row) => { row.selected = 1; });
-        if (name === "ops_external_sync_rows" && patch.rowStatus === "applied") state.rows.forEach((row) => { row.rowStatus = "applied"; });
+        if (name === "ops_external_sync_rows" && patch.rowStatus) state.rows.forEach((row) => { row.rowStatus = patch.rowStatus; });
         if (name === "ops_lingxing_sync_schedules" && state.schedules[0]) Object.assign(state.schedules[0], patch);
       },
     }),
@@ -156,6 +159,22 @@ describe("领星ASIN日数据同步路由", () => {
     expect(preview.totalRows).toBe(2);
     expect(state.batch.summary).toMatchObject({ pageTruncations: 1, storeDateWindowsExpected: 3, storeDateWindowsRead: 2 });
     expect(state.batch.summary.failedStoreDateWindows).toEqual([expect.objectContaining({ sid: "7392", reportDate: "2026-08-11", page: 0, error: "MCP窗口读取超时" })]);
+  });
+
+  it("应用前发现已有日快照身份时回退待复核，不创建导入或重复快照", async () => {
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+    const preview = await caller.createPreview({ dataDomain: "product_performance_daily", scope: { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-10", marketplace: "US" } });
+    state.snapshots.push({ sourceStoreId: "7392", country: "US", asin: "B0DAY001", reportDate: "2026-08-10" });
+    state.imports.push({ id: 7700, fileName: "领星MCP-product_performance_daily-批次9901", status: "importing", importedRows: 0 });
+
+    await caller.confirm({ batchId: preview.batchId, selectedRowIds: [state.rows[0].id] });
+    await expect(caller.applyConfirmedProductInventory({ batchId: preview.batchId })).rejects.toThrow("日快照身份重复");
+
+    expect(state.imports).toEqual([expect.objectContaining({ id: 7700, status: "failed", errorMessage: expect.stringContaining("未创建导入记录") })]);
+    expect(state.batch).toMatchObject({ status: "ready_for_review", errorMessage: expect.stringContaining("未创建导入记录") });
+    expect(state.batch.summary).toMatchObject({ applyBlocked: "duplicate_daily_snapshot_identity", duplicateDailySnapshotCount: 1 });
+    expect(state.rows[0].rowStatus).toBe("needs_review");
+    expect(state.confirmations.map((item) => item.action)).toEqual(["confirm"]);
   });
 
   it("计划管理创建、暂停和恢复同一Heartbeat任务，并固定为只生成草稿", async () => {
