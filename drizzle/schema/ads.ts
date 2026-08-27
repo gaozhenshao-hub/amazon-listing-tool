@@ -193,6 +193,8 @@ export const adKeywordWeekly = mysqlTable("ad_keyword_weekly", {
   id: int("id").autoincrement().primaryKey(),
   importId: int("import_id").notNull(), // FK → ad_report_imports.id
   userId: int("user_id").notNull(),
+  sourceProfileId: varchar("source_profile_id", { length: 64 }),
+  sourceIdentityHash: varchar("source_identity_hash", { length: 64 }),
   productId: int("product_id"), // FK → product_profiles.id (resolved via portfolio mapping)
   parentAsin: varchar("parent_asin", { length: 20 }),
   weekStartDate: varchar("week_start_date", { length: 10 }).notNull(),
@@ -234,9 +236,12 @@ export const adKeywordWeekly = mysqlTable("ad_keyword_weekly", {
   // Brand metrics (SB/SD)
   brandNewOrders: int("brand_new_orders").default(0),
   brandNewSales: decimal("brand_new_sales", { precision: 12, scale: 2 }),
-  brandSearchCount: int("brand_search_count").default(0),
+  brandSearchCount: int("brand_search_count"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("uk_ad_keyword_workspace_source_identity").on(table.workspaceId, table.sourceIdentityHash),
+  index("idx_ad_keyword_workspace_profile_period").on(table.workspaceId, table.sourceProfileId, table.weekStartDate, table.weekEndDate),
+]);
 
 export type AdKeywordWeekly = typeof adKeywordWeekly.$inferSelect;
 

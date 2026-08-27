@@ -6,7 +6,7 @@ import { lingxingSyncRouter } from "../../routers/lingxingSync";
 import { getDb } from "../../repositories/dbClient";
 import { summarizeParentAsinWeeks, type DailySnapshot } from "./productOverview/dailyAggregation";
 
-type ScheduleDomain = "product_performance_daily" | "parent_asin_weekly_rollup";
+type ScheduleDomain = "product_performance_daily" | "fba_inventory" | "ad_keyword" | "parent_asin_weekly_rollup";
 
 const shanghaiDate = (input = new Date()) => new Date(input.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const addDays = (date: string, days: number) => {
@@ -23,6 +23,16 @@ const mondayOf = (date: string) => {
 export function scheduledDailyScope(now = new Date()) {
   const previousDate = addDays(shanghaiDate(now), -1);
   return { startDate: previousDate, endDate: previousDate, runKey: `daily:${previousDate}` };
+}
+
+export function scheduledInventoryScope(now = new Date()) {
+  const snapshotDate = shanghaiDate(now);
+  return { startDate: snapshotDate, endDate: snapshotDate, runKey: `inventory:${snapshotDate}` };
+}
+
+export function scheduledKeywordScope(now = new Date()) {
+  const previousDate = addDays(shanghaiDate(now), -1);
+  return { startDate: previousDate, endDate: previousDate, runKey: `keyword:${previousDate}` };
 }
 
 export function scheduledWeeklyScope(now = new Date()) {
@@ -129,6 +139,47 @@ export function validateDailyAutoApplyIntegrity(batch: AutoApplyBatch, rows: Aut
   }
 }
 
+function validateScheduledReadCoverage(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }, label: string) {
+  const summary = record(batch.summary);
+  if (batch.status !== "ready_for_review") throw new Error(`${label}自动应用校验未通过：草稿批次不处于待确认状态`);
+  if (Boolean(summary.capped) || Number(summary.pageTruncations || 0) > 0) throw new Error(`${label}自动应用校验未通过：读取存在分页或行数截断`);
+  if (Array.isArray(summary.failedStoreDateWindows) && summary.failedStoreDateWindows.length) throw new Error(`${label}自动应用校验未通过：存在读取失败窗口`);
+  if (Number(summary.storesExpected || 0) < 1 || Number(summary.storesExpected) !== Number(summary.storesRead || 0)) throw new Error(`${label}自动应用校验未通过：授权范围覆盖不完整`);
+  if (Number(summary.storeDateWindowsExpected || 0) > 0 && Number(summary.storeDateWindowsExpected) !== Number(summary.storeDateWindowsRead || 0)) throw new Error(`${label}自动应用校验未通过：读取窗口覆盖不完整`);
+  if (!rows.length || Number(summary.needsReview || 0) > 0) throw new Error(`${label}自动应用校验未通过：存在缺失身份或字段异常草稿`);
+  const entityKeys = new Set<string>();
+  for (const row of rows) {
+    if (!row.entityKey || entityKeys.has(row.entityKey)) throw new Error(`${label}自动应用校验未通过：存在重复或缺失的业务身份键`);
+    entityKeys.add(row.entityKey);
+    if (Array.isArray(row.validationErrors) && row.validationErrors.length) throw new Error(`${label}自动应用校验未通过：草稿包含字段校验错误`);
+  }
+  if (scope.startDate !== scope.endDate) throw new Error(`${label}自动应用校验未通过：每日计划必须覆盖单一报告日`);
+}
+
+export function validateInventoryAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }) {
+  validateScheduledReadCoverage(batch, rows, scope, "库存快照");
+  for (const row of rows) {
+    const data = record(row.normalizedData);
+    if (!text(data.asin) || text(data.asin) === "-" || !text(data.parentAsin) || text(data.reportDate) !== scope.endDate) throw new Error("库存快照自动应用校验未通过：存在缺失ASIN、父ASIN或快照日期的草稿行");
+    for (const key of ["fbaAvailable", "fbaReserved", "fbaInTransit"]) {
+      const metric = numberOrNull(data[key]);
+      if (metric === null || !Number.isFinite(metric) || metric < 0) throw new Error(`库存快照自动应用校验未通过：${key}存在无效或负数指标`);
+    }
+  }
+}
+
+export function validateKeywordAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }) {
+  validateScheduledReadCoverage(batch, rows, scope, "广告关键词");
+  for (const row of rows) {
+    const data = record(row.normalizedData);
+    if (!text(data.profileId) || !text(data.campaignName) || !text(data.keyword) || text(data.periodStart) !== scope.startDate || text(data.periodEnd) !== scope.endDate) throw new Error("广告关键词自动应用校验未通过：存在缺失Profile、活动、关键词或报告期的草稿行");
+    for (const key of ["adImpressions", "adClicks", "adSpend", "adSales", "adOrders", "adAcos", "adCpc", "adCtr"]) {
+      const metric = numberOrNull(data[key]);
+      if (metric !== null && (!Number.isFinite(metric) || metric < 0)) throw new Error(`广告关键词自动应用校验未通过：${key}存在无效或负数指标`);
+    }
+  }
+}
+
 /** 历史回补使用与每日计划等同的治理规则，但必须完整覆盖输入范围内的所有日期。 */
 export function validateHistoricalBackfillIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }, previousSnapshots: PreviousDailySnapshot[] = []) {
   const summary = record(batch.summary);
@@ -184,18 +235,27 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
     .where(and(eq(opsLingxingSyncSchedules.scheduleCronTaskUid, taskUid), eq(opsLingxingSyncSchedules.enabled, 1))).limit(1);
   if (!schedule) return { ok: true, skipped: "orphan_or_paused" as const };
   const domain = schedule.dataDomain as ScheduleDomain;
-  const scope = domain === "product_performance_daily" ? scheduledDailyScope(now) : scheduledWeeklyScope(now);
+  const scope = domain === "product_performance_daily" ? scheduledDailyScope(now) : domain === "fba_inventory" ? scheduledInventoryScope(now) : domain === "ad_keyword" ? scheduledKeywordScope(now) : scheduledWeeklyScope(now);
   if (schedule.lastRunKey === scope.runKey && schedule.lastStatus === "succeeded") return { ok: true, skipped: "idempotent" as const, runKey: scope.runKey };
 
   await db.update(opsLingxingSyncSchedules).set({ lastStatus: "running", lastError: null, lastRunAt: now }).where(eq(opsLingxingSyncSchedules.id, schedule.id));
+  let batchId: number | null = null;
   try {
-    let batchId: number;
-    if (domain === "product_performance_daily") {
+    if (["product_performance_daily", "fba_inventory", "ad_keyword"].includes(domain)) {
       const [owner] = await db.select({ id: users.id, role: users.role, organizationId: users.organizationId, defaultWorkspaceId: users.defaultWorkspaceId })
         .from(users).where(eq(users.id, schedule.ownerUserId)).limit(1);
       if (!owner) throw new Error("计划创建者不存在或已删除");
       const caller = lingxingSyncRouter.createCaller({ user: { ...owner, defaultWorkspaceId: schedule.workspaceId } } as any);
-      const preview = await caller.createPreview({ dataDomain: "product_performance_daily", scope: { storeId: "ALL_US", marketplace: "US", startDate: scope.startDate, endDate: scope.endDate } });
+      const preview = await caller.createPreview({
+        dataDomain: domain,
+        scope: {
+          storeId: domain === "ad_keyword" ? "ALL_US_AD_PROFILES" : "ALL_US",
+          profileId: domain === "ad_keyword" ? "ALL_US_AD_PROFILES" : undefined,
+          marketplace: "US",
+          startDate: scope.startDate,
+          endDate: scope.endDate,
+        },
+      });
       batchId = preview.batchId;
       if (Number(schedule.autoApply || 0) === 1) {
         const [batch] = await db.select().from(opsExternalSyncBatches).where(and(
@@ -206,16 +266,20 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
           eq(opsExternalSyncRows.batchId, batchId),
           eq(opsExternalSyncRows.workspaceId, schedule.workspaceId),
         ));
-        const snapshots = await db.select().from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, schedule.workspaceId));
-        validateDailyAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, snapshots as PreviousDailySnapshot[]);
+        if (domain === "product_performance_daily") {
+          const snapshots = await db.select().from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, schedule.workspaceId));
+          validateDailyAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, snapshots as PreviousDailySnapshot[]);
+        } else if (domain === "fba_inventory") validateInventoryAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope);
+        else validateKeywordAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope);
         const selectedRowIds = rows.map((row) => row.id);
-        await caller.confirm({ batchId, selectedRowIds, note: "系统每日校验通过自动确认" });
-        await caller.applyConfirmedProductInventory({ batchId, note: "系统每日校验通过自动追加日快照" });
+        await caller.confirm({ batchId, selectedRowIds, note: `系统${domain}每日校验通过自动确认` });
+        if (domain === "ad_keyword") await caller.applyConfirmedAds({ batchId, note: "系统每日关键词校验通过自动追加历史事实" });
+        else await caller.applyConfirmedProductInventory({ batchId, note: domain === "fba_inventory" ? "系统每日库存校验通过自动追加库存快照" : "系统每日校验通过自动追加日快照" });
       }
     } else {
-      const snapshots = await db.select().from(opsAsinDailySnapshots).where(and(
+      const snapshots = (await db.select().from(opsAsinDailySnapshots).where(and(
         eq(opsAsinDailySnapshots.workspaceId, schedule.workspaceId),
-      ));
+      ))).filter((snapshot) => snapshot.sourceType !== "lx_inventory_mcp");
       const weekRows = snapshots.filter((row) => row.reportDate >= scope.startDate && row.reportDate <= scope.endDate);
       const coverageException = weeklyCoverageExceptionSummary(weekRows, scope.startDate, scope.endDate);
       const parents = summarizeParentAsinWeeks(weekRows.map(asDailySnapshot), 1)
@@ -237,11 +301,21 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
         })) as any);
       }
     }
-    const writePolicy = domain === "product_performance_daily" && Number(schedule.autoApply || 0) === 1 ? "validated_daily_auto_apply" as const : "draft_only" as const;
+    const writePolicy = ["product_performance_daily", "fba_inventory", "ad_keyword"].includes(domain) && Number(schedule.autoApply || 0) === 1 ? "validated_daily_auto_apply" as const : "draft_only" as const;
     await db.update(opsLingxingSyncSchedules).set({ lastRunKey: scope.runKey, lastRunAt: new Date(), lastBatchId: batchId, lastStatus: "succeeded", lastError: null }).where(eq(opsLingxingSyncSchedules.id, schedule.id));
-    return { ok: true, batchId, runKey: scope.runKey, writePolicy };
+    return { ok: true, batchId: batchId!, runKey: scope.runKey, writePolicy };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (batchId) {
+      const [batch] = await db.select().from(opsExternalSyncBatches).where(and(
+        eq(opsExternalSyncBatches.id, batchId),
+        eq(opsExternalSyncBatches.workspaceId, schedule.workspaceId),
+      )).limit(1);
+      if (batch?.status === "ready_for_review") await db.update(opsExternalSyncBatches).set({
+        errorMessage: message.slice(0, 3000),
+        summary: { ...(record(batch.summary)), autoApplyBlocked: true, autoApplyError: message.slice(0, 1000), scheduled: true },
+      }).where(eq(opsExternalSyncBatches.id, batchId));
+    }
     await db.update(opsLingxingSyncSchedules).set({ lastStatus: "failed", lastError: message.slice(0, 3000), lastRunAt: new Date() }).where(eq(opsLingxingSyncSchedules.id, schedule.id));
     throw error;
   }

@@ -29,13 +29,15 @@ describe("领星同步页面ASIN日数据契约", () => {
     expect(pageSource).toContain("保护与缺失值");
   });
 
-  it("提供每日校验后自动追加与每周仅草稿的独立计划治理", () => {
+  it("提供产品、库存、关键词每日校验后自动追加与每周仅草稿的独立计划治理", () => {
     expect(pageSource).toContain("受治理自动计划");
     expect(pageSource).toContain("每天北京时间 17:00");
+    expect(pageSource).toContain("每天北京时间 17:20");
+    expect(pageSource).toContain("每天北京时间 17:40");
     expect(pageSource).toContain("每周一北京时间 17:10");
     expect(pageSource).toContain("lingxingSync.setScheduleEnabled");
-    expect(pageSource).toContain("校验通过自动追加日快照");
-    expect(pageSource).toContain("库存、广告与Listing均不进入自动写入");
+    expect(pageSource).toContain("校验通过自动追加历史事实");
+    expect(pageSource).toContain("FBA库存快照与广告关键词历史事实仅在完整性校验通过后自动追加");
   });
 
   it("明确同步与下载仅保留所选时间内有经营、广告或表现数据的商品", () => {

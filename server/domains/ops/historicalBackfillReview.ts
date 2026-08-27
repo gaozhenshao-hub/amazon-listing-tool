@@ -61,3 +61,42 @@ export function buildDailyBackfillReviewQueue(batches: DailyBackfillReviewBatch[
     };
   }).sort((a, b) => a.reportDate.localeCompare(b.reportDate));
 }
+
+export type ScheduledAutoApplyReviewBatch = DailyBackfillReviewBatch & { dataDomain: "product_performance_daily" | "fba_inventory" | "ad_keyword" };
+
+export function scheduledAutoApplyReviewIssue(input: ScheduledAutoApplyReviewBatch): DailyBackfillReviewIssue | null {
+  if (input.dataDomain === "product_performance_daily") return dailyBackfillReviewIssue(input);
+  const summary = record(input.summary);
+  const failedWindows = Array.isArray(summary.failedStoreDateWindows) ? summary.failedStoreDateWindows : [];
+  const labelPrefix = input.dataDomain === "fba_inventory" ? "库存快照" : "广告关键词";
+  if (Boolean(summary.capped) || numberOf(summary.pageTruncations) > 0) return { code: "pagination_truncated", label: `${labelPrefix}分页或行数截断`, detail: `分页截断${numberOf(summary.pageTruncations)}次${Boolean(summary.capped) ? "，并触发总行数上限" : ""}。` };
+  if (failedWindows.length) return { code: "store_window_failed", label: `${labelPrefix}读取窗口失败`, detail: `存在${failedWindows.length}个店铺或广告Profile读取窗口未完成。` };
+  if (numberOf(summary.storesExpected) > 0 && numberOf(summary.storesExpected) !== numberOf(summary.storesRead)) return { code: "coverage_incomplete", label: `${labelPrefix}授权范围覆盖不完整`, detail: `已完成${numberOf(summary.storesRead)}/${numberOf(summary.storesExpected)}个授权范围。` };
+  if (input.errorMessage) return { code: "integrity_blocked", label: `${labelPrefix}完整性校验阻断`, detail: input.errorMessage.slice(0, 500) };
+  return null;
+}
+
+export function buildScheduledAutoApplyReviewQueue(batches: ScheduledAutoApplyReviewBatch[]) {
+  const grouped = new Map<string, ScheduledAutoApplyReviewBatch[]>();
+  for (const batch of batches) {
+    if (batch.status !== "ready_for_review") continue;
+    const scope = record(batch.scope);
+    const reportDate = typeof scope.startDate === "string" && scope.startDate === scope.endDate ? scope.startDate : "";
+    const issue = scheduledAutoApplyReviewIssue(batch);
+    if (!reportDate || !issue) continue;
+    const key = `${batch.dataDomain}|${reportDate}`;
+    grouped.set(key, [...(grouped.get(key) || []), batch]);
+  }
+  return [...grouped.entries()].map(([, groupedBatches]) => {
+    const sorted = [...groupedBatches].sort((a, b) => b.id - a.id);
+    const latestBatch = sorted[0];
+    return {
+      dataDomain: latestBatch.dataDomain,
+      reportDate: String(record(latestBatch.scope).startDate),
+      attempts: sorted.length,
+      batchIds: sorted.map((batch) => batch.id),
+      latestBatch,
+      issue: scheduledAutoApplyReviewIssue(latestBatch)!,
+    };
+  }).sort((a, b) => a.reportDate.localeCompare(b.reportDate) || a.dataDomain.localeCompare(b.dataDomain));
+}

@@ -31,8 +31,9 @@ function matchesLingxingMarketplace(row: { country?: string | null; storeName?: 
 }
 
 async function refreshZeroValueDiscontinuationStatuses(db: any, workspaceId: number) {
-  const snapshots = await db.select().from(opsAsinDailySnapshots)
-    .where(eq(opsAsinDailySnapshots.workspaceId, workspaceId));
+  const snapshots = (await db.select().from(opsAsinDailySnapshots)
+    .where(eq(opsAsinDailySnapshots.workspaceId, workspaceId)))
+    .filter((snapshot) => snapshot.sourceType !== "lx_inventory_mcp");
   const legacyWeekly = await db.select().from(lingxingProductWeekly).where(or(
     isNull(lingxingProductWeekly.workspaceId), eq(lingxingProductWeekly.workspaceId, workspaceId),
   ));
@@ -634,7 +635,7 @@ export const dataImportRouter = router({
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       const rows = await db!.select().from(opsAsinDailySnapshots)
         .where(opsWorkspaceCondition(opsAsinDailySnapshots, currentOpsWorkspaceId(), eq(opsAsinDailySnapshots.userId, effectiveUserId)));
-      const filtered = rows.filter(row => matchesLingxingMarketplace(row, input.marketplace));
+      const filtered = rows.filter(row => row.sourceType !== "lx_inventory_mcp" && matchesLingxingMarketplace(row, input.marketplace));
       const overview = summarizeParentAsinWeeks(filtered as any, input.weeks);
       const profileOperatorRows = await db!.select({
         parentAsin: productProfiles.parentAsin,
@@ -682,7 +683,7 @@ export const dataImportRouter = router({
           eq(opsAsinDailySnapshots.userId, effectiveUserId),
           eq(opsAsinDailySnapshots.parentAsin, input.parentAsin),
         )));
-      const filtered = rows.filter(row => matchesLingxingMarketplace(row, input.marketplace));
+      const filtered = rows.filter(row => row.sourceType !== "lx_inventory_mcp" && matchesLingxingMarketplace(row, input.marketplace));
       return summarizeVariantSales(filtered as any, input.weeks);
     }),
 
@@ -721,7 +722,9 @@ export const dataImportRouter = router({
       const snapshots = await db!.select().from(opsAsinDailySnapshots)
         .where(eq(opsAsinDailySnapshots.workspaceId, workspaceId));
       const scopedSnapshots = snapshots.filter(row => matchesLingxingMarketplace(row, input.marketplace));
-      const asOfDate = input.asOfDate || scopedSnapshots.reduce((latest, row) => row.reportDate > latest ? row.reportDate : latest, "");
+      const inventorySnapshots = scopedSnapshots.filter(row => row.sourceType === "lx_inventory_mcp");
+      const inventoryPlanningSource = inventorySnapshots.length ? inventorySnapshots : scopedSnapshots;
+      const asOfDate = input.asOfDate || inventoryPlanningSource.reduce((latest, row) => row.reportDate > latest ? row.reportDate : latest, "");
       if (!asOfDate) return { asOfDate: null, rows: [] };
 
       const lifecycleStatuses = await db!.select().from(opsAsinLifecycleStatuses)
@@ -749,10 +752,10 @@ export const dataImportRouter = router({
         console.error("[InventoryPlanning] optional local inventory or parameter query failed", { workspaceId, userId: ctx.user.id, error });
       }
 
-      const latestRows = scopedSnapshots.filter(row => row.reportDate === asOfDate);
+      const latestRows = inventoryPlanningSource.filter(row => row.reportDate === asOfDate);
       const planningRows = latestRows.map(latest => {
         const lifecycle = lifecycleByKey.get(`${latest.asin}::${latest.storeName}::${latest.country}`);
-        const history = scopedSnapshots.filter(row => row.asin === latest.asin && row.storeName === latest.storeName && row.country === latest.country);
+        const history = scopedSnapshots.filter(row => row.sourceType !== "lx_inventory_mcp" && row.asin === latest.asin && row.storeName === latest.storeName && row.country === latest.country);
         const local = locals
           .filter(item => item.asin === latest.asin && item.storeName === latest.storeName && item.country === latest.country && item.effectiveDate <= asOfDate)
           .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate) || b.id - a.id)[0];

@@ -10,13 +10,13 @@ vi.mock("./routers/lingxingSync", () => ({
   lingxingSyncRouter: { createCaller: createCallerMock },
 }));
 
-import { runLingxingScheduledDraft, validateDailyAutoApplyIntegrity, validateHistoricalBackfillIntegrity } from "./domains/ops/lingxingScheduledDrafts";
+import { runLingxingScheduledDraft, validateDailyAutoApplyIntegrity, validateHistoricalBackfillIntegrity, validateInventoryAutoApplyIntegrity, validateKeywordAutoApplyIntegrity } from "./domains/ops/lingxingScheduledDrafts";
 
 type ScheduleRow = {
   id: number;
   workspaceId: number;
   ownerUserId: number;
-  dataDomain: "product_performance_daily" | "parent_asin_weekly_rollup";
+  dataDomain: "product_performance_daily" | "fba_inventory" | "ad_keyword" | "parent_asin_weekly_rollup";
   autoApply?: number;
   lastRunKey: string | null;
   lastStatus: string | null;
@@ -93,7 +93,7 @@ describe("领星Heartbeat草稿运行", () => {
     const result = await runLingxingScheduledDraft("daily-task", new Date("2026-08-25T09:00:00.000Z"));
 
     expect(result).toMatchObject({ ok: true, batchId: 42, writePolicy: "validated_daily_auto_apply" });
-    expect(confirm).toHaveBeenCalledWith({ batchId: 42, selectedRowIds: [101], note: "系统每日校验通过自动确认" });
+    expect(confirm).toHaveBeenCalledWith({ batchId: 42, selectedRowIds: [101], note: "系统product_performance_daily每日校验通过自动确认" });
     expect(applyConfirmedProductInventory).toHaveBeenCalledWith({ batchId: 42, note: "系统每日校验通过自动追加日快照" });
     expect(updates.some((value) => value.lastStatus === "succeeded" && value.lastBatchId === 42)).toBe(true);
   });
@@ -112,6 +112,54 @@ describe("领星Heartbeat草稿运行", () => {
     expect(confirm).not.toHaveBeenCalled();
     expect(applyConfirmedProductInventory).not.toHaveBeenCalled();
     expect(updates.some((value) => value.lastStatus === "failed")).toBe(true);
+  });
+
+  it("每日库存快照仅在全店覆盖、身份与非负库存指标均有效时自动追加", async () => {
+    const schedule = { ...dailySchedule, dataDomain: "fba_inventory" as const, autoApply: 1 };
+    const readyBatch = { id: 43, status: "ready_for_review", summary: { capped: false, pageTruncations: 0, storesExpected: 2, storesRead: 2, storeDateWindowsExpected: 2, storeDateWindowsRead: 2, needsReview: 0 }, scope: {} };
+    const readyRows = [{ id: 102, entityKey: "7392|fba_inventory|B0INV|SKU-1|2026-08-25", validationErrors: [], normalizedData: { storeId: "7392", country: "US", asin: "B0INV", parentAsin: "PARENTINV", reportDate: "2026-08-25", fbaAvailable: 8, fbaReserved: 1, fbaInTransit: 2 }, sourceData: {} }];
+    const { db } = createMockDb([schedule], [{ id: 1, role: "super_admin", organizationId: null, defaultWorkspaceId: 1 }], [readyBatch], readyRows);
+    getDbMock.mockResolvedValue(db);
+    const createPreview = vi.fn().mockResolvedValue({ batchId: 43 });
+    const confirm = vi.fn().mockResolvedValue({ success: true });
+    const applyConfirmedProductInventory = vi.fn().mockResolvedValue({ importId: 660003, importedRows: 1 });
+    createCallerMock.mockReturnValue({ createPreview, confirm, applyConfirmedProductInventory });
+
+    const result = await runLingxingScheduledDraft("inventory-task", new Date("2026-08-25T09:20:00.000Z"));
+
+    expect(result).toMatchObject({ ok: true, batchId: 43, runKey: "inventory:2026-08-25", writePolicy: "validated_daily_auto_apply" });
+    expect(createPreview).toHaveBeenCalledWith({ dataDomain: "fba_inventory", scope: { storeId: "ALL_US", profileId: undefined, marketplace: "US", startDate: "2026-08-25", endDate: "2026-08-25" } });
+    expect(confirm).toHaveBeenCalledWith({ batchId: 43, selectedRowIds: [102], note: "系统fba_inventory每日校验通过自动确认" });
+    expect(applyConfirmedProductInventory).toHaveBeenCalledWith({ batchId: 43, note: "系统每日库存校验通过自动追加库存快照" });
+  });
+
+  it("每日广告关键词仅在全Profile完整读取且字段有效时自动追加历史事实", async () => {
+    const schedule = { ...dailySchedule, dataDomain: "ad_keyword" as const, autoApply: 1 };
+    const readyBatch = { id: 44, status: "ready_for_review", summary: { capped: false, pageTruncations: 0, storesExpected: 2, storesRead: 2, storeDateWindowsExpected: 2, storeDateWindowsRead: 2, needsReview: 0 }, scope: {} };
+    const readyRows = [{ id: 103, entityKey: "P-1|ad_keyword|C-1|power bank|exact|2026-08-24|2026-08-24", validationErrors: [], normalizedData: { profileId: "P-1", campaignName: "SP-Core", campaignId: "C-1", keyword: "power bank", matchType: "exact", periodStart: "2026-08-24", periodEnd: "2026-08-24", adImpressions: 100, adClicks: 4, adSpend: 2.1, adSales: 20, adOrders: 1 }, sourceData: {} }];
+    const { db } = createMockDb([schedule], [{ id: 1, role: "super_admin", organizationId: null, defaultWorkspaceId: 1 }], [readyBatch], readyRows);
+    getDbMock.mockResolvedValue(db);
+    const createPreview = vi.fn().mockResolvedValue({ batchId: 44 });
+    const confirm = vi.fn().mockResolvedValue({ success: true });
+    const applyConfirmedAds = vi.fn().mockResolvedValue({ importId: 770001, importedRows: 1 });
+    createCallerMock.mockReturnValue({ createPreview, confirm, applyConfirmedAds });
+
+    const result = await runLingxingScheduledDraft("keyword-task", new Date("2026-08-25T09:40:00.000Z"));
+
+    expect(result).toMatchObject({ ok: true, batchId: 44, runKey: "keyword:2026-08-24", writePolicy: "validated_daily_auto_apply" });
+    expect(createPreview).toHaveBeenCalledWith({ dataDomain: "ad_keyword", scope: { storeId: "ALL_US_AD_PROFILES", profileId: "ALL_US_AD_PROFILES", marketplace: "US", startDate: "2026-08-24", endDate: "2026-08-24" } });
+    expect(confirm).toHaveBeenCalledWith({ batchId: 44, selectedRowIds: [103], note: "系统ad_keyword每日校验通过自动确认" });
+    expect(applyConfirmedAds).toHaveBeenCalledWith({ batchId: 44, note: "系统每日关键词校验通过自动追加历史事实" });
+  });
+
+  it("库存和关键词自动应用对覆盖、负库存及缺失Profile保持阻断", () => {
+    const inventoryBatch = { id: 45, status: "ready_for_review", summary: { capped: false, pageTruncations: 0, storesExpected: 2, storesRead: 1, storeDateWindowsExpected: 2, storeDateWindowsRead: 1, needsReview: 0 }, scope: {} };
+    const inventoryRow = { id: 104, entityKey: "7392|fba_inventory|B0INV|SKU-1|2026-08-25", validationErrors: [], normalizedData: { storeId: "7392", country: "US", asin: "B0INV", parentAsin: "PARENTINV", reportDate: "2026-08-25", fbaAvailable: 8, fbaReserved: 1, fbaInTransit: 2 }, sourceData: {} };
+    expect(() => validateInventoryAutoApplyIntegrity(inventoryBatch, [inventoryRow], { startDate: "2026-08-25", endDate: "2026-08-25" })).toThrow("授权范围覆盖不完整");
+    expect(() => validateInventoryAutoApplyIntegrity({ ...inventoryBatch, summary: { ...inventoryBatch.summary, storesRead: 2, storeDateWindowsRead: 2 } }, [{ ...inventoryRow, normalizedData: { ...inventoryRow.normalizedData, fbaAvailable: -1 } }], { startDate: "2026-08-25", endDate: "2026-08-25" })).toThrow("fbaAvailable存在无效或负数指标");
+    const keywordBatch = { id: 46, status: "ready_for_review", summary: { capped: false, pageTruncations: 0, storesExpected: 1, storesRead: 1, storeDateWindowsExpected: 1, storeDateWindowsRead: 1, needsReview: 0 }, scope: {} };
+    const keywordRow = { id: 105, entityKey: "bad", validationErrors: [], normalizedData: { campaignName: "SP-Core", keyword: "power bank", periodStart: "2026-08-24", periodEnd: "2026-08-24" }, sourceData: {} };
+    expect(() => validateKeywordAutoApplyIntegrity(keywordBatch, [keywordRow], { startDate: "2026-08-24", endDate: "2026-08-24" })).toThrow("缺失Profile");
   });
 
   it("每日草稿相较前一日出现异常跃升时转人工，不进入自动确认", () => {

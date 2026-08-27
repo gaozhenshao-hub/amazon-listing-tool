@@ -10,7 +10,7 @@ import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { ensureAgentRunTrace } from "../domains/ai_os/services/runLedger";
 import { registerUnifiedArtifact } from "../domains/ai_os/services/artifactLifecycle";
 import { invokeEmperorTool } from "../domains/ai_os/services/toolGateway/executors";
-import { buildDailyBackfillReviewQueue, dailyBackfillReviewIssue } from "../domains/ops/historicalBackfillReview";
+import { buildScheduledAutoApplyReviewQueue, scheduledAutoApplyReviewIssue } from "../domains/ops/historicalBackfillReview";
 import { getDb } from "../repositories/dbClient";
 
 const domainSchema = z.enum(["product_performance", "product_performance_daily", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword", "listing_master", "ad_search_term", "ad_targeting"]);
@@ -21,11 +21,21 @@ const scopeSchema = z.object({
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   marketplace: z.string().trim().optional(),
 });
-const scheduledDomainSchema = z.enum(["product_performance_daily", "parent_asin_weekly_rollup"]);
+const scheduledDomainSchema = z.enum(["product_performance_daily", "fba_inventory", "ad_keyword", "parent_asin_weekly_rollup"]);
 const SCHEDULE_PRESETS = {
   product_performance_daily: {
     cadence: "daily_previous_day", cronExpression: "0 0 9 * * *",
     description: "北京时间每日17:00读取前一天美国站ASIN日数据；完整性校验通过后自动追加日快照，异常转人工",
+    autoApply: true,
+  },
+  fba_inventory: {
+    cadence: "daily_inventory_snapshot", cronExpression: "0 20 9 * * *",
+    description: "北京时间每日17:20读取美国站FBA库存快照；完整性与异常校验通过后自动追加库存事实，异常转人工复核",
+    autoApply: true,
+  },
+  ad_keyword: {
+    cadence: "daily_keyword_previous_day", cronExpression: "0 40 9 * * *",
+    description: "北京时间每日17:40读取前一天美国站广告关键词历史表现；完整性与异常校验通过后自动追加历史事实，异常转人工复核",
     autoApply: true,
   },
   parent_asin_weekly_rollup: {
@@ -239,6 +249,10 @@ function isPlaceholderAsin(record: RecordValue) {
 export function dailySnapshotIdentityKey(input: { sourceStoreId?: unknown; country?: unknown; asin?: unknown; reportDate?: unknown }) {
   return [asText(input.sourceStoreId), asText(input.country), asText(input.asin), asText(input.reportDate)].join("|");
 }
+export function keywordSnapshotIdentityHash(input: { profileId?: unknown; campaignId?: unknown; campaignName?: unknown; keyword?: unknown; matchType?: unknown; periodStart?: unknown; periodEnd?: unknown }) {
+  const identity = [input.profileId, input.campaignId || input.campaignName, input.keyword, input.matchType || "unknown", input.periodStart, input.periodEnd].map(asText).join("|");
+  return createHash("sha256").update(identity).digest("hex");
+}
 export function normalizeDailyPreviewPage(pageRows: RecordValue[], context: { storeId: string; storeName: string; reportDate: string }) {
   let placeholderRows = 0;
   const rows: RecordValue[] = [];
@@ -314,6 +328,8 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
   };
   const entityKey = domain === "listing_master"
     ? [normalized.storeId, domain, normalized.asin || "unmatched"].join("|")
+    : domain === "ad_keyword"
+      ? [normalized.profileId || "unmatched", domain, normalized.campaignId || normalized.campaignName || "missing", normalized.keyword || "missing", normalized.matchType || "unknown", scope.startDate || "latest", scope.endDate || ""].join("|")
     : domain === "ad_search_term"
       ? [normalized.profileId || "unmatched", domain, normalized.searchTerm || "missing", normalized.sourceTarget || "missing", scope.startDate || "latest", scope.endDate || ""].join("|")
       : domain === "ad_targeting"
@@ -326,7 +342,7 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
   if (domain === "product_performance_daily" && (!normalized.asin || normalized.asin === "-" || !normalized.parentAsin || !normalized.reportDate)) validationErrors.push("ASIN日快照需要有效子ASIN、父ASIN和报告日期；占位ASIN不能写入。");
   if (domain === "fba_inventory" && (!normalized.asin || !normalized.parentAsin)) validationErrors.push("库存快照需要子ASIN和父ASIN映射；请在草稿中补充或取消选择该行。");
   if (domain === "ad_campaign" && !normalized.campaignName) validationErrors.push("广告活动报表需要活动名称；请核对草稿后再确认。");
-  if (domain === "ad_keyword" && (!normalized.keyword || !normalized.campaignName)) validationErrors.push("广告关键词报表需要关键词和活动名称；请核对草稿后再确认。");
+  if (domain === "ad_keyword" && (!normalized.profileId || !normalized.keyword || !normalized.campaignName)) validationErrors.push("广告关键词报表需要Profile、关键词和活动名称；请核对草稿后再确认。");
   if (domain === "listing_master" && !normalized.asin) validationErrors.push("Listing主数据需要有效ASIN。");
   if (domain === "listing_master" && ["已删除", "2"].includes(asText(normalized.listingStatus))) validationErrors.push("源Listing已删除或归档；仅供人工差异审阅，不能覆盖现有主数据。");
   return { entityKey, normalized, validationErrors };
@@ -453,6 +469,7 @@ export const lingxingSyncRouter = router({
     const batches = await db.select({
       id: opsExternalSyncBatches.id,
       status: opsExternalSyncBatches.status,
+      dataDomain: opsExternalSyncBatches.dataDomain,
       scope: opsExternalSyncBatches.scope,
       summary: opsExternalSyncBatches.summary,
       errorMessage: opsExternalSyncBatches.errorMessage,
@@ -462,10 +479,11 @@ export const lingxingSyncRouter = router({
     }).from(opsExternalSyncBatches).where(and(
       eq(opsExternalSyncBatches.workspaceId, workspaceId),
       eq(opsExternalSyncBatches.source, "lingxing_mcp"),
-      eq(opsExternalSyncBatches.dataDomain, "product_performance_daily"),
-      inArray(opsExternalSyncBatches.status, ["applied", "ready_for_review"]),
+      inArray(opsExternalSyncBatches.dataDomain, ["product_performance_daily", "fba_inventory", "ad_keyword"]),
+      eq(opsExternalSyncBatches.status, "ready_for_review"),
     ));
-    return buildDailyBackfillReviewQueue(batches).map((entry) => ({
+    return buildScheduledAutoApplyReviewQueue(batches as any).map((entry) => ({
+      dataDomain: entry.dataDomain,
       reportDate: entry.reportDate,
       attempts: entry.attempts,
       batchIds: entry.batchIds,
@@ -482,10 +500,10 @@ export const lingxingSyncRouter = router({
       eq(opsExternalSyncBatches.id, input.batchId),
       eq(opsExternalSyncBatches.workspaceId, workspaceId),
       eq(opsExternalSyncBatches.source, "lingxing_mcp"),
-      eq(opsExternalSyncBatches.dataDomain, "product_performance_daily"),
+      inArray(opsExternalSyncBatches.dataDomain, ["product_performance_daily", "fba_inventory", "ad_keyword"]),
       eq(opsExternalSyncBatches.status, "ready_for_review"),
     )).limit(1);
-    const issue = batch ? dailyBackfillReviewIssue(batch) : null;
+    const issue = batch ? scheduledAutoApplyReviewIssue(batch as any) : null;
     if (!batch || !issue) throw new Error("该批次不属于可记录的异常日数据复核项");
     await db.insert(opsExternalSyncConfirmations).values({ workspaceId, batchId: batch.id, userId: ctx.user.id, action: "review_acknowledged", selectedRowIds: [], note: input.note });
     return { success: true, batchId: batch.id, issue };
@@ -564,6 +582,99 @@ export const lingxingSyncRouter = router({
         capped,
         failedStoreDateWindows,
         toolRunIds,
+      });
+    } else if (input.dataDomain === "fba_inventory" && input.scope.storeId === "ALL_US") {
+      const storesExecution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: { capability: "get_my_sids", arguments: {} }, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_inventory_us_store_directory" });
+      const stores = pickRecords(normalizeMcpPayload(storesExecution.output)).map(normalizeLingxingStoreDirectoryRecord).filter(isUsStore).filter((store) => Boolean(store.sid));
+      const rows: RecordValue[] = [];
+      const toolRunIds: string[] = [];
+      const completedStores = new Set<string>();
+      const failedStoreDateWindows: Array<{ sid: string; reportDate: string; page: number; error: string }> = [];
+      let pageTruncations = 0;
+      let capped = false;
+      for (const store of stores) {
+        let exhausted = false;
+        let complete = true;
+        for (let page = 0; page < 10 && !exhausted; page += 1) {
+          if (rows.length >= 5000) { capped = true; complete = false; break; }
+          const request = buildMcpArguments("fba_inventory", { ...input.scope, storeId: store.sid });
+          request.arguments.offset = page * 200;
+          try {
+            const execution = await withMcpStoreDateWindowTimeout(
+              invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: `read_inventory_${store.sid}_${page}` }),
+              `${store.sid}|${input.scope.endDate || "inventory"}|${page}`,
+            );
+            toolRunId = execution.metadata.toolRunId || toolRunId;
+            if (execution.metadata.toolRunId) toolRunIds.push(execution.metadata.toolRunId);
+            const pageRows = pickRecords(normalizeMcpPayload(execution.output));
+            for (const source of pageRows) if (rows.length < 5000) rows.push({ ...source, __lingxingSid: store.sid, __lingxingStoreName: store.name, __reportDate: input.scope.endDate });
+            exhausted = pageRows.length < 200;
+            if (page === 9 && !exhausted) { pageTruncations += 1; complete = false; }
+          } catch (error) {
+            complete = false;
+            failedStoreDateWindows.push({ sid: store.sid, reportDate: input.scope.endDate || "", page, error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500) });
+            exhausted = true;
+          }
+        }
+        if (complete && exhausted) completedStores.add(store.sid);
+        if (capped) break;
+      }
+      sourceRows = rows;
+      rawSnapshot = { source: "lingxing_mcp", dataDomain: input.dataDomain, stores, snapshotDate: input.scope.endDate, rows, toolRunIds };
+      Object.assign(summary, {
+        totalRead: sourceRows.length, selected: sourceRows.length, datesRead: 1,
+        storesExpected: stores.length, storesRead: completedStores.size,
+        storeDateWindowsExpected: stores.length, storeDateWindowsRead: completedStores.size,
+        pageTruncations, capped, failedStoreDateWindows, toolRunIds,
+      });
+    } else if (input.dataDomain === "ad_keyword" && input.scope.profileId === "ALL_US_AD_PROFILES") {
+      const profilesExecution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: { capability: "ad_auth_shops", arguments: {} }, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_keyword_us_profile_directory" });
+      const profiles = pickRecords(normalizeMcpPayload(profilesExecution.output)).map((source) => ({
+        profileId: asText(value(source, ["profile_id", "profileId", "profile", "id"])),
+        sid: asText(value(source, ["sid", "shop_id", "shopId"])),
+        name: asText(value(source, ["shop_name", "shopName", "name", "store_name", "seller_name"])),
+        country: asText(value(source, ["country", "site", "marketplace"])),
+      })).filter((profile) => profile.profileId && (profile.country === "US" || profile.country === "美国" || /\bUS\b/i.test(profile.name)));
+      const rows: RecordValue[] = [];
+      const toolRunIds: string[] = [];
+      const completedProfiles = new Set<string>();
+      const failedStoreDateWindows: Array<{ sid: string; reportDate: string; page: number; error: string }> = [];
+      let pageTruncations = 0;
+      let capped = false;
+      for (const profile of profiles) {
+        let exhausted = false;
+        let complete = true;
+        for (let page = 0; page < 10 && !exhausted; page += 1) {
+          if (rows.length >= 5000) { capped = true; complete = false; break; }
+          const request = buildMcpArguments("ad_keyword", { ...input.scope, storeId: profile.sid || "ALL_US", profileId: profile.profileId });
+          request.arguments.page = page + 1;
+          try {
+            const execution = await withMcpStoreDateWindowTimeout(
+              invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: `read_keyword_${profile.profileId}_${page}` }),
+              `${profile.profileId}|${input.scope.endDate || "keyword"}|${page}`,
+            );
+            toolRunId = execution.metadata.toolRunId || toolRunId;
+            if (execution.metadata.toolRunId) toolRunIds.push(execution.metadata.toolRunId);
+            const pageRows = pickRecords(normalizeMcpPayload(execution.output));
+            for (const source of pageRows) if (rows.length < 5000) rows.push({ ...source, profile_id: value(source, ["profile_id", "profileId", "profile"]) || profile.profileId, __lingxingSid: profile.sid, __lingxingStoreName: profile.name, __reportDate: input.scope.endDate });
+            exhausted = pageRows.length < 200;
+            if (page === 9 && !exhausted) { pageTruncations += 1; complete = false; }
+          } catch (error) {
+            complete = false;
+            failedStoreDateWindows.push({ sid: profile.profileId, reportDate: input.scope.endDate || "", page, error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500) });
+            exhausted = true;
+          }
+        }
+        if (complete && exhausted) completedProfiles.add(profile.profileId);
+        if (capped) break;
+      }
+      sourceRows = rows;
+      rawSnapshot = { source: "lingxing_mcp", dataDomain: input.dataDomain, profiles, reportDate: input.scope.endDate, rows, toolRunIds };
+      Object.assign(summary, {
+        totalRead: sourceRows.length, selected: sourceRows.length, datesRead: 1,
+        storesExpected: profiles.length, storesRead: completedProfiles.size,
+        storeDateWindowsExpected: profiles.length, storeDateWindowsRead: completedProfiles.size,
+        pageTruncations, capped, failedStoreDateWindows, toolRunIds,
       });
     } else {
       const listingStoresExecution = input.dataDomain === "listing_master" && input.scope.storeId === "ALL_US"
@@ -749,7 +860,7 @@ export const lingxingSyncRouter = router({
     const [batch] = await db.select().from(opsExternalSyncBatches).where(and(eq(opsExternalSyncBatches.id, input.batchId), eq(opsExternalSyncBatches.workspaceId, workspaceId))).limit(1);
     if (!batch || batch.status !== "ready_for_review") throw new Error("该同步批次不在可确认状态");
     if (isPhase5PreviewDomain(batch.dataDomain)) throw new Error("Listing主数据、广告搜索词和投放目标当前仅提供字段对账草稿；尚未开放确认或业务写入。");
-    const reviewIssue = batch.dataDomain === "product_performance_daily" ? dailyBackfillReviewIssue(batch) : null;
+    const reviewIssue = ["product_performance_daily", "fba_inventory", "ad_keyword"].includes(batch.dataDomain) ? scheduledAutoApplyReviewIssue(batch as any) : null;
     if (reviewIssue) throw new Error(`该异常批次不能人工确认或写入：${reviewIssue.label}。请在“异常数据复核”中重新读取完整窗口或记录暂缓原因。`);
     await db.insert(opsExternalSyncConfirmations).values({ workspaceId, batchId: input.batchId, userId: ctx.user.id, action: "confirm", selectedRowIds: input.selectedRowIds, note: input.note || null });
     await db.update(opsExternalSyncRows).set({ selected: 0, rowStatus: "skipped" }).where(and(eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.batchId, input.batchId)));
@@ -770,7 +881,7 @@ export const lingxingSyncRouter = router({
     const scope = object(batch.scope);
     const periodStart = asText(scope.startDate, todayIso());
     const periodEnd = asText(scope.endDate, periodStart);
-    const reviewIssue = batch.dataDomain === "product_performance_daily" ? dailyBackfillReviewIssue(batch) : null;
+    const reviewIssue = ["product_performance_daily", "fba_inventory", "ad_keyword"].includes(batch.dataDomain) ? scheduledAutoApplyReviewIssue(batch as any) : null;
     if (reviewIssue) {
       await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", reviewedAt: null, reviewedBy: null }).where(eq(opsExternalSyncBatches.id, input.batchId));
       throw new Error(`该异常批次不能应用：${reviewIssue.label}。批次已回退待复核，请重新读取完整窗口。`);
@@ -814,6 +925,27 @@ export const lingxingSyncRouter = router({
         throw new Error(`日快照身份重复：${duplicateIdentityKeys.length}条；批次已回退为待复核，未创建导入记录。`);
       }
     }
+    if (batch.dataDomain === "fba_inventory") {
+      const inventoryRows = selectedRows.map((row) => object(row.normalizedData));
+      const selectedKeys = new Set<string>();
+      const duplicateKeys = new Set<string>();
+      for (const data of inventoryRows) {
+        const key = dailySnapshotIdentityKey({ sourceStoreId: data.storeId, country: data.country, asin: data.asin, reportDate: data.reportDate });
+        if (!isValidDailySnapshotForApply({ ...data, reportDate: data.reportDate }) || selectedKeys.has(key)) duplicateKeys.add(key);
+        selectedKeys.add(key);
+      }
+      const existingInventorySnapshots = await db.select({ sourceStoreId: opsAsinDailySnapshots.sourceStoreId, country: opsAsinDailySnapshots.country, asin: opsAsinDailySnapshots.asin, reportDate: opsAsinDailySnapshots.reportDate })
+        .from(opsAsinDailySnapshots).where(and(eq(opsAsinDailySnapshots.workspaceId, workspaceId), eq(opsAsinDailySnapshots.sourceType, "lx_inventory_mcp")));
+      const existingKeys = new Set(existingInventorySnapshots.map((snapshot) => dailySnapshotIdentityKey(snapshot)));
+      for (const key of selectedKeys) if (existingKeys.has(key)) duplicateKeys.add(key);
+      if (duplicateKeys.size) {
+        const duplicates = [...duplicateKeys].sort();
+        const message = `库存快照身份重复或无效：${duplicates.length}条。已回退为待复核，未创建导入记录。`;
+        await db.update(opsExternalSyncRows).set({ rowStatus: "needs_review" }).where(and(eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.batchId, input.batchId), eq(opsExternalSyncRows.selected, 1)));
+        await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", reviewedAt: null, reviewedBy: null, errorMessage: message, summary: { ...object(batch.summary), applyBlocked: "duplicate_inventory_snapshot_identity", duplicateInventorySnapshotIdentities: duplicates, duplicateInventorySnapshotCount: duplicates.length } }).where(eq(opsExternalSyncBatches.id, input.batchId));
+        throw new Error(message);
+      }
+    }
     const [importRecord] = await db.insert(dataImports).values({
       workspaceId, userId: ctx.user.id, sourceType: "lingxing", fileName: `领星MCP-${batch.dataDomain}-批次${batch.id}`,
       weekStartDate: periodStart, weekEndDate: periodEnd, dataGranularity: ["fba_inventory", "product_performance_daily"].includes(batch.dataDomain) ? "daily" : "weekly",
@@ -848,7 +980,7 @@ export const lingxingSyncRouter = router({
         const fbaReserved = asNumber(data.fbaReserved);
         const fbaTotal = fbaAvailable + fbaInTransit + fbaReserved;
         await db.insert(opsAsinDailySnapshots).values({
-          workspaceId, importId, userId: ctx.user.id, sourceType: "lingxing_mcp", reportDate,
+          workspaceId, importId, userId: ctx.user.id, sourceType: batch.dataDomain === "fba_inventory" ? "lx_inventory_mcp" : "lingxing_mcp", reportDate,
           sourceStoreId: asText(data.storeId), sourceBatchHash: asText(batch.rawResponseHash),
           asin, parentAsin, storeName: asText(data.storeName, `SID ${asText(data.storeId || scope.storeId)}`), country: asText(data.country, "US"),
           msku: asText(data.sku), sku: asText(data.sku), title: asText(data.productName), productName: asText(data.productName),
@@ -878,6 +1010,31 @@ export const lingxingSyncRouter = router({
     const scope = object(batch.scope);
     const periodStart = asText(scope.startDate, todayIso());
     const periodEnd = asText(scope.endDate, periodStart);
+    const reviewIssue = ["product_performance_daily", "fba_inventory", "ad_keyword"].includes(batch.dataDomain) ? scheduledAutoApplyReviewIssue(batch as any) : null;
+    if (reviewIssue) {
+      await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", reviewedAt: null, reviewedBy: null }).where(eq(opsExternalSyncBatches.id, input.batchId));
+      throw new Error(`该异常批次不能应用：${reviewIssue.label}。请先重新读取完整窗口或在异常复核中记录原因。`);
+    }
+    if (batch.dataDomain === "ad_keyword") {
+      const selectedIdentities = new Set<string>();
+      const duplicateIdentities = new Set<string>();
+      for (const row of selectedRows) {
+        const data = object(row.normalizedData);
+        const identityHash = keywordSnapshotIdentityHash({ profileId: data.profileId, campaignId: data.campaignId, campaignName: data.campaignName, keyword: data.keyword, matchType: data.matchType, periodStart, periodEnd });
+        if (!asText(data.profileId) || !asText(data.campaignName) || !asText(data.keyword) || selectedIdentities.has(identityHash)) duplicateIdentities.add(identityHash);
+        selectedIdentities.add(identityHash);
+      }
+      const existing = selectedIdentities.size
+        ? await db.select({ sourceIdentityHash: adKeywordWeekly.sourceIdentityHash }).from(adKeywordWeekly).where(and(eq(adKeywordWeekly.workspaceId, workspaceId), inArray(adKeywordWeekly.sourceIdentityHash, [...selectedIdentities])))
+        : [];
+      for (const row of existing) if (row.sourceIdentityHash) duplicateIdentities.add(row.sourceIdentityHash);
+      if (duplicateIdentities.size) {
+        const message = `广告关键词事实身份重复或无效：${duplicateIdentities.size}条。已回退为待复核，未创建广告导入记录。`;
+        await db.update(opsExternalSyncRows).set({ rowStatus: "needs_review" }).where(and(eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.batchId, input.batchId), eq(opsExternalSyncRows.selected, 1)));
+        await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", reviewedAt: null, reviewedBy: null, errorMessage: message, summary: { ...object(batch.summary), applyBlocked: "duplicate_ad_keyword_identity", duplicateAdKeywordIdentityCount: duplicateIdentities.size } }).where(eq(opsExternalSyncBatches.id, input.batchId));
+        throw new Error(message);
+      }
+    }
     const [importRecord] = await db.insert(adReportImports).values({ workspaceId, userId: ctx.user.id, fileName: `领星MCP-${batch.dataDomain}-批次${batch.id}`, weekStartDate: periodStart, weekEndDate: periodEnd, totalRows: selectedRows.length, keywordRows: batch.dataDomain === "ad_keyword" ? selectedRows.length : 0, mappedRows: 0, status: "importing" }).$returningId();
     let importedRows = 0;
     let skippedRows = 0;
@@ -900,7 +1057,7 @@ export const lingxingSyncRouter = router({
         const keyword = asText(data.keyword);
         if (!campaignName || !keyword) { skippedRows += 1; continue; }
         await db.insert(adKeywordWeekly).values({
-          workspaceId, importId: importRecord.id, userId: ctx.user.id, weekStartDate: periodStart, weekEndDate: periodEnd,
+          workspaceId, importId: importRecord.id, userId: ctx.user.id, sourceProfileId: asText(data.profileId), sourceIdentityHash: keywordSnapshotIdentityHash({ profileId: data.profileId, campaignId: data.campaignId, campaignName, keyword, matchType: data.matchType, periodStart, periodEnd }), weekStartDate: periodStart, weekEndDate: periodEnd,
           storeName, country: asText(data.country, "US"), adType, portfolioName: asText(data.portfolioName), campaignName,
           keyword, matchType: asText(data.matchType, "unknown"), targetingType: "keyword", status: asText(data.effectiveStatus),
           impressions: asNumber(data.adImpressions), clicks: asNumber(data.adClicks), spend: String(asNumber(data.adSpend)), sales: String(asNumber(data.adSales)),

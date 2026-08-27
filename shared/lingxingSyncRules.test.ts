@@ -33,6 +33,8 @@ describe("领星分域同步规则目录", () => {
       expect(governance.readWindowPolicy).toBeTruthy();
     }
     expect(getLingxingSyncGovernance("product_performance_daily")).toMatchObject({ writePolicy: "validated_daily_auto_apply", schedulePolicy: "daily_17_shanghai" });
+    expect(getLingxingSyncGovernance("fba_inventory")).toMatchObject({ writePolicy: "validated_daily_auto_apply", schedulePolicy: "daily_1720_shanghai" });
+    expect(getLingxingSyncGovernance("ad_keyword")).toMatchObject({ writePolicy: "validated_daily_auto_apply", schedulePolicy: "daily_1740_shanghai" });
     expect(getLingxingSyncGovernance("parent_asin_traffic")).toMatchObject({ writePolicy: "unavailable", schedulePolicy: "disabled_pending_source" });
   });
 });

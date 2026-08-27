@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDailyBackfillReviewQueue, dailyBackfillReviewIssue } from "./historicalBackfillReview";
+import { buildDailyBackfillReviewQueue, buildScheduledAutoApplyReviewQueue, dailyBackfillReviewIssue } from "./historicalBackfillReview";
 
 describe("历史回补异常复核队列", () => {
   it("按日期合并未覆盖的异常草稿，并排除被完整批次覆盖的旧异常", () => {
@@ -20,5 +20,16 @@ describe("历史回补异常复核队列", () => {
     expect(dailyBackfillReviewIssue({ summary: { failedStoreDateWindows: [{ sid: "1" }] }, scope: {}, errorMessage: null })?.code).toBe("store_window_failed");
     expect(dailyBackfillReviewIssue({ summary: { storesExpected: 9, storesRead: 8 }, scope: {}, errorMessage: null })?.code).toBe("coverage_incomplete");
     expect(dailyBackfillReviewIssue({ summary: { applyBlocked: "duplicate_daily_snapshot_identity" }, scope: {}, errorMessage: null })?.code).toBe("duplicate_identity");
+  });
+
+  it("将库存和关键词自动应用异常按数据域及报告日纳入统一复核队列", () => {
+    const queue = buildScheduledAutoApplyReviewQueue([
+      { id: 8, dataDomain: "fba_inventory", status: "ready_for_review", scope: { startDate: "2026-08-25", endDate: "2026-08-25" }, summary: { storesExpected: 9, storesRead: 8 } },
+      { id: 9, dataDomain: "ad_keyword", status: "ready_for_review", scope: { startDate: "2026-08-24", endDate: "2026-08-24" }, summary: { pageTruncations: 1 } },
+    ] as any);
+    expect(queue).toMatchObject([
+      { dataDomain: "ad_keyword", reportDate: "2026-08-24", issue: { code: "pagination_truncated" } },
+      { dataDomain: "fba_inventory", reportDate: "2026-08-25", issue: { code: "coverage_incomplete" } },
+    ]);
   });
 });

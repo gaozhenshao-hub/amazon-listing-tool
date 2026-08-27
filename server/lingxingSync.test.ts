@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMcpArguments, calculateFieldDiffs, dailyReadCoverageSummary, dailySnapshotIdentityKey, hasSelectedPeriodActivity, isValidDailySnapshotForApply, normalizeDailyPreviewPage, normalizeLingxingStoreDirectoryRecord, normalizeMcpPayload, normalizeRow, pickRecords, shouldExternalizeSyncRawSnapshot } from "./routers/lingxingSync";
+import { buildMcpArguments, calculateFieldDiffs, dailyReadCoverageSummary, dailySnapshotIdentityKey, hasSelectedPeriodActivity, isValidDailySnapshotForApply, keywordSnapshotIdentityHash, normalizeDailyPreviewPage, normalizeLingxingStoreDirectoryRecord, normalizeMcpPayload, normalizeRow, pickRecords, shouldExternalizeSyncRawSnapshot } from "./routers/lingxingSync";
 
 describe("领星运营同步预览契约", () => {
   it("产品表现使用官方sids范围且保留人工选择的周期", () => {
@@ -136,5 +136,11 @@ describe("领星运营同步预览契约", () => {
 
   it("仅将实际变化字段列为差异，供人工确认新增或更新", () => {
     expect(calculateFieldDiffs({ salesQty: 3, sku: "A" }, { salesQty: 5, sku: "A" }, ["salesQty", "sku"])).toEqual([{ field: "salesQty", before: 3, after: 5 }]);
+  });
+
+  it("广告关键词来源身份哈希只依赖Profile、投放身份、关键词、匹配方式与报告期", () => {
+    const identity = { profileId: "P-1", campaignId: "C-1", campaignName: "SP-Core", keyword: "power bank", matchType: "exact", periodStart: "2026-08-24", periodEnd: "2026-08-24" };
+    expect(keywordSnapshotIdentityHash(identity)).toBe(keywordSnapshotIdentityHash({ ...identity, campaignName: "SP-Core renamed" }));
+    expect(keywordSnapshotIdentityHash(identity)).not.toBe(keywordSnapshotIdentityHash({ ...identity, periodEnd: "2026-08-25" }));
   });
 });
