@@ -33,6 +33,7 @@ import {
   Calendar,
   Database,
   ExternalLink,
+  Pencil,
   ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -56,6 +57,34 @@ interface ScheduledTask {
   externalTaskUid?: string | null;
   managePath?: string | null;
   lastBatchId?: number | null;
+  inputTemplate?: unknown;
+}
+
+type SystemTaskDraft = {
+  name: string;
+  cronExpr: string;
+  isActive: boolean;
+  autoApply: boolean;
+  multiplier: string;
+  absoluteIncrease: string;
+};
+
+function systemTaskDraft(task: ScheduledTask): SystemTaskDraft {
+  let template: Record<string, unknown> = {};
+  try {
+    const parsed = typeof task.inputTemplate === "string" ? JSON.parse(task.inputTemplate) : task.inputTemplate;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) template = parsed as Record<string, unknown>;
+  } catch { /* 保持安全默认值；服务端仍会校验保存输入。 */ }
+  const threshold = template.anomalyThreshold && typeof template.anomalyThreshold === "object" && !Array.isArray(template.anomalyThreshold)
+    ? template.anomalyThreshold as Record<string, unknown> : {};
+  return {
+    name: task.name,
+    cronExpr: task.cronExpr || "0 0 9 * * *",
+    isActive: Boolean(task.isActive),
+    autoApply: Boolean(template.autoApply ?? task.dataDomain !== "parent_asin_weekly_rollup"),
+    multiplier: String(threshold.multiplier ?? 20),
+    absoluteIncrease: String(threshold.absoluteIncrease ?? 10_000),
+  };
 }
 
 const CRON_PRESETS = [
@@ -69,7 +98,9 @@ const CRON_PRESETS = [
 export default function EmperorScheduled() {
   const [selectedTask, setSelectedTask] = useState<ScheduledTask | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showSystemEdit, setShowSystemEdit] = useState(false);
   const [newTask, setNewTask] = useState({ name: "", skillSlug: "", cronExpr: "0 9 * * *", context: "" });
+  const [systemDraft, setSystemDraft] = useState<SystemTaskDraft>({ name: "", cronExpr: "", isActive: true, autoApply: true, multiplier: "20", absoluteIncrease: "10000" });
 
   const { data, isLoading, refetch } = trpc.emperor.scheduled.list.useQuery();
   const { data: skillsData } = trpc.emperor.skills.list.useQuery({ page: 1, pageSize: 200, category: "", search: "" });
@@ -92,10 +123,26 @@ export default function EmperorScheduled() {
     onSuccess: (result) => { toast.success(result.enabled ? "领星系统任务已恢复" : "领星系统任务已暂停"); refetch(); },
     onError: (err: any) => toast.error(err.message),
   });
+  const updateSystemTaskMutation = trpc.emperor.scheduled.updateSystemTask.useMutation({
+    onSuccess: () => { toast.success("领星系统任务已更新", { description: "已同步到唯一Heartbeat任务与执行配置。" }); setShowSystemEdit(false); refetch(); },
+    onError: (err: any) => toast.error("保存失败", { description: err.message }),
+  });
 
   const tasks: ScheduledTask[] = (data || []) as ScheduledTask[];
   const skills = (skillsData?.skills || []) as Array<{ slug: string; name: string }>;
   const isSystemTask = (task: ScheduledTask | null) => Number(task?.systemManaged || 0) === 1;
+  const openSystemEdit = (task: ScheduledTask) => { setSystemDraft(systemTaskDraft(task)); setShowSystemEdit(true); };
+  const saveSystemTask = () => {
+    if (!selectedTask) return;
+    updateSystemTaskMutation.mutate({
+      slug: selectedTask.slug,
+      name: systemDraft.name.trim(),
+      cronExpr: systemDraft.cronExpr.trim(),
+      isActive: systemDraft.isActive,
+      autoApply: selectedTask.dataDomain === "parent_asin_weekly_rollup" ? false : systemDraft.autoApply,
+      anomalyThreshold: { multiplier: Number(systemDraft.multiplier), absoluteIncrease: Number(systemDraft.absoluteIncrease) },
+    });
+  };
 
   const formatTime = (ts: number | null) => {
     if (!ts) return "—";
@@ -191,9 +238,12 @@ export default function EmperorScheduled() {
                     {selectedTask.isActive ? <><Pause className="h-4 w-4" />暂停</> : <><Play className="h-4 w-4" />启用</>}
                   </Button>
                   {isSystemTask(selectedTask) ? (
-                    <Button variant="outline" size="sm" className="gap-2" onClick={() => { window.location.href = selectedTask.managePath || "/ops/lingxing-sync"; }}>
-                      <ExternalLink className="h-4 w-4" />查看同步审计
-                    </Button>
+                    <>
+                      <Button variant="outline" size="sm" className="gap-2" onClick={() => openSystemEdit(selectedTask)}><Pencil className="h-4 w-4" />编辑</Button>
+                      <Button variant="outline" size="sm" className="gap-2" onClick={() => { window.location.href = selectedTask.managePath || "/ops/lingxing-sync"; }}>
+                        <ExternalLink className="h-4 w-4" />查看同步审计
+                      </Button>
+                    </>
                   ) : (
                     <Button
                       variant="outline"
@@ -333,6 +383,24 @@ export default function EmperorScheduled() {
               创建
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSystemEdit} onOpenChange={setShowSystemEdit}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader><DialogTitle>编辑领星系统任务</DialogTitle></DialogHeader>
+          <div className="space-y-5 py-2">
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground leading-5">
+              此处为皇帝中台唯一控制面。保存会更新同一Heartbeat任务和执行配置，不会新建Cron、改变MCP白名单、店铺范围或任务UID。
+            </div>
+            <div className="space-y-2"><label className="text-sm font-medium">任务名称</label><Input value={systemDraft.name} onChange={(event) => setSystemDraft((draft) => ({ ...draft, name: event.target.value }))} /></div>
+            <div className="space-y-2"><label className="text-sm font-medium">UTC Cron 表达式</label><Input className="font-mono" value={systemDraft.cronExpr} onChange={(event) => setSystemDraft((draft) => ({ ...draft, cronExpr: event.target.value }))} /><p className="text-xs text-muted-foreground">固定为6段，秒字段必须是0。例如`0 0 9 * * *`代表北京时间每日17:00。</p></div>
+            <div className="flex items-center justify-between rounded-lg border p-3"><div><p className="text-sm font-medium">启用任务</p><p className="text-xs text-muted-foreground">暂停会同步暂停唯一Heartbeat触发器。</p></div><Switch checked={systemDraft.isActive} onCheckedChange={(checked) => setSystemDraft((draft) => ({ ...draft, isActive: checked }))} /></div>
+            <div className="flex items-center justify-between rounded-lg border p-3"><div><p className="text-sm font-medium">校验通过后自动应用</p><p className="text-xs text-muted-foreground">关闭后只生成待审核草稿，不追加历史事实。</p></div><Switch checked={selectedTask?.dataDomain === "parent_asin_weekly_rollup" ? false : systemDraft.autoApply} disabled={selectedTask?.dataDomain === "parent_asin_weekly_rollup"} onCheckedChange={(checked) => setSystemDraft((draft) => ({ ...draft, autoApply: checked }))} /></div>
+            <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-sm font-medium">异常倍数阈值</label><Input type="number" min="2" max="20" value={systemDraft.multiplier} onChange={(event) => setSystemDraft((draft) => ({ ...draft, multiplier: event.target.value }))} /><p className="text-xs text-muted-foreground">范围2–20倍</p></div><div className="space-y-2"><label className="text-sm font-medium">绝对增量阈值</label><Input type="number" min="100" max="10000" value={systemDraft.absoluteIncrease} onChange={(event) => setSystemDraft((draft) => ({ ...draft, absoluteIncrease: event.target.value }))} /><p className="text-xs text-muted-foreground">范围100–10,000</p></div></div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">始终锁定：数据域、MCP工具白名单、美国店铺范围、任务UID、运行审计、库存货期/MOQ/成本，以及广告预算/竞价/否词/状态/结构。</div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setShowSystemEdit(false)}>取消</Button><Button onClick={saveSystemTask} disabled={updateSystemTaskMutation.isPending || !systemDraft.name.trim()}>{updateSystemTaskMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}保存受治理变更</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </>

@@ -96,9 +96,21 @@ const record = (input: unknown): Record<string, unknown> => input && typeof inpu
 const text = (input: unknown) => input === null || input === undefined ? "" : String(input).trim();
 const numberOrNull = (input: unknown) => input === null || input === undefined || input === "" ? null : Number(input);
 const dailyIdentity = (input: { sourceStoreId?: unknown; storeId?: unknown; country?: unknown; asin?: unknown; reportDate?: unknown }) => [text(input.sourceStoreId ?? input.storeId), text(input.country), text(input.asin), text(input.reportDate)].join("|");
+type AnomalyThreshold = { multiplier: number; absoluteIncrease: number };
+const defaultAnomalyThreshold: AnomalyThreshold = { multiplier: 20, absoluteIncrease: 10_000 };
+const resolveAnomalyThreshold = (value: unknown): AnomalyThreshold => {
+  const config = record(value).anomalyThreshold;
+  const multiplier = numberOrNull(record(config).multiplier);
+  const absoluteIncrease = numberOrNull(record(config).absoluteIncrease);
+  return {
+    multiplier: multiplier !== null && Number.isInteger(multiplier) && multiplier >= 2 && multiplier <= 20 ? multiplier : defaultAnomalyThreshold.multiplier,
+    absoluteIncrease: absoluteIncrease !== null && Number.isInteger(absoluteIncrease) && absoluteIncrease >= 100 && absoluteIncrease <= 10_000 ? absoluteIncrease : defaultAnomalyThreshold.absoluteIncrease,
+  };
+};
+const exceedsAnomalyThreshold = (current: number, baseline: number, threshold: AnomalyThreshold) => current > Math.max(baseline * threshold.multiplier, baseline + threshold.absoluteIncrease);
 
 /** 仅供每日ASIN日表现的自动应用前置校验；任一异常均保留草稿并转人工。 */
-export function validateDailyAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }, previousSnapshots: PreviousDailySnapshot[] = []) {
+export function validateDailyAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }, previousSnapshots: PreviousDailySnapshot[] = [], threshold = defaultAnomalyThreshold) {
   const summary = record(batch.summary);
   if (batch.status !== "ready_for_review") throw new Error("自动应用校验未通过：草稿批次不处于待确认状态");
   if (Boolean(summary.capped) || Number(summary.pageTruncations || 0) > 0) throw new Error("自动应用校验未通过：读取存在分页或行数截断");
@@ -131,7 +143,7 @@ export function validateDailyAutoApplyIntegrity(batch: AutoApplyBatch, rows: Aut
       for (const [key, previousValue] of [["salesQty", previous.salesQty], ["orderQty", previous.orderQty], ["salesAmount", previous.salesAmount], ["adSpend", previous.adSpend], ["sessionsTotal", previous.sessionsTotal]] as const) {
         const currentValue = numberOrNull(data[key]);
         const baseline = numberOrNull(previousValue);
-        if (currentValue !== null && baseline !== null && baseline > 0 && currentValue > Math.max(baseline * 20, baseline + 10_000)) {
+        if (currentValue !== null && baseline !== null && baseline > 0 && exceedsAnomalyThreshold(currentValue, baseline, threshold)) {
           throw new Error(`自动应用校验未通过：${key}相较前一日异常跃升，需人工复核`);
         }
       }
@@ -156,7 +168,7 @@ function validateScheduledReadCoverage(batch: AutoApplyBatch, rows: AutoApplyRow
   if (scope.startDate !== scope.endDate) throw new Error(`${label}自动应用校验未通过：每日计划必须覆盖单一报告日`);
 }
 
-export function validateInventoryAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }, previousSnapshots: PreviousDailySnapshot[] = []) {
+export function validateInventoryAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }, previousSnapshots: PreviousDailySnapshot[] = [], threshold = defaultAnomalyThreshold) {
   validateScheduledReadCoverage(batch, rows, scope, "库存快照");
   const previousByIdentity = new Map(previousSnapshots.map((snapshot) => [dailyIdentity(snapshot), snapshot]));
   for (const row of rows) {
@@ -171,13 +183,13 @@ export function validateInventoryAutoApplyIntegrity(batch: AutoApplyBatch, rows:
       for (const key of ["fbaAvailable", "fbaReserved", "fbaInTransit"] as const) {
         const current = numberOrNull(data[key]);
         const baseline = numberOrNull((previous as RecordValue)[key]);
-        if (current !== null && baseline !== null && baseline > 0 && current > Math.max(baseline * 20, baseline + 10_000)) throw new Error(`库存快照自动应用校验未通过：${key}相较前一日异常跃升，需人工复核`);
+        if (current !== null && baseline !== null && baseline > 0 && exceedsAnomalyThreshold(current, baseline, threshold)) throw new Error(`库存快照自动应用校验未通过：${key}相较前一日异常跃升，需人工复核`);
       }
     }
   }
 }
 
-export function validateKeywordAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }, previousRows: Array<Record<string, unknown>> = []) {
+export function validateKeywordAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }, previousRows: Array<Record<string, unknown>> = [], threshold = defaultAnomalyThreshold) {
   validateScheduledReadCoverage(batch, rows, scope, "广告关键词");
   const keywordIdentity = (value: RecordValue) => [text(value.profileId || value.sourceProfileId), text(value.campaignId || value.campaignName), text(value.keyword), text(value.matchType || "unknown")].join("|");
   const previousByIdentity = new Map(previousRows.map((row) => [keywordIdentity(row), row]));
@@ -193,7 +205,7 @@ export function validateKeywordAutoApplyIntegrity(batch: AutoApplyBatch, rows: A
       for (const [currentKey, previousKey] of [["adImpressions", "impressions"], ["adClicks", "clicks"], ["adSpend", "spend"], ["adSales", "sales"]] as const) {
         const current = numberOrNull(data[currentKey]);
         const baseline = numberOrNull(previous[previousKey]);
-        if (current !== null && baseline !== null && baseline > 0 && current > Math.max(baseline * 20, baseline + 10_000)) throw new Error(`广告关键词自动应用校验未通过：${currentKey}相较前一日异常跃升，需人工复核`);
+        if (current !== null && baseline !== null && baseline > 0 && exceedsAnomalyThreshold(current, baseline, threshold)) throw new Error(`广告关键词自动应用校验未通过：${currentKey}相较前一日异常跃升，需人工复核`);
       }
     }
   }
@@ -259,6 +271,7 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
     .where(and(eq(opsLingxingSyncSchedules.id, emperorTask.externalScheduleId!), eq(opsLingxingSyncSchedules.scheduleCronTaskUid, taskUid), eq(opsLingxingSyncSchedules.enabled, 1))).limit(1);
   if (!schedule) return { ok: true, skipped: "orphan_or_paused" as const };
   const domain = schedule.dataDomain as ScheduleDomain;
+  const anomalyThreshold = resolveAnomalyThreshold(emperorTask.inputTemplate);
   const scope = domain === "product_performance_daily" ? scheduledDailyScope(now) : domain === "fba_inventory" ? scheduledInventoryScope(now) : domain === "ad_keyword" ? scheduledKeywordScope(now) : scheduledWeeklyScope(now);
   if (schedule.lastRunKey === scope.runKey && schedule.lastStatus === "succeeded") return { ok: true, skipped: "idempotent" as const, runKey: scope.runKey };
 
@@ -293,11 +306,11 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
         ));
         if (domain === "product_performance_daily") {
           const snapshots = await db.select().from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, schedule.workspaceId));
-          validateDailyAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, snapshots as PreviousDailySnapshot[]);
+          validateDailyAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, snapshots as PreviousDailySnapshot[], anomalyThreshold);
         } else if (domain === "fba_inventory") {
           const previousSnapshots = (await db.select().from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, schedule.workspaceId)))
             .filter((snapshot) => snapshot.sourceType === "lx_inventory_mcp");
-          validateInventoryAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, previousSnapshots as PreviousDailySnapshot[]);
+          validateInventoryAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, previousSnapshots as PreviousDailySnapshot[], anomalyThreshold);
         } else {
           const previousDate = addDays(scope.startDate, -1);
           const previousKeywords = await db.select().from(adKeywordWeekly).where(and(
@@ -305,7 +318,7 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
             eq(adKeywordWeekly.weekStartDate, previousDate),
             eq(adKeywordWeekly.weekEndDate, previousDate),
           ));
-          validateKeywordAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, previousKeywords as Array<Record<string, unknown>>);
+          validateKeywordAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, previousKeywords as Array<Record<string, unknown>>, anomalyThreshold);
         }
         const selectedRowIds = rows.map((row) => row.id);
         await caller.confirm({ batchId, selectedRowIds, note: `系统${domain}每日校验通过自动确认` });

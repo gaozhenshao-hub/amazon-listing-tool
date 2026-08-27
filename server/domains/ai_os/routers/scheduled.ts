@@ -7,13 +7,23 @@ import { COOKIE_NAME } from "@shared/const";
 import { listHeartbeatJobs, updateHeartbeatJob } from "../../../_core/heartbeat";
 import { opsLingxingSyncSchedules } from "../../../../drizzle/schema";
 import { getDb } from "../../../repositories/dbClient";
+import { recordSecurityAuditLog } from "../../../services/securityGovernance";
 import { rawExecute } from "../routerContext";
 
-const systemTaskSql = "SELECT id, systemManaged, externalTaskUid, externalScheduleId, workspaceId FROM emperor_scheduled_tasks WHERE slug = ? LIMIT 1";
+const systemTaskSql = "SELECT id, systemManaged, externalTaskUid, externalScheduleId, workspaceId, dataDomain, inputTemplate FROM emperor_scheduled_tasks WHERE slug = ? LIMIT 1";
+const sixFieldCron = z.string().trim().max(64).refine((value) => {
+  const parts = value.split(/\s+/);
+  return parts.length === 6 && parts[0] === "0" && parts.every((part) => /^[0-9*/,-]+$/.test(part));
+}, "Cron必须为6段UTC表达式，秒字段固定为0");
+const anomalyThresholdSchema = z.object({
+  multiplier: z.number().int().min(2).max(20),
+  absoluteIncrease: z.number().int().min(100).max(10_000),
+});
+const jsonObject = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
 async function getSystemTask(slug: string) {
   const rows = await rawExecute(systemTaskSql, [slug]);
-  return rows[0] as { id: number; systemManaged: number; externalTaskUid: string | null; externalScheduleId: number | null; workspaceId: number | null } | undefined;
+  return rows[0] as { id: number; systemManaged: number; externalTaskUid: string | null; externalScheduleId: number | null; workspaceId: number | null; dataDomain: string | null; inputTemplate: unknown } | undefined;
 }
 
 export const emperorScheduledRouter = router({
@@ -96,6 +106,48 @@ export const emperorScheduledRouter = router({
         [input.enabled ? 1 : 0, heartbeat.nextExecutionAt ? new Date(heartbeat.nextExecutionAt) : null, task.id],
       );
       return { success: true, enabled: input.enabled, nextRunAt: heartbeat.nextExecutionAt ?? null, externalTaskUid: task.externalTaskUid };
+    }),
+
+  updateSystemTask: adminProcedure
+    .input(z.object({
+      slug: z.string().min(1).max(128),
+      name: z.string().trim().min(2).max(100),
+      cronExpr: sixFieldCron,
+      isActive: z.boolean(),
+      autoApply: z.boolean(),
+      anomalyThreshold: anomalyThresholdSchema,
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const task = await getSystemTask(input.slug);
+      if (!task || Number(task.systemManaged || 0) !== 1 || !task.externalTaskUid || !task.externalScheduleId || !task.dataDomain) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "未找到受系统管理的领星定时任务" });
+      }
+      if (task.workspaceId !== ctx.user.defaultWorkspaceId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (task.dataDomain === "parent_asin_weekly_rollup" && input.autoApply) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "父ASIN周汇总仅生成草稿，不允许开启自动应用" });
+      }
+      const db = await getDb();
+      if (!db) throw new Error("数据库不可用");
+      const sessionToken = parseCookie(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+      const description = `${input.name}；由皇帝中台统一管理的领星官方MCP任务。${input.autoApply ? "完整性与异常校验通过后自动应用历史事实，异常转人工复核。" : "仅生成待审核草稿，不自动写入业务事实。"}`;
+      const heartbeat = await updateHeartbeatJob(task.externalTaskUid, { cron: input.cronExpr, enable: input.isActive, description }, sessionToken);
+      await db.update(opsLingxingSyncSchedules).set({
+        cronExpression: input.cronExpr,
+        enabled: input.isActive ? 1 : 0,
+        autoApply: input.autoApply ? 1 : 0,
+      }).where(eq(opsLingxingSyncSchedules.id, task.externalScheduleId));
+      const template = jsonObject(task.inputTemplate);
+      const inputTemplate = { ...template, dataDomain: task.dataDomain, externalTaskUid: task.externalTaskUid, scheduleId: task.externalScheduleId, anomalyThreshold: input.anomalyThreshold };
+      await rawExecute(
+        "UPDATE emperor_scheduled_tasks SET name=?, description=?, cronExpr=?, inputTemplate=?, isActive=?, nextRunAt=? WHERE id=? AND systemManaged=1",
+        [input.name, description, input.cronExpr, JSON.stringify(inputTemplate), input.isActive ? 1 : 0, heartbeat.nextExecutionAt ? new Date(heartbeat.nextExecutionAt) : null, task.id],
+      );
+      await recordSecurityAuditLog({
+        ctx, workspaceId: task.workspaceId, action: "emperor.scheduled_task.update", resourceType: "emperor_scheduled_task", resourceId: input.slug,
+        status: "success", riskLevel: "medium", reason: `领星系统任务运营级编辑：${task.dataDomain}`,
+        metadata: { dataDomain: task.dataDomain, autoApply: input.autoApply, anomalyThreshold: input.anomalyThreshold, externalTaskUid: task.externalTaskUid },
+      });
+      return { success: true, name: input.name, cronExpr: input.cronExpr, enabled: input.isActive, autoApply: input.autoApply, anomalyThreshold: input.anomalyThreshold, nextRunAt: heartbeat.nextExecutionAt ?? null };
     }),
 
   trigger: adminProcedure
