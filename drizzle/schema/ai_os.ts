@@ -764,6 +764,37 @@ export type EmperorMcpConnector = typeof emperorMcpConnectors.$inferSelect;
 
 export type InsertEmperorMcpConnector = typeof emperorMcpConnectors.$inferInsert;
 
+// 皇帝统一定时任务。由Heartbeat实际触发的业务同步任务也必须在此登记为系统管理实体，
+// externalTaskUid是唯一外部触发器身份，禁止为同一领星计划创建第二个Cron。
+export const emperorScheduledTasks = mysqlTable("emperor_scheduled_tasks", {
+  id: int("id").autoincrement().primaryKey(),
+  slug: varchar("slug", { length: 128 }).notNull().unique(),
+  workspaceId: int("workspaceId"),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  skillSlug: varchar("skillSlug", { length: 128 }).notNull(),
+  cronExpr: varchar("cronExpr", { length: 64 }),
+  inputTemplate: json("inputTemplate"),
+  isActive: int("isActive").default(1).notNull(),
+  triggerMode: mysqlEnum("triggerMode", ["internal", "heartbeat"]).default("internal").notNull(),
+  systemManaged: int("systemManaged").default(0).notNull(),
+  dataDomain: varchar("dataDomain", { length: 64 }),
+  externalScheduleId: int("externalScheduleId"),
+  externalTaskUid: varchar("externalTaskUid", { length: 65 }),
+  managePath: varchar("managePath", { length: 255 }),
+  lastBatchId: int("lastBatchId"),
+  lastRunAt: timestamp("lastRunAt"),
+  nextRunAt: timestamp("nextRunAt"),
+  lastRunStatus: mysqlEnum("lastRunStatus", ["succeeded", "failed", "running"]),
+  runCount: int("runCount").default(0).notNull(),
+  createdByUserId: int("createdByUserId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EmperorScheduledTask = typeof emperorScheduledTasks.$inferSelect;
+export type InsertEmperorScheduledTask = typeof emperorScheduledTasks.$inferInsert;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 皇帝 · 通用对话式任务管理器（Conversation Task Manager）
 // 对话仅编排既有Skill / Agent / Tool与Run，不复制附件二进制或密钥。

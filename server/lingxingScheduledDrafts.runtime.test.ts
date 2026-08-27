@@ -23,7 +23,8 @@ type ScheduleRow = {
 };
 
 function createMockDb(scheduleRows: ScheduleRow[], ownerRows: Array<Record<string, unknown>> = [], batchRows: Array<Record<string, unknown>> = [], draftRows: Array<Record<string, unknown>> = []) {
-  const selectResults = [scheduleRows, ownerRows, batchRows, draftRows];
+  const emperorTasks = scheduleRows.map((schedule) => ({ id: schedule.id + 1000, externalTaskUid: `${schedule.dataDomain === "fba_inventory" ? "inventory" : schedule.dataDomain === "ad_keyword" ? "keyword" : "daily"}-task`, externalScheduleId: schedule.id, systemManaged: 1, isActive: 1 }));
+  const selectResults = [emperorTasks, scheduleRows, ownerRows, batchRows, draftRows, []];
   let selectIndex = 0;
   const updates: Array<Record<string, unknown>> = [];
   const queryResult = (rows: Array<Record<string, unknown>>) => ({
@@ -213,5 +214,17 @@ describe("领星Heartbeat草稿运行", () => {
 
     expect(createCallerMock).not.toHaveBeenCalled();
     expect(updates.some((value) => value.lastStatus === "failed" && String(value.lastError).includes("计划创建者不存在"))).toBe(true);
+  });
+
+  it("皇帝任务映射暂停时安全跳过，不读取MCP也不创建批次", async () => {
+    const { db } = createMockDb([dailySchedule]);
+    const originalSelect = db.select;
+    let calls = 0;
+    db.select = () => ({ from: () => ({ where: () => ({ then: (resolve: any) => Promise.resolve(calls++ === 0 ? [{ id: 1007, externalTaskUid: "daily-task", externalScheduleId: 7, systemManaged: 1, isActive: 0 }] : []).then(resolve), limit: async () => calls++ === 1 ? [{ id: 1007, externalTaskUid: "daily-task", externalScheduleId: 7, systemManaged: 1, isActive: 0 }] : [] }) }) });
+    getDbMock.mockResolvedValue(db);
+
+    await expect(runLingxingScheduledDraft("daily-task", new Date("2026-08-25T09:00:00.000Z"))).resolves.toEqual({ ok: true, skipped: "orphan_or_paused" });
+    expect(createCallerMock).not.toHaveBeenCalled();
+    db.select = originalSelect;
   });
 });

@@ -1,11 +1,51 @@
 import { TRPCError } from "@trpc/server";
+import { parse as parseCookie } from "cookie";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../../../_core/trpc";
+import { COOKIE_NAME } from "@shared/const";
+import { listHeartbeatJobs, updateHeartbeatJob } from "../../../_core/heartbeat";
+import { opsLingxingSyncSchedules } from "../../../../drizzle/schema";
+import { getDb } from "../../../repositories/dbClient";
 import { rawExecute } from "../routerContext";
 
+const systemTaskSql = "SELECT id, systemManaged, externalTaskUid, externalScheduleId, workspaceId FROM emperor_scheduled_tasks WHERE slug = ? LIMIT 1";
+
+async function getSystemTask(slug: string) {
+  const rows = await rawExecute(systemTaskSql, [slug]);
+  return rows[0] as { id: number; systemManaged: number; externalTaskUid: string | null; externalScheduleId: number | null; workspaceId: number | null } | undefined;
+}
+
 export const emperorScheduledRouter = router({
-  list: protectedProcedure.query(async () => {
-    return rawExecute("SELECT * FROM emperor_scheduled_tasks ORDER BY name");
+  list: protectedProcedure.query(async ({ ctx }) => {
+    const tasks = await rawExecute(
+      `SELECT t.*,
+        s.enabled AS linkedScheduleEnabled, s.last_status AS linkedLastStatus,
+        s.last_run_at AS linkedLastRunAt, s.last_batch_id AS linkedLastBatchId,
+        s.schedule_cron_task_uid AS linkedTaskUid
+       FROM emperor_scheduled_tasks t
+       LEFT JOIN ops_lingxing_sync_schedules s ON t.externalScheduleId = s.id
+       WHERE t.systemManaged = 0 OR t.workspaceId = ?
+       ORDER BY t.systemManaged DESC, t.name`,
+      [ctx.user.defaultWorkspaceId ?? -1],
+    );
+    const sessionToken = parseCookie(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+    try {
+      const heartbeat = await listHeartbeatJobs(sessionToken, { page: 1, pageSize: 100 });
+      const jobByUid = new Map(heartbeat.jobs.map((job) => [job.taskUid, job]));
+      return tasks.map((task: Record<string, unknown>) => {
+        const job = jobByUid.get(String(task.externalTaskUid || task.linkedTaskUid || ""));
+        return job ? {
+          ...task,
+          isActive: job.isEnable ? 1 : 0,
+          nextRunAt: job.nextExecutionAt ?? task.nextRunAt,
+          externalTaskUid: job.taskUid,
+        } : task;
+      });
+    } catch {
+      // 平台状态暂不可用时仍返回已持久化映射，管理入口不会因目录短暂失败消失。
+      return tasks;
+    }
   }),
 
   upsert: adminProcedure
@@ -19,6 +59,8 @@ export const emperorScheduledRouter = router({
       isActive: z.boolean().optional().default(true),
     }))
     .mutation(async ({ input, ctx }) => {
+      const existing = await getSystemTask(input.slug);
+      if (Number(existing?.systemManaged || 0) === 1) throw new TRPCError({ code: "FORBIDDEN", message: "受系统管理的领星任务只能通过暂停/恢复操作修改" });
       await rawExecute(
         `INSERT INTO emperor_scheduled_tasks (slug,name,description,skillSlug,cronExpr,inputTemplate,isActive,createdByUserId) VALUES (?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),skillSlug=VALUES(skillSlug),cronExpr=VALUES(cronExpr),inputTemplate=VALUES(inputTemplate),isActive=VALUES(isActive)`,
         [input.slug, input.name, input.description||null, input.skillSlug, input.cronExpr||null, input.inputTemplate ? JSON.stringify(input.inputTemplate) : null, input.isActive?1:0, ctx.user.id]
@@ -29,8 +71,31 @@ export const emperorScheduledRouter = router({
   delete: adminProcedure
     .input(z.object({ slug: z.string() }))
     .mutation(async ({ input }) => {
+      const existing = await getSystemTask(input.slug);
+      if (Number(existing?.systemManaged || 0) === 1) throw new TRPCError({ code: "FORBIDDEN", message: "受系统管理的领星任务不可删除，以防产生孤立外部触发器" });
       await rawExecute("DELETE FROM emperor_scheduled_tasks WHERE slug = ?", [input.slug]);
       return { success: true };
+    }),
+
+  setSystemTaskEnabled: adminProcedure
+    .input(z.object({ slug: z.string(), enabled: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      const task = await getSystemTask(input.slug);
+      if (!task || Number(task.systemManaged || 0) !== 1 || !task.externalTaskUid || !task.externalScheduleId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "未找到受系统管理的领星定时任务" });
+      }
+      if (task.workspaceId !== ctx.user.defaultWorkspaceId) throw new TRPCError({ code: "FORBIDDEN" });
+      const db = await getDb();
+      if (!db) throw new Error("数据库不可用");
+      const sessionToken = parseCookie(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+      const heartbeat = await updateHeartbeatJob(task.externalTaskUid, { enable: input.enabled }, sessionToken);
+      await db.update(opsLingxingSyncSchedules).set({ enabled: input.enabled ? 1 : 0 })
+        .where(eq(opsLingxingSyncSchedules.id, task.externalScheduleId));
+      await rawExecute(
+        "UPDATE emperor_scheduled_tasks SET isActive=?, nextRunAt=? WHERE id=? AND systemManaged=1",
+        [input.enabled ? 1 : 0, heartbeat.nextExecutionAt ? new Date(heartbeat.nextExecutionAt) : null, task.id],
+      );
+      return { success: true, enabled: input.enabled, nextRunAt: heartbeat.nextExecutionAt ?? null, externalTaskUid: task.externalTaskUid };
     }),
 
   trigger: adminProcedure
@@ -38,6 +103,9 @@ export const emperorScheduledRouter = router({
     .mutation(async ({ input }) => {
       const rows = await rawExecute("SELECT * FROM emperor_scheduled_tasks WHERE slug = ? LIMIT 1", [input.slug]);
       if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
+      if (Number(rows[0].systemManaged || 0) === 1) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "领星同步仅可按受治理计划触发；请在同步页面查看批次和Trace。" });
+      }
       await rawExecute("UPDATE emperor_scheduled_tasks SET lastRunAt = NOW(), runCount = runCount + 1 WHERE slug = ?", [input.slug]);
       return { success: true, message: `Task '${rows[0].name}' triggered` };
     }),

@@ -35,7 +35,9 @@ describe("领星同步页面ASIN日数据契约", () => {
     expect(pageSource).toContain("每天北京时间 17:20");
     expect(pageSource).toContain("每天北京时间 17:40");
     expect(pageSource).toContain("每周一北京时间 17:10");
-    expect(pageSource).toContain("lingxingSync.setScheduleEnabled");
+    expect(pageSource).toContain("在皇帝定时任务管理");
+    expect(pageSource).toContain('window.location.href = "/emperor/scheduled"');
+    expect(pageSource).not.toContain("lingxingSync.setScheduleEnabled");
     expect(pageSource).toContain("校验通过自动追加历史事实");
     expect(pageSource).toContain("FBA库存快照与广告关键词历史事实仅在完整性校验通过后自动追加");
   });

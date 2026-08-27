@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Archive, CalendarClock, CalendarRange, DatabaseZap, Eye, FileCheck2, Filter, Loader2, RefreshCw, RotateCcw, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Archive, CalendarClock, CalendarRange, DatabaseZap, ExternalLink, Eye, FileCheck2, Filter, Loader2, RefreshCw, RotateCcw, ShieldAlert, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
@@ -135,13 +135,6 @@ export default function OpsLingxingSync() {
       void historyQuery.refetch();
     },
     onError: (error) => toast.error("广告报表应用失败", { description: error.message }),
-  });
-  const scheduleMutation = trpc.lingxingSync.setScheduleEnabled.useMutation({
-    onSuccess: (result) => {
-      toast.success(result.enabled ? "已更新领星自动计划" : "已暂停领星自动计划", { description: result.autoApply ? "该历史事实将在完整性与异常校验通过后自动追加；异常转入复核队列。" : "计划只生成待审核草稿，不自动写入业务数据。" });
-      void schedulesQuery.refetch();
-    },
-    onError: (error) => toast.error("计划更新失败", { description: error.message }),
   });
   const acknowledgeReviewMutation = trpc.lingxingSync.acknowledgeBackfillReview.useMutation({
     onSuccess: () => {
@@ -295,7 +288,7 @@ export default function OpsLingxingSync() {
         const schedule = (schedulesQuery.data || []).find((item: any) => item.dataDomain === plan.dataDomain);
         const enabled = Boolean(schedule?.enabled);
         const autoApply = Boolean(schedule?.autoApply ?? plan.autoApply);
-        return <div key={plan.dataDomain} className="rounded-lg border bg-background p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{plan.title}</p><p className="mt-1 text-xs text-muted-foreground">{plan.timing}</p></div><Badge variant={enabled ? "default" : "outline"}>{enabled ? "运行中" : "未启用"}</Badge></div><p className="mt-3 text-sm text-muted-foreground">{plan.detail}</p><div className="mt-3 grid gap-1 text-xs text-muted-foreground"><span>写入策略：{autoApply ? "校验通过自动追加历史事实" : "仅生成草稿"}</span><span>最近状态：{schedule?.lastStatus || "尚未运行"}</span><span>最近草稿：{schedule?.lastBatchId ? `#${schedule.lastBatchId}` : "—"}</span>{schedule?.lastError ? <span className="text-amber-700">最近错误：{schedule.lastError}</span> : null}</div><Button className="mt-4 w-full" variant={enabled ? "outline" : "default"} onClick={() => scheduleMutation.mutate({ dataDomain: plan.dataDomain, enabled: !enabled })} disabled={scheduleMutation.isPending}>{scheduleMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{enabled ? "暂停计划" : "启用计划"}</Button></div>;
+        return <div key={plan.dataDomain} className="rounded-lg border bg-background p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{plan.title}</p><p className="mt-1 text-xs text-muted-foreground">{plan.timing}</p></div><Badge variant={enabled ? "default" : "outline"}>{enabled ? "运行中" : "未启用"}</Badge></div><p className="mt-3 text-sm text-muted-foreground">{plan.detail}</p><div className="mt-3 grid gap-1 text-xs text-muted-foreground"><span>写入策略：{autoApply ? "校验通过自动追加历史事实" : "仅生成草稿"}</span><span>最近状态：{schedule?.lastStatus || "尚未运行"}</span><span>最近草稿：{schedule?.lastBatchId ? `#${schedule.lastBatchId}` : "—"}</span>{schedule?.lastError ? <span className="text-amber-700">最近错误：{schedule.lastError}</span> : null}</div><Button className="mt-4 w-full" variant="outline" onClick={() => { window.location.href = "/emperor/scheduled"; }}><ExternalLink className="mr-2 h-4 w-4" />在皇帝定时任务管理</Button></div>;
       })}</CardContent></Card>
 
     {batchQuery.data && <Card>

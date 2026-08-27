@@ -101,6 +101,7 @@ const supplementalMigrations = [
     "0177_ops_lingxing_sync_schedule_cadence_length.sql",
     "0178_backfill_legacy_ads_workspace.sql",
     "0179_ad_keyword_source_identity.sql",
+    "0180_emperor_lingxing_scheduled_task_unification.sql",
   ];
 
 const retiredMigrationFiles = new Set([

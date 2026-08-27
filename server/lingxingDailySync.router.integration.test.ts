@@ -16,6 +16,8 @@ const state = {
   failAtToolCall: 0,
 };
 
+const rawExecuteMock = vi.hoisted(() => vi.fn(async () => []));
+
 function tableName(table: any) {
   return table?.[Symbol.for("drizzle:Name")];
 }
@@ -62,7 +64,13 @@ const db = {
       if (name === "ops_asin_daily_snapshots") state.snapshots.push(input);
       if (name === "lingxing_product_weekly") state.weekly.push(input);
       if (name === "ops_external_sync_confirmations") state.confirmations.push(input);
-      if (name === "ops_lingxing_sync_schedules") state.schedules.push({ id: state.schedules.length + 1, ...input });
+      if (name === "ops_lingxing_sync_schedules") {
+        const row = { id: state.schedules.length + 1, ...input };
+        state.schedules.push(row);
+        const result: any = Promise.resolve(undefined);
+        result.$returningId = async () => [{ id: row.id }];
+        return result;
+      }
       return Promise.resolve(undefined);
     },
   }),
@@ -106,6 +114,7 @@ vi.mock("./domains/ai_os/services/toolGateway/executors", () => ({
     return { output: { content: [{ type: "text", text: JSON.stringify({ list }) }] }, metadata: { toolRunId: `tool_daily_${state.toolCallCount}` } };
   },
 }));
+vi.mock("./domains/ai_os/routerContext", () => ({ rawExecute: rawExecuteMock }));
 vi.mock("./_core/heartbeat", () => ({
   createHeartbeatJob: async (input: any) => {
     state.heartbeatCreates.push(input);

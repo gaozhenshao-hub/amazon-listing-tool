@@ -31,6 +31,9 @@ import {
   CheckCircle2,
   XCircle,
   Calendar,
+  Database,
+  ExternalLink,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -45,6 +48,14 @@ interface ScheduledTask {
   isActive: boolean;
   runCount: number;
   lastRunAt: string | null;
+  nextRunAt?: string | null;
+  lastRunStatus?: "succeeded" | "failed" | "running" | null;
+  systemManaged?: number;
+  triggerMode?: "internal" | "heartbeat";
+  dataDomain?: string | null;
+  externalTaskUid?: string | null;
+  managePath?: string | null;
+  lastBatchId?: number | null;
 }
 
 const CRON_PRESETS = [
@@ -77,9 +88,14 @@ export default function EmperorScheduled() {
     onSuccess: (res) => { toast.success(res.message); refetch(); },
     onError: (err: any) => toast.error(err.message),
   });
+  const setSystemTaskEnabledMutation = trpc.emperor.scheduled.setSystemTaskEnabled.useMutation({
+    onSuccess: (result) => { toast.success(result.enabled ? "领星系统任务已恢复" : "领星系统任务已暂停"); refetch(); },
+    onError: (err: any) => toast.error(err.message),
+  });
 
   const tasks: ScheduledTask[] = (data || []) as ScheduledTask[];
   const skills = (skillsData?.skills || []) as Array<{ slug: string; name: string }>;
+  const isSystemTask = (task: ScheduledTask | null) => Number(task?.systemManaged || 0) === 1;
 
   const formatTime = (ts: number | null) => {
     if (!ts) return "—";
@@ -132,14 +148,14 @@ export default function EmperorScheduled() {
                     )}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium text-sm truncate">{task.name}</span>
+                      <span className="font-medium text-sm truncate flex items-center gap-1.5"><span className="truncate">{task.name}</span>{isSystemTask(task) && <Database className="h-3.5 w-3.5 text-primary flex-shrink-0" />}</span>
                       {task.isActive ? (
                         <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
                       ) : (
                         <XCircle className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground truncate">{task.skillSlug}</p>
+                    <p className="text-xs text-muted-foreground truncate">{isSystemTask(task) ? "领星 MCP · 系统任务" : task.skillSlug}</p>
                     <div className="flex items-center gap-2 mt-1.5">
                       <Badge variant="outline" className="text-xs px-1.5 py-0 font-mono">{task.cronExpr}</Badge>
                     </div>
@@ -160,27 +176,35 @@ export default function EmperorScheduled() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-semibold">{selectedTask.name}</h2>
-                  <p className="text-sm text-muted-foreground mt-1">{selectedTask.skillSlug}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{isSystemTask(selectedTask) ? "领星官方MCP · 受治理系统任务" : selectedTask.skillSlug}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => upsertMutation.mutate({ slug: selectedTask.slug, name: selectedTask.name, skillSlug: selectedTask.skillSlug, cronExpr: selectedTask.cronExpr, isActive: !selectedTask.isActive })}
-                    disabled={upsertMutation.isPending}
+                    onClick={() => isSystemTask(selectedTask)
+                      ? setSystemTaskEnabledMutation.mutate({ slug: selectedTask.slug, enabled: !selectedTask.isActive })
+                      : upsertMutation.mutate({ slug: selectedTask.slug, name: selectedTask.name, skillSlug: selectedTask.skillSlug, cronExpr: selectedTask.cronExpr, isActive: !selectedTask.isActive })}
+                    disabled={upsertMutation.isPending || setSystemTaskEnabledMutation.isPending}
                     className="gap-2"
                   >
                     {selectedTask.isActive ? <><Pause className="h-4 w-4" />暂停</> : <><Play className="h-4 w-4" />启用</>}
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => deleteMutation.mutate({ slug: selectedTask.slug })}
-                    disabled={deleteMutation.isPending}
-                    className="gap-2 text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4" />删除
-                  </Button>
+                  {isSystemTask(selectedTask) ? (
+                    <Button variant="outline" size="sm" className="gap-2" onClick={() => { window.location.href = selectedTask.managePath || "/ops/lingxing-sync"; }}>
+                      <ExternalLink className="h-4 w-4" />查看同步审计
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => deleteMutation.mutate({ slug: selectedTask.slug })}
+                      disabled={deleteMutation.isPending}
+                      className="gap-2 text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />删除
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -209,7 +233,27 @@ export default function EmperorScheduled() {
                       <p className="text-xs text-muted-foreground">运行次数</p>
                       <p className="font-medium mt-1">{selectedTask.runCount} 次</p>
                     </div>
+                    {isSystemTask(selectedTask) && <>
+                      <div>
+                        <p className="text-xs text-muted-foreground">下次运行</p>
+                        <p className="font-medium mt-1">{selectedTask.nextRunAt ? new Date(selectedTask.nextRunAt).toLocaleString() : "由平台计划触发"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">最近批次</p>
+                        <p className="font-medium mt-1">{selectedTask.lastBatchId ? `#${selectedTask.lastBatchId}` : "尚未运行"}</p>
+                      </div>
+                    </>}
                   </div>
+                  {isSystemTask(selectedTask) && (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-medium"><ShieldCheck className="h-4 w-4 text-primary" />皇帝受治理同步任务</div>
+                      <p className="text-xs text-muted-foreground leading-5">任务由皇帝中台统一控制，实际调用仅经领星官方MCP Tool Gateway。暂停/恢复会同步更新唯一的外部任务UID；不可删除、不可直接触发，以避免重复写入。</p>
+                      <div className="grid gap-2 text-xs sm:grid-cols-2">
+                        <p><span className="text-muted-foreground">数据域：</span>{selectedTask.dataDomain || "—"}</p>
+                        <p className="truncate"><span className="text-muted-foreground">任务UID：</span>{selectedTask.externalTaskUid || "—"}</p>
+                      </div>
+                    </div>
+                  )}
                   {selectedTask.description && (
                     <div>
                       <p className="text-xs text-muted-foreground mb-2">描述</p>

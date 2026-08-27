@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
-import { adKeywordWeekly, opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncRows, opsLingxingSyncSchedules, users } from "../../../drizzle/schema";
+import { and, eq, sql } from "drizzle-orm";
+import { adKeywordWeekly, emperorScheduledTasks, opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncRows, opsLingxingSyncSchedules, users } from "../../../drizzle/schema";
 import { lingxingSyncRouter } from "../../routers/lingxingSync";
 import { getDb } from "../../repositories/dbClient";
 import { summarizeParentAsinWeeks, type DailySnapshot } from "./productOverview/dailyAggregation";
@@ -250,14 +250,20 @@ export function validateHistoricalBackfillIntegrity(batch: AutoApplyBatch, rows:
 export async function runLingxingScheduledDraft(taskUid: string, now = new Date()) {
   const db = await getDb();
   if (!db) throw new Error("数据库不可用");
+  const [emperorTask] = await db.select().from(emperorScheduledTasks).where(and(
+    eq(emperorScheduledTasks.externalTaskUid, taskUid),
+    eq(emperorScheduledTasks.systemManaged, 1),
+  )).limit(1);
+  if (!emperorTask || Number(emperorTask.isActive || 0) !== 1) return { ok: true, skipped: "orphan_or_paused" as const };
   const [schedule] = await db.select().from(opsLingxingSyncSchedules)
-    .where(and(eq(opsLingxingSyncSchedules.scheduleCronTaskUid, taskUid), eq(opsLingxingSyncSchedules.enabled, 1))).limit(1);
+    .where(and(eq(opsLingxingSyncSchedules.id, emperorTask.externalScheduleId!), eq(opsLingxingSyncSchedules.scheduleCronTaskUid, taskUid), eq(opsLingxingSyncSchedules.enabled, 1))).limit(1);
   if (!schedule) return { ok: true, skipped: "orphan_or_paused" as const };
   const domain = schedule.dataDomain as ScheduleDomain;
   const scope = domain === "product_performance_daily" ? scheduledDailyScope(now) : domain === "fba_inventory" ? scheduledInventoryScope(now) : domain === "ad_keyword" ? scheduledKeywordScope(now) : scheduledWeeklyScope(now);
   if (schedule.lastRunKey === scope.runKey && schedule.lastStatus === "succeeded") return { ok: true, skipped: "idempotent" as const, runKey: scope.runKey };
 
   await db.update(opsLingxingSyncSchedules).set({ lastStatus: "running", lastError: null, lastRunAt: now }).where(eq(opsLingxingSyncSchedules.id, schedule.id));
+  await db.update(emperorScheduledTasks).set({ lastRunStatus: "running", lastRunAt: now, runCount: sql`${emperorScheduledTasks.runCount} + 1` }).where(eq(emperorScheduledTasks.id, emperorTask.id));
   let batchId: number | null = null;
   try {
     if (["product_performance_daily", "fba_inventory", "ad_keyword"].includes(domain)) {
@@ -333,6 +339,7 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
     }
     const writePolicy = ["product_performance_daily", "fba_inventory", "ad_keyword"].includes(domain) && Number(schedule.autoApply || 0) === 1 ? "validated_daily_auto_apply" as const : "draft_only" as const;
     await db.update(opsLingxingSyncSchedules).set({ lastRunKey: scope.runKey, lastRunAt: new Date(), lastBatchId: batchId, lastStatus: "succeeded", lastError: null }).where(eq(opsLingxingSyncSchedules.id, schedule.id));
+    await db.update(emperorScheduledTasks).set({ lastRunStatus: "succeeded", lastRunAt: new Date(), lastBatchId: batchId }).where(eq(emperorScheduledTasks.id, emperorTask.id));
     return { ok: true, batchId: batchId!, runKey: scope.runKey, writePolicy };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -347,6 +354,7 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
       }).where(eq(opsExternalSyncBatches.id, batchId));
     }
     await db.update(opsLingxingSyncSchedules).set({ lastStatus: "failed", lastError: message.slice(0, 3000), lastRunAt: new Date() }).where(eq(opsLingxingSyncSchedules.id, schedule.id));
+    await db.update(emperorScheduledTasks).set({ lastRunStatus: "failed", lastRunAt: new Date(), lastBatchId: batchId }).where(eq(emperorScheduledTasks.id, emperorTask.id));
     throw error;
   }
 }

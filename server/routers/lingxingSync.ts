@@ -11,6 +11,7 @@ import { ensureAgentRunTrace } from "../domains/ai_os/services/runLedger";
 import { registerUnifiedArtifact } from "../domains/ai_os/services/artifactLifecycle";
 import { invokeEmperorTool } from "../domains/ai_os/services/toolGateway/executors";
 import { buildScheduledAutoApplyReviewQueue, scheduledAutoApplyReviewIssue } from "../domains/ops/historicalBackfillReview";
+import { rawExecute } from "../domains/ai_os/routerContext";
 import { getDb } from "../repositories/dbClient";
 
 const domainSchema = z.enum(["product_performance", "product_performance_daily", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword", "listing_master", "ad_search_term", "ad_targeting"]);
@@ -44,6 +45,13 @@ const SCHEDULE_PRESETS = {
     autoApply: false,
   },
 } as const;
+
+const emperorScheduleName = (dataDomain: keyof typeof SCHEDULE_PRESETS) => ({
+  product_performance_daily: "领星 · 每日ASIN产品表现",
+  fba_inventory: "领星 · 每日FBA库存快照",
+  ad_keyword: "领星 · 每日广告关键词历史",
+  parent_asin_weekly_rollup: "领星 · 父ASIN周汇总草稿",
+}[dataDomain]);
 
 type RecordValue = Record<string, unknown>;
 const phase5PreviewDomains = new Set(["listing_master", "ad_search_term", "ad_targeting"]);
@@ -420,6 +428,11 @@ export const lingxingSyncRouter = router({
       eq(opsLingxingSyncSchedules.workspaceId, workspaceId),
       eq(opsLingxingSyncSchedules.dataDomain, input.dataDomain),
     )).limit(1);
+    const managedRows = await rawExecute(
+      "SELECT id FROM emperor_scheduled_tasks WHERE workspaceId=? AND dataDomain=? AND systemManaged=1 LIMIT 1",
+      [workspaceId, input.dataDomain],
+    );
+    if (managedRows[0]) throw new Error("领星定时任务已迁移至皇帝中台，请在“定时任务”中心暂停或恢复");
     let taskUid = existing?.scheduleCronTaskUid ?? null;
     let nextExecutionAt: string | null | undefined;
     if (!taskUid && input.enabled) {
@@ -447,8 +460,23 @@ export const lingxingSyncRouter = router({
       lastStatus: existing?.lastStatus ?? "idle", lastRunKey: existing?.lastRunKey ?? null, lastRunAt: existing?.lastRunAt ?? null,
       lastBatchId: existing?.lastBatchId ?? null, lastError: existing?.lastError ?? null,
     };
+    let scheduleId = existing?.id;
     if (existing) await db.update(opsLingxingSyncSchedules).set(payload).where(eq(opsLingxingSyncSchedules.id, existing.id));
-    else await db.insert(opsLingxingSyncSchedules).values(payload);
+    else {
+      const [created] = await db.insert(opsLingxingSyncSchedules).values(payload).$returningId();
+      scheduleId = created.id;
+    }
+    const slug = `lingxing-sync-${input.dataDomain}-workspace-${workspaceId}`;
+    await rawExecute(
+      `INSERT INTO emperor_scheduled_tasks
+        (slug,workspaceId,name,description,skillSlug,cronExpr,inputTemplate,isActive,triggerMode,systemManaged,dataDomain,externalScheduleId,externalTaskUid,managePath,lastBatchId,createdByUserId)
+       VALUES (?,?,?,?,?,?,?,?, 'heartbeat',1,?,?,?, '/ops/lingxing-sync',?,?)
+       ON DUPLICATE KEY UPDATE
+         workspaceId=VALUES(workspaceId),name=VALUES(name),description=VALUES(description),skillSlug=VALUES(skillSlug),cronExpr=VALUES(cronExpr),inputTemplate=VALUES(inputTemplate),isActive=VALUES(isActive),triggerMode='heartbeat',systemManaged=1,dataDomain=VALUES(dataDomain),externalScheduleId=VALUES(externalScheduleId),externalTaskUid=VALUES(externalTaskUid),managePath='/ops/lingxing-sync',lastBatchId=VALUES(lastBatchId),createdByUserId=VALUES(createdByUserId)`,
+      [slug, workspaceId, emperorScheduleName(input.dataDomain), preset.description, "internal.lingxing.read", preset.cronExpression,
+        JSON.stringify({ dataDomain: input.dataDomain, externalTaskUid: taskUid, scheduleId }), input.enabled ? 1 : 0,
+        input.dataDomain, scheduleId, taskUid, existing?.lastBatchId ?? null, ctx.user.id],
+    );
     return { dataDomain: input.dataDomain, enabled: input.enabled, autoApply: preset.autoApply, taskUid, nextExecutionAt, writePolicy: preset.autoApply ? "validated_daily_auto_apply" as const : "draft_only" as const };
   }),
 
