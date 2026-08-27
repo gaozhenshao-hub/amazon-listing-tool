@@ -57,6 +57,7 @@ describe("领星同步页面ASIN日数据契约", () => {
     expect(pageSource).toContain("lingxingSync.acknowledgeBackfillReview");
     expect(pageSource).toContain("重新读取");
     expect(pageSource).toContain("旧草稿和审计证据会保留");
+    expect(pageSource).toContain("正在准备店铺目录并读取异常复核队列");
   });
 
   it("对异常ASIN日草稿锁定确认与应用，不允许前端绕过完整性校验", () => {

@@ -157,6 +157,7 @@ export default function OpsLingxingSync() {
   const activeSummary = (batchQuery.data?.batch.summary || {}) as Record<string, unknown>;
   const activeScope = (batchQuery.data?.batch.scope || {}) as Record<string, unknown>;
   const reviewEntries = reviewQueueQuery.data || [];
+  const reviewQueueInitializing = !directoryBootstrapSettled || !reviewQueueBootstrapReady || reviewQueueQuery.isPending;
   const activeBatchReviewBlocked = activeBatchDomain === "product_performance_daily" && (
     Boolean(activeSummary.capped)
     || Number(activeSummary.pageTruncations || 0) > 0
@@ -257,14 +258,14 @@ export default function OpsLingxingSync() {
       <Card className="border-amber-300 bg-amber-50/50">
         <CardHeader className="flex-row items-start justify-between gap-4">
           <div><CardTitle className="flex items-center gap-2 text-base"><ShieldAlert className="h-5 w-5 text-amber-700" />异常数据复核</CardTitle><CardDescription className="mt-1">按报告日期合并历史异常草稿。可查看截断、超时和失败窗口证据；只能记录复核意见或重新读取完整窗口，不能绕过完整性校验直接写入。</CardDescription></div>
-          <Badge variant="outline" className="border-amber-300 bg-background text-amber-800">{reviewQueueQuery.isLoading ? "加载中" : `${reviewEntries.length} 个待复核日期`}</Badge>
+          <Badge variant="outline" className="border-amber-300 bg-background text-amber-800">{reviewQueueInitializing ? "准备复核队列" : `${reviewEntries.length} 个待复核日期`}</Badge>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto rounded-md border border-amber-200 bg-background"><Table><TableHeader><TableRow><TableHead>报告日期</TableHead><TableHead>异常原因</TableHead><TableHead>覆盖 / 截断</TableHead><TableHead>审计批次</TableHead><TableHead className="text-right">人工处理</TableHead></TableRow></TableHeader><TableBody>{reviewEntries.map((entry: any) => {
             const summary = (entry.batch.summary || {}) as Record<string, unknown>;
             const failedWindows = Array.isArray(summary.failedStoreDateWindows) ? summary.failedStoreDateWindows : [];
             return <TableRow key={entry.reportDate}><TableCell className="font-medium">{entry.reportDate}<p className="mt-1 text-xs text-muted-foreground">已尝试 {entry.attempts} 次</p></TableCell><TableCell><Badge variant="secondary" className="font-normal">{entry.issue.label}</Badge><p className="mt-1 max-w-72 text-xs text-muted-foreground">{entry.issue.detail}</p></TableCell><TableCell className="text-xs text-muted-foreground">店铺：{String(summary.storesRead || 0)}/{String(summary.storesExpected || "—")}<br />窗口：{String(summary.storeDateWindowsRead || 0)}/{String(summary.storeDateWindowsExpected || "—")} · 截断 {String(summary.pageTruncations || 0)}{failedWindows.length ? <span className="block text-amber-700">失败窗口 {failedWindows.length}</span> : null}</TableCell><TableCell className="text-xs">#{entry.batch.id}<p className="mt-1 text-muted-foreground">{entry.batch.traceId ? `Trace ${String(entry.batch.traceId).slice(-12)}` : "Trace未记录"}</p></TableCell><TableCell><div className="flex justify-end gap-1.5"><Button variant="outline" size="sm" onClick={() => reviewBatch(entry)}><Eye className="mr-1 h-3.5 w-3.5" />查看</Button><Button variant="outline" size="sm" onClick={() => acknowledgeReview(entry)} disabled={acknowledgeReviewMutation.isPending}><FileCheck2 className="mr-1 h-3.5 w-3.5" />记复核</Button><Button size="sm" onClick={() => retryReviewDate(entry)} disabled={previewMutation.isPending}><RotateCcw className="mr-1 h-3.5 w-3.5" />重新读取</Button></div></TableCell></TableRow>;
-          })}{!reviewQueueQuery.isLoading && !reviewEntries.length && <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">当前没有需要人工复核的历史异常日期。</TableCell></TableRow>}{reviewQueueQuery.isLoading && <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">正在读取异常复核队列…</TableCell></TableRow>}</TableBody></Table></div>
+          })}{reviewQueueInitializing && <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">正在准备店铺目录并读取异常复核队列…</TableCell></TableRow>}{!reviewQueueInitializing && reviewQueueQuery.isError && <TableRow><TableCell colSpan={5} className="py-8 text-center text-destructive">异常复核队列读取失败，请刷新页面后重试；系统未对任何日快照进行写入。</TableCell></TableRow>}{!reviewQueueInitializing && !reviewQueueQuery.isError && !reviewEntries.length && <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">当前没有需要人工复核的历史异常日期。</TableCell></TableRow>}</TableBody></Table></div>
           <p className="mt-3 text-xs text-amber-900">“重新读取”仅再次发起领星官方MCP的只读预览；旧批次、原始响应哈希和Trace保持不变。新的草稿仍须通过全店覆盖、无截断、唯一身份、字段有效和异常校验后，才会开放确认入口。</p>
         </CardContent>
       </Card>
