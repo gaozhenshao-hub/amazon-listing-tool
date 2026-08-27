@@ -99,8 +99,10 @@ describe("导入模式库存规划接口契约", () => {
 
   it("库存规划按父ASIN、店铺和国家复用已验证负责人，不以子ASIN跨店模糊匹配", () => {
     expect(routerSource).toContain("const [profileOperatorRows, weeklyOperatorRows] = await Promise.all");
-    expect(routerSource).toContain("operatorByProfileKey.get([latest.parentAsin, latest.storeName || \"\"].join(\"|\"))");
-    expect(routerSource).toContain("operatorByParentKey.get([latest.parentAsin, latest.storeName, latest.country].join(\"|\"))");
+    expect(routerSource).toContain("buildOperatorProfileKey(latest.parentAsin, latest.storeName)");
+    expect(routerSource).toContain("buildOperatorParentKey(latest.parentAsin, latest.storeName, latest.country)");
+    expect(routerSource).toContain("where(opsWorkspaceCondition(lingxingProductWeekly, workspaceId))");
+    expect(routerSource).toContain("where(opsWorkspaceCondition(productProfiles, workspaceId))");
     expect(routerSource).toContain('await applyOperatorMappings(db, planningRows as any, "lingxing")');
   });
 

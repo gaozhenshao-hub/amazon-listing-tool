@@ -21,6 +21,7 @@ import { calculateInventoryPlan } from "../domains/ops/inventoryPlanning/calcula
 import { evaluateThreeMonthZeroDiscontinuation, evaluateThreeMonthZeroWeeklyDiscontinuation } from "../domains/ops/lifecycle/zeroValueDiscontinuation";
 import { buildCompleteCoverageEvidence } from "../domains/ops/lifecycle/completeCoverageEvidence";
 import { collectCompletedDailyBackfillDates } from "../domains/ops/historicalBackfillCoverage";
+import { buildOperatorParentKey, buildOperatorProfileKey } from "../domains/ops/operatorMappingKeys";
 import { mergeErpProducts } from "@shared/erpProductMerge";
 
 function matchesLingxingMarketplace(row: { country?: string | null; storeName?: string | null }, marketplace: string) {
@@ -687,31 +688,34 @@ export const dataImportRouter = router({
         storeName: productProfiles.storeName,
         operator: productProfiles.operator,
       }).from(productProfiles).where(or(
-        isNull(productProfiles.workspaceId),
-        opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), eq(productProfiles.userId, effectiveUserId))
+        and(isNull(productProfiles.workspaceId), eq(productProfiles.userId, effectiveUserId)),
+        opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), eq(productProfiles.userId, effectiveUserId)),
       ));
       const operatorRows = await db!.select({
         parentAsin: lingxingProductWeekly.parentAsin,
         storeName: lingxingProductWeekly.storeName,
         country: lingxingProductWeekly.country,
         operator: lingxingProductWeekly.operator,
-      }).from(lingxingProductWeekly).where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)));
+      }).from(lingxingProductWeekly).where(or(
+        and(isNull(lingxingProductWeekly.workspaceId), eq(lingxingProductWeekly.userId, effectiveUserId)),
+        opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)),
+      )).orderBy(desc(lingxingProductWeekly.weekStartDate), desc(lingxingProductWeekly.id));
       const operatorByProfileKey = new Map<string, string>();
       for (const row of profileOperatorRows) {
         if (!row.operator) continue;
-        const key = [row.parentAsin, row.storeName || ""].join("|");
+        const key = buildOperatorProfileKey(row.parentAsin, row.storeName);
         if (!operatorByProfileKey.has(key)) operatorByProfileKey.set(key, row.operator);
       }
       const operatorByParentKey = new Map<string, string>();
       for (const row of operatorRows) {
         if (!row.operator) continue;
-        const key = [row.parentAsin, row.storeName, row.country].join("|");
+        const key = buildOperatorParentKey(row.parentAsin, row.storeName, row.country);
         if (!operatorByParentKey.has(key)) operatorByParentKey.set(key, row.operator);
       }
       for (const item of overview as Array<{ parentAsin: string; storeName: string; country: string; operator?: string | null }>) {
         item.operator = item.operator
-          || operatorByProfileKey.get([item.parentAsin, item.storeName || ""].join("|"))
-          || operatorByParentKey.get([item.parentAsin, item.storeName, item.country].join("|"))
+          || operatorByProfileKey.get(buildOperatorProfileKey(item.parentAsin, item.storeName))
+          || operatorByParentKey.get(buildOperatorParentKey(item.parentAsin, item.storeName, item.country))
           || null;
       }
       await applyOperatorMappings(db, overview as any, "lingxing");
@@ -777,31 +781,26 @@ export const dataImportRouter = router({
           parentAsin: productProfiles.parentAsin,
           storeName: productProfiles.storeName,
           operator: productProfiles.operator,
-        }).from(productProfiles).where(or(
-          isNull(productProfiles.workspaceId),
-          opsWorkspaceCondition(productProfiles, workspaceId, eq(productProfiles.userId, ctx.user.id)),
-        )),
+        }).from(productProfiles).where(opsWorkspaceCondition(productProfiles, workspaceId)),
         db!.select({
           parentAsin: lingxingProductWeekly.parentAsin,
           storeName: lingxingProductWeekly.storeName,
           country: lingxingProductWeekly.country,
           operator: lingxingProductWeekly.operator,
-        }).from(lingxingProductWeekly).where(opsWorkspaceCondition(
-          lingxingProductWeekly,
-          workspaceId,
-          eq(lingxingProductWeekly.userId, ctx.user.id),
-        )),
+        }).from(lingxingProductWeekly)
+          .where(opsWorkspaceCondition(lingxingProductWeekly, workspaceId))
+          .orderBy(desc(lingxingProductWeekly.weekStartDate), desc(lingxingProductWeekly.id)),
       ]);
       const operatorByProfileKey = new Map<string, string>();
       for (const row of profileOperatorRows) {
         if (!row.operator) continue;
-        const key = [row.parentAsin, row.storeName || ""].join("|");
+        const key = buildOperatorProfileKey(row.parentAsin, row.storeName);
         if (!operatorByProfileKey.has(key)) operatorByProfileKey.set(key, row.operator);
       }
       const operatorByParentKey = new Map<string, string>();
       for (const row of weeklyOperatorRows) {
         if (!row.operator) continue;
-        const key = [row.parentAsin, row.storeName, row.country].join("|");
+        const key = buildOperatorParentKey(row.parentAsin, row.storeName, row.country);
         if (!operatorByParentKey.has(key)) operatorByParentKey.set(key, row.operator);
       }
 
@@ -873,8 +872,8 @@ export const dataImportRouter = router({
           asin: latest.asin, sku: latest.msku || latest.sku || null, parentAsin: latest.parentAsin, storeName: latest.storeName, country: latest.country,
           productName: latest.productName || latest.title || null,
           operator: latest.operator
-            || operatorByProfileKey.get([latest.parentAsin, latest.storeName || ""].join("|"))
-            || operatorByParentKey.get([latest.parentAsin, latest.storeName, latest.country].join("|"))
+            || operatorByProfileKey.get(buildOperatorProfileKey(latest.parentAsin, latest.storeName))
+            || operatorByParentKey.get(buildOperatorParentKey(latest.parentAsin, latest.storeName, latest.country))
             || null,
           localInventory: local?.localQty || 0,
           localInventoryConfirmedAt: local?.confirmedAt || null, parameterScope: parameter?.scopeType || "workspace",

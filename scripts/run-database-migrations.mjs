@@ -104,6 +104,7 @@ const supplementalMigrations = [
     "0180_emperor_lingxing_scheduled_task_unification.sql",
     "0181_product_knowledge_transfer.sql",
     "0182_product_knowledge_transfer_receipts.sql",
+    "0183_backfill_lingxing_weekly_workspace.sql",
   ];
 
 const retiredMigrationFiles = new Set([
