@@ -15,10 +15,13 @@ describe("广告历史事实下游消费边界", () => {
     expect(campaignAnalysisSource).toContain("acos: safePct(c.spend, c.sales)");
   });
 
-  it("广告关键词看板按工作空间和用户读取关键词周事实", () => {
+  it("广告关键词看板按工作空间和用户读取关键词周事实，并兼容已确认的广告组合映射", () => {
     expect(keywordTrackingSource).toContain("getProductKeywords");
     expect(keywordTrackingSource).toContain("from(adKeywordWeekly)");
     expect(keywordTrackingSource).toContain("opsWorkspaceCondition(adKeywordWeekly, currentOpsWorkspaceId()");
+    expect(keywordTrackingSource).toContain("from(adPortfolioMappings)");
+    expect(keywordTrackingSource).toContain("mappedPortfolioCount");
+    expect(keywordTrackingSource).toContain("eq(adKeywordWeekly.portfolioName, mapping.portfolioName)");
     expect(keywordTrackingSource).toContain("keywordGroups.get(key)!.weeks.push");
   });
 

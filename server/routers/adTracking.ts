@@ -20,7 +20,7 @@ import {
   adCompetitorRanks,
   productProfiles,
 } from "../../drizzle/schema";
-import { eq, desc, and, inArray, sql, like } from "drizzle-orm";
+import { eq, desc, and, or, inArray, sql, like } from "drizzle-orm";
 import { parseAdReportBuffer } from "../adReportParser";
 import { storagePut } from "../storage";
 import XLSX from "xlsx";
@@ -361,12 +361,34 @@ export const adTrackingRouter = router({
       const db = await getDb();
       if (!db) return { keywords: [], weeks: [], meta: {} };
 
-      // Get all keyword data for this product, ordered by week desc
+      // 关键词事实有两种可验证归因：导入/同步时已经落到产品的直接归因，
+      // 或用户维护的“广告组合→父ASIN”映射。两者应取并集，不能因旧数据的
+      // productId/parentAsin尚未回填而隐藏已确认映射下的关键词。
       const conditions = [eq(adKeywordWeekly.userId, ctx.user.id)];
+      const attributionConditions: any[] = [];
       if (input.productId > 0) {
-        conditions.push(eq(adKeywordWeekly.productId, input.productId));
-      } else if (input.parentAsin) {
-        conditions.push(eq(adKeywordWeekly.parentAsin, input.parentAsin));
+        attributionConditions.push(eq(adKeywordWeekly.productId, input.productId));
+      }
+      let mappedPortfolioCount = 0;
+      if (input.parentAsin) {
+        attributionConditions.push(eq(adKeywordWeekly.parentAsin, input.parentAsin));
+        const mappings = await db.select({
+          portfolioName: adPortfolioMappings.portfolioName,
+          storeName: adPortfolioMappings.storeName,
+        }).from(adPortfolioMappings)
+          .where(opsWorkspaceCondition(adPortfolioMappings, currentOpsWorkspaceId(), and(
+            eq(adPortfolioMappings.userId, ctx.user.id),
+            eq(adPortfolioMappings.parentAsin, input.parentAsin),
+          )));
+        mappedPortfolioCount = mappings.length;
+        for (const mapping of mappings) {
+          attributionConditions.push(mapping.storeName
+            ? and(eq(adKeywordWeekly.portfolioName, mapping.portfolioName), eq(adKeywordWeekly.storeName, mapping.storeName))
+            : eq(adKeywordWeekly.portfolioName, mapping.portfolioName));
+        }
+      }
+      if (attributionConditions.length > 0) {
+        conditions.push(or(...attributionConditions));
       }
       if (input.targetingType !== "all") {
         conditions.push(eq(adKeywordWeekly.targetingType, input.targetingType));
@@ -380,6 +402,8 @@ export const adTrackingRouter = router({
       const metaConditions = [eq(adKeywordMeta.userId, ctx.user.id)];
       if (input.productId > 0) {
         metaConditions.push(eq(adKeywordMeta.productId, input.productId));
+      } else if (input.parentAsin) {
+        metaConditions.push(eq(adKeywordMeta.parentAsin, input.parentAsin));
       }
       const metaRows = await db.select().from(adKeywordMeta)
         .where(opsWorkspaceCondition(adKeywordMeta, currentOpsWorkspaceId(), and(...metaConditions)));
@@ -467,6 +491,10 @@ export const adTrackingRouter = router({
         keywords: keywordsArr,
         weeks: sortedWeeks,
         meta: metaMap,
+        attribution: {
+          directParentAsin: Boolean(input.parentAsin),
+          mappedPortfolioCount,
+        },
       };
     }),
 
