@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Archive, CalendarClock, CalendarRange, DatabaseZap, Eye, FileCheck2, Filter, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Archive, CalendarClock, CalendarRange, DatabaseZap, Eye, FileCheck2, Filter, Loader2, RefreshCw, RotateCcw, ShieldAlert, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
@@ -54,20 +54,39 @@ export default function OpsLingxingSync() {
   const [rowStatusFilter, setRowStatusFilter] = useState("all");
   const [historyDomainFilter, setHistoryDomainFilter] = useState("all");
   const [historyStatusFilter, setHistoryStatusFilter] = useState("all");
+  const [directoryBootstrapSettled, setDirectoryBootstrapSettled] = useState(false);
+  const [reviewQueueBootstrapReady, setReviewQueueBootstrapReady] = useState(false);
+  const [historyBootstrapReady, setHistoryBootstrapReady] = useState(false);
+  const isAdDomain = ["ad_campaign", "ad_keyword", "ad_search_term", "ad_targeting"].includes(domain);
   const storesQuery = trpc.lingxingSync.listStores.useQuery(undefined, { retry: false, staleTime: 5 * 60_000 });
-  const adProfilesQuery = trpc.lingxingSync.listAdProfiles.useQuery(undefined, { retry: false, staleTime: 5 * 60_000 });
-  // 店铺与广告Profile目录会触发官方MCP读取且受QPS=1约束。先让目录请求各自结束，
-  // 再单独发起纯数据库历史/计划查询，避免同一批请求的局部429使页面误显示为空状态。
-  const directoryBootstrapSettled = !storesQuery.isLoading && !adProfilesQuery.isLoading;
+  const adProfilesQuery = trpc.lingxingSync.listAdProfiles.useQuery(undefined, { enabled: isAdDomain, retry: false, staleTime: 5 * 60_000 });
+  // 店铺与广告Profile目录会触发官方MCP读取且受QPS=1约束。必须等到目录真实成功或失败后，
+  // 再在下一次渲染单独发起纯数据库历史、计划和异常复核查询，避免首屏同批局部429污染其缓存。
+  const directoryRequestsFinished = (storesQuery.isSuccess || storesQuery.isError)
+    && (!isAdDomain || adProfilesQuery.isSuccess || adProfilesQuery.isError);
+  useEffect(() => {
+    setDirectoryBootstrapSettled(directoryRequestsFinished);
+    if (!directoryRequestsFinished) {
+      setReviewQueueBootstrapReady(false);
+      setHistoryBootstrapReady(false);
+    }
+  }, [directoryRequestsFinished]);
+  useEffect(() => {
+    if (directoryBootstrapSettled) setReviewQueueBootstrapReady(true);
+  }, [directoryBootstrapSettled]);
   const historyQuery = trpc.lingxingSync.list.useQuery(
     { limit: 20 },
-    { enabled: directoryBootstrapSettled, retry: false, staleTime: 30_000 },
+    { enabled: historyBootstrapReady, retry: false, staleTime: 30_000 },
   );
   const schedulesQuery = trpc.lingxingSync.listSchedules.useQuery(
     undefined,
-    { enabled: directoryBootstrapSettled, retry: false, staleTime: 30_000 },
+    { enabled: historyBootstrapReady, retry: false, staleTime: 30_000 },
   );
+  const reviewQueueQuery = trpc.lingxingSync.listBackfillReviewQueue.useQuery(undefined, { enabled: reviewQueueBootstrapReady, retry: false, staleTime: 0, refetchOnMount: "always" });
   const batchQuery = trpc.lingxingSync.get.useQuery({ batchId: batchId || 0 }, { enabled: Boolean(batchId) });
+  useEffect(() => {
+    if (reviewQueueQuery.isSuccess || reviewQueueQuery.isError) setHistoryBootstrapReady(true);
+  }, [reviewQueueQuery.isError, reviewQueueQuery.isSuccess]);
 
   const previewMutation = trpc.lingxingSync.createPreview.useMutation({
     onSuccess: (result) => {
@@ -114,6 +133,13 @@ export default function OpsLingxingSync() {
     },
     onError: (error) => toast.error("计划更新失败", { description: error.message }),
   });
+  const acknowledgeReviewMutation = trpc.lingxingSync.acknowledgeBackfillReview.useMutation({
+    onSuccess: () => {
+      toast.success("已记录复核意见", { description: "异常草稿与原始审计证据会保留；该操作不会确认、应用或写入任何业务数据。" });
+      void reviewQueueQuery.refetch();
+    },
+    onError: (error) => toast.error("记录复核意见失败", { description: error.message }),
+  });
 
   const rows = useMemo(() => batchQuery.data?.rows || [], [batchQuery.data?.rows]);
   const visibleRows = useMemo(() => filterLingxingDraftRows(rows, rowStatusFilter), [rows, rowStatusFilter]);
@@ -125,8 +151,21 @@ export default function OpsLingxingSync() {
     const statusMatches = historyStatusFilter === "all" || batch.status === historyStatusFilter;
     return domainMatches && statusMatches;
   }), [historyQuery.data, historyDomainFilter, historyStatusFilter]);
+  const activeBatchDomain = batchQuery.data?.batch.dataDomain || domain;
+  const activeBatchPreviewOnly = phase5PreviewDomains.has(activeBatchDomain);
+  const detailColumns = phase5DetailColumns[activeBatchDomain] || defaultDetailColumns;
   const activeSummary = (batchQuery.data?.batch.summary || {}) as Record<string, unknown>;
   const activeScope = (batchQuery.data?.batch.scope || {}) as Record<string, unknown>;
+  const reviewEntries = reviewQueueQuery.data || [];
+  const activeBatchReviewBlocked = activeBatchDomain === "product_performance_daily" && (
+    Boolean(activeSummary.capped)
+    || Number(activeSummary.pageTruncations || 0) > 0
+    || Boolean(activeSummary.timeoutBeforePreview)
+    || Boolean(activeSummary.applyBlocked)
+    || (Array.isArray(activeSummary.failedStoreDateWindows) && activeSummary.failedStoreDateWindows.length > 0)
+    || (Number(activeSummary.storesExpected || 0) > 0 && Number(activeSummary.storesExpected) !== Number(activeSummary.storesRead || 0))
+    || (Number(activeSummary.storeDateWindowsExpected || 0) > 0 && Number(activeSummary.storeDateWindowsExpected) !== Number(activeSummary.storeDateWindowsRead || 0))
+  );
   const scheduledDrafts = [
     { dataDomain: "product_performance_daily" as const, title: "每日产品日数据", timing: "每天北京时间 17:00 · 读取前一天", detail: "美国站全店逐日读取；仅在分页完整、身份去重、字段有效且无异常时自动追加日快照", autoApply: true },
     { dataDomain: "parent_asin_weekly_rollup" as const, title: "每周父ASIN汇总草稿", timing: "每周一北京时间 17:10 · 汇总上一自然周", detail: "仅汇总已确认日快照，生成父ASIN周度摘要与异常提示，不改写历史周表或人工财务", autoApply: false },
@@ -138,10 +177,6 @@ export default function OpsLingxingSync() {
     const current = { ...(row.normalizedData || {}), ...(edits[row.id]?.normalizedData || {}) };
     setRow(row.id, { normalizedData: { ...current, [key]: nextValue } });
   };
-  const isAdDomain = ["ad_campaign", "ad_keyword", "ad_search_term", "ad_targeting"].includes(domain);
-  const activeBatchDomain = batchQuery.data?.batch.dataDomain || domain;
-  const activeBatchPreviewOnly = phase5PreviewDomains.has(activeBatchDomain);
-  const detailColumns = phase5DetailColumns[activeBatchDomain] || defaultDetailColumns;
   const usAdProfileIds = useMemo(() => (adProfilesQuery.data || [])
     .filter((profile) => ["US", "美国"].includes(String(profile.country || "").toUpperCase()) || /\bUS\b/i.test(String(profile.name || "")))
     .map((profile) => profile.profileId)
@@ -175,6 +210,25 @@ export default function OpsLingxingSync() {
     if (!window.confirm("确认将已选择的广告报表草稿追加到广告数据链路吗？此操作只写入历史指标，不会修改广告预算、竞价、投放状态或广告组合。")) return;
     applyAdsMutation.mutate({ batchId });
   };
+  const reviewBatch = (entry: any) => {
+    setBatchId(entry.batch.id);
+    setEdits({});
+  };
+  const retryReviewDate = (entry: any) => {
+    const scope = (entry.batch.scope || {}) as Record<string, unknown>;
+    if (!window.confirm(`将重新通过领星官方MCP读取 ${entry.reportDate} 的美国站全店数据。旧草稿和审计证据会保留；只有新的读取窗口完整通过校验后，才会生成可确认的新草稿。是否继续？`)) return;
+    const retryStoreId = String(scope.storeId || "ALL_US");
+    setDomain("product_performance_daily");
+    setStoreId(retryStoreId);
+    setStartDate(entry.reportDate);
+    setEndDate(entry.reportDate);
+    previewMutation.mutate({ dataDomain: "product_performance_daily", scope: { storeId: retryStoreId, startDate: entry.reportDate, endDate: entry.reportDate, marketplace: "US" } });
+  };
+  const acknowledgeReview = (entry: any) => {
+    const note = window.prompt(`记录 ${entry.reportDate} 的复核结论（不会确认或写入数据）：`);
+    if (!note?.trim()) return;
+    acknowledgeReviewMutation.mutate({ batchId: entry.batch.id, note: note.trim() });
+  };
 
   return <div className="space-y-6">
     <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
@@ -200,6 +254,21 @@ export default function OpsLingxingSync() {
       <Card className="border-amber-200 bg-amber-50/40"><CardContent className="flex gap-3 pt-6 text-sm text-amber-900"><FileCheck2 className="mt-0.5 h-5 w-5 shrink-0" /><p><b>人工确认与自动应用边界：</b>领星读取先生成独立草稿批次。手动预览须由人工逐行确认；仅已启用的每日ASIN日表现计划可在分页完整、店铺日期覆盖、身份去重、字段有效且无异常时自动确认并追加日快照。产品总览按父ASIN自然周汇总；库存、广告、Listing、月度采购和广告投放设置均不会由自动计划写入或修改。</p></CardContent></Card>
       <Card className="border-emerald-200 bg-emerald-50/40"><CardContent className="flex gap-3 pt-5 text-sm text-emerald-900"><Filter className="mt-0.5 h-5 w-5 shrink-0" /><p><b>统计范围（同步与下载）：</b>系统会完整读取所选店铺和日期窗口，以校验店铺/日期覆盖；但仅将所选时间内有销量、广告或表现数据的商品写入同步草稿、下载结果与产品总览。全零商品保留在受控原始读取审计中，不进入业务日快照。</p></CardContent></Card>
 
+      <Card className="border-amber-300 bg-amber-50/50">
+        <CardHeader className="flex-row items-start justify-between gap-4">
+          <div><CardTitle className="flex items-center gap-2 text-base"><ShieldAlert className="h-5 w-5 text-amber-700" />异常数据复核</CardTitle><CardDescription className="mt-1">按报告日期合并历史异常草稿。可查看截断、超时和失败窗口证据；只能记录复核意见或重新读取完整窗口，不能绕过完整性校验直接写入。</CardDescription></div>
+          <Badge variant="outline" className="border-amber-300 bg-background text-amber-800">{reviewQueueQuery.isLoading ? "加载中" : `${reviewEntries.length} 个待复核日期`}</Badge>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto rounded-md border border-amber-200 bg-background"><Table><TableHeader><TableRow><TableHead>报告日期</TableHead><TableHead>异常原因</TableHead><TableHead>覆盖 / 截断</TableHead><TableHead>审计批次</TableHead><TableHead className="text-right">人工处理</TableHead></TableRow></TableHeader><TableBody>{reviewEntries.map((entry: any) => {
+            const summary = (entry.batch.summary || {}) as Record<string, unknown>;
+            const failedWindows = Array.isArray(summary.failedStoreDateWindows) ? summary.failedStoreDateWindows : [];
+            return <TableRow key={entry.reportDate}><TableCell className="font-medium">{entry.reportDate}<p className="mt-1 text-xs text-muted-foreground">已尝试 {entry.attempts} 次</p></TableCell><TableCell><Badge variant="secondary" className="font-normal">{entry.issue.label}</Badge><p className="mt-1 max-w-72 text-xs text-muted-foreground">{entry.issue.detail}</p></TableCell><TableCell className="text-xs text-muted-foreground">店铺：{String(summary.storesRead || 0)}/{String(summary.storesExpected || "—")}<br />窗口：{String(summary.storeDateWindowsRead || 0)}/{String(summary.storeDateWindowsExpected || "—")} · 截断 {String(summary.pageTruncations || 0)}{failedWindows.length ? <span className="block text-amber-700">失败窗口 {failedWindows.length}</span> : null}</TableCell><TableCell className="text-xs">#{entry.batch.id}<p className="mt-1 text-muted-foreground">{entry.batch.traceId ? `Trace ${String(entry.batch.traceId).slice(-12)}` : "Trace未记录"}</p></TableCell><TableCell><div className="flex justify-end gap-1.5"><Button variant="outline" size="sm" onClick={() => reviewBatch(entry)}><Eye className="mr-1 h-3.5 w-3.5" />查看</Button><Button variant="outline" size="sm" onClick={() => acknowledgeReview(entry)} disabled={acknowledgeReviewMutation.isPending}><FileCheck2 className="mr-1 h-3.5 w-3.5" />记复核</Button><Button size="sm" onClick={() => retryReviewDate(entry)} disabled={previewMutation.isPending}><RotateCcw className="mr-1 h-3.5 w-3.5" />重新读取</Button></div></TableCell></TableRow>;
+          })}{!reviewQueueQuery.isLoading && !reviewEntries.length && <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">当前没有需要人工复核的历史异常日期。</TableCell></TableRow>}{reviewQueueQuery.isLoading && <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">正在读取异常复核队列…</TableCell></TableRow>}</TableBody></Table></div>
+          <p className="mt-3 text-xs text-amber-900">“重新读取”仅再次发起领星官方MCP的只读预览；旧批次、原始响应哈希和Trace保持不变。新的草稿仍须通过全店覆盖、无截断、唯一身份、字段有效和异常校验后，才会开放确认入口。</p>
+        </CardContent>
+      </Card>
+
       {selectedRule ? <Card className="border-sky-200 bg-sky-50/40"><CardHeader className="pb-2"><CardTitle className="text-base">{selectedRule.label} · 独立联动规则</CardTitle><CardDescription>{selectedRule.grain}；身份键：{selectedRule.identity}</CardDescription></CardHeader><CardContent className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4"><div><p className="text-xs text-muted-foreground">读取字段</p><p className="mt-1">{selectedRule.sourceFields.join("、")}</p></div><div><p className="text-xs text-muted-foreground">写入与下游联动</p><p className="mt-1">{selectedRule.target} → {selectedRule.downstream.join("、")}</p></div><div><p className="text-xs text-muted-foreground">节奏与确认</p><p className="mt-1">{selectedRule.cadence}；{selectedRule.confirmation}</p></div><div><p className="text-xs text-muted-foreground">保护与缺失值</p><p className="mt-1">保护：{selectedRule.protectedFields.join("、")}；{selectedRule.missingValue}</p></div></CardContent></Card> : null}
 
       <Card className="border-slate-200 bg-slate-50/50"><CardHeader className="pb-2"><CardTitle className="text-base">Phase 5 · 只读预览准备域</CardTitle><CardDescription>Listing、广告搜索词与投放目标已开放独立只读草稿及字段对账，但未开放确认、业务写入或自动计划；避免未验证字段进入现有业务表。</CardDescription></CardHeader><CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{LINGXING_SYNC_RULES.filter((rule) => ["listing_master", "ad_search_term", "ad_targeting", "parent_asin_traffic"].includes(rule.domain)).map((rule) => <div key={rule.domain} className="rounded-md border bg-background p-3 text-sm"><div className="flex items-start justify-between gap-2"><p className="font-medium">{rule.label}</p><Badge variant="outline">只读准备</Badge></div><p className="mt-2 text-xs text-muted-foreground">来源：{rule.source}</p><p className="mt-1 text-xs text-muted-foreground">身份键：{rule.identity}</p><p className="mt-2 text-xs">{rule.confirmation}</p></div>)}</CardContent></Card>
@@ -213,7 +282,7 @@ export default function OpsLingxingSync() {
 
     {batchQuery.data && <Card>
       <CardHeader className="flex-row items-start justify-between"><div><CardTitle>同步草稿 #{batchQuery.data.batch.id}</CardTitle><CardDescription>状态：{statusLabel(batchQuery.data.batch.status)} · 已读取 {rows.length} 行 · 已选择 {selectedCount} 行{batchQuery.data.batch.summary?.placeholderRows ? ` · 已过滤占位ASIN ${batchQuery.data.batch.summary.placeholderRows} 行` : ""}{batchQuery.data.batch.summary?.pageTruncations ? ` · 分页上限触发 ${batchQuery.data.batch.summary.pageTruncations} 次` : ""}</CardDescription></div><Button variant="outline" size="sm" onClick={() => void batchQuery.refetch()}><RefreshCw className="mr-2 h-4 w-4" />刷新</Button></CardHeader>
-      <CardContent className="space-y-4"><div className="grid gap-3 rounded-lg border bg-muted/20 p-3 text-sm sm:grid-cols-2 xl:grid-cols-4"><div><p className="text-xs text-muted-foreground">读取范围</p><p className="mt-1 font-medium">{String(activeScope.storeId || "未记录")} · {String(activeScope.startDate || "-")} 至 {String(activeScope.endDate || "-")}</p></div><div><p className="text-xs text-muted-foreground">有效草稿 / 已选</p><p className="mt-1 font-medium">{rows.length} / {selectedCount}</p></div><div><p className="text-xs text-muted-foreground">过滤与分页</p><p className="mt-1 font-medium">占位 {String(activeSummary.placeholderRows || 0)} · 聚合/空身份 {String(activeSummary.filteredAggregateOrInvalidRows || 0)} · 截断 {String(activeSummary.pageTruncations || 0)}</p></div><div><p className="text-xs text-muted-foreground">数据影响</p><p className="mt-1 font-medium">{activeBatchPreviewOnly ? "仅字段对账草稿，未开放确认或业务写入" : batchQuery.data.batch.dataDomain === "product_performance_daily" ? "确认后追加日快照并联动产品总览" : "确认后仅追加对应历史事实"}</p></div></div>{activeBatchPreviewOnly ? <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">此Phase 5批次仅用于人工字段对账。搜索词/投放目标的聚合行、空身份行与`99999999`比率哨兵已被过滤或归一为缺失值；系统不会确认、写入广告事实表、覆盖Listing主数据或修改广告设置。</p> : null}<LingxingDraftStatusFilter value={rowStatusFilter} total={rows.length} onChange={setRowStatusFilter} /><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>选择</TableHead><TableHead>状态</TableHead><TableHead>差异</TableHead>{detailColumns.map((column) => <TableHead key={column.key}>{column.label}</TableHead>)}</TableRow></TableHeader><TableBody>{visibleRows.map((row: any) => <TableRow key={row.id}><TableCell><input aria-label={`选择草稿行 ${row.id}`} type="checkbox" checked={edits[row.id]?.selected ?? Boolean(row.selected)} onChange={(event) => setRow(row.id, { selected: event.target.checked })} disabled={activeBatchPreviewOnly} /></TableCell><TableCell><Badge variant={row.rowStatus === "needs_review" ? "secondary" : "outline"}>{statusLabel(edits[row.id]?.rowStatus || row.rowStatus)}</Badge></TableCell><TableCell className="max-w-52 text-xs text-muted-foreground">{row.fieldDiffs?.length ? row.fieldDiffs.map((diff: any) => `${diff.field}: ${diff.before ?? "-"} → ${diff.after ?? "-"}`).join("；") : row.matchInfo?.strategy ? "与现有记录一致" : "新增记录"}{row.validationErrors?.length ? <p className="mt-1 text-amber-700">{row.validationErrors.join("；")}</p> : null}</TableCell>{detailColumns.map((column) => <TableCell key={column.key}><Input className="h-8 min-w-28" value={field(row, column.key)} onChange={(event) => updateField(row, column.key, event.target.value)} disabled={activeBatchPreviewOnly} /></TableCell>)}</TableRow>)}{!visibleRows.length && <TableRow><TableCell colSpan={3 + detailColumns.length} className="py-8 text-center text-muted-foreground">{rows.length ? "当前筛选条件下没有草稿行。" : "此批次没有可预览的数据行。"}</TableCell></TableRow>}</TableBody></Table></div>{batchQuery.data.batch.summary?.rawResponseExternalized ? <p className="flex items-center gap-1 text-xs text-muted-foreground"><Archive className="h-3.5 w-3.5" />完整领星原始响应已受控归档；当前页面只展示可编辑草稿、差异与审计摘要。</p> : null}<div className="flex flex-wrap justify-end gap-2"><Button onClick={() => void saveAndConfirm()} disabled={activeBatchPreviewOnly || !rows.length || updateMutation.isPending || confirmMutation.isPending || batchQuery.data.batch.status !== "ready_for_review"}>{(updateMutation.isPending || confirmMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{activeBatchPreviewOnly ? "仅供字段对账，暂不开放确认" : "确认所选草稿（不写业务表）"}</Button>{["product_performance", "product_performance_daily", "order_profit", "fba_inventory"].includes(batchQuery.data.batch.dataDomain) && <Button variant="secondary" onClick={applyConfirmed} disabled={applyMutation.isPending || batchQuery.data.batch.status !== "confirmed"}>{applyMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{batchQuery.data.batch.dataDomain === "product_performance_daily" ? "确认后追加日快照并联动产品总览" : "确认后应用至现有运营数据"}</Button>}{["ad_campaign", "ad_keyword"].includes(batchQuery.data.batch.dataDomain) && <Button variant="secondary" onClick={applyConfirmedAds} disabled={applyAdsMutation.isPending || batchQuery.data.batch.status !== "confirmed"}>{applyAdsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}确认后追加广告报表</Button>}</div></CardContent>
+      <CardContent className="space-y-4"><div className="grid gap-3 rounded-lg border bg-muted/20 p-3 text-sm sm:grid-cols-2 xl:grid-cols-4"><div><p className="text-xs text-muted-foreground">读取范围</p><p className="mt-1 font-medium">{String(activeScope.storeId || "未记录")} · {String(activeScope.startDate || "-")} 至 {String(activeScope.endDate || "-")}</p></div><div><p className="text-xs text-muted-foreground">有效草稿 / 已选</p><p className="mt-1 font-medium">{rows.length} / {selectedCount}</p></div><div><p className="text-xs text-muted-foreground">过滤与分页</p><p className="mt-1 font-medium">占位 {String(activeSummary.placeholderRows || 0)} · 聚合/空身份 {String(activeSummary.filteredAggregateOrInvalidRows || 0)} · 截断 {String(activeSummary.pageTruncations || 0)}</p></div><div><p className="text-xs text-muted-foreground">数据影响</p><p className="mt-1 font-medium">{activeBatchPreviewOnly ? "仅字段对账草稿，未开放确认或业务写入" : batchQuery.data.batch.dataDomain === "product_performance_daily" ? "确认后追加日快照并联动产品总览" : "确认后仅追加对应历史事实"}</p></div></div>{activeBatchReviewBlocked ? <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><b>该批次为异常复核草稿，已锁定确认与应用。</b>请查看截断、店铺日期窗口和Trace证据；只能记录复核意见或从上方异常复核列表重新读取完整窗口。</div> : null}{activeBatchPreviewOnly ? <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">此Phase 5批次仅用于人工字段对账。搜索词/投放目标的聚合行、空身份行与`99999999`比率哨兵已被过滤或归一为缺失值；系统不会确认、写入广告事实表、覆盖Listing主数据或修改广告设置。</p> : null}<LingxingDraftStatusFilter value={rowStatusFilter} total={rows.length} onChange={setRowStatusFilter} /><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>选择</TableHead><TableHead>状态</TableHead><TableHead>差异</TableHead>{detailColumns.map((column) => <TableHead key={column.key}>{column.label}</TableHead>)}</TableRow></TableHeader><TableBody>{visibleRows.map((row: any) => <TableRow key={row.id}><TableCell><input aria-label={`选择草稿行 ${row.id}`} type="checkbox" checked={edits[row.id]?.selected ?? Boolean(row.selected)} onChange={(event) => setRow(row.id, { selected: event.target.checked })} disabled={activeBatchPreviewOnly || activeBatchReviewBlocked} /></TableCell><TableCell><Badge variant={row.rowStatus === "needs_review" ? "secondary" : "outline"}>{statusLabel(edits[row.id]?.rowStatus || row.rowStatus)}</Badge></TableCell><TableCell className="max-w-52 text-xs text-muted-foreground">{row.fieldDiffs?.length ? row.fieldDiffs.map((diff: any) => `${diff.field}: ${diff.before ?? "-"} → ${diff.after ?? "-"}`).join("；") : row.matchInfo?.strategy ? "与现有记录一致" : "新增记录"}{row.validationErrors?.length ? <p className="mt-1 text-amber-700">{row.validationErrors.join("；")}</p> : null}</TableCell>{detailColumns.map((column) => <TableCell key={column.key}><Input className="h-8 min-w-28" value={field(row, column.key)} onChange={(event) => updateField(row, column.key, event.target.value)} disabled={activeBatchPreviewOnly || activeBatchReviewBlocked} /></TableCell>)}</TableRow>)}{!visibleRows.length && <TableRow><TableCell colSpan={3 + detailColumns.length} className="py-8 text-center text-muted-foreground">{rows.length ? "当前筛选条件下没有草稿行。" : "此批次没有可预览的数据行。"}</TableCell></TableRow>}</TableBody></Table></div>{batchQuery.data.batch.summary?.rawResponseExternalized ? <p className="flex items-center gap-1 text-xs text-muted-foreground"><Archive className="h-3.5 w-3.5" />完整领星原始响应已受控归档；当前页面只展示可编辑草稿、差异与审计摘要。</p> : null}<div className="flex flex-wrap justify-end gap-2"><Button onClick={() => void saveAndConfirm()} disabled={activeBatchPreviewOnly || activeBatchReviewBlocked || !rows.length || updateMutation.isPending || confirmMutation.isPending || batchQuery.data.batch.status !== "ready_for_review"}>{(updateMutation.isPending || confirmMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{activeBatchReviewBlocked ? "异常批次不可确认" : activeBatchPreviewOnly ? "仅供字段对账，暂不开放确认" : "确认所选草稿（不写业务表）"}</Button>{["product_performance", "product_performance_daily", "order_profit", "fba_inventory"].includes(batchQuery.data.batch.dataDomain) && <Button variant="secondary" onClick={applyConfirmed} disabled={activeBatchReviewBlocked || applyMutation.isPending || batchQuery.data.batch.status !== "confirmed"}>{applyMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{batchQuery.data.batch.dataDomain === "product_performance_daily" ? "确认后追加日快照并联动产品总览" : "确认后应用至现有运营数据"}</Button>}{["ad_campaign", "ad_keyword"].includes(batchQuery.data.batch.dataDomain) && <Button variant="secondary" onClick={applyConfirmedAds} disabled={applyAdsMutation.isPending || batchQuery.data.batch.status !== "confirmed"}>{applyAdsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}确认后追加广告报表</Button>}</div></CardContent>
     </Card>}
 
       <Card><CardHeader><CardTitle>最近同步批次</CardTitle><CardDescription>保留领星读取范围、Tool Run、Artifact与人工确认记录；历史表格导入不受影响。</CardDescription></CardHeader><CardContent className="space-y-3"><div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/20 p-2"><Filter className="h-4 w-4 text-muted-foreground" /><select aria-label="按数据域筛选批次" className="h-8 rounded border bg-background px-2 text-sm" value={historyDomainFilter} onChange={(event) => setHistoryDomainFilter(event.target.value)}><option value="all">全部数据域</option>{domains.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><select aria-label="按状态筛选批次" className="h-8 rounded border bg-background px-2 text-sm" value={historyStatusFilter} onChange={(event) => setHistoryStatusFilter(event.target.value)}><option value="all">全部状态</option>{["ready_for_review", "confirmed", "applied", "empty", "failed"].map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select><span className="ml-auto text-xs text-muted-foreground">显示 {visibleBatches.length} / {(historyQuery.data || []).length} 个批次</span></div><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>批次</TableHead><TableHead>数据域</TableHead><TableHead>状态</TableHead><TableHead>读取行数</TableHead><TableHead>范围 / 审计</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>{visibleBatches.map((batch: any) => <TableRow key={batch.id}><TableCell>#{batch.id}</TableCell><TableCell>{domains.find((item) => item.value === batch.dataDomain)?.label || batch.dataDomain}</TableCell><TableCell><Badge variant="outline">{statusLabel(batch.status)}</Badge></TableCell><TableCell>{batch.summary?.totalRead ?? "-"}</TableCell><TableCell className="text-xs text-muted-foreground">{batch.scope?.storeId || "-"} · {batch.scope?.startDate || "-"} 至 {batch.scope?.endDate || "-"}{batch.summary?.rawResponseExternalized ? <span className="mt-1 flex items-center gap-1"><Archive className="h-3 w-3" />原始响应已归档</span> : null}</TableCell><TableCell><Button variant="ghost" size="sm" onClick={() => { setBatchId(batch.id); setEdits({}); }}>查看草稿</Button></TableCell></TableRow>)}{!visibleBatches.length && <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">当前筛选条件下没有同步批次。</TableCell></TableRow>}</TableBody></Table></div></CardContent></Card>

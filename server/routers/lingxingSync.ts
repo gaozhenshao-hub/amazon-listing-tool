@@ -10,6 +10,7 @@ import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { ensureAgentRunTrace } from "../domains/ai_os/services/runLedger";
 import { registerUnifiedArtifact } from "../domains/ai_os/services/artifactLifecycle";
 import { invokeEmperorTool } from "../domains/ai_os/services/toolGateway/executors";
+import { buildDailyBackfillReviewQueue, dailyBackfillReviewIssue } from "../domains/ops/historicalBackfillReview";
 import { getDb } from "../repositories/dbClient";
 
 const domainSchema = z.enum(["product_performance", "product_performance_daily", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword", "listing_master", "ad_search_term", "ad_targeting"]);
@@ -445,6 +446,51 @@ export const lingxingSyncRouter = router({
     return { batch, rows };
   }),
 
+  listBackfillReviewQueue: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new Error("数据库不可用");
+    const workspaceId = ctx.user.defaultWorkspaceId!;
+    const batches = await db.select({
+      id: opsExternalSyncBatches.id,
+      status: opsExternalSyncBatches.status,
+      scope: opsExternalSyncBatches.scope,
+      summary: opsExternalSyncBatches.summary,
+      errorMessage: opsExternalSyncBatches.errorMessage,
+      traceId: opsExternalSyncBatches.traceId,
+      toolRunId: opsExternalSyncBatches.toolRunId,
+      createdAt: opsExternalSyncBatches.createdAt,
+    }).from(opsExternalSyncBatches).where(and(
+      eq(opsExternalSyncBatches.workspaceId, workspaceId),
+      eq(opsExternalSyncBatches.source, "lingxing_mcp"),
+      eq(opsExternalSyncBatches.dataDomain, "product_performance_daily"),
+      inArray(opsExternalSyncBatches.status, ["applied", "ready_for_review"]),
+    ));
+    return buildDailyBackfillReviewQueue(batches).map((entry) => ({
+      reportDate: entry.reportDate,
+      attempts: entry.attempts,
+      batchIds: entry.batchIds,
+      issue: entry.issue,
+      batch: entry.latestBatch,
+    }));
+  }),
+
+  acknowledgeBackfillReview: protectedProcedure.input(z.object({ batchId: z.number().int().positive(), note: z.string().trim().min(1).max(1000) })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("数据库不可用");
+    const workspaceId = ctx.user.defaultWorkspaceId!;
+    const [batch] = await db.select().from(opsExternalSyncBatches).where(and(
+      eq(opsExternalSyncBatches.id, input.batchId),
+      eq(opsExternalSyncBatches.workspaceId, workspaceId),
+      eq(opsExternalSyncBatches.source, "lingxing_mcp"),
+      eq(opsExternalSyncBatches.dataDomain, "product_performance_daily"),
+      eq(opsExternalSyncBatches.status, "ready_for_review"),
+    )).limit(1);
+    const issue = batch ? dailyBackfillReviewIssue(batch) : null;
+    if (!batch || !issue) throw new Error("该批次不属于可记录的异常日数据复核项");
+    await db.insert(opsExternalSyncConfirmations).values({ workspaceId, batchId: batch.id, userId: ctx.user.id, action: "review_acknowledged", selectedRowIds: [], note: input.note });
+    return { success: true, batchId: batch.id, issue };
+  }),
+
   createPreview: protectedProcedure.input(z.object({ dataDomain: domainSchema, scope: scopeSchema })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("数据库不可用");
@@ -703,6 +749,8 @@ export const lingxingSyncRouter = router({
     const [batch] = await db.select().from(opsExternalSyncBatches).where(and(eq(opsExternalSyncBatches.id, input.batchId), eq(opsExternalSyncBatches.workspaceId, workspaceId))).limit(1);
     if (!batch || batch.status !== "ready_for_review") throw new Error("该同步批次不在可确认状态");
     if (isPhase5PreviewDomain(batch.dataDomain)) throw new Error("Listing主数据、广告搜索词和投放目标当前仅提供字段对账草稿；尚未开放确认或业务写入。");
+    const reviewIssue = batch.dataDomain === "product_performance_daily" ? dailyBackfillReviewIssue(batch) : null;
+    if (reviewIssue) throw new Error(`该异常批次不能人工确认或写入：${reviewIssue.label}。请在“异常数据复核”中重新读取完整窗口或记录暂缓原因。`);
     await db.insert(opsExternalSyncConfirmations).values({ workspaceId, batchId: input.batchId, userId: ctx.user.id, action: "confirm", selectedRowIds: input.selectedRowIds, note: input.note || null });
     await db.update(opsExternalSyncRows).set({ selected: 0, rowStatus: "skipped" }).where(and(eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.batchId, input.batchId)));
     if (input.selectedRowIds.length) await db.update(opsExternalSyncRows).set({ selected: 1 }).where(and(eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.batchId, input.batchId), inArray(opsExternalSyncRows.id, input.selectedRowIds)));
@@ -722,6 +770,11 @@ export const lingxingSyncRouter = router({
     const scope = object(batch.scope);
     const periodStart = asText(scope.startDate, todayIso());
     const periodEnd = asText(scope.endDate, periodStart);
+    const reviewIssue = batch.dataDomain === "product_performance_daily" ? dailyBackfillReviewIssue(batch) : null;
+    if (reviewIssue) {
+      await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", reviewedAt: null, reviewedBy: null }).where(eq(opsExternalSyncBatches.id, input.batchId));
+      throw new Error(`该异常批次不能应用：${reviewIssue.label}。批次已回退待复核，请重新读取完整窗口。`);
+    }
     if (batch.dataDomain === "product_performance_daily") {
       const dailyRows = selectedRows
         .map((row) => object(row.normalizedData))

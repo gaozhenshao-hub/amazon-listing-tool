@@ -46,8 +46,23 @@ describe("领星同步页面ASIN日数据契约", () => {
 
   it("将受QPS限制的官方目录读取与纯数据库历史/计划查询分阶段发起", () => {
     expect(pageSource).toContain("directoryBootstrapSettled");
-    expect(pageSource).toContain("避免同一批请求的局部429使页面误显示为空状态");
-    expect(pageSource).toContain("enabled: directoryBootstrapSettled");
+    expect(pageSource).toContain("避免首屏同批局部429污染其缓存");
+    expect(pageSource).toContain("enabled: reviewQueueBootstrapReady");
+    expect(pageSource).toContain("enabled: historyBootstrapReady");
+  });
+
+  it("提供按日期的异常回补复核入口、证据查看、复核审计与受控重新读取", () => {
+    expect(pageSource).toContain("异常数据复核");
+    expect(pageSource).toContain("lingxingSync.listBackfillReviewQueue");
+    expect(pageSource).toContain("lingxingSync.acknowledgeBackfillReview");
+    expect(pageSource).toContain("重新读取");
+    expect(pageSource).toContain("旧草稿和审计证据会保留");
+  });
+
+  it("对异常ASIN日草稿锁定确认与应用，不允许前端绕过完整性校验", () => {
+    expect(pageSource).toContain("activeBatchReviewBlocked");
+    expect(pageSource).toContain("该批次为异常复核草稿，已锁定确认与应用");
+    expect(pageSource).toContain("异常批次不可确认");
   });
 
   it("为Phase 5只读域提供美国站全店范围和不可确认的结构化字段对账提示", () => {

@@ -204,4 +204,17 @@ describe("领星ASIN日数据同步路由", () => {
     await expect(caller.confirm({ batchId: 9901, selectedRowIds: [] })).rejects.toThrow("仅提供字段对账草稿");
     expect(state.confirmations).toEqual([]);
   });
+
+  it("异常ASIN日草稿只能记录复核意见，服务端拒绝确认并写入", async () => {
+    state.batch = { id: 9901, workspaceId: 1, status: "ready_for_review", dataDomain: "product_performance_daily", source: "lingxing_mcp", scope: { storeId: "ALL_US", startDate: "2026-04-23", endDate: "2026-04-23" }, summary: { timeoutBeforePreview: true } };
+    state.selectCount = 1;
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+
+    await expect(caller.confirm({ batchId: 9901, selectedRowIds: [] })).rejects.toThrow("异常批次不能人工确认或写入");
+    expect(state.confirmations).toEqual([]);
+
+    state.selectCount = 1;
+    await expect(caller.acknowledgeBackfillReview({ batchId: 9901, note: "等待上游窗口稳定后重新读取" })).resolves.toMatchObject({ success: true, issue: { code: "preview_timeout" } });
+    expect(state.confirmations).toEqual([expect.objectContaining({ action: "review_acknowledged", note: "等待上游窗口稳定后重新读取" })]);
+  });
 });
