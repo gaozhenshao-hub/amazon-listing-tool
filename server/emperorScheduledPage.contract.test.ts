@@ -47,4 +47,15 @@ describe("皇帝定时任务与领星计划统一管理契约", () => {
     expect(router).toContain("cronExpression: input.cronExpr");
     expect(router).toContain('action: "emperor.scheduled_task.update"');
   });
+
+  it("将执行频率和北京时间转换为受治理UTC Cron，并保留高级编辑与周任务频率锁定", () => {
+    expect(page).toContain("执行频率");
+    expect(page).toContain("执行时间（北京时间）");
+    expect(page).toContain("系统自动转换为UTC时间。");
+    expect(page).toContain("编辑高级Cron");
+    expect(page).toContain("使用可视化设置");
+    expect(page).toContain("周汇总固定每周一，不能改为每日。");
+    expect(page).toContain("function createUtcCron");
+    expect(page).toContain('const utcWeekday = frequency === "weekly" ? (beijingHour < 8 ? "0" : "1") : "*"');
+  });
 });

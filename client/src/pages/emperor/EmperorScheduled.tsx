@@ -63,11 +63,34 @@ interface ScheduledTask {
 type SystemTaskDraft = {
   name: string;
   cronExpr: string;
+  frequency: "daily" | "weekly";
+  beijingTime: string;
+  advancedCron: boolean;
   isActive: boolean;
   autoApply: boolean;
   multiplier: string;
   absoluteIncrease: string;
 };
+
+const pad = (value: number) => String(value).padStart(2, "0");
+function readBeijingSchedule(cronExpr: string, dataDomain?: string | null) {
+  const [seconds, minute, hour, dayOfMonth, month, weekday] = cronExpr.trim().split(/\s+/);
+  const utcHour = Number(hour);
+  const utcMinute = Number(minute);
+  const supported = seconds === "0" && dayOfMonth === "*" && month === "*" && Number.isInteger(utcHour) && utcHour >= 0 && utcHour <= 23 && Number.isInteger(utcMinute) && utcMinute >= 0 && utcMinute <= 59;
+  const frequency = dataDomain === "parent_asin_weekly_rollup" || weekday !== "*" ? "weekly" : "daily";
+  return { frequency, beijingTime: supported ? `${pad((utcHour + 8) % 24)}:${pad(utcMinute)}` : "17:00", advancedCron: !supported } as Pick<SystemTaskDraft, "frequency" | "beijingTime" | "advancedCron">;
+}
+function createUtcCron(frequency: "daily" | "weekly", beijingTime: string) {
+  const [hourText, minuteText] = beijingTime.split(":");
+  const beijingHour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isInteger(beijingHour) || !Number.isInteger(minute) || beijingHour < 0 || beijingHour > 23 || minute < 0 || minute > 59) return "";
+  const utcHour = (beijingHour - 8 + 24) % 24;
+  // 周任务固定为中国时间周一；00:00–07:59会转换到前一日UTC，因此使用周日(0)。
+  const utcWeekday = frequency === "weekly" ? (beijingHour < 8 ? "0" : "1") : "*";
+  return `0 ${minute} ${utcHour} * * ${utcWeekday}`;
+}
 
 function systemTaskDraft(task: ScheduledTask): SystemTaskDraft {
   let template: Record<string, unknown> = {};
@@ -80,6 +103,7 @@ function systemTaskDraft(task: ScheduledTask): SystemTaskDraft {
   return {
     name: task.name,
     cronExpr: task.cronExpr || "0 0 9 * * *",
+    ...readBeijingSchedule(task.cronExpr || "0 0 9 * * *", task.dataDomain),
     isActive: Boolean(task.isActive),
     autoApply: Boolean(template.autoApply ?? task.dataDomain !== "parent_asin_weekly_rollup"),
     multiplier: String(threshold.multiplier ?? 20),
@@ -100,7 +124,7 @@ export default function EmperorScheduled() {
   const [showCreate, setShowCreate] = useState(false);
   const [showSystemEdit, setShowSystemEdit] = useState(false);
   const [newTask, setNewTask] = useState({ name: "", skillSlug: "", cronExpr: "0 9 * * *", context: "" });
-  const [systemDraft, setSystemDraft] = useState<SystemTaskDraft>({ name: "", cronExpr: "", isActive: true, autoApply: true, multiplier: "20", absoluteIncrease: "10000" });
+  const [systemDraft, setSystemDraft] = useState<SystemTaskDraft>({ name: "", cronExpr: "", frequency: "daily", beijingTime: "17:00", advancedCron: false, isActive: true, autoApply: true, multiplier: "20", absoluteIncrease: "10000" });
 
   const { data, isLoading, refetch } = trpc.emperor.scheduled.list.useQuery();
   const { data: skillsData } = trpc.emperor.skills.list.useQuery({ page: 1, pageSize: 200, category: "", search: "" });
@@ -132,6 +156,7 @@ export default function EmperorScheduled() {
   const skills = (skillsData?.skills || []) as Array<{ slug: string; name: string }>;
   const isSystemTask = (task: ScheduledTask | null) => Number(task?.systemManaged || 0) === 1;
   const openSystemEdit = (task: ScheduledTask) => { setSystemDraft(systemTaskDraft(task)); setShowSystemEdit(true); };
+  const updateVisualSchedule = (frequency: "daily" | "weekly", beijingTime: string) => setSystemDraft((draft) => ({ ...draft, frequency, beijingTime, cronExpr: createUtcCron(frequency, beijingTime), advancedCron: false }));
   const saveSystemTask = () => {
     if (!selectedTask) return;
     updateSystemTaskMutation.mutate({
@@ -394,7 +419,8 @@ export default function EmperorScheduled() {
               此处为皇帝中台唯一控制面。保存会更新同一Heartbeat任务和执行配置，不会新建Cron、改变MCP白名单、店铺范围或任务UID。
             </div>
             <div className="space-y-2"><label className="text-sm font-medium">任务名称</label><Input value={systemDraft.name} onChange={(event) => setSystemDraft((draft) => ({ ...draft, name: event.target.value }))} /></div>
-            <div className="space-y-2"><label className="text-sm font-medium">UTC Cron 表达式</label><Input className="font-mono" value={systemDraft.cronExpr} onChange={(event) => setSystemDraft((draft) => ({ ...draft, cronExpr: event.target.value }))} /><p className="text-xs text-muted-foreground">固定为6段，秒字段必须是0。例如`0 0 9 * * *`代表北京时间每日17:00。</p></div>
+            <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-sm font-medium">执行频率</label><Select value={systemDraft.frequency} onValueChange={(value: "daily" | "weekly") => updateVisualSchedule(value, systemDraft.beijingTime)} disabled={selectedTask?.dataDomain === "parent_asin_weekly_rollup"}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="daily">每天</SelectItem><SelectItem value="weekly">每周一</SelectItem></SelectContent></Select><p className="text-xs text-muted-foreground">周汇总固定每周一，不能改为每日。</p></div><div className="space-y-2"><label className="text-sm font-medium">执行时间（北京时间）</label><Input type="time" value={systemDraft.beijingTime} onChange={(event) => updateVisualSchedule(systemDraft.frequency, event.target.value)} /><p className="text-xs text-muted-foreground">系统自动转换为UTC时间。</p></div></div>
+            <div className="rounded-lg border p-3 space-y-2"><div className="flex items-center justify-between"><div><p className="text-sm font-medium">高级 Cron</p><p className="text-xs text-muted-foreground">仅在需要特殊表达式时使用；仍必须为6段UTC格式。</p></div><Button type="button" variant="outline" size="sm" onClick={() => setSystemDraft((draft) => ({ ...draft, advancedCron: !draft.advancedCron }))}>{systemDraft.advancedCron ? "使用可视化设置" : "编辑高级Cron"}</Button></div>{systemDraft.advancedCron ? <Input className="font-mono" value={systemDraft.cronExpr} onChange={(event) => setSystemDraft((draft) => ({ ...draft, cronExpr: event.target.value }))} /> : <p className="font-mono text-xs text-muted-foreground">将保存为UTC：{systemDraft.cronExpr}</p>}</div>
             <div className="flex items-center justify-between rounded-lg border p-3"><div><p className="text-sm font-medium">启用任务</p><p className="text-xs text-muted-foreground">暂停会同步暂停唯一Heartbeat触发器。</p></div><Switch checked={systemDraft.isActive} onCheckedChange={(checked) => setSystemDraft((draft) => ({ ...draft, isActive: checked }))} /></div>
             <div className="flex items-center justify-between rounded-lg border p-3"><div><p className="text-sm font-medium">校验通过后自动应用</p><p className="text-xs text-muted-foreground">关闭后只生成待审核草稿，不追加历史事实。</p></div><Switch checked={selectedTask?.dataDomain === "parent_asin_weekly_rollup" ? false : systemDraft.autoApply} disabled={selectedTask?.dataDomain === "parent_asin_weekly_rollup"} onCheckedChange={(checked) => setSystemDraft((draft) => ({ ...draft, autoApply: checked }))} /></div>
             <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-sm font-medium">异常倍数阈值</label><Input type="number" min="2" max="20" value={systemDraft.multiplier} onChange={(event) => setSystemDraft((draft) => ({ ...draft, multiplier: event.target.value }))} /><p className="text-xs text-muted-foreground">范围2–20倍</p></div><div className="space-y-2"><label className="text-sm font-medium">绝对增量阈值</label><Input type="number" min="100" max="10000" value={systemDraft.absoluteIncrease} onChange={(event) => setSystemDraft((draft) => ({ ...draft, absoluteIncrease: event.target.value }))} /><p className="text-xs text-muted-foreground">范围100–10,000</p></div></div>
