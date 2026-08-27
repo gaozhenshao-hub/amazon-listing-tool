@@ -1023,6 +1023,10 @@ export const lingxingSyncRouter = router({
     await db.update(dataImports).set({ importedRows, skippedRows, status: "completed" }).where(eq(dataImports.id, importId));
     await db.insert(opsExternalSyncConfirmations).values({ workspaceId, batchId: input.batchId, userId: ctx.user.id, action: "apply", selectedRowIds: selectedRows.map((row) => row.id), note: input.note || null });
     await db.update(opsExternalSyncBatches).set({ status: "applied", appliedAt: new Date(), appliedBy: ctx.user.id, summary: { ...object(batch.summary), appliedRows: importedRows, skippedRows } }).where(eq(opsExternalSyncBatches.id, input.batchId));
+    if (batch.dataDomain === "product_performance_daily") {
+      const { refreshZeroValueDiscontinuationStatuses } = await import("./dataImport");
+      await refreshZeroValueDiscontinuationStatuses(db, workspaceId);
+    }
     return { success: true, importId, importedRows, skippedRows };
   }),
 

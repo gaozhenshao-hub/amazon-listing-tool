@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
-import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsAsinLifecycleStatuses, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, opsMonthlyFinancialProfits, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles } from "../../drizzle/schema";
+import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsAsinLifecycleStatuses, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, opsMonthlyFinancialProfits, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles, opsExternalSyncBatches } from "../../drizzle/schema";
 import { MANAGER_ROLES } from "../../shared/const";
 import { eq, desc, and, sql, or, isNull, ne } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
@@ -19,6 +19,8 @@ import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { summarizeParentAsinWeeks, summarizeVariantSales } from "../domains/ops/productOverview/dailyAggregation";
 import { calculateInventoryPlan } from "../domains/ops/inventoryPlanning/calculator";
 import { evaluateThreeMonthZeroDiscontinuation, evaluateThreeMonthZeroWeeklyDiscontinuation } from "../domains/ops/lifecycle/zeroValueDiscontinuation";
+import { buildCompleteCoverageEvidence } from "../domains/ops/lifecycle/completeCoverageEvidence";
+import { collectCompletedDailyBackfillDates } from "../domains/ops/historicalBackfillCoverage";
 import { mergeErpProducts } from "@shared/erpProductMerge";
 
 function matchesLingxingMarketplace(row: { country?: string | null; storeName?: string | null }, marketplace: string) {
@@ -30,10 +32,41 @@ function matchesLingxingMarketplace(row: { country?: string | null; storeName?: 
   return [requested, ...(countryAliases[requested] || [])].some(alias => country.includes(alias) || storeName.includes(`-${alias}`));
 }
 
-async function refreshZeroValueDiscontinuationStatuses(db: any, workspaceId: number) {
+export async function refreshZeroValueDiscontinuationStatuses(db: any, workspaceId: number) {
   const snapshots = (await db.select().from(opsAsinDailySnapshots)
     .where(eq(opsAsinDailySnapshots.workspaceId, workspaceId)))
     .filter((snapshot) => snapshot.sourceType !== "lx_inventory_mcp");
+  // 活跃商品过滤会省略连续零值的ASIN。已存在的生命周期状态是此前可验证的业务身份，
+  // 仅作为身份种子参与完整覆盖窗口补零，不伪造任何销量、利润或库存事实。
+  const existingLifecycleStatuses = await db.select().from(opsAsinLifecycleStatuses).where(
+    eq(opsAsinLifecycleStatuses.workspaceId, workspaceId),
+  );
+  const lifecycleIdentitySeeds = existingLifecycleStatuses
+    .filter((status) => Boolean(status.evidenceStartDate || status.evidenceEndDate))
+    .map((status) => ({
+      asin: status.asin,
+      parentAsin: status.parentAsin,
+      storeName: status.storeName,
+      country: status.country,
+      reportDate: status.evidenceStartDate || status.evidenceEndDate!,
+      salesQty: 0,
+      orderProfit: 0,
+      fbaAvailable: 0,
+      availableStock: 0,
+      fbaInTransit: 0,
+      sourceType: "lifecycle_identity_seed",
+      userId: status.userId,
+    }));
+  const dailyBatches = (await db.select().from(opsExternalSyncBatches).where(eq(opsExternalSyncBatches.workspaceId, workspaceId)))
+    .filter((batch) => batch.source === "lingxing_mcp" && batch.dataDomain === "product_performance_daily");
+  const batchScopes = dailyBatches.map((batch) => batch.scope && typeof batch.scope === "object" ? batch.scope as Record<string, unknown> : {});
+  const scopeStarts = batchScopes.map(scope => typeof scope.startDate === "string" ? scope.startDate : "").filter(Boolean).sort();
+  const scopeEnds = batchScopes.map(scope => typeof scope.endDate === "string" ? scope.endDate : "").filter(Boolean).sort();
+  const completedDates = scopeStarts.length && scopeEnds.length
+    ? collectCompletedDailyBackfillDates(dailyBatches as any[], scopeStarts[0], scopeEnds.at(-1)!)
+    : new Set<string>();
+  const completeCoverageInputs = [...snapshots, ...lifecycleIdentitySeeds];
+  const coveredEvidenceByKey = buildCompleteCoverageEvidence(completeCoverageInputs as any[], completedDates);
   const legacyWeekly = await db.select().from(lingxingProductWeekly).where(or(
     isNull(lingxingProductWeekly.workspaceId), eq(lingxingProductWeekly.workspaceId, workspaceId),
   ));
@@ -43,17 +76,19 @@ async function refreshZeroValueDiscontinuationStatuses(db: any, workspaceId: num
     weeklyByKey.set(key, [...(weeklyByKey.get(key) || []), row]);
   }
   const grouped = new Map<string, any[]>();
-  for (const row of snapshots) {
+  for (const row of completeCoverageInputs) {
     const key = `${row.asin}::${row.storeName}::${row.country}`;
     grouped.set(key, [...(grouped.get(key) || []), row]);
   }
   for (const rows of grouped.values()) {
     const latest = [...rows].sort((a, b) => a.reportDate.localeCompare(b.reportDate)).at(-1)!;
-    const dailyDecision = evaluateThreeMonthZeroDiscontinuation(rows.map(row => ({
+    const identityKey = `${latest.asin}::${latest.storeName}::${latest.country}`;
+    const completeCoverageEvidence = coveredEvidenceByKey.get(identityKey) || [];
+    const dailyDecision = evaluateThreeMonthZeroDiscontinuation(completeCoverageEvidence.map(row => ({
       reportDate: row.reportDate, salesQty: row.salesQty || 0, orderProfit: Number(row.orderProfit || 0),
-      totalInventory: (row.fbaAvailable || row.availableStock || 0) + (row.fbaInTransit || 0),
+      totalInventory: row.totalInventory,
     })));
-    const weeklyDecision = evaluateThreeMonthZeroWeeklyDiscontinuation((weeklyByKey.get(`${latest.asin}::${latest.storeName}::${latest.country}`) || []).map(row => ({
+    const weeklyDecision = evaluateThreeMonthZeroWeeklyDiscontinuation((weeklyByKey.get(identityKey) || []).map(row => ({
       weekStartDate: row.weekStartDate, weekEndDate: row.weekEndDate, salesQty: row.salesQty || 0,
       orderProfit: Number(row.orderProfit || 0), totalInventory: (row.fbaAvailable || 0) + (row.fbaInTransit || 0),
     })));
@@ -61,10 +96,20 @@ async function refreshZeroValueDiscontinuationStatuses(db: any, workspaceId: num
       eq(opsAsinLifecycleStatuses.workspaceId, workspaceId), eq(opsAsinLifecycleStatuses.asin, latest.asin),
       eq(opsAsinLifecycleStatuses.storeName, latest.storeName), eq(opsAsinLifecycleStatuses.country, latest.country),
     )).limit(1);
-    const decision = dailyDecision.shouldDiscontinue ? dailyDecision : weeklyDecision;
-    if (!decision.shouldDiscontinue) continue;
+    const decision = completeCoverageEvidence.length === 90 ? dailyDecision : weeklyDecision;
     // 人工恢复为在售是明确的经营决策；后续同一批零值证据不应立即覆盖该决策。
     if (existing?.status === "active" && existing.restoredAt) continue;
+    if (!decision.shouldDiscontinue) {
+      if (existing && !existing.restoredAt) {
+        await db.update(opsAsinLifecycleStatuses).set({
+          status: "active", reason: decision.reason, parentAsin: latest.parentAsin,
+          evidenceStartDate: decision.evidenceStartDate, evidenceEndDate: decision.evidenceEndDate, evidenceDays: decision.evidenceDays,
+          evidenceSalesQty: decision.salesQty, evidenceProfit: String(decision.profit), evidenceMaxInventory: decision.maxInventory,
+          changedBy: null, changedAt: new Date(),
+        }).where(and(eq(opsAsinLifecycleStatuses.id, existing.id), eq(opsAsinLifecycleStatuses.workspaceId, workspaceId)));
+      }
+      continue;
+    }
     const evidence = { status: "discontinued" as const, reason: "three_months_zero", parentAsin: latest.parentAsin,
       evidenceStartDate: decision.evidenceStartDate, evidenceEndDate: decision.evidenceEndDate, evidenceDays: decision.evidenceDays,
       evidenceSalesQty: decision.salesQty, evidenceProfit: String(decision.profit), evidenceMaxInventory: decision.maxInventory,
