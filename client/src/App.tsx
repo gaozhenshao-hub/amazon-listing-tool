@@ -72,6 +72,7 @@ const KBSkills = lazy(() => import("./pages/knowledge/KBSkills"));
 const KBVideos = lazy(() => import("./pages/knowledge/KBVideos"));
 const KBBot = lazy(() => import("./pages/knowledge/KBBot"));
 const KBIntel = lazy(() => import("./pages/knowledge/KBIntel"));
+const KBTransfer = lazy(() => import("./pages/knowledge/KBTransfer"));
 
 // ─── Module 3: Operations AI Tools ─────────────────────────────
 const OpsDashboard = lazy(() => import("./pages/ops/OpsDashboard"));
@@ -217,6 +218,7 @@ function Router() {
         <Route path="/knowledge/skills">{() => <PermissionGuard><KBSkills /></PermissionGuard>}</Route>
         <Route path="/knowledge/videos">{() => <PermissionGuard><KBVideos /></PermissionGuard>}</Route>
         <Route path="/knowledge/intel">{() => <PermissionGuard><KBIntel /></PermissionGuard>}</Route>
+        <Route path="/knowledge/transfer">{() => <PermissionGuard><KBTransfer /></PermissionGuard>}</Route>
 
         {/* ─── Module 3: Operations AI Tools ─── */}
         <Route path="/ops">{() => <PermissionGuard><OpsDashboard /></PermissionGuard>}</Route>

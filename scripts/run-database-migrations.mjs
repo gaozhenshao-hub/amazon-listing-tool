@@ -102,6 +102,8 @@ const supplementalMigrations = [
     "0178_backfill_legacy_ads_workspace.sql",
     "0179_ad_keyword_source_identity.sql",
     "0180_emperor_lingxing_scheduled_task_unification.sql",
+    "0181_product_knowledge_transfer.sql",
+    "0182_product_knowledge_transfer_receipts.sql",
   ];
 
 const retiredMigrationFiles = new Set([

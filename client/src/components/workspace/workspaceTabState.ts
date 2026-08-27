@@ -74,6 +74,7 @@ const EXACT_ROUTE_LABELS: Record<string, string> = {
   "/knowledge/skills": "智能运营SOP库",
   "/knowledge/videos": "智能视频知识库",
   "/knowledge/intel": "情报推荐中心",
+  "/knowledge/transfer": "知识库流转",
   "/offsite": "站外总览",
   "/offsite/influencers": "达人管理",
   "/offsite/campaigns": "活动管理",

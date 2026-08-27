@@ -299,6 +299,9 @@ export default function KBOverview() {
             <Sparkles className="h-3.5 w-3.5 mr-1.5" />
             共 {isLoading ? "..." : totalCount} 条知识
           </Badge>
+          <Button variant="outline" size="sm" onClick={() => navigate("/knowledge/transfer")}>
+            <Archive className="mr-1.5 h-4 w-4" />知识库流转
+          </Button>
         </div>
 
         {/* ═══ Enhanced Core Value Chain ═══ */}

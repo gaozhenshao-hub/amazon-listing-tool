@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, int, json, longtext, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 // Knowledge base sync logs (P2P bidirectional sync)
 export const kbSyncLogs = mysqlTable("kb_sync_logs", {
@@ -206,6 +206,42 @@ export const kbVideos = mysqlTable("kb_videos", {
 export type KbVideo = typeof kbVideos.$inferSelect;
 
 export type InsertKbVideo = typeof kbVideos.$inferInsert;
+
+// 产品知识库跨实例传输：上传ZIP在预检成功后仅保存短期清单与已恢复附件的受控存储引用。
+// 原始ZIP与附件二进制不进入数据库，源端用户/工作空间/审核人/签名URL也不会被写入该表。
+export const kbTransferStages = mysqlTable("kb_transfer_stages", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  userId: int("userId").notNull(),
+  workspaceId: int("workspaceId").notNull(),
+  status: mysqlEnum("status", ["previewed", "importing", "completed", "expired", "failed"]).default("previewed").notNull(),
+  packageSha256: varchar("packageSha256", { length: 64 }).notNull(),
+  originalFileName: varchar("originalFileName", { length: 255 }).notNull(),
+  manifestJson: longtext("manifestJson").notNull(),
+  attachmentStorageJson: longtext("attachmentStorageJson").notNull(),
+  previewJson: text("previewJson").notNull(),
+  importResultJson: text("importResultJson"),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type KbTransferStage = typeof kbTransferStages.$inferSelect;
+export type InsertKbTransferStage = typeof kbTransferStages.$inferInsert;
+
+// 已确认导入的内容哈希回执，作为跨实例“同内容默认跳过”的唯一稳定依据。
+// 不保存源端ID、用户、工作空间或任何外部下载链接。
+export const kbTransferItemReceipts = mysqlTable("kb_transfer_item_receipts", {
+  id: int("id").autoincrement().primaryKey(),
+  stageId: varchar("stageId", { length: 64 }).notNull(),
+  workspaceId: int("workspaceId").notNull(),
+  module: mysqlEnum("module", ["products", "listings", "images", "skills", "videos"]).notNull(),
+  contentHash: varchar("contentHash", { length: 64 }).notNull(),
+  targetRecordId: int("targetRecordId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type KbTransferItemReceipt = typeof kbTransferItemReceipts.$inferSelect;
+export type InsertKbTransferItemReceipt = typeof kbTransferItemReceipts.$inferInsert;
 
 // ═════════════════════════════════════════════════════════════════
 // ─── 知识库优化模块：外部情报采集 + AI机器人 + 调用反馈 ─────────

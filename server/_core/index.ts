@@ -30,6 +30,7 @@ import {
 } from "../scheduledHandlers";
 import { kbExternalApiRouter } from "../kbExternalApi";
 import { imageUploadRouter } from "../imageUploadRouter";
+import { kbTransferUploadRouter } from "../kbTransferUploadRouter";
 import {
   getRuntimeRole,
   shouldProcessAiJobs,
@@ -79,6 +80,8 @@ async function startServer() {
   app.use("/api/external/kb", kbExternalApiRouter);
   // Fast image upload endpoint (multipart/form-data, avoids base64 overhead)
   app.use("/api/upload", imageUploadRouter);
+  // Product knowledge base transfer ZIP preflight (session-authenticated multipart upload)
+  app.use("/api/kb-transfer", kbTransferUploadRouter);
   // Scheduled task handlers (Heartbeat HTTP cron)
   app.post("/api/scheduled/weekly-report", weeklyReportHandler);
   app.post("/api/scheduled/data-cleanup", dataCleanupHandler);
