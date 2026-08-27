@@ -56,6 +56,7 @@ export default function OpsLingxingSync() {
   const [historyStatusFilter, setHistoryStatusFilter] = useState("all");
   const [directoryBootstrapSettled, setDirectoryBootstrapSettled] = useState(false);
   const [reviewQueueBootstrapReady, setReviewQueueBootstrapReady] = useState(false);
+  const [scheduleBootstrapReady, setScheduleBootstrapReady] = useState(false);
   const [historyBootstrapReady, setHistoryBootstrapReady] = useState(false);
   const isAdDomain = ["ad_campaign", "ad_keyword", "ad_search_term", "ad_targeting"].includes(domain);
   const storesQuery = trpc.lingxingSync.listStores.useQuery(undefined, { retry: false, staleTime: 5 * 60_000 });
@@ -68,11 +69,20 @@ export default function OpsLingxingSync() {
     setDirectoryBootstrapSettled(directoryRequestsFinished);
     if (!directoryRequestsFinished) {
       setReviewQueueBootstrapReady(false);
+      setScheduleBootstrapReady(false);
       setHistoryBootstrapReady(false);
     }
   }, [directoryRequestsFinished]);
+  // 计划状态来自纯数据库。挂载后的下一事件循环独立发起，既避开首屏与MCP目录的同批请求，
+  // 也不因目录暂时超时而隐藏已经启用的自动计划。
   useEffect(() => {
-    if (directoryBootstrapSettled) setReviewQueueBootstrapReady(true);
+    const timer = window.setTimeout(() => setScheduleBootstrapReady(true), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    if (directoryBootstrapSettled) {
+      setReviewQueueBootstrapReady(true);
+    }
   }, [directoryBootstrapSettled]);
   const historyQuery = trpc.lingxingSync.list.useQuery(
     { limit: 20 },
@@ -80,7 +90,7 @@ export default function OpsLingxingSync() {
   );
   const schedulesQuery = trpc.lingxingSync.listSchedules.useQuery(
     undefined,
-    { enabled: historyBootstrapReady, retry: false, staleTime: 30_000 },
+    { enabled: scheduleBootstrapReady, retry: false, staleTime: 30_000, refetchOnMount: "always" },
   );
   const reviewQueueQuery = trpc.lingxingSync.listBackfillReviewQueue.useQuery(undefined, { enabled: reviewQueueBootstrapReady, retry: false, staleTime: 0, refetchOnMount: "always" });
   const batchQuery = trpc.lingxingSync.get.useQuery({ batchId: batchId || 0 }, { enabled: Boolean(batchId) });

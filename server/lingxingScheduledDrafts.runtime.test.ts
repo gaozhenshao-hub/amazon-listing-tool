@@ -157,9 +157,12 @@ describe("领星Heartbeat草稿运行", () => {
     const inventoryRow = { id: 104, entityKey: "7392|fba_inventory|B0INV|SKU-1|2026-08-25", validationErrors: [], normalizedData: { storeId: "7392", country: "US", asin: "B0INV", parentAsin: "PARENTINV", reportDate: "2026-08-25", fbaAvailable: 8, fbaReserved: 1, fbaInTransit: 2 }, sourceData: {} };
     expect(() => validateInventoryAutoApplyIntegrity(inventoryBatch, [inventoryRow], { startDate: "2026-08-25", endDate: "2026-08-25" })).toThrow("授权范围覆盖不完整");
     expect(() => validateInventoryAutoApplyIntegrity({ ...inventoryBatch, summary: { ...inventoryBatch.summary, storesRead: 2, storeDateWindowsRead: 2 } }, [{ ...inventoryRow, normalizedData: { ...inventoryRow.normalizedData, fbaAvailable: -1 } }], { startDate: "2026-08-25", endDate: "2026-08-25" })).toThrow("fbaAvailable存在无效或负数指标");
+    expect(() => validateInventoryAutoApplyIntegrity({ ...inventoryBatch, summary: { ...inventoryBatch.summary, storesRead: 2, storeDateWindowsRead: 2 } }, [{ ...inventoryRow, normalizedData: { ...inventoryRow.normalizedData, fbaAvailable: 50_000 } }], { startDate: "2026-08-25", endDate: "2026-08-25" }, [{ sourceStoreId: "7392", country: "US", asin: "B0INV", reportDate: "2026-08-24", fbaAvailable: 1, fbaReserved: 1, fbaInTransit: 1 }] as any)).toThrow("fbaAvailable相较前一日异常跃升");
     const keywordBatch = { id: 46, status: "ready_for_review", summary: { capped: false, pageTruncations: 0, storesExpected: 1, storesRead: 1, storeDateWindowsExpected: 1, storeDateWindowsRead: 1, needsReview: 0 }, scope: {} };
     const keywordRow = { id: 105, entityKey: "bad", validationErrors: [], normalizedData: { campaignName: "SP-Core", keyword: "power bank", periodStart: "2026-08-24", periodEnd: "2026-08-24" }, sourceData: {} };
     expect(() => validateKeywordAutoApplyIntegrity(keywordBatch, [keywordRow], { startDate: "2026-08-24", endDate: "2026-08-24" })).toThrow("缺失Profile");
+    const validKeyword = { ...keywordRow, normalizedData: { ...keywordRow.normalizedData, profileId: "P-1", adImpressions: 50_000, adClicks: 1, adSpend: 1, adSales: 2, adOrders: 1 } };
+    expect(() => validateKeywordAutoApplyIntegrity(keywordBatch, [validKeyword], { startDate: "2026-08-24", endDate: "2026-08-24" }, [{ sourceProfileId: "P-1", campaignName: "SP-Core", keyword: "power bank", matchType: "unknown", impressions: 1, clicks: 1, spend: 1, sales: 2 }])).toThrow("adImpressions相较前一日异常跃升");
   });
 
   it("每日草稿相较前一日出现异常跃升时转人工，不进入自动确认", () => {

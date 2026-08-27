@@ -51,6 +51,8 @@ describe("领星同步页面ASIN日数据契约", () => {
     expect(pageSource).toContain("避免首屏同批局部429污染其缓存");
     expect(pageSource).toContain("enabled: reviewQueueBootstrapReady");
     expect(pageSource).toContain("enabled: historyBootstrapReady");
+    expect(pageSource).toContain("enabled: scheduleBootstrapReady");
+    expect(pageSource).toContain("也不因目录暂时超时而隐藏已经启用的自动计划");
   });
 
   it("提供按日期的异常回补复核入口、证据查看、复核审计与受控重新读取", () => {

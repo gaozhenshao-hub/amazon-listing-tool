@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import { opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncRows, opsLingxingSyncSchedules, users } from "../../../drizzle/schema";
+import { adKeywordWeekly, opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncRows, opsLingxingSyncSchedules, users } from "../../../drizzle/schema";
 import { lingxingSyncRouter } from "../../routers/lingxingSync";
 import { getDb } from "../../repositories/dbClient";
 import { summarizeParentAsinWeeks, type DailySnapshot } from "./productOverview/dailyAggregation";
@@ -156,8 +156,9 @@ function validateScheduledReadCoverage(batch: AutoApplyBatch, rows: AutoApplyRow
   if (scope.startDate !== scope.endDate) throw new Error(`${label}自动应用校验未通过：每日计划必须覆盖单一报告日`);
 }
 
-export function validateInventoryAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }) {
+export function validateInventoryAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }, previousSnapshots: PreviousDailySnapshot[] = []) {
   validateScheduledReadCoverage(batch, rows, scope, "库存快照");
+  const previousByIdentity = new Map(previousSnapshots.map((snapshot) => [dailyIdentity(snapshot), snapshot]));
   for (const row of rows) {
     const data = record(row.normalizedData);
     if (!text(data.asin) || text(data.asin) === "-" || !text(data.parentAsin) || text(data.reportDate) !== scope.endDate) throw new Error("库存快照自动应用校验未通过：存在缺失ASIN、父ASIN或快照日期的草稿行");
@@ -165,17 +166,35 @@ export function validateInventoryAutoApplyIntegrity(batch: AutoApplyBatch, rows:
       const metric = numberOrNull(data[key]);
       if (metric === null || !Number.isFinite(metric) || metric < 0) throw new Error(`库存快照自动应用校验未通过：${key}存在无效或负数指标`);
     }
+    const previous = previousByIdentity.get(dailyIdentity({ storeId: data.storeId, country: data.country, asin: data.asin, reportDate: addDays(scope.endDate, -1) }));
+    if (previous) {
+      for (const key of ["fbaAvailable", "fbaReserved", "fbaInTransit"] as const) {
+        const current = numberOrNull(data[key]);
+        const baseline = numberOrNull((previous as RecordValue)[key]);
+        if (current !== null && baseline !== null && baseline > 0 && current > Math.max(baseline * 20, baseline + 10_000)) throw new Error(`库存快照自动应用校验未通过：${key}相较前一日异常跃升，需人工复核`);
+      }
+    }
   }
 }
 
-export function validateKeywordAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }) {
+export function validateKeywordAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }, previousRows: Array<Record<string, unknown>> = []) {
   validateScheduledReadCoverage(batch, rows, scope, "广告关键词");
+  const keywordIdentity = (value: RecordValue) => [text(value.profileId || value.sourceProfileId), text(value.campaignId || value.campaignName), text(value.keyword), text(value.matchType || "unknown")].join("|");
+  const previousByIdentity = new Map(previousRows.map((row) => [keywordIdentity(row), row]));
   for (const row of rows) {
     const data = record(row.normalizedData);
     if (!text(data.profileId) || !text(data.campaignName) || !text(data.keyword) || text(data.periodStart) !== scope.startDate || text(data.periodEnd) !== scope.endDate) throw new Error("广告关键词自动应用校验未通过：存在缺失Profile、活动、关键词或报告期的草稿行");
     for (const key of ["adImpressions", "adClicks", "adSpend", "adSales", "adOrders", "adAcos", "adCpc", "adCtr"]) {
       const metric = numberOrNull(data[key]);
       if (metric !== null && (!Number.isFinite(metric) || metric < 0)) throw new Error(`广告关键词自动应用校验未通过：${key}存在无效或负数指标`);
+    }
+    const previous = previousByIdentity.get(keywordIdentity(data));
+    if (previous) {
+      for (const [currentKey, previousKey] of [["adImpressions", "impressions"], ["adClicks", "clicks"], ["adSpend", "spend"], ["adSales", "sales"]] as const) {
+        const current = numberOrNull(data[currentKey]);
+        const baseline = numberOrNull(previous[previousKey]);
+        if (current !== null && baseline !== null && baseline > 0 && current > Math.max(baseline * 20, baseline + 10_000)) throw new Error(`广告关键词自动应用校验未通过：${currentKey}相较前一日异常跃升，需人工复核`);
+      }
     }
   }
 }
@@ -269,8 +288,19 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
         if (domain === "product_performance_daily") {
           const snapshots = await db.select().from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, schedule.workspaceId));
           validateDailyAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, snapshots as PreviousDailySnapshot[]);
-        } else if (domain === "fba_inventory") validateInventoryAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope);
-        else validateKeywordAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope);
+        } else if (domain === "fba_inventory") {
+          const previousSnapshots = (await db.select().from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, schedule.workspaceId)))
+            .filter((snapshot) => snapshot.sourceType === "lx_inventory_mcp");
+          validateInventoryAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, previousSnapshots as PreviousDailySnapshot[]);
+        } else {
+          const previousDate = addDays(scope.startDate, -1);
+          const previousKeywords = await db.select().from(adKeywordWeekly).where(and(
+            eq(adKeywordWeekly.workspaceId, schedule.workspaceId),
+            eq(adKeywordWeekly.weekStartDate, previousDate),
+            eq(adKeywordWeekly.weekEndDate, previousDate),
+          ));
+          validateKeywordAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, previousKeywords as Array<Record<string, unknown>>);
+        }
         const selectedRowIds = rows.map((row) => row.id);
         await caller.confirm({ batchId, selectedRowIds, note: `系统${domain}每日校验通过自动确认` });
         if (domain === "ad_keyword") await caller.applyConfirmedAds({ batchId, note: "系统每日关键词校验通过自动追加历史事实" });
