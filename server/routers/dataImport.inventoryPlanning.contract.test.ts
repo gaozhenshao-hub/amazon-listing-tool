@@ -97,6 +97,13 @@ describe("导入模式库存规划接口契约", () => {
     expect(routerSource).toContain("|| operatorByProfileKey.get");
   });
 
+  it("库存规划按父ASIN、店铺和国家复用已验证负责人，不以子ASIN跨店模糊匹配", () => {
+    expect(routerSource).toContain("const [profileOperatorRows, weeklyOperatorRows] = await Promise.all");
+    expect(routerSource).toContain("operatorByProfileKey.get([latest.parentAsin, latest.storeName || \"\"].join(\"|\"))");
+    expect(routerSource).toContain("operatorByParentKey.get([latest.parentAsin, latest.storeName, latest.country].join(\"|\"))");
+    expect(routerSource).toContain('await applyOperatorMappings(db, planningRows as any, "lingxing")');
+  });
+
   it("产品总览前端保留后端已经映射的运营字段，不将其重置为空", () => {
     expect(productsPageSource).toContain("operator: product.operator || null");
     expect(productsPageSource).not.toContain("operator: null, storeName: product.storeName");

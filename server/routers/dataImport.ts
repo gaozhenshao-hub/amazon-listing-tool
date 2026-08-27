@@ -727,6 +727,39 @@ export const dataImportRouter = router({
       const asOfDate = input.asOfDate || inventoryPlanningSource.reduce((latest, row) => row.reportDate > latest ? row.reportDate : latest, "");
       if (!asOfDate) return { asOfDate: null, rows: [] };
 
+      const [profileOperatorRows, weeklyOperatorRows] = await Promise.all([
+        db!.select({
+          parentAsin: productProfiles.parentAsin,
+          storeName: productProfiles.storeName,
+          operator: productProfiles.operator,
+        }).from(productProfiles).where(or(
+          isNull(productProfiles.workspaceId),
+          opsWorkspaceCondition(productProfiles, workspaceId, eq(productProfiles.userId, ctx.user.id)),
+        )),
+        db!.select({
+          parentAsin: lingxingProductWeekly.parentAsin,
+          storeName: lingxingProductWeekly.storeName,
+          country: lingxingProductWeekly.country,
+          operator: lingxingProductWeekly.operator,
+        }).from(lingxingProductWeekly).where(opsWorkspaceCondition(
+          lingxingProductWeekly,
+          workspaceId,
+          eq(lingxingProductWeekly.userId, ctx.user.id),
+        )),
+      ]);
+      const operatorByProfileKey = new Map<string, string>();
+      for (const row of profileOperatorRows) {
+        if (!row.operator) continue;
+        const key = [row.parentAsin, row.storeName || ""].join("|");
+        if (!operatorByProfileKey.has(key)) operatorByProfileKey.set(key, row.operator);
+      }
+      const operatorByParentKey = new Map<string, string>();
+      for (const row of weeklyOperatorRows) {
+        if (!row.operator) continue;
+        const key = [row.parentAsin, row.storeName, row.country].join("|");
+        if (!operatorByParentKey.has(key)) operatorByParentKey.set(key, row.operator);
+      }
+
       const lifecycleStatuses = await db!.select().from(opsAsinLifecycleStatuses)
         .where(eq(opsAsinLifecycleStatuses.workspaceId, workspaceId));
       const lifecycleByKey = new Map(lifecycleStatuses.map(status => [`${status.asin}::${status.storeName}::${status.country}`, status]));
@@ -793,7 +826,12 @@ export const dataImportRouter = router({
           : null;
         return {
           asin: latest.asin, sku: latest.msku || latest.sku || null, parentAsin: latest.parentAsin, storeName: latest.storeName, country: latest.country,
-          productName: latest.productName || latest.title || null, operator: latest.operator || null, localInventory: local?.localQty || 0,
+          productName: latest.productName || latest.title || null,
+          operator: latest.operator
+            || operatorByProfileKey.get([latest.parentAsin, latest.storeName || ""].join("|"))
+            || operatorByParentKey.get([latest.parentAsin, latest.storeName, latest.country].join("|"))
+            || null,
+          localInventory: local?.localQty || 0,
           localInventoryConfirmedAt: local?.confirmedAt || null, parameterScope: parameter?.scopeType || "workspace",
           productionDays: parameter?.productionDays ?? 30, shippingDays: parameter?.shippingDays ?? 30, bufferDays: parameter?.bufferDays ?? 10,
           productCost, estimatedFirstLegCost, actualFirstLegCost, estimatedFbaFee, actualFbaFee, sellingPrice, estimatedDimensions, actualDimensions, estimatedWeight, actualWeight, dimensionUnit: parameter?.dimensionUnit ?? "in", weightUnit: parameter?.weightUnit ?? "lb", currency: parameter?.currency ?? "USD",
