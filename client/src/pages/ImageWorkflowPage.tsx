@@ -72,6 +72,8 @@ import { buildStep5SegmentStates, getStep5FailurePresentation, getStep5SegmentPr
 import { updateStep5AplusStrategy } from "./imageWorkflow/step5AplusStrategy";
 import { getStep5AplusSectionCardKey, getStep5SecondaryImageCardKey } from "./imageWorkflow/step5RenderIdentity";
 import { normalizeSecondaryImageSlots } from "@shared/imageWorkflow";
+import { DistillationGuidancePicker, type DistillationBinding } from "@/components/workflow/DistillationGuidancePicker";
+import { DistillationGuidanceProvider } from "@/contexts/DistillationGuidanceContext";
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── Step Progress Bar ───────────────────────────────────────────
@@ -1680,6 +1682,7 @@ export default function ImageWorkflowPage() {
   const { canEdit } = usePermissions();
   const canEditImageWorkflow = canEdit("listing", "listing_image_workflow");
   const [currentStep, setCurrentStep] = useState(1);
+  const [distillationBinding, setDistillationBinding] = useState<DistillationBinding>({ ledgerKey: null, skillSlugs: [] });
   const queryAgentRunId = useMemo(() => new URLSearchParams(window.location.search).get("agentRunId"), []);
   const queryProjectId = useMemo(() => resolveImageWorkflowProjectId(window.location.search, null), []);
   const projectId = resolveImageWorkflowProjectId(window.location.search, selectedProjectId);
@@ -1810,6 +1813,7 @@ export default function ImageWorkflowPage() {
   }
 
   return (
+    <DistillationGuidanceProvider value={distillationBinding}>
     <WorkflowShell
       title="智能图片建议"
       subtitle="6步工作流：竞品分析 → 卖点梳理 → 图片大纲 → 风格确认 → 参考图确认 → 图片建议"
@@ -1843,6 +1847,8 @@ export default function ImageWorkflowPage() {
     >
 
       <AiJobHistoryPanel module="imageWorkflow" projectId={projectId} title="图片工作流后台任务历史" />
+
+      <DistillationGuidancePicker value={distillationBinding} onChange={setDistillationBinding} compact />
 
       {session && (
         <BusinessArtifactVersionPicker
@@ -1896,5 +1902,6 @@ export default function ImageWorkflowPage() {
       )}
 
     </WorkflowShell>
+    </DistillationGuidanceProvider>
   );
 }

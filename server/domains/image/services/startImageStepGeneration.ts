@@ -13,6 +13,7 @@ export async function startImageStepGenerationForUser(input: {
   user: { id: number; role: string };
   workspaceId?: number | null;
   agentRunId?: string | null;
+  distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
 }) {
   const project = await resolveProjectAccess(input.projectId, input.user);
   ensureWriteAccess(project, input.user);
@@ -39,5 +40,6 @@ export async function startImageStepGenerationForUser(input: {
     userId: input.user.id,
     workspaceId: input.workspaceId,
     agentRunId,
+    distillationBinding: input.distillationBinding,
   });
 }

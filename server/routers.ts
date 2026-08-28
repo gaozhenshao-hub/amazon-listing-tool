@@ -84,6 +84,7 @@ import { dataImportRouter } from "./routers/dataImport";
 import { lingxingSyncRouter } from "./routers/lingxingSync";
 import { operatorMappingRouter } from "./routers/operatorMapping";
 import { inventoryOwnerAssignmentsRouter } from "./routers/inventoryOwnerAssignments";
+import { skillDistillationRouter } from "./routers/skillDistillation";
 // Ad Keyword Tracking
 import { adTrackingRouter } from "./routers/adTracking";
 import { adReportUploadRouter } from "./routers/adReportUpload";
@@ -191,6 +192,7 @@ export const appRouter = router({
   lingxingSync: lingxingSyncRouter,
   operatorMapping: operatorMappingRouter,
   inventoryOwnerAssignments: inventoryOwnerAssignmentsRouter,
+  skillDistillation: skillDistillationRouter,
   // Ad Keyword Tracking
   adTracking: adTrackingRouter,
   // Task Management

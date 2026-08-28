@@ -17,6 +17,7 @@ import {
   PanelLeft,
   Search,
   FileText,
+  FlaskConical,
   Image,
   Sparkles,
   GitCompareArrows,
@@ -261,6 +262,7 @@ const modules: ModuleDef[] = [
     enabled: true,
     items: [
       { icon: LayoutDashboard, label: "Skill 库", path: "/emperor" },
+      { icon: FlaskConical, label: "知识蒸馏", path: "/emperor/skill-distillation" },
       { icon: MessageSquareText, label: "对话任务管理器", path: "/emperor/conversations" },
       { icon: Zap, label: "运行历史", path: "/emperor/trace" },
       { icon: ClipboardCheck, label: "质量门禁", path: "/emperor/quality" },

@@ -37,6 +37,7 @@ import {
   ensureImageWorkflowAgentRun,
   imageWorkflowSkillNodeId,
 } from "../imageWorkflowAgentBridge";
+import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
 
 export const IMAGE_GENERATION_STEPS = [0, 1, 2, 3] as const;
 export type ImageGenerationStep = (typeof IMAGE_GENERATION_STEPS)[number];
@@ -56,6 +57,10 @@ export const imageStepGenerationJobInput = z.object({
   step: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
   agentRunId: z.string().max(80).optional(),
   agentNodeId: z.string().max(80).optional(),
+  distillationBinding: z.object({
+    ledgerKey: z.string().min(1).max(80).nullable().optional(),
+    skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional(),
+  }).optional(),
 });
 
 function compactText(value: unknown, maxChars: number) {
@@ -163,7 +168,7 @@ async function generateStep0(job: AiJobSnapshot, context: AiJobHandlerContext, p
   });
 }
 
-async function generateStep1(job: AiJobSnapshot, context: AiJobHandlerContext, project: any) {
+async function generateStep1(job: AiJobSnapshot, context: AiJobHandlerContext, project: any, distillationGuidance = "") {
   const productContext = compactText(await buildImageWorkflowContext(Number(job.projectId)), 18_000);
   const contextHint = productContext || "暂无竞品、评论或关键词数据。请根据产品名称、品牌和类目，结合亚马逊运营经验生成完整卖点体系。";
   return callImageWorkflowSkill({
@@ -171,7 +176,7 @@ async function generateStep1(job: AiJobSnapshot, context: AiJobHandlerContext, p
     userId: job.userId,
     workspaceId: job.workspaceId,
     systemPrompt: STEP1_SELLING_POINTS_PROMPT,
-    context: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || "未指定"}\n类目: ${project.category || "未指定"}\n\n${contextHint}`,
+    context: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || "未指定"}\n类目: ${project.category || "未指定"}\n\n${contextHint}${distillationGuidance}`,
     signal: context.signal,
     maxModelAttempts: 3,
     validate: (value) => {
@@ -181,7 +186,7 @@ async function generateStep1(job: AiJobSnapshot, context: AiJobHandlerContext, p
   });
 }
 
-async function generateStep2(job: AiJobSnapshot, context: AiJobHandlerContext, project: any, session: any) {
+async function generateStep2(job: AiJobSnapshot, context: AiJobHandlerContext, project: any, session: any, distillationGuidance = "") {
   if (!session.step1Confirmed) throw new Error("请先确认 Step 1 卖点梳理");
   const sellingPoints = compactText(session.step1UserEdit || session.step1AiResult, 8_000);
   const productContext = compactText(await buildImageWorkflowContext(Number(job.projectId)), 12_000);
@@ -189,7 +194,7 @@ async function generateStep2(job: AiJobSnapshot, context: AiJobHandlerContext, p
     ? `\n\n--- 竞品图片分析总结 ---\n${compactText(session.step0AiResult, 3_000)}`
     : "";
   const contextHint = productContext || "暂无竞品分析数据。请根据产品名称、品牌和类目生成完整图片大纲。";
-  const prompt = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || "未指定"}\n类目: ${project.category || "未指定"}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${contextHint}${step0Summary}\n\n--- 可选亚马逊A+模块样式 ---\n${APLUS_MODULE_STYLE_GUIDE}\n\n请根据以上卖点体系和竞品分析规划图片大纲。secondaryImages必须恰好生成6项，imageNumber依次为2、3、4、5、6、7，并在referenceHighlights中引用竞品亮点。首次生成时所有A+模块一律使用premium_full_image（高级完整图片、1464x600px、单张全宽大图），不要自行选择其他模块；用户改选后会通过专用皇帝Skill单独重新优化。`;
+  const prompt = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || "未指定"}\n类目: ${project.category || "未指定"}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${contextHint}${step0Summary}${distillationGuidance}\n\n--- 可选亚马逊A+模块样式 ---\n${APLUS_MODULE_STYLE_GUIDE}\n\n请根据以上卖点体系和竞品分析规划图片大纲。secondaryImages必须恰好生成6项，imageNumber依次为2、3、4、5、6、7，并在referenceHighlights中引用竞品亮点。首次生成时所有A+模块一律使用premium_full_image（高级完整图片、1464x600px、单张全宽大图），不要自行选择其他模块；用户改选后会通过专用皇帝Skill单独重新优化。`;
   return callImageWorkflowSkill({
     skillSlug: "image.step2.outline",
     userId: job.userId,
@@ -211,7 +216,7 @@ async function generateStep2(job: AiJobSnapshot, context: AiJobHandlerContext, p
   });
 }
 
-async function generateStep3(job: AiJobSnapshot, context: AiJobHandlerContext, project: any, session: any) {
+async function generateStep3(job: AiJobSnapshot, context: AiJobHandlerContext, project: any, session: any, distillationGuidance = "") {
   if (!session.step2Confirmed) throw new Error("请先确认 Step 2 图片大纲");
   const profile = await devDb.getDevProductProfile(Number(job.projectId));
   const colorInfo = profile?.appearanceColors ? `产品外观颜色: ${profile.appearanceColors}` : "";
@@ -232,7 +237,7 @@ async function generateStep3(job: AiJobSnapshot, context: AiJobHandlerContext, p
     userId: job.userId,
     workspaceId: job.workspaceId,
     systemPrompt: STEP3_STYLE_PROMPT,
-    context: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || "未指定"}\n类目: ${project.category || "未指定"}\n${colorInfo}\n\n--- 已确认的卖点 ---\n${step1}\n\n--- 已确认的图片大纲 ---\n${step2}${kbReference}${kbStylesText}\n\n请参考知识库中同类目高分图片的风格分布，推荐3-4个适合的视觉风格方案。`,
+    context: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || "未指定"}\n类目: ${project.category || "未指定"}\n${colorInfo}\n\n--- 已确认的卖点 ---\n${step1}\n\n--- 已确认的图片大纲 ---\n${step2}${kbReference}${kbStylesText}${distillationGuidance}\n\n请参考知识库中同类目高分图片的风格分布，推荐3-4个适合的视觉风格方案。`,
     signal: context.signal,
     maxModelAttempts: 3,
     validate: (value) => {
@@ -259,12 +264,16 @@ export async function runImageStepGenerationJob(job: AiJobSnapshot, context: AiJ
   }, { onlyBusinessConfirmedSteps: true });
 
   await reportProgress(job, input.step, 15, input.agentRunId);
+  const guidance = input.distillationBinding
+    ? await resolveWorkflowGuidance({ workspaceId: job.workspaceId || Number(project.workspaceId || 0), ...input.distillationBinding })
+    : null;
+  const distillationGuidance = guidance ? `\n\n--- 用户显式选择的知识蒸馏指导（只读） ---\n${compactText(JSON.stringify(guidance), 6_000)}` : "";
   let result: any;
   try {
     if (input.step === 0) result = await generateStep0(job, context, project);
-    else if (input.step === 1) result = await generateStep1(job, context, project);
-    else if (input.step === 2) result = await generateStep2(job, context, project, session);
-    else result = await generateStep3(job, context, project, session);
+    else if (input.step === 1) result = await generateStep1(job, context, project, distillationGuidance);
+    else if (input.step === 2) result = await generateStep2(job, context, project, session, distillationGuidance);
+    else result = await generateStep3(job, context, project, session, distillationGuidance);
   } catch (error) {
     throw normalizeJobError(error, STEP_CONFIG[input.step].label);
   }
@@ -291,6 +300,7 @@ export async function startImageStepGenerationJob(input: {
   userId: number;
   workspaceId?: number | null;
   agentRunId?: string | null;
+  distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
 }) {
   const active = await getLatestImageStepGenerationJob(input.userId, input.projectId, input.step);
   if (active?.status === "queued" || active?.status === "running") {
@@ -329,6 +339,7 @@ export async function startImageStepGenerationJob(input: {
       step: input.step,
       agentRunId,
       agentNodeId: imageWorkflowSkillNodeId(input.step),
+      distillationBinding: input.distillationBinding,
     },
     progress: 5,
     maxAttempts: 3,

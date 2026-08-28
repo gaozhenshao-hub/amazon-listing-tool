@@ -52,6 +52,7 @@ import BulletChecklistPanel from "@/components/BulletChecklistPanel";
 import LockedContentBar from "@/components/LockedContentBar";
 import { CharCountBadge, GeneratingProgress } from "./listing/GenerationIndicators";
 import { KeywordImportDialog } from "./listing/KeywordImportDialog";
+import { DistillationGuidancePicker, type DistillationBinding } from "@/components/workflow/DistillationGuidancePicker";
 import {
   ListingGenerationJobStatus,
   useListingGenerationJob,
@@ -62,6 +63,7 @@ export default function GeneratePage() {
   const { selectedProjectId } = useProject();
   const [, setLocation] = useLocation();
   const [emphasis, setEmphasis] = useState("");
+  const [distillationBinding, setDistillationBinding] = useState<DistillationBinding>({ ledgerKey: null, skillSlugs: [] });
 
   // Step-by-step bullet generation state
   const [sellingPointCores, setSellingPointCores] = useState<any[] | null>(null);
@@ -249,6 +251,7 @@ export default function GeneratePage() {
     nodeId: "G1",
     operation: "sellingPoints",
     scopeKey: "main",
+    distillationBinding,
     onSucceeded: (data: any) => {
       // Normalize field name variants (backend may return selling_points / points / cores / themes)
       const points = data.sellingPoints ?? data.selling_points ?? data.points ?? data.bulletCores ?? data.cores ?? data.themes;
@@ -572,6 +575,7 @@ export default function GeneratePage() {
         sellingPoint: sp,
         previousBullets,
         emphasis: emphasis.trim() || undefined,
+        ...(distillationBinding.ledgerKey || distillationBinding.skillSlugs?.length ? { distillationBinding } : {}),
       });
       await g1JobsQuery.refetch();
       toast.success(`卖点 ${idx + 1} 已进入后台队列`);
@@ -818,6 +822,7 @@ export default function GeneratePage() {
           addressesGap: fabe.addressesGap || "",
         },
         previousBullets: currentBullets,
+        ...(distillationBinding.ledgerKey || distillationBinding.skillSlugs?.length ? { distillationBinding } : {}),
       });
       await g1JobsQuery.refetch();
       toast.success("新卖点已进入后台队列，完成后可检查并确认");
@@ -856,6 +861,7 @@ export default function GeneratePage() {
         </Card>
       ) : (
         <div className="space-y-6">
+          <DistillationGuidancePicker value={distillationBinding} onChange={setDistillationBinding} />
           {/* Step Progress Indicator */}
           <Card>
             <CardContent className="p-4">

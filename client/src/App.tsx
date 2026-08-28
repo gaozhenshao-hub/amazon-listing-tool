@@ -147,6 +147,7 @@ const EmperorScheduled = lazy(() => import("./pages/emperor/EmperorScheduled"));
 const AgentCanvas = lazy(() => import("./pages/emperor/AgentCanvas"));
 const EmperorKnowledge = lazy(() => import("./pages/emperor/EmperorKnowledge"));
 const EmperorObservability = lazy(() => import("./pages/emperor/EmperorObservability"));
+const EmperorSkillDistillation = lazy(() => import("./pages/emperor/EmperorSkillDistillation"));
 const CoreWorkflowQaPage = import.meta.env.MODE === "e2e"
   ? lazy(() => import("./pages/qa/CoreWorkflowQaPage"))
   : null;
@@ -273,6 +274,7 @@ function Router() {
         <Route path="/emperor/settings">{() => <PermissionGuard><EmperorSettings /></PermissionGuard>}</Route>
         <Route path="/emperor/scheduled">{() => <PermissionGuard><EmperorScheduled /></PermissionGuard>}</Route>
         <Route path="/emperor/knowledge">{() => <PermissionGuard><EmperorKnowledge /></PermissionGuard>}</Route>
+        <Route path="/emperor/skill-distillation">{() => <PermissionGuard><EmperorSkillDistillation /></PermissionGuard>}</Route>
         <Route path="/emperor/observability">{() => <PermissionGuard><EmperorObservability /></PermissionGuard>}</Route>
 
         {/* ─── System Settings ─── */}

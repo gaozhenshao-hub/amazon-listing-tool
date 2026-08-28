@@ -127,12 +127,14 @@ export const imageWorkflowStepProcedures = {
     .input(z.object({
       projectId: z.number(),
       step: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+      distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional(),
     }))
     .mutation(({ ctx, input }) => startGenerationForRequest({
       projectId: input.projectId,
       step: input.step,
       user: ctx.user,
       workspaceId: ctx.workspaceId,
+      distillationBinding: input.distillationBinding,
     })),
 
   getStepGenerationRun: protectedProcedure
@@ -165,12 +167,13 @@ export const imageWorkflowStepProcedures = {
 
   // ─── Step 1: Generate selling points ───────────────────────────
   generateStep1: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.number(), distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional() }))
     .mutation(({ ctx, input }) => startGenerationForRequest({
       projectId: input.projectId,
       step: 1,
       user: ctx.user,
       workspaceId: ctx.workspaceId,
+      distillationBinding: input.distillationBinding,
     })),
 
   // ─── Step 1: Save user edits and confirm ───────────────────────
@@ -204,12 +207,13 @@ export const imageWorkflowStepProcedures = {
 
   // ─── Step 2: Generate image outline ────────────────────────────
   generateStep2: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.number(), distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional() }))
     .mutation(({ ctx, input }) => startGenerationForRequest({
       projectId: input.projectId,
       step: 2,
       user: ctx.user,
       workspaceId: ctx.workspaceId,
+      distillationBinding: input.distillationBinding,
     })),
 
 
@@ -445,12 +449,13 @@ export const imageWorkflowStepProcedures = {
 
   // ─── Step 3: Generate style recommendations ───────────────────
   generateStep3: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.number(), distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional() }))
     .mutation(({ ctx, input }) => startGenerationForRequest({
       projectId: input.projectId,
       step: 3,
       user: ctx.user,
       workspaceId: ctx.workspaceId,
+      distillationBinding: input.distillationBinding,
     })),
 
 

@@ -41,6 +41,7 @@ export function useListingGenerationJob(input: {
   nodeId: ListingGenerationNodeId;
   operation: ListingGenerationOperation;
   scopeKey?: string;
+  distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
   onSucceeded: (output: any, job: any) => void;
 }) {
   const startMutation = trpc.listing.startGenerationJob.useMutation();
@@ -89,6 +90,7 @@ export function useListingGenerationJob(input: {
         nodeId: input.nodeId,
         operation: input.operation,
         scopeKey: input.scopeKey || "main",
+        ...(input.distillationBinding ? { distillationBinding: input.distillationBinding } : {}),
         ...payload,
       } as any);
       setActiveRunId(job.runId);
@@ -101,7 +103,7 @@ export function useListingGenerationJob(input: {
       toast.error(formatError(error));
       return null;
     }
-  }, [input.nodeId, input.operation, input.projectId, input.scopeKey, runQuery, startMutation]);
+  }, [input.distillationBinding, input.nodeId, input.operation, input.projectId, input.scopeKey, runQuery, startMutation]);
 
   const cancel = useCallback(async () => {
     try {

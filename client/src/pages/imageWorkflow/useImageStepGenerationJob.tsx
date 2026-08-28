@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
+import { useDistillationGuidance } from "@/contexts/DistillationGuidanceContext";
 import { AlertCircle, Loader2, RotateCcw, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -36,6 +37,7 @@ export function useImageStepGenerationJob(input: {
   onSucceeded: (output: any) => void;
   onRefresh?: () => void | Promise<unknown>;
 }) {
+  const distillationBinding = useDistillationGuidance();
   const startMutation = trpc.imageWorkflow.startStepGeneration.useMutation();
   const cancelMutation = trpc.imageWorkflow.cancelStepGeneration.useMutation();
   const utils = trpc.useUtils();
@@ -82,7 +84,11 @@ export function useImageStepGenerationJob(input: {
 
   const start = useCallback(async () => {
     try {
-      const job = await startMutation.mutateAsync({ projectId: input.projectId, step: input.step });
+      const job = await startMutation.mutateAsync({
+        projectId: input.projectId,
+        step: input.step,
+        ...(distillationBinding?.ledgerKey || distillationBinding?.skillSlugs?.length ? { distillationBinding } : {}),
+      });
       setActiveRunId(job.runId);
       await runQuery.refetch();
       toast.success(job.status === "running" ? `${STEP_LABELS[input.step]}正在后台执行` : `${STEP_LABELS[input.step]}已进入后台队列`);
@@ -91,7 +97,7 @@ export function useImageStepGenerationJob(input: {
       toast.error(formatError(error));
       return null;
     }
-  }, [input.projectId, input.step, runQuery, startMutation]);
+  }, [distillationBinding, input.projectId, input.step, runQuery, startMutation]);
 
   const cancel = useCallback(async () => {
     try {

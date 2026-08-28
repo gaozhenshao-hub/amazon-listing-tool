@@ -32,6 +32,7 @@ import {
   type ListingAgentNodeId,
   type ListingGenerationNodeKey,
 } from "../listingAgentBridge";
+import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
 
 export const LISTING_JOB_MODULE = "listing";
 
@@ -78,6 +79,10 @@ export const listingGenerationJobInput = z.object({
     subtitle: z.string(),
     fullText: z.string(),
   })).max(9).optional(),
+  distillationBinding: z.object({
+    ledgerKey: z.string().min(1).max(80).nullable().optional(),
+    skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional(),
+  }).optional(),
 });
 
 export type ListingGenerationJobInput = z.infer<typeof listingGenerationJobInput>;
@@ -264,13 +269,17 @@ async function confirmedArtifactContext(agentRunId: string | undefined, currentN
 async function buildJobContext(job: AiJobSnapshot, input: ListingGenerationJobInput) {
   const project = await db.getProjectByIdAdmin(input.projectId);
   if (!project) throw new Error("项目不存在");
-  const [analyses, enrichedData, artifactContext] = await Promise.all([
+  const [analyses, enrichedData, artifactContext, distillationGuidance] = await Promise.all([
     db.getCompetitorAnalysesByProject(input.projectId),
     loadEnrichedData(input.projectId),
     confirmedArtifactContext(input.agentRunId, input.nodeId),
+    input.distillationBinding
+      ? resolveWorkflowGuidance({ workspaceId: input.workspaceId || Number(project.workspaceId || 0), ...input.distillationBinding })
+      : Promise.resolve(null),
   ]);
   let context = buildProductContext(project, analyses, enrichedData);
   if (artifactContext) context += `\n\n${artifactContext}`;
+  if (distillationGuidance) context += `\n\n--- 用户显式选择的知识蒸馏指导（只读） ---\n${compactText(distillationGuidance, 6_000)}`;
   if (input.emphasis?.trim()) {
     context += `\n\n--- 用户重点强调 ---\n${input.emphasis.trim()}`;
   }
@@ -279,7 +288,7 @@ async function buildJobContext(job: AiJobSnapshot, input: ListingGenerationJobIn
     analyses,
     enrichedData,
     context: compactText(context, 28_000),
-    variables: { project, analyses, enrichedData },
+    variables: { project, analyses, enrichedData, distillationGuidance },
   };
 }
 
