@@ -428,3 +428,188 @@ Listing Skill 的重点是抽取可复用的**表达结构和证据门槛**。�
 | `X-01` | Listing—图片一致性校验 | Cross-flow | 全部 / 覆盖、冲突、重复检查 | 所有类目；不生成最终内容 |
 
 首批仅需从 `L-01 + I-01 + X-01` 开始，尤其适合家电配件、五金工具和工业品。这套组合会先解决“兼容性、规格、安装、功能证明”的一致性问题，风险最低；场景/品牌故事/高情绪化风格可在验证后再开放。
+
+## 17. 建议进入皇帝中台的蒸馏 Skill 清单
+
+下表中的内容不是立即创建的一组“自动执行 Skill”，而是**知识蒸馏完成后可被批准发布的 Skill 类型目录**。每一个实际 Skill 都带有五维 Profile、来源 Evidence Card、固定 JSON 合同和版本；例如 `listing.bullet.fabe.tech-us.v1` 是一个具体版本，而不是泛化的无边界提示词。
+
+### 17.1 A 组：知识蒸馏工厂 Skill
+
+这组只生成候选、证据和评估结果，不改写 Listing、图片大纲或最终资产。它们应先以 `Draft` 状态运行。
+
+| 建议 Slug | 主要蒸馏对象 | 固定分类重点 | 输出 | 发布前人工动作 |
+|---|---|---|---|---|
+| `knowledge.evidence.curate` | Listing、图片集、SOP、产品创意中的可用来源 | 类目、站点、确认状态、证据等级 | 来源准入清单、排除原因、Evidence Card 候选 | 选择来源、删除不可信片段 |
+| `listing.structure.distill` | 标题、五点、A+、QA 中已确认的表达方法 | 描述方式、表达方向、`copyStyle` | 文案结构规则、禁用模式、适用条件 | 编辑每条规则，确认不可泛化案例被排除 |
+| `image.visual-system.distill` | 图片集、单图标签、人工分析、参考图备注 | 图片类型、视觉风格、构图、图片归属 | 视觉证明规则、风格参数、图片分工规则 | 确认参考图仅作为方法证据而非素材复用 |
+| `listing.image.pattern.distill` | 同一产品/类目的文案与图片成功组合 | Claim、叙事顺序、A+模块、品牌故事 | 文案—图片承载模式、覆盖规则、反例 | 确认关联由人工认可，而非ASIN相似度推断 |
+| `knowledge.rule.conflict.review` | 同方向或同类目下相互冲突的候选规则 | 适用条件、证据强度、站点 | 冲突组、推荐保留/拆分/拒绝动作 | 对冲突做最终取舍，不允许模型自行覆盖旧规则 |
+| `knowledge.skill.evaluation` | 已发布 Skill 与人工改写/反馈 | Skill 版本、类目、描述方式、方向 | 质量门禁结果、下一版本候选，不直接改动当前版本 | 确认反馈是否足以进入下一版蒸馏 |
+
+### 17.2 B 组：Listing 工作流消费 Skill
+
+这组将已发布的蒸馏规则用于**内容规划与候选生成**。所有输出先进入现有可编辑数据结构，再由用户确认；不直接覆盖 `listings`、`sellingPointDrafts` 或已锁定步骤。
+
+| 建议 Slug | 对应工作流节点 | 读取的 Skill Profile | 固定输入 | 固定输出 | 自动写入边界 |
+|---|---|---|---|---|---|
+| `listing.positioning.plan` | Listing 开始前的定位规划 | 类目 + 方向 + 文案风格 | 产品事实、关键词、证据引用、用户目标 | 定位陈述、目标人群、核心 Claim 候选、风险边界 | 只创建规划 Artifact |
+| `listing.title.structure.plan` | 标题/Item Highlights | 搜索发现 + 核心价值 + 文案风格 | 锁定 Claim、关键词分层、标题限制 | 标题槽位结构、关键词位置、候选标题 | 只生成候选，不替换现有标题 |
+| `listing.bullet.fabe.plan` | 五点 Step 1 与逐条精雕前 | 功能收益/痛点解决/适配边界 | 锁定 Claim、证据、关键词、已确认五点角色 | 五点角色表、FABE 结构、每点禁用词、证据引用 | 只更新待审核卖点规划 |
+| `listing.aplus.narrative.plan` | A+ 内容规划 | 信任转化/品牌叙事/比较差异 | 锁定 Claim、可用素材摘要、模块偏好 | A+ 1–7 连续章节、模块建议、每节 Claim、品牌故事独立卡 | 空模块或无证据模块必须被阻断 |
+| `listing.qa.objection.plan` | QA 内容规划 | 痛点解决/适配与边界/易用操作 | 买家问题、产品事实、已发布规则 | 问题分类、回答大纲、需要人工补充的事实 | 不发布买家回复，不生成无证据答案 |
+| `listing.compliance.claim.gate` | 所有文案候选提交前 | 合规规则 + 类目条件 | 文案候选、Claim Ledger、证据卡 | 通过/阻断/需人工复核项及原因 | 只改变候选状态，不能自动删改用户文本 |
+
+### 17.3 C 组：图片工作流消费 Skill
+
+图片消费 Skill 与当前图片 Step 1–6 一一对应。它们读取已锁定的 Claim 与已发布的图片规则，输出可编辑 JSON；任何“生成图片”或外部工具调用仍需经皇帝 Tool Gateway 和用户确认。
+
+| 建议 Slug | 对应图片步骤 | 固定分类 | 输入 | 输出 | 人工锁定点 |
+|---|---|---|---|---|---|
+| `image.selling-point.plan` | Step 1：卖点梳理 | 功能收益、痛点解决、适配与边界 | Claim Ledger、类目、图片规则 | 图片可承载卖点、不可视觉化内容、优先级 | 用户锁定 Step 1 卖点后才可进入 Step 2 |
+| `image.outline.storyboard.plan` | Step 2：图片大纲 | 图片归属、图片类型、表达方向 | 锁定卖点、套图数量、A+模块需求 | 主图/副图/A+/品牌故事的连续编号任务卡 | 用户逐项锁定，A+ 1–7 与品牌故事分开管理 |
+| `image.style-system.plan` | Step 3：风格确认 | `visualStyle`、配色、构图、风格禁忌 | 锁定图片任务、品牌偏好、图片库风格证据 | 1–2 个风格候选、灯光/材质/色温/禁忌 | 用户确认单一套图风格与例外图 |
+| `image.reference-brief.plan` | Step 4：参考图与备注 | 构图、效果、信息密度、风格 | 锁定任务、风格、用户上传/已确认参考摘要 | 每张图的构图 Brief、效果 Brief、备注问题 | 单图参考及备注分别锁定，绝不覆盖上传资产 |
+| `image.content-spec.plan` | Step 5：图片结构与内容建议 | 图片类型、卖点、A+模块 | Step 2/3/4 锁定版本、对应 Claim | 中英文图片建议、文本层级、场景、道具、禁忌、A+内容规格 | 无 Claim 或无模块类型时只能报缺口，不生成空内容 |
+| `image.prompt-brief.plan` | Step 6：提示词生成 | 视觉风格、构图、素材限制 | 已确认的 Step 5 内容规格、锁定参考版本 | 图片生成/美工 Brief、负面约束、素材清单 | 只生成可编辑提示词，最终调用由用户另行确认 |
+
+### 17.4 D 组：跨工作流协同与治理 Skill
+
+这组不负责产出最终文本或图片，它们专门防止 Listing 和图片各自演化后脱节。
+
+| 建议 Slug | 触发点 | 输入 | 输出 | 必须由谁决定 |
+|---|---|---|---|---|
+| `listing.image.claim-ledger` | Listing 定位计划确认后 | 产品事实、证据、选定规则、关键词 | 统一 Claim Ledger 与稳定 `claimId` | 产品/运营人员确认 Claim、证据和适用条件 |
+| `listing.image.coherence.check` | Listing 规划、图片 Step 2 或 Step 5 修改后 | 当前 Listing 计划、图片任务、Claim Ledger | 覆盖矩阵、冲突、重复、空模块、错号、缺证据清单 | 用户决定在文案侧还是图片侧修复 |
+| `listing.image.change-impact` | 用户解锁、修改或替换已锁定内容后 | 变更前后 Artifact、Skill 版本、Claim Ledger | 受影响的五点、A+模块、图片任务和需重新确认项 | 用户选择同步、仅保留当前侧或放弃变更 |
+| `knowledge.skill.source-health` | 来源撤回、归档、哈希变化或定期复核时 | Evidence Card、Skill 版本、来源状态 | 受影响 Skill、运行和待复核清单 | 超级管理员决定停用、回滚或重新蒸馏 |
+
+## 18. 与现有工作流的精确联动方式
+
+### 18.1 Listing 链路
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant L as Listing工作流
+    participant S as 已发布蒸馏Skill
+    participant C as Claim Ledger
+    participant I as 图片工作流
+    participant R as Run Ledger/Artifact
+
+    U->>L: 选择产品、关键词和Skill版本
+    L->>S: 调用 listing.positioning.plan
+    S-->>L: 结构化定位与Claim候选
+    L->>U: 编辑并锁定Claim Ledger
+    U->>C: 确认Claim、证据与限制
+    C->>L: 提供标题/五点/A+规划输入
+    L->>S: 调用标题、五点、A+和QA Skill
+    S-->>L: 可编辑候选与合规检查
+    L->>R: 记录Skill版本、输入摘要、输出Artifact
+    C->>I: 传递锁定的Claim与文案承载位置
+```
+
+Listing 的关键改变是新增一个**“内容规划”前置阶段**，而不是替换现有逐条精雕。固定联动顺序如下：
+
+| Listing 节点 | 被调用 Skill | 输入来源 | 输出存放 | 是否允许自动进入下一步 |
+|---|---|---|---|---|
+| 定位规划 | `listing.positioning.plan` | 产品事实、关键词、选定 Skill | 规划 Artifact | 否，需确认 Claim Ledger |
+| 标题规划 | `listing.title.structure.plan` | 锁定 Claim、词根、标题限制 | 标题候选 | 否，用户选择/编辑 |
+| 五点规划 | `listing.bullet.fabe.plan` | 锁定 Claim、当前五点角色 | `sellingPointDrafts` 的待审核规划 | 否，继续沿用逐条锁定/精雕 |
+| A+ 规划 | `listing.aplus.narrative.plan` | 锁定 Claim、素材摘要 | A+ 章节 Artifact | 否，用户确认模块和品牌故事 |
+| QA 规划 | `listing.qa.objection.plan` | 买家问题、产品事实 | QA 候选 Artifact | 否，用户确认 |
+| 提交检查 | `listing.compliance.claim.gate` | 用户编辑后的候选 | 阻断/风险说明 | 仅通过时允许提交待审核 |
+
+### 18.2 图片 Step 1–6 链路
+
+```mermaid
+flowchart TD
+  A[锁定 Claim Ledger] --> B[Step 1: 图片卖点计划]
+  B --> C{用户确认卖点}
+  C -->|确认| D[Step 2: 故事板/图片大纲]
+  C -->|修改| B
+  D --> E{用户锁定图片任务}
+  E --> F[Step 3: 风格系统]
+  F --> G[Step 4: 单图参考与备注]
+  G --> H[Step 5: 内容规格]
+  H --> I[一致性校验]
+  I --> J{用户处理缺口/冲突}
+  J -->|通过| K[Step 6: 图片/美工提示词]
+  J -->|调整| D
+```
+
+| 图片阶段 | 自动读取什么 | 必须人工确认什么 | 回写什么 | 不允许做什么 |
+|---|---|---|---|---|
+| Step 1 | Claim Ledger、图片规则 | 图片要承载的卖点和优先级 | Step 1 可编辑卖点计划 | 不得扩写无证据 Claim |
+| Step 2 | 锁定卖点、图片归属/类型规则 | 每张图片、A+模块、品牌故事任务 | Step 2 大纲与 `claimId` 引用 | 不得让品牌故事占用 A+ 1–7编号 |
+| Step 3 | Step 2任务、视觉风格规则 | 套图风格、配色、例外图 | 风格选择结构化参数 | 不得用风格改变产品事实 |
+| Step 4 | 单图任务、风格、参考摘要 | 每张图的构图、效果、用户备注 | 单图版本与备注 | 不得覆盖用户上传的参考图 |
+| Step 5 | 已锁定 Step 2–4、对应 Claim | 结构、文字层级、场景、模块内容 | 可编辑图片内容规格 | 无证据/无模块时不得生成空白建议 |
+| Step 6 | 已确认 Step 5 | 最终提示词与负面约束 | Prompt Brief Artifact | 不得自动发起生成或覆盖设计稿 |
+
+### 18.3 A+ 和品牌故事的特殊规则
+
+A+ 的 1–7 是内容模块编号；品牌故事是独立区域。蒸馏 Skill 必须以两个不同集合输出：`aPlusModules[1..7]` 与 `brandStoryCards[]`。任何模块若无 `claimId`、无证据或无用户选择的模块类型，必须以 `missing_evidence` 返回，不能填入空对象以凑够数量。
+
+## 19. 固定输入输出合同（示例）
+
+### 19.1 所有工作流消费 Skill 的公共输入
+
+```json
+{
+  "skillProfile": {
+    "domain": "listing | image | cross_flow",
+    "descriptionMode": "fact_spec",
+    "expressionDirection": "fit_compatibility",
+    "productCategory": "家电配件",
+    "subCategory": "热水器配件",
+    "copyStyle": "technical_precise",
+    "visualStyle": null,
+    "marketplace": "US"
+  },
+  "productFacts": [{"factId": "F-01", "value": "", "evidence": ""}],
+  "claimLedger": [],
+  "knowledgeEvidence": [{"evidenceId": "", "contentHash": "", "excerpt": ""}],
+  "lockedArtifacts": [{"artifactId": "", "version": 1}],
+  "userInstructions": ""
+}
+```
+
+### 19.2 所有工作流消费 Skill 的公共输出
+
+```json
+{
+  "skillVersion": "listing.bullet.fabe.tech-us.v1",
+  "recommendations": [],
+  "claimReferences": ["CLM-01"],
+  "evidenceReferences": ["evd_..."],
+  "confidence": "high | medium | low",
+  "requiredHumanDecisions": [],
+  "blockedReasons": [],
+  "downstreamImpact": []
+}
+```
+
+输出 Schema 必须使用严格 JSON Schema，并要求 `additionalProperties: false`。当来源不足、类目不匹配、锁定版本已失效或组合负责人式证据无法完整映射时，Skill 必须返回 `blockedReasons` 或 `requiredHumanDecisions`，而不是靠自然语言补全。
+
+## 20. 发布与联动治理
+
+每次蒸馏发布形成一个新的 `emperor_skills` 版本，Manifest 中至少应记录 Profile、规则摘要、证据卡 ID/哈希、适用范围、输入/输出 Schema、质量门禁和回滚父版本。业务工作流只接收 `Released` 状态的版本；`Draft`、`Validated` 与 `Approved` 版本只能在蒸馏工作台或明确选择的试点项目中使用。
+
+| 事件 | 必须记录的追溯字段 | 允许的自动行为 | 禁止的自动行为 |
+|---|---|---|---|
+| 蒸馏运行 | 来源内容哈希、规则草案、Skill Run ID | 创建 Draft Artifact | 自动发布 |
+| 规则编辑 | 操作人、前后差异、原因、证据变更 | 创建新草案版本 | 覆盖已发布版本 |
+| 发布/回滚 | 操作人、版本、原因、影响范围 | 切换默认已发布版本 | 改写历史项目输出 |
+| Listing/图片消费 | Skill版本、Manifest Hash、输入摘要、Claim Ledger版本 | 生成可编辑候选 | 覆盖锁定内容 |
+| 来源失效 | 来源哈希、受影响Skill/Run | 标记需复核、阻止新默认调用 | 删除历史记录或静默继续使用 |
+
+## 21. 推荐上线顺序与验收标准
+
+| 阶段 | 交付 | 先不做什么 | 关键验收 |
+|---|---|---|---|
+| P0 | A组知识蒸馏工厂、Evidence Card、固定五维 Profile、草案工作台 | 不创建真实Released Skill；不影响生成 | 每条规则有证据；用户可编辑/拒绝；未确认来源为0 |
+| P1 | `listing.positioning.plan`、`listing.bullet.fabe.plan`、`listing.aplus.narrative.plan`、Claim Ledger | 不替换逐条精雕，不直接写最终Listing | 每个五点/A+建议引用 Claim 和证据；锁定内容不被改写 |
+| P2 | 图片 Step 1–6 六项消费 Skill 和 `listing.image.coherence.check` | 不自动触发图片生成 | A+ 1–7连续、品牌故事独立、无空模块、每张图有Claim |
+| P3 | `knowledge.skill.evaluation`、反馈与版本健康检查 | 不用反馈自动修改生产版本 | 反馈只产生新草案；回滚可恢复默认版本且历史Run可追溯 |
+
+建议首先实施 **P0 + P1 中的 `listing.positioning.plan`、`listing.bullet.fabe.plan`、`listing.image.claim-ledger`**。只有当 Claim Ledger 的人工确认与版本回溯稳定后，再接入图片 Step 1–6。这样既可以尽快让知识库指导 Listing，又不会把图片工作流的复杂状态一次性引入。
