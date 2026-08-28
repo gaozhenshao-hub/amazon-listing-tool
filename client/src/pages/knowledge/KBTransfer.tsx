@@ -184,7 +184,11 @@ export default function KBTransfer() {
               )}
               <p className="mt-2 text-xs text-muted-foreground">{previewQuery.data?.completenessRule || "预览不下载或复制任何附件。"}</p>
             </div>
-            <Button className="w-full sm:w-auto" onClick={handleExport} disabled={!canExportSharedKnowledge || exportMutation.isPending || !selectedModules.length || Boolean(startDate && endDate && startDate > endDate)}><FileArchive className="mr-2 h-4 w-4" />{exportMutation.isPending ? "正在校验附件并生成ZIP…" : canExportSharedKnowledge ? "下载全部共享ZIP知识包" : "仅超级管理员可导出"}</Button>
+            {canExportSharedKnowledge ? (
+              <Button className="w-full sm:w-auto" onClick={handleExport} disabled={exportMutation.isPending || !selectedModules.length || Boolean(startDate && endDate && startDate > endDate)}><FileArchive className="mr-2 h-4 w-4" />{exportMutation.isPending ? "正在校验附件并生成ZIP…" : "下载全部共享ZIP知识包"}</Button>
+            ) : (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground" role="note"><ShieldCheck className="h-4 w-4 shrink-0 text-amber-600" />仅超级管理员可导出当前工作空间的完整共享知识包。</p>
+            )}
           </CardContent>
         </Card>
 

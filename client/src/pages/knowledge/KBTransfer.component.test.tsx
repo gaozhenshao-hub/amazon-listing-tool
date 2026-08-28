@@ -88,10 +88,11 @@ describe("KBTransfer", () => {
     expect(screen.getByRole("button", { name: "确认导入 1 条" })).toBeInTheDocument();
   });
 
-  it("shows the workspace-wide shared scope but disables export for non-super-admin users", () => {
+  it("shows the workspace-wide shared scope but hides export for non-super-admin users", () => {
     mocks.user = { id: 2, defaultWorkspaceId: 1, role: "ops_specialist" };
     render(<KBTransfer />);
     expect(screen.getByText("导出范围为当前工作空间的全部已确认共享知识，仅超级管理员可预览或导出。")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "仅超级管理员可导出" })).toBeDisabled();
+    expect(screen.getByRole("note", { name: "" })).toHaveTextContent("仅超级管理员可导出当前工作空间的完整共享知识包。");
+    expect(screen.queryByRole("button", { name: "下载全部共享ZIP知识包" })).not.toBeInTheDocument();
   });
 });
