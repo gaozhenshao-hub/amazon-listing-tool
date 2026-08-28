@@ -2380,3 +2380,44 @@ export const operatorNameMappings = mysqlTable("operator_name_mappings", {
 export type OperatorNameMapping = typeof operatorNameMappings.$inferSelect;
 
 export type InsertOperatorNameMapping = typeof operatorNameMappings.$inferInsert;
+
+// ==================== 库存负责人人工分配规则 ====================
+// 人工规则以父ASIN + 店铺 + 站点为最小业务归属单元，不写回领星原始快照。
+// 同一归属仅保留一条生效规则；每次创建、替换或停用均写入下方审计表。
+export const opsInventoryOwnerAssignments = mysqlTable("ops_inventory_owner_assignments", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  parentAsin: varchar("parent_asin", { length: 20 }).notNull(),
+  storeName: varchar("store_name", { length: 200 }).notNull(),
+  country: varchar("country", { length: 50 }).notNull(),
+  assigneeUserId: int("assignee_user_id").notNull(),
+  assigneeName: varchar("assignee_name", { length: 200 }).notNull(),
+  isActive: int("is_active").notNull().default(1),
+  createdByUserId: int("created_by_user_id").notNull(),
+  updatedByUserId: int("updated_by_user_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uk_ops_inventory_owner_assignment_scope").on(table.workspaceId, table.parentAsin, table.storeName, table.country),
+  index("idx_ops_inventory_owner_assignment_active").on(table.workspaceId, table.isActive, table.updatedAt),
+  index("idx_ops_inventory_owner_assignment_assignee").on(table.workspaceId, table.assigneeUserId, table.isActive),
+]);
+
+export const opsInventoryOwnerAssignmentAudits = mysqlTable("ops_inventory_owner_assignment_audits", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  assignmentId: int("assignment_id").notNull(),
+  action: mysqlEnum("action", ["created", "replaced", "revoked"]).notNull(),
+  previousAssigneeUserId: int("previous_assignee_user_id"),
+  previousAssigneeName: varchar("previous_assignee_name", { length: 200 }),
+  nextAssigneeUserId: int("next_assignee_user_id"),
+  nextAssigneeName: varchar("next_assignee_name", { length: 200 }),
+  reason: varchar("reason", { length: 500 }),
+  changedByUserId: int("changed_by_user_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ops_inventory_owner_assignment_audit").on(table.workspaceId, table.assignmentId, table.createdAt),
+]);
+
+export type OpsInventoryOwnerAssignment = typeof opsInventoryOwnerAssignments.$inferSelect;
+export type InsertOpsInventoryOwnerAssignment = typeof opsInventoryOwnerAssignments.$inferInsert;

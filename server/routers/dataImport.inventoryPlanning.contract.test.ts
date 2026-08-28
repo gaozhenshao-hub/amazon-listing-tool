@@ -7,6 +7,8 @@ const productsPageSource = readFileSync(resolve(process.cwd(), "client/src/pages
 const detailPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsProductDetail.tsx"), "utf8");
 const inventoryPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsInventory.tsx"), "utf8");
 const purchasePlanningSource = readFileSync(resolve(process.cwd(), "shared/inventoryPurchasePlanning.ts"), "utf8");
+const lingxingSyncSource = readFileSync(resolve(process.cwd(), "server/routers/lingxingSync.ts"), "utf8");
+const ownerAssignmentRouterSource = readFileSync(resolve(process.cwd(), "server/routers/inventoryOwnerAssignments.ts"), "utf8");
 
 describe("导入模式库存规划接口契约", () => {
   it("以 ASIN 日快照作为库存规划输入，而不是旧库存预警表", () => {
@@ -98,12 +100,30 @@ describe("导入模式库存规划接口契约", () => {
   });
 
   it("库存规划按父ASIN、店铺和国家复用已验证负责人，不以子ASIN跨店模糊匹配", () => {
-    expect(routerSource).toContain("const [profileOperatorRows, weeklyOperatorRows] = await Promise.all");
+    expect(routerSource).toContain("const [profileOperatorRows, weeklyOperatorRows, manualOwnerRules, confirmedExternalNameMappings] = await Promise.all");
     expect(routerSource).toContain("buildOperatorProfileKey(latest.parentAsin, latest.storeName)");
     expect(routerSource).toContain("buildOperatorParentKey(latest.parentAsin, latest.storeName, latest.country)");
+    expect(routerSource).toContain("manualOwner?.assigneeName || confirmedExternalOperator || profileOperator || weeklyOperator || null");
+    expect(routerSource).toContain("inventoryOwnerAssignmentKey(latest)");
+    expect(routerSource).toContain("resolveConfirmedExternalOperator");
     expect(routerSource).toContain("where(opsWorkspaceCondition(lingxingProductWeekly, workspaceId))");
     expect(routerSource).toContain("where(opsWorkspaceCondition(productProfiles, workspaceId))");
     expect(routerSource).toContain('await applyOperatorMappings(db, planningRows as any, "lingxing")');
+  });
+
+  it("领星日表现保留负责人原始标识，并在写入日快照后交由设置页名称映射解析", () => {
+    expect(lingxingSyncSource).toContain('operator: value(source, ["principal_names", "principal_name", "principal", "operator", "owner_name", "负责人"])');
+    expect(lingxingSyncSource).toContain("operator: asText(data.operator) || null");
+    expect(lingxingSyncSource).toContain("由库存/产品读取层复用已确认的“外部名称→系统人员”映射");
+  });
+
+  it("库存页面提供待分配入口，且人工规则按父ASIN、店铺和站点批量保存并允许审计撤销", () => {
+    expect(inventoryPageSource).toContain("待分配负责人");
+    expect(inventoryPageSource).toContain("inventoryOwnerAssignments.assignBatch");
+    expect(inventoryPageSource).toContain("人工库存规则 → 设置页已确认的领星名称映射");
+    expect(ownerAssignmentRouterSource).toContain("uniqueInventoryOwnerAssignmentScopes(input.targets)");
+    expect(ownerAssignmentRouterSource).toContain("opsInventoryOwnerAssignmentAudits");
+    expect(ownerAssignmentRouterSource).toContain("inventory_owner_assignment.assign_batch");
   });
 
   it("产品总览前端保留后端已经映射的运营字段，不将其重置为空", () => {

@@ -299,6 +299,9 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
     productName: value(source, ["local_name", "product_name", "item_name", "title", "name", "品名", "产品名称"]),
     storeName: value(source, ["__lingxingStoreName", "shop_name", "store_name", "storeName", "seller_name"]) || `SID ${sourceStoreId}`,
     country: value(source, ["country", "site", "marketplace"]) || scope.marketplace || "US",
+    // 领星产品表现的principal_names是外部负责人原始标识；不在此处猜测系统用户，
+    // 由库存/产品读取层复用已确认的“外部名称→系统人员”映射。
+    operator: value(source, ["principal_names", "principal_name", "principal", "operator", "owner_name", "负责人"]),
     salesQty: value(source, ["volume", "sales_qty", "salesQty", "units", "quantity", "销量"]),
     orderQty: value(source, ["order_items", "order_qty", "orderQty", "orders"]),
     salesAmount: value(source, ["sales_amount", "sales", "salesAmount", "revenue", "amount", "销售额"]),
@@ -1012,6 +1015,7 @@ export const lingxingSyncRouter = router({
           sourceStoreId: asText(data.storeId), sourceBatchHash: asText(batch.rawResponseHash),
           asin, parentAsin, storeName: asText(data.storeName, `SID ${asText(data.storeId || scope.storeId)}`), country: asText(data.country, "US"),
           msku: asText(data.sku), sku: asText(data.sku), title: asText(data.productName), productName: asText(data.productName),
+          operator: asText(data.operator) || null,
           salesQty: asNumber(data.salesQty), orderQty: asNumber(data.orderQty), salesAmount: String(asNumber(data.salesAmount)), netSalesAmount: String(asNumber(data.netSalesAmount)), orderProfit: String(asNumber(data.orderProfit)), adSpend: String(asNumber(data.adSpend)), adSales: String(asNumber(data.adSales)), adOrders: asNumber(data.adOrders), organicOrders: asNumber(data.organicOrders), sessionsTotal: asNumber(data.sessionsTotal), adClicks: asNumber(data.adClicks), adImpressions: asNumber(data.adImpressions), returnQty: asNumber(data.returnQty),
           fbaAvailable, fbaInTransit, fbaPlanInbound: 0, fbaTotal, availableStock: fbaAvailable,
           sourceRowHash: createHash("sha256").update(JSON.stringify(source)).digest("hex"), isValid: 1,

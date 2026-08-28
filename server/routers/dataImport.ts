@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
-import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsAsinLifecycleStatuses, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, opsMonthlyFinancialProfits, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles, opsExternalSyncBatches } from "../../drizzle/schema";
+import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsAsinLifecycleStatuses, opsInventoryOwnerAssignments, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, opsMonthlyFinancialProfits, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles, opsExternalSyncBatches } from "../../drizzle/schema";
 import { MANAGER_ROLES } from "../../shared/const";
 import { eq, desc, and, sql, or, isNull, ne } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
@@ -22,6 +22,8 @@ import { evaluateThreeMonthZeroDiscontinuation, evaluateThreeMonthZeroWeeklyDisc
 import { buildCompleteCoverageEvidence } from "../domains/ops/lifecycle/completeCoverageEvidence";
 import { collectCompletedDailyBackfillDates } from "../domains/ops/historicalBackfillCoverage";
 import { buildOperatorParentKey, buildOperatorProfileKey } from "../domains/ops/operatorMappingKeys";
+import { inventoryOwnerAssignmentKey } from "../domains/ops/inventoryOwnerAssignmentKeys";
+import { resolveConfirmedExternalOperator, splitExternalOperatorNames } from "../domains/ops/operatorNameResolution";
 import { mergeErpProducts } from "@shared/erpProductMerge";
 
 function matchesLingxingMarketplace(row: { country?: string | null; storeName?: string | null }, marketplace: string) {
@@ -176,8 +178,7 @@ export async function resolveDataUserId(
  * Supports separators: / 、 , ，  (slash, Chinese enumeration comma, comma, Chinese comma, space)
  */
 function splitOperatorNames(operator: string | null): string[] {
-  if (!operator) return [];
-  return operator.split(/[\/、,，]+/).map(s => s.trim()).filter(Boolean);
+  return splitExternalOperatorNames(operator);
 }
 
 /**
@@ -776,7 +777,7 @@ export const dataImportRouter = router({
       const asOfDate = input.asOfDate || inventoryPlanningSource.reduce((latest, row) => row.reportDate > latest ? row.reportDate : latest, "");
       if (!asOfDate) return { asOfDate: null, rows: [] };
 
-      const [profileOperatorRows, weeklyOperatorRows] = await Promise.all([
+      const [profileOperatorRows, weeklyOperatorRows, manualOwnerRules, confirmedExternalNameMappings] = await Promise.all([
         db!.select({
           parentAsin: productProfiles.parentAsin,
           storeName: productProfiles.storeName,
@@ -790,6 +791,15 @@ export const dataImportRouter = router({
         }).from(lingxingProductWeekly)
           .where(opsWorkspaceCondition(lingxingProductWeekly, workspaceId))
           .orderBy(desc(lingxingProductWeekly.weekStartDate), desc(lingxingProductWeekly.id)),
+        db!.select().from(opsInventoryOwnerAssignments).where(and(
+          eq(opsInventoryOwnerAssignments.workspaceId, workspaceId),
+          eq(opsInventoryOwnerAssignments.isActive, 1),
+        )),
+        db!.select().from(operatorNameMappings).where(opsWorkspaceCondition(
+          operatorNameMappings,
+          workspaceId,
+          eq(operatorNameMappings.isConfirmed, 1),
+        )),
       ]);
       const operatorByProfileKey = new Map<string, string>();
       for (const row of profileOperatorRows) {
@@ -802,6 +812,18 @@ export const dataImportRouter = router({
         if (!row.operator) continue;
         const key = buildOperatorParentKey(row.parentAsin, row.storeName, row.country);
         if (!operatorByParentKey.has(key)) operatorByParentKey.set(key, row.operator);
+      }
+      const manualOwnerByKey = new Map(manualOwnerRules.map((rule) => [inventoryOwnerAssignmentKey(rule), rule]));
+      const confirmedNameLookup = new Map<string, string>();
+      for (const mapping of confirmedExternalNameMappings) {
+        if (!mapping.systemUserName || !["lingxing", "all"].includes(mapping.sourceType)) continue;
+        confirmedNameLookup.set(mapping.externalName, mapping.systemUserName);
+      }
+      const dailyOperatorByParentKey = new Map<string, string>();
+      for (const row of [...scopedSnapshots].sort((a, b) => b.reportDate.localeCompare(a.reportDate) || b.id - a.id)) {
+        if (row.sourceType === "lx_inventory_mcp" || !row.operator) continue;
+        const key = buildOperatorParentKey(row.parentAsin, row.storeName, row.country);
+        if (!dailyOperatorByParentKey.has(key)) dailyOperatorByParentKey.set(key, row.operator);
       }
 
       const lifecycleStatuses = await db!.select().from(opsAsinLifecycleStatuses)
@@ -868,13 +890,20 @@ export const dataImportRouter = router({
         const actualBreakEven = sellingPrice !== null && productCost !== null && actualFirstLegCost !== null && actualFbaFee !== null
           ? sellingPrice * 0.85 - productCost - actualFirstLegCost - actualFbaFee
           : null;
+        const parentKey = buildOperatorParentKey(latest.parentAsin, latest.storeName, latest.country);
+        const manualOwner = manualOwnerByKey.get(inventoryOwnerAssignmentKey(latest));
+        const externalOperator = latest.operator || dailyOperatorByParentKey.get(parentKey) || null;
+        const confirmedExternalOperator = resolveConfirmedExternalOperator(externalOperator, confirmedNameLookup);
+        const profileOperator = operatorByProfileKey.get(buildOperatorProfileKey(latest.parentAsin, latest.storeName)) || null;
+        const weeklyOperator = operatorByParentKey.get(parentKey) || null;
+        const resolvedOperator = manualOwner?.assigneeName || confirmedExternalOperator || profileOperator || weeklyOperator || null;
+        const operatorSource = manualOwner ? "manual_assignment" : confirmedExternalOperator ? "lingxing_name_mapping" : profileOperator ? "product_profile" : weeklyOperator ? "weekly_report" : "unmapped";
         return {
           asin: latest.asin, sku: latest.msku || latest.sku || null, parentAsin: latest.parentAsin, storeName: latest.storeName, country: latest.country,
           productName: latest.productName || latest.title || null,
-          operator: latest.operator
-            || operatorByProfileKey.get(buildOperatorProfileKey(latest.parentAsin, latest.storeName))
-            || operatorByParentKey.get(buildOperatorParentKey(latest.parentAsin, latest.storeName, latest.country))
-            || null,
+          operator: resolvedOperator,
+          operatorSource,
+          externalOperator,
           localInventory: local?.localQty || 0,
           localInventoryConfirmedAt: local?.confirmedAt || null, parameterScope: parameter?.scopeType || "workspace",
           productionDays: parameter?.productionDays ?? 30, shippingDays: parameter?.shippingDays ?? 30, bufferDays: parameter?.bufferDays ?? 10,

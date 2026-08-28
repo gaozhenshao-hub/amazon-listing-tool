@@ -105,6 +105,9 @@ const supplementalMigrations = [
     "0181_product_knowledge_transfer.sql",
     "0182_product_knowledge_transfer_receipts.sql",
     "0183_backfill_lingxing_weekly_workspace.sql",
+    "0184_backfill_lingxing_daily_operators.sql",
+    "0185_ops_inventory_owner_assignments.sql",
+    "0186_backfill_lingxing_daily_operators_by_normalized_identity.sql",
   ];
 
 const retiredMigrationFiles = new Set([
