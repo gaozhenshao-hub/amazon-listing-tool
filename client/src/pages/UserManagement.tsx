@@ -24,6 +24,27 @@ import {
   Loader2, Users, UserCheck, UserX, Clock, Pencil, Trash2, AlertTriangle,
 } from "lucide-react";
 
+type ProductKnowledgeExportLog = {
+  id: number;
+  actorUserId: number | null;
+  operatorName: string;
+  status: "success" | "failed";
+  reason: string | null;
+  createdAt: Date | string | null;
+  metadata: {
+    filter: {
+      modules: string[];
+      dateField: "created_at" | "updated_at";
+      startAt: string | null;
+      endAt: string | null;
+      tags: string[];
+    };
+    itemCount: number | null;
+    attachmentCount: number | null;
+    archiveBytes: number | null;
+  };
+};
+
 // ─── Status badge ────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
   const variants: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -497,12 +518,14 @@ function DeleteUserDialog({ user, allUsers, onSuccess }: { user: any; allUsers: 
 // ─── Main Page ───────────────────────────────────────────────
 export default function UserManagement() {
   const { user: currentUser } = useAuth();
+  const isSuperAdmin = currentUser?.role === "super_admin";
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
   const usersQuery = trpc.userManagement.list.useQuery();
   const loginLogsQuery = trpc.userManagement.loginLogs.useQuery({ limit: 50 });
+  const exportLogsQuery = trpc.kbTransfer.exportLogs.useQuery({ limit: 100 }, { enabled: isSuperAdmin });
 
   const users = usersQuery.data || [];
 
@@ -528,6 +551,7 @@ export default function UserManagement() {
   const handleRefresh = () => {
     usersQuery.refetch();
     loginLogsQuery.refetch();
+    if (isSuperAdmin) exportLogsQuery.refetch();
   };
 
   return (
@@ -595,6 +619,7 @@ export default function UserManagement() {
         <TabsList>
           <TabsTrigger value="users">用户列表</TabsTrigger>
           <TabsTrigger value="logs">登录日志</TabsTrigger>
+          {isSuperAdmin && <TabsTrigger value="export-logs">知识包导出日志</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="users" className="space-y-4">
@@ -759,6 +784,49 @@ export default function UserManagement() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {isSuperAdmin && <TabsContent value="export-logs">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">产品知识库完整包导出记录</CardTitle>
+              <CardDescription>显示当前工作空间最近100次完整ZIP导出。日志仅保留操作范围和结果，不保存下载链接、签名链接或知识正文。</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>导出时间</TableHead>
+                    <TableHead>操作人</TableHead>
+                    <TableHead>数据范围</TableHead>
+                    <TableHead>规模</TableHead>
+                    <TableHead>结果</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {exportLogsQuery.isLoading ? (
+                    <TableRow><TableCell colSpan={5} className="py-8 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></TableCell></TableRow>
+                  ) : (exportLogsQuery.data || []).length === 0 ? (
+                    <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">暂无产品知识库完整包导出记录</TableCell></TableRow>
+                  ) : (
+                    (exportLogsQuery.data || []).map((log: ProductKnowledgeExportLog) => {
+                      const scope = log.metadata?.filter || {};
+                      const dateRange = [scope.startAt, scope.endAt].filter(Boolean).map((value: string) => new Date(value).toLocaleDateString("zh-CN")).join(" 至 ") || "不限日期";
+                      const tags = Array.isArray(scope.tags) && scope.tags.length ? `；标签：${scope.tags.join("、")}` : "";
+                      const size = typeof log.metadata?.archiveBytes === "number" && log.metadata.archiveBytes > 0 ? `${(log.metadata.archiveBytes / 1024 / 1024).toFixed(1)} MB` : "—";
+                      return <TableRow key={log.id}>
+                        <TableCell className="text-sm">{log.createdAt ? new Date(log.createdAt).toLocaleString("zh-CN") : "—"}</TableCell>
+                        <TableCell className="text-sm font-medium">{log.operatorName}</TableCell>
+                        <TableCell className="max-w-[360px] text-sm text-muted-foreground"><span>{(scope.modules || []).join("、") || "—"}；{scope.dateField === "created_at" ? "创建时间" : "最后更新时间"}：{dateRange}{tags}</span></TableCell>
+                        <TableCell className="text-sm">{log.metadata?.itemCount ?? "—"} 条知识 / {log.metadata?.attachmentCount ?? "—"} 个附件<br /><span className="text-xs text-muted-foreground">{size}</span></TableCell>
+                        <TableCell>{log.status === "success" ? <Badge variant="default" className="text-xs">成功</Badge> : <div className="space-y-1"><Badge variant="destructive" className="text-xs">失败</Badge>{log.reason && <p className="max-w-52 text-xs text-muted-foreground">{log.reason}</p>}</div>}</TableCell>
+                      </TableRow>;
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>}
       </Tabs>
     </div>
   );
