@@ -41,6 +41,7 @@ export default function KBTransfer() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
   const workspaceId = Number((user as any)?.defaultWorkspaceId || 0);
+  const canExportSharedKnowledge = (user as any)?.role === "super_admin";
   const [selectedModules, setSelectedModules] = useState<ModuleName[]>(MODULES.map((module) => module.value));
   const [dateField, setDateField] = useState<"created_at" | "updated_at">("updated_at");
   const [startDate, setStartDate] = useState("");
@@ -61,7 +62,7 @@ export default function KBTransfer() {
     ...(tagInput.trim() ? { tags: tagInput.split(",").map((tag) => tag.trim()).filter(Boolean) } : {}),
   }), [selectedModules, dateField, startDate, endDate, tagInput]);
 
-  const previewQuery = trpc.kbTransfer.previewExport.useQuery(filters, { enabled: selectedModules.length > 0 });
+  const previewQuery = trpc.kbTransfer.previewExport.useQuery(filters, { enabled: canExportSharedKnowledge && selectedModules.length > 0 });
   const exportMutation = trpc.kbTransfer.exportZip.useMutation({
     onSuccess: (result) => {
       toast.success(`已生成完整知识包：${result.itemCount}条知识、${result.attachmentCount}个附件`);
@@ -86,6 +87,10 @@ export default function KBTransfer() {
   };
 
   const handleExport = () => {
+    if (!canExportSharedKnowledge) {
+      toast.error("仅超级管理员可导出当前工作空间的共享产品知识");
+      return;
+    }
     if (!selectedModules.length) {
       toast.error("请至少选择一个知识库模块");
       return;
@@ -154,13 +159,13 @@ export default function KBTransfer() {
         <Card className="shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg"><Download className="h-5 w-5 text-primary" />导出完整知识包</CardTitle>
-            <CardDescription>选择业务模块、标签和时间范围。系统将重新验证每一个图片、PDF、文档或视频附件；任何无法安全嵌入的外部引用都会阻止“完整包”导出。</CardDescription>
+            <CardDescription>仅超级管理员可导出当前工作空间内全部已确认共享的产品知识。选择业务模块、标签和时间范围后，系统会重新验证每一个图片、PDF、文档或视频附件；任何无法安全嵌入的外部引用都会阻止“完整包”导出。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-2 sm:grid-cols-2">
               {MODULES.map((module) => (
                 <label key={module.value} className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/50">
-                  <Checkbox checked={selectedModules.includes(module.value)} onCheckedChange={(checked) => toggleModule(module.value, checked === true)} />
+                  <Checkbox disabled={!canExportSharedKnowledge} checked={selectedModules.includes(module.value)} onCheckedChange={(checked) => toggleModule(module.value, checked === true)} />
                   <span className="grid gap-0.5"><span className="text-sm font-medium">{module.label}</span><span className="text-xs text-muted-foreground">{module.description}</span></span>
                 </label>
               ))}
@@ -174,12 +179,12 @@ export default function KBTransfer() {
             <div className="space-y-2"><Label htmlFor="transfer-tags">标签筛选（可选）</Label><Input id="transfer-tags" value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder="输入一个或多个标签，以英文逗号分隔" /></div>
 
             <div className="rounded-lg border border-dashed border-primary/30 bg-primary/[0.03] p-4">
-              {previewQuery.isLoading ? <span className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />正在计算导出范围…</span> : (
+              {!canExportSharedKnowledge ? <span className="flex items-center gap-2 text-sm text-muted-foreground"><ShieldCheck className="h-4 w-4 text-amber-600" />导出范围为当前工作空间的全部已确认共享知识，仅超级管理员可预览或导出。</span> : previewQuery.isLoading ? <span className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />正在计算导出范围…</span> : (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"><span className="font-semibold">待导出 {previewQuery.data?.totalItems ?? 0} 条</span>{MODULES.filter((module) => selectedModules.includes(module.value)).map((module) => <span key={module.value} className="text-muted-foreground">{module.label} {previewQuery.data?.counts?.[module.value] ?? 0}</span>)}<span className="text-muted-foreground">声明附件候选约 {previewQuery.data?.declaredAttachmentCandidates ?? 0} 个</span></div>
               )}
               <p className="mt-2 text-xs text-muted-foreground">{previewQuery.data?.completenessRule || "预览不下载或复制任何附件。"}</p>
             </div>
-            <Button className="w-full sm:w-auto" onClick={handleExport} disabled={exportMutation.isPending || !selectedModules.length || Boolean(startDate && endDate && startDate > endDate)}><FileArchive className="mr-2 h-4 w-4" />{exportMutation.isPending ? "正在校验附件并生成ZIP…" : "下载完整ZIP知识包"}</Button>
+            <Button className="w-full sm:w-auto" onClick={handleExport} disabled={!canExportSharedKnowledge || exportMutation.isPending || !selectedModules.length || Boolean(startDate && endDate && startDate > endDate)}><FileArchive className="mr-2 h-4 w-4" />{exportMutation.isPending ? "正在校验附件并生成ZIP…" : canExportSharedKnowledge ? "下载全部共享ZIP知识包" : "仅超级管理员可导出"}</Button>
           </CardContent>
         </Card>
 

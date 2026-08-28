@@ -9,8 +9,13 @@ import {
   exportProductKnowledgeTransfer,
   previewProductKnowledgeTransfer,
 } from "../domains/knowledge/productKnowledgeTransferService";
+import { assertProductKnowledgeTransferExportAuthority } from "../domains/knowledge/productKnowledgeTransferAuthorization";
 
 const protectedProcedure = workspaceScopedProcedure("knowledge");
+const superAdminExportProcedure = protectedProcedure.use(({ ctx, next }) => {
+  assertProductKnowledgeTransferExportAuthority(ctx.user.role);
+  return next({ ctx });
+});
 const moduleSchema = z.enum(["products", "listings", "images", "skills", "videos"]);
 const filtersSchema = z.object({
   modules: z.array(moduleSchema).min(1).max(5),
@@ -25,11 +30,11 @@ const filtersSchema = z.object({
 });
 
 export const kbTransferRouter = router({
-  previewExport: protectedProcedure
+  previewExport: superAdminExportProcedure
     .input(filtersSchema)
-    .query(({ ctx, input }) => previewProductKnowledgeTransfer(ctx.user.id, ctx.workspaceId!, input)),
+    .query(({ ctx, input }) => previewProductKnowledgeTransfer(ctx.workspaceId!, input)),
 
-  exportZip: protectedProcedure
+  exportZip: superAdminExportProcedure
     .input(filtersSchema)
     .mutation(({ ctx, input }) => exportProductKnowledgeTransfer(ctx.user.id, ctx.workspaceId!, input)),
 

@@ -253,13 +253,15 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-async function loadSourceRows(userId: number, workspaceId: number, filters: TransferFiltersInput): Promise<Record<ProductKnowledgeModule, DbRecord[]>> {
+async function loadSourceRows(workspaceId: number, filters: TransferFiltersInput): Promise<Record<ProductKnowledgeModule, DbRecord[]>> {
   const db = await getDb();
   if (!db) throw new Error("数据库不可用");
   const needs = new Set(filters.modules);
   const scoped = async (table: any) => {
     const column = filters.dateField === "created_at" ? table.createdAt : table.updatedAt;
-    const conditions = [eq(table.workspaceId, workspaceId), eq(table.userId, userId)];
+    // 与产品知识库的“共享”范围保持一致：仅导出当前工作空间已确认的知识，
+    // 且由路由层的超级管理员权限保证不会越过工作空间边界。
+    const conditions = [eq(table.workspaceId, workspaceId), eq(table.status, "confirmed")];
     if (filters.startAt) conditions.push(gte(column, filters.startAt));
     if (filters.endAt) conditions.push(lte(column, filters.endAt));
     return db.select().from(table).where(and(...conditions));
@@ -277,8 +279,8 @@ async function loadSourceRows(userId: number, workspaceId: number, filters: Tran
   return rows;
 }
 
-async function buildTransferItems(userId: number, workspaceId: number, filters: TransferFiltersInput): Promise<{ items: TransferItem[]; archives: TransferArchiveAttachment[] }> {
-  const rows = await loadSourceRows(userId, workspaceId, filters);
+async function buildTransferItems(workspaceId: number, filters: TransferFiltersInput): Promise<{ items: TransferItem[]; archives: TransferArchiveAttachment[] }> {
+  const rows = await loadSourceRows(workspaceId, filters);
   const db = await getDb();
   if (!db) throw new Error("数据库不可用");
   const items: TransferItem[] = [];
@@ -378,8 +380,8 @@ async function countAttachmentCandidates(rows: Record<ProductKnowledgeModule, Db
     + rows.videos.reduce((count, row) => count + 1 + (row.thumbnailUrl ? 1 : 0) + parseStringArray(row.keyframeUrls).length, 0);
 }
 
-export async function previewProductKnowledgeTransfer(userId: number, workspaceId: number, filters: TransferFiltersInput): Promise<ExportPreview> {
-  const rows = await loadSourceRows(userId, workspaceId, filters);
+export async function previewProductKnowledgeTransfer(workspaceId: number, filters: TransferFiltersInput): Promise<ExportPreview> {
+  const rows = await loadSourceRows(workspaceId, filters);
   const counts = EMPTY_COUNTS();
   for (const module of filters.modules) counts[module] = rows[module].length;
   return {
@@ -392,7 +394,7 @@ export async function previewProductKnowledgeTransfer(userId: number, workspaceI
 }
 
 export async function exportProductKnowledgeTransfer(userId: number, workspaceId: number, filters: TransferFiltersInput) {
-  const { items, archives } = await buildTransferItems(userId, workspaceId, filters);
+  const { items, archives } = await buildTransferItems(workspaceId, filters);
   const externalReferences = items.flatMap((item) => item.attachments).filter((attachment) => attachment.status === "external_reference").length;
   if (externalReferences > 0) {
     throw new Error(`有${externalReferences}个附件无法安全读取并嵌入完整ZIP；请先在源知识库补齐实际文件后重试。`);

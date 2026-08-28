@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  user: { id: 1, defaultWorkspaceId: 1, role: "super_admin" },
   previewExport: vi.fn(() => ({
     data: {
       totalItems: 5,
@@ -18,7 +19,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/_core/hooks/useAuth", () => ({
-  useAuth: () => ({ user: { id: 1, defaultWorkspaceId: 1 } }),
+  useAuth: () => ({ user: mocks.user }),
 }));
 vi.mock("wouter", () => ({
   useLocation: () => ["/knowledge/transfer", vi.fn()],
@@ -40,6 +41,7 @@ import KBTransfer from "./KBTransfer";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  mocks.user = { id: 1, defaultWorkspaceId: 1, role: "super_admin" };
 });
 
 describe("KBTransfer", () => {
@@ -84,5 +86,12 @@ describe("KBTransfer", () => {
     expect(screen.getByText("冲突，不导入 1")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "ASIN等业务键冲突" })).toHaveTextContent("安全跳过冲突（默认）");
     expect(screen.getByRole("button", { name: "确认导入 1 条" })).toBeInTheDocument();
+  });
+
+  it("shows the workspace-wide shared scope but disables export for non-super-admin users", () => {
+    mocks.user = { id: 2, defaultWorkspaceId: 1, role: "ops_specialist" };
+    render(<KBTransfer />);
+    expect(screen.getByText("导出范围为当前工作空间的全部已确认共享知识，仅超级管理员可预览或导出。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "仅超级管理员可导出" })).toBeDisabled();
   });
 });
