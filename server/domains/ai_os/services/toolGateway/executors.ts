@@ -282,6 +282,87 @@ async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown, 
   };
 }
 
+const LINGXING_READ_ONLY_CAPABILITIES = new Set([
+  "query_product_performance_asin_lists",
+  "get_fba_stock_list",
+  "query_order_profit_list",
+  "get_my_sids",
+  "ad_auth_shops",
+  "erp_listing",
+  "query_erp_keyword_ranking_keyword",
+  "ad_campaign_report",
+  "ad_campaign_keyword_report",
+  "ad_campaign_search_term_report",
+  "ad_campaign_targeting_report",
+]);
+
+const LINGXING_SCOPE_EXEMPT_CAPABILITIES = new Set(["get_my_sids", "ad_auth_shops"]);
+
+function parseLingxingMcpText(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
+/** 兼容官方MCP在JSON-RPC result.content.text和直接data两种返回封装。 */
+export function unwrapLingxingMcpEnvelope(value: unknown): Record<string, any> {
+  const root = toRecord(value);
+  const content = Array.isArray(root.content) ? root.content : [];
+  const textItem = content.map(toRecord).find((item) => typeof item.text === "string");
+  const parsed = parseLingxingMcpText(textItem?.text ?? root);
+  const envelope = toRecord(parsed);
+  return toRecord(envelope.data ?? envelope.result ?? envelope);
+}
+
+export function buildLingxingActionInvocation(capability: string, args: unknown, schemaEnvelope: unknown) {
+  if (!LINGXING_READ_ONLY_CAPABILITIES.has(capability)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: `领星能力${capability || "(empty)"}不在只读白名单中` });
+  }
+  const argumentsRecord = toRecord(args);
+  if (!LINGXING_SCOPE_EXEMPT_CAPABILITIES.has(capability)) {
+    const scopeKeys = ["shop_id", "shopId", "sid", "sids", "profile_id", "profileId", "profile_ids"];
+    if (!scopeKeys.some((key) => argumentsRecord[key] !== undefined && argumentsRecord[key] !== null && String(argumentsRecord[key]).trim())) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: `领星能力${capability}缺少店铺或广告Profile范围` });
+    }
+  }
+  const schema = unwrapLingxingMcpEnvelope(schemaEnvelope);
+  const toolId = String(schema.toolId || "");
+  const catalogVersion = String(schema.catalogVersion || "");
+  const schemaVersion = String(schema.schemaVersion || "");
+  if (toolId !== capability || !catalogVersion || !schemaVersion || schema.toolType !== "read") {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `领星能力${capability}的最新只读Schema无效或不匹配` });
+  }
+  return {
+    toolName: "action",
+    arguments: { toolId, catalogVersion, schemaVersion, paramsJson: JSON.stringify(argumentsRecord) },
+  };
+}
+
+async function invokeLingxingReadOnlyMcp(params: unknown, resolvedSecretRefs: string[] = [], workspaceId?: number | null) {
+  const request = toRecord(params);
+  const capability = String(request.capability || request.toolName || "").trim();
+  const args = request.arguments || request.params || request.payload || {};
+  if (!capability) throw new TRPCError({ code: "BAD_REQUEST", message: "领星读取请求缺少能力名称" });
+  const config = {
+    mcpEndpoint: process.env.LINGXING_MCP_ENDPOINT || "https://openmcp.lingxing.com/mcp-servers/lingxing-mcp",
+    headers: { "X-Mcp-Key": "env:LINGXING_MCP_KEY" },
+    allowedHosts: ["openmcp.lingxing.com"],
+    timeoutMs: 30_000,
+    maxResponseBytes: 2 * 1024 * 1024,
+    rateLimitPolicy: { scope: "tool", perSecond: 1, perMinute: 60, concurrency: 1 },
+    initializeBeforeCall: true,
+    protocolVersion: "2025-03-26",
+    requireShopScope: false,
+    scopeExemptTools: ["search", "action"],
+    allowedTools: ["search", "action"],
+  };
+  const tool = { slug: "internal.lingxing.read", name: "领星官方MCP只读数据源", type: "mcp" as const, config };
+  const schema = await invokeMcpHttpTool(tool, { toolName: "search", arguments: { toolId: capability } }, resolvedSecretRefs, workspaceId);
+  // 官方新版MCP将目录查询和实际读取视为两次请求；间隔超过1秒避免突破已声明的QPS=1边界。
+  await new Promise((resolve) => setTimeout(resolve, 1_100));
+  const actionRequest = buildLingxingActionInvocation(capability, args, schema.output);
+  return invokeMcpHttpTool(tool, actionRequest, resolvedSecretRefs, workspaceId);
+}
+
 async function invokeInternalTool(slug: string, params: unknown, resolvedSecretRefs: string[] = [], workspaceId?: number | null) {
   switch (slug) {
     case "internal.agent.capture_input":
@@ -300,26 +381,7 @@ async function invokeInternalTool(slug: string, params: unknown, resolvedSecretR
         config: {},
       }, params, resolvedSecretRefs, workspaceId);
     case "internal.lingxing.read":
-      return invokeMcpHttpTool({
-        slug,
-        name: "领星官方MCP只读数据源",
-        type: "mcp",
-        config: {
-          mcpEndpoint: process.env.LINGXING_MCP_ENDPOINT || "https://openmcp.lingxing.com/mcp-servers/lingxing-mcp",
-          headers: { "X-Mcp-Key": "env:LINGXING_MCP_KEY" },
-          allowedHosts: ["openmcp.lingxing.com"],
-          timeoutMs: 30_000,
-          maxResponseBytes: 2 * 1024 * 1024,
-          rateLimitPolicy: { scope: "tool", perSecond: 1, perMinute: 60, concurrency: 1 },
-          initializeBeforeCall: true,
-          protocolVersion: "2025-03-26",
-          allowToolDiscovery: true,
-          requireShopScope: true,
-          shopScopeKeys: ["shop_id", "shopId", "sid", "sids", "profile_id", "profileId", "profile_ids"],
-          scopeExemptTools: ["get_my_sids", "ad_auth_shops"],
-          allowedTools: ["query_product_performance_asin_lists", "get_fba_stock_list", "query_order_profit_list", "get_my_sids", "ad_auth_shops", "erp_listing", "query_erp_keyword_ranking_keyword", "ad_campaign_report", "ad_campaign_keyword_report", "ad_campaign_search_term_report", "ad_campaign_targeting_report"],
-        },
-      }, params, resolvedSecretRefs, workspaceId);
+      return invokeLingxingReadOnlyMcp(params, resolvedSecretRefs, workspaceId);
     default:
       throw new TRPCError({ code: "BAD_REQUEST", message: `Unsupported internal tool: ${slug}` });
   }

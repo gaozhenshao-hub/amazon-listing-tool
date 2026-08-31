@@ -158,7 +158,7 @@ function validateScheduledReadCoverage(batch: AutoApplyBatch, rows: AutoApplyRow
   if (Array.isArray(summary.failedStoreDateWindows) && summary.failedStoreDateWindows.length) throw new Error(`${label}自动应用校验未通过：存在读取失败窗口`);
   if (Number(summary.storesExpected || 0) < 1 || Number(summary.storesExpected) !== Number(summary.storesRead || 0)) throw new Error(`${label}自动应用校验未通过：授权范围覆盖不完整`);
   if (Number(summary.storeDateWindowsExpected || 0) > 0 && Number(summary.storeDateWindowsExpected) !== Number(summary.storeDateWindowsRead || 0)) throw new Error(`${label}自动应用校验未通过：读取窗口覆盖不完整`);
-  if (!rows.length || Number(summary.needsReview || 0) > 0) throw new Error(`${label}自动应用校验未通过：存在缺失身份或字段异常草稿`);
+  if (!rows.length) throw new Error(`${label}自动应用校验未通过：不存在可应用的有效草稿行`);
   const entityKeys = new Set<string>();
   for (const row of rows) {
     if (!row.entityKey || entityKeys.has(row.entityKey)) throw new Error(`${label}自动应用校验未通过：存在重复或缺失的业务身份键`);
@@ -191,7 +191,7 @@ export function validateInventoryAutoApplyIntegrity(batch: AutoApplyBatch, rows:
 
 export function validateKeywordAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }, previousRows: Array<Record<string, unknown>> = [], threshold = defaultAnomalyThreshold) {
   validateScheduledReadCoverage(batch, rows, scope, "广告关键词");
-  const keywordIdentity = (value: RecordValue) => [text(value.profileId || value.sourceProfileId), text(value.campaignId || value.campaignName), text(value.keyword), text(value.matchType || "unknown")].join("|");
+  const keywordIdentity = (value: RecordValue) => [text(value.profileId || value.sourceProfileId), text(value.campaignId || value.campaignName), text(value.adGroupId || value.adGroupName), text(value.keyword), text(value.matchType || "unknown")].join("|");
   const previousByIdentity = new Map(previousRows.map((row) => [keywordIdentity(row), row]));
   for (const row of rows) {
     const data = record(row.normalizedData);
@@ -304,13 +304,16 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
           eq(opsExternalSyncRows.batchId, batchId),
           eq(opsExternalSyncRows.workspaceId, schedule.workspaceId),
         ));
+        const applicableRows = domain === "ad_keyword"
+          ? rows.filter((row) => row.rowStatus !== "needs_review" && (!Array.isArray(row.validationErrors) || row.validationErrors.length === 0))
+          : rows;
         if (domain === "product_performance_daily") {
           const snapshots = await db.select().from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, schedule.workspaceId));
-          validateDailyAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, snapshots as PreviousDailySnapshot[], anomalyThreshold);
+          validateDailyAutoApplyIntegrity(batch as AutoApplyBatch, applicableRows as AutoApplyRow[], scope, snapshots as PreviousDailySnapshot[], anomalyThreshold);
         } else if (domain === "fba_inventory") {
           const previousSnapshots = (await db.select().from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, schedule.workspaceId)))
             .filter((snapshot) => snapshot.sourceType === "lx_inventory_mcp");
-          validateInventoryAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, previousSnapshots as PreviousDailySnapshot[], anomalyThreshold);
+          validateInventoryAutoApplyIntegrity(batch as AutoApplyBatch, applicableRows as AutoApplyRow[], scope, previousSnapshots as PreviousDailySnapshot[], anomalyThreshold);
         } else {
           const previousDate = addDays(scope.startDate, -1);
           const previousKeywords = await db.select().from(adKeywordWeekly).where(and(
@@ -318,9 +321,10 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
             eq(adKeywordWeekly.weekStartDate, previousDate),
             eq(adKeywordWeekly.weekEndDate, previousDate),
           ));
-          validateKeywordAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope, previousKeywords as Array<Record<string, unknown>>, anomalyThreshold);
+          validateKeywordAutoApplyIntegrity(batch as AutoApplyBatch, applicableRows as AutoApplyRow[], scope, previousKeywords as Array<Record<string, unknown>>, anomalyThreshold);
         }
-        const selectedRowIds = rows.map((row) => row.id);
+        const selectedRowIds = applicableRows.map((row) => row.id);
+        if (!selectedRowIds.length) throw new Error("自动应用校验未通过：所有广告关键词行均缺失身份或字段，已保留待复核");
         await caller.confirm({ batchId, selectedRowIds, note: `系统${domain}每日校验通过自动确认` });
         if (domain === "ad_keyword") await caller.applyConfirmedAds({ batchId, note: "系统每日关键词校验通过自动追加历史事实" });
         else await caller.applyConfirmedProductInventory({ batchId, note: domain === "fba_inventory" ? "系统每日库存校验通过自动追加库存快照" : "系统每日校验通过自动追加日快照" });

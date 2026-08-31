@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMcpArguments, calculateFieldDiffs, dailyReadCoverageSummary, dailySnapshotIdentityKey, hasSelectedPeriodActivity, isValidDailySnapshotForApply, keywordSnapshotIdentityHash, normalizeDailyPreviewPage, normalizeLingxingStoreDirectoryRecord, normalizeMcpPayload, normalizeRow, pickRecords, shouldExternalizeSyncRawSnapshot } from "./routers/lingxingSync";
+import { buildMcpArguments, calculateFieldDiffs, coalesceFbaInventoryPreviewRows, dailyReadCoverageSummary, dailySnapshotIdentityKey, hasSelectedPeriodActivity, isValidDailySnapshotForApply, keywordSnapshotIdentityHash, normalizeDailyPreviewPage, normalizeLingxingStoreDirectoryRecord, normalizeMcpPayload, normalizeRow, pickRecords, shouldExternalizeSyncRawSnapshot } from "./routers/lingxingSync";
 
 describe("领星运营同步预览契约", () => {
   it("产品表现使用官方sids范围且保留人工选择的周期", () => {
@@ -134,13 +134,32 @@ describe("领星运营同步预览契约", () => {
     expect(normalized.validationErrors[0]).toContain("父ASIN映射");
   });
 
+  it("FBA库存身份键优先使用领星unique_id，避免同ASIN/SKU细分记录被错误判为重复", () => {
+    const first = normalizeRow("fba_inventory", { unique_id: "stock-a", asin: "B012", parent_asin: "P012", sku: "SKU-1" }, { storeId: "123", endDate: "2026-08-31" });
+    const second = normalizeRow("fba_inventory", { unique_id: "stock-b", asin: "B012", parent_asin: "P012", sku: "SKU-1" }, { storeId: "123", endDate: "2026-08-31" });
+    expect(first.validationErrors).toEqual([]);
+    expect(second.validationErrors).toEqual([]);
+    expect(first.entityKey).not.toBe(second.entityKey);
+  });
+
+  it("FBA库存同一ASIN细分记录在应用前聚合为单一可审计日快照", () => {
+    const scope = { storeId: "123", marketplace: "US", endDate: "2026-08-31" };
+    const first = { unique_id: "stock-a", asin: "B012", parent_asin: "P012", sku: "SKU-1", afn_fulfillable_quantity: 8, afn_reserved_quantity: 1, afn_inbound_shipped_quantity: 2 };
+    const second = { unique_id: "stock-b", asin: "B012", parent_asin: "P012", sku: "SKU-1", afn_fulfillable_quantity: 3, afn_reserved_quantity: 2, afn_inbound_shipped_quantity: 1 };
+    const result = coalesceFbaInventoryPreviewRows([first, second].map((source) => ({ source, normalized: normalizeRow("fba_inventory", source, scope) })));
+    expect(result).toHaveLength(1);
+    expect(result[0].normalized.normalized).toMatchObject({ fbaAvailable: 11, fbaReserved: 3, fbaInTransit: 3, inventoryAggregation: { sourceRecordCount: 2, sourceRecordIds: ["stock-a", "stock-b"] } });
+    expect(result[0].normalized.validationErrors).toEqual([]);
+  });
+
   it("仅将实际变化字段列为差异，供人工确认新增或更新", () => {
     expect(calculateFieldDiffs({ salesQty: 3, sku: "A" }, { salesQty: 5, sku: "A" }, ["salesQty", "sku"])).toEqual([{ field: "salesQty", before: 3, after: 5 }]);
   });
 
-  it("广告关键词来源身份哈希只依赖Profile、投放身份、关键词、匹配方式与报告期", () => {
-    const identity = { profileId: "P-1", campaignId: "C-1", campaignName: "SP-Core", keyword: "power bank", matchType: "exact", periodStart: "2026-08-24", periodEnd: "2026-08-24" };
+  it("广告关键词来源身份哈希依赖Profile、活动、广告组、关键词、匹配方式与报告期", () => {
+    const identity = { profileId: "P-1", campaignId: "C-1", campaignName: "SP-Core", adGroupId: "G-1", keyword: "power bank", matchType: "exact", periodStart: "2026-08-24", periodEnd: "2026-08-24" };
     expect(keywordSnapshotIdentityHash(identity)).toBe(keywordSnapshotIdentityHash({ ...identity, campaignName: "SP-Core renamed" }));
     expect(keywordSnapshotIdentityHash(identity)).not.toBe(keywordSnapshotIdentityHash({ ...identity, periodEnd: "2026-08-25" }));
+    expect(keywordSnapshotIdentityHash(identity)).not.toBe(keywordSnapshotIdentityHash({ ...identity, adGroupId: "G-2" }));
   });
 });
