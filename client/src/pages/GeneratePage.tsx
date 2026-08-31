@@ -53,6 +53,7 @@ import LockedContentBar from "@/components/LockedContentBar";
 import { CharCountBadge, GeneratingProgress } from "./listing/GenerationIndicators";
 import { KeywordImportDialog } from "./listing/KeywordImportDialog";
 import { DistillationGuidancePicker, type DistillationBinding } from "@/components/workflow/DistillationGuidancePicker";
+import { ListingPlanningPanel } from "@/components/workflow/ListingPlanningPanel";
 import {
   ListingGenerationJobStatus,
   useListingGenerationJob,
@@ -862,6 +863,7 @@ export default function GeneratePage() {
       ) : (
         <div className="space-y-6">
           <DistillationGuidancePicker value={distillationBinding} onChange={setDistillationBinding} />
+          <ListingPlanningPanel projectId={selectedProjectId} binding={distillationBinding} />
           {/* Step Progress Indicator */}
           <Card>
             <CardContent className="p-4">

@@ -490,7 +490,7 @@ export const imageWorkflowStepProcedures = {
 
   // ─── Step 4: Queue reference image recommendations ────────────
   startStep4Generation: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.number(), distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional() }))
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
@@ -522,6 +522,7 @@ export const imageWorkflowStepProcedures = {
         userId: ctx.user.id,
         workspaceId: ctx.workspaceId,
         agentRunId,
+        distillationBinding: input.distillationBinding,
       });
     }),
 

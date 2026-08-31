@@ -109,6 +109,8 @@ const supplementalMigrations = [
     "0185_ops_inventory_owner_assignments.sql",
     "0186_backfill_lingxing_daily_operators_by_normalized_identity.sql",
     "0187_skill_distillation_foundation.sql",
+    "0188_manual_knowledge_distillation_executor.sql",
+    "0189_claim_ledger_consistency_decisions.sql",
   ];
 
 const retiredMigrationFiles = new Set([

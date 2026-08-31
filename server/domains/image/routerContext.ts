@@ -50,6 +50,7 @@ import {
   markBusinessManagedNodeWaitingHuman,
   markBusinessManagedNodeConfirmed,
 } from "../ai_os/services/businessManagedAgent";
+import { resolveWorkflowGuidance } from "../knowledge/claimLedgerService";
 export {
   IMAGE_ADVICE_TRANSLATION_PROMPT,
   STEP0_COMPETITOR_IMAGE_ANALYSIS_PROMPT,
@@ -107,6 +108,7 @@ export const step5JobInput = z.object({
   projectId: z.number(),
   sessionId: z.number(),
   agentRunId: z.string().max(80).optional(),
+  distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional(),
 });
 
 // ─── Helper: Build context from project data ─────────────────────
@@ -957,6 +959,7 @@ export async function buildStep5FinalSuggestion(
   options?: {
     onProgress?: (progress: number) => Promise<void> | void;
     onSegmentsChange?: (segments: Step5RunSegment[], failure?: { group: string; module?: string | null }) => Promise<void> | void;
+    distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
   },
 ) {
   const reportProgress = async (progress: number) => {
@@ -986,7 +989,9 @@ export async function buildStep5FinalSuggestion(
 
   const kbReference = await getKBReference(project.category || "", userId, workspaceId ?? project.workspaceId ?? 1);
   const lockedAssetNote = consumedRefs.length ? `\n--- 已锁定A+子图资产 ---\n以下子图必须严格使用已确认版本：${consumedRefs.join(", ")}` : "";
-  const context = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}${lockedAssetNote}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n--- A+备注驱动的逐图目标（必须逐项保留） ---\n${JSON.stringify(aplusSubmoduleTargets)}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。secondaryImages必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7，不得遗漏辅图7。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。对于A+子图，必须遵守subModuleRemark、subModuleCount与subModuleTopic，按每个目标分别输出独立构图和作图建议。`;
+  const hasGuidance = Boolean(options?.distillationBinding?.ledgerKey || options?.distillationBinding?.skillSlugs?.length);
+  const guidance = hasGuidance ? await resolveWorkflowGuidance({ workspaceId: Number(workspaceId || project.workspaceId || 0), ...options?.distillationBinding }) : null;
+  const context = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}${lockedAssetNote}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}${guidance ? `\n\n--- 用户显式选择的知识蒸馏指导（只读） ---\n${JSON.stringify(guidance).slice(0, 6_000)}` : ""}\n\n--- A+备注驱动的逐图目标（必须逐项保留） ---\n${JSON.stringify(aplusSubmoduleTargets)}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。secondaryImages必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7，不得遗漏辅图7。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。对于A+子图，必须遵守subModuleRemark、subModuleCount与subModuleTopic，按每个目标分别输出独立构图和作图建议。`;
 
   const skillArgs = { userId, workspaceId: workspaceId ?? project?.workspaceId ?? null };
   const getAplusModules = (value: any) => Array.isArray(value?.aPlusModules)
@@ -1207,6 +1212,7 @@ export async function runStep5GenerationJob(args: {
   attempt?: number;
   maxAttempts?: number;
   signal?: AbortSignal;
+  distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
 }) {
   const { runId, projectId, sessionId, userId } = args;
 
@@ -1253,6 +1259,7 @@ export async function runStep5GenerationJob(args: {
       onSegmentsChange: async (segments, failure) => {
         await updateIfCurrent(buildStep5SegmentPersistenceUpdate(segments, failure));
       },
+      distillationBinding: args.distillationBinding,
     });
     if (args.signal?.aborted) throw new Error(String(args.signal.reason || "图片建议任务已取消"));
     await updateAiJobProgress(runId, 90, { expectedAttempt: args.attempt });
@@ -1315,6 +1322,7 @@ registerAiJobHandler({
         attempt: job.attempt,
         maxAttempts: job.maxAttempts,
         signal: context.signal,
+        distillationBinding: input.distillationBinding,
       });
       if (!(result as any)?.skipped) {
         await settleStep5AgentSync(syncStepJobWaitingHumanToAgent({ ...syncInput, output: (result as any)?.en ?? result }));

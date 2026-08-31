@@ -197,6 +197,7 @@ export const IMAGE_SUGGESTION_WORKFLOW_STEPS: WorkflowStepDefinition[] = [
   { id: 3, label: "风格确认", icon: Palette, description: "视觉风格选择", agentNodeId: "image.step3", artifactKey: "style_reference" },
   { id: 4, label: "参考图确认", icon: Eye, description: "构图与效果参考", agentNodeId: "image.step4", artifactKey: "reference_images" },
   { id: 5, label: "图片建议", icon: FileCheck2, description: "最终输出与锁定", agentNodeId: "image.step5", artifactKey: "final_image_advice" },
+  { id: 6, label: "作图提示词", icon: PenLine, description: "可编辑生产提示词与确认", agentNodeId: "image.step6", artifactKey: "image_prompt_pack" },
 ];
 
 export const AD_STRUCTURE_WORKFLOW_STEPS: WorkflowStepDefinition[] = [

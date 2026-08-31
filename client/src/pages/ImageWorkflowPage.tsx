@@ -73,7 +73,7 @@ import { updateStep5AplusStrategy } from "./imageWorkflow/step5AplusStrategy";
 import { getStep5AplusSectionCardKey, getStep5SecondaryImageCardKey } from "./imageWorkflow/step5RenderIdentity";
 import { normalizeSecondaryImageSlots } from "@shared/imageWorkflow";
 import { DistillationGuidancePicker, type DistillationBinding } from "@/components/workflow/DistillationGuidancePicker";
-import { DistillationGuidanceProvider } from "@/contexts/DistillationGuidanceContext";
+import { DistillationGuidanceProvider, useDistillationGuidance } from "@/contexts/DistillationGuidanceContext";
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── Step Progress Bar ───────────────────────────────────────────
@@ -681,6 +681,7 @@ function Step5FinalSuggestions({
   session: any;
   onConfirm: () => void;
 }) {
+  const distillationBinding = useDistillationGuidance();
   const generateMutation = trpc.imageWorkflow.startStep5Generation.useMutation();
   const cancelMutation = trpc.imageWorkflow.cancelStep5Generation.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep5.useMutation();
@@ -822,6 +823,7 @@ function Step5FinalSuggestions({
         sectionIndex: sectionIdx,
         moduleType: moduleId,
         moduleName: mod.name,
+        ...(distillationBinding?.ledgerKey || distillationBinding?.skillSlugs?.length ? { distillationBinding } : {}),
       });
       // Update only this section in enData and cnData
       if (result.en) {
@@ -932,7 +934,10 @@ function Step5FinalSuggestions({
     try {
       // 从失败记录重新生成时先脱离旧run查询，避免旧失败快照继续占用展示状态。
       if (!isActiveStep5RunStatus(sessionRunStatus)) setActiveRunId(null);
-      const result = await generateMutation.mutateAsync({ projectId });
+      const result = await generateMutation.mutateAsync({
+        projectId,
+        ...(distillationBinding?.ledgerKey || distillationBinding?.skillSlugs?.length ? { distillationBinding } : {}),
+      });
       if (result.runId) setActiveRunId(result.runId);
       if (result.status === "succeeded") {
         setEnData(normalizeFinalImageSuggestions(result.en));
@@ -1674,6 +1679,54 @@ function Step5FinalSuggestions({
   );
 }
 
+function Step6PromptPack({ projectId, session, onConfirm }: { projectId: number; session: any; onConfirm: () => void }) {
+  const { canEdit } = usePermissions();
+  const canEditStep6 = canEdit("listing", "listing_image_workflow");
+  const distillationBinding = useDistillationGuidance();
+  const utils = trpc.useUtils();
+  const generateMutation = trpc.imageWorkflow.generateStep6Prompts.useMutation();
+  const saveMutation = trpc.imageWorkflow.saveStep6Draft.useMutation();
+  const confirmMutation = trpc.imageWorkflow.confirmStep6.useMutation();
+  const unlockMutation = trpc.imageWorkflow.unlockStep6.useMutation();
+  const [draft, setDraft] = useState("");
+  const [locked, setLocked] = useState(Boolean(session?.step6Confirmed));
+
+  useEffect(() => {
+    setDraft(session?.step6UserEdit || session?.step6AiResult || "");
+    setLocked(Boolean(session?.step6Confirmed));
+  }, [session?.step6AiResult, session?.step6UserEdit, session?.step6Confirmed]);
+
+  const validateDraft = () => {
+    const parsed = JSON.parse(draft);
+    if (!parsed || Array.isArray(parsed) || !Array.isArray(parsed.prompts) || !parsed.prompts.length) throw new Error("提示词草案必须是包含prompts数组的JSON对象");
+    return JSON.stringify(parsed);
+  };
+  const refresh = async () => { await utils.imageWorkflow.getSession.invalidate({ projectId }); };
+  const generate = async () => {
+    if (!canEditStep6) return toast.error("您仅拥有图片建议查看权限，无法生成提示词");
+    try {
+      const result = await generateMutation.mutateAsync({ projectId, ...(distillationBinding?.ledgerKey || distillationBinding?.skillSlugs?.length ? { distillationBinding } : {}) });
+      setDraft(JSON.stringify(result.prompts, null, 2));
+      setLocked(false);
+      await refresh();
+      toast.success("Step6提示词草案已生成，请人工审阅、编辑并确认。");
+    } catch (error: any) { toast.error(error?.message || "提示词生成失败"); }
+  };
+  const save = async () => {
+    if (!canEditStep6) return toast.error("您仅拥有图片建议查看权限，无法保存提示词");
+    try { await saveMutation.mutateAsync({ projectId, userEdit: validateDraft() }); await refresh(); toast.success("提示词草案已保存，尚未锁定。"); } catch (error: any) { toast.error(error?.message || "提示词JSON格式无效"); }
+  };
+  const confirm = async () => {
+    if (!canEditStep6) return toast.error("您仅拥有图片建议查看权限，无法确认提示词");
+    try { await confirmMutation.mutateAsync({ projectId, userEdit: validateDraft() }); setLocked(true); await refresh(); onConfirm(); toast.success("Step6提示词已人工确认；未自动生成图片。"); } catch (error: any) { toast.error(error?.message || "确认失败"); }
+  };
+  const unlock = async () => {
+    try { await unlockMutation.mutateAsync({ projectId }); setLocked(false); await refresh(); toast.success("Step6已解锁，可继续编辑并另行确认。"); } catch (error: any) { toast.error(error?.message || "解锁失败"); }
+  };
+
+  return <Card><CardHeader><div className="flex flex-wrap items-start justify-between gap-3"><div><CardTitle className="flex items-center gap-2"><Pencil className="h-5 w-5 text-violet-700" />Step 6 · 作图提示词包</CardTitle><CardDescription>将已确认的图片建议编排成可编辑生产提示词。仅在您点击生成时调用模型；确认不会自动出图或修改Step0–5。</CardDescription></div><Badge variant="outline" className={distillationBinding?.ledgerKey || distillationBinding?.skillSlugs?.length ? "border-emerald-300 text-emerald-700" : "text-muted-foreground"}>{distillationBinding?.ledgerKey || distillationBinding?.skillSlugs?.length ? "已使用显式指导" : "未选择蒸馏指导"}</Badge></div></CardHeader><CardContent className="space-y-3">{!locked && <Button onClick={generate} disabled={!canEditStep6 || generateMutation.isPending}>{generateMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}生成可编辑提示词草案</Button>}{!draft && !generateMutation.isPending && <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">请先人工确认Step5图片建议，然后主动生成Step6提示词草案。</p>}{draft && <><Textarea className="min-h-[420px] font-mono text-xs" value={draft} disabled={locked || !canEditStep6} onChange={(event) => setDraft(event.target.value)} aria-label="Step6结构化提示词草案" /><p className="text-xs text-muted-foreground">提示词中应保留目标图片、英文提示词、负面约束、主张引用和人工复核备注。品牌故事与A+模块必须分别存在。</p>{locked ? <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 p-3"><span className="text-sm text-emerald-800">已人工确认。历史提示词不会被后续蒸馏更新自动覆盖。</span><Button variant="outline" size="sm" onClick={unlock} disabled={!canEditStep6 || unlockMutation.isPending}>解锁编辑</Button></div> : <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={save} disabled={!canEditStep6 || saveMutation.isPending}>保存草案</Button><Button onClick={confirm} disabled={!canEditStep6 || confirmMutation.isPending}><Check className="mr-2 h-4 w-4" />确认锁定</Button></div>}</>}</CardContent></Card>;
+}
+
 // ═════════════════════════════════════════════════════════════════
 // ─── Main Page Component ─────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════════
@@ -1716,6 +1769,7 @@ export default function ImageWorkflowPage() {
         session.step3Confirmed ? 3 : null,
         session.step4Confirmed ? 4 : null,
         session.step5Confirmed ? 5 : null,
+        session.step6Confirmed ? 6 : null,
       ].filter((step): step is number => typeof step === "number"),
     );
   }, [session]);
@@ -1733,7 +1787,7 @@ export default function ImageWorkflowPage() {
 
   const handleStepConfirm = () => {
     sessionQuery.refetch();
-    if (currentStep < 5) {
+    if (currentStep < 6) {
       setCurrentStep(currentStep + 1);
     }
   };
@@ -1778,7 +1832,7 @@ export default function ImageWorkflowPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `图片设计完整方案-Step0-5-${new Date().toISOString().slice(0, 10)}.html`;
+      a.download = `图片设计完整方案-Step0-6-${new Date().toISOString().slice(0, 10)}.html`;
       a.click();
       URL.revokeObjectURL(url);
       toast.success("已导出六步完整方案，可在浏览器中打印为 PDF");
@@ -1796,7 +1850,7 @@ export default function ImageWorkflowPage() {
               <Image className="w-6 h-6 text-primary" />
               智能图片建议
             </h1>
-            <p className="text-muted-foreground text-sm mt-1">6步工作流：竞品分析 → 卖点梳理 → 图片大纲 → 风格确认 → 参考图确认 → 图片建议</p>
+            <p className="text-muted-foreground text-sm mt-1">Step0–6工作流：竞品分析 → 卖点梳理 → 图片大纲 → 风格确认 → 参考图确认 → 图片建议 → 作图提示词</p>
           </div>
           <ProjectSelector />
         </div>
@@ -1816,7 +1870,7 @@ export default function ImageWorkflowPage() {
     <DistillationGuidanceProvider value={distillationBinding}>
     <WorkflowShell
       title="智能图片建议"
-      subtitle="6步工作流：竞品分析 → 卖点梳理 → 图片大纲 → 风格确认 → 参考图确认 → 图片建议"
+      subtitle="Step0–6工作流：竞品分析 → 卖点梳理 → 图片大纲 → 风格确认 → 参考图确认 → 图片建议 → 作图提示词"
       kind="image"
       steps={IMAGE_SUGGESTION_WORKFLOW_STEPS}
       activeStepId={currentStep}
@@ -1899,6 +1953,9 @@ export default function ImageWorkflowPage() {
       )}
       {session && currentStep === 5 && (
         <Step5FinalSuggestions projectId={projectId} session={session} onConfirm={handleStepConfirm} />
+      )}
+      {session && currentStep === 6 && (
+        <Step6PromptPack projectId={projectId} session={session} onConfirm={handleStepConfirm} />
       )}
 
     </WorkflowShell>

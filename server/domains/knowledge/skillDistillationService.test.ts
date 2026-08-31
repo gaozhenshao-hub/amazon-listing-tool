@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultManifestForSkillType, getDistillationCatalog } from "./skillDistillationCatalog";
 import { assertSkillDistillationGovernor } from "./skillDistillationAuthorization";
+import { parseDistillationOutput } from "./skillDistillationService";
 
 describe("knowledge skill distillation governance", () => {
   it("exposes blueprint-only catalog entries and never labels them as auto-running", () => {
@@ -19,5 +20,11 @@ describe("knowledge skill distillation governance", () => {
   it("limits distillation governance to super administrators", () => {
     expect(() => assertSkillDistillationGovernor({ role: "super_admin" })).not.toThrow();
     expect(() => assertSkillDistillationGovernor({ role: "admin" })).toThrow("仅允许超级管理员");
+  });
+
+  it("accepts fenced JSON object output but refuses non-object model output", () => {
+    expect(parseDistillationOutput('```json\n{"rules":[{"ruleId":"r1"}]}\n```')).toEqual({ rules: [{ ruleId: "r1" }] });
+    expect(() => parseDistillationOutput("[]")).toThrow("未返回JSON对象");
+    expect(() => parseDistillationOutput("not-json")).toThrow();
   });
 });

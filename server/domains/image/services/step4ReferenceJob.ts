@@ -13,6 +13,7 @@ import { kbDb } from "../repository";
 import { callImageWorkflowSkill } from "../routerContext";
 import { buildImageWorkflowReferenceTargets, normalizeImageOutline } from "@shared/imageWorkflow";
 import { hydrateLockedImageWorkflowAplusSubmodules } from "../../ai_os/services/businessArtifactRegistry";
+import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
 import {
   syncStepJobFailedToAgent,
   syncStepJobQueuedToAgent,
@@ -30,6 +31,7 @@ export const step4ReferenceJobInput = z.object({
   sessionId: z.number().int().positive(),
   agentRunId: z.string().max(80).optional(),
   agentNodeId: z.string().max(80).optional(),
+  distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional(),
 });
 
 function compactPromptText(value: unknown, maxChars: number) {
@@ -212,6 +214,7 @@ export async function buildStep4ReferenceRecommendation(input: {
   session: any;
   userId: number;
   workspaceId?: number | null;
+  distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
 }) {
   let kbImageInfo = "";
   try {
@@ -236,7 +239,9 @@ export async function buildStep4ReferenceRecommendation(input: {
   const referenceTargets = buildImageWorkflowReferenceTargets(outlineData);
   const style = compactPromptText(input.session.step3UserEdit || input.session.step3AiResult, 6_000);
   const lockedAssetNote = consumedRefs.length ? `\n--- 已锁定A+子图资产 ---\n以下子图为用户确认版本，必须以其内容为准：${consumedRefs.join(", ")}` : "";
-  const context = `产品名称: ${input.project.productName || input.project.name}\n品牌: ${input.project.brand || "未指定"}\n类目: ${input.project.category || "未指定"}\n\n--- 已确认的图片大纲 ---\n${outline}${lockedAssetNote}\n\n--- 已确认的风格方案 ---\n${style}\n${kbImageInfo}\n\n--- 必须逐项输出参考方案的图片目标 ---\n${JSON.stringify(referenceTargets)}\n\n请为每个目标生成一项 imageReferences，并原样保留 imageKey、imageNumber、imageType、parentModuleNumber 和 subModuleNumber。不得遗漏辅图2-7。A+多图模块的每张子图是独立目标，例如A+模块8的四张轮播图必须分别输出A+模块8.1、8.2、8.3、8.4的构图和效果参考。`;
+  const hasGuidance = Boolean(input.distillationBinding?.ledgerKey || input.distillationBinding?.skillSlugs?.length);
+  const guidance = hasGuidance ? await resolveWorkflowGuidance({ workspaceId: Number(input.workspaceId || input.project.workspaceId || 0), ...input.distillationBinding }) : null;
+  const context = `产品名称: ${input.project.productName || input.project.name}\n品牌: ${input.project.brand || "未指定"}\n类目: ${input.project.category || "未指定"}\n\n--- 已确认的图片大纲 ---\n${outline}${lockedAssetNote}\n\n--- 已确认的风格方案 ---\n${style}\n${kbImageInfo}${guidance ? `\n\n--- 用户显式选择的知识蒸馏指导（只读） ---\n${compactPromptText(JSON.stringify(guidance), 6_000)}` : ""}\n\n--- 必须逐项输出参考方案的图片目标 ---\n${JSON.stringify(referenceTargets)}\n\n请为每个目标生成一项 imageReferences，并原样保留 imageKey、imageNumber、imageType、parentModuleNumber 和 subModuleNumber。不得遗漏辅图2-7。A+多图模块的每张子图是独立目标，例如A+模块8的四张轮播图必须分别输出A+模块8.1、8.2、8.3、8.4的构图和效果参考。`;
 
   try {
     return await callImageWorkflowSkill({
@@ -271,6 +276,7 @@ export async function startStep4ReferenceJob(input: {
   userId: number;
   workspaceId?: number | null;
   agentRunId?: string | null;
+  distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
 }) {
   const activeJob = await getLatestStep4ReferenceJob(input.userId, input.projectId);
   if (activeJob?.status === "queued" || activeJob?.status === "running") {
@@ -311,6 +317,7 @@ export async function startStep4ReferenceJob(input: {
       sessionId: input.sessionId,
       agentRunId,
       agentNodeId: imageWorkflowSkillNodeId(4),
+      distillationBinding: input.distillationBinding,
     },
     progress: 5,
     maxAttempts: 3,
@@ -349,6 +356,7 @@ export async function runStep4ReferenceJob(
       session,
       userId: job.userId,
       workspaceId: job.workspaceId,
+      distillationBinding: input.distillationBinding,
     });
   } catch (error) {
     throw normalizeStep4JobError(error);

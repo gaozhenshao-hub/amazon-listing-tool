@@ -6,6 +6,7 @@ import { listingAbTestingProcedures } from "./routers/abTesting";
 import { listingEvaluationProcedures } from "./routers/evaluation";
 import { listingVersionProcedures } from "./routers/versions";
 import { listingJobControlProcedures } from "./routers/jobControl";
+import { listingPlanningProcedures } from "./routers/planning";
 
 export const listingRouter = router({
   ...listingReadProcedures,
@@ -15,4 +16,5 @@ export const listingRouter = router({
   ...listingEvaluationProcedures,
   ...listingVersionProcedures,
   ...listingJobControlProcedures,
+  ...listingPlanningProcedures,
 });

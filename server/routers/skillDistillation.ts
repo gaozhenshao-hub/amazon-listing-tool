@@ -11,13 +11,22 @@ import {
   getDistillationProjectDetail,
   listEligibleDistillationSources,
   listDistillationProjects,
+  listDistillationFeedback,
+  listPublishedDistillationSkillVersions,
   publishApprovedSkillDraft,
+  revalidateDistillationSources,
   recordDistillationFeedback,
+  restoreDistillationSkillSnapshot,
+  summarizeDistillationFeedback,
   reviewEvidenceCard,
+  runManualDistillation,
   transitionSkillDraft,
+  updateSkillDraft,
+  createNextDraftFromFeedback,
 } from "../domains/knowledge/skillDistillationService";
 import {
   analyzeClaimLedgerChangeImpact,
+  analyzeClaimLedgerConsistencyMatrix,
   createClaimLedger,
   createClaimLedgerVersion,
   getClaimLedgerDetail,
@@ -26,6 +35,7 @@ import {
   listPublishedDistilledSkills,
   lockClaimLedger,
   reviewClaimLedgerCoherence,
+  recordClaimLedgerConsistencyDecision,
   resolveWorkflowGuidance,
 } from "../domains/knowledge/claimLedgerService";
 
@@ -97,15 +107,55 @@ export const skillDistillationRouter = router({
     return createSkillDraft({ workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, ...input });
   }),
 
+  runManualDistillation: protectedProcedure.input(z.object({ projectKey: z.string().min(1).max(80), skillTypeKey: z.string().min(1).max(128), title: z.string().min(2).max(255), profile: profileSchema.default({}), evidenceKeys: z.array(z.string().min(1).max(80)).min(1).max(30) })).mutation(({ ctx, input }) => {
+    assertSkillDistillationGovernor(ctx.user);
+    return runManualDistillation({ workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, ...input });
+  }),
+
+  revalidateSources: protectedProcedure.input(z.object({ projectKey: z.string().min(1).max(80) })).mutation(({ ctx, input }) => {
+    assertSkillDistillationGovernor(ctx.user);
+    return revalidateDistillationSources({ workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, ...input });
+  }),
+
   transitionDraft: protectedProcedure.input(z.object({ projectKey: z.string().min(1).max(80), draftKey: z.string().min(1).max(80), status: z.enum(["draft", "conflict", "review", "approved", "rejected", "published", "superseded"]), reviewSummary: z.string().max(4000).nullable().optional(), conflictReport: z.unknown().optional() })).mutation(({ ctx, input }) => {
     assertSkillDistillationGovernor(ctx.user);
     if (input.status === "published") throw new Error("发布必须使用独立的审批发布入口");
     return transitionSkillDraft({ workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, ...input });
   }),
 
+  updateDraft: protectedProcedure.input(z.object({ projectKey: z.string().min(1).max(80), draftKey: z.string().min(1).max(80), title: z.string().min(2).max(255), profile: profileSchema.default({}), evidenceKeys: z.array(z.string().min(1).max(80)).min(1).max(100), manifestDraft: z.record(z.string(), z.unknown()), editNote: z.string().max(2000).nullable().optional() })).mutation(({ ctx, input }) => {
+    assertSkillDistillationGovernor(ctx.user);
+    return updateSkillDraft({ workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, ...input });
+  }),
+
   publishDraft: protectedProcedure.input(z.object({ projectKey: z.string().min(1).max(80), draftKey: z.string().min(1).max(80), releaseNote: z.string().min(5).max(4000) })).mutation(({ ctx, input }) => {
     assertSkillDistillationGovernor(ctx.user);
     return publishApprovedSkillDraft({ workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, ...input });
+  }),
+
+  publishedSkillVersions: protectedProcedure.query(({ ctx }) => {
+    assertSkillDistillationGovernor(ctx.user);
+    return listPublishedDistillationSkillVersions(workspaceIdFromContext(ctx));
+  }),
+
+  restoreSnapshot: protectedProcedure.input(z.object({ projectKey: z.string().min(1).max(80), snapshotId: z.string().min(1).max(128), releaseNote: z.string().min(5).max(4000) })).mutation(({ ctx, input }) => {
+    assertSkillDistillationGovernor(ctx.user);
+    return restoreDistillationSkillSnapshot({ workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, ...input });
+  }),
+
+  feedback: protectedProcedure.input(z.object({ projectKey: z.string().min(1).max(80).nullable().optional() }).default({})).query(({ ctx, input }) => {
+    assertSkillDistillationGovernor(ctx.user);
+    return listDistillationFeedback({ workspaceId: workspaceIdFromContext(ctx), ...input });
+  }),
+
+  feedbackSummary: protectedProcedure.input(z.object({ projectKey: z.string().min(1).max(80).nullable().optional() }).default({})).query(({ ctx, input }) => {
+    assertSkillDistillationGovernor(ctx.user);
+    return summarizeDistillationFeedback({ workspaceId: workspaceIdFromContext(ctx), ...input });
+  }),
+
+  createNextDraftFromFeedback: protectedProcedure.input(z.object({ projectKey: z.string().min(1).max(80), title: z.string().min(2).max(255), feedbackKeys: z.array(z.string().min(1).max(80)).min(1).max(30), evidenceKeys: z.array(z.string().min(1).max(80)).min(1).max(30) })).mutation(({ ctx, input }) => {
+    assertSkillDistillationGovernor(ctx.user);
+    return createNextDraftFromFeedback({ workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, ...input });
   }),
 
   recordFeedback: protectedProcedure.input(z.object({ projectKey: z.string().min(1).max(80).nullable().optional(), skillSlug: z.string().min(1).max(128), skillVersion: z.number().int().positive().nullable().optional(), consumerDomain: z.enum(["listing", "image", "other"]), consumerRef: z.string().min(1).max(192), outcome: z.enum(["accepted", "revised", "rejected", "published", "issue"]), editDelta: z.unknown().optional(), note: z.string().max(4000).nullable().optional() })).mutation(({ ctx, input }) => recordDistillationFeedback({ workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, ...input })),
@@ -138,6 +188,14 @@ export const skillDistillationRouter = router({
 
   reviewClaimCoherence: protectedProcedure.input(z.object({ ledgerKey: z.string().min(1).max(80) })).query(({ ctx, input }) => reviewClaimLedgerCoherence({ workspaceId: workspaceIdFromContext(ctx), ledgerKey: input.ledgerKey })),
   claimChangeImpact: protectedProcedure.input(z.object({ ledgerKey: z.string().min(1).max(80) })).query(({ ctx, input }) => analyzeClaimLedgerChangeImpact({ workspaceId: workspaceIdFromContext(ctx), ledgerKey: input.ledgerKey })),
+  consistencyMatrix: protectedProcedure.input(z.object({ ledgerKey: z.string().min(1).max(80) })).query(({ ctx, input }) => {
+    assertSkillDistillationGovernor(ctx.user);
+    return analyzeClaimLedgerConsistencyMatrix({ workspaceId: workspaceIdFromContext(ctx), ledgerKey: input.ledgerKey });
+  }),
+  recordConsistencyDecision: protectedProcedure.input(z.object({ ledgerKey: z.string().min(1).max(80), matrixFingerprint: z.string().length(64), issueKey: z.string().min(1).max(160), decision: z.enum(["accepted", "ignored", "new_version"]), note: z.string().max(2000).nullable().optional() })).mutation(({ ctx, input }) => {
+    assertSkillDistillationGovernor(ctx.user);
+    return recordClaimLedgerConsistencyDecision({ workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, ...input });
+  }),
   consumableSkills: protectedProcedure.input(z.object({ profile: profileSchema.optional() }).default({})).query(({ ctx, input }) => listPublishedDistilledSkills({ workspaceId: workspaceIdFromContext(ctx), profile: input.profile })),
   resolveWorkflowGuidance: protectedProcedure.input(z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).default({})).query(({ ctx, input }) =>
     resolveWorkflowGuidance({ workspaceId: workspaceIdFromContext(ctx), ...input })),

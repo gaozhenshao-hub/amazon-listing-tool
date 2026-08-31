@@ -188,7 +188,7 @@ export const imageSessionProcedures = {
       return applyCurrentStep4ImageVersions(session);
     }),
 
-  // ─── Complete export bundle (Step0-5 + selected reference assets) ─────────
+  // ─── Complete export bundle (Step0-6 + selected reference assets) ─────────
   getExportBundle: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
@@ -256,7 +256,7 @@ export const imageSessionProcedures = {
   resetToStep: protectedProcedure
     .input(z.object({
       projectId: z.number(),
-      step: z.number().min(0).max(5),
+      step: z.number().min(0).max(6),
     }))
     .mutation(async ({ ctx, input }) => {
       const session = await resolveSessionAccess(input.projectId, ctx.user);
@@ -306,6 +306,16 @@ export const imageSessionProcedures = {
         clearData.step5SelectedModule = null;
         clearData.step5OptimizedResult = null;
         clearData.step5OptimizedResultCn = null;
+      }
+      if (input.step <= 6) {
+        clearData.step6AiResult = null;
+        clearData.step6AiResultCn = null;
+        clearData.step6UserEdit = null;
+        clearData.step6Confirmed = 0;
+        clearData.step6LovartResult = null;
+        clearData.step6LovartResultEn = null;
+        clearData.step6LovartUserEdit = null;
+        clearData.step6LovartConfirmed = 0;
       }
 
       clearData.status = "in_progress";

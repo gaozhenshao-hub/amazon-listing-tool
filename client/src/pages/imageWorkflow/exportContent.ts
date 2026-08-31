@@ -51,7 +51,7 @@ function renderImageAsset(img: any, source: string, label?: string) {
   return `<figure class="asset-card"><img class="asset-img" src="${url}" alt="${caption}"/><figcaption>${caption}</figcaption></figure>`;
 }
 
-// ─── Full Plan HTML builder (Step0-5) ─────────────────────────────
+// ─── Full Plan HTML builder (Step0-6) ─────────────────────────────
 export function buildFullPlanContent(session: any, enData?: any, cnData?: any, assets: FullPlanExportAssets = {}): string {
   const s: string[] = [];
   s.push(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>产品图片设计完整方案</title>
@@ -90,7 +90,7 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
 .toc { background: #f9fafb; padding: 16px; border-radius: 8px; margin: 16px 0; }
 .toc a { color: #8B4513; text-decoration: none; }
 .toc a:hover { text-decoration: underline; }
-.six-step-waterfall { display: grid; grid-template-columns: repeat(6, minmax(280px, 1fr)); align-items: start; gap: 16px; min-width: 1800px; }
+	.six-step-waterfall { display: grid; grid-template-columns: repeat(7, minmax(280px, 1fr)); align-items: start; gap: 16px; min-width: 2100px; }
 .workflow-step { min-width: 0; padding: 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; break-inside: avoid; }
 .workflow-step h2 { margin-top: 0; font-size: 16px; }
 .workflow-step .divider { display: none; }
@@ -114,7 +114,8 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   s.push(`<a href="#step2">Step 2: 图片大纲</a><br/>`);
   s.push(`<a href="#step3">Step 3: 风格确认</a><br/>`);
   s.push(`<a href="#step4">Step 4: 参考图确认</a><br/>`);
-  s.push(`<a href="#step5">Step 5: 图片结构及内容建议</a>`);
+  s.push(`<a href="#step5">Step 5: 图片结构及内容建议</a><br/>`);
+  s.push(`<a href="#step6">Step 6: 作图提示词包</a>`);
   s.push(`</div>`);
   s.push(`<div class="six-step-waterfall">`);
 
@@ -418,6 +419,21 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
     }
   } else {
     s.push(`<p style="color:#999;">未生成或未确认</p>`);
+  }
+  s.push(`</section>`);
+
+  // ===== Step 6: Editable Prompt Pack =====
+  s.push(`<section class="workflow-step">`);
+  s.push(`<h2 id="step6"><span class="step-badge">Step 6</span>作图提示词包</h2>`);
+  s.push(`<p class="section-note">基于人工确认的图片建议生成的可编辑生产提示词；确认不代表自动出图。</p>`);
+  const step6 = session ? safeJsonParse(session.step6UserEdit || session.step6AiResult) : null;
+  if (step6?.summary) s.push(`<div class="card"><strong>提示词包摘要：</strong>${safeText(step6.summary)}</div>`);
+  if (Array.isArray(step6?.prompts) && step6.prompts.length) {
+    step6.prompts.forEach((prompt: any, index: number) => {
+      s.push(`<div class="card"><h3>${safeText(prompt.target || `提示词 ${index + 1}`)}</h3><p><strong>English Prompt:</strong> ${safeText(prompt.englishPrompt || prompt.prompt || "")}</p>${Array.isArray(prompt.negativeConstraints) && prompt.negativeConstraints.length ? `<p><strong>Negative Constraints:</strong> ${safeText(prompt.negativeConstraints.join("；"))}</p>` : ""}${Array.isArray(prompt.claimKeys) && prompt.claimKeys.length ? `<p><strong>Claim References:</strong> ${safeText(prompt.claimKeys.join("，"))}</p>` : ""}${prompt.reviewNote ? `<p><strong>人工复核备注:</strong> ${safeText(prompt.reviewNote)}</p>` : ""}</div>`);
+    });
+  } else {
+    s.push(`<p style="color:#999;">未生成或未确认Step6提示词包</p>`);
   }
   s.push(`</section></div>`);
 

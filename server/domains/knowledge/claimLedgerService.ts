@@ -177,6 +177,90 @@ export async function analyzeClaimLedgerChangeImpact(input: { workspaceId: numbe
   };
 }
 
+type ConsistencyIssue = { issueKey: string; severity: "info" | "warning" | "high"; category: string; message: string; claimKeys?: string[]; targets?: string[] };
+
+function asObject(value: unknown) {
+  return parse<Record<string, any>>(value, {});
+}
+
+function asArray(value: unknown) {
+  return Array.isArray(value) ? value : parse<any[]>(value, []);
+}
+
+export async function analyzeClaimLedgerConsistencyMatrix(input: { workspaceId: number; ledgerKey: string }) {
+  const { ledger, links } = await getClaimLedgerDetail(input);
+  const claims = ledger.claims.filter((claim: ClaimLedgerClaim) => claim.status === "locked" || claim.status === "confirmed");
+  const confirmedLinks = links.filter((link: any) => link.status === "confirmed" || link.status === "locked");
+  const [listingRows, imageRows, decisions] = await Promise.all([
+    ledger.businessProjectId ? rawExecute("SELECT * FROM listings WHERE projectId=? AND isActive=1 ORDER BY updatedAt DESC LIMIT 1", [ledger.businessProjectId]).catch(() => []) : Promise.resolve([]),
+    ledger.imageWorkflowSessionId ? rawExecute("SELECT * FROM image_workflow_sessions WHERE id=? LIMIT 1", [ledger.imageWorkflowSessionId]).catch(() => []) : ledger.businessProjectId ? rawExecute("SELECT * FROM image_workflow_sessions WHERE projectId=? ORDER BY updatedAt DESC LIMIT 1", [ledger.businessProjectId]).catch(() => []) : Promise.resolve([]),
+    rawExecute("SELECT issueKey,decision,note,createdAt FROM knowledge_claim_ledger_consistency_decisions WHERE workspaceId=? AND ledgerKey=? ORDER BY createdAt DESC LIMIT 500", [input.workspaceId, input.ledgerKey]).catch(() => []),
+  ]);
+  const listing = listingRows[0] as any;
+  const imageSession = imageRows[0] as any;
+  const bullets = asArray(listing?.bulletPoints || listing?.itemHighlights);
+  const qa = asArray(listing?.qaContent || listing?.qa || listing?.questions);
+  const imagePlan = asObject(imageSession?.step5UserEdit || imageSession?.step5OptimizedResult || imageSession?.step5AiResult);
+  const secondaryImages = asArray(imagePlan.secondaryImages);
+  const aplusModules = asArray(imagePlan?.aPlusContent?.sections || imagePlan?.aPlusModules);
+  const issues: ConsistencyIssue[] = [];
+  const matrix = claims.map((claim: ClaimLedgerClaim) => {
+    const carriers = confirmedLinks.filter((link: any) => link.claimKey === claim.claimKey).map((link: any) => ({
+      domain: link.targetDomain,
+      type: link.targetType,
+      ref: link.targetRef,
+      position: link.targetPosition || null,
+      status: link.status,
+    }));
+    const byDomain = (domain: string, matcher?: RegExp) => carriers.filter((carrier) => carrier.domain === domain && (!matcher || matcher.test(`${carrier.type}:${carrier.ref}:${carrier.position || ""}`)));
+    const listingBullet = byDomain("listing", /bullet|five|selling/i);
+    const listingAplus = byDomain("listing", /aplus|a\+/i);
+    const listingQa = byDomain("listing", /qa|question|objection/i);
+    const imageMain = byDomain("image", /main|primary/i);
+    const imageSecondary = byDomain("image", /secondary|image|slot/i);
+    const imageAplus = byDomain("image", /aplus|a\+/i);
+    const brandStory = byDomain("brand_story");
+    if (!claim.evidenceKeys.length) issues.push({ issueKey: `evidence:${claim.claimKey}`, severity: "high", category: "无证据", message: `主张“${claim.claimKey}”没有关联已批准证据。`, claimKeys: [claim.claimKey] });
+    if (!listingBullet.length && !listingAplus.length && !listingQa.length) issues.push({ issueKey: `listing-missing:${claim.claimKey}`, severity: "warning", category: "Listing孤立", message: `主张“${claim.claimKey}”未映射至五点、A+或QA。`, claimKeys: [claim.claimKey] });
+    if (!imageMain.length && !imageSecondary.length && !imageAplus.length && !brandStory.length) issues.push({ issueKey: `image-missing:${claim.claimKey}`, severity: "warning", category: "图片孤立", message: `主张“${claim.claimKey}”未映射至主图、辅图、A+或品牌故事。`, claimKeys: [claim.claimKey] });
+    return { claimKey: claim.claimKey, statement: claim.statement, risk: claim.risk, evidenceKeys: claim.evidenceKeys, carriers, coverage: { bullet: listingBullet.length, aplus: listingAplus.length, qa: listingQa.length, mainImage: imageMain.length, secondaryImage: imageSecondary.length, imageAplus: imageAplus.length, brandStory: brandStory.length } };
+  });
+  const targetMap = new Map<string, string[]>();
+  for (const link of confirmedLinks) {
+    const target = `${link.targetDomain}:${link.targetType}:${link.targetRef}:${link.targetPosition || ""}`;
+    targetMap.set(target, [...(targetMap.get(target) || []), String(link.claimKey)]);
+  }
+  for (const [target, claimKeys] of targetMap.entries()) {
+    if (claimKeys.length > 1) issues.push({ issueKey: `duplicate:${target}`, severity: "warning", category: "重复承载", message: `${target} 关联了${claimKeys.length}项主张，请人工确认是否信息过载。`, claimKeys, targets: [target] });
+  }
+  const activeClaimKeys = new Set(claims.map((claim: ClaimLedgerClaim) => claim.claimKey));
+  for (const link of confirmedLinks) if (!activeClaimKeys.has(String(link.claimKey))) issues.push({ issueKey: `orphan-link:${link.linkKey}`, severity: "high", category: "孤立链接", message: `链接 ${link.targetDomain}:${link.targetRef} 指向已失效或不存在的主张。`, targets: [`${link.targetDomain}:${link.targetRef}`] });
+  if (confirmedLinks.some((link: any) => /bullet|five|selling/i.test(`${link.targetType}:${link.targetRef}`)) && bullets.length === 0) issues.push({ issueKey: "empty-bullets", severity: "high", category: "空内容", message: "账本已链接五点承载位置，但当前Listing没有可读取的五点内容。" });
+  if (confirmedLinks.some((link: any) => /qa|question|objection/i.test(`${link.targetType}:${link.targetRef}`)) && qa.length === 0) issues.push({ issueKey: "empty-qa", severity: "warning", category: "空内容", message: "账本已链接QA承载位置，但当前Listing没有可读取的QA内容。" });
+  if (confirmedLinks.some((link: any) => /aplus|a\+/i.test(`${link.targetType}:${link.targetRef}`)) && aplusModules.length === 0) issues.push({ issueKey: "empty-aplus", severity: "high", category: "空A+", message: "账本已链接A+承载位置，但图片工作流中没有可读取的A+模块内容。" });
+  const numbers = secondaryImages.map((item: any) => Number(item?.imageNumber)).filter(Number.isFinite);
+  const expected = [2, 3, 4, 5, 6, 7];
+  const missing = expected.filter((number) => !numbers.includes(number));
+  const duplicateNumbers = [...new Set(numbers.filter((number, index) => numbers.indexOf(number) !== index))];
+  if (missing.length || duplicateNumbers.length) issues.push({ issueKey: "secondary-numbering", severity: "high", category: "辅图编号", message: `辅图应完整且仅包含2–7；缺少：${missing.join("、") || "无"}；重复：${duplicateNumbers.join("、") || "无"}。` });
+  if (confirmedLinks.some((link: any) => link.targetDomain === "brand_story") && !imagePlan.brandStory) issues.push({ issueKey: "empty-brand-story", severity: "warning", category: "品牌故事", message: "账本链接了独立品牌故事，但当前图片建议中没有独立品牌故事内容。" });
+  const latestDecisionByIssue = new Map<string, any>();
+  for (const decision of decisions as any[]) if (!latestDecisionByIssue.has(String(decision.issueKey))) latestDecisionByIssue.set(String(decision.issueKey), decision);
+  const fingerprint = contentHash({ ledgerKey: ledger.ledgerKey, version: ledger.version, updatedAt: ledger.updatedAt, claims, links: confirmedLinks.map((link: any) => [link.claimKey, link.targetDomain, link.targetType, link.targetRef, link.targetPosition, link.status]) });
+  return { ledgerKey: ledger.ledgerKey, ledgerVersion: Number(ledger.version), matrixFingerprint: fingerprint, matrix, issues: issues.map((issue) => ({ ...issue, latestDecision: latestDecisionByIssue.get(issue.issueKey) || null })), sourceState: { bulletCount: bullets.length, qaCount: qa.length, secondaryImageNumbers: numbers, aplusModuleCount: aplusModules.length, hasBrandStory: Boolean(imagePlan.brandStory) }, advisory: "矩阵仅提供差异和人工决策入口；不会自动修改任何Listing、图片、品牌故事或锁定账本。" };
+}
+
+export async function recordClaimLedgerConsistencyDecision(input: { workspaceId: number; userId: number; ledgerKey: string; matrixFingerprint: string; issueKey: string; decision: "accepted" | "ignored" | "new_version"; note?: string | null }) {
+  const ledger = await getLedger(input.ledgerKey, input.workspaceId);
+  if (ledger.status !== "locked") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "仅可对已锁定Claim Ledger记录一致性决策，以保护版本审计链" });
+  await rawExecute(
+    `INSERT INTO knowledge_claim_ledger_consistency_decisions (decisionKey,workspaceId,ledgerKey,matrixFingerprint,issueKey,decision,note,createdBy)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [key("cdecision"), input.workspaceId, input.ledgerKey, input.matrixFingerprint, input.issueKey, input.decision, input.note || null, input.userId],
+  );
+  return { ledgerKey: input.ledgerKey, issueKey: input.issueKey, decision: input.decision, requiresNewVersion: input.decision === "new_version", advisory: input.decision === "new_version" ? "请由超级管理员显式创建新的Claim Ledger版本；本操作不会自动变更账本或下游内容。" : "决定已审计记录；未修改任何下游内容。" };
+}
+
 export async function resolveWorkflowGuidance(input: { workspaceId: number; ledgerKey?: string | null; skillSlugs?: string[] | null }) {
   const skillSlugs = [...new Set((input.skillSlugs || []).map((slug) => String(slug).trim()).filter(Boolean))].slice(0, 12);
   let ledger: Record<string, unknown> | null = null;

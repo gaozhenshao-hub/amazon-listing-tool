@@ -3,6 +3,7 @@ import type { Step5RunStatus } from "../routerContext";
 import * as step4Snapshot from "../step4Snapshot";
 import { getLatestStep4ReferenceJob } from "../services/step4ReferenceJob";
 import { clearStep4ReferenceLocks } from "../step4ReferenceLockState";
+import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
 
 const {
   compactStep4ReferenceForStorage,
@@ -52,6 +53,18 @@ const {
   storagePut,
   z,
 } = shared;
+
+const distillationBindingSchema = z.object({
+  ledgerKey: z.string().min(1).max(80).nullable().optional(),
+  skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional(),
+});
+
+async function selectedGuidanceText(input: { distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] } }, ctx: any, project: any) {
+  if (!input.distillationBinding?.ledgerKey && !input.distillationBinding?.skillSlugs?.length) return "";
+  const workspaceId = Number(ctx.workspaceId || project.workspaceId || 0);
+  const guidance = await resolveWorkflowGuidance({ workspaceId, ...input.distillationBinding });
+  return `\n\n--- 用户显式选择的知识蒸馏指导（只读） ---\n${JSON.stringify(guidance).slice(0, 6_000)}`;
+}
 
 function mergeStep4DraftVersions(confirmedRaw: unknown, latestRaw: unknown) {
   const parseSnapshot = (value: unknown) => {
@@ -217,6 +230,7 @@ export const imageReferenceProcedures = {
       effectRefUrl: z.string().optional(),
       compositionRefNote: z.string().max(1_000).optional(),
       effectRefNote: z.string().max(1_000).optional(),
+      distillationBinding: distillationBindingSchema.optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
@@ -224,6 +238,7 @@ export const imageReferenceProcedures = {
       ensureWriteAccess(project, ctx.user);
       const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step4.refs.optimize:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
+      const guidanceText = await selectedGuidanceText(input, ctx, project);
 
       // Build context with reference images
       const messages: any[] = [
@@ -233,7 +248,7 @@ export const imageReferenceProcedures = {
       const userContent: any[] = [];
       userContent.push({
         type: "text",
-        text: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n\n--- 当前图片参考方案 ---\n${session.step4AiResult}\n\n目标图片: ${input.imageKey}\n\n请根据上传的参考图重新优化该图的构图参考和效果参考方案。`,
+        text: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n\n--- 当前图片参考方案 ---\n${session.step4AiResult}${guidanceText}\n\n目标图片: ${input.imageKey}\n\n请根据上传的参考图重新优化该图的构图参考和效果参考方案。`,
       });
 
       if (input.compositionRefUrl) {
@@ -304,6 +319,7 @@ export const imageReferenceProcedures = {
         note: z.string().optional(),
         position: z.string().optional(),
       })),
+      distillationBinding: distillationBindingSchema.optional(),
       compositionRefUrl: z.string().optional(),
       effectRefUrl: z.string().optional(),
       compositionRefNote: z.string().max(1_000).optional(),
@@ -315,6 +331,7 @@ export const imageReferenceProcedures = {
       ensureWriteAccess(project, ctx.user);
       const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.references.regenerate-all:${input.projectId}`);
       if (!session) throw new Error("No workflow session found");
+      const guidanceText = await selectedGuidanceText(input, ctx, project);
 
       // Build multimodal messages with all reference images + notes
       const userContent: any[] = [];
@@ -330,6 +347,7 @@ ${session.step2UserEdit || session.step2AiResult}
 
 --- 已确认的风格方案 ---
 ${session.step3UserEdit || session.step3AiResult}
+${guidanceText}
 
 请根据以下参考图和备注，重新生成完整的图片参考方案（imageReferences数组）。`,
       });
@@ -539,6 +557,7 @@ ${session.step3UserEdit || session.step3AiResult}
       sectionIndex: z.number().min(0),
       moduleType: z.string(),
       moduleName: z.string(),
+      distillationBinding: distillationBindingSchema.optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
@@ -547,6 +566,7 @@ ${session.step3UserEdit || session.step3AiResult}
       const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.aplus.optimize-one:${input.projectId}:${input.sectionIndex}`);
       if (!session) throw new Error("No workflow session found");
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
+      const guidanceText = await selectedGuidanceText(input, ctx, project);
 
       const storedCandidates = [session.step5UserEdit, session.step5OptimizedResult, session.step5AiResult].filter(Boolean);
       let currentData: any = null;
@@ -582,6 +602,7 @@ ${JSON.stringify(currentSection)}
 
 --- 用户为该模块选择的A+样式（已归一化） ---
 ${JSON.stringify(normalizedStyle)}
+${guidanceText}
 模块位置: A+模块 ${input.sectionIndex + 1}
 
 请只返回一个可合并的A+模块JSON对象，保留原模块的moduleNumber、purpose、sellingPointRefs和position，并严格适配目标样式结构。`;

@@ -71,7 +71,7 @@ export const imageStep5Procedures = {
 
   // ─── Step 5: Start async final image suggestions generation ───────
   startStep5Generation: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.number(), distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional() }))
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
@@ -176,6 +176,7 @@ export const imageStep5Procedures = {
             sessionId: session.id,
             agentRunId,
             agentNodeId: "step5_skill",
+            distillationBinding: input.distillationBinding,
           },
           progress: 5,
           maxAttempts: 3,
@@ -348,7 +349,7 @@ export const imageStep5Procedures = {
 
   // ─── Step 5: Generate final image suggestions (sync compatibility) ──
   generateStep5: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.number(), distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional() }))
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
@@ -373,7 +374,7 @@ export const imageStep5Procedures = {
       });
 
       try {
-        const result = await buildStep5FinalSuggestion(project, session, ctx.user.id, ctx.workspaceId);
+        const result = await buildStep5FinalSuggestion(project, session, ctx.user.id, ctx.workspaceId, { distillationBinding: input.distillationBinding });
         const resultStr = JSON.stringify(result);
 
         // Save English result immediately so user sees it fast

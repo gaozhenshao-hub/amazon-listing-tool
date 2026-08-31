@@ -19,6 +19,7 @@ import { ReferenceImagesHeader } from "./ReferenceImagesHeader";
 import { getStep4KbReferenceCardKey, getStep4ReferenceCardKey } from "./referenceCardIdentity";
 import { shouldApplyStep4RunOutput } from "./step4RunHydration";
 import { normalizeStep4References } from "@shared/imageWorkflow";
+import { useDistillationGuidance } from "@/contexts/DistillationGuidanceContext";
 
 const isActiveStep4Run = (status?: string | null) => status === "queued" || status === "running";
 
@@ -77,6 +78,7 @@ export function Step4References({
   onConfirm: () => void;
   canEdit?: boolean;
 }) {
+  const distillationBinding = useDistillationGuidance();
   const generateMutation = trpc.imageWorkflow.startStep4Generation.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep4.useMutation();
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
@@ -255,6 +257,7 @@ export function Step4References({
         effectRefUrl: ref.effectRefImageUrl || '',
         compositionRefNote: ref.compositionRefNote || undefined,
         effectRefNote: ref.effectRefNote || undefined,
+        ...(distillationBinding?.ledgerKey || distillationBinding?.skillSlugs?.length ? { distillationBinding } : {}),
       });
       // Merge the re-optimized result into editData
       const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
@@ -286,7 +289,10 @@ export function Step4References({
       return;
     }
     try {
-      const job = await generateMutation.mutateAsync({ projectId });
+      const job = await generateMutation.mutateAsync({
+        projectId,
+        ...(distillationBinding?.ledgerKey || distillationBinding?.skillSlugs?.length ? { distillationBinding } : {}),
+      });
       setActiveRunId(job.runId);
       await Promise.all([
         step4RunQuery.refetch(),
@@ -415,6 +421,7 @@ export function Step4References({
         effectRefUrl,
         compositionRefNote,
         effectRefNote,
+        ...(distillationBinding?.ledgerKey || distillationBinding?.skillSlugs?.length ? { distillationBinding } : {}),
       });
       const existingRefs = editData.imageReferences || [];
       const mergedResult = {
