@@ -27,6 +27,19 @@
 | 旧生产数据库 | 已保留 | 切换前的生产库保留为独立回滚库；本轮未删除。 |
 | 当前生产数据库 | 已验证 | 使用托管源库最新数据并以`INSERT IGNORE`保留目标环境不冲突的历史记录。 |
 
+## www子域名404修复（2026-08-31）
+
+用户直接访问`http://www.kuahaixing.com`时收到Nginx 404。根因是原80端口虚拟主机只对根域名设置条件跳转，`www`未命中该条件而落入Certbot生成的`return 404`兜底。DNS解析无差异，两者均指向青岛ECS。
+
+已创建Nginx站点配置备份，并将80端口的根域名与www统一设置为301跳转；随后以Certbot将现有证书扩展为同时覆盖`kuahaixing.com`和`www.kuahaixing.com`。Nginx语法测试、无中断重载、服务器端四条URL响应、证书SAN和浏览器端直接输入www均已验证。
+
+| 访问地址 | 最终结果 |
+| --- | --- |
+| `http://kuahaixing.com` | 301 → `https://kuahaixing.com` |
+| `https://kuahaixing.com` | 200，应用登录页 |
+| `http://www.kuahaixing.com` | 301 → `https://www.kuahaixing.com` |
+| `https://www.kuahaixing.com` | 200，应用登录页；证书含两个域名 |
+
 ## 安全边界
 
 本记录不包含环境配置、数据库连接、对象存储凭据、模型密钥、下载URL或业务正文。首次知识蒸馏真实试点仍未执行。
