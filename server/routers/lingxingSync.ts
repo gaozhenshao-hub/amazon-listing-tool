@@ -41,8 +41,8 @@ const SCHEDULE_PRESETS = {
   },
   parent_asin_weekly_rollup: {
     cadence: "weekly_parent_asin_rollup", cronExpression: "0 10 9 * * 1",
-    description: "北京时间每周一17:10汇总上一自然周已确认日快照，仅生成待审核父ASIN周汇总草稿",
-    autoApply: false,
+    description: "北京时间每周一17:10汇总上一自然周已确认日快照；完整性校验通过后直接幂等追加父ASIN周事实，冲突或异常阻断并保留审计",
+    autoApply: true,
   },
 } as const;
 
@@ -50,7 +50,7 @@ const emperorScheduleName = (dataDomain: keyof typeof SCHEDULE_PRESETS) => ({
   product_performance_daily: "领星 · 每日ASIN产品表现",
   fba_inventory: "领星 · 每日FBA库存快照",
   ad_keyword: "领星 · 每日广告关键词历史",
-  parent_asin_weekly_rollup: "领星 · 父ASIN周汇总草稿",
+  parent_asin_weekly_rollup: "领星 · 父ASIN周汇总",
 }[dataDomain]);
 
 type RecordValue = Record<string, unknown>;
@@ -518,10 +518,10 @@ export const lingxingSyncRouter = router({
        ON DUPLICATE KEY UPDATE
          workspaceId=VALUES(workspaceId),name=VALUES(name),description=VALUES(description),skillSlug=VALUES(skillSlug),cronExpr=VALUES(cronExpr),inputTemplate=VALUES(inputTemplate),isActive=VALUES(isActive),triggerMode='heartbeat',systemManaged=1,dataDomain=VALUES(dataDomain),externalScheduleId=VALUES(externalScheduleId),externalTaskUid=VALUES(externalTaskUid),managePath='/ops/lingxing-sync',lastBatchId=VALUES(lastBatchId),createdByUserId=VALUES(createdByUserId)`,
       [slug, workspaceId, emperorScheduleName(input.dataDomain), preset.description, "internal.lingxing.read", preset.cronExpression,
-        JSON.stringify({ dataDomain: input.dataDomain, externalTaskUid: taskUid, scheduleId }), input.enabled ? 1 : 0,
+        JSON.stringify({ dataDomain: input.dataDomain, externalTaskUid: taskUid, scheduleId, autoApply: preset.autoApply }), input.enabled ? 1 : 0,
         input.dataDomain, scheduleId, taskUid, existing?.lastBatchId ?? null, ctx.user.id],
     );
-    return { dataDomain: input.dataDomain, enabled: input.enabled, autoApply: preset.autoApply, taskUid, nextExecutionAt, writePolicy: preset.autoApply ? "validated_daily_auto_apply" as const : "draft_only" as const };
+    return { dataDomain: input.dataDomain, enabled: input.enabled, autoApply: preset.autoApply, taskUid, nextExecutionAt, writePolicy: input.dataDomain === "parent_asin_weekly_rollup" ? "validated_weekly_auto_apply" as const : preset.autoApply ? "validated_daily_auto_apply" as const : "draft_only" as const };
   }),
 
   get: protectedProcedure.input(z.object({ batchId: z.number().int().positive() })).query(async ({ ctx, input }) => {

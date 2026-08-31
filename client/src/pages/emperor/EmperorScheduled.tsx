@@ -105,7 +105,7 @@ function systemTaskDraft(task: ScheduledTask): SystemTaskDraft {
     cronExpr: task.cronExpr || "0 0 9 * * *",
     ...readBeijingSchedule(task.cronExpr || "0 0 9 * * *", task.dataDomain),
     isActive: Boolean(task.isActive),
-    autoApply: Boolean(template.autoApply ?? task.dataDomain !== "parent_asin_weekly_rollup"),
+    autoApply: Boolean(template.autoApply ?? true),
     multiplier: String(threshold.multiplier ?? 20),
     absoluteIncrease: String(threshold.absoluteIncrease ?? 10_000),
   };
@@ -164,7 +164,7 @@ export default function EmperorScheduled() {
       name: systemDraft.name.trim(),
       cronExpr: systemDraft.cronExpr.trim(),
       isActive: systemDraft.isActive,
-      autoApply: selectedTask.dataDomain === "parent_asin_weekly_rollup" ? false : systemDraft.autoApply,
+      autoApply: selectedTask.dataDomain === "parent_asin_weekly_rollup" ? true : systemDraft.autoApply,
       anomalyThreshold: { multiplier: Number(systemDraft.multiplier), absoluteIncrease: Number(systemDraft.absoluteIncrease) },
     });
   };
@@ -422,7 +422,7 @@ export default function EmperorScheduled() {
             <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-sm font-medium">执行频率</label><Select value={systemDraft.frequency} onValueChange={(value: "daily" | "weekly") => updateVisualSchedule(value, systemDraft.beijingTime)} disabled={selectedTask?.dataDomain === "parent_asin_weekly_rollup"}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="daily">每天</SelectItem><SelectItem value="weekly">每周一</SelectItem></SelectContent></Select><p className="text-xs text-muted-foreground">周汇总固定每周一，不能改为每日。</p></div><div className="space-y-2"><label className="text-sm font-medium">执行时间（北京时间）</label><Input type="time" value={systemDraft.beijingTime} onChange={(event) => updateVisualSchedule(systemDraft.frequency, event.target.value)} /><p className="text-xs text-muted-foreground">系统自动转换为UTC时间。</p></div></div>
             <div className="rounded-lg border p-3 space-y-2"><div className="flex items-center justify-between"><div><p className="text-sm font-medium">高级 Cron</p><p className="text-xs text-muted-foreground">仅在需要特殊表达式时使用；仍必须为6段UTC格式。</p></div><Button type="button" variant="outline" size="sm" onClick={() => setSystemDraft((draft) => ({ ...draft, advancedCron: !draft.advancedCron }))}>{systemDraft.advancedCron ? "使用可视化设置" : "编辑高级Cron"}</Button></div>{systemDraft.advancedCron ? <Input className="font-mono" value={systemDraft.cronExpr} onChange={(event) => setSystemDraft((draft) => ({ ...draft, cronExpr: event.target.value }))} /> : <p className="font-mono text-xs text-muted-foreground">将保存为UTC：{systemDraft.cronExpr}</p>}</div>
             <div className="flex items-center justify-between rounded-lg border p-3"><div><p className="text-sm font-medium">启用任务</p><p className="text-xs text-muted-foreground">暂停会同步暂停唯一Heartbeat触发器。</p></div><Switch checked={systemDraft.isActive} onCheckedChange={(checked) => setSystemDraft((draft) => ({ ...draft, isActive: checked }))} /></div>
-            <div className="flex items-center justify-between rounded-lg border p-3"><div><p className="text-sm font-medium">校验通过后自动应用</p><p className="text-xs text-muted-foreground">关闭后只生成待审核草稿，不追加历史事实。</p></div><Switch checked={selectedTask?.dataDomain === "parent_asin_weekly_rollup" ? false : systemDraft.autoApply} disabled={selectedTask?.dataDomain === "parent_asin_weekly_rollup"} onCheckedChange={(checked) => setSystemDraft((draft) => ({ ...draft, autoApply: checked }))} /></div>
+            <div className="flex items-center justify-between rounded-lg border p-3"><div><p className="text-sm font-medium">校验通过后自动应用</p><p className="text-xs text-muted-foreground">{selectedTask?.dataDomain === "parent_asin_weekly_rollup" ? "父ASIN周汇总固定为校验通过后直接幂等应用；冲突或覆盖异常会阻断并保留审计。" : "关闭后只生成待审核草稿，不追加历史事实。"}</p></div><Switch checked={selectedTask?.dataDomain === "parent_asin_weekly_rollup" ? true : systemDraft.autoApply} disabled={selectedTask?.dataDomain === "parent_asin_weekly_rollup"} onCheckedChange={(checked) => setSystemDraft((draft) => ({ ...draft, autoApply: checked }))} /></div>
             <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-sm font-medium">异常倍数阈值</label><Input type="number" min="2" max="20" value={systemDraft.multiplier} onChange={(event) => setSystemDraft((draft) => ({ ...draft, multiplier: event.target.value }))} /><p className="text-xs text-muted-foreground">范围2–20倍</p></div><div className="space-y-2"><label className="text-sm font-medium">绝对增量阈值</label><Input type="number" min="100" max="10000" value={systemDraft.absoluteIncrease} onChange={(event) => setSystemDraft((draft) => ({ ...draft, absoluteIncrease: event.target.value }))} /><p className="text-xs text-muted-foreground">范围100–10,000</p></div></div>
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">始终锁定：数据域、MCP工具白名单、美国店铺范围、任务UID、运行审计、库存货期/MOQ/成本，以及广告预算/竞价/否词/状态/结构。</div>
           </div>

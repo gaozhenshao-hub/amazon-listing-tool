@@ -92,6 +92,7 @@ export function summarizeParentAsinWeeks(records: DailySnapshot[], weeksToShow: 
       productName: latest.productName || null,
       operator: latest.operator || null,
       variantCount: latestAsins.size,
+      asins: [...latestAsins.keys()].sort(),
       skus: [...latestAsins.values()].map(row => row.sku).filter((sku): sku is string => Boolean(sku)),
       weeks,
     };

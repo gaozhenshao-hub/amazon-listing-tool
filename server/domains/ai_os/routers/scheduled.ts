@@ -123,9 +123,6 @@ export const emperorScheduledRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "未找到受系统管理的领星定时任务" });
       }
       if (task.workspaceId !== ctx.user.defaultWorkspaceId) throw new TRPCError({ code: "FORBIDDEN" });
-      if (task.dataDomain === "parent_asin_weekly_rollup" && input.autoApply) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "父ASIN周汇总仅生成草稿，不允许开启自动应用" });
-      }
       const db = await getDb();
       if (!db) throw new Error("数据库不可用");
       const sessionToken = parseCookie(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
@@ -137,7 +134,7 @@ export const emperorScheduledRouter = router({
         autoApply: input.autoApply ? 1 : 0,
       }).where(eq(opsLingxingSyncSchedules.id, task.externalScheduleId));
       const template = jsonObject(task.inputTemplate);
-      const inputTemplate = { ...template, dataDomain: task.dataDomain, externalTaskUid: task.externalTaskUid, scheduleId: task.externalScheduleId, anomalyThreshold: input.anomalyThreshold };
+      const inputTemplate = { ...template, dataDomain: task.dataDomain, externalTaskUid: task.externalTaskUid, scheduleId: task.externalScheduleId, autoApply: input.autoApply, anomalyThreshold: input.anomalyThreshold };
       await rawExecute(
         "UPDATE emperor_scheduled_tasks SET name=?, description=?, cronExpr=?, inputTemplate=?, isActive=?, nextRunAt=? WHERE id=? AND systemManaged=1",
         [input.name, description, input.cronExpr, JSON.stringify(inputTemplate), input.isActive ? 1 : 0, heartbeat.nextExecutionAt ? new Date(heartbeat.nextExecutionAt) : null, task.id],

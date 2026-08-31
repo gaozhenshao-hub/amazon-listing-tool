@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
-import { adKeywordWeekly, emperorScheduledTasks, opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncRows, opsLingxingSyncSchedules, users } from "../../../drizzle/schema";
+import { adKeywordWeekly, dataImports, emperorScheduledTasks, lingxingProductWeekly, opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncConfirmations, opsExternalSyncRows, opsLingxingSyncSchedules, users } from "../../../drizzle/schema";
 import { lingxingSyncRouter } from "../../routers/lingxingSync";
 import { getDb } from "../../repositories/dbClient";
 import { summarizeParentAsinWeeks, type DailySnapshot } from "./productOverview/dailyAggregation";
@@ -73,7 +73,7 @@ export function weeklyCoverageExceptionSummary(rows: WeeklyExceptionSnapshot[], 
     missingDates,
     exceptionTypes,
     isIncomplete: exceptionTypes.length > 0,
-    message: messages.length ? `${messages.join("；")}；周汇总仅供人工审阅。` : null,
+    message: messages.length ? `${messages.join("；")}；周汇总已阻断自动应用。` : null,
   };
 }
 
@@ -87,6 +87,183 @@ function asDailySnapshot(row: typeof opsAsinDailySnapshots.$inferSelect): DailyS
     fbaAvailable: Number(row.fbaAvailable || row.availableStock || 0), fbaInTransit: Number(row.fbaInTransit || 0), sourceLocalAvailable: Number(row.sourceLocalAvailable || 0),
     title: row.title, productName: row.productName, sku: row.sku || row.msku, operator: row.operator,
   };
+}
+
+type WeeklyRollupData = Record<string, unknown> & { week?: Record<string, unknown> };
+type WeeklyFactInsert = typeof lingxingProductWeekly.$inferInsert;
+
+export function weeklyRollupIdentity(input: { workspaceId?: unknown; parentAsin?: unknown; storeName?: unknown; country?: unknown; weekStartDate?: unknown }) {
+  return [text(input.workspaceId), text(input.parentAsin).toUpperCase(), text(input.storeName), text(input.country).toUpperCase(), text(input.weekStartDate)].join("|");
+}
+
+export function buildWeeklyRollupFact(input: WeeklyRollupData, context: { workspaceId: number; importId: number; userId: number }): WeeklyFactInsert {
+  const week = record(input.week);
+  const parentAsin = text(input.parentAsin).toUpperCase();
+  const storeName = text(input.storeName);
+  const country = text(input.country || "US").toUpperCase();
+  const weekStartDate = text(week.weekStartDate);
+  const weekEndDate = text(week.weekEndDate);
+  if (!parentAsin || !storeName || !weekStartDate || !weekEndDate) throw new Error("父ASIN周汇总自动应用失败：缺少父ASIN、店铺或自然周身份字段");
+  const asins = Array.isArray(input.asins) ? input.asins.map(text).filter(Boolean) : [text(input.asin)].filter(Boolean);
+  const asDecimal = (value: unknown) => String(Number(value || 0));
+  const asPercent = (value: unknown) => value === null || value === undefined || value === "" ? null : String(Number(Number(value).toFixed(4)));
+  return {
+    workspaceId: context.workspaceId,
+    importId: context.importId,
+    userId: context.userId,
+    weekStartDate,
+    weekEndDate,
+    asin: asins.join(","),
+    parentAsin,
+    msku: text(input.sku),
+    sku: text(input.sku),
+    storeName,
+    country,
+    title: text(input.title),
+    productName: text(input.productName),
+    operator: text(input.operator),
+    salesQty: Number(week.salesQty || 0),
+    salesAmount: asDecimal(week.salesAmount),
+    orderQty: Number(week.orderQty || 0),
+    orderProfit: asDecimal(week.orderProfit),
+    orderProfitMargin: asPercent(week.profitMargin),
+    sessionsTotal: Number(week.sessionsTotal || 0),
+    cvr: asPercent(week.cvr),
+    adCvr: asPercent(week.adCvr),
+    organicCvr: asPercent(week.organicCvr),
+    adOrders: Number(week.adOrders || 0),
+    organicOrders: Number(week.organicOrders || 0),
+    adClicks: Number(week.adClicks || 0),
+    adImpressions: Number(week.adImpressions || 0),
+    ctr: asPercent(week.ctr),
+    cpc: asDecimal(week.cpc),
+    adSpend: asDecimal(week.adSpend),
+    adSales: asDecimal(week.adSales),
+    acos: asPercent(week.acos),
+    returnQty: Number(week.returnQty || 0),
+    returnRate: asPercent(week.returnRate),
+    fbaAvailable: Number(week.fbaAvailable || 0),
+    fbaInTransit: Number(week.fbaInTransit || 0),
+  };
+}
+
+function weeklyFactComparable(input: Partial<typeof lingxingProductWeekly.$inferSelect> | WeeklyFactInsert) {
+  return {
+    identity: weeklyRollupIdentity(input),
+    asin: text(input.asin),
+    sku: text(input.sku),
+    salesQty: Number(input.salesQty || 0),
+    salesAmount: Number(input.salesAmount || 0),
+    orderQty: Number(input.orderQty || 0),
+    orderProfit: Number(input.orderProfit || 0),
+    orderProfitMargin: numberOrNull(input.orderProfitMargin),
+    sessionsTotal: Number(input.sessionsTotal || 0),
+    cvr: numberOrNull(input.cvr),
+    adCvr: numberOrNull(input.adCvr),
+    organicCvr: numberOrNull(input.organicCvr),
+    adOrders: Number(input.adOrders || 0),
+    organicOrders: Number(input.organicOrders || 0),
+    adClicks: Number(input.adClicks || 0),
+    adImpressions: Number(input.adImpressions || 0),
+    ctr: numberOrNull(input.ctr),
+    cpc: Number(input.cpc || 0),
+    adSpend: Number(input.adSpend || 0),
+    adSales: Number(input.adSales || 0),
+    acos: numberOrNull(input.acos),
+    returnQty: Number(input.returnQty || 0),
+    returnRate: numberOrNull(input.returnRate),
+    fbaAvailable: Number(input.fbaAvailable || 0),
+    fbaInTransit: Number(input.fbaInTransit || 0),
+  };
+}
+
+export function weeklyFactsEqual(left: Partial<typeof lingxingProductWeekly.$inferSelect> | WeeklyFactInsert, right: Partial<typeof lingxingProductWeekly.$inferSelect> | WeeklyFactInsert) {
+  return JSON.stringify(weeklyFactComparable(left)) === JSON.stringify(weeklyFactComparable(right));
+}
+
+export async function applyParentAsinWeeklyRollupBatch(db: any, input: { batchId: number; workspaceId: number; userId: number }) {
+  const [batch] = await db.select().from(opsExternalSyncBatches).where(and(
+    eq(opsExternalSyncBatches.id, input.batchId),
+    eq(opsExternalSyncBatches.workspaceId, input.workspaceId),
+  )).limit(1);
+  if (!batch || batch.dataDomain !== "parent_asin_weekly_rollup") throw new Error("父ASIN周汇总批次不存在或不属于当前工作空间");
+  if (batch.status === "applied") return { success: true, batchId: batch.id, importedRows: 0, skippedRows: Number(record(batch.summary).appliedRows || 0), idempotent: true as const };
+  if (batch.status !== "ready_for_review" && batch.status !== "confirmed") throw new Error("父ASIN周汇总批次不处于可自动应用状态");
+  const rows = await db.select().from(opsExternalSyncRows).where(and(
+    eq(opsExternalSyncRows.batchId, input.batchId),
+    eq(opsExternalSyncRows.workspaceId, input.workspaceId),
+  ));
+  if (!rows.length) throw new Error("父ASIN周汇总自动应用失败：批次没有汇总行");
+  const facts = rows.map((row: typeof opsExternalSyncRows.$inferSelect) => {
+    const errors = Array.isArray(row.validationErrors) ? row.validationErrors : [];
+    if (errors.length) throw new Error("父ASIN周汇总自动应用失败：批次存在覆盖或字段异常");
+    return { row, fact: buildWeeklyRollupFact(record(row.normalizedData), { workspaceId: input.workspaceId, importId: 0, userId: input.userId }) };
+  });
+  const identities = facts.map(({ fact }) => weeklyRollupIdentity(fact));
+  if (new Set(identities).size !== identities.length) throw new Error("父ASIN周汇总自动应用失败：批次存在重复业务身份");
+  const scope = record(batch.scope);
+  const weekStartDate = text(scope.startDate || facts[0].fact.weekStartDate);
+  const weekEndDate = text(scope.endDate || facts[0].fact.weekEndDate);
+  const existing = await db.select().from(lingxingProductWeekly).where(and(
+    eq(lingxingProductWeekly.workspaceId, input.workspaceId),
+    eq(lingxingProductWeekly.weekStartDate, weekStartDate),
+    eq(lingxingProductWeekly.weekEndDate, weekEndDate),
+  ));
+  const existingByIdentity = new Map(existing.map((row: typeof lingxingProductWeekly.$inferSelect) => [weeklyRollupIdentity(row), row]));
+  const conflicting = facts.filter(({ fact }) => {
+    const current = existingByIdentity.get(weeklyRollupIdentity(fact));
+    return current && !weeklyFactsEqual(current, fact);
+  });
+  if (conflicting.length) {
+    const message = `父ASIN周汇总自动应用失败：${conflicting.length}条历史周事实存在冲突，未覆盖原记录`;
+    await db.update(opsExternalSyncBatches).set({ status: "failed", errorMessage: message, summary: { ...record(batch.summary), autoApplyBlocked: true, conflictCount: conflicting.length, writePolicy: "validated_weekly_auto_apply" } }).where(eq(opsExternalSyncBatches.id, input.batchId));
+    throw new Error(message);
+  }
+  const pending = facts.filter(({ fact }) => !existingByIdentity.has(weeklyRollupIdentity(fact)));
+  const identicalRows = facts.length - pending.length;
+  const execute = async (tx: any) => {
+    let importId = 0;
+    if (pending.length) {
+      const [createdImport] = await tx.insert(dataImports).values({
+        workspaceId: input.workspaceId,
+        userId: input.userId,
+        sourceType: "lingxing",
+        fileName: `系统父ASIN周汇总-批次${input.batchId}`,
+        weekStartDate,
+        weekEndDate,
+        dataGranularity: "weekly",
+        totalRows: pending.length,
+        importedRows: pending.length,
+        skippedRows: identicalRows,
+        status: "completed",
+      }).$returningId();
+      importId = createdImport.id;
+      for (let offset = 0; offset < pending.length; offset += 100) {
+        await tx.insert(lingxingProductWeekly).values(pending.slice(offset, offset + 100).map(({ fact }) => ({ ...fact, importId })) as WeeklyFactInsert[]);
+      }
+    }
+    await tx.update(opsExternalSyncRows).set({ rowStatus: "applied", selected: 1, appliedAt: new Date() }).where(and(
+      eq(opsExternalSyncRows.batchId, input.batchId),
+      eq(opsExternalSyncRows.workspaceId, input.workspaceId),
+    ));
+    await tx.insert(opsExternalSyncConfirmations).values({
+      workspaceId: input.workspaceId,
+      batchId: input.batchId,
+      userId: input.userId,
+      action: "system_auto_apply",
+      selectedRowIds: rows.map((row: typeof opsExternalSyncRows.$inferSelect) => row.id),
+      note: "父ASIN周汇总完整性校验通过后由系统直接应用",
+    });
+    await tx.update(opsExternalSyncBatches).set({
+      status: "applied",
+      appliedAt: new Date(),
+      appliedBy: input.userId,
+      errorMessage: null,
+      summary: { ...record(batch.summary), autoApplied: true, writePolicy: "validated_weekly_auto_apply", appliedRows: pending.length, skippedRows: identicalRows },
+    }).where(eq(opsExternalSyncBatches.id, input.batchId));
+    return { success: true, batchId: input.batchId, importId: importId || null, importedRows: pending.length, skippedRows: identicalRows, idempotent: pending.length === 0 };
+  };
+  return typeof db.transaction === "function" ? db.transaction((tx: any) => execute(tx)) : execute(db);
 }
 
 type AutoApplyBatch = { id: number; status: string; summary: unknown; scope: unknown };
@@ -278,6 +455,7 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
   await db.update(opsLingxingSyncSchedules).set({ lastStatus: "running", lastError: null, lastRunAt: now }).where(eq(opsLingxingSyncSchedules.id, schedule.id));
   await db.update(emperorScheduledTasks).set({ lastRunStatus: "running", lastRunAt: now, runCount: sql`${emperorScheduledTasks.runCount} + 1` }).where(eq(emperorScheduledTasks.id, emperorTask.id));
   let batchId: number | null = null;
+  let writePolicy: "draft_only" | "validated_daily_auto_apply" | "validated_weekly_auto_apply" = "draft_only";
   try {
     if (["product_performance_daily", "fba_inventory", "ad_keyword"].includes(domain)) {
       const [owner] = await db.select({ id: users.id, role: users.role, organizationId: users.organizationId, defaultWorkspaceId: users.defaultWorkspaceId })
@@ -328,6 +506,7 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
         await caller.confirm({ batchId, selectedRowIds, note: `系统${domain}每日校验通过自动确认` });
         if (domain === "ad_keyword") await caller.applyConfirmedAds({ batchId, note: "系统每日关键词校验通过自动追加历史事实" });
         else await caller.applyConfirmedProductInventory({ batchId, note: domain === "fba_inventory" ? "系统每日库存校验通过自动追加库存快照" : "系统每日校验通过自动追加日快照" });
+        writePolicy = "validated_daily_auto_apply";
       }
     } else {
       const snapshots = (await db.select().from(opsAsinDailySnapshots).where(and(
@@ -340,21 +519,26 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
         .filter((parent) => parent.week);
       const rawResponseHash = createHash("sha256").update(JSON.stringify(parents)).digest("hex");
       const [created] = await db.insert(opsExternalSyncBatches).values({
-        workspaceId: schedule.workspaceId, userId: schedule.ownerUserId, source: "internal_rollup", dataDomain: "parent_asin_weekly_rollup", status: parents.length ? "ready_for_review" : "empty",
+        workspaceId: schedule.workspaceId, userId: schedule.ownerUserId, source: "internal_rollup", dataDomain: "parent_asin_weekly_rollup", status: !parents.length ? "empty" : coverageException.isIncomplete ? "failed" : "ready_for_review",
         scope: { startDate: scope.startDate, endDate: scope.endDate, marketplace: "US", scheduleTaskUid: taskUid },
         rawResponseHash, rawSnapshot: { source: "confirmed_daily_snapshots", rawResponseHash, parentCount: parents.length },
-        summary: { totalRead: weekRows.length, parentCount: parents.length, selected: 0, scheduled: true, writePolicy: "draft_only", coverageException },
+        errorMessage: coverageException.message,
+        summary: { totalRead: weekRows.length, parentCount: parents.length, selected: coverageException.isIncomplete ? 0 : parents.length, scheduled: true, writePolicy: "validated_weekly_auto_apply", coverageException },
       }).$returningId();
       batchId = created.id;
       for (let offset = 0; offset < parents.length; offset += 250) {
         await db.insert(opsExternalSyncRows).values(parents.slice(offset, offset + 250).map((parent) => ({
           workspaceId: schedule.workspaceId, batchId, entityKey: `${parent.storeName}|${parent.country}|${parent.parentAsin}|${scope.startDate}`,
-          rowStatus: "new", selected: 0, sourceData: parent as any, normalizedData: parent as any,
-          validationErrors: coverageException.message ? [coverageException.message] : [], matchInfo: { strategy: "confirmed_daily_parent_asin_weekly_rollup", writePolicy: "draft_only", coverageException },
+          rowStatus: coverageException.isIncomplete ? "needs_review" : "new", selected: coverageException.isIncomplete ? 0 : 1, sourceData: parent as any, normalizedData: parent as any,
+          validationErrors: coverageException.message ? [coverageException.message] : [], matchInfo: { strategy: "confirmed_daily_parent_asin_weekly_rollup", writePolicy: "validated_weekly_auto_apply", coverageException },
         })) as any);
       }
+      if (coverageException.isIncomplete) throw new Error(coverageException.message || "父ASIN周汇总覆盖不完整，已阻断自动应用");
+      if (parents.length) {
+        await applyParentAsinWeeklyRollupBatch(db, { batchId, workspaceId: schedule.workspaceId, userId: schedule.ownerUserId });
+        writePolicy = "validated_weekly_auto_apply";
+      }
     }
-    const writePolicy = ["product_performance_daily", "fba_inventory", "ad_keyword"].includes(domain) && Number(schedule.autoApply || 0) === 1 ? "validated_daily_auto_apply" as const : "draft_only" as const;
     await db.update(opsLingxingSyncSchedules).set({ lastRunKey: scope.runKey, lastRunAt: new Date(), lastBatchId: batchId, lastStatus: "succeeded", lastError: null }).where(eq(opsLingxingSyncSchedules.id, schedule.id));
     await db.update(emperorScheduledTasks).set({ lastRunStatus: "succeeded", lastRunAt: new Date(), lastBatchId: batchId }).where(eq(emperorScheduledTasks.id, emperorTask.id));
     return { ok: true, batchId: batchId!, runKey: scope.runKey, writePolicy };

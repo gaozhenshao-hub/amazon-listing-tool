@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scheduledDailyScope, scheduledWeeklyScope, validateKeywordAutoApplyIntegrity, weeklyCoverageExceptionSummary } from "./domains/ops/lingxingScheduledDrafts";
+import { buildWeeklyRollupFact, scheduledDailyScope, scheduledWeeklyScope, validateKeywordAutoApplyIntegrity, weeklyCoverageExceptionSummary, weeklyFactsEqual, weeklyRollupIdentity } from "./domains/ops/lingxingScheduledDrafts";
 
 describe("领星分域定时草稿范围", () => {
   it("每日北京时间17:00对应的任务读取前一天，且生成稳定幂等键", () => {
@@ -12,10 +12,32 @@ describe("领星分域定时草稿范围", () => {
     expect(scope).toEqual({ startDate: "2026-08-17", endDate: "2026-08-23", runKey: "weekly:2026-08-17" });
   });
 
-  it("周汇总对缺失的确认日快照生成明确人工审阅摘要", () => {
+  it("周汇总对缺失的确认日快照生成明确自动应用阻断摘要", () => {
     const summary = weeklyCoverageExceptionSummary([{ reportDate: "2026-08-17" }, { reportDate: "2026-08-19" }] as any, "2026-08-17", "2026-08-23");
     expect(summary).toMatchObject({ isIncomplete: true, missingDates: ["2026-08-18", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23"] });
-    expect(summary.message).toContain("仅供人工审阅");
+    expect(summary.message).toContain("已阻断自动应用");
+  });
+
+  it("将父ASIN周汇总结构化映射到现有周事实字段", () => {
+    const fact = buildWeeklyRollupFact({
+      parentAsin: "b0parent",
+      asins: ["B0CHILD1", "B0CHILD2"],
+      storeName: "US Store",
+      country: "us",
+      sku: "SKU-1",
+      title: "Product",
+      operator: "Owner",
+      week: { weekStartDate: "2026-08-17", weekEndDate: "2026-08-23", salesQty: 12, salesAmount: 120.5, orderQty: 10, orderProfit: 20, profitMargin: 16.6, sessionsTotal: 100, cvr: 10, adSpend: 8, adSales: 40, acos: 20 },
+    }, { workspaceId: 1, importId: 9, userId: 2 });
+    expect(fact).toMatchObject({ workspaceId: 1, importId: 9, userId: 2, parentAsin: "B0PARENT", asin: "B0CHILD1,B0CHILD2", storeName: "US Store", country: "US", weekStartDate: "2026-08-17", weekEndDate: "2026-08-23", salesQty: 12, salesAmount: "120.5", orderProfitMargin: "16.6", sessionsTotal: 100, adSpend: "8", acos: "20" });
+  });
+
+  it("周事实身份包含工作空间、父ASIN、店铺、站点和自然周，且相同事实可幂等跳过", () => {
+    const left = { workspaceId: 1, parentAsin: "B0PARENT", storeName: "US Store", country: "US", weekStartDate: "2026-08-17", weekEndDate: "2026-08-23", salesQty: 12, salesAmount: "120.50", adSpend: "8.00" } as any;
+    const right = { ...left, importId: 99, userId: 3, salesAmount: "120.5", adSpend: "8" } as any;
+    expect(weeklyRollupIdentity(left)).toBe("1|B0PARENT|US Store|US|2026-08-17");
+    expect(weeklyFactsEqual(left, right)).toBe(true);
+    expect(weeklyFactsEqual(left, { ...right, salesQty: 13 })).toBe(false);
   });
 
   it("周汇总区分空周、全零指标和无法核验上游截断状态的追溯缺口", () => {
