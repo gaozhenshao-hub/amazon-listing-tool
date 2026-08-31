@@ -5,6 +5,7 @@ import {
   stopTodoReminderScheduler,
 } from "../todoReminder";
 import { createSchedulerLeaderLock } from "./leaderLock";
+import { closeDbConnection } from "../repositories/dbClient";
 import { assertStartupConfig } from "./startupValidation";
 import { startAiOsOperationalScheduler } from "../domains/ai_os/services/operationalScheduler";
 import { startLocalLingxingScheduleRunner } from "../domains/ops/localLingxingScheduler";
@@ -64,6 +65,9 @@ async function main() {
       stopLocalLingxingScheduleRunner();
       await sleep(Math.min(shutdownGraceMs, 5_000));
       await releaseLock?.();
+      await closeDbConnection().catch(error => {
+        console.warn("[Scheduler] shared database connection was already unavailable during shutdown:", error);
+      });
       console.log("[Scheduler] stopped");
     } catch (error) {
       console.error("[Scheduler] graceful shutdown failed:", error);

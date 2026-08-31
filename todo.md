@@ -1699,4 +1699,5 @@
 - [x] 只读比对四个领星任务的Cron、触发模式、托管Heartbeat UID与青岛本机Scheduler注册状态，定位此前“已启用/运行0次/下次时间过期”的失效点。
 - [x] 只读核验青岛Scheduler服务历史启动状态、部署环境开关、运行日志、任务Run、Tool Gateway Trace及数据批次，建立从配置到数据缺口的完整证据链。
 - [x] 输出根本原因、直接影响、已实施修复和防复发措施；保持广告补读与Scheduler暂停，不调用领星MCP或写入运营数据。
-- [ ] 在恢复Scheduler前修复其优雅停止时LeaderLock连接已关闭的退出顺序，并用不调用领星的启动—停止回归验证避免systemd超时和SIGKILL。
+- [x] 在恢复Scheduler前修复其优雅停止时LeaderLock连接已关闭的退出顺序，并用不调用领星的启动—停止回归验证避免systemd超时和SIGKILL。
+- [x] 核验并修复本机Scheduler对父ASIN周Cron的下次执行时间计算；隔离启动测试显示周任务投影至2029-01-01，恢复自动同步前必须排除错误Cron解释或库版本兼容问题。

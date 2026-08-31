@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getNextParentWeeklyRunAt,
   isLocalLingxingSchedulerEnabled,
   toLocalLingxingScheduleTask,
 } from "./localLingxingScheduler";
@@ -30,5 +31,12 @@ describe("独立站领星本机调度器", () => {
     expect(toLocalLingxingScheduleTask({ ...validTask, systemManaged: 0 })).toBeNull();
     expect(toLocalLingxingScheduleTask({ ...validTask, isActive: 0 })).toBeNull();
     expect(toLocalLingxingScheduleTask({ ...validTask, cronExpr: "invalid" })).toBeNull();
+  });
+
+  it("将每周一的父ASIN汇总投影到下一自然周，而不是远期年份", () => {
+    expect(getNextParentWeeklyRunAt(new Date("2026-08-31T12:59:00.000Z")).toISOString())
+      .toBe("2026-09-07T08:10:00.000Z");
+    expect(getNextParentWeeklyRunAt(new Date("2026-08-31T08:10:00.000Z")).toISOString())
+      .toBe("2026-09-07T08:10:00.000Z");
   });
 });

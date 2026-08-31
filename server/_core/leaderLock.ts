@@ -49,12 +49,23 @@ export class MysqlLeaderLock {
       clearInterval(this.heartbeat);
       this.heartbeat = null;
     }
-    if (!this.connection) return;
+    const connection = this.connection;
+    this.connection = null;
+    if (!connection) return;
     try {
-      await this.connection.query("SELECT RELEASE_LOCK(?)", [this.lockName]);
+      await connection.query("SELECT RELEASE_LOCK(?)", [this.lockName]);
+    } catch (error) {
+      console.warn(
+        `[LeaderLock] Could not release scheduler lock ${this.lockName}; connection was already unavailable.`,
+        error instanceof Error ? error.message : String(error)
+      );
     } finally {
-      await this.connection.end();
-      this.connection = null;
+      await connection.end().catch(error => {
+        console.warn(
+          `[LeaderLock] Could not close scheduler lock connection ${this.lockName}; it was already unavailable.`,
+          error instanceof Error ? error.message : String(error)
+        );
+      });
     }
   }
 }

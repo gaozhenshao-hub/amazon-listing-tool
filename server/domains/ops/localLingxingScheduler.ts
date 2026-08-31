@@ -15,6 +15,11 @@ const supportedDomains = [
 
 type SupportedDomain = (typeof supportedDomains)[number];
 
+type LocalScheduledTask = {
+  destroy: () => Promise<void> | void;
+  getNextRun: () => Date | null;
+};
+
 export type LocalLingxingScheduleTask = {
   id: number;
   dataDomain: string | null;
@@ -52,6 +57,57 @@ export function toLocalLingxingScheduleTask(task: LocalLingxingScheduleTask) {
   };
 }
 
+/**
+ * node-cron 4.2.1会将六段Cron中受限的星期字段（例如`* * 1`）错误推进到远期年份。
+ * 父ASIN周汇总固定为UTC周一，故用受限计时器替代该单一模式；日任务继续使用node-cron。
+ */
+export function getNextParentWeeklyRunAt(after = new Date()): Date {
+  const result = new Date(after.getTime());
+  result.setUTCSeconds(0, 0);
+  result.setUTCHours(8, 10, 0, 0);
+  const daysUntilMonday = (1 - result.getUTCDay() + 7) % 7;
+  result.setUTCDate(result.getUTCDate() + daysUntilMonday);
+  if (result.getTime() <= after.getTime()) {
+    result.setUTCDate(result.getUTCDate() + 7);
+  }
+  return result;
+}
+
+function isDefaultParentWeeklyCron(cronExpr: string) {
+  return /^0\s+10\s+8\s+\*\s+\*\s+(?:1|MON)$/i.test(cronExpr.trim());
+}
+
+function scheduleParentWeeklyTask(
+  run: (scheduledFor: Date) => Promise<void>
+): LocalScheduledTask {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let destroyed = false;
+  let nextRunAt = getNextParentWeeklyRunAt();
+
+  const scheduleNext = () => {
+    if (destroyed) return;
+    nextRunAt = getNextParentWeeklyRunAt();
+    timer = setTimeout(async () => {
+      const scheduledFor = nextRunAt;
+      try {
+        await run(scheduledFor);
+      } finally {
+        scheduleNext();
+      }
+    }, Math.max(0, nextRunAt.getTime() - Date.now()));
+  };
+  scheduleNext();
+
+  return {
+    getNextRun: () => destroyed ? null : nextRunAt,
+    destroy: () => {
+      destroyed = true;
+      if (timer) clearTimeout(timer);
+      timer = null;
+    },
+  };
+}
+
 async function persistNextRun(taskId: number, nextRunAt: Date | null) {
   const db = await getDb();
   if (!db) return;
@@ -67,7 +123,7 @@ export function startLocalLingxingScheduleRunner() {
   }
 
   let stopped = false;
-  const scheduled = new Map<number, { signature: string; task: cron.ScheduledTask }>();
+  const scheduled = new Map<number, { signature: string; task: LocalScheduledTask }>();
 
   const refresh = async () => {
     const db = await getDb();
@@ -98,10 +154,11 @@ export function startLocalLingxingScheduleRunner() {
 
     for (const item of current.values()) {
       if (!item || scheduled.has(item.id) || stopped) continue;
-      const task = cron.schedule(item.cronExpr, async (context) => {
+      let task: LocalScheduledTask;
+      const runTask = async (scheduledFor: Date) => {
         try {
-          await runLingxingScheduledDraft(item.externalTaskUid, context.date);
-          console.log(`[LingXingLocalScheduler] completed ${item.dataDomain} at ${context.date.toISOString()}`);
+          await runLingxingScheduledDraft(item.externalTaskUid, scheduledFor);
+          console.log(`[LingXingLocalScheduler] completed ${item.dataDomain} at ${scheduledFor.toISOString()}`);
         } catch (error) {
           console.error(`[LingXingLocalScheduler] ${item.dataDomain} failed:`, error);
         } finally {
@@ -109,7 +166,10 @@ export function startLocalLingxingScheduleRunner() {
             console.error(`[LingXingLocalScheduler] failed to persist next run for ${item.dataDomain}:`, error);
           });
         }
-      }, { timezone: "UTC", noOverlap: true, name: `lingxing:${item.dataDomain}` });
+      };
+      task = item.dataDomain === "parent_asin_weekly_rollup" && isDefaultParentWeeklyCron(item.cronExpr)
+        ? scheduleParentWeeklyTask(runTask)
+        : cron.schedule(item.cronExpr, async (context) => runTask(context.date), { timezone: "UTC", noOverlap: true, name: `lingxing:${item.dataDomain}` });
       scheduled.set(item.id, { signature: `${item.cronExpr}|${item.externalTaskUid}`, task });
       await persistNextRun(item.id, task.getNextRun());
       console.log(`[LingXingLocalScheduler] registered ${item.dataDomain}; next=${task.getNextRun()?.toISOString() || "none"}`);
