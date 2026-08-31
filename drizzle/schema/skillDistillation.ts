@@ -177,6 +177,22 @@ export const knowledgeClaimLedgerLinks = mysqlTable("knowledge_claim_ledger_link
   index("idx_claim_ledger_link_ledger_status").on(table.ledgerKey, table.status),
 ]);
 
+/** 一致性矩阵的人工决定只追加审计记录，不会反向修改账本或任何业务内容。 */
+export const knowledgeClaimLedgerConsistencyDecisions = mysqlTable("knowledge_claim_ledger_consistency_decisions", {
+  decisionKey: varchar("decisionKey", { length: 80 }).primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  ledgerKey: varchar("ledgerKey", { length: 80 }).notNull(),
+  matrixFingerprint: varchar("matrixFingerprint", { length: 64 }).notNull(),
+  issueKey: varchar("issueKey", { length: 160 }).notNull(),
+  decision: mysqlEnum("decision", ["accepted", "ignored", "new_version"]).notNull(),
+  note: text("note"),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_claim_consistency_workspace_ledger").on(table.workspaceId, table.ledgerKey, table.createdAt),
+  index("idx_claim_consistency_issue").on(table.workspaceId, table.ledgerKey, table.issueKey, table.createdAt),
+]);
+
 export type KnowledgeDistillationProject = typeof knowledgeDistillationProjects.$inferSelect;
 export type KnowledgeSkillDraft = typeof knowledgeSkillDrafts.$inferSelect;
 export type KnowledgeClaimLedger = typeof knowledgeClaimLedgers.$inferSelect;
