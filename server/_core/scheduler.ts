@@ -7,6 +7,7 @@ import {
 import { createSchedulerLeaderLock } from "./leaderLock";
 import { assertStartupConfig } from "./startupValidation";
 import { startAiOsOperationalScheduler } from "../domains/ai_os/services/operationalScheduler";
+import { startLocalLingxingScheduleRunner } from "../domains/ops/localLingxingScheduler";
 
 const shutdownGraceMs = Math.min(
   Math.max(Number(process.env.SCHEDULER_SHUTDOWN_GRACE_MS || 10_000), 1_000),
@@ -50,6 +51,7 @@ async function main() {
   intelScheduler.start();
   startTodoReminderScheduler();
   const stopAiOsOperationalScheduler = startAiOsOperationalScheduler();
+  const stopLocalLingxingScheduleRunner = startLocalLingxingScheduleRunner();
 
   const stop = async (signal: string) => {
     if (stopped) return;
@@ -59,6 +61,7 @@ async function main() {
       intelScheduler.stop();
       stopTodoReminderScheduler();
       stopAiOsOperationalScheduler();
+      stopLocalLingxingScheduleRunner();
       await sleep(Math.min(shutdownGraceMs, 5_000));
       await releaseLock?.();
       console.log("[Scheduler] stopped");
