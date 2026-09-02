@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { emperorScheduledTasks } from "../drizzle/schema";
 import { runLingxingScheduledDraft } from "../server/domains/ops/lingxingScheduledDrafts";
-import { closeDbConnection, getDb } from "../server/repositories/dbClient";
+import { getDb } from "../server/repositories/dbClient";
 
 const WORKSPACE_ID = 1;
 const DATA_DOMAIN = "ad_keyword";
@@ -45,6 +45,8 @@ void main()
     }));
     process.exitCode = 1;
   })
-  .finally(async () => {
-    await closeDbConnection();
+  .finally(() => {
+    // 这是一次性systemd单元；mysql2 pool结束时可能在空闲连接回调中抛出未捕获异常。
+    // 审计输出完成后强制结束进程，不影响正式Web/Worker/Scheduler的共享连接池。
+    setTimeout(() => process.exit(process.exitCode ?? 0), 50);
   });
