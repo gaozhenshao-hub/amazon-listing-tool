@@ -58,6 +58,10 @@ const phase5PreviewDomains = new Set(["listing_master", "ad_search_term", "ad_ta
 const MCP_STORE_DATE_WINDOW_TIMEOUT_MS = 95_000;
 export const AD_KEYWORD_MAX_PAGES_PER_PROFILE = 100;
 export const AD_KEYWORD_MAX_ROWS_PER_PROFILE = 20_000;
+// 日常广告任务会汇聚多个授权Profile的有效行；确认接口必须高于单Profile读取上限，
+// 同时仍保留明确总量保护，避免把任意大小的客户端数组交给数据库。
+export const MAX_SELECTED_ROWS_PER_CONFIRMATION = 200_000;
+const SELECTED_ROW_UPDATE_CHUNK_SIZE = 5_000;
 
 /**
  * 广告关键词必须逐Profile串行读取，不能以所有Profile共享的5,000行预览上限
@@ -961,7 +965,7 @@ export const lingxingSyncRouter = router({
     return { success: true };
   }),
 
-  confirm: protectedProcedure.input(z.object({ batchId: z.number().int().positive(), selectedRowIds: z.array(z.number().int().positive()).max(5000), note: z.string().max(1000).optional() })).mutation(async ({ ctx, input }) => {
+  confirm: protectedProcedure.input(z.object({ batchId: z.number().int().positive(), selectedRowIds: z.array(z.number().int().positive()).max(MAX_SELECTED_ROWS_PER_CONFIRMATION), note: z.string().max(1000).optional() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("数据库不可用");
     const workspaceId = ctx.user.defaultWorkspaceId!;
@@ -978,7 +982,10 @@ export const lingxingSyncRouter = router({
       eq(opsExternalSyncRows.workspaceId, workspaceId),
       eq(opsExternalSyncRows.batchId, input.batchId),
     ));
-    if (input.selectedRowIds.length) await db.update(opsExternalSyncRows).set({ selected: 1 }).where(and(eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.batchId, input.batchId), inArray(opsExternalSyncRows.id, input.selectedRowIds)));
+    for (let offset = 0; offset < input.selectedRowIds.length; offset += SELECTED_ROW_UPDATE_CHUNK_SIZE) {
+      const selectedRowIds = input.selectedRowIds.slice(offset, offset + SELECTED_ROW_UPDATE_CHUNK_SIZE);
+      await db.update(opsExternalSyncRows).set({ selected: 1 }).where(and(eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.batchId, input.batchId), inArray(opsExternalSyncRows.id, selectedRowIds)));
+    }
     await db.update(opsExternalSyncBatches).set({ status: "confirmed", reviewedAt: new Date(), reviewedBy: ctx.user.id }).where(eq(opsExternalSyncBatches.id, input.batchId));
     return { success: true, nextStep: "待应用到业务数据链路" };
   }),

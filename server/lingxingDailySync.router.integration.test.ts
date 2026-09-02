@@ -10,6 +10,7 @@ const state = {
   schedules: [] as any[],
   heartbeatCreates: [] as any[],
   heartbeatUpdates: [] as any[],
+  selectedRowUpdateCalls: 0,
   selectCount: 0,
   toolCallCount: 0,
   largePageMode: false,
@@ -81,7 +82,7 @@ const db = {
         if (name === "ops_external_sync_batches" && state.batch) Object.assign(state.batch, patch);
         if (name === "data_imports") state.imports.forEach((item) => Object.assign(item, patch));
         if (name === "ops_external_sync_rows" && patch.selected === 0) state.rows.forEach((row) => { row.selected = 0; row.rowStatus = "skipped"; });
-        if (name === "ops_external_sync_rows" && patch.selected === 1) state.rows.forEach((row) => { row.selected = 1; });
+        if (name === "ops_external_sync_rows" && patch.selected === 1) { state.selectedRowUpdateCalls += 1; state.rows.forEach((row) => { row.selected = 1; }); }
         if (name === "ops_external_sync_rows" && patch.rowStatus) state.rows.forEach((row) => { row.rowStatus = patch.rowStatus; });
         if (name === "ops_lingxing_sync_schedules" && state.schedules[0]) Object.assign(state.schedules[0], patch);
       },
@@ -130,7 +131,7 @@ const { lingxingSyncRouter } = await import("./routers/lingxingSync");
 
 describe("领星ASIN日数据同步路由", () => {
   beforeEach(() => {
-    state.batch = null; state.rows = []; state.snapshots = []; state.weekly = []; state.imports = []; state.confirmations = []; state.schedules = []; state.heartbeatCreates = []; state.heartbeatUpdates = []; state.selectCount = 0; state.toolCallCount = 0; state.largePageMode = false; state.failAtToolCall = 0;
+    state.batch = null; state.rows = []; state.snapshots = []; state.weekly = []; state.imports = []; state.confirmations = []; state.schedules = []; state.heartbeatCreates = []; state.heartbeatUpdates = []; state.selectedRowUpdateCalls = 0; state.selectCount = 0; state.toolCallCount = 0; state.largePageMode = false; state.failAtToolCall = 0;
   });
 
   it("预览、确认和应用仅追加可追溯日快照，过滤占位ASIN且不写周度产品表", async () => {
@@ -225,5 +226,17 @@ describe("领星ASIN日数据同步路由", () => {
     state.selectCount = 1;
     await expect(caller.acknowledgeBackfillReview({ batchId: 9901, note: "等待上游窗口稳定后重新读取" })).resolves.toMatchObject({ success: true, issue: { code: "preview_timeout" } });
     expect(state.confirmations).toEqual([expect.objectContaining({ action: "review_acknowledged", note: "等待上游窗口稳定后重新读取" })]);
+  });
+
+  it("允许系统确认跨Profile的大批量有效广告行，并按受限块更新选择状态", async () => {
+    state.batch = { id: 9901, workspaceId: 1, status: "ready_for_review", dataDomain: "ad_keyword", source: "lingxing_mcp", scope: { storeId: "ALL_US_AD_PROFILES", startDate: "2026-09-01", endDate: "2026-09-01" }, summary: {} };
+    state.selectCount = 1;
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+    const selectedRowIds = Array.from({ length: 5_001 }, (_, index) => index + 1);
+
+    await expect(caller.confirm({ batchId: 9901, selectedRowIds, note: "系统广告日常校验通过自动确认" })).resolves.toMatchObject({ success: true });
+
+    expect(state.confirmations).toEqual([expect.objectContaining({ action: "confirm", selectedRowIds })]);
+    expect(state.selectedRowUpdateCalls).toBe(2);
   });
 });
