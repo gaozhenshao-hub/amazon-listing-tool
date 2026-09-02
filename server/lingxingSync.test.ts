@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMcpArguments, calculateFieldDiffs, coalesceFbaInventoryPreviewRows, dailyReadCoverageSummary, dailySnapshotIdentityKey, hasSelectedPeriodActivity, isValidDailySnapshotForApply, keywordSnapshotIdentityHash, normalizeDailyPreviewPage, normalizeLingxingStoreDirectoryRecord, normalizeMcpPayload, normalizeRow, pickRecords, shouldExternalizeSyncRawSnapshot } from "./routers/lingxingSync";
+import { buildMcpArguments, calculateFieldDiffs, coalesceFbaInventoryPreviewRows, dailyReadCoverageSummary, dailySnapshotIdentityKey, hasSelectedPeriodActivity, isValidDailySnapshotForApply, keywordPreviewReadLimits, keywordSnapshotIdentityHash, normalizeDailyPreviewPage, normalizeLingxingStoreDirectoryRecord, normalizeMcpPayload, normalizeRow, pickRecords, shouldExternalizeSyncRawSnapshot } from "./routers/lingxingSync";
 
 describe("领星运营同步预览契约", () => {
   it("产品表现使用官方sids范围且保留人工选择的周期", () => {
@@ -161,5 +161,10 @@ describe("领星运营同步预览契约", () => {
     expect(keywordSnapshotIdentityHash(identity)).toBe(keywordSnapshotIdentityHash({ ...identity, campaignName: "SP-Core renamed" }));
     expect(keywordSnapshotIdentityHash(identity)).not.toBe(keywordSnapshotIdentityHash({ ...identity, periodEnd: "2026-08-25" }));
     expect(keywordSnapshotIdentityHash(identity)).not.toBe(keywordSnapshotIdentityHash({ ...identity, adGroupId: "G-2" }));
+  });
+
+  it("广告关键词全Profile读取为每个授权Profile保留完整分页配额，不共享旧的5,000行截断", () => {
+    expect(keywordPreviewReadLimits(3)).toEqual({ maxPagesPerProfile: 100, maxRowsPerProfile: 20_000, maxRowsOverall: 60_000 });
+    expect(keywordPreviewReadLimits(0)).toMatchObject({ maxPagesPerProfile: 100, maxRowsPerProfile: 20_000, maxRowsOverall: 20_000 });
   });
 });

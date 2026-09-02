@@ -56,6 +56,21 @@ const emperorScheduleName = (dataDomain: keyof typeof SCHEDULE_PRESETS) => ({
 type RecordValue = Record<string, unknown>;
 const phase5PreviewDomains = new Set(["listing_master", "ad_search_term", "ad_targeting"]);
 const MCP_STORE_DATE_WINDOW_TIMEOUT_MS = 95_000;
+export const AD_KEYWORD_MAX_PAGES_PER_PROFILE = 100;
+export const AD_KEYWORD_MAX_ROWS_PER_PROFILE = 20_000;
+
+/**
+ * 广告关键词必须逐Profile串行读取，不能以所有Profile共享的5,000行预览上限
+ * 判定截断。仍保留每Profile分页/行数上限，任何上限触发均由后续完整性校验转人工复核。
+ */
+export function keywordPreviewReadLimits(profileCount: number) {
+  const safeProfileCount = Number.isFinite(profileCount) ? Math.max(1, Math.floor(profileCount)) : 1;
+  return {
+    maxPagesPerProfile: AD_KEYWORD_MAX_PAGES_PER_PROFILE,
+    maxRowsPerProfile: AD_KEYWORD_MAX_ROWS_PER_PROFILE,
+    maxRowsOverall: AD_KEYWORD_MAX_ROWS_PER_PROFILE * safeProfileCount,
+  };
+}
 
 export function withMcpStoreDateWindowTimeout<T>(promise: Promise<T>, label: string, timeoutMs = MCP_STORE_DATE_WINDOW_TIMEOUT_MS) {
   return new Promise<T>((resolve, reject) => {
@@ -714,14 +729,18 @@ export const lingxingSyncRouter = router({
       const failedStoreDateWindows: Array<{ sid: string; reportDate: string; page: number; error: string }> = [];
       let pageTruncations = 0;
       let capped = false;
-      const isSingleProfileScope = input.scope.profileId !== "ALL_US_AD_PROFILES";
-      const maxPages = isSingleProfileScope ? 100 : 10;
-      const maxRows = isSingleProfileScope ? 20_000 : 5_000;
+      const limits = keywordPreviewReadLimits(profiles.length);
       for (const profile of profiles) {
         let exhausted = false;
         let complete = true;
-        for (let page = 0; page < maxPages && !exhausted; page += 1) {
-          if (rows.length >= maxRows) { capped = true; complete = false; break; }
+        let profileRowCount = 0;
+        for (let page = 0; page < limits.maxPagesPerProfile && !exhausted; page += 1) {
+          if (profileRowCount >= limits.maxRowsPerProfile || rows.length >= limits.maxRowsOverall) {
+            capped = true;
+            pageTruncations += 1;
+            complete = false;
+            break;
+          }
           const request = buildMcpArguments("ad_keyword", { ...input.scope, storeId: profile.sid || "ALL_US", profileId: profile.profileId });
           request.arguments.page = page + 1;
           try {
@@ -732,9 +751,18 @@ export const lingxingSyncRouter = router({
             toolRunId = execution.metadata.toolRunId || toolRunId;
             if (execution.metadata.toolRunId) toolRunIds.push(execution.metadata.toolRunId);
             const pageRows = pickRecords(normalizeMcpPayload(execution.output));
-            for (const source of pageRows) if (rows.length < maxRows) rows.push({ ...source, profile_id: value(source, ["profile_id", "profileId", "profile"]) || profile.profileId, __lingxingSid: profile.sid, __lingxingStoreName: profile.name, __reportDate: input.scope.endDate });
-            exhausted = pageRows.length < 200;
-            if (page === maxPages - 1 && !exhausted) { pageTruncations += 1; complete = false; }
+            for (const source of pageRows) {
+              if (profileRowCount >= limits.maxRowsPerProfile || rows.length >= limits.maxRowsOverall) {
+                capped = true;
+                pageTruncations += 1;
+                complete = false;
+                break;
+              }
+              rows.push({ ...source, profile_id: value(source, ["profile_id", "profileId", "profile"]) || profile.profileId, __lingxingSid: profile.sid, __lingxingStoreName: profile.name, __reportDate: input.scope.endDate });
+              profileRowCount += 1;
+            }
+            exhausted = pageRows.length < 200 || !complete;
+            if (page === limits.maxPagesPerProfile - 1 && !exhausted) { pageTruncations += 1; complete = false; }
           } catch (error) {
             complete = false;
             failedStoreDateWindows.push({ sid: profile.profileId, reportDate: input.scope.endDate || "", page, error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500) });
@@ -751,6 +779,9 @@ export const lingxingSyncRouter = router({
         storesExpected: profiles.length, storesRead: completedProfiles.size,
         storeDateWindowsExpected: profiles.length, storeDateWindowsRead: completedProfiles.size,
         pageTruncations, capped, failedStoreDateWindows, toolRunIds,
+        maxPagesPerProfile: limits.maxPagesPerProfile,
+        maxRowsPerProfile: limits.maxRowsPerProfile,
+        maxRowsOverall: limits.maxRowsOverall,
       });
     } else {
       const listingStoresExecution = input.dataDomain === "listing_master" && input.scope.storeId === "ALL_US"

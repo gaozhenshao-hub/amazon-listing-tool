@@ -18,4 +18,24 @@ describe("MysqlLeaderLock.release", () => {
     expect(warn).toHaveBeenCalledTimes(2);
     warn.mockRestore();
   });
+
+  it("stops the heartbeat and notifies the scheduler exactly once when the lock connection is lost", () => {
+    const onConnectionLost = vi.fn();
+    const lock = new MysqlLeaderLock("test-scheduler", "test-owner", "", { onConnectionLost });
+    const closedConnection = { ping: vi.fn() } as any;
+    const heartbeat = setInterval(() => undefined, 60_000);
+    const error = new Error("Can't add new command when connection is in closed state");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    (lock as any).connection = closedConnection;
+    (lock as any).heartbeat = heartbeat;
+
+    (lock as any).handleHeartbeatFailure(closedConnection, error);
+    (lock as any).handleHeartbeatFailure(closedConnection, error);
+
+    expect((lock as any).connection).toBeNull();
+    expect((lock as any).heartbeat).toBeNull();
+    expect(onConnectionLost).toHaveBeenCalledTimes(1);
+    expect(onConnectionLost).toHaveBeenCalledWith(error);
+    consoleError.mockRestore();
+  });
 });

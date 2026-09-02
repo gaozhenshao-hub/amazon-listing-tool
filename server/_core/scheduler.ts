@@ -17,6 +17,7 @@ const shutdownGraceMs = Math.min(
 
 let stopped = false;
 let releaseLock: (() => Promise<void>) | null = null;
+let stopScheduler: ((signal: string) => Promise<void>) | null = null;
 
 async function sleep(ms: number) {
   await new Promise(resolve => setTimeout(resolve, ms));
@@ -28,7 +29,15 @@ async function main() {
     entrypoint: "scheduler",
     role: "scheduler",
   });
-  const lock = createSchedulerLeaderLock();
+  const lock = createSchedulerLeaderLock({
+    onConnectionLost: () => {
+      console.error("[Scheduler] leader lock connection was lost; stopping timers before systemd restarts this scheduler instance.");
+      void stopScheduler?.("leader_lock_lost").finally(() => {
+        process.exitCode = 1;
+        setImmediate(() => process.exit(1));
+      });
+    },
+  });
   const lockTimeoutSeconds = Math.min(
     Math.max(
       Number(process.env.SCHEDULER_LEADER_LOCK_TIMEOUT_SECONDS || 10),
@@ -74,6 +83,7 @@ async function main() {
       process.exitCode = 1;
     }
   };
+  stopScheduler = stop;
 
   process.once("SIGINT", () => void stop("SIGINT"));
   process.once("SIGTERM", () => void stop("SIGTERM"));
