@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto";
-import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { adKeywordWeekly, dataImports, emperorScheduledTasks, lingxingProductWeekly, opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncConfirmations, opsExternalSyncRows, opsLingxingSyncSchedules, users } from "../../../drizzle/schema";
 import { lingxingSyncRouter } from "../../routers/lingxingSync";
 import { getDb } from "../../repositories/dbClient";
 import { summarizeParentAsinWeeks, type DailySnapshot } from "./productOverview/dailyAggregation";
 
-type ScheduleDomain = "product_performance_daily" | "fba_inventory" | "ad_keyword" | "parent_asin_weekly_rollup";
+type ScheduleDomain = "product_performance_daily" | "fba_inventory" | "ad_keyword" | "parent_asin_weekly_rollup" | "parent_asin_weekly_mcp";
 
 const shanghaiDate = (input = new Date()) => new Date(input.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const addDays = (date: string, days: number) => {
@@ -96,13 +95,13 @@ export function weeklyRollupIdentity(input: { workspaceId?: unknown; parentAsin?
   return [text(input.workspaceId), text(input.parentAsin).toUpperCase(), text(input.storeName), text(input.country).toUpperCase(), text(input.weekStartDate)].join("|");
 }
 
-export function buildWeeklyRollupFact(input: WeeklyRollupData, context: { workspaceId: number; importId: number; userId: number }): WeeklyFactInsert {
-  const week = record(input.week);
+export function buildWeeklyRollupFact(input: WeeklyRollupData, context: { workspaceId: number; importId: number; userId: number; sourceKind?: string; sourceBatchId?: number | null; sourceTraceId?: string | null; sourceSchemaVersion?: string | null }): WeeklyFactInsert {
+  const week = Object.keys(record(input.week)).length ? record(input.week) : input;
   const parentAsin = text(input.parentAsin).toUpperCase();
   const storeName = text(input.storeName);
   const country = text(input.country || "US").toUpperCase();
-  const weekStartDate = text(week.weekStartDate);
-  const weekEndDate = text(week.weekEndDate);
+  const weekStartDate = text(week.weekStartDate || input.weekStartDate);
+  const weekEndDate = text(week.weekEndDate || input.weekEndDate);
   if (!parentAsin || !storeName || !weekStartDate || !weekEndDate) throw new Error("父ASIN周汇总自动应用失败：缺少父ASIN、店铺或自然周身份字段");
   const asins = Array.isArray(input.asins) ? input.asins.map(text).filter(Boolean) : [text(input.asin)].filter(Boolean);
   const asDecimal = (value: unknown) => String(Number(value || 0));
@@ -111,6 +110,10 @@ export function buildWeeklyRollupFact(input: WeeklyRollupData, context: { worksp
     workspaceId: context.workspaceId,
     importId: context.importId,
     userId: context.userId,
+    sourceKind: context.sourceKind || "internal_daily_rollup",
+    sourceBatchId: context.sourceBatchId || null,
+    sourceTraceId: context.sourceTraceId || null,
+    sourceSchemaVersion: context.sourceSchemaVersion || null,
     weekStartDate,
     weekEndDate,
     asin: asins.join(","),
@@ -194,7 +197,7 @@ export async function applyParentAsinWeeklyRollupBatch(db: any, input: { batchId
     eq(opsExternalSyncRows.workspaceId, input.workspaceId),
   ));
   if (!rows.length) throw new Error("父ASIN周汇总自动应用失败：批次没有汇总行");
-  const facts = rows.map((row: typeof opsExternalSyncRows.$inferSelect) => {
+  const facts: Array<{ row: typeof opsExternalSyncRows.$inferSelect; fact: WeeklyFactInsert }> = rows.map((row: typeof opsExternalSyncRows.$inferSelect) => {
     const errors = Array.isArray(row.validationErrors) ? row.validationErrors : [];
     if (errors.length) throw new Error("父ASIN周汇总自动应用失败：批次存在覆盖或字段异常");
     return { row, fact: buildWeeklyRollupFact(record(row.normalizedData), { workspaceId: input.workspaceId, importId: 0, userId: input.userId }) };
@@ -266,8 +269,86 @@ export async function applyParentAsinWeeklyRollupBatch(db: any, input: { batchId
   return typeof db.transaction === "function" ? db.transaction((tx: any) => execute(tx)) : execute(db);
 }
 
+export async function applyParentAsinWeeklyMcpBatch(db: any, input: { batchId: number; workspaceId: number; userId: number }) {
+  const [batch] = await db.select().from(opsExternalSyncBatches).where(and(
+    eq(opsExternalSyncBatches.id, input.batchId),
+    eq(opsExternalSyncBatches.workspaceId, input.workspaceId),
+    eq(opsExternalSyncBatches.dataDomain, "parent_asin_weekly_mcp"),
+  )).limit(1);
+  if (!batch) throw new Error("父ASIN周报MCP批次不存在或不属于当前工作空间");
+  if (batch.status === "applied") return { success: true, batchId: batch.id, importedRows: 0, skippedRows: Number(record(batch.summary).appliedRows || 0), idempotent: true as const };
+  if (batch.status !== "ready_for_review") throw new Error("父ASIN周报MCP批次不处于可自动应用状态");
+
+  const rows = await db.select().from(opsExternalSyncRows).where(and(
+    eq(opsExternalSyncRows.batchId, input.batchId),
+    eq(opsExternalSyncRows.workspaceId, input.workspaceId),
+  ));
+  if (!rows.length) throw new Error("父ASIN周报MCP自动应用失败：批次没有周报行");
+  const facts: Array<{ row: typeof opsExternalSyncRows.$inferSelect; fact: WeeklyFactInsert }> = rows.map((row: typeof opsExternalSyncRows.$inferSelect) => {
+    const errors = Array.isArray(row.validationErrors) ? row.validationErrors : [];
+    if (errors.length) throw new Error("父ASIN周报MCP自动应用失败：批次存在字段或范围异常");
+    return {
+      row,
+      fact: buildWeeklyRollupFact(record(row.normalizedData), {
+        workspaceId: input.workspaceId,
+        importId: 0,
+        userId: input.userId,
+        sourceKind: "lingxing_mcp_parent_asin_weekly",
+        sourceBatchId: input.batchId,
+        sourceTraceId: text(batch.traceId) || null,
+        sourceSchemaVersion: text(record(batch.summary).sourceSchemaVersion || "lingxing_parent_asin_weekly_v1"),
+      }),
+    };
+  });
+  const identities = facts.map(({ fact }) => weeklyRollupIdentity(fact));
+  if (new Set(identities).size !== identities.length) throw new Error("父ASIN周报MCP自动应用失败：批次存在重复业务身份");
+  const scope = record(batch.scope);
+  const weekStartDate = text(scope.startDate || facts[0].fact.weekStartDate);
+  const weekEndDate = text(scope.endDate || facts[0].fact.weekEndDate);
+  const existing = await db.select().from(lingxingProductWeekly).where(and(
+    eq(lingxingProductWeekly.workspaceId, input.workspaceId),
+    eq(lingxingProductWeekly.weekStartDate, weekStartDate),
+    eq(lingxingProductWeekly.weekEndDate, weekEndDate),
+  ));
+  const existingByIdentity = new Map(existing
+    .filter((row: typeof lingxingProductWeekly.$inferSelect) => row.sourceKind === "lingxing_mcp_parent_asin_weekly")
+    .map((row: typeof lingxingProductWeekly.$inferSelect) => [weeklyRollupIdentity(row), row]));
+  const conflicting = facts.filter(({ fact }) => {
+    const current = existingByIdentity.get(weeklyRollupIdentity(fact));
+    return current && !weeklyFactsEqual(current, fact);
+  });
+  if (conflicting.length) {
+    const message = `父ASIN周报MCP自动应用失败：${conflicting.length}条同来源历史周事实存在冲突，未覆盖原记录`;
+    await db.update(opsExternalSyncBatches).set({ status: "failed", errorMessage: message, summary: { ...record(batch.summary), autoApplyBlocked: true, conflictCount: conflicting.length, writePolicy: "validated_weekly_auto_apply" } }).where(eq(opsExternalSyncBatches.id, input.batchId));
+    throw new Error(message);
+  }
+  const pending = facts.filter(({ fact }) => !existingByIdentity.has(weeklyRollupIdentity(fact)));
+  const identicalRows = facts.length - pending.length;
+  const execute = async (tx: any) => {
+    let importId = 0;
+    if (pending.length) {
+      const [createdImport] = await tx.insert(dataImports).values({
+        workspaceId: input.workspaceId, userId: input.userId, sourceType: "lingxing",
+        fileName: `领星MCP-父ASIN周报-批次${input.batchId}`,
+        weekStartDate, weekEndDate, dataGranularity: "weekly",
+        totalRows: pending.length, importedRows: pending.length, skippedRows: identicalRows, status: "completed",
+      }).$returningId();
+      importId = createdImport.id;
+      for (let offset = 0; offset < pending.length; offset += 100) {
+        await tx.insert(lingxingProductWeekly).values(pending.slice(offset, offset + 100).map(({ fact }) => ({ ...fact, importId })) as WeeklyFactInsert[]);
+      }
+    }
+    await tx.update(opsExternalSyncRows).set({ rowStatus: "applied", selected: 1, appliedAt: new Date() }).where(and(eq(opsExternalSyncRows.batchId, input.batchId), eq(opsExternalSyncRows.workspaceId, input.workspaceId)));
+    await tx.insert(opsExternalSyncConfirmations).values({ workspaceId: input.workspaceId, batchId: input.batchId, userId: input.userId, action: "system_auto_apply", selectedRowIds: rows.map((row: typeof opsExternalSyncRows.$inferSelect) => row.id), note: "领星MCP父ASIN周报完整性校验通过后由系统直接应用" });
+    await tx.update(opsExternalSyncBatches).set({ status: "applied", appliedAt: new Date(), appliedBy: input.userId, errorMessage: null, summary: { ...record(batch.summary), autoApplied: true, writePolicy: "validated_weekly_auto_apply", sourceKind: "lingxing_mcp_parent_asin_weekly", appliedRows: pending.length, skippedRows: identicalRows } }).where(eq(opsExternalSyncBatches.id, input.batchId));
+    return { success: true, batchId: input.batchId, importId: importId || null, importedRows: pending.length, skippedRows: identicalRows, idempotent: pending.length === 0 };
+  };
+  return typeof db.transaction === "function" ? db.transaction((tx: any) => execute(tx)) : execute(db);
+}
+
 type AutoApplyBatch = { id: number; status: string; summary: unknown; scope: unknown };
-type AutoApplyRow = { id: number; entityKey: string; validationErrors: unknown; normalizedData: unknown; sourceData: unknown };
+type AutoApplyRow = { id: number; entityKey: string; rowStatus?: string; validationErrors: unknown; normalizedData: unknown; sourceData: unknown };
+type RecordValue = Record<string, unknown>;
 type PreviousDailySnapshot = Pick<typeof opsAsinDailySnapshots.$inferSelect, "sourceStoreId" | "country" | "asin" | "reportDate" | "salesQty" | "orderQty" | "salesAmount" | "adSpend" | "sessionsTotal">;
 const record = (input: unknown): Record<string, unknown> => input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : {};
 const text = (input: unknown) => input === null || input === undefined ? "" : String(input).trim();
@@ -436,6 +517,21 @@ export function validateHistoricalBackfillIntegrity(batch: AutoApplyBatch, rows:
   }
 }
 
+export function validateParentAsinWeeklyMcpAutoApplyIntegrity(batch: AutoApplyBatch, rows: AutoApplyRow[], scope: { startDate: string; endDate: string }) {
+  const summary = record(batch.summary);
+  const expectedStores = Number(summary.storesExpected || 0);
+  const readStores = Number(summary.storesRead || 0);
+  const failedWindows = Array.isArray(summary.failedStoreDateWindows) ? summary.failedStoreDateWindows : [];
+  const coveredDays = Number(summary.datesRead || 0);
+  const hasInvalidRow = rows.some((row) => row.rowStatus === "needs_review" || (Array.isArray(row.validationErrors) && row.validationErrors.length > 0));
+  if (!rows.length) throw new Error("父ASIN周报MCP自动应用校验未通过：本自然周未读取到有效父ASIN行");
+  if (!expectedStores || readStores !== expectedStores || failedWindows.length || Number(summary.pageTruncations || 0) > 0 || Boolean(summary.capped)) {
+    throw new Error("父ASIN周报MCP自动应用校验未通过：店铺覆盖不完整、存在失败窗口或分页截断，已保留待复核");
+  }
+  if (coveredDays !== 7 || !scope.startDate || !scope.endDate) throw new Error("父ASIN周报MCP自动应用校验未通过：报告范围不是完整自然周");
+  if (hasInvalidRow) throw new Error("父ASIN周报MCP自动应用校验未通过：存在父ASIN身份或周范围异常行，已保留待复核");
+}
+
 export async function runLingxingScheduledDraft(taskUid: string, now = new Date()) {
   const db = await getDb();
   if (!db) throw new Error("数据库不可用");
@@ -447,6 +543,7 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
   const [schedule] = await db.select().from(opsLingxingSyncSchedules)
     .where(and(eq(opsLingxingSyncSchedules.id, emperorTask.externalScheduleId!), eq(opsLingxingSyncSchedules.scheduleCronTaskUid, taskUid), eq(opsLingxingSyncSchedules.enabled, 1))).limit(1);
   if (!schedule) return { ok: true, skipped: "orphan_or_paused" as const };
+  if (!schedule.ownerUserId) throw new Error("受治理领星计划缺少创建者，已阻断自动执行");
   const domain = schedule.dataDomain as ScheduleDomain;
   const anomalyThreshold = resolveAnomalyThreshold(emperorTask.inputTemplate);
   const scope = domain === "product_performance_daily" ? scheduledDailyScope(now) : domain === "fba_inventory" ? scheduledInventoryScope(now) : domain === "ad_keyword" ? scheduledKeywordScope(now) : scheduledWeeklyScope(now);
@@ -463,7 +560,7 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
       if (!owner) throw new Error("计划创建者不存在或已删除");
       const caller = lingxingSyncRouter.createCaller({ user: { ...owner, defaultWorkspaceId: schedule.workspaceId } } as any);
       const preview = await caller.createPreview({
-        dataDomain: domain,
+        dataDomain: domain as "product_performance_daily" | "fba_inventory" | "ad_keyword",
         scope: {
           storeId: domain === "ad_keyword" ? "ALL_US_AD_PROFILES" : "ALL_US",
           profileId: domain === "ad_keyword" ? "ALL_US_AD_PROFILES" : undefined,
@@ -472,14 +569,15 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
           endDate: scope.endDate,
         },
       });
-      batchId = preview.batchId;
+      const previewBatchId = preview.batchId;
+      batchId = previewBatchId;
       if (Number(schedule.autoApply || 0) === 1) {
         const [batch] = await db.select().from(opsExternalSyncBatches).where(and(
-          eq(opsExternalSyncBatches.id, batchId),
+          eq(opsExternalSyncBatches.id, previewBatchId),
           eq(opsExternalSyncBatches.workspaceId, schedule.workspaceId),
         )).limit(1);
         const rows = await db.select().from(opsExternalSyncRows).where(and(
-          eq(opsExternalSyncRows.batchId, batchId),
+          eq(opsExternalSyncRows.batchId, previewBatchId),
           eq(opsExternalSyncRows.workspaceId, schedule.workspaceId),
         ));
         const applicableRows = domain === "ad_keyword"
@@ -503,11 +601,35 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
         }
         const selectedRowIds = applicableRows.map((row) => row.id);
         if (!selectedRowIds.length) throw new Error("自动应用校验未通过：所有广告关键词行均缺失身份或字段，已保留待复核");
-        await caller.confirm({ batchId, selectedRowIds, note: `系统${domain}每日校验通过自动确认` });
-        if (domain === "ad_keyword") await caller.applyConfirmedAds({ batchId, note: "系统每日关键词校验通过自动追加历史事实" });
-        else await caller.applyConfirmedProductInventory({ batchId, note: domain === "fba_inventory" ? "系统每日库存校验通过自动追加库存快照" : "系统每日校验通过自动追加日快照" });
+        await caller.confirm({ batchId: previewBatchId, selectedRowIds, note: `系统${domain}每日校验通过自动确认` });
+        if (domain === "ad_keyword") await caller.applyConfirmedAds({ batchId: previewBatchId, note: "系统每日关键词校验通过自动追加历史事实" });
+        else await caller.applyConfirmedProductInventory({ batchId: previewBatchId, note: domain === "fba_inventory" ? "系统每日库存校验通过自动追加库存快照" : "系统每日校验通过自动追加日快照" });
         writePolicy = "validated_daily_auto_apply";
       }
+    } else if (domain === "parent_asin_weekly_mcp") {
+      const [owner] = await db.select({ id: users.id, role: users.role, organizationId: users.organizationId, defaultWorkspaceId: users.defaultWorkspaceId })
+        .from(users).where(eq(users.id, schedule.ownerUserId)).limit(1);
+      if (!owner) throw new Error("计划创建者不存在或已删除");
+      const caller = lingxingSyncRouter.createCaller({ user: { ...owner, defaultWorkspaceId: schedule.workspaceId } } as any);
+      const preview = await caller.createPreview({
+        dataDomain: "parent_asin_weekly_mcp",
+        scope: { storeId: "ALL_US", marketplace: "US", startDate: scope.startDate, endDate: scope.endDate },
+      });
+      const previewBatchId = preview.batchId;
+      batchId = previewBatchId;
+      if (Number(schedule.autoApply || 0) !== 1) throw new Error("父ASIN周报MCP计划未启用自动应用；批次已保留待复核");
+      const [batch] = await db.select().from(opsExternalSyncBatches).where(and(
+        eq(opsExternalSyncBatches.id, previewBatchId),
+        eq(opsExternalSyncBatches.workspaceId, schedule.workspaceId),
+      )).limit(1);
+      const rows = await db.select().from(opsExternalSyncRows).where(and(
+        eq(opsExternalSyncRows.batchId, previewBatchId),
+        eq(opsExternalSyncRows.workspaceId, schedule.workspaceId),
+      ));
+      if (!batch) throw new Error("父ASIN周报MCP自动应用失败：未找到刚创建的同步批次");
+      validateParentAsinWeeklyMcpAutoApplyIntegrity(batch as AutoApplyBatch, rows as AutoApplyRow[], scope);
+      await applyParentAsinWeeklyMcpBatch(db, { batchId: previewBatchId, workspaceId: schedule.workspaceId, userId: schedule.ownerUserId });
+      writePolicy = "validated_weekly_auto_apply";
     } else {
       const snapshots = (await db.select().from(opsAsinDailySnapshots).where(and(
         eq(opsAsinDailySnapshots.workspaceId, schedule.workspaceId),

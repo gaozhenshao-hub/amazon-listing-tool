@@ -10,7 +10,7 @@ const supportedDomains = [
   "product_performance_daily",
   "fba_inventory",
   "ad_keyword",
-  "parent_asin_weekly_rollup",
+  "parent_asin_weekly_mcp",
 ] as const;
 
 type SupportedDomain = (typeof supportedDomains)[number];
@@ -23,7 +23,7 @@ type LocalScheduledTask = {
 export type LocalLingxingScheduleTask = {
   id: number;
   dataDomain: string | null;
-  cronExpr: string;
+  cronExpr: string | null;
   externalTaskUid: string | null;
   isActive: number | null;
   systemManaged: number | null;
@@ -44,6 +44,7 @@ export function toLocalLingxingScheduleTask(task: LocalLingxingScheduleTask) {
     || Number(task.systemManaged || 0) !== 1
     || task.triggerMode !== "heartbeat"
     || !task.externalTaskUid
+    || !task.cronExpr
     || !supportedDomains.includes(task.dataDomain as SupportedDomain)
     || !cron.validate(task.cronExpr)
   ) {
@@ -59,7 +60,7 @@ export function toLocalLingxingScheduleTask(task: LocalLingxingScheduleTask) {
 
 /**
  * node-cron 4.2.1会将六段Cron中受限的星期字段（例如`* * 1`）错误推进到远期年份。
- * 父ASIN周汇总固定为UTC周一，故用受限计时器替代该单一模式；日任务继续使用node-cron。
+ * 父ASIN周报MCP任务固定为UTC周一，故用受限计时器替代该单一模式；日任务继续使用node-cron。
  */
 export function getNextParentWeeklyRunAt(after = new Date()): Date {
   const result = new Date(after.getTime());
@@ -167,7 +168,7 @@ export function startLocalLingxingScheduleRunner() {
           });
         }
       };
-      task = item.dataDomain === "parent_asin_weekly_rollup" && isDefaultParentWeeklyCron(item.cronExpr)
+      task = item.dataDomain === "parent_asin_weekly_mcp" && isDefaultParentWeeklyCron(item.cronExpr)
         ? scheduleParentWeeklyTask(runTask)
         : cron.schedule(item.cronExpr, async (context) => runTask(context.date), { timezone: "UTC", noOverlap: true, name: `lingxing:${item.dataDomain}` });
       scheduled.set(item.id, { signature: `${item.cronExpr}|${item.externalTaskUid}`, task });

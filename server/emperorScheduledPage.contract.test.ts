@@ -28,15 +28,15 @@ describe("皇帝定时任务与领星计划统一管理契约", () => {
     expect(router).toContain("领星同步仅可按受治理计划触发");
   });
 
-  it("为系统任务提供运营级编辑，并锁定任务UID、数据域和周汇总直接应用", () => {
+  it("为系统任务提供运营级编辑，并锁定任务UID、数据域和MCP父ASIN周报直接应用", () => {
     expect(page).toContain("编辑领星系统任务");
     expect(page).toContain("保存受治理变更");
     expect(page).toContain("异常倍数阈值");
     expect(page).toContain("始终锁定：数据域、MCP工具白名单、美国店铺范围、任务UID");
-    expect(page).toContain('selectedTask.dataDomain === "parent_asin_weekly_rollup" ? true : systemDraft.autoApply');
-    expect(page).toContain("父ASIN周汇总固定为校验通过后直接幂等应用");
+    expect(page).toContain('selectedTask.dataDomain === "parent_asin_weekly_mcp" ? true : systemDraft.autoApply');
+    expect(page).toContain("领星MCP父ASIN周报固定为校验通过后直接幂等应用");
     expect(router).toContain("updateSystemTask: adminProcedure");
-    expect(router).not.toContain("父ASIN周汇总仅生成草稿，不允许开启自动应用");
+    expect(router).not.toContain("父ASIN周报仅生成草稿，不允许开启自动应用");
     expect(router).toContain("autoApply: input.autoApply");
     expect(router).toContain("externalTaskUid: task.externalTaskUid");
   });
@@ -56,7 +56,7 @@ describe("皇帝定时任务与领星计划统一管理契约", () => {
     expect(page).toContain("系统自动转换为UTC时间。");
     expect(page).toContain("编辑高级Cron");
     expect(page).toContain("使用可视化设置");
-    expect(page).toContain("周汇总固定每周一，不能改为每日。");
+    expect(page).toContain("父ASIN周报固定每周一，不能改为每日。");
     expect(page).toContain("function createUtcCron");
     expect(page).toContain('const utcWeekday = frequency === "weekly" ? (beijingHour < 8 ? "0" : "1") : "*"');
   });

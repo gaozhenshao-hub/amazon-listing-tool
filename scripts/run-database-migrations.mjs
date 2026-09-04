@@ -111,6 +111,11 @@ const supplementalMigrations = [
     "0187_skill_distillation_foundation.sql",
     "0188_manual_knowledge_distillation_executor.sql",
     "0189_claim_ledger_consistency_decisions.sql",
+    "0190_parent_asin_weekly_mcp_source.sql",
+    "0191_parent_asin_weekly_mcp_source_forward_repair.sql",
+    "0192_parent_asin_weekly_source_columns_forward_repair.sql",
+    "0193_parent_asin_weekly_mcp_control_plane_forward_repair.sql",
+    "0194_parent_asin_weekly_mcp_auto_apply.sql",
   ];
 
 const retiredMigrationFiles = new Set([

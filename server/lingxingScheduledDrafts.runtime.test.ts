@@ -10,13 +10,13 @@ vi.mock("./routers/lingxingSync", () => ({
   lingxingSyncRouter: { createCaller: createCallerMock },
 }));
 
-import { runLingxingScheduledDraft, validateDailyAutoApplyIntegrity, validateHistoricalBackfillIntegrity, validateInventoryAutoApplyIntegrity, validateKeywordAutoApplyIntegrity } from "./domains/ops/lingxingScheduledDrafts";
+import { runLingxingScheduledDraft, validateDailyAutoApplyIntegrity, validateHistoricalBackfillIntegrity, validateInventoryAutoApplyIntegrity, validateKeywordAutoApplyIntegrity, validateParentAsinWeeklyMcpAutoApplyIntegrity } from "./domains/ops/lingxingScheduledDrafts";
 
 type ScheduleRow = {
   id: number;
   workspaceId: number;
   ownerUserId: number;
-  dataDomain: "product_performance_daily" | "fba_inventory" | "ad_keyword" | "parent_asin_weekly_rollup";
+  dataDomain: "product_performance_daily" | "fba_inventory" | "ad_keyword" | "parent_asin_weekly_rollup" | "parent_asin_weekly_mcp";
   autoApply?: number;
   lastRunKey: string | null;
   lastStatus: string | null;
@@ -203,6 +203,15 @@ describe("领星Heartbeat草稿运行", () => {
     expect(() => validateHistoricalBackfillIntegrity(batch, [{ ...rows[0], entityKey: rows[1].entityKey }, rows[1]], { startDate: "2026-08-01", endDate: "2026-08-02" })).toThrow("重复或缺失");
     expect(() => validateHistoricalBackfillIntegrity({ ...batch, summary: { ...batch.summary, capped: true } }, rows, { startDate: "2026-08-01", endDate: "2026-08-02" })).toThrow("分页或行数截断");
     expect(() => validateHistoricalBackfillIntegrity({ ...batch, summary: { ...batch.summary, pageTruncations: 1 } }, rows, { startDate: "2026-08-01", endDate: "2026-08-02" })).toThrow("分页或行数截断");
+  });
+
+  it("父ASIN周报MCP仅在完整自然周、全店覆盖且无截断或异常行时可自动应用", () => {
+    const batch = { id: 88, status: "ready_for_review", summary: { capped: false, pageTruncations: 0, datesRead: 7, storesExpected: 2, storesRead: 2, failedStoreDateWindows: [] }, scope: {} };
+    const rows = [{ id: 1, entityKey: "7392|US|parent_asin_weekly_mcp|PARENT|2026-08-24", rowStatus: "new", validationErrors: [], normalizedData: { storeId: "7392", parentAsin: "PARENT", weekStartDate: "2026-08-24", weekEndDate: "2026-08-30" }, sourceData: {} }];
+    expect(() => validateParentAsinWeeklyMcpAutoApplyIntegrity(batch, rows, { startDate: "2026-08-24", endDate: "2026-08-30" })).not.toThrow();
+    expect(() => validateParentAsinWeeklyMcpAutoApplyIntegrity({ ...batch, summary: { ...batch.summary, storesRead: 1 } }, rows, { startDate: "2026-08-24", endDate: "2026-08-30" })).toThrow("店铺覆盖不完整");
+    expect(() => validateParentAsinWeeklyMcpAutoApplyIntegrity({ ...batch, summary: { ...batch.summary, pageTruncations: 1 } }, rows, { startDate: "2026-08-24", endDate: "2026-08-30" })).toThrow("店铺覆盖不完整");
+    expect(() => validateParentAsinWeeklyMcpAutoApplyIntegrity(batch, [{ ...rows[0], rowStatus: "needs_review" }], { startDate: "2026-08-24", endDate: "2026-08-30" })).toThrow("父ASIN身份或周范围异常");
   });
 
   it("相同运行键成功后跳过重复运行，不再读取MCP或创建草稿", async () => {

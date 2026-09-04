@@ -229,34 +229,6 @@ type ProductOverview = {
   erpSource?: "lingxing" | "saihu";
 };
 
-function adaptDailyParentOverview(source: any[], weeksToShow: number): ProductOverview[] {
-  return source.map((product, productIndex) => {
-    const weeks = (product.weeks || []).slice(0, weeksToShow).map((week: any, weekIndex: number) => {
-      const salesAmount = Number(week.salesAmount || 0);
-      const orderProfit = Number(week.orderProfit || 0);
-      const salesQty = Number(week.salesQty || 0);
-      const nullableNumber = (value: unknown) => value == null ? null : Number(value);
-      return {
-        id: productIndex * 100 + weekIndex + 1, weekStartDate: week.weekStartDate, weekEndDate: week.weekEndDate,
-        salesTrend: null, salesQty, orderQty: Number(week.orderQty || 0), salesAmount, orderProfit,
-        profitMargin: nullableNumber(week.profitMargin), sessionTotal: Number(week.sessionsTotal || 0),
-        totalCvr: nullableNumber(week.totalCvr), adCvr: nullableNumber(week.adCvr), organicCvr: nullableNumber(week.organicCvr),
-        adOrders: Number(week.adOrders || 0), organicOrders: Number(week.organicOrders || 0), adClicks: Number(week.adClicks || 0), ctr: nullableNumber(week.ctr),
-        adImpressions: Number(week.adImpressions || 0), cpc: nullableNumber(week.cpc), adSpend: Number(week.adSpend || 0), acos: nullableNumber(week.acos),
-        rating: nullableNumber(week.rating), reviewCount: nullableNumber(week.reviewCount), returnRate: nullableNumber(week.returnRate), wow: null,
-      };
-    });
-    const latest = weeks[0];
-    return {
-      id: productIndex + 1, parentAsin: product.parentAsin, title: product.productName || product.title || product.parentAsin,
-      chineseName: product.productName || null, brand: null, category: null, marketplace: product.country || null, imageUrl: null, status: "active",
-      operator: product.operator || null, storeName: product.storeName || null, variantCount: Number(product.variantCount || 0), skus: product.skus || [], basicInfo: null,
-      inventory: latest ? { fbaAvailable: Number((product.weeks?.[0]?.fbaAvailable) || 0), fbaInbound: 0, fbaInTransit: Number((product.weeks?.[0]?.fbaInTransit) || 0), fbaTotal: Number((product.weeks?.[0]?.fbaAvailable) || 0) + Number((product.weeks?.[0]?.fbaInTransit) || 0), availableStock: Number((product.weeks?.[0]?.fbaAvailable) || 0), fbaDaysOfSupply: 0, stockoutDate: null, avgDailySales7d: latest.salesQty / Math.max(Number((product.weeks?.[0]?.activeDays) || 1), 1), daysOfStock: latest.salesQty > 0 ? Math.round(Number((product.weeks?.[0]?.fbaAvailable) || 0) / (latest.salesQty / Math.max(Number((product.weeks?.[0]?.activeDays) || 1), 1))) : 999 } : null,
-      weeks, monthlySummaries: product.monthlySummaries || [], erpSource: "lingxing",
-    };
-  });
-}
-
 // ─── Sortable column keys (based on latest week data) ───
 type SortKey = "salesQty" | "orderQty" | "salesAmount" | "orderProfit" | "profitMargin" | "sessionTotal" | "totalCvr" | "adCvr" | "organicCvr" | "adOrders" | "organicOrders" | "adClicks" | "ctr" | "adImpressions" | "cpc" | "adSpend" | "acos" | "rating" | "reviewCount" | "returnRate" | null;
 type SortDir = "asc" | "desc";
@@ -461,7 +433,7 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
 
           <div className="h-14 w-[260px] shrink-0" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between"><p className="mb-0.5 text-[10px] text-muted-foreground">近6个月财务利润</p><button className="text-[10px] text-primary hover:underline" onClick={() => setFinancialProfitOpen(open => !open)}>填写</button></div>
-            <ResponsiveContainer width="100%" height="100%"><LineChart data={profitTrend} margin={{ top: 0, right: 2, left: 2, bottom: 0 }}><XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} /><YAxis hide /><RechartsTooltip formatter={(value: number | null) => [value == null ? "待填写" : `$${value.toFixed(2)}`, "财务利润"]} /><Line connectNulls type="monotone" dataKey="financialProfit" name="财务利润" stroke="#7c3aed" strokeWidth={2} dot={{ r: 2 }} /></LineChart></ResponsiveContainer>
+            <ResponsiveContainer width="100%" height="100%"><LineChart data={profitTrend} margin={{ top: 0, right: 2, left: 2, bottom: 0 }}><XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} /><YAxis hide /><RechartsTooltip formatter={(value) => [value == null ? "待填写" : `$${Number(value).toFixed(2)}`, "财务利润"]} /><Line connectNulls type="monotone" dataKey="financialProfit" name="财务利润" stroke="#7c3aed" strokeWidth={2} dot={{ r: 2 }} /></LineChart></ResponsiveContainer>
           </div>
 
           {/* Product Name (品名) */}
@@ -815,7 +787,7 @@ export default function OpsProducts() {
   const isManagerOrAbove = user?.role && (MANAGER_ROLES as readonly string[]).includes(user.role);
   const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("active");
-  const [dataSource, setDataSource] = useState<DataSource>("erp");
+  const [dataSource, setDataSource] = useState<DataSource>("system");
 
   // Mutations
   const utils = trpc.useUtils();
@@ -918,11 +890,6 @@ export default function OpsProducts() {
     weeks: 4,
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "ALL",
   }, { enabled: dataSource !== "system" });
-  const { data: lingxingDailyOverview, isLoading: lingxingDailyLoading } = trpc.dataImport.getLingxingDailyOverview.useQuery({
-    weeks: weekFilter,
-    marketplace: marketplaceFilter,
-  }, { enabled: dataSource === "erp" });
-
   // Import stats for showing data availability
   const { data: importStats } = trpc.dataImport.getImportStats.useQuery();
 
@@ -953,11 +920,10 @@ export default function OpsProducts() {
   });
 
   // Unified products & loading state
-  const products = dataSource === "system" ? systemProducts : mergeProductWeeksPreferPrimary(
-    adaptDailyParentOverview((lingxingDailyOverview || []) as any[], weekFilter),
-    (importProducts || []) as ProductOverview[],
-  );
-  const isLoading = dataSource === "system" ? systemLoading : lingxingDailyLoading || importLoading;
+  const products = useMemo(() => (
+    dataSource === "system" ? systemProducts : (importProducts || []) as ProductOverview[]
+  ), [dataSource, systemProducts, importProducts]);
+  const isLoading = dataSource === "system" ? systemLoading : importLoading;
 
   const [form, setForm] = useState({
     parentAsin: "", title: "", brand: "", category: "", marketplace: "US",
@@ -1057,7 +1023,7 @@ export default function OpsProducts() {
           onClick={() => setDataSource("system")}
         >
           <Database className="h-3.5 w-3.5" />
-          系统数据
+          MCP 父ASIN周报
         </button>
         <button
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
@@ -1136,7 +1102,7 @@ export default function OpsProducts() {
           <h1 className="text-2xl font-bold">产品运营总览</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             {dataSource === "system"
-              ? "按父ASIN维度管理，展示最近4周周度数据及同比变化"
+              ? "权威周度来源：领星MCP父ASIN自然周报；ASIN日数据仅用于单ASIN详情与库存规划，不参与本页周度累计"
               : "基于 ERP 导入数据，兼容领星和赛狐格式，按父ASIN维度展示最近4周周度数据"}
           </p>
         </div>

@@ -328,12 +328,15 @@ export function buildLingxingActionInvocation(capability: string, args: unknown,
   const toolId = String(schema.toolId || "");
   const catalogVersion = String(schema.catalogVersion || "");
   const schemaVersion = String(schema.schemaVersion || "");
-  if (toolId !== capability || !catalogVersion || !schemaVersion || schema.toolType !== "read") {
+  const toolVersionId = Number(schema.toolVersionId);
+  if (toolId !== capability || !catalogVersion || !schemaVersion || !Number.isInteger(toolVersionId) || toolVersionId < 1 || schema.toolType !== "read") {
     throw new TRPCError({ code: "BAD_REQUEST", message: `领星能力${capability}的最新只读Schema无效或不匹配` });
   }
   return {
     toolName: "action",
-    arguments: { toolId, catalogVersion, schemaVersion, paramsJson: JSON.stringify(argumentsRecord) },
+    // 官方MCP v20260904要求action携带不可变toolVersionId和对象型params；
+    // 旧paramsJson契约会被服务端解释为params=null并以400失败。
+    arguments: { toolId, catalogVersion, schemaVersion, toolVersionId, params: argumentsRecord },
   };
 }
 

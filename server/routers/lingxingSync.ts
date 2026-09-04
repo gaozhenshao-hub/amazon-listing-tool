@@ -14,7 +14,7 @@ import { buildScheduledAutoApplyReviewQueue, scheduledAutoApplyReviewIssue } fro
 import { rawExecute } from "../domains/ai_os/routerContext";
 import { getDb } from "../repositories/dbClient";
 
-const domainSchema = z.enum(["product_performance", "product_performance_daily", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword", "listing_master", "ad_search_term", "ad_targeting"]);
+const domainSchema = z.enum(["product_performance", "product_performance_daily", "parent_asin_weekly_mcp", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword", "listing_master", "ad_search_term", "ad_targeting"]);
 const scopeSchema = z.object({
   storeId: z.string().trim().min(1),
   profileId: z.string().trim().optional(),
@@ -22,7 +22,7 @@ const scopeSchema = z.object({
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   marketplace: z.string().trim().optional(),
 });
-const scheduledDomainSchema = z.enum(["product_performance_daily", "fba_inventory", "ad_keyword", "parent_asin_weekly_rollup"]);
+const scheduledDomainSchema = z.enum(["product_performance_daily", "fba_inventory", "ad_keyword", "parent_asin_weekly_mcp"]);
 const SCHEDULE_PRESETS = {
   product_performance_daily: {
     cadence: "daily_previous_day", cronExpression: "0 0 9 * * *",
@@ -39,9 +39,9 @@ const SCHEDULE_PRESETS = {
     description: "北京时间每日17:40读取前一天美国站广告关键词历史表现；完整性与异常校验通过后自动追加历史事实，异常转人工复核",
     autoApply: true,
   },
-  parent_asin_weekly_rollup: {
-    cadence: "weekly_parent_asin_rollup", cronExpression: "0 10 9 * * 1",
-    description: "北京时间每周一17:10汇总上一自然周已确认日快照；完整性校验通过后直接幂等追加父ASIN周事实，冲突或异常阻断并保留审计",
+  parent_asin_weekly_mcp: {
+    cadence: "weekly_parent_asin_mcp_report", cronExpression: "0 10 8 * * 1",
+    description: "北京时间每周一16:10读取上一自然周领星MCP父ASIN周报；完整性校验通过后直接幂等追加周事实，冲突或异常阻断并保留审计",
     autoApply: true,
   },
 } as const;
@@ -50,7 +50,7 @@ const emperorScheduleName = (dataDomain: keyof typeof SCHEDULE_PRESETS) => ({
   product_performance_daily: "领星 · 每日ASIN产品表现",
   fba_inventory: "领星 · 每日FBA库存快照",
   ad_keyword: "领星 · 每日广告关键词历史",
-  parent_asin_weekly_rollup: "领星 · 父ASIN周汇总",
+  parent_asin_weekly_mcp: "领星 · 父ASIN周报",
 }[dataDomain]);
 
 type RecordValue = Record<string, unknown>;
@@ -304,9 +304,12 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
   const sku = value(source, ["sku", "local_sku", "seller_sku", "msku", "sellerSku", "SKU"]);
   const sourceStoreId = value(source, ["__lingxingSid", "sid", "store_id", "storeId"]) || scope.storeId;
   const reportDate = value(source, ["rdate", "report_date", "reportDate", "__reportDate"]) || scope.endDate || scope.startDate;
+  const weekStartDate = value(source, ["week_start_date", "weekStartDate", "start_date", "period_start", "report_start"]) || scope.startDate || null;
+  const weekEndDate = value(source, ["week_end_date", "weekEndDate", "end_date", "period_end", "report_end"]) || scope.endDate || scope.startDate || null;
   const profileId = value(source, ["profile_id", "profileId", "profile"]) || (profileIdsFromScope(scope).length === 1 ? profileIdsFromScope(scope)[0] : null);
   const normalized: RecordValue = {
     sourceDomain: domain,
+    sourceSchemaVersion: domain === "parent_asin_weekly_mcp" ? "lingxing_parent_asin_weekly_v1" : null,
     storeId: sourceStoreId,
     profileId,
     periodStart: scope.startDate || null,
@@ -314,6 +317,8 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
     asin: asin ? firstText(asin) : firstText(value(source, ["asins"])),
     parentAsin: parentAsin ? firstText(parentAsin) : null,
     reportDate,
+    weekStartDate,
+    weekEndDate,
     sku: sku ? String(sku) : null,
     productName: value(source, ["local_name", "product_name", "item_name", "title", "name", "品名", "产品名称"]),
     storeName: value(source, ["__lingxingStoreName", "shop_name", "store_name", "storeName", "seller_name"]) || `SID ${sourceStoreId}`,
@@ -369,10 +374,13 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
           ? [normalized.storeId, domain, normalized.recordId || normalized.asin || normalized.parentAsin || "unmatched", normalized.reportDate || scope.endDate || scope.startDate || "latest"].join("|")
         : domain === "product_performance_daily"
           ? [normalized.storeId, domain, normalized.asin || "unmatched", normalized.reportDate || "missing"].join("|")
+          : domain === "parent_asin_weekly_mcp"
+            ? [normalized.storeId, normalized.country, domain, normalized.parentAsin || "unmatched", normalized.weekStartDate || "missing"].join("|")
           : [normalized.storeId, domain, normalized.parentAsin || normalized.asin || "unmatched", normalized.sku || "", scope.startDate || "latest", scope.endDate || ""].join("|");
   const validationErrors: string[] = [];
   if (["product_performance", "product_performance_daily", "order_profit"].includes(domain) && !normalized.asin && !normalized.parentAsin) validationErrors.push("未识别ASIN或父ASIN，不能确认写入产品总览。");
   if (domain === "product_performance_daily" && (!normalized.asin || normalized.asin === "-" || !normalized.parentAsin || !normalized.reportDate)) validationErrors.push("ASIN日快照需要有效子ASIN、父ASIN和报告日期；占位ASIN不能写入。");
+  if (domain === "parent_asin_weekly_mcp" && (!normalized.parentAsin || !normalized.storeId || !normalized.weekStartDate || !normalized.weekEndDate || normalized.weekStartDate !== scope.startDate || normalized.weekEndDate !== scope.endDate)) validationErrors.push("父ASIN周报需要店铺、父ASIN和与自然周范围一致的起止日期；异常行不能自动应用。");
   if (domain === "fba_inventory" && (!normalized.asin || !normalized.parentAsin)) validationErrors.push("库存快照需要子ASIN和父ASIN映射；请在草稿中补充或取消选择该行。");
   if (domain === "ad_campaign" && !normalized.campaignName) validationErrors.push("广告活动报表需要活动名称；请核对草稿后再确认。");
   if (domain === "ad_keyword" && (!normalized.profileId || !normalized.keyword || !normalized.campaignName)) validationErrors.push("广告关键词报表需要Profile、关键词和活动名称；请核对草稿后再确认。");
@@ -431,6 +439,7 @@ export function buildMcpArguments(domain: z.infer<typeof domainSchema>, scope: z
   const commonDate = { start_date: scope.startDate, end_date: scope.endDate };
   if (domain === "product_performance") return { capability: "query_product_performance_asin_lists", arguments: { sids: scope.storeId, offset: 0, length: 200, ...commonDate, date_type: "purchase", date_view_type: "week", date_view_order_type: 2, summary_field: "parent_asin", turn_on_summary: 1, query_order_profit: true, currency_code: "USD" } };
   if (domain === "product_performance_daily") return { capability: "query_product_performance_asin_lists", arguments: { sids: scope.storeId, offset: 0, length: 200, ...commonDate, date_type: "purchase", date_view_type: "day", date_view_order_type: 1, summary_field: "asin", turn_on_summary: 1, query_order_profit: true, currency_code: "USD" } };
+  if (domain === "parent_asin_weekly_mcp") return { capability: "query_product_performance_asin_lists", arguments: { sids: scope.storeId, offset: 0, length: 200, ...commonDate, date_type: "purchase", date_view_type: "week", date_view_order_type: 2, summary_field: "parent_asin", turn_on_summary: 1, query_order_profit: true, currency_code: "USD" } };
   if (domain === "order_profit") return { capability: "query_order_profit_list", arguments: { sids: scope.storeId, ...commonDate, currency_type: "USD", external_service_mark: 1, source_service: "mcp", length: "200", offset: "0", sort_type: "desc", turn_on_summary: "1", search_type: 0, search_field: "parent_asin", summary_field: "parent_asin", date_summary_type: 2, query_order_gross_first: true } };
   if (domain === "fba_inventory") return { capability: "get_fba_stock_list", arguments: { sid: scope.storeId, offset: 0, length: 200, sort_field: "sku", sort_type: "asc", is_cost_page: "0", is_hide_zero_stock: 0, is_parant_asin_merge: "1" } };
   if (domain === "ad_campaign") return { capability: "ad_campaign_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: 200, sort_field: "spends", sort_type: "desc" } };
@@ -540,7 +549,7 @@ export const lingxingSyncRouter = router({
         JSON.stringify({ dataDomain: input.dataDomain, externalTaskUid: taskUid, scheduleId, autoApply: preset.autoApply }), input.enabled ? 1 : 0,
         input.dataDomain, scheduleId, taskUid, existing?.lastBatchId ?? null, ctx.user.id],
     );
-    return { dataDomain: input.dataDomain, enabled: input.enabled, autoApply: preset.autoApply, taskUid, nextExecutionAt, writePolicy: input.dataDomain === "parent_asin_weekly_rollup" ? "validated_weekly_auto_apply" as const : preset.autoApply ? "validated_daily_auto_apply" as const : "draft_only" as const };
+    return { dataDomain: input.dataDomain, enabled: input.enabled, autoApply: preset.autoApply, taskUid, nextExecutionAt, writePolicy: input.dataDomain === "parent_asin_weekly_mcp" ? "validated_weekly_auto_apply" as const : preset.autoApply ? "validated_daily_auto_apply" as const : "draft_only" as const };
   }),
 
   get: protectedProcedure.input(z.object({ batchId: z.number().int().positive() })).query(async ({ ctx, input }) => {
@@ -610,14 +619,17 @@ export const lingxingSyncRouter = router({
     let sourceRows: RecordValue[];
     let toolRunId: string | null = null;
     const summary: { totalRead: number; selected: number; needsReview: number; unmatched: number; [key: string]: unknown } = { totalRead: 0, selected: 0, needsReview: 0, unmatched: 0 };
-    if (input.dataDomain === "product_performance_daily") {
+    if (input.dataDomain === "product_performance_daily" || input.dataDomain === "parent_asin_weekly_mcp") {
+      const isParentAsinWeeklyMcp = input.dataDomain === "parent_asin_weekly_mcp";
       const storesExecution = input.scope.storeId === "ALL_US"
         ? await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: { capability: "get_my_sids", arguments: {} }, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_us_store_directory" })
         : null;
       const stores = storesExecution
         ? pickRecords(normalizeMcpPayload(storesExecution.output)).map(normalizeLingxingStoreDirectoryRecord).filter(isUsStore).filter((store) => Boolean(store.sid))
         : [{ sid: input.scope.storeId, name: "" }];
-      const dates = input.scope.startDate && input.scope.endDate ? isoDates(input.scope.startDate, input.scope.endDate) : [];
+      const dates = isParentAsinWeeklyMcp
+        ? (input.scope.startDate && input.scope.endDate ? [input.scope.startDate] : [])
+        : (input.scope.startDate && input.scope.endDate ? isoDates(input.scope.startDate, input.scope.endDate) : []);
       const rows: RecordValue[] = [];
       const toolRunIds: string[] = [];
       const completedStoreDateWindows = new Set<string>();
@@ -629,14 +641,17 @@ export const lingxingSyncRouter = router({
         for (const reportDate of dates) {
           let exhausted = false;
           let windowComplete = true;
-          for (let page = 0; page < 10 && !exhausted; page += 1) {
-            if (rows.length >= 5000) { capped = true; windowComplete = false; break; }
-            const request = buildMcpArguments("product_performance_daily", { ...input.scope, storeId: store.sid, startDate: reportDate, endDate: reportDate });
+          let windowRows = 0;
+          const maxPages = isParentAsinWeeklyMcp ? 100 : 10;
+          const maxRows = isParentAsinWeeklyMcp ? 20_000 : 5_000;
+          for (let page = 0; page < maxPages && !exhausted; page += 1) {
+            if (windowRows >= maxRows) { capped = true; windowComplete = false; break; }
+            const request = buildMcpArguments(input.dataDomain, { ...input.scope, storeId: store.sid, startDate: isParentAsinWeeklyMcp ? input.scope.startDate : reportDate, endDate: isParentAsinWeeklyMcp ? input.scope.endDate : reportDate });
             request.arguments.offset = page * 200;
             let execution;
             try {
               execution = await withMcpStoreDateWindowTimeout(
-                invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: `read_asin_daily_${store.sid}_${reportDate}_${page}` }),
+                invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: `${isParentAsinWeeklyMcp ? "read_parent_weekly" : "read_asin_daily"}_${store.sid}_${reportDate}_${page}` }),
                 `${store.sid}|${reportDate}|${page}`,
               );
             } catch (error) {
@@ -649,11 +664,23 @@ export const lingxingSyncRouter = router({
             toolRunId = execution.metadata.toolRunId || toolRunId;
             if (execution.metadata.toolRunId) toolRunIds.push(execution.metadata.toolRunId);
             const pageRows = pickRecords(normalizeMcpPayload(execution.output));
-            const normalizedPage = normalizeDailyPreviewPage(pageRows, { storeId: store.sid, storeName: store.name, reportDate });
+            const normalizedPage = isParentAsinWeeklyMcp
+              ? { placeholderRows: 0, rows: pageRows.map((source) => ({
+                ...source,
+                __lingxingSid: store.sid,
+                __lingxingStoreName: store.name,
+                week_start_date: value(source, ["week_start_date", "weekStartDate", "start_date", "period_start", "report_start"]) || input.scope.startDate,
+                week_end_date: value(source, ["week_end_date", "weekEndDate", "end_date", "period_end", "report_end"]) || input.scope.endDate,
+              })) }
+              : normalizeDailyPreviewPage(pageRows, { storeId: store.sid, storeName: store.name, reportDate });
             placeholderRows += normalizedPage.placeholderRows;
-            for (const source of normalizedPage.rows) if (rows.length < 5000) rows.push(source);
+            for (const source of normalizedPage.rows) {
+              if (windowRows >= maxRows) { capped = true; windowComplete = false; break; }
+              rows.push(source);
+              windowRows += 1;
+            }
             exhausted = pageRows.length < 200;
-            if (page === 9 && !exhausted) { pageTruncations += 1; windowComplete = false; }
+            if (page === maxPages - 1 && !exhausted) { pageTruncations += 1; windowComplete = false; }
           }
           if (windowComplete && exhausted) completedStoreDateWindows.add(`${store.sid}|${reportDate}`);
           if (capped) break;
@@ -667,12 +694,13 @@ export const lingxingSyncRouter = router({
         totalRead: sourceRows.length,
         selected: sourceRows.length,
         ...coverage,
-        datesRead: dates.length,
+        datesRead: isParentAsinWeeklyMcp ? (dates.length ? 7 : 0) : dates.length,
         placeholderRows,
         pageTruncations,
         capped,
         failedStoreDateWindows,
         toolRunIds,
+        sourceSchemaVersion: isParentAsinWeeklyMcp ? "lingxing_parent_asin_weekly_v1" : undefined,
       });
     } else if (input.dataDomain === "fba_inventory" && input.scope.storeId === "ALL_US") {
       const storesExecution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: { capability: "get_my_sids", arguments: {} }, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_inventory_us_store_directory" });
@@ -856,7 +884,7 @@ export const lingxingSyncRouter = router({
     const periodEnd = input.scope.endDate || periodStart;
     const parentAsins = [...new Set(applicableRows.map((item) => asText(item.normalized.normalized.parentAsin || item.normalized.normalized.asin)).filter(Boolean))];
     const childAsins = [...new Set(applicableRows.map((item) => asText(item.normalized.normalized.asin)).filter(Boolean))];
-    const existingProductRows = ["product_performance", "order_profit"].includes(input.dataDomain) && parentAsins.length
+    const existingProductRows = ["product_performance", "order_profit", "parent_asin_weekly_mcp"].includes(input.dataDomain) && parentAsins.length
       ? await db.select().from(lingxingProductWeekly).where(and(eq(lingxingProductWeekly.workspaceId, workspaceId), eq(lingxingProductWeekly.weekStartDate, periodStart), inArray(lingxingProductWeekly.parentAsin, parentAsins)))
       : [];
     const existingInventoryRows = ["fba_inventory", "product_performance_daily"].includes(input.dataDomain) && childAsins.length
@@ -868,19 +896,24 @@ export const lingxingSyncRouter = router({
     const existingKeywordRows = input.dataDomain === "ad_keyword"
       ? await db.select().from(adKeywordWeekly).where(and(eq(adKeywordWeekly.workspaceId, workspaceId), eq(adKeywordWeekly.weekStartDate, periodStart), eq(adKeywordWeekly.weekEndDate, periodEnd)))
       : [];
-    const productByParentAsin = new Map(existingProductRows.map((row) => [asText(row.parentAsin), row]));
+    const weeklyIdentity = (row: RecordValue) => `${asText(row.storeName)}|${asText(row.country).toUpperCase()}|${asText(row.parentAsin).toUpperCase()}`;
+    const productByParentAsin = new Map(existingProductRows
+      .filter((row) => input.dataDomain !== "parent_asin_weekly_mcp" || row.sourceKind === "lingxing_mcp_parent_asin_weekly")
+      .map((row) => [input.dataDomain === "parent_asin_weekly_mcp" ? weeklyIdentity(row as unknown as RecordValue) : asText(row.parentAsin), row]));
     const inventoryByAsin = new Map(existingInventoryRows.map((row) => [asText(row.asin), row]));
     const inventoryByAsinDate = new Map(existingInventoryRows.map((row) => [dailySnapshotIdentityKey({ sourceStoreId: row.sourceStoreId, country: row.country, asin: row.asin, reportDate: row.reportDate }), row]));
     const campaignByKey = new Map(existingCampaignRows.map((row) => [`${asText(row.campaignName)}|${asText(row.storeName)}`, row]));
     const keywordByKey = new Map(existingKeywordRows.map((row) => [`${asText(row.campaignName)}|${asText(row.keyword)}|${asText(row.matchType)}`, row]));
     const rows = applicableRows.map(({ source, normalized }) => {
-      const output = { ...normalized.normalized };
+      const output: RecordValue = { ...normalized.normalized };
       const errors = [...normalized.validationErrors];
       let current: RecordValue = {};
       let targetReference: RecordValue | null = null;
       let matchInfo: RecordValue | null = null;
-      if (["product_performance", "order_profit"].includes(input.dataDomain)) {
-        const target = productByParentAsin.get(asText(output.parentAsin || output.asin));
+      if (["product_performance", "order_profit", "parent_asin_weekly_mcp"].includes(input.dataDomain)) {
+        const target = productByParentAsin.get(input.dataDomain === "parent_asin_weekly_mcp"
+          ? weeklyIdentity({ storeName: output.storeName, country: output.country, parentAsin: output.parentAsin || output.asin })
+          : asText(output.parentAsin || output.asin));
         if (target) {
           current = target as unknown as RecordValue;
           targetReference = { table: "lingxing_product_weekly", id: target.id, parentAsin: target.parentAsin, weekStartDate: target.weekStartDate };
@@ -952,7 +985,7 @@ export const lingxingSyncRouter = router({
     return { batchId, totalRows: rows.length, toolRunId, traceId: runId };
   }),
 
-  updateRows: protectedProcedure.input(z.object({ batchId: z.number().int().positive(), rows: z.array(z.object({ id: z.number().int().positive(), selected: z.boolean(), normalizedData: z.record(z.unknown()).optional(), rowStatus: z.enum(["new", "changed", "unchanged", "unmatched", "needs_review", "skipped"]).optional() })).min(1).max(5000) })).mutation(async ({ ctx, input }) => {
+  updateRows: protectedProcedure.input(z.object({ batchId: z.number().int().positive(), rows: z.array(z.object({ id: z.number().int().positive(), selected: z.boolean(), normalizedData: z.record(z.string(), z.unknown()).optional(), rowStatus: z.enum(["new", "changed", "unchanged", "unmatched", "needs_review", "skipped"]).optional() })).min(1).max(5000) })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("数据库不可用");
     const workspaceId = ctx.user.defaultWorkspaceId!;

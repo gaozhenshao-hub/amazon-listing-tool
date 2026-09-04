@@ -1223,10 +1223,11 @@ async function buildOverviewFromLingxing(db: any, userId: number, weeksToShow: n
     const c = (r.country || "").toUpperCase();
     return c === marketplace || c.includes(marketplace);
   });
+  const preferredData = preferParentAsinWeeklySources(filteredData as any[]);
 
   // Group by parentAsin
   const parentAsinMap = new Map<string, any[]>();
-  for (const row of filteredData) {
+  for (const row of preferredData) {
     const key = row.parentAsin || row.asin || "unknown";
     if (!parentAsinMap.has(key)) parentAsinMap.set(key, []);
     parentAsinMap.get(key)!.push(row);
@@ -1584,6 +1585,18 @@ function calcChange(current: number, previous: number): { value: number; pct: nu
   return { value: current, pct: Math.round(pct * 100) / 100 };
 }
 
+/** 同一店铺、站点、父ASIN和自然周只消费一个权威周度来源。 */
+export function preferParentAsinWeeklySources<T extends { storeName?: string | null; country?: string | null; parentAsin?: string | null; asin?: string | null; weekStartDate?: string | null; sourceKind?: string | null; createdAt?: Date | null }>(rows: T[]) {
+  const rank = (row: T) => row.sourceKind === "lingxing_mcp_parent_asin_weekly" ? 3 : row.sourceKind === "internal_daily_rollup" ? 1 : 2;
+  const selected = new Map<string, T>();
+  for (const row of rows) {
+    const key = [row.storeName || "", (row.country || "").toUpperCase(), row.parentAsin || row.asin || "", row.weekStartDate || ""].join("|");
+    const current = selected.get(key);
+    if (!current || rank(row) > rank(current) || (rank(row) === rank(current) && String(row.createdAt || "") > String(current.createdAt || ""))) selected.set(key, row);
+  }
+  return [...selected.values()];
+}
+
 // ═══════════════════════════════════════════════════════
 // Helper: Build product detail from Lingxing imported data
 // Returns product header info + ALL weekly data for a single parentAsin
@@ -1608,15 +1621,16 @@ async function buildProductDetailFromLingxing(db: any, userId: number, parentAsi
     const c = (r.country || "").toUpperCase();
     return c === marketplace || c.includes(marketplace);
   });
+  const preferredData = preferParentAsinWeeklySources(filteredData as any[]);
 
-  if (filteredData.length === 0) return null;
+  if (preferredData.length === 0) return null;
 
   // Get the latest row for product info
-  const latestRow = filteredData[0];
+  const latestRow = preferredData[0];
 
   // Group rows by week
   const weekMap = new Map<string, any>();
-  for (const row of filteredData) {
+  for (const row of preferredData) {
     const weekKey = row.weekStartDate;
     if (!weekMap.has(weekKey)) weekMap.set(weekKey, row);
   }

@@ -2031,6 +2031,11 @@ export const lingxingProductWeekly = mysqlTable("lingxing_product_weekly", {
   id: int("id").autoincrement().primaryKey(),
   importId: int("import_id").notNull(),
   userId: int("user_id").notNull(),
+  // 周度事实来源明确隔离：用户上传、历史日快照聚合、官方MCP父ASIN周报不互相覆盖。
+  sourceKind: varchar("source_kind", { length: 48 }).notNull().default("uploaded_parent_asin_weekly"),
+  sourceBatchId: int("source_batch_id"),
+  sourceTraceId: varchar("source_trace_id", { length: 128 }),
+  sourceSchemaVersion: varchar("source_schema_version", { length: 32 }),
   weekStartDate: varchar("week_start_date", { length: 10 }).notNull(),
   weekEndDate: varchar("week_end_date", { length: 10 }).notNull(),
   // Basic info
@@ -2170,7 +2175,10 @@ export const lingxingProductWeekly = mysqlTable("lingxing_product_weekly", {
   organicOrders: int("organic_orders").default(0),
   organicCvr: varchar("organic_cvr", { length: 20 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("lingxing_product_weekly_source_period_idx").on(table.workspaceId, table.sourceKind, table.weekStartDate, table.weekEndDate),
+  index("lingxing_product_weekly_source_batch_idx").on(table.workspaceId, table.sourceBatchId),
+]);
 
 export type LingxingProductWeekly = typeof lingxingProductWeekly.$inferSelect;
 
