@@ -14,4 +14,13 @@ describe("父ASIN周报MCP自动应用控制面迁移", () => {
     expect(migration).not.toContain("lingxing_product_weekly");
     expect(migration).not.toContain("ops_external_sync_batches");
   });
+
+  it("将既有MCP周报计划投影至皇帝而不创建第二个任务UID", () => {
+    const projectionMigration = readFileSync(resolve(process.cwd(), "drizzle/0195_parent_asin_weekly_mcp_emperor_projection.sql"), "utf8");
+    expect(projectionMigration).toContain("FROM ops_lingxing_sync_schedules s");
+    expect(projectionMigration).toContain("'parent_asin_weekly_mcp'");
+    expect(projectionMigration).toContain("s.schedule_cron_task_uid");
+    expect(projectionMigration).not.toContain("createHeartbeatJob");
+    expect(projectionMigration).toContain("ON DUPLICATE KEY UPDATE");
+  });
 });

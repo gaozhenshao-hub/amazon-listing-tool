@@ -116,6 +116,7 @@ const supplementalMigrations = [
     "0192_parent_asin_weekly_source_columns_forward_repair.sql",
     "0193_parent_asin_weekly_mcp_control_plane_forward_repair.sql",
     "0194_parent_asin_weekly_mcp_auto_apply.sql",
+    "0195_parent_asin_weekly_mcp_emperor_projection.sql",
   ];
 
 const retiredMigrationFiles = new Set([
