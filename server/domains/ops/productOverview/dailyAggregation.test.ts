@@ -30,8 +30,29 @@ describe("领星日快照周汇总", () => {
 
   it("按子 ASIN 输出最近周销量和截止日库存", () => {
     const variants = summarizeVariantSales(records, 1);
-    expect(variants.find(item => item.asin === "A1")).toMatchObject({ fbaAvailable: 8, weekly: [{ salesQty: 5, activeDays: 2 }] });
-    expect(variants.find(item => item.asin === "A2")).toMatchObject({ fbaAvailable: 7, weekly: [{ salesQty: 4, activeDays: 1 }] });
+    expect(variants.find(item => item.asin === "A1")).toMatchObject({ salesQty: 5, salesAmount: 50, orderProfit: 12, adSpend: 5, fbaAvailable: 8, weekly: [{ salesQty: 5, activeDays: 2 }] });
+    expect(variants.find(item => item.asin === "A2")).toMatchObject({ salesQty: 4, salesAmount: 40, orderProfit: 8, adSpend: 4, fbaAvailable: 7, weekly: [{ salesQty: 4, activeDays: 1 }] });
+    expect(variants.find(item => item.asin === "A1")?.avgDailySales).toBeNull();
+  });
+
+  it("按父ASIN、店铺、站点和子ASIN区分成员，不会把跨店同ASIN合并", () => {
+    const variants = summarizeVariantSales([
+      ...records.slice(0, 1),
+      { ...records[0], storeName: "另一店铺", salesQty: 9, fbaAvailable: 19, sku: "SKU-OTHER" },
+    ], 1);
+    expect(variants).toHaveLength(2);
+    expect(variants).toEqual(expect.arrayContaining([
+      expect.objectContaining({ identityKey: "P1|店铺|US|A1", salesQty: 2, fbaAvailable: 10 }),
+      expect.objectContaining({ identityKey: "P1|另一店铺|US|A1", salesQty: 9, fbaAvailable: 19 }),
+    ]));
+  });
+
+  it("仅在完整日快照窗口中计算平均日销，不将缺失日期视为零", () => {
+    const completeWeek = Array.from({ length: 7 }, (_, index) => ({
+      ...records[0], reportDate: `2026-08-${String(17 + index).padStart(2, "0")}`, salesQty: 7,
+    }));
+    const [variant] = summarizeVariantSales(completeWeek, 1);
+    expect(variant).toMatchObject({ salesQty: 49, observedDays: 7, expectedDays: 7, avgDailySales: 7 });
   });
 
   it("保留最新日快照中的上传运营人员以供名称映射", () => {

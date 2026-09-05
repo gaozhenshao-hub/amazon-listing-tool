@@ -8,6 +8,7 @@ export type DailySnapshot = {
 };
 
 const numberOf = (value: number | string | null | undefined) => Number(value || 0) || 0;
+const identityPart = (value: string | null | undefined) => String(value || "").trim().toUpperCase();
 const mondayOf = (date: string) => {
   const value = new Date(`${date}T00:00:00Z`);
   const shift = (value.getUTCDay() + 6) % 7;
@@ -102,21 +103,73 @@ export function summarizeParentAsinWeeks(records: DailySnapshot[], weeksToShow: 
 export function summarizeVariantSales(records: DailySnapshot[], weeks: number) {
   const preferredByDayAndAsin = new Map<string, DailySnapshot>();
   for (const record of records) {
-    const key = [record.storeName, record.country, record.asin, record.reportDate].join("|");
+    // 子ASIN在不同店铺或站点可以是不同的业务实体，不能按裸ASIN合并。
+    const key = [record.parentAsin, record.storeName, record.country, record.asin, record.reportDate].map(identityPart).join("|");
     const existing = preferredByDayAndAsin.get(key);
-    if (!existing || record.sourceType === "lingxing_mcp") preferredByDayAndAsin.set(key, record);
+    const currentIsMcp = record.sourceType === "lingxing_mcp";
+    const existingIsMcp = existing?.sourceType === "lingxing_mcp";
+    if (!existing || (currentIsMcp && !existingIsMcp)) preferredByDayAndAsin.set(key, record);
   }
   records = [...preferredByDayAndAsin.values()];
   const latestWeeks = [...new Set(records.map(row => mondayOf(row.reportDate)))].sort((a, b) => b.localeCompare(a)).slice(0, weeks);
   const rows = records.filter(row => latestWeeks.includes(mondayOf(row.reportDate)));
   const variants = new Map<string, DailySnapshot[]>();
-  for (const row of rows) variants.set(row.asin, [...(variants.get(row.asin) || []), row]);
-  return [...variants.entries()].map(([asin, variantRows]) => {
+  for (const row of rows) {
+    const key = [row.parentAsin, row.storeName, row.country, row.asin].map(identityPart).join("|");
+    variants.set(key, [...(variants.get(key) || []), row]);
+  }
+  return [...variants.values()].map((variantRows) => {
     const latest = variantRows.sort((a, b) => b.reportDate.localeCompare(a.reportDate))[0];
     const weekly = latestWeeks.map(weekStartDate => {
-        const periodRows = variantRows.filter(row => mondayOf(row.reportDate) === weekStartDate);
-      return { weekStartDate, weekEndDate: sundayOf(weekStartDate), salesQty: periodRows.reduce((sum, row) => sum + numberOf(row.salesQty), 0), activeDays: new Set(periodRows.map(row => row.reportDate)).size };
+      const periodRows = variantRows.filter(row => mondayOf(row.reportDate) === weekStartDate);
+      const activeDays = new Set(periodRows.map(row => row.reportDate)).size;
+      return {
+        weekStartDate,
+        weekEndDate: sundayOf(weekStartDate),
+        salesQty: activeDays > 0 ? periodRows.reduce((sum, row) => sum + numberOf(row.salesQty), 0) : null,
+        activeDays,
+      };
     });
-    return { asin, sku: latest.sku || null, title: latest.title || null, fbaAvailable: latest.fbaAvailable, fbaInTransit: latest.fbaInTransit, sourceLocalAvailable: latest.sourceLocalAvailable, weekly };
+    const observedDays = new Set(variantRows.map(row => row.reportDate)).size;
+    const expectedDays = latestWeeks.length * 7;
+    const salesQty = variantRows.reduce((sum, row) => sum + numberOf(row.salesQty), 0);
+    const salesAmount = variantRows.reduce((sum, row) => sum + numberOf(row.salesAmount), 0);
+    const orderProfit = variantRows.reduce((sum, row) => sum + numberOf(row.orderProfit), 0);
+    const adSpend = variantRows.reduce((sum, row) => sum + numberOf(row.adSpend), 0);
+    const adSales = variantRows.reduce((sum, row) => sum + numberOf(row.adSales), 0);
+    const adOrders = variantRows.reduce((sum, row) => sum + numberOf(row.adOrders), 0);
+    const organicOrders = variantRows.reduce((sum, row) => sum + numberOf(row.organicOrders), 0);
+    const sessionsTotal = variantRows.reduce((sum, row) => sum + numberOf(row.sessionsTotal), 0);
+    const adClicks = variantRows.reduce((sum, row) => sum + numberOf(row.adClicks), 0);
+    const adImpressions = variantRows.reduce((sum, row) => sum + numberOf(row.adImpressions), 0);
+    return {
+      identityKey: [latest.parentAsin, latest.storeName, latest.country, latest.asin].map(identityPart).join("|"),
+      parentAsin: latest.parentAsin,
+      asin: latest.asin,
+      storeName: latest.storeName,
+      country: latest.country,
+      sku: latest.sku || null,
+      title: latest.title || null,
+      latestReportDate: latest.reportDate,
+      salesQty,
+      // 仅在完整周窗口具有逐日证据时计算“平均日销”；不把缺失日期当作零销量。
+      avgDailySales: expectedDays > 0 && observedDays === expectedDays ? salesQty / expectedDays : null,
+      observedDays,
+      expectedDays,
+      salesAmount,
+      orderProfit,
+      adSpend,
+      adSales,
+      adOrders,
+      organicOrders,
+      sessionsTotal,
+      adClicks,
+      adImpressions,
+      acos: adSales > 0 ? adSpend / adSales * 100 : null,
+      fbaAvailable: latest.fbaAvailable,
+      fbaInTransit: latest.fbaInTransit,
+      sourceLocalAvailable: latest.sourceLocalAvailable,
+      weekly,
+    };
   });
 }

@@ -5,6 +5,7 @@ import { currentOpsWorkspaceId } from "../workspaceContext";
 import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
+import { buildParentWeeklyOverview } from "../productOverview/parentWeeklyOverview";
 
 const {
   MARKETPLACE_MID_MAP,
@@ -895,139 +896,55 @@ export const opsWeeklyProcedures = {
       const marketplace = input?.marketplace || "US";
       const statusFilter = input?.statusFilter || "active";
       const weeksToShow = input?.weeks || 4;
-
-      // Build where conditions
-      const conditions = [eq(productProfiles.userId, ctx.user.id)];
-      if (marketplace !== "all") {
-        conditions.push(eq(productProfiles.marketplace, marketplace));
+      const workspaceId = currentOpsWorkspaceId();
+      const recentWeekStarts = await db!.selectDistinct({ weekStartDate: lingxingProductWeekly.weekStartDate })
+        .from(lingxingProductWeekly)
+        .where(opsWorkspaceCondition(lingxingProductWeekly, workspaceId, eq(lingxingProductWeekly.sourceKind, "lingxing_mcp_parent_asin_weekly")))
+        .orderBy(desc(lingxingProductWeekly.weekStartDate))
+        .limit(weeksToShow + 1);
+      const weekStartDates = recentWeekStarts.map((row) => row.weekStartDate).filter((date): date is string => Boolean(date));
+      const [weeklyFacts, products] = await Promise.all([
+        weekStartDates.length ? db!.select().from(lingxingProductWeekly)
+          .where(opsWorkspaceCondition(lingxingProductWeekly, workspaceId, and(
+            eq(lingxingProductWeekly.sourceKind, "lingxing_mcp_parent_asin_weekly"),
+            inArray(lingxingProductWeekly.weekStartDate, weekStartDates),
+          ))) : Promise.resolve([]),
+        db!.select().from(productProfiles)
+          .where(opsWorkspaceCondition(productProfiles, workspaceId)),
+      ]);
+      const productIds = products.map((product) => product.id);
+      const [variants, basicInfos, monthlySummaries] = productIds.length ? await Promise.all([
+        db!.select().from(productVariants)
+          .where(opsWorkspaceCondition(productVariants, workspaceId, inArray(productVariants.productId, productIds))),
+        db!.select().from(productBasicInfo)
+          .where(opsWorkspaceCondition(productBasicInfo, workspaceId, and(eq(productBasicInfo.userId, ctx.user.id), inArray(productBasicInfo.productId, productIds)))),
+        db!.select().from(productMonthlySummary)
+          .where(opsWorkspaceCondition(productMonthlySummary, workspaceId, and(eq(productMonthlySummary.userId, ctx.user.id), inArray(productMonthlySummary.productId, productIds))))
+          .orderBy(desc(productMonthlySummary.yearMonth)),
+      ]) : [[], [], []];
+      const variantsByProduct = new Map<number, typeof variants>();
+      for (const variant of variants) variantsByProduct.set(variant.productId, [...(variantsByProduct.get(variant.productId) || []), variant]);
+      const basicInfoByProduct = new Map(basicInfos.map((basicInfo) => [basicInfo.productId, basicInfo]));
+      const monthlyByProduct = new Map<number, typeof monthlySummaries>();
+      for (const summary of monthlySummaries) {
+        const existing = monthlyByProduct.get(summary.productId) || [];
+        if (existing.length < 3) monthlyByProduct.set(summary.productId, [...existing, summary]);
       }
-      if (statusFilter !== "all") {
-        conditions.push(eq(productProfiles.status, statusFilter as any));
-      }
-
-      const products = await db!.select().from(productProfiles)
-        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(...conditions)))
-        .orderBy(desc(productProfiles.updatedAt));
-
-      // For each product, get basic info + last N weeks + monthly summaries
-      const result = await Promise.all(products.map(async (p) => {
-        // Get variants, basic info
-        const [variants, basicInfoArr, weeklyData, monthlySummaries] = await Promise.all([
-          db!.select().from(productVariants)
-            .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, p.id))),
-          db!.select().from(productBasicInfo)
-            .where(opsWorkspaceCondition(productBasicInfo, currentOpsWorkspaceId(), and(eq(productBasicInfo.productId, p.id), eq(productBasicInfo.userId, ctx.user.id))))
-            .limit(1),
-          db!.select().from(productWeeklyOps)
-            .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(
-              eq(productWeeklyOps.productId, p.id),
-              eq(productWeeklyOps.userId, ctx.user.id),
-            )))
-            .orderBy(desc(productWeeklyOps.weekStartDate))
-            .limit(weeksToShow + 1), // +1 for previous week comparison
-          db!.select().from(productMonthlySummary)
-            .where(opsWorkspaceCondition(productMonthlySummary, currentOpsWorkspaceId(), and(
-              eq(productMonthlySummary.productId, p.id),
-              eq(productMonthlySummary.userId, ctx.user.id),
-            )))
-            .orderBy(desc(productMonthlySummary.yearMonth))
-            .limit(3),
-        ]);
-
-        const basicInfo = basicInfoArr[0] || null;
-        const skus = variants.map(v => v.sku).filter(Boolean);
-
-        // Build weekly rows with WoW (week-over-week) comparison
-        const weeksWithComparison = weeklyData.slice(0, weeksToShow).map((week, idx) => {
-          const prevWeek = weeklyData[idx + 1] || null; // previous week for comparison
-
-          function calcChange(current: number, previous: number | null): { value: number; pct: number | null } {
-            if (previous === null || previous === 0) return { value: current, pct: null };
-            const pct = ((current - previous) / Math.abs(previous)) * 100;
-            return { value: current, pct: Math.round(pct * 100) / 100 };
-          }
-
-          const salesQty = week.salesQty || 0;
-          const orderQty = week.orderQty || 0;
-          const salesAmount = parseFloat(String(week.salesAmount || "0"));
-          const orderProfit = parseFloat(String(week.orderProfit || "0"));
-          const profitMargin = parseFloat(String(week.orderProfitMargin || "0"));
-          const sessionTotal = week.sessionTotal || 0;
-          const totalCvr = parseFloat(String(week.totalCvr || "0"));
-          const adCvr = parseFloat(String(week.adCvr || "0"));
-          const organicCvr = parseFloat(String(week.organicCvr || "0"));
-          const adOrders = week.adOrders || 0;
-          const organicOrders = week.organicOrders || 0;
-          const adClicks = week.adClicks || 0;
-          const ctr = parseFloat(String(week.ctr || "0"));
-          const adImpressions = week.adImpressions || 0;
-          const cpc = parseFloat(String(week.cpc || "0"));
-          const adSpend = parseFloat(String(week.adSpend || "0"));
-          const adSales = parseFloat(String((week as any).adSales || "0"));
-          const acos = parseFloat(String(week.acos || "0"));
-          const rating = parseFloat(String(week.rating || "0"));
-          const reviewCount = week.reviewCount || 0;
-          const returnRate = parseFloat(String(week.returnRate || "0"));
-
-          return {
-            id: week.id,
-            weekStartDate: week.weekStartDate,
-            weekEndDate: week.weekEndDate,
-            salesTrend: week.salesTrend,
-            // Core metrics
-            salesQty,
-            orderQty,
-            salesAmount,
-            orderProfit,
-            profitMargin,
-            // Session & CVR
-            sessionTotal,
-            totalCvr,
-            adCvr,
-            organicCvr,
-            // Orders breakdown
-            adOrders,
-            organicOrders,
-            // Ad metrics
-            adClicks,
-            ctr,
-            adImpressions,
-            cpc,
-            adSpend,
-            adSales,
-            acos,
-            // Quality
-            rating,
-            reviewCount,
-            returnRate,
-            // Week-over-week changes
-            wow: prevWeek ? {
-              salesQty: calcChange(salesQty, prevWeek.salesQty || 0),
-              salesAmount: calcChange(salesAmount, parseFloat(String(prevWeek.salesAmount || "0"))),
-              orderProfit: calcChange(orderProfit, parseFloat(String(prevWeek.orderProfit || "0"))),
-              sessionTotal: calcChange(sessionTotal, prevWeek.sessionTotal || 0),
-              adSpend: calcChange(adSpend, parseFloat(String(prevWeek.adSpend || "0"))),
-              acos: calcChange(acos, parseFloat(String(prevWeek.acos || "0"))),
-            } : null,
-          };
-        });
-
+      const profileSeeds = products.map((product) => {
+        const basicInfo = basicInfoByProduct.get(product.id);
         return {
-          // Product info
-          id: p.id,
-          parentAsin: p.parentAsin,
-          title: p.title,
-          chineseName: p.chineseName,
-          brand: p.brand,
-          category: p.category,
-          marketplace: p.marketplace,
-          imageUrl: p.imageUrl,
-          status: p.status,
-          operator: p.operator,
-          storeName: p.storeName,
-          variantCount: variants.length,
-          skus,
-          // Basic info (pricing/margins)
+          id: product.id,
+          parentAsin: product.parentAsin,
+          title: product.title,
+          chineseName: product.chineseName,
+          brand: product.brand,
+          category: product.category,
+          marketplace: product.marketplace,
+          imageUrl: product.imageUrl,
+          status: product.status,
+          operator: product.operator,
+          storeName: product.storeName,
+          updatedAt: product.updatedAt,
           basicInfo: basicInfo ? {
             sellingPrice: basicInfo.sellingPrice,
             breakEvenPrice: basicInfo.breakEvenPrice,
@@ -1040,22 +957,25 @@ export const opsWeeklyProcedures = {
             currentStock: basicInfo.currentStock,
             inTransitStock: basicInfo.inTransitStock,
           } : null,
-          // Weekly data (most recent N weeks)
-          weeks: weeksWithComparison,
-          // Monthly summaries
-          monthlySummaries: monthlySummaries.map(m => ({
-            yearMonth: m.yearMonth,
-            financialProfit: m.financialProfit,
-            orderProfitTotal: m.orderProfitTotal,
-            totalSalesQty: m.totalSalesQty,
-            totalOrderQty: m.totalOrderQty,
-            totalSalesAmount: m.totalSalesAmount,
-            totalAdSpend: m.totalAdSpend,
-            avgAcos: m.avgAcos,
+          monthlySummaries: (monthlyByProduct.get(product.id) || []).map((summary) => ({
+            yearMonth: summary.yearMonth,
+            financialProfit: summary.financialProfit,
+            orderProfitTotal: summary.orderProfitTotal,
+            totalSalesQty: summary.totalSalesQty,
+            totalOrderQty: summary.totalOrderQty,
+            totalSalesAmount: summary.totalSalesAmount,
+            totalAdSpend: summary.totalAdSpend,
+            avgAcos: summary.avgAcos,
           })),
+          manualChildAsins: (variantsByProduct.get(product.id) || []).map((variant) => variant.childAsin),
+          manualSkus: (variantsByProduct.get(product.id) || []).map((variant) => variant.sku).filter((sku): sku is string => Boolean(sku)),
         };
-      }));
-
-      return result;
+      });
+      const overview = buildParentWeeklyOverview(weeklyFacts, profileSeeds, weeksToShow);
+      return overview.filter((product) => {
+        const matchesMarketplace = marketplace === "all" || product.marketplace?.toUpperCase() === marketplace.toUpperCase();
+        const matchesStatus = statusFilter === "all" || product.status === statusFilter;
+        return matchesMarketplace && matchesStatus;
+      });
     }),
 };

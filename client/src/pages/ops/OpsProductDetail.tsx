@@ -39,6 +39,12 @@ function fmtNum(v: number | null | undefined, decimals = 0): string {
   if (v == null || isNaN(v)) return "-";
   return v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
+function fmtProvidedNum(v: number | null | undefined, decimals = 0): string {
+  return v == null || isNaN(v) ? "未提供" : fmtNum(v, decimals);
+}
+function fmtProvidedCurrency(v: number | null | undefined): string {
+  return v == null || isNaN(v) ? "未提供" : `$${fmtNum(v, 2)}`;
+}
 function fmtPct(v: number | null | undefined): string {
   if (v == null || isNaN(v)) return "-";
   return `${v.toFixed(1)}%`;
@@ -67,28 +73,32 @@ export default function OpsProductDetail() {
   const [isErpRoute, erpParams] = useRoute("/ops/products/erp/:source/:parentAsin");
   const [isImportRoute, importParams] = useRoute("/ops/products/import/:source/:parentAsin");
   const [isSystemRoute, systemParams] = useRoute("/ops/products/:id");
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
 
   const isImportMode = !!isErpRoute || !!isImportRoute;
   const erpParamsOrLegacy = erpParams || importParams;
   const sourceType = erpParamsOrLegacy?.source as "lingxing" | "saihu" | undefined;
   const importParentAsin = erpParamsOrLegacy?.parentAsin ? decodeURIComponent(erpParamsOrLegacy.parentAsin) : undefined;
   const productId = isSystemRoute ? Number(systemParams?.id) : 0;
+  const importSearch = new URLSearchParams(location.split("?")[1] || "");
+  const importStoreName = importSearch.get("store") || undefined;
+  const importCountry = importSearch.get("country") || undefined;
 
   // ─── Import Mode Data Query ───
   const { data: importDetail, isLoading: loadingImport } = trpc.dataImport.getProductDetailFromImport.useQuery(
-    { parentAsin: importParentAsin || "", sourceType: sourceType || "lingxing", marketplace: "ALL" },
+    { parentAsin: importParentAsin || "", sourceType: sourceType || "lingxing", marketplace: "ALL", storeName: importStoreName, country: importCountry },
     { enabled: isImportMode && !!importParentAsin && !!sourceType }
   );
   const [variantWeeks, setVariantWeeks] = useState(4);
-  const { data: dailyVariants } = trpc.dataImport.getLingxingDailyVariants.useQuery(
-    { parentAsin: importParentAsin || "", weeks: variantWeeks, marketplace: "ALL" },
-    { enabled: isImportMode && sourceType === "lingxing" && !!importParentAsin }
-  );
 
   // ─── System Mode Data Queries ───
   const { data: product, isLoading: loadingProduct, refetch: refetchProduct } = trpc.productOps.getProduct.useQuery(
     { id: productId }, { enabled: !isImportMode && !!productId }
+  );
+  const dailyVariantParentAsin = isImportMode ? importParentAsin : product?.parentAsin;
+  const { data: dailyVariants } = trpc.dataImport.getLingxingDailyVariants.useQuery(
+    { parentAsin: dailyVariantParentAsin || "", weeks: variantWeeks, marketplace: "ALL", storeName: isImportMode ? importStoreName : undefined, country: isImportMode ? importCountry : undefined },
+    { enabled: !!dailyVariantParentAsin && (isImportMode ? sourceType === "lingxing" : !!productId) }
   );
   const { data: profitData, isLoading: loadingProfit, error: profitError, refetch: refetchProfit, isFetching: fetchingProfit } = trpc.productOps.getProductProfitSummary.useQuery(
     { productId }, { enabled: !isImportMode && !!productId, retry: 1 }
@@ -394,7 +404,7 @@ export default function OpsProductDetail() {
             <CardContent>
               {sourceType === "lingxing" ? (
                 !dailyVariants?.length ? <p className="text-sm text-muted-foreground text-center py-4">暂无日粒度变体销量数据</p> : (
-                  <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-muted-foreground"><th className="text-left py-2 font-medium">子ASIN</th><th className="text-left py-2 font-medium">SKU</th><th className="text-right py-2 font-medium">最近{variantWeeks}周销量</th><th className="text-right py-2 font-medium">平均日销</th><th className="text-right py-2 font-medium">可售库存</th><th className="text-right py-2 font-medium">在途库存</th></tr></thead><tbody>{dailyVariants.map((v: any) => <tr key={`${v.asin}-${v.storeName}-${v.country}`} className="border-b last:border-0"><td className="py-2 font-mono text-xs">{v.asin}</td><td className="py-2 text-xs">{v.sku || "-"}</td><td className="py-2 text-right">{v.salesQty}</td><td className="py-2 text-right">{v.avgDailySales}</td><td className="py-2 text-right">{v.fbaAvailable}</td><td className="py-2 text-right">{v.fbaInTransit}</td></tr>)}</tbody></table></div>
+                  <div className="overflow-x-auto"><table className="w-full min-w-[1460px] text-sm"><thead><tr className="border-b text-muted-foreground"><th className="text-left py-2 font-medium">子ASIN</th><th className="text-left py-2 font-medium">店铺 / 站点</th><th className="text-left py-2 font-medium">SKU</th><th className="text-right py-2 font-medium">最近{variantWeeks}周销量</th><th className="text-right py-2 font-medium">平均日销</th><th className="text-right py-2 font-medium">销售额</th><th className="text-right py-2 font-medium">订单利润</th><th className="text-right py-2 font-medium">广告花费</th><th className="text-right py-2 font-medium">广告销售额</th><th className="text-right py-2 font-medium">ACoS</th><th className="text-right py-2 font-medium">Session</th><th className="text-right py-2 font-medium">可售库存</th><th className="text-right py-2 font-medium">在途库存</th><th className="text-right py-2 font-medium">数据日期</th></tr></thead><tbody>{dailyVariants.map((v: any) => <tr key={v.identityKey || `${v.parentAsin}-${v.storeName}-${v.country}-${v.asin}`} className="border-b last:border-0"><td className="py-2 font-mono text-xs">{v.asin}</td><td className="py-2 text-xs">{v.storeName || "未提供"} / {v.country || "未提供"}</td><td className="py-2 text-xs">{v.sku || "未提供"}</td><td className="py-2 text-right">{fmtProvidedNum(v.salesQty)}</td><td className="py-2 text-right" title={v.avgDailySales == null ? `已覆盖 ${v.observedDays ?? 0}/${v.expectedDays ?? 0} 天` : undefined}>{fmtProvidedNum(v.avgDailySales, 1)}</td><td className="py-2 text-right">{fmtProvidedCurrency(v.salesAmount)}</td><td className="py-2 text-right">{fmtProvidedCurrency(v.orderProfit)}</td><td className="py-2 text-right">{fmtProvidedCurrency(v.adSpend)}</td><td className="py-2 text-right">{fmtProvidedCurrency(v.adSales)}</td><td className="py-2 text-right">{v.acos == null ? "未提供" : fmtPct(v.acos)}</td><td className="py-2 text-right">{fmtProvidedNum(v.sessionsTotal)}</td><td className="py-2 text-right">{fmtProvidedNum(v.fbaAvailable)}</td><td className="py-2 text-right">{fmtProvidedNum(v.fbaInTransit)}</td><td className="py-2 text-right text-xs text-muted-foreground">{v.latestReportDate || "未提供"}</td></tr>)}</tbody></table></div>
                 )
               ) : derivedProduct.variants.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">暂无变体数据</p>
@@ -439,16 +449,21 @@ export default function OpsProductDetail() {
           {/* Variants */}
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">子ASIN变体</CardTitle>
-                <Button size="sm" variant="outline" onClick={() => setShowAddVariant(true)}>
-                  <Plus className="h-3 w-3 mr-1" /> 添加变体
-                </Button>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="text-base">子ASIN变体数据 ({dailyVariants?.length ?? derivedProduct.variants.length})</CardTitle>
+                <div className="flex items-center gap-2">
+                  <div className="flex rounded-md border p-0.5">{[1, 2, 3, 4].map(week => <Button key={week} size="sm" variant={variantWeeks === week ? "secondary" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setVariantWeeks(week)}>近{week}周</Button>)}</div>
+                  <Button size="sm" variant="outline" onClick={() => setShowAddVariant(true)}>
+                    <Plus className="h-3 w-3 mr-1" /> 添加变体
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
-              {derivedProduct.variants.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">暂无变体，点击上方按钮添加</p>
+              {dailyVariants?.length ? (
+                <div className="overflow-x-auto"><table className="w-full min-w-[1460px] text-sm"><thead><tr className="border-b text-muted-foreground"><th className="text-left py-2 font-medium">子ASIN</th><th className="text-left py-2 font-medium">店铺 / 站点</th><th className="text-left py-2 font-medium">SKU</th><th className="text-right py-2 font-medium">最近{variantWeeks}周销量</th><th className="text-right py-2 font-medium">平均日销</th><th className="text-right py-2 font-medium">销售额</th><th className="text-right py-2 font-medium">订单利润</th><th className="text-right py-2 font-medium">广告花费</th><th className="text-right py-2 font-medium">广告销售额</th><th className="text-right py-2 font-medium">ACoS</th><th className="text-right py-2 font-medium">Session</th><th className="text-right py-2 font-medium">可售库存</th><th className="text-right py-2 font-medium">在途库存</th><th className="text-right py-2 font-medium">数据日期</th></tr></thead><tbody>{dailyVariants.map((v: any) => <tr key={v.identityKey || `${v.parentAsin}-${v.storeName}-${v.country}-${v.asin}`} className="border-b last:border-0"><td className="py-2 font-mono text-xs">{v.asin}</td><td className="py-2 text-xs">{v.storeName || "未提供"} / {v.country || "未提供"}</td><td className="py-2 text-xs">{v.sku || "未提供"}</td><td className="py-2 text-right">{fmtProvidedNum(v.salesQty)}</td><td className="py-2 text-right" title={v.avgDailySales == null ? `已覆盖 ${v.observedDays ?? 0}/${v.expectedDays ?? 0} 天` : undefined}>{fmtProvidedNum(v.avgDailySales, 1)}</td><td className="py-2 text-right">{fmtProvidedCurrency(v.salesAmount)}</td><td className="py-2 text-right">{fmtProvidedCurrency(v.orderProfit)}</td><td className="py-2 text-right">{fmtProvidedCurrency(v.adSpend)}</td><td className="py-2 text-right">{fmtProvidedCurrency(v.adSales)}</td><td className="py-2 text-right">{v.acos == null ? "未提供" : fmtPct(v.acos)}</td><td className="py-2 text-right">{fmtProvidedNum(v.sessionsTotal)}</td><td className="py-2 text-right">{fmtProvidedNum(v.fbaAvailable)}</td><td className="py-2 text-right">{fmtProvidedNum(v.fbaInTransit)}</td><td className="py-2 text-right text-xs text-muted-foreground">{v.latestReportDate || "未提供"}</td></tr>)}</tbody></table></div>
+              ) : derivedProduct.variants.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">暂无具备日数据的变体；可手工维护基础变体档案</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">

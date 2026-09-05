@@ -272,7 +272,7 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort, isImportMode, productionConfig, onUpdateProductionConfig, planningRows, financialProfits = [], onSaveCostParameters, onSaveFinancialProfits }: {
   product: ProductOverview;
   onNavigate: (id: number) => void;
-  onNavigateImport?: (parentAsin: string, source: "lingxing" | "saihu") => void;
+  onNavigateImport?: (parentAsin: string, source: "lingxing" | "saihu", storeName?: string | null, country?: string | null) => void;
   onDelete: (id: number) => void;
   onSync: (productId: number) => void;
   isSyncing: boolean;
@@ -299,6 +299,7 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
   const [costDrafts, setCostDrafts] = useState<Record<string, Record<string, string>>>({});
   const [financialProfitOpen, setFinancialProfitOpen] = useState(false);
   const [financialProfitDrafts, setFinancialProfitDrafts] = useState<Record<string, string>>({});
+  const hasManagedProfile = product.id > 0;
   const bi = product.basicInfo;
   const profitTrend = useMemo(() => Array.from({ length: 6 }, (_, index) => {
     const date = new Date(); date.setMonth(date.getMonth() - 5 + index);
@@ -445,7 +446,7 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
 
           {/* Operator (运营负责人) */}
           {/* Operator display & assign popover */}
-          {(() => {
+          {hasManagedProfile ? (() => {
             const assignedNames = (product.operator || "").split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean);
             return (
               <Popover open={assignOpen} onOpenChange={setAssignOpen}>
@@ -497,7 +498,9 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
                 </PopoverContent>
               </Popover>
             );
-          })()}
+          })() : (
+            <TooltipProvider><Tooltip><TooltipTrigger asChild><span className="text-xs rounded px-2 py-1 border text-muted-foreground bg-muted/40">未绑定档案</span></TooltipTrigger><TooltipContent>该周报来源行尚未绑定手工产品档案，不能执行负责人分配。</TooltipContent></Tooltip></TooltipProvider>
+          )}
 
           {/* Actions */}
           <div className="flex items-center gap-1">
@@ -507,11 +510,11 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="sm" className={`h-7 w-7 p-0 ${isSyncing ? 'text-blue-500' : 'text-muted-foreground hover:text-blue-600'}`}
                     onClick={(e) => { e.stopPropagation(); onSync(product.id); }}
-                    disabled={isSyncing}>
+                    disabled={isSyncing || !hasManagedProfile}>
                     {isSyncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{isSyncing ? '同步中...' : '同步本产品数据'}</TooltipContent>
+                <TooltipContent>{!hasManagedProfile ? '来源行尚未绑定产品档案' : isSyncing ? '同步中...' : '同步本产品数据'}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             )}
@@ -520,11 +523,11 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
-                    onClick={(e) => { e.stopPropagation(); onNavigate(product.id); }}>
+                    onClick={(e) => { e.stopPropagation(); onNavigate(product.id); }} disabled={!hasManagedProfile}>
                     <ExternalLink className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>查看详情</TooltipContent>
+                <TooltipContent>{hasManagedProfile ? '查看详情' : '来源行尚未绑定产品档案'}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             )}
@@ -533,7 +536,7 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-500 hover:text-blue-700"
-                    onClick={(e) => { e.stopPropagation(); onNavigateImport(product.parentAsin, product.erpSource || "lingxing"); }}>
+                    onClick={(e) => { e.stopPropagation(); onNavigateImport(product.parentAsin, product.erpSource || "lingxing", product.storeName, product.marketplace); }}>
                     <ExternalLink className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -546,11 +549,11 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
-                    onClick={(e) => { e.stopPropagation(); if (confirm("确定删除该产品及其所有关联数据？")) onDelete(product.id); }}>
+                    onClick={(e) => { e.stopPropagation(); if (confirm("确定删除该产品及其所有关联数据？")) onDelete(product.id); }} disabled={!hasManagedProfile}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>删除产品</TooltipContent>
+                <TooltipContent>{hasManagedProfile ? '删除产品' : '来源行尚未绑定产品档案'}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             )}
@@ -1350,7 +1353,12 @@ export default function OpsProducts() {
               key={`${product.erpSource || "system"}-${product.parentAsin}-${product.storeName || ""}-${product.marketplace || ""}`}
               product={product}
               onNavigate={(id) => navigate(`/ops/products/${id}`)}
-              onNavigateImport={(parentAsin, source) => navigate(`/ops/products/erp/${source}/${encodeURIComponent(parentAsin)}`)}
+              onNavigateImport={(parentAsin, source, storeName, country) => {
+                const query = new URLSearchParams();
+                if (storeName) query.set("store", storeName);
+                if (country) query.set("country", country);
+                navigate(`/ops/products/erp/${source}/${encodeURIComponent(parentAsin)}${query.size ? `?${query.toString()}` : ""}`);
+              }}
               onDelete={(id) => deleteMut.mutate({ id })}
               onSync={(id) => { setSyncingProductId(id); syncSingleProductMut.mutate({ productId: id }); }}
               isSyncing={syncingProductId === product.id && syncSingleProductMut.isPending}

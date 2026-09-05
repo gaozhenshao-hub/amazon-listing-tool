@@ -724,7 +724,7 @@ export const dataImportRouter = router({
     }),
 
   getLingxingDailyVariants: protectedProcedure
-    .input(z.object({ parentAsin: z.string(), weeks: z.number().min(1).max(4).default(4), marketplace: z.string().default("ALL") }))
+    .input(z.object({ parentAsin: z.string(), weeks: z.number().min(1).max(4).default(4), marketplace: z.string().default("ALL"), storeName: z.string().optional(), country: z.string().optional() }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
@@ -733,7 +733,11 @@ export const dataImportRouter = router({
           eq(opsAsinDailySnapshots.userId, effectiveUserId),
           eq(opsAsinDailySnapshots.parentAsin, input.parentAsin),
         )));
-      const filtered = rows.filter(row => row.sourceType !== "lx_inventory_mcp" && matchesLingxingMarketplace(row, input.marketplace));
+      const normalizeIdentity = (value: string | null | undefined) => String(value || "").trim().toUpperCase();
+      const filtered = rows.filter(row => row.sourceType !== "lx_inventory_mcp"
+        && matchesLingxingMarketplace(row, input.marketplace)
+        && (!input.storeName || normalizeIdentity(row.storeName) === normalizeIdentity(input.storeName))
+        && (!input.country || normalizeIdentity(row.country) === normalizeIdentity(input.country)));
       return summarizeVariantSales(filtered as any, input.weeks);
     }),
 
@@ -1135,13 +1139,15 @@ export const dataImportRouter = router({
       parentAsin: z.string(),
       sourceType: z.enum(["lingxing", "saihu"]),
       marketplace: z.string().default("ALL"),
+      storeName: z.string().optional(),
+      country: z.string().optional(),
     }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       // Resolve effective userId (non-admin users use admin's data)
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       if (input.sourceType === "lingxing") {
-        return buildProductDetailFromLingxing(db!, effectiveUserId, input.parentAsin, input.marketplace);
+        return buildProductDetailFromLingxing(db!, effectiveUserId, input.parentAsin, input.marketplace, input.storeName, input.country);
       } else {
         return buildProductDetailFromSaihu(db!, effectiveUserId, input.parentAsin, input.marketplace);
       }
@@ -1225,19 +1231,21 @@ async function buildOverviewFromLingxing(db: any, userId: number, weeksToShow: n
   });
   const preferredData = preferParentAsinWeeklySources(filteredData as any[]);
 
-  // Group by parentAsin
+  // 同一父ASIN在不同店铺或站点属于不同的业务身份，不能在总览中错误合并。
   const parentAsinMap = new Map<string, any[]>();
   for (const row of preferredData) {
-    const key = row.parentAsin || row.asin || "unknown";
+    const parentAsin = row.parentAsin || row.asin || "unknown";
+    const key = [parentAsin, row.storeName || "", row.country || ""].map((value) => String(value).trim().toUpperCase()).join("|");
     if (!parentAsinMap.has(key)) parentAsinMap.set(key, []);
     parentAsinMap.get(key)!.push(row);
   }
 
   // Build result for each parent ASIN
   const result: any[] = [];
-  for (const [parentAsin, rows] of Array.from(parentAsinMap.entries())) {
+  for (const rows of Array.from(parentAsinMap.values())) {
     // Get the latest row for product info
     const latestRow = rows.sort((a: any, b: any) => (b.weekStartDate || "").localeCompare(a.weekStartDate || ""))[0];
+    const parentAsin = latestRow.parentAsin || latestRow.asin || "unknown";
 
     // Group rows by week
     const weekMap = new Map<string, any>();
@@ -1328,7 +1336,7 @@ async function buildOverviewFromLingxing(db: any, userId: number, weeksToShow: n
       status: "active",
       operator: latestRow.operator || null,
       storeName: latestRow.storeName || null,
-      variantCount: 0,
+      variantCount: new Set(String(latestRow.asin || "").split(/[，,、;；\n]+/).map((asin: string) => asin.trim().toUpperCase()).filter((asin: string) => asin && asin !== "-")).size,
       skus: latestRow.sku ? [latestRow.sku] : [],
       basicInfo: null,
       weeks: weeksWithComparison,
@@ -1601,7 +1609,7 @@ export function preferParentAsinWeeklySources<T extends { storeName?: string | n
 // Helper: Build product detail from Lingxing imported data
 // Returns product header info + ALL weekly data for a single parentAsin
 // ═══════════════════════════════════════════════════════
-async function buildProductDetailFromLingxing(db: any, userId: number, parentAsin: string, marketplace: string) {
+async function buildProductDetailFromLingxing(db: any, userId: number, parentAsin: string, marketplace: string, storeName?: string, country?: string) {
   // Get all data for this parentAsin
   const allData = await db.select().from(lingxingProductWeekly)
     .where(and(
@@ -1617,9 +1625,14 @@ async function buildProductDetailFromLingxing(db: any, userId: number, parentAsi
     .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
   // Filter by marketplace if specified
-  const filteredData = marketplace === "ALL" ? allData : allData.filter((r: any) => {
-    const c = (r.country || "").toUpperCase();
-    return c === marketplace || c.includes(marketplace);
+  const normalizedStoreName = String(storeName || "").trim().toUpperCase();
+  const normalizedCountry = String(country || "").trim().toUpperCase();
+  const filteredData = allData.filter((r: any) => {
+    const rowCountry = (r.country || "").toUpperCase();
+    const matchesMarketplace = marketplace === "ALL" || rowCountry === marketplace || rowCountry.includes(marketplace);
+    return matchesMarketplace
+      && (!normalizedStoreName || String(r.storeName || "").trim().toUpperCase() === normalizedStoreName)
+      && (!normalizedCountry || rowCountry === normalizedCountry);
   });
   const preferredData = preferParentAsinWeeklySources(filteredData as any[]);
 
