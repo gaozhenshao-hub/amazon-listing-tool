@@ -887,7 +887,9 @@ export default function OpsProducts() {
     const fallback = (importProducts || []) as ProductOverview[];
     return buildUnifiedProductOverview(primary, fallback);
   }, [systemProducts, importProducts]);
-  const isLoading = systemLoading || importLoading;
+  // ERP history is an opportunistic fallback. Never keep the authoritative MCP
+  // overview in a loading skeleton while the historical import query is pending.
+  const isLoading = systemLoading;
 
   const [form, setForm] = useState({
     parentAsin: "", title: "", brand: "", category: "", marketplace: "US",
