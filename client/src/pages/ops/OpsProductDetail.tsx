@@ -69,57 +69,61 @@ function WowBadge({ wow }: { wow: { value: number; pct: number | null } | null |
 }
 
 export default function OpsProductDetail() {
-  // ─── Route Matching: detect import mode vs system mode ───
+  // Legacy detail URLs remain readable; the overview now opens the unified route.
   const [isErpRoute, erpParams] = useRoute("/ops/products/erp/:source/:parentAsin");
   const [isImportRoute, importParams] = useRoute("/ops/products/import/:source/:parentAsin");
+  const [isUnifiedRoute, unifiedParams] = useRoute("/ops/products/view/:parentAsin");
   const [isSystemRoute, systemParams] = useRoute("/ops/products/:id");
   const [location, navigate] = useLocation();
 
   const isImportMode = !!isErpRoute || !!isImportRoute;
+  const isSourceBackedView = isImportMode || !!isUnifiedRoute;
   const erpParamsOrLegacy = erpParams || importParams;
-  const sourceType = erpParamsOrLegacy?.source as "lingxing" | "saihu" | undefined;
-  const importParentAsin = erpParamsOrLegacy?.parentAsin ? decodeURIComponent(erpParamsOrLegacy.parentAsin) : undefined;
-  const productId = isSystemRoute ? Number(systemParams?.id) : 0;
+  const sourceType = (isUnifiedRoute ? "lingxing" : erpParamsOrLegacy?.source) as "lingxing" | "saihu" | undefined;
+  const importParentAsin = isUnifiedRoute
+    ? (unifiedParams?.parentAsin ? decodeURIComponent(unifiedParams.parentAsin) : undefined)
+    : (erpParamsOrLegacy?.parentAsin ? decodeURIComponent(erpParamsOrLegacy.parentAsin) : undefined);
   const importSearch = new URLSearchParams(location.split("?")[1] || "");
+  const productId = isSystemRoute ? Number(systemParams?.id) : Number(importSearch.get("productId") || 0);
   const importStoreName = importSearch.get("store") || undefined;
   const importCountry = importSearch.get("country") || undefined;
 
-  // ─── Import Mode Data Query ───
+  // ─── Source-backed unified data query ───
   const { data: importDetail, isLoading: loadingImport } = trpc.dataImport.getProductDetailFromImport.useQuery(
     { parentAsin: importParentAsin || "", sourceType: sourceType || "lingxing", marketplace: "ALL", storeName: importStoreName, country: importCountry },
-    { enabled: isImportMode && !!importParentAsin && !!sourceType }
+    { enabled: isSourceBackedView && !!importParentAsin && !!sourceType }
   );
   const [variantWeeks, setVariantWeeks] = useState(4);
 
   // ─── System Mode Data Queries ───
   const { data: product, isLoading: loadingProduct, refetch: refetchProduct } = trpc.productOps.getProduct.useQuery(
-    { id: productId }, { enabled: !isImportMode && !!productId }
+    { id: productId }, { enabled: !!productId }
   );
-  const dailyVariantParentAsin = isImportMode ? importParentAsin : product?.parentAsin;
+  const dailyVariantParentAsin = isSourceBackedView ? importParentAsin : product?.parentAsin;
   const { data: dailyVariants } = trpc.dataImport.getLingxingDailyVariants.useQuery(
-    { parentAsin: dailyVariantParentAsin || "", weeks: variantWeeks, marketplace: "ALL", storeName: isImportMode ? importStoreName : undefined, country: isImportMode ? importCountry : undefined },
-    { enabled: !!dailyVariantParentAsin && (isImportMode ? sourceType === "lingxing" : !!productId) }
+    { parentAsin: dailyVariantParentAsin || "", weeks: variantWeeks, marketplace: "ALL", storeName: isSourceBackedView ? importStoreName : undefined, country: isSourceBackedView ? importCountry : undefined },
+    { enabled: !!dailyVariantParentAsin && (isSourceBackedView ? sourceType === "lingxing" : !!productId) }
   );
   const { data: profitData, isLoading: loadingProfit, error: profitError, refetch: refetchProfit, isFetching: fetchingProfit } = trpc.productOps.getProductProfitSummary.useQuery(
-    { productId }, { enabled: !isImportMode && !!productId, retry: 1 }
+    { productId }, { enabled: !!productId, retry: 1 }
   );
   const { data: inventoryData, isLoading: loadingInventory, error: inventoryError, refetch: refetchInventory, isFetching: fetchingInventory } = trpc.productOps.getProductInventorySummary.useQuery(
-    { productId }, { enabled: !isImportMode && !!productId, retry: 1 }
+    { productId }, { enabled: !!productId, retry: 1 }
   );
   const { data: adsData, isLoading: loadingAds, error: adsError, refetch: refetchAds, isFetching: fetchingAds } = trpc.productOps.getProductAdsSummary.useQuery(
-    { productId }, { enabled: !isImportMode && !!productId, retry: 1 }
+    { productId }, { enabled: !!productId, retry: 1 }
   );
   const { data: todos, refetch: refetchTodos } = trpc.productOps.getTodos.useQuery(
-    { productId }, { enabled: !isImportMode && !!productId }
+    { productId }, { enabled: !!productId }
   );
   const { data: logs, refetch: refetchLogs } = trpc.productOps.getLogs.useQuery(
-    { productId }, { enabled: !isImportMode && !!productId }
+    { productId }, { enabled: !!productId }
   );
   const { data: competitors } = trpc.productOps.getProductCompetitors.useQuery(
-    { productId }, { enabled: !isImportMode && !!productId }
+    { productId }, { enabled: !!productId }
   );
   const { data: keywordMonitorsData, refetch: refetchKeywords } = trpc.productOps.getKeywordMonitors.useQuery(
-    { productId }, { enabled: !isImportMode && !!productId }
+    { productId }, { enabled: !!productId }
   );
 
   // ─── Mutations (system mode only) ───
@@ -155,7 +159,7 @@ export default function OpsProductDetail() {
   const _stableDate = stableDate;
   void _stableDate;
 
-  // ─── Chart data for import mode ───
+  // ─── Chart data for source-backed unified detail ───
   const importChartData = useMemo(() => {
     if (!importDetail?.weeks) return [];
     return [...importDetail.weeks].reverse().map(w => ({
@@ -171,9 +175,9 @@ export default function OpsProductDetail() {
     }));
   }, [importDetail?.weeks]);
 
-  // ─── Derive unified product info for both modes ───
+  // ─── Derive product info for source-backed and legacy system routes ───
   const derivedProduct = useMemo(() => {
-    if (isImportMode && importDetail) {
+    if (isSourceBackedView && importDetail) {
       const p = importDetail.product;
       return {
         title: p.title || p.parentAsin,
@@ -188,7 +192,7 @@ export default function OpsProductDetail() {
         variants: p.variants || [],
       };
     }
-    if (!isImportMode && product) {
+    if (!isSourceBackedView && product) {
       return {
         title: product.title,
         parentAsin: product.parentAsin,
@@ -203,10 +207,10 @@ export default function OpsProductDetail() {
       };
     }
     return null;
-  }, [isImportMode, importDetail, product]);
+  }, [isSourceBackedView, importDetail, product]);
 
   // ─── Loading states ───
-  const isLoading = isImportMode ? loadingImport : loadingProduct;
+  const isLoading = isSourceBackedView ? loadingImport : loadingProduct;
 
   if (isLoading) {
     return (
@@ -219,7 +223,7 @@ export default function OpsProductDetail() {
   if (!derivedProduct) {
     return (
       <div className="text-center py-12">
-        <p className="text-muted-foreground">{isImportMode ? "未找到该产品的导入数据" : "产品不存在"}</p>
+        <p className="text-muted-foreground">{isSourceBackedView ? "未找到该产品的来源数据" : "产品不存在"}</p>
         <Button variant="link" onClick={() => navigate("/ops/products")}>返回产品列表</Button>
       </div>
     );
@@ -241,9 +245,9 @@ export default function OpsProductDetail() {
     milestone: "bg-green-100 text-green-700",
   };
 
-  // Import mode extra info
-  const extra = isImportMode ? importDetail?.extraInfo : null;
-  const importWeeks = isImportMode ? (importDetail?.weeks || []) : [];
+  // MCP parent-week facts are selected before ERP history in the source adapter.
+  const extra = isSourceBackedView ? importDetail?.extraInfo : null;
+  const importWeeks = isSourceBackedView ? (importDetail?.weeks || []) : [];
   const latestImportWeek = importWeeks[0];
 
   return (
@@ -256,10 +260,10 @@ export default function OpsProductDetail() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold truncate">{derivedProduct.title}</h1>
-            {isImportMode && (
+            {isSourceBackedView && (
               <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
                 <Database className="h-3 w-3 mr-1" />
-                ERP 数据
+                MCP优先 · ERP历史回退
               </Badge>
             )}
           </div>
@@ -275,7 +279,7 @@ export default function OpsProductDetail() {
             <p className="text-xs text-muted-foreground mt-0.5">品名: {derivedProduct.chineseName}</p>
           )}
         </div>
-        {!isImportMode && (
+        {!isSourceBackedView && (
           <Badge variant="secondary" className={
             derivedProduct.status === "active" ? "bg-emerald-100 text-emerald-700" :
             derivedProduct.status === "inactive" ? "bg-gray-100 text-gray-600" : "bg-red-100 text-red-700"
@@ -285,8 +289,8 @@ export default function OpsProductDetail() {
         )}
       </div>
 
-      {/* ═══ Import Mode: Extra Info Row (BSR/FBA/SKU/MSKU) ═══ */}
-      {isImportMode && extra && (
+      {/* ═══ Source-backed extra info (BSR/FBA/SKU/MSKU) ═══ */}
+      {isSourceBackedView && extra && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
           {extra.bsrMain && (
             <div className="text-center p-3 rounded-lg bg-muted/50 border">
@@ -327,8 +331,8 @@ export default function OpsProductDetail() {
         </div>
       )}
 
-      {/* ═══ Import Mode: KPI Summary Cards (latest week) ═══ */}
-      {isImportMode && latestImportWeek && (
+      {/* ═══ Source-backed KPI Summary Cards (latest week) ═══ */}
+      {isSourceBackedView && latestImportWeek && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
           <Card className="p-3">
             <p className="text-xs text-muted-foreground">周销量</p>
@@ -363,23 +367,24 @@ export default function OpsProductDetail() {
         </div>
       )}
 
-      {/* ═══ Tab Navigation — SAME for both modes ═══ */}
+      {/* ═══ Tab Navigation — source data is always one dashboard; collaboration needs a manual profile. ═══ */}
       <Tabs defaultValue="dashboard" className="w-full">
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="dashboard">数据看板</TabsTrigger>
-          <TabsTrigger value="plan">运营计划</TabsTrigger>
-          <TabsTrigger value="conversion">转化率对比</TabsTrigger>
-          <TabsTrigger value="review">执行复盘</TabsTrigger>
-          <TabsTrigger value="team">团队协作</TabsTrigger>
+          <TabsTrigger value="plan" disabled={!productId}>运营计划</TabsTrigger>
+          <TabsTrigger value="conversion" disabled={!productId}>转化率对比</TabsTrigger>
+          <TabsTrigger value="review" disabled={!productId}>执行复盘</TabsTrigger>
+          <TabsTrigger value="team" disabled={!productId}>团队协作</TabsTrigger>
         </TabsList>
+        {!productId && isSourceBackedView && <p className="mt-2 text-xs text-muted-foreground">该来源行尚未关联人工产品档案；周报、日指标、库存和广告数据可查看，运营计划与协作功能待绑定档案后启用。</p>}
 
         {/* ═══ Tab: 数据看板 ═══ */}
         <TabsContent value="dashboard" className="mt-4">
 
-      {/* ─── Import Mode Dashboard ─── */}
-      {isImportMode ? (
+      {/* ─── Source-backed unified dashboard ─── */}
+      {isSourceBackedView ? (
         <div className="space-y-6">
-          {/* Import Weekly Data Table */}
+          {/* Authoritative parent-week table with ERP history fallback */}
           <ImportWeeklyTable weeks={importWeeks} sourceType={sourceType || "lingxing"} />
 
           {/* Ad Keyword Tracking */}
@@ -388,10 +393,10 @@ export default function OpsProductDetail() {
             parentAsin={derivedProduct.parentAsin}
           />
 
-          {/* Import Trend Charts */}
+          {/* Source-backed trend charts */}
           <ImportCharts data={importChartData} />
 
-          {/* Import Variants */}
+          {/* Daily child-ASIN metrics */}
           <Card>
             <CardHeader className="flex-row items-center justify-between pb-3">
               <CardTitle className="text-base">子ASIN变体销量 ({dailyVariants?.length ?? derivedProduct.variants.length})</CardTitle>
@@ -1174,7 +1179,7 @@ export default function OpsProductDetail() {
       </Tabs>
 
       {/* ─── Dialogs (system mode only) ─── */}
-      {!isImportMode && (
+      {!!productId && (
         <>
       {/* Add Todo Dialog */}
       <Dialog open={showAddTodo} onOpenChange={setShowAddTodo}>

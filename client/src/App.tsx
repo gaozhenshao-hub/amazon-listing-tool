@@ -224,6 +224,7 @@ function Router() {
         {/* ─── Module 3: Operations AI Tools ─── */}
         <Route path="/ops">{() => <PermissionGuard><OpsDashboard /></PermissionGuard>}</Route>
         <Route path="/ops/products">{() => <PermissionGuard><OpsProducts /></PermissionGuard>}</Route>
+        <Route path="/ops/products/view/:parentAsin">{() => <PermissionGuard><OpsProductDetail /></PermissionGuard>}</Route>
         <Route path="/ops/products/erp/:source/:parentAsin">{() => <PermissionGuard><OpsProductDetail /></PermissionGuard>}</Route>
         <Route path="/ops/products/import/:source/:parentAsin">{() => <PermissionGuard><OpsProductDetail /></PermissionGuard>}</Route>
         <Route path="/ops/products/:id">{() => <PermissionGuard><OpsProductDetail /></PermissionGuard>}</Route>

@@ -36,6 +36,14 @@
 - **交付物**：产品总览使用父 ASIN 周汇总；详情页底部静态变体表替换为最近 1–4 周销量与库存看板；`/ops/inventory` 完全替换旧预警页面。
 - **关键文件**：`client/src/pages/ops/OpsProducts.tsx`、`client/src/pages/ops/OpsProductDetail.tsx`、`client/src/pages/ops/OpsInventory.tsx`、`client/src/pages/ops/components/VariantSalesInventoryTable.tsx`、`client/src/pages/ops/components/InventoryPlanningWorkbench.tsx`。
 - **验收标准**：不新增产品数据上传入口；用户可切换 1–4 周；本地库存与参数修改的影响在界面立即可见；旧库存预警逻辑和入口不再显示。
+- **状态**：✅ 周报权威来源、日变体指标合同与库存规划边界已完成；该阶段原先遗留的“系统/ERP双前台入口”由Phase 7收敛。
+
+## Phase 7：统一产品总览与详情来源视图（2026-09-05）
+
+- **交付物**：移除产品总览的“MCP父ASIN周报 / ERP数据”双页面切换，改为基于`父ASIN + 店铺 + 国家`的单产品集合；在同一产品详情展示MCP父ASIN周报、ASIN日指标、库存和广告来源覆盖；保留人工主档编辑与无主档来源行的只读安全降级。
+- **关键文件**：`server/domains/ops/productOverview/unifiedProductView.ts`、`server/domains/ops/productOverview/unifiedProductView.test.ts`、`server/domains/ops/routers/weeklyOps.ts`、`server/routers/dataImport.ts`、`client/src/pages/ops/OpsProducts.tsx`、`client/src/pages/ops/OpsProductDetail.tsx`、`client/src/App.tsx`。
+- **验收标准**：同身份在总览只返回一行；MCP周事实存在时仅使用其周指标且不与ERP相加；日快照指标按`父ASIN+店铺+国家+子ASIN`呈现；无覆盖字段显示“未提供”；所有入口进入同一详情路由；未关联手工主档的行不可执行主档写操作；回归测试、构建和青岛已认证页面验证均通过。
+- **数据库表**：不新建、不迁移。仅只读归并`lingxing_product_weekly`、`ops_asin_daily_snapshots`、`product_profiles`、`product_variants`与现有ERP历史表。
 
 ## Phase 6：数据迁移、回归与发布
 
@@ -56,3 +64,5 @@
 ## 已知风险
 
 新领星文件当前仅覆盖 7 个完整报告日，因此 30 天日销在首次导入后须明确标记样本不足，不能伪造成完整 30 天均值。人工本地库存没有历史版本时，不能反向影响此前日期的断货判断。赛狐文件待用户后续提供，本轮必须确保其缺席不会阻塞领星流程，也不能使用模拟赛狐数据。
+
+统一产品视图不得以标题、SKU片段或裸ASIN进行成员匹配。MCP事实、ERP历史和日快照可能存在覆盖日期差异；前台必须显示来源与覆盖状态，而不是合并为无法审计的数值。当前线上Web进程已重新加载本轮工件；后续合并版本发布前仍须保留编译目录备份和单服务回滚路径。

@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { MANAGER_ROLES } from "@shared/const";
-import { mergeProductWeeksPreferPrimary } from "@shared/erpProductMerge";
+import { buildUnifiedProductOverview } from "@shared/unifiedProductOverview";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,7 +23,7 @@ import {
   BarChart3, ChevronDown, ChevronRight, ExternalLink,
   TrendingUp, TrendingDown, Minus, Trash2, RefreshCw,
   ArrowUpDown, ArrowUp, ArrowDown, Calendar,
-  AlertTriangle, AlertCircle, Database, Upload, FileSpreadsheet,
+  AlertTriangle, AlertCircle, Upload,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -227,6 +227,8 @@ type ProductOverview = {
     avgAcos: string | null;
   }>;
   erpSource?: "lingxing" | "saihu";
+  weeklySource?: "mcp_parent_weekly" | "erp_history";
+  hasErpHistory?: boolean;
 };
 
 // ─── Sortable column keys (based on latest week data) ───
@@ -269,10 +271,9 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 }
 
 // ─── Product Row Component ───
-function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort, isImportMode, productionConfig, onUpdateProductionConfig, planningRows, financialProfits = [], onSaveCostParameters, onSaveFinancialProfits }: {
+function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort, productionConfig, planningRows, financialProfits = [], onSaveCostParameters, onSaveFinancialProfits }: {
   product: ProductOverview;
-  onNavigate: (id: number) => void;
-  onNavigateImport?: (parentAsin: string, source: "lingxing" | "saihu", storeName?: string | null, country?: string | null) => void;
+  onNavigate: (product: ProductOverview) => void;
   onDelete: (id: number) => void;
   onSync: (productId: number) => void;
   isSyncing: boolean;
@@ -281,9 +282,7 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
   sortKey: SortKey;
   sortDir: SortDir;
   onSort: (key: SortKey) => void;
-  isImportMode?: boolean;
   productionConfig?: { productionTimeDays: number; shippingTimeDays: number; notes: string | null };
-  onUpdateProductionConfig?: (config: { productionTimeDays: number; shippingTimeDays: number; marketplace: string }) => void;
   planningRows?: any[];
   financialProfits?: any[];
   onSaveCostParameters?: (row: any, values: Record<string, string>) => void;
@@ -388,6 +387,12 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
             <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0 shrink-0">
               {product.marketplace || "US"}
             </Badge>
+            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 shrink-0 ${product.weeklySource === "mcp_parent_weekly" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+              {product.weeklySource === "mcp_parent_weekly" ? "MCP 周报" : "ERP 历史"}
+            </Badge>
+            {product.weeklySource === "mcp_parent_weekly" && product.hasErpHistory && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-slate-200 text-slate-500">含ERP历史</Badge>
+            )}
           </div>
           <div className="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground">
             <span className="font-mono">{product.parentAsin}</span>
@@ -432,10 +437,11 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
             </>
           )}
 
-          <div className="h-14 w-[260px] shrink-0" onClick={e => e.stopPropagation()}>
+          {hasManagedProfile && <div className="h-14 w-[260px] shrink-0" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between"><p className="mb-0.5 text-[10px] text-muted-foreground">近6个月财务利润</p><button className="text-[10px] text-primary hover:underline" onClick={() => setFinancialProfitOpen(open => !open)}>填写</button></div>
             <ResponsiveContainer width="100%" height="100%"><LineChart data={profitTrend} margin={{ top: 0, right: 2, left: 2, bottom: 0 }}><XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} /><YAxis hide /><RechartsTooltip formatter={(value) => [value == null ? "待填写" : `$${Number(value).toFixed(2)}`, "财务利润"]} /><Line connectNulls type="monotone" dataKey="financialProfit" name="财务利润" stroke="#7c3aed" strokeWidth={2} dot={{ r: 2 }} /></LineChart></ResponsiveContainer>
           </div>
+          }
 
           {/* Product Name (品名) */}
           {product.chineseName && (
@@ -504,8 +510,7 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
 
           {/* Actions */}
           <div className="flex items-center gap-1">
-            {!isImportMode && (
-            <TooltipProvider>
+            {hasManagedProfile && <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="sm" className={`h-7 w-7 p-0 ${isSyncing ? 'text-blue-500' : 'text-muted-foreground hover:text-blue-600'}`}
@@ -516,36 +521,19 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
                 </TooltipTrigger>
                 <TooltipContent>{!hasManagedProfile ? '来源行尚未绑定产品档案' : isSyncing ? '同步中...' : '同步本产品数据'}</TooltipContent>
               </Tooltip>
-            </TooltipProvider>
-            )}
-            {!isImportMode && (
+            </TooltipProvider>}
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
-                    onClick={(e) => { e.stopPropagation(); onNavigate(product.id); }} disabled={!hasManagedProfile}>
+                    onClick={(e) => { e.stopPropagation(); onNavigate(product); }}>
                     <ExternalLink className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{hasManagedProfile ? '查看详情' : '来源行尚未绑定产品档案'}</TooltipContent>
+                <TooltipContent>查看统一详情</TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            )}
-            {isImportMode && onNavigateImport && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-500 hover:text-blue-700"
-                    onClick={(e) => { e.stopPropagation(); onNavigateImport(product.parentAsin, product.erpSource || "lingxing", product.storeName, product.marketplace); }}>
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>查看详情（导入数据）</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            )}
-            {!isImportMode && (
-            <TooltipProvider>
+            {hasManagedProfile && <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
@@ -555,8 +543,7 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
                 </TooltipTrigger>
                 <TooltipContent>{hasManagedProfile ? '删除产品' : '来源行尚未绑定产品档案'}</TooltipContent>
               </Tooltip>
-            </TooltipProvider>
-            )}
+            </TooltipProvider>}
           </div>
         </div>
       </div>
@@ -564,8 +551,8 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
       {/* ═══ Weekly Data Table ═══ */}
       {expanded && (
         <div>
-          {financialProfitOpen && <section className="border-b bg-violet-50/50 px-3 py-2.5"><div className="flex items-center justify-between gap-3"><div><span className="text-xs font-semibold text-violet-800">最近6个月财务利润（USD）</span><span className="ml-2 text-[11px] text-muted-foreground">按月手动填写；仅用于本卡片财务利润趋势。</span></div><Button size="sm" className="h-7 text-[11px]" onClick={() => onSaveFinancialProfits?.(product.parentAsin, profitTrend.filter(item => item.financialProfit !== null).map(item => ({ yearMonth: item.yearMonth, financialProfit: item.financialProfit! })))}>保存财务利润</Button></div><div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">{profitTrend.map(item => <label key={item.yearMonth} className="text-[11px] text-muted-foreground">{item.yearMonth}<Input type="number" step="0.01" className="mt-1 h-7 text-xs" value={financialProfitDrafts[item.yearMonth] ?? (item.financialProfit == null ? "" : String(item.financialProfit))} placeholder="0.00" onChange={event => setFinancialProfitDrafts(current => ({ ...current, [item.yearMonth]: event.target.value }))} /></label>)}</div></section>}
-          {isImportMode && productPlanningRows.length > 0 && (
+          {hasManagedProfile && financialProfitOpen && <section className="border-b bg-violet-50/50 px-3 py-2.5"><div className="flex items-center justify-between gap-3"><div><span className="text-xs font-semibold text-violet-800">最近6个月财务利润（USD）</span><span className="ml-2 text-[11px] text-muted-foreground">按月手动填写；仅用于本卡片财务利润趋势。</span></div><Button size="sm" className="h-7 text-[11px]" onClick={() => onSaveFinancialProfits?.(product.parentAsin, profitTrend.filter(item => item.financialProfit !== null).map(item => ({ yearMonth: item.yearMonth, financialProfit: item.financialProfit! })))}>保存财务利润</Button></div><div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">{profitTrend.map(item => <label key={item.yearMonth} className="text-[11px] text-muted-foreground">{item.yearMonth}<Input type="number" step="0.01" className="mt-1 h-7 text-xs" value={financialProfitDrafts[item.yearMonth] ?? (item.financialProfit == null ? "" : String(item.financialProfit))} placeholder="0.00" onChange={event => setFinancialProfitDrafts(current => ({ ...current, [item.yearMonth]: event.target.value }))} /></label>)}</div></section>}
+          {hasManagedProfile && productPlanningRows.length > 0 && (
             <section className="border-b bg-slate-50/70 px-3 py-2.5">
               <button className="flex w-full items-center justify-between text-left" onClick={() => setCostPanelOpen(open => !open)}>
                 <span>
@@ -781,8 +768,6 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
   );
 }
 
-type DataSource = "system" | "erp";
-
 // ─── Main Component ───
 export default function OpsProducts() {
   const [, navigate] = useLocation();
@@ -790,7 +775,6 @@ export default function OpsProducts() {
   const isManagerOrAbove = user?.role && (MANAGER_ROLES as readonly string[]).includes(user.role);
   const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("active");
-  const [dataSource, setDataSource] = useState<DataSource>("system");
 
   // Mutations
   const utils = trpc.useUtils();
@@ -801,13 +785,6 @@ export default function OpsProducts() {
   const deleteMut = trpc.productOps.deleteProduct.useMutation({
     onSuccess: () => { utils.productOps.getProductOverviewWithWeeks.invalidate(); toast.success("产品已删除"); },
     onError: (e: any) => toast.error(e.message),
-  });
-  const syncMut = trpc.productOps.syncFromLingxing.useMutation({
-    onSuccess: (data) => {
-      utils.productOps.getProductOverviewWithWeeks.invalidate();
-      toast.success(`同步完成：新增${data.synced}个，更新${data.updated}个，共${data.total}个产品`);
-    },
-    onError: (e: any) => toast.error("同步失败", { description: e.message }),
   });
   const batchSyncWeeklyMut = trpc.productOps.batchSyncWeeklyOps.useMutation({
     onSuccess: (data) => {
@@ -847,18 +824,6 @@ export default function OpsProducts() {
   });
   const { data: operatorList } = trpc.productOps.listOperators.useQuery();
 
-  // Get team member names (pure system users, no productProfiles contamination)
-  const { data: teamMembersList } = trpc.productOps.listTeamMembers.useQuery();
-  const systemUserNames = useMemo(() => {
-    if (!teamMembersList) return new Set<string>();
-    return new Set(teamMembersList.map(m => m.name).filter(Boolean) as string[]);
-  }, [teamMembersList]);
-
-  // Operator name mappings - used to show mapping status in filter dropdown
-  const { data: mappingsList } = trpc.operatorMapping.listMappings.useQuery(undefined, {
-    enabled: dataSource !== "system",
-  });
-
   // State
   const [showCreate, setShowCreate] = useState(false);
   const [showBatchAssign, setShowBatchAssign] = useState(false);
@@ -873,43 +838,36 @@ export default function OpsProducts() {
     }
   }, [user, isManagerOrAbove]);
   const [storeFilter, setStoreFilter] = useState("ALL");
-  const [newOperatorName, setNewOperatorName] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>(null);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [weekFilter, setWeekFilter] = useState(4); // 1-4 weeks
   const [syncWeeks, setSyncWeeks] = useState(1); // weeks to sync: 1-26
   const [showSyncPopover, setShowSyncPopover] = useState(false);
 
-  // Main query - system data (original)
+  // The MCP parent-ASIN weeks are the primary facts; ERP is historical fallback.
   const { data: systemProducts, isLoading: systemLoading } = trpc.productOps.getProductOverviewWithWeeks.useQuery({
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "all",
-    statusFilter: statusFilter !== "ALL" ? statusFilter as any : "all",
+    statusFilter: "all",
     weeks: 4,
-  }, { enabled: dataSource === "system" });
+  });
 
   // Import data query (lingxing or saihu)
   const { data: importProducts, isLoading: importLoading } = trpc.dataImport.getProductOverviewFromImport.useQuery({
     sourceType: "erp",
     weeks: 4,
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "ALL",
-  }, { enabled: dataSource !== "system" });
-  // Import stats for showing data availability
-  const { data: importStats } = trpc.dataImport.getImportStats.useQuery();
+  });
 
   const { data: inventoryPlanning } = trpc.dataImport.getInventoryPlanningFromImport.useQuery({
     marketplace: marketplaceFilter,
-  }, { enabled: dataSource === "erp" });
-  const { data: monthlyFinancialProfits } = trpc.dataImport.getMonthlyFinancialProfits.useQuery(undefined, { enabled: dataSource === "erp" });
+  });
+  const { data: monthlyFinancialProfits } = trpc.dataImport.getMonthlyFinancialProfits.useQuery();
 
   // Production config for inventory status
   const { data: productionConfigs } = trpc.dataImport.getProductionConfigs.useQuery({
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "US",
-  }, { enabled: dataSource !== "system" });
-
-  // Update production config mutation
-  const updateProductionMut = trpc.dataImport.updateProductionConfig.useMutation({
-    onSuccess: () => { utils.dataImport.getProductionConfigs.invalidate(); toast.success("生产配置已更新"); },
   });
+
   const savePlanningParametersMut = trpc.dataImport.saveInventoryPlanningParameters.useMutation({
     onSuccess: () => {
       void utils.dataImport.getInventoryPlanningFromImport.invalidate();
@@ -922,11 +880,14 @@ export default function OpsProducts() {
     onError: (error) => toast.error("财务利润保存失败", { description: error.message }),
   });
 
-  // Unified products & loading state
-  const products = useMemo(() => (
-    dataSource === "system" ? systemProducts : (importProducts || []) as ProductOverview[]
-  ), [dataSource, systemProducts, importProducts]);
-  const isLoading = dataSource === "system" ? systemLoading : importLoading;
+  // Same parent ASIN/store/site belongs to one card. MCP facts win for overlapping
+  // natural weeks and ERP remains only as explicitly labelled historical fallback.
+  const products = useMemo(() => {
+    const primary = (systemProducts || []) as ProductOverview[];
+    const fallback = (importProducts || []) as ProductOverview[];
+    return buildUnifiedProductOverview(primary, fallback);
+  }, [systemProducts, importProducts]);
+  const isLoading = systemLoading || importLoading;
 
   const [form, setForm] = useState({
     parentAsin: "", title: "", brand: "", category: "", marketplace: "US",
@@ -949,6 +910,7 @@ export default function OpsProducts() {
         return names.includes(operatorFilter);
       });
     }
+    if (statusFilter !== "ALL") list = list.filter(p => p.status === statusFilter);
     if (storeFilter !== "ALL") list = list.filter(p => (p.storeName || "") === storeFilter);
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
@@ -977,7 +939,7 @@ export default function OpsProducts() {
       });
     }
     return list;
-  }, [products, operatorFilter, storeFilter, searchTerm, weekFilter, sortKey, sortDir]);
+  }, [products, operatorFilter, statusFilter, storeFilter, searchTerm, weekFilter, sortKey, sortDir]);
 
   const availableOperators = useMemo(() => {
     const set = new Set<string>();
@@ -988,17 +950,6 @@ export default function OpsProducts() {
     });
     return Array.from(set).sort();
   }, [products]);
-
-  // Build a set of mapped system user names for the current data source
-  const mappedSystemNames = useMemo(() => {
-    if (!mappingsList || dataSource === "system") return new Set<string>();
-    return new Set(
-      mappingsList
-        .filter(m => m.sourceType === "lingxing" || m.sourceType === "saihu" || m.sourceType === "all")
-        .map(m => m.systemUserName)
-        .filter(Boolean)
-    );
-  }, [mappingsList, dataSource]);
 
   const availableStores = useMemo(() => {
     const set = new Set((products || []).map(p => p.storeName || "").filter(Boolean));
@@ -1017,105 +968,25 @@ export default function OpsProducts() {
 
   return (
     <div className="space-y-4">
-      {/* Data Source Tabs */}
-      <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-lg w-fit">
-        <button
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-            dataSource === "system" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-          }`}
-          onClick={() => setDataSource("system")}
-        >
-          <Database className="h-3.5 w-3.5" />
-          MCP 父ASIN周报
-        </button>
-        <button
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-            dataSource === "erp" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-          }`}
-          onClick={() => setDataSource("erp")}
-        >
-          <FileSpreadsheet className="h-3.5 w-3.5" />
-          ERP 数据
-          {importStats && (importStats.lingxing.weekCount > 0 || importStats.saihu.weekCount > 0) && (
-            <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-0.5">
-              {totalProducts} 品
-            </Badge>
-          )}
-        </button>
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-xs text-blue-800">
+        <Badge variant="outline" className="border-blue-200 bg-white text-blue-700">统一产品视图</Badge>
+        <span>同一父ASIN、店铺和站点仅显示一张卡片；MCP父ASIN自然周报优先，ERP仅补充未覆盖的历史周。</span>
+        <Button variant="link" size="sm" className="h-auto px-0 text-xs text-blue-700" onClick={() => navigate("/ops/inventory")}>进入库存规划</Button>
       </div>
-
-      {/* No Import Data Hint */}
-      {dataSource !== "system" && !isLoading && (!products || (products as any[]).length === 0) && (
-        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-          <Upload className="h-5 w-5 text-amber-600 shrink-0" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-amber-800">
-              暂无 ERP 导入数据
-            </p>
-            <p className="text-xs text-amber-600 mt-0.5">
-              请先在“ERP 数据导入中心”上传产品数据 Excel 文件，系统会自动识别格式
-            </p>
-          </div>
-          <Button variant="outline" size="sm" className="shrink-0 gap-1" onClick={() => navigate("/ops/data-import")}>
-            <Upload className="h-3.5 w-3.5" /> 去导入
-          </Button>
-        </div>
-      )}
-
-      {dataSource === "erp" && inventoryPlanning?.asOfDate && (
-        <section className="rounded-xl border bg-card p-4 shadow-sm">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-base font-semibold">库存规划工作台</h2>
-              <p className="text-xs text-muted-foreground">子 ASIN 维度计算；总库存 = 可售 + 在途 + 已确认本地库存。成本、售价及平手价与库存规划使用同一参数数据。数据截至 {inventoryPlanning.asOfDate}。</p>
-            </div>
-            <Button size="sm" variant="outline" onClick={() => navigate("/ops/inventory")}>进入完整规划</Button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1240px] text-sm">
-              <thead className="border-b text-left text-xs text-muted-foreground">
-                <tr><th className="px-2 py-2">子 ASIN</th><th className="px-2 py-2">总库存</th><th className="px-2 py-2">7日 / 30日日销</th><th className="px-2 py-2">加权日销</th><th className="px-2 py-2">覆盖天数</th><th className="px-2 py-2">产品成本</th><th className="px-2 py-2">售价</th><th className="px-2 py-2">预估平手价</th><th className="px-2 py-2">实际平手价</th><th className="px-2 py-2">建议订货日</th><th className="px-2 py-2">建议订货量</th><th className="px-2 py-2">状态</th></tr>
-              </thead>
-              <tbody>
-                {inventoryPlanning.rows.slice(0, 12).map((row: any) => (
-                  <tr key={`${row.asin}-${row.storeName}-${row.country}`} className="border-b last:border-0">
-                    <td className="px-2 py-2 font-medium">{row.asin}<span className="ml-1 text-xs text-muted-foreground">{row.country}</span></td>
-                    <td className="px-2 py-2">{row.totalInventory}</td>
-                    <td className="px-2 py-2">{row.sales7.dailySales} / {row.sales30.dailySales}</td>
-                    <td className="px-2 py-2">{row.weightedDailySales}</td>
-                    <td className="px-2 py-2">{row.coverageDays ?? "—"}</td>
-                    <td className="px-2 py-2 tabular-nums">{row.productCost == null ? <span className="text-amber-600">待录入</span> : `$${Number(row.productCost).toFixed(2)}`}</td>
-                    <td className="px-2 py-2 tabular-nums">{row.sellingPrice == null ? <span className="text-muted-foreground">—</span> : `$${Number(row.sellingPrice).toFixed(2)}`}</td>
-                    <td className="px-2 py-2 tabular-nums">{row.estimatedBreakEven == null ? <span className="text-muted-foreground">—</span> : `$${Number(row.estimatedBreakEven).toFixed(2)}`}</td>
-                    <td className="px-2 py-2 tabular-nums">{row.actualBreakEven == null ? <span className="text-muted-foreground">—</span> : `$${Number(row.actualBreakEven).toFixed(2)}`}</td>
-                    <td className="px-2 py-2">{row.suggestedOrderDate ?? "待补充销量"}</td>
-                    <td className="px-2 py-2">{row.suggestedOrderQuantity}</td>
-                    <td className="px-2 py-2"><Badge variant={row.confirmedStockout ? "destructive" : "secondary"}>{row.confirmedStockout ? "已确认断货" : row.manualOverrideApplied ? "人工日销" : "待确认"}</Badge></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">产品运营总览</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            {dataSource === "system"
-              ? "权威周度来源：领星MCP父ASIN自然周报；ASIN日数据仅用于单ASIN详情与库存规划，不参与本页周度累计"
-              : "基于 ERP 导入数据，兼容领星和赛狐格式，按父ASIN维度展示最近4周周度数据"}
+            权威周度来源：领星MCP父ASIN自然周报；ERP仅作为未覆盖历史的来源化参考。ASIN日数据用于单ASIN详情与库存规划，不参与本页周度累计。
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {dataSource !== "system" && (
-            <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate("/ops/data-import")}>
-              <Upload className="h-3.5 w-3.5" /> 导入数据
-            </Button>
-          )}
-          {dataSource === "system" && (<Popover open={showSyncPopover} onOpenChange={setShowSyncPopover}>
+          <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate("/ops/data-import")}>
+            <Upload className="h-3.5 w-3.5" /> 导入数据
+          </Button>
+          <Popover open={showSyncPopover} onOpenChange={setShowSyncPopover}>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
@@ -1167,12 +1038,10 @@ export default function OpsProducts() {
                 </Button>
               </div>
             </PopoverContent>
-          </Popover>)}
-          {dataSource === "system" && (
-            <Button onClick={() => setShowCreate(true)} className="gap-2">
-              <Plus className="h-4 w-4" /> 添加产品
-            </Button>
-          )}
+          </Popover>
+          <Button onClick={() => setShowCreate(true)} className="gap-2">
+            <Plus className="h-4 w-4" /> 添加产品
+          </Button>
         </div>
       </div>
 
@@ -1249,24 +1118,9 @@ export default function OpsProducts() {
             <SelectContent>
               {isManagerOrAbove && <SelectItem value="ALL">全部运营</SelectItem>}
               {isManagerOrAbove && <SelectItem value="__UNASSIGNED__">未分配</SelectItem>}
-              {(() => {
-                if (dataSource === "system") {
-                  // System mode: show operators from data + system user list
-                  const allOps = new Set<string>();
-                  availableOperators.forEach(o => allOps.add(o));
-                  (operatorList || []).forEach((o: string) => allOps.add(o));
-                  return Array.from(allOps).sort().map(o => (
-                    <SelectItem key={o} value={o}>{o}</SelectItem>
-                  ));
-                } else {
-                  // Import mode: only show system user names that appear in the data
-                  // Filter out raw unmapped names (XM-1, 娄迪 etc.) that aren't system users
-                  const filteredOps = availableOperators.filter(o => systemUserNames.has(o));
-                  return filteredOps.sort().map(o => (
-                    <SelectItem key={o} value={o}>{o}</SelectItem>
-                  ));
-                }
-              })()}
+              {Array.from(new Set([...availableOperators, ...(operatorList || [])])).sort().map(o => (
+                <SelectItem key={o} value={o}>{o}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -1341,8 +1195,7 @@ export default function OpsProducts() {
             <p className="text-muted-foreground">
               {searchTerm || marketplaceFilter !== "ALL" || statusFilter !== "ALL"
                 ? "没有找到匹配的产品"
-                : dataSource === "system" ? "还没有添加产品，点击\"添加产品\"或在数据导入中心上传Excel开始"
-                : "暂无 ERP 导入数据，请先在 ERP 数据导入中心上传 Excel 文件"}
+                : "暂无产品数据，请在数据导入中心上传Excel，或添加人工产品档案"}
             </p>
           </CardContent>
         </Card>
@@ -1350,14 +1203,14 @@ export default function OpsProducts() {
         <div className="space-y-3">
           {filtered.map(product => (
             <ProductBlock
-              key={`${product.erpSource || "system"}-${product.parentAsin}-${product.storeName || ""}-${product.marketplace || ""}`}
+              key={`${product.parentAsin}-${product.storeName || ""}-${product.marketplace || ""}`}
               product={product}
-              onNavigate={(id) => navigate(`/ops/products/${id}`)}
-              onNavigateImport={(parentAsin, source, storeName, country) => {
+              onNavigate={(item) => {
                 const query = new URLSearchParams();
-                if (storeName) query.set("store", storeName);
-                if (country) query.set("country", country);
-                navigate(`/ops/products/erp/${source}/${encodeURIComponent(parentAsin)}${query.size ? `?${query.toString()}` : ""}`);
+                if (item.storeName) query.set("store", item.storeName);
+                if (item.marketplace) query.set("country", item.marketplace);
+                if (item.id > 0) query.set("productId", String(item.id));
+                navigate(`/ops/products/view/${encodeURIComponent(item.parentAsin)}${query.size ? `?${query.toString()}` : ""}`);
               }}
               onDelete={(id) => deleteMut.mutate({ id })}
               onSync={(id) => { setSyncingProductId(id); syncSingleProductMut.mutate({ productId: id }); }}
@@ -1380,10 +1233,8 @@ export default function OpsProducts() {
                   setSortDir("desc");
                 }
               }}
-              isImportMode={dataSource !== "system"}
               productionConfig={productionConfigs?.[product.parentAsin]}
-              onUpdateProductionConfig={(config) => updateProductionMut.mutate({ parentAsin: product.parentAsin, ...config })}
-              planningRows={dataSource === "erp" ? inventoryPlanning?.rows : []}
+              planningRows={inventoryPlanning?.rows || []}
               financialProfits={(monthlyFinancialProfits || []).filter((item: any) => item.parentAsin === product.parentAsin)}
               onSaveFinancialProfits={(parentAsin, entries) => saveMonthlyFinancialProfitsMut.mutate({ parentAsin, entries })}
               onSaveCostParameters={(row, values) => savePlanningParametersMut.mutate({
