@@ -1,3 +1,5 @@
+import { normalizeIdentityPart, normalizeMarketplaceCode } from "../../../../shared/marketplaceIdentity";
+
 export type ParentWeeklyFact = {
   id: number;
   sourceKind: string | null;
@@ -76,16 +78,17 @@ export type ProductProfileSeed = {
 };
 
 const text = (value: string | null | undefined) => String(value || "").trim();
-const normalized = (value: string | null | undefined) => text(value).toUpperCase();
+const normalized = normalizeIdentityPart;
+const canonicalCountry = normalizeMarketplaceCode;
 const numberOf = (value: string | number | null | undefined) => Number(value || 0) || 0;
 const percentage = (numerator: number, denominator: number) => denominator > 0 ? numerator / denominator * 100 : null;
 
 export function parentWeekIdentity(fact: Pick<ParentWeeklyFact, "storeName" | "country" | "parentAsin" | "weekStartDate">) {
-  return [fact.storeName, fact.country, fact.parentAsin, fact.weekStartDate].map(normalized).join("|");
+  return [normalized(fact.storeName), canonicalCountry(fact.country), normalized(fact.parentAsin), normalized(fact.weekStartDate)].join("|");
 }
 
 function productIdentity(profile: Pick<ProductProfileSeed, "storeName" | "marketplace" | "parentAsin">) {
-  return [profile.storeName, profile.marketplace, profile.parentAsin].map(normalized).join("|");
+  return [normalized(profile.storeName), canonicalCountry(profile.marketplace), normalized(profile.parentAsin)].join("|");
 }
 
 function sourceRank(fact: ParentWeeklyFact) {
@@ -180,13 +183,13 @@ export function buildParentWeeklyOverview(facts: ParentWeeklyFact[], profiles: P
   }
   const factGroups = new Map<string, ParentWeeklyFact[]>();
   for (const fact of authoritativeFacts) {
-    const key = [fact.storeName, fact.country, fact.parentAsin].map(normalized).join("|");
+    const key = [normalized(fact.storeName), canonicalCountry(fact.country), normalized(fact.parentAsin)].join("|");
     factGroups.set(key, [...(factGroups.get(key) || []), fact]);
   }
   return [...factGroups.values()].map((group) => {
     const orderedFacts = [...group].sort((a, b) => text(b.weekStartDate).localeCompare(text(a.weekStartDate)));
     const latest = orderedFacts[0];
-    const profile = profileByIdentity.get([latest.storeName, latest.country, latest.parentAsin].map(normalized).join("|")) || null;
+    const profile = profileByIdentity.get([normalized(latest.storeName), canonicalCountry(latest.country), normalized(latest.parentAsin)].join("|")) || null;
     const sourceChildAsins = childAsinsFromFacts(group);
     const manualChildAsins = [...new Set((profile?.manualChildAsins || []).map(normalized).filter(Boolean))].sort();
     const childAsins = sourceChildAsins.length ? sourceChildAsins : manualChildAsins;
@@ -204,7 +207,7 @@ export function buildParentWeeklyOverview(facts: ParentWeeklyFact[], profiles: P
       chineseName: latest.productName || profile?.chineseName || null,
       brand: latest.brand || profile?.brand || null,
       category: latest.category1 || profile?.category || null,
-      marketplace: latest.country,
+      marketplace: canonicalCountry(latest.country),
       imageUrl: profile?.imageUrl || null,
       status: profile?.status || "active",
       operator: profile?.operator || latest.operator || null,

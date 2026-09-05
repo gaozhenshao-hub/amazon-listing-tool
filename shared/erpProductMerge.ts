@@ -1,3 +1,5 @@
+import { normalizeIdentityPart, normalizeMarketplaceCode } from "./marketplaceIdentity";
+
 export type ErpSource = "lingxing" | "saihu";
 
 export type ErpProductIdentity = {
@@ -7,10 +9,6 @@ export type ErpProductIdentity = {
   erpSource?: ErpSource;
 };
 
-function normalizeKeyPart(value: string | null | undefined) {
-  return (value || "").trim().toUpperCase();
-}
-
 /**
  * Generates a stable product identity across ERP sources. Store and marketplace
  * remain part of the key so identical parent ASINs in different storefronts are
@@ -18,9 +16,9 @@ function normalizeKeyPart(value: string | null | undefined) {
  */
 export function getErpProductKey(product: ErpProductIdentity) {
   return [
-    normalizeKeyPart(product.parentAsin),
-    normalizeKeyPart(product.storeName),
-    normalizeKeyPart(product.marketplace),
+    normalizeIdentityPart(product.parentAsin),
+    normalizeIdentityPart(product.storeName),
+    normalizeMarketplaceCode(product.marketplace),
   ].join("|");
 }
 

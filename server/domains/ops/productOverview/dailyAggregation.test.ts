@@ -47,6 +47,20 @@ describe("领星日快照周汇总", () => {
     ]));
   });
 
+  it("将US和美国站点别名视为同一子ASIN身份，不重复累计同日事实", () => {
+    const aliasRecords = [
+      { ...records[0], sourceType: "lingxing_mcp", country: "US", salesQty: 2, salesAmount: 20, fbaAvailable: 10 },
+      { ...records[0], sourceType: "uploaded", country: "美国", salesQty: 99, salesAmount: 990, fbaAvailable: 99 },
+    ];
+    const variants = summarizeVariantSales(aliasRecords, 1);
+    const [parent] = summarizeParentAsinWeeks(aliasRecords, 1);
+
+    expect(variants).toHaveLength(1);
+    expect(variants[0]).toMatchObject({ identityKey: "P1|店铺|US|A1", country: "US", salesQty: 2, salesAmount: 20, fbaAvailable: 10 });
+    expect(parent).toMatchObject({ country: "US", variantCount: 1 });
+    expect(parent.weeks[0]).toMatchObject({ salesQty: 2, salesAmount: 20, fbaAvailable: 10 });
+  });
+
   it("仅在完整日快照窗口中计算平均日销，不将缺失日期视为零", () => {
     const completeWeek = Array.from({ length: 7 }, (_, index) => ({
       ...records[0], reportDate: `2026-08-${String(17 + index).padStart(2, "0")}`, salesQty: 7,

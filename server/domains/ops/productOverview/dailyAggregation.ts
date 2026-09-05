@@ -1,3 +1,5 @@
+import { normalizeIdentityPart, normalizeMarketplaceCode } from "../../../../shared/marketplaceIdentity";
+
 export type DailySnapshot = {
   reportDate: string; asin: string; parentAsin: string; storeName: string; country: string; sourceType?: string | null;
   salesQty: number; orderQty: number; salesAmount: number | string; orderProfit: number | string;
@@ -8,7 +10,8 @@ export type DailySnapshot = {
 };
 
 const numberOf = (value: number | string | null | undefined) => Number(value || 0) || 0;
-const identityPart = (value: string | null | undefined) => String(value || "").trim().toUpperCase();
+const identityPart = normalizeIdentityPart;
+const countryPart = normalizeMarketplaceCode;
 const mondayOf = (date: string) => {
   const value = new Date(`${date}T00:00:00Z`);
   const shift = (value.getUTCDay() + 6) % 7;
@@ -24,7 +27,7 @@ const sundayOf = (monday: string) => {
 export function summarizeParentAsinWeeks(records: DailySnapshot[], weeksToShow: number) {
   const preferredByDayAndAsin = new Map<string, DailySnapshot>();
   for (const record of records) {
-    const key = [record.storeName, record.country, record.asin, record.reportDate].join("|");
+    const key = [record.parentAsin, record.storeName, countryPart(record.country), record.asin, record.reportDate].map(identityPart).join("|");
     const existing = preferredByDayAndAsin.get(key);
     const priority = record.sourceType === "lingxing_mcp" ? 2 : 1;
     const existingPriority = existing?.sourceType === "lingxing_mcp" ? 2 : 1;
@@ -33,7 +36,7 @@ export function summarizeParentAsinWeeks(records: DailySnapshot[], weeksToShow: 
   records = [...preferredByDayAndAsin.values()];
   const groups = new Map<string, DailySnapshot[]>();
   for (const record of records) {
-    const key = [record.parentAsin, record.storeName, record.country].join("|");
+    const key = [record.parentAsin, record.storeName, countryPart(record.country)].map(identityPart).join("|");
     groups.set(key, [...(groups.get(key) || []), record]);
   }
   return [...groups.values()].map(group => {
@@ -88,7 +91,7 @@ export function summarizeParentAsinWeeks(records: DailySnapshot[], weeksToShow: 
     return {
       parentAsin: latest.parentAsin,
       storeName: latest.storeName,
-      country: latest.country,
+      country: countryPart(latest.country),
       title: latest.title || "",
       productName: latest.productName || null,
       operator: latest.operator || null,
@@ -104,7 +107,7 @@ export function summarizeVariantSales(records: DailySnapshot[], weeks: number) {
   const preferredByDayAndAsin = new Map<string, DailySnapshot>();
   for (const record of records) {
     // 子ASIN在不同店铺或站点可以是不同的业务实体，不能按裸ASIN合并。
-    const key = [record.parentAsin, record.storeName, record.country, record.asin, record.reportDate].map(identityPart).join("|");
+    const key = [record.parentAsin, record.storeName, countryPart(record.country), record.asin, record.reportDate].map(identityPart).join("|");
     const existing = preferredByDayAndAsin.get(key);
     const currentIsMcp = record.sourceType === "lingxing_mcp";
     const existingIsMcp = existing?.sourceType === "lingxing_mcp";
@@ -115,7 +118,7 @@ export function summarizeVariantSales(records: DailySnapshot[], weeks: number) {
   const rows = records.filter(row => latestWeeks.includes(mondayOf(row.reportDate)));
   const variants = new Map<string, DailySnapshot[]>();
   for (const row of rows) {
-    const key = [row.parentAsin, row.storeName, row.country, row.asin].map(identityPart).join("|");
+    const key = [row.parentAsin, row.storeName, countryPart(row.country), row.asin].map(identityPart).join("|");
     variants.set(key, [...(variants.get(key) || []), row]);
   }
   return [...variants.values()].map((variantRows) => {
@@ -143,11 +146,11 @@ export function summarizeVariantSales(records: DailySnapshot[], weeks: number) {
     const adClicks = variantRows.reduce((sum, row) => sum + numberOf(row.adClicks), 0);
     const adImpressions = variantRows.reduce((sum, row) => sum + numberOf(row.adImpressions), 0);
     return {
-      identityKey: [latest.parentAsin, latest.storeName, latest.country, latest.asin].map(identityPart).join("|"),
+      identityKey: [latest.parentAsin, latest.storeName, countryPart(latest.country), latest.asin].map(identityPart).join("|"),
       parentAsin: latest.parentAsin,
       asin: latest.asin,
       storeName: latest.storeName,
-      country: latest.country,
+      country: countryPart(latest.country),
       sku: latest.sku || null,
       title: latest.title || null,
       latestReportDate: latest.reportDate,

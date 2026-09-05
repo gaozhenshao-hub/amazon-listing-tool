@@ -1,4 +1,4 @@
-import { mergeProductWeeksPreferPrimary } from "./erpProductMerge";
+import { getErpProductKey, mergeProductWeeksPreferPrimary } from "./erpProductMerge";
 
 export type UnifiedOverviewProduct = {
   parentAsin: string;
@@ -10,9 +10,7 @@ export type UnifiedOverviewProduct = {
 export type UnifiedOverviewSource = "mcp_parent_weekly" | "erp_history";
 
 export function getUnifiedProductIdentity(product: Pick<UnifiedOverviewProduct, "parentAsin" | "storeName" | "marketplace">) {
-  return [product.parentAsin, product.storeName || "", product.marketplace || ""]
-    .map(value => value.trim().toUpperCase())
-    .join("|");
+  return getErpProductKey(product);
 }
 
 /**

@@ -25,14 +25,14 @@ import { buildOperatorParentKey, buildOperatorProfileKey } from "../domains/ops/
 import { inventoryOwnerAssignmentKey } from "../domains/ops/inventoryOwnerAssignmentKeys";
 import { resolveConfirmedExternalOperator, splitExternalOperatorNames } from "../domains/ops/operatorNameResolution";
 import { mergeErpProducts } from "@shared/erpProductMerge";
+import { normalizeMarketplaceCode } from "@shared/marketplaceIdentity";
 
 function matchesLingxingMarketplace(row: { country?: string | null; storeName?: string | null }, marketplace: string) {
   if (marketplace === "ALL") return true;
-  const requested = marketplace.toUpperCase();
-  const country = (row.country || "").toUpperCase();
+  const requested = normalizeMarketplaceCode(marketplace);
+  const country = normalizeMarketplaceCode(row.country);
   const storeName = (row.storeName || "").toUpperCase();
-  const countryAliases: Record<string, string[]> = { US: ["US", "美国"], CA: ["CA", "加拿大"], UK: ["UK", "英国"], DE: ["DE", "德国"], FR: ["FR", "法国"], IT: ["IT", "意大利"], ES: ["ES", "西班牙"], JP: ["JP", "日本"] };
-  return [requested, ...(countryAliases[requested] || [])].some(alias => country.includes(alias) || storeName.includes(`-${alias}`));
+  return country === requested || storeName.includes(`-${requested}`);
 }
 
 export async function refreshZeroValueDiscontinuationStatuses(db: any, workspaceId: number) {
@@ -733,11 +733,10 @@ export const dataImportRouter = router({
           eq(opsAsinDailySnapshots.userId, effectiveUserId),
           eq(opsAsinDailySnapshots.parentAsin, input.parentAsin),
         )));
-      const normalizeIdentity = (value: string | null | undefined) => String(value || "").trim().toUpperCase();
       const filtered = rows.filter(row => row.sourceType !== "lx_inventory_mcp"
         && matchesLingxingMarketplace(row, input.marketplace)
-        && (!input.storeName || normalizeIdentity(row.storeName) === normalizeIdentity(input.storeName))
-        && (!input.country || normalizeIdentity(row.country) === normalizeIdentity(input.country)));
+        && (!input.storeName || String(row.storeName || "").trim().toUpperCase() === String(input.storeName || "").trim().toUpperCase())
+        && (!input.country || normalizeMarketplaceCode(row.country) === normalizeMarketplaceCode(input.country)));
       return summarizeVariantSales(filtered as any, input.weeks);
     }),
 

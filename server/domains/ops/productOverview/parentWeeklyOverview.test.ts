@@ -89,6 +89,17 @@ describe("父ASIN周报权威总览", () => {
     ]));
   });
 
+  it("将US与美国站点别名归并为一个权威父ASIN身份", () => {
+    const overview = buildParentWeeklyOverview([
+      fact({ id: 1, country: "US", asin: "CHILD-1,CHILD-2", salesQty: 70 }),
+      fact({ id: 2, country: "美国", asin: "CHILD-1,CHILD-2", salesQty: 999, sourceKind: "uploaded_parent_asin_weekly" }),
+    ], [profile({ marketplace: "美国" })], 1);
+
+    expect(overview).toHaveLength(1);
+    expect(overview[0]).toMatchObject({ marketplace: "US", variantCount: 2 });
+    expect(overview[0].weeks[0]).toMatchObject({ salesQty: 70 });
+  });
+
   it("同一权威业务身份即使存在重复手工产品档案也只生成一张总览卡片", () => {
     const overview = buildParentWeeklyOverview([fact()], [
       profile({ id: 101, updatedAt: new Date("2026-08-01T00:00:00Z") }),

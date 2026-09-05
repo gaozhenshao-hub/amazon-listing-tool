@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 const routerSource = readFileSync(resolve(process.cwd(), "server/routers/dataImport.ts"), "utf8");
 const productsPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsProducts.tsx"), "utf8");
 const detailPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsProductDetail.tsx"), "utf8");
+const parentWeeklyOverviewSource = readFileSync(resolve(process.cwd(), "server/domains/ops/productOverview/parentWeeklyOverview.ts"), "utf8");
 const inventoryPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsInventory.tsx"), "utf8");
 const purchasePlanningSource = readFileSync(resolve(process.cwd(), "shared/inventoryPurchasePlanning.ts"), "utf8");
 const lingxingSyncSource = readFileSync(resolve(process.cwd(), "server/routers/lingxingSync.ts"), "utf8");
@@ -56,21 +57,18 @@ describe("导入模式库存规划接口契约", () => {
     expect(productsPageSource).toContain("实际重量 (lb/kg)");
   });
 
-  it("产品总览和详情页均使用新的日粒度库存与变体销量接口", () => {
-    expect(productsPageSource).toContain("getLingxingDailyOverview");
-    expect(productsPageSource).toContain("adaptDailyParentOverview");
-    expect(productsPageSource).toContain("ProductBlock");
-    expect(productsPageSource).toContain("avgDailySales7d: latest.salesQty");
-    expect(productsPageSource).not.toContain("avgDailySales7d: salesQty /");
+  it("统一总览消费父ASIN周报，详情和库存规划继续消费日粒度接口", () => {
+    expect(productsPageSource).toContain("getProductOverviewWithWeeks");
+    expect(productsPageSource).toContain("buildUnifiedProductOverview");
     expect(productsPageSource).toContain("getInventoryPlanningFromImport");
-    expect(productsPageSource).toContain("库存规划工作台");
+    expect(productsPageSource).toContain("进入库存规划");
     expect(detailPageSource).toContain("getLingxingDailyVariants");
     expect(detailPageSource).toContain("近{week}周");
   });
 
-  it("产品总览卡片优先展示上传表品名，品名缺失时才回退到Listing标题", () => {
-    expect(productsPageSource).toContain("title: product.productName || product.title || product.parentAsin");
-    expect(productsPageSource).toContain("chineseName: product.productName || null");
+  it("统一产品总览保留权威周报名称和人工主档回退，前端中文名称再回退标题", () => {
+    expect(parentWeeklyOverviewSource).toContain("title: latest.title || latest.productName || profile?.title || \"\"");
+    expect(parentWeeklyOverviewSource).toContain("chineseName: latest.productName || profile?.chineseName || null");
     expect(productsPageSource).toContain("product.chineseName || product.title");
   });
 
@@ -127,7 +125,8 @@ describe("导入模式库存规划接口契约", () => {
   });
 
   it("产品总览前端保留后端已经映射的运营字段，不将其重置为空", () => {
-    expect(productsPageSource).toContain("operator: product.operator || null");
+    expect(productsPageSource).toContain('const names = (p.operator || "").split');
+    expect(productsPageSource).toContain('(p.operator || "").toLowerCase().includes(q)');
     expect(productsPageSource).not.toContain("operator: null, storeName: product.storeName");
   });
 
@@ -141,7 +140,9 @@ describe("导入模式库存规划接口契约", () => {
 
   it("库存规划以市场代码筛选时可识别领星中文国家名和店铺站点后缀", () => {
     expect(routerSource).toContain("function matchesLingxingMarketplace");
-    expect(routerSource).toContain('US: ["US", "美国"]');
+    expect(routerSource).toContain('import { normalizeMarketplaceCode } from "@shared/marketplaceIdentity"');
+    expect(routerSource).toContain("const requested = normalizeMarketplaceCode(marketplace)");
+    expect(routerSource).toContain("const country = normalizeMarketplaceCode(row.country)");
     expect(routerSource).toContain("const scopedSnapshots = snapshots.filter(row => matchesLingxingMarketplace(row, input.marketplace))");
   });
 
