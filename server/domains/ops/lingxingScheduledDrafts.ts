@@ -4,6 +4,7 @@ import { adKeywordWeekly, dataImports, emperorScheduledTasks, lingxingProductWee
 import { lingxingSyncRouter } from "../../routers/lingxingSync";
 import { getDb } from "../../repositories/dbClient";
 import { summarizeParentAsinWeeks, type DailySnapshot } from "./productOverview/dailyAggregation";
+import { normalizeMarketplaceCode } from "../../../shared/marketplaceIdentity";
 
 type ScheduleDomain = "product_performance_daily" | "fba_inventory" | "ad_keyword" | "parent_asin_weekly_rollup" | "parent_asin_weekly_mcp";
 
@@ -92,14 +93,52 @@ type WeeklyRollupData = Record<string, unknown> & { week?: Record<string, unknow
 type WeeklyFactInsert = typeof lingxingProductWeekly.$inferInsert;
 
 export function weeklyRollupIdentity(input: { workspaceId?: unknown; parentAsin?: unknown; storeName?: unknown; country?: unknown; weekStartDate?: unknown }) {
-  return [text(input.workspaceId), text(input.parentAsin).toUpperCase(), text(input.storeName), text(input.country).toUpperCase(), text(input.weekStartDate)].join("|");
+  return [text(input.workspaceId), text(input.parentAsin).toUpperCase(), text(input.storeName), normalizeMarketplaceCode(text(input.country)), text(input.weekStartDate)].join("|");
+}
+
+type WeeklyFactIdentityCandidate = {
+  fact: { workspaceId?: unknown; parentAsin?: unknown; storeName?: unknown; country?: unknown; weekStartDate?: unknown };
+  rawCountry: unknown;
+};
+
+/**
+ * Collapses only representational marketplace aliases inside one normalized business identity.
+ * Metrics are never summed: a row already carrying the canonical marketplace label wins.
+ * Repeated rows with the same raw marketplace label remain visible to the strict duplicate guard.
+ */
+export function collapseWeeklyFactMarketplaceAliases<T extends WeeklyFactIdentityCandidate>(candidates: T[]): T[] {
+  const byIdentity = new Map<string, T[]>();
+  for (const candidate of candidates) {
+    const identity = weeklyRollupIdentity(candidate.fact);
+    const bucket = byIdentity.get(identity) || [];
+    bucket.push(candidate);
+    byIdentity.set(identity, bucket);
+  }
+  const collapsed: T[] = [];
+  for (const bucket of byIdentity.values()) {
+    const rawCountries = bucket.map((candidate) => text(candidate.rawCountry || "US").toUpperCase());
+    const rawCountryCounts = new Map<string, number>();
+    for (const country of rawCountries) rawCountryCounts.set(country, (rawCountryCounts.get(country) || 0) + 1);
+    if (bucket.length > 1 && rawCountryCounts.size > 1 && [...rawCountryCounts.values()].every((count) => count === 1)) {
+      collapsed.push([...bucket].sort((left, right) => {
+        const leftRaw = text(left.rawCountry || "US").toUpperCase();
+        const rightRaw = text(right.rawCountry || "US").toUpperCase();
+        const leftCanonical = normalizeMarketplaceCode(leftRaw) === leftRaw ? 1 : 0;
+        const rightCanonical = normalizeMarketplaceCode(rightRaw) === rightRaw ? 1 : 0;
+        return rightCanonical - leftCanonical || leftRaw.localeCompare(rightRaw);
+      })[0]!);
+      continue;
+    }
+    collapsed.push(...bucket);
+  }
+  return collapsed;
 }
 
 export function buildWeeklyRollupFact(input: WeeklyRollupData, context: { workspaceId: number; importId: number; userId: number; sourceKind?: string; sourceBatchId?: number | null; sourceTraceId?: string | null; sourceSchemaVersion?: string | null }): WeeklyFactInsert {
   const week = Object.keys(record(input.week)).length ? record(input.week) : input;
   const parentAsin = text(input.parentAsin).toUpperCase();
   const storeName = text(input.storeName);
-  const country = text(input.country || "US").toUpperCase();
+  const country = normalizeMarketplaceCode(text(input.country || "US"));
   const weekStartDate = text(week.weekStartDate || input.weekStartDate);
   const weekEndDate = text(week.weekEndDate || input.weekEndDate);
   if (!parentAsin || !storeName || !weekStartDate || !weekEndDate) throw new Error("父ASIN周汇总自动应用失败：缺少父ASIN、店铺或自然周身份字段");
@@ -197,11 +236,16 @@ export async function applyParentAsinWeeklyRollupBatch(db: any, input: { batchId
     eq(opsExternalSyncRows.workspaceId, input.workspaceId),
   ));
   if (!rows.length) throw new Error("父ASIN周汇总自动应用失败：批次没有汇总行");
-  const facts: Array<{ row: typeof opsExternalSyncRows.$inferSelect; fact: WeeklyFactInsert }> = rows.map((row: typeof opsExternalSyncRows.$inferSelect) => {
+  const rawFacts: Array<{ row: typeof opsExternalSyncRows.$inferSelect; fact: WeeklyFactInsert; rawCountry: unknown }> = rows.map((row: typeof opsExternalSyncRows.$inferSelect) => {
     const errors = Array.isArray(row.validationErrors) ? row.validationErrors : [];
     if (errors.length) throw new Error("父ASIN周汇总自动应用失败：批次存在覆盖或字段异常");
-    return { row, fact: buildWeeklyRollupFact(record(row.normalizedData), { workspaceId: input.workspaceId, importId: 0, userId: input.userId }) };
+    return {
+      row,
+      fact: buildWeeklyRollupFact(record(row.normalizedData), { workspaceId: input.workspaceId, importId: 0, userId: input.userId }),
+      rawCountry: record(row.normalizedData).country,
+    };
   });
+  const facts = collapseWeeklyFactMarketplaceAliases(rawFacts);
   const identities = facts.map(({ fact }) => weeklyRollupIdentity(fact));
   if (new Set(identities).size !== identities.length) throw new Error("父ASIN周汇总自动应用失败：批次存在重复业务身份");
   const scope = record(batch.scope);
@@ -284,7 +328,7 @@ export async function applyParentAsinWeeklyMcpBatch(db: any, input: { batchId: n
     eq(opsExternalSyncRows.workspaceId, input.workspaceId),
   ));
   if (!rows.length) throw new Error("父ASIN周报MCP自动应用失败：批次没有周报行");
-  const facts: Array<{ row: typeof opsExternalSyncRows.$inferSelect; fact: WeeklyFactInsert }> = rows.map((row: typeof opsExternalSyncRows.$inferSelect) => {
+  const rawFacts: Array<{ row: typeof opsExternalSyncRows.$inferSelect; fact: WeeklyFactInsert; rawCountry: unknown }> = rows.map((row: typeof opsExternalSyncRows.$inferSelect) => {
     const errors = Array.isArray(row.validationErrors) ? row.validationErrors : [];
     if (errors.length) throw new Error("父ASIN周报MCP自动应用失败：批次存在字段或范围异常");
     return {
@@ -298,8 +342,10 @@ export async function applyParentAsinWeeklyMcpBatch(db: any, input: { batchId: n
         sourceTraceId: text(batch.traceId) || null,
         sourceSchemaVersion: text(record(batch.summary).sourceSchemaVersion || "lingxing_parent_asin_weekly_v1"),
       }),
+      rawCountry: record(row.normalizedData).country,
     };
   });
+  const facts = collapseWeeklyFactMarketplaceAliases(rawFacts);
   const identities = facts.map(({ fact }) => weeklyRollupIdentity(fact));
   if (new Set(identities).size !== identities.length) throw new Error("父ASIN周报MCP自动应用失败：批次存在重复业务身份");
   const scope = record(batch.scope);
