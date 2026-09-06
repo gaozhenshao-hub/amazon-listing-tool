@@ -134,6 +134,13 @@ export function collapseWeeklyFactMarketplaceAliases<T extends WeeklyFactIdentit
   return collapsed;
 }
 
+export function rawMarketplaceFromWeeklySyncRow(input: { sourceData?: unknown; normalizedData?: unknown }) {
+  const source = record(input.sourceData);
+  const normalized = record(input.normalizedData);
+  return source.country || source.country_name || source.site || source.marketplace || source.marketplace_name
+    || normalized.country || normalized.site || normalized.marketplace || "US";
+}
+
 export function buildWeeklyRollupFact(input: WeeklyRollupData, context: { workspaceId: number; importId: number; userId: number; sourceKind?: string; sourceBatchId?: number | null; sourceTraceId?: string | null; sourceSchemaVersion?: string | null }): WeeklyFactInsert {
   const week = Object.keys(record(input.week)).length ? record(input.week) : input;
   const parentAsin = text(input.parentAsin).toUpperCase();
@@ -242,7 +249,7 @@ export async function applyParentAsinWeeklyRollupBatch(db: any, input: { batchId
     return {
       row,
       fact: buildWeeklyRollupFact(record(row.normalizedData), { workspaceId: input.workspaceId, importId: 0, userId: input.userId }),
-      rawCountry: record(row.normalizedData).country,
+      rawCountry: rawMarketplaceFromWeeklySyncRow(row),
     };
   });
   const facts = collapseWeeklyFactMarketplaceAliases(rawFacts);
@@ -342,7 +349,7 @@ export async function applyParentAsinWeeklyMcpBatch(db: any, input: { batchId: n
         sourceTraceId: text(batch.traceId) || null,
         sourceSchemaVersion: text(record(batch.summary).sourceSchemaVersion || "lingxing_parent_asin_weekly_v1"),
       }),
-      rawCountry: record(row.normalizedData).country,
+      rawCountry: rawMarketplaceFromWeeklySyncRow(row),
     };
   });
   const facts = collapseWeeklyFactMarketplaceAliases(rawFacts);
