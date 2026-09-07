@@ -66,6 +66,13 @@ describe("导入模式库存规划接口契约", () => {
     expect(detailPageSource).toContain("近{week}周");
   });
 
+  it("产品总览将父周查询失败明确展示并允许重试，不把失败伪装成零产品", () => {
+    expect(productsPageSource).toContain("systemOverviewError");
+    expect(productsPageSource).toContain("父ASIN周度数据暂时无法加载");
+    expect(productsPageSource).toContain("当前不会将请求失败显示为“0个产品”");
+    expect(productsPageSource).toContain("refetchSystemOverview");
+  });
+
   it("统一产品总览保留权威周报名称和人工主档回退，前端中文名称再回退标题", () => {
     expect(parentWeeklyOverviewSource).toContain("title: latest.title || latest.productName || profile?.title || \"\"");
     expect(parentWeeklyOverviewSource).toContain("chineseName: latest.productName || profile?.chineseName || null");

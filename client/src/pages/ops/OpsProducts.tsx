@@ -845,11 +845,18 @@ export default function OpsProducts() {
   const [showSyncPopover, setShowSyncPopover] = useState(false);
 
   // The MCP parent-ASIN weeks are the primary facts; ERP is historical fallback.
-  const { data: systemProducts, isLoading: systemLoading } = trpc.productOps.getProductOverviewWithWeeks.useQuery({
+  const systemOverviewQuery = trpc.productOps.getProductOverviewWithWeeks.useQuery({
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "all",
     statusFilter: "all",
     weeks: 4,
   });
+  const {
+    data: systemProducts,
+    isLoading: systemLoading,
+    isError: systemOverviewError,
+    error: systemOverviewErrorDetail,
+    refetch: refetchSystemOverview,
+  } = systemOverviewQuery;
 
   // Import data query (lingxing or saihu)
   const { data: importProducts, isLoading: importLoading } = trpc.dataImport.getProductOverviewFromImport.useQuery({
@@ -1170,7 +1177,25 @@ export default function OpsProducts() {
       )}
 
       {/* ═══ Product Blocks ═══ */}
-      {isLoading ? (
+      {systemOverviewError ? (
+        <Card className="border-amber-200 bg-amber-50/40">
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <AlertCircle className="h-10 w-10 text-amber-600" />
+            <div className="space-y-1">
+              <p className="font-medium text-amber-950">父ASIN周度数据暂时无法加载</p>
+              <p className="max-w-xl text-sm text-amber-800">
+                当前不会将请求失败显示为“0个产品”。请重试；若问题持续，请保留页面时间并联系管理员核对服务日志。
+              </p>
+              {systemOverviewErrorDetail?.message && (
+                <p className="text-xs text-amber-700">错误摘要：{systemOverviewErrorDetail.message}</p>
+              )}
+            </div>
+            <Button variant="outline" className="gap-2 border-amber-300 bg-white" onClick={() => void refetchSystemOverview()}>
+              <RefreshCw className="h-4 w-4" /> 重试加载
+            </Button>
+          </CardContent>
+        </Card>
+      ) : isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
             <Card key={i}>
