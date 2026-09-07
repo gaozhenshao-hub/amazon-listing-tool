@@ -4,10 +4,10 @@ import { opsExternalSyncBatches, users } from "../drizzle/schema/index.ts";
 import { applyParentAsinWeeklyMcpBatch } from "../server/domains/ops/lingxingScheduledDrafts.ts";
 import { getDb } from "../server/repositories/dbClient.ts";
 
-const START_DATE = "2026-03-01";
+const START_DATE = "2026-02-23";
 const END_DATE = "2026-08-23";
-const EXPECTED_COMPLETE_BATCHES = 21;
 const applyRequested = process.argv.includes("--apply");
+const approvedWeekStarts = String(process.env.APPROVED_PARENT_WEEK_STARTS || "").split(",").map((value) => value.trim()).filter(Boolean);
 
 function record(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -20,6 +20,19 @@ function number(value) {
 
 function scopeStartDate(batch) {
   return String(record(batch.scope).startDate ?? "");
+}
+
+function scopeEndDate(batch) {
+  return String(record(batch.scope).endDate ?? "");
+}
+
+function isMondaySundayNaturalWeek(batch) {
+  const startDate = scopeStartDate(batch);
+  const endDate = scopeEndDate(batch);
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  if (!Number.isFinite(start.getTime()) || start.getUTCDay() !== 1) return false;
+  start.setUTCDate(start.getUTCDate() + 6);
+  return start.toISOString().slice(0, 10) === endDate;
 }
 
 function isCompleteWeeklyBatch(batch) {
@@ -55,7 +68,7 @@ async function main() {
   const complete = candidates
     .filter((batch) => {
       const week = scopeStartDate(batch);
-      return week >= START_DATE && week <= END_DATE && isCompleteWeeklyBatch(batch);
+      return week >= START_DATE && week <= END_DATE && isMondaySundayNaturalWeek(batch) && isCompleteWeeklyBatch(batch);
     })
     .sort((left, right) => scopeStartDate(left).localeCompare(scopeStartDate(right)) || left.id - right.id);
 
@@ -63,15 +76,20 @@ async function main() {
     action: applyRequested ? "apply_complete_parent_weekly_backfill" : "dry_run_complete_parent_weekly_backfill",
     dateRange: { startDate: START_DATE, endDate: END_DATE },
     completeBatchCount: complete.length,
-    expectedCompleteBatchCount: EXPECTED_COMPLETE_BATCHES,
+    approvedWeekCount: approvedWeekStarts.length,
     candidateWeeks: complete.map((batch) => ({ batchId: batch.id, weekStartDate: scopeStartDate(batch) })),
   };
   if (!applyRequested) {
     console.log(JSON.stringify({ ...audit, writePerformed: false }));
     return;
   }
-  if (complete.length !== EXPECTED_COMPLETE_BATCHES) {
-    throw new Error(`受治理应用已阻断：完整草稿批次数为${complete.length}，预期为${EXPECTED_COMPLETE_BATCHES}；未执行写入`);
+  if (!approvedWeekStarts.length) {
+    throw new Error("受治理应用已阻断：未提供经用户确认的APPROVED_PARENT_WEEK_STARTS精确周清单；未执行写入");
+  }
+  const candidateWeekStarts = complete.map(scopeStartDate);
+  const approvedUnique = [...new Set(approvedWeekStarts)].sort();
+  if (JSON.stringify(candidateWeekStarts) !== JSON.stringify(approvedUnique)) {
+    throw new Error(`受治理应用已阻断：完整草稿周集合与经用户确认的精确周清单不一致；未执行写入`);
   }
 
   const results = [];

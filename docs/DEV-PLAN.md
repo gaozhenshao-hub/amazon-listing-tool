@@ -47,9 +47,9 @@
 
 ## Phase 8：MCP子ASIN周数据的父ASIN受治理聚合（2026-09-07）
 
-- **交付物**：纠正“领星MCP直接提供Amazon父ASIN周汇总”的旧假设；在`parent_asin_weekly_mcp`应用阶段将同父ASIN自然周下的不同子ASIN成员聚合为唯一父级事实，并保留成员集合、来源批次与Trace。
+- **交付物**：纠正“领星MCP直接提供Amazon父ASIN周汇总”的旧假设；解析领星`rweek/rdate`真实源周期，只接受周一至周日的完整自然周；在`parent_asin_weekly_mcp`应用阶段将同父ASIN自然周下的不同子ASIN成员聚合为唯一父级事实，并保留成员集合、来源批次与Trace。
 - **关键文件**：`server/routers/lingxingSync.ts`、`server/domains/ops/lingxingScheduledDrafts.ts`、`server/domains/ops/lingxingScheduledDrafts.identity.test.ts`、`shared/marketplaceIdentity.ts`、`scripts/apply-qingdao-parent-asin-weekly-history-complete.mjs`。
-- **验收标准**：不同子ASIN成员可安全聚合；可加指标求和、比率重算；跨店铺/站点保持隔离；重复子ASIN、重叠成员和同来源历史冲突失败关闭；完整周可幂等补齐，异常周继续隔离；统一产品总览显示父ASIN周事实。
+- **验收标准**：请求范围和真实源周期均为同一周一至周日自然周；周日至周六、跨周分片、未知周期、重复子ASIN、重叠成员和同来源历史冲突均在写入前失败关闭。不同子ASIN成员可安全聚合；可加指标求和、比率重算；跨店铺/站点保持隔离；完整周可幂等补齐，异常周继续隔离；统一产品总览显示父ASIN周事实。
 - **数据库表**：不新建、不迁移。继续使用`ops_external_sync_batches`、`ops_external_sync_rows`与`lingxing_product_weekly`，仅改变受治理应用阶段的父级聚合合同。
 
 ## Phase 6：数据迁移、回归与发布

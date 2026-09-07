@@ -107,7 +107,7 @@ describe("父ASIN周报子ASIN成员聚合", () => {
     expect(result[0]?.fact).toMatchObject({
       asin: "CHILD-A,CHILD-B",
       country: "US",
-      sourceSchemaVersion: "lx_asin_weekly_parent_v2",
+      sourceSchemaVersion: "lx_asin_weekly_parent_v3",
       salesQty: 30,
       salesAmount: "300",
       orderQty: 15,

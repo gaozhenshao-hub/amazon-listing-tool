@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMcpArguments, calculateFieldDiffs, coalesceFbaInventoryPreviewRows, dailyReadCoverageSummary, dailySnapshotIdentityKey, hasSelectedPeriodActivity, isValidDailySnapshotForApply, keywordPreviewReadLimits, keywordSnapshotIdentityHash, normalizeDailyPreviewPage, normalizeLingxingStoreDirectoryRecord, normalizeMcpPayload, normalizeRow, pickRecords, shouldExternalizeSyncRawSnapshot } from "./routers/lingxingSync";
+import { buildMcpArguments, calculateFieldDiffs, coalesceFbaInventoryPreviewRows, dailyReadCoverageSummary, dailySnapshotIdentityKey, hasSelectedPeriodActivity, isValidDailySnapshotForApply, keywordPreviewReadLimits, keywordSnapshotIdentityHash, normalizeDailyPreviewPage, normalizeLingxingStoreDirectoryRecord, normalizeMcpPayload, normalizeRow, pickRecords, resolveLingxingSourcePeriod, shouldExternalizeSyncRawSnapshot } from "./routers/lingxingSync";
 
 describe("领星运营同步预览契约", () => {
   it("产品表现使用官方sids范围且保留人工选择的周期", () => {
@@ -20,6 +20,24 @@ describe("领星运营同步预览契约", () => {
     const request = buildMcpArguments("parent_asin_weekly_mcp", { storeId: "7392", startDate: "2026-08-24", endDate: "2026-08-30" });
     expect(request.capability).toBe("query_product_performance_asin_lists");
     expect(request.arguments).toMatchObject({ sids: "7392", date_view_type: "week", summary_field: "asin", date_view_order_type: 2, query_order_profit: true });
+  });
+
+  it("解析领星rweek/rdate真实源周期，禁止请求范围覆盖跨周分片", () => {
+    expect(resolveLingxingSourcePeriod({ rweek: "2026-03-02~2026-03-08" })).toEqual({ startDate: "2026-03-02", endDate: "2026-03-08", sourceField: "rweek" });
+    expect(resolveLingxingSourcePeriod({ rdate: "2026-03-01~2026-03-01" })).toEqual({ startDate: "2026-03-01", endDate: "2026-03-01", sourceField: "rdate" });
+  });
+
+  it("ASIN周草稿仅接受与目标周一至周日完全一致的源周期，并按子ASIN区分身份", () => {
+    const scope = { storeId: "7392", marketplace: "US", startDate: "2026-03-02", endDate: "2026-03-08" };
+    const accepted = normalizeRow("parent_asin_weekly_mcp", { asin: "CHILD-A", parent_asin_real: "PARENT-1", rweek: "2026-03-02~2026-03-08" }, scope);
+    const second = normalizeRow("parent_asin_weekly_mcp", { asin: "CHILD-B", parent_asin_real: "PARENT-1", rweek: "2026-03-02~2026-03-08" }, scope);
+    expect(accepted.validationErrors).toEqual([]);
+    expect(accepted.normalized).toMatchObject({ sourcePeriodStart: "2026-03-02", sourcePeriodEnd: "2026-03-08", weekStartDate: "2026-03-02", weekEndDate: "2026-03-08" });
+    expect(accepted.entityKey).not.toBe(second.entityKey);
+
+    const crossed = normalizeRow("parent_asin_weekly_mcp", { asin: "CHILD-A", parent_asin_real: "PARENT-1", rdate: "2026-03-01~2026-03-01" }, scope);
+    expect(crossed.validationErrors.join(" ")).toContain("跨周分片");
+    expect(crossed.normalized).toMatchObject({ weekStartDate: "2026-03-01", weekEndDate: "2026-03-01" });
   });
 
   it("广告报表使用profile_ids范围，不借用产品店铺参数", () => {

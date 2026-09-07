@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildWeeklyRollupFact, scheduledDailyScope, scheduledWeeklyScope, validateKeywordAutoApplyIntegrity, weeklyCoverageExceptionSummary, weeklyFactsEqual, weeklyRollupIdentity } from "./domains/ops/lingxingScheduledDrafts";
+import { buildWeeklyRollupFact, isCompleteMondaySundayWeek, scheduledDailyScope, scheduledWeeklyScope, validateKeywordAutoApplyIntegrity, validateParentAsinWeeklyMcpAutoApplyIntegrity, weeklyCoverageExceptionSummary, weeklyFactsEqual, weeklyRollupIdentity } from "./domains/ops/lingxingScheduledDrafts";
 
 describe("领星分域定时草稿范围", () => {
   it("每日北京时间17:00对应的任务读取前一天，且生成稳定幂等键", () => {
@@ -10,6 +10,18 @@ describe("领星分域定时草稿范围", () => {
   it("每周一任务只汇总上一自然周已确认日快照", () => {
     const scope = scheduledWeeklyScope(new Date("2026-08-24T09:10:00.000Z"));
     expect(scope).toEqual({ startDate: "2026-08-17", endDate: "2026-08-23", runKey: "weekly:2026-08-17" });
+  });
+
+  it("父ASIN周任务只接受周一至周日，拒绝周日至周六", () => {
+    expect(isCompleteMondaySundayWeek({ startDate: "2026-08-17", endDate: "2026-08-23" })).toBe(true);
+    expect(isCompleteMondaySundayWeek({ startDate: "2026-08-16", endDate: "2026-08-22" })).toBe(false);
+  });
+
+  it("父ASIN周自动应用要求每行真实源周期与目标自然周完全一致", () => {
+    const batch = { id: 1, status: "ready_for_review", summary: { storesExpected: 1, storesRead: 1, storeDateWindowsExpected: 1, storeDateWindowsRead: 1, datesRead: 7, failedStoreDateWindows: [], pageTruncations: 0, capped: false }, scope: {} };
+    const valid = [{ id: 1, entityKey: "sid|US|parent_asin_weekly_mcp|PARENT-1|CHILD-A|2026-08-17|2026-08-23", validationErrors: [], normalizedData: {}, sourceData: { rweek: "2026-08-17~2026-08-23" } }];
+    expect(() => validateParentAsinWeeklyMcpAutoApplyIntegrity(batch, valid, { startDate: "2026-08-17", endDate: "2026-08-23" })).not.toThrow();
+    expect(() => validateParentAsinWeeklyMcpAutoApplyIntegrity(batch, [{ ...valid[0], sourceData: { rdate: "2026-08-16~2026-08-16" } }], { startDate: "2026-08-17", endDate: "2026-08-23" })).toThrow("真实源周期");
   });
 
   it("周汇总对缺失的确认日快照生成明确自动应用阻断摘要", () => {

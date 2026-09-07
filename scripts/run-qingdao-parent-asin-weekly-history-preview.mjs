@@ -5,7 +5,7 @@ import { getDb } from "../server/repositories/dbClient";
 import { lingxingSyncRouter } from "../server/routers/lingxingSync";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const START_DATE = "2026-03-15";
+const START_DATE = "2026-02-23";
 const END_DATE = "2026-08-23";
 const INTERVAL_MS = 1_200;
 
@@ -13,14 +13,14 @@ function isoDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
-export function completeSundaySaturdayWeeks(startDate = START_DATE, endDate = END_DATE) {
+export function completeMondaySundayWeeks(startDate = START_DATE, endDate = END_DATE) {
   const start = new Date(`${startDate}T00:00:00.000Z`);
   const end = new Date(`${endDate}T00:00:00.000Z`);
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) {
     throw new Error("历史周范围无效");
   }
-  if (start.getUTCDay() !== 0 || end.getUTCDay() !== 0) {
-    throw new Error("历史父ASIN周报仅接受以周日开始的完整自然周范围");
+  if (start.getUTCDay() !== 1 || end.getUTCDay() !== 0 || isoDate(new Date(start.getTime() + 6 * DAY_MS)) > endDate) {
+    throw new Error("历史父ASIN周报仅接受周一开始、周日结束的完整自然周范围");
   }
   const weeks = [];
   for (let current = new Date(start); current <= end; current = new Date(current.getTime() + 7 * DAY_MS)) {
@@ -35,7 +35,7 @@ function sleep(ms) {
 }
 
 async function main() {
-  const weeks = completeSundaySaturdayWeeks();
+  const weeks = completeMondaySundayWeeks();
   if (process.argv.includes("--dry-run")) {
     console.log(JSON.stringify({ action: "parent_asin_weekly_history_preview_dry_run", previewOnly: true, weekCount: weeks.length, firstWeek: weeks[0], lastWeek: weeks.at(-1) }));
     return;

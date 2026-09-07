@@ -246,6 +246,39 @@ function isoDates(startDate: string, endDate: string) {
   return dates;
 }
 
+export type LingxingSourcePeriod = {
+  startDate: string;
+  endDate: string;
+  sourceField: "rweek" | "rdate" | "explicit_week_fields";
+};
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseLingxingPeriodText(input: unknown) {
+  const raw = asText(input);
+  if (!raw) return null;
+  if (ISO_DATE.test(raw)) return { startDate: raw, endDate: raw };
+  const matched = raw.match(/^(\d{4}-\d{2}-\d{2})\s*(?:~|～|至|\s-\s)\s*(\d{4}-\d{2}-\d{2})$/);
+  return matched ? { startDate: matched[1], endDate: matched[2] } : null;
+}
+
+/**
+ * 领星的ASIN周视图会按其自然周边界返回rweek/rdate周期。
+ * 请求若跨周，接口会返回多个源周期分片；调用方必须保留真实周期，
+ * 绝不能用请求起止日覆盖它们，否则不同周会被压成同一事实身份。
+ */
+export function resolveLingxingSourcePeriod(source: RecordValue): LingxingSourcePeriod | null {
+  for (const sourceField of ["rweek", "rdate"] as const) {
+    const period = parseLingxingPeriodText(source[sourceField]);
+    if (period) return { ...period, sourceField };
+  }
+  const startDate = asText(value(source, ["week_start_date", "weekStartDate", "start_date", "period_start", "report_start"]));
+  const endDate = asText(value(source, ["week_end_date", "weekEndDate", "end_date", "period_end", "report_end"]));
+  return ISO_DATE.test(startDate) && ISO_DATE.test(endDate)
+    ? { startDate, endDate, sourceField: "explicit_week_fields" }
+    : null;
+}
+
 export function dailyReadCoverageSummary(stores: Array<{ sid: string }>, dates: string[], completedStoreDateWindows: Set<string>) {
   const completedStores = new Set(stores.filter((store) => dates.every((reportDate) => completedStoreDateWindows.has(`${store.sid}|${reportDate}`))).map((store) => store.sid));
   return {
@@ -304,12 +337,13 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
   const sku = value(source, ["sku", "local_sku", "seller_sku", "msku", "sellerSku", "SKU"]);
   const sourceStoreId = value(source, ["__lingxingSid", "sid", "store_id", "storeId"]) || scope.storeId;
   const reportDate = value(source, ["rdate", "report_date", "reportDate", "__reportDate"]) || scope.endDate || scope.startDate;
-  const weekStartDate = value(source, ["week_start_date", "weekStartDate", "start_date", "period_start", "report_start"]) || scope.startDate || null;
-  const weekEndDate = value(source, ["week_end_date", "weekEndDate", "end_date", "period_end", "report_end"]) || scope.endDate || scope.startDate || null;
+  const sourcePeriod = domain === "parent_asin_weekly_mcp" ? resolveLingxingSourcePeriod(source) : null;
+  const weekStartDate = sourcePeriod?.startDate || value(source, ["week_start_date", "weekStartDate", "start_date", "period_start", "report_start"]) || scope.startDate || null;
+  const weekEndDate = sourcePeriod?.endDate || value(source, ["week_end_date", "weekEndDate", "end_date", "period_end", "report_end"]) || scope.endDate || scope.startDate || null;
   const profileId = value(source, ["profile_id", "profileId", "profile"]) || (profileIdsFromScope(scope).length === 1 ? profileIdsFromScope(scope)[0] : null);
   const normalized: RecordValue = {
     sourceDomain: domain,
-    sourceSchemaVersion: domain === "parent_asin_weekly_mcp" ? "lingxing_parent_asin_weekly_v1" : null,
+    sourceSchemaVersion: domain === "parent_asin_weekly_mcp" ? "lingxing_asin_weekly_source_period_v2" : null,
     storeId: sourceStoreId,
     profileId,
     periodStart: scope.startDate || null,
@@ -319,6 +353,9 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
     reportDate,
     weekStartDate,
     weekEndDate,
+    sourcePeriodStart: sourcePeriod?.startDate || null,
+    sourcePeriodEnd: sourcePeriod?.endDate || null,
+    sourcePeriodField: sourcePeriod?.sourceField || null,
     sku: sku ? String(sku) : null,
     productName: value(source, ["local_name", "product_name", "item_name", "title", "name", "品名", "产品名称"]),
     storeName: value(source, ["__lingxingStoreName", "shop_name", "store_name", "storeName", "seller_name"]) || `SID ${sourceStoreId}`,
@@ -375,12 +412,12 @@ export function normalizeRow(domain: z.infer<typeof domainSchema>, source: Recor
         : domain === "product_performance_daily"
           ? [normalized.storeId, domain, normalized.asin || "unmatched", normalized.reportDate || "missing"].join("|")
           : domain === "parent_asin_weekly_mcp"
-            ? [normalized.storeId, normalized.country, domain, normalized.parentAsin || "unmatched", normalized.weekStartDate || "missing"].join("|")
+            ? [normalized.storeId, normalized.country, domain, normalized.parentAsin || "unmatched", normalized.asin || "unmatched", normalized.weekStartDate || "missing", normalized.weekEndDate || "missing"].join("|")
           : [normalized.storeId, domain, normalized.parentAsin || normalized.asin || "unmatched", normalized.sku || "", scope.startDate || "latest", scope.endDate || ""].join("|");
   const validationErrors: string[] = [];
   if (["product_performance", "product_performance_daily", "order_profit"].includes(domain) && !normalized.asin && !normalized.parentAsin) validationErrors.push("未识别ASIN或父ASIN，不能确认写入产品总览。");
   if (domain === "product_performance_daily" && (!normalized.asin || normalized.asin === "-" || !normalized.parentAsin || !normalized.reportDate)) validationErrors.push("ASIN日快照需要有效子ASIN、父ASIN和报告日期；占位ASIN不能写入。");
-  if (domain === "parent_asin_weekly_mcp" && (!normalized.parentAsin || !normalized.storeId || !normalized.weekStartDate || !normalized.weekEndDate || normalized.weekStartDate !== scope.startDate || normalized.weekEndDate !== scope.endDate)) validationErrors.push("父ASIN周报需要店铺、父ASIN和与自然周范围一致的起止日期；异常行不能自动应用。");
+  if (domain === "parent_asin_weekly_mcp" && (!normalized.asin || !normalized.parentAsin || !normalized.storeId || !sourcePeriod || normalized.weekStartDate !== scope.startDate || normalized.weekEndDate !== scope.endDate)) validationErrors.push("ASIN周数据需要子ASIN、父ASIN、店铺及与目标自然周完全一致的真实源周期；跨周分片、未知周期或异常行不能自动应用。");
   if (domain === "fba_inventory" && (!normalized.asin || !normalized.parentAsin)) validationErrors.push("库存快照需要子ASIN和父ASIN映射；请在草稿中补充或取消选择该行。");
   if (domain === "ad_campaign" && !normalized.campaignName) validationErrors.push("广告活动报表需要活动名称；请核对草稿后再确认。");
   if (domain === "ad_keyword" && (!normalized.profileId || !normalized.keyword || !normalized.campaignName)) validationErrors.push("广告关键词报表需要Profile、关键词和活动名称；请核对草稿后再确认。");
@@ -669,8 +706,6 @@ export const lingxingSyncRouter = router({
                 ...source,
                 __lingxingSid: store.sid,
                 __lingxingStoreName: store.name,
-                week_start_date: value(source, ["week_start_date", "weekStartDate", "start_date", "period_start", "report_start"]) || input.scope.startDate,
-                week_end_date: value(source, ["week_end_date", "weekEndDate", "end_date", "period_end", "report_end"]) || input.scope.endDate,
               })) }
               : normalizeDailyPreviewPage(pageRows, { storeId: store.sid, storeName: store.name, reportDate });
             placeholderRows += normalizedPage.placeholderRows;
@@ -700,7 +735,7 @@ export const lingxingSyncRouter = router({
         capped,
         failedStoreDateWindows,
         toolRunIds,
-        sourceSchemaVersion: isParentAsinWeeklyMcp ? "lingxing_parent_asin_weekly_v1" : undefined,
+        sourceSchemaVersion: isParentAsinWeeklyMcp ? "lingxing_asin_weekly_source_period_v2" : undefined,
       });
     } else if (input.dataDomain === "fba_inventory" && input.scope.storeId === "ALL_US") {
       const storesExecution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: { capability: "get_my_sids", arguments: {} }, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_inventory_us_store_directory" });

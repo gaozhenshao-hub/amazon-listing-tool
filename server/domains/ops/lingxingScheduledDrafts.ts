@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { adKeywordWeekly, dataImports, emperorScheduledTasks, lingxingProductWeekly, opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncConfirmations, opsExternalSyncRows, opsLingxingSyncSchedules, users } from "../../../drizzle/schema";
-import { lingxingSyncRouter } from "../../routers/lingxingSync";
+import { lingxingSyncRouter, resolveLingxingSourcePeriod } from "../../routers/lingxingSync";
 import { getDb } from "../../repositories/dbClient";
 import { summarizeParentAsinWeeks, type DailySnapshot } from "./productOverview/dailyAggregation";
 import { normalizeMarketplaceCode } from "../../../shared/marketplaceIdentity";
@@ -19,6 +19,12 @@ const mondayOf = (date: string) => {
   value.setUTCDate(value.getUTCDate() - ((value.getUTCDay() + 6) % 7));
   return value.toISOString().slice(0, 10);
 };
+
+export function isCompleteMondaySundayWeek(scope: { startDate: string; endDate: string }) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(scope.startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(scope.endDate)) return false;
+  const start = new Date(`${scope.startDate}T00:00:00Z`);
+  return Number.isFinite(start.getTime()) && start.getUTCDay() === 1 && addDays(scope.startDate, 6) === scope.endDate;
+}
 
 export function scheduledDailyScope(now = new Date()) {
   const previousDate = addDays(shanghaiDate(now), -1);
@@ -283,6 +289,7 @@ export function aggregateParentAsinWeeklyMemberFacts<T extends WeeklyMemberFactC
           ...ordered[0]!.fact,
           asin: [...members].sort().join(","),
           country: normalizeMarketplaceCode(text(ordered[0]!.fact.country)),
+          sourceSchemaVersion: "lx_asin_weekly_parent_v3",
         },
       });
       continue;
@@ -314,7 +321,7 @@ export function aggregateParentAsinWeeklyMemberFacts<T extends WeeklyMemberFactC
         msku: uniqueSkus.length === 1 ? uniqueSkus[0] : "",
         operator: uniqueOperators.length === 1 ? uniqueOperators[0] : "",
         country: normalizeMarketplaceCode(text(first.fact.country)),
-        sourceSchemaVersion: "lx_asin_weekly_parent_v2",
+        sourceSchemaVersion: "lx_asin_weekly_parent_v3",
         salesQty,
         salesAmount: weeklyFactDecimal(salesAmount),
         orderQty,
@@ -341,6 +348,21 @@ export function aggregateParentAsinWeeklyMemberFacts<T extends WeeklyMemberFactC
     });
   }
   return aggregated;
+}
+
+function assertParentAsinWeeklySourcePeriods(rows: AutoApplyRow[], scope: { startDate: string; endDate: string }) {
+  if (!isCompleteMondaySundayWeek(scope)) throw new Error("父ASIN周报MCP自动应用失败：目标范围不是周一至周日的完整自然周");
+  for (const row of rows) {
+    const sourcePeriod = resolveLingxingSourcePeriod(record(row.sourceData));
+    if (!sourcePeriod || sourcePeriod.startDate !== scope.startDate || sourcePeriod.endDate !== scope.endDate) {
+      throw new Error("父ASIN周报MCP自动应用失败：真实源周期与目标周一至周日自然周不一致");
+    }
+  }
+  const entityKeys = new Set<string>();
+  for (const row of rows) {
+    if (!row.entityKey || entityKeys.has(row.entityKey)) throw new Error("父ASIN周报MCP自动应用失败：存在重复或缺失的子ASIN周身份键");
+    entityKeys.add(row.entityKey);
+  }
 }
 
 export async function applyParentAsinWeeklyRollupBatch(db: any, input: { batchId: number; workspaceId: number; userId: number }) {
@@ -448,6 +470,10 @@ export async function applyParentAsinWeeklyMcpBatch(db: any, input: { batchId: n
     eq(opsExternalSyncRows.workspaceId, input.workspaceId),
   ));
   if (!rows.length) throw new Error("父ASIN周报MCP自动应用失败：批次没有周报行");
+  const scope = record(batch.scope);
+  const weekStartDate = text(scope.startDate);
+  const weekEndDate = text(scope.endDate);
+  assertParentAsinWeeklySourcePeriods(rows as AutoApplyRow[], { startDate: weekStartDate, endDate: weekEndDate });
   const rawFacts: Array<{ row: typeof opsExternalSyncRows.$inferSelect; fact: WeeklyFactInsert; rawCountry: unknown }> = rows.map((row: typeof opsExternalSyncRows.$inferSelect) => {
     const errors = Array.isArray(row.validationErrors) ? row.validationErrors : [];
     if (errors.length) throw new Error("父ASIN周报MCP自动应用失败：批次存在字段或范围异常");
@@ -468,9 +494,6 @@ export async function applyParentAsinWeeklyMcpBatch(db: any, input: { batchId: n
   const facts = aggregateParentAsinWeeklyMemberFacts(rawFacts);
   const identities = facts.map(({ fact }) => weeklyRollupIdentity(fact));
   if (new Set(identities).size !== identities.length) throw new Error("父ASIN周报MCP自动应用失败：批次存在重复业务身份");
-  const scope = record(batch.scope);
-  const weekStartDate = text(scope.startDate || facts[0].fact.weekStartDate);
-  const weekEndDate = text(scope.endDate || facts[0].fact.weekEndDate);
   const existing = await db.select().from(lingxingProductWeekly).where(and(
     eq(lingxingProductWeekly.workspaceId, input.workspaceId),
     eq(lingxingProductWeekly.weekStartDate, weekStartDate),
@@ -694,8 +717,9 @@ export function validateParentAsinWeeklyMcpAutoApplyIntegrity(batch: AutoApplyBa
   if (!expectedStores || readStores !== expectedStores || failedWindows.length || Number(summary.pageTruncations || 0) > 0 || Boolean(summary.capped)) {
     throw new Error("父ASIN周报MCP自动应用校验未通过：店铺覆盖不完整、存在失败窗口或分页截断，已保留待复核");
   }
-  if (coveredDays !== 7 || !scope.startDate || !scope.endDate) throw new Error("父ASIN周报MCP自动应用校验未通过：报告范围不是完整自然周");
+  if (coveredDays !== 7 || !isCompleteMondaySundayWeek(scope)) throw new Error("父ASIN周报MCP自动应用校验未通过：报告范围不是周一至周日的完整自然周");
   if (hasInvalidRow) throw new Error("父ASIN周报MCP自动应用校验未通过：存在父ASIN身份或周范围异常行，已保留待复核");
+  assertParentAsinWeeklySourcePeriods(rows, scope);
 }
 
 export async function runLingxingScheduledDraft(taskUid: string, now = new Date()) {

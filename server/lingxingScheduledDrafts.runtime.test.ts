@@ -8,6 +8,11 @@ const { getDbMock, createCallerMock } = vi.hoisted(() => ({
 vi.mock("./repositories/dbClient", () => ({ getDb: getDbMock }));
 vi.mock("./routers/lingxingSync", () => ({
   lingxingSyncRouter: { createCaller: createCallerMock },
+  resolveLingxingSourcePeriod: (source: Record<string, unknown>) => {
+    const raw = String(source.rweek || source.rdate || "");
+    const matched = raw.match(/^(\d{4}-\d{2}-\d{2})~(\d{4}-\d{2}-\d{2})$/);
+    return matched ? { startDate: matched[1], endDate: matched[2], sourceField: source.rweek ? "rweek" : "rdate" } : null;
+  },
 }));
 
 import { runLingxingScheduledDraft, validateDailyAutoApplyIntegrity, validateHistoricalBackfillIntegrity, validateInventoryAutoApplyIntegrity, validateKeywordAutoApplyIntegrity, validateParentAsinWeeklyMcpAutoApplyIntegrity } from "./domains/ops/lingxingScheduledDrafts";
@@ -207,7 +212,7 @@ describe("领星Heartbeat草稿运行", () => {
 
   it("父ASIN周报MCP仅在完整自然周、全店覆盖且无截断或异常行时可自动应用", () => {
     const batch = { id: 88, status: "ready_for_review", summary: { capped: false, pageTruncations: 0, datesRead: 7, storesExpected: 2, storesRead: 2, failedStoreDateWindows: [] }, scope: {} };
-    const rows = [{ id: 1, entityKey: "7392|US|parent_asin_weekly_mcp|PARENT|2026-08-24", rowStatus: "new", validationErrors: [], normalizedData: { storeId: "7392", parentAsin: "PARENT", weekStartDate: "2026-08-24", weekEndDate: "2026-08-30" }, sourceData: {} }];
+    const rows = [{ id: 1, entityKey: "7392|US|parent_asin_weekly_mcp|PARENT|CHILD|2026-08-24|2026-08-30", rowStatus: "new", validationErrors: [], normalizedData: { storeId: "7392", asin: "CHILD", parentAsin: "PARENT", weekStartDate: "2026-08-24", weekEndDate: "2026-08-30" }, sourceData: { rweek: "2026-08-24~2026-08-30" } }];
     expect(() => validateParentAsinWeeklyMcpAutoApplyIntegrity(batch, rows, { startDate: "2026-08-24", endDate: "2026-08-30" })).not.toThrow();
     expect(() => validateParentAsinWeeklyMcpAutoApplyIntegrity({ ...batch, summary: { ...batch.summary, storesRead: 1 } }, rows, { startDate: "2026-08-24", endDate: "2026-08-30" })).toThrow("店铺覆盖不完整");
     expect(() => validateParentAsinWeeklyMcpAutoApplyIntegrity({ ...batch, summary: { ...batch.summary, pageTruncations: 1 } }, rows, { startDate: "2026-08-24", endDate: "2026-08-30" })).toThrow("店铺覆盖不完整");
