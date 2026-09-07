@@ -388,7 +388,7 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
               {product.marketplace || "US"}
             </Badge>
             <Badge variant="outline" className={`text-[10px] px-1.5 py-0 shrink-0 ${product.weeklySource === "mcp_parent_weekly" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
-              {product.weeklySource === "mcp_parent_weekly" ? "MCP 周报" : "ERP 历史"}
+              {product.weeklySource === "mcp_parent_weekly" ? "ASIN周数据·系统父级汇总" : "ERP 历史"}
             </Badge>
             {product.weeklySource === "mcp_parent_weekly" && product.hasErpHistory && (
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-slate-200 text-slate-500">含ERP历史</Badge>
@@ -979,7 +979,7 @@ export default function OpsProducts() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-xs text-blue-800">
         <Badge variant="outline" className="border-blue-200 bg-white text-blue-700">统一产品视图</Badge>
-        <span>同一父ASIN、店铺和站点仅显示一张卡片；MCP父ASIN自然周报优先，ERP仅补充未覆盖的历史周。</span>
+        <span>同一父ASIN、店铺和站点仅显示一张卡片；领星ASIN周数据经系统汇总为父ASIN自然周事实，ERP仅补充未覆盖的历史周。</span>
         <Button variant="link" size="sm" className="h-auto px-0 text-xs text-blue-700" onClick={() => navigate("/ops/inventory")}>进入库存规划</Button>
       </div>
 
@@ -988,7 +988,7 @@ export default function OpsProducts() {
         <div>
           <h1 className="text-2xl font-bold">产品运营总览</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            权威周度来源：领星MCP父ASIN自然周报；ERP仅作为未覆盖历史的来源化参考。ASIN日数据用于单ASIN详情与库存规划，不参与本页周度累计。
+            权威周度来源：领星ASIN周数据·系统父ASIN汇总；ERP仅作为未覆盖历史的来源化参考。ASIN日数据用于单ASIN详情与库存规划，不参与本页周度累计。
           </p>
         </div>
         <div className="flex items-center gap-2">

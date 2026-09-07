@@ -263,7 +263,7 @@ export default function OpsProductDetail() {
             {isSourceBackedView && (
               <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
                 <Database className="h-3 w-3 mr-1" />
-                MCP优先 · ERP历史回退
+                ASIN周数据系统父ASIN汇总优先 · ERP历史回退
               </Badge>
             )}
           </div>

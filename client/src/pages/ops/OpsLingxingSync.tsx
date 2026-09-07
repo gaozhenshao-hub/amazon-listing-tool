@@ -179,7 +179,7 @@ export default function OpsLingxingSync() {
     { dataDomain: "product_performance_daily" as const, title: "每日产品日数据", timing: "每天北京时间 17:00 · 读取前一天", detail: "美国站全店逐日读取；仅在分页完整、身份去重、字段有效且无异常时自动追加日快照", autoApply: true },
     { dataDomain: "fba_inventory" as const, title: "每日FBA库存快照", timing: "每天北京时间 17:20 · 读取当前库存", detail: "美国站店铺错峰读取；仅在全店覆盖、分页完整、身份唯一且指标有效时自动追加库存事实", autoApply: true },
     { dataDomain: "ad_keyword" as const, title: "每日广告关键词历史", timing: "每天北京时间 17:40 · 读取前一天", detail: "美国站广告Profile错峰读取；仅在全Profile覆盖、分页完整、身份唯一且指标有效时自动追加关键词历史事实", autoApply: true },
-    { dataDomain: "parent_asin_weekly_mcp" as const, title: "每周父ASIN周报", timing: "每周一北京时间 16:10 · 读取上一自然周", detail: "领星MCP读取美国站全部已授权店铺的父ASIN周报；仅在店铺覆盖、分页、自然周范围与身份校验完整时直接幂等追加周事实，异常或冲突会阻断并保留审计", autoApply: true },
+    { dataDomain: "parent_asin_weekly_mcp" as const, title: "每周ASIN周数据·系统父ASIN汇总", timing: "每周一北京时间 16:10 · 读取上一自然周", detail: "领星MCP读取美国站全部已授权店铺的ASIN周数据；系统仅在店铺覆盖、分页、真实周一至周日源周期与身份校验完整时汇总为父ASIN周事实并幂等追加，异常或冲突会阻断并保留审计", autoApply: true },
   ];
 
   const setRow = (id: number, patch: Record<string, unknown>) => setEdits((previous) => ({ ...previous, [id]: { ...previous[id], ...patch } }));

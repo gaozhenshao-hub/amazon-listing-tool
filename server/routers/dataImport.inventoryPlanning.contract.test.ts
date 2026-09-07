@@ -10,6 +10,7 @@ const inventoryPageSource = readFileSync(resolve(process.cwd(), "client/src/page
 const purchasePlanningSource = readFileSync(resolve(process.cwd(), "shared/inventoryPurchasePlanning.ts"), "utf8");
 const lingxingSyncSource = readFileSync(resolve(process.cwd(), "server/routers/lingxingSync.ts"), "utf8");
 const ownerAssignmentRouterSource = readFileSync(resolve(process.cwd(), "server/routers/inventoryOwnerAssignments.ts"), "utf8");
+const lingxingSyncPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsLingxingSync.tsx"), "utf8");
 
 describe("导入模式库存规划接口契约", () => {
   it("以 ASIN 日快照作为库存规划输入，而不是旧库存预警表", () => {
@@ -71,6 +72,18 @@ describe("导入模式库存规划接口契约", () => {
     expect(productsPageSource).toContain("父ASIN周度数据暂时无法加载");
     expect(productsPageSource).toContain("当前不会将请求失败显示为“0个产品”");
     expect(productsPageSource).toContain("refetchSystemOverview");
+  });
+
+  it("产品总览和周度同步任务准确说明ASIN周数据由系统汇总为父ASIN自然周", () => {
+    expect(productsPageSource).toContain("领星ASIN周数据·系统父ASIN汇总");
+    expect(productsPageSource).toContain("ASIN周数据·系统父级汇总");
+    expect(productsPageSource).not.toContain("领星MCP父ASIN自然周报");
+    expect(detailPageSource).toContain("ASIN周数据系统父ASIN汇总优先 · ERP历史回退");
+    expect(detailPageSource).not.toContain("MCP优先 · ERP历史回退");
+    expect(lingxingSyncPageSource).toContain("每周ASIN周数据·系统父ASIN汇总");
+    expect(lingxingSyncPageSource).toContain("领星MCP读取美国站全部已授权店铺的ASIN周数据");
+    expect(lingxingSyncPageSource).toContain("真实周一至周日源周期");
+    expect(lingxingSyncPageSource).not.toContain("领星MCP读取美国站全部已授权店铺的父ASIN周报");
   });
 
   it("统一产品总览保留权威周报名称和人工主档回退，前端中文名称再回退标题", () => {
