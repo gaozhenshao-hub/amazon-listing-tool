@@ -5,7 +5,7 @@ import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct, type ProductImage } from "../scraper";
 import { getScraperConfig } from "./systemSettings";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
-import { storagePut } from "../storage";
+import { resolveStoredObjectUrl, storagePut } from "../storage";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { resourceConflictError } from "@shared/_core/errors";
 import {
@@ -84,11 +84,31 @@ async function downloadAndStoreImage(imageUrl: string, asin: string, index: numb
     const buffer = response.body;
     const ext = imageUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)?.[1] || "jpg";
     const key = `${prefix}/${asin}/${Date.now()}-${index}.${ext}`;
-    const { url } = await storagePut(key, buffer, `image/${ext}`);
-    return url;
+    const { storageUri } = await storagePut(key, buffer, `image/${ext}`);
+    return storageUri;
   } catch {
     return imageUrl; // Fallback to original URL
   }
+}
+
+async function resolveImageForDelivery<T extends { imageUrl: string }>(image: T): Promise<T & { imageAccessError?: string }> {
+  try {
+    return {
+      ...image,
+      imageUrl: await resolveStoredObjectUrl(image.imageUrl),
+    };
+  } catch {
+    console.warn("[KB Images] Failed to refresh a stored image URL for delivery");
+    return {
+      ...image,
+      imageUrl: "",
+      imageAccessError: "图片对象暂时不可访问，可刷新后重试。",
+    };
+  }
+}
+
+async function resolveImagesForDelivery<T extends { imageUrl: string }>(images: T[]): Promise<Array<T & { imageAccessError?: string }>> {
+  return Promise.all(images.map(resolveImageForDelivery));
 }
 
 /**
@@ -155,10 +175,11 @@ async function processImport(setId: number, asin: string, userId: number, runAna
 
 
 
+          const resolvedImageUrl = await resolveStoredObjectUrl(img.imageUrl);
           const response = await invokeBusinessSkill({
             messages: [
               { role: "system", content: buildSingleImageAnalysisPrompt() },
-              { role: "user", content: [{ type: "image_url" as const, image_url: { url: img.imageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}，图片位置: ${img.imagePosition}` }] }
+              { role: "user", content: [{ type: "image_url" as const, image_url: { url: resolvedImageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}，图片位置: ${img.imagePosition}` }] }
             ],
             response_format: { type: "json_object" as const },
           });
@@ -326,10 +347,11 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
 
 
 
+        const resolvedImageUrl = await resolveStoredObjectUrl(img.imageUrl);
         const response = await invokeBusinessSkill({
           messages: [
             { role: "system", content: buildSingleImageAnalysisPrompt() },
-            { role: "user", content: [{ type: "image_url" as const, image_url: { url: img.imageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}，图片位置: ${img.imagePosition}` }] }
+            { role: "user", content: [{ type: "image_url" as const, image_url: { url: resolvedImageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}，图片位置: ${img.imagePosition}` }] }
           ],
           response_format: { type: "json_object" as const },
         });
@@ -483,7 +505,11 @@ export const kbImagesRouter = router({
   listSets: protectedProcedure
     .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
     .query(async ({ ctx, input }) => {
-    return kbDb.listImageSetsWithThumbnails(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
+    const sets = await kbDb.listImageSetsWithThumbnails(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
+    return Promise.all(sets.map(async (set) => ({
+      ...set,
+      thumbnailImages: await resolveImagesForDelivery(set.thumbnailImages),
+    })));
   }),
 
   // Get image set with all images (lightweight: excludes large analysis fields for fast load)
@@ -492,7 +518,7 @@ export const kbImagesRouter = router({
     .query(async ({ ctx, input }) => {
       const set = await kbDb.getImageSetById(input.id);
       if (!set) return null;
-      const images = await kbDb.listImagesBySetLight(set.id);
+      const images = await resolveImagesForDelivery(await kbDb.listImagesBySetLight(set.id));
       return { ...set, images };
     }),
 
@@ -525,7 +551,7 @@ export const kbImagesRouter = router({
       tagDesignStyleV2: z.string().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
-      return kbDb.listAllImages(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine", input);
+      return resolveImagesForDelivery(await kbDb.listAllImages(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine", input));
     }),
 
   // Import by ASIN - crawl images and analyze
@@ -534,11 +560,11 @@ export const kbImagesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const asin = input.asin.trim().toUpperCase();
       // ASIN dedup: prevent duplicate entries
-      const dupSet = await kbDb.findImageSetByAsin(asin);
+      const dupSet = await kbDb.findImageSetByAsin(asin, ctx.workspaceId!);
       if (dupSet) {
         throw resourceConflictError(`ASIN ${asin} 已存在于图片知识库中`, { existingId: dupSet.id, resource: "kb_image_set", asin });
       }
-      const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
+      const setId = await kbDb.createImageSet({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
       // Fire-and-forget with full analysis
       processImport(Number(setId), asin, Number(ctx.user.id), true);
       return { id: Number(setId), asin };
@@ -552,12 +578,12 @@ export const kbImagesRouter = router({
         const asin = raw.trim().toUpperCase();
         if (!asin) continue;
         // ASIN dedup: skip if already exists
-        const dupSet = await kbDb.findImageSetByAsin(asin);
+        const dupSet = await kbDb.findImageSetByAsin(asin, ctx.workspaceId!);
         if (dupSet) {
           results.push({ asin, id: dupSet.id });
           continue;
         }
-        const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
+        const setId = await kbDb.createImageSet({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
         results.push({ asin, id: Number(setId) });
         // Fire-and-forget without per-image analysis for batch (faster)
         processImport(Number(setId), asin, Number(ctx.user.id), false);
@@ -572,11 +598,11 @@ export const kbImagesRouter = router({
       const asin = asinMatch?.[1]?.toUpperCase() || "";
       if (!asin) throw new Error("无法从链接中提取ASIN");
       // ASIN dedup: prevent duplicate entries
-      const dupSet = await kbDb.findImageSetByAsin(asin);
+      const dupSet = await kbDb.findImageSetByAsin(asin, ctx.workspaceId!);
       if (dupSet) {
         throw resourceConflictError(`ASIN ${asin} 已存在于图片知识库中`, { existingId: dupSet.id, resource: "kb_image_set", asin });
       }
-      const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
+      const setId = await kbDb.createImageSet({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
       // Fire-and-forget with full analysis
       processImport(Number(setId), asin, Number(ctx.user.id), true);
       return { id: Number(setId), asin };
@@ -662,28 +688,26 @@ export const kbImagesRouter = router({
       const set = await kbDb.getImageSet(input.setId, ctx.user.id);
       if (!set) throw new Error("图片集不存在");
       const existingImages = await kbDb.listImagesBySet(set.id);
-      const results: { imageUrl: string; position: string }[] = [];
       for (let i = 0; i < input.images.length; i++) {
         const img = input.images[i];
         const buffer = Buffer.from(img.base64, "base64");
         const ext = img.filename.match(/\.(jpg|jpeg|png|webp|gif)$/i)?.[1] || "jpg";
         const prefix = img.position === "aplus" ? "kb-aplus" : img.position === "brand_story" ? "kb-brand-story" : "kb-images";
         const key = `${prefix}/${set.asin}/${Date.now()}-upload-${i}.${ext}`;
-        const { url } = await storagePut(key, buffer, `image/${ext}`);
+        const { storageUri } = await storagePut(key, buffer, `image/${ext}`);
         // Calculate positionIndex: max existing index for this position + 1
         const samePositionImages = existingImages.filter(e => e.imagePosition === img.position);
         const maxIdx = samePositionImages.length > 0 ? Math.max(...samePositionImages.map(e => e.positionIndex ?? 0)) : -1;
         await kbDb.createImage({
           imageSetId: set.id,
-          imageUrl: url,
+          imageUrl: storageUri,
           imagePosition: img.position,
           positionIndex: maxIdx + 1 + i,
         });
-        results.push({ imageUrl: url, position: img.position });
       }
       // Reset status to pending_review so user can re-analyze
       await kbDb.updateImageSet(set.id, ctx.user.id, { status: "confirmed" });
-      return { success: true, uploaded: results.length };
+      return { success: true, uploaded: input.images.length };
     }),
 
   // Delete a single image from a set
@@ -785,11 +809,11 @@ export const kbImagesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const asin = input.asin.trim().toUpperCase();
       // ASIN dedup: prevent duplicate entries
-      const dupSet = await kbDb.findImageSetByAsin(asin);
+      const dupSet = await kbDb.findImageSetByAsin(asin, ctx.workspaceId!);
       if (dupSet) {
         throw resourceConflictError(`ASIN ${asin} 已存在于图片知识库中`, { existingId: dupSet.id, resource: "kb_image_set", asin });
       }
-      const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, productTitle: input.title || undefined, status: "confirmed", visibility: "team" });
+      const setId = await kbDb.createImageSet({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin, productTitle: input.title || undefined, status: "confirmed", visibility: "team" });
       const numericSetId = Number(setId);
       // Upload images to S3
       for (let i = 0; i < input.images.length; i++) {
@@ -798,10 +822,10 @@ export const kbImagesRouter = router({
         const ext = img.filename.match(/\.(jpg|jpeg|png|webp|gif)$/i)?.[1] || "jpg";
         const prefix = img.position === "aplus" ? "kb-aplus" : img.position === "brand_story" ? "kb-brand-story" : "kb-images";
         const key = `${prefix}/${asin}/${Date.now()}-manual-${i}.${ext}`;
-        const { url } = await storagePut(key, buffer, `image/${ext}`);
+        const { storageUri } = await storagePut(key, buffer, `image/${ext}`);
         await kbDb.createImage({
           imageSetId: numericSetId,
-          imageUrl: url,
+          imageUrl: storageUri,
           imagePosition: img.position,
           positionIndex: i,
         });

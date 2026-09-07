@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { KnowledgeImagePreview } from "@/components/KnowledgeImagePreview";
 import { ChevronDown, ChevronRight, Eye, Image as ImageIcon } from "lucide-react";
 import { groupImageSets, type AsinSetGroupBy } from "./kbImageSetGrouping";
 
@@ -156,20 +157,20 @@ function SetMetadataTags({ set }: { set: any }) {
   );
 }
 
-function AsinThumbnailStrip({ thumbnailImages }: { thumbnailImages?: Array<{ id: number; imageUrl: string }> }) {
+function AsinThumbnailStrip({ thumbnailImages }: { thumbnailImages?: Array<{ id: number; imageUrl: string; imageAccessError?: string }> }) {
   const displayImages = (thumbnailImages || []).slice(0, 5);
   if (displayImages.length === 0) {
     return <div className="flex h-full w-full items-center justify-center"><ImageIcon className="h-8 w-8 text-muted-foreground/30" /></div>;
   }
   if (displayImages.length === 1) {
-    return <img src={displayImages[0].imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />;
+    return <KnowledgeImagePreview src={displayImages[0].imageUrl} alt="图片集缩略图" className="h-full w-full object-cover" fallbackClassName="h-full w-full" accessError={displayImages[0].imageAccessError} />;
   }
   return (
     <div className="flex h-full gap-0.5">
-      <div className="min-w-0 flex-1"><img src={displayImages[0].imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" /></div>
+      <div className="min-w-0 flex-1"><KnowledgeImagePreview src={displayImages[0].imageUrl} alt="图片集首图" className="h-full w-full object-cover" fallbackClassName="h-full w-full" accessError={displayImages[0].imageAccessError} /></div>
       <div className="flex w-[28%] flex-col gap-0.5">
         {displayImages.slice(1, 5).map((image) => (
-          <div key={image.id} className="min-h-0 flex-1"><img src={image.imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" /></div>
+          <div key={image.id} className="min-h-0 flex-1"><KnowledgeImagePreview src={image.imageUrl} alt="图片集缩略图" className="h-full w-full object-cover" fallbackClassName="h-full w-full" accessError={image.imageAccessError} /></div>
         ))}
       </div>
     </div>

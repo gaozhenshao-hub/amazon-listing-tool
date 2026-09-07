@@ -30,6 +30,63 @@ export function parseStorageUri(uri: string): { provider: StorageProvider | stri
   return { provider: match[1], key: normalizeKey(match[2]) };
 }
 
+function getConfiguredStorageHosts(): string[] {
+  return [ENV.s3Endpoint, ENV.s3PublicEndpoint]
+    .filter(Boolean)
+    .flatMap((endpoint) => {
+      try {
+        return [new URL(endpoint).hostname.toLowerCase()];
+      } catch {
+        return [];
+      }
+    });
+}
+
+/**
+ * Extract an object key only from a legacy S3-compatible pre-signed URL that
+ * points to a configured storage endpoint. The strict host check prevents an
+ * arbitrary external URL from being reinterpreted as a private object key.
+ */
+export function parseLegacyPresignedObjectKey(reference: string): string | null {
+  try {
+    const url = new URL(reference);
+    const queryKeys = Array.from(url.searchParams.keys()).map((key) => key.toLowerCase());
+    const isPresigned = queryKeys.some((key) =>
+      key.startsWith("x-amz-") || key === "signature" || key === "ossaccesskeyid" || key === "expires"
+    );
+    if (!isPresigned) return null;
+
+    const hostname = url.hostname.toLowerCase();
+    const configuredHosts = getConfiguredStorageHosts();
+    const matchesConfiguredEndpoint = configuredHosts.some((host) =>
+      hostname === host || hostname.endsWith(`.${host}`)
+    );
+    if (!matchesConfiguredEndpoint) return null;
+
+    const segments = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    const bucket = ENV.s3Bucket.trim();
+    if (bucket && segments[0] === bucket) segments.shift();
+    return segments.length > 0 ? normalizeKey(segments.join("/")) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve a persisted file reference immediately before it is sent to a client
+ * or an AI runtime. New files should store storage:// URIs; legacy pre-signed
+ * URLs are refreshed only when their host and signature shape are verified.
+ */
+export async function resolveStoredObjectUrl(reference: string): Promise<string> {
+  const parsed = parseStorageUri(reference);
+  if (parsed) return (await storageGet(parsed.key)).url;
+
+  const legacyKey = parseLegacyPresignedObjectKey(reference);
+  if (legacyKey) return (await storageGet(legacyKey)).url;
+
+  return reference;
+}
+
 function getStorageConfig(): StorageConfig {
   const baseUrl = ENV.forgeApiUrl;
   const apiKey = ENV.forgeApiKey;

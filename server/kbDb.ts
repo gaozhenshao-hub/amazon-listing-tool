@@ -180,11 +180,11 @@ export async function getImageSetById(id: number) {
   const rows = await _d.select().from(kbImageSets).where(eq(kbImageSets.id, id));
   return rows[0] ?? null;
 }
-export async function findImageSetByAsin(asin: string) {
+export async function findImageSetByAsin(asin: string, workspaceId: number) {
   const _d = await db();
   const rows = await _d.select({ id: kbImageSets.id })
     .from(kbImageSets)
-    .where(eq(kbImageSets.asin, asin))
+    .where(and(eq(kbImageSets.asin, asin), eq(kbImageSets.workspaceId, workspaceId)))
     .limit(1);
   return rows[0] ?? null;
 }

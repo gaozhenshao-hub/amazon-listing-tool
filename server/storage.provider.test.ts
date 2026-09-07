@@ -81,6 +81,43 @@ describe("独立对象存储提供商选择", () => {
     expect(downloaded).toEqual({ key: "uploads/demo.txt", url: "https://oss.example.test/signed-download" });
   });
 
+  it("交付持久storage URI时按请求刷新OSS签名URL", async () => {
+    vi.stubEnv("STORAGE_PROVIDER", "oss");
+    vi.stubEnv("S3_ENDPOINT", "https://oss-cn-hangzhou.aliyuncs.com");
+    vi.stubEnv("S3_PUBLIC_ENDPOINT", "https://oss-cn-hangzhou.aliyuncs.com");
+    vi.stubEnv("S3_REGION", "cn-hangzhou");
+    vi.stubEnv("S3_BUCKET", "amz-private");
+    vi.stubEnv("S3_ACCESS_KEY_ID", "test-key");
+    vi.stubEnv("S3_SECRET_ACCESS_KEY", "test-secret");
+    vi.resetModules();
+    const { resolveStoredObjectUrl } = await import("./storage");
+
+    await expect(resolveStoredObjectUrl("storage://oss/kb-images/DEMO/image.jpg"))
+      .resolves.toBe("https://oss.example.test/signed-download");
+    expect(getObjectCommandMock).toHaveBeenCalledWith({
+      Bucket: "amz-private",
+      Key: "kb-images/DEMO/image.jpg",
+    });
+  });
+
+  it("仅将受信任OSS主机上的历史签名URL还原为对象键", async () => {
+    vi.stubEnv("STORAGE_PROVIDER", "oss");
+    vi.stubEnv("S3_ENDPOINT", "https://oss-cn-hangzhou.aliyuncs.com");
+    vi.stubEnv("S3_PUBLIC_ENDPOINT", "https://oss-cn-hangzhou.aliyuncs.com");
+    vi.stubEnv("S3_REGION", "cn-hangzhou");
+    vi.stubEnv("S3_BUCKET", "amz-private");
+    vi.stubEnv("S3_ACCESS_KEY_ID", "test-key");
+    vi.stubEnv("S3_SECRET_ACCESS_KEY", "test-secret");
+    vi.resetModules();
+    const { parseLegacyPresignedObjectKey, resolveStoredObjectUrl } = await import("./storage");
+    const legacyUrl = "https://amz-private.oss-cn-hangzhou.aliyuncs.com/kb-images/DEMO/image.jpg?X-Amz-Signature=expired";
+
+    expect(parseLegacyPresignedObjectKey(legacyUrl)).toBe("kb-images/DEMO/image.jpg");
+    await expect(resolveStoredObjectUrl(legacyUrl)).resolves.toBe("https://oss.example.test/signed-download");
+    expect(parseLegacyPresignedObjectKey("https://untrusted.example.test/image.jpg?X-Amz-Signature=not-a-key"))
+      .toBeNull();
+  });
+
   it("OSS配置缺失时拒绝执行上传或下载", async () => {
     vi.stubEnv("STORAGE_PROVIDER", "oss");
     vi.stubEnv("S3_REGION", "");

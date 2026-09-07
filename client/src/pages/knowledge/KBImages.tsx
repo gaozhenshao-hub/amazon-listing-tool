@@ -28,6 +28,7 @@ import { Settings2 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useQueryClient } from "@tanstack/react-query";
 import { KbAsinSetGrid } from "./KbAsinSetGrid";
+import { KnowledgeImagePreview } from "@/components/KnowledgeImagePreview";
 import { ASIN_SET_GROUP_OPTIONS, type AsinSetGroupBy } from "./kbImageSetGrouping";
 import { shouldRefreshImageBrowse } from "./kbImageBrowseRefresh";
 
@@ -730,7 +731,7 @@ export default function KBImages() {
                         <Card key={item.id} className="cursor-pointer hover:shadow-lg transition-all overflow-hidden group" onClick={() => { setDetailSetId(item.imageSetId); setEditingAnalysis(""); }}>
                           {item.imageUrl && (
                             <div className="relative">
-                              <img src={item.imageUrl} alt="" className="w-full object-cover" loading="lazy" />
+                              <KnowledgeImagePreview src={item.imageUrl} alt="知识库图片" className="w-full object-cover" fallbackClassName="min-h-44 w-full" accessError={item.imageAccessError} />
                               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
                             </div>
                           )}
@@ -797,7 +798,7 @@ export default function KBImages() {
                     <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 pb-3">
                       {rowItems.map((item: any) => (
                         <Card key={item.id} className="cursor-pointer hover:shadow-md transition-all overflow-hidden" onClick={() => { setDetailSetId(item.imageSetId); setEditingAnalysis(""); }}>
-                          {item.imageUrl && <img src={item.imageUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" />}
+                          <KnowledgeImagePreview src={item.imageUrl} alt="知识库图片" className="w-full aspect-square object-cover" fallbackClassName="aspect-square w-full" accessError={item.imageAccessError} />
                           <CardContent className="p-2">
                             <Badge variant="outline" className="text-[10px]">{item.asin || "N/A"}</Badge>
                           </CardContent>
@@ -1344,7 +1345,7 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
   return (
     <div className={`rounded-lg overflow-hidden bg-muted border transition-all ${isExpanded ? "ring-2 ring-primary col-span-full" : ""}`}>
       <div className="relative cursor-pointer group/card" onClick={() => onSelectImage(isExpanded ? null : img.id)}>
-        <img src={img.imageUrl} alt="" className={`w-full ${isExpanded ? "max-h-80 object-contain bg-black/5" : "aspect-square object-cover"}`} loading="lazy" />
+        <KnowledgeImagePreview src={img.imageUrl} alt="图片详情" className={`w-full ${isExpanded ? "max-h-80 object-contain bg-black/5" : "aspect-square object-cover"}`} fallbackClassName={isExpanded ? "min-h-56 w-full" : "aspect-square w-full"} accessError={img.imageAccessError} />
         {onDeleteImage && (
           <button
             className="absolute top-1.5 right-1.5 z-10 bg-destructive/90 hover:bg-destructive text-white rounded-full p-1 opacity-0 group-hover/card:opacity-100 transition-opacity shadow-sm"
