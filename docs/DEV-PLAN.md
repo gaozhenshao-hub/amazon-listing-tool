@@ -45,6 +45,13 @@
 - **验收标准**：同身份在总览只返回一行；MCP周事实存在时仅使用其周指标且不与ERP相加；日快照指标按`父ASIN+店铺+国家+子ASIN`呈现；无覆盖字段显示“未提供”；所有入口进入同一详情路由；未关联手工主档的行不可执行主档写操作；回归测试、构建和青岛已认证页面验证均通过。
 - **数据库表**：不新建、不迁移。仅只读归并`lingxing_product_weekly`、`ops_asin_daily_snapshots`、`product_profiles`、`product_variants`与现有ERP历史表。
 
+## Phase 8：MCP子ASIN周数据的父ASIN受治理聚合（2026-09-07）
+
+- **交付物**：纠正“领星MCP直接提供Amazon父ASIN周汇总”的旧假设；在`parent_asin_weekly_mcp`应用阶段将同父ASIN自然周下的不同子ASIN成员聚合为唯一父级事实，并保留成员集合、来源批次与Trace。
+- **关键文件**：`server/routers/lingxingSync.ts`、`server/domains/ops/lingxingScheduledDrafts.ts`、`server/domains/ops/lingxingScheduledDrafts.identity.test.ts`、`shared/marketplaceIdentity.ts`、`scripts/apply-qingdao-parent-asin-weekly-history-complete.mjs`。
+- **验收标准**：不同子ASIN成员可安全聚合；可加指标求和、比率重算；跨店铺/站点保持隔离；重复子ASIN、重叠成员和同来源历史冲突失败关闭；完整周可幂等补齐，异常周继续隔离；统一产品总览显示父ASIN周事实。
+- **数据库表**：不新建、不迁移。继续使用`ops_external_sync_batches`、`ops_external_sync_rows`与`lingxing_product_weekly`，仅改变受治理应用阶段的父级聚合合同。
+
 ## Phase 6：数据迁移、回归与发布
 
 - **交付物**：执行迁移；针对真实用户提供表完成导入回归；补齐单元测试；进行类型检查、状态检查和检查点保存。

@@ -1,5 +1,11 @@
 # Product Spec Change Log
 
+## 2026-09-07 — 纠正领星MCP父ASIN能力边界
+
+生产草稿和领星文档共同确认，`query_product_performance_asin_lists`直接支持SPU/ASIN/MSKU/SKU维度，但不直接返回Amazon父ASIN周汇总。系统周度权威链路调整为：MCP子ASIN周数据 → 明确Amazon父子ASIN映射 → 按店铺、规范站点、父ASIN和自然周聚合 → 父ASIN周事实。SPU不得作为Amazon父ASIN替代。
+
+聚合仅对不同子ASIN成员执行：销量、订单、金额、利润、流量、广告和库存等可加指标求和；利润率、CVR、CTR、CPC、ACoS与退货率按汇总分子分母重算；子ASIN集合去重保留。重复子ASIN、重叠成员、父子映射缺失或已有同来源事实冲突继续失败关闭，不覆盖历史事实。
+
 ## 2026-09-05 — 统一产品视图
 
 将“MCP父ASIN周报”与“ERP数据”从两个前台产品总览/详情入口调整为**一套产品视图中的来源化数据层**。前台身份键统一为`父ASIN + 店铺 + 国家`；当前自然周经营指标由领星MCP父ASIN周报提供，单ASIN日指标与库存由日快照提供，ERP上传历史保留为可追溯参考而不与MCP指标重复累计。

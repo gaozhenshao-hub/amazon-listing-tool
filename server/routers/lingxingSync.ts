@@ -41,7 +41,7 @@ const SCHEDULE_PRESETS = {
   },
   parent_asin_weekly_mcp: {
     cadence: "weekly_parent_asin_mcp_report", cronExpression: "0 10 8 * * 1",
-    description: "北京时间每周一16:10读取上一自然周领星MCP父ASIN周报；完整性校验通过后直接幂等追加周事实，冲突或异常阻断并保留审计",
+    description: "北京时间每周一16:10读取上一自然周领星MCP子ASIN周数据；完整性校验后由系统聚合父ASIN周事实，冲突或异常阻断并保留审计",
     autoApply: true,
   },
 } as const;
@@ -50,7 +50,7 @@ const emperorScheduleName = (dataDomain: keyof typeof SCHEDULE_PRESETS) => ({
   product_performance_daily: "领星 · 每日ASIN产品表现",
   fba_inventory: "领星 · 每日FBA库存快照",
   ad_keyword: "领星 · 每日广告关键词历史",
-  parent_asin_weekly_mcp: "领星 · 父ASIN周报",
+  parent_asin_weekly_mcp: "领星 · ASIN周数据·父级汇总",
 }[dataDomain]);
 
 type RecordValue = Record<string, unknown>;
@@ -439,7 +439,7 @@ export function buildMcpArguments(domain: z.infer<typeof domainSchema>, scope: z
   const commonDate = { start_date: scope.startDate, end_date: scope.endDate };
   if (domain === "product_performance") return { capability: "query_product_performance_asin_lists", arguments: { sids: scope.storeId, offset: 0, length: 200, ...commonDate, date_type: "purchase", date_view_type: "week", date_view_order_type: 2, summary_field: "parent_asin", turn_on_summary: 1, query_order_profit: true, currency_code: "USD" } };
   if (domain === "product_performance_daily") return { capability: "query_product_performance_asin_lists", arguments: { sids: scope.storeId, offset: 0, length: 200, ...commonDate, date_type: "purchase", date_view_type: "day", date_view_order_type: 1, summary_field: "asin", turn_on_summary: 1, query_order_profit: true, currency_code: "USD" } };
-  if (domain === "parent_asin_weekly_mcp") return { capability: "query_product_performance_asin_lists", arguments: { sids: scope.storeId, offset: 0, length: 200, ...commonDate, date_type: "purchase", date_view_type: "week", date_view_order_type: 2, summary_field: "parent_asin", turn_on_summary: 1, query_order_profit: true, currency_code: "USD" } };
+  if (domain === "parent_asin_weekly_mcp") return { capability: "query_product_performance_asin_lists", arguments: { sids: scope.storeId, offset: 0, length: 200, ...commonDate, date_type: "purchase", date_view_type: "week", date_view_order_type: 2, summary_field: "asin", turn_on_summary: 1, query_order_profit: true, currency_code: "USD" } };
   if (domain === "order_profit") return { capability: "query_order_profit_list", arguments: { sids: scope.storeId, ...commonDate, currency_type: "USD", external_service_mark: 1, source_service: "mcp", length: "200", offset: "0", sort_type: "desc", turn_on_summary: "1", search_type: 0, search_field: "parent_asin", summary_field: "parent_asin", date_summary_type: 2, query_order_gross_first: true } };
   if (domain === "fba_inventory") return { capability: "get_fba_stock_list", arguments: { sid: scope.storeId, offset: 0, length: 200, sort_field: "sku", sort_type: "asc", is_cost_page: "0", is_hide_zero_stock: 0, is_parant_asin_merge: "1" } };
   if (domain === "ad_campaign") return { capability: "ad_campaign_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: 200, sort_field: "spends", sort_type: "desc" } };

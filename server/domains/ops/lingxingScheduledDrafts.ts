@@ -230,6 +230,119 @@ export function weeklyFactsEqual(left: Partial<typeof lingxingProductWeekly.$inf
   return JSON.stringify(weeklyFactComparable(left)) === JSON.stringify(weeklyFactComparable(right));
 }
 
+type WeeklyMemberFactCandidate = {
+  fact: WeeklyFactInsert;
+};
+
+const weeklyFactNumber = (value: unknown) => {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const weeklyFactDecimal = (value: number, scale = 2) => String(Number(value.toFixed(scale)));
+const weeklyFactRate = (numerator: number, denominator: number) => denominator > 0
+  ? String(Number(((numerator / denominator) * 100).toFixed(4)))
+  : null;
+
+const weeklyFactMembers = (fact: WeeklyFactInsert) => text(fact.asin)
+  .split(",")
+  .map((asin) => asin.trim().toUpperCase())
+  .filter(Boolean);
+
+/**
+ * LingXing product-performance MCP rows are child-ASIN weekly facts. The
+ * product overview requires one fact per parent/store/marketplace/week, so
+ * distinct child members are aggregated here before the strict identity guard.
+ */
+export function aggregateParentAsinWeeklyMemberFacts<T extends WeeklyMemberFactCandidate>(candidates: T[]): T[] {
+  const byParentWeek = new Map<string, T[]>();
+  for (const candidate of candidates) {
+    const identity = weeklyRollupIdentity(candidate.fact);
+    const bucket = byParentWeek.get(identity) || [];
+    bucket.push(candidate);
+    byParentWeek.set(identity, bucket);
+  }
+
+  const aggregated: T[] = [];
+  for (const bucket of byParentWeek.values()) {
+    const ordered = [...bucket].sort((left, right) => weeklyFactMembers(left.fact).join(",").localeCompare(weeklyFactMembers(right.fact).join(",")));
+    const members = new Set<string>();
+    for (const candidate of ordered) {
+      const candidateMembers = weeklyFactMembers(candidate.fact);
+      if (!candidateMembers.length) throw new Error("父ASIN周报MCP自动应用失败：父ASIN周成员缺少子ASIN");
+      for (const member of candidateMembers) {
+        if (members.has(member)) throw new Error("父ASIN周报MCP自动应用失败：同一父ASIN周内存在重复子ASIN成员");
+        members.add(member);
+      }
+    }
+
+    if (ordered.length === 1) {
+      aggregated.push({
+        ...ordered[0],
+        fact: {
+          ...ordered[0]!.fact,
+          asin: [...members].sort().join(","),
+          country: normalizeMarketplaceCode(text(ordered[0]!.fact.country)),
+        },
+      });
+      continue;
+    }
+
+    const total = (field: keyof WeeklyFactInsert) => ordered.reduce((sum, candidate) => sum + weeklyFactNumber(candidate.fact[field]), 0);
+    const salesQty = total("salesQty");
+    const salesAmount = total("salesAmount");
+    const orderQty = total("orderQty");
+    const orderProfit = total("orderProfit");
+    const sessionsTotal = total("sessionsTotal");
+    const adOrders = total("adOrders");
+    const organicOrders = total("organicOrders");
+    const adClicks = total("adClicks");
+    const adImpressions = total("adImpressions");
+    const adSpend = total("adSpend");
+    const adSales = total("adSales");
+    const returnQty = total("returnQty");
+    const uniqueSkus = [...new Set(ordered.map((candidate) => text(candidate.fact.sku)).filter(Boolean))];
+    const uniqueOperators = [...new Set(ordered.map((candidate) => text(candidate.fact.operator)).filter(Boolean))];
+    const first = ordered[0]!;
+
+    aggregated.push({
+      ...first,
+      fact: {
+        ...first.fact,
+        asin: [...members].sort().join(","),
+        sku: uniqueSkus.length === 1 ? uniqueSkus[0] : "",
+        msku: uniqueSkus.length === 1 ? uniqueSkus[0] : "",
+        operator: uniqueOperators.length === 1 ? uniqueOperators[0] : "",
+        country: normalizeMarketplaceCode(text(first.fact.country)),
+        sourceSchemaVersion: "lx_asin_weekly_parent_v2",
+        salesQty,
+        salesAmount: weeklyFactDecimal(salesAmount),
+        orderQty,
+        orderProfit: weeklyFactDecimal(orderProfit),
+        orderProfitMargin: weeklyFactRate(orderProfit, salesAmount),
+        sessionsTotal,
+        cvr: weeklyFactRate(orderQty, sessionsTotal),
+        adCvr: weeklyFactRate(adOrders, adClicks),
+        organicCvr: null,
+        adOrders,
+        organicOrders,
+        adClicks,
+        adImpressions,
+        ctr: weeklyFactRate(adClicks, adImpressions),
+        cpc: adClicks > 0 ? weeklyFactDecimal(adSpend / adClicks) : null,
+        adSpend: weeklyFactDecimal(adSpend),
+        adSales: weeklyFactDecimal(adSales),
+        acos: weeklyFactRate(adSpend, adSales),
+        returnQty,
+        returnRate: weeklyFactRate(returnQty, salesQty),
+        fbaAvailable: total("fbaAvailable"),
+        fbaInTransit: total("fbaInTransit"),
+      },
+    });
+  }
+  return aggregated;
+}
+
 export async function applyParentAsinWeeklyRollupBatch(db: any, input: { batchId: number; workspaceId: number; userId: number }) {
   const [batch] = await db.select().from(opsExternalSyncBatches).where(and(
     eq(opsExternalSyncBatches.id, input.batchId),
@@ -352,7 +465,7 @@ export async function applyParentAsinWeeklyMcpBatch(db: any, input: { batchId: n
       rawCountry: rawMarketplaceFromWeeklySyncRow(row),
     };
   });
-  const facts = collapseWeeklyFactMarketplaceAliases(rawFacts);
+  const facts = aggregateParentAsinWeeklyMemberFacts(rawFacts);
   const identities = facts.map(({ fact }) => weeklyRollupIdentity(fact));
   if (new Set(identities).size !== identities.length) throw new Error("父ASIN周报MCP自动应用失败：批次存在重复业务身份");
   const scope = record(batch.scope);

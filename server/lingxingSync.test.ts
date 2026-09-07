@@ -16,10 +16,10 @@ describe("领星运营同步预览契约", () => {
     expect(request.arguments).toMatchObject({ sids: "7392", date_view_type: "day", summary_field: "asin", query_order_profit: true });
   });
 
-  it("父ASIN周报固定使用周粒度与父ASIN汇总，不借用ASIN日数据参数", () => {
+  it("父ASIN周事实读取受支持的ASIN周维度，再由系统按明确父子关系聚合", () => {
     const request = buildMcpArguments("parent_asin_weekly_mcp", { storeId: "7392", startDate: "2026-08-24", endDate: "2026-08-30" });
     expect(request.capability).toBe("query_product_performance_asin_lists");
-    expect(request.arguments).toMatchObject({ sids: "7392", date_view_type: "week", summary_field: "parent_asin", date_view_order_type: 2, query_order_profit: true });
+    expect(request.arguments).toMatchObject({ sids: "7392", date_view_type: "week", summary_field: "asin", date_view_order_type: 2, query_order_profit: true });
   });
 
   it("广告报表使用profile_ids范围，不借用产品店铺参数", () => {
