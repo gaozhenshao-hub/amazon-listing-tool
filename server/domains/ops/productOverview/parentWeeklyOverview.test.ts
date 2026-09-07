@@ -109,4 +109,16 @@ describe("父ASIN周报权威总览", () => {
     expect(overview).toHaveLength(1);
     expect(overview[0]).toMatchObject({ id: 102, title: "Source title", operator: "Manual owner" });
   });
+
+  it("来源支持行可复用同一父ASIN、店铺和规范站点的人工负责人规则，且不跨店铺匹配", () => {
+    const overview = buildParentWeeklyOverview([
+      fact({ storeName: "Store A", country: "美国", parentAsin: "PARENT-1" }),
+      fact({ id: 2, storeName: "Store B", country: "US", parentAsin: "PARENT-1" }),
+    ], [], 1, [{ parentAsin: "PARENT-1", storeName: "Store A", country: "US", assigneeName: "已确认负责人" }]);
+
+    expect(overview).toEqual(expect.arrayContaining([
+      expect.objectContaining({ storeName: "Store A", operator: "已确认负责人", operatorSource: "manual_assignment" }),
+      expect.objectContaining({ storeName: "Store B", operator: "Operator", operatorSource: "weekly_source" }),
+    ]));
+  });
 });

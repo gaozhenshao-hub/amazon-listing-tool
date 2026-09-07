@@ -5,6 +5,7 @@ import {
   opsAsinDailySnapshots,
   opsInventoryOwnerAssignmentAudits,
   opsInventoryOwnerAssignments,
+  lingxingProductWeekly,
   users,
   workspaceMemberships,
 } from "../../drizzle/schema";
@@ -77,20 +78,32 @@ export const inventoryOwnerAssignmentsRouter = router({
       const assignee = eligibleUsers.find((user: { id: number }) => user.id === input.assigneeUserId);
       if (!assignee?.name) throw new TRPCError({ code: "BAD_REQUEST", message: "负责人必须是当前工作空间中的正常账号。" });
 
-      const latestSnapshots = await db.select({
+      const [latestSnapshots, parentWeeklyFacts] = await Promise.all([
+        db.select({
         parentAsin: opsAsinDailySnapshots.parentAsin,
         storeName: opsAsinDailySnapshots.storeName,
         country: opsAsinDailySnapshots.country,
-      }).from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, workspaceId));
-      const availableKeys = new Set(latestSnapshots.map((row: any) => inventoryOwnerAssignmentKey(row)));
+        }).from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, workspaceId)),
+        db.select({
+          parentAsin: lingxingProductWeekly.parentAsin,
+          storeName: lingxingProductWeekly.storeName,
+          country: lingxingProductWeekly.country,
+        }).from(lingxingProductWeekly).where(and(
+          eq(lingxingProductWeekly.workspaceId, workspaceId),
+          eq(lingxingProductWeekly.sourceKind, "lingxing_mcp_parent_asin_weekly"),
+        )),
+      ]);
+      const availableKeys = new Set([...latestSnapshots, ...parentWeeklyFacts]
+        .filter((row: any) => row.parentAsin && row.storeName && row.country)
+        .map((row: any) => inventoryOwnerAssignmentKey(row)));
       const invalidScopes = targets.filter((target) => !availableKeys.has(inventoryOwnerAssignmentKey(target)));
       if (invalidScopes.length) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `${invalidScopes.length}个分配目标已不在当前库存工作空间内，未写入任何规则。` });
+        throw new TRPCError({ code: "BAD_REQUEST", message: `${invalidScopes.length}个分配目标未在当前工作空间的可验证ASIN日数据或父ASIN周事实中找到，未写入任何规则。` });
       }
 
       const existingRules = await db.select().from(opsInventoryOwnerAssignments)
         .where(and(eq(opsInventoryOwnerAssignments.workspaceId, workspaceId), eq(opsInventoryOwnerAssignments.isActive, 1)));
-      const existingByKey = new Map(existingRules.map((rule: any) => [inventoryOwnerAssignmentKey(rule), rule]));
+      const existingByKey = new Map<string, any>(existingRules.map((rule: any) => [inventoryOwnerAssignmentKey(rule), rule]));
       let created = 0;
       let replaced = 0;
       let unchanged = 0;

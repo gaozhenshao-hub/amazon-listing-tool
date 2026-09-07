@@ -1,4 +1,5 @@
 import { normalizeIdentityPart, normalizeMarketplaceCode } from "../../../../shared/marketplaceIdentity";
+import { inventoryOwnerAssignmentKey } from "../inventoryOwnerAssignmentKeys";
 
 export type ParentWeeklyFact = {
   id: number;
@@ -75,6 +76,13 @@ export type ProductProfileSeed = {
   }>;
   manualChildAsins: string[];
   manualSkus: string[];
+};
+
+export type ManualOwnerAssignment = {
+  parentAsin: string;
+  storeName: string;
+  country: string;
+  assigneeName: string;
 };
 
 const text = (value: string | null | undefined) => String(value || "").trim();
@@ -173,13 +181,23 @@ function calculateWeeklyRow(current: ParentWeeklyFact, previous: ParentWeeklyFac
   };
 }
 
-export function buildParentWeeklyOverview(facts: ParentWeeklyFact[], profiles: ProductProfileSeed[], weeksToShow: number) {
+export function buildParentWeeklyOverview(
+  facts: ParentWeeklyFact[],
+  profiles: ProductProfileSeed[],
+  weeksToShow: number,
+  manualOwnerAssignments: ManualOwnerAssignment[] = [],
+) {
   const authoritativeFacts = selectAuthoritativeParentWeeks(facts)
     .filter((fact) => fact.sourceKind === "lingxing_mcp_parent_asin_weekly");
   const profileByIdentity = new Map<string, ProductProfileSeed>();
   for (const profile of [...profiles].sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")) || b.id - a.id)) {
     const key = productIdentity(profile);
     if (!profileByIdentity.has(key)) profileByIdentity.set(key, profile);
+  }
+  const manualOwnerByIdentity = new Map<string, ManualOwnerAssignment>();
+  for (const assignment of manualOwnerAssignments) {
+    if (!text(assignment.parentAsin) || !text(assignment.storeName) || !text(assignment.country) || !text(assignment.assigneeName)) continue;
+    manualOwnerByIdentity.set(inventoryOwnerAssignmentKey(assignment), assignment);
   }
   const factGroups = new Map<string, ParentWeeklyFact[]>();
   for (const fact of authoritativeFacts) {
@@ -190,6 +208,11 @@ export function buildParentWeeklyOverview(facts: ParentWeeklyFact[], profiles: P
     const orderedFacts = [...group].sort((a, b) => text(b.weekStartDate).localeCompare(text(a.weekStartDate)));
     const latest = orderedFacts[0];
     const profile = profileByIdentity.get([normalized(latest.storeName), canonicalCountry(latest.country), normalized(latest.parentAsin)].join("|")) || null;
+    const manualOwner = manualOwnerByIdentity.get(inventoryOwnerAssignmentKey({
+      parentAsin: latest.parentAsin || "",
+      storeName: latest.storeName || "",
+      country: latest.country || "",
+    }));
     const sourceChildAsins = childAsinsFromFacts(group);
     const manualChildAsins = [...new Set((profile?.manualChildAsins || []).map(normalized).filter(Boolean))].sort();
     const childAsins = sourceChildAsins.length ? sourceChildAsins : manualChildAsins;
@@ -210,7 +233,8 @@ export function buildParentWeeklyOverview(facts: ParentWeeklyFact[], profiles: P
       marketplace: canonicalCountry(latest.country),
       imageUrl: profile?.imageUrl || null,
       status: profile?.status || "active",
-      operator: profile?.operator || latest.operator || null,
+      operator: manualOwner?.assigneeName || profile?.operator || latest.operator || null,
+      operatorSource: manualOwner ? "manual_assignment" : profile?.operator ? "product_profile" : latest.operator ? "weekly_source" : null,
       storeName: latest.storeName,
       variantCount: childAsins.length,
       skus: profile?.manualSkus.length ? profile.manualSkus : (latest.sku ? [latest.sku] : []),

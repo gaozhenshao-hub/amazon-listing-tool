@@ -6,6 +6,7 @@ import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
 import { buildParentWeeklyOverview } from "../productOverview/parentWeeklyOverview";
+import { opsInventoryOwnerAssignments } from "../../../../drizzle/schema/ops";
 
 const {
   MARKETPLACE_MID_MAP,
@@ -903,7 +904,7 @@ export const opsWeeklyProcedures = {
         .orderBy(desc(lingxingProductWeekly.weekStartDate))
         .limit(weeksToShow + 1);
       const weekStartDates = recentWeekStarts.map((row) => row.weekStartDate).filter((date): date is string => Boolean(date));
-      const [weeklyFacts, products] = await Promise.all([
+      const [weeklyFacts, products, manualOwnerAssignments] = await Promise.all([
         weekStartDates.length ? db!.select().from(lingxingProductWeekly)
           .where(opsWorkspaceCondition(lingxingProductWeekly, workspaceId, and(
             eq(lingxingProductWeekly.sourceKind, "lingxing_mcp_parent_asin_weekly"),
@@ -911,6 +912,15 @@ export const opsWeeklyProcedures = {
           ))) : Promise.resolve([]),
         db!.select().from(productProfiles)
           .where(opsWorkspaceCondition(productProfiles, workspaceId)),
+        db!.select({
+          parentAsin: opsInventoryOwnerAssignments.parentAsin,
+          storeName: opsInventoryOwnerAssignments.storeName,
+          country: opsInventoryOwnerAssignments.country,
+          assigneeName: opsInventoryOwnerAssignments.assigneeName,
+        }).from(opsInventoryOwnerAssignments).where(and(
+          eq(opsInventoryOwnerAssignments.workspaceId, workspaceId),
+          eq(opsInventoryOwnerAssignments.isActive, 1),
+        )),
       ]);
       const productIds = products.map((product) => product.id);
       const [variants, basicInfos, monthlySummaries] = productIds.length ? await Promise.all([
@@ -971,7 +981,7 @@ export const opsWeeklyProcedures = {
           manualSkus: (variantsByProduct.get(product.id) || []).map((variant) => variant.sku).filter((sku): sku is string => Boolean(sku)),
         };
       });
-      const overview = buildParentWeeklyOverview(weeklyFacts, profileSeeds, weeksToShow);
+      const overview = buildParentWeeklyOverview(weeklyFacts, profileSeeds, weeksToShow, manualOwnerAssignments);
       return overview.filter((product) => {
         const matchesMarketplace = marketplace === "all" || product.marketplace?.toUpperCase() === marketplace.toUpperCase();
         const matchesStatus = statusFilter === "all" || product.status === statusFilter;

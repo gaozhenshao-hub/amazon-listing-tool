@@ -144,6 +144,17 @@ describe("导入模式库存规划接口契约", () => {
     expect(ownerAssignmentRouterSource).toContain("inventory_owner_assignment.assign_batch");
   });
 
+  it("来源支持的产品总览行可按父ASIN、店铺和规范站点分配负责人，不依赖手工产品档案", () => {
+    expect(productsPageSource).toContain("onAssignSourceOwner");
+    expect(productsPageSource).toContain("ownerCandidates");
+    expect(productsPageSource).toContain("保存为父ASIN、店铺与站点的人工规则");
+    expect(productsPageSource).toContain("不改写领星原始数据");
+    expect(parentWeeklyOverviewSource).toContain("manualOwner?.assigneeName || profile?.operator || latest.operator || null");
+    expect(parentWeeklyOverviewSource).toContain("operatorSource: manualOwner ? \"manual_assignment\"");
+    expect(ownerAssignmentRouterSource).toContain("lingxingProductWeekly.sourceKind");
+    expect(ownerAssignmentRouterSource).toContain("可验证ASIN日数据或父ASIN周事实");
+  });
+
   it("产品总览前端保留后端已经映射的运营字段，不将其重置为空", () => {
     expect(productsPageSource).toContain('const names = (p.operator || "").split');
     expect(productsPageSource).toContain('(p.operator || "").toLowerCase().includes(q)');
