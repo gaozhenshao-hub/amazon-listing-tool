@@ -23,13 +23,7 @@ import AdDeepDataUpload from "./ad-deep/AdDeepDataUpload";
 import OpsPlanImportTab from "./OpsPlanImportTab";
 import OpsReviewImportTab from "./OpsReviewImportTab";
 import ImportWizardTab from "./ImportWizardTab";
-
-// ─── Helper: format date ───
-function formatDate(d: Date | string | null) {
-  if (!d) return "-";
-  const date = typeof d === "string" ? new Date(d) : d;
-  return date.toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
+import { formatAsiaShanghaiAuditTime } from "@shared/asiaShanghaiAuditTime";
 
 // ─── Status Badge ───
 function StatusBadge({ status }: { status: string }) {
@@ -249,7 +243,7 @@ export default function OpsDataImport() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">最近导入</p>
-                <p className="text-sm font-medium">{stats?.lastImportAt ? formatDate(stats.lastImportAt) : "暂无"}</p>
+                <p className="text-sm font-medium">{stats?.lastImportAt ? formatAsiaShanghaiAuditTime(stats.lastImportAt) : "暂无"}</p>
               </div>
             </div>
           </CardContent>
@@ -408,7 +402,7 @@ export default function OpsDataImport() {
                       <TableHead>日期范围</TableHead>
                       <TableHead className="text-right">数据行数</TableHead>
                       <TableHead>状态</TableHead>
-                      <TableHead>导入时间</TableHead>
+                      <TableHead>导入时间（东八区）</TableHead>
                       <TableHead className="text-right">操作</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -431,7 +425,7 @@ export default function OpsDataImport() {
                         </TableCell>
                         <TableCell><StatusBadge status={record.status} /></TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {formatDate(record.createdAt)}
+                          {formatAsiaShanghaiAuditTime(record.createdAt)}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
