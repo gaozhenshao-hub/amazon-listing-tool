@@ -171,10 +171,10 @@ describe("领星ASIN日数据同步路由", () => {
     expect(state.batch.summary.failedStoreDateWindows).toEqual([expect.objectContaining({ sid: "7392", reportDate: "2026-08-11", page: 0, error: "MCP窗口读取超时" })]);
   });
 
-  it("应用前发现已有日快照身份时回退待复核，不创建导入或重复快照", async () => {
+  it("应用前发现已有同源日表现身份时回退待复核，不创建导入或重复快照", async () => {
     const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
     const preview = await caller.createPreview({ dataDomain: "product_performance_daily", scope: { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-10", marketplace: "US" } });
-    state.snapshots.push({ sourceStoreId: "7392", country: "US", asin: "B0DAY001", reportDate: "2026-08-10" });
+    state.snapshots.push({ sourceStoreId: "7392", country: "US", asin: "B0DAY001", reportDate: "2026-08-10", sourceType: "lingxing_mcp" });
     state.imports.push({ id: 7700, fileName: "领星MCP-product_performance_daily-批次9901", status: "importing", importedRows: 0 });
 
     await caller.confirm({ batchId: preview.batchId, selectedRowIds: [state.rows[0].id] });
@@ -185,6 +185,22 @@ describe("领星ASIN日数据同步路由", () => {
     expect(state.batch.summary).toMatchObject({ applyBlocked: "duplicate_daily_snapshot_identity", duplicateDailySnapshotCount: 1 });
     expect(state.rows[0].rowStatus).toBe("needs_review");
     expect(state.confirmations.map((item) => item.action)).toEqual(["confirm"]);
+  });
+
+  it("同日库存快照不得阻断ASIN日表现追加，两个来源分别保留", async () => {
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+    const preview = await caller.createPreview({ dataDomain: "product_performance_daily", scope: { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-10", marketplace: "US" } });
+    state.snapshots.push({ sourceStoreId: "7392", country: "US", asin: "B0DAY001", reportDate: "2026-08-10", sourceType: "lx_inventory_mcp", fbaAvailable: 9 });
+
+    await caller.confirm({ batchId: preview.batchId, selectedRowIds: [state.rows[0].id] });
+    await expect(caller.applyConfirmedProductInventory({ batchId: preview.batchId })).resolves.toMatchObject({ success: true, importedRows: 1 });
+
+    expect(state.imports).toEqual([expect.objectContaining({ status: "completed" })]);
+    expect(state.batch).toMatchObject({ status: "applied" });
+    expect(state.snapshots).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceType: "lx_inventory_mcp", fbaAvailable: 9 }),
+      expect.objectContaining({ sourceType: "lingxing_mcp", reportDate: "2026-08-10", asin: "B0DAY001" }),
+    ]));
   });
 
   it("计划管理创建、暂停和恢复同一Heartbeat任务，并固定为只生成草稿", async () => {

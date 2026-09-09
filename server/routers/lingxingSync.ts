@@ -22,6 +22,14 @@ const scopeSchema = z.object({
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   marketplace: z.string().trim().optional(),
 });
+/**
+ * 产品表现和库存共享同一张日快照表，但属于可互补的不同事实来源。
+ * 日表现追加只能与既有日表现（ERP上传或领星MCP）查重；库存由独立入口按库存来源查重。
+ */
+export const DAILY_PERFORMANCE_SNAPSHOT_SOURCES = ["lingxing", "lingxing_mcp"] as const;
+export function isDailyPerformanceSnapshotSource(sourceType: unknown): boolean {
+  return DAILY_PERFORMANCE_SNAPSHOT_SOURCES.includes(sourceType as typeof DAILY_PERFORMANCE_SNAPSHOT_SOURCES[number]);
+}
 const scheduledDomainSchema = z.enum(["product_performance_daily", "fba_inventory", "ad_keyword", "parent_asin_weekly_mcp"]);
 const SCHEDULE_PRESETS = {
   product_performance_daily: {
@@ -1091,8 +1099,14 @@ export const lingxingSyncRouter = router({
         country: opsAsinDailySnapshots.country,
         asin: opsAsinDailySnapshots.asin,
         reportDate: opsAsinDailySnapshots.reportDate,
-      }).from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, workspaceId));
-      const existingKeys = new Set(existingSnapshots.map((snapshot) => dailySnapshotIdentityKey(snapshot)));
+        sourceType: opsAsinDailySnapshots.sourceType,
+      }).from(opsAsinDailySnapshots).where(and(
+        eq(opsAsinDailySnapshots.workspaceId, workspaceId),
+        inArray(opsAsinDailySnapshots.sourceType, DAILY_PERFORMANCE_SNAPSHOT_SOURCES),
+      ));
+      // 防御性保留来源判断，使测试替身、迁移期间的旧查询实现也不能把库存事实混入日表现去重集合。
+      const existingPerformanceSnapshots = existingSnapshots.filter((snapshot) => isDailyPerformanceSnapshotSource(snapshot.sourceType));
+      const existingKeys = new Set(existingPerformanceSnapshots.map((snapshot) => dailySnapshotIdentityKey(snapshot)));
       for (const key of selectedKeys) if (existingKeys.has(key)) duplicateKeys.add(key);
       if (duplicateKeys.size) {
         const duplicateIdentityKeys = [...duplicateKeys].sort();
