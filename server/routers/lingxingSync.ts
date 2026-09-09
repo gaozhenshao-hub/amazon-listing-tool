@@ -1048,7 +1048,52 @@ export const lingxingSyncRouter = router({
     const [batch] = await db.select().from(opsExternalSyncBatches).where(and(eq(opsExternalSyncBatches.id, input.batchId), eq(opsExternalSyncBatches.workspaceId, workspaceId))).limit(1);
     if (!batch || batch.status !== "ready_for_review") throw new Error("该同步批次不在可确认状态");
     if (isPhase5PreviewDomain(batch.dataDomain)) throw new Error("Listing主数据、广告搜索词和投放目标当前仅提供字段对账草稿；尚未开放确认或业务写入。");
-    const reviewIssue = ["product_performance_daily", "fba_inventory", "ad_keyword"].includes(batch.dataDomain) ? scheduledAutoApplyReviewIssue(batch as any) : null;
+    let reviewIssue = ["product_performance_daily", "fba_inventory", "ad_keyword"].includes(batch.dataDomain) ? scheduledAutoApplyReviewIssue(batch as any) : null;
+    // 旧版本会把库存快照混入ASIN日表现的重复集合。仅当保留的阻断标记属于日表现重复，
+    // 且按当前“同源日表现”规则重新验证已无冲突时，才解除这个过期标记；其他异常继续失败关闭。
+    if (reviewIssue?.code === "duplicate_identity" && batch.dataDomain === "product_performance_daily") {
+      const selectedRows = await db.select().from(opsExternalSyncRows).where(and(
+        eq(opsExternalSyncRows.batchId, input.batchId),
+        eq(opsExternalSyncRows.workspaceId, workspaceId),
+        eq(opsExternalSyncRows.selected, 1),
+      ));
+      const selectedKeys = new Set<string>();
+      const duplicateKeys = new Set<string>();
+      for (const row of selectedRows) {
+        const data = object(row.normalizedData);
+        if (!isValidDailySnapshotForApply(data)) continue;
+        const key = dailySnapshotIdentityKey({ sourceStoreId: data.storeId, country: data.country, asin: data.asin, reportDate: data.reportDate });
+        if (selectedKeys.has(key)) duplicateKeys.add(key);
+        selectedKeys.add(key);
+      }
+      const existingSnapshots = await db.select({
+        sourceStoreId: opsAsinDailySnapshots.sourceStoreId,
+        country: opsAsinDailySnapshots.country,
+        asin: opsAsinDailySnapshots.asin,
+        reportDate: opsAsinDailySnapshots.reportDate,
+        sourceType: opsAsinDailySnapshots.sourceType,
+      }).from(opsAsinDailySnapshots).where(and(
+        eq(opsAsinDailySnapshots.workspaceId, workspaceId),
+        inArray(opsAsinDailySnapshots.sourceType, DAILY_PERFORMANCE_SNAPSHOT_SOURCES),
+      ));
+      const existingKeys = new Set(existingSnapshots
+        .filter((snapshot) => isDailyPerformanceSnapshotSource(snapshot.sourceType))
+        .map((snapshot) => dailySnapshotIdentityKey(snapshot)));
+      for (const key of selectedKeys) if (existingKeys.has(key)) duplicateKeys.add(key);
+      if (!duplicateKeys.size) {
+        const summary = { ...object(batch.summary) };
+        delete summary.applyBlocked;
+        delete summary.duplicateDailySnapshotIdentities;
+        delete summary.duplicateDailySnapshotCount;
+        await db.update(opsExternalSyncBatches).set({ summary, errorMessage: null }).where(and(
+          eq(opsExternalSyncBatches.id, input.batchId),
+          eq(opsExternalSyncBatches.workspaceId, workspaceId),
+        ));
+        batch.summary = summary;
+        batch.errorMessage = null;
+        reviewIssue = null;
+      }
+    }
     if (reviewIssue) throw new Error(`该异常批次不能人工确认或写入：${reviewIssue.label}。请在“异常数据复核”中重新读取完整窗口或记录暂缓原因。`);
     await db.insert(opsExternalSyncConfirmations).values({ workspaceId, batchId: input.batchId, userId: ctx.user.id, action: "confirm", selectedRowIds: input.selectedRowIds, note: input.note || null });
     await db.update(opsExternalSyncRows).set({

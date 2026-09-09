@@ -36,6 +36,9 @@ const db = {
     from: (table: any) => ({
       where: () => {
         if (tableName(table) === "ops_lingxing_sync_schedules") return queryResult(state.schedules);
+        if (tableName(table) === "ops_external_sync_batches") return queryResult(state.batch ? [state.batch] : []);
+        if (tableName(table) === "ops_external_sync_rows") return queryResult(state.rows.filter((row) => row.selected === 1));
+        if (tableName(table) === "ops_asin_daily_snapshots") return queryResult(state.snapshots);
         state.selectCount += 1;
         if (state.selectCount === 1) return queryResult([]); // existing day snapshots during preview
         if (state.selectCount === 2) return queryResult(state.batch ? [state.batch] : []); // confirm batch
@@ -201,6 +204,24 @@ describe("领星ASIN日数据同步路由", () => {
       expect.objectContaining({ sourceType: "lx_inventory_mcp", fbaAvailable: 9 }),
       expect.objectContaining({ sourceType: "lingxing_mcp", reportDate: "2026-08-10", asin: "B0DAY001" }),
     ]));
+  });
+
+  it("修复跨来源查重后，仅在同源复核通过时解除遗留日表现重复阻断并允许重试", async () => {
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+    const preview = await caller.createPreview({ dataDomain: "product_performance_daily", scope: { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-10", marketplace: "US" } });
+    state.batch.status = "ready_for_review";
+    state.batch.summary = { ...(state.batch.summary || {}), applyBlocked: "duplicate_daily_snapshot_identity", duplicateDailySnapshotCount: 1, duplicateDailySnapshotIdentities: ["stale-cross-source-key"] };
+    state.batch.errorMessage = "日快照身份重复：1条。已回退为待复核，未创建导入记录。";
+
+    await expect(caller.confirm({ batchId: preview.batchId, selectedRowIds: [state.rows[0].id] })).resolves.toMatchObject({ success: true });
+    expect(state.batch).toMatchObject({ status: "confirmed", errorMessage: null });
+    expect(state.batch.summary).not.toHaveProperty("applyBlocked");
+    expect(state.batch.summary).not.toHaveProperty("duplicateDailySnapshotCount");
+
+    await expect(caller.applyConfirmedProductInventory({ batchId: preview.batchId })).resolves.toMatchObject({ success: true, importedRows: 1 });
+    expect(state.batch.status).toBe("applied");
+    expect(state.imports).toEqual([expect.objectContaining({ status: "completed" })]);
+    expect(state.confirmations.map((item) => item.action)).toEqual(["confirm", "apply"]);
   });
 
   it("计划管理创建、暂停和恢复同一Heartbeat任务，并固定为只生成草稿", async () => {
