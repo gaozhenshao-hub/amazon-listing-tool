@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { parse as parseCookie } from "cookie";
 import { z } from "zod";
-import { adCampaignReports, adKeywordWeekly, adReportImports, dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncConfirmations, opsExternalSyncRows, opsLingxingSyncSchedules } from "../../drizzle/schema";
+import { adCampaignReports, adKeywordWeekly, adReportImports, dataImports, lingxingProductWeekly, opsAdMcpCampaignDailyFacts, opsAdMcpFactRevisions, opsAdMcpProductDailyFacts, opsAdMcpProfiles, opsAsinDailySnapshots, opsExternalSyncBatches, opsExternalSyncConfirmations, opsExternalSyncRows, opsLingxingSyncSchedules } from "../../drizzle/schema";
 import { router } from "../_core/trpc";
 import { createHeartbeatJob, updateHeartbeatJob } from "../_core/heartbeat";
 import { COOKIE_NAME } from "@shared/const";
@@ -13,8 +13,10 @@ import { invokeEmperorTool } from "../domains/ai_os/services/toolGateway/executo
 import { buildScheduledAutoApplyReviewQueue, scheduledAutoApplyReviewIssue } from "../domains/ops/historicalBackfillReview";
 import { rawExecute } from "../domains/ai_os/routerContext";
 import { getDb } from "../repositories/dbClient";
+import { AD_MCP_MAX_PAGES_PER_PROFILE, AD_MCP_MAX_ROWS_PER_PROFILE, AD_MCP_PAGE_SIZE, assertAdMcpAutoApplyIntegrity, isAdMcpAggregateRow, normalizeAdMcpCampaign, normalizeAdMcpProduct, normalizeAdMcpProfile, resolveParentAsinMapping, type AdMcpFactDomain, type AdMcpProfile } from "../domains/ops/adMcpFacts";
+import { applyConfirmedAdMcpFacts } from "../domains/ops/adMcpApply";
 
-const domainSchema = z.enum(["product_performance", "product_performance_daily", "parent_asin_weekly_mcp", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword", "listing_master", "ad_search_term", "ad_targeting"]);
+const domainSchema = z.enum(["product_performance", "product_performance_daily", "parent_asin_weekly_mcp", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword", "ad_campaign_mcp", "ad_product_mcp", "listing_master", "ad_search_term", "ad_targeting"]);
 const scopeSchema = z.object({
   storeId: z.string().trim().min(1),
   profileId: z.string().trim().optional(),
@@ -30,7 +32,7 @@ export const DAILY_PERFORMANCE_SNAPSHOT_SOURCES = ["lingxing", "lingxing_mcp"] a
 export function isDailyPerformanceSnapshotSource(sourceType: unknown): boolean {
   return DAILY_PERFORMANCE_SNAPSHOT_SOURCES.includes(sourceType as typeof DAILY_PERFORMANCE_SNAPSHOT_SOURCES[number]);
 }
-const scheduledDomainSchema = z.enum(["product_performance_daily", "fba_inventory", "ad_keyword", "parent_asin_weekly_mcp"]);
+const scheduledDomainSchema = z.enum(["product_performance_daily", "fba_inventory", "ad_keyword", "ad_campaign_mcp", "ad_product_mcp", "parent_asin_weekly_mcp"]);
 const SCHEDULE_PRESETS = {
   product_performance_daily: {
     cadence: "daily_previous_day", cronExpression: "0 0 9 * * *",
@@ -47,6 +49,16 @@ const SCHEDULE_PRESETS = {
     description: "北京时间每日17:40读取前一天美国站广告关键词历史表现；完整性与异常校验通过后自动追加历史事实，异常转人工复核",
     autoApply: true,
   },
+  ad_campaign_mcp: {
+    cadence: "daily_ad_campaign_previous_day", cronExpression: "0 0 10 * * *",
+    description: "北京时间每日18:00读取前一天美国站广告活动报告；完整性与异常校验通过后自动写入独立活动日事实，异常转人工复核",
+    autoApply: true,
+  },
+  ad_product_mcp: {
+    cadence: "daily_ad_product_previous_day", cronExpression: "0 10 10 * * *",
+    description: "北京时间每日18:10读取前一天美国站广告商品报告；完整性、父ASIN映射与异常校验通过后自动写入独立商品日事实，异常转人工复核",
+    autoApply: true,
+  },
   parent_asin_weekly_mcp: {
     cadence: "weekly_parent_asin_mcp_report", cronExpression: "0 10 8 * * 1",
     description: "北京时间每周一16:10读取上一自然周领星MCP子ASIN周数据；完整性校验后由系统聚合父ASIN周事实，冲突或异常阻断并保留审计",
@@ -58,11 +70,21 @@ const emperorScheduleName = (dataDomain: keyof typeof SCHEDULE_PRESETS) => ({
   product_performance_daily: "领星 · 每日ASIN产品表现",
   fba_inventory: "领星 · 每日FBA库存快照",
   ad_keyword: "领星 · 每日广告关键词历史",
+  ad_campaign_mcp: "领星 · 每日广告活动事实",
+  ad_product_mcp: "领星 · 每日广告商品事实",
   parent_asin_weekly_mcp: "领星 · ASIN周数据·父级汇总",
 }[dataDomain]);
 
 type RecordValue = Record<string, unknown>;
 const phase5PreviewDomains = new Set(["listing_master", "ad_search_term", "ad_targeting"]);
+function isAdMcpFactDomain(domain: string): domain is AdMcpFactDomain {
+  return domain === "ad_campaign_mcp" || domain === "ad_product_mcp";
+}
+function adMcpEntityKey(domain: AdMcpFactDomain, data: RecordValue) {
+  return domain === "ad_campaign_mcp"
+    ? [data.profileId, data.reportDate, data.adType, data.campaignId].map(asText).join("|")
+    : [data.profileId, data.reportDate, data.adType, data.campaignId, data.adGroupId, data.adId, data.advertisedAsin].map(asText).join("|");
+}
 const MCP_STORE_DATE_WINDOW_TIMEOUT_MS = 95_000;
 export const AD_KEYWORD_MAX_PAGES_PER_PROFILE = 100;
 export const AD_KEYWORD_MAX_ROWS_PER_PROFILE = 20_000;
@@ -489,6 +511,8 @@ export function buildMcpArguments(domain: z.infer<typeof domainSchema>, scope: z
   if (domain === "fba_inventory") return { capability: "get_fba_stock_list", arguments: { sid: scope.storeId, offset: 0, length: 200, sort_field: "sku", sort_type: "asc", is_cost_page: "0", is_hide_zero_stock: 0, is_parant_asin_merge: "1" } };
   if (domain === "ad_campaign") return { capability: "ad_campaign_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: 200, sort_field: "spends", sort_type: "desc" } };
   if (domain === "ad_keyword") return { capability: "ad_campaign_keyword_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: 200, sort_field: "spends", sort_type: "desc" } };
+  if (domain === "ad_campaign_mcp") return { capability: "ad_campaign_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: AD_MCP_PAGE_SIZE, sort_field: "spends", sort_type: "desc" } };
+  if (domain === "ad_product_mcp") return { capability: "ad_campaign_product_report", arguments: { profile_ids: [scope.profileId || scope.storeId], report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: AD_MCP_PAGE_SIZE, sort_field: "spends", sort_type: "desc" } };
   if (domain === "listing_master") return { capability: "erp_listing", arguments: { pvi_ids: "", sids: scope.storeId, length: 200, offset: 0, sort_field: "asin", sort_type: "asc" } };
   if (domain === "ad_search_term") return { capability: "ad_campaign_search_term_report", arguments: { profile_ids: profileIdsFromScope(scope), report_date: `${scope.startDate} - ${scope.endDate}`, country: [scope.marketplace || "US"], page: 1, length: 200, with_ring: false, sort_field: "spends", sort_type: "desc" } };
   return { capability: "ad_campaign_targeting_report", arguments: { profile_ids: profileIdsFromScope(scope), report_date: `${scope.startDate} - ${scope.endDate}`, page: 1, length: "200", with_ring: 0, sort_field: "spends", sort_type: "desc" } };
@@ -663,6 +687,7 @@ export const lingxingSyncRouter = router({
     let rawSnapshot: unknown;
     let sourceRows: RecordValue[];
     let toolRunId: string | null = null;
+    let adMcpProfiles: AdMcpProfile[] = [];
     const summary: { totalRead: number; selected: number; needsReview: number; unmatched: number; [key: string]: unknown } = { totalRead: 0, selected: 0, needsReview: 0, unmatched: 0 };
     if (input.dataDomain === "product_performance_daily" || input.dataDomain === "parent_asin_weekly_mcp") {
       const isParentAsinWeeklyMcp = input.dataDomain === "parent_asin_weekly_mcp";
@@ -858,6 +883,74 @@ export const lingxingSyncRouter = router({
         maxRowsPerProfile: limits.maxRowsPerProfile,
         maxRowsOverall: limits.maxRowsOverall,
       });
+    } else if (isAdMcpFactDomain(input.dataDomain) && input.scope.profileId) {
+      const toolRunIds: string[] = [];
+      const directoryExecution = await invokeEmperorTool({
+        toolSlug: "internal.lingxing.read", params: { capability: "ad_auth_shops", arguments: {} },
+        userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_ad_mcp_profile_directory",
+      });
+      if (directoryExecution.metadata.toolRunId) toolRunIds.push(directoryExecution.metadata.toolRunId);
+      const directoryRecords = pickRecords(normalizeMcpPayload(directoryExecution.output));
+      const parsedProfiles = directoryRecords.map(normalizeAdMcpProfile);
+      const profileValidationErrors = parsedProfiles.flatMap((item) => item.validationErrors);
+      adMcpProfiles = parsedProfiles.flatMap((item) => item.profile ? [item.profile] : [])
+        .filter((profile) => profile.country === "US");
+      const requestedProfiles = input.scope.profileId === "ALL_US_AD_PROFILES"
+        ? adMcpProfiles
+        : adMcpProfiles.filter((profile) => input.scope.profileId!.split(",").map((id) => id.trim()).includes(profile.profileId));
+      const duplicatedProfiles = requestedProfiles.filter((profile, index, list) => list.findIndex((candidate) => candidate.profileId === profile.profileId && (candidate.sourceStoreId !== profile.sourceStoreId || candidate.country !== profile.country)) !== index);
+      const rows: RecordValue[] = [];
+      const completedProfiles = new Set<string>();
+      const failedProfileDateWindows: Array<{ profileId: string; reportDate: string; page: number; error: string }> = [];
+      let aggregateRows = 0;
+      let pageTruncations = 0;
+      let capped = false;
+      const reportDate = input.scope.endDate || input.scope.startDate || "";
+      for (const profile of requestedProfiles) {
+        let exhausted = false;
+        let complete = true;
+        let profileRowCount = 0;
+        for (let page = 0; page < AD_MCP_MAX_PAGES_PER_PROFILE && !exhausted; page += 1) {
+          if (profileRowCount >= AD_MCP_MAX_ROWS_PER_PROFILE) { capped = true; pageTruncations += 1; complete = false; break; }
+          const request = buildMcpArguments(input.dataDomain, { ...input.scope, storeId: profile.sourceStoreId, profileId: profile.profileId, marketplace: profile.country });
+          request.arguments.page = page + 1;
+          try {
+            const execution = await withMcpStoreDateWindowTimeout(
+              invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: `read_${input.dataDomain}_${profile.profileId}_${reportDate}_${page}` }),
+              `${profile.profileId}|${reportDate}|${page}`,
+            );
+            toolRunId = execution.metadata.toolRunId || toolRunId;
+            if (execution.metadata.toolRunId) toolRunIds.push(execution.metadata.toolRunId);
+            const pageRows = pickRecords(normalizeMcpPayload(execution.output));
+            for (const source of pageRows) {
+              if (isAdMcpAggregateRow(input.dataDomain, source)) { aggregateRows += 1; continue; }
+              if (profileRowCount >= AD_MCP_MAX_ROWS_PER_PROFILE) { capped = true; pageTruncations += 1; complete = false; break; }
+              rows.push({ ...source, __adMcpProfileId: profile.profileId, __adMcpStoreId: profile.sourceStoreId, __adMcpCountry: profile.country, __reportDate: reportDate });
+              profileRowCount += 1;
+            }
+            exhausted = pageRows.length < AD_MCP_PAGE_SIZE || !complete;
+            if (page === AD_MCP_MAX_PAGES_PER_PROFILE - 1 && !exhausted) { pageTruncations += 1; complete = false; }
+          } catch (error) {
+            complete = false;
+            failedProfileDateWindows.push({ profileId: profile.profileId, reportDate, page, error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500) });
+            exhausted = true;
+          }
+        }
+        if (complete && exhausted) completedProfiles.add(profile.profileId);
+      }
+      sourceRows = rows;
+      rawSnapshot = {
+        source: "lingxing_mcp", dataDomain: input.dataDomain, reportDate, profiles: requestedProfiles.map((profile) => ({ profileId: profile.profileId, sourceStoreId: profile.sourceStoreId, country: profile.country })),
+        rows, aggregateRows, toolRunIds,
+      };
+      Object.assign(summary, {
+        totalRead: sourceRows.length, selected: sourceRows.length, datesRead: 1,
+        profilesExpected: requestedProfiles.length, profilesRead: completedProfiles.size,
+        profileDateWindowsExpected: requestedProfiles.length, profileDateWindowsRead: completedProfiles.size,
+        profileDirectoryValidationErrors: profileValidationErrors, profileDirectoryDuplicateCount: duplicatedProfiles.length,
+        aggregateRows, pageTruncations, capped, failedProfileDateWindows, toolRunIds,
+        maxPagesPerProfile: AD_MCP_MAX_PAGES_PER_PROFILE, maxRowsPerProfile: AD_MCP_MAX_ROWS_PER_PROFILE,
+      });
     } else {
       const listingStoresExecution = input.dataDomain === "listing_master" && input.scope.storeId === "ALL_US"
         ? await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: { capability: "get_my_sids", arguments: {} }, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_listing_us_store_directory" })
@@ -910,7 +1003,60 @@ export const lingxingSyncRouter = router({
       });
       await db.update(opsExternalSyncBatches).set({ rawSnapshot: { ...object(compactRawSnapshot), rawArtifactRef: artifact?.ref || null, rawArtifactUri: artifact?.storageUri || null } as any }).where(eq(opsExternalSyncBatches.id, batchId));
     }
-    const initialStagedRows = sourceRows.map((source) => ({ source, normalized: normalizeRow(input.dataDomain, source, input.scope) }));
+    const adMcpAdvertisedAsins = isAdMcpFactDomain(input.dataDomain) && input.dataDomain === "ad_product_mcp"
+      ? [...new Set(sourceRows.map((source) => asText(source.asin || source.advertised_asin).toUpperCase()).filter(Boolean))]
+      : [];
+    const adMcpMappingEvidence = adMcpAdvertisedAsins.length
+      ? await db.select({
+        sourceStoreId: opsAsinDailySnapshots.sourceStoreId,
+        country: opsAsinDailySnapshots.country,
+        asin: opsAsinDailySnapshots.asin,
+        sku: opsAsinDailySnapshots.sku,
+        parentAsin: opsAsinDailySnapshots.parentAsin,
+        reportDate: opsAsinDailySnapshots.reportDate,
+      }).from(opsAsinDailySnapshots).where(and(
+        eq(opsAsinDailySnapshots.workspaceId, workspaceId),
+        inArray(opsAsinDailySnapshots.asin, adMcpAdvertisedAsins),
+      ))
+      : [];
+    const initialStagedRows = sourceRows.map((source) => {
+      if (!isAdMcpFactDomain(input.dataDomain)) return { source, normalized: normalizeRow(input.dataDomain, source, input.scope) };
+      const profile = adMcpProfiles.find((candidate) => candidate.profileId === asText(source.__adMcpProfileId));
+      if (!profile) {
+        return {
+          source,
+          normalized: {
+            entityKey: `unresolved-profile|${input.dataDomain}|${asText(source.__adMcpProfileId)}`,
+            normalized: { sourceDomain: input.dataDomain, profileId: asText(source.__adMcpProfileId), reportDate: asText(source.__reportDate) },
+            validationErrors: ["广告报告行未找到唯一授权Profile目录记录。"],
+          },
+        };
+      }
+      if (input.dataDomain === "ad_campaign_mcp") {
+        const campaign = normalizeAdMcpCampaign(source, profile, asText(source.__reportDate));
+        const normalized = { ...campaign } as unknown as RecordValue;
+        return { source, normalized: { entityKey: adMcpEntityKey(input.dataDomain, normalized), normalized, validationErrors: campaign.validationErrors } };
+      }
+      const product = normalizeAdMcpProduct(source, profile, asText(source.__reportDate));
+      const mapping = resolveParentAsinMapping({
+        sourceStoreId: product.sourceStoreId,
+        country: product.country,
+        advertisedAsin: product.advertisedAsin,
+        advertisedSku: product.advertisedSku,
+        reportDate: product.reportDate,
+        evidence: adMcpMappingEvidence,
+      });
+      const validationErrors = [...product.validationErrors];
+      if (!mapping.parentAsin) validationErrors.push("广告商品未找到唯一父ASIN证据，不能自动纳入产品详情周度KPI。");
+      const normalized = {
+        ...product,
+        parentAsin: mapping.parentAsin,
+        mappingStatus: mapping.status,
+        mappingEvidenceDate: mapping.evidenceDate,
+        mappingEvidenceKind: mapping.evidenceKind,
+      } as unknown as RecordValue;
+      return { source, normalized: { entityKey: adMcpEntityKey(input.dataDomain, normalized), normalized, validationErrors } };
+    });
     const stagedRows = input.dataDomain === "fba_inventory" ? coalesceFbaInventoryPreviewRows(initialStagedRows) : initialStagedRows;
     const applicableRows = input.dataDomain === "product_performance_daily"
       ? stagedRows.filter((item) => hasSelectedPeriodActivity(item.normalized.normalized))
@@ -1095,6 +1241,26 @@ export const lingxingSyncRouter = router({
       }
     }
     if (reviewIssue) throw new Error(`该异常批次不能人工确认或写入：${reviewIssue.label}。请在“异常数据复核”中重新读取完整窗口或记录暂缓原因。`);
+    if (isAdMcpFactDomain(batch.dataDomain)) {
+      const selectedRows = await db.select().from(opsExternalSyncRows).where(and(
+        eq(opsExternalSyncRows.batchId, input.batchId),
+        eq(opsExternalSyncRows.workspaceId, workspaceId),
+        inArray(opsExternalSyncRows.id, input.selectedRowIds),
+      ));
+      try {
+        assertAdMcpAutoApplyIntegrity({
+          status: batch.status,
+          summary: batch.summary,
+          rows: selectedRows,
+          scope: { startDate: asText(object(batch.scope).startDate), endDate: asText(object(batch.scope).endDate) },
+          domain: batch.dataDomain,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "广告MCP批次完整性校验失败";
+        await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", errorMessage: message, summary: { ...object(batch.summary), applyBlocked: "ad_mcp_integrity", autoApplyBlocked: true } }).where(and(eq(opsExternalSyncBatches.id, input.batchId), eq(opsExternalSyncBatches.workspaceId, workspaceId)));
+        throw error;
+      }
+    }
     await db.insert(opsExternalSyncConfirmations).values({ workspaceId, batchId: input.batchId, userId: ctx.user.id, action: "confirm", selectedRowIds: input.selectedRowIds, note: input.note || null });
     await db.update(opsExternalSyncRows).set({
       selected: 0,
@@ -1257,9 +1423,12 @@ export const lingxingSyncRouter = router({
     const workspaceId = ctx.user.defaultWorkspaceId!;
     const [batch] = await db.select().from(opsExternalSyncBatches).where(and(eq(opsExternalSyncBatches.id, input.batchId), eq(opsExternalSyncBatches.workspaceId, workspaceId))).limit(1);
     if (!batch || batch.status !== "confirmed") throw new Error("请先完成人工确认；已应用或不在确认状态的批次不能重复写入。");
-    if (!["ad_campaign", "ad_keyword"].includes(batch.dataDomain)) throw new Error("当前广告应用入口仅支持广告活动和关键词报表草稿。");
+    if (!["ad_campaign", "ad_keyword", "ad_campaign_mcp", "ad_product_mcp"].includes(batch.dataDomain)) throw new Error("当前广告应用入口仅支持广告活动、广告商品和关键词报表草稿。");
     const selectedRows = await db.select().from(opsExternalSyncRows).where(and(eq(opsExternalSyncRows.batchId, input.batchId), eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.selected, 1)));
     if (!selectedRows.length) throw new Error("没有已选择的草稿行可应用。");
+    if (isAdMcpFactDomain(batch.dataDomain)) {
+      return applyConfirmedAdMcpFacts(db, { batch, rows: selectedRows, workspaceId, userId: ctx.user.id, note: input.note });
+    }
     const scope = object(batch.scope);
     const periodStart = asText(scope.startDate, todayIso());
     const periodEnd = asText(scope.endDate, periodStart);

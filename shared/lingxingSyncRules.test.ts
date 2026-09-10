@@ -5,11 +5,16 @@ describe("领星分域同步规则目录", () => {
   it("为库存与广告定义独立粒度、目标和人工保护字段", () => {
     const inventory = getLingxingSyncRule("fba_inventory");
     const campaign = getLingxingSyncRule("ad_campaign");
+    const campaignMcp = getLingxingSyncRule("ad_campaign_mcp");
+    const productMcp = getLingxingSyncRule("ad_product_mcp");
     const keyword = getLingxingSyncRule("ad_keyword");
     expect(inventory?.target).toBe("ops_asin_daily_snapshots");
     expect(inventory?.protectedFields).toContain("生产周期");
     expect(campaign?.target).toBe("ad_campaign_reports");
     expect(campaign?.protectedFields).toContain("预算");
+    expect(campaignMcp?.target).toBe("ops_ad_mcp_campaign_daily_facts");
+    expect(productMcp?.target).toBe("ops_ad_mcp_product_daily_facts");
+    expect(productMcp?.identity).toContain("adId");
     expect(keyword?.identity).toContain("keyword/target");
   });
 
@@ -18,7 +23,7 @@ describe("领星分域同步规则目录", () => {
     const traffic = getLingxingSyncRule("parent_asin_traffic");
     expect(daily?.target).not.toBe(traffic?.target);
     expect(traffic?.confirmation).toContain("分库存储");
-    expect(LINGXING_SYNC_RULES).toHaveLength(11);
+    expect(LINGXING_SYNC_RULES).toHaveLength(13);
   });
 
   it("为全部数据域显式声明重复键、差异字段、写入策略与定时策略", () => {
@@ -35,6 +40,8 @@ describe("领星分域同步规则目录", () => {
     expect(getLingxingSyncGovernance("product_performance_daily")).toMatchObject({ writePolicy: "validated_daily_auto_apply", schedulePolicy: "daily_17_shanghai" });
     expect(getLingxingSyncGovernance("fba_inventory")).toMatchObject({ writePolicy: "validated_daily_auto_apply", schedulePolicy: "daily_1720_shanghai" });
     expect(getLingxingSyncGovernance("ad_keyword")).toMatchObject({ writePolicy: "validated_daily_auto_apply", schedulePolicy: "daily_1740_shanghai" });
+    expect(getLingxingSyncGovernance("ad_campaign_mcp")).toMatchObject({ writePolicy: "validated_ad_mcp_auto_apply", schedulePolicy: "daily_1800_shanghai" });
+    expect(getLingxingSyncGovernance("ad_product_mcp")).toMatchObject({ writePolicy: "validated_ad_mcp_auto_apply", schedulePolicy: "daily_1810_shanghai" });
     expect(getLingxingSyncGovernance("parent_asin_traffic")).toMatchObject({ writePolicy: "unavailable", schedulePolicy: "disabled_pending_source" });
   });
 });

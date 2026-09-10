@@ -10,9 +10,9 @@ import { createHash } from "node:crypto";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
-import { dataImports, lingxingProductWeekly, opsAsinDailySnapshots, opsAsinLifecycleStatuses, opsInventoryOwnerAssignments, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, opsMonthlyFinancialProfits, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles, opsExternalSyncBatches } from "../../drizzle/schema";
+import { dataImports, lingxingProductWeekly, opsAdMcpCampaignDailyFacts, opsAdMcpProductDailyFacts, opsAdMcpProfiles, opsAsinDailySnapshots, opsAsinLifecycleStatuses, opsInventoryOwnerAssignments, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, opsMonthlyFinancialProfits, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles, opsExternalSyncBatches } from "../../drizzle/schema";
 import { MANAGER_ROLES } from "../../shared/const";
-import { eq, desc, and, sql, or, isNull, ne } from "drizzle-orm";
+import { eq, desc, and, inArray, sql, or, isNull, ne } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
 import { storagePut } from "../storage";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
@@ -26,6 +26,7 @@ import { inventoryOwnerAssignmentKey } from "../domains/ops/inventoryOwnerAssign
 import { resolveConfirmedExternalOperator, splitExternalOperatorNames } from "../domains/ops/operatorNameResolution";
 import { mergeErpProducts } from "@shared/erpProductMerge";
 import { normalizeMarketplaceCode } from "@shared/marketplaceIdentity";
+import { isCompleteNaturalWeek, summarizeParentAsinAdMcpWeek } from "../domains/ops/productOverview/adMcpWeeklySummary";
 
 function matchesLingxingMarketplace(row: { country?: string | null; storeName?: string | null }, marketplace: string) {
   if (marketplace === "ALL") return true;
@@ -1150,6 +1151,100 @@ export const dataImportRouter = router({
       } else {
         return buildProductDetailFromSaihu(db!, effectiveUserId, input.parentAsin, input.marketplace);
       }
+    }),
+
+  getWeeklyAdMcpDetail: protectedProcedure
+    .input(z.object({
+      parentAsin: z.string().trim().min(1).max(20),
+      weekStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      weekEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      storeName: z.string().trim().optional(),
+      country: z.string().trim().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("数据库不可用");
+      if (!isCompleteNaturalWeek(input.weekStartDate, input.weekEndDate)) throw new Error("广告周度查询仅支持周一至周日完整自然周");
+      const workspaceId = currentOpsWorkspaceId();
+      const normalizedStoreName = input.storeName?.trim().toUpperCase() || "";
+      const normalizedCountry = input.country ? normalizeMarketplaceCode(input.country) : "";
+      const profileCandidates = await db.select().from(opsAdMcpProfiles).where(eq(opsAdMcpProfiles.workspaceId, workspaceId));
+      const productSnapshotScopes = await db.select({ sourceStoreId: opsAsinDailySnapshots.sourceStoreId, storeName: opsAsinDailySnapshots.storeName, country: opsAsinDailySnapshots.country })
+        .from(opsAsinDailySnapshots)
+        .where(and(eq(opsAsinDailySnapshots.workspaceId, workspaceId), eq(opsAsinDailySnapshots.parentAsin, input.parentAsin.toUpperCase())));
+      const sourceStoreIdsFromProduct = new Set(productSnapshotScopes
+        .filter((snapshot) => !normalizedStoreName || String(snapshot.storeName || "").trim().toUpperCase() === normalizedStoreName)
+        .filter((snapshot) => !normalizedCountry || normalizeMarketplaceCode(snapshot.country) === normalizedCountry)
+        .map((snapshot) => String(snapshot.sourceStoreId || "").trim())
+        .filter(Boolean));
+      const profiles = profileCandidates
+        .filter((profile) => Number(profile.isActive) === 1)
+        .filter((profile) => !normalizedCountry || normalizeMarketplaceCode(profile.country) === normalizedCountry)
+        .filter((profile) => sourceStoreIdsFromProduct.size > 0
+          ? sourceStoreIdsFromProduct.has(profile.sourceStoreId)
+          : !normalizedStoreName || String(profile.storeName || "").trim().toUpperCase() === normalizedStoreName);
+      const profileIds = profiles.map((profile) => profile.profileId);
+      const sourceStoreIds = new Set(profiles.map((profile) => profile.sourceStoreId));
+      const expectedDates: string[] = [];
+      for (let cursor = input.weekStartDate; cursor <= input.weekEndDate;) {
+        expectedDates.push(cursor);
+        const day = new Date(`${cursor}T00:00:00.000Z`);
+        day.setUTCDate(day.getUTCDate() + 1);
+        cursor = day.toISOString().slice(0, 10);
+      }
+      if (!profileIds.length) return {
+        status: "no_profile" as const,
+        message: "未找到与当前店铺和站点匹配的已授权广告Profile，尚无可展示的广告周度数据。",
+        weekStartDate: input.weekStartDate,
+        weekEndDate: input.weekEndDate,
+        coverage: { expectedDates, campaignAppliedDates: [], productAppliedDates: [], missingCampaignDates: expectedDates, missingProductDates: expectedDates },
+        weekly: null,
+        provisional: null,
+      };
+      const [allProducts, allCampaigns, batches] = await Promise.all([
+        db.select().from(opsAdMcpProductDailyFacts).where(and(
+          eq(opsAdMcpProductDailyFacts.workspaceId, workspaceId),
+          eq(opsAdMcpProductDailyFacts.parentAsin, input.parentAsin.toUpperCase()),
+          inArray(opsAdMcpProductDailyFacts.profileId, profileIds),
+        )),
+        db.select().from(opsAdMcpCampaignDailyFacts).where(and(
+          eq(opsAdMcpCampaignDailyFacts.workspaceId, workspaceId),
+          inArray(opsAdMcpCampaignDailyFacts.profileId, profileIds),
+        )),
+        db.select().from(opsExternalSyncBatches).where(and(
+          eq(opsExternalSyncBatches.workspaceId, workspaceId),
+          eq(opsExternalSyncBatches.source, "lingxing_mcp"),
+          eq(opsExternalSyncBatches.status, "applied"),
+          inArray(opsExternalSyncBatches.dataDomain, ["ad_campaign_mcp", "ad_product_mcp"]),
+        )),
+      ]);
+      const products = allProducts.filter((fact) => sourceStoreIds.has(fact.sourceStoreId) && normalizeMarketplaceCode(fact.country) === (normalizedCountry || normalizeMarketplaceCode(fact.country)) && fact.reportDate >= input.weekStartDate && fact.reportDate <= input.weekEndDate);
+      const campaignKeys = new Set(products.map((fact) => `${fact.profileId}|${fact.adType}|${fact.campaignId}`));
+      const campaigns = allCampaigns.filter((fact) => campaignKeys.has(`${fact.profileId}|${fact.adType}|${fact.campaignId}`) && fact.reportDate >= input.weekStartDate && fact.reportDate <= input.weekEndDate);
+      const appliedDates = (domain: "ad_campaign_mcp" | "ad_product_mcp") => new Set(batches
+        .filter((batch) => batch.dataDomain === domain)
+        .map((batch) => batch.scope && typeof batch.scope === "object" ? String((batch.scope as Record<string, unknown>).startDate || "") : "")
+        .filter((date) => expectedDates.includes(date)));
+      const campaignApplied = appliedDates("ad_campaign_mcp");
+      const productApplied = appliedDates("ad_product_mcp");
+      const coverage = {
+        expectedDates,
+        campaignAppliedDates: [...campaignApplied].sort(),
+        productAppliedDates: [...productApplied].sort(),
+        missingCampaignDates: expectedDates.filter((date) => !campaignApplied.has(date)),
+        missingProductDates: expectedDates.filter((date) => !productApplied.has(date)),
+      };
+      const provisional = summarizeParentAsinAdMcpWeek({ products: products as any[], campaigns: campaigns as any[], weekStartDate: input.weekStartDate, weekEndDate: input.weekEndDate });
+      const isComplete = coverage.missingCampaignDates.length === 0 && coverage.missingProductDates.length === 0;
+      return {
+        status: isComplete ? "complete" as const : "incomplete" as const,
+        message: isComplete ? null : "广告活动或商品报告尚未完整覆盖本自然周，当前仅显示待复核数据，不作为正式周度KPI。",
+        weekStartDate: input.weekStartDate,
+        weekEndDate: input.weekEndDate,
+        coverage,
+        weekly: isComplete ? provisional : null,
+        provisional: isComplete ? null : provisional,
+      };
     }),
 });
 

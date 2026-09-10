@@ -5,8 +5,10 @@ import { lingxingSyncRouter, resolveLingxingSourcePeriod } from "../../routers/l
 import { getDb } from "../../repositories/dbClient";
 import { summarizeParentAsinWeeks, type DailySnapshot } from "./productOverview/dailyAggregation";
 import { normalizeMarketplaceCode } from "../../../shared/marketplaceIdentity";
+import { applyConfirmedAdMcpFacts } from "./adMcpApply";
+import { assertAdMcpAutoApplyIntegrity, type AdMcpFactDomain } from "./adMcpFacts";
 
-type ScheduleDomain = "product_performance_daily" | "fba_inventory" | "ad_keyword" | "parent_asin_weekly_rollup" | "parent_asin_weekly_mcp";
+type ScheduleDomain = "product_performance_daily" | "fba_inventory" | "ad_keyword" | "ad_campaign_mcp" | "ad_product_mcp" | "parent_asin_weekly_rollup" | "parent_asin_weekly_mcp";
 
 const shanghaiDate = (input = new Date()) => new Date(input.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const addDays = (date: string, days: number) => {
@@ -39,6 +41,11 @@ export function scheduledInventoryScope(now = new Date()) {
 export function scheduledKeywordScope(now = new Date()) {
   const previousDate = addDays(shanghaiDate(now), -1);
   return { startDate: previousDate, endDate: previousDate, runKey: `keyword:${previousDate}` };
+}
+
+export function scheduledAdMcpScope(domain: "ad_campaign_mcp" | "ad_product_mcp", now = new Date()) {
+  const previousDate = addDays(shanghaiDate(now), -1);
+  return { startDate: previousDate, endDate: previousDate, runKey: `${domain === "ad_campaign_mcp" ? "ad-campaign" : "ad-product"}:${previousDate}` };
 }
 
 export function scheduledWeeklyScope(now = new Date()) {
@@ -734,9 +741,18 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
     .where(and(eq(opsLingxingSyncSchedules.id, emperorTask.externalScheduleId!), eq(opsLingxingSyncSchedules.scheduleCronTaskUid, taskUid), eq(opsLingxingSyncSchedules.enabled, 1))).limit(1);
   if (!schedule) return { ok: true, skipped: "orphan_or_paused" as const };
   if (!schedule.ownerUserId) throw new Error("受治理领星计划缺少创建者，已阻断自动执行");
+  if (schedule.workspaceId === null) throw new Error("受治理领星计划缺少工作空间归属，已阻断自动执行");
   const domain = schedule.dataDomain as ScheduleDomain;
   const anomalyThreshold = resolveAnomalyThreshold(emperorTask.inputTemplate);
-  const scope = domain === "product_performance_daily" ? scheduledDailyScope(now) : domain === "fba_inventory" ? scheduledInventoryScope(now) : domain === "ad_keyword" ? scheduledKeywordScope(now) : scheduledWeeklyScope(now);
+  const scope = domain === "product_performance_daily"
+    ? scheduledDailyScope(now)
+    : domain === "fba_inventory"
+      ? scheduledInventoryScope(now)
+      : domain === "ad_keyword"
+        ? scheduledKeywordScope(now)
+        : domain === "ad_campaign_mcp" || domain === "ad_product_mcp"
+          ? scheduledAdMcpScope(domain, now)
+          : scheduledWeeklyScope(now);
   if (schedule.lastRunKey === scope.runKey && schedule.lastStatus === "succeeded") return { ok: true, skipped: "idempotent" as const, runKey: scope.runKey };
 
   await db.update(opsLingxingSyncSchedules).set({ lastStatus: "running", lastError: null, lastRunAt: now }).where(eq(opsLingxingSyncSchedules.id, schedule.id));
@@ -744,16 +760,16 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
   let batchId: number | null = null;
   let writePolicy: "draft_only" | "validated_daily_auto_apply" | "validated_weekly_auto_apply" = "draft_only";
   try {
-    if (["product_performance_daily", "fba_inventory", "ad_keyword"].includes(domain)) {
+    if (["product_performance_daily", "fba_inventory", "ad_keyword", "ad_campaign_mcp", "ad_product_mcp"].includes(domain)) {
       const [owner] = await db.select({ id: users.id, role: users.role, organizationId: users.organizationId, defaultWorkspaceId: users.defaultWorkspaceId })
         .from(users).where(eq(users.id, schedule.ownerUserId)).limit(1);
       if (!owner) throw new Error("计划创建者不存在或已删除");
       const caller = lingxingSyncRouter.createCaller({ user: { ...owner, defaultWorkspaceId: schedule.workspaceId } } as any);
       const preview = await caller.createPreview({
-        dataDomain: domain as "product_performance_daily" | "fba_inventory" | "ad_keyword",
+        dataDomain: domain as "product_performance_daily" | "fba_inventory" | "ad_keyword" | "ad_campaign_mcp" | "ad_product_mcp",
         scope: {
-          storeId: domain === "ad_keyword" ? "ALL_US_AD_PROFILES" : "ALL_US",
-          profileId: domain === "ad_keyword" ? "ALL_US_AD_PROFILES" : undefined,
+          storeId: ["ad_keyword", "ad_campaign_mcp", "ad_product_mcp"].includes(domain) ? "ALL_US_AD_PROFILES" : "ALL_US",
+          profileId: ["ad_keyword", "ad_campaign_mcp", "ad_product_mcp"].includes(domain) ? "ALL_US_AD_PROFILES" : undefined,
           marketplace: "US",
           startDate: scope.startDate,
           endDate: scope.endDate,
@@ -770,7 +786,7 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
           eq(opsExternalSyncRows.batchId, previewBatchId),
           eq(opsExternalSyncRows.workspaceId, schedule.workspaceId),
         ));
-        const applicableRows = domain === "ad_keyword"
+        const applicableRows = ["ad_keyword", "ad_campaign_mcp", "ad_product_mcp"].includes(domain)
           ? rows.filter((row) => row.rowStatus !== "needs_review" && (!Array.isArray(row.validationErrors) || row.validationErrors.length === 0))
           : rows;
         if (domain === "product_performance_daily") {
@@ -780,7 +796,7 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
           const previousSnapshots = (await db.select().from(opsAsinDailySnapshots).where(eq(opsAsinDailySnapshots.workspaceId, schedule.workspaceId)))
             .filter((snapshot) => snapshot.sourceType === "lx_inventory_mcp");
           validateInventoryAutoApplyIntegrity(batch as AutoApplyBatch, applicableRows as AutoApplyRow[], scope, previousSnapshots as PreviousDailySnapshot[], anomalyThreshold);
-        } else {
+        } else if (domain === "ad_keyword") {
           const previousDate = addDays(scope.startDate, -1);
           const previousKeywords = await db.select().from(adKeywordWeekly).where(and(
             eq(adKeywordWeekly.workspaceId, schedule.workspaceId),
@@ -788,11 +804,19 @@ export async function runLingxingScheduledDraft(taskUid: string, now = new Date(
             eq(adKeywordWeekly.weekEndDate, previousDate),
           ));
           validateKeywordAutoApplyIntegrity(batch as AutoApplyBatch, applicableRows as AutoApplyRow[], scope, previousKeywords as Array<Record<string, unknown>>, anomalyThreshold);
+        } else {
+          assertAdMcpAutoApplyIntegrity({
+            status: batch?.status || "missing",
+            summary: batch?.summary,
+            rows: applicableRows as Array<{ entityKey: string; validationErrors: unknown; normalizedData: unknown }>,
+            scope: { startDate: scope.startDate, endDate: scope.endDate },
+            domain: domain as AdMcpFactDomain,
+          });
         }
         const selectedRowIds = applicableRows.map((row) => row.id);
-        if (!selectedRowIds.length) throw new Error("自动应用校验未通过：所有广告关键词行均缺失身份或字段，已保留待复核");
+        if (!selectedRowIds.length) throw new Error("自动应用校验未通过：不存在可自动写入的有效草稿行，已保留待复核");
         await caller.confirm({ batchId: previewBatchId, selectedRowIds, note: `系统${domain}每日校验通过自动确认` });
-        if (domain === "ad_keyword") await caller.applyConfirmedAds({ batchId: previewBatchId, note: "系统每日关键词校验通过自动追加历史事实" });
+        if (["ad_keyword", "ad_campaign_mcp", "ad_product_mcp"].includes(domain)) await caller.applyConfirmedAds({ batchId: previewBatchId, note: domain === "ad_keyword" ? "系统每日关键词校验通过自动追加历史事实" : "系统每日广告MCP完整性校验通过自动写入独立日事实" });
         else await caller.applyConfirmedProductInventory({ batchId: previewBatchId, note: domain === "fba_inventory" ? "系统每日库存校验通过自动追加库存快照" : "系统每日校验通过自动追加日快照" });
         writePolicy = "validated_daily_auto_apply";
       }

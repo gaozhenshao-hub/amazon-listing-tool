@@ -7,7 +7,6 @@ import OpsProductConversion from "./OpsProductConversion";
 import OpsProductReview from "./OpsProductReview";
 import OpsProductTeam from "./OpsProductTeam";
 import ProductWeeklyOpsTable from "./ProductWeeklyOpsTable";
-import AdKeywordTracking from "./AdKeywordTracking";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -94,6 +93,20 @@ export default function OpsProductDetail() {
     { enabled: isSourceBackedView && !!importParentAsin && !!sourceType }
   );
   const [variantWeeks, setVariantWeeks] = useState(4);
+  const sourceAdWeekInput = useMemo(() => {
+    const latestWeek = importDetail?.weeks?.[0];
+    return {
+      parentAsin: importParentAsin || "",
+      weekStartDate: latestWeek?.weekStartDate || "1900-01-01",
+      weekEndDate: latestWeek?.weekEndDate || "1900-01-07",
+      storeName: importStoreName,
+      country: importCountry,
+    };
+  }, [importDetail?.weeks, importParentAsin, importStoreName, importCountry]);
+  const { data: sourceWeeklyAds, isLoading: loadingSourceWeeklyAds, error: sourceWeeklyAdsError, refetch: refetchSourceWeeklyAds } = trpc.dataImport.getWeeklyAdMcpDetail.useQuery(
+    sourceAdWeekInput,
+    { enabled: isSourceBackedView && sourceType === "lingxing" && Boolean(importDetail?.weeks?.[0]) },
+  );
 
   // ─── System Mode Data Queries ───
   const { data: product, isLoading: loadingProduct, refetch: refetchProduct } = trpc.productOps.getProduct.useQuery(
@@ -387,11 +400,7 @@ export default function OpsProductDetail() {
           {/* Authoritative parent-week table with ERP history fallback */}
           <ImportWeeklyTable weeks={importWeeks} sourceType={sourceType || "lingxing"} />
 
-          {/* Ad Keyword Tracking */}
-          <AdKeywordTracking
-            productId={0}
-            parentAsin={derivedProduct.parentAsin}
-          />
+          {sourceType === "lingxing" && <SourceWeeklyAdMcpCard data={sourceWeeklyAds} loading={loadingSourceWeeklyAds} error={sourceWeeklyAdsError} onRefresh={() => refetchSourceWeeklyAds()} />}
 
           {/* Source-backed trend charts */}
           <ImportCharts data={importChartData} />
@@ -1484,6 +1493,53 @@ function ImportWeeklyTable({ weeks, sourceType }: { weeks: any[]; sourceType: st
       </CardContent>
     </Card>
   );
+}
+
+function SourceWeeklyAdMcpCard({ data, loading, error, onRefresh }: { data: any; loading: boolean; error: { message: string } | null; onRefresh: () => void }) {
+  if (loading) {
+    return <Card><CardContent className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />正在读取该自然周的广告商品事实…</CardContent></Card>;
+  }
+  if (error) {
+    return <Card className="border-amber-200"><CardContent className="flex items-center justify-between gap-3 py-5"><p className="text-sm text-amber-800">广告周度数据暂不可读取：{error.message}</p><Button size="sm" variant="outline" onClick={onRefresh}><RefreshCw className="mr-1 h-3.5 w-3.5" />重试</Button></CardContent></Card>;
+  }
+  if (!data || data.status === "no_profile") {
+    return <Card><CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-base"><Target className="h-4 w-4 text-violet-600" />广告商品周度数据</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">{data?.message || "正在等待广告MCP数据。"}</p></CardContent></Card>;
+  }
+  const weekly = data.weekly || data.provisional;
+  const isComplete = data.status === "complete";
+  const missing = [...(data.coverage?.missingProductDates || []), ...(data.coverage?.missingCampaignDates || [])];
+  return (
+    <Card className={isComplete ? "border-violet-100" : "border-amber-200"}>
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base"><Target className="h-4 w-4 text-violet-600" />广告商品周度数据</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">{fmtWeekRange(data.weekStartDate, data.weekEndDate)} · 广告商品日事实聚合 · 活动日报仅说明状态/预算</p>
+          </div>
+          <Badge variant="outline" className={isComplete ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}>{isComplete ? "完整周 · 正式KPI" : "待复核 · 非正式KPI"}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!isComplete && <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />{data.message} 缺少日期：{missing.length ? [...new Set(missing)].join("、") : "待同步"}。</div>}
+        {!weekly?.summary ? <p className="py-3 text-center text-sm text-muted-foreground">该周尚无广告商品实体事实。</p> : <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <AdWeekMetric label="广告花费" value={fmtProvidedCurrency(weekly.summary.spend)} accent="text-red-600" />
+            <AdWeekMetric label="广告销售额" value={fmtProvidedCurrency(weekly.summary.sales)} accent="text-emerald-600" />
+            <AdWeekMetric label="广告订单" value={fmtProvidedNum(weekly.summary.orders)} />
+            <AdWeekMetric label="ACoS" value={weekly.summary.acos == null ? "未提供" : fmtPct(weekly.summary.acos)} />
+            <AdWeekMetric label="ROAS" value={weekly.summary.roas == null ? "未提供" : `${fmtNum(weekly.summary.roas, 2)}x`} />
+            <AdWeekMetric label="点击 / CTR" value={`${fmtProvidedNum(weekly.summary.clicks)} / ${weekly.summary.ctr == null ? "未提供" : fmtPct(weekly.summary.ctr)}`} />
+          </div>
+          <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">已关联 {weekly.summary.advertisedAsinCount} 个子ASIN、{weekly.summary.productFactCount} 条广告商品日事实；不与ASIN日表现中的广告汇总重复相加。</div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-xs"><thead><tr className="border-b bg-muted/50"><th className="px-2 py-2 text-left font-medium">活动</th><th className="px-2 py-2 text-left font-medium">类型</th><th className="px-2 py-2 text-left font-medium">状态</th><th className="px-2 py-2 text-right font-medium">预算</th><th className="px-2 py-2 text-left font-medium">关联子ASIN</th><th className="px-2 py-2 text-right font-medium">商品事实行</th></tr></thead><tbody>{weekly.campaigns.map((campaign: any) => <tr key={`${campaign.profileId}-${campaign.campaignId}-${campaign.adType}`} className="border-b last:border-0"><td className="max-w-[250px] truncate px-2 py-2 font-medium" title={campaign.campaignName || campaign.campaignId}>{campaign.campaignName || campaign.campaignId}</td><td className="px-2 py-2">{campaign.adType}</td><td className="px-2 py-2">{campaign.statusAvailable ? (campaign.campaignStatus || "未提供") : <span className="text-amber-700">活动报告待同步</span>}</td><td className="px-2 py-2 text-right">{campaign.budget == null ? "未提供" : `${campaign.currency || "$"} ${fmtNum(campaign.budget, 2)}`}</td><td className="max-w-[220px] truncate px-2 py-2 font-mono" title={campaign.linkedChildAsins.join(", ")}>{campaign.linkedChildAsins.join(", ")}</td><td className="px-2 py-2 text-right">{fmtNum(campaign.productFactCount)}</td></tr>)}</tbody></table></div>
+        </>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AdWeekMetric({ label, value, accent }: { label: string; value: string; accent?: string }) {
+  return <div className="rounded-lg border bg-background p-3"><p className="text-[11px] text-muted-foreground">{label}</p><p className={`mt-1 text-sm font-semibold ${accent || ""}`}>{value}</p></div>;
 }
 
 // ─── Trend Charts for Import Mode ───

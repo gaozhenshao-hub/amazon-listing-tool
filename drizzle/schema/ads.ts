@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 import { currentOpsWorkspaceId } from "../../server/domains/ops/workspaceContext";
 
 // Ad analysis tasks (AI-powered ad analysis)
@@ -992,3 +992,148 @@ export const adClinicRecords = mysqlTable("ad_clinic_records", {
 export type AdClinicRecord = typeof adClinicRecords.$inferSelect;
 
 export type InsertAdClinicRecord = typeof adClinicRecords.$inferInsert;
+
+// ═══════════════════════════════════════════════════════════════
+// 领星 MCP 广告事实（P1：产品详情自然周广告数据）
+// 与历史上传型广告表分离；仅保存已通过受治理同步门禁的事实。
+// ═══════════════════════════════════════════════════════════════
+
+export const opsAdMcpProfiles = mysqlTable("ops_ad_mcp_profiles", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  profileId: varchar("profile_id", { length: 64 }).notNull(),
+  sourceStoreId: varchar("source_store_id", { length: 64 }).notNull(),
+  country: varchar("country", { length: 16 }).notNull(),
+  storeName: varchar("store_name", { length: 200 }),
+  profileName: varchar("profile_name", { length: 300 }),
+  status: varchar("status", { length: 32 }).notNull().default("active"),
+  sourceBatchId: int("source_batch_id").notNull(),
+  sourceRowHash: varchar("source_row_hash", { length: 64 }).notNull(),
+  metadata: json("metadata"),
+  isActive: int("is_active").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uk_ops_ad_mcp_profiles_workspace_profile").on(table.workspaceId, table.profileId),
+  index("idx_ops_ad_mcp_profiles_store_country").on(table.workspaceId, table.sourceStoreId, table.country),
+]);
+
+export const opsAdMcpCampaignDailyFacts = mysqlTable("ops_ad_mcp_campaign_daily_facts", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  profileId: varchar("profile_id", { length: 64 }).notNull(),
+  sourceStoreId: varchar("source_store_id", { length: 64 }).notNull(),
+  country: varchar("country", { length: 16 }).notNull(),
+  reportDate: varchar("report_date", { length: 10 }).notNull(),
+  adType: varchar("ad_type", { length: 12 }).notNull(),
+  campaignId: varchar("campaign_id", { length: 80 }).notNull(),
+  campaignName: varchar("campaign_name", { length: 500 }),
+  campaignStatus: varchar("campaign_status", { length: 64 }),
+  biddingStrategy: varchar("bidding_strategy", { length: 100 }),
+  budget: decimal("budget", { precision: 14, scale: 2 }),
+  currency: varchar("currency", { length: 12 }),
+  impressions: bigint("impressions", { mode: "number" }).notNull().default(0),
+  clicks: bigint("clicks", { mode: "number" }).notNull().default(0),
+  spend: decimal("spend", { precision: 14, scale: 2 }).notNull().default("0"),
+  sales: decimal("sales", { precision: 14, scale: 2 }).notNull().default("0"),
+  orders: int("orders").notNull().default(0),
+  sourceBatchId: int("source_batch_id").notNull(),
+  sourceRowHash: varchar("source_row_hash", { length: 64 }).notNull(),
+  sourcePayloadHash: varchar("source_payload_hash", { length: 64 }).notNull(),
+  version: int("version").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uk_ops_ad_mcp_campaign_daily_identity").on(
+    table.workspaceId,
+    table.profileId,
+    table.reportDate,
+    table.adType,
+    table.campaignId,
+  ),
+  index("idx_ops_ad_mcp_campaign_week_lookup").on(table.workspaceId, table.sourceStoreId, table.country, table.reportDate),
+  index("idx_ops_ad_mcp_campaign_batch").on(table.workspaceId, table.sourceBatchId),
+]);
+
+export const opsAdMcpProductDailyFacts = mysqlTable("ops_ad_mcp_product_daily_facts", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  profileId: varchar("profile_id", { length: 64 }).notNull(),
+  sourceStoreId: varchar("source_store_id", { length: 64 }).notNull(),
+  country: varchar("country", { length: 16 }).notNull(),
+  reportDate: varchar("report_date", { length: 10 }).notNull(),
+  adType: varchar("ad_type", { length: 12 }).notNull(),
+  campaignId: varchar("campaign_id", { length: 80 }).notNull(),
+  campaignName: varchar("campaign_name", { length: 500 }),
+  adGroupId: varchar("ad_group_id", { length: 80 }).notNull(),
+  adGroupName: varchar("ad_group_name", { length: 500 }),
+  adId: varchar("ad_id", { length: 80 }).notNull(),
+  advertisedAsin: varchar("advertised_asin", { length: 20 }).notNull(),
+  advertisedSku: varchar("advertised_sku", { length: 200 }),
+  creativeSku: varchar("creative_sku", { length: 200 }),
+  creativeResolvedAsin: varchar("creative_resolved_asin", { length: 20 }),
+  parentAsin: varchar("parent_asin", { length: 20 }).notNull(),
+  mappingStatus: varchar("mapping_status", { length: 48 }).notNull(),
+  mappingEvidenceDate: varchar("mapping_evidence_date", { length: 10 }),
+  mappingEvidenceKind: varchar("mapping_evidence_kind", { length: 64 }).notNull(),
+  currency: varchar("currency", { length: 12 }),
+  impressions: bigint("impressions", { mode: "number" }).notNull().default(0),
+  clicks: bigint("clicks", { mode: "number" }).notNull().default(0),
+  spend: decimal("spend", { precision: 14, scale: 2 }).notNull().default("0"),
+  sales: decimal("sales", { precision: 14, scale: 2 }).notNull().default("0"),
+  orders: int("orders").notNull().default(0),
+  sourceBatchId: int("source_batch_id").notNull(),
+  sourceRowHash: varchar("source_row_hash", { length: 64 }).notNull(),
+  sourcePayloadHash: varchar("source_payload_hash", { length: 64 }).notNull(),
+  version: int("version").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uk_ops_ad_mcp_product_daily_identity").on(
+    table.workspaceId,
+    table.profileId,
+    table.reportDate,
+    table.adType,
+    table.campaignId,
+    table.adGroupId,
+    table.adId,
+    table.advertisedAsin,
+  ),
+  index("idx_ops_ad_mcp_product_parent_week_lookup").on(
+    table.workspaceId,
+    table.parentAsin,
+    table.sourceStoreId,
+    table.country,
+    table.reportDate,
+  ),
+  index("idx_ops_ad_mcp_product_child_week_lookup").on(
+    table.workspaceId,
+    table.advertisedAsin,
+    table.sourceStoreId,
+    table.country,
+    table.reportDate,
+  ),
+  index("idx_ops_ad_mcp_product_batch").on(table.workspaceId, table.sourceBatchId),
+]);
+
+export const opsAdMcpFactRevisions = mysqlTable("ops_ad_mcp_fact_revisions", {
+  workspaceId: int("workspaceId").$defaultFn(currentOpsWorkspaceId),
+  id: int("id").autoincrement().primaryKey(),
+  factType: mysqlEnum("fact_type", ["campaign", "product"]).notNull(),
+  factId: int("fact_id").notNull(),
+  sourceBatchId: int("source_batch_id").notNull(),
+  previousSourcePayloadHash: varchar("previous_source_payload_hash", { length: 64 }),
+  nextSourcePayloadHash: varchar("next_source_payload_hash", { length: 64 }).notNull(),
+  changedFields: json("changed_fields").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ops_ad_mcp_fact_revisions_fact").on(table.workspaceId, table.factType, table.factId, table.createdAt),
+  index("idx_ops_ad_mcp_fact_revisions_batch").on(table.workspaceId, table.sourceBatchId),
+]);
+
+export type OpsAdMcpProfile = typeof opsAdMcpProfiles.$inferSelect;
+export type OpsAdMcpCampaignDailyFact = typeof opsAdMcpCampaignDailyFacts.$inferSelect;
+export type OpsAdMcpProductDailyFact = typeof opsAdMcpProductDailyFacts.$inferSelect;
+export type OpsAdMcpFactRevision = typeof opsAdMcpFactRevisions.$inferSelect;

@@ -4,6 +4,8 @@ export type LingxingSyncDomain =
   | "parent_asin_weekly_mcp"
   | "fba_inventory"
   | "ad_campaign"
+  | "ad_campaign_mcp"
+  | "ad_product_mcp"
   | "ad_keyword"
   | "ad_search_term"
   | "ad_targeting"
@@ -102,6 +104,34 @@ export const LINGXING_SYNC_RULES: readonly LingxingSyncRule[] = [
     missingValue: "缺失广告字段显示“数据未提供”，不伪造0花费或0订单",
   },
   {
+    domain: "ad_campaign_mcp",
+    label: "广告活动日事实（MCP）",
+    source: "ad_auth_shops → ad_campaign_report",
+    grain: "广告Profile × 店铺SID × 站点 × 活动 × 广告类型 × 报告日",
+    identity: "workspaceId + profileId + reportDate + adType + campaignId",
+    sourceFields: ["活动状态", "预算", "曝光", "点击", "花费", "广告销售额", "广告订单"],
+    target: "ops_ad_mcp_campaign_daily_facts",
+    downstream: ["产品详情周度活动列表", "活动状态与预算说明"],
+    cadence: "每日北京时间18:00读取前一天全部美国站广告Profile；与产品、库存、关键词任务错峰执行",
+    confirmation: "Profile目录、分页、字段与报告日覆盖完整时自动写入；异常整批待复核，不写入上传型广告表",
+    protectedFields: ["预算修改", "竞价", "投放状态", "活动结构", "否词", "投放目标"],
+    missingValue: "总计行和实体身份缺失行不写入；字段哨兵值保持缺失并阻断自动应用",
+  },
+  {
+    domain: "ad_product_mcp",
+    label: "广告商品日事实（MCP）",
+    source: "ad_auth_shops → ad_campaign_product_report → ASIN日快照.parentAsin",
+    grain: "广告Profile × 店铺SID × 站点 × 广告类型 × 活动 × 广告组 × 广告实体 × 子ASIN × 报告日",
+    identity: "workspaceId + profileId + reportDate + adType + campaignId + adGroupId + adId + advertisedAsin",
+    sourceFields: ["广告ASIN", "SKU", "活动/广告组/广告实体", "曝光", "点击", "花费", "广告销售额", "广告订单"],
+    target: "ops_ad_mcp_product_daily_facts",
+    downstream: ["父ASIN产品详情周度广告商品KPI", "周度活动关联子ASIN说明", "映射复核"],
+    cadence: "每日北京时间18:10读取前一天全部美国站广告Profile；与活动报告错峰执行",
+    confirmation: "目录、分页、实体身份与父ASIN精确映射均通过时自动写入；未映射或多父映射行仅保留复核证据",
+    protectedFields: ["ASIN日经营广告汇总", "搜索词", "关键词", "投放目标", "广告平台写操作"],
+    missingValue: "不以活动名或标题猜测父ASIN；总计行和99999999等哨兵值不写为0",
+  },
+  {
     domain: "ad_keyword",
     label: "广告关键词历史表现",
     source: "ad_campaign_keyword_report",
@@ -190,8 +220,8 @@ export const LINGXING_SYNC_RULES: readonly LingxingSyncRule[] = [
 export type LingxingSyncGovernance = {
   dedupeKey: string;
   diffFields: readonly string[];
-  writePolicy: "manual_append" | "validated_daily_auto_apply" | "validated_weekly_auto_apply" | "draft_only" | "preview_only" | "unavailable";
-  schedulePolicy: "manual" | "daily_17_shanghai" | "daily_1720_shanghai" | "daily_1740_shanghai" | "weekly_1610_shanghai" | "weekly_1710_shanghai" | "disabled_pending_source";
+  writePolicy: "manual_append" | "validated_daily_auto_apply" | "validated_ad_mcp_auto_apply" | "validated_weekly_auto_apply" | "draft_only" | "preview_only" | "unavailable";
+  schedulePolicy: "manual" | "daily_17_shanghai" | "daily_1720_shanghai" | "daily_1740_shanghai" | "daily_1800_shanghai" | "daily_1810_shanghai" | "weekly_1610_shanghai" | "weekly_1710_shanghai" | "disabled_pending_source";
   scopePolicy: string;
   readWindowPolicy: string;
 };
@@ -203,6 +233,8 @@ export const LINGXING_SYNC_GOVERNANCE: Record<LingxingSyncDomain, LingxingSyncGo
   parent_asin_weekly_mcp: { dedupeKey: "sourceStoreId|country|parentAsin|weekStart", diffFields: ["salesQty", "orderQty", "salesAmount", "orderProfit", "adSpend", "sessionsTotal", "adOrders"], writePolicy: "validated_weekly_auto_apply", schedulePolicy: "weekly_1610_shanghai", scopePolicy: "authorized-US-stores", readWindowPolicy: "previous-complete-natural-week" },
   fba_inventory: { dedupeKey: "sourceStoreId|country|asin|snapshotDate", diffFields: ["fbaAvailable", "fbaReserved", "fbaInTransit", "sku", "productName"], writePolicy: "validated_daily_auto_apply", schedulePolicy: "daily_1720_shanghai", scopePolicy: "authorized-US-stores", readWindowPolicy: "provider-current-inventory-snapshot" },
   ad_campaign: { dedupeKey: "profileId|campaignId|reportStart|reportEnd", diffFields: ["adImpressions", "adClicks", "adSpend", "adSales", "adOrders", "adAcos", "adCpc"], writePolicy: "manual_append", schedulePolicy: "manual", scopePolicy: "single-selected-ad-profile", readWindowPolicy: "manual-closed-report-period" },
+  ad_campaign_mcp: { dedupeKey: "profileId|reportDate|adType|campaignId", diffFields: ["campaignStatus", "budget", "impressions", "clicks", "spend", "sales", "orders"], writePolicy: "validated_ad_mcp_auto_apply", schedulePolicy: "daily_1800_shanghai", scopePolicy: "authorized-US-ad-profiles", readWindowPolicy: "previous-calendar-day" },
+  ad_product_mcp: { dedupeKey: "profileId|reportDate|adType|campaignId|adGroupId|adId|advertisedAsin", diffFields: ["parentAsin", "mappingStatus", "impressions", "clicks", "spend", "sales", "orders"], writePolicy: "validated_ad_mcp_auto_apply", schedulePolicy: "daily_1810_shanghai", scopePolicy: "authorized-US-ad-profiles", readWindowPolicy: "previous-calendar-day" },
   ad_keyword: { dedupeKey: "profileId|campaignId|keyword|matchType|reportDate", diffFields: ["adImpressions", "adClicks", "adSpend", "adSales", "adOrders", "adAcos", "adCpc", "adCtr"], writePolicy: "validated_daily_auto_apply", schedulePolicy: "daily_1740_shanghai", scopePolicy: "authorized-US-ad-profiles", readWindowPolicy: "previous-calendar-day" },
   order_profit: { dedupeKey: "sourceStoreId|parentAsin|weekStart", diffFields: ["salesQty", "salesAmount", "orderProfit", "adSpend"], writePolicy: "manual_append", schedulePolicy: "manual", scopePolicy: "single-selected-store", readWindowPolicy: "manual-closed-settlement-week" },
   listing_master: { dedupeKey: "sourceStoreId|country|asin", diffFields: ["productName", "sku", "parentAsin", "listingStatus", "marketplace"], writePolicy: "preview_only", schedulePolicy: "manual", scopePolicy: "authorized-US-stores-or-single-selected-store", readWindowPolicy: "provider-current-listing-page" },

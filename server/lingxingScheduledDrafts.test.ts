@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { buildWeeklyRollupFact, isCompleteMondaySundayWeek, scheduledDailyScope, scheduledWeeklyScope, validateKeywordAutoApplyIntegrity, validateParentAsinWeeklyMcpAutoApplyIntegrity, weeklyCoverageExceptionSummary, weeklyFactsEqual, weeklyRollupIdentity } from "./domains/ops/lingxingScheduledDrafts";
+import { buildWeeklyRollupFact, isCompleteMondaySundayWeek, scheduledAdMcpScope, scheduledDailyScope, scheduledWeeklyScope, validateKeywordAutoApplyIntegrity, validateParentAsinWeeklyMcpAutoApplyIntegrity, weeklyCoverageExceptionSummary, weeklyFactsEqual, weeklyRollupIdentity } from "./domains/ops/lingxingScheduledDrafts";
 
 describe("领星分域定时草稿范围", () => {
   it("每日北京时间17:00对应的任务读取前一天，且生成稳定幂等键", () => {
     const scope = scheduledDailyScope(new Date("2026-08-25T09:00:00.000Z"));
     expect(scope).toEqual({ startDate: "2026-08-24", endDate: "2026-08-24", runKey: "daily:2026-08-24" });
+  });
+
+  it("广告活动与广告商品分别读取前一报告日，并使用独立幂等运行键", () => {
+    const now = new Date("2026-08-25T09:00:00.000Z");
+    expect(scheduledAdMcpScope("ad_campaign_mcp", now)).toEqual({ startDate: "2026-08-24", endDate: "2026-08-24", runKey: "ad-campaign:2026-08-24" });
+    expect(scheduledAdMcpScope("ad_product_mcp", now)).toEqual({ startDate: "2026-08-24", endDate: "2026-08-24", runKey: "ad-product:2026-08-24" });
   });
 
   it("每周一任务只汇总上一自然周已确认日快照", () => {

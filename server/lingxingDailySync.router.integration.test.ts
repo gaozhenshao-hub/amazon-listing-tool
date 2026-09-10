@@ -276,4 +276,22 @@ describe("领星ASIN日数据同步路由", () => {
     expect(state.confirmations).toEqual([expect.objectContaining({ action: "confirm", selectedRowIds })]);
     expect(state.selectedRowUpdateCalls).toBe(2);
   });
+
+  it("完整且精确映射的广告商品草稿可通过受治理确认，异常门禁不适用于正常批次", async () => {
+    state.batch = {
+      id: 9901, workspaceId: 1, status: "ready_for_review", dataDomain: "ad_product_mcp", source: "lingxing_mcp",
+      scope: { storeId: "ALL_US_AD_PROFILES", startDate: "2026-09-07", endDate: "2026-09-07" },
+      summary: { profilesExpected: 1, profilesRead: 1, profileDateWindowsExpected: 1, profileDateWindowsRead: 1, pageTruncations: 0, capped: false, failedProfileDateWindows: [] },
+    };
+    state.rows = [{
+      id: 1, selected: 1, rowStatus: "new", validationErrors: [], entityKey: "profile-1|2026-09-07|SP|campaign-1|group-1|ad-1|B0CHILD",
+      normalizedData: { profileId: "profile-1", sourceStoreId: "sid-1", country: "US", reportDate: "2026-09-07", adType: "SP", campaignId: "campaign-1", adGroupId: "group-1", adId: "ad-1", advertisedAsin: "B0CHILD", parentAsin: "B0PARENT", mappingStatus: "exact_asin_same_day", mappingEvidenceKind: "same_day_asin", impressions: 1, clicks: 1, spend: 1, sales: 2, orders: 1 },
+    }];
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+
+    await expect(caller.confirm({ batchId: 9901, selectedRowIds: [1], note: "系统广告日常校验通过自动确认" })).resolves.toMatchObject({ success: true });
+
+    expect(state.batch).toMatchObject({ status: "confirmed" });
+    expect(state.confirmations).toEqual([expect.objectContaining({ action: "confirm", selectedRowIds: [1] })]);
+  });
 });
