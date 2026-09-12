@@ -13,7 +13,7 @@ import { invokeEmperorTool } from "../domains/ai_os/services/toolGateway/executo
 import { buildScheduledAutoApplyReviewQueue, scheduledAutoApplyReviewIssue } from "../domains/ops/historicalBackfillReview";
 import { rawExecute } from "../domains/ai_os/routerContext";
 import { getDb } from "../repositories/dbClient";
-import { AD_MCP_MAX_PAGES_PER_PROFILE, AD_MCP_MAX_ROWS_PER_PROFILE, AD_MCP_PAGE_SIZE, AD_MCP_VALIDATOR_VERSION, assertAdMcpAutoApplyIntegrity, isAdMcpAggregateRow, normalizeAdMcpCampaign, normalizeAdMcpProduct, normalizeAdMcpProfile, resolveParentAsinMapping, summarizeAdMcpValidationErrors, type AdMcpFactDomain, type AdMcpProfile } from "../domains/ops/adMcpFacts";
+import { AD_MCP_MAX_PAGES_PER_PROFILE, AD_MCP_MAX_ROWS_PER_PROFILE, AD_MCP_PAGE_SIZE, AD_MCP_VALIDATOR_VERSION, assertAdMcpAutoApplyIntegrity, classifyAdMcpPreviewFailure, isAdMcpAggregateRow, normalizeAdMcpCampaign, normalizeAdMcpProduct, normalizeAdMcpProfile, resolveParentAsinMapping, summarizeAdMcpValidationErrors, type AdMcpFactDomain, type AdMcpPreviewFailureCategory, type AdMcpProfile } from "../domains/ops/adMcpFacts";
 import { applyConfirmedAdMcpFacts } from "../domains/ops/adMcpApply";
 
 const domainSchema = z.enum(["product_performance", "product_performance_daily", "parent_asin_weekly_mcp", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword", "ad_campaign_mcp", "ad_product_mcp", "listing_master", "ad_search_term", "ad_targeting"]);
@@ -1538,6 +1538,7 @@ export const lingxingSyncRouter = router({
       outcome: "applied" | "review_required";
       failureStage?: "preview" | "integrity" | "confirm" | "apply";
       failureCode?: "preview_failed" | "no_eligible_rows" | "confirm_blocked" | "apply_failed";
+      previewFailureCategory?: AdMcpPreviewFailureCategory;
       importedRows?: number;
       skippedRows?: number;
     }> = [];
@@ -1556,8 +1557,8 @@ export const lingxingSyncRouter = router({
           },
         });
         batchId = preview.batchId;
-      } catch {
-        results.push({ dataDomain, batchId, outcome: "review_required", failureStage: "preview", failureCode: "preview_failed" });
+      } catch (error) {
+        results.push({ dataDomain, batchId, outcome: "review_required", failureStage: "preview", failureCode: "preview_failed", previewFailureCategory: classifyAdMcpPreviewFailure(error) });
         continue;
       }
 

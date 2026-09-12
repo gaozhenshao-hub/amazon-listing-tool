@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AD_MCP_VALIDATOR_VERSION,
   assertAdMcpAutoApplyIntegrity,
+  classifyAdMcpPreviewFailure,
   isAdMcpAggregateRow,
   normalizeAdMcpCampaign,
   normalizeAdMcpProfile,
@@ -97,6 +98,14 @@ describe("广告MCP事实归一化", () => {
       sid_mismatch: 1,
       unsupported_ad_type: 1,
     });
+  });
+
+  it("将预览异常限制为固定运行前置类别，不回传异常正文", () => {
+    expect(classifyAdMcpPreviewFailure(new Error("OAUTH_SERVER_URL is not configured"))).toBe("oauth_not_configured");
+    expect(classifyAdMcpPreviewFailure(new Error("数据库不可用"))).toBe("database_unavailable");
+    expect(classifyAdMcpPreviewFailure(new Error("MCP窗口读取超时"))).toBe("request_timeout");
+    expect(classifyAdMcpPreviewFailure(new Error("Lingxing request rejected"))).toBe("lingxing_request_failed");
+    expect(classifyAdMcpPreviewFailure(new Error("source-specific internal detail"))).toBe("unknown");
   });
 });
 

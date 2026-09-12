@@ -147,6 +147,23 @@ describe("领星ASIN日数据同步路由", () => {
     expect(state.batch).toBeNull();
   });
 
+  it("广告MCP首轮活动预览异常仅返回固定脱敏类别且不创建该域批次", async () => {
+    state.failAtToolCall = 1;
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+
+    const result = await caller.runAdMcpFirstValidation();
+
+    expect(result.automaticScheduleCreated).toBe(false);
+    expect(result.results.find((entry) => entry.dataDomain === "ad_campaign_mcp")).toMatchObject({
+      batchId: null,
+      outcome: "review_required",
+      failureStage: "preview",
+      failureCode: "preview_failed",
+      previewFailureCategory: "request_timeout",
+    });
+    expect(state.batch).toMatchObject({ dataDomain: "ad_product_mcp", status: "empty" });
+  });
+
   it("同步历史列表仅返回页面所需的批次元数据，隔离原始响应快照", async () => {
     state.batch = {
       id: 9902,

@@ -120,6 +120,26 @@ export function summarizeAdMcpValidationErrors(validationErrors: unknown): Recor
   return Object.fromEntries([...counts.entries()].sort(([left], [right]) => left.localeCompare(right)));
 }
 
+/**
+ * 预览阶段的异常仅允许以固定运行前置类别返回。
+ * 禁止将错误正文、请求URL、源端响应或任何业务字段放入批次摘要或tRPC响应。
+ */
+export type AdMcpPreviewFailureCategory =
+  | "oauth_not_configured"
+  | "database_unavailable"
+  | "lingxing_request_failed"
+  | "request_timeout"
+  | "unknown";
+
+export function classifyAdMcpPreviewFailure(error: unknown): AdMcpPreviewFailureCategory {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  if (/oauth.*(not configured|missing)|未配置.*oauth/.test(message)) return "oauth_not_configured";
+  if (/数据库不可用|database.*unavailable|db.*unavailable/.test(message)) return "database_unavailable";
+  if (/timeout|timed out|aborterror|aborted|超时/.test(message)) return "request_timeout";
+  if (/lingxing|领星|mcp|emperor tool/.test(message)) return "lingxing_request_failed";
+  return "unknown";
+}
+
 function record(input: unknown): RecordValue {
   return input && typeof input === "object" && !Array.isArray(input) ? input as RecordValue : {};
 }
