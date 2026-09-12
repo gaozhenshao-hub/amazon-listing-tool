@@ -541,11 +541,31 @@ export const lingxingSyncRouter = router({
     })).filter((profile) => Boolean(profile.profileId));
   }),
 
+  // 历史列表仅消费批次元数据。原始响应快照可能极大且只应由受控Artifact/草稿详情链路读取，
+  // 不能因为无关的原始载荷序列化或格式问题阻断同步页的只读审计。
   list: protectedProcedure.input(z.object({ limit: z.number().min(1).max(100).default(30) })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("数据库不可用");
     const workspaceId = ctx.user.defaultWorkspaceId!;
-    return db.select().from(opsExternalSyncBatches).where(eq(opsExternalSyncBatches.workspaceId, workspaceId)).orderBy(desc(opsExternalSyncBatches.createdAt)).limit(input.limit);
+    return db.select({
+      id: opsExternalSyncBatches.id,
+      source: opsExternalSyncBatches.source,
+      dataDomain: opsExternalSyncBatches.dataDomain,
+      status: opsExternalSyncBatches.status,
+      scope: opsExternalSyncBatches.scope,
+      toolRunId: opsExternalSyncBatches.toolRunId,
+      traceId: opsExternalSyncBatches.traceId,
+      rawResponseHash: opsExternalSyncBatches.rawResponseHash,
+      normalizationVersion: opsExternalSyncBatches.normalizationVersion,
+      summary: opsExternalSyncBatches.summary,
+      errorMessage: opsExternalSyncBatches.errorMessage,
+      createdAt: opsExternalSyncBatches.createdAt,
+      reviewedAt: opsExternalSyncBatches.reviewedAt,
+      reviewedBy: opsExternalSyncBatches.reviewedBy,
+      appliedAt: opsExternalSyncBatches.appliedAt,
+      appliedBy: opsExternalSyncBatches.appliedBy,
+      updatedAt: opsExternalSyncBatches.updatedAt,
+    }).from(opsExternalSyncBatches).where(eq(opsExternalSyncBatches.workspaceId, workspaceId)).orderBy(desc(opsExternalSyncBatches.createdAt)).limit(input.limit);
   }),
 
   listSchedules: protectedProcedure.query(async ({ ctx }) => {

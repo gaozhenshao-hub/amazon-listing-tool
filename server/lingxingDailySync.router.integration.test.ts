@@ -23,29 +23,32 @@ function tableName(table: any) {
   return table?.[Symbol.for("drizzle:Name")];
 }
 
-function queryResult(rows: any[]) {
+function queryResult(rows: any[], fields?: Record<string, unknown>) {
+  const projectedRows = fields
+    ? rows.map((row) => Object.fromEntries(Object.keys(fields).map((key) => [key, row[key]])))
+    : rows;
   return {
-    then: (resolve: (value: any[]) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(rows).then(resolve, reject),
-    limit: async (count: number) => rows.slice(0, count),
-    orderBy: () => queryResult(rows),
+    then: (resolve: (value: any[]) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(projectedRows).then(resolve, reject),
+    limit: async (count: number) => projectedRows.slice(0, count),
+    orderBy: () => queryResult(rows, fields),
   };
 }
 
 const db = {
-  select: () => ({
+  select: (fields?: Record<string, unknown>) => ({
     from: (table: any) => ({
       where: () => {
-        if (tableName(table) === "ops_lingxing_sync_schedules") return queryResult(state.schedules);
-        if (tableName(table) === "ops_external_sync_batches") return queryResult(state.batch ? [state.batch] : []);
-        if (tableName(table) === "ops_external_sync_rows") return queryResult(state.rows.filter((row) => row.selected === 1));
-        if (tableName(table) === "ops_asin_daily_snapshots") return queryResult(state.snapshots);
+        if (tableName(table) === "ops_lingxing_sync_schedules") return queryResult(state.schedules, fields);
+        if (tableName(table) === "ops_external_sync_batches") return queryResult(state.batch ? [state.batch] : [], fields);
+        if (tableName(table) === "ops_external_sync_rows") return queryResult(state.rows.filter((row) => row.selected === 1), fields);
+        if (tableName(table) === "ops_asin_daily_snapshots") return queryResult(state.snapshots, fields);
         state.selectCount += 1;
-        if (state.selectCount === 1) return queryResult([]); // existing day snapshots during preview
-        if (state.selectCount === 2) return queryResult(state.batch ? [state.batch] : []); // confirm batch
-        if (state.selectCount === 3) return queryResult(state.batch ? [state.batch] : []); // apply batch
-        if (state.selectCount === 4) return queryResult(state.rows.filter((row) => row.selected === 1)); // apply selected rows
-        if (state.selectCount === 5) return queryResult(state.snapshots); // duplicate identity preflight
-        return queryResult([]);
+        if (state.selectCount === 1) return queryResult([], fields); // existing day snapshots during preview
+        if (state.selectCount === 2) return queryResult(state.batch ? [state.batch] : [], fields); // confirm batch
+        if (state.selectCount === 3) return queryResult(state.batch ? [state.batch] : [], fields); // apply batch
+        if (state.selectCount === 4) return queryResult(state.rows.filter((row) => row.selected === 1), fields); // apply selected rows
+        if (state.selectCount === 5) return queryResult(state.snapshots, fields); // duplicate identity preflight
+        return queryResult([], fields);
       },
     }),
   }),
@@ -142,6 +145,40 @@ describe("领星ASIN日数据同步路由", () => {
     await expect(caller.runAdMcpFirstValidation()).rejects.toThrow("仅超级管理员可运行广告MCP首轮受治理验证");
     expect(state.toolCallCount).toBe(0);
     expect(state.batch).toBeNull();
+  });
+
+  it("同步历史列表仅返回页面所需的批次元数据，隔离原始响应快照", async () => {
+    state.batch = {
+      id: 9902,
+      workspaceId: 1,
+      userId: 1,
+      source: "lingxing_mcp",
+      dataDomain: "ad_product_mcp",
+      status: "ready_for_review",
+      scope: { storeId: "ALL_US_AD_PROFILES", startDate: "2026-09-11", endDate: "2026-09-11" },
+      toolRunId: "tool_safe",
+      traceId: "trace_safe",
+      rawResponseHash: "hash_safe",
+      rawSnapshot: { records: Array.from({ length: 10_000 }, () => ({ raw: "not-for-history-list" })) },
+      normalizationVersion: "v1",
+      summary: { totalRead: 1 },
+      errorMessage: null,
+      createdAt: new Date("2026-09-12T00:00:00Z"),
+      reviewedAt: null,
+      reviewedBy: null,
+      appliedAt: null,
+      appliedBy: null,
+      updatedAt: new Date("2026-09-12T00:00:00Z"),
+    };
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+
+    const history = await caller.list({ limit: 20 });
+
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ id: 9902, dataDomain: "ad_product_mcp", status: "ready_for_review", summary: { totalRead: 1 } });
+    expect(history[0]).not.toHaveProperty("rawSnapshot");
+    expect(history[0]).not.toHaveProperty("userId");
+    expect(state.toolCallCount).toBe(0);
   });
 
   it("预览、确认和应用仅追加可追溯日快照，过滤占位ASIN且不写周度产品表", async () => {
