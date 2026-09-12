@@ -12,6 +12,12 @@ const value = (input: unknown): number => {
   const parsed = Number(input);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+const nullableNumber = (input: unknown): number | null => {
+  if (input === null || input === undefined || text(input) === "") return null;
+  const parsed = Number(input);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const nullableDecimal = (input: unknown): string | null => text(input) || null;
 
 function profilePatch(data: RecordValue, input: { workspaceId: number; batchId: number }) {
   return {
@@ -61,11 +67,11 @@ function campaignPatch(data: RecordValue, input: { workspaceId: number; userId: 
     biddingStrategy: text(data.biddingStrategy) || null,
     budget: text(data.budget) || null,
     currency: text(data.currency) || null,
-    impressions: value(data.impressions),
-    clicks: value(data.clicks),
-    spend: text(data.spend),
-    sales: text(data.sales),
-    orders: value(data.orders),
+    impressions: nullableNumber(data.impressions),
+    clicks: nullableNumber(data.clicks),
+    spend: nullableDecimal(data.spend),
+    sales: nullableDecimal(data.sales),
+    orders: nullableNumber(data.orders),
     sourceBatchId: input.batchId,
     sourceRowHash: text(data.sourceRowHash),
     sourcePayloadHash: text(data.sourcePayloadHash),

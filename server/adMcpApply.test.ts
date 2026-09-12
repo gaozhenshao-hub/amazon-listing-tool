@@ -55,4 +55,47 @@ describe("广告MCP独立事实应用", () => {
     expect(inserts.map((entry: any) => entry.tableName)).not.toContain("ops_asin_daily_snapshots");
     expect(inserts.map((entry: any) => entry.tableName)).not.toContain("ad_product_daily_reports");
   });
+
+  it("将仅含状态预算的广告活动元数据写入独立事实并保留未提供指标为空", async () => {
+    const inserts: unknown[] = [];
+    const selected = [[], []];
+    let identity = 20;
+    const db = {
+      select: () => chain(selected.shift() || []),
+      insert: (table: unknown) => ({
+        values: (payload: unknown) => {
+          inserts.push({ tableName: getTableName(table as any), payload });
+          return { $returningId: async () => [{ id: identity++ }] };
+        },
+      }),
+      update: () => ({ set: () => ({ where: async () => undefined }) }),
+    };
+    const result = await applyConfirmedAdMcpFacts(db, {
+      workspaceId: 1,
+      userId: 2,
+      batch: {
+        id: 9,
+        status: "confirmed",
+        dataDomain: "ad_campaign_mcp",
+        scope: { startDate: "2026-09-07", endDate: "2026-09-07" },
+        summary: { profilesExpected: 1, profilesRead: 1, profileDateWindowsExpected: 1, profileDateWindowsRead: 1, pageTruncations: 0, capped: false },
+      },
+      rows: [{
+        id: 13,
+        entityKey: "profile-1|2026-09-07|SP|campaign-1",
+        validationErrors: [],
+        sourceData: {},
+        normalizedData: {
+          profileId: "profile-1", sourceStoreId: "sid-1", country: "US", reportDate: "2026-09-07", adType: "SP", campaignId: "campaign-1",
+          campaignName: "Campaign", campaignStatus: "enabled", budget: "8.00", impressions: null, clicks: null, spend: null, sales: null, orders: null,
+          sourceRowHash: "r".repeat(64), sourcePayloadHash: "p".repeat(64),
+        },
+      }],
+    });
+    expect(result).toMatchObject({ success: true, importedRows: 1, revisedRows: 0, skippedRows: 0 });
+    const campaignInsert = inserts.find((entry: any) => entry.tableName === "ops_ad_mcp_campaign_daily_facts") as any;
+    expect(campaignInsert.payload).toMatchObject({ impressions: null, clicks: null, spend: null, sales: null, orders: null });
+    expect(inserts.map((entry: any) => entry.tableName)).not.toContain("ops_ad_mcp_product_daily_facts");
+    expect(inserts.map((entry: any) => entry.tableName)).not.toContain("ops_asin_daily_snapshots");
+  });
 });

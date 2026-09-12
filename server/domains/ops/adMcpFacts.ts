@@ -37,11 +37,11 @@ export type AdMcpCampaignInput = {
   biddingStrategy: string | null;
   budget: string | null;
   currency: string | null;
-  impressions: number;
-  clicks: number;
-  spend: string;
-  sales: string;
-  orders: number;
+  impressions: number | null;
+  clicks: number | null;
+  spend: string | null;
+  sales: string | null;
+  orders: number | null;
   sourceRowHash: string;
   sourcePayloadHash: string;
   validationErrors: string[];
@@ -174,6 +174,14 @@ function requiredDecimal(source: RecordValue, aliases: string[], label: string, 
   return value ?? "0.00";
 }
 
+function optionalCount(source: RecordValue, aliases: string[]): number | null {
+  return count(first(source, aliases));
+}
+
+function optionalDecimal(source: RecordValue, aliases: string[]): string | null {
+  return decimal(first(source, aliases));
+}
+
 export function normalizeAdMcpProfile(source: RecordValue): { profile: AdMcpProfile | null; validationErrors: string[] } {
   const profileId = first(source, ["profile_id", "profileId", "profile", "id"]);
   const sourceStoreId = first(source, ["sid", "shop_id", "shopId"]);
@@ -211,13 +219,15 @@ export function isAdMcpAggregateRow(domain: AdMcpFactDomain, source: RecordValue
 export function normalizeAdMcpCampaign(source: RecordValue, profile: AdMcpProfile, reportDate: string): AdMcpCampaignInput {
   const validationErrors: string[] = [];
   const sourceProfileId = first(source, ["profile_id", "profileId", "profile"]);
-  const sourceStoreId = first(source, ["sid", "store_id", "storeId"]);
+  // 广告活动报告的store_id/storeId可能是广告账户内部标识，而不是领星SID。
+  // 只有源行明确提供sid时才可与授权目录SID作确定性比对。
+  const sourceSid = first(source, ["sid", "lingxing_sid", "lingxingSid"]);
   const sourceCountry = normalizeAdMarketplace(first(source, ["store_country", "country", "site", "marketplace"]));
   const campaignId = first(source, ["campaign_id", "campaignId"]);
   const adType = normalizeAdType(first(source, ["sponsored_type", "ad_type", "adType"]));
   if (!isoDate(reportDate)) validationErrors.push("广告报告日期必须为单日ISO日期。");
   if (!sourceProfileId || sourceProfileId !== profile.profileId) validationErrors.push("广告活动行Profile与授权目录不一致。");
-  if (sourceStoreId && sourceStoreId !== profile.sourceStoreId) validationErrors.push("广告活动行店铺与授权Profile不一致。");
+  if (sourceSid && sourceSid !== profile.sourceStoreId) validationErrors.push("广告活动行店铺SID与授权Profile不一致。");
   if (sourceCountry && sourceCountry !== profile.country) validationErrors.push("广告活动行站点与授权Profile不一致。");
   if (!campaignId) validationErrors.push("广告活动行缺少Campaign ID，疑似总计行或无效行。");
   if (!adType || !["SP", "SB", "SD"].includes(adType)) validationErrors.push("广告活动行广告类型不是SP、SB或SD。");
@@ -233,11 +243,13 @@ export function normalizeAdMcpCampaign(source: RecordValue, profile: AdMcpProfil
     biddingStrategy: first(source, ["bidding_strategy", "bid_strategy"]) || null,
     budget: decimal(first(source, ["daily_budget", "budget"])) || null,
     currency: first(source, ["currency", "currency_code"]) || null,
-    impressions: requiredCount(source, ["impressions"], "广告活动曝光", validationErrors),
-    clicks: requiredCount(source, ["clicks"], "广告活动点击", validationErrors),
-    spend: requiredDecimal(source, ["spends", "spend"], "广告活动花费", validationErrors),
-    sales: requiredDecimal(source, ["sales", "ad_sales"], "广告活动销售额", validationErrors),
-    orders: requiredCount(source, ["orders", "ad_orders"], "广告活动订单", validationErrors),
+    // 活动事实只为产品详情补充状态和预算，产品KPI仅来自广告商品事实。
+    // 源端未提供的活动表现指标必须保持为空，不能伪造成0或阻断有效元数据。
+    impressions: optionalCount(source, ["impressions"]),
+    clicks: optionalCount(source, ["clicks"]),
+    spend: optionalDecimal(source, ["spends", "spend"]),
+    sales: optionalDecimal(source, ["sales", "ad_sales"]),
+    orders: optionalCount(source, ["orders", "ad_orders"]),
     sourceRowHash: first(source, ["entity_level_hash", "row_hash"]) || hash({ profileId: profile.profileId, reportDate, adType, campaignId }),
     sourcePayloadHash: hash(source),
     validationErrors,
@@ -341,11 +353,11 @@ export function assertAdMcpAutoApplyIntegrity(input: AdMcpBatchIntegrityInput) {
     if (Array.isArray(row.validationErrors) && row.validationErrors.length) throw new Error(`${label}自动应用校验未通过：草稿包含字段或映射异常`);
     const data = record(row.normalizedData);
     if (text(data.reportDate) !== input.scope.startDate || !text(data.profileId) || !text(data.campaignId) || !text(data.adType)) throw new Error(`${label}自动应用校验未通过：存在缺失Profile、活动、广告类型或报告日的草稿行`);
-    for (const key of ["impressions", "clicks", "spend", "sales", "orders"]) {
-      const value = Number(data[key]);
-      if (!Number.isFinite(value) || value < 0) throw new Error(`${label}自动应用校验未通过：${key}存在无效或负数指标`);
-    }
     if (input.domain === "ad_product_mcp") {
+      for (const key of ["impressions", "clicks", "spend", "sales", "orders"]) {
+        const value = Number(data[key]);
+        if (!Number.isFinite(value) || value < 0) throw new Error(`${label}自动应用校验未通过：${key}存在无效或负数指标`);
+      }
       if (!text(data.adGroupId) || !text(data.adId) || !text(data.advertisedAsin) || !text(data.parentAsin)) throw new Error("广告商品自动应用校验未通过：存在缺失广告实体、子ASIN或父ASIN映射的草稿行");
       if (!["exact_asin_same_day", "exact_asin_prior_evidence", "exact_sku", "manual_confirmed"].includes(text(data.mappingStatus))) throw new Error("广告商品自动应用校验未通过：存在非精确父ASIN映射草稿行");
     }

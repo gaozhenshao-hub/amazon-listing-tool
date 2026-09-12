@@ -67,6 +67,22 @@ describe("广告MCP事实归一化", () => {
     expect(campaign.validationErrors).toEqual([]);
     expect(campaign).toMatchObject({ profileId: "profile-us-1", campaignId: "campaign-1", reportDate: "2026-09-07", adType: "SP" });
   });
+
+  it("允许活动报告仅提供状态或预算，并只对明确SID进行店铺一致性校验", () => {
+    const profile = normalizeAdMcpProfile(profileSource).profile!;
+    const metadataOnly = normalizeAdMcpCampaign({
+      ...productSource,
+      store_id: "advertising-scoped-store-id",
+      sales: "99999999",
+      orders: "",
+      name: "Campaign A",
+      state: "enabled",
+    }, profile, "2026-09-07");
+    expect(metadataOnly.validationErrors).toEqual([]);
+    expect(metadataOnly).toMatchObject({ sales: null, orders: null, spend: "12.50" });
+    const explicitSidMismatch = normalizeAdMcpCampaign({ ...productSource, sid: "different-sid" }, profile, "2026-09-07");
+    expect(explicitSidMismatch.validationErrors.join(" ")).toContain("店铺SID与授权Profile不一致");
+  });
 });
 
 describe("广告商品父ASIN映射", () => {
@@ -125,5 +141,13 @@ describe("广告MCP自动应用门禁", () => {
       summary: { profilesExpected: 1, profilesRead: 1, profileDateWindowsExpected: 1, profileDateWindowsRead: 1 },
       rows: [{ entityKey: "unmapped", validationErrors: ["未映射"], normalizedData: {} }],
     })).toThrow("字段或映射异常");
+  });
+
+  it("允许没有表现KPI的完整广告活动元数据通过活动事实门禁", () => {
+    expect(() => assertAdMcpAutoApplyIntegrity({
+      status: "ready_for_review", domain: "ad_campaign_mcp", scope: { startDate: "2026-09-07", endDate: "2026-09-07" },
+      summary: { profilesExpected: 1, profilesRead: 1, profileDateWindowsExpected: 1, profileDateWindowsRead: 1, pageTruncations: 0, capped: false },
+      rows: [{ entityKey: "campaign-1", validationErrors: [], normalizedData: { profileId: "profile-us-1", campaignId: "campaign-1", adType: "SP", reportDate: "2026-09-07", impressions: null, clicks: null, spend: null, sales: null, orders: null } }],
+    })).not.toThrow();
   });
 });
