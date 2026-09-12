@@ -4,6 +4,7 @@ export const AD_MCP_MAX_PAGES_PER_PROFILE = 100;
 export const AD_MCP_MAX_ROWS_PER_PROFILE = 20_000;
 export const AD_MCP_PAGE_SIZE = 200;
 export const AD_MCP_PARENT_ASIN_LOOKBACK_DAYS = 90;
+export const AD_MCP_VALIDATOR_VERSION = "ad_mcp_p1_2026_09_12_r2";
 
 export type AdMcpFactDomain = "ad_campaign_mcp" | "ad_product_mcp";
 export type RecordValue = Record<string, unknown>;
@@ -96,6 +97,28 @@ export type AdMcpBatchIntegrityInput = {
   scope: { startDate: string; endDate: string };
   domain: AdMcpFactDomain;
 };
+
+/**
+ * 批次摘要仅保存稳定类别和计数，绝不保存原始验证消息或源报告字段。
+ * 这样生产审计可将批次与规则版本对应，同时不扩大业务数据暴露面。
+ */
+export function summarizeAdMcpValidationErrors(validationErrors: unknown): Record<string, number> {
+  const errors = Array.isArray(validationErrors) ? validationErrors : [];
+  const counts = new Map<string, number>();
+  for (const error of errors) {
+    const message = text(error);
+    const category = message.includes("Profile与授权目录不一致") ? "profile_mismatch"
+      : message.includes("店铺SID与授权Profile不一致") ? "sid_mismatch"
+      : message.includes("站点与授权Profile不一致") ? "marketplace_mismatch"
+      : message.includes("缺少Campaign") || message.includes("缺少广告组") || message.includes("缺少广告ID") ? "entity_identity_missing"
+      : message.includes("广告类型") ? "unsupported_ad_type"
+      : message.includes("广告报告日期") ? "report_date_invalid"
+      : message.includes("父ASIN") || message.includes("ASIN") ? "product_mapping_error"
+      : "other_validation_error";
+    counts.set(category, (counts.get(category) || 0) + 1);
+  }
+  return Object.fromEntries([...counts.entries()].sort(([left], [right]) => left.localeCompare(right)));
+}
 
 function record(input: unknown): RecordValue {
   return input && typeof input === "object" && !Array.isArray(input) ? input as RecordValue : {};

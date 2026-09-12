@@ -13,7 +13,7 @@ import { invokeEmperorTool } from "../domains/ai_os/services/toolGateway/executo
 import { buildScheduledAutoApplyReviewQueue, scheduledAutoApplyReviewIssue } from "../domains/ops/historicalBackfillReview";
 import { rawExecute } from "../domains/ai_os/routerContext";
 import { getDb } from "../repositories/dbClient";
-import { AD_MCP_MAX_PAGES_PER_PROFILE, AD_MCP_MAX_ROWS_PER_PROFILE, AD_MCP_PAGE_SIZE, assertAdMcpAutoApplyIntegrity, isAdMcpAggregateRow, normalizeAdMcpCampaign, normalizeAdMcpProduct, normalizeAdMcpProfile, resolveParentAsinMapping, type AdMcpFactDomain, type AdMcpProfile } from "../domains/ops/adMcpFacts";
+import { AD_MCP_MAX_PAGES_PER_PROFILE, AD_MCP_MAX_ROWS_PER_PROFILE, AD_MCP_PAGE_SIZE, AD_MCP_VALIDATOR_VERSION, assertAdMcpAutoApplyIntegrity, isAdMcpAggregateRow, normalizeAdMcpCampaign, normalizeAdMcpProduct, normalizeAdMcpProfile, resolveParentAsinMapping, summarizeAdMcpValidationErrors, type AdMcpFactDomain, type AdMcpProfile } from "../domains/ops/adMcpFacts";
 import { applyConfirmedAdMcpFacts } from "../domains/ops/adMcpApply";
 
 const domainSchema = z.enum(["product_performance", "product_performance_daily", "parent_asin_weekly_mcp", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword", "ad_campaign_mcp", "ad_product_mcp", "listing_master", "ad_search_term", "ad_targeting"]);
@@ -1187,6 +1187,13 @@ export const lingxingSyncRouter = router({
       if (rowStatus === "needs_review") summary.needsReview += 1;
       return { workspaceId, batchId, entityKey: normalized.entityKey, rowStatus, selected: isPhase5PreviewDomain(input.dataDomain) ? 0 : ["new", "changed"].includes(rowStatus) ? 1 : 0, sourceData: source as any, normalizedData: output as any, fieldDiffs: fieldDiffs as any, matchInfo: matchInfo as any, targetReference: targetReference as any, validationErrors: errors as any };
     });
+    if (isAdMcpFactDomain(input.dataDomain)) {
+      const validationErrors = rows.flatMap((row) => Array.isArray(row.validationErrors) ? row.validationErrors : []);
+      Object.assign(summary, {
+        adMcpValidatorVersion: AD_MCP_VALIDATOR_VERSION,
+        adMcpValidationErrorCounts: summarizeAdMcpValidationErrors(validationErrors),
+      });
+    }
     for (let offset = 0; offset < rows.length; offset += 250) {
       await db.insert(opsExternalSyncRows).values(rows.slice(offset, offset + 250) as any);
     }

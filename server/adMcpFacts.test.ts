@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  AD_MCP_VALIDATOR_VERSION,
   assertAdMcpAutoApplyIntegrity,
   isAdMcpAggregateRow,
   normalizeAdMcpCampaign,
   normalizeAdMcpProfile,
   normalizeAdMcpProduct,
   resolveParentAsinMapping,
+  summarizeAdMcpValidationErrors,
 } from "./domains/ops/adMcpFacts";
 
 const profileSource = {
@@ -82,6 +84,19 @@ describe("广告MCP事实归一化", () => {
     expect(metadataOnly).toMatchObject({ sales: null, orders: null, spend: "12.50" });
     const explicitSidMismatch = normalizeAdMcpCampaign({ ...productSource, sid: "different-sid" }, profile, "2026-09-07");
     expect(explicitSidMismatch.validationErrors.join(" ")).toContain("店铺SID与授权Profile不一致");
+  });
+
+  it("将活动验证错误归为固定脱敏类别，并为批次审计提供规则版本", () => {
+    expect(AD_MCP_VALIDATOR_VERSION).toBe("ad_mcp_p1_2026_09_12_r2");
+    expect(summarizeAdMcpValidationErrors([
+      "广告活动行店铺SID与授权Profile不一致。",
+      "广告活动行广告类型不是SP、SB或SD。",
+      "不应写入批次摘要的任意原始错误文本",
+    ])).toEqual({
+      other_validation_error: 1,
+      sid_mismatch: 1,
+      unsupported_ad_type: 1,
+    });
   });
 });
 
