@@ -1494,4 +1494,58 @@ export const lingxingSyncRouter = router({
     await db.update(opsExternalSyncBatches).set({ status: "applied", appliedAt: new Date(), appliedBy: ctx.user.id, summary: { ...object(batch.summary), appliedRows: importedRows, skippedRows } }).where(eq(opsExternalSyncBatches.id, input.batchId));
     return { success: true, importId: importRecord.id, importedRows, skippedRows };
   }),
+
+  runAdMcpFirstValidation: protectedProcedure.mutation(async ({ ctx }) => {
+    if (ctx.user.role !== "super_admin") throw new Error("仅超级管理员可运行广告MCP首轮受治理验证");
+    const workspaceId = ctx.user.defaultWorkspaceId;
+    if (!workspaceId) throw new Error("当前用户缺少默认运营工作空间");
+    const shanghaiNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    shanghaiNow.setUTCDate(shanghaiNow.getUTCDate() - 1);
+    const reportDate = shanghaiNow.toISOString().slice(0, 10);
+    const caller = lingxingSyncRouter.createCaller(ctx);
+    const db = await getDb();
+    if (!db) throw new Error("数据库不可用");
+    const results: Array<{ dataDomain: AdMcpFactDomain; batchId: number | null; outcome: "applied" | "review_required"; importedRows?: number; skippedRows?: number }> = [];
+
+    for (const dataDomain of ["ad_campaign_mcp", "ad_product_mcp"] as const) {
+      let batchId: number | null = null;
+      try {
+        const preview = await caller.createPreview({
+          dataDomain,
+          scope: {
+            storeId: "ALL_US_AD_PROFILES",
+            profileId: "ALL_US_AD_PROFILES",
+            marketplace: "US",
+            startDate: reportDate,
+            endDate: reportDate,
+          },
+        });
+        batchId = preview.batchId;
+        const selectedRows = await db.select({ id: opsExternalSyncRows.id }).from(opsExternalSyncRows).where(and(
+          eq(opsExternalSyncRows.workspaceId, workspaceId),
+          eq(opsExternalSyncRows.batchId, batchId),
+          eq(opsExternalSyncRows.selected, 1),
+        ));
+        if (!selectedRows.length) throw new Error("不存在可自动应用的完整广告草稿行");
+        await caller.confirm({
+          batchId,
+          selectedRowIds: selectedRows.map((row) => row.id),
+          note: "青岛广告MCP首轮受治理验证：完整性门禁通过后系统确认",
+        });
+        const applied = await caller.applyConfirmedAds({
+          batchId,
+          note: "青岛广告MCP首轮受治理验证：仅写入独立广告事实表",
+        });
+        results.push({ dataDomain, batchId, outcome: "applied", importedRows: applied.importedRows, skippedRows: applied.skippedRows });
+      } catch {
+        results.push({ dataDomain, batchId, outcome: "review_required" });
+      }
+    }
+
+    return {
+      reportDate,
+      automaticScheduleCreated: false,
+      results,
+    };
+  }),
 });

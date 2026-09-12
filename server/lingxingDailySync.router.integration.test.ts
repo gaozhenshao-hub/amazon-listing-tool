@@ -137,6 +137,13 @@ describe("领星ASIN日数据同步路由", () => {
     state.batch = null; state.rows = []; state.snapshots = []; state.weekly = []; state.imports = []; state.confirmations = []; state.schedules = []; state.heartbeatCreates = []; state.heartbeatUpdates = []; state.selectedRowUpdateCalls = 0; state.selectCount = 0; state.toolCallCount = 0; state.largePageMode = false; state.failAtToolCall = 0;
   });
 
+  it("广告MCP首轮受治理入口仅允许超级管理员，拒绝时不读取MCP", async () => {
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 9, role: "ops_manager", defaultWorkspaceId: 1, organizationId: null } } as any);
+    await expect(caller.runAdMcpFirstValidation()).rejects.toThrow("仅超级管理员可运行广告MCP首轮受治理验证");
+    expect(state.toolCallCount).toBe(0);
+    expect(state.batch).toBeNull();
+  });
+
   it("预览、确认和应用仅追加可追溯日快照，过滤占位ASIN且不写周度产品表", async () => {
     const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
     const preview = await caller.createPreview({ dataDomain: "product_performance_daily", scope: { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-10", marketplace: "US" } });
