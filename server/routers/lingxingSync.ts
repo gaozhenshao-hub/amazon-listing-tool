@@ -918,7 +918,16 @@ export const lingxingSyncRouter = router({
       const requestedProfiles = input.scope.profileId === "ALL_US_AD_PROFILES"
         ? adMcpProfiles
         : adMcpProfiles.filter((profile) => input.scope.profileId!.split(",").map((id) => id.trim()).includes(profile.profileId));
-      const duplicatedProfiles = requestedProfiles.filter((profile, index, list) => list.findIndex((candidate) => candidate.profileId === profile.profileId && (candidate.sourceStoreId !== profile.sourceStoreId || candidate.country !== profile.country)) !== index);
+      // 只有“同一广告Profile指向多个SID或站点”才是目录冲突。此前findIndex
+      // 会把每一个Profile与首个不同Profile比较，因而把所有不同Profile误计为冲突。
+      const profileMappings = new Map<string, string>();
+      const duplicatedProfileIds = new Set<string>();
+      for (const profile of requestedProfiles) {
+        const mapping = `${profile.sourceStoreId}|${profile.country}`;
+        const existing = profileMappings.get(profile.profileId);
+        if (existing && existing !== mapping) duplicatedProfileIds.add(profile.profileId);
+        else if (!existing) profileMappings.set(profile.profileId, mapping);
+      }
       const rows: RecordValue[] = [];
       const completedProfiles = new Set<string>();
       const failedProfileDateWindows: Array<{ profileId: string; reportDate: string; page: number; error: string }> = [];
@@ -967,7 +976,7 @@ export const lingxingSyncRouter = router({
         totalRead: sourceRows.length, selected: sourceRows.length, datesRead: 1,
         profilesExpected: requestedProfiles.length, profilesRead: completedProfiles.size,
         profileDateWindowsExpected: requestedProfiles.length, profileDateWindowsRead: completedProfiles.size,
-        profileDirectoryValidationErrors: profileValidationErrors, profileDirectoryDuplicateCount: duplicatedProfiles.length,
+        profileDirectoryValidationErrors: profileValidationErrors, profileDirectoryDuplicateCount: duplicatedProfileIds.size,
         aggregateRows, pageTruncations, capped, failedProfileDateWindows, toolRunIds,
         maxPagesPerProfile: AD_MCP_MAX_PAGES_PER_PROFILE, maxRowsPerProfile: AD_MCP_MAX_ROWS_PER_PROFILE,
       });

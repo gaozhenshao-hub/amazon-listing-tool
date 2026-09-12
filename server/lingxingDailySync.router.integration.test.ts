@@ -16,6 +16,7 @@ const state = {
   largePageMode: false,
   failAtToolCall: 0,
   adCampaignMcpRows: null as any[] | null,
+  adMcpProfiles: null as any[] | null,
 };
 
 const rawExecuteMock = vi.hoisted(() => vi.fn(async () => []));
@@ -114,7 +115,7 @@ vi.mock("./domains/ai_os/services/toolGateway/executors", () => ({
     state.toolCallCount += 1;
     if (state.failAtToolCall === state.toolCallCount) throw new Error("MCP窗口读取超时");
     if (state.adCampaignMcpRows && input?.params?.capability === "ad_auth_shops") {
-      return { output: { content: [{ type: "text", text: JSON.stringify({ list: [{ profile_id: "profile-us-1", sid: "store-us-1", country: "US" }] }) }] }, metadata: { toolRunId: "tool_ad_directory" } };
+      return { output: { content: [{ type: "text", text: JSON.stringify({ list: state.adMcpProfiles ?? [{ profile_id: "profile-us-1", sid: "store-us-1", country: "US" }] }) }] }, metadata: { toolRunId: "tool_ad_directory" } };
     }
     if (state.adCampaignMcpRows && input?.params?.capability === "ad_campaign_report") {
       return { output: { content: [{ type: "text", text: JSON.stringify({ list: state.adCampaignMcpRows }) }] }, metadata: { toolRunId: "tool_ad_campaign" } };
@@ -144,7 +145,7 @@ const { lingxingSyncRouter } = await import("./routers/lingxingSync");
 
 describe("领星ASIN日数据同步路由", () => {
   beforeEach(() => {
-    state.batch = null; state.rows = []; state.snapshots = []; state.weekly = []; state.imports = []; state.confirmations = []; state.schedules = []; state.heartbeatCreates = []; state.heartbeatUpdates = []; state.selectedRowUpdateCalls = 0; state.selectCount = 0; state.toolCallCount = 0; state.largePageMode = false; state.failAtToolCall = 0; state.adCampaignMcpRows = null;
+    state.batch = null; state.rows = []; state.snapshots = []; state.weekly = []; state.imports = []; state.confirmations = []; state.schedules = []; state.heartbeatCreates = []; state.heartbeatUpdates = []; state.selectedRowUpdateCalls = 0; state.selectCount = 0; state.toolCallCount = 0; state.largePageMode = false; state.failAtToolCall = 0; state.adCampaignMcpRows = null; state.adMcpProfiles = null;
   });
 
   it("广告MCP首轮受治理入口仅允许超级管理员，拒绝时不读取MCP", async () => {
@@ -186,6 +187,80 @@ describe("领星ASIN日数据同步路由", () => {
       expect.objectContaining({ rowStatus: "skipped", selected: 0, normalizedData: expect.objectContaining({ adType: "HSA" }) }),
     ]));
     expect(state.batch.summary).toMatchObject({ adMcpOutOfScopeSkippedCount: 1, adMcpValidationErrorCounts: {} });
+  });
+
+  it("多个不同Profile各自映射唯一SID与站点时不得误计目录冲突", async () => {
+    state.adCampaignMcpRows = [];
+    state.adMcpProfiles = [
+      { profile_id: "profile-us-1", sid: "store-us-1", country: "US" },
+      { profile_id: "profile-us-2", sid: "store-us-2", country: "US" },
+    ];
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+
+    await caller.createPreview({ dataDomain: "ad_campaign_mcp", scope: { storeId: "ALL_US_AD_PROFILES", profileId: "ALL_US_AD_PROFILES", marketplace: "US", startDate: "2026-09-11", endDate: "2026-09-11" } });
+
+    expect(state.batch.summary).toMatchObject({ profilesExpected: 2, profilesRead: 2, profileDirectoryDuplicateCount: 0 });
+  });
+
+  it("同一Profile映射到不同SID或站点时仍只计一次目录冲突", async () => {
+    state.adCampaignMcpRows = [];
+    state.adMcpProfiles = [
+      { profile_id: "profile-us-1", sid: "store-us-1", country: "US" },
+      { profile_id: "profile-us-1", sid: "store-us-2", country: "US" },
+    ];
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+
+    await caller.createPreview({ dataDomain: "ad_campaign_mcp", scope: { storeId: "ALL_US_AD_PROFILES", profileId: "ALL_US_AD_PROFILES", marketplace: "US", startDate: "2026-09-11", endDate: "2026-09-11" } });
+
+    expect(state.batch.summary).toMatchObject({ profilesExpected: 2, profileDirectoryDuplicateCount: 1 });
+  });
+
+  it("完整支持活动行与明确非P1安全跳过行混合时仍可受治理确认", async () => {
+    state.batch = {
+      id: 9901,
+      workspaceId: 1,
+      status: "ready_for_review",
+      dataDomain: "ad_campaign_mcp",
+      source: "lingxing_mcp",
+      scope: { storeId: "ALL_US_AD_PROFILES", startDate: "2026-09-11", endDate: "2026-09-11" },
+      summary: {
+        profilesExpected: 8,
+        profilesRead: 8,
+        profileDateWindowsExpected: 8,
+        profileDateWindowsRead: 8,
+        pageTruncations: 0,
+        capped: false,
+        failedProfileDateWindows: [],
+        profileDirectoryValidationErrors: [],
+        profileDirectoryDuplicateCount: 0,
+        adMcpOutOfScopeSkippedCount: 136,
+        adMcpValidationErrorCounts: {},
+      },
+    };
+    const selectedRows = Array.from({ length: 1_788 }, (_, index) => ({
+      id: index + 1,
+      selected: 1,
+      rowStatus: "new",
+      validationErrors: [],
+      entityKey: `profile-${(index % 8) + 1}|2026-09-11|SP|campaign-${index + 1}`,
+      normalizedData: { profileId: `profile-${(index % 8) + 1}`, sourceStoreId: `sid-${(index % 8) + 1}`, country: "US", reportDate: "2026-09-11", adType: "SP", campaignId: `campaign-${index + 1}` },
+    }));
+    const safelySkippedRows = Array.from({ length: 136 }, (_, index) => ({
+      id: 1_789 + index,
+      selected: 0,
+      rowStatus: "skipped",
+      validationErrors: [],
+      entityKey: `profile-${(index % 8) + 1}|2026-09-11|HSA|campaign-out-of-scope-${index + 1}`,
+      normalizedData: { profileId: `profile-${(index % 8) + 1}`, sourceStoreId: `sid-${(index % 8) + 1}`, country: "US", reportDate: "2026-09-11", adType: "HSA", campaignId: `campaign-out-of-scope-${index + 1}` },
+    }));
+    state.rows = [...selectedRows, ...safelySkippedRows];
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+
+    await expect(caller.confirm({ batchId: 9901, selectedRowIds: selectedRows.map((row) => row.id), note: "完整活动批次系统确认" })).resolves.toMatchObject({ success: true });
+
+    expect(state.batch).toMatchObject({ status: "confirmed" });
+    expect(state.confirmations).toEqual([expect.objectContaining({ action: "confirm", selectedRowIds: selectedRows.map((row) => row.id) })]);
+    expect(state.selectedRowUpdateCalls).toBe(1);
   });
 
   it("同步历史列表仅返回页面所需的批次元数据，隔离原始响应快照", async () => {
