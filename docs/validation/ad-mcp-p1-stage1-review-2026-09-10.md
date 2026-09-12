@@ -212,3 +212,9 @@ Web服务实际`ExecStart`与Node命令行均明确为生产目录下的`dist/in
 本地已完成预览失败分类增强：`classifyAdMcpPreviewFailure`仅映射为`oauth_not_configured`、`database_unavailable`、`lingxing_request_failed`、`request_timeout`或`unknown`；首轮入口在`preview_failed`原有码旁返回该分类，但不返回、记录或持久化异常正文、URL、源端载荷、店铺、ASIN、金额或凭据。新增纯函数回归11项全部通过；新增路由回归确认“超时→固定`request_timeout`分类且该活动域不创建批次”，该文件15项中14项通过，唯一失败为项目既有日表现多页预览断言（期望5000、实际6000），与本次无关。修改文件ESLint无错误，生产构建通过。本地候选尚未发布青岛，未触发第四次广告读取。
 
 对当前同步路由的精确复核已否定“广告MCP被Phase 5强制复核”的假设：`phase5PreviewDomains`只含`listing_master`、`ad_search_term`与`ad_targeting`，广告活动/商品MCP不在其中；其确认拦截也仅适用于该三类。#90655全量待复核由实际验证错误导致，而非无条件预览策略。此前登记的P1.5j不实施任何代码改动，保留活动事实失败关闭与商品父ASIN门禁不变；后续继续限定为识别旧指标必填与未知模板的真实生成位置。
+
+经用户确认，预览失败固定分类增强的一次性无迁移发布单元已在青岛启动。远端启动脚本已下载并通过SHA-256校验，随后由独立systemd单元执行运行包工件验签、版本化`dist`备份、原子替换、三服务重启和本机HTTP健康检查。首次只读状态检查时该单元仍在运行，未出现成功或回滚标识；终态明确前禁止重启、重复发布、迁移或广告MCP读取。
+
+同一发布单元的后续只读状态为`Result=success`、`ExecMainStatus=0`、`ActiveState=inactive`、`SubState=dead`，journal返回`AD_MCP_PREVIEW_FAILURE_CLASSIFICATION_RELEASE_OK`且未见回滚标识，证明无迁移受控发布已完成。下一步仅检查当前`dist`的固定预览失败分类标识、Web/Worker/Scheduler三服务状态与本机HTTP；不会触发第四次广告读取、确认或写入。
+
+发布后只读运行核验通过：`previewFailureCategory`固定分类标识在当前`dist`命中2个构建分块，Web、Worker、Scheduler三项服务均为`active`，本机HTTP返回`200`。本次发布未执行数据库迁移，也未读取、确认、应用或改写广告批次。第四次广告验证只有在用户单独授权后才可执行，届时结果将附带不泄露原始异常的固定预览失败类别。
