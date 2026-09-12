@@ -13,7 +13,7 @@ import { invokeEmperorTool } from "../domains/ai_os/services/toolGateway/executo
 import { buildScheduledAutoApplyReviewQueue, scheduledAutoApplyReviewIssue } from "../domains/ops/historicalBackfillReview";
 import { rawExecute } from "../domains/ai_os/routerContext";
 import { getDb } from "../repositories/dbClient";
-import { AD_MCP_MAX_PAGES_PER_PROFILE, AD_MCP_MAX_ROWS_PER_PROFILE, AD_MCP_PAGE_SIZE, AD_MCP_VALIDATOR_VERSION, assertAdMcpAutoApplyIntegrity, classifyAdMcpPreviewFailure, isAdMcpAggregateRow, normalizeAdMcpCampaign, normalizeAdMcpProduct, normalizeAdMcpProfile, resolveParentAsinMapping, summarizeAdMcpValidationErrors, type AdMcpFactDomain, type AdMcpPreviewFailureCategory, type AdMcpProfile } from "../domains/ops/adMcpFacts";
+import { AD_MCP_MAX_PAGES_PER_PROFILE, AD_MCP_MAX_ROWS_PER_PROFILE, AD_MCP_PAGE_SIZE, AD_MCP_VALIDATOR_VERSION, assertAdMcpAutoApplyIntegrity, classifyAdMcpPreviewFailure, isAdMcpAggregateRow, isAdMcpCampaignTypeOutOfScope, normalizeAdMcpCampaign, normalizeAdMcpProduct, normalizeAdMcpProfile, resolveParentAsinMapping, summarizeAdMcpValidationErrors, type AdMcpFactDomain, type AdMcpPreviewFailureCategory, type AdMcpProfile } from "../domains/ops/adMcpFacts";
 import { applyConfirmedAdMcpFacts } from "../domains/ops/adMcpApply";
 
 const domainSchema = z.enum(["product_performance", "product_performance_daily", "parent_asin_weekly_mcp", "order_profit", "fba_inventory", "ad_campaign", "ad_keyword", "ad_campaign_mcp", "ad_product_mcp", "listing_master", "ad_search_term", "ad_targeting"]);
@@ -1183,15 +1183,19 @@ export const lingxingSyncRouter = router({
           ? { adImpressions: current.impressions, adClicks: current.clicks, adSpend: current.spend, adSales: current.sales, campaignName: current.campaignName, keyword: current.keyword, matchType: current.matchType }
         : { salesQty: current.salesQty, salesAmount: current.salesAmount, orderProfit: current.orderProfit, adSpend: current.adSpend, sku: current.sku, productName: current.productName };
       const fieldDiffs = targetReference ? calculateFieldDiffs(currentComparable, output, comparedFields) : [];
-      const rowStatus = isPhase5PreviewDomain(input.dataDomain) ? "needs_review" : errors.length ? "needs_review" : !targetReference ? "new" : fieldDiffs.length ? "changed" : "unchanged";
+      const skipKnownOutOfScopeCampaign = input.dataDomain === "ad_campaign_mcp" && isAdMcpCampaignTypeOutOfScope(output.adType);
+      const rowStatus = skipKnownOutOfScopeCampaign ? "skipped" : isPhase5PreviewDomain(input.dataDomain) ? "needs_review" : errors.length ? "needs_review" : !targetReference ? "new" : fieldDiffs.length ? "changed" : "unchanged";
       if (rowStatus === "needs_review") summary.needsReview += 1;
-      return { workspaceId, batchId, entityKey: normalized.entityKey, rowStatus, selected: isPhase5PreviewDomain(input.dataDomain) ? 0 : ["new", "changed"].includes(rowStatus) ? 1 : 0, sourceData: source as any, normalizedData: output as any, fieldDiffs: fieldDiffs as any, matchInfo: matchInfo as any, targetReference: targetReference as any, validationErrors: errors as any };
+      return { workspaceId, batchId, entityKey: normalized.entityKey, rowStatus, selected: skipKnownOutOfScopeCampaign || isPhase5PreviewDomain(input.dataDomain) ? 0 : ["new", "changed"].includes(rowStatus) ? 1 : 0, sourceData: source as any, normalizedData: output as any, fieldDiffs: fieldDiffs as any, matchInfo: matchInfo as any, targetReference: targetReference as any, validationErrors: errors as any };
     });
     if (isAdMcpFactDomain(input.dataDomain)) {
       const validationErrors = rows.flatMap((row) => Array.isArray(row.validationErrors) ? row.validationErrors : []);
       Object.assign(summary, {
         adMcpValidatorVersion: AD_MCP_VALIDATOR_VERSION,
         adMcpValidationErrorCounts: summarizeAdMcpValidationErrors(validationErrors),
+        adMcpOutOfScopeSkippedCount: input.dataDomain === "ad_campaign_mcp"
+          ? rows.filter((row) => row.rowStatus === "skipped").length
+          : 0,
       });
     }
     for (let offset = 0; offset < rows.length; offset += 250) {

@@ -205,6 +205,21 @@ export function normalizeAdType(input: unknown): string {
   return adType === "SP" || adType === "SB" || adType === "SD" ? adType : adType;
 }
 
+/** P1可写入的广告活动类型；产品KPI仍只由广告商品事实提供。 */
+export const AD_MCP_SUPPORTED_CAMPAIGN_TYPES = ["SP", "SB", "SD"] as const;
+/** 已知但不在P1活动事实范围内的来源类型，只能跳过，不能自动归类或写入。 */
+export const AD_MCP_OUT_OF_SCOPE_CAMPAIGN_TYPES = ["HSA", "VD"] as const;
+
+export function isAdMcpCampaignTypeOutOfScope(input: unknown): boolean {
+  const adType = normalizeAdType(input);
+  return (AD_MCP_OUT_OF_SCOPE_CAMPAIGN_TYPES as readonly string[]).includes(adType);
+}
+
+function isSupportedAdMcpCampaignType(input: unknown): boolean {
+  const adType = normalizeAdType(input);
+  return (AD_MCP_SUPPORTED_CAMPAIGN_TYPES as readonly string[]).includes(adType);
+}
+
 function requiredCount(source: RecordValue, aliases: string[], label: string, errors: string[]): number {
   const value = count(first(source, aliases));
   if (value === null) errors.push(`${label}缺失、非有限或为源端哨兵值，不能自动写入。`);
@@ -273,7 +288,9 @@ export function normalizeAdMcpCampaign(source: RecordValue, profile: AdMcpProfil
   if (sourceSid && sourceSid !== profile.sourceStoreId) validationErrors.push("广告活动行店铺SID与授权Profile不一致。");
   if (sourceCountry && sourceCountry !== profile.country) validationErrors.push("广告活动行站点与授权Profile不一致。");
   if (!campaignId) validationErrors.push("广告活动行缺少Campaign ID，疑似总计行或无效行。");
-  if (!adType || !["SP", "SB", "SD"].includes(adType)) validationErrors.push("广告活动行广告类型不是SP、SB或SD。");
+  if (!adType || (!isSupportedAdMcpCampaignType(adType) && !isAdMcpCampaignTypeOutOfScope(adType))) {
+    validationErrors.push("广告活动行广告类型不属于本期支持或可安全跳过范围。");
+  }
   const result: AdMcpCampaignInput = {
     profileId: profile.profileId,
     sourceStoreId: profile.sourceStoreId,

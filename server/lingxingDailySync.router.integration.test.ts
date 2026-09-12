@@ -15,6 +15,7 @@ const state = {
   toolCallCount: 0,
   largePageMode: false,
   failAtToolCall: 0,
+  adCampaignMcpRows: null as any[] | null,
 };
 
 const rawExecuteMock = vi.hoisted(() => vi.fn(async () => []));
@@ -109,9 +110,15 @@ vi.mock("./domains/ops/services/securityGovernance", () => ({
 vi.mock("./domains/ai_os/services/runLedger", () => ({ ensureAgentRunTrace: async () => undefined }));
 vi.mock("./domains/ai_os/services/artifactLifecycle", () => ({ registerUnifiedArtifact: async () => ({ ref: "artifact://ops/lingxing-raw", storageUri: "s3://ops/lingxing-raw.json" }) }));
 vi.mock("./domains/ai_os/services/toolGateway/executors", () => ({
-  invokeEmperorTool: async () => {
+  invokeEmperorTool: async (input: any) => {
     state.toolCallCount += 1;
     if (state.failAtToolCall === state.toolCallCount) throw new Error("MCP窗口读取超时");
+    if (state.adCampaignMcpRows && input?.params?.capability === "ad_auth_shops") {
+      return { output: { content: [{ type: "text", text: JSON.stringify({ list: [{ profile_id: "profile-us-1", sid: "store-us-1", country: "US" }] }) }] }, metadata: { toolRunId: "tool_ad_directory" } };
+    }
+    if (state.adCampaignMcpRows && input?.params?.capability === "ad_campaign_report") {
+      return { output: { content: [{ type: "text", text: JSON.stringify({ list: state.adCampaignMcpRows }) }] }, metadata: { toolRunId: "tool_ad_campaign" } };
+    }
     const list = state.largePageMode
       ? Array.from({ length: 200 }, (_, index) => ({ asin: `B0PAGE${state.toolCallCount.toString().padStart(2, "0")}${index.toString().padStart(3, "0")}`, parent_asins: [{ parent_asin: `PARENT${state.toolCallCount}` }], volume: 1 }))
       : [
@@ -137,7 +144,7 @@ const { lingxingSyncRouter } = await import("./routers/lingxingSync");
 
 describe("领星ASIN日数据同步路由", () => {
   beforeEach(() => {
-    state.batch = null; state.rows = []; state.snapshots = []; state.weekly = []; state.imports = []; state.confirmations = []; state.schedules = []; state.heartbeatCreates = []; state.heartbeatUpdates = []; state.selectedRowUpdateCalls = 0; state.selectCount = 0; state.toolCallCount = 0; state.largePageMode = false; state.failAtToolCall = 0;
+    state.batch = null; state.rows = []; state.snapshots = []; state.weekly = []; state.imports = []; state.confirmations = []; state.schedules = []; state.heartbeatCreates = []; state.heartbeatUpdates = []; state.selectedRowUpdateCalls = 0; state.selectCount = 0; state.toolCallCount = 0; state.largePageMode = false; state.failAtToolCall = 0; state.adCampaignMcpRows = null;
   });
 
   it("广告MCP首轮受治理入口仅允许超级管理员，拒绝时不读取MCP", async () => {
@@ -162,6 +169,23 @@ describe("领星ASIN日数据同步路由", () => {
       previewFailureCategory: "request_timeout",
     });
     expect(state.batch).toMatchObject({ dataDomain: "ad_product_mcp", status: "empty" });
+  });
+
+  it("广告活动预览跳过明确非P1类型，但自动选中完整SP元数据行", async () => {
+    state.adCampaignMcpRows = [
+      { profile_id: "profile-us-1", store_country: "US", sponsored_type: "SP", campaign_id: "campaign-sp", campaign_name: "SP campaign", state: "enabled" },
+      { profile_id: "profile-us-1", store_country: "US", sponsored_type: "HSA", campaign_id: "campaign-hsa", campaign_name: "out-of-scope campaign", state: "enabled" },
+    ];
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
+
+    const preview = await caller.createPreview({ dataDomain: "ad_campaign_mcp", scope: { storeId: "ALL_US_AD_PROFILES", profileId: "ALL_US_AD_PROFILES", marketplace: "US", startDate: "2026-09-11", endDate: "2026-09-11" } });
+
+    expect(preview.totalRows).toBe(2);
+    expect(state.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ rowStatus: "new", selected: 1, normalizedData: expect.objectContaining({ adType: "SP" }) }),
+      expect.objectContaining({ rowStatus: "skipped", selected: 0, normalizedData: expect.objectContaining({ adType: "HSA" }) }),
+    ]));
+    expect(state.batch.summary).toMatchObject({ adMcpOutOfScopeSkippedCount: 1, adMcpValidationErrorCounts: {} });
   });
 
   it("同步历史列表仅返回页面所需的批次元数据，隔离原始响应快照", async () => {

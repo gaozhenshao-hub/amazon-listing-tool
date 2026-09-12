@@ -4,6 +4,7 @@ import {
   assertAdMcpAutoApplyIntegrity,
   classifyAdMcpPreviewFailure,
   isAdMcpAggregateRow,
+  isAdMcpCampaignTypeOutOfScope,
   normalizeAdMcpCampaign,
   normalizeAdMcpProfile,
   normalizeAdMcpProduct,
@@ -85,6 +86,17 @@ describe("广告MCP事实归一化", () => {
     expect(metadataOnly).toMatchObject({ sales: null, orders: null, spend: "12.50" });
     const explicitSidMismatch = normalizeAdMcpCampaign({ ...productSource, sid: "different-sid" }, profile, "2026-09-07");
     expect(explicitSidMismatch.validationErrors.join(" ")).toContain("店铺SID与授权Profile不一致");
+  });
+
+  it("仅将明确的非P1活动类型安全跳过，未知类型继续保留验证错误", () => {
+    const profile = normalizeAdMcpProfile(profileSource).profile!;
+    const outOfScope = normalizeAdMcpCampaign({ ...productSource, sponsored_type: "HSA" }, profile, "2026-09-07");
+    expect(isAdMcpCampaignTypeOutOfScope(outOfScope.adType)).toBe(true);
+    expect(outOfScope.validationErrors).toEqual([]);
+
+    const unknown = normalizeAdMcpCampaign({ ...productSource, sponsored_type: "UNKNOWN_TYPE" }, profile, "2026-09-07");
+    expect(isAdMcpCampaignTypeOutOfScope(unknown.adType)).toBe(false);
+    expect(unknown.validationErrors.join(" ")).toContain("不属于本期支持或可安全跳过范围");
   });
 
   it("将活动验证错误归为固定脱敏类别，并为批次审计提供规则版本", () => {
