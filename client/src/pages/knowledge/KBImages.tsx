@@ -174,15 +174,29 @@ export default function KBImages() {
   );
 
   const importAsin = trpc.kbImages.importByAsin.useMutation({
-    onSuccess: () => { toast.success("已开始导入图片，AI正在分析..."); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setAsinInput(""); },
+    onSuccess: (result: any) => {
+      toast.success(result.status === "confirmed"
+        ? "已复用24小时内的确认快照并完成入库"
+        : `采集任务 #${result.jobId} 已创建，请到“采集任务”审核后入库`);
+      utils.kbImages.listSets.invalidate();
+      utils.kbImages.listAllImages.invalidate();
+      setShowImport(false);
+      setAsinInput("");
+    },
     onError: createImportOnError((id) => { setShowImport(false); setDetailSetId(id); }),
   });
   const importLink = trpc.kbImages.importByLink.useMutation({
-    onSuccess: () => { toast.success("已开始导入"); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setLinkInput(""); },
+    onSuccess: (result: any) => {
+      toast.success(`已创建 ${result.imported} 个受控采集任务${result.skipped ? `，跳过${result.skipped}个已入库ASIN` : ""}`);
+      utils.kbImages.listSets.invalidate();
+      utils.kbImages.listAllImages.invalidate();
+      setShowImport(false);
+      setLinkInput("");
+    },
     onError: createImportOnError((id) => { setShowImport(false); setDetailSetId(id); }),
   });
   const batchImport = trpc.kbImages.batchImportAsins.useMutation({
-    onSuccess: (r: any) => { toast.success(`已开始导入 ${r.imported} 个ASIN的图片`); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setBatchInput(""); },
+    onSuccess: (r: any) => { toast.success(`已创建 ${r.imported} 个受控采集任务${r.skipped ? `，跳过${r.skipped}个已入库ASIN` : ""}`); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setBatchInput(""); },
     onError: (e: any) => toast.error(e.message),
   });
   // Manual upload state
@@ -297,7 +311,7 @@ export default function KBImages() {
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
 
   const reCrawlMutation = trpc.kbImages.reCrawlByPosition.useMutation({
-    onSuccess: () => { toast.success("已开始重新爬取，请稍后刷新"); setShowReCrawl(false); setReCrawlPositions([]); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
+    onSuccess: (result: any) => { toast.success(`刷新任务 #${result.jobId} 已创建；旧图保留至新快照审核确认`); setShowReCrawl(false); setReCrawlPositions([]); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -828,29 +842,29 @@ export default function KBImages() {
               <div className="space-y-2">
                 <Label>输入单个ASIN</Label>
                 <Input placeholder="B0XXXXXXXXX" value={asinInput} onChange={(e) => setAsinInput(e.target.value)} className="font-mono" />
-                <p className="text-xs text-muted-foreground">系统将自动爬取所有产品图片（主图+副图+A+图片），并按ASIN整合为一个图片集</p>
+                <p className="text-xs text-muted-foreground">系统通过受控Provider采集主图、副图及可获取的A+/品牌故事；确认前进入独立审核，不会直接覆盖图片知识库。</p>
               </div>
               <Button onClick={() => importAsin.mutate({ asin: asinInput })} disabled={importAsin.isPending || !asinInput} className="w-full gap-2">
                 {importAsin.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                <Sparkles className="h-4 w-4" /> 开始采集并AI分析
+                <Sparkles className="h-4 w-4" /> 创建受控采集任务
               </Button>
             </TabsContent>
             <TabsContent value="link" className="space-y-4 mt-4">
               <div className="space-y-2">
                 <Label>输入亚马逊产品链接</Label>
                 <Textarea placeholder={"https://www.amazon.com/dp/B0XXXXXXXXX\nhttps://www.amazon.com/dp/B0YYYYYYYYY"} value={linkInput} onChange={(e) => setLinkInput(e.target.value)} rows={4} />
-                <p className="text-xs text-muted-foreground">支持多个链接，每行一个，系统自动提取ASIN</p>
+                <p className="text-xs text-muted-foreground">支持多个Amazon美国站链接，每行一个；系统提取ASIN后创建独立采集与审核任务。</p>
               </div>
               <Button onClick={() => importLink.mutate({ url: linkInput })} disabled={importLink.isPending || !linkInput} className="w-full gap-2">
                 {importLink.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                <Sparkles className="h-4 w-4" /> 开始采集并AI分析
+                <Sparkles className="h-4 w-4" /> 创建受控采集任务
               </Button>
             </TabsContent>
             <TabsContent value="batch" className="space-y-4 mt-4">
               <div className="space-y-2">
                 <Label>批量输入ASIN（每行一个，最多20个）</Label>
                 <Textarea placeholder={"B0XXXXXXXXX\nB0YYYYYYYYY\nB0ZZZZZZZZZ"} value={batchInput} onChange={(e) => setBatchInput(e.target.value)} rows={6} className="font-mono text-sm" />
-                <p className="text-xs text-muted-foreground">每个ASIN将创建独立的图片集，AI分别进行12维度分析</p>
+                <p className="text-xs text-muted-foreground">每个ASIN创建独立采集任务；人工确认后才进入图片知识库，AI分析可在入库后单独启动。</p>
               </div>
               <Button onClick={() => {
                 const asins = batchInput.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
@@ -858,7 +872,7 @@ export default function KBImages() {
                 batchImport.mutate({ asins });
               }} disabled={batchImport.isPending || !batchInput} className="w-full gap-2">
                 {batchImport.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                <Sparkles className="h-4 w-4" /> 批量采集并AI分析
+                <Sparkles className="h-4 w-4" /> 批量创建采集任务
               </Button>
             </TabsContent>
             <TabsContent value="manual" className="space-y-4 mt-4">
@@ -952,7 +966,7 @@ export default function KBImages() {
                         <h4 className="text-sm font-semibold flex items-center gap-2">
                           <RefreshCw className="h-4 w-4 text-blue-500" /> 选择重新爬取的模块
                         </h4>
-                        <p className="text-xs text-muted-foreground">勾选需要重新爬取的图片模块，系统将清除该模块旧图片并重新从亚马逊爬取</p>
+                        <p className="text-xs text-muted-foreground">勾选需要刷新的能力。旧图片会保留到新快照审核确认；主图或副图任一选择都会请求完整商品图库并在确认后一起替换。</p>
                         <div className="flex flex-wrap gap-4">
                           {[
                             { key: "main", label: "主图", color: "blue", count: groupedImages.main.length },
@@ -975,7 +989,7 @@ export default function KBImages() {
                         <div className="flex gap-2">
                           <Button size="sm" onClick={() => reCrawlMutation.mutate({ setId: detailSetId!, positions: reCrawlPositions as any })} disabled={reCrawlMutation.isPending || reCrawlPositions.length === 0} className="gap-1.5">
                             {reCrawlMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                            开始重新爬取
+                            创建刷新任务
                           </Button>
                           <Button variant="ghost" size="sm" onClick={() => { setShowReCrawl(false); setReCrawlPositions([]); }}>取消</Button>
                         </div>

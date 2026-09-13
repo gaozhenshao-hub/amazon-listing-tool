@@ -30,4 +30,15 @@ describe("图片知识库工作空间范围契约", () => {
     expect(routerSource).toContain("resolveImagesForDelivery(await kbDb.listImagesBySetLight(set.id))");
     expect(routerSource).toContain("resolveImagesForDelivery(await kbDb.listAllImages");
   });
+
+  it("Amazon导入通过统一采集Job且刷新确认前保留旧图片", () => {
+    expect(routerSource).toContain("startAmazonAcquisitionJob");
+    expect(routerSource).toContain('consumerType: "kb_images"');
+    expect(routerSource).toContain('cachePolicy: "refresh"');
+    const importSection = routerSource.slice(routerSource.indexOf("importByAsin:"), routerSource.indexOf("confirmImageTags:"));
+    expect(importSection).not.toContain("processImport(");
+    const refreshSection = routerSource.slice(routerSource.indexOf("reCrawlByPosition:"), routerSource.indexOf("uploadImages:"));
+    expect(refreshSection).not.toContain("processPartialReCrawl(");
+    expect(refreshSection).not.toContain("deleteImagesByPosition");
+  });
 });

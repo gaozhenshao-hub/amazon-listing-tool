@@ -115,6 +115,8 @@ Provider资格验证
 
 ## 阶段A4：图片知识库首个消费者迁移
 
+**状态（2026-09-13）**：本地完成。单ASIN、批量、Amazon美国站链接和局部刷新已切换统一Acquisition Job；人工确认后按能力幂等投影到现有`kb_image_sets`/`kb_images`，确认前不删除旧图，手工上传和AI重分析保持不变。18项定向回归、ESLint、生产构建、Bundle预算和桌面截图通过。青岛生产尚未迁移或发布。
+
 **交付物**：图片知识库单ASIN、批量、链接和局部刷新改为创建Acquisition Job；确认Snapshot后投影到现有知识库或创建Consumer Link；保留ASIN卡片、完整图库、标签、共享权限和历史旧来源；移除图片知识库对`server/scraper.ts`的运行时调用。
 
 **关键文件**：`server/routers/kbImages.ts`、`server/kbDb.ts`、`client/src/pages/knowledge/KBImages.tsx`、`client/src/pages/knowledge/KbAsinSetGrid.tsx`及采集集成测试。

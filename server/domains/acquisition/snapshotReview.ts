@@ -3,10 +3,10 @@ import { z } from "zod";
 import { NormalizedAmazonSnapshotSchema } from "./contracts";
 import { requireDb, withDbTransaction, type DbExecutor } from "../../repositories/dbClient";
 import { resolveStoredObjectUrl } from "../../storage";
+import type { AcquisitionAssetCandidate } from "../../../drizzle/schema/acquisition";
 import {
   clearCurrentConfirmedSnapshot,
   createConfirmedSnapshot,
-  createConsumerLink,
   createSnapshotRevision,
   getAcquisitionJob,
   getLatestSnapshotRevision,
@@ -15,11 +15,11 @@ import {
   listAssetCandidates,
   nextConfirmationVersion,
   nextSnapshotRevisionVersion,
-  supersedeConsumerLinks,
   updateAcquisitionJob,
   updateAssetCandidateReview,
   updateSourceSnapshot,
 } from "./repository";
+import { activateConfirmedSnapshotForConsumer } from "./consumerActivation";
 
 export const SnapshotPatchSchema = z.object({
   title: z.string().trim().max(1000).nullable().optional(),
@@ -64,7 +64,7 @@ export async function getSnapshotReview(workspaceId: number, snapshotId: number)
       createdAt: snapshot.createdAt,
     },
     revision: revision ? { id: revision.id, version: revision.version, patch: revision.patch, reasonCode: revision.reasonCode } : null,
-    assets: await Promise.all(assets.map(async asset => ({
+    assets: await Promise.all(assets.map(async (asset: AcquisitionAssetCandidate) => ({
       id: asset.id,
       role: asset.role,
       positionIndex: asset.positionIndex,
@@ -94,7 +94,9 @@ export async function saveSnapshotReview(input: {
     if (!snapshot) throw new Error("snapshot not found");
     if (!["draft", "pending_review"].includes(snapshot.status)) throw new Error("snapshot is not editable");
     const assets = await listAssetCandidates(tx, input.workspaceId, input.snapshotId);
-    const knownAssets = new Map(assets.map(item => [item.id, item]));
+    const knownAssets = new Map<number, AcquisitionAssetCandidate>(
+      assets.map((item: AcquisitionAssetCandidate) => [item.id, item]),
+    );
     if (assetReviews.some(item => !knownAssets.has(item.assetId))) throw new Error("asset does not belong to snapshot");
     if (assetReviews.some(item => item.reviewStatus === "approved" && !knownAssets.get(item.assetId)?.storageKey)) {
       throw new Error("asset without stored evidence cannot be approved");
@@ -150,16 +152,16 @@ export async function confirmSnapshot(input: { workspaceId: number; snapshotId: 
     if (!snapshot) throw new Error("snapshot not found");
     if (!["draft", "pending_review"].includes(snapshot.status)) throw new Error("snapshot cannot be confirmed");
     const assets = await listAssetCandidates(tx, input.workspaceId, snapshot.id);
-    if (assets.some(asset => asset.reviewStatus === "pending")) throw new Error("all assets must be reviewed before confirmation");
-    const approvedAssets = assets.filter(asset => asset.reviewStatus === "approved" && asset.storageKey);
-    if (!approvedAssets.some(asset => asset.role === "main" || asset.role === "secondary")) {
+    if (assets.some((asset: AcquisitionAssetCandidate) => asset.reviewStatus === "pending")) throw new Error("all assets must be reviewed before confirmation");
+    const approvedAssets = assets.filter((asset: AcquisitionAssetCandidate) => asset.reviewStatus === "approved" && asset.storageKey);
+    if (!approvedAssets.some((asset: AcquisitionAssetCandidate) => asset.role === "main" || asset.role === "secondary")) {
       throw new Error("at least one approved gallery asset is required");
     }
     const revision = await getLatestSnapshotRevision(tx, input.workspaceId, snapshot.id);
     const confirmedData = applySnapshotPatch(snapshot.normalizedData, revision?.patch || {});
     const confirmedFieldStatuses = confirmSnapshotFieldStatuses(snapshot.fieldStatuses);
     const confirmationVersion = await nextConfirmationVersion(tx, snapshot.id);
-    const contentHash = sha256({ confirmedData, approvedAssetIds: approvedAssets.map(asset => asset.id) });
+    const contentHash = sha256({ confirmedData, approvedAssetIds: approvedAssets.map((asset: AcquisitionAssetCandidate) => asset.id) });
     await clearCurrentConfirmedSnapshot(tx, input.workspaceId, snapshot.marketplace, snapshot.asin);
     const confirmedSnapshotId = await createConfirmedSnapshot(tx, {
       workspaceId: input.workspaceId,
@@ -171,25 +173,18 @@ export async function confirmSnapshot(input: { workspaceId: number; snapshotId: 
       contentHash,
       confirmedData,
       fieldStatuses: confirmedFieldStatuses,
-      confirmedAssetIds: approvedAssets.map(asset => asset.id),
+      confirmedAssetIds: approvedAssets.map((asset: AcquisitionAssetCandidate) => asset.id),
       isCurrent: 1,
       confirmedBy: input.userId,
     });
     const job = await loadJobForSnapshot(tx, input.workspaceId, snapshot.jobId);
-    const capabilities = Array.isArray(job.requestedCapabilities) ? job.requestedCapabilities.map(String) : [];
-    for (const capability of capabilities) {
-      await supersedeConsumerLinks({ db: tx, workspaceId: input.workspaceId, consumerType: job.consumerType, consumerRef: job.consumerRef, capabilityScope: capability });
-      await createConsumerLink(tx, {
-        workspaceId: input.workspaceId,
-        confirmedSnapshotId,
-        consumerType: job.consumerType,
-        consumerRef: job.consumerRef,
-        capabilityScope: capability,
-        projectionVersion: "amazon_snapshot_projection_v1",
-        status: "active",
-        createdBy: input.userId,
-      });
-    }
+    const projection = await activateConfirmedSnapshotForConsumer({
+      db: tx,
+      workspaceId: input.workspaceId,
+      confirmedSnapshotId,
+      job,
+      activatedBy: input.userId,
+    });
     await updateSourceSnapshot(tx, input.workspaceId, snapshot.id, {
       status: "confirmed",
       reviewedBy: input.userId,
@@ -197,7 +192,7 @@ export async function confirmSnapshot(input: { workspaceId: number; snapshotId: 
       reviewNote: input.note?.trim().slice(0, 2000) || snapshot.reviewNote,
     });
     await updateAcquisitionJob(tx, input.workspaceId, job.id, { status: "confirmed", completedAt: new Date() });
-    return { snapshotId: snapshot.id, confirmedSnapshotId, confirmationVersion, confirmedAssetCount: approvedAssets.length };
+    return { snapshotId: snapshot.id, confirmedSnapshotId, confirmationVersion, confirmedAssetCount: approvedAssets.length, projection };
   });
 }
 

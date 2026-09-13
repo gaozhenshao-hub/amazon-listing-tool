@@ -14,6 +14,7 @@ import { normalizeApifyAmazonArtifact } from "./amazonNormalizer";
 import { ingestAcquisitionAssets } from "./assetIngestion";
 import { AmazonAcquisitionCapabilitySchema } from "./contracts";
 import {
+  acquisitionAttemptIdempotencyKey,
   buildAcquisitionIdempotencyKey,
   evaluateAcquisitionBudget,
   type AcquisitionBudgetPolicy,
@@ -33,6 +34,7 @@ import {
   updateAcquisitionRun,
   updateSourceSnapshot,
 } from "./repository";
+import { activateConfirmedSnapshotForConsumer } from "./consumerActivation";
 
 export const AcquisitionJobRequestSchema = z.object({
   workspaceId: z.number().int().positive(),
@@ -86,30 +88,48 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
       const idempotencyKey = buildAcquisitionIdempotencyKey({ ...input, cachePolicy: "confirmed_cache" });
       const existing = await findAcquisitionJobByIdempotency(db, input.workspaceId, idempotencyKey);
       if (existing) return { jobId: existing.id, status: existing.status, cacheHitSnapshotId: existing.cacheHitSnapshotId, aiJobRunId: null };
-      const jobId = await createAcquisitionJob(db, {
-        workspaceId: input.workspaceId,
-        requestedBy: input.requestedBy,
-        providerProfileId: profile.id,
-        consumerType: input.consumerType,
-        consumerRef: input.consumerRef,
-        marketplace: input.marketplace,
-        asin: input.asin,
-        requestedCapabilities: input.capabilities,
-        idempotencyKey,
-        status: "confirmed",
-        cachePolicy: input.cachePolicy,
-        maxChargeUsd: input.maxChargeUsd.toFixed(4),
-        cacheHitSnapshotId: cached.id,
-        completedAt: new Date(),
+      return withDbTransaction("Reuse confirmed Amazon acquisition snapshot", async tx => {
+        const jobId = await createAcquisitionJob(tx, {
+          workspaceId: input.workspaceId,
+          requestedBy: input.requestedBy,
+          providerProfileId: profile.id,
+          consumerType: input.consumerType,
+          consumerRef: input.consumerRef,
+          marketplace: input.marketplace,
+          asin: input.asin,
+          requestedCapabilities: input.capabilities,
+          idempotencyKey,
+          status: "confirmed",
+          cachePolicy: input.cachePolicy,
+          maxChargeUsd: input.maxChargeUsd.toFixed(4),
+          cacheHitSnapshotId: cached.id,
+          completedAt: new Date(),
+        });
+        await activateConfirmedSnapshotForConsumer({
+          db: tx,
+          workspaceId: input.workspaceId,
+          confirmedSnapshotId: cached.id,
+          job: {
+            requestedBy: input.requestedBy,
+            consumerType: input.consumerType,
+            consumerRef: input.consumerRef,
+            requestedCapabilities: input.capabilities,
+          },
+          activatedBy: input.requestedBy,
+        });
+        return { jobId, status: "confirmed" as const, cacheHitSnapshotId: cached.id, aiJobRunId: null };
       });
-      return { jobId, status: "confirmed" as const, cacheHitSnapshotId: cached.id, aiJobRunId: null };
     }
     if (input.cachePolicy === "cache_only") throw new Error("acquisition cache miss");
   }
 
-  const idempotencyKey = buildAcquisitionIdempotencyKey({ ...input, cachePolicy: input.cachePolicy });
-  const existing = await findAcquisitionJobByIdempotency(db, input.workspaceId, idempotencyKey);
-  if (existing) return { jobId: existing.id, status: existing.status, cacheHitSnapshotId: existing.cacheHitSnapshotId, aiJobRunId: null };
+  const baseIdempotencyKey = buildAcquisitionIdempotencyKey({ ...input, cachePolicy: input.cachePolicy });
+  const existing = await findAcquisitionJobByIdempotency(db, input.workspaceId, baseIdempotencyKey);
+  const attempt = acquisitionAttemptIdempotencyKey({ baseKey: baseIdempotencyKey, existingStatus: existing?.status });
+  if (existing && attempt.reuseExisting) {
+    return { jobId: existing.id, status: existing.status, cacheHitSnapshotId: existing.cacheHitSnapshotId, aiJobRunId: null };
+  }
+  const idempotencyKey = attempt.key;
 
   const jobId = await createAcquisitionJob(db, {
     workspaceId: input.workspaceId,

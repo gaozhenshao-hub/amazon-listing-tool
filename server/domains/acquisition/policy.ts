@@ -39,6 +39,19 @@ export function buildAcquisitionIdempotencyKey(input: {
   return createHash("sha256").update(canonical).digest("hex");
 }
 
+export function acquisitionAttemptIdempotencyKey(input: {
+  baseKey: string;
+  existingStatus?: string | null;
+  now?: Date;
+}): { key: string; reuseExisting: boolean } {
+  if (input.existingStatus && ["queued", "running", "review_required"].includes(input.existingStatus)) {
+    return { key: input.baseKey, reuseExisting: true };
+  }
+  if (!input.existingStatus) return { key: input.baseKey, reuseExisting: false };
+  const minuteBucket = Math.floor((input.now ?? new Date()).getTime() / 60_000).toString(36);
+  return { key: `${input.baseKey}:${minuteBucket}`, reuseExisting: false };
+}
+
 export function isAcquisitionCacheFresh(input: {
   capturedAt: Date;
   now: Date;

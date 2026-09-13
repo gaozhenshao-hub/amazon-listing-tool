@@ -256,5 +256,7 @@ export async function supersedeConsumerLinks(input: {
 }
 
 export async function createConsumerLink(db: DbExecutor, values: typeof acquisitionConsumerLinks.$inferInsert) {
-  await db.insert(acquisitionConsumerLinks).values(values);
+  await db.insert(acquisitionConsumerLinks).values(values).onDuplicateKeyUpdate({
+    set: { status: "active", projectionVersion: values.projectionVersion, updatedAt: new Date() },
+  });
 }

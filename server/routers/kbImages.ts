@@ -8,6 +8,15 @@ import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGate
 import { resolveStoredObjectUrl, storagePut } from "../storage";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { resourceConflictError } from "@shared/_core/errors";
+import { startAmazonAcquisitionJob } from "../domains/acquisition/acquisitionJobs";
+import {
+  KB_IMAGE_IMPORT_CAPABILITIES,
+  KbImageImportAsinSchema,
+  capabilitiesForKbPositions,
+  kbImagesConsumerRef,
+  parseAmazonUsAsins,
+  type KbImagePosition,
+} from "../domains/acquisition/kbImagesAcquisition";
 import {
   STYLE_NAME_OPTIONS, IMAGE_BELONG_OPTIONS, IMAGE_BELONG_HIERARCHY, IMAGE_TYPE_HIERARCHY,
   IMAGE_TYPE_MAIN_OPTIONS, SELLING_POINT_HIERARCHY, SELLING_POINT_MAIN_OPTIONS,
@@ -109,6 +118,28 @@ async function resolveImageForDelivery<T extends { imageUrl: string }>(image: T)
 
 async function resolveImagesForDelivery<T extends { imageUrl: string }>(images: T[]): Promise<Array<T & { imageAccessError?: string }>> {
   return Promise.all(images.map(resolveImageForDelivery));
+}
+
+const KB_IMAGE_ACQUISITION_MAX_USD = 0.1;
+
+async function startKbImagesAcquisition(input: {
+  workspaceId: number;
+  userId: number;
+  asin: string;
+  capabilities?: readonly (typeof KB_IMAGE_IMPORT_CAPABILITIES)[number][];
+  cachePolicy?: "prefer_cache" | "refresh";
+}) {
+  return startAmazonAcquisitionJob({
+    workspaceId: input.workspaceId,
+    requestedBy: input.userId,
+    consumerType: "kb_images",
+    consumerRef: kbImagesConsumerRef(input.asin),
+    marketplace: "US",
+    asin: input.asin,
+    capabilities: [...(input.capabilities ?? KB_IMAGE_IMPORT_CAPABILITIES)],
+    cachePolicy: input.cachePolicy ?? "prefer_cache",
+    maxChargeUsd: KB_IMAGE_ACQUISITION_MAX_USD,
+  });
 }
 
 /**
@@ -554,58 +585,55 @@ export const kbImagesRouter = router({
       return resolveImagesForDelivery(await kbDb.listAllImages(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine", input));
     }),
 
-  // Import by ASIN - crawl images and analyze
+  // Import by ASIN through the governed acquisition job. Projection occurs only after human confirmation.
   importByAsin: protectedProcedure
     .input(z.object({ asin: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const asin = input.asin.trim().toUpperCase();
-      // ASIN dedup: prevent duplicate entries
+      const asin = KbImageImportAsinSchema.parse(input.asin);
       const dupSet = await kbDb.findImageSetByAsin(asin, ctx.workspaceId!);
       if (dupSet) {
         throw resourceConflictError(`ASIN ${asin} 已存在于图片知识库中`, { existingId: dupSet.id, resource: "kb_image_set", asin });
       }
-      const setId = await kbDb.createImageSet({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
-      // Fire-and-forget with full analysis
-      processImport(Number(setId), asin, Number(ctx.user.id), true);
-      return { id: Number(setId), asin };
+      const job = await startKbImagesAcquisition({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin });
+      return { asin, ...job, reviewRequired: job.status !== "confirmed" };
     }),
 
   batchImportAsins: protectedProcedure
     .input(z.object({ asins: z.array(z.string()).min(1).max(20) }))
     .mutation(async ({ ctx, input }) => {
-      const results: { asin: string; id: number }[] = [];
-      for (const raw of input.asins) {
-        const asin = raw.trim().toUpperCase();
-        if (!asin) continue;
-        // ASIN dedup: skip if already exists
+      const asins = [...new Set(input.asins.map(value => KbImageImportAsinSchema.parse(value)))];
+      const results: Array<{ asin: string; jobId: number; status: string; cacheHitSnapshotId: number | null }> = [];
+      const skipped: Array<{ asin: string; existingId: number }> = [];
+      for (const asin of asins) {
         const dupSet = await kbDb.findImageSetByAsin(asin, ctx.workspaceId!);
         if (dupSet) {
-          results.push({ asin, id: dupSet.id });
+          skipped.push({ asin, existingId: dupSet.id });
           continue;
         }
-        const setId = await kbDb.createImageSet({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
-        results.push({ asin, id: Number(setId) });
-        // Fire-and-forget without per-image analysis for batch (faster)
-        processImport(Number(setId), asin, Number(ctx.user.id), false);
+        const job = await startKbImagesAcquisition({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin });
+        results.push({ asin, jobId: job.jobId, status: job.status, cacheHitSnapshotId: job.cacheHitSnapshotId });
       }
-      return { imported: results.length, items: results };
+      return { imported: results.length, skipped: skipped.length, items: results, skippedItems: skipped };
     }),
 
   importByLink: protectedProcedure
-    .input(z.object({ url: z.string().url() }))
+    .input(z.object({ url: z.string().trim().min(1).max(20_000) }))
     .mutation(async ({ ctx, input }) => {
-      const asinMatch = input.url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
-      const asin = asinMatch?.[1]?.toUpperCase() || "";
-      if (!asin) throw new Error("无法从链接中提取ASIN");
-      // ASIN dedup: prevent duplicate entries
-      const dupSet = await kbDb.findImageSetByAsin(asin, ctx.workspaceId!);
-      if (dupSet) {
-        throw resourceConflictError(`ASIN ${asin} 已存在于图片知识库中`, { existingId: dupSet.id, resource: "kb_image_set", asin });
+      const asins = parseAmazonUsAsins(input.url);
+      if (asins.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "未找到可导入的美国站ASIN" });
+      if (asins.length > 20) throw new TRPCError({ code: "BAD_REQUEST", message: "每次最多导入20个ASIN" });
+      const results = [];
+      const skipped: Array<{ asin: string; existingId: number }> = [];
+      for (const asin of asins) {
+        const dupSet = await kbDb.findImageSetByAsin(asin, ctx.workspaceId!);
+        if (dupSet) {
+          skipped.push({ asin, existingId: dupSet.id });
+          continue;
+        }
+        const job = await startKbImagesAcquisition({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin });
+        results.push({ asin, jobId: job.jobId, status: job.status, cacheHitSnapshotId: job.cacheHitSnapshotId });
       }
-      const setId = await kbDb.createImageSet({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
-      // Fire-and-forget with full analysis
-      processImport(Number(setId), asin, Number(ctx.user.id), true);
-      return { id: Number(setId), asin };
+      return { imported: results.length, skipped: skipped.length, items: results, skippedItems: skipped };
     }),
 
   // Confirm image tags (v2: supports 7-dimension tags)
@@ -656,7 +684,7 @@ export const kbImagesRouter = router({
       return { success: true };
     }),
 
-  // Re-crawl specific image positions for an existing set
+  // Refresh selected capabilities through a governed acquisition job. Existing images remain until confirmation.
   reCrawlByPosition: protectedProcedure
     .input(z.object({
       setId: z.number(),
@@ -665,13 +693,15 @@ export const kbImagesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const set = await kbDb.getImageSet(input.setId, ctx.user.id);
       if (!set) throw new Error("图片集不存在");
-      // Delete existing images for selected positions
-      await kbDb.deleteImagesByPosition(set.id, input.positions);
-      // Update status to crawling
-      await kbDb.updateImageSet(set.id, ctx.user.id, { status: "crawling" });
-      // Fire-and-forget: re-crawl only selected positions
-      processPartialReCrawl(set.id, set.asin, Number(ctx.user.id), input.positions);
-      return { success: true };
+      const capabilities = capabilitiesForKbPositions(input.positions as KbImagePosition[]);
+      const job = await startKbImagesAcquisition({
+        workspaceId: ctx.workspaceId!,
+        userId: ctx.user.id,
+        asin: set.asin,
+        capabilities: capabilities as (typeof KB_IMAGE_IMPORT_CAPABILITIES)[number][],
+        cachePolicy: "refresh",
+      });
+      return { success: true, ...job, requestedCapabilities: capabilities, reviewRequired: true };
     }),
 
   // Upload images manually to a specific position
