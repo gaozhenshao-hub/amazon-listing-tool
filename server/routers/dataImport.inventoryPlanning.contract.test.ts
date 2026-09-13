@@ -11,6 +11,8 @@ const purchasePlanningSource = readFileSync(resolve(process.cwd(), "shared/inven
 const lingxingSyncSource = readFileSync(resolve(process.cwd(), "server/routers/lingxingSync.ts"), "utf8");
 const ownerAssignmentRouterSource = readFileSync(resolve(process.cwd(), "server/routers/inventoryOwnerAssignments.ts"), "utf8");
 const lingxingSyncPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsLingxingSync.tsx"), "utf8");
+const overviewScopeSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/productOverviewScope.ts"), "utf8");
+const opsSchemaSource = readFileSync(resolve(process.cwd(), "drizzle/schema/ops.ts"), "utf8");
 
 describe("导入模式库存规划接口契约", () => {
   it("以 ASIN 日快照作为库存规划输入，而不是旧库存预警表", () => {
@@ -101,6 +103,25 @@ describe("导入模式库存规划接口契约", () => {
     expect(productsPageSource).not.toContain('dataKey="orderProfit" name="订单利润"');
   });
 
+  it("来源型负责人卡片可按精确父ASIN、店铺和规范站点维护基础信息与财务趋势，不依赖手工产品档案", () => {
+    expect(productsPageSource).toContain("hasScopedSourceIdentity");
+    expect(productsPageSource).toContain("canMaintainScopedOperations");
+    expect(productsPageSource).toContain("isSameSourceProductScope(row, product)");
+    expect(productsPageSource).toContain("selectFinancialProfitsForProduct(monthlyFinancialProfits || [], product)");
+    expect(overviewScopeSource).toContain("normalizeMarketplaceCode");
+    expect(overviewScopeSource).toContain("normalizeIdentityPart(left.storeName) === normalizeIdentityPart(right.storeName)");
+    expect(overviewScopeSource).toContain("hasVerifiedSourceScope(left) || !hasVerifiedSourceScope(right)");
+  });
+
+  it("新六个月财务利润按父ASIN、店铺和站点持久化，旧版无范围记录保持独立且不自动归属", () => {
+    expect(opsSchemaSource).toContain('storeName: varchar("store_name", { length: 200 })');
+    expect(opsSchemaSource).toContain('country: varchar("country", { length: 50 })');
+    expect(opsSchemaSource).toContain("table.storeName, table.country, table.yearMonth");
+    expect(routerSource).toContain("店铺与站点必须同时提供，或同时留空以维护历史手工档案记录。");
+    expect(routerSource).toContain("isNull(opsMonthlyFinancialProfits.storeName)");
+    expect(routerSource).toContain("storeName: scopedIdentity?.storeName ?? null");
+  });
+
   it("财务利润按滚动六个月回读，新增月份仅保存已填写数据", () => {
     expect(productsPageSource).toContain("date.setMonth(date.getMonth() - 5 + index)");
     expect(productsPageSource).toContain("financialProfits.find");
@@ -133,6 +154,7 @@ describe("导入模式库存规划接口契约", () => {
     expect(lingxingSyncSource).toContain('operator: value(source, ["principal_names", "principal_name", "principal", "operator", "owner_name", "负责人"])');
     expect(lingxingSyncSource).toContain("operator: asText(data.operator) || null");
     expect(lingxingSyncSource).toContain("由库存/产品读取层复用已确认的“外部名称→系统人员”映射");
+    expect(routerSource).toContain("manualOwner?.assigneeName || confirmedExternalOperator || profileOperator || weeklyOperator || null");
   });
 
   it("库存页面提供待分配入口，且人工规则按父ASIN、店铺和站点批量保存并允许审计撤销", () => {

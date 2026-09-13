@@ -1976,12 +1976,16 @@ export const opsMonthlyFinancialProfits = mysqlTable("ops_monthly_financial_prof
   id: int("id").autoincrement().primaryKey(),
   userId: int("user_id").notNull(),
   parentAsin: varchar("parent_asin", { length: 20 }).notNull(),
+  // New entries are scoped to the same business identity as a source-backed
+  // overview card. Historical rows remain NULL here and are never auto-linked.
+  storeName: varchar("store_name", { length: 200 }),
+  country: varchar("country", { length: 50 }),
   yearMonth: varchar("year_month", { length: 7 }).notNull(),
   financialProfit: decimal("financial_profit", { precision: 14, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 }, (table) => [
-  uniqueIndex("ops_monthly_financial_profit_unique").on(table.workspaceId, table.userId, table.parentAsin, table.yearMonth),
+  uniqueIndex("ops_monthly_financial_profit_unique").on(table.workspaceId, table.userId, table.parentAsin, table.storeName, table.country, table.yearMonth),
 ]);
 
 // Confirmed future supply can be incorporated into the planning timeline only after its availability date is known.

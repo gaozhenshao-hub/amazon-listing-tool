@@ -749,17 +749,45 @@ export const dataImportRouter = router({
     }),
 
   saveMonthlyFinancialProfits: protectedProcedure
-    .input(z.object({ parentAsin: z.string().min(1), entries: z.array(z.object({ yearMonth: z.string().regex(/^\d{4}-\d{2}$/), financialProfit: z.number() })).min(1).max(6) }))
+    .input(z.object({
+      parentAsin: z.string().trim().min(1),
+      storeName: z.string().trim().min(1).optional(),
+      country: z.string().trim().min(1).optional(),
+      entries: z.array(z.object({ yearMonth: z.string().regex(/^\d{4}-\d{2}$/), financialProfit: z.number() })).min(1).max(6),
+    }).refine((value) => Boolean(value.storeName) === Boolean(value.country), {
+      message: "店铺与站点必须同时提供，或同时留空以维护历史手工档案记录。",
+    }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       const workspaceId = ctx.user.defaultWorkspaceId ?? currentOpsWorkspaceId();
+      const scopedIdentity = input.storeName && input.country
+        ? { storeName: input.storeName.trim(), country: normalizeMarketplaceCode(input.country) }
+        : null;
       for (const entry of input.entries) {
-        const [existing] = await db!.select().from(opsMonthlyFinancialProfits).where(and(eq(opsMonthlyFinancialProfits.workspaceId, workspaceId), eq(opsMonthlyFinancialProfits.userId, ctx.user.id), eq(opsMonthlyFinancialProfits.parentAsin, input.parentAsin), eq(opsMonthlyFinancialProfits.yearMonth, entry.yearMonth))).limit(1);
+        const identityCondition = scopedIdentity ? and(
+          eq(opsMonthlyFinancialProfits.storeName, scopedIdentity.storeName),
+          eq(opsMonthlyFinancialProfits.country, scopedIdentity.country),
+        ) : and(isNull(opsMonthlyFinancialProfits.storeName), isNull(opsMonthlyFinancialProfits.country));
+        const [existing] = await db!.select().from(opsMonthlyFinancialProfits).where(and(
+          eq(opsMonthlyFinancialProfits.workspaceId, workspaceId),
+          eq(opsMonthlyFinancialProfits.userId, ctx.user.id),
+          eq(opsMonthlyFinancialProfits.parentAsin, input.parentAsin),
+          eq(opsMonthlyFinancialProfits.yearMonth, entry.yearMonth),
+          identityCondition,
+        )).limit(1);
         if (existing) await db!.update(opsMonthlyFinancialProfits).set({ financialProfit: String(entry.financialProfit) }).where(and(
           eq(opsMonthlyFinancialProfits.id, existing.id),
           eq(opsMonthlyFinancialProfits.workspaceId, workspaceId),
         ));
-        else await db!.insert(opsMonthlyFinancialProfits).values({ workspaceId, userId: ctx.user.id, parentAsin: input.parentAsin, yearMonth: entry.yearMonth, financialProfit: String(entry.financialProfit) });
+        else await db!.insert(opsMonthlyFinancialProfits).values({
+          workspaceId,
+          userId: ctx.user.id,
+          parentAsin: input.parentAsin,
+          storeName: scopedIdentity?.storeName ?? null,
+          country: scopedIdentity?.country ?? null,
+          yearMonth: entry.yearMonth,
+          financialProfit: String(entry.financialProfit),
+        });
       }
       return { status: "saved" as const, count: input.entries.length };
     }),

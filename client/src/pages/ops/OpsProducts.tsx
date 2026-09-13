@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { MANAGER_ROLES } from "@shared/const";
 import { buildUnifiedProductOverview } from "@shared/unifiedProductOverview";
+import { countLegacyFinancialProfitMonths, hasVerifiedSourceScope, isSameSourceProductScope, selectFinancialProfitsForProduct, shouldWaitForProductOverviewFallback } from "./productOverviewScope";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -291,7 +292,8 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
   planningRows?: any[];
   financialProfits?: any[];
   onSaveCostParameters?: (row: any, values: Record<string, string>) => void;
-  onSaveFinancialProfits?: (parentAsin: string, entries: Array<{ yearMonth: string; financialProfit: number }>) => void;
+  legacyFinancialProfitMonths?: number;
+  onSaveFinancialProfits?: (scope: { parentAsin: string; storeName?: string; country?: string; entries: Array<{ yearMonth: string; financialProfit: number }> }) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -304,6 +306,11 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
   const [financialProfitOpen, setFinancialProfitOpen] = useState(false);
   const [financialProfitDrafts, setFinancialProfitDrafts] = useState<Record<string, string>>({});
   const hasManagedProfile = product.id > 0;
+  const hasScopedSourceIdentity = hasVerifiedSourceScope(product);
+  // A manually assigned source product is not promoted to a product profile.
+  // Its exact parent/store/site scope is sufficient for source-derived costs and
+  // user-maintained financial trend records, without changing source facts.
+  const canMaintainScopedOperations = hasManagedProfile || hasScopedSourceIdentity;
   const canAssignSourceOwner = Boolean(isManagerOrAbove && product.parentAsin && product.storeName && product.marketplace && ownerCandidates.length && onAssignSourceOwner);
   const bi = product.basicInfo;
   const profitTrend = useMemo(() => Array.from({ length: 6 }, (_, index) => {
@@ -313,7 +320,7 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
     const value = financialProfitDrafts[yearMonth] ?? (saved?.financialProfit == null ? "" : String(saved.financialProfit));
     return { yearMonth, month: yearMonth.slice(2), financialProfit: value === "" ? null : Number(value) };
   }), [financialProfits, financialProfitDrafts]);
-  const productPlanningRows = useMemo(() => (planningRows || []).filter((row: any) => row.parentAsin === product.parentAsin), [planningRows, product.parentAsin]);
+  const productPlanningRows = useMemo(() => (planningRows || []).filter((row: any) => isSameSourceProductScope(row, product)), [planningRows, product]);
 
   const getCostValue = (row: any, field: string) => costDrafts[row.asin]?.[field] ?? (row[field] == null ? "" : String(row[field]));
   const updateCostDraft = (asin: string, field: string, value: string) => {
@@ -443,7 +450,7 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
             </>
           )}
 
-          {hasManagedProfile && <div className="h-14 w-[260px] shrink-0" onClick={e => e.stopPropagation()}>
+          {canMaintainScopedOperations && <div className="h-14 w-[260px] shrink-0" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between"><p className="mb-0.5 text-[10px] text-muted-foreground">近6个月财务利润</p><button className="text-[10px] text-primary hover:underline" onClick={() => setFinancialProfitOpen(open => !open)}>填写</button></div>
             <ResponsiveContainer width="100%" height="100%"><LineChart data={profitTrend} margin={{ top: 0, right: 2, left: 2, bottom: 0 }}><XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} /><YAxis hide /><RechartsTooltip formatter={(value) => [value == null ? "待填写" : `$${Number(value).toFixed(2)}`, "财务利润"]} /><Line connectNulls type="monotone" dataKey="financialProfit" name="财务利润" stroke="#7c3aed" strokeWidth={2} dot={{ r: 2 }} /></LineChart></ResponsiveContainer>
           </div>
@@ -576,8 +583,8 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
       {/* ═══ Weekly Data Table ═══ */}
       {expanded && (
         <div>
-          {hasManagedProfile && financialProfitOpen && <section className="border-b bg-violet-50/50 px-3 py-2.5"><div className="flex items-center justify-between gap-3"><div><span className="text-xs font-semibold text-violet-800">最近6个月财务利润（USD）</span><span className="ml-2 text-[11px] text-muted-foreground">按月手动填写；仅用于本卡片财务利润趋势。</span></div><Button size="sm" className="h-7 text-[11px]" onClick={() => onSaveFinancialProfits?.(product.parentAsin, profitTrend.filter(item => item.financialProfit !== null).map(item => ({ yearMonth: item.yearMonth, financialProfit: item.financialProfit! })))}>保存财务利润</Button></div><div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">{profitTrend.map(item => <label key={item.yearMonth} className="text-[11px] text-muted-foreground">{item.yearMonth}<Input type="number" step="0.01" className="mt-1 h-7 text-xs" value={financialProfitDrafts[item.yearMonth] ?? (item.financialProfit == null ? "" : String(item.financialProfit))} placeholder="0.00" onChange={event => setFinancialProfitDrafts(current => ({ ...current, [item.yearMonth]: event.target.value }))} /></label>)}</div></section>}
-          {hasManagedProfile && productPlanningRows.length > 0 && (
+          {canMaintainScopedOperations && financialProfitOpen && <section className="border-b bg-violet-50/50 px-3 py-2.5"><div className="flex items-center justify-between gap-3"><div><span className="text-xs font-semibold text-violet-800">最近6个月财务利润（USD）</span><span className="ml-2 text-[11px] text-muted-foreground">{hasScopedSourceIdentity ? "按父ASIN、店铺与站点手动维护；仅用于本卡片财务利润趋势。" : "历史手工档案记录按父ASIN维护。"}</span>{hasScopedSourceIdentity && legacyFinancialProfitMonths > 0 && <p className="mt-1 text-[11px] text-amber-700">存在 {legacyFinancialProfitMonths} 个月旧版未限定店铺/站点的记录，系统不会自动归属到本卡片。</p>}</div><Button size="sm" className="h-7 text-[11px]" onClick={() => onSaveFinancialProfits?.({ parentAsin: product.parentAsin, ...(hasScopedSourceIdentity ? { storeName: product.storeName!, country: product.marketplace! } : {}), entries: profitTrend.filter(item => item.financialProfit !== null).map(item => ({ yearMonth: item.yearMonth, financialProfit: item.financialProfit! })) })}>保存财务利润</Button></div><div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">{profitTrend.map(item => <label key={item.yearMonth} className="text-[11px] text-muted-foreground">{item.yearMonth}<Input type="number" step="0.01" className="mt-1 h-7 text-xs" value={financialProfitDrafts[item.yearMonth] ?? (item.financialProfit == null ? "" : String(item.financialProfit))} placeholder="0.00" onChange={event => setFinancialProfitDrafts(current => ({ ...current, [item.yearMonth]: event.target.value }))} /></label>)}</div></section>}
+          {canMaintainScopedOperations && productPlanningRows.length > 0 && (
             <section className="border-b bg-slate-50/70 px-3 py-2.5">
               <button className="flex w-full items-center justify-between text-left" onClick={() => setCostPanelOpen(open => !open)}>
                 <span>
@@ -927,9 +934,10 @@ export default function OpsProducts() {
     const fallback = (importProducts || []) as ProductOverview[];
     return buildUnifiedProductOverview(primary, fallback);
   }, [systemProducts, importProducts]);
-  // ERP history is an opportunistic fallback. Never keep the authoritative MCP
-  // overview in a loading skeleton while the historical import query is pending.
-  const isLoading = systemLoading;
+  // ERP history is an opportunistic fallback. When authoritative MCP facts
+  // already yield cards, do not delay them. When they yield none, wait for the
+  // fallback query instead of prematurely rendering a misleading empty state.
+  const isLoading = systemLoading || shouldWaitForProductOverviewFallback(systemProducts?.length ?? 0, importLoading);
 
   const [form, setForm] = useState({
     parentAsin: "", title: "", brand: "", category: "", marketplace: "US",
@@ -1299,8 +1307,9 @@ export default function OpsProducts() {
               }}
               productionConfig={productionConfigs?.[product.parentAsin]}
               planningRows={inventoryPlanning?.rows || []}
-              financialProfits={(monthlyFinancialProfits || []).filter((item: any) => item.parentAsin === product.parentAsin)}
-              onSaveFinancialProfits={(parentAsin, entries) => saveMonthlyFinancialProfitsMut.mutate({ parentAsin, entries })}
+              financialProfits={selectFinancialProfitsForProduct(monthlyFinancialProfits || [], product)}
+              legacyFinancialProfitMonths={countLegacyFinancialProfitMonths(monthlyFinancialProfits || [], product)}
+              onSaveFinancialProfits={(scope) => saveMonthlyFinancialProfitsMut.mutate(scope)}
               onSaveCostParameters={(row, values) => savePlanningParametersMut.mutate({
                 scopeType: "asin",
                 asin: row.asin,
