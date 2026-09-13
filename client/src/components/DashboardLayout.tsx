@@ -228,6 +228,7 @@ const modules: ModuleDef[] = [
       { icon: Lightbulb, label: "智能产品创意库", path: "/knowledge/products" },
       { icon: FileText, label: "智能Listing文案库", path: "/knowledge/listings" },
       { icon: Image, label: "智能图片知识库", path: "/knowledge/images" },
+      { icon: DatabaseZap, label: "受控采集与审核", path: "/knowledge/acquisition" },
       { icon: BookOpen, label: "智能运营SOP库", path: "/knowledge/skills" },
       { icon: Video, label: "智能视频知识库", path: "/knowledge/videos" },
       { icon: Rss, label: "情报推荐中心", path: "/knowledge/intel" },

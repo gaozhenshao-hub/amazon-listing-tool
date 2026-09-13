@@ -11,6 +11,27 @@ import {
 export const DEFAULT_APIFY_PROFILE_KEY = "apify-amazon-primary";
 export const APIFY_PROVIDER_CODE = "apify.junglee.amazon_crawler";
 
+export function defaultApifyProviderProfileView() {
+  return {
+    id: null,
+    profileKey: DEFAULT_APIFY_PROFILE_KEY,
+    providerCode: APIFY_PROVIDER_CODE,
+    displayName: "Apify Amazon主Provider",
+    status: "qualification_pending" as const,
+    actorName: "junglee/Amazon-crawler",
+    capabilities: ["catalog_basic", "image_gallery", "aplus", "brand_story", "listing_content"],
+    perRunMaxUsd: 0.1,
+    dailyBudgetUsd: 5,
+    monthlyBudgetUsd: 100,
+    cacheTtlSeconds: DEFAULT_ACQUISITION_CACHE_TTL_SECONDS,
+    qualificationVersion: "apify-junglee-us-gallery-2026-09-13-r1",
+    lastQualifiedAt: null,
+    secretConfigured: Boolean(ENV.apifyApiToken),
+    createdAt: null,
+    updatedAt: null,
+  };
+}
+
 export type ApifyProviderProfileInput = AcquisitionBudgetPolicy & {
   displayName: string;
   actorName: string;

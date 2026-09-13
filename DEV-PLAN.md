@@ -105,6 +105,8 @@ Provider资格验证
 
 ## 阶段A3：标准化、S3资产与人工审核
 
+**状态（2026-09-13）**：本地完成。标准化Snapshot、竞品证据图片S3入库、逐图审核、Revision、不可变Confirmed Snapshot、Consumer Link、采集任务中心和审核页面已实现；只有确认版本可消费。0198已应用到当前开发数据库，尚未应用青岛生产数据库。采集领域25项回归通过（凭证联网测试默认跳过），ESLint、生产构建、Bundle预算及页面截图通过。
+
 **交付物**：标准化基础信息、Listing、commerce、图片/A+/品牌故事和字段状态；下载竞品证据图片到S3并保存哈希、尺寸、图位与模块类型；实现Snapshot Revision、确认版本与Consumer Link；提供任务列表和人工审核页面。
 
 **关键文件**：`server/domains/acquisition/services/amazonNormalizer.ts`、`server/domains/acquisition/services/assetIngestion.ts`、`server/domains/acquisition/services/snapshotReview.ts`、`server/routers/acquisition.ts`、`client/src/pages/acquisition/AcquisitionJobsPage.tsx`、`client/src/pages/acquisition/AcquisitionReviewPage.tsx`、`client/src/pages/acquisition/components/AssetReviewGrid.tsx`、`client/src/App.tsx`及测试。

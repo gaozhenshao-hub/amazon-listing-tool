@@ -10,6 +10,8 @@ import {
   type AiJobSnapshot,
 } from "../../services/aiJobRunner";
 import { createConfiguredApifyAmazonProvider } from "./apifyProvider";
+import { normalizeApifyAmazonArtifact } from "./amazonNormalizer";
+import { ingestAcquisitionAssets } from "./assetIngestion";
 import { AmazonAcquisitionCapabilitySchema } from "./contracts";
 import {
   buildAcquisitionIdempotencyKey,
@@ -20,6 +22,7 @@ import {
   createAcquisitionJob,
   createAcquisitionRun,
   createRawArtifact,
+  createSourceSnapshot,
   findAcquisitionJobByIdempotency,
   findFreshConfirmedSnapshot,
   getAcquisitionBudgetUsage,
@@ -28,6 +31,7 @@ import {
   nextAcquisitionRunAttempt,
   updateAcquisitionJob,
   updateAcquisitionRun,
+  updateSourceSnapshot,
 } from "./repository";
 
 export const AcquisitionJobRequestSchema = z.object({
@@ -201,7 +205,7 @@ async function executeAmazonAcquisitionJob(aiJob: AiJobSnapshot) {
   await updateAiJobProgress(aiJob.runId, 70);
   const key = `acquisition/${workspaceId}/runs/${runId}/${result.rawArtifact.contentHash}.json`;
   const stored = await storagePut(key, result.rawArtifact.bytes, result.rawArtifact.contentType);
-  await createRawArtifact(db, {
+  const rawArtifactId = await createRawArtifact(db, {
     workspaceId,
     runId,
     artifactKind: "provider_result",
@@ -210,8 +214,38 @@ async function executeAmazonAcquisitionJob(aiJob: AiJobSnapshot) {
     contentType: result.rawArtifact.contentType,
     sizeBytes: result.rawArtifact.bytes.byteLength,
   });
+  const normalized = normalizeApifyAmazonArtifact({
+    bytes: result.rawArtifact.bytes,
+    expectedAsin: job.asin,
+    marketplace: "US",
+  });
+  const snapshotId = await createSourceSnapshot(db, {
+    workspaceId,
+    jobId: job.id,
+    runId,
+    rawArtifactId,
+    marketplace: "US",
+    asin: job.asin,
+    schemaVersion: "amazon_snapshot_v1",
+    sourceHash: normalized.sourceHash,
+    normalizedData: normalized.snapshot,
+    fieldStatuses: normalized.snapshot.fieldEvidence,
+    completeness: normalized.completeness,
+    status: "draft",
+  });
+  const assetSummary = await ingestAcquisitionAssets({
+    db,
+    workspaceId,
+    snapshotId,
+    rawArtifactId,
+    assets: normalized.sourceAssets,
+  });
+  await updateSourceSnapshot(db, workspaceId, snapshotId, {
+    completeness: { ...normalized.completeness, assetIngestion: assetSummary },
+    status: "pending_review",
+  });
   await updateAcquisitionJob(db, workspaceId, job.id, { status: "review_required", completedAt: new Date() });
-  return { acquisitionJobId: job.id, status: "review_required", failureCategory: result.failureCategory };
+  return { acquisitionJobId: job.id, snapshotId, status: "review_required", failureCategory: result.failureCategory };
 }
 
 registerAiJobHandler({

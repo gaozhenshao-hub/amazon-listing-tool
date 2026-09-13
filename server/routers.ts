@@ -210,7 +210,7 @@ export const appRouter = router({
   emperor: emperorRouter,
   // Long-running AI Job infrastructure
   aiJobs: aiJobsRouter,
-  amazonAcquisition: amazonAcquisitionRouter,
+  acquisition: amazonAcquisitionRouter,
 });
 
 export type AppRouter = typeof appRouter;
