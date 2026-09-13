@@ -37,7 +37,7 @@
 
 ## 4. 当前连接器状态
 
-通过当前任务的只读配置检查发现有两个名为Apify的连接器条目，均处于`enabled: false`。本轮只评审方案，未启用、修改或调用连接器。
+用户已连接当前任务的Apify服务，并授权一个公开US站ASIN、最高0.10美元的资格测试。首选`junglee/Amazon-crawler`在显式美国代理与Actor默认内存下成功返回一条结果；基础信息和6张主图可观察，A+、品牌故事和变体在该样本中未观察到。资格结论为“主图库条件批准，A+/品牌故事/变体仍需对应阳性样本验证”。本任务连接只用于资格验证；青岛生产仍须配置独立服务端Secret。
 
 ## 5. 方案含义
 
@@ -45,3 +45,14 @@
 2. 产品契约应拆分为`basic_info`、`main_gallery`、`a_plus`三个独立覆盖状态；`a_plus`必须允许`unavailable/not_returned/needs_manual_supplement`。
 3. 在正式开发前必须用少量经用户批准的试点ASIN做Provider字段验收，验证原始顺序、完整主图数组、A+模块、图片清晰度、变体一致性与错误语义；未通过的范围不得在生产UI中承诺。
 4. 旧项目中的自建Amazon页面抓取器使用直连页面、代理、UA轮换和反自动化重试，不符合当前“仅管理员启用受控Provider”的数据源约束；新功能只能复用图片知识库的展示、标签和审核交互，不能复用旧采集实现。
+
+## 6. Apify REST API实施依据
+
+Apify官方同步接口为`POST https://api.apify.com/v2/actors/:actorId/run-sync-get-dataset-items`，Actor所有者与名称用波浪号分隔。请求支持`timeout`、`maxItems`和`maxTotalChargeUsd`；其中`maxItems`只约束按结果计费的最大收费条数，`maxTotalChargeUsd`用于限制所有计费模型的Run总费用。同步连接最长300秒且可能因网络连接中断丢失状态，因此生产Job/Run不能只依赖长连接。[1]
+
+异步Run对象公开`id`、`status`、`defaultDatasetId`和`usageTotalUsd`。统一采集平台应先持久化本地Run，再异步启动Actor、按Run ID恢复查询终态，并在成功后通过`defaultDatasetId`读取不可变数据集；费用审计记录`usageTotalUsd`，不能用估算值冒充实际费用。[2]
+
+## References
+
+[1]: https://docs.apify.com/api/v2/actor-run-sync-get-dataset-items-post "Apify API: Run Actor synchronously and get dataset items"
+[2]: https://docs.apify.com/api/client/js/reference/interface/ActorRun "Apify API Client: ActorRun interface"

@@ -75,6 +75,8 @@ Provider资格验证
 
 ## 阶段A0：实施基线与Provider资格验证
 
+**状态（2026-09-13）**：主图库条件批准。一个用户授权US站样本已验证基础信息与6张主图；A+、品牌故事和变体未在该样本观察到，继续作为阳性样本待验能力，不阻塞主图库首期。
+
 **交付物**：固化规格和计划；只读发现不超过两个Amazon商品详情候选Actor；获取真实输入/输出Schema、定价、成功率、维护状态和能力声明；用户确认测试ASIN和最高预算后运行最小资格验证，不写业务数据库。
 
 **关键文件**：`Product-Spec.md`、`DEV-PLAN.md`、`docs/validation/amazon-acquisition-provider-qualification-2026-09-13.md`、`server/domains/acquisition/providerContracts.ts`、`server/domains/acquisition/providerContracts.test.ts`。
@@ -82,6 +84,8 @@ Provider资格验证
 **验收标准**：至少验证`catalog_basic`和`image_gallery`；A+、品牌故事、变体及空值均有明确FieldStatus；Actor运行设置结果数和金额上限；输出批准、条件批准或拒绝结论；拒绝时不实施该Adapter。
 
 ## 阶段A1：统一采集Schema与核心合同
+
+**状态（2026-09-13）**：本地完成。已新增共享合同、Provider接口、9张基础表和0198纯新增表迁移草案；7项定向回归、ESLint和生产构建通过。0198尚未执行到任何数据库。
 
 **交付物**：新增Provider Profile、Job、Run、Raw Artifact、Source Snapshot、Asset Candidate、Revision、Confirmed Snapshot和Consumer Link；新增能力、状态、错误类别和标准化Amazon Snapshot共享合同；新增0198非破坏性迁移。
 

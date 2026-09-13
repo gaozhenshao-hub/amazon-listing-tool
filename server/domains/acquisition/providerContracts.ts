@@ -1,52 +1,23 @@
 import { z } from "zod";
+import {
+  ACQUISITION_FIELD_STATUSES,
+  AMAZON_ACQUISITION_CAPABILITIES,
+  PROVIDER_FAILURE_CATEGORIES,
+  type AcquisitionFieldStatus as SharedAcquisitionFieldStatus,
+  type AmazonAcquisitionCapability as SharedAmazonAcquisitionCapability,
+  type ProviderFailureCategory as SharedProviderFailureCategory,
+} from "../../../shared/acquisition";
 
-export const AMAZON_ACQUISITION_CAPABILITIES = [
-  "catalog_basic",
-  "image_gallery",
-  "aplus",
-  "brand_story",
-  "listing_content",
-  "offers",
-  "ratings",
-  "availability",
-  "rankings",
-  "search_rank",
-  "product_video",
-] as const;
+export { ACQUISITION_FIELD_STATUSES, AMAZON_ACQUISITION_CAPABILITIES, PROVIDER_FAILURE_CATEGORIES };
 
 export const AmazonAcquisitionCapabilitySchema = z.enum(AMAZON_ACQUISITION_CAPABILITIES);
-export type AmazonAcquisitionCapability = z.infer<typeof AmazonAcquisitionCapabilitySchema>;
-
-export const ACQUISITION_FIELD_STATUSES = [
-  "returned",
-  "confirmed_absent",
-  "not_returned",
-  "provider_unsupported",
-  "provider_blocked_suspected",
-  "invalid",
-  "pending_review",
-] as const;
+export type AmazonAcquisitionCapability = SharedAmazonAcquisitionCapability;
 
 export const AcquisitionFieldStatusSchema = z.enum(ACQUISITION_FIELD_STATUSES);
-export type AcquisitionFieldStatus = z.infer<typeof AcquisitionFieldStatusSchema>;
-
-export const PROVIDER_FAILURE_CATEGORIES = [
-  "provider_not_configured",
-  "authentication_failed",
-  "permission_denied",
-  "rate_limited",
-  "request_timeout",
-  "budget_exceeded",
-  "partial_result",
-  "schema_drift",
-  "normalization_failed",
-  "provider_blocked_suspected",
-  "provider_unavailable",
-  "unknown",
-] as const;
+export type AcquisitionFieldStatus = SharedAcquisitionFieldStatus;
 
 export const ProviderFailureCategorySchema = z.enum(PROVIDER_FAILURE_CATEGORIES);
-export type ProviderFailureCategory = z.infer<typeof ProviderFailureCategorySchema>;
+export type ProviderFailureCategory = SharedProviderFailureCategory;
 
 export const ProviderQualificationDecisionSchema = z.enum([
   "approved",
