@@ -11,9 +11,16 @@
  */
 
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
-import type { ProductImage } from "../scraper";
 
 // ─── Types ───
+
+export interface ProductImage {
+  url: string;
+  position: "main" | "secondary" | "aplus" | "brand_story";
+  positionIndex: number;
+  aplusModuleType?: string;
+  aplusModuleClass?: string;
+}
 
 export interface ImageAnalysisResult {
   imageUrl: string;

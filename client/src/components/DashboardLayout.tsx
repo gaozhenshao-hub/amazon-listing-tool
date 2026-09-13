@@ -193,7 +193,7 @@ const modules: ModuleDef[] = [
       { icon: Target, label: "广告优化", path: "/ops/ads" },
       { icon: Activity, label: "广告深度优化", path: "/ops/ad-deep" },
       { icon: Layers, label: "自定义看板", path: "/ops/custom-dashboard" },
-      { icon: Bot, label: "爬虫引擎", path: "/ops/crawler" },
+      { icon: Bot, label: "Amazon监控", path: "/ops/crawler" },
       { icon: Clock, label: "物流时效分析", path: "/ops/logistics" },
       { icon: Upload, label: "ERP 数据导入", path: "/ops/data-import" },
       { icon: Link2, label: "广告组合映射", path: "/ops/ad-mapping" },

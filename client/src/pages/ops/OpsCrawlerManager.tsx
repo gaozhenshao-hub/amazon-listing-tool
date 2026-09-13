@@ -1,923 +1,141 @@
-import { useState, useMemo } from "react";
-import { trpc } from "@/lib/trpc";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useMemo, useState } from "react";
+import { Activity, BarChart3, Bot, CheckCircle2, Clock, History, Loader2, Package, Pause, Play, RefreshCw, Search, XCircle, Zap } from "lucide-react";
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { toast } from "sonner";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
-  ResponsiveContainer, BarChart, Bar, Legend,
-} from "recharts";
-import {
-  Bot, Play, Square, RefreshCw, Loader2, Clock, CheckCircle2,
-  XCircle, TrendingUp, TrendingDown, Eye, Activity, Zap, Timer,
-  BarChart3, ArrowUpRight, ArrowDownRight, Minus, History, Settings2,
-  Search, Package, DollarSign, Star, AlertTriangle,
-} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { trpc } from "@/lib/trpc";
+import { AmazonMonitorGovernancePanel } from "./AmazonMonitorGovernancePanel";
 
-// ─── Scheduler Control Panel ───────────────────────────────────
+type CompetitorMonitorView = {
+  id: number;
+  competitorAsin: string;
+  competitorTitle: string | null;
+  marketplace: string | null;
+  monitorFrequency: string | null;
+  isActive: number;
+  lastCheckedAt: Date | string | null;
+};
+
+type KeywordMonitorView = {
+  id: number;
+  keyword: string;
+  keywordCn: string | null;
+  targetAsin: string | null;
+  matchType: string | null;
+  isActive: number;
+  lastCheckedAt: Date | string | null;
+  latestSnapshot?: { organicRank?: number | null; adRank?: number | null } | null;
+};
+
+type ProductView = { id: number; title?: string | null; parentAsin?: string | null };
+type HistoryRow = {
+  id: number;
+  snapshotDate: string;
+  price?: string | number | null;
+  rating?: string | number | null;
+  reviewCount?: number | null;
+  salesRank?: number | null;
+  organicRank?: number | null;
+  adRank?: number | null;
+  pageNumber?: number | null;
+  totalResults?: number | null;
+};
+
+function StatMini({ label, value, icon: Icon, tone = "slate" }: { label: string; value: string | number; icon: typeof Activity; tone?: "slate" | "green" | "red" | "blue" }) {
+  const tones = { slate: "bg-slate-50 text-slate-700", green: "bg-emerald-50 text-emerald-700", red: "bg-red-50 text-red-700", blue: "bg-blue-50 text-blue-700" };
+  return <div className={`rounded-lg p-3 ${tones[tone]}`}><div className="mb-1 flex items-center gap-1.5"><Icon className="h-3.5 w-3.5 opacity-70" /><span className="text-[11px] opacity-75">{label}</span></div><div className="text-lg font-bold">{value}</div></div>;
+}
+
 function SchedulerPanel() {
-  const { data: status, isLoading, refetch } = trpc.crawler.getSchedulerStatus.useQuery(
-    undefined, { refetchInterval: 10000 }
-  );
-  const startScheduler = trpc.crawler.startScheduler.useMutation({
-    onSuccess: () => { toast.success("定时调度器已启动"); refetch(); },
-    onError: (e) => toast.error("启动失败", { description: e.message }),
+  const status = trpc.crawler.getSchedulerStatus.useQuery(undefined, { refetchInterval: 10000 });
+  const runs = trpc.crawler.getMonitorRuns.useQuery({ limit: 50 }, { refetchInterval: 10000 });
+  const start = trpc.crawler.startScheduler.useMutation({
+    onSuccess: result => { toast.success(`Heartbeat计划已更新：${result.activeCount}/${result.total} 个启用`); void status.refetch(); },
+    onError: error => toast.error("启动失败", { description: error.message }),
   });
-  const stopScheduler = trpc.crawler.stopScheduler.useMutation({
-    onSuccess: () => { toast.success("定时调度器已停止"); refetch(); },
-    onError: (e) => toast.error("停止失败", { description: e.message }),
+  const stop = trpc.crawler.stopScheduler.useMutation({
+    onSuccess: result => { toast.success(`已暂停 ${result.pausedCount} 个Heartbeat计划`); void status.refetch(); },
+    onError: error => toast.error("暂停失败", { description: error.message }),
   });
-
-  if (isLoading) return <Skeleton className="h-40" />;
-
-  const isRunning = status?.isRunning ?? false;
-  const lastRun = status?.lastRunAt ? new Date(status.lastRunAt).toLocaleString() : "从未运行";
-  const nextRun = status?.nextRunAt ? new Date(status.nextRunAt).toLocaleString() : "—";
-
+  if (status.isLoading) return <Skeleton className="h-44" />;
+  const runRows = (runs.data || []) as Array<{ status: string; createdAt: Date | string; completedAt?: Date | string | null }>;
+  const latestAt = runRows[0]?.completedAt || runRows[0]?.createdAt;
   return (
     <Card className="border-l-4 border-l-orange-500">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isRunning ? "bg-green-100" : "bg-gray-100"}`}>
-              <Bot className={`w-4 h-4 ${isRunning ? "text-green-600" : "text-gray-400"}`} />
-            </div>
-            <div>
-              <CardTitle className="text-base">爬虫调度器</CardTitle>
-              <CardDescription className="text-xs">自动定时抓取竞品和关键词数据</CardDescription>
-            </div>
-          </div>
-          <Badge variant={isRunning ? "default" : "secondary"} className={isRunning ? "bg-green-500" : ""}>
-            {isRunning ? "运行中" : "已停止"}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-          <StatMini label="累计执行" value={status?.totalRuns ?? 0} icon={Activity} />
-          <StatMini label="成功任务" value={status?.totalSuccess ?? 0} icon={CheckCircle2} color="green" />
-          <StatMini label="失败任务" value={status?.totalFailed ?? 0} icon={XCircle} color="red" />
-          <StatMini label="上次结果" value={status?.lastResultCount ?? 0} icon={BarChart3} />
-        </div>
-        <div className="flex items-center gap-4 text-xs text-gray-500 mb-4">
-          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> 上次运行: {lastRun}</span>
-          {isRunning && <span className="flex items-center gap-1"><Timer className="w-3 h-3" /> 下次运行: {nextRun}</span>}
-        </div>
-        <div className="flex gap-2">
-          {!isRunning ? (
-            <Button
-              size="sm"
-              onClick={() => startScheduler.mutate({ intervalHours: 24 })}
-              disabled={startScheduler.isPending}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              {startScheduler.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Play className="w-3 h-3 mr-1" />}
-              启动调度器 (每24小时)
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => stopScheduler.mutate()}
-              disabled={stopScheduler.isPending}
-            >
-              {stopScheduler.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Square className="w-3 h-3 mr-1" />}
-              停止调度器
-            </Button>
-          )}
-          <Button size="sm" variant="outline" onClick={() => refetch()}>
-            <RefreshCw className="w-3 h-3 mr-1" /> 刷新状态
-          </Button>
-        </div>
+      <CardHeader><div className="flex flex-wrap items-start justify-between gap-3"><div><CardTitle className="flex items-center gap-2 text-base"><Bot className="h-4 w-4" />Heartbeat监控计划</CardTitle><CardDescription>持久化触发Provider Job，不依赖Web进程驻留。</CardDescription></div><Badge variant={status.data?.running ? "default" : "secondary"}>{status.data?.running ? "运行中" : "已暂停"}</Badge></div></CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4"><StatMini label="最近Run" value={runRows.length} icon={Activity} /><StatMini label="成功" value={runRows.filter(row => row.status === "succeeded").length} icon={CheckCircle2} tone="green" /><StatMini label="失败/部分" value={runRows.filter(row => row.status === "failed" || row.status === "partial").length} icon={XCircle} tone="red" /><StatMini label="启用计划" value={status.data?.activeCount || 0} icon={BarChart3} tone="blue" /></div>
+        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground"><span className="flex items-center gap-1"><Clock className="h-3 w-3" />上次Run：{latestAt ? new Date(latestAt).toLocaleString() : "从未"}</span><span>下次Heartbeat：{status.data?.nextRunAt ? new Date(status.data.nextRunAt).toLocaleString() : "—"}</span></div>
+        <div className="flex flex-wrap gap-2">{status.data?.running ? <Button size="sm" variant="destructive" disabled={stop.isPending} onClick={() => stop.mutate()}>{stop.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Pause className="mr-1 h-3 w-3" />}暂停Heartbeat</Button> : <Button size="sm" disabled={start.isPending} onClick={() => start.mutate({ intervalHours: 24 })}>{start.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Play className="mr-1 h-3 w-3" />}启用每日Heartbeat</Button>}<Button size="sm" variant="outline" onClick={() => { void status.refetch(); void runs.refetch(); }}><RefreshCw className="mr-1 h-3 w-3" />刷新</Button></div>
+        <p className="text-xs text-muted-foreground">只有已通过资格验证的Provider能力会创建计划；未验证能力失败关闭，不会回退旧爬虫。</p>
       </CardContent>
     </Card>
   );
 }
 
-function StatMini({ label, value, icon: Icon, color = "gray" }: {
-  label: string; value: number | string; icon: any; color?: string;
-}) {
-  const colorMap: Record<string, string> = {
-    gray: "text-gray-600 bg-gray-50",
-    green: "text-green-600 bg-green-50",
-    red: "text-red-600 bg-red-50",
-    blue: "text-blue-600 bg-blue-50",
-    orange: "text-orange-600 bg-orange-50",
-  };
-  return (
-    <div className={`rounded-lg p-3 ${colorMap[color] || colorMap.gray}`}>
-      <div className="flex items-center gap-1.5 mb-1">
-        <Icon className="w-3.5 h-3.5 opacity-60" />
-        <span className="text-[11px] opacity-70">{label}</span>
-      </div>
-      <div className="text-lg font-bold">{value}</div>
-    </div>
-  );
+function QueueSummary({ result, label }: { result: { total: number; queuedCount: number; failedCount: number } | undefined; label: string }) {
+  if (!result) return null;
+  return <div className="mt-4 rounded-lg border bg-muted/30 p-3"><p className="mb-2 text-sm font-medium">{label}排队结果</p><div className="grid grid-cols-3 gap-3 text-center text-xs"><div className="rounded bg-background p-2"><div className="text-lg font-bold">{result.total}</div>总任务</div><div className="rounded bg-background p-2"><div className="text-lg font-bold text-emerald-600">{result.queuedCount}</div>已排队</div><div className="rounded bg-background p-2"><div className="text-lg font-bold text-red-600">{result.failedCount}</div>未排队</div></div></div>;
 }
 
-// ─── Competitor Crawl Tasks ────────────────────────────────────
-function CompetitorCrawlPanel() {
-  const { data: monitors, isLoading, refetch } = trpc.operations.getCompetitorMonitors.useQuery();
-  const crawlOne = trpc.crawler.crawlCompetitor.useMutation({
-    onSuccess: (res) => {
-      if (res.success) {
-        toast.success("竞品数据抓取成功", { description: `耗时 ${res.duration}ms` });
-      } else {
-        toast.error("抓取失败", { description: res.error });
-      }
-      refetch();
-    },
-    onError: (e) => toast.error("抓取出错", { description: e.message }),
-  });
-  const crawlAll = trpc.crawler.crawlAllCompetitors.useMutation({
-    onSuccess: (res) => {
-      toast.success(`批量抓取完成: ${res.successCount}/${res.total} 成功`, {
-        description: (res.failedCount ?? 0) > 0 ? `${res.failedCount} 个失败` : undefined,
-      });
-      refetch();
-    },
-    onError: (e) => toast.error("批量抓取出错", { description: e.message }),
-  });
-
-  const [selectedMonitorId, setSelectedMonitorId] = useState<number | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
-  const [crawlingId, setCrawlingId] = useState<number | null>(null);
-
-  const activeMonitors = (monitors || []).filter((m: any) => m.isActive === 1);
-
-  if (isLoading) return <Skeleton className="h-60" />;
-
+function CompetitorPanel() {
+  const query = trpc.operations.getCompetitorMonitors.useQuery();
+  const runOne = trpc.crawler.crawlCompetitor.useMutation({ onSuccess: result => result.success ? toast.success("竞品监控Job已排队", { description: "aiJobRunId" in result ? result.aiJobRunId : undefined }) : toast.error("未能排队", { description: result.error }), onError: error => toast.error("排队失败", { description: error.message }) });
+  const runAll = trpc.crawler.crawlAllCompetitors.useMutation({ onSuccess: result => toast.success(`已排队 ${result.queuedCount}/${result.total}`), onError: error => toast.error("批量排队失败", { description: error.message }) });
+  const [runningId, setRunningId] = useState<number | null>(null);
+  const [history, setHistory] = useState<{ id: number; title: string } | null>(null);
+  const monitors = ((query.data || []) as CompetitorMonitorView[]).filter(item => item.isActive === 1);
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Package className="w-4 h-4 text-purple-500" />
-              竞品价格/排名监控
-            </CardTitle>
-            <CardDescription className="text-xs">
-              追踪竞品ASIN的价格、BSR排名、评论数等变化
-            </CardDescription>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => refetch()}
-            >
-              <RefreshCw className="w-3 h-3 mr-1" /> 刷新
-            </Button>
-            <Button
-              size="sm"
-              className="bg-purple-600 hover:bg-purple-700"
-              onClick={() => crawlAll.mutate()}
-              disabled={crawlAll.isPending || activeMonitors.length === 0}
-            >
-              {crawlAll.isPending ? (
-                <Loader2 className="w-3 h-3 animate-spin mr-1" />
-              ) : (
-                <Zap className="w-3 h-3 mr-1" />
-              )}
-              全部抓取 ({activeMonitors.length})
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {activeMonitors.length === 0 ? (
-          <div className="text-center py-8 text-gray-400">
-            <Package className="w-10 h-10 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">暂无竞品监控任务</p>
-            <p className="text-xs mt-1">请先在「竞品监控」页面添加竞品ASIN</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-gray-500">
-                  <th className="py-2 px-3 font-medium">ASIN</th>
-                  <th className="py-2 px-3 font-medium">竞品名称</th>
-                  <th className="py-2 px-3 font-medium">站点</th>
-                  <th className="py-2 px-3 font-medium">频率</th>
-                  <th className="py-2 px-3 font-medium">上次抓取</th>
-                  <th className="py-2 px-3 font-medium text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeMonitors.map((m: any) => (
-                  <tr key={m.id} className="border-b hover:bg-gray-50 transition-colors">
-                    <td className="py-2.5 px-3">
-                      <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono">{m.competitorAsin}</code>
-                    </td>
-                    <td className="py-2.5 px-3 max-w-[200px] truncate text-gray-700">
-                      {m.competitorTitle || "—"}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <Badge variant="outline" className="text-[10px]">{m.marketplace || "US"}</Badge>
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <Badge variant="secondary" className="text-[10px]">
-                        {m.monitorFrequency === "daily" ? "每日" : m.monitorFrequency === "weekly" ? "每周" : "手动"}
-                      </Badge>
-                    </td>
-                    <td className="py-2.5 px-3 text-xs text-gray-500">
-                      {m.lastCheckedAt ? new Date(m.lastCheckedAt).toLocaleString() : "从未"}
-                    </td>
-                    <td className="py-2.5 px-3 text-right">
-                      <div className="flex gap-1 justify-end">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-xs"
-                          onClick={() => {
-                            setSelectedMonitorId(m.id);
-                            setShowHistory(true);
-                          }}
-                        >
-                          <History className="w-3 h-3 mr-1" /> 历史
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-xs text-purple-600 hover:text-purple-700"
-                          onClick={() => {
-                            setCrawlingId(m.id);
-                            crawlOne.mutate({ monitorId: m.id }, {
-                              onSettled: () => setCrawlingId(null),
-                            });
-                          }}
-                          disabled={crawlingId === m.id}
-                        >
-                          {crawlingId === m.id ? (
-                            <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                          ) : (
-                            <Play className="w-3 h-3 mr-1" />
-                          )}
-                          抓取
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Batch crawl results summary */}
-        {crawlAll.data && (
-          <div className="mt-4 p-3 rounded-lg bg-gray-50 border">
-            <div className="flex items-center gap-2 mb-2">
-              <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <span className="text-sm font-medium">批量抓取结果</span>
-            </div>
-            <div className="grid grid-cols-3 gap-3 text-center text-xs">
-              <div className="bg-white rounded p-2">
-                <div className="text-lg font-bold">{crawlAll.data.total}</div>
-                <div className="text-gray-500">总任务</div>
-              </div>
-              <div className="bg-white rounded p-2">
-                <div className="text-lg font-bold text-green-600">{crawlAll.data.successCount}</div>
-                <div className="text-gray-500">成功</div>
-              </div>
-              <div className="bg-white rounded p-2">
-                <div className="text-lg font-bold text-red-600">{crawlAll.data.failedCount}</div>
-                <div className="text-gray-500">失败</div>
-              </div>
-            </div>
-            {crawlAll.data.results && crawlAll.data.results.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {crawlAll.data.results.map((r: any, i: number) => (
-                  <div key={i} className="flex items-center gap-2 text-xs py-1">
-                    {r.success ? (
-                      <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
-                    ) : (
-                      <XCircle className="w-3 h-3 text-red-500 shrink-0" />
-                    )}
-                    <code className="font-mono text-[11px]">{r.asin}</code>
-                    {r.duration && <span className="text-gray-400">{r.duration}ms</span>}
-                    {r.error && <span className="text-red-500 truncate max-w-[200px]">{r.error}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </CardContent>
-
-      {/* History Dialog */}
-      {showHistory && selectedMonitorId && (
-        <CompetitorHistoryDialog
-          monitorId={selectedMonitorId}
-          monitor={activeMonitors.find((m: any) => m.id === selectedMonitorId)}
-          open={showHistory}
-          onClose={() => setShowHistory(false)}
-        />
-      )}
+      <CardHeader><div className="flex flex-wrap items-start justify-between gap-3"><div><CardTitle className="flex items-center gap-2 text-base"><Package className="h-4 w-4 text-purple-500" />竞品价格 / BSR监控</CardTitle><CardDescription>只写入Provider明确返回的价格、Buy Box、Offer和BSR字段。</CardDescription></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => void query.refetch()}><RefreshCw className="mr-1 h-3 w-3" />刷新</Button><Button size="sm" disabled={runAll.isPending || !monitors.length} onClick={() => runAll.mutate()}><Zap className="mr-1 h-3 w-3" />全部排队（{monitors.length}）</Button></div></div></CardHeader>
+      <CardContent>{query.isLoading ? <Skeleton className="h-40" /> : !monitors.length ? <p className="py-10 text-center text-sm text-muted-foreground">暂无启用的竞品监控任务。</p> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground"><th className="px-3 py-2">ASIN</th><th className="px-3 py-2">竞品</th><th className="px-3 py-2">站点</th><th className="px-3 py-2">频率</th><th className="px-3 py-2">上次快照</th><th className="px-3 py-2 text-right">操作</th></tr></thead><tbody>{monitors.map(monitor => <tr key={monitor.id} className="border-b"><td className="px-3 py-2 font-mono text-xs">{monitor.competitorAsin}</td><td className="max-w-[220px] truncate px-3 py-2">{monitor.competitorTitle || "—"}</td><td className="px-3 py-2"><Badge variant="outline">{monitor.marketplace || "US"}</Badge></td><td className="px-3 py-2">{monitor.monitorFrequency === "weekly" ? "每周" : monitor.monitorFrequency === "daily" ? "每日" : "手动"}</td><td className="px-3 py-2 text-xs text-muted-foreground">{monitor.lastCheckedAt ? new Date(monitor.lastCheckedAt).toLocaleString() : "从未"}</td><td className="px-3 py-2"><div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setHistory({ id: monitor.id, title: monitor.competitorAsin })}><History className="mr-1 h-3 w-3" />历史</Button><Button size="sm" variant="ghost" disabled={runningId === monitor.id} onClick={() => { setRunningId(monitor.id); runOne.mutate({ monitorId: monitor.id }, { onSettled: () => setRunningId(null) }); }}>{runningId === monitor.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Play className="mr-1 h-3 w-3" />}运行</Button></div></td></tr>)}</tbody></table></div>}<QueueSummary result={runAll.data} label="竞品Job" /></CardContent>
+      <HistoryDialog open={Boolean(history)} onClose={() => setHistory(null)} kind="competitor" monitorId={history?.id || 0} title={history?.title || ""} />
     </Card>
   );
 }
 
-// ─── Competitor History Dialog ─────────────────────────────────
-function CompetitorHistoryDialog({ monitorId, monitor, open, onClose }: {
-  monitorId: number; monitor: any; open: boolean; onClose: () => void;
-}) {
-  const { data: history, isLoading } = trpc.crawler.getCrawlHistory.useQuery(
-    { monitorId, type: "competitor", limit: 30 },
-    { enabled: open }
-  );
-
-  const chartData = useMemo(() => {
-    if (!history || history.length === 0) return [];
-    return [...history].reverse().map((s: any) => ({
-      date: s.snapshotDate,
-      price: s.price ? parseFloat(s.price) : null,
-      bsrRank: s.bsrRank,
-      reviewCount: s.reviewCount,
-      rating: s.rating ? parseFloat(s.rating) : null,
-    }));
-  }, [history]);
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <History className="w-4 h-4" />
-            抓取历史 — {monitor?.competitorAsin}
-          </DialogTitle>
-          <DialogDescription>
-            {monitor?.competitorTitle || "竞品"} 的历史数据趋势
-          </DialogDescription>
-        </DialogHeader>
-
-        {isLoading ? (
-          <div className="space-y-4">
-            <Skeleton className="h-48" />
-            <Skeleton className="h-32" />
-          </div>
-        ) : !history || history.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
-            <History className="w-10 h-10 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">暂无抓取记录</p>
-            <p className="text-xs mt-1">请先手动触发抓取或等待调度器运行</p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Price Trend */}
-            {chartData.some(d => d.price !== null) && (
-              <div>
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
-                  <DollarSign className="w-3.5 h-3.5 text-green-500" /> 价格趋势
-                </h4>
-                <ResponsiveContainer width="100%" height={180}>
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} domain={["auto", "auto"]} />
-                    <RechartsTooltip contentStyle={{ fontSize: 12 }} />
-                    <Line type="monotone" dataKey="price" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} name="价格($)" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-
-            {/* BSR Rank Trend */}
-            {chartData.some(d => d.bsrRank !== null) && (
-              <div>
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
-                  <TrendingUp className="w-3.5 h-3.5 text-blue-500" /> BSR排名趋势
-                </h4>
-                <ResponsiveContainer width="100%" height={180}>
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} reversed domain={["auto", "auto"]} />
-                    <RechartsTooltip contentStyle={{ fontSize: 12 }} />
-                    <Line type="monotone" dataKey="bsrRank" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} name="BSR排名" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-
-            {/* Review Count Trend */}
-            {chartData.some(d => d.reviewCount !== null) && (
-              <div>
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
-                  <Star className="w-3.5 h-3.5 text-yellow-500" /> 评论数趋势
-                </h4>
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <RechartsTooltip contentStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="reviewCount" fill="#f59e0b" name="评论数" radius={[2, 2, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-
-            {/* Data Table */}
-            <div>
-              <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
-                <BarChart3 className="w-3.5 h-3.5 text-gray-500" /> 详细数据
-              </h4>
-              <div className="overflow-x-auto max-h-[300px] overflow-y-auto border rounded-lg">
-                <table className="w-full text-xs">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="py-2 px-3 text-left font-medium">日期</th>
-                      <th className="py-2 px-3 text-right font-medium">价格</th>
-                      <th className="py-2 px-3 text-right font-medium">BSR排名</th>
-                      <th className="py-2 px-3 text-right font-medium">评论数</th>
-                      <th className="py-2 px-3 text-right font-medium">评分</th>
-                      <th className="py-2 px-3 text-center font-medium">库存</th>
-                      <th className="py-2 px-3 text-left font-medium">优惠</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(history as any[]).map((s: any, i: number) => {
-                      const prev = (history as any[])[i + 1]; // history is desc order
-                      return (
-                        <tr key={s.id} className="border-t hover:bg-gray-50">
-                          <td className="py-1.5 px-3 font-mono">{s.snapshotDate}</td>
-                          <td className="py-1.5 px-3 text-right">
-                            {s.price ? `$${parseFloat(s.price).toFixed(2)}` : "—"}
-                            {prev?.price && s.price && (
-                              <PriceChange current={parseFloat(s.price)} previous={parseFloat(prev.price)} />
-                            )}
-                          </td>
-                          <td className="py-1.5 px-3 text-right">
-                            {s.bsrRank ? `#${s.bsrRank.toLocaleString()}` : "—"}
-                            {prev?.bsrRank && s.bsrRank && (
-                              <RankChange current={s.bsrRank} previous={prev.bsrRank} />
-                            )}
-                          </td>
-                          <td className="py-1.5 px-3 text-right">{s.reviewCount?.toLocaleString() ?? "—"}</td>
-                          <td className="py-1.5 px-3 text-right">{s.rating ? parseFloat(s.rating).toFixed(1) : "—"}</td>
-                          <td className="py-1.5 px-3 text-center">
-                            {s.isInStock ? (
-                              <Badge variant="outline" className="text-[9px] text-green-600 border-green-200">有货</Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-[9px] text-red-600 border-red-200">缺货</Badge>
-                            )}
-                          </td>
-                          <td className="py-1.5 px-3 text-xs text-gray-500 max-w-[120px] truncate">
-                            {s.couponInfo || s.dealInfo || "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Keyword Crawl Tasks ───────────────────────────────────────
-function KeywordCrawlPanel() {
-  const { data: products } = trpc.productOps.listProducts.useQuery();
+function KeywordPanel() {
+  const productsQuery = trpc.productOps.listProducts.useQuery();
+  const products = (productsQuery.data || []) as ProductView[];
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
-
-  // Auto-select first product
-  const productId = selectedProductId ?? (products && products.length > 0 ? products[0].id : null);
-
-  const { data: monitors, isLoading, refetch } = trpc.productOps.getKeywordMonitors.useQuery(
-    { productId: productId! },
-    { enabled: !!productId }
-  );
-
-  const crawlOne = trpc.crawler.crawlKeyword.useMutation({
-    onSuccess: (res) => {
-      if (res.success) {
-        toast.success("关键词排名抓取成功", { description: `耗时 ${res.duration}ms` });
-      } else {
-        toast.error("抓取失败", { description: res.error });
-      }
-      refetch();
-    },
-    onError: (e) => toast.error("抓取出错", { description: e.message }),
-  });
-
-  const crawlAll = trpc.crawler.crawlAllKeywords.useMutation({
-    onSuccess: (res) => {
-      toast.success(`批量抓取完成: ${res.successCount}/${res.total} 成功`, {
-        description: (res.failedCount ?? 0) > 0 ? `${res.failedCount} 个失败` : undefined,
-      });
-      refetch();
-    },
-    onError: (e) => toast.error("批量抓取出错", { description: e.message }),
-  });
-
-  const [showHistory, setShowHistory] = useState(false);
-  const [selectedKwMonitorId, setSelectedKwMonitorId] = useState<number | null>(null);
-  const [crawlingId, setCrawlingId] = useState<number | null>(null);
-
-  const activeMonitors = (monitors || []).filter((m: any) => m.isActive === 1);
-
+  const productId = selectedProductId ?? products[0]?.id ?? null;
+  const query = trpc.productOps.getKeywordMonitors.useQuery({ productId: productId || 0 }, { enabled: Boolean(productId) });
+  const runOne = trpc.crawler.crawlKeyword.useMutation({ onSuccess: result => result.success ? toast.success("关键词排名Job已排队", { description: "aiJobRunId" in result ? result.aiJobRunId : undefined }) : toast.error("未能排队", { description: result.error }), onError: error => toast.error("排队失败", { description: error.message }) });
+  const runAll = trpc.crawler.crawlAllKeywords.useMutation({ onSuccess: result => toast.success(`已排队 ${result.queuedCount}/${result.total}`), onError: error => toast.error("批量排队失败", { description: error.message }) });
+  const [runningId, setRunningId] = useState<number | null>(null);
+  const [history, setHistory] = useState<{ id: number; title: string } | null>(null);
+  const monitors = ((query.data || []) as KeywordMonitorView[]).filter(item => item.isActive === 1);
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Search className="w-4 h-4 text-blue-500" />
-              关键词排名监控
-            </CardTitle>
-            <CardDescription className="text-xs">
-              追踪关键词在亚马逊搜索结果中的自然排名和广告排名
-            </CardDescription>
-          </div>
-          <div className="flex gap-2 items-center">
-            {products && products.length > 0 && (
-              <Select
-                value={productId?.toString() || ""}
-                onValueChange={(v) => setSelectedProductId(parseInt(v))}
-              >
-                <SelectTrigger className="w-[200px] h-8 text-xs">
-                  <SelectValue placeholder="选择产品" />
-                </SelectTrigger>
-                <SelectContent>
-                  {products.map((p: any) => (
-                    <SelectItem key={p.id} value={p.id.toString()}>
-                      {p.title?.slice(0, 30) || p.parentAsin}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            <Button
-              size="sm"
-              className="bg-blue-600 hover:bg-blue-700"
-              onClick={() => productId && crawlAll.mutate({ productId })}
-              disabled={crawlAll.isPending || activeMonitors.length === 0 || !productId}
-            >
-              {crawlAll.isPending ? (
-                <Loader2 className="w-3 h-3 animate-spin mr-1" />
-              ) : (
-                <Zap className="w-3 h-3 mr-1" />
-              )}
-              全部抓取 ({activeMonitors.length})
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <Skeleton className="h-40" />
-        ) : !productId ? (
-          <div className="text-center py-8 text-gray-400">
-            <Search className="w-10 h-10 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">请先选择一个产品</p>
-          </div>
-        ) : activeMonitors.length === 0 ? (
-          <div className="text-center py-8 text-gray-400">
-            <Search className="w-10 h-10 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">该产品暂无关键词监控任务</p>
-            <p className="text-xs mt-1">请在产品详情页的「关键词监控」Tab中添加关键词</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-gray-500">
-                  <th className="py-2 px-3 font-medium">关键词</th>
-                  <th className="py-2 px-3 font-medium">目标ASIN</th>
-                  <th className="py-2 px-3 font-medium">匹配类型</th>
-                  <th className="py-2 px-3 font-medium">最新排名</th>
-                  <th className="py-2 px-3 font-medium">上次抓取</th>
-                  <th className="py-2 px-3 font-medium text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeMonitors.map((m: any) => (
-                  <tr key={m.id} className="border-b hover:bg-gray-50 transition-colors">
-                    <td className="py-2.5 px-3">
-                      <span className="font-medium text-gray-800">{m.keyword}</span>
-                      {m.keywordCn && (
-                        <span className="text-xs text-gray-400 ml-1">({m.keywordCn})</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono">
-                        {m.targetAsin || "—"}
-                      </code>
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <Badge variant="outline" className="text-[10px]">
-                        {m.matchType === "exact" ? "精准" : m.matchType === "phrase" ? "词组" : "广泛"}
-                      </Badge>
-                    </td>
-                    <td className="py-2.5 px-3">
-                      {m.latestSnapshot ? (
-                        <div className="flex items-center gap-1">
-                          <span className="font-medium">
-                            {m.latestSnapshot.organicRank ? `#${m.latestSnapshot.organicRank}` : "—"}
-                          </span>
-                          {m.latestSnapshot.adRank && (
-                            <Badge variant="secondary" className="text-[9px]">
-                              广告#{m.latestSnapshot.adRank}
-                            </Badge>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3 text-xs text-gray-500">
-                      {m.lastCheckedAt ? new Date(m.lastCheckedAt).toLocaleString() : "从未"}
-                    </td>
-                    <td className="py-2.5 px-3 text-right">
-                      <div className="flex gap-1 justify-end">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-xs"
-                          onClick={() => {
-                            setSelectedKwMonitorId(m.id);
-                            setShowHistory(true);
-                          }}
-                        >
-                          <History className="w-3 h-3 mr-1" /> 历史
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-xs text-blue-600 hover:text-blue-700"
-                          onClick={() => {
-                            setCrawlingId(m.id);
-                            crawlOne.mutate({ keywordMonitorId: m.id }, {
-                              onSettled: () => setCrawlingId(null),
-                            });
-                          }}
-                          disabled={crawlingId === m.id}
-                        >
-                          {crawlingId === m.id ? (
-                            <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                          ) : (
-                            <Play className="w-3 h-3 mr-1" />
-                          )}
-                          抓取
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Batch crawl results summary */}
-        {crawlAll.data && (
-          <div className="mt-4 p-3 rounded-lg bg-gray-50 border">
-            <div className="flex items-center gap-2 mb-2">
-              <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <span className="text-sm font-medium">批量抓取结果</span>
-            </div>
-            <div className="grid grid-cols-3 gap-3 text-center text-xs">
-              <div className="bg-white rounded p-2">
-                <div className="text-lg font-bold">{crawlAll.data.total}</div>
-                <div className="text-gray-500">总任务</div>
-              </div>
-              <div className="bg-white rounded p-2">
-                <div className="text-lg font-bold text-green-600">{crawlAll.data.successCount}</div>
-                <div className="text-gray-500">成功</div>
-              </div>
-              <div className="bg-white rounded p-2">
-                <div className="text-lg font-bold text-red-600">{crawlAll.data.failedCount}</div>
-                <div className="text-gray-500">失败</div>
-              </div>
-            </div>
-            {crawlAll.data.results && crawlAll.data.results.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {crawlAll.data.results.map((r: any, i: number) => (
-                  <div key={i} className="flex items-center gap-2 text-xs py-1">
-                    {r.success ? (
-                      <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
-                    ) : (
-                      <XCircle className="w-3 h-3 text-red-500 shrink-0" />
-                    )}
-                    <span className="font-medium">{r.keyword}</span>
-                    {r.duration && <span className="text-gray-400">{r.duration}ms</span>}
-                    {r.error && <span className="text-red-500 truncate max-w-[200px]">{r.error}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </CardContent>
-
-      {/* Keyword History Dialog */}
-      {showHistory && selectedKwMonitorId && (
-        <KeywordHistoryDialog
-          monitorId={selectedKwMonitorId}
-          monitor={activeMonitors.find((m: any) => m.id === selectedKwMonitorId)}
-          open={showHistory}
-          onClose={() => setShowHistory(false)}
-        />
-      )}
+      <CardHeader><div className="flex flex-wrap items-start justify-between gap-3"><div><CardTitle className="flex items-center gap-2 text-base"><Search className="h-4 w-4 text-blue-500" />关键词排名监控</CardTitle><CardDescription>追踪自然与广告位置；未找到只记录“未进入扫描范围”，不伪造排名。</CardDescription></div><div className="flex flex-wrap gap-2">{!!products.length && <Select value={productId?.toString()} onValueChange={value => setSelectedProductId(Number(value))}><SelectTrigger className="w-[220px]"><SelectValue placeholder="选择产品" /></SelectTrigger><SelectContent>{products.map(product => <SelectItem key={product.id} value={String(product.id)}>{product.title?.slice(0, 28) || product.parentAsin || `产品#${product.id}`}</SelectItem>)}</SelectContent></Select>}<Button size="sm" disabled={runAll.isPending || !monitors.length || !productId} onClick={() => productId && runAll.mutate({ productId })}><Zap className="mr-1 h-3 w-3" />全部排队（{monitors.length}）</Button></div></div></CardHeader>
+      <CardContent>{query.isLoading ? <Skeleton className="h-40" /> : !productId ? <p className="py-10 text-center text-sm text-muted-foreground">请先选择产品。</p> : !monitors.length ? <p className="py-10 text-center text-sm text-muted-foreground">该产品暂无启用的关键词监控。</p> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground"><th className="px-3 py-2">关键词</th><th className="px-3 py-2">目标ASIN</th><th className="px-3 py-2">匹配类型</th><th className="px-3 py-2">最新排名</th><th className="px-3 py-2">上次快照</th><th className="px-3 py-2 text-right">操作</th></tr></thead><tbody>{monitors.map(monitor => <tr key={monitor.id} className="border-b"><td className="px-3 py-2 font-medium">{monitor.keyword}{monitor.keywordCn ? <span className="ml-1 text-xs text-muted-foreground">({monitor.keywordCn})</span> : null}</td><td className="px-3 py-2 font-mono text-xs">{monitor.targetAsin || "—"}</td><td className="px-3 py-2">{monitor.matchType || "—"}</td><td className="px-3 py-2">{monitor.latestSnapshot?.organicRank ? `#${monitor.latestSnapshot.organicRank}` : "—"}{monitor.latestSnapshot?.adRank ? <Badge variant="secondary" className="ml-2">广告#{monitor.latestSnapshot.adRank}</Badge> : null}</td><td className="px-3 py-2 text-xs text-muted-foreground">{monitor.lastCheckedAt ? new Date(monitor.lastCheckedAt).toLocaleString() : "从未"}</td><td className="px-3 py-2"><div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setHistory({ id: monitor.id, title: monitor.keyword })}><History className="mr-1 h-3 w-3" />历史</Button><Button size="sm" variant="ghost" disabled={runningId === monitor.id} onClick={() => { setRunningId(monitor.id); runOne.mutate({ keywordMonitorId: monitor.id }, { onSettled: () => setRunningId(null) }); }}>{runningId === monitor.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Play className="mr-1 h-3 w-3" />}运行</Button></div></td></tr>)}</tbody></table></div>}<QueueSummary result={runAll.data} label="关键词Job" /></CardContent>
+      <HistoryDialog open={Boolean(history)} onClose={() => setHistory(null)} kind="keyword" monitorId={history?.id || 0} title={history?.title || ""} />
     </Card>
   );
 }
 
-// ─── Keyword History Dialog ────────────────────────────────────
-function KeywordHistoryDialog({ monitorId, monitor, open, onClose }: {
-  monitorId: number; monitor: any; open: boolean; onClose: () => void;
-}) {
-  const { data: history, isLoading } = trpc.crawler.getCrawlHistory.useQuery(
-    { monitorId, type: "keyword", limit: 30 },
-    { enabled: open }
-  );
-
-  const chartData = useMemo(() => {
-    if (!history || history.length === 0) return [];
-    return [...history].reverse().map((s: any) => ({
-      date: s.snapshotDate,
-      organicRank: s.organicRank,
-      adRank: s.adRank,
-      pageNumber: s.pageNumber,
-    }));
-  }, [history]);
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <History className="w-4 h-4" />
-            排名历史 — "{monitor?.keyword}"
-          </DialogTitle>
-          <DialogDescription>
-            关键词排名变化趋势（排名越低越好）
-          </DialogDescription>
-        </DialogHeader>
-
-        {isLoading ? (
-          <div className="space-y-4">
-            <Skeleton className="h-48" />
-            <Skeleton className="h-32" />
-          </div>
-        ) : !history || history.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
-            <History className="w-10 h-10 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">暂无排名记录</p>
-            <p className="text-xs mt-1">请先手动触发抓取或等待调度器运行</p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Rank Trend Chart */}
-            <div>
-              <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
-                <TrendingUp className="w-3.5 h-3.5 text-blue-500" /> 排名趋势
-              </h4>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 10 }} reversed domain={["auto", "auto"]} />
-                  <RechartsTooltip contentStyle={{ fontSize: 12 }} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Line type="monotone" dataKey="organicRank" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} name="自然排名" />
-                  <Line type="monotone" dataKey="adRank" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} name="广告排名" strokeDasharray="5 5" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Data Table */}
-            <div>
-              <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
-                <BarChart3 className="w-3.5 h-3.5 text-gray-500" /> 详细数据
-              </h4>
-              <div className="overflow-x-auto max-h-[300px] overflow-y-auto border rounded-lg">
-                <table className="w-full text-xs">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="py-2 px-3 text-left font-medium">日期</th>
-                      <th className="py-2 px-3 text-right font-medium">自然排名</th>
-                      <th className="py-2 px-3 text-right font-medium">广告排名</th>
-                      <th className="py-2 px-3 text-right font-medium">页码</th>
-                      <th className="py-2 px-3 text-right font-medium">总结果数</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(history as any[]).map((s: any, i: number) => {
-                      const prev = (history as any[])[i + 1];
-                      return (
-                        <tr key={s.id} className="border-t hover:bg-gray-50">
-                          <td className="py-1.5 px-3 font-mono">{s.snapshotDate}</td>
-                          <td className="py-1.5 px-3 text-right">
-                            {s.organicRank ? (
-                              <span className="flex items-center gap-1 justify-end">
-                                #{s.organicRank}
-                                {prev?.organicRank && (
-                                  <RankChange current={s.organicRank} previous={prev.organicRank} />
-                                )}
-                              </span>
-                            ) : "—"}
-                          </td>
-                          <td className="py-1.5 px-3 text-right">
-                            {s.adRank ? `#${s.adRank}` : "—"}
-                          </td>
-                          <td className="py-1.5 px-3 text-right">{s.pageNumber ?? "—"}</td>
-                          <td className="py-1.5 px-3 text-right">{s.totalResults?.toLocaleString() ?? "—"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
+function HistoryDialog({ open, onClose, kind, monitorId, title }: { open: boolean; onClose: () => void; kind: "competitor" | "keyword"; monitorId: number; title: string }) {
+  const query = trpc.crawler.getCrawlHistory.useQuery({ monitorId, type: kind, limit: 30 }, { enabled: open && monitorId > 0 });
+  const rows = useMemo(() => (query.data || []) as HistoryRow[], [query.data]);
+  const chartData = useMemo(() => [...rows].reverse().map(row => ({ ...row, priceValue: row.price === null || row.price === undefined ? null : Number(row.price) })), [rows]);
+  return <Dialog open={open} onOpenChange={onClose}><DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>Provider快照历史 — {title}</DialogTitle><DialogDescription>{kind === "competitor" ? "价格与BSR变化；空值表示Provider未返回。" : "自然与广告排名变化；排名数值越低越靠前。"}</DialogDescription></DialogHeader>{query.isLoading ? <Skeleton className="h-64" /> : !rows.length ? <p className="py-12 text-center text-sm text-muted-foreground">暂无确认快照；请先运行受控Provider Job或等待Heartbeat。</p> : <div className="space-y-5"><ResponsiveContainer width="100%" height={240}><LineChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="snapshotDate" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} reversed={kind === "keyword"} /><RechartsTooltip /><Legend />{kind === "competitor" ? <><Line type="monotone" dataKey="priceValue" stroke="#7c3aed" name="价格" connectNulls={false} /><Line type="monotone" dataKey="salesRank" stroke="#ea580c" name="BSR" connectNulls={false} /></> : <><Line type="monotone" dataKey="organicRank" stroke="#2563eb" name="自然排名" connectNulls={false} /><Line type="monotone" dataKey="adRank" stroke="#d97706" name="广告排名" connectNulls={false} /></>}</LineChart></ResponsiveContainer><div className="max-h-64 overflow-auto rounded-lg border"><table className="w-full text-xs"><thead><tr className="border-b bg-muted/50 text-left"><th className="px-3 py-2">日期</th>{kind === "competitor" ? <><th className="px-3 py-2">价格</th><th className="px-3 py-2">评分</th><th className="px-3 py-2">评论</th><th className="px-3 py-2">BSR</th></> : <><th className="px-3 py-2">自然</th><th className="px-3 py-2">广告</th><th className="px-3 py-2">页码</th></>}</tr></thead><tbody>{rows.map(row => <tr key={row.id} className="border-b"><td className="px-3 py-2">{row.snapshotDate}</td>{kind === "competitor" ? <><td className="px-3 py-2">{row.price ?? "—"}</td><td className="px-3 py-2">{row.rating ?? "—"}</td><td className="px-3 py-2">{row.reviewCount ?? "—"}</td><td className="px-3 py-2">{row.salesRank ?? "—"}</td></> : <><td className="px-3 py-2">{row.organicRank ?? "—"}</td><td className="px-3 py-2">{row.adRank ?? "—"}</td><td className="px-3 py-2">{row.pageNumber ?? "—"}</td></>}</tr>)}</tbody></table></div></div>}</DialogContent></Dialog>;
 }
 
-// ─── Helper Components ─────────────────────────────────────────
-function PriceChange({ current, previous }: { current: number; previous: number }) {
-  const diff = current - previous;
-  if (Math.abs(diff) < 0.01) return null;
-  return (
-    <span className={`inline-flex items-center ml-1 text-[10px] ${diff > 0 ? "text-red-500" : "text-green-500"}`}>
-      {diff > 0 ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
-      ${Math.abs(diff).toFixed(2)}
-    </span>
-  );
-}
-
-function RankChange({ current, previous }: { current: number; previous: number }) {
-  const diff = previous - current; // positive = improved (rank decreased)
-  if (diff === 0) return null;
-  return (
-    <span className={`inline-flex items-center ml-1 text-[10px] ${diff > 0 ? "text-green-500" : "text-red-500"}`}>
-      {diff > 0 ? (
-        <><ArrowUpRight className="w-2.5 h-2.5" />{diff}</>
-      ) : (
-        <><ArrowDownRight className="w-2.5 h-2.5" />{Math.abs(diff)}</>
-      )}
-    </span>
-  );
-}
-
-// ─── Main Page ─────────────────────────────────────────────────
 export default function OpsCrawlerManager() {
   return (
     <div className="space-y-6 p-1">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-xl font-bold flex items-center gap-2">
-          <Bot className="w-5 h-5 text-orange-500" />
-          爬虫引擎管理
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          管理亚马逊数据爬虫任务，包括竞品价格/排名监控和关键词自然排名追踪
-        </p>
-      </div>
-
-      {/* Tabs */}
+      <div><h1 className="flex items-center gap-2 text-xl font-bold"><Bot className="h-5 w-5 text-orange-500" />Amazon监控中心</h1><p className="mt-1 text-sm text-muted-foreground">受控Provider、持久化Job/Run与Heartbeat驱动的竞品价格/BSR和关键词排名追踪。</p></div>
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="overview" className="text-xs">
-            <Activity className="w-3.5 h-3.5 mr-1" /> 总览
-          </TabsTrigger>
-          <TabsTrigger value="competitor" className="text-xs">
-            <Package className="w-3.5 h-3.5 mr-1" /> 竞品爬虫
-          </TabsTrigger>
-          <TabsTrigger value="keyword" className="text-xs">
-            <Search className="w-3.5 h-3.5 mr-1" /> 关键词爬虫
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="space-y-4">
-          <SchedulerPanel />
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <CompetitorCrawlPanel />
-            <KeywordCrawlPanel />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="competitor">
-          <CompetitorCrawlPanel />
-        </TabsContent>
-
-        <TabsContent value="keyword">
-          <KeywordCrawlPanel />
-        </TabsContent>
+        <TabsList><TabsTrigger value="overview"><Activity className="mr-1 h-3.5 w-3.5" />总览</TabsTrigger><TabsTrigger value="competitor"><Package className="mr-1 h-3.5 w-3.5" />竞品监控</TabsTrigger><TabsTrigger value="keyword"><Search className="mr-1 h-3.5 w-3.5" />关键词监控</TabsTrigger></TabsList>
+        <TabsContent value="overview" className="space-y-4"><AmazonMonitorGovernancePanel /><SchedulerPanel /><div className="grid gap-4 xl:grid-cols-2"><CompetitorPanel /><KeywordPanel /></div></TabsContent>
+        <TabsContent value="competitor"><CompetitorPanel /></TabsContent>
+        <TabsContent value="keyword"><KeywordPanel /></TabsContent>
       </Tabs>
     </div>
   );

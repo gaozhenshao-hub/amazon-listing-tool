@@ -31,6 +31,7 @@ import {
 import { kbExternalApiRouter } from "../kbExternalApi";
 import { imageUploadRouter } from "../imageUploadRouter";
 import { kbTransferUploadRouter } from "../kbTransferUploadRouter";
+import { amazonMonitorHeartbeatHandler } from "../domains/acquisition/monitorHeartbeat";
 import {
   getRuntimeRole,
   shouldProcessAiJobs,
@@ -91,6 +92,7 @@ async function startServer() {
   app.post("/api/scheduled/data-lifecycle-sweep", dataLifecycleSweepHandler);
   app.post("/api/scheduled/ai-os-operational-health", aiOsOperationalHealthHandler);
   app.post("/api/scheduled/lingxing-sync-draft", lingxingScheduledDraftHandler);
+  app.post("/api/scheduled/amazon-monitor", amazonMonitorHeartbeatHandler);
   // tRPC API
   app.use(
     "/api/trpc",

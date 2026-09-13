@@ -9,6 +9,7 @@ export * from "./ads";
 export * from "./video";
 export * from "./skillDistillation";
 export * from "./acquisition";
+export * from "./monitoring";
 
 export * as authSchema from "./auth";
 export * as aiOsSchema from "./ai_os";
@@ -21,3 +22,4 @@ export * as adsSchema from "./ads";
 export * as videoSchema from "./video";
 export * as skillDistillationSchema from "./skillDistillation";
 export * as acquisitionSchema from "./acquisition";
+export * as monitoringSchema from "./monitoring";

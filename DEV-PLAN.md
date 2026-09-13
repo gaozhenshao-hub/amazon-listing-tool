@@ -155,11 +155,13 @@ Provider资格验证
 
 ## 阶段A8：监控迁移与旧爬虫退役
 
+**状态（2026-09-13）**：本地实现完成，真实资格与生产启用待授权。已为offers/Buy Box/BSR和关键词自然/广告排名建立独立Provider Profile、固定Actor Adapter、能力与证据门禁、预算上限、Monitor Run、S3原始证据、Agent/Job审计和Heartbeat计划。候选Provider未运行真实资格Job，保持`qualification_pending`且任何手动、批量或Heartbeat执行均失败关闭。旧`scraper.ts`、`crawlerEngine.ts`、`antiBot.ts`及旧HTML爬虫测试已删除；系统设置的旧代理、UA、重试和即时抓取入口已退役。开发数据库已执行0201，青岛未迁移/未发布，也未创建真实Heartbeat或产生Provider费用。
+
 **交付物**：分别验证offers、sales rank与search rank Provider能力；将竞品/关键词监控迁移为持久化Heartbeat；封锁旧`setInterval`和旧爬虫运行时入口；增加全库静态审计。
 
-**关键文件**：`server/routers/crawler.ts`、`server/crawlerEngine.ts`、`server/scraper.ts`、`server/antiBot.ts`、`server/_core/scheduledRoutes.ts`、`server/_core/index.ts`、`drizzle/0201_acquisition_monitor_schedules.sql`、`scripts/check-retired-amazon-crawler-imports.mjs`及测试。
+**关键文件**：`drizzle/schema/monitoring.ts`、`drizzle/0201_amazon_monitor_provider_jobs.sql`、`server/domains/acquisition/monitorProviderContracts.ts`、`server/domains/acquisition/apifyMonitorProvider.ts`、`server/domains/acquisition/monitorProviderProfileService.ts`、`server/domains/acquisition/monitorRepository.ts`、`server/domains/acquisition/monitorAgent.ts`、`server/domains/acquisition/monitorJob.ts`、`server/domains/acquisition/monitorHeartbeat.ts`、`server/routers/crawler.ts`、`server/routers/systemSettings.ts`、`server/_core/index.ts`、`client/src/pages/ops/OpsCrawlerManager.tsx`、`client/src/pages/ops/AmazonMonitorGovernancePanel.tsx`、`client/src/pages/SystemSettings.tsx`及测试。
 
-**验收标准**：回调路径使用`/api/scheduled/*`并按Heartbeat`taskUid`定位业务行；处理幂等且两分钟内完成；Provider失败不调用旧爬虫；全库业务代码对旧执行器运行时导入为0。
+**验收标准**：回调路径使用`/api/scheduled/amazon-monitor`并按经认证的Heartbeat`taskUid`定位业务行；回调只排队持久化Job并立即返回；资格、预算或字段证据不足时失败关闭；Provider失败不调用旧爬虫；全库业务代码对旧执行器运行时导入为0。真实资格、真实Heartbeat和生产端到端验证纳入A9受控发布阶段。
 
 ## 阶段A9：完整质量门禁与受控发布
 

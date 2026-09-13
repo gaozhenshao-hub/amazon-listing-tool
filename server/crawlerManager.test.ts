@@ -20,14 +20,14 @@ describe("Crawler Manager Frontend Page", () => {
     expect(content).toContain("SchedulerPanel");
   });
 
-  it("contains CompetitorCrawlPanel component", () => {
+  it("contains CompetitorPanel component", () => {
     const content = fs.readFileSync(pagePath, "utf-8");
-    expect(content).toContain("function CompetitorCrawlPanel");
+    expect(content).toContain("function CompetitorPanel");
   });
 
-  it("contains KeywordCrawlPanel component", () => {
+  it("contains KeywordPanel component", () => {
     const content = fs.readFileSync(pagePath, "utf-8");
-    expect(content).toContain("function KeywordCrawlPanel");
+    expect(content).toContain("function KeywordPanel");
   });
 
   it("uses crawler tRPC endpoints", () => {
@@ -51,27 +51,27 @@ describe("Crawler Manager Frontend Page", () => {
 
   it("contains history dialog components", () => {
     const content = fs.readFileSync(pagePath, "utf-8");
-    expect(content).toContain("CompetitorHistoryDialog");
-    expect(content).toContain("KeywordHistoryDialog");
+    expect(content).toContain("function HistoryDialog");
+    expect(content).toContain("Provider快照历史");
   });
 
   it("uses Recharts for data visualization", () => {
     const content = fs.readFileSync(pagePath, "utf-8");
     expect(content).toContain("LineChart");
-    expect(content).toContain("BarChart");
     expect(content).toContain("ResponsiveContainer");
   });
 
-  it("has batch crawl functionality", () => {
+  it("has batch Provider Job queue functionality", () => {
     const content = fs.readFileSync(pagePath, "utf-8");
     expect(content).toContain("crawlAll");
-    expect(content).toContain("全部抓取");
+    expect(content).toContain("全部排队");
   });
 
-  it("has helper components for price and rank changes", () => {
+  it("shows Provider qualification, Monitor Runs and Heartbeat governance", () => {
     const content = fs.readFileSync(pagePath, "utf-8");
-    expect(content).toContain("function PriceChange");
-    expect(content).toContain("function RankChange");
+    expect(content).toContain("AmazonMonitorGovernancePanel");
+    expect(content).toContain("Heartbeat监控计划");
+    expect(content).not.toContain("setInterval(");
   });
 });
 
@@ -92,9 +92,9 @@ describe("Crawler Manager Route Registration", () => {
 describe("Crawler Manager Sidebar Navigation", () => {
   const layoutPath = path.resolve(__dirname, "../client/src/components/DashboardLayout.tsx");
 
-  it("DashboardLayout has crawler nav item", () => {
+  it("DashboardLayout has Amazon monitoring nav item", () => {
     const content = fs.readFileSync(layoutPath, "utf-8");
-    expect(content).toContain('label: "爬虫引擎"');
+    expect(content).toContain('label: "Amazon监控"');
     expect(content).toContain('path: "/ops/crawler"');
   });
 });

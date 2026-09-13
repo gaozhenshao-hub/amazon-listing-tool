@@ -38,7 +38,8 @@ export async function createContext(
       } else {
         // Step 2b: OAuth user session - use the standard authenticateRequest flow
         try {
-          user = await sdk.authenticateRequest(opts.req);
+          const authenticated = await sdk.authenticateRequest(opts.req);
+          user = authenticated.isCron ? null : authenticated;
         } catch {
           // OAuth auth failed, user stays null
         }

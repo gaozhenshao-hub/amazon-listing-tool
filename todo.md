@@ -1903,6 +1903,11 @@
 - [x] P4/A7：迁移产品知识库的单ASIN、批量和Amazon美国站链接入口为Acquisition Job；确认后幂等投影基础信息/卖点/已确认图片引用并启动受治理结构化AI分析，旧记录保持可读，S3引用只在交付时解析。
 - [x] P4/A7：迁移项目竞品分析的自动ASIN、单个和批量入口；只允许Confirmed Snapshot进入分析，保存统一Artifact并保留编辑/确认/解锁版本链；手工与文件导入路径继续兼容且明确来源。
 - [x] P4/A7：将转化率采集中的Amazon商品详情目录字段改为Confirmed Snapshot消费；缺Snapshot时只创建采集任务并停止评分，全部确认后才联合领星广告事实评分；排名、Coupon、Deal监控保留到A8单独Provider迁移，禁止回退旧爬虫。A7新增及相邻回归71项通过（另1项显式跳过），定向TypeScript、ESLint、生产构建与Bundle预算通过；青岛未发布，未运行真实Provider或LLM。
-- [ ] P5：为竞品价格/排名与关键词排名选择独立Provider能力并迁移持久化调度；所有消费者验证为0调用后禁用旧`scraper.ts`/`crawlerEngine.ts`执行入口和代理配置写入口。
-- [ ] 完成Provider合同、标准化、Job/Run、快照、权限、资产、AI覆盖、UI点选、消费者兼容和旧爬虫退役回归；执行静态检查与生产构建。
+- [x] P5：为竞品价格/排名与关键词排名选择独立Provider能力并迁移持久化调度；所有消费者验证为0调用后禁用旧`scraper.ts`/`crawlerEngine.ts`执行入口和代理配置写入口。候选Provider保持待资格验证，未获单次费用授权前不可执行。
+- [x] P5/A8：建立`offer_snapshot`、`sales_rank`与`search_rank`三类监控能力合同和Provider Profile门禁；未完成真实资格验证的能力显示不可执行，不得用旧爬虫或浏览器采集补位。结构化结果缺价格、BSR、Offer/Buy Box或定位排名证据时标记`schema_drift`且不得激活/投影。
+- [x] P5/A8：将竞品价格/评分/销售排名监控迁移为持久化Monitor Run与统一Provider Job；Heartbeat回调只按认证`taskUid`解析业务监控，使用日桶幂等键、只排队Job后立即返回且无`setInterval`。
+- [x] P5/A8：将关键词排名监控迁移为独立受控Provider能力与Heartbeat执行链；搜索排名Provider未批准时失败关闭并保留历史结果，不伪造未进入扫描范围的排名。
+- [x] P5/A8：把系统设置中的旧代理、User-Agent、重试与测试旧爬虫入口改为只读退役说明和Provider健康/预算/能力视图，旧写接口使用统一退役错误失败关闭。
+- [x] P5/A8：删除图片知识库不可达旧采集辅助入口，移除`scraper.ts`、`crawlerEngine.ts`、`antiBot.ts`及旧HTML解析测试；静态守卫证明业务代码运行时导入为0，Provider失败无旧爬虫回退。
+- [x] 完成本地Provider合同、标准化、Job/Run、快照、权限、资产、AI覆盖、UI点选、消费者兼容和旧爬虫退役回归；A1–A8采集领域68项通过（另1项凭证联网测试跳过），相邻图片/转化/监控页面93项通过（另1项跳过），定向TypeScript、ESLint、生产构建、Bundle预算及桌面/移动页面验证通过。
 - [ ] 分阶段执行受控迁移、发布和真实ASIN验收；每次实际Provider付费调用、生产迁移与发布均保留预算提示、备份、验签、健康检查和失败回滚。

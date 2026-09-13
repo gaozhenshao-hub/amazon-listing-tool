@@ -2,8 +2,6 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
-import { scrapeAmazonProduct, type ProductImage } from "../scraper";
-import { getScraperConfig } from "./systemSettings";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { resolveStoredObjectUrl, storagePut } from "../storage";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
@@ -22,6 +20,29 @@ import {
   IMAGE_TYPE_MAIN_OPTIONS, SELLING_POINT_HIERARCHY, SELLING_POINT_MAIN_OPTIONS,
   COLOR_SCHEME_OPTIONS, COMPOSITION_OPTIONS, CATEGORY_OPTIONS, COLOR_TAG_OPTIONS, getStyleParams
 } from "../constants/imageTagConstants";
+
+type ProductImage = {
+  url: string;
+  position: "main" | "secondary" | "aplus" | "brand_story";
+  positionIndex: number;
+  aplusModuleType?: string;
+  aplusModuleClass?: string;
+};
+
+type RetiredAmazonProductData = {
+  title: string;
+  brand: string;
+  category: string;
+  images: ProductImage[];
+  imageUrls: string[];
+};
+
+async function rejectRetiredAmazonScrape(): Promise<RetiredAmazonProductData> {
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message: "旧Amazon HTML爬虫已退役；请创建统一Acquisition Job并在人工确认Snapshot后投影。",
+  });
+}
 
 /**
  * Build the upgraded single-image analysis prompt with 7-dimension constrained enum tags
@@ -148,8 +169,7 @@ async function startKbImagesAcquisition(input: {
  */
 async function processImport(setId: number, asin: string, userId: number, runAnalysis: boolean) {
   try {
-    const scraperConfig = await getScraperConfig();
-    const data = await scrapeAmazonProduct(asin, scraperConfig);
+    const data = await rejectRetiredAmazonScrape();
     await kbDb.updateImageSet(setId, userId, {
       productTitle: data.title, brand: data.brand, category: data.category,
     });
@@ -301,8 +321,7 @@ async function processPartialReCrawl(
   positions: ("main" | "secondary" | "aplus" | "brand_story")[]
 ) {
   try {
-    const scraperConfig = await getScraperConfig();
-    const data = await scrapeAmazonProduct(asin, scraperConfig);
+    const data = await rejectRetiredAmazonScrape();
     // Update product info
     await kbDb.updateImageSet(setId, userId, {
       productTitle: data.title, brand: data.brand, category: data.category,
