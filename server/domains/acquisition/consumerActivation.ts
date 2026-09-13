@@ -2,6 +2,7 @@ import type { DbExecutor } from "../../repositories/dbClient";
 import { AmazonAcquisitionCapabilitySchema } from "./contracts";
 import { createConsumerLink, supersedeConsumerLinks } from "./repository";
 import { projectConfirmedSnapshotToKbImages } from "./kbImagesProjection";
+import { projectConfirmedSnapshotToLegacyConsumer } from "./legacyConsumerProjection";
 
 export async function activateConfirmedSnapshotForConsumer(input: {
   db: DbExecutor;
@@ -17,14 +18,26 @@ export async function activateConfirmedSnapshotForConsumer(input: {
 }) {
   const capabilities = AmazonAcquisitionCapabilitySchema.array().parse(input.job.requestedCapabilities);
   const projection = input.job.consumerType === "kb_images"
-    ? await projectConfirmedSnapshotToKbImages({
-      db: input.db,
-      workspaceId: input.workspaceId,
-      confirmedSnapshotId: input.confirmedSnapshotId,
-      requestedBy: input.job.requestedBy,
-      requestedCapabilities: capabilities,
-    })
-    : null;
+    ? {
+      consumerType: "kb_images" as const,
+      ...(await projectConfirmedSnapshotToKbImages({
+        db: input.db,
+        workspaceId: input.workspaceId,
+        confirmedSnapshotId: input.confirmedSnapshotId,
+        requestedBy: input.job.requestedBy,
+        requestedCapabilities: capabilities,
+      })),
+    }
+    : ["kb_listing", "kb_product", "project_competitor", "conversion_collector"].includes(input.job.consumerType)
+      ? await projectConfirmedSnapshotToLegacyConsumer({
+        db: input.db,
+        workspaceId: input.workspaceId,
+        confirmedSnapshotId: input.confirmedSnapshotId,
+        requestedBy: input.job.requestedBy,
+        consumerType: input.job.consumerType as "kb_listing" | "kb_product" | "project_competitor" | "conversion_collector",
+        consumerRef: input.job.consumerRef,
+      })
+      : null;
   for (const capability of capabilities) {
     await supersedeConsumerLinks({
       db: input.db,
@@ -39,7 +52,11 @@ export async function activateConfirmedSnapshotForConsumer(input: {
       consumerType: input.job.consumerType,
       consumerRef: input.job.consumerRef,
       capabilityScope: capability,
-      projectionVersion: projection ? "kb_images_projection_v1" : "amazon_snapshot_projection_v1",
+      projectionVersion: projection?.consumerType === "kb_images"
+        ? "kb_images_projection_v1"
+        : projection
+          ? "amazon_legacy_consumer_projection_v1"
+          : "amazon_snapshot_projection_v1",
       status: "active",
       createdBy: input.activatedBy,
     });

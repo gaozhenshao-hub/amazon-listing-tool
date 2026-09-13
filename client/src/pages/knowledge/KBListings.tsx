@@ -43,15 +43,15 @@ export default function KBListings() {
   const { data: detail } = trpc.kbListings.getById.useQuery({ id: detailId! }, { enabled: !!detailId });
 
   const importAsin = trpc.kbListings.importByAsin.useMutation({
-    onSuccess: () => { toast.success("已开始导入，AI正在分析文案..."); utils.kbListings.list.invalidate(); setShowImport(false); setAsinInput(""); },
+    onSuccess: (result) => { toast.success(result.reviewRequired ? "已创建受控采集任务，请在采集任务中心审核后启动AI分析" : "已复用确认快照并开始AI分析"); utils.kbListings.list.invalidate(); setShowImport(false); setAsinInput(""); },
     onError: createImportOnError((id) => { setShowImport(false); setDetailId(id); }),
   });
   const importLink = trpc.kbListings.importByLink.useMutation({
-    onSuccess: () => { toast.success("已开始导入"); utils.kbListings.list.invalidate(); setShowImport(false); setLinkInput(""); },
+    onSuccess: (result) => { toast.success(result.reviewRequired ? "已创建受控采集任务，请先审核采集结果" : "已复用确认快照并开始AI分析"); utils.kbListings.list.invalidate(); setShowImport(false); setLinkInput(""); },
     onError: createImportOnError((id) => { setShowImport(false); setDetailId(id); }),
   });
   const batchImport = trpc.kbListings.batchImportAsins.useMutation({
-    onSuccess: (r: any) => { toast.success(`已开始导入 ${r.imported} 个ASIN`); utils.kbListings.list.invalidate(); setShowImport(false); setBatchInput(""); },
+    onSuccess: (r: any) => { toast.success(`已创建 ${r.imported} 个受控采集任务，跳过 ${r.skipped || 0} 个重复ASIN`); utils.kbListings.list.invalidate(); setShowImport(false); setBatchInput(""); },
     onError: (e: any) => toast.error(e.message),
   });
   const confirmMutation = trpc.kbListings.confirmAnalysis.useMutation({
@@ -76,7 +76,7 @@ export default function KBListings() {
   });
 
   const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
-    crawling: { label: "爬取中", variant: "secondary" },
+    crawling: { label: "待采集审核", variant: "secondary" },
     analyzing: { label: "AI分析中", variant: "secondary" },
     pending_review: { label: "待确认", variant: "default" },
     confirmed: { label: "已入库", variant: "outline" },
@@ -110,7 +110,7 @@ export default function KBListings() {
             <FileText className="h-6 w-6 text-blue-500" />
             智能Listing文案库
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">自动爬取优秀Listing文案，AI分析文案技巧和优秀原因</p>
+          <p className="text-muted-foreground text-sm mt-1">受控采集Amazon公开Listing，人工确认Snapshot后由AI生成可编辑分析</p>
         </div>
         <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 导入文案</Button>
       </div>

@@ -142,7 +142,15 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
     onSuccess: () => refetchScores(),
   });
   const aiScore = trpc.productOps.triggerAiScoring.useMutation({
-    onSuccess: () => { refetchScores(); toast.success("AI评分完成"); },
+    onSuccess: (data) => {
+      if (data.reviewRequired) {
+        toast.warning("等待采集审核", { description: data.message });
+        return;
+      }
+      refetchScores();
+      toast.success("AI评分完成");
+    },
+    onError: (error) => toast.error(`AI评分失败：${error.message}`),
   });
   const aiSuggest = trpc.productOps.generateSuggestions.useMutation({
     onSuccess: () => { refetchSuggestions(); toast.success("AI优化建议已生成"); },
@@ -242,10 +250,11 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
     { taskKey: scoringTaskKey! },
     { enabled: !!scoringTaskKey, refetchInterval: 2000 }
   );
+  const scoringProgressData = scoringProgress.data;
 
   useEffect(() => {
-    if (!scoringProgress.data) return;
-    const { status, message } = scoringProgress.data;
+    if (!scoringProgressData) return;
+    const { status, message } = scoringProgressData;
     if (status === 'done') {
       toast.success(message);
       refetchScores();
@@ -254,7 +263,7 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
       toast.error(message);
       setScoringTaskKey(null);
     }
-  }, [scoringProgress.data?.status]);
+  }, [scoringProgressData, refetchScores]);
 
   // ─── Computed ───
   const groupedItems = useMemo(() => {

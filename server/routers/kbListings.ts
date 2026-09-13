@@ -4,195 +4,99 @@ import { resourceConflictError } from "@shared/_core/errors";
 import { router } from "../_core/trpc";
 import { workspaceScopedProcedure } from "../domains/ai_os/workspaceScopedProcedure";
 import * as kbDb from "../kbDb";
-import { scrapeAmazonProduct } from "../scraper";
-import { getScraperConfig } from "./systemSettings";
-import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
+import { startAmazonAcquisitionJob } from "../domains/acquisition/acquisitionJobs";
+import { KbImageImportAsinSchema, parseAmazonUsAsins } from "../domains/acquisition/kbImagesAcquisition";
+import {
+  KB_LISTING_ACQUISITION_CAPABILITIES,
+  kbListingConsumerRef,
+} from "../domains/acquisition/legacyConsumerContracts";
 
 const protectedProcedure = workspaceScopedProcedure("knowledge");
+const MAX_ACQUISITION_USD = 0.1;
+
+async function createListingAcquisition(input: { workspaceId: number; userId: number; asin: string }) {
+  const duplicate = await kbDb.findListingCopywritingByAsin(input.asin, input.workspaceId);
+  if (duplicate && duplicate.status !== "archived") {
+    throw resourceConflictError(`ASIN ${input.asin} 已存在于 Listing 知识库中`, {
+      existingId: duplicate.id,
+      resource: "kb_listing",
+      asin: input.asin,
+    });
+  }
+  const id = duplicate
+    ? duplicate.id
+    : Number(await kbDb.createListingCopywriting({
+      userId: input.userId,
+      workspaceId: input.workspaceId,
+      asin: input.asin,
+      status: "crawling",
+    }));
+  if (duplicate) await kbDb.updateListingCopywriting(id, input.userId, input.workspaceId, { status: "crawling" });
+  try {
+    const job = await startAmazonAcquisitionJob({
+      workspaceId: input.workspaceId,
+      requestedBy: input.userId,
+      consumerType: "kb_listing",
+      consumerRef: kbListingConsumerRef(id),
+      marketplace: "US",
+      asin: input.asin,
+      capabilities: [...KB_LISTING_ACQUISITION_CAPABILITIES],
+      cachePolicy: "prefer_cache",
+      maxChargeUsd: MAX_ACQUISITION_USD,
+    });
+    return { id, asin: input.asin, ...job, reviewRequired: job.status !== "confirmed" };
+  } catch (error) {
+    await kbDb.updateListingCopywriting(id, input.userId, input.workspaceId, { status: "archived" });
+    throw error;
+  }
+}
 
 export const kbListingsRouter = router({
   list: protectedProcedure
     .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
-    .query(async ({ ctx, input }) => {
-    return kbDb.listListingCopywriting(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
-  }),
+    .query(({ ctx, input }) => kbDb.listListingCopywriting(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine")),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ ctx, input }) => {
-      return kbDb.getListingCopywriting(input.id, ctx.user.id, ctx.workspaceId!);
-    }),
+    .query(({ ctx, input }) => kbDb.getListingCopywriting(input.id, ctx.user.id, ctx.workspaceId!)),
 
   importByAsin: protectedProcedure
     .input(z.object({ asin: z.string().min(1) }))
-    .mutation(async ({ ctx, input }) => {
-      const asin = input.asin.trim().toUpperCase();
-      // ASIN dedup: prevent duplicate entries
-      const dupListing = await kbDb.findListingCopywritingByAsin(asin, ctx.workspaceId!);
-      if (dupListing) {
-        throw resourceConflictError(`ASIN ${asin} 已存在于 Listing 知识库中`, { existingId: dupListing.id, resource: "kb_listing", asin });
-      }
-      const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, workspaceId: ctx.workspaceId!, asin, status: "crawling" });
-      (async () => {
-        try {
-          const scraperCfg = await getScraperConfig();
-          const data = await scrapeAmazonProduct(asin, scraperCfg);
-          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, {
-            productTitle: data.title, brand: data.brand, category: data.category,
-            titleText: data.title,
-            bulletPoints: JSON.stringify(data.bulletPoints),
-            longDescription: data.description,
-            crawledData: JSON.stringify(data),
-            status: "analyzing",
-          });
-      // [Emperor] 优先调用 Emperor Skill: listing.competitor.analyze
-
-
-
-
-
-          const response = await invokeBusinessSkill({
-            messages: [
-              { role: "system", content: `你是一位资深的亚马逊Listing文案分析专家。请从以下维度分析这个Listing文案的优劣：
-1. 标题结构分析（关键词布局、品牌词位置、字符数）
-2. 五点描述分析（卖点提炼、关键词密度、结构化程度）
-3. 长描述/A+分析（故事性、视觉引导、SEO优化）
-4. 关键词覆盖评估
-5. 转化率优化建议
-6. 竞品对比亮点
-7. 可借鉴的文案技巧
-
-返回JSON格式：
-{
-  "titleAnalysis": { "structure": "", "keywords": "", "score": 8 },
-  "bulletPointsAnalysis": { "highlights": "", "keywordDensity": "", "structure": "", "score": 8 },
-  "descriptionAnalysis": { "storytelling": "", "seoOptimization": "", "score": 7 },
-  "keywordCoverage": { "primaryKeywords": [], "missingKeywords": [], "score": 7 },
-  "conversionTips": [],
-  "competitiveHighlights": [],
-  "copywritingTechniques": [],
-  "overallScore": 75,
-  "summary": "一句话总结"
-}` },
-              { role: "user", content: `ASIN: ${asin}\n标题: ${data.title}\n品牌: ${data.brand}\n类目: ${data.category}\n五点描述:\n${data.bulletPoints.map((b, i) => `${i+1}. ${b}`).join("\n")}\n长描述: ${data.description}` }
-            ],
-            response_format: { type: "json_object" as const },
-          });
-          const analysis = String(response.choices?.[0]?.message?.content || "{}");
-          const parsed = JSON.parse(analysis);
-          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, {
-            aiAnalysis: analysis, overallScore: parsed.overallScore ?? 70, status: "pending_review",
-          });
-        } catch (err: any) {
-          console.error("[KB Listings] Import failed:", err.message);
-          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
-              }
-      })();
-      return { id: Number(id), asin };
-    }),
+    .mutation(({ ctx, input }) => createListingAcquisition({
+      workspaceId: ctx.workspaceId!,
+      userId: ctx.user.id,
+      asin: KbImageImportAsinSchema.parse(input.asin),
+    })),
 
   batchImportAsins: protectedProcedure
     .input(z.object({ asins: z.array(z.string()).min(1).max(50) }))
     .mutation(async ({ ctx, input }) => {
-      const results: { asin: string; id: number }[] = [];
-      for (const raw of input.asins) {
-        const asin = raw.trim().toUpperCase();
-        if (!asin) continue;
-        // ASIN dedup: skip if already exists
-        const dupListing = await kbDb.findListingCopywritingByAsin(asin, ctx.workspaceId!);
-        if (dupListing) {
-          results.push({ asin, id: dupListing.id });
+      const asins = [...new Set(input.asins.map(value => KbImageImportAsinSchema.parse(value)))];
+      const items: Array<Awaited<ReturnType<typeof createListingAcquisition>>> = [];
+      const skippedItems: Array<{ asin: string; existingId: number }> = [];
+      for (const asin of asins) {
+        const duplicate = await kbDb.findListingCopywritingByAsin(asin, ctx.workspaceId!);
+        if (duplicate && duplicate.status !== "archived") {
+          skippedItems.push({ asin, existingId: duplicate.id });
           continue;
         }
-        const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, workspaceId: ctx.workspaceId!, asin, status: "crawling" });
-        results.push({ asin, id: Number(id) });
-        (async () => {
-          try {
-            const scraperCfg = await getScraperConfig();
-          const data = await scrapeAmazonProduct(asin, scraperCfg);
-            await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, {
-              productTitle: data.title, brand: data.brand, category: data.category,
-              titleText: data.title, bulletPoints: JSON.stringify(data.bulletPoints),
-              longDescription: data.description, crawledData: JSON.stringify(data), status: "analyzing",
-            });
-      // [Emperor] 优先调用 Emperor Skill: listing.competitor.analyze
-
-
-
-
-
-            const response = await invokeBusinessSkill({
-              messages: [
-                { role: "system", content: `你是亚马逊Listing文案分析专家。分析文案优劣，返回JSON: { titleAnalysis: {structure,keywords,score}, bulletPointsAnalysis: {highlights,keywordDensity,structure,score}, descriptionAnalysis: {storytelling,seoOptimization,score}, keywordCoverage: {primaryKeywords,missingKeywords,score}, conversionTips, competitiveHighlights, copywritingTechniques, overallScore(1-100), summary }` },
-                { role: "user", content: `ASIN: ${asin}\n标题: ${data.title}\n五点: ${data.bulletPoints.join("; ")}\n描述: ${data.description?.slice(0, 500)}` }
-              ],
-              response_format: { type: "json_object" as const },
-            });
-            const analysis = String(response.choices?.[0]?.message?.content || "{}");
-            const parsed = JSON.parse(analysis);
-            await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, {
-              aiAnalysis: analysis, overallScore: parsed.overallScore ?? 70, status: "pending_review",
-            });
-          } catch (err: any) {
-            console.error(`[KB Listings] Batch import failed for ${asin}:`, err.message);
-            await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
-                }
-        })();
+        items.push(await createListingAcquisition({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin }));
       }
-      return { imported: results.length, items: results };
+      return { imported: items.length, skipped: skippedItems.length, items, skippedItems };
     }),
 
   importByLink: protectedProcedure
-    .input(z.object({ url: z.string().url() }))
+    .input(z.object({ url: z.string().trim().min(1).max(20_000) }))
     .mutation(async ({ ctx, input }) => {
-      const asinMatch = input.url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
-      const asin = asinMatch?.[1]?.toUpperCase() || "";
-      if (!asin) throw new Error("无法从链接中提取ASIN");
-      // ASIN dedup: prevent duplicate entries
-      const dupListing = await kbDb.findListingCopywritingByAsin(asin, ctx.workspaceId!);
-      if (dupListing) {
-        throw resourceConflictError(`ASIN ${asin} 已存在于 Listing 知识库中`, { existingId: dupListing.id, resource: "kb_listing", asin });
-      }
-      const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, workspaceId: ctx.workspaceId!, asin, status: "crawling" });
-      (async () => {
-        try {
-          const scraperCfg = await getScraperConfig();
-          const data = await scrapeAmazonProduct(asin, scraperCfg);
-          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, {
-            productTitle: data.title, brand: data.brand, category: data.category,
-            titleText: data.title, bulletPoints: JSON.stringify(data.bulletPoints),
-            longDescription: data.description, crawledData: JSON.stringify(data), status: "analyzing",
-          });
-      // [Emperor] 优先调用 Emperor Skill: listing.competitor.analyze
-
-
-
-
-
-          const response = await invokeBusinessSkill({
-            messages: [
-              { role: "system", content: `你是亚马逊Listing文案分析专家。分析文案优劣，返回JSON: { titleAnalysis, bulletPointsAnalysis, descriptionAnalysis, keywordCoverage, conversionTips, competitiveHighlights, copywritingTechniques, overallScore(1-100), summary }` },
-              { role: "user", content: `ASIN: ${asin}\n标题: ${data.title}\n五点: ${data.bulletPoints.join("; ")}\n描述: ${data.description?.slice(0, 500)}` }
-            ],
-            response_format: { type: "json_object" as const },
-          });
-          const analysis = String(response.choices?.[0]?.message?.content || "{}");
-          const parsed = JSON.parse(analysis);
-          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, {
-            aiAnalysis: analysis, overallScore: parsed.overallScore ?? 70, status: "pending_review",
-          });
-        } catch (err: any) {
-          console.error("[KB Listings] Link import failed:", err.message);
-          await kbDb.updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
-              }
-      })();
-      return { id: Number(id), asin };
+      const asins = parseAmazonUsAsins(input.url);
+      if (asins.length !== 1) throw new TRPCError({ code: "BAD_REQUEST", message: "请输入一个Amazon美国站商品链接" });
+      return createListingAcquisition({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin: asins[0] });
     }),
 
   confirmAnalysis: protectedProcedure
     .input(z.object({ id: z.number(), editedAnalysis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const update: any = { status: "confirmed" as const, confirmedAt: new Date() };
+      const update: Record<string, unknown> = { status: "confirmed" as const, confirmedAt: new Date() };
       if (input.editedAnalysis) update.userEditedAnalysis = input.editedAnalysis;
       await kbDb.updateListingCopywriting(input.id, ctx.user.id, ctx.workspaceId!, update);
       return { success: true };

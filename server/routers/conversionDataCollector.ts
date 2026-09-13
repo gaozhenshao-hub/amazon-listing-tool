@@ -2,18 +2,20 @@ import { failUnavailableDataSource } from "@shared/_core/errors";
 /**
  * 转化率对比 — 数据采集引擎
  * 
- * 职责：为每个ASIN采集产品页面数据，整合爬虫+领星API+程序计算三大数据源，
+ * 职责：为每个ASIN整合已确认Amazon Snapshot、领星API与程序化计算，
  * 输出结构化的 ConversionCrawlData，供AI评分引擎使用。
  * 
  * 数据源：
- * 1. scraper.ts — 产品详情页深度爬虫（标题/五点/价格/图片/A+/品牌故事/评论）
- * 2. crawlerEngine.ts — 竞品监控爬虫（BSR/价格/Coupon/Deal/评论数）
- * 3. lingxingAdapter.ts — 领星ERP API（广告数据/利润/库存）
- * 4. 程序化计算 — 字数统计、正则匹配、HTML解析等
+ * 1. Unified Acquisition — 人工确认的标题/五点/价格/图片/A+/品牌故事/评分
+ * 2. 领星ERP API — 广告数据/利润/库存
+ * 3. 程序化计算 — 字数统计等确定性指标
+ * 排名、Coupon、Deal等监控字段在A8迁移独立Provider前保持“未覆盖”，不得回退旧爬虫。
  */
 
-import { scrapeAmazonProduct, type AmazonProductData, type ProductImage } from "../scraper";
-import { crawlCompetitorData, type CompetitorCrawlData } from "../crawlerEngine";
+import { requireDb } from "../repositories/dbClient";
+import { findFreshConfirmedSnapshot } from "../domains/acquisition/repository";
+import { loadConfirmedSnapshotForConsumer } from "../domains/acquisition/legacyConsumerProjection";
+import { resolveStoredObjectUrl } from "../storage";
 // ═══════════════════════════════════════════════════════════════
 // Types
 // ═══════════════════════════════════════════════════════════════
@@ -29,12 +31,14 @@ export interface ConversionCrawlData {
     scraper: { success: boolean; error?: string };
     competitor: { success: boolean; error?: string };
     lingxingAd: { success: boolean; error?: string };
+    confirmedSnapshot?: { success: boolean; confirmedSnapshotId?: number; error?: string };
   };
   /** 原始爬虫数据（用于AI分析） */
   raw: {
-    scraperData: AmazonProductData | null;
-    competitorData: CompetitorCrawlData | null;
+    scraperData: ConfirmedAmazonProductData | null;
+    competitorData: null;
     adData: AdData | null;
+    confirmedSnapshot?: { id: number; contentHash: string; confirmationVersion: number } | null;
   };
   /** 按18个类别组织的结构化数据（仅当hasData=true时有意义） */
   categories: {
@@ -57,6 +61,29 @@ export interface ConversionCrawlData {
     店铺介绍页面: StoreData;
     广告: AdCategoryData;
   };
+}
+
+export interface ProductImage {
+  url: string;
+  position: "main" | "secondary" | "aplus" | "brand_story";
+  positionIndex: number;
+  aplusModuleType?: string;
+  aplusModuleClass?: string;
+}
+
+export interface ConfirmedAmazonProductData {
+  title: string;
+  bulletPoints: string[];
+  price: string;
+  rating: string;
+  reviewCount: string;
+  description: string;
+  brand: string;
+  imageUrls: string[];
+  images: ProductImage[];
+  reviews: string[];
+  category: string;
+  asin: string;
 }
 
 export interface TitleData {
@@ -180,6 +207,7 @@ export interface TrafficLoopData {
 
 export interface BrandStoryData {
   hasBrandStory: boolean;
+  coverageStatus?: "confirmed" | "not_returned" | "unknown";
   hasRecommendation: boolean;
   imageCount: number;
   textContent: string;
@@ -188,6 +216,7 @@ export interface BrandStoryData {
 
 export interface AplusData {
   hasAplus: boolean;
+  coverageStatus?: "confirmed" | "not_returned" | "unknown";
   moduleCount: number;
   moduleTypes: string[];
   hasComparisonChart: boolean;
@@ -535,18 +564,19 @@ export interface CollectionOptions {
   sid?: number;
   /** 是否跳过广告数据采集 */
   skipAds?: boolean;
-  /** 爬虫代理配置 */
+  /** @deprecated 仅兼容旧调用签名；统一采集不接受消费者代理配置。 */
   proxyUrl?: string;
+  /** Amazon详情只允许读取该工作空间的Confirmed Snapshot。 */
+  workspaceId?: number;
 }
 
 /**
  * 为单个ASIN采集完整的转化率对比数据
  * 
  * 流程：
- * 1. 并行调用 scraper + crawlerEngine 爬取产品页面
- * 2. 从HTML中提取扩展数据（变体/配送/限购/标签等）
- * 3. 调用领星API获取广告数据
- * 4. 整合为结构化的 ConversionCrawlData
+ * 1. 读取当前工作空间的Confirmed Snapshot与已确认S3资产
+ * 2. 调用领星API获取广告数据
+ * 3. 整合为结构化的 ConversionCrawlData
  */
 export async function collectConversionData(
   asin: string,
@@ -554,54 +584,81 @@ export async function collectConversionData(
 ): Promise<ConversionCrawlData> {
   const startTime = Date.now();
 
-  // Step 1: 并行爬取
-  const [scraperResult, competitorResult, adResult] = await Promise.allSettled([
-    scrapeAmazonProduct(asin, { proxyUrl: options.proxyUrl }),
-    crawlCompetitorData(asin),
+  if (!options.workspaceId) throw new Error("conversion collector requires workspaceId");
+  const db = await requireDb("Conversion confirmed Amazon snapshot");
+  const confirmed = await findFreshConfirmedSnapshot({
+    db,
+    workspaceId: options.workspaceId,
+    marketplace: "US",
+    asin: asin.trim().toUpperCase(),
+    freshAfter: new Date(0),
+  });
+  if (!confirmed) throw new Error(`confirmed Amazon snapshot required for ${asin}`);
+  const snapshot = await loadConfirmedSnapshotForConsumer({
+    db,
+    workspaceId: options.workspaceId,
+    confirmedSnapshotId: confirmed.id,
+  });
+  const images: ProductImage[] = await Promise.all(snapshot.assets
+    .filter((asset: any) => ["main", "secondary", "aplus", "brand_story"].includes(asset.role))
+    .sort((a: any, b: any) => a.positionIndex - b.positionIndex)
+    .map(async (asset: any) => ({
+      url: await resolveStoredObjectUrl(asset.storageKey),
+      position: asset.role as ProductImage["position"],
+      positionIndex: asset.positionIndex,
+      aplusModuleType: asset.moduleType || undefined,
+      aplusModuleClass: asset.moduleClass || undefined,
+    })));
+  const scraperData: ConfirmedAmazonProductData = {
+    asin: snapshot.data.asin,
+    title: snapshot.data.title || "",
+    brand: snapshot.data.brand || "",
+    category: snapshot.data.category || "",
+    description: snapshot.data.description || "",
+    bulletPoints: snapshot.data.bulletPoints,
+    price: snapshot.data.price ? `${snapshot.data.price.value} ${snapshot.data.price.currency}` : "",
+    rating: snapshot.data.rating || "",
+    reviewCount: snapshot.data.reviewCount === null ? "" : String(snapshot.data.reviewCount),
+    imageUrls: images.filter(image => image.position === "main" || image.position === "secondary").map(image => image.url),
+    images,
+    reviews: [],
+  };
+  const competitorData = null;
+  const [adResult] = await Promise.allSettled([
     options.skipAds ? Promise.resolve(null) : collectAdData(asin, options.sid),
   ]);
-
-  const scraperData = scraperResult.status === "fulfilled" ? scraperResult.value : null;
-  const competitorData = competitorResult.status === "fulfilled" ? competitorResult.value?.data as CompetitorCrawlData : null;
   const adData = adResult.status === "fulfilled" ? adResult.value : null;
 
-  const scraperError = scraperResult.status === "rejected" ? String(scraperResult.reason) : null;
-  const competitorError = competitorResult.status === "rejected" ? String(competitorResult.reason) : null;
+  const scraperError = null;
+  const competitorError = "排名、Coupon与Deal监控尚未迁移至统一Provider（A8）";
   const adError = adResult.status === "rejected" ? String(adResult.reason) : null;
 
-  if (scraperError) console.warn(`[ConversionCollector] Scraper failed for ${asin}: ${scraperError}`);
-  if (competitorError) console.warn(`[ConversionCollector] Competitor crawl failed for ${asin}: ${competitorError}`);
   if (adError) console.warn(`[ConversionCollector] Ad data failed for ${asin}: ${adError}`);
 
   // 判断是否有任何有效数据
-  const hasScraperData = !!scraperData;
-  const hasCompetitorData = !!competitorData;
+  const hasScraperData = true;
+  const hasCompetitorData = false;
   const hasAdData = !!adData && (adData.campaigns?.length > 0 || adData.keywords?.length > 0);
   const hasAnyData = hasScraperData || hasCompetitorData || hasAdData;
 
-  // Step 2: 从原始HTML中提取扩展数据（如果scraper成功的话）
-  // 注意：scraper.ts 的 fetchWithRetry 返回HTML，但 scrapeAmazonProduct 只返回解析后的数据
-  // 所以我们需要用 competitorData 中的基础数据 + scraperData 中的详细数据来组合
+  // HTML专属字段未被Confirmed Snapshot覆盖时保持未知/默认，不作存在性断言。
   let extendedData: ReturnType<typeof parseExtendedProductData> | null = null;
-  
-  // 由于我们无法直接获取原始HTML（scraper.ts不暴露），
-  // 我们基于已有的scraperData和competitorData来构建结构化数据
-  
-  // Step 3: 构建结构化数据
+
+  // 构建结构化数据
 
   // ── 标题 ──
-  const titleText = scraperData?.title || competitorData?.title || "";
+  const titleText = scraperData.title;
   const titleData: TitleData = {
     text: titleText,
     charCount: titleText.length,
     wordCount: titleText.split(/\s+/).filter(Boolean).length,
-    brand: scraperData?.brand || "",
-    hasBrand: !!(scraperData?.brand && titleText.toLowerCase().includes(scraperData.brand.toLowerCase())),
+    brand: scraperData.brand,
+    hasBrand: !!(scraperData.brand && titleText.toLowerCase().includes(scraperData.brand.toLowerCase())),
     rawTitle: titleText,
   };
 
   // ── 五点 ──
-  const bullets = scraperData?.bulletPoints || competitorData?.bulletPoints || [];
+  const bullets = scraperData.bulletPoints;
   const bulletCharCounts = bullets.map(b => b.length);
   const bulletPointsData: BulletPointsData = {
     bullets,
@@ -613,13 +670,13 @@ export async function collectConversionData(
 
   // ── 标签 ──
   const badges: BadgeData = {
-    hasBestSeller: (competitorData?.bsrRank || 0) <= 1,
+    hasBestSeller: false,
     hasAmazonChoice: false, // 需要HTML解析
     hasNewRelease: false,
-    hasDeal: !!competitorData?.dealInfo,
-    dealInfo: competitorData?.dealInfo || null,
-    hasCoupon: !!competitorData?.couponInfo,
-    couponInfo: competitorData?.couponInfo || null,
+    hasDeal: false,
+    dealInfo: null,
+    hasCoupon: false,
+    couponInfo: null,
     hasPrime: false, // 不默认假设，需要真实数据确认
     hasSubscribeSave: false,
     hasClimateTag: false,
@@ -637,7 +694,7 @@ export async function collectConversionData(
   badges.totalBadges = badgeCount;
 
   // ── 价格 ──
-  const currentPrice = competitorData?.price || (scraperData?.price ? parseFloat(scraperData.price.replace(/[^0-9.]/g, "")) : null);
+  const currentPrice = scraperData.price ? parseFloat(scraperData.price.replace(/[^0-9.]/g, "")) : null;
   const priceData: PriceData = {
     currentPrice,
     listPrice: null, // 需要HTML解析
@@ -698,7 +755,7 @@ export async function collectConversionData(
   };
 
   // ── 主图 ──
-  const allImages = scraperData?.images || [];
+  const allImages = scraperData.images;
   const mainImages = allImages.filter(img => img.position === "main");
   const secondaryImages = allImages.filter(img => img.position === "secondary");
   const aplusImages = allImages.filter(img => img.position === "aplus");
@@ -731,6 +788,7 @@ export async function collectConversionData(
   // ── 品牌故事 ──
   const brandStoryData: BrandStoryData = {
     hasBrandStory: brandStoryImages.length > 0,
+    coverageStatus: brandStoryImages.length > 0 ? "confirmed" : "unknown",
     hasRecommendation: false,
     imageCount: brandStoryImages.length,
     textContent: "",
@@ -740,12 +798,13 @@ export async function collectConversionData(
   // ── A+ ──
   const aplusData: AplusData = {
     hasAplus: aplusImages.length > 0,
+    coverageStatus: aplusImages.length > 0 ? "confirmed" : "unknown",
     moduleCount: 0,
     moduleTypes: [],
     hasComparisonChart: false,
     hasVideo: false,
     imageCount: aplusImages.length,
-    textContent: scraperData?.description || "",
+    textContent: scraperData.description,
     images: aplusImages,
   };
 
@@ -764,10 +823,10 @@ export async function collectConversionData(
 
   // ── Review ──
   const reviewData: ReviewData = {
-    rating: competitorData?.rating || (scraperData?.rating ? parseFloat(scraperData.rating) : null),
-    reviewCount: competitorData?.reviewCount || (scraperData?.reviewCount ? parseInt(scraperData.reviewCount) : null),
+    rating: scraperData.rating ? parseFloat(scraperData.rating) : null,
+    reviewCount: scraperData.reviewCount ? parseInt(scraperData.reviewCount) : null,
     hasVine: false,
-    topReviews: scraperData?.reviews || [],
+    topReviews: [],
     ratingDistribution: {},
   };
 
@@ -821,11 +880,17 @@ export async function collectConversionData(
       scraper: { success: hasScraperData, error: scraperError || undefined },
       competitor: { success: hasCompetitorData, error: competitorError || undefined },
       lingxingAd: { success: hasAdData, error: adError || undefined },
+      confirmedSnapshot: { success: true, confirmedSnapshotId: confirmed.id },
     },
     raw: {
       scraperData,
       competitorData,
       adData,
+      confirmedSnapshot: {
+        id: confirmed.id,
+        contentHash: confirmed.contentHash,
+        confirmationVersion: confirmed.confirmationVersion,
+      },
     },
     categories: {
       标题: titleData,

@@ -35,6 +35,7 @@ import {
   updateSourceSnapshot,
 } from "./repository";
 import { activateConfirmedSnapshotForConsumer } from "./consumerActivation";
+import { triggerConsumerPostConfirmation } from "./postConfirmation";
 
 export const AcquisitionJobRequestSchema = z.object({
   workspaceId: z.number().int().positive(),
@@ -88,7 +89,7 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
       const idempotencyKey = buildAcquisitionIdempotencyKey({ ...input, cachePolicy: "confirmed_cache" });
       const existing = await findAcquisitionJobByIdempotency(db, input.workspaceId, idempotencyKey);
       if (existing) return { jobId: existing.id, status: existing.status, cacheHitSnapshotId: existing.cacheHitSnapshotId, aiJobRunId: null };
-      return withDbTransaction("Reuse confirmed Amazon acquisition snapshot", async tx => {
+      const reused = await withDbTransaction("Reuse confirmed Amazon acquisition snapshot", async tx => {
         const jobId = await createAcquisitionJob(tx, {
           workspaceId: input.workspaceId,
           requestedBy: input.requestedBy,
@@ -105,7 +106,7 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
           cacheHitSnapshotId: cached.id,
           completedAt: new Date(),
         });
-        await activateConfirmedSnapshotForConsumer({
+        const projection = await activateConfirmedSnapshotForConsumer({
           db: tx,
           workspaceId: input.workspaceId,
           confirmedSnapshotId: cached.id,
@@ -117,8 +118,10 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
           },
           activatedBy: input.requestedBy,
         });
-        return { jobId, status: "confirmed" as const, cacheHitSnapshotId: cached.id, aiJobRunId: null };
+        return { jobId, status: "confirmed" as const, cacheHitSnapshotId: cached.id, aiJobRunId: null, projection };
       });
+      const postConfirmation = await triggerConsumerPostConfirmation(reused.projection);
+      return { ...reused, ...postConfirmation };
     }
     if (input.cachePolicy === "cache_only") throw new Error("acquisition cache miss");
   }

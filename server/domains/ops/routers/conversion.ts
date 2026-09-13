@@ -4,6 +4,11 @@ import { runOpsSkill } from "../legacy/service";
 import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
+import { startAmazonAcquisitionJob } from "../../../domains/acquisition/acquisitionJobs";
+import {
+  CONVERSION_COLLECTOR_ACQUISITION_CAPABILITIES,
+  conversionCollectorConsumerRef,
+} from "../../../domains/acquisition/legacyConsumerContracts";
 
 const {
   MARKETPLACE_MID_MAP,
@@ -359,11 +364,49 @@ export const opsConversionProcedures = {
       .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), eq(conversionComparisons.id, input.comparisonId)));
     if (!comp) throw new TRPCError({ code: "NOT_FOUND" });
 
-    // Update status to crawling
-    await db!.update(conversionComparisons).set({ status: "crawling" as any })
-      .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), eq(conversionComparisons.id, input.comparisonId)));
-
     const allAsins = [comp.ownAsin, ...JSON.parse((comp.competitorAsins as string) || "[]")];
+    const workspaceId = currentOpsWorkspaceId();
+    const acquisitionJobs = [];
+    for (const asin of allAsins) {
+      const normalizedAsin = String(asin || "").trim().toUpperCase();
+      const job = await startAmazonAcquisitionJob({
+        workspaceId,
+        requestedBy: ctx.user.id,
+        consumerType: "conversion_collector",
+        consumerRef: conversionCollectorConsumerRef(normalizedAsin),
+        marketplace: "US",
+        asin: normalizedAsin,
+        capabilities: [...CONVERSION_COLLECTOR_ACQUISITION_CAPABILITIES],
+        cachePolicy: "prefer_cache",
+        maxChargeUsd: 0.1,
+      });
+      acquisitionJobs.push({
+        asin: normalizedAsin,
+        jobId: job.jobId,
+        status: job.status,
+        confirmedSnapshotId: job.cacheHitSnapshotId,
+        reviewRequired: job.status !== "confirmed",
+      });
+    }
+    const pendingAcquisition = acquisitionJobs.filter(job => job.reviewRequired);
+    if (pendingAcquisition.length > 0) {
+      await db!.update(conversionComparisons).set({
+        status: "crawling" as any,
+        crawlData: {
+          acquisitionStatus: "review_required",
+          jobs: acquisitionJobs,
+        },
+      }).where(opsWorkspaceCondition(conversionComparisons, workspaceId, eq(conversionComparisons.id, input.comparisonId)));
+      return {
+        success: false,
+        reviewRequired: true,
+        jobs: acquisitionJobs,
+        message: `已创建 ${pendingAcquisition.length} 个受控采集任务，请在采集任务中心审核Snapshot后重新评分`,
+      };
+    }
+
+    await db!.update(conversionComparisons).set({ status: "crawling" as any })
+      .where(opsWorkspaceCondition(conversionComparisons, workspaceId, eq(conversionComparisons.id, input.comparisonId)));
     const checkItems = await db!.select().from(conversionCheckItems)
       .where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), sql`${conversionCheckItems.userId} IS NULL OR ${conversionCheckItems.userId} = ${ctx.user.id}`))
       .orderBy(asc(conversionCheckItems.categoryIndex), asc(conversionCheckItems.sortOrder));
@@ -372,7 +415,7 @@ export const opsConversionProcedures = {
     let crawlData: Record<string, any> = {};
     const failedAsins: string[] = [];
     try {
-      crawlData = await collectMultipleAsins(allAsins, { skipAds: false });
+      crawlData = await collectMultipleAsins(allAsins, { skipAds: false, workspaceId });
       // 记录采集失败的ASIN
       for (const asin of allAsins) {
         if (!crawlData[asin]) failedAsins.push(asin);

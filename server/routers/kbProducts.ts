@@ -4,238 +4,121 @@ import { resourceConflictError } from "@shared/_core/errors";
 import { router } from "../_core/trpc";
 import { workspaceScopedProcedure } from "../domains/ai_os/workspaceScopedProcedure";
 import * as kbDb from "../kbDb";
-import { scrapeAmazonProduct } from "../scraper";
-import { getScraperConfig } from "./systemSettings";
-import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
+import { resolveStoredObjectUrl } from "../storage";
+import { startAmazonAcquisitionJob } from "../domains/acquisition/acquisitionJobs";
+import { KbImageImportAsinSchema, parseAmazonUsAsins } from "../domains/acquisition/kbImagesAcquisition";
+import {
+  KB_PRODUCT_ACQUISITION_CAPABILITIES,
+  kbProductConsumerRef,
+} from "../domains/acquisition/legacyConsumerContracts";
 
 const protectedProcedure = workspaceScopedProcedure("knowledge");
+const MAX_ACQUISITION_USD = 0.1;
+
+async function resolveProductImageUrls<T extends { imageUrls?: string | null }>(item: T | null) {
+  if (!item?.imageUrls) return item;
+  try {
+    const refs = JSON.parse(item.imageUrls);
+    if (!Array.isArray(refs)) return item;
+    const imageUrls = await Promise.all(refs.map((ref: unknown) => typeof ref === "string" ? resolveStoredObjectUrl(ref) : Promise.resolve("")));
+    return { ...item, imageUrls: JSON.stringify(imageUrls.filter(Boolean)) };
+  } catch {
+    return item;
+  }
+}
+
+async function createProductAcquisition(input: { workspaceId: number; userId: number; asin: string; productUrl?: string }) {
+  const duplicate = await kbDb.findProductInnovationByAsin(input.asin, input.workspaceId);
+  if (duplicate && duplicate.status !== "archived") {
+    throw resourceConflictError(`ASIN ${input.asin} 已存在于产品知识库中`, {
+      existingId: duplicate.id,
+      resource: "kb_product",
+      asin: input.asin,
+    });
+  }
+  const id = duplicate
+    ? duplicate.id
+    : Number(await kbDb.createProductInnovation({
+      userId: input.userId,
+      workspaceId: input.workspaceId,
+      asin: input.asin,
+      productUrl: input.productUrl ?? `https://www.amazon.com/dp/${input.asin}`,
+      status: "crawling",
+    }));
+  if (duplicate) await kbDb.updateProductInnovation(id, input.userId, input.workspaceId, { status: "crawling" });
+  try {
+    const job = await startAmazonAcquisitionJob({
+      workspaceId: input.workspaceId,
+      requestedBy: input.userId,
+      consumerType: "kb_product",
+      consumerRef: kbProductConsumerRef(id),
+      marketplace: "US",
+      asin: input.asin,
+      capabilities: [...KB_PRODUCT_ACQUISITION_CAPABILITIES],
+      cachePolicy: "prefer_cache",
+      maxChargeUsd: MAX_ACQUISITION_USD,
+    });
+    return { id, asin: input.asin, ...job, reviewRequired: job.status !== "confirmed" };
+  } catch (error) {
+    await kbDb.updateProductInnovation(id, input.userId, input.workspaceId, { status: "archived" });
+    throw error;
+  }
+}
 
 export const kbProductsRouter = router({
   list: protectedProcedure
     .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
     .query(async ({ ctx, input }) => {
-    return kbDb.listProductInnovations(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
-  }),
+      const rows = await kbDb.listProductInnovations(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
+      return Promise.all(rows.map(row => resolveProductImageUrls(row)));
+    }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ ctx, input }) => {
-      return kbDb.getProductInnovation(input.id, ctx.user.id, ctx.workspaceId!);
-    }),
+    .query(async ({ ctx, input }) => resolveProductImageUrls(await kbDb.getProductInnovation(input.id, ctx.user.id, ctx.workspaceId!))),
 
-  // Import by ASIN - single
   importByAsin: protectedProcedure
     .input(z.object({ asin: z.string().min(1) }))
-    .mutation(async ({ ctx, input }) => {
-      const asin = input.asin.trim().toUpperCase();
-      // ASIN dedup: prevent duplicate entries
-      const dupProduct = await kbDb.findProductInnovationByAsin(asin, ctx.workspaceId!);
-      if (dupProduct) {
-        throw resourceConflictError(`ASIN ${asin} 已存在于产品知识库中`, { existingId: dupProduct.id, resource: "kb_product", asin });
-      }
-      const id = await kbDb.createProductInnovation({
-        userId: ctx.user.id,
-        workspaceId: ctx.workspaceId!,
-        asin,
-        status: "crawling",
-      });
-      // Async crawl + analyze
-      (async () => {
-        try {
-          const scraperCfg = await getScraperConfig();
-          const data = await scrapeAmazonProduct(asin, scraperCfg);
-          await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, {
-            productTitle: data.title,
-            brand: data.brand,
-            price: data.price,
-            rating: data.rating,
-            reviewCount: data.reviewCount,
-            category: data.category,
-            bulletPoints: JSON.stringify(data.bulletPoints),
-            imageUrls: JSON.stringify(data.imageUrls),
-            crawledData: JSON.stringify(data),
-            productUrl: `https://www.amazon.com/dp/${asin}`,
-            status: "analyzing",
-          });
-          // AI analysis
-      // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
+    .mutation(({ ctx, input }) => createProductAcquisition({
+      workspaceId: ctx.workspaceId!,
+      userId: ctx.user.id,
+      asin: KbImageImportAsinSchema.parse(input.asin),
+    })),
 
-
-
-
-
-          const response = await invokeBusinessSkill({
-            messages: [
-              {
-                role: "system",
-                content: `你是一位资深的亚马逊产品创意分析专家。请分析以下产品，从以下维度评价其创意的优秀之处：
-1. 市场定位创新点
-2. 功能设计亮点
-3. 外观/包装差异化
-4. 用户痛点解决方案
-5. 定价策略分析
-6. 竞争优势总结
-7. 可借鉴的创意要素
-
-请用JSON格式返回分析结果，包含以下字段：
-{
-  "marketPositioning": "市场定位创新点分析",
-  "functionalHighlights": "功能设计亮点",
-  "designDifferentiation": "外观/包装差异化",
-  "painPointSolutions": "用户痛点解决方案",
-  "pricingStrategy": "定价策略分析",
-  "competitiveAdvantages": "竞争优势总结",
-  "inspiringElements": "可借鉴的创意要素",
-  "overallScore": 8,
-  "summary": "一句话总结"
-}`
-              },
-              {
-                role: "user",
-                content: `产品标题: ${data.title}\n品牌: ${data.brand}\n价格: ${data.price}\n评分: ${data.rating} (${data.reviewCount}条评论)\n类目: ${data.category}\n五点描述:\n${data.bulletPoints.join("\n")}\n产品描述: ${data.description}`
-              }
-            ],
-            response_format: { type: "json_object" as const },
-          });
-          const analysis = String(response.choices?.[0]?.message?.content || "{}");
-          const parsed = JSON.parse(analysis);
-          await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, {
-            aiAnalysis: analysis,
-            overallScore: parsed.overallScore ?? 7,
-            status: "pending_review",
-          });
-        } catch (err: any) {
-          console.error("[KB Products] Import failed:", err.message);
-          await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
-              }
-      })();
-      return { id: Number(id), asin };
-    }),
-
-  // Batch import by ASINs
   batchImportAsins: protectedProcedure
     .input(z.object({ asins: z.array(z.string()).min(1).max(50) }))
     .mutation(async ({ ctx, input }) => {
-      const results: { asin: string; id: number }[] = [];
-      for (const raw of input.asins) {
-        const asin = raw.trim().toUpperCase();
-        if (!asin) continue;
-        // ASIN dedup: skip if already exists
-        const dupProduct = await kbDb.findProductInnovationByAsin(asin, ctx.workspaceId!);
-        if (dupProduct) {
-          results.push({ asin, id: dupProduct.id });
+      const asins = [...new Set(input.asins.map(value => KbImageImportAsinSchema.parse(value)))];
+      const items: Array<Awaited<ReturnType<typeof createProductAcquisition>>> = [];
+      const skippedItems: Array<{ asin: string; existingId: number }> = [];
+      for (const asin of asins) {
+        const duplicate = await kbDb.findProductInnovationByAsin(asin, ctx.workspaceId!);
+        if (duplicate && duplicate.status !== "archived") {
+          skippedItems.push({ asin, existingId: duplicate.id });
           continue;
         }
-        const id = await kbDb.createProductInnovation({
-          userId: ctx.user.id,
-          workspaceId: ctx.workspaceId!,
-          asin,
-          status: "crawling",
-        });
-        results.push({ asin, id: Number(id) });
-        // Fire-and-forget crawl + analyze for each
-        (async () => {
-          try {
-            const scraperCfg = await getScraperConfig();
-          const data = await scrapeAmazonProduct(asin, scraperCfg);
-            await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, {
-              productTitle: data.title, brand: data.brand, price: data.price,
-              rating: data.rating, reviewCount: data.reviewCount, category: data.category,
-              bulletPoints: JSON.stringify(data.bulletPoints), imageUrls: JSON.stringify(data.imageUrls),
-              crawledData: JSON.stringify(data), productUrl: `https://www.amazon.com/dp/${asin}`,
-              status: "analyzing",
-            });
-      // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
-
-
-
-
-
-            const response = await invokeBusinessSkill({
-              messages: [
-                { role: "system", content: `你是亚马逊产品创意分析专家。分析产品创意的优秀之处，返回JSON格式包含: marketPositioning, functionalHighlights, designDifferentiation, painPointSolutions, pricingStrategy, competitiveAdvantages, inspiringElements, overallScore(1-10), summary` },
-                { role: "user", content: `标题: ${data.title}\n品牌: ${data.brand}\n价格: ${data.price}\n评分: ${data.rating}\n五点: ${data.bulletPoints.join("; ")}` }
-              ],
-              response_format: { type: "json_object" as const },
-            });
-            const analysis = String(response.choices?.[0]?.message?.content || "{}");
-            const parsed = JSON.parse(analysis);
-            await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, {
-              aiAnalysis: analysis, overallScore: parsed.overallScore ?? 7, status: "pending_review",
-            });
-          } catch (err: any) {
-            console.error(`[KB Products] Batch import failed for ${asin}:`, err.message);
-            await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
-                }
-        })();
+        items.push(await createProductAcquisition({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin }));
       }
-      return { imported: results.length, items: results };
+      return { imported: items.length, skipped: skippedItems.length, items, skippedItems };
     }),
 
-  // Import by URL/link
   importByLink: protectedProcedure
-    .input(z.object({ url: z.string().url() }))
+    .input(z.object({ url: z.string().trim().min(1).max(20_000) }))
     .mutation(async ({ ctx, input }) => {
-      // Extract ASIN from URL
-      const asinMatch = input.url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
-      const asin = asinMatch?.[1]?.toUpperCase() || "";
-      if (!asin) throw new Error("无法从链接中提取ASIN，请检查链接格式");
-      // ASIN dedup: prevent duplicate entries
-      const dupProduct = await kbDb.findProductInnovationByAsin(asin, ctx.workspaceId!);
-      if (dupProduct) {
-        throw resourceConflictError(`ASIN ${asin} 已存在于产品知识库中`, { existingId: dupProduct.id, resource: "kb_product", asin });
-      }
-      const id = await kbDb.createProductInnovation({
-        userId: ctx.user.id, workspaceId: ctx.workspaceId!, asin, productUrl: input.url, status: "crawling",
-      });
-      // Same async flow as importByAsin
-      (async () => {
-        try {
-          const scraperCfg = await getScraperConfig();
-          const data = await scrapeAmazonProduct(asin, scraperCfg);
-          await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, {
-            productTitle: data.title, brand: data.brand, price: data.price,
-            rating: data.rating, reviewCount: data.reviewCount, category: data.category,
-            bulletPoints: JSON.stringify(data.bulletPoints), imageUrls: JSON.stringify(data.imageUrls),
-            crawledData: JSON.stringify(data), status: "analyzing",
-          });
-      // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
-
-
-
-
-
-          const response = await invokeBusinessSkill({
-            messages: [
-              { role: "system", content: `你是亚马逊产品创意分析专家。分析产品创意的优秀之处，返回JSON: { marketPositioning, functionalHighlights, designDifferentiation, painPointSolutions, pricingStrategy, competitiveAdvantages, inspiringElements, overallScore(1-10), summary }` },
-              { role: "user", content: `标题: ${data.title}\n品牌: ${data.brand}\n价格: ${data.price}\n评分: ${data.rating}\n五点: ${data.bulletPoints.join("; ")}` }
-            ],
-            response_format: { type: "json_object" as const },
-          });
-          const analysis = String(response.choices?.[0]?.message?.content || "{}");
-          const parsed = JSON.parse(analysis);
-          await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, {
-            aiAnalysis: analysis, overallScore: parsed.overallScore ?? 7, status: "pending_review",
-          });
-        } catch (err: any) {
-          console.error("[KB Products] Link import failed:", err.message);
-          await kbDb.updateProductInnovation(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
-              }
-      })();
-      return { id: Number(id), asin };
+      const asins = parseAmazonUsAsins(input.url);
+      if (asins.length !== 1) throw new TRPCError({ code: "BAD_REQUEST", message: "请输入一个Amazon美国站商品链接" });
+      return createProductAcquisition({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin: asins[0], productUrl: input.url });
     }),
 
-  // Confirm / edit analysis
   confirmAnalysis: protectedProcedure
     .input(z.object({ id: z.number(), editedAnalysis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const update: any = { status: "confirmed" as const, confirmedAt: new Date() };
+      const update: Record<string, unknown> = { status: "confirmed" as const, confirmedAt: new Date() };
       if (input.editedAnalysis) update.userEditedAnalysis = input.editedAnalysis;
       await kbDb.updateProductInnovation(input.id, ctx.user.id, ctx.workspaceId!, update);
       return { success: true };
     }),
 
-  // Update tags
   updateTags: protectedProcedure
     .input(z.object({ id: z.number(), tags: z.string() }))
     .mutation(async ({ ctx, input }) => {

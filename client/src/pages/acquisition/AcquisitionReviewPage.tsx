@@ -70,8 +70,16 @@ export default function AcquisitionReviewPage() {
     if (hasPendingAssets) return toast.error("请先对全部图片选择保留或排除");
     if (!hasApprovedGallery) return toast.error("至少保留一张主图或辅图");
     await saveReview.mutateAsync({ snapshotId, patch, assetReviews: reviewItems, note: note.trim() || null });
-    await confirmReview.mutateAsync({ snapshotId, note: note.trim() || null });
-    toast.success("确认版本已生成，可供授权业务模块消费");
+    const confirmed = await confirmReview.mutateAsync({ snapshotId, note: note.trim() || null });
+    if (confirmed.analysisJobStatus === "failed_to_queue") {
+      toast.warning("确认版本已生成，但后续AI分析未能排队", {
+        description: "Snapshot确认不会回滚，请稍后从AI任务中心重试分析。",
+      });
+    } else if (confirmed.analysisJobRunId) {
+      toast.success("确认版本已生成，后续AI分析已排队");
+    } else {
+      toast.success("确认版本已生成，可供授权业务模块消费");
+    }
     await utils.acquisition.listJobs.invalidate();
     navigate("/knowledge/acquisition");
   };
@@ -85,6 +93,7 @@ export default function AcquisitionReviewPage() {
 
   if (review.isLoading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin" /></div>;
   if (review.error || !review.data) return <div className="p-6"><Card><CardContent className="flex items-center gap-2 p-6 text-destructive"><ShieldAlert className="h-5 w-5" />{review.error?.message || "未找到可审核Snapshot"}</CardContent></Card></div>;
+  const reviewAssets = review.data.assets;
 
   return (
     <div className="space-y-6 p-6">
@@ -106,13 +115,13 @@ export default function AcquisitionReviewPage() {
         </Card>
 
         <Card>
-          <CardHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle>竞品证据图片</CardTitle><CardDescription>按主图、辅图、A+和品牌故事逐图审核；确认前必须处理全部图片。</CardDescription></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setAssetReviews(Object.fromEntries(review.data.assets.map(asset => [asset.id, asset.previewUrl ? "approved" : "rejected"]))) }><CheckCircle2 className="mr-1 h-4 w-4" />保留可用图片</Button><Button size="sm" variant="outline" onClick={() => setAssetReviews(Object.fromEntries(review.data.assets.map(asset => [asset.id, "rejected"]))) }><XCircle className="mr-1 h-4 w-4" />全部排除</Button></div></div></CardHeader>
-          <CardContent><AssetReviewGrid assets={review.data.assets} reviews={assetReviews} onChange={(assetId, status) => setAssetReviews(current => ({ ...current, [assetId]: status }))} /></CardContent>
+          <CardHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle>竞品证据图片</CardTitle><CardDescription>按主图、辅图、A+和品牌故事逐图审核；确认前必须处理全部图片。</CardDescription></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setAssetReviews(Object.fromEntries(reviewAssets.map(asset => [asset.id, asset.previewUrl ? "approved" : "rejected"]))) }><CheckCircle2 className="mr-1 h-4 w-4" />保留可用图片</Button><Button size="sm" variant="outline" onClick={() => setAssetReviews(Object.fromEntries(reviewAssets.map(asset => [asset.id, "rejected"]))) }><XCircle className="mr-1 h-4 w-4" />全部排除</Button></div></div></CardHeader>
+          <CardContent><AssetReviewGrid assets={reviewAssets} reviews={assetReviews} onChange={(assetId, status) => setAssetReviews(current => ({ ...current, [assetId]: status }))} /></CardContent>
         </Card>
       </div>
 
       <div className="sticky bottom-4 flex flex-col gap-3 rounded-xl border bg-background/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm text-muted-foreground">待处理 {review.data.assets.filter(asset => (assetReviews[asset.id] || "pending") === "pending").length} 张 · 已保留 {review.data.assets.filter(asset => assetReviews[asset.id] === "approved").length} 张</div>
+        <div className="text-sm text-muted-foreground">待处理 {reviewAssets.filter(asset => (assetReviews[asset.id] || "pending") === "pending").length} 张 · 已保留 {reviewAssets.filter(asset => assetReviews[asset.id] === "approved").length} 张</div>
         <div className="flex gap-2"><Button variant="outline" onClick={handleSave} disabled={saveReview.isPending}><Save className="mr-2 h-4 w-4" />保存草稿</Button><Button variant="destructive" onClick={handleReject} disabled={rejectReview.isPending}>拒绝Snapshot</Button><Button onClick={handleConfirm} disabled={saveReview.isPending || confirmReview.isPending || hasPendingAssets || !hasApprovedGallery}>确认并授权消费</Button></div>
       </div>
     </div>

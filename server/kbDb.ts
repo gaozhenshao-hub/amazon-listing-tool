@@ -47,7 +47,7 @@ export async function getProductInnovationById(id: number, workspaceId: number) 
 }
 export async function findProductInnovationByAsin(asin: string, workspaceId: number) {
   const _d = await db();
-  const rows = await _d.select({ id: kbProductInnovations.id })
+  const rows = await _d.select({ id: kbProductInnovations.id, status: kbProductInnovations.status })
     .from(kbProductInnovations)
     .where(and(eq(kbProductInnovations.asin, asin), eq(kbProductInnovations.workspaceId, workspaceId)))
     .limit(1);
@@ -86,7 +86,7 @@ export async function getListingCopywritingById(id: number, workspaceId: number)
 }
 export async function findListingCopywritingByAsin(asin: string, workspaceId: number) {
   const _d = await db();
-  const rows = await _d.select({ id: kbListingCopywriting.id })
+  const rows = await _d.select({ id: kbListingCopywriting.id, status: kbListingCopywriting.status })
     .from(kbListingCopywriting)
     .where(and(eq(kbListingCopywriting.asin, asin), eq(kbListingCopywriting.workspaceId, workspaceId)))
     .limit(1);

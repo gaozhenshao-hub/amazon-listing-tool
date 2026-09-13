@@ -9,6 +9,7 @@ import "../domains/product_development/panorama/marketInsightService";
 import "../domains/keyword/keywordGenerationJob";
 import "../domains/video/videoGenerationJob";
 import "../domains/acquisition/acquisitionJobs";
+import "../domains/acquisition/legacyConsumerAnalysisJob";
 import "../domains/image/services/competitorGalleryJob";
 import "../domains/image/services/expressionLinkageJob";
 import {

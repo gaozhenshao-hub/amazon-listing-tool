@@ -1897,7 +1897,12 @@
 - [x] P3：在智能图片建议Step 0实现主要竞品ASIN卡片、完整图库、逐图事实卡、整套图片策略、编辑确认和版本追溯；新增唯一主要竞品门禁、两个皇帝Skill、可恢复AI Job和不可变Gallery Artifact，原卖点表达方式保持并列。0199已执行开发数据库；11项定向回归、定向TypeScript筛选、ESLint、生产构建与Bundle预算通过。真实有项目数据的AI运行和青岛迁移留待受控验收。
 - [x] P3/A6：实现从所有已确认竞品图库按卖点、表达方式、ASIN、竞品角色、图位、证明方式与置信度筛选并批量点选；支持AI推荐、全选结果、去重、排序、已选托盘和Selection Version。选择变化会失效旧表达分析与Composite但保留历史；历史手工上传仍保持1–5张，图库模式无5张上限。
 - [x] P3/A6：实现基于已确认全图Artifact与已确认表达方向Artifact的Step 0综合结论，AI仅生成结构化候选，用户必须逐项选择至少一项后才能确认；确认Composite只以文本策略进入卖点梳理和图片大纲，竞品图不得作为我方素材。0200已执行开发数据库，15项A6及相邻回归、定向TypeScript、ESLint、两次生产构建与Bundle预算通过；青岛未迁移/未发布，未运行真实Provider或LLM。
-- [ ] P4：迁移Listing知识库、产品知识库、项目竞品分析与转化率采集中的旧商品详情爬虫消费者，保留历史记录并避免重复采集。
+- [x] P4：迁移Listing知识库、产品知识库、项目竞品分析与转化率采集中的旧商品详情爬虫消费者，保留历史记录并避免重复采集。A7四类业务消费者运行时旧商品详情爬虫调用为0；监控执行器和系统设置入口留待A8。
+- [x] P4/A7：建立`kb_listing`、`kb_product`、`project_competitor`与`conversion_collector`的统一Consumer Ref、能力合同和Confirmed Snapshot读取/投影服务；只保存Snapshot/Artifact引用，不再复制新的原始Provider大JSON。
+- [x] P4/A7：迁移Listing知识库的单ASIN、批量和Amazon美国站链接入口为Acquisition Job；人工确认Snapshot后才投影文案字段并启动受治理结构化AI分析，失败占位可重试，Provider失败不得回退旧爬虫。
+- [x] P4/A7：迁移产品知识库的单ASIN、批量和Amazon美国站链接入口为Acquisition Job；确认后幂等投影基础信息/卖点/已确认图片引用并启动受治理结构化AI分析，旧记录保持可读，S3引用只在交付时解析。
+- [x] P4/A7：迁移项目竞品分析的自动ASIN、单个和批量入口；只允许Confirmed Snapshot进入分析，保存统一Artifact并保留编辑/确认/解锁版本链；手工与文件导入路径继续兼容且明确来源。
+- [x] P4/A7：将转化率采集中的Amazon商品详情目录字段改为Confirmed Snapshot消费；缺Snapshot时只创建采集任务并停止评分，全部确认后才联合领星广告事实评分；排名、Coupon、Deal监控保留到A8单独Provider迁移，禁止回退旧爬虫。A7新增及相邻回归71项通过（另1项显式跳过），定向TypeScript、ESLint、生产构建与Bundle预算通过；青岛未发布，未运行真实Provider或LLM。
 - [ ] P5：为竞品价格/排名与关键词排名选择独立Provider能力并迁移持久化调度；所有消费者验证为0调用后禁用旧`scraper.ts`/`crawlerEngine.ts`执行入口和代理配置写入口。
 - [ ] 完成Provider合同、标准化、Job/Run、快照、权限、资产、AI覆盖、UI点选、消费者兼容和旧爬虫退役回归；执行静态检查与生产构建。
 - [ ] 分阶段执行受控迁移、发布和真实ASIN验收；每次实际Provider付费调用、生产迁移与发布均保留预算提示、备份、验签、健康检查和失败回滚。

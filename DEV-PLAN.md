@@ -145,11 +145,13 @@ Provider资格验证
 
 ## 阶段A7：其他商品详情消费者迁移
 
+**状态（2026-09-13）**：本地完成。Listing知识库、产品知识库和项目竞品分析的ASIN入口均改为统一Acquisition Job；Confirmed Snapshot确认后按消费者投影，并通过独立单节点Agent、持久化AI Job与皇帝Skill生成待人工审核草案。转化率评分会先为全部ASIN建立或复用统一采集任务，存在未确认Snapshot时立即停止评分并引导审核，全部确认后才读取Snapshot与领星广告数据。Provider失败不回退旧`scraper.ts`或`crawlerEngine.ts`。本阶段未新增数据库迁移，未执行真实Provider或LLM调用，青岛未发布。
+
 **交付物**：迁移Listing知识库、产品知识库、项目竞品分析和转化率采集的目录数据部分；原大JSON副本改为Snapshot引用；逐模块删除旧爬虫运行时调用并增加影子对照回归。
 
-**关键文件**：`server/routers/kbListings.ts`、`server/routers/kbProducts.ts`、`server/routers/analysis.ts`、`server/routers/conversionDataCollector.ts`、`server/routers/systemSettings.ts`、`server/domains/acquisition/services/consumerProjection.ts`及测试。
+**关键文件**：`server/domains/acquisition/legacyConsumerContracts.ts`、`server/domains/acquisition/legacyConsumerProjection.ts`、`server/domains/acquisition/legacyConsumerAgent.ts`、`server/domains/acquisition/legacyConsumerAnalysisJob.ts`、`server/domains/acquisition/postConfirmation.ts`、`server/domains/acquisition/consumerActivation.ts`、`server/routers/kbListings.ts`、`server/routers/kbProducts.ts`、`server/routers/analysis.ts`、`server/routers/conversionDataCollector.ts`、`server/domains/ops/routers/conversion.ts`及测试。
 
-**验收标准**：模块只读取Confirmed Snapshot或历史记录；转化率采集的广告部分继续使用领星受治理事实；系统设置改为Provider健康、能力和预算，不再写旧代理/UA/重试配置。
+**验收标准**：模块只读取Confirmed Snapshot或历史记录；转化率采集的广告部分继续使用领星受治理事实；A7四类业务消费者对旧商品详情爬虫的运行时调用为0；排名、Coupon、Deal与系统设置旧代理入口明确留给A8处理。
 
 ## 阶段A8：监控迁移与旧爬虫退役
 

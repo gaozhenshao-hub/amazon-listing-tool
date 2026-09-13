@@ -1,10 +1,18 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+import { TRPCError } from "@trpc/server";
 import * as db from "../repositories";
 import { COMPETITOR_ANALYSIS_PROMPT, REVIEW_ANALYSIS_PROMPT, COMPARISON_SUMMARY_PROMPT } from "../prompts";
-import { scrapeAmazonProduct, type AmazonProductData } from "../scraper";
-import { getScraperConfig } from "./systemSettings";
 import { parseReviewFile, reviewsToText, type ParseResult } from "../reviewParser";
+import { requireDb } from "../repositories/dbClient";
+import { startAmazonAcquisitionJob } from "../domains/acquisition/acquisitionJobs";
+import { findFreshConfirmedSnapshot } from "../domains/acquisition/repository";
+import { loadConfirmedSnapshotForConsumer } from "../domains/acquisition/legacyConsumerProjection";
+import {
+  PROJECT_COMPETITOR_ACQUISITION_CAPABILITIES,
+  projectCompetitorConsumerRef,
+} from "../domains/acquisition/legacyConsumerContracts";
+import { resolveStoredObjectUrl } from "../storage";
 import {
   registerCompetitorAnalysisArtifact,
   registerCompetitorComparisonArtifact,
@@ -59,107 +67,46 @@ async function runAnalysisSkill<T>(input: {
   return result.parsed;
 }
 
-// Helper: run a single ASIN analysis (scrape + LLM)
-async function analyzeSingleAsin(
-  projectId: number,
-  asin: string,
-  userId: number,
-  workspaceId?: number | null,
-): Promise<{
+const PROJECT_COMPETITOR_MAX_USD = 0.1;
+
+async function startProjectCompetitorAcquisition(input: {
+  projectId: number;
+  workspaceId: number;
+  userId: number;
   asin: string;
-  status: "success" | "partial" | "failed";
-  analysisId?: number;
-  title?: string;
-  error?: string;
-}> {
-  // Step 1: Auto-scrape Amazon product data
-  let scrapedData: AmazonProductData | null = null;
-  try {
-    const scraperCfg = await getScraperConfig();
-    scrapedData = await scrapeAmazonProduct(asin, scraperCfg);
-  } catch (error: any) {
-    console.warn(`[Analysis] Scraping failed for ${asin}: ${error.message}`);
-  }
-
-  // Step 2: Build context for LLM analysis
-  const contextParts: string[] = [];
-  contextParts.push(`ASIN: ${asin}`);
-
-  if (scrapedData) {
-    if (scrapedData.title) contextParts.push(`Title: ${scrapedData.title}`);
-    if (scrapedData.brand) contextParts.push(`Brand: ${scrapedData.brand}`);
-    if (scrapedData.bulletPoints.length > 0) {
-      contextParts.push(`Bullet Points:\n${scrapedData.bulletPoints.map((bp, i) => `${i + 1}. ${bp}`).join("\n")}`);
-    }
-    if (scrapedData.price) contextParts.push(`Price: ${scrapedData.price}`);
-    if (scrapedData.rating) contextParts.push(`Rating: ${scrapedData.rating}/5`);
-    if (scrapedData.reviewCount) contextParts.push(`Review Count: ${scrapedData.reviewCount}`);
-    if (scrapedData.description) contextParts.push(`Description: ${scrapedData.description}`);
-    if (scrapedData.category) contextParts.push(`Category: ${scrapedData.category}`);
-  }
-
-  // Step 3: Analyze competitor data with LLM
-  const analysisData = await runAnalysisSkill<any>({
-    skillSlug: "listing.competitor.analyze",
-    userId,
-    workspaceId,
-    context: `Analyze this competitor product:\n\n${contextParts.join("\n\n")}`,
-    legacySystemPrompt: COMPETITOR_ANALYSIS_PROMPT,
-  });
-  const structuredSummary = formatCompetitorAnalysisSummary(analysisData);
-
-  // Step 4: Analyze reviews if available
-  let reviewAnalysis: any = null;
-  const reviewTexts = scrapedData?.reviews || [];
-  if (reviewTexts.length > 0) {
-    reviewAnalysis = await runAnalysisSkill<any>({
-      skillSlug: "analysis.review.extract",
-      userId,
-      workspaceId,
-      context: `Analyze these customer reviews:\n\n${reviewTexts.join("\n\n---\n\n")}`,
-      legacySystemPrompt: REVIEW_ANALYSIS_PROMPT,
-    });
-  }
-
-  // Step 5: Save analysis to database (upsert to prevent duplicates)
-  const saved = await db.upsertCompetitorAnalysis({
-    projectId,
+}) {
+  const asin = input.asin.trim().toUpperCase();
+  const job = await startAmazonAcquisitionJob({
+    workspaceId: input.workspaceId,
+    requestedBy: input.userId,
+    consumerType: "project_competitor",
+    consumerRef: projectCompetitorConsumerRef(input.projectId, asin),
+    marketplace: "US",
     asin,
-    title: scrapedData?.title ?? null,
-    bulletPoints: scrapedData?.bulletPoints ? JSON.stringify(scrapedData.bulletPoints) : null,
-    price: scrapedData?.price ?? null,
-    rating: scrapedData?.rating ?? null,
-    reviewCount: scrapedData?.reviewCount ?? null,
-    reviewAnalysis: reviewAnalysis ? JSON.stringify(reviewAnalysis) : null,
-    keywords: analysisData.keywords ? JSON.stringify(analysisData.keywords) : null,
-    imageUrls: scrapedData?.imageUrls ? JSON.stringify(scrapedData.imageUrls) : null,
-    rawData: JSON.stringify({
-      ...analysisData,
-      scrapedData: scrapedData ? {
-        title: scrapedData.title,
-        brand: scrapedData.brand,
-        price: scrapedData.price,
-        rating: scrapedData.rating,
-        reviewCount: scrapedData.reviewCount,
-        bulletPointsCount: scrapedData.bulletPoints.length,
-        reviewsCount: scrapedData.reviews.length,
-        category: scrapedData.category,
-      } : null,
-    }),
-    aiSummary: structuredSummary,
-    summary: structuredSummary,
-    summaryStatus: "draft",
+    capabilities: [...PROJECT_COMPETITOR_ACQUISITION_CAPABILITIES],
+    cachePolicy: "prefer_cache",
+    maxChargeUsd: PROJECT_COMPETITOR_MAX_USD,
   });
-  await registerCompetitorAnalysisArtifact(saved.id, "ai_output").catch(error => {
-    console.warn("[Analysis] Failed to register competitor artifact", error);
-  });
-
   return {
     asin,
-    status: scrapedData?.title ? "success" : "partial",
-    analysisId: saved.id,
-    title: scrapedData?.title ?? undefined,
+    status: job.status === "confirmed" ? "analysis_queued" as const : "review_required" as const,
+    jobId: job.jobId,
+    cacheHitSnapshotId: job.cacheHitSnapshotId,
+    analysisJobRunId: "analysisJobRunId" in job ? job.analysisJobRunId : null,
+    reviewRequired: job.status !== "confirmed",
   };
+}
+
+async function resolveCompetitorImagesForDelivery<T extends { imageUrls?: string | null }>(analysis: T) {
+  if (!analysis.imageUrls) return analysis;
+  try {
+    const refs = JSON.parse(analysis.imageUrls);
+    if (!Array.isArray(refs)) return analysis;
+    const urls = await Promise.all(refs.map((ref: unknown) => typeof ref === "string" ? resolveStoredObjectUrl(ref) : Promise.resolve("")));
+    return { ...analysis, imageUrls: JSON.stringify(urls.filter(Boolean)) };
+  } catch {
+    return analysis;
+  }
 }
 
 export const analysisRouter = router({
@@ -169,7 +116,8 @@ export const analysisRouter = router({
     .query(async ({ ctx, input }) => {
       const project = await db.getProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
-      return db.getCompetitorAnalysesByProject(input.projectId);
+      const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
+      return Promise.all(analyses.map(resolveCompetitorImagesForDelivery));
     }),
 
   updateSummary: protectedProcedure
@@ -331,15 +279,41 @@ export const analysisRouter = router({
       return serializeComparisonReport(updated);
     }),
 
-  // Scrape Amazon product data by ASIN (preview only, no save)
+  // Preview only from an already confirmed controlled snapshot; never calls a provider.
   scrapeAsin: protectedProcedure
     .input(z.object({
       asin: z.string().min(10).max(10),
     }))
-    .mutation(async ({ input }) => {
-      const scraperCfg2 = await getScraperConfig();
-      const data = await scrapeAmazonProduct(input.asin, scraperCfg2);
-      return data;
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.workspaceId) throw new TRPCError({ code: "BAD_REQUEST", message: "当前工作空间不可用" });
+      const database = await requireDb("Confirmed Amazon competitor preview");
+      const confirmed = await findFreshConfirmedSnapshot({
+        db: database,
+        workspaceId: ctx.workspaceId,
+        marketplace: "US",
+        asin: input.asin.toUpperCase(),
+        freshAfter: new Date(0),
+      });
+      if (!confirmed) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该ASIN尚无已确认采集快照，请先创建采集任务并完成审核" });
+      }
+      const snapshot = await loadConfirmedSnapshotForConsumer({
+        db: database,
+        workspaceId: ctx.workspaceId,
+        confirmedSnapshotId: confirmed.id,
+      });
+      const imageUrls = await Promise.all(snapshot.assets
+        .filter((asset: any) => asset.role === "main" || asset.role === "secondary")
+        .sort((a: any, b: any) => a.positionIndex - b.positionIndex)
+        .map((asset: any) => resolveStoredObjectUrl(asset.storageKey)));
+      return {
+        ...snapshot.data,
+        price: snapshot.data.price ? `${snapshot.data.price.value} ${snapshot.data.price.currency}` : null,
+        imageUrls,
+        reviews: [],
+        confirmedSnapshotId: confirmed.id,
+        source: "unified_amazon_acquisition" as const,
+      };
     }),
 
   // Analyze a single competitor ASIN - auto-scrape + LLM analysis
@@ -354,13 +328,13 @@ export const analysisRouter = router({
 
       await db.updateProject(input.projectId, ctx.user.id, { status: "analyzing" });
 
-      const result = await analyzeSingleAsin(
-        input.projectId,
-        input.asin,
-        ctx.user.id,
-        project.workspaceId,
-      );
-      return result;
+      if (!project.workspaceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "项目尚未绑定工作空间" });
+      return startProjectCompetitorAcquisition({
+        projectId: input.projectId,
+        workspaceId: project.workspaceId,
+        userId: ctx.user.id,
+        asin: input.asin,
+      });
     }),
 
   // Batch analyze multiple ASINs - process sequentially
@@ -378,23 +352,24 @@ export const analysisRouter = router({
       // Deduplicate ASINs
       const uniqueAsins = Array.from(new Set(input.asins));
 
+      if (!project.workspaceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "项目尚未绑定工作空间" });
       const results: Array<{
         asin: string;
-        status: "success" | "partial" | "failed";
-        analysisId?: number;
-        title?: string;
+        status: "analysis_queued" | "review_required" | "failed";
+        jobId?: number;
+        reviewRequired?: boolean;
         error?: string;
       }> = [];
 
       // Process each ASIN sequentially to avoid rate limiting
       for (const asin of uniqueAsins) {
         try {
-          const result = await analyzeSingleAsin(
-            input.projectId,
+          const result = await startProjectCompetitorAcquisition({
+            projectId: input.projectId,
             asin,
-            ctx.user.id,
-            project.workspaceId,
-          );
+            userId: ctx.user.id,
+            workspaceId: project.workspaceId,
+          });
           results.push(result);
         } catch (error: any) {
           console.error(`[BatchAnalysis] Failed for ${asin}: ${error.message}`);
@@ -405,14 +380,10 @@ export const analysisRouter = router({
           });
         }
 
-        // Small delay between ASINs to be polite to Amazon
-        if (uniqueAsins.indexOf(asin) < uniqueAsins.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
       }
 
-      const successCount = results.filter(r => r.status === "success").length;
-      const partialCount = results.filter(r => r.status === "partial").length;
+      const successCount = results.filter(r => r.status === "analysis_queued").length;
+      const partialCount = results.filter(r => r.status === "review_required").length;
       const failedCount = results.filter(r => r.status === "failed").length;
 
       return {

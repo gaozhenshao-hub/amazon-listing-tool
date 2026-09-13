@@ -23,6 +23,7 @@ import {
   rejectSnapshot,
   saveSnapshotReview,
 } from "./snapshotReview";
+import { triggerConsumerPostConfirmation } from "./postConfirmation";
 
 function workspaceIdOf(ctx: { workspaceId?: number | null }): number {
   if (!ctx.workspaceId || ctx.workspaceId <= 0) {
@@ -85,7 +86,11 @@ export const amazonAcquisitionRouter = router({
 
   confirmReview: protectedProcedure
     .input(z.object({ snapshotId: z.number().int().positive(), note: z.string().trim().max(2000).nullable().optional() }))
-    .mutation(({ ctx, input }) => confirmSnapshot({ ...input, workspaceId: workspaceIdOf(ctx), userId: ctx.user.id })),
+    .mutation(async ({ ctx, input }) => {
+      const result = await confirmSnapshot({ ...input, workspaceId: workspaceIdOf(ctx), userId: ctx.user.id });
+      const postConfirmation = await triggerConsumerPostConfirmation(result.projection);
+      return { ...result, ...postConfirmation };
+    }),
 
   rejectReview: protectedProcedure
     .input(z.object({ snapshotId: z.number().int().positive(), note: z.string().trim().min(1).max(2000) }))

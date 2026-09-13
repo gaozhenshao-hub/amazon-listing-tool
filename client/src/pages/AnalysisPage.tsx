@@ -545,12 +545,6 @@ export default function AnalysisPage() {
         idx === i ? { ...item, status: "scraping" } : item
       ));
 
-      setTimeout(() => {
-        setBatchItems(prev => prev.map((item, idx) =>
-          idx === i && item.status === "scraping" ? { ...item, status: "analyzing" } : item
-        ));
-      }, 3000);
-
       try {
         const result = await analyzeAsin.mutateAsync({
           projectId: selectedProjectId,
@@ -561,7 +555,7 @@ export default function AnalysisPage() {
           idx === i ? {
             ...item,
             status: "done",
-            title: result.title || "分析完成",
+            title: result.reviewRequired ? "采集任务已创建，等待人工审核" : "已复用确认快照，AI分析已排队",
           } : item
         ));
         successCount++;
@@ -588,12 +582,12 @@ export default function AnalysisPage() {
     if (abortRef.current) {
       toast.info("批量分析已取消");
     } else {
-      toast.success(`批量分析完成`, {
-        description: `成功 ${successCount} 个，失败 ${failCount} 个，共 ${items.length} 个ASIN`,
+      toast.success(`批量采集任务已创建`, {
+        description: `已受理 ${successCount} 个，失败 ${failCount} 个，共 ${items.length} 个ASIN；请到采集任务中心审核Snapshot`,
       });
       if (failedAsins.length > 0) {
-        toast.info("部分ASIN爬取失败", {
-          description: "您可以切换到手动输入或评论导入模式进行分析",
+        toast.info("部分采集任务创建失败", {
+          description: "请检查Provider配置、预算或ASIN格式；系统不会自动回退旧爬虫",
           duration: 8000,
         });
       }
@@ -623,28 +617,24 @@ export default function AnalysisPage() {
     setBatchItems([{ asin, status: "scraping" }]);
     setIsProcessing(true);
 
-    setTimeout(() => {
-      setBatchItems(prev => prev.map(item =>
-        item.status === "scraping" ? { ...item, status: "analyzing" } : item
-      ));
-    }, 3000);
-
     try {
       const result = await analyzeAsin.mutateAsync({
         projectId: selectedProjectId,
         asin,
       });
 
-      setBatchItems([{ asin, status: "done", title: result.title || "分析完成" }]);
+      setBatchItems([{ asin, status: "done", title: result.reviewRequired ? "采集任务已创建，等待人工审核" : "已复用确认快照，AI分析已排队" }]);
       utils.analysis.listByProject.invalidate({ projectId: selectedProjectId! });
-      toast.success("竞品分析完成", {
-        description: `已成功爬取并分析 ${asin} 的产品数据`,
+      toast.success(result.reviewRequired ? "受控采集任务已创建" : "已开始竞品AI分析", {
+        description: result.reviewRequired
+          ? `请到采集任务中心审核 ${asin} 的Snapshot，确认后才会运行AI分析`
+          : `已复用已确认Snapshot，不需要重复采集`,
       });
       setAsinInput("");
     } catch (error: any) {
       setBatchItems([{ asin, status: "failed", error: error.message }]);
-      toast.error("自动爬取失败", {
-        description: "您可以切换到手动输入或评论导入模式进行分析",
+      toast.error("采集任务创建失败", {
+        description: "请检查Provider配置、预算或ASIN格式；系统不会自动回退旧爬虫。也可使用手工或文件导入模式。",
         duration: 6000,
       });
       setFailedAsin(asin);
@@ -675,9 +665,9 @@ export default function AnalysisPage() {
   const getStatusText = (status: BatchItemStatus) => {
     switch (status) {
       case "pending": return "等待中";
-      case "scraping": return "爬取数据中...";
-      case "analyzing": return "AI分析中...";
-      case "done": return "完成";
+      case "scraping": return "创建受控采集任务...";
+      case "analyzing": return "等待审核/分析排队...";
+      case "done": return "任务已创建";
       case "failed": return "失败";
     }
   };
@@ -692,7 +682,7 @@ export default function AnalysisPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">竞品分析</h1>
           <p className="text-muted-foreground mt-1">
-            输入竞品ASIN，自动爬取产品数据并进行AI深度分析
+            输入竞品ASIN创建受控采集任务，人工确认Snapshot后再进行AI深度分析
           </p>
         </div>
         <ProjectSelector />
@@ -877,21 +867,21 @@ export default function AnalysisPage() {
                     {isProcessing ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        {batchItems.length > 1 ? "批量分析中..." : "自动爬取分析中..."}
+                        {batchItems.length > 1 ? "批量创建采集任务..." : "创建受控采集任务..."}
                       </>
                     ) : (
                       <>
                         <Zap className="h-4 w-4 mr-2" />
                         {uniqueAsins.length > 1
-                          ? `批量爬取 & 分析 (${uniqueAsins.length}个)`
-                          : "一键爬取 & 分析"
+                          ? `批量采集 & 审核后分析 (${uniqueAsins.length}个)`
+                          : "受控采集 & 审核后分析"
                         }
                       </>
                     )}
                   </Button>
 
                   <div className="pt-2 space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">自动爬取内容：</p>
+                    <p className="text-xs font-medium text-muted-foreground">受控采集并待人工确认的内容：</p>
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         { icon: Package, label: "产品标题" },
