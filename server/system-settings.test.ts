@@ -1,122 +1,33 @@
 import { describe, expect, it } from "vitest";
 import {
   buildProxyUrl,
+  getScraperConfig,
   PROXY_SETTING_KEYS,
   PROVIDER_PRESETS,
 } from "./routers/systemSettings";
 
-describe("systemSettings - buildProxyUrl", () => {
-  it("returns undefined when no proxy settings provided", () => {
-    const result = buildProxyUrl({});
-    expect(result).toBeUndefined();
-  });
-
-  it("returns undefined when proxy is disabled", () => {
-    const result = buildProxyUrl({
-      [PROXY_SETTING_KEYS.PROXY_ENABLED]: "false",
-      [PROXY_SETTING_KEYS.PROXY_HOST]: "proxy.example.com",
-      [PROXY_SETTING_KEYS.PROXY_PORT]: "8080",
-    });
-    expect(result).toBeUndefined();
-  });
-
-  it("returns direct URL when proxy_url is set and enabled", () => {
-    const result = buildProxyUrl({
+describe("systemSettings - retired crawler proxy", () => {
+  it("never builds a runtime proxy URL from legacy settings", () => {
+    expect(buildProxyUrl({})).toBeUndefined();
+    expect(buildProxyUrl({
       [PROXY_SETTING_KEYS.PROXY_ENABLED]: "true",
-      [PROXY_SETTING_KEYS.PROXY_URL]: "http://user:pass@proxy.example.com:8080",
-    });
-    expect(result).toBe("http://user:pass@proxy.example.com:8080");
+      [PROXY_SETTING_KEYS.PROXY_URL]: "http://legacy.example.invalid:8080",
+      [PROXY_SETTING_KEYS.PROXY_USERNAME]: "legacy-user",
+      [PROXY_SETTING_KEYS.PROXY_PASSWORD]: "legacy-password",
+    })).toBeUndefined();
   });
 
-  it("builds URL from host/port when no direct URL", () => {
-    const result = buildProxyUrl({
-      [PROXY_SETTING_KEYS.PROXY_ENABLED]: "true",
-      [PROXY_SETTING_KEYS.PROXY_HOST]: "proxy.example.com",
-      [PROXY_SETTING_KEYS.PROXY_PORT]: "8080",
-      [PROXY_SETTING_KEYS.PROXY_PROTOCOL]: "http",
+  it("fails closed when legacy scraper configuration is requested", async () => {
+    await expect(getScraperConfig()).rejects.toMatchObject({
+      code: "FEATURE_RETIRED",
     });
-    expect(result).toBe("http://proxy.example.com:8080");
-  });
-
-  it("includes username and password in URL when provided", () => {
-    const result = buildProxyUrl({
-      [PROXY_SETTING_KEYS.PROXY_ENABLED]: "true",
-      [PROXY_SETTING_KEYS.PROXY_HOST]: "proxy.example.com",
-      [PROXY_SETTING_KEYS.PROXY_PORT]: "8080",
-      [PROXY_SETTING_KEYS.PROXY_PROTOCOL]: "https",
-      [PROXY_SETTING_KEYS.PROXY_USERNAME]: "myuser",
-      [PROXY_SETTING_KEYS.PROXY_PASSWORD]: "mypass",
-    });
-    expect(result).toBe("https://myuser:mypass@proxy.example.com:8080");
-  });
-
-  it("uses default protocol http when not specified", () => {
-    const result = buildProxyUrl({
-      [PROXY_SETTING_KEYS.PROXY_ENABLED]: "true",
-      [PROXY_SETTING_KEYS.PROXY_HOST]: "proxy.example.com",
-      [PROXY_SETTING_KEYS.PROXY_PORT]: "3128",
-    });
-    expect(result).toBe("http://proxy.example.com:3128");
-  });
-
-  it("supports socks5 protocol", () => {
-    const result = buildProxyUrl({
-      [PROXY_SETTING_KEYS.PROXY_ENABLED]: "true",
-      [PROXY_SETTING_KEYS.PROXY_HOST]: "socks.example.com",
-      [PROXY_SETTING_KEYS.PROXY_PORT]: "1080",
-      [PROXY_SETTING_KEYS.PROXY_PROTOCOL]: "socks5",
-    });
-    expect(result).toBe("socks5://socks.example.com:1080");
-  });
-
-  it("returns undefined when host is missing", () => {
-    const result = buildProxyUrl({
-      [PROXY_SETTING_KEYS.PROXY_ENABLED]: "true",
-      [PROXY_SETTING_KEYS.PROXY_PORT]: "8080",
-    });
-    expect(result).toBeUndefined();
-  });
-
-  it("builds URL without port when port is missing", () => {
-    const result = buildProxyUrl({
-      [PROXY_SETTING_KEYS.PROXY_ENABLED]: "true",
-      [PROXY_SETTING_KEYS.PROXY_HOST]: "proxy.example.com",
-    });
-    expect(result).toBe("http://proxy.example.com");
+    await expect(getScraperConfig()).rejects.toThrow(/crawler\.getProviderReadiness/);
   });
 });
 
 describe("systemSettings - PROVIDER_PRESETS", () => {
-  it("has presets for all major providers", () => {
-    expect(PROVIDER_PRESETS).toHaveProperty("smartproxy");
-    expect(PROVIDER_PRESETS).toHaveProperty("oxylabs");
-    expect(PROVIDER_PRESETS).toHaveProperty("brightdata");
-    expect(PROVIDER_PRESETS).toHaveProperty("scraperapi");
-  });
-
-  it("each preset has required fields", () => {
-    for (const [key, preset] of Object.entries(PROVIDER_PRESETS)) {
-      expect(preset).toHaveProperty("name");
-      expect(preset).toHaveProperty("host");
-      expect(preset).toHaveProperty("port");
-      expect(preset).toHaveProperty("protocol");
-      expect(typeof preset.name).toBe("string");
-      expect(typeof preset.host).toBe("string");
-      expect(typeof preset.port).toBe("string");
-      expect(typeof preset.protocol).toBe("string");
-      expect(preset.host.length).toBeGreaterThan(0);
-      expect(preset.port.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("smartproxy preset has correct host", () => {
-    const sp = PROVIDER_PRESETS["smartproxy"];
-    expect(sp.host).toContain("smartproxy");
-  });
-
-  it("oxylabs preset has correct host", () => {
-    const ox = PROVIDER_PRESETS["oxylabs"];
-    expect(ox.host).toContain("oxylabs");
+  it("does not expose retired proxy vendor presets", () => {
+    expect(PROVIDER_PRESETS).toEqual({});
   });
 });
 

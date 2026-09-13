@@ -4,16 +4,12 @@ import { describe, it, expect } from "vitest";
 // Tests for 6 New Features (2026-03-23)
 // ═══════════════════════════════════════════════════════════════
 
-describe("Feature 1: Crawler Engine", () => {
-  it("should export crawler engine module with required functions", async () => {
-    const mod = await import("./crawlerEngine");
+describe("Feature 1: Governed Amazon monitoring", () => {
+  it("should export persistent Provider Job entry points", async () => {
+    const mod = await import("./domains/acquisition/monitorJob");
     expect(mod).toBeDefined();
-    expect(typeof mod.crawlCompetitorData).toBe("function");
-    expect(typeof mod.crawlKeywordRank).toBe("function");
-    expect(typeof mod.executeCrawlBatch).toBe("function");
-    expect(typeof mod.getSchedulerStatus).toBe("function");
-    expect(typeof mod.startScheduler).toBe("function");
-    expect(typeof mod.stopScheduler).toBe("function");
+    expect(typeof mod.startAmazonMonitorJob).toBe("function");
+    expect(typeof mod.startMonitorQualificationJob).toBe("function");
   });
 
   it("crawler router should be registered in main app router", async () => {
@@ -26,12 +22,9 @@ describe("Feature 1: Crawler Engine", () => {
     expect(appRouter._def.procedures).toHaveProperty("crawler.getCrawlHistory");
   }, 15_000);
 
-  it("scheduler status should return correct structure", async () => {
-    const { getSchedulerStatus } = await import("./crawlerEngine");
-    const status = getSchedulerStatus();
-    expect(status).toHaveProperty("isRunning");
-    expect(status).toHaveProperty("lastRunAt");
-    expect(typeof status.isRunning).toBe("boolean");
+  it("should export the authenticated Heartbeat callback", async () => {
+    const mod = await import("./domains/acquisition/monitorHeartbeat");
+    expect(typeof mod.amazonMonitorHeartbeatHandler).toBe("function");
   });
 });
 
