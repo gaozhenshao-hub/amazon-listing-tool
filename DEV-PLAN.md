@@ -125,6 +125,8 @@ Provider资格验证
 
 ## 阶段A5：主要竞品全图分析
 
+**状态（2026-09-13）**：本地完成。已新增0199四表与两个皇帝系统Skill、Research Subject、逐图事实、整套分析版本、不可变Step 0 Gallery Artifact、可恢复AI Job和双轨Step 0 UI。存在Research Subject时必须先确认唯一主要竞品分析；无Subject时兼容原流程。开发数据库已执行0199，青岛生产尚未迁移。11项定向回归、定向TypeScript筛选、ESLint、生产构建与Bundle预算通过；真实AI运行留待受控验收。
+
 **交付物**：新增竞品Research Subject、逐图事实卡、全图分析版本和Step 0综合Artifact；新增0199迁移；实现主要/对标/补充角色、ASIN卡片、完整图库、事实卡编辑、覆盖门禁、逐图/分区/整套策略Skill与版本确认。
 
 **关键文件**：`drizzle/schema/image.ts`、`drizzle/0199_competitor_gallery_research.sql`、`shared/competitorResearch.ts`、`server/domains/image/routers/competitorResearch.ts`、`server/domains/image/services/competitorGalleryJob.ts`、`server/domains/image/services/competitorGallerySchemas.ts`、`client/src/pages/imageWorkflow/CompetitorAnalysisStep.tsx`、`client/src/pages/imageWorkflow/components/CompetitorGalleryAnalysis.tsx`、`client/src/pages/imageWorkflow/components/CompetitorFactCardEditor.tsx`及测试。

@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, int, json, longtext, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, index, int, json, longtext, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
 // 智能图片知识库 - 图片集（以ASIN为单位）
 export const kbImageSets = mysqlTable("kb_image_sets", {
@@ -239,3 +239,97 @@ export const expressionGroupImages = mysqlTable("expression_group_images", {
 export type ExpressionGroupImage = typeof expressionGroupImages.$inferSelect;
 
 export type InsertExpressionGroupImage = typeof expressionGroupImages.$inferInsert;
+
+// Step 0竞品整套图库研究：仅绑定已人工确认的统一采集Snapshot。
+export const imageCompetitorResearchSubjects = mysqlTable("image_competitor_research_subjects", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  confirmedSnapshotId: int("confirmedSnapshotId").notNull(),
+  marketplace: varchar("marketplace", { length: 16 }).default("US").notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  displayName: varchar("displayName", { length: 255 }).default("").notNull(),
+  role: mysqlEnum("role", ["primary", "benchmark", "supplemental"]).default("benchmark").notNull(),
+  status: mysqlEnum("status", ["draft", "ready", "analyzing", "review_required", "confirmed", "archived"]).default("draft").notNull(),
+  currentAnalysisVersion: int("currentAnalysisVersion").default(0).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uk_image_comp_subject_snapshot").on(table.workspaceId, table.projectId, table.confirmedSnapshotId),
+  index("idx_image_comp_subject_project_role").on(table.workspaceId, table.projectId, table.role, table.status),
+]);
+
+export const imageCompetitorAssetFacts = mysqlTable("image_competitor_asset_facts", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  projectId: int("projectId").notNull(),
+  subjectId: int("subjectId").notNull(),
+  acquisitionAssetId: int("acquisitionAssetId").notNull(),
+  assetRole: varchar("assetRole", { length: 32 }).notNull(),
+  positionIndex: int("positionIndex").notNull(),
+  inputContentHash: varchar("inputContentHash", { length: 64 }).notNull(),
+  status: mysqlEnum("status", ["pending", "analyzed", "review_required", "confirmed", "excluded", "failed"]).default("pending").notNull(),
+  aiFacts: json("aiFacts"),
+  userEdit: json("userEdit"),
+  confidence: decimal("confidence", { precision: 5, scale: 4 }),
+  analyzedByJobRunId: varchar("analyzedByJobRunId", { length: 80 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uk_image_comp_fact_subject_asset").on(table.subjectId, table.acquisitionAssetId),
+  index("idx_image_comp_fact_subject_status").on(table.workspaceId, table.subjectId, table.status),
+]);
+
+export const imageCompetitorGalleryAnalysisVersions = mysqlTable("image_competitor_gallery_analysis_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  projectId: int("projectId").notNull(),
+  subjectId: int("subjectId").notNull(),
+  version: int("version").notNull(),
+  inputHash: varchar("inputHash", { length: 64 }).notNull(),
+  status: mysqlEnum("status", ["draft", "review_required", "confirmed", "superseded", "failed"]).default("draft").notNull(),
+  analysis: json("analysis").notNull(),
+  userEdit: json("userEdit"),
+  evidenceAssetIds: json("evidenceAssetIds").notNull(),
+  skillVersion: varchar("skillVersion", { length: 64 }).notNull(),
+  jobRunId: varchar("jobRunId", { length: 80 }),
+  createdBy: int("createdBy").notNull(),
+  confirmedBy: int("confirmedBy"),
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uk_image_comp_gallery_subject_ver").on(table.subjectId, table.version),
+  index("idx_image_comp_gallery_project_status").on(table.workspaceId, table.projectId, table.status),
+]);
+
+export const imageWorkflowStep0Artifacts = mysqlTable("image_workflow_step0_artifacts", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  projectId: int("projectId").notNull(),
+  sessionId: int("sessionId").notNull(),
+  artifactType: mysqlEnum("artifactType", ["competitor_gallery", "expression_summary", "composite"]).notNull(),
+  version: int("version").notNull(),
+  status: mysqlEnum("status", ["draft", "review_required", "confirmed", "superseded"]).default("draft").notNull(),
+  content: json("content").notNull(),
+  evidenceRefs: json("evidenceRefs").notNull(),
+  createdBy: int("createdBy").notNull(),
+  confirmedBy: int("confirmedBy"),
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uk_image_step0_artifact_ver").on(table.sessionId, table.artifactType, table.version),
+  index("idx_image_step0_artifact_current").on(table.workspaceId, table.projectId, table.artifactType, table.status),
+]);
+
+export type ImageCompetitorResearchSubject = typeof imageCompetitorResearchSubjects.$inferSelect;
+export type InsertImageCompetitorResearchSubject = typeof imageCompetitorResearchSubjects.$inferInsert;
+export type ImageCompetitorAssetFact = typeof imageCompetitorAssetFacts.$inferSelect;
+export type InsertImageCompetitorAssetFact = typeof imageCompetitorAssetFacts.$inferInsert;
+export type ImageCompetitorGalleryAnalysisVersion = typeof imageCompetitorGalleryAnalysisVersions.$inferSelect;
+export type InsertImageCompetitorGalleryAnalysisVersion = typeof imageCompetitorGalleryAnalysisVersions.$inferInsert;
+export type ImageWorkflowStep0Artifact = typeof imageWorkflowStep0Artifacts.$inferSelect;
+export type InsertImageWorkflowStep0Artifact = typeof imageWorkflowStep0Artifacts.$inferInsert;

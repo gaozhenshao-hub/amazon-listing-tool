@@ -1,6 +1,7 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
 import { syncStepConfirmToAgent } from "../imageWorkflowAgentBridge";
+import { requireConfirmedPrimaryGallery } from "../competitorGalleryService";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -150,6 +151,7 @@ export const imageCompetitorProcedures = {
       ensureWriteAccess(project, ctx.user);
       const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
+      await requireConfirmedPrimaryGallery(Number(project.workspaceId || ctx.workspaceId || 0), input.projectId);
       if (!session.step0AiResult) throw new Error("请先运行竞品图片分析并等待总结生成完成");
       let summaryResult: any;
       try {
