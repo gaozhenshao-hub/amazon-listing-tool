@@ -94,6 +94,7 @@ import { adDeepAnalysisRouter } from "./routers/adDeepAnalysis";
 // Emperor 皇帝 · AI能力中台
 import { emperorRouter } from "./routers/emperor";
 import { aiJobsRouter } from "./routers/aiJobs";
+import { amazonAcquisitionRouter } from "./domains/acquisition/router";
 
 export const appRouter = router({
   system: systemRouter,
@@ -209,6 +210,7 @@ export const appRouter = router({
   emperor: emperorRouter,
   // Long-running AI Job infrastructure
   aiJobs: aiJobsRouter,
+  amazonAcquisition: amazonAcquisitionRouter,
 });
 
 export type AppRouter = typeof appRouter;

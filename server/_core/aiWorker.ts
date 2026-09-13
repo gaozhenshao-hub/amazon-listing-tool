@@ -8,6 +8,7 @@ import "../domains/product_development/analysis/analysisStageJobService";
 import "../domains/product_development/panorama/marketInsightService";
 import "../domains/keyword/keywordGenerationJob";
 import "../domains/video/videoGenerationJob";
+import "../domains/acquisition/acquisitionJobs";
 import {
   drainAiJobQueue,
   getAiJobWorkerId,

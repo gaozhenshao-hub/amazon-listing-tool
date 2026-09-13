@@ -95,6 +95,8 @@ Provider资格验证
 
 ## 阶段A2：Provider Adapter、预算、缓存与Job/Run
 
+**状态（2026-09-13）**：本地完成。服务端Apify Secret已通过轻量认证端点验证；Adapter固定US、单结果、无Offer/Seller，支持异步Run恢复、不可变原始Artifact和固定失败类别；24小时确认快照缓存、幂等入队、单Run/日/月预算门禁、Job/Run持久化、可恢复AI Worker处理器及超级管理员配置tRPC均已完成。0198仍未执行。
+
 **交付物**：实现通用Provider接口和通过A0验证的Apify Actor适配器；实现成本估算、24小时缓存、幂等键、单Run/日/月预算、固定错误分类和持久化Worker任务；新增超级管理员配置与能力状态接口。
 
 **关键文件**：`server/domains/acquisition/providers/provider.ts`、`server/domains/acquisition/providers/apifyAmazonProvider.ts`、`server/domains/acquisition/services/acquisitionPolicy.ts`、`server/domains/acquisition/services/acquisitionJobs.ts`、`server/domains/acquisition/services/acquisitionWorker.ts`、`server/domains/acquisition/repository.ts`、`server/routers/acquisitionAdmin.ts`、`server/routers.ts`、`server/_core/aiWorker.ts`及测试。
