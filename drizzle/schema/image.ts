@@ -325,6 +325,97 @@ export const imageWorkflowStep0Artifacts = mysqlTable("image_workflow_step0_arti
   index("idx_image_step0_artifact_current").on(table.workspaceId, table.projectId, table.artifactType, table.status),
 ]);
 
+// Step 0竞品图库资产与卖点表达方向的版本化选择。
+// 历史手工上传仍保留在expression_group_images；本表只承载已确认竞品图库资产。
+export const imageExpressionSelectionVersions = mysqlTable("image_expression_selection_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  projectId: int("projectId").notNull(),
+  sessionId: int("sessionId").notNull(),
+  groupId: int("groupId").notNull(),
+  version: int("version").notNull(),
+  status: mysqlEnum("status", ["draft", "confirmed", "superseded"]).default("draft").notNull(),
+  filterState: json("filterState").notNull(),
+  selectedAssetIds: json("selectedAssetIds").notNull(),
+  selectionHash: varchar("selectionHash", { length: 64 }).notNull(),
+  createdBy: int("createdBy").notNull(),
+  confirmedBy: int("confirmedBy"),
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uk_image_expr_selection_group_ver").on(table.groupId, table.version),
+  index("idx_image_expr_selection_current").on(table.workspaceId, table.projectId, table.groupId, table.status),
+]);
+
+export const imageExpressionAssetLinks = mysqlTable("image_expression_asset_links", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  projectId: int("projectId").notNull(),
+  selectionVersionId: int("selectionVersionId").notNull(),
+  groupId: int("groupId").notNull(),
+  subjectId: int("subjectId").notNull(),
+  acquisitionAssetId: int("acquisitionAssetId").notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  source: mysqlEnum("source", ["manual", "ai_recommended"]).default("manual").notNull(),
+  matchScore: decimal("matchScore", { precision: 5, scale: 4 }),
+  matchedSellingPoint: varchar("matchedSellingPoint", { length: 512 }),
+  matchedExpressionMethod: varchar("matchedExpressionMethod", { length: 512 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uk_image_expr_asset_selection").on(table.selectionVersionId, table.acquisitionAssetId),
+  index("idx_image_expr_asset_group").on(table.workspaceId, table.projectId, table.groupId),
+]);
+
+export const imageExpressionAnalysisVersions = mysqlTable("image_expression_analysis_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  projectId: int("projectId").notNull(),
+  sessionId: int("sessionId").notNull(),
+  groupId: int("groupId").notNull(),
+  selectionVersionId: int("selectionVersionId").notNull(),
+  version: int("version").notNull(),
+  inputHash: varchar("inputHash", { length: 64 }).notNull(),
+  status: mysqlEnum("status", ["draft", "review_required", "confirmed", "superseded", "failed"]).default("draft").notNull(),
+  analysis: json("analysis").notNull(),
+  userEdit: json("userEdit"),
+  evidenceAssetIds: json("evidenceAssetIds").notNull(),
+  skillVersion: varchar("skillVersion", { length: 64 }).notNull(),
+  jobRunId: varchar("jobRunId", { length: 80 }),
+  createdBy: int("createdBy").notNull(),
+  confirmedBy: int("confirmedBy"),
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uk_image_expr_analysis_group_ver").on(table.groupId, table.version),
+  index("idx_image_expr_analysis_current").on(table.workspaceId, table.projectId, table.groupId, table.status),
+]);
+
+export const imageStep0SynthesisVersions = mysqlTable("image_step0_synthesis_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  projectId: int("projectId").notNull(),
+  sessionId: int("sessionId").notNull(),
+  version: int("version").notNull(),
+  inputHash: varchar("inputHash", { length: 64 }).notNull(),
+  status: mysqlEnum("status", ["draft", "review_required", "confirmed", "superseded", "failed"]).default("draft").notNull(),
+  analysis: json("analysis").notNull(),
+  userEdit: json("userEdit"),
+  selectedDecisionIds: json("selectedDecisionIds").notNull(),
+  evidenceRefs: json("evidenceRefs").notNull(),
+  skillVersion: varchar("skillVersion", { length: 64 }).notNull(),
+  jobRunId: varchar("jobRunId", { length: 80 }),
+  createdBy: int("createdBy").notNull(),
+  confirmedBy: int("confirmedBy"),
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uk_image_step0_synthesis_session_ver").on(table.sessionId, table.version),
+  index("idx_image_step0_synthesis_current").on(table.workspaceId, table.projectId, table.status),
+]);
+
 export type ImageCompetitorResearchSubject = typeof imageCompetitorResearchSubjects.$inferSelect;
 export type InsertImageCompetitorResearchSubject = typeof imageCompetitorResearchSubjects.$inferInsert;
 export type ImageCompetitorAssetFact = typeof imageCompetitorAssetFacts.$inferSelect;
@@ -333,3 +424,11 @@ export type ImageCompetitorGalleryAnalysisVersion = typeof imageCompetitorGaller
 export type InsertImageCompetitorGalleryAnalysisVersion = typeof imageCompetitorGalleryAnalysisVersions.$inferInsert;
 export type ImageWorkflowStep0Artifact = typeof imageWorkflowStep0Artifacts.$inferSelect;
 export type InsertImageWorkflowStep0Artifact = typeof imageWorkflowStep0Artifacts.$inferInsert;
+export type ImageExpressionSelectionVersion = typeof imageExpressionSelectionVersions.$inferSelect;
+export type InsertImageExpressionSelectionVersion = typeof imageExpressionSelectionVersions.$inferInsert;
+export type ImageExpressionAssetLink = typeof imageExpressionAssetLinks.$inferSelect;
+export type InsertImageExpressionAssetLink = typeof imageExpressionAssetLinks.$inferInsert;
+export type ImageExpressionAnalysisVersion = typeof imageExpressionAnalysisVersions.$inferSelect;
+export type InsertImageExpressionAnalysisVersion = typeof imageExpressionAnalysisVersions.$inferInsert;
+export type ImageStep0SynthesisVersion = typeof imageStep0SynthesisVersions.$inferSelect;
+export type InsertImageStep0SynthesisVersion = typeof imageStep0SynthesisVersions.$inferInsert;

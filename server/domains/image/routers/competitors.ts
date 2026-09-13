@@ -2,6 +2,7 @@ import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
 import { syncStepConfirmToAgent } from "../imageWorkflowAgentBridge";
 import { requireConfirmedPrimaryGallery } from "../competitorGalleryService";
+import { getConfirmedCompositeContext, requireConfirmedCompositeForSelections } from "../expressionLinkageService";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -151,17 +152,20 @@ export const imageCompetitorProcedures = {
       ensureWriteAccess(project, ctx.user);
       const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
-      await requireConfirmedPrimaryGallery(Number(project.workspaceId || ctx.workspaceId || 0), input.projectId);
-      if (!session.step0AiResult) throw new Error("请先运行竞品图片分析并等待总结生成完成");
+      const workspaceId = Number(project.workspaceId || ctx.workspaceId || 0);
+      await requireConfirmedPrimaryGallery(workspaceId, input.projectId);
+      await requireConfirmedCompositeForSelections(workspaceId, input.projectId);
+      const compositeContext = await getConfirmedCompositeContext(workspaceId, input.projectId);
+      if (!session.step0AiResult && !compositeContext) throw new Error("请先完成手工表达图片总结，或确认图库联动综合结论");
       let summaryResult: any;
       try {
-        summaryResult = JSON.parse(input.userEdit || session.step0AiResult);
+        summaryResult = JSON.parse(input.userEdit || session.step0AiResult || compositeContext);
       } catch {
         throw new Error("竞品分析总结格式无效，请重新生成");
       }
 
       await db.updateImageWorkflowSession(session.id, {
-        step0AiResult: session.step0AiResult,
+        step0AiResult: session.step0AiResult || compositeContext,
         step0UserEdit: input.userEdit || null,
         step0Confirmed: 1,
         currentStep: 1,

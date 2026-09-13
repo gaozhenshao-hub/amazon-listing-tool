@@ -1,5 +1,6 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
+import { getExpressionLinkageSessionState, supersedeExpressionLinkageForStep0Reset } from "../expressionLinkageService";
 import { ensureImageWorkflowAgentRun, syncStepUnlockToAgent } from "../imageWorkflowAgentBridge";
 import { buildImageWorkflowReferenceTargets, normalizeImageOutline } from "@shared/imageWorkflow";
 import { extractLatestStep4JobResult, mergeStep4LatestWithUserAssets } from "../step4Snapshot";
@@ -185,7 +186,13 @@ export const imageSessionProcedures = {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
       const session = await resolveSessionForDisplay(input.projectId, ctx.user);
-      return applyCurrentStep4ImageVersions(session);
+      const hydrated = await applyCurrentStep4ImageVersions(session);
+      if (!hydrated) return hydrated;
+      const workspaceId = Number(project.workspaceId || ctx.workspaceId || 0);
+      return {
+        ...hydrated,
+        expressionLinkage: await getExpressionLinkageSessionState({ workspaceId, projectId: input.projectId, sessionId: hydrated.id }),
+      };
     }),
 
   // ─── Complete export bundle (Step0-6 + selected reference assets) ─────────
@@ -211,6 +218,11 @@ export const imageSessionProcedures = {
       return {
         session,
         expressionGroups,
+        expressionLinkage: await getExpressionLinkageSessionState({
+          workspaceId: Number(project.workspaceId || ctx.workspaceId || 0),
+          projectId: input.projectId,
+          sessionId: session.id,
+        }),
         asinReferenceSets: asinReferenceSets.filter(Boolean),
       };
     }),
@@ -259,6 +271,7 @@ export const imageSessionProcedures = {
       step: z.number().min(0).max(6),
     }))
     .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
@@ -269,6 +282,10 @@ export const imageSessionProcedures = {
         clearData.step0AiResult = null;
         clearData.step0UserEdit = null;
         clearData.step0Confirmed = 0;
+        await supersedeExpressionLinkageForStep0Reset({
+          workspaceId: Number(project.workspaceId || ctx.workspaceId || 0),
+          projectId: input.projectId,
+        });
       }
       if (input.step <= 1) {
         clearData.step1AiResult = null;

@@ -38,6 +38,7 @@ import {
   imageWorkflowSkillNodeId,
 } from "../imageWorkflowAgentBridge";
 import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
+import { getConfirmedCompositeContext } from "../expressionLinkageService";
 
 export const IMAGE_GENERATION_STEPS = [0, 1, 2, 3] as const;
 export type ImageGenerationStep = (typeof IMAGE_GENERATION_STEPS)[number];
@@ -171,12 +172,16 @@ async function generateStep0(job: AiJobSnapshot, context: AiJobHandlerContext, p
 async function generateStep1(job: AiJobSnapshot, context: AiJobHandlerContext, project: any, distillationGuidance = "") {
   const productContext = compactText(await buildImageWorkflowContext(Number(job.projectId)), 18_000);
   const contextHint = productContext || "暂无竞品、评论或关键词数据。请根据产品名称、品牌和类目，结合亚马逊运营经验生成完整卖点体系。";
+  const composite = await getConfirmedCompositeContext(Number(job.workspaceId || project.workspaceId || 0), Number(job.projectId));
+  const compositeContext = composite
+    ? `\n\n--- 用户确认的竞品研究策略（只读） ---\n${compactText(composite, 5_000)}\n注意：竞品图片仅作为研究证据，不得作为我方生成素材。`
+    : "";
   return callImageWorkflowSkill({
     skillSlug: "image.step1.sellingpoints",
     userId: job.userId,
     workspaceId: job.workspaceId,
     systemPrompt: STEP1_SELLING_POINTS_PROMPT,
-    context: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || "未指定"}\n类目: ${project.category || "未指定"}\n\n${contextHint}${distillationGuidance}`,
+    context: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || "未指定"}\n类目: ${project.category || "未指定"}\n\n${contextHint}${compositeContext}${distillationGuidance}`,
     signal: context.signal,
     maxModelAttempts: 3,
     validate: (value) => {
@@ -193,8 +198,12 @@ async function generateStep2(job: AiJobSnapshot, context: AiJobHandlerContext, p
   const step0Summary = session.step0AiResult
     ? `\n\n--- 竞品图片分析总结 ---\n${compactText(session.step0AiResult, 3_000)}`
     : "";
+  const composite = await getConfirmedCompositeContext(Number(job.workspaceId || project.workspaceId || 0), Number(job.projectId));
+  const compositeContext = composite
+    ? `\n\n--- 用户确认的竞品研究策略（只读） ---\n${compactText(composite, 5_000)}\n注意：只采用其中被用户选择的策略结论；竞品图片不得作为我方生成素材。`
+    : "";
   const contextHint = productContext || "暂无竞品分析数据。请根据产品名称、品牌和类目生成完整图片大纲。";
-  const prompt = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || "未指定"}\n类目: ${project.category || "未指定"}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${contextHint}${step0Summary}${distillationGuidance}\n\n--- 可选亚马逊A+模块样式 ---\n${APLUS_MODULE_STYLE_GUIDE}\n\n请根据以上卖点体系和竞品分析规划图片大纲。secondaryImages必须恰好生成6项，imageNumber依次为2、3、4、5、6、7，并在referenceHighlights中引用竞品亮点。首次生成时所有A+模块一律使用premium_full_image（高级完整图片、1464x600px、单张全宽大图），不要自行选择其他模块；用户改选后会通过专用皇帝Skill单独重新优化。`;
+  const prompt = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || "未指定"}\n类目: ${project.category || "未指定"}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${contextHint}${step0Summary}${compositeContext}${distillationGuidance}\n\n--- 可选亚马逊A+模块样式 ---\n${APLUS_MODULE_STYLE_GUIDE}\n\n请根据以上卖点体系和竞品分析规划图片大纲。secondaryImages必须恰好生成6项，imageNumber依次为2、3、4、5、6、7，并在referenceHighlights中引用竞品亮点。首次生成时所有A+模块一律使用premium_full_image（高级完整图片、1464x600px、单张全宽大图），不要自行选择其他模块；用户改选后会通过专用皇帝Skill单独重新优化。`;
   return callImageWorkflowSkill({
     skillSlug: "image.step2.outline",
     userId: job.userId,

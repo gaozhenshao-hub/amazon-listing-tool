@@ -15,6 +15,8 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { ImageStepGenerationStatus, useImageStepGenerationJob } from "./useImageStepGenerationJob";
 import { CompetitorGalleryAnalysisPanel } from "./CompetitorGalleryAnalysisPanel";
+import { ExpressionAssetPicker } from "./ExpressionAssetPicker";
+import { Step0SynthesisPanel } from "./Step0SynthesisPanel";
 
 // 亮点标签预设类型
 const HIGHLIGHT_CATEGORIES = [
@@ -62,7 +64,7 @@ export function Step0CompetitorAnalysis({
 
   // ── Local state ─────────────────────────────────────────────────
   const [newGroupName, setNewGroupName] = useState("");
-  const [activeAnalysisTrack, setActiveAnalysisTrack] = useState<"gallery" | "expression">("gallery");
+  const [activeAnalysisTrack, setActiveAnalysisTrack] = useState<"gallery" | "expression" | "synthesis">("gallery");
   const [uploadingGroupId, setUploadingGroupId] = useState<number | null>(null);
   const [isLockedState, setIsLocked] = useState(!!session?.step0Confirmed);
   const isLocked = isLockedState || !canEdit;
@@ -207,7 +209,8 @@ export function Step0CompetitorAnalysis({
 
   const handleConfirm = async () => {
     if (groups.length === 0) { toast.error("请先创建至少一个表达方向并上传图片"); return; }
-    if (!summaryData) {
+    const hasManualImages = groups.some((group: any) => (group.images || []).length > 0);
+    if (!summaryData && hasManualImages) {
       await generationJob.start();
       return;
     }
@@ -236,17 +239,21 @@ export function Step0CompetitorAnalysis({
     <div className="space-y-4">
       <Card className="overflow-hidden">
         <CardContent className="p-2">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
             <Button variant={activeAnalysisTrack === "gallery" ? "default" : "ghost"} className="h-auto justify-start px-4 py-3 text-left" onClick={() => setActiveAnalysisTrack("gallery")}>
               <div><p className="font-semibold">竞品全图分析</p><p className="mt-0.5 text-xs font-normal opacity-75">按单个竞争对手总结整套主图与可获取A+</p></div>
             </Button>
-            <Button variant={activeAnalysisTrack === "expression" ? "default" : "ghost"} className="h-auto justify-start px-4 py-3 text-left" onClick={() => setActiveAnalysisTrack("expression")}>
+            <Button variant={activeAnalysisTrack === "expression" ? "default" : "ghost"} className="h-auto justify-start px-4 py-3 text-left" onClick={() => setActiveAnalysisTrack("expression")}> 
               <div><p className="font-semibold">卖点表达方式</p><p className="mt-0.5 text-xs font-normal opacity-75">原功能保留：横向比较同一表达方式的竞品图片</p></div>
+            </Button>
+            <Button variant={activeAnalysisTrack === "synthesis" ? "default" : "ghost"} className="h-auto justify-start px-4 py-3 text-left" onClick={() => setActiveAnalysisTrack("synthesis")}> 
+              <div><p className="font-semibold">综合结论</p><p className="mt-0.5 text-xs font-normal opacity-75">逐项选择进入后续的图片策略</p></div>
             </Button>
           </div>
         </CardContent>
       </Card>
       {activeAnalysisTrack === "gallery" && <CompetitorGalleryAnalysisPanel projectId={projectId} canEdit={!isLocked} />}
+      {activeAnalysisTrack === "synthesis" && <Step0SynthesisPanel projectId={projectId} canEdit={!isLocked} onNavigate={setActiveAnalysisTrack} />}
       <div className={activeAnalysisTrack === "expression" ? "space-y-4" : "hidden"}>
       {/* Header Card */}
       <Card>
@@ -354,6 +361,8 @@ export function Step0CompetitorAnalysis({
                 </div>
               )}
             </div>
+
+            <ExpressionAssetPicker projectId={projectId} groupId={group.id} canEdit={!isLocked} />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
               {/* ── Column 1: Image Grid (1-5 competitor images) ── */}

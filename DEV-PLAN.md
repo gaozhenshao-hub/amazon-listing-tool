@@ -135,9 +135,11 @@ Provider资格验证
 
 ## 阶段A6：同表达卖点图片点选联动与综合结论
 
+**状态（2026-09-13）**：本地完成。已新增0200四表与两个皇帝系统Skill、Confirmed竞品资产候选门禁、Selection Version、人工/AI推荐来源、按30张分批的可恢复表达分析Job、只组合已确认Artifact的综合Job、人工逐项选择、Composite Artifact、会话刷新/导出/重置和Step 1/2只读上下文联动。Step 0已形成“竞品全图分析 / 卖点表达方式 / 综合结论”三页签；历史手工上传仍限制1–5张，图库模式无5张上限。开发数据库已执行0200，青岛生产尚未迁移或发布；未运行真实Provider采集或真实LLM分析。
+
 **交付物**：新增表达方向资产链接和分析版本；实现按卖点、表达方式、ASIN、角色、图位、证明方式与置信度筛选，支持批量全选、AI推荐、已选托盘、排序、去重、Selection Version和多方向引用；超过30张时分批分析全部资产；实现全图、表达和综合三页签双向回跳。
 
-**关键文件**：`drizzle/schema/image.ts`、`drizzle/0200_expression_group_asset_linkage.sql`、`server/domains/image/routers/expressionGroups.ts`、`server/domains/image/services/stepGenerationJob.ts`、`server/imageWorkflowPrompts.ts`、`client/src/pages/imageWorkflow/CompetitorAnalysisStep.tsx`、`client/src/pages/imageWorkflow/components/ExpressionAssetPicker.tsx`、`client/src/pages/imageWorkflow/components/Step0SynthesisPanel.tsx`及测试。
+**关键文件**：`drizzle/schema/image.ts`、`drizzle/0200_image_expression_asset_linkage.sql`、`server/domains/image/expressionLinkageContracts.ts`、`server/domains/image/expressionLinkageRepository.ts`、`server/domains/image/expressionLinkageService.ts`、`server/domains/image/routers/expressionLinkage.ts`、`server/domains/image/services/expressionLinkageJob.ts`、`server/domains/image/services/stepGenerationJob.ts`、`client/src/pages/imageWorkflow/CompetitorAnalysisStep.tsx`、`client/src/pages/imageWorkflow/ExpressionAssetPicker.tsx`、`client/src/pages/imageWorkflow/Step0SynthesisPanel.tsx`及测试。
 
 **验收标准**：图库模式不受5张硬上限约束，历史手工上传仍保持1–5张；同一Asset在同一版本只出现一次；选择变更产生新版本并使旧AI结果失效；综合结论只使用确认Artifact并由用户逐项选择是否进入后续步骤。
 
