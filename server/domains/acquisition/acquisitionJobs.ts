@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { ACQUISITION_CONSUMER_TYPES } from "../../../shared/acquisition";
+import { AppError, APP_ERROR_CODES } from "../../../shared/_core/errors";
 import { storagePut } from "../../storage";
 import { requireDb, withDbTransaction } from "../../repositories/dbClient";
 import {
@@ -34,6 +35,7 @@ import {
   updateAcquisitionRun,
   updateSourceSnapshot,
 } from "./repository";
+import { getApifyProviderProfile } from "./providerProfileService";
 import { activateConfirmedSnapshotForConsumer } from "./consumerActivation";
 import { triggerConsumerPostConfirmation } from "./postConfirmation";
 import { isApiConnectionSecretConfigured } from "../apiConnections/service";
@@ -55,15 +57,39 @@ const AcquisitionWorkerInputSchema = z.object({
   acquisitionJobId: z.number().int().positive(),
 });
 
-function profileBudgetPolicy(profile: Awaited<ReturnType<typeof getActiveAcquisitionProfile>>): AcquisitionBudgetPolicy {
-  if (!profile) throw new Error("provider not configured");
+function profileBudgetPolicy(profile: NonNullable<Awaited<ReturnType<typeof getApifyProviderProfile>>>): AcquisitionBudgetPolicy {
   const perRunMaxUsd = Number(profile.perRunMaxUsd);
   const dailyBudgetUsd = Number(profile.dailyBudgetUsd);
   const monthlyBudgetUsd = Number(profile.monthlyBudgetUsd);
   if (![perRunMaxUsd, dailyBudgetUsd, monthlyBudgetUsd].every(value => Number.isFinite(value) && value > 0)) {
-    throw new Error("provider budget not configured");
+    throw new AppError({
+      code: APP_ERROR_CODES.PRECONDITION_FAILED,
+      statusCode: 412,
+      message: "采集Provider预算尚未配置完成，请由超级管理员检查采集任务中心的Provider治理设置后重试。",
+      details: { provider: "apify", reason: "budget_not_configured" },
+    });
   }
   return { perRunMaxUsd, dailyBudgetUsd, monthlyBudgetUsd, cacheTtlSeconds: profile.cacheTtlSeconds };
+}
+
+function requireEnabledAcquisitionProfile(profile: Awaited<ReturnType<typeof getApifyProviderProfile>>) {
+  if (!profile) {
+    throw new AppError({
+      code: APP_ERROR_CODES.PRECONDITION_FAILED,
+      statusCode: 412,
+      message: "采集Provider尚未配置。请由超级管理员在“采集任务与人工审核”的Provider治理区完成配置并启用后再创建任务。",
+      details: { provider: "apify", reason: "profile_not_configured" },
+    });
+  }
+  if (profile.status !== "active") {
+    throw new AppError({
+      code: APP_ERROR_CODES.PRECONDITION_FAILED,
+      statusCode: 412,
+      message: "采集Provider当前未启用。请由超级管理员完成资格审核并在“采集任务与人工审核”的Provider治理区设为“启用”后再创建任务。",
+      details: { provider: "apify", reason: "profile_not_active", status: profile.status },
+    });
+  }
+  return profile;
 }
 
 function providerRequestHash(input: unknown) {
@@ -73,9 +99,15 @@ function providerRequestHash(input: unknown) {
 export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest) {
   const input = AcquisitionJobRequestSchema.parse(rawInput);
   const db = await requireDb("Amazon acquisition job");
-  const profile = await getActiveAcquisitionProfile(db, input.workspaceId);
-  if (!profile) throw new Error("provider not configured");
-  if (!await isApiConnectionSecretConfigured("apify", "api_token")) throw new Error("provider secret not configured");
+  const profile = requireEnabledAcquisitionProfile(await getApifyProviderProfile(db, input.workspaceId));
+  if (!await isApiConnectionSecretConfigured("apify", "api_token")) {
+    throw new AppError({
+      code: APP_ERROR_CODES.PRECONDITION_FAILED,
+      statusCode: 412,
+      message: "Apify受控密钥尚未配置。请在系统设置的API连接管理中保存密钥后再创建任务。",
+      details: { provider: "apify", reason: "secret_not_configured" },
+    });
+  }
   const policy = profileBudgetPolicy(profile);
 
   if (input.cachePolicy !== "refresh") {

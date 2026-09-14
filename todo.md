@@ -1948,5 +1948,6 @@
 - [x] P0完成Run 3归档的脱敏只读形状审计：数据集有1条记录，已出现`price`、`bsr_rank`、`offer_count`、`buy_box_winner`和`asin`顶层字段；不含任何值、ASIN、对象键、URL或密钥。结论为新商品详情/Offer适配器缺少对蛇形字段的兼容映射，而非Actor空结果。
 - [x] P0修复替代Apify商品详情/Offer Adapter对`price`、`bsr_rank`、`offer_count`、`buy_box_winner`等蛇形返回字段的归一化兼容性，补纯Mock回归并完成无迁移发布验证。修复发布后不得重跑已计费Run 3；任何新的外部资格Run仍需用户单独明确授权。
 - [x] P0重新执行蛇形字段兼容修复的青岛无迁移原子发布：首次健康探针显示当前三服务均active、HTTP 200，但远端入口哈希仍为上一版本，且留下未切换的staging目录、未出现本次版本化备份，故不能视为发布成功。必须用含工件哈希与失败回滚的单文件发布脚本重新切换，并再次核验三项入口哈希、三服务和HTTP；不创建Provider Run、不启动关键词或Heartbeat。第二次使用带回滚保护的原子发布脚本成功：构建包SHA-256、Web/Worker/Scheduler入口SHA-256全部匹配，三项服务均active，本机HTTP 200，且已留存版本化dist备份。
+- [ ] P0排查并修复智能图片建议Step 0“创建采集任务”触发的生产“系统内部错误”：代码链已确认非`active`采集Provider Profile会被查询为空、抛出普通异常并被生产错误格式隐藏为“系统内部错误”。已改为可读的412预条件失败，且纯Mock回归确认Profile缺失/待资格时不创建Job、不入队。待以无迁移发布后按请求ID和界面复验；诊断和复验期间不得触发新的Apify Provider调用、关键词资格或Heartbeat。
 - [x] P0完成蛇形字段兼容修复的本地验证：新增纯Mock返回`price`、`bsr_rank`、`offer_count`、`buy_box_winner`和`buy_box_seller`的成功路径；Adapter与监控Job定向13项Vitest通过，ESLint通过，定向TypeScript无新增诊断，生产构建与Bundle预算通过。全局TypeScript仍有152项既有历史诊断；尚未发布青岛，绝不重跑Run 3。
 - [x] P0修正生产只读资格审计的运行时环境继承：`runtime.conf`未向临时审计器提供`DATABASE_URL`，导致审计在任何数据读取前失败。改由root只将运行中Worker进程的数据库连接变量导入到当前只读子进程，绝不打印、落盘或返回该变量；随后重跑脱敏状态与字段覆盖审计。
