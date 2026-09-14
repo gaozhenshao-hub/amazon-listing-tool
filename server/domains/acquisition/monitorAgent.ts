@@ -23,9 +23,10 @@ export function monitorAgentDag(kind: AmazonMonitorKind): EmperorAgentDag {
     businessRoute: "/ops/crawler",
     nodes: [{
       id: item.nodeId,
-      nodeType: "operation_node",
+      nodeType: "http_node",
       label: item.name,
       subtitle: "受控Provider Job / Run",
+      toolSlug: "internal.amazon.monitor.provider",
       outputKey: "providerSnapshot",
       humanGate: false,
       autoConfirm: true,

@@ -1927,4 +1927,6 @@
 - [x] 补齐权限、工作空间隔离、Secret非泄露、轮换、校验失败、审计与生产同步状态测试；完成定向TypeScript、ESLint、生产构建、Bundle预算和页面验证。已在开发超级管理员会话实测页面只展示连接状态与空白替换输入框、不回显历史密钥；不得在测试中填入真实密钥。
 - [x] 按用户确认将受控API连接管理后台无迁移发布青岛独立站：发布版本`b68495a0`已完成远端SHA-256验签、dist版本化备份、原子替换、Web/Worker/Scheduler三服务和本机HTTP健康核验；未保存或读取生产密钥，未启动Provider/ERP/Heartbeat任务。
 - [ ] 仅在后台完成受管配置与轻量校验通过后，恢复两项已授权Provider资格任务的生产预检；此前价格/Offer/BSR与关键词排名任务均不得排队，费用保持0.00美元。
-- [x] 修复生产Apify无费用轻量校验返回`timeout`的问题：无令牌诊断已证明青岛到账户端点IPv4 HTTPS可达且预期401；本地改用IPv4优先、请求头认证与固定超时的账户端点调用，10项定向回归、TypeScript、ESLint、生产构建与Bundle预算通过。待无迁移补丁发布青岛并重新轻量校验；通过前不得启动两项Provider资格任务。
+- [x] 修复生产Apify无费用轻量校验返回`timeout`的问题：无令牌诊断已证明青岛到账户端点IPv4 HTTPS可达且预期401；本地改用IPv4优先、请求头认证与固定超时的账户端点调用，10项定向回归、TypeScript、ESLint、生产构建与Bundle预算通过。补丁`800fd8dc`已无迁移发布青岛，远端三项dist哈希与本地一致，Web/Worker/Scheduler均active且本机HTTP 200；尚待重新轻量校验，通过前不得启动两项Provider资格任务。
+- [x] P0修复生产资格任务排队：监控Agent模板使用不受支持的`operation_node`，导致首项资格Run已持久化但未创建Agent/AI Job；本地已改为受支持的受控Tool节点，补充DAG校验、入队失败关闭和恢复门禁回归，且未触发Provider。
+- [ ] P0生产执行资格任务排队修复：无迁移发布Agent节点修复后，仅恢复首项满足“无Provider/Agent/AI Job/S3证据且未计费”的既有资格Run；禁止创建第二个Run或启动关键词资格任务，恢复后先只读核对Run/AI Job终态。

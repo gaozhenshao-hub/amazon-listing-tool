@@ -28,3 +28,9 @@
 生产运行环境未配置 `OWNER_OPEN_ID` 或 `OWNER_NAME`，且只读聚合审计显示有两名活跃超级管理员、共享一个默认工作空间。因此临时资格调用器已调整为优先使用用户明确指定的 `gaozhen shao` 名称，且仅在该名称精确匹配**唯一活跃超级管理员**和**活动默认工作空间**时，以五分钟短期会话调用已发布的 `crawler.qualifyProvider` Procedure。调用器不输出身份标识、会话令牌或任何凭据。
 
 下一步需由用户通过受管密钥渠道将有效的 `APIFY_API_TOKEN` 注入青岛服务运行环境，并重启服务后再重做无费用预检。仅当预检返回 `secretConfigured=true` 时，才允许排队首个 `competitor` 资格任务。不得直接写入 Run、绕过 tRPC Procedure、绕过预算门禁或使用旧 HTML 爬虫。
+
+## 受控API连接后台保存后的补充记录
+
+受控API连接管理后台及其IPv4优先轻量校验补丁已先后无迁移发布青岛，并完成构建哈希、Web/Worker/Scheduler active状态和本机HTTP健康核验。用户在生产后台完成Apify保存与轻量校验后，以指定审计发起人`gaozhen shao`执行的无费用预检返回：`secretConfigured=true`、`status=qualification_pending`、`perRunMaxUsd=0.10`、`qualified=false`。该预检未运行Actor、未创建Provider Run、未发生费用。
+
+随后已在既有“1+2+3”授权与首项0.10美元硬上限内，向正式Agent/Job/Run链提交价格/Offer/BSR资格任务的排队命令。Workbench在该命令提交后断开，未返回任务创建标识或任务终态。因此不得重试该首项任务，也不得启动关键词资格任务；后续只能先通过生产任务中心或对`amazon_monitor_runs`进行只读状态核验，确认首项资格任务是否存在、其状态及费用字段后再决定下一步。该记录不将任务标记为成功、失败或已收费。

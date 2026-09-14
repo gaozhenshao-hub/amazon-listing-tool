@@ -63,7 +63,7 @@ vi.mock("./monitorAgent", () => ({
   startMonitorAgentRun: mocks.startMonitorAgentRun,
 }));
 
-import { startAmazonMonitorJob, startMonitorQualificationJob } from "./monitorJob";
+import { resumeUnstartedMonitorQualificationRun, startAmazonMonitorJob, startMonitorQualificationJob } from "./monitorJob";
 
 const profile = { id: 4, status: "active", perRunMaxUsd: "0.1000", dailyBudgetUsd: "5.0000", monthlyBudgetUsd: "100.0000", cacheTtlSeconds: 3600 };
 
@@ -121,6 +121,70 @@ describe("Amazon monitor Job", () => {
     }));
     expect(mocks.startRegisteredAiJob).toHaveBeenCalledWith(expect.objectContaining({ kind: "amazon.monitor.keyword.qualify", queueName: "acquisition" }));
     expect(result).toEqual({ monitorRunId: 31, aiJobRunId: "job-31", status: "queued" });
+  });
+
+  it("fails closed after Run persistence when Agent or Job registration fails", async () => {
+    mocks.startMonitorAgentRun.mockRejectedValueOnce(new Error("unsupported Agent node"));
+    await expect(startMonitorQualificationJob({
+      workspaceId: 2,
+      userId: 7,
+      kind: "competitor",
+      asin: "B0H1VCSGWK",
+      maxChargeUsd: 0.1,
+      confirmExternalCharge: true,
+    })).rejects.toThrow("unsupported Agent node");
+    expect(mocks.startRegisteredAiJob).not.toHaveBeenCalled();
+    expect(mocks.updateMonitorRun).toHaveBeenCalledWith(expect.anything(), 2, 31, expect.objectContaining({
+      status: "failed",
+      failureCategory: "job_enqueue_failed",
+    }));
+  });
+
+  it("only resumes an unstarted qualification Run without Provider, Agent or Job evidence", async () => {
+    mocks.getMonitorRun.mockResolvedValue({
+      id: 31,
+      monitorKind: "competitor",
+      triggerType: "qualification",
+      status: "queued",
+      providerProfileId: 4,
+      monitorId: null,
+      asin: "B0H1VCSGWK",
+      requestedBy: 7,
+      providerRunId: null,
+      agentRunId: null,
+      aiJobRunId: null,
+      rawStorageKey: null,
+      chargedUsd: null,
+    });
+    mocks.loadMonitorProviderProfileById.mockResolvedValue({ ...profile, status: "qualification_pending" });
+    await expect(resumeUnstartedMonitorQualificationRun({ workspaceId: 2, userId: 7, monitorRunId: 31 }))
+      .resolves.toEqual({ monitorRunId: 31, aiJobRunId: "job-31", status: "queued" });
+    expect(mocks.startRegisteredAiJob).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "amazon.monitor.competitor.qualify",
+      procedure: "crawler.resumeQualification",
+    }));
+  });
+
+  it("refuses to resume a qualification Run with any Provider execution evidence", async () => {
+    mocks.getMonitorRun.mockResolvedValue({
+      id: 31,
+      monitorKind: "competitor",
+      triggerType: "qualification",
+      status: "queued",
+      providerProfileId: 4,
+      monitorId: null,
+      asin: "B0H1VCSGWK",
+      requestedBy: 7,
+      providerRunId: "provider-31",
+      agentRunId: null,
+      aiJobRunId: null,
+      rawStorageKey: null,
+      chargedUsd: null,
+    });
+    await expect(resumeUnstartedMonitorQualificationRun({ workspaceId: 2, userId: 7, monitorRunId: 31 }))
+      .rejects.toThrow("禁止恢复");
+    expect(mocks.startMonitorAgentRun).not.toHaveBeenCalled();
+    expect(mocks.startRegisteredAiJob).not.toHaveBeenCalled();
   });
 
   it("archives raw evidence, persists the normalized snapshot and completes the Tool node", async () => {

@@ -181,6 +181,14 @@ Provider资格验证
 
 **验证情况**：16项受控连接/监控定向Vitest通过；定向TypeScript新增诊断为0；ESLint、生产构建与Bundle预算通过。全项目仍存在此前已记录的历史TypeScript/契约诊断，未在本阶段掩盖或归因于该功能。真实密钥仅应由用户通过生产后台输入；尚未在新后台执行真实轻量校验、Provider资格Run、Heartbeat创建或外部业务读取。
 
+## 阶段A11：生产资格任务排队修复
+
+**状态（2026-09-14）**：本地修复完成，生产待单独发布。生产只读审计确认首项价格/Offer/BSR资格Run已在用户授权后持久化为`queued`，费用授权仍为0.10美元，但未创建Agent Run、AI Job或Provider Run，已发生费用为`NULL`。根因是A8监控Agent DAG使用了皇帝Agent校验器不支持的`operation_node`；该校验在Agent创建前失败，使资格Run留下无执行痕迹的`queued`记录。
+
+**修复与门禁**：监控节点已改为受支持的`http_node`并声明受控Tool标识；任何Agent/AI Job登记失败都会把已创建Monitor Run标为`failed/job_enqueue_failed`，不会静默遗留可误判为可恢复的排队记录。新增管理员恢复接口，但仅接受当前工作空间、原始发起人、资格类型、无`providerRunId`、无`agentRunId`、无`aiJobRunId`、无原始S3证据且`chargedUsd IS NULL`的既有记录。恢复复用原Run、原0.10美元上限和原始审计归属，绝不创建第二个Provider Run。
+
+**验证情况**：监控Agent/Job定向10项和统一采集领域72项通过（另1项凭证联网测试按设计跳过）；定向TypeScript新增诊断为0、ESLint与生产构建/Bundle预算通过。尚未发布该修复、尚未恢复既有生产Run、尚未再次调用Provider或启动关键词资格任务。
+
 ## 扩展迁移摘要
 
 | 迁移 | 阶段 | 范围 |

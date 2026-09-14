@@ -52,6 +52,80 @@ function profilePolicy(profile: { perRunMaxUsd: unknown; dailyBudgetUsd: unknown
   };
 }
 
+type PersistedMonitorRun = Awaited<ReturnType<typeof createMonitorRun>>["run"];
+
+async function attachMonitorRunToExecution(input: {
+  db: Awaited<ReturnType<typeof requireDb>>;
+  run: PersistedMonitorRun;
+  kind: AmazonMonitorKind;
+  workspaceId: number;
+  userId: number;
+  monitorId: number | null;
+  asin: string;
+  procedure: string;
+  qualification: boolean;
+}) {
+  try {
+    const agent = await startMonitorAgentRun({
+      kind: input.kind,
+      monitorRunId: input.run.id,
+      monitorId: input.monitorId,
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      asin: input.asin,
+    });
+    const aiJob = await startRegisteredAiJob({
+      kind: `amazon.monitor.${input.kind}.${input.qualification ? "qualify" : "execute"}`,
+      module: "amazonMonitoring",
+      procedure: input.procedure,
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      projectId: input.monitorId,
+      input: {
+        monitorRunId: input.run.id,
+        workspaceId: input.workspaceId,
+        userId: input.userId,
+        kind: input.kind,
+        agentRunId: agent.agentRunId,
+        agentNodeId: agent.agentNodeId,
+      },
+      queueName: "acquisition",
+      maxAttempts: 1,
+      timeoutSeconds: 420,
+    });
+    await updateMonitorRun(input.db, input.workspaceId, input.run.id, { aiJobRunId: aiJob.runId, agentRunId: agent.agentRunId });
+    return { monitorRunId: input.run.id, aiJobRunId: aiJob.runId, status: aiJob.status };
+  } catch (error) {
+    await updateMonitorRun(input.db, input.workspaceId, input.run.id, {
+      status: "failed",
+      failureCategory: "job_enqueue_failed",
+      completedAt: new Date(),
+    }).catch(() => undefined);
+    throw error;
+  }
+}
+
+function canSafelyResumeQualificationRun(run: {
+  triggerType: string;
+  status: string;
+  providerRunId?: string | null;
+  aiJobRunId?: string | null;
+  agentRunId?: string | null;
+  rawStorageKey?: string | null;
+  chargedUsd?: unknown;
+  monitorId?: number | null;
+  requestedBy?: number | null;
+}) {
+  return run.triggerType === "qualification"
+    && ["queued", "failed"].includes(run.status)
+    && !run.providerRunId
+    && !run.aiJobRunId
+    && !run.agentRunId
+    && !run.rawStorageKey
+    && run.chargedUsd === null
+    && run.monitorId === null;
+}
+
 export async function startAmazonMonitorJob(input: {
   workspaceId: number;
   userId: number;
@@ -103,35 +177,18 @@ export async function startAmazonMonitorJob(input: {
   if (created.reused && created.run.aiJobRunId) {
     return { monitorRunId: created.run.id, aiJobRunId: created.run.aiJobRunId, status: created.run.status, reused: true };
   }
-  const agent = await startMonitorAgentRun({
+  const queued = await attachMonitorRunToExecution({
+    db,
+    run: created.run,
     kind: input.kind,
-    monitorRunId: created.run.id,
+    workspaceId: input.workspaceId,
+    userId: input.userId,
     monitorId: input.monitorId,
-    workspaceId: input.workspaceId,
-    userId: input.userId,
     asin: request.asin,
-  });
-  const aiJob = await startRegisteredAiJob({
-    kind: `amazon.monitor.${input.kind}.execute`,
-    module: "amazonMonitoring",
     procedure: "crawler.queueMonitor",
-    workspaceId: input.workspaceId,
-    userId: input.userId,
-    projectId: input.monitorId,
-    input: {
-      monitorRunId: created.run.id,
-      workspaceId: input.workspaceId,
-      userId: input.userId,
-      kind: input.kind,
-      agentRunId: agent.agentRunId,
-      agentNodeId: agent.agentNodeId,
-    },
-    queueName: "acquisition",
-    maxAttempts: 1,
-    timeoutSeconds: 420,
+    qualification: false,
   });
-  await updateMonitorRun(db, input.workspaceId, created.run.id, { aiJobRunId: aiJob.runId, agentRunId: agent.agentRunId });
-  return { monitorRunId: created.run.id, aiJobRunId: aiJob.runId, status: aiJob.status, reused: false };
+  return { ...queued, reused: false };
 }
 
 export async function startMonitorQualificationJob(input: {
@@ -179,21 +236,47 @@ export async function startMonitorQualificationJob(input: {
     status: "queued",
     estimatedMaxUsd: estimate.estimatedMaxUsd.toFixed(4),
   });
-  const agent = await startMonitorAgentRun({ kind: input.kind, monitorRunId: created.run.id, monitorId: null, workspaceId: input.workspaceId, userId: input.userId, asin: request.asin });
-  const aiJob = await startRegisteredAiJob({
-    kind: `amazon.monitor.${input.kind}.qualify`,
-    module: "amazonMonitoring",
-    procedure: "crawler.qualifyProvider",
+  return attachMonitorRunToExecution({
+    db,
+    run: created.run,
+    kind: input.kind,
     workspaceId: input.workspaceId,
     userId: input.userId,
-    projectId: null,
-    input: { monitorRunId: created.run.id, workspaceId: input.workspaceId, userId: input.userId, kind: input.kind, agentRunId: agent.agentRunId, agentNodeId: agent.agentNodeId },
-    queueName: "acquisition",
-    maxAttempts: 1,
-    timeoutSeconds: 420,
+    monitorId: null,
+    asin: request.asin,
+    procedure: "crawler.qualifyProvider",
+    qualification: true,
   });
-  await updateMonitorRun(db, input.workspaceId, created.run.id, { aiJobRunId: aiJob.runId, agentRunId: agent.agentRunId });
-  return { monitorRunId: created.run.id, aiJobRunId: aiJob.runId, status: aiJob.status };
+}
+
+export async function resumeUnstartedMonitorQualificationRun(input: {
+  workspaceId: number;
+  userId: number;
+  monitorRunId: number;
+}) {
+  const db = await requireDb("Amazon monitor qualification resume");
+  const run = await getMonitorRun(db, input.workspaceId, input.monitorRunId);
+  if (!run) throw new Error("资格任务不存在或不属于当前工作空间");
+  if (run.requestedBy !== input.userId) throw new Error("只能恢复本人发起的资格任务");
+  if (!canSafelyResumeQualificationRun(run)) {
+    throw new Error("该资格任务已存在Provider、Agent或AI Job执行痕迹，禁止恢复以避免重复费用");
+  }
+  const kind = run.monitorKind as AmazonMonitorKind;
+  const profile = await loadMonitorProviderProfileById(db, input.workspaceId, run.providerProfileId);
+  if (!profile || profile.status !== "qualification_pending") {
+    throw new Error("资格Provider当前状态不允许恢复任务");
+  }
+  return attachMonitorRunToExecution({
+    db,
+    run,
+    kind,
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    monitorId: null,
+    asin: run.asin,
+    procedure: "crawler.resumeQualification",
+    qualification: true,
+  });
 }
 
 async function executeMonitorJob(job: AiJobSnapshot) {

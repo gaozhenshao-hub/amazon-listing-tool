@@ -35,3 +35,11 @@
 页面轻量校验最终返回固定脱敏类别`timeout`。在青岛服务器上执行的无令牌只读网络诊断证明`api.apify.com`可通过IPv4解析和HTTPS访问；账户端点在未携带认证的情况下约1.2秒返回预期HTTP 401。因此，网络不可达不是根因，且该诊断不读取配置、令牌或业务数据。
 
 本地补丁将账户检查从全局`fetch`改为受控`node:https`请求：固定`family: 4`、10秒超时、`Authorization: Bearer`请求头认证、URL不含令牌，并在非2xx或超时时保持固定失败关闭。10项受控API连接定向测试、定向TypeScript/ESLint及生产构建/Bundle预算均通过。补丁尚未发布青岛；发布后必须重新执行无费用轻量校验，通过前不得创建两项Provider资格Run。
+
+## IPv4补丁发布单元（进行中）
+
+用户已单独确认以无迁移方式发布补丁`800fd8dc`。青岛Workbench已恢复至目标ECS，远端下载发布脚本后的SHA-256校验返回`OK`，脚本已启动。当前尚未收到`SERVICES_ACTIVE`、`LOCAL_HTTP_OK`或最终成功/回滚标识，因而本记录不提前将生产补丁标记为成功。该单元不写入或读取密钥、不执行DDL、不调用Provider/ERP，也不创建Heartbeat或资格Run。
+
+随后，Workbench原发布终端与独立只读终端均报告远程连接断开。断开前只观察到脚本文件SHA-256校验`OK`，未观察到构建切换、服务重启、健康检查、成功或回滚标识。为避免并发和重复发布，未再次提交发布命令；恢复终端后必须先运行只读状态核验，确认发布标记、三个构建入口哈希、三服务状态和本机HTTP，再决定是否需要安全续跑或回滚。
+
+恢复终端后，全sudo只读终态核验确认发布标记为`800fd8dc`；远端`dist/index.js`、`dist/aiWorker.js`、`dist/scheduler.js`的SHA-256均与本地补丁构建完全一致；Web、Worker、Scheduler均为`active`，本机HTTP为200。中断发生于Workbench会话而非应用发布。发布标记的首次回读因普通用户无读取权限而返回`Permission denied`，但写入使用`sudo tee`；随后使用sudo只读核验成功确认标记和健康状态。未再次执行发布、未修改密钥、未执行DDL，也未发起Provider、ERP、Heartbeat或资格Run。

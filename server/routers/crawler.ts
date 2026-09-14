@@ -10,7 +10,7 @@ import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { requireDb } from "../repositories/dbClient";
 import { opsWorkspaceCondition } from "../repositories/ops";
-import { startAmazonMonitorJob, startMonitorQualificationJob } from "../domains/acquisition/monitorJob";
+import { resumeUnstartedMonitorQualificationRun, startAmazonMonitorJob, startMonitorQualificationJob } from "../domains/acquisition/monitorJob";
 import {
   defaultMonitorProviderView,
   getMonitorProviderProfile,
@@ -93,6 +93,17 @@ export const crawlerRouter = router({
       assertAdmin(ctx.user);
       if (input.kind === "keyword" && !input.keyword) throw new TRPCError({ code: "BAD_REQUEST", message: "关键词排名资格验证必须提供测试关键词" });
       return startMonitorQualificationJob({ workspaceId: currentOpsWorkspaceId(), userId: ctx.user.id, ...input });
+    }),
+
+  resumeQualificationRun: protectedProcedure
+    .input(z.object({ monitorRunId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      assertAdmin(ctx.user);
+      return resumeUnstartedMonitorQualificationRun({
+        workspaceId: currentOpsWorkspaceId(),
+        userId: ctx.user.id,
+        monitorRunId: input.monitorRunId,
+      });
     }),
 
   crawlCompetitor: protectedProcedure
