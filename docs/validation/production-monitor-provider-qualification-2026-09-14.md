@@ -43,4 +43,26 @@
 
 本地根因隔离显示监控Adapter仍依赖默认`fetch`传输，而生产轻量校验已验证必须强制IPv4，避免IPv6黑洞。现已完成本地修复：Actor与数据集请求改为受控IPv4 HTTPS、令牌仅位于Authorization请求头、URL不含令牌，网络和Apify HTTP失败映射到固定脱敏分类。IPv4传输、账户轻量校验、固定失败分类及资格排队定向回归均采用Mock运行，未触发真实Provider；定向TypeScript、ESLint、生产构建与Bundle预算通过。
 
-该修复**尚未发布青岛**。在无迁移发布完成、远端健康核验通过、并仅以只读方式确认首项失败Run的状态之前，不得新建资格Run、自动重试、启动关键词资格任务或执行任何新的外部Provider调用。
+该修复已以无迁移方式发布青岛。远端发布脚本及构建包SHA-256均已验证，`dist`完成版本化备份和原子切换；`index.js`、`aiWorker.js`和`scheduler.js`入口哈希均与本地构建一致，Web/Worker/Scheduler均为active，本机HTTP返回200。发布过程未读取或改写密钥、未触碰数据库、未创建Heartbeat、未恢复或重试资格Run、未启动关键词任务或新的外部Provider调用。
+
+下一步只能对首项失败Run执行只读可恢复性审计。除非用户在既有单项0.10美元授权范围内再次明确批准恢复同一条Run，否则不得新建资格Run、自动重试、启动关键词资格任务或执行任何新的外部Provider调用。
+
+## IPv4补丁发布后的只读恢复门禁审计
+
+IPv4监控传输补丁已完成青岛无迁移发布并通过入口哈希、三服务和本机HTTP核验。随后执行的只读审计显示，首项原资格Run当前为`failed`，`providerRunRecorded=0`、`chargedUsd=null`、`maxChargeUsd=0.10`，但已存在失败的Agent Run和AI Job。因此它不再满足“完全无Agent/AI Job执行痕迹”的安全恢复条件，系统未尝试恢复、重试或创建替代Run；关键词资格仍未启动。
+
+如需继续价格/Offer/BSR资格验证，必须取得用户对**新建一条资格Run**的再次明确批准，并在0.10美元单项硬上限内执行。只有该新Run通过Provider与字段证据门禁后，才可再单独讨论关键词资格任务。
+
+## 新建资格Run #2 的部分结果与只读形状审计
+
+在用户再次明确批准的单项 **0.10 美元**硬上限内，系统先完成无费用预检与预算门禁，随后通过正式的 Agent / Job / Run 链创建了一条新的价格、Offer 与 BSR 资格任务。该任务记录了 Provider Run，并产生 **0.0011 美元**费用，低于上限；但终态为`partial`，固定失败类别为`partial_result`。已完成的只读覆盖度审计确认价格、BSR 和 Offer 三类必要证据均未返回，因此资格门禁未激活Provider Profile，关键词资格任务仍未排队。
+
+为区分“字段别名不匹配”与“Provider未产生记录”，已对本次Run的S3原始归档执行严格脱敏的只读形状审计。审计仅返回记录数量、字段名和预定义别名存在性，不输出原始载荷、字段值、对象键、签名URL、ASIN或密钥。结果为 **0 条记录**，无任何顶层字段或候选别名可供归一化。因此，本次失败不是现有snake_case字段映射漏项；当前Adapter期望的`price`、`bsr_rank`、`buy_box_winner`与`offer_count`已与该Actor公开输出合同一致。[1]
+
+该Actor的公开说明指出，无法在所选站点目录中找到的ASIN会被静默跳过；本次空数据集与该类行为相容，但在不新增外部调用的前提下，不能把它断言为唯一原因。[1] 当前结论是：**Provider在本资格样本中没有产出可验证的记录**。系统继续保持`qualification_pending`和失败关闭状态；不新增字段别名修复、不激活监控能力、不创建Heartbeat、不恢复或重试本Run，也不启动关键词资格任务。
+
+如需继续，只能先形成替代Actor或样本的最小资格方案，并由用户对一条新的外部Provider Run单独明确授权，说明目标、单项费用上限及关键词仍保持停止。
+
+## References
+
+[1]: https://apify.com/marketplace-scrapers/amazon-bsr-scraper "Amazon BSR Scraper — public input and output contract"

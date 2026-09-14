@@ -155,7 +155,7 @@ Provider资格验证
 
 ## 阶段A8：监控迁移与旧爬虫退役
 
-**状态（2026-09-14）**：监控迁移、0201迁移、旧爬虫退役和受控API连接后台已发布青岛；真实Heartbeat仍未创建。首项价格/Offer/BSR资格只恢复原有未执行、未计费Run，已创建Agent/AI Job但在任何Actor请求前失败，未记录Provider Run且`chargedUsd=null`；关键词资格未启动。根因已隔离为监控Adapter仍使用默认IPv6优先传输，和已验证的Apify轻量校验IPv4路径不一致。本地修复已完成并通过离线Mock回归、定向静态检查和生产构建：监控Actor/数据集请求统一走受控IPv4 HTTPS，令牌仅位于Authorization请求头，网络与HTTP错误进入固定失败分类。该补丁尚待无迁移发布和远端健康核验；在此之前及之后的只读可恢复性确认完成前，不得新建或重复资格Run。
+**状态（2026-09-14）**：监控迁移、0201迁移、旧爬虫退役、受控API连接后台和IPv4监控传输修复均已发布青岛；真实Heartbeat仍未创建。IPv4补丁发布完成远端脚本/构建包验签、dist版本化备份与原子替换，入口哈希与本地构建一致，Web/Worker/Scheduler为active，本机HTTP为200。首项价格/Offer/BSR资格原Run已在Actor调用前失败，未记录Provider Run且`chargedUsd=null`，但失败的Agent/AI Job已经存在；只读审计确认该Run不再满足安全恢复条件。用户随后单独批准一条新的0.10美元上限资格Run：该Run产生0.0011美元费用并记录Provider Run，但因归档结果为0条记录而以`partial_result`失败关闭，价格、BSR、Offer均无证据。公开Actor合同的输出字段与现有归一化字段一致，因此不是别名映射问题；Provider Profile继续`qualification_pending`，不得重试、激活能力、创建Heartbeat或启动关键词资格任务。后续任何新Run均须重新取得用户明确的费用授权。
 
 **交付物**：分别验证offers、sales rank与search rank Provider能力；将竞品/关键词监控迁移为持久化Heartbeat；封锁旧`setInterval`和旧爬虫运行时入口；增加全库静态审计。
 
@@ -179,7 +179,7 @@ Provider资格验证
 
 **关键文件**：`server/domains/apiConnections/contracts.ts`、`server/domains/apiConnections/service.ts`、`server/routers/apiConnections.ts`、`server/domains/ai_os/services/toolGateway/governanceCore.ts`、`server/domains/acquisition/apifyProvider.ts`、`server/domains/acquisition/apifyMonitorProvider.ts`、`client/src/pages/apiConnections/ApiConnectionManager.tsx`、`client/src/pages/SystemSettings.tsx`及定向测试。
 
-**验证情况**：16项受控连接/监控定向Vitest通过；定向TypeScript新增诊断为0；ESLint、生产构建与Bundle预算通过。全项目仍存在此前已记录的历史TypeScript/契约诊断，未在本阶段掩盖或归因于该功能。受控后台已完成生产发布；Apify密钥由用户在后台保存并通过无费用轻量校验。首项资格Run已按单次授权恢复但零计费失败，关键词资格、Heartbeat和任何外部业务读取仍未执行。
+**验证情况**：16项受控连接/监控定向Vitest通过；定向TypeScript新增诊断为0；ESLint、生产构建与Bundle预算通过。全项目仍存在此前已记录的历史TypeScript/契约诊断，未在本阶段掩盖或归因于该功能。受控后台已完成生产发布；Apify密钥由用户在后台保存并通过无费用轻量校验。首项资格Run曾按单次授权恢复但零计费失败；其后的新资格Run产生0.0011美元部分结果，但只读形状审计为0条记录，Provider仍未资格通过。关键词资格、Heartbeat和任何新的外部业务读取均未执行。
 
 ## 阶段A11：生产资格任务排队修复
 
@@ -200,4 +200,4 @@ Provider资格验证
 
 ## 扩展已知风险
 
-Provider主图/A+能力必须在A0实样验证；生产Token尚未配置；Actor存在计费、限流与Schema漂移；大量图片必须逐图、分区、分批保证全覆盖；历史数据不批量重采；旧爬虫需等待全部消费者迁移后才能退役；青岛独立站每阶段均需单独迁移和受控发布授权。
+Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受控后台配置和轻量校验，但竞品监控Actor在已测资格样本返回0条记录，能力继续未资格通过；Actor存在计费、限流、空结果与Schema漂移；大量图片必须逐图、分区、分批保证全覆盖；历史数据不批量重采；旧爬虫已退役且不得作为失败回退；青岛独立站每阶段仍须遵循独立的生产变更与费用授权边界。
