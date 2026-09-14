@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+
+const requestApifyJsonIPv4Mock = vi.hoisted(() => vi.fn());
+vi.mock("../apiConnections/apifyAccountHealth", () => ({ requestApifyJsonIPv4: requestApifyJsonIPv4Mock }));
+
 import { ApifyAmazonMonitorProvider } from "./apifyMonitorProvider";
 import { AmazonMonitorRequestSchema } from "./monitorProviderContracts";
 
@@ -41,5 +45,24 @@ describe("ApifyAmazonMonitorProvider", () => {
     const requestBody = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
     expect(requestBody).toMatchObject({ keywords: ["travel tumbler"], asins: ["B0H1VCSGWK"], marketplace: "com", postalCode: "10001", depth: 1, includeVolume: false });
     expect(result.normalized).toMatchObject({ kind: "keyword", found: true, organicRank: 7, adRank: 2, absoluteRank: 9, pageNumber: 1, locationPinned: true });
+  });
+
+  it("keeps production transport out of the default global fetch path so Apify calls use the controlled IPv4 HTTPS client", async () => {
+    const globalFetch = vi.fn();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = globalFetch;
+    try {
+      requestApifyJsonIPv4Mock
+        .mockResolvedValueOnce({ data: { id: "run-ipv4", status: "SUCCEEDED", defaultDatasetId: "dataset-ipv4", usageTotalUsd: 0.002 } })
+        .mockResolvedValueOnce([{ asin: "B0H1VCSGWK", price: "$19.99", bsr_rank: 10, buy_box_winner: "Seller", offer_count: 1 }]);
+      const provider = new ApifyAmazonMonitorProvider({ apiToken: "test-token" });
+      const request = AmazonMonitorRequestSchema.parse({ workspaceId: 1, kind: "competitor", marketplace: "US", asin: "B0H1VCSGWK", keyword: null, postalCode: "10001", depth: 1, maxChargeUsd: 0.1, idempotencyKey: "monitor-ipv4-transport" });
+      await provider.fetch(request);
+      expect(globalFetch).not.toHaveBeenCalled();
+      expect(requestApifyJsonIPv4Mock).toHaveBeenCalledWith(expect.objectContaining({ path: expect.stringMatching(/^\/acts\//), method: "POST", token: "test-token" }));
+    } finally {
+      globalThis.fetch = originalFetch;
+      requestApifyJsonIPv4Mock.mockReset();
+    }
   });
 });

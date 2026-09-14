@@ -12,7 +12,7 @@
 
 | 项目 | 状态 | 说明 |
 |---|---|---|
-| 价格 / Offer / BSR 资格验证 | **尚未排队** | 尚未创建 Monitor Run，未调用外部 Provider。 |
+| 价格 / Offer / BSR 资格验证 | **失败关闭，未计费** | 已恢复同一条既有Monitor Run并建立Agent/AI Job；Actor请求前失败，未记录Provider Run，`chargedUsd=null`。 |
 | 关键词排名资格验证 | **尚未排队** | 必须在首个任务取得终态后再启动。 |
 | 费用 | **0.00 美元（尚未发生）** | 尚未提交任何外部 Provider Run。 |
 | 审计发起人 | 已指定 | 仅精确匹配活跃超级管理员、默认工作空间后继续。 |
@@ -33,4 +33,14 @@
 
 受控API连接管理后台及其IPv4优先轻量校验补丁已先后无迁移发布青岛，并完成构建哈希、Web/Worker/Scheduler active状态和本机HTTP健康核验。用户在生产后台完成Apify保存与轻量校验后，以指定审计发起人`gaozhen shao`执行的无费用预检返回：`secretConfigured=true`、`status=qualification_pending`、`perRunMaxUsd=0.10`、`qualified=false`。该预检未运行Actor、未创建Provider Run、未发生费用。
 
-随后已在既有“1+2+3”授权与首项0.10美元硬上限内，向正式Agent/Job/Run链提交价格/Offer/BSR资格任务的排队命令。Workbench在该命令提交后断开，未返回任务创建标识或任务终态。因此不得重试该首项任务，也不得启动关键词资格任务；后续只能先通过生产任务中心或对`amazon_monitor_runs`进行只读状态核验，确认首项资格任务是否存在、其状态及费用字段后再决定下一步。该记录不将任务标记为成功、失败或已收费。
+随后已在既有“1+2+3”授权与首项0.10美元硬上限内，向正式Agent/Job/Run链提交价格/Offer/BSR资格任务的排队命令。Workbench在该命令提交后断开，未返回任务创建标识或任务终态。因此不得重试该首项任务，也不得启动关键词资格任务；后续只能先通过生产任务中心或对`amazon_monitor_runs`进行只读状态核验，确认首项资格任务是否存在、其状态及费用字段后再决定下一步。
+
+## 首项既有Run恢复与零计费失败
+
+排队链修复补丁发布并经服务健康核验后，系统只恢复了原有首项资格Run；恢复接口要求该记录属于指定审计发起人、当前工作空间、无Provider Run、无Agent/AI Job、无S3原始证据且未计费。恢复没有创建第二条Run，也没有启动关键词资格任务。
+
+恢复后的只读审计表明：同一Monitor Run已创建一个Agent Run和一个AI Job，但在任何Provider Run创建之前失败；`providerRunRecorded=0`、`chargedUsd=null`，保留原`maxChargeUsd=0.10`。共享任务记录的脱敏错误为`monitor provider failed: unknown`。因此当前首项不构成成功资格，也不构成已收费外部调用；关键词资格继续停止。
+
+本地根因隔离显示监控Adapter仍依赖默认`fetch`传输，而生产轻量校验已验证必须强制IPv4，避免IPv6黑洞。现已完成本地修复：Actor与数据集请求改为受控IPv4 HTTPS、令牌仅位于Authorization请求头、URL不含令牌，网络和Apify HTTP失败映射到固定脱敏分类。IPv4传输、账户轻量校验、固定失败分类及资格排队定向回归均采用Mock运行，未触发真实Provider；定向TypeScript、ESLint、生产构建与Bundle预算通过。
+
+该修复**尚未发布青岛**。在无迁移发布完成、远端健康核验通过、并仅以只读方式确认首项失败Run的状态之前，不得新建资格Run、自动重试、启动关键词资格任务或执行任何新的外部Provider调用。

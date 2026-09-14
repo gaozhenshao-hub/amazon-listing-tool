@@ -84,7 +84,9 @@ export function classifyProviderFailure(error: unknown): ProviderFailureCategory
   if (message.includes("schema") || message.includes("unexpected field")) return "schema_drift";
   if (message.includes("normalize") || message.includes("normalization")) return "normalization_failed";
   if (message.includes("captcha") || message.includes("blocked")) return "provider_blocked_suspected";
-  if (message.includes("503") || message.includes("unavailable") || message.includes("connection refused")) return "provider_unavailable";
+  if (message.includes("apify_network") || message.includes("network") || message.includes("connection refused")) return "provider_unavailable";
+  if (message.includes("apify_http_400") || message.includes("apify_http_404") || message.includes("apify_invalid_json") || message.includes("apify_invalid_path")) return "schema_drift";
+  if (message.includes("apify_http_5") || message.includes("503") || message.includes("unavailable")) return "provider_unavailable";
   return "unknown";
 }
 

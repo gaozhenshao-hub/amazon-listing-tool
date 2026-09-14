@@ -155,7 +155,7 @@ Provider资格验证
 
 ## 阶段A8：监控迁移与旧爬虫退役
 
-**状态（2026-09-13）**：本地实现完成，真实资格与生产启用待授权。已为offers/Buy Box/BSR和关键词自然/广告排名建立独立Provider Profile、固定Actor Adapter、能力与证据门禁、预算上限、Monitor Run、S3原始证据、Agent/Job审计和Heartbeat计划。候选Provider未运行真实资格Job，保持`qualification_pending`且任何手动、批量或Heartbeat执行均失败关闭。旧`scraper.ts`、`crawlerEngine.ts`、`antiBot.ts`及旧HTML爬虫测试已删除；系统设置的旧代理、UA、重试和即时抓取入口已退役。开发数据库已执行0201，青岛未迁移/未发布，也未创建真实Heartbeat或产生Provider费用。
+**状态（2026-09-14）**：监控迁移、0201迁移、旧爬虫退役和受控API连接后台已发布青岛；真实Heartbeat仍未创建。首项价格/Offer/BSR资格只恢复原有未执行、未计费Run，已创建Agent/AI Job但在任何Actor请求前失败，未记录Provider Run且`chargedUsd=null`；关键词资格未启动。根因已隔离为监控Adapter仍使用默认IPv6优先传输，和已验证的Apify轻量校验IPv4路径不一致。本地修复已完成并通过离线Mock回归、定向静态检查和生产构建：监控Actor/数据集请求统一走受控IPv4 HTTPS，令牌仅位于Authorization请求头，网络与HTTP错误进入固定失败分类。该补丁尚待无迁移发布和远端健康核验；在此之前及之后的只读可恢复性确认完成前，不得新建或重复资格Run。
 
 **交付物**：分别验证offers、sales rank与search rank Provider能力；将竞品/关键词监控迁移为持久化Heartbeat；封锁旧`setInterval`和旧爬虫运行时入口；增加全库静态审计。
 
@@ -173,21 +173,21 @@ Provider资格验证
 
 ## 阶段A10：受控第三方 API 连接管理后台
 
-**状态（2026-09-14）**：本地实现完成，青岛独立站待单独受控发布。系统设置新增“API连接管理”页，仅`super_admin`可查看脱敏状态、在空白密码输入框新增/替换密钥、执行无费用轻量校验和发起密文重加密。领星、Apify、赛狐均使用系统级`secret://integration.*`引用；值通过既有皇帝Tool AES-GCM密文存储与版本治理保存，历史值绝不回显。统一Amazon采集与监控Adapter已改为优先解析`secret://integration.apify.api_token`，旧环境变量仅为服务器端兼容回退。赛狐仍保持“待受限官方API合同”，保存后不得自动外呼或同步。
+**状态（2026-09-14）**：本地实现与青岛无迁移发布均已完成。系统设置新增“API连接管理”页，仅`super_admin`可查看脱敏状态、在空白密码输入框新增/替换密钥、执行无费用轻量校验和发起密文重加密。领星、Apify、赛狐均使用系统级`secret://integration.*`引用；值通过既有皇帝Tool AES-GCM密文存储与版本治理保存，历史值绝不回显。统一Amazon采集与监控Adapter已改为优先解析`secret://integration.apify.api_token`，旧环境变量仅为服务器端兼容回退。赛狐仍保持“待受限官方API合同”，保存后不得自动外呼或同步。
 
 **安全边界**：密钥不得写入业务数据库明文、客户端状态持久化、Job/Run输入、日志、审计元数据、错误文本、静态构建文件或下载包。保存/校验/重加密均记录连接代码、字段名、密钥版本、时间与固定脱敏状态；未配置、验证失败、Tool主密钥不可用或Provider资格未通过时失败关闭。Apify轻量校验仅请求账户身份端点，不启动Actor；领星仅执行MCP协议初始化；赛狐本期不发起网络请求。
 
 **关键文件**：`server/domains/apiConnections/contracts.ts`、`server/domains/apiConnections/service.ts`、`server/routers/apiConnections.ts`、`server/domains/ai_os/services/toolGateway/governanceCore.ts`、`server/domains/acquisition/apifyProvider.ts`、`server/domains/acquisition/apifyMonitorProvider.ts`、`client/src/pages/apiConnections/ApiConnectionManager.tsx`、`client/src/pages/SystemSettings.tsx`及定向测试。
 
-**验证情况**：16项受控连接/监控定向Vitest通过；定向TypeScript新增诊断为0；ESLint、生产构建与Bundle预算通过。全项目仍存在此前已记录的历史TypeScript/契约诊断，未在本阶段掩盖或归因于该功能。真实密钥仅应由用户通过生产后台输入；尚未在新后台执行真实轻量校验、Provider资格Run、Heartbeat创建或外部业务读取。
+**验证情况**：16项受控连接/监控定向Vitest通过；定向TypeScript新增诊断为0；ESLint、生产构建与Bundle预算通过。全项目仍存在此前已记录的历史TypeScript/契约诊断，未在本阶段掩盖或归因于该功能。受控后台已完成生产发布；Apify密钥由用户在后台保存并通过无费用轻量校验。首项资格Run已按单次授权恢复但零计费失败，关键词资格、Heartbeat和任何外部业务读取仍未执行。
 
 ## 阶段A11：生产资格任务排队修复
 
-**状态（2026-09-14）**：本地修复完成，生产待单独发布。生产只读审计确认首项价格/Offer/BSR资格Run已在用户授权后持久化为`queued`，费用授权仍为0.10美元，但未创建Agent Run、AI Job或Provider Run，已发生费用为`NULL`。根因是A8监控Agent DAG使用了皇帝Agent校验器不支持的`operation_node`；该校验在Agent创建前失败，使资格Run留下无执行痕迹的`queued`记录。
+**状态（2026-09-14）**：排队修复已无迁移发布青岛，原有首项资格Run已在受控门禁下恢复。生产只读审计确认该Run已创建Agent Run和AI Job，但在任何Provider Run之前失败，`chargedUsd=null`；费用授权仍为0.10美元且未消耗。后续根因隔离为监控Adapter未使用生产已验证的IPv4传输，相关本地传输修复另行待发布。
 
 **修复与门禁**：监控节点已改为受支持的`http_node`并声明受控Tool标识；任何Agent/AI Job登记失败都会把已创建Monitor Run标为`failed/job_enqueue_failed`，不会静默遗留可误判为可恢复的排队记录。新增管理员恢复接口，但仅接受当前工作空间、原始发起人、资格类型、无`providerRunId`、无`agentRunId`、无`aiJobRunId`、无原始S3证据且`chargedUsd IS NULL`的既有记录。恢复复用原Run、原0.10美元上限和原始审计归属，绝不创建第二个Provider Run。
 
-**验证情况**：监控Agent/Job定向10项和统一采集领域72项通过（另1项凭证联网测试按设计跳过）；定向TypeScript新增诊断为0、ESLint与生产构建/Bundle预算通过。尚未发布该修复、尚未恢复既有生产Run、尚未再次调用Provider或启动关键词资格任务。
+**验证情况**：监控Agent/Job定向10项和统一采集领域72项通过（另1项凭证联网测试按设计跳过）；定向TypeScript新增诊断为0、ESLint与生产构建/Bundle预算通过。发布后仅恢复既有生产Run，未创建第二条Run；首项失败前未产生Provider Run或费用，关键词资格未启动。
 
 ## 扩展迁移摘要
 

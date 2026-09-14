@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { ENV } from "../../_core/env";
 import { resolveToolSecretReference } from "../ai_os/services/toolGateway";
+import { requestApifyJsonIPv4 } from "../apiConnections/apifyAccountHealth";
 import { classifyProviderFailure } from "./providerContracts";
 import {
   AmazonMonitorRequestSchema,
@@ -58,7 +59,7 @@ function fieldStatus(value: unknown) {
 export class ApifyAmazonMonitorProvider {
   private readonly token: string;
   private readonly baseUrl: string;
-  private readonly fetchImpl: typeof fetch;
+  private readonly fetchImpl: typeof fetch | null;
   private readonly pollIntervalMs: number;
   private readonly maxWaitMs: number;
   private readonly timeoutSeconds: number;
@@ -66,7 +67,7 @@ export class ApifyAmazonMonitorProvider {
   constructor(options: ApifyMonitorProviderOptions = {}) {
     this.token = options.apiToken ?? ENV.apifyApiToken;
     this.baseUrl = (options.apiBaseUrl ?? "https://api.apify.com/v2").replace(/\/$/, "");
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? null;
     this.pollIntervalMs = options.pollIntervalMs ?? 2_000;
     this.maxWaitMs = options.maxWaitMs ?? 180_000;
     this.timeoutSeconds = options.actorTimeoutSeconds ?? 150;
@@ -211,6 +212,15 @@ export class ApifyAmazonMonitorProvider {
 
   private async request<T>(path: string, init: RequestInit = {}) {
     if (!this.token) throw new Error("Apify provider not configured: missing API token");
+    if (!this.fetchImpl) {
+      return requestApifyJsonIPv4<T>({
+        path,
+        token: this.token,
+        method: init.method === "POST" ? "POST" : "GET",
+        body: typeof init.body === "string" ? init.body : undefined,
+        timeoutMs: 30_000,
+      });
+    }
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       ...init,
       headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json", ...(init.headers || {}) },

@@ -1929,4 +1929,6 @@
 - [ ] 仅在后台完成受管配置与轻量校验通过后，恢复两项已授权Provider资格任务的生产预检；此前价格/Offer/BSR与关键词排名任务均不得排队，费用保持0.00美元。
 - [x] 修复生产Apify无费用轻量校验返回`timeout`的问题：无令牌诊断已证明青岛到账户端点IPv4 HTTPS可达且预期401；本地改用IPv4优先、请求头认证与固定超时的账户端点调用，10项定向回归、TypeScript、ESLint、生产构建与Bundle预算通过。补丁`800fd8dc`已无迁移发布青岛，远端三项dist哈希与本地一致，Web/Worker/Scheduler均active且本机HTTP 200；尚待重新轻量校验，通过前不得启动两项Provider资格任务。
 - [x] P0修复生产资格任务排队：监控Agent模板使用不受支持的`operation_node`，导致首项资格Run已持久化但未创建Agent/AI Job；本地已改为受支持的受控Tool节点，补充DAG校验、入队失败关闭和恢复门禁回归，且未触发Provider。
-- [ ] P0生产执行资格任务排队修复：无迁移发布Agent节点修复后，仅恢复首项满足“无Provider/Agent/AI Job/S3证据且未计费”的既有资格Run；禁止创建第二个Run或启动关键词资格任务，恢复后先只读核对Run/AI Job终态。
+- [x] P0生产执行资格任务排队修复：无迁移发布Agent节点修复后，仅恢复了首项满足“无Provider/Agent/AI Job/S3证据且未计费”的既有资格Run，未创建第二个Run或启动关键词任务。恢复后只读核验显示已生成Agent/AI Job，但Actor请求前失败、无Provider Run且`chargedUsd=null`；原0.10美元上限仍未消耗。
+- [x] P0修复生产资格Provider网络失败：首项既有Run已恢复并创建Agent/AI Job，但Actor请求前以`unknown`失败、无Provider Run且未计费；监控Adapter现已统一使用已验证的IPv4受控HTTPS传输，令牌仅走Authorization请求头，网络及Apify HTTP失败进入固定脱敏分类。离线Mock回归、定向TypeScript、ESLint、生产构建和Bundle预算通过，未触发真实Provider。
+- [ ] P0将监控Adapter IPv4传输修复以无迁移方式发布青岛；仅在远端验签、版本化备份、原子替换、三服务和本机HTTP健康均通过后，才只读审计首项已失败Run的可恢复性。不得创建第二条Run、不得自动重试、不得启动关键词资格任务；任何新的外部调用仍需在现有单项0.10美元授权边界内明确执行。

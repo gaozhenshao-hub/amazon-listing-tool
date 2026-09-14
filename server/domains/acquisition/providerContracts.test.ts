@@ -42,6 +42,9 @@ describe("Amazon受控Provider合同", () => {
     expect(classifyProviderFailure(new Error("429 rate limit exceeded"))).toBe("rate_limited");
     expect(classifyProviderFailure(new Error("request timed out"))).toBe("request_timeout");
     expect(classifyProviderFailure(new Error("captcha blocked response"))).toBe("provider_blocked_suspected");
+    expect(classifyProviderFailure(new Error("apify_network"))).toBe("provider_unavailable");
+    expect(classifyProviderFailure(new Error("apify_http_400"))).toBe("schema_drift");
+    expect(classifyProviderFailure(new Error("apify_http_503"))).toBe("provider_unavailable");
     expect(classifyProviderFailure(new Error("source-specific secret detail"))).toBe("unknown");
   });
 
