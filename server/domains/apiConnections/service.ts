@@ -16,6 +16,7 @@ import {
   getApiConnectionDefinition,
   type ApiConnectionCode,
 } from "./contracts";
+import { verifyApifyAccountToken } from "./apifyAccountHealth";
 
 type ValidationStatus = "not_checked" | "verified" | "configuration_valid" | "pending_provider_contract" | "failed";
 type StoredSecretRow = Pick<typeof emperorToolSecrets.$inferSelect, "slug" | "status" | "keyVersion" | "rotatedAt" | "updatedAt" | "metadata">;
@@ -183,12 +184,7 @@ export async function validateApiConnection(input: { connection: ApiConnectionCo
   try {
     if (input.connection === "apify") {
       const token = await resolveToolSecretReference("secret://integration.apify.api_token", null);
-      const response = await fetch(`https://api.apify.com/v2/users/me?token=${encodeURIComponent(token)}`, {
-        method: "GET",
-        headers: { accept: "application/json" },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!response.ok) throw new Error(`apify_http_${response.status}`);
+      await verifyApifyAccountToken(token);
     } else {
       const key = await resolveToolSecretReference("secret://integration.lingxing.mcp_key", null);
       const response = await fetch("https://openmcp.lingxing.com/mcp-servers/lingxing-mcp", {
