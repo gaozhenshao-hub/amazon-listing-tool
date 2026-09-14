@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   markMonitorAgentRunning: vi.fn(),
   startMonitorAgentRun: vi.fn(),
   storagePut: vi.fn(),
+  createConfiguredProvider: vi.fn(),
   registered: { handler: null as null | ((job: unknown) => Promise<unknown>) },
 }));
 
@@ -39,6 +40,7 @@ vi.mock("./apifyMonitorProvider", () => ({
     estimate = mocks.estimate;
     fetch = mocks.fetch;
   },
+  createConfiguredApifyAmazonMonitorProvider: mocks.createConfiguredProvider,
 }));
 vi.mock("./monitorRepository", () => ({
   createMonitorRun: mocks.createMonitorRun,
@@ -73,6 +75,7 @@ describe("Amazon monitor Job", () => {
     mocks.getQualifiedMonitorProviderProfile.mockResolvedValue(profile);
     mocks.getMonitorProviderProfile.mockResolvedValue({ ...profile, status: "qualification_pending" });
     mocks.estimate.mockReturnValue({ estimatedMaxUsd: 0.002, pricingModel: "pay_per_snapshot" });
+    mocks.createConfiguredProvider.mockResolvedValue({ estimate: mocks.estimate, fetch: mocks.fetch });
     mocks.createMonitorRun.mockResolvedValue({ reused: false, run: { id: 31 } });
     mocks.startMonitorAgentRun.mockResolvedValue({ agentRunId: "agent-31", agentNodeId: "provider_snapshot" });
     mocks.startRegisteredAiJob.mockResolvedValue({ runId: "job-31", status: "queued" });

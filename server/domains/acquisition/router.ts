@@ -3,6 +3,7 @@ import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../../_core/trpc";
 import { requireDb } from "../../repositories/dbClient";
 import { createConfiguredApifyAmazonProvider } from "./apifyProvider";
+import { isApiConnectionSecretConfigured } from "../apiConnections/service";
 import { AmazonAcquisitionCapabilitySchema } from "./contracts";
 import { AcquisitionBudgetPolicySchema } from "./policy";
 import {
@@ -99,7 +100,7 @@ export const amazonAcquisitionRouter = router({
   providerProfile: adminProcedure.query(async ({ ctx }) => {
     const db = await requireDb("Amazon acquisition provider profile");
     const row = await getApifyProviderProfile(db, workspaceIdOf(ctx));
-    return row ? sanitizeProviderProfile(row) : defaultApifyProviderProfileView();
+    return row ? await sanitizeProviderProfile(row) : await defaultApifyProviderProfileView();
   }),
 
   saveProviderProfile: adminProcedure
@@ -126,7 +127,7 @@ export const amazonAcquisitionRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const workspaceId = workspaceIdOf(ctx);
-      const provider = createConfiguredApifyAmazonProvider();
+      const provider = await createConfiguredApifyAmazonProvider();
       const estimate = await provider.estimate({
         ...input,
         workspaceId,
@@ -135,7 +136,7 @@ export const amazonAcquisitionRouter = router({
       return {
         providerCode: provider.providerCode,
         ...estimate,
-        secretConfigured: Boolean(process.env.APIFY_API_TOKEN),
+        secretConfigured: await isApiConnectionSecretConfigured("apify", "api_token"),
       };
     }),
 });

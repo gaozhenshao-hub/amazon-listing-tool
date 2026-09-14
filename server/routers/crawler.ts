@@ -55,8 +55,8 @@ export const crawlerRouter = router({
       getMonitorProviderProfile(db, workspaceId, "keyword"),
     ]);
     return {
-      competitor: competitor ? sanitizeMonitorProviderProfile("competitor", competitor) : defaultMonitorProviderView("competitor"),
-      keyword: keyword ? sanitizeMonitorProviderProfile("keyword", keyword) : defaultMonitorProviderView("keyword"),
+      competitor: competitor ? await sanitizeMonitorProviderProfile("competitor", competitor) : await defaultMonitorProviderView("competitor"),
+      keyword: keyword ? await sanitizeMonitorProviderProfile("keyword", keyword) : await defaultMonitorProviderView("keyword"),
       policy: {
         realRunRequiresExplicitConfirmation: true,
         unqualifiedCapabilitiesFailClosed: true,

@@ -36,6 +36,7 @@ import {
 } from "./repository";
 import { activateConfirmedSnapshotForConsumer } from "./consumerActivation";
 import { triggerConsumerPostConfirmation } from "./postConfirmation";
+import { isApiConnectionSecretConfigured } from "../apiConnections/service";
 
 export const AcquisitionJobRequestSchema = z.object({
   workspaceId: z.number().int().positive(),
@@ -74,6 +75,7 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
   const db = await requireDb("Amazon acquisition job");
   const profile = await getActiveAcquisitionProfile(db, input.workspaceId);
   if (!profile) throw new Error("provider not configured");
+  if (!await isApiConnectionSecretConfigured("apify", "api_token")) throw new Error("provider secret not configured");
   const policy = profileBudgetPolicy(profile);
 
   if (input.cachePolicy !== "refresh") {
@@ -182,7 +184,7 @@ async function executeAmazonAcquisitionJob(aiJob: AiJobSnapshot) {
     maxChargeUsd,
     idempotencyKey: job.idempotencyKey,
   };
-  const provider = createConfiguredApifyAmazonProvider();
+  const provider = await createConfiguredApifyAmazonProvider();
   const estimate = await provider.estimate(providerRequest);
   const usage = await getAcquisitionBudgetUsage(db, workspaceId, new Date());
   const decision = evaluateAcquisitionBudget({

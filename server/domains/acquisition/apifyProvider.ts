@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { ENV } from "../../_core/env";
+import { resolveToolSecretReference } from "../ai_os/services/toolGateway";
 import {
   AmazonAcquisitionRequestSchema,
   assertProviderSupportsRequest,
@@ -210,6 +211,7 @@ export class ApifyAmazonProvider implements AmazonAcquisitionProvider {
   }
 }
 
-export function createConfiguredApifyAmazonProvider(options: Omit<ApifyAmazonProviderOptions, "apiToken"> = {}) {
-  return new ApifyAmazonProvider({ ...options, apiToken: ENV.apifyApiToken });
+export async function createConfiguredApifyAmazonProvider(options: Omit<ApifyAmazonProviderOptions, "apiToken"> = {}) {
+  const apiToken = await resolveToolSecretReference("secret://integration.apify.api_token", null).catch(() => ENV.apifyApiToken);
+  return new ApifyAmazonProvider({ ...options, apiToken });
 }

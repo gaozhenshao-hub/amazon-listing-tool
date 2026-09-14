@@ -171,6 +171,16 @@ Provider资格验证
 
 **验收标准**：新增测试通过；项目既有失败明确隔离；迁移非破坏性且只执行一次；青岛发布执行验签、备份、原子替换、三服务与本机HTTP检查；真实验收覆盖采集、审核、知识库链接、全图分析、跨竞品选图、综合结论和证据追溯。
 
+## 阶段A10：受控第三方 API 连接管理后台
+
+**状态（2026-09-14）**：本地实现完成，青岛独立站待单独受控发布。系统设置新增“API连接管理”页，仅`super_admin`可查看脱敏状态、在空白密码输入框新增/替换密钥、执行无费用轻量校验和发起密文重加密。领星、Apify、赛狐均使用系统级`secret://integration.*`引用；值通过既有皇帝Tool AES-GCM密文存储与版本治理保存，历史值绝不回显。统一Amazon采集与监控Adapter已改为优先解析`secret://integration.apify.api_token`，旧环境变量仅为服务器端兼容回退。赛狐仍保持“待受限官方API合同”，保存后不得自动外呼或同步。
+
+**安全边界**：密钥不得写入业务数据库明文、客户端状态持久化、Job/Run输入、日志、审计元数据、错误文本、静态构建文件或下载包。保存/校验/重加密均记录连接代码、字段名、密钥版本、时间与固定脱敏状态；未配置、验证失败、Tool主密钥不可用或Provider资格未通过时失败关闭。Apify轻量校验仅请求账户身份端点，不启动Actor；领星仅执行MCP协议初始化；赛狐本期不发起网络请求。
+
+**关键文件**：`server/domains/apiConnections/contracts.ts`、`server/domains/apiConnections/service.ts`、`server/routers/apiConnections.ts`、`server/domains/ai_os/services/toolGateway/governanceCore.ts`、`server/domains/acquisition/apifyProvider.ts`、`server/domains/acquisition/apifyMonitorProvider.ts`、`client/src/pages/apiConnections/ApiConnectionManager.tsx`、`client/src/pages/SystemSettings.tsx`及定向测试。
+
+**验证情况**：16项受控连接/监控定向Vitest通过；定向TypeScript新增诊断为0；ESLint、生产构建与Bundle预算通过。全项目仍存在此前已记录的历史TypeScript/契约诊断，未在本阶段掩盖或归因于该功能。真实密钥仅应由用户通过生产后台输入；尚未在新后台执行真实轻量校验、Provider资格Run、Heartbeat创建或外部业务读取。
+
 ## 扩展迁移摘要
 
 | 迁移 | 阶段 | 范围 |

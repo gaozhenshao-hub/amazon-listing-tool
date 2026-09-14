@@ -347,7 +347,7 @@ async function invokeLingxingReadOnlyMcp(params: unknown, resolvedSecretRefs: st
   if (!capability) throw new TRPCError({ code: "BAD_REQUEST", message: "领星读取请求缺少能力名称" });
   const config = {
     mcpEndpoint: process.env.LINGXING_MCP_ENDPOINT || "https://openmcp.lingxing.com/mcp-servers/lingxing-mcp",
-    headers: { "X-Mcp-Key": "env:LINGXING_MCP_KEY" },
+    headers: { "X-Mcp-Key": "secret://integration.lingxing.mcp_key" },
     allowedHosts: ["openmcp.lingxing.com"],
     timeoutMs: 30_000,
     maxResponseBytes: 2 * 1024 * 1024,

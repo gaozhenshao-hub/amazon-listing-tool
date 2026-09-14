@@ -9,7 +9,7 @@ import {
   type AiJobSnapshot,
 } from "../../services/aiJobRunner";
 import { evaluateAcquisitionBudget } from "./policy";
-import { ApifyAmazonMonitorProvider } from "./apifyMonitorProvider";
+import { ApifyAmazonMonitorProvider, createConfiguredApifyAmazonMonitorProvider } from "./apifyMonitorProvider";
 import {
   AmazonMonitorRequestSchema,
   hasRequiredMonitorEvidence,
@@ -217,7 +217,7 @@ async function executeMonitorJob(job: AiJobSnapshot) {
     maxChargeUsd: Number(run.maxChargeUsd),
     idempotencyKey: run.idempotencyKey,
   });
-  const provider = new ApifyAmazonMonitorProvider();
+  const provider = await createConfiguredApifyAmazonMonitorProvider();
   const estimate = provider.estimate(request);
   const usage = await getMonitorBudgetUsage(db, input.workspaceId, profile.id);
   const decision = evaluateAcquisitionBudget({ estimatedMaxUsd: estimate.estimatedMaxUsd, requestedMaxUsd: request.maxChargeUsd, ...usage, policy: profilePolicy(profile) });

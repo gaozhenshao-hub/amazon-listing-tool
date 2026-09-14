@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { ENV } from "../../_core/env";
+import { resolveToolSecretReference } from "../ai_os/services/toolGateway";
 import { classifyProviderFailure } from "./providerContracts";
 import {
   AmazonMonitorRequestSchema,
@@ -222,4 +223,9 @@ export class ApifyAmazonMonitorProvider {
   private failed(providerCode: string, providerRunId: string, failureCategory: string, chargedUsd: number | null = null): MonitorProviderFetchResult {
     return { providerCode, providerRunId, status: "failed", failureCategory, chargedUsd, rawArtifact: null, normalized: null };
   }
+}
+
+export async function createConfiguredApifyAmazonMonitorProvider(options: Omit<ApifyMonitorProviderOptions, "apiToken"> = {}) {
+  const apiToken = await resolveToolSecretReference("secret://integration.apify.api_token", null).catch(() => ENV.apifyApiToken);
+  return new ApifyAmazonMonitorProvider({ ...options, apiToken });
 }

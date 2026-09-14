@@ -40,6 +40,7 @@ import { kbTagsRouter } from "./routers/kbTags";
 import { kbTransferRouter } from "./routers/kbTransfer";
 // System Settings
 import { systemSettingsRouter } from "./routers/systemSettings";
+import { apiConnectionsRouter } from "./routers/apiConnections";
 // KB Review & Access Control
 import { kbReviewRouter } from "./routers/kbReview";
 import { kbBotRouter } from "./routers/kbBot";
@@ -152,6 +153,7 @@ export const appRouter = router({
   kbFeedback: kbFeedbackRouter,
   // System Settings
   systemSettings: systemSettingsRouter,
+  apiConnections: apiConnectionsRouter,
   // KB Review & Access Control
   kbReview: kbReviewRouter,
   sopAccess: sopAccessRouter,

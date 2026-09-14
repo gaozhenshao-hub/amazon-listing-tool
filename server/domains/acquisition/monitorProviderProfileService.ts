@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { acquisitionProviderProfiles } from "../../../drizzle/schema/acquisition";
-import { ENV } from "../../_core/env";
+import { isApiConnectionSecretConfigured } from "../apiConnections/service";
 import type { DbExecutor } from "../../repositories/dbClient";
 import { AcquisitionBudgetPolicySchema, DEFAULT_ACQUISITION_CACHE_TTL_SECONDS } from "./policy";
 import type { AmazonMonitorKind } from "./monitorProviderContracts";
@@ -35,7 +35,7 @@ function numeric(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function defaultMonitorProviderView(kind: AmazonMonitorKind) {
+export async function defaultMonitorProviderView(kind: AmazonMonitorKind) {
   const candidate = monitorProviderCandidate(kind);
   return {
     id: null,
@@ -47,12 +47,12 @@ export function defaultMonitorProviderView(kind: AmazonMonitorKind) {
     monthlyBudgetUsd: 100,
     cacheTtlSeconds: DEFAULT_ACQUISITION_CACHE_TTL_SECONDS,
     lastQualifiedAt: null,
-    secretConfigured: Boolean(ENV.apifyApiToken),
+    secretConfigured: await isApiConnectionSecretConfigured("apify", "api_token"),
     configured: false,
   };
 }
 
-export function sanitizeMonitorProviderProfile(kind: AmazonMonitorKind, row: typeof acquisitionProviderProfiles.$inferSelect) {
+export async function sanitizeMonitorProviderProfile(kind: AmazonMonitorKind, row: typeof acquisitionProviderProfiles.$inferSelect) {
   return {
     id: row.id,
     kind,
@@ -68,7 +68,7 @@ export function sanitizeMonitorProviderProfile(kind: AmazonMonitorKind, row: typ
     cacheTtlSeconds: row.cacheTtlSeconds,
     qualificationVersion: row.qualificationVersion,
     lastQualifiedAt: row.lastQualifiedAt,
-    secretConfigured: Boolean(ENV.apifyApiToken),
+    secretConfigured: await isApiConnectionSecretConfigured("apify", "api_token"),
     configured: true,
   };
 }
@@ -85,6 +85,7 @@ export async function getMonitorProviderProfile(db: DbExecutor, workspaceId: num
 export async function getQualifiedMonitorProviderProfile(db: DbExecutor, workspaceId: number, kind: AmazonMonitorKind) {
   const row = await getMonitorProviderProfile(db, workspaceId, kind);
   if (!row || row.status !== "active" || !row.lastQualifiedAt || !row.qualificationVersion) return null;
+  if (!await isApiConnectionSecretConfigured("apify", "api_token")) return null;
   const candidate = monitorProviderCandidate(kind);
   const capabilities = Array.isArray(row.capabilities) ? row.capabilities : [];
   if (row.providerCode !== candidate.providerCode || row.actorName !== candidate.actorName) return null;
@@ -115,7 +116,7 @@ export async function upsertMonitorProviderCandidate(input: {
     providerCode: candidate.providerCode,
     displayName: input.displayName?.trim() || candidate.displayName,
     status: "qualification_pending" as const,
-    secretRef: "env:APIFY_API_TOKEN",
+    secretRef: "secret://integration.apify.api_token",
     actorName: candidate.actorName,
     capabilities: [...candidate.capabilities],
     providerSettings: input.kind === "keyword"

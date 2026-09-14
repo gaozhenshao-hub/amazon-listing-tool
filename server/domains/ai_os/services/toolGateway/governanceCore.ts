@@ -169,6 +169,20 @@ const SECRET_REF_PATTERN = /^(env:[A-Z0-9_]+|secret:\/\/[a-z0-9._:-]+)$/i;
 
 const SECRET_TEMPLATE_PATTERN = /\$\{(env:[A-Z0-9_]+|secret:[a-z0-9._:-]+)\}/gi;
 
+/**
+ * 迁移期的兼容映射。新后台写入`secret://`，旧生产环境仍可在未迁移前使用
+ * 既有受管环境变量。此映射只在服务端解析；从不下发到客户端或审计日志。
+ */
+const SECRET_REFERENCE_ENV_FALLBACKS: Record<string, string> = {
+  "integration.apify.api_token": "APIFY_API_TOKEN",
+  "integration.lingxing.mcp_key": "LINGXING_MCP_KEY",
+  "integration.lingxing.app_id": "LINGXING_APP_ID",
+  "integration.lingxing.app_secret": "LINGXING_APP_SECRET",
+  "integration.saihu.api_token": "SAIHU_API_TOKEN",
+  "integration.saihu.app_id": "SAIHU_APP_ID",
+  "integration.saihu.app_secret": "SAIHU_APP_SECRET",
+};
+
 function sanitizeForAudit(value: unknown, depth = 0): unknown {
   if (value === null || value === undefined) return null;
   if (depth > 5) return "[Truncated]";
@@ -275,6 +289,36 @@ async function loadStoredToolSecret(slug: string, workspaceId?: number | null): 
   return decryptToolSecretValue(rows[0]);
 }
 
+export function getSecretReferenceFallbackEnvironmentKey(slug: string): string | null {
+  return SECRET_REFERENCE_ENV_FALLBACKS[slug] || null;
+}
+
+/**
+ * 仅供服务器端Provider与Tool执行器使用。调用方不得把返回值写入Job、审计、
+ * 日志、错误消息或客户端响应。优先使用加密Secret，环境变量只用于安全迁移回退。
+ */
+export async function resolveToolSecretReference(reference: string, workspaceId?: number | null): Promise<string> {
+  const trimmed = reference.trim();
+  if (/^env:/i.test(trimmed)) {
+    const key = trimmed.slice(4);
+    const value = process.env[key];
+    if (!value) throw new TRPCError({ code: "BAD_REQUEST", message: `Missing environment secret: ${key}` });
+    return value;
+  }
+  if (!/^secret:\/\//i.test(trimmed)) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid server secret reference" });
+  }
+  const slug = trimmed.slice("secret://".length);
+  try {
+    return await loadStoredToolSecret(slug, workspaceId);
+  } catch (error) {
+    const fallbackKey = getSecretReferenceFallbackEnvironmentKey(slug);
+    const fallbackValue = fallbackKey ? process.env[fallbackKey] : "";
+    if (fallbackValue) return fallbackValue;
+    throw error;
+  }
+}
+
 function isSecretReferenceString(value: string): boolean {
   SECRET_TEMPLATE_PATTERN.lastIndex = 0;
   return SECRET_REF_PATTERN.test(value.trim()) || SECRET_TEMPLATE_PATTERN.test(value);
@@ -315,7 +359,7 @@ async function resolveSecretRefString(value: string, refs: string[], workspaceId
   if (/^secret:\/\//i.test(trimmed)) {
     const slug = trimmed.slice("secret://".length);
     refs.push(`secret://${slug}`);
-    return loadStoredToolSecret(slug, workspaceId);
+    return resolveToolSecretReference(`secret://${slug}`, workspaceId);
   }
   SECRET_TEMPLATE_PATTERN.lastIndex = 0;
   let output = value;

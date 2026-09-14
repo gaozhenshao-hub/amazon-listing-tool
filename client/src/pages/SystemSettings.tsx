@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { Activity, ArrowRight, CheckCircle2, ChevronRight, Clock, ExternalLink, Globe, Loader2, LockKeyhole, Settings2, Shield, TestTube2, Trash2, Users, XCircle } from "lucide-react";
+import { Activity, ArrowRight, CheckCircle2, ChevronRight, Clock, ExternalLink, Globe, KeyRound, Loader2, LockKeyhole, Settings2, Shield, TestTube2, Trash2, Users, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
+import { ApiConnectionManager } from "./apiConnections/ApiConnectionManager";
 
 function providerStatusLabel(status: string) {
   if (status === "active") return "已通过资格验证";
@@ -38,12 +39,14 @@ export default function SystemSettings() {
         <Button asChild><Link href="/ops/crawler">前往监控与Provider治理 <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
       </div>
 
-      <Tabs defaultValue="nextsls" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+      <Tabs defaultValue="connections" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
+          <TabsTrigger value="connections"><KeyRound className="mr-2 h-4 w-4" />API连接管理</TabsTrigger>
           <TabsTrigger value="nextsls">物流API</TabsTrigger>
           <TabsTrigger value="provider"><Shield className="mr-2 h-4 w-4" />Amazon Provider</TabsTrigger>
           <TabsTrigger value="mapping"><Users className="mr-2 h-4 w-4" />人员映射</TabsTrigger>
         </TabsList>
+        <TabsContent value="connections"><ApiConnectionManager /></TabsContent>
         <TabsContent value="nextsls"><NextSlsSettings /></TabsContent>
         <TabsContent value="provider" className="space-y-6">
           <Card>

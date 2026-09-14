@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { acquisitionProviderProfiles } from "../../../drizzle/schema/acquisition";
-import { ENV } from "../../_core/env";
+import { isApiConnectionSecretConfigured } from "../apiConnections/service";
 import type { DbExecutor } from "../../repositories/dbClient";
 import {
   AcquisitionBudgetPolicySchema,
@@ -11,7 +11,7 @@ import {
 export const DEFAULT_APIFY_PROFILE_KEY = "apify-amazon-primary";
 export const APIFY_PROVIDER_CODE = "apify.junglee.amazon_crawler";
 
-export function defaultApifyProviderProfileView() {
+export async function defaultApifyProviderProfileView() {
   return {
     id: null,
     profileKey: DEFAULT_APIFY_PROFILE_KEY,
@@ -26,7 +26,7 @@ export function defaultApifyProviderProfileView() {
     cacheTtlSeconds: DEFAULT_ACQUISITION_CACHE_TTL_SECONDS,
     qualificationVersion: "apify-junglee-us-gallery-2026-09-13-r1",
     lastQualifiedAt: null,
-    secretConfigured: Boolean(ENV.apifyApiToken),
+    secretConfigured: await isApiConnectionSecretConfigured("apify", "api_token"),
     createdAt: null,
     updatedAt: null,
   };
@@ -45,7 +45,7 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function sanitizeProviderProfile(row: typeof acquisitionProviderProfiles.$inferSelect) {
+export async function sanitizeProviderProfile(row: typeof acquisitionProviderProfiles.$inferSelect) {
   return {
     id: row.id,
     profileKey: row.profileKey,
@@ -60,7 +60,7 @@ export function sanitizeProviderProfile(row: typeof acquisitionProviderProfiles.
     cacheTtlSeconds: row.cacheTtlSeconds,
     qualificationVersion: row.qualificationVersion,
     lastQualifiedAt: row.lastQualifiedAt,
-    secretConfigured: Boolean(ENV.apifyApiToken),
+    secretConfigured: await isApiConnectionSecretConfigured("apify", "api_token"),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -91,7 +91,7 @@ export async function upsertApifyProviderProfile(input: {
     providerCode: APIFY_PROVIDER_CODE,
     displayName: input.profile.displayName.trim(),
     status: input.profile.status,
-    secretRef: "env:APIFY_API_TOKEN",
+    secretRef: "secret://integration.apify.api_token",
     actorName: input.profile.actorName.trim(),
     capabilities: input.profile.capabilities,
     providerSettings: {
