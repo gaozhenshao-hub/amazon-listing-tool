@@ -1935,6 +1935,17 @@
 - [x] P0仅以只读方式审计首项零计费失败Run是否仍满足可恢复性门禁：IPv4补丁健康发布后核验显示原Run已处于`failed`，存在失败的Agent/AI Job，故不再符合“无Agent/AI Job执行痕迹”的恢复门禁；仍无Provider Run、`chargedUsd=null`、原上限为0.10美元，关键词资格任务未启动。
 - [x] P0用户已再次明确批准创建一条新的价格/Offer/BSR资格Run（最高0.10美元）：已先完成无费用生产预检与预算门禁，再通过正式Agent/Job/Run链排队。该Run未通过Provider字段证据门禁，关键词资格任务未启动。
 - [x] P0诊断价格/Offer/BSR资格Run #2 的部分结果：该Run产生0.0011美元费用并记录Provider Run，但价格、BSR和Offer三类证据均未返回。脱敏只读形状审计确认归档数据集为0条记录，公开Actor输出合同与现有归一化字段一致，故不是字段别名映射问题；资格门禁已正确失败关闭。
-- [ ] P0如需继续竞争对手价格/Offer/BSR资格验证，先形成替代Actor或样本的最小方案，再取得用户对一条**新**外部Provider Run的明确费用授权（需声明单项上限）。在新的资格Run通过前，保持Provider `qualification_pending`、禁止自动重试、禁止创建Heartbeat、禁止启动关键词资格任务，也不得恢复旧HTML爬虫。
-- [ ] P0用户已授权采用替代Apify Actor进行一次新的价格/Offer/BSR资格验证，单次费用硬上限为2.00美元：先完成公开输入/输出/计费合同核验和本地受控适配测试；发布新Adapter后才允许通过正式Agent/Job/Run链发起一次新Run。不得重试旧Run，不得启动关键词资格或Heartbeat，不得将密钥或原始载荷输出到客户端或日志。
+- [x] P0如需继续竞争对手价格/Offer/BSR资格验证，先形成替代Actor或样本的最小方案，再取得用户对一条**新**外部Provider Run的明确费用授权（需声明单项上限）。在新的资格Run通过前，保持Provider `qualification_pending`、禁止自动重试、禁止创建Heartbeat、禁止启动关键词资格任务，也不得恢复旧HTML爬虫。
+- [x] P0用户已授权采用替代Apify Actor进行一次新的价格/Offer/BSR资格验证，单次费用硬上限为2.00美元：先完成公开输入/输出/计费合同核验和本地受控适配测试；发布新Adapter后才允许通过正式Agent/Job/Run链发起一次新Run。不得重试旧Run，不得启动关键词资格或Heartbeat，不得将密钥或原始载荷输出到客户端或日志。
 - [x] P0完成替代Apify Actor的无费用合同核验与本地适配：选定受控商品详情/Offer Actor，固定单一商品URL、商品详情、最多10条Offer，关闭变体与卖家档案；映射公开价格、Best Seller Rank、OfferCount与Buy Box字段。17项定向回归、ESLint、定向TypeScript和生产构建/Bundle预算通过；尚未发布青岛、登记候选或发起外部Run。
+- [x] P0用户已确认执行替代Apify Actor的青岛无迁移发布，并在发布健康核验通过后登记新候选、以`gaozhen shao`审计身份通过正式Agent/Job/Run链创建恰好一条价格/Offer/BSR资格Run（单次最高2.00美元）。完成后仅做脱敏只读审计；严禁重试旧Run、启动关键词资格或创建Heartbeat。
+- [x] P0修正生产临时资格调用器的只读执行权限：此前以`sudo install -m 600`写入后由非root受控进程运行，因`EACCES`在任何tRPC或Provider调用前失败；尚未创建新Run、尚未产生新费用。改为只读可执行的临时脚本权限并重新完成无费用预检后，方可使用既有单次2.00美元授权创建一条新Run。
+- [x] P0修正临时资格调用器的执行权限并完成无费用预检：临时脚本改为仅执行期间对应用运行用户可读，预检退出码为0；此前权限失败未创建Run或费用。临时文件均在执行后删除。
+- [x] P0在用户授权范围内通过替代Apify Actor提交一条新的价格/Offer/BSR资格Run：正式受控调用器退出码为0，未启动关键词资格或Heartbeat；仍须只读核验费用、Provider Run和字段覆盖，未满足证据门禁前不得激活Provider。
+- [x] P0更正前项并重新提交用户已授权的替代Apify资格Run：只读数据库摘要确认最新记录仍为既有的部分结果Run，未创建新的Run或新增费用。根因是临时调用器未继承`DATABASE_URL`，外层清理脚本以0退出掩盖了前置失败。必须仅从运行中Worker受控继承所需运行时变量后，通过正式Agent/Job/Run链创建**恰好一条**新Run（最高2.00美元）；不得重试旧Run、启动关键词资格或Heartbeat。
+- [x] P0生产路由另有更严格的`maxChargeUsd≤1.00`输入上限：2.00美元请求在输入校验阶段失败，未创建Run且未产生费用。用户授权额度覆盖更低的安全上限；后续只允许以**1.00美元**硬上限重新提交恰好一条替代Actor资格Run，仍不得重试旧Run、启动关键词资格或Heartbeat。
+- [x] P0替代Apify Actor资格Run已按1.00美元硬上限创建并以`partial/schema_drift`结束，实际费用0.0008美元：仅可对该Run归档响应执行脱敏只读形状审计，确认价格、BSR、Offer证据是字段映射问题还是Actor未返回；禁止自动重试、激活Provider、启动关键词资格或创建Heartbeat。
+- [x] P0完成Run 3归档的脱敏只读形状审计：数据集有1条记录，已出现`price`、`bsr_rank`、`offer_count`、`buy_box_winner`和`asin`顶层字段；不含任何值、ASIN、对象键、URL或密钥。结论为新商品详情/Offer适配器缺少对蛇形字段的兼容映射，而非Actor空结果。
+- [ ] P0修复替代Apify商品详情/Offer Adapter对`price`、`bsr_rank`、`offer_count`、`buy_box_winner`等蛇形返回字段的归一化兼容性，补纯Mock回归并完成无迁移发布验证。修复发布后不得重跑已计费Run 3；任何新的外部资格Run仍需用户单独明确授权。
+- [x] P0完成蛇形字段兼容修复的本地验证：新增纯Mock返回`price`、`bsr_rank`、`offer_count`、`buy_box_winner`和`buy_box_seller`的成功路径；Adapter与监控Job定向13项Vitest通过，ESLint通过，定向TypeScript无新增诊断，生产构建与Bundle预算通过。全局TypeScript仍有152项既有历史诊断；尚未发布青岛，绝不重跑Run 3。
+- [x] P0修正生产只读资格审计的运行时环境继承：`runtime.conf`未向临时审计器提供`DATABASE_URL`，导致审计在任何数据读取前失败。改由root只将运行中Worker进程的数据库连接变量导入到当前只读子进程，绝不打印、落盘或返回该变量；随后重跑脱敏状态与字段覆盖审计。

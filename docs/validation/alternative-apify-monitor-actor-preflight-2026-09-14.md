@@ -37,6 +37,34 @@
 
 需要单独确认一次**无迁移青岛生产发布**，以使新的Adapter、Actor候选和2.00美元输入上限在生产生效。发布后，才可先通过正式受控Procedure登记替代候选，再创建**恰好一条**新的资格Run。运行完成后必须只读审计费用、Provider Run、字段覆盖和资格状态；即使费用低于上限，字段不足也不得激活Provider或启动关键词/Heartbeat。
 
+## 青岛无迁移发布记录
+
+用户已确认发布与单次2.00美元资格验证。发布工件已在远端完成SHA-256校验，旧`dist`已创建版本化备份，替代Actor构建以临时目录原子替换；Web、Worker、Scheduler三项服务均返回`active`，本机HTTP健康检查返回200。该发布不包含数据库迁移、不读取或改写受管Secret，也未创建Heartbeat。
+
+用户提供的Apify控制台截图显示既有两个Actor的最近运行均为`Succeeded`，但截图不包含数据集记录数、必要字段覆盖或实际费用。因此，控制台成功状态不替代系统资格门禁；新Run仍须基于归档后的价格、BSR和Offer证据做出资格结论。
+
+## 生产资格Run执行记录
+
+首次尝试仅在临时调用器权限阶段失败：脚本被安装为仅root可读，而受控调用进程以应用运行用户执行，因而在任何tRPC或Provider调用前即遭遇权限拒绝。该失败未创建新Run，未产生新费用。
+
+随后已将**不含Secret的临时调用器**改为仅在执行期间可由应用运行用户读取，且每次执行后删除。无费用预检表面返回退出码0；但后续只读数据库摘要确认，临时调用器没有继承`DATABASE_URL`，其外层清理脚本又以0退出，因而掩盖了调用器在任何tRPC或Provider调用前的失败。最新记录仍为先前的部分结果Run，未创建新Run，未产生新增费用。
+
+当前将从运行中的Worker受控继承临时调用器所需的数据库与会话变量，重新执行用户已授权的**恰好一条**替代Actor资格Run；变量值不会被打印、记录、上传或传入Job载荷。创建后必须核验其实际计费、Provider Run记录，以及价格、BSR、Offer三个必要证据的字段覆盖。旧Run不重试，关键词资格和Heartbeat仍保持未启动。
+
+Worker环境预检已通过：竞品Provider为已配置、受管Secret可用、仍处于`qualification_pending`，单次政策上限仍为0.10美元，未资格激活；系统明确保持“未资格能力失败关闭”和“旧爬虫不回退”。最新已有资格记录仍是此前的`partial_result`，费用0.0011美元、Provider Run与AI Job均已存在，AI Job/Agent均为失败状态。该预检不产生外部费用，且确认尚未创建本轮新的替代Actor资格Run。
+
+首次以用户授权的2.00美元上限提交新Run时，生产路由在输入校验阶段拒绝：该生产实例仍强制`maxChargeUsd`不高于1.00美元。拒绝发生在Run、Agent、Job和Provider调用创建之前，因此没有新增费用或外部执行。用户授权额度覆盖较低的服务端安全上限；后续仅可用1.00美元硬上限重新提交一次。
+
+随后以1.00美元硬上限创建的唯一替代Actor资格Run已执行，实际费用为0.0008美元，但以`partial/schema_drift`失败关闭。对该Run归档响应进行严格脱敏的只读形状审计显示：数据集有1条记录，且顶层同时存在`price`、`bsr_rank`、`offer_count`、`buy_box_winner`与`asin`等必要语义字段。审计只记录字段名称和别名存在性，不包含字段值、ASIN、对象键、原始载荷、签名URL或凭据。
+
+因此，本次失败不再是Actor空结果或缺少公开字段，而是新的商品详情/Offer Actor适配器未兼容该返回的蛇形字段命名。Provider继续保持`qualification_pending`，不自动重试、不激活能力、不启动关键词资格或Heartbeat；后续先修复本地归一化映射并完成回归与无迁移发布，再单独取得新的真实外部调用授权。
+
+本地修复已将`bsr_rank`、`offer_count`、`buy_box_winner`和`buy_box_seller`与既有驼峰/数组输出并列归一化，保留价格与货币字段，并将字段覆盖基于实际返回的蛇形或驼峰字段计算。新增纯Mock测试验证这些字段能满足价格、BSR和Offer资格证据门禁；Adapter与监控Job定向13项Vitest、ESLint、定向TypeScript筛选、生产构建和Bundle预算检查均通过。全局TypeScript仍有152项已知历史诊断，故完整代码审查的“零TypeScript错误”门槛不满足；本次相关文件无新增诊断。
+
+该修复尚未无迁移发布青岛。它不会回写或改变已计费的Run 3，亦不会使Provider自动变为`active`；发布后仍需用户单独授权一条新的、带费用上限的资格Run，才能验证修复是否在新的外部响应上满足完整证据门禁。
+
+随后用于读取费用、Provider Run、Agent与AI Job摘要的脱敏只读审计退出码为0；终端控制台的细粒度JSON显示受限，且Workbench远程会话在再次读取Worker日志前中断。因此，资格结果当前仍标记为**待只读复核**，不得仅依据退出码或Apify控制台运行成功而激活Provider。该中断未触发新的Provider调用。
+
 ## References
 
 [1]: https://apify.com/calm_builder/amazon-product-scraper "Amazon Product Scraper — public input, output and pricing contract"

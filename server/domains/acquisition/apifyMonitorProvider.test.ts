@@ -36,6 +36,27 @@ describe("ApifyAmazonMonitorProvider", () => {
     expect(result.rawArtifact?.contentHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it("accepts snake_case price, BSR and offer evidence returned by the product-and-offer actor", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ data: { id: "run-snake", status: "SUCCEEDED", defaultDatasetId: "dataset-snake", usageTotalUsd: 0.0008 } }))
+      .mockResolvedValueOnce(jsonResponse([{ asin: "B0H1VCSGWK", price: "$18.99", currency: "USD", bsr_rank: 321, offer_count: 2, buy_box_winner: true, buy_box_seller: "Example Seller" }]));
+    const provider = new ApifyAmazonMonitorProvider({ apiToken: "test-token", fetchImpl, pollIntervalMs: 0 });
+    const request = AmazonMonitorRequestSchema.parse({ workspaceId: 1, kind: "competitor", marketplace: "US", asin: "B0H1VCSGWK", keyword: null, postalCode: "10001", depth: 1, maxChargeUsd: 0.1, idempotencyKey: "monitor-snake-case" });
+
+    const result = await provider.fetch(request);
+
+    expect(result.status).toBe("succeeded");
+    expect(result.normalized).toMatchObject({
+      kind: "competitor",
+      price: "18.99",
+      currency: "USD",
+      bsrRank: 321,
+      offerCount: 2,
+      buyBoxSellerName: "Example Seller",
+      coverage: { price: "returned", bsrRank: "returned", buyBox: "returned", offerCount: "returned" },
+    });
+  });
+
   it("uses the documented rank tracker input and separates organic from sponsored positions", async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ data: { id: "run-2", status: "SUCCEEDED", defaultDatasetId: "dataset-2", usageTotalUsd: 0.075 } }))

@@ -137,14 +137,18 @@ export class ApifyAmazonMonitorProvider {
       const offers = Array.isArray(item.offers) ? item.offers : [];
       const buyBoxOffer = offers.find((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry) && (entry as Record<string, unknown>).isBuyBoxWinner === true);
       const primaryRank = categories.find((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry) && positiveIntOrNull((entry as Record<string, unknown>).rank) !== null);
+      const directBsrRank = positiveIntOrNull(item.bsr_rank);
+      const offerCount = nonnegativeIntOrNull(item.offersCount ?? item.offer_count);
+      const buyBoxSellerName = textOrNull(buyBoxOffer?.sellerName) ?? textOrNull(item.buy_box_seller);
+      const buyBoxEvidence = item.hasBuyBox ?? item.buy_box_winner ?? item.buy_box_seller;
       return AmazonMonitorResultSchema.parse({
         kind: "competitor",
         asin: request.asin,
         marketplace: "US",
         title: textOrNull(item.title),
         price: priceOrNull(item.price),
-        currency: null,
-        bsrRank: positiveIntOrNull(primaryRank?.rank),
+        currency: textOrNull(item.currency),
+        bsrRank: positiveIntOrNull(primaryRank?.rank) ?? directBsrRank,
         bsrCategory: textOrNull(primaryRank?.category),
         bsrCategories: categories.flatMap((entry) => {
           if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
@@ -153,16 +157,16 @@ export class ApifyAmazonMonitorProvider {
           const category = textOrNull(row.category);
           return rank && category ? [{ rank, category }] : [];
         }),
-        buyBoxWinner: textOrNull(buyBoxOffer?.sellerName),
-        buyBoxSellerName: textOrNull(buyBoxOffer?.sellerName),
+        buyBoxWinner: buyBoxSellerName,
+        buyBoxSellerName,
         shipsFrom: textOrNull(buyBoxOffer?.shipsFrom),
-        offerCount: nonnegativeIntOrNull(item.offersCount),
+        offerCount,
         snapshotAt: null,
         coverage: {
           price: fieldStatus(item.price),
-          bsrRank: fieldStatus(primaryRank?.rank),
-          buyBox: fieldStatus(item.hasBuyBox),
-          offerCount: fieldStatus(item.offersCount),
+          bsrRank: fieldStatus(primaryRank?.rank ?? item.bsr_rank),
+          buyBox: fieldStatus(buyBoxEvidence),
+          offerCount: fieldStatus(item.offersCount ?? item.offer_count),
           ratings: "provider_unsupported",
           availability: "provider_unsupported",
           coupon: "provider_unsupported",
