@@ -21,17 +21,18 @@ describe("ApifyAmazonMonitorProvider", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("uses the documented BSR actor input and normalizes price, BSR and offers without inventing unsupported fields", async () => {
+  it("uses the documented product-and-offer actor input and normalizes price, BSR and offers without inventing unsupported fields", async () => {
     const fetchImpl = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ data: { id: "run-1", status: "SUCCEEDED", defaultDatasetId: "dataset-1", usageTotalUsd: 0.002 } }))
-      .mockResolvedValueOnce(jsonResponse([{ asin: "B0H1VCSGWK", title: "Example", price: "$29.99", currency: "USD", bsr_rank: 4321, bsr_category: "Home", bsr_categories_all: [{ rank: 4321, category: "Home" }], buy_box_winner: "Example Brand", buy_box_seller_name: "Example Seller", ships_from: "Amazon", offer_count: 4, snapshot_ts: "2026-09-13T00:00:00Z" }]));
+      .mockResolvedValueOnce(jsonResponse({ data: { id: "run-1", status: "SUCCEEDED", defaultDatasetId: "dataset-1", usageTotalUsd: 0.0245 } }))
+      .mockResolvedValueOnce(jsonResponse([{ asin: "B0H1VCSGWK", title: "Example", price: "$29.99", bestsellerRanks: [{ rank: 4321, category: "Home" }], hasBuyBox: true, offersCount: 4, offers: [{ isBuyBoxWinner: true, sellerName: "Example Seller", shipsFrom: "Amazon" }] }]));
     const provider = new ApifyAmazonMonitorProvider({ apiToken: "test-token", fetchImpl, pollIntervalMs: 0 });
     const request = AmazonMonitorRequestSchema.parse({ workspaceId: 1, kind: "competitor", marketplace: "US", asin: "B0H1VCSGWK", keyword: null, postalCode: "10001", depth: 1, maxChargeUsd: 0.1, idempotencyKey: "monitor-competitor-test" });
     const result = await provider.fetch(request);
     const requestBody = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
-    expect(requestBody).toMatchObject({ marketplaces: ["US"], asins: ["B0H1VCSGWK"], maxSnapshots: 1 });
+    expect(requestBody).toMatchObject({ productUrls: [{ url: "https://www.amazon.com/dp/B0H1VCSGWK" }], scrapeOffers: true, maxOffers: 10, scrapeProductDetails: true });
+    expect(provider.estimate(request)).toMatchObject({ estimatedMaxUsd: 0.03, pricingModel: "product_detail_plus_capped_offers" });
     expect(result.status).toBe("succeeded");
-    expect(result.normalized).toMatchObject({ kind: "competitor", price: "29.99", bsrRank: 4321, offerCount: 4, coverage: { ratings: "provider_unsupported", coupon: "provider_unsupported" } });
+    expect(result.normalized).toMatchObject({ kind: "competitor", price: "29.99", bsrRank: 4321, offerCount: 4, buyBoxSellerName: "Example Seller", coverage: { price: "returned", bsrRank: "returned", buyBox: "returned", offerCount: "returned", ratings: "provider_unsupported", coupon: "provider_unsupported" } });
     expect(result.rawArtifact?.contentHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
@@ -53,8 +54,8 @@ describe("ApifyAmazonMonitorProvider", () => {
     globalThis.fetch = globalFetch;
     try {
       requestApifyJsonIPv4Mock
-        .mockResolvedValueOnce({ data: { id: "run-ipv4", status: "SUCCEEDED", defaultDatasetId: "dataset-ipv4", usageTotalUsd: 0.002 } })
-        .mockResolvedValueOnce([{ asin: "B0H1VCSGWK", price: "$19.99", bsr_rank: 10, buy_box_winner: "Seller", offer_count: 1 }]);
+        .mockResolvedValueOnce({ data: { id: "run-ipv4", status: "SUCCEEDED", defaultDatasetId: "dataset-ipv4", usageTotalUsd: 0.0245 } })
+        .mockResolvedValueOnce([{ asin: "B0H1VCSGWK", price: "$19.99", bestsellerRanks: [{ rank: 10, category: "Home" }], hasBuyBox: true, offersCount: 1, offers: [] }]);
       const provider = new ApifyAmazonMonitorProvider({ apiToken: "test-token" });
       const request = AmazonMonitorRequestSchema.parse({ workspaceId: 1, kind: "competitor", marketplace: "US", asin: "B0H1VCSGWK", keyword: null, postalCode: "10001", depth: 1, maxChargeUsd: 0.1, idempotencyKey: "monitor-ipv4-transport" });
       await provider.fetch(request);

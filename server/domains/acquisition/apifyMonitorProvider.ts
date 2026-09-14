@@ -75,22 +75,24 @@ export class ApifyAmazonMonitorProvider {
 
   estimate(request: AmazonMonitorRequest) {
     const parsed = AmazonMonitorRequestSchema.parse(request);
-    const estimatedMaxUsd = parsed.kind === "keyword" ? 0.05 + 0.025 * parsed.depth : 0.002;
-    return { estimatedMaxUsd, pricingModel: parsed.kind === "keyword" ? "actor_start_plus_keyword_page" : "pay_per_snapshot" };
+    const estimatedMaxUsd = parsed.kind === "keyword" ? 0.05 + 0.025 * parsed.depth : 0.03;
+    return { estimatedMaxUsd, pricingModel: parsed.kind === "keyword" ? "actor_start_plus_keyword_page" : "product_detail_plus_capped_offers" };
   }
 
   async fetch(request: AmazonMonitorRequest): Promise<MonitorProviderFetchResult> {
     const parsed = AmazonMonitorRequestSchema.parse(request);
     const candidate = monitorProviderCandidate(parsed.kind);
-    const estimate = this.estimate(parsed);
-    if (parsed.maxChargeUsd < estimate.estimatedMaxUsd) return this.failed(candidate.providerCode, "", "budget_exceeded");
-    try {
-      const input = parsed.kind === "competitor"
-        ? {
-          marketplaces: ["US"],
-          asins: [parsed.asin],
-          maxSnapshots: 1,
-          proxyConfiguration: { useApifyProxy: true, apifyProxyGroups: ["RESIDENTIAL"], apifyProxyCountry: "US" },
+      const estimate = this.estimate(parsed);
+      if (parsed.maxChargeUsd < estimate.estimatedMaxUsd) return this.failed(candidate.providerCode, "", "budget_exceeded");
+      try {
+        const input = parsed.kind === "competitor"
+          ? {
+          productUrls: [{ url: `https://www.amazon.com/dp/${parsed.asin}` }],
+          scrapeOffers: true,
+          maxOffers: 10,
+          scrapeProductDetails: true,
+          scrapeVariants: false,
+          scrapeSellers: false,
         }
         : {
           keywords: [parsed.keyword],
@@ -129,18 +131,21 @@ export class ApifyAmazonMonitorProvider {
   private normalize(request: AmazonMonitorRequest, items: unknown[]) {
     const records = items.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item));
     if (request.kind === "competitor") {
-      const item = records.find(row => String(row.asin || "").toUpperCase() === request.asin) ?? records[0];
+      const item = records.find(row => [row.asin, row.currentAsin, row.originalAsin].some(value => String(value || "").toUpperCase() === request.asin)) ?? records[0];
       if (!item) return null;
-      const categories = Array.isArray(item.bsr_categories_all) ? item.bsr_categories_all : [];
+      const categories = Array.isArray(item.bestsellerRanks) ? item.bestsellerRanks : [];
+      const offers = Array.isArray(item.offers) ? item.offers : [];
+      const buyBoxOffer = offers.find((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry) && (entry as Record<string, unknown>).isBuyBoxWinner === true);
+      const primaryRank = categories.find((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry) && positiveIntOrNull((entry as Record<string, unknown>).rank) !== null);
       return AmazonMonitorResultSchema.parse({
         kind: "competitor",
         asin: request.asin,
         marketplace: "US",
         title: textOrNull(item.title),
         price: priceOrNull(item.price),
-        currency: textOrNull(item.currency),
-        bsrRank: positiveIntOrNull(item.bsr_rank),
-        bsrCategory: textOrNull(item.bsr_category),
+        currency: null,
+        bsrRank: positiveIntOrNull(primaryRank?.rank),
+        bsrCategory: textOrNull(primaryRank?.category),
         bsrCategories: categories.flatMap((entry) => {
           if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
           const row = entry as Record<string, unknown>;
@@ -148,16 +153,16 @@ export class ApifyAmazonMonitorProvider {
           const category = textOrNull(row.category);
           return rank && category ? [{ rank, category }] : [];
         }),
-        buyBoxWinner: textOrNull(item.buy_box_winner),
-        buyBoxSellerName: textOrNull(item.buy_box_seller_name),
-        shipsFrom: textOrNull(item.ships_from),
-        offerCount: nonnegativeIntOrNull(item.offer_count),
-        snapshotAt: isoOrNull(item.snapshot_ts),
+        buyBoxWinner: textOrNull(buyBoxOffer?.sellerName),
+        buyBoxSellerName: textOrNull(buyBoxOffer?.sellerName),
+        shipsFrom: textOrNull(buyBoxOffer?.shipsFrom),
+        offerCount: nonnegativeIntOrNull(item.offersCount),
+        snapshotAt: null,
         coverage: {
           price: fieldStatus(item.price),
-          bsrRank: fieldStatus(item.bsr_rank),
-          buyBox: fieldStatus(item.buy_box_winner),
-          offerCount: fieldStatus(item.offer_count),
+          bsrRank: fieldStatus(primaryRank?.rank),
+          buyBox: fieldStatus(item.hasBuyBox),
+          offerCount: fieldStatus(item.offersCount),
           ratings: "provider_unsupported",
           availability: "provider_unsupported",
           coupon: "provider_unsupported",

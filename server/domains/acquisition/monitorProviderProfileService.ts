@@ -8,12 +8,12 @@ import type { AmazonMonitorKind } from "./monitorProviderContracts";
 export const MONITOR_PROVIDER_CANDIDATES = {
   competitor: {
     profileKey: "apify-amazon-monitor-offers-rankings",
-    providerCode: "apify.marketplace_scrapers.amazon_bsr",
-    actorName: "marketplace-scrapers/amazon-bsr-scraper",
-    displayName: "Apify Amazon BSR / Buy Box监控",
+    providerCode: "apify.calm_builder.amazon_product_scraper",
+    actorName: "calm_builder/amazon-product-scraper",
+    displayName: "Apify Amazon商品详情 / Offer监控",
     capabilities: ["offers", "rankings"],
-    qualificationVersion: "monitor-bsr-us-qualification-v1",
-    defaultPerRunMaxUsd: 0.1,
+    qualificationVersion: "monitor-product-offers-us-qualification-v2",
+    defaultPerRunMaxUsd: 0.05,
   },
   keyword: {
     profileKey: "apify-amazon-monitor-search-rank",
@@ -121,7 +121,7 @@ export async function upsertMonitorProviderCandidate(input: {
     capabilities: [...candidate.capabilities],
     providerSettings: input.kind === "keyword"
       ? { marketplace: "com", postalCode: "10001", depth: 1, includeVolume: false }
-      : { marketplaces: ["US"], maxSnapshots: 1 },
+      : { marketplace: "US", productUrlTemplate: "https://www.amazon.com/dp/{ASIN}", scrapeOffers: true, maxOffers: 10 },
     perRunMaxUsd: budget.perRunMaxUsd.toFixed(4),
     dailyBudgetUsd: budget.dailyBudgetUsd.toFixed(4),
     monthlyBudgetUsd: budget.monthlyBudgetUsd.toFixed(4),

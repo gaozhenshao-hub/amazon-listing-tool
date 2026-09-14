@@ -1936,3 +1936,5 @@
 - [x] P0用户已再次明确批准创建一条新的价格/Offer/BSR资格Run（最高0.10美元）：已先完成无费用生产预检与预算门禁，再通过正式Agent/Job/Run链排队。该Run未通过Provider字段证据门禁，关键词资格任务未启动。
 - [x] P0诊断价格/Offer/BSR资格Run #2 的部分结果：该Run产生0.0011美元费用并记录Provider Run，但价格、BSR和Offer三类证据均未返回。脱敏只读形状审计确认归档数据集为0条记录，公开Actor输出合同与现有归一化字段一致，故不是字段别名映射问题；资格门禁已正确失败关闭。
 - [ ] P0如需继续竞争对手价格/Offer/BSR资格验证，先形成替代Actor或样本的最小方案，再取得用户对一条**新**外部Provider Run的明确费用授权（需声明单项上限）。在新的资格Run通过前，保持Provider `qualification_pending`、禁止自动重试、禁止创建Heartbeat、禁止启动关键词资格任务，也不得恢复旧HTML爬虫。
+- [ ] P0用户已授权采用替代Apify Actor进行一次新的价格/Offer/BSR资格验证，单次费用硬上限为2.00美元：先完成公开输入/输出/计费合同核验和本地受控适配测试；发布新Adapter后才允许通过正式Agent/Job/Run链发起一次新Run。不得重试旧Run，不得启动关键词资格或Heartbeat，不得将密钥或原始载荷输出到客户端或日志。
+- [x] P0完成替代Apify Actor的无费用合同核验与本地适配：选定受控商品详情/Offer Actor，固定单一商品URL、商品详情、最多10条Offer，关闭变体与卖家档案；映射公开价格、Best Seller Rank、OfferCount与Buy Box字段。17项定向回归、ESLint、定向TypeScript和生产构建/Bundle预算通过；尚未发布青岛、登记候选或发起外部Run。

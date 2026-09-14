@@ -155,7 +155,7 @@ Provider资格验证
 
 ## 阶段A8：监控迁移与旧爬虫退役
 
-**状态（2026-09-14）**：监控迁移、0201迁移、旧爬虫退役、受控API连接后台和IPv4监控传输修复均已发布青岛；真实Heartbeat仍未创建。IPv4补丁发布完成远端脚本/构建包验签、dist版本化备份与原子替换，入口哈希与本地构建一致，Web/Worker/Scheduler为active，本机HTTP为200。首项价格/Offer/BSR资格原Run已在Actor调用前失败，未记录Provider Run且`chargedUsd=null`，但失败的Agent/AI Job已经存在；只读审计确认该Run不再满足安全恢复条件。用户随后单独批准一条新的0.10美元上限资格Run：该Run产生0.0011美元费用并记录Provider Run，但因归档结果为0条记录而以`partial_result`失败关闭，价格、BSR、Offer均无证据。公开Actor合同的输出字段与现有归一化字段一致，因此不是别名映射问题；Provider Profile继续`qualification_pending`，不得重试、激活能力、创建Heartbeat或启动关键词资格任务。后续任何新Run均须重新取得用户明确的费用授权。
+**状态（2026-09-14）**：监控迁移、0201迁移、旧爬虫退役、受控API连接后台和IPv4监控传输修复均已发布青岛；真实Heartbeat仍未创建。IPv4补丁发布完成远端脚本/构建包验签、dist版本化备份与原子替换，入口哈希与本地构建一致，Web/Worker/Scheduler为active，本机HTTP为200。首项价格/Offer/BSR资格原Run已在Actor调用前失败，未记录Provider Run且`chargedUsd=null`，但失败的Agent/AI Job已经存在；只读审计确认该Run不再满足安全恢复条件。用户随后单独批准一条新的0.10美元上限资格Run：该Run产生0.0011美元费用并记录Provider Run，但因归档结果为0条记录而以`partial_result`失败关闭，价格、BSR、Offer均无证据。公开Actor合同的输出字段与现有归一化字段一致，因此不是别名映射问题。用户现已授权采用替代Apify商品详情/Offer Actor的一条新资格Run，单次硬上限2.00美元；本地合同核验、Adapter适配和回归已完成，但尚未无迁移发布青岛、尚未登记候选或创建外部Run。发布并运行前Provider Profile继续`qualification_pending`，不得重试旧Run、激活能力、创建Heartbeat或启动关键词资格任务。
 
 **交付物**：分别验证offers、sales rank与search rank Provider能力；将竞品/关键词监控迁移为持久化Heartbeat；封锁旧`setInterval`和旧爬虫运行时入口；增加全库静态审计。
 

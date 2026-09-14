@@ -70,7 +70,7 @@ export const crawlerRouter = router({
     .input(z.object({
       kind: z.enum(["competitor", "keyword"]),
       displayName: z.string().trim().min(1).max(200).optional(),
-      perRunMaxUsd: z.number().positive().max(1).default(0.1),
+      perRunMaxUsd: z.number().positive().max(2).default(0.05),
       dailyBudgetUsd: z.number().positive().max(100).default(5),
       monthlyBudgetUsd: z.number().positive().max(1000).default(100),
     }))
@@ -86,7 +86,7 @@ export const crawlerRouter = router({
       asin: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{10}$/),
       keyword: z.string().trim().min(1).max(500).nullable().optional(),
       depth: z.number().int().min(1).max(10).default(3),
-      maxChargeUsd: z.number().positive().max(1),
+      maxChargeUsd: z.number().positive().max(2),
       confirmExternalCharge: z.literal(true),
     }))
     .mutation(async ({ ctx, input }) => {
