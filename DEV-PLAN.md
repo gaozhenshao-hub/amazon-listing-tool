@@ -155,7 +155,7 @@ Provider资格验证
 
 ## 阶段A8：监控迁移与旧爬虫退役
 
-**状态（2026-09-14）**：监控迁移、0201迁移、旧爬虫退役、受控API连接后台和IPv4监控传输修复均已发布青岛；真实Heartbeat仍未创建。IPv4补丁发布完成远端脚本/构建包验签、dist版本化备份与原子替换，入口哈希与本地构建一致，Web/Worker/Scheduler为active，本机HTTP为200。首项价格/Offer/BSR资格原Run已在Actor调用前失败，未记录Provider Run且`chargedUsd=null`，但失败的Agent/AI Job已经存在；只读审计确认该Run不再满足安全恢复条件。用户随后单独批准一条新的0.10美元上限资格Run：该Run产生0.0011美元费用并记录Provider Run，但因归档结果为0条记录而以`partial_result`失败关闭，价格、BSR、Offer均无证据。公开Actor合同的输出字段与现有归一化字段一致，因此不是别名映射问题。用户现已授权采用替代Apify商品详情/Offer Actor的一条新资格Run，单次硬上限2.00美元；本地合同核验、Adapter适配和回归已完成，但尚未无迁移发布青岛、尚未登记候选或创建外部Run。发布并运行前Provider Profile继续`qualification_pending`，不得重试旧Run、激活能力、创建Heartbeat或启动关键词资格任务。
+**状态（2026-09-14）**：监控迁移、0201迁移、旧爬虫退役、受控API连接后台、IPv4监控传输修复和替代商品详情/Offer Actor的蛇形字段兼容修复均已无迁移发布青岛；真实Heartbeat仍未创建。最新发布执行构建包和Web/Worker/Scheduler三项入口SHA-256验签，保留版本化`dist`备份并原子替换；三项服务均为`active`，本机HTTP为200。首项价格/Offer/BSR资格原Run已在Actor调用前失败，未记录Provider Run且`chargedUsd=null`，但失败的Agent/AI Job已经存在；只读审计确认该Run不再满足安全恢复条件。用户随后单独批准一条新的0.10美元上限资格Run：该Run产生0.0011美元费用并记录Provider Run，但因归档结果为0条记录而以`partial_result`失败关闭，价格、BSR、Offer均无证据。替代Actor的Run 3在生产路由1.00美元硬上限内执行，实际费用0.0008美元，原始归档的脱敏形状审计确认有1条记录，且已有`price`、`bsr_rank`、`offer_count`、`buy_box_winner`和`asin`顶层字段；失败根因是Adapter未兼容蛇形字段，而非Actor空结果。映射修复已通过定向测试并发布，但Run 3保持不可变的失败记录，Provider继续`qualification_pending`。不得重试旧Run、激活能力、创建Heartbeat或启动关键词资格任务；验证修复效果只能在后续经单独用户费用授权的一条新真实Run中进行。
 
 **交付物**：分别验证offers、sales rank与search rank Provider能力；将竞品/关键词监控迁移为持久化Heartbeat；封锁旧`setInterval`和旧爬虫运行时入口；增加全库静态审计。
 
@@ -200,4 +200,4 @@ Provider资格验证
 
 ## 扩展已知风险
 
-Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受控后台配置和轻量校验，但竞品监控Actor在已测资格样本返回0条记录，能力继续未资格通过；Actor存在计费、限流、空结果与Schema漂移；大量图片必须逐图、分区、分批保证全覆盖；历史数据不批量重采；旧爬虫已退役且不得作为失败回退；青岛独立站每阶段仍须遵循独立的生产变更与费用授权边界。
+Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受控后台配置和轻量校验。竞品监控初始Actor在已测资格样本返回0条记录；替代Actor已返回完整必要字段，但先前Adapter存在已修复的蛇形字段兼容缺口。Provider尚未通过真实完整资格门禁，且Actor存在计费、限流、空结果与Schema漂移风险；大量图片必须逐图、分区、分批保证全覆盖；历史数据不批量重采；旧爬虫已退役且不得作为失败回退；青岛独立站每阶段仍须遵循独立的生产变更与费用授权边界。

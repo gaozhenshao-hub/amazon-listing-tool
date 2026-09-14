@@ -63,6 +63,16 @@ Worker环境预检已通过：竞品Provider为已配置、受管Secret可用、
 
 该修复尚未无迁移发布青岛。它不会回写或改变已计费的Run 3，亦不会使Provider自动变为`active`；发布后仍需用户单独授权一条新的、带费用上限的资格Run，才能验证修复是否在新的外部响应上满足完整证据门禁。
 
+## 蛇形字段修复的青岛发布（进行中）
+
+用户已确认无迁移发布。发布包的SHA-256已在青岛终端通过校验，staging目录也已验证包含Web、Worker与Scheduler三项入口；随后开始版本化备份、原子替换与三服务重启。该步骤不执行数据库迁移、不改变受管Secret、不创建Provider Run、不启动关键词资格或Heartbeat。最终服务状态、本机HTTP和入口哈希仍待命令返回后确认。
+
+首次健康探针显示Web、Worker、Scheduler均为active且本机HTTP为200，但入口哈希仍与上一生产版本一致；同时可见遗留staging目录而未发现本次版本化备份。因此，首轮切换没有完成，不能将其记录为成功发布。后续将使用带工件哈希验证、失败回滚和最终哈希断言的单文件原子发布脚本重试；该重试仍不创建外部Provider Run或任何调度任务。
+
+重试已使用可回滚的原子发布脚本完成。青岛侧先核对构建包SHA-256，再对staging的`index.js`、`aiWorker.js`和`scheduler.js`逐项校验哈希；切换后再次核对三项入口哈希，均与本地已验证构建一致。Web、Worker、Scheduler均为`active`，本机HTTP返回200，且已保留版本化`dist`备份。此次为无迁移发布，未读取或变更Secret，未创建任何Provider Run，也没有启动关键词资格或Heartbeat。
+
+生产代码现已具备蛇形价格、BSR、Offer Count与Buy Box字段的兼容归一化能力；但已计费的Run 3保持原有失败记录，不会被回写、重跑或用于自动资格激活。竞争对手Provider仍处于`qualification_pending`；要验证新映射在新的外部响应上是否满足完整资格门禁，仍须获得用户对一条全新真实资格Run及其费用上限的单独明确授权。
+
 随后用于读取费用、Provider Run、Agent与AI Job摘要的脱敏只读审计退出码为0；终端控制台的细粒度JSON显示受限，且Workbench远程会话在再次读取Worker日志前中断。因此，资格结果当前仍标记为**待只读复核**，不得仅依据退出码或Apify控制台运行成功而激活Provider。该中断未触发新的Provider调用。
 
 ## References
