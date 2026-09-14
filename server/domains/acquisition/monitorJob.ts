@@ -140,6 +140,7 @@ export async function startMonitorQualificationJob(input: {
   kind: AmazonMonitorKind;
   asin: string;
   keyword?: string | null;
+  depth?: number;
   maxChargeUsd: number;
   confirmExternalCharge: true;
 }) {
@@ -153,7 +154,7 @@ export async function startMonitorQualificationJob(input: {
     asin: input.asin,
     keyword: input.kind === "keyword" ? input.keyword : null,
     postalCode: "10001",
-    depth: 1,
+    depth: input.kind === "keyword" ? (input.depth ?? 3) : 1,
     maxChargeUsd: input.maxChargeUsd,
     idempotencyKey: `monitor-qualification-${input.kind}-${randomUUID()}`,
   });

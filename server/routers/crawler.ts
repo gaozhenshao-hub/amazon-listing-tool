@@ -85,6 +85,7 @@ export const crawlerRouter = router({
       kind: z.enum(["competitor", "keyword"]),
       asin: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{10}$/),
       keyword: z.string().trim().min(1).max(500).nullable().optional(),
+      depth: z.number().int().min(1).max(10).default(3),
       maxChargeUsd: z.number().positive().max(1),
       confirmExternalCharge: z.literal(true),
     }))

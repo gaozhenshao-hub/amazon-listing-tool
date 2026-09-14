@@ -61,7 +61,7 @@ vi.mock("./monitorAgent", () => ({
   startMonitorAgentRun: mocks.startMonitorAgentRun,
 }));
 
-import { startAmazonMonitorJob } from "./monitorJob";
+import { startAmazonMonitorJob, startMonitorQualificationJob } from "./monitorJob";
 
 const profile = { id: 4, status: "active", perRunMaxUsd: "0.1000", dailyBudgetUsd: "5.0000", monthlyBudgetUsd: "100.0000", cacheTtlSeconds: 3600 };
 
@@ -71,6 +71,7 @@ describe("Amazon monitor Job", () => {
     mocks.requireDb.mockResolvedValue({});
     mocks.loadMonitorTarget.mockResolvedValue({ active: true, marketplace: "US", asin: "B0H1VCSGWK", keyword: null, ownerUserId: 7 });
     mocks.getQualifiedMonitorProviderProfile.mockResolvedValue(profile);
+    mocks.getMonitorProviderProfile.mockResolvedValue({ ...profile, status: "qualification_pending" });
     mocks.estimate.mockReturnValue({ estimatedMaxUsd: 0.002, pricingModel: "pay_per_snapshot" });
     mocks.createMonitorRun.mockResolvedValue({ reused: false, run: { id: 31 } });
     mocks.startMonitorAgentRun.mockResolvedValue({ agentRunId: "agent-31", agentNodeId: "provider_snapshot" });
@@ -94,6 +95,29 @@ describe("Amazon monitor Job", () => {
     expect(mocks.createMonitorRun).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ workspaceId: 2, monitorKind: "competitor", monitorId: 9, requestedCapabilities: ["offers", "rankings"], idempotencyKey: "heartbeat-task-9-2026-09-13" }));
     expect(mocks.startRegisteredAiJob).toHaveBeenCalledWith(expect.objectContaining({ kind: "amazon.monitor.competitor.execute", queueName: "acquisition", maxAttempts: 1 }));
     expect(result).toEqual({ monitorRunId: 31, aiJobRunId: "job-31", status: "queued", reused: false });
+  });
+
+  it("persists the explicitly authorized three-page keyword qualification scope without expanding the charge cap", async () => {
+    const result = await startMonitorQualificationJob({
+      workspaceId: 2,
+      userId: 7,
+      kind: "keyword",
+      asin: "B0H1VCSGWK",
+      keyword: "example keyword",
+      depth: 3,
+      maxChargeUsd: 0.1,
+      confirmExternalCharge: true,
+    });
+    expect(mocks.createMonitorRun).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      workspaceId: 2,
+      monitorKind: "keyword",
+      triggerType: "qualification",
+      postalCode: "10001",
+      depth: 3,
+      maxChargeUsd: "0.1000",
+    }));
+    expect(mocks.startRegisteredAiJob).toHaveBeenCalledWith(expect.objectContaining({ kind: "amazon.monitor.keyword.qualify", queueName: "acquisition" }));
+    expect(result).toEqual({ monitorRunId: 31, aiJobRunId: "job-31", status: "queued" });
   });
 
   it("archives raw evidence, persists the normalized snapshot and completes the Tool node", async () => {
