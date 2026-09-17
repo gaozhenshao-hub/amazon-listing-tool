@@ -37,7 +37,8 @@ function trpcCodeForStatus(statusCode: number): TRPC_ERROR_CODE_KEY {
   if (statusCode === 403) return "FORBIDDEN";
   if (statusCode === 404) return "NOT_FOUND";
   if (statusCode === 409) return "CONFLICT";
-  if (statusCode === 412 || statusCode === 410) return "PRECONDITION_FAILED";
+  if (statusCode === 412) return "PRECONDITION_FAILED";
+  if (statusCode === 410) return "NOT_FOUND";
   if (statusCode === 429) return "TOO_MANY_REQUESTS";
   if (statusCode === 408 || statusCode === 504) return "TIMEOUT";
   if (statusCode >= 500) return "INTERNAL_SERVER_ERROR";

@@ -198,6 +198,12 @@ Provider资格验证
 | 0200 | A6 | 表达方向Asset Link与分析版本 |
 | 0201 | A8 | 监控Heartbeat taskUid、Provider能力和幂等字段 |
 
+## 生产运维修复记录（2026-09-17）
+
+**采集任务错误合同**：智能图片建议 Step 0 的“创建采集任务”已完成无迁移原子发布。修复将未配置、未启用、未填受控密钥和缺少预算从普通异常转换为可读的 `PRECONDITION_FAILED`。生产受控tRPC复验确认HTTP 412、`profile_not_configured`和可读管理员操作提示，同时确保未创建采集Job、AI Job或Provider Run。构建包与Web/Worker/Scheduler入口SHA-256一致，三服务为active，本机HTTP为200。主Provider仍为`qualification_pending`，不得因该前端提示修复而启用Provider或启动关键词/Heartbeat。
+
+**N3本品属性表模型可用性**：只读诊断确认失败记录源于受管外部模型出口不可用，而非文件解析、Skill注册、模型记录或凭证引用缺失。`analysis.rufus.attribute`的失败Run已被正确归类为`PROVIDER_UNAVAILABLE`；应用配置指向127.0.0.1:1088，但预配置的受限SSH出口隧道到远端连接超时并以255退出，端口未形成监听。已执行一次安全的隧道重启，仍未恢复监听；未重新解析任何用户上传文件或调用模型。后续仅可在恢复/替换出口后进行无模型端口健康核验；用户文件或任何真实模型重跑须另行获得确认。
+
 ## 扩展已知风险
 
 Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受控后台配置和轻量校验。竞品监控初始Actor在已测资格样本返回0条记录；替代Actor已返回完整必要字段，但先前Adapter存在已修复的蛇形字段兼容缺口。Provider尚未通过真实完整资格门禁，且Actor存在计费、限流、空结果与Schema漂移风险；大量图片必须逐图、分区、分批保证全覆盖；历史数据不批量重采；旧爬虫已退役且不得作为失败回退；青岛独立站每阶段仍须遵循独立的生产变更与费用授权边界。

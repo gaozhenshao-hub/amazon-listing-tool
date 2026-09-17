@@ -27,7 +27,12 @@ export const mergeRouters = t.mergeRouters;
 
 const withErrorContract = t.middleware(async ({ next }) => {
   try {
-    return await next();
+    const result = await next();
+    // tRPC returns resolver failures as a non-throwing middleware result. Raise
+    // that result here so AppError causes are translated before the adapter
+    // selects the HTTP status and JSON-RPC error code.
+    if (!result.ok) throw result.error;
+    return result;
   } catch (error) {
     throw toTrpcError(error);
   }
