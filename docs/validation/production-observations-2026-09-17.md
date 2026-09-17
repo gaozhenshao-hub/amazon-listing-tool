@@ -21,3 +21,7 @@ The more specific read-only Skill-run summary showed `PROVIDER_UNAVAILABLE` for 
 The application’s `TEAMOROUTER_SOCKS_PROXY` is configured for loopback port **1088**. The required `teamorouter-egress-tunnel.service` is configured to establish that SOCKS listener through a restricted SSH tunnel. At diagnosis time, no listener existed at 127.0.0.1:1088. A safe service restart was attempted and it again did not produce the listener. Service logs show the restricted egress SSH connection timing out to its preconfigured remote endpoint and exiting with code 255; systemd has repeatedly retried it. This is the direct reason the N3 model calls fail closed as `PROVIDER_UNAVAILABLE` before processing the uploaded table.
 
 No user file was re-uploaded, re-parsed, or retried. No LLM completion, Amazon Provider call, acquisition job, keyword task, or Heartbeat was started.
+
+### Recovery follow-up
+
+After the requested recovery route was selected, the existing egress service was checked again without a model call. It remains `active` at the systemd process level, but its configured SOCKS port 1088 is still not listening. The unit’s restricted SSH connection remains in a timed-out wait state for the preconfigured remote endpoint. Therefore the exit has **not yet been restored**, and retrying the N3 file would still fail closed. Remote-endpoint or network-path intervention is required before another local port check can succeed.
