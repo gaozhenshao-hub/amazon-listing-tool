@@ -28,6 +28,9 @@ describe("皇帝Skill质量评测与发布门禁契约", () => {
     expect(router).toContain("createEvalCase:");
     expect(router).toContain("recordEvalResult:");
     expect(router).toContain("updateReleaseGate:");
+    expect(router).toContain("buildGovernedHighQualityManifest");
+    expect(router).toContain("isHighQualitySkill");
+    expect(router).toContain("targetModelOverride");
   });
 
   it("默认门禁为建议式，且评测界面不生成或伪造质量结果", () => {

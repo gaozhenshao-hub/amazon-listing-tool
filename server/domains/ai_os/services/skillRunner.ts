@@ -14,6 +14,10 @@ import {
   defaultTeamorouterFallbacks,
   resolveGovernedModelApiKey,
 } from "./teamorouterCatalog";
+import {
+  getHighQualitySkillGovernance,
+  type HighQualitySkillGovernance,
+} from "./highQualitySkillGovernance";
 
 export type SkillRunErrorCode =
   | "SKILL_NOT_FOUND"
@@ -82,6 +86,14 @@ type SkillManifest = {
     temperature?: number;
     supportsJsonMode?: boolean;
   };
+  contract?: {
+    schemaVersion?: string;
+    inputSchema?: Record<string, unknown>;
+    outputMode?: string;
+    humanReviewRequired?: boolean;
+    automaticExecution?: string;
+  };
+  governance?: Partial<HighQualitySkillGovernance>;
 };
 
 export function buildSkillJsonResponseFormat(supportsJsonMode?: boolean) {
@@ -126,6 +138,7 @@ export type RunSkillResult<T = string> = {
   outputTokens: number;
   fallbackCount: number;
   executionPreset: SkillExecutionPreset;
+  governance: HighQualitySkillGovernance | null;
 };
 
 export type SkillVersionPolicy = "latest" | "snapshot" | "pinned";
@@ -695,6 +708,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
   assertSkillSnapshotCompatible(skillSnapshot, input);
   const implementation = manifest.implementation || {};
   const executionPreset = normalizeSkillExecutionPreset(input.executionPreset);
+  const governance = getHighQualitySkillGovernance(skill.slug);
   const timeoutSeconds = skillSnapshot.timeoutSeconds;
   const variables = {
     context: input.context || "",
@@ -715,6 +729,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
       skillVersion: skillSnapshot.version,
       skillManifestHash: skillSnapshot.manifestHash,
     },
+    __governance: governance,
   };
   const userPrompt = renderSkillTemplate(implementation.userPromptTemplate || "{{context}}", executionVariables);
   const models = await resolveModelCandidates(
@@ -780,6 +795,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
             skillVersion: skillSnapshot.version,
             skillPromptHash: skillSnapshot.systemPromptHash,
             skillManifestHash: skillSnapshot.manifestHash,
+            governance,
           }),
           model.slug,
           model.provider,
@@ -808,6 +824,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
           modelSlug: model.slug,
           provider: model.provider,
           executionPreset,
+          governance,
           inputTokens: response.inputTokens,
           outputTokens: response.outputTokens,
           durationMs,
@@ -823,7 +840,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
         workspaceId: input.workspaceId ?? skill.workspaceId ?? null,
         userId: input.userId,
         skillSlug: skill.slug,
-        metadata: { skillName: skill.name, modelSlug: model.slug, provider: model.provider, fallbackCount: index, executionPreset },
+        metadata: { skillName: skill.name, modelSlug: model.slug, provider: model.provider, fallbackCount: index, executionPreset, governance },
       });
       void recordAiOsMetric({
         entityType: "skill",
@@ -834,7 +851,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
         workspaceId: input.workspaceId ?? skill.workspaceId ?? null,
         userId: input.userId,
         skillSlug: skill.slug,
-        metadata: { inputTokens: response.inputTokens, outputTokens: response.outputTokens, modelSlug: model.slug, executionPreset },
+        metadata: { inputTokens: response.inputTokens, outputTokens: response.outputTokens, modelSlug: model.slug, executionPreset, governance },
       });
       return {
         runId,
@@ -853,6 +870,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
         outputTokens: response.outputTokens,
         fallbackCount: index,
         executionPreset,
+        governance,
       };
     } catch (error) {
       lastError = input.signal?.aborted
@@ -877,7 +895,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
     userId: input.userId,
     skillSlug: skill.slug,
     retryCount: modelAttempts.length - 1,
-    metadata: { skillName: skill.name, retryable: lastError?.retryable ?? false, executionPreset },
+    metadata: { skillName: skill.name, retryable: lastError?.retryable ?? false, executionPreset, governance },
   });
   void recordAiOsMetric({
     entityType: "skill",
@@ -888,7 +906,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
     workspaceId: input.workspaceId ?? skill.workspaceId ?? null,
     userId: input.userId,
     skillSlug: skill.slug,
-    metadata: { skillName: skill.name, errorCode: lastError?.code || "UNKNOWN", retryable: lastError?.retryable ?? false, executionPreset },
+    metadata: { skillName: skill.name, errorCode: lastError?.code || "UNKNOWN", retryable: lastError?.retryable ?? false, executionPreset, governance },
   });
   throw new TRPCError({
     code: "INTERNAL_SERVER_ERROR",

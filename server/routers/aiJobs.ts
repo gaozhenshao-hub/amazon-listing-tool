@@ -35,8 +35,8 @@ import { cancelVideoGenerationJob, retryVideoGenerationJob } from "../domains/vi
 import { auditBusinessJobCheckpointBindings } from "../domains/ai_os/services/businessJobCheckpointBinder";
 
 const DEFAULT_FALLBACK_MODELS = [
-  "claude-sonnet-5",
-  "gemini-3-6-flash",
+  "teamo-gemini-3-8-flash",
+  "teamo-deepseek-v4-flash",
   "manus-default",
 ];
 

@@ -78,6 +78,13 @@ interface RunResult {
   durationMs: number;
   inputTokens: number;
   outputTokens: number;
+  executionPreset?: "standard" | "quality_first" | "batch_background" | "evaluation";
+  governance?: {
+    draft: true;
+    recommendationOnly: true;
+    humanReviewRequired: true;
+    automaticExecution: "prohibited";
+  } | null;
   error?: string;
 }
 
@@ -526,6 +533,7 @@ export default function EmperorSkillLibrary() {
   const [context, setContext] = useState("");
   const [emphasis, setEmphasis] = useState("");
   const [modelOverride, setModelOverride] = useState<string>("default");
+  const [executionPreset, setExecutionPreset] = useState<"standard" | "quality_first">("standard");
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
@@ -635,6 +643,7 @@ export default function EmperorSkillLibrary() {
       context,
       emphasis,
       modelOverride: modelOverride === "default" ? undefined : modelOverride,
+      executionPreset,
     });
   };
 
@@ -693,7 +702,7 @@ export default function EmperorSkillLibrary() {
     if (skillDetail && editingSkill && skillDetail.slug === editingSkill.slug) {
       setEditingSkill(skillDetail as any);
     }
-  }, [skillDetail]);
+  }, [skillDetail, editingSkill]);
 
   const refreshSkills = () => {
     utils.emperor.skills.list.invalidate();
@@ -987,6 +996,17 @@ export default function EmperorSkillLibrary() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">执行策略</label>
+                  <Select value={executionPreset} onValueChange={(value) => setExecutionPreset(value as "standard" | "quality_first")}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="standard">标准：使用 Skill 专属模型</SelectItem>
+                      <SelectItem value="quality_first">质量优先：使用受治理质量模型并要求人工复核</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-xs text-muted-foreground">质量优先会按该 Skill 已配置的质量路由执行；运行前请确认输入不含不必要的敏感数据。</p>
+                </div>
                 <Button
                   onClick={handleRun}
                   disabled={isRunning}
@@ -1007,13 +1027,13 @@ export default function EmperorSkillLibrary() {
                   <>
                     <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
                       <div className="flex items-center gap-2">
-                        {runResult.status === "completed" ? (
+                        {runResult.status === "completed" || runResult.status === "succeeded" ? (
                           <CheckCircle2 className="h-4 w-4 text-green-500" />
                         ) : (
                           <XCircle className="h-4 w-4 text-red-500" />
                         )}
                         <span className="text-xs font-medium">
-                          {runResult.status === "completed" ? "运行成功" : "运行失败"}
+                          {runResult.status === "completed" || runResult.status === "succeeded" ? "运行成功" : "运行失败"}
                         </span>
                         {runResult.durationMs > 0 && (
                           <span className="text-xs text-muted-foreground">{(runResult.durationMs / 1000).toFixed(1)}s</span>
@@ -1029,6 +1049,12 @@ export default function EmperorSkillLibrary() {
                         复制
                       </Button>
                     </div>
+                    {runResult.governance && !runResult.error && (
+                      <div className="mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                        <span className="font-semibold">结构化草案，待人工审核。</span>
+                        <span className="ml-1">结果仅提供建议，不会自动发布、修改广告、采购或提交平台。</span>
+                      </div>
+                    )}
                     <div ref={outputRef} className="flex-1 overflow-y-auto p-4">
                       {runResult.error ? (
                         <div className="text-sm text-red-500 bg-red-50 rounded-lg p-3">

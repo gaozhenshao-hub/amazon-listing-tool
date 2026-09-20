@@ -35,6 +35,10 @@ import {
   previewParallelPlan,
 } from "../services/harnessCompletion";
 import { prepareSkillRunRecovery } from "../services/directRunRecovery";
+import {
+  buildGovernedHighQualityManifest,
+  isHighQualitySkill,
+} from "../services/highQualitySkillGovernance";
 
 export const emperorSkillsRouter = router({
   list: protectedProcedure
@@ -252,17 +256,22 @@ export const emperorSkillsRouter = router({
       version: z.union([z.string(), z.number()]).optional().default(1),
     }))
     .mutation(async ({ input, ctx }) => {
-      const manifest = {
+      const initialManifest = {
         implementation: {
           systemPrompt: input.systemPrompt || "",
           userPromptTemplate: input.userPromptTemplate || "{{context}}",
         }
       };
+      const governed = buildGovernedHighQualityManifest({
+        slug: input.slug,
+        manifest: initialManifest,
+        modelOverride: input.modelOverride,
+      });
       await rawExecute(
         `INSERT INTO emperor_skills (slug,name,description,category,modelOverride,status,manifest,isSystem,callCount,version,when_to_use,timeout_seconds,execution_mode,allowed_tools,disallowed_tools) VALUES (?,?,?,?,?,?,?,0,0,?,?,?,?,?,?)`,
         [
           input.slug, input.name, input.description||null, input.category||"通用",
-          input.modelOverride||null, input.status||"Draft", JSON.stringify(manifest),
+          governed.modelOverride, input.status||"Draft", JSON.stringify(governed.manifest),
           normalizeSkillVersionForDb(input.version),
           input.whenToUse||null,
           input.timeoutSeconds||120,
@@ -310,21 +319,37 @@ export const emperorSkillsRouter = router({
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: `发布门禁未通过：${gate.reasons.join("；")}` });
         }
       }
+      let candidateManifest: Record<string, any> | null = null;
+      if (updates.manifest !== undefined) {
+        candidateManifest = updates.manifest || {};
+      } else if (systemPrompt !== undefined || userPromptTemplate !== undefined) {
+        const editableManifest: Record<string, any> = beforeRows[0]?.manifest
+          ? (typeof beforeRows[0].manifest === "string" ? JSON.parse(beforeRows[0].manifest) : beforeRows[0].manifest)
+          : {};
+        editableManifest.implementation = editableManifest.implementation || {};
+        if (systemPrompt !== undefined) editableManifest.implementation.systemPrompt = systemPrompt;
+        if (userPromptTemplate !== undefined) editableManifest.implementation.userPromptTemplate = userPromptTemplate;
+        candidateManifest = editableManifest;
+      }
+      const targetModelOverride = updates.modelOverride !== undefined ? updates.modelOverride : beforeRows[0].modelOverride;
+      const governed = isHighQualitySkill(slug)
+        ? buildGovernedHighQualityManifest({
+          slug,
+          manifest: candidateManifest || (typeof beforeRows[0].manifest === "string" ? JSON.parse(beforeRows[0].manifest) : beforeRows[0].manifest || {}),
+          modelOverride: targetModelOverride,
+        })
+        : null;
       const sets: string[] = [];
       const params: any[] = [];
       if (updates.name !== undefined) { sets.push("name = ?"); params.push(updates.name); }
       if (updates.description !== undefined) { sets.push("description = ?"); params.push(updates.description); }
       if (updates.category !== undefined) { sets.push("category = ?"); params.push(updates.category); }
       if (updates.status !== undefined) { sets.push("status = ?"); params.push(updates.status); }
-      if (updates.modelOverride !== undefined) { sets.push("modelOverride = ?"); params.push(updates.modelOverride); }
-      if (updates.manifest !== undefined) { sets.push("manifest = ?"); params.push(JSON.stringify(updates.manifest)); }
-      else if (systemPrompt !== undefined || userPromptTemplate !== undefined) {
-        const existing = await rawExecute("SELECT manifest FROM emperor_skills WHERE slug = ? LIMIT 1", [slug]);
-        const existingManifest = existing[0]?.manifest ? (typeof existing[0].manifest === "string" ? JSON.parse(existing[0].manifest) : existing[0].manifest) : {};
-        if (systemPrompt !== undefined) { existingManifest.implementation = existingManifest.implementation || {}; existingManifest.implementation.systemPrompt = systemPrompt; }
-        if (userPromptTemplate !== undefined) { existingManifest.implementation = existingManifest.implementation || {}; existingManifest.implementation.userPromptTemplate = userPromptTemplate; }
-        sets.push("manifest = ?"); params.push(JSON.stringify(existingManifest));
-      }
+      if (governed) {
+        sets.push("modelOverride = ?"); params.push(governed.modelOverride);
+        sets.push("manifest = ?"); params.push(JSON.stringify(governed.manifest));
+      } else if (updates.modelOverride !== undefined) { sets.push("modelOverride = ?"); params.push(updates.modelOverride); }
+      if (!governed && candidateManifest) { sets.push("manifest = ?"); params.push(JSON.stringify(candidateManifest)); }
       // cc-haha 新字段
       if (whenToUse !== undefined) { sets.push("when_to_use = ?"); params.push(whenToUse); }
       if (timeoutSeconds !== undefined) { sets.push("timeout_seconds = ?"); params.push(timeoutSeconds); }
