@@ -254,7 +254,7 @@ function SkillFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[calc(100vh-2rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "编辑 Skill" : "新建 Skill"}</DialogTitle>
         </DialogHeader>
@@ -355,8 +355,9 @@ function SkillFormDialog({
                 value={form.systemPrompt}
                 onChange={(e) => setForm((f) => ({ ...f, systemPrompt: e.target.value }))}
                 placeholder="你是一位专业的亚马逊运营专家..."
-                className="resize-none min-h-[150px] font-mono text-xs"
+                className="h-72 min-h-[180px] max-h-[36vh] resize-none overflow-y-auto font-mono text-xs"
               />
+              <p className="mt-1 text-right text-xs text-muted-foreground">{form.systemPrompt.length.toLocaleString()} 字；可在框内滚动查看完整内容</p>
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
@@ -367,8 +368,9 @@ function SkillFormDialog({
                 value={form.userPromptTemplate}
                 onChange={(e) => setForm((f) => ({ ...f, userPromptTemplate: e.target.value }))}
                 placeholder="请分析以下内容：\n\n{{context}}\n\n重点关注：{{emphasis}}"
-                className="resize-none min-h-[150px] font-mono text-xs"
+                className="h-72 min-h-[180px] max-h-[36vh] resize-none overflow-y-auto font-mono text-xs"
               />
+              <p className="mt-1 text-right text-xs text-muted-foreground">{form.userPromptTemplate.length.toLocaleString()} 字；可在框内滚动查看完整内容</p>
             </div>
           </div>
         )}

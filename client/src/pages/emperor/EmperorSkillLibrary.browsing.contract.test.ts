@@ -22,4 +22,10 @@ describe("皇帝Skill库完整浏览契约", () => {
     expect(source).toContain("上一页");
     expect(source).toContain("下一页");
   });
+
+  it("允许长提示词在编辑框和对话框内完整滚动查看", () => {
+    expect(source).toContain('max-h-[calc(100vh-2rem)] overflow-y-auto');
+    expect(source).toContain('max-h-[36vh] resize-none overflow-y-auto font-mono text-xs');
+    expect(source).toContain("可在框内滚动查看完整内容");
+  });
 });
