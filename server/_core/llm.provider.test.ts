@@ -50,4 +50,19 @@ describe("独立LLM提供商配置", () => {
       model: "gemini-2.5-flash",
     });
   });
+
+  it("将遗留Teamorouter .com OpenAI地址收敛到官方可直连.cn入口", async () => {
+    vi.stubEnv("LLM_PROVIDER", "external");
+    vi.stubEnv("EXTERNAL_LLM_BASE_URL", "https://api.teamorouter.com/v1");
+    vi.stubEnv("EXTERNAL_LLM_API_KEY", "test-key");
+    vi.stubEnv("EXTERNAL_LLM_MODEL", "gpt-5.6-sol");
+    vi.resetModules();
+    const { resolveLlmRuntimeConfig } = await import("./llm");
+
+    expect(resolveLlmRuntimeConfig()).toMatchObject({
+      provider: "external",
+      apiUrl: "https://api.teamorouter.cn/v1/chat/completions",
+      model: "gpt-5.6-sol",
+    });
+  });
 });

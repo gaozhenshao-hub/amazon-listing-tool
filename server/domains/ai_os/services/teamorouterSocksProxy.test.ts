@@ -5,8 +5,9 @@ import { createRestrictedTeamorouterSocksAgent } from "./skillRunner";
 const shouldRun = process.env.RUN_TEAMOROUTER_SOCKS_PROXY_TEST === "1";
 
 describe("Teamorouter SOCKS出口约束", () => {
-  it("仅为Teamorouter主机创建代理，其他业务主机保持直连", () => {
+  it("仅为遗留Teamorouter .com主机创建代理，官方.cn和其他业务主机保持直连", () => {
     expect(createRestrictedTeamorouterSocksAgent("https://api.lingxing.com/v1/data", "socks5h://127.0.0.1:1088")).toBeUndefined();
+    expect(createRestrictedTeamorouterSocksAgent("https://api.teamorouter.cn/v1/models", "socks5h://127.0.0.1:1088")).toBeUndefined();
   });
 
   it("拒绝非回环或非SOCKS代理配置", () => {
@@ -16,7 +17,7 @@ describe("Teamorouter SOCKS出口约束", () => {
 });
 
 (shouldRun ? describe : describe.skip)("Teamorouter本机SOCKS出口", () => {
-  it("通过受限本机SOCKS出口读取轻量模型目录", async () => {
+  it("通过遗留受限本机SOCKS出口读取轻量模型目录", async () => {
     const proxy = process.env.TEAMOROUTER_SOCKS_PROXY || "";
     const agent = createRestrictedTeamorouterSocksAgent("https://api.teamorouter.com/v1/models", proxy);
     expect(agent).toBeDefined();

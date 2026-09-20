@@ -9,6 +9,11 @@ import { invokeLLM, type InvokeResult, type Message, type MessageContent } from 
 import { ENV } from "../../../_core/env";
 import { SafeHttpError, safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { recordAiOsEvaluation, recordAiOsMetric } from "./observability";
+import {
+  TEAMOROUTER_LEGACY_SOCKS_HOST,
+  defaultTeamorouterFallbacks,
+  resolveGovernedModelApiKey,
+} from "./teamorouterCatalog";
 
 export type SkillRunErrorCode =
   | "SKILL_NOT_FOUND"
@@ -148,24 +153,20 @@ export type SkillRuntimeSnapshot = {
 };
 
 /**
- * The built-in candidate must be first: the independent external gateway can
- * share one egress tunnel across several external models, so another external
- * candidate cannot recover a tunnel outage. Candidate resolution is capped at
- * two attempts, making this ordering part of the fail-closed availability
+ * When Forge is genuinely provisioned it is the first independent fallback;
+ * otherwise both candidates stay on the official direct Teamorouter endpoint.
+ * Candidate resolution is capped at two attempts, so this is an availability
  * policy rather than a cosmetic preference.
  */
-export const DEFAULT_FALLBACKS = [
-  "manus-default",
-  "claude-sonnet-5",
-  "gemini-3-6-flash",
-];
-
-const TEAMOROUTER_HOST = "api.teamorouter.com";
+export const DEFAULT_FALLBACKS = defaultTeamorouterFallbacks();
 
 export function createRestrictedTeamorouterSocksAgent(targetUrl: string, proxyUrl = ENV.teamorouterSocksProxy) {
   const target = new URL(targetUrl);
   const configuredProxy = proxyUrl.trim();
-  if (target.hostname !== TEAMOROUTER_HOST || !configuredProxy) return undefined;
+  // The current official `.cn` endpoint is directly reachable from Qingdao.
+  // Keep the restricted local SOCKS path only for legacy `.com` records until
+  // their administrator-approved migration is complete.
+  if (target.hostname !== TEAMOROUTER_LEGACY_SOCKS_HOST || !configuredProxy) return undefined;
 
   const proxy = new URL(configuredProxy);
   const loopbackHosts = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -594,7 +595,8 @@ async function callModel(
   timeoutSeconds: number,
   signal?: AbortSignal,
 ): Promise<{ content: string; inputTokens: number; outputTokens: number }> {
-  if (model.provider === "custom" && model.baseUrl && model.apiKeyRef) {
+  const apiKey = resolveGovernedModelApiKey(model.apiKeyRef);
+  if (model.provider === "custom" && model.baseUrl && apiKey) {
     const payload: Record<string, unknown> = {
       model: model.modelId,
       messages,
@@ -610,7 +612,7 @@ async function callModel(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${model.apiKeyRef}`,
+        authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(payload),
       signal,

@@ -4,6 +4,8 @@ import { adminProcedure, protectedProcedure, router } from "../../../_core/trpc"
 import { invokeLLM } from "../../../_core/llm";
 import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { rawExecute } from "../routerContext";
+import { resolveGovernedModelApiKey } from "../services/teamorouterCatalog";
+import { syncGovernedTeamorouterCatalog } from "../services/teamorouterCatalogRegistration";
 
 export const emperorModelsRouter = router({
   list: protectedProcedure.query(async () => {
@@ -36,6 +38,11 @@ export const emperorModelsRouter = router({
         [slug, input.name, input.provider, input.modelId, input.name, input.apiBaseUrl||null, input.apiKey||null, input.isDefault?1:0, JSON.stringify(input.capabilityTags), input.costPer1kInputTokens, input.costPer1kOutputTokens, input.maxContextTokens]
       );
       return { success: true, slug };
+    }),
+
+  syncTeamorouterCatalog: adminProcedure
+    .mutation(async () => {
+      return syncGovernedTeamorouterCatalog((statement, params) => rawExecute(statement, params));
     }),
 
   update: adminProcedure
@@ -84,9 +91,11 @@ export const emperorModelsRouter = router({
       let errorMsg = "";
       try {
         const baseUrl = model.baseUrl || "https://api.openai.com/v1";
+        const apiKey = resolveGovernedModelApiKey(model.apiKeyRef);
+        if (!apiKey) throw new Error("Model credential is unavailable");
         const apiUrl = `${baseUrl.replace(/\/$/, "")}/models`;
         const response = await safeHttpRequest(apiUrl, {
-          headers: { Authorization: `Bearer ${model.apiKeyRef || ""}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
           timeoutMs: 10_000,
           maxResponseBytes: 2 * 1024 * 1024,
           allowedHosts: [new URL(apiUrl).hostname],

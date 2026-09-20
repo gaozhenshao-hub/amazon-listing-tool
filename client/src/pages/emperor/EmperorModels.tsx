@@ -76,6 +76,14 @@ export default function EmperorModels() {
     onError: (e) => toast.error(e.message),
   });
 
+  const syncTeamorouterCatalogMutation = trpc.emperor.models.syncTeamorouterCatalog.useMutation({
+    onSuccess: (data) => {
+      toast.success(`TeamoRouter 目录已同步：新增或更新 ${data.registeredModelSlugs.length} 个非默认候选`);
+      refetch();
+    },
+    onError: (e) => toast.error(`目录同步失败：${e.message}`),
+  });
+
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [form, setForm] = useState(defaultForm);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -120,13 +128,25 @@ export default function EmperorModels() {
             <RefreshCw className="h-4 w-4" />
           </Button>
           {isAdmin && (
-            <Button
-              onClick={() => setShowCreateDialog(true)}
-              className="bg-violet-600 hover:bg-violet-500 text-white gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              添加模型
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                disabled={syncTeamorouterCatalogMutation.isPending}
+                onClick={() => syncTeamorouterCatalogMutation.mutate()}
+                className="border-violet-500/30 text-violet-300 hover:bg-violet-500/10 gap-2"
+                title="使用受控运行时密钥同步已验证的 Teamorouter 文本模型；不会设为默认模型"
+              >
+                <RefreshCw className={`h-4 w-4 ${syncTeamorouterCatalogMutation.isPending ? "animate-spin" : ""}`} />
+                同步 TeamoRouter
+              </Button>
+              <Button
+                onClick={() => setShowCreateDialog(true)}
+                className="bg-violet-600 hover:bg-violet-500 text-white gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                添加模型
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -218,8 +238,14 @@ export default function EmperorModels() {
                   </div>
                   <div className="text-right text-xs text-slate-500 min-w-[120px]">
                     <div>输入 / 输出</div>
-                    <div className="text-slate-300 font-mono">$0.0000 / $0.0000</div>
-                    <div className="text-slate-600">per 1K tokens</div>
+                    {Number(model.costPer1kInputTokens || 0) || Number(model.costPer1kOutputTokens || 0) ? (
+                      <>
+                        <div className="text-slate-300 font-mono">${Number(model.costPer1kInputTokens || 0).toFixed(4)} / ${Number(model.costPer1kOutputTokens || 0).toFixed(4)}</div>
+                        <div className="text-slate-600">per 1K tokens</div>
+                      </>
+                    ) : (
+                      <div className="text-slate-400">按供应商实际账单</div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button

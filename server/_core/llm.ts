@@ -1,5 +1,6 @@
 import { ENV } from "./env";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
+import { canonicalizeTeamorouterOpenAiBaseUrl } from "../domains/ai_os/services/teamorouterCatalog";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -258,7 +259,7 @@ export function resolveLlmRuntimeConfig(runtimeProviderOverride?: "forge"): LlmR
   const provider = runtimeProviderOverride ?? ENV.llmProvider;
 
   if (provider === "external") {
-    const baseUrl = ENV.externalLlmBaseUrl.replace(/\/+$/, "");
+    const baseUrl = canonicalizeTeamorouterOpenAiBaseUrl(ENV.externalLlmBaseUrl).replace(/\/+$/, "");
     if (!baseUrl || !ENV.externalLlmApiKey || !ENV.externalLlmModel) {
       throw new Error(
         "External LLM configuration missing: set EXTERNAL_LLM_BASE_URL, EXTERNAL_LLM_API_KEY and EXTERNAL_LLM_MODEL"
