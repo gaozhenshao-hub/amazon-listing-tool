@@ -83,6 +83,12 @@ export type InvokeParams = {
     | "model_health_check"
     | "platform_diagnostics";
   /**
+   * Internal runtime selection used only by the governed Skill runner when its
+   * registered `manus_builtin` fallback is selected. It must never be supplied
+   * by a business route or client request.
+   */
+  runtimeProviderOverride?: "forge";
+  /**
    * Optional explicit Skill routing hint. When omitted, the gateway will infer
    * a Skill from the caller file and legacy prompt.
    */
@@ -248,8 +254,10 @@ export type LlmRuntimeConfig = {
   model: string;
 };
 
-export function resolveLlmRuntimeConfig(): LlmRuntimeConfig {
-  if (ENV.llmProvider === "external") {
+export function resolveLlmRuntimeConfig(runtimeProviderOverride?: "forge"): LlmRuntimeConfig {
+  const provider = runtimeProviderOverride ?? ENV.llmProvider;
+
+  if (provider === "external") {
     const baseUrl = ENV.externalLlmBaseUrl.replace(/\/+$/, "");
     if (!baseUrl || !ENV.externalLlmApiKey || !ENV.externalLlmModel) {
       throw new Error(
@@ -264,8 +272,8 @@ export function resolveLlmRuntimeConfig(): LlmRuntimeConfig {
     };
   }
 
-  if (ENV.llmProvider !== "forge") {
-    throw new Error(`Unsupported LLM_PROVIDER: ${ENV.llmProvider}`);
+  if (provider !== "forge") {
+    throw new Error(`Unsupported LLM_PROVIDER: ${provider}`);
   }
   if (!ENV.forgeApiKey) {
     throw new Error("BUILT_IN_FORGE_API_KEY is not configured");
@@ -326,7 +334,13 @@ const normalizeResponseFormat = ({
 };
 
 export async function invokeRawLLM(params: InvokeParams): Promise<InvokeResult> {
-  const runtime = resolveLlmRuntimeConfig();
+  if (
+    params.runtimeProviderOverride &&
+    params.emperorBypassReason !== "skill_runner_provider_call"
+  ) {
+    throw new Error("Runtime provider override is reserved for the governed Skill runner");
+  }
+  const runtime = resolveLlmRuntimeConfig(params.runtimeProviderOverride);
 
   const {
     messages,

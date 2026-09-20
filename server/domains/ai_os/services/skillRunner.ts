@@ -60,6 +60,11 @@ type ModelRow = {
   costPer1kOutputTokens?: string | number | null;
 };
 
+/** `manus-default` is an explicit governed failover, never a client-selected route. */
+export function runtimeProviderOverrideForModel(model: Pick<ModelRow, "provider">): "forge" | undefined {
+  return model.provider === "manus_builtin" ? "forge" : undefined;
+}
+
 type SkillManifest = {
   implementation?: {
     systemPrompt?: string;
@@ -142,10 +147,17 @@ export type SkillRuntimeSnapshot = {
   manifestHash: string;
 };
 
-const DEFAULT_FALLBACKS = [
+/**
+ * The built-in candidate must be first: the independent external gateway can
+ * share one egress tunnel across several external models, so another external
+ * candidate cannot recover a tunnel outage. Candidate resolution is capped at
+ * two attempts, making this ordering part of the fail-closed availability
+ * policy rather than a cosmetic preference.
+ */
+export const DEFAULT_FALLBACKS = [
+  "manus-default",
   "claude-sonnet-5",
   "gemini-3-6-flash",
-  "manus-default",
 ];
 
 const TEAMOROUTER_HOST = "api.teamorouter.com";
@@ -646,6 +658,11 @@ async function callModel(
       emperorBypassReason: "skill_runner_provider_call",
       signal: timeoutController.signal,
     };
+    // The independent site normally uses its registered external model gateway.
+    // `manus-default` is the explicit, audited final candidate and must use the
+    // Forge runtime even when the process-level default remains external.
+    const runtimeProviderOverride = runtimeProviderOverrideForModel(model);
+    if (runtimeProviderOverride) params.runtimeProviderOverride = runtimeProviderOverride;
     const responseFormat = buildSkillJsonResponseFormat(implementation.supportsJsonMode);
     if (responseFormat) params.response_format = responseFormat;
     result = await invokeLLM(params);

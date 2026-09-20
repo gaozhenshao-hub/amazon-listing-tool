@@ -32,4 +32,22 @@ describe("独立LLM提供商配置", () => {
 
     expect(() => resolveLlmRuntimeConfig()).toThrow("External LLM configuration missing");
   });
+
+  it("受治理的内置回退可在外部默认配置下显式解析Forge运行时", async () => {
+    vi.stubEnv("LLM_PROVIDER", "external");
+    vi.stubEnv("EXTERNAL_LLM_BASE_URL", "https://llm.example.test/v1");
+    vi.stubEnv("EXTERNAL_LLM_API_KEY", "external-test-key");
+    vi.stubEnv("EXTERNAL_LLM_MODEL", "external-model");
+    vi.stubEnv("BUILT_IN_FORGE_API_URL", "https://forge.example.test");
+    vi.stubEnv("BUILT_IN_FORGE_API_KEY", "forge-test-key");
+    vi.resetModules();
+    const { resolveLlmRuntimeConfig } = await import("./llm");
+
+    expect(resolveLlmRuntimeConfig("forge")).toEqual({
+      provider: "forge",
+      apiUrl: "https://forge.example.test/v1/chat/completions",
+      apiKey: "forge-test-key",
+      model: "gemini-2.5-flash",
+    });
+  });
 });
