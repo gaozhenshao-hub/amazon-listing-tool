@@ -180,6 +180,13 @@ function SkillFormDialog({
   const isEdit = !!initialData;
   const [form, setForm] = useState<SkillFormData>(EMPTY_FORM);
   const [activeTab, setActiveTab] = useState<"basic" | "prompt" | "model" | "cchaha">("basic");
+  const gpt6Model = models.find((model) => model.slug === "teamo-gpt-6-astra");
+  const qualityFirstModel = initialData?.manifest?.implementation?.qualityModelPolicy as string | undefined;
+  const sortedModels = [...models].sort((left, right) => {
+    const leftPriority = left.slug === "teamo-gpt-6-astra" ? 0 : 1;
+    const rightPriority = right.slug === "teamo-gpt-6-astra" ? 0 : 1;
+    return leftPriority - rightPriority || (left.displayName || left.slug).localeCompare(right.displayName || right.slug);
+  });
 
   useEffect(() => {
     if (open) {
@@ -390,24 +397,48 @@ function SkillFormDialog({
 
         {activeTab === "model" && (
           <div className="space-y-4">
+            {gpt6Model && (
+              <div className="rounded-lg border border-violet-200 bg-violet-50/70 p-3 text-xs text-violet-950">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-semibold">GPT‑6 Astra（质量优先）</p>
+                    <p className="mt-1 text-violet-800">质量优先执行策略已路由到 GPT‑6 Astra；点击右侧可将本 Skill 的标准默认模型也改为 GPT‑6 Astra。</p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={form.modelOverride === gpt6Model.slug ? "secondary" : "outline"}
+                    className="border-violet-300 bg-white text-xs text-violet-800 hover:bg-violet-100"
+                    onClick={() => setForm((current) => ({ ...current, modelOverride: gpt6Model.slug }))}
+                  >
+                    {form.modelOverride === gpt6Model.slug ? "已设为标准默认" : "设为 GPT‑6 Astra"}
+                  </Button>
+                </div>
+              </div>
+            )}
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                模型覆盖
-                <span className="ml-2 text-muted-foreground/60">（留空则使用系统默认模型）</span>
+                标准默认模型
+                <span className="ml-2 text-muted-foreground/60">（留空则使用系统默认模型；不影响“质量优先”路由）</span>
               </label>
               <Select value={form.modelOverride || "__default__"} onValueChange={(v) => setForm((f) => ({ ...f, modelOverride: v === "__default__" ? "" : v }))}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-[50vh]">
                   <SelectItem value="__default__">默认模型（系统配置）</SelectItem>
-                  {models.map((m) => (
+                  {sortedModels.map((m) => (
                     <SelectItem key={m.slug} value={m.slug}>
-                      {m.displayName || m.slug} ({m.provider})
+                      {m.slug === "teamo-gpt-6-astra" ? "GPT‑6 Astra（质量优先推荐）" : (m.displayName || m.slug)} ({m.provider})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="grid gap-2 rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+              <p><span className="font-medium text-foreground">标准执行：</span>{form.modelOverride || "系统默认模型"}</p>
+              <p><span className="font-medium text-foreground">质量优先执行：</span>{qualityFirstModel === "teamo-gpt-6-astra" ? "GPT‑6 Astra（已启用）" : (qualityFirstModel || "跟随标准模型")}</p>
+              <p>在 Skill 右侧运行区选择“质量优先”即可使用质量路由；不需要先修改本页的标准默认模型。</p>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
               <p className="font-medium mb-1">模型优先级说明：</p>
@@ -626,9 +657,11 @@ export default function EmperorSkillLibrary() {
     const modelList: { value: string; label: string }[] = [
       { value: "default", label: "默认模型（Skill 配置）" },
     ];
-    for (const p of providers) {
+    const activeProviders = providers.filter((provider) => provider.isActive)
+      .sort((left, right) => (left.slug === "teamo-gpt-6-astra" ? -1 : right.slug === "teamo-gpt-6-astra" ? 1 : (left.displayName || left.slug).localeCompare(right.displayName || right.slug)));
+    for (const p of activeProviders) {
       if (p.isActive) {
-        modelList.push({ value: p.modelId, label: `${p.displayName || p.modelId} (${p.provider})` });
+        modelList.push({ value: p.slug, label: p.slug === "teamo-gpt-6-astra" ? "GPT‑6 Astra（质量优先推荐）" : `${p.displayName || p.modelId} (${p.provider})` });
       }
     }
     return modelList;

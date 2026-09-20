@@ -28,4 +28,12 @@ describe("皇帝Skill库完整浏览契约", () => {
     expect(source).toContain('max-h-[36vh] resize-none overflow-y-auto font-mono text-xs');
     expect(source).toContain("可在框内滚动查看完整内容");
   });
+
+  it("将 GPT-6 Astra 置顶并区分标准默认与质量优先路由", () => {
+    expect(source).toContain('model.slug === "teamo-gpt-6-astra"');
+    expect(source).toContain("设为 GPT‑6 Astra");
+    expect(source).toContain("质量优先执行：");
+    expect(source).toContain("不影响“质量优先”路由");
+    expect(source).toContain('value: p.slug');
+  });
 });
