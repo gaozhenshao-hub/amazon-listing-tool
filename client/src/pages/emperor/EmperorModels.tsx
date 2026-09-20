@@ -92,15 +92,26 @@ export default function EmperorModels() {
 
   const visibleModels = useMemo(() => {
     const normalized = modelQuery.trim().toLowerCase();
-    if (!normalized) return models as any[] | undefined;
-    return (models as any[] | undefined)?.filter((model: any) => {
+    const filtered = (models as any[] | undefined)?.filter((model: any) => {
       const searchable = [
         model.name,
         model.modelId,
         model.baseUrl,
         ...(model.capabilityTags ?? []),
       ].filter(Boolean).join(" ").toLowerCase();
-      return searchable.includes(normalized);
+      return !normalized || searchable.includes(normalized);
+    });
+    return filtered?.slice().sort((left: any, right: any) => {
+      const defaultOrder = Number(Boolean(right.isDefault)) - Number(Boolean(left.isDefault));
+      if (defaultOrder) return defaultOrder;
+      const isTeamorouter = (model: any) => [model.name, model.modelId, model.baseUrl, ...(model.capabilityTags ?? [])]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes("teamorouter");
+      const teamorouterOrder = Number(isTeamorouter(right)) - Number(isTeamorouter(left));
+      if (teamorouterOrder) return teamorouterOrder;
+      return String(left.name ?? left.modelId).localeCompare(String(right.name ?? right.modelId));
     });
   }, [modelQuery, models]);
 
