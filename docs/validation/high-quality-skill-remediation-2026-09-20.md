@@ -91,3 +91,9 @@ Listing 兼容入口的过期备用模型名也更新为受治理的 Teamorouter
 最终只读验证确认：80/80 Skill 均具有治理标记、JSON 草案模式、`humanReviewRequired=true`、`automaticExecution=prohibited` 和 GPT-6 Astra 的质量优先策略；`listing.bullets.generate` 的专属路由为 `teamo-gpt-6-astra`。复验工具明确记录 `noModelCall=true`。本次未调用模型、未读取或重跑用户文件、未创建 AI Job、采集 Job、Provider Run、关键词任务或 Heartbeat。
 
 在首次发布后补充了一个无结构迁移热修：皇帝 Skill 管理后台的创建和编辑入口现在会对这 80 个范围内的 Skill 自动重建同一治理合同。因此，普通编辑无法移除人工复核、证据标记、JSON 草案约束或质量优先模型策略。该热修同样通过原子发布；最终 Web、Worker、Scheduler 均为 `active`，本机 HTTP 为 `200`，入口 SHA-256 与发布包一致，并再次得到 80/80 的只读治理复验。 
+
+## 提示词原样恢复与 Listing 奥美角色层
+
+在用户指出高质量 Skill 的提示词可能与历史版本不同后，生产只读逐项比较确认：73 项仅追加了通用治理文字，6 项因专项治理发生任务提示词替换或清理，另 `listing.bullets.generate` 是此前经用户明确确认的奥美 v3 单独版本。用户选择恢复质量优先的专业提示词，因此执行了受控事务：**79 项恢复到治理前的历史专业提示词**，`listing.bullets.generate` 保留已验收的奥美 v3，所有 21 个 `listing.*` Skill 在原任务提示词之前添加一致、短小的“奥美方法论”角色层。
+
+通用治理长提示词不再注入任何业务 Skill 的运行时 `systemPrompt`；人审、禁止自动执行、质量模型策略、审计元数据和版本快照继续保留在 Manifest、统一 Runner、运行记录及前端提示中。恢复事务为 80 项全部新增可回滚快照。最终只读验证结果为：79 项历史提示词完全匹配、五点生成 v3 保留、21 项 Listing 均含奥美角色层、0 项无效、`noModelCall=true`。随后青岛服务复验 Web、Worker、Scheduler 均为 `active`，本机 HTTP 为 `200`，三个入口 SHA-256 与发布包一致。

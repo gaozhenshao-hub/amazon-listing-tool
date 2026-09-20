@@ -123,9 +123,14 @@ export const HIGH_QUALITY_SKILL_SLUGS = new Set<string>([
 
 export const HIGH_QUALITY_GOVERNANCE_MARKER = "EMPEROR_HIGH_QUALITY_GOVERNANCE_V1";
 export const HIGH_QUALITY_QUALITY_MODEL = "teamo-gpt-6-astra";
+export const LISTING_OGILVY_ROLE_MARKER = "EMPEROR_LISTING_OGILVY_ROLE_V1";
 
 export function isHighQualitySkill(slug: string): boolean {
   return HIGH_QUALITY_SKILL_SLUGS.has(slug);
+}
+
+export function isListingSkill(slug: string): boolean {
+  return slug.startsWith("listing.");
 }
 
 export function classifyHighQualitySkill(slug: string): GovernedSkillKind {
@@ -152,71 +157,25 @@ export function getHighQualitySkillGovernance(slug: string): HighQualitySkillGov
   };
 }
 
-function removeMisleadingPolicyClaims(prompt: string, slug: string): string {
-  if (slug !== "listing.title.generate") return prompt;
-  return prompt
-    .split("\n")
-    .filter((line) => !/two-stage title|effective july 27|amazon now requires|must be split into two layers/i.test(line))
-    .join("\n");
+export function stripHighQualityGovernancePrompt(prompt: string): string {
+  const marker = `\n\n## ${HIGH_QUALITY_GOVERNANCE_MARKER}`;
+  const offset = prompt.indexOf(marker);
+  return (offset >= 0 ? prompt.slice(0, offset) : prompt).trim();
 }
 
-function removeMarkdownJsonFenceInstruction(prompt: string, slug: string): string {
-  if (slug !== "dev.analysis.product") return prompt;
-  const fence = String.fromCharCode(96).repeat(3);
-  return prompt.replace(new RegExp(fence + "json\\s*", "gi"), "").replace(new RegExp("\\s*" + fence, "g"), "");
-}
-
-function patchCriticalPrompt(prompt: string, slug: string): string {
-  if (slug === "listing.bullet.refine") {
-    return [
-      "You are an Amazon Listing bullet refinement specialist. Rewrite exactly one existing bullet according to the human-approved optimization direction.",
-      "Use only product facts, limits, materials, measurements, certifications, comparisons and warranties present in the input. Never invent, strengthen or imply an unsupported claim.",
-      "Return only one JSON object with: subtitle, fullText, characterCount, conflictDetected, conflictExplanation, proposedRewrite, evidenceUsed, claimStatus, requiresHumanConfirmation.",
-      "claimStatus must be grounded, needs_verification or insufficient_data. If a requested direction conflicts with evidence or marketplace policy, set conflictDetected=true, explain it outside the publishable copy, provide the closest compliant draft, and set requiresHumanConfirmation=true.",
-      "The combined subtitle and fullText length must be 200–280 characters only when the supplied product facts support that length. Do not pad with invented data.",
-    ].join("\n");
-  }
-  if (slug === "listing.checklist.bullets") {
-    return [
-      "You are an Amazon Listing quality auditor. Assess one bullet-point draft as a non-binding, human-reviewable quality check.",
-      "Evaluate exactly these 15 dimensions: character_count, subtitle_format, fabe_structure, keyword_relevance, benefit_clarity, specificity, emotional_appeal, readability, uniqueness, mobile_friendliness, compliance, action_orientation, sensory_language, social_proof, urgency.",
-      "Use only the supplied text and policy profile. Do not assume marketplace policies, reviews, social proof, urgency, certification or performance facts that are not provided.",
-      "Return only JSON: {schemaVersion, draft, requiresHumanApproval, overallScore, blockingIssues, dimensions:[{dimension,status,evidence,recommendation,score}], missingInputs, limitations}. status is pass|warning|fail; score is 0–100; evidence is an input excerpt or an explicit insufficient-data statement.",
-    ].join("\n");
-  }
-  if (slug === "listing.translate.chinese") {
-    return [
-      "You translate a Chinese Amazon Listing draft into natural, policy-conscious English. Treat the supplied Chinese text as the source and preserve only supported product claims.",
-      "Return only JSON with sourceLanguage set to zh, targetLanguage set to en, translatedListing, keywordMapping items containing sourceTerm, targetTerm, sourceRef and claimStatus, missingInputs, and requiresHumanApproval set to true.",
-      "Do not estimate search volume, ranking, certification, price, review count, warranty or performance. If a term requires verification, mark claimStatus=needs_verification and leave its unsupported metric null.",
-    ].join("\n");
-  }
-  if (slug === "ad.chatbot") {
-    return [
-      "You are an Amazon advertising analyst. Answer one analytical question using only the supplied account data and stated time window.",
-      "Return only JSON with responseType (diagnosis, metric_explanation, or strategy_question), answer, findings containing claim/evidence/confidence, recommendations containing recommendation/preconditions/humanApprovalRequired:true, missingInputs, and limitations.",
-      "Do not issue an execution command, modify budgets, bids, status or keywords. Any recommendation is non-binding and requires human approval.",
-    ].join("\n");
-  }
-  return prompt;
-}
-
-export function buildHighQualityGovernancePrompt(slug: string): string {
-  const governance = getHighQualitySkillGovernance(slug);
-  if (!governance) return "";
+export function buildListingOgilvyRolePrompt(): string {
   return [
-    "\n\n## " + HIGH_QUALITY_GOVERNANCE_MARKER,
-    "This is a structured AI draft, never an automatic publication, advertising change, procurement decision, marketplace submission or external action.",
-    "Use only facts, numbers, certifications, policy rules, comparisons, reviews, images and measurements that are explicitly present in the supplied input or confirmed policy profile. Never invent, infer or inflate missing facts.",
-    "For every external-facing or decision-relevant claim, retain a concise input evidence reference. If evidence is missing, set the claim status to needs_verification or insufficient_data and describe the missing input instead of guessing.",
-    "Return valid JSON only, without Markdown. Preserve the task-specific fields and append a top-level _governance object with schemaVersion, draft:true, recommendationOnly:true, requiresHumanApproval:true, evidencePolicy input_only, missingInputs, limitations and claimStatusSummary.",
-    "A marketplace/category policy rule is only authoritative when a confirmed policy profile is supplied. Otherwise label compliance guidance as a draft for human review.",
-    governance.kind === "operational_recommendation"
-      ? "Recommendations must include preconditions, humanApprovalRequired:true and a monitoring or rollback note; never say to execute a bid, budget, campaign, keyword or status change automatically."
-      : governance.kind === "decision_advisory"
-        ? "Any launch, investment, purchase, pricing or market-entry conclusion is advisory only. Distinguish confirmed facts, bounded estimates and insufficient-data items."
-        : "All generated copy, analyses and plans are editable drafts requiring human review before downstream use.",
+    `## ${LISTING_OGILVY_ROLE_MARKER}`,
+    "You are a senior Amazon Listing strategist and copywriter using an Ogilvy-inspired methodology for U.S. Amazon shoppers.",
+    "Begin with consumer insight and one credible product promise; turn supported product facts into clear, specific consumer benefits using FABE where appropriate. Write natural American English with clarity, distinctiveness and restraint.",
+    "Do not invent, strengthen or imply product, policy, certification, review, ranking, price, warranty or performance claims that are not present in the supplied input.",
   ].join("\n");
+}
+
+export function applyListingOgilvyRole(slug: string, prompt: string): string {
+  const taskPrompt = stripHighQualityGovernancePrompt(prompt);
+  if (!isListingSkill(slug) || taskPrompt.includes(LISTING_OGILVY_ROLE_MARKER)) return taskPrompt;
+  return `${buildListingOgilvyRolePrompt()}\n\n${taskPrompt}`.trim();
 }
 
 export function buildGovernedHighQualityManifest(input: {
@@ -229,14 +188,7 @@ export function buildGovernedHighQualityManifest(input: {
     return { manifest: current, modelOverride: input.modelOverride ?? null, changed: false };
   }
   const implementation = { ...(current.implementation || {}) };
-  let prompt = String(implementation.systemPrompt || "").trim();
-  prompt = patchCriticalPrompt(prompt, input.slug);
-  prompt = removeMisleadingPolicyClaims(prompt, input.slug);
-  prompt = removeMarkdownJsonFenceInstruction(prompt, input.slug);
-  if (!prompt.includes(HIGH_QUALITY_GOVERNANCE_MARKER)) {
-    prompt += buildHighQualityGovernancePrompt(input.slug);
-  }
-  implementation.systemPrompt = prompt;
+  implementation.systemPrompt = applyListingOgilvyRole(input.slug, String(implementation.systemPrompt || "").trim());
   implementation.supportsJsonMode = true;
   implementation.modelPolicy = input.modelOverride || implementation.modelPolicy || undefined;
   implementation.qualityModelPolicy = HIGH_QUALITY_QUALITY_MODEL;

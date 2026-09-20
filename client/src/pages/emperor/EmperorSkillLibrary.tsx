@@ -843,6 +843,11 @@ export default function EmperorSkillLibrary() {
                           >
                             {skill.category}
                           </Badge>
+                          {skill.slug.startsWith("listing.") && (
+                            <Badge variant="outline" className="border-violet-200 bg-violet-50 px-1.5 py-0 text-xs text-violet-700">
+                              奥美方法论
+                            </Badge>
+                          )}
                           <span className={cn("text-xs px-1.5 py-0.5 rounded-full", STATUS_COLORS[skill.status] || "bg-gray-100 text-gray-600")}>
                             {skill.status}
                           </span>
@@ -930,6 +935,11 @@ export default function EmperorSkillLibrary() {
                     >
                       {selectedSkill.category}
                     </Badge>
+                    {selectedSkill.slug.startsWith("listing.") && (
+                      <Badge variant="outline" className="border-violet-200 bg-violet-50 text-xs text-violet-700">
+                        奥美 Listing
+                      </Badge>
+                    )}
                     {isAdmin && (
                       <Button
                         size="sm"
