@@ -5,6 +5,11 @@ import { protectedProcedure, router } from "../../../_core/trpc";
 import { invokeLLM } from "../../../_core/llm";
 import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { renderSkillTemplate } from "../services/skillRunner";
+import {
+  canonicalizeTeamorouterOpenAiBaseUrl,
+  resolveGovernedModelApiKey,
+} from "../services/teamorouterCatalog";
+import { createRestrictedTeamorouterSocksAgent } from "../services/skillRunner";
 import { recordAiOsEvaluation, recordAiOsMetric } from "../services/observability";
 import { generateRunId, getSkillBySlug, parseManifest, rawExecute, resolveModel } from "../routerContext";
 
@@ -52,9 +57,11 @@ export const emperorRunRouter = router({
         let content = "";
         let usage: { prompt_tokens?: number; completion_tokens?: number } = {};
 
-        if (modelInfo.provider === "custom" && modelInfo.baseUrl && modelInfo.apiKeyRef) {
+        const apiKey = resolveGovernedModelApiKey(modelInfo.apiKeyRef);
+        if (modelInfo.provider === "custom" && modelInfo.baseUrl && apiKey) {
           // ── External LLM via OpenAI-compatible API (Teamo Router etc.) ──
-          const apiUrl = `${modelInfo.baseUrl.replace(/\/$/, "")}/chat/completions`;
+          const baseUrl = canonicalizeTeamorouterOpenAiBaseUrl(modelInfo.baseUrl);
+          const apiUrl = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
           const externalPayload: any = {
             model: modelInfo.modelId,
             messages: [...messages],
@@ -69,10 +76,11 @@ export const emperorRunRouter = router({
           }
           const extResponse = await safeHttpRequest(apiUrl, {
             method: "POST",
-            headers: { "content-type": "application/json", authorization: `Bearer ${modelInfo.apiKeyRef}` },
+            headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
             body: JSON.stringify(externalPayload),
             timeoutMs: 120_000,
             maxResponseBytes: 20 * 1024 * 1024,
+            agent: createRestrictedTeamorouterSocksAgent(apiUrl),
             allowedHosts: [new URL(apiUrl).hostname],
             allowPrivateNetwork: process.env.MODEL_PROVIDER_ALLOW_PRIVATE_NETWORK === "true",
             auditContext: {

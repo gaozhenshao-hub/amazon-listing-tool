@@ -202,7 +202,7 @@ Provider资格验证
 
 **采集任务错误合同**：智能图片建议 Step 0 的“创建采集任务”已完成无迁移原子发布。修复将未配置、未启用、未填受控密钥和缺少预算从普通异常转换为可读的 `PRECONDITION_FAILED`。生产受控tRPC复验确认HTTP 412、`profile_not_configured`和可读管理员操作提示，同时确保未创建采集Job、AI Job或Provider Run。构建包与Web/Worker/Scheduler入口SHA-256一致，三服务为active，本机HTTP为200。主Provider仍为`qualification_pending`，不得因该前端提示修复而启用Provider或启动关键词/Heartbeat。
 
-**N3本品属性表模型可用性**：只读诊断确认失败记录源于受管外部模型出口不可用，而非文件解析、Skill注册、模型记录或凭证引用缺失。`analysis.rufus.attribute`的失败Run已被正确归类为`PROVIDER_UNAVAILABLE`；应用配置指向127.0.0.1:1088，但预配置的受限SSH出口隧道到远端连接超时并以255退出，端口未形成监听。已执行一次安全的隧道重启，仍未恢复监听；未重新解析任何用户上传文件或调用模型。为避免共享失联隧道的第二外部模型消耗唯一回退机会，已本地实现受治理的无迁移回退：外部模型保持首选，`manus-default`成为第一回退候选，且仅该已登记的`manus_builtin`候选可由Skill Runner显式走Forge；业务路由、客户端和上传文件均不能指定覆盖。用户批准后，该版本已原子发布并通过三服务、HTTP和三入口哈希检查；但合成、无用户数据的健康检查在请求模型前发现生产Forge变量值为空。初始“变量存在”结论不代表有可用凭据，因此健康检查失败关闭、未发生模型调用，随后立即原子回滚并复验三服务active、HTTP 200与旧入口哈希恢复。当前N3仍需先恢复Teamorouter远端出口，或由管理员在受控配置中安全提供可用Forge/替代受管模型凭据；成功无内容健康验证前不得重新解析用户文件，任何真实模型重跑仍须单独确认。
+**N3本品属性表模型可用性**：诊断确认失败记录源于过期的 Teamorouter `.com` 入口及其被强制送往已失联 SOCKS 隧道，而非文件解析、Skill注册、模型记录或 API Key 缺失。官方当前 OpenAI 兼容入口为 `https://api.teamorouter.cn/v1`，Qingdao 可直连并已通过受控目录读取确认 39 个文本模型。已无迁移原子发布官方端点/环境密钥引用修复，并登记 GPT‑6 Astra、Gemini 3.8 Flash、DeepSeek V4 Pro/Flash、GLM‑5.3、Grok‑4.6；同步不改变既有默认模型。随后发现泛用 `emperor.run.run` 未解析环境引用，已以第二个无迁移热修补齐并通过三服务、HTTP及入口哈希验证。经用户明确授权，一次合成、无用户数据的 `analysis.rufus.attribute` 健康运行成功（`gpt-5.5`、外部受治理路由）；未重试、读取或解析任何本品属性表，也未创建 AI Job、采集Job、Provider Run、关键词任务或Heartbeat。真实用户文件重跑仍须单独确认。
 
 ## 扩展已知风险
 
