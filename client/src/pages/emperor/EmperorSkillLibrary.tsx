@@ -346,6 +346,12 @@ function SkillFormDialog({
 
         {activeTab === "prompt" && (
           <div className="space-y-4">
+            {isEdit && (
+              <div className="rounded-lg border border-sky-200 bg-sky-50/70 p-3 text-xs text-sky-900">
+                <span className="font-semibold">运行时版本：v{form.version || "1"}</span>
+                <span className="ml-2 text-sky-800">此处保存的数据库 Prompt 是实际执行来源；保存前会保留当前版本快照，便于审阅与回退。</span>
+              </div>
+            )}
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
                 System Prompt

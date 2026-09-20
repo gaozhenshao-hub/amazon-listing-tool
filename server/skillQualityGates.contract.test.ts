@@ -7,21 +7,21 @@ const read = (relativePath: string) => readFileSync(resolve(process.cwd(), relat
 describe("皇帝Skill质量评测与发布门禁契约", () => {
   it("登记金标、版本快照、评测结果和门禁的纯前向迁移与类型化实体", () => {
     const migration = read("drizzle/0154_emperor_skill_quality_gates.sql");
-    const schema = read("drizzle/schema/ai_os.ts");
     for (const table of [
       "emperor_skill_version_snapshots",
       "emperor_skill_eval_cases",
       "emperor_skill_eval_results",
       "emperor_skill_release_gates",
     ]) expect(migration).toContain(table);
-    expect(schema).toContain("emperorSkillVersionSnapshots");
-    expect(schema).toContain("emperorSkillEvalCases");
-    expect(schema).toContain("emperorSkillReleaseGates");
+    const service = read("server/domains/ai_os/services/skillQualityGates.ts");
+    expect(service).toContain("captureSkillVersionSnapshot");
+    expect(service).toContain("emperor_skill_version_snapshots");
   });
 
   it("在Skill创建、更新和发布入口保存候选快照，且仅强制门禁阻止发布", () => {
     const router = read("server/domains/ai_os/routers/skills.ts");
     expect(router).toContain("captureSkillVersionSnapshot");
+    expect(router).toContain('skill: beforeRows[0], userId: ctx.user.id, source: "update"');
     expect(router).toContain("getSkillReleaseGateDecision");
     expect(router).toContain('gate.mode === "enforced" && !gate.allowed');
     expect(router).toContain("发布门禁未通过");

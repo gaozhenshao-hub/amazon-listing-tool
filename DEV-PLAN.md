@@ -204,6 +204,8 @@ Provider资格验证
 
 **N3本品属性表模型可用性**：诊断确认失败记录源于过期的 Teamorouter `.com` 入口及其被强制送往已失联 SOCKS 隧道，而非文件解析、Skill注册、模型记录或 API Key 缺失。官方当前 OpenAI 兼容入口为 `https://api.teamorouter.cn/v1`，Qingdao 可直连并已通过受控目录读取确认 39 个文本模型。已无迁移原子发布官方端点/环境密钥引用修复，并登记 GPT‑6 Astra、Gemini 3.8 Flash、DeepSeek V4 Pro/Flash、GLM‑5.3、Grok‑4.6；同步不改变既有默认模型。随后发现泛用 `emperor.run.run` 未解析环境引用，已以第二个无迁移热修补齐并通过三服务、HTTP及入口哈希验证。经用户明确授权，一次合成、无用户数据的 `analysis.rufus.attribute` 健康运行成功（`gpt-5.5`、外部受治理路由）；未重试、读取或解析任何本品属性表，也未创建 AI Job、采集Job、Provider Run、关键词任务或Heartbeat。真实用户文件重跑仍须单独确认。
 
+**Listing五点 Skill 提示词与质量路由**：生产审计确认`listing.bullets.generate`的数据库Prompt混入了旧中文通用/标题导向规则，且其`deepseek-chat`模型策略已停用，造成指令冲突与不稳定的备用模型路由。用户选择保留奥美资深英文文案角色、固定GPT‑6 Astra并授权一次合成验收后，已完成无迁移原子发布和受控`emperor.skills.update`。更新先补写不可变v2快照，再发布v3：运行时Prompt为单一的2,904字符奥美/FABE/200–280字符/JSON约束版本，Skill专属路由为`teamo-gpt-6-astra`。一次不含用户、项目、ASIN或上传文件的合成运行成功返回5条结构化Bullet（240、230、242、242、252字符），全部合规；没有重跑、覆盖或修改任何真实Listing。Skill编辑页现在明确运行时版本与保存前快照语义。
+
 ## 扩展已知风险
 
 Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受控后台配置和轻量校验。竞品监控初始Actor在已测资格样本返回0条记录；替代Actor已返回完整必要字段，但先前Adapter存在已修复的蛇形字段兼容缺口。Provider尚未通过真实完整资格门禁，且Actor存在计费、限流、空结果与Schema漂移风险；大量图片必须逐图、分区、分批保证全覆盖；历史数据不批量重采；旧爬虫已退役且不得作为失败回退；青岛独立站每阶段仍须遵循独立的生产变更与费用授权边界。

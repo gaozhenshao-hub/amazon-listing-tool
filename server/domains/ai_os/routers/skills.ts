@@ -4,6 +4,7 @@ import { adminProcedure, protectedProcedure, router } from "../../../_core/trpc"
 import { workspaceIdFromContext } from "../../../services/securityGovernance";
 import { getSkillBySlug, normalizeSkillVersionForDb, parseManifest, rawExecute } from "../routerContext";
 import {
+  captureSkillVersionSnapshot,
   createSkillEvalCase,
   getSkillReleaseGateDecision,
   listSkillEvalCases,
@@ -293,11 +294,15 @@ export const emperorSkillsRouter = router({
       allowedTools: z.array(z.string()).nullable().optional(),
       disallowedTools: z.array(z.string()).nullable().optional(),
       version: z.union([z.string(), z.number()]).optional(),
-    }))
+      }))
     .mutation(async ({ input, ctx }) => {
       const { slug, systemPrompt, userPromptTemplate, whenToUse, timeoutSeconds, executionMode, allowedTools, disallowedTools, version, ...updates } = input;
       const beforeRows = await rawExecute("SELECT * FROM emperor_skills WHERE slug=? LIMIT 1", [slug]);
       if (!beforeRows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Skill not found" });
+      // Preserve the exact runtime record before every mutation. Existing
+      // pre-quality-gate Skills may have no earlier snapshot, and a post-update
+      // snapshot alone cannot provide a trustworthy rollback point.
+      await captureSkillVersionSnapshot({ skill: beforeRows[0], userId: ctx.user.id, source: "update" });
       if (updates.status === "Released") {
         const candidateVersion = version === undefined ? String(beforeRows[0].version ?? "1") : String(version);
         const gate = await getSkillReleaseGateDecision(slug, candidateVersion);
