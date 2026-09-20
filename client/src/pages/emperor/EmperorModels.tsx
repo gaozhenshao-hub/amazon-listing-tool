@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Brain, Plus, Activity, DollarSign, Zap, RefreshCw,
@@ -88,6 +88,21 @@ export default function EmperorModels() {
   const [form, setForm] = useState(defaultForm);
   const [showApiKey, setShowApiKey] = useState(false);
   const [activeTab, setActiveTab] = useState<"models" | "cost" | "logs">("models");
+  const [modelQuery, setModelQuery] = useState("");
+
+  const visibleModels = useMemo(() => {
+    const normalized = modelQuery.trim().toLowerCase();
+    if (!normalized) return models as any[] | undefined;
+    return (models as any[] | undefined)?.filter((model: any) => {
+      const searchable = [
+        model.name,
+        model.modelId,
+        model.baseUrl,
+        ...(model.capabilityTags ?? []),
+      ].filter(Boolean).join(" ").toLowerCase();
+      return searchable.includes(normalized);
+    });
+  }, [modelQuery, models]);
 
   const handleCreate = () => {
     if (!form.name || !form.modelId || !form.apiKey) {
@@ -196,6 +211,38 @@ export default function EmperorModels() {
       <div className="flex-1 px-8 py-6 overflow-auto">
         {activeTab === "models" && (
           <div className="space-y-2">
+            <div className="flex flex-col gap-3 rounded-xl border border-white/6 bg-white/3 p-4 sm:flex-row sm:items-center">
+              <div className="min-w-0 flex-1">
+                <Label htmlFor="model-search" className="sr-only">搜索模型</Label>
+                <Input
+                  id="model-search"
+                  value={modelQuery}
+                  onChange={(event) => setModelQuery(event.target.value)}
+                  placeholder="搜索模型名称、ID 或标签，例如 GPT-6、Teamorouter"
+                  className="bg-white/5 border-white/10 text-white placeholder:text-slate-600"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: "全部", value: "" },
+                  { label: "Teamorouter", value: "teamorouter" },
+                  { label: "GPT-6", value: "gpt-6" },
+                ].map((filter) => (
+                  <Button
+                    key={filter.label}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setModelQuery(filter.value)}
+                    className={modelQuery === filter.value
+                      ? "border-violet-500/50 bg-violet-500/15 text-violet-200"
+                      : "border-white/10 text-slate-400 hover:bg-white/5"}
+                  >
+                    {filter.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
             {isLoading ? (
               <div className="text-center py-12 text-slate-500">加载中...</div>
             ) : !totalCount ? (
@@ -209,7 +256,9 @@ export default function EmperorModels() {
                 )}
               </div>
             ) : (
-              (models as any[]).map((model: any) => (
+              !visibleModels?.length ? (
+                <div className="text-center py-12 text-slate-500">未找到匹配模型，请调整搜索条件。</div>
+              ) : visibleModels.map((model: any) => (
                 <div key={model.slug} className="flex items-center gap-4 px-5 py-4 rounded-xl bg-white/3 border border-white/6 hover:border-white/10 transition-all group">
                   <div className="flex items-center gap-2 min-w-[80px]">
                     {model.isActive
