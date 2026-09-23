@@ -223,3 +223,6 @@ Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受�
 **双站前端未定义变量审计（2026-09-23）**：针对图片工作流的 `hasData` 崩溃进行全量扩展审计，确认并修复两个同类前端 `ReferenceError` 风险：产品开发数据上传“补录缺失产品”按钮调用过期 `setManualProductOpen`，以及产品总览财务利润卡片遗漏解构 `legacyFinancialProfitMonths`。两处均改为既有状态/安全默认值，并新增回归。修复后全量 TypeScript 从149项历史诊断降为146项，客户端 `Cannot find name` 类诊断为0；定向11项测试、ESLint、生产构建及Bundle预算通过。青岛无迁移原子发布后Web/Worker/Scheduler均active、本机HTTP200、入口SHA一致，公共入口已引用新的图片和运营产品资源；Manus托管站全部93个动态资源HTTP200。未调用模型、未重试图片任务或修改业务数据。
 
 **托管资源一致性与构建门禁（2026-09-23）**：Manus托管发布切换期间曾观察到旧入口与新分块短暂不一致；当前无缓存入口`index-BsTxb_Xj.js`的94个动态导入资源已全部HTTP200。为避免被大量历史类型诊断掩盖的前端未声明变量再次进入构建，新增`check:client-runtime-identifiers`并接入`pnpm build`；它只拦截客户端TS2304、TS2448、TS2454、TS2552，完整构建已验证通过。
+
+
+**SellerSprite竞品批量分析失败反馈与Teamorouter端点兼容修复（2026-09-23）**：用户截图显示批量导入后“0成功、18失败”，历史实现只汇总计数，未向前端提供逐条、脱敏且可行动的失败原因；因此历史18条不可在不重跑的前提下精确归因。只读目录核验确认双站受控凭据、44个模型目录、`claude-opus-5`和`gpt-6-astra`均可用；发现托管站遗留`.com`基址而青岛为`.cn`，旧入口依赖已退役SOCKS，已作为兼容风险在运行时及模型健康检查中规范为官方`.cn`。批处理现在返回ASIN级安全失败分类，成功行自动取消勾选、失败行保留但绝不自动重跑。定向Vitest、ESLint、客户端未定义标识符门禁与生产构建通过；完整tsc仍有146项既有历史诊断，新增涉及路径为0。青岛无迁移原子发布并健康/入口SHA一致；Manus托管站已切换至新版入口`index-By1CIoET.js`，其`AnalysisPage-Di_T4Mmb.js`包含失败反馈合同，94个动态资源均HTTP200。未调用模型、未重试18条、未创建Provider/采集/关键词/Heartbeat任务。
