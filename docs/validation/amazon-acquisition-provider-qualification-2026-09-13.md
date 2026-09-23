@@ -45,3 +45,12 @@ Apify连接器已在当前开发任务启用，仅用于Actor发现、Schema和�
 | 地区字段 | 已返回 | 美国站加载身份可核验 |
 
 本次真实Run证明首选Actor具备`catalog_basic + image_gallery`最小能力，因此结论为**条件批准**：可进入统一Adapter和主图采集底座开发；A+、品牌故事和变体继续保持未验证状态，后续必须使用已知含A+、品牌故事或变体的样本分别验证。当前工具返回只确认调用被0.10美元上限保护，未提供精确账单金额，不据此虚构实际费用。
+
+
+## 主图片采集 Provider 资格验证完成（2026-09-23）
+
+在用户对单次最高 **0.10 USD** 的明确授权下，主 Apify Provider 的受控资格验证已完成。首次执行器在加载生产数据库依赖之前以 CommonJS/ESM 兼容错误失败关闭；该次未发起 Provider 请求、未创建 Provider Run，也未产生费用。随后使用与青岛运行环境兼容的 CommonJS 执行方式完成同一笔授权范围内的资格任务，未扩大费用上限或重试任何用户业务任务。
+
+最终只读复验确认，`apify-amazon-primary` Profile 已为 **active**，仅登记 `catalog_basic` 与 `image_gallery` 两项已观测能力；A+、品牌故事及 Listing 内容仍未获资格，不可被创建任务调用。资格 Job #1 为 `confirmed`，Run #1 为 `succeeded`，记录费用为 **0.00 USD**，无失败类别。验证样本、原始 Provider 载荷、URL、图片和密钥均未写入业务快照、客户端或本文档；验证用途仅保留脱敏 Job/Run 审计结论。青岛 Web、Worker、Scheduler 均为 active，本机 HTTP 健康检查通过。
+
+后续业务采集仍需遵守现有上限、能力资格、人工 Snapshot 审核和失败关闭策略。该资格任务不构成对关键词资格、Heartbeat、A+/品牌故事或其他新付费 Provider 调用的授权。

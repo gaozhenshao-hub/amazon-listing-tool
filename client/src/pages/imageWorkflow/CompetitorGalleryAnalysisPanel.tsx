@@ -109,7 +109,10 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
         consumerRef: `project:${projectId}:competitor-gallery`,
         marketplace: "US",
         asin,
-        capabilities: ["catalog_basic", "image_gallery", "aplus", "brand_story"],
+        // A+/brand story remain unavailable until their own positive Provider
+        // qualification samples have passed; observed optional fields are
+        // still retained in the reviewed snapshot when the Provider returns them.
+        capabilities: ["catalog_basic", "image_gallery"],
         cachePolicy: "prefer_cache",
         maxChargeUsd: 0.1,
       });

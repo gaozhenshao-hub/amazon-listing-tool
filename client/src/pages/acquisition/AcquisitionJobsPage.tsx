@@ -68,7 +68,7 @@ export default function AcquisitionJobsPage() {
       consumerRef: `manual:${normalizedAsin}`,
       marketplace: "US",
       asin: normalizedAsin,
-      capabilities: ["catalog_basic", "image_gallery", "aplus", "brand_story", "listing_content"],
+      capabilities: ["catalog_basic", "image_gallery"],
       cachePolicy: "prefer_cache",
       maxChargeUsd: Number(perRunMaxUsd) || 0.1,
     });
@@ -113,12 +113,12 @@ export default function AcquisitionJobsPage() {
                 <div className="space-y-2"><Label>每日预算</Label><Input type="number" min="0.01" step="0.01" value={dailyBudgetUsd} onChange={event => setDailyBudgetUsd(event.target.value)} /></div>
                 <div className="space-y-2"><Label>每月预算</Label><Input type="number" min="0.01" step="0.01" value={monthlyBudgetUsd} onChange={event => setMonthlyBudgetUsd(event.target.value)} /></div>
               </div>
-              <div className="space-y-2"><Label>状态</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={profileStatus} onChange={event => setProfileStatus(event.target.value as typeof profileStatus)}><option value="active">启用</option><option value="paused">暂停</option><option value="qualification_pending">待资格验证</option><option value="rejected">拒绝</option></select></div>
-              <Button className="w-full" variant="outline" disabled={saveProfile.isPending} onClick={() => saveProfile.mutate({
+              <div className="space-y-2"><Label>状态</Label><select className="h-10 w-full rounded-md border bg-muted px-3 text-sm" value={profileStatus} disabled><option value="active">启用（仅资格验证成功后自动切换）</option><option value="paused">暂停</option><option value="qualification_pending">待资格验证</option><option value="rejected">拒绝</option></select><p className="text-xs text-muted-foreground">为防止绕过费用与能力门禁，本页不能手动启用Provider；仅可保存预算。</p></div>
+              <Button className="w-full" variant="outline" disabled={saveProfile.isPending || profile.isLoading || !profile.data} onClick={() => saveProfile.mutate({
                 displayName: "Apify Amazon主Provider",
                 actorName: "junglee/Amazon-crawler",
                 status: profileStatus,
-                capabilities: ["catalog_basic", "image_gallery", "aplus", "brand_story", "listing_content"],
+                capabilities: profile.data?.capabilities ?? ["catalog_basic", "image_gallery"],
                 perRunMaxUsd: Number(perRunMaxUsd) || 0.1,
                 dailyBudgetUsd: Number(dailyBudgetUsd) || 5,
                 monthlyBudgetUsd: Number(monthlyBudgetUsd) || 100,
@@ -138,13 +138,16 @@ export default function AcquisitionJobsPage() {
             <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">尚无采集任务。创建任务后将进入持久化队列。</div>
           ) : (
             <div className="space-y-3">
-              {jobs.data.map(job => (
+              {jobs.data.map(job => {
+                const isQualification = job.consumerType === "provider_qualification";
+                return (
                 <div key={job.id} className="grid gap-3 rounded-xl border p-4 md:grid-cols-[1fr_auto_auto] md:items-center">
-                  <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{job.asin}</span><Badge variant="outline">{job.marketplace}</Badge><Badge>{statusLabels[job.status] || job.status}</Badge>{job.cacheHitSnapshotId ? <Badge variant="secondary">缓存命中</Badge> : null}</div><p className="mt-1 truncate text-xs text-muted-foreground">用途：{job.consumerType} · {job.consumerRef} · 创建于 {formatDate(job.createdAt)}</p></div>
+                  <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{isQualification ? "Provider 技术资格验证（样本已脱敏）" : job.asin}</span><Badge variant="outline">{job.marketplace}</Badge><Badge>{statusLabels[job.status] || job.status}</Badge>{job.cacheHitSnapshotId ? <Badge variant="secondary">缓存命中</Badge> : null}</div><p className="mt-1 truncate text-xs text-muted-foreground">用途：{isQualification ? "仅验证受控能力，不进入任何业务分析" : `${job.consumerType} · ${job.consumerRef}`} · 创建于 {formatDate(job.createdAt)}</p></div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">{job.status === "running" || job.status === "queued" ? <Clock3 className="h-4 w-4" /> : job.status === "confirmed" ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : null}<span>上限 ${job.maxChargeUsd}</span></div>
-                  <Button size="sm" variant="outline" disabled={job.status !== "review_required"} onClick={() => openReview(job.id)}>打开审核</Button>
+                  <Button size="sm" variant="outline" disabled={isQualification || job.status !== "review_required"} onClick={() => openReview(job.id)}>{isQualification ? "资格记录" : "打开审核"}</Button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>

@@ -92,6 +92,19 @@ function requireEnabledAcquisitionProfile(profile: Awaited<ReturnType<typeof get
   return profile;
 }
 
+function requireQualifiedCapabilities(profile: NonNullable<Awaited<ReturnType<typeof getApifyProviderProfile>>>, capabilities: readonly string[]) {
+  const qualified = new Set(Array.isArray(profile.capabilities) ? profile.capabilities : []);
+  const missing = capabilities.filter(capability => !qualified.has(capability));
+  if (missing.length > 0) {
+    throw new AppError({
+      code: APP_ERROR_CODES.PRECONDITION_FAILED,
+      statusCode: 412,
+      message: `采集Provider尚未完成以下能力的资格验证：${missing.join("、")}。当前仅允许已验证能力创建任务。`,
+      details: { provider: "apify", reason: "capability_not_qualified", capabilities: missing },
+    });
+  }
+}
+
 function providerRequestHash(input: unknown) {
   return createHash("sha256").update(JSON.stringify(input)).digest("hex");
 }
@@ -100,6 +113,7 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
   const input = AcquisitionJobRequestSchema.parse(rawInput);
   const db = await requireDb("Amazon acquisition job");
   const profile = requireEnabledAcquisitionProfile(await getApifyProviderProfile(db, input.workspaceId));
+  requireQualifiedCapabilities(profile, input.capabilities);
   if (!await isApiConnectionSecretConfigured("apify", "api_token")) {
     throw new AppError({
       code: APP_ERROR_CODES.PRECONDITION_FAILED,

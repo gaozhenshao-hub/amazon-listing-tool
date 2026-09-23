@@ -7,6 +7,7 @@ import {
   DEFAULT_ACQUISITION_CACHE_TTL_SECONDS,
   type AcquisitionBudgetPolicy,
 } from "./policy";
+import type { ProviderQualificationRecord } from "./providerContracts";
 
 export const DEFAULT_APIFY_PROFILE_KEY = "apify-amazon-primary";
 export const APIFY_PROVIDER_CODE = "apify.junglee.amazon_crawler";
@@ -85,6 +86,10 @@ export async function upsertApifyProviderProfile(input: {
   profile: ApifyProviderProfileInput;
 }) {
   const budget = AcquisitionBudgetPolicySchema.parse(input.profile);
+  const existing = await getApifyProviderProfile(input.db, input.workspaceId);
+  if (input.profile.status === "active" && existing?.status !== "active") {
+    throw new Error("采集Provider只能由受控资格验证成功后启用，不能在治理页面直接切换为启用");
+  }
   const values = {
     workspaceId: input.workspaceId,
     profileKey: DEFAULT_APIFY_PROFILE_KEY,
@@ -104,8 +109,8 @@ export async function upsertApifyProviderProfile(input: {
     dailyBudgetUsd: budget.dailyBudgetUsd.toFixed(4),
     monthlyBudgetUsd: budget.monthlyBudgetUsd.toFixed(4),
     cacheTtlSeconds: budget.cacheTtlSeconds || DEFAULT_ACQUISITION_CACHE_TTL_SECONDS,
-    qualificationVersion: "apify-junglee-us-gallery-2026-09-13-r1",
-    lastQualifiedAt: new Date(),
+    qualificationVersion: existing?.qualificationVersion ?? "apify-junglee-us-gallery-2026-09-13-r1",
+    lastQualifiedAt: existing?.lastQualifiedAt ?? null,
     createdBy: input.userId,
     updatedBy: input.userId,
   };
@@ -133,4 +138,60 @@ export async function upsertApifyProviderProfile(input: {
   const row = await getApifyProviderProfile(input.db, input.workspaceId);
   if (!row) throw new Error("Provider profile was not persisted");
   return sanitizeProviderProfile(row);
+}
+
+/**
+ * Only the server-side qualification workflow may activate the primary
+ * Provider. It preserves the user-configured budget while replacing the
+ * capability set with the technically observed minimum and stores only
+ * redacted technical evidence (never an ASIN, raw payload, URL or secret).
+ */
+export async function finalizeApifyProviderQualification(input: {
+  db: DbExecutor;
+  workspaceId: number;
+  userId: number;
+  profileId: number;
+  record: ProviderQualificationRecord;
+  jobId: number;
+  runId: number;
+}) {
+  const profile = await getApifyProviderProfile(input.db, input.workspaceId);
+  if (!profile || profile.id !== input.profileId || profile.status !== "qualification_pending") {
+    throw new Error("primary Provider profile is no longer eligible for qualification finalization");
+  }
+  const observedCapabilities = input.record.observedCapabilities;
+  if (!observedCapabilities.includes("catalog_basic") || !observedCapabilities.includes("image_gallery")) {
+    throw new Error("primary Provider qualification did not observe required capabilities");
+  }
+  const previousSettings = profile.providerSettings && typeof profile.providerSettings === "object" && !Array.isArray(profile.providerSettings)
+    ? profile.providerSettings as Record<string, unknown>
+    : {};
+  await input.db.update(acquisitionProviderProfiles).set({
+    status: "active",
+    capabilities: observedCapabilities,
+    qualificationVersion: "apify-junglee-us-gallery-2026-09-23-r2",
+    lastQualifiedAt: new Date(),
+    providerSettings: {
+      ...previousSettings,
+      qualification: {
+        version: "apify-junglee-us-gallery-2026-09-23-r2",
+        decision: input.record.decision,
+        observedCapabilities,
+        checkedAt: input.record.checkedAt,
+        maxObservedChargeUsd: input.record.maxObservedChargeUsd,
+        jobId: input.jobId,
+        runId: input.runId,
+      },
+    },
+    updatedBy: input.userId,
+  }).where(and(
+    eq(acquisitionProviderProfiles.workspaceId, input.workspaceId),
+    eq(acquisitionProviderProfiles.id, input.profileId),
+    eq(acquisitionProviderProfiles.status, "qualification_pending"),
+  ));
+  const finalized = await getApifyProviderProfile(input.db, input.workspaceId);
+  if (!finalized || finalized.status !== "active") {
+    throw new Error("primary Provider qualification finalization did not persist");
+  }
+  return sanitizeProviderProfile(finalized);
 }
