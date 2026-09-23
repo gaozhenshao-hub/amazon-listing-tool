@@ -1082,8 +1082,8 @@ Respond in JSON format:
     "painPointCoverage": { "pass": true, "notes": "" },
     "differentiationCoverage": { "pass": true, "notes": "" },
     "categoryStandard": { "pass": true, "notes": "" },
-    "quantifiedData": { "pass": true, "notes": "" },
-    "semanticRelations": { "pass": true, "notes": "" },
-    "priorityOrdering": { "pass": true, "notes": "" }
+    "dataQuantification": { "pass": true, "notes": "" },
+    "semanticRelation": { "pass": true, "notes": "" },
+    "priorityOrder": { "pass": true, "notes": "" }
   }
 }`;

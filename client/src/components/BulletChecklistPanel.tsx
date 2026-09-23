@@ -50,9 +50,14 @@ export default function BulletChecklistPanel({
   isRunningCheck,
 }: BulletChecklistPanelProps) {
   const [expanded, setExpanded] = useState(false);
+  const isCompleteChecklist = CHECKLIST_DIMENSIONS.every((dimension) => {
+    const score = checkListScores?.[dimension.key];
+    return typeof score?.pass === "boolean" && typeof score?.notes === "string";
+  });
 
-  // When no checkListScores data, show a "Run Check" button
-  if (!checkListScores) {
+  // A partial model reply must never be rendered as a red 0/15 result.
+  if (!checkListScores || !isCompleteChecklist) {
+    const needsRetry = Boolean(checkListScores);
     return (
       <div className="mt-2">
         <button
@@ -70,11 +75,11 @@ export default function BulletChecklistPanel({
               <ClipboardCheck className="h-3.5 w-3.5 text-muted-foreground" />
             )}
             <span className="font-medium text-muted-foreground">
-              {isRunningCheck ? "正在进行15维度自检..." : "Check List 自检"}
+              {isRunningCheck ? "正在进行15维度自检..." : needsRetry ? "上次自检结果不完整" : "Check List 自检"}
             </span>
             {!isRunningCheck && (
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground border-muted-foreground/30">
-                点击运行
+                {needsRetry ? "重新自检" : "点击运行"}
               </Badge>
             )}
           </div>
@@ -91,6 +96,11 @@ export default function BulletChecklistPanel({
             {!isRunningCheck && <PlayCircle className="h-3.5 w-3.5 text-muted-foreground" />}
           </div>
         </button>
+        {needsRetry && !isRunningCheck && (
+          <p className="mt-1 px-1 text-[10px] text-amber-700">
+            未获得完整的15项结构化结果，未计入评分；请点击重新自检。
+          </p>
+        )}
       </div>
     );
   }

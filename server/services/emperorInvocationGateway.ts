@@ -266,6 +266,7 @@ export async function invokeViaEmperorSkill(params: InvokeParams): Promise<Invok
     attachments: collectAttachments(params.messages),
     legacySystemPrompt,
     migrationSource: params.emperorSkill?.migrationSource || inferred.source,
+    executionPreset: params.emperorSkill?.executionPreset,
     validate: (content) => content,
   });
 

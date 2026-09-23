@@ -32,8 +32,9 @@ describe("Listing Agent 与新皇帝 Skill 完整性", () => {
       "listing.checklist.searchterms",
       "listing.checklist.qa",
     ]) {
-      expect(evaluation).toContain(`emperorSkill: { slug: "${skillSlug}" }`);
+      expect(evaluation).toContain(`emperorSkill: { slug: "${skillSlug}", executionPreset: "quality_first" }`);
     }
+    expect(evaluation).toContain("requireCompleteChecklist");
   });
 
   it("在人工编辑后重置下游节点，并以数据库皇帝 Prompt 作为运行时唯一来源", () => {

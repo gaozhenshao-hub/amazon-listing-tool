@@ -101,6 +101,11 @@ export type InvokeParams = {
     workspaceId?: number | null;
     context?: string;
     emphasis?: string;
+    /**
+     * A governed execution choice interpreted only by the Emperor Skill
+     * runner. Business callers cannot select an arbitrary provider or key.
+     */
+    executionPreset?: "standard" | "quality_first" | "batch_background" | "evaluation";
     migrationSource?: string;
     variables?: Record<string, unknown>;
     fallbackToLegacy?: boolean;

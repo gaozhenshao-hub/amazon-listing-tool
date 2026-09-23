@@ -24,10 +24,16 @@ describe("BulletChecklistPanel Component", () => {
       expect(componentCode).toContain("aiSemanticRelations");
     });
 
-    it("should show run-check button when checkListScores is undefined", () => {
-      expect(componentCode).toContain("if (!checkListScores)");
-      expect(componentCode).toContain("Check List \u81ea\u68c0");
+    it("should show run-check button when checkListScores is absent or incomplete", () => {
+      expect(componentCode).toContain("if (!checkListScores || !isCompleteChecklist)");
+      expect(componentCode).toContain("Check List 自检");
       expect(componentCode).toContain("onRunCheck");
+    });
+
+    it("should not render an incomplete model response as a 0/15 scorecard", () => {
+      expect(componentCode).toContain("isCompleteChecklist");
+      expect(componentCode).toContain("上次自检结果不完整");
+      expect(componentCode).toContain("未获得完整的15项结构化结果，未计入评分");
     });
   });
 

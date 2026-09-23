@@ -226,3 +226,6 @@ Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受�
 
 
 **SellerSprite竞品批量分析失败反馈与Teamorouter端点兼容修复（2026-09-23）**：用户截图显示批量导入后“0成功、18失败”，历史实现只汇总计数，未向前端提供逐条、脱敏且可行动的失败原因；因此历史18条不可在不重跑的前提下精确归因。只读目录核验确认双站受控凭据、44个模型目录、`claude-opus-5`和`gpt-6-astra`均可用；发现托管站遗留`.com`基址而青岛为`.cn`，旧入口依赖已退役SOCKS，已作为兼容风险在运行时及模型健康检查中规范为官方`.cn`。批处理现在返回ASIN级安全失败分类，成功行自动取消勾选、失败行保留但绝不自动重跑。定向Vitest、ESLint、客户端未定义标识符门禁与生产构建通过；完整tsc仍有146项既有历史诊断，新增涉及路径为0。青岛无迁移原子发布并健康/入口SHA一致；Manus托管站已切换至新版入口`index-By1CIoET.js`，其`AnalysisPage-Di_T4Mmb.js`包含失败反馈合同，94个动态资源均HTTP200。未调用模型、未重试18条、未创建Provider/采集/关键词/Heartbeat任务。
+
+
+**Listing五点自检质量与0/15评分修复（2026-09-23）**：用户截图中的247字符五点文案被展示为0/15并非可信质量判定。只读审计确认自检Skill的空/键漂移响应被页面按完整评分卡渲染，并且五类自检没有显式走质量优先GPT‑6 Astra。已新增严格完整评分合同（不完整结果不计分，提示重新自检）、批量自检最新状态累积保存、五类自检的受治理`quality_first`执行预设、Q&A输出键对齐；Skill配置统一为结构化草案、人工审核、禁止自动执行并以GPT‑6 Astra作为quality/evaluation路由。青岛无迁移原子发布后Web/Worker/Scheduler active、本机HTTP 200、入口哈希一致；青岛和托管站均已静态验收五个Skill完整合同与GPT‑6 Astra活动路由。未重跑用户Listing、文件或模型。详细证据见`docs/validation/listing-checklist-quality-remediation-2026-09-23.md`。

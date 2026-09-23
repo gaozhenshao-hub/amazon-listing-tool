@@ -1,4 +1,8 @@
 import * as shared from "../routerContext";
+import {
+  parseCompleteListingChecklist,
+  type ListingChecklistKind,
+} from "../services/checklistContracts";
 
 const {
   BULLET_POINTS_PROMPT,
@@ -44,6 +48,18 @@ const {
   z,
 } = shared;
 
+function requireCompleteChecklist(content: unknown, kind: ListingChecklistKind) {
+  const parsed = safeParseJSON<Record<string, unknown>>(content, {});
+  const result = parseCompleteListingChecklist(parsed, kind);
+  if (!result) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "AI 自检结果格式不完整，未计入评分。请重新自检。",
+    });
+  }
+  return result;
+}
+
 export const listingEvaluationProcedures = {
 
 
@@ -58,7 +74,7 @@ export const listingEvaluationProcedures = {
       const bulletText = `${input.subtitle} ${input.fullText}`;
 
       const response = await invokeBusinessSkill({
-        emperorSkill: { slug: "listing.checklist.bullets" },
+        emperorSkill: { slug: "listing.checklist.bullets", executionPreset: "quality_first" },
         messages: [
           { role: "system", content: EVALUATE_BULLET_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate this Amazon bullet point (Bullet #${input.bulletIndex + 1}):\n\n${bulletText}` },
@@ -67,11 +83,10 @@ export const listingEvaluationProcedures = {
       });
 
       const content = (response.choices?.[0]?.message?.content ?? "") as string;
-
-      const parsedBullet = safeParseJSON<any>(content, {});
+      const parsedBullet = requireCompleteChecklist(content, "bullets");
       return {
-        checkListScores: parsedBullet.checkListScores || {},
-        aiSemanticRelations: parsedBullet.aiSemanticRelations || null,
+        checkListScores: parsedBullet.checkListScores,
+        aiSemanticRelations: parsedBullet.aiSemanticRelations,
       };
     }),
 
@@ -109,7 +124,7 @@ export const listingEvaluationProcedures = {
     }))
     .mutation(async ({ input }) => {
       const response = await invokeBusinessSkill({
-        emperorSkill: { slug: "listing.checklist.title" },
+        emperorSkill: { slug: "listing.checklist.title", executionPreset: "quality_first" },
         messages: [
           { role: "system", content: EVALUATE_TITLE_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate this Amazon product title:\n\n${input.title}\n\nCharacter count: ${input.title.length}` },
@@ -117,8 +132,8 @@ export const listingEvaluationProcedures = {
         response_format: { type: "json_object" },
       });
       const rawTitleMsg = response.choices?.[0]?.message?.content;
-      const parsed = safeParseJSON<any>(rawTitleMsg, {});
-      return { checkListScores: (parsed as any).checkListScores || {} };
+      const parsed = requireCompleteChecklist(rawTitleMsg, "title");
+      return { checkListScores: parsed.checkListScores };
     }),
 
 
@@ -129,7 +144,7 @@ export const listingEvaluationProcedures = {
     }))
     .mutation(async ({ input }) => {
       const response = await invokeBusinessSkill({
-        emperorSkill: { slug: "listing.checklist.description" },
+        emperorSkill: { slug: "listing.checklist.description", executionPreset: "quality_first" },
         messages: [
           { role: "system", content: EVALUATE_DESCRIPTION_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate this Amazon product description:\n\n${input.description}\n\nCharacter count: ${input.description.length}` },
@@ -137,8 +152,8 @@ export const listingEvaluationProcedures = {
         response_format: { type: "json_object" },
       });
       const rawDescMsg = response.choices?.[0]?.message?.content;
-      const parsedDesc = safeParseJSON<any>(rawDescMsg, {});
-      return { checkListScores: (parsedDesc as any).checkListScores || {} };
+      const parsedDesc = requireCompleteChecklist(rawDescMsg, "description");
+      return { checkListScores: parsedDesc.checkListScores };
     }),
 
 
@@ -159,7 +174,7 @@ export const listingEvaluationProcedures = {
       if (input.title) userMsg += `\n\nProduct Title (for duplication check):\n${input.title}`;
       if (input.bulletPoints) userMsg += `\n\nBullet Points (for long-tail coverage check):\n${input.bulletPoints}`;
       const response = await invokeBusinessSkill({
-        emperorSkill: { slug: "listing.checklist.searchterms" },
+        emperorSkill: { slug: "listing.checklist.searchterms", executionPreset: "quality_first" },
         messages: [
           { role: "system", content: EVALUATE_SEARCH_TERMS_CHECKLIST_PROMPT },
           { role: "user", content: userMsg },
@@ -167,8 +182,8 @@ export const listingEvaluationProcedures = {
         response_format: { type: "json_object" },
       });
       const content = (response.choices?.[0]?.message?.content ?? "") as string;
-      const parsedST = safeParseJSON<any>(content, {});
-      return { checkListScores: parsedST.checkListScores || {} };
+      const parsedST = requireCompleteChecklist(content, "searchterms");
+      return { checkListScores: parsedST.checkListScores };
     }),
 
 
@@ -192,7 +207,7 @@ export const listingEvaluationProcedures = {
         }
       } catch {}
       const response = await invokeBusinessSkill({
-        emperorSkill: { slug: "listing.checklist.qa" },
+        emperorSkill: { slug: "listing.checklist.qa", executionPreset: "quality_first" },
         messages: [
           { role: "system", content: EVALUATE_QA_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate these Amazon Q&A pairs:\n\n${qaText}` },
@@ -200,7 +215,7 @@ export const listingEvaluationProcedures = {
         response_format: { type: "json_object" },
       });
       const content = (response.choices?.[0]?.message?.content ?? "") as string;
-      const parsedQA = safeParseJSON<any>(content, {});
-      return { checkListScores: parsedQA.checkListScores || {} };
+      const parsedQA = requireCompleteChecklist(content, "qa");
+      return { checkListScores: parsedQA.checkListScores };
     }),
 };

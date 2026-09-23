@@ -680,16 +680,26 @@ export default function GeneratePage() {
     }
   };
 
+  const hasCompleteBulletChecklist = (scores: unknown) => {
+    if (!scores || typeof scores !== "object") return false;
+    const entries = Object.values(scores as Record<string, unknown>);
+    return entries.length === 15 && entries.every((entry) => {
+      const score = entry as { pass?: unknown; notes?: unknown } | null;
+      return typeof score?.pass === "boolean" && typeof score?.notes === "string";
+    });
+  };
+
   // Batch checklist evaluation for all confirmed bullets
   const [batchChecklistRunning, setBatchChecklistRunning] = useState(false);
   const handleBatchChecklist = async () => {
     if (!sellingPointCores) return;
     setBatchChecklistRunning(true);
     let successCount = 0;
+    let nextBullets = generatedBullets;
     for (let idx = 0; idx < sellingPointCores.length; idx++) {
-      const bullet = generatedBullets[idx];
+      const bullet = nextBullets[idx];
       if (!bullet?.subtitle || !bullet?.fullText) continue;
-      if (bullet.checkListScores && Object.keys(bullet.checkListScores).length > 0) continue; // skip already evaluated
+      if (hasCompleteBulletChecklist(bullet.checkListScores)) continue;
       setEvaluatingChecklist(prev => ({ ...prev, [idx]: true }));
       try {
         const result = await evaluateChecklist.mutateAsync({
@@ -697,20 +707,21 @@ export default function GeneratePage() {
           fullText: bullet.fullText,
           bulletIndex: idx,
         });
-        setGeneratedBullets(prev => ({
-          ...prev,
+        nextBullets = {
+          ...nextBullets,
           [idx]: {
-            ...prev[idx],
+            ...nextBullets[idx],
             checkListScores: result.checkListScores,
             aiSemanticRelations: result.aiSemanticRelations,
           },
-        }));
+        };
+        setGeneratedBullets(nextBullets);
         successCount++;
       } catch { /* continue with next */ }
       finally { setEvaluatingChecklist(prev => ({ ...prev, [idx]: false })); }
     }
     // Persist all scores to DB after batch
-    persistChecklistScores(generatedBullets);
+    persistChecklistScores(nextBullets);
     setBatchChecklistRunning(false);
     toast.success(`批量自检完成，成功 ${successCount} 条`);
   };
