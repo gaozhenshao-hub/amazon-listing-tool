@@ -26,6 +26,8 @@ const hasData = Boolean(editData?.imageReferences?.length);
 
 青岛完成无迁移原子发布：Web、Worker、Scheduler 均为 `active`，本机 HTTP 为 `200`，入口 SHA-256 与构建包一致。公共域名已引用新的 `ImageWorkflowPage-BPkLyQxE.js`，而截图中的旧资源为 `ImageWorkflowPage-DqvPhBt.js`。本次没有调用模型、没有创建或重试图片任务，也没有改动用户已保存的图片工作流会话。
 
+用户随后提供的第二张截图来自 Manus 托管域名，而不是青岛独立站。该截图中的旧资源 `ImageWorkflowPage-DIbEJlJg.js` 已返回 `404`；托管站点入口已切换到新的 `ImageWorkflowPage-Byp-mLmX.js`。静态检查确认新资源将头部的 `hasData` 参数绑定到编译后的已定义派生变量，而不再引用未声明标识符。因此两处站点都不再提供截图中的崩溃资源。
+
 ## 用户侧操作
 
 请重新打开图片工作流，或用浏览器强制刷新一次以加载新资源。旧的哈希资源不会再被最新入口引用；若某个已打开的标签页仍保留旧脚本，关闭该标签页再进入即可。
