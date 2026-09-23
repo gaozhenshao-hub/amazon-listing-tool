@@ -329,6 +329,10 @@ export function Step4References({
     }
   };
 
+  // Step 4 header owns the empty, generate, regenerate and confirm states.
+  // Keep this derived from the hydrated/editable reference list so a partially
+  // loaded session never reads a stale or undeclared render-time variable.
+  const hasData = Boolean(editData?.imageReferences?.length);
   const isConfirmed = isLocked;
 
   const updateRef = (idx: number, section: string, field: string, value: any) => {
