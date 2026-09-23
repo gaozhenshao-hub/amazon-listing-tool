@@ -517,7 +517,7 @@ export default function DevDataUpload({ projectId, onDataUploaded, addProductReq
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setManualProductOpen(true)}>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setSupplementUploadOpen(true)}>
             <Plus className="h-3.5 w-3.5" />补录缺失产品
           </Button>
           {confirmedCount > 0 && (

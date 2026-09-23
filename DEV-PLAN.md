@@ -218,3 +218,6 @@ Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受�
 
 
 **图片工作流 Step 4 前端崩溃（2026-09-23）**：用户截图确认 `ReferenceError: hasData is not defined`。根因是参考图确认组件将未声明的 `hasData` 传给头部组件；全局错误边界使浏览器渲染错误表现为整页崩溃。现从水合编辑数据安全派生该状态并增加契约回归。定向4个测试文件9项、ESLint、生产构建与Bundle预算通过；青岛无迁移原子发布，三服务active、本机HTTP 200、公共域名已引用新图片工作流资源。没有调用模型、重试图片任务或修改已有会话。
+
+
+**双站前端未定义变量审计（2026-09-23）**：针对图片工作流的 `hasData` 崩溃进行全量扩展审计，确认并修复两个同类前端 `ReferenceError` 风险：产品开发数据上传“补录缺失产品”按钮调用过期 `setManualProductOpen`，以及产品总览财务利润卡片遗漏解构 `legacyFinancialProfitMonths`。两处均改为既有状态/安全默认值，并新增回归。修复后全量 TypeScript 从149项历史诊断降为146项，客户端 `Cannot find name` 类诊断为0；定向11项测试、ESLint、生产构建及Bundle预算通过。青岛无迁移原子发布后Web/Worker/Scheduler均active、本机HTTP200、入口SHA一致，公共入口已引用新的图片和运营产品资源；Manus托管站全部93个动态资源HTTP200。未调用模型、未重试图片任务或修改业务数据。

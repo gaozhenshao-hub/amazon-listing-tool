@@ -273,7 +273,7 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 }
 
 // ─── Product Row Component ───
-function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, ownerCandidates = [], isManagerOrAbove = false, onAssignSourceOwner, isAssigningSourceOwner = false, sortKey, sortDir, onSort, productionConfig, planningRows, financialProfits = [], onSaveCostParameters, onSaveFinancialProfits }: {
+function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, ownerCandidates = [], isManagerOrAbove = false, onAssignSourceOwner, isAssigningSourceOwner = false, sortKey, sortDir, onSort, productionConfig, planningRows, financialProfits = [], legacyFinancialProfitMonths = 0, onSaveCostParameters, onSaveFinancialProfits }: {
   product: ProductOverview;
   onNavigate: (product: ProductOverview) => void;
   onDelete: (id: number) => void;
