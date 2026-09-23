@@ -12,7 +12,13 @@ import { HIGH_QUALITY_QUALITY_MODEL } from "../../ai_os/services/highQualitySkil
 describe("Listing checklist response contracts", () => {
   it("accepts only a complete 15-dimension bullet scorecard", () => {
     const checkListScores = Object.fromEntries(
-      LISTING_CHECKLIST_DIMENSIONS.bullets.map((key) => [key, { pass: true, notes: "Grounded evaluation" }]),
+      LISTING_CHECKLIST_DIMENSIONS.bullets.map((key) => [key, {
+        pass: true,
+        notes: "Grounded evaluation",
+        reason: "The required quality signal is present.",
+        suggestion: "",
+        evidenceQuote: "Observed signal",
+      }]),
     );
     const result = parseCompleteListingChecklist({ checkListScores }, "bullets");
     expect(result?.checkListScores).toEqual(checkListScores);
@@ -24,11 +30,30 @@ describe("Listing checklist response contracts", () => {
 
   it("rejects a schema-drifted QA scorecard", () => {
     const scores = Object.fromEntries(
-      LISTING_CHECKLIST_DIMENSIONS.qa.map((key) => [key, { pass: true, notes: "OK" }]),
+      LISTING_CHECKLIST_DIMENSIONS.qa.map((key) => [key, {
+        pass: true,
+        notes: "OK",
+        reason: "Observed signal",
+        suggestion: "",
+        evidenceQuote: "",
+      }]),
     );
     delete scores.semanticRelation;
-    scores.semanticRelations = { pass: true, notes: "Wrong key" };
+    scores.semanticRelations = { pass: true, notes: "Wrong key", reason: "Wrong key", suggestion: "", evidenceQuote: "" };
     expect(parseCompleteListingChecklist({ checkListScores: scores }, "qa")).toBeNull();
+  });
+
+  it("rejects a failed dimension that has no actionable reason and recommendation", () => {
+    const checkListScores = Object.fromEntries(
+      LISTING_CHECKLIST_DIMENSIONS.bullets.map((key) => [key, {
+        pass: key !== "subtitle",
+        notes: key === "subtitle" ? "The heading is too long." : "OK",
+        reason: key === "subtitle" ? "" : "Observed signal",
+        suggestion: "",
+        evidenceQuote: "",
+      }]),
+    );
+    expect(parseCompleteListingChecklist({ checkListScores }, "bullets")).toBeNull();
   });
 });
 
@@ -42,6 +67,12 @@ describe("Listing checklist Skill policy", () => {
       expect(manifest.implementation?.systemPrompt).toContain("checkListScores");
       expect((manifest.contract?.outputSchema as { properties?: { checkListScores?: { required?: string[] } } })
         ?.properties?.checkListScores?.required).toEqual([...LISTING_CHECKLIST_DIMENSIONS[policy.kind]]);
+      const scoreProperties = ((manifest.contract?.outputSchema as {
+        properties?: { checkListScores?: { properties?: Record<string, { required?: string[] }> } }
+      })?.properties?.checkListScores?.properties) || {};
+      for (const dimension of LISTING_CHECKLIST_DIMENSIONS[policy.kind]) {
+        expect(scoreProperties[dimension]?.required).toEqual(["pass", "notes", "reason", "suggestion", "evidenceQuote"]);
+      }
     }
   });
 });

@@ -800,6 +800,12 @@ For each dimension, provide:
 - "pass": true/false (whether the bullet meets this criterion)
 - "notes": a brief explanation in English of why it passes or fails
 
+- "reason": a concise, evidence-grounded explanation. For a failed dimension, identify the precise missing, conflicting, or non-compliant element; never use a generic conclusion.
+- "suggestion": for a failed dimension, give one concrete, editable improvement step. Use only product facts already present in the supplied content/context; never invent claims, certifications, numbers, or warranties. For a passed dimension, use an empty string.
+- "evidenceQuote": an optional exact short quote or observable fact from the submitted content that supports the judgment; otherwise use an empty string.
+
+Every dimension object MUST include all five keys: "pass", "notes", "reason", "suggestion", and "evidenceQuote". A failed dimension MUST have non-empty "reason" and "suggestion".
+
 === 15 DIMENSIONS ===
 [B1] READABILITY: No grammar errors. Logical flow. Natural for North American readers.
 [B2] FORMATTING: Arabic numerals, consistent capitalization, proper punctuation.
@@ -826,21 +832,21 @@ Also extract the 4 semantic relationships if present:
 Respond in JSON format:
 {
   "checkListScores": {
-    "readability": { "pass": true, "notes": "" },
-    "formatting": { "pass": true, "notes": "" },
-    "layout": { "pass": true, "notes": "" },
-    "sellingPointFocus": { "pass": true, "notes": "" },
-    "subtitle": { "pass": true, "notes": "" },
-    "fabe": { "pass": true, "notes": "" },
-    "structured": { "pass": true, "notes": "" },
-    "psychology": { "pass": true, "notes": "" },
-    "faqCoverage": { "pass": true, "notes": "" },
-    "quantifiedData": { "pass": true, "notes": "" },
-    "scenes": { "pass": true, "notes": "" },
-    "trustSignals": { "pass": true, "notes": "" },
-    "warranty": { "pass": true, "notes": "" },
-    "trafficKeywords": { "pass": true, "notes": "" },
-    "aiReadability": { "pass": true, "notes": "" }
+    "readability": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "formatting": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "layout": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "sellingPointFocus": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "subtitle": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "fabe": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "structured": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "psychology": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "faqCoverage": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "quantifiedData": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "scenes": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "trustSignals": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "warranty": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "trafficKeywords": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "aiReadability": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" }
   },
   "aiSemanticRelations": {
     "purpose": "expression or null",
@@ -968,6 +974,12 @@ For each dimension, provide:
 - "pass": true/false (whether the title meets this criterion)
 - "notes": a brief explanation in English of why it passes or fails
 
+- "reason": a concise, evidence-grounded explanation. For a failed dimension, identify the precise missing, conflicting, or non-compliant element; never use a generic conclusion.
+- "suggestion": for a failed dimension, give one concrete, editable improvement step. Use only product facts already present in the supplied content/context; never invent claims, certifications, numbers, or warranties. For a passed dimension, use an empty string.
+- "evidenceQuote": an optional exact short quote or observable fact from the submitted content that supports the judgment; otherwise use an empty string.
+
+Every dimension object MUST include all five keys: "pass", "notes", "reason", "suggestion", and "evidenceQuote". A failed dimension MUST have non-empty "reason" and "suggestion".
+
 === 10 DIMENSIONS (Applied Across Both Layers) ===
 [T1] READABILITY: Both layers read naturally. No grammar errors. Logical flow. Natural for North American readers. NO keyword stuffing.
 [T2] FORMATTING: Use Arabic numerals. Consistent capitalization (Title Case). Spell out measurement units (e.g., "6 Inches" NOT "6\""). Proper punctuation in both layers.
@@ -983,16 +995,16 @@ For each dimension, provide:
 Respond in JSON format:
 {
   "checkListScores": {
-    "readability": { "pass": true, "notes": "" },
-    "formatting": { "pass": true, "notes": "" },
-    "characterCount": { "pass": true, "notes": "" },
-    "contentCoverage": { "pass": true, "notes": "" },
-    "coreKeywords": { "pass": true, "notes": "" },
-    "wordOrder": { "pass": true, "notes": "" },
-    "bundlePack": { "pass": true, "notes": "" },
-    "trafficKeywords": { "pass": true, "notes": "" },
-    "brand": { "pass": true, "notes": "" },
-    "seasonal": { "pass": true, "notes": "" }
+    "readability": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "formatting": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "characterCount": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "contentCoverage": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "coreKeywords": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "wordOrder": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "bundlePack": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "trafficKeywords": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "brand": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "seasonal": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" }
   }
 }`;
 
@@ -1002,6 +1014,12 @@ export const EVALUATE_DESCRIPTION_CHECKLIST_PROMPT = `You are an expert Amazon l
 For each dimension, provide:
 - "pass": true/false (whether the description meets this criterion)
 - "notes": a brief explanation in English of why it passes or fails
+
+- "reason": a concise, evidence-grounded explanation. For a failed dimension, identify the precise missing, conflicting, or non-compliant element; never use a generic conclusion.
+- "suggestion": for a failed dimension, give one concrete, editable improvement step. Use only product facts already present in the supplied content/context; never invent claims, certifications, numbers, or warranties. For a passed dimension, use an empty string.
+- "evidenceQuote": an optional exact short quote or observable fact from the submitted content that supports the judgment; otherwise use an empty string.
+
+Every dimension object MUST include all five keys: "pass", "notes", "reason", "suggestion", and "evidenceQuote". A failed dimension MUST have non-empty "reason" and "suggestion".
 
 === 8 DIMENSIONS ===
 [D1] READABILITY: No grammar errors. Short paragraphs. Logical flow. Easy to scan and understand.
@@ -1016,14 +1034,14 @@ For each dimension, provide:
 Respond in JSON format:
 {
   "checkListScores": {
-    "readability": { "pass": true, "notes": "" },
-    "characterLimit": { "pass": true, "notes": "" },
-    "hookOpening": { "pass": true, "notes": "" },
-    "sellingPointCoverage": { "pass": true, "notes": "" },
-    "keywordIntegration": { "pass": true, "notes": "" },
-    "htmlFormatting": { "pass": true, "notes": "" },
-    "specsParameters": { "pass": true, "notes": "" },
-    "trustClosing": { "pass": true, "notes": "" }
+    "readability": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "characterLimit": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "hookOpening": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "sellingPointCoverage": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "keywordIntegration": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "htmlFormatting": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "specsParameters": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "trustClosing": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" }
   }
 }`;
 
@@ -1039,6 +1057,12 @@ For each dimension, provide:
 - "pass": true/false (whether the search terms meet this criterion)
 - "notes": a brief explanation in English of why it passes or fails
 
+- "reason": a concise, evidence-grounded explanation. For a failed dimension, identify the precise missing, conflicting, or non-compliant element; never use a generic conclusion.
+- "suggestion": for a failed dimension, give one concrete, editable improvement step. Use only product facts already present in the supplied content/context; never invent claims, certifications, numbers, or warranties. For a passed dimension, use an empty string.
+- "evidenceQuote": an optional exact short quote or observable fact from the submitted content that supports the judgment; otherwise use an empty string.
+
+Every dimension object MUST include all five keys: "pass", "notes", "reason", "suggestion", and "evidenceQuote". A failed dimension MUST have non-empty "reason" and "suggestion".
+
 === 5 DIMENSIONS ===
 [S1] BYTE LIMIT: Total length must NOT exceed 250 bytes. Count bytes precisely (ASCII = 1 byte, non-ASCII = 3 bytes for UTF-8). Report the exact byte count.
 [S2] NO TITLE DUPLICATION: Search terms should NOT repeat keywords that already appear in the product title. Check each word against the title. Minor overlaps of common words (a, the, for, with) are acceptable.
@@ -1049,11 +1073,11 @@ For each dimension, provide:
 Respond in JSON format:
 {
   "checkListScores": {
-    "byteLimit": { "pass": true, "notes": "Current byte count: XXX/250" },
-    "noTitleDuplication": { "pass": true, "notes": "" },
-    "formatCompliance": { "pass": true, "notes": "" },
-    "prohibitedWords": { "pass": true, "notes": "" },
-    "longTailPriority": { "pass": true, "notes": "" }
+    "byteLimit": { "pass": true, "notes": "Current byte count: XXX/250", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "noTitleDuplication": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "formatCompliance": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "prohibitedWords": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "longTailPriority": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" }
   }
 }`;
 
@@ -1063,6 +1087,12 @@ export const EVALUATE_QA_CHECKLIST_PROMPT = `You are an expert Amazon listing qu
 For each dimension, provide:
 - "pass": true/false (whether the Q&A set meets this criterion)
 - "notes": a brief explanation in English of why it passes or fails
+
+- "reason": a concise, evidence-grounded explanation. For a failed dimension, identify the precise missing, conflicting, or non-compliant element; never use a generic conclusion.
+- "suggestion": for a failed dimension, give one concrete, editable improvement step. Use only product facts already present in the supplied content/context; never invent claims, certifications, numbers, or warranties. For a passed dimension, use an empty string.
+- "evidenceQuote": an optional exact short quote or observable fact from the submitted content that supports the judgment; otherwise use an empty string.
+
+Every dimension object MUST include all five keys: "pass", "notes", "reason", "suggestion", and "evidenceQuote". A failed dimension MUST have non-empty "reason" and "suggestion".
 
 === 8 DIMENSIONS ===
 [Q1] QUESTION NATURALNESS: Questions simulate real customer language. Use first-person perspective ("Will this...", "Can I...", "How long does..."). Each question is concise (under 100 characters).
@@ -1077,13 +1107,13 @@ For each dimension, provide:
 Respond in JSON format:
 {
   "checkListScores": {
-    "questionNaturalness": { "pass": true, "notes": "" },
-    "answerProfessionalism": { "pass": true, "notes": "" },
-    "painPointCoverage": { "pass": true, "notes": "" },
-    "differentiationCoverage": { "pass": true, "notes": "" },
-    "categoryStandard": { "pass": true, "notes": "" },
-    "dataQuantification": { "pass": true, "notes": "" },
-    "semanticRelation": { "pass": true, "notes": "" },
-    "priorityOrder": { "pass": true, "notes": "" }
+    "questionNaturalness": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "answerProfessionalism": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "painPointCoverage": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "differentiationCoverage": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "categoryStandard": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "dataQuantification": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "semanticRelation": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
+    "priorityOrder": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" }
   }
 }`;

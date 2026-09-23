@@ -8,6 +8,12 @@ export type ListingChecklistKind =
 export type ChecklistScore = {
   pass: boolean;
   notes: string;
+  /** Evidence-grounded explanation shown to the operator for a failed dimension. */
+  reason: string;
+  /** A specific, editable next step; never an automatic content rewrite. */
+  suggestion: string;
+  /** Short quote or observable fact from the submitted content, when available. */
+  evidenceQuote?: string;
 };
 
 export type ChecklistResult = {
@@ -60,10 +66,27 @@ export function parseCompleteListingChecklist(
   const scores: Record<string, ChecklistScore> = {};
   for (const key of LISTING_CHECKLIST_DIMENSIONS[kind]) {
     const candidate = toObject(candidateScores[key]);
-    if (!candidate || typeof candidate.pass !== "boolean" || typeof candidate.notes !== "string") {
+    if (
+      !candidate
+      || typeof candidate.pass !== "boolean"
+      || typeof candidate.notes !== "string"
+      || typeof candidate.reason !== "string"
+      || typeof candidate.suggestion !== "string"
+    ) {
       return null;
     }
-    scores[key] = { pass: candidate.pass, notes: candidate.notes.trim() };
+    const reason = candidate.reason.trim();
+    const suggestion = candidate.suggestion.trim();
+    if (!candidate.pass && (!reason || !suggestion)) return null;
+    scores[key] = {
+      pass: candidate.pass,
+      notes: candidate.notes.trim(),
+      reason,
+      suggestion,
+      ...(typeof candidate.evidenceQuote === "string" && candidate.evidenceQuote.trim()
+        ? { evidenceQuote: candidate.evidenceQuote.trim() }
+        : {}),
+    };
   }
 
   const semanticSource = toObject(root?.aiSemanticRelations);

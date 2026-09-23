@@ -35,6 +35,13 @@ describe("BulletChecklistPanel Component", () => {
       expect(componentCode).toContain("上次自检结果不完整");
       expect(componentCode).toContain("未获得完整的15项结构化结果，未计入评分");
     });
+
+    it("should expose a reason and a human-editable recommendation for each failed dimension", () => {
+      expect(componentCode).toContain("未通过原因：");
+      expect(componentCode).toContain("修改建议：");
+      expect(componentCode).toContain("evidenceQuote");
+      expect(componentCode).toContain("setExpanded(true)");
+    });
   });
 
   describe("15 Dimensions Definition", () => {
@@ -260,13 +267,15 @@ describe("BulletChecklistPanel Component", () => {
       expect(componentCode).toContain("{dim.description}");
     });
 
-    it("should show AI notes for each dimension", () => {
-      expect(componentCode).toContain("{notes && (");
+    it("should show an AI reason for each dimension and advice when it fails", () => {
+      expect(componentCode).toContain("通过依据：");
+      expect(componentCode).toContain("未通过原因：");
+      expect(componentCode).toContain("修改建议：");
     });
 
-    it("should differentiate pass/fail notes with color", () => {
+    it("should differentiate pass/fail feedback with color", () => {
       expect(componentCode).toContain("text-green-700");
-      expect(componentCode).toContain("text-red-600");
+      expect(componentCode).toContain("text-red-800");
     });
 
     it("should show CheckCircle2 for passed dimensions", () => {
@@ -294,7 +303,9 @@ describe("BulletChecklistPanel Component", () => {
 
   describe("Type Safety", () => {
     it("should define CheckListScores type", () => {
-      expect(componentCode).toContain("type CheckListScores = Record<string, { pass: boolean; notes: string }>");
+      expect(componentCode).toContain("type CheckListScores = Record<string, {");
+      expect(componentCode).toContain("reason: string;");
+      expect(componentCode).toContain("suggestion: string;");
     });
 
     it("should define BulletChecklistPanelProps interface", () => {

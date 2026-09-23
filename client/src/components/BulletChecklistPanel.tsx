@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -32,7 +32,13 @@ const CHECKLIST_DIMENSIONS = [
   { key: "aiReadability", code: "B15", label: "AI语义关系", labelEn: "AI-Friendly Structure", description: "自然体现4种语义关系(用途/能力/定义/因果)，帮助Rufus/COSMO理解" },
 ] as const;
 
-type CheckListScores = Record<string, { pass: boolean; notes: string }>;
+type CheckListScores = Record<string, {
+  pass: boolean;
+  notes: string;
+  reason: string;
+  suggestion: string;
+  evidenceQuote?: string;
+}>;
 
 interface BulletChecklistPanelProps {
   checkListScores?: CheckListScores;
@@ -52,8 +58,23 @@ export default function BulletChecklistPanel({
   const [expanded, setExpanded] = useState(false);
   const isCompleteChecklist = CHECKLIST_DIMENSIONS.every((dimension) => {
     const score = checkListScores?.[dimension.key];
-    return typeof score?.pass === "boolean" && typeof score?.notes === "string";
+    return (
+      typeof score?.pass === "boolean"
+      && typeof score?.notes === "string"
+      && typeof score?.reason === "string"
+      && typeof score?.suggestion === "string"
+      && (score.pass || (score.reason.trim().length > 0 && score.suggestion.trim().length > 0))
+    );
   });
+
+  // Newly returned failures should immediately expose the reason and a safe
+  // human-editable recommendation instead of hiding both behind a collapsed score.
+  useEffect(() => {
+    if (!isCompleteChecklist || !checkListScores) return;
+    if (CHECKLIST_DIMENSIONS.some((dimension) => !checkListScores[dimension.key]?.pass)) {
+      setExpanded(true);
+    }
+  }, [checkListScores, isCompleteChecklist]);
 
   // A partial model reply must never be rendered as a red 0/15 result.
   if (!checkListScores || !isCompleteChecklist) {
@@ -201,6 +222,9 @@ export default function BulletChecklistPanel({
               const score = checkListScores[dim.key];
               const passed = score?.pass ?? false;
               const notes = score?.notes || "";
+              const reason = score?.reason || notes;
+              const suggestion = score?.suggestion || "";
+              const evidenceQuote = score?.evidenceQuote || "";
 
               return (
                 <div
@@ -241,10 +265,26 @@ export default function BulletChecklistPanel({
                     <p className="text-muted-foreground mt-0.5 leading-relaxed">
                       {dim.description}
                     </p>
-                    {notes && (
-                      <p className={`mt-1 text-[11px] leading-relaxed ${passed ? "text-green-700" : "text-red-600 font-medium"}`}>
-                        {passed ? "\u2713 " : "\u2717 "}{notes}
-                      </p>
+                    {passed ? (
+                      reason && (
+                        <p className="mt-1 text-[11px] leading-relaxed text-green-700">
+                          <span className="font-medium">通过依据：</span>{reason}
+                        </p>
+                      )
+                    ) : (
+                      <div className="mt-1.5 space-y-1.5 text-[11px] leading-relaxed">
+                        <p className="rounded bg-red-100/70 px-2 py-1 text-red-800">
+                          <span className="font-semibold">未通过原因：</span>{reason}
+                        </p>
+                        {evidenceQuote && (
+                          <p className="rounded bg-amber-50 px-2 py-1 text-amber-900">
+                            <span className="font-semibold">对应内容：</span>“{evidenceQuote}”
+                          </p>
+                        )}
+                        <p className="rounded bg-blue-50 px-2 py-1 text-blue-900">
+                          <span className="font-semibold">修改建议：</span>{suggestion}
+                        </p>
+                      </div>
                     )}
                   </div>
 

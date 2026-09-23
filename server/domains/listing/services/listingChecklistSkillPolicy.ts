@@ -40,6 +40,15 @@ export function buildListingChecklistSkillManifest(
   implementation.temperature = 0;
 
   const dimensions = LISTING_CHECKLIST_DIMENSIONS[policy.kind];
+  const scoreProperties = Object.fromEntries(
+    dimensions.map((dimension) => [
+      dimension,
+      {
+        type: "object",
+        required: ["pass", "notes", "reason", "suggestion", "evidenceQuote"],
+      },
+    ]),
+  );
   return {
     ...currentManifest,
     implementation,
@@ -55,6 +64,7 @@ export function buildListingChecklistSkillManifest(
           checkListScores: {
             type: "object",
             required: [...dimensions],
+            properties: scoreProperties,
           },
         },
       },
