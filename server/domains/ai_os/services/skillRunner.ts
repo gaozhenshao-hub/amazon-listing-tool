@@ -10,6 +10,7 @@ import { ENV } from "../../../_core/env";
 import { SafeHttpError, safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { recordAiOsEvaluation, recordAiOsMetric } from "./observability";
 import {
+  canonicalizeTeamorouterOpenAiBaseUrl,
   TEAMOROUTER_LEGACY_SOCKS_HOST,
   defaultTeamorouterFallbacks,
   resolveGovernedModelApiKey,
@@ -619,7 +620,11 @@ async function callModel(
     const responseFormat = buildSkillJsonResponseFormat(implementation.supportsJsonMode);
     if (responseFormat) payload.response_format = responseFormat;
 
-    const apiUrl = `${model.baseUrl.replace(/\/$/, "")}/chat/completions`;
+    // Older managed sites can still have a persisted `.com` Teamorouter base
+    // URL. Normalize it at execution time as a failed-closed compatibility
+    // boundary, so a stale record never depends on a retired SOCKS tunnel.
+    const canonicalBaseUrl = canonicalizeTeamorouterOpenAiBaseUrl(model.baseUrl);
+    const apiUrl = `${canonicalBaseUrl.replace(/\/$/, "")}/chat/completions`;
     const proxyAgent = createRestrictedTeamorouterSocksAgent(apiUrl);
     const response = await safeHttpRequest(apiUrl, {
       method: "POST",

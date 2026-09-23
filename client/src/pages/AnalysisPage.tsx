@@ -108,9 +108,16 @@ export default function AnalysisPage() {
     category?: string;
     selected?: boolean;
   }
+  interface SSBatchFailure {
+    asin: string;
+    code: string;
+    message: string;
+    retryable: boolean;
+  }
   const [ssFileBase64, setSsFileBase64] = useState<string | null>(null);
   const [ssFilename, setSsFilename] = useState("");
   const [ssProducts, setSsProducts] = useState<SSProduct[]>([]);
+  const [ssBatchFailures, setSsBatchFailures] = useState<SSBatchFailure[]>([]);
   const [ssIsPreviewing, setSsIsPreviewing] = useState(false);
   const [ssIsAnalyzing, setSsIsAnalyzing] = useState(false);
   const [ssDragOver, setSsDragOver] = useState(false);
@@ -223,6 +230,7 @@ export default function AnalysisPage() {
       setSsFileBase64(b64);
       setSsFilename(file.name);
       setSsProducts([]);
+      setSsBatchFailures([]);
       setSsIsPreviewing(true);
       try {
         const result = await previewSellerSprite.mutateAsync({ fileBase64: b64, filename: file.name });
@@ -257,11 +265,34 @@ export default function AnalysisPage() {
         filename: ssFilename,
         selectedAsins: selected.map(p => p.asin),
       });
-      toast.success(`分析完成：${result.succeeded} 成功，${result.failed} 失败`);
+      const failedResults = result.results.filter((item) => item.status === "failed");
+      const failures = failedResults.map((item) => ({
+        asin: item.asin,
+        code: item.failure?.code || "ANALYSIS_FAILED",
+        message: item.failure?.message || item.error || "本条分析未完成，未写入结果。",
+        retryable: item.failure?.retryable ?? false,
+      }));
+      const failedAsins = new Set(failures.map((item) => item.asin));
+      setSsBatchFailures(failures);
+      // Keep only the failed rows selected. This makes retry an explicit user
+      // decision and prevents successful rows from being billed twice.
+      setSsProducts((previous) => previous.map((product) => ({
+        ...product,
+        selected: failedAsins.has(product.asin),
+      })));
+      if (result.failed === 0) {
+        toast.success(`分析完成：${result.succeeded} 条已生成待审核结果`);
+      } else {
+        toast.error(`分析完成：${result.succeeded} 成功，${result.failed} 失败`, {
+          description: "失败原因已保留在下方；成功条目已取消勾选，系统不会自动重试。",
+        });
+      }
       utils.analysis.listByProject.invalidate({ projectId: selectedProjectId });
-      setSsFileBase64(null);
-      setSsFilename("");
-      setSsProducts([]);
+      if (result.failed === 0) {
+        setSsFileBase64(null);
+        setSsFilename("");
+        setSsProducts([]);
+      }
     } catch (err: any) {
       toast.error("批量分析失败", { description: err.message });
     } finally {
@@ -1139,7 +1170,7 @@ export default function AnalysisPage() {
                         variant="ghost"
                         size="sm"
                         className="text-xs h-7"
-                        onClick={() => { setSsFileBase64(null); setSsFilename(""); setSsProducts([]); }}
+                      onClick={() => { setSsFileBase64(null); setSsFilename(""); setSsProducts([]); setSsBatchFailures([]); }}
                         disabled={ssIsAnalyzing}
                       >
                         <RotateCcw className="h-3.5 w-3.5 mr-1" />
@@ -1260,6 +1291,35 @@ export default function AnalysisPage() {
                           </table>
                         </div>
                       </div>
+
+                      {ssBatchFailures.length > 0 && (
+                        <div
+                          className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950"
+                          data-testid="sellersprite-batch-failures"
+                          aria-live="polite"
+                        >
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">{ssBatchFailures.length} 条未完成，未写入分析结果</p>
+                              <p className="mt-0.5 text-xs text-amber-800">仅失败条目保持勾选；请先查看原因，再由人工决定是否再次分析。</p>
+                            </div>
+                          </div>
+                          <ScrollArea className="mt-2 max-h-36 rounded border border-amber-200 bg-background/70">
+                            <ul className="divide-y divide-amber-100 px-2">
+                              {ssBatchFailures.map((failure) => (
+                                <li key={failure.asin} className="py-2 text-xs">
+                                  <span className="font-mono font-medium">{failure.asin}</span>
+                                  <span className="ml-2 text-amber-800">{failure.message}</span>
+                                  <Badge variant="outline" className="ml-2 border-amber-300 bg-amber-100 text-[10px] text-amber-900">
+                                    {failure.retryable ? "可人工重试" : "需先修复配置"}
+                                  </Badge>
+                                </li>
+                              ))}
+                            </ul>
+                          </ScrollArea>
+                        </div>
+                      )}
 
                       {/* Analyze Button */}
                       {ssIsAnalyzing && (

@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { createRestrictedTeamorouterSocksAgent } from "./skillRunner";
+import { canonicalizeTeamorouterOpenAiBaseUrl } from "./teamorouterCatalog";
 
 const shouldRun = process.env.RUN_TEAMOROUTER_SOCKS_PROXY_TEST === "1";
 
 describe("Teamorouter SOCKS出口约束", () => {
+  it("将遗留 .com OpenAI 入口规范化为直连 .cn 入口", () => {
+    expect(canonicalizeTeamorouterOpenAiBaseUrl("https://api.teamorouter.com/v1")).toBe("https://api.teamorouter.cn/v1");
+    expect(canonicalizeTeamorouterOpenAiBaseUrl("https://api.teamorouter.cn/v1")).toBe("https://api.teamorouter.cn/v1");
+  });
+
   it("仅为遗留Teamorouter .com主机创建代理，官方.cn和其他业务主机保持直连", () => {
     expect(createRestrictedTeamorouterSocksAgent("https://api.lingxing.com/v1/data", "socks5h://127.0.0.1:1088")).toBeUndefined();
     expect(createRestrictedTeamorouterSocksAgent("https://api.teamorouter.cn/v1/models", "socks5h://127.0.0.1:1088")).toBeUndefined();

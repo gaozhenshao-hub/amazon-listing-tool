@@ -29,6 +29,10 @@ import {
   runEmperorSkill,
   safeParseSkillJSON,
 } from "../domains/ai_os/services/skillRunner";
+import {
+  classifySellerSpriteBatchFailure,
+  type SellerSpriteBatchFailure,
+} from "./sellerSpriteBatchFailure";
 
 type AnalysisSkillSlug =
   | "listing.competitor.analyze"
@@ -954,6 +958,7 @@ export const analysisRouter = router({
         analysisId?: number;
         title?: string;
         error?: string;
+        failure?: SellerSpriteBatchFailure;
       }> = [];
 
       for (const product of productsToProcess) {
@@ -1038,8 +1043,19 @@ export const analysisRouter = router({
           });
 
           results.push({ asin: product.asin, status: "success", analysisId: saved.id, title: product.title });
-        } catch (err: any) {
-          results.push({ asin: product.asin, status: "failed", error: err.message });
+        } catch (err: unknown) {
+          const failure = classifySellerSpriteBatchFailure(err);
+          console.warn("[SellerSpriteBatch] Competitor analysis failed", {
+            asin: product.asin,
+            failureCode: failure.code,
+            retryable: failure.retryable,
+          });
+          results.push({
+            asin: product.asin,
+            status: "failed",
+            error: failure.message,
+            failure,
+          });
         }
       }
 
