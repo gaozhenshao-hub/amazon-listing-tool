@@ -3,6 +3,7 @@ import { AmazonAcquisitionCapabilitySchema } from "./contracts";
 import { createConsumerLink, supersedeConsumerLinks } from "./repository";
 import { projectConfirmedSnapshotToKbImages } from "./kbImagesProjection";
 import { projectConfirmedSnapshotToLegacyConsumer } from "./legacyConsumerProjection";
+import { projectConfirmedSnapshotToImageWorkflow } from "./imageWorkflowProjection";
 
 export async function activateConfirmedSnapshotForConsumer(input: {
   db: DbExecutor;
@@ -17,7 +18,15 @@ export async function activateConfirmedSnapshotForConsumer(input: {
   activatedBy: number;
 }) {
   const capabilities = AmazonAcquisitionCapabilitySchema.array().parse(input.job.requestedCapabilities);
-  const projection = input.job.consumerType === "kb_images"
+  const projection = input.job.consumerType === "image_workflow"
+    ? await projectConfirmedSnapshotToImageWorkflow({
+      db: input.db,
+      workspaceId: input.workspaceId,
+      confirmedSnapshotId: input.confirmedSnapshotId,
+      requestedBy: input.job.requestedBy,
+      consumerRef: input.job.consumerRef,
+    })
+    : input.job.consumerType === "kb_images"
     ? {
       consumerType: "kb_images" as const,
       ...(await projectConfirmedSnapshotToKbImages({
@@ -54,9 +63,11 @@ export async function activateConfirmedSnapshotForConsumer(input: {
       capabilityScope: capability,
       projectionVersion: projection?.consumerType === "kb_images"
         ? "kb_images_projection_v1"
-        : projection
-          ? "amazon_legacy_consumer_projection_v1"
-          : "amazon_snapshot_projection_v1",
+        : projection?.consumerType === "image_workflow"
+          ? "image_workflow_projection_v1"
+          : projection
+            ? "amazon_legacy_consumer_projection_v1"
+            : "amazon_snapshot_projection_v1",
       status: "active",
       createdBy: input.activatedBy,
     });

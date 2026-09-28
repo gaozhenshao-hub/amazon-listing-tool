@@ -241,3 +241,6 @@ Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受�
 
 
 **A+与品牌故事扩展资格验证（2026-09-28）**：用户授权一次最高$0.10的受控扩展资格任务后，主Provider在不撤销既有基础目录/图库能力的前提下，成功观测`catalog_basic`、`image_gallery`、`aplus`、`brand_story`四项能力；Qualification Job为confirmed、Run为succeeded、实际费用$0.00、样本及原始载荷均未持久化。Provider Profile维持active并安全扩展为四项完整图片能力；图片知识库ASIN/链接/批量导入已恢复完整四项请求。青岛Web、Worker、Scheduler均active，本机HTTP 200；未自动创建业务采集任务、未启动关键词或Heartbeat。
+
+
+**统一采集任务直接录入（2026-09-28，本地实现已完成、待独立生产发布授权）**：用户确认将所有当前统一Amazon采集消费者从人工Snapshot审核改为直接录入。实现已移除采集审核页面以及`review`、`saveReview`、`confirmReview`、`rejectReview`接口；历史审核深链安全跳转至采集任务中心。Provider成功后仍必须形成原始Artifact、Source Snapshot、不可变Confirmed Snapshot、确认版本、内容哈希和Consumer Link；只有规范化成功、能力/预算门禁通过、非partial/非schema drift，且所有返回图片已安全入库（图库请求还须至少有一张主图或副图）才以`system_direct_ingestion`来源自动确认并幂等投影。失败、部分、结构漂移、资格或预算不足一律失败关闭，绝不回退旧HTML爬虫。图片知识库、图片工作流竞品图库、Listing知识库、产品知识库、项目竞品、转化采集和监控消费者均使用此入库路径。AI分析和Listing生成的可编辑人工确认仍保留，因为它们是业务草案确认而非采集审核。定向8个Vitest文件22项、零警告ESLint、客户端标识符门禁、生产构建/Bundle预算和差异检查均通过；全局`tsc`仍有143项既有诊断，本次相关文件新增为0。未调用Provider/AI、未创建业务任务、未执行迁移或生产发布。详细验证记录：`docs/validation/acquisition-direct-ingestion-2026-09-28.md`。

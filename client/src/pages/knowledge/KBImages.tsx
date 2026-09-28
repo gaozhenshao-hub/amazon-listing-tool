@@ -176,8 +176,8 @@ export default function KBImages() {
   const importAsin = trpc.kbImages.importByAsin.useMutation({
     onSuccess: (result: any) => {
       toast.success(result.status === "confirmed"
-        ? "已复用24小时内的确认快照并完成入库"
-        : `采集任务 #${result.jobId} 已创建，请到“采集任务”审核后入库`);
+        ? "已复用确认快照并完成直接入库"
+        : `采集任务 #${result.jobId} 已创建，完整安全校验通过后将自动直接入库`);
       utils.kbImages.listSets.invalidate();
       utils.kbImages.listAllImages.invalidate();
       setShowImport(false);
@@ -187,7 +187,7 @@ export default function KBImages() {
   });
   const importLink = trpc.kbImages.importByLink.useMutation({
     onSuccess: (result: any) => {
-      toast.success(`已创建 ${result.imported} 个受控采集任务${result.skipped ? `，跳过${result.skipped}个已入库ASIN` : ""}`);
+      toast.success(`已创建 ${result.imported} 个受控采集任务，完成后自动直接入库${result.skipped ? `；跳过${result.skipped}个已入库ASIN` : ""}`);
       utils.kbImages.listSets.invalidate();
       utils.kbImages.listAllImages.invalidate();
       setShowImport(false);
@@ -196,7 +196,7 @@ export default function KBImages() {
     onError: createImportOnError((id) => { setShowImport(false); setDetailSetId(id); }),
   });
   const batchImport = trpc.kbImages.batchImportAsins.useMutation({
-    onSuccess: (r: any) => { toast.success(`已创建 ${r.imported} 个受控采集任务${r.skipped ? `，跳过${r.skipped}个已入库ASIN` : ""}`); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setBatchInput(""); },
+    onSuccess: (r: any) => { toast.success(`已创建 ${r.imported} 个受控采集任务，完成后自动直接入库${r.skipped ? `；跳过${r.skipped}个已入库ASIN` : ""}`); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setBatchInput(""); },
     onError: (e: any) => toast.error(e.message),
   });
   // Manual upload state
@@ -311,7 +311,7 @@ export default function KBImages() {
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
 
   const reCrawlMutation = trpc.kbImages.reCrawlByPosition.useMutation({
-    onSuccess: (result: any) => { toast.success(`刷新任务 #${result.jobId} 已创建；旧图保留至新快照审核确认`); setShowReCrawl(false); setReCrawlPositions([]); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
+    onSuccess: (result: any) => { toast.success(`刷新任务 #${result.jobId} 已创建；旧图保留至新快照完成安全校验并直接录入`); setShowReCrawl(false); setReCrawlPositions([]); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -360,7 +360,7 @@ export default function KBImages() {
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [analyzingPoll, detailSetId]);
+  }, [analyzingPoll, detailSetId, utils.kbImages.getSet]);
 
     const reorderImagesMutation = trpc.kbImages.reorderImages.useMutation({
     onSuccess: () => { toast.success("排序已保存"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); },
@@ -966,7 +966,7 @@ export default function KBImages() {
                         <h4 className="text-sm font-semibold flex items-center gap-2">
                           <RefreshCw className="h-4 w-4 text-blue-500" /> 选择重新爬取的模块
                         </h4>
-                        <p className="text-xs text-muted-foreground">勾选需要刷新的能力。旧图片会保留到新快照审核确认；主图或副图任一选择都会请求完整商品图库并在确认后一起替换。</p>
+                        <p className="text-xs text-muted-foreground">勾选需要刷新的能力。旧图片会保留到新快照完成安全校验并直接录入；主图或副图任一选择都会请求完整商品图库并在通过后一起替换。</p>
                         <div className="flex flex-wrap gap-4">
                           {[
                             { key: "main", label: "主图", color: "blue", count: groupedImages.main.length },

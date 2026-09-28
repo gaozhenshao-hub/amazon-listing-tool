@@ -385,23 +385,26 @@ export const opsConversionProcedures = {
         jobId: job.jobId,
         status: job.status,
         confirmedSnapshotId: job.cacheHitSnapshotId,
-        reviewRequired: job.status !== "confirmed",
+        directIngestion: true,
+        directIngestionPending: job.status !== "confirmed",
+        reviewRequired: false,
       });
     }
-    const pendingAcquisition = acquisitionJobs.filter(job => job.reviewRequired);
+    const pendingAcquisition = acquisitionJobs.filter(job => job.directIngestionPending);
     if (pendingAcquisition.length > 0) {
       await db!.update(conversionComparisons).set({
         status: "crawling" as any,
         crawlData: {
-          acquisitionStatus: "review_required",
+          acquisitionStatus: "direct_ingestion_pending",
           jobs: acquisitionJobs,
         },
       }).where(opsWorkspaceCondition(conversionComparisons, workspaceId, eq(conversionComparisons.id, input.comparisonId)));
       return {
         success: false,
-        reviewRequired: true,
+        directIngestionPending: true,
+        reviewRequired: false,
         jobs: acquisitionJobs,
-        message: `已创建 ${pendingAcquisition.length} 个受控采集任务，请在采集任务中心审核Snapshot后重新评分`,
+        message: `已创建 ${pendingAcquisition.length} 个受控采集任务；完整安全校验通过后会自动直接录入，请等待任务完成后重新发起评分`,
       };
     }
 

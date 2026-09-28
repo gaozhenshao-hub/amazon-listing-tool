@@ -1,10 +1,10 @@
 import { startLegacyConsumerAnalysisJob } from "./legacyConsumerAnalysisJob";
 import type { LegacyConsumerProjection } from "./legacyConsumerProjection";
 
-type Projection = LegacyConsumerProjection | { consumerType: "kb_images" } | null;
+type Projection = LegacyConsumerProjection | { consumerType: "kb_images" } | { consumerType: "image_workflow" } | null;
 
 export async function triggerConsumerPostConfirmation(projection: Projection) {
-  if (!projection || projection.consumerType === "kb_images" || projection.consumerType === "conversion_collector") {
+  if (!projection || projection.consumerType === "kb_images" || projection.consumerType === "image_workflow" || projection.consumerType === "conversion_collector") {
     return { analysisJobRunId: null, analysisJobStatus: null, analysisJobError: null };
   }
   try {

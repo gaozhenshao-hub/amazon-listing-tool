@@ -117,7 +117,7 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
         maxChargeUsd: 0.1,
       });
       setAsinInput("");
-      toast.success(result.cacheHitSnapshotId ? "已复用24小时内确认快照，请从下方关联" : `采集任务 #${result.jobId} 已创建，请审核确认后再关联`);
+      toast.success(result.cacheHitSnapshotId ? "已复用确认快照并直接录入本项目竞品图库" : `采集任务 #${result.jobId} 已创建，完成安全校验后将自动直接录入本项目竞品图库`);
       await refresh();
     } catch (error: any) {
       toast.error(error.message || "采集任务创建失败");
@@ -218,7 +218,7 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
       <Card className="border-amber-200/70 bg-gradient-to-br from-amber-50/80 via-background to-background">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base"><ImageIcon className="h-4 w-4 text-amber-700" />受控采集与竞品研究对象</CardTitle>
-          <CardDescription>输入ASIN后先进入统一采集任务；只有人工确认的Snapshot和S3图片证据才能加入分析。</CardDescription>
+          <CardDescription>输入ASIN后先进入统一采集任务；只有完整成功、通过安全校验且已存储的图片证据才会自动直接录入本项目。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
@@ -226,11 +226,11 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
             <Button variant="outline" onClick={handleCreateAcquisition} disabled={!canEdit || createAcquisitionJob.isPending}>
               {createAcquisitionJob.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}创建采集任务
             </Button>
-            <Button variant="ghost" asChild><Link href="/knowledge/acquisition">打开采集审核中心</Link></Button>
+            <Button variant="ghost" asChild><Link href="/knowledge/acquisition">打开采集任务中心</Link></Button>
           </div>
           <div className="grid gap-2 md:grid-cols-[1fr_auto]">
             <Select value={selectedSnapshotId} onValueChange={setSelectedSnapshotId} disabled={!canEdit}>
-              <SelectTrigger><SelectValue placeholder="选择已人工确认的竞品Snapshot" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="选择已直接录入的竞品Snapshot" /></SelectTrigger>
               <SelectContent>
                 {(snapshotQuery.data || []).map((snapshot: any) => (
                   <SelectItem key={snapshot.id} value={String(snapshot.id)}>{snapshot.asin} · {snapshot.title || "未命名商品"} · {snapshot.assetCount}张图</SelectItem>
@@ -245,8 +245,8 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
       {subjects.length === 0 ? (
         <div className="rounded-xl border-2 border-dashed p-12 text-center text-muted-foreground">
           <ImageIcon className="mx-auto mb-3 h-10 w-10 opacity-30" />
-          <p className="font-medium">暂无已确认竞品图库</p>
-          <p className="mt-1 text-sm">先创建采集任务，在审核中心确认图片，再关联为主要竞争对手或对标竞品。</p>
+          <p className="font-medium">暂无已直接录入的竞品图库</p>
+          <p className="mt-1 text-sm">创建采集任务后，完整安全校验通过的图片会自动录入本项目。</p>
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">

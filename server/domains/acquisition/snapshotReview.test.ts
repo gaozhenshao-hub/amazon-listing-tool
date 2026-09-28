@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { applySnapshotPatch, confirmSnapshotFieldStatuses, SnapshotPatchSchema } from "./snapshotReview";
+import {
+  confirmSnapshotFieldStatuses,
+  directIngestionBlockReason,
+} from "./snapshotReview";
 
 const baseSnapshot = {
   asin: "B012345678",
@@ -21,22 +24,38 @@ const baseSnapshot = {
   },
 };
 
-describe("acquisition snapshot review contracts", () => {
-  it("applies an editable patch without mutating source evidence", () => {
-    const revised = applySnapshotPatch(baseSnapshot, { title: "Reviewed title" });
-    expect(revised.title).toBe("Reviewed title");
-    expect(revised.fieldEvidence.title.status).toBe("pending_review");
-    expect(baseSnapshot.title).toBe("Original title");
-  });
-
-  it("confirms returned evidence but preserves not-returned semantics", () => {
+describe("acquisition direct-ingestion contracts", () => {
+  it("system-confirms returned evidence but preserves not-returned semantics", () => {
     const statuses = confirmSnapshotFieldStatuses(baseSnapshot.fieldEvidence) as Record<string, any>;
     expect(statuses.title.status).toBe("confirmed");
-    expect(statuses.title.noteCode).toBe("human_confirmed");
+    expect(statuses.title.noteCode).toBe("system_direct_ingestion");
     expect(statuses.description.status).toBe("not_returned");
   });
 
-  it("rejects unrecognized patch fields", () => {
-    expect(() => SnapshotPatchSchema.parse({ sourceUrlHash: "override" })).toThrow();
+  it("fails closed when a requested gallery asset was not safely stored", () => {
+    expect(directIngestionBlockReason({
+      requestedCapabilities: ["catalog_basic", "image_gallery"],
+      assets: [
+        { role: "main", fieldStatus: "pending_review", storageKey: "s3://stored" },
+        { role: "secondary", fieldStatus: "invalid", storageKey: null },
+      ] as any,
+    })).toContain("全部安全入库");
   });
+
+  it("fails closed when gallery capability returns no usable main or secondary image", () => {
+    expect(directIngestionBlockReason({
+      requestedCapabilities: ["catalog_basic", "image_gallery"],
+      assets: [
+        { role: "aplus", fieldStatus: "pending_review", storageKey: "s3://stored" },
+      ] as any,
+    })).toContain("主图或副图");
+  });
+
+  it("permits a catalog-only result with no image capability", () => {
+    expect(directIngestionBlockReason({
+      requestedCapabilities: ["catalog_basic"],
+      assets: [],
+    })).toBeNull();
+  });
+
 });

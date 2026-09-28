@@ -44,7 +44,14 @@ async function createListingAcquisition(input: { workspaceId: number; userId: nu
       cachePolicy: "prefer_cache",
       maxChargeUsd: MAX_ACQUISITION_USD,
     });
-    return { id, asin: input.asin, ...job, reviewRequired: job.status !== "confirmed" };
+    return {
+      id,
+      asin: input.asin,
+      ...job,
+      directIngestion: true,
+      directIngestionPending: job.status !== "confirmed",
+      reviewRequired: false,
+    };
   } catch (error) {
     await kbDb.updateListingCopywriting(id, input.userId, input.workspaceId, { status: "archived" });
     throw error;

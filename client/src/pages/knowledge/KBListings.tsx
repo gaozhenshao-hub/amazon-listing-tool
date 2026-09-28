@@ -43,11 +43,11 @@ export default function KBListings() {
   const { data: detail } = trpc.kbListings.getById.useQuery({ id: detailId! }, { enabled: !!detailId });
 
   const importAsin = trpc.kbListings.importByAsin.useMutation({
-    onSuccess: (result) => { toast.success(result.reviewRequired ? "已创建受控采集任务，请在采集任务中心审核后启动AI分析" : "已复用确认快照并开始AI分析"); utils.kbListings.list.invalidate(); setShowImport(false); setAsinInput(""); },
+    onSuccess: (result) => { toast.success(result.directIngestionPending ? "已创建受控采集任务；安全校验通过后将直接录入并启动AI分析" : "已复用确认快照并开始AI分析"); utils.kbListings.list.invalidate(); setShowImport(false); setAsinInput(""); },
     onError: createImportOnError((id) => { setShowImport(false); setDetailId(id); }),
   });
   const importLink = trpc.kbListings.importByLink.useMutation({
-    onSuccess: (result) => { toast.success(result.reviewRequired ? "已创建受控采集任务，请先审核采集结果" : "已复用确认快照并开始AI分析"); utils.kbListings.list.invalidate(); setShowImport(false); setLinkInput(""); },
+    onSuccess: (result) => { toast.success(result.directIngestionPending ? "已创建受控采集任务；安全校验通过后将直接录入并启动AI分析" : "已复用确认快照并开始AI分析"); utils.kbListings.list.invalidate(); setShowImport(false); setLinkInput(""); },
     onError: createImportOnError((id) => { setShowImport(false); setDetailId(id); }),
   });
   const batchImport = trpc.kbListings.batchImportAsins.useMutation({
@@ -76,7 +76,7 @@ export default function KBListings() {
   });
 
   const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
-    crawling: { label: "待采集审核", variant: "secondary" },
+    crawling: { label: "采集中", variant: "secondary" },
     analyzing: { label: "AI分析中", variant: "secondary" },
     pending_review: { label: "待确认", variant: "default" },
     confirmed: { label: "已入库", variant: "outline" },
@@ -110,7 +110,7 @@ export default function KBListings() {
             <FileText className="h-6 w-6 text-blue-500" />
             智能Listing文案库
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">受控采集Amazon公开Listing，人工确认Snapshot后由AI生成可编辑分析</p>
+          <p className="text-muted-foreground text-sm mt-1">受控采集Amazon公开Listing，完整安全校验后直接录入，再由AI生成可编辑分析</p>
         </div>
         <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 导入文案</Button>
       </div>

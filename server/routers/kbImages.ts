@@ -41,7 +41,7 @@ type RetiredAmazonProductData = {
 async function rejectRetiredAmazonScrape(): Promise<RetiredAmazonProductData> {
   throw new TRPCError({
     code: "PRECONDITION_FAILED",
-    message: "旧Amazon HTML爬虫已退役；请创建统一Acquisition Job并在人工确认Snapshot后投影。",
+    message: "旧Amazon HTML爬虫已退役；请创建统一Acquisition Job，系统仅在完整安全校验通过后自动直接录入。",
   });
 }
 
@@ -605,7 +605,7 @@ export const kbImagesRouter = router({
       return resolveImagesForDelivery(await kbDb.listAllImages(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine", input));
     }),
 
-  // Import by ASIN through the governed acquisition job. Projection occurs only after human confirmation.
+  // Import by ASIN through the governed acquisition job. Projection occurs only after guarded direct ingestion.
   importByAsin: protectedProcedure
     .input(z.object({ asin: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
@@ -615,7 +615,7 @@ export const kbImagesRouter = router({
         throw resourceConflictError(`ASIN ${asin} 已存在于图片知识库中`, { existingId: dupSet.id, resource: "kb_image_set", asin });
       }
       const job = await startKbImagesAcquisition({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin });
-      return { asin, ...job, reviewRequired: job.status !== "confirmed" };
+      return { asin, ...job, directIngestion: true, reviewRequired: false };
     }),
 
   batchImportAsins: protectedProcedure
@@ -704,7 +704,7 @@ export const kbImagesRouter = router({
       return { success: true };
     }),
 
-  // Refresh selected capabilities through a governed acquisition job. Existing images remain until confirmation.
+  // Refresh selected capabilities through a governed acquisition job. Existing images remain until guarded direct ingestion succeeds.
   reCrawlByPosition: protectedProcedure
     .input(z.object({
       setId: z.number(),
@@ -721,7 +721,7 @@ export const kbImagesRouter = router({
         capabilities,
         cachePolicy: "refresh",
       });
-      return { success: true, ...job, requestedCapabilities: capabilities, reviewRequired: true };
+      return { success: true, ...job, requestedCapabilities: capabilities, directIngestion: true, reviewRequired: false };
     }),
 
   // Upload images manually to a specific position

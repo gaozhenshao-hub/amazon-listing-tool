@@ -105,7 +105,7 @@ async function runProjectCompetitorAnalysis(input: z.infer<typeof JobInputSchema
     skillSlug: "listing.competitor.analyze",
     userId: input.userId,
     workspaceId: input.workspaceId,
-    context: `Analyze this competitor product from a human-confirmed Amazon snapshot:\n\n${context}`,
+    context: `Analyze this competitor product from a system-confirmed, directly ingested Amazon snapshot:\n\n${context}`,
     variables: { context },
     legacySystemPrompt: COMPETITOR_ANALYSIS_PROMPT,
     migrationSource: "server/domains/acquisition/legacyConsumerAnalysisJob.ts",
@@ -226,7 +226,7 @@ export async function startLegacyConsumerAnalysisJob(projection: LegacyConsumerP
   return startRegisteredAiJob({
     kind: `amazon.consumer.${consumerType}.analyze`,
     module: consumerType === "kb_product" ? "productDevelopment" : "listing",
-    procedure: "amazonAcquisition.confirmReview",
+    procedure: "amazonAcquisition.directIngestion",
     workspaceId: projection.workspaceId,
     userId: projection.userId,
     projectId: businessId,

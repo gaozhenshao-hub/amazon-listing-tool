@@ -93,11 +93,13 @@ async function startProjectCompetitorAcquisition(input: {
   });
   return {
     asin,
-    status: job.status === "confirmed" ? "analysis_queued" as const : "review_required" as const,
+    status: job.status === "confirmed" ? "analysis_queued" as const : "direct_ingestion_pending" as const,
     jobId: job.jobId,
     cacheHitSnapshotId: job.cacheHitSnapshotId,
     analysisJobRunId: "analysisJobRunId" in job ? job.analysisJobRunId : null,
-    reviewRequired: job.status !== "confirmed",
+    directIngestion: true,
+    directIngestionPending: job.status !== "confirmed",
+    reviewRequired: false,
   };
 }
 
@@ -299,7 +301,7 @@ export const analysisRouter = router({
         freshAfter: new Date(0),
       });
       if (!confirmed) {
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该ASIN尚无已确认采集快照，请先创建采集任务并完成审核" });
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该ASIN尚无已直接录入的采集快照，请先创建采集任务并等待完整安全校验完成" });
       }
       const snapshot = await loadConfirmedSnapshotForConsumer({
         db: database,
@@ -359,9 +361,9 @@ export const analysisRouter = router({
       if (!project.workspaceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "项目尚未绑定工作空间" });
       const results: Array<{
         asin: string;
-        status: "analysis_queued" | "review_required" | "failed";
+        status: "analysis_queued" | "direct_ingestion_pending" | "failed";
         jobId?: number;
-        reviewRequired?: boolean;
+        directIngestionPending?: boolean;
         error?: string;
       }> = [];
 
@@ -387,7 +389,7 @@ export const analysisRouter = router({
       }
 
       const successCount = results.filter(r => r.status === "analysis_queued").length;
-      const partialCount = results.filter(r => r.status === "review_required").length;
+      const partialCount = results.filter(r => r.status === "direct_ingestion_pending").length;
       const failedCount = results.filter(r => r.status === "failed").length;
 
       return {

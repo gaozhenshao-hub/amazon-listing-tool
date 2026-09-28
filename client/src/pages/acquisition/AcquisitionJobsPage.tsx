@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { AlertCircle, CheckCircle2, Clock3, DatabaseZap, Loader2, Play, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -13,8 +12,8 @@ import { Label } from "@/components/ui/label";
 const statusLabels: Record<string, string> = {
   queued: "排队中",
   running: "采集中",
-  review_required: "待人工审核",
-  confirmed: "已确认",
+  review_required: "历史审计状态",
+  confirmed: "已直接录入",
   failed: "失败关闭",
   canceled: "已取消",
 };
@@ -24,7 +23,6 @@ function formatDate(value: Date | string | null | undefined) {
 }
 
 export default function AcquisitionJobsPage() {
-  const [, navigate] = useLocation();
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
   const utils = trpc.useUtils();
@@ -46,7 +44,7 @@ export default function AcquisitionJobsPage() {
 
   const createJob = trpc.acquisition.createJob.useMutation({
     onSuccess: async (result) => {
-      toast.success(result.cached ? "已复用24小时内确认快照" : "采集任务已进入持久化队列");
+      toast.success(result.cacheHitSnapshotId ? "已复用确认快照并直接录入" : "采集任务已进入持久化队列，完成后将自动直接录入");
       setAsin("");
       await utils.acquisition.listJobs.invalidate();
     },
@@ -64,7 +62,7 @@ export default function AcquisitionJobsPage() {
     const normalizedAsin = asin.trim().toUpperCase();
     if (!/^[A-Z0-9]{10}$/.test(normalizedAsin)) return toast.error("请输入10位有效ASIN");
     createJob.mutate({
-      consumerType: "competitor_research",
+      consumerType: "competitor_monitor",
       consumerRef: `manual:${normalizedAsin}`,
       marketplace: "US",
       asin: normalizedAsin,
@@ -74,19 +72,13 @@ export default function AcquisitionJobsPage() {
     });
   };
 
-  const openReview = async (jobId: number) => {
-    const snapshotId = await utils.acquisition.latestSnapshotForJob.fetch({ jobId });
-    if (!snapshotId) return toast.error("该任务尚未生成可审核快照");
-    navigate(`/knowledge/acquisition/review/${snapshotId}`);
-  };
-
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-sm font-medium text-amber-700 dark:text-amber-300">统一受控Amazon采集平台</p>
-          <h1 className="text-2xl font-semibold tracking-tight">采集任务与人工审核</h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">外部Provider只产生独立Snapshot。基础信息和竞品图片必须人工审核、形成确认版本后，才能供图片知识库或竞品分析消费。</p>
+          <h1 className="text-2xl font-semibold tracking-tight">采集任务与直接录入</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">外部Provider先形成独立Snapshot；仅在完整成功、规范化通过且图片证据全部安全入库后自动确认并录入对应业务模块。失败、部分结果或结构异常一律失败关闭。</p>
         </div>
         <Button variant="outline" onClick={() => jobs.refetch()} disabled={jobs.isFetching}><RefreshCw className={`mr-2 h-4 w-4 ${jobs.isFetching ? "animate-spin" : ""}`} />刷新</Button>
       </div>
@@ -130,7 +122,7 @@ export default function AcquisitionJobsPage() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle>任务记录</CardTitle><CardDescription>Job/Run、费用、失败类别和审核状态均保留审计记录。</CardDescription></CardHeader>
+        <CardHeader><CardTitle>任务记录</CardTitle><CardDescription>Job/Run、费用、失败类别、来源哈希与直接录入状态均保留审计记录。</CardDescription></CardHeader>
         <CardContent>
           {jobs.isLoading ? <div className="flex h-36 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div> : jobs.error ? (
             <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-4 text-sm text-destructive"><AlertCircle className="h-4 w-4" />{jobs.error.message}</div>
@@ -138,13 +130,13 @@ export default function AcquisitionJobsPage() {
             <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">尚无采集任务。创建任务后将进入持久化队列。</div>
           ) : (
             <div className="space-y-3">
-              {jobs.data.map(job => {
+              {jobs.data.map((job: any) => {
                 const isQualification = job.consumerType === "provider_qualification";
                 return (
                 <div key={job.id} className="grid gap-3 rounded-xl border p-4 md:grid-cols-[1fr_auto_auto] md:items-center">
                   <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{isQualification ? "Provider 技术资格验证（样本已脱敏）" : job.asin}</span><Badge variant="outline">{job.marketplace}</Badge><Badge>{statusLabels[job.status] || job.status}</Badge>{job.cacheHitSnapshotId ? <Badge variant="secondary">缓存命中</Badge> : null}</div><p className="mt-1 truncate text-xs text-muted-foreground">用途：{isQualification ? "仅验证受控能力，不进入任何业务分析" : `${job.consumerType} · ${job.consumerRef}`} · 创建于 {formatDate(job.createdAt)}</p></div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">{job.status === "running" || job.status === "queued" ? <Clock3 className="h-4 w-4" /> : job.status === "confirmed" ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : null}<span>上限 ${job.maxChargeUsd}</span></div>
-                  <Button size="sm" variant="outline" disabled={isQualification || job.status !== "review_required"} onClick={() => openReview(job.id)}>{isQualification ? "资格记录" : "打开审核"}</Button>
+                  <span className="text-right text-xs text-muted-foreground">{isQualification ? "资格记录" : job.status === "confirmed" ? "已直接录入" : job.status === "failed" ? "失败关闭" : "等待安全校验"}</span>
                 </div>
                 );
               })}

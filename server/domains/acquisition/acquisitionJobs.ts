@@ -38,6 +38,7 @@ import {
 import { getApifyProviderProfile } from "./providerProfileService";
 import { activateConfirmedSnapshotForConsumer } from "./consumerActivation";
 import { triggerConsumerPostConfirmation } from "./postConfirmation";
+import { confirmSnapshotForDirectIngestion } from "./snapshotReview";
 import { isApiConnectionSecretConfigured } from "../apiConnections/service";
 
 export const AcquisitionJobRequestSchema = z.object({
@@ -77,7 +78,7 @@ function requireEnabledAcquisitionProfile(profile: Awaited<ReturnType<typeof get
     throw new AppError({
       code: APP_ERROR_CODES.PRECONDITION_FAILED,
       statusCode: 412,
-      message: "采集Provider尚未配置。请由超级管理员在“采集任务与人工审核”的Provider治理区完成配置并启用后再创建任务。",
+      message: "采集Provider尚未配置。请由超级管理员在“采集任务与直接录入”的Provider治理区完成配置并启用后再创建任务。",
       details: { provider: "apify", reason: "profile_not_configured" },
     });
   }
@@ -85,7 +86,7 @@ function requireEnabledAcquisitionProfile(profile: Awaited<ReturnType<typeof get
     throw new AppError({
       code: APP_ERROR_CODES.PRECONDITION_FAILED,
       statusCode: 412,
-      message: "采集Provider当前未启用。请由超级管理员完成资格审核并在“采集任务与人工审核”的Provider治理区设为“启用”后再创建任务。",
+      message: "采集Provider当前未启用。请由超级管理员完成资格验证并在“采集任务与直接录入”的Provider治理区设为“启用”后再创建任务。",
       details: { provider: "apify", reason: "profile_not_active", status: profile.status },
     });
   }
@@ -268,9 +269,13 @@ async function executeAmazonAcquisitionJob(aiJob: AiJobSnapshot) {
     resultCount: result.rawArtifact ? 1 : 0,
     completedAt: new Date(),
   });
-  if (!result.rawArtifact || result.status === "failed") {
+  if (!result.rawArtifact || result.status !== "succeeded") {
     await updateAcquisitionJob(db, workspaceId, job.id, { status: "failed", completedAt: new Date() });
-    return { acquisitionJobId: job.id, status: "failed", failureCategory: result.failureCategory ?? "unknown" };
+    return {
+      acquisitionJobId: job.id,
+      status: "failed",
+      failureCategory: result.failureCategory ?? (result.status === "partial" ? "partial_result" : "unknown"),
+    };
   }
 
   await updateAiJobProgress(aiJob.runId, 70);
@@ -285,11 +290,22 @@ async function executeAmazonAcquisitionJob(aiJob: AiJobSnapshot) {
     contentType: result.rawArtifact.contentType,
     sizeBytes: result.rawArtifact.bytes.byteLength,
   });
-  const normalized = normalizeApifyAmazonArtifact({
-    bytes: result.rawArtifact.bytes,
-    expectedAsin: job.asin,
-    marketplace: "US",
-  });
+  let normalized: ReturnType<typeof normalizeApifyAmazonArtifact>;
+  try {
+    normalized = normalizeApifyAmazonArtifact({
+      bytes: result.rawArtifact.bytes,
+      expectedAsin: job.asin,
+      marketplace: "US",
+    });
+  } catch (error) {
+    await updateAcquisitionRun(db, runId, {
+      status: "failed",
+      failureCategory: "normalization_failed",
+      completedAt: new Date(),
+    });
+    await updateAcquisitionJob(db, workspaceId, job.id, { status: "failed", completedAt: new Date() });
+    return { acquisitionJobId: job.id, status: "failed", failureCategory: "normalization_failed" };
+  }
   const snapshotId = await createSourceSnapshot(db, {
     workspaceId,
     jobId: job.id,
@@ -313,10 +329,38 @@ async function executeAmazonAcquisitionJob(aiJob: AiJobSnapshot) {
   });
   await updateSourceSnapshot(db, workspaceId, snapshotId, {
     completeness: { ...normalized.completeness, assetIngestion: assetSummary },
-    status: "pending_review",
   });
-  await updateAcquisitionJob(db, workspaceId, job.id, { status: "review_required", completedAt: new Date() });
-  return { acquisitionJobId: job.id, snapshotId, status: "review_required", failureCategory: result.failureCategory };
+  try {
+    const directIngestion = await confirmSnapshotForDirectIngestion({
+      workspaceId,
+      snapshotId,
+      requestedBy: job.requestedBy,
+    });
+    const postConfirmation = await triggerConsumerPostConfirmation(directIngestion.projection);
+    await updateAiJobProgress(aiJob.runId, 100);
+    return {
+      acquisitionJobId: job.id,
+      snapshotId,
+      confirmedSnapshotId: directIngestion.confirmedSnapshotId,
+      status: "confirmed",
+      directIngestion: true,
+      failureCategory: null,
+      ...postConfirmation,
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    await updateSourceSnapshot(db, workspaceId, snapshotId, {
+      status: "rejected",
+      reviewNote: `system_direct_ingestion_blocked: ${reason.slice(0, 1800)}`,
+    });
+    await updateAcquisitionRun(db, runId, {
+      status: "failed",
+      failureCategory: "partial_result",
+      completedAt: new Date(),
+    });
+    await updateAcquisitionJob(db, workspaceId, job.id, { status: "failed", completedAt: new Date() });
+    return { acquisitionJobId: job.id, snapshotId, status: "failed", failureCategory: "partial_result" };
+  }
 }
 
 registerAiJobHandler({

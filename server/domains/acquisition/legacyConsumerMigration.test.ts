@@ -28,7 +28,8 @@ describe("A7 legacy Amazon consumer migration guard", () => {
     const route = read("server/domains/ops/routers/conversion.ts");
     expect(collector).toContain("findFreshConfirmedSnapshot");
     expect(collector).toContain("confirmed Amazon snapshot required");
-    expect(route).toContain("reviewRequired: true");
+    expect(route).toContain("directIngestionPending: true");
+    expect(route).toContain("reviewRequired: false");
     expect(route).toContain("workspaceId });");
   });
 });
