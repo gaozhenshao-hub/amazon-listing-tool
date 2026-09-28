@@ -117,7 +117,7 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
         maxChargeUsd: 0.1,
       });
       setAsinInput("");
-      toast.success(result.cacheHitSnapshotId ? "已复用确认快照并直接录入本项目竞品图库" : `采集任务 #${result.jobId} 已创建，完成安全校验后将自动直接录入本项目竞品图库`);
+      toast.success(result.cacheHitSnapshotId ? "已复用确认快照并直接录入本项目竞品图库" : `采集任务 #${result.jobId} 已创建；安全保存的图片将自动直接录入，缺失图片会明确提示`);
       await refresh();
     } catch (error: any) {
       toast.error(error.message || "采集任务创建失败");
@@ -218,7 +218,7 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
       <Card className="border-amber-200/70 bg-gradient-to-br from-amber-50/80 via-background to-background">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base"><ImageIcon className="h-4 w-4 text-amber-700" />受控采集与竞品研究对象</CardTitle>
-          <CardDescription>输入ASIN后先进入统一采集任务；只有完整成功、通过安全校验且已存储的图片证据才会自动直接录入本项目。</CardDescription>
+          <CardDescription>输入ASIN后先进入统一采集任务；通过安全校验的已保存图片会立即直接录入本项目，缺失图片不伪装为已有，可在预算范围内重新采集。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
@@ -246,7 +246,7 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
         <div className="rounded-xl border-2 border-dashed p-12 text-center text-muted-foreground">
           <ImageIcon className="mx-auto mb-3 h-10 w-10 opacity-30" />
           <p className="font-medium">暂无已直接录入的竞品图库</p>
-          <p className="mt-1 text-sm">创建采集任务后，完整安全校验通过的图片会自动录入本项目。</p>
+          <p className="mt-1 text-sm">创建采集任务后，安全保存的图片会自动录入本项目；缺失图片会保留为可追踪缺口。</p>
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">

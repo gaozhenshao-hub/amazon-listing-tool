@@ -37,19 +37,18 @@ function requestedImageGallery(capabilities: unknown) {
 }
 
 /**
- * Admission is fail-closed: no consumer receives a result until every returned
- * image is safely stored, and gallery requests contain a usable main/secondary image.
+ * Admission remains fail-closed for unsafe assets, but a successful gallery may
+ * be partially ingested when at least one usable image was safely stored. Missing
+ * assets remain explicit evidence gaps for later manual supplementation or refresh.
  */
 export function directIngestionBlockReason(input: {
   requestedCapabilities: unknown;
   assets: AcquisitionAssetCandidate[];
 }) {
-  if (input.assets.some(asset => !asset.storageKey || asset.fieldStatus !== "pending_review")) {
-    return "采集图片未能全部安全入库";
-  }
   if (requestedImageGallery(input.requestedCapabilities)) {
     const hasGallery = input.assets.some(asset => (
-      Boolean(asset.storageKey) && (asset.role === "main" || asset.role === "secondary")
+      Boolean(asset.storageKey) && asset.fieldStatus === "pending_review"
+        && (asset.role === "main" || asset.role === "secondary")
     ));
     if (!hasGallery) return "采集结果未包含可用主图或副图";
   }
@@ -75,13 +74,13 @@ export async function confirmSnapshotForDirectIngestion(input: {
   return withDbTransaction("Directly ingest Amazon acquisition snapshot", async tx => {
     const snapshot = await getSourceSnapshot(tx, input.workspaceId, input.snapshotId);
     if (!snapshot) throw new Error("snapshot not found");
-    if (snapshot.status !== "draft") throw new Error("snapshot cannot be directly ingested");
+    if (!["draft", "pending_review"].includes(snapshot.status)) throw new Error("snapshot cannot be directly ingested");
     const job = await loadJobForSnapshot(tx, input.workspaceId, snapshot.jobId);
     const assets = await listAssetCandidates(tx, input.workspaceId, snapshot.id) as AcquisitionAssetCandidate[];
     const reason = directIngestionBlockReason({ requestedCapabilities: job.requestedCapabilities, assets });
     if (reason) throw new Error(`直接录入已安全关闭：${reason}`);
 
-    const approvedAssets = assets.filter(asset => Boolean(asset.storageKey));
+    const approvedAssets = assets.filter(asset => Boolean(asset.storageKey) && asset.fieldStatus === "pending_review");
     for (const asset of approvedAssets) {
       await updateAssetCandidateReview({
         db: tx,
@@ -118,11 +117,14 @@ export async function confirmSnapshotForDirectIngestion(input: {
       job,
       activatedBy: input.requestedBy,
     });
+    const missingAssetCount = assets.length - approvedAssets.length;
     await updateSourceSnapshot(tx, input.workspaceId, snapshot.id, {
       status: "confirmed",
       reviewedBy: input.requestedBy,
       reviewedAt: new Date(),
-      reviewNote: "system_direct_ingestion: provider completed, normalized data passed, and every returned asset was safely stored",
+      reviewNote: missingAssetCount > 0
+        ? `system_partial_direct_ingestion: ${approvedAssets.length} safely stored, ${missingAssetCount} unavailable; manual upload or governed refresh may supplement missing assets`
+        : "system_direct_ingestion: provider completed, normalized data passed, and every returned asset was safely stored",
     });
     await updateAcquisitionJob(tx, input.workspaceId, job.id, { status: "confirmed", completedAt: new Date() });
     return {
@@ -130,6 +132,8 @@ export async function confirmSnapshotForDirectIngestion(input: {
       confirmedSnapshotId,
       confirmationVersion,
       confirmedAssetCount: approvedAssets.length,
+      missingAssetCount,
+      partialIngestion: missingAssetCount > 0,
       projection,
       directIngestion: true as const,
     };

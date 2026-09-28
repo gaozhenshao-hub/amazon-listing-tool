@@ -939,6 +939,13 @@ export default function KBImages() {
                 <div className="space-y-6">
                   {d.productTitle && <h3 className="font-medium text-lg">{d.productTitle}</h3>}
 
+                  {d.acquisitionCoverage?.partial && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                      <div><p className="font-medium">部分直接入库：已展示 {d.acquisitionCoverage.stored} 张安全保存图片</p><p className="mt-1 text-xs text-amber-800">另有 {d.acquisitionCoverage.missing} 张未安全保存，未被伪装为已有图片。可上传图片补充，或在预算范围内重新采集对应图位。</p></div>
+                      {allowEdit && <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => { setShowUpload(true); setShowReCrawl(false); }}><UploadCloud className="mr-1 h-3.5 w-3.5" />人工补图</Button><Button size="sm" variant="outline" onClick={() => { setShowReCrawl(true); setShowUpload(false); }}><RefreshCw className="mr-1 h-3.5 w-3.5" />重新采集</Button></div>}
+                    </div>
+                  )}
+
                   {/* ── Action Toolbar ── */}
                   {allowEdit && (d.status === "pending_review" || d.status === "confirmed") && (
                     <div className="flex flex-wrap gap-2 p-3 bg-muted/50 rounded-lg border border-dashed">

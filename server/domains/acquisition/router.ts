@@ -13,7 +13,8 @@ import {
   upsertApifyProviderProfile,
 } from "./providerProfileService";
 import { startAmazonAcquisitionJob } from "./acquisitionJobs";
-import { listAcquisitionJobs } from "./repository";
+import { getAcquisitionJob, getSourceSnapshotByJob, listAcquisitionJobs } from "./repository";
+import { confirmSnapshotForDirectIngestion } from "./snapshotReview";
 import { ACQUISITION_CONSUMER_TYPES } from "../../../shared/acquisition";
 
 function workspaceIdOf(ctx: { workspaceId?: number | null }): number {
@@ -52,6 +53,22 @@ export const amazonAcquisitionRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await requireDb("Amazon acquisition jobs");
       return listAcquisitionJobs(db, workspaceIdOf(ctx), input?.limit ?? 50);
+    }),
+
+  ingestLegacyPartialJob: protectedProcedure
+    .input(z.object({ jobId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const workspaceId = workspaceIdOf(ctx);
+      const db = await requireDb("legacy Amazon acquisition ingestion");
+      const job = await getAcquisitionJob(db, workspaceId, input.jobId);
+      if (!job || job.status !== "review_required") {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该任务不是可迁移的历史采集任务" });
+      }
+      const snapshot = await getSourceSnapshotByJob(db, workspaceId, job.id);
+      if (!snapshot || snapshot.status !== "pending_review") {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该历史任务没有可直接入库的快照" });
+      }
+      return confirmSnapshotForDirectIngestion({ workspaceId, snapshotId: snapshot.id, requestedBy: ctx.user.id });
     }),
 
   providerProfile: adminProcedure.query(async ({ ctx }) => {

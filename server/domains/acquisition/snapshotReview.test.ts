@@ -32,14 +32,14 @@ describe("acquisition direct-ingestion contracts", () => {
     expect(statuses.description.status).toBe("not_returned");
   });
 
-  it("fails closed when a requested gallery asset was not safely stored", () => {
+  it("permits partial gallery ingestion when at least one usable image was safely stored", () => {
     expect(directIngestionBlockReason({
       requestedCapabilities: ["catalog_basic", "image_gallery"],
       assets: [
         { role: "main", fieldStatus: "pending_review", storageKey: "s3://stored" },
         { role: "secondary", fieldStatus: "invalid", storageKey: null },
       ] as any,
-    })).toContain("全部安全入库");
+    })).toBeNull();
   });
 
   it("fails closed when gallery capability returns no usable main or secondary image", () => {

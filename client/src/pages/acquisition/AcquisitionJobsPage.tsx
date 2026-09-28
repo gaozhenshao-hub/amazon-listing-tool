@@ -22,7 +22,7 @@ function ingestionStatusText(status: string, isQualification: boolean) {
   if (isQualification) return "资格记录";
   if (status === "confirmed") return "已直接录入";
   if (status === "failed") return "失败关闭";
-  if (status === "review_required") return "历史任务：安全入库未完成";
+  if (status === "review_required") return "历史任务：可直接录入已安全保存的图片";
   if (status === "queued" || status === "running") return "自动安全校验中（无需人工审核）";
   return "等待任务处理";
 }
@@ -66,6 +66,15 @@ export default function AcquisitionJobsPage() {
     },
     onError: error => toast.error(error.message),
   });
+  const ingestLegacyPartial = trpc.acquisition.ingestLegacyPartialJob.useMutation({
+    onSuccess: async (result) => {
+      toast.success(result.partialIngestion
+        ? `已直接入库 ${result.confirmedAssetCount} 张安全保存图片；${result.missingAssetCount} 张可人工补充或重新采集`
+        : `已直接入库 ${result.confirmedAssetCount} 张图片`);
+      await utils.acquisition.listJobs.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
 
   const handleCreate = () => {
     const normalizedAsin = asin.trim().toUpperCase();
@@ -87,7 +96,7 @@ export default function AcquisitionJobsPage() {
         <div>
           <p className="text-sm font-medium text-amber-700 dark:text-amber-300">统一受控Amazon采集平台</p>
           <h1 className="text-2xl font-semibold tracking-tight">采集任务与直接录入</h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">外部Provider先形成独立Snapshot；仅在完整成功、规范化通过且图片证据全部安全入库后自动确认并录入对应业务模块。失败、部分结果或结构异常一律失败关闭。</p>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">外部Provider先形成独立Snapshot；规范化通过后，已安全保存的图片立即直接录入。缺失图片保留为可见缺口，可人工补图或按预算重新采集；结构异常与无可用图库仍失败关闭。</p>
         </div>
         <Button variant="outline" onClick={() => jobs.refetch()} disabled={jobs.isFetching}><RefreshCw className={`mr-2 h-4 w-4 ${jobs.isFetching ? "animate-spin" : ""}`} />刷新</Button>
       </div>
@@ -145,7 +154,7 @@ export default function AcquisitionJobsPage() {
                 <div key={job.id} className="grid gap-3 rounded-xl border p-4 md:grid-cols-[1fr_auto_auto] md:items-center">
                   <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{isQualification ? "Provider 技术资格验证（样本已脱敏）" : job.asin}</span><Badge variant="outline">{job.marketplace}</Badge><Badge>{statusLabels[job.status] || job.status}</Badge>{job.cacheHitSnapshotId ? <Badge variant="secondary">缓存命中</Badge> : null}</div><p className="mt-1 truncate text-xs text-muted-foreground">用途：{isQualification ? "仅验证受控能力，不进入任何业务分析" : `${job.consumerType} · ${job.consumerRef}`} · 创建于 {formatDate(job.createdAt)}</p></div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">{job.status === "running" || job.status === "queued" ? <Clock3 className="h-4 w-4" /> : job.status === "confirmed" ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : null}<span>上限 ${job.maxChargeUsd}</span></div>
-                  <span className="text-right text-xs text-muted-foreground">{ingestionStatusText(job.status, isQualification)}</span>
+                  <div className="flex flex-col items-end gap-2"><span className="text-right text-xs text-muted-foreground">{ingestionStatusText(job.status, isQualification)}</span>{job.status === "review_required" && !isQualification ? <Button size="sm" variant="outline" onClick={() => ingestLegacyPartial.mutate({ jobId: job.id })} disabled={ingestLegacyPartial.isPending}><DatabaseZap className="mr-1 h-3.5 w-3.5" />直接入库已保存图片</Button> : null}</div>
                 </div>
                 );
               })}

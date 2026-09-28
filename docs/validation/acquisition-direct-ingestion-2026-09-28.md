@@ -125,3 +125,21 @@ The local UI correction now distinguishes:
 | `failed` | **失败关闭**. |
 
 The correction does not relax asset storage controls and does not attempt to mark incomplete historical jobs as ingested. Targeted direct-ingestion tests, zero-warning ESLint, the client identifier gate, source-copy scan, and production build/bundle budget passed locally. Production deployment of this wording correction remains a separate authorization.
+
+
+## Partial direct ingestion policy
+
+The confirmed product decision is: **a missing source image must not prevent safely stored images from being directly ingested**.
+
+| Stage | Behaviour |
+| --- | --- |
+| Provider and normalization succeed | Create the immutable source Snapshot and retain the Job/Run/audit record. |
+| At least one requested gallery image is safely stored | Auto-confirm the Snapshot, approve only the safely stored asset candidates, and project them to the requested consumer. |
+| Some returned images cannot be safely stored | Record the exact count as a visible evidence gap. Do not create a fake image, do not claim it is stored, and do not use it in downstream analysis. |
+| No usable main or secondary image for a requested gallery | Fail closed; no consumer projection. |
+| Product data schema / Provider result is partial or invalid | Keep the existing failure-close behavior. |
+| User action after partial ingestion | Existing image-knowledge-base upload supplies manual images; the governed refresh action creates a new budget-gated Provider Job. Neither action silently retries a Provider call. |
+
+For legacy jobs created under the previous all-assets-required policy, the task centre now exposes **“直接入库已保存图片”**. It is a deliberate, authenticated data action: it has no Provider call and no charge, but it creates a Confirmed Snapshot and consumer projection only for the already safely stored assets. It is not a manual content-review action.
+
+Validation: 10 targeted Vitest tests, zero-warning ESLint for all changed files, the client runtime identifier gate, diff check, and a production build/bundle budget passed. The repository-wide TypeScript check still reports 143 documented historical diagnostics; there are zero diagnostics in the changed files. This policy update is local and has not modified production records or called a Provider.

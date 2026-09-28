@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
@@ -6,6 +7,8 @@ import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGate
 import { resolveStoredObjectUrl, storagePut } from "../storage";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { resourceConflictError } from "@shared/_core/errors";
+import { requireDb } from "../repositories/dbClient";
+import { acquisitionAssetCandidates, acquisitionConfirmedSnapshots } from "../../drizzle/schema/acquisition";
 import { startAmazonAcquisitionJob } from "../domains/acquisition/acquisitionJobs";
 import {
   KB_IMAGE_IMPORT_CAPABILITIES,
@@ -570,7 +573,23 @@ export const kbImagesRouter = router({
       const set = await kbDb.getImageSetById(input.id);
       if (!set) return null;
       const images = await resolveImagesForDelivery(await kbDb.listImagesBySetLight(set.id));
-      return { ...set, images };
+      let acquisitionCoverage: { stored: number; missing: number; total: number; partial: boolean } | null = null;
+      if (set.originInstanceId === "unified_amazon_acquisition" && set.remoteId) {
+        const db = await requireDb("image acquisition coverage");
+        const [confirmed] = await db.select().from(acquisitionConfirmedSnapshots).where(and(
+          eq(acquisitionConfirmedSnapshots.workspaceId, ctx.workspaceId!),
+          eq(acquisitionConfirmedSnapshots.id, set.remoteId),
+        )).limit(1);
+        if (confirmed) {
+          const candidates = await db.select().from(acquisitionAssetCandidates).where(and(
+            eq(acquisitionAssetCandidates.workspaceId, ctx.workspaceId!),
+            eq(acquisitionAssetCandidates.snapshotId, confirmed.snapshotId),
+          ));
+          const stored = candidates.filter(candidate => Boolean(candidate.storageKey) && candidate.fieldStatus === "pending_review").length;
+          acquisitionCoverage = { stored, missing: candidates.length - stored, total: candidates.length, partial: stored < candidates.length };
+        }
+      }
+      return { ...set, images, acquisitionCoverage };
     }),
 
   // Get single image's full analysis data on-demand (lazy load when user expands tag panel)
