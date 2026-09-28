@@ -289,7 +289,7 @@ function WizardDialog({ open, onOpenChange, onSaved }: {
                     type="password"
                     value={form.connectionString}
                     onChange={(e) => sf("connectionString", e.target.value)}
-                    placeholder="mysql://user:pass@host:3306/db"
+                    placeholder="填写受控数据库连接信息（保存后不会回显）"
                     className="bg-white/5 border-white/10 text-white placeholder:text-slate-600 font-mono text-sm"
                   />
                 </div>
