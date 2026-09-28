@@ -169,3 +169,8 @@ All three jobs and source Snapshots are now `confirmed`, have active consumer li
 A post-release screenshot showed oversized/cropped-looking gallery images. The persisted image records were complete (no missing delivery URL), and the symptom matched the display layout rather than a source-object loss. In `AmazonStyleGallery`, the main preview had only minimum/maximum heights while its image used `h-full`; the A+ row had no definite image-box height. `object-contain` therefore had no reliable containing box from which to preserve the image ratio.
 
 The targeted rendering fix supplies definite boxes: 420px for the main/secondary preview and 320px for each A+ preview, with absolute full-box `object-contain` images and padding. Brand-story thumbnails also use `object-contain` rather than cropping. This changes no image object, metadata, source Snapshot, or consumer projection. Two dedicated sizing regressions, zero-warning ESLint, the client runtime identifier gate, production build, and bundle budget pass. The full repository TypeScript check remains at 143 documented historical diagnostics, with zero in the changed gallery files.
+
+
+### Qingdao release
+
+User authorized the gallery-sizing correction. The checked bundle was atomically published to Qingdao with no schema migration, no acquisition run, and no business-data write; the previous `dist` remains as a versioned rollback backup. Web, Worker, and Scheduler are active. The deployed knowledge-gallery chunk includes the fixed 320px A+ sizing and full-fit brand-story rules; `/knowledge/images` returned local HTTP 200 and the public route plus its lazy-loaded chunk returned HTTP 200. Recent Web-service logs show no rendering or startup fatal error.
