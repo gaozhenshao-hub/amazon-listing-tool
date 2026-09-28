@@ -143,3 +143,22 @@ The confirmed product decision is: **a missing source image must not prevent saf
 For legacy jobs created under the previous all-assets-required policy, the task centre now exposes **“直接入库已保存图片”**. It is a deliberate, authenticated data action: it has no Provider call and no charge, but it creates a Confirmed Snapshot and consumer projection only for the already safely stored assets. It is not a manual content-review action.
 
 Validation: 10 targeted Vitest tests, zero-warning ESLint for all changed files, the client runtime identifier gate, diff check, and a production build/bundle budget passed. The repository-wide TypeScript check still reports 143 documented historical diagnostics; there are zero diagnostics in the changed files. This policy update is local and has not modified production records or called a Provider.
+
+
+## Qingdao production release and historical activation
+
+**Authorization:** the user explicitly authorized Qingdao release and direct ingestion of the three screenshot-visible historical tasks.
+
+**Release:** The checked production bundle was atomically published without a schema migration. The old `dist` directory was retained as a versioned rollback backup. Web, Worker, and Scheduler services restarted successfully and remained active; local HTTP and both public entry domains returned HTTP 200. Release markers for partial direct ingestion, legacy activation, and UI copy were verified in the deployed bundle. No Provider, AI, or crawler operation was executed.
+
+The first SCP transfer stalled before any remote replacement; it was interrupted and the remote baseline was verified unchanged. The archive was then resumed with checksum verification and atomically swapped. The initial broad `sk-` literal scanner matched two strings inside a third-party Emacs-Lisp syntax grammar; hashes matched the installed syntax dependency, while the stricter credential checks found no project credential, environment file, database file, or personal path in the bundle.
+
+**Historical activation:** a final read-only preflight verified that jobs **3**, **4**, and **5** each had one successful, zero-cost Provider Run, an eligible pending source Snapshot, no previously confirmed Snapshot, and usable safely stored gallery images. A single database transaction then directly ingested only their safely stored assets:
+
+| Job | Consumer | Directly ingested | Missing / available for supplementation |
+| --- | --- | ---: | ---: |
+| 3 | Image knowledge base | 18 images | 1 |
+| 4 | Project competitor gallery | 17 images | 2 |
+| 5 | Image knowledge base | 63 images | 23 |
+
+All three jobs and source Snapshots are now `confirmed`, have active consumer links, and retain a `system_partial_direct_ingestion` audit note. The two knowledge-base consumers have their image sets with 18 and 63 stored images respectively; the project competitor-gallery consumer has one research subject with 17 stored images. No missing asset was fabricated, no existing asset was deleted, and no source image was used as a first-party creative asset.

@@ -1975,3 +1975,5 @@
 - [x] P0完成直接入库状态截图只读诊断与本地文案修复：三条旧`review_required`任务的Provider Run均成功且0.00 USD，但Source Snapshot仍为`pending_review`、无Confirmed Snapshot/Consumer Link，且分别有1、2、23张返回图未安全入库，不能绕过门禁标记为已入库。页面不再把旧任务显示为“等待安全校验”；新排队/运行任务显示“自动安全校验中（无需人工审核）”，旧任务显示“历史任务：安全入库未完成”。8项定向Vitest、零警告ESLint、客户端门禁、文案扫描与生产构建/Bundle预算通过；未重跑Provider/AI或改动生产业务数据。待用户单独授权无迁移发布此纯UI澄清补丁。详见`docs/validation/acquisition-direct-ingestion-2026-09-28.md`。
 
 - [x] P0实现“部分直接入库”本地改造：任意安全存储的主图/副图即可自动确认并投影，缺失资产保留为可见、不可伪造的缺口；图片知识库可见已入库图片并提供人工补图/受控重新采集入口。结构异常、Provider失败/partial、无可用图库继续失败关闭。历史`review_required`任务新增无Provider、无费用的“直接入库已保存图片”认证动作，待用户授权生产发布及执行。10项定向Vitest、零警告ESLint、标识符门禁、构建/Bundle预算通过；全局tsc 143项既有诊断且改动文件0新增。详见`docs/validation/acquisition-direct-ingestion-2026-09-28.md`。
+
+- [x] P0完成“部分直接入库”青岛生产发布及用户授权的三条历史任务激活：无迁移原子发布、保留dist回滚备份，Web/Worker/Scheduler active、本机和公网HTTP 200。任务3/4/5在无Provider/AI调用、无费用的单一事务中仅录入安全保存资产：18张缺1、17张缺2、63张缺23；均confirmed且消费者投影、审计注记复验通过。初次传输4%卡住未修改远端，复验旧版本后以校验续传完成。详见`docs/validation/acquisition-direct-ingestion-2026-09-28.md`。
