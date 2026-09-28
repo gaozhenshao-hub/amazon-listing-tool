@@ -162,3 +162,10 @@ The first SCP transfer stalled before any remote replacement; it was interrupted
 | 5 | Image knowledge base | 63 images | 23 |
 
 All three jobs and source Snapshots are now `confirmed`, have active consumer links, and retain a `system_partial_direct_ingestion` audit note. The two knowledge-base consumers have their image sets with 18 and 63 stored images respectively; the project competitor-gallery consumer has one research subject with 17 stored images. No missing asset was fabricated, no existing asset was deleted, and no source image was used as a first-party creative asset.
+
+
+## Knowledge-base gallery sizing fix (local, pending production release)
+
+A post-release screenshot showed oversized/cropped-looking gallery images. The persisted image records were complete (no missing delivery URL), and the symptom matched the display layout rather than a source-object loss. In `AmazonStyleGallery`, the main preview had only minimum/maximum heights while its image used `h-full`; the A+ row had no definite image-box height. `object-contain` therefore had no reliable containing box from which to preserve the image ratio.
+
+The targeted rendering fix supplies definite boxes: 420px for the main/secondary preview and 320px for each A+ preview, with absolute full-box `object-contain` images and padding. Brand-story thumbnails also use `object-contain` rather than cropping. This changes no image object, metadata, source Snapshot, or consumer projection. Two dedicated sizing regressions, zero-warning ESLint, the client runtime identifier gate, production build, and bundle budget pass. The full repository TypeScript check remains at 143 documented historical diagnostics, with zero in the changed gallery files.

@@ -114,8 +114,8 @@ function AplusRow({ img, onDeleteImage, renderTagEditor, onReorder }: {
   return (
     <div ref={setNodeRef} style={style} className="flex gap-0 border rounded-lg overflow-hidden bg-white group/aprow">
       {/* Left: image */}
-      <div className="relative flex-1 min-w-0">
-        <img src={img.imageUrl} alt="" className="w-full object-contain bg-white" loading="lazy" />
+      <div className="relative flex-1 min-w-0 h-[320px] bg-slate-50">
+        <img src={img.imageUrl} alt="" className="absolute inset-0 h-full w-full object-contain p-2" loading="lazy" />
         {/* Drag handle */}
         {onReorder && (
           <div
@@ -181,7 +181,7 @@ function BrandStoryItem({ img, isActive, onClick, onDeleteImage }: {
   return (
     <div ref={setNodeRef} style={style} className="relative flex-shrink-0 w-[280px] group/bsitem cursor-pointer" onClick={onClick}>
       <div className={`rounded-lg overflow-hidden border-2 transition-all ${isActive ? "border-primary ring-1 ring-primary/30" : "border-transparent hover:border-muted-foreground/30"}`}>
-        <img src={img.imageUrl} alt="" className="w-full h-[160px] object-cover bg-white" loading="lazy" />
+        <img src={img.imageUrl} alt="" className="w-full h-[160px] object-contain bg-slate-50 p-1" loading="lazy" />
       </div>
       {/* Drag handle */}
       <div
@@ -237,7 +237,7 @@ export function AmazonStyleGallery({
     if (brandStoryImages.length > 0 && !activeBrandStoryId) {
       setActiveBrandStoryId(brandStoryImages[0].id);
     }
-  }, [brandStoryImages]);
+  }, [brandStoryImages, activeBrandStoryId]);
 
   const currentImage = galleryItems[currentIndex];
   const activeBrandStoryImg = brandStoryItems.find((i) => i.id === activeBrandStoryId) || brandStoryItems[0];
@@ -374,14 +374,13 @@ export function AmazonStyleGallery({
                     className={`relative bg-gray-50 rounded-lg overflow-hidden border cursor-pointer transition-all ${
                       selectedImageId === currentImage.id ? "ring-2 ring-primary" : ""
                     }`}
-                    style={{ minHeight: "360px", maxHeight: "480px" }}
+                    style={{ height: "420px" }}
                     onClick={handleMainImageClick}
                   >
                     <img
                       src={currentImage.imageUrl}
                       alt=""
-                      className="w-full h-full object-contain"
-                      style={{ maxHeight: "480px" }}
+                      className="absolute inset-0 h-full w-full object-contain p-2"
                       loading="eager"
                       fetchPriority="high"
                     />
