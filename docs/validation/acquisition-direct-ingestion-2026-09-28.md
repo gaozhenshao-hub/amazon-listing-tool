@@ -1,7 +1,7 @@
 # Unified Amazon Acquisition — Direct Ingestion Validation
 
-**Date:** 2026-09-28  
-**Status:** Local implementation and validation complete; production release has not been performed.  
+**Date:** 2026-09-28
+**Status:** Local implementation and validation complete; production release has not been performed.
 **Scope approved:** all current unified Amazon acquisition consumers.
 
 ## Outcome
@@ -71,3 +71,39 @@ Direct ingestion removes a manual **acquisition** review only. It does not weake
 ## Release boundary
 
 No Provider call, AI run, business import, migration, production release, keyword task, or Heartbeat was triggered by this implementation or validation. A production release must remain a separate, explicit authorization and must use the established Qingdao atomic release procedure with service and static-health verification only.
+
+
+## Qingdao production release
+
+**Authorization:** user confirmed production release on 2026-09-28.
+**Release ID:** `direct-ingestion-20260928T085024Z`
+**Migration:** none.
+**Provider / AI invocation:** none. No business acquisition, AI run, keyword task, or Heartbeat was created.
+
+### Atomic release evidence
+
+| Control | Result |
+| --- | --- |
+| Local production build, bundle budget, and direct-ingestion regression suite | Passed before release |
+| Strict artifact privacy audit | Passed after removing a client-side database-URI example placeholder; no literal credential or database-URI pattern was present in the released bundle |
+| Uploaded archive SHA-256 | Verified on Qingdao before extraction |
+| Staging entry files | Verified non-empty and hash-matched before swap |
+| Atomic activation | Previous `dist` preserved as a versioned backup; staged `dist` moved into place only after verification |
+| Rollback | Automatic rollback handler installed for any post-swap failure; not triggered |
+| Services | `amazon-listing-web`, `amazon-listing-worker`, and `amazon-listing-scheduler` all `active` |
+| Local service health | `HTTP 200` from `127.0.0.1:3000/` |
+| Public shell and entry | `HTTP 200` |
+| Updated lazy chunks | Acquisition task page, image workflow, image knowledge base, and MCP manager resources all `HTTP 200` |
+| Rollback copy | Preserved and verified under Qingdao’s protected backup directory |
+
+### Deployed entry fingerprints
+
+| Entry | SHA-256 |
+| --- | --- |
+| Web | `4676f59fbe97039cdd907bd510ab5c2f0dd82571cdcdc49892c18d5eddc5e2c1` |
+| AI worker | `4c30b2a5973ca65608fd339c01a240060c247b801205d187346d46574aa77bed` |
+| Scheduler | `2afff49e31dffc13168c6eef530fc549073672fe4279942551c2abba47dbeea7` |
+
+### Separate operational observation
+
+The production runtime configuration has no non-empty Manus OAuth server, portal, or app identifier values. The web process reports this at startup. Existing custom/local authentication behavior and the public application shell remain available; this release did not change authentication code or configuration. However, a **new Manus OAuth callback cannot complete** while that external configuration is absent. No authentication configuration was changed during this release because it is outside the authorized direct-ingestion scope and can affect account access. Treat configuration repair as a separate, explicitly authorized operation.

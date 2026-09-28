@@ -244,3 +244,6 @@ Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受�
 
 
 **统一采集任务直接录入（2026-09-28，本地实现已完成、待独立生产发布授权）**：用户确认将所有当前统一Amazon采集消费者从人工Snapshot审核改为直接录入。实现已移除采集审核页面以及`review`、`saveReview`、`confirmReview`、`rejectReview`接口；历史审核深链安全跳转至采集任务中心。Provider成功后仍必须形成原始Artifact、Source Snapshot、不可变Confirmed Snapshot、确认版本、内容哈希和Consumer Link；只有规范化成功、能力/预算门禁通过、非partial/非schema drift，且所有返回图片已安全入库（图库请求还须至少有一张主图或副图）才以`system_direct_ingestion`来源自动确认并幂等投影。失败、部分、结构漂移、资格或预算不足一律失败关闭，绝不回退旧HTML爬虫。图片知识库、图片工作流竞品图库、Listing知识库、产品知识库、项目竞品、转化采集和监控消费者均使用此入库路径。AI分析和Listing生成的可编辑人工确认仍保留，因为它们是业务草案确认而非采集审核。定向8个Vitest文件22项、零警告ESLint、客户端标识符门禁、生产构建/Bundle预算和差异检查均通过；全局`tsc`仍有143项既有诊断，本次相关文件新增为0。未调用Provider/AI、未创建业务任务、未执行迁移或生产发布。详细验证记录：`docs/validation/acquisition-direct-ingestion-2026-09-28.md`。
+
+
+**统一采集任务直接录入生产发布（2026-09-28）**：用户已授权后完成青岛无迁移原子发布。发布前严格构建隐私审计发现MCP连接字段的客户端示例使用数据库URI形式，占位文本已改为非URI的受控说明；重新构建后无真实凭据、数据库URI、私钥、环境文件、数据库文件或本地路径进入发布包。发布包与远端staging的SHA-256均校验一致，旧`dist`已版本化备份，Web/Worker/Scheduler三服务均active、本机HTTP 200，公网入口与采集任务、图片工作流、图片知识库、MCP管理等更新资源均HTTP 200。未执行迁移、未调用Provider/AI、未创建业务采集、关键词或Heartbeat。发布后只读发现生产`OAUTH_SERVER_URL`、OAuth portal和App ID运行配置为空，新的Manus OAuth回调目前不能完成；该项与本次直录功能无关且会影响认证访问，未擅自修改，需单独授权后按认证配置流程修复。详细证据：`docs/validation/acquisition-direct-ingestion-2026-09-28.md`。
