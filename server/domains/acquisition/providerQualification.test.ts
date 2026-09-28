@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   createProvider: vi.fn(),
   getProfile: vi.fn(),
   finalizeProfile: vi.fn(),
+  finalizeRichProfile: vi.fn(),
   createJob: vi.fn(),
   createRun: vi.fn(),
   findByIdempotency: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock("./apifyProvider", () => ({ createConfiguredApifyAmazonProvider: mocks.c
 vi.mock("./providerProfileService", () => ({
   getApifyProviderProfile: mocks.getProfile,
   finalizeApifyProviderQualification: mocks.finalizeProfile,
+  finalizeApifyProviderRichContentQualification: mocks.finalizeRichProfile,
 }));
 vi.mock("./repository", () => ({
   createAcquisitionJob: mocks.createJob,
@@ -32,7 +34,10 @@ vi.mock("./repository", () => ({
 }));
 vi.mock("./amazonNormalizer", () => ({ normalizeApifyAmazonArtifact: mocks.normalize }));
 
-import { runPrimaryProviderQualification } from "./providerQualification";
+import {
+  runPrimaryProviderQualification,
+  runPrimaryProviderRichContentQualification,
+} from "./providerQualification";
 
 const input = { workspaceId: 1, requestedBy: 7, testAsin: "B0DCTJLP9R", maxChargeUsd: 0.1 as const };
 const pendingProfile = {
@@ -134,5 +139,73 @@ describe("primary Provider qualification", () => {
     });
     expect(mocks.createProvider).not.toHaveBeenCalled();
     expect(mocks.createJob).not.toHaveBeenCalled();
+  });
+
+  it("extends an active base-qualified Provider only after both rich-content collections are observed", async () => {
+    mocks.getProfile.mockResolvedValue({
+      ...pendingProfile,
+      status: "active",
+      capabilities: ["catalog_basic", "image_gallery"],
+    });
+    const fetch = vi.fn().mockResolvedValue({
+      providerCode: "apify.junglee.amazon_crawler",
+      providerRunId: "run-private",
+      status: "succeeded",
+      failureCategory: null,
+      chargedUsd: 0.005,
+      rawArtifact: { bytes: new Uint8Array([1]), contentHash: "c".repeat(64), contentType: "application/json" },
+    });
+    mocks.createProvider.mockResolvedValue({ estimate: vi.fn().mockResolvedValue({ estimatedMaxUsd: 0.005 }), fetch });
+    mocks.normalize.mockReturnValue({
+      completeness: { basicFieldsReturned: 3, mainGalleryCount: 2, aplusAssetCount: 1, brandStoryAssetCount: 1 },
+      sourceHash: "ignored",
+      snapshot: {},
+    });
+
+    const result = await runPrimaryProviderRichContentQualification(input);
+
+    expect(result).toEqual(expect.objectContaining({
+      status: "qualified",
+      providerStatus: "active",
+      observedCapabilities: ["catalog_basic", "image_gallery", "aplus", "brand_story"],
+    }));
+    expect(fetch).toHaveBeenCalledWith(expect.objectContaining({
+      capabilities: ["catalog_basic", "image_gallery", "aplus", "brand_story"],
+      maxChargeUsd: 0.1,
+    }));
+    expect(mocks.finalizeRichProfile).toHaveBeenCalledWith(expect.objectContaining({
+      record: expect.objectContaining({ observedCapabilities: ["catalog_basic", "image_gallery", "aplus", "brand_story"] }),
+    }));
+    expect(JSON.stringify(mocks.createJob.mock.calls)).not.toContain(input.testAsin);
+  });
+
+  it("fails rich-content qualification without removing base capabilities when either collection is absent", async () => {
+    mocks.getProfile.mockResolvedValue({
+      ...pendingProfile,
+      status: "active",
+      capabilities: ["catalog_basic", "image_gallery"],
+    });
+    mocks.createProvider.mockResolvedValue({
+      estimate: vi.fn().mockResolvedValue({ estimatedMaxUsd: 0.005 }),
+      fetch: vi.fn().mockResolvedValue({
+        providerCode: "apify.junglee.amazon_crawler",
+        providerRunId: "run-private",
+        status: "succeeded",
+        failureCategory: null,
+        chargedUsd: 0.005,
+        rawArtifact: { bytes: new Uint8Array([1]), contentHash: "d".repeat(64), contentType: "application/json" },
+      }),
+    });
+    mocks.normalize.mockReturnValue({
+      completeness: { basicFieldsReturned: 3, mainGalleryCount: 2, aplusAssetCount: 1, brandStoryAssetCount: 0 },
+      sourceHash: "ignored",
+      snapshot: {},
+    });
+
+    const result = await runPrimaryProviderRichContentQualification(input);
+
+    expect(result).toEqual(expect.objectContaining({ status: "failed", providerStatus: "active", failureCategory: "partial_result" }));
+    expect(mocks.finalizeRichProfile).not.toHaveBeenCalled();
+    expect(mocks.updateJob).toHaveBeenCalledWith(expect.anything(), 1, 101, expect.objectContaining({ status: "failed" }));
   });
 });

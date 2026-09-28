@@ -238,3 +238,6 @@ Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受�
 
 
 **图片知识库首次采集能力门禁修复（2026-09-28）**：主 Provider 已通过`catalog_basic`与`image_gallery`资格，但图片知识库的首次导入仍错误地把`aplus`、`brand_story`作为硬性请求，导致在外呼前被正确但不符合首期目标的能力门禁拒绝。现首次单ASIN、链接和批量导入仅请求已验证的基础信息与主/副图库；A+/品牌故事仍仅能经显式图位刷新请求且继续失败关闭，绝不静默降级或自行启用。定向4项回归、ESLint、客户端标识符门禁、生产构建和Bundle预算通过；青岛无迁移原子发布后，三服务active、HTTP健康、入口SHA和公共图片库分块均已静态复验。未创建业务采集、Provider Run、AI Job、关键词或Heartbeat。
+
+
+**A+与品牌故事扩展资格验证（2026-09-28）**：用户授权一次最高$0.10的受控扩展资格任务后，主Provider在不撤销既有基础目录/图库能力的前提下，成功观测`catalog_basic`、`image_gallery`、`aplus`、`brand_story`四项能力；Qualification Job为confirmed、Run为succeeded、实际费用$0.00、样本及原始载荷均未持久化。Provider Profile维持active并安全扩展为四项完整图片能力；图片知识库ASIN/链接/批量导入已恢复完整四项请求。青岛Web、Worker、Scheduler均active，本机HTTP 200；未自动创建业务采集任务、未启动关键词或Heartbeat。

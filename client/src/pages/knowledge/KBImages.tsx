@@ -842,7 +842,7 @@ export default function KBImages() {
               <div className="space-y-2">
                 <Label>输入单个ASIN</Label>
                 <Input placeholder="B0XXXXXXXXX" value={asinInput} onChange={(e) => setAsinInput(e.target.value)} className="font-mono" />
-                <p className="text-xs text-muted-foreground">系统通过受控Provider采集基础商品信息、主图和副图；确认前进入独立审核，不会直接覆盖图片知识库。A+/品牌故事须在Provider完成单独资格验证后再请求。</p>
+                <p className="text-xs text-muted-foreground">系统通过受控Provider采集基础商品信息、主图、副图、可获取的A+和品牌故事；确认前进入独立审核，不会直接覆盖图片知识库。</p>
               </div>
               <Button onClick={() => importAsin.mutate({ asin: asinInput })} disabled={importAsin.isPending || !asinInput} className="w-full gap-2">
                 {importAsin.isPending && <Loader2 className="h-4 w-4 animate-spin" />}

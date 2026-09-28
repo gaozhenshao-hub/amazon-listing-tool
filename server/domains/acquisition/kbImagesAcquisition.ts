@@ -4,14 +4,14 @@ import type { AmazonAcquisitionCapability } from "../../../shared/acquisition";
 export const KB_IMAGE_IMPORT_CAPABILITIES = [
   "catalog_basic",
   "image_gallery",
+  "aplus",
+  "brand_story",
 ] as const satisfies readonly AmazonAcquisitionCapability[];
 
 /**
- * The default ASIN/link/batch import deliberately requests only the capability
- * set that the current Provider Profile has passed. A+ and Brand Story are
- * separately requested only by the explicit position refresh flow, where the
- * Provider qualification gate returns a readable precondition error until
- * those capabilities have evidence.
+ * Default ASIN/link/batch import requests all currently qualified image
+ * capabilities. The Provider Profile remains the runtime authority and rejects
+ * a request if a later capability is not actively qualified.
  */
 export type KbImageAcquisitionCapability = AmazonAcquisitionCapability;
 

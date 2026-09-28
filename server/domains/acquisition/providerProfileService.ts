@@ -195,3 +195,66 @@ export async function finalizeApifyProviderQualification(input: {
   }
   return sanitizeProviderProfile(finalized);
 }
+
+/**
+ * Extends an already-qualified primary Provider with A+ and Brand Story only
+ * after a separate positive sample has demonstrated both image collections.
+ * Existing catalog/gallery qualification remains usable if this check fails.
+ */
+export async function finalizeApifyProviderRichContentQualification(input: {
+  db: DbExecutor;
+  workspaceId: number;
+  userId: number;
+  profileId: number;
+  record: ProviderQualificationRecord;
+  jobId: number;
+  runId: number;
+}) {
+  const profile = await getApifyProviderProfile(input.db, input.workspaceId);
+  if (!profile || profile.id !== input.profileId || profile.status !== "active") {
+    throw new Error("primary Provider is not eligible for rich-content qualification finalization");
+  }
+  const observed = new Set(input.record.observedCapabilities);
+  const required = ["catalog_basic", "image_gallery", "aplus", "brand_story"] as const;
+  const missing = required.filter(capability => !observed.has(capability));
+  if (missing.length > 0) {
+    throw new Error(`primary Provider rich-content qualification did not observe required capabilities: ${missing.join(",")}`);
+  }
+  const previousSettings = profile.providerSettings && typeof profile.providerSettings === "object" && !Array.isArray(profile.providerSettings)
+    ? profile.providerSettings as Record<string, unknown>
+    : {};
+  const previousQualification = previousSettings.qualification && typeof previousSettings.qualification === "object" && !Array.isArray(previousSettings.qualification)
+    ? previousSettings.qualification as Record<string, unknown>
+    : {};
+  await input.db.update(acquisitionProviderProfiles).set({
+    capabilities: required,
+    qualificationVersion: "apify-junglee-us-rich-content-2026-09-28-r1",
+    lastQualifiedAt: new Date(),
+    providerSettings: {
+      ...previousSettings,
+      qualification: {
+        ...previousQualification,
+        richContent: {
+          version: "apify-junglee-us-rich-content-2026-09-28-r1",
+          decision: input.record.decision,
+          observedCapabilities: required,
+          checkedAt: input.record.checkedAt,
+          maxObservedChargeUsd: input.record.maxObservedChargeUsd,
+          jobId: input.jobId,
+          runId: input.runId,
+        },
+      },
+    },
+    updatedBy: input.userId,
+  }).where(and(
+    eq(acquisitionProviderProfiles.workspaceId, input.workspaceId),
+    eq(acquisitionProviderProfiles.id, input.profileId),
+    eq(acquisitionProviderProfiles.status, "active"),
+  ));
+  const finalized = await getApifyProviderProfile(input.db, input.workspaceId);
+  if (!finalized || finalized.status !== "active" || !Array.isArray(finalized.capabilities)
+    || !required.every(capability => finalized.capabilities.includes(capability))) {
+    throw new Error("primary Provider rich-content qualification finalization did not persist");
+  }
+  return sanitizeProviderProfile(finalized);
+}
