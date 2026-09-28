@@ -174,3 +174,10 @@ The targeted rendering fix supplies definite boxes: 420px for the main/secondary
 ### Qingdao release
 
 User authorized the gallery-sizing correction. The checked bundle was atomically published to Qingdao with no schema migration, no acquisition run, and no business-data write; the previous `dist` remains as a versioned rollback backup. Web, Worker, and Scheduler are active. The deployed knowledge-gallery chunk includes the fixed 320px A+ sizing and full-fit brand-story rules; `/knowledge/images` returned local HTTP 200 and the public route plus its lazy-loaded chunk returned HTTP 200. Recent Web-service logs show no rendering or startup fatal error.
+
+
+## Balanced preview framing (local, pending production release)
+
+A follow-up comparison showed that fixed preview dimensions solved overflow but still rendered source-canvas white space too literally. A read-only sample measurement found a near-square source canvas with visual content substantially below its geometric center, which explains the perceived misplaced blank area. The gallery now retains `object-contain` (so it never crops or changes stored pixels) and applies a small, client-side translation only when its local canvas analysis can safely detect a nonblank content bounding box. The translation is clamped so no image edge leaves the preview frame. Each main/secondary and A+ preview also has a **完整画布 / 平衡留白** control, allowing the user to switch back to the exact original canvas at any time. No image object, Snapshot, acquisition run, or business record is changed.
+
+Three sizing/framing regressions, zero-warning ESLint, the client runtime identifier gate, the production build, and bundle budget pass. The full TypeScript check remains at 143 documented historical diagnostics, with zero in the changed gallery files.

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useState, useCallback, useEffect, useRef, type ReactNode, type RefObject } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, X, GripVertical, Tag } from "lucide-react";
@@ -37,6 +37,116 @@ interface AmazonStyleGalleryProps {
   renderTagEditor?: (img: GalleryImage) => ReactNode;
   onReorder?: (imageOrders: { id: number; positionIndex: number }[]) => void;
   allowEdit?: boolean;
+}
+
+type PreviewFitMode = "balanced" | "full";
+
+type VisualBounds = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  aspectRatio: number;
+};
+
+/**
+ * Estimates the visual center from a small client-side canvas. It only changes
+ * preview framing; the stored source image and its original pixels remain intact.
+ */
+function useBalancedPreviewTransform(imageUrl: string, containerRef: RefObject<HTMLDivElement | null>) {
+  const [bounds, setBounds] = useState<VisualBounds | null>(null);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    let cancelled = false;
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      try {
+        const side = 96;
+        const scale = Math.min(side / image.naturalWidth, side / image.naturalHeight);
+        const width = Math.max(1, Math.round(image.naturalWidth * scale));
+        const height = Math.max(1, Math.round(image.naturalHeight * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) return;
+        context.drawImage(image, 0, 0, width, height);
+        const pixels = context.getImageData(0, 0, width, height).data;
+        let minX = width;
+        let minY = height;
+        let maxX = -1;
+        let maxY = -1;
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const offset = (y * width + x) * 4;
+            const r = pixels[offset];
+            const g = pixels[offset + 1];
+            const b = pixels[offset + 2];
+            const alpha = pixels[offset + 3];
+            const isForeground = alpha > 16 && (Math.min(r, g, b) < 232 || Math.max(r, g, b) - Math.min(r, g, b) > 14);
+            if (!isForeground) continue;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          }
+        }
+        if (!cancelled && maxX >= minX && maxY >= minY) {
+          setBounds({
+            minX: minX / width,
+            minY: minY / height,
+            maxX: (maxX + 1) / width,
+            maxY: (maxY + 1) / height,
+            aspectRatio: image.naturalWidth / image.naturalHeight,
+          });
+        }
+      } catch {
+        // Cross-origin sources without canvas permission retain the safe center fallback.
+      }
+    };
+    if (!imageUrl) {
+      setBounds(null);
+      return () => { cancelled = true; };
+    }
+    image.src = imageUrl;
+    return () => { cancelled = true; };
+  }, [imageUrl]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const updateSize = () => setContainerSize({ width: element.clientWidth, height: element.clientHeight });
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [containerRef]);
+
+  if (!bounds || !containerSize.width || !containerSize.height) return "translate(0px, 0px)";
+  const renderedWidth = Math.min(containerSize.width, containerSize.height * bounds.aspectRatio);
+  const renderedHeight = renderedWidth / bounds.aspectRatio;
+  const baseX = (containerSize.width - renderedWidth) / 2;
+  const baseY = (containerSize.height - renderedHeight) / 2;
+  const desiredX = (0.5 - (bounds.minX + bounds.maxX) / 2) * renderedWidth;
+  const desiredY = (0.5 - (bounds.minY + bounds.maxY) / 2) * renderedHeight;
+  const offsetX = Math.max(-(baseX + bounds.minX * renderedWidth), Math.min(desiredX, containerSize.width - (baseX + bounds.maxX * renderedWidth)));
+  const offsetY = Math.max(-(baseY + bounds.minY * renderedHeight), Math.min(desiredY, containerSize.height - (baseY + bounds.maxY * renderedHeight)));
+  return `translate(${Math.round(offsetX)}px, ${Math.round(offsetY)}px)`;
+}
+
+function PreviewFitToggle({ mode, onToggle }: { mode: PreviewFitMode; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      className="rounded-full bg-black/45 px-2 py-1 text-[10px] text-white shadow-sm backdrop-blur-sm hover:bg-black/60"
+      onClick={(event) => { event.stopPropagation(); onToggle(); }}
+      title={mode === "balanced" ? "当前为平衡留白预览；点击查看完整原图画布" : "当前为完整原图画布；点击切回平衡留白预览"}
+    >
+      {mode === "balanced" ? "完整画布" : "平衡留白"}
+    </button>
+  );
 }
 
 /** Inline tag display for an image — always visible, no click needed */
@@ -108,14 +218,24 @@ function AplusRow({ img, onDeleteImage, renderTagEditor, onReorder }: {
   onReorder?: boolean;
 }) {
   const [showEditor, setShowEditor] = useState(false);
+  const [fitMode, setFitMode] = useState<PreviewFitMode>("balanced");
+  const previewRef = useRef<HTMLDivElement>(null);
+  const balancedTransform = useBalancedPreviewTransform(img.imageUrl, previewRef);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: img.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
 
   return (
     <div ref={setNodeRef} style={style} className="flex gap-0 border rounded-lg overflow-hidden bg-white group/aprow">
       {/* Left: image */}
-      <div className="relative flex-1 min-w-0 h-[320px] bg-slate-50">
-        <img src={img.imageUrl} alt="" className="absolute inset-0 h-full w-full object-contain p-2" loading="lazy" />
+      <div ref={previewRef} className="relative flex-1 min-w-0 h-[320px] bg-slate-50">
+        <img
+          src={img.imageUrl}
+          alt=""
+          className="absolute inset-0 h-full w-full object-contain p-2"
+          style={{ transform: fitMode === "balanced" ? balancedTransform : undefined }}
+          loading="lazy"
+        />
+        <div className="absolute bottom-2 right-2 z-10"><PreviewFitToggle mode={fitMode} onToggle={() => setFitMode(mode => mode === "balanced" ? "full" : "balanced")} /></div>
         {/* Drag handle */}
         {onReorder && (
           <div
@@ -221,8 +341,10 @@ export function AmazonStyleGallery({
   const [aplusItems, setAplusItems] = useState<GalleryImage[]>([]);
   const [brandStoryItems, setBrandStoryItems] = useState<GalleryImage[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [galleryFitMode, setGalleryFitMode] = useState<PreviewFitMode>("balanced");
   const [activeBrandStoryId, setActiveBrandStoryId] = useState<number | null>(null);
   const brandStoryScrollRef = useRef<HTMLDivElement>(null);
+  const galleryPreviewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setGalleryItems([...mainImages, ...secondaryImages].sort((a, b) => (a.positionIndex || 0) - (b.positionIndex || 0)));
@@ -240,6 +362,7 @@ export function AmazonStyleGallery({
   }, [brandStoryImages, activeBrandStoryId]);
 
   const currentImage = galleryItems[currentIndex];
+  const galleryBalancedTransform = useBalancedPreviewTransform(currentImage?.imageUrl || "", galleryPreviewRef);
   const activeBrandStoryImg = brandStoryItems.find((i) => i.id === activeBrandStoryId) || brandStoryItems[0];
 
   // Optimization 5/7: Preload adjacent images when currentIndex changes
@@ -374,6 +497,7 @@ export function AmazonStyleGallery({
                     className={`relative bg-gray-50 rounded-lg overflow-hidden border cursor-pointer transition-all ${
                       selectedImageId === currentImage.id ? "ring-2 ring-primary" : ""
                     }`}
+                    ref={galleryPreviewRef}
                     style={{ height: "420px" }}
                     onClick={handleMainImageClick}
                   >
@@ -381,6 +505,7 @@ export function AmazonStyleGallery({
                       src={currentImage.imageUrl}
                       alt=""
                       className="absolute inset-0 h-full w-full object-contain p-2"
+                      style={{ transform: galleryFitMode === "balanced" ? galleryBalancedTransform : undefined }}
                       loading="eager"
                       fetchPriority="high"
                     />
@@ -392,6 +517,7 @@ export function AmazonStyleGallery({
                         {currentImage.singleImageScore}/10
                       </Badge>
                     )}
+                    <div className="absolute top-2 right-2 z-10"><PreviewFitToggle mode={galleryFitMode} onToggle={() => setGalleryFitMode(mode => mode === "balanced" ? "full" : "balanced")} /></div>
                     {/* Tags overlay at bottom */}
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent p-3">
                       <InlineTags img={currentImage} compact />
