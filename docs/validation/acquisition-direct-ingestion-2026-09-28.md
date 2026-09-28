@@ -107,3 +107,21 @@ No Provider call, AI run, business import, migration, production release, keywor
 ### Separate operational observation
 
 The production runtime configuration has no non-empty Manus OAuth server, portal, or app identifier values. The web process reports this at startup. Existing custom/local authentication behavior and the public application shell remain available; this release did not change authentication code or configuration. However, a **new Manus OAuth callback cannot complete** while that external configuration is absent. No authentication configuration was changed during this release because it is outside the authorized direct-ingestion scope and can affect account access. Treat configuration repair as a separate, explicitly authorized operation.
+
+
+## Historical task-status clarification
+
+A post-release screenshot exposed a presentation defect: legacy `review_required` jobs were rendered with the generic text **“等待安全校验”**. That wording was misleading because it made completed legacy Provider Runs look like they still needed a human review action.
+
+A read-only production audit confirmed that the three visible legacy jobs have successful, zero-cost Provider Runs but their source snapshots are still `pending_review`, with no Confirmed Snapshot and no active Consumer Link. They do not qualify for direct ingestion because not every returned image has a safely stored asset. The missing-safe-asset counts are **1**, **2**, and **23** respectively. No provider was re-run and no data was changed during the audit.
+
+The local UI correction now distinguishes:
+
+| Status | User-facing meaning |
+| --- | --- |
+| `queued` / `running` | **自动安全校验中（无需人工审核）** — server-side validation only; successful completion proceeds automatically to direct ingestion. |
+| `confirmed` | **已直接录入**. |
+| `review_required` (legacy only) | **历史任务：安全入库未完成** — not a manual-review queue and not an already-ingested record. |
+| `failed` | **失败关闭**. |
+
+The correction does not relax asset storage controls and does not attempt to mark incomplete historical jobs as ingested. Targeted direct-ingestion tests, zero-warning ESLint, the client identifier gate, source-copy scan, and production build/bundle budget passed locally. Production deployment of this wording correction remains a separate authorization.

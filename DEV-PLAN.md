@@ -247,3 +247,6 @@ Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受�
 
 
 **统一采集任务直接录入生产发布（2026-09-28）**：用户已授权后完成青岛无迁移原子发布。发布前严格构建隐私审计发现MCP连接字段的客户端示例使用数据库URI形式，占位文本已改为非URI的受控说明；重新构建后无真实凭据、数据库URI、私钥、环境文件、数据库文件或本地路径进入发布包。发布包与远端staging的SHA-256均校验一致，旧`dist`已版本化备份，Web/Worker/Scheduler三服务均active、本机HTTP 200，公网入口与采集任务、图片工作流、图片知识库、MCP管理等更新资源均HTTP 200。未执行迁移、未调用Provider/AI、未创建业务采集、关键词或Heartbeat。发布后只读发现生产`OAUTH_SERVER_URL`、OAuth portal和App ID运行配置为空，新的Manus OAuth回调目前不能完成；该项与本次直录功能无关且会影响认证访问，未擅自修改，需单独授权后按认证配置流程修复。详细证据：`docs/validation/acquisition-direct-ingestion-2026-09-28.md`。
+
+
+**历史采集任务状态澄清（2026-09-28，本地待发布）**：发布后截图显示三条旧任务仍标记`review_required`，页面右侧错误复用“等待安全校验”，易误解为还需要人工审核。只读生产审计确认三条旧Provider Run均成功且费用0.00，但Source Snapshot仍为`pending_review`、没有Confirmed Snapshot或Consumer Link；分别有1、2、23张返回图片未完成安全存储，故不满足直接入库门禁，不能伪造为已入库。已将页面文案改为：新任务`queued/running`显示“自动安全校验中（无需人工审核）”，旧`review_required`显示“历史任务：安全入库未完成”，`confirmed`保持“已直接录入”。未弱化任何资产门禁、未重跑Provider/AI或写入旧业务数据。定向8项Vitest、零警告ESLint、客户端标识符门禁、源文案扫描和生产构建/Bundle预算通过；待用户单独授权无迁移发布此纯UI澄清补丁。详见`docs/validation/acquisition-direct-ingestion-2026-09-28.md`。

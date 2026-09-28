@@ -12,11 +12,20 @@ import { Label } from "@/components/ui/label";
 const statusLabels: Record<string, string> = {
   queued: "排队中",
   running: "采集中",
-  review_required: "历史审计状态",
+  review_required: "历史入库未完成",
   confirmed: "已直接录入",
   failed: "失败关闭",
   canceled: "已取消",
 };
+
+function ingestionStatusText(status: string, isQualification: boolean) {
+  if (isQualification) return "资格记录";
+  if (status === "confirmed") return "已直接录入";
+  if (status === "failed") return "失败关闭";
+  if (status === "review_required") return "历史任务：安全入库未完成";
+  if (status === "queued" || status === "running") return "自动安全校验中（无需人工审核）";
+  return "等待任务处理";
+}
 
 function formatDate(value: Date | string | null | undefined) {
   return value ? new Date(value).toLocaleString() : "—";
@@ -136,7 +145,7 @@ export default function AcquisitionJobsPage() {
                 <div key={job.id} className="grid gap-3 rounded-xl border p-4 md:grid-cols-[1fr_auto_auto] md:items-center">
                   <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{isQualification ? "Provider 技术资格验证（样本已脱敏）" : job.asin}</span><Badge variant="outline">{job.marketplace}</Badge><Badge>{statusLabels[job.status] || job.status}</Badge>{job.cacheHitSnapshotId ? <Badge variant="secondary">缓存命中</Badge> : null}</div><p className="mt-1 truncate text-xs text-muted-foreground">用途：{isQualification ? "仅验证受控能力，不进入任何业务分析" : `${job.consumerType} · ${job.consumerRef}`} · 创建于 {formatDate(job.createdAt)}</p></div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">{job.status === "running" || job.status === "queued" ? <Clock3 className="h-4 w-4" /> : job.status === "confirmed" ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : null}<span>上限 ${job.maxChargeUsd}</span></div>
-                  <span className="text-right text-xs text-muted-foreground">{isQualification ? "资格记录" : job.status === "confirmed" ? "已直接录入" : job.status === "failed" ? "失败关闭" : "等待安全校验"}</span>
+                  <span className="text-right text-xs text-muted-foreground">{ingestionStatusText(job.status, isQualification)}</span>
                 </div>
                 );
               })}
