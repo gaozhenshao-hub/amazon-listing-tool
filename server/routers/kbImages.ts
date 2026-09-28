@@ -13,6 +13,7 @@ import {
   capabilitiesForKbPositions,
   kbImagesConsumerRef,
   parseAmazonUsAsins,
+  type KbImageAcquisitionCapability,
   type KbImagePosition,
 } from "../domains/acquisition/kbImagesAcquisition";
 import {
@@ -147,7 +148,7 @@ async function startKbImagesAcquisition(input: {
   workspaceId: number;
   userId: number;
   asin: string;
-  capabilities?: readonly (typeof KB_IMAGE_IMPORT_CAPABILITIES)[number][];
+  capabilities?: readonly KbImageAcquisitionCapability[];
   cachePolicy?: "prefer_cache" | "refresh";
 }) {
   return startAmazonAcquisitionJob({
@@ -717,7 +718,7 @@ export const kbImagesRouter = router({
         workspaceId: ctx.workspaceId!,
         userId: ctx.user.id,
         asin: set.asin,
-        capabilities: capabilities as (typeof KB_IMAGE_IMPORT_CAPABILITIES)[number][],
+        capabilities,
         cachePolicy: "refresh",
       });
       return { success: true, ...job, requestedCapabilities: capabilities, reviewRequired: true };

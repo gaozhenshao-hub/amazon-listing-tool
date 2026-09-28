@@ -16,11 +16,11 @@ describe("KB Images acquisition contract", () => {
     expect(() => parseAmazonUsAsins("https://www.amazon.co.uk/dp/B000000001")).toThrow("美国站");
   });
 
-  it("maps gallery positions to one capability and keeps partial refresh explicit", () => {
+  it("defaults imports to qualified gallery capabilities and keeps optional positions explicit", () => {
     expect(capabilitiesForKbPositions(["main"])).toEqual(["catalog_basic", "image_gallery"]);
     expect(capabilitiesForKbPositions(["secondary", "aplus"])).toEqual(["catalog_basic", "image_gallery", "aplus"]);
     expect(capabilitiesForKbPositions(["brand_story"])).toEqual(["catalog_basic", "brand_story"]);
-    expect(KB_IMAGE_IMPORT_CAPABILITIES).toEqual(["catalog_basic", "image_gallery", "aplus", "brand_story"]);
+    expect(KB_IMAGE_IMPORT_CAPABILITIES).toEqual(["catalog_basic", "image_gallery"]);
     expect(kbImagesConsumerRef("b000000001")).toBe("kb-images:US:B000000001");
   });
 });

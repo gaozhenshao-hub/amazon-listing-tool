@@ -235,3 +235,6 @@ Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受�
 
 
 **主图片采集 Provider 资格验证完成（2026-09-23）**：在用户一次、最高0.10 USD的明确授权下，`apify-amazon-primary` 的受控资格任务已成功完成，Run费用为0.00 USD。Profile仅自动启用经实际观察通过的`catalog_basic`和`image_gallery`，A+、品牌故事和Listing内容继续保持未资格验证、不可调用。资格样本、原始载荷、竞品图片、URL和密钥均未进入业务快照或客户端；仅保留脱敏Job/Run审计结论。三项青岛服务active、HTTP健康且入口哈希已验证；未重跑用户业务任务，未启动关键词或Heartbeat。
+
+
+**图片知识库首次采集能力门禁修复（2026-09-28）**：主 Provider 已通过`catalog_basic`与`image_gallery`资格，但图片知识库的首次导入仍错误地把`aplus`、`brand_story`作为硬性请求，导致在外呼前被正确但不符合首期目标的能力门禁拒绝。现首次单ASIN、链接和批量导入仅请求已验证的基础信息与主/副图库；A+/品牌故事仍仅能经显式图位刷新请求且继续失败关闭，绝不静默降级或自行启用。定向4项回归、ESLint、客户端标识符门禁、生产构建和Bundle预算通过；青岛无迁移原子发布后，三服务active、HTTP健康、入口SHA和公共图片库分块均已静态复验。未创建业务采集、Provider Run、AI Job、关键词或Heartbeat。
