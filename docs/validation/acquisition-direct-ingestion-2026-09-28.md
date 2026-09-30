@@ -181,3 +181,10 @@ User authorized the gallery-sizing correction. The checked bundle was atomically
 A follow-up comparison showed that fixed preview dimensions solved overflow but still rendered source-canvas white space too literally. A read-only sample measurement found a near-square source canvas with visual content substantially below its geometric center, which explains the perceived misplaced blank area. The gallery now retains `object-contain` (so it never crops or changes stored pixels) and applies a small, client-side translation only when its local canvas analysis can safely detect a nonblank content bounding box. The translation is clamped so no image edge leaves the preview frame. Each main/secondary and A+ preview also has a **完整画布 / 平衡留白** control, allowing the user to switch back to the exact original canvas at any time. No image object, Snapshot, acquisition run, or business record is changed.
 
 Three sizing/framing regressions, zero-warning ESLint, the client runtime identifier gate, the production build, and bundle budget pass. The full TypeScript check remains at 143 documented historical diagnostics, with zero in the changed gallery files.
+
+
+### Qingdao balanced-preview release (2026-09-30)
+
+User authorized the no-migration Qingdao release. The validated release artifact was transferred with SHA-256 verification, extracted into a staging directory, and atomically swapped only after the staged entry files and `KBImages` bundle matched their expected hashes. The release restarted the web, worker, and scheduler services and performed a local HTTP health check before finalizing; its previous `dist` remains in a versioned rollback backup.
+
+Post-release verification confirms all three services are active; local HTTP, public root, public knowledge-image route, and the public `KBImages` resource return HTTP 200. The deployed bundle contains both **平衡留白** and **完整画布** controls. No migration, acquisition, Provider call, AI invocation, source-image mutation, or business-data write occurred.
