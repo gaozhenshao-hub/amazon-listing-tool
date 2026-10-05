@@ -3,6 +3,7 @@ import { z } from "zod";
 import { acquisitionConfirmedSnapshots } from "../../../drizzle/schema/acquisition";
 import { projects } from "../../../drizzle/schema/project";
 import { NormalizedAmazonSnapshotSchema } from "./contracts";
+import { readAcquisitionSnapshotJsonField } from "./snapshotJson";
 import type { DbExecutor } from "../../repositories/dbClient";
 import {
   listCompetitorResearchSubjects,
@@ -18,6 +19,10 @@ export function parseImageWorkflowConsumerRef(consumerRef: string) {
   return { projectId: Number(projectId) };
 }
 
+export function firstProjectionRow<T>(rows: T[]) {
+  return rows[0] ?? null;
+}
+
 export async function projectConfirmedSnapshotToImageWorkflow(input: {
   db: DbExecutor;
   workspaceId: number;
@@ -26,7 +31,7 @@ export async function projectConfirmedSnapshotToImageWorkflow(input: {
   consumerRef: string;
 }) {
   const { projectId } = parseImageWorkflowConsumerRef(input.consumerRef);
-  const [confirmed, project] = await Promise.all([
+  const [confirmedRows, projectRows] = await Promise.all([
     input.db.select().from(acquisitionConfirmedSnapshots).where(and(
       eq(acquisitionConfirmedSnapshots.workspaceId, input.workspaceId),
       eq(acquisitionConfirmedSnapshots.id, input.confirmedSnapshotId),
@@ -37,10 +42,16 @@ export async function projectConfirmedSnapshotToImageWorkflow(input: {
       eq(projects.id, projectId),
     )).limit(1),
   ]);
+  const confirmed = firstProjectionRow(
+    confirmedRows as Array<typeof acquisitionConfirmedSnapshots.$inferSelect>,
+  );
+  const project = firstProjectionRow(projectRows as Array<typeof projects.$inferSelect>);
   if (!confirmed) throw new Error("confirmed snapshot not found");
   if (!project) throw new Error("image workflow project target not found");
 
-  const snapshot = NormalizedAmazonSnapshotSchema.parse(confirmed.confirmedData);
+  const snapshot = NormalizedAmazonSnapshotSchema.parse(
+    readAcquisitionSnapshotJsonField(confirmed, "confirmedData", "confirmed_data"),
+  );
   const existing = await listCompetitorResearchSubjects(input.db, input.workspaceId, projectId);
   const current = existing.find((subject: any) => subject.confirmedSnapshotId === confirmed.id);
   if (current) {

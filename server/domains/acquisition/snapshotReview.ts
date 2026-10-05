@@ -15,6 +15,9 @@ import {
   updateSourceSnapshot,
 } from "./repository";
 import { activateConfirmedSnapshotForConsumer } from "./consumerActivation";
+import { readAcquisitionSnapshotJsonField } from "./snapshotJson";
+
+export { readAcquisitionSnapshotJsonField as readSnapshotJsonField } from "./snapshotJson";
 
 function sha256(value: unknown) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -34,24 +37,6 @@ export function confirmSnapshotFieldStatuses(value: unknown) {
 
 function requestedImageGallery(capabilities: unknown) {
   return z.array(z.string()).parse(capabilities).includes("image_gallery");
-}
-
-/**
- * Production rows are normally hydrated with camelCase Drizzle properties.
- * Some historical Worker bundles may surface JSON columns with their physical
- * snake_case name instead. Resolve both shapes without accepting invalid JSON.
- */
-export function readSnapshotJsonField(snapshot: unknown, camelCaseKey: string, snakeCaseKey: string) {
-  const row = snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
-    ? snapshot as Record<string, unknown>
-    : {};
-  const value = row[camelCaseKey] ?? row[snakeCaseKey];
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    throw new Error(`snapshot ${camelCaseKey} JSON is invalid`);
-  }
 }
 
 export function isRecoverableDirectIngestionSnapshot(snapshot: { status: string; reviewNote?: string | null }) {
@@ -115,10 +100,10 @@ export async function confirmSnapshotForDirectIngestion(input: {
       });
     }
     const confirmedData = NormalizedAmazonSnapshotSchema.parse(
-      readSnapshotJsonField(snapshot, "normalizedData", "normalized_data"),
+      readAcquisitionSnapshotJsonField(snapshot, "normalizedData", "normalized_data"),
     );
     const confirmedFieldStatuses = confirmSnapshotFieldStatuses(
-      readSnapshotJsonField(snapshot, "fieldStatuses", "field_statuses") ?? confirmedData.fieldEvidence,
+      readAcquisitionSnapshotJsonField(snapshot, "fieldStatuses", "field_statuses") ?? confirmedData.fieldEvidence,
     );
     const confirmationVersion = await nextConfirmationVersion(tx, snapshot.id);
     const contentHash = sha256({ confirmedData, approvedAssetIds: approvedAssets.map(asset => asset.id) });

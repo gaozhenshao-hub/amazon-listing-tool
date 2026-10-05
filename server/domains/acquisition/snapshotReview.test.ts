@@ -65,6 +65,7 @@ describe("acquisition direct-ingestion contracts", () => {
     expect(readSnapshotJsonField({ normalized_data: JSON.stringify(baseSnapshot) }, "normalizedData", "normalized_data")).toEqual(baseSnapshot);
     expect(readSnapshotJsonField({ field_statuses: JSON.stringify(baseSnapshot.fieldEvidence) }, "fieldStatuses", "field_statuses"))
       .toEqual(baseSnapshot.fieldEvidence);
+    expect(readSnapshotJsonField({ confirmed_data: JSON.stringify(baseSnapshot) }, "confirmedData", "confirmed_data")).toEqual(baseSnapshot);
   });
 
   it("fails explicitly for malformed persisted snapshot JSON", () => {
