@@ -188,3 +188,10 @@ Three sizing/framing regressions, zero-warning ESLint, the client runtime identi
 User authorized the no-migration Qingdao release. The validated release artifact was transferred with SHA-256 verification, extracted into a staging directory, and atomically swapped only after the staged entry files and `KBImages` bundle matched their expected hashes. The release restarted the web, worker, and scheduler services and performed a local HTTP health check before finalizing; its previous `dist` remains in a versioned rollback backup.
 
 Post-release verification confirms all three services are active; local HTTP, public root, public knowledge-image route, and the public `KBImages` resource return HTTP 200. The deployed bundle contains both **平衡留白** and **完整画布** controls. No migration, acquisition, Provider call, AI invocation, source-image mutation, or business-data write occurred.
+
+
+## Direct-ingestion snapshot mapping repair (local, pending production authorization)
+
+A user-reported image-workflow task failed after the Provider run completed. Read-only evidence shows the Provider profile was active, all four requested capabilities were qualified, the run returned one raw result at USD 0.00, and 76 of 77 image assets were safely persisted. The failure occurred afterward: the snapshot stored a valid normalized JSON object, but the Worker accessed only the camelCase property and received `undefined` under a historical physical-column mapping. The structured snapshot contract correctly rejected undefined data, but the job was incorrectly classified as a partial result.
+
+The repair reads either the Drizzle camelCase or physical snake_case JSON field and explicitly rejects malformed JSON. It permits recovery only when a Snapshot was rejected by the system direct-ingestion contract; manual rejections and genuine unsafe/no-gallery failures remain closed. Ten acquisition regression tests, zero-warning ESLint, client identifier gate, production build, and bundle budget pass. Full TypeScript remains at 143 existing diagnostics, with none in the repaired files. No Provider call, retry, image mutation, or business-data write has occurred locally.

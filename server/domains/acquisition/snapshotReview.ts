@@ -37,6 +37,29 @@ function requestedImageGallery(capabilities: unknown) {
 }
 
 /**
+ * Production rows are normally hydrated with camelCase Drizzle properties.
+ * Some historical Worker bundles may surface JSON columns with their physical
+ * snake_case name instead. Resolve both shapes without accepting invalid JSON.
+ */
+export function readSnapshotJsonField(snapshot: unknown, camelCaseKey: string, snakeCaseKey: string) {
+  const row = snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
+    ? snapshot as Record<string, unknown>
+    : {};
+  const value = row[camelCaseKey] ?? row[snakeCaseKey];
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    throw new Error(`snapshot ${camelCaseKey} JSON is invalid`);
+  }
+}
+
+export function isRecoverableDirectIngestionSnapshot(snapshot: { status: string; reviewNote?: string | null }) {
+  return ["draft", "pending_review"].includes(snapshot.status)
+    || (snapshot.status === "rejected" && snapshot.reviewNote?.startsWith("system_direct_ingestion_blocked:") === true);
+}
+
+/**
  * Admission remains fail-closed for unsafe assets, but a successful gallery may
  * be partially ingested when at least one usable image was safely stored. Missing
  * assets remain explicit evidence gaps for later manual supplementation or refresh.
@@ -74,7 +97,7 @@ export async function confirmSnapshotForDirectIngestion(input: {
   return withDbTransaction("Directly ingest Amazon acquisition snapshot", async tx => {
     const snapshot = await getSourceSnapshot(tx, input.workspaceId, input.snapshotId);
     if (!snapshot) throw new Error("snapshot not found");
-    if (!["draft", "pending_review"].includes(snapshot.status)) throw new Error("snapshot cannot be directly ingested");
+    if (!isRecoverableDirectIngestionSnapshot(snapshot)) throw new Error("snapshot cannot be directly ingested");
     const job = await loadJobForSnapshot(tx, input.workspaceId, snapshot.jobId);
     const assets = await listAssetCandidates(tx, input.workspaceId, snapshot.id) as AcquisitionAssetCandidate[];
     const reason = directIngestionBlockReason({ requestedCapabilities: job.requestedCapabilities, assets });
@@ -91,8 +114,12 @@ export async function confirmSnapshotForDirectIngestion(input: {
         reviewedBy: input.requestedBy,
       });
     }
-    const confirmedData = NormalizedAmazonSnapshotSchema.parse(snapshot.normalizedData);
-    const confirmedFieldStatuses = confirmSnapshotFieldStatuses(snapshot.fieldStatuses);
+    const confirmedData = NormalizedAmazonSnapshotSchema.parse(
+      readSnapshotJsonField(snapshot, "normalizedData", "normalized_data"),
+    );
+    const confirmedFieldStatuses = confirmSnapshotFieldStatuses(
+      readSnapshotJsonField(snapshot, "fieldStatuses", "field_statuses") ?? confirmedData.fieldEvidence,
+    );
     const confirmationVersion = await nextConfirmationVersion(tx, snapshot.id);
     const contentHash = sha256({ confirmedData, approvedAssetIds: approvedAssets.map(asset => asset.id) });
     await clearCurrentConfirmedSnapshot(tx, input.workspaceId, snapshot.marketplace, snapshot.asin);

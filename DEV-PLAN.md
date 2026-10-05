@@ -268,3 +268,6 @@ Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受�
 
 
 **图片知识库平衡留白预览生产发布（2026-09-30）**：用户授权后，已将经回归、ESLint、客户端运行时标识符门禁、生产构建、Bundle预算和隐私审计验证的“平衡留白 / 完整画布”图库预览发布到青岛。采用传输SHA校验、staging入口文件哈希校验、带版本化dist回滚备份的原子替换；发布后Web/Worker/Scheduler均active，本机HTTP、知识库公网路由及新版KBImages资源均200，并静态确认平衡留白/完整画布文案存在。没有迁移、采集、Provider/AI调用或图片、业务数据写入。
+
+
+**采集任务失败根因与直录映射修复（2026-10-05，本地待发布）**：用户报告智能图片建议的竞品图库任务失败。只读生产审计确认：Job/Run失败不是Apify、密钥、预算或资格问题；Provider Run实际成功（费用0.00 USD），原始结果已保存，77项候选资产中76项已安全存储。失败发生在Snapshot直录阶段：数据库中的`normalized_data`为完整JSON对象，但Worker的运行时行对象未提供`normalizedData`，结构化合同读到undefined并安全拒绝，误报`partial_result`。修复为兼容camelCase/snake_case JSON读取且拒绝畸形JSON；仅对`system_direct_ingestion_blocked`的历史快照开放可恢复直录，手动拒绝、无安全主/副图及Provider失败不放开。10项定向回归、ESLint、标识符门禁、构建和Bundle预算通过；全局TS仍143项历史诊断且改动文件无新增。待用户授权无迁移发布与对该已安全保存快照执行一次不调用Provider的恢复直录。

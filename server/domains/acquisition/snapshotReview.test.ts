@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   confirmSnapshotFieldStatuses,
   directIngestionBlockReason,
+  isRecoverableDirectIngestionSnapshot,
+  readSnapshotJsonField,
 } from "./snapshotReview";
 
 const baseSnapshot = {
@@ -56,6 +58,26 @@ describe("acquisition direct-ingestion contracts", () => {
       requestedCapabilities: ["catalog_basic"],
       assets: [],
     })).toBeNull();
+  });
+
+  it("reads persisted JSON using either Drizzle camelCase or physical snake_case keys", () => {
+    expect(readSnapshotJsonField({ normalizedData: baseSnapshot }, "normalizedData", "normalized_data")).toEqual(baseSnapshot);
+    expect(readSnapshotJsonField({ normalized_data: JSON.stringify(baseSnapshot) }, "normalizedData", "normalized_data")).toEqual(baseSnapshot);
+    expect(readSnapshotJsonField({ field_statuses: JSON.stringify(baseSnapshot.fieldEvidence) }, "fieldStatuses", "field_statuses"))
+      .toEqual(baseSnapshot.fieldEvidence);
+  });
+
+  it("fails explicitly for malformed persisted snapshot JSON", () => {
+    expect(() => readSnapshotJsonField({ normalized_data: "not-json" }, "normalizedData", "normalized_data"))
+      .toThrow("snapshot normalizedData JSON is invalid");
+  });
+
+  it("only permits recovery for system-blocked direct-ingestion snapshots", () => {
+    expect(isRecoverableDirectIngestionSnapshot({ status: "draft" })).toBe(true);
+    expect(isRecoverableDirectIngestionSnapshot({ status: "pending_review" })).toBe(true);
+    expect(isRecoverableDirectIngestionSnapshot({ status: "rejected", reviewNote: "system_direct_ingestion_blocked: contract retry" })).toBe(true);
+    expect(isRecoverableDirectIngestionSnapshot({ status: "rejected", reviewNote: "manual_rejection" })).toBe(false);
+    expect(isRecoverableDirectIngestionSnapshot({ status: "confirmed" })).toBe(false);
   });
 
 });
