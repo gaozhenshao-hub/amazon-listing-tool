@@ -1989,3 +1989,5 @@
 - [x] P0完成竞品图库采集失败只读诊断与本地修复：Provider Run成功、费用0.00 USD、76项图片安全持久化；直录失败根因为历史运行时JSON字段映射读取undefined。兼容camelCase/snake_case并限制仅系统直录阻断快照可恢复，10项回归、零警告ESLint、标识符门禁、构建/Bundle预算通过；待用户授权无迁移青岛发布及无Provider调用的历史快照恢复直录。
 
 - [x] P0完成用户授权的青岛无迁移发布与指定竞品图库失败快照恢复：最终修复JSON映射兼容及投影查询数组解构错误。发布后仅恢复一条系统直录阻断快照，Job/Snapshot confirmed、76项安全图片已直接入库、1项缺口保留补充入口、项目竞品关联ready；未重爬、未产生新Provider/AI Run，原唯一Run费用仍0.00 USD。三服务active、本机/公网HTTP 200、入口SHA一致；4个定向测试文件14项、ESLint、标识符门禁、构建/Bundle/隐私审计均通过。
+
+- [x] P0完成智能图片建议“分析整套图片”系统内部错误只读诊断与本地修复：根因是业务托管Agent复用查询对大型JSON执行记录`SELECT *`后文件排序，触发MySQL `Out of sort memory`，并非采集、图片或模型故障。改为只读`runId,status`，范围/排序/复用规则不变；4项Vitest、ESLint、客户端标识符门禁、构建/Bundle预算及生产只读最小查询通过；全局tsc仍143项既有诊断、改动文件0新增。没有创建AI Job、重跑分析、调用模型/Provider或产生费用；待用户授权无迁移发布青岛。

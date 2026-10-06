@@ -57,6 +57,15 @@ function workspaceClause(workspaceId?: number | null) {
     : { clause: "workspaceId=?", params: [workspaceId] as unknown[] };
 }
 
+export function latestBusinessManagedRunQuery(scopeClause: string) {
+  // Only the Run id and status participate in reuse admission. Selecting the
+  // large JSON execution payloads here makes MySQL's filesort carry megabytes
+  // of irrelevant data before getAgentRun fetches the chosen Run by id.
+  return `SELECT runId,status FROM emperor_agent_runs
+    WHERE agentSlug=? AND projectId=? AND ${scopeClause}
+    ORDER BY createdAt DESC,id DESC LIMIT 1`;
+}
+
 function nodeFromDag(dag: EmperorAgentDag, nodeId: string): EmperorAgentNode {
   const node = dag.nodes.find((item) => item.id === nodeId);
   if (!node) throw new Error(`Agent node not found: ${nodeId}`);
@@ -140,9 +149,7 @@ async function ensureNodeCanRun(input: BusinessManagedNodeInput) {
 export async function findLatestBusinessManagedRun(input: BusinessManagedRunInput) {
   const scope = workspaceClause(input.workspaceId);
   const rows = await rawExecute(
-    `SELECT * FROM emperor_agent_runs
-     WHERE agentSlug=? AND projectId=? AND ${scope.clause}
-     ORDER BY createdAt DESC,id DESC LIMIT 1`,
+    latestBusinessManagedRunQuery(scope.clause),
     [input.agentSlug, input.projectId, ...scope.params],
   );
   return rows[0] || null;

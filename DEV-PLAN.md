@@ -274,3 +274,10 @@ Provider主图/A+能力必须在A0实样验证；生产Apify Secret已通过受�
 
 
 **竞品图库历史快照恢复成功（2026-10-05）**：在用户授权“无迁移发布 + 不重爬/不调用Provider/不新增费用”的范围内，已完成最终青岛原子发布及指定失败快照恢复。根因链经证据确定为两处直录映射缺陷：持久化JSON字段的历史物理列映射兼容，以及竞品图库投影把查询结果数组误当单行记录。两次早期恢复尝试均在同一数据库事务内自动回滚，未留下确认记录、关联或项目数据；最终修复集中JSON读取并显式选取查询首行。最终恢复前严格验证系统阻断标记、0既有确认和76项安全资产；恢复后Job/Snapshot均confirmed，76项图片已直接录入，1项缺口保留为可人工补充/受控重采集入口，竞品图库项目关联ready。唯一原Provider Run仍为USD 0.00，未新增Run、Provider或AI调用。4个定向测试文件14项通过、ESLint、标识符门禁、构建/Bundle/隐私审计通过，改动文件无新增TS诊断；最终三服务active、本机/公网HTTP 200、入口SHA一致，保留版本化dist回滚备份。
+
+### 2026-10-06 — 智能图片建议“分析整套图片”启动失败修复（本地完成，待发布授权）
+- **问题证据：** 用户截图中的“系统内部错误”发生在模型调用前。青岛只读日志将异常定位至 `startCompetitorGalleryAnalysisJob → ensureImageWorkflowAgentRun → ensureBusinessManagedRun`；`emperor_agent_runs` 的复用查询执行 `SELECT * ... ORDER BY createdAt DESC,id DESC LIMIT 1` 时，MySQL 因排序携带大型 JSON 执行载荷而返回 `Out of sort memory`。
+- **最小修复：** 新增 `latestBusinessManagedRunQuery`，复用判定只读取实际所需的 `runId,status`；工作空间/Agent/项目条件、按时间/id选最新、复用状态规则和之后按`runId`完整受权读取均不变。此处不需要数据库迁移或扩大MySQL排序缓冲区。
+- **影响边界：** 此共用查询亦用于 Listing、关键词和产品分析的业务托管Agent，修复对它们同样消除无关大JSON排序压力；不改变任何模型路由、Skill提示词、权限、Run状态或人审/可编辑结果合同。
+- **验证：** 新增窄字段查询回归；4项Vitest、零警告ESLint、客户端未定义标识符门禁、生产构建和Bundle预算通过。全局TypeScript仍有143项已记录历史诊断，涉及两文件为0新增。生产只读最小查询已确认仅返回`runId,status`。
+- **发布门槛：** 待用户授权无迁移发布青岛。发布仅做服务/静态健康验证，不点击“分析整套图片”，因为该业务动作将创建AI Job并可能调用已配置模型、产生模型费用。
