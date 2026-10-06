@@ -104,6 +104,7 @@ export default function EmperorObservability() {
   const { data, isLoading, isFetching, error } = trpc.emperor.observability.dashboard.useQuery({ days });
   const sloQuery = trpc.emperor.observability.slo.useQuery({ days });
   const sloTrendQuery = trpc.emperor.observability.sloTrend.useQuery({ days });
+  const frontendPerformanceQuery = trpc.emperor.observability.frontendPerformance.useQuery({ days: Math.min(days, 14) });
   const alertsQuery = trpc.aiJobs.operationalAlerts.useQuery({ status: "open", limit: 20 });
   const snapshotMutation = trpc.emperor.observability.recordDatabaseBaselineSnapshot.useMutation({
     onSuccess: (result) => {
@@ -304,6 +305,23 @@ export default function EmperorObservability() {
               </ResponsiveContainer>
             </div> : <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">当前时间窗口暂无真实趋势样本；系统不会补造评分或曲线。</div>}
             <p className="text-xs text-muted-foreground">人工评测来源：`emperor_ai_os_evaluations`；运行失败率来源：`emperor_skill_runs`、`emperor_agent_runs`。指标按所选时间窗口聚合。</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base"><Timer className="h-4 w-4" />前端真实体验基线</CardTitle>
+            <p className="text-xs text-muted-foreground">仅汇总已登录会话的匿名 LCP、INP、CLS、TTFB、FCP 数值；路径已规范化，不记录项目、ASIN、查询参数、提示词或业务内容。</p>
+          </CardHeader>
+          <CardContent>
+            {(frontendPerformanceQuery.data?.routes || []).length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] text-sm">
+                  <thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="py-2 font-medium">页面</th><th className="py-2 font-medium">指标</th><th className="py-2 text-right font-medium">样本</th><th className="py-2 text-right font-medium">P50</th><th className="py-2 text-right font-medium">P75</th><th className="py-2 text-right font-medium">P95</th><th className="py-2 font-medium">等级</th></tr></thead>
+                  <tbody>{(frontendPerformanceQuery.data?.routes || []).slice(0, 18).map((item: any) => <tr key={`${item.routeKey}-${item.metricName}`} className="border-b last:border-0"><td className="py-2 font-mono text-xs">{item.routeKey}</td><td className="py-2">{item.metricName}</td><td className="py-2 text-right tabular-nums">{formatNumber(item.sampleCount)}</td><td className="py-2 text-right tabular-nums">{formatMs(item.p50)}</td><td className="py-2 text-right tabular-nums">{formatMs(item.p75)}</td><td className="py-2 text-right tabular-nums">{formatMs(item.p95)}</td><td className="py-2 text-xs">好 {item.ratings.good} / 需改善 {item.ratings.needsImprovement} / 差 {item.ratings.poor}</td></tr>)}</tbody>
+                </table>
+              </div>
+            ) : <div className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">正在收集匿名性能样本；在有足够真实访问前，不会虚构性能结论。</div>}
           </CardContent>
         </Card>
 

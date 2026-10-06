@@ -175,10 +175,18 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // bundle:check already enforces compressed-size budgets. Avoid compressing every emitted
+    // chunk a second time solely for Vite console output during production releases.
+    reportCompressedSize: false,
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes("node_modules/lucide-react")) return "vendor-icons";
+          // 这些依赖只在对应的懒页面或复杂富文本需要时下载，不能重新进入首页入口。
+          if (id.includes("node_modules/streamdown")) return "vendor-rich-content";
+          if (id.includes("node_modules/recharts")) return "vendor-charts";
+          if (id.includes("node_modules/cytoscape")) return "vendor-graph";
+          if (id.includes("node_modules/xlsx")) return "vendor-spreadsheet";
         },
       },
     },

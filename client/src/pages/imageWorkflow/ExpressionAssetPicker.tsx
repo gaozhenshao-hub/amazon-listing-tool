@@ -214,7 +214,7 @@ export function ExpressionAssetPicker({ projectId, groupId, canEdit }: Props) {
             return (
               <button key={candidate.assetId} type="button" onClick={() => canEdit && toggleAsset(candidate.assetId)} className={`overflow-hidden rounded-lg border bg-background text-left transition ${checked ? "border-primary ring-2 ring-primary/20" : "hover:border-primary/40"}`}>
                 <div className="relative aspect-square bg-muted">
-                  <img src={candidate.imageUrl} alt={`${candidate.asin} ${candidate.positionIndex}`} className="h-full w-full object-contain" />
+                  <img src={candidate.imageUrl} alt={`${candidate.asin} ${candidate.positionIndex}`} className="h-full w-full object-contain" loading="lazy" decoding="async" />
                   <div className="absolute left-2 top-2"><Checkbox checked={checked} /></div>
                   {candidate.recommended && <Badge className="absolute right-2 top-2 bg-violet-600 text-white">AI推荐</Badge>}
                 </div>

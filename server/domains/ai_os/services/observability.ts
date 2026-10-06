@@ -82,7 +82,7 @@ function markMetricStoreUnavailable(error: unknown) {
 }
 
 export async function recordAiOsMetric(input: {
-  entityType: "job" | "agent_run" | "agent_node" | "skill" | "tool" | "database";
+  entityType: "job" | "agent_run" | "agent_node" | "skill" | "tool" | "database" | "frontend";
   entityId: string;
   metricName: string;
   metricValue?: number | null;
@@ -336,6 +336,62 @@ export async function listAiOsMetrics(input: {
   } catch (error) {
     markMetricStoreUnavailable(error);
     return [];
+  }
+}
+
+function percentile(values: number[], ratio: number) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const position = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1));
+  return Math.round(sorted[position] * 100) / 100;
+}
+
+export async function buildFrontendPerformanceSummary(input: { workspaceId: number | null; days?: number }) {
+  if (!shouldAttemptMetricStore()) return { days: boundedDays(input.days), sampleCount: 0, routes: [] };
+  const days = boundedDays(input.days);
+  const since = new Date(Date.now() - days * 86_400_000);
+  try {
+    const rows = await rawExecute(
+      `SELECT entityId, metricName, metricValue, status, metadata, createdAt
+       FROM emperor_ai_os_metrics
+       WHERE entityType='frontend' AND workspaceId <=> ? AND createdAt>=?
+       ORDER BY createdAt DESC
+       LIMIT 5000`,
+      [input.workspaceId, since],
+    );
+    const grouped = new Map<string, { routeKey: string; metricName: string; values: number[]; good: number; needsImprovement: number; poor: number; latestAt: string | null }>();
+    for (const row of rows) {
+      const value = Number(row.metricValue);
+      if (!Number.isFinite(value) || value < 0) continue;
+      const routeKey = String(row.entityId || "/").slice(0, 96);
+      const metricName = String(row.metricName || "").replace(/^frontend\./, "").toUpperCase();
+      const key = `${routeKey}:${metricName}`;
+      const current = grouped.get(key) || { routeKey, metricName, values: [], good: 0, needsImprovement: 0, poor: 0, latestAt: null };
+      current.values.push(value);
+      if (row.status === "good") current.good += 1;
+      else if (row.status === "needs-improvement") current.needsImprovement += 1;
+      else if (row.status === "poor") current.poor += 1;
+      const createdAt = row.createdAt ? new Date(row.createdAt).toISOString() : null;
+      if (createdAt && (!current.latestAt || createdAt > current.latestAt)) current.latestAt = createdAt;
+      grouped.set(key, current);
+    }
+    return {
+      days,
+      sampleCount: rows.length,
+      routes: Array.from(grouped.values()).map((item) => ({
+        routeKey: item.routeKey,
+        metricName: item.metricName,
+        sampleCount: item.values.length,
+        p50: percentile(item.values, 0.5),
+        p75: percentile(item.values, 0.75),
+        p95: percentile(item.values, 0.95),
+        ratings: { good: item.good, needsImprovement: item.needsImprovement, poor: item.poor },
+        latestAt: item.latestAt,
+      })).sort((left, right) => right.sampleCount - left.sampleCount || left.routeKey.localeCompare(right.routeKey)),
+    };
+  } catch (error) {
+    markMetricStoreUnavailable(error);
+    return { days, sampleCount: 0, routes: [] };
   }
 }
 

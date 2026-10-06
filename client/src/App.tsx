@@ -7,7 +7,10 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { NetworkStatusBanner } from "./components/NetworkStatusBanner";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
-import { lazy, Suspense, type ComponentType } from "react";
+import { lazy, Suspense, useCallback, type ComponentType } from "react";
+import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { usePerformanceVitals, type PerformanceVital } from "@/lib/performanceVitals";
 
 function lazyWithRecovery<T extends ComponentType<any>>(
   loader: () => Promise<{ default: T }>,
@@ -163,9 +166,20 @@ export function RouteLoadingFallback() {
   );
 }
 
+function PerformanceVitalsReporter() {
+  const { isAuthenticated } = useAuth();
+  const recordVitals = trpc.performance.recordVitals.useMutation();
+  const report = useCallback((events: PerformanceVital[]) => {
+    recordVitals.mutate({ events });
+  }, [recordVitals]);
+  usePerformanceVitals(isAuthenticated, report);
+  return null;
+}
+
 function Router() {
   return (
     <DashboardLayout>
+      <PerformanceVitalsReporter />
       <Switch>
         {/* Platform root → redirect to listing (default module) */}
         <Route path="/" component={PlatformHome} />

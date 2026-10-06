@@ -11,6 +11,16 @@ import {
   type StartupEntrypoint,
 } from "./startupValidation";
 
+let runtimeDraining = false;
+
+export function setRuntimeDraining(value: boolean) {
+  runtimeDraining = value;
+}
+
+export function getRuntimeDraining() {
+  return runtimeDraining;
+}
+
 export type RuntimeHealthCheck = {
   status: "ok" | "warning" | "error";
   message?: string;
@@ -123,7 +133,10 @@ export async function buildRuntimeHealth(
       };
   checks.database = await checkDatabase();
   checks.toolGateway = checkToolGatewaySecret();
-  checks.runtime = { status: "ok", details: describeRuntimeRole(role) };
+  checks.runtime = {
+    status: runtimeDraining ? "warning" : "ok",
+    details: { ...describeRuntimeRole(role), draining: runtimeDraining },
+  };
   if (input.includeQueue) {
     checks.aiQueue = await checkAiQueue();
   }
@@ -135,7 +148,8 @@ export async function buildRuntimeHealth(
   const ready =
     checks.database.status === "ok" &&
     checks.environment.status !== "error" &&
-    checks.toolGateway.status !== "error";
+    checks.toolGateway.status !== "error" &&
+    !runtimeDraining;
   return {
     ok: worstStatus < 2,
     ready,
@@ -153,8 +167,9 @@ export function registerRuntimeHealthRoutes(
   input: { service: StartupEntrypoint }
 ) {
   app.get("/healthz", (_req, res) => {
-    res.json({
+    res.status(runtimeDraining ? 503 : 200).json({
       ok: true,
+      draining: runtimeDraining,
       service: input.service,
       role: getRuntimeRole(),
       timestamp: new Date().toISOString(),

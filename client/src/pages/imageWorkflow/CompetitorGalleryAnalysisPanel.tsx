@@ -394,7 +394,7 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
                   const draft = factDrafts[asset.id];
                   return (
                     <Card key={asset.id} className={`overflow-hidden ${selectedAssetIdSet.has(asset.id) ? "border-sky-300" : "border-dashed opacity-80"}`}>
-                      <div className="aspect-[4/3] bg-muted"><img src={asset.imageUrl || ""} alt="竞品确认图片" className="h-full w-full object-contain" /></div>
+                      <div className="aspect-[4/3] bg-muted"><img src={asset.imageUrl || ""} alt="竞品确认图片" className="h-full w-full object-contain" loading="lazy" decoding="async" /></div>
                       <CardContent className="space-y-3 p-4">
                         <div className="flex items-center justify-between gap-2"><div className="flex gap-2"><Badge variant="outline">{asset.role}</Badge><Badge variant="secondary">图位 {asset.positionIndex + 1}</Badge></div><label className="flex cursor-pointer items-center gap-2 text-xs font-medium"><Checkbox checked={selectedAssetIdSet.has(asset.id)} onCheckedChange={(checked) => toggleAsset(asset.id, checked === true)} disabled={!canEdit} aria-label={`将图位 ${asset.positionIndex + 1} 加入分析范围`} />纳入分析</label></div>
                         {!selectedAssetIdSet.has(asset.id) && <div className="flex gap-2 rounded-md bg-muted p-2 text-xs text-muted-foreground"><EyeOff className="h-3.5 w-3.5 shrink-0" />此图仅安全保留，不会进入本次AI、表达方式候选或综合结论。</div>}

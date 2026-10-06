@@ -600,7 +600,7 @@ export function Step4References({
                     <div key={getStep4KbReferenceCardKey(referenceCardKey, kbImg, imgIdx)} className="flex gap-2 items-start border rounded-lg p-2 bg-white">
                       <div className="relative shrink-0">
                         <div className="w-16 h-16 rounded-lg overflow-hidden border border-emerald-200">
-                          <img src={kbImg.imageUrl} alt={`KB ref ${imgIdx}`} className="w-full h-full object-cover" />
+                          <img src={kbImg.imageUrl} alt={`KB ref ${imgIdx}`} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                         </div>
                         <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-1 py-0.5 rounded-b-lg">
                           <span className="text-[8px] text-white">
@@ -654,7 +654,7 @@ export function Step4References({
                 </h4>
                 {ref.compositionRefImageUrl ? (
                   <div className="relative group">
-                    <img src={ref.compositionRefImageUrl} alt="构图参考" className="w-full h-32 object-cover rounded-lg border" />
+                    <img src={ref.compositionRefImageUrl} alt="构图参考" className="w-full h-32 object-cover rounded-lg border" loading="lazy" decoding="async" />
                     {!isConfirmed && !isImageLocked && (
                       <div className="absolute top-1 right-1 flex gap-1">
                         <label className="cursor-pointer bg-white/90 hover:bg-white rounded-full p-1 shadow-sm">
@@ -698,7 +698,7 @@ export function Step4References({
                 </h4>
                 {ref.effectRefImageUrl ? (
                   <div className="relative group">
-                    <img src={ref.effectRefImageUrl} alt="效果参考" className="w-full h-32 object-cover rounded-lg border" />
+                    <img src={ref.effectRefImageUrl} alt="效果参考" className="w-full h-32 object-cover rounded-lg border" loading="lazy" decoding="async" />
                     {!isConfirmed && !isImageLocked && (
                       <div className="absolute top-1 right-1 flex gap-1">
                         <label className="cursor-pointer bg-white/90 hover:bg-white rounded-full p-1 shadow-sm">

@@ -163,11 +163,11 @@ function AsinThumbnailStrip({ thumbnailImages }: { thumbnailImages?: Array<{ id:
     return <div className="flex h-full w-full items-center justify-center"><ImageIcon className="h-8 w-8 text-muted-foreground/30" /></div>;
   }
   if (displayImages.length === 1) {
-    return <KnowledgeImagePreview src={displayImages[0].imageUrl} alt="图片集缩略图" className="h-full w-full object-cover" fallbackClassName="h-full w-full" accessError={displayImages[0].imageAccessError} />;
+    return <KnowledgeImagePreview src={displayImages[0].imageUrl} alt="图片集缩略图" className="h-full w-full object-cover" fallbackClassName="h-full w-full" accessError={displayImages[0].imageAccessError} loading="eager" />;
   }
   return (
     <div className="flex h-full gap-0.5">
-      <div className="min-w-0 flex-1"><KnowledgeImagePreview src={displayImages[0].imageUrl} alt="图片集首图" className="h-full w-full object-cover" fallbackClassName="h-full w-full" accessError={displayImages[0].imageAccessError} /></div>
+      <div className="min-w-0 flex-1"><KnowledgeImagePreview src={displayImages[0].imageUrl} alt="图片集首图" className="h-full w-full object-cover" fallbackClassName="h-full w-full" accessError={displayImages[0].imageAccessError} loading="eager" /></div>
       <div className="flex w-[28%] flex-col gap-0.5">
         {displayImages.slice(1, 5).map((image) => (
           <div key={image.id} className="min-h-0 flex-1"><KnowledgeImagePreview src={image.imageUrl} alt="图片集缩略图" className="h-full w-full object-cover" fallbackClassName="h-full w-full" accessError={image.imageAccessError} /></div>

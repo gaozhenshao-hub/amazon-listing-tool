@@ -12,6 +12,12 @@ describe("global recovery UI contract", () => {
     expect(errorBoundary).toContain("返回首页");
   });
 
+  it("renders a non-business incident identifier for render failures", () => {
+    expect(errorBoundary).toContain("页面错误编号：");
+    expect(errorBoundary).toContain("globalThis.crypto?.randomUUID");
+    expect(errorBoundary).not.toContain("error.stack");
+  });
+
   it("exposes an offline status instead of silently leaving the page stale", () => {
     expect(networkBanner).toContain("网络连接暂时中断");
     expect(networkBanner).toContain('window.addEventListener("offline"');

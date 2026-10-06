@@ -307,7 +307,7 @@ export function Step3StyleConfirm({
                         {styleKbImages[style.id].map((kbImg, imgIdx) => (
                           <div key={imgIdx} className="relative group">
                             <div className="w-14 h-14 rounded overflow-hidden border border-emerald-200">
-                              <img src={kbImg.imageUrl} alt={`ref ${imgIdx}`} className="w-full h-full object-cover" />
+                              <img src={kbImg.imageUrl} alt={`ref ${imgIdx}`} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                             </div>
                             {!isConfirmed && (
                               <button

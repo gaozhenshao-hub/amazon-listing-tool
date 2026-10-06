@@ -39,7 +39,7 @@ import {
   shouldStartWebLocalTasks,
 } from "./runtime";
 import { assertStartupConfig } from "./startupValidation";
-import { registerRuntimeHealthRoutes } from "./runtimeHealth";
+import { registerRuntimeHealthRoutes, setRuntimeDraining } from "./runtimeHealth";
 import { resolveListenHost } from "./listenHost";
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -227,14 +227,26 @@ async function startServer() {
     }
   });
 
+  let shutdownPromise: Promise<void> | null = null;
   const shutdown = async (signal: string) => {
+    if (shutdownPromise) return shutdownPromise;
+    shutdownPromise = (async () => {
     console.log(`[Server] received ${signal}, shutting down gracefully`);
+    setRuntimeDraining(true);
+    const graceMs = Math.min(Math.max(Number(process.env.SHUTDOWN_GRACE_MS || 20_000), 5_000), 60_000);
+    const forceCloseTimer = setTimeout(() => {
+      console.warn(`[Server] grace period ${graceMs}ms reached; closing idle connections`);
+      server.closeIdleConnections?.();
+      server.closeAllConnections?.();
+    }, graceMs);
+    forceCloseTimer.unref();
     await new Promise<void>(resolve => {
       server.close(error => {
         if (error) console.error("[Server] close failed:", error);
         resolve();
       });
     });
+    clearTimeout(forceCloseTimer);
     if (shouldStartWebLocalTasks(role)) {
       await stopUsageTracking().catch(error =>
         console.error("[UsageTracking] Stop failed:", error)
@@ -248,6 +260,8 @@ async function startServer() {
         .then(m => m.stopTodoReminderScheduler())
         .catch(err => console.error("[TodoReminder] Stop failed:", err));
     }
+    })();
+    return shutdownPromise;
   };
 
   process.once("SIGINT", () => void shutdown("SIGINT"));

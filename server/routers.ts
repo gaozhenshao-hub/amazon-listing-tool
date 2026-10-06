@@ -96,9 +96,11 @@ import { adDeepAnalysisRouter } from "./routers/adDeepAnalysis";
 import { emperorRouter } from "./routers/emperor";
 import { aiJobsRouter } from "./routers/aiJobs";
 import { amazonAcquisitionRouter } from "./domains/acquisition/router";
+import { performanceRouter } from "./routers/performance";
 
 export const appRouter = router({
   system: systemRouter,
+  performance: performanceRouter,
   auth: router({
     me: publicProcedure.query(opts => {
       if (!opts.ctx.user) return null;

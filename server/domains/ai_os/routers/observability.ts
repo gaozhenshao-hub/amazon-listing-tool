@@ -6,6 +6,7 @@ import {
   buildAiOsObservabilityDashboard,
   buildAiOsSloSummary,
   buildAiOsSloTrend,
+  buildFrontendPerformanceSummary,
   buildDatabaseObservabilitySection,
   buildWorkerQueueHealth,
   listAiOsEvaluations,
@@ -50,6 +51,13 @@ export const emperorObservabilityRouter = router({
         agentSlug: input?.agentSlug,
       });
     }),
+
+  frontendPerformance: adminProcedure
+    .input(z.object({ days: z.number().int().min(1).max(30).optional().default(14) }).optional())
+    .query(async ({ ctx, input }) => buildFrontendPerformanceSummary({
+      workspaceId: workspaceIdFromContext(ctx),
+      days: input?.days || 14,
+    })),
 
   slo: adminProcedure
     .input(z.object({
