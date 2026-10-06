@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
+import { beijingReportDateDaysAgo } from "@/lib/beijingReportDate";
 import { useMarketplace } from "@/contexts/MarketplaceContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -96,11 +97,7 @@ export default function OpsAds() {
   // Primary campaign for sub-tab analysis (first selected or explicitly chosen)
   const [primaryCampaignId, setPrimaryCampaignId] = useState<string | null>(() => loadSavedSelection().primaryId);
 
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 2);
-    return d.toISOString().slice(0, 10);
-  });
+  const [selectedDate, setSelectedDate] = useState(() => beijingReportDateDaysAgo(2));
   // Support URL params for deep-linking: ?tab=search-terms&campaignId=xxx&campaignName=xxx
   const [activeTab, setActiveTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -114,16 +111,8 @@ export default function OpsAds() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [dateMode, setDateMode] = useState<'single' | 'range'>('single');
-  const [startDate, setStartDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 8);
-    return d.toISOString().slice(0, 10);
-  });
-  const [endDate, setEndDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 2);
-    return d.toISOString().slice(0, 10);
-  });
+  const [startDate, setStartDate] = useState(() => beijingReportDateDaysAgo(8));
+  const [endDate, setEndDate] = useState(() => beijingReportDateDaysAgo(2));
   const { marketplace } = useMarketplace();
 
   // Overview data - campaign summary with portfolio structure (from local uploaded data)
@@ -132,15 +121,17 @@ export default function OpsAds() {
     if (dateMode === 'range') {
       params.weekStartDate = startDate;
       params.weekEndDate = endDate;
+    } else {
+      params.selectedDate = selectedDate;
     }
     return params;
-  }, [adStateFilter, dateMode, startDate, endDate]);
+  }, [adStateFilter, dateMode, startDate, endDate, selectedDate]);
   const { data: campaignData, isLoading: campaignLoading, isFetching: campaignFetching, refetch: refetchCampaigns } = trpc.adLocalAnalysis.getAdCampaignsLocal.useQuery(queryParams);
   const dateRange = (campaignData as any)?.dateRange;
   const cacheInfo = (campaignData as any)?.cacheInfo;
 
-  const campaigns = campaignData?.campaigns || [];
-  const portfolios = (campaignData as any)?.portfolios || [];
+  const campaigns = useMemo(() => campaignData?.campaigns || [], [campaignData?.campaigns]);
+  const portfolios = useMemo(() => (campaignData as any)?.portfolios || [], [campaignData]);
 
   // Derived: selected campaign IDs as array
   const selectedCampaignIds = useMemo(() => Array.from(selectedCampaigns.keys()), [selectedCampaigns]);
@@ -158,21 +149,6 @@ export default function OpsAds() {
 
   // ASIN mapping warmup disabled for local data mode
   // const warmupMutation = trpc.adAnalysis.warmupAsinMapping.useMutation();
-
-  // Auto-select a random campaign when data loads and no campaign is selected
-  useEffect(() => {
-    if (campaigns.length > 0 && selectedCampaigns.size === 0 && !deepLinkApplied) {
-      const randomIndex = Math.floor(Math.random() * Math.min(campaigns.length, 10));
-      const randomCampaign = campaigns[randomIndex] as any;
-      if (randomCampaign) {
-        const id = String(randomCampaign.campaign_id);
-        const name = randomCampaign.name || randomCampaign.campaign_name || `Campaign ${randomCampaign.campaign_id}`;
-        const type = mapCampaignTypeToAdType(randomCampaign.campaign_type);
-        setSelectedCampaigns(new Map([[id, { id, name, type }]]));
-        setPrimaryCampaignId(id);
-      }
-    }
-  }, [campaigns]);
 
   // Deep-link: apply URL params to select a specific campaign and tab
   useEffect(() => {
@@ -309,49 +285,6 @@ export default function OpsAds() {
     });
   }, [selectedCampaigns, primaryCampaignId, typeFilter, searchQuery]);
 
-  // Select all campaigns on current page
-  const toggleSelectAllOnPage = useCallback(() => {
-    const allCampaignsOnPage: any[] = [];
-    paginatedPortfolios.forEach((p: any) => {
-      const filteredCampaigns = (p.campaigns || []).filter((c: any) => {
-        if (typeFilter !== "all" && (c.campaign_type || "SP") !== typeFilter) return false;
-        if (searchQuery.trim()) {
-          const q = searchQuery.trim().toLowerCase();
-          if (!(p.name || "").toLowerCase().includes(q)) {
-            if (!(c.campaign_name || "").toLowerCase().includes(q) && !String(c.campaign_id).includes(q)) return false;
-          }
-        }
-        return true;
-      });
-      allCampaignsOnPage.push(...filteredCampaigns);
-    });
-
-    const allSelected = allCampaignsOnPage.length > 0 && allCampaignsOnPage.every((c: any) => selectedCampaigns.has(String(c.campaign_id)));
-
-    setSelectedCampaigns(prev => {
-      const next = new Map(prev);
-      if (allSelected) {
-        allCampaignsOnPage.forEach((c: any) => next.delete(String(c.campaign_id)));
-      } else {
-        allCampaignsOnPage.forEach((c: any) => {
-          const id = String(c.campaign_id);
-          if (!next.has(id)) {
-            next.set(id, {
-              id,
-              name: c.campaign_name || `Campaign ${c.campaign_id}`,
-              type: mapCampaignTypeToAdType(c.campaign_type),
-            });
-          }
-        });
-      }
-      if (!next.has(primaryCampaignId || "")) {
-        const firstKey = next.keys().next().value;
-        setPrimaryCampaignId(firstKey || null);
-      }
-      return next;
-    });
-  }, [selectedCampaigns, primaryCampaignId, typeFilter, searchQuery]);
-
   // Clear all selections
   const clearAllSelections = useCallback(() => {
     setSelectedCampaigns(new Map());
@@ -429,6 +362,43 @@ export default function OpsAds() {
     const start = (currentPage - 1) * pageSize;
     return filteredPortfolios.slice(start, start + pageSize);
   }, [filteredPortfolios, currentPage, pageSize]);
+
+  // Select only campaigns currently visible on this page; recompute whenever
+  // pagination or filters change rather than capturing a stale page.
+  const toggleSelectAllOnPage = useCallback(() => {
+    const allCampaignsOnPage: any[] = [];
+    paginatedPortfolios.forEach((p: any) => {
+      const filteredCampaigns = (p.campaigns || []).filter((c: any) => {
+        if (typeFilter !== "all" && (c.campaign_type || "SP") !== typeFilter) return false;
+        if (searchQuery.trim()) {
+          const q = searchQuery.trim().toLowerCase();
+          if (!(p.name || "").toLowerCase().includes(q)) {
+            if (!(c.campaign_name || "").toLowerCase().includes(q) && !String(c.campaign_id).includes(q)) return false;
+          }
+        }
+        return true;
+      });
+      allCampaignsOnPage.push(...filteredCampaigns);
+    });
+    const allSelected = allCampaignsOnPage.length > 0 && allCampaignsOnPage.every((c: any) => selectedCampaigns.has(String(c.campaign_id)));
+    setSelectedCampaigns(prev => {
+      const next = new Map(prev);
+      if (allSelected) {
+        allCampaignsOnPage.forEach((c: any) => next.delete(String(c.campaign_id)));
+      } else {
+        allCampaignsOnPage.forEach((c: any) => {
+          const id = String(c.campaign_id);
+          if (!next.has(id)) next.set(id, {
+            id,
+            name: c.campaign_name || `Campaign ${c.campaign_id}`,
+            type: mapCampaignTypeToAdType(c.campaign_type),
+          });
+        });
+      }
+      if (!next.has(primaryCampaignId || "")) setPrimaryCampaignId(next.keys().next().value || null);
+      return next;
+    });
+  }, [selectedCampaigns, primaryCampaignId, typeFilter, searchQuery, paginatedPortfolios]);
 
   // Reset page when search/filter/data changes
   useEffect(() => {
@@ -524,7 +494,7 @@ export default function OpsAds() {
               )}
               {cacheInfo && (
                 <span className="text-[10px] text-gray-400">
-                  {cacheInfo.campaignListCached ? '(缓存)' : '(实时)'}
+                  (已导入报表)
                 </span>
               )}
             </div>
@@ -536,7 +506,7 @@ export default function OpsAds() {
               <button
                 onClick={() => setDateMode('single')}
                 className={`px-2 py-1 text-xs transition-colors ${dateMode === 'single' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              >单日</button>
+              >所选日期所在周</button>
               <button
                 onClick={() => setDateMode('range')}
                 className={`px-2 py-1 text-xs transition-colors ${dateMode === 'range' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
@@ -559,7 +529,7 @@ export default function OpsAds() {
           </div>
           {dateRange && (
             <span className="text-[10px] text-gray-400">
-              数据: {dateRange.start} ~ {dateRange.end}
+              {dateRange.startDate ? `数据周报: ${dateRange.startDate} ~ ${dateRange.endDate}（非单日指标）` : "所选日期无可用周报"}
             </span>
           )}
           <Button
@@ -574,7 +544,7 @@ export default function OpsAds() {
           </Button>
           {cacheInfo && (
             <span className="text-[10px] text-gray-400">
-              {cacheInfo.fromCache ? `缓存 ${cacheInfo.cacheAge}` : "实时"}
+              来源：已导入报表
             </span>
           )}
         </div>

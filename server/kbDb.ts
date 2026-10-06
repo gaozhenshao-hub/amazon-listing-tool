@@ -5,7 +5,7 @@ async function db() {
   if (!d) throw new Error("Database not available");
   return d;
 }
-import { eq, and, desc, like, or, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, like, or, sql, inArray, ne } from "drizzle-orm";
 import {
   kbProductInnovations, InsertKbProductInnovation,
   kbListingCopywriting, InsertKbListingCopywriting,
@@ -23,9 +23,72 @@ type Scope = "mine" | "shared" | "all";
 function scopeCondition(table: any, userId: number, workspaceId: number, scope: Scope) {
   const workspace = eq(table.workspaceId, workspaceId);
   if (scope === "mine") return and(workspace, eq(table.userId, userId));
-  if (scope === "shared") return and(workspace, eq(table.status, "confirmed"));
-  // "all" is reserved for callers whose route authorization has already been verified.
-  return workspace;
+  const shared = and(eq(table.status, "confirmed"), ne(table.visibility, "private"));
+  if (scope === "shared") return and(workspace, shared);
+  // "all" includes a caller's own records plus explicitly shared, confirmed
+  // records from colleagues in the same workspace. It must not expose drafts.
+  return and(workspace, or(eq(table.userId, userId), shared));
+}
+
+/**
+ * Image sets are readable by their owner, or when a confirmed set is explicitly
+ * shared. Keep this separate from the generic helper above: `scope=all` is an
+ * end-user option on the image routes and must not turn into every workspace
+ * record (including another user's private work in progress).
+ */
+function imageSetReadCondition(userId: number, workspaceId: number) {
+  return and(
+    eq(kbImageSets.workspaceId, workspaceId),
+    or(
+      eq(kbImageSets.userId, userId),
+      and(eq(kbImageSets.status, "confirmed"), ne(kbImageSets.visibility, "private")),
+    ),
+  );
+}
+
+function imageSetScopeCondition(userId: number, workspaceId: number, scope: Scope) {
+  const workspace = eq(kbImageSets.workspaceId, workspaceId);
+  const shared = and(eq(kbImageSets.status, "confirmed"), ne(kbImageSets.visibility, "private"));
+  if (scope === "mine") return and(workspace, eq(kbImageSets.userId, userId));
+  if (scope === "shared") return and(workspace, shared);
+  return and(workspace, or(eq(kbImageSets.userId, userId), shared));
+}
+
+function ownedImageSetCondition(id: number, userId: number, workspaceId: number) {
+  return and(
+    eq(kbImageSets.id, id),
+    eq(kbImageSets.userId, userId),
+    eq(kbImageSets.workspaceId, workspaceId),
+  );
+}
+
+function imageSetIdsMatching(condition: any) {
+  return sql`${kbImages.imageSetId} IN (SELECT ${kbImageSets.id} FROM ${kbImageSets} WHERE ${condition})`;
+}
+
+function imageInOwnedSetCondition(imageId: number, imageSetId: number, userId: number, workspaceId: number) {
+  return and(
+    eq(kbImages.id, imageId),
+    eq(kbImages.imageSetId, imageSetId),
+    imageSetIdsMatching(ownedImageSetCondition(imageSetId, userId, workspaceId)),
+  );
+}
+
+function imageInReadableSetCondition(imageId: number, userId: number, workspaceId: number) {
+  return and(
+    eq(kbImages.id, imageId),
+    imageSetIdsMatching(imageSetReadCondition(userId, workspaceId)),
+  );
+}
+
+function imageInOwnedWorkspaceCondition(imageId: number, userId: number, workspaceId: number) {
+  return and(
+    eq(kbImages.id, imageId),
+    imageSetIdsMatching(and(
+      eq(kbImageSets.userId, userId),
+      eq(kbImageSets.workspaceId, workspaceId),
+    )),
+  );
 }
 
 // ═══════════════════════════════════════════════════
@@ -111,7 +174,7 @@ export async function deleteListingCopywriting(id: number, userId: number, works
 // ═══════════════════════════════════════════════════
 export async function listImageSets(userId: number, workspaceId: number, scope: Scope = "mine") {
   const _d = await db();
-  return _d.select().from(kbImageSets).where(scopeCondition(kbImageSets, userId, workspaceId, scope)).orderBy(desc(kbImageSets.updatedAt));
+  return _d.select().from(kbImageSets).where(imageSetScopeCondition(userId, workspaceId, scope)).orderBy(desc(kbImageSets.updatedAt));
 }
 
 /** Lightweight set fields for list views — excludes large text blobs */
@@ -151,7 +214,7 @@ const SET_LIST_FIELDS = {
 
 export async function listImageSetsWithThumbnails(userId: number, workspaceId: number, scope: Scope = "mine") {
   const _d = await db();
-  const sets = await _d.select(SET_LIST_FIELDS).from(kbImageSets).where(scopeCondition(kbImageSets, userId, workspaceId, scope)).orderBy(desc(kbImageSets.updatedAt));
+  const sets = await _d.select(SET_LIST_FIELDS).from(kbImageSets).where(imageSetScopeCondition(userId, workspaceId, scope)).orderBy(desc(kbImageSets.updatedAt));
   if (sets.length === 0) return [];
   const setIds = sets.map(s => s.id);
   // Fetch first 5 images per set in a single query (ordered by positionIndex)
@@ -180,6 +243,19 @@ export async function getImageSetById(id: number) {
   const rows = await _d.select().from(kbImageSets).where(eq(kbImageSets.id, id));
   return rows[0] ?? null;
 }
+/** Read a set only when it belongs to the current workspace and is owned or shared. */
+export async function getReadableImageSet(id: number, userId: number, workspaceId: number) {
+  const _d = await db();
+  const rows = await _d.select().from(kbImageSets)
+    .where(and(eq(kbImageSets.id, id), imageSetReadCondition(userId, workspaceId)));
+  return rows[0] ?? null;
+}
+/** Write/delete access is limited to the set owner in the current workspace. */
+export async function getOwnedImageSet(id: number, userId: number, workspaceId: number) {
+  const _d = await db();
+  const rows = await _d.select().from(kbImageSets).where(ownedImageSetCondition(id, userId, workspaceId));
+  return rows[0] ?? null;
+}
 export async function findImageSetByAsin(asin: string, workspaceId: number) {
   const _d = await db();
   const rows = await _d.select({ id: kbImageSets.id })
@@ -197,11 +273,28 @@ export async function updateImageSet(id: number, userId: number, data: Partial<I
   const _d = await db();
   await _d.update(kbImageSets).set(data).where(and(eq(kbImageSets.id, id), eq(kbImageSets.userId, userId)));
 }
+export async function updateOwnedImageSet(id: number, userId: number, workspaceId: number, data: Partial<InsertKbImageSet>) {
+  const _d = await db();
+  await _d.update(kbImageSets).set(data).where(ownedImageSetCondition(id, userId, workspaceId));
+}
 export async function deleteImageSet(id: number, userId: number) {
   const _d = await db();
   // Delete all images in the set first
   await _d.delete(kbImages).where(eq(kbImages.imageSetId, id));
   await _d.delete(kbImageSets).where(and(eq(kbImageSets.id, id), eq(kbImageSets.userId, userId)));
+}
+/**
+ * Delete only an owned set. The child delete repeats the ownership/workspace
+ * predicate so a stale or forged set id cannot erase another tenant's images.
+ */
+export async function deleteOwnedImageSet(id: number, userId: number, workspaceId: number) {
+  const _d = await db();
+  const condition = ownedImageSetCondition(id, userId, workspaceId);
+  const rows = await _d.select({ id: kbImageSets.id }).from(kbImageSets).where(condition).limit(1);
+  if (!rows[0]) return false;
+  await _d.delete(kbImages).where(and(eq(kbImages.imageSetId, id), imageSetIdsMatching(condition)));
+  await _d.delete(kbImageSets).where(condition);
+  return true;
 }
 export async function listImagesBySet(imageSetId: number) {
   const _d = await db();
@@ -252,6 +345,15 @@ export async function getImageWithAnalysis(imageId: number) {
   }).from(kbImages).where(eq(kbImages.id, imageId));
   return rows[0] ?? null;
 }
+export async function getReadableImageWithAnalysis(imageId: number, userId: number, workspaceId: number) {
+  const _d = await db();
+  const rows = await _d.select({
+    id: kbImages.id,
+    aiDimensionAnalysis: kbImages.aiDimensionAnalysis,
+    userEditedDimensionAnalysis: kbImages.userEditedDimensionAnalysis,
+  }).from(kbImages).where(imageInReadableSetCondition(imageId, userId, workspaceId));
+  return rows[0] ?? null;
+}
 export async function createImage(data: InsertKbImage) {
   const _d = await db();
   const [result] = await _d.insert(kbImages).values(data);
@@ -260,6 +362,26 @@ export async function createImage(data: InsertKbImage) {
 export async function updateImage(id: number, data: Partial<InsertKbImage>) {
   const _d = await db();
   await _d.update(kbImages).set(data).where(eq(kbImages.id, id));
+}
+export async function getOwnedImage(imageId: number, userId: number, workspaceId: number) {
+  const _d = await db();
+  const rows = await _d.select({ id: kbImages.id, imageSetId: kbImages.imageSetId }).from(kbImages)
+    .where(imageInOwnedWorkspaceCondition(imageId, userId, workspaceId)).limit(1);
+  return rows[0] ?? null;
+}
+export async function updateOwnedImage(imageId: number, userId: number, workspaceId: number, data: Partial<InsertKbImage>) {
+  const _d = await db();
+  await _d.update(kbImages).set(data).where(imageInOwnedWorkspaceCondition(imageId, userId, workspaceId));
+}
+export async function getImageInOwnedSet(imageId: number, imageSetId: number, userId: number, workspaceId: number) {
+  const _d = await db();
+  const rows = await _d.select({ id: kbImages.id }).from(kbImages)
+    .where(imageInOwnedSetCondition(imageId, imageSetId, userId, workspaceId)).limit(1);
+  return rows[0] ?? null;
+}
+export async function updateImageInOwnedSet(imageId: number, imageSetId: number, userId: number, workspaceId: number, data: Partial<InsertKbImage>) {
+  const _d = await db();
+  await _d.update(kbImages).set(data).where(imageInOwnedSetCondition(imageId, imageSetId, userId, workspaceId));
 }
 export async function deleteImagesByPosition(imageSetId: number, positions: string[]) {
   const _d = await db();
@@ -275,22 +397,27 @@ export async function deleteImage(id: number) {
   const _d = await db();
   await _d.delete(kbImages).where(eq(kbImages.id, id));
 }
+export async function deleteImageInOwnedSet(imageId: number, imageSetId: number, userId: number, workspaceId: number) {
+  const _d = await db();
+  await _d.delete(kbImages).where(imageInOwnedSetCondition(imageId, imageSetId, userId, workspaceId));
+}
 export async function reorderImages(imageOrders: { id: number; positionIndex: number }[]) {
   const _d = await db();
   for (const item of imageOrders) {
     await _d.update(kbImages).set({ positionIndex: item.positionIndex }).where(eq(kbImages.id, item.id));
   }
 }
+export async function reorderImagesInOwnedSet(imageSetId: number, userId: number, workspaceId: number, imageOrders: { id: number; positionIndex: number }[]) {
+  const _d = await db();
+  for (const item of imageOrders) {
+    await _d.update(kbImages).set({ positionIndex: item.positionIndex })
+      .where(imageInOwnedSetCondition(item.id, imageSetId, userId, workspaceId));
+  }
+}
 export async function listAllImages(userId: number, workspaceId: number, scope: Scope = "mine", filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string; tagImageBelong?: string; tagImageBelongSub?: string; tagImageTypeMain?: string; tagImageTypeSub?: string; tagSellingPointCategory?: string; tagSellingPointDetail?: string; tagComposition?: string; tagColorSchemeV2?: string; tagDesignStyleV2?: string }) {
   const _d = await db();
   const conditions: any[] = [];
-  if (scope === "mine") {
-    conditions.push(sql`${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE userId = ${userId} AND workspaceId = ${workspaceId})`);
-  } else if (scope === "shared") {
-    conditions.push(sql`${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE workspaceId = ${workspaceId} AND status = 'confirmed')`);
-  } else {
-    conditions.push(sql`${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE workspaceId = ${workspaceId})`);
-  }
+  conditions.push(imageSetIdsMatching(imageSetScopeCondition(userId, workspaceId, scope)));
   // tagCategory: check both single image AND parent set's setCategory
   if (filters?.tagCategory) {
     conditions.push(sql`(${kbImages.tagCategory} = ${filters.tagCategory} OR ${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE setCategory = ${filters.tagCategory}))`);
@@ -353,18 +480,18 @@ export async function listAllImages(userId: number, workspaceId: number, scope: 
 // ═══════════════════════════════════════════════════
 // ─── Operation Skills (SOP) ───────────────────────
 // ═══════════════════════════════════════════════════
-export async function listOperationSkills(userId: number, scope: Scope = "mine") {
+export async function listOperationSkills(userId: number, workspaceId: number, scope: Scope = "mine") {
   const _d = await db();
-  return _d.select().from(kbOperationSkills).where(scopeCondition(kbOperationSkills, userId, scope)).orderBy(desc(kbOperationSkills.updatedAt));
+  return _d.select().from(kbOperationSkills).where(scopeCondition(kbOperationSkills, userId, workspaceId, scope)).orderBy(desc(kbOperationSkills.updatedAt));
 }
-export async function getOperationSkill(id: number, userId: number) {
+export async function getOperationSkill(id: number, userId: number, workspaceId: number) {
   const _d = await db();
-  const rows = await _d.select().from(kbOperationSkills).where(and(eq(kbOperationSkills.id, id), eq(kbOperationSkills.userId, userId)));
+  const rows = await _d.select().from(kbOperationSkills).where(and(eq(kbOperationSkills.id, id), eq(kbOperationSkills.userId, userId), eq(kbOperationSkills.workspaceId, workspaceId)));
   return rows[0] ?? null;
 }
-export async function getOperationSkillById(id: number) {
+export async function getOperationSkillById(id: number, workspaceId: number) {
   const _d = await db();
-  const rows = await _d.select().from(kbOperationSkills).where(eq(kbOperationSkills.id, id));
+  const rows = await _d.select().from(kbOperationSkills).where(and(eq(kbOperationSkills.id, id), eq(kbOperationSkills.workspaceId, workspaceId)));
   return rows[0] ?? null;
 }
 export async function createOperationSkill(data: InsertKbOperationSkill) {
@@ -372,37 +499,37 @@ export async function createOperationSkill(data: InsertKbOperationSkill) {
   const [result] = await _d.insert(kbOperationSkills).values(data);
   return result.insertId;
 }
-export async function updateOperationSkill(id: number, userId: number, data: Partial<InsertKbOperationSkill>) {
+export async function updateOperationSkill(id: number, userId: number, workspaceId: number, data: Partial<InsertKbOperationSkill>) {
   const _d = await db();
-  await _d.update(kbOperationSkills).set(data).where(and(eq(kbOperationSkills.id, id), eq(kbOperationSkills.userId, userId)));
+  await _d.update(kbOperationSkills).set(data).where(and(eq(kbOperationSkills.id, id), eq(kbOperationSkills.userId, userId), eq(kbOperationSkills.workspaceId, workspaceId)));
 }
-export async function deleteOperationSkill(id: number, userId: number) {
+export async function deleteOperationSkill(id: number, userId: number, workspaceId: number) {
   const _d = await db();
-  await _d.delete(kbOperationSkills).where(and(eq(kbOperationSkills.id, id), eq(kbOperationSkills.userId, userId)));
+  await _d.delete(kbOperationSkills).where(and(eq(kbOperationSkills.id, id), eq(kbOperationSkills.userId, userId), eq(kbOperationSkills.workspaceId, workspaceId)));
 }
 
 // ═══════════════════════════════════════════════════
 // ─── Videos ───────────────────────────────────────
 // ═══════════════════════════════════════════════════
-export async function listVideos(userId: number, scope: Scope = "mine") {
+export async function listVideos(userId: number, workspaceId: number, scope: Scope = "mine") {
   const _d = await db();
-  return _d.select().from(kbVideos).where(scopeCondition(kbVideos, userId, scope)).orderBy(desc(kbVideos.updatedAt));
+  return _d.select().from(kbVideos).where(scopeCondition(kbVideos, userId, workspaceId, scope)).orderBy(desc(kbVideos.updatedAt));
 }
-export async function getVideo(id: number, userId: number) {
+export async function getVideo(id: number, userId: number, workspaceId: number) {
   const _d = await db();
-  const rows = await _d.select().from(kbVideos).where(and(eq(kbVideos.id, id), eq(kbVideos.userId, userId)));
+  const rows = await _d.select().from(kbVideos).where(and(eq(kbVideos.id, id), eq(kbVideos.userId, userId), eq(kbVideos.workspaceId, workspaceId)));
   return rows[0] ?? null;
 }
-export async function getVideoById(id: number) {
+export async function getVideoById(id: number, workspaceId: number) {
   const _d = await db();
-  const rows = await _d.select().from(kbVideos).where(eq(kbVideos.id, id));
+  const rows = await _d.select().from(kbVideos).where(and(eq(kbVideos.id, id), eq(kbVideos.workspaceId, workspaceId)));
   return rows[0] ?? null;
 }
-export async function findVideoByAsin(asin: string) {
+export async function findVideoByAsin(asin: string, workspaceId: number) {
   const _d = await db();
   const rows = await _d.select({ id: kbVideos.id })
     .from(kbVideos)
-    .where(eq(kbVideos.asin, asin))
+    .where(and(eq(kbVideos.asin, asin), eq(kbVideos.workspaceId, workspaceId)))
     .limit(1);
   return rows[0] ?? null;
 }
@@ -411,24 +538,24 @@ export async function createVideo(data: InsertKbVideo) {
   const [result] = await _d.insert(kbVideos).values(data);
   return result.insertId;
 }
-export async function updateVideo(id: number, userId: number, data: Partial<InsertKbVideo>) {
+export async function updateVideo(id: number, userId: number, workspaceId: number, data: Partial<InsertKbVideo>) {
   const _d = await db();
-  await _d.update(kbVideos).set(data).where(and(eq(kbVideos.id, id), eq(kbVideos.userId, userId)));
+  await _d.update(kbVideos).set(data).where(and(eq(kbVideos.id, id), eq(kbVideos.userId, userId), eq(kbVideos.workspaceId, workspaceId)));
 }
-export async function deleteVideo(id: number, userId: number) {
+export async function deleteVideo(id: number, userId: number, workspaceId: number) {
   const _d = await db();
-  await _d.delete(kbVideos).where(and(eq(kbVideos.id, id), eq(kbVideos.userId, userId)));
+  await _d.delete(kbVideos).where(and(eq(kbVideos.id, id), eq(kbVideos.userId, userId), eq(kbVideos.workspaceId, workspaceId)));
 }
 
 // ═══════════════════════════════════════════════════
 // ─── Cross-module Search (scope-aware) ───────────
 // ═══════════════════════════════════════════════════
-export async function searchKnowledgeBase(userId: number, query: string, scope: Scope = "mine") {
+export async function searchKnowledgeBase(userId: number, workspaceId: number, query: string, scope: Scope = "mine") {
   const _d = await db();
   const q = `%${query}%`;
 
   function buildWhere(table: any, searchFields: any[]) {
-    const sc = scopeCondition(table, userId, scope);
+    const sc = scopeCondition(table, userId, workspaceId, scope);
     return and(sc, or(...searchFields));
   }
 
@@ -455,14 +582,14 @@ export async function searchKnowledgeBase(userId: number, query: string, scope: 
 // ═══════════════════════════════════════════════════
 // ─── Stats (scope-aware) ─────────────────────────
 // ═══════════════════════════════════════════════════
-export async function getKbStats(userId: number, scope: Scope = "mine") {
+export async function getKbStats(userId: number, workspaceId: number, scope: Scope = "mine") {
   const _d = await db();
   const [products, listings, imageSets, skills, videos] = await Promise.all([
-    _d.select({ count: sql<number>`count(*)` }).from(kbProductInnovations).where(scopeCondition(kbProductInnovations, userId, scope)),
-    _d.select({ count: sql<number>`count(*)` }).from(kbListingCopywriting).where(scopeCondition(kbListingCopywriting, userId, scope)),
-    _d.select({ count: sql<number>`count(*)` }).from(kbImageSets).where(scopeCondition(kbImageSets, userId, scope)),
-    _d.select({ count: sql<number>`count(*)` }).from(kbOperationSkills).where(scopeCondition(kbOperationSkills, userId, scope)),
-    _d.select({ count: sql<number>`count(*)` }).from(kbVideos).where(scopeCondition(kbVideos, userId, scope)),
+    _d.select({ count: sql<number>`count(*)` }).from(kbProductInnovations).where(scopeCondition(kbProductInnovations, userId, workspaceId, scope)),
+    _d.select({ count: sql<number>`count(*)` }).from(kbListingCopywriting).where(scopeCondition(kbListingCopywriting, userId, workspaceId, scope)),
+    _d.select({ count: sql<number>`count(*)` }).from(kbImageSets).where(scopeCondition(kbImageSets, userId, workspaceId, scope)),
+    _d.select({ count: sql<number>`count(*)` }).from(kbOperationSkills).where(scopeCondition(kbOperationSkills, userId, workspaceId, scope)),
+    _d.select({ count: sql<number>`count(*)` }).from(kbVideos).where(scopeCondition(kbVideos, userId, workspaceId, scope)),
   ]);
   return {
     productCount: products[0]?.count ?? 0,

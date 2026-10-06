@@ -266,6 +266,9 @@ export const opsWeeklyProcedures = {
       const [product] = await db!.select().from(productProfiles)
         .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
+      // The former live connector is intentionally disabled. Fail before the
+      // per-week catch/sleep loop can turn every failed read into a 0-week success.
+      failUnavailableDataSource("旧周报即时读取接口（请改用受控表格导入）");
       const parentAsin = product.parentAsin;
 
       // Get matched SID and MID for this product
@@ -661,6 +664,9 @@ export const opsWeeklyProcedures = {
       weeks: z.number().default(1),
     }).optional())
     .mutation(async ({ ctx, input }) => {
+      // The retired connector cannot provide weekly data. Do not fabricate a
+      // completed batch or spend time on guaranteed-to-fail per-week requests.
+      failUnavailableDataSource("旧周报批量即时读取接口（请改用受控表格导入）");
       const db = await requireOpsDb();
       const weeks = input?.weeks || 1;
 

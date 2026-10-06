@@ -70,11 +70,15 @@ export async function getListingById(id: number) {
   return selected ? { ...snapshot, ...selected, id: snapshot.id, projectId: snapshot.projectId } : snapshot;
 }
 
-export async function updateListing(id: number, data: Partial<InsertListing>) {
+export async function updateListing(id: number, data: Partial<InsertListing>, projectId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(listings).set(data).where(eq(listings.id, id));
-  const rows = await db.select().from(listings).where(eq(listings.id, id)).limit(1);
+  const where = projectId === undefined
+    ? eq(listings.id, id)
+    : and(eq(listings.id, id), eq(listings.projectId, projectId));
+  await db.update(listings).set(data).where(where);
+  const rows = await db.select().from(listings).where(where).limit(1);
+  if (!rows[0]) return null;
   await registerListingArtifact(id, "user_edit");
   return rows[0];
 }

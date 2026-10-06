@@ -62,12 +62,16 @@ const legacyListingEditingProcedures = {
   updateByProject: protectedProcedure
     .input(z.object({
       projectId: z.number(),
-      field: z.string(),
+      field: z.enum([
+        "title", "itemHighlights", "bulletPoints", "description", "searchTerms", "qaContent",
+        "titleCn", "itemHighlightsCn", "bulletPointsCn", "descriptionCn", "searchTermsCn", "qaContentCn",
+      ]),
       value: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureListingWorkspaceAccess(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
       let listing = await db.getActiveListingByProject(input.projectId);
       if (!listing) {
@@ -81,7 +85,7 @@ const legacyListingEditingProcedures = {
         });
       }
       const data: Record<string, string> = { [input.field]: input.value };
-      const result = await db.updateListing(listing.id, data);
+      const result = await db.updateListing(listing.id, data, input.projectId);
       if (result && ctx.user) {
         const fieldMap: Record<string, string> = { title: '标题', itemHighlights: '价值亮点', bulletPoints: '卖点', description: '描述', searchTerms: '搜索词', qaContent: 'QA问答', titleCn: '中文标题', itemHighlightsCn: '中文价值亮点', bulletPointsCn: '中文卖点', descriptionCn: '中文描述', searchTermsCn: '中文搜索词', qaContentCn: '中文QA问答' };
         await saveListingVersion(result, ctx.user.id, "manual_edit", `Step编辑: ${fieldMap[input.field] || input.field}`);
@@ -132,7 +136,16 @@ const legacyListingEditingProcedures = {
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      const result = await db.updateListing(id, data);
+      const listing = await db.getListingById(id);
+      if (!listing) throw new Error("Listing not found");
+
+      const project = await resolveProjectAccess(listing.projectId, ctx.user);
+      ensureListingWorkspaceAccess(project, ctx.workspaceId);
+      ensureWriteAccess(project, ctx.user);
+
+      // Scope the write to the authorized listing's project as a defense in depth
+      // measure against stale or mismatched listing IDs.
+      const result = await db.updateListing(id, data, listing.projectId);
       // Save version snapshot after manual edit
       if (result && ctx.user) {
         const updatedFields = Object.keys(data).filter(k => (data as any)[k] !== undefined);
@@ -687,6 +700,22 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       };
     }),
 };
+
+function ensureListingWorkspaceAccess(
+  project: { workspaceId?: number | null },
+  workspaceId?: number | null,
+) {
+  // Match project repository workspace scoping: an unscoped legacy project is
+  // visible in every workspace, while a workspace-bound project must match.
+  if (workspaceId === undefined) return;
+  if (workspaceId === null) {
+    if (project.workspaceId != null) throw new Error("Project not found");
+    return;
+  }
+  if (project.workspaceId != null && project.workspaceId !== workspaceId) {
+    throw new Error("Project not found");
+  }
+}
 
 const sellingPointJobSchema = z.object({
   index: z.number(),

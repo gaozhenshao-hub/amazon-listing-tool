@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, Star, AlertTriangle, Bot, MessageSquare, Check, X, Eye, Edit, Send } from "lucide-react";
+import { ServiceDataUnavailable } from "./ServiceDataUnavailable";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from "recharts";
@@ -58,6 +59,18 @@ export default function ServiceReviews() {
 
   const reviews = reviewsQuery.data?.list || [];
   const negativeReviews = reviews.filter((r: any) => r.star_rating <= 2);
+
+  if (reviewsQuery.isError || statsQuery.isError) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold">Review智能管理</h1>
+        <ServiceDataUnavailable onRetry={() => {
+          void reviewsQuery.refetch();
+          void statsQuery.refetch();
+        }} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

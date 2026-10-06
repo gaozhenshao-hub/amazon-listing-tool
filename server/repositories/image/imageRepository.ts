@@ -211,25 +211,47 @@ export async function insertExpressionGroup(data: InsertExpressionGroup) {
   return result;
 }
 
-export async function updateExpressionGroup(id: number, data: Partial<InsertExpressionGroup>) {
+export async function getExpressionGroupByProject(id: number, projectId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(expressionGroups)
+    .where(and(eq(expressionGroups.id, id), eq(expressionGroups.projectId, projectId)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateExpressionGroup(id: number, data: Partial<InsertExpressionGroup>, projectId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [existing] = await db.select({ projectId: expressionGroups.projectId }).from(expressionGroups).where(eq(expressionGroups.id, id));
-  await db.update(expressionGroups).set(data).where(eq(expressionGroups.id, id));
+  const [existing] = await db.select({ projectId: expressionGroups.projectId }).from(expressionGroups)
+    .where(projectId === undefined
+      ? eq(expressionGroups.id, id)
+      : and(eq(expressionGroups.id, id), eq(expressionGroups.projectId, projectId)));
+  const scopedProjectId = projectId ?? existing?.projectId;
+  if (scopedProjectId === undefined) return;
+  await db.update(expressionGroups).set(data)
+    .where(and(eq(expressionGroups.id, id), eq(expressionGroups.projectId, scopedProjectId)));
   await captureImageProject(
-    data.projectId ?? existing?.projectId,
+    data.projectId ?? scopedProjectId,
     data.aiAnalysis !== undefined && data.userEdit === undefined ? "ai_output" : "user_edit",
   );
 }
 
-export async function deleteExpressionGroup(id: number) {
+export async function deleteExpressionGroup(id: number, projectId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [existing] = await db.select({ projectId: expressionGroups.projectId }).from(expressionGroups).where(eq(expressionGroups.id, id));
+  const [existing] = await db.select({ projectId: expressionGroups.projectId }).from(expressionGroups)
+    .where(projectId === undefined
+      ? eq(expressionGroups.id, id)
+      : and(eq(expressionGroups.id, id), eq(expressionGroups.projectId, projectId)));
+  const scopedProjectId = projectId ?? existing?.projectId;
+  if (scopedProjectId === undefined) return;
   // Delete images first
-  await db.delete(expressionGroupImages).where(eq(expressionGroupImages.groupId, id));
-  await db.delete(expressionGroups).where(eq(expressionGroups.id, id));
-  await captureImageProject(existing?.projectId);
+  await db.delete(expressionGroupImages)
+    .where(and(eq(expressionGroupImages.groupId, id), eq(expressionGroupImages.projectId, scopedProjectId)));
+  await db.delete(expressionGroups)
+    .where(and(eq(expressionGroups.id, id), eq(expressionGroups.projectId, scopedProjectId)));
+  await captureImageProject(scopedProjectId);
 }
 
 export async function insertExpressionGroupImage(data: InsertExpressionGroupImage) {
@@ -240,19 +262,36 @@ export async function insertExpressionGroupImage(data: InsertExpressionGroupImag
   return result;
 }
 
-export async function deleteExpressionGroupImage(id: number) {
+export async function getExpressionGroupImageByProject(id: number, projectId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const [existing] = await db.select({ projectId: expressionGroupImages.projectId }).from(expressionGroupImages).where(eq(expressionGroupImages.id, id));
-  await db.delete(expressionGroupImages).where(eq(expressionGroupImages.id, id));
-  await captureImageProject(existing?.projectId);
+  if (!db) return null;
+  const rows = await db.select().from(expressionGroupImages)
+    .where(and(eq(expressionGroupImages.id, id), eq(expressionGroupImages.projectId, projectId)))
+    .limit(1);
+  return rows[0] ?? null;
 }
 
-export async function countExpressionGroupImages(groupId: number): Promise<number> {
+export async function deleteExpressionGroupImage(id: number, projectId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [existing] = await db.select({ projectId: expressionGroupImages.projectId }).from(expressionGroupImages)
+    .where(projectId === undefined
+      ? eq(expressionGroupImages.id, id)
+      : and(eq(expressionGroupImages.id, id), eq(expressionGroupImages.projectId, projectId)));
+  const scopedProjectId = projectId ?? existing?.projectId;
+  if (scopedProjectId === undefined) return;
+  await db.delete(expressionGroupImages)
+    .where(and(eq(expressionGroupImages.id, id), eq(expressionGroupImages.projectId, scopedProjectId)));
+  await captureImageProject(scopedProjectId);
+}
+
+export async function countExpressionGroupImages(groupId: number, projectId?: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
   const rows = await db.select({ count: sql<number>`count(*)` })
     .from(expressionGroupImages)
-    .where(eq(expressionGroupImages.groupId, groupId));
+    .where(projectId === undefined
+      ? eq(expressionGroupImages.groupId, groupId)
+      : and(eq(expressionGroupImages.groupId, groupId), eq(expressionGroupImages.projectId, projectId)));
   return Number(rows[0]?.count ?? 0);
 }

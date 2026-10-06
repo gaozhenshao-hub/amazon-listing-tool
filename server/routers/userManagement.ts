@@ -296,6 +296,15 @@ export const userManagementRouter = router({
       if (targetUser.role === "super_admin" && ctx.user.role !== "super_admin") {
         throw new TRPCError({ code: "FORBIDDEN", message: "无法修改超级管理员" });
       }
+      if (input.role === "super_admin" && ctx.user.role !== "super_admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "只有超级管理员可以授予超级管理员角色" });
+      }
+      if (targetUser.id === ctx.user.id && (
+        (input.role !== undefined && input.role !== targetUser.role) ||
+        (input.status !== undefined && input.status !== targetUser.status)
+      )) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "不能修改自己的角色或账号状态" });
+      }
 
       const updateData: Record<string, any> = {};
       if (input.name !== undefined) updateData.name = input.name;
@@ -356,6 +365,10 @@ export const userManagementRouter = router({
     .mutation(async ({ input, ctx }) => {
       if (!ADMIN_ROLES.includes(ctx.user.role as any)) {
         throw new TRPCError({ code: "FORBIDDEN", message: "需要管理员权限" });
+      }
+
+      if (ctx.user.role !== "super_admin" && input.users.some(user => user.role === "super_admin")) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "只有超级管理员可以导入超级管理员" });
       }
 
       let successCount = 0;

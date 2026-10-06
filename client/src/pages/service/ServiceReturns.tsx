@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Package, AlertTriangle, Bot, TrendingDown, BarChart3, RefreshCw, FileText } from "lucide-react";
+import { ServiceDataUnavailable } from "./ServiceDataUnavailable";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell
@@ -75,6 +76,8 @@ export default function ServiceReturns() {
 
       {returnsQuery.isLoading ? (
         <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+      ) : returnsQuery.isError || !returnsQuery.data ? (
+        <ServiceDataUnavailable onRetry={() => void returnsQuery.refetch()} />
       ) : (
         <>
           {/* KPI Cards */}

@@ -202,65 +202,11 @@ export default function OpsDashboardUpgrade() {
         </Button>
       </div>
 
-      {/* AI Briefing Card */}
-      {briefingMutation.data && (
-        <Card className="border-primary/30 bg-gradient-to-r from-primary/5 to-transparent">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
-              AI每日运营简报 — {briefingMutation.data.date}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                { label: '销售', text: briefingMutation.data.salesSummary, icon: TrendingUp, color: 'text-blue-500' },
-                { label: '广告', text: briefingMutation.data.adSummary, icon: Zap, color: 'text-orange-500' },
-                { label: '库存', text: briefingMutation.data.inventorySummary, icon: Info, color: 'text-green-500' },
-                { label: '退货', text: briefingMutation.data.returnSummary, icon: AlertTriangle, color: 'text-red-500' },
-              ].map((item, i) => (
-                <div key={i} className="p-3 rounded-lg bg-background border">
-                  <div className={`text-xs font-medium ${item.color} flex items-center gap-1 mb-1`}>
-                    <item.icon className="h-3 w-3" />{item.label}
-                  </div>
-                  <p className="text-sm">{item.text}</p>
-                </div>
-              ))}
-            </div>
-            {briefingMutation.data.priorityActions?.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium mb-2">今日优先事项</h4>
-                <div className="space-y-1">
-                  {briefingMutation.data.priorityActions.map((a: any, i: number) => (
-                    <div key={i} className="flex items-center gap-2 text-sm p-2 rounded bg-muted/50">
-                      <Badge variant={a.priority === 'P0' ? 'destructive' : a.priority === 'P1' ? 'default' : 'secondary'} className="text-xs">
-                        {a.priority}
-                      </Badge>
-                      <span className="flex-1">{a.action}</span>
-                      <span className="text-xs text-muted-foreground">{a.reason}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-4">
-              {briefingMutation.data.opportunities?.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium text-green-600 mb-1">机会点</h4>
-                  {briefingMutation.data.opportunities.map((o: string, i: number) => (
-                    <div key={i} className="text-sm flex items-start gap-1"><CheckCircle className="h-3 w-3 mt-1 text-green-500 shrink-0" />{o}</div>
-                  ))}
-                </div>
-              )}
-              {briefingMutation.data.risks?.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium text-red-600 mb-1">风险点</h4>
-                  {briefingMutation.data.risks.map((r: string, i: number) => (
-                    <div key={i} className="text-sm flex items-start gap-1"><XCircle className="h-3 w-3 mt-1 text-red-500 shrink-0" />{r}</div>
-                  ))}
-                </div>
-              )}
-            </div>
+      {/* Current API returns only import_required; no generated briefing exists. */}
+      {briefingMutation.data?.status === "import_required" && (
+        <Card role="status" className="border-amber-300 bg-amber-50/40">
+          <CardContent className="py-4 text-sm">
+            尚未生成 AI 简报：请先完成受控数据导入。此提示不是运营分析结论。
           </CardContent>
         </Card>
       )}

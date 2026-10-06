@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router } from "../_core/trpc";
+import { workspaceScopedProcedure } from "../domains/ai_os/workspaceScopedProcedure";
 import * as kbDb from "../kbDb";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { resolveStoredObjectUrl, storagePut } from "../storage";
@@ -556,7 +557,7 @@ async function runSummaryOnly(setId: number, asin: string, userId: number) {
 
 export const kbImagesRouter = router({
   // List all image sets
-  listSets: protectedProcedure
+  listSets: workspaceScopedProcedure("knowledge")
     .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
     .query(async ({ ctx, input }) => {
     const sets = await kbDb.listImageSetsWithThumbnails(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
@@ -567,10 +568,10 @@ export const kbImagesRouter = router({
   }),
 
   // Get image set with all images (lightweight: excludes large analysis fields for fast load)
-  getSet: protectedProcedure
+  getSet: workspaceScopedProcedure("knowledge")
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const set = await kbDb.getImageSetById(input.id);
+      const set = await kbDb.getReadableImageSet(input.id, ctx.user.id, ctx.workspaceId!);
       if (!set) return null;
       const images = await resolveImagesForDelivery(await kbDb.listImagesBySetLight(set.id));
       let acquisitionCoverage: { stored: number; missing: number; total: number; partial: boolean } | null = null;
@@ -593,14 +594,14 @@ export const kbImagesRouter = router({
     }),
 
   // Get single image's full analysis data on-demand (lazy load when user expands tag panel)
-  getImageAnalysis: protectedProcedure
+  getImageAnalysis: workspaceScopedProcedure("knowledge")
     .input(z.object({ imageId: z.number() }))
     .query(async ({ ctx, input }) => {
-      return kbDb.getImageWithAnalysis(input.imageId);
+      return kbDb.getReadableImageWithAnalysis(input.imageId, ctx.user.id, ctx.workspaceId!);
     }),
 
   // List all images with 7-dimension filters (waterfall view)
-  listAllImages: protectedProcedure
+  listAllImages: workspaceScopedProcedure("knowledge")
     .input(z.object({
       scope: z.enum(["mine", "shared", "all"]).optional(),
       // Legacy filters
@@ -625,7 +626,7 @@ export const kbImagesRouter = router({
     }),
 
   // Import by ASIN through the governed acquisition job. Projection occurs only after guarded direct ingestion.
-  importByAsin: protectedProcedure
+  importByAsin: workspaceScopedProcedure("knowledge")
     .input(z.object({ asin: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const asin = KbImageImportAsinSchema.parse(input.asin);
@@ -637,7 +638,7 @@ export const kbImagesRouter = router({
       return { asin, ...job, directIngestion: true, reviewRequired: false };
     }),
 
-  batchImportAsins: protectedProcedure
+  batchImportAsins: workspaceScopedProcedure("knowledge")
     .input(z.object({ asins: z.array(z.string()).min(1).max(20) }))
     .mutation(async ({ ctx, input }) => {
       const asins = [...new Set(input.asins.map(value => KbImageImportAsinSchema.parse(value)))];
@@ -655,7 +656,7 @@ export const kbImagesRouter = router({
       return { imported: results.length, skipped: skipped.length, items: results, skippedItems: skipped };
     }),
 
-  importByLink: protectedProcedure
+  importByLink: workspaceScopedProcedure("knowledge")
     .input(z.object({ url: z.string().trim().min(1).max(20_000) }))
     .mutation(async ({ ctx, input }) => {
       const asins = parseAmazonUsAsins(input.url);
@@ -676,7 +677,7 @@ export const kbImagesRouter = router({
     }),
 
   // Confirm image tags (v2: supports 7-dimension tags)
-  confirmImageTags: protectedProcedure
+  confirmImageTags: workspaceScopedProcedure("knowledge")
     .input(z.object({
       imageId: z.number(),
       // Legacy fields (backward compatible)
@@ -697,41 +698,47 @@ export const kbImagesRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { imageId, ...tags } = input;
+      const image = await kbDb.getOwnedImage(imageId, ctx.user.id, ctx.workspaceId!);
+      if (!image) throw new TRPCError({ code: "NOT_FOUND", message: "图片不存在或无权限" });
       // Filter out undefined values
       const cleanTags = Object.fromEntries(
         Object.entries(tags).filter(([_, v]) => v !== undefined)
       );
-      await kbDb.updateImage(imageId, { ...cleanTags, tagsConfirmed: 1 } as any);
+      await kbDb.updateOwnedImage(imageId, ctx.user.id, ctx.workspaceId!, { ...cleanTags, tagsConfirmed: 1 } as any);
       return { success: true };
     }),
 
   // Confirm set overall analysis
-  confirmSetAnalysis: protectedProcedure
+  confirmSetAnalysis: workspaceScopedProcedure("knowledge")
     .input(z.object({ id: z.number(), editedAnalysis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
+      const set = await kbDb.getOwnedImageSet(input.id, ctx.user.id, ctx.workspaceId!);
+      if (!set) throw new TRPCError({ code: "NOT_FOUND", message: "图片集不存在或无权限" });
       const update: any = { status: "confirmed" as const, confirmedAt: new Date() };
       if (input.editedAnalysis) update.userEditedOverallAnalysis = input.editedAnalysis;
-      await kbDb.updateImageSet(input.id, ctx.user.id, update);
+      await kbDb.updateOwnedImageSet(input.id, ctx.user.id, ctx.workspaceId!, update);
       return { success: true };
     }),
 
   // Update single image score
-  updateImageScore: protectedProcedure
+  updateImageScore: workspaceScopedProcedure("knowledge")
     .input(z.object({ imageId: z.number(), score: z.number().min(1).max(10) }))
     .mutation(async ({ ctx, input }) => {
-      await kbDb.updateImage(input.imageId, { singleImageScore: input.score });
+      const image = await kbDb.getOwnedImage(input.imageId, ctx.user.id, ctx.workspaceId!);
+      if (!image) throw new TRPCError({ code: "NOT_FOUND", message: "图片不存在或无权限" });
+      await kbDb.updateOwnedImage(input.imageId, ctx.user.id, ctx.workspaceId!, { singleImageScore: input.score });
       return { success: true };
     }),
 
   // Refresh selected capabilities through a governed acquisition job. Existing images remain until guarded direct ingestion succeeds.
-  reCrawlByPosition: protectedProcedure
+  reCrawlByPosition: workspaceScopedProcedure("knowledge")
     .input(z.object({
       setId: z.number(),
       positions: z.array(z.enum(["main", "secondary", "aplus", "brand_story"])).min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const set = await kbDb.getImageSet(input.setId, ctx.user.id);
-      if (!set) throw new Error("图片集不存在");
+      const set = await kbDb.getOwnedImageSet(input.setId, ctx.user.id, ctx.workspaceId!);
+      if (!set) throw new TRPCError({ code: "NOT_FOUND", message: "图片集不存在或无权限" });
       const capabilities = capabilitiesForKbPositions(input.positions as KbImagePosition[]);
       const job = await startKbImagesAcquisition({
         workspaceId: ctx.workspaceId!,
@@ -744,7 +751,7 @@ export const kbImagesRouter = router({
     }),
 
   // Upload images manually to a specific position
-  uploadImages: protectedProcedure
+  uploadImages: workspaceScopedProcedure("knowledge")
     .input(z.object({
       setId: z.number(),
       images: z.array(z.object({
@@ -754,8 +761,8 @@ export const kbImagesRouter = router({
       })).min(1).max(20),
     }))
     .mutation(async ({ ctx, input }) => {
-      const set = await kbDb.getImageSet(input.setId, ctx.user.id);
-      if (!set) throw new Error("图片集不存在");
+      const set = await kbDb.getOwnedImageSet(input.setId, ctx.user.id, ctx.workspaceId!);
+      if (!set) throw new TRPCError({ code: "NOT_FOUND", message: "图片集不存在或无权限" });
       const existingImages = await kbDb.listImagesBySet(set.id);
       for (let i = 0; i < input.images.length; i++) {
         const img = input.images[i];
@@ -775,71 +782,78 @@ export const kbImagesRouter = router({
         });
       }
       // Reset status to pending_review so user can re-analyze
-      await kbDb.updateImageSet(set.id, ctx.user.id, { status: "confirmed" });
+      await kbDb.updateOwnedImageSet(set.id, ctx.user.id, ctx.workspaceId!, { status: "confirmed" });
       return { success: true, uploaded: input.images.length };
     }),
 
   // Delete a single image from a set
-  deleteImage: protectedProcedure
+  deleteImage: workspaceScopedProcedure("knowledge")
     .input(z.object({ imageId: z.number(), setId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const set = await kbDb.getImageSet(input.setId, ctx.user.id);
-      if (!set) throw new Error("图片集不存在");
-      await kbDb.deleteImage(input.imageId);
+      const set = await kbDb.getOwnedImageSet(input.setId, ctx.user.id, ctx.workspaceId!);
+      if (!set) throw new TRPCError({ code: "NOT_FOUND", message: "图片集不存在或无权限" });
+      const image = await kbDb.getImageInOwnedSet(input.imageId, set.id, ctx.user.id, ctx.workspaceId!);
+      if (!image) throw new TRPCError({ code: "NOT_FOUND", message: "图片不存在于该图片集或无权限" });
+      await kbDb.deleteImageInOwnedSet(input.imageId, set.id, ctx.user.id, ctx.workspaceId!);
       return { success: true };
     }),
 
   // Reorder images within a group
-  reorderImages: protectedProcedure
+  reorderImages: workspaceScopedProcedure("knowledge")
     .input(z.object({
       setId: z.number(),
       imageOrders: z.array(z.object({ id: z.number(), positionIndex: z.number() })),
     }))
     .mutation(async ({ ctx, input }) => {
-      const set = await kbDb.getImageSet(input.setId, ctx.user.id);
-      if (!set) throw new Error("图片集不存在");
-      await kbDb.reorderImages(input.imageOrders);
+      const set = await kbDb.getOwnedImageSet(input.setId, ctx.user.id, ctx.workspaceId!);
+      if (!set) throw new TRPCError({ code: "NOT_FOUND", message: "图片集不存在或无权限" });
+      for (const item of input.imageOrders) {
+        const image = await kbDb.getImageInOwnedSet(item.id, set.id, ctx.user.id, ctx.workspaceId!);
+        if (!image) throw new TRPCError({ code: "NOT_FOUND", message: "图片不存在于该图片集或无权限" });
+      }
+      await kbDb.reorderImagesInOwnedSet(set.id, ctx.user.id, ctx.workspaceId!, input.imageOrders);
       return { success: true };
     }),
 
   // Re-run AI analysis on all images in a set
-  reAnalyze: protectedProcedure
+  reAnalyze: workspaceScopedProcedure("knowledge")
     .input(z.object({ setId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      // Use getImageSetById (no userId filter) to allow team members to re-analyze shared sets
-      const set = await kbDb.getImageSetById(input.setId);
-      if (!set) throw new Error("图片集不存在");
+      const set = await kbDb.getOwnedImageSet(input.setId, ctx.user.id, ctx.workspaceId!);
+      if (!set) throw new TRPCError({ code: "NOT_FOUND", message: "图片集不存在或无权限" });
       const images = await kbDb.listImagesBySet(set.id);
       if (images.length === 0) throw new Error("没有图片可供分析");
-      await kbDb.updateImageSet(set.id, set.userId, { status: "analyzing" });
+      await kbDb.updateOwnedImageSet(set.id, ctx.user.id, ctx.workspaceId!, { status: "analyzing" });
       // Fire-and-forget: run full AI analysis
-      runAnalysisOnly(set.id, set.asin, Number(set.userId));
+      runAnalysisOnly(set.id, set.asin, ctx.user.id);
       return { success: true };
     }),
 
   // Re-run ONLY the overall set-level summary (no per-image tag re-scoring, much faster)
-  reAnalyzeSummaryOnly: protectedProcedure
+  reAnalyzeSummaryOnly: workspaceScopedProcedure("knowledge")
     .input(z.object({ setId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const set = await kbDb.getImageSetById(input.setId);
-      if (!set) throw new Error("图片集不存在");
+      const set = await kbDb.getOwnedImageSet(input.setId, ctx.user.id, ctx.workspaceId!);
+      if (!set) throw new TRPCError({ code: "NOT_FOUND", message: "图片集不存在或无权限" });
       const images = await kbDb.listImagesBySet(set.id);
       if (images.length === 0) throw new Error("没有图片可供分析");
-      await kbDb.updateImageSet(set.id, set.userId, { status: "analyzing" });
+      await kbDb.updateOwnedImageSet(set.id, ctx.user.id, ctx.workspaceId!, { status: "analyzing" });
       // Fire-and-forget: run summary-only analysis
-      runSummaryOnly(set.id, set.asin, Number(set.userId));
+      runSummaryOnly(set.id, set.asin, ctx.user.id);
       return { success: true };
     }),
 
-  deleteSet: protectedProcedure
+  deleteSet: workspaceScopedProcedure("knowledge")
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await kbDb.deleteImageSet(input.id, ctx.user.id);
+      const set = await kbDb.getOwnedImageSet(input.id, ctx.user.id, ctx.workspaceId!);
+      if (!set) throw new TRPCError({ code: "NOT_FOUND", message: "图片集不存在或无权限" });
+      await kbDb.deleteOwnedImageSet(input.id, ctx.user.id, ctx.workspaceId!);
       return { success: true };
     }),
 
   // Update set-level style configuration (Phase 6)
-  updateSetStyle: protectedProcedure
+  updateSetStyle: workspaceScopedProcedure("knowledge")
     .input(z.object({
       id: z.number(),
       setStyle: z.string().nullable().optional(),
@@ -852,6 +866,8 @@ export const kbImagesRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
+      const set = await kbDb.getOwnedImageSet(id, ctx.user.id, ctx.workspaceId!);
+      if (!set) throw new TRPCError({ code: "NOT_FOUND", message: "图片集不存在或无权限" });
       const update: any = {};
       if (data.setStyle !== undefined) update.setStyle = data.setStyle;
       if (data.setStyleParams !== undefined) update.setStyleParams = data.setStyleParams;
@@ -860,11 +876,11 @@ export const kbImagesRouter = router({
       if (data.setCategory !== undefined) update.setCategory = data.setCategory;
       if (data.setTargetAudience !== undefined) update.setTargetAudience = data.setTargetAudience;
       if (data.setCategoryScene !== undefined) update.setCategoryScene = data.setCategoryScene;
-      await kbDb.updateImageSet(id, ctx.user.id, update);
+      await kbDb.updateOwnedImageSet(id, ctx.user.id, ctx.workspaceId!, update);
       return { success: true };
     }),
   // ── Manual upload: create a new set from uploaded images (no ASIN crawl) ──
-  createSetFromUpload: protectedProcedure
+  createSetFromUpload: workspaceScopedProcedure("knowledge")
     .input(z.object({
       asin: z.string().min(1).describe("ASIN or custom identifier for the set"),
       title: z.string().min(1).describe("Title for the image set").optional(),
@@ -901,7 +917,7 @@ export const kbImagesRouter = router({
       }
       // Optionally trigger AI analysis
       if (input.autoAnalyze) {
-        await kbDb.updateImageSet(numericSetId, ctx.user.id, { status: "analyzing" });
+        await kbDb.updateOwnedImageSet(numericSetId, ctx.user.id, ctx.workspaceId!, { status: "analyzing" });
         runAnalysisOnly(numericSetId, asin, ctx.user.id).catch(() => {});
       }
       return { id: numericSetId, asin, imageCount: input.images.length };

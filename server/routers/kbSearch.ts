@@ -1,15 +1,17 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router } from "../_core/trpc";
+import { workspaceScopedProcedure } from "../domains/ai_os/workspaceScopedProcedure";
 import * as kbDb from "../kbDb";
 
 const scopeSchema = z.enum(["mine", "shared", "all"]).optional();
+const protectedProcedure = workspaceScopedProcedure("knowledge");
 
 export const kbSearchRouter = router({
   // Cross-module search (original)
   search: protectedProcedure
     .input(z.object({ query: z.string().min(1), scope: scopeSchema }))
     .query(async ({ ctx, input }) => {
-      return kbDb.searchKnowledgeBase(ctx.user.id, input.query, input.scope ?? "mine");
+      return kbDb.searchKnowledgeBase(ctx.user.id, ctx.workspaceId!, input.query, input.scope ?? "mine");
     }),
 
   // Enhanced search with type filter
@@ -21,7 +23,7 @@ export const kbSearchRouter = router({
       scope: scopeSchema,
     }))
     .query(async ({ ctx, input }) => {
-      const allResults = await kbDb.searchKnowledgeBase(ctx.user.id, input.query, input.scope ?? "mine");
+      const allResults = await kbDb.searchKnowledgeBase(ctx.user.id, ctx.workspaceId!, input.query, input.scope ?? "mine");
       const filtered = (allResults as any[]).filter((r: any) => r.type === input.type);
       return filtered.slice(0, input.limit || 20);
     }),
@@ -31,7 +33,7 @@ export const kbSearchRouter = router({
     .input(z.object({ asin: z.string().min(1), scope: scopeSchema }))
     .query(async ({ ctx, input }) => {
       const asin = input.asin.trim().toUpperCase();
-      const allResults = await kbDb.searchKnowledgeBase(ctx.user.id, asin, input.scope ?? "mine");
+      const allResults = await kbDb.searchKnowledgeBase(ctx.user.id, ctx.workspaceId!, asin, input.scope ?? "mine");
       // Group by type for ASIN panoramic view
       const grouped: Record<string, any[]> = { product: [], listing: [], image: [], skill: [], video: [] };
       for (const item of allResults as any[]) {
@@ -46,7 +48,7 @@ export const kbSearchRouter = router({
   stats: protectedProcedure
     .input(z.object({ scope: scopeSchema }).optional())
     .query(async ({ ctx, input }) => {
-      return kbDb.getKbStats(ctx.user.id, input?.scope ?? "mine");
+      return kbDb.getKbStats(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
     }),
 
   // Get confirmed knowledge items for RAG/AI reference (cross-module calling API)
@@ -59,13 +61,13 @@ export const kbSearchRouter = router({
     .query(async ({ ctx, input }) => {
       // RAG always uses "shared" scope to get confirmed items from all users
       if (input.query) {
-        const results = await kbDb.searchKnowledgeBase(ctx.user.id, input.query, "shared");
+        const results = await kbDb.searchKnowledgeBase(ctx.user.id, ctx.workspaceId!, input.query, "shared");
         return (results as any[])
           .filter((r: any) => r.type === input.type && r.status === "confirmed")
           .slice(0, input.limit || 10);
       }
       // Return all confirmed items of the given type
-      const allResults = await kbDb.searchKnowledgeBase(ctx.user.id, "", "shared");
+      const allResults = await kbDb.searchKnowledgeBase(ctx.user.id, ctx.workspaceId!, "", "shared");
       return (allResults as any[])
         .filter((r: any) => r.type === input.type && r.status === "confirmed")
         .slice(0, input.limit || 10);

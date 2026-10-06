@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Loader2, Mail, Bot, Send, Plus, Edit, Trash2, Copy, Check, FileText, Inbox, Clock, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { ServiceDataUnavailable } from "./ServiceDataUnavailable";
 
 export default function ServiceEmails() {
   const [selectedSid, setSelectedSid] = useState<number | undefined>();
@@ -174,6 +175,8 @@ export default function ServiceEmails() {
         <TabsContent value="inbox" className="mt-4">
           {emailsQuery.isLoading ? (
             <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
+          ) : emailsQuery.isError ? (
+            <ServiceDataUnavailable onRetry={() => void emailsQuery.refetch()} />
           ) : (
             <div className="space-y-3">
               {emails.map((email: any, i: number) => (

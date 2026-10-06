@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router } from "../_core/trpc";
+import { workspaceScopedProcedure } from "../domains/ai_os/workspaceScopedProcedure";
 import * as kbDb from "../kbDb";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
@@ -63,17 +64,19 @@ function detectSourceType(mimeType: string, fileName: string): "upload_pdf" | "u
   return "manual";
 }
 
+const protectedProcedure = workspaceScopedProcedure("knowledge");
+
 export const kbSkillsRouter = router({
   list: protectedProcedure
     .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
     .query(async ({ ctx, input }) => {
-    return kbDb.listOperationSkills(ctx.user.id, input?.scope ?? "mine");
+    return kbDb.listOperationSkills(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
   }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      return kbDb.getOperationSkill(input.id, ctx.user.id);
+      return kbDb.getOperationSkill(input.id, ctx.user.id, ctx.workspaceId!);
     }),
 
   // Upload single file
@@ -94,6 +97,7 @@ export const kbSkillsRouter = router({
 
       const id = await kbDb.createOperationSkill({
         userId: ctx.user.id,
+        workspaceId: ctx.workspaceId!,
         title: input.title,
         sourceType,
         fileUrl,
@@ -125,7 +129,7 @@ export const kbSkillsRouter = router({
             extractedContent = await parseFileContent(buffer, input.mimeType, input.fileName);
           }
 
-          await kbDb.updateOperationSkill(Number(id), ctx.user.id, {
+          await kbDb.updateOperationSkill(Number(id), ctx.user.id, ctx.workspaceId!, {
             extractedContent, status: "analyzing",
           });
 
@@ -157,7 +161,7 @@ export const kbSkillsRouter = router({
           });
           const summary = String(response.choices?.[0]?.message?.content || "{}");
           const parsed = JSON.parse(summary);
-          await kbDb.updateOperationSkill(Number(id), ctx.user.id, {
+          await kbDb.updateOperationSkill(Number(id), ctx.user.id, ctx.workspaceId!, {
             aiSummary: summary,
             categories: JSON.stringify(parsed.categories || []),
             tags: JSON.stringify(parsed.tags || []),
@@ -166,7 +170,7 @@ export const kbSkillsRouter = router({
           });
         } catch (err: any) {
           console.error("[KB Skills] File processing failed:", err.message);
-          await kbDb.updateOperationSkill(Number(id), ctx.user.id, { status: "archived" });
+          await kbDb.updateOperationSkill(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
               }
       })();
       return { id: Number(id) };
@@ -192,6 +196,7 @@ export const kbSkillsRouter = router({
 
         const id = await kbDb.createOperationSkill({
           userId: ctx.user.id,
+        workspaceId: ctx.workspaceId!,
           title: file.title || file.fileName,
           sourceType, fileUrl, originalFileName: file.fileName,
           status: "parsing",
@@ -204,7 +209,7 @@ export const kbSkillsRouter = router({
             const extractedContent = sourceType === "upload_image"
               ? "[图片文件]"
               : await parseFileContent(buffer, file.mimeType, file.fileName);
-            await kbDb.updateOperationSkill(Number(id), ctx.user.id, { extractedContent, status: "analyzing" });
+            await kbDb.updateOperationSkill(Number(id), ctx.user.id, ctx.workspaceId!, { extractedContent, status: "analyzing" });
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
 
@@ -220,14 +225,14 @@ export const kbSkillsRouter = router({
             });
             const summary = String(response.choices?.[0]?.message?.content || "{}");
             const parsed = JSON.parse(summary);
-            await kbDb.updateOperationSkill(Number(id), ctx.user.id, {
+            await kbDb.updateOperationSkill(Number(id), ctx.user.id, ctx.workspaceId!, {
               aiSummary: summary, categories: JSON.stringify(parsed.categories || []),
               tags: JSON.stringify(parsed.tags || []), practicalityScore: parsed.practicalityScore || 7,
               status: "pending_review",
             });
           } catch (err: any) {
             console.error(`[KB Skills] Batch file processing failed for ${file.fileName}:`, err.message);
-            await kbDb.updateOperationSkill(Number(id), ctx.user.id, { status: "archived" });
+            await kbDb.updateOperationSkill(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
                 }
         })();
       }
@@ -240,6 +245,7 @@ export const kbSkillsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const id = await kbDb.createOperationSkill({
         userId: ctx.user.id,
+        workspaceId: ctx.workspaceId!,
         title: input.title || input.url,
         sourceType: "url",
         sourceUrl: input.url,
@@ -325,7 +331,7 @@ export const kbSkillsRouter = router({
           }
 
           const fullContent = text.slice(0, 40000) + imageOcrText;
-          await kbDb.updateOperationSkill(Number(id), ctx.user.id, {
+          await kbDb.updateOperationSkill(Number(id), ctx.user.id, ctx.workspaceId!, {
             extractedContent: fullContent.slice(0, 50000),
             status: "analyzing",
           });
@@ -345,7 +351,7 @@ export const kbSkillsRouter = router({
           });
           const summary = String(aiResponse.choices?.[0]?.message?.content || "{}");
           const parsed = JSON.parse(summary);
-          await kbDb.updateOperationSkill(Number(id), ctx.user.id, {
+          await kbDb.updateOperationSkill(Number(id), ctx.user.id, ctx.workspaceId!, {
             title: parsed.title || input.title || input.url,
             aiSummary: summary, categories: JSON.stringify(parsed.categories || []),
             tags: JSON.stringify(parsed.tags || []), practicalityScore: parsed.practicalityScore || 7,
@@ -353,7 +359,7 @@ export const kbSkillsRouter = router({
           });
         } catch (err: any) {
           console.error("[KB Skills] URL import failed:", err.message);
-          await kbDb.updateOperationSkill(Number(id), ctx.user.id, { status: "archived" });
+          await kbDb.updateOperationSkill(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
               }
       })();
       return { id: Number(id) };
@@ -370,7 +376,7 @@ export const kbSkillsRouter = router({
       })).min(1).max(20),
     }))
     .mutation(async ({ ctx, input }) => {
-      const item = await kbDb.getOperationSkill(input.id, ctx.user.id);
+      const item = await kbDb.getOperationSkill(input.id, ctx.user.id, ctx.workspaceId!);
       if (!item) throw new Error("条目不存在或无权限");
 
       // OCR all images in parallel, return results for user review
@@ -417,7 +423,7 @@ export const kbSkillsRouter = router({
       })).min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const item = await kbDb.getOperationSkill(input.id, ctx.user.id);
+      const item = await kbDb.getOperationSkill(input.id, ctx.user.id, ctx.workspaceId!);
       if (!item) throw new Error("条目不存在或无权限");
 
       const validTexts = input.confirmedTexts.filter(t => t.ocrText.trim());
@@ -428,7 +434,7 @@ export const kbSkillsRouter = router({
       const existingContent = item.extractedContent || "";
       const newContent = (existingContent + ocrSection).slice(0, 50000);
 
-      await kbDb.updateOperationSkill(input.id, ctx.user.id, {
+      await kbDb.updateOperationSkill(input.id, ctx.user.id, ctx.workspaceId!, {
         extractedContent: newContent,
         status: "analyzing",
       });
@@ -451,7 +457,7 @@ export const kbSkillsRouter = router({
           });
           const summary = String(aiResponse.choices?.[0]?.message?.content || "{}");
           const parsed = JSON.parse(summary);
-          await kbDb.updateOperationSkill(input.id, ctx.user.id, {
+          await kbDb.updateOperationSkill(input.id, ctx.user.id, ctx.workspaceId!, {
             aiSummary: summary,
             categories: JSON.stringify(parsed.categories || []),
             tags: JSON.stringify(parsed.tags || []),
@@ -460,7 +466,7 @@ export const kbSkillsRouter = router({
           });
         } catch (err: any) {
           console.error("[KB Skills] Re-analysis after image merge failed:", err.message);
-          await kbDb.updateOperationSkill(input.id, ctx.user.id, { status: "pending_review" });
+          await kbDb.updateOperationSkill(input.id, ctx.user.id, ctx.workspaceId!, { status: "pending_review" });
               }
       })();
 
@@ -482,7 +488,7 @@ export const kbSkillsRouter = router({
       })).min(1).max(20),
     }))
     .mutation(async ({ ctx, input }) => {
-      const item = await kbDb.getOperationSkill(input.id, ctx.user.id);
+      const item = await kbDb.getOperationSkill(input.id, ctx.user.id, ctx.workspaceId!);
       if (!item) throw new Error("条目不存在或无权限");
 
       // OCR all uploaded images in parallel
@@ -521,7 +527,7 @@ export const kbSkillsRouter = router({
       const existingContent = item.extractedContent || "";
       const newContent = (existingContent + ocrSection).slice(0, 50000);
 
-      await kbDb.updateOperationSkill(input.id, ctx.user.id, {
+      await kbDb.updateOperationSkill(input.id, ctx.user.id, ctx.workspaceId!, {
         extractedContent: newContent,
         status: "analyzing",
       });
@@ -544,7 +550,7 @@ export const kbSkillsRouter = router({
           });
           const summary = String(aiResponse.choices?.[0]?.message?.content || "{}");
           const parsed = JSON.parse(summary);
-          await kbDb.updateOperationSkill(input.id, ctx.user.id, {
+          await kbDb.updateOperationSkill(input.id, ctx.user.id, ctx.workspaceId!, {
             aiSummary: summary,
             categories: JSON.stringify(parsed.categories || []),
             tags: JSON.stringify(parsed.tags || []),
@@ -553,7 +559,7 @@ export const kbSkillsRouter = router({
           });
         } catch (err: any) {
           console.error("[KB Skills] Re-analysis after image enrichment failed:", err.message);
-          await kbDb.updateOperationSkill(input.id, ctx.user.id, { status: "pending_review" });
+          await kbDb.updateOperationSkill(input.id, ctx.user.id, ctx.workspaceId!, { status: "pending_review" });
               }
       })();
 
@@ -570,7 +576,8 @@ export const kbSkillsRouter = router({
     .input(z.object({ title: z.string().min(1), content: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const id = await kbDb.createOperationSkill({
-        userId: ctx.user.id, title: input.title,
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId!, title: input.title,
         sourceType: "manual", extractedContent: input.content, status: "analyzing",
       });
       (async () => {
@@ -590,14 +597,14 @@ export const kbSkillsRouter = router({
           });
           const summary = String(response.choices?.[0]?.message?.content || "{}");
           const parsed = JSON.parse(summary);
-          await kbDb.updateOperationSkill(Number(id), ctx.user.id, {
+          await kbDb.updateOperationSkill(Number(id), ctx.user.id, ctx.workspaceId!, {
             aiSummary: summary, categories: JSON.stringify(parsed.categories || []),
             tags: JSON.stringify(parsed.tags || []), practicalityScore: parsed.practicalityScore || 7,
             status: "pending_review",
           });
         } catch (err: any) {
           console.error("[KB Skills] Manual entry analysis failed:", err.message);
-          await kbDb.updateOperationSkill(Number(id), ctx.user.id, { status: "archived" });
+          await kbDb.updateOperationSkill(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
               }
       })();
       return { id: Number(id) };
@@ -608,7 +615,7 @@ export const kbSkillsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const update: any = { status: "confirmed" as const, confirmedAt: new Date() };
       if (input.editedSummary) update.userEditedSummary = input.editedSummary;
-      await kbDb.updateOperationSkill(input.id, ctx.user.id, update);
+      await kbDb.updateOperationSkill(input.id, ctx.user.id, ctx.workspaceId!, update);
       return { success: true };
     }),
 
@@ -617,21 +624,21 @@ export const kbSkillsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const update: any = { tags: input.tags };
       if (input.categories) update.categories = input.categories;
-      await kbDb.updateOperationSkill(input.id, ctx.user.id, update);
+      await kbDb.updateOperationSkill(input.id, ctx.user.id, ctx.workspaceId!, update);
       return { success: true };
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await kbDb.deleteOperationSkill(input.id, ctx.user.id);
+      await kbDb.deleteOperationSkill(input.id, ctx.user.id, ctx.workspaceId!);
       return { success: true };
     }),
 
   // ── 批量重新生成 aiSummary（历史数据迁移） ─────────────────────────────────────────────
   getSummaryMigrationStats: protectedProcedure
     .query(async ({ ctx }) => {
-      const allSkills = await kbDb.listOperationSkills(ctx.user.id, "mine");
+      const allSkills = await kbDb.listOperationSkills(ctx.user.id, ctx.workspaceId!, "mine");
       const total = allSkills.length;
       // Old format: missing briefSummary or actionSteps fields
       const needsMigration = allSkills.filter(s => {
@@ -657,7 +664,7 @@ export const kbSkillsRouter = router({
       forceAll: z.boolean().default(false), // Force regenerate even if already has new format
     }))
     .mutation(async ({ ctx, input }) => {
-      const allSkills = await kbDb.listOperationSkills(ctx.user.id, "mine");
+      const allSkills = await kbDb.listOperationSkills(ctx.user.id, ctx.workspaceId!, "mine");
 
       // Determine which items to process
       let toProcess = allSkills;
@@ -733,7 +740,7 @@ export const kbSkillsRouter = router({
           const summaryStr = String(response.choices?.[0]?.message?.content || "{}");
           const parsed = JSON.parse(summaryStr);
 
-          await kbDb.updateOperationSkill(skill.id, ctx.user.id, {
+          await kbDb.updateOperationSkill(skill.id, ctx.user.id, ctx.workspaceId!, {
             aiSummary: summaryStr,
             categories: JSON.stringify(parsed.categories || []),
             tags: JSON.stringify(parsed.tags || []),

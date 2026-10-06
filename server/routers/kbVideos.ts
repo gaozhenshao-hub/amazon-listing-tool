@@ -1,23 +1,26 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { resourceConflictError } from "@shared/_core/errors";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router } from "../_core/trpc";
+import { workspaceScopedProcedure } from "../domains/ai_os/workspaceScopedProcedure";
 import * as kbDb from "../kbDb";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { assertForgeCapabilityAvailable } from "../_core/forgeCapability";
 import { transcribeAudio } from "../_core/voiceTranscription";
 
+const protectedProcedure = workspaceScopedProcedure("knowledge");
+
 export const kbVideosRouter = router({
   list: protectedProcedure
     .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
     .query(async ({ ctx, input }) => {
-    return kbDb.listVideos(ctx.user.id, input?.scope ?? "mine");
+    return kbDb.listVideos(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
   }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      return kbDb.getVideo(input.id, ctx.user.id);
+      return kbDb.getVideo(input.id, ctx.user.id, ctx.workspaceId!);
     }),
 
   // Import by video URL
@@ -33,13 +36,14 @@ export const kbVideosRouter = router({
       // ASIN dedup: only if ASIN is provided
       if (input.asin) {
         const asin = input.asin.trim().toUpperCase();
-        const dupVideo = await kbDb.findVideoByAsin(asin);
+        const dupVideo = await kbDb.findVideoByAsin(asin, ctx.workspaceId!);
         if (dupVideo) {
           throw resourceConflictError(`ASIN ${asin} 已存在于视频知识库中`, { existingId: dupVideo.id, resource: "kb_video", asin });
         }
       }
       const id = await kbDb.createVideo({
         userId: ctx.user.id,
+          workspaceId: ctx.workspaceId!,
         videoUrl: input.videoUrl,
         videoTitle: input.videoTitle || "未命名视频",
         asin: input.asin || null,
@@ -49,7 +53,7 @@ export const kbVideosRouter = router({
       // Async transcribe + analyze
       (async () => {
         try {
-          await kbDb.updateVideo(Number(id), ctx.user.id, { status: "transcribing" });
+          await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, { status: "transcribing" });
           // Try audio transcription
           let transcriptText = "";
           try {
@@ -63,7 +67,7 @@ export const kbVideosRouter = router({
             console.warn("[KB Videos] Transcription failed, continuing with AI analysis:", err.message);
             transcriptText = "[音频转写失败 - 仅基于视频元数据分析]";
           }
-          await kbDb.updateVideo(Number(id), ctx.user.id, {
+          await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, {
             transcriptText, status: "analyzing",
           });
           // AI analysis
@@ -99,7 +103,7 @@ export const kbVideosRouter = router({
           });
           const analysis = String(response.choices?.[0]?.message?.content || "{}");
           const parsed = JSON.parse(analysis);
-          await kbDb.updateVideo(Number(id), ctx.user.id, {
+          await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, {
             aiAnalysis: analysis,
             tags: JSON.stringify(parsed.tags || []),
             overallScore: parsed.overallScore ?? 70,
@@ -107,7 +111,7 @@ export const kbVideosRouter = router({
           });
         } catch (err: any) {
           console.error("[KB Videos] Import failed:", err.message);
-          await kbDb.updateVideo(Number(id), ctx.user.id, { status: "archived" });
+          await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
               }
       })();
       return { id: Number(id) };
@@ -129,6 +133,7 @@ export const kbVideosRouter = router({
       for (const video of input.videos) {
         const id = await kbDb.createVideo({
           userId: ctx.user.id,
+          workspaceId: ctx.workspaceId!,
           videoUrl: video.videoUrl,
           videoTitle: video.videoTitle || "未命名视频",
           asin: video.asin || null,
@@ -139,13 +144,13 @@ export const kbVideosRouter = router({
         // Fire-and-forget
         (async () => {
           try {
-            await kbDb.updateVideo(Number(id), ctx.user.id, { status: "transcribing" });
+            await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, { status: "transcribing" });
             let transcriptText = "";
             try {
               const transcription = await transcribeAudio({ audioUrl: video.videoUrl, language: "en" }) as any;
               transcriptText = transcription.text || "";
             } catch { transcriptText = "[转写失败]"; }
-            await kbDb.updateVideo(Number(id), ctx.user.id, { transcriptText, status: "analyzing" });
+            await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, { transcriptText, status: "analyzing" });
       // [Emperor] 优先调用 Emperor Skill: video.competitor.analysis
 
 
@@ -161,13 +166,13 @@ export const kbVideosRouter = router({
             });
             const analysis = String(response.choices?.[0]?.message?.content || "{}");
             const parsed = JSON.parse(analysis);
-            await kbDb.updateVideo(Number(id), ctx.user.id, {
+            await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, {
               aiAnalysis: analysis, tags: JSON.stringify(parsed.tags || []),
               overallScore: parsed.overallScore ?? 70, status: "pending_review",
             });
           } catch (err: any) {
             console.error(`[KB Videos] Batch import failed:`, err.message);
-            await kbDb.updateVideo(Number(id), ctx.user.id, { status: "archived" });
+            await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
                 }
         })();
       }
@@ -186,13 +191,14 @@ export const kbVideosRouter = router({
         const asin = rawAsin.trim().toUpperCase();
         if (!asin) continue;
         // ASIN dedup: skip if already exists
-        const dupVideo = await kbDb.findVideoByAsin(asin);
+        const dupVideo = await kbDb.findVideoByAsin(asin, ctx.workspaceId!);
         if (dupVideo) {
           results.push({ id: dupVideo.id, asin });
           continue;
         }
         const id = await kbDb.createVideo({
           userId: ctx.user.id,
+          workspaceId: ctx.workspaceId!,
           asin,
           videoUrl: `https://www.amazon.com/dp/${asin}`,
           videoTitle: `${asin} 产品视频`,
@@ -202,13 +208,13 @@ export const kbVideosRouter = router({
         // Fire-and-forget async analysis
         (async () => {
           try {
-            await kbDb.updateVideo(Number(id), ctx.user.id, { status: "transcribing" });
+            await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, { status: "transcribing" });
             let transcriptText = "";
             try {
               const transcription = await transcribeAudio({ audioUrl: `https://www.amazon.com/dp/${asin}`, language: "en" }) as any;
               transcriptText = transcription.text || "";
             } catch { transcriptText = "[转写失败]"; }
-            await kbDb.updateVideo(Number(id), ctx.user.id, { transcriptText, status: "analyzing" });
+            await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, { transcriptText, status: "analyzing" });
       // [Emperor] 优先调用 Emperor Skill: video.competitor.analysis
 
 
@@ -224,13 +230,13 @@ export const kbVideosRouter = router({
             });
             const analysis = String(response.choices?.[0]?.message?.content || "{}");
             const parsed = JSON.parse(analysis);
-            await kbDb.updateVideo(Number(id), ctx.user.id, {
+            await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, {
               aiAnalysis: analysis, tags: JSON.stringify(parsed.tags || []),
               overallScore: parsed.overallScore ?? 70, status: "pending_review",
             });
           } catch (err: any) {
             console.error(`[KB Videos] Batch ASIN import failed for ${asin}:`, err.message);
-            await kbDb.updateVideo(Number(id), ctx.user.id, { status: "archived" });
+            await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
                 }
         })();
       }
@@ -244,23 +250,24 @@ export const kbVideosRouter = router({
       assertForgeCapabilityAvailable("voice_transcription");
       const asin = input.asin.trim().toUpperCase();
       // ASIN dedup: prevent duplicate entries
-      const dupVideo = await kbDb.findVideoByAsin(asin);
+      const dupVideo = await kbDb.findVideoByAsin(asin, ctx.workspaceId!);
       if (dupVideo) {
         throw resourceConflictError(`ASIN ${asin} 已存在于视频知识库中`, { existingId: dupVideo.id, resource: "kb_video", asin });
       }
       const id = await kbDb.createVideo({
-        userId: ctx.user.id, asin, videoUrl: input.videoUrl,
+        userId: ctx.user.id,
+          workspaceId: ctx.workspaceId!, asin, videoUrl: input.videoUrl,
         videoTitle: `${asin} 产品视频`, status: "downloading",
       });
       (async () => {
         try {
-          await kbDb.updateVideo(Number(id), ctx.user.id, { status: "transcribing" });
+          await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, { status: "transcribing" });
           let transcriptText = "";
           try {
             const transcription = await transcribeAudio({ audioUrl: input.videoUrl, language: "en" }) as any;
             transcriptText = transcription.text || "";
           } catch { transcriptText = "[转写失败]"; }
-          await kbDb.updateVideo(Number(id), ctx.user.id, { transcriptText, status: "analyzing" });
+          await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, { transcriptText, status: "analyzing" });
       // [Emperor] 优先调用 Emperor Skill: video.competitor.analysis
 
 
@@ -276,13 +283,13 @@ export const kbVideosRouter = router({
           });
           const analysis = String(response.choices?.[0]?.message?.content || "{}");
           const parsed = JSON.parse(analysis);
-          await kbDb.updateVideo(Number(id), ctx.user.id, {
+          await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, {
             aiAnalysis: analysis, tags: JSON.stringify(parsed.tags || []),
             overallScore: parsed.overallScore ?? 70, status: "pending_review",
           });
         } catch (err: any) {
           console.error("[KB Videos] ASIN import failed:", err.message);
-          await kbDb.updateVideo(Number(id), ctx.user.id, { status: "archived" });
+          await kbDb.updateVideo(Number(id), ctx.user.id, ctx.workspaceId!, { status: "archived" });
               }
       })();
       return { id: Number(id), asin };
@@ -293,28 +300,28 @@ export const kbVideosRouter = router({
     .mutation(async ({ ctx, input }) => {
       const update: any = { status: "confirmed" as const, confirmedAt: new Date() };
       if (input.editedAnalysis) update.userEditedAnalysis = input.editedAnalysis;
-      await kbDb.updateVideo(input.id, ctx.user.id, update);
+      await kbDb.updateVideo(input.id, ctx.user.id, ctx.workspaceId!, update);
       return { success: true };
     }),
 
   updateTags: protectedProcedure
     .input(z.object({ id: z.number(), tags: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      await kbDb.updateVideo(input.id, ctx.user.id, { tags: input.tags });
+      await kbDb.updateVideo(input.id, ctx.user.id, ctx.workspaceId!, { tags: input.tags });
       return { success: true };
     }),
 
   updateScore: protectedProcedure
     .input(z.object({ id: z.number(), score: z.number().min(1).max(100) }))
     .mutation(async ({ ctx, input }) => {
-      await kbDb.updateVideo(input.id, ctx.user.id, { overallScore: input.score });
+      await kbDb.updateVideo(input.id, ctx.user.id, ctx.workspaceId!, { overallScore: input.score });
       return { success: true };
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await kbDb.deleteVideo(input.id, ctx.user.id);
+      await kbDb.deleteVideo(input.id, ctx.user.id, ctx.workspaceId!);
       return { success: true };
     }),
 });

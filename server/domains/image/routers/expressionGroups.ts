@@ -45,6 +45,17 @@ const {
   z,
 } = shared;
 
+function ensureProjectInCurrentWorkspace(
+  project: { workspaceId?: number | null },
+  workspaceId?: number | null,
+) {
+  if ((project.workspaceId ?? null) !== (workspaceId ?? null)) {
+    // Keep the existing project-not-found contract so callers cannot use this
+    // endpoint to discover projects outside their active workspace.
+    throw new Error("Project not found");
+  }
+}
+
 export const imageExpressionGroupProcedures = {
 
 
@@ -52,7 +63,8 @@ export const imageExpressionGroupProcedures = {
   getExpressionGroups: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
       return db.getExpressionGroupsByProject(input.projectId);
     }),
 
@@ -65,6 +77,7 @@ export const imageExpressionGroupProcedures = {
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
       const groups = await db.getExpressionGroupsByProject(input.projectId);
       const result = await db.insertExpressionGroup({
@@ -87,11 +100,14 @@ export const imageExpressionGroupProcedures = {
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
+      const group = await db.getExpressionGroupByProject(input.groupId, input.projectId);
+      if (!group) throw new Error("Group not found");
       const patch: Record<string, any> = {};
       if (input.expressionName !== undefined) patch.expressionName = input.expressionName;
       if (input.userEdit !== undefined) patch.userEdit = input.userEdit;
-      await db.updateExpressionGroup(input.groupId, patch);
+      await db.updateExpressionGroup(input.groupId, patch, input.projectId);
       return { success: true };
     }),
 
@@ -104,8 +120,11 @@ export const imageExpressionGroupProcedures = {
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
-      await db.deleteExpressionGroup(input.groupId);
+      const group = await db.getExpressionGroupByProject(input.groupId, input.projectId);
+      if (!group) throw new Error("Group not found");
+      await db.deleteExpressionGroup(input.groupId, input.projectId);
       return { success: true };
     }),
 
@@ -120,9 +139,12 @@ export const imageExpressionGroupProcedures = {
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
+      const group = await db.getExpressionGroupByProject(input.groupId, input.projectId);
+      if (!group) throw new Error("Group not found");
       // Enforce max 5 images per group
-      const count = await db.countExpressionGroupImages(input.groupId);
+      const count = await db.countExpressionGroupImages(input.groupId, input.projectId);
       if (count >= 5) throw new Error("每个表达方向最多上传5张参考图");
       const result = await db.insertExpressionGroupImage({
         groupId: input.groupId,
@@ -142,8 +164,12 @@ export const imageExpressionGroupProcedures = {
       imageId: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await resolveProjectAccess(input.projectId, ctx.user);
-      await db.deleteExpressionGroupImage(input.imageId);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
+      ensureWriteAccess(project, ctx.user);
+      const image = await db.getExpressionGroupImageByProject(input.imageId, input.projectId);
+      if (!image) throw new Error("Image not found");
+      await db.deleteExpressionGroupImage(input.imageId, input.projectId);
       return { success: true };
     }),
 
@@ -155,6 +181,7 @@ export const imageExpressionGroupProcedures = {
     }))
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
+      ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
       const groups = await db.getExpressionGroupsByProject(input.projectId);
       const group = groups.find(g => g.id === input.groupId);

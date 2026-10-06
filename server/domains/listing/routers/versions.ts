@@ -52,7 +52,9 @@ export const listingVersionProcedures = {
   // Get version history for a project
   getVersionHistory: protectedProcedure
     .input(z.object({ projectId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      ensureListingWorkspaceAccess(project, ctx.workspaceId);
       return db.getListingVersionsByProject(input.projectId);
     }),
 
@@ -66,6 +68,7 @@ export const listingVersionProcedures = {
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureListingWorkspaceAccess(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
 
       const version = await db.getListingVersionById(input.versionId);
@@ -98,3 +101,19 @@ export const listingVersionProcedures = {
       return { listing: updated, rolledBackTo: version.versionNumber };
     }),
 };
+
+function ensureListingWorkspaceAccess(
+  project: { workspaceId?: number | null },
+  workspaceId?: number | null,
+) {
+  // Match project repository workspace scoping: an unscoped legacy project is
+  // visible in every workspace, while a workspace-bound project must match.
+  if (workspaceId === undefined) return;
+  if (workspaceId === null) {
+    if (project.workspaceId != null) throw new Error("Project not found");
+    return;
+  }
+  if (project.workspaceId != null && project.workspaceId !== workspaceId) {
+    throw new Error("Project not found");
+  }
+}

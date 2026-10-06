@@ -25,6 +25,119 @@ import {
 import { panoramaCompetitorAsinsSchema } from "../domains/product_development/panorama/marketInsightSchema";
 import { addPanoramaProduct, deletePanoramaProduct } from "../domains/product_development/panorama/panoramaProductService";
 
+// This list mirrors the non-tag inline-editable columns in PanoramaTable. Tags
+// and monthly history have their own mutation paths; history edits are persisted
+// through the monthlySalesHistory field below.
+const panoramaEditableProductFieldSchema = z.enum([
+  "parentAsin",
+  "sku",
+  "brand",
+  "title",
+  "category",
+  "subcategory",
+  "categoryPath",
+  "bsrLarge",
+  "bsrSmall",
+  "bsr",
+  "bsrGrowthRate",
+  "price",
+  "fbaFee",
+  "grossMargin",
+  "monthlySales",
+  "monthlySalesGrowth",
+  "monthlyRevenue",
+  "childSales",
+  "childRevenue",
+  "variantCount",
+  "reviewCount",
+  "monthlyNewReviews",
+  "rating",
+  "reviewRate",
+  "lqs",
+  "sellerCount",
+  "fulfillment",
+  "buyboxSeller",
+  "buyboxType",
+  "sellerLocation",
+  "listingDate",
+  "listingDays",
+  "productWeight",
+  "productSize",
+  "packageWeight",
+  "packageSize",
+  "packageSizeTier",
+  "bulletPoints",
+  "monthlySalesHistory",
+]);
+
+const nullableString = (max: number) => z.string().max(max).nullable();
+const nullableNonnegativeInt = z.number().finite().int().nonnegative().max(2_147_483_647).nullable();
+const nullableDecimal = z.number().finite().nonnegative().max(9_999_999_999.99).nullable();
+const monthlySalesHistorySchema = z.string().max(20_000).refine((value) => {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      && Object.values(parsed).every((item) => item === null || (typeof item === "number" && Number.isFinite(item)));
+  } catch {
+    return false;
+  }
+}, "月销量历史必须是数值或空值组成的 JSON 对象");
+
+const panoramaEditableProductValueSchemas = {
+  parentAsin: nullableString(20),
+  sku: nullableString(100),
+  brand: nullableString(255),
+  title: nullableString(2_000),
+  category: nullableString(255),
+  subcategory: nullableString(255),
+  categoryPath: nullableString(2_000),
+  bsrLarge: nullableNonnegativeInt,
+  bsrSmall: nullableNonnegativeInt,
+  bsr: nullableNonnegativeInt,
+  bsrGrowthRate: nullableString(50),
+  price: nullableString(50),
+  fbaFee: nullableString(50),
+  grossMargin: nullableString(50),
+  monthlySales: nullableNonnegativeInt,
+  monthlySalesGrowth: nullableString(50),
+  monthlyRevenue: nullableDecimal,
+  childSales: nullableNonnegativeInt,
+  childRevenue: nullableDecimal,
+  variantCount: nullableNonnegativeInt,
+  reviewCount: nullableString(20),
+  monthlyNewReviews: nullableNonnegativeInt,
+  rating: nullableString(10),
+  reviewRate: nullableString(50),
+  lqs: nullableNonnegativeInt,
+  sellerCount: nullableNonnegativeInt,
+  fulfillment: nullableString(20),
+  buyboxSeller: nullableString(255),
+  buyboxType: nullableString(50),
+  sellerLocation: nullableString(100),
+  listingDate: nullableString(50),
+  listingDays: nullableNonnegativeInt,
+  productWeight: nullableString(100),
+  productSize: nullableString(200),
+  packageWeight: nullableString(100),
+  packageSize: nullableString(200),
+  packageSizeTier: nullableString(100),
+  bulletPoints: nullableString(20_000),
+  monthlySalesHistory: monthlySalesHistorySchema,
+} satisfies Record<z.infer<typeof panoramaEditableProductFieldSchema>, z.ZodTypeAny>;
+
+const updateProductFieldInputSchema = z.object({
+  productId: z.number().int().positive(),
+  field: panoramaEditableProductFieldSchema,
+  value: z.union([z.string().max(20_000), z.number().finite(), z.null()]),
+}).superRefine(({ field, value }, ctx) => {
+  const result = panoramaEditableProductValueSchemas[field].safeParse(value);
+  if (!result.success) {
+    for (const issue of result.error.issues) {
+      ctx.addIssue({ ...issue, path: ["value", ...issue.path] });
+    }
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════
 // ─── Panorama (竞品全景分析表) Router ────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
@@ -135,11 +248,7 @@ export const devPanoramaRouter = router({
 
   // Update a single product field (inline edit)
   updateProductField: protectedProcedure
-    .input(z.object({
-      productId: z.number(),
-      field: z.string(),
-      value: z.union([z.string(), z.number(), z.null()]),
-    }))
+    .input(updateProductFieldInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database not available");

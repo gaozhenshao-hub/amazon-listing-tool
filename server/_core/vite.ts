@@ -62,6 +62,13 @@ export function serveStatic(app: Express) {
     setHeaders(res, filePath) {
       if (path.basename(filePath) === "index.html") {
         res.setHeader("Cache-Control", "no-store, max-age=0, must-revalidate");
+      } else if (
+        path.dirname(filePath) === path.join(distPath, "assets") &&
+        /-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$/.test(path.basename(filePath))
+      ) {
+        // Vite 的内容哈希文件名变化即 URL 变化；只缓存实际存在的构建资源。
+        // HTML 与缺失旧版本资源仍然不可缓存，避免发布后白屏。
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
       }
     },
   }));

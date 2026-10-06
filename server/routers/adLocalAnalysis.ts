@@ -130,6 +130,7 @@ export const adLocalAnalysisRouter = router({
       parentAsin: z.string().optional(),
       weekStartDate: z.string().optional(),
       weekEndDate: z.string().optional(),
+      selectedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       adType: z.string().optional(),
       adState: z.enum(['all', 'enabled', 'paused', 'archived']).optional().default('all'),
     }))
@@ -137,8 +138,14 @@ export const adLocalAnalysisRouter = router({
       const d = await requireAdsDb();
       const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
       if (input.parentAsin) conditions.push(eq(adCampaignReports.parentAsin, input.parentAsin));
-      if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
-      if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
+      if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekEndDate, input.weekStartDate));
+      if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekStartDate, input.weekEndDate));
+      // Campaign report rows are weekly. A selected day means the report week
+      // containing that day, not a fabricated daily metric or all-history sum.
+      if (input.selectedDate) {
+        conditions.push(lte(adCampaignReports.weekStartDate, input.selectedDate));
+        conditions.push(gte(adCampaignReports.weekEndDate, input.selectedDate));
+      }
       if (input.adType && input.adType !== 'all') conditions.push(eq(adCampaignReports.adType, input.adType));
 
       const rows = await d.select().from(adCampaignReports).where(opsWorkspaceCondition(adCampaignReports, currentOpsWorkspaceId(), and(...conditions)));
