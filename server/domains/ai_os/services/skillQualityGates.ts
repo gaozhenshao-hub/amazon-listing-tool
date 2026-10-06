@@ -147,19 +147,25 @@ export async function replaySkillEvalCase(input: { caseId: string; snapshotId: s
   if (!snapshot) throw new Error("候选版本快照不存在或不属于该Skill");
   const inputContext = parse<Record<string, unknown>>(evalCase.inputContext, {});
   const expectedConstraints = parse<Record<string, unknown>>(evalCase.expectedConstraints, {});
-  const result = await runEmperorSkill({
-    skillSlug: evalCase.skillSlug,
-    userId: input.userId,
-    workspaceId: input.workspaceId ?? snapshot.workspaceId ?? evalCase.workspaceId ?? null,
-    variables: inputContext,
-    context: JSON.stringify(inputContext),
-    evaluationMode: "replay",
+  const replayMetadata = {
+    evaluationMode: "replay" as const,
     replaySnapshot: {
       snapshotId: snapshot.snapshotId,
       skillVersion: String(snapshot.skillVersion),
       manifest: parse(snapshot.manifest, {}),
       modelOverride: snapshot.modelOverride ?? null,
     },
+  };
+  const result = await runEmperorSkill({
+    skillSlug: evalCase.skillSlug,
+    userId: input.userId,
+    workspaceId: input.workspaceId ?? snapshot.workspaceId ?? evalCase.workspaceId ?? null,
+    variables: { ...inputContext, replayMetadata },
+    context: JSON.stringify({ inputContext, replayMetadata }),
+    skillVersionPolicy: "snapshot",
+    expectedSkillVersion: replayMetadata.replaySnapshot.skillVersion,
+    modelOverride: replayMetadata.replaySnapshot.modelOverride || undefined,
+    executionPreset: "evaluation",
   });
   const constraints = evaluateExpectedConstraints(result.content, expectedConstraints);
   const replayResultId = `eval_result_${randomUUID().replace(/-/g, "").slice(0, 24)}`;

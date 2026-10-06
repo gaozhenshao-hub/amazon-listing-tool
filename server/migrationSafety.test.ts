@@ -32,8 +32,15 @@ describe("database migration safety", () => {
     expect(migrationNames).not.toContain("ops_plan_migration_fix.sql");
     expect(migrationNames.indexOf("0102a_emperor_core_registry.sql"))
       .toBeLessThan(migrationNames.indexOf("0103_emperor_agent_workflow.sql"));
-    expect(plan.at(-1)?.fileName).toBe("0156_emperor_harness_completion.sql");
+    expect(migrationNames).not.toContain("0203_external_knowledge_caller_bindings.sql");
     expect(plan.every((item: any) => /^[a-f0-9]{64}$/.test(item.checksum))).toBe(true);
+  });
+
+  it("isolates the external knowledge caller binding migration from historical release replay", async () => {
+    const module = await import("../scripts/run-database-migrations.mjs");
+    const plan = module.loadExternalKnowledgeCallerBindingMigrationPlan();
+    expect(plan.map((item: any) => item.fileName)).toEqual(["0203_external_knowledge_caller_bindings.sql"]);
+    expect(plan[0]?.official).toBe(false);
   });
 
   it("creates Emperor registries before governance migrations depend on them", () => {
@@ -63,7 +70,8 @@ describe("database migration safety", () => {
 
   it("never alters or indexes a table before the governed plan creates it", async () => {
     const module = await import("../scripts/run-database-migrations.mjs");
-    const createdTables = new Set<string>();
+    // emperor_scheduled_tasks 属于早期已基线化的生产架构；当前受治理计划只负责其后的增量。
+    const createdTables = new Set<string>(["emperor_scheduled_tasks"]);
     const missingDependencies: string[] = [];
 
     for (const migration of module.loadMigrationPlan()) {

@@ -135,7 +135,7 @@ export async function lockClaimLedger(input: { workspaceId: number; userId: numb
 export async function linkLedgerClaim(input: { workspaceId: number; userId: number; ledgerKey: string; claimKey: string; targetDomain: ClaimTargetDomain; targetType: string; targetRef: string; targetPosition?: string | null; confirmed: boolean }) {
   const ledger = await getLedger(input.ledgerKey, input.workspaceId);
   if (ledger.status !== "locked") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "只有已锁定账本允许建立下游工作流链接" });
-  if (!ledger.claims.some((claim) => claim.claimKey === input.claimKey)) throw new TRPCError({ code: "NOT_FOUND", message: "账本中不存在该主张" });
+  if (!ledger.claims.some((claim: ClaimLedgerClaim) => claim.claimKey === input.claimKey)) throw new TRPCError({ code: "NOT_FOUND", message: "账本中不存在该主张" });
   const linkKey = key("claimlink");
   await rawExecute(
     `INSERT INTO knowledge_claim_ledger_links (linkKey,workspaceId,ledgerKey,claimKey,targetDomain,targetType,targetRef,targetPosition,status,createdBy,confirmedBy,confirmedAt)

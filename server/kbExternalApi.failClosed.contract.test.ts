@@ -2,14 +2,20 @@ import http from "node:http";
 import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const getKbStats = vi.fn();
+const { getKbStats, searchKnowledgeBase, rawExecute } = vi.hoisted(() => ({
+  getKbStats: vi.fn(),
+  searchKnowledgeBase: vi.fn(),
+  rawExecute: vi.fn(),
+}));
 
-vi.mock("./kbDb", () => ({ getKbStats }));
+vi.mock("./kbDb", () => ({ getKbStats, searchKnowledgeBase }));
+vi.mock("./domains/ai_os/routerContext", () => ({ rawExecute }));
 
 import { kbExternalApiRouter } from "./kbExternalApi";
 
 async function startServer() {
   const app = express();
+  app.use(express.json());
   app.use("/api/external/kb", kbExternalApiRouter);
   const server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve, reject) => {
@@ -21,12 +27,22 @@ async function startServer() {
   return { server, baseUrl: `http://127.0.0.1:${address.port}/api/external/kb` };
 }
 
-describe("external knowledge-base API workspace fail-closed contract", () => {
+function configureBoundCaller(scopes = ["stats", "search", "rag"]) {
+  rawExecute.mockImplementation(async (statement: string) => {
+    if (statement.includes("SELECT caller.connectorId")) {
+      return [{ connectorId: 71, workspaceId: 9, createdByUserId: 7, scopes: JSON.stringify(scopes) }];
+    }
+    return [];
+  });
+}
+
+describe("external knowledge-base API caller-to-workspace binding", () => {
   let server: http.Server | undefined;
 
   beforeEach(() => {
-    delete process.env.EMPEROR_KB_API_KEY;
     getKbStats.mockReset();
+    searchKnowledgeBase.mockReset();
+    rawExecute.mockReset();
   });
 
   afterEach(async () => {
@@ -37,36 +53,61 @@ describe("external knowledge-base API workspace fail-closed contract", () => {
     server = undefined;
   });
 
-  it("returns 503 without a configured caller-to-workspace binding and never queries stats", async () => {
+  it("fails closed when no caller token is provided and never queries the knowledge base", async () => {
     const started = await startServer();
     server = started.server;
-
     const response = await fetch(`${started.baseUrl}/stats`);
-    const body = await response.json() as { error: string };
-
-    expect(response.status).toBe(503);
-    expect(body.error).toBe("WORKSPACE_SCOPE_UNAVAILABLE");
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ error: "AUTH_REQUIRED" });
+    expect(rawExecute).not.toHaveBeenCalled();
     expect(getKbStats).not.toHaveBeenCalled();
   });
 
-  it("does not trust a global key or a caller-supplied workspace header", async () => {
-    process.env.EMPEROR_KB_API_KEY = "global-key-without-workspace-binding";
+  it("rejects an unknown caller binding rather than honoring global environment or caller headers", async () => {
+    process.env.EMPEROR_KB_API_KEY = "legacy-global-key-must-not-authorize";
+    rawExecute.mockResolvedValue([]);
     const started = await startServer();
     server = started.server;
-
-    for (const path of ["stats", "search", "rag"]) {
-      const response = await fetch(`${started.baseUrl}/${path}`, {
-        method: path === "stats" ? "GET" : "POST",
-        headers: {
-          authorization: "Bearer global-key-without-workspace-binding",
-          "x-workspace-id": "999999",
-        },
-      });
-      const body = await response.json() as { error: string };
-      expect(response.status).toBe(503);
-      expect(body.error).toBe("WORKSPACE_SCOPE_UNAVAILABLE");
-    }
-
+    const response = await fetch(`${started.baseUrl}/stats`, {
+      headers: {
+        authorization: "Bearer legacy-global-key-must-not-authorize",
+        "x-workspace-id": "999999",
+      },
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: "CALLER_BINDING_INVALID" });
     expect(getKbStats).not.toHaveBeenCalled();
+    delete process.env.EMPEROR_KB_API_KEY;
+  });
+
+  it("uses only the persisted caller workspace and shared confirmed scope", async () => {
+    configureBoundCaller();
+    getKbStats.mockResolvedValue({ totalCount: 3 });
+    const started = await startServer();
+    server = started.server;
+    const response = await fetch(`${started.baseUrl}/stats`, {
+      headers: {
+        authorization: "Bearer caller-token",
+        "x-workspace-id": "999999",
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ totalCount: 3 });
+    expect(getKbStats).toHaveBeenCalledWith(7, 9, "shared");
+    expect(rawExecute.mock.calls.some(([statement]) => String(statement).includes("lastUsedAt"))).toBe(true);
+  });
+
+  it("enforces each caller's explicit read-only scopes", async () => {
+    configureBoundCaller(["stats"]);
+    const started = await startServer();
+    server = started.server;
+    const response = await fetch(`${started.baseUrl}/search`, {
+      method: "POST",
+      headers: { authorization: "Bearer caller-token", "content-type": "application/json" },
+      body: JSON.stringify({ query: "ceiling fan" }),
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: "CALLER_SCOPE_DENIED" });
+    expect(searchKnowledgeBase).not.toHaveBeenCalled();
   });
 });

@@ -2,7 +2,8 @@ import { TRPCError, assertNodeTransition, withAgentStateMachine, AgentNodeStatus
 import { selectAgentTemplateVersionForRun, getAgentBySlug } from "./templateGovernance";
 import { addEvent, getCheckpoints, getCheckpoint } from "./checkpointStore";
 import { persistAgentArtifact, listAgentArtifacts, estimateAgentHumanEditRate } from "./artifactStore";
-import { getRunRow, effectiveCheckpointOutput, refreshRunAfterCheckpoint, unlockChildren, buildNodeInput, buildSkillContext } from "./contextPackage";
+import { getRunRow, effectiveCheckpointOutput, refreshRunAfterCheckpoint, unlockChildren, buildSkillContext } from "./contextPackage";
+import { compileAgentNodeInput } from "./contextCompiler";
 import {
   buildRecoveryIdempotencyKey,
   claimExecutionRecoveryRequest,
@@ -1162,7 +1163,8 @@ export async function executeAgentNode(input: {
     throw new TRPCError({ code: "BAD_REQUEST", message: `Node is not executable: ${checkpoint.status}` });
   }
 
-  const nodeInput = buildNodeInput(run, dag, node, detail.checkpoints, detail.artifacts);
+  const nodeInput = await compileAgentNodeInput({ run, dag, node, checkpoints: detail.checkpoints, artifacts: detail.artifacts });
+  const compiledSources = nodeInput.contextPackage?.provenance?.sources || [];
   const metadata = checkpointMetadata(checkpoint);
   const binding = resolveAgentNodeSkillBinding(node);
   const executionPreset = normalizeSkillExecutionPreset((node as any).executionPreset || "standard");
@@ -1182,7 +1184,11 @@ export async function executeAgentNode(input: {
     allowedFromStatuses: ["ready", "waiting_human", "failed", "canceled"],
     action: "execute node",
   }));
-  await addEvent(input.runId, run.agentSlug, input.nodeId, "node.running", `节点 ${node.label || node.id} 开始执行`, { nodeInput, executionPreset });
+  await addEvent(input.runId, run.agentSlug, input.nodeId, "node.running", `节点 ${node.label || node.id} 开始执行`, {
+    nodeInput,
+    executionPreset,
+    compiledSources,
+  });
 
   try {
     const toolResult = await executeToolBackedNode({ run, dag, node, nodeInput, userId: input.userId });

@@ -479,6 +479,8 @@ export const kbIntelRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const _d = await db();
+      const workspaceId = ctx.workspaceId;
+      if (workspaceId == null) throw new Error("工作空间不存在");
       const [item] = await _d.select().from(kbIntelItems)
         .where(eq(kbIntelItems.id, input.itemId));
       if (!item) throw new Error("情报条目不存在");
@@ -503,6 +505,7 @@ export const kbIntelRouter = router({
 
         const [result] = await _d.insert(kbOperationSkills).values({
           userId: ctx.user!.id,
+          workspaceId,
           title: content.title,
           sourceType: "url",
           sourceUrl: item.originalUrl,
@@ -524,6 +527,7 @@ export const kbIntelRouter = router({
       } else if (input.targetKbType === "listing") {
         const [result] = await _d.insert(kbListingCopywriting).values({
           userId: ctx.user!.id,
+          workspaceId,
           asin: "",
           productTitle: content.title || item.title,
           category: content.businessModule || "通用",
@@ -537,6 +541,7 @@ export const kbIntelRouter = router({
       } else if (input.targetKbType === "product") {
         const [result] = await _d.insert(kbProductInnovations).values({
           userId: ctx.user!.id,
+          workspaceId,
           asin: "",
           productTitle: content.title || item.title,
           category: content.businessModule || "通用",

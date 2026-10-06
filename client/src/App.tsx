@@ -4,6 +4,7 @@ import { claimLazyRecovery } from "@/lib/lazyRecovery";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, Redirect } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { NetworkStatusBanner } from "./components/NetworkStatusBanner";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import { lazy, Suspense, type ComponentType } from "react";
@@ -143,6 +144,7 @@ const EmperorMCP = lazy(() => import("./pages/emperor/EmperorMCP"));
 const EmperorAgents = lazy(() => import("./pages/emperor/EmperorAgents"));
 const EmperorUsage = lazy(() => import("./pages/emperor/EmperorUsage"));
 const EmperorDiagnostics = lazy(() => import("./pages/emperor/EmperorDiagnostics"));
+const EmperorExternalKnowledgeAccess = lazy(() => import("./pages/emperor/EmperorExternalKnowledgeAccess"));
 const EmperorSettings = lazy(() => import("./pages/emperor/EmperorSettings"));
 const EmperorScheduled = lazy(() => import("./pages/emperor/EmperorScheduled"));
 const AgentCanvas = lazy(() => import("./pages/emperor/AgentCanvas"));
@@ -275,6 +277,7 @@ function Router() {
         <Route path="/emperor/agents">{() => <PermissionGuard><EmperorAgents /></PermissionGuard>}</Route>
         <Route path="/emperor/usage">{() => <PermissionGuard><EmperorUsage /></PermissionGuard>}</Route>
         <Route path="/emperor/diagnostics">{() => <PermissionGuard><EmperorDiagnostics /></PermissionGuard>}</Route>
+        <Route path="/emperor/external-knowledge-access">{() => <PermissionGuard><EmperorExternalKnowledgeAccess /></PermissionGuard>}</Route>
         <Route path="/emperor/settings">{() => <PermissionGuard><EmperorSettings /></PermissionGuard>}</Route>
         <Route path="/emperor/scheduled">{() => <PermissionGuard><EmperorScheduled /></PermissionGuard>}</Route>
         <Route path="/emperor/knowledge">{() => <PermissionGuard><EmperorKnowledge /></PermissionGuard>}</Route>
@@ -306,6 +309,7 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
+          <NetworkStatusBanner />
           <Toaster />
           <Suspense fallback={<RouteLoadingFallback />}>
             <Switch>

@@ -274,7 +274,7 @@ async function buildJobContext(job: AiJobSnapshot, input: ListingGenerationJobIn
     loadEnrichedData(input.projectId),
     confirmedArtifactContext(input.agentRunId, input.nodeId),
     input.distillationBinding
-      ? resolveWorkflowGuidance({ workspaceId: input.workspaceId || Number(project.workspaceId || 0), ...input.distillationBinding })
+      ? resolveWorkflowGuidance({ workspaceId: job.workspaceId || Number(project.workspaceId || 0), ...input.distillationBinding })
       : Promise.resolve(null),
   ]);
   let context = buildProductContext(project, analyses, enrichedData);

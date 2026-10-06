@@ -3,6 +3,7 @@ import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
+import { type Readable } from "node:stream";
 import { finished } from "node:stream/promises";
 import { ZipArchive } from "archiver";
 import yauzl from "yauzl";
@@ -100,7 +101,7 @@ function openZip(archivePath: string): Promise<yauzl.ZipFile> {
   });
 }
 
-function openReadStream(zipFile: yauzl.ZipFile, entry: yauzl.Entry): Promise<NodeJS.ReadableStream> {
+function openReadStream(zipFile: yauzl.ZipFile, entry: yauzl.Entry): Promise<Readable> {
   return new Promise((resolveStream, reject) => {
     zipFile.openReadStream(entry, (error, stream) => {
       if (error || !stream) reject(error ?? new Error("无法读取知识包文件"));

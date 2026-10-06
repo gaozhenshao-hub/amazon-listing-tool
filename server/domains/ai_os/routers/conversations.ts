@@ -37,6 +37,7 @@ import {
   highestConversationRisk,
   parseConversationStructuredJson,
   shouldRetryConversationPlannerError,
+  type ConversationRiskLevel,
 } from "../services/conversationPolicy";
 import type { MessageContent } from "../../../_core/llm";
 
@@ -428,7 +429,7 @@ export const emperorConversationsRouter = router({
       const version = Number(versionRows[0]?.version || 0) + 1;
       const planId = `plan_${randomUUID().replace(/-/g, "")}`;
       const requiresApproval = governedSteps.some((step) => conversationStepRequiresApproval(step));
-      const highestRisk = governedSteps.reduce((risk, step) => highestConversationRisk(risk, step.riskLevel), "L0" as const);
+      const highestRisk = governedSteps.reduce<ConversationRiskLevel>((risk, step) => highestConversationRisk(risk, step.riskLevel), "L0");
       await rawExecute(
         `INSERT INTO emperor_conversation_plans (workspaceId,planId,conversationId,version,status,goal,assumptions,planJson,riskSummary,createdBy) VALUES (?,?,?,?, 'proposed',?,?,?,?,?)`,
         [workspaceIdFromContext(ctx), planId, input.conversationId, version, input.goal, json(input.assumptions || []), json({ source: "user_editable_conversation_plan", executionMode: "serial", steps: governedSteps }), json({ requiresApproval, highestRisk, executionMode: "serial", allowParallel: false }), ctx.user.id],
@@ -460,7 +461,7 @@ export const emperorConversationsRouter = router({
     await rawExecute("UPDATE emperor_conversation_plan_steps SET status=IF(approvalRequired=1,'waiting_human','ready') WHERE planId=?", [input.planId]);
     await rawExecute("UPDATE emperor_conversations SET status='waiting_human',activePlanId=? WHERE conversationId=?", [input.planId, input.conversationId]);
     const traceId = `conversation_plan_${input.planId}`;
-    await ensureRunTrace({ runId: traceId, rootRunType: "conversation_plan", workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, metadata: { conversationId: input.conversationId, planId: input.planId, planVersion: Number(rows[0].version || 0) } });
+    await ensureRunTrace({ runId: traceId, rootRunType: "conversation_step", workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, metadata: { conversationId: input.conversationId, planId: input.planId, planVersion: Number(rows[0].version || 0) } });
     const planSnapshot = await createExecutionStateSnapshot({
       workspaceId: workspaceIdFromContext(ctx), traceId, targetType: "conversation_plan", targetId: input.planId,
       stateVersion: priorStateVersion + 1, planId: input.planId, planVersion: Number(rows[0].version || 0),
@@ -487,7 +488,7 @@ export const emperorConversationsRouter = router({
     const plan = rows[0];
     if (!plan) throw new TRPCError({ code: "NOT_FOUND", message: "计划不存在" });
     const traceId = `conversation_plan_${input.planId}`;
-    await ensureRunTrace({ runId: traceId, rootRunType: "conversation_plan", workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, metadata: { conversationId: input.conversationId, planId: input.planId, recovery: true } });
+    await ensureRunTrace({ runId: traceId, rootRunType: "conversation_step", workspaceId: workspaceIdFromContext(ctx), userId: ctx.user.id, metadata: { conversationId: input.conversationId, planId: input.planId, recovery: true } });
     const snapshot = await createExecutionStateSnapshot({
       workspaceId: workspaceIdFromContext(ctx), traceId, targetType: "conversation_plan", targetId: input.planId,
       stateVersion: Number(plan.stateVersion || 0) + 1, planId: input.planId, planVersion: Number(plan.version || 0),
@@ -642,7 +643,7 @@ export const emperorConversationsRouter = router({
       knowledgeReferences: knowledgeRefs,
     });
     const executionPayload = { ...payload, conversationId: input.conversationId, conversationAttachments: attachmentRefs, conversationKnowledgeReferences: knowledgeRefs, conversationContext: compiledContext.context, contextPolicyHash: compiledContext.policyHash, executionPolicy };
-    const skillAttachments: MessageContent[] = attachmentRows.flatMap((attachment: any) => {
+    const skillAttachments = attachmentRows.flatMap<MessageContent>((attachment: any) => {
       if (!attachment.publicUrl) return [];
       if (attachment.contextPolicy === "image_vision" && String(attachment.mimeType).startsWith("image/")) {
         return [{ type: "image_url", image_url: { url: attachment.publicUrl, detail: "high" } }];

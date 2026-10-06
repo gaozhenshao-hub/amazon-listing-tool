@@ -480,8 +480,9 @@ export function buildStep5OutlineSafetyFallback(input: {
   failedGroup?: string | null;
   failedModule?: string | null;
 }) {
-  const outline = normalizeImageOutline(input.outline || {}, { recoverMissingSecondaryContent: true });
-  const mainOutline = outline?.mainImage || {};
+  const sourceOutline = input.outline || {};
+  const outline = normalizeImageOutline(sourceOutline, { recoverMissingSecondaryContent: true });
+  const mainOutline = sourceOutline.mainImage || {};
   const secondaryImages = normalizeSecondaryImageSlots(
     Array.isArray(outline?.secondaryImages) ? outline.secondaryImages : [],
     (imageNumber) => ({ imageNumber }),
@@ -515,7 +516,7 @@ export function buildStep5OutlineSafetyFallback(input: {
       subModules: Array.isArray(module?.subModules) ? module.subModules : undefined,
     };
   });
-  const brandSource = outline?.brandStory || outline?.brandStoryModule || outline?.aPlusBrandStory || null;
+  const brandSource = outline.brandStory || sourceOutline.brandStoryModule || sourceOutline.aPlusBrandStory || null;
   const brandPurpose = String(brandSource?.purpose || brandSource?.story || "品牌故事与品牌价值展示").trim();
   const brandStory = brandSource ? {
     title: String(brandSource?.title || "品牌故事").trim(),
@@ -967,7 +968,8 @@ export async function buildStep5FinalSuggestion(
   };
   const truncate = (s: string | null, maxLen = 3000) => s ? s.substring(0, maxLen) : "";
   const step1Content = truncate(session.step1UserEdit || session.step1AiResult, 4000);
-  const step2Draft = normalizeImageOutline(parseStoredJson(session.step2UserEdit || session.step2AiResult || "{}") || {});
+  const storedStep2Outline = parseStoredJson(session.step2UserEdit || session.step2AiResult || "{}") || {};
+  const step2Draft = normalizeImageOutline(storedStep2Outline);
   const { outline: step2Outline, consumedRefs } = await hydrateLockedImageWorkflowAplusSubmodules({
     sessionId: session.id,
     projectId: project.id,
@@ -1011,7 +1013,7 @@ export async function buildStep5FinalSuggestion(
   const outlineAplusModules = Array.isArray(step2Outline?.aPlusModules)
     ? step2Outline.aPlusModules
     : [];
-  const outlineBrandStory = step2Outline?.brandStory || step2Outline?.brandStoryModule || step2Outline?.aPlusBrandStory || null;
+  const outlineBrandStory = getBrandStory(step2Outline) || getBrandStory(storedStep2Outline) || null;
   let segments: Step5RunSegment[] = [
     { id: "main", label: "主图", group: "main", status: "pending" },
     { id: "secondary", label: "辅图 2–7", group: "secondary", status: "pending" },

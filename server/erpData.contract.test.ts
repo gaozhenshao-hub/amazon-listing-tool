@@ -16,12 +16,11 @@ describe("ERP 数据统一入口契约", () => {
     expect(routerSource).toContain('source: "saihu"');
   });
 
-  it("产品总览只保留系统数据与 ERP 数据两个前端入口", () => {
-    expect(productsPageSource).toContain('type DataSource = "system" | "erp"');
+  it("产品总览合并权威周报与 ERP 历史回退，而不让用户切换孤立来源", () => {
     expect(productsPageSource).toContain('sourceType: "erp"');
-    expect(productsPageSource).toContain("ERP 数据");
-    expect(productsPageSource).not.toContain('setDataSource("lingxing")');
-    expect(productsPageSource).not.toContain('setDataSource("saihu")');
+    expect(productsPageSource).toContain("buildUnifiedProductOverview");
+    expect(productsPageSource).toContain("MCP parent-ASIN weeks are the primary facts");
+    expect(productsPageSource).toContain("ERP remains only as explicitly labelled historical fallback");
   });
 
   it("详情页使用 ERP 路由且继续兼容旧导入链接", () => {
@@ -29,6 +28,6 @@ describe("ERP 数据统一入口契约", () => {
     expect(appSource).toContain('/ops/products/import/:source/:parentAsin');
     expect(detailPageSource).toContain('useRoute("/ops/products/erp/:source/:parentAsin")');
     expect(detailPageSource).toContain('useRoute("/ops/products/import/:source/:parentAsin")');
-    expect(detailPageSource).toContain("ERP 数据");
+    expect(detailPageSource).toContain("ASIN周数据系统父ASIN汇总优先 · ERP历史回退");
   });
 });

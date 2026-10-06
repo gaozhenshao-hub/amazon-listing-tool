@@ -18,6 +18,8 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import type { inferRouterInputs } from "@trpc/server";
+import type { AppRouter } from "../../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
@@ -38,6 +40,21 @@ interface ColumnDef {
   type?: "text" | "number" | "boolean";
   render?: (value: any, product: any) => React.ReactNode;
 }
+
+type PanoramaEditableProductField = inferRouterInputs<AppRouter>["devPanorama"]["updateProductField"]["field"];
+
+const PANORAMA_EDITABLE_PRODUCT_FIELDS = new Set<PanoramaEditableProductField>([
+  "parentAsin", "sku", "brand", "title", "category", "subcategory", "categoryPath",
+  "bsrLarge", "bsrSmall", "bsr", "bsrGrowthRate", "price", "fbaFee", "grossMargin",
+  "monthlySales", "monthlySalesGrowth", "monthlyRevenue", "childSales", "childRevenue",
+  "variantCount", "reviewCount", "monthlyNewReviews", "rating", "reviewRate", "lqs",
+  "sellerCount", "fulfillment", "buyboxSeller", "buyboxType", "sellerLocation", "listingDate",
+  "listingDays", "productWeight", "productSize", "packageWeight", "packageSize", "packageSizeTier",
+  "bulletPoints", "monthlySalesHistory",
+]);
+
+const isPanoramaEditableProductField = (field: string): field is PanoramaEditableProductField =>
+  PANORAMA_EDITABLE_PRODUCT_FIELDS.has(field as PanoramaEditableProductField);
 
 const FIXED_COLUMNS: ColumnDef[] = [
   { key: "searchRank", label: "#", group: "基础信息", width: 50, type: "number" },
@@ -852,7 +869,7 @@ export default function PanoramaTable({
           toast.error("历史数据格式错误");
         }
       }
-    } else {
+    } else if (isPanoramaEditableProductField(editingCell.field)) {
       const value = col.type === "number" ? (finalValue ? Number(finalValue) : null) : finalValue;
       updateFieldMutation.mutate({
         productId: editingCell.productId,

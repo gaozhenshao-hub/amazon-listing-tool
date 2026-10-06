@@ -19,31 +19,14 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { ROLE_LABELS, ALL_ROLES } from "@shared/const";
 import { useAuth } from "@/_core/hooks/useAuth";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "../../../server/routers";
 import {
   UserPlus, Upload, Search, RotateCcw, Shield, ShieldAlert,
   Loader2, Users, UserCheck, UserX, Clock, Pencil, Trash2, AlertTriangle, Copy,
 } from "lucide-react";
 
-type ProductKnowledgeExportLog = {
-  id: number;
-  actorUserId: number | null;
-  operatorName: string;
-  status: "success" | "failed";
-  reason: string | null;
-  createdAt: Date | string | null;
-  metadata: {
-    filter: {
-      modules: string[];
-      dateField: "created_at" | "updated_at";
-      startAt: string | null;
-      endAt: string | null;
-      tags: string[];
-    };
-    itemCount: number | null;
-    attachmentCount: number | null;
-    archiveBytes: number | null;
-  };
-};
+type ProductKnowledgeExportLog = inferRouterOutputs<AppRouter>["kbTransfer"]["exportLogs"][number];
 
 // ─── Status badge ────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
@@ -825,8 +808,8 @@ export default function UserManagement() {
                     <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">暂无产品知识库完整包导出记录</TableCell></TableRow>
                   ) : (
                     (exportLogsQuery.data || []).map((log: ProductKnowledgeExportLog) => {
-                      const scope = log.metadata?.filter || {};
-                      const dateRange = [scope.startAt, scope.endAt].filter(Boolean).map((value: string) => new Date(value).toLocaleDateString("zh-CN")).join(" 至 ") || "不限日期";
+                      const scope = log.metadata.filter;
+                      const dateRange = [scope.startAt, scope.endAt].filter((value): value is string => value !== null).map(value => new Date(value).toLocaleDateString("zh-CN")).join(" 至 ") || "不限日期";
                       const tags = Array.isArray(scope.tags) && scope.tags.length ? `；标签：${scope.tags.join("、")}` : "";
                       const size = typeof log.metadata?.archiveBytes === "number" && log.metadata.archiveBytes > 0 ? `${(log.metadata.archiveBytes / 1024 / 1024).toFixed(1)} MB` : "—";
                       return <TableRow key={log.id}>

@@ -27,7 +27,7 @@ describe("权限治理中心页面契约", () => {
   });
 
   it("要求先执行服务端变更预览，再保存角色模板", () => {
-    expect(source).toContain("trpc.roleManagement.previewUpdate.useMutation");
+    expect(source).toContain("utils.roleManagement.previewUpdate.fetch");
     expect(source).toContain("请先查看变更影响与风险提示");
     expect(source).toContain("预览不会写入任何授权。");
     expect(source).toContain("不会自动变更成员角色、项目或ASIN范围。");

@@ -82,8 +82,8 @@ function isAdMcpFactDomain(domain: string): domain is AdMcpFactDomain {
 }
 function adMcpEntityKey(domain: AdMcpFactDomain, data: RecordValue) {
   return domain === "ad_campaign_mcp"
-    ? [data.profileId, data.reportDate, data.adType, data.campaignId].map(asText).join("|")
-    : [data.profileId, data.reportDate, data.adType, data.campaignId, data.adGroupId, data.adId, data.advertisedAsin].map(asText).join("|");
+    ? [data.profileId, data.reportDate, data.adType, data.campaignId].map((part) => asText(part)).join("|")
+    : [data.profileId, data.reportDate, data.adType, data.campaignId, data.adGroupId, data.adId, data.advertisedAsin].map((part) => asText(part)).join("|");
 }
 const MCP_STORE_DATE_WINDOW_TIMEOUT_MS = 95_000;
 export const AD_KEYWORD_MAX_PAGES_PER_PROFILE = 100;
@@ -219,7 +219,7 @@ function asNumber(input: unknown) {
 }
 function sumValues(record: RecordValue, keys: string[]) {
   const values = keys.map((key) => value(record, [key])).filter((item) => item !== null);
-  return values.length ? values.reduce((total, item) => total + asNumber(item), 0) : null;
+  return values.length ? values.reduce<number>((total, item) => total + asNumber(item), 0) : null;
 }
 function metricValue(record: RecordValue, keys: string[]) {
   const raw = value(record, keys);
@@ -340,7 +340,7 @@ export function dailySnapshotIdentityKey(input: { sourceStoreId?: unknown; count
   return [asText(input.sourceStoreId), asText(input.country), asText(input.asin), asText(input.reportDate)].join("|");
 }
 export function keywordSnapshotIdentityHash(input: { profileId?: unknown; campaignId?: unknown; campaignName?: unknown; adGroupId?: unknown; adGroupName?: unknown; recordId?: unknown; keyword?: unknown; matchType?: unknown; periodStart?: unknown; periodEnd?: unknown }) {
-  const identity = [input.profileId, input.campaignId || input.campaignName, input.adGroupId || input.adGroupName || input.recordId, input.keyword, input.matchType || "unknown", input.periodStart, input.periodEnd].map(asText).join("|");
+  const identity = [input.profileId, input.campaignId || input.campaignName, input.adGroupId || input.adGroupName || input.recordId, input.keyword, input.matchType || "unknown", input.periodStart, input.periodEnd].map((part) => asText(part)).join("|");
   return createHash("sha256").update(identity).digest("hex");
 }
 export function normalizeDailyPreviewPage(pageRows: RecordValue[], context: { storeId: string; storeName: string; reportDate: string }) {
@@ -463,7 +463,7 @@ type NormalizedPreviewRow = { source: RecordValue; normalized: ReturnType<typeof
  * 业务快照表的事实粒度为同一ASIN每日一行，因此在草稿阶段显式合计三项库存指标，
  * 同时保留细分记录数量和unique_id审计信息；缺失主键的行不与其他行合并，仍由既有校验阻断。
  */
-export function coalesceFbaInventoryPreviewRows(stagedRows: NormalizedPreviewRow[]) {
+export function coalesceFbaInventoryPreviewRows(stagedRows: NormalizedPreviewRow[]): NormalizedPreviewRow[] {
   const groups = new Map<string, NormalizedPreviewRow[]>();
   stagedRows.forEach((item, index) => {
     const data = item.normalized.normalized;
@@ -472,11 +472,11 @@ export function coalesceFbaInventoryPreviewRows(stagedRows: NormalizedPreviewRow
     groups.set(key, [...(groups.get(key) || []), item]);
   });
   return [...groups.values()].map((items) => {
-    const first = items[0];
+    const first = items[0]!;
     if (items.length === 1) return first;
     const sourceIds = items.map((item) => asText(item.normalized.normalized.recordId)).filter(Boolean).sort();
     const validationErrors = [...new Set(items.flatMap((item) => item.normalized.validationErrors))];
-    const mergedData = {
+    const mergedData: RecordValue = {
       ...first.normalized.normalized,
       fbaAvailable: items.reduce((total, item) => total + asNumber(item.normalized.normalized.fbaAvailable), 0),
       fbaReserved: items.reduce((total, item) => total + asNumber(item.normalized.normalized.fbaReserved), 0),
@@ -989,7 +989,7 @@ export const lingxingSyncRouter = router({
         : input.scope.storeId;
       const request = buildMcpArguments(input.dataDomain, { ...input.scope, storeId: listingStoreIds });
       const execution = await invokeEmperorTool({ toolSlug: "internal.lingxing.read", params: request, userId: ctx.user.id, userRole: ctx.user.role, workspaceId, runId, nodeId: "read_external_data" });
-      toolRunId = execution.metadata.toolRunId;
+      toolRunId = execution.metadata.toolRunId ?? null;
       rawSnapshot = normalizeMcpPayload(execution.output);
       const sourceRecords = pickRecords(rawSnapshot);
       const invalidRows = isPhase5PreviewDomain(input.dataDomain)
@@ -1030,7 +1030,7 @@ export const lingxingSyncRouter = router({
         metadata: { batchId, dataDomain: input.dataDomain, rawResponseHash, toolRunId, traceId: runId, externalized: true },
         failOnError: true,
       });
-      await db.update(opsExternalSyncBatches).set({ rawSnapshot: { ...object(compactRawSnapshot), rawArtifactRef: artifact?.ref || null, rawArtifactUri: artifact?.storageUri || null } as any }).where(eq(opsExternalSyncBatches.id, batchId));
+      await db.update(opsExternalSyncBatches).set({ rawSnapshot: { ...object(compactRawSnapshot), rawArtifactRef: artifact?.ref || null, rawArtifactUri: null } as any }).where(eq(opsExternalSyncBatches.id, batchId));
     }
     const adMcpAdvertisedAsins = isAdMcpFactDomain(input.dataDomain) && input.dataDomain === "ad_product_mcp"
       ? [...new Set(sourceRows.map((source) => asText(source.asin || source.advertised_asin).toUpperCase()).filter(Boolean))]

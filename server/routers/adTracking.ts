@@ -20,7 +20,7 @@ import {
   adCompetitorRanks,
   productProfiles,
 } from "../../drizzle/schema";
-import { eq, desc, and, or, inArray, sql, like } from "drizzle-orm";
+import { eq, desc, and, or, inArray, sql, like, type SQL } from "drizzle-orm";
 import { parseAdReportBuffer } from "../adReportParser";
 import { storagePut } from "../storage";
 import XLSX from "xlsx";
@@ -365,7 +365,7 @@ export const adTrackingRouter = router({
       // 或用户维护的“广告组合→父ASIN”映射。两者应取并集，不能因旧数据的
       // productId/parentAsin尚未回填而隐藏已确认映射下的关键词。
       const conditions = [eq(adKeywordWeekly.userId, ctx.user.id)];
-      const attributionConditions: any[] = [];
+      const attributionConditions: SQL[] = [];
       if (input.productId > 0) {
         attributionConditions.push(eq(adKeywordWeekly.productId, input.productId));
       }
@@ -383,12 +383,15 @@ export const adTrackingRouter = router({
         mappedPortfolioCount = mappings.length;
         for (const mapping of mappings) {
           attributionConditions.push(mapping.storeName
-            ? and(eq(adKeywordWeekly.portfolioName, mapping.portfolioName), eq(adKeywordWeekly.storeName, mapping.storeName))
+            ? and(eq(adKeywordWeekly.portfolioName, mapping.portfolioName), eq(adKeywordWeekly.storeName, mapping.storeName))!
             : eq(adKeywordWeekly.portfolioName, mapping.portfolioName));
         }
       }
       if (attributionConditions.length > 0) {
-        conditions.push(or(...attributionConditions));
+        const attributionCondition = or(...attributionConditions);
+        if (attributionCondition) {
+          conditions.push(attributionCondition);
+        }
       }
       if (input.targetingType !== "all") {
         conditions.push(eq(adKeywordWeekly.targetingType, input.targetingType));

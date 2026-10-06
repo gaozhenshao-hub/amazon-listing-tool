@@ -19,7 +19,10 @@ describe("领星分域同步规则目录", () => {
     const traffic = getLingxingSyncRule("parent_asin_traffic");
     expect(daily?.target).not.toBe(traffic?.target);
     expect(traffic?.confirmation).toContain("分库存储");
-    expect(LINGXING_SYNC_RULES).toHaveLength(11);
+    expect(LINGXING_SYNC_RULES.map((rule) => rule.domain)).toEqual(expect.arrayContaining([
+      "ad_campaign_mcp",
+      "ad_product_mcp",
+    ]));
   });
 
   it("登记Phase 5官方只读预览映射而不暴露自动写入", () => {

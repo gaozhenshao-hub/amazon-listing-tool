@@ -1,46 +1,134 @@
 /**
  * kbExternalApi.ts — 知识库对外 REST API
- * 供 Emperor 皇帝平台跨系统调用。
- * 只有配置了可验证的调用方—工作空间绑定时才可开放读取。
+ *
+ * External callers must authenticate with a one-time provisioned caller token.
+ * Each token is bound to exactly one workspace and read-only scopes server-side;
+ * caller-supplied workspace headers and environment-wide fallback keys are ignored.
  */
-import { Router, Request, Response } from "express";
-const router = Router();
+import { Router, type Request, type Response } from "express";
+import * as kbDb from "./kbDb";
+import { rawExecute } from "./domains/ai_os/routerContext";
+import {
+  EXTERNAL_KNOWLEDGE_CALLER_KIND,
+  hashExternalKnowledgeCallerToken,
+} from "./domains/ai_os/services/externalKnowledgeCaller";
 
-// ─── 鉴权中间件 ──────────────────────────────────────────────────────────────
-function workspaceBindingUnavailable(res: Response) {
-  res.status(503).json({
-    error: "WORKSPACE_SCOPE_UNAVAILABLE",
-    message: "Knowledge-base access is unavailable until a verified caller-to-workspace binding is configured",
-  });
+export const kbExternalApiRouter = Router();
+
+type ExternalKnowledgeCaller = {
+  workspaceId: number;
+  userId: number;
+  scopes: string[];
+  connectorId: number;
+};
+
+function getBearerToken(value: unknown) {
+  const authorization = String(value || "").trim();
+  return authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length).trim() : "";
 }
 
-router.use((_req: Request, res: Response) => workspaceBindingUnavailable(res));
+async function resolveCaller(req: Request, res: Response, requiredScope: string): Promise<ExternalKnowledgeCaller | null> {
+  const token = getBearerToken(req.header("authorization"));
+  if (!token) {
+    res.status(401).json({ error: "AUTH_REQUIRED" });
+    return null;
+  }
 
-// ─── GET /api/external/kb/stats ───────────────────────────────────────────────
-// 获取知识库统计（各类型数量）
-router.get("/stats", (_req: Request, res: Response) => workspaceBindingUnavailable(res));
+  const rows = await rawExecute(
+    `SELECT caller.connectorId, caller.workspaceId, caller.createdByUserId, caller.scopes
+       FROM emperor_external_knowledge_callers AS caller
+       INNER JOIN emperor_mcp_connectors AS connector ON connector.id = caller.connectorId
+      WHERE caller.tokenHash = ?
+        AND caller.revokedAt IS NULL
+        AND connector.isActive = 1
+        AND JSON_UNQUOTE(JSON_EXTRACT(connector.config, '$.kind')) = ?
+      LIMIT 1`,
+    [hashExternalKnowledgeCallerToken(token), EXTERNAL_KNOWLEDGE_CALLER_KIND],
+  );
+  const row = rows[0];
+  if (!row) {
+    res.status(403).json({ error: "CALLER_BINDING_INVALID" });
+    return null;
+  }
 
-// ─── POST /api/external/kb/search ─────────────────────────────────────────────
-// 知识库混合检索（L1 快速扫描 → L2 摘要确认 → L3 按需详情）
-// Body: { query, types?, category?, limit?, level? }
-router.post("/search", (_req: Request, res: Response) => workspaceBindingUnavailable(res));
+  let scopes: unknown = row.scopes;
+  if (typeof scopes === "string") {
+    try {
+      scopes = JSON.parse(scopes);
+    } catch {
+      scopes = [];
+    }
+  }
+  if (!Array.isArray(scopes) || !scopes.includes(requiredScope)) {
+    res.status(403).json({ error: "CALLER_SCOPE_DENIED" });
+    return null;
+  }
 
-// ─── POST /api/external/kb/rag ────────────────────────────────────────────────
-// RAG 专用接口：返回格式化的 few-shot 文本，可直接注入 systemPrompt
-// Body: { query, type, limit?, includeAnalysis? }
-router.post("/rag", (_req: Request, res: Response) => workspaceBindingUnavailable(res));
+  await rawExecute(
+    "UPDATE emperor_external_knowledge_callers SET lastUsedAt = NOW() WHERE connectorId = ?",
+    [row.connectorId],
+  );
+  return {
+    workspaceId: Number(row.workspaceId),
+    userId: Number(row.createdByUserId),
+    scopes: scopes.filter((scope): scope is string => typeof scope === "string"),
+    connectorId: Number(row.connectorId),
+  };
+}
 
-// ─── GET /api/external/kb/collections ─────────────────────────────────────────
-// 获取所有知识库集合定义
-router.get("/collections", (_req: Request, res: Response) => {
-  const collections = [
-    { slug: "kb-product", name: "产品创新知识库", type: "product", description: "优秀产品创意案例，含AI分析和优秀原因" },
-    { slug: "kb-listing", name: "Listing文案知识库", type: "listing", description: "优秀Listing文案案例，含标题/五点/描述" },
-    { slug: "kb-image", name: "图片知识库", type: "image", description: "优秀图片集案例，含构图/色彩/风格分析" },
-    { slug: "kb-skill", name: "运营技巧知识库", type: "skill", description: "运营经验和最佳实践" },
-    { slug: "kb-video", name: "视频知识库", type: "video", description: "优秀视频案例，含脚本分析" },
-  ];
-  res.json({ success: true, collections });
+kbExternalApiRouter.get("/stats", async (req, res, next) => {
+  try {
+    const caller = await resolveCaller(req, res, "stats");
+    if (!caller) return;
+    const stats = await kbDb.getKbStats(caller.userId, caller.workspaceId, "shared");
+    res.json(stats);
+  } catch (error) {
+    next(error);
+  }
 });
 
-export { router as kbExternalApiRouter };
+kbExternalApiRouter.post("/search", async (req, res, next) => {
+  try {
+    const caller = await resolveCaller(req, res, "search");
+    if (!caller) return;
+    const query = String(req.body?.query || "").trim();
+    if (!query) return res.status(400).json({ error: "QUERY_REQUIRED" });
+    const results = await kbDb.searchKnowledgeBase(caller.userId, caller.workspaceId, query, "shared");
+    res.json({ results });
+  } catch (error) {
+    next(error);
+  }
+});
+
+kbExternalApiRouter.post("/rag", async (req, res, next) => {
+  try {
+    const caller = await resolveCaller(req, res, "rag");
+    if (!caller) return;
+    const query = String(req.body?.query || "").trim();
+    const type = String(req.body?.type || "").trim();
+    if (!query || !type) return res.status(400).json({ error: "QUERY_AND_TYPE_REQUIRED" });
+    const results = await kbDb.searchKnowledgeBase(caller.userId, caller.workspaceId, query, "shared");
+    res.json({ results: results.filter((item: any) => item.type === type && item.status === "confirmed") });
+  } catch (error) {
+    next(error);
+  }
+});
+
+kbExternalApiRouter.get("/collections", async (req, res, next) => {
+  try {
+    const caller = await resolveCaller(req, res, "stats");
+    if (!caller) return;
+    res.json({
+      success: true,
+      collections: [
+        { slug: "kb-product", name: "产品创新知识库", type: "product", description: "已确认的产品创意案例" },
+        { slug: "kb-listing", name: "Listing文案知识库", type: "listing", description: "已确认的Listing文案案例" },
+        { slug: "kb-image", name: "图片知识库", type: "image", description: "已确认的图片集案例" },
+        { slug: "kb-skill", name: "运营技巧知识库", type: "skill", description: "已确认的运营经验和最佳实践" },
+        { slug: "kb-video", name: "视频知识库", type: "video", description: "已确认的视频案例" },
+      ],
+    });
+  } catch (error) {
+    next(error);
+  }
+});

@@ -3,6 +3,7 @@ import { emperorAgentsRouter } from "./routers/agents";
 import { emperorArtifactsRouter } from "./routers/artifacts";
 import { emperorDiagnosticsRouter } from "./routers/diagnostics";
 import { emperorConversationsRouter } from "./routers/conversations";
+import { emperorExternalKnowledgeAccessRouter } from "./routers/externalKnowledgeAccess";
 import { emperorKnowledgeRouter } from "./routers/knowledge";
 import { emperorMcpRouter } from "./routers/mcp";
 import { emperorModelsRouter } from "./routers/models";
@@ -16,6 +17,7 @@ export { emperorAgentsRouter } from "./routers/agents";
 export { emperorArtifactsRouter } from "./routers/artifacts";
 export { emperorDiagnosticsRouter } from "./routers/diagnostics";
 export { emperorConversationsRouter } from "./routers/conversations";
+export { emperorExternalKnowledgeAccessRouter } from "./routers/externalKnowledgeAccess";
 export { emperorKnowledgeRouter } from "./routers/knowledge";
 export { emperorMcpRouter } from "./routers/mcp";
 export { emperorModelsRouter } from "./routers/models";
@@ -37,6 +39,7 @@ export const emperorRouter = router({
   scheduled: emperorScheduledRouter,
   diagnostics: emperorDiagnosticsRouter,
   conversations: emperorConversationsRouter,
+  externalKnowledgeAccess: emperorExternalKnowledgeAccessRouter,
   knowledge: emperorKnowledgeRouter,
   observability: emperorObservabilityRouter,
 });

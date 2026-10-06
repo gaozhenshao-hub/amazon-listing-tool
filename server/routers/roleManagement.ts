@@ -45,7 +45,7 @@ function parseModulePermissions(value: string | null | undefined): ModulePermiss
 
 function validateRoleUpdate(input: z.infer<typeof roleUpdateSchema>) {
   if (!ALL_ROLES.includes(input.role as any)) throw new TRPCError({ code: "BAD_REQUEST", message: "无效的角色标识" });
-  const validModuleIds = new Set(ALL_MODULES.map(m => m.id));
+  const validModuleIds = new Set<string>(ALL_MODULES.map(m => m.id));
   const invalidModules = input.modules.filter(m => !validModuleIds.has(m));
   if (invalidModules.length > 0) throw new TRPCError({ code: "BAD_REQUEST", message: `无效的模块ID: ${invalidModules.join(", ")}` });
   const selectedModules = new Set(input.modules);

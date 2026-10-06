@@ -107,6 +107,7 @@ async function startGenerationForRequest(input: {
   step: ImageGenerationStep;
   user: { id: number; role: string };
   workspaceId?: number | null;
+  distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
 }) {
   return startImageStepGenerationForUser(input);
 }
@@ -119,6 +120,13 @@ async function startGenerationForRequest(input: {
 export function buildCurrentStep4ConfirmationSnapshot(session: any, requestedSnapshot: Record<string, any> | null) {
   if (!requestedSnapshot) return null;
   return rebuildStep4DisplaySnapshot(session, requestedSnapshot);
+}
+
+function parseStep4ConfirmedVersion(content: string | null): Record<string, unknown> | null {
+  const parsed = parseStoredJson(content);
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : null;
 }
 
 export const imageWorkflowStepProcedures = {
@@ -578,7 +586,10 @@ export const imageWorkflowStepProcedures = {
       const requestedSnapshot = parseStoredJson(input.userEdit) as Record<string, any> | null;
       const currentSnapshot = buildCurrentStep4ConfirmationSnapshot(session, requestedSnapshot);
       const confirmedVersions = await db.getCurrentStep4ImageVersions(session.id);
-      const versionByIndex = new Map(confirmedVersions.map((version: any) => [Number(version.imageIndex), parseStoredJson(version.content)]));
+      const versionByIndex = new Map(confirmedVersions.map((version: any) => [
+        Number(version.imageIndex),
+        parseStep4ConfirmedVersion(version.content),
+      ]));
       const completeSnapshot = buildStep4ConfirmedSnapshot(currentSnapshot, versionByIndex);
       const completeUserEdit = JSON.stringify(completeSnapshot);
 

@@ -9,8 +9,8 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
-import { getDb } from "../repositories/dbClient";
-import { dataImports, lingxingProductWeekly, opsAdMcpCampaignDailyFacts, opsAdMcpProductDailyFacts, opsAdMcpProfiles, opsAsinDailySnapshots, opsAsinLifecycleStatuses, opsInventoryOwnerAssignments, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, opsMonthlyFinancialProfits, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles, opsExternalSyncBatches } from "../../drizzle/schema";
+import { getDb, type AppDb } from "../repositories/dbClient";
+import { dataImports, lingxingProductWeekly, opsAdMcpCampaignDailyFacts, opsAdMcpProductDailyFacts, opsAdMcpProfiles, opsAsinDailySnapshots, opsAsinLifecycleStatuses, opsInventoryOwnerAssignments, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, opsMonthlyFinancialProfits, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles, opsExternalSyncBatches, type InsertOpsInventoryPlanningParameter } from "../../drizzle/schema";
 import { MANAGER_ROLES } from "../../shared/const";
 import { eq, desc, and, inArray, sql, or, isNull, ne } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
@@ -19,7 +19,7 @@ import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { summarizeParentAsinWeeks, summarizeVariantSales } from "../domains/ops/productOverview/dailyAggregation";
 import { calculateInventoryPlan } from "../domains/ops/inventoryPlanning/calculator";
 import { evaluateThreeMonthZeroDiscontinuation, evaluateThreeMonthZeroWeeklyDiscontinuation } from "../domains/ops/lifecycle/zeroValueDiscontinuation";
-import { buildCompleteCoverageEvidence } from "../domains/ops/lifecycle/completeCoverageEvidence";
+import { buildCompleteCoverageEvidence, type DailyPerformanceEvidenceRow } from "../domains/ops/lifecycle/completeCoverageEvidence";
 import { collectCompletedDailyBackfillDates } from "../domains/ops/historicalBackfillCoverage";
 import { buildOperatorParentKey, buildOperatorProfileKey } from "../domains/ops/operatorMappingKeys";
 import { inventoryOwnerAssignmentKey } from "../domains/ops/inventoryOwnerAssignmentKeys";
@@ -36,7 +36,12 @@ function matchesLingxingMarketplace(row: { country?: string | null; storeName?: 
   return country === requested || storeName.includes(`-${requested}`);
 }
 
-export async function refreshZeroValueDiscontinuationStatuses(db: any, workspaceId: number) {
+type LifecycleIdentityEvidenceRow = DailyPerformanceEvidenceRow & {
+  parentAsin: string;
+  userId: number;
+};
+
+export async function refreshZeroValueDiscontinuationStatuses(db: AppDb, workspaceId: number) {
   const snapshots = (await db.select().from(opsAsinDailySnapshots)
     .where(eq(opsAsinDailySnapshots.workspaceId, workspaceId)))
     .filter((snapshot) => snapshot.sourceType !== "lx_inventory_mcp");
@@ -45,11 +50,13 @@ export async function refreshZeroValueDiscontinuationStatuses(db: any, workspace
   const existingLifecycleStatuses = await db.select().from(opsAsinLifecycleStatuses).where(
     eq(opsAsinLifecycleStatuses.workspaceId, workspaceId),
   );
-  const lifecycleIdentitySeeds = existingLifecycleStatuses
-    .filter((status) => Boolean(status.evidenceStartDate || status.evidenceEndDate))
+  const lifecycleIdentitySeeds: LifecycleIdentityEvidenceRow[] = existingLifecycleStatuses
+    .filter((status): status is typeof status & { parentAsin: string; userId: number } => Boolean(
+      status.parentAsin && status.userId && (status.evidenceStartDate || status.evidenceEndDate),
+    ))
     .map((status) => ({
       asin: status.asin,
-      parentAsin: status.parentAsin,
+      parentAsin: status.parentAsin!,
       storeName: status.storeName,
       country: status.country,
       reportDate: status.evidenceStartDate || status.evidenceEndDate!,
@@ -59,7 +66,7 @@ export async function refreshZeroValueDiscontinuationStatuses(db: any, workspace
       availableStock: 0,
       fbaInTransit: 0,
       sourceType: "lifecycle_identity_seed",
-      userId: status.userId,
+      userId: status.userId!,
     }));
   const dailyBatches = (await db.select().from(opsExternalSyncBatches).where(eq(opsExternalSyncBatches.workspaceId, workspaceId)))
     .filter((batch) => batch.source === "lingxing_mcp" && batch.dataDomain === "product_performance_daily");
@@ -67,19 +74,19 @@ export async function refreshZeroValueDiscontinuationStatuses(db: any, workspace
   const scopeStarts = batchScopes.map(scope => typeof scope.startDate === "string" ? scope.startDate : "").filter(Boolean).sort();
   const scopeEnds = batchScopes.map(scope => typeof scope.endDate === "string" ? scope.endDate : "").filter(Boolean).sort();
   const completedDates = scopeStarts.length && scopeEnds.length
-    ? collectCompletedDailyBackfillDates(dailyBatches as any[], scopeStarts[0], scopeEnds.at(-1)!)
+    ? collectCompletedDailyBackfillDates(dailyBatches, scopeStarts[0], scopeEnds.at(-1)!)
     : new Set<string>();
-  const completeCoverageInputs = [...snapshots, ...lifecycleIdentitySeeds];
-  const coveredEvidenceByKey = buildCompleteCoverageEvidence(completeCoverageInputs as any[], completedDates);
+  const completeCoverageInputs: LifecycleIdentityEvidenceRow[] = [...snapshots, ...lifecycleIdentitySeeds];
+  const coveredEvidenceByKey = buildCompleteCoverageEvidence(completeCoverageInputs, completedDates);
   const legacyWeekly = await db.select().from(lingxingProductWeekly).where(or(
     isNull(lingxingProductWeekly.workspaceId), eq(lingxingProductWeekly.workspaceId, workspaceId),
   ));
-  const weeklyByKey = new Map<string, any[]>();
+  const weeklyByKey = new Map<string, typeof legacyWeekly>();
   for (const row of legacyWeekly) {
     const key = `${row.asin}::${row.storeName}::${row.country}`;
     weeklyByKey.set(key, [...(weeklyByKey.get(key) || []), row]);
   }
-  const grouped = new Map<string, any[]>();
+  const grouped = new Map<string, LifecycleIdentityEvidenceRow[]>();
   for (const row of completeCoverageInputs) {
     const key = `${row.asin}::${row.storeName}::${row.country}`;
     grouped.set(key, [...(grouped.get(key) || []), row]);
@@ -938,7 +945,6 @@ export const dataImportRouter = router({
           externalOperator,
           localInventory: local?.localQty || 0,
           localInventoryConfirmedAt: local?.confirmedAt || null, parameterScope: parameter?.scopeType || "workspace",
-          productionDays: parameter?.productionDays ?? 30, shippingDays: parameter?.shippingDays ?? 30, bufferDays: parameter?.bufferDays ?? 10,
           productCost, estimatedFirstLegCost, actualFirstLegCost, estimatedFbaFee, actualFbaFee, sellingPrice, estimatedDimensions, actualDimensions, estimatedWeight, actualWeight, dimensionUnit: parameter?.dimensionUnit ?? "in", weightUnit: parameter?.weightUnit ?? "lb", currency: parameter?.currency ?? "USD",
           estimatedBreakEven, actualBreakEven,
           lifecycleStatus: lifecycle?.status || "active",
@@ -1013,6 +1019,34 @@ export const dataImportRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
+      const planningParameterValues = {
+        userId: ctx.user.id,
+        scopeType: input.scopeType,
+        asin: input.asin,
+        parentAsin: input.parentAsin,
+        storeName: input.storeName,
+        country: input.country,
+        productionDays: input.productionDays,
+        shippingDays: input.shippingDays,
+        bufferDays: input.bufferDays,
+        targetCoverDays: input.targetCoverDays,
+        moq: input.moq,
+        packSize: input.packSize,
+        productCost: input.productCost?.toFixed(2),
+        estimatedFirstLegCost: input.estimatedFirstLegCost?.toFixed(2),
+        actualFirstLegCost: input.actualFirstLegCost?.toFixed(2),
+        estimatedFbaFee: input.estimatedFbaFee?.toFixed(2),
+        actualFbaFee: input.actualFbaFee?.toFixed(2),
+        sellingPrice: input.sellingPrice?.toFixed(2),
+        estimatedDimensions: input.estimatedDimensions,
+        actualDimensions: input.actualDimensions,
+        estimatedWeight: input.estimatedWeight?.toFixed(3),
+        actualWeight: input.actualWeight?.toFixed(3),
+        dimensionUnit: input.dimensionUnit,
+        weightUnit: input.weightUnit,
+        currency: input.currency,
+        isActive: 1,
+      } satisfies InsertOpsInventoryPlanningParameter;
       const existing = await db!.select().from(opsInventoryPlanningParameters)
         .where(opsWorkspaceCondition(opsInventoryPlanningParameters, currentOpsWorkspaceId(), and(
           eq(opsInventoryPlanningParameters.userId, ctx.user.id), eq(opsInventoryPlanningParameters.scopeType, input.scopeType),
@@ -1022,10 +1056,10 @@ export const dataImportRouter = router({
           input.country ? eq(opsInventoryPlanningParameters.country, input.country) : isNull(opsInventoryPlanningParameters.country),
         ))).limit(1);
       if (existing[0]) {
-        await db!.update(opsInventoryPlanningParameters).set({ ...input, isActive: 1 }).where(opsWorkspaceCondition(opsInventoryPlanningParameters, currentOpsWorkspaceId(), eq(opsInventoryPlanningParameters.id, existing[0].id)));
+        await db!.update(opsInventoryPlanningParameters).set(planningParameterValues).where(opsWorkspaceCondition(opsInventoryPlanningParameters, currentOpsWorkspaceId(), eq(opsInventoryPlanningParameters.id, existing[0].id)));
         return { id: existing[0].id, status: "updated" as const };
       }
-      const [created] = await db!.insert(opsInventoryPlanningParameters).values({ ...input, userId: ctx.user.id, isActive: 1 }).$returningId();
+      const [created] = await db!.insert(opsInventoryPlanningParameters).values({ ...planningParameterValues, userId: ctx.user.id }).$returningId();
       return { id: created.id, status: "created" as const };
     }),
 

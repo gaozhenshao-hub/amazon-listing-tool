@@ -33,14 +33,14 @@ export function usePermissions() {
     if (!user) return false;
     if (hasFullAccess) return true;
     if (!myPerms) return false;
-    return myPerms.modules.includes(moduleId);
+    return myPerms.modules.some((permissionModuleId) => permissionModuleId === moduleId);
   };
 
   const hasModuleOperation = (moduleId: string, operation: PermissionOperation): boolean => {
     if (!user) return false;
     if (hasFullAccess) return true;
     if (!myPerms) return false;
-    if (!myPerms.modules.includes(moduleId)) return false;
+    if (!myPerms.modules.some((permissionModuleId) => permissionModuleId === moduleId)) return false;
     if (!myPerms.detailedPermissions) return true;
     const modulePerm = myPerms.detailedPermissions.find((p: ModulePermission) => p.moduleId === moduleId);
     if (!modulePerm) return true;
@@ -55,7 +55,7 @@ export function usePermissions() {
     if (!user) return false;
     if (hasFullAccess) return true;
     if (!myPerms) return false;
-    if (!myPerms.modules.includes(moduleId)) return false;
+    if (!myPerms.modules.some((permissionModuleId) => permissionModuleId === moduleId)) return false;
     if (!myPerms.detailedPermissions) return true;
     const modulePerm = myPerms.detailedPermissions.find((p: ModulePermission) => p.moduleId === moduleId);
     if (!modulePerm) return true;

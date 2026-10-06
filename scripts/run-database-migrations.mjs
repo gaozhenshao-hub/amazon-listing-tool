@@ -119,6 +119,23 @@ const supplementalMigrations = [
     "0195_parent_asin_weekly_mcp_emperor_projection.sql",
   ];
 
+const dedicatedMigrationFiles = [
+  "0203_external_knowledge_caller_bindings.sql",
+];
+
+// These migrations were atomically released to the established Qingdao schema
+// before app_schema_migrations existed for this release train. They remain
+// immutable source artifacts but must never be replayed by the current runner.
+const legacyManuallyReleasedMigrationFiles = new Set([
+  "0196_ops_ad_mcp_campaign_metadata_nullable.sql",
+  "0197_ops_monthly_financial_profit_scope.sql",
+  "0198_unified_amazon_acquisition_foundation.sql",
+  "0199_image_competitor_gallery_analysis.sql",
+  "0200_image_expression_asset_linkage.sql",
+  "0201_amazon_monitor_provider_jobs.sql",
+  "0202_competitor_gallery_analysis_scope.sql",
+]);
+
 const retiredMigrationFiles = new Set([
   "0000_aberrant_black_panther.sql",
   "0006_chubby_hellion.sql",
@@ -128,19 +145,7 @@ const retiredMigrationFiles = new Set([
   "ops_plan_migration_fix.sql",
 ]);
 
-export function loadMigrationPlan() {
-  const journal = JSON.parse(readFileSync(join(drizzleDir, "meta/_journal.json"), "utf8"));
-  const files = [
-    ...journal.entries.map((entry) => `${entry.tag}.sql`),
-    ...supplementalMigrations,
-  ];
-  if (new Set(files).size !== files.length) throw new Error("Migration plan contains duplicate files");
-  const unmanagedFiles = readdirSync(drizzleDir)
-    .filter((fileName) => fileName.endsWith(".sql"))
-    .filter((fileName) => !files.includes(fileName) && !retiredMigrationFiles.has(fileName));
-  if (unmanagedFiles.length > 0) {
-    throw new Error(`Migration files are not registered in the release plan: ${unmanagedFiles.sort().join(", ")}`);
-  }
+function migrationEntries(files, officialCount) {
   return files.map((fileName, order) => {
     const filePath = join(drizzleDir, fileName);
     if (!existsSync(filePath)) throw new Error(`Migration file is missing: ${fileName}`);
@@ -151,9 +156,32 @@ export function loadMigrationPlan() {
       filePath,
       sql,
       checksum: createHash("sha256").update(sql).digest("hex"),
-      official: order < journal.entries.length,
+      official: order < officialCount,
     };
   });
+}
+
+export function loadMigrationPlan() {
+  const journal = JSON.parse(readFileSync(join(drizzleDir, "meta/_journal.json"), "utf8"));
+  const files = [
+    ...journal.entries.map((entry) => `${entry.tag}.sql`),
+    ...supplementalMigrations,
+  ];
+  if (new Set(files).size !== files.length) throw new Error("Migration plan contains duplicate files");
+  const unmanagedFiles = readdirSync(drizzleDir)
+    .filter((fileName) => fileName.endsWith(".sql"))
+    .filter((fileName) => !files.includes(fileName)
+      && !retiredMigrationFiles.has(fileName)
+      && !dedicatedMigrationFiles.includes(fileName)
+      && !legacyManuallyReleasedMigrationFiles.has(fileName));
+  if (unmanagedFiles.length > 0) {
+    throw new Error(`Migration files are not registered in the release plan: ${unmanagedFiles.sort().join(", ")}`);
+  }
+  return migrationEntries(files, journal.entries.length);
+}
+
+export function loadExternalKnowledgeCallerBindingMigrationPlan() {
+  return migrationEntries(dedicatedMigrationFiles, 0);
 }
 
 function printPlan(plan) {
@@ -377,7 +405,10 @@ export async function acquireMigrationLock(
 }
 
 async function main() {
-  const plan = loadMigrationPlan();
+  const dedicatedCallerBindingPlan = args.has("--apply-external-knowledge-caller-bindings");
+  const plan = dedicatedCallerBindingPlan
+    ? loadExternalKnowledgeCallerBindingMigrationPlan()
+    : loadMigrationPlan();
   if (args.has("--plan")) return printPlan(plan);
   assertExecutionEnvironment();
 

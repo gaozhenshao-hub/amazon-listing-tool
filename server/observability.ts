@@ -1,21 +1,21 @@
 import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
-import { getDb } from "../../../repositories/dbClient";
+import { getDb } from "./repositories/dbClient";
 import {
   auditDatabasePerformanceBaselines,
   collectCoreTableRowCounts,
   getMigrationRegressionBaseline,
   type CoreTableRowCountResult,
   type DatabaseExplainAuditResult,
-} from "../../../repositories/dbGovernance";
+} from "./repositories/dbGovernance";
 import {
   listDatabaseSlowQuerySamples,
   sampleDatabaseSlowQueries,
-} from "../../../repositories/database";
+} from "./repositories/database";
 import {
   BUSINESS_AI_JOB_MODULES,
   readBusinessJobAgentBinding,
-} from "./businessJobBindingPolicy";
+} from "./domains/ai_os/services/businessJobBindingPolicy";
 
 const METRIC_STORE_RETRY_MS = 60_000;
 let aiOsMetricStoreUnavailableUntil = 0;

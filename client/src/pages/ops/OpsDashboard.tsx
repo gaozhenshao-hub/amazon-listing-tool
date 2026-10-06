@@ -114,7 +114,59 @@ function PromotionCalendar({ events }: { events: any[] }) {
 }
 
 // ─── Shop Health Score Card ───────────────────────────────────
-function ShopHealthCard({ data }: { data: any }) {
+type ShopHealthRiskItem = {
+  metric: string;
+  value: string | number;
+  threshold: string | number;
+};
+
+type ShopHealthData = {
+  score: number;
+  level: string;
+  metrics: {
+    orderDefectRate: number;
+    lateShipmentRate: number;
+    cancellationRate: number;
+    validTrackingRate: number;
+  };
+  riskItems: ShopHealthRiskItem[];
+};
+
+function isShopHealthData(value: unknown): value is ShopHealthData {
+  if (typeof value !== "object" || value === null) return false;
+
+  const data = value as Record<string, unknown>;
+  if (
+    typeof data.score !== "number" ||
+    typeof data.level !== "string" ||
+    !Array.isArray(data.riskItems) ||
+    typeof data.metrics !== "object" ||
+    data.metrics === null
+  ) {
+    return false;
+  }
+
+  const metrics = data.metrics as Record<string, unknown>;
+  const metricKeys = ["orderDefectRate", "lateShipmentRate", "cancellationRate", "validTrackingRate"] as const;
+  return metricKeys.every((key) => typeof metrics[key] === "number") && data.riskItems.every((riskItem: unknown) => {
+    if (typeof riskItem !== "object" || riskItem === null) return false;
+    const risk = riskItem as Record<string, unknown>;
+    return typeof risk.metric === "string" &&
+      (typeof risk.value === "string" || typeof risk.value === "number") &&
+      (typeof risk.threshold === "string" || typeof risk.threshold === "number");
+  });
+}
+
+function ShopHealthCard({ data }: { data: unknown }) {
+  if (!isShopHealthData(data)) {
+    return (
+      <div className="text-center py-8 text-gray-400">
+        <ShieldCheck className="w-8 h-8 mx-auto mb-2 opacity-50" />
+        <p className="text-sm">暂无健康数据</p>
+      </div>
+    );
+  }
+
   const scoreColor = data.level === 'excellent' ? 'text-green-500' :
     data.level === 'good' ? 'text-blue-500' :
     data.level === 'warning' ? 'text-yellow-500' : 'text-red-500';
@@ -157,7 +209,7 @@ function ShopHealthCard({ data }: { data: any }) {
       {data.riskItems.length > 0 && (
         <div className="space-y-2">
           <h4 className="text-sm font-medium text-red-500 flex items-center gap-1"><AlertTriangle className="h-4 w-4" /> 风险项</h4>
-          {data.riskItems.map((r: any, i: number) => (
+          {data.riskItems.map((r, i) => (
             <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-red-50 text-sm">
               <span>{r.metric}</span>
               <div className="flex items-center gap-2">
@@ -374,13 +426,8 @@ export default function OpsDashboard() {
           <CardContent>
             {healthQuery.isLoading ? (
               <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
-            ) : healthQuery.data ? (
-              <ShopHealthCard data={healthQuery.data} />
             ) : (
-              <div className="text-center py-8 text-gray-400">
-                <ShieldCheck className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">暂无健康数据</p>
-              </div>
+              <ShopHealthCard data={healthQuery.data} />
             )}
           </CardContent>
         </Card>

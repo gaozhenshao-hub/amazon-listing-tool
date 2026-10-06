@@ -155,7 +155,7 @@ export async function compileAgentNodeInput(input: {
     requestedToolSlug: input.node.toolSlug || null,
     note: "业务Tool必须通过现有Tool Gateway、Schema、权限、限流与熔断策略执行。",
   } as const;
-  const compiler = {
+  const compiler: NonNullable<AgentContextPackage["compiler"]> = {
     name: "emperor.context_compiler",
     version: "1.0",
     policy,
@@ -167,7 +167,7 @@ export async function compileAgentNodeInput(input: {
   const contextPackage: AgentContextPackage = {
     ...basePackage,
     version: "1.1",
-    schema: { ...basePackage.schema, version: "1.2", sections: [...basePackage.schema.sections, "knowledge", "compiler", "toolPolicy"] },
+    schema: { ...basePackage.schema, sections: [...basePackage.schema.sections, "knowledge", "compiler", "toolPolicy"] },
     knowledge,
     compiler,
     toolPolicy,

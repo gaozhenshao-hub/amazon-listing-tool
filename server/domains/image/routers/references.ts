@@ -582,13 +582,16 @@ ${session.step3UserEdit || session.step3AiResult}
         throw new Error(`A+模块 ${input.sectionIndex + 1} 缺少可优化内容，请先生成完整图片建议后再试`);
       }
 
-      const styleGuide = (APLUS_MODULE_STYLE_GUIDE as Record<string, any>)[input.moduleType] || {};
+      const styleGuideEntry = APLUS_MODULE_STYLE_GUIDE
+        .split("\n")
+        .find((entry) => entry.startsWith(`${input.moduleType}:`));
+      const styleGuide = styleGuideEntry?.slice(input.moduleType.length + 1).trim();
       const normalizedStyle = {
         id: input.moduleType,
-        name: input.moduleName || styleGuide.name || input.moduleType,
-        category: styleGuide.category || currentSection.selectedModuleCategory || "A+内容模块",
-        specs: styleGuide.specs || styleGuide.size || currentSection.selectedModuleSpecs || null,
-        structure: styleGuide.structure || currentSection.selectedModuleStructure || null,
+        name: input.moduleName || input.moduleType,
+        category: currentSection.selectedModuleCategory || "A+内容模块",
+        specs: currentSection.selectedModuleSpecs || styleGuide || null,
+        structure: currentSection.selectedModuleStructure || styleGuide || null,
       };
       const skillContext = `产品名称: ${project.productName || project.name}
 品牌: ${project.brand || '未指定'}

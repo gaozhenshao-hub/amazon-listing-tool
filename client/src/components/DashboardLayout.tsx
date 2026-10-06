@@ -271,6 +271,7 @@ const modules: ModuleDef[] = [
       { icon: Network, label: "Agent 编排", path: "/emperor/agents" },
       { icon: Cpu, label: "模型路由", path: "/emperor/models" },
       { icon: Plug, label: "MCP 连接器", path: "/emperor/mcp" },
+      { icon: Key, label: "知识库外部访问", path: "/emperor/external-knowledge-access" },
       { icon: Timer, label: "定时任务", path: "/emperor/scheduled" },
       { icon: BarChart3, label: "Token 用量", path: "/emperor/usage" },
       { icon: Activity, label: "可观测看板", path: "/emperor/observability" },

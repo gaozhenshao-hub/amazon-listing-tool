@@ -39,7 +39,7 @@ function formatDate(value: unknown) {
 }
 
 export default function EmperorSkillDistillation() {
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [, navigate] = useLocation();
   const isGovernor = user?.role === "super_admin";
   const utils = trpc.useUtils();

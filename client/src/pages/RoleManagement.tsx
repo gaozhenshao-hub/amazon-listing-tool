@@ -15,6 +15,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "../../../server/routers";
+import type { PermissionOperation } from "@shared/const";
 import {
   Shield, ShieldAlert, ShieldCheck, Edit3, Save, Loader2, ChevronDown, ChevronRight,
   Package, FileText, TrendingUp, Headphones, BookOpen, Users,
@@ -40,14 +43,21 @@ const MODULE_COLORS: Record<string, string> = {
   emperor: "bg-indigo-100 text-indigo-700",
 };
 
-const OP_ICONS: Record<string, LucideIcon> = { read: Eye, edit: Pencil, delete: Trash2 };
-const OP_LABELS: Record<string, string> = { read: "只读", edit: "编辑", delete: "删除" };
-const OP_COLORS: Record<string, string> = {
+const PERMISSION_OPERATIONS = ["read", "edit", "delete"] as const satisfies readonly PermissionOperation[];
+const OP_ICONS: Record<PermissionOperation, LucideIcon> = { read: Eye, edit: Pencil, delete: Trash2 };
+const OP_LABELS: Record<PermissionOperation, string> = { read: "只读", edit: "编辑", delete: "删除" };
+const OP_COLORS: Record<PermissionOperation, string> = {
   read: "text-blue-600", edit: "text-amber-600", delete: "text-red-600",
 };
 
-interface SubModulePerm { subModuleId: string; operations: string[]; }
-interface ModulePerm { moduleId: string; operations: string[]; subModules?: SubModulePerm[]; }
+type RoleManagementInputs = inferRouterInputs<AppRouter>["roleManagement"];
+type RoleManagementOutputs = inferRouterOutputs<AppRouter>["roleManagement"];
+type RoleUpdateInput = RoleManagementInputs["update"];
+type ModulePerm = NonNullable<RoleUpdateInput["detailedPermissions"]>[number];
+type SubModulePerm = NonNullable<ModulePerm["subModules"]>[number];
+type Role = RoleManagementOutputs["list"][number];
+type RoleChangePreview = RoleManagementOutputs["previewUpdate"];
+type BatchRoleChangePreview = RoleManagementOutputs["batchPreview"];
 
 export default function RoleManagement() {
   const utils = trpc.useUtils();
@@ -60,11 +70,12 @@ export default function RoleManagement() {
   const [editDescription, setEditDescription] = useState("");
   const [editDetailedPerms, setEditDetailedPerms] = useState<ModulePerm[]>([]);
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
-  const [changePreview, setChangePreview] = useState<any | null>(null);
+  const [changePreview, setChangePreview] = useState<RoleChangePreview | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [batchModules, setBatchModules] = useState<string[]>([]);
-  const [batchPreview, setBatchPreview] = useState<any | null>(null);
+  const [batchPreview, setBatchPreview] = useState<BatchRoleChangePreview | null>(null);
 
   const updateMutation = trpc.roleManagement.update.useMutation({
     onSuccess: () => {
@@ -74,11 +85,6 @@ export default function RoleManagement() {
       setEditingRole(null);
       setChangePreview(null);
     },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const previewMutation = trpc.roleManagement.previewUpdate.useMutation({
-    onSuccess: (preview) => setChangePreview(preview),
     onError: (err) => toast.error(err.message),
   });
 
@@ -94,7 +100,7 @@ export default function RoleManagement() {
     onError: (err) => toast.error(err.message),
   });
 
-  const buildBatchPayload = () => ({
+  const buildBatchPayload = (): RoleManagementInputs["batchUpdate"] => ({
     updates: (roles || []).filter(role => selectedRoles.has(role.role)).map(role => ({
       role: role.role,
       modules: batchModules,
@@ -106,8 +112,8 @@ export default function RoleManagement() {
     if (selectedRoles.size === 0) return;
     try {
       setBatchPreview(await utils.roleManagement.batchPreview.fetch(buildBatchPayload()));
-    } catch (error: any) {
-      toast.error(error?.message || "批量权限预览失败");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "批量权限预览失败");
     }
   };
 
@@ -116,7 +122,7 @@ export default function RoleManagement() {
     setBatchModules(previous => previous.includes(moduleId) ? previous.filter(item => item !== moduleId) : [...previous, moduleId]);
   };
 
-  const handleEdit = useCallback((role: any) => {
+  const handleEdit = useCallback((role: Role) => {
     setEditingRole(role.role);
     setEditModules([...role.modules]);
     setEditDescription(role.description || "");
@@ -127,7 +133,7 @@ export default function RoleManagement() {
       // Default: all enabled modules get full permissions
       setEditDetailedPerms(role.modules.map((modId: string) => ({
         moduleId: modId,
-        operations: ['read', 'edit', 'delete'],
+        operations: [...PERMISSION_OPERATIONS],
         subModules: [],
       })));
     }
@@ -145,7 +151,7 @@ export default function RoleManagement() {
       setEditDetailedPerms(dp => {
         if (next.includes(moduleId)) {
           if (!dp.find(p => p.moduleId === moduleId)) {
-            return [...dp, { moduleId, operations: ['read', 'edit', 'delete'], subModules: [] }];
+            return [...dp, { moduleId, operations: [...PERMISSION_OPERATIONS], subModules: [] }];
           }
           return dp;
         }
@@ -155,7 +161,7 @@ export default function RoleManagement() {
     });
   }, []);
 
-  const handleToggleModuleOp = useCallback((moduleId: string, op: string) => {
+  const handleToggleModuleOp = useCallback((moduleId: string, op: PermissionOperation) => {
     setChangePreview(null);
     setEditDetailedPerms(prev => prev.map(p => {
       if (p.moduleId !== moduleId) return p;
@@ -166,7 +172,7 @@ export default function RoleManagement() {
     }));
   }, []);
 
-  const handleToggleSubModuleOp = useCallback((moduleId: string, subModuleId: string, op: string) => {
+  const handleToggleSubModuleOp = useCallback((moduleId: string, subModuleId: string, op: PermissionOperation) => {
     setChangePreview(null);
     setEditDetailedPerms(prev => prev.map(p => {
       if (p.moduleId !== moduleId) return p;
@@ -202,10 +208,10 @@ export default function RoleManagement() {
     // Grant full permissions (read/edit/delete) for all modules and all sub-modules
     setEditDetailedPerms(modules.map(mod => ({
       moduleId: mod.id,
-      operations: ['read', 'edit', 'delete'],
+      operations: [...PERMISSION_OPERATIONS],
       subModules: (mod.subModules || []).map(sub => ({
         subModuleId: sub.id,
-        operations: ['read', 'edit', 'delete'],
+        operations: [...PERMISSION_OPERATIONS],
       })),
     })));
     // Expand all modules to show the result
@@ -222,16 +228,23 @@ export default function RoleManagement() {
     toast.info("已清除所有模块权限");
   }, []);
 
-  const buildEditPayload = () => ({
+  const buildEditPayload = (): RoleUpdateInput => ({
     role: editingRole || "",
     modules: editModules,
     description: editDescription || undefined,
-    detailedPermissions: editDetailedPerms as any,
+    detailedPermissions: editDetailedPerms,
   });
 
-  const handlePreview = () => {
+  const handlePreview = async () => {
     if (!editingRole) return;
-    previewMutation.mutate(buildEditPayload());
+    setIsPreviewing(true);
+    try {
+      setChangePreview(await utils.roleManagement.previewUpdate.fetch(buildEditPayload()));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "权限预览失败");
+    } finally {
+      setIsPreviewing(false);
+    }
   };
 
   const handleSave = () => {
@@ -262,19 +275,19 @@ export default function RoleManagement() {
 
   const editingRoleData = roles?.find(r => r.role === editingRole);
 
-  const getSubModuleOps = (moduleId: string, subModuleId: string): string[] => {
+  const getSubModuleOps = (moduleId: string, subModuleId: string): PermissionOperation[] => {
     const perm = editDetailedPerms.find(p => p.moduleId === moduleId);
     const sub = perm?.subModules?.find(s => s.subModuleId === subModuleId);
     return sub?.operations || [];
   };
 
-  const getModuleOps = (moduleId: string): string[] => {
+  const getModuleOps = (moduleId: string): PermissionOperation[] => {
     const perm = editDetailedPerms.find(p => p.moduleId === moduleId);
     return perm?.operations || [];
   };
 
   // Summary of detailed permissions for display
-  const getPermSummary = (role: any) => {
+  const getPermSummary = (role: Role) => {
     if (!role.detailedPermissions?.length) return null;
     const restricted = role.detailedPermissions.filter(
       (p: ModulePerm) => p.operations.length < 3 || (p.subModules && p.subModules.length > 0)
@@ -463,11 +476,12 @@ export default function RoleManagement() {
                     const mappedActions = Object.entries(governanceQuery.data?.actionOperationMap || {}).reduce<Record<string, string[]>>((acc, [action, operation]) => {
                       (acc[operation] ||= []).push(action); return acc;
                     }, {});
+                    const resourceSubModuleId = "subModuleId" in resource ? resource.subModuleId : undefined;
                     return <TableRow key={resource.resource}>
                       <TableCell className="font-mono text-xs">{resource.resource}</TableCell>
                       <TableCell>{modules?.find(module => module.id === resource.moduleId)?.label || resource.moduleId}</TableCell>
-                      <TableCell className="text-muted-foreground">{modules?.find(module => module.id === resource.moduleId)?.subModules?.find(sub => sub.id === resource.subModuleId)?.label || "模块级"}</TableCell>
-                      <TableCell><div className="flex flex-wrap gap-1">{Object.entries(mappedActions).map(([operation, actions]) => <Badge key={operation} variant="outline" className="text-xs">{OP_LABELS[operation]}：{actions.join("、")}</Badge>)}</div></TableCell>
+                      <TableCell className="text-muted-foreground">{modules?.find(module => module.id === resource.moduleId)?.subModules?.find(sub => sub.id === resourceSubModuleId)?.label || "模块级"}</TableCell>
+                      <TableCell><div className="flex flex-wrap gap-1">{Object.entries(mappedActions).map(([operation, actions]) => <Badge key={operation} variant="outline" className="text-xs">{OP_LABELS[operation as keyof typeof OP_LABELS] ?? operation}：{actions.join("、")}</Badge>)}</div></TableCell>
                     </TableRow>;
                   })}
                 </TableBody>
@@ -698,8 +712,8 @@ export default function RoleManagement() {
                   <p className="font-medium">变更影响预览</p>
                   <p className="text-xs text-muted-foreground">先由服务端校验目录与风险；预览不会写入任何授权。</p>
                 </div>
-                <Button type="button" variant="outline" size="sm" onClick={handlePreview} disabled={previewMutation.isPending}>
-                  {previewMutation.isPending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}查看影响
+                <Button type="button" variant="outline" size="sm" onClick={handlePreview} disabled={isPreviewing}>
+                  {isPreviewing && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}查看影响
                 </Button>
               </div>
               {changePreview && <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
@@ -762,7 +776,7 @@ export default function RoleManagement() {
                           <div className="flex items-center gap-2">
                             {/* Operation badges */}
                             <div className="flex gap-1">
-                              {['read', 'edit', 'delete'].map(op => {
+                              {PERMISSION_OPERATIONS.map(op => {
                                 const OpIcon = OP_ICONS[op];
                                 return (
                                   <button
@@ -803,7 +817,7 @@ export default function RoleManagement() {
                               <div key={sub.id} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-accent/50">
                                 <span className="text-sm">{sub.label}</span>
                                 <div className="flex gap-1">
-                                  {['read', 'edit', 'delete'].map(op => {
+                                  {PERMISSION_OPERATIONS.map(op => {
                                     const OpIcon = OP_ICONS[op];
                                     const isActive = subOps.includes(op);
                                     return (

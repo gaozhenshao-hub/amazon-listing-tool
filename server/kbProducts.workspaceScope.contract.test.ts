@@ -22,7 +22,8 @@ describe("产品知识库工作空间范围契约", () => {
   it("Listing文案知识库同样通过公共中间件并将异步回写绑定到请求工作空间", () => {
     expect(listingRouterSource).toContain('workspaceScopedProcedure("knowledge")');
     expect(listingRouterSource).toContain("workspaceId: ctx.workspaceId!");
-    expect(listingRouterSource).toContain("updateListingCopywriting(Number(id), ctx.user.id, ctx.workspaceId!");
+    expect(listingRouterSource).toContain("createListingAcquisition({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin");
+    expect(listingRouterSource).toContain("updateListingCopywriting(input.id, ctx.user.id, ctx.workspaceId!");
   });
 
   it("迁移为核心知识库表添加工作空间字段和索引", () => {

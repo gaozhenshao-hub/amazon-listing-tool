@@ -764,6 +764,25 @@ export type EmperorMcpConnector = typeof emperorMcpConnectors.$inferSelect;
 
 export type InsertEmperorMcpConnector = typeof emperorMcpConnectors.$inferInsert;
 
+// 外部知识库调用方绑定：令牌仅保存不可逆摘要，调用方固定归属一个工作空间。
+// 真实表与皇帝连接器记录保持一一对应，便于治理后台与审计链统一管理。
+export const emperorExternalKnowledgeCallers = mysqlTable("emperor_external_knowledge_callers", {
+  id: int("id").autoincrement().primaryKey(),
+  connectorId: int("connectorId").notNull().unique(),
+  workspaceId: int("workspaceId").notNull(),
+  tokenHash: varchar("tokenHash", { length: 64 }).notNull().unique(),
+  tokenPrefix: varchar("tokenPrefix", { length: 20 }).notNull(),
+  scopes: json("scopes").notNull(),
+  createdByUserId: int("createdByUserId").notNull(),
+  lastUsedAt: timestamp("lastUsedAt"),
+  revokedAt: timestamp("revokedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EmperorExternalKnowledgeCaller = typeof emperorExternalKnowledgeCallers.$inferSelect;
+export type InsertEmperorExternalKnowledgeCaller = typeof emperorExternalKnowledgeCallers.$inferInsert;
+
 // 皇帝统一定时任务。由Heartbeat实际触发的业务同步任务也必须在此登记为系统管理实体，
 // externalTaskUid是唯一外部触发器身份，禁止为同一领星计划创建第二个Cron。
 export const emperorScheduledTasks = mysqlTable("emperor_scheduled_tasks", {
