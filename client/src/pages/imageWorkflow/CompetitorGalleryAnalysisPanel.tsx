@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { AlertTriangle, Check, Crown, ImageIcon, Loader2, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Crown, EyeOff, ImageIcon, Layers3, Loader2, Plus, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,6 +19,22 @@ type FactDraft = {
   strengthsText: string;
   risksText: string;
 };
+
+const DEFAULT_ANALYSIS_ROLES = new Set(["main", "secondary", "aplus"]);
+
+export function defaultGalleryAnalysisAssetIds(assets: Array<{ id: number; role: string }>) {
+  return assets.filter((asset) => DEFAULT_ANALYSIS_ROLES.has(asset.role)).map((asset) => asset.id);
+}
+
+export function stableAssetIds(value: unknown) {
+  return Array.from(new Set(Array.isArray(value) ? value.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [])).sort((left, right) => left - right);
+}
+
+export function sameAssetIds(left: number[], right: number[]) {
+  const normalizedLeft = stableAssetIds(left);
+  const normalizedRight = stableAssetIds(right);
+  return normalizedLeft.length === normalizedRight.length && normalizedLeft.every((id, index) => id === normalizedRight[index]);
+}
 
 function objectValue(value: unknown): Record<string, any> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
@@ -53,12 +70,28 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
   const [factDrafts, setFactDrafts] = useState<Record<number, FactDraft>>({});
   const [overallConclusion, setOverallConclusion] = useState("");
   const [narrativeStrategy, setNarrativeStrategy] = useState("");
+  const [selectedAssetIds, setSelectedAssetIds] = useState<number[]>([]);
 
   const subjects = useMemo(() => subjectsQuery.data || [], [subjectsQuery.data]);
   useEffect(() => {
     if (!selectedSubjectId && subjects[0]?.id) setSelectedSubjectId(subjects[0].id);
   }, [selectedSubjectId, subjects]);
   const selected = useMemo(() => subjects.find((subject: any) => subject.id === selectedSubjectId) || null, [subjects, selectedSubjectId]);
+  const selectionSourceKey = useMemo(() => {
+    if (!selected) return "";
+    const source = selected.selection || selected.analysisScope;
+    const selectedIds = source?.selectedAssetIds || defaultGalleryAnalysisAssetIds(selected.assets || []);
+    return `${selected.id}:${source?.id || source?.selectionVersionId || "default"}:${stableAssetIds(selectedIds).join(",")}`;
+  }, [selected]);
+
+  useEffect(() => {
+    if (!selected) {
+      setSelectedAssetIds([]);
+      return;
+    }
+    const source = selected.selection || selected.analysisScope;
+    setSelectedAssetIds(stableAssetIds(source?.selectedAssetIds || defaultGalleryAnalysisAssetIds(selected.assets || [])));
+  }, [selectionSourceKey, selected]);
 
   useEffect(() => {
     if (!selected) return;
@@ -92,6 +125,8 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
   const saveFact = trpc.imageWorkflow.saveCompetitorImageFact.useMutation();
   const saveAnalysis = trpc.imageWorkflow.saveCompetitorGalleryAnalysis.useMutation();
   const confirmAnalysis = trpc.imageWorkflow.confirmCompetitorGalleryAnalysis.useMutation();
+  const saveScope = trpc.imageWorkflow.saveCompetitorGallerySelection.useMutation();
+  const confirmScope = trpc.imageWorkflow.confirmCompetitorGallerySelection.useMutation();
 
   const refresh = async () => {
     await Promise.all([
@@ -109,15 +144,12 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
         consumerRef: `project:${projectId}:competitor-gallery`,
         marketplace: "US",
         asin,
-        // A+/brand story remain unavailable until their own positive Provider
-        // qualification samples have passed; observed optional fields are
-        // still retained in the reviewed snapshot when the Provider returns them.
-        capabilities: ["catalog_basic", "image_gallery"],
+        capabilities: ["catalog_basic", "image_gallery", "aplus", "brand_story"],
         cachePolicy: "prefer_cache",
         maxChargeUsd: 0.1,
       });
       setAsinInput("");
-      toast.success(result.cacheHitSnapshotId ? "已复用确认快照并直接录入本项目竞品图库" : `采集任务 #${result.jobId} 已创建；安全保存的图片将自动直接录入，缺失图片会明确提示`);
+      toast.success(result.cacheHitSnapshotId ? "已复用确认快照并直接录入本项目竞品图库" : `采集任务 #${result.jobId} 已创建；主图、副图、A+与品牌故事安全保存后将直接录入，缺失图片会明确提示`);
       await refresh();
     } catch (error: any) {
       toast.error(error.message || "采集任务创建失败");
@@ -142,10 +174,61 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
     }
   };
 
+  const selection = selected?.selection || null;
+  const scopeDirty = Boolean(selected) && (!selection || !sameAssetIds(selectedAssetIds, selection.selectedAssetIds || []));
+  const scopeReadyForAnalysis = Boolean(selection?.status === "confirmed" && !scopeDirty);
+  const selectedAssetIdSet = useMemo(() => new Set(selectedAssetIds), [selectedAssetIds]);
+  const scopeRoleCounts = useMemo(() => {
+    const counts: Record<string, number> = { main: 0, secondary: 0, aplus: 0, brand_story: 0 };
+    for (const asset of selected?.assets || []) if (selectedAssetIdSet.has(asset.id) && asset.role in counts) counts[asset.role] += 1;
+    return counts;
+  }, [selected?.assets, selectedAssetIdSet]);
+
+  const toggleAsset = (assetId: number, checked: boolean) => {
+    setSelectedAssetIds((previous) => stableAssetIds(checked ? [...previous, assetId] : previous.filter((id) => id !== assetId)));
+  };
+
+  const selectByRoles = (roles: string[]) => {
+    if (!selected) return;
+    setSelectedAssetIds(stableAssetIds(selected.assets.filter((asset: any) => roles.includes(asset.role)).map((asset: any) => asset.id)));
+  };
+
+  const saveCurrentScope = async () => {
+    if (!selected) throw new Error("请先选择竞品图库");
+    if (!selectedAssetIds.length) throw new Error("请至少选择一张图片进入分析范围");
+    const result = await saveScope.mutateAsync({
+      projectId,
+      subjectId: selected.id,
+      selectedAssetIds,
+      filters: { includedRoles: Object.entries(scopeRoleCounts).filter(([, count]) => count > 0).map(([role]) => role as "main" | "secondary" | "aplus" | "brand_story") },
+    });
+    await refresh();
+    return result;
+  };
+
+  const handleSaveScope = async () => {
+    try {
+      const result = await saveCurrentScope();
+      toast.success(result.status === "confirmed" ? "当前分析范围已确认" : "分析范围草稿已保存；确认后才会进入AI分析");
+    } catch (error: any) { toast.error(error.message || "保存分析范围失败"); }
+  };
+
+  const handleConfirmScope = async () => {
+    try {
+      const result = !scopeDirty && selection ? selection : await saveCurrentScope();
+      if (result.status !== "confirmed") {
+        await confirmScope.mutateAsync({ projectId, subjectId: selected.id, selectionVersionId: result.id });
+      }
+      await refresh();
+      toast.success("分析范围已确认：范围外图片仍安全保留，但不会传入AI或下游表达分析");
+    } catch (error: any) { toast.error(error.message || "确认分析范围失败"); }
+  };
+
   const handleAnalyze = async () => {
     if (!selected) return;
+    if (!scopeReadyForAnalysis || !selection) return toast.error("请先保存并确认当前图片分析范围");
     try {
-      await startAnalysis.mutateAsync({ projectId, subjectId: selected.id });
+      await startAnalysis.mutateAsync({ projectId, subjectId: selected.id, selectionVersionId: selection.id });
       await latestJobQuery.refetch();
       toast.success("竞品全图分析已进入后台任务");
     } catch (error: any) {
@@ -218,7 +301,7 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
       <Card className="border-amber-200/70 bg-gradient-to-br from-amber-50/80 via-background to-background">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base"><ImageIcon className="h-4 w-4 text-amber-700" />受控采集与竞品研究对象</CardTitle>
-          <CardDescription>输入ASIN后先进入统一采集任务；通过安全校验的已保存图片会立即直接录入本项目，缺失图片不伪装为已有，可在预算范围内重新采集。</CardDescription>
+          <CardDescription>输入ASIN后先进入统一采集任务；主图、副图、A+和品牌故事安全保存后会直接录入本项目。每次AI分析前均由人工选择范围，未选择的图片不会进入模型或下游表达分析。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
@@ -270,7 +353,7 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
                     <div><CardTitle className="text-lg">{selected.displayName || selected.asin}</CardTitle><CardDescription>{selected.asin} · {roleLabel(selected.role)} · {selected.assets.length}张已确认图片</CardDescription></div>
                     <div className="flex flex-wrap gap-2">
                       {selected.role !== "primary" && <Button size="sm" variant="outline" disabled={!canEdit} onClick={async () => { await setPrimary.mutateAsync({ projectId, subjectId: selected.id }); await refresh(); }}><Crown className="mr-1 h-4 w-4" />设为主要竞品</Button>}
-                      <Button size="sm" onClick={handleAnalyze} disabled={!canEdit || jobActive || startAnalysis.isPending}>{jobActive ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1 h-4 w-4" />}{selected.analysis ? "重新分析" : "分析整套图片"}</Button>
+                      <Button size="sm" onClick={handleAnalyze} disabled={!canEdit || !scopeReadyForAnalysis || jobActive || startAnalysis.isPending}>{jobActive ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1 h-4 w-4" />}{selected.analysis ? "重新分析已选图片" : "分析已选图片"}</Button>
                       <Button size="icon" variant="ghost" disabled={!canEdit} onClick={async () => { await archiveSubject.mutateAsync({ projectId, subjectId: selected.id }); setSelectedSubjectId(null); await refresh(); }}><Trash2 className="h-4 w-4" /></Button>
                     </div>
                   </div>
@@ -278,14 +361,43 @@ export function CompetitorGalleryAnalysisPanel({ projectId, canEdit }: { project
                 </CardHeader>
               </Card>
 
+              <Card className="border-sky-200 bg-sky-50/40">
+                <CardHeader className="pb-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-base"><Layers3 className="h-4 w-4 text-sky-700" />本次图片分析范围</CardTitle>
+                      <CardDescription>默认纳入主图/副图和A+，默认排除品牌故事。图片始终保留在竞品图库；未纳入图片不会发送给AI、不会成为表达方式候选，也不会被判断为“缺失”。</CardDescription>
+                    </div>
+                    <Badge variant={scopeReadyForAnalysis ? "default" : "secondary"}>{scopeReadyForAnalysis ? `已确认范围 v${selection?.version || ""}` : selection?.status === "draft" ? "范围草稿未确认" : "请选择并确认范围"}</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" onClick={() => selectByRoles(["main", "secondary", "aplus"])} disabled={!canEdit}>仅主图/副图/A+</Button>
+                    <Button size="sm" variant="outline" onClick={() => selectByRoles(["main", "secondary", "aplus", "brand_story"])} disabled={!canEdit}>全选已保存图片</Button>
+                    <Button size="sm" variant="ghost" onClick={() => selectByRoles([])} disabled={!canEdit}>清空选择</Button>
+                  </div>
+                  <div className="grid gap-2 rounded-lg border bg-background p-3 text-sm md:grid-cols-4">
+                    <div><span className="text-muted-foreground">已选范围</span><p className="font-semibold">{selectedAssetIds.length} / {selected.assets.length} 张</p></div>
+                    <div><span className="text-muted-foreground">主图/副图</span><p className="font-semibold">{scopeRoleCounts.main + scopeRoleCounts.secondary} 张</p></div>
+                    <div><span className="text-muted-foreground">A+内容</span><p className="font-semibold">{scopeRoleCounts.aplus} 张</p></div>
+                    <div><span className="text-muted-foreground">品牌故事</span><p className="font-semibold">{scopeRoleCounts.brand_story} 张{scopeRoleCounts.brand_story === 0 ? "（默认排除）" : ""}</p></div>
+                  </div>
+                  {selected.analysisScope?.legacy && <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-4 w-4 shrink-0" />历史整套分析没有范围版本记录；请保存并确认一次新的范围，后续分析、表达方式和综合结论将仅使用该范围。</div>}
+                  {!selectedAssetIds.length && <div className="flex gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><AlertTriangle className="h-4 w-4 shrink-0" />至少选择一张安全保存的图片后才能保存或确认分析范围。</div>}
+                  <div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={handleSaveScope} disabled={!canEdit || !selectedAssetIds.length || saveScope.isPending}><Save className="mr-1 h-4 w-4" />保存范围草稿</Button><Button onClick={handleConfirmScope} disabled={!canEdit || !selectedAssetIds.length || confirmScope.isPending}>{confirmScope.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Check className="mr-1 h-4 w-4" />}确认分析范围</Button></div>
+                </CardContent>
+              </Card>
+
               <div className="grid gap-4 xl:grid-cols-2">
                 {selected.assets.map((asset: any) => {
                   const draft = factDrafts[asset.id];
                   return (
-                    <Card key={asset.id} className="overflow-hidden">
+                    <Card key={asset.id} className={`overflow-hidden ${selectedAssetIdSet.has(asset.id) ? "border-sky-300" : "border-dashed opacity-80"}`}>
                       <div className="aspect-[4/3] bg-muted"><img src={asset.imageUrl || ""} alt="竞品确认图片" className="h-full w-full object-contain" /></div>
                       <CardContent className="space-y-3 p-4">
-                        <div className="flex gap-2"><Badge variant="outline">{asset.role}</Badge><Badge variant="secondary">图位 {asset.positionIndex + 1}</Badge></div>
+                        <div className="flex items-center justify-between gap-2"><div className="flex gap-2"><Badge variant="outline">{asset.role}</Badge><Badge variant="secondary">图位 {asset.positionIndex + 1}</Badge></div><label className="flex cursor-pointer items-center gap-2 text-xs font-medium"><Checkbox checked={selectedAssetIdSet.has(asset.id)} onCheckedChange={(checked) => toggleAsset(asset.id, checked === true)} disabled={!canEdit} aria-label={`将图位 ${asset.positionIndex + 1} 加入分析范围`} />纳入分析</label></div>
+                        {!selectedAssetIdSet.has(asset.id) && <div className="flex gap-2 rounded-md bg-muted p-2 text-xs text-muted-foreground"><EyeOff className="h-3.5 w-3.5 shrink-0" />此图仅安全保留，不会进入本次AI、表达方式候选或综合结论。</div>}
                         {!asset.fact || !draft ? <p className="text-sm text-muted-foreground">运行“分析整套图片”后生成可编辑逐图事实。</p> : (
                           <>
                             <div className="grid gap-2 sm:grid-cols-2"><Input value={draft.imagePurpose} onChange={(e) => updateFactDraft(asset.id, { imagePurpose: e.target.value })} placeholder="图片目的" disabled={!canEdit} /><Input value={draft.sellingPointsText} onChange={(e) => updateFactDraft(asset.id, { sellingPointsText: e.target.value })} placeholder="核心卖点（多项用换行）" disabled={!canEdit} /></div>
