@@ -71,6 +71,7 @@ describe("expressionLinkageService", () => {
     mocks.listCompetitorGallerySubjects.mockResolvedValue([
       {
         id: 21, status: "confirmed", role: "primary", displayName: "竞品A", asin: "REDACTED-A",
+        analysisScope: { selectedAssetIds: [101], legacy: false },
         assets: [
           { id: 101, role: "main", positionIndex: 0, imageUrl: "https://example.test/101", fact: confirmedFact },
           { id: 102, role: "main", positionIndex: 1, imageUrl: "https://example.test/102", fact: { ...confirmedFact, status: "review_required" } },
@@ -80,7 +81,7 @@ describe("expressionLinkageService", () => {
     ]);
   });
 
-  it("只返回已确认Subject中的已确认逐图事实资产", async () => {
+  it("只返回当前确认分析范围内的已确认逐图事实资产", async () => {
     const result = await listExpressionAssetCandidates({ workspaceId: 3, projectId: 7, groupId: 11 });
     expect(result.candidates.map((item) => item.assetId)).toEqual([101]);
     expect(result.candidates[0]).toMatchObject({ subjectId: 21, recommended: true });

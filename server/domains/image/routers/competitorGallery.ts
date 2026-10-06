@@ -1,13 +1,16 @@
 import * as shared from "../routerContext";
 import { CompetitorGalleryAnalysisSchema, CompetitorImageFactSchema } from "../competitorGalleryContracts";
+import { CompetitorGallerySelectionFilterSchema } from "../competitorGallerySelectionContracts";
 import {
   addCompetitorResearchSubject,
   archiveCompetitorResearchSubject,
   confirmCompetitorGalleryAnalysis,
+  confirmCompetitorGallerySelectionVersion,
   listCompetitorGallerySubjects,
   listCompetitorSnapshotOptions,
   saveCompetitorAssetFact,
   saveCompetitorGalleryAnalysis,
+  saveCompetitorGallerySelection,
   setPrimaryCompetitorSubject,
 } from "../competitorGalleryService";
 import {
@@ -66,8 +69,35 @@ export const imageCompetitorGalleryProcedures = {
       return archiveCompetitorResearchSubject({ ...input, workspaceId });
     }),
 
+  saveCompetitorGallerySelection: protectedProcedure
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      subjectId: z.number().int().positive(),
+      selectedAssetIds: z.array(z.number().int().positive()).min(1).max(300),
+      filters: CompetitorGallerySelectionFilterSchema.optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { workspaceId } = await access(input, ctx, true);
+      return saveCompetitorGallerySelection({ ...input, workspaceId, userId: ctx.user.id });
+    }),
+
+  confirmCompetitorGallerySelection: protectedProcedure
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      subjectId: z.number().int().positive(),
+      selectionVersionId: z.number().int().positive(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { workspaceId } = await access(input, ctx, true);
+      return confirmCompetitorGallerySelectionVersion({ ...input, workspaceId, userId: ctx.user.id });
+    }),
+
   startCompetitorGalleryAnalysis: protectedProcedure
-    .input(z.object({ projectId: z.number().int().positive(), subjectId: z.number().int().positive() }))
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      subjectId: z.number().int().positive(),
+      selectionVersionId: z.number().int().positive(),
+    }))
     .mutation(async ({ ctx, input }) => {
       const { workspaceId } = await access(input, ctx, true);
       return startCompetitorGalleryAnalysisJob({ ...input, workspaceId, userId: ctx.user.id });

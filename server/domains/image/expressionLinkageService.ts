@@ -85,6 +85,10 @@ export async function listExpressionAssetCandidates(input: {
   const filters = ExpressionSelectionFilterSchema.parse(input.filters || {});
   const subjects = await listCompetitorGallerySubjects({ workspaceId, projectId: input.projectId });
   const candidates = subjects.flatMap((subject: any) => (subject.status === "confirmed" ? subject.assets : []).flatMap((asset: any) => {
+    const scopedAssetIds = Array.isArray(subject.analysisScope?.selectedAssetIds)
+      ? new Set(subject.analysisScope.selectedAssetIds.map(Number))
+      : null;
+    if (!scopedAssetIds || !scopedAssetIds.has(asset.id)) return [];
     if (!asset.fact || asset.fact.status !== "confirmed") return [];
     const facts = factValue(asset.fact);
     const sellingPoints = Array.isArray(facts.sellingPoints) ? facts.sellingPoints.map(String) : [];

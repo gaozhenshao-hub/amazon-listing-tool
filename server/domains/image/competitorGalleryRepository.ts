@@ -6,7 +6,11 @@ import {
 import {
   imageCompetitorAssetFacts,
   imageCompetitorGalleryAnalysisVersions,
+  imageCompetitorGallerySelectionVersions,
   imageCompetitorResearchSubjects,
+  imageExpressionAnalysisVersions,
+  imageExpressionSelectionVersions,
+  imageStep0SynthesisVersions,
   imageWorkflowStep0Artifacts,
 } from "../../../drizzle/schema/image";
 import type { DbExecutor } from "../../repositories/dbClient";
@@ -154,6 +158,76 @@ export async function updateCompetitorAssetFactEdit(input: {
   ));
 }
 
+export async function nextCompetitorGallerySelectionVersion(db: DbExecutor, subjectId: number) {
+  const rows = await db.select({ version: imageCompetitorGallerySelectionVersions.version })
+    .from(imageCompetitorGallerySelectionVersions)
+    .where(eq(imageCompetitorGallerySelectionVersions.subjectId, subjectId))
+    .orderBy(desc(imageCompetitorGallerySelectionVersions.version)).limit(1);
+  return Number(rows[0]?.version ?? 0) + 1;
+}
+
+export async function createCompetitorGallerySelectionVersion(
+  db: DbExecutor,
+  values: typeof imageCompetitorGallerySelectionVersions.$inferInsert,
+) {
+  const [created] = await db.insert(imageCompetitorGallerySelectionVersions).values(values).$returningId();
+  return Number(created.id);
+}
+
+export async function getLatestCompetitorGallerySelection(db: DbExecutor, workspaceId: number, projectId: number, subjectId: number) {
+  const rows = await db.select().from(imageCompetitorGallerySelectionVersions).where(and(
+    eq(imageCompetitorGallerySelectionVersions.workspaceId, workspaceId),
+    eq(imageCompetitorGallerySelectionVersions.projectId, projectId),
+    eq(imageCompetitorGallerySelectionVersions.subjectId, subjectId),
+    ne(imageCompetitorGallerySelectionVersions.status, "superseded"),
+  )).orderBy(desc(imageCompetitorGallerySelectionVersions.version)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getLatestConfirmedCompetitorGallerySelection(db: DbExecutor, workspaceId: number, projectId: number, subjectId: number) {
+  const rows = await db.select().from(imageCompetitorGallerySelectionVersions).where(and(
+    eq(imageCompetitorGallerySelectionVersions.workspaceId, workspaceId),
+    eq(imageCompetitorGallerySelectionVersions.projectId, projectId),
+    eq(imageCompetitorGallerySelectionVersions.subjectId, subjectId),
+    eq(imageCompetitorGallerySelectionVersions.status, "confirmed"),
+  )).orderBy(desc(imageCompetitorGallerySelectionVersions.version)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getCompetitorGallerySelectionById(db: DbExecutor, workspaceId: number, projectId: number, subjectId: number, selectionVersionId: number) {
+  const rows = await db.select().from(imageCompetitorGallerySelectionVersions).where(and(
+    eq(imageCompetitorGallerySelectionVersions.workspaceId, workspaceId),
+    eq(imageCompetitorGallerySelectionVersions.projectId, projectId),
+    eq(imageCompetitorGallerySelectionVersions.subjectId, subjectId),
+    eq(imageCompetitorGallerySelectionVersions.id, selectionVersionId),
+  )).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function supersedeCompetitorGallerySelections(db: DbExecutor, workspaceId: number, projectId: number, subjectId: number, excludeId: number) {
+  await db.update(imageCompetitorGallerySelectionVersions).set({ status: "superseded" }).where(and(
+    eq(imageCompetitorGallerySelectionVersions.workspaceId, workspaceId),
+    eq(imageCompetitorGallerySelectionVersions.projectId, projectId),
+    eq(imageCompetitorGallerySelectionVersions.subjectId, subjectId),
+    ne(imageCompetitorGallerySelectionVersions.id, excludeId),
+    ne(imageCompetitorGallerySelectionVersions.status, "superseded"),
+  ));
+}
+
+export async function confirmCompetitorGallerySelection(db: DbExecutor, workspaceId: number, projectId: number, subjectId: number, selectionVersionId: number, userId: number) {
+  await db.update(imageCompetitorGallerySelectionVersions).set({
+    status: "confirmed",
+    confirmedBy: userId,
+    confirmedAt: new Date(),
+  }).where(and(
+    eq(imageCompetitorGallerySelectionVersions.workspaceId, workspaceId),
+    eq(imageCompetitorGallerySelectionVersions.projectId, projectId),
+    eq(imageCompetitorGallerySelectionVersions.subjectId, subjectId),
+    eq(imageCompetitorGallerySelectionVersions.id, selectionVersionId),
+    eq(imageCompetitorGallerySelectionVersions.status, "draft"),
+  ));
+}
+
 export async function nextCompetitorGalleryAnalysisVersion(db: DbExecutor, subjectId: number) {
   const rows = await db.select({ version: imageCompetitorGalleryAnalysisVersions.version })
     .from(imageCompetitorGalleryAnalysisVersions)
@@ -200,11 +274,39 @@ export async function supersedeConfirmedGalleryAnalyses(db: DbExecutor, workspac
   ));
 }
 
-export async function markCompetitorFactsConfirmed(db: DbExecutor, workspaceId: number, subjectId: number) {
+export async function supersedeActiveCompetitorGalleryAnalyses(db: DbExecutor, workspaceId: number, projectId: number, subjectId: number) {
+  await db.update(imageCompetitorGalleryAnalysisVersions).set({ status: "superseded" }).where(and(
+    eq(imageCompetitorGalleryAnalysisVersions.workspaceId, workspaceId),
+    eq(imageCompetitorGalleryAnalysisVersions.projectId, projectId),
+    eq(imageCompetitorGalleryAnalysisVersions.subjectId, subjectId),
+    ne(imageCompetitorGalleryAnalysisVersions.status, "superseded"),
+  ));
+}
+
+export async function supersedeExpressionLinkageForGalleryScopeChange(db: DbExecutor, workspaceId: number, projectId: number) {
+  await db.update(imageExpressionSelectionVersions).set({ status: "superseded" }).where(and(
+    eq(imageExpressionSelectionVersions.workspaceId, workspaceId),
+    eq(imageExpressionSelectionVersions.projectId, projectId),
+    ne(imageExpressionSelectionVersions.status, "superseded"),
+  ));
+  await db.update(imageExpressionAnalysisVersions).set({ status: "superseded" }).where(and(
+    eq(imageExpressionAnalysisVersions.workspaceId, workspaceId),
+    eq(imageExpressionAnalysisVersions.projectId, projectId),
+    ne(imageExpressionAnalysisVersions.status, "superseded"),
+  ));
+  await db.update(imageStep0SynthesisVersions).set({ status: "superseded" }).where(and(
+    eq(imageStep0SynthesisVersions.workspaceId, workspaceId),
+    eq(imageStep0SynthesisVersions.projectId, projectId),
+    ne(imageStep0SynthesisVersions.status, "superseded"),
+  ));
+}
+
+export async function markCompetitorFactsConfirmed(db: DbExecutor, workspaceId: number, subjectId: number, assetIds?: number[]) {
   await db.update(imageCompetitorAssetFacts).set({ status: "confirmed" }).where(and(
     eq(imageCompetitorAssetFacts.workspaceId, workspaceId),
     eq(imageCompetitorAssetFacts.subjectId, subjectId),
     ne(imageCompetitorAssetFacts.status, "excluded"),
+    ...(assetIds?.length ? [inArray(imageCompetitorAssetFacts.acquisitionAssetId, assetIds)] : []),
   ));
 }
 

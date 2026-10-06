@@ -282,11 +282,34 @@ export const imageCompetitorAssetFacts = mysqlTable("image_competitor_asset_fact
   index("idx_image_comp_fact_subject_status").on(table.workspaceId, table.subjectId, table.status),
 ]);
 
+// Step 0竞品全图分析范围：保留全部采集证据，但仅将人工确认的资产发送给模型。
+export const imageCompetitorGallerySelectionVersions = mysqlTable("image_competitor_gallery_selection_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  projectId: int("projectId").notNull(),
+  subjectId: int("subjectId").notNull(),
+  confirmedSnapshotId: int("confirmedSnapshotId").notNull(),
+  version: int("version").notNull(),
+  status: mysqlEnum("status", ["draft", "confirmed", "superseded"]).default("draft").notNull(),
+  filterState: json("filterState").notNull(),
+  selectedAssetIds: json("selectedAssetIds").notNull(),
+  selectionHash: varchar("selectionHash", { length: 64 }).notNull(),
+  createdBy: int("createdBy").notNull(),
+  confirmedBy: int("confirmedBy"),
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("uk_image_comp_gallery_selection_subject_ver").on(table.subjectId, table.version),
+  index("idx_image_comp_gallery_selection_current").on(table.workspaceId, table.projectId, table.subjectId, table.status),
+]);
+
 export const imageCompetitorGalleryAnalysisVersions = mysqlTable("image_competitor_gallery_analysis_versions", {
   id: int("id").autoincrement().primaryKey(),
   workspaceId: int("workspaceId").notNull(),
   projectId: int("projectId").notNull(),
   subjectId: int("subjectId").notNull(),
+  selectionVersionId: int("selectionVersionId"),
   version: int("version").notNull(),
   inputHash: varchar("inputHash", { length: 64 }).notNull(),
   status: mysqlEnum("status", ["draft", "review_required", "confirmed", "superseded", "failed"]).default("draft").notNull(),
@@ -420,6 +443,8 @@ export type ImageCompetitorResearchSubject = typeof imageCompetitorResearchSubje
 export type InsertImageCompetitorResearchSubject = typeof imageCompetitorResearchSubjects.$inferInsert;
 export type ImageCompetitorAssetFact = typeof imageCompetitorAssetFacts.$inferSelect;
 export type InsertImageCompetitorAssetFact = typeof imageCompetitorAssetFacts.$inferInsert;
+export type ImageCompetitorGallerySelectionVersion = typeof imageCompetitorGallerySelectionVersions.$inferSelect;
+export type InsertImageCompetitorGallerySelectionVersion = typeof imageCompetitorGallerySelectionVersions.$inferInsert;
 export type ImageCompetitorGalleryAnalysisVersion = typeof imageCompetitorGalleryAnalysisVersions.$inferSelect;
 export type InsertImageCompetitorGalleryAnalysisVersion = typeof imageCompetitorGalleryAnalysisVersions.$inferInsert;
 export type ImageWorkflowStep0Artifact = typeof imageWorkflowStep0Artifacts.$inferSelect;

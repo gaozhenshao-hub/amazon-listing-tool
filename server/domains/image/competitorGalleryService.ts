@@ -20,10 +20,21 @@ import {
   confirmEvidenceBackedAnalysis,
 } from "./competitorGalleryContracts";
 import {
+  CompetitorGallerySelectionFilterSchema,
+  assertGallerySelectionAssets,
+  buildCompetitorGallerySelectionHash,
+  summarizeGallerySelectionRoles,
+} from "./competitorGallerySelectionContracts";
+import {
+  confirmCompetitorGallerySelection,
+  createCompetitorGallerySelectionVersion,
   createStep0Artifact,
+  getCompetitorGallerySelectionById,
   getCompetitorResearchSubject,
   getConfirmedSnapshot,
   getLatestCompetitorGalleryAnalysis,
+  getLatestCompetitorGallerySelection,
+  getLatestConfirmedCompetitorGallerySelection,
   listAvailableConfirmedSnapshots,
   listCompetitorAssetFacts,
   listCompetitorResearchSubjects,
@@ -31,7 +42,11 @@ import {
   listConfirmedGalleryAnalysesForProject,
   markCompetitorFactsConfirmed,
   nextStep0ArtifactVersion,
+  nextCompetitorGallerySelectionVersion,
+  supersedeActiveCompetitorGalleryAnalyses,
+  supersedeCompetitorGallerySelections,
   supersedeConfirmedGalleryAnalyses,
+  supersedeExpressionLinkageForGalleryScopeChange,
   supersedeStep0Artifacts,
   updateCompetitorAssetFactEdit,
   updateCompetitorGalleryAnalysis,
@@ -95,15 +110,92 @@ export async function addCompetitorResearchSubject(input: {
   });
 }
 
+export async function saveCompetitorGallerySelection(input: {
+  workspaceId?: number | null;
+  projectId: number;
+  subjectId: number;
+  userId: number;
+  selectedAssetIds: number[];
+  filters?: unknown;
+}) {
+  const workspaceId = workspaceIdOrThrow(input.workspaceId);
+  const db = await requireDb("competitor gallery selection");
+  const subject = await getCompetitorResearchSubject(db, workspaceId, input.projectId, input.subjectId);
+  if (!subject) throw new Error("竞品研究对象不存在");
+  const assets = await listConfirmedAssets(db, workspaceId, subject.confirmedSnapshotId);
+  const selectedAssetIds = assertGallerySelectionAssets({ selectedAssetIds: input.selectedAssetIds, assets });
+  const filters = CompetitorGallerySelectionFilterSchema.parse(input.filters || {});
+  const selectionHash = buildCompetitorGallerySelectionHash({
+    subjectId: subject.id,
+    confirmedSnapshotId: subject.confirmedSnapshotId,
+    selectedAssetIds,
+    assets,
+    filters,
+  });
+  const latest = await getLatestCompetitorGallerySelection(db, workspaceId, input.projectId, subject.id);
+  if (latest?.selectionHash === selectionHash && latest.status !== "superseded") {
+    return { ...latest, reused: true };
+  }
+  const version = await nextCompetitorGallerySelectionVersion(db, subject.id);
+  const id = await createCompetitorGallerySelectionVersion(db, {
+    workspaceId,
+    projectId: input.projectId,
+    subjectId: subject.id,
+    confirmedSnapshotId: subject.confirmedSnapshotId,
+    version,
+    status: "draft",
+    filterState: filters,
+    selectedAssetIds,
+    selectionHash,
+    createdBy: input.userId,
+  });
+  return { id, version, status: "draft" as const, selectionHash, selectedAssetIds, filterState: filters, reused: false };
+}
+
+export async function confirmCompetitorGallerySelectionVersion(input: {
+  workspaceId?: number | null;
+  projectId: number;
+  subjectId: number;
+  selectionVersionId: number;
+  userId: number;
+}) {
+  const workspaceId = workspaceIdOrThrow(input.workspaceId);
+  const db = await requireDb("confirm competitor gallery selection");
+  const subject = await getCompetitorResearchSubject(db, workspaceId, input.projectId, input.subjectId);
+  if (!subject) throw new Error("竞品研究对象不存在");
+  const selection = await getCompetitorGallerySelectionById(db, workspaceId, input.projectId, subject.id, input.selectionVersionId);
+  if (!selection || selection.confirmedSnapshotId !== subject.confirmedSnapshotId) throw new Error("分析范围版本不存在或不属于当前竞品图库");
+  if (selection.status === "confirmed") return { success: true, selectionVersionId: selection.id };
+  if (selection.status !== "draft") throw new Error("只有当前草稿分析范围可以确认");
+  const assets = await listConfirmedAssets(db, workspaceId, subject.confirmedSnapshotId);
+  const selectedAssetIds = assertGallerySelectionAssets({
+    selectedAssetIds: Array.isArray(selection.selectedAssetIds) ? selection.selectedAssetIds.map(Number) : [],
+    assets,
+  });
+  await db.transaction(async (tx) => {
+    await supersedeCompetitorGallerySelections(tx, workspaceId, input.projectId, subject.id, selection.id);
+    await confirmCompetitorGallerySelection(tx, workspaceId, input.projectId, subject.id, selection.id, input.userId);
+    await supersedeActiveCompetitorGalleryAnalyses(tx, workspaceId, input.projectId, subject.id);
+    await supersedeExpressionLinkageForGalleryScopeChange(tx, workspaceId, input.projectId);
+    await supersedeStep0Artifacts(tx, workspaceId, input.projectId, "competitor_gallery");
+    await supersedeStep0Artifacts(tx, workspaceId, input.projectId, "expression_summary");
+    await supersedeStep0Artifacts(tx, workspaceId, input.projectId, "composite");
+    await updateCompetitorResearchSubject(tx, workspaceId, input.projectId, subject.id, { status: "ready", currentAnalysisVersion: 0 });
+  });
+  return { success: true, selectionVersionId: selection.id, selectedAssetIds };
+}
+
 export async function listCompetitorGallerySubjects(input: { workspaceId?: number | null; projectId: number }) {
   const workspaceId = workspaceIdOrThrow(input.workspaceId);
   const db = await requireDb("competitor gallery subjects");
   const subjects = await listCompetitorResearchSubjects(db, workspaceId, input.projectId);
   return Promise.all(subjects.map(async (subject: ImageCompetitorResearchSubject) => {
-    const [assets, facts, analysis] = await Promise.all([
+    const [assets, facts, analysis, selection, confirmedSelection] = await Promise.all([
       listConfirmedAssets(db, workspaceId, subject.confirmedSnapshotId),
       listCompetitorAssetFacts(db, workspaceId, subject.id),
       getLatestCompetitorGalleryAnalysis(db, workspaceId, subject.id),
+      getLatestCompetitorGallerySelection(db, workspaceId, input.projectId, subject.id),
+      getLatestConfirmedCompetitorGallerySelection(db, workspaceId, input.projectId, subject.id),
     ]);
     const factByAsset = new Map(facts.map((fact: ImageCompetitorAssetFact) => [fact.acquisitionAssetId, fact]));
     return {
@@ -118,6 +210,24 @@ export async function listCompetitorGallerySubjects(input: { workspaceId?: numbe
         fact: factByAsset.get(asset.id) || null,
       }))),
       analysis,
+      selection,
+      analysisScope: confirmedSelection
+        ? {
+          selectionVersionId: confirmedSelection.id,
+          version: confirmedSelection.version,
+          selectedAssetIds: Array.isArray(confirmedSelection.selectedAssetIds) ? confirmedSelection.selectedAssetIds.map(Number) : [],
+          roleCounts: summarizeGallerySelectionRoles(assets, Array.isArray(confirmedSelection.selectedAssetIds) ? confirmedSelection.selectedAssetIds.map(Number) : []),
+          legacy: false,
+        }
+        : analysis
+          ? {
+            selectionVersionId: null,
+            version: null,
+            selectedAssetIds: Array.isArray(analysis.evidenceAssetIds) ? analysis.evidenceAssetIds.map(Number) : [],
+            roleCounts: summarizeGallerySelectionRoles(assets, Array.isArray(analysis.evidenceAssetIds) ? analysis.evidenceAssetIds.map(Number) : []),
+            legacy: true,
+          }
+          : null,
     };
   }));
 }
@@ -184,7 +294,7 @@ export async function confirmCompetitorGalleryAnalysis(input: {
     await updateCompetitorGalleryAnalysis({ db: tx, workspaceId, projectId: input.projectId, subjectId: input.subjectId, analysisId: current.id, values: {
       status: "confirmed", userEdit: parsed, confirmedBy: input.userId, confirmedAt: new Date(),
     } });
-    await markCompetitorFactsConfirmed(tx, workspaceId, input.subjectId);
+    await markCompetitorFactsConfirmed(tx, workspaceId, input.subjectId, allowedAssetIds);
     await updateCompetitorResearchSubject(tx, workspaceId, input.projectId, input.subjectId, { status: "confirmed", currentAnalysisVersion: current.version });
     const confirmed = await listConfirmedGalleryAnalysesForProject(tx, workspaceId, input.projectId);
     const artifactType = "competitor_gallery" as const;
