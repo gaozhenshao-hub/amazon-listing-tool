@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
-import { COOKIE_NAME, ALL_ROLES, ROLE_LABELS, ADMIN_ROLES } from "../shared/const";
+import { COOKIE_NAME, ALL_ROLES, ROLE_LABELS, ADMIN_ROLES, PASSWORD_REGEX } from "../shared/const";
 import type { TrpcContext } from "./_core/context";
+import { generateTemporaryPassword } from "./routers/userManagement";
 
 type CookieCall = {
   name: string;
@@ -91,6 +92,18 @@ describe("Role system constants", () => {
     expect(ROLE_LABELS["finance"]).toBe("财务");
     expect(ROLE_LABELS["purchaser"]).toBe("采购");
     expect(ROLE_LABELS["designer"]).toBe("美工");
+  });
+});
+
+describe("temporary password generation", () => {
+  it("creates policy-compliant random temporary passwords without a shared default", () => {
+    const passwords = Array.from({ length: 8 }, () => generateTemporaryPassword());
+    expect(passwords).toHaveLength(8);
+    for (const password of passwords) {
+      expect(password).toHaveLength(16);
+      expect(password).toMatch(PASSWORD_REGEX);
+    }
+    expect(new Set(passwords).size).toBeGreaterThan(1);
   });
 });
 

@@ -18,6 +18,29 @@ function hashPasswordFast(password: string): string {
   return `scrypt:${salt}:${hash}`;
 }
 
+function secureRandomCharacter(alphabet: string) {
+  const ceiling = 256 - (256 % alphabet.length);
+  while (true) {
+    const value = randomBytes(1)[0];
+    if (value < ceiling) return alphabet[value % alphabet.length];
+  }
+}
+
+export function generateTemporaryPassword() {
+  const uppercase = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lowercase = "abcdefghijkmnopqrstuvwxyz";
+  const digits = "23456789";
+  const symbols = "!@#$%";
+  const all = `${uppercase}${lowercase}${digits}${symbols}`;
+  return [
+    secureRandomCharacter(uppercase),
+    secureRandomCharacter(lowercase),
+    secureRandomCharacter(digits),
+    secureRandomCharacter(symbols),
+    ...Array.from({ length: 12 }, () => secureRandomCharacter(all)),
+  ].join("");
+}
+
 function verifyPasswordFast(password: string, stored: string): boolean {
   if (stored.startsWith("scrypt:")) {
     const [, salt, hash] = stored.split(":");
@@ -208,7 +231,7 @@ export const userManagementRouter = router({
       role: z.enum(ALL_ROLES as unknown as [string, ...string[]]),
       department: z.string().optional(),
       jobTitle: z.string().optional(),
-      initialPassword: z.string().min(PASSWORD_MIN_LENGTH).optional(),
+      initialPassword: z.string().min(PASSWORD_MIN_LENGTH).regex(PASSWORD_REGEX, "密码必须包含大小写字母和数字").optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       if (!ADMIN_ROLES.includes(ctx.user.role as any)) {
@@ -230,7 +253,7 @@ export const userManagementRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "只有超级管理员可以创建超级管理员" });
       }
 
-      const password = input.initialPassword || "Abc12345";
+      const password = input.initialPassword || generateTemporaryPassword();
       const hashedPassword = hashPasswordFast(password);
 
       await db.upsertUser({
@@ -291,7 +314,7 @@ export const userManagementRouter = router({
   resetPassword: protectedProcedure
     .input(z.object({
       userId: z.number(),
-      newPassword: z.string().min(PASSWORD_MIN_LENGTH).optional(),
+      newPassword: z.string().min(PASSWORD_MIN_LENGTH).regex(PASSWORD_REGEX, "密码必须包含大小写字母和数字").optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       if (!ADMIN_ROLES.includes(ctx.user.role as any)) {
@@ -305,7 +328,7 @@ export const userManagementRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "无法重置超级管理员密码" });
       }
 
-      const newPassword = input.newPassword || "Abc12345";
+      const newPassword = input.newPassword || generateTemporaryPassword();
       const hashedPassword = hashPasswordFast(newPassword);
 
       await db.updateUserById(input.userId, {
@@ -335,11 +358,10 @@ export const userManagementRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "需要管理员权限" });
       }
 
-      const defaultPassword = "Abc12345";
-      const hashedPassword = hashPasswordFast(defaultPassword);
       let successCount = 0;
       let skipCount = 0;
       const errors: string[] = [];
+      const temporaryCredentials: Array<{ name: string; identifier: string; password: string }> = [];
 
       for (const u of input.users) {
         try {
@@ -353,11 +375,12 @@ export const userManagementRouter = router({
             if (existing) { skipCount++; errors.push(`${u.name}: 手机号已存在`); continue; }
           }
 
+          const password = generateTemporaryPassword();
           await db.upsertUser({
             name: u.name,
             email: u.email || null,
             phone: u.phone || null,
-            password: hashedPassword,
+            password: hashPasswordFast(password),
             role: (u.role || "ops_specialist") as UserRole,
             department: u.department || null,
             jobTitle: u.jobTitle || null,
@@ -365,13 +388,18 @@ export const userManagementRouter = router({
             mustChangePassword: 1,
             invitedBy: ctx.user.id,
           });
+          temporaryCredentials.push({
+            name: u.name,
+            identifier: u.email || u.phone || "请由管理员补充登录标识",
+            password,
+          });
           successCount++;
         } catch (err: any) {
           errors.push(`${u.name}: ${err.message}`);
         }
       }
 
-      return { success: true, successCount, skipCount, errors, defaultPassword };
+      return { success: true, successCount, skipCount, errors, temporaryCredentials };
     }),
 
   // Check user data dependencies before deletion

@@ -21,7 +21,7 @@ import { ROLE_LABELS, ALL_ROLES } from "@shared/const";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
   UserPlus, Upload, Search, RotateCcw, Shield, ShieldAlert,
-  Loader2, Users, UserCheck, UserX, Clock, Pencil, Trash2, AlertTriangle,
+  Loader2, Users, UserCheck, UserX, Clock, Pencil, Trash2, AlertTriangle, Copy,
 } from "lucide-react";
 
 type ProductKnowledgeExportLog = {
@@ -61,14 +61,14 @@ function CreateUserDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     name: "", email: "", phone: "", role: "ops_specialist",
-    department: "", jobTitle: "", initialPassword: "Abc12345",
+    department: "", jobTitle: "", initialPassword: "",
   });
 
   const createMutation = trpc.userManagement.create.useMutation({
     onSuccess: (data) => {
       toast.success(`用户创建成功，初始密码: ${data.defaultPassword}`);
       setOpen(false);
-      setForm({ name: "", email: "", phone: "", role: "ops_specialist", department: "", jobTitle: "", initialPassword: "Abc12345" });
+      setForm({ name: "", email: "", phone: "", role: "ops_specialist", department: "", jobTitle: "", initialPassword: "" });
       onSuccess();
     },
     onError: (err) => toast.error(err.message),
@@ -123,8 +123,8 @@ function CreateUserDialog({ onSuccess }: { onSuccess: () => void }) {
             </div>
           </div>
           <div className="space-y-2">
-            <Label>初始密码（留空使用默认: Abc12345）</Label>
-            <Input type="password" value={form.initialPassword} onChange={e => setForm({ ...form, initialPassword: e.target.value })} placeholder="留空使用默认密码" />
+            <Label>初始密码（可选）</Label>
+            <Input type="password" value={form.initialPassword} onChange={e => setForm({ ...form, initialPassword: e.target.value })} placeholder="留空由系统生成一次性临时密码" />
           </div>
         </div>
         <DialogFooter>
@@ -143,6 +143,7 @@ function CreateUserDialog({ onSuccess }: { onSuccess: () => void }) {
 function BulkImportDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [csvText, setCsvText] = useState("");
+  const [temporaryCredentials, setTemporaryCredentials] = useState<Array<{ name: string; identifier: string; password: string }>>([]);
 
   const bulkMutation = trpc.userManagement.bulkImport.useMutation({
     onSuccess: (data) => {
@@ -150,7 +151,7 @@ function BulkImportDialog({ onSuccess }: { onSuccess: () => void }) {
       if (data.errors.length > 0) {
         toast.warning(`部分导入失败: ${data.errors.slice(0, 3).join("; ")}`);
       }
-      setOpen(false);
+      setTemporaryCredentials(data.temporaryCredentials || []);
       setCsvText("");
       onSuccess();
     },
@@ -185,7 +186,7 @@ function BulkImportDialog({ onSuccess }: { onSuccess: () => void }) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (!nextOpen) setTemporaryCredentials([]); }}>
       <DialogTrigger asChild>
         <Button variant="outline"><Upload className="mr-2 h-4 w-4" />批量导入</Button>
       </DialogTrigger>
@@ -197,6 +198,21 @@ function BulkImportDialog({ onSuccess }: { onSuccess: () => void }) {
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
+          {temporaryCredentials.length > 0 && (
+            <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
+              <div>
+                <p className="font-semibold text-amber-950">请立即安全保存临时密码</p>
+                <p className="mt-1 text-xs text-amber-800">每位新用户均使用不同的随机临时密码；关闭此窗口后系统不会以明文再次显示。用户首次登录必须修改密码。</p>
+              </div>
+              <div className="max-h-44 space-y-1 overflow-y-auto rounded-md bg-background p-2 font-mono text-xs">
+                {temporaryCredentials.map((credential) => <p key={`${credential.identifier}:${credential.password}`}>{credential.name} · {credential.identifier} · {credential.password}</p>)}
+              </div>
+              <Button size="sm" variant="outline" onClick={async () => {
+                await navigator.clipboard.writeText(temporaryCredentials.map((credential) => `${credential.name}\t${credential.identifier}\t${credential.password}`).join("\n"));
+                toast.success("临时密码已复制；请通过受控渠道发送给对应用户");
+              }}><Copy className="mr-1 h-3.5 w-3.5" />复制临时密码</Button>
+            </div>
+          )}
           <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 font-mono space-y-0.5">
             <p className="font-semibold mb-1">格式示例（姓名，邮箱，手机号，角色，部门，职位）：</p>
             <p>张三，zhangsan@example.com，13800001111，公司管理员，管理层，总经理</p>
@@ -527,7 +543,7 @@ export default function UserManagement() {
   const loginLogsQuery = trpc.userManagement.loginLogs.useQuery({ limit: 50 });
   const exportLogsQuery = trpc.kbTransfer.exportLogs.useQuery({ limit: 100 }, { enabled: isSuperAdmin });
 
-  const users = usersQuery.data || [];
+  const users = useMemo(() => usersQuery.data || [], [usersQuery.data]);
 
   const filteredUsers = useMemo(() => {
     return users.filter(u => {
