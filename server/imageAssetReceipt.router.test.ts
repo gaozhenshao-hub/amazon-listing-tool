@@ -91,6 +91,16 @@ describe("图片资产来源写入真实路由", () => {
     expect(mocks.updateImageWorkflowSession).toHaveBeenCalledWith(23, expect.objectContaining({ step4Confirmed: 0, step5Confirmed: 0, step6Confirmed: 0 }));
     await expect(requireStep4DraftAssets({ imageReferences: [{ kbReferenceImages: [{ id: -1, imageUrl: "https://competitor.invalid" }] }] }, ctx(), 51)).rejects.toThrow();
   });
+  it("同空间可读但用途未审批的竞品知识库图片不能作为本品Step4参考或调用模型", async () => {
+    mocks.getReadableImage.mockResolvedValue({ id: 77, imageUrl: "https://competitor.invalid/research.jpg", imagePosition: "main" });
+    const caller = callerFactory.createCaller(ctx());
+    const draft = JSON.stringify({ imageReferences: [{ imageNumber: "main", kbReferenceImages: [{ id: 77 }] }] });
+    await expect(caller.saveStep4Draft({ projectId: 51, userEdit: draft })).rejects.toThrow(/用途尚未审核/);
+    await expect(caller.regenerateAllFromReferences({ projectId: 51, kbImages: [{ id: 77 }] })).rejects.toThrow(/用途尚未审核/);
+    expect(mocks.getReadableImage).not.toHaveBeenCalled();
+    expect(mocks.invokeBusinessSkill).not.toHaveBeenCalled();
+    expect(mocks.updateImageWorkflowSession).not.toHaveBeenCalled();
+  });
   it("Step4整体确认不会把旧版本中的外部图片URL升级成正式成果", async () => {
     mocks.getCurrentStep4ImageVersions.mockResolvedValue([{ imageIndex: 0,
       content: JSON.stringify({ imageNumber: "main", compositionRefImageUrl: "https://competitor.invalid/foreign.jpg" }) }]);
@@ -99,11 +109,11 @@ describe("图片资产来源写入真实路由", () => {
       userEdit: JSON.stringify({ imageReferences: [{ imageNumber: "main" }] }) })).rejects.toThrow(/受控上传/);
     expect(mocks.updateImageWorkflowSession).not.toHaveBeenCalled();
   });
-  it("Step4再优化在裸URL或不可访问知识库图片ID时不调用模型", async () => {
+  it("Step4再优化在裸URL或未审批知识库图片ID时不调用模型", async () => {
     const caller = callerFactory.createCaller(ctx());
     await expect(caller.reoptimizeStep4WithRefs({ projectId: 51, imageKey: "main",
       compositionRefUrl: "https://competitor.invalid/image.jpg" })).rejects.toThrow(/受控上传/);
-    await expect(caller.regenerateAllFromReferences({ projectId: 51, kbImages: [{ id: 2024 }] })).rejects.toThrow(/不可访问/);
+    await expect(caller.regenerateAllFromReferences({ projectId: 51, kbImages: [{ id: 2024 }] })).rejects.toThrow(/用途尚未审核/);
     expect(mocks.invokeBusinessSkill).not.toHaveBeenCalled();
     expect(mocks.updateImageWorkflowSession).not.toHaveBeenCalled();
   });

@@ -6,6 +6,7 @@ import { clearStep4ReferenceLocks } from "../step4ReferenceLockState";
 import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
 import { createImageAssetReceipt, requireImageAssetReceipt } from "../services/imageAssetReceipt";
 import { validateImageBytes } from "../services/validateImageBytes";
+import { requireClassifiedStep4KbUses } from "../services/imageKbUsePolicy";
 
 const {
   compactStep4ReferenceForStorage,
@@ -71,28 +72,20 @@ async function resolveReadableKbImages(images: Step4KbImage[], ctx: any) {
 export async function requireStep4DraftAssets(snapshot: Record<string, any>, ctx: any, projectId: number) {
   const references = snapshot?.imageReferences;
   if (!Array.isArray(references)) throw new Error("Step4 草稿缺少图片参考方案");
+  requireClassifiedStep4KbUses(snapshot);
   for (const reference of references) {
     if (!reference || typeof reference !== "object") continue;
     const verifyNestedUrls = (value: unknown): void => {
       if (!value || typeof value !== "object") return;
       if (Array.isArray(value)) { value.forEach(verifyNestedUrls); return; }
       for (const [key, candidate] of Object.entries(value)) {
-        if (/^(?:kbReferenceImages)$/i.test(key)) continue; // Authoritative KB IDs validated below.
+        if (/^(?:kbReferenceImages)$/i.test(key)) continue; // Must be empty until asset-use approval exists.
         if (/(?:url|src|uri)$/i.test(key) && typeof candidate === "string" && candidate.trim()) {
           requireImageAssetReceipt({ reference: candidate, kind: "step4-ref", projectId, userId: ctx.user.id });
         } else verifyNestedUrls(candidate);
       }
     };
     verifyNestedUrls(reference);
-    const kbImages = Array.isArray(reference.kbReferenceImages) ? reference.kbReferenceImages : [];
-    if (!kbImages.length) continue;
-    const readable = await resolveReadableKbImages(kbImages.map((image: any) => ({
-      id: Number(image?.id), note: image?.note, position: image?.position,
-    })), ctx);
-    reference.kbReferenceImages = kbImages.map((image: any, index: number) => ({
-      ...image,
-      imageUrl: readable[index].url,
-    }));
   }
 }
 
@@ -390,6 +383,7 @@ export const imageReferenceProcedures = {
       ensureWriteAccess(project, ctx.user);
       const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.references.regenerate-all:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
+      requireClassifiedStep4KbUses({ imageReferences: [{ kbReferenceImages: input.kbImages }] });
       const guidanceText = await selectedGuidanceText(input, ctx, project);
       const kbImages = await resolveReadableKbImages(input.kbImages, ctx);
       const compositionRefUrl = input.compositionRefUrl
@@ -510,6 +504,7 @@ ${guidanceText}
       const targetImage = imageRefs[input.imageIndex];
       if (!targetImage) throw new Error(`Image at index ${input.imageIndex} not found`);
       await requireStep4DraftAssets(currentStep4, ctx, input.projectId);
+      requireClassifiedStep4KbUses({ imageReferences: [{ kbReferenceImages: input.kbImages }] });
       const kbImages = await resolveReadableKbImages(input.kbImages, ctx);
       const compositionRefUrl = input.compositionRefUrl
         ? requireImageAssetReceipt({ reference: input.compositionRefUrl, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id }).url

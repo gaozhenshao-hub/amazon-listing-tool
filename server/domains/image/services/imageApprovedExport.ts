@@ -1,7 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import type { ImageWorkflowSession } from "../../../../drizzle/schema/image";
+import { requireClassifiedStep4KbUses } from "./imageKbUsePolicy";
 
-type ExportMode = "step5" | "complete";
+type ExportMode = "complete";
 type ApprovedImageSession = Pick<ImageWorkflowSession, "projectId" | "id"> & Partial<ImageWorkflowSession>;
 
 /** This is a deliverable gate, not a general data-read permission or an archival API. */
@@ -35,7 +36,7 @@ function validObjectJson(value: unknown): boolean {
  */
 export function requireApprovedImageSession(session: ImageWorkflowSession | null | undefined, mode: ExportMode): ApprovedImageSession {
   if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "尚未创建图片工作流" });
-  const required = mode === "complete" ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 5];
+  const required = [0, 1, 2, 3, 4, 5, 6];
   for (const step of required) {
     const confirmation = session[`step${step}Confirmed` as keyof ImageWorkflowSession];
     // confirmStep0 supports approval of the already generated composite
@@ -47,6 +48,7 @@ export function requireApprovedImageSession(session: ImageWorkflowSession | null
       throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Step ${step} 尚无当前人工确认的完整方案，不能作为业务成果导出` });
     }
   }
+  requireClassifiedStep4KbUses(session.step4UserEdit);
   // Designer uploads are stored as legacy JSON URLs, not as source-verified
   // owned-product assets. They must not be labelled as an approved handoff.
   let uploads: unknown;

@@ -21,7 +21,8 @@ import { router } from "./_core/trpc";
 import { imageWorkflowStepProcedures } from "./domains/image/routers/workflowSteps";
 
 const caller = router({ step1: imageWorkflowStepProcedures.confirmStep1,
-  step2: imageWorkflowStepProcedures.confirmStep2, step3: imageWorkflowStepProcedures.confirmStep3 }).createCaller({
+  step2: imageWorkflowStepProcedures.confirmStep2, step3: imageWorkflowStepProcedures.confirmStep3,
+  lockAplus: imageWorkflowStepProcedures.lockStep2AplusSubmodule }).createCaller({
   user: { id: 17, role: "super_admin", openId: "test", email: "test@invalid.local", name: "test",
     loginMethod: "manus", createdAt: new Date(), updatedAt: new Date(), lastSignedIn: new Date() },
   workspaceId: 7, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"],
@@ -56,5 +57,10 @@ describe("Step1–3直接重确认不能绕开下游失效链", () => {
     expect(mocks.updateImageWorkflowSession).toHaveBeenCalledWith(23,
       expect.objectContaining({ step3Confirmed: 1, step4Confirmed: 0,
         step5Confirmed: 0, step6Confirmed: 0 }));
+  });
+  it("已确认Step2不能通过子模块锁定暗中改变后续步骤的原始输入", async () => {
+    await expect(caller.lockAplus({ projectId: 51, moduleIndex: 0, submoduleIndex: 0 }))
+      .rejects.toThrow(/已整体确认.*先解锁Step2/);
+    expect(mocks.updateImageWorkflowSession).not.toHaveBeenCalled();
   });
 });

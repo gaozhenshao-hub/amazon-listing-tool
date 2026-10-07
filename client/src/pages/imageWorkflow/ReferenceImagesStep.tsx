@@ -406,12 +406,8 @@ export function Step4References({
         });
       });
     });
-    if (allKbImages.some(image => !Number.isSafeInteger(image.id) || image.id <= 0)) {
-      toast.error("部分历史知识库参考图没有资产ID，请删除后从知识库重新选择，再执行重新生成");
-      return;
-    }
-    if (allKbImages.length === 0) {
-      toast.error("请先为至少一张图添加知识库参考图");
+    if (allKbImages.length > 0) {
+      toast.error("知识库图片可能含竞品素材，请先移除这些图片；可保留研究文字，再使用本项目已上传的参考图");
       return;
     }
     // Collect composition/effect ref URLs (from first ref that has them)
@@ -481,12 +477,12 @@ export function Step4References({
       note: kbImg.note || undefined,
       position: kbImg.position || undefined,
     }));
-    if (kbImages.some(image => !Number.isSafeInteger(image.id) || image.id <= 0)) {
-      toast.error("历史知识库参考图没有资产ID，请从知识库重新选择此图的参考图");
+    if (kbImages.length > 0) {
+      toast.error("知识库图片用途尚未审核，请移除旧图片后使用本项目已上传的参考图");
       return;
     }
-    if (kbImages.length === 0) {
-      toast.error("请先为这张图添加知识库参考图");
+    if (!ref.compositionRefImageUrl && !ref.effectRefImageUrl) {
+      toast.error("请先上传本项目的构图或效果参考图");
       return;
     }
     setRegeneratingSingleIdx(idx);
@@ -558,6 +554,9 @@ export function Step4References({
         onConfirm={handleConfirm}
         onUnlock={handleUnlock}
       />
+      <p role="alert" className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        知识库图片可能包含竞品素材；在完成来源和用途审核前，仅可查看研究文字，不能选为本品参考图。已有旧引用请解锁并移除，随后可使用本项目受控上传的参考图。
+      </p>
 
       {editData?.imageReferences && !isGenerating && editData.imageReferences.map((ref: any, idx: number) => {
         const isImageLocked = Boolean(ref.isLocked);
@@ -573,8 +572,8 @@ export function Step4References({
               </CardTitle>
               {!isConfirmed && (
                 <div className="flex gap-1.5">
-                  {!isImageLocked && <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openKbPicker(idx, ref.imageType)}>
-                    <BookOpen className="w-3.5 h-3.5 mr-1" /> 从知识库选图
+                  {!isImageLocked && <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openKbPicker(idx, ref.imageType)} disabled title="来源与用途尚未审核，暂不支持作为本品制作参考">
+                    <BookOpen className="w-3.5 h-3.5 mr-1" /> 知识库选图待审核
                   </Button>}
                   {!isImageLocked && (ref.kbReferenceImages?.length > 0 || ref.compositionRefImageUrl || ref.effectRefImageUrl) && (
                     <Button
@@ -688,7 +687,7 @@ export function Step4References({
                       <>
                         <Upload className="w-6 h-6 text-blue-400 mb-1" />
                         <span className="text-xs text-blue-500">上传构图参考图</span>
-                        <span className="text-[10px] text-muted-foreground">或从知识库选择</span>
+                        <span className="text-[10px] text-muted-foreground">知识库选图暂不可用</span>
                       </>
                     )}
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRefImageUpload(idx, 'composition', f); }} disabled={!!uploadingRef} />
@@ -732,7 +731,7 @@ export function Step4References({
                       <>
                         <Upload className="w-6 h-6 text-amber-400 mb-1" />
                         <span className="text-xs text-amber-500">上传效果参考图</span>
-                        <span className="text-[10px] text-muted-foreground">或从知识库选择</span>
+                        <span className="text-[10px] text-muted-foreground">知识库选图暂不可用</span>
                       </>
                     )}
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRefImageUpload(idx, 'effect', f); }} disabled={!!uploadingRef} />

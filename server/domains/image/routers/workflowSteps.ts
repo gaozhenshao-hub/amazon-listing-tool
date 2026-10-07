@@ -326,6 +326,9 @@ export const imageWorkflowStepProcedures = {
       const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw NotFoundError("图片建议工作流不存在");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
+      if (session.step2Confirmed) {
+        throw BadRequestError("图片大纲已整体确认，请先解锁Step2并重新确认后再锁定A+子模块");
+      }
       const outline = parseStoredJson(session.step2UserEdit || session.step2AiResult) as Record<string, any> | null;
       const module = outline?.aPlusModules?.[input.moduleIndex];
       const submodule = module?.subModules?.[input.submoduleIndex];

@@ -103,7 +103,9 @@ export const imageKnowledgeExportProcedures = {
       const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       requireImageDeliverableAccess({ role: ctx.user.role, workspaceId: ctx.workspaceId, project });
-      const session = requireApprovedImageSession(await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId), "step5");
+      // A partial Step 5 PDF is still a downloadable business deliverable; it
+      // must not bypass the same final Step 6 approval as the complete export.
+      const session = requireApprovedImageSession(await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId), "complete");
 
       // Only server-approved English and preceding steps. The old Chinese
       // machine translation has no separate human-confirmation revision.

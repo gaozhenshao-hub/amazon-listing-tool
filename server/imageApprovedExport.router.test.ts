@@ -78,6 +78,22 @@ describe("图片成果下载的真实tRPC服务端边界", () => {
     await expect(caller.exportPdf({ projectId: 51 })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
   });
 
+  it("仅Step5已确认但Step6尚未确认时，旧PDF也不得绕过最终成果审批", async () => {
+    mocks.resolveSessionAccess.mockResolvedValue({ ...approvedSession(), step6Confirmed: 0 });
+    const caller = callerFactory.createCaller(ctx("super_admin"));
+    await expect(caller.getExportBundle({ projectId: 51 })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    await expect(caller.exportPdf({ projectId: 51 })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+  });
+
+  it("历史已确认Step4含未分类知识库图时，两种成果下载都拒绝", async () => {
+    mocks.resolveSessionAccess.mockResolvedValue({ ...approvedSession(),
+      step4UserEdit: json({ imageReferences: [{ imageNumber: "main", kbReferenceImages: [{ id: 77, imageUrl: "https://competitor.invalid/research.jpg" }] }] }),
+    });
+    const caller = callerFactory.createCaller(ctx("super_admin"));
+    await expect(caller.getExportBundle({ projectId: 51 })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    await expect(caller.exportPdf({ projectId: 51 })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+  });
+
   it("完整导出只返回已确认版本，旧设计师URL不可被夹带", async () => {
     mocks.getExpressionGroupsByProject.mockResolvedValueOnce([
       { expressionName: "Product context", confirmed: 1, userEdit: json({ observation: "approved research" }),

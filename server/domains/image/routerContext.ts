@@ -52,6 +52,7 @@ import {
   markBusinessManagedNodeConfirmed,
 } from "../ai_os/services/businessManagedAgent";
 import { resolveWorkflowGuidance } from "../knowledge/claimLedgerService";
+import { requireClassifiedStep4KbUses } from "./services/imageKbUsePolicy";
 export {
   IMAGE_ADVICE_TRANSLATION_PROMPT,
   STEP0_COMPETITOR_IMAGE_ANALYSIS_PROMPT,
@@ -970,6 +971,9 @@ export async function buildStep5FinalSuggestion(
     distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
   },
 ) {
+  // Historical confirmed Step 4 data may still contain competitor KB images.
+  // A readable image ID does not grant manufacturing-use permission.
+  requireClassifiedStep4KbUses(session.step4UserEdit || session.step4AiResult);
   const reportProgress = async (progress: number) => {
     await options?.onProgress?.(progress);
   };
