@@ -12,6 +12,7 @@ import {
   Type, Sparkles, Printer, ExternalLink, BookOpen,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 
 interface Chapter {
@@ -259,6 +260,7 @@ function ThemePicker({
 // ─── Main ManualEditor Component ────────────────────────────────
 export default function ManualEditor({ manual, projectId, readOnly = false }: ManualEditorProps) {
   const utils = trpc.useUtils();
+  const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
 
   // Theme state
@@ -291,7 +293,7 @@ export default function ManualEditor({ manual, projectId, readOnly = false }: Ma
 
   // Assets
   const assetsQuery = trpc.devManual.getManualAssets.useQuery({ projectId });
-  const assets = assetsQuery.data || [];
+  const assets = useMemo(() => assetsQuery.data || [], [assetsQuery.data]);
   const contentBgUrl = useMemo(() => {
     const bg = assets.find((a: any) => a.assetType === "content_bg");
     return bg?.fileUrl || "";
@@ -349,6 +351,7 @@ export default function ManualEditor({ manual, projectId, readOnly = false }: Ma
   const themeConfigMut = trpc.devManual.saveThemeConfig.useMutation({
     onSuccess: () => { utils.devManual.getManual.invalidate({ projectId }); },
   });
+  const saveThemeConfig = themeConfigMut.mutate;
 
   const analyzeRefMut = trpc.devManual.analyzeReference.useMutation({
     onSuccess: (data) => {
@@ -374,18 +377,18 @@ export default function ManualEditor({ manual, projectId, readOnly = false }: Ma
   // Handlers
   const handleThemeChange = useCallback((t: string) => {
     setThemeStyle(t);
-    themeConfigMut.mutate({ projectId, themeStyle: t as any, themeColor, fontScheme: fontScheme as any });
-  }, [projectId, themeColor, fontScheme]);
+    saveThemeConfig({ projectId, themeStyle: t as any, themeColor, fontScheme: fontScheme as any });
+  }, [projectId, themeColor, fontScheme, saveThemeConfig]);
 
   const handleColorChange = useCallback((c: string) => {
     setThemeColor(c);
-    themeConfigMut.mutate({ projectId, themeStyle: themeStyle as any, themeColor: c, fontScheme: fontScheme as any });
-  }, [projectId, themeStyle, fontScheme]);
+    saveThemeConfig({ projectId, themeStyle: themeStyle as any, themeColor: c, fontScheme: fontScheme as any });
+  }, [projectId, themeStyle, fontScheme, saveThemeConfig]);
 
   const handleFontChange = useCallback((f: string) => {
     setFontScheme(f);
-    themeConfigMut.mutate({ projectId, themeStyle: themeStyle as any, themeColor, fontScheme: f as any });
-  }, [projectId, themeStyle, themeColor]);
+    saveThemeConfig({ projectId, themeStyle: themeStyle as any, themeColor, fontScheme: f as any });
+  }, [projectId, themeStyle, themeColor, saveThemeConfig]);
 
   const startEdit = (idx: number) => {
     setEditingIdx(idx);
@@ -950,8 +953,8 @@ export default function ManualEditor({ manual, projectId, readOnly = false }: Ma
                 </div>
               </div>
 
-              {/* PDF Export */}
-              <div className="border-t pt-4">
+              {/* PDF Export: the server repeats this super_admin check. */}
+              {user?.role === "super_admin" && <div className="border-t pt-4">
                 <p className="text-xs font-medium mb-2 flex items-center gap-1.5">
                   <Printer className="h-3.5 w-3.5" />
                   PDF导出（方便打印）
@@ -977,7 +980,7 @@ export default function ManualEditor({ manual, projectId, readOnly = false }: Ma
                     下载PDF (Spanish)
                   </Button>
                 </div>
-              </div>
+              </div>}
             </CardContent>
           </Card>
 

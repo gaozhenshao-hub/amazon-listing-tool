@@ -205,34 +205,42 @@ export function Step4References({
 
   // Upload independent reference image (composition or effect)
   const handleRefImageUpload = async (idx: number, refType: 'composition' | 'effect', file: File) => {
+    if (file.size > 20 * 1024 * 1024) { toast.error("图片超过20MB，请压缩后重试"); return; }
     setUploadingRef({ idx, type: refType });
     try {
       const reader = new FileReader();
       reader.onload = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        const result = await uploadRefMutation.mutateAsync({
-          projectId,
-          imageKey: `step4-ref-${idx}-${refType}`,
-          refType,
-          imageData: base64,
-          fileName: file.name,
-        });
-        // Update editData with the uploaded image URL
-        if (editData) {
-          const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
-          const ref = { ...newData.imageReferences[idx] };
-          if (refType === 'composition') {
-            ref.compositionRefImageUrl = result.url;
-          } else {
-            ref.effectRefImageUrl = result.url;
+        try {
+          const base64 = (reader.result as string).split(',')[1];
+          const result = await uploadRefMutation.mutateAsync({
+            projectId,
+            imageKey: `step4-ref-${idx}-${refType}`,
+            refType,
+            imageData: base64,
+            fileName: file.name,
+          });
+          // Update editData with the uploaded image URL
+          if (editData) {
+            const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
+            const ref = { ...newData.imageReferences[idx] };
+            if (refType === 'composition') {
+              ref.compositionRefImageUrl = result.url;
+            } else {
+              ref.effectRefImageUrl = result.url;
+            }
+            newData.imageReferences[idx] = ref;
+            await persistStep4Draft(newData);
+            setEditData(newData);
           }
-          newData.imageReferences[idx] = ref;
-          setEditData(newData);
-          await persistStep4Draft(newData);
+          toast.success(`${refType === 'composition' ? '构图' : '效果'}参考图已上传`);
+        } catch (error: unknown) {
+          toast.error(error instanceof Error ? error.message : "上传失败，请检查文件格式或稍后重试");
+        } finally {
+          setUploadingRef(null);
         }
-        toast.success(`${refType === 'composition' ? '构图' : '效果'}参考图已上传`);
-        setUploadingRef(null);
       };
+      reader.onerror = () => { toast.error("图片读取失败，请重新选择文件"); setUploadingRef(null); };
+      reader.onabort = () => { toast.error("图片读取已取消"); setUploadingRef(null); };
       reader.readAsDataURL(file);
     } catch (err: any) {
       toast.error(err.message || "上传失败");
@@ -388,16 +396,20 @@ export function Step4References({
   const handleRegenerateAll = async () => {
     if (!editData) return;
     // Collect all KB reference images with notes across all refs
-    const allKbImages: Array<{ url: string; note?: string; position?: string }> = [];
+    const allKbImages: Array<{ id: number; note?: string; position?: string }> = [];
     (editData.imageReferences || []).forEach((ref: any) => {
       (ref.kbReferenceImages || []).forEach((kbImg: any) => {
         allKbImages.push({
-          url: kbImg.imageUrl,
+          id: Number(kbImg.id),
           note: kbImg.note || undefined,
           position: kbImg.position || undefined,
         });
       });
     });
+    if (allKbImages.some(image => !Number.isSafeInteger(image.id) || image.id <= 0)) {
+      toast.error("部分历史知识库参考图没有资产ID，请删除后从知识库重新选择，再执行重新生成");
+      return;
+    }
     if (allKbImages.length === 0) {
       toast.error("请先为至少一张图添加知识库参考图");
       return;
@@ -464,11 +476,15 @@ export function Step4References({
       toast.error("请先解锁此图，再单独重新生成");
       return;
     }
-    const kbImages: Array<{ url: string; note?: string; position?: string }> = (ref.kbReferenceImages || []).map((kbImg: any) => ({
-      url: kbImg.imageUrl,
+    const kbImages: Array<{ id: number; note?: string; position?: string }> = (ref.kbReferenceImages || []).map((kbImg: any) => ({
+      id: Number(kbImg.id),
       note: kbImg.note || undefined,
       position: kbImg.position || undefined,
     }));
+    if (kbImages.some(image => !Number.isSafeInteger(image.id) || image.id <= 0)) {
+      toast.error("历史知识库参考图没有资产ID，请从知识库重新选择此图的参考图");
+      return;
+    }
     if (kbImages.length === 0) {
       toast.error("请先为这张图添加知识库参考图");
       return;

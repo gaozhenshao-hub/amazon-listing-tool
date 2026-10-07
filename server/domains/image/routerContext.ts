@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../../_core/trpc";
 import * as db from "./repository";
 import { devDb, kbDb } from "./repository";
@@ -666,19 +667,24 @@ export async function callLLMWithRetry(systemPrompt: string, userMessage: string
 }
 
 // Helper: resolve project access for imageWorkflow based on user role
-export async function resolveProjectAccess(projectId: number, user: { id: number; role: string }) {
+export async function resolveProjectAccess(projectId: number, user: { id: number; role: string }, workspaceId: number | null | undefined) {
+  const visibleInCurrentWorkspace = (project: { workspaceId?: number | null; userId: number } | null | undefined) =>
+    Boolean(project && (project.workspaceId == null
+      ? project.userId === user.id
+      : workspaceId != null && Number(project.workspaceId) === Number(workspaceId)));
   if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
     const project = await db.getProjectByIdAdmin(projectId);
-    if (!project) throw new Error("Project not found");
+    if (!project || !visibleInCurrentWorkspace(project)) throw new TRPCError({ code: "NOT_FOUND", message: "项目不存在或无权访问" });
     return project;
   }
   const project = await db.getProjectById(projectId, user.id);
-  if (!project) throw new Error("Project not found");
+  if (!project || !visibleInCurrentWorkspace(project)) throw new TRPCError({ code: "NOT_FOUND", message: "项目不存在或无权访问" });
   return project;
 }
 
 // Helper: resolve session access - designer/admin can view any project's session
-export async function resolveSessionAccess(projectId: number, user: { id: number; role: string }) {
+export async function resolveSessionAccess(projectId: number, user: { id: number; role: string }, workspaceId: number | null | undefined) {
+  await resolveProjectAccess(projectId, user, workspaceId);
   if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
     return db.getImageWorkflowSessionByProject(projectId);
   }
@@ -689,8 +695,9 @@ export async function resolveSessionForExecution(
   projectId: number,
   user: { id: number; role: string },
   consumerId: string,
+  workspaceId: number | null | undefined,
 ) {
-  const session = await resolveSessionAccess(projectId, user);
+  const session = await resolveSessionAccess(projectId, user, workspaceId);
   if (!session) return null;
   return hydrateImageWorkflowSessionFromArtifacts(session, {
     consumerType: "business_operation",
@@ -702,8 +709,8 @@ export async function resolveSessionForExecution(
   });
 }
 
-export async function resolveSessionForDisplay(projectId: number, user: { id: number; role: string }) {
-  const session = await resolveSessionAccess(projectId, user);
+export async function resolveSessionForDisplay(projectId: number, user: { id: number; role: string }, workspaceId: number | null | undefined) {
+  const session = await resolveSessionAccess(projectId, user, workspaceId);
   if (!session) return null;
   let hydrated = await hydrateImageWorkflowSessionFromArtifacts(session, undefined, {
     onlyBusinessConfirmedSteps: true,

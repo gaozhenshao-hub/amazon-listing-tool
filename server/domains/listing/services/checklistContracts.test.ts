@@ -8,6 +8,30 @@ import {
   buildListingChecklistSkillManifest,
 } from "./listingChecklistSkillPolicy";
 import { HIGH_QUALITY_QUALITY_MODEL } from "../../ai_os/services/highQualitySkillGovernance";
+import {
+  EVALUATE_TITLE_CHECKLIST_PROMPT,
+  TITLE_GENERATION_PROMPT,
+} from "../../../prompts";
+
+function createCompleteScorecard(kind: keyof typeof LISTING_CHECKLIST_DIMENSIONS) {
+  return Object.fromEntries(
+    LISTING_CHECKLIST_DIMENSIONS[kind].map((key) => [key, {
+      pass: true,
+      notes: "Grounded evaluation",
+      reason: "The required quality signal is present.",
+      suggestion: "",
+      evidenceQuote: "Observed signal",
+    }]),
+  );
+}
+
+function promptScoreKeys(prompt: string): string[] {
+  const responseExample = prompt.slice(prompt.lastIndexOf("Respond in JSON format:"));
+  return Array.from(
+    responseExample.matchAll(/^\s{4}"([^"]+)": \{ "pass":/gm),
+    ([, key]) => key,
+  );
+}
 
 describe("Listing checklist response contracts", () => {
   it("accepts only a complete 15-dimension bullet scorecard", () => {
@@ -66,6 +90,61 @@ describe("Listing checklist response contracts", () => {
     expect(parseCompleteListingChecklist({ checkListScores }, "bullets")).toBeNull();
     checkListScores.subtitle.evidenceQuote = "No supporting evidence supplied";
     expect(parseCompleteListingChecklist({ checkListScores }, "bullets")).not.toBeNull();
+  });
+
+  it("rejects empty arrays and objects for a title scorecard", () => {
+    expect(parseCompleteListingChecklist([], "title")).toBeNull();
+    expect(parseCompleteListingChecklist({ checkListScores: [] }, "title")).toBeNull();
+    expect(parseCompleteListingChecklist({ checkListScores: {} }, "title")).toBeNull();
+  });
+
+  it("accepts a complete title scorecard with the canonical 10 keys", () => {
+    const checkListScores = createCompleteScorecard("title");
+    const result = parseCompleteListingChecklist({ checkListScores }, "title");
+
+    expect(Object.keys(result?.checkListScores || {})).toEqual([...LISTING_CHECKLIST_DIMENSIONS.title]);
+  });
+
+  it("rejects the legacy bundlePack key because it omits required noRepetition", () => {
+    const checkListScores = createCompleteScorecard("title");
+    checkListScores.bundlePack = checkListScores.noRepetition;
+    delete checkListScores.noRepetition;
+
+    expect(parseCompleteListingChecklist({ checkListScores }, "title")).toBeNull();
+  });
+
+  it("rejects a failed title dimension without both an actionable reason and suggestion", () => {
+    const checkListScores = createCompleteScorecard("title");
+    checkListScores.noRepetition = {
+      ...checkListScores.noRepetition,
+      pass: false,
+      reason: "",
+      suggestion: "Remove duplicated non-essential words from Layer 2.",
+    };
+    expect(parseCompleteListingChecklist({ checkListScores }, "title")).toBeNull();
+
+    checkListScores.noRepetition.reason = "The word 'portable' appears in both layers.";
+    checkListScores.noRepetition.suggestion = "";
+    expect(parseCompleteListingChecklist({ checkListScores }, "title")).toBeNull();
+
+    checkListScores.noRepetition.suggestion = "Remove 'portable' from Layer 2 if its meaning remains clear.";
+    expect(parseCompleteListingChecklist({ checkListScores }, "title")).not.toBeNull();
+  });
+});
+
+describe("Title checklist prompt contract", () => {
+  it.each([
+    ["evaluator", EVALUATE_TITLE_CHECKLIST_PROMPT],
+    ["generation self-check", TITLE_GENERATION_PROMPT],
+  ])("uses exactly the canonical title keys in the %s response example", (_name, prompt) => {
+    expect(promptScoreKeys(prompt)).toEqual([...LISTING_CHECKLIST_DIMENSIONS.title]);
+    expect(prompt).not.toContain('"bundlePack"');
+  });
+
+  it("evaluates a multi-pack quantity as content coverage rather than replacing noRepetition", () => {
+    expect(EVALUATE_TITLE_CHECKLIST_PROMPT).toContain("contentCoverage");
+    expect(EVALUATE_TITLE_CHECKLIST_PROMPT).toContain("multi-pack or bundle");
+    expect(EVALUATE_TITLE_CHECKLIST_PROMPT).toContain("noRepetition");
   });
 });
 

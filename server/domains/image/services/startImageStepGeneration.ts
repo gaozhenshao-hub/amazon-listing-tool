@@ -15,9 +15,9 @@ export async function startImageStepGenerationForUser(input: {
   agentRunId?: string | null;
   distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
 }) {
-  const project = await resolveProjectAccess(input.projectId, input.user);
+  const project = await resolveProjectAccess(input.projectId, input.user, input.workspaceId);
   ensureWriteAccess(project, input.user);
-  let session = await resolveSessionAccess(input.projectId, input.user);
+  let session = await resolveSessionAccess(input.projectId, input.user, input.workspaceId);
   if (!session) {
     session = await db.createImageWorkflowSession({
       projectId: input.projectId,

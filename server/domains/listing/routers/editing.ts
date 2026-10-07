@@ -834,6 +834,7 @@ ${input.optimizationNote}
           skillSlug: "listing.bullet.step.generate",
           userId: ctx.user.id,
           workspaceId: ctx.workspaceId,
+          executionPreset: "quality_first",
           context: promptContext,
           emphasis: input.optimizationNote,
           variables: {
@@ -855,7 +856,10 @@ ${input.optimizationNote}
         const issues = unchanged ? [...quality.issues, "候选与当前待优化原文相同，必须实质改写"] : quality.issues;
         if (quality.valid && !unchanged) {
           return { ...parsed, factSafety: { excludedFields: selected.excludedFields, requiresHumanReview: true },
-            characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true };
+            characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true,
+            executionAudit: { modelSlug: result.modelSlug || null,
+              fallbackCount: Number.isInteger(result.fallbackCount) ? result.fallbackCount : null,
+              skillVersion: result.skillVersion || null, executionPreset: "quality_first" as const } };
         }
         if (attempt === MAX_RETRIES) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `优化候选未通过质量门禁：${issues.join("；")}。原文未改动，请调整优化方向后重试。` });

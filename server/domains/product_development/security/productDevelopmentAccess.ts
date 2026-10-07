@@ -50,6 +50,14 @@ export async function resolveDevProjectAccess(
   return project;
 }
 
+/** System exports are restricted to super_admin and remain workspace-scoped. */
+export async function resolveDevProjectExportAccess(projectId: number, ctx: TrpcContext) {
+  if (ctx.user?.role !== "super_admin") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "仅超级管理员可导出产品开发数据" });
+  }
+  return resolveDevProjectAccess(projectId, ctx, "export");
+}
+
 export function productDevelopmentWorkspaceId(ctx: TrpcContext) {
   return workspaceIdFromContext(ctx);
 }

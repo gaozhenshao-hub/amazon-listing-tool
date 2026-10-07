@@ -164,20 +164,24 @@ export async function insertCompetitorImage(data: InsertCompetitorImageAnalysis)
   return result;
 }
 
-export async function updateCompetitorImage(id: number, data: Partial<InsertCompetitorImageAnalysis>) {
+export async function updateCompetitorImage(id: number, projectId: number, data: Partial<InsertCompetitorImageAnalysis>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [existing] = await db.select({ projectId: competitorImageAnalyses.projectId }).from(competitorImageAnalyses).where(eq(competitorImageAnalyses.id, id));
-  await db.update(competitorImageAnalyses).set(data).where(eq(competitorImageAnalyses.id, id));
-  await captureImageProject(data.projectId ?? existing?.projectId);
+  const [result] = await db.update(competitorImageAnalyses).set(data)
+    .where(and(eq(competitorImageAnalyses.id, id), eq(competitorImageAnalyses.projectId, projectId)));
+  if (result.affectedRows === 0) return false;
+  await captureImageProject(projectId);
+  return true;
 }
 
-export async function deleteCompetitorImage(id: number) {
+export async function deleteCompetitorImage(id: number, projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [existing] = await db.select({ projectId: competitorImageAnalyses.projectId }).from(competitorImageAnalyses).where(eq(competitorImageAnalyses.id, id));
-  await db.delete(competitorImageAnalyses).where(eq(competitorImageAnalyses.id, id));
-  await captureImageProject(existing?.projectId);
+  const [result] = await db.delete(competitorImageAnalyses)
+    .where(and(eq(competitorImageAnalyses.id, id), eq(competitorImageAnalyses.projectId, projectId)));
+  if (result.affectedRows === 0) return false;
+  await captureImageProject(projectId);
+  return true;
 }
 
 export async function deleteCompetitorImagesByProject(projectId: number) {

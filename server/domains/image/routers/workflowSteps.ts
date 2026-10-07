@@ -16,6 +16,7 @@ import {
 import { startImageStepGenerationForUser } from "../services/startImageStepGeneration";
 import { registerImageWorkflowAplusSubmoduleArtifact, registerImageWorkflowStepArtifact } from "../../ai_os/services/businessArtifactRegistry";
 import { buildStep4ConfirmedSnapshot } from "../step4Snapshot";
+import { requireStep4DraftAssets } from "./references";
 import { preserveLockedAplusSubmodules } from "../step2AplusLockedSubmodules";
 import { rebuildStep4DisplaySnapshot } from "./sessions";
 
@@ -151,7 +152,7 @@ export const imageWorkflowStepProcedures = {
       step: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
     }))
     .query(async ({ ctx, input }) => {
-      await resolveProjectAccess(input.projectId, ctx.user);
+      await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       return getLatestImageStepGenerationJob(ctx.user.id, input.projectId, input.step);
     }),
 
@@ -161,7 +162,7 @@ export const imageWorkflowStepProcedures = {
       step: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw NotFoundError("图片建议工作流不存在");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       return cancelImageStepGenerationJob({
@@ -191,15 +192,22 @@ export const imageWorkflowStepProcedures = {
       userEdit: z.string(), // JSON string of edited selling points
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
+      let edited: unknown;
+      try { edited = JSON.parse(input.userEdit); } catch { throw BadRequestError("卖点梳理内容不是有效JSON"); }
+      let previous: unknown;
+      try { previous = JSON.parse(session.step1UserEdit || "null"); } catch { previous = null; }
+      const changed = !session.step1Confirmed || JSON.stringify(edited) !== JSON.stringify(previous);
 
       await db.updateImageWorkflowSession(session.id, {
         step1UserEdit: input.userEdit,
         step1Confirmed: 1,
+        ...(changed ? { step2Confirmed: 0, step3Confirmed: 0, step4Confirmed: 0, step5Confirmed: 0, step6Confirmed: 0, status: "in_progress" as const } : {}),
         currentStep: 2,
       });
+      if (changed) await db.unlockAllStep4ImageVersions(session.id);
       void syncStepConfirmToAgent({
         agentRunId: session.agentRunId,
         stepNumber: 1,
@@ -207,7 +215,7 @@ export const imageWorkflowStepProcedures = {
         userId: ctx.user.id,
         workspaceId: ctx.workspaceId ?? null,
         aiResult: session.step1AiResult ? JSON.parse(session.step1AiResult) : null,
-        userEdit: JSON.parse(input.userEdit),
+        userEdit: edited,
       });
       return { success: true };
     }),
@@ -232,7 +240,7 @@ export const imageWorkflowStepProcedures = {
       userEdit: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw NotFoundError("图片建议工作流不存在");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       if (session.step2Confirmed) {
@@ -261,7 +269,7 @@ export const imageWorkflowStepProcedures = {
       userEdit: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw NotFoundError("图片建议工作流不存在");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
 
@@ -281,11 +289,16 @@ export const imageWorkflowStepProcedures = {
         });
       }
 
+      let previous: unknown;
+      try { previous = JSON.parse(session.step2UserEdit || "null"); } catch { previous = null; }
+      const changed = !session.step2Confirmed || JSON.stringify(normalized) !== JSON.stringify(previous);
       await db.updateImageWorkflowSession(session.id, {
         step2UserEdit: JSON.stringify(normalized),
         step2Confirmed: 1,
+        ...(changed ? { step3Confirmed: 0, step4Confirmed: 0, step5Confirmed: 0, step6Confirmed: 0, status: "in_progress" as const } : {}),
         currentStep: 3,
       });
+      if (changed) await db.unlockAllStep4ImageVersions(session.id);
       // 发布当前确认的大纲版本，避免Agent资产仍显示为空或读取较早快照。
       await registerImageWorkflowStepArtifact(session.id, 2, "user_edit");
       void syncStepConfirmToAgent({
@@ -310,7 +323,7 @@ export const imageWorkflowStepProcedures = {
       submoduleIndex: z.number().int().min(0),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw NotFoundError("图片建议工作流不存在");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       const outline = parseStoredJson(session.step2UserEdit || session.step2AiResult) as Record<string, any> | null;
@@ -349,11 +362,11 @@ export const imageWorkflowStepProcedures = {
       moduleType: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
-      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step2.aplus.optimize:${input.projectId}`);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step2.aplus.optimize:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       if (session.step2Confirmed) {
         throw BadRequestError("图片大纲已锁定，请先点击“解锁编辑”后再调整A+模块样式");
@@ -412,7 +425,7 @@ export const imageWorkflowStepProcedures = {
   unlockStep2: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
 
@@ -474,15 +487,22 @@ export const imageWorkflowStepProcedures = {
       userEdit: z.string(), // JSON: selected style IDs and any modifications
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
+      let edited: unknown;
+      try { edited = JSON.parse(input.userEdit); } catch { throw BadRequestError("风格选择内容不是有效JSON"); }
+      let previous: unknown;
+      try { previous = JSON.parse(session.step3UserEdit || "null"); } catch { previous = null; }
+      const changed = !session.step3Confirmed || JSON.stringify(edited) !== JSON.stringify(previous);
 
       await db.updateImageWorkflowSession(session.id, {
         step3UserEdit: input.userEdit,
         step3Confirmed: 1,
+        ...(changed ? { step4Confirmed: 0, step5Confirmed: 0, step6Confirmed: 0, status: "in_progress" as const } : {}),
         currentStep: 4,
       });
+      if (changed) await db.unlockAllStep4ImageVersions(session.id);
       void syncStepConfirmToAgent({
         agentRunId: session.agentRunId,
         stepNumber: 3,
@@ -490,7 +510,7 @@ export const imageWorkflowStepProcedures = {
         userId: ctx.user.id,
         workspaceId: ctx.workspaceId ?? null,
         aiResult: session.step3AiResult ? JSON.parse(session.step3AiResult) : null,
-        userEdit: JSON.parse(input.userEdit),
+        userEdit: edited,
       });
       return { success: true };
     }),
@@ -500,11 +520,11 @@ export const imageWorkflowStepProcedures = {
   startStep4Generation: protectedProcedure
     .input(z.object({ projectId: z.number(), distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
-      const resolvedSession = await resolveSessionForExecution(input.projectId, ctx.user, `image.step4.generate:${input.projectId}`);
+      const resolvedSession = await resolveSessionForExecution(input.projectId, ctx.user, `image.step4.generate:${input.projectId}`, ctx.workspaceId);
       if (!resolvedSession) throw new Error("No workflow session found");
       let session = resolvedSession;
       if (!session.step3Confirmed) {
@@ -537,7 +557,7 @@ export const imageWorkflowStepProcedures = {
   getStep4Run: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      await resolveProjectAccess(input.projectId, ctx.user);
+      await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       return getLatestStep4ReferenceJob(ctx.user.id, input.projectId);
     }),
 
@@ -545,11 +565,11 @@ export const imageWorkflowStepProcedures = {
   generateStep4: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
-      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step4.generate:${input.projectId}`);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step4.generate:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       if (!session.step3Confirmed) {
         throw new TRPCError({
@@ -580,7 +600,7 @@ export const imageWorkflowStepProcedures = {
       userEdit: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       const requestedSnapshot = parseStoredJson(input.userEdit) as Record<string, any> | null;
@@ -591,12 +611,15 @@ export const imageWorkflowStepProcedures = {
         parseStep4ConfirmedVersion(version.content),
       ]));
       const completeSnapshot = buildStep4ConfirmedSnapshot(currentSnapshot, versionByIndex);
+      await requireStep4DraftAssets(completeSnapshot, ctx, input.projectId);
       const completeUserEdit = JSON.stringify(completeSnapshot);
 
       await db.updateImageWorkflowSession(session.id, {
         step4AiResult: completeUserEdit,
         step4UserEdit: completeUserEdit,
         step4Confirmed: 1,
+        step5Confirmed: 0,
+        step6Confirmed: 0,
         currentStep: 5,
       });
       // Step4 锁定时必须等待完整快照成为当前正式 Artifact。

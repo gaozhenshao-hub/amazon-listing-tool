@@ -21,6 +21,7 @@ import {
 import type { inferRouterInputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -403,6 +404,7 @@ export default function PanoramaTable({
   projectId: number;
   onAddProduct: () => void;
 }) {
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [editingCell, setEditingCell] = useState<{ productId: number; field: string } | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -1037,11 +1039,11 @@ export default function PanoramaTable({
                   <CheckCircle2 className="h-3.5 w-3.5" />确认锁定
                 </Button>
               )}
-              <Button size="sm" variant="outline" className="gap-1.5 text-xs"
+              {user?.role === "super_admin" && <Button size="sm" variant="outline" className="gap-1.5 text-xs"
                 onClick={() => exportMutation.mutate({ projectId })}
                 disabled={exportMutation.isPending || !hasData}>
                 <Download className="h-3.5 w-3.5" />下载CSV
-              </Button>
+              </Button>}
             </div>
           </div>
           <p className="text-xs text-muted-foreground mt-1">

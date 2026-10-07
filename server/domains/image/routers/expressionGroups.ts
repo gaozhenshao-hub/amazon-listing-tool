@@ -2,6 +2,7 @@ import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
 import { ensureImageWorkflowAgentRun } from "../imageWorkflowAgentBridge";
 import { startImageStepGenerationJob } from "../services/stepGenerationJob";
+import { requireImageAssetReceipt } from "../services/imageAssetReceipt";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -63,7 +64,7 @@ export const imageExpressionGroupProcedures = {
   getExpressionGroups: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
       return db.getExpressionGroupsByProject(input.projectId);
     }),
@@ -75,7 +76,7 @@ export const imageExpressionGroupProcedures = {
       expressionName: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
@@ -98,7 +99,7 @@ export const imageExpressionGroupProcedures = {
       userEdit: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
@@ -118,7 +119,7 @@ export const imageExpressionGroupProcedures = {
       groupId: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
@@ -137,7 +138,7 @@ export const imageExpressionGroupProcedures = {
       imageUrl: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
@@ -146,12 +147,14 @@ export const imageExpressionGroupProcedures = {
       // Enforce max 5 images per group
       const count = await db.countExpressionGroupImages(input.groupId, input.projectId);
       if (count >= 5) throw new Error("每个表达方向最多上传5张参考图");
+      const receipt = requireImageAssetReceipt({ reference: input.imageUrl,
+        kind: "expression-group", projectId: input.projectId, userId: ctx.user.id });
       const result = await db.insertExpressionGroupImage({
         groupId: input.groupId,
         projectId: input.projectId,
         userId: ctx.user.id,
         competitorName: input.competitorName,
-        imageUrl: input.imageUrl,
+        imageUrl: receipt.url,
         sortOrder: count,
       });
       return { id: result.insertId };
@@ -164,7 +167,7 @@ export const imageExpressionGroupProcedures = {
       imageId: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
       const image = await db.getExpressionGroupImageByProject(input.imageId, input.projectId);
@@ -180,14 +183,14 @@ export const imageExpressionGroupProcedures = {
       groupId: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       ensureProjectInCurrentWorkspace(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
       const groups = await db.getExpressionGroupsByProject(input.projectId);
       const group = groups.find(g => g.id === input.groupId);
       if (!group) throw new Error("Group not found");
       if (group.images.length === 0) throw new Error("请先上传图片");
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       const agentRunId = session.agentRunId || await ensureImageWorkflowAgentRun({
         projectId: input.projectId,

@@ -4,6 +4,7 @@ import { protectedProcedure } from "../domains/product_development/security/prod
 import {
   productDevelopmentWorkspaceId,
   recordProductDevelopmentAudit,
+  resolveDevProjectExportAccess,
 } from "../domains/product_development/security/productDevelopmentAccess";
 import { getDb } from "../repositories/dbClient";
 import { devProducts, devPanoramaStatus, devPanoramaVersions, devProjectTagCategories, devProjectTagItems, devProductTags } from "../../drizzle/schema";
@@ -591,6 +592,7 @@ export const devPanoramaRouter = router({
   exportCsv: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      await resolveDevProjectExportAccess(input.projectId, ctx);
       const db = await getDb();
       if (!db) throw new Error("Database not available");
 

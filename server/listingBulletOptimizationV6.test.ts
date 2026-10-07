@@ -54,7 +54,7 @@ describe("卖点优化v6实际路由（无模型/数据库外呼）", () => {
     const result = await caller.optimizeSingleBullet(input);
     expect(mocks.runSkill).toHaveBeenCalledOnce();
     expect(mocks.runSkill.mock.calls[0][0]).toMatchObject({
-      skillSlug: "listing.bullet.step.generate", userId: 7, workspaceId: 12,
+      skillSlug: "listing.bullet.step.generate", userId: 7, workspaceId: 12, executionPreset: "quality_first",
       variables: { sellingPoint: input.sellingPoint, currentBullet: input.currentBullet, previousBullets: input.previousBullets },
     });
     expect(mocks.validate.mock.calls[0][1].previousBullets).toEqual(input.previousBullets);

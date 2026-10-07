@@ -437,11 +437,15 @@ async function callListingSkill(
   skillSlug: string,
   promptContext: string,
   variables: Record<string, unknown>,
+  onExecution?: (audit: { modelSlug: string | null; fallbackCount: number | null; skillVersion: string | null; executionPreset: string }) => void,
 ) {
   const result = await runEmperorSkill<any>({
     skillSlug,
     userId: job.userId,
     workspaceId: job.workspaceId,
+    // A manifest's qualityModelPolicy is only active for this explicit preset.
+    // Other Listing skills keep their existing route until separately reviewed.
+    ...(skillSlug === "listing.bullet.step.generate" ? { executionPreset: "quality_first" as const } : {}),
     context: promptContext,
     emphasis: input.emphasis,
     variables: {
@@ -452,6 +456,12 @@ async function callListingSkill(
     signal: context.signal,
     maxModelAttempts: 3,
     validate: parseSkillJson,
+  });
+  onExecution?.({
+    modelSlug: result.modelSlug || null,
+    fallbackCount: Number.isInteger(result.fallbackCount) ? result.fallbackCount : null,
+    skillVersion: result.skillVersion || null,
+    executionPreset: "quality_first",
   });
   return result.parsed;
 }
@@ -510,7 +520,9 @@ async function runOperation(
     variables.existingTitle = input.existingTitle;
   }
 
-  let parsed = await callListingSkill(job, handlerContext, input, config.skillSlug, promptContext, variables);
+  let executionAudit: { modelSlug: string | null; fallbackCount: number | null; skillVersion: string | null; executionPreset: string } | undefined;
+  const captureExecution = operation === "singleBullet" ? (audit: NonNullable<typeof executionAudit>) => { executionAudit = audit; } : undefined;
+  let parsed = await callListingSkill(job, handlerContext, input, config.skillSlug, promptContext, variables, captureExecution);
   if ((operation === "sellingPoints" || operation === "bullets") && built.rawExamples.length
       && excludeRawExamplesFromFactTree(parsed, built.rawExamples, "output").excludedFields.length) {
     throw new Error("生成结果引用了原始产品属性表的示例值；此候选不可确认，请核实真实事实");
@@ -527,13 +539,14 @@ async function runOperation(
         config.skillSlug,
         `${promptContext}\n\n上次逐条卖点质量门禁未通过：${quality.issues.join("；")}。请仅依据输入事实完整重写当前选中卖点的一条英文JSON Bullet，且不要解释。`,
         { ...variables, previousOutput: bullet, qualityIssues: quality.issues },
+        captureExecution,
       );
       bullet = parsed;
       quality = validateSingleBulletQuality(bullet, input);
     }
     if (!quality.valid) throw new Error(`单条五点描述质量验证未通过：${quality.issues.join("；")}`);
     return { ...bullet, factSafety: { excludedFields: selected!.excludedFields, requiresHumanReview: true },
-      characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true };
+      characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true, executionAudit };
   }
   if (operation === "title") {
     let validation = validateTitles(parsed);

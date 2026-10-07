@@ -52,6 +52,12 @@ describe("卖点精雕v6前端人审和自检状态", () => {
     expect(skillLibrary).toContain("手动单条试写（不驱动分步骤工作流）");
     expect(skillLibrary).toContain("分步骤卖点精雕工作流的实际生成 Skill");
   });
+  it("显示实际模型和回退次数，旧记录不臆测Astra且人工修改有标识", () => {
+    expect(source).toContain("本候选来源模型：${generatedBullets[idx].executionAudit.modelSlug}");
+    expect(source).toContain('generatedBullets[idx].executionAudit.fallbackCount ?? "未记录"');
+    expect(source).toContain("旧数据不推断为 GPT-6 Astra");
+    expect(source).toContain("manuallyEdited: true");
+  });
   it("确认核心前要求清除示例事实，重新编辑时旧草案仍可查看但不能确认", () => {
     expect(source).toContain("const safety = sanitizeSelectedSellingPoint(sellingPointCores?.[idx])");
     expect(source).toContain("!safety.canGenerate || safety.excludedFields.length > 0");

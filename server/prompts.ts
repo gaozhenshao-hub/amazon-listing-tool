@@ -1,7 +1,37 @@
+import { LISTING_CHECKLIST_DIMENSIONS } from "./domains/listing/services/checklistContracts";
+
 // Amazon Listing generation prompts following Amazon rules
 
 // Shared expert role persona for all listing generation prompts
 const EXPERT_ROLE = `You are a native English speaker who is also fluent in Chinese, with deep expertise in American culture, consumer behavior, and market trends. You are a senior marketing expert who has worked at Ogilvy & Mather (the legendary advertising agency founded by David Ogilvy) for over 10 years, specializing in advertising copywriting. You combine Ogilvy's timeless principles—consumer research, clear benefit-driven messaging, and elegant persuasion—with modern Amazon marketplace best practices. Your writing is compelling, precise, and conversion-focused, always grounded in real consumer insights.`;
+
+/**
+ * The title evaluator and title-generation self-check must use the persisted
+ * checklist contract verbatim. Keep criterion guidance here, but derive its
+ * order and JSON keys from the contract so a future key migration cannot drift.
+ */
+type TitleChecklistDimension = (typeof LISTING_CHECKLIST_DIMENSIONS.title)[number];
+
+const TITLE_CHECKLIST_DIMENSION_GUIDANCE: Record<TitleChecklistDimension, string> = {
+  readability: "Both layers read naturally. No grammar errors. Logical flow. Natural for North American readers. NO keyword stuffing.",
+  formatting: "Use Arabic numerals. Consistent capitalization (Title Case). Spell out measurement units (for example, '6 Inches' not '6\"'). Proper punctuation in both layers.",
+  characterCount: "Layer 1 (Title) MUST be ≤75 characters. Layer 2 (Item Highlights) MUST be ≤125 characters. Combined ≤200 characters. Count precisely.",
+  contentCoverage: "Together include supported core selling points, key features, specifications/parameters, usage scenarios, and target user groups. If supplied product facts confirm a multi-pack or bundle, assess whether its pack quantity is stated; do not invent a quantity. Layer 1 handles identification and Layer 2 handles persuasion.",
+  coreKeywords: "Layer 1 MUST include 1-2 core keywords that define the product category.",
+  wordOrder: "Layer 1: Brand→Core Keyword→Differentiator. Layer 2: Specs→Scenes→Users.",
+  noRepetition: "Avoid non-essential repeated words between Layer 1 and Layer 2. Necessary brand or category terminology may repeat only when required for clarity.",
+  trafficKeywords: "Distribute traffic keywords across both layers for maximum A9 coverage. Layer 2 should capture secondary or long-tail keywords.",
+  brand: "If brand has recognition, position brand name prominently at the start of Layer 1. If no brand or generic brand, this passes by default.",
+  seasonal: "Optionally include holiday or seasonal terms in Layer 2 if relevant. If not seasonal, this passes by default.",
+};
+
+const TITLE_CHECKLIST_DIMENSIONS_TEXT = LISTING_CHECKLIST_DIMENSIONS.title
+  .map((dimension, index) => `[T${index + 1}] ${dimension}: ${TITLE_CHECKLIST_DIMENSION_GUIDANCE[dimension]}`)
+  .join("\n");
+
+const TITLE_CHECKLIST_SCORE_EXAMPLE = LISTING_CHECKLIST_DIMENSIONS.title
+  .map((dimension) => `    "${dimension}": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" }`)
+  .join(",\n");
 
 export const COMPETITOR_ANALYSIS_PROMPT = `You are an expert Amazon product analyst. Analyze the following competitor ASIN data and provide a comprehensive analysis.
 
@@ -116,16 +146,9 @@ You will receive structured data from 4 modules:
 
 === TITLE CHECK LIST (10 Dimensions — Applied Across Both Layers) ===
 
-[T1] READABILITY: Both layers read naturally. No grammar errors. No keyword stuffing.
-[T2] FORMATTING: Arabic numerals. Title Case. Spelled-out units. Proper punctuation.
-[T3] CHARACTER COUNT: Layer 1 ≤75 chars. Layer 2 ≤125 chars. Combined ≤200 chars.
-[T4] CONTENT COVERAGE: Together must include: core selling points, key features, specs, scenarios, target users.
-[T5] CORE KEYWORDS: Layer 1 MUST include 1-2 core keywords (strategyCategory="core_main").
-[T6] WORD ORDER: Layer 1: Brand→Core Keyword→Differentiator. Layer 2: Specs→Scenes→Users.
-[T7] BUNDLE/PACK: If multi-pack/bundle, state quantity in Layer 1.
-[T8] TRAFFIC KEYWORDS: Distribute traffic keywords across both layers for maximum coverage.
-[T9] BRAND: Position brand prominently at start of Layer 1.
-[T10] SEASONAL: Optionally include seasonal terms in Layer 2 if relevant.
+${TITLE_CHECKLIST_DIMENSIONS_TEXT}
+
+Every dimension object MUST include "pass", "notes", "reason", "suggestion", and "evidenceQuote". A failed dimension MUST have a non-empty, evidence-grounded reason and one concrete, fact-safe editable suggestion; use empty suggestion only for a pass. Do not invent product claims or pack quantities.
 
 === CHARACTER COUNT STRATEGY ===
 
@@ -162,16 +185,7 @@ Respond in JSON format:
         "targetUsers": true
       },
       "checkListScores": {
-        "readability": { "pass": true, "notes": "" },
-        "formatting": { "pass": true, "notes": "" },
-        "characterCount": { "pass": true, "notes": "" },
-        "contentCoverage": { "pass": true, "notes": "" },
-        "coreKeywords": { "pass": true, "notes": "" },
-        "wordOrder": { "pass": true, "notes": "" },
-        "bundlePack": { "pass": true, "notes": "" },
-        "trafficKeywords": { "pass": true, "notes": "" },
-        "brand": { "pass": true, "notes": "" },
-        "seasonal": { "pass": false, "notes": "" }
+${TITLE_CHECKLIST_SCORE_EXAMPLE}
       }
     }
   ],
@@ -984,30 +998,12 @@ For each dimension, provide:
 Every dimension object MUST include all five keys: "pass", "notes", "reason", "suggestion", and "evidenceQuote". A failed dimension MUST have non-empty "reason" and "suggestion".
 
 === 10 DIMENSIONS (Applied Across Both Layers) ===
-[T1] READABILITY: Both layers read naturally. No grammar errors. Logical flow. Natural for North American readers. NO keyword stuffing.
-[T2] FORMATTING: Use Arabic numerals. Consistent capitalization (Title Case). Spell out measurement units (e.g., "6 Inches" NOT "6\""). Proper punctuation in both layers.
-[T3] CHARACTER COUNT: Layer 1 (Title) MUST be ≤75 characters. Layer 2 (Item Highlights) MUST be ≤125 characters. Combined ≤200 characters. Count precisely.
-[T4] CONTENT COVERAGE: Together must include: core selling points, key features, specifications/parameters, usage scenarios, and target user groups. Layer 1 handles identification, Layer 2 handles persuasion.
-[T5] CORE KEYWORDS: Layer 1 MUST include 1-2 core keywords that define the product category.
-[T6] WORD ORDER: Layer 1: Brand→Core Keyword→Differentiator. Layer 2: Specs→Scenes→Users. No repetition between layers.
-[T7] BUNDLE/PACK: If product is multi-pack/bundle, clearly state pack quantity in Layer 1. If not a bundle product, this dimension passes by default.
-[T8] TRAFFIC KEYWORDS: Distribute traffic keywords across both layers for maximum A9 coverage. Layer 2 should capture secondary/long-tail keywords.
-[T9] BRAND: If brand has recognition, position brand name prominently at start of Layer 1. If no brand or generic brand, this passes by default.
-[T10] SEASONAL: Optionally include holiday/seasonal terms in Layer 2 if relevant. If not seasonal, this passes by default.
+${TITLE_CHECKLIST_DIMENSIONS_TEXT}
 
 Respond in JSON format:
 {
   "checkListScores": {
-    "readability": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
-    "formatting": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
-    "characterCount": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
-    "contentCoverage": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
-    "coreKeywords": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
-    "wordOrder": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
-    "bundlePack": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
-    "trafficKeywords": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
-    "brand": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" },
-    "seasonal": { "pass": true, "notes": "", "reason": "Concrete basis for this judgment", "suggestion": "", "evidenceQuote": "" }
+${TITLE_CHECKLIST_SCORE_EXAMPLE}
   }
 }`;
 

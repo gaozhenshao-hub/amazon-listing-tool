@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import {
   Edit2, Save, X, Copy, Tags, Tag, FileUp, FileDown, Eye, Link2, ArrowRight, AlertTriangle,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { WorkflowStepProgress } from "@/components/workflow/WorkflowStepProgress";
@@ -108,7 +109,7 @@ export default function DevProjectDetail() {
     profit: "利润计算",
   };
 
-  const isModuleLocked = (mod: string) => moduleLocks?.[mod]?.isLocked ?? false;
+  const isModuleLocked = useCallback((mod: string) => moduleLocks?.[mod]?.isLocked ?? false, [moduleLocks]);
 
   const handleToggleModuleLock = (mod: string) => {
     const currentlyLocked = isModuleLocked(mod);
@@ -164,7 +165,7 @@ export default function DevProjectDetail() {
     confirmedAnalysisCount,
     score,
     profileConfirmedCount,
-    moduleLocks,
+    isModuleLocked,
     bomItems?.length,
     manualChapters.length,
     testItems.length,
@@ -183,7 +184,7 @@ export default function DevProjectDetail() {
       if (isModuleLocked(stepId)) ids.add(stepId);
     }
     return ids;
-  }, [confirmedDataCount, tagStatus?.allConfirmed, taggingStatus?.confirmed, panoramaStatus?.confirmed, confirmedAnalysisCount, isPhase2, moduleLocks]);
+  }, [confirmedDataCount, tagStatus?.allConfirmed, taggingStatus?.confirmed, panoramaStatus?.confirmed, confirmedAnalysisCount, isPhase2, isModuleLocked]);
   const devWorkflowDisabledStepIds = useMemo(() => {
     if (isPhase2) return [];
     return DEV_PRODUCT_WORKFLOW_STEPS.filter((step) => DEV_PHASE2_STEP_IDS.has(String(step.id))).map((step) => step.id);
@@ -669,6 +670,7 @@ export default function DevProjectDetail() {
 /* ─── Project Tag Manager Component ──────────────────── */
 /* ═══════════════════════════════════════════════════════ */
 function ProjectTagManager({ projectId }: { projectId: number }) {
+  const { user } = useAuth();
   const utils = trpc.useUtils();
   const [editingCatId, setEditingCatId] = useState<number | null>(null);
   const [editCatName, setEditCatName] = useState("");
@@ -820,7 +822,7 @@ function ProjectTagManager({ projectId }: { projectId: number }) {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={async () => {
+          {user?.role === "super_admin" && <Button size="sm" variant="outline" onClick={async () => {
             try {
               const result = await utils.devProjectTags.exportTagsCsv.fetch({ projectId });
               const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8;' });
@@ -838,7 +840,7 @@ function ProjectTagManager({ projectId }: { projectId: number }) {
             }
           }} className="gap-1.5">
             <FileDown className="h-3.5 w-3.5" />导出CSV
-          </Button>
+          </Button>}
           <Button size="sm" variant="outline" onClick={() => setShowImportDialog(true)} className="gap-1.5">
             <FileUp className="h-3.5 w-3.5" />批量导入
           </Button>

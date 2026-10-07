@@ -73,11 +73,11 @@ export const imageStep5Procedures = {
   startStep5Generation: protectedProcedure
     .input(z.object({ projectId: z.number(), distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
-      const resolvedSession = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.generate:${input.projectId}`);
+      const resolvedSession = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.generate:${input.projectId}`, ctx.workspaceId);
       if (!resolvedSession) throw new Error("No workflow session found");
       let session = resolvedSession;
       if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
@@ -259,8 +259,8 @@ export const imageStep5Procedures = {
       runId: z.string().optional(),
     }))
     .query(async ({ ctx, input }) => {
-      await resolveProjectAccess(input.projectId, ctx.user);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       const job = session.step5RunId
         ? await getAiJobRun(session.step5RunId).catch(() => null)
@@ -309,7 +309,7 @@ export const imageStep5Procedures = {
   cancelStep5Generation: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       if (!session.step5RunId || !isActiveStep5Run(session.step5RunStatus)) {
@@ -351,11 +351,11 @@ export const imageStep5Procedures = {
   generateStep5: protectedProcedure
     .input(z.object({ projectId: z.number(), distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
-      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.generate-sync:${input.projectId}`);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.generate-sync:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
 
@@ -411,7 +411,7 @@ export const imageStep5Procedures = {
       userEdit: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
 
@@ -440,6 +440,9 @@ export const imageStep5Procedures = {
       await db.updateImageWorkflowSession(session.id, {
         step5UserEdit: JSON.stringify(parsed),
         step5Confirmed: 1,
+        // A previously approved prompt pack was derived from a different
+        // Step 5 revision and must be reviewed again before a full export.
+        step6Confirmed: 0,
         status: "completed",
       });
       void syncStepConfirmToAgent({
@@ -459,12 +462,13 @@ export const imageStep5Procedures = {
   unlockStep5: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
 
       await db.updateImageWorkflowSession(session.id, {
         step5Confirmed: 0,
+        step6Confirmed: 0,
         currentStep: 5,
         status: "in_progress",
       });

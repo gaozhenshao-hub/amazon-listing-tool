@@ -366,8 +366,7 @@ export default function GeneratePage() {
         toast.info(`卖点 ${idx + 1} 在生成期间已修改，后台结果未覆盖当前内容`);
         continue;
       }
-      const initialBullets = latestBulletsRef.current[idx] && bulletFingerprint(latestBulletsRef.current[idx]) === bulletFingerprint(job.output)
-        ? latestBulletsRef.current : { ...latestBulletsRef.current, [idx]: job.output };
+      const initialBullets = { ...latestBulletsRef.current, [idx]: job.output };
       latestBulletsRef.current = initialBullets;
       setGeneratedBullets(initialBullets);
       toast.success(`卖点 ${idx + 1} 生成完成`);
@@ -694,7 +693,7 @@ export default function GeneratePage() {
         toast.info("卖点核心或内容已更改，旧优化候选已丢弃；请按最新内容重新优化");
         return;
       }
-      const next = { ...optimized, optimizationNote: note, checkListScores: undefined, aiSemanticRelations: undefined };
+      const next = { ...optimized, optimizationNote: note, manuallyEdited: false, checkListScores: undefined, aiSemanticRelations: undefined };
       setBulletCandidates(prev => ({ ...prev, [idx]: [...(prev[idx] || (current ? [current] : [])), next] }));
       replaceBulletDraft(idx, next);
       setConfirmedBullets(prev => ({ ...prev, [idx]: false }));
@@ -719,6 +718,7 @@ export default function GeneratePage() {
       keywordsUsed: [],
       distinctFromPrevious: undefined,
       qualityAudit: undefined,
+      manuallyEdited: true,
       checkListScores: undefined,
       aiSemanticRelations: undefined,
       staleSource: !!latestBulletsRef.current[idx]?.staleSource,
@@ -1998,6 +1998,11 @@ export default function GeneratePage() {
                                       max={280}
                                     />
                                   </div>
+                                  <p className="mt-1 text-[11px] text-muted-foreground">
+                                    {generatedBullets[idx].executionAudit?.modelSlug
+                                      ? `本候选来源模型：${generatedBullets[idx].executionAudit.modelSlug} · ${generatedBullets[idx].executionAudit.executionPreset === "quality_first" ? "质量优先" : "标准路由"} · 回退 ${generatedBullets[idx].executionAudit.fallbackCount ?? "未记录"} 次${generatedBullets[idx].manuallyEdited ? " · 内容已人工修改，需重新自检" : ""}`
+                                      : "本候选未记录实际模型；旧数据不推断为 GPT-6 Astra。"}
+                                  </p>
                                   {generatedBullets[idx].fabeBreakdown && (
                                     <div className="grid grid-cols-2 gap-1 mt-2">
                                       {Object.entries(generatedBullets[idx].fabeBreakdown).map(([key, val]) => (

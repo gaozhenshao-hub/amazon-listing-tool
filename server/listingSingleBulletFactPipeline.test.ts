@@ -142,9 +142,12 @@ describe("G1 v7事实保护实际Job Handler（所有外部依赖mock）", () =>
     expect(mocks.runSkill).not.toHaveBeenCalled();
   });
   it("逐条输入只保留确认核心和产品身份，不把分析/竞品资料混入Skill上下文", async () => {
-    await runListingGenerationJob(makeJob({ operation: "singleBullet", sellingPoint: core }), handler);
+    mocks.runSkill.mockResolvedValueOnce({ parsed: bullet, modelSlug: "synthetic/test-model", fallbackCount: 1, skillVersion: "7" });
+    const result = await runListingGenerationJob(makeJob({ operation: "singleBullet", sellingPoint: core }), handler);
     const call = mocks.runSkill.mock.calls[0][0];
     expect(call.skillSlug).toBe("listing.bullet.step.generate");
+    expect(call.executionPreset).toBe("quality_first");
+    expect(result.executionAudit).toMatchObject({ modelSlug: "synthetic/test-model", fallbackCount: 1, skillVersion: "7" });
     expect(call.variables.sellingPoint).toMatchObject(core);
     expect(call.variables.enrichedData).toBeUndefined();
     expect(call.variables.analyses).toBeUndefined();

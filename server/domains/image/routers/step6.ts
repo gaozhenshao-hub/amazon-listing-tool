@@ -26,9 +26,9 @@ export const imageStep6Procedures = {
   generateStep6Prompts: protectedProcedure
     .input(z.object({ projectId: z.number().int().positive(), distillationBinding: bindingSchema.optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step6.prompt:${input.projectId}`);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step6.prompt:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       if (!session.step5Confirmed) throw new Error("请先人工确认Step5图片建议，再生成Step6提示词");
       const workspaceId = Number(ctx.workspaceId || project.workspaceId || 0);
@@ -58,7 +58,7 @@ export const imageStep6Procedures = {
   saveStep6Draft: protectedProcedure
     .input(z.object({ projectId: z.number().int().positive(), userEdit: z.string().min(2).max(200_000) }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       const draft = parsePromptDraft(JSON.parse(input.userEdit));
@@ -69,9 +69,12 @@ export const imageStep6Procedures = {
   confirmStep6: protectedProcedure
     .input(z.object({ projectId: z.number().int().positive(), userEdit: z.string().min(2).max(200_000) }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
+      if (!session.step5Confirmed || !session.step5UserEdit) {
+        throw new Error("请先确认当前Step5图片建议，再确认Step6提示词");
+      }
       const draft = parsePromptDraft(JSON.parse(input.userEdit));
       await db.updateImageWorkflowSession(session.id, { step6UserEdit: JSON.stringify(draft), step6Confirmed: 1, currentStep: 6, status: "completed" });
       return { success: true };
@@ -80,7 +83,7 @@ export const imageStep6Procedures = {
   unlockStep6: protectedProcedure
     .input(z.object({ projectId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       await db.updateImageWorkflowSession(session.id, { step6Confirmed: 0, currentStep: 6, status: "in_progress" });

@@ -354,6 +354,16 @@ export async function getReadableImageWithAnalysis(imageId: number, userId: numb
   }).from(kbImages).where(imageInReadableSetCondition(imageId, userId, workspaceId));
   return rows[0] ?? null;
 }
+/** Resolve an image URL only when its parent set is owned or explicitly shared in this workspace. */
+export async function getReadableImage(imageId: number, userId: number, workspaceId: number) {
+  const _d = await db();
+  const rows = await _d.select({
+    id: kbImages.id,
+    imageUrl: kbImages.imageUrl,
+    imagePosition: kbImages.imagePosition,
+  }).from(kbImages).where(imageInReadableSetCondition(imageId, userId, workspaceId)).limit(1);
+  return rows[0] ?? null;
+}
 export async function createImage(data: InsertKbImage) {
   const _d = await db();
   const [result] = await _d.insert(kbImages).values(data);

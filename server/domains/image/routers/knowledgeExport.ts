@@ -1,5 +1,6 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
+import { requireApprovedImageSession, requireImageDeliverableAccess } from "../services/imageApprovedExport";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -96,19 +97,23 @@ export const imageKnowledgeExportProcedures = {
   exportPdf: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.export.pdf:${input.projectId}`);
-      if (!session) throw new Error("No workflow session found");
-      ensureWriteAccess({ userId: session.userId }, ctx.user);
-      if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
+      if (ctx.user.role !== "super_admin") {
+        requireImageDeliverableAccess({ role: ctx.user.role, workspaceId: ctx.workspaceId, project: {} });
+      }
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
+      if (!project) throw new Error("Project not found");
+      requireImageDeliverableAccess({ role: ctx.user.role, workspaceId: ctx.workspaceId, project });
+      const session = requireApprovedImageSession(await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId), "step5");
 
-      // Return the data for client-side PDF generation
+      // Only server-approved English and preceding steps. The old Chinese
+      // machine translation has no separate human-confirmation revision.
       return {
-        en: session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult,
-        cn: session.step5AiResultCn || session.step5OptimizedResultCn,
-        sellingPoints: session.step1UserEdit || session.step1AiResult,
-        outline: session.step2UserEdit || session.step2AiResult,
-        style: session.step3UserEdit || session.step3AiResult,
-        references: session.step4UserEdit || session.step4AiResult,
+        en: session.step5UserEdit,
+        cn: null,
+        sellingPoints: session.step1UserEdit,
+        outline: session.step2UserEdit,
+        style: session.step3UserEdit,
+        references: session.step4UserEdit,
       };
     }),
 };

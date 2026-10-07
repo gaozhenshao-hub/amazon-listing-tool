@@ -26,9 +26,9 @@ function projectWorkspaceId(project: any, contextWorkspaceId?: number | null) {
 }
 
 async function access(input: { projectId: number }, ctx: any, write = false) {
-  const project = await resolveProjectAccess(input.projectId, ctx.user);
+  const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
   if (write) ensureWriteAccess(project, ctx.user);
-  const session = await resolveSessionAccess(input.projectId, ctx.user);
+  const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
   if (!session) throw new Error("图片工作流会话不存在");
   return { project, session, workspaceId: projectWorkspaceId(project, ctx.workspaceId) };
 }

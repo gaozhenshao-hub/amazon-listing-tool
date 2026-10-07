@@ -13,6 +13,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { AiJobHistoryPanel, BusinessArtifactVersionPicker, WorkflowShell } from "@/components/workflow";
 import { IMAGE_SUGGESTION_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import {
   AlertTriangle,
   Check,
@@ -29,7 +30,6 @@ import {
   Plus,
   Trash2,
   GripVertical,
-  Download,
   Languages,
   Paintbrush,
   Camera,
@@ -66,7 +66,7 @@ import { Step2ImageOutline } from "./imageWorkflow/ImageOutlineStep";
 import { Step3StyleConfirm } from "./imageWorkflow/StyleConfirmationStep";
 import { Step4References } from "./imageWorkflow/ReferenceImagesStep";
 import { OUTLINE_APLUS_CATEGORIES, OUTLINE_APLUS_MODULES, findOutlineAplusModule, normalizeAplusModuleStyle } from "./imageWorkflow/aplusModules";
-import { buildFullPlanContent, buildPdfContent, safeJsonParse } from "./imageWorkflow/exportContent";
+import { buildFullPlanContent, safeJsonParse } from "./imageWorkflow/exportContent";
 import { resolveImageWorkflowProjectId } from "./imageWorkflow/projectIdResolution";
 import { buildStep5SegmentStates, getStep5FailurePresentation, getStep5SegmentPresentation, isActiveStep5RunStatus, resolveCurrentStep5RunId } from "./imageWorkflow/step5RunState";
 import { updateStep5AplusStrategy } from "./imageWorkflow/step5AplusStrategy";
@@ -1046,46 +1046,6 @@ function Step5FinalSuggestions({
   };
   const handleDragEnd = () => setDraggedIdx(null);
 
-  // HTML export
-  const handleExportHtml = () => {
-    toast.info("正在准备导出...");
-    try {
-      const content = buildPdfContent(applySectionModuleStyles(enData), cnData);
-      const blob = new Blob([content], { type: "text/html;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "image-suggestions.html";
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("已导出HTML文件");
-    } catch {
-      toast.error("导出失败");
-    }
-  };
-
-  // PDF export via print
-  const handleExportPdf = () => {
-    toast.info("正在生成PDF...");
-    try {
-      const content = buildPdfContent(applySectionModuleStyles(enData), cnData);
-      const printWindow = window.open("", "_blank");
-      if (!printWindow) {
-        toast.error("无法打开打印窗口，请允许弹出窗口");
-        return;
-      }
-      printWindow.document.write(content);
-      printWindow.document.close();
-      // Add print-specific styles and auto-trigger print
-      setTimeout(() => {
-        printWindow.print();
-      }, 500);
-      toast.success("已打开打印对话框，选择“保存为PDF”即可导出");
-    } catch {
-      toast.error("导出失败");
-    }
-  };
-
   const isConfirmed = !!session?.step5Confirmed;
 
   // Designer upload state
@@ -1155,12 +1115,6 @@ function Step5FinalSuggestions({
               <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isGenerating}>
                 <RotateCcw className="w-4 h-4 mr-2" /> 重新生成
               </Button>
-              <Button variant="outline" size="sm" onClick={handleExportHtml}>
-                <Download className="w-4 h-4 mr-2" /> 导出HTML
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleExportPdf}>
-                <FileText className="w-4 h-4 mr-2" /> 导出PDF
-              </Button>
               <Button size="sm" onClick={handleConfirm} disabled={confirmMutation.isPending || isGenerating}>
                 {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
                 确认锁定
@@ -1192,12 +1146,6 @@ function Step5FinalSuggestions({
                     {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RotateCcw className="w-4 h-4 mr-2" />}
                     {isGenerating ? (runStatus === "queued" ? "排队中..." : "生成中...") : "重新生成"}
                   </Button>
-                  <Button variant="outline" onClick={handleExportHtml}>
-                    <Download className="w-4 h-4 mr-2" /> 导出HTML
-                  </Button>
-                  <Button variant="outline" onClick={handleExportPdf}>
-                    <FileText className="w-4 h-4 mr-2" /> 导出PDF
-                  </Button>
                   <Button onClick={handleConfirm} disabled={confirmMutation.isPending || isGenerating}>
                     {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
                     确认锁定
@@ -1206,12 +1154,7 @@ function Step5FinalSuggestions({
               )}
               {isConfirmed && (
                 <>
-                  <Button variant="outline" onClick={handleExportHtml}>
-                    <Download className="w-4 h-4 mr-2" /> 导出HTML
-                  </Button>
-                  <Button variant="outline" onClick={handleExportPdf}>
-                    <FileText className="w-4 h-4 mr-2" /> 导出PDF
-                  </Button>
+                  <span className="text-xs text-muted-foreground">完整成果须确认 Step 6 后由超级管理员导出；当前内容可在线审阅。</span>
                   <div className="flex gap-2 items-center">
                     <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                       <Lock className="w-3 h-3 mr-1" /> 已锁定
@@ -1732,6 +1675,7 @@ function Step6PromptPack({ projectId, session, onConfirm }: { projectId: number;
 // ══════════════════════════════════════════════════════════════════
 export default function ImageWorkflowPage() {
   const { selectedProjectId, setSelectedProjectId } = useProject();
+  const { user } = useAuth();
   const { canEdit } = usePermissions();
   const canEditImageWorkflow = canEdit("listing", "listing_image_workflow");
   const [currentStep, setCurrentStep] = useState(1);
@@ -1822,9 +1766,14 @@ export default function ImageWorkflowPage() {
 
   const handleExportFullPlan = async () => {
     if (!projectId || !session) return;
-    toast.info("正在汇总六步内容与参考图片...");
+    if (user?.role !== "super_admin" || !session.step6Confirmed) {
+      toast.error("仅超级管理员可导出全部人工确认的成果；请先完成 Step 0–6 确认");
+      return;
+    }
+    toast.info("正在核验竞品研究与六个制作阶段的确认版本...");
     try {
       const result = await exportBundleQuery.refetch();
+      if (result.error) throw result.error;
       const bundle = result.data;
       if (!bundle?.session) throw new Error("完整方案数据获取失败");
       const content = buildFullPlanContent(bundle.session, undefined, undefined, bundle);
@@ -1832,12 +1781,12 @@ export default function ImageWorkflowPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `图片设计完整方案-Step0-6-${new Date().toISOString().slice(0, 10)}.html`;
+      a.download = `图片设计确认方案-Step0-6-${new Date().toISOString().slice(0, 10)}.html`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success("已导出六步完整方案，可在浏览器中打印为 PDF");
-    } catch (error: any) {
-      toast.error(error?.message || "导出失败");
+      toast.success("已导出研究＋六阶段的确认文字方案；未分类图片和设计师附件不包含在内，可在浏览器打印为PDF");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "导出失败，请检查确认状态与素材来源");
     }
   };
 
@@ -1885,10 +1834,10 @@ export default function ImageWorkflowPage() {
       headerActions={
         <>
           <ProjectSelector />
-          {session && session.step5Confirmed && (
+          {user?.role === "super_admin" && session?.step6Confirmed && (
             <Button variant="outline" size="sm" onClick={handleExportFullPlan} disabled={exportBundleQuery.isFetching}>
               {exportBundleQuery.isFetching ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <FileText className="w-3 h-3 mr-1" />}
-              导出六步完整方案
+              导出已确认文字方案（研究＋六阶段）
             </Button>
           )}
           {canEditImageWorkflow && session && (

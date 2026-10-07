@@ -3,6 +3,8 @@ import type { Step5RunStatus } from "../routerContext";
 import { syncStepConfirmToAgent } from "../imageWorkflowAgentBridge";
 import { requireConfirmedPrimaryGallery } from "../competitorGalleryService";
 import { getConfirmedCompositeContext, requireConfirmedCompositeForSelections } from "../expressionLinkageService";
+import { validateImageBytes } from "../services/validateImageBytes";
+import { TRPCError } from "@trpc/server";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -54,9 +56,9 @@ export const imageCompetitorProcedures = {
   getStep0Data: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      await resolveProjectAccess(input.projectId, ctx.user);
+      await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       const images = await db.getCompetitorImagesByProject(input.projectId);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       return {
         images,
         step0AiResult: session?.step0AiResult || null,
@@ -71,20 +73,22 @@ export const imageCompetitorProcedures = {
     .input(z.object({
       projectId: z.number(),
       competitorName: z.string(),
-      imageData: z.string(), // base64 encoded
+      imageData: z.string().max(28_000_000), // base64 encoded; actual bytes checked below
       fileName: z.string(),
       sortOrder: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
-      // Upload to S3
+      // Legacy tRPC upload remains research-only, with the same byte and
+      // decoder policy as the controlled multipart endpoint.
       const buffer = Buffer.from(input.imageData, "base64");
-      const ext = input.fileName.split(".").pop() || "png";
-      const key = `image-workflow/${input.projectId}/step0-competitor/${input.competitorName}-${Date.now()}.${ext}`;
-      const { url } = await storagePut(key, buffer, `image/${ext}`);
+      const { extension: ext, mimeType } = await validateImageBytes(buffer);
+      const safeName = input.competitorName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, "-").slice(0, 80);
+      const key = `image-workflow/${input.projectId}/step0-competitor/${safeName}-${Date.now()}.${ext}`;
+      const { url } = await storagePut(key, buffer, mimeType);
 
       const record = await db.insertCompetitorImage({
         projectId: input.projectId,
@@ -105,7 +109,7 @@ export const imageCompetitorProcedures = {
       imageId: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await resolveProjectAccess(input.projectId, ctx.user);
+      await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       throw new Error("旧版单图同步分析已停用，请在 Step 0 使用后台分析并生成总结");
     }),
 
@@ -114,16 +118,18 @@ export const imageCompetitorProcedures = {
   updateCompetitorImageAnalysis: protectedProcedure
     .input(z.object({
       projectId: z.number(),
-      imageId: z.number(),
+      imageId: z.number().int().positive(),
       userEdit: z.string(),
       imageType: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await resolveProjectAccess(input.projectId, ctx.user);
-      await db.updateCompetitorImage(input.imageId, {
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
+      ensureWriteAccess(project, ctx.user);
+      const updated = await db.updateCompetitorImage(input.imageId, input.projectId, {
         userEdit: input.userEdit,
         imageType: input.imageType || null,
       });
+      if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "竞品图片不存在于当前项目" });
       return { success: true };
     }),
 
@@ -132,11 +138,13 @@ export const imageCompetitorProcedures = {
   deleteCompetitorImage: protectedProcedure
     .input(z.object({
       projectId: z.number(),
-      imageId: z.number(),
+      imageId: z.number().int().positive(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await resolveProjectAccess(input.projectId, ctx.user);
-      await db.deleteCompetitorImage(input.imageId);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
+      ensureWriteAccess(project, ctx.user);
+      const deleted = await db.deleteCompetitorImage(input.imageId, input.projectId);
+      if (!deleted) throw new TRPCError({ code: "NOT_FOUND", message: "竞品图片不存在于当前项目" });
       return { success: true };
     }),
 
@@ -148,9 +156,9 @@ export const imageCompetitorProcedures = {
       userEdit: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       const workspaceId = Number(project.workspaceId || ctx.workspaceId || 0);
       await requireConfirmedPrimaryGallery(workspaceId, input.projectId);
@@ -163,13 +171,18 @@ export const imageCompetitorProcedures = {
       } catch {
         throw new Error("竞品分析总结格式无效，请重新生成");
       }
+      const previousSummary = session.step0UserEdit || session.step0AiResult || compositeContext;
+      let unchanged = false;
+      try { unchanged = Boolean(session.step0Confirmed && previousSummary && JSON.stringify(JSON.parse(previousSummary)) === JSON.stringify(summaryResult)); } catch { /* invalid historical data must be re-reviewed */ }
 
       await db.updateImageWorkflowSession(session.id, {
         step0AiResult: session.step0AiResult || compositeContext,
         step0UserEdit: input.userEdit || null,
         step0Confirmed: 1,
+        ...(!unchanged ? { step1Confirmed: 0, step2Confirmed: 0, step3Confirmed: 0, step4Confirmed: 0, step5Confirmed: 0, step6Confirmed: 0, status: "in_progress" as const } : {}),
         currentStep: 1,
       });
+      if (!unchanged) await db.unlockAllStep4ImageVersions(session.id);
       // Sync to Agent DAG (best-effort)
       void syncStepConfirmToAgent({
         agentRunId: session.agentRunId,

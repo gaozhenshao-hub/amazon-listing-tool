@@ -7,8 +7,10 @@ import { Router, Request, Response } from "express";
 import multer from "multer";
 import { parse as parseCookieHeader } from "cookie";
 import { storagePut } from "./storage";
-import { getUserById, getProjectById, getProjectByIdAdmin, insertCompetitorImage, countExpressionGroupImages } from "./repositories";
+import { getUserById, getProjectById, getProjectByIdAdmin, getExpressionGroupByProject, insertCompetitorImage, countExpressionGroupImages } from "./repositories";
 import { sdk } from "./_core/sdk";
+import { createImageAssetReceipt } from "./domains/image/services/imageAssetReceipt";
+import { InvalidImageError, validateImageBytes } from "./domains/image/services/validateImageBytes";
 
 // Store file in memory (max 20MB per file)
 const upload = multer({
@@ -18,8 +20,17 @@ const upload = multer({
 
 export const imageUploadRouter = Router();
 
+function sendUploadError(res: Response, error: unknown, route: string) {
+  if (error instanceof InvalidImageError) {
+    res.status(400).json({ error: error.message });
+    return;
+  }
+  console.error(`[imageUpload] ${route} error:`, error);
+  res.status(500).json({ error: "上传失败，请稍后重试" });
+}
+
 // Authenticate via session cookie (mirrors context.ts logic)
-async function getAuthUser(req: Request): Promise<{ id: number; role: string } | null> {
+async function getAuthUser(req: Request): Promise<{ id: number; role: string; defaultWorkspaceId?: number | null } | null> {
   try {
     const cookies = req.headers.cookie
       ? new Map(Object.entries(parseCookieHeader(req.headers.cookie)))
@@ -36,11 +47,21 @@ async function getAuthUser(req: Request): Promise<{ id: number; role: string } |
       return null;
     } else {
       const user = await sdk.authenticateRequest(req);
-      return user || null;
+      return user && !user.isCron && user.status === "active" ? user : null;
     }
   } catch {
     return null;
   }
+}
+
+async function getUploadProject(user: { id: number; role: string; defaultWorkspaceId?: number | null }, projectId: number) {
+  const project = user.role === "admin" || user.role === "super_admin"
+    ? await getProjectByIdAdmin(projectId)
+    : await getProjectById(projectId, user.id);
+  // Multipart uploads do not pass through tRPC workspace middleware. Read the
+  // authenticated user's current workspace, never a client-supplied field.
+  if (!user.defaultWorkspaceId || !project || Number(project.workspaceId) !== Number(user.defaultWorkspaceId)) return null;
+  return project;
 }
 
 /**
@@ -77,23 +98,16 @@ imageUploadRouter.post(
     }
 
     try {
-      // Verify project access (admin can access all, others only their own)
-      let project: any = null;
-      if ((user as any).role === "admin") {
-        project = await getProjectByIdAdmin(projectId);
-      } else {
-        project = await getProjectById(projectId, user.id);
-      }
+      const project = await getUploadProject(user, projectId);
       if (!project) {
         res.status(404).json({ error: "项目不存在或无权限" });
         return;
       }
 
       // Upload to S3 directly from buffer (no base64 round-trip)
-      const ext = (file.originalname.split(".").pop() || "jpg").toLowerCase();
+      const { extension: ext, mimeType: contentType } = await validateImageBytes(file.buffer);
       const safeName = competitorName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, "-");
       const key = `image-workflow/${projectId}/step0-competitor/${safeName}-${Date.now()}.${ext}`;
-      const contentType = file.mimetype || `image/${ext}`;
       const { url } = await storagePut(key, file.buffer, contentType);
 
       // Insert DB record
@@ -106,9 +120,8 @@ imageUploadRouter.post(
       });
 
       res.json({ id: record.insertId, url, competitorName });
-    } catch (err: any) {
-      console.error("[imageUpload] competitor-image error:", err);
-      res.status(500).json({ error: err.message || "上传失败" });
+    } catch (err: unknown) {
+      sendUploadError(res, err, "competitor-image");
     }
   }
 );
@@ -147,26 +160,20 @@ imageUploadRouter.post(
     }
 
     try {
-      let project: any = null;
-      if ((user as any).role === "admin") {
-        project = await getProjectByIdAdmin(projectId);
-      } else {
-        project = await getProjectById(projectId, user.id);
-      }
+      const project = await getUploadProject(user, projectId);
       if (!project) {
         res.status(404).json({ error: "项目不存在或无权限" });
         return;
       }
 
-      const ext = (file.originalname.split(".").pop() || "jpg").toLowerCase();
+      const { extension: ext, mimeType: contentType } = await validateImageBytes(file.buffer);
       const key = `image-workflow/${projectId}/step4-ref/${refType}-${imageIndex}-${Date.now()}.${ext}`;
-      const contentType = file.mimetype || `image/${ext}`;
       const { url } = await storagePut(key, file.buffer, contentType);
+      const receipt = createImageAssetReceipt({ url, key, kind: "step4-ref", projectId, userId: user.id });
 
-      res.json({ url });
-    } catch (err: any) {
-      console.error("[imageUpload] ref-image error:", err);
-      res.status(500).json({ error: err.message || "上传失败" });
+      res.json({ url: receipt.url });
+    } catch (err: unknown) {
+      sendUploadError(res, err, "ref-image");
     }
   }
 );
@@ -206,15 +213,13 @@ imageUploadRouter.post(
     }
 
     try {
-      // Verify project access
-      let project: any = null;
-      if ((user as any).role === "admin") {
-        project = await getProjectByIdAdmin(projectId);
-      } else {
-        project = await getProjectById(projectId, user.id);
-      }
+      const project = await getUploadProject(user, projectId);
       if (!project) {
         res.status(404).json({ error: "项目不存在或无权限" });
+        return;
+      }
+      if (!await getExpressionGroupByProject(groupId, projectId)) {
+        res.status(404).json({ error: "表达方式组不存在或不属于该项目" });
         return;
       }
 
@@ -226,16 +231,15 @@ imageUploadRouter.post(
       }
 
       // Upload to S3
-      const ext = (file.originalname.split(".").pop() || "jpg").toLowerCase();
+      const { extension: ext, mimeType: contentType } = await validateImageBytes(file.buffer);
       const safeName = (competitorName || "img").replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, "-");
       const key = `image-workflow/${projectId}/step0-expression/${groupId}-${safeName}-${Date.now()}.${ext}`;
-      const contentType = file.mimetype || `image/${ext}`;
       const { url } = await storagePut(key, file.buffer, contentType);
+      const receipt = createImageAssetReceipt({ url, key, kind: "expression-group", projectId, userId: user.id });
 
-      res.json({ url, competitorName });
-    } catch (err: any) {
-      console.error("[imageUpload] expression-group-image error:", err);
-      res.status(500).json({ error: err.message || "上传失败" });
+      res.json({ url: receipt.url, competitorName });
+    } catch (err: unknown) {
+      sendUploadError(res, err, "expression-group-image");
     }
   }
 );
@@ -257,20 +261,19 @@ imageUploadRouter.post(
       const imageNumber = (req.body.imageNumber || "unknown").trim();
       if (!projectId) { res.status(400).json({ error: "projectId required" }); return; }
 
-      // Verify project access
-      const project = await getProjectByIdAdmin(projectId);
+      // Mirror the other upload routes: only administrators may cross project ownership.
+      const project = await getUploadProject(user, projectId);
       if (!project) { res.status(404).json({ error: "Project not found" }); return; }
 
       // Upload to S3
-      const ext = (file.originalname.split(".").pop() || "jpg").toLowerCase();
+      const { extension: ext, mimeType: contentType } = await validateImageBytes(file.buffer);
       const safeNum = imageNumber.replace(/[^a-zA-Z0-9_-]/g, "-");
       const key = `image-workflow/${projectId}/step5-designer/${safeNum}-${Date.now()}.${ext}`;
-      const contentType = file.mimetype || `image/${ext}`;
       const { url } = await storagePut(key, file.buffer, contentType);
-      res.json({ url, imageNumber });
-    } catch (err: any) {
-      console.error("[imageUpload] designer-image error:", err);
-      res.status(500).json({ error: err.message || "上传失败" });
+      const receipt = createImageAssetReceipt({ url, key, kind: "designer", projectId, userId: user.id });
+      res.json({ url: receipt.url, imageNumber });
+    } catch (err: unknown) {
+      sendUploadError(res, err, "designer-image");
     }
   }
 );

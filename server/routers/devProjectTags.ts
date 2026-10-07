@@ -5,7 +5,7 @@ import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGate
 import { getDb } from "../repositories/dbClient";
 import { devProjectTagCategories, devProjectTagItems, devProducts } from "../../drizzle/schema";
 import { eq, and, asc } from "drizzle-orm";
-import { productDevelopmentWorkspaceId } from "../domains/product_development/security/productDevelopmentAccess";
+import { productDevelopmentWorkspaceId, resolveDevProjectExportAccess } from "../domains/product_development/security/productDevelopmentAccess";
 
 async function ensureDb() {
   const d = await getDb();
@@ -826,6 +826,7 @@ ${JSON.stringify(productContext, null, 2)}
   exportTagsCsv: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
+      await resolveDevProjectExportAccess(input.projectId, ctx);
       const db = await ensureDb();
       const categories = await db.select().from(devProjectTagCategories)
         .where(eq(devProjectTagCategories.projectId, input.projectId))

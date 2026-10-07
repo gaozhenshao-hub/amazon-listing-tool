@@ -4,6 +4,8 @@ import * as step4Snapshot from "../step4Snapshot";
 import { getLatestStep4ReferenceJob } from "../services/step4ReferenceJob";
 import { clearStep4ReferenceLocks } from "../step4ReferenceLockState";
 import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
+import { createImageAssetReceipt, requireImageAssetReceipt } from "../services/imageAssetReceipt";
+import { validateImageBytes } from "../services/validateImageBytes";
 
 const {
   compactStep4ReferenceForStorage,
@@ -53,6 +55,46 @@ const {
   storagePut,
   z,
 } = shared;
+
+type Step4KbImage = { id: number; note?: string; position?: string };
+
+async function resolveReadableKbImages(images: Step4KbImage[], ctx: any) {
+  const workspaceId = Number(ctx.workspaceId || 0);
+  if (workspaceId <= 0) throw new Error("当前工作空间不可用，无法验证知识库图片");
+  return Promise.all(images.map(async (image) => {
+    const readable = await kbDb.getReadableImage(image.id, ctx.user.id, workspaceId);
+    if (!readable) throw new Error("知识库图片不存在、不可访问或不属于当前工作空间");
+    return { url: readable.imageUrl, note: image.note, position: image.position };
+  }));
+}
+
+export async function requireStep4DraftAssets(snapshot: Record<string, any>, ctx: any, projectId: number) {
+  const references = snapshot?.imageReferences;
+  if (!Array.isArray(references)) throw new Error("Step4 草稿缺少图片参考方案");
+  for (const reference of references) {
+    if (!reference || typeof reference !== "object") continue;
+    const verifyNestedUrls = (value: unknown): void => {
+      if (!value || typeof value !== "object") return;
+      if (Array.isArray(value)) { value.forEach(verifyNestedUrls); return; }
+      for (const [key, candidate] of Object.entries(value)) {
+        if (/^(?:kbReferenceImages)$/i.test(key)) continue; // Authoritative KB IDs validated below.
+        if (/(?:url|src|uri)$/i.test(key) && typeof candidate === "string" && candidate.trim()) {
+          requireImageAssetReceipt({ reference: candidate, kind: "step4-ref", projectId, userId: ctx.user.id });
+        } else verifyNestedUrls(candidate);
+      }
+    };
+    verifyNestedUrls(reference);
+    const kbImages = Array.isArray(reference.kbReferenceImages) ? reference.kbReferenceImages : [];
+    if (!kbImages.length) continue;
+    const readable = await resolveReadableKbImages(kbImages.map((image: any) => ({
+      id: Number(image?.id), note: image?.note, position: image?.position,
+    })), ctx);
+    reference.kbReferenceImages = kbImages.map((image: any, index: number) => ({
+      ...image,
+      imageUrl: readable[index].url,
+    }));
+  }
+}
 
 const distillationBindingSchema = z.object({
   ledgerKey: z.string().min(1).max(80).nullable().optional(),
@@ -119,15 +161,18 @@ export const imageReferenceProcedures = {
   saveStep4Draft: protectedProcedure
     .input(z.object({ projectId: z.number(), userEdit: z.string().min(2) }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       const draft = parseStoredJson(input.userEdit) as Record<string, any> | null;
       if (!Array.isArray(draft?.imageReferences)) throw new Error("Step4 草稿缺少图片参考方案");
+      await requireStep4DraftAssets(draft, ctx, input.projectId);
 
       await db.updateImageWorkflowSession(session.id, {
         step4UserEdit: JSON.stringify(compactStep4SnapshotForStorage(draft)),
         step4Confirmed: 0,
+        step5Confirmed: 0,
+        step6Confirmed: 0,
         currentStep: 4,
         status: "in_progress",
       });
@@ -137,11 +182,13 @@ export const imageReferenceProcedures = {
   confirmStep4ImageVersion: protectedProcedure
     .input(z.object({ projectId: z.number(), imageIndex: z.number().int().min(0), content: z.string().min(2) }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       const reference = parseStoredJson(input.content) as Record<string, any> | null;
       if (!reference) throw new Error("单图确认内容无效");
+      await requireStep4DraftAssets({ imageReferences: [reference] }, ctx, input.projectId);
+      await db.updateImageWorkflowSession(session.id, { step4Confirmed: 0, step5Confirmed: 0, step6Confirmed: 0 });
       const version = await db.confirmStep4ImageVersion({ sessionId: session.id, projectId: input.projectId, userId: ctx.user.id, imageIndex: input.imageIndex, imageKey: `step4-ref-${input.imageIndex}`, content: JSON.stringify(compactStep4ReferenceForStorage(reference)) });
       return { success: true, version };
     }),
@@ -149,10 +196,11 @@ export const imageReferenceProcedures = {
   unlockStep4ImageVersion: protectedProcedure
     .input(z.object({ projectId: z.number(), imageIndex: z.number().int().min(0) }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       await db.unlockStep4ImageVersion(session.id, input.imageIndex);
+      await db.updateImageWorkflowSession(session.id, { step4Confirmed: 0, step5Confirmed: 0, step6Confirmed: 0 });
       return { success: true };
     }),
 
@@ -160,7 +208,7 @@ export const imageReferenceProcedures = {
   unlockStep4ForEditing: protectedProcedure
     .input(z.object({ projectId: z.number(), userEdit: z.string().min(2).optional() }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       const visibleSnapshot = input.userEdit ? parseStoredJson(input.userEdit) as Record<string, any> | null : null;
@@ -181,6 +229,8 @@ export const imageReferenceProcedures = {
       await db.updateImageWorkflowSession(session.id, {
         step4UserEdit: userEdit,
         step4Confirmed: 0,
+        step5Confirmed: 0,
+        step6Confirmed: 0,
         currentStep: 4,
         status: "in_progress",
       });
@@ -192,32 +242,33 @@ export const imageReferenceProcedures = {
   uploadStep4RefImage: protectedProcedure
     .input(z.object({
       projectId: z.number(),
-      imageKey: z.string(), // e.g. "mainImage", "secondary-2", "aplus-1"
+      imageKey: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/), // e.g. "mainImage", "secondary-2"
       refType: z.enum(["composition", "effect"]),
-      imageData: z.string(), // base64 encoded image data
-      fileName: z.string(),
+      imageData: z.string().min(24).max(28 * 1024 * 1024), // <=20MB decoded image
+      fileName: z.string().min(1).max(256),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
 
       // Upload to S3
       const buffer = Buffer.from(input.imageData, "base64");
-      const ext = input.fileName.split(".").pop() || "png";
+      const { extension: ext, mimeType } = await validateImageBytes(buffer);
       const key = `image-workflow/${input.projectId}/step4-refs/${input.refType}-${input.imageKey}-${Date.now()}.${ext}`;
-      const { url } = await storagePut(key, buffer, `image/${ext}`);
+      const { url } = await storagePut(key, buffer, mimeType);
+      const asset = createImageAssetReceipt({ url, key, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id });
 
       // Update the refs JSON in DB
       const field = input.refType === "composition" ? "step4CompositionRefs" : "step4EffectRefs";
       const existingRefs = session[field] ? JSON.parse(session[field] as string) : {};
-      existingRefs[input.imageKey] = url;
+      existingRefs[input.imageKey] = asset.url;
 
       await db.updateImageWorkflowSession(session.id, {
         [field]: JSON.stringify(existingRefs),
       });
 
-      return { url, imageKey: input.imageKey, refType: input.refType };
+      return { url: asset.url, imageKey: input.imageKey, refType: input.refType };
     }),
 
 
@@ -233,12 +284,18 @@ export const imageReferenceProcedures = {
       distillationBinding: distillationBindingSchema.optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step4.refs.optimize:${input.projectId}`);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step4.refs.optimize:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       const guidanceText = await selectedGuidanceText(input, ctx, project);
+      const compositionRefUrl = input.compositionRefUrl
+        ? requireImageAssetReceipt({ reference: input.compositionRefUrl, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id }).url
+        : undefined;
+      const effectRefUrl = input.effectRefUrl
+        ? requireImageAssetReceipt({ reference: input.effectRefUrl, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id }).url
+        : undefined;
 
       // Build context with reference images
       const messages: any[] = [
@@ -251,17 +308,17 @@ export const imageReferenceProcedures = {
         text: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n\n--- 当前图片参考方案 ---\n${session.step4AiResult}${guidanceText}\n\n目标图片: ${input.imageKey}\n\n请根据上传的参考图重新优化该图的构图参考和效果参考方案。`,
       });
 
-      if (input.compositionRefUrl) {
+      if (compositionRefUrl) {
         userContent.push({
           type: "image_url",
-          image_url: { url: input.compositionRefUrl, detail: "high" },
+          image_url: { url: compositionRefUrl, detail: "high" },
         });
         userContent.push({ type: "text", text: `[上面是构图参考图${input.compositionRefNote?.trim() ? `，用户备注：${input.compositionRefNote.trim()}` : ""}]` });
       }
-      if (input.effectRefUrl) {
+      if (effectRefUrl) {
         userContent.push({
           type: "image_url",
-          image_url: { url: input.effectRefUrl, detail: "high" },
+          image_url: { url: effectRefUrl, detail: "high" },
         });
         userContent.push({ type: "text", text: `[上面是效果参考图${input.effectRefNote?.trim() ? `，用户备注：${input.effectRefNote.trim()}` : ""}]` });
       }
@@ -305,6 +362,8 @@ export const imageReferenceProcedures = {
         step4AiResult: JSON.stringify(updatedResult),
         step4UserEdit: JSON.stringify(updatedResult),
         step4Confirmed: 0,
+        step5Confirmed: 0,
+        step6Confirmed: 0,
       });
       return merged;
     }),
@@ -315,7 +374,7 @@ export const imageReferenceProcedures = {
     .input(z.object({
       projectId: z.number(),
       kbImages: z.array(z.object({
-        url: z.string(),
+        id: z.number().int().positive(),
         note: z.string().optional(),
         position: z.string().optional(),
       })),
@@ -326,12 +385,19 @@ export const imageReferenceProcedures = {
       effectRefNote: z.string().max(1_000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.references.regenerate-all:${input.projectId}`);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.references.regenerate-all:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       const guidanceText = await selectedGuidanceText(input, ctx, project);
+      const kbImages = await resolveReadableKbImages(input.kbImages, ctx);
+      const compositionRefUrl = input.compositionRefUrl
+        ? requireImageAssetReceipt({ reference: input.compositionRefUrl, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id }).url
+        : undefined;
+      const effectRefUrl = input.effectRefUrl
+        ? requireImageAssetReceipt({ reference: input.effectRefUrl, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id }).url
+        : undefined;
 
       // Build multimodal messages with all reference images + notes
       const userContent: any[] = [];
@@ -354,7 +420,7 @@ ${guidanceText}
 
       // Add KB reference images with notes
       let kbImageIndex = 1;
-      for (const kbImg of input.kbImages) {
+      for (const kbImg of kbImages) {
         userContent.push({
           type: "image_url",
           image_url: { url: kbImg.url, detail: "high" },
@@ -367,19 +433,19 @@ ${guidanceText}
       }
 
       // Add composition ref if provided
-      if (input.compositionRefUrl) {
+      if (compositionRefUrl) {
         userContent.push({
           type: "image_url",
-          image_url: { url: input.compositionRefUrl, detail: "high" },
+          image_url: { url: compositionRefUrl, detail: "high" },
         });
         userContent.push({ type: "text", text: `[构图参考图：请参考此图的构图布局${input.compositionRefNote?.trim() ? `；用户备注：${input.compositionRefNote.trim()}` : ""}]` });
       }
 
       // Add effect ref if provided
-      if (input.effectRefUrl) {
+      if (effectRefUrl) {
         userContent.push({
           type: "image_url",
-          image_url: { url: input.effectRefUrl, detail: "high" },
+          image_url: { url: effectRefUrl, detail: "high" },
         });
         userContent.push({ type: "text", text: `[效果参考图：请参考此图的视觉效果和风格${input.effectRefNote?.trim() ? `；用户备注：${input.effectRefNote.trim()}` : ""}]` });
       }
@@ -401,6 +467,11 @@ ${guidanceText}
       // Save the regenerated result back to session
       await db.updateImageWorkflowSession(session.id, {
         step4AiResult: JSON.stringify(result),
+        step4Confirmed: 0,
+        step5Confirmed: 0,
+        step6Confirmed: 0,
+        currentStep: 4,
+        status: "in_progress",
       });
 
       return result;
@@ -413,7 +484,7 @@ ${guidanceText}
       projectId: z.number(),
       imageIndex: z.number(),
       kbImages: z.array(z.object({
-        url: z.string(),
+        id: z.number().int().positive(),
         note: z.string().optional(),
         position: z.string().optional(),
       })),
@@ -423,10 +494,10 @@ ${guidanceText}
       effectRefNote: z.string().max(1_000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.references.regenerate-one:${input.projectId}:${input.imageIndex}`);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.references.regenerate-one:${input.projectId}:${input.imageIndex}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
 
       // Parse current step4 result to get the specific image info
@@ -438,6 +509,14 @@ ${guidanceText}
       const imageRefs = currentStep4.imageReferences || [];
       const targetImage = imageRefs[input.imageIndex];
       if (!targetImage) throw new Error(`Image at index ${input.imageIndex} not found`);
+      await requireStep4DraftAssets(currentStep4, ctx, input.projectId);
+      const kbImages = await resolveReadableKbImages(input.kbImages, ctx);
+      const compositionRefUrl = input.compositionRefUrl
+        ? requireImageAssetReceipt({ reference: input.compositionRefUrl, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id }).url
+        : undefined;
+      const effectRefUrl = input.effectRefUrl
+        ? requireImageAssetReceipt({ reference: input.effectRefUrl, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id }).url
+        : undefined;
 
       // Build multimodal messages for single image regeneration
       const userContent: any[] = [];
@@ -456,7 +535,7 @@ ${session.step3UserEdit || session.step3AiResult}
       });
 
       let kbImageIndex = 1;
-      for (const kbImg of input.kbImages) {
+      for (const kbImg of kbImages) {
         userContent.push({ type: "image_url", image_url: { url: kbImg.url, detail: "high" } });
         const noteText = kbImg.note
           ? `[知识库参考图${kbImageIndex}，备注: ${kbImg.note}${kbImg.position ? "，图片位置: " + kbImg.position : ""}]`
@@ -464,12 +543,12 @@ ${session.step3UserEdit || session.step3AiResult}
         userContent.push({ type: "text", text: noteText });
         kbImageIndex++;
       }
-      if (input.compositionRefUrl) {
-        userContent.push({ type: "image_url", image_url: { url: input.compositionRefUrl, detail: "high" } });
+      if (compositionRefUrl) {
+        userContent.push({ type: "image_url", image_url: { url: compositionRefUrl, detail: "high" } });
         userContent.push({ type: "text", text: `[构图参考图：请参考此图的构图布局${input.compositionRefNote?.trim() ? `；用户备注：${input.compositionRefNote.trim()}` : ""}]` });
       }
-      if (input.effectRefUrl) {
-        userContent.push({ type: "image_url", image_url: { url: input.effectRefUrl, detail: "high" } });
+      if (effectRefUrl) {
+        userContent.push({ type: "image_url", image_url: { url: effectRefUrl, detail: "high" } });
         userContent.push({ type: "text", text: `[效果参考图：请参考此图的视觉效果和风格${input.effectRefNote?.trim() ? `；用户备注：${input.effectRefNote.trim()}` : ""}]` });
       }
 
@@ -493,6 +572,8 @@ ${session.step3UserEdit || session.step3AiResult}
         step4AiResult: JSON.stringify(persistedDraft),
         step4UserEdit: JSON.stringify(persistedDraft),
         step4Confirmed: 0,
+        step5Confirmed: 0,
+        step6Confirmed: 0,
         currentStep: 4,
         status: "in_progress",
       });
@@ -513,10 +594,10 @@ ${session.step3UserEdit || session.step3AiResult}
       })),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.aplus.optimize:${input.projectId}`);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.aplus.optimize:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
 
@@ -544,6 +625,10 @@ ${session.step3UserEdit || session.step3AiResult}
         step5OptimizedResultCn: optimizedCn ? JSON.stringify(optimizedCn) : null,
         step5UserEdit: JSON.stringify(optimizedEn),
         step5AiResultCn: optimizedCn ? JSON.stringify(optimizedCn) : session.step5AiResultCn,
+        step5Confirmed: 0,
+        step6Confirmed: 0,
+        currentStep: 5,
+        status: "in_progress",
       });
 
       return result;
@@ -560,10 +645,10 @@ ${session.step3UserEdit || session.step3AiResult}
       distillationBinding: distillationBindingSchema.optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.aplus.optimize-one:${input.projectId}:${input.sectionIndex}`);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.aplus.optimize-one:${input.projectId}:${input.sectionIndex}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
       const guidanceText = await selectedGuidanceText(input, ctx, project);
@@ -663,6 +748,10 @@ ${guidanceText}
         step5OptimizedResult: JSON.stringify(nextData),
         step5OptimizedResultCn: nextCnData ? JSON.stringify(nextCnData) : session.step5OptimizedResultCn,
         step5AiResultCn: nextCnData ? JSON.stringify(nextCnData) : session.step5AiResultCn,
+        step5Confirmed: 0,
+        step6Confirmed: 0,
+        currentStep: 5,
+        status: "in_progress",
       });
       return { en: optimizedSectionEn, cn: optimizedSectionCn };
     }),
@@ -674,10 +763,10 @@ ${guidanceText}
       projectId: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.aplus.recommend:${input.projectId}`);
+      const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.aplus.recommend:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
 
       // Gather product context
@@ -713,18 +802,22 @@ ${guidanceText}
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error('Project not found');
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error('No workflow session found');
+      requireImageAssetReceipt({ reference: input.imageUrl,
+        kind: "designer", projectId: input.projectId, userId: ctx.user.id });
       let uploads: any[] = [];
       try { uploads = JSON.parse(session.step5DesignerUploads || '[]'); } catch {}
       const idx = uploads.findIndex((u: any) => u.imageNumber === input.imageNumber);
-      const entry = { id: Date.now(), imageUrl: input.imageUrl, imageNumber: input.imageNumber, notes: input.notes || '', uploadedAt: new Date().toISOString() };
+      const entry = { id: Date.now(), imageUrl: input.imageUrl,
+        imageNumber: input.imageNumber, notes: input.notes || '', uploadedAt: new Date().toISOString() };
       if (idx >= 0) uploads[idx] = entry;
       else uploads.push(entry);
-      await db.updateImageWorkflowSession(session.id, { step5DesignerUploads: JSON.stringify(uploads) });
+      await db.updateImageWorkflowSession(session.id, { step5DesignerUploads: JSON.stringify(uploads),
+        step5Confirmed: 0, step6Confirmed: 0, currentStep: 5, status: "in_progress" });
       return { success: true, uploads };
     }),
 
@@ -735,15 +828,16 @@ ${guidanceText}
       imageNumber: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error('Project not found');
       ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error('No workflow session found');
       let uploads: any[] = [];
       try { uploads = JSON.parse(session.step5DesignerUploads || '[]'); } catch {}
       uploads = uploads.filter((u: any) => u.imageNumber !== input.imageNumber);
-      await db.updateImageWorkflowSession(session.id, { step5DesignerUploads: JSON.stringify(uploads) });
+      await db.updateImageWorkflowSession(session.id, { step5DesignerUploads: JSON.stringify(uploads),
+        step5Confirmed: 0, step6Confirmed: 0, currentStep: 5, status: "in_progress" });
       return { success: true, uploads };
     }),
 
@@ -763,6 +857,7 @@ ${guidanceText}
         input.projectId,
         ctx.user,
         `image.refine:${input.projectId}:${input.imageType}:${input.imageIndex ?? 0}`,
+        ctx.workspaceId,
       );
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);

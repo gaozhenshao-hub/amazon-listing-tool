@@ -6,6 +6,7 @@ import { buildImageWorkflowReferenceTargets, normalizeImageOutline } from "@shar
 import { extractLatestStep4JobResult, mergeStep4LatestWithUserAssets } from "../step4Snapshot";
 import { getLatestStep4ReferenceJob } from "../services/step4ReferenceJob";
 import { clearStep4ReferenceLock } from "../step4ReferenceLockState";
+import { requireApprovedImageSession, requireImageDeliverableAccess } from "../services/imageApprovedExport";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -75,15 +76,6 @@ export function chooseStep4DisplayBase(input: {
     return mergeStep4LatestWithUserAssets(draft, latestContent) || latestContent;
   }
   return latestContent || draft || ai;
-}
-
-function selectedAsinSetIds(session: any): number[] {
-  const step3 = parseExportJson(session?.step3UserEdit || session?.step3AiResult);
-  const styles = Array.isArray(step3?.selectedStyles) ? step3.selectedStyles : [];
-  const ids = styles
-    .filter((style: any) => style?.source === "kb_asin" && Number.isFinite(Number(style?.asinSetId)))
-    .map((style: any) => Number(style.asinSetId)) as number[];
-  return [...new Set<number>(ids)];
 }
 
 async function applyCurrentStep4ImageVersions(session: any) {
@@ -183,9 +175,9 @@ export const imageSessionProcedures = {
   getSession: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
-      const session = await resolveSessionForDisplay(input.projectId, ctx.user);
+      const session = await resolveSessionForDisplay(input.projectId, ctx.user, ctx.workspaceId);
       const hydrated = await applyCurrentStep4ImageVersions(session);
       if (!hydrated) return hydrated;
       const workspaceId = Number(project.workspaceId || ctx.workspaceId || 0);
@@ -199,32 +191,22 @@ export const imageSessionProcedures = {
   getExportBundle: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      // The display endpoint remains available to project operators; this
+      // endpoint is a downloadable approved deliverable, not a preview API.
+      if (ctx.user.role !== "super_admin") {
+        requireImageDeliverableAccess({ role: ctx.user.role, workspaceId: ctx.workspaceId, project: {} });
+      }
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
-      const session = await applyCurrentStep4ImageVersions(await resolveSessionForDisplay(input.projectId, ctx.user));
-      if (!session) throw new Error("请先创建图片工作流");
+      requireImageDeliverableAccess({ role: ctx.user.role, workspaceId: ctx.workspaceId, project });
+      const session = requireApprovedImageSession(await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId), "complete");
 
-      const asinSetIds = selectedAsinSetIds(session);
-      const [expressionGroups, asinReferenceSets] = await Promise.all([
-        db.getExpressionGroupsByProject(input.projectId),
-        Promise.all(asinSetIds.map(async (setId) => {
-          const set = await kbDb.getImageSetById(setId);
-          if (!set) return null;
-          const images = await kbDb.listImagesBySetLight(setId);
-          return { ...set, images };
-        })),
-      ]);
-
-      return {
-        session,
-        expressionGroups,
-        expressionLinkage: await getExpressionLinkageSessionState({
-          workspaceId: Number(project.workspaceId || ctx.workspaceId || 0),
-          projectId: input.projectId,
-          sessionId: session.id,
-        }),
-        asinReferenceSets: asinReferenceSets.filter(Boolean),
-      };
+      // Legacy group images and KB-set URLs have no current immutable asset
+      // policy. Include only confirmed research text, never their raw images.
+      const groups = await db.getExpressionGroupsByProject(input.projectId);
+      const expressionGroups = groups.filter((group: any) => Number(group.confirmed) === 1 && group.userEdit)
+        .map((group: any) => ({ expressionName: group.expressionName, userEdit: group.userEdit, images: [] }));
+      return { session, expressionGroups, asinReferenceSets: [] as any[] };
     }),
 
 
@@ -232,11 +214,11 @@ export const imageSessionProcedures = {
   createSession: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
       // Delete existing session if any
-      const existing = await resolveSessionAccess(input.projectId, ctx.user);
+      const existing = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (existing) {
         await db.deleteImageWorkflowSession(existing.id);
       }
@@ -271,8 +253,8 @@ export const imageSessionProcedures = {
       step: z.number().min(0).max(6),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
 

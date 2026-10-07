@@ -5,7 +5,7 @@ import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGate
 import * as devDb from "../devDb";
 import { storagePut } from "../storage";
 import { generateThemedManualHtml, THEME_PRESETS, FONT_PRESETS } from "../manualTemplates";
-import { resolveDevProjectAccess } from "../domains/product_development/security/productDevelopmentAccess";
+import { resolveDevProjectAccess, resolveDevProjectExportAccess } from "../domains/product_development/security/productDevelopmentAccess";
 
 const MANUAL_CHAPTERS = [
   { key: "overview", titleEn: "Product Overview", titleEs: "Descripcion del Producto" },
@@ -363,6 +363,7 @@ IMPORTANT: Spanish content must be natural, professional Spanish - not literal t
   exportPdf: protectedProcedure
     .input(z.object({ projectId: z.number(), language: z.enum(["en", "es"]) }))
     .mutation(async ({ ctx, input }) => {
+      await resolveDevProjectExportAccess(input.projectId, ctx);
       const manual = await devDb.getDevManual(input.projectId);
       if (!manual?.contentSections) throw new Error("Please generate manual content first");
 

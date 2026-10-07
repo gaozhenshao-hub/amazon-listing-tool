@@ -5,7 +5,7 @@ import { buildFullPlanContent } from "../client/src/pages/imageWorkflow/exportCo
 
 const root = path.resolve(import.meta.dirname, "..");
 
-describe("图片工作流六步完整方案导出", () => {
+describe("图片工作流研究＋六制作阶段完整方案导出", () => {
   const session = {
     step0UserEdit: JSON.stringify({ overallSummary: "竞品更偏好用细节拆解表达密封能力" }),
     step1UserEdit: JSON.stringify({ coreSellingPoints: [{ point: "双重密封" }] }),
@@ -65,9 +65,9 @@ describe("图片工作流六步完整方案导出", () => {
     }],
   };
 
-  it("输出 Step0 至 Step5 的目录与业务内容", () => {
+  it("输出 Step0 至 Step6 的目录与业务内容", () => {
     const html = buildFullPlanContent(session, undefined, undefined, assets);
-    for (const label of ["Step 0: 竞品图片分析", "Step 1: 卖点梳理", "Step 2: 图片大纲", "Step 3: 风格确认", "Step 4: 参考图确认", "Step 5: 图片结构及内容建议"]) {
+    for (const label of ["Step 0: 竞品图片分析", "Step 1: 卖点梳理", "Step 2: 图片大纲", "Step 3: 风格确认", "Step 4: 参考图确认", "Step 5: 图片结构及内容建议", "Step 6: 作图提示词包"]) {
       expect(html).toContain(label);
     }
     expect(html).toContain("竞品更偏好用细节拆解表达密封能力");
@@ -129,10 +129,10 @@ describe("图片工作流六步完整方案导出", () => {
     expect(page).toContain("buildFullPlanContent(bundle.session, undefined, undefined, bundle)");
   });
 
-  it("保留原六步内容并以横向六列瀑布流展示，不输出新增逐图执行版", () => {
+  it("保留研究＋六阶段且以七列瀑布流展示，不输出新增逐图执行版", () => {
     const html = buildFullPlanContent(session, undefined, undefined, assets);
-    expect(html).toContain('class="six-step-waterfall"');
-    expect((html.match(/class="workflow-step"/g) || []).length).toBe(6);
+    expect(html).toContain('class="seven-section-waterfall"');
+    expect((html.match(/class="workflow-step"/g) || []).length).toBe(7);
     expect(html).not.toContain("逐图瀑布流方案");
     expect(html).not.toContain('id="image-2"');
     expect(html).toContain("展示密封结构");

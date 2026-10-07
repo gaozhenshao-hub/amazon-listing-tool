@@ -11,7 +11,10 @@ export function buildPdfContent(enData: any, cnData: any): string {
 function safeText(value: unknown): string {
   if (value === null || value === undefined) return "";
   return String(value)
-    .replace(/&/g, "&amp;")
+    // The approved-deliverable service has already escaped stored strings.
+    // Preserve its five safe entities, but still escape raw input used by the
+    // legacy preview helper; browser HTML entity decoding is one-pass only.
+    .replace(/&(?!(?:amp|lt|gt|quot|#39);)/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
@@ -51,10 +54,10 @@ function renderImageAsset(img: any, source: string, label?: string) {
   return `<figure class="asset-card"><img class="asset-img" src="${url}" alt="${caption}"/><figcaption>${caption}</figcaption></figure>`;
 }
 
-// ─── Full Plan HTML builder (Step0-6) ─────────────────────────────
+// ─── Approved deliverable: research Step 0 + six production steps ────
 export function buildFullPlanContent(session: any, enData?: any, cnData?: any, assets: FullPlanExportAssets = {}): string {
   const s: string[] = [];
-  s.push(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>产品图片设计完整方案</title>
+  s.push(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>图片设计已确认方案（研究＋六阶段）</title>
 <style>
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; min-width: 1860px; margin: 0; padding: 24px; color: #333; line-height: 1.6; }
@@ -90,7 +93,7 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
 .toc { background: #f9fafb; padding: 16px; border-radius: 8px; margin: 16px 0; }
 .toc a { color: #8B4513; text-decoration: none; }
 .toc a:hover { text-decoration: underline; }
-	.six-step-waterfall { display: grid; grid-template-columns: repeat(7, minmax(280px, 1fr)); align-items: start; gap: 16px; min-width: 2100px; }
+	.seven-section-waterfall { display: grid; grid-template-columns: repeat(7, minmax(280px, 1fr)); align-items: start; gap: 16px; min-width: 2100px; }
 .workflow-step { min-width: 0; padding: 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; break-inside: avoid; }
 .workflow-step h2 { margin-top: 0; font-size: 16px; }
 .workflow-step .divider { display: none; }
@@ -101,10 +104,10 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
 .flow-stage { margin: 12px 0; padding: 12px; border-radius: 8px; background: #fafafa; border-left: 4px solid #d4a574; }
 .flow-stage h4 { margin: 0 0 7px; color: #8B4513; }
 .flow-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-@media print { @page { size: landscape; margin: 8mm; } body { min-width: 0; padding: 0; } .six-step-waterfall { min-width: 0; gap: 6px; } .workflow-step { padding: 7px; } .workflow-step h2 { font-size: 12px; } .workflow-step p, .workflow-step td, .workflow-step th { font-size: 9px; } .workflow-step .asset-img { height: 88px; } h2 { break-before: auto; } }
+@media print { @page { size: landscape; margin: 8mm; } body { min-width: 0; padding: 0; } .seven-section-waterfall { min-width: 0; gap: 6px; } .workflow-step { padding: 7px; } .workflow-step h2 { font-size: 12px; } .workflow-step p, .workflow-step td, .workflow-step th { font-size: 9px; } .workflow-step .asset-img { height: 88px; } h2 { break-before: auto; } }
 </style></head><body>`);
 
-  s.push(`<h1>📷 产品图片设计完整方案</h1>`);
+  s.push(`<h1>产品图片设计已确认方案 · 竞品研究＋六个制作阶段</h1>`);
   s.push(`<p style="color:#888;font-size:12px;">生成时间: ${new Date().toLocaleString('zh-CN')}</p>`);
 
   // Table of Contents
@@ -117,12 +120,12 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   s.push(`<a href="#step5">Step 5: 图片结构及内容建议</a><br/>`);
   s.push(`<a href="#step6">Step 6: 作图提示词包</a>`);
   s.push(`</div>`);
-  s.push(`<div class="six-step-waterfall">`);
+  s.push(`<div class="seven-section-waterfall">`);
 
   // ===== Step 0: Competitor Image Analysis =====
   s.push(`<section class="workflow-step">`);
   s.push(`<h2 id="step0"><span class="step-badge">Step 0</span>竞品图片分析</h2>`);
-  s.push(`<p class="section-note">按卖点表达方向归档竞品图片、竞品名称和人工确认的分析结论，为后续卖点、图片大纲与视觉风格提供依据。</p>`);
+  s.push(`<p class="section-note">竞品仅作研究证据，不可作为我方素材。旧版未归类的图片仅供站内审阅，不包含在此成果导出中。</p>`);
   const step0Summary = safeJsonParse(session?.step0UserEdit || session?.step0AiResult);
   if (step0Summary?.overallSummary || step0Summary?.summary) {
     s.push(`<div class="card"><strong>竞品图片总体洞察：</strong>${safeText(step0Summary.overallSummary || step0Summary.summary)}</div>`);
