@@ -69,6 +69,7 @@ export const listingEvaluationProcedures = {
       subtitle: z.string(),
       fullText: z.string(),
       bulletIndex: z.number(),
+      evidenceUsed: z.array(z.string().max(240)).max(20).optional(),
     }))
     .mutation(async ({ input }) => {
       const bulletText = `${input.subtitle} ${input.fullText}`;
@@ -77,7 +78,7 @@ export const listingEvaluationProcedures = {
         emperorSkill: { slug: "listing.checklist.bullets", executionPreset: "quality_first" },
         messages: [
           { role: "system", content: EVALUATE_BULLET_CHECKLIST_PROMPT },
-          { role: "user", content: `Evaluate this Amazon bullet point (Bullet #${input.bulletIndex + 1}):\n\n${bulletText}` },
+          { role: "user", content: `Evaluate this Amazon bullet point (Bullet #${input.bulletIndex + 1}):\n\n${bulletText}\n\nConfirmed generation evidence (if supplied; still verify each claim against the text): ${JSON.stringify(input.evidenceUsed || [])}` },
         ],
         response_format: { type: "json_object" },
       });

@@ -1,0 +1,70 @@
+import {
+  applyListingOgilvyRole,
+  HIGH_QUALITY_QUALITY_MODEL,
+  type GovernedSkillManifest,
+} from "../../ai_os/services/highQualitySkillGovernance";
+
+export const SINGLE_BULLET_PROMPT_VERSION = 6;
+export const SINGLE_BULLET_SKILL_SLUGS = ["listing.bullet.step.generate", "listing.bullet.single"] as const;
+export const SINGLE_BULLET_DISCOVERY_POLICY = `## AMAZON_DISCOVERY_AND_CONVERSATIONAL_COMMERCE_V1
+Optimize for shopper understanding and truthful product discoverability across Amazon search and conversational shopping experiences, including Alexa for Shopping (formerly Rufus). Match supported buyer intent, not a purported ranking formula. Make product type, relevant attribute, supported use and limits easy to understand. Never promise rankings, visibility, conversions, or answers not established by the input; never stuff keywords.`;
+
+/** Task prompt only: the shared governance layer injects the Ogilvy role exactly once. */
+export const SINGLE_BULLET_TASK_PROMPT_V6 = `## SINGLE_AMAZON_US_BULLET_V6
+Act as an Ogilvy-inspired senior U.S. marketplace copy strategist. Silently identify ONE genuine shopper need supported by the selected selling point; find a single credible promise and the minimum product fact that makes it believable. Write one distinctive, restrained, idiomatic American-English Amazon US Bullet, not a slogan or a checklist of parameters.
+
+FABE is an internal reasoning aid, NOT a rigid sentence template. Choose a natural benefit-led, feature-led, scenario-led, or reassurance-led structure according to the evidence. Do not force all four FABE parts into the copy, label them, or add an unsupported use case, number, certification, warranty, social proof, comparison, review consensus, compatibility claim, or performance outcome. Treat competitor/review content as research, not as facts about this product. A keyword may be omitted if it harms readability; if used, it must be in the selected point's targetKeywords and appear only once. Use American spelling and fluent, natural word order; avoid literal translation, parameter dumping, ALL CAPS, superlatives and sales/price claims. Never assert knowledge of A9/A10/COSMO ranking formulas.
+
+Produce ONLY the currently selected selling point, regardless of its index. Distinguish its opening, buyer reason, scenario and keyword angle from previously confirmed bullets. Return exactly one editable JSON object, without markdown, Chinese copy, a list, additional bullets, or commentary.
+
+The UI displays subtitle + " " + fullText. subtitle must be a 2–8 word Title Case lead-in ending in one ASCII colon (:). fullText starts with a capital letter or supported number, continues the same thought, and does NOT repeat the lead-in. Both fields are single-line, with no list marker, HTML or additional heading; do not add final terminal punctuation. The combined display is 200–280 characters under the current internal quality policy; do not attribute this range to Amazon's universal policy. If verified facts are too sparse to make a persuasive claim, keep it factual instead of inventing a missing FABE element.
+
+For each stated measurement, number, material, certification, comparison, compatibility or warranty, cite the corresponding confirmed product fact in evidenceUsed. evidenceUsed contains only short input facts; keywordsUsed contains only targetKeywords actually used. qualityAudit is your self-check, not proof of correctness. Before replying, edit for American English grammar, parallel structure, one benefit, truthful claims, correct colon/length, and non-repetition.
+
+Return ONLY this JSON shape:
+{"subtitle":"Short Title Case Lead-in:","fullText":"One natural continuation","evidenceUsed":["Short supported fact"],"keywordsUsed":[],"distinctFromPrevious":"Short explanation of the new buyer angle","qualityAudit":{"factsGrounded":true,"lengthInRange":true,"noKeywordStuffing":true,"oneClearBenefit":true,"subtitleBodyPunctuationCorrect":true,"americanEnglishNatural":true,"grammarAndParallelismCorrect":true,"noUnsupportedClaims":true,"distinctFromPrevious":true,"amazonBulletStyleCompliant":true}}`;
+
+export function buildSingleBulletSkillManifest(
+  slug: (typeof SINGLE_BULLET_SKILL_SLUGS)[number],
+  current: GovernedSkillManifest,
+): GovernedSkillManifest {
+  const systemPrompt = applyListingOgilvyRole(slug, `${SINGLE_BULLET_DISCOVERY_POLICY}\n\n${SINGLE_BULLET_TASK_PROMPT_V6}`);
+  return {
+    ...current,
+    implementation: {
+      ...(current.implementation || {}),
+      systemPrompt,
+      userPromptTemplate: "{{context}}",
+      supportsJsonMode: true,
+      qualityModelPolicy: HIGH_QUALITY_QUALITY_MODEL,
+      maxTokens: Math.max(1800, Number(current.implementation?.maxTokens || 0)),
+      temperature: 0.25,
+      promptVersion: SINGLE_BULLET_PROMPT_VERSION,
+    },
+    contract: {
+      ...(current.contract || {}),
+      outputMode: "json_draft",
+      humanReviewRequired: true,
+      automaticExecution: "prohibited",
+      outputSchema: {
+        type: "object",
+        required: ["subtitle", "fullText", "evidenceUsed", "keywordsUsed", "distinctFromPrevious", "qualityAudit"],
+        properties: {
+          subtitle: { type: "string" },
+          fullText: { type: "string" },
+          evidenceUsed: { type: "array", items: { type: "string" } },
+          keywordsUsed: { type: "array", items: { type: "string" } },
+          distinctFromPrevious: { type: "string" },
+          qualityAudit: {
+            type: "object",
+            required: ["factsGrounded", "lengthInRange", "noKeywordStuffing", "oneClearBenefit", "subtitleBodyPunctuationCorrect", "americanEnglishNatural", "grammarAndParallelismCorrect", "noUnsupportedClaims", "distinctFromPrevious", "amazonBulletStyleCompliant"],
+            properties: Object.fromEntries(
+              ["factsGrounded", "lengthInRange", "noKeywordStuffing", "oneClearBenefit", "subtitleBodyPunctuationCorrect", "americanEnglishNatural", "grammarAndParallelismCorrect", "noUnsupportedClaims", "distinctFromPrevious", "amazonBulletStyleCompliant"]
+                .map((key) => [key, { type: "boolean" }]),
+            ),
+          },
+        },
+      },
+    },
+  };
+}

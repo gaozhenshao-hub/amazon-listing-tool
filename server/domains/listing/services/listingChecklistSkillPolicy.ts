@@ -46,6 +46,11 @@ export function buildListingChecklistSkillManifest(
       {
         type: "object",
         required: ["pass", "notes", "reason", "suggestion", "evidenceQuote"],
+        ...(policy.kind === "bullets" ? { properties: {
+          pass: { type: "boolean" }, notes: { type: "string" }, reason: { type: "string" },
+          suggestion: { type: "string" }, evidenceQuote: { type: "string" },
+          suggestedRevision: { type: "string" },
+        } } : {}),
       },
     ]),
   );

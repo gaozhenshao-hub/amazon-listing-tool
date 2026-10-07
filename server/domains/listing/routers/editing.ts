@@ -9,6 +9,7 @@ import {
   syncStepUnlockToAgent,
 } from "../listingAgentBridge";
 import { startListingJobForContext } from "./jobControl";
+import { validateSingleBulletQuality, type ListingGenerationJobInput } from "../services/generationJob";
 
 const {
   BULLET_POINTS_PROMPT,
@@ -770,6 +771,7 @@ export const listingEditingProcedures = {
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "项目不存在" });
+      ensureListingWorkspaceAccess(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
 
       const [analyses, enrichedData] = await Promise.all([
@@ -777,44 +779,67 @@ export const listingEditingProcedures = {
         loadEnrichedData(input.projectId),
       ]);
       const current = input.currentBullet;
+      // The current draft is the revision target, not a different selling point.
+      // Reject unchanged copy below, but do not reject a valid revision merely
+      // because it necessarily shares its buyer reason with that draft.
+      const previousBullets = input.previousBullets || [];
+      const validationInput: ListingGenerationJobInput = {
+        projectId: input.projectId,
+        operation: "singleBullet",
+        nodeId: "G1",
+        scopeKey: `bullet-${input.sellingPoint.index}`,
+        sellingPoint: input.sellingPoint,
+        previousBullets,
+      };
       const context = `${buildProductContext(project, analyses, enrichedData)}
 
---- 当前待优化卖点 ---
-标题：${current.subtitle}
-正文：${current.fullText}
+--- 当前选中的卖点核心（只生成这一条） ---
+${JSON.stringify(input.sellingPoint)}
+
+--- 当前待优化卖点（必须实质改写，不得原样返回） ---
+${JSON.stringify(current)}
+
+--- 其他卖点（不得重复） ---
+${JSON.stringify(previousBullets)}
 
 --- 用户优化方向 ---
 ${input.optimizationNote}
 
 --- 必须遵守 ---
-仅输出一条新的 JSON 卖点。新标题与新正文不得同时与当前卖点相同；至少重写标题或正文中的一个完整句子。`;
-      const result = await runEmperorSkill<any>({
-        skillSlug: "listing.bullet.refine",
-        userId: ctx.user.id,
-        workspaceId: ctx.workspaceId,
-        context,
-        emphasis: input.optimizationNote,
-        variables: {
-          context,
-          sellingPoint: input.sellingPoint,
-          currentBullet: current,
-          optimizationNote: input.optimizationNote,
-          previousBullets: input.previousBullets || [],
-        },
-        maxModelAttempts: 3,
-        validate: parseJsonOrThrow,
-      });
-      const parsed = result.parsed?.bullet || result.parsed?.bulletPoint || result.parsed;
-      const subtitle = String(parsed?.subtitle || parsed?.title || "").trim();
-      const fullText = String(parsed?.fullText || parsed?.text || parsed?.content || "").trim();
-      if (!subtitle || !fullText) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "卖点优化 Skill 返回格式异常" });
+仅输出一个 {subtitle,fullText,evidenceUsed,keywordsUsed,distinctFromPrevious,qualityAudit} JSON对象。请遵守单条卖点 v6 的自然美式英语、证据追溯和200–280字符合同。`;
+      let promptContext = context;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        const result = await runEmperorSkill<any>({
+          skillSlug: "listing.bullet.step.generate",
+          userId: ctx.user.id,
+          workspaceId: ctx.workspaceId,
+          context: promptContext,
+          emphasis: input.optimizationNote,
+          variables: {
+            context: promptContext,
+            mode: "single_bullet",
+            sellingPoint: input.sellingPoint,
+            currentBullet: current,
+            optimizationNote: input.optimizationNote,
+            previousBullets,
+          },
+          maxModelAttempts: 3,
+          validate: parseJsonOrThrow,
+        });
+        const parsed = result.parsed;
+        const quality = validateSingleBulletQuality(parsed, validationInput, enrichedData?.productAttributes);
+        const unchanged = String(parsed?.subtitle || "").trim() === current.subtitle.trim()
+          && String(parsed?.fullText || "").trim() === current.fullText.trim();
+        const issues = unchanged ? [...quality.issues, "候选与当前待优化原文相同，必须实质改写"] : quality.issues;
+        if (quality.valid && !unchanged) {
+          return { ...parsed, characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true };
+        }
+        if (attempt === MAX_RETRIES) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `优化候选未通过质量门禁：${issues.join("；")}。原文未改动，请调整优化方向后重试。` });
+        }
+        promptContext = `${context}\n\n上一次候选未通过质量门禁：${issues.join("；")}。仅依据当前已确认事实重新输出一条完整JSON卖点。`;
       }
-      if (subtitle === current.subtitle.trim() && fullText === current.fullText.trim()) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "卖点优化 Skill 未产生与原文不同的候选，请调整优化方向后重试" });
-      }
-      const characterCount = `${subtitle} ${fullText}`.length;
-      return { ...current, ...parsed, subtitle, fullText, characterCount, actualCharacterCount: characterCount, inRange: characterCount >= 200 && characterCount <= 280 };
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "卖点优化未生成有效候选" });
     }),
   generateQA: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))

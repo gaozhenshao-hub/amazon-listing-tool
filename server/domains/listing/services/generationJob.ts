@@ -114,28 +114,126 @@ function normalizeBulletText(value: unknown) {
   return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-export function validateSingleBulletQuality(bullet: any, input: ListingGenerationJobInput) {
+function meaningfulBulletTokens(value: unknown): string[] {
+  const common = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "is", "of", "on", "or", "the", "this", "to", "with", "you", "your"]);
+  return (String(value || "").toLowerCase().match(/[a-z0-9]+/g) || []).filter((token) => token.length > 2 && !common.has(token));
+}
+
+function tokenSimilarity(left: string[], right: string[]): number {
+  const first = new Set(left);
+  const second = new Set(right);
+  if (first.size === 0 || second.size === 0) return 0;
+  const intersection = [...first].filter((word) => second.has(word)).length;
+  return intersection / (first.size + second.size - intersection);
+}
+
+const SINGLE_BULLET_AUDIT_KEYS = [
+  "factsGrounded", "lengthInRange", "noKeywordStuffing", "oneClearBenefit",
+  "subtitleBodyPunctuationCorrect", "americanEnglishNatural", "grammarAndParallelismCorrect",
+  "noUnsupportedClaims", "distinctFromPrevious", "amazonBulletStyleCompliant",
+] as const;
+
+function countOccurrences(text: string, phrase: string) {
+  if (!phrase) return 0;
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return [...text.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "giu"))].length;
+}
+
+export function validateSingleBulletQuality(bullet: any, input: ListingGenerationJobInput, confirmedProductFacts: unknown = null) {
   const issues: string[] = [];
-  const subtitle = String(bullet?.subtitle || "").trim();
-  const fullText = String(bullet?.fullText || "").trim();
+  const rawSubtitle = String(bullet?.subtitle || "");
+  const rawFullText = String(bullet?.fullText || "");
+  const subtitle = rawSubtitle.trim();
+  const fullText = rawFullText.trim();
   const combined = `${subtitle} ${fullText}`.trim();
   if (!subtitle || !fullText) issues.push("必须同时提供subtitle和fullText");
-  if (/\r|\n/.test(subtitle) || /\r|\n/.test(fullText)) issues.push("逐条精雕只能输出一条英文Bullet段落，不得分段");
+  if (/\r|\n/.test(rawSubtitle) || /\r|\n/.test(rawFullText)) issues.push("逐条精雕只能输出一条英文Bullet段落，不得分段");
   if (combined.length < 200 || combined.length > 280) issues.push(`总长度${combined.length}，必须在200–280字符之间`);
+  const titleWords = subtitle.replace(/:$/, "").trim().split(/\s+/).filter(Boolean);
+  const naturalSmallWords = new Set(["a", "an", "and", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "with"]);
+  if (!/^[A-Z][A-Za-z0-9'& -]*:$/.test(subtitle) || titleWords.length < 2 || titleWords.length > 8
+      || titleWords.some((word, index) => /^[a-z]/.test(word)
+        && (index === 0 || index === titleWords.length - 1 || !naturalSmallWords.has(word.toLowerCase())))
+      || /:[\s]*:/.test(subtitle)) {
+    issues.push("小标题必须为2–8词的Title Case且以单个英文冒号结尾");
+  }
+  if (!/^(?:[A-Z]|\d)/.test(fullText) || /[.!?;:]$/.test(fullText) || /^(?:[•*-]|\d+[.)])\s/.test(fullText)
+      || /<\/?[a-z][^>]*>/i.test(combined) || /[\u3400-\u9fff]/.test(combined)) {
+    issues.push("正文需大写或经证实数字开头，不含列表/HTML/中文或末尾标点");
+  }
+  const plainTitle = subtitle.replace(/:$/, "").toLowerCase();
+  if (plainTitle && fullText.toLowerCase().startsWith(plainTitle)) issues.push("正文开头不得复述小标题");
+  if (/\b(?:best|perfect|guaranteed|revolutionary|industry-leading|must-have|game-changing|#1)\b/i.test(combined)
+      || /\$\s*\d/.test(combined)) issues.push("不得包含绝对化宣传或价格信息");
 
   const normalized = normalizeBulletText(combined);
+  if (typeof bullet?.distinctFromPrevious !== "string" || !bullet.distinctFromPrevious.trim()) {
+    issues.push("须说明与既有卖点不同的买家角度distinctFromPrevious");
+  }
   const previous = (input.previousBullets || []).map((item) => normalizeBulletText(`${item.subtitle} ${item.fullText}`));
   if (normalized && previous.includes(normalized)) issues.push("与已确认卖点重复");
+  if ((input.previousBullets || []).some((item) => normalizeBulletText(item.subtitle) === normalizeBulletText(subtitle))) {
+    issues.push("小标题与已确认卖点重复");
+  }
+  const currentOpening = meaningfulBulletTokens(fullText.split(/[.!?;,]/, 1)[0]).slice(0, 11);
+  const currentTheme = meaningfulBulletTokens(`${subtitle} ${fullText}`);
+  if ((input.previousBullets || []).some((item) => {
+    const priorOpening = meaningfulBulletTokens(item.fullText.split(/[.!?;,]/, 1)[0]).slice(0, 11);
+    const priorTheme = meaningfulBulletTokens(`${item.subtitle} ${item.fullText}`);
+    return (currentOpening.length >= 5 && priorOpening.length >= 5 && tokenSimilarity(currentOpening, priorOpening) >= 0.78)
+      || (currentTheme.length >= 12 && priorTheme.length >= 12 && tokenSimilarity(currentTheme, priorTheme) >= 0.8);
+  })) issues.push("与已确认卖点的开头句式或核心表达高度重复，请改用不同的买家角度");
 
   const targetKeywords = input.sellingPoint?.targetKeywords || [];
-  if (targetKeywords.length > 0 && !targetKeywords.some((keyword) => normalizeBulletText(combined).includes(normalizeBulletText(keyword)))) {
-    issues.push("未自然使用当前卖点核心指定的目标关键词");
+  const usedKeywords = bullet?.keywordsUsed;
+  if (!Array.isArray(usedKeywords) || usedKeywords.some((word: unknown) => typeof word !== "string")) {
+    issues.push("keywordsUsed必须是关键词数组");
+  } else {
+    for (const keyword of usedKeywords) {
+      if (!targetKeywords.some((source) => normalizeBulletText(source) === normalizeBulletText(keyword))
+          || countOccurrences(combined, keyword) !== 1) issues.push("关键词只能来自当前卖点且每个词最多使用一次");
+    }
+    if (targetKeywords.some((keyword) => countOccurrences(combined, keyword) > 1)) {
+      issues.push("不得重复堆砌目标关键词");
+    }
+    if (targetKeywords.some((keyword) => countOccurrences(combined, keyword) === 1
+        && !usedKeywords.some((used: string) => normalizeBulletText(used) === normalizeBulletText(keyword)))) {
+      issues.push("keywordsUsed应列出文案实际采用的目标关键词");
+    }
   }
-  if (input.sellingPoint?.fabeDirection?.evidence && (!Array.isArray(bullet?.evidenceUsed) || bullet.evidenceUsed.length === 0)) {
+  const sourceFacts = [input.sellingPoint?.theme, input.sellingPoint?.description,
+    ...Object.values(input.sellingPoint?.fabeDirection || {}),
+    confirmedProductFacts ? JSON.stringify(confirmedProductFacts) : ""].filter(Boolean).join(" ").toLowerCase();
+  if (!Array.isArray(bullet?.evidenceUsed) || ((input.sellingPoint?.theme || input.sellingPoint?.description) && bullet.evidenceUsed.length === 0)) {
     issues.push("未输出可追溯的事实依据evidenceUsed");
+  } else if (bullet.evidenceUsed.some((fact: unknown) => typeof fact !== "string" || !fact.trim()
+      || !sourceFacts.includes(fact.trim().toLowerCase()))) {
+    issues.push("evidenceUsed必须引用当前已确认卖点核心中的具体短事实");
   }
+  // A self-declared audit cannot establish numeric proof: compare numeric tokens to the
+  // selected, human-confirmed point. The broader project context may include competitors.
+  const statedNumbers = [...combined.matchAll(/(?<![\w])\d[\d,.]*(?:\s*(?:%|rpm|w|v|in|ft|lb|oz|hours?|minutes?))?/gi)]
+    .map(([token]) => token.replace(/,/g, "").toLowerCase().replace(/\s+/g, ""));
+  const supportedNumbers = new Set([...sourceFacts.matchAll(/(?<![\w])\d[\d,.]*(?:\s*(?:%|rpm|w|v|in|ft|lb|oz|hours?|minutes?))?/gi)]
+    .map(([token]) => token.replace(/,/g, "").toLowerCase().replace(/\s+/g, "")));
+  const citedFacts = Array.isArray(bullet?.evidenceUsed)
+    ? bullet.evidenceUsed.filter((fact: unknown): fact is string => typeof fact === "string").join(" ").toLowerCase() : "";
+  const citedNumbers = new Set([...citedFacts.matchAll(/(?<![\w])\d[\d,.]*(?:\s*(?:%|rpm|w|v|in|ft|lb|oz|hours?|minutes?))?/gi)]
+    .map(([token]) => token.replace(/,/g, "").toLowerCase().replace(/\s+/g, "")));
+  if (statedNumbers.some((token) => !supportedNumbers.has(token) || !citedNumbers.has(token))) {
+    issues.push("数字/规格必须能从当前已确认卖点核心和evidenceUsed逐字追溯");
+  }
+  const sensitiveClaims = /\b(?:titanium|stainless steel|aluminum|aluminium|ceramic|silicone|leather|cotton|bpa.free|fda.approved|ul.certified|usda.certified|ce.certified|warrant(?:y|ies)|guaranteed)\b/giu;
+  if ([...combined.matchAll(sensitiveClaims)].some(([claim]) => !sourceFacts.includes(claim.toLowerCase()) || !citedFacts.includes(claim.toLowerCase()))) {
+    issues.push("材料、认证或保修声明必须能从当前已确认产品事实和evidenceUsed逐字追溯");
+  }
+  const comparativeOrCompatibility = /\b(?:more|less|faster|slower|better|lighter|stronger|longer)\b[^,.;:!?]{0,45}\bthan\b[^,.;:!?]{0,55}|\b(?:compatible with|works with|fits the|fits a|fits an)\b[^,.;:!?]{0,60}/giu;
+  if ([...combined.matchAll(comparativeOrCompatibility)].some(([phrase]) => {
+    const claim = normalizeBulletText(phrase);
+    return !normalizeBulletText(sourceFacts).includes(claim) || !normalizeBulletText(citedFacts).includes(claim);
+  })) issues.push("竞品比较或兼容性声明必须完整引用当前已确认事实和evidenceUsed");
   const audit = bullet?.qualityAudit;
-  for (const key of ["factsGrounded", "lengthInRange", "noKeywordStuffing", "oneClearBenefit"]) {
+  for (const key of SINGLE_BULLET_AUDIT_KEYS) {
     if (audit?.[key] !== true) issues.push(`qualityAudit.${key}必须为true`);
   }
   return { valid: issues.length === 0, issues, characterCount: combined.length };
@@ -345,7 +443,7 @@ async function runOperation(
 
   if (operation === "singleBullet") {
     if (!input.sellingPoint) throw new Error("缺少待生成的卖点核心");
-    promptContext += `\n\n--- 单条五点描述任务 ---\n只生成一条五点描述。卖点核心：${JSON.stringify(input.sellingPoint)}\n已确认五点：${JSON.stringify(input.previousBullets || [])}\n输出可使用 {bulletPoints:[...]} 或单条 {subtitle,fullText} JSON。`;
+    promptContext += `\n\n--- 单条五点描述任务 ---\n只生成一条五点描述。当前选中卖点核心：${JSON.stringify(input.sellingPoint)}\n已确认五点：${JSON.stringify(input.previousBullets || [])}\n仅返回单个 {subtitle,fullText,evidenceUsed,keywordsUsed,distinctFromPrevious,qualityAudit} JSON对象，不要输出数组或其他卖点。`;
     variables.mode = "single_bullet";
     variables.sellingPoint = input.sellingPoint;
     variables.previousBullets = input.previousBullets || [];
@@ -357,8 +455,8 @@ async function runOperation(
   let parsed = await callListingSkill(job, handlerContext, input, config.skillSlug, promptContext, variables);
   if (operation === "sellingPoints") return normalizeSellingPoints(parsed);
   if (operation === "singleBullet") {
-    let bullet = parsed?.bulletPoints?.[0] || parsed?.bullets?.[0] || parsed;
-    let quality = validateSingleBulletQuality(bullet, input);
+    let bullet = parsed;
+    let quality = validateSingleBulletQuality(bullet, input, built.enrichedData?.productAttributes);
     for (let attempt = 0; attempt < MAX_RETRIES && !quality.valid; attempt += 1) {
       parsed = await callListingSkill(
         job,
@@ -368,8 +466,8 @@ async function runOperation(
         `${promptContext}\n\n上次逐条卖点质量门禁未通过：${quality.issues.join("；")}。请仅依据输入事实完整重写当前选中卖点的一条英文JSON Bullet，且不要解释。`,
         { ...variables, previousOutput: bullet, qualityIssues: quality.issues },
       );
-      bullet = parsed?.bulletPoints?.[0] || parsed?.bullets?.[0] || parsed;
-      quality = validateSingleBulletQuality(bullet, input);
+      bullet = parsed;
+      quality = validateSingleBulletQuality(bullet, input, built.enrichedData?.productAttributes);
     }
     if (!quality.valid) throw new Error(`单条五点描述质量验证未通过：${quality.issues.join("；")}`);
     return { ...bullet, characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true };

@@ -5,12 +5,15 @@ const editingRouter = readFileSync("server/domains/listing/routers/editing.ts", 
 const generatePage = readFileSync("client/src/pages/GeneratePage.tsx", "utf8");
 
 describe("卖点定向再次优化皇帝Skill契约", () => {
-  it("服务端使用独立 listing.bullet.refine Skill 并拒绝原文候选", () => {
+  it("服务端使用工作流权威Skill、同一质量门禁及有限重试，拒绝原文候选", () => {
     expect(editingRouter).toContain("optimizeSingleBullet: protectedProcedure");
-    expect(editingRouter).toContain('skillSlug: "listing.bullet.refine"');
+    expect(editingRouter).toContain('skillSlug: "listing.bullet.step.generate"');
+    expect(editingRouter).not.toContain('skillSlug: "listing.bullet.refine"');
+    expect(editingRouter).toContain("validateSingleBulletQuality(parsed, validationInput");
+    expect(editingRouter).toContain("attempt <= MAX_RETRIES");
     expect(editingRouter).toContain("currentBullet");
     expect(editingRouter).toContain("optimizationNote");
-    expect(editingRouter).toContain("未产生与原文不同的候选");
+    expect(editingRouter).toContain("候选与当前待优化原文相同");
   });
 
   it("前端再次优化调用专用接口并提交当前卖点与优化方向", () => {

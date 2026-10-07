@@ -60,6 +60,10 @@ import {
 } from "./listing/useListingGenerationJob";
 import { LISTING_STEPS, ListingWorkflowNavigation } from "./listing/ListingWorkflowNavigation";
 
+function bulletFingerprint(bullet: { subtitle?: string; fullText?: string } | null | undefined) {
+  return `${bullet?.subtitle || ""}\u0000${bullet?.fullText || ""}`;
+}
+
 export default function GeneratePage() {
   const { selectedProjectId } = useProject();
   const [, setLocation] = useLocation();
@@ -71,6 +75,13 @@ export default function GeneratePage() {
   const [overallStrategy, setOverallStrategy] = useState<string>("");
   const [confirmedCores, setConfirmedCores] = useState<boolean[]>([]);
   const [generatedBullets, setGeneratedBullets] = useState<Record<number, any>>({});
+  const latestBulletsRef = useRef<Record<number, any>>({});
+  useEffect(() => { latestBulletsRef.current = generatedBullets; }, [generatedBullets]);
+  const replaceBulletDraft = useCallback((idx: number, bullet: any) => {
+    const updated = { ...latestBulletsRef.current, [idx]: bullet };
+    latestBulletsRef.current = updated;
+    setGeneratedBullets(updated);
+  }, []);
   const [bulletCandidates, setBulletCandidates] = useState<Record<number, any[]>>({});
   const [bulletOptimizationNotes, setBulletOptimizationNotes] = useState<Record<number, string>>({});
   const [confirmedBullets, setConfirmedBullets] = useState<Record<number, boolean>>({});
@@ -111,7 +122,30 @@ export default function GeneratePage() {
     { enabled: !!selectedProjectId }
   );
   const updateLockedStepsMut = trpc.listing.updateLockedSteps.useMutation();
-  const saveChecklistScoresMut = trpc.listing.saveChecklistScores.useMutation();
+  const { mutateAsync: saveChecklistScores } = trpc.listing.saveChecklistScores.useMutation();
+  const checklistSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const generatedBulletCount = Object.keys(generatedBullets).length;
+  const persistChecklistScores = useCallback((bullets: Record<number, any>) => {
+    if (!selectedProjectId) return;
+    const scores: Record<number, any> = {};
+    for (const [idx, bullet] of Object.entries(bullets)) {
+      if (bullet?.checkListScores) {
+        scores[Number(idx)] = {
+          checkListScores: bullet.checkListScores,
+          aiSemanticRelations: bullet.aiSemanticRelations || null,
+          fingerprint: bulletFingerprint(bullet),
+        };
+      }
+    }
+    if (Object.keys(scores).length > 0) {
+      const projectId = selectedProjectId;
+      checklistSaveQueue.current = checklistSaveQueue.current.then(async () => {
+        await saveChecklistScores({ projectId, scores: JSON.stringify(scores) });
+      }).catch(() => {
+        toast.error("卖点自检已完成，但评分保存失败；刷新前请重新自检");
+      });
+    }
+  }, [saveChecklistScores, selectedProjectId]);
 
   // Initialize locked steps from DB
   useEffect(() => {
@@ -129,27 +163,30 @@ export default function GeneratePage() {
 
   // Initialize checklist scores from DB
   useEffect(() => {
-    if (activeListing?.checklistScores && Object.keys(generatedBullets).length > 0) {
+    if (activeListing?.checklistScores && generatedBulletCount > 0) {
       try {
         const saved = JSON.parse(activeListing.checklistScores);
         if (saved && typeof saved === 'object') {
           setGeneratedBullets(prev => {
             const updated = { ...prev };
+            let changed = false;
             for (const [idx, scores] of Object.entries(saved)) {
-              if (updated[Number(idx)]) {
+              if (updated[Number(idx)] && (scores as any).fingerprint === bulletFingerprint(updated[Number(idx)])) {
+                if (updated[Number(idx)].checkListScores === (scores as any).checkListScores) continue;
                 updated[Number(idx)] = {
                   ...updated[Number(idx)],
                   checkListScores: (scores as any).checkListScores || updated[Number(idx)].checkListScores,
                   aiSemanticRelations: (scores as any).aiSemanticRelations || updated[Number(idx)].aiSemanticRelations,
                 };
+                changed = true;
               }
             }
-            return updated;
+            return changed ? updated : prev;
           });
         }
       } catch { /* ignore parse errors */ }
     }
-  }, [activeListing?.checklistScores, Object.keys(generatedBullets).length]);
+  }, [activeListing?.checklistScores, generatedBulletCount]);
 
   // All-locked redirect: show prompt when all 5 steps are locked
   const [showAllLockedDialog, setShowAllLockedDialog] = useState(false);
@@ -277,6 +314,7 @@ export default function GeneratePage() {
   const startListingJob = trpc.listing.startGenerationJob.useMutation();
   const cancelListingJob = trpc.listing.cancelGenerationJob.useMutation();
   const handledBulletJobRuns = useRef(new Set<string>());
+  const requestedBulletFingerprints = useRef(new Map<string, string>());
   const g1JobsQuery = trpc.listing.listGenerationRuns.useQuery(
     { projectId: selectedProjectId || 0, nodeId: "G1" },
     {
@@ -305,6 +343,8 @@ export default function GeneratePage() {
       if (restoredScopes.has(scopeKey)) continue;
       restoredScopes.add(scopeKey);
       handledBulletJobRuns.current.add(job.runId);
+      const requestedFingerprint = requestedBulletFingerprints.current.get(job.runId);
+      requestedBulletFingerprints.current.delete(job.runId);
       if (scopeKey === "locked-add") {
         setLockedAiResult({
           subtitle: job.output.subtitle || jobInput.sellingPoint?.theme || "",
@@ -315,7 +355,15 @@ export default function GeneratePage() {
       const match = scopeKey.match(/^bullet-(\d+)$/);
       if (!match) continue;
       const idx = Number(match[1]);
-      setGeneratedBullets((previous) => ({ ...previous, [idx]: job.output }));
+      if (confirmedBullets[idx]) continue;
+      if (requestedFingerprint !== undefined && bulletFingerprint(latestBulletsRef.current[idx]) !== requestedFingerprint) {
+        toast.info(`卖点 ${idx + 1} 在生成期间已修改，后台结果未覆盖当前内容`);
+        continue;
+      }
+      const initialBullets = latestBulletsRef.current[idx] && bulletFingerprint(latestBulletsRef.current[idx]) === bulletFingerprint(job.output)
+        ? latestBulletsRef.current : { ...latestBulletsRef.current, [idx]: job.output };
+      latestBulletsRef.current = initialBullets;
+      setGeneratedBullets(initialBullets);
       toast.success(`卖点 ${idx + 1} 生成完成`);
       if (job.output.subtitle && job.output.fullText) {
         setEvaluatingChecklist((previous) => ({ ...previous, [idx]: true }));
@@ -323,21 +371,22 @@ export default function GeneratePage() {
           subtitle: job.output.subtitle,
           fullText: job.output.fullText,
           bulletIndex: idx,
+          evidenceUsed: job.output.evidenceUsed || [],
         }).then((checkResult) => {
-          setGeneratedBullets((previous) => ({
-            ...previous,
-            [idx]: {
-              ...previous[idx],
-              checkListScores: checkResult.checkListScores,
-              aiSemanticRelations: checkResult.aiSemanticRelations,
-            },
-          }));
+          if (!latestBulletsRef.current[idx] || bulletFingerprint(latestBulletsRef.current[idx]) !== bulletFingerprint(job.output)) return;
+          const updated = { ...latestBulletsRef.current, [idx]: { ...latestBulletsRef.current[idx],
+            checkListScores: checkResult.checkListScores, aiSemanticRelations: checkResult.aiSemanticRelations } };
+          latestBulletsRef.current = updated;
+          setGeneratedBullets(updated);
+          persistChecklistScores(updated);
+        }).catch((error: unknown) => {
+          toast.error(`卖点 ${idx + 1} 已生成，自检未完成；可在下方点击“重新自检”。${error instanceof Error ? ` ${error.message}` : ""}`);
         }).finally(() => {
           setEvaluatingChecklist((previous) => ({ ...previous, [idx]: false }));
         });
       }
     }
-  }, [evaluateChecklist, g1Jobs]);
+  }, [confirmedBullets, evaluateChecklist, g1Jobs, persistChecklistScores]);
 
   const handleGenerateCores = () => {
     if (!selectedProjectId) return;
@@ -568,7 +617,8 @@ export default function GeneratePage() {
       .map(b => ({ subtitle: b.subtitle || "", fullText: b.fullText || "" }));
 
     try {
-      await startListingJob.mutateAsync({
+      const requestedFingerprint = bulletFingerprint(latestBulletsRef.current[idx]);
+      const job = await startListingJob.mutateAsync({
         projectId: selectedProjectId,
         nodeId: "G1",
         operation: "singleBullet",
@@ -578,6 +628,7 @@ export default function GeneratePage() {
         emphasis: emphasis.trim() || undefined,
         ...(distillationBinding.ledgerKey || distillationBinding.skillSlugs?.length ? { distillationBinding } : {}),
       });
+      requestedBulletFingerprints.current.set(job.runId, requestedFingerprint);
       await g1JobsQuery.refetch();
       toast.success(`卖点 ${idx + 1} 已进入后台队列`);
     } catch (error: any) {
@@ -599,15 +650,20 @@ export default function GeneratePage() {
     if (candidates.length >= 4) { toast.error("每条卖点最多可再优化三次"); return; }
     if (!note) { toast.error("请填写优化方向"); return; }
     try {
-      const toCandidate = (response: any) => {
-        const optimized = response?.parsed || response?.data || response?.result || response;
-        const optimizedBullet = Array.isArray(optimized) ? optimized[0] : (optimized?.bullet || optimized?.bulletPoint || optimized);
-        return { ...current, ...(typeof optimizedBullet === "object" ? optimizedBullet : {}), subtitle: optimizedBullet?.subtitle || optimizedBullet?.title || current.subtitle, fullText: optimizedBullet?.fullText || optimizedBullet?.bulletPoint || optimizedBullet?.text || optimizedBullet?.content || (typeof optimizedBullet === "string" ? optimizedBullet : current.fullText), optimizationNote: note };
-      };
-      const previousBullets = Object.entries(generatedBullets).filter(([bulletIndex]) => Number(bulletIndex) !== idx).map(([, bullet]) => ({ subtitle: (bullet as any).subtitle || "", fullText: (bullet as any).fullText || "" })).filter((bullet) => bullet.subtitle && bullet.fullText);
-      const next = toCandidate(await optimizeBulletMut.mutateAsync({ projectId: selectedProjectId, sellingPoint: sellingPointCores[idx], currentBullet: { subtitle: current.subtitle || "", fullText: current.fullText || "" }, previousBullets, optimizationNote: note }));
+      const previousBullets = Object.entries(confirmedBullets)
+        .filter(([bulletIndex, confirmed]) => confirmed && Number(bulletIndex) !== idx)
+        .map(([bulletIndex]) => generatedBullets[Number(bulletIndex)])
+        .filter(Boolean)
+        .map((bullet) => ({ subtitle: bullet.subtitle || "", fullText: bullet.fullText || "" }));
+      const optimized = await optimizeBulletMut.mutateAsync({ projectId: selectedProjectId, sellingPoint: sellingPointCores[idx], currentBullet: { subtitle: current.subtitle || "", fullText: current.fullText || "" }, previousBullets, optimizationNote: note });
+      if (bulletFingerprint(latestBulletsRef.current[idx]) !== bulletFingerprint(current)) {
+        toast.info("卖点内容已更改，旧优化候选已丢弃；请按最新内容重新优化");
+        return;
+      }
+      const next = { ...optimized, optimizationNote: note, checkListScores: undefined, aiSemanticRelations: undefined };
       setBulletCandidates(prev => ({ ...prev, [idx]: [...candidates, next] }));
-      setGeneratedBullets(prev => ({ ...prev, [idx]: next }));
+      replaceBulletDraft(idx, next);
+      setConfirmedBullets(prev => ({ ...prev, [idx]: false }));
       setBulletOptimizationNotes(prev => ({ ...prev, [idx]: "" }));
       toast.success(`已新增优化候选 ${candidates.length + 1}/4`);
     } catch (error: any) { toast.error(`卖点优化失败: ${error?.message || "未知错误"}`); }
@@ -621,16 +677,20 @@ export default function GeneratePage() {
   };
 
   const handleSaveEditBullet = (idx: number) => {
-    setGeneratedBullets(prev => ({
-      ...prev,
-      [idx]: {
-        ...prev[idx],
-        subtitle: editBulletData.subtitle,
-        fullText: editBulletData.fullText,
-        actualCharacterCount: (editBulletData.subtitle + " " + editBulletData.fullText).length,
-        characterCount: (editBulletData.subtitle + " " + editBulletData.fullText).length,
-      },
-    }));
+    replaceBulletDraft(idx, {
+      ...latestBulletsRef.current[idx],
+      subtitle: editBulletData.subtitle,
+      fullText: editBulletData.fullText,
+      evidenceUsed: [],
+      keywordsUsed: [],
+      distinctFromPrevious: undefined,
+      qualityAudit: undefined,
+      checkListScores: undefined,
+      aiSemanticRelations: undefined,
+      actualCharacterCount: (editBulletData.subtitle + " " + editBulletData.fullText).length,
+      characterCount: (editBulletData.subtitle + " " + editBulletData.fullText).length,
+    });
+    setConfirmedBullets(prev => ({ ...prev, [idx]: false }));
     setEditingBullet(null);
     toast.success("卖点内容已更新");
   };
@@ -657,21 +717,14 @@ export default function GeneratePage() {
         subtitle: bullet.subtitle,
         fullText: bullet.fullText,
         bulletIndex: idx,
+        evidenceUsed: bullet.evidenceUsed || [],
       });
-      // Merge checklist scores and semantic relations into the bullet data
-      setGeneratedBullets(prev => {
-        const updated = {
-          ...prev,
-          [idx]: {
-            ...prev[idx],
-            checkListScores: result.checkListScores,
-            aiSemanticRelations: result.aiSemanticRelations,
-          },
-        };
-        // Persist to DB
-        persistChecklistScores(updated);
-        return updated;
-      });
+      if (bulletFingerprint(latestBulletsRef.current[idx]) !== bulletFingerprint(bullet)) return;
+      const updated = { ...latestBulletsRef.current, [idx]: { ...latestBulletsRef.current[idx],
+        checkListScores: result.checkListScores, aiSemanticRelations: result.aiSemanticRelations } };
+      latestBulletsRef.current = updated;
+      setGeneratedBullets(updated);
+      persistChecklistScores(updated);
       toast.success(`卖点 ${idx + 1} 自检完成`);
     } catch (err: any) {
       toast.error(`自检失败: ${err.message}`);
@@ -695,9 +748,8 @@ export default function GeneratePage() {
     if (!sellingPointCores) return;
     setBatchChecklistRunning(true);
     let successCount = 0;
-    let nextBullets = generatedBullets;
     for (let idx = 0; idx < sellingPointCores.length; idx++) {
-      const bullet = nextBullets[idx];
+      const bullet = latestBulletsRef.current[idx];
       if (!bullet?.subtitle || !bullet?.fullText) continue;
       if (hasCompleteBulletChecklist(bullet.checkListScores)) continue;
       setEvaluatingChecklist(prev => ({ ...prev, [idx]: true }));
@@ -706,41 +758,27 @@ export default function GeneratePage() {
           subtitle: bullet.subtitle,
           fullText: bullet.fullText,
           bulletIndex: idx,
+          evidenceUsed: bullet.evidenceUsed || [],
         });
-        nextBullets = {
-          ...nextBullets,
+        if (bulletFingerprint(latestBulletsRef.current[idx]) !== bulletFingerprint(bullet)) continue;
+        const nextBullets = {
+          ...latestBulletsRef.current,
           [idx]: {
-            ...nextBullets[idx],
+            ...latestBulletsRef.current[idx],
             checkListScores: result.checkListScores,
             aiSemanticRelations: result.aiSemanticRelations,
           },
         };
         setGeneratedBullets(nextBullets);
+        latestBulletsRef.current = nextBullets;
         successCount++;
       } catch { /* continue with next */ }
       finally { setEvaluatingChecklist(prev => ({ ...prev, [idx]: false })); }
     }
     // Persist all scores to DB after batch
-    persistChecklistScores(nextBullets);
+    persistChecklistScores(latestBulletsRef.current);
     setBatchChecklistRunning(false);
     toast.success(`批量自检完成，成功 ${successCount} 条`);
-  };
-
-  // Helper to persist checklist scores to DB
-  const persistChecklistScores = (bullets: Record<number, any>) => {
-    if (!selectedProjectId) return;
-    const scores: Record<number, any> = {};
-    for (const [idx, bullet] of Object.entries(bullets)) {
-      if (bullet?.checkListScores) {
-        scores[Number(idx)] = {
-          checkListScores: bullet.checkListScores,
-          aiSemanticRelations: bullet.aiSemanticRelations || null,
-        };
-      }
-    }
-    if (Object.keys(scores).length > 0) {
-      saveChecklistScoresMut.mutate({ projectId: selectedProjectId, scores: JSON.stringify(scores) });
-    }
   };
 
   // Sync confirmed bullets to listing preview
@@ -1846,6 +1884,7 @@ export default function GeneratePage() {
                       {/* Single bullet generation for this core */}
                       {confirmedCores[idx] && (
                         <div className="mt-3 pt-3 border-t">
+                          <p className="mb-2 text-[11px] text-muted-foreground">实际生成 Skill：listing.bullet.step.generate v6 · 奥美式买家价值 · 自然美式英语；FABE 不作为固定句式。生成草案可编辑，确认后再同步。</p>
                           {!generatedBullets[idx] ? (
                             <Button
                               variant="outline"
@@ -1900,7 +1939,7 @@ export default function GeneratePage() {
                                   <div className="flex items-start justify-between gap-2">
                                     <p className="text-sm flex-1">
                                       <span className="font-bold">{generatedBullets[idx].subtitle}</span>
-                                      {" \u2014 "}
+                                      {" "}
                                       <span className="text-muted-foreground">{generatedBullets[idx].fullText}</span>
                                     </p>
                                     <CharCountBadge
@@ -1916,10 +1955,10 @@ export default function GeneratePage() {
                                       ))}
                                     </div>
                                   )}
-                                  {generatedBullets[idx].incorporatedKeywords?.length > 0 && (
+                                  {generatedBullets[idx].keywordsUsed?.length > 0 && (
                                     <div className="flex gap-1 flex-wrap mt-1.5">
                                       <span className="text-[10px] text-muted-foreground">已埋入:</span>
-                                      {generatedBullets[idx].incorporatedKeywords.map((kw: string, j: number) => (
+                                      {generatedBullets[idx].keywordsUsed.map((kw: string, j: number) => (
                                         <Badge key={j} variant="outline" className="text-[10px] bg-teal-50">{kw}</Badge>
                                       ))}
                                     </div>
@@ -1935,7 +1974,7 @@ export default function GeneratePage() {
                                   <div className="mt-2 rounded-md border border-violet-200 bg-violet-50/50 p-2 space-y-2">
                                     <div className="flex items-center justify-between gap-2"><Label className="text-xs text-violet-800">再次优化（最多3次）</Label><span className="text-[10px] text-muted-foreground">候选 {Math.max(1, (bulletCandidates[idx] || []).length)}/4</span></div>
                                     <div className="flex gap-2"><Input className="h-7 text-xs" placeholder="填写优化方向，例如：突出安装便利性、压缩冗余表达" value={bulletOptimizationNotes[idx] || ""} onChange={event => setBulletOptimizationNotes(prev => ({ ...prev, [idx]: event.target.value }))} /><Button size="sm" className="h-7 text-xs" variant="outline" onClick={() => handleOptimizeBullet(idx)} disabled={optimizeBulletMut.isPending || (bulletCandidates[idx] || [generatedBullets[idx]]).length >= 4}>{optimizeBulletMut.isPending ? "优化中…" : "生成优化候选"}</Button></div>
-                                    {(bulletCandidates[idx] || []).length > 0 && <div className="space-y-1">{bulletCandidates[idx].map((candidate, candidateIndex) => <button key={candidateIndex} onClick={() => setGeneratedBullets(prev => ({ ...prev, [idx]: candidate }))} className={`w-full rounded border px-2 py-1 text-left text-[11px] ${generatedBullets[idx] === candidate ? "border-violet-500 bg-white" : "border-transparent hover:border-violet-200"}`}>候选 {candidateIndex + 1}{candidate.optimizationNote ? ` · ${candidate.optimizationNote}` : " · 初始生成"}</button>)}</div>}
+                                    {(bulletCandidates[idx] || []).length > 0 && <div className="space-y-1">{bulletCandidates[idx].map((candidate, candidateIndex) => <button key={candidateIndex} onClick={() => { replaceBulletDraft(idx, { ...candidate, checkListScores: undefined, aiSemanticRelations: undefined }); setConfirmedBullets(prev => ({ ...prev, [idx]: false })); }} className={`w-full rounded border px-2 py-1 text-left text-[11px] ${bulletFingerprint(generatedBullets[idx]) === bulletFingerprint(candidate) ? "border-violet-500 bg-white" : "border-transparent hover:border-violet-200"}`}>候选 {candidateIndex + 1}{candidate.optimizationNote ? ` · ${candidate.optimizationNote}` : " · 初始生成"}</button>)}</div>}
                                   </div>
                                 </div>
                               )}

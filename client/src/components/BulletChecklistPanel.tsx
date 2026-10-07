@@ -20,16 +20,16 @@ const CHECKLIST_DIMENSIONS = [
   { key: "layout", code: "B3", label: "排版", labelEn: "Layout", description: "字数及格式样统一" },
   { key: "sellingPointFocus", code: "B4", label: "卖点顺序", labelEn: "Selling Point Focus", description: "一条一个核心卖点，表达清晰" },
   { key: "subtitle", code: "B5", label: "小标题", labelEn: "Subtitle", description: "小标题简短清晰，帮助用户归纳总结卖点" },
-  { key: "fabe", code: "B6", label: "FABE法则", labelEn: "FABE Method", description: "对每个卖点进行FABE思考列，提炼用户最关心和最切中利益的点" },
+  { key: "fabe", code: "B6", label: "事实与买家价值", labelEn: "Fact to Benefit", description: "以FABE辅助思考，不必把四个环节机械写进同一条" },
   { key: "structured", code: "B7", label: "结构化格式", labelEn: "Structured Format", description: "卖点+解答，采用结构化格式，信息一目了然" },
-  { key: "psychology", code: "B8", label: "用户心理学", labelEn: "User Psychology", description: "符合大众用户心理学，如厌恶损失、从众心理" },
-  { key: "faqCoverage", code: "B9", label: "常见问题覆盖", labelEn: "FAQ Coverage", description: "通过评论、Q&A、品牌分析识别高频问题并在卖点中回答" },
-  { key: "quantifiedData", code: "B10", label: "数据对比", labelEn: "Quantified Data", description: "使用量化数据，如'轻30%'、'充电快2倍'" },
-  { key: "scenes", code: "B11", label: "场景融入", labelEn: "Scene Integration", description: "自然融入使用场景，如'办公室'、'旅行'、'健身房'" },
-  { key: "trustSignals", code: "B12", label: "信任背书", labelEn: "Trust Signals", description: "符合大众用户心理学，如厌恶损失、从众心理" },
-  { key: "warranty", code: "B13", label: "质保与售后", labelEn: "Warranty & Quality", description: "包含数据背书或权威背书，如'FCC认证'" },
-  { key: "trafficKeywords", code: "B14", label: "流量词", labelEn: "Traffic Keywords", description: "定期更新ARA排名快速上升的相关长尾词" },
-  { key: "aiReadability", code: "B15", label: "AI语义关系", labelEn: "AI-Friendly Structure", description: "自然体现4种语义关系(用途/能力/定义/因果)，帮助Rufus/COSMO理解" },
+  { key: "psychology", code: "B8", label: "真实购买理由", labelEn: "Buyer Motivation", description: "买家需求有事实支撑，不编造评论、从众心理或恐惧诉求" },
+  { key: "faqCoverage", code: "B9", label: "买家问题可回答性", labelEn: "Question Clarity", description: "有已确认问题时自然回应；缺少问题依据不扣分" },
+  { key: "quantifiedData", code: "B10", label: "数字与比较真实性", labelEn: "Claim Evidence", description: "出现数字/比较时需可核实；没有依据不应为了评分添加数字" },
+  { key: "scenes", code: "B11", label: "场景可信度", labelEn: "Scenario Fit", description: "仅在真实使用场景有依据时融入；缺场景不扣分" },
+  { key: "trustSignals", code: "B12", label: "信任表述真实性", labelEn: "Trust Claims", description: "核查出现的背书；没有证实的社会认同不应杜撰" },
+  { key: "warranty", code: "B13", label: "认证与质保真实性", labelEn: "Warranty & Certification", description: "仅审核已写入的承诺是否有依据，不强求认证或质保" },
+  { key: "trafficKeywords", code: "B14", label: "关键词自然度", labelEn: "Keyword Fit", description: "仅融入与本条相关的已确认词，不为埋词损害自然英文" },
+  { key: "aiReadability", code: "B15", label: "属性与用途清晰度", labelEn: "Shopper Clarity", description: "明确已有事实的属性、用途和限制，不机械堆叠语义关系" },
 ] as const;
 
 type CheckListScores = Record<string, {
@@ -38,6 +38,7 @@ type CheckListScores = Record<string, {
   reason: string;
   suggestion: string;
   evidenceQuote?: string;
+  suggestedRevision?: string;
 }>;
 
 interface BulletChecklistPanelProps {
@@ -225,6 +226,7 @@ export default function BulletChecklistPanel({
               const reason = score?.reason || notes;
               const suggestion = score?.suggestion || "";
               const evidenceQuote = score?.evidenceQuote || "";
+              const suggestedRevision = score?.suggestedRevision || "";
 
               return (
                 <div
@@ -284,6 +286,11 @@ export default function BulletChecklistPanel({
                         <p className="rounded bg-blue-50 px-2 py-1 text-blue-900">
                           <span className="font-semibold">修改建议：</span>{suggestion}
                         </p>
+                        {suggestedRevision && (
+                          <p className="rounded bg-violet-50 px-2 py-1 text-violet-900">
+                            <span className="font-semibold">英文改写草案（仅供人工编辑）：</span>{suggestedRevision}
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>

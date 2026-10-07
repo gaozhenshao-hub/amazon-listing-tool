@@ -55,6 +55,18 @@ describe("Listing checklist response contracts", () => {
     );
     expect(parseCompleteListingChecklist({ checkListScores }, "bullets")).toBeNull();
   });
+
+  it("rejects a failed bullet dimension without a quote or explicit missing-evidence marker", () => {
+    const checkListScores = Object.fromEntries(
+      LISTING_CHECKLIST_DIMENSIONS.bullets.map((key) => [key, {
+        pass: key !== "subtitle", notes: "Observed", reason: "Missing information",
+        suggestion: "Edit the lead-in", evidenceQuote: "",
+      }]),
+    );
+    expect(parseCompleteListingChecklist({ checkListScores }, "bullets")).toBeNull();
+    checkListScores.subtitle.evidenceQuote = "No supporting evidence supplied";
+    expect(parseCompleteListingChecklist({ checkListScores }, "bullets")).not.toBeNull();
+  });
 });
 
 describe("Listing checklist Skill policy", () => {

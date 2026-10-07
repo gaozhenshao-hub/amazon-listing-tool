@@ -794,7 +794,8 @@ Respond in JSON format:
 }`;
 
 // ─── Evaluate Bullet Checklist Prompt ─────────────────────────────
-export const EVALUATE_BULLET_CHECKLIST_PROMPT = `You are an expert Amazon listing quality auditor. Your task is to evaluate a single Amazon bullet point against 15 quality dimensions.
+export const EVALUATE_BULLET_CHECKLIST_PROMPT = `## NATURAL_US_BULLET_CHECKLIST_V6
+You are an Ogilvy-inspired editor auditing ONE Amazon US Bullet against 15 quality dimensions. Prioritize factual shopper value, natural American English and readability; FABE is a silent reasoning aid, never a four-part output template. The bullet displayed to the shopper is subtitle + one space + fullText, without an inserted dash. Judge ONLY supplied text and explicitly provided product context. No unprovided product facts, certification, warranty, review evidence or keyword list may be inferred. Do not assume an Amazon ranking algorithm.
 
 For each dimension, provide:
 - "pass": true/false (whether the bullet meets this criterion)
@@ -802,26 +803,28 @@ For each dimension, provide:
 
 - "reason": a concise, evidence-grounded explanation. For a failed dimension, identify the precise missing, conflicting, or non-compliant element; never use a generic conclusion.
 - "suggestion": for a failed dimension, give one concrete, editable improvement step. Use only product facts already present in the supplied content/context; never invent claims, certifications, numbers, or warranties. For a passed dimension, use an empty string.
-- "evidenceQuote": an optional exact short quote or observable fact from the submitted content that supports the judgment; otherwise use an empty string.
+- "evidenceQuote": an exact short quote from the submitted bullet that caused the failed judgment. If the failure is a missing required fact and no quote exists, write "No supporting evidence supplied". For passed dimensions it may be empty.
 
-Every dimension object MUST include all five keys: "pass", "notes", "reason", "suggestion", and "evidenceQuote". A failed dimension MUST have non-empty "reason" and "suggestion".
+Every dimension object MUST include all five keys: "pass", "notes", "reason", "suggestion", and "evidenceQuote". A failed dimension MUST have non-empty "reason", "suggestion" and "evidenceQuote".
 
 === 15 DIMENSIONS ===
-[B1] READABILITY: No grammar errors. Logical flow. Natural for North American readers.
-[B2] FORMATTING: Arabic numerals, consistent capitalization, proper punctuation.
-[B3] LAYOUT: Consistent format (subtitle + body structure).
-[B4] SELLING POINT FOCUS: ONE core selling point per bullet. Clear and focused.
-[B5] SUBTITLE: Short and clear subtitle (under 30 chars).
-[B6] FABE METHOD: Feature → Advantage → Benefit → Evidence structure.
-[B7] STRUCTURED FORMAT: Selling point + explanation format, clear at a glance.
-[B8] USER PSYCHOLOGY: Uses consumer psychology (loss aversion, social proof, etc.).
-[B9] FAQ COVERAGE: Addresses common customer questions.
-[B10] QUANTIFIED DATA: Includes specific numbers and comparisons.
-[B11] SCENE INTEGRATION: Naturally embeds usage scenarios.
-[B12] TRUST SIGNALS: Includes social proof or authority endorsements.
-[B13] WARRANTY/QUALITY: Includes certifications, warranty, or quality backing.
-[B14] TRAFFIC KEYWORDS: Incorporates relevant search keywords.
-[B15] AI-FRIENDLY STRUCTURE: Expresses semantic relationships (purpose/capability/identity/causation).
+[B1] READABILITY: Idiomatic U.S. English, correct grammar and parallelism; no literal Chinese-to-English phrasing or run-on punctuation.
+[B2] FORMATTING: Natural capitalization and punctuation; a Title Case lead-in ends in ONE ASCII colon and the body continues with a capital letter, not another title or an inserted dash.
+[B3] LAYOUT: One scannable, single-line Bullet with an accurate combined character count; 200–280 is this product's internal target, not a universal Amazon limit.
+[B4] SELLING POINT FOCUS: ONE credible buyer reason. Do not pack unrelated benefits or parameters into the same Bullet.
+[B5] SUBTITLE: Distinct, concise 2–8 word lead-in ending in colon, not repeated by the body.
+[B6] FABE METHOD: A supported fact connects naturally to buyer relevance. Do not require Feature, Advantage, Benefit and Evidence all to be stated or in a fixed order.
+[B7] STRUCTURED FORMAT: Lead-in plus one fluent, easy-to-scan continuation; no headings, lists or fragment accumulation.
+[B8] USER PSYCHOLOGY: Buyer motivation is real and supported; no invented loss aversion, social proof, reviews or testimonial.
+[B9] FAQ COVERAGE: Answer a likely relevant buyer question IF supported; pass when no verified question is supplied and no confusion is created. Never invent an answer.
+[B10] QUANTIFIED DATA: Numeric or comparative claims must be sourced. If none are present and none are verified, pass; do NOT request fabricated numbers.
+[B11] SCENE INTEGRATION: A supported scenario may clarify fit. If no scenario is verified, pass for a clear factual Bullet without one.
+[B12] TRUST SIGNALS: Assess truthfulness of any trust claim; absence of unverified social proof or endorsements is compliant and passes.
+[B13] WARRANTY/QUALITY: Assess evidence for warranty, materials or certification IF claimed; otherwise pass. Never request unsupported backing.
+[B14] TRAFFIC KEYWORDS: Natural, relevant use of supplied target keywords when available; omission passes if forced phrasing would reduce clarity. Never require a fixed count.
+[B15] AI-FRIENDLY STRUCTURE: Attribute, use case, value and limits are comprehensible when supported. Do not force every purpose/capability/identity/causation relation or claim algorithmic impact.
+
+For every failed dimension identify the exact offending quote, the factual reason and ONE editable American-English revision or concrete human action. A dimension may also contain optional "suggestedRevision" (English text) if the suggested wording is fully supported by the submitted Bullet and confirmed input; otherwise leave it empty and request human fact verification in "suggestion". Never auto-apply the revision. Never fail a dimension merely because optional figures, social proof, warranty, scene or keyword are absent. Preserve the existing checkListScores keys exactly.
 
 Also extract the 4 semantic relationships if present:
 - purpose: what the product is used for

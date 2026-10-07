@@ -81,10 +81,10 @@ describe("BulletChecklistPanel Component", () => {
       expect(componentCode).toContain('code: "B5"');
     });
 
-    it("should have B6 FABE dimension", () => {
+    it("should keep B6 as fact-to-benefit rather than a rigid FABE template", () => {
       expect(componentCode).toContain('key: "fabe"');
       expect(componentCode).toContain('code: "B6"');
-      expect(componentCode).toContain('label: "FABE法则"');
+      expect(componentCode).toContain('label: "事实与买家价值"');
     });
 
     it("should have B7 structured format dimension", () => {
@@ -130,7 +130,7 @@ describe("BulletChecklistPanel Component", () => {
     it("should have B15 AI semantic relations dimension", () => {
       expect(componentCode).toContain('key: "aiReadability"');
       expect(componentCode).toContain('code: "B15"');
-      expect(componentCode).toContain("AI语义关系");
+      expect(componentCode).toContain('label: "属性与用途清晰度"');
     });
 
     it("should have exactly 15 dimensions in CHECKLIST_DIMENSIONS array", () => {
@@ -389,10 +389,11 @@ describe("GeneratePage - BulletChecklistPanel Integration", () => {
     expect(pageCode).toContain("aiSemanticRelations={generatedBullets[idx].aiSemanticRelations}");
   });
 
-  it("should place BulletChecklistPanel after incorporatedKeywords section", () => {
-    const keywordsIdx = pageCode.indexOf("incorporatedKeywords.map");
+  it("should place BulletChecklistPanel after the actual keywordsUsed section", () => {
+    const keywordsIdx = pageCode.indexOf("keywordsUsed.map");
     // Find the BulletChecklistPanel usage (not the import)
     const checklistIdx = pageCode.indexOf("<BulletChecklistPanel");
+    expect(keywordsIdx).toBeGreaterThanOrEqual(0);
     expect(checklistIdx).toBeGreaterThan(keywordsIdx);
   });
 
