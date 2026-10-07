@@ -2009,4 +2009,4 @@
 
 - [x] P0–P4前端性能优化已完成并发布青岛：Nginx内容哈希静态直出/gzip/immutable缓存，受控Web Vitals观测，图库延迟解码与首图优先，富文本/图表/图形分包，响应耗时/错误恢复/优雅排空均已部署。生产三服务active、排空关闭、入口哈希一致、新JS/CSS压缩缓存正确、旧资源404、匿名性能写入401；未运行采集、AI或Provider任务。
 - [x] Listing 单条卖点精雕 v6 本地完成：权威 Skill 与试写 Skill 统一奥美式自然美式英语、非机械 FABE 与结构化合同；工作流及优化统一事实/证据/重复门禁；自检失败原因和人工可编辑建议、过期结果保护、工作空间隔离均已覆盖。开发库三项 Skill 已受控同步并幂等复验；离线回归、ESLint、全量TypeScript、客户端门禁、构建及Bundle预算通过，未调用模型或Provider。详见 `docs/validation/listing-single-bullet-v6-2026-10-07.md`。
-- [ ] Listing 单条卖点 v6 青岛上线：另获用户授权后才执行生产Skill事务快照及更新、原子发布和静态验收；发布不自动重跑历史Listing或调用模型/Provider。合成模型质量验收如需执行另行授权。
+- [x] Listing 单条卖点 v6 青岛上线：用户独立授权后完成三项生产Skill事务旧版快照与升级、三服务版本化备份/原子切换；本机/公网HTTP200、入口哈希、gzip/immutable和旧资源404均通过。未自动重跑历史Listing或调用模型/Provider；合成模型质量实测仍需另行授权。
