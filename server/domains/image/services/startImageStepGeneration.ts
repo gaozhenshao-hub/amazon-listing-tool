@@ -1,6 +1,8 @@
 import {
+  asImageWorkflowVersionTrpcError,
   db,
   ensureWriteAccess,
+  requireCurrentImageWorkflowUpstream,
   resolveProjectAccess,
   resolveSessionAccess,
 } from "../routerContext";
@@ -25,6 +27,12 @@ export async function startImageStepGenerationForUser(input: {
       currentStep: input.step,
     });
   }
+  if (input.step > 0) {
+    await requireCurrentImageWorkflowUpstream({
+      workspaceId: Number(input.workspaceId || 0), projectId: input.projectId, sessionId: session.id,
+      actorId: input.user.id, actorRole: input.user.role, targetStep: input.step,
+    }).catch(asImageWorkflowVersionTrpcError);
+  }
   const agentRunId = input.agentRunId || session.agentRunId || await ensureImageWorkflowAgentRun({
     projectId: input.projectId,
     userId: input.user.id,
@@ -38,6 +46,7 @@ export async function startImageStepGenerationForUser(input: {
     sessionId: session.id,
     step: input.step,
     userId: input.user.id,
+    actorRole: input.user.role,
     workspaceId: input.workspaceId,
     agentRunId,
     distillationBinding: input.distillationBinding,

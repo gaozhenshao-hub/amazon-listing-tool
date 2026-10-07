@@ -26,7 +26,7 @@ import {
   createRawArtifact,
   createSourceSnapshot,
   findAcquisitionJobByIdempotency,
-  findFreshConfirmedSnapshot,
+  findFreshConfirmedSnapshotCoveringCapabilities,
   getAcquisitionBudgetUsage,
   getAcquisitionJob,
   getActiveAcquisitionProfile,
@@ -39,6 +39,7 @@ import { getApifyProviderProfile } from "./providerProfileService";
 import { activateConfirmedSnapshotForConsumer } from "./consumerActivation";
 import { triggerConsumerPostConfirmation } from "./postConfirmation";
 import { confirmSnapshotForDirectIngestion } from "./snapshotReview";
+import { uncoveredCapabilitySummary } from "./capabilityCoverage";
 import { isApiConnectionSecretConfigured } from "../apiConnections/service";
 
 export const AcquisitionJobRequestSchema = z.object({
@@ -113,7 +114,77 @@ function providerRequestHash(input: unknown) {
 export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest) {
   const input = AcquisitionJobRequestSchema.parse(rawInput);
   const db = await requireDb("Amazon acquisition job");
-  const profile = requireEnabledAcquisitionProfile(await getApifyProviderProfile(db, input.workspaceId));
+  const configuredProfile = await getApifyProviderProfile(db, input.workspaceId);
+  // Cache-only requests do not need a Provider profile or secret: a retained
+  // snapshot is local evidence, not a new collection attempt.
+  const cacheTtlSeconds = configuredProfile?.cacheTtlSeconds ?? 86_400;
+
+  if (input.cachePolicy !== "refresh") {
+    const freshAfter = new Date(Date.now() - cacheTtlSeconds * 1_000);
+    const cached = await findFreshConfirmedSnapshotCoveringCapabilities({
+      db,
+      workspaceId: input.workspaceId,
+      marketplace: input.marketplace,
+      asin: input.asin,
+      freshAfter,
+      requestedCapabilities: input.capabilities,
+    });
+    if (cached?.complete) {
+      const idempotencyKey = buildAcquisitionIdempotencyKey({ ...input, cachePolicy: "confirmed_cache" });
+      const existing = await findAcquisitionJobByIdempotency(db, input.workspaceId, idempotencyKey);
+      if (existing) return { jobId: existing.id, status: existing.status, cacheHitSnapshotId: existing.cacheHitSnapshotId, aiJobRunId: null };
+      const reused = await withDbTransaction("Reuse confirmed Amazon acquisition snapshot", async tx => {
+        const jobId = await createAcquisitionJob(tx, {
+          workspaceId: input.workspaceId,
+          requestedBy: input.requestedBy,
+          providerProfileId: configuredProfile?.id ?? null,
+          consumerType: input.consumerType,
+          consumerRef: input.consumerRef,
+          marketplace: input.marketplace,
+          asin: input.asin,
+          requestedCapabilities: input.capabilities,
+          idempotencyKey,
+          status: "confirmed",
+          cachePolicy: input.cachePolicy,
+          maxChargeUsd: input.maxChargeUsd.toFixed(4),
+          cacheHitSnapshotId: cached.snapshot.id,
+          completedAt: new Date(),
+        });
+        const projection = await activateConfirmedSnapshotForConsumer({
+          db: tx,
+          workspaceId: input.workspaceId,
+          confirmedSnapshotId: cached.snapshot.id,
+          job: {
+            requestedBy: input.requestedBy,
+            consumerType: input.consumerType,
+            consumerRef: input.consumerRef,
+            requestedCapabilities: input.capabilities,
+          },
+          activatedBy: input.requestedBy,
+        });
+        return { jobId, status: "confirmed" as const, cacheHitSnapshotId: cached.snapshot.id, aiJobRunId: null, projection };
+      });
+      const postConfirmation = await triggerConsumerPostConfirmation(reused.projection);
+      return { ...reused, ...postConfirmation };
+    }
+    if (input.cachePolicy === "cache_only") {
+      const capabilityGaps = cached ? uncoveredCapabilitySummary(cached.coverage) : input.capabilities;
+      throw new AppError({
+        code: APP_ERROR_CODES.PRECONDITION_FAILED,
+        statusCode: 412,
+        message: cached
+          ? `缓存保留了已安全保存的部分采集结果，但未覆盖所请求能力：${capabilityGaps.join("、")}。未调用Provider，也不会删除既有图片。`
+          : "未找到覆盖所请求能力的可复用缓存。未调用Provider。",
+        details: {
+          reason: cached ? "capability_coverage_incomplete" : "cache_miss",
+          cacheSnapshotId: cached?.snapshot.id ?? null,
+          capabilityGaps,
+        },
+      });
+    }
+  }
+
+  const profile = requireEnabledAcquisitionProfile(configuredProfile);
   requireQualifiedCapabilities(profile, input.capabilities);
   if (!await isApiConnectionSecretConfigured("apify", "api_token")) {
     throw new AppError({
@@ -124,56 +195,6 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
     });
   }
   const policy = profileBudgetPolicy(profile);
-
-  if (input.cachePolicy !== "refresh") {
-    const freshAfter = new Date(Date.now() - policy.cacheTtlSeconds * 1_000);
-    const cached = await findFreshConfirmedSnapshot({
-      db,
-      workspaceId: input.workspaceId,
-      marketplace: input.marketplace,
-      asin: input.asin,
-      freshAfter,
-    });
-    if (cached) {
-      const idempotencyKey = buildAcquisitionIdempotencyKey({ ...input, cachePolicy: "confirmed_cache" });
-      const existing = await findAcquisitionJobByIdempotency(db, input.workspaceId, idempotencyKey);
-      if (existing) return { jobId: existing.id, status: existing.status, cacheHitSnapshotId: existing.cacheHitSnapshotId, aiJobRunId: null };
-      const reused = await withDbTransaction("Reuse confirmed Amazon acquisition snapshot", async tx => {
-        const jobId = await createAcquisitionJob(tx, {
-          workspaceId: input.workspaceId,
-          requestedBy: input.requestedBy,
-          providerProfileId: profile.id,
-          consumerType: input.consumerType,
-          consumerRef: input.consumerRef,
-          marketplace: input.marketplace,
-          asin: input.asin,
-          requestedCapabilities: input.capabilities,
-          idempotencyKey,
-          status: "confirmed",
-          cachePolicy: input.cachePolicy,
-          maxChargeUsd: input.maxChargeUsd.toFixed(4),
-          cacheHitSnapshotId: cached.id,
-          completedAt: new Date(),
-        });
-        const projection = await activateConfirmedSnapshotForConsumer({
-          db: tx,
-          workspaceId: input.workspaceId,
-          confirmedSnapshotId: cached.id,
-          job: {
-            requestedBy: input.requestedBy,
-            consumerType: input.consumerType,
-            consumerRef: input.consumerRef,
-            requestedCapabilities: input.capabilities,
-          },
-          activatedBy: input.requestedBy,
-        });
-        return { jobId, status: "confirmed" as const, cacheHitSnapshotId: cached.id, aiJobRunId: null, projection };
-      });
-      const postConfirmation = await triggerConsumerPostConfirmation(reused.projection);
-      return { ...reused, ...postConfirmation };
-    }
-    if (input.cachePolicy === "cache_only") throw new Error("acquisition cache miss");
-  }
 
   const baseIdempotencyKey = buildAcquisitionIdempotencyKey({ ...input, cachePolicy: input.cachePolicy });
   const existing = await findAcquisitionJobByIdempotency(db, input.workspaceId, baseIdempotencyKey);

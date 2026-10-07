@@ -397,11 +397,12 @@ describe("GeneratePage - BulletChecklistPanel Integration", () => {
     expect(checklistIdx).toBeGreaterThan(keywordsIdx);
   });
 
-  it("should place BulletChecklistPanel before the action buttons", () => {
-    const checklistIdx = pageCode.indexOf("BulletChecklistPanel");
-    // The confirm/edit/regenerate buttons come after
-    const confirmIdx = pageCode.indexOf("确认此条", checklistIdx);
-    expect(confirmIdx).toBeGreaterThan(checklistIdx);
+  it("should place BulletChecklistPanel before the governed candidate-review handoff", () => {
+    const checklistIdx = pageCode.indexOf("<BulletChecklistPanel");
+    const reviewHandoffIdx = pageCode.indexOf("请在下方候选账本中完成人工确认", checklistIdx);
+    expect(checklistIdx).toBeGreaterThanOrEqual(0);
+    expect(reviewHandoffIdx).toBeGreaterThan(checklistIdx);
+    expect(pageCode).not.toContain("确认此条");
   });
 });
 

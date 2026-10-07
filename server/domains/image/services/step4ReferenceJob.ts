@@ -15,6 +15,11 @@ import { buildImageWorkflowReferenceTargets, normalizeImageOutline } from "@shar
 import { hydrateLockedImageWorkflowAplusSubmodules } from "../../ai_os/services/businessArtifactRegistry";
 import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
 import {
+  captureImageWorkflowWorkerFence,
+  projectCurrentImageWorkflowSnapshotsToSession,
+  verifyImageWorkflowWorkerFence,
+} from "./imageWorkflowVersionPolicy";
+import {
   syncStepJobFailedToAgent,
   syncStepJobQueuedToAgent,
   syncStepJobRunningToAgent,
@@ -29,6 +34,9 @@ const STEP4_JOB_MODULE = "imageWorkflow";
 export const step4ReferenceJobInput = z.object({
   projectId: z.number().int().positive(),
   sessionId: z.number().int().positive(),
+  actorRole: z.string().min(1).max(80),
+  scopeRevision: z.number().int().min(0),
+  upstreamDigest: z.string().regex(/^[a-f0-9]{64}$/u),
   agentRunId: z.string().max(80).optional(),
   agentNodeId: z.string().max(80).optional(),
   distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional(),
@@ -274,10 +282,19 @@ export async function startStep4ReferenceJob(input: {
   projectId: number;
   sessionId: number;
   userId: number;
+  actorRole: string;
   workspaceId?: number | null;
   agentRunId?: string | null;
   distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
 }) {
+  const fence = await captureImageWorkflowWorkerFence({
+    workspaceId: Number(input.workspaceId || 0),
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+    actorId: input.userId,
+    actorRole: input.actorRole,
+    targetStep: 4,
+  });
   const activeJob = await getLatestStep4ReferenceJob(input.userId, input.projectId);
   if (activeJob?.status === "queued" || activeJob?.status === "running") {
     const syncActiveJob = activeJob.status === "running"
@@ -315,6 +332,8 @@ export async function startStep4ReferenceJob(input: {
     input: {
       projectId: input.projectId,
       sessionId: input.sessionId,
+      actorRole: input.actorRole,
+      ...fence,
       agentRunId,
       agentNodeId: imageWorkflowSkillNodeId(4),
       distillationBinding: input.distillationBinding,
@@ -345,8 +364,21 @@ export async function runStep4ReferenceJob(
   const input = step4ReferenceJobInput.parse(job.input);
   const project = await db.getProjectByIdAdmin(input.projectId);
   if (!project) throw new Error("Project not found");
-  const session = await db.getImageWorkflowSessionById(input.sessionId);
-  if (!session || session.projectId !== input.projectId) throw new Error("No workflow session found");
+  const storedSession = await db.getImageWorkflowSessionById(input.sessionId);
+  if (!storedSession || storedSession.projectId !== input.projectId) throw new Error("No workflow session found");
+  const scope = {
+    workspaceId: Number(job.workspaceId || project.workspaceId || 0),
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+  };
+  const upstream = await verifyImageWorkflowWorkerFence({
+    ...scope,
+    actorId: job.userId,
+    actorRole: input.actorRole,
+    targetStep: 4,
+    fence: { scopeRevision: input.scopeRevision, upstreamDigest: input.upstreamDigest },
+  });
+  const session = projectCurrentImageWorkflowSnapshotsToSession({ scope, snapshots: upstream, session: storedSession });
   if (!session.step3Confirmed) throw new Error("Step 3 not confirmed yet");
 
   let result: any;
@@ -371,6 +403,13 @@ export async function runStep4ReferenceJob(
   if (!latestSession || latestSession.step4Confirmed) {
     return { skipped: true, reason: "Step 4 session is no longer writable" };
   }
+  await verifyImageWorkflowWorkerFence({
+    ...scope,
+    actorId: job.userId,
+    actorRole: input.actorRole,
+    targetStep: 4,
+    fence: { scopeRevision: input.scopeRevision, upstreamDigest: input.upstreamDigest },
+  });
 
   const historicalSnapshot = parseStep4Snapshot(latestSession.step4UserEdit || latestSession.step4AiResult);
   const persistedResult = preserveHistoricalStep4ReferencesOnFallback(historicalSnapshot, result);

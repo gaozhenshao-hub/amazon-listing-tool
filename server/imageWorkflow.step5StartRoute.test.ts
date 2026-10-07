@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 
+vi.mock("./domains/image/services/imageWorkflowVersionPolicy", async importOriginal => {
+  const actual = await importOriginal<typeof import("./domains/image/services/imageWorkflowVersionPolicy")>();
+  const fence = { scopeRevision: 1, upstreamDigest: "b".repeat(64) };
+  return { ...actual,
+    requireCurrentImageWorkflowUpstream: vi.fn(async () => fence),
+    captureImageWorkflowWorkerFence: vi.fn(async () => fence),
+    invalidateImageWorkflowStages: vi.fn(async () => ({ invalidatedSteps: [5, 6] })),
+  };
+});
+
 vi.mock("./domains/image/repository", () => ({
   getProjectByIdAdmin: vi.fn(),
   getImageWorkflowSessionByProject: vi.fn(),
@@ -46,6 +56,7 @@ import {
   syncStepJobRunningToAgent,
 } from "./domains/image/imageWorkflowAgentBridge";
 import { STEP5_STALE_RUN_GRACE_MS } from "./domains/image/step5StaleRecovery";
+import { invalidateImageWorkflowStages } from "./domains/image/services/imageWorkflowVersionPolicy";
 
 const repository = vi.mocked(imageRepository);
 const mockedCancel = vi.mocked(cancelAiJob);
@@ -69,6 +80,7 @@ function createContext(): TrpcContext {
       updatedAt: new Date(),
       lastSignedIn: new Date(),
     },
+    workspaceId: 1,
     req: { protocol: "https", headers: {} } as TrpcContext["req"],
     res: { clearCookie: vi.fn() } as unknown as TrpcContext["res"],
   };
@@ -126,10 +138,14 @@ describe("Step5重新生成启动路由", () => {
       step5RunStatus: "failed",
       step5RunFailedGroup: "stale_recovery",
     }));
+    expect(vi.mocked(invalidateImageWorkflowStages)).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 1, projectId: 90001, sessionId: 780001, fromStep: 5,
+      legacyPatch: expect.objectContaining({ step5Confirmed: 0, step6Confirmed: 0 }),
+    }));
     expect(mockedCreate).toHaveBeenCalledWith(expect.objectContaining({
       runId: expect.any(String),
       projectId: 90001,
-      input: expect.objectContaining({ sessionId: 780001, agentRunId: "agent-existing" }),
+      input: expect.objectContaining({ sessionId: 780001, agentRunId: "agent-existing", scopeRevision: 1, upstreamDigest: "b".repeat(64) }),
     }));
     expect(mockedSchedule).toHaveBeenCalledWith("step5-new-run");
     expect(result).toMatchObject({ status: "queued" });

@@ -64,7 +64,7 @@ export async function ingestAcquisitionAssets(input: {
     let contentHash: string | null = null;
     let meta: ImageMeta | null = null;
     let sizeBytes: number | null = null;
-    let fieldStatus = "invalid";
+    let fieldStatus = "download_failed";
     try {
       const response = await safeHttpRequest(asset.sourceUrl, {
         timeoutMs: 30_000,
@@ -87,7 +87,9 @@ export async function ingestAcquisitionAssets(input: {
       stored = await storagePut(key, response.body, meta.contentType);
       fieldStatus = "pending_review";
     } catch {
-      fieldStatus = "invalid";
+      // Keep the source role and expected position as a visible gap. This is
+      // not evidence that the image or its module does not exist.
+      fieldStatus = "download_failed";
     }
     const assetId = await createAssetCandidate(input.db, {
       workspaceId: input.workspaceId,

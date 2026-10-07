@@ -5,7 +5,21 @@ import {
   registerListingArtifact,
   resolveCurrentBusinessArtifact,
 } from "../../domains/ai_os/services/businessArtifactRegistry";
-import { InsertAdStructure, InsertKeyword, InsertListing, InsertListingVersion, InsertNegativeKeyword, InsertReviewAggregation, adStructures, buyerQuestions, keywords, listings, listingVersions, negativeKeywords, reviewAggregations } from "../../../drizzle/schema/listing";
+import {
+  InsertAdStructure,
+  InsertKeyword,
+  InsertListing,
+  InsertListingVersion,
+  InsertNegativeKeyword,
+  InsertReviewAggregation,
+  adStructures,
+  buyerQuestions,
+  keywords,
+  listings,
+  listingVersions,
+  negativeKeywords,
+  reviewAggregations,
+} from "../../../drizzle/schema/listing";
 
 async function captureListingProject(projectId: number | null | undefined) {
   if (!projectId) return;
@@ -20,7 +34,11 @@ export async function createListing(data: InsertListing) {
   if (!db) throw new Error("Database not available");
   const result = await db.insert(listings).values(data);
   const insertId = result[0].insertId;
-  const rows = await db.select().from(listings).where(eq(listings.id, insertId)).limit(1);
+  const rows = await db
+    .select()
+    .from(listings)
+    .where(eq(listings.id, insertId))
+    .limit(1);
   await registerListingArtifact(insertId, "ai_output");
   return rows[0];
 }
@@ -28,54 +46,56 @@ export async function createListing(data: InsertListing) {
 export async function getListingsByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.select().from(listings).where(eq(listings.projectId, projectId)).orderBy(desc(listings.createdAt));
+  return db
+    .select()
+    .from(listings)
+    .where(eq(listings.projectId, projectId))
+    .orderBy(desc(listings.createdAt));
 }
 
 export async function getActiveListingByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const rows = await db.select().from(listings)
+  const rows = await db
+    .select()
+    .from(listings)
     .where(and(eq(listings.projectId, projectId), eq(listings.isActive, 1)))
     .orderBy(desc(listings.version))
     .limit(1);
-  const snapshot = rows[0] ?? null;
-  if (!snapshot) return null;
-  const artifact = await resolveCurrentBusinessArtifact({
-    domain: "listing",
-    artifactKey: "listing.content",
-    projectId,
-  }).catch(() => null);
-  const selected = artifact?.content && typeof artifact.content === "object"
-    ? (artifact.content as any).listing
-    : null;
-  return selected ? { ...snapshot, ...selected, id: snapshot.id, projectId: snapshot.projectId } : snapshot;
+  // `listings` is the operational source of truth for editor and candidate-CAS
+  // reads. `listing.content` is a historical projection that can legitimately
+  // lag a same-transaction Phase B complete snapshot; applying it here would
+  // mint a preview token for bytes that no longer exist in the real row. Other
+  // confirmed Artifact types and all listing.content versions remain available
+  // through the Artifact registry's explicit version APIs.
+  return rows[0] ?? null;
 }
 
 export async function getListingById(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const rows = await db.select().from(listings).where(eq(listings.id, id)).limit(1);
-  const snapshot = rows[0] ?? null;
-  if (!snapshot) return null;
-  const artifact = await resolveCurrentBusinessArtifact({
-    domain: "listing",
-    artifactKey: "listing.content",
-    sourceTable: "listings",
-    sourceRowId: id,
-    projectId: snapshot.projectId,
-  }).catch(() => null);
-  const selected = artifact?.content && typeof artifact.content === "object"
-    ? (artifact.content as any).listing
-    : null;
-  return selected ? { ...snapshot, ...selected, id: snapshot.id, projectId: snapshot.projectId } : snapshot;
+  const rows = await db
+    .select()
+    .from(listings)
+    .where(eq(listings.id, id))
+    .limit(1);
+  // Keep direct edit reads aligned with getActiveListingByProject: projections
+  // are versioned history, while the persisted Listing row is the only safe
+  // mutation source of truth.
+  return rows[0] ?? null;
 }
 
-export async function updateListing(id: number, data: Partial<InsertListing>, projectId?: number) {
+export async function updateListing(
+  id: number,
+  data: Partial<InsertListing>,
+  projectId?: number
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const where = projectId === undefined
-    ? eq(listings.id, id)
-    : and(eq(listings.id, id), eq(listings.projectId, projectId));
+  const where =
+    projectId === undefined
+      ? eq(listings.id, id)
+      : and(eq(listings.id, id), eq(listings.projectId, projectId));
   await db.update(listings).set(data).where(where);
   const rows = await db.select().from(listings).where(where).limit(1);
   if (!rows[0]) return null;
@@ -90,7 +110,11 @@ export async function createKeyword(data: InsertKeyword) {
   if (!db) throw new Error("Database not available");
   const result = await db.insert(keywords).values(data);
   const insertId = result[0].insertId;
-  const rows = await db.select().from(keywords).where(eq(keywords.id, insertId)).limit(1);
+  const rows = await db
+    .select()
+    .from(keywords)
+    .where(eq(keywords.id, insertId))
+    .limit(1);
   await captureListingProject(data.projectId);
   return rows[0];
 }
@@ -107,7 +131,9 @@ export async function bulkCreateKeywords(dataArr: InsertKeyword[]) {
 export async function getKeywordsByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.select().from(keywords)
+  return db
+    .select()
+    .from(keywords)
     .where(and(eq(keywords.projectId, projectId), eq(keywords.isNegative, 0)))
     .orderBy(desc(keywords.updatedAt));
 }
@@ -115,24 +141,45 @@ export async function getKeywordsByProject(projectId: number) {
 export async function getKeywordById(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const rows = await db.select().from(keywords).where(eq(keywords.id, id)).limit(1);
+  const rows = await db
+    .select()
+    .from(keywords)
+    .where(eq(keywords.id, id))
+    .limit(1);
   return rows[0] ?? null;
 }
 
 export async function updateKeyword(id: number, data: Partial<InsertKeyword>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [existing] = await db.select({ projectId: keywords.projectId }).from(keywords).where(eq(keywords.id, id));
+  const [existing] = await db
+    .select({ projectId: keywords.projectId })
+    .from(keywords)
+    .where(eq(keywords.id, id));
   await db.update(keywords).set(data).where(eq(keywords.id, id));
-  const rows = await db.select().from(keywords).where(eq(keywords.id, id)).limit(1);
+  const rows = await db
+    .select()
+    .from(keywords)
+    .where(eq(keywords.id, id))
+    .limit(1);
   await captureListingProject(data.projectId ?? existing?.projectId);
   return rows[0];
 }
 
-export async function bulkUpdateKeywords(ids: number[], data: Partial<InsertKeyword>) {
+export async function bulkUpdateKeywords(
+  ids: number[],
+  data: Partial<InsertKeyword>
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [existing] = ids.length > 0 ? await db.select({ projectId: keywords.projectId }).from(keywords).where(eq(keywords.id, ids[0])).limit(1) : [];
+  const [existing] =
+    ids.length > 0
+      ? await db
+          .select({ projectId: keywords.projectId })
+          .from(keywords)
+          .where(eq(keywords.id, ids[0]))
+          .limit(1)
+      : [];
   for (const id of ids) {
     await db.update(keywords).set(data).where(eq(keywords.id, id));
   }
@@ -143,7 +190,10 @@ export async function bulkUpdateKeywords(ids: number[], data: Partial<InsertKeyw
 export async function deleteKeyword(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [existing] = await db.select({ projectId: keywords.projectId }).from(keywords).where(eq(keywords.id, id));
+  const [existing] = await db
+    .select({ projectId: keywords.projectId })
+    .from(keywords)
+    .where(eq(keywords.id, id));
   await db.delete(keywords).where(eq(keywords.id, id));
   await captureListingProject(existing?.projectId);
   return { success: true };
@@ -160,7 +210,10 @@ export async function deleteKeywordsByProject(projectId: number) {
 export async function getKeywordStats(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const all = await db.select().from(keywords).where(eq(keywords.projectId, projectId));
+  const all = await db
+    .select()
+    .from(keywords)
+    .where(eq(keywords.projectId, projectId));
   const total = all.length;
   const byStatus: Record<string, number> = {};
   const byStrategy: Record<string, number> = {};
@@ -168,8 +221,11 @@ export async function getKeywordStats(projectId: number) {
   const negativeCount = all.filter(k => k.isNegative === 1).length;
   for (const kw of all) {
     byStatus[kw.status] = (byStatus[kw.status] || 0) + 1;
-    if (kw.strategyCategory) byStrategy[kw.strategyCategory] = (byStrategy[kw.strategyCategory] || 0) + 1;
-    if (kw.rootCategory) byRoot[kw.rootCategory] = (byRoot[kw.rootCategory] || 0) + 1;
+    if (kw.strategyCategory)
+      byStrategy[kw.strategyCategory] =
+        (byStrategy[kw.strategyCategory] || 0) + 1;
+    if (kw.rootCategory)
+      byRoot[kw.rootCategory] = (byRoot[kw.rootCategory] || 0) + 1;
   }
   return { total, negativeCount, byStatus, byStrategy, byRoot };
 }
@@ -181,12 +237,18 @@ export async function createNegativeKeyword(data: InsertNegativeKeyword) {
   if (!db) throw new Error("Database not available");
   const result = await db.insert(negativeKeywords).values(data);
   const insertId = result[0].insertId;
-  const rows = await db.select().from(negativeKeywords).where(eq(negativeKeywords.id, insertId)).limit(1);
+  const rows = await db
+    .select()
+    .from(negativeKeywords)
+    .where(eq(negativeKeywords.id, insertId))
+    .limit(1);
   await captureListingProject(data.projectId);
   return rows[0];
 }
 
-export async function bulkCreateNegativeKeywords(dataArr: InsertNegativeKeyword[]) {
+export async function bulkCreateNegativeKeywords(
+  dataArr: InsertNegativeKeyword[]
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   if (dataArr.length === 0) return [];
@@ -198,7 +260,9 @@ export async function bulkCreateNegativeKeywords(dataArr: InsertNegativeKeyword[
 export async function getNegativeKeywordsByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.select().from(negativeKeywords)
+  return db
+    .select()
+    .from(negativeKeywords)
     .where(eq(negativeKeywords.projectId, projectId))
     .orderBy(desc(negativeKeywords.createdAt));
 }
@@ -206,7 +270,10 @@ export async function getNegativeKeywordsByProject(projectId: number) {
 export async function deleteNegativeKeyword(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [existing] = await db.select({ projectId: negativeKeywords.projectId }).from(negativeKeywords).where(eq(negativeKeywords.id, id));
+  const [existing] = await db
+    .select({ projectId: negativeKeywords.projectId })
+    .from(negativeKeywords)
+    .where(eq(negativeKeywords.id, id));
   await db.delete(negativeKeywords).where(eq(negativeKeywords.id, id));
   await captureListingProject(existing?.projectId);
   return { success: true };
@@ -215,7 +282,9 @@ export async function deleteNegativeKeyword(id: number) {
 export async function deleteNegativeKeywordsByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(negativeKeywords).where(eq(negativeKeywords.projectId, projectId));
+  await db
+    .delete(negativeKeywords)
+    .where(eq(negativeKeywords.projectId, projectId));
   await captureListingProject(projectId);
   return { success: true };
 }
@@ -233,25 +302,39 @@ export async function createAdStructure(data: InsertAdStructure) {
 export async function getAdStructuresByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const rows = await db.select().from(adStructures).where(eq(adStructures.projectId, projectId)).orderBy(desc(adStructures.createdAt));
-  return Promise.all(rows.map(async (row) => {
-    const artifact = await resolveCurrentBusinessArtifact({
-      domain: "ads",
-      artifactKey: "ads.structure",
-      sourceTable: "adStructures",
-      sourceRowId: row.id,
-      projectId,
-    }).catch(() => null);
-    return artifact?.content && typeof artifact.content === "object"
-      ? { ...row, ...(artifact.content as Record<string, unknown>), id: row.id, projectId: row.projectId }
-      : row;
-  }));
+  const rows = await db
+    .select()
+    .from(adStructures)
+    .where(eq(adStructures.projectId, projectId))
+    .orderBy(desc(adStructures.createdAt));
+  return Promise.all(
+    rows.map(async row => {
+      const artifact = await resolveCurrentBusinessArtifact({
+        domain: "ads",
+        artifactKey: "ads.structure",
+        sourceTable: "adStructures",
+        sourceRowId: row.id,
+        projectId,
+      }).catch(() => null);
+      return artifact?.content && typeof artifact.content === "object"
+        ? {
+            ...row,
+            ...(artifact.content as Record<string, unknown>),
+            id: row.id,
+            projectId: row.projectId,
+          }
+        : row;
+    })
+  );
 }
 
 export async function getAdStructureById(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const rows = await db.select().from(adStructures).where(eq(adStructures.id, id));
+  const rows = await db
+    .select()
+    .from(adStructures)
+    .where(eq(adStructures.id, id));
   const snapshot = rows[0] || null;
   if (!snapshot) return null;
   const artifact = await resolveCurrentBusinessArtifact({
@@ -262,11 +345,19 @@ export async function getAdStructureById(id: number) {
     projectId: snapshot.projectId,
   }).catch(() => null);
   return artifact?.content && typeof artifact.content === "object"
-    ? { ...snapshot, ...(artifact.content as Record<string, unknown>), id: snapshot.id, projectId: snapshot.projectId }
+    ? {
+        ...snapshot,
+        ...(artifact.content as Record<string, unknown>),
+        id: snapshot.id,
+        projectId: snapshot.projectId,
+      }
     : snapshot;
 }
 
-export async function updateAdStructure(id: number, data: Partial<InsertAdStructure>) {
+export async function updateAdStructure(
+  id: number,
+  data: Partial<InsertAdStructure>
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(adStructures).set(data).where(eq(adStructures.id, id));
@@ -294,20 +385,30 @@ export async function createListingVersion(data: InsertListingVersion) {
 export async function getListingVersionsByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.select().from(listingVersions).where(eq(listingVersions.projectId, projectId)).orderBy(desc(listingVersions.id));
+  return db
+    .select()
+    .from(listingVersions)
+    .where(eq(listingVersions.projectId, projectId))
+    .orderBy(desc(listingVersions.id));
 }
 
 export async function getListingVersionById(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const rows = await db.select().from(listingVersions).where(eq(listingVersions.id, id));
+  const rows = await db
+    .select()
+    .from(listingVersions)
+    .where(eq(listingVersions.id, id));
   return rows[0] || null;
 }
 
-export async function getLatestListingVersionNumber(listingId: number): Promise<number> {
+export async function getLatestListingVersionNumber(
+  listingId: number
+): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
-  const rows = await db.select({ versionNumber: listingVersions.versionNumber })
+  const rows = await db
+    .select({ versionNumber: listingVersions.versionNumber })
     .from(listingVersions)
     .where(eq(listingVersions.listingId, listingId))
     .orderBy(desc(listingVersions.versionNumber))
@@ -321,7 +422,11 @@ export async function createReviewAggregation(data: InsertReviewAggregation) {
   if (!db) throw new Error("DB not available");
   const result = await db.insert(reviewAggregations).values(data);
   const insertId = result[0].insertId;
-  const rows = await db.select().from(reviewAggregations).where(eq(reviewAggregations.id, insertId)).limit(1);
+  const rows = await db
+    .select()
+    .from(reviewAggregations)
+    .where(eq(reviewAggregations.id, insertId))
+    .limit(1);
   await captureListingProject(data.projectId);
   return rows[0];
 }
@@ -329,19 +434,34 @@ export async function createReviewAggregation(data: InsertReviewAggregation) {
 export async function getReviewAggregationByProject(projectId: number) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(reviewAggregations)
+  const rows = await db
+    .select()
+    .from(reviewAggregations)
     .where(eq(reviewAggregations.projectId, projectId))
     .orderBy(desc(reviewAggregations.updatedAt))
     .limit(1);
   return rows[0] || null;
 }
 
-export async function updateReviewAggregation(id: number, data: Partial<InsertReviewAggregation>) {
+export async function updateReviewAggregation(
+  id: number,
+  data: Partial<InsertReviewAggregation>
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const [existing] = await db.select({ projectId: reviewAggregations.projectId }).from(reviewAggregations).where(eq(reviewAggregations.id, id));
-  await db.update(reviewAggregations).set(data).where(eq(reviewAggregations.id, id));
-  const rows = await db.select().from(reviewAggregations).where(eq(reviewAggregations.id, id)).limit(1);
+  const [existing] = await db
+    .select({ projectId: reviewAggregations.projectId })
+    .from(reviewAggregations)
+    .where(eq(reviewAggregations.id, id));
+  await db
+    .update(reviewAggregations)
+    .set(data)
+    .where(eq(reviewAggregations.id, id));
+  const rows = await db
+    .select()
+    .from(reviewAggregations)
+    .where(eq(reviewAggregations.id, id))
+    .limit(1);
   await captureListingProject(data.projectId ?? existing?.projectId);
   return rows[0];
 }
@@ -355,8 +475,15 @@ export async function deleteReviewAggregation(id: number) {
 export async function getActiveBuyerQuestionsByProject(projectId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(buyerQuestions)
-    .where(and(eq(buyerQuestions.projectId, projectId), eq(buyerQuestions.status, "active")))
+  return db
+    .select()
+    .from(buyerQuestions)
+    .where(
+      and(
+        eq(buyerQuestions.projectId, projectId),
+        eq(buyerQuestions.status, "active")
+      )
+    )
     .orderBy(desc(buyerQuestions.frequency), desc(buyerQuestions.createdAt))
     .limit(30);
 }

@@ -94,7 +94,7 @@ describe("expression-group project scope", () => {
     const caller = expressionGroupRouter.createCaller(createContext(7));
 
     await expect(caller.deleteExpressionGroup({ projectId: 101, groupId: 101 }))
-      .rejects.toThrow("Project not found");
+      .rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(mocks.getExpressionGroupByProject).not.toHaveBeenCalled();
     expect(mocks.deleteExpressionGroup).not.toHaveBeenCalled();
   });

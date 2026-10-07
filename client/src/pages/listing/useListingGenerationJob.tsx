@@ -58,8 +58,11 @@ export function useListingGenerationJob(input: {
       refetchInterval: (query) => isActive((query.state.data as any)?.status) ? 2_000 : false,
     },
   );
-  const run = runQuery.data as any;
+  const fetchedRun = runQuery.data as any;
+  const run = fetchedRun?.projectId === input.projectId ? fetchedRun : null;
   const generating = startMutation.isPending || isActive(run?.status);
+
+  useEffect(() => { setActiveRunId(null); }, [input.projectId]);
 
   useEffect(() => {
     if (!run?.runId) return;

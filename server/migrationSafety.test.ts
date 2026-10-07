@@ -33,6 +33,10 @@ describe("database migration safety", () => {
     expect(migrationNames.indexOf("0102a_emperor_core_registry.sql"))
       .toBeLessThan(migrationNames.indexOf("0103_emperor_agent_workflow.sql"));
     expect(migrationNames).not.toContain("0203_external_knowledge_caller_bindings.sql");
+    expect(migrationNames).toContain("0204_listing_revision_governance.sql");
+    expect(migrationNames).toContain("0205_image_asset_policy.sql");
+    expect(migrationNames).not.toContain("0206_image_workflow_version_snapshots.sql");
+    expect(migrationNames).not.toContain("0207_image_asset_trust_ledger.sql");
     expect(plan.every((item: any) => /^[a-f0-9]{64}$/.test(item.checksum))).toBe(true);
   });
 

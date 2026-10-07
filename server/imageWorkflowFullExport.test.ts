@@ -119,14 +119,15 @@ describe("图片工作流研究＋六制作阶段完整方案导出", () => {
     expect(html).toContain("避免背景抢占产品细节");
   });
 
-  it("通过后端导出包接口而不是页面缓存来取得完整资产", () => {
+  it("通过后端已批准快照导出包接口而不是页面缓存或旧原始资产来取得成果", () => {
     const sessionsRouter = fs.readFileSync(path.join(root, "server/domains/image/routers/sessions.ts"), "utf8");
     const page = fs.readFileSync(path.join(root, "client/src/pages/ImageWorkflowPage.tsx"), "utf8");
     expect(sessionsRouter).toContain("getExportBundle: protectedProcedure");
-    expect(sessionsRouter).toContain("getExpressionGroupsByProject");
-    expect(sessionsRouter).toContain("asinReferenceSets");
+    expect(sessionsRouter).toContain("getApprovedImageWorkflowExport");
+    expect(sessionsRouter).toContain("return { approved, expressionGroups: [] as any[], asinReferenceSets: [] as any[] }");
     expect(page).toContain("trpc.imageWorkflow.getExportBundle.useQuery");
-    expect(page).toContain("buildFullPlanContent(bundle.session, undefined, undefined, bundle)");
+    expect(page).toContain("Object.fromEntries(bundle.approved.sections.map");
+    expect(page).toContain("buildFullPlanContent(approvedSession, undefined, undefined");
   });
 
   it("保留研究＋六阶段且以七列瀑布流展示，不输出新增逐图执行版", () => {

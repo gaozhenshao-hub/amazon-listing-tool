@@ -205,7 +205,7 @@ export default function ImageSuggestionsPage() {
                       <Button
                         variant="outline"
                         onClick={handleTranslate}
-                        disabled={translateImageAdvice.isPending}
+                        disabled title="旧图片建议翻译会直接覆盖正式Listing，待人工审阅译文流程"
                         className="border-orange-300 text-orange-700 hover:bg-orange-50"
                       >
                         {translateImageAdvice.isPending ? (
@@ -349,7 +349,7 @@ export default function ImageSuggestionsPage() {
                             )}
                           </>
                         ) : (
-                          <p className="text-sm text-muted-foreground italic">暂无中文翻译，请点击"生成中文翻译"</p>
+                          <p className="text-sm text-muted-foreground italic">暂无中文翻译；旧自动翻译已暂停，等待人工审阅译文流程</p>
                         )}
                       </div>
                     </div>
@@ -514,7 +514,7 @@ export default function ImageSuggestionsPage() {
                             )}
                           </>
                         ) : (
-                          <p className="text-sm text-muted-foreground italic">暂无中文翻译，请点击"生成中文翻译"</p>
+                          <p className="text-sm text-muted-foreground italic">暂无中文翻译；旧自动翻译已暂停，等待人工审阅译文流程</p>
                         )}
                       </div>
                     </div>
@@ -872,7 +872,7 @@ export default function ImageSuggestionsPage() {
                   <Button
                     variant="outline"
                     onClick={handleTranslate}
-                    disabled={translateImageAdvice.isPending}
+                    disabled title="旧图片建议翻译会直接覆盖正式Listing，待人工审阅译文流程"
                     className="border-orange-300 text-orange-700 hover:bg-orange-50"
                   >
                     {translateImageAdvice.isPending ? (

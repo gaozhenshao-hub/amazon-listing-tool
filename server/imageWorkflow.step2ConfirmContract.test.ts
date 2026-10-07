@@ -23,15 +23,16 @@ describe("Step2整体确认路由契约", () => {
     expect(draftBlock).toContain("return { outline: normalized }");
   });
 
-  it("确认前将场景子图规范化，并将同一快照保存及发布给后续步骤", () => {
+  it("确认前将场景子图规范化，并将同一快照交给不可变确认事务及后续步骤", () => {
     const confirmBlock = workflowStepsSource.slice(
       workflowStepsSource.indexOf("confirmStep2: protectedProcedure"),
       workflowStepsSource.indexOf("// ─── Step 2: Lock a single image"),
     );
 
     expect(confirmBlock).toContain("const normalized = normalizeImageOutline(parsed)");
-    expect(confirmBlock).toContain("step2UserEdit: JSON.stringify(normalized)");
-    expect(confirmBlock).toContain("step2Confirmed: 1");
+    expect(confirmBlock).toContain("confirmHumanImageWorkflowStage({");
+    expect(confirmBlock).toContain("step: 2, content: normalized");
+    expect(confirmBlock).not.toContain("db.updateImageWorkflowSession(session.id");
     expect(confirmBlock).toContain("aiResult: normalized");
     expect(confirmBlock).toContain("userEdit: normalized");
   });

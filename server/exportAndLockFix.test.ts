@@ -1,15 +1,15 @@
 import { describe, it, expect } from "vitest";
 
-describe("PreviewPage Unicode Fix", () => {
-  it("should not contain unicode escape sequences for Chinese characters", async () => {
+describe("PreviewPage Unicode and legacy export closure", () => {
+  it("should retain UTF-8 Chinese UI text and explain that legacy CSV/report downloads are paused", async () => {
     const fs = await import("fs");
     const content = fs.readFileSync("client/src/pages/PreviewPage.tsx", "utf-8");
     // Check that common Chinese UI strings are present as actual characters
     expect(content).toContain("结果预览");
-    expect(content).toContain("导出完整报告");
     expect(content).toContain("工作台步骤锁定状态");
     expect(content).toContain("已锁定");
     expect(content).toContain("待完善");
+    expect(content).toContain("直接下载报告/CSV与旧产物指针选版已暂停");
     // Should not have excessive unicode escapes (a few for special chars like ✓ are OK)
     const unicodeEscapes = content.match(/\\u[0-9a-fA-F]{4}/g) || [];
     // Allow some for special symbols, but should be less than 20
@@ -17,29 +17,28 @@ describe("PreviewPage Unicode Fix", () => {
   });
 });
 
-describe("Export Listing Pack", () => {
-  it("should have the export button in PreviewPage", async () => {
+describe("Legacy browser export is closed", () => {
+  it("should not expose the retired browser Listing-pack export", async () => {
     const fs = await import("fs");
     const content = fs.readFileSync("client/src/pages/PreviewPage.tsx", "utf-8");
-    expect(content).toContain("handleExportListingPack");
-    expect(content).toContain("导出Listing包");
-    expect(content).toContain("Package");
+    expect(content).not.toContain("handleExportListingPack");
+    expect(content).not.toContain("导出Listing包");
+    expect(content).toContain("旧报告与浏览器本地CSV无法验证当前完整人审快照，暂不提供下载");
   });
 
-  it("should generate CSV with BOM for Excel compatibility", async () => {
+  it("should not retain browser CSV/BOM generation after export closure", async () => {
     const fs = await import("fs");
     const content = fs.readFileSync("client/src/pages/PreviewPage.tsx", "utf-8");
-    // Check for BOM marker
-    expect(content).toContain("\\uFEFF");
-    // Check for CSV generation logic
-    expect(content).toContain("text/csv;charset=utf-8");
-    expect(content).toContain("Listing_Pack_");
+    expect(content).not.toContain("text/csv;charset=utf-8");
+    expect(content).not.toContain("Listing_Pack_");
+    expect(content).not.toContain("\\uFEFF");
   });
+});
 
-  it("should export all listing sections: title, bullets, description, searchTerms, QA", async () => {
+describe("Preview Listing content display", () => {
+  it("should render all Listing sections: title, bullets, description, searchTerms, QA", async () => {
     const fs = await import("fs");
     const content = fs.readFileSync("client/src/pages/PreviewPage.tsx", "utf-8");
-    // Verify all sections are included in export (uses template literals)
     expect(content).toContain("Title");
     expect(content).toContain("Bullet Point");
     expect(content).toContain("Description");
@@ -47,7 +46,7 @@ describe("Export Listing Pack", () => {
     expect(content).toContain("Q&A");
   });
 
-  it("should support both EN and CN content in export", async () => {
+  it("should render both EN and CN Listing content", async () => {
     const fs = await import("fs");
     const content = fs.readFileSync("client/src/pages/PreviewPage.tsx", "utf-8");
     expect(content).toContain("EN");

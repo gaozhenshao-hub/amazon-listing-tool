@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
+import { sanitizeListingHtml } from "@/lib/sanitizeListingHtml";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -65,7 +66,7 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
       autoCheckTriggered.current = true;
       evaluateCheck.mutate({ description });
     }
-  }, [generated, description]);
+  }, [generated, description, checkScores, evaluateCheck]);
 
   const handleRunCheck = () => {
     if (!description.trim()) {
@@ -173,7 +174,7 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
           {displayContent ? (
             <div
               className="text-sm text-green-800 dark:text-green-300 prose prose-sm max-w-none line-clamp-6 pl-2"
-              dangerouslySetInnerHTML={{ __html: displayContent }}
+              dangerouslySetInnerHTML={{ __html: sanitizeListingHtml(displayContent) }}
             />
           ) : (
             <p className="text-sm text-muted-foreground pl-2">描述内容已锁定</p>
@@ -261,7 +262,7 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
               <div className="rounded-lg border p-4 min-h-[200px]">
                 <div
                   className="prose prose-sm max-w-none"
-                  dangerouslySetInnerHTML={{ __html: description }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeListingHtml(description) }}
                 />
               </div>
             )}
@@ -304,7 +305,7 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
             </div>
             <div
               className="text-sm text-green-700 prose prose-sm max-w-none line-clamp-3"
-              dangerouslySetInnerHTML={{ __html: description }}
+              dangerouslySetInnerHTML={{ __html: sanitizeListingHtml(description) }}
             />
             <Button
               size="sm"

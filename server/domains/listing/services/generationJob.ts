@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { containsTemplateFactInFreeText, excludeRawExamplesFromFactTree, formatSingleBulletIdentity, isTemplateOrEmptyFact, rawAttributeExampleValues, sanitizeListingFactTree, sanitizeListingProjectFacts, sanitizeSelectedSellingPoint, selectedPointContainsRawExamples } from "../../../../shared/listingFactSafety";
 
@@ -35,6 +36,9 @@ import {
 } from "../listingAgentBridge";
 import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
 import { readCompleteAttributeText } from "./listingRawAttributeSource";
+import { resolveConfirmedListingCore } from "./listingConfirmedCore";
+import { persistGeneratedBulletCandidate } from "./listingCandidateProvenance";
+import { resolveCurrentConfirmedListingFacts } from "./listingFactSource";
 
 export const LISTING_JOB_MODULE = "listing";
 
@@ -77,10 +81,17 @@ export const listingGenerationJobInput = z.object({
   emphasis: z.string().max(4_000).optional(),
   existingTitle: z.string().max(2_000).optional(),
   sellingPoint: sellingPointSchema.optional(),
+  coreRevisionId: z.number().int().positive().optional(),
+  coreInputHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   previousBullets: z.array(z.object({
     subtitle: z.string(),
     fullText: z.string(),
   })).max(9).optional(),
+  factBinding: z.object({
+    sourceFileId: z.number().int().positive(),
+    rawHash: z.string().regex(/^[a-f0-9]{64}$/),
+    factRevisionIds: z.array(z.number().int().positive()).min(1).max(100),
+  }).optional(),
   distillationBinding: z.object({
     ledgerKey: z.string().min(1).max(80).nullable().optional(),
     skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional(),
@@ -105,6 +116,39 @@ const OPERATION_CONFIG: Record<Exclude<ListingGenerationOperation, "batch">, {
 };
 
 const NODE_ORDER: ListingAgentNodeId[] = ["G1", "G2", "G3", "G4", "G5"];
+
+const FACT_BOUND_OPERATIONS = new Set<ListingGenerationOperation>([
+  "sellingPoints", "title", "description", "searchTerms", "qa",
+]);
+
+function requiresCurrentFactBinding(operation: ListingGenerationOperation) {
+  return FACT_BOUND_OPERATIONS.has(operation);
+}
+
+function factBindingFromCurrentFacts(current: Awaited<ReturnType<typeof resolveCurrentConfirmedListingFacts>>) {
+  return {
+    sourceFileId: current.source.fileId,
+    rawHash: current.source.rawHash,
+    factRevisionIds: current.facts.map((fact) => fact.id).sort((left, right) => left - right),
+  };
+}
+
+async function resolveBoundFactsBeforeModel(input: ListingGenerationJobInput, workspaceId: number) {
+  if (!requiresCurrentFactBinding(input.operation)) return null;
+  const binding = input.factBinding;
+  if (!binding) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "旧AI任务缺少0204已审事实绑定；请先核对原始资料并重新创建候选" });
+  }
+  const current = await resolveCurrentConfirmedListingFacts({ projectId: input.projectId, workspaceId });
+  if (binding.sourceFileId !== current.source.fileId || binding.rawHash !== current.source.rawHash) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204事实账本或原始文件已变化；旧AI任务不得使用未绑定当前哈希的事实" });
+  }
+  const currentIds = new Set(current.facts.map((fact) => fact.id));
+  if (!binding.factRevisionIds.every((id) => currentIds.has(id))) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204已确认事实已变化或过期；请重新核对后再生成" });
+  }
+  return current.facts.filter((fact) => binding.factRevisionIds.includes(fact.id));
+}
 
 function compactText(value: unknown, maxChars: number) {
   const text = typeof value === "string" ? value : JSON.stringify(value ?? null);
@@ -377,9 +421,49 @@ async function confirmedArtifactContext(agentRunId: string | undefined, currentN
   )).join("\n\n");
 }
 
-async function buildJobContext(job: AiJobSnapshot, input: ListingGenerationJobInput, operation: ListingGenerationOperation) {
+async function buildJobContext(
+  job: AiJobSnapshot,
+  input: ListingGenerationJobInput,
+  operation: ListingGenerationOperation,
+  confirmedFacts: Awaited<ReturnType<typeof resolveCurrentConfirmedListingFacts>>["facts"] | null = null,
+) {
   const project = await db.getProjectByIdAdmin(input.projectId, job.workspaceId ?? null);
   if (!project) throw new Error("项目不存在");
+  if (requiresCurrentFactBinding(operation)) {
+    if (!confirmedFacts?.length) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204事实账本没有可用于AI的当前已确认产品事实" });
+    }
+    // Product identity is not product proof. Do not put project specs, AI-extracted
+    // attributes, competitor claims, previous artifacts, or old Listing text into
+    // these prompts: every product assertion must originate in this fact ledger.
+    const identity = {
+      productName: project.productName || project.name || "",
+      brand: project.brand || "",
+      category: project.category || "",
+      targetMarket: project.targetMarket || "",
+    };
+    const sourceFacts = confirmedFacts.map((fact) => ({
+      id: fact.id,
+      attributeKey: fact.attributeKey,
+      value: fact.value,
+    }));
+    const context = [
+      "--- Product identity (not proof of specifications) ---",
+      JSON.stringify(identity),
+      "--- Current 0204 human-confirmed product facts; the only product-claim evidence ---",
+      JSON.stringify(sourceFacts),
+      "--- Mandatory fact boundary ---",
+      "Use only the confirmed facts above for any product specification, material, performance, certification, compatibility, warranty, pack quantity, comparison, or benefit claim. Do not infer our product facts from competitor data, reviews, keywords, historical Listing text, or general category knowledge. If the facts do not support a claim, omit it rather than guessing.",
+    ].join("\n");
+    return {
+      project: identity,
+      analyses: [],
+      enrichedData: {},
+      rawExamples: [],
+      context,
+      variables: { project: identity, confirmedFacts: sourceFacts },
+    };
+  }
   const [analyses, enrichedData, artifactContext, distillationGuidance] = await Promise.all([
     db.getCompetitorAnalysesByProject(input.projectId),
     loadEnrichedData(input.projectId),
@@ -437,8 +521,16 @@ async function callListingSkill(
   skillSlug: string,
   promptContext: string,
   variables: Record<string, unknown>,
-  onExecution?: (audit: { modelSlug: string | null; fallbackCount: number | null; skillVersion: string | null; executionPreset: string }) => void,
+  onExecution?: (audit: { runId: string; modelSlug: string | null; fallbackCount: number | null; skillVersion: string | null; executionPreset: string }) => void,
 ) {
+  if (requiresCurrentFactBinding(input.operation)) {
+    if (!job.workspaceId) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204事实账本需要当前工作空间，Worker拒绝执行未绑定人审事实的AI任务" });
+    }
+    // Also applies to quality retries: a source replacement or invalidated fact
+    // after the first response must stop before another provider invocation.
+    await resolveBoundFactsBeforeModel(input, job.workspaceId);
+  }
   const result = await runEmperorSkill<any>({
     skillSlug,
     userId: job.userId,
@@ -447,20 +539,28 @@ async function callListingSkill(
     // Other Listing skills keep their existing route until separately reviewed.
     ...(skillSlug === "listing.bullet.step.generate" ? { executionPreset: "quality_first" as const } : {}),
     context: promptContext,
-    emphasis: input.emphasis,
+    // A free-text emphasis may be copied from a historical Listing or describe
+    // an unreviewed specification, so it cannot be a second evidence channel.
+    emphasis: requiresCurrentFactBinding(input.operation) ? undefined : input.emphasis,
     variables: {
       context: promptContext,
-      emphasis: input.emphasis || "",
+      emphasis: requiresCurrentFactBinding(input.operation) ? "" : input.emphasis || "",
       ...variables,
     },
     signal: context.signal,
     maxModelAttempts: 3,
     validate: parseSkillJson,
   });
+  // The source file or a human-confirmed fact can change while inference runs.
+  // Never return a now-stale field result to the waiting-human checkpoint.
+  if (requiresCurrentFactBinding(input.operation)) {
+    await resolveBoundFactsBeforeModel(input, job.workspaceId!);
+  }
   onExecution?.({
+    runId: result.runId,
     modelSlug: result.modelSlug || null,
     fallbackCount: Number.isInteger(result.fallbackCount) ? result.fallbackCount : null,
-    skillVersion: result.skillVersion || null,
+    skillVersion: result.skillVersion == null ? null : String(result.skillVersion),
     executionPreset: "quality_first",
   });
   return result.parsed;
@@ -479,6 +579,43 @@ function normalizeSellingPoints(parsed: any) {
   };
 }
 
+const generatedFieldOutputSchemas = {
+  title: z.object({
+    titles: z.array(z.object({ title: z.string().min(1), itemHighlights: z.string().min(1) })).min(1),
+  }).passthrough(),
+  description: z.object({
+    description: z.string().min(1),
+    htmlDescription: z.string().min(1),
+    characterCount: z.number().finite().optional(),
+    keywordsUsed: z.array(z.string()).optional(),
+  }).passthrough(),
+  searchTerms: z.object({
+    searchTerms: z.string().min(1),
+    byteCount: z.number().finite().optional(),
+    categories: z.object({
+      synonyms: z.array(z.string()), relatedTerms: z.array(z.string()),
+      alternateSpellings: z.array(z.string()), useCases: z.array(z.string()),
+    }).optional(),
+  }).passthrough(),
+  qa: z.object({
+    qaItems: z.array(z.object({
+      question: z.string().min(1), answer: z.string().min(1), category: z.string().min(1), priority: z.string().min(1),
+    }).passthrough()).min(1),
+  }).passthrough(),
+} as const;
+
+function assertGeneratedFieldOutputSchema(
+  operation: ListingGenerationOperation,
+  parsed: unknown,
+) {
+  if (!(operation in generatedFieldOutputSchemas)) return parsed;
+  const result = generatedFieldOutputSchemas[operation as keyof typeof generatedFieldOutputSchemas].safeParse(parsed);
+  if (!result.success) {
+    throw new Error(`${OPERATION_CONFIG[operation as Exclude<ListingGenerationOperation, "batch">].label}生成结果不符合当前JSON schema，候选不可展示或确认`);
+  }
+  return result.data;
+}
+
 async function runOperation(
   job: AiJobSnapshot,
   handlerContext: AiJobHandlerContext,
@@ -495,7 +632,21 @@ async function runOperation(
       && input.emphasis && containsTemplateFactInFreeText(input.emphasis)) {
     throw new Error("重点强调含空白或示例数值；请确认真实数据后重试");
   }
-  const built = await buildJobContext(job, input, operation);
+  if (requiresCurrentFactBinding(operation) && !job.workspaceId) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204事实账本需要当前工作空间，Worker拒绝执行未绑定人审事实的AI任务" });
+  }
+  if (requiresCurrentFactBinding(operation)) {
+    // Scope validation precedes a ledger read so a job for a moved/deleted
+    // project cannot inspect another workspace's raw-upload metadata.
+    const project = await db.getProjectByIdAdmin(input.projectId, job.workspaceId!);
+    if (!project) throw new Error("项目不存在");
+  }
+  // Re-read raw file + confirmed revisions immediately before building the
+  // model prompt. Historical queued jobs without the binding fail closed.
+  const confirmedFacts = requiresCurrentFactBinding(operation)
+    ? await resolveBoundFactsBeforeModel(input, job.workspaceId!)
+    : null;
+  const built = await buildJobContext(job, input, operation, confirmedFacts);
   if (operation === "singleBullet" && selectedPointContainsRawExamples(selected!.point, built.rawExamples)) {
     throw new Error("卖点核心包含原始属性表的示例值；请核实真实参数并修改核心后再生成");
   }
@@ -515,14 +666,15 @@ async function runOperation(
     delete variables.analyses;
     delete variables.enrichedData;
     delete variables.distillationGuidance;
-  } else if (operation === "searchTerms" && input.existingTitle) {
+  } else if (operation === "searchTerms" && input.existingTitle && !requiresCurrentFactBinding(operation)) {
     promptContext += `\n\n当前已确认标题（搜索词不得重复）：${input.existingTitle}`;
     variables.existingTitle = input.existingTitle;
   }
 
-  let executionAudit: { modelSlug: string | null; fallbackCount: number | null; skillVersion: string | null; executionPreset: string } | undefined;
+  let executionAudit: { runId: string; modelSlug: string | null; fallbackCount: number | null; skillVersion: string | null; executionPreset: string } | undefined;
   const captureExecution = operation === "singleBullet" ? (audit: NonNullable<typeof executionAudit>) => { executionAudit = audit; } : undefined;
   let parsed = await callListingSkill(job, handlerContext, input, config.skillSlug, promptContext, variables, captureExecution);
+  parsed = assertGeneratedFieldOutputSchema(operation, parsed);
   if ((operation === "sellingPoints" || operation === "bullets") && built.rawExamples.length
       && excludeRawExamplesFromFactTree(parsed, built.rawExamples, "output").excludedFields.length) {
     throw new Error("生成结果引用了原始产品属性表的示例值；此候选不可确认，请核实真实事实");
@@ -545,8 +697,22 @@ async function runOperation(
       quality = validateSingleBulletQuality(bullet, input);
     }
     if (!quality.valid) throw new Error(`单条五点描述质量验证未通过：${quality.issues.join("；")}`);
+    if (!job.workspaceId || !input.coreRevisionId || !input.coreInputHash)
+      throw new Error("单条候选失去已审事实版本绑定，不能保存结果");
+    const approved = await resolveConfirmedListingCore({ projectId: input.projectId, workspaceId: job.workspaceId,
+      coreRevisionId: input.coreRevisionId, coreInputHash: input.coreInputHash });
+    if (!executionAudit) throw new Error("单条卖点缺少实际Skill Run审计，不能保存候选");
+    const candidate = await persistGeneratedBulletCandidate({
+      projectId: input.projectId, workspaceId: job.workspaceId, userId: job.userId,
+      jobRunId: job.runId, coreRevisionId: input.coreRevisionId, coreInputHash: input.coreInputHash,
+      execution: executionAudit, bullet,
+      factRevisions: approved.factRevisions, issues: quality.issues, characterCount: quality.characterCount,
+    });
     return { ...bullet, factSafety: { excludedFields: selected!.excludedFields, requiresHumanReview: true },
-      characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true, executionAudit };
+      characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true,
+      candidateId: candidate.id, candidateRevision: candidate.candidateRevision,
+      executionAudit: { modelSlug: executionAudit.modelSlug, fallbackCount: executionAudit.fallbackCount,
+        skillVersion: executionAudit.skillVersion, executionPreset: executionAudit.executionPreset } };
   }
   if (operation === "title") {
     let validation = validateTitles(parsed);
@@ -559,6 +725,7 @@ async function runOperation(
         `${promptContext}\n\n上次标题校验未通过：${validation.issues.join("；")}。请修正并重新输出完整 JSON。`,
         { ...variables, previousOutput: parsed, validationIssues: validation.issues },
       );
+      parsed = assertGeneratedFieldOutputSchema(operation, parsed);
       validation = validateTitles(parsed);
     }
   }
@@ -652,9 +819,19 @@ async function runBatchJob(job: AiJobSnapshot, context: AiJobHandlerContext, inp
 
 export async function runListingGenerationJob(job: AiJobSnapshot, context: AiJobHandlerContext) {
   const input = listingGenerationJobInput.parse(job.input);
-  if (input.operation === "batch") return runBatchJob(job, context, input);
+  if (input.operation === "batch" || input.operation === "bullets") {
+    throw new Error("历史整套卖点任务未绑定逐条已审事实与核心版本，Worker拒绝执行模型调用；请从人审候选重新开始");
+  }
   await reportNodeProgress(job, input, input.nodeId, 15);
-  const result = await runOperation(job, context, input, input.operation);
+  let executionInput = input;
+  if (input.operation === "singleBullet") {
+    if (!job.workspaceId || !input.coreRevisionId || !input.coreInputHash)
+      throw new Error("单条卖点须绑定当前已人工确认的核心版本和事实摘要，旧自由文本入口已停用");
+    const confirmedCore = await resolveConfirmedListingCore({ projectId: input.projectId, workspaceId: job.workspaceId,
+      coreRevisionId: input.coreRevisionId, coreInputHash: input.coreInputHash });
+    executionInput = { ...input, sellingPoint: confirmedCore.sellingPoint };
+  }
+  const result = await runOperation(job, context, executionInput, input.operation);
   if (context.signal.aborted) throw new Error(`${OPERATION_CONFIG[input.operation].label}任务已取消`);
   if (!await latestJobStillOwnsNode(job, input.nodeId)) {
     return { skipped: true, reason: `${input.nodeId} 已有更新的任务` };
@@ -667,10 +844,32 @@ export async function startListingGenerationJob(input: ListingGenerationJobInput
   userId: number;
   workspaceId?: number | null;
 }) {
+  if (input.operation === "batch" || input.operation === "bullets") {
+    throw new Error("旧整套卖点任务缺少逐条已审事实及核心版本绑定，拒绝创建模型任务；请使用单条候选人审流程");
+  }
+  if (input.operation === "singleBullet") {
+    if (!input.workspaceId || !input.coreRevisionId || !input.coreInputHash)
+      throw new Error("单条卖点须先确认事实和卖点核心版本，再创建生成任务");
+    await resolveConfirmedListingCore({ projectId: input.projectId, workspaceId: input.workspaceId,
+      coreRevisionId: input.coreRevisionId, coreInputHash: input.coreInputHash });
+  }
+  let jobInput: ListingGenerationJobInput & { userId: number; workspaceId?: number | null } = input;
+  if (requiresCurrentFactBinding(input.operation)) {
+    if (!input.workspaceId) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204事实账本需要当前工作空间，无法启动未绑定人审事实的AI任务" });
+    }
+    const currentFacts = await resolveCurrentConfirmedListingFacts({
+      projectId: input.projectId,
+      workspaceId: input.workspaceId,
+    });
+    // Never trust a browser-provided binding. The job snapshot records only the
+    // service-derived raw hash and current confirmed fact revisions.
+    jobInput = { ...input, factBinding: factBindingFromCurrentFacts(currentFacts) };
+  }
   const active = await getLatestListingNodeJob(input.userId, input.projectId, input.nodeId);
   if (active?.status === "queued" || active?.status === "running") return active;
-  const label = input.operation === "batch" ? "Listing 批量五步" : OPERATION_CONFIG[input.operation].label;
-  const skillSlug = input.operation === "batch" ? "listing.*" : OPERATION_CONFIG[input.operation].skillSlug;
+  const label = OPERATION_CONFIG[input.operation].label;
+  const skillSlug = OPERATION_CONFIG[input.operation].skillSlug;
   const job = await createAiJobRun({
     kind: `listing.generation.${input.operation}`,
     module: LISTING_JOB_MODULE,
@@ -679,10 +878,10 @@ export async function startListingGenerationJob(input: ListingGenerationJobInput
     userId: input.userId,
     projectId: input.projectId,
     skillSlug,
-    input: { ...input, agentRunId: input.agentRunId, agentNodeId: input.nodeId },
+    input: { ...jobInput, agentRunId: jobInput.agentRunId, agentNodeId: jobInput.nodeId },
     progress: 5,
     maxAttempts: 3,
-    timeoutSeconds: input.operation === "batch" ? 60 * 60 : 20 * 60,
+    timeoutSeconds: 20 * 60,
   });
   await syncListingNodeJobQueued({
     agentRunId: input.agentRunId,

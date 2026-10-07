@@ -7,6 +7,8 @@ import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
 import { createImageAssetReceipt, requireImageAssetReceipt } from "../services/imageAssetReceipt";
 import { validateImageBytes } from "../services/validateImageBytes";
 import { requireClassifiedStep4KbUses } from "../services/imageKbUsePolicy";
+import { imageAssetPolicyService } from "../services/imageAssetPolicyService";
+import { recordServerControlledImageUpload } from "../services/imageAssetTrustLedgerService";
 
 const {
   compactStep4ReferenceForStorage,
@@ -31,6 +33,8 @@ const {
   buildImageWorkflowContext,
   buildStep5FinalSuggestion,
   buildStep5RunSnapshot,
+  asImageWorkflowVersionTrpcError,
+  captureImageWorkflowWorkerFence,
   callLLMWithRetry,
   db,
   devDb,
@@ -39,6 +43,7 @@ const {
   getKBReference,
   invokeBusinessSkill,
   isActiveStep5Run,
+  invalidateImageWorkflowStages,
   kbDb,
   parseLLMJson,
   parseStoredJson,
@@ -69,10 +74,47 @@ async function resolveReadableKbImages(images: Step4KbImage[], ctx: any) {
   }));
 }
 
+async function requireApprovedReceiptUse(input: {
+  reference: string;
+  kind: "step4-ref" | "designer";
+  allowedUse: "step4_reference" | "designer_attachment";
+  projectId: number;
+  ctx: any;
+}) {
+  const receipt = requireImageAssetReceipt({
+    reference: input.reference,
+    kind: input.kind,
+    projectId: input.projectId,
+    userId: input.ctx.user.id,
+  });
+  await imageAssetPolicyService.requireApprovedReceiptAssetUse({
+    workspaceId: Number(input.ctx.workspaceId || 0),
+    projectId: input.projectId,
+    actorId: input.ctx.user.id,
+    actorRole: input.ctx.user.role,
+    receiptReference: input.reference,
+    kind: input.kind,
+    allowedUse: input.allowedUse,
+  });
+  return receipt.url;
+}
+
+/** A signed browser receipt only identifies a server upload. It becomes a
+ * production reference only after its bytes, license evidence and human review
+ * are current in the ledger. */
+async function requireApprovedStep4Reference(input: { reference: string; ctx: any; projectId: number }) {
+  return requireApprovedReceiptUse({ ...input, kind: "step4-ref", allowedUse: "step4_reference" });
+}
+
+async function requireApprovedDesignerAttachment(input: { reference: string; ctx: any; projectId: number }) {
+  return requireApprovedReceiptUse({ ...input, kind: "designer", allowedUse: "designer_attachment" });
+}
+
 export async function requireStep4DraftAssets(snapshot: Record<string, any>, ctx: any, projectId: number) {
   const references = snapshot?.imageReferences;
   if (!Array.isArray(references)) throw new Error("Step4 草稿缺少图片参考方案");
   requireClassifiedStep4KbUses(snapshot);
+  const receiptReferences: string[] = [];
   for (const reference of references) {
     if (!reference || typeof reference !== "object") continue;
     const verifyNestedUrls = (value: unknown): void => {
@@ -81,11 +123,14 @@ export async function requireStep4DraftAssets(snapshot: Record<string, any>, ctx
       for (const [key, candidate] of Object.entries(value)) {
         if (/^(?:kbReferenceImages)$/i.test(key)) continue; // Must be empty until asset-use approval exists.
         if (/(?:url|src|uri)$/i.test(key) && typeof candidate === "string" && candidate.trim()) {
-          requireImageAssetReceipt({ reference: candidate, kind: "step4-ref", projectId, userId: ctx.user.id });
+          receiptReferences.push(candidate);
         } else verifyNestedUrls(candidate);
       }
     };
     verifyNestedUrls(reference);
+  }
+  for (const reference of receiptReferences) {
+    await requireApprovedStep4Reference({ reference, ctx, projectId });
   }
 }
 
@@ -161,14 +206,17 @@ export const imageReferenceProcedures = {
       if (!Array.isArray(draft?.imageReferences)) throw new Error("Step4 草稿缺少图片参考方案");
       await requireStep4DraftAssets(draft, ctx, input.projectId);
 
-      await db.updateImageWorkflowSession(session.id, {
-        step4UserEdit: JSON.stringify(compactStep4SnapshotForStorage(draft)),
-        step4Confirmed: 0,
-        step5Confirmed: 0,
-        step6Confirmed: 0,
-        currentStep: 4,
-        status: "in_progress",
-      });
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 4,
+        legacyPatch: {
+          step4UserEdit: JSON.stringify(compactStep4SnapshotForStorage(draft)),
+        },
+      }).catch(asImageWorkflowVersionTrpcError);
       return { success: true };
     }),
 
@@ -192,8 +240,16 @@ export const imageReferenceProcedures = {
       const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
-      await db.unlockStep4ImageVersion(session.id, input.imageIndex);
-      await db.updateImageWorkflowSession(session.id, { step4Confirmed: 0, step5Confirmed: 0, step6Confirmed: 0 });
+      // A single reference lock belongs to the same Step 4 dependency branch as
+      // the complete plan.  The policy also clears its legacy per-image locks.
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 4,
+      }).catch(asImageWorkflowVersionTrpcError);
       return { success: true };
     }),
 
@@ -216,17 +272,17 @@ export const imageReferenceProcedures = {
       if (!draft) throw new Error("当前没有可编辑的参考图方案");
       const userEdit = JSON.stringify(draft);
 
-      // 整体解锁代表开始一轮新的人工编辑。若保留旧的逐图确认版本，
-      // 下一次整体确认会重新将它们叠加，覆盖本次最新场景方案。
-      await db.unlockAllStep4ImageVersions(session.id);
-      await db.updateImageWorkflowSession(session.id, {
-        step4UserEdit: userEdit,
-        step4Confirmed: 0,
-        step5Confirmed: 0,
-        step6Confirmed: 0,
-        currentStep: 4,
-        status: "in_progress",
-      });
+      // 整体解锁代表开始一轮新的人工编辑。版本策略会在相同 scope/CAS
+      // 事务中解除逐图投影并写入草稿，不能先失效再裸写草稿。
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 4,
+        legacyPatch: { step4UserEdit: userEdit },
+      }).catch(asImageWorkflowVersionTrpcError);
       return { success: true, userEdit };
     }),
 
@@ -249,7 +305,21 @@ export const imageReferenceProcedures = {
       const buffer = Buffer.from(input.imageData, "base64");
       const { extension: ext, mimeType } = await validateImageBytes(buffer);
       const key = `image-workflow/${input.projectId}/step4-refs/${input.refType}-${input.imageKey}-${Date.now()}.${ext}`;
-      const { url } = await storagePut(key, buffer, mimeType);
+      const stored = await storagePut(key, buffer, mimeType);
+      if (stored.key !== key || !stored.storageUri) {
+        throw new Error("受控对象存储未返回稳定对象引用，拒绝签发素材回执");
+      }
+      await recordServerControlledImageUpload({
+        workspaceId: Number(ctx.workspaceId || 0),
+        projectId: input.projectId,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        kind: "step4-ref",
+        intendedUse: "step4_reference",
+        storage: { key: stored.key, storageUri: stored.storageUri },
+        bytes: buffer,
+      });
+      const { url } = stored;
       const asset = createImageAssetReceipt({ url, key, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id });
 
       // Update the refs JSON in DB
@@ -257,9 +327,15 @@ export const imageReferenceProcedures = {
       const existingRefs = session[field] ? JSON.parse(session[field] as string) : {};
       existingRefs[input.imageKey] = asset.url;
 
-      await db.updateImageWorkflowSession(session.id, {
-        [field]: JSON.stringify(existingRefs),
-      });
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 4,
+        legacyPatch: { [field]: JSON.stringify(existingRefs) },
+      }).catch(asImageWorkflowVersionTrpcError);
 
       return { url: asset.url, imageKey: input.imageKey, refType: input.refType };
     }),
@@ -282,12 +358,20 @@ export const imageReferenceProcedures = {
       ensureWriteAccess(project, ctx.user);
       const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step4.refs.optimize:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
+      const fence = await captureImageWorkflowWorkerFence({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        targetStep: 4,
+      }).catch(asImageWorkflowVersionTrpcError);
       const guidanceText = await selectedGuidanceText(input, ctx, project);
       const compositionRefUrl = input.compositionRefUrl
-        ? requireImageAssetReceipt({ reference: input.compositionRefUrl, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id }).url
+        ? await requireApprovedStep4Reference({ reference: input.compositionRefUrl, ctx, projectId: input.projectId })
         : undefined;
       const effectRefUrl = input.effectRefUrl
-        ? requireImageAssetReceipt({ reference: input.effectRefUrl, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id }).url
+        ? await requireApprovedStep4Reference({ reference: input.effectRefUrl, ctx, projectId: input.projectId })
         : undefined;
 
       // Build context with reference images
@@ -351,13 +435,20 @@ export const imageReferenceProcedures = {
       const updatedRefs = clearStep4ReferenceLocks(imageRefs);
       if (targetIdx >= 0) updatedRefs[targetIdx] = merged;
       const updatedResult = { ...(currentStep4 || {}), imageReferences: updatedRefs };
-      await db.updateImageWorkflowSession(session.id, {
-        step4AiResult: JSON.stringify(updatedResult),
-        step4UserEdit: JSON.stringify(updatedResult),
-        step4Confirmed: 0,
-        step5Confirmed: 0,
-        step6Confirmed: 0,
-      });
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 4,
+        targetStep: 4,
+        fence,
+        legacyPatch: {
+          step4AiResult: JSON.stringify(updatedResult),
+          step4UserEdit: JSON.stringify(updatedResult),
+        },
+      }).catch(asImageWorkflowVersionTrpcError);
       return merged;
     }),
 
@@ -383,14 +474,22 @@ export const imageReferenceProcedures = {
       ensureWriteAccess(project, ctx.user);
       const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.references.regenerate-all:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
+      const fence = await captureImageWorkflowWorkerFence({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        targetStep: 4,
+      }).catch(asImageWorkflowVersionTrpcError);
       requireClassifiedStep4KbUses({ imageReferences: [{ kbReferenceImages: input.kbImages }] });
       const guidanceText = await selectedGuidanceText(input, ctx, project);
       const kbImages = await resolveReadableKbImages(input.kbImages, ctx);
       const compositionRefUrl = input.compositionRefUrl
-        ? requireImageAssetReceipt({ reference: input.compositionRefUrl, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id }).url
+        ? await requireApprovedStep4Reference({ reference: input.compositionRefUrl, ctx, projectId: input.projectId })
         : undefined;
       const effectRefUrl = input.effectRefUrl
-        ? requireImageAssetReceipt({ reference: input.effectRefUrl, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id }).url
+        ? await requireApprovedStep4Reference({ reference: input.effectRefUrl, ctx, projectId: input.projectId })
         : undefined;
 
       // Build multimodal messages with all reference images + notes
@@ -459,14 +558,17 @@ ${guidanceText}
       const result = parseLLMJson(response);
 
       // Save the regenerated result back to session
-      await db.updateImageWorkflowSession(session.id, {
-        step4AiResult: JSON.stringify(result),
-        step4Confirmed: 0,
-        step5Confirmed: 0,
-        step6Confirmed: 0,
-        currentStep: 4,
-        status: "in_progress",
-      });
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 4,
+        targetStep: 4,
+        fence,
+        legacyPatch: { step4AiResult: JSON.stringify(result) },
+      }).catch(asImageWorkflowVersionTrpcError);
 
       return result;
     }),
@@ -493,6 +595,14 @@ ${guidanceText}
       ensureWriteAccess(project, ctx.user);
       const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.references.regenerate-one:${input.projectId}:${input.imageIndex}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
+      const fence = await captureImageWorkflowWorkerFence({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        targetStep: 4,
+      }).catch(asImageWorkflowVersionTrpcError);
 
       // Parse current step4 result to get the specific image info
       let currentStep4: any = {};
@@ -507,10 +617,10 @@ ${guidanceText}
       requireClassifiedStep4KbUses({ imageReferences: [{ kbReferenceImages: input.kbImages }] });
       const kbImages = await resolveReadableKbImages(input.kbImages, ctx);
       const compositionRefUrl = input.compositionRefUrl
-        ? requireImageAssetReceipt({ reference: input.compositionRefUrl, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id }).url
+        ? await requireApprovedStep4Reference({ reference: input.compositionRefUrl, ctx, projectId: input.projectId })
         : undefined;
       const effectRefUrl = input.effectRefUrl
-        ? requireImageAssetReceipt({ reference: input.effectRefUrl, kind: "step4-ref", projectId: input.projectId, userId: ctx.user.id }).url
+        ? await requireApprovedStep4Reference({ reference: input.effectRefUrl, ctx, projectId: input.projectId })
         : undefined;
 
       // Build multimodal messages for single image regeneration
@@ -563,15 +673,20 @@ ${session.step3UserEdit || session.step3AiResult}
       // 从而让用户看到重新生成前的历史参考图。
       const updatedResult = mergeSingleStep4Reference(currentStep4, input.imageIndex, mergedRef);
       const persistedDraft = compactStep4SnapshotForStorage(updatedResult);
-      await db.updateImageWorkflowSession(session.id, {
-        step4AiResult: JSON.stringify(persistedDraft),
-        step4UserEdit: JSON.stringify(persistedDraft),
-        step4Confirmed: 0,
-        step5Confirmed: 0,
-        step6Confirmed: 0,
-        currentStep: 4,
-        status: "in_progress",
-      });
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 4,
+        targetStep: 4,
+        fence,
+        legacyPatch: {
+          step4AiResult: JSON.stringify(persistedDraft),
+          step4UserEdit: JSON.stringify(persistedDraft),
+        },
+      }).catch(asImageWorkflowVersionTrpcError);
       return { updatedResult, regeneratedIndex: input.imageIndex, newImageRef: mergedRef };
     }),
 
@@ -595,6 +710,14 @@ ${session.step3UserEdit || session.step3AiResult}
       const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.aplus.optimize:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
+      const fence = await captureImageWorkflowWorkerFence({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        targetStep: 5,
+      }).catch(asImageWorkflowVersionTrpcError);
 
       const currentSuggestions = session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult;
 
@@ -614,17 +737,23 @@ ${session.step3UserEdit || session.step3AiResult}
 
       const optimizedEn = result.en || result;
       const optimizedCn = result.cn || null;
-      await db.updateImageWorkflowSession(session.id, {
-        step5SelectedModule: JSON.stringify(input.selectedModules),
-        step5OptimizedResult: JSON.stringify(optimizedEn),
-        step5OptimizedResultCn: optimizedCn ? JSON.stringify(optimizedCn) : null,
-        step5UserEdit: JSON.stringify(optimizedEn),
-        step5AiResultCn: optimizedCn ? JSON.stringify(optimizedCn) : session.step5AiResultCn,
-        step5Confirmed: 0,
-        step6Confirmed: 0,
-        currentStep: 5,
-        status: "in_progress",
-      });
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 5,
+        targetStep: 5,
+        fence,
+        legacyPatch: {
+          step5SelectedModule: JSON.stringify(input.selectedModules),
+          step5OptimizedResult: JSON.stringify(optimizedEn),
+          step5OptimizedResultCn: optimizedCn ? JSON.stringify(optimizedCn) : null,
+          step5UserEdit: JSON.stringify(optimizedEn),
+          step5AiResultCn: optimizedCn ? JSON.stringify(optimizedCn) : session.step5AiResultCn,
+        },
+      }).catch(asImageWorkflowVersionTrpcError);
 
       return result;
     }),
@@ -646,6 +775,14 @@ ${session.step3UserEdit || session.step3AiResult}
       const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.aplus.optimize-one:${input.projectId}:${input.sectionIndex}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
+      const fence = await captureImageWorkflowWorkerFence({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        targetStep: 5,
+      }).catch(asImageWorkflowVersionTrpcError);
       const guidanceText = await selectedGuidanceText(input, ctx, project);
 
       const storedCandidates = [session.step5UserEdit, session.step5OptimizedResult, session.step5AiResult].filter(Boolean);
@@ -738,16 +875,22 @@ ${guidanceText}
         }
       }
 
-      await db.updateImageWorkflowSession(session.id, {
-        step5UserEdit: JSON.stringify(nextData),
-        step5OptimizedResult: JSON.stringify(nextData),
-        step5OptimizedResultCn: nextCnData ? JSON.stringify(nextCnData) : session.step5OptimizedResultCn,
-        step5AiResultCn: nextCnData ? JSON.stringify(nextCnData) : session.step5AiResultCn,
-        step5Confirmed: 0,
-        step6Confirmed: 0,
-        currentStep: 5,
-        status: "in_progress",
-      });
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 5,
+        targetStep: 5,
+        fence,
+        legacyPatch: {
+          step5UserEdit: JSON.stringify(nextData),
+          step5OptimizedResult: JSON.stringify(nextData),
+          step5OptimizedResultCn: nextCnData ? JSON.stringify(nextCnData) : session.step5OptimizedResultCn,
+          step5AiResultCn: nextCnData ? JSON.stringify(nextCnData) : session.step5AiResultCn,
+        },
+      }).catch(asImageWorkflowVersionTrpcError);
       return { en: optimizedSectionEn, cn: optimizedSectionCn };
     }),
 
@@ -802,17 +945,27 @@ ${guidanceText}
       ensureWriteAccess(project, ctx.user);
       const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error('No workflow session found');
-      requireImageAssetReceipt({ reference: input.imageUrl,
-        kind: "designer", projectId: input.projectId, userId: ctx.user.id });
+      const approvedImageUrl = await requireApprovedDesignerAttachment({
+        reference: input.imageUrl,
+        ctx,
+        projectId: input.projectId,
+      });
       let uploads: any[] = [];
       try { uploads = JSON.parse(session.step5DesignerUploads || '[]'); } catch {}
       const idx = uploads.findIndex((u: any) => u.imageNumber === input.imageNumber);
-      const entry = { id: Date.now(), imageUrl: input.imageUrl,
+      const entry = { id: Date.now(), imageUrl: approvedImageUrl,
         imageNumber: input.imageNumber, notes: input.notes || '', uploadedAt: new Date().toISOString() };
       if (idx >= 0) uploads[idx] = entry;
       else uploads.push(entry);
-      await db.updateImageWorkflowSession(session.id, { step5DesignerUploads: JSON.stringify(uploads),
-        step5Confirmed: 0, step6Confirmed: 0, currentStep: 5, status: "in_progress" });
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 5,
+        legacyPatch: { step5DesignerUploads: JSON.stringify(uploads) },
+      }).catch(asImageWorkflowVersionTrpcError);
       return { success: true, uploads };
     }),
 
@@ -831,8 +984,15 @@ ${guidanceText}
       let uploads: any[] = [];
       try { uploads = JSON.parse(session.step5DesignerUploads || '[]'); } catch {}
       uploads = uploads.filter((u: any) => u.imageNumber !== input.imageNumber);
-      await db.updateImageWorkflowSession(session.id, { step5DesignerUploads: JSON.stringify(uploads),
-        step5Confirmed: 0, step6Confirmed: 0, currentStep: 5, status: "in_progress" });
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 5,
+        legacyPatch: { step5DesignerUploads: JSON.stringify(uploads) },
+      }).catch(asImageWorkflowVersionTrpcError);
       return { success: true, uploads };
     }),
 

@@ -11,13 +11,29 @@ export function buildPdfContent(enData: any, cnData: any): string {
 function safeText(value: unknown): string {
   if (value === null || value === undefined) return "";
   return String(value)
-    // The approved-deliverable service has already escaped stored strings.
-    // Preserve its five safe entities, but still escape raw input used by the
-    // legacy preview helper; browser HTML entity decoding is one-pass only.
+    // Preserve previously escaped entities; HTML entity decoding is one-pass.
+    // Still escape all raw tag and attribute delimiters.
     .replace(/&(?!(?:amp|lt|gt|quot|#39);)/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function escapeExportTree(value: any): any {
+  if (typeof value === "string") return safeText(value);
+  if (Array.isArray(value)) return value.map(escapeExportTree);
+  if (value && typeof value === "object") return Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [key, escapeExportTree(nested)]));
+  return value;
+}
+
+function safeExportJsonParse(value: unknown): any {
+  // The immutable snapshot Store parses its contentJson JSON column to an
+  // object before returning approved.sections. Legacy preview fields are JSON
+  // strings; accepting both keeps approved exports populated without reading
+  // any mutable session content as a fallback.
+  if (value === null || value === undefined || value === "") return null;
+  return escapeExportTree(typeof value === "string" ? safeJsonParse(value) : value);
 }
 
 function parseObject(value: unknown): any {
@@ -47,8 +63,10 @@ function readableDetail(value: unknown): string {
 }
 
 function renderImageAsset(img: any, source: string, label?: string) {
-  const url = safeText(img?.imageUrl || img?.url || img?.thumbnailUrl || "");
-  if (!url) return "";
+  const rawUrl = String(img?.imageUrl || img?.url || img?.thumbnailUrl || "").trim();
+  // A locally opened HTML report must not load javascript:, data: or file:.
+  if (!/^https:\/\//i.test(rawUrl)) return "";
+  const url = safeText(rawUrl);
   const caption = [label, img?.competitorName, img?.imagePosition && `位置：${img.imagePosition}${img?.positionIndex ?? ""}`, source]
     .filter(Boolean).map(safeText).join(" · ");
   return `<figure class="asset-card"><img class="asset-img" src="${url}" alt="${caption}"/><figcaption>${caption}</figcaption></figure>`;
@@ -126,7 +144,7 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   s.push(`<section class="workflow-step">`);
   s.push(`<h2 id="step0"><span class="step-badge">Step 0</span>竞品图片分析</h2>`);
   s.push(`<p class="section-note">竞品仅作研究证据，不可作为我方素材。旧版未归类的图片仅供站内审阅，不包含在此成果导出中。</p>`);
-  const step0Summary = safeJsonParse(session?.step0UserEdit || session?.step0AiResult);
+  const step0Summary = safeExportJsonParse(session?.step0UserEdit || session?.step0AiResult);
   if (step0Summary?.overallSummary || step0Summary?.summary) {
     s.push(`<div class="card"><strong>竞品图片总体洞察：</strong>${safeText(step0Summary.overallSummary || step0Summary.summary)}</div>`);
   }
@@ -148,7 +166,7 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   if (session) {
     s.push(`<section class="workflow-step">`);
     s.push(`<h2 id="step1"><span class="step-badge">Step 1</span>卖点梳理</h2>`);
-    const sp = safeJsonParse(session.step1UserEdit || session.step1AiResult);
+    const sp = safeExportJsonParse(session.step1UserEdit || session.step1AiResult);
     if (sp) {
       if (sp.coreSellingPoints?.length) {
         s.push(`<h3>⭐ 核心卖点（主卖点）</h3>`);
@@ -198,7 +216,7 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   if (session) {
     s.push(`<section class="workflow-step">`);
     s.push(`<h2 id="step2"><span class="step-badge">Step 2</span>图片大纲</h2>`);
-    const outline = safeJsonParse(session.step2UserEdit || session.step2AiResult);
+    const outline = safeExportJsonParse(session.step2UserEdit || session.step2AiResult);
     const outlineImages = outline?.images || [
       outline?.mainImage ? {
         imageLabel: '主图',
@@ -251,7 +269,7 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   if (session) {
     s.push(`<section class="workflow-step">`);
     s.push(`<h2 id="step3"><span class="step-badge">Step 3</span>风格确认</h2>`);
-    const styleData = safeJsonParse(session.step3UserEdit || session.step3AiResult);
+    const styleData = safeExportJsonParse(session.step3UserEdit || session.step3AiResult);
     if (styleData?.selectedStyles?.length) {
       styleData.selectedStyles.forEach((style: any) => {
         s.push(`<div class="card card-selected">`);
@@ -311,7 +329,7 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   if (session) {
     s.push(`<section class="workflow-step">`);
     s.push(`<h2 id="step4"><span class="step-badge">Step 4</span>参考图确认</h2>`);
-    const refData = safeJsonParse(session.step4UserEdit || session.step4AiResult);
+    const refData = safeExportJsonParse(session.step4UserEdit || session.step4AiResult);
     if (refData?.imageReferences?.length) {
       refData.imageReferences.forEach((ref: any, index: number) => {
         s.push(`<div class="card">`);
@@ -380,8 +398,8 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   s.push(`<section class="workflow-step">`);
   s.push(`<h2 id="step5"><span class="step-badge">Step 5</span>图片结构及内容建议</h2>`);
 
-  const en = enData || (session ? safeJsonParse(session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult) : null);
-  const cn = cnData || (session ? safeJsonParse(session.step5AiResultCn || session.step5OptimizedResultCn) : null);
+  const en = enData ? escapeExportTree(enData) : (session ? safeExportJsonParse(session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult) : null);
+  const cn = cnData ? escapeExportTree(cnData) : (session ? safeExportJsonParse(session.step5AiResultCn || session.step5OptimizedResultCn) : null);
 
   if (en) {
     if (en.designGuidelines) {
@@ -414,7 +432,7 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
         s.push(`<h4>Module ${idx + 1}: ${sec.title || ''}</h4><div class="grid"><div class="en">${moduleMeta ? `<p><strong>A+ Module:</strong> ${moduleMeta}</p>` : ''}<p><strong>Purpose:</strong> ${sec.purpose || ''}</p><p>${sec.content || ''}</p>${sec.fabe ? `<div class="fabe">FABE: F: ${sec.fabe.feature || ''} | A: ${sec.fabe.advantage || ''} | B: ${sec.fabe.benefit || ''} | E: ${sec.fabe.evidence || ''}</div>` : ''}${moduleSpecific}</div><div class="cn"><p><strong>目的:</strong> ${cnSec?.purpose || ''}</p><p>${cnSec?.content || ''}</p>${cnSec?.fabe ? `<div class="fabe">FABE: F: ${cnSec.fabe.feature || ''} | A: ${cnSec.fabe.advantage || ''} | B: ${cnSec.fabe.benefit || ''} | E: ${cnSec.fabe.evidence || ''}</div>` : ''}</div></div>`);
       });
     }
-    const designerUploads = safeJsonParse(session?.step5DesignerUploads);
+    const designerUploads = safeExportJsonParse(session?.step5DesignerUploads);
     if (Array.isArray(designerUploads) && designerUploads.length) {
       s.push(`<h3>设计师补充图片 / Designer Uploads</h3>`);
       s.push(`<p class="section-note">以下为在最终图片建议阶段补充上传的图片资产，保留图片编号、备注及上传时间。</p>`);
@@ -429,7 +447,7 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   s.push(`<section class="workflow-step">`);
   s.push(`<h2 id="step6"><span class="step-badge">Step 6</span>作图提示词包</h2>`);
   s.push(`<p class="section-note">基于人工确认的图片建议生成的可编辑生产提示词；确认不代表自动出图。</p>`);
-  const step6 = session ? safeJsonParse(session.step6UserEdit || session.step6AiResult) : null;
+  const step6 = session ? safeExportJsonParse(session.step6UserEdit || session.step6AiResult) : null;
   if (step6?.summary) s.push(`<div class="card"><strong>提示词包摘要：</strong>${safeText(step6.summary)}</div>`);
   if (Array.isArray(step6?.prompts) && step6.prompts.length) {
     step6.prompts.forEach((prompt: any, index: number) => {
@@ -442,8 +460,8 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
 
   // ===== Designer waterfall: one image, one complete execution context =====
   if (false && session) {
-    const waterfallOutline = safeJsonParse(session.step2UserEdit || session.step2AiResult) || {};
-    const waterfallRefs = safeJsonParse(session.step4UserEdit || session.step4AiResult) || {};
+    const waterfallOutline = safeExportJsonParse(session.step2UserEdit || session.step2AiResult) || {};
+    const waterfallRefs = safeExportJsonParse(session.step4UserEdit || session.step4AiResult) || {};
     const outlineItems = waterfallOutline.images || [
       waterfallOutline.mainImage ? { ...waterfallOutline.mainImage, imageNumber: 1, imageLabel: "主图", imageType: "主图", content: waterfallOutline.mainImage.contentBrief, sellingPoint: waterfallOutline.mainImage.sellingPointRef, expressionMethod: waterfallOutline.mainImage.purpose } : null,
       ...(waterfallOutline.secondaryImages || []).map((item: any, idx: number) => ({ ...item, imageNumber: item.imageNumber || idx + 2, imageLabel: item.imageLabel || `辅图 ${item.imageNumber || idx + 2}`, imageType: "辅图", content: item.contentBrief || item.content, sellingPoint: item.sellingPointRefs || item.sellingPoint, expressionMethod: item.expressionType || item.expressionMethod })),

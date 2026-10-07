@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 
+const policyMocks = vi.hoisted(() => ({ confirmHumanImageWorkflowStage: vi.fn() }));
+vi.mock("./domains/image/services/imageWorkflowVersionPolicy", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./domains/image/services/imageWorkflowVersionPolicy")>();
+  return { ...actual, confirmHumanImageWorkflowStage: policyMocks.confirmHumanImageWorkflowStage };
+});
+
 vi.mock("./domains/image/repository", () => ({
   getImageWorkflowSessionByProject: vi.fn(),
   updateImageWorkflowSession: vi.fn(),
@@ -41,6 +47,7 @@ function createContext(): TrpcContext {
       updatedAt: new Date(),
       lastSignedIn: new Date(),
     },
+    workspaceId: 7,
     req: { protocol: "https", headers: {} } as TrpcContext["req"],
     res: { clearCookie: vi.fn() } as unknown as TrpcContext["res"],
   };
@@ -49,6 +56,7 @@ function createContext(): TrpcContext {
 describe("Step4整体确认当前目标过滤", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    policyMocks.confirmHumanImageWorkflowStage.mockResolvedValue({ snapshot: { version: 4 }, scopeRevision: 9 });
     repository.getImageWorkflowSessionByProject.mockResolvedValue({
       id: 780001,
       projectId: 90001,
@@ -57,6 +65,7 @@ describe("Step4整体确认当前目标过滤", () => {
       // 仅主图 + 辅图2-7是当前大纲目标；不再包含历史A+模块8。
       step2UserEdit: JSON.stringify({ mainImage: { purpose: "主图目标" }, secondaryImages: [] }),
     } as any);
+    repository.getProjectByIdAdmin.mockResolvedValue({ id: 90001, userId: 1, workspaceId: 7 } as any);
     repository.updateImageWorkflowSession.mockResolvedValue(undefined as any);
     repository.getCurrentStep4ImageVersions.mockResolvedValue(Array.from({ length: 7 }, (_, imageIndex) => ({
       imageIndex,
@@ -85,13 +94,14 @@ describe("Step4整体确认当前目标过滤", () => {
           { imageKey: "aplus-8", imageType: "A+模块 8", purpose: "历史未确认版本" },
         ],
       }),
-    })).resolves.toEqual({ success: true });
+    })).resolves.toMatchObject({ success: true, version: 4, scopeRevision: 9 });
 
-    const update = vi.mocked(repository.updateImageWorkflowSession).mock.calls[0]?.[1] as Record<string, any>;
-    const confirmed = JSON.parse(String(update.step4UserEdit));
+    const confirmation = policyMocks.confirmHumanImageWorkflowStage.mock.calls[0]?.[0] as Record<string, any>;
+    const confirmed = confirmation.content as Record<string, any>;
     expect(confirmed.imageReferences).toHaveLength(7);
     expect(confirmed.imageReferences.map((reference: any) => reference.imageKey)).toEqual(currentRefs.map((reference) => reference.imageKey));
     expect(confirmed.imageReferences.some((reference: any) => reference.imageKey === "aplus-8")).toBe(false);
-    expect(update).toMatchObject({ step4Confirmed: 1, currentStep: 5 });
+    expect(confirmation).toMatchObject({ workspaceId: 7, projectId: 90001, sessionId: 780001, step: 4 });
+    expect(repository.updateImageWorkflowSession).not.toHaveBeenCalled();
   });
 });

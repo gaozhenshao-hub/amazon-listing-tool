@@ -3,7 +3,6 @@ import {
   LISTING_STEP_NODE_MAP,
   syncGenerationToAgent,
   syncListingNodeDraft,
-  syncListingPreviewConfirmed,
   syncListingPreviewWaitingHuman,
   syncStepLockToAgent,
   syncStepUnlockToAgent,
@@ -12,6 +11,7 @@ import { startListingJobForContext } from "./jobControl";
 import { validateSingleBulletQuality, type ListingGenerationJobInput } from "../services/generationJob";
 import { containsTemplateFactInFreeText, excludeRawExamplesFromFactTree, formatSingleBulletIdentity, rawAttributeExampleValues, sanitizeListingProjectFacts, sanitizeSelectedSellingPoint, selectedPointContainsRawExamples } from "../../../../shared/listingFactSafety";
 import { readCompleteAttributeText } from "../services/listingRawAttributeSource";
+import { resolveConfirmedListingCore } from "../services/listingConfirmedCore";
 
 const {
   BULLET_POINTS_PROMPT,
@@ -76,6 +76,12 @@ const legacyListingEditingProcedures = {
       if (!project) throw new Error("Project not found");
       ensureListingWorkspaceAccess(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
+      if (input.field === "bulletPoints" || input.field === "bulletPointsCn") {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "旧卖点直接编辑已停用；请使用已审核候选和受治理的完整快照同步流程",
+        });
+      }
       let listing = await db.getActiveListingByProject(input.projectId);
       if (!listing) {
         // Auto-create listing if not exists
@@ -111,7 +117,7 @@ const legacyListingEditingProcedures = {
             workspaceId: ctx.workspaceId ?? null,
             userEdit: stepNumber === 2
               ? { title: result.title || "", itemHighlights: result.itemHighlights || "" }
-              : input.field === "bulletPoints" || input.field === "qaContent"
+              : input.field === "qaContent"
                 ? safeParseJSON(input.value, input.value)
                 : input.value,
           });
@@ -145,6 +151,12 @@ const legacyListingEditingProcedures = {
       const project = await resolveProjectAccess(listing.projectId, ctx.user, ctx.workspaceId ?? null);
       ensureListingWorkspaceAccess(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
+      if (data.bulletPoints !== undefined || data.bulletPointsCn !== undefined) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "旧卖点直接编辑已停用；请使用已审核候选和受治理的完整快照同步流程",
+        });
+      }
 
       // Scope the write to the authorized listing's project as a defense in depth
       // measure against stale or mismatched listing IDs.
@@ -194,23 +206,12 @@ const legacyListingEditingProcedures = {
     .mutation(async ({ ctx, input }) => {
       const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
+      ensureListingWorkspaceAccess(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
-      const listing = await db.getActiveListingByProject(input.projectId);
-      if (!listing) throw new Error("请先生成并保存 Listing 内容");
-      const lockedSteps = safeParseJSON<number[]>(listing.lockedSteps || "[]", []);
-      const requiredSteps = [1, 2, 3, 4, 5];
-      if (!requiredSteps.every((step) => Array.isArray(lockedSteps) && lockedSteps.includes(step))) {
-        throw new Error("请先确认并锁定全部 5 个 Listing 步骤，再进行最终审核");
-      }
-      const output = buildListingPreviewOutput(listing);
-      await syncListingPreviewConfirmed({
-        agentRunId: listing.agentRunId,
-        projectId: input.projectId,
-        userId: ctx.user.id,
-        workspaceId: ctx.workspaceId ?? null,
-        output,
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "旧预览五步锁定不足以证明Listing已完成事实与候选人审；请在卖点工作台预览完整Listing并正式确认同步",
       });
-      return { listing, output };
     }),
 
 
@@ -562,55 +563,16 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       })).min(1).max(9),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { projectId, bullets } = input;
+      const { projectId } = input;
       const project = await resolveProjectAccess(projectId, ctx.user!, ctx.workspaceId ?? null);
       if (!project) throw new Error("项目不存在");
       ensureWriteAccess(project, ctx.user);
 
-      // Format bullets as JSON array of strings (subtitle + fullText)
-      const bulletStrings = bullets.map(b => `${b.subtitle} ${b.fullText}`);
-      const bulletPointsJson = JSON.stringify(bulletStrings);
+      // This legacy endpoint trusts a browser-local boolean and arbitrary bullet
+      // strings. Do not let it bypass the versioned human review and atomic
+      // full-Listing CAS introduced by the governed candidate workflow.
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "旧自由文本同步已停用；请使用已审核选审阅，正式同步需等待全字段版本门禁验收" });
 
-      // Check if active listing exists
-      let listing = await db.getActiveListingByProject(projectId);
-      if (listing) {
-        // Update existing listing's bulletPoints
-        const updated = await db.updateListing(listing.id, {
-          bulletPoints: bulletPointsJson,
-        });
-        if (updated) {
-          await saveListingVersion(updated, ctx.user.id, "manual_edit", `同步分步卖点精雕结果 (${bullets.length}条)`);
-        }
-        await syncListingNodeDraft({
-          agentRunId: listing.agentRunId,
-          nodeId: "G1",
-          projectId,
-          userId: ctx.user.id,
-          workspaceId: ctx.workspaceId ?? null,
-          userEdit: bullets,
-        });
-        return { action: "updated", listingId: listing.id, bulletCount: bullets.length };
-      } else {
-        // Create new listing with only bulletPoints
-        const newListing = await db.createListing({
-          projectId,
-          bulletPoints: bulletPointsJson,
-          version: 1,
-          isActive: 1,
-        });
-        if (newListing) {
-          await saveListingVersion(newListing, ctx.user.id, "generate", `从分步卖点精雕创建 (${bullets.length}条)`);
-          await syncListingNodeDraft({
-            agentRunId: newListing.agentRunId,
-            nodeId: "G1",
-            projectId,
-            userId: ctx.user.id,
-            workspaceId: ctx.workspaceId ?? null,
-            userEdit: bullets,
-          });
-        }
-        return { action: "created", listingId: newListing?.id, bulletCount: bullets.length };
-      }
     }),
 
 
@@ -739,11 +701,15 @@ const sellingPointJobSchema = z.object({
 async function queueEditingJob(ctx: any, input: any, operation: "sellingPoints" | "singleBullet" | "qa") {
   const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
   ensureWriteAccess(project, ctx.user);
+  const reviewedCore = operation === "singleBullet" && ctx.workspaceId
+    ? await resolveConfirmedListingCore({ projectId: input.projectId, workspaceId: ctx.workspaceId,
+      coreRevisionId: input.coreRevisionId, coreInputHash: input.coreInputHash }) : null;
   return startListingJobForContext({
     ...input,
     operation,
     nodeId: operation === "qa" ? "G5" : "G1",
-    scopeKey: operation === "singleBullet" ? `bullet-${input.sellingPoint.index}` : "main",
+    scopeKey: reviewedCore ? `bullet-${reviewedCore.sellingPoint.index}` : "main",
+    ...(reviewedCore ? { sellingPoint: reviewedCore.sellingPoint } : {}),
     userId: ctx.user.id,
     workspaceId: ctx.workspaceId ?? null,
   });
@@ -758,6 +724,8 @@ export const listingEditingProcedures = {
     .input(z.object({
       projectId: z.number(),
       sellingPoint: sellingPointJobSchema,
+      coreRevisionId: z.number().int().positive(),
+      coreInputHash: z.string().regex(/^[a-f0-9]{64}$/),
       previousBullets: z.array(z.object({ subtitle: z.string(), fullText: z.string() })).optional(),
       emphasis: z.string().optional(),
     }))
@@ -766,6 +734,8 @@ export const listingEditingProcedures = {
     .input(z.object({
       projectId: z.number(),
       sellingPoint: sellingPointJobSchema,
+      coreRevisionId: z.number().int().positive(),
+      coreInputHash: z.string().regex(/^[a-f0-9]{64}$/),
       currentBullet: z.object({ subtitle: z.string(), fullText: z.string() }),
       previousBullets: z.array(z.object({ subtitle: z.string(), fullText: z.string() })).optional(),
       optimizationNote: z.string().trim().min(1).max(4_000),
@@ -776,7 +746,10 @@ export const listingEditingProcedures = {
       ensureListingWorkspaceAccess(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
 
-      const selected = sanitizeSelectedSellingPoint(input.sellingPoint);
+      if (!ctx.workspaceId) throw new TRPCError({ code: "FORBIDDEN" });
+      const reviewedCore = await resolveConfirmedListingCore({ projectId: input.projectId, workspaceId: ctx.workspaceId,
+        coreRevisionId: input.coreRevisionId, coreInputHash: input.coreInputHash });
+      const selected = sanitizeSelectedSellingPoint(reviewedCore.sellingPoint);
       if (!selected.canGenerate) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "卖点核心缺少真实产品事实；请删除空白/示例并人工补充确认后再优化" });
       }
@@ -808,7 +781,7 @@ export const listingEditingProcedures = {
         projectId: input.projectId,
         operation: "singleBullet",
         nodeId: "G1",
-        scopeKey: `bullet-${input.sellingPoint.index}`,
+        scopeKey: `bullet-${reviewedCore.sellingPoint.index}`,
         sellingPoint: selected.point,
         previousBullets,
       };

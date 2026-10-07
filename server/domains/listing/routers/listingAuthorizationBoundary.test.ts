@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  getDb: vi.fn(),
   getListingById: vi.fn(),
   getActiveListingByProject: vi.fn(),
   updateListing: vi.fn(),

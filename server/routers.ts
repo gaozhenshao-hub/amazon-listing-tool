@@ -97,10 +97,12 @@ import { emperorRouter } from "./routers/emperor";
 import { aiJobsRouter } from "./routers/aiJobs";
 import { amazonAcquisitionRouter } from "./domains/acquisition/router";
 import { performanceRouter } from "./routers/performance";
+import { qualityDashboardRouter } from "./domains/quality/router";
 
 export const appRouter = router({
   system: systemRouter,
   performance: performanceRouter,
+  quality: qualityDashboardRouter,
   auth: router({
     me: publicProcedure.query(opts => {
       if (!opts.ctx.user) return null;

@@ -1,9 +1,15 @@
 import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
 import {
+  asImageWorkflowVersionTrpcError,
   callImageWorkflowSkill,
+  confirmHumanImageWorkflowStage,
+  currentImageWorkflowUpstreamDigest,
   db,
   ensureWriteAccess,
+  invalidateImageWorkflowStages,
+  projectCurrentImageWorkflowSnapshotsToSession,
   protectedProcedure,
+  requireCurrentImageWorkflowUpstream,
   resolveProjectAccess,
   resolveSessionAccess,
   resolveSessionForExecution,
@@ -30,11 +36,17 @@ export const imageStep6Procedures = {
       ensureWriteAccess(project, ctx.user);
       const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step6.prompt:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
-      if (!session.step5Confirmed) throw new Error("请先人工确认Step5图片建议，再生成Step6提示词");
       const workspaceId = Number(ctx.workspaceId || project.workspaceId || 0);
+      const scope = { workspaceId, projectId: input.projectId, sessionId: session.id };
+      const upstream = await requireCurrentImageWorkflowUpstream({
+        ...scope, actorId: ctx.user.id, actorRole: ctx.user.role, targetStep: 6,
+      }).catch(asImageWorkflowVersionTrpcError);
+      const upstreamDigest = currentImageWorkflowUpstreamDigest({ scope, snapshots: upstream, targetStep: 6 });
+      if (!session.step5Confirmed) throw new Error("请先人工确认Step5图片建议，再生成Step6提示词");
       const hasGuidance = Boolean(input.distillationBinding?.ledgerKey || input.distillationBinding?.skillSlugs?.length);
       const guidance = hasGuidance ? await resolveWorkflowGuidance({ workspaceId, ...input.distillationBinding }) : null;
-      const step5 = String(session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult || "").slice(0, 24_000);
+      const governedSession = projectCurrentImageWorkflowSnapshotsToSession({ scope, snapshots: upstream, session });
+      const step5 = String(governedSession.step5UserEdit || "").slice(0, 24_000);
       const result = await callImageWorkflowSkill({
         skillSlug: "image.step6.prompt",
         userId: ctx.user.id,
@@ -44,6 +56,12 @@ export const imageStep6Procedures = {
         maxModelAttempts: 3,
         validate: parsePromptDraft,
       });
+      const latestUpstream = await requireCurrentImageWorkflowUpstream({
+        ...scope, actorId: ctx.user.id, actorRole: ctx.user.role, targetStep: 6,
+      }).catch(asImageWorkflowVersionTrpcError);
+      if (currentImageWorkflowUpstreamDigest({ scope, snapshots: latestUpstream, targetStep: 6 }) !== upstreamDigest) {
+        throw new Error("Step6生成期间上游确认版本已变化，草稿未写回；请基于当前版本重新生成");
+      }
       await db.updateImageWorkflowSession(session.id, {
         step6AiResult: JSON.stringify(result),
         step6AiResultCn: null,
@@ -62,7 +80,15 @@ export const imageStep6Procedures = {
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
       const draft = parsePromptDraft(JSON.parse(input.userEdit));
-      await db.updateImageWorkflowSession(session.id, { step6UserEdit: JSON.stringify(draft), step6Confirmed: 0, currentStep: 6, status: "in_progress" });
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 6,
+        legacyPatch: { step6UserEdit: JSON.stringify(draft), step6Confirmed: 0, currentStep: 6, status: "in_progress" },
+      }).catch(asImageWorkflowVersionTrpcError);
       return { success: true };
     }),
 
@@ -72,12 +98,12 @@ export const imageStep6Procedures = {
       const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
-      if (!session.step5Confirmed || !session.step5UserEdit) {
-        throw new Error("请先确认当前Step5图片建议，再确认Step6提示词");
-      }
       const draft = parsePromptDraft(JSON.parse(input.userEdit));
-      await db.updateImageWorkflowSession(session.id, { step6UserEdit: JSON.stringify(draft), step6Confirmed: 1, currentStep: 6, status: "completed" });
-      return { success: true };
+      const confirmation = await confirmHumanImageWorkflowStage({
+        workspaceId: Number(ctx.workspaceId || 0), projectId: input.projectId, sessionId: session.id,
+        actorId: ctx.user.id, actorRole: ctx.user.role, step: 6, content: draft,
+      }).catch(asImageWorkflowVersionTrpcError);
+      return { success: true, version: confirmation.snapshot.version, scopeRevision: confirmation.scopeRevision };
     }),
 
   unlockStep6: protectedProcedure
@@ -86,7 +112,15 @@ export const imageStep6Procedures = {
       const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
-      await db.updateImageWorkflowSession(session.id, { step6Confirmed: 0, currentStep: 6, status: "in_progress" });
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 6,
+        legacyPatch: { step6Confirmed: 0, currentStep: 6, status: "in_progress" },
+      }).catch(asImageWorkflowVersionTrpcError);
       return { success: true };
     }),
 };

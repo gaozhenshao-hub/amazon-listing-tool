@@ -52,6 +52,27 @@ describe("normalizeApifyAmazonArtifact", () => {
     expect(result.snapshot.fieldEvidence.imageGallery.status).toBe("not_returned");
   });
 
+  it("preserves separate semantic references when a gallery and A+ module use the same URL", () => {
+    const sharedUrl = "https://m.media-amazon.com/images/I/shared.jpg";
+    const result = normalizeApifyAmazonArtifact({
+      expectedAsin: "B000000001",
+      marketplace: "US",
+      bytes: bytes([{
+        asin: "B000000001",
+        title: "Example",
+        highResolutionImages: [sharedUrl],
+        aPlusContent: { modules: [{ image: sharedUrl }] },
+      }]),
+    });
+
+    expect(result.sourceAssets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "main", positionIndex: 0, sourceUrlHash: expect.any(String) }),
+      expect.objectContaining({ role: "aplus", positionIndex: 0, sourceUrlHash: expect.any(String) }),
+    ]));
+    expect(result.sourceAssets).toHaveLength(2);
+    expect(result.sourceAssets[0]?.sourceUrlHash).toBe(result.sourceAssets[1]?.sourceUrlHash);
+  });
+
   it("fails closed when the returned ASIN does not match the requested ASIN", () => {
     expect(() => normalizeApifyAmazonArtifact({
       expectedAsin: "B000000001",

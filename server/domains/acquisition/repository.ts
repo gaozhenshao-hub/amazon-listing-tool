@@ -10,7 +10,13 @@ import {
   acquisitionSnapshotRevisions,
   acquisitionSourceSnapshots,
 } from "../../../drizzle/schema/acquisition";
+import type { AmazonAcquisitionCapability } from "../../../shared/acquisition";
 import type { DbExecutor } from "../../repositories/dbClient";
+import {
+  assessConfirmedSnapshotCoverage,
+  isCapabilitySubsetCovered,
+  type CapabilityCoverage,
+} from "./capabilityCoverage";
 
 export async function findAcquisitionJobByIdempotency(db: DbExecutor, workspaceId: number, idempotencyKey: string) {
   const rows = await db.select().from(acquisitionJobs).where(and(
@@ -88,6 +94,43 @@ export async function findFreshConfirmedSnapshot(input: {
     gte(acquisitionConfirmedSnapshots.confirmedAt, input.freshAfter),
   )).orderBy(desc(acquisitionConfirmedSnapshots.confirmedAt)).limit(1);
   return rows[0] ?? null;
+}
+
+/**
+ * Reads the saved source evidence before reusing a confirmed snapshot. A
+ * current snapshot can remain a useful gallery record while still missing A+;
+ * only a true requested-capability subset is a cache hit.
+ */
+export async function findFreshConfirmedSnapshotCoveringCapabilities(input: {
+  db: DbExecutor;
+  workspaceId: number;
+  marketplace: string;
+  asin: string;
+  freshAfter: Date;
+  requestedCapabilities: readonly AmazonAcquisitionCapability[];
+}) {
+  const candidates = await input.db.select().from(acquisitionConfirmedSnapshots).where(and(
+    eq(acquisitionConfirmedSnapshots.workspaceId, input.workspaceId),
+    eq(acquisitionConfirmedSnapshots.marketplace, input.marketplace),
+    eq(acquisitionConfirmedSnapshots.asin, input.asin),
+    eq(acquisitionConfirmedSnapshots.isCurrent, 1),
+    gte(acquisitionConfirmedSnapshots.confirmedAt, input.freshAfter),
+  )).orderBy(desc(acquisitionConfirmedSnapshots.confirmedAt)).limit(10);
+
+  let firstIncomplete: { snapshot: typeof acquisitionConfirmedSnapshots.$inferSelect; coverage: CapabilityCoverage[] } | null = null;
+  for (const candidate of candidates) {
+    const snapshot = await getSourceSnapshot(input.db, input.workspaceId, candidate.snapshotId);
+    if (!snapshot) continue;
+    const assets = await listAssetCandidates(input.db, input.workspaceId, snapshot.id);
+    const coverage = assessConfirmedSnapshotCoverage({
+      fieldStatuses: candidate.fieldStatuses,
+      confirmedAssetIds: candidate.confirmedAssetIds,
+      assets,
+    }, input.requestedCapabilities);
+    if (isCapabilitySubsetCovered(coverage)) return { snapshot: candidate, coverage, complete: true as const };
+    firstIncomplete ??= { snapshot: candidate, coverage };
+  }
+  return firstIncomplete ? { ...firstIncomplete, complete: false as const } : null;
 }
 
 export async function nextAcquisitionRunAttempt(db: DbExecutor, jobId: number) {

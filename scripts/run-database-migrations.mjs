@@ -117,11 +117,21 @@ const supplementalMigrations = [
     "0193_parent_asin_weekly_mcp_control_plane_forward_repair.sql",
     "0194_parent_asin_weekly_mcp_auto_apply.sql",
     "0195_parent_asin_weekly_mcp_emperor_projection.sql",
+    "0204_listing_revision_governance.sql",
+    "0205_image_asset_policy.sql",
   ];
 
 const dedicatedMigrationFiles = [
   "0203_external_knowledge_caller_bindings.sql",
 ];
+
+// Not executable by --plan, the general runner, or any dedicated release path.
+// Approval requires reviewing each draft, then explicitly removing it from this
+// set and registering it in the ordered plan as a separate change.
+const unreleasedDraftMigrationFiles = new Set([
+  "0206_image_workflow_version_snapshots.sql",
+  "0207_image_asset_trust_ledger.sql",
+]);
 
 // These migrations were atomically released to the established Qingdao schema
 // before app_schema_migrations existed for this release train. They remain
@@ -168,12 +178,22 @@ export function loadMigrationPlan() {
     ...supplementalMigrations,
   ];
   if (new Set(files).size !== files.length) throw new Error("Migration plan contains duplicate files");
+  for (const fileName of unreleasedDraftMigrationFiles) {
+    const filePath = join(drizzleDir, fileName);
+    if (!existsSync(filePath) || !/draft only/i.test(readFileSync(filePath, "utf8"))) {
+      throw new Error(`Unreleased draft migration is missing its explicit DRAFT ONLY marker: ${fileName}`);
+    }
+    if (files.includes(fileName) || dedicatedMigrationFiles.includes(fileName)) {
+      throw new Error(`Unreleased draft migration must not be executable: ${fileName}`);
+    }
+  }
   const unmanagedFiles = readdirSync(drizzleDir)
     .filter((fileName) => fileName.endsWith(".sql"))
     .filter((fileName) => !files.includes(fileName)
       && !retiredMigrationFiles.has(fileName)
       && !dedicatedMigrationFiles.includes(fileName)
-      && !legacyManuallyReleasedMigrationFiles.has(fileName));
+      && !legacyManuallyReleasedMigrationFiles.has(fileName)
+      && !unreleasedDraftMigrationFiles.has(fileName));
   if (unmanagedFiles.length > 0) {
     throw new Error(`Migration files are not registered in the release plan: ${unmanagedFiles.sort().join(", ")}`);
   }

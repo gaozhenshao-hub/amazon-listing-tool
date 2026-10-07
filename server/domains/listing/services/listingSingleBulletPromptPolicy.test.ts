@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { LISTING_OGILVY_ROLE_MARKER } from "../../ai_os/services/highQualitySkillGovernance";
 import { buildSingleBulletV6Change } from "../../../../scripts/upgradeListingSingleBulletSkillsV6";
 import { buildSingleBulletV7Change } from "../../../../scripts/upgradeListingSingleBulletSkillsV7";
-import { buildSingleBulletSkillManifest, SINGLE_BULLET_SKILL_SLUGS } from "./listingSingleBulletPromptPolicy";
+import {
+  buildSingleBulletSkillManifest,
+  buildSingleBulletV8SkillManifest,
+  SINGLE_BULLET_SKILL_SLUGS,
+  SINGLE_BULLET_V8_PROMPT_VERSION,
+} from "./listingSingleBulletPromptPolicy";
 
 function row(slug: string) {
   return { slug, workspaceId: null, version: 4, status: "Released", manifest: {
@@ -50,5 +55,29 @@ describe("单条卖点v7统一Prompt Policy", () => {
     const next = buildSingleBulletV7Change(original);
     expect(buildSingleBulletV7Change({ ...original, ...next, version: 5 }).changed).toBe(false);
     expect(() => buildSingleBulletV7Change({ ...original, status: "Draft" })).toThrow();
+  });
+
+  it("v8准备构建器使用固定候选信封和确认事实ID，同时不替换默认v7构建器", () => {
+    const v7 = buildSingleBulletSkillManifest("listing.bullet.step.generate", row("listing.bullet.step.generate").manifest);
+    const v8 = buildSingleBulletV8SkillManifest("listing.bullet.step.generate", row("listing.bullet.step.generate").manifest);
+    const prompt = String(v8.implementation?.systemPrompt || "");
+    const schema = v8.contract?.outputSchema as any;
+
+    expect(v7.implementation?.promptVersion).toBe(7);
+    expect(String(v7.implementation?.systemPrompt)).toContain("SINGLE_AMAZON_US_BULLET_V7");
+    expect(v8.implementation?.promptVersion).toBe(SINGLE_BULLET_V8_PROMPT_VERSION);
+    expect(prompt.match(new RegExp(LISTING_OGILVY_ROLE_MARKER, "g"))).toHaveLength(1);
+    expect(prompt).toContain("SINGLE_AMAZON_US_BULLET_V8");
+    expect(prompt).toContain("selectedCore {id,revision,singleBuyerReason,confirmedFactRefs[]}");
+    expect(prompt).toContain("confirmedFacts [{id,claim,sourceRef,verificationRevision}]");
+    expect(prompt).toContain("previousConfirmedBullets");
+    expect(prompt).toContain("evidenceFactIds");
+    expect(schema).toMatchObject({ type: "object", required: ["status", "candidate", "missingEvidence"] });
+    expect(schema.properties.status).toEqual({ type: "string", enum: ["candidate", "needs_facts"] });
+    expect(schema.properties.candidate.type).toEqual(["object", "null"]);
+    expect(schema.properties.candidate.required).toContain("evidenceFactIds");
+    expect(schema.properties.candidate.properties.evidenceFactIds).toMatchObject({ type: "array", minItems: 1 });
+    expect(schema.properties).not.toHaveProperty("oneOf");
+    expect(schema.properties).not.toHaveProperty("anyOf");
   });
 });

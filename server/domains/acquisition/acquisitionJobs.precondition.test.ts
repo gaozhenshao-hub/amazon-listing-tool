@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   createAcquisitionJob: vi.fn(),
   startRegisteredAiJob: vi.fn(),
   registerAiJobHandler: vi.fn(),
+  findFreshConfirmedSnapshotCoveringCapabilities: vi.fn(),
 }));
 
 vi.mock("../../repositories/dbClient", () => ({
@@ -33,7 +34,7 @@ vi.mock("./repository", () => ({
   createRawArtifact: vi.fn(),
   createSourceSnapshot: vi.fn(),
   findAcquisitionJobByIdempotency: vi.fn(),
-  findFreshConfirmedSnapshot: vi.fn(),
+  findFreshConfirmedSnapshotCoveringCapabilities: mocks.findFreshConfirmedSnapshotCoveringCapabilities,
   getAcquisitionBudgetUsage: vi.fn(),
   getAcquisitionJob: vi.fn(),
   getActiveAcquisitionProfile: vi.fn(),
@@ -101,5 +102,37 @@ describe("Amazon acquisition job preconditions", () => {
     });
     expect(mocks.createAcquisitionJob).not.toHaveBeenCalled();
     expect(mocks.startRegisteredAiJob).not.toHaveBeenCalled();
+  });
+
+  it("cache-only misses when A+ is requested from a gallery-only snapshot without calling a Provider or deleting gallery history", async () => {
+    const galleryHistory = { confirmedAssetIds: [101, 102] };
+    mocks.getApifyProviderProfile.mockResolvedValue(null);
+    mocks.findFreshConfirmedSnapshotCoveringCapabilities.mockResolvedValue({
+      complete: false,
+      snapshot: { id: 44 },
+      coverage: [
+        { capability: "image_gallery", state: "returned", safelyStoredAssetIds: [101, 102], failedAssetIds: [] },
+        { capability: "aplus", state: "not_returned", safelyStoredAssetIds: [], failedAssetIds: [] },
+      ],
+    });
+
+    const error = await startAmazonAcquisitionJob({
+      ...input,
+      capabilities: ["image_gallery", "aplus"],
+      cachePolicy: "cache_only",
+    }).then(
+      () => { throw new Error("expected capability coverage cache miss"); },
+      cause => cause,
+    );
+
+    expect(error).toMatchObject({
+      code: "PRECONDITION_FAILED",
+      statusCode: 412,
+      message: expect.stringContaining("aplus:not_returned"),
+      details: { reason: "capability_coverage_incomplete", cacheSnapshotId: 44 },
+    });
+    expect(mocks.startRegisteredAiJob).not.toHaveBeenCalled();
+    expect(mocks.createAcquisitionJob).not.toHaveBeenCalled();
+    expect(galleryHistory.confirmedAssetIds).toEqual([101, 102]);
   });
 });

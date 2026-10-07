@@ -6,7 +6,8 @@ import { buildImageWorkflowReferenceTargets, normalizeImageOutline } from "@shar
 import { extractLatestStep4JobResult, mergeStep4LatestWithUserAssets } from "../step4Snapshot";
 import { getLatestStep4ReferenceJob } from "../services/step4ReferenceJob";
 import { clearStep4ReferenceLock } from "../step4ReferenceLockState";
-import { requireApprovedImageSession, requireImageDeliverableAccess } from "../services/imageApprovedExport";
+import { requireImageDeliverableAccess } from "../services/imageApprovedExport";
+import { asImageWorkflowVersionTrpcError, getApprovedImageWorkflowExport, invalidateImageWorkflowStages } from "../services/imageWorkflowVersionPolicy";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -199,14 +200,19 @@ export const imageSessionProcedures = {
       const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       requireImageDeliverableAccess({ role: ctx.user.role, workspaceId: ctx.workspaceId, project });
-      const session = requireApprovedImageSession(await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId), "complete");
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
+      if (!session) throw new Error("No workflow session found");
+      const approved = await getApprovedImageWorkflowExport({
+        workspaceId: Number(project.workspaceId || ctx.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+      }).catch(asImageWorkflowVersionTrpcError);
 
-      // Legacy group images and KB-set URLs have no current immutable asset
-      // policy. Include only confirmed research text, never their raw images.
-      const groups = await db.getExpressionGroupsByProject(input.projectId);
-      const expressionGroups = groups.filter((group: any) => Number(group.confirmed) === 1 && group.userEdit)
-        .map((group: any) => ({ expressionName: group.expressionName, userEdit: group.userEdit, images: [] }));
-      return { session, expressionGroups, asinReferenceSets: [] as any[] };
+      // The manifest is the sole approved-deliverable source. Do not attach
+      // legacy expression groups, raw asset URLs, or session draft fields.
+      return { approved, expressionGroups: [] as any[], asinReferenceSets: [] as any[] };
     }),
 
 
@@ -319,7 +325,15 @@ export const imageSessionProcedures = {
 
       clearData.status = "in_progress";
 
-      await db.updateImageWorkflowSession(session.id, clearData);
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(project.workspaceId || ctx.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: input.step as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+        legacyPatch: clearData,
+      }).catch(asImageWorkflowVersionTrpcError);
       void syncStepUnlockToAgent({
         agentRunId: session.agentRunId,
         stepNumber: input.step,

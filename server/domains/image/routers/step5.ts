@@ -33,7 +33,11 @@ const {
   buildImageWorkflowContext,
   buildStep5FinalSuggestion,
   buildStep5RunSnapshot,
+  asImageWorkflowVersionTrpcError,
+  captureImageWorkflowWorkerFence,
   callLLMWithRetry,
+  confirmHumanImageWorkflowStage,
+  currentImageWorkflowUpstreamDigest,
   db,
   devDb,
   ensureWriteAccess,
@@ -42,6 +46,7 @@ const {
   invokeBusinessSkill,
   isActiveStep5Run,
   kbDb,
+  invalidateImageWorkflowStages,
   parseLLMJson,
   parseStoredJson,
   normalizeSecondaryImageSlots,
@@ -50,6 +55,8 @@ const {
   resolveProjectAccess,
   resolveSessionAccess,
   resolveSessionForExecution,
+  projectCurrentImageWorkflowSnapshotsToSession,
+  requireCurrentImageWorkflowUpstream,
   router,
   serializeStep5Error,
   settleStep5AgentSync,
@@ -79,6 +86,10 @@ export const imageStep5Procedures = {
 
       const resolvedSession = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.generate:${input.projectId}`, ctx.workspaceId);
       if (!resolvedSession) throw new Error("No workflow session found");
+      await requireCurrentImageWorkflowUpstream({
+        workspaceId: Number(ctx.workspaceId || 0), projectId: input.projectId, sessionId: resolvedSession.id,
+        actorId: ctx.user.id, actorRole: ctx.user.role, targetStep: 5,
+      }).catch(asImageWorkflowVersionTrpcError);
       let session = resolvedSession;
       if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
 
@@ -144,6 +155,26 @@ export const imageStep5Procedures = {
         session = { ...session, agentRunId };
       }
 
+      // Starting another Step 5 result creates a new draft branch. Invalidate
+      // the old Step 5/6 confirmation first, then bind the queued job to the
+      // new scope revision so a late result cannot overwrite the new branch.
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 5,
+        legacyPatch: { step5Confirmed: 0, step6Confirmed: 0, currentStep: 5, status: "in_progress" },
+      }).catch(asImageWorkflowVersionTrpcError);
+      const fence = await captureImageWorkflowWorkerFence({
+        workspaceId: Number(ctx.workspaceId || project.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        targetStep: 5,
+      }).catch(asImageWorkflowVersionTrpcError);
       const runId = generateStep5RunId();
       const startedAt = new Date();
       const queuedSession = await db.updateImageWorkflowSession(session.id, {
@@ -174,6 +205,8 @@ export const imageStep5Procedures = {
           input: {
             projectId: input.projectId,
             sessionId: session.id,
+            actorRole: ctx.user.role,
+            ...fence,
             agentRunId,
             agentNodeId: "step5_skill",
             distillationBinding: input.distillationBinding,
@@ -318,16 +351,31 @@ export const imageStep5Procedures = {
 
       const reason = "用户取消最终图片建议任务";
       const job = await getAiJobRun(session.step5RunId).catch(() => null);
-      await cancelAiJob(session.step5RunId, reason);
-      const latestSession = await db.getImageWorkflowSessionById(session.id);
-      const updated = latestSession?.step5RunId === session.step5RunId
-        ? await db.updateImageWorkflowSession(session.id, {
-            step5RunStatus: "canceled",
-            step5RunProgress: 100,
-            step5RunError: reason,
-            step5RunCompletedAt: new Date(),
-          })
-        : latestSession;
+      const runId = session.step5RunId;
+      // First detach this run and invalidate Step 5/6 in one scope/CAS
+      // transaction. A worker that survives cancellation sees no current run ID
+      // and cannot write its late result back into this editing branch.
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 5,
+        expectedStep5RunId: runId,
+        legacyPatch: {
+          step5RunId: null,
+          step5RunStatus: "canceled",
+          step5RunProgress: 100,
+          step5RunError: reason,
+          step5RunCompletedAt: new Date(),
+        },
+      }).catch(asImageWorkflowVersionTrpcError);
+      // Cancellation is best effort after detaching. A scheduler race is safe:
+      // the retired run can still execute but has no current session pointer.
+      await cancelAiJob(runId, reason).catch((error) => {
+        console.warn("[Step5] 取消请求失败；已隔离晚到结果", error);
+      });
 
       await syncStepJobFailedToAgent({
         agentRunId: session.agentRunId,
@@ -335,7 +383,7 @@ export const imageStep5Procedures = {
         projectId: input.projectId,
         userId: ctx.user.id,
         workspaceId: ctx.workspaceId ?? null,
-        aiJobRunId: session.step5RunId,
+        aiJobRunId: runId,
         aiJobAttempt: job?.attempt ?? null,
         aiJobMaxAttempts: job?.maxAttempts ?? null,
         progress: 100,
@@ -343,7 +391,14 @@ export const imageStep5Procedures = {
         finalAttempt: true,
         failureKind: "cancel",
       });
-      return buildStep5RunSnapshot(updated || session);
+      return buildStep5RunSnapshot({
+        ...session,
+        step5RunId: null,
+        step5RunStatus: "canceled",
+        step5RunProgress: 100,
+        step5RunError: reason,
+        step5RunCompletedAt: new Date(),
+      });
     }),
 
 
@@ -357,6 +412,11 @@ export const imageStep5Procedures = {
 
       const session = await resolveSessionForExecution(input.projectId, ctx.user, `image.step5.generate-sync:${input.projectId}`, ctx.workspaceId);
       if (!session) throw new Error("No workflow session found");
+      const scope = { workspaceId: Number(ctx.workspaceId || 0), projectId: input.projectId, sessionId: session.id };
+      const upstream = await requireCurrentImageWorkflowUpstream({
+        ...scope, actorId: ctx.user.id, actorRole: ctx.user.role, targetStep: 5,
+      }).catch(asImageWorkflowVersionTrpcError);
+      const upstreamDigest = currentImageWorkflowUpstreamDigest({ scope, snapshots: upstream, targetStep: 5 });
       if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
 
       const runId = generateStep5RunId();
@@ -374,8 +434,15 @@ export const imageStep5Procedures = {
       });
 
       try {
-        const result = await buildStep5FinalSuggestion(project, session, ctx.user.id, ctx.workspaceId, { distillationBinding: input.distillationBinding });
+        const governedSession = projectCurrentImageWorkflowSnapshotsToSession({ scope, snapshots: upstream, session });
+        const result = await buildStep5FinalSuggestion(project, governedSession, ctx.user.id, ctx.workspaceId, { distillationBinding: input.distillationBinding });
         const resultStr = JSON.stringify(result);
+        const latestUpstream = await requireCurrentImageWorkflowUpstream({
+          ...scope, actorId: ctx.user.id, actorRole: ctx.user.role, targetStep: 5,
+        }).catch(asImageWorkflowVersionTrpcError);
+        if (currentImageWorkflowUpstreamDigest({ scope, snapshots: latestUpstream, targetStep: 5 }) !== upstreamDigest) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Step 5 生成期间上游确认版本已变化，结果未写回；请基于当前版本重新生成" });
+        }
 
         // Save English result immediately so user sees it fast
         await db.updateImageWorkflowSession(session.id, {
@@ -437,14 +504,10 @@ export const imageStep5Procedures = {
       }
       parsed.secondaryImages = normalizeSecondaryImageSlots(parsed.secondaryImages, (imageNumber: number) => ({ imageNumber }));
 
-      await db.updateImageWorkflowSession(session.id, {
-        step5UserEdit: JSON.stringify(parsed),
-        step5Confirmed: 1,
-        // A previously approved prompt pack was derived from a different
-        // Step 5 revision and must be reviewed again before a full export.
-        step6Confirmed: 0,
-        status: "completed",
-      });
+      const confirmation = await confirmHumanImageWorkflowStage({
+        workspaceId: Number(ctx.workspaceId || 0), projectId: input.projectId, sessionId: session.id,
+        actorId: ctx.user.id, actorRole: ctx.user.role, step: 5, content: parsed,
+      }).catch(asImageWorkflowVersionTrpcError);
       void syncStepConfirmToAgent({
         agentRunId: session.agentRunId,
         stepNumber: 5,
@@ -454,7 +517,7 @@ export const imageStep5Procedures = {
         aiResult: session.step5AiResult ? JSON.parse(session.step5AiResult) : null,
         userEdit: parsed,
       });
-      return { success: true };
+      return { success: true, version: confirmation.snapshot.version, scopeRevision: confirmation.scopeRevision };
     }),
 
 
@@ -466,12 +529,33 @@ export const imageStep5Procedures = {
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
 
-      await db.updateImageWorkflowSession(session.id, {
-        step5Confirmed: 0,
-        step6Confirmed: 0,
-        currentStep: 5,
-        status: "in_progress",
-      });
+      const activeRunId = session.step5RunId && isActiveStep5Run(session.step5RunStatus)
+        ? session.step5RunId
+        : null;
+      await invalidateImageWorkflowStages({
+        workspaceId: Number(ctx.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        fromStep: 5,
+        ...(activeRunId ? { expectedStep5RunId: activeRunId } : {}),
+        legacyPatch: {
+          ...(activeRunId ? {
+            step5RunId: null,
+            step5RunStatus: "canceled",
+            step5RunProgress: 100,
+            step5RunError: "用户解锁最终图片建议任务",
+            step5RunCompletedAt: new Date(),
+          } : {}),
+        },
+      }).catch(asImageWorkflowVersionTrpcError);
+
+      if (activeRunId) {
+        await cancelAiJob(activeRunId, "用户解锁最终图片建议任务").catch((error) => {
+          console.warn("[Step5] 解锁后取消请求失败；已隔离晚到结果", error);
+        });
+      }
 
       return { success: true };
     }),

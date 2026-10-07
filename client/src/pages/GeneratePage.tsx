@@ -19,7 +19,6 @@ import {
   Megaphone,
   Target,
   RotateCcw,
-  Upload,
   FileText,
   CheckCircle2,
   Plus,
@@ -52,8 +51,13 @@ import BulletChecklistPanel from "@/components/BulletChecklistPanel";
 import LockedContentBar from "@/components/LockedContentBar";
 import { CharCountBadge, GeneratingProgress } from "./listing/GenerationIndicators";
 import { KeywordImportDialog } from "./listing/KeywordImportDialog";
+import { ListingGenerationPreparationSummary } from "./listing/ListingGenerationPreparationSummary";
 import { DistillationGuidancePicker, type DistillationBinding } from "@/components/workflow/DistillationGuidancePicker";
 import { ListingPlanningPanel } from "@/components/workflow/ListingPlanningPanel";
+import { FactReviewPanel } from "@/components/listing/FactReviewPanel";
+import { CoreReviewPanel } from "@/components/listing/CoreReviewPanel";
+import { CandidateReviewPanel } from "@/components/listing/CandidateReviewPanel";
+import { buildRestoredSellingPointCores, factRevisionIdsForCore, hasCurrentConfirmedEvidence } from "./listing/reviewRecovery";
 import {
   ListingGenerationJobStatus,
   useListingGenerationJob,
@@ -68,14 +72,38 @@ function bulletFingerprint(bullet: { subtitle?: string; fullText?: string } | nu
 export default function GeneratePage() {
   const { selectedProjectId } = useProject();
   const [, setLocation] = useLocation();
-  const [emphasis, setEmphasis] = useState("");
+  // Free-text emphasis is not an evidence channel for fact-bound AI jobs.
+  const emphasis = "";
   const [distillationBinding, setDistillationBinding] = useState<DistillationBinding>({ ledgerKey: null, skillSlugs: [] });
 
   // Step-by-step bullet generation state
-  const [sellingPointCores, setSellingPointCores] = useState<any[] | null>(null);
+  const [sellingPointCores, setSellingPointCores] = useState<Array<any | null> | null>(null);
   const coreRevisionRef = useRef(0);
   const [overallStrategy, setOverallStrategy] = useState<string>("");
   const [confirmedCores, setConfirmedCores] = useState<boolean[]>([]);
+  const [coreFactSelection, setCoreFactSelection] = useState<Record<number, number[]>>({});
+  const reviewedFactsQuery = trpc.listing.listReviewedFacts.useQuery({ projectId: selectedProjectId! }, { enabled: !!selectedProjectId });
+  const reviewedCoresQuery = trpc.listing.listCurrentCores.useQuery({ projectId: selectedProjectId! }, { enabled: !!selectedProjectId });
+  const reviewCoreMutation = trpc.listing.reviewCore.useMutation();
+  const reviewUtils = trpc.useUtils();
+  const confirmedFactIds = useMemo(() => new Set((reviewedFactsQuery.data || [])
+    .filter((fact) => fact.status === "confirmed").map((fact) => fact.id)), [reviewedFactsQuery.data]);
+  const factLabels = useMemo(() => Object.fromEntries((reviewedFactsQuery.data || [])
+    .filter((fact) => fact.status === "confirmed")
+    .map((fact) => [fact.id, `${fact.attributeKey}：${fact.value}`])), [reviewedFactsQuery.data]);
+  const currentConfirmedCoreBindings = useMemo(() => (reviewedCoresQuery.data || []).filter((core) =>
+    core.status === "confirmed" && hasCurrentConfirmedEvidence(core, confirmedFactIds)),
+  [confirmedFactIds, reviewedCoresQuery.data]);
+  // A restored card retains the exact server-reviewed reason until an operator
+  // changes it. This prevents formatting the display fields from creating a
+  // different core binding after refresh.
+  const coreReason = (point: any) => String(point?.restoredBuyerReason ||
+    `${String(point?.theme || "").trim()}: ${String(point?.description || "").trim()}`).trim();
+  const coreBinding = (idx: number) => reviewedCoresQuery.data?.find((item) =>
+    item.sellingPointIndex === idx && item.status === "confirmed"
+      && (!sellingPointCores?.[idx]?.serverCoreId || item.coreId === sellingPointCores[idx]?.serverCoreId)
+      && item.buyerReason === coreReason(sellingPointCores?.[idx])
+      && hasCurrentConfirmedEvidence(item, confirmedFactIds));
   const [generatedBullets, setGeneratedBullets] = useState<Record<number, any>>({});
   const latestBulletsRef = useRef<Record<number, any>>({});
   useEffect(() => { latestBulletsRef.current = generatedBullets; }, [generatedBullets]);
@@ -88,9 +116,55 @@ export default function GeneratePage() {
   const [bulletOptimizationNotes, setBulletOptimizationNotes] = useState<Record<number, string>>({});
   const [confirmedBullets, setConfirmedBullets] = useState<Record<number, boolean>>({});
   const [editingCore, setEditingCore] = useState<number | null>(null);
+  useEffect(() => {
+    if (!sellingPointCores?.length || !reviewedCoresQuery.data || reviewedFactsQuery.isLoading || reviewedFactsQuery.isError) return;
+    setConfirmedCores((previous) => {
+      const next = sellingPointCores.map((point, idx) => !point || editingCore === idx ? false : Boolean(
+        reviewedCoresQuery.data.some((item) => item.sellingPointIndex === idx && item.status === "confirmed"
+          && (!point.serverCoreId || item.coreId === point.serverCoreId)
+          && item.buyerReason === coreReason(point)
+          && hasCurrentConfirmedEvidence(item, confirmedFactIds))));
+      return next.some((item, idx) => item !== previous[idx]) ? next : previous;
+    });
+  }, [confirmedFactIds, editingCore, reviewedCoresQuery.data, reviewedFactsQuery.isError, reviewedFactsQuery.isLoading, sellingPointCores]);
   const [editingBullet, setEditingBullet] = useState<number | null>(null);
   const [editBulletData, setEditBulletData] = useState<{ subtitle: string; fullText: string }>({ subtitle: "", fullText: "" });
   const [stepBulletPhase, setStepBulletPhase] = useState<"idle" | "cores" | "bullets">("idle");
+  const lastCoreProjectRef = useRef(selectedProjectId);
+  const lastRecoveredCoreSignatureRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastCoreProjectRef.current === selectedProjectId) return;
+    lastCoreProjectRef.current = selectedProjectId;
+    lastRecoveredCoreSignatureRef.current = null;
+    coreRevisionRef.current += 1;
+    setSellingPointCores(null);
+    setConfirmedCores([]);
+    setCoreFactSelection({});
+    setGeneratedBullets({});
+    latestBulletsRef.current = {};
+    setBulletCandidates({});
+    setConfirmedBullets({});
+    setStepBulletPhase("idle");
+  }, [selectedProjectId]);
+
+  // Core review rows are the only durable source for an interrupted/reloaded
+  // G1 review.  Hydrate once per server result, only when this page has no
+  // local cards, so query refetches can never replace an operator's dirty edit.
+  useEffect(() => {
+    if (!selectedProjectId || reviewedCoresQuery.isLoading || reviewedCoresQuery.isError || !reviewedCoresQuery.data) return;
+    const signature = reviewedCoresQuery.data.map((core) => `${core.id}:${core.revision}:${core.status}`).join("|");
+    if (signature === lastRecoveredCoreSignatureRef.current || sellingPointCores !== null) return;
+    lastRecoveredCoreSignatureRef.current = signature;
+    const restored = buildRestoredSellingPointCores(reviewedCoresQuery.data);
+    if (!restored.length) return;
+    setSellingPointCores(restored);
+    setCoreFactSelection(Object.fromEntries(restored.flatMap((point, index) => {
+      const core = point && reviewedCoresQuery.data.find((item) => item.coreId === point.serverCoreId);
+      return core ? [[index, factRevisionIdsForCore(core)]] : [];
+    })));
+    setOverallStrategy((current) => current || "已从服务端恢复人工审核的卖点核心；未确认项目仍需人工完成审核。");
+    setStepBulletPhase((current) => current === "idle" ? "cores" : current);
+  }, [reviewedCoresQuery.data, reviewedCoresQuery.isError, reviewedCoresQuery.isLoading, selectedProjectId, sellingPointCores]);
 
   // Manual selling point addition state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -299,6 +373,7 @@ export default function GeneratePage() {
         setSellingPointCores(points);
         setOverallStrategy(data.overallStrategy ?? data.overall_strategy ?? data.strategy ?? data.summary ?? "");
         setConfirmedCores(new Array(points.length).fill(false));
+        setCoreFactSelection({});
         setGeneratedBullets({});
         setConfirmedBullets({});
         setStepBulletPhase("cores");
@@ -411,16 +486,34 @@ export default function GeneratePage() {
     void sellingPointsJob.start({ emphasis: emphasis.trim() || undefined });
   };
 
-  const handleConfirmCore = (idx: number) => {
-    if (!sellingPointCores?.[idx]) return;
+  const handleConfirmCore = async (idx: number) => {
+    if (!selectedProjectId || !sellingPointCores?.[idx]) return;
     const safety = sanitizeSelectedSellingPoint(sellingPointCores?.[idx]);
     if (!safety.canGenerate || safety.excludedFields.length > 0) {
       setEditingCore(idx);
       toast.error("请先删除或核实核心中的空白/示例字段，并填写真实产品事实后再确认");
       return;
     }
-    setConfirmedCores(prev => { const next = [...prev]; next[idx] = true; return next; });
-    setEditingCore(null);
+    const factIds = coreFactSelection[idx] || [];
+    if (!factIds.length || reviewedFactsQuery.isLoading || reviewedFactsQuery.isError) {
+      toast.error("请先在上方确认原始属性表中的本品事实，再勾选至少一条支持该卖点的证据");
+      return;
+    }
+    const known = reviewedCoresQuery.data?.find((row) => row.coreId === sellingPointCores[idx]?.serverCoreId)
+      || reviewedCoresQuery.data?.filter((row) => row.sellingPointIndex === idx && (row.status === "draft" || row.status === "confirmed"))
+        .sort((a, b) => b.revision - a.revision || b.id - a.id)[0];
+    try {
+      await reviewCoreMutation.mutateAsync({ projectId: selectedProjectId,
+        ...(known ? { coreId: known.coreId } : {}), sellingPointIndex: idx,
+        buyerReason: coreReason(sellingPointCores[idx]), factRevisionIds: factIds,
+        expectedRevision: known?.revision || 0, decision: "confirm" });
+      await reviewUtils.listing.listCurrentCores.invalidate({ projectId: selectedProjectId });
+      setConfirmedCores(prev => { const next = [...prev]; next[idx] = true; return next; });
+      setEditingCore(null);
+      toast.success("核心及所选产品事实已记录为人工确认版本");
+    } catch (error: any) {
+      toast.error(error?.message || "核心确认失败；当前未创建模型任务");
+    }
   };
 
   const handleReopenCore = (idx: number) => {
@@ -439,7 +532,7 @@ export default function GeneratePage() {
     setSellingPointCores(prev => {
       if (!prev) return prev;
       const next = [...prev];
-      next[idx] = { ...next[idx], [field]: value };
+      next[idx] = { ...next[idx], [field]: value, restoredBuyerReason: undefined };
       return next;
     });
   };
@@ -452,6 +545,7 @@ export default function GeneratePage() {
       const next = [...prev];
       next[idx] = {
         ...next[idx],
+        restoredBuyerReason: undefined,
         fabeDirection: { ...next[idx].fabeDirection, [fabeField]: value },
       };
       return next;
@@ -618,14 +712,16 @@ export default function GeneratePage() {
       // Re-index
       return next.map((item, i) => ({ ...item, index: i + 1 }));
     });
-    setConfirmedCores(prev => prev.filter((_, i) => i !== idx));
+    setConfirmedCores(prev => prev.filter((_, i) => i !== idx).map((confirmed, i) => i < idx && confirmed));
+    setCoreFactSelection(prev => Object.fromEntries(Object.entries(prev)
+      .filter(([index]) => Number(index) < idx).map(([index, ids]) => [Number(index), ids])));
     // Clean up generated bullets
     const newBullets: Record<number, any> = {};
     const newConfirmed: Record<number, boolean> = {};
     Object.entries(generatedBullets).forEach(([key, val]) => {
       const k = Number(key);
       if (k < idx) { newBullets[k] = val; newConfirmed[k] = confirmedBullets[k] || false; }
-      else if (k > idx) { newBullets[k - 1] = val; newConfirmed[k - 1] = confirmedBullets[k] || false; }
+      else if (k > idx) { newBullets[k - 1] = { ...val, staleSource: true }; newConfirmed[k - 1] = false; }
     });
     setGeneratedBullets(newBullets);
     setConfirmedBullets(newConfirmed);
@@ -633,6 +729,8 @@ export default function GeneratePage() {
 
   const handleGenerateSingleBullet = async (idx: number) => {
     if (!selectedProjectId || !sellingPointCores) return;
+    const approvedCore = confirmedCores[idx] ? coreBinding(idx) : null;
+    if (!approvedCore) { toast.error("请先勾选已审事实并完成人工核心版本确认，旧本地确认不可用于新生成"); return; }
     const sp = sellingPointCores[idx];
     const safety = sanitizeSelectedSellingPoint(sp);
     if (!safety.canGenerate) { toast.error("卖点核心缺少真实产品事实；请先补充并确认"); return; }
@@ -652,6 +750,8 @@ export default function GeneratePage() {
         operation: "singleBullet",
         scopeKey: `bullet-${idx}`,
         sellingPoint: sp,
+        coreRevisionId: approvedCore.id,
+        coreInputHash: approvedCore.inputHash,
         previousBullets,
         emphasis: emphasis.trim() || undefined,
         ...(distillationBinding.ledgerKey || distillationBinding.skillSlugs?.length ? { distillationBinding } : {}),
@@ -664,15 +764,10 @@ export default function GeneratePage() {
     }
   };
 
-  const handleConfirmBullet = (idx: number) => {
-    if (!sellingPointCores?.[idx] || !confirmedCores[idx]) { toast.error("请先人工确认当前卖点核心"); return; }
-    if (generatedBullets[idx]?.staleSource) { toast.error("卖点核心已修改，请先重新生成，旧草案不能确认"); return; }
-    setConfirmedBullets(prev => ({ ...prev, [idx]: true }));
-    setEditingBullet(null);
-  };
-
   const optimizeBulletMut = trpc.listing.optimizeSingleBullet.useMutation();
   const handleOptimizeBullet = async (idx: number) => {
+    const approvedCore = confirmedCores[idx] ? coreBinding(idx) : null;
+    if (!approvedCore) { toast.error("当前卖点核心未绑定有效的人审事实版本，无法优化"); return; }
     const current = generatedBullets[idx];
     const requestedCoreRevision = coreRevisionRef.current;
     const candidates = (bulletCandidates[idx] || (current ? [current] : [])).filter(candidate => !candidate.staleSource);
@@ -687,7 +782,9 @@ export default function GeneratePage() {
         .map(([bulletIndex]) => generatedBullets[Number(bulletIndex)])
         .filter(Boolean)
         .map((bullet) => ({ subtitle: bullet.subtitle || "", fullText: bullet.fullText || "" }));
-      const optimized = await optimizeBulletMut.mutateAsync({ projectId: selectedProjectId, sellingPoint: sellingPointCores[idx], currentBullet: { subtitle: current.subtitle || "", fullText: current.fullText || "" }, previousBullets, optimizationNote: note });
+      const optimized = await optimizeBulletMut.mutateAsync({ projectId: selectedProjectId, sellingPoint: sellingPointCores[idx],
+        coreRevisionId: approvedCore.id, coreInputHash: approvedCore.inputHash,
+        currentBullet: { subtitle: current.subtitle || "", fullText: current.fullText || "" }, previousBullets, optimizationNote: note });
       if (requestedCoreRevision !== coreRevisionRef.current || latestBulletsRef.current[idx]?.staleSource
           || bulletFingerprint(latestBulletsRef.current[idx]) !== bulletFingerprint(current)) {
         toast.info("卖点核心或内容已更改，旧优化候选已丢弃；请按最新内容重新优化");
@@ -743,6 +840,12 @@ export default function GeneratePage() {
     setEditingBullet(null);
     setShowAddForm(false);
   };
+
+  // Legacy locked-step fine-tuning still references this mutation. The server
+  // rejects unreviewed free-text writes; never report success optimistically.
+  const syncBulletsMut = trpc.listing.syncBulletsFromSellingPoints.useMutation({
+    onError: (error) => toast.error(`旧版自由文本同步不可用：${error.message}`),
+  });
 
   // Run 15-dimension checklist evaluation for a bullet
   const handleRunChecklist = async (idx: number) => {
@@ -818,35 +921,6 @@ export default function GeneratePage() {
     toast.success(`批量自检完成，成功 ${successCount} 条`);
   };
 
-  // Sync confirmed bullets to listing preview
-  const syncBulletsMut = trpc.listing.syncBulletsFromSellingPoints.useMutation({
-    onSuccess: (data) => {
-      toast.success(`已成功同步 ${data.bulletCount} 条卖点并锁定`);
-      // Auto-lock Step 1 after sync
-      setLockedSteps(prev => {
-        const n = new Set(prev);
-        n.add(1);
-        if (selectedProjectId) {
-          updateLockedStepsMut.mutate({ projectId: selectedProjectId, lockedSteps: Array.from(n) });
-        }
-        return n;
-      });
-      handleStepComplete(1);
-    },
-    onError: (err) => toast.error("同步失败: " + err.message),
-  });
-
-  const handleSyncBullets = () => {
-    if (!selectedProjectId || !sellingPointCores) return;
-    const bullets = Object.entries(confirmedBullets)
-      .filter(([, confirmed]) => confirmed)
-      .map(([i]) => generatedBullets[Number(i)])
-      .filter(Boolean)
-      .map(b => ({ subtitle: b.subtitle || "", fullText: b.fullText || "" }));
-    if (bullets.length === 0) { toast.error("没有已确认的卖点可同步"); return; }
-    syncBulletsMut.mutate({ projectId: selectedProjectId, bullets });
-  };
-
   // Lock/Unlock helpers - persist to DB
   const handleLockStep = (step: number) => {
     setLockedSteps(prev => {
@@ -880,51 +954,19 @@ export default function GeneratePage() {
     toast.info("卖点已解锁，可重新编辑");
   };
 
-  // Locked mode: AI generate a new bullet point from keyword
-  const handleLockedAiGenerate = async (currentBullets: { subtitle: string; fullText: string }[]) => {
-    if (!selectedProjectId || !lockedAddKeyword.trim()) {
-      toast.error("请输入关键词或主题");
-      return;
-    }
-    try {
-      // Step 1: Expand keyword to FABE framework
-      const fabe = await expandKeyword.mutateAsync({
-        projectId: selectedProjectId,
-        keyword: lockedAddKeyword.trim(),
-      });
-      // Step 2: Generate a full bullet point from the FABE
-      await startListingJob.mutateAsync({
-        projectId: selectedProjectId,
-        nodeId: "G1",
-        operation: "singleBullet",
-        scopeKey: "locked-add",
-        sellingPoint: {
-          index: currentBullets.length + 1,
-          theme: fabe.theme,
-          themeZh: fabe.themeZh || "",
-          description: fabe.description || "",
-          descriptionZh: fabe.descriptionZh || "",
-          fabeDirection: fabe.fabeDirection,
-          targetKeywords: fabe.targetKeywords || [],
-          addressesGap: fabe.addressesGap || "",
-        },
-        previousBullets: currentBullets,
-        ...(distillationBinding.ledgerKey || distillationBinding.skillSlugs?.length ? { distillationBinding } : {}),
-      });
-      await g1JobsQuery.refetch();
-      toast.success("新卖点已进入后台队列，完成后可检查并确认");
-    } catch (err: any) {
-      toast.error("AI生成失败: " + (err.message || "未知错误"));
-    }
+  // The legacy locked-mode keyword route does not carry a confirmed core revision.
+  // Refuse before keyword expansion or any model call; the reviewed workflow is below.
+  const handleLockedAiGenerate = () => {
+    toast.info("此旧版扩写入口已停用。请解锁后先确认本品事实与卖点核心，再用逐条精雕生成。历史文案不会被覆盖。");
   };
 
   const allBulletsConfirmed = sellingPointCores
-    ? sellingPointCores.every((_, i) => confirmedBullets[i])
+    ? sellingPointCores.some(Boolean) && sellingPointCores.every((point, i) => !point || confirmedBullets[i])
     : false;
 
   const confirmedBulletCount = Object.values(confirmedBullets).filter(Boolean).length;
-  const totalCoresCount = sellingPointCores?.length || 0;
-  const manualCoresCount = sellingPointCores?.filter(sp => sp.isManual).length || 0;
+  const totalCoresCount = sellingPointCores?.filter(Boolean).length || 0;
+  const manualCoresCount = sellingPointCores?.filter((sp): sp is any => Boolean(sp?.isManual)).length || 0;
   const canAddMore = totalCoresCount < 9;
 
   return (
@@ -1114,16 +1156,16 @@ export default function GeneratePage() {
                             />
                           </div>
                           <div className="flex gap-2">
-                            <Button size="sm" className="bg-teal-600 hover:bg-teal-700" onClick={() => {
+                            <Button size="sm" className="bg-teal-600 hover:bg-teal-700" onClick={async () => {
                               // Save the fine-tuned bullet
                               const newBullets = [...savedBullets];
                               newBullets[idx] = { subtitle: lockedFineTuneData.subtitle, fullText: lockedFineTuneData.fullText };
-                              // Re-sync to DB
-                              if (selectedProjectId) {
-                                syncBulletsMut.mutate({ projectId: selectedProjectId, bullets: newBullets });
-                              }
-                              setLockedFineTuneIdx(null);
-                              toast.success(`第 ${idx + 1} 条卖点已更新并重新同步`);
+                              if (!selectedProjectId) return;
+                              try {
+                                await syncBulletsMut.mutateAsync({ projectId: selectedProjectId, bullets: newBullets });
+                                setLockedFineTuneIdx(null);
+                                toast.success(`第 ${idx + 1} 条卖点已同步`);
+                              } catch { /* onError already tells the operator; keep the editor open. */ }
                             }} disabled={syncBulletsMut.isPending}>
                               {syncBulletsMut.isPending ? (
                                 <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />保存中...</>
@@ -1166,11 +1208,13 @@ export default function GeneratePage() {
                                 variant="ghost"
                                 size="sm"
                                 className="h-7 px-2 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                onClick={() => {
+                                onClick={async () => {
                                   const newBullets = savedBullets.filter((_, i) => i !== idx);
                                   if (selectedProjectId && newBullets.length >= 1) {
-                                    syncBulletsMut.mutate({ projectId: selectedProjectId, bullets: newBullets });
-                                    toast.success(`已删除第 ${idx + 1} 条卖点并重新同步`);
+                                    try {
+                                      await syncBulletsMut.mutateAsync({ projectId: selectedProjectId, bullets: newBullets });
+                                      toast.success(`已删除第 ${idx + 1} 条卖点并同步`);
+                                    } catch { /* Keep persisted content unchanged on refusal. */ }
                                   }
                                 }}
                               >
@@ -1243,13 +1287,13 @@ export default function GeneratePage() {
                                 className="h-9 text-sm flex-1"
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter" && lockedAddKeyword.trim()) {
-                                    handleLockedAiGenerate(savedBullets);
+                                    handleLockedAiGenerate();
                                   }
                                 }}
                               />
                               <Button
                                 size="sm"
-                                onClick={() => handleLockedAiGenerate(savedBullets)}
+                                onClick={handleLockedAiGenerate}
                                 disabled={!lockedAddKeyword.trim() || expandKeyword.isPending}
                                 className="bg-teal-600 hover:bg-teal-700 h-9"
                               >
@@ -1291,14 +1335,16 @@ export default function GeneratePage() {
                                   />
                                 </div>
                                 <div className="flex gap-2">
-                                  <Button size="sm" className="bg-teal-600 hover:bg-teal-700" onClick={() => {
+                                  <Button size="sm" className="bg-teal-600 hover:bg-teal-700" onClick={async () => {
                                     if (!lockedAiResult || !selectedProjectId) return;
                                     const newBullets = [...savedBullets, { subtitle: lockedAiResult.subtitle, fullText: lockedAiResult.fullText }];
-                                    syncBulletsMut.mutate({ projectId: selectedProjectId, bullets: newBullets });
-                                    setLockedAiResult(null);
-                                    setLockedAddKeyword("");
-                                    setShowLockedAddForm(false);
-                                    toast.success("新卖点已添加并同步");
+                                    try {
+                                      await syncBulletsMut.mutateAsync({ projectId: selectedProjectId, bullets: newBullets });
+                                      setLockedAiResult(null);
+                                      setLockedAddKeyword("");
+                                      setShowLockedAddForm(false);
+                                      toast.success("新卖点已添加并同步");
+                                    } catch { /* Retain the AI draft for human review. */ }
                                   }} disabled={syncBulletsMut.isPending}>
                                     <Check className="h-3.5 w-3.5 mr-1" />确认添加并同步
                                   </Button>
@@ -1337,14 +1383,16 @@ export default function GeneratePage() {
                                 max={280}
                               />
                               <div className="flex gap-2">
-                                <Button size="sm" className="bg-teal-600 hover:bg-teal-700" onClick={() => {
+                                <Button size="sm" className="bg-teal-600 hover:bg-teal-700" onClick={async () => {
                                   if (!lockedAddSubtitle.trim() || !lockedAddFullText.trim() || !selectedProjectId) return;
                                   const newBullets = [...savedBullets, { subtitle: lockedAddSubtitle, fullText: lockedAddFullText }];
-                                  syncBulletsMut.mutate({ projectId: selectedProjectId, bullets: newBullets });
-                                  setLockedAddSubtitle("");
-                                  setLockedAddFullText("");
-                                  setShowLockedAddForm(false);
-                                  toast.success("新卖点已添加并同步");
+                                  try {
+                                    await syncBulletsMut.mutateAsync({ projectId: selectedProjectId, bullets: newBullets });
+                                    setLockedAddSubtitle("");
+                                    setLockedAddFullText("");
+                                    setShowLockedAddForm(false);
+                                    toast.success("新卖点已添加并同步");
+                                  } catch { /* Keep input until a reviewed sync path is available. */ }
                                 }} disabled={!lockedAddSubtitle.trim() || !lockedAddFullText.trim() || syncBulletsMut.isPending}>
                                   <Plus className="h-3.5 w-3.5 mr-1" />添加并同步
                                 </Button>
@@ -1370,142 +1418,13 @@ export default function GeneratePage() {
           })()}
           {/* Unlocked Step 1 content */}
           {!lockedSteps.has(1) && (<>
-          {/* Character count rules reminder */}
-          <Card className="bg-blue-50/50 border-blue-200">
-            <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-blue-900">亚马逊Bullet Point规则</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-blue-700">
-                    <span>每条Bullet Point：<strong>200-280</strong> 字符（不超过280）</span>
-                    <span>卖点数量：AI生成 <strong>7</strong> 条，可手动增加最多 <strong>2</strong> 条（共9条）</span>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Project Info Summary */}
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <div className="flex items-center gap-4">
-                  <div>
-                    <p className="font-medium">{project?.name || "加载中..."}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {project?.brand ? `${project.brand} · ` : ""}
-                      {project?.productName || ""}
-                      {analyses && analyses.length > 0 ? ` · ${analyses.length} 个竞品分析` : ""}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  {analyses && analyses.length > 0 && (
-                    <Badge variant="secondary">
-                      <CheckCircle2 className="h-3 w-3 mr-1" />
-                      已有竞品数据
-                    </Badge>
-                  )}
-                  {fileSummary && fileSummary.fileCount > 0 && (
-                    <Badge variant={fileSummary.hasAllFiles ? "default" : "secondary"}
-                      className={fileSummary.hasAllFiles ? "bg-green-600" : ""}>
-                      {fileSummary.hasAllFiles ? (
-                        <><CheckCircle2 className="h-3 w-3 mr-1" />4/4 分析模块就绪</>
-                      ) : (
-                        <>{[
-                          fileSummary.productAttributes ? 1 : 0,
-                          fileSummary.competitorListings ? 1 : 0,
-                          fileSummary.cosmoScenes ? 1 : 0,
-                          fileSummary.a9Keywords ? 1 : 0,
-                        ].reduce((a: number, b: number) => a + b, 0)}/4 分析模块</>
-                      )}
-                    </Badge>
-                  )}
-                  {kwReadiness && (
-                    <Badge variant={kwReadiness.allDone ? "default" : "secondary"}
-                      className={kwReadiness.allDone ? "bg-green-600" : ""}>
-                      {kwReadiness.allDone ? (
-                        <><CheckCircle2 className="h-3 w-3 mr-1" />关键词分析就绪</>
-                      ) : (
-                        <>{kwReadiness.completedSteps}/{kwReadiness.total} 关键词步骤</>
-                      )}
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Keyword Readiness Indicator */}
-          {kwReadiness && !kwReadiness.allDone && (
-            <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/30">
-              <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-amber-900 dark:text-amber-200 mb-2">
-                      关键词AI分析未完成 — 建议先完成分析以获得更优质的Listing
-                    </p>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-                      {kwReadiness.steps.map((step) => (
-                        <div key={step.key} className={`flex items-center gap-2 rounded-md px-3 py-2 text-xs ${
-                          step.done
-                            ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
-                            : "bg-white/60 text-muted-foreground dark:bg-gray-800/40"
-                        }`}>
-                          {step.done ? (
-                            <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
-                          ) : (
-                            <step.icon className="h-3.5 w-3.5 shrink-0" />
-                          )}
-                          <span className="font-medium">{step.label}</span>
-                          {step.done && <span className="ml-auto text-[10px]">({step.count})</span>}
-                        </div>
-                      ))}
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-amber-700 border-amber-300 hover:bg-amber-100"
-                      onClick={() => setLocation("/listing/keywords")}
-                    >
-                      前往关键词管理
-                      <ArrowRight className="h-3.5 w-3.5 ml-1" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Emphasis / Key Selling Points */}
-          <Card className="border-amber-200 bg-gradient-to-r from-amber-50/50 to-transparent">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Megaphone className="h-5 w-5 text-amber-600" />
-                重点强调（可选）
-              </CardTitle>
-              <CardDescription>
-                指定AI生成时需要优先突出的卖点、场景或差异化优势，留空则由AI自主决策
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Textarea
-                placeholder={'例如：突出"无毒安全"和"室内外多场景使用"；强调与竞品相比的独特设计优势；重点体现"送礼场景"...'}
-                value={emphasis}
-                onChange={(e) => setEmphasis(e.target.value)}
-                rows={2}
-                className="resize-none"
-              />
-              {emphasis.trim() && (
-                <p className="mt-2 text-xs text-amber-600 flex items-center gap-1">
-                  <Check className="h-3 w-3" />
-                  已设置重点强调，AI将在生成内容中优先体现这些内容
-                </p>
-              )}
-            </CardContent>
-          </Card>
+          <ListingGenerationPreparationSummary
+            project={project}
+            analysisCount={analyses?.length || 0}
+            fileSummary={fileSummary}
+            kwReadiness={kwReadiness}
+            onManageKeywords={() => setLocation("/listing/keywords")}
+          />
 
           {/* Step-by-Step Bullet Crafting Section - Main Content */}
           <Card className="border-teal-200 bg-gradient-to-br from-teal-50/50 to-transparent dark:from-teal-950/20">
@@ -1515,10 +1434,36 @@ export default function GeneratePage() {
                 分步卖点精雕
               </CardTitle>
               <CardDescription>
-                AI生成7条卖点核心方向 → 可手动增加最多2条（共9条） → 人工确认/编辑 → 逐条生成完整Bullet Point → 同步到预览页
+                AI生成卖点核心方向 → 事实与核心人工审核 → 逐条编辑并确认候选 → 查看全字段差异后人工同步
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {selectedProjectId && <FactReviewPanel projectId={selectedProjectId} />}
+              {selectedProjectId && <CoreReviewPanel projectId={selectedProjectId} />}
+              {selectedProjectId && <section className="space-y-2" aria-label="已审核卖点候选恢复">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">已保存候选的人工审阅</h3>
+                  <p className="text-xs text-slate-600">候选入口直接使用当前项目的服务端核心版本；刷新后无需重跑模型。核心或事实已失效的历史只供审计，不能错绑到当前核心。</p>
+                </div>
+                {reviewedCoresQuery.isLoading && <p className="text-xs text-slate-600">正在恢复已审核核心与候选入口…</p>}
+                {reviewedCoresQuery.isError && <p role="alert" className="text-xs text-red-700">无法恢复候选入口：{reviewedCoresQuery.error.message}</p>}
+                {!reviewedCoresQuery.isLoading && !reviewedCoresQuery.isError && currentConfirmedCoreBindings.length === 0 && <p className="text-xs text-slate-600">当前项目暂无仍有效且已确认的核心；请先审核事实并确认核心后再创建或继续审阅候选。</p>}
+                {currentConfirmedCoreBindings.map((core) => <CandidateReviewPanel
+                  key={`candidate-active-${selectedProjectId}-${core.id}`}
+                  projectId={selectedProjectId}
+                  coreRevisionId={core.id}
+                  coreInputHash={core.inputHash}
+                  factRevisionIds={factRevisionIdsForCore(core)}
+                  factLabels={factLabels}
+                />)}
+                {!reviewedCoresQuery.isLoading && !reviewedCoresQuery.isError && <CandidateReviewPanel
+                  key={`candidate-history-${selectedProjectId}`}
+                  projectId={selectedProjectId}
+                  factRevisionIds={[]}
+                  factLabels={factLabels}
+                  readOnlyHistory
+                />}
+              </section>}
               {/* Phase: Generate Cores */}
               {stepBulletPhase === "idle" && (
                 <Button
@@ -1812,6 +1757,7 @@ export default function GeneratePage() {
                   )}
 
                   {sellingPointCores.map((sp, idx) => {
+                    if (!sp) return null;
                     const coreSafety = sanitizeSelectedSellingPoint(sp);
                     return (
                     <div key={idx} className={`rounded-lg border p-4 transition-all ${
@@ -1849,15 +1795,15 @@ export default function GeneratePage() {
                               <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setEditingCore(editingCore === idx ? null : idx)}>
                                 <Pencil className="h-3 w-3" />
                               </Button>
-                              <Button variant="default" size="sm" className="h-7 px-3 bg-green-600 hover:bg-green-700" onClick={() => handleConfirmCore(idx)}>
-                                <Check className="h-3 w-3 mr-1" />确认
+                              <Button variant="default" size="sm" className="h-7 px-3 bg-green-600 hover:bg-green-700" disabled={reviewCoreMutation.isPending || reviewedFactsQuery.isLoading || reviewedCoresQuery.isLoading} onClick={() => void handleConfirmCore(idx)}>
+                                <Check className="h-3 w-3 mr-1" />确认事实与核心
                               </Button>
                             </>
                           )}
                           {confirmedCores[idx] && (
                             <>
                               <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => handleReopenCore(idx)}>编辑核心</Button>
-                              <Badge className="bg-green-600 text-white text-[10px]"><CheckCircle2 className="h-3 w-3 mr-1" />已确认</Badge>
+                              <Badge className={coreBinding(idx) ? "bg-green-600 text-white text-[10px]" : "bg-amber-600 text-white text-[10px]"}><CheckCircle2 className="h-3 w-3 mr-1" />{coreBinding(idx) ? `服务端已确认 v${coreBinding(idx)?.revision}` : "待绑定已审事实"}</Badge>
                             </>
                           )}
                         </div>
@@ -1869,6 +1815,20 @@ export default function GeneratePage() {
                           {!coreSafety.canGenerate ? "当前缺少可用产品事实，无法生成。" : "请编辑并确认真实数据；模型不会使用这些字段。"}
                         </div>
                       )}
+
+                      {!confirmedCores[idx] && <fieldset className="mb-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs">
+                        <legend className="px-1 font-medium">选择本条卖点的已确认事实（必选）</legend>
+                        {reviewedFactsQuery.isError && <p role="alert" className="text-red-700">事实账本读取失败，请刷新后重试</p>}
+                        {!reviewedFactsQuery.data?.some((fact) => fact.status === "confirmed") && <p className="text-amber-800">暂无已确认的原始属性表事实；请先在上方审阅，再确认卖点核心。</p>}
+                        <div className="max-h-28 space-y-1 overflow-auto">
+                          {reviewedFactsQuery.data?.filter((fact) => fact.status === "confirmed").map((fact) => <label key={fact.id} className="flex gap-2 items-start">
+                            <Checkbox checked={(coreFactSelection[idx] || []).includes(fact.id)} onCheckedChange={() => setCoreFactSelection((previous) => ({ ...previous,
+                              [idx]: (previous[idx] || []).includes(fact.id) ? previous[idx].filter((id) => id !== fact.id) : [...(previous[idx] || []), fact.id],
+                            }))} />
+                            <span>{fact.attributeKey}：{fact.value}</span>
+                          </label>)}
+                        </div>
+                      </fieldset>}
 
                       {editingCore === idx ? (
                         <div className="space-y-2 mt-3">
@@ -2036,9 +1996,7 @@ export default function GeneratePage() {
                               <div className="flex gap-2">
                                 {!confirmedBullets[idx] ? (
                                   <>
-                                    <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleConfirmBullet(idx)}>
-                                      <Check className="h-3.5 w-3.5 mr-1" />确认此条
-                                    </Button>
+                                    <span className="self-center text-xs text-indigo-800">请在下方候选账本中完成人工确认</span>
                                     <Button size="sm" variant="outline" onClick={() => handleStartEditBullet(idx)}>
                                       <Pencil className="h-3.5 w-3.5 mr-1" />编辑
                                     </Button>
@@ -2064,15 +2022,8 @@ export default function GeneratePage() {
                         <CheckCircle2 className="h-5 w-5 text-green-600" />
                         <span className="text-sm font-semibold text-green-800">全部 {totalCoresCount} 条卖点已确认</span>
                       </div>
-                      <p className="text-xs text-green-700 mb-3">所有卖点已精雕完成，点击"同步到预览页"将卖点内容更新到Listing预览页面，然后可在预览页进行编辑和中英文翻译</p>
+                      <p className="text-xs text-amber-800 mb-3">旧浏览器确认仅用于本地展示；请在上方候选账本完成人审。正式同步需预览全字段变化，并以服务端版本冲突校验提交。</p>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Button size="sm" onClick={handleSyncBullets} disabled={syncBulletsMut.isPending}>
-                          {syncBulletsMut.isPending ? (
-                            <><Loader2 className="h-4 w-4 mr-2 animate-spin" />同步中...</>
-                          ) : (
-                            <><Upload className="h-4 w-4 mr-2" />同步到预览页</>
-                          )}
-                        </Button>
                         <Button variant="outline" size="sm" onClick={handleBatchChecklist} disabled={batchChecklistRunning}>
                           {batchChecklistRunning ? (
                             <><Loader2 className="h-4 w-4 mr-2 animate-spin" />批量自检中...</>
@@ -2093,14 +2044,8 @@ export default function GeneratePage() {
                       <div className="flex items-center justify-between">
                         <p className="text-xs text-amber-700">
                           已确认 {confirmedBulletCount}/{totalCoresCount} 条卖点
-                          {confirmedBulletCount >= 5 && "（已达最低5条，可先同步已确认的卖点）"}
+                          {confirmedBulletCount >= 5 && "（正式同步须通过服务端候选版本及Listing快照门禁）"}
                         </p>
-                        {confirmedBulletCount >= 5 && (
-                          <Button size="sm" variant="outline" className="text-xs" onClick={handleSyncBullets} disabled={syncBulletsMut.isPending}>
-                            <Upload className="h-3.5 w-3.5 mr-1" />
-                            先同步已确认的 {confirmedBulletCount} 条
-                          </Button>
-                        )}
                       </div>
                     </div>
                   )}

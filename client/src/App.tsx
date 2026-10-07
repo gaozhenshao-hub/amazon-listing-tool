@@ -47,6 +47,7 @@ const ImageWorkflowPage = lazyWithRecovery(
   () => import("./pages/ImageWorkflowPage"),
   "lazy-recovery:image-workflow",
 );
+const QualityDashboard = lazy(() => import("./pages/QualityDashboard"));
 const KeywordPage = lazy(() => import("./pages/KeywordPage"));
 const AdStructurePage = lazy(() => import("./pages/AdStructurePage"));
 const ReviewAggregationPage = lazy(() => import("./pages/ReviewAggregationPage"));
@@ -195,6 +196,7 @@ function Router() {
         <Route path="/listing/score">{() => <PermissionGuard><ScorePage /></PermissionGuard>}</Route>
         <Route path="/listing/image-suggestions">{() => <PermissionGuard><ImageSuggestionsPage /></PermissionGuard>}</Route>
         <Route path="/listing/image-workflow">{() => <PermissionGuard><ImageWorkflowPage /></PermissionGuard>}</Route>
+        <Route path="/listing/quality">{() => <PermissionGuard><QualityDashboard /></PermissionGuard>}</Route>
         <Route path="/listing/keywords">{() => <PermissionGuard><KeywordPage /></PermissionGuard>}</Route>
         <Route path="/listing/ad-structure">{() => <PermissionGuard><AdStructurePage /></PermissionGuard>}</Route>
         <Route path="/listing/review-aggregation">{() => <PermissionGuard><ReviewAggregationPage /></PermissionGuard>}</Route>

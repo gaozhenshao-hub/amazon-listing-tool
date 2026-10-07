@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 
 const mocks = vi.hoisted(() => ({ resolveSessionAccess: vi.fn(), updateImageWorkflowSession: vi.fn(),
-  unlockAllStep4ImageVersions: vi.fn(), registerArtifact: vi.fn() }));
+  unlockAllStep4ImageVersions: vi.fn(), registerArtifact: vi.fn(), confirmHumanImageWorkflowStage: vi.fn() }));
+vi.mock("./domains/image/services/imageWorkflowVersionPolicy", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./domains/image/services/imageWorkflowVersionPolicy")>();
+  return { ...actual, confirmHumanImageWorkflowStage: mocks.confirmHumanImageWorkflowStage };
+});
 vi.mock("./domains/image/routerContext", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./domains/image/routerContext")>();
   return { ...actual, resolveSessionAccess: mocks.resolveSessionAccess,
@@ -30,6 +34,10 @@ const caller = router({ step1: imageWorkflowStepProcedures.confirmStep1,
 
 describe("Step1–3直接重确认不能绕开下游失效链", () => {
   beforeEach(() => { vi.clearAllMocks();
+    mocks.confirmHumanImageWorkflowStage.mockResolvedValue({
+      snapshot: { version: 2 }, scopeRevision: 8,
+      invalidation: { changed: true, invalidateSteps: [2, 3, 4, 5, 6] }, unchanged: false,
+    });
     mocks.resolveSessionAccess.mockResolvedValue({ id: 23, userId: 17, projectId: 51,
       step1Confirmed: 1, step1UserEdit: JSON.stringify({ old: true }),
       step2Confirmed: 1, step2UserEdit: JSON.stringify({ secondaryImages: [] }),
@@ -39,24 +47,26 @@ describe("Step1–3直接重确认不能绕开下游失效链", () => {
     await expect(caller.step1({ projectId: 51, userEdit: "{" })).rejects.toThrow();
     expect(mocks.updateImageWorkflowSession).not.toHaveBeenCalled();
     await caller.step1({ projectId: 51, userEdit: JSON.stringify({ sellingPoints: ["new"] }) });
-    expect(mocks.updateImageWorkflowSession).toHaveBeenCalledWith(23,
-      expect.objectContaining({ step1Confirmed: 1, step2Confirmed: 0, step3Confirmed: 0,
-        step4Confirmed: 0, step5Confirmed: 0, step6Confirmed: 0 }));
+    expect(mocks.confirmHumanImageWorkflowStage).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 7, projectId: 51, sessionId: 23, step: 1,
+      content: { sellingPoints: ["new"] },
+    }));
   });
   it("Step2重新确认改变时清除Step3–6", async () => {
     const secondaryImages = Array.from({ length: 6 }, (_, index) => ({
       imageNumber: index + 2, purpose: `Purpose ${index + 2}`, contentBrief: "Supported product message",
     }));
     await caller.step2({ projectId: 51, userEdit: JSON.stringify({ secondaryImages }) });
-    expect(mocks.updateImageWorkflowSession).toHaveBeenCalledWith(23,
-      expect.objectContaining({ step2Confirmed: 1, step3Confirmed: 0, step4Confirmed: 0,
-        step5Confirmed: 0, step6Confirmed: 0 }));
+    expect(mocks.confirmHumanImageWorkflowStage).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 7, projectId: 51, sessionId: 23, step: 2,
+      content: expect.objectContaining({ secondaryImages: expect.any(Array) }),
+    }));
   });
   it("Step3重新确认不同风格时清除Step4–6", async () => {
     await caller.step3({ projectId: 51, userEdit: JSON.stringify({ style: "new" }) });
-    expect(mocks.updateImageWorkflowSession).toHaveBeenCalledWith(23,
-      expect.objectContaining({ step3Confirmed: 1, step4Confirmed: 0,
-        step5Confirmed: 0, step6Confirmed: 0 }));
+    expect(mocks.confirmHumanImageWorkflowStage).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 7, projectId: 51, sessionId: 23, step: 3, content: { style: "new" },
+    }));
   });
   it("已确认Step2不能通过子模块锁定暗中改变后续步骤的原始输入", async () => {
     await expect(caller.lockAplus({ projectId: 51, moduleIndex: 0, submoduleIndex: 0 }))

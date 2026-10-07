@@ -16,8 +16,9 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(references).toContain("getLatestStep4ReferenceJob");
     expect(references).toContain("latestResult || session.step4AiResult");
     expect(references).toContain('typeof value === "object" && !Array.isArray(value)');
-    expect(references).toContain("await db.unlockAllStep4ImageVersions(session.id)");
-    expect(references).toContain("step4Confirmed: 0");
+    expect(references).toContain("await invalidateImageWorkflowStages({");
+    expect(references).toContain("fromStep: 4");
+    expect(references).toContain("legacyPatch: { step4UserEdit: userEdit }");
   });
 
   it("单图重新优化会保存完整合并结果，而非只返回内存对象", () => {
@@ -39,8 +40,8 @@ describe("Step4 参考图与方案版本保留", () => {
     expect(workflowSteps).toContain("buildStep4ConfirmedSnapshot(currentSnapshot, versionByIndex)");
     expect(step4Snapshot).toContain("请先逐图点击“确认此图”，整体确认只会发布独立确认版本");
     expect(step4Snapshot).toContain("compactStep4ReferenceForStorage(confirmedByIndex.get(index)");
-    expect(workflowSteps).toContain("step4AiResult: completeUserEdit");
-    expect(workflowSteps).toContain("step4UserEdit: completeUserEdit");
+    expect(workflowSteps).toContain("confirmHumanImageWorkflowStage({");
+    expect(workflowSteps).toContain("step: 4, content: completeSnapshot");
   });
 
   it("锁定态展示以会话确认快照为权威，并只用 Artifact 补齐缺失图片资产", () => {
@@ -78,7 +79,7 @@ describe("Step4 参考图与方案版本保留", () => {
     const sessionsRouter = fs.readFileSync(path.join(root, "server/domains/image/routers/sessions.ts"), "utf8");
     expect(refsRouter).toContain("confirmStep4ImageVersion");
     expect(refsRouter).toContain("unlockStep4ImageVersion");
-    expect(refsRouter).toContain("unlockAllStep4ImageVersions");
+    expect(refsRouter).toContain("invalidateImageWorkflowStages({");
     expect(sessionsRouter).toContain("applyCurrentStep4ImageVersions");
     expect(sessionsRouter).toContain("chooseStep4DisplayBase");
     expect(sessionsRouter).toContain("latestJobSnapshot");
@@ -90,7 +91,7 @@ describe("Step4 参考图与方案版本保留", () => {
     const sessionsRouter = fs.readFileSync(path.join(root, "server/domains/image/routers/sessions.ts"), "utf8");
     expect(workflowSteps).toContain("const currentSnapshot = buildCurrentStep4ConfirmationSnapshot(session, requestedSnapshot)");
     expect(workflowSteps).toContain("const completeSnapshot = buildStep4ConfirmedSnapshot(currentSnapshot, versionByIndex)");
-    expect(workflowSteps).toContain("step4Confirmed: 1");
+    expect(workflowSteps).toContain("step: 4, content: completeSnapshot");
     expect(sessionsRouter).toContain("const versions = await db.getCurrentStep4ImageVersions(session.id)");
     expect(sessionsRouter).toContain("if (confirmed) {");
     expect(sessionsRouter).toContain("return { ...reference, ...confirmed, isLocked: true");

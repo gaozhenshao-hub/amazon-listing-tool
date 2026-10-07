@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 
+vi.mock("./domains/image/services/imageWorkflowVersionPolicy", async importOriginal => {
+  const actual = await importOriginal<typeof import("./domains/image/services/imageWorkflowVersionPolicy")>();
+  return { ...actual, requireCurrentImageWorkflowUpstream: vi.fn(async () => ({
+    scopeRevision: 1, upstreamDigest: "a".repeat(64),
+  })) };
+});
+
 vi.mock("./domains/image/repository", () => ({
   getProjectByIdAdmin: vi.fn(),
   getImageWorkflowSessionByProject: vi.fn(),
@@ -49,6 +56,7 @@ function createContext(): TrpcContext {
       updatedAt: new Date(),
       lastSignedIn: new Date(),
     },
+    workspaceId: 1,
     req: { protocol: "https", headers: {} } as TrpcContext["req"],
     res: { clearCookie: vi.fn() } as unknown as TrpcContext["res"],
   };

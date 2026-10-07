@@ -5,13 +5,16 @@ const mocks = vi.hoisted(() => ({
   resolveProjectAccess: vi.fn(), resolveSessionAccess: vi.fn(),
   getExpressionGroupByProject: vi.fn(), countExpressionGroupImages: vi.fn(),
   updateImageWorkflowSession: vi.fn(), insertExpressionGroupImage: vi.fn(), getCurrentStep4ImageVersions: vi.fn(),
-  resolveSessionForExecution: vi.fn(), invokeBusinessSkill: vi.fn(), getReadableImage: vi.fn(),
+  resolveSessionForExecution: vi.fn(), invokeBusinessSkill: vi.fn(), getReadableImage: vi.fn(), requireApprovedReceiptUse: vi.fn(),
+  invalidateImageWorkflowStages: vi.fn(), captureImageWorkflowWorkerFence: vi.fn(),
 }));
 vi.mock("./domains/image/routerContext", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./domains/image/routerContext")>();
   return { ...actual, resolveProjectAccess: mocks.resolveProjectAccess,
     resolveSessionAccess: mocks.resolveSessionAccess,
     resolveSessionForExecution: mocks.resolveSessionForExecution,
+    invalidateImageWorkflowStages: mocks.invalidateImageWorkflowStages,
+    captureImageWorkflowWorkerFence: mocks.captureImageWorkflowWorkerFence,
     invokeBusinessSkill: mocks.invokeBusinessSkill,
     kbDb: { ...actual.kbDb, getReadableImage: mocks.getReadableImage },
     db: { ...actual.db,
@@ -25,6 +28,9 @@ vi.mock("./domains/image/routerContext", async (importOriginal) => {
 vi.mock("./domains/image/routers/sessions", async (importOriginal) => ({
   ...await importOriginal<typeof import("./domains/image/routers/sessions")>(),
   rebuildStep4DisplaySnapshot: (_session: unknown, requested: unknown) => requested,
+}));
+vi.mock("./domains/image/services/imageAssetPolicyService", () => ({
+  imageAssetPolicyService: { requireApprovedReceiptAssetUse: mocks.requireApprovedReceiptUse },
 }));
 
 import { router } from "./_core/trpc";
@@ -64,6 +70,9 @@ beforeEach(() => {
   mocks.getCurrentStep4ImageVersions.mockResolvedValue([]);
   mocks.resolveSessionForExecution.mockResolvedValue({ id: 23, projectId: 51, userId: 17 });
   mocks.getReadableImage.mockResolvedValue(null);
+  mocks.requireApprovedReceiptUse.mockResolvedValue({ assetId: "asset-approved", reviewState: "approved" });
+  mocks.invalidateImageWorkflowStages.mockResolvedValue({ scopeRevision: 8, invalidatedSteps: [4, 5, 6] });
+  mocks.captureImageWorkflowWorkerFence.mockResolvedValue({ scopeRevision: 7, upstreamDigest: "a".repeat(64) });
 });
 afterEach(() => {
   if (originalSecret === undefined) delete process.env.JWT_SECRET;
@@ -79,7 +88,13 @@ describe("图片资产来源写入真实路由", () => {
     await expect(caller.addDesignerUpload({ ...input, imageUrl: signed("designer", 52) })).rejects.toThrow(/项目/);
     expect(mocks.updateImageWorkflowSession).not.toHaveBeenCalled();
     await caller.addDesignerUpload({ ...input, imageUrl: signed("designer") });
-    expect(mocks.updateImageWorkflowSession).toHaveBeenCalledWith(23, expect.objectContaining({ step5Confirmed: 0, step6Confirmed: 0 }));
+    expect(mocks.invalidateImageWorkflowStages).toHaveBeenLastCalledWith(expect.objectContaining({
+      workspaceId: 7, projectId: 51, sessionId: 23, fromStep: 5,
+      legacyPatch: expect.objectContaining({ step5DesignerUploads: expect.any(String) }),
+    }));
+    expect(mocks.requireApprovedReceiptUse).toHaveBeenCalledWith(expect.objectContaining({
+      allowedUse: "designer_attachment", kind: "designer", projectId: 51, workspaceId: 7,
+    }));
   });
   it("Step4草稿拒绝裸URL和伪造KB ID，不写入旧的正式快照", async () => {
     const caller = callerFactory.createCaller(ctx());
@@ -88,7 +103,13 @@ describe("图片资产来源写入真实路由", () => {
     await expect(caller.saveStep4Draft({ projectId: 51, userEdit: draft(signed("designer")) })).rejects.toThrow(/类型/);
     expect(mocks.updateImageWorkflowSession).not.toHaveBeenCalled();
     await caller.saveStep4Draft({ projectId: 51, userEdit: draft(signed("step4-ref")) });
-    expect(mocks.updateImageWorkflowSession).toHaveBeenCalledWith(23, expect.objectContaining({ step4Confirmed: 0, step5Confirmed: 0, step6Confirmed: 0 }));
+    expect(mocks.invalidateImageWorkflowStages).toHaveBeenLastCalledWith(expect.objectContaining({
+      workspaceId: 7, projectId: 51, sessionId: 23, fromStep: 4,
+      legacyPatch: expect.objectContaining({ step4UserEdit: expect.any(String) }),
+    }));
+    expect(mocks.requireApprovedReceiptUse).toHaveBeenCalledWith(expect.objectContaining({
+      allowedUse: "step4_reference", kind: "step4-ref", projectId: 51,
+    }));
     await expect(requireStep4DraftAssets({ imageReferences: [{ kbReferenceImages: [{ id: -1, imageUrl: "https://competitor.invalid" }] }] }, ctx(), 51)).rejects.toThrow();
   });
   it("同空间可读但用途未审批的竞品知识库图片不能作为本品Step4参考或调用模型", async () => {
@@ -116,6 +137,14 @@ describe("图片资产来源写入真实路由", () => {
     await expect(caller.regenerateAllFromReferences({ projectId: 51, kbImages: [{ id: 2024 }] })).rejects.toThrow(/用途尚未审核/);
     expect(mocks.invokeBusinessSkill).not.toHaveBeenCalled();
     expect(mocks.updateImageWorkflowSession).not.toHaveBeenCalled();
+  });
+  it("签名合法但缺少人工批准的我方图片，不能写入草稿或送入模型", async () => {
+    mocks.requireApprovedReceiptUse.mockRejectedValueOnce(Object.assign(new Error("图片用途尚未由人工审核通过"), { code: "PRECONDITION_FAILED" }));
+    const caller = callerFactory.createCaller(ctx());
+    const draft = JSON.stringify({ imageReferences: [{ compositionRefImageUrl: signed("step4-ref") }] });
+    await expect(caller.saveStep4Draft({ projectId: 51, userEdit: draft })).rejects.toThrow(/人工审核/);
+    expect(mocks.updateImageWorkflowSession).not.toHaveBeenCalled();
+    expect(mocks.invokeBusinessSkill).not.toHaveBeenCalled();
   });
   it("竞品表达方式组仅可追加受签研究素材，不能裸写外部URL或引用别的项目", async () => {
     const caller = callerFactory.createCaller(ctx());

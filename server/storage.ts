@@ -8,6 +8,10 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 type StorageConfig = { baseUrl: string; apiKey: string };
 export type StorageProvider = "forge" | "s3" | "oss" | "local" | "external";
+type StorageGetOptions = {
+  /** Only server-controlled callers may select this shorter S3/OSS signature TTL. */
+  expiresSeconds?: number;
+};
 type S3CompatibleStorageConfig = {
   provider: "s3" | "oss";
   endpoint?: string;
@@ -269,15 +273,22 @@ export async function storagePut(
   return { key, url, storageUri: buildStorageUri(key, "forge") };
 }
 
-export async function storageGet(relKey: string): Promise<{ key: string; url: string; }> {
+export async function storageGet(
+  relKey: string,
+  options: StorageGetOptions = {}
+): Promise<{ key: string; url: string; }> {
   const provider = getActiveStorageProvider();
   if (provider === "s3" || provider === "oss") {
     const config = getS3CompatibleStorageConfig();
     const key = normalizeKey(relKey);
+    const expiresIn = options.expiresSeconds ?? config.presignExpiresSeconds;
+    if (!Number.isInteger(expiresIn) || expiresIn < 60 || expiresIn > 7 * 24 * 60 * 60) {
+      throw new Error("Storage download signature TTL must be between 60 seconds and 7 days");
+    }
     const url = await getSignedUrl(
       createS3CompatibleClient(config, config.publicEndpoint),
       new GetObjectCommand({ Bucket: config.bucket, Key: key }),
-      { expiresIn: config.presignExpiresSeconds }
+      { expiresIn }
     );
     return { key, url };
   }
@@ -291,4 +302,32 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
     key,
     url: await buildDownloadUrl(baseUrl, key, apiKey),
   };
+}
+
+/** Upload and preview share this fail-closed private-bucket precondition. */
+export function assertPrivateEvidenceStorageAvailable(): void {
+  const provider = getActiveStorageProvider();
+  if ((provider !== "s3" && provider !== "oss") || !ENV.storagePrivateObjects) {
+    throw new Error("Private evidence preview requires a private S3/OSS bucket and STORAGE_PRIVATE_OBJECTS=true");
+  }
+  const expiresIn = ENV.privateEvidencePreviewPresignExpiresSeconds;
+  if (!Number.isInteger(expiresIn) || expiresIn < 60 || expiresIn > 300) {
+    throw new Error("Private evidence preview TTL must be configured from 60 to 300 seconds");
+  }
+}
+
+/**
+ * Obtain a private evidence-document URL only when deployment explicitly
+ * attests its S3/OSS bucket is not anonymously readable. Forge has no short
+ * caller-selected expiry and must never store these PDFs in this flow.
+ */
+export async function createPrivateEvidencePreviewUrl(storageUri: string): Promise<string> {
+  assertPrivateEvidenceStorageAvailable();
+  const parsed = parseStorageUri(storageUri);
+  const provider = getActiveStorageProvider();
+  if (!parsed || parsed.provider !== provider) {
+    throw new Error("Private evidence storage reference is not controlled by the active provider");
+  }
+  const expiresIn = ENV.privateEvidencePreviewPresignExpiresSeconds;
+  return (await storageGet(parsed.key, { expiresSeconds: expiresIn })).url;
 }

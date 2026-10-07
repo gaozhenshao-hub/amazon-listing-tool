@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  runSkill: vi.fn(), validate: vi.fn(), resolveProject: vi.fn(), ensureWrite: vi.fn(), getFiles: vi.fn(),
+  runSkill: vi.fn(), validate: vi.fn(), resolveProject: vi.fn(), ensureWrite: vi.fn(), getFiles: vi.fn(), resolveCore: vi.fn(),
 }));
 
 vi.mock("./domains/listing/routerContext", async (importOriginal) => {
@@ -21,6 +21,7 @@ vi.mock("./domains/listing/routerContext", async (importOriginal) => {
 });
 vi.mock("./domains/listing/routers/jobControl", () => ({ startListingJobForContext: vi.fn() }));
 vi.mock("./domains/listing/services/generationJob", () => ({ validateSingleBulletQuality: mocks.validate }));
+vi.mock("./domains/listing/services/listingConfirmedCore", () => ({ resolveConfirmedListingCore: mocks.resolveCore }));
 
 import { router } from "./domains/listing/routerContext";
 import { listingEditingProcedures } from "./domains/listing/routers/editing";
@@ -33,6 +34,7 @@ const candidate = {
 };
 const input = {
   projectId: 1,
+  coreRevisionId: 12, coreInputHash: "a".repeat(64),
   sellingPoint: { index: 0, theme: "Protection", description: "Padded shell" },
   currentBullet: { subtitle: "Travel Protection:", fullText: "Original copy about a padded shell" },
   previousBullets: [{ subtitle: "Easy Storage:", fullText: "Other supported benefit" }],
@@ -47,6 +49,7 @@ beforeEach(() => {
   mocks.getFiles.mockResolvedValue([]);
   mocks.runSkill.mockResolvedValue({ parsed: candidate });
   mocks.validate.mockReturnValue({ valid: true, issues: [], characterCount: 220 });
+  mocks.resolveCore.mockImplementation(async () => ({ sellingPoint: input.sellingPoint }));
 });
 
 describe("卖点优化v6实际路由（无模型/数据库外呼）", () => {
@@ -89,10 +92,13 @@ describe("卖点优化v6实际路由（无模型/数据库外呼）", () => {
   });
 
   it("核心只有示例值时不调用模型；有效核心的示例字段会在入模前移除", async () => {
+    mocks.resolveCore.mockResolvedValueOnce({ sellingPoint: { ...input.sellingPoint, description: "功率：[如：1200W]" } });
     await expect(caller.optimizeSingleBullet({ ...input, sellingPoint: {
       ...input.sellingPoint, description: "功率：[如：1200W]",
     } })).rejects.toThrow(/缺少真实产品事实/);
     expect(mocks.runSkill).not.toHaveBeenCalled();
+    mocks.resolveCore.mockResolvedValueOnce({ sellingPoint: { ...input.sellingPoint, description: "功率：[如：1200W]",
+      fabeDirection: { feature: "Padded shell", advantage: "", benefit: "", evidence: "[ ]" } } });
     await caller.optimizeSingleBullet({ ...input, sellingPoint: {
       ...input.sellingPoint, description: "功率：[如：1200W]",
       fabeDirection: { feature: "Padded shell", advantage: "", benefit: "", evidence: "[ ]" },
@@ -112,6 +118,8 @@ describe("卖点优化v6实际路由（无模型/数据库外呼）", () => {
   });
 
   it("原始表中的示例数值被AI分析误提成事实时，优化入口仍在调用前拒绝", async () => {
+    mocks.resolveCore.mockResolvedValueOnce({ sellingPoint: { ...input.sellingPoint, description: "1200W motor",
+      fabeDirection: { feature: "Padded shell", advantage: "", benefit: "", evidence: "1200W" } } });
     mocks.getFiles.mockResolvedValueOnce([{
       fileType: "product_attributes", status: "completed", analysisResult: "{}", rawContent: "功率：[如：1200W]",
     }]);
@@ -119,5 +127,10 @@ describe("卖点优化v6实际路由（无模型/数据库外呼）", () => {
       ...input.sellingPoint, description: "1200W motor", fabeDirection: { feature: "Padded shell", advantage: "", benefit: "", evidence: "1200W" },
     } })).rejects.toThrow(/原始上传表中的示例值/);
     expect(mocks.runSkill).not.toHaveBeenCalled();
+  });
+  it("即使客户端伪造了卖点事实，模型仍只收到服务端审核修订的事实", async () => {
+    await caller.optimizeSingleBullet({ ...input, sellingPoint: { ...input.sellingPoint, description: "Invented guarantee" } });
+    expect(JSON.stringify(mocks.runSkill.mock.calls[0][0].variables.sellingPoint)).not.toContain("Invented guarantee");
+    expect(mocks.resolveCore).toHaveBeenCalledWith(expect.objectContaining({ coreRevisionId: 12, workspaceId: 12 }));
   });
 });

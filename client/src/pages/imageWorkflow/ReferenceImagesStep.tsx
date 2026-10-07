@@ -16,6 +16,7 @@ import { toast } from "sonner";
 
 import { KbImagePickerDialog } from "./KnowledgeImagePickerDialog";
 import { ReferenceImagesHeader } from "./ReferenceImagesHeader";
+import { ReferenceEvidenceWorkflow } from "./ReferenceEvidenceWorkflow";
 import { getStep4KbReferenceCardKey, getStep4ReferenceCardKey } from "./referenceCardIdentity";
 import { shouldApplyStep4RunOutput } from "./step4RunHydration";
 import { normalizeStep4References } from "@shared/imageWorkflow";
@@ -342,6 +343,24 @@ export function Step4References({
   // loaded session never reads a stale or undeclared render-time variable.
   const hasData = Boolean(editData?.imageReferences?.length);
   const isConfirmed = isLocked;
+  const controlledReceiptChoices = useMemo(() => (
+    (editData?.imageReferences || []).flatMap((ref: any, index: number) => [
+      ref.compositionRefImageUrl
+        ? {
+            receiptReference: ref.compositionRefImageUrl,
+            label: `第${index + 1}张 · 构图参考图`,
+            sourcePosition: index * 2,
+          }
+        : null,
+      ref.effectRefImageUrl
+        ? {
+            receiptReference: ref.effectRefImageUrl,
+            label: `第${index + 1}张 · 效果参考图`,
+            sourcePosition: index * 2 + 1,
+          }
+        : null,
+    ].filter(Boolean))
+  ), [editData?.imageReferences]);
 
   const updateRef = (idx: number, section: string, field: string, value: any) => {
     if (!editData) return;
@@ -557,6 +576,11 @@ export function Step4References({
       <p role="alert" className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
         知识库图片可能包含竞品素材；在完成来源和用途审核前，仅可查看研究文字，不能选为本品参考图。已有旧引用请解锁并移除，随后可使用本项目受控上传的参考图。
       </p>
+      <ReferenceEvidenceWorkflow
+        projectId={projectId}
+        receipts={controlledReceiptChoices}
+        disabled={isConfirmed || !canEdit}
+      />
 
       {editData?.imageReferences && !isGenerating && editData.imageReferences.map((ref: any, idx: number) => {
         const isImageLocked = Boolean(ref.isLocked);

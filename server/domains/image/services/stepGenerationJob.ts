@@ -39,6 +39,11 @@ import {
 } from "../imageWorkflowAgentBridge";
 import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
 import { getConfirmedCompositeContext } from "../expressionLinkageService";
+import {
+  captureImageWorkflowWorkerFence,
+  projectCurrentImageWorkflowSnapshotsToSession,
+  verifyImageWorkflowWorkerFence,
+} from "./imageWorkflowVersionPolicy";
 
 export const IMAGE_GENERATION_STEPS = [0, 1, 2, 3] as const;
 export type ImageGenerationStep = (typeof IMAGE_GENERATION_STEPS)[number];
@@ -56,6 +61,9 @@ export const imageStepGenerationJobInput = z.object({
   projectId: z.number().int().positive(),
   sessionId: z.number().int().positive(),
   step: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+  actorRole: z.string().min(1).max(80),
+  scopeRevision: z.number().int().min(0),
+  upstreamDigest: z.string().regex(/^[a-f0-9]{64}$/u),
   agentRunId: z.string().max(80).optional(),
   agentNodeId: z.string().max(80).optional(),
   distillationBinding: z.object({
@@ -262,15 +270,30 @@ export async function runImageStepGenerationJob(job: AiJobSnapshot, context: AiJ
   if (!project) throw new Error("项目不存在");
   const storedSession = await db.getImageWorkflowSessionById(input.sessionId);
   if (!storedSession || storedSession.projectId !== input.projectId) throw new Error("图片建议工作流不存在");
+  const scope = {
+    workspaceId: Number(job.workspaceId || project.workspaceId || 0),
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+  };
+  // Recheck immediately before any model/provider path. Step 0 has no upstream
+  // snapshots but still requires the migration-backed scope fence.
+  const upstream = await verifyImageWorkflowWorkerFence({
+    ...scope,
+    actorId: job.userId,
+    actorRole: input.actorRole,
+    targetStep: input.step,
+    fence: { scopeRevision: input.scopeRevision, upstreamDigest: input.upstreamDigest },
+  });
   if (Number(storedSession[`step${input.step}Confirmed` as keyof typeof storedSession] || 0) === 1) {
     throw new Error(`Step ${input.step} 已确认，请先解锁后再重新生成`);
   }
-  const session = await hydrateImageWorkflowSessionFromArtifacts(storedSession, {
+  const hydratedSession = await hydrateImageWorkflowSessionFromArtifacts(storedSession, {
     consumerType: "ai_job",
     consumerId: job.runId,
     runId: input.agentRunId || null,
     nodeId: `step${input.step}_skill`,
   }, { onlyBusinessConfirmedSteps: true });
+  const session = projectCurrentImageWorkflowSnapshotsToSession({ scope, snapshots: upstream, session: hydratedSession });
 
   await reportProgress(job, input.step, 15, input.agentRunId);
   const guidance = input.distillationBinding
@@ -294,6 +317,15 @@ export async function runImageStepGenerationJob(job: AiJobSnapshot, context: AiJ
   if (!latestSession || Number(latestSession[`step${input.step}Confirmed` as keyof typeof latestSession] || 0) === 1) {
     return { skipped: true, reason: `Step ${input.step} session is no longer writable` };
   }
+  // A changed scope or upstream version makes this result archival only; never
+  // project a late model response into the current session.
+  await verifyImageWorkflowWorkerFence({
+    ...scope,
+    actorId: job.userId,
+    actorRole: input.actorRole,
+    targetStep: input.step,
+    fence: { scopeRevision: input.scopeRevision, upstreamDigest: input.upstreamDigest },
+  });
   await reportProgress(job, input.step, 90, input.agentRunId);
   await db.updateImageWorkflowSession(input.sessionId, {
     [`step${input.step}AiResult`]: JSON.stringify(result),
@@ -307,10 +339,19 @@ export async function startImageStepGenerationJob(input: {
   sessionId: number;
   step: ImageGenerationStep;
   userId: number;
+  actorRole: string;
   workspaceId?: number | null;
   agentRunId?: string | null;
   distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
 }) {
+  const fence = await captureImageWorkflowWorkerFence({
+    workspaceId: Number(input.workspaceId || 0),
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+    actorId: input.userId,
+    actorRole: input.actorRole,
+    targetStep: input.step,
+  });
   const active = await getLatestImageStepGenerationJob(input.userId, input.projectId, input.step);
   if (active?.status === "queued" || active?.status === "running") {
     const sync = active.status === "running" ? syncStepJobRunningToAgent : syncStepJobQueuedToAgent;
@@ -346,6 +387,8 @@ export async function startImageStepGenerationJob(input: {
       projectId: input.projectId,
       sessionId: input.sessionId,
       step: input.step,
+      actorRole: input.actorRole,
+      ...fence,
       agentRunId,
       agentNodeId: imageWorkflowSkillNodeId(input.step),
       distillationBinding: input.distillationBinding,

@@ -1,5 +1,9 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
+import { and, eq } from "drizzle-orm";
+import { projects } from "../../drizzle/schema/project";
 import { protectedProcedure, router } from "../_core/trpc";
+import { requireDb } from "../repositories/dbClient";
 import * as vsDb from "../videoScriptDb";
 import { generateVideoScriptExcel } from "../videoScriptExcel";
 import { storagePut } from "../storage";
@@ -16,6 +20,27 @@ import {
   type VideoGenerationOperation,
 } from "../domains/video/videoGenerationJob";
 import { confirmVideoStage, type VideoStage } from "../domains/video/videoAgent";
+
+async function resolveVideoScriptExportAccess(videoScriptId: number, ctx: {
+  user: { role: string }; workspaceId?: number | null;
+}) {
+  if (ctx.user.role !== "super_admin") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "仅超级管理员可导出视频脚本" });
+  }
+  if (!ctx.workspaceId || ctx.workspaceId <= 0) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "请先选择所属工作空间" });
+  }
+  const script = await vsDb.getVideoScriptById(videoScriptId);
+  if (!script) throw new TRPCError({ code: "NOT_FOUND", message: "视频脚本不存在或无权访问" });
+  const db = await requireDb("Video export project authorization");
+  // Older project repository helpers also match NULL legacy workspace rows.
+  // Exports must use an exact workspace match, never the legacy read fallback.
+  const [project] = await db.select({ id: projects.id }).from(projects).where(and(
+    eq(projects.id, script.projectId), eq(projects.workspaceId, ctx.workspaceId),
+  )).limit(1);
+  if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "视频脚本不存在或无权访问" });
+  return script;
+}
 
 async function queueVideoJob(input: {
   videoScriptId: number;
@@ -577,8 +602,8 @@ export const videoScriptRouter = router({
 
   getFullScript: protectedProcedure
     .input(z.object({ videoScriptId: z.number() }))
-    .query(async ({ input }) => {
-      const script = await vsDb.getVideoScriptById(input.videoScriptId);
+    .query(async ({ ctx, input }) => {
+      const script = await resolveVideoScriptExportAccess(input.videoScriptId, ctx);
       const competitors = await vsDb.getCompetitorScriptsByVideoScript(input.videoScriptId);
       const summary = await vsDb.getCompetitorSummary(input.videoScriptId);
       const snapshot = await vsDb.getProductSnapshot(input.videoScriptId);
@@ -596,10 +621,9 @@ export const videoScriptRouter = router({
   // ═══════════════════════════════════════════════════════
   exportToExcel: protectedProcedure
     .input(z.object({ videoScriptId: z.number() }))
-    .mutation(async ({ input }) => {
-      // 1. 加载全部数据
-      const script = await vsDb.getVideoScriptById(input.videoScriptId);
-      if (!script) throw new Error("视频脚本不存在");
+    .mutation(async ({ ctx, input }) => {
+      // Role and exact workspace checks must precede every export data read.
+      const script = await resolveVideoScriptExportAccess(input.videoScriptId, ctx);
       const sections = await vsDb.getSections(input.videoScriptId);
       const subtopics = await vsDb.getSubtopicsByVideoScript(input.videoScriptId);
       const shots = await vsDb.getAllShotsByVideoScript(input.videoScriptId);

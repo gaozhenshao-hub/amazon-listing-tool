@@ -67,7 +67,8 @@ describe("卖点精雕v6前端人审和自检状态", () => {
     expect(source).toContain("disabled={!!candidate.staleSource}");
     expect(source).toContain(".filter(candidate => !candidate.staleSource)");
     expect(source).toContain("generatedBullets[idx]?.staleSource");
-    expect(source).toContain("!sellingPointCores?.[idx] || !confirmedCores[idx]");
+    expect(source).toContain("coreBinding(idx)");
+    expect(source).toContain("readOnlyHistory");
     expect(source).toContain("staleSource: !!latestBulletsRef.current[idx]?.staleSource");
     expect(source).toContain("if (current.staleSource) { toast.error");
     expect(source).toContain("const requestedCoreRevision = coreRevisionRef.current");

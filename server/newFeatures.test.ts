@@ -68,6 +68,22 @@ describe("Report Router - generateReportHtml", () => {
     expect(bulletPoints).toHaveLength(2);
     expect(bulletPoints[0].subtitle).toBe("Test");
   });
+
+  it("keeps the legacy HTML generator unreachable from the system download procedure", async () => {
+    const { LEGACY_REPORT_DOWNLOAD_DISABLED_MESSAGE, reportRouter } = await import("./routers/report");
+    const caller = reportRouter.createCaller({
+      user: { id: 1, role: "super_admin", defaultWorkspaceId: 101 },
+      workspaceId: 101,
+      req: { headers: {}, header: () => undefined },
+      res: { locals: {} },
+    } as any);
+
+    await expect(caller.generateReport({ projectId: 1, workspaceId: 101 }))
+      .rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: LEGACY_REPORT_DOWNLOAD_DISABLED_MESSAGE,
+      });
+  });
 });
 
 // ─── Test 2: Version History Logic ───────────────────────────────

@@ -53,6 +53,18 @@ import {
 } from "../ai_os/services/businessManagedAgent";
 import { resolveWorkflowGuidance } from "../knowledge/claimLedgerService";
 import { requireClassifiedStep4KbUses } from "./services/imageKbUsePolicy";
+import {
+  asImageWorkflowVersionTrpcError,
+  captureImageWorkflowWorkerFence,
+  confirmHumanImageWorkflowStage,
+  currentImageWorkflowUpstreamDigest,
+  getApprovedImageWorkflowExport,
+  IMAGE_WORKFLOW_VERSION_REPAIR_MESSAGE,
+  invalidateImageWorkflowStages,
+  projectCurrentImageWorkflowSnapshotsToSession,
+  requireCurrentImageWorkflowUpstream,
+  verifyImageWorkflowWorkerFence,
+} from "./services/imageWorkflowVersionPolicy";
 export {
   IMAGE_ADVICE_TRANSLATION_PROMPT,
   STEP0_COMPETITOR_IMAGE_ANALYSIS_PROMPT,
@@ -84,6 +96,16 @@ export {
   ensureBusinessManagedRun,
   markBusinessManagedNodeWaitingHuman,
   markBusinessManagedNodeConfirmed,
+  asImageWorkflowVersionTrpcError,
+  captureImageWorkflowWorkerFence,
+  confirmHumanImageWorkflowStage,
+  currentImageWorkflowUpstreamDigest,
+  getApprovedImageWorkflowExport,
+  IMAGE_WORKFLOW_VERSION_REPAIR_MESSAGE,
+  invalidateImageWorkflowStages,
+  projectCurrentImageWorkflowSnapshotsToSession,
+  requireCurrentImageWorkflowUpstream,
+  verifyImageWorkflowWorkerFence,
 };
 
 export const APLUS_MODULE_STYLE_GUIDE = [
@@ -109,6 +131,9 @@ export const APLUS_MODULE_STYLE_GUIDE = [
 export const step5JobInput = z.object({
   projectId: z.number(),
   sessionId: z.number(),
+  actorRole: z.string().min(1).max(80),
+  scopeRevision: z.number().int().min(0),
+  upstreamDigest: z.string().regex(/^[a-f0-9]{64}$/u),
   agentRunId: z.string().max(80).optional(),
   distillationBinding: z.object({ ledgerKey: z.string().min(1).max(80).nullable().optional(), skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional() }).optional(),
 });
@@ -1221,6 +1246,7 @@ export async function runStep5GenerationJob(args: {
   projectId: number;
   sessionId: number;
   userId: number;
+  actorRole: string;
   workspaceId?: number | null;
   attempt?: number;
   maxAttempts?: number;
@@ -1228,6 +1254,7 @@ export async function runStep5GenerationJob(args: {
   distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
 }) {
   const { runId, projectId, sessionId, userId } = args;
+  const jobInput = step5JobInput.parse({ ...args, projectId, sessionId });
 
   const updateIfCurrent = async (data: Record<string, unknown>) => {
     const latest = await db.getImageWorkflowSessionById(sessionId);
@@ -1250,6 +1277,14 @@ export async function runStep5GenerationJob(args: {
 
     const project = await db.getProjectByIdAdmin(projectId);
     if (!project) throw new Error("Project not found");
+    const scope = { workspaceId: Number(args.workspaceId || project.workspaceId || 0), projectId, sessionId };
+    const upstream = await verifyImageWorkflowWorkerFence({
+      ...scope,
+      actorId: userId,
+      actorRole: jobInput.actorRole,
+      targetStep: 5,
+      fence: { scopeRevision: jobInput.scopeRevision, upstreamDigest: jobInput.upstreamDigest },
+    });
 
     let selectedSession: typeof session;
     try {
@@ -1264,7 +1299,8 @@ export async function runStep5GenerationJob(args: {
       console.warn(`[Step5] hydrateImageWorkflowSessionFromArtifacts failed, using raw session: ${hydrateError}`);
       selectedSession = session;
     }
-    const result = await buildStep5FinalSuggestion(project, selectedSession, userId, args.workspaceId, {
+    const governedSession = projectCurrentImageWorkflowSnapshotsToSession({ scope, snapshots: upstream, session: selectedSession });
+    const result = await buildStep5FinalSuggestion(project, governedSession, userId, args.workspaceId, {
       onProgress: async (progress) => {
         await updateIfCurrent({ step5RunProgress: progress, step5RunError: null });
         await updateAiJobProgress(runId, progress, { expectedAttempt: args.attempt });
@@ -1277,6 +1313,13 @@ export async function runStep5GenerationJob(args: {
     if (args.signal?.aborted) throw new Error(String(args.signal.reason || "图片建议任务已取消"));
     await updateAiJobProgress(runId, 90, { expectedAttempt: args.attempt });
     const resultStr = JSON.stringify(result);
+    await verifyImageWorkflowWorkerFence({
+      ...scope,
+      actorId: userId,
+      actorRole: jobInput.actorRole,
+      targetStep: 5,
+      fence: { scopeRevision: jobInput.scopeRevision, upstreamDigest: jobInput.upstreamDigest },
+    });
 
     const updated = await updateIfCurrent({
       step5AiResult: resultStr,
@@ -1331,6 +1374,7 @@ registerAiJobHandler({
         projectId: input.projectId,
         sessionId: input.sessionId,
         userId: job.userId,
+        actorRole: input.actorRole,
         workspaceId: job.workspaceId,
         attempt: job.attempt,
         maxAttempts: job.maxAttempts,

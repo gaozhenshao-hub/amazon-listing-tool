@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ runSkill: vi.fn(), getFiles: vi.fn(), getProject: vi.fn(), loadEnriched: vi.fn(),
   getAnalyses: vi.fn(), buildContext: vi.fn(), listJobs: vi.fn(), progress: vi.fn(), syncRunning: vi.fn(),
-  validateBullets: vi.fn() }));
+  validateBullets: vi.fn(), resolveCore: vi.fn(), persistCandidate: vi.fn(), resolveFacts: vi.fn() }));
 
 vi.mock("./domains/listing/routerContext", () => ({
   MAX_RETRIES: 2, buildProductContext: mocks.buildContext, loadEnrichedData: mocks.loadEnriched,
@@ -23,6 +23,12 @@ vi.mock("./domains/listing/listingAgentBridge", () => ({
 vi.mock("./domains/listing/services/listingRawAttributeSource", () => ({
   readCompleteAttributeText: async (file: { rawContent: string }) => file.rawContent,
 }));
+vi.mock("./domains/listing/services/listingConfirmedCore", () => ({ resolveConfirmedListingCore: mocks.resolveCore }));
+vi.mock("./domains/listing/services/listingCandidateProvenance", () => ({ persistGeneratedBulletCandidate: mocks.persistCandidate }));
+vi.mock("./domains/listing/services/listingFactSource", async importOriginal => ({
+  ...await importOriginal<typeof import("./domains/listing/services/listingFactSource")>(),
+  resolveCurrentConfirmedListingFacts: mocks.resolveFacts,
+}));
 
 import { runListingGenerationJob } from "./domains/listing/services/generationJob";
 
@@ -39,7 +45,11 @@ const core = { index: 1, theme: "Portable protection", description: "Padded shel
   targetKeywords: ["portable case"] };
 function makeJob(input: Record<string, unknown>) {
   return { runId: "job_test", attempt: 1, maxAttempts: 1, projectId: 1, userId: 7, workspaceId: 9,
-    input: { projectId: 1, nodeId: "G1", scopeKey: "bullet-0", ...input } } as any;
+    input: { projectId: 1, nodeId: "G1", scopeKey: "bullet-0",
+      ...(input.operation === "sellingPoints" ? { factBinding: {
+        sourceFileId: 11, rawHash: "b".repeat(64), factRevisionIds: [23],
+      } } : {}),
+      ...(input.operation === "singleBullet" ? { coreRevisionId: 12, coreInputHash: "a".repeat(64) } : {}), ...input } } as any;
 }
 const handler = { signal: new AbortController().signal } as any;
 
@@ -48,13 +58,17 @@ beforeEach(() => {
   mocks.getProject.mockResolvedValue(project);
   mocks.getAnalyses.mockResolvedValue([]);
   mocks.validateBullets.mockReturnValue({ valid: true, issues: [] });
+  mocks.resolveCore.mockImplementation(async () => ({ sellingPoint: core, factRevisions: [{ id: 23, attributeKey: "Feature", value: "Padded shell" }] }));
+  mocks.persistCandidate.mockResolvedValue({ id: 61, candidateRevision: 1 });
+  mocks.resolveFacts.mockResolvedValue({ source: { fileId: 11, rawHash: "b".repeat(64) },
+    facts: [{ id: 23, attributeKey: "Feature", value: "Padded shell", status: "confirmed" }] });
   mocks.getFiles.mockResolvedValue([{ fileType: "product_attributes", status: "completed", rawContent: "Power: 1200W (example)\nFeature: Padded shell",
     analysisResult: JSON.stringify({ coreSpecs: [{ attribute: "Power", value: 1200 }], uniqueSellingPoints: ["Padded shell"] }) }]);
   mocks.loadEnriched.mockResolvedValue({ productAttributes: { coreSpecs: [{ attribute: "Power", value: 1200 }] } });
   mocks.buildContext.mockImplementation((p: unknown, _analyses: unknown, e: unknown) => JSON.stringify({ project: p, enrichedData: e }));
   mocks.listJobs.mockImplementation(async () => [makeJob({ operation: "sellingPoints" }), makeJob({ operation: "singleBullet", sellingPoint: core })]);
-  mocks.runSkill.mockImplementation(async (call: { skillSlug: string }) => ({ parsed: call.skillSlug === "listing.sellingpoints.generate"
-    ? { sellingPoints: [core] } : bullet }));
+  mocks.runSkill.mockImplementation(async (call: { skillSlug: string }) => ({ runId: "skill_test", modelSlug: "quality-test-model", skillVersion: "7",
+    parsed: call.skillSlug === "listing.sellingpoints.generate" ? { sellingPoints: [core] } : bullet }));
 });
 
 describe("G1 v7事实保护实际Job Handler（所有外部依赖mock）", () => {
@@ -63,60 +77,11 @@ describe("G1 v7事实保护实际Job Handler（所有外部依赖mock）", () =>
       .rejects.toThrow(/重点强调含空白或示例/);
     expect(mocks.runSkill).not.toHaveBeenCalled();
   });
-  it("旧整套批量入口的G1阶段同样拦截重点强调示例", async () => {
-    const batchJob = makeJob({ operation: "batch", emphasis: "Power: [e.g. 1200W]" });
-    mocks.listJobs.mockResolvedValueOnce([batchJob]);
-    await expect(runListingGenerationJob(batchJob, handler)).rejects.toThrow(/重点强调含空白或示例/);
+  it.each(["batch", "bullets"])("历史%s任务不再使用整套模型流程，旧队列在模型前拒绝", async operation => {
+    await expect(runListingGenerationJob(makeJob({ operation, emphasis: "Power: [e.g. 1200W]" }), handler))
+      .rejects.toThrow(/Worker拒绝执行模型调用/);
+    expect(mocks.getProject).not.toHaveBeenCalled();
     expect(mocks.runSkill).not.toHaveBeenCalled();
-  });
-  it("旧批量入口的G1阶段仍使用完整原表与分析结果交叉过滤", async () => {
-    const batchJob = makeJob({ operation: "batch" });
-    mocks.listJobs.mockResolvedValue([batchJob]);
-    mocks.runSkill.mockImplementation(async ({ skillSlug }: { skillSlug: string }) => {
-      if (skillSlug !== "listing.sellingpoints.generate") throw new Error("STOP_AFTER_G1_TEST");
-      return { parsed: { sellingPoints: [core] } };
-    });
-    await expect(runListingGenerationJob(batchJob, handler)).rejects.toThrow("STOP_AFTER_G1_TEST");
-    const call = mocks.runSkill.mock.calls[0][0];
-    expect(call.skillSlug).toBe("listing.sellingpoints.generate");
-    expect(JSON.stringify(call.variables)).not.toContain("1200W");
-    expect(JSON.stringify(call.variables)).not.toContain('"value":1200');
-  });
-  it("旧批量入口G1的第二阶段整套五点也看不到示例参数", async () => {
-    const batchJob = makeJob({ operation: "batch" });
-    mocks.listJobs.mockResolvedValue([batchJob]);
-    mocks.runSkill.mockImplementation(async ({ skillSlug }: { skillSlug: string }) => {
-      if (skillSlug === "listing.sellingpoints.generate") return { parsed: { sellingPoints: [core] } };
-      if (skillSlug === "listing.bullets.generate") return { parsed: { bulletPoints: [bullet] } };
-      throw new Error("STOP_AFTER_BULLETS_TEST");
-    });
-    await expect(runListingGenerationJob(batchJob, handler)).rejects.toThrow("STOP_AFTER_BULLETS_TEST");
-    const g1Calls = mocks.runSkill.mock.calls.slice(0, 2).map(([call]) => call);
-    expect(g1Calls.map((call) => call.skillSlug)).toEqual(["listing.sellingpoints.generate", "listing.bullets.generate"]);
-    for (const call of g1Calls) {
-      expect(JSON.stringify(call.variables)).not.toContain("1200W");
-      expect(JSON.stringify(call.variables)).not.toContain('"value":1200');
-    }
-  });
-  it("G1提案自行编造出原表示例值时整批失败关闭，不交给五点Skill", async () => {
-    const batchJob = makeJob({ operation: "batch" });
-    mocks.listJobs.mockResolvedValue([batchJob]);
-    mocks.runSkill.mockResolvedValue({ parsed: { sellingPoints: [{ ...core, description: "1200W motor" }] } });
-    await expect(runListingGenerationJob(batchJob, handler)).rejects.toThrow(/生成结果引用了原始产品属性表的示例值/);
-    expect(mocks.runSkill).toHaveBeenCalledOnce();
-  });
-  it("整套五点首次候选无示例但格式重试带回示例时，第二次仍失败关闭且不流转后续节点", async () => {
-    const batchJob = makeJob({ operation: "batch" });
-    mocks.listJobs.mockResolvedValue([batchJob]);
-    mocks.validateBullets.mockReturnValueOnce({ valid: false, issues: ["格式"] });
-    mocks.runSkill.mockImplementation(async ({ skillSlug }: { skillSlug: string }) => ({ parsed:
-      skillSlug === "listing.sellingpoints.generate" ? { sellingPoints: [core] }
-        : mocks.runSkill.mock.calls.filter(([call]) => call.skillSlug === "listing.bullets.generate").length >= 2
-          ? { bulletPoints: [{ ...bullet, fullText: "1200W motor" }] }
-          : { bulletPoints: [bullet] },
-    }));
-    await expect(runListingGenerationJob(batchJob, handler)).rejects.toThrow(/五点重试结果引用了原始产品属性表的示例值/);
-    expect(mocks.runSkill).toHaveBeenCalledTimes(3);
   });
   it("上游G1从原表移除被AI剥去示例标签的裸数字，同时保留真实Padded shell", async () => {
     await runListingGenerationJob(makeJob({ operation: "sellingPoints" }), handler);
@@ -137,20 +102,33 @@ describe("G1 v7事实保护实际Job Handler（所有外部依赖mock）", () =>
   });
   it("逐条输入参考了原始模板的数值时，在入模前失败关闭", async () => {
     const withExample = { ...core, description: "1200W motor" };
+    mocks.resolveCore.mockResolvedValueOnce({ sellingPoint: withExample });
     await expect(runListingGenerationJob(makeJob({ operation: "singleBullet", sellingPoint: withExample }), handler))
       .rejects.toThrow(/原始属性表的示例值/);
     expect(mocks.runSkill).not.toHaveBeenCalled();
   });
   it("逐条输入只保留确认核心和产品身份，不把分析/竞品资料混入Skill上下文", async () => {
-    mocks.runSkill.mockResolvedValueOnce({ parsed: bullet, modelSlug: "synthetic/test-model", fallbackCount: 1, skillVersion: "7" });
+    mocks.runSkill.mockResolvedValueOnce({ runId: "skill_test", parsed: bullet, modelSlug: "synthetic/test-model", fallbackCount: 1, skillVersion: "7" });
     const result = await runListingGenerationJob(makeJob({ operation: "singleBullet", sellingPoint: core }), handler);
     const call = mocks.runSkill.mock.calls[0][0];
     expect(call.skillSlug).toBe("listing.bullet.step.generate");
     expect(call.executionPreset).toBe("quality_first");
     expect(result.executionAudit).toMatchObject({ modelSlug: "synthetic/test-model", fallbackCount: 1, skillVersion: "7" });
+    expect(result).toMatchObject({ candidateId: 61, candidateRevision: 1 });
+    expect(mocks.persistCandidate).toHaveBeenCalledWith(expect.objectContaining({
+      coreRevisionId: 12, workspaceId: 9, jobRunId: "job_test",
+      execution: expect.objectContaining({ runId: "skill_test", modelSlug: "synthetic/test-model" }),
+      factRevisions: [expect.objectContaining({ id: 23, value: "Padded shell" })],
+    }));
     expect(call.variables.sellingPoint).toMatchObject(core);
     expect(call.variables.enrichedData).toBeUndefined();
     expect(call.variables.analyses).toBeUndefined();
     expect(call.context).not.toContain("1200W");
+    expect(mocks.resolveCore).toHaveBeenCalledWith(expect.objectContaining({ coreRevisionId: 12, workspaceId: 9 }));
+  });
+  it("逐条请求即使伪造描述字段，Worker仍只用服务端确认事实，成功后再核对一次版本", async () => {
+    await runListingGenerationJob(makeJob({ operation: "singleBullet", sellingPoint: { ...core, description: "Invented certification" } }), handler);
+    expect(JSON.stringify(mocks.runSkill.mock.calls[0][0].variables.sellingPoint)).not.toContain("Invented certification");
+    expect(mocks.resolveCore).toHaveBeenCalledTimes(2);
   });
 });

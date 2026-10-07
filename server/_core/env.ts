@@ -23,6 +23,12 @@ export const ENV = {
   s3SecretAccessKey: process.env.S3_SECRET_ACCESS_KEY ?? "",
   s3ForcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
   storagePresignExpiresSeconds: Number(process.env.STORAGE_PRESIGN_EXPIRES_SECONDS ?? "3600"),
+  // License evidence can be previewed only after deployment configuration
+  // explicitly attests that its S3/OSS objects are not anonymously readable.
+  storagePrivateObjects: process.env.STORAGE_PRIVATE_OBJECTS === "true",
+  privateEvidencePreviewPresignExpiresSeconds: Number(
+    process.env.STORAGE_PRIVATE_EVIDENCE_PREVIEW_PRESIGN_EXPIRES_SECONDS ?? "300"
+  ),
   // Deployment configuration
   companyName: process.env.COMPANY_NAME ?? "跨海\uD83D\uDC4D",
   companyLogo: process.env.COMPANY_LOGO ?? "",

@@ -1,6 +1,40 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import * as db from "../repositories";
+
+/**
+ * The legacy report assembler combines mutable Listings with raw uploads,
+ * competitor research, and keyword analysis. None of those sources proves a
+ * complete, current human-approved deliverable. Keep its download surface
+ * closed until a separate governed export reads only verified snapshots.
+ */
+export const LEGACY_REPORT_DOWNLOAD_DISABLED_MESSAGE =
+  "报告下载已安全关闭：旧版报告会拼接未经完整确认的 Listing、原始分析和竞品数据。待仅由当前工作空间已确认完整快照生成的交付合同上线后再开放。";
+
+function assertCurrentSuperAdminWorkspace(
+  ctx: { user: { role: string; defaultWorkspaceId?: number | null }; workspaceId?: number | null },
+  requestedWorkspaceId?: number,
+): void {
+  if (ctx.user.role !== "super_admin") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "系统下载仅限 super_admin。" });
+  }
+
+  const currentWorkspaceId = ctx.workspaceId ?? ctx.user.defaultWorkspaceId ?? null;
+  if (
+    typeof currentWorkspaceId !== "number" ||
+    !Number.isSafeInteger(currentWorkspaceId) ||
+    currentWorkspaceId <= 0
+  ) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "报告下载已关闭：请先进入当前已授权工作空间。",
+    });
+  }
+
+  if (requestedWorkspaceId !== undefined && requestedWorkspaceId !== currentWorkspaceId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "不能为其他工作空间请求报告下载。" });
+  }
+}
 
 // ─── Report HTML Generator ──────────────────────────────────────
 
@@ -403,106 +437,18 @@ ${strategyMatrix ? `
 // ─── Router ──────────────────────────────────────────────────────
 
 export const reportRouter = router({
-  // Generate full report data (returns HTML string for client-side PDF generation)
+  // Legacy report output is a system download and remains fail-closed until it can
+  // read only the current human-approved complete snapshot for this workspace.
   generateReport: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({
+      projectId: z.number().int().positive(),
+      workspaceId: z.number().int().positive().optional(),
+    }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
-
-      // Get active listing
-      const listing = await db.getActiveListingByProject(input.projectId);
-
-      // ─── Module 1: Rufus attributes from file analysis (unchanged) ───
-      let productAttributes: any = null;
-      const files = await db.getProjectFilesByProject(input.projectId);
-      for (const file of files) {
-        if (file.status !== "completed" || !file.analysisResult) continue;
-        try {
-          const result = JSON.parse(file.analysisResult);
-          if (file.fileType === "product_attributes") {
-            productAttributes = result;
-          }
-        } catch {}
-      }
-
-      // ─── Module 2: Competitor analyses from competitor analysis module ───
-      const competitorAnalyses = await db.getCompetitorAnalysesByProject(input.projectId);
-
-      // ─── Module 3 & 4: Keywords from keyword module ───
-      const allKeywords = await db.getKeywordsByProject(input.projectId);
-      
-      let keywordSceneTags: any = null;
-      let keywordStrategyMatrix: any = null;
-
-      if (allKeywords.length > 0) {
-        // Build scene tag groups (Module 3: COSMO scene mapping)
-        const sceneGroups: Record<string, string[]> = {};
-        const intentGroups: Record<string, string[]> = {};
-        for (const kw of allKeywords) {
-          if (kw.sceneTags) {
-            try {
-              const tags = JSON.parse(kw.sceneTags);
-              if (Array.isArray(tags)) {
-                tags.forEach((tag: string) => {
-                  if (!sceneGroups[tag]) sceneGroups[tag] = [];
-                  sceneGroups[tag].push(kw.keyword);
-                });
-              }
-            } catch {}
-          }
-          if (kw.intentTag) {
-            if (!intentGroups[kw.intentTag]) intentGroups[kw.intentTag] = [];
-            intentGroups[kw.intentTag].push(kw.keyword);
-          }
-        }
-        const topScenes = Object.entries(sceneGroups)
-          .sort(([, a], [, b]) => b.length - a.length)
-          .slice(0, 8)
-          .map(([scene]) => scene);
-
-        if (Object.keys(sceneGroups).length > 0 || Object.keys(intentGroups).length > 0) {
-          keywordSceneTags = { sceneGroups, intentGroups, topScenes };
-        }
-
-        // Build strategy matrix groups and placement groups (Module 4: A9 keyword grading)
-        const strategyGroups: Record<string, string[]> = {};
-        const placementGroups: Record<string, string[]> = {};
-        const rootGroups: Record<string, string[]> = {};
-        for (const kw of allKeywords) {
-          if (kw.strategyCategory && kw.strategyCategory !== "negative") {
-            if (!strategyGroups[kw.strategyCategory]) strategyGroups[kw.strategyCategory] = [];
-            strategyGroups[kw.strategyCategory].push(kw.keyword);
-          }
-          if (kw.listingPlacement) {
-            if (!placementGroups[kw.listingPlacement]) placementGroups[kw.listingPlacement] = [];
-            placementGroups[kw.listingPlacement].push(kw.keyword);
-          }
-          if (kw.rootCategory) {
-            if (!rootGroups[kw.rootCategory]) rootGroups[kw.rootCategory] = [];
-            rootGroups[kw.rootCategory].push(kw.keyword);
-          }
-        }
-
-        if (Object.keys(strategyGroups).length > 0 || Object.keys(placementGroups).length > 0) {
-          keywordStrategyMatrix = { strategyGroups, placementGroups, rootGroups };
-        }
-      }
-
-      const analysisSummary = {
-        productAttributes,
-        competitorAnalyses,
-        keywordSceneTags,
-        keywordStrategyMatrix,
-      };
-
-      const html = generateReportHtml(project, listing, analysisSummary);
-
-      return {
-        html,
-        projectName: project.name,
-        hasListing: !!listing,
-        hasAnalysis: !!(productAttributes || competitorAnalyses.length > 0 || keywordSceneTags || keywordStrategyMatrix),
-      };
+      assertCurrentSuperAdminWorkspace(ctx, input.workspaceId);
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: LEGACY_REPORT_DOWNLOAD_DISABLED_MESSAGE,
+      });
     }),
 });

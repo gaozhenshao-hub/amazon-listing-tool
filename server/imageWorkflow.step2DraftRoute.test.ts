@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 
+const policyMocks = vi.hoisted(() => ({ invalidateImageWorkflowStages: vi.fn() }));
+vi.mock("./domains/image/services/imageWorkflowVersionPolicy", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./domains/image/services/imageWorkflowVersionPolicy")>();
+  return { ...actual, invalidateImageWorkflowStages: policyMocks.invalidateImageWorkflowStages };
+});
+
 vi.mock("./domains/image/repository", () => ({
   getImageWorkflowSessionByProject: vi.fn(),
   updateImageWorkflowSession: vi.fn(),
@@ -27,6 +33,11 @@ vi.mock("./domains/image/services/step4ReferenceJob", async (importOriginal) => 
   };
 });
 
+vi.mock("./domains/image/expressionLinkageService", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./domains/image/expressionLinkageService")>();
+  return { ...actual, getExpressionLinkageSessionState: vi.fn(async () => null) };
+});
+
 import { imageWorkflowRouter } from "./domains/image/router";
 import * as imageRepository from "./domains/image/repository";
 import { resolveSessionForDisplay } from "./domains/image/routerContext";
@@ -47,6 +58,7 @@ function createContext(): TrpcContext {
       updatedAt: new Date(),
       lastSignedIn: new Date(),
     },
+    workspaceId: 7,
     req: { protocol: "https", headers: {} } as TrpcContext["req"],
     res: { clearCookie: vi.fn() } as unknown as TrpcContext["res"],
   };
@@ -73,7 +85,8 @@ function buildDraft() {
 describe("Step2草稿保存与会话水合路由", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedRepository.getProjectByIdAdmin.mockResolvedValue({ id: 90001, userId: 1 } as any);
+    policyMocks.invalidateImageWorkflowStages.mockResolvedValue({ scopeRevision: 8, invalidatedSteps: [2, 3, 4, 5, 6] });
+    mockedRepository.getProjectByIdAdmin.mockResolvedValue({ id: 90001, userId: 1, workspaceId: 7 } as any);
     mockedRepository.getCurrentStep4ImageVersions.mockResolvedValue([] as any);
     vi.mocked(step4ReferenceJob.getLatestStep4ReferenceJob).mockResolvedValue(null);
   });
@@ -90,9 +103,9 @@ describe("Step2草稿保存与会话水合路由", () => {
       subModuleRemark: "4种场景：车库、庭院、露营、工地",
       subModuleCount: 4,
     });
-    expect(mockedRepository.updateImageWorkflowSession).toHaveBeenCalledWith(780001, expect.objectContaining({
-      currentStep: 2,
-      step2UserEdit: expect.stringContaining("车库"),
+    expect(policyMocks.invalidateImageWorkflowStages).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 7, projectId: 90001, sessionId: 780001, fromStep: 2,
+      legacyPatch: expect.objectContaining({ currentStep: 2, step2UserEdit: expect.stringContaining("车库") }),
     }));
   });
 
@@ -116,7 +129,7 @@ describe("Step2草稿保存与会话水合路由", () => {
       step2AiResult: null,
     } as any);
 
-    const hydrated = await resolveSessionForDisplay(90001, { id: 1, role: "super_admin" });
+    const hydrated = await resolveSessionForDisplay(90001, { id: 1, role: "super_admin" }, 7);
     const outline = JSON.parse(hydrated!.step2UserEdit);
 
     expect(outline.aPlusModules[0]).toMatchObject({

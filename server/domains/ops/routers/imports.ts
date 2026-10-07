@@ -39,7 +39,6 @@ const {
   keywordSnapshots,
   lingxingProductWeekly,
   mergeSellerSpriteWithCrawlData,
-  operatorNameMappings,
   opsImportHistory,
   opsPlanActions,
   opsPlanSummaries,
@@ -351,14 +350,16 @@ export const opsImportProcedures = {
   // ─── Ops Plan Batch Import: Template Download & Import ───
   // ═══════════════════════════════════════════════════════
 
-  /** Generate Excel template with user's product parent ASINs pre-filled */
+  /** Generate a super-admin Excel template with current workspace products pre-filled. */
   downloadPlanTemplate: protectedProcedure
     .input(z.object({
       marketplace: z.string().default("ALL"),
     }))
     .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "super_admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "仅超级管理员可下载工作空间运营计划模板" });
+      }
       const db = await requireOpsDb();
-      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
 
       // Get distinct parent ASINs with latest product info
       const allRows = await db!.select({
@@ -371,7 +372,7 @@ export const opsImportProcedures = {
         weekStartDate: lingxingProductWeekly.weekStartDate,
       })
         .from(lingxingProductWeekly)
-        .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)))
+        .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId()))
         .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
       // Filter by marketplace
@@ -387,32 +388,7 @@ export const opsImportProcedures = {
         if (key && !asinMap.has(key)) asinMap.set(key, row);
       }
 
-      // Apply operator permission filter for non-admin users
-      const { MANAGER_ROLES } = await import("../../../../shared/const");
-      const isManagerOrAbove = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
-      let products = Array.from(asinMap.values());
-      if (!isManagerOrAbove && ctx.user.name) {
-        // Apply operator name mapping
-        const mappings = await db!.select().from(operatorNameMappings)
-          .where(opsWorkspaceCondition(
-            operatorNameMappings,
-            currentOpsWorkspaceId(),
-            eq(operatorNameMappings.isConfirmed, 1),
-          ));
-        const nameMap = new Map(mappings.map((m: any) => [m.externalName, m.systemUserName]));
-        products = products.filter((p: any) => {
-          const mappedName = nameMap.get(p.operator) || p.operator;
-          return mappedName === ctx.user.name;
-        });
-      }
-
-      // Check existing plans for these ASINs
-      const existingPlans = await db!.select().from(opsPlans)
-        .where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), eq(opsPlans.userId, ctx.user.id)));
-      const plansByProfileId = new Map<number, any>();
-      for (const p of existingPlans) {
-        plansByProfileId.set(p.productProfileId, p);
-      }
+      const products = Array.from(asinMap.values());
 
       // Build template rows
       const templateRows = products.map((p: any) => ({
@@ -669,8 +645,10 @@ export const opsImportProcedures = {
       marketplace: z.string().default("ALL"),
     }))
     .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "super_admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "仅超级管理员可下载工作空间运营复盘模板" });
+      }
       const db = await requireOpsDb();
-      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
 
       // Get distinct parent ASINs with latest product info
       const allRows = await db!.select({
@@ -683,7 +661,7 @@ export const opsImportProcedures = {
         weekStartDate: lingxingProductWeekly.weekStartDate,
       })
         .from(lingxingProductWeekly)
-        .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)))
+        .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId()))
         .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
       // Filter by marketplace
@@ -699,23 +677,7 @@ export const opsImportProcedures = {
         if (!asinMap.has(key)) asinMap.set(key, row);
       }
 
-      // Apply operator permission filter for non-admin users
-      const { MANAGER_ROLES } = await import("../../../../shared/const");
-      const isManagerOrAbove = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
-      let products = Array.from(asinMap.values());
-      if (!isManagerOrAbove && ctx.user.name) {
-        const mappings = await db!.select().from(operatorNameMappings)
-          .where(opsWorkspaceCondition(
-            operatorNameMappings,
-            currentOpsWorkspaceId(),
-            eq(operatorNameMappings.isConfirmed, 1),
-          ));
-        const nameMap = new Map(mappings.map((m: any) => [m.externalName, m.systemUserName]));
-        products = products.filter((p: any) => {
-          const mappedName = nameMap.get(p.operator) || p.operator;
-          return mappedName === ctx.user.name;
-        });
-      }
+      const products = Array.from(asinMap.values());
 
       // Build template rows
       const templateRows = products.map((p: any) => ({

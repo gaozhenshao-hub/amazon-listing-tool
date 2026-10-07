@@ -205,6 +205,7 @@ export const imageExpressionGroupProcedures = {
         sessionId: session.id,
         step: 0,
         userId: ctx.user.id,
+        actorRole: ctx.user.role,
         workspaceId: ctx.workspaceId,
         agentRunId,
       });

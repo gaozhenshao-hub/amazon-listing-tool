@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,8 @@ import {
 import { toast } from "sonner";
 
 export default function OpsPlanImportTab() {
+  const { user } = useAuth();
+  const canDownloadTemplate = user?.role === "super_admin";
   const [downloading, setDownloading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
@@ -176,7 +179,7 @@ export default function OpsPlanImportTab() {
             运营计划批量导入
           </CardTitle>
           <CardDescription>
-            下载包含您负责产品的模板，填写运营计划后上传导入。系统会自动为每个产品创建或更新运营计划。
+            仅超级管理员可下载当前工作空间完整产品模板；已有模板仍可按授权上传并确认导入。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -186,12 +189,12 @@ export default function OpsPlanImportTab() {
             <div className="flex-1">
               <h4 className="font-medium text-blue-700 dark:text-blue-300 mb-1">下载运营计划模板</h4>
               <p className="text-sm text-blue-600/80 dark:text-blue-400/80 mb-3">
-                模板已自动填充您负责的产品父ASIN和产品标题，您只需填写计划名称和计划周期（基线/目标数据在系统中自动加载）
+                超管模板填充当前工作空间产品父ASIN和标题，不按操作人筛选；计划名称和周期由人工填写。
               </p>
-              <Button onClick={handleDownloadTemplate} disabled={downloading} variant="outline" className="gap-2">
+              {canDownloadTemplate ? <Button onClick={handleDownloadTemplate} disabled={downloading} variant="outline" className="gap-2">
                 {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                 {downloading ? "正在生成模板..." : "下载模板 Excel"}
-              </Button>
+              </Button> : <p role="note" className="text-xs text-blue-700">下载仅限超级管理员；您可以在线查看、编辑及按权限导入。</p>}
             </div>
           </div>
 

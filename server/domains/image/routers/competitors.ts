@@ -23,7 +23,9 @@ const {
   buildImageWorkflowContext,
   buildStep5FinalSuggestion,
   buildStep5RunSnapshot,
+  asImageWorkflowVersionTrpcError,
   callLLMWithRetry,
+  confirmHumanImageWorkflowStage,
   db,
   devDb,
   ensureWriteAccess,
@@ -171,18 +173,15 @@ export const imageCompetitorProcedures = {
       } catch {
         throw new Error("竞品分析总结格式无效，请重新生成");
       }
-      const previousSummary = session.step0UserEdit || session.step0AiResult || compositeContext;
-      let unchanged = false;
-      try { unchanged = Boolean(session.step0Confirmed && previousSummary && JSON.stringify(JSON.parse(previousSummary)) === JSON.stringify(summaryResult)); } catch { /* invalid historical data must be re-reviewed */ }
-
-      await db.updateImageWorkflowSession(session.id, {
-        step0AiResult: session.step0AiResult || compositeContext,
-        step0UserEdit: input.userEdit || null,
-        step0Confirmed: 1,
-        ...(!unchanged ? { step1Confirmed: 0, step2Confirmed: 0, step3Confirmed: 0, step4Confirmed: 0, step5Confirmed: 0, step6Confirmed: 0, status: "in_progress" as const } : {}),
-        currentStep: 1,
-      });
-      if (!unchanged) await db.unlockAllStep4ImageVersions(session.id);
+      const confirmation = await confirmHumanImageWorkflowStage({
+        workspaceId,
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+        step: 0,
+        content: summaryResult,
+      }).catch(asImageWorkflowVersionTrpcError);
       // Sync to Agent DAG (best-effort)
       void syncStepConfirmToAgent({
         agentRunId: session.agentRunId,
@@ -191,8 +190,8 @@ export const imageCompetitorProcedures = {
         userId: ctx.user.id,
         workspaceId: ctx.workspaceId ?? null,
         aiResult: summaryResult,
-        userEdit: input.userEdit ? JSON.parse(input.userEdit) : summaryResult,
+        userEdit: summaryResult,
       });
-      return { success: true, summary: summaryResult };
+      return { success: true, summary: summaryResult, version: confirmation.snapshot.version, scopeRevision: confirmation.scopeRevision };
     }),
 };

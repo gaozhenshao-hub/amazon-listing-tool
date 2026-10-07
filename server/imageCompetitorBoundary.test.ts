@@ -6,7 +6,12 @@ const mocks = vi.hoisted(() => ({
   updateCompetitorImage: vi.fn(), deleteCompetitorImage: vi.fn(),
   updateImageWorkflowSession: vi.fn(), unlockAllStep4ImageVersions: vi.fn(),
   storagePut: vi.fn(), confirmPrimary: vi.fn(), confirmSelections: vi.fn(), composite: vi.fn(),
+  confirmHumanImageWorkflowStage: vi.fn(),
 }));
+vi.mock("./domains/image/services/imageWorkflowVersionPolicy", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./domains/image/services/imageWorkflowVersionPolicy")>();
+  return { ...actual, confirmHumanImageWorkflowStage: mocks.confirmHumanImageWorkflowStage };
+});
 vi.mock("./domains/image/routerContext", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./domains/image/routerContext")>();
   return { ...actual, resolveProjectAccess: mocks.resolveProjectAccess,
@@ -51,6 +56,10 @@ beforeEach(() => {
   mocks.confirmPrimary.mockResolvedValue(undefined);
   mocks.confirmSelections.mockResolvedValue(undefined);
   mocks.composite.mockResolvedValue(null);
+  mocks.confirmHumanImageWorkflowStage.mockResolvedValue({
+    snapshot: { version: 2 }, scopeRevision: 8,
+    invalidation: { changed: true, invalidateSteps: [1, 2, 3, 4, 5, 6] }, unchanged: false,
+  });
 });
 
 describe("竞品图片ID与项目、内容变更和图片字节的服务端边界", () => {
@@ -71,12 +80,14 @@ describe("竞品图片ID与项目、内容变更和图片字节的服务端边�
       .rejects.toThrow();
     expect(mocks.storagePut).not.toHaveBeenCalled();
   });
-  it("Step0重确认不同研究结论时必须在同一会话更新中撤销Step1–6", async () => {
+  it("Step0重确认不同研究结论时必须交由同一0206确认事务撤销Step1–6", async () => {
     const caller = callerFactory.createCaller(ctx());
-    await caller.confirm({ projectId: 51, userEdit: JSON.stringify({ summary: "reviewed change" }) });
-    expect(mocks.updateImageWorkflowSession).toHaveBeenCalledWith(23,
-      expect.objectContaining({ step0Confirmed: 1, step1Confirmed: 0, step2Confirmed: 0,
-        step3Confirmed: 0, step4Confirmed: 0, step5Confirmed: 0, step6Confirmed: 0 }));
-    expect(mocks.unlockAllStep4ImageVersions).toHaveBeenCalledWith(23);
+    await expect(caller.confirm({ projectId: 51, userEdit: JSON.stringify({ summary: "reviewed change" }) }))
+      .resolves.toMatchObject({ success: true, version: 2, scopeRevision: 8 });
+    expect(mocks.confirmHumanImageWorkflowStage).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 7, projectId: 51, sessionId: 23, step: 0, content: { summary: "reviewed change" },
+    }));
+    expect(mocks.updateImageWorkflowSession).not.toHaveBeenCalled();
+    expect(mocks.unlockAllStep4ImageVersions).not.toHaveBeenCalled();
   });
 });

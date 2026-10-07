@@ -572,6 +572,7 @@ Generate 2-4 test items per category. Consider US market regulations (CPSC, FDA,
   exportTestExcel: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      await resolveDevProjectExportAccess(input.projectId, ctx);
       const report = await devDb.getDevTestReport(input.projectId);
       if (!report?.testItems) throw new Error("Test report not found");
 

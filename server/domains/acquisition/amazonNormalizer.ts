@@ -102,13 +102,10 @@ function collectNestedImages(value: unknown, path: string, output: Array<{ url: 
 function addAssets(input: {
   urls: Array<{ url: string; path: string }>;
   role: AcquisitionAssetRole;
-  existing: Set<string>;
   output: SourceAssetReference[];
 }) {
   for (const item of input.urls) {
     const sourceUrlHash = hash(item.url);
-    if (input.existing.has(sourceUrlHash)) continue;
-    input.existing.add(sourceUrlHash);
     const rolePosition = input.output.filter(asset => asset.role === input.role).length;
     input.output.push({
       role: input.role === "secondary" && rolePosition === 0 && !input.output.some(asset => asset.role === "main")
@@ -154,21 +151,20 @@ export function normalizeApifyAmazonArtifact(input: {
   }
 
   const sourceAssets: SourceAssetReference[] = [];
-  const seen = new Set<string>();
   const gallery = stringArray(item.highResolutionImages).map((url, index) => ({
     url,
     path: `$.highResolutionImages[${index}]`,
   }));
-  addAssets({ urls: gallery.slice(0, 1), role: "main", existing: seen, output: sourceAssets });
-  addAssets({ urls: gallery.slice(1), role: "secondary", existing: seen, output: sourceAssets });
+  addAssets({ urls: gallery.slice(0, 1), role: "main", output: sourceAssets });
+  addAssets({ urls: gallery.slice(1), role: "secondary", output: sourceAssets });
 
   const aplusImages: Array<{ url: string; path: string }> = [];
   collectNestedImages(item.aPlusContent, "$.aPlusContent", aplusImages);
-  addAssets({ urls: aplusImages, role: "aplus", existing: seen, output: sourceAssets });
+  addAssets({ urls: aplusImages, role: "aplus", output: sourceAssets });
 
   const brandStoryImages: Array<{ url: string; path: string }> = [];
   collectNestedImages(item.brandStory, "$.brandStory", brandStoryImages);
-  addAssets({ urls: brandStoryImages, role: "brand_story", existing: seen, output: sourceAssets });
+  addAssets({ urls: brandStoryImages, role: "brand_story", output: sourceAssets });
 
   const variantAsins = Array.from(new Set([
     ...stringArray(item.variantAsins),

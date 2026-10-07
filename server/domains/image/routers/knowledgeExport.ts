@@ -1,6 +1,7 @@
 import * as shared from "../routerContext";
 import type { Step5RunStatus } from "../routerContext";
-import { requireApprovedImageSession, requireImageDeliverableAccess } from "../services/imageApprovedExport";
+import { requireImageDeliverableAccess } from "../services/imageApprovedExport";
+import { asImageWorkflowVersionTrpcError, getApprovedImageWorkflowExport } from "../services/imageWorkflowVersionPolicy";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -103,19 +104,27 @@ export const imageKnowledgeExportProcedures = {
       const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       requireImageDeliverableAccess({ role: ctx.user.role, workspaceId: ctx.workspaceId, project });
-      // A partial Step 5 PDF is still a downloadable business deliverable; it
-      // must not bypass the same final Step 6 approval as the complete export.
-      const session = requireApprovedImageSession(await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId), "complete");
+      const session = await resolveSessionAccess(input.projectId, ctx.user, ctx.workspaceId);
+      if (!session) throw new Error("No workflow session found");
+      const approved = await getApprovedImageWorkflowExport({
+        workspaceId: Number(project.workspaceId || ctx.workspaceId || 0),
+        projectId: input.projectId,
+        sessionId: session.id,
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role,
+      }).catch(asImageWorkflowVersionTrpcError);
+      const section = (step: number) => approved.sections.find(candidate => candidate.step === step)?.content ?? null;
 
-      // Only server-approved English and preceding steps. The old Chinese
-      // machine translation has no separate human-confirmation revision.
+      // Compatibility fields are derived only from the immutable manifest. The
+      // PDF renderer must not read legacy session drafts or machine translations.
       return {
-        en: session.step5UserEdit,
+        approved,
+        en: section(5),
         cn: null,
-        sellingPoints: session.step1UserEdit,
-        outline: session.step2UserEdit,
-        style: session.step3UserEdit,
-        references: session.step4UserEdit,
+        sellingPoints: section(1),
+        outline: section(2),
+        style: section(3),
+        references: section(4),
       };
     }),
 };

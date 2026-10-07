@@ -1775,8 +1775,20 @@ export default function ImageWorkflowPage() {
       const result = await exportBundleQuery.refetch();
       if (result.error) throw result.error;
       const bundle = result.data;
-      if (!bundle?.session) throw new Error("完整方案数据获取失败");
-      const content = buildFullPlanContent(bundle.session, undefined, undefined, bundle);
+      if (!bundle?.approved || bundle.approved.sections.length !== 7) {
+        throw new Error("完整方案缺少当前已确认的 Step 0–6 快照");
+      }
+      // Export rendering receives an in-memory compatibility projection made
+      // exclusively from the immutable approved manifest. It must never read
+      // the mutable workflow session (drafts, historical AI output or uploads).
+      const approvedSession = Object.fromEntries(bundle.approved.sections.map(section => [
+        `step${section.step}UserEdit`,
+        section.content,
+      ]));
+      const content = buildFullPlanContent(approvedSession, undefined, undefined, {
+        expressionGroups: bundle.expressionGroups,
+        asinReferenceSets: bundle.asinReferenceSets,
+      });
       const blob = new Blob([content], { type: "text/html;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

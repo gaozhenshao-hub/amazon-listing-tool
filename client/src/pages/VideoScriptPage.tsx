@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { AiJobHistoryPanel, BusinessArtifactVersionPicker, EmbeddedAgentRunPanel, WorkflowStepProgress } from "@/components/workflow";
 import { VIDEO_SCRIPT_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
@@ -237,7 +238,7 @@ function VideoScriptList() {
       if (dur > spec.maxDuration) setNewDuration(spec.maxDuration.toString());
       if (dur < spec.minDuration) setNewDuration(spec.maxDuration.toString());
     }
-  }, [newVideoType]);
+  }, [newVideoType, newDuration]);
 
   return (
     <div className="space-y-6">
@@ -533,6 +534,8 @@ function DurationValidator({ videoType, currentDuration, targetDuration }: { vid
 
 function VideoScriptEditor({ scriptId }: { scriptId: number }) {
   const [, navigate] = useLocation();
+  const { user } = useAuth();
+  const canExport = user?.role === "super_admin";
   const [showVersions, setShowVersions] = useState(false);
   const [versionNote, setVersionNote] = useState("");
   const script = trpc.videoScript.getById.useQuery({ id: scriptId });
@@ -597,7 +600,7 @@ function VideoScriptEditor({ scriptId }: { scriptId: number }) {
       fromStage: STAGES[currentStageIdx].key,
       toStage: STAGES[currentStageIdx + 1].key,
     });
-  }, [scriptId, currentStageIdx, script.data]);
+  }, [scriptId, currentStageIdx, script.data, advanceStageMutation]);
 
   const handleConfirmStage = useCallback(() => {
     if (!script.data) return;
@@ -605,7 +608,7 @@ function VideoScriptEditor({ scriptId }: { scriptId: number }) {
       videoScriptId: scriptId,
       stage: STAGES[currentStageIdx].key,
     });
-  }, [scriptId, currentStageIdx, script.data]);
+  }, [scriptId, currentStageIdx, script.data, confirmStageMutation]);
 
   if (script.isLoading) {
     return (
@@ -756,7 +759,7 @@ function VideoScriptEditor({ scriptId }: { scriptId: number }) {
             </DialogContent>
           </Dialog>
 
-          <Button
+          {canExport && <Button
             variant="outline"
             size="sm"
             onClick={() => exportMutation.mutate({ videoScriptId: scriptId })}
@@ -764,7 +767,7 @@ function VideoScriptEditor({ scriptId }: { scriptId: number }) {
           >
             {exportMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Download className="w-4 h-4 mr-1" />}
             导出Excel
-          </Button>
+          </Button>}
         </div>
       </div>
 
@@ -1500,7 +1503,7 @@ function Stage3({ scriptId, videoType, targetDuration, onAdvance, onConfirm, isC
     onSuccess: () => shots.refetch(),
   });
 
-  const shotList = shots.data || [];
+  const shotList = useMemo(() => shots.data || [], [shots.data]);
   const totalDuration = shotList.reduce((sum: number, s: any) => sum + (parseFloat(s.duration) || 0), 0);
 
   const handleMoveShot = (sectionShots: any[], idx: number, direction: "up" | "down") => {
@@ -1803,6 +1806,8 @@ function Stage3({ scriptId, videoType, targetDuration, onAdvance, onConfirm, isC
 function Stage4({ scriptId, onConfirm, isConfirmed }: {
   scriptId: number; onConfirm: () => void; isConfirmed: boolean;
 }) {
+  const { user } = useAuth();
+  const canExport = user?.role === "super_admin";
   const editScripts = trpc.videoScript.getEditScripts.useQuery({ videoScriptId: scriptId });
   const editJob = useVideoGenerationJob({
     scriptId,
@@ -1935,9 +1940,9 @@ function Stage4({ scriptId, onConfirm, isConfirmed }: {
             <CheckCircle className="w-12 h-12 mx-auto text-green-500 mb-3" />
             <h3 className="text-lg font-semibold">视频脚本创作完成</h3>
             <p className="text-muted-foreground mt-1">
-              所有六个阶段已完成，您可以导出完整的拍摄脚本和剪辑方案。
+              所有六个阶段已完成；导出完整拍摄脚本和剪辑方案仅限超级管理员。
             </p>
-            <div className="flex justify-center gap-3 mt-4">
+            {canExport && <div className="flex justify-center gap-3 mt-4">
               <Button
                 variant="outline"
                 onClick={() => exportMutation.mutate({ videoScriptId: scriptId })}
@@ -1946,7 +1951,7 @@ function Stage4({ scriptId, onConfirm, isConfirmed }: {
                 {exportMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
                 导出Excel
               </Button>
-            </div>
+            </div>}
           </CardContent>
         </Card>
       )}

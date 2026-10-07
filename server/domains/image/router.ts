@@ -9,6 +9,7 @@ import { imageStep5Procedures } from "./routers/step5";
 import { imageStep6Procedures } from "./routers/step6";
 import { imageReferenceProcedures } from "./routers/references";
 import { imageKnowledgeExportProcedures } from "./routers/knowledgeExport";
+import { imageAssetPolicyProcedures } from "./routers/assetPolicy";
 
 export const imageWorkflowRouter = router({
   ...imageSessionProcedures,
@@ -21,4 +22,5 @@ export const imageWorkflowRouter = router({
   ...imageStep6Procedures,
   ...imageReferenceProcedures,
   ...imageKnowledgeExportProcedures,
+  ...imageAssetPolicyProcedures,
 });

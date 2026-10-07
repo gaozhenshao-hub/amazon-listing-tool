@@ -72,15 +72,22 @@ describe("Artifact source of truth v2", () => {
     expect(sources.match(/recordBusinessArtifactUse/g)?.length).toBeGreaterThanOrEqual(4);
   });
 
-  it("exposes version selection on all human review surfaces", () => {
+  it("uses governed complete snapshots on the Listing review surface while other review surfaces retain Artifact selection", () => {
     for (const page of [
       "client/src/pages/dev/DevAnalysisFlow.tsx",
-      "client/src/pages/PreviewPage.tsx",
       "client/src/pages/ImageWorkflowPage.tsx",
       "client/src/pages/AdStructurePage.tsx",
       "client/src/pages/VideoScriptPage.tsx",
     ]) {
       expect(read(page)).toContain("BusinessArtifactVersionPicker");
     }
+
+    const preview = read("client/src/pages/PreviewPage.tsx");
+    expect(preview).not.toContain("BusinessArtifactVersionPicker");
+    expect(preview).toContain("listGovernedCompleteRestoreSnapshots");
+    expect(preview).toContain("previewGovernedCompleteRestore");
+    expect(preview).toContain("restoreGovernedCompleteSnapshot");
+    expect(preview).toContain("旧版本历史（只读）");
+    expect(preview).toContain("不提供回滚操作");
   });
 });

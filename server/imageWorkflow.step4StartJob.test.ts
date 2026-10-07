@@ -16,6 +16,15 @@ vi.mock("./domains/image/imageWorkflowAgentBridge", () => ({
   syncStepJobWaitingHumanToAgent: vi.fn(),
 }));
 
+const policyMocks = vi.hoisted(() => ({
+  captureImageWorkflowWorkerFence: vi.fn(),
+}));
+
+vi.mock("./domains/image/services/imageWorkflowVersionPolicy", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./domains/image/services/imageWorkflowVersionPolicy")>();
+  return { ...actual, captureImageWorkflowWorkerFence: policyMocks.captureImageWorkflowWorkerFence };
+});
+
 import {
   createAiJobRun,
   listAiJobRunsForUser,
@@ -38,6 +47,7 @@ const mockedSyncRunning = vi.mocked(syncStepJobRunningToAgent);
 describe("Step4任务创建与去重", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    policyMocks.captureImageWorkflowWorkerFence.mockResolvedValue({ scopeRevision: 4, upstreamDigest: "a".repeat(64) });
     mockedEnsureAgent.mockResolvedValue("agent-step4" as any);
     mockedCreateJob.mockResolvedValue({
       runId: "step4-created",
@@ -51,14 +61,20 @@ describe("Step4任务创建与去重", () => {
   it("历史失败任务不会阻塞创建、同步并调度新的Step4任务", async () => {
     mockedListJobs.mockResolvedValue([{ runId: "step4-failed", kind: "image.step4.reference", status: "failed" }] as any);
 
-    const job = await startStep4ReferenceJob({ projectId: 90001, sessionId: 780001, userId: 1, workspaceId: 1 });
+    const job = await startStep4ReferenceJob({ projectId: 90001, sessionId: 780001, userId: 1, actorRole: "admin", workspaceId: 1 });
 
     expect(job.runId).toBe("step4-created");
     expect(mockedCreateJob).toHaveBeenCalledWith(expect.objectContaining({
       kind: "image.step4.reference",
       projectId: 90001,
       userId: 1,
-      input: expect.objectContaining({ sessionId: 780001, agentRunId: "agent-step4" }),
+      input: expect.objectContaining({
+        sessionId: 780001,
+        agentRunId: "agent-step4",
+        actorRole: "admin",
+        scopeRevision: 4,
+        upstreamDigest: "a".repeat(64),
+      }),
     }));
     expect(mockedSyncQueued).toHaveBeenCalledWith(expect.objectContaining({ aiJobRunId: "step4-created" }));
     expect(mockedSchedule).toHaveBeenCalledWith("step4-created");
@@ -68,12 +84,27 @@ describe("Step4任务创建与去重", () => {
     const active = { runId: "step4-active", kind: "image.step4.reference", status: "queued", attempt: 1, maxAttempts: 3, progress: 42 };
     mockedListJobs.mockResolvedValue([active] as any);
 
-    const job = await startStep4ReferenceJob({ projectId: 90001, sessionId: 780001, userId: 1, workspaceId: 1, agentRunId: "agent-existing" });
+    const job = await startStep4ReferenceJob({ projectId: 90001, sessionId: 780001, userId: 1, actorRole: "admin", workspaceId: 1, agentRunId: "agent-existing" });
 
     expect(job).toBe(active);
     expect(mockedCreateJob).not.toHaveBeenCalled();
     expect(mockedSchedule).not.toHaveBeenCalled();
     expect(mockedSyncQueued).toHaveBeenCalledWith(expect.objectContaining({ aiJobRunId: "step4-active", progress: 42 }));
     expect(mockedSyncRunning).not.toHaveBeenCalled();
+  });
+
+  it("0206账本不可用时在入队前失败，不创建或调度模型作业", async () => {
+    policyMocks.captureImageWorkflowWorkerFence.mockRejectedValue(new Error("图片工作流版本快照尚未初始化"));
+
+    await expect(startStep4ReferenceJob({
+      projectId: 90001,
+      sessionId: 780001,
+      userId: 1,
+      actorRole: "admin",
+      workspaceId: 1,
+    })).rejects.toThrow("版本快照尚未初始化");
+
+    expect(mockedCreateJob).not.toHaveBeenCalled();
+    expect(mockedSchedule).not.toHaveBeenCalled();
   });
 });

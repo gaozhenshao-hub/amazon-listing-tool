@@ -39,10 +39,10 @@ describe("图片成果导出服务端资格合同", () => {
       .toThrow(`Step ${step}`);
   });
 
-  it("Step5独立PDF受Step0–5人审约束；完整方案还需Step6", () => {
-    const session = { ...approved(), step6Confirmed: 0 };
-    expect(requireApprovedImageSession(session, "step5").step5UserEdit).toContain("approved");
-    expect(() => requireApprovedImageSession(session, "complete")).toThrow("Step 6");
+  it("完整方案始终受Step0–6人审约束，Step6缺失时不降级为旧Step5导出", () => {
+    const missingStep6 = { ...approved(), step6Confirmed: 0 };
+    expect(() => requireApprovedImageSession(missingStep6, "complete")).toThrow("Step 6");
+    expect(requireApprovedImageSession(approved(), "complete").step5UserEdit).toContain("approved");
   });
 
   it("无确认正文不能回退到AI草稿或旧优化候选", () => {

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "crypto";
+import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb, withDbTransaction, type DbExecutor } from "../../../repositories/dbClient";
 import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
@@ -975,6 +976,15 @@ export async function selectUnifiedArtifactVersion(input: {
       tx,
     ))[0];
     if (!target) throw new Error("Artifact version not found");
+    // Listing's operational row, immutable complete snapshot and Artifact
+    // current pointer are one CAS transaction. Merely selecting a historical
+    // pointer would bypass human review and leave these three sources split.
+    if (["listing.content", "listing.complete_snapshot"].includes(String(target.artifactKey))) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Listing版本不能只切换历史产物指针；请使用完整快照的审核与并发校验恢复流程",
+      });
+    }
     if (!["final", "superseded"].includes(String(target.status))) {
       throw new Error("只有已确认的 Artifact 版本可以设为下游当前版本");
     }
