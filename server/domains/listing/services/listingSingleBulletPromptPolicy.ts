@@ -4,16 +4,19 @@ import {
   type GovernedSkillManifest,
 } from "../../ai_os/services/highQualitySkillGovernance";
 
-export const SINGLE_BULLET_PROMPT_VERSION = 6;
+export const SINGLE_BULLET_PROMPT_VERSION = 7;
 export const SINGLE_BULLET_SKILL_SLUGS = ["listing.bullet.step.generate", "listing.bullet.single"] as const;
 export const SINGLE_BULLET_DISCOVERY_POLICY = `## AMAZON_DISCOVERY_AND_CONVERSATIONAL_COMMERCE_V1
 Optimize for shopper understanding and truthful product discoverability across Amazon search and conversational shopping experiences, including Alexa for Shopping (formerly Rufus). Match supported buyer intent, not a purported ranking formula. Make product type, relevant attribute, supported use and limits easy to understand. Never promise rankings, visibility, conversions, or answers not established by the input; never stuff keywords.`;
 
 /** Task prompt only: the shared governance layer injects the Ogilvy role exactly once. */
-export const SINGLE_BULLET_TASK_PROMPT_V6 = `## SINGLE_AMAZON_US_BULLET_V6
+export const SINGLE_BULLET_TASK_PROMPT_V7 = `## SINGLE_AMAZON_US_BULLET_V7
 Act as an Ogilvy-inspired senior U.S. marketplace copy strategist. Silently identify ONE genuine shopper need supported by the selected selling point; find a single credible promise and the minimum product fact that makes it believable. Write one distinctive, restrained, idiomatic American-English Amazon US Bullet, not a slogan or a checklist of parameters.
 
 FABE is an internal reasoning aid, NOT a rigid sentence template. Choose a natural benefit-led, feature-led, scenario-led, or reassurance-led structure according to the evidence. Do not force all four FABE parts into the copy, label them, or add an unsupported use case, number, certification, warranty, social proof, comparison, review consensus, compatibility claim, or performance outcome. Treat competitor/review content as research, not as facts about this product. A keyword may be omitted if it harms readability; if used, it must be in the selected point's targetKeywords and appear only once. Use American spelling and fluent, natural word order; avoid literal translation, parameter dumping, ALL CAPS, superlatives and sales/price claims. Never assert knowledge of A9/A10/COSMO ranking formulas.
+
+## FACT_SOURCE_AND_TEMPLATE_GUARD_V1
+The selected, human-reviewed selling point is the ONLY source of this product's factual claims. Product-attribute analyses, competitors, previous bullets, keywords and user style instructions are NOT independent proof. Empty fields, brackets with no value, N/A, TBD, pending/please fill, and example cues such as "for example", "e.g.", "示例", "例如" or "如：" are template instructions, not measurements or observed product facts. Never repeat, infer, translate, complete or cite example numbers, colors, materials or benefits; a number in an example is not evidence even when it appears in the input. If supported facts are missing, do not fill them from neighboring fields or a typical product. Ask the user to correct and confirm the fact instead of returning a plausible invention. Excluded fields must remain excluded from evidenceUsed and from the prose.
 
 Produce ONLY the currently selected selling point, regardless of its index. Distinguish its opening, buyer reason, scenario and keyword angle from previously confirmed bullets. Return exactly one editable JSON object, without markdown, Chinese copy, a list, additional bullets, or commentary.
 
@@ -28,7 +31,7 @@ export function buildSingleBulletSkillManifest(
   slug: (typeof SINGLE_BULLET_SKILL_SLUGS)[number],
   current: GovernedSkillManifest,
 ): GovernedSkillManifest {
-  const systemPrompt = applyListingOgilvyRole(slug, `${SINGLE_BULLET_DISCOVERY_POLICY}\n\n${SINGLE_BULLET_TASK_PROMPT_V6}`);
+  const systemPrompt = applyListingOgilvyRole(slug, `${SINGLE_BULLET_DISCOVERY_POLICY}\n\n${SINGLE_BULLET_TASK_PROMPT_V7}`);
   return {
     ...current,
     implementation: {

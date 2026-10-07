@@ -10,6 +10,8 @@ import {
 } from "../listingAgentBridge";
 import { startListingJobForContext } from "./jobControl";
 import { validateSingleBulletQuality, type ListingGenerationJobInput } from "../services/generationJob";
+import { containsTemplateFactInFreeText, excludeRawExamplesFromFactTree, formatSingleBulletIdentity, rawAttributeExampleValues, sanitizeListingProjectFacts, sanitizeSelectedSellingPoint, selectedPointContainsRawExamples } from "../../../../shared/listingFactSafety";
+import { readCompleteAttributeText } from "../services/listingRawAttributeSource";
 
 const {
   BULLET_POINTS_PROMPT,
@@ -70,7 +72,7 @@ const legacyListingEditingProcedures = {
       value: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureListingWorkspaceAccess(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
@@ -140,7 +142,7 @@ const legacyListingEditingProcedures = {
       const listing = await db.getListingById(id);
       if (!listing) throw new Error("Listing not found");
 
-      const project = await resolveProjectAccess(listing.projectId, ctx.user);
+      const project = await resolveProjectAccess(listing.projectId, ctx.user, ctx.workspaceId ?? null);
       ensureListingWorkspaceAccess(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
 
@@ -190,7 +192,7 @@ const legacyListingEditingProcedures = {
   confirmPreview: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
       const listing = await db.getActiveListingByProject(input.projectId);
@@ -219,7 +221,7 @@ const legacyListingEditingProcedures = {
       lockedSteps: z.array(z.number()), // e.g. [1, 2, 3]
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
       let listing = await db.getActiveListingByProject(input.projectId);
@@ -294,7 +296,7 @@ const legacyListingEditingProcedures = {
       emphasis: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -380,7 +382,7 @@ const legacyListingEditingProcedures = {
       emphasis: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -488,7 +490,7 @@ const legacyListingEditingProcedures = {
       keyword: z.string().min(1).max(200),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -561,7 +563,7 @@ Please expand this keyword/theme into a complete selling point core with FABE di
     }))
     .mutation(async ({ ctx, input }) => {
       const { projectId, bullets } = input;
-      const project = await resolveProjectAccess(projectId, ctx.user!);
+      const project = await resolveProjectAccess(projectId, ctx.user!, ctx.workspaceId ?? null);
       if (!project) throw new Error("项目不存在");
       ensureWriteAccess(project, ctx.user);
 
@@ -619,7 +621,7 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       emphasis: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -735,7 +737,7 @@ const sellingPointJobSchema = z.object({
 });
 
 async function queueEditingJob(ctx: any, input: any, operation: "sellingPoints" | "singleBullet" | "qa") {
-  const project = await resolveProjectAccess(input.projectId, ctx.user);
+  const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
   ensureWriteAccess(project, ctx.user);
   return startListingJobForContext({
     ...input,
@@ -769,32 +771,51 @@ export const listingEditingProcedures = {
       optimizationNote: z.string().trim().min(1).max(4_000),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "项目不存在" });
       ensureListingWorkspaceAccess(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);
 
-      const [analyses, enrichedData] = await Promise.all([
-        db.getCompetitorAnalysesByProject(input.projectId),
-        loadEnrichedData(input.projectId),
-      ]);
+      const selected = sanitizeSelectedSellingPoint(input.sellingPoint);
+      if (!selected.canGenerate) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "卖点核心缺少真实产品事实；请删除空白/示例并人工补充确认后再优化" });
+      }
+      const attributeFiles = await db.getProjectFilesByProject(input.projectId);
+      const latestAttributeFile = attributeFiles.find((file) => file.fileType === "product_attributes"
+        && file.status === "completed" && file.analysisResult);
+      const rawExamples = latestAttributeFile
+        ? rawAttributeExampleValues(await readCompleteAttributeText(latestAttributeFile, project.workspaceId ?? null))
+        : [];
+      if (selectedPointContainsRawExamples(selected.point, rawExamples)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "卖点核心包含原始上传表中的示例值；请核实参数后再优化" });
+      }
+      const sanitizedProject = sanitizeListingProjectFacts(project).project;
+      const safeIdentity = excludeRawExamplesFromFactTree(sanitizedProject,
+        rawExamples, "project").value || sanitizedProject;
+      if (containsTemplateFactInFreeText(input.optimizationNote)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "优化方向包含空白或示例数据；请先确认事实" });
+      }
       const current = input.currentBullet;
+      if (containsTemplateFactInFreeText(`${current.subtitle}\n${current.fullText}`)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "当前草案含示例或空白规格；请先人工删除或核实后再优化" });
+      }
       // The current draft is the revision target, not a different selling point.
       // Reject unchanged copy below, but do not reject a valid revision merely
       // because it necessarily shares its buyer reason with that draft.
-      const previousBullets = input.previousBullets || [];
+      const previousBullets = (input.previousBullets || []).filter((bullet) =>
+        !containsTemplateFactInFreeText(`${bullet.subtitle}\n${bullet.fullText}`));
       const validationInput: ListingGenerationJobInput = {
         projectId: input.projectId,
         operation: "singleBullet",
         nodeId: "G1",
         scopeKey: `bullet-${input.sellingPoint.index}`,
-        sellingPoint: input.sellingPoint,
+        sellingPoint: selected.point,
         previousBullets,
       };
-      const context = `${buildProductContext(project, analyses, enrichedData)}
+      const context = `${formatSingleBulletIdentity(safeIdentity as typeof project)}
 
 --- 当前选中的卖点核心（只生成这一条） ---
-${JSON.stringify(input.sellingPoint)}
+${JSON.stringify(selected.point)}
 
 --- 当前待优化卖点（必须实质改写，不得原样返回） ---
 ${JSON.stringify(current)}
@@ -806,7 +827,7 @@ ${JSON.stringify(previousBullets)}
 ${input.optimizationNote}
 
 --- 必须遵守 ---
-仅输出一个 {subtitle,fullText,evidenceUsed,keywordsUsed,distinctFromPrevious,qualityAudit} JSON对象。请遵守单条卖点 v6 的自然美式英语、证据追溯和200–280字符合同。`;
+仅输出一个 {subtitle,fullText,evidenceUsed,keywordsUsed,distinctFromPrevious,qualityAudit} JSON对象。请遵守单条卖点 v7 的自然美式英语、空白/示例屏蔽、证据追溯和200–280字符合同。`;
       let promptContext = context;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         const result = await runEmperorSkill<any>({
@@ -818,21 +839,23 @@ ${input.optimizationNote}
           variables: {
             context: promptContext,
             mode: "single_bullet",
-            sellingPoint: input.sellingPoint,
+            sellingPoint: selected.point,
             currentBullet: current,
             optimizationNote: input.optimizationNote,
             previousBullets,
+            excludedFactPaths: selected.excludedFields,
           },
           maxModelAttempts: 3,
           validate: parseJsonOrThrow,
         });
         const parsed = result.parsed;
-        const quality = validateSingleBulletQuality(parsed, validationInput, enrichedData?.productAttributes);
+        const quality = validateSingleBulletQuality(parsed, validationInput);
         const unchanged = String(parsed?.subtitle || "").trim() === current.subtitle.trim()
           && String(parsed?.fullText || "").trim() === current.fullText.trim();
         const issues = unchanged ? [...quality.issues, "候选与当前待优化原文相同，必须实质改写"] : quality.issues;
         if (quality.valid && !unchanged) {
-          return { ...parsed, characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true };
+          return { ...parsed, factSafety: { excludedFields: selected.excludedFields, requiresHumanReview: true },
+            characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true };
         }
         if (attempt === MAX_RETRIES) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `优化候选未通过质量门禁：${issues.join("；")}。原文未改动，请调整优化方向后重试。` });

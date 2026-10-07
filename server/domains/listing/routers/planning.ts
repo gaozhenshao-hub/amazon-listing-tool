@@ -48,7 +48,7 @@ export const listingPlanningProcedures = {
       if (!input.distillationBinding.ledgerKey && !(input.distillationBinding.skillSlugs || []).length) {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "生成规划前必须由用户显式选择至少一个已发布蒸馏Skill或已锁定Claim Ledger" });
       }
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       ensureWriteAccess(project, ctx.user);
       const workspaceId = Number(ctx.workspaceId || project.workspaceId || 0);
       if (!workspaceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "当前项目缺少工作空间，无法解析受治理指导" });
@@ -92,7 +92,7 @@ export const listingPlanningProcedures = {
   planningArtifacts: protectedProcedure
     .input(z.object({ projectId: z.number().int().positive(), planningType: planningTypeSchema.optional() }))
     .query(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       const workspaceId = Number(ctx.workspaceId || project.workspaceId || 0);
       if (!workspaceId) return [];
       const keys = input.planningType ? [input.planningType] : Object.keys(PLANNING_CONFIG);
@@ -106,7 +106,7 @@ export const listingPlanningProcedures = {
       if (!input.distillationBinding.ledgerKey && !(input.distillationBinding.skillSlugs || []).length) {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "保存规划版本时必须保留用户显式选择的蒸馏Skill或锁定Claim Ledger" });
       }
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       ensureWriteAccess(project, ctx.user);
       const workspaceId = Number(ctx.workspaceId || project.workspaceId || 0);
       const guidance = await resolveWorkflowGuidance({ workspaceId, ...input.distillationBinding });

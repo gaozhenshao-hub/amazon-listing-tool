@@ -962,12 +962,12 @@ export default function EmperorSkillLibrary() {
                     <p className="text-sm text-muted-foreground leading-relaxed">{selectedSkill.description}</p>
                     {selectedSkill.slug === "listing.bullet.single" && (
                       <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
-                        手动单条试写（不驱动分步骤工作流）。正式“分步骤卖点精雕”使用 listing.bullet.step.generate v6；两者共享自然美式英文与事实边界合同。
+                        手动单条试写（不驱动分步骤工作流）。正式“分步骤卖点精雕”使用 listing.bullet.step.generate v7；空白和示例值不能作为产品事实，候选仍需人工确认。
                       </p>
                     )}
                     {selectedSkill.slug === "listing.bullet.step.generate" && (
                       <p className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-xs text-blue-900">
-                        分步骤卖点精雕工作流的实际生成 Skill · v6 · 奥美式单一主张，FABE 仅用于内部思考。
+                        分步骤卖点精雕工作流的实际生成 Skill · v7 · 奥美式单一主张，空白/示例不作事实，FABE 仅用于内部思考。
                       </p>
                     )}
                   </div>

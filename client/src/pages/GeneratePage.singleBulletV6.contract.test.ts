@@ -12,10 +12,11 @@ function between(start: string, end: string) {
 describe("卖点精雕v6前端人审和自检状态", () => {
   it("生成后保留人工确认；已确认卖点不被晚到任务覆盖", () => {
     expect(source).toContain('if (confirmedBullets[idx]) continue;');
-    expect(source).toContain('实际生成 Skill：listing.bullet.step.generate v6');
+    expect(source).toContain('实际生成 Skill：listing.bullet.step.generate v7');
     expect(source).toContain('if (!latestBulletsRef.current[idx] || bulletFingerprint(latestBulletsRef.current[idx]) !== bulletFingerprint(job.output))');
     expect(source).toContain('requestedBulletFingerprints.current.set(job.runId, requestedFingerprint)');
     expect(source).toContain('requestedFingerprint !== undefined && bulletFingerprint(latestBulletsRef.current[idx]) !== requestedFingerprint');
+    expect(source).toContain('JSON.stringify(jobInput.sellingPoint) !== JSON.stringify(sellingPointCores[idx])');
   });
   it("人工编辑、重新优化和候选切换清理旧自检并撤销旧确认", () => {
     const edit = between("const handleSaveEditBullet", "const handleResetStepBullet");
@@ -50,5 +51,21 @@ describe("卖点精雕v6前端人审和自检状态", () => {
   it("Skill库准确区分手动试写与分步骤权威Skill", () => {
     expect(skillLibrary).toContain("手动单条试写（不驱动分步骤工作流）");
     expect(skillLibrary).toContain("分步骤卖点精雕工作流的实际生成 Skill");
+  });
+  it("确认核心前要求清除示例事实，重新编辑时旧草案仍可查看但不能确认", () => {
+    expect(source).toContain("const safety = sanitizeSelectedSellingPoint(sellingPointCores?.[idx])");
+    expect(source).toContain("!safety.canGenerate || safety.excludedFields.length > 0");
+    expect(source).toContain("const handleReopenCore = (idx: number) =>");
+    expect(source).toContain("staleSource: true");
+    expect(source).toContain("(prev[idx] || []).map(candidate => ({ ...candidate, staleSource: true }))");
+    expect(source).toContain("disabled={!!candidate.staleSource}");
+    expect(source).toContain(".filter(candidate => !candidate.staleSource)");
+    expect(source).toContain("generatedBullets[idx]?.staleSource");
+    expect(source).toContain("!sellingPointCores?.[idx] || !confirmedCores[idx]");
+    expect(source).toContain("staleSource: !!latestBulletsRef.current[idx]?.staleSource");
+    expect(source).toContain("if (current.staleSource) { toast.error");
+    expect(source).toContain("const requestedCoreRevision = coreRevisionRef.current");
+    expect(source).toContain("requestedCoreRevision !== coreRevisionRef.current || latestBulletsRef.current[idx]?.staleSource");
+    expect(source).toContain('role="alert"');
   });
 });

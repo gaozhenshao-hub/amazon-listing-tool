@@ -127,7 +127,7 @@ export async function listAiJobsForUser(
     .select()
     .from(aiJobs)
     .where(where)
-    .orderBy(desc(aiJobs.createdAt))
+    .orderBy(desc(aiJobs.createdAt), desc(aiJobs.id))
     .limit(boundedLimit(opts.limit, 20, 100));
 }
 

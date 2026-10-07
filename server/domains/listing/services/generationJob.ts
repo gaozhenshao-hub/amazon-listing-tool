@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { containsTemplateFactInFreeText, excludeRawExamplesFromFactTree, formatSingleBulletIdentity, isTemplateOrEmptyFact, rawAttributeExampleValues, sanitizeListingFactTree, sanitizeListingProjectFacts, sanitizeSelectedSellingPoint, selectedPointContainsRawExamples } from "../../../../shared/listingFactSafety";
 
 import {
   MAX_RETRIES,
@@ -33,6 +34,7 @@ import {
   type ListingGenerationNodeKey,
 } from "../listingAgentBridge";
 import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
+import { readCompleteAttributeText } from "./listingRawAttributeSource";
 
 export const LISTING_JOB_MODULE = "listing";
 
@@ -139,7 +141,7 @@ function countOccurrences(text: string, phrase: string) {
   return [...text.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "giu"))].length;
 }
 
-export function validateSingleBulletQuality(bullet: any, input: ListingGenerationJobInput, confirmedProductFacts: unknown = null) {
+export function validateSingleBulletQuality(bullet: any, input: ListingGenerationJobInput, _unconfirmedProductAttributes: unknown = null) {
   const issues: string[] = [];
   const rawSubtitle = String(bullet?.subtitle || "");
   const rawFullText = String(bullet?.fullText || "");
@@ -201,9 +203,20 @@ export function validateSingleBulletQuality(bullet: any, input: ListingGeneratio
       issues.push("keywordsUsed应列出文案实际采用的目标关键词");
     }
   }
-  const sourceFacts = [input.sellingPoint?.theme, input.sellingPoint?.description,
-    ...Object.values(input.sellingPoint?.fabeDirection || {}),
-    confirmedProductFacts ? JSON.stringify(confirmedProductFacts) : ""].filter(Boolean).join(" ").toLowerCase();
+  const selected = input.sellingPoint ? sanitizeSelectedSellingPoint(input.sellingPoint) : null;
+  if (!selected?.canGenerate) issues.push("卖点核心缺少已确认且非模板的产品事实");
+  const sourceFacts = [selected?.point.theme, selected?.point.description,
+    ...Object.values(selected?.point.fabeDirection || {})].filter(Boolean).join(" ").toLowerCase();
+  const originalFacts = [input.sellingPoint?.theme, input.sellingPoint?.description,
+    ...Object.values(input.sellingPoint?.fabeDirection || {})].filter((value): value is string => typeof value === "string");
+  const excludedNumbers = originalFacts.filter(isTemplateOrEmptyFact)
+    .flatMap((value) => [...value.matchAll(/(?<![\w])\d[\d,.]*/gu)].map(([number]) => number.replace(/,/g, "")));
+  if (isTemplateOrEmptyFact(combined) || (Array.isArray(bullet?.evidenceUsed)
+      && bullet.evidenceUsed.some((fact: unknown) => isTemplateOrEmptyFact(fact)))
+      || /\b(?:unspecified|placeholder|sample value|example value|not (?:provided|listed|stated)|blank (?:field|specification|spec))\b/iu.test(combined)
+      || excludedNumbers.some((number) => new RegExp(`(?<![\\w])${number.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w])`, "u").test(combined))) {
+    issues.push("示例或空白字段不能作为卖点事实依据");
+  }
   if (!Array.isArray(bullet?.evidenceUsed) || ((input.sellingPoint?.theme || input.sellingPoint?.description) && bullet.evidenceUsed.length === 0)) {
     issues.push("未输出可追溯的事实依据evidenceUsed");
   } else if (bullet.evidenceUsed.some((fact: unknown) => typeof fact !== "string" || !fact.trim()
@@ -246,7 +259,7 @@ export async function syncListingPreparationNodes(input: {
   agentRunId?: string | null;
 }) {
   if (!input.agentRunId) return;
-  const project = await db.getProjectByIdAdmin(input.projectId);
+  const project = await db.getProjectByIdAdmin(input.projectId, input.workspaceId ?? null);
   if (!project) return;
   const [analyses, comparison, enrichedData, keywords, reviewAggregation, buyerQuestions] = await Promise.all([
     db.getCompetitorAnalysesByProject(input.projectId),
@@ -364,8 +377,8 @@ async function confirmedArtifactContext(agentRunId: string | undefined, currentN
   )).join("\n\n");
 }
 
-async function buildJobContext(job: AiJobSnapshot, input: ListingGenerationJobInput) {
-  const project = await db.getProjectByIdAdmin(input.projectId);
+async function buildJobContext(job: AiJobSnapshot, input: ListingGenerationJobInput, operation: ListingGenerationOperation) {
+  const project = await db.getProjectByIdAdmin(input.projectId, job.workspaceId ?? null);
   if (!project) throw new Error("项目不存在");
   const [analyses, enrichedData, artifactContext, distillationGuidance] = await Promise.all([
     db.getCompetitorAnalysesByProject(input.projectId),
@@ -375,18 +388,45 @@ async function buildJobContext(job: AiJobSnapshot, input: ListingGenerationJobIn
       ? resolveWorkflowGuidance({ workspaceId: job.workspaceId || Number(project.workspaceId || 0), ...input.distillationBinding })
       : Promise.resolve(null),
   ]);
-  let context = buildProductContext(project, analyses, enrichedData);
-  if (artifactContext) context += `\n\n${artifactContext}`;
-  if (distillationGuidance) context += `\n\n--- 用户显式选择的知识蒸馏指导（只读） ---\n${compactText(distillationGuidance, 6_000)}`;
+  const guardFacts = operation === "sellingPoints" || operation === "singleBullet" || operation === "bullets";
+  let safeProject = guardFacts ? sanitizeListingProjectFacts(project).project : project;
+  // Product attribute extraction is AI-generated and not a confirmation of
+  // facts. Pair the latest completed analysis with its own original upload:
+  // an extractor may have stripped the "example" tag while keeping its value.
+  let safeEnriched = enrichedData;
+  let rawExamples: string[] = [];
+  if (guardFacts) {
+    const files = await db.getProjectFilesByProject(input.projectId);
+    const latest = files.find((file) => file.fileType === "product_attributes"
+      && file.status === "completed" && file.analysisResult);
+    let attributes: unknown = null;
+    if (latest) {
+      const rawText = await readCompleteAttributeText(latest, job.workspaceId ?? null);
+      rawExamples = rawAttributeExampleValues(rawText);
+      try {
+        const parsed = JSON.parse(latest.analysisResult!);
+        const cleaned = sanitizeListingFactTree(parsed, "productAttributes").value;
+        attributes = excludeRawExamplesFromFactTree(cleaned, rawExamples, "productAttributes").value;
+      } catch { /* malformed analysis is not evidence */ }
+    }
+    safeProject = (excludeRawExamplesFromFactTree(safeProject, rawExamples, "project").value || safeProject) as typeof project;
+    safeEnriched = { ...enrichedData, productAttributes: attributes };
+  }
+  const safeGuidance = !guardFacts || !distillationGuidance || !containsTemplateFactInFreeText(JSON.stringify(distillationGuidance))
+    ? distillationGuidance : null;
+  let context = buildProductContext(safeProject, analyses, safeEnriched);
+  if (artifactContext && (!guardFacts || !containsTemplateFactInFreeText(artifactContext))) context += `\n\n${artifactContext}`;
+  if (safeGuidance) context += `\n\n--- 用户显式选择的知识蒸馏指导（只读） ---\n${compactText(safeGuidance, 6_000)}`;
   if (input.emphasis?.trim()) {
     context += `\n\n--- 用户重点强调 ---\n${input.emphasis.trim()}`;
   }
   return {
-    project,
+    project: safeProject,
     analyses,
-    enrichedData,
+    enrichedData: safeEnriched,
+    rawExamples,
     context: compactText(context, 28_000),
-    variables: { project, analyses, enrichedData, distillationGuidance },
+    variables: { project: safeProject, analyses, enrichedData: safeEnriched, distillationGuidance: safeGuidance },
   };
 }
 
@@ -436,27 +476,49 @@ async function runOperation(
   operation: Exclude<ListingGenerationOperation, "batch">,
   transientOutputs: Record<string, unknown> = {},
 ) {
-  const built = await buildJobContext(job, input);
+  const selected = operation === "singleBullet" && input.sellingPoint
+    ? sanitizeSelectedSellingPoint(input.sellingPoint) : null;
+  if (operation === "singleBullet" && !selected?.canGenerate) {
+    throw new Error("卖点核心无可用产品事实；请先编辑并确认，空白与示例字段不可用于生成");
+  }
+  if ((operation === "sellingPoints" || operation === "singleBullet" || operation === "bullets")
+      && input.emphasis && containsTemplateFactInFreeText(input.emphasis)) {
+    throw new Error("重点强调含空白或示例数值；请确认真实数据后重试");
+  }
+  const built = await buildJobContext(job, input, operation);
+  if (operation === "singleBullet" && selectedPointContainsRawExamples(selected!.point, built.rawExamples)) {
+    throw new Error("卖点核心包含原始属性表的示例值；请核实真实参数并修改核心后再生成");
+  }
   const config = OPERATION_CONFIG[operation];
   let promptContext = built.context;
   const variables: Record<string, unknown> = { ...built.variables, ...transientOutputs };
 
   if (operation === "singleBullet") {
-    if (!input.sellingPoint) throw new Error("缺少待生成的卖点核心");
-    promptContext += `\n\n--- 单条五点描述任务 ---\n只生成一条五点描述。当前选中卖点核心：${JSON.stringify(input.sellingPoint)}\n已确认五点：${JSON.stringify(input.previousBullets || [])}\n仅返回单个 {subtitle,fullText,evidenceUsed,keywordsUsed,distinctFromPrevious,qualityAudit} JSON对象，不要输出数组或其他卖点。`;
+    const previous = (input.previousBullets || []).filter((bullet) =>
+      !containsTemplateFactInFreeText(`${bullet.subtitle}\n${bullet.fullText}`));
+    promptContext = `${formatSingleBulletIdentity(built.project)}\n\n--- 人工选中的卖点核心；非示例事实 ---\n${JSON.stringify(selected!.point)}\n--- 其他已确认卖点；仅供避免重复，不作本品证据 ---\n${JSON.stringify(previous)}\n仅输出一条 {subtitle,fullText,evidenceUsed,keywordsUsed,distinctFromPrevious,qualityAudit} JSON。被过滤的空值/示例不得补全或写入文案；不足事实时请拒绝编造。`;
     variables.mode = "single_bullet";
-    variables.sellingPoint = input.sellingPoint;
-    variables.previousBullets = input.previousBullets || [];
+    variables.sellingPoint = selected!.point;
+    variables.previousBullets = previous;
+    variables.excludedFactPaths = selected!.excludedFields;
+    delete variables.project;
+    delete variables.analyses;
+    delete variables.enrichedData;
+    delete variables.distillationGuidance;
   } else if (operation === "searchTerms" && input.existingTitle) {
     promptContext += `\n\n当前已确认标题（搜索词不得重复）：${input.existingTitle}`;
     variables.existingTitle = input.existingTitle;
   }
 
   let parsed = await callListingSkill(job, handlerContext, input, config.skillSlug, promptContext, variables);
+  if ((operation === "sellingPoints" || operation === "bullets") && built.rawExamples.length
+      && excludeRawExamplesFromFactTree(parsed, built.rawExamples, "output").excludedFields.length) {
+    throw new Error("生成结果引用了原始产品属性表的示例值；此候选不可确认，请核实真实事实");
+  }
   if (operation === "sellingPoints") return normalizeSellingPoints(parsed);
   if (operation === "singleBullet") {
     let bullet = parsed;
-    let quality = validateSingleBulletQuality(bullet, input, built.enrichedData?.productAttributes);
+    let quality = validateSingleBulletQuality(bullet, input);
     for (let attempt = 0; attempt < MAX_RETRIES && !quality.valid; attempt += 1) {
       parsed = await callListingSkill(
         job,
@@ -467,10 +529,11 @@ async function runOperation(
         { ...variables, previousOutput: bullet, qualityIssues: quality.issues },
       );
       bullet = parsed;
-      quality = validateSingleBulletQuality(bullet, input, built.enrichedData?.productAttributes);
+      quality = validateSingleBulletQuality(bullet, input);
     }
     if (!quality.valid) throw new Error(`单条五点描述质量验证未通过：${quality.issues.join("；")}`);
-    return { ...bullet, characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true };
+    return { ...bullet, factSafety: { excludedFields: selected!.excludedFields, requiresHumanReview: true },
+      characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true };
   }
   if (operation === "title") {
     let validation = validateTitles(parsed);
@@ -498,6 +561,9 @@ async function runOperation(
         { ...variables, previousOutput: parsed, validationIssues: validation.issues },
       );
       validation = validateBullets(parsed);
+    }
+    if (built.rawExamples.length && excludeRawExamplesFromFactTree(parsed, built.rawExamples, "output").excludedFields.length) {
+      throw new Error("五点重试结果引用了原始产品属性表的示例值；此候选不可确认");
     }
   }
   return parsed;

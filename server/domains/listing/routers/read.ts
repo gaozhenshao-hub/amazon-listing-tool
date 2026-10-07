@@ -50,7 +50,7 @@ export const listingReadProcedures = {
   listByProject: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       return db.getListingsByProject(input.projectId);
     }),
@@ -60,7 +60,7 @@ export const listingReadProcedures = {
   getActive: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       return db.getActiveListingByProject(input.projectId);
     }),
@@ -70,7 +70,7 @@ export const listingReadProcedures = {
   checkDataReadiness: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       return checkDataReadiness(input.projectId);
     }),

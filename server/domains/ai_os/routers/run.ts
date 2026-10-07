@@ -7,6 +7,7 @@ import {
   type SkillExecutionPreset,
 } from "../services/skillRunner";
 import { rawExecute } from "../routerContext";
+import { containsTemplateFactInFreeText } from "../../../../shared/listingFactSafety";
 
 const executionPresetSchema = z.enum(["standard", "quality_first", "batch_background", "evaluation"]);
 
@@ -26,6 +27,12 @@ export const emperorRunRouter = router({
       executionPreset: executionPresetSchema.optional().default("standard"),
     }))
     .mutation(async ({ input, ctx }) => {
+      if ((input.skillSlug === "listing.bullet.single" || input.skillSlug === "listing.bullet.step.generate")
+          && [input.context, input.emphasis, ...Object.values(input.variables).map((value) =>
+            typeof value === "string" ? value : JSON.stringify(value))].some((value) =>
+            containsTemplateFactInFreeText(value || ""))) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "单条卖点输入含空白字段或示例文字；请先删除示例并确认真实产品事实" });
+      }
       const executionPreset: SkillExecutionPreset = normalizeSkillExecutionPreset(input.executionPreset);
       const result = await runEmperorSkill({
         skillSlug: input.skillSlug,

@@ -60,7 +60,7 @@ export const listingAbTestingProcedures = {
       }).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -201,7 +201,7 @@ export const listingAbTestingProcedures = {
       bulletPoints: z.string().optional(), // JSON string of bullet points array
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 

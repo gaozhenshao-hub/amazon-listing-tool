@@ -59,6 +59,7 @@ import {
   useListingGenerationJob,
 } from "./listing/useListingGenerationJob";
 import { LISTING_STEPS, ListingWorkflowNavigation } from "./listing/ListingWorkflowNavigation";
+import { sanitizeSelectedSellingPoint } from "@shared/listingFactSafety";
 
 function bulletFingerprint(bullet: { subtitle?: string; fullText?: string } | null | undefined) {
   return `${bullet?.subtitle || ""}\u0000${bullet?.fullText || ""}`;
@@ -72,6 +73,7 @@ export default function GeneratePage() {
 
   // Step-by-step bullet generation state
   const [sellingPointCores, setSellingPointCores] = useState<any[] | null>(null);
+  const coreRevisionRef = useRef(0);
   const [overallStrategy, setOverallStrategy] = useState<string>("");
   const [confirmedCores, setConfirmedCores] = useState<boolean[]>([]);
   const [generatedBullets, setGeneratedBullets] = useState<Record<number, any>>({});
@@ -356,6 +358,10 @@ export default function GeneratePage() {
       if (!match) continue;
       const idx = Number(match[1]);
       if (confirmedBullets[idx]) continue;
+      if (!sellingPointCores?.[idx] || JSON.stringify(jobInput.sellingPoint) !== JSON.stringify(sellingPointCores[idx])) {
+        toast.info(`卖点 ${idx + 1} 的核心已调整，旧任务结果仅保留在运行记录中，未覆盖当前草案`);
+        continue;
+      }
       if (requestedFingerprint !== undefined && bulletFingerprint(latestBulletsRef.current[idx]) !== requestedFingerprint) {
         toast.info(`卖点 ${idx + 1} 在生成期间已修改，后台结果未覆盖当前内容`);
         continue;
@@ -386,7 +392,7 @@ export default function GeneratePage() {
         });
       }
     }
-  }, [confirmedBullets, evaluateChecklist, g1Jobs, persistChecklistScores]);
+  }, [confirmedBullets, evaluateChecklist, g1Jobs, persistChecklistScores, sellingPointCores]);
 
   const handleGenerateCores = () => {
     if (!selectedProjectId) return;
@@ -401,17 +407,36 @@ export default function GeneratePage() {
       });
       return;
     }
+    coreRevisionRef.current += 1;
     setStepBulletPhase("idle");
     void sellingPointsJob.start({ emphasis: emphasis.trim() || undefined });
   };
 
   const handleConfirmCore = (idx: number) => {
+    if (!sellingPointCores?.[idx]) return;
+    const safety = sanitizeSelectedSellingPoint(sellingPointCores?.[idx]);
+    if (!safety.canGenerate || safety.excludedFields.length > 0) {
+      setEditingCore(idx);
+      toast.error("请先删除或核实核心中的空白/示例字段，并填写真实产品事实后再确认");
+      return;
+    }
     setConfirmedCores(prev => { const next = [...prev]; next[idx] = true; return next; });
     setEditingCore(null);
   };
 
+  const handleReopenCore = (idx: number) => {
+    coreRevisionRef.current += 1;
+    setConfirmedCores(prev => { const next = [...prev]; next[idx] = false; return next; });
+    setConfirmedBullets(prev => ({ ...prev, [idx]: false }));
+    setBulletCandidates(prev => ({ ...prev, [idx]: (prev[idx] || []).map(candidate => ({ ...candidate, staleSource: true })) }));
+    if (latestBulletsRef.current[idx]) replaceBulletDraft(idx, { ...latestBulletsRef.current[idx], staleSource: true,
+      checkListScores: undefined, aiSemanticRelations: undefined, qualityAudit: undefined });
+    setEditingCore(idx);
+  };
+
   const handleEditCore = (idx: number, field: string, value: any) => {
     if (!sellingPointCores) return;
+    coreRevisionRef.current += 1;
     setSellingPointCores(prev => {
       if (!prev) return prev;
       const next = [...prev];
@@ -422,6 +447,7 @@ export default function GeneratePage() {
 
   const handleEditCoreFabe = (idx: number, fabeField: string, value: string) => {
     if (!sellingPointCores) return;
+    coreRevisionRef.current += 1;
     setSellingPointCores(prev => {
       if (!prev) return prev;
       const next = [...prev];
@@ -609,6 +635,9 @@ export default function GeneratePage() {
   const handleGenerateSingleBullet = async (idx: number) => {
     if (!selectedProjectId || !sellingPointCores) return;
     const sp = sellingPointCores[idx];
+    const safety = sanitizeSelectedSellingPoint(sp);
+    if (!safety.canGenerate) { toast.error("卖点核心缺少真实产品事实；请先补充并确认"); return; }
+    if (safety.excludedFields.length > 0) toast.info(`已排除 ${safety.excludedFields.length} 项示例/空白字段，请在生成后核对事实依据`);
     // Collect previously confirmed bullets
     const previousBullets = Object.entries(confirmedBullets)
       .filter(([, confirmed]) => confirmed)
@@ -637,6 +666,8 @@ export default function GeneratePage() {
   };
 
   const handleConfirmBullet = (idx: number) => {
+    if (!sellingPointCores?.[idx] || !confirmedCores[idx]) { toast.error("请先人工确认当前卖点核心"); return; }
+    if (generatedBullets[idx]?.staleSource) { toast.error("卖点核心已修改，请先重新生成，旧草案不能确认"); return; }
     setConfirmedBullets(prev => ({ ...prev, [idx]: true }));
     setEditingBullet(null);
   };
@@ -644,9 +675,11 @@ export default function GeneratePage() {
   const optimizeBulletMut = trpc.listing.optimizeSingleBullet.useMutation();
   const handleOptimizeBullet = async (idx: number) => {
     const current = generatedBullets[idx];
-    const candidates = bulletCandidates[idx] || (current ? [current] : []);
+    const requestedCoreRevision = coreRevisionRef.current;
+    const candidates = (bulletCandidates[idx] || (current ? [current] : [])).filter(candidate => !candidate.staleSource);
     const note = bulletOptimizationNotes[idx]?.trim();
     if (!selectedProjectId || !sellingPointCores || !current) return;
+    if (current.staleSource) { toast.error("核心已修改，请先重新生成；旧草案不能作为优化事实来源"); return; }
     if (candidates.length >= 4) { toast.error("每条卖点最多可再优化三次"); return; }
     if (!note) { toast.error("请填写优化方向"); return; }
     try {
@@ -656,12 +689,13 @@ export default function GeneratePage() {
         .filter(Boolean)
         .map((bullet) => ({ subtitle: bullet.subtitle || "", fullText: bullet.fullText || "" }));
       const optimized = await optimizeBulletMut.mutateAsync({ projectId: selectedProjectId, sellingPoint: sellingPointCores[idx], currentBullet: { subtitle: current.subtitle || "", fullText: current.fullText || "" }, previousBullets, optimizationNote: note });
-      if (bulletFingerprint(latestBulletsRef.current[idx]) !== bulletFingerprint(current)) {
-        toast.info("卖点内容已更改，旧优化候选已丢弃；请按最新内容重新优化");
+      if (requestedCoreRevision !== coreRevisionRef.current || latestBulletsRef.current[idx]?.staleSource
+          || bulletFingerprint(latestBulletsRef.current[idx]) !== bulletFingerprint(current)) {
+        toast.info("卖点核心或内容已更改，旧优化候选已丢弃；请按最新内容重新优化");
         return;
       }
       const next = { ...optimized, optimizationNote: note, checkListScores: undefined, aiSemanticRelations: undefined };
-      setBulletCandidates(prev => ({ ...prev, [idx]: [...candidates, next] }));
+      setBulletCandidates(prev => ({ ...prev, [idx]: [...(prev[idx] || (current ? [current] : [])), next] }));
       replaceBulletDraft(idx, next);
       setConfirmedBullets(prev => ({ ...prev, [idx]: false }));
       setBulletOptimizationNotes(prev => ({ ...prev, [idx]: "" }));
@@ -687,15 +721,18 @@ export default function GeneratePage() {
       qualityAudit: undefined,
       checkListScores: undefined,
       aiSemanticRelations: undefined,
+      staleSource: !!latestBulletsRef.current[idx]?.staleSource,
       actualCharacterCount: (editBulletData.subtitle + " " + editBulletData.fullText).length,
       characterCount: (editBulletData.subtitle + " " + editBulletData.fullText).length,
     });
     setConfirmedBullets(prev => ({ ...prev, [idx]: false }));
     setEditingBullet(null);
-    toast.success("卖点内容已更新");
+    if (latestBulletsRef.current[idx]?.staleSource) toast.info("编辑已保留供参考，但旧核心草案仍不可确认；请按当前核心重新生成");
+    else toast.success("卖点内容已更新");
   };
 
   const handleResetStepBullet = () => {
+    coreRevisionRef.current += 1;
     setSellingPointCores(null);
     setOverallStrategy("");
     setConfirmedCores([]);
@@ -1774,7 +1811,9 @@ export default function GeneratePage() {
                     </div>
                   )}
 
-                  {sellingPointCores.map((sp, idx) => (
+                  {sellingPointCores.map((sp, idx) => {
+                    const coreSafety = sanitizeSelectedSellingPoint(sp);
+                    return (
                     <div key={idx} className={`rounded-lg border p-4 transition-all ${
                       confirmedCores[idx]
                         ? "border-green-300 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20"
@@ -1816,10 +1855,20 @@ export default function GeneratePage() {
                             </>
                           )}
                           {confirmedCores[idx] && (
-                            <Badge className="bg-green-600 text-white text-[10px]"><CheckCircle2 className="h-3 w-3 mr-1" />已确认</Badge>
+                            <>
+                              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => handleReopenCore(idx)}>编辑核心</Button>
+                              <Badge className="bg-green-600 text-white text-[10px]"><CheckCircle2 className="h-3 w-3 mr-1" />已确认</Badge>
+                            </>
                           )}
                         </div>
                       </div>
+
+                      {(!coreSafety.canGenerate || coreSafety.excludedFields.length > 0) && (
+                        <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900" role="alert">
+                          空白或示例不是商品事实。{coreSafety.excludedFields.length > 0 ? `需核实：${coreSafety.excludedFields.join("、")}。` : ""}
+                          {!coreSafety.canGenerate ? "当前缺少可用产品事实，无法生成。" : "请编辑并确认真实数据；模型不会使用这些字段。"}
+                        </div>
+                      )}
 
                       {editingCore === idx ? (
                         <div className="space-y-2 mt-3">
@@ -1884,7 +1933,8 @@ export default function GeneratePage() {
                       {/* Single bullet generation for this core */}
                       {confirmedCores[idx] && (
                         <div className="mt-3 pt-3 border-t">
-                          <p className="mb-2 text-[11px] text-muted-foreground">实际生成 Skill：listing.bullet.step.generate v6 · 奥美式买家价值 · 自然美式英语；FABE 不作为固定句式。生成草案可编辑，确认后再同步。</p>
+                          <p className="mb-2 text-[11px] text-muted-foreground">实际生成 Skill：listing.bullet.step.generate v7 · 奥美式买家价值 · 自然美式英语；示例值不作为事实，FABE 不作为固定句式。生成草案可编辑，确认后再同步。</p>
+                          {generatedBullets[idx]?.staleSource && <p className="mb-2 text-xs text-amber-700" role="alert">核心曾重新编辑；保留的旧草案仅供参考，需重新生成或人工核实修改后再确认</p>}
                           {!generatedBullets[idx] ? (
                             <Button
                               variant="outline"
@@ -1972,9 +2022,9 @@ export default function GeneratePage() {
                                     isRunningCheck={!!evaluatingChecklist[idx]}
                                   />
                                   <div className="mt-2 rounded-md border border-violet-200 bg-violet-50/50 p-2 space-y-2">
-                                    <div className="flex items-center justify-between gap-2"><Label className="text-xs text-violet-800">再次优化（最多3次）</Label><span className="text-[10px] text-muted-foreground">候选 {Math.max(1, (bulletCandidates[idx] || []).length)}/4</span></div>
-                                    <div className="flex gap-2"><Input className="h-7 text-xs" placeholder="填写优化方向，例如：突出安装便利性、压缩冗余表达" value={bulletOptimizationNotes[idx] || ""} onChange={event => setBulletOptimizationNotes(prev => ({ ...prev, [idx]: event.target.value }))} /><Button size="sm" className="h-7 text-xs" variant="outline" onClick={() => handleOptimizeBullet(idx)} disabled={optimizeBulletMut.isPending || (bulletCandidates[idx] || [generatedBullets[idx]]).length >= 4}>{optimizeBulletMut.isPending ? "优化中…" : "生成优化候选"}</Button></div>
-                                    {(bulletCandidates[idx] || []).length > 0 && <div className="space-y-1">{bulletCandidates[idx].map((candidate, candidateIndex) => <button key={candidateIndex} onClick={() => { replaceBulletDraft(idx, { ...candidate, checkListScores: undefined, aiSemanticRelations: undefined }); setConfirmedBullets(prev => ({ ...prev, [idx]: false })); }} className={`w-full rounded border px-2 py-1 text-left text-[11px] ${bulletFingerprint(generatedBullets[idx]) === bulletFingerprint(candidate) ? "border-violet-500 bg-white" : "border-transparent hover:border-violet-200"}`}>候选 {candidateIndex + 1}{candidate.optimizationNote ? ` · ${candidate.optimizationNote}` : " · 初始生成"}</button>)}</div>}
+                                    <div className="flex items-center justify-between gap-2"><Label className="text-xs text-violet-800">再次优化（最多3次）</Label><span className="text-[10px] text-muted-foreground">当前核心候选 {Math.max(1, (bulletCandidates[idx] || []).filter(candidate => !candidate.staleSource).length)}/4</span></div>
+                                    <div className="flex gap-2"><Input className="h-7 text-xs" placeholder="填写优化方向，例如：突出安装便利性、压缩冗余表达" value={bulletOptimizationNotes[idx] || ""} onChange={event => setBulletOptimizationNotes(prev => ({ ...prev, [idx]: event.target.value }))} /><Button size="sm" className="h-7 text-xs" variant="outline" onClick={() => handleOptimizeBullet(idx)} disabled={optimizeBulletMut.isPending || (bulletCandidates[idx] || [generatedBullets[idx]]).filter(candidate => !candidate.staleSource).length >= 4}>{optimizeBulletMut.isPending ? "优化中…" : "生成优化候选"}</Button></div>
+                                    {(bulletCandidates[idx] || []).length > 0 && <div className="space-y-1">{bulletCandidates[idx].map((candidate, candidateIndex) => <button key={candidateIndex} disabled={!!candidate.staleSource} onClick={() => { if (candidate.staleSource) return; replaceBulletDraft(idx, { ...candidate, checkListScores: undefined, aiSemanticRelations: undefined }); setConfirmedBullets(prev => ({ ...prev, [idx]: false })); }} className={`w-full rounded border px-2 py-1 text-left text-[11px] ${candidate.staleSource ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-700" : bulletFingerprint(generatedBullets[idx]) === bulletFingerprint(candidate) ? "border-violet-500 bg-white" : "border-transparent hover:border-violet-200"}`}>候选 {candidateIndex + 1}{candidate.staleSource ? " · 旧核心，仅供对照" : candidate.optimizationNote ? ` · ${candidate.optimizationNote}` : " · 初始生成"}</button>)}</div>}
                                   </div>
                                 </div>
                               )}
@@ -2000,7 +2050,7 @@ export default function GeneratePage() {
                         </div>
                       )}
                     </div>
-                  ))}
+                  ); })}
 
                   {/* Summary when all bullets confirmed */}
                   {allBulletsConfirmed && (

@@ -143,13 +143,13 @@ export async function executeListingSkill<T = any>(
 // Helper: resolve project access based on user role
 // designer, admin, super_admin can access any project (designer: read-only for image suggestions)
 // regular users can only access their own projects
-export async function resolveProjectAccess(projectId: number, user: { id: number; role: string }) {
+export async function resolveProjectAccess(projectId: number, user: { id: number; role: string }, workspaceId?: number | null) {
   if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
-    const project = await db.getProjectByIdAdmin(projectId);
+    const project = await db.getProjectByIdAdmin(projectId, workspaceId);
     if (!project) throw new Error("Project not found");
     return project;
   }
-  const project = await db.getProjectById(projectId, user.id);
+  const project = await db.getProjectById(projectId, user.id, workspaceId);
   if (!project) throw new Error("Project not found");
   return project;
 }

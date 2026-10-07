@@ -99,7 +99,7 @@ export const listingEvaluationProcedures = {
       scores: z.string(), // JSON string of { [bulletIndex]: { checkListScores, aiSemanticRelations } }
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
       let listing = await db.getActiveListingByProject(input.projectId);

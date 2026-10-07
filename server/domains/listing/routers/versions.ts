@@ -53,7 +53,7 @@ export const listingVersionProcedures = {
   getVersionHistory: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       ensureListingWorkspaceAccess(project, ctx.workspaceId);
       return db.getListingVersionsByProject(input.projectId);
     }),
@@ -66,7 +66,7 @@ export const listingVersionProcedures = {
       projectId: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureListingWorkspaceAccess(project, ctx.workspaceId);
       ensureWriteAccess(project, ctx.user);

@@ -69,7 +69,7 @@ export const listingJobControlProcedures = {
   startGenerationJob: protectedProcedure
     .input(listingGenerationJobInput.omit({ agentRunId: true }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       ensureWriteAccess(project, ctx.user);
       return startListingJobForContext({
         ...input,
@@ -85,7 +85,7 @@ export const listingJobControlProcedures = {
       scopeKey: z.string().trim().min(1).max(80).optional(),
     }))
     .query(async ({ ctx, input }) => {
-      await resolveProjectAccess(input.projectId, ctx.user);
+      await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       return getLatestListingNodeJob(ctx.user.id, input.projectId, input.nodeId, input.scopeKey);
     }),
 
@@ -95,7 +95,7 @@ export const listingJobControlProcedures = {
       nodeId: nodeIdSchema.optional(),
     }))
     .query(async ({ ctx, input }) => {
-      await resolveProjectAccess(input.projectId, ctx.user);
+      await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       const jobs = await listListingGenerationJobs(ctx.user.id, input.projectId);
       if (!input.nodeId) return jobs;
       return jobs.filter((job) => {
@@ -111,7 +111,7 @@ export const listingJobControlProcedures = {
       scopeKey: z.string().trim().min(1).max(80).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       ensureWriteAccess(project, ctx.user);
       const listing = await db.getActiveListingByProject(input.projectId);
       return cancelListingGenerationJob({

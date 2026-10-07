@@ -62,4 +62,15 @@ describe("emperor.run.run governed runner contract", () => {
       governance: { humanReviewRequired: true, automaticExecution: "prohibited" },
     });
   });
+
+  it("单条试写与工作流Skill面对示例值直接拦截，模型不被调用；其他Skill不受影响", async () => {
+    const caller = emperorRunRouter.createCaller({ user: { id: 7, role: "super_admin", defaultWorkspaceId: 9 } } as any);
+    for (const skillSlug of ["listing.bullet.single", "listing.bullet.step.generate"]) {
+      await expect(caller.run({ skillSlug, context: "Power: [如：1200W]" })).rejects.toThrow(/示例文字/);
+      await expect(caller.run({ skillSlug, context: "Product is padded", variables: { material: "[example: steel]" } })).rejects.toThrow(/示例文字/);
+    }
+    expect(runEmperorSkill).not.toHaveBeenCalled();
+    await caller.run({ skillSlug: "listing.checklist.bullets", context: "检查文本中示例的格式" });
+    expect(runEmperorSkill).toHaveBeenCalledTimes(1);
+  });
 });

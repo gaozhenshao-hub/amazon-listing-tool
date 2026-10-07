@@ -54,7 +54,7 @@ const legacyListingGenerationProcedures = {
   generateTitle: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -96,7 +96,7 @@ const legacyListingGenerationProcedures = {
   generateBulletPoints: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -138,7 +138,7 @@ const legacyListingGenerationProcedures = {
   generateDescription: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -177,7 +177,7 @@ const legacyListingGenerationProcedures = {
       emphasis: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -218,7 +218,7 @@ const legacyListingGenerationProcedures = {
   generateImageAdvice: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -287,7 +287,7 @@ const legacyListingGenerationProcedures = {
       emphasis: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -410,7 +410,7 @@ const legacyListingGenerationProcedures = {
   translateToChinese: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -467,7 +467,7 @@ const legacyListingGenerationProcedures = {
 };
 
 async function queueListingJob(ctx: any, input: { projectId: number; emphasis?: string; existingTitle?: string }, operation: "bullets" | "title" | "description" | "searchTerms" | "batch", nodeId: "G1" | "G2" | "G3" | "G4") {
-  const project = await resolveProjectAccess(input.projectId, ctx.user);
+  const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
   ensureWriteAccess(project, ctx.user);
   return startListingJobForContext({
     ...input,

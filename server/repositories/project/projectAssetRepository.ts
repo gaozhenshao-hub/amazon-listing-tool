@@ -231,7 +231,7 @@ export async function createProjectFile(data: InsertProjectFile) {
 export async function getProjectFilesByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.select().from(projectFiles).where(eq(projectFiles.projectId, projectId)).orderBy(desc(projectFiles.createdAt));
+  return db.select().from(projectFiles).where(eq(projectFiles.projectId, projectId)).orderBy(desc(projectFiles.createdAt), desc(projectFiles.id));
 }
 
 export async function getProjectFilesByType(projectId: number, fileType: string) {
@@ -239,7 +239,7 @@ export async function getProjectFilesByType(projectId: number, fileType: string)
   if (!db) throw new Error("Database not available");
   return db.select().from(projectFiles)
     .where(and(eq(projectFiles.projectId, projectId), eq(projectFiles.fileType, fileType as any)))
-    .orderBy(desc(projectFiles.createdAt));
+    .orderBy(desc(projectFiles.createdAt), desc(projectFiles.id));
 }
 
 export async function getProjectFileById(id: number) {

@@ -34,7 +34,7 @@ export function buildSingleBulletV6Change(row: Row) {
   }
   const prompt = String(manifest.implementation?.systemPrompt || "");
   if (prompt.split(LISTING_OGILVY_ROLE_MARKER).length !== 2
-      || !prompt.includes(row.slug === "listing.checklist.bullets" ? "NATURAL_US_BULLET_CHECKLIST_V6" : "SINGLE_AMAZON_US_BULLET_V6")) {
+      || !prompt.includes(row.slug === "listing.checklist.bullets" ? "NATURAL_US_BULLET_CHECKLIST_V6" : `SINGLE_AMAZON_US_BULLET_V${SINGLE_BULLET_PROMPT_VERSION}`)) {
     throw new Error(`Skill ${row.slug} 奥美角色/任务层合同不匹配`);
   }
   // Both manual and workflow slugs share the exact same prompt; only the
@@ -48,6 +48,7 @@ export function buildSingleBulletV6Change(row: Row) {
 }
 
 async function main() {
+  if (SINGLE_BULLET_PROMPT_VERSION !== 6) throw new Error("历史v6升级脚本已封存；请使用对应当前版本的专用升级脚本");
   const apply = process.argv.includes("--apply");
   if (!process.env.DATABASE_URL) throw new Error("数据库运行环境未配置");
   const connection = await mysql.createConnection({ uri: process.env.DATABASE_URL, multipleStatements: false });

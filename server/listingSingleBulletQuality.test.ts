@@ -81,6 +81,19 @@ describe("逐条卖点v6事实与格式门禁", () => {
       .toContain("竞品比较或兼容性声明必须完整引用当前已确认事实和evidenceUsed");
   });
 
+  it("绝不把模板中的示例数值当成可追溯的商品事实", () => {
+    const example = { ...baseInput, sellingPoint: { ...baseInput.sellingPoint,
+      description: "功率：[如：1200W]", fabeDirection: { ...baseInput.sellingPoint.fabeDirection, evidence: "[如：1200W]" },
+    } };
+    const candidate = { ...validBullet,
+      fullText: validBullet.fullText.replace("padded shell", "1200W padded shell"),
+      evidenceUsed: ["[如：1200W]"],
+    };
+    expect(validateSingleBulletQuality(candidate, example).issues).toContain("示例或空白字段不能作为卖点事实依据");
+    const noNumber = { ...validBullet, fullText: validBullet.fullText.replace("padded shell", "padded shell with an unspecified wattage") };
+    expect(validateSingleBulletQuality(noNumber, example).issues).toContain("示例或空白字段不能作为卖点事实依据");
+  });
+
   it("识别换词后仍沿用同一开头与购买理由的卖点", () => {
     const previousBullets = [{ subtitle: "Travel Guard:", fullText: validBullet.fullText.replace("portable case", "travel case") }];
     expect(validateSingleBulletQuality(validBullet, { ...baseInput, previousBullets }).issues)
