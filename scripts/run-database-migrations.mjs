@@ -142,6 +142,8 @@ const imageQualityDevelopmentMigrationFiles = [
 ];
 
 const imageQualityProductionMigrationFiles = [
+  "0204_listing_revision_governance.sql",
+  "0205_image_asset_policy.sql",
   "0206_image_workflow_version_snapshots.sql",
   "0207_image_asset_trust_ledger.sql",
 ];
