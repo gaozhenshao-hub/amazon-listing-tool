@@ -47,7 +47,7 @@ describe("database migration safety", () => {
     expect(plan[0]?.official).toBe(false);
   });
 
-  it("keeps 0206/0207 out of the default plan but exposes their ordered development-only plan", async () => {
+  it("keeps 0206/0207 out of the default plan but exposes their ordered dedicated plans", async () => {
     const module = await import("../scripts/run-database-migrations.mjs");
     const plan = module.loadImageQualityDevelopmentMigrationPlan();
     expect(plan.map((item: any) => item.fileName)).toEqual([
@@ -60,6 +60,14 @@ describe("database migration safety", () => {
     expect(source).toContain("ALLOW_IMAGE_QUALITY_DEVELOPMENT_MIGRATIONS");
     expect(source).toContain("WEBDEV_DEVELOPMENT_SCHEMA");
     expect(source).toContain("--apply-image-quality-development");
+    const productionPlan = module.loadImageQualityProductionMigrationPlan();
+    expect(productionPlan.map((item: any) => item.fileName)).toEqual([
+      "0206_image_workflow_version_snapshots.sql",
+      "0207_image_asset_trust_ledger.sql",
+    ]);
+    expect(source).toContain("ALLOW_IMAGE_QUALITY_PRODUCTION_MIGRATIONS");
+    expect(source).toContain("QINGDAO_PRODUCTION_SCHEMA");
+    expect(source).toContain("--apply-image-quality-production");
   });
 
   it("creates Emperor registries before governance migrations depend on them", () => {

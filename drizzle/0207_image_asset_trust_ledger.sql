@@ -1,8 +1,8 @@
 -- Phase C trusted controlled-upload byte ledger and human-verified license evidence.
--- DRAFT ONLY: additive DDL for authorized production migration review. This file is
--- deliberately not registered with a migration runner and must not be executed
--- without the deployment owner's explicit database-migration authorization.
--- It performs no backfill, mutation, provider call, or model invocation.
+-- DEDICATED RELEASE ONLY: additive DDL excluded from the default migration plan.
+-- It may run only through the explicit 0206/0207 production gate after the
+-- deployment owner authorizes database migration. It performs no backfill,
+-- provider call, or model invocation.
 
 CREATE TABLE IF NOT EXISTS `image_controlled_upload_receipts` (
   `id` int NOT NULL AUTO_INCREMENT,

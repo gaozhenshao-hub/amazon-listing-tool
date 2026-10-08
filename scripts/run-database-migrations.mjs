@@ -133,10 +133,15 @@ const unreleasedDraftMigrationFiles = new Set([
   "0207_image_asset_trust_ledger.sql",
 ]);
 
-// Separate from the general release train: only a verified WebDev development
-// schema may opt into these two additive migrations. Production never reaches
-// this plan implicitly.
+// Separate from the general release train: these two additive migrations are
+// never reached implicitly. Development and production use separate explicit
+// flags and each validates its intended database name before taking the lock.
 const imageQualityDevelopmentMigrationFiles = [
+  "0206_image_workflow_version_snapshots.sql",
+  "0207_image_asset_trust_ledger.sql",
+];
+
+const imageQualityProductionMigrationFiles = [
   "0206_image_workflow_version_snapshots.sql",
   "0207_image_asset_trust_ledger.sql",
 ];
@@ -188,11 +193,11 @@ export function loadMigrationPlan() {
   if (new Set(files).size !== files.length) throw new Error("Migration plan contains duplicate files");
   for (const fileName of unreleasedDraftMigrationFiles) {
     const filePath = join(drizzleDir, fileName);
-    if (!existsSync(filePath) || !/draft only/i.test(readFileSync(filePath, "utf8"))) {
-      throw new Error(`Unreleased draft migration is missing its explicit DRAFT ONLY marker: ${fileName}`);
+    if (!existsSync(filePath) || !/dedicated release only/i.test(readFileSync(filePath, "utf8"))) {
+      throw new Error(`Dedicated migration is missing its explicit DEDICATED RELEASE ONLY marker: ${fileName}`);
     }
     if (files.includes(fileName) || dedicatedMigrationFiles.includes(fileName)) {
-      throw new Error(`Unreleased draft migration must not be executable: ${fileName}`);
+      throw new Error(`Dedicated migration must not be included in the default plan: ${fileName}`);
     }
   }
   const unmanagedFiles = readdirSync(drizzleDir)
@@ -214,6 +219,10 @@ export function loadExternalKnowledgeCallerBindingMigrationPlan() {
 
 export function loadImageQualityDevelopmentMigrationPlan() {
   return migrationEntries(imageQualityDevelopmentMigrationFiles, 0);
+}
+
+export function loadImageQualityProductionMigrationPlan() {
+  return migrationEntries(imageQualityProductionMigrationFiles, 0);
 }
 
 function printPlan(plan) {
@@ -245,6 +254,24 @@ async function assertImageQualityDevelopmentTarget(connection) {
   const actualSchema = String(rows?.[0]?.schemaName || "");
   if (actualSchema !== expectedSchema) {
     throw new Error(`Refusing 0206/0207: connected schema ${actualSchema || "(none)"} does not equal WEBDEV_DEVELOPMENT_SCHEMA`);
+  }
+}
+
+async function assertImageQualityProductionTarget(connection) {
+  if (process.env.NODE_ENV !== "production") {
+    throw new Error("0206/0207 production release requires NODE_ENV=production");
+  }
+  if (process.env.ALLOW_IMAGE_QUALITY_PRODUCTION_MIGRATIONS !== "true") {
+    throw new Error("0206/0207 require ALLOW_IMAGE_QUALITY_PRODUCTION_MIGRATIONS=true");
+  }
+  const expectedSchema = String(process.env.QINGDAO_PRODUCTION_SCHEMA || "").trim();
+  if (!/^[A-Za-z0-9_]+$/.test(expectedSchema)) {
+    throw new Error("0206/0207 require a safe QINGDAO_PRODUCTION_SCHEMA identifier");
+  }
+  const [rows] = await connection.query("SELECT DATABASE() AS schemaName");
+  const actualSchema = String(rows?.[0]?.schemaName || "");
+  if (actualSchema !== expectedSchema) {
+    throw new Error(`Refusing 0206/0207: connected schema ${actualSchema || "(none)"} does not equal QINGDAO_PRODUCTION_SCHEMA`);
   }
 }
 
@@ -457,14 +484,17 @@ export async function acquireMigrationLock(
 async function main() {
   const dedicatedCallerBindingPlan = args.has("--apply-external-knowledge-caller-bindings");
   const imageQualityDevelopmentPlan = args.has("--apply-image-quality-development");
-  if (dedicatedCallerBindingPlan && imageQualityDevelopmentPlan) {
+  const imageQualityProductionPlan = args.has("--apply-image-quality-production");
+  if ([dedicatedCallerBindingPlan, imageQualityDevelopmentPlan, imageQualityProductionPlan].filter(Boolean).length > 1) {
     throw new Error("Select exactly one dedicated migration plan");
   }
   const plan = dedicatedCallerBindingPlan
     ? loadExternalKnowledgeCallerBindingMigrationPlan()
     : imageQualityDevelopmentPlan
       ? loadImageQualityDevelopmentMigrationPlan()
-      : loadMigrationPlan();
+      : imageQualityProductionPlan
+        ? loadImageQualityProductionMigrationPlan()
+        : loadMigrationPlan();
   if (args.has("--plan")) return printPlan(plan);
   assertExecutionEnvironment();
 
@@ -475,6 +505,7 @@ async function main() {
   let releaseLock;
   try {
     if (imageQualityDevelopmentPlan) await assertImageQualityDevelopmentTarget(connection);
+    if (imageQualityProductionPlan) await assertImageQualityProductionTarget(connection);
     releaseLock = await acquireMigrationLock(connection);
     await ensureLedger(connection);
     await importLegacyJournal(connection, plan);

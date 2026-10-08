@@ -1,7 +1,9 @@
 -- Phase D image workflow dependency digests and exportable approved snapshots.
--- Draft only: this additive migration is intentionally NOT registered or executed by
--- this task. It does not modify existing sessions, Listing, acquisition, or
--- knowledge tables; it performs no backfill, data mutation, provider call, or model invocation.
+-- DEDICATED RELEASE ONLY: this additive migration is intentionally excluded from
+-- the default migration plan. It may run only through the explicit 0206/0207
+-- production gate after deployment-owner authorization. It does not modify existing
+-- sessions, Listing, acquisition, or knowledge tables; it performs no backfill,
+-- provider call, or model invocation.
 --
 -- Apply only after the integration prerequisites in
 -- docs/validation/image-workflow-phase-d-integration.md are approved.
