@@ -34,12 +34,13 @@ describe("领星同步页面ASIN日数据契约", () => {
     expect(pageSource).toContain("每天北京时间 17:00");
     expect(pageSource).toContain("每天北京时间 17:20");
     expect(pageSource).toContain("每天北京时间 17:40");
-    expect(pageSource).toContain("每周一北京时间 17:10");
+    expect(pageSource).toContain("每周一北京时间 16:10");
     expect(pageSource).toContain("在皇帝定时任务管理");
     expect(pageSource).toContain('window.location.href = "/emperor/scheduled"');
     expect(pageSource).not.toContain("lingxingSync.setScheduleEnabled");
     expect(pageSource).toContain("校验通过自动追加历史事实");
-    expect(pageSource).toContain("FBA库存快照与广告关键词历史事实仅在完整性校验通过后自动追加");
+    expect(pageSource).toContain("仅在全店覆盖、分页完整、身份唯一且指标有效时自动追加库存事实");
+    expect(pageSource).toContain("仅在全Profile覆盖、分页完整、身份唯一且指标有效时自动追加关键词历史事实");
   });
 
   it("明确同步与下载仅保留所选时间内有经营、广告或表现数据的商品", () => {

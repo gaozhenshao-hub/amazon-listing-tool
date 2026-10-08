@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { AppError, APP_ERROR_CODES } from "@shared/_core/errors";
 import { protectedProcedure, router } from "../../../_core/trpc";
 import {
   actorFromContext,
@@ -571,7 +572,12 @@ export const emperorConversationsRouter = router({
     const reject = async (reasonCode: string, message: string) => {
       await completeExecutionRecoveryRequest({ recoveryId: claim.request.recoveryId, status: "rejected", reasonCode, result: { currentStateVersion: step.stateVersion, status: step.status } });
       await appendConversationLifecycleStage({ traceId, stepId: input.stepId, actorUserId: ctx.user.id, stage: "recovery_rejected", payload: { recoveryId: claim.request.recoveryId, reasonCode } });
-      throw new TRPCError({ code: "PRECONDITION_FAILED", message });
+      throw new AppError({
+        code: APP_ERROR_CODES.PRECONDITION_FAILED,
+        statusCode: 412,
+        message,
+        details: { reasonCode },
+      });
     };
     const contextBlock = contextRecoveryBlock(invalidatedSources as Array<{ sourceType: string; sourceKey: string }>);
     if (contextBlock.blocked) {

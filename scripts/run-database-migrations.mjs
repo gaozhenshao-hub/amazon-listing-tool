@@ -133,6 +133,14 @@ const unreleasedDraftMigrationFiles = new Set([
   "0207_image_asset_trust_ledger.sql",
 ]);
 
+// Separate from the general release train: only a verified WebDev development
+// schema may opt into these two additive migrations. Production never reaches
+// this plan implicitly.
+const imageQualityDevelopmentMigrationFiles = [
+  "0206_image_workflow_version_snapshots.sql",
+  "0207_image_asset_trust_ledger.sql",
+];
+
 // These migrations were atomically released to the established Qingdao schema
 // before app_schema_migrations existed for this release train. They remain
 // immutable source artifacts but must never be replayed by the current runner.
@@ -204,6 +212,10 @@ export function loadExternalKnowledgeCallerBindingMigrationPlan() {
   return migrationEntries(dedicatedMigrationFiles, 0);
 }
 
+export function loadImageQualityDevelopmentMigrationPlan() {
+  return migrationEntries(imageQualityDevelopmentMigrationFiles, 0);
+}
+
 function printPlan(plan) {
   for (const item of plan) {
     console.log(`${String(item.order + 1).padStart(3, "0")}  ${item.fileName}  ${item.checksum.slice(0, 12)}`);
@@ -215,6 +227,24 @@ function assertExecutionEnvironment() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
   if (process.env.NODE_ENV === "production" && process.env.ALLOW_PRODUCTION_MIGRATIONS !== "true") {
     throw new Error("Production migrations require ALLOW_PRODUCTION_MIGRATIONS=true in the one-off migration process");
+  }
+}
+
+async function assertImageQualityDevelopmentTarget(connection) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("0206/0207 are development-only here; production migration requires a separately reviewed release path");
+  }
+  if (process.env.ALLOW_IMAGE_QUALITY_DEVELOPMENT_MIGRATIONS !== "true") {
+    throw new Error("0206/0207 require ALLOW_IMAGE_QUALITY_DEVELOPMENT_MIGRATIONS=true");
+  }
+  const expectedSchema = String(process.env.WEBDEV_DEVELOPMENT_SCHEMA || "").trim();
+  if (!/^[A-Za-z0-9_]+$/.test(expectedSchema)) {
+    throw new Error("0206/0207 require a safe WEBDEV_DEVELOPMENT_SCHEMA identifier");
+  }
+  const [rows] = await connection.query("SELECT DATABASE() AS schemaName");
+  const actualSchema = String(rows?.[0]?.schemaName || "");
+  if (actualSchema !== expectedSchema) {
+    throw new Error(`Refusing 0206/0207: connected schema ${actualSchema || "(none)"} does not equal WEBDEV_DEVELOPMENT_SCHEMA`);
   }
 }
 
@@ -426,9 +456,15 @@ export async function acquireMigrationLock(
 
 async function main() {
   const dedicatedCallerBindingPlan = args.has("--apply-external-knowledge-caller-bindings");
+  const imageQualityDevelopmentPlan = args.has("--apply-image-quality-development");
+  if (dedicatedCallerBindingPlan && imageQualityDevelopmentPlan) {
+    throw new Error("Select exactly one dedicated migration plan");
+  }
   const plan = dedicatedCallerBindingPlan
     ? loadExternalKnowledgeCallerBindingMigrationPlan()
-    : loadMigrationPlan();
+    : imageQualityDevelopmentPlan
+      ? loadImageQualityDevelopmentMigrationPlan()
+      : loadMigrationPlan();
   if (args.has("--plan")) return printPlan(plan);
   assertExecutionEnvironment();
 
@@ -438,6 +474,7 @@ async function main() {
   });
   let releaseLock;
   try {
+    if (imageQualityDevelopmentPlan) await assertImageQualityDevelopmentTarget(connection);
     releaseLock = await acquireMigrationLock(connection);
     await ensureLedger(connection);
     await importLegacyJournal(connection, plan);

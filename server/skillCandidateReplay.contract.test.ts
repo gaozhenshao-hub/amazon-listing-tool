@@ -22,11 +22,12 @@ describe("皇帝候选版本回放评测契约", () => {
     expect(service).toContain('"replay", "completed"');
   });
 
-  it("Skill运行器不将回放计入正常调用量，门禁只统计人工评测", () => {
+  it("Skill运行器以evaluation preset隔离回放调用量，门禁只统计人工评测", () => {
     const runner = read("server/domains/ai_os/services/skillRunner.ts");
     const service = read("server/domains/ai_os/services/skillQualityGates.ts");
-    expect(runner).toContain('if (input.evaluationMode !== "replay")');
-    expect(runner).toContain("quality_replay:");
+    expect(runner).toContain('executionPreset !== "evaluation"');
+    expect(runner).toContain("UPDATE emperor_skills SET callCount = callCount + 1");
+    expect(service).toContain('executionPreset: "evaluation"');
     expect(service).toContain("evaluationMode='manual'");
   });
 

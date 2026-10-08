@@ -1,81 +1,31 @@
 /**
- * Tests for 4 new features:
- * 1. Anti-bot module (antiBot.ts)
- * 2. Seller Sprite CSV importer (sellerSpriteImporter.ts)
- * 3. Manual input form (applySellerSpriteData API)
- * 4. Image AI analyzer (imageAiAnalyzer.ts)
+ * Tests for active Product Ops features and controlled acquisition routing:
+ * 1. Seller Sprite CSV importer
+ * 2. Manual Seller Sprite data application
+ * 3. Image AI analyzer
+ * 4. Managed Provider Job and Heartbeat acquisition flow
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { repoPath } from "./testPaths";
 
-const serverFilePath = (fileName: string) => repoPath("server", fileName);
 const routerFilePath = (fileName: string) => repoPath("server/routers", fileName);
 
 // ═══════════════════════════════════════════════════════
-// 1. Anti-Bot Module Tests
+// 1. Retired Crawler Protection
 // ═══════════════════════════════════════════════════════
 
-describe("Anti-Bot Module", () => {
-  it("should export smartFetch and helper functions", async () => {
-    const antiBot = await import("./antiBot");
-    expect(antiBot.smartFetch).toBeDefined();
-    expect(typeof antiBot.smartFetch).toBe("function");
-    expect(antiBot.generateFingerprint).toBeDefined();
-    expect(typeof antiBot.generateFingerprint).toBe("function");
-    expect(antiBot.checkForCaptcha).toBeDefined();
-    expect(typeof antiBot.checkForCaptcha).toBe("function");
-    expect(antiBot.randomDelay).toBeDefined();
-    expect(typeof antiBot.randomDelay).toBe("function");
-  });
-
-  it("generateFingerprint should return a valid fingerprint", async () => {
-    const { generateFingerprint } = await import("./antiBot");
-    const fp = generateFingerprint();
-    expect(typeof fp.userAgent).toBe("string");
-    expect(fp.userAgent.length).toBeGreaterThan(20);
-    expect(fp.userAgent).toMatch(/Mozilla|Chrome|Safari|Firefox|Edge/);
-    expect(typeof fp.isMobile).toBe("boolean");
-    expect(typeof fp.headers).toBe("object");
-  });
-
-  it("generateFingerprint should return different fingerprints", async () => {
-    const { generateFingerprint } = await import("./antiBot");
-    const fps = new Set<string>();
-    for (let i = 0; i < 20; i++) {
-      fps.add(generateFingerprint().userAgent);
+describe("Retired crawler protection", () => {
+  it("keeps the retired implementation absent and acquisition under managed jobs", async () => {
+    const fs = await import("node:fs");
+    const retiredFiles = ["scraper.ts", "crawlerEngine.ts", "antiBot.ts"];
+    for (const fileName of retiredFiles) {
+      expect(fs.existsSync(repoPath("server", fileName))).toBe(false);
     }
-    // Should have at least 3 different UAs in 20 calls
-    expect(fps.size).toBeGreaterThanOrEqual(3);
-  });
 
-  it("checkForCaptcha should detect CAPTCHA pages", async () => {
-    const { checkForCaptcha } = await import("./antiBot");
-    
-    // Normal page
-    const normalResult = checkForCaptcha("<html><body><h1>Product</h1></body></html>");
-    expect(normalResult.isCaptcha).toBe(false);
-    
-    // CAPTCHA page
-    const captchaResult = checkForCaptcha('<html><body><form action="/errors/validateCaptcha">Enter captcha</form></body></html>');
-    expect(captchaResult.isCaptcha).toBe(true);
-    
-    // Robot check - returns isBlocked instead of isCaptcha
-    const robotResult = checkForCaptcha('<html><body><p>Sorry, we just need to make sure you\'re not a robot</p></body></html>');
-    expect(robotResult.isBlocked).toBe(true);
-  });
-
-  it("checkForCaptcha should not false-positive on normal content", async () => {
-    const { checkForCaptcha } = await import("./antiBot");
-    const normalHtml = `
-      <html><body>
-        <h1>Bluetooth Earbuds</h1>
-        <div id="productTitle">Great Product</div>
-        <div id="feature-bullets"><ul><li>Feature 1</li></ul></div>
-        <div id="aplus">A+ Content here</div>
-      </body></html>
-    `;
-    const result = checkForCaptcha(normalHtml);
-    expect(result.isCaptcha).toBe(false);
+    const crawlerRoute = fs.readFileSync(routerFilePath("crawler.ts"), "utf-8");
+    expect(crawlerRoute).toContain("startAmazonMonitorJob");
+    expect(crawlerRoute).toContain("createHeartbeatJob");
+    expect(crawlerRoute).not.toContain("setInterval(");
   });
 });
 
@@ -209,29 +159,14 @@ describe("Image AI Analyzer", () => {
 // ═══════════════════════════════════════════════════════
 
 describe("ProductOps Router - New Procedures", () => {
-  it("should have parseSellerSpriteCSV procedure", async () => {
+  it("should expose active Seller Sprite and image-analysis procedures", async () => {
     const { productOpsRouter } = await import("./routers/productOps");
     const procedures = Object.keys((productOpsRouter as any)._def.procedures || {});
     expect(procedures).toContain("parseSellerSpriteCSV");
-  });
-
-  it("should have applySellerSpriteData procedure", async () => {
-    const { productOpsRouter } = await import("./routers/productOps");
-    const procedures = Object.keys((productOpsRouter as any)._def.procedures || {});
     expect(procedures).toContain("applySellerSpriteData");
-  });
-
-  it("should have analyzeProductImages procedure", async () => {
-    const { productOpsRouter } = await import("./routers/productOps");
-    const procedures = Object.keys((productOpsRouter as any)._def.procedures || {});
     expect(procedures).toContain("analyzeProductImages");
-  });
-
-  it("should have correct total procedure count (88)", async () => {
-    const { productOpsRouter } = await import("./routers/productOps");
-    const procedures = Object.keys((productOpsRouter as any)._def.procedures || {});
     expect(procedures.length).toBe(100);
-  });
+  }, 15_000);
 });
 
 // ═══════════════════════════════════════════════════════
@@ -239,22 +174,6 @@ describe("ProductOps Router - New Procedures", () => {
 // ═══════════════════════════════════════════════════════
 
 describe("Data Flow Integration", () => {
-  it("scraper should use antiBot module", async () => {
-    const scraperCode = await import("fs").then(fs => 
-      fs.readFileSync(serverFilePath("scraper.ts"), "utf-8")
-    );
-    expect(scraperCode).toContain("antiBot");
-    expect(scraperCode).toContain("smartFetch");
-  });
-
-  it("crawlerEngine should use antiBot module", async () => {
-    const crawlerCode = await import("fs").then(fs => 
-      fs.readFileSync(serverFilePath("crawlerEngine.ts"), "utf-8")
-    );
-    expect(crawlerCode).toContain("antiBot");
-    expect(crawlerCode).toContain("smartFetch");
-  });
-
   it("conversionDataCollector should not have createFallbackData generating fake data", async () => {
     const collectorCode = await import("fs").then(fs => 
       fs.readFileSync(routerFilePath("conversionDataCollector.ts"), "utf-8")

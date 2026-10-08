@@ -47,6 +47,21 @@ describe("database migration safety", () => {
     expect(plan[0]?.official).toBe(false);
   });
 
+  it("keeps 0206/0207 out of the default plan but exposes their ordered development-only plan", async () => {
+    const module = await import("../scripts/run-database-migrations.mjs");
+    const plan = module.loadImageQualityDevelopmentMigrationPlan();
+    expect(plan.map((item: any) => item.fileName)).toEqual([
+      "0206_image_workflow_version_snapshots.sql",
+      "0207_image_asset_trust_ledger.sql",
+    ]);
+    expect(plan.every((item: any) => item.official === false)).toBe(true);
+    expect(plan.every((item: any) => /^[a-f0-9]{64}$/.test(item.checksum))).toBe(true);
+    const source = fs.readFileSync(repoPath("scripts/run-database-migrations.mjs"), "utf8");
+    expect(source).toContain("ALLOW_IMAGE_QUALITY_DEVELOPMENT_MIGRATIONS");
+    expect(source).toContain("WEBDEV_DEVELOPMENT_SCHEMA");
+    expect(source).toContain("--apply-image-quality-development");
+  });
+
   it("creates Emperor registries before governance migrations depend on them", () => {
     const sql = fs.readFileSync(repoPath("drizzle/0102a_emperor_core_registry.sql"), "utf8");
     for (const tableName of [

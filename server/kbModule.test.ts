@@ -144,16 +144,26 @@ describe("KB - File structure", () => {
 // ============================================================
 
 describe("KB - AI prompts in routers", () => {
-  it("kbProducts should contain product innovation AI analysis", () => {
+  it("kbProducts should delegate product acquisition and analysis through the controlled pipeline", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/kbProducts.ts"), "utf-8");
-    expect(code).toContain("invokeBusinessSkill");
-    expect(code).toContain("创意");
+    expect(code).toContain("createProductAcquisition");
+    expect(code).toContain("startAmazonAcquisitionJob");
+    expect(code).toContain('consumerType: "kb_product"');
+    expect(code).toContain("kbProductConsumerRef");
+    expect(code).toContain("KB_PRODUCT_ACQUISITION_CAPABILITIES");
+    expect(code).toContain('cachePolicy: "prefer_cache"');
+    expect(code).toContain("maxChargeUsd");
   });
 
-  it("kbListings should contain listing copywriting AI analysis", () => {
+  it("kbListings should delegate listing acquisition and analysis through the controlled pipeline", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/kbListings.ts"), "utf-8");
-    expect(code).toContain("invokeBusinessSkill");
-    expect(code).toContain("文案");
+    expect(code).toContain("createListingAcquisition");
+    expect(code).toContain("startAmazonAcquisitionJob");
+    expect(code).toContain('consumerType: "kb_listing"');
+    expect(code).toContain("kbListingConsumerRef");
+    expect(code).toContain("KB_LISTING_ACQUISITION_CAPABILITIES");
+    expect(code).toContain('cachePolicy: "prefer_cache"');
+    expect(code).toContain("maxChargeUsd");
   });
 
   it("kbImages should contain image visual AI analysis with 4 dimensions", () => {

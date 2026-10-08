@@ -8,6 +8,24 @@ import { appErrorResponse, normalizeAppError, toTrpcError } from "./_core/appErr
 import { requestContextMiddleware } from "./_core/requestContext";
 
 describe("application error contract", () => {
+  const createResponseMock = () => {
+    const headers = new Map<string, string>();
+    return {
+      locals: {},
+      statusCode: 200,
+      headersSent: false,
+      setHeader: vi.fn((name: string, value: string) => {
+        headers.set(name.toLowerCase(), value);
+      }),
+      hasHeader: vi.fn((name: string) => headers.has(name.toLowerCase())),
+      writeHead: vi.fn(function (this: { headersSent: boolean }) {
+        this.headersSent = true;
+        return this;
+      }),
+      on: vi.fn(),
+    };
+  };
+
   it("preserves structured codes and migration details", () => {
     const error = retiredFeatureError("旧同步", "dataImport.uploadAndParse", {
       replacementProcedure: "dataImport.uploadAndParse",
@@ -43,10 +61,7 @@ describe("application error contract", () => {
   it("accepts a valid request id and returns it on the response", () => {
     const requestId = "client-request-12345678";
     const req = { header: vi.fn(() => requestId) } as any;
-    const res = {
-      locals: {},
-      setHeader: vi.fn(),
-    } as any;
+    const res = createResponseMock();
     const next = vi.fn();
 
     requestContextMiddleware(req, res, next);
@@ -58,7 +73,7 @@ describe("application error contract", () => {
 
   it("replaces invalid incoming request ids", () => {
     const req = { header: vi.fn(() => "bad id") } as any;
-    const res = { locals: {}, setHeader: vi.fn() } as any;
+    const res = createResponseMock();
 
     requestContextMiddleware(req, res, vi.fn());
 

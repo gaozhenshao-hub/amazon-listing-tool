@@ -107,6 +107,20 @@ describe("image workflow Phase D version policy", () => {
       .toBe(immutableDigest({ first: 1, second: [2, { a: null, z: true }] }));
   });
 
+  it("keeps persisted dependency digests independent of transient actor and CAS metadata", () => {
+    const persistedInput = {
+      ...scope,
+      step: 0 as const,
+      content: { research: "human-confirmed" },
+      contentRevision: 1,
+      contentOrigin: "human_confirmed" as const,
+      sourceConfirmed: true,
+    };
+    const confirmed = buildHumanConfirmedStageDraft({ ...persistedInput, actorId: 17, expectedScopeRevision: 8 } as any, []);
+    const rehydrated = buildHumanConfirmedStageDraft(persistedInput, []);
+    expect(confirmed.dependencyDigest).toBe(rehydrated.dependencyDigest);
+  });
+
   it("refuses AI drafts, unreviewed assets, and legacy unclassified URLs before a confirmation snapshot exists", () => {
     expect(() => buildHumanConfirmedStageDraft({
       ...scope,
@@ -286,5 +300,13 @@ describe("image workflow Phase D version policy", () => {
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS `image_workflow_snapshot_state_events`");
     expect(migration).not.toMatch(/^\s*(?:ALTER|DROP|INSERT|UPDATE|DELETE)\b/imu);
     expect(migration).not.toMatch(/\b(?:listing_|acquisition_|kb_|knowledge_)\w*/iu);
+  });
+
+  it("uses a TiDB-compatible derived latest-event join for version-state reads", () => {
+    const root = path.resolve(import.meta.dirname, "../../../..");
+    const service = fs.readFileSync(path.join(root, "server/domains/image/services/imageWorkflowVersionPolicy.ts"), "utf8");
+    expect(service).toContain("MAX(id) AS latestEventId");
+    expect(service).toContain("latestEvent.snapshotDigest = s.snapshotDigest");
+    expect(service).not.toMatch(/ON\s+e\.id\s*=\s*\(\s*SELECT\s+latest\.id/iu);
   });
 });

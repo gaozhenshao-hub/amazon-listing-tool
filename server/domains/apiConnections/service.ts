@@ -17,6 +17,7 @@ import {
   type ApiConnectionCode,
 } from "./contracts";
 import { verifyApifyAccountToken } from "./apifyAccountHealth";
+import { safeHttpRequest } from "../../infrastructure/http/safeHttpClient";
 
 type ValidationStatus = "not_checked" | "verified" | "configuration_valid" | "pending_provider_contract" | "failed";
 type StoredSecretRow = Pick<typeof emperorToolSecrets.$inferSelect, "slug" | "status" | "keyVersion" | "rotatedAt" | "updatedAt" | "metadata">;
@@ -187,7 +188,7 @@ export async function validateApiConnection(input: { connection: ApiConnectionCo
       await verifyApifyAccountToken(token);
     } else {
       const key = await resolveToolSecretReference("secret://integration.lingxing.mcp_key", null);
-      const response = await fetch("https://openmcp.lingxing.com/mcp-servers/lingxing-mcp", {
+      const response = await safeHttpRequest("https://openmcp.lingxing.com/mcp-servers/lingxing-mcp", {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "X-Mcp-Key": key },
         body: JSON.stringify({
@@ -196,7 +197,9 @@ export async function validateApiConnection(input: { connection: ApiConnectionCo
           method: "initialize",
           params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "amazon-listing-tool", version: "connection-console" } },
         }),
-        signal: AbortSignal.timeout(10_000),
+        timeoutMs: 10_000,
+        allowedHosts: ["openmcp.lingxing.com"],
+        auditContext: { operation: "api_connections.lingxing_mcp_health" },
       });
       if (!response.ok) throw new Error(`lingxing_http_${response.status}`);
     }

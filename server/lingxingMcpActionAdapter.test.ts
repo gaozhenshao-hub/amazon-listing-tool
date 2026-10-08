@@ -3,7 +3,7 @@ import { buildLingxingActionInvocation, unwrapLingxingMcpEnvelope } from "./doma
 
 describe("领星MCP新版action协议适配", () => {
   const schema = {
-    content: [{ type: "text", text: JSON.stringify({ data: { toolId: "get_my_sids", catalogVersion: "catalog-v3", schemaVersion: "get_my_sids-v1", toolType: "read" } }) }],
+    content: [{ type: "text", text: JSON.stringify({ data: { toolId: "get_my_sids", catalogVersion: "catalog-v3", schemaVersion: "get_my_sids-v1", toolVersionId: 1, toolType: "read" } }) }],
   };
 
   it("解析JSON-RPC文本封装中的官方Schema", () => {
@@ -13,7 +13,7 @@ describe("领星MCP新版action协议适配", () => {
   it("只为白名单只读能力构造action请求", () => {
     expect(buildLingxingActionInvocation("get_my_sids", {}, schema)).toEqual({
       toolName: "action",
-      arguments: { toolId: "get_my_sids", catalogVersion: "catalog-v3", schemaVersion: "get_my_sids-v1", paramsJson: "{}" },
+      arguments: { toolId: "get_my_sids", catalogVersion: "catalog-v3", schemaVersion: "get_my_sids-v1", toolVersionId: 1, params: {} },
     });
   });
 

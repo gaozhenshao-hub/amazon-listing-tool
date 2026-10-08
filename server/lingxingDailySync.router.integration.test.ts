@@ -25,6 +25,27 @@ function tableName(table: any) {
   return table?.[Symbol.for("drizzle:Name")];
 }
 
+function workspacePredicateMatches(condition: any, workspaceId: number) {
+  let hasWorkspacePredicate = false;
+  let matchesWorkspace = false;
+  const visit = (node: any) => {
+    if (!node || typeof node !== "object") return;
+    const chunks = node.queryChunks;
+    if (Array.isArray(chunks)) {
+      const hasWorkspaceColumn = chunks.some((chunk: any) => chunk?.name === "workspaceId");
+      if (hasWorkspaceColumn) {
+        hasWorkspacePredicate = true;
+        if (chunks.some((chunk: any) => chunk?.constructor?.name === "Param" && chunk.value === workspaceId)) matchesWorkspace = true;
+      }
+      chunks.forEach(visit);
+    }
+  };
+  visit(condition);
+  // The legacy mock deliberately permits mutations with no workspace predicate so the
+  // cross-workspace test fails if a future change drops the tenant condition.
+  return !hasWorkspacePredicate || matchesWorkspace;
+}
+
 function queryResult(rows: any[], fields?: Record<string, unknown>) {
   const projectedRows = fields
     ? rows.map((row) => Object.fromEntries(Object.keys(fields).map((key) => [key, row[key]])))
@@ -85,14 +106,15 @@ const db = {
   }),
   update: (table: any) => ({
     set: (patch: any) => ({
-      where: async () => {
+      where: async (condition: any) => {
         const name = tableName(table);
-        if (name === "ops_external_sync_batches" && state.batch) Object.assign(state.batch, patch);
-        if (name === "data_imports") state.imports.forEach((item) => Object.assign(item, patch));
-        if (name === "ops_external_sync_rows" && patch.selected === 0) state.rows.forEach((row) => { row.selected = 0; row.rowStatus = "skipped"; });
-        if (name === "ops_external_sync_rows" && patch.selected === 1) { state.selectedRowUpdateCalls += 1; state.rows.forEach((row) => { row.selected = 1; }); }
-        if (name === "ops_external_sync_rows" && patch.rowStatus) state.rows.forEach((row) => { row.rowStatus = patch.rowStatus; });
-        if (name === "ops_lingxing_sync_schedules" && state.schedules[0]) Object.assign(state.schedules[0], patch);
+        if (name === "ops_external_sync_batches" && state.batch && workspacePredicateMatches(condition, state.batch.workspaceId ?? 1)) Object.assign(state.batch, patch);
+        if (name === "data_imports") state.imports.filter((item) => workspacePredicateMatches(condition, item.workspaceId ?? 1)).forEach((item) => Object.assign(item, patch));
+        const rows = state.rows.filter((row) => workspacePredicateMatches(condition, row.workspaceId ?? 1));
+        if (name === "ops_external_sync_rows" && patch.selected === 0) rows.forEach((row) => { row.selected = 0; row.rowStatus = "skipped"; });
+        if (name === "ops_external_sync_rows" && patch.selected === 1) { state.selectedRowUpdateCalls += 1; rows.forEach((row) => { row.selected = 1; }); }
+        if (name === "ops_external_sync_rows" && patch.rowStatus) rows.forEach((row) => { row.rowStatus = patch.rowStatus; });
+        if (name === "ops_lingxing_sync_schedules" && state.schedules[0] && workspacePredicateMatches(condition, state.schedules[0].workspaceId ?? 1)) Object.assign(state.schedules[0], patch);
       },
     }),
   }),
@@ -297,6 +319,17 @@ describe("领星ASIN日数据同步路由", () => {
     expect(state.toolCallCount).toBe(0);
   });
 
+  it("即使不可信查询层返回其他workspace批次，确认也不得修改其批次或草稿行", async () => {
+    state.batch = { id: 4242, workspaceId: 1, status: "ready_for_review", dataDomain: "product_performance", summary: {} };
+    state.rows = [{ id: 91, workspaceId: 1, batchId: 4242, selected: 0, rowStatus: "new", validationErrors: [] }];
+    const caller = lingxingSyncRouter.createCaller({ user: { id: 2, role: "super_admin", defaultWorkspaceId: 2, organizationId: null } } as any);
+
+    await expect(caller.confirm({ batchId: 4242, selectedRowIds: [91], note: "跨workspace越权尝试" })).resolves.toMatchObject({ success: true });
+
+    expect(state.batch).toMatchObject({ workspaceId: 1, status: "ready_for_review" });
+    expect(state.rows).toEqual([expect.objectContaining({ workspaceId: 1, selected: 0, rowStatus: "new" })]);
+  });
+
   it("预览、确认和应用仅追加可追溯日快照，过滤占位ASIN且不写周度产品表", async () => {
     const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
     const preview = await caller.createPreview({ dataDomain: "product_performance_daily", scope: { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-10", marketplace: "US" } });
@@ -314,13 +347,23 @@ describe("领星ASIN日数据同步路由", () => {
     expect(state.confirmations.map((item) => item.action)).toEqual(["confirm", "apply"]);
   });
 
-  it("多页预览累积有效ASIN并在5000行上限触发时记录分页摘要", async () => {
+  it("多页预览累积有效ASIN并按每店×日期窗口5000行上限记录覆盖摘要", async () => {
     state.largePageMode = true;
     const caller = lingxingSyncRouter.createCaller({ user: { id: 1, role: "super_admin", defaultWorkspaceId: 1, organizationId: null } } as any);
     const preview = await caller.createPreview({ dataDomain: "product_performance_daily", scope: { storeId: "7392", startDate: "2026-08-10", endDate: "2026-08-12", marketplace: "US" } });
-    expect(preview.totalRows).toBe(5000);
-    expect(state.rows).toHaveLength(5000);
-    expect(state.batch.summary).toMatchObject({ totalRead: 5000, placeholderRows: 0, capped: true, pageTruncations: 2, datesRead: 3 });
+    expect(preview.totalRows).toBe(6000);
+    expect(state.rows).toHaveLength(6000);
+    expect(state.batch.summary).toMatchObject({
+      totalRead: 6000,
+      placeholderRows: 0,
+      capped: false,
+      pageTruncations: 3,
+      datesRead: 3,
+      storesExpected: 1,
+      storesRead: 0,
+      storeDateWindowsExpected: 3,
+      storeDateWindowsRead: 0,
+    });
   });
 
   it("单个MCP窗口失败时保留其他日期草稿并记录不可自动应用的失败摘要", async () => {

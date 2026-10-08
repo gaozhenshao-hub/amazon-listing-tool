@@ -622,7 +622,10 @@ export const lingxingSyncRouter = router({
       lastBatchId: existing?.lastBatchId ?? null, lastError: existing?.lastError ?? null,
     };
     let scheduleId = existing?.id;
-    if (existing) await db.update(opsLingxingSyncSchedules).set(payload).where(eq(opsLingxingSyncSchedules.id, existing.id));
+    if (existing) await db.update(opsLingxingSyncSchedules).set(payload).where(and(
+      eq(opsLingxingSyncSchedules.workspaceId, workspaceId),
+      eq(opsLingxingSyncSchedules.id, existing.id),
+    ));
     else {
       const [created] = await db.insert(opsLingxingSyncSchedules).values(payload).$returningId();
       scheduleId = created.id;
@@ -1030,7 +1033,10 @@ export const lingxingSyncRouter = router({
         metadata: { batchId, dataDomain: input.dataDomain, rawResponseHash, toolRunId, traceId: runId, externalized: true },
         failOnError: true,
       });
-      await db.update(opsExternalSyncBatches).set({ rawSnapshot: { ...object(compactRawSnapshot), rawArtifactRef: artifact?.ref || null, rawArtifactUri: null } as any }).where(eq(opsExternalSyncBatches.id, batchId));
+      await db.update(opsExternalSyncBatches).set({ rawSnapshot: { ...object(compactRawSnapshot), rawArtifactRef: artifact?.ref || null, rawArtifactUri: null } as any }).where(and(
+        eq(opsExternalSyncBatches.workspaceId, workspaceId),
+        eq(opsExternalSyncBatches.id, batchId),
+      ));
     }
     const adMcpAdvertisedAsins = isAdMcpFactDomain(input.dataDomain) && input.dataDomain === "ad_product_mcp"
       ? [...new Set(sourceRows.map((source) => asText(source.asin || source.advertised_asin).toUpperCase()).filter(Boolean))]
@@ -1210,7 +1216,10 @@ export const lingxingSyncRouter = router({
     for (let offset = 0; offset < rows.length; offset += 250) {
       await db.insert(opsExternalSyncRows).values(rows.slice(offset, offset + 250) as any);
     }
-    await db.update(opsExternalSyncBatches).set({ summary, status: previewBatchStatusFor(rows.length) }).where(eq(opsExternalSyncBatches.id, batchId));
+    await db.update(opsExternalSyncBatches).set({ summary, status: previewBatchStatusFor(rows.length) }).where(and(
+      eq(opsExternalSyncBatches.workspaceId, workspaceId),
+      eq(opsExternalSyncBatches.id, batchId),
+    ));
     return { batchId, totalRows: rows.length, toolRunId, traceId: runId };
   }),
 
@@ -1313,7 +1322,10 @@ export const lingxingSyncRouter = router({
       const selectedRowIds = input.selectedRowIds.slice(offset, offset + SELECTED_ROW_UPDATE_CHUNK_SIZE);
       await db.update(opsExternalSyncRows).set({ selected: 1 }).where(and(eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.batchId, input.batchId), inArray(opsExternalSyncRows.id, selectedRowIds)));
     }
-    await db.update(opsExternalSyncBatches).set({ status: "confirmed", reviewedAt: new Date(), reviewedBy: ctx.user.id }).where(eq(opsExternalSyncBatches.id, input.batchId));
+    await db.update(opsExternalSyncBatches).set({ status: "confirmed", reviewedAt: new Date(), reviewedBy: ctx.user.id }).where(and(
+      eq(opsExternalSyncBatches.workspaceId, workspaceId),
+      eq(opsExternalSyncBatches.id, input.batchId),
+    ));
     return { success: true, nextStep: "待应用到业务数据链路" };
   }),
 
@@ -1331,7 +1343,10 @@ export const lingxingSyncRouter = router({
     const periodEnd = asText(scope.endDate, periodStart);
     const reviewIssue = ["product_performance_daily", "fba_inventory", "ad_keyword"].includes(batch.dataDomain) ? scheduledAutoApplyReviewIssue(batch as any) : null;
     if (reviewIssue) {
-      await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", reviewedAt: null, reviewedBy: null }).where(eq(opsExternalSyncBatches.id, input.batchId));
+      await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", reviewedAt: null, reviewedBy: null }).where(and(
+        eq(opsExternalSyncBatches.workspaceId, workspaceId),
+        eq(opsExternalSyncBatches.id, input.batchId),
+      ));
       throw new Error(`该异常批次不能应用：${reviewIssue.label}。批次已回退待复核，请重新读取完整窗口。`);
     }
     if (batch.dataDomain === "product_performance_daily") {
@@ -1375,7 +1390,10 @@ export const lingxingSyncRouter = router({
           reviewedBy: null,
           errorMessage: duplicateMessage,
           summary: { ...object(batch.summary), applyBlocked: "duplicate_daily_snapshot_identity", duplicateDailySnapshotIdentities: duplicateIdentityKeys, duplicateDailySnapshotCount: duplicateIdentityKeys.length },
-        }).where(eq(opsExternalSyncBatches.id, input.batchId));
+        }).where(and(
+          eq(opsExternalSyncBatches.workspaceId, workspaceId),
+          eq(opsExternalSyncBatches.id, input.batchId),
+        ));
         throw new Error(`日快照身份重复：${duplicateIdentityKeys.length}条；批次已回退为待复核，未创建导入记录。`);
       }
     }
@@ -1396,7 +1414,10 @@ export const lingxingSyncRouter = router({
         const duplicates = [...duplicateKeys].sort();
         const message = `库存快照身份重复或无效：${duplicates.length}条。已回退为待复核，未创建导入记录。`;
         await db.update(opsExternalSyncRows).set({ rowStatus: "needs_review" }).where(and(eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.batchId, input.batchId), eq(opsExternalSyncRows.selected, 1)));
-        await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", reviewedAt: null, reviewedBy: null, errorMessage: message, summary: { ...object(batch.summary), applyBlocked: "duplicate_inventory_snapshot_identity", duplicateInventorySnapshotIdentities: duplicates, duplicateInventorySnapshotCount: duplicates.length } }).where(eq(opsExternalSyncBatches.id, input.batchId));
+        await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", reviewedAt: null, reviewedBy: null, errorMessage: message, summary: { ...object(batch.summary), applyBlocked: "duplicate_inventory_snapshot_identity", duplicateInventorySnapshotIdentities: duplicates, duplicateInventorySnapshotCount: duplicates.length } }).where(and(
+          eq(opsExternalSyncBatches.workspaceId, workspaceId),
+          eq(opsExternalSyncBatches.id, input.batchId),
+        ));
         throw new Error(message);
       }
     }
@@ -1445,11 +1466,20 @@ export const lingxingSyncRouter = router({
         });
         importedRows += 1;
       }
-      await db.update(opsExternalSyncRows).set({ rowStatus: "applied", appliedAt: new Date() }).where(eq(opsExternalSyncRows.id, row.id));
+      await db.update(opsExternalSyncRows).set({ rowStatus: "applied", appliedAt: new Date() }).where(and(
+        eq(opsExternalSyncRows.workspaceId, workspaceId),
+        eq(opsExternalSyncRows.id, row.id),
+      ));
     }
-    await db.update(dataImports).set({ importedRows, skippedRows, status: "completed" }).where(eq(dataImports.id, importId));
+    await db.update(dataImports).set({ importedRows, skippedRows, status: "completed" }).where(and(
+      eq(dataImports.workspaceId, workspaceId),
+      eq(dataImports.id, importId),
+    ));
     await db.insert(opsExternalSyncConfirmations).values({ workspaceId, batchId: input.batchId, userId: ctx.user.id, action: "apply", selectedRowIds: selectedRows.map((row) => row.id), note: input.note || null });
-    await db.update(opsExternalSyncBatches).set({ status: "applied", appliedAt: new Date(), appliedBy: ctx.user.id, summary: { ...object(batch.summary), appliedRows: importedRows, skippedRows } }).where(eq(opsExternalSyncBatches.id, input.batchId));
+    await db.update(opsExternalSyncBatches).set({ status: "applied", appliedAt: new Date(), appliedBy: ctx.user.id, summary: { ...object(batch.summary), appliedRows: importedRows, skippedRows } }).where(and(
+      eq(opsExternalSyncBatches.workspaceId, workspaceId),
+      eq(opsExternalSyncBatches.id, input.batchId),
+    ));
     if (batch.dataDomain === "product_performance_daily") {
       const { refreshZeroValueDiscontinuationStatuses } = await import("./dataImport");
       await refreshZeroValueDiscontinuationStatuses(db, workspaceId);
@@ -1474,7 +1504,10 @@ export const lingxingSyncRouter = router({
     const periodEnd = asText(scope.endDate, periodStart);
     const reviewIssue = ["product_performance_daily", "fba_inventory", "ad_keyword"].includes(batch.dataDomain) ? scheduledAutoApplyReviewIssue(batch as any) : null;
     if (reviewIssue) {
-      await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", reviewedAt: null, reviewedBy: null }).where(eq(opsExternalSyncBatches.id, input.batchId));
+      await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", reviewedAt: null, reviewedBy: null }).where(and(
+        eq(opsExternalSyncBatches.workspaceId, workspaceId),
+        eq(opsExternalSyncBatches.id, input.batchId),
+      ));
       throw new Error(`该异常批次不能应用：${reviewIssue.label}。请先重新读取完整窗口或在异常复核中记录原因。`);
     }
     if (batch.dataDomain === "ad_keyword") {
@@ -1493,7 +1526,10 @@ export const lingxingSyncRouter = router({
       if (duplicateIdentities.size) {
         const message = `广告关键词事实身份重复或无效：${duplicateIdentities.size}条。已回退为待复核，未创建广告导入记录。`;
         await db.update(opsExternalSyncRows).set({ rowStatus: "needs_review" }).where(and(eq(opsExternalSyncRows.workspaceId, workspaceId), eq(opsExternalSyncRows.batchId, input.batchId), eq(opsExternalSyncRows.selected, 1)));
-        await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", reviewedAt: null, reviewedBy: null, errorMessage: message, summary: { ...object(batch.summary), applyBlocked: "duplicate_ad_keyword_identity", duplicateAdKeywordIdentityCount: duplicateIdentities.size } }).where(eq(opsExternalSyncBatches.id, input.batchId));
+        await db.update(opsExternalSyncBatches).set({ status: "ready_for_review", reviewedAt: null, reviewedBy: null, errorMessage: message, summary: { ...object(batch.summary), applyBlocked: "duplicate_ad_keyword_identity", duplicateAdKeywordIdentityCount: duplicateIdentities.size } }).where(and(
+          eq(opsExternalSyncBatches.workspaceId, workspaceId),
+          eq(opsExternalSyncBatches.id, input.batchId),
+        ));
         throw new Error(message);
       }
     }
@@ -1527,11 +1563,20 @@ export const lingxingSyncRouter = router({
         });
       }
       importedRows += 1;
-      await db.update(opsExternalSyncRows).set({ rowStatus: "applied", appliedAt: new Date() }).where(eq(opsExternalSyncRows.id, row.id));
+      await db.update(opsExternalSyncRows).set({ rowStatus: "applied", appliedAt: new Date() }).where(and(
+        eq(opsExternalSyncRows.workspaceId, workspaceId),
+        eq(opsExternalSyncRows.id, row.id),
+      ));
     }
-    await db.update(adReportImports).set({ status: "completed", mappedRows: importedRows, keywordRows: batch.dataDomain === "ad_keyword" ? importedRows : 0 }).where(eq(adReportImports.id, importRecord.id));
+    await db.update(adReportImports).set({ status: "completed", mappedRows: importedRows, keywordRows: batch.dataDomain === "ad_keyword" ? importedRows : 0 }).where(and(
+      eq(adReportImports.workspaceId, workspaceId),
+      eq(adReportImports.id, importRecord.id),
+    ));
     await db.insert(opsExternalSyncConfirmations).values({ workspaceId, batchId: input.batchId, userId: ctx.user.id, action: "apply", selectedRowIds: selectedRows.map((row) => row.id), note: input.note || null });
-    await db.update(opsExternalSyncBatches).set({ status: "applied", appliedAt: new Date(), appliedBy: ctx.user.id, summary: { ...object(batch.summary), appliedRows: importedRows, skippedRows } }).where(eq(opsExternalSyncBatches.id, input.batchId));
+    await db.update(opsExternalSyncBatches).set({ status: "applied", appliedAt: new Date(), appliedBy: ctx.user.id, summary: { ...object(batch.summary), appliedRows: importedRows, skippedRows } }).where(and(
+      eq(opsExternalSyncBatches.workspaceId, workspaceId),
+      eq(opsExternalSyncBatches.id, input.batchId),
+    ));
     return { success: true, importId: importRecord.id, importedRows, skippedRows };
   }),
 

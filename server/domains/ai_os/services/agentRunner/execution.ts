@@ -1358,6 +1358,7 @@ async function runAgentNodeSkillJob(job: AiJobSnapshot) {
       skillSlug: payload.skillSlug,
       userId: job.userId,
       workspaceId: run.workspaceId ?? job.workspaceId ?? null,
+      projectId: run.projectId ?? null,
       context: buildSkillContext(node, payload.nodeInput),
       variables: {
         agentRunId: payload.runId,

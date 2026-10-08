@@ -1,4 +1,4 @@
-import { request as httpsRequest } from "node:https";
+import { SafeHttpError, safeHttpRequest } from "../../infrastructure/http/safeHttpClient";
 
 const APIFY_ACCOUNT_HOST = "api.apify.com";
 const APIFY_ACCOUNT_PATH = "/v2/users/me";
@@ -21,44 +21,36 @@ export async function requestApifyJsonIPv4<T>({
 }: ApifyJsonRequest): Promise<T> {
   if (!path.startsWith("/")) throw new Error("apify_invalid_path");
   const apiPath = path.startsWith("/v2/") ? path : `/v2${path}`;
-  return new Promise<T>((resolve, reject) => {
-    const request = httpsRequest({
-      hostname: APIFY_ACCOUNT_HOST,
-      path: apiPath,
+  try {
+    const response = await safeHttpRequest(`https://${APIFY_ACCOUNT_HOST}${apiPath}`, {
       method,
-      family: 4,
       headers: {
         accept: "application/json",
         authorization: `Bearer ${token}`,
-        ...(body ? { "content-type": "application/json", "content-length": Buffer.byteLength(body) } : {}),
+        ...(body ? { "content-type": "application/json", "content-length": String(Buffer.byteLength(body)) } : {}),
       },
-      timeout: timeoutMs,
-    }, response => {
-      const statusCode = response.statusCode || 0;
-      const chunks: Buffer[] = [];
-      response.on("data", chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-      response.once("error", () => reject(new Error("apify_network")));
-      response.once("end", () => {
-        if (statusCode < 200 || statusCode >= 300) {
-          reject(new Error(`apify_http_${statusCode}`));
-          return;
-        }
-        try {
-          resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")) as T);
-        } catch {
-          reject(new Error("apify_invalid_json"));
-        }
-      });
+      body,
+      timeoutMs,
+      allowedHosts: [APIFY_ACCOUNT_HOST],
+      auditContext: { operation: "api_connections.apify_account_health" },
     });
-    request.once("timeout", () => request.destroy(new Error("apify_timeout")));
-    request.once("error", error => reject(new Error(error.message === "apify_timeout" ? "apify_timeout" : "apify_network")));
-    request.end(body);
-  });
+    if (!response.ok) throw new Error(`apify_http_${response.status}`);
+    try {
+      return response.json<T>();
+    } catch {
+      throw new Error("apify_invalid_json");
+    }
+  } catch (error) {
+    if (error instanceof SafeHttpError) {
+      throw new Error(error.reason === "timeout" || error.reason === "aborted" ? "apify_timeout" : "apify_network");
+    }
+    throw error;
+  }
 }
 
 /**
  * 轻量校验只验证账户端点可认证，不启动Actor、不读取数据集且不产生采集费用。
- * 强制IPv4避免部分生产网络的IPv6黑洞导致受控校验误报超时。
+ * 请求由 Safe HTTP 统一解析、校验目标地址并执行，不启动Actor或读取数据集。
  */
 export async function verifyApifyAccountToken(token: string): Promise<void> {
   await requestApifyJsonIPv4<unknown>({ path: APIFY_ACCOUNT_PATH, token });
@@ -68,5 +60,5 @@ export const APIFY_ACCOUNT_HEALTH_CONTRACT = {
   host: APIFY_ACCOUNT_HOST,
   path: APIFY_ACCOUNT_PATH,
   timeoutMs: APIFY_ACCOUNT_TIMEOUT_MS,
-  family: 4,
+  allowedHosts: [APIFY_ACCOUNT_HOST],
 } as const;

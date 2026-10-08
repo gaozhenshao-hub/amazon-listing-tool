@@ -19,6 +19,13 @@ export const APP_ERROR_CODES = {
 } as const;
 
 export type AppErrorCode = typeof APP_ERROR_CODES[keyof typeof APP_ERROR_CODES];
+
+/** Stable subtypes carried in AppError details when an app code needs disambiguation. */
+export const APP_ERROR_REASON_CODES = {
+  CONTEXT_SOURCE_INVALIDATED: "context_source_invalidated",
+} as const;
+
+export type AppErrorReasonCode = typeof APP_ERROR_REASON_CODES[keyof typeof APP_ERROR_REASON_CODES];
 export type AppErrorDetails = Record<string, unknown>;
 
 export type AppErrorOptions = {

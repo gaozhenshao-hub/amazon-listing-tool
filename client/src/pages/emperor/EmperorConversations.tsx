@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { getAppErrorInfo } from "@/lib/appError";
+import { APP_ERROR_REASON_CODES } from "@shared/_core/errors";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -80,10 +82,11 @@ export default function EmperorConversations() {
       toast.success(result.replayed ? "已返回已有恢复结果" : "步骤已恢复至待运行状态；请人工确认后运行");
     },
     onError: (error, variables) => {
-      const sourceInvalidated = error.message.includes("上下文来源已失效") || error.message.includes("context_source_invalidated");
+      const errorInfo = getAppErrorInfo(error);
+      const sourceInvalidated = errorInfo.details?.reasonCode === APP_ERROR_REASON_CODES.CONTEXT_SOURCE_INVALIDATED;
       const message = sourceInvalidated
         ? "上下文来源已失效，系统已阻止恢复。请重新生成或重新编译计划，并在核对最新附件/知识摘要后再次人工确认。"
-        : error.message;
+        : errorInfo.message;
       setRecoveryError({ stepId: variables.stepId, message });
       toast.error(message);
     },

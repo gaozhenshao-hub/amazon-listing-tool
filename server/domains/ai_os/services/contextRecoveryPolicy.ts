@@ -1,9 +1,11 @@
+import { APP_ERROR_REASON_CODES } from "@shared/_core/errors";
+
 export type InvalidatedContextSource = {
   sourceType: string;
   sourceKey: string;
 };
 
-export const CONTEXT_SOURCE_INVALIDATED_REASON = "context_source_invalidated";
+export const CONTEXT_SOURCE_INVALIDATED_REASON = APP_ERROR_REASON_CODES.CONTEXT_SOURCE_INVALIDATED;
 
 /**
  * 仅判断恢复是否必须停止；调用方仍负责创建恢复请求与写入Ledger。

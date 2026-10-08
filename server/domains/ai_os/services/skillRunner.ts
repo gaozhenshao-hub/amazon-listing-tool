@@ -19,6 +19,7 @@ import {
   getHighQualitySkillGovernance,
   type HighQualitySkillGovernance,
 } from "./highQualitySkillGovernance";
+import { resolveActiveSkillRollout } from "./skillRollout";
 
 export type SkillRunErrorCode =
   | "SKILL_NOT_FOUND"
@@ -105,6 +106,7 @@ export type RunSkillInput<T> = {
   skillSlug: string;
   userId: number;
   workspaceId?: number | null;
+  projectId?: number | null;
   variables: Record<string, unknown>;
   context?: string;
   emphasis?: string;
@@ -704,13 +706,37 @@ async function callModel(
 
 export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Promise<RunSkillResult<T>> {
   const skill = await getSkill(input.skillSlug, input.workspaceId ?? null);
-  const manifest = parseJson<SkillManifest>(skill.manifest, {});
+  // Fixed-version and implicit snapshot runs must not drift into a live rollout.
+  const rollout = input.skillVersionPolicy !== "snapshot" && input.skillVersionPolicy !== "pinned"
+    && (input.skillVersionPolicy === "latest" || (input.expectedSkillVersion === undefined && !input.expectedSkillPromptHash))
+    ? await resolveActiveSkillRollout({
+      skillSlug: skill.slug,
+      workspaceId: input.workspaceId ?? skill.workspaceId ?? null,
+      userId: input.userId,
+      projectId: input.projectId ?? null,
+    })
+    : null;
+  const runtimeSkill: SkillRow = rollout ? {
+    ...skill,
+    version: rollout.skillVersion,
+    manifest: rollout.manifest,
+    modelOverride: rollout.modelOverride,
+    model_override: null,
+  } : skill;
+  const manifest = parseJson<SkillManifest>(runtimeSkill.manifest, {});
   // DEBUG: log manifest type and systemPrompt for troubleshooting
   if (input.skillSlug === 'image.step5.final.suggestion') {
     console.log(`[SkillRunner DEBUG] slug=${skill.slug} manifestType=${typeof skill.manifest} manifestIsNull=${skill.manifest === null} manifestKeys=${typeof manifest === 'object' ? Object.keys(manifest as object).join(',') : 'N/A'} implKeys=${typeof (manifest as any)?.implementation === 'object' ? Object.keys((manifest as any).implementation).join(',') : 'N/A'} promptLen=${((manifest as any)?.implementation?.systemPrompt || '').length}`);
   }
-  const skillSnapshot = buildSkillRuntimeSnapshot(skill, manifest);
+  const skillSnapshot = buildSkillRuntimeSnapshot(runtimeSkill, manifest);
   assertSkillSnapshotCompatible(skillSnapshot, input);
+  const rolloutAudit = rollout ? {
+    planId: rollout.planId,
+    snapshotId: rollout.snapshotId,
+    snapshotHash: rollout.snapshotHash,
+    bucket: rollout.bucket,
+    rolloutPercent: rollout.rolloutPercent,
+  } : null;
   const implementation = manifest.implementation || {};
   const executionPreset = normalizeSkillExecutionPreset(input.executionPreset);
   const governance = getHighQualitySkillGovernance(skill.slug);
@@ -729,6 +755,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
   const executionVariables = {
     ...variables,
     __executionPreset: executionPreset,
+    ...(rolloutAudit ? { __rollout: rolloutAudit } : {}),
     __promptAudit: {
       ...promptAudit,
       skillVersion: skillSnapshot.version,
@@ -738,7 +765,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
   };
   const userPrompt = renderSkillTemplate(implementation.userPromptTemplate || "{{context}}", executionVariables);
   const models = await resolveModelCandidates(
-    skill,
+    runtimeSkill,
     input.modelOverride,
     input.fallbackModels || DEFAULT_FALLBACKS,
     input.workspaceId ?? skill.workspaceId ?? null,
@@ -750,7 +777,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
   const startedAt = new Date();
   await rawExecute(
     "INSERT INTO emperor_skill_runs (workspaceId,runId,skillSlug,skillName,skillVersion,skillPromptHash,skillManifestHash,migrationSource,userId,input,status,modelSlug,provider,startedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    [input.workspaceId ?? skill.workspaceId ?? null, runId, skill.slug, skill.name, Number(skillSnapshot.version) || 1, skillSnapshot.systemPromptHash, skillSnapshot.manifestHash, input.migrationSource || null, input.userId, JSON.stringify(executionVariables), "running", models[0].slug, models[0].provider, startedAt],
+    [input.workspaceId ?? skill.workspaceId ?? null, runId, skill.slug, skill.name, Number(skillSnapshot.version) || 1, skillSnapshot.systemPromptHash, skillSnapshot.manifestHash, rollout ? `skill_rollout:${rollout.planId}` : input.migrationSource || null, input.userId, JSON.stringify(executionVariables), "running", models[0].slug, models[0].provider, startedAt],
   );
 
   let lastError: SkillRunError | null = null;
@@ -800,6 +827,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
             skillVersion: skillSnapshot.version,
             skillPromptHash: skillSnapshot.systemPromptHash,
             skillManifestHash: skillSnapshot.manifestHash,
+            rollout: rollout ? rolloutAudit : null,
             governance,
           }),
           model.slug,
@@ -812,7 +840,11 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
           runId,
         ],
       );
-      await rawExecute("UPDATE emperor_skills SET callCount = callCount + 1 WHERE slug = ?", [skill.slug]);
+      // Quality-gate replay invokes the governed `evaluation` preset and records
+      // its outcome in emperor_skill_eval_results. It is not a normal Skill use.
+      if (executionPreset !== "evaluation") {
+        await rawExecute("UPDATE emperor_skills SET callCount = callCount + 1 WHERE slug = ?", [skill.slug]);
+      }
       void recordAiOsEvaluation({
         entityType: "skill",
         entityId: runId,

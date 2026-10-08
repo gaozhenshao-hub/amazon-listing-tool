@@ -336,7 +336,11 @@ export function buildHumanConfirmedStageDraft(
     assetDependencyDigest,
     dependencies: normalizedDependencies,
     dependencyDigest: dependencyDigest({
-      scope: input,
+      scope: {
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        sessionId: input.sessionId,
+      },
       step: input.step,
       contentRevision: input.contentRevision,
       contentDigest,
@@ -796,15 +800,16 @@ export function createDrizzleImageWorkflowVersionStore(): ImageWorkflowVersionSt
                  s.dependencyDigest, s.snapshotDigest, s.confirmedBy, s.confirmedAt,
                  e.state
           FROM image_workflow_stage_snapshots s
+          INNER JOIN (
+            SELECT snapshotDigest, MAX(id) AS latestEventId
+            FROM image_workflow_snapshot_state_events
+            WHERE workspaceId = ${scope.workspaceId}
+              AND projectId = ${scope.projectId}
+              AND sessionId = ${scope.sessionId}
+            GROUP BY snapshotDigest
+          ) latestEvent ON latestEvent.snapshotDigest = s.snapshotDigest
           INNER JOIN image_workflow_snapshot_state_events e
-            ON e.id = (
-              SELECT latest.id FROM image_workflow_snapshot_state_events latest
-              WHERE latest.workspaceId = s.workspaceId
-                AND latest.projectId = s.projectId
-                AND latest.sessionId = s.sessionId
-                AND latest.snapshotDigest = s.snapshotDigest
-              ORDER BY latest.id DESC LIMIT 1
-            )
+            ON e.id = latestEvent.latestEventId
           WHERE s.workspaceId = ${scope.workspaceId}
             AND s.projectId = ${scope.projectId}
             AND s.sessionId = ${scope.sessionId}

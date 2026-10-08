@@ -17,14 +17,15 @@ const overviewSource = fs.readFileSync(
 
 describe("产品总览父ASIN周报适配", () => {
   it("系统总览直接消费父ASIN周报权威构建器，而不再由前端日快照适配层构造周指标", () => {
-    expect(routerSource).toContain("buildParentWeeklyOverview(weeklyFacts, profileSeeds, weeksToShow)");
-    expect(routerSource).toContain("lingxingProductWeekly");
+    expect(routerSource).toContain("from(lingxingProductWeekly)");
+    expect(routerSource).toContain('eq(lingxingProductWeekly.sourceKind, "lingxing_mcp_parent_asin_weekly")');
+    expect(routerSource).toContain("buildParentWeeklyOverview(weeklyFacts, profileSeeds, weeksToShow, manualOwnerAssignments)");
     expect(overviewSource).toContain('fact.sourceKind === "lingxing_mcp_parent_asin_weekly"');
     expect(overviewSource).toContain("variantCount: childAsins.length");
   });
 
   it("页面明确提示周度权威来源及ASIN日数据的受限用途", () => {
-    expect(pageSource).toContain("权威周度来源：领星MCP父ASIN自然周报");
-    expect(pageSource).toContain("ASIN日数据仅用于单ASIN详情与库存规划");
+    expect(pageSource).toContain("权威周度来源：领星ASIN周数据·系统父ASIN汇总");
+    expect(pageSource).toContain("ASIN日数据用于单ASIN详情与库存规划，不参与本页周度累计");
   });
 });
