@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import ProjectSelector from "@/components/ProjectSelector";
 import { useProject } from "@/contexts/ProjectContext";
 import { CompetitorAnalysisSummaryEditor } from "@/pages/listing/CompetitorAnalysisSummaryEditor";
+import { ImportJobPanel, getImportJobOutcome, type ImportJobView } from "@/components/analysis/ImportJobPanel";
 import {
   Search,
   Loader2,
@@ -41,7 +42,7 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 
 type BatchItemStatus = "pending" | "scraping" | "analyzing" | "done" | "failed";
@@ -75,6 +76,12 @@ interface FilePreview {
 
 export default function AnalysisPage() {
   const { selectedProjectId } = useProject();
+  // Uploads and their pending callbacks belong to one project. Remounting the
+  // form prevents both stale UI locks and late responses from leaking to another.
+  return <ProjectAnalysisPage key={selectedProjectId ?? "no-project"} selectedProjectId={selectedProjectId} />;
+}
+
+function ProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number | null }) {
   const [asinInput, setAsinInput] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [isBatchMode, setIsBatchMode] = useState(false);
@@ -120,6 +127,10 @@ export default function AnalysisPage() {
   const [ssBatchFailures, setSsBatchFailures] = useState<SSBatchFailure[]>([]);
   const [ssIsPreviewing, setSsIsPreviewing] = useState(false);
   const [ssIsAnalyzing, setSsIsAnalyzing] = useState(false);
+  const [ssPreviewError, setSsPreviewError] = useState<string | null>(null);
+  const [ssSubmittedJob, setSsSubmittedJob] = useState<{ runId: string; projectId: number; fileBase64: string } | null>(null);
+  const ssSubmitLock = useRef(false);
+  const ssPreviewLock = useRef(false);
   const [ssDragOver, setSsDragOver] = useState(false);
   const ssFileRef = useRef<HTMLInputElement | null>(null);
 
@@ -141,7 +152,9 @@ export default function AnalysisPage() {
     filename: string;
     preview: FilePreview | null;
     isPreviewing: boolean;
-    status: "ready" | "importing" | "done" | "failed";
+    status: "ready" | "importing" | "queued" | "done" | "failed";
+    runId?: string;
+    projectId?: number;
     error?: string;
   }
   const [importItems, setImportItems] = useState<ImportItem[]>([
@@ -150,6 +163,10 @@ export default function AnalysisPage() {
   const [importNextId, setImportNextId] = useState(2);
   const [isDragOverId, setIsDragOverId] = useState<number | null>(null);
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  const [isSubmittingImports, setIsSubmittingImports] = useState(false);
+  const importSubmitLock = useRef(false);
+  const previewItemLocks = useRef(new Set<number>());
+  const handledJobResults = useRef(new Set<string>());
 
   const { data: analyses, isLoading: loadingAnalyses } = trpc.analysis.listByProject.useQuery(
     { projectId: selectedProjectId! },
@@ -160,10 +177,48 @@ export default function AnalysisPage() {
 
   const analyzeAsin = trpc.analysis.analyzeAsin.useMutation();
   const analyzeManual = trpc.analysis.analyzeManual.useMutation();
-  const importReviews = trpc.analysis.importReviews.useMutation();
-  const previewReviewFile = trpc.analysis.previewReviewFile.useMutation();
-  const previewSellerSprite = trpc.analysis.previewSellerSpriteFile.useMutation();
-  const analyzeFromSellerSprite = trpc.analysis.analyzeFromSellerSprite.useMutation();
+  const startImportJob = trpc.analysis.startImportJob.useMutation({ retry: false });
+  const previewReviewFile = trpc.analysis.previewReviewFile.useMutation({ retry: false });
+  const previewSellerSprite = trpc.analysis.previewSellerSpriteFile.useMutation({ retry: false });
+  const importJobsQuery = trpc.analysis.listImportJobs.useQuery(
+    { projectId: selectedProjectId!, limit: 30 },
+    { enabled: !!selectedProjectId, refetchInterval: 2500, retry: false }
+  );
+  const importJobs: ImportJobView[] = importJobsQuery.data || [];
+  const ssPendingJob = !!ssSubmittedJob && ssSubmittedJob.projectId === selectedProjectId && !handledJobResults.current.has(ssSubmittedJob.runId);
+
+  useEffect(() => {
+    let shouldRefreshAnalyses = false;
+    for (const job of importJobsQuery.data || []) {
+      const outcome = getImportJobOutcome(job);
+      if (outcome.active || handledJobResults.current.has(job.runId)) continue;
+      handledJobResults.current.add(job.runId);
+      shouldRefreshAnalyses = true;
+      setImportItems(previous => previous.map(item => item.runId === job.runId ? {
+        ...item,
+        status: outcome.complete ? "done" : "failed",
+        error: outcome.complete ? undefined : job.error || `已完成 ${outcome.succeeded} 条，未完成 ${outcome.failed} 条；请查看后台任务详情。`,
+      } : item));
+      if (ssSubmittedJob && ssSubmittedJob.projectId === selectedProjectId && ssSubmittedJob.runId === job.runId && ssSubmittedJob.fileBase64 === ssFileBase64) {
+        const failures = outcome.failures;
+        const failedAsins = new Set(failures.map((item) => item.asin));
+        setSsBatchFailures(failures);
+        setSsProducts(previous => previous.map(product => failures.length ? {
+          ...product,
+          selected: failedAsins.has(product.asin),
+        } : { ...product, selected: !outcome.complete && product.selected }));
+        setSsSubmittedJob(null);
+        if (outcome.complete) toast.success(`分析完成：${outcome.succeeded} 条已生成待审核结果`);
+        else toast.error(`分析未全部完成：${outcome.succeeded} 成功，${outcome.failed} 失败`, {
+          description: "文件与失败原因已保留，系统不会自动重试。",
+        });
+      }
+    }
+    // Refresh once per snapshot, including partial results and restored completed jobs.
+    if (shouldRefreshAnalyses && selectedProjectId) {
+      void utils.analysis.listByProject.invalidate({ projectId: selectedProjectId });
+    }
+  }, [importJobsQuery.data, selectedProjectId, ssSubmittedJob, ssFileBase64, utils]);
 
   const deleteAnalysis = trpc.analysis.delete.useMutation({
     onSuccess: () => {
@@ -208,8 +263,28 @@ export default function AnalysisPage() {
     setFailedAsin(null);
   }, []);
 
-  // SellerSprite file handler
+  const previewSsFile = useCallback(async (fileBase64: string, filename: string) => {
+    setSsIsPreviewing(true);
+    setSsPreviewError(null);
+    try {
+      const result = await previewSellerSprite.mutateAsync({ fileBase64, filename });
+      if (!result.success || result.products.length === 0) {
+        throw new Error(result.errors?.[0] || "未找到有效产品数据，请检查文件内容与格式");
+      }
+      setSsProducts(result.products.map(p => ({ ...p, selected: true })));
+      toast.success(`解析成功：共 ${result.products.length} 条竞品数据`);
+    } catch (err: any) {
+      setSsPreviewError(err.message || "预览失败，请重试");
+      toast.error("解析失败，文件已保留", { description: err.message });
+    } finally {
+      ssPreviewLock.current = false;
+      setSsIsPreviewing(false);
+    }
+  }, [previewSellerSprite]);
+
+  // FileReader encodes directly instead of building a large binary string on the UI thread.
   const handleSsFileSelect = useCallback(async (file: File) => {
+    if (ssPreviewLock.current || ssSubmitLock.current || ssPendingJob) return;
     const validExt = [".xlsx", ".xls", ".csv"];
     const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
     if (!validExt.includes(ext)) {
@@ -220,85 +295,66 @@ export default function AnalysisPage() {
       toast.error("文件过大", { description: "文件大小不能超过 20MB" });
       return;
     }
+    ssPreviewLock.current = true;
+    setSsIsPreviewing(true);
+    setSsPreviewError(null);
+    setSsFileBase64(null);
+    setSsFilename(file.name);
+    setSsProducts([]);
+    setSsBatchFailures([]);
+    setSsSubmittedJob(null);
     const reader = new FileReader();
-    reader.onload = async (e) => {
-      const ab = e.target?.result as ArrayBuffer;
-      const bytes = new Uint8Array(ab);
-      let binary = "";
-      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-      const b64 = btoa(binary);
-      setSsFileBase64(b64);
-      setSsFilename(file.name);
-      setSsProducts([]);
-      setSsBatchFailures([]);
-      setSsIsPreviewing(true);
-      try {
-        const result = await previewSellerSprite.mutateAsync({ fileBase64: b64, filename: file.name });
-        if (result.success && result.products.length > 0) {
-          setSsProducts(result.products.map(p => ({ ...p, selected: true })));
-          toast.success(`解析成功：共 ${result.products.length} 条竞品数据`);
-        } else {
-          toast.error("解析失败", { description: result.errors?.[0] || "未找到有效产品数据" });
-        }
-      } catch (err: any) {
-        toast.error("解析失败", { description: err.message });
-      } finally {
-        setSsIsPreviewing(false);
-      }
+    const onReadFailure = () => {
+      ssPreviewLock.current = false;
+      setSsIsPreviewing(false);
+      setSsPreviewError("无法读取文件，请重新选择原文件");
+      toast.error("无法读取文件，请重新选择原文件");
     };
-    reader.readAsArrayBuffer(file);
-  }, [previewSellerSprite]);
+    reader.onerror = onReadFailure;
+    reader.onabort = onReadFailure;
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      const b64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+      if (!b64) { onReadFailure(); return; }
+      setSsFileBase64(b64);
+      void previewSsFile(b64, file.name);
+    };
+    reader.readAsDataURL(file);
+  }, [previewSsFile, ssPendingJob]);
 
   // SellerSprite batch analyze
   const handleSsAnalyze = useCallback(async () => {
-    if (!ssFileBase64 || !selectedProjectId) return;
+    if (!ssFileBase64 || !selectedProjectId || ssSubmitLock.current || ssPendingJob) return;
     const selected = ssProducts.filter(p => p.selected);
     if (selected.length === 0) {
       toast.error("请至少选择一条竞品数据");
       return;
     }
+    ssSubmitLock.current = true;
     setSsIsAnalyzing(true);
     try {
-      const result = await analyzeFromSellerSprite.mutateAsync({
+      const job = await startImportJob.mutateAsync({
+        kind: "sellersprite",
         projectId: selectedProjectId,
         fileBase64: ssFileBase64,
         filename: ssFilename,
         selectedAsins: selected.map(p => p.asin),
       });
-      const failedResults = result.results.filter((item) => item.status === "failed");
-      const failures = failedResults.map((item) => ({
-        asin: item.asin,
-        code: item.failure?.code || "ANALYSIS_FAILED",
-        message: item.failure?.message || item.error || "本条分析未完成，未写入结果。",
-        retryable: item.failure?.retryable ?? false,
-      }));
-      const failedAsins = new Set(failures.map((item) => item.asin));
-      setSsBatchFailures(failures);
-      // Keep only the failed rows selected. This makes retry an explicit user
-      // decision and prevents successful rows from being billed twice.
-      setSsProducts((previous) => previous.map((product) => ({
-        ...product,
-        selected: failedAsins.has(product.asin),
-      })));
-      if (result.failed === 0) {
-        toast.success(`分析完成：${result.succeeded} 条已生成待审核结果`);
-      } else {
-        toast.error(`分析完成：${result.succeeded} 成功，${result.failed} 失败`, {
-          description: "失败原因已保留在下方；成功条目已取消勾选，系统不会自动重试。",
-        });
-      }
-      utils.analysis.listByProject.invalidate({ projectId: selectedProjectId });
-      if (result.failed === 0) {
-        setSsFileBase64(null);
-        setSsFilename("");
-        setSsProducts([]);
-      }
+      handledJobResults.current.delete(job.runId);
+      setSsSubmittedJob({ runId: job.runId, projectId: selectedProjectId, fileBase64: ssFileBase64 });
+      utils.analysis.listImportJobs.setData({ projectId: selectedProjectId, limit: 30 }, previous => [job, ...(previous || []).filter(item => item.runId !== job.runId)]);
+      void utils.analysis.listImportJobs.invalidate({ projectId: selectedProjectId });
+      toast.info("导入任务已受理", { description: "后台将逐条分析，进度见下方任务列表；可以刷新或离开页面。" });
     } catch (err: any) {
-      toast.error("批量分析失败", { description: err.message });
+      toast.error("未能确认任务提交状态，文件已保留", {
+        description: `${err.message}。请先刷新下方任务列表，确认后再手动提交。`,
+      });
+      void utils.analysis.listImportJobs.invalidate({ projectId: selectedProjectId });
     } finally {
+      ssSubmitLock.current = false;
       setSsIsAnalyzing(false);
     }
-  }, [ssFileBase64, ssFilename, ssProducts, selectedProjectId, analyzeFromSellerSprite, utils]);
+  }, [ssFileBase64, ssFilename, ssProducts, selectedProjectId, startImportJob, utils, ssPendingJob]);
 
   // Reset manual form
   const resetManualForm = useCallback(() => {
@@ -345,8 +401,29 @@ export default function AnalysisPage() {
     ));
   }, []);
 
+  const previewImportFile = useCallback(async (itemId: number, fileBase64: string, filename: string) => {
+    setImportItems(previous => previous.map(item => item.id === itemId ? { ...item, isPreviewing: true, error: undefined } : item));
+    try {
+      const preview = await previewReviewFile.mutateAsync({ fileBase64, filename });
+      if (preview.parsedRows === 0) throw new Error("未找到有效评论，请检查文件内容与格式");
+      setImportItems(previous => previous.map(item => item.id === itemId ? {
+        ...item, preview: preview as FilePreview, isPreviewing: false, error: undefined,
+      } : item));
+      toast.success(`文件解析成功：${preview.parsedRows} 条评论`);
+    } catch (error: any) {
+      setImportItems(previous => previous.map(item => item.id === itemId ? {
+        ...item, preview: null, isPreviewing: false, error: error.message || "预览失败，请重试",
+      } : item));
+      toast.error("文件预览失败，文件已保留", { description: error.message });
+    } finally {
+      previewItemLocks.current.delete(itemId);
+    }
+  }, [previewReviewFile]);
+
   // Handle file selection for a specific import item
   const handleFileSelectForItem = useCallback(async (itemId: number, file: File) => {
+    const currentItem = importItems.find(item => item.id === itemId);
+    if (!currentItem || previewItemLocks.current.has(itemId) || importSubmitLock.current || ["queued", "importing", "done"].includes(currentItem.status)) return;
     const validExtensions = [".xlsx", ".xls", ".csv"];
     const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
 
@@ -362,38 +439,30 @@ export default function AnalysisPage() {
       return;
     }
 
+    previewItemLocks.current.add(itemId);
+    setImportItems(previous => previous.map(item => item.id === itemId ? {
+      ...item, filename: file.name, fileBase64: null, preview: null, isPreviewing: true,
+      status: "ready", error: undefined, runId: undefined, projectId: undefined,
+    } : item));
     const reader = new FileReader();
-    reader.onload = async (e) => {
-      const arrayBuffer = e.target?.result as ArrayBuffer;
-      const bytes = new Uint8Array(arrayBuffer);
-      let binary = "";
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const base64 = btoa(binary);
-
-      setImportItems(prev => prev.map(item =>
-        item.id === itemId ? { ...item, fileBase64: base64, filename: file.name, isPreviewing: true } : item
-      ));
-
-      try {
-        const preview = await previewReviewFile.mutateAsync({
-          fileBase64: base64,
-          filename: file.name,
-        });
-        setImportItems(prev => prev.map(item =>
-          item.id === itemId ? { ...item, preview: preview as FilePreview, isPreviewing: false } : item
-        ));
-        toast.success(`文件解析成功: ${preview.parsedRows} 条评论`);
-      } catch (error: any) {
-        toast.error("文件解析失败: " + error.message);
-        setImportItems(prev => prev.map(item =>
-          item.id === itemId ? { ...item, fileBase64: null, filename: "", preview: null, isPreviewing: false } : item
-        ));
-      }
+    const onReadFailure = () => {
+      previewItemLocks.current.delete(itemId);
+      setImportItems(previous => previous.map(item => item.id === itemId ? {
+        ...item, isPreviewing: false, error: "无法读取文件，请重新选择原文件",
+      } : item));
+      toast.error("无法读取文件，请重新选择原文件");
     };
-    reader.readAsArrayBuffer(file);
-  }, [previewReviewFile]);
+    reader.onerror = onReadFailure;
+    reader.onabort = onReadFailure;
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+      if (!base64) { onReadFailure(); return; }
+      setImportItems(previous => previous.map(item => item.id === itemId ? { ...item, fileBase64: base64 } : item));
+      void previewImportFile(itemId, base64, file.name);
+    };
+    reader.readAsDataURL(file);
+  }, [importItems, previewImportFile]);
 
   // Handle drag and drop for a specific item
   const handleItemDragOver = useCallback((e: React.DragEvent, id: number) => {
@@ -415,82 +484,52 @@ export default function AnalysisPage() {
 
   // Handle batch import submit - now auto-detects ASINs from files
   const handleImportSubmit = useCallback(async () => {
+    if (importSubmitLock.current) return;
     if (!selectedProjectId) {
       toast.error("请先选择一个项目");
       return;
     }
 
     // Validate: at least one file uploaded
-    const validItems = importItems.filter(item => item.fileBase64);
+    const validItems = importItems.filter(item => item.fileBase64 && item.preview && !item.isPreviewing && ["ready", "failed"].includes(item.status));
 
     if (validItems.length === 0) {
-      toast.error("请至少上传一个评论文件");
+      toast.error("请先完成至少一个评论文件的预览");
       return;
     }
 
-    setIsProcessing(true);
-    setBatchItems(validItems.map((item, idx) => ({ asin: `文件${idx + 1}`, status: "pending" as BatchItemStatus })));
-
-    let successCount = 0;
-    let failCount = 0;
-
-    for (let i = 0; i < validItems.length; i++) {
-      const item = validItems[i];
-      setBatchItems(prev => prev.map((b, idx) =>
-        idx === i ? { ...b, status: "analyzing" } : b
-      ));
-      setImportItems(prev => prev.map(it =>
-        it.id === item.id ? { ...it, status: "importing" } : it
-      ));
-
-      try {
-        const result = await importReviews.mutateAsync({
-          projectId: selectedProjectId,
-          fileBase64: item.fileBase64!,
-          filename: item.filename,
-        });
-
-        const matchedCount = (result as any).results?.filter((r: any) => r.status === "matched").length || 0;
-        const newCount = (result as any).results?.filter((r: any) => r.status === "new").length || 0;
-        const detectedAsins = (result as any).detectedAsins || [];
-
-        setBatchItems(prev => prev.map((b, idx) =>
-          idx === i ? {
-            ...b,
-            status: "done",
-            title: detectedAsins.length > 0
-              ? `已匹配 ${matchedCount} 个竞品，新增 ${newCount} 个 (${detectedAsins.join(", ")})`
-              : "导入分析完成"
-          } : b
-        ));
-        setImportItems(prev => prev.map(it =>
-          it.id === item.id ? { ...it, status: "done" } : it
-        ));
-        successCount++;
-      } catch (error: any) {
-        setBatchItems(prev => prev.map((b, idx) =>
-          idx === i ? { ...b, status: "failed", error: error.message } : b
-        ));
-        setImportItems(prev => prev.map(it =>
-          it.id === item.id ? { ...it, status: "failed", error: error.message } : it
-        ));
-        failCount++;
+    importSubmitLock.current = true;
+    setIsSubmittingImports(true);
+    let acceptedCount = 0;
+    try {
+      for (const item of validItems) {
+        setImportItems(previous => previous.map(row => row.id === item.id ? { ...row, status: "importing", error: undefined } : row));
+        try {
+          const job = await startImportJob.mutateAsync({
+            kind: "reviews", projectId: selectedProjectId, fileBase64: item.fileBase64!, filename: item.filename,
+          });
+          handledJobResults.current.delete(job.runId);
+          setImportItems(previous => previous.map(row => row.id === item.id ? {
+            ...row, status: "queued", runId: job.runId, projectId: selectedProjectId,
+          } : row));
+          utils.analysis.listImportJobs.setData({ projectId: selectedProjectId, limit: 30 }, previous => [job, ...(previous || []).filter(row => row.runId !== job.runId)]);
+          acceptedCount++;
+        } catch (error: any) {
+          setImportItems(previous => previous.map(row => row.id === item.id ? {
+            ...row, status: "failed", error: `${error.message}。未能确认提交状态，请先刷新下方任务列表再手动提交。`,
+          } : row));
+        }
       }
-    }
-
-    utils.analysis.listByProject.invalidate({ projectId: selectedProjectId! });
-
-    if (successCount > 0) {
-      toast.success(`评论导入完成`, {
-        description: `成功处理 ${successCount} 个文件${failCount > 0 ? `，失败 ${failCount} 个` : ""}`,
+      if (acceptedCount) toast.info(`已受理 ${acceptedCount} 个评论导入任务`, {
+        description: "后台逐条处理，完成情况见下方任务列表；文件会保留，便于查看失败原因后手动重试。",
       });
+      if (acceptedCount < validItems.length) toast.error(`${validItems.length - acceptedCount} 个文件未确认提交，文件已保留`);
+    } finally {
+      importSubmitLock.current = false;
+      setIsSubmittingImports(false);
+      void utils.analysis.listImportJobs.invalidate({ projectId: selectedProjectId });
     }
-    if (failCount > 0 && successCount === 0) {
-      toast.error("全部导入失败");
-    }
-
-    setIsProcessing(false);
-  }, [selectedProjectId, importItems, importReviews, utils]);
+  }, [selectedProjectId, importItems, startImportJob, utils]);
 
   // Handle manual input analysis
   const handleManualAnalyze = useCallback(async () => {
@@ -947,14 +986,14 @@ export default function AnalysisPage() {
                       size="sm"
                       className="text-xs h-7"
                       onClick={resetImportForm}
-                      disabled={isProcessing}
+                      disabled={isSubmittingImports || importItems.some(item => item.isPreviewing)}
                     >
                       <RotateCcw className="h-3.5 w-3.5 mr-1" />
                       重置
                     </Button>
                   </div>
                   <CardDescription>
-                    填写竞品ASIN并上传对应的评论文件，支持同时导入多个竞品的评论。
+                    上传评论文件并预览后，提交后台导入任务，支持同时导入多个竞品的评论。
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -977,7 +1016,7 @@ export default function AnalysisPage() {
                             ? "border-green-300 bg-green-50/50"
                             : item.status === "failed"
                               ? "border-red-300 bg-red-50/50"
-                              : item.status === "importing"
+                              : item.status === "importing" || item.status === "queued"
                                 ? "border-primary/50 bg-primary/5"
                                 : "border-border"
                         }`}
@@ -1003,8 +1042,11 @@ export default function AnalysisPage() {
                             {item.status === "importing" && (
                               <Badge className="text-xs bg-blue-100 text-blue-700 border-blue-300">
                                 <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                分析中
+                                正在提交
                               </Badge>
+                            )}
+                            {item.status === "queued" && (
+                              <Badge variant="outline" className="text-xs">已提交后台</Badge>
                             )}
                           </div>
                           {importItems.length > 1 && item.status === "ready" && (
@@ -1013,7 +1055,7 @@ export default function AnalysisPage() {
                               size="sm"
                               className="h-6 w-6 p-0 text-muted-foreground hover:text-red-500"
                               onClick={() => removeImportItem(item.id)}
-                              disabled={isProcessing}
+                              disabled={isSubmittingImports || item.isPreviewing}
                             >
                               <X className="h-3.5 w-3.5" />
                             </Button>
@@ -1035,7 +1077,7 @@ export default function AnalysisPage() {
                             onDragLeave={handleItemDragLeave}
                             onDrop={(e) => handleItemDrop(e, item.id)}
                             onClick={() => {
-                              if (item.status === "ready") fileInputRefs.current[item.id]?.click();
+                              if (["ready", "failed"].includes(item.status) && !item.isPreviewing && !isSubmittingImports) fileInputRefs.current[item.id]?.click();
                             }}
                           >
                             <input
@@ -1048,7 +1090,7 @@ export default function AnalysisPage() {
                                 if (file) handleFileSelectForItem(item.id, file);
                                 e.target.value = "";
                               }}
-                              disabled={isProcessing || item.status !== "ready"}
+                              disabled={isSubmittingImports || item.isPreviewing || !["ready", "failed"].includes(item.status)}
                             />
 
                             {item.isPreviewing ? (
@@ -1077,6 +1119,8 @@ export default function AnalysisPage() {
                                   )}
                                 </div>
                               </div>
+                            ) : item.fileBase64 ? (
+                              <p className="break-all text-xs">{item.filename} · 文件已保留，等待重新预览</p>
                             ) : (
                               <div className="flex items-center justify-center gap-2">
                                 <Upload className="h-5 w-5 text-muted-foreground" />
@@ -1087,8 +1131,15 @@ export default function AnalysisPage() {
                         </div>
 
                         {/* Error message */}
-                        {item.status === "failed" && item.error && (
+                        {item.error && (
                           <p className="text-xs text-red-600 mt-2">{item.error}</p>
+                        )}
+                        {item.fileBase64 && !item.preview && !item.isPreviewing && (
+                          <Button variant="outline" size="sm" className="mt-2" onClick={() => {
+                            if (previewItemLocks.current.has(item.id)) return;
+                            previewItemLocks.current.add(item.id);
+                            void previewImportFile(item.id, item.fileBase64!, item.filename);
+                          }} disabled={isSubmittingImports}>重试文件预览</Button>
                         )}
                       </div>
                     ))}
@@ -1100,27 +1151,15 @@ export default function AnalysisPage() {
                     size="sm"
                     className="w-full border-dashed"
                     onClick={addImportItem}
-                    disabled={isProcessing}
+                    disabled={isSubmittingImports}
                   >
                     <Plus className="h-4 w-4 mr-1.5" />
                     添加更多文件
                   </Button>
 
-                  {/* Batch Progress */}
-                  {isProcessing && batchItems.length > 0 && (
-                    <BatchProgressDisplay
-                      batchItems={batchItems}
-                      batchProgress={batchProgress}
-                      getStatusIcon={getStatusIcon}
-                      getStatusText={getStatusText}
-                      onCancel={handleCancel}
-                      onManualSwitch={switchToManualMode}
-                    />
-                  )}
-
                   {/* Submit Button */}
                   {(() => {
-                    const validCount = importItems.filter(item => item.fileBase64).length;
+                    const validCount = importItems.filter(item => item.fileBase64 && item.preview && !item.isPreviewing && ["ready", "failed"].includes(item.status)).length;
                     const totalReviews = importItems.reduce((sum, item) => sum + (item.preview?.parsedRows || 0), 0);
                     const totalAsins = importItems.reduce((sum, item) => sum + (item.preview?.detectedAsins?.length || 0), 0);
                     return (
@@ -1128,19 +1167,19 @@ export default function AnalysisPage() {
                         className="w-full"
                         size="lg"
                         onClick={handleImportSubmit}
-                        disabled={isProcessing || validCount === 0}
+                        disabled={isSubmittingImports || validCount === 0}
                       >
-                        {isProcessing ? (
+                        {isSubmittingImports ? (
                           <>
                             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            导入分析中...
+                            正在提交后台任务...
                           </>
                         ) : (
                           <>
                             <FileSpreadsheet className="h-4 w-4 mr-2" />
                             {validCount > 1
-                              ? `批量导入 & AI分析 (${validCount}个文件)`
-                              : "导入评论 & AI分析"
+                              ? `提交后台导入 (${validCount}个文件)`
+                              : "提交评论后台导入"
                             }
                             {totalReviews > 0 && (
                               <Badge variant="secondary" className="ml-2 text-xs">
@@ -1152,6 +1191,7 @@ export default function AnalysisPage() {
                       </Button>
                     );
                   })()}
+                  <p className="text-xs text-muted-foreground">提交后不必等待分析结束，下方任务列表会持续更新进度与逐 ASIN 结果。</p>
                 </CardContent>
               </Card>
             )}
@@ -1170,8 +1210,8 @@ export default function AnalysisPage() {
                         variant="ghost"
                         size="sm"
                         className="text-xs h-7"
-                      onClick={() => { setSsFileBase64(null); setSsFilename(""); setSsProducts([]); setSsBatchFailures([]); }}
-                        disabled={ssIsAnalyzing}
+                      onClick={() => { setSsFileBase64(null); setSsFilename(""); setSsProducts([]); setSsBatchFailures([]); setSsPreviewError(null); setSsSubmittedJob(null); }}
+                        disabled={ssIsAnalyzing || !!ssPendingJob}
                       >
                         <RotateCcw className="h-3.5 w-3.5 mr-1" />
                         重新上传
@@ -1199,7 +1239,8 @@ export default function AnalysisPage() {
                         type="file"
                         accept=".xlsx,.xls,.csv"
                         className="hidden"
-                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleSsFileSelect(f); }}
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleSsFileSelect(f); e.target.value = ""; }}
+                        disabled={ssIsPreviewing || ssIsAnalyzing || !!ssPendingJob}
                       />
                       {ssIsPreviewing ? (
                         <div className="flex flex-col items-center gap-2">
@@ -1222,6 +1263,17 @@ export default function AnalysisPage() {
                       )}
                     </div>
                   )}
+                  {ssPreviewError && <p className="break-words text-xs text-red-600">{ssPreviewError}</p>}
+                  {ssFileBase64 && !ssProducts.length && !ssIsPreviewing && (
+                    <div className="space-y-2">
+                      <p className="break-all text-xs text-muted-foreground">已保留：{ssFilename}</p>
+                      <Button variant="outline" size="sm" onClick={() => {
+                        if (ssPreviewLock.current) return;
+                        ssPreviewLock.current = true;
+                        void previewSsFile(ssFileBase64, ssFilename);
+                      }}>重试文件预览</Button>
+                    </div>
+                  )}
 
                   {/* Product Preview Table */}
                   {ssProducts.length > 0 && (
@@ -1233,9 +1285,11 @@ export default function AnalysisPage() {
                         <div className="flex gap-2">
                           <Button variant="outline" size="sm" className="text-xs h-7"
                             onClick={() => setSsProducts(prev => prev.map(p => ({ ...p, selected: true })))}
+                            disabled={ssIsAnalyzing || !!ssPendingJob}
                           >全选</Button>
                           <Button variant="outline" size="sm" className="text-xs h-7"
                             onClick={() => setSsProducts(prev => prev.map(p => ({ ...p, selected: false })))}
+                            disabled={ssIsAnalyzing || !!ssPendingJob}
                           >全不选</Button>
                         </div>
                       </div>
@@ -1247,6 +1301,7 @@ export default function AnalysisPage() {
                                 <th className="p-2 text-left w-8">
                                   <input type="checkbox"
                                     checked={ssProducts.every(p => p.selected)}
+                                    disabled={ssIsAnalyzing || !!ssPendingJob}
                                     onChange={(e) => setSsProducts(prev => prev.map(p => ({ ...p, selected: e.target.checked })))}
                                     className="rounded"
                                   />
@@ -1267,6 +1322,7 @@ export default function AnalysisPage() {
                                 }`}>
                                   <td className="p-2">
                                     <input type="checkbox" checked={!!p.selected}
+                                      disabled={ssIsAnalyzing || !!ssPendingJob}
                                       onChange={(e) => setSsProducts(prev => prev.map((item, i) => i === idx ? { ...item, selected: e.target.checked } : item))}
                                       className="rounded"
                                     />
@@ -1326,9 +1382,9 @@ export default function AnalysisPage() {
                         <div className="space-y-2 p-3 bg-muted/30 rounded-lg border">
                           <div className="flex items-center gap-2">
                             <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                            <span className="text-sm font-medium">正在对 {ssProducts.filter(p => p.selected).length} 条竞品进行AI分析...</span>
+                            <span className="text-sm font-medium">正在上传文件并提交后台任务...</span>
                           </div>
-                          <p className="text-xs text-muted-foreground">这可能需要几分钟，请耐心等待</p>
+                          <p className="text-xs text-muted-foreground">任务受理后即可离开页面，后续分析在后台执行。</p>
                         </div>
                       )}
 
@@ -1336,28 +1392,34 @@ export default function AnalysisPage() {
                         className="w-full"
                         size="lg"
                         onClick={handleSsAnalyze}
-                        disabled={ssIsAnalyzing || ssProducts.filter(p => p.selected).length === 0}
+                        disabled={ssIsAnalyzing || !!ssPendingJob || ssProducts.filter(p => p.selected).length === 0}
                       >
                         {ssIsAnalyzing ? (
                           <>
                             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            AI分析中...
+                            正在提交后台任务...
                           </>
                         ) : (
                           <>
                             <Zap className="h-4 w-4 mr-2" />
-                            批量导入 & AI分析 ({ssProducts.filter(p => p.selected).length} 条)
+                            {ssPendingJob ? "已提交后台，请查看任务进度" : `提交后台分析 (${ssProducts.filter(p => p.selected).length} 条)`}
                           </>
                         )}
                       </Button>
                       <p className="text-xs text-muted-foreground text-center">
-                        将导入并分析已选竞品，结果展示在右侧面板
+                        任务进度与失败原因显示在下方，成功结果展示在右侧面板
                       </p>
                     </div>
                   )}
                 </CardContent>
               </Card>
             )}
+            <ImportJobPanel
+              jobs={importJobs}
+              isLoading={importJobsQuery.isLoading}
+              error={importJobsQuery.error?.message}
+              onRefresh={() => { void importJobsQuery.refetch(); }}
+            />
           </div>
 
           {/* ═══════════════ Results Panel ═══════════════ */}

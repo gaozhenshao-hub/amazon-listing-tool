@@ -10,6 +10,7 @@ import { MarketplaceProvider } from "./contexts/MarketplaceContext";
 import { getLoginUrl } from "./const";
 import "./index.css";
 import { ClientTransportError, isAuthRequiredError, isRetryableAppError } from "./lib/appError";
+import { getRequestTimeoutMs } from "./lib/requestTimeout";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -115,17 +116,8 @@ const trpcClient = trpc.createClient({
       transformer: superjson,
       async fetch(input, init) {
         const controller = new AbortController();
-        // Determine timeout based on request type
-        // AI-heavy mutations (imageWorkflow, generate, evaluate, analyze) need longer timeout
         const inputUrl = typeof input === 'string' ? input : (input as Request).url || '';
-        const isAiMutation = inputUrl.includes('imageWorkflow') || 
-          inputUrl.includes('generate') || 
-          inputUrl.includes('evaluate') || 
-          inputUrl.includes('analyze') ||
-          inputUrl.includes('adDeep') ||
-          inputUrl.includes('runStage') ||
-          inputUrl.includes('Checklist');
-        const timeoutMs = isAiMutation ? 180000 : 30000; // 180s for AI, 30s for others
+        const timeoutMs = getRequestTimeoutMs(inputUrl);
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         try {
           const res = await globalThis.fetch(input, {
@@ -148,7 +140,7 @@ const trpcClient = trpc.createClient({
         } catch (err) {
           clearTimeout(timeoutId);
           if (err instanceof DOMException && err.name === 'AbortError') {
-            throw new ClientTransportError("请求超时，正在重试...", APP_ERROR_CODES.REQUEST_TIMEOUT, true);
+            throw new ClientTransportError("请求等待超时；已提交的导入任务可在任务列表查看进度", APP_ERROR_CODES.REQUEST_TIMEOUT, true);
           }
           throw err;
         }

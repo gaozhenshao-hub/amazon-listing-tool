@@ -2,6 +2,7 @@ import "dotenv/config";
 import "../routers/aiJobs";
 import "../routers/imageWorkflow";
 import "../domains/listing/services/generationJob";
+import "../services/analysisImportJob";
 import "../services/emperorAgentRunner";
 import "../domains/product_development/analysis/informationSummaryService";
 import "../domains/product_development/analysis/analysisStageJobService";
