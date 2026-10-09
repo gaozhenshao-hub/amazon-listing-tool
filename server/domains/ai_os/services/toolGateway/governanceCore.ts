@@ -859,7 +859,9 @@ export function classifyToolFailure(error: unknown, httpStatus?: number): { kind
   if (code === "TOO_MANY_REQUESTS" || /rate limit|concurrency limit/i.test(message)) return { kind: "rate_limit", retryable: true };
   if (code === "FORBIDDEN" || isPolicyBlock(error)) return { kind: "policy", retryable: false };
   if (/schema validation failed/i.test(message)) return { kind: "schema", retryable: false };
-  if (/missing .*secret|unauthorized|forbidden|401|403/i.test(message)) return { kind: "auth", retryable: false };
+  if (code === "UNAUTHORIZED" || /missing .*secret|unauthorized|forbidden|401|403|mcp[ _-]?key|api[ _-]?key|access[ _-]?key|密钥|认证失败|鉴权失败/i.test(message)) {
+    return { kind: "auth", retryable: false };
+  }
   if (/timeout|aborted|AbortError|ETIMEDOUT/i.test(message)) return { kind: "timeout", retryable: true };
   if (/fetch failed|ECONNRESET|ENOTFOUND|ECONNREFUSED|network/i.test(message)) return { kind: "network", retryable: true };
   if (parsedStatus && parsedStatus >= 500) return { kind: "http", retryable: true };

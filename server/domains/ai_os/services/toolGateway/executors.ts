@@ -313,6 +313,20 @@ export function unwrapLingxingMcpEnvelope(value: unknown): Record<string, any> {
   return toRecord(envelope.data ?? envelope.result ?? envelope);
 }
 
+function assertLingxingSchemaEnvelopeIsNotProviderError(value: Record<string, any>) {
+  const errorText = [value.message, value.error, value.msg, value.code]
+    .filter((item) => item !== null && item !== undefined)
+    .map((item) => typeof item === "string" ? item : JSON.stringify(item))
+    .join(" ")
+    .toLowerCase();
+  if (/mcp[ _-]?key|api[ _-]?key|access[ _-]?key|token|unauthori[sz]ed|forbidden|认证|鉴权|密钥/.test(errorText)) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "领星MCP认证失败：访问密钥无效、已失效或无权访问。请由超级管理员在系统设置 → API连接管理中替换领星MCP访问密钥，再执行无费用轻量校验。",
+    });
+  }
+}
+
 export function buildLingxingActionInvocation(capability: string, args: unknown, schemaEnvelope: unknown) {
   if (!LINGXING_READ_ONLY_CAPABILITIES.has(capability)) {
     throw new TRPCError({ code: "FORBIDDEN", message: `领星能力${capability || "(empty)"}不在只读白名单中` });
@@ -325,6 +339,7 @@ export function buildLingxingActionInvocation(capability: string, args: unknown,
     }
   }
   const schema = unwrapLingxingMcpEnvelope(schemaEnvelope);
+  assertLingxingSchemaEnvelopeIsNotProviderError(schema);
   const toolId = String(schema.toolId || "");
   const catalogVersion = String(schema.catalogVersion || "");
   const schemaVersion = String(schema.schemaVersion || "");

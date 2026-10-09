@@ -166,10 +166,47 @@ async function persistValidation(input: {
 function validationFailureCode(error: unknown) {
   const message = String(error instanceof Error ? error.message : error).toLowerCase();
   if (/missing|not configured|not found/.test(message)) return "not_configured";
-  if (/401|403|unauthori[sz]ed|forbidden|auth/.test(message)) return "auth_failed";
+  if (/401|403|unauthori[sz]ed|forbidden|auth|mcp[ _-]?key|密钥|认证|鉴权/.test(message)) return "auth_failed";
   if (/timeout|abort/.test(message)) return "timeout";
   if (/network|fetch|socket|dns/.test(message)) return "network";
   return "validation_failed";
+}
+
+function parseLingxingMcpHealthPayload(value: unknown): Record<string, unknown> {
+  if (typeof value !== "string") return toRecord(value);
+  try {
+    return toRecord(JSON.parse(value));
+  } catch {
+    const eventJson = value.split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.startsWith("data:"));
+    if (!eventJson) return {};
+    try { return toRecord(JSON.parse(eventJson.slice("data:".length).trim())); } catch { return {}; }
+  }
+}
+
+/**
+ * 领星MCP可能以HTTP 200承载业务错误（例如code=102的失效MCP Key）。
+ * 连接页必须将其当作校验失败，不能仅依据HTTP状态标记“已校验”。
+ */
+export function assertLingxingMcpHealthPayload(value: unknown) {
+  const payload = parseLingxingMcpHealthPayload(value);
+  const error = toRecord(payload.error);
+  const code = payload.code ?? error.code;
+  const success = payload.success;
+  const message = [payload.msg, payload.message, error.message, error.msg]
+    .filter((item) => item !== null && item !== undefined)
+    .map(String)
+    .join(" ");
+  const numericCode = typeof code === "number" ? code : Number(code);
+  const hasProviderError = Boolean(Object.keys(error).length)
+    || success === false
+    || (Number.isFinite(numericCode) && ![0, 1, 200].includes(numericCode));
+  if (!hasProviderError) return;
+  if (/mcp[ _-]?key|api[ _-]?key|access[ _-]?key|密钥|认证|鉴权|unauthori[sz]ed|forbidden/i.test(message)) {
+    throw new Error("lingxing_auth_failed: MCP Key无效、已失效或无权访问");
+  }
+  throw new Error(`lingxing_provider_validation_failed${code === undefined ? "" : `:${String(code)}`}`);
 }
 
 export async function validateApiConnection(input: { connection: ApiConnectionCode; userId: number }) {
@@ -202,6 +239,9 @@ export async function validateApiConnection(input: { connection: ApiConnectionCo
         auditContext: { operation: "api_connections.lingxing_mcp_health" },
       });
       if (!response.ok) throw new Error(`lingxing_http_${response.status}`);
+      const contentType = response.headers["content-type"] || "";
+      const payload = contentType.includes("application/json") ? response.json() : response.text();
+      assertLingxingMcpHealthPayload(payload);
     }
     const validation = await persistValidation({ ...input, status: "verified" });
     return { connection: input.connection, success: true, validation };

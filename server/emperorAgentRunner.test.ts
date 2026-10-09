@@ -484,6 +484,7 @@ describe("Emperor Agent workflow kernel", () => {
     expect(classifyToolFailure(new Error("Tool circuit breaker is open")).kind).toBe("circuit_open");
     expect(classifyToolFailure(new Error("HTTP tool failed: 503")).retryable).toBe(true);
     expect(classifyToolFailure(new Error("Tool inputSchema validation failed")).kind).toBe("schema");
+    expect(classifyToolFailure(new Error("领星MCP认证失败：访问密钥无效、已失效或无权访问"))).toEqual({ kind: "auth", retryable: false });
   });
 
   it("should validate Tool Gateway JSON schema contracts", () => {
