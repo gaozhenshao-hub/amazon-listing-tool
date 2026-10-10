@@ -3,12 +3,12 @@ import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 const GENERATION_STEPS = [
-  "AI正在读取产品属性数据...",
-  "AI正在分析竞品Listing共性与缺口...",
-  "AI正在匹配买家高频痛点和场景...",
-  "AI正在规划A9关键词分配策略...",
-  "AI正在生成FABE卖点方向框架...",
-  "AI正在整合七条卖点核心主题...",
+  "规划环节：核对本品事实",
+  "规划环节：参考可用竞品研究",
+  "规划环节：梳理买家痛点与场景",
+  "规划环节：分配关键词",
+  "规划环节：明确每条卖点方向",
+  "规划环节：安排七条方向的先后逻辑",
 ];
 
 // Step 1 animated progress indicator
@@ -27,7 +27,7 @@ export function GeneratingProgress() {
       <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
         <div className="h-full bg-teal-500 rounded-full animate-pulse" style={{ width: `${((idx + 1) / GENERATION_STEPS.length) * 100}%`, transition: 'width 2.8s ease' }} />
       </div>
-      <p className="text-xs text-muted-foreground text-center">通常需要 15-30 秒，请耐心等待...</p>
+      <p className="text-xs text-muted-foreground text-center">以上为规划环节说明，不代表实时读取状态；缺失的研究数据将在结果中说明。</p>
     </div>
   );
 }

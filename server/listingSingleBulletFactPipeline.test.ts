@@ -9,7 +9,9 @@ vi.mock("./domains/listing/routerContext", () => ({
   safeParseJSON: JSON.parse, validateBullets: mocks.validateBullets, validateTitles: vi.fn(),
 }));
 vi.mock("./domains/listing/repository", () => ({ getProjectByIdAdmin: mocks.getProject,
-  getCompetitorAnalysesByProject: mocks.getAnalyses, getProjectFilesByProject: mocks.getFiles }));
+  getCompetitorAnalysesByProject: mocks.getAnalyses, getProjectFilesByProject: mocks.getFiles,
+  getReviewAggregationByProject: vi.fn(async () => null), getKeywordsByProject: vi.fn(async () => []),
+  getActiveBuyerQuestionsByProject: vi.fn(async () => []), getLatestConfirmedCompetitorComparisonReport: vi.fn(async () => null) }));
 vi.mock("./domains/listing/service", () => ({ runEmperorSkill: mocks.runSkill }));
 vi.mock("./domains/ai_os/services/jobRunner", () => ({
   registerAiJobHandler: vi.fn(), listAiJobRunsForUser: mocks.listJobs, updateAiJobProgress: mocks.progress,
@@ -68,7 +70,14 @@ beforeEach(() => {
   mocks.buildContext.mockImplementation((p: unknown, _analyses: unknown, e: unknown) => JSON.stringify({ project: p, enrichedData: e }));
   mocks.listJobs.mockImplementation(async () => [makeJob({ operation: "sellingPoints" }), makeJob({ operation: "singleBullet", sellingPoint: core })]);
   mocks.runSkill.mockImplementation(async (call: { skillSlug: string }) => ({ runId: "skill_test", modelSlug: "quality-test-model", skillVersion: "7",
-    parsed: call.skillSlug === "listing.sellingpoints.generate" ? { sellingPoints: [core] } : bullet }));
+    parsed: call.skillSlug === "listing.sellingpoints.generate" ? {
+      sellingPoints: Array.from({ length: 7 }, (_, index) => ({ ...core, index: index + 1,
+        theme: `Planning angle ${index + 1}`, themeZh: `策划方向${index + 1}`, descriptionZh: "待补证的策划角度",
+        fabeDirection: { feature: "Padded shell", advantage: "Evidence gap", benefit: "Evidence gap", evidence: "Confirmed fact 23: Padded shell" },
+        addressesGap: "No review evidence supplied; research needed", checkListTargets: [] })),
+      overallStrategy: "Only padded shell is supported; research is missing for other buyer angles.",
+      checkListCoverage: { B4_order: "Supported facts first; other angles need evidence, not fabricated customer consensus." },
+    } : bullet }));
 });
 
 describe("G1 v7事实保护实际Job Handler（所有外部依赖mock）", () => {

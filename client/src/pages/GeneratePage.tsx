@@ -57,7 +57,9 @@ import { ListingPlanningPanel } from "@/components/workflow/ListingPlanningPanel
 import { FactReviewPanel } from "@/components/listing/FactReviewPanel";
 import { CoreReviewPanel } from "@/components/listing/CoreReviewPanel";
 import { CandidateReviewPanel } from "@/components/listing/CandidateReviewPanel";
-import { buildRestoredSellingPointCores, factRevisionIdsForCore, hasCurrentConfirmedEvidence } from "./listing/reviewRecovery";
+import { factRevisionIdsForCore, findSuccessfulSellingPointPlan, hasCurrentConfirmedEvidence, sellingPointBuyerReason } from "./listing/reviewRecovery";
+import { useSellingPointPlanRecovery } from "./listing/useSellingPointPlanRecovery";
+import { SellingPointDirectionDetails, SellingPointPlanSummary } from "./listing/SellingPointPlanSummary";
 import {
   ListingGenerationJobStatus,
   useListingGenerationJob,
@@ -77,9 +79,9 @@ export default function GeneratePage() {
   const [distillationBinding, setDistillationBinding] = useState<DistillationBinding>({ ledgerKey: null, skillSlugs: [] });
 
   // Step-by-step bullet generation state
-  const [sellingPointCores, setSellingPointCores] = useState<Array<any | null> | null>(null);
+  const sellingPointPlan = useSellingPointPlanRecovery(selectedProjectId);
+  const { points: sellingPointCores, setPoints: setSellingPointCores, restore: restoreSellingPointPlan, settleUnsuccessfulAttempt } = sellingPointPlan;
   const coreRevisionRef = useRef(0);
-  const [overallStrategy, setOverallStrategy] = useState<string>("");
   const [confirmedCores, setConfirmedCores] = useState<boolean[]>([]);
   const [coreFactSelection, setCoreFactSelection] = useState<Record<number, number[]>>({});
   const reviewedFactsQuery = trpc.listing.listReviewedFacts.useQuery({ projectId: selectedProjectId! }, { enabled: !!selectedProjectId });
@@ -97,8 +99,7 @@ export default function GeneratePage() {
   // A restored card retains the exact server-reviewed reason until an operator
   // changes it. This prevents formatting the display fields from creating a
   // different core binding after refresh.
-  const coreReason = (point: any) => String(point?.restoredBuyerReason ||
-    `${String(point?.theme || "").trim()}: ${String(point?.description || "").trim()}`).trim();
+  const coreReason = sellingPointBuyerReason;
   const coreBinding = (idx: number) => reviewedCoresQuery.data?.find((item) =>
     item.sellingPointIndex === idx && item.status === "confirmed"
       && (!sellingPointCores?.[idx]?.serverCoreId || item.coreId === sellingPointCores[idx]?.serverCoreId)
@@ -126,45 +127,27 @@ export default function GeneratePage() {
           && hasCurrentConfirmedEvidence(item, confirmedFactIds))));
       return next.some((item, idx) => item !== previous[idx]) ? next : previous;
     });
-  }, [confirmedFactIds, editingCore, reviewedCoresQuery.data, reviewedFactsQuery.isError, reviewedFactsQuery.isLoading, sellingPointCores]);
+  }, [confirmedFactIds, coreReason, editingCore, reviewedCoresQuery.data, reviewedFactsQuery.isError, reviewedFactsQuery.isLoading, sellingPointCores]);
   const [editingBullet, setEditingBullet] = useState<number | null>(null);
   const [editBulletData, setEditBulletData] = useState<{ subtitle: string; fullText: string }>({ subtitle: "", fullText: "" });
   const [stepBulletPhase, setStepBulletPhase] = useState<"idle" | "cores" | "bullets">("idle");
   const lastCoreProjectRef = useRef(selectedProjectId);
-  const lastRecoveredCoreSignatureRef = useRef<string | null>(null);
+  const lastRecoveredPlanVersionRef = useRef(0);
   useEffect(() => {
     if (lastCoreProjectRef.current === selectedProjectId) return;
     lastCoreProjectRef.current = selectedProjectId;
-    lastRecoveredCoreSignatureRef.current = null;
+    lastRecoveredPlanVersionRef.current = 0;
     coreRevisionRef.current += 1;
-    setSellingPointCores(null);
     setConfirmedCores([]);
     setCoreFactSelection({});
     setGeneratedBullets({});
     latestBulletsRef.current = {};
     setBulletCandidates({});
     setConfirmedBullets({});
+    setEditingCore(null);
+    setEditingBullet(null);
     setStepBulletPhase("idle");
   }, [selectedProjectId]);
-
-  // Core review rows are the only durable source for an interrupted/reloaded
-  // G1 review.  Hydrate once per server result, only when this page has no
-  // local cards, so query refetches can never replace an operator's dirty edit.
-  useEffect(() => {
-    if (!selectedProjectId || reviewedCoresQuery.isLoading || reviewedCoresQuery.isError || !reviewedCoresQuery.data) return;
-    const signature = reviewedCoresQuery.data.map((core) => `${core.id}:${core.revision}:${core.status}`).join("|");
-    if (signature === lastRecoveredCoreSignatureRef.current || sellingPointCores !== null) return;
-    lastRecoveredCoreSignatureRef.current = signature;
-    const restored = buildRestoredSellingPointCores(reviewedCoresQuery.data);
-    if (!restored.length) return;
-    setSellingPointCores(restored);
-    setCoreFactSelection(Object.fromEntries(restored.flatMap((point, index) => {
-      const core = point && reviewedCoresQuery.data.find((item) => item.coreId === point.serverCoreId);
-      return core ? [[index, factRevisionIdsForCore(core)]] : [];
-    })));
-    setOverallStrategy((current) => current || "已从服务端恢复人工审核的卖点核心；未确认项目仍需人工完成审核。");
-    setStepBulletPhase((current) => current === "idle" ? "cores" : current);
-  }, [reviewedCoresQuery.data, reviewedCoresQuery.isError, reviewedCoresQuery.isLoading, selectedProjectId, sellingPointCores]);
 
   // Manual selling point addition state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -370,14 +353,9 @@ export default function GeneratePage() {
       // Normalize field name variants (backend may return selling_points / points / cores / themes)
       const points = data.sellingPoints ?? data.selling_points ?? data.points ?? data.bulletCores ?? data.cores ?? data.themes;
       if (Array.isArray(points) && points.length > 0) {
-        setSellingPointCores(points);
-        setOverallStrategy(data.overallStrategy ?? data.overall_strategy ?? data.strategy ?? data.summary ?? "");
-        setConfirmedCores(new Array(points.length).fill(false));
-        setCoreFactSelection({});
-        setGeneratedBullets({});
-        setConfirmedBullets({});
-        setStepBulletPhase("cores");
-        toast.success(`卖点核心已生成（${points.length}条），请确认或编辑后逐条生成`);
+        // Recovery below waits for the review ledger and preserves reviewed
+        // buying reasons instead of replaying an old draft over human edits.
+        return;
       } else if ((data as any).raw || (data as any).parseError) {
         // Backend returned raw text (JSON parse failed)
         console.error("[generateCores] Backend JSON parse error:", (data as any).parseError, "\nRaw:", String((data as any).raw ?? "").slice(0, 200));
@@ -388,6 +366,17 @@ export default function GeneratePage() {
       }
     },
   });
+
+  useEffect(() => {
+    if (!sellingPointCores || !sellingPointPlan.restorationVersion
+      || lastRecoveredPlanVersionRef.current === sellingPointPlan.restorationVersion) return;
+    lastRecoveredPlanVersionRef.current = sellingPointPlan.restorationVersion;
+    setCoreFactSelection(Object.fromEntries(sellingPointCores.flatMap((point, index) => {
+      const core = point && reviewedCoresQuery.data?.find((item) => item.coreId === point.serverCoreId);
+      return core ? [[index, factRevisionIdsForCore(core)]] : [];
+    })));
+    setStepBulletPhase((current) => current === "idle" ? "cores" : current);
+  }, [sellingPointCores, sellingPointPlan.restorationVersion, reviewedCoresQuery.data]);
   const startListingJob = trpc.listing.startGenerationJob.useMutation();
   const cancelListingJob = trpc.listing.cancelGenerationJob.useMutation();
   const handledBulletJobRuns = useRef(new Set<string>());
@@ -400,6 +389,23 @@ export default function GeneratePage() {
     },
   );
   const g1Jobs = useMemo(() => (g1JobsQuery.data || []) as any[], [g1JobsQuery.data]);
+  useEffect(() => {
+    if (!selectedProjectId || sellingPointsJob.isLoadingRun || reviewedCoresQuery.isLoading
+      || reviewedCoresQuery.isError || !reviewedCoresQuery.data) return;
+    if (sellingPointPlan.awaitingNewRun && sellingPointsJob.run?.runId !== sellingPointPlan.ignoredRunId
+      && ["failed", "canceled"].includes(sellingPointsJob.run?.status)) {
+      settleUnsuccessfulAttempt(sellingPointsJob.run); return;
+    }
+    const run = findSuccessfulSellingPointPlan(sellingPointsJob.run,
+      sellingPointPlan.awaitingNewRun ? [] : g1Jobs, selectedProjectId);
+    // Prefer a saved complete plan to lossy core-only reconstruction. History
+    // is already queried for bullet recovery; no extra endpoint is required.
+    if (!run && g1JobsQuery.isLoading && !sellingPointPlan.awaitingNewRun) return;
+    restoreSellingPointPlan(run?.runId || null, run?.output || null, reviewedCoresQuery.data);
+  }, [selectedProjectId, sellingPointsJob.isLoadingRun, sellingPointsJob.run, reviewedCoresQuery.data,
+    reviewedCoresQuery.isLoading, reviewedCoresQuery.isError, restoreSellingPointPlan,
+    g1Jobs, g1JobsQuery.isLoading, sellingPointPlan.awaitingNewRun, sellingPointPlan.ignoredRunId, settleUnsuccessfulAttempt]);
+
   const latestSingleBulletJob = g1Jobs.find((job) => {
     const operation = (job.input as any)?.operation;
     return operation === "singleBullet";
@@ -482,8 +488,15 @@ export default function GeneratePage() {
       return;
     }
     coreRevisionRef.current += 1;
+    sellingPointPlan.prepare(sellingPointsJob.run?.runId || null);
+    setCoreFactSelection({});
+    setConfirmedCores([]);
+    setGeneratedBullets({});
+    setConfirmedBullets({});
     setStepBulletPhase("idle");
-    void sellingPointsJob.start({ emphasis: emphasis.trim() || undefined });
+    void sellingPointsJob.start({ emphasis: emphasis.trim() || undefined }).then((job) => {
+      if (!job) settleUnsuccessfulAttempt();
+    });
   };
 
   const handleConfirmCore = async (idx: number) => {
@@ -503,6 +516,7 @@ export default function GeneratePage() {
       || reviewedCoresQuery.data?.filter((row) => row.sellingPointIndex === idx && (row.status === "draft" || row.status === "confirmed"))
         .sort((a, b) => b.revision - a.revision || b.id - a.id)[0];
     try {
+      sellingPointPlan.markDirty();
       await reviewCoreMutation.mutateAsync({ projectId: selectedProjectId,
         ...(known ? { coreId: known.coreId } : {}), sellingPointIndex: idx,
         buyerReason: coreReason(sellingPointCores[idx]), factRevisionIds: factIds,
@@ -517,6 +531,7 @@ export default function GeneratePage() {
   };
 
   const handleReopenCore = (idx: number) => {
+    sellingPointPlan.markDirty();
     coreRevisionRef.current += 1;
     setConfirmedCores(prev => { const next = [...prev]; next[idx] = false; return next; });
     setConfirmedBullets(prev => ({ ...prev, [idx]: false }));
@@ -830,8 +845,7 @@ export default function GeneratePage() {
 
   const handleResetStepBullet = () => {
     coreRevisionRef.current += 1;
-    setSellingPointCores(null);
-    setOverallStrategy("");
+    sellingPointPlan.reset();
     setConfirmedCores([]);
     setGeneratedBullets({});
     setConfirmedBullets({});
@@ -1438,6 +1452,9 @@ export default function GeneratePage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <details className="text-sm">
+                <summary className="cursor-pointer text-muted-foreground">事实与核心审核（确认方向前必填，点击展开）</summary>
+                <div className="mt-3 space-y-4">
               {selectedProjectId && <FactReviewPanel projectId={selectedProjectId} />}
               {selectedProjectId && <CoreReviewPanel projectId={selectedProjectId} />}
               {selectedProjectId && <section className="space-y-2" aria-label="已审核卖点候选恢复">
@@ -1464,6 +1481,8 @@ export default function GeneratePage() {
                   readOnlyHistory
                 />}
               </section>}
+                </div>
+              </details>
               {/* Phase: Generate Cores */}
               {stepBulletPhase === "idle" && (
                 <Button
@@ -1521,7 +1540,6 @@ export default function GeneratePage() {
                           </span>
                         )}
                       </h3>
-                      {overallStrategy && <p className="text-xs text-muted-foreground mt-1">{overallStrategy}</p>}
                     </div>
                     <div className="flex items-center gap-2">
                       {canAddMore && (
@@ -1548,6 +1566,7 @@ export default function GeneratePage() {
                       </Button>
                     </div>
                   </div>
+                  <SellingPointPlanSummary metadata={sellingPointPlan.metadata} />
 
                   {/* Manual Add Form with AI Assist */}
                   {showAddForm && canAddMore && (
@@ -1792,7 +1811,7 @@ export default function GeneratePage() {
                                   <Trash2 className="h-3 w-3" />
                                 </Button>
                               )}
-                              <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setEditingCore(editingCore === idx ? null : idx)}>
+                              <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => { sellingPointPlan.markDirty(); setEditingCore(editingCore === idx ? null : idx); }}>
                                 <Pencil className="h-3 w-3" />
                               </Button>
                               <Button variant="default" size="sm" className="h-7 px-3 bg-green-600 hover:bg-green-700" disabled={reviewCoreMutation.isPending || reviewedFactsQuery.isLoading || reviewedCoresQuery.isLoading} onClick={() => void handleConfirmCore(idx)}>
@@ -1816,19 +1835,22 @@ export default function GeneratePage() {
                         </div>
                       )}
 
-                      {!confirmedCores[idx] && <fieldset className="mb-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs">
+                      {!confirmedCores[idx] && <details className="mb-2 text-xs">
+                        <summary className="cursor-pointer text-muted-foreground">确认前选择本品事实（必选，已选 {(coreFactSelection[idx] || []).length} 条）</summary>
+                        <fieldset className="mt-2 rounded-md border border-slate-200 bg-white px-2 py-1.5">
                         <legend className="px-1 font-medium">选择本条卖点的已确认事实（必选）</legend>
                         {reviewedFactsQuery.isError && <p role="alert" className="text-red-700">事实账本读取失败，请刷新后重试</p>}
                         {!reviewedFactsQuery.data?.some((fact) => fact.status === "confirmed") && <p className="text-amber-800">暂无已确认的原始属性表事实；请先在上方审阅，再确认卖点核心。</p>}
                         <div className="max-h-28 space-y-1 overflow-auto">
                           {reviewedFactsQuery.data?.filter((fact) => fact.status === "confirmed").map((fact) => <label key={fact.id} className="flex gap-2 items-start">
-                            <Checkbox checked={(coreFactSelection[idx] || []).includes(fact.id)} onCheckedChange={() => setCoreFactSelection((previous) => ({ ...previous,
+                            <Checkbox checked={(coreFactSelection[idx] || []).includes(fact.id)} onCheckedChange={() => { sellingPointPlan.markDirty(); setCoreFactSelection((previous) => ({ ...previous,
                               [idx]: (previous[idx] || []).includes(fact.id) ? previous[idx].filter((id) => id !== fact.id) : [...(previous[idx] || []), fact.id],
-                            }))} />
+                            })); }} />
                             <span>{fact.attributeKey}：{fact.value}</span>
                           </label>)}
                         </div>
-                      </fieldset>}
+                        </fieldset>
+                      </details>}
 
                       {editingCore === idx ? (
                         <div className="space-y-2 mt-3">
@@ -1867,27 +1889,7 @@ export default function GeneratePage() {
                           )}
                         </div>
                       ) : (
-                        <div className="space-y-1.5">
-                          <p className="text-xs text-muted-foreground">{sp.description}</p>
-                          {sp.descriptionZh && <p className="text-xs text-muted-foreground italic">{sp.descriptionZh}</p>}
-                          {sp.fabeDirection && (
-                            <div className="grid grid-cols-2 gap-1 mt-2">
-                              {Object.entries(sp.fabeDirection).map(([key, val]) => (
-                                val ? <div key={key} className="text-[10px] text-muted-foreground"><span className="font-medium uppercase">{key}:</span> {val as string}</div> : null
-                              ))}
-                            </div>
-                          )}
-                          {sp.targetKeywords?.length > 0 && (
-                            <div className="flex gap-1 flex-wrap mt-1">
-                              {sp.targetKeywords.map((kw: string, j: number) => (
-                                <Badge key={j} variant="outline" className="text-[10px]">{kw}</Badge>
-                              ))}
-                            </div>
-                          )}
-                          {sp.addressesGap && (
-                            <p className="text-[10px] text-teal-600 mt-1">针对: {sp.addressesGap}</p>
-                          )}
-                        </div>
+                        <SellingPointDirectionDetails point={sp} />
                       )}
 
                       {/* Single bullet generation for this core */}

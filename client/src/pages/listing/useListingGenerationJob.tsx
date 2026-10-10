@@ -125,6 +125,7 @@ export function useListingGenerationJob(input: {
 
   return {
     run,
+    isLoadingRun: runQuery.isLoading,
     isGenerating: generating,
     isStarting: startMutation.isPending,
     isCanceling: cancelMutation.isPending,
