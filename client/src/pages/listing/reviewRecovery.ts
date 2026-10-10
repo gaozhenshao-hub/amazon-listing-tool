@@ -23,6 +23,70 @@ export type RestoredSellingPointCore = {
   restoredBuyerReason: string;
 };
 
+export type SellingPointPlanMetadata = {
+  overallStrategy: string;
+  checkListCoverage: Record<string, string>;
+  researchLimitations: string[];
+  missingPlanningMetadata: boolean;
+  hasReviewedEdits: boolean;
+};
+
+export function emptySellingPointPlanMetadata(): SellingPointPlanMetadata {
+  return { overallStrategy: "", checkListCoverage: {}, researchLimitations: [], missingPlanningMetadata: false, hasReviewedEdits: false };
+}
+
+export function sellingPointBuyerReason(point: any): string {
+  return String(point?.restoredBuyerReason || `${String(point?.theme || "").trim()}: ${String(point?.description || "").trim()}`).trim();
+}
+
+export function findSuccessfulSellingPointPlan(currentRun: any, history: any[], projectId: number) {
+  return [currentRun, ...history].filter(Boolean).sort((left, right) => {
+    const leftTime = new Date(left.createdAt).getTime();
+    const rightTime = new Date(right.createdAt).getTime();
+    return Number.isFinite(leftTime) && Number.isFinite(rightTime) ? rightTime - leftTime : 0;
+  }).find((job) => {
+    if (!job || job.projectId !== projectId || job.status !== "succeeded" || job.output?.skipped) return false;
+    if (job.input?.operation !== "sellingPoints" || (job.input?.scopeKey || "main") !== "main") return false;
+    const output = job.output;
+    const points = output?.sellingPoints ?? output?.selling_points ?? output?.points ?? output?.bulletCores ?? output?.cores ?? output?.themes;
+    return Array.isArray(points) && points.length > 0;
+  }) || null;
+}
+
+/** A successful job supplies planning context, never authority to replace a reviewed buying reason. */
+export function recoverSellingPointPlan(output: any, reviewedCores: ReviewedCoreRecovery[]) {
+  const rawPoints = output?.sellingPoints ?? output?.selling_points ?? output?.points ?? output?.bulletCores ?? output?.cores ?? output?.themes;
+  const points: Array<any | null> = Array.isArray(rawPoints) ? rawPoints.map((point) => point ? { ...point } : null) : [];
+  const reviewed = buildRestoredSellingPointCores(reviewedCores);
+  let hasReviewedEdits = false;
+  for (let index = 0; index < reviewed.length; index += 1) {
+    const core = reviewed[index];
+    if (!core) continue;
+    const generated = points[index];
+    if (generated && sellingPointBuyerReason(generated) === core.restoredBuyerReason.trim()) {
+      // Keep bilingual explanations/FABE/research from the same direction, and
+      // retain the exact reviewed reason/id for server-side confirmation checks.
+      points[index] = { ...generated, isRestored: true, serverCoreId: core.serverCoreId, restoredBuyerReason: core.restoredBuyerReason };
+    } else {
+      hasReviewedEdits ||= Boolean(generated);
+      points[index] = core;
+    }
+  }
+  const overallStrategy = output?.overallStrategy ?? output?.overall_strategy ?? output?.strategy ?? output?.summary;
+  const coverage = output?.checkListCoverage;
+  const limitations = output?.researchLimitations;
+  const metadata: SellingPointPlanMetadata = {
+    overallStrategy: typeof overallStrategy === "string" ? overallStrategy : "",
+    checkListCoverage: coverage && typeof coverage === "object" && !Array.isArray(coverage)
+      ? Object.fromEntries(Object.entries(coverage).filter((entry): entry is [string, string] => typeof entry[1] === "string")) : {},
+    researchLimitations: (Array.isArray(limitations) ? limitations : typeof limitations === "string" ? [limitations] : [])
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0),
+    missingPlanningMetadata: reviewed.some(Boolean) && !Array.isArray(rawPoints),
+    hasReviewedEdits,
+  };
+  return { points: points.length ? Array.from({ length: points.length }, (_, index) => points[index] ?? null) : null, metadata };
+}
+
 export function factRevisionIdsForCore(core: Pick<ReviewedCoreRecovery, "factRevisionIdsJson">): number[] {
   if (!Array.isArray(core.factRevisionIdsJson)) return [];
   return core.factRevisionIdsJson.filter((id): id is number => Number.isInteger(id) && id > 0);

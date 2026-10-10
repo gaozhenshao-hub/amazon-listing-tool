@@ -14,9 +14,10 @@ describe("GenerationIndicators", () => {
     vi.useFakeTimers();
     render(<GeneratingProgress />);
 
-    expect(screen.getByText("AI正在读取产品属性数据...")).toBeInTheDocument();
+    expect(screen.getByText("规划环节：核对本品事实")).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(2800));
-    expect(screen.getByText("AI正在分析竞品Listing共性与缺口...")).toBeInTheDocument();
+    expect(screen.getByText("规划环节：参考可用竞品研究")).toBeInTheDocument();
+    expect(screen.getByText(/不代表实时读取状态/)).toBeInTheDocument();
   });
 
   it("shows whether the generated text length is valid", () => {

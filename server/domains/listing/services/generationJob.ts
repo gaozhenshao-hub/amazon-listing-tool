@@ -39,6 +39,7 @@ import { readCompleteAttributeText } from "./listingRawAttributeSource";
 import { resolveConfirmedListingCore } from "./listingConfirmedCore";
 import { persistGeneratedBulletCandidate } from "./listingCandidateProvenance";
 import { resolveCurrentConfirmedListingFacts } from "./listingFactSource";
+import { buildSellingPointPlanningResearch, formatSellingPointPlanningContext, normalizeSellingPointPlanningOutput, sellingPointResearchLimitations } from "./sellingPointPlanning";
 
 export const LISTING_JOB_MODULE = "listing";
 
@@ -433,9 +434,8 @@ async function buildJobContext(
     if (!confirmedFacts?.length) {
       throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204事实账本没有可用于AI的当前已确认产品事实" });
     }
-    // Product identity is not product proof. Do not put project specs, AI-extracted
-    // attributes, competitor claims, previous artifacts, or old Listing text into
-    // these prompts: every product assertion must originate in this fact ledger.
+    // Product identity is not product proof. Every product assertion must
+    // originate in this ledger; planning research is a separate, labeled input.
     const identity = {
       productName: project.productName || project.name || "",
       brand: project.brand || "",
@@ -447,7 +447,7 @@ async function buildJobContext(
       attributeKey: fact.attributeKey,
       value: fact.value,
     }));
-    const context = [
+    const factContext = [
       "--- Product identity (not proof of specifications) ---",
       JSON.stringify(identity),
       "--- Current 0204 human-confirmed product facts; the only product-claim evidence ---",
@@ -455,12 +455,29 @@ async function buildJobContext(
       "--- Mandatory fact boundary ---",
       "Use only the confirmed facts above for any product specification, material, performance, certification, compatibility, warranty, pack quantity, comparison, or benefit claim. Do not infer our product facts from competitor data, reviews, keywords, historical Listing text, or general category knowledge. If the facts do not support a claim, omit it rather than guessing.",
     ].join("\n");
+    if (operation === "sellingPoints") {
+      const [competitors, reviewAggregation, keywords, buyerQuestions, confirmedComparison] = await Promise.all([
+        db.getCompetitorAnalysesByProject(input.projectId),
+        db.getReviewAggregationByProject(input.projectId),
+        db.getKeywordsByProject(input.projectId),
+        db.getActiveBuyerQuestionsByProject(input.projectId),
+        db.getLatestConfirmedCompetitorComparisonReport(input.projectId),
+      ]);
+      const planningResearch = buildSellingPointPlanningResearch({
+        projectId: input.projectId, competitors, reviewAggregation, keywords, buyerQuestions, confirmedComparison,
+      });
+      return {
+        project: identity, analyses: [], enrichedData: {}, rawExamples: [],
+        context: formatSellingPointPlanningContext({ factContext, research: planningResearch, emphasis: input.emphasis }),
+        variables: { project: identity, confirmedFacts: sourceFacts, planningResearch },
+      };
+    }
     return {
       project: identity,
       analyses: [],
       enrichedData: {},
       rawExamples: [],
-      context,
+      context: factContext,
       variables: { project: identity, confirmedFacts: sourceFacts },
     };
   }
@@ -531,6 +548,10 @@ async function callListingSkill(
     // after the first response must stop before another provider invocation.
     await resolveBoundFactsBeforeModel(input, job.workspaceId);
   }
+  const planningResearch = variables.planningResearch as ReturnType<typeof buildSellingPointPlanningResearch> | undefined;
+  if (input.operation === "sellingPoints" && !planningResearch) {
+    throw new Error("卖点方向缺少研究来源状态，不能调用模型");
+  }
   const result = await runEmperorSkill<any>({
     skillSlug,
     userId: job.userId,
@@ -549,7 +570,10 @@ async function callListingSkill(
     },
     signal: context.signal,
     maxModelAttempts: 3,
-    validate: parseSkillJson,
+    validate: (content) => {
+      const parsed = parseSkillJson(content);
+      return input.operation === "sellingPoints" ? normalizeSellingPointPlanningOutput(parsed, planningResearch) : parsed;
+    },
   });
   // The source file or a human-confirmed fact can change while inference runs.
   // Never return a now-stale field result to the waiting-human checkpoint.
@@ -566,16 +590,11 @@ async function callListingSkill(
   return result.parsed;
 }
 
-function normalizeSellingPoints(parsed: any) {
-  const sellingPoints = parsed?.sellingPoints || parsed?.selling_points || parsed?.points
-    || parsed?.bulletCores || parsed?.cores || parsed?.themes;
-  if (!Array.isArray(sellingPoints) || sellingPoints.length === 0) {
-    throw new Error("卖点核心生成结果缺少 sellingPoints");
-  }
+function normalizeSellingPoints(parsed: any, research: ReturnType<typeof buildSellingPointPlanningResearch>) {
   return {
-    ...parsed,
-    sellingPoints,
-    overallStrategy: parsed.overallStrategy || parsed.overall_strategy || parsed.strategy || parsed.summary || "",
+    ...normalizeSellingPointPlanningOutput(parsed, research),
+    // Server-derived provenance: a model cannot hide unavailable research.
+    researchLimitations: sellingPointResearchLimitations(research),
   };
 }
 
@@ -679,7 +698,12 @@ async function runOperation(
       && excludeRawExamplesFromFactTree(parsed, built.rawExamples, "output").excludedFields.length) {
     throw new Error("生成结果引用了原始产品属性表的示例值；此候选不可确认，请核实真实事实");
   }
-  if (operation === "sellingPoints") return normalizeSellingPoints(parsed);
+  if (operation === "sellingPoints") {
+    if (!("planningResearch" in built.variables) || !built.variables.planningResearch) {
+      throw new Error("卖点方向缺少研究来源状态，不能展示未经核验的策划结果");
+    }
+    return normalizeSellingPoints(parsed, built.variables.planningResearch);
+  }
   if (operation === "singleBullet") {
     let bullet = parsed;
     let quality = validateSingleBulletQuality(bullet, input);

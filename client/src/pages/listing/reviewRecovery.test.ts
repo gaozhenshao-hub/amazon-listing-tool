@@ -40,8 +40,8 @@ describe("listing review recovery", () => {
   });
 
   it("clears prior project state and mounts candidate review independently of transient core cards", () => {
-    expect(page).toContain("lastRecoveredCoreSignatureRef.current = null;");
-    expect(page).toContain("setSellingPointCores(null);");
+    expect(page).toContain("lastRecoveredPlanVersionRef.current = 0;");
+    expect(page).toContain("useSellingPointPlanRecovery(selectedProjectId)");
     expect(page).toContain('aria-label="已审核卖点候选恢复"');
     expect(page).toContain("currentConfirmedCoreBindings.map((core) => <CandidateReviewPanel");
     expect(page).not.toContain("{selectedProjectId && coreBinding(idx) && <CandidateReviewPanel");
