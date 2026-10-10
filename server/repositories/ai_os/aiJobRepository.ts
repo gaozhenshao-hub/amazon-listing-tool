@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import type { AiJob, AiJobDeadLetter, InsertAiJob } from "../../../drizzle/schema";
 import { aiJobDeadLetters, aiJobs, aiJobWorkers } from "../../../drizzle/schema";
 import { requireDb, withDbTransaction, type DbExecutor } from "../dbClient";
@@ -134,17 +134,30 @@ export async function listAiJobsForUser(
 export async function listRecoverableAiJobs(opts: { limit?: number } = {}) {
   const db = await requireDb("AI Job repository");
   const now = new Date();
-  return db
-    .select()
+  const recoverable = or(
+    and(eq(aiJobs.status, "queued"), or(isNull(aiJobs.nextRunAt), lt(aiJobs.nextRunAt, now))),
+    and(eq(aiJobs.status, "running"), or(isNull(aiJobs.leaseUntil), lt(aiJobs.leaseUntil, now))),
+  );
+  // Keep large input/output JSON out of MySQL's filesort buffer.
+  const candidates = await db
+    .select({ id: aiJobs.id })
     .from(aiJobs)
-    .where(
-      or(
-        and(eq(aiJobs.status, "queued"), or(isNull(aiJobs.nextRunAt), lt(aiJobs.nextRunAt, now))),
-        and(eq(aiJobs.status, "running"), or(isNull(aiJobs.leaseUntil), lt(aiJobs.leaseUntil, now))),
-      ),
-    )
+    .where(recoverable)
     .orderBy(desc(aiJobs.priority), asc(aiJobs.nextRunAt), asc(aiJobs.createdAt))
     .limit(boundedLimit(opts.limit, 50, 200));
+  if (candidates.length === 0) return [];
+
+  const rows = await db
+    .select()
+    .from(aiJobs)
+    .where(and(inArray(aiJobs.id, candidates.map(({ id }) => id)), recoverable));
+  const rowsById = new Map(rows.map((row) => [row.id, row]));
+  // Restore order without sorting payloads in SQL; missing/ineligible rows are
+  // skipped, and the atomic claim still decides execution ownership.
+  return candidates.flatMap(({ id }) => {
+    const row = rowsById.get(id);
+    return row ? [row] : [];
+  });
 }
 
 export async function heartbeatAiJobWorker(input: {
