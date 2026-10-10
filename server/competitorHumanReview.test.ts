@@ -87,19 +87,21 @@ describe("competitor human review", () => {
 
   it("keeps competitor AI execution on Emperor Skills", () => {
     const routerSource = fs.readFileSync(repoPath("server/routers/analysis.ts"), "utf8");
+    const executionSource = fs.readFileSync(repoPath("server/services/analysisImportExecution.ts"), "utf8");
+    const analysisSources = `${routerSource}\n${executionSource}`;
     const agentSource = fs.readFileSync(
       repoPath("server/domains/ai_os/services/agentRunner/templateGovernance.ts"),
       "utf8",
     );
 
-    expect(routerSource).toContain("runEmperorSkill");
-    expect(routerSource).not.toContain("invokeLLM");
+    expect(executionSource).toContain("runEmperorSkill");
+    expect(analysisSources).not.toContain("invokeLLM");
     for (const slug of [
       "listing.competitor.analyze",
       "analysis.competitor.multi",
       "analysis.review.extract",
     ]) {
-      expect(routerSource).toContain(slug);
+      expect(analysisSources).toContain(slug);
       expect(agentSource).toContain(slug);
     }
   });
