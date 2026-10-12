@@ -7,7 +7,8 @@ const USER = {
   role: "super_admin",
 };
 
-function fixtureFor(procedure: string): unknown {
+function fixtureFor(procedure: string, overrides: Record<string, unknown>): unknown {
+  if (Object.prototype.hasOwnProperty.call(overrides, procedure)) return overrides[procedure];
   const fixtures: Record<string, unknown> = {
     "auth.me": USER,
     "roleManagement.myPermissions": { modules: [], detailedPermissions: [] },
@@ -45,12 +46,12 @@ function fixtureFor(procedure: string): unknown {
   return null;
 }
 
-async function fulfillTrpc(route: Route) {
+async function fulfillTrpc(route: Route, overrides: Record<string, unknown>) {
   const requestUrl = new URL(route.request().url());
   const encodedPath = requestUrl.pathname.split("/api/trpc/")[1] || "";
   const procedures = decodeURIComponent(encodedPath).split(",").filter(Boolean);
   const payload = procedures.map((procedure) => ({
-    result: { data: { json: fixtureFor(procedure) } },
+    result: { data: { json: fixtureFor(procedure, overrides) } },
   }));
   await route.fulfill({
     status: 200,
@@ -59,9 +60,9 @@ async function fulfillTrpc(route: Route) {
   });
 }
 
-export async function installRealPageFixtures(page: Page) {
+export async function installRealPageFixtures(page: Page, overrides: Record<string, unknown> = {}) {
   await page.addInitScript(() => {
     localStorage.setItem("selectedProjectId", "1");
   });
-  await page.route("**/api/trpc/**", fulfillTrpc);
+  await page.route("**/api/trpc/**", route => fulfillTrpc(route, overrides));
 }

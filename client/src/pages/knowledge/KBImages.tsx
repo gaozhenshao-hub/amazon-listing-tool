@@ -917,7 +917,7 @@ export default function KBImages() {
 
       {/* ═══ ASIN Set Detail Dialog — Images Grouped by Position ═══ */}
       <Dialog open={!!detailSetId} onOpenChange={(open) => !open && setDetailSetId(null)}>
-        <DialogContent className="w-[60vw] max-w-[60vw] max-h-[90vh] overflow-y-auto">
+        <DialogContent data-testid="kb-image-set-detail" className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] lg:w-[60vw] lg:max-w-[60vw] min-w-0 grid-cols-[minmax(0,1fr)] max-h-[90vh] overflow-x-hidden overflow-y-auto">
           {(detailSet || detailSetPlaceholder) ? (() => {
             const d = (detailSet || detailSetPlaceholder) as any;
             const isPlaceholder = !detailSet && !!detailSetPlaceholder; // still loading full data
@@ -936,8 +936,8 @@ export default function KBImages() {
                     {isPlaceholder && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />加载中...</span>}
                   </DialogTitle>
                 </DialogHeader>
-                <div className="space-y-6">
-                  {d.productTitle && <h3 className="font-medium text-lg">{d.productTitle}</h3>}
+                <div className="min-w-0 max-w-full space-y-6">
+                  {d.productTitle && <h3 className="font-medium text-lg [overflow-wrap:anywhere]">{d.productTitle}</h3>}
 
                   {d.acquisitionCoverage?.partial && (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
@@ -1057,7 +1057,8 @@ export default function KBImages() {
                   )}
 
                   {/* ── Amazon-Style Gallery (Main + Secondary + Brand Story + A+) ── */}
-                  <div className="-mx-6">
+                  {/* Keep horizontal image strips inside the dialog's shrinkable grid track. */}
+                  <div className="min-w-0 max-w-full">
                   <AmazonStyleGallery
                     mainImages={groupedImages.main}
                     secondaryImages={groupedImages.secondary}
