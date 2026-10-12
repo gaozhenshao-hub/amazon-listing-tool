@@ -1,10 +1,11 @@
-import { useState, useCallback, useEffect, useRef, type ReactNode, type RefObject } from "react";
+import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, X, GripVertical, Tag } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, horizontalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useBalancedPreviewTransform } from "./useBalancedPreviewTransform";
 
 interface GalleryImage {
   id: number;
@@ -41,101 +42,6 @@ interface AmazonStyleGalleryProps {
 
 type PreviewFitMode = "balanced" | "full";
 
-type VisualBounds = {
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-  aspectRatio: number;
-};
-
-/**
- * Estimates the visual center from a small client-side canvas. It only changes
- * preview framing; the stored source image and its original pixels remain intact.
- */
-function useBalancedPreviewTransform(imageUrl: string, containerRef: RefObject<HTMLDivElement | null>) {
-  const [bounds, setBounds] = useState<VisualBounds | null>(null);
-  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
-
-  useEffect(() => {
-    let cancelled = false;
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    image.onload = () => {
-      try {
-        const side = 96;
-        const scale = Math.min(side / image.naturalWidth, side / image.naturalHeight);
-        const width = Math.max(1, Math.round(image.naturalWidth * scale));
-        const height = Math.max(1, Math.round(image.naturalHeight * scale));
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const context = canvas.getContext("2d", { willReadFrequently: true });
-        if (!context) return;
-        context.drawImage(image, 0, 0, width, height);
-        const pixels = context.getImageData(0, 0, width, height).data;
-        let minX = width;
-        let minY = height;
-        let maxX = -1;
-        let maxY = -1;
-        for (let y = 0; y < height; y += 1) {
-          for (let x = 0; x < width; x += 1) {
-            const offset = (y * width + x) * 4;
-            const r = pixels[offset];
-            const g = pixels[offset + 1];
-            const b = pixels[offset + 2];
-            const alpha = pixels[offset + 3];
-            const isForeground = alpha > 16 && (Math.min(r, g, b) < 232 || Math.max(r, g, b) - Math.min(r, g, b) > 14);
-            if (!isForeground) continue;
-            minX = Math.min(minX, x);
-            minY = Math.min(minY, y);
-            maxX = Math.max(maxX, x);
-            maxY = Math.max(maxY, y);
-          }
-        }
-        if (!cancelled && maxX >= minX && maxY >= minY) {
-          setBounds({
-            minX: minX / width,
-            minY: minY / height,
-            maxX: (maxX + 1) / width,
-            maxY: (maxY + 1) / height,
-            aspectRatio: image.naturalWidth / image.naturalHeight,
-          });
-        }
-      } catch {
-        // Cross-origin sources without canvas permission retain the safe center fallback.
-      }
-    };
-    if (!imageUrl) {
-      setBounds(null);
-      return () => { cancelled = true; };
-    }
-    image.src = imageUrl;
-    return () => { cancelled = true; };
-  }, [imageUrl]);
-
-  useEffect(() => {
-    const element = containerRef.current;
-    if (!element) return;
-    const updateSize = () => setContainerSize({ width: element.clientWidth, height: element.clientHeight });
-    updateSize();
-    const observer = new ResizeObserver(updateSize);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [containerRef]);
-
-  if (!bounds || !containerSize.width || !containerSize.height) return "translate(0px, 0px)";
-  const renderedWidth = Math.min(containerSize.width, containerSize.height * bounds.aspectRatio);
-  const renderedHeight = renderedWidth / bounds.aspectRatio;
-  const baseX = (containerSize.width - renderedWidth) / 2;
-  const baseY = (containerSize.height - renderedHeight) / 2;
-  const desiredX = (0.5 - (bounds.minX + bounds.maxX) / 2) * renderedWidth;
-  const desiredY = (0.5 - (bounds.minY + bounds.maxY) / 2) * renderedHeight;
-  const offsetX = Math.max(-(baseX + bounds.minX * renderedWidth), Math.min(desiredX, containerSize.width - (baseX + bounds.maxX * renderedWidth)));
-  const offsetY = Math.max(-(baseY + bounds.minY * renderedHeight), Math.min(desiredY, containerSize.height - (baseY + bounds.maxY * renderedHeight)));
-  return `translate(${Math.round(offsetX)}px, ${Math.round(offsetY)}px)`;
-}
-
 function PreviewFitToggle({ mode, onToggle }: { mode: PreviewFitMode; onToggle: () => void }) {
   return (
     <button
@@ -165,9 +71,9 @@ function InlineTags({ img, compact = false }: { img: GalleryImage; compact?: boo
     return <p className="text-xs text-muted-foreground italic">暂无标签</p>;
   }
   return (
-    <div className={`flex flex-wrap gap-1 ${compact ? "" : "mt-1"}`}>
+    <div className={`flex min-w-0 max-w-full flex-wrap gap-1 ${compact ? "" : "mt-1"}`}>
       {tags.map((t, i) => (
-        <Badge key={i} className={`text-[9px] border-0 text-white ${t.color}`}>{t.label}</Badge>
+        <Badge key={i} className={`max-w-full whitespace-normal [overflow-wrap:anywhere] text-[9px] border-0 text-white ${t.color}`}>{t.label}</Badge>
       ))}
     </div>
   );
@@ -219,15 +125,14 @@ function AplusRow({ img, onDeleteImage, renderTagEditor, onReorder }: {
 }) {
   const [showEditor, setShowEditor] = useState(false);
   const [fitMode, setFitMode] = useState<PreviewFitMode>("balanced");
-  const previewRef = useRef<HTMLDivElement>(null);
-  const balancedTransform = useBalancedPreviewTransform(img.imageUrl, previewRef);
+  const { previewRef, transform: balancedTransform } = useBalancedPreviewTransform(img.imageUrl);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: img.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
 
   return (
-    <div ref={setNodeRef} style={style} className="flex gap-0 border rounded-lg overflow-hidden bg-white group/aprow">
+    <div ref={setNodeRef} style={style} className="flex w-full min-w-0 max-w-full flex-col gap-0 border rounded-lg overflow-hidden bg-white group/aprow md:flex-row">
       {/* Left: image */}
-      <div ref={previewRef} className="relative flex-1 min-w-0 h-[320px] bg-slate-50">
+      <div ref={previewRef} className="relative w-full min-w-0 h-[320px] shrink-0 overflow-hidden bg-slate-50 md:w-auto md:flex-1">
         <img
           src={img.imageUrl}
           alt=""
@@ -264,7 +169,7 @@ function AplusRow({ img, onDeleteImage, renderTagEditor, onReorder }: {
       </div>
 
       {/* Right: tag panel — always visible */}
-      <div className="w-[260px] flex-shrink-0 border-l bg-muted/20 p-3 flex flex-col gap-2">
+      <div className="w-full min-w-0 max-w-full shrink-0 border-t bg-muted/20 p-3 flex flex-col gap-2 md:w-[260px] md:border-t-0 md:border-l">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
             <Tag className="h-3 w-3" /> 标签
@@ -280,7 +185,7 @@ function AplusRow({ img, onDeleteImage, renderTagEditor, onReorder }: {
         </div>
         <InlineTags img={img} />
         {showEditor && renderTagEditor && (
-          <div className="mt-1 border-t pt-2 animate-in slide-in-from-top-2 duration-200">
+          <div className="mt-1 min-w-0 max-w-full border-t pt-2 animate-in slide-in-from-top-2 duration-200">
             {renderTagEditor(img)}
           </div>
         )}
@@ -344,7 +249,6 @@ export function AmazonStyleGallery({
   const [galleryFitMode, setGalleryFitMode] = useState<PreviewFitMode>("balanced");
   const [activeBrandStoryId, setActiveBrandStoryId] = useState<number | null>(null);
   const brandStoryScrollRef = useRef<HTMLDivElement>(null);
-  const galleryPreviewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setGalleryItems([...mainImages, ...secondaryImages].sort((a, b) => (a.positionIndex || 0) - (b.positionIndex || 0)));
@@ -362,7 +266,7 @@ export function AmazonStyleGallery({
   }, [brandStoryImages, activeBrandStoryId]);
 
   const currentImage = galleryItems[currentIndex];
-  const galleryBalancedTransform = useBalancedPreviewTransform(currentImage?.imageUrl || "", galleryPreviewRef);
+  const { previewRef: galleryPreviewRef, transform: galleryBalancedTransform } = useBalancedPreviewTransform(currentImage?.imageUrl || "");
   const activeBrandStoryImg = brandStoryItems.find((i) => i.id === activeBrandStoryId) || brandStoryItems[0];
 
   // Optimization 5/7: Preload adjacent images when currentIndex changes
@@ -439,20 +343,20 @@ export function AmazonStyleGallery({
   }, [brandStoryItems, onReorder]);
 
   return (
-    <div className="space-y-6">
+    <div className="w-full min-w-0 max-w-full space-y-6">
 
       {/* ═══ 1. Main + Secondary Gallery (Amazon Style) ═══ */}
       {galleryItems.length > 0 && (
-        <div>
+        <div className="w-full min-w-0 max-w-full">
           <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
             <div className="w-1 h-4 bg-blue-500 rounded-full" />
             副图 <Badge variant="secondary" className="text-[10px]">{galleryItems.length}张</Badge>
             <span className="text-[10px] text-muted-foreground">（主图+副图，可拖拽排序）</span>
           </h4>
 
-          <div className="flex gap-3">
+          <div className="flex w-full min-w-0 max-w-full gap-3">
             {/* Left: Vertical thumbnail strip */}
-            <div className="hidden md:flex flex-col gap-1.5 w-[72px] max-h-[480px] overflow-y-auto scrollbar-thin">
+            <div className="hidden md:flex flex-col gap-1.5 w-[72px] shrink-0 max-h-[480px] overflow-y-auto scrollbar-thin">
               {onReorder ? (
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleGalleryDragEnd}>
                   <SortableContext items={galleryItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
@@ -490,11 +394,11 @@ export function AmazonStyleGallery({
             </div>
 
             {/* Center: Main display area */}
-            <div className="flex-1 relative group">
+            <div className="min-w-0 max-w-full flex-1 relative group">
               {currentImage && (
                 <>
                   <div
-                    className={`relative bg-gray-50 rounded-lg overflow-hidden border cursor-pointer transition-all ${
+                    className={`relative w-full min-w-0 max-w-full bg-gray-50 rounded-lg overflow-hidden border cursor-pointer transition-all ${
                       selectedImageId === currentImage.id ? "ring-2 ring-primary" : ""
                     }`}
                     ref={galleryPreviewRef}
@@ -550,13 +454,13 @@ export function AmazonStyleGallery({
 
           {/* Inline tag editor panel */}
           {selectedImageId && currentImage && selectedImageId === currentImage.id && renderTagEditor && (
-            <div className="mt-3 animate-in slide-in-from-top-2 duration-200">
+            <div className="mt-3 min-w-0 max-w-full animate-in slide-in-from-top-2 duration-200">
               {renderTagEditor(currentImage)}
             </div>
           )}
 
           {/* Mobile: Horizontal thumbnail strip */}
-          <div className="flex md:hidden gap-1.5 mt-2 overflow-x-auto pb-2">
+          <div className="flex w-full min-w-0 max-w-full md:hidden gap-1.5 mt-2 overflow-x-auto pb-2">
             {galleryItems.map((img, idx) => (
               <button
                 key={img.id}
@@ -574,7 +478,7 @@ export function AmazonStyleGallery({
 
       {/* ═══ 2. A+ Content Section (left image, right tags, vertical stack) ═══ */}
       {aplusItems.length > 0 && (
-        <div>
+        <div className="w-full min-w-0 max-w-full">
           <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
             <div className="w-1 h-4 bg-purple-500 rounded-full" />
             A+ 内容 <Badge variant="secondary" className="text-[10px]">{aplusItems.length}张</Badge>
@@ -583,7 +487,7 @@ export function AmazonStyleGallery({
           {onReorder ? (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleAplusDragEnd}>
               <SortableContext items={aplusItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                <div className="flex flex-col gap-0">
+                <div className="flex min-w-0 max-w-full flex-col gap-0">
                   {aplusItems.map((img) => (
                     <AplusRow
                       key={img.id}
@@ -597,7 +501,7 @@ export function AmazonStyleGallery({
               </SortableContext>
             </DndContext>
           ) : (
-            <div className="flex flex-col gap-0">
+            <div className="flex min-w-0 max-w-full flex-col gap-0">
               {aplusItems.map((img) => (
                 <AplusRow
                   key={img.id}
@@ -614,7 +518,7 @@ export function AmazonStyleGallery({
 
       {/* ═══ 3. Brand Story Section (horizontal scroll, tags below) ═══ */}
       {brandStoryItems.length > 0 && (
-        <div>
+        <div className="w-full min-w-0 max-w-full">
           <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
             <div className="w-1 h-4 bg-amber-500 rounded-full" />
             品牌故事 <Badge variant="secondary" className="text-[10px]">{brandStoryItems.length}张</Badge>
@@ -622,7 +526,7 @@ export function AmazonStyleGallery({
           </h4>
 
           {/* Horizontal scroll strip */}
-          <div ref={brandStoryScrollRef} className="overflow-x-auto pb-2">
+          <div ref={brandStoryScrollRef} className="w-full min-w-0 max-w-full overflow-x-auto pb-2">
             {onReorder ? (
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleBrandStoryDragEnd}>
                 <SortableContext items={brandStoryItems.map(i => i.id)} strategy={horizontalListSortingStrategy}>
@@ -656,7 +560,7 @@ export function AmazonStyleGallery({
 
           {/* Tags + editor for the selected brand story image */}
           {activeBrandStoryImg && (
-            <div className="mt-3 rounded-lg border bg-muted/20 p-3">
+            <div className="mt-3 min-w-0 max-w-full rounded-lg border bg-muted/20 p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
                   <Tag className="h-3 w-3" />
@@ -675,7 +579,7 @@ export function AmazonStyleGallery({
               </div>
               <InlineTags img={activeBrandStoryImg} />
               {selectedImageId === activeBrandStoryImg.id && renderTagEditor && (
-                <div className="mt-2 border-t pt-2 animate-in slide-in-from-top-2 duration-200">
+                <div className="mt-2 min-w-0 max-w-full border-t pt-2 animate-in slide-in-from-top-2 duration-200">
                   {renderTagEditor(activeBrandStoryImg)}
                 </div>
               )}
