@@ -128,8 +128,13 @@ for (const counts of cases) {
       const brandImages = dialog.locator('img[src*="/brand_story-"]');
       await expect(brandImages).toHaveCount(counts.brandStories);
       if (counts.brandStories) {
-        const strip = dialog.locator("div.overflow-x-auto").filter({ has: brandImages.first() });
+        // `has` is relative to each candidate strip; reusing brandImages would
+        // incorrectly require another detail dialog nested inside that strip.
+        const strip = dialog.locator("div.overflow-x-auto").filter({
+          has: page.locator('img[src*="/brand_story-"]').first(),
+        });
         await expect(strip).toHaveCount(1);
+        await expect(strip.locator('img[src*="/brand_story-"]')).toHaveCount(counts.brandStories);
         await strip.scrollIntoViewIfNeeded();
         expect(await strip.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
         expect(await strip.evaluate(element => { element.scrollLeft = element.scrollWidth; return element.scrollLeft; })).toBeGreaterThan(0);

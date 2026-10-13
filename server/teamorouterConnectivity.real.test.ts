@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+// The .real filename excludes this from ordinary runs. Keep a second gate here
+// because RUN_REAL_DB_TESTS also includes .real files in the shared config.
+const shouldRun = process.env.RUN_REAL_LLM_TESTS === "1"
+  && process.env.ALLOW_REAL_NETWORK_IN_TESTS !== "0";
+
 const requireEnvironment = (name: string) => {
   const value = process.env[name]?.trim();
   if (!value) {
@@ -8,7 +13,7 @@ const requireEnvironment = (name: string) => {
   return value;
 };
 
-describe("Teamorouter external model gateway", () => {
+describe.skipIf(!shouldRun)("Teamorouter external model gateway", () => {
   it("lists available models using the managed API key without sending business data", async () => {
     const baseUrl = requireEnvironment("EXTERNAL_LLM_BASE_URL").replace(/\/+$/, "");
     const apiKey = requireEnvironment("EXTERNAL_LLM_API_KEY");
