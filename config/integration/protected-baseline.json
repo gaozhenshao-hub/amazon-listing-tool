@@ -1,0 +1,1212 @@
+{
+  "schema": "protected-baseline/v1",
+  "baselineCommit": "927a5d71f43e6a35e04c1fbd7a82a48244ab4141",
+  "updatePolicy": "Keep original baseline hashes. An intentional reviewed integration must explicitly add reviewed hashes and a nonempty reviewRef to each changed record. Never regenerate the entire list to silence drift. This guard detects changes; it is not business, security, or deployment approval.",
+  "controls": {
+    "K01": "Persistent review and SellerSprite imports, upload budget and safe retry",
+    "K02": "Large-payload queue ordering, atomic claim and recovery",
+    "K03": "Seven selling-point directions with research provenance and recovery",
+    "K04": "Current Lingxing read contract and governed complete-week backfill",
+    "K05": "Knowledge image layout containment and non-destructive preview",
+    "K06": "Workspace and resource ownership, sanitization, private evidence and dependencies",
+    "K07": "Listing fact/core/candidate review, provenance and conflict gates",
+    "K08": "Governed Skill versions, rollout, model routing and usage",
+    "K09": "Lingxing scheduler, explicit retired-entry failures and source identities",
+    "K10": "Existing routes, safe error recovery, offline state, caching and performance"
+  },
+  "files": [
+    {
+      "path": "client/src/App.tsx",
+      "kind": "implementation",
+      "controls": [
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "ddb247998f3e22e56fbf278204661361815cfc0a",
+        "sha256": "05a4205aecfa3e713f2f29fd91e8e37706727e8d8db0b943cc6b3e44d0cc9bd1"
+      }
+    },
+    {
+      "path": "client/src/components/ErrorBoundary.contract.test.ts",
+      "kind": "test",
+      "controls": [
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "1e6673970d49e8bc79d8e867af22164b09591b1d",
+        "sha256": "70d7ca62d24476056d647de718138670bd4aed69907cc0988ae40ae1a1672329"
+      }
+    },
+    {
+      "path": "client/src/components/ErrorBoundary.tsx",
+      "kind": "implementation",
+      "controls": [
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "0aa8c7bec35c5a8962975b317e6a2c8c8796b5e2",
+        "sha256": "e4ec00a75a863b40205062ce339cf15c6f404965ee1022d383a4402cf38e1835"
+      }
+    },
+    {
+      "path": "client/src/components/NetworkStatusBanner.tsx",
+      "kind": "implementation",
+      "controls": [
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "46e76cad3b50ff08546634cc6b1a97b4257693c3",
+        "sha256": "d1daafd104a85b31253aa52cabb6f719e09811556cfaddf6883b5c62cafc9a4e"
+      }
+    },
+    {
+      "path": "client/src/components/analysis/ImportJobPanel.test.tsx",
+      "kind": "test",
+      "controls": [
+        "K01"
+      ],
+      "baseline": {
+        "gitBlobSha1": "290d0d077cc0a62e0fa1adf140fa8e5c7e0b4c4d",
+        "sha256": "a77d3a8fcffb5c5fd808c025c8fcdb74047d52dde24da60c21da54ea18a05d41"
+      }
+    },
+    {
+      "path": "client/src/components/analysis/ImportJobPanel.tsx",
+      "kind": "implementation",
+      "controls": [
+        "K01"
+      ],
+      "baseline": {
+        "gitBlobSha1": "d26041ebf5fad32db1d4892bc9910e3e29119e50",
+        "sha256": "51f0c06ea292db86dc035a583fedb9a324dc327828b84aea319334d8678b7e82"
+      }
+    },
+    {
+      "path": "client/src/components/workspace/WorkspaceTabs.component.test.tsx",
+      "kind": "test",
+      "controls": [
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "7e0a4e4f32b7cdf8967382dd57e8d22001ae53a1",
+        "sha256": "7ebfabae380cc55457aa0382fc5c40981668eb05ef527482efe8e90a6221923c"
+      }
+    },
+    {
+      "path": "client/src/components/workspace/WorkspaceTabs.tsx",
+      "kind": "implementation",
+      "controls": [
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "f632fc8a6643ac8d0a928208d620cf4afad3fe38",
+        "sha256": "2f4461f0ecea2a396fed20d346b5a223bf9cbc1b4dab0c6a89f1fdf3f266dcba"
+      }
+    },
+    {
+      "path": "client/src/components/workspace/workspaceTabState.ts",
+      "kind": "implementation",
+      "controls": [
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "7584bc6daad17001a8e1abc7dc37e94771cec9b4",
+        "sha256": "8fa7d463e662d16c20018f018e35f1d28ecab0f5acd18b13b847967149772ebf"
+      }
+    },
+    {
+      "path": "client/src/lib/lazyRecovery.test.ts",
+      "kind": "test",
+      "controls": [
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "371ab5def5c4db96b80889d0f68739c280055bc4",
+        "sha256": "64a6d5dc8742ae86103d14e3ecab1b30a1ffab49a2230d5bde7e8679cf21197b"
+      }
+    },
+    {
+      "path": "client/src/lib/lazyRecovery.ts",
+      "kind": "implementation",
+      "controls": [
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "73ec5167970d77e275067e6f6234087e776e1058",
+        "sha256": "be547cd70452d657f8ffce1e179dc8c8f9c1fe70cd4bab22ebc41ed49ae66bf2"
+      }
+    },
+    {
+      "path": "client/src/lib/performanceVitals.test.ts",
+      "kind": "test",
+      "controls": [
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "18bcb865fd847c7eab4afcb44de9a5d49b2539f4",
+        "sha256": "a9423393a9ef57da95e92cf6bf4f01b83ec181d2edb982f52b03933cb9839ab3"
+      }
+    },
+    {
+      "path": "client/src/lib/performanceVitals.ts",
+      "kind": "implementation",
+      "controls": [
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "b8aed6ad9620388046ede10f0bc323961edde762",
+        "sha256": "9bbd796edd20f50c8d37ee45808616dee5c6af5a38e55a70ec33f3ef7165b992"
+      }
+    },
+    {
+      "path": "client/src/lib/requestTimeout.test.ts",
+      "kind": "test",
+      "controls": [
+        "K01"
+      ],
+      "baseline": {
+        "gitBlobSha1": "6ab612df98062ff32545afaf8f660ab6f875b547",
+        "sha256": "f08f6972762bd0ccb586f60be0ba8a74052ce0b1fb129b6947e97fec8815d6b0"
+      }
+    },
+    {
+      "path": "client/src/lib/requestTimeout.ts",
+      "kind": "implementation",
+      "controls": [
+        "K01"
+      ],
+      "baseline": {
+        "gitBlobSha1": "320c5b949b365d087e4b0a1424460fbfd4d5d752",
+        "sha256": "f296bb02a36cbc6544b3a6d13d1e4a5825abb21c56c064dd0c79d9606b2ba76b"
+      }
+    },
+    {
+      "path": "client/src/lib/sanitizeListingHtml.test.ts",
+      "kind": "test",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "b2a1ed7db9ad9714ab9ab88a26235dff8b7fa7e3",
+        "sha256": "09b233d194814f4e3f12551e2f987b8dd2153c7e5fbcc10b555fb7e489388192"
+      }
+    },
+    {
+      "path": "client/src/lib/sanitizeListingHtml.ts",
+      "kind": "implementation",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "191061a6f00979beda08344b5211d3f56558997a",
+        "sha256": "e92ef074c0862d44e5e9ad2d52e8ad4214686cfc09f449bf7ea7b8658a0470de"
+      }
+    },
+    {
+      "path": "client/src/main.tsx",
+      "kind": "implementation",
+      "controls": [
+        "K01",
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "d7b491e4f3d2504e2d1e0cf993c3d260896e6b84",
+        "sha256": "9ee3aa89c3aadae59f8c2ae1988423a68848dd5f44b8c269d0265ba96af8df96"
+      }
+    },
+    {
+      "path": "client/src/pages/AnalysisPage.importJobs.test.tsx",
+      "kind": "test",
+      "controls": [
+        "K01"
+      ],
+      "baseline": {
+        "gitBlobSha1": "18a863fc0ce8f2b14b6670e6310f7f6eb578354a",
+        "sha256": "30f9285172fc22f2050263f2a9bbd81e215c03807c1f77933bbd546e2409a785"
+      }
+    },
+    {
+      "path": "client/src/pages/AnalysisPage.tsx",
+      "kind": "implementation",
+      "controls": [
+        "K01"
+      ],
+      "baseline": {
+        "gitBlobSha1": "fb70e8547a0461e5af7cac0fcc555eee0c0ce6bd",
+        "sha256": "7213602df42b78b5a62621e7080992ef94d122a7b3b81ee4cbf34df187b1fe78"
+      }
+    },
+    {
+      "path": "client/src/pages/ComparisonPage.tsx",
+      "kind": "implementation",
+      "controls": [
+        "K03"
+      ],
+      "baseline": {
+        "gitBlobSha1": "56bb213ba04b78eb57e4113bfd36c2bf5d0e8060",
+        "sha256": "c71e7a7319825baa2828a9e9a5d4a9f9656d02c3c4e10020a4b497f99553d248"
+      }
+    },
+    {
+      "path": "client/src/pages/GeneratePage.tsx",
+      "kind": "implementation",
+      "controls": [
+        "K03"
+      ],
+      "baseline": {
+        "gitBlobSha1": "1ff44c44ee53fbf2006c39a0b54de428f1b5dc86",
+        "sha256": "0bb405c09c0a47385dc48f7cf3a16e6e3d0150f3e7618d02b59e6d5f86d666fc"
+      }
+    },
+    {
+      "path": "client/src/pages/knowledge/AmazonStyleGallery.sizing.test.ts",
+      "kind": "test",
+      "controls": [
+        "K05"
+      ],
+      "baseline": {
+        "gitBlobSha1": "c6afbb7451336c1e1136ea88a5ba49da07e77070",
+        "sha256": "118458755229f30796fcb7bc418c383ad816a10d5b7e7e1544bef52118333406"
+      }
+    },
+    {
+      "path": "client/src/pages/knowledge/AmazonStyleGallery.tsx",
+      "kind": "implementation",
+      "controls": [
+        "K05"
+      ],
+      "baseline": {
+        "gitBlobSha1": "86ec761ee26548829ead0376b6c75ed9847fdfcd",
+        "sha256": "db191bf3555053bc825c0e5e631a832e2ebbd06b850c45315245f9a23b297016"
+      }
+    },
+    {
+      "path": "client/src/pages/knowledge/KBImages.tsx",
+      "kind": "implementation",
+      "controls": [
+        "K05"
+      ],
+      "baseline": {
+        "gitBlobSha1": "d7ed6f483ec206949ef4a849a026ddaf3552ddff",
+        "sha256": "a87607198360e41816cad44b3000748015bc43c4fe95f6bffde14343693ff426"
+      }
+    },
+    {
+      "path": "client/src/pages/knowledge/useBalancedPreviewTransform.test.tsx",
+      "kind": "test",
+      "controls": [
+        "K05"
+      ],
+      "baseline": {
+        "gitBlobSha1": "a23b818657f45e7bbf4168bb830a7b86942a1b68",
+        "sha256": "929427d49ce1a4db509b3cf34ad56262083dde9597a5ca774e179a9eee343d4c"
+      }
+    },
+    {
+      "path": "client/src/pages/knowledge/useBalancedPreviewTransform.ts",
+      "kind": "implementation",
+      "controls": [
+        "K05"
+      ],
+      "baseline": {
+        "gitBlobSha1": "d3e9ce4589fce90e7044ae57e3f88f2f6ebfb93a",
+        "sha256": "ee6ec6e8eac074f9b300303c9a1bf5b6212e51529cd4102d72fb8c45c2627201"
+      }
+    },
+    {
+      "path": "client/src/pages/listing/SellingPointPlanRecovery.component.test.tsx",
+      "kind": "test",
+      "controls": [
+        "K03"
+      ],
+      "baseline": {
+        "gitBlobSha1": "c6a079672f827ac3309757b49372332a3c9f24ab",
+        "sha256": "7ee48ecf8e2ad383934004016640b6ca89385f5ea777eadbae951ef58ce1e9cf"
+      }
+    },
+    {
+      "path": "client/src/pages/listing/SellingPointPlanSummary.tsx",
+      "kind": "implementation",
+      "controls": [
+        "K03"
+      ],
+      "baseline": {
+        "gitBlobSha1": "209d27547b06c715007e076ca7bfe755de336e5e",
+        "sha256": "45e67291b985d7f2686f1b399155288f076c5f185908b6761f149c20c80c38ed"
+      }
+    },
+    {
+      "path": "client/src/pages/listing/reviewRecovery.test.ts",
+      "kind": "test",
+      "controls": [
+        "K03"
+      ],
+      "baseline": {
+        "gitBlobSha1": "3649c3af33a6762cd7b43538cac0c8064e1ad08c",
+        "sha256": "2ebc8165a168327241af255ef470a3b0165d8c3099fd383f5874465fe0a949d9"
+      }
+    },
+    {
+      "path": "client/src/pages/listing/reviewRecovery.ts",
+      "kind": "implementation",
+      "controls": [
+        "K03"
+      ],
+      "baseline": {
+        "gitBlobSha1": "7fb916dac03bebb527381fc9ac21cafa322f0675",
+        "sha256": "942bc2c6e2d3ed1be40800b4b4aa9f9ddc9e4038c15cbc7460e9da937c50e49c"
+      }
+    },
+    {
+      "path": "client/src/pages/listing/useSellingPointPlanRecovery.ts",
+      "kind": "implementation",
+      "controls": [
+        "K03"
+      ],
+      "baseline": {
+        "gitBlobSha1": "8159e68790aa4080a16c7c367c6701ff4313a585",
+        "sha256": "c51a61d3b59b8c8ab6a3996d20e2072659e32a650b7fe32b52c54db536e1fb12"
+      }
+    },
+    {
+      "path": "e2e/kb-image-gallery.spec.ts",
+      "kind": "test",
+      "controls": [
+        "K05"
+      ],
+      "baseline": {
+        "gitBlobSha1": "6ee47ebacfb84b2e154e372f90b30c1bdfb628b6",
+        "sha256": "3f88735f4b920de2cdf949ae5ebb0130b70af89d17a7693541e120643f78a22e"
+      },
+      "reviewed": {
+        "gitBlobSha1": "6d95f5106dc9a1d7ec248488347f6a0313836035",
+        "sha256": "9bfa34ad8067ae458d9cf2f16964601680533c5197c7796190a33fbc9ad7a13e",
+        "reviewRef": "P1-20261013-kb-gallery-relative-has-locator: 927 baseline locator repeated dialog ancestor inside has; fix relative locator, retain geometry/scroll assertions, add strip count; synthetic Chromium 4/4 passed"
+      }
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "kind": "implementation",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "2d15f8973dd6ce3dec888ec82fdb03b244a8a848",
+        "sha256": "e3ff0aa5f1144f4b762f840a034ebcddc06b2b73cfdcf25fcab988bd21514e21"
+      }
+    },
+    {
+      "path": "scripts/backfillLingxingParentWeekly.ts",
+      "kind": "implementation",
+      "controls": [
+        "K04"
+      ],
+      "baseline": {
+        "gitBlobSha1": "009c437299c08e39c02a32adfd727cb29954cae3",
+        "sha256": "ebc999eab77e7e472e908134793013c6ebd5a599c48f963aa83705a7e4ac4663"
+      }
+    },
+    {
+      "path": "server/_core/aiWorker.ts",
+      "kind": "implementation",
+      "controls": [
+        "K01"
+      ],
+      "baseline": {
+        "gitBlobSha1": "bb156a213c07585a3c34d8d464e9625278733ca1",
+        "sha256": "b3684a0e402946b9114559e50489f41ccc59e92159cc050baba43849f5061e7d"
+      }
+    },
+    {
+      "path": "server/_core/leaderLock.ts",
+      "kind": "implementation",
+      "controls": [
+        "K09"
+      ],
+      "baseline": {
+        "gitBlobSha1": "cc69e948f1e6f769bc659ed4a81eba2e02fda9f7",
+        "sha256": "547dab37584759b1818a2a783281c68597cc08e129fce1756709f317e7d0e9c6"
+      }
+    },
+    {
+      "path": "server/_core/scheduler.ts",
+      "kind": "implementation",
+      "controls": [
+        "K09"
+      ],
+      "baseline": {
+        "gitBlobSha1": "cab116df092cc4404b49603b4338e2558e2a0851",
+        "sha256": "f712fce46fc9ace0d10e20dcba03bab567b21b0f1ebdf0ae9c64b2dbb42dfcdb"
+      }
+    },
+    {
+      "path": "server/_core/vite.staticCache.test.ts",
+      "kind": "test",
+      "controls": [
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "4e8ec397208e0e60479f4fbea04606232191e70e",
+        "sha256": "921e9bb5af2f76a611c0f0aba74aacf62a23b5a009ae1d05cdb46878f5267fad"
+      }
+    },
+    {
+      "path": "server/_core/vite.ts",
+      "kind": "implementation",
+      "controls": [
+        "K10"
+      ],
+      "baseline": {
+        "gitBlobSha1": "02d19e9f29d24a44353f0c1b9bf9d0902252761f",
+        "sha256": "f6f427865e11a854539bbcfac1ead4525933a93d7d59015343adb8d63682d44f"
+      }
+    },
+    {
+      "path": "server/aiJobRepository.queue.test.ts",
+      "kind": "test",
+      "controls": [
+        "K02"
+      ],
+      "baseline": {
+        "gitBlobSha1": "65345cfb152d8373627c7debcedf1c719c2d00a5",
+        "sha256": "fee0ecae4f403c271e591fa8f03b1a3edb52acfec07a85bb7ea22929fa65a1a6"
+      }
+    },
+    {
+      "path": "server/aiJobRunner.test.ts",
+      "kind": "test",
+      "controls": [
+        "K02"
+      ],
+      "baseline": {
+        "gitBlobSha1": "812eaf2e1df4de4060b9bd261591d1c7a8153243",
+        "sha256": "f1e1e8a5ee456b4d57e75a4117a92f6ec12710bc0e492b52934fed5524715c3a"
+      }
+    },
+    {
+      "path": "server/analysisImportExecution.test.ts",
+      "kind": "test",
+      "controls": [
+        "K01"
+      ],
+      "baseline": {
+        "gitBlobSha1": "19ffeb06c122df26a63902aa05781efe219446a2",
+        "sha256": "d54271c370c11ddaac0ccc6e685b4d6ae91f2361a218671e45e9da38259052df"
+      }
+    },
+    {
+      "path": "server/analysisImportJob.test.ts",
+      "kind": "test",
+      "controls": [
+        "K01"
+      ],
+      "baseline": {
+        "gitBlobSha1": "cd11d3f6645544f536814e277f49a6a916b3b233",
+        "sha256": "15c9cf96348f99a126ab1a9bc5c6f61cea20ef00ee0ac542822d63cf9d7895e6"
+      }
+    },
+    {
+      "path": "server/domains/ai_os/services/highQualitySkillGovernance.ts",
+      "kind": "implementation",
+      "controls": [
+        "K08"
+      ],
+      "baseline": {
+        "gitBlobSha1": "e0b38c8324d7c74bf90eb2b24379b80cbf28d536",
+        "sha256": "909e18acd90e80800553f9bd73819df73701af0f4a697c0e612a8cb4919a289c"
+      }
+    },
+    {
+      "path": "server/domains/ai_os/services/jobRunner.ts",
+      "kind": "implementation",
+      "controls": [
+        "K02"
+      ],
+      "baseline": {
+        "gitBlobSha1": "e865beb2aacce5c7f206c08e3c639fe348b8d3b1",
+        "sha256": "22cf601101ed0d041974c62d83a8c795969c5338a305a7c264dbe2d83c918490"
+      }
+    },
+    {
+      "path": "server/domains/ai_os/services/skillRollout.ts",
+      "kind": "implementation",
+      "controls": [
+        "K08"
+      ],
+      "baseline": {
+        "gitBlobSha1": "00a39346d86ca6c6cd13a39514b41feb9b588142",
+        "sha256": "c8b8146a16e021b84892b1946f5a1a9ca5f6aa4bb8a912619cc1f73c45a4b6ce"
+      }
+    },
+    {
+      "path": "server/domains/ai_os/services/skillRunner.forgeFallback.test.ts",
+      "kind": "test",
+      "controls": [
+        "K08"
+      ],
+      "baseline": {
+        "gitBlobSha1": "50a58135e1bb6fff3b355ec4316f0127fe71cf8e",
+        "sha256": "db5f58ba0bbd008fb75c13cd0c8f6a024c71118ae1efe496611bc389464b040c"
+      },
+      "reviewed": {
+        "gitBlobSha1": "9123834ecba859844823e1c528c5003bcfe9b27e",
+        "sha256": "171f2e73fccff598d98f294127dcefd59c978521581b1f5d616c2160cb1dcd60",
+        "reviewRef": "P1-20261013-forge-fallback-environment-assertion: preserve 927a5d7 teamorouterCatalog.ts:84 and skillRunner.ts:171 policy; test configured/unconfigured synthetic environments explicitly, no production code change"
+      }
+    },
+    {
+      "path": "server/domains/ai_os/services/skillRunner.ts",
+      "kind": "implementation",
+      "controls": [
+        "K08"
+      ],
+      "baseline": {
+        "gitBlobSha1": "2fe924bcda8e3cc1fc60c53ee5b94ca6aa3ce5ac",
+        "sha256": "ec7a969f2fb780835b4bcc4265fbe035ecb11fa6b86a268a087cf61be164f46f"
+      }
+    },
+    {
+      "path": "server/domains/ai_os/services/teamorouterCatalog.ts",
+      "kind": "implementation",
+      "controls": [
+        "K08"
+      ],
+      "baseline": {
+        "gitBlobSha1": "bc032bdf11a414ab81247d9d8e62cf30e6c21a65",
+        "sha256": "d90be816b0bbbbc8dd3b209cdcf0fb927cbce020687ef1262ef2abb070c791c5"
+      }
+    },
+    {
+      "path": "server/domains/ai_os/services/toolGateway/executors.ts",
+      "kind": "implementation",
+      "controls": [
+        "K04"
+      ],
+      "baseline": {
+        "gitBlobSha1": "590744231a9fcbead4e2747f5d4e943648a8ab97",
+        "sha256": "d994b323f1d6b13813d913912125c271c15eebef2f181a8db7d0668ff549c67b"
+      }
+    },
+    {
+      "path": "server/domains/ai_os/services/toolGateway/lingxingReadContract.ts",
+      "kind": "implementation",
+      "controls": [
+        "K04"
+      ],
+      "baseline": {
+        "gitBlobSha1": "81fc8787d5ad347eeb85a1423e6f9d8184e61ac5",
+        "sha256": "281f0fb90a58f2f8efbb3dc2aa8a2ffcec5b878d4eab173ca4e357f53e45194e"
+      }
+    },
+    {
+      "path": "server/domains/image/routerContext.ts",
+      "kind": "implementation",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "eab6f48ddcdfd27e50c30de5ce3a0fe56eebcfd6",
+        "sha256": "2bd3d69b6cbcada31d611e1e6993cde69cecf724a049111a8ee99bde5ef22ed3"
+      }
+    },
+    {
+      "path": "server/domains/image/routers/competitors.ts",
+      "kind": "implementation",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "61f8c7d6500ea0d4a981a4a9045f115264452ee0",
+        "sha256": "2b282b40b4bacba829ad5777f0aedcb89061f8c9ba5c0134bf11eaec578019b9"
+      }
+    },
+    {
+      "path": "server/domains/image/routers/expressionGroups.ts",
+      "kind": "implementation",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "475dc05117aed1da77739c25d969f641f3cd672b",
+        "sha256": "61f6066f379ca160b6411d60165752e9155804d565f9c03f448c1e2fb95c154f"
+      }
+    },
+    {
+      "path": "server/domains/listing/routerContext.ts",
+      "kind": "implementation",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "eb8dd14d5dc7aca8e733bc4f4eb7570acfb5d176",
+        "sha256": "80f74245e2286bcc9e63b41a9e0096166fb764c76fce99913b75d4f06abe813f"
+      }
+    },
+    {
+      "path": "server/domains/listing/routers/candidates.ts",
+      "kind": "implementation",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "6caa70ecbd09458c398470b84d9ba4b34b723d34",
+        "sha256": "dd558a741a20f450774f91e981f635abd96da8dd1e19db609d92170cee170a65"
+      }
+    },
+    {
+      "path": "server/domains/listing/routers/cores.ts",
+      "kind": "implementation",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "7467b2df3b3cc7312025a7fee61e16cdf9835361",
+        "sha256": "252f5c4d85cb4c44524ec718c4fdd3ecc8e3db6db3fa77ddc04e7300f7052ab8"
+      }
+    },
+    {
+      "path": "server/domains/listing/routers/facts.ts",
+      "kind": "implementation",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "192d6d0aca70cb0ae27d9c59c522860e2bed1774",
+        "sha256": "9579dbe388a5fcd0a1aaf5bfc79002e7c6fc45ddf14f2890acabbbc6e5a60780"
+      }
+    },
+    {
+      "path": "server/domains/listing/services/generationJob.ts",
+      "kind": "implementation",
+      "controls": [
+        "K03"
+      ],
+      "baseline": {
+        "gitBlobSha1": "925d8743f8db575b3d0e27d191889ede069d119c",
+        "sha256": "be7aa49e377677dc94263869bd96d976e551f1dcb8607836cba7344801cc3e64"
+      }
+    },
+    {
+      "path": "server/domains/listing/services/listingCandidateProvenance.ts",
+      "kind": "implementation",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "61eb4798ad1bb367479912c773a17401c600f4e4",
+        "sha256": "865b6f82d925d6af513547d2992a4dc65e8fd9235125f92c20ce00d3ff0d4458"
+      }
+    },
+    {
+      "path": "server/domains/listing/services/listingCandidateReviewService.ts",
+      "kind": "implementation",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "9b1dbc651c59c9476a4e2785cff145238055ef76",
+        "sha256": "4f3fef8878d1f5dd8a72a1a8c1fc639c95b48fa15999b0478f5844b0c70591c2"
+      }
+    },
+    {
+      "path": "server/domains/listing/services/listingCandidateSyncService.ts",
+      "kind": "implementation",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "341665b92a3cc4c57c1b6e759c1241e401919a47",
+        "sha256": "bd6e2ba703dc54b2cf7d06b6cef308c104c705708932da2c8ecb80beb9f28fdc"
+      }
+    },
+    {
+      "path": "server/domains/listing/services/listingCoreReviewService.ts",
+      "kind": "implementation",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "4e9bbfb38ba072d431674e9df866f1f6dfc3559c",
+        "sha256": "412a4311b25ae2f71b2a8de77858a744942a5ea488014751f565afbd32d960b2"
+      }
+    },
+    {
+      "path": "server/domains/listing/services/listingFactSource.ts",
+      "kind": "implementation",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "8afa7dfa94bef1a554bde5fb4ea63824431451d5",
+        "sha256": "6ccb242645213941727e795f3d2a93791f17762b35ba70c55c4b478089a86d3b"
+      }
+    },
+    {
+      "path": "server/domains/listing/services/listingRawFacts.ts",
+      "kind": "implementation",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "2935fb02741df516cadaaa92ac0905c86aa14a9e",
+        "sha256": "d78b7ca2092ab0102eed43dba77a88a5b283fd504052138724d76709b21737d7"
+      }
+    },
+    {
+      "path": "server/domains/listing/services/sellingPointPlanning.test.ts",
+      "kind": "test",
+      "controls": [
+        "K03"
+      ],
+      "baseline": {
+        "gitBlobSha1": "3a084bfae55ee02f15f8eb8cf5579bb8dace9e03",
+        "sha256": "647a348fd17c7bc418878deeb88a317b896f6118473ba902c4d5bfb2d270c526"
+      }
+    },
+    {
+      "path": "server/domains/listing/services/sellingPointPlanning.ts",
+      "kind": "implementation",
+      "controls": [
+        "K03"
+      ],
+      "baseline": {
+        "gitBlobSha1": "4a99bca81fcb6a67c5bf1937b24b0fa7bc71f2c1",
+        "sha256": "416a96e042e577683800d0fd5eaba6ede97655a5906faeb74ff03cee88d78aa2"
+      }
+    },
+    {
+      "path": "server/domains/listing/services/sellingPointPlanningPromptPolicy.test.ts",
+      "kind": "test",
+      "controls": [
+        "K03"
+      ],
+      "baseline": {
+        "gitBlobSha1": "b56b14d412abe9ee212fb2be319a3fedfabe9940",
+        "sha256": "ac31d5b4ba1ed560851ddbe193684876b0d63cd14814f299867aa4e82b92c5a4"
+      }
+    },
+    {
+      "path": "server/domains/listing/services/sellingPointPlanningPromptPolicy.ts",
+      "kind": "implementation",
+      "controls": [
+        "K03"
+      ],
+      "baseline": {
+        "gitBlobSha1": "7160d90591bd84c83b51e52290186e613d1a5684",
+        "sha256": "78dbdbac8742ee7aaa11cbf31c4d14eef2fd6b8a507392f42f9177cee4188066"
+      }
+    },
+    {
+      "path": "server/domains/ops/lingxingScheduledDrafts.ts",
+      "kind": "implementation",
+      "controls": [
+        "K04"
+      ],
+      "baseline": {
+        "gitBlobSha1": "1a0c415dd3fe72a06b74b71286a21c49f2f26e05",
+        "sha256": "52f57729923dc104b87cf72ed32dc4f1265b3a99d1a4de7c0c37d634d1facacc"
+      }
+    },
+    {
+      "path": "server/domains/ops/localLingxingScheduler.ts",
+      "kind": "implementation",
+      "controls": [
+        "K09"
+      ],
+      "baseline": {
+        "gitBlobSha1": "c466c912bc10d59c645b3ccdc238cd56d920c150",
+        "sha256": "14ccbffd336315dd2d23edcc44acbf1fa5c2cf8455ca55e4850ce81f6d8a1a1c"
+      }
+    },
+    {
+      "path": "server/domains/ops/productOverview/parentWeeklyOverview.test.ts",
+      "kind": "test",
+      "controls": [
+        "K09"
+      ],
+      "baseline": {
+        "gitBlobSha1": "0d86dc10dc085949eaa6715632810b719c1938d3",
+        "sha256": "e655225227c28b9cd3982a4fabe02270b180d2184c5a34427c996f2cee90924f"
+      }
+    },
+    {
+      "path": "server/domains/ops/productOverview/parentWeeklyOverview.ts",
+      "kind": "implementation",
+      "controls": [
+        "K09"
+      ],
+      "baseline": {
+        "gitBlobSha1": "b41cc75946ebb2259b3bf70289d52e76ab42ea53",
+        "sha256": "7df5368bca0963ff7ec159b2d702d696c6bbaf13c868ca7e27b43eae678a4090"
+      }
+    },
+    {
+      "path": "server/domains/ops/routers/weeklyOps.ts",
+      "kind": "implementation",
+      "controls": [
+        "K09"
+      ],
+      "baseline": {
+        "gitBlobSha1": "e91972923968e1eacfd76d12124f541b4fcb4fe1",
+        "sha256": "0eed680cdc2b1f9bbbe4929d6062065e1bbec888a5d08c7aadfb448cd65262dd"
+      }
+    },
+    {
+      "path": "server/domains/ops/workspaceProcedure.ts",
+      "kind": "implementation",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "e2ccd7c67e630a73d787429be202a9f511afb5fa",
+        "sha256": "7dd2567063b3b4119870313dd2bf7591d6d98a3b966cac954ea168f9cbbc92b7"
+      }
+    },
+    {
+      "path": "server/kbDb.ts",
+      "kind": "implementation",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "e80ff45f133f56db02deb42305f8b980a43af1bd",
+        "sha256": "09d08beeaa1d9b017096a9df080f58a860c60f2f69a7afba48168c84454b2aa3"
+      }
+    },
+    {
+      "path": "server/kbImages.tenantPredicate.test.ts",
+      "kind": "test",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "06d26298e8940c604aa570430ca78d104c17e53c",
+        "sha256": "f131d4d0e12eaa547f000a58f4679621bed637a9817455370b963701e37d67da"
+      }
+    },
+    {
+      "path": "server/kbImages.workspaceScope.contract.test.ts",
+      "kind": "test",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "117d15fc3a84fcbe945f24d00b2e93fb96f6fc94",
+        "sha256": "c14f52f54613e0aa294cd605811d64d3ffced9e1510d6da5a3a7192b551ecebc"
+      }
+    },
+    {
+      "path": "server/lingxingMcpReadContract.test.ts",
+      "kind": "test",
+      "controls": [
+        "K04"
+      ],
+      "baseline": {
+        "gitBlobSha1": "1c4d2c89c41bdf99dd89416886e3460b91e211ae",
+        "sha256": "255248ea032eb6d749b6135347560bea846d29f6cd6b901f3cf2e7bc10be7123"
+      }
+    },
+    {
+      "path": "server/lingxingParentWeeklyBackfill.test.ts",
+      "kind": "test",
+      "controls": [
+        "K04"
+      ],
+      "baseline": {
+        "gitBlobSha1": "38713f4fe307adc19bb07304d1a8ed82383a8f3e",
+        "sha256": "b5d5b2cec9e33ff06817bb55912cea0ed38c137b0298939a24715a99ca45024c"
+      }
+    },
+    {
+      "path": "server/lingxingScheduledDrafts.runtime.test.ts",
+      "kind": "test",
+      "controls": [
+        "K04"
+      ],
+      "baseline": {
+        "gitBlobSha1": "bb76a633d7c3a88eb13484344680f29665324f67",
+        "sha256": "95db64cd604ed32688cb2905baf9506b08081c9f54573c575f1ee9d83840e5e5"
+      }
+    },
+    {
+      "path": "server/listingCandidateReview.test.ts",
+      "kind": "test",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "b1ea3f5550ade7da57cd13aaa5993fcec1bfed22",
+        "sha256": "76410fe9444436e051a296ce4a35be76af2c1616c3932d8d208d57197cf2cf75"
+      }
+    },
+    {
+      "path": "server/listingCandidateSyncService.test.ts",
+      "kind": "test",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "1d5401d856e49f613a17d1cdb2f29daa8f8b25b4",
+        "sha256": "8335f344659aa9d3f50e1013914f3150df5edf01920fa4c80fcf251f0b8d9dc8"
+      }
+    },
+    {
+      "path": "server/listingCoreReviewService.test.ts",
+      "kind": "test",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "57c7990dacd202ec2ec7866c426c6d20709f7eb4",
+        "sha256": "906ff154dc204d2934565cbd5aab27cc13a730106ba7ddd15e80ec36b3ae8f60"
+      }
+    },
+    {
+      "path": "server/listingFactBoundFieldJobs.test.ts",
+      "kind": "test",
+      "controls": [
+        "K03"
+      ],
+      "baseline": {
+        "gitBlobSha1": "7423b938b0ed31230db09605662244ba1265258a",
+        "sha256": "f16eb18d81a537cfa24cebb28c8459238e7074a5307d0d4df5d9df32eee38e2f"
+      }
+    },
+    {
+      "path": "server/listingFactReviewRouter.test.ts",
+      "kind": "test",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "91da40f881996f008221b2892e921fff1e09772b",
+        "sha256": "bf3ded532af11dc7f0913f6ebf02ca8bf6e275bb06e5257361d4f59a67f2ae76"
+      }
+    },
+    {
+      "path": "server/listingProjectAccessWorkspaceV7.test.ts",
+      "kind": "test",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "6e801386e78b0823769db7c9ce1bbc97185843ba",
+        "sha256": "8f77651b99f957e6b280c95abc034eb92073be2fae9258c1b96d05280731e488"
+      }
+    },
+    {
+      "path": "server/localLingxingScheduler.test.ts",
+      "kind": "test",
+      "controls": [
+        "K09"
+      ],
+      "baseline": {
+        "gitBlobSha1": "621e528b58a885fec921cf139fb759205f3b0129",
+        "sha256": "02736c1cbdd1bf5df03263396739fd5b11bf22e69b1026af886468a8b624c478"
+      }
+    },
+    {
+      "path": "server/project.imageWorkflowReadAccess.test.ts",
+      "kind": "test",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "609fd992db10cf5153a552b7e0e37289efe11a9c",
+        "sha256": "a2be390e9a0531b0246df65f984c8c054efbf1bc8d194a29d7c7ee3cddfa9306"
+      }
+    },
+    {
+      "path": "server/repositories/ai_os/aiJobRepository.ts",
+      "kind": "implementation",
+      "controls": [
+        "K02"
+      ],
+      "baseline": {
+        "gitBlobSha1": "ac1c85d578fcd11d7db89a0849097103a179ffd2",
+        "sha256": "f32e7e884932429c07c4978699ba88d9144803fc17634f7542d18abd5fc19d8d"
+      }
+    },
+    {
+      "path": "server/routers/analysis.ts",
+      "kind": "implementation",
+      "controls": [
+        "K01"
+      ],
+      "baseline": {
+        "gitBlobSha1": "3a8806630114264cc6cda6196567ee3cce9a38bc",
+        "sha256": "dfc27c614e4c74c026b4efe7c9a1ce3ee073dc0dd12b190b4131dd7001aa6f56"
+      }
+    },
+    {
+      "path": "server/routers/dataImport.ts",
+      "kind": "implementation",
+      "controls": [
+        "K09"
+      ],
+      "baseline": {
+        "gitBlobSha1": "65ea86c5448be8126c8495e524468923c654f3c5",
+        "sha256": "eb2c9057f6ba6de8fa0fa8ccf9120e0a5804c6706bc107861aecbe9abd0a31e9"
+      }
+    },
+    {
+      "path": "server/routers/kbImages.ts",
+      "kind": "implementation",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "4cb5a05266b458efb9a968a60912054ea38d636e",
+        "sha256": "03291353d69a8b3265a72136371871897bd98e639755143590f9b02383e0c984"
+      }
+    },
+    {
+      "path": "server/routers/lingxingSync.ts",
+      "kind": "implementation",
+      "controls": [
+        "K04"
+      ],
+      "baseline": {
+        "gitBlobSha1": "d4db3d05d254b0eee225c12584e73ca1de61ed6c",
+        "sha256": "bcebd7a468564a5a491648530e13b27114a94425be8f5361bd4c8b2733589855"
+      }
+    },
+    {
+      "path": "server/scheduledHandlers.ts",
+      "kind": "implementation",
+      "controls": [
+        "K09"
+      ],
+      "baseline": {
+        "gitBlobSha1": "3cbebae918010b3efca416a7bfe6b3f82cd9ccbe",
+        "sha256": "304f46471cdf233b13b51395f0f3456435ce7e24239022d090ad19bc41b2888b"
+      }
+    },
+    {
+      "path": "server/services/aiJobRunner.ts",
+      "kind": "implementation",
+      "controls": [
+        "K02"
+      ],
+      "baseline": {
+        "gitBlobSha1": "159b000e12686d2d2ab01a3646c3b78d0b5f0294",
+        "sha256": "04ed3ce66c4fa57d83ae5bb848fa6ee84e4e57130ffd31355b1b0830af73cdaa"
+      }
+    },
+    {
+      "path": "server/services/analysisImportExecution.ts",
+      "kind": "implementation",
+      "controls": [
+        "K01"
+      ],
+      "baseline": {
+        "gitBlobSha1": "3ea06ae8c1bfae167ffba572d08fb3755774bc9d",
+        "sha256": "026b7a4781b28834ba287fbdec7da86795c67fa39f99b5f96143aae166bda2d7"
+      }
+    },
+    {
+      "path": "server/services/analysisImportJob.ts",
+      "kind": "implementation",
+      "controls": [
+        "K01"
+      ],
+      "baseline": {
+        "gitBlobSha1": "45f34e1ef8b9ae73d0c4db59bb56405e6a645956",
+        "sha256": "4fc2bb11ed5168ee9aa27d53731b61e2905454333938528c42a4cfa4012fc7d1"
+      }
+    },
+    {
+      "path": "server/services/securityGovernance.ts",
+      "kind": "implementation",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "8d765568e9e453160929cce180c62ef0cb0fb22c",
+        "sha256": "d23348bbbda0f947b23da72d15344c6a666078dec9bd1b9a04a2c8fd7722b604"
+      }
+    },
+    {
+      "path": "server/skillRunner.callCount.test.ts",
+      "kind": "test",
+      "controls": [
+        "K08"
+      ],
+      "baseline": {
+        "gitBlobSha1": "fc1181b0d9f20ad80d49ded54c9348d4b25bf16f",
+        "sha256": "a50a00773bbbcb761ace268e9afc6afdbf43c596b227a2f84f0144964f4e2362"
+      }
+    },
+    {
+      "path": "server/skillRunner.rollout.test.ts",
+      "kind": "test",
+      "controls": [
+        "K08"
+      ],
+      "baseline": {
+        "gitBlobSha1": "9eed9d5d4f4fa7a6b77d81a4413e9160c1238385",
+        "sha256": "ac911498767d1d9bd7cfa87d8b64765f998ebe634ea6dcc627c37cd5d60221ab"
+      }
+    },
+    {
+      "path": "server/storage.ts",
+      "kind": "implementation",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "465654a27b81818d1e48178f93b656e4ee679e94",
+        "sha256": "8c11373e51efebcb6359bb01279916aa3f85e5e457743d1162d6f9d73a178b77"
+      }
+    },
+    {
+      "path": "server/storagePrivateEvidence.test.ts",
+      "kind": "test",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "8efc9f0379a38db4810f5bc6fffa2eaddaa9cf04",
+        "sha256": "34fd42550257aadc86c18ae99844c0e8f58192ec05ae8007325602c26d2cc3ee"
+      }
+    },
+    {
+      "path": "server/workspaceScopedProcedure.contract.test.ts",
+      "kind": "test",
+      "controls": [
+        "K06"
+      ],
+      "baseline": {
+        "gitBlobSha1": "93065795537b38e23c5a76696a4d24e45ce1c7b4",
+        "sha256": "29033fe8af08ed1f2ccca1d8f3d0d23b15d09a76370bd888e3005a760626f76d"
+      }
+    },
+    {
+      "path": "shared/listingFactSafety.ts",
+      "kind": "implementation",
+      "controls": [
+        "K07"
+      ],
+      "baseline": {
+        "gitBlobSha1": "cd0377f5ff362574e92520e08ddfb285e2dff5ab",
+        "sha256": "9f19814b6330d43163138db46ed94cd5a6929846ed98c69a86f168e9fe5eba5e"
+      }
+    }
+  ],
+  "requiredDependencies": {
+    "path": "package.json",
+    "section": "dependencies",
+    "names": [
+      "dompurify",
+      "sharp"
+    ],
+    "controls": [
+      "K06"
+    ],
+    "hashScope": "SHA256 of canonical JSON containing only the named declarations, sorted by name. packageGitBlobSha1 records original package provenance; unrelated package scripts may change.",
+    "baseline": {
+      "packageGitBlobSha1": "5fec07c8c364d3b17eac8df8cd9ea2b695621984",
+      "sha256": "df86e1f872a4ab822b77b807cc1e853a51283e8c93ec57e991a11f416a7ed866"
+    }
+  }
+}
