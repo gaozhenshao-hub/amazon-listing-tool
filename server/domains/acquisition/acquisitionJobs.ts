@@ -225,7 +225,13 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
     workspaceId: input.workspaceId,
     userId: input.requestedBy,
     skillSlug: "acquisition.amazon.catalog.fetch",
-    input: { acquisitionJobId: jobId },
+    input: {
+      acquisitionJobId: jobId,
+      // This is standalone Provider collection, not an Agent node execution.
+      // The request contract intentionally accepts no caller-supplied Agent IDs.
+      agentRunId: null,
+      agentNodeId: null,
+    },
     queueName: "external_provider",
     maxAttempts: 2,
     timeoutSeconds: 300,
