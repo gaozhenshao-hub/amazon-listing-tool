@@ -33,13 +33,14 @@ export const protectedProcedure = baseProtectedProcedure.use(async ({ ctx, next,
     resource: "ops_data",
     action,
     workspaceId,
-  });
+  }, ctx);
   try {
     const result = await runWithOpsWorkspace({
       workspaceId,
       tenantId: (ctx.user as any).organizationId ?? `workspace-${workspaceId}`,
       userId: ctx.user.id,
     }, () => next({ ctx: { ...ctx, workspaceId } }));
+    if (!result.ok) throw result.error;
     if (type === "mutation") {
       void recordSecurityAuditLog({
         ctx,

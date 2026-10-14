@@ -34,9 +34,10 @@ export function workspaceScopedProcedure(resource: SecurityResource) {
       throw new TRPCError({ code: "PRECONDITION_FAILED", message: "当前用户尚未绑定工作空间，无法访问该资源" });
     }
     const action = inferAction(path, type);
-    await assertResourceAction({ actor: actorFromContext(ctx), resource, action, workspaceId });
+    await assertResourceAction({ actor: actorFromContext(ctx), resource, action, workspaceId }, ctx);
     try {
       const result = await next({ ctx: { ...ctx, workspaceId } });
+      if (!result.ok) throw result.error;
       if (type === "mutation") {
         void recordSecurityAuditLog({
           ctx, workspaceId, action: `${resource}.${action}`, resourceType: resource,

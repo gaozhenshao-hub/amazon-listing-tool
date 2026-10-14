@@ -4,6 +4,7 @@ import { recordSecurityAuditLog } from "../../services/securityGovernance";
 export const protectedProcedure = baseProtectedProcedure.use(async ({ ctx, next, path, type }) => {
   try {
     const result = await next();
+    if (!result.ok) throw result.error;
     if (type === "mutation") {
       void recordSecurityAuditLog({
         ctx,

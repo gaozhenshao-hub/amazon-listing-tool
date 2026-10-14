@@ -236,11 +236,12 @@ export async function hasResourceAction(input: ResourceActionCheck): Promise<boo
   return baseMatrixAllows(input.actor.role, input.resource, input.action);
 }
 
-export async function assertResourceAction(input: ResourceActionCheck): Promise<void> {
+export async function assertResourceAction(input: ResourceActionCheck, ctx?: TrpcContext): Promise<void> {
   const allowed = await hasResourceAction(input);
   if (allowed) return;
   const message = `没有权限执行 ${input.resource}.${input.action}`;
   await recordSecurityAuditLog({
+    ctx,
     actorUserId: input.actor.id,
     actorRole: input.actor.role,
     workspaceId: normalizeWorkspaceId(input.actor, input.workspaceId),

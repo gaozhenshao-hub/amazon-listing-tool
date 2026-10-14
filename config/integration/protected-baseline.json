@@ -860,6 +860,11 @@
       "baseline": {
         "gitBlobSha1": "e2ccd7c67e630a73d787429be202a9f511afb5fa",
         "sha256": "7dd2567063b3b4119870313dd2bf7591d6d98a3b966cac954ea168f9cbbc92b7"
+      },
+      "reviewed": {
+        "gitBlobSha1": "cad19c2087a48d0f6f946cf21ab944fc2a445776",
+        "sha256": "11abec9c5e622de4e25ab47b7e41a841312017d28d2ad0dc26a14b10c3d94cdd",
+        "reviewRef": "config/integration/reviews/mutation-audit-result-20261015.json; observed isolated47case audit defects; Root and independent124controlled cases/typecheck/source review; authorization unchanged; fixed realHTTP retest pending"
       }
     },
     {
@@ -1124,6 +1129,11 @@
       "baseline": {
         "gitBlobSha1": "8d765568e9e453160929cce180c62ef0cb0fb22c",
         "sha256": "d23348bbbda0f947b23da72d15344c6a666078dec9bd1b9a04a2c8fd7722b604"
+      },
+      "reviewed": {
+        "gitBlobSha1": "9f31f2bb0ebde9a3134f039322910212e63dfe1a",
+        "sha256": "f7337348728e9aa8c35847cf7ec66b19b2d1e3a134cd9cc6e6f310bbf8bee577",
+        "reviewRef": "config/integration/reviews/mutation-audit-result-20261015.json; optionalctx fordeniedaudit only; Root and independent124controlled cases/typecheck/source review; permissionpolicy unchanged; fixed realHTTP retest pending"
       }
     },
     {

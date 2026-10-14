@@ -1,0 +1,79 @@
+{
+  "version": "amazon-protected-baseline-review/1",
+  "reviewedOn": "2026-10-15",
+  "control": "K06",
+  "decision": "explicit-local-reviewed-audit-correction-not-full-T24-acceptance",
+  "priorSourceHead": "9fa15f943d82c314b60ee6373212e97716792f15",
+  "observedRegression": {
+    "scope": "Root-owned isolated real MySQL and HTTP Session plus KB submatrix; synthetic data only",
+    "orderedCases": 47,
+    "parentCliExitCode": 2,
+    "status": "completed-with-findings",
+    "notFoundAuditsIncorrectlySuccessful": 5,
+    "deniedAuditsMissingRequestId": 3,
+    "businessWritesInRejectedCases": false,
+    "parentReceiptSha256": "517229f1159be6b1c08a9a8f3d3541ce69f593fe959593dd0a481aff086b7c0d",
+    "workerReceiptSha256": "641b7c1840951d0e94ddd9889ef0ac6799915048c0b7b69391b1d76c8969b6e8",
+    "harnessReceiptSha256": "8f341239203ed9a05436134427dcf25837a58ae12a100b77ac4e9ee2d6b0c9c7",
+    "originalReceiptsAndFixturePreserved": true
+  },
+  "scope": [
+    "Inspect the actual tRPC middleware result.ok in knowledge, operations and ads wrappers before success auditing; rethrow its original error into the existing failed-audit path.",
+    "Pass optional request context to assertResourceAction for denial auditing only; the knowledge and operations gateways propagate their original context.",
+    "Keep resolver data containing ok:false as ordinary successful data, never confuse it with the tRPC middleware result.",
+    "Keep authorization outside the mutation try/catch so permission denial produces denied, not an additional failed audit."
+  ],
+  "protectedFiles": [
+    {
+      "path": "server/domains/ops/workspaceProcedure.ts",
+      "baseline": { "gitBlobSha1": "e2ccd7c67e630a73d787429be202a9f511afb5fa", "sha256": "7dd2567063b3b4119870313dd2bf7591d6d98a3b966cac954ea168f9cbbc92b7" },
+      "reviewed": { "gitBlobSha1": "cad19c2087a48d0f6f946cf21ab944fc2a445776", "sha256": "11abec9c5e622de4e25ab47b7e41a841312017d28d2ad0dc26a14b10c3d94cdd" }
+    },
+    {
+      "path": "server/services/securityGovernance.ts",
+      "baseline": { "gitBlobSha1": "8d765568e9e453160929cce180c62ef0cb0fb22c", "sha256": "d23348bbbda0f947b23da72d15344c6a666078dec9bd1b9a04a2c8fd7722b604" },
+      "reviewed": { "gitBlobSha1": "9f31f2bb0ebde9a3134f039322910212e63dfe1a", "sha256": "f7337348728e9aa8c35847cf7ec66b19b2d1e3a134cd9cc6e6f310bbf8bee577" }
+    }
+  ],
+  "otherReviewedFiles": [
+    { "path": "server/domains/ai_os/workspaceScopedProcedure.ts", "sha256": "5b68b1a9429bf6a464adde37a229037ceff636b6dffe2aa8bd1d89e849345228" },
+    { "path": "server/domains/ads/procedure.ts", "sha256": "4019149e6edb628d7aa41d19b213b5357226e6f97cbd1015e604471c3e693f86" },
+    { "path": "server/workspaceMutationAudit.behavior.test.ts", "sha256": "27930afdea1fe9bdcfb6badcc9841d1daf1327f4516786bc0e2ae2aa874526cc" }
+  ],
+  "verification": {
+    "newCases": 34,
+    "redBeforeFix": { "passed": 17, "failed": 17 },
+    "greenAfterFix": { "passed": 34, "failed": 0 },
+    "rootSixFileCasesPassed": 124,
+    "independentSixFileCasesPassed": 124,
+    "rootFullProductionTypecheckPassed": true,
+    "rootScopedLintWarnings": 0,
+    "independentFullSourceAndHashReviewPassed": true,
+    "behaviorTestPersistenceMocked": true,
+    "newPatchPersistedHttpRevalidated": false
+  },
+  "unchanged": {
+    "originalBaselineHashesRetained": true,
+    "existingProtectedTests": true,
+    "permissionMatrix": true,
+    "ownerAndParentChildChecks": true,
+    "defaultWorkspaceShortcut": true,
+    "superAdminBypass": true,
+    "adsLoginOnlyPolicy": true,
+    "asyncMutationAuditAndAwaitedDeniedAudit": true,
+    "historicalSqlAndLedgersAndDefaultMigrationRunner": true,
+    "dependenciesAndLockfile": true,
+    "storageAndModelConfiguration": true
+  },
+  "limitations": [
+    "Behavior tests use real tRPC/policy/audit code with a DB substitute, not durable SQL or HTTP evidence for the fixed patch.",
+    "The original actual 47-case run remains completed-with-findings and is not rewritten as success.",
+    "Other direct assertResourceAction callers still omit optional context; no universal request-correlation completion is claimed.",
+    "Audit insertion remains best effort and async for mutation results; persistence must be independently read back.",
+    "A new isolated fixture and fixed-source bundle must verify corrected audits; complete T24/P1/P0-P6 remain pending."
+  ],
+  "deployed": false,
+  "publicPush": false,
+  "fullT24Complete": false,
+  "p1Complete": false
+}
