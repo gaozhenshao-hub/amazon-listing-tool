@@ -1,0 +1,1155 @@
+{
+  "version": "amazon-fresh-bootstrap/1",
+  "executionScope": "local-or-ci-only",
+  "planSha256": "7c4a068d198258c14c721d02ac1464d629458987b73b1e207b21da23e3a76044",
+  "structureContract": null,
+  "structureContractAdmission": "Generate independent reference from pinned public schema plus reviewed historical indexes/FKs/collations; bind full 13-collection catalog JSON and SHA256 here. Candidate bootstrap output is never its own expected oracle.",
+  "requiredBusinessTables": [
+    "acquisition_asset_candidates",
+    "acquisition_confirmed_snapshots",
+    "acquisition_consumer_links",
+    "acquisition_jobs",
+    "acquisition_provider_profiles",
+    "acquisition_raw_artifacts",
+    "acquisition_runs",
+    "acquisition_snapshot_revisions",
+    "acquisition_source_snapshots",
+    "adStructures",
+    "ad_analysis_tasks",
+    "ad_automation_rules",
+    "ad_campaign_reports",
+    "ad_clinic_records",
+    "ad_competitor_ranks",
+    "ad_daily_business_reports",
+    "ad_daily_impression_share_reports",
+    "ad_daily_placement_reports",
+    "ad_daily_sb_benchmark_reports",
+    "ad_daily_search_term_reports",
+    "ad_diagnoses",
+    "ad_dsp_reports",
+    "ad_hourly_reports",
+    "ad_keyword_meta",
+    "ad_keyword_tiers",
+    "ad_keyword_weekly",
+    "ad_order_hourly",
+    "ad_placement_reports",
+    "ad_portfolio_mappings",
+    "ad_product_stages",
+    "ad_report_analysis_records",
+    "ad_report_imports",
+    "ad_report_uploads",
+    "ad_search_term_reports",
+    "ad_sop_tasks",
+    "ai_artifact_consumptions",
+    "ai_artifact_selection_events",
+    "ai_artifacts",
+    "ai_data_archive_items",
+    "ai_data_archive_runs",
+    "ai_job_dead_letters",
+    "ai_job_workers",
+    "ai_jobs",
+    "ai_operational_alerts",
+    "ai_storage_objects",
+    "amazon_monitor_runs",
+    "amazon_monitor_schedules",
+    "analysisVersions",
+    "asin_logs",
+    "asin_permissions",
+    "asin_status_cache",
+    "asin_tag_assignments",
+    "asin_tag_definitions",
+    "batch_logs",
+    "batch_products",
+    "batch_step_configs",
+    "budget_tracking",
+    "buyer_questions",
+    "check_item_overrides",
+    "competitorAnalyses",
+    "competitorComparisonReports",
+    "competitor_ad_benchmarks",
+    "competitor_image_analyses",
+    "competitor_monitors",
+    "competitor_reports",
+    "competitor_snapshots",
+    "conversion_check_items",
+    "conversion_comparisons",
+    "conversion_scores",
+    "conversion_suggestions",
+    "custom_dashboards",
+    "customer_profiles",
+    "dashboard_widgets",
+    "data_imports",
+    "database_slow_query_samples",
+    "dev_analysis_reports",
+    "dev_analysis_stage_conflicts",
+    "dev_analysis_stages",
+    "dev_bom_items",
+    "dev_bom_summary",
+    "dev_external_data",
+    "dev_global_suppliers",
+    "dev_import_apply_snapshots",
+    "dev_import_batches",
+    "dev_manual_assets",
+    "dev_module_locks",
+    "dev_mold_costs",
+    "dev_offsite_analyses",
+    "dev_panorama_market_insights",
+    "dev_panorama_status",
+    "dev_panorama_versions",
+    "dev_product_manuals",
+    "dev_product_profiles",
+    "dev_product_tags",
+    "dev_products",
+    "dev_profit_calculations",
+    "dev_project_progress",
+    "dev_project_scores",
+    "dev_project_tag_categories",
+    "dev_project_tag_items",
+    "dev_projects",
+    "dev_reviews",
+    "dev_suppliers",
+    "dev_tag_dimensions",
+    "dev_test_reports",
+    "dev_time_plans",
+    "dev_uploaded_files",
+    "email_replies",
+    "email_templates",
+    "emperor_agent_artifacts",
+    "emperor_agent_checkpoints",
+    "emperor_agent_events",
+    "emperor_agent_runs",
+    "emperor_agent_template_versions",
+    "emperor_agents",
+    "emperor_ai_os_evaluations",
+    "emperor_ai_os_metrics",
+    "emperor_context_manifests",
+    "emperor_context_source_provenance",
+    "emperor_conversation_attachments",
+    "emperor_conversation_knowledge_refs",
+    "emperor_conversation_messages",
+    "emperor_conversation_plan_steps",
+    "emperor_conversation_plans",
+    "emperor_conversations",
+    "emperor_execution_presets",
+    "emperor_execution_recovery_requests",
+    "emperor_execution_state_snapshots",
+    "emperor_external_knowledge_callers",
+    "emperor_harness_feedback_signals",
+    "emperor_harness_review_requests",
+    "emperor_knowledge",
+    "emperor_mcp_connectors",
+    "emperor_model_providers",
+    "emperor_parallel_branches",
+    "emperor_parallel_plans",
+    "emperor_run_ledger_events",
+    "emperor_run_traces",
+    "emperor_scheduled_tasks",
+    "emperor_secret_key_versions",
+    "emperor_skill_eval_cases",
+    "emperor_skill_eval_results",
+    "emperor_skill_release_gates",
+    "emperor_skill_rollout_decisions",
+    "emperor_skill_rollout_plans",
+    "emperor_skill_runs",
+    "emperor_skill_version_snapshots",
+    "emperor_skills",
+    "emperor_tool_runs",
+    "emperor_tool_secrets",
+    "emperor_tools",
+    "execution_reviews",
+    "expression_group_images",
+    "expression_groups",
+    "image_acquisition_capability_coverage_revisions",
+    "image_asset_policy_revisions",
+    "image_asset_source_references",
+    "image_assets",
+    "image_competitor_asset_facts",
+    "image_competitor_gallery_analysis_versions",
+    "image_competitor_gallery_selection_versions",
+    "image_competitor_research_subjects",
+    "image_expression_analysis_versions",
+    "image_expression_asset_links",
+    "image_expression_selection_versions",
+    "image_step0_synthesis_versions",
+    "image_workflow_sessions",
+    "image_workflow_step0_artifacts",
+    "image_workflow_step4_image_versions",
+    "inventory_config",
+    "inventory_snapshots",
+    "kb_bot_conversations",
+    "kb_bot_messages",
+    "kb_call_logs",
+    "kb_feedback",
+    "kb_image_sets",
+    "kb_images",
+    "kb_intel_collect_logs",
+    "kb_intel_items",
+    "kb_intel_sources",
+    "kb_listing_copywriting",
+    "kb_operation_skills",
+    "kb_product_innovations",
+    "kb_sync_logs",
+    "kb_tag_definitions",
+    "kb_transfer_item_receipts",
+    "kb_transfer_stages",
+    "kb_videos",
+    "keyword_daily_records",
+    "keyword_monitors",
+    "keyword_snapshots",
+    "keyword_trackings",
+    "keywords",
+    "knowledge_claim_ledger_consistency_decisions",
+    "knowledge_claim_ledger_links",
+    "knowledge_claim_ledgers",
+    "knowledge_distillation_evidence",
+    "knowledge_distillation_projects",
+    "knowledge_distillation_sources",
+    "knowledge_skill_drafts",
+    "knowledge_skill_feedback",
+    "knowledge_skill_review_events",
+    "lingxing_api_logs",
+    "lingxing_config",
+    "lingxing_product_weekly",
+    "listingVersions",
+    "listing_bullet_candidates",
+    "listing_complete_snapshots",
+    "listing_core_revisions",
+    "listing_fact_revisions",
+    "listing_review_revisions",
+    "listings",
+    "login_logs",
+    "meeting_records",
+    "negativeKeywords",
+    "notifications",
+    "off_ai_analysis_logs",
+    "off_attribution_links",
+    "off_campaign_analytics",
+    "off_campaigns",
+    "off_collaborations",
+    "off_content_calendar",
+    "off_content_submissions",
+    "off_influencer_scores",
+    "off_influencers",
+    "off_matrix_groups",
+    "off_outreach_messages",
+    "off_social_accounts",
+    "operator_name_mappings",
+    "ops_ad_mcp_campaign_daily_facts",
+    "ops_ad_mcp_fact_revisions",
+    "ops_ad_mcp_product_daily_facts",
+    "ops_ad_mcp_profiles",
+    "ops_asin_daily_snapshots",
+    "ops_asin_lifecycle_statuses",
+    "ops_external_sync_batches",
+    "ops_external_sync_confirmations",
+    "ops_external_sync_rows",
+    "ops_import_history",
+    "ops_inventory_owner_assignment_audits",
+    "ops_inventory_owner_assignments",
+    "ops_inventory_planning_parameters",
+    "ops_inventory_planning_versions",
+    "ops_lingxing_sync_schedules",
+    "ops_local_inventory_adjustments",
+    "ops_monthly_financial_profits",
+    "ops_plan_actions",
+    "ops_plan_summaries",
+    "ops_plans",
+    "ops_replenishment_plans",
+    "organizations",
+    "product_basic_info",
+    "product_logs",
+    "product_monthly_summary",
+    "product_ops_daily_records",
+    "product_ops_plans",
+    "product_profiles",
+    "product_todos",
+    "product_variants",
+    "product_weekly_ops",
+    "production_config",
+    "profit_alert_rules",
+    "profit_snapshots",
+    "projectFiles",
+    "project_assignments",
+    "projects",
+    "promotion_phases",
+    "remote_usage_snapshots",
+    "replenishment_predictions",
+    "return_analysis_cache",
+    "reviewAggregations",
+    "reviewImports",
+    "review_records",
+    "review_replies",
+    "role_permissions",
+    "saihu_product_weekly",
+    "search_term_actions",
+    "security_access_policies",
+    "security_audit_logs",
+    "sellingPointDrafts",
+    "service_tasks",
+    "shipping_batches",
+    "sop_access_grants",
+    "step_time_history",
+    "step_time_templates",
+    "system_settings",
+    "team_tasks",
+    "usage_stats",
+    "user_settings",
+    "users",
+    "video_competitor_scripts",
+    "video_competitor_summary",
+    "video_edit_scripts",
+    "video_product_snapshots",
+    "video_script_sections",
+    "video_script_shots",
+    "video_script_subtopics",
+    "video_script_versions",
+    "video_scripts",
+    "video_spv_segments",
+    "workspace_memberships",
+    "workspaces"
+  ],
+  "skillSeeds": [
+    {
+      "slug": "image.step0.competitor.gallery.image-facts",
+      "version": 1,
+      "systemPromptSha256": "15fd87b306098a80c3a79130da4865cef37ea252aae18d6af33e31bab3ec48c5"
+    },
+    {
+      "slug": "image.step0.competitor.gallery.summary",
+      "version": 2,
+      "systemPromptSha256": "cc24c48dc2c6e6652f3d64a9e1b5a823a859107cd9e2da1e3dd929676bbe2d02"
+    },
+    {
+      "slug": "image.step0.expression.linked-analysis",
+      "version": 1,
+      "systemPromptSha256": "ccbe2defa9e684f8080a7e35f7b4c227820cfe15a84898f1fe2f745abce0d2f6"
+    },
+    {
+      "slug": "image.step0.composite.synthesis",
+      "version": 1,
+      "systemPromptSha256": "6298f8003e102067b50d187de0dac8d8078fa8fa0cda515ee922280a26f1d5ca"
+    }
+  ],
+  "sources": [
+    {
+      "path": "drizzle/0000_perpetual_vulcan.sql",
+      "sha256": "814a08e40d7fc2bcfd458759d18319198ca8ae394f2fa15617a78678e9c9c93b"
+    },
+    {
+      "path": "drizzle/0001_harsh_kitty_pryde.sql",
+      "sha256": "3aeacde88c44af7ecba050449c7770d2144206d3ef7c88c4dcc97d5ba0d688fa"
+    },
+    {
+      "path": "drizzle/0002_wise_newton_destine.sql",
+      "sha256": "7d83c6cd992cd3ba2571d02520efa6aa1b72a6bc4e07558d2f3590edd230918c"
+    },
+    {
+      "path": "drizzle/0003_unusual_hiroim.sql",
+      "sha256": "67864d993c940e4da3e21015eced1f920af279faf763ab422adf3f1320dd03f3"
+    },
+    {
+      "path": "drizzle/0004_majestic_freak.sql",
+      "sha256": "f31843b214a58e89ad2cb88c2d2c617cf42ba90aa181d8dc77eacefddc9258d4"
+    },
+    {
+      "path": "drizzle/0005_premium_christian_walker.sql",
+      "sha256": "a01795c6c656de8468d9cc87730374daa618e72fed69988b3eaed89336eca0b1"
+    },
+    {
+      "path": "drizzle/0006_tan_titania.sql",
+      "sha256": "9c7e01e82a0d279cd4dbc6b5cbf443343a43981a6ba590c6cd9248238d703e29"
+    },
+    {
+      "path": "drizzle/0007_free_chronomancer.sql",
+      "sha256": "0704d2015e6422299ac2605bcad4168d9ee8be5729b7adfb153d31d7c8cbcb77"
+    },
+    {
+      "path": "drizzle/0008_harsh_sage.sql",
+      "sha256": "8104a3b21a334d723b74e883401e9c8618f71cd8646125cfa05837001de5c27b"
+    },
+    {
+      "path": "drizzle/0009_fuzzy_deathbird.sql",
+      "sha256": "3943135a768ce6789bb7ac7eedf47c3010bb03e0f7e2850a12ecb25dcd1341e0"
+    },
+    {
+      "path": "drizzle/0010_sparkling_slayback.sql",
+      "sha256": "27c375f3d2d51cb47f3f9c93121c014e2996a4c140c4c6211756419e7088ddbf"
+    },
+    {
+      "path": "drizzle/0011_bored_black_tom.sql",
+      "sha256": "ad850497fbc0c7c4016a03520ccb62a6213986f6e32352784819254ca92ea823"
+    },
+    {
+      "path": "drizzle/0012_dapper_blob.sql",
+      "sha256": "e770f480a2753747f8efb5e034cf63ab73f6b8337fcfe113445c3377309e1e29"
+    },
+    {
+      "path": "drizzle/0013_gifted_agent_brand.sql",
+      "sha256": "47322aa73b91fff18eb7a896e872fadf5e463213f0f94b9a66b4ee566f89e4f5"
+    },
+    {
+      "path": "drizzle/0014_ordinary_wolf_cub.sql",
+      "sha256": "31e323492d70e9c98c4aeb79864ffd572a2ff79d9ef7345f88c4a7e0597c386b"
+    },
+    {
+      "path": "drizzle/0015_awesome_jean_grey.sql",
+      "sha256": "27060628b5eba3ebb21eca81b15886dbc53a146fb8e6518a116579b065232157"
+    },
+    {
+      "path": "drizzle/0016_nosy_doorman.sql",
+      "sha256": "a1c760548293fa5fcf9f6745ec99d8a247c4392110b65e4f755dabd4452fd449"
+    },
+    {
+      "path": "drizzle/0017_striped_wild_child.sql",
+      "sha256": "3248b124ec6bbafed46d396ca24203ad0274c00f6192aa7b8fdea0f55ccd451d"
+    },
+    {
+      "path": "drizzle/0018_pale_doctor_faustus.sql",
+      "sha256": "5583d97d11581e4a7c68b7fad52d6467ff20bac4c95f2fa46af0b8d863454e59"
+    },
+    {
+      "path": "drizzle/0019_classy_revanche.sql",
+      "sha256": "e58432faf148b1e7b2577c18a76844639e1134db305ea8af3eb3b80787dae9bf"
+    },
+    {
+      "path": "drizzle/0020_legal_nomad.sql",
+      "sha256": "d5616719d0034b15e20c6836a4a656657af57648c0b181f41c8c64d8486033f9"
+    },
+    {
+      "path": "drizzle/0021_luxuriant_electro.sql",
+      "sha256": "634f96f78dededf8852d0c117172a61b2da9cd9ca7ca742a9b95e9d04a9b3ef7"
+    },
+    {
+      "path": "drizzle/0022_chief_sally_floyd.sql",
+      "sha256": "9445f34ce34cf450a17e7a01839e3cbd205e555dde6f06cc517b5091664f71e5"
+    },
+    {
+      "path": "drizzle/0023_old_wind_dancer.sql",
+      "sha256": "13564f4220c6b94e00446232c87bf0329c6a2201b0f7ba9bb513ff1349bf5697"
+    },
+    {
+      "path": "drizzle/0024_unusual_blackheart.sql",
+      "sha256": "c06c4b245517810f782c7956ee000ac6dc18241d57f7c53929b1f881513133fc"
+    },
+    {
+      "path": "drizzle/0025_salty_plazm.sql",
+      "sha256": "758eddd01a30d9a085a163565cecf632f92bffa80e3cf88578a09d9ac11ea8c2"
+    },
+    {
+      "path": "drizzle/0026_first_bishop.sql",
+      "sha256": "31bc2e1e037019a4b696b7b9f1f0e82ae1cd53b867ca7ff64199bf9aa5442a41"
+    },
+    {
+      "path": "drizzle/0027_glamorous_praxagora.sql",
+      "sha256": "ee937c6ead7dd5b2120dc23d23575f4e1b7ac68d8d105db4960ed88d297f682e"
+    },
+    {
+      "path": "drizzle/0028_messy_goliath.sql",
+      "sha256": "0b49d4dd75bb6beb1ffe6eda299435733b5d4a8ac350eb1d0eb3a83b9b35963f"
+    },
+    {
+      "path": "drizzle/0029_strange_sister_grimm.sql",
+      "sha256": "14abaefd0ce048dafbe78253c25b18c123e9702387b2aa45032129933a4c3af8"
+    },
+    {
+      "path": "drizzle/0030_flippant_genesis.sql",
+      "sha256": "8e2a95dfef3d427662bf125e7cf5727adfb2462f0acf1976423a01299a68536b"
+    },
+    {
+      "path": "drizzle/0031_aspiring_aaron_stack.sql",
+      "sha256": "acf8d350a9c40cc0fddfc906cfe4ab65b8c9c26169604344dc5a77b1569567c8"
+    },
+    {
+      "path": "drizzle/0032_complex_shadow_king.sql",
+      "sha256": "2db5c80e4d400a6e6be6160dc0270900860ce14f7128dbb3badb5ddc3f41bbf2"
+    },
+    {
+      "path": "drizzle/0033_burly_zarda.sql",
+      "sha256": "0e51c955c8b181970e4321fe44f420843e0ddd85a00f8d2f90a0fb053a86ff8c"
+    },
+    {
+      "path": "drizzle/0034_cynical_major_mapleleaf.sql",
+      "sha256": "2f89763a5f7785e57fda3043bf0f99625d82f15db420cf47d4845b64be901b7a"
+    },
+    {
+      "path": "drizzle/0035_condemned_kat_farrell.sql",
+      "sha256": "a50b62256eefe37531f1800f6bc0e0e926df41ed52fc117d247c61c4a21613a1"
+    },
+    {
+      "path": "drizzle/0036_legal_gargoyle.sql",
+      "sha256": "285dfb8e7e715b2aa7adcce8fc6b08b4c28e20a0bbee7eca240f01c27d04cb5e"
+    },
+    {
+      "path": "drizzle/0037_sturdy_leo.sql",
+      "sha256": "c17c43d8b202a7e527c899d796c3542d2ee3b62c1b225e1e9d2f480bea539ee4"
+    },
+    {
+      "path": "drizzle/0038_icy_meltdown.sql",
+      "sha256": "27402fd12cccffaf4e9e7e4a3d8cc703016955925dec4895f8966c8a95dc839b"
+    },
+    {
+      "path": "drizzle/0039_useful_ricochet.sql",
+      "sha256": "d1f15b2220aeb58f9587420bc38d1fb3982a6ba703f96c9cdd496e89819db2d8"
+    },
+    {
+      "path": "drizzle/0040_heavy_wallop.sql",
+      "sha256": "6aba35666795dad2554e6cbcbe32ce59188103f1400851d0a32048a7d51d3fd1"
+    },
+    {
+      "path": "drizzle/0041_parched_chronomancer.sql",
+      "sha256": "7f96f7ca6f11aa50fb3545496239546875c8152c93c35cd04df43858de54eca4"
+    },
+    {
+      "path": "drizzle/0042_tan_freak.sql",
+      "sha256": "949f253cf6c6ebe59e5e7e7ede7c987a44fd985f8f6a5fafa206770df2bae730"
+    },
+    {
+      "path": "drizzle/0043_greedy_lord_hawal.sql",
+      "sha256": "eae5dc0a457ebbc15bbf68ac3b854e7fbdf18593188004d88508aea742ebec10"
+    },
+    {
+      "path": "drizzle/0044_flowery_zarda.sql",
+      "sha256": "73b0edf5d2273ef908efebe5abd7e750a108b313f26b20cace033e8f7abe1de1"
+    },
+    {
+      "path": "drizzle/0045_daily_living_tribunal.sql",
+      "sha256": "9a86963437645fd8594577db77b763ac96a2dcf28d197771ff392fe14fb48e3a"
+    },
+    {
+      "path": "drizzle/0046_loose_the_hood.sql",
+      "sha256": "27e752dd02f24c781ba16362550bf2a29c0407d68a5ef254bad5c0119e52afbb"
+    },
+    {
+      "path": "drizzle/0047_heavy_shatterstar.sql",
+      "sha256": "8cbf6ee7a02a91c91a146d14226fdafc269b5ce0534fc3c9cd9b97b2dcb3b3a2"
+    },
+    {
+      "path": "drizzle/0048_outstanding_speed.sql",
+      "sha256": "54b6daec72d6c5e3ac19af3d39cce3e6784b565b9dd3fe84a8d26b9099950ff0"
+    },
+    {
+      "path": "drizzle/0049_daily_zemo.sql",
+      "sha256": "badd741fd60d47a031eb7f58c01e73accd05ca334481700123cffb435aa70cb6"
+    },
+    {
+      "path": "drizzle/0050_dear_dagger.sql",
+      "sha256": "d92e128bb4e895cec212e88f3f1dacd9bb3667325ed31ff13fc6a0671bd88a15"
+    },
+    {
+      "path": "drizzle/0051_thin_echo.sql",
+      "sha256": "540cbdd1098e8e57226555917c91440678e41d4c25230b18986e2222cffe6e75"
+    },
+    {
+      "path": "drizzle/0052_spooky_komodo.sql",
+      "sha256": "a1a49f925607f7606361f36f3630c61d7ef6115725503d39cb5b53cbc93ecfa0"
+    },
+    {
+      "path": "drizzle/0053_noisy_thundra.sql",
+      "sha256": "9b549a81b45f25cfca6df9d2807314974045761f14269f50c6c54c0637fec16c"
+    },
+    {
+      "path": "drizzle/0054_demonic_mystique.sql",
+      "sha256": "3fc9ec82956e5509c1aa33bbca775c088c68ba8118351356ada7351f8dd93974"
+    },
+    {
+      "path": "drizzle/0055_parallel_phalanx.sql",
+      "sha256": "82c94b1b0f63bb97f2f6e1e03a21d185b666edb1a4abc22de88087b5a2eae6bf"
+    },
+    {
+      "path": "drizzle/0056_lowly_nitro.sql",
+      "sha256": "c73ce5575204e377b5323a5bb1b9bc3406e316303f5b4b9ce0b308594e7fe9b0"
+    },
+    {
+      "path": "drizzle/0057_awesome_loki.sql",
+      "sha256": "2526f26e40e1c1c2824f40b5773576a77e219c7b25837047092641123e1e50b1"
+    },
+    {
+      "path": "drizzle/0058_massive_vindicator.sql",
+      "sha256": "36fb6251cd787fb05d87cc605ddcbc639c7d0f785421139cdb980318e8277e0c"
+    },
+    {
+      "path": "drizzle/0059_ops_ad_mcp_facts.sql",
+      "sha256": "5f0b2b40f2cfaddc0a5d4156376ea89d274c7ce3c790cc97c651dd5196af1008"
+    },
+    {
+      "path": "drizzle/0059_product_weekly_ops.sql",
+      "sha256": "aada8dfa1e4f20aa30757c90a6a76a0ec38330480b95068310c13a6211e3a651"
+    },
+    {
+      "path": "drizzle/0099_budget_tracking.sql",
+      "sha256": "290cd38f5db4a0bc3a13dbf2bdb16c74fba473a5cb6bdd205a23d01db0b742d8"
+    },
+    {
+      "path": "drizzle/0100_data_import_center.sql",
+      "sha256": "d62b4c9582ae147e5f79a4b43c892032bf7603b5485270237677b96a53b6f7e5"
+    },
+    {
+      "path": "drizzle/0101_image_workflow_step5_runs.sql",
+      "sha256": "3e80c8f39297b249121ac44a4f1bfa4ce08912512caa28bdef570b7690c0298e"
+    },
+    {
+      "path": "drizzle/0102_ai_jobs.sql",
+      "sha256": "d604086a4be7ab1d1db03b9e812452a246b9901f71502e954edf6b3063fa07fe"
+    },
+    {
+      "path": "drizzle/0102a_emperor_core_registry.sql",
+      "sha256": "aec805de4a3fd1c3638fcc50b6dbaea05f7ca5a92543e8f44d1f4c523bb9d3ea"
+    },
+    {
+      "path": "drizzle/0103_emperor_agent_workflow.sql",
+      "sha256": "0c8f5b691aed4aa0f558cb94a306eb2fcf7c7385f2a780acf8ded0da86fa3fd2"
+    },
+    {
+      "path": "drizzle/0104_emperor_agent_artifacts.sql",
+      "sha256": "59fd3b79e47da5fdbdfc1fc4b204bd6f7695106508856c457fc35f72bd06ad68"
+    },
+    {
+      "path": "drizzle/0105_emperor_tool_runs.sql",
+      "sha256": "7c9fb94aefa086b730833fbf5dfd84ea74e29c422cda294c19281579ebc3eed8"
+    },
+    {
+      "path": "drizzle/0106_ai_os_runtime_hardening.sql",
+      "sha256": "c0d5d1386cb8da076d4affa295d720ba3e1333b280dd7d5107218c0c1859ab3e"
+    },
+    {
+      "path": "drizzle/0107_ai_os_observability.sql",
+      "sha256": "7879cf424461ca1f13bf0373f2d13181f4b8361a9d80c66f26802950f0457e50"
+    },
+    {
+      "path": "drizzle/0108_ai_job_queue_system.sql",
+      "sha256": "649fb54e47ce517907da2732e433a4344b1b7e6d2aa5687ce9ced7adc7f19aa0"
+    },
+    {
+      "path": "drizzle/0109_agent_job_retry_alignment.sql",
+      "sha256": "cfbeb4b7dace94ade976c929ab5070cdc7a70135f7ec5ccf000cbabf48b0ec42"
+    },
+    {
+      "path": "drizzle/0110_agent_artifacts_v1.sql",
+      "sha256": "6f405ea22f468875590257179486167dc46a5e631c7afdd4195b91c52402b855"
+    },
+    {
+      "path": "drizzle/0111_tool_gateway_governance_v2.sql",
+      "sha256": "d3d1f02d0ee309ab7377b3d98c5978f12cad4b4dd716d0b04bb518e884a9b89b"
+    },
+    {
+      "path": "drizzle/0112_template_observability_qa.sql",
+      "sha256": "bcb3ceb53cd379aa84474d1c2e2401601543d7e8d5ad0872a2334f387defe0d7"
+    },
+    {
+      "path": "drizzle/0112a_listing_image_support_tables.sql",
+      "sha256": "6bb1da4a4e644470a85ee39ea8ece5b7b87ae1576468d153cb033b88957c96f0"
+    },
+    {
+      "path": "drizzle/0112b_ops_ads_base_tables.sql",
+      "sha256": "e455cc9c96fadcd69ffc94774030cf1714d98ac3964fc433c75c9013fb0609a9"
+    },
+    {
+      "path": "drizzle/0112c_ad_dsp_product_link.sql",
+      "sha256": "4768df2f3f0c3219ec53494aa1a1ee462baba7891caee7624328424f6284a83c"
+    },
+    {
+      "path": "drizzle/0113_database_governance_v1.sql",
+      "sha256": "2b02fbac36f9848785c56ebc04cd538e193ccc967bb058ddfa55cba61e9ec5f4"
+    },
+    {
+      "path": "drizzle/0114_security_tenant_governance_v1.sql",
+      "sha256": "5344dffd4ce6ada658773a78b40cd132aee6e52277a256e98f9a680d173318a3"
+    },
+    {
+      "path": "drizzle/0115_data_lifecycle_artifacts_v1.sql",
+      "sha256": "fa2a75bfdec1d828108cecee19a2dbe6b8204784ca7f25a084bfa0fa9e3def78"
+    },
+    {
+      "path": "drizzle/0116_ops_workspace_isolation.sql",
+      "sha256": "0011967a0b99fcd28395d3d2df296e856b57bb358f5dbbe5f134d59e7ae52fd4"
+    },
+    {
+      "path": "drizzle/0117_database_runtime_observability.sql",
+      "sha256": "236ec0ff6f2dcfa9d6e0b9478fea7485d9e16fdee87704c88c03c59e6e6f2d76"
+    },
+    {
+      "path": "drizzle/0118_listing_competitor_human_review.sql",
+      "sha256": "defd1d854e4cb41e24e6776e41a38fcad56d7aab95942fd9bea951d5e81127c8"
+    },
+    {
+      "path": "drizzle/0119_listing_competitor_emperor_skills.sql",
+      "sha256": "db6e5bad3c2af11090e2cb9c23862bd0df6e152437dd5639a987af448d33e62d"
+    },
+    {
+      "path": "drizzle/0120_image_workflow_outline_contract.sql",
+      "sha256": "17fda2fa6d484d02c2627a0733b680a5bcabb620069c78977a57ff75af354d51"
+    },
+    {
+      "path": "drizzle/0121_dev_information_summary_emperor_skills.sql",
+      "sha256": "5c6d54c6ca8fa820a636789725f6a7d65c26f2849aa20dbe49c746749387a273"
+    },
+    {
+      "path": "drizzle/0122_image_outline_reliability.sql",
+      "sha256": "3703d603655ef4957e1d2e47a82463917ab63c83aa58caa1f59891d5e159b756"
+    },
+    {
+      "path": "drizzle/0123_dev_information_summary_jobs.sql",
+      "sha256": "393f473242bb6659a4db78cf9dfd9f0b9387ecb7a3261c6a2a5bec85585fe4bb"
+    },
+    {
+      "path": "drizzle/0124_product_development_workspace_security.sql",
+      "sha256": "075f82ce5cf5940463cc34243d0e86a0c399354bb77d4d164fda65f862e9db9b"
+    },
+    {
+      "path": "drizzle/0125_dev_stage_consistency.sql",
+      "sha256": "85d56c7d5b957a27e033802349b12a3b00076ef9f1c43fd423cbbdfe85cfdfec"
+    },
+    {
+      "path": "drizzle/0126_product_analysis_stage_jobs.sql",
+      "sha256": "e662443f07c0c93525b9bcafde29427d54ba1ec027c03f8f6a381ef79387e07e"
+    },
+    {
+      "path": "drizzle/0127_product_development_analysis_agent.sql",
+      "sha256": "08537fac5a815652818f7c39a34b156cdc6c722620dae52874b62e97c2c08433"
+    },
+    {
+      "path": "drizzle/0128_artifact_source_of_truth.sql",
+      "sha256": "c469ba2c245d052ca5d23e6ce81723d1dd7257fa61ca9b107d5541b5b2d54dd9"
+    },
+    {
+      "path": "drizzle/0129_business_skill_governance.sql",
+      "sha256": "034bc5df221b3637ed1564168a9b399145e87c7f8fc7ed02f01e0499b20f771f"
+    },
+    {
+      "path": "drizzle/0130_ai_operations_runtime.sql",
+      "sha256": "65522fe2e9751a942ad840cfa534ac53d4c4071b6bd25fbf11a18f02ad13e834"
+    },
+    {
+      "path": "drizzle/0131_dev_panorama_market_insights.sql",
+      "sha256": "16c262b1f857250f9e2f6fa280ac84714c72e3dfcb897636cff9f12d9287ab8b"
+    },
+    {
+      "path": "drizzle/0132_dev_project_progress_list.sql",
+      "sha256": "36f9ec315bf27f186313805630bb800c01918aaac9f5b53b8f563cc54b9eecee"
+    },
+    {
+      "path": "drizzle/0133_dev_panorama_competitor_selection.sql",
+      "sha256": "d27871250bb054a29a4383514b7ebed0874c7f8908f661bc268f2cc16cfc6b91"
+    },
+    {
+      "path": "drizzle/0134_round4_business_agent_bindings.sql",
+      "sha256": "d919346668cd49f4f3e0a2ed52467263db861bbcbbfa1b4c42fd6b0e3ed19a1c"
+    },
+    {
+      "path": "drizzle/0135_video_job_checkpoint_binder.sql",
+      "sha256": "8dac0a7a2802a46bf7a96c061480def259534919fc2fe20963e0bb6b0948cb20"
+    },
+    {
+      "path": "drizzle/0136_business_job_binding_qa.sql",
+      "sha256": "1be331716c665d820fa56779334de8ac78b2760f118be14aa5fedbdd23b4d206"
+    },
+    {
+      "path": "drizzle/0137_dev_project_operator_stage.sql",
+      "sha256": "f28fe9962fe6ba6d300b577af88ab652f318ce15e0a43bf52cba82d5589dce54"
+    },
+    {
+      "path": "drizzle/0138_dev_project_landing_stage.sql",
+      "sha256": "a04dbacaeed1785b263f0c32b7d3132a92198a8e9bf613bd927216557aa44243"
+    },
+    {
+      "path": "drizzle/0139_step4_image_version_records.sql",
+      "sha256": "1c8f3bf178e6acf4cdd2eb36f4f53c8c4b201df0ac5bf8f11bb670fc440572c0"
+    },
+    {
+      "path": "drizzle/0140_dev_panorama_versions.sql",
+      "sha256": "fc69dbf66ce14fbc886f03adcc9186eeeb352956a225d902d01216457f1f6aae"
+    },
+    {
+      "path": "drizzle/0141_dev_import_batches_base.sql",
+      "sha256": "660d9ab436de29069c23d7a68564c75a45fc5e016cd2a16317d6fd12405d139d"
+    },
+    {
+      "path": "drizzle/0142_ops_asin_daily_inventory_planning.sql",
+      "sha256": "c15d50863cbea1f460263712e15a5af9bede01a31edb8281299006b0fde8569f"
+    },
+    {
+      "path": "drizzle/0143_ops_inventory_parent_asin_parameters.sql",
+      "sha256": "2bfd80ddaff7b3d0e49725f56c32e5fec7bbdf1547be6c864720190ae994b00a"
+    },
+    {
+      "path": "drizzle/0144_ops_asin_lifecycle_status.sql",
+      "sha256": "11c9d94d0004f0e5bab9c6d862c0892032b7fd4a7b7da0756c909abaffd94f37"
+    },
+    {
+      "path": "drizzle/0145_ops_inventory_product_cost_parameters.sql",
+      "sha256": "6be7b6bcda372173fe1916b8af8b100bff41e78b54fe125465b6060462898aba"
+    },
+    {
+      "path": "drizzle/0146_ops_inventory_size_weight_parameters.sql",
+      "sha256": "cf2fb06720820c4c28f8581d545f8565db472347732a6a1882cdfed427fb19ce"
+    },
+    {
+      "path": "drizzle/0147_ops_monthly_financial_profits.sql",
+      "sha256": "205910b5aea3c5ddde4764d922da55821c008371bfe093db9cd636c4dcd9b756"
+    },
+    {
+      "path": "drizzle/0148_knowledge_workspace_scope.sql",
+      "sha256": "9fe28266dfd561926c9a6a52ead8ca46ee2b32134cec4946e238b3794677d3cd"
+    },
+    {
+      "path": "drizzle/0149_dev_import_batch_governance.sql",
+      "sha256": "b7260e468e2a09d393365dc7ae3e583c6a6310f2aec2a3aec7ff7bfcf5476242"
+    },
+    {
+      "path": "drizzle/0150_step5_complete_result_longtext.sql",
+      "sha256": "4c205ad55a1f3fbc648b297431f1ee49eeadaa99de0432853bbf2987120d578b"
+    },
+    {
+      "path": "drizzle/0151_step5_segment_run_status.sql",
+      "sha256": "28fa1cd63a9a04da8c0ebedaf64f253934783361d032278dc52af41fcfe6552e"
+    },
+    {
+      "path": "drizzle/0152_dev_panorama_competitor_selection_persistence.sql",
+      "sha256": "21c407bb2ae1c0637d086c5fd45f44a8b3e539010138e5efa1d82602a14f22d1"
+    },
+    {
+      "path": "drizzle/0153_emperor_run_ledger_v2.sql",
+      "sha256": "90df721da6f65584b254745a6dc8a92e5a3c4be44c1f54b9f65b347a72747a79"
+    },
+    {
+      "path": "drizzle/0154_emperor_skill_quality_gates.sql",
+      "sha256": "f610b7dbd261eae93030f73380b43a8665130c8ecaf62fb6372bdb764f1a5c9a"
+    },
+    {
+      "path": "drizzle/0155_emperor_skill_feedback_rollouts.sql",
+      "sha256": "07d57118d2deee78ac53ab4cf6156af0b860ef5d5886ef4cafbda85b12895cae"
+    },
+    {
+      "path": "drizzle/0156_emperor_harness_completion.sql",
+      "sha256": "37e343db4b0f28e93045311622b8fbc89a7d46be68440f86d9dabf5fbbaac648"
+    },
+    {
+      "path": "drizzle/0157_ops_external_sync_drafts.sql",
+      "sha256": "597f1c924524491d1568395bcf46235f812774aa8df069a18258e547a053fd02"
+    },
+    {
+      "path": "drizzle/0158_emperor_conversation_task_manager.sql",
+      "sha256": "518a4e853c5816ca13f4dc89224f6c1394b4850073f55e1e0e8cc265fe444064"
+    },
+    {
+      "path": "drizzle/0159_emperor_conversation_planner_skill.sql",
+      "sha256": "5a33429901b33b100d3afe29caa542b42021c33a2ee935fe0892ce30e6d5ae1b"
+    },
+    {
+      "path": "drizzle/0160_emperor_conversation_knowledge_refs.sql",
+      "sha256": "0ecec3f832e335596e1cd064c0fe0b3c348f8f43d2513efb6487f8c84ec11589"
+    },
+    {
+      "path": "drizzle/0161_ai_storage_objects_oss_provider.sql",
+      "sha256": "49afb19b03f51e37d70ced0c00ce63fe2b0860c112c87c36fd066561aa71b49f"
+    },
+    {
+      "path": "drizzle/0162_emperor_conversation_planner_model_policy.sql",
+      "sha256": "0a602f81a3df0048c8c4ece2d9d317b94d934cd5299a7bea7a3df0a4349c189f"
+    },
+    {
+      "path": "drizzle/0163_emperor_conversation_message_skill_run.sql",
+      "sha256": "0f0ee5725772f403aa266aeb5e1b32be91f27fc13d0fe611ccfcf4e07fedfe98"
+    },
+    {
+      "path": "drizzle/0164_emperor_execution_recovery_lifecycle.sql",
+      "sha256": "6e0a9b363e503fc29ff5e37a0a490a629696c9736d0099f6f4a97cdb89d249d7"
+    },
+    {
+      "path": "drizzle/0165_emperor_agent_run_recovery_state.sql",
+      "sha256": "6f383d530f27670b07abcd55a93855fc19c9e00a5ad25325a4bd35984dc9292a"
+    },
+    {
+      "path": "drizzle/0166_emperor_skill_run_recovery_state.sql",
+      "sha256": "87a37d02020c3b0c98da66316a1ea975de98e63b9ced03a7935fae4a13a2181b"
+    },
+    {
+      "path": "drizzle/0167_emperor_conversation_plan_recovery_state.sql",
+      "sha256": "55d2f77e00dd5b6f5641ceb9a5e80b8c7fb7acdada654fe59f6b71e74db4dd96"
+    },
+    {
+      "path": "drizzle/0168_emperor_context_provenance_projection.sql",
+      "sha256": "2a7eb8a764e23e5686a7957424de881c79e2dfae5367c08773a35b512a7955b2"
+    },
+    {
+      "path": "drizzle/0171_listing_bullet_step_skill_v3.sql",
+      "sha256": "74f0fc6338ce6a6b16ccee356d5e1fac447b4ec7a4f010326d7aa3ccde48171a"
+    },
+    {
+      "path": "drizzle/0172_ops_asin_daily_source_provenance.sql",
+      "sha256": "e0ae593fa064fce86c998df77f663775d31c95bc7d58deeb89a31de1eb827dc6"
+    },
+    {
+      "path": "drizzle/0173_ops_asin_daily_source_provenance_indexes.sql",
+      "sha256": "41fb438c21e4d50083e705df0a65003ee343620051732387551aba0c3dea9fc9"
+    },
+    {
+      "path": "drizzle/0174_ops_asin_daily_source_provenance_indexes.sql",
+      "sha256": "22f9151f8784788a29bea4053c3b2c5e6319d1ccfd6510136bd001d1a495dbfa"
+    },
+    {
+      "path": "drizzle/0175_ops_lingxing_sync_schedules.sql",
+      "sha256": "c4c7bbd94e18eee7d9979f50f7c8061d35cb3f043cc4da24d31ae5f8d2a9eee4"
+    },
+    {
+      "path": "drizzle/0176_ops_lingxing_daily_auto_apply.sql",
+      "sha256": "6e7736df7b681e3822fb25803d787f6aeded4da4b0069d4819edf27933b43562"
+    },
+    {
+      "path": "drizzle/0177_ops_lingxing_sync_schedule_cadence_length.sql",
+      "sha256": "a165409cb2c7f032afb09c5cba35a51fa0525fc698493b85fe58214130acaa3b"
+    },
+    {
+      "path": "drizzle/0178_backfill_legacy_ads_workspace.sql",
+      "sha256": "028568e9623fba2a530638d31d8877b894591a2d12fcd6a984c55b2194ccf81e"
+    },
+    {
+      "path": "drizzle/0179_ad_keyword_source_identity.sql",
+      "sha256": "27f34c9cc736271aba87c122fa93649621d042d60e6b3d64fe24e244e4b81c21"
+    },
+    {
+      "path": "drizzle/0180_emperor_lingxing_scheduled_task_unification.sql",
+      "sha256": "86128ad785f71aeaff7c2e47a2646892458aa12d1d86256a036f6e5d89635296"
+    },
+    {
+      "path": "drizzle/0181_product_knowledge_transfer.sql",
+      "sha256": "6a4a40e4cad0fe567815ce91a690632929015ba965f6d75af63073a03fe466dd"
+    },
+    {
+      "path": "drizzle/0182_product_knowledge_transfer_receipts.sql",
+      "sha256": "2af98af4509ae02b62ae501969e87f4ad23952190c5725dd0084adf7b360d496"
+    },
+    {
+      "path": "drizzle/0183_backfill_lingxing_weekly_workspace.sql",
+      "sha256": "139de33a5e74f3729ff37c0242c07b7c28bf69e09a89f97a645286de53b6f497"
+    },
+    {
+      "path": "drizzle/0184_backfill_lingxing_daily_operators.sql",
+      "sha256": "7edfb926366c8abc7bde40c02c0a45d38b7fad55dcf0cae4fd197b3f739f7ee5"
+    },
+    {
+      "path": "drizzle/0185_ops_inventory_owner_assignments.sql",
+      "sha256": "ef05a7ca0d99076df73651dd21cac1ef70f1b0dd73e03fbfd418c906fe03c84d"
+    },
+    {
+      "path": "drizzle/0186_backfill_lingxing_daily_operators_by_normalized_identity.sql",
+      "sha256": "265591536c1e3d2c21b221c88c5dce1768c79c3a5b409134513ab6fd47656aa0"
+    },
+    {
+      "path": "drizzle/0187_skill_distillation_foundation.sql",
+      "sha256": "bf6403bdc8d3d84854f79e4dc51fc4973684db6a7ed3c4853474a2727aa73f54"
+    },
+    {
+      "path": "drizzle/0188_manual_knowledge_distillation_executor.sql",
+      "sha256": "dbf97a5c056cdfb27a3d96ee41a309be73b0366c8c9fbe7fa150614c1597ad57"
+    },
+    {
+      "path": "drizzle/0189_claim_ledger_consistency_decisions.sql",
+      "sha256": "c5a2399cb59ed04b60574f4743f07d7f0551a8b188c9bb022a4962bdc97324f1"
+    },
+    {
+      "path": "drizzle/0190_parent_asin_weekly_mcp_source.sql",
+      "sha256": "18649e7c2c0f1e35a075713406497590c0cdf8e3ec3aacb5bc4d01091e7f95b0"
+    },
+    {
+      "path": "drizzle/0191_parent_asin_weekly_mcp_source_forward_repair.sql",
+      "sha256": "3f7ad0b2d849a7c6cb2206c41bde3484ec0ea358eb3ec7952b7844f94ba1581b"
+    },
+    {
+      "path": "drizzle/0192_parent_asin_weekly_source_columns_forward_repair.sql",
+      "sha256": "9e74ca1d103fbcea920d0daf666d650ccd28bd7e4146dc6c151ad64c3e968079"
+    },
+    {
+      "path": "drizzle/0193_parent_asin_weekly_mcp_control_plane_forward_repair.sql",
+      "sha256": "67d02b7457801a5b5a7d2bc3405d6fad8e047b5277711098bedf5912d9776c38"
+    },
+    {
+      "path": "drizzle/0194_parent_asin_weekly_mcp_auto_apply.sql",
+      "sha256": "00f11ff4687f03320490917f4d50e8afaaec81efb6dbedcef91cf20d81b2e5c9"
+    },
+    {
+      "path": "drizzle/0195_parent_asin_weekly_mcp_emperor_projection.sql",
+      "sha256": "a02decbee0a1a243c09b5e97cf9d982d37b6c87bbf09bab13182a01aec7587e8"
+    },
+    {
+      "path": "drizzle/0196_ops_ad_mcp_campaign_metadata_nullable.sql",
+      "sha256": "2359096ae0aa5ee0c0a058f7a47201e6ef55e9f94a23fa7af82e03098307d999"
+    },
+    {
+      "path": "drizzle/0197_ops_monthly_financial_profit_scope.sql",
+      "sha256": "f350519fba2502602d9202b9085605017559bf4e8576bccb22822c6f6381fb91"
+    },
+    {
+      "path": "drizzle/0198_unified_amazon_acquisition_foundation.sql",
+      "sha256": "72a453fc77437f95296d3bbf04f9e7f6d1047aeb1dc18c693c8b81fac5758ac9"
+    },
+    {
+      "path": "drizzle/0199_image_competitor_gallery_analysis.sql",
+      "sha256": "6eed9924c7af9c4cad1d7f4cc6c5ee928fd20f76f29c5a8e3b4d5ff6c9cced97"
+    },
+    {
+      "path": "drizzle/0200_image_expression_asset_linkage.sql",
+      "sha256": "a5245255c5be8c8e24dc8b063033e4eeead2ebf8735ab9d94f6ef07b9813f97e"
+    },
+    {
+      "path": "drizzle/0201_amazon_monitor_provider_jobs.sql",
+      "sha256": "8184c0c95d1a75ef6c98eabbf08708af3d62b25a25edc887de20d4280ab54b20"
+    },
+    {
+      "path": "drizzle/0202_competitor_gallery_analysis_scope.sql",
+      "sha256": "d8ee225ded044f002a9eb7786abd5c5ba9e823433acc76a9f1b130aff01000ad"
+    },
+    {
+      "path": "drizzle/0203_external_knowledge_caller_bindings.sql",
+      "sha256": "d6ba975ecdc34ff70ae8c905cb9cca38cb7d69a5f50cd72ca0637917cd1d4722"
+    },
+    {
+      "path": "drizzle/0204_listing_revision_governance.sql",
+      "sha256": "560dd6dc756795fde46d136c606cc28288f27097faad283b79a31f26bfb6c725"
+    },
+    {
+      "path": "drizzle/0205_image_asset_policy.sql",
+      "sha256": "3d236d7df2782dba0beca90a3be40634d6ea618710b2f1ad7a979eb6dfce87ee"
+    },
+    {
+      "path": "drizzle/ad_tracking_migration.sql",
+      "sha256": "d237c84fe73e6530e47bb9d1840cb43c4e0363ce17fd73beed58684ea7f89ae2"
+    },
+    {
+      "path": "drizzle/bootstrap/0001_scheduled_tasks_prerequisite.sql",
+      "sha256": "c37def8e231f03a1a379d5a51f7c35d038c948d2953775d1122b7823c06534bd"
+    },
+    {
+      "path": "drizzle/bootstrap/0002_kb_tag_definitions.sql",
+      "sha256": "f0fea75ac660a4bbb4b1681a952890060383e4025acd618065a089fc5c2a4d18"
+    },
+    {
+      "path": "drizzle/bootstrap/0003_listing_and_image_source_columns.sql",
+      "sha256": "9cc939d49cd9e1d6612240d2d855e40a7798a16e67add1f2f0f48ad962f617ec"
+    },
+    {
+      "path": "drizzle/dsp_migration.sql",
+      "sha256": "302b7ace151b36c6d2e685dd76b9d9ea7113b8d8d8b70f5eb9501d52451c7c66"
+    },
+    {
+      "path": "drizzle/meta/_journal.json",
+      "sha256": "4e9eb19f598b8d7a60b944ac8513de9615334d87e82061508346f66637566a18"
+    },
+    {
+      "path": "drizzle/ops_plan_migration.sql",
+      "sha256": "79856111912554e3cb918b7067a1ac8063ef5d304ee295c26abbd73141e7fa61"
+    },
+    {
+      "path": "drizzle/review_migration.sql",
+      "sha256": "c268baa247aa8d2b84f6d7f8299b3d71ed4b110d07caf2d1216172c756e2f6da"
+    },
+    {
+      "path": "drizzle/schema/acquisition.ts",
+      "sha256": "fd203c102235ce3f1c5c8510a880c1bdd89f920998e9e481b1821919ac69857c"
+    },
+    {
+      "path": "drizzle/schema/ads.ts",
+      "sha256": "257b12961beb58ab5627a08999efadfee9a2067ec4dc5ffc2525fd6c9cf394a0"
+    },
+    {
+      "path": "drizzle/schema/ai_os.ts",
+      "sha256": "99aff033bb3b6e3ffe518df787ae2fde017f8afcdeb97c458e26001a580d7f2d"
+    },
+    {
+      "path": "drizzle/schema/auth.ts",
+      "sha256": "47ae30b38a7f72e74726b77d7dd5f2995c2c371ba46f95c933fed2032b14f2d4"
+    },
+    {
+      "path": "drizzle/schema/image.ts",
+      "sha256": "e4193191d60764c4e551ca7a983ce43126c67a42c6d97fe89b502fdde25528dd"
+    },
+    {
+      "path": "drizzle/schema/imageAssetPolicies.ts",
+      "sha256": "0bcda167aded1bfa9dcf78287433761b0d40e0878f9606cfbfec72725cf0daca"
+    },
+    {
+      "path": "drizzle/schema/imageAssetTrustLedger.ts",
+      "sha256": "445b64e1f7afab5baa692b5d2acd35acbdee9c5f5d9af523717f2bb45f3e3a83"
+    },
+    {
+      "path": "drizzle/schema/imageWorkflowVersions.ts",
+      "sha256": "c84958f3b33a838a921db2ff7113974f3a586a35b5198c2512a38c76d31f1cf3"
+    },
+    {
+      "path": "drizzle/schema/index.ts",
+      "sha256": "e2990343f4c0ea8b16d21a78e54c696044b45a0cee5159abb7325411fe68ea29"
+    },
+    {
+      "path": "drizzle/schema/knowledge.ts",
+      "sha256": "7f462909b1c41c7211fb06911aa3d7910ee1502e54ff340b5468b456563b2079"
+    },
+    {
+      "path": "drizzle/schema/listing.ts",
+      "sha256": "8eea3dc5e7f1a6bcd572605ffac7b9acc7bce48c31529113b0780dbf17ce4c4f"
+    },
+    {
+      "path": "drizzle/schema/listingRevisions.ts",
+      "sha256": "b57935085ad2a910830a1e2e509f2a39d83ba88216f958891e51713045919a4a"
+    },
+    {
+      "path": "drizzle/schema/monitoring.ts",
+      "sha256": "502bcbd219005df91ea8e0913d51b58630421e36fc1a7d11607c45fa6e6015e5"
+    },
+    {
+      "path": "drizzle/schema/ops.ts",
+      "sha256": "4fd0d94cb4fc9c165b68d6612d9201de0ff981506a13b10d68a0ef685e729d10"
+    },
+    {
+      "path": "drizzle/schema/project.ts",
+      "sha256": "1be91fa4afb4981125d3f3a327aef40bace6318bbe45a6035e90d77519c41a5e"
+    },
+    {
+      "path": "drizzle/schema/skillDistillation.ts",
+      "sha256": "b87499d2aeaea8129231b2ebeb92dd470d275fc474d24cc4a5086ac63b9ad461"
+    },
+    {
+      "path": "drizzle/schema/video.ts",
+      "sha256": "6eb078c74386762843274b513bcf6cbc1d6ae72e03ed6a1cfc101761f9ef9f48"
+    },
+    {
+      "path": "drizzle/video_script_migration.sql",
+      "sha256": "55dee14340e26576e92482c3ee863c074d53f85fbcf38033ce9a99e9682a6300"
+    },
+    {
+      "path": "drizzle/video_script_v2_migration.sql",
+      "sha256": "d2025b70b37d9baa43bdb6363fe3f7c3f4abfe528e54f778fb46f71286f429e0"
+    },
+    {
+      "path": "migrate_update.mjs",
+      "sha256": "4a4d8afa161c62c97046f89bdfb5d7d8b9eaebb9ab4b31d2175f3087e0bd54a5"
+    },
+    {
+      "path": "scripts/integration/exportProductionDdl.mjs",
+      "sha256": "8b76a413c0e9e125d57b179d8619373af4012d00c198bb3d4056965346c9167a"
+    },
+    {
+      "path": "scripts/integration/freshHistoricalLineage.mjs",
+      "sha256": "6e255c9c595c77d6308c3e3e264eaac44eac6e6392a4eef07cf7314978ba6c79"
+    },
+    {
+      "path": "scripts/integration/migrationInventory.mjs",
+      "sha256": "7a06199832cae0b6f805344b080d5c3ada603a1fdf9895813d1bf34d4efbe08b"
+    },
+    {
+      "path": "scripts/integration/mysqlRehearsal.mjs",
+      "sha256": "a1cb2b89e19774179a1b24b5860d7c36d43dc1f6031729b4713f1202651e91bd"
+    },
+    {
+      "path": "scripts/integration/readProductionSchema.mjs",
+      "sha256": "8445a302469f9bcf622fa46f13ee325d2d4560b86b5d4d5067cd75fb787fc6d2"
+    },
+    {
+      "path": "scripts/run-database-migrations.mjs",
+      "sha256": "5ed6ad3b13e14cd7e92f32a31b8398bf83af13643ac64793fb10a2234f5cc638"
+    },
+    {
+      "path": "server/domains/ops/workspaceContext.ts",
+      "sha256": "a25652858ed79f28291c9a3fe459bf6b152d43c4195daead5b488cca2023999b"
+    }
+  ]
+}
