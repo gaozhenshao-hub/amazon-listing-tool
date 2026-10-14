@@ -601,7 +601,10 @@ export const dataImportRouter = router({
         weekEndDate: table.weekEndDate,
       })
         .from(table)
-        .where(or(isNull(table.userId), eq(table.userId, effectiveUserId)))
+        .where(and(
+          or(isNull(table.workspaceId), opsWorkspaceCondition(table, currentOpsWorkspaceId())),
+          or(isNull(table.userId), eq(table.userId, effectiveUserId)),
+        ))
         .orderBy(desc(table.weekStartDate));
 
       return ranges;

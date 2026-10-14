@@ -1,0 +1,34 @@
+{
+  "version": "amazon-protected-baseline-review/1",
+  "reviewedOn": "2026-10-15",
+  "control": "K09",
+  "decision": "explicit-local-reviewed-workspace-filter-not-full-T24-acceptance",
+  "priorSourceHead": "eddc792a75ed2fd45bb3ce19f510d6e2d1d5e78f",
+  "scope": "getAvailableDateRanges for both weekly sources: add (workspace IS NULL OR current workspace) AND the original user predicate; preserve original user restriction and weekly-summary compatibility",
+  "protectedFiles": [{
+    "path": "server/routers/dataImport.ts",
+    "baseline": { "gitBlobSha1": "65ea86c5448be8126c8495e524468923c654f3c5", "sha256": "eb2c9057f6ba6de8fa0fa8ccf9120e0a5804c6706bc107861aecbe9abd0a31e9" },
+    "reviewed": { "gitBlobSha1": "3038566c62b912acc18972ca101d1db3d38779fa", "sha256": "b5829f4f6efad587c7c177283f2079e37d0e4495cca95fc329bac5c92ab9393e" }
+  }],
+  "tests": [{ "path": "server/dataImport.dateRanges.workspace.behavior.test.ts", "sha256": "6d4e311dad2beecf3eb86325277b3643982bf014f9beacf20f697dbad381bb66", "cases": 8 }],
+  "verification": {
+    "redBeforeFix": { "passed": 4, "failed": 4 },
+    "greenAfterFix": { "passed": 8, "failed": 0 },
+    "implementerNeighborCasesPassed": 90,
+    "independentNewCasesPassed": 8,
+    "rootNewDateAndEnqueueCasesPassed": 34,
+    "rootFullCandidateUnit": { "actualSession": 51694, "actualExitCode": 0, "passed": 5437, "originalSkipped": 14, "passedFiles": 562, "originalSkippedFiles": 3, "seconds": 92.83, "maxWorkers": 2 },
+    "rootFullProductionTypecheck": { "actualSession": 33141, "actualExitCode": 0, "incremental": false },
+    "rootNineFileScopedLintExitCode": 0,
+    "rootBaselineBeforeAllowance": { "actualExitCode": 1, "onlyChangedProtectedFile": "server/routers/dataImport.ts" },
+    "behaviorTestsUseControlledDb": true,
+    "newPatchPersistedHttpRevalidated": false
+  },
+  "unchanged": ["original baseline hashes", "legacy NULL workspace remains subject to original user scope", "existing weekly-summary behavior", "permission matrix", "effective owner resolution", "dependencies and lockfile", "historical SQL and migration runner"],
+  "limitations": ["Exact parameterized SQL and controlled fixture tests are not actual MySQL row-visibility evidence", "The full unit run also includes the separately reviewed enqueue and reset patches", "A fresh actual HTTP and full database observation batch is still required"],
+  "rollback": "Revert this isolated source/test/guard-review commit; this patch performs no migration",
+  "deployed": false,
+  "publicPush": false,
+  "fullT24Complete": false,
+  "p1Complete": false
+}
