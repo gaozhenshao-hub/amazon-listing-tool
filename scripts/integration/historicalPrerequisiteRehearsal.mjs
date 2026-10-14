@@ -6,15 +6,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  validateEnvironment, validatePaths, validateOutput, validateServerIdentity,
+  validateEnvironment, validateOutput,
   connectionOptions, schemaNames, validateGeneralPlan, GENERAL_PLAN_SHA256,
   safeError, sqlOperationText,
 } from "./mysqlRehearsal.mjs";
 import {
-  parseArguments as parseLocalArguments, validateBinaries, nativeArguments, runNative,
+  parseArguments as parseLocalArguments, runNative,
 } from "./mysqlSnapshotRehearsal.mjs";
 import { selectFreshLineage, checkPostconditions, CHOSEN } from "./freshHistoricalLineage.mjs";
 import { normalizeSnapshotCreateTable } from "./snapshotDdlNormalization.mjs";
+import { createHistoricalPlatformProfile, validateLinuxPluginRows, runLinuxNative } from "./historicalPlatformProfile.mjs";
 
 const repo = fileURLToPath(new URL("../../", import.meta.url));
 const digest = value => createHash("sha256").update(value).digest("hex");
@@ -27,9 +28,11 @@ const MAX_BYTES = 32 * 1024 * 1024;
 const MAX_ROWS_PER_TABLE = 10_000;
 export function parseArguments(args) {
   const flags = args.filter(value => value === "--fresh-reviewed-lineage");
+  const linuxFlags = args.filter(value => value === "--linux-isolated-vm");
   requireSafe(flags.length <= 1, "DUPLICATE_LINEAGE_FLAG");
-  return { ...parseLocalArguments(args.filter(value => value !== "--fresh-reviewed-lineage")),
-    freshReviewedLineage: flags.length === 1 };
+  requireSafe(linuxFlags.length <= 1, "DUPLICATE_LINUX_PROFILE_FLAG");
+  return { ...parseLocalArguments(args.filter(value => value !== "--fresh-reviewed-lineage" && value !== "--linux-isolated-vm")),
+    freshReviewedLineage: flags.length === 1, linuxIsolatedVm: linuxFlags.length === 1 };
 }
 export const SOURCE_PINS = Object.freeze({
   "drizzle/schema/ai_os.ts": "99aff033bb3b6e3ffe518df787ae2fde017f8afcdeb97c458e26001a580d7f2d",
@@ -172,11 +175,13 @@ async function quietlyApply(runner, connection, plan) {
 }
 
 export async function runRehearsal(options, { environment = process.env, argv = process.argv, io = fs,
-  load = loadDependencies, native = runNative } = {}) {
+  load = loadDependencies, native, runtime = { platform: process.platform, arch: process.arch } } = {}) {
   requireSafe(options.executeLocal === true && options.output, "EXPLICIT_LOCAL_EXECUTION_AND_OUTPUT_REQUIRED");
-  validateEnvironment(environment, argv);
-  const paths = validatePaths(options, io), output = validateOutput(options.output, io);
-  const binaries = validateBinaries(paths.root, options.bindir, io), provenance = validateSources(io);
+  const profile = createHistoricalPlatformProfile(options, { io, runtime });
+  const nativeRunner = native ?? (profile.kind === "linux-isolated-vm" ? runLinuxNative : runNative);
+  profile.validateEnvironment(environment, argv);
+  const paths = profile.validatePaths(options), output = validateOutput(options.output, io);
+  const binaries = profile.validateBinaries(paths.root, options.bindir), provenance = validateSources(io);
   const { runner, createConnection } = await load();
   const sourcePlan = runner.loadMigrationPlan();
   requireSafe(validateGeneralPlan(sourcePlan) === GENERAL_PLAN_SHA256, "GENERAL_PLAN_SNAPSHOT_CHANGED");
@@ -186,6 +191,7 @@ export async function runRehearsal(options, { environment = process.env, argv = 
   requireSafe(source !== restored, "FRESH_SCHEMA_COLLISION");
   const receipt = { formatVersion: 1, mode: "source-derived-prerequisite-general-chain", status: "running",
     startedAt: new Date().toISOString(), schemas: { source, restored }, prerequisite: provenance,
+    platformProfile: { kind: profile.kind, runtime: profile.runtime },
     sourcePlan: { count: sourcePlan.length, sha256: GENERAL_PLAN_SHA256 },
     plan: { count: plan.length, sha256: lineage?.sha256 ?? GENERAL_PLAN_SHA256 },
     lineage: lineage ? { mode: "explicit_local_0190_lineage", excluded: lineage.excluded, postconditions: [] }
@@ -197,7 +203,9 @@ export async function runRehearsal(options, { environment = process.env, argv = 
       lineage ? "Explicit fresh-only 0190 lineage: 165 executed, 0191/0192/0193 alternative repairs excluded with no ledger rows. Default production runner remains unchanged."
         : "Only the original 168-item general chain; dedicated/retired/manual/friend migrations remain excluded.",
       "All data originate from pinned migration seeds; no production business rows or services.",
-      "Local native MySQL dump/restore is not production baseline-copy upgrade or Linux validation.",
+      profile.kind === "linux-isolated-vm" ? "Isolated Linux VM source-derived rehearsal only; not production baseline-copy upgrade or a production clone."
+        : "Local native MySQL dump/restore is not production baseline-copy upgrade or Linux validation.",
+      "VM isolation is an explicit caller/setup assurance, not an attestation inferred by this tool.",
       "Original unbootstrapped failure is retained; this tool never retries or repairs a failed migration."] };
   const controller = new AbortController(), connections = [];
   let release, dumpFd;
@@ -215,11 +223,16 @@ export async function runRehearsal(options, { environment = process.env, argv = 
         query(sql, values) { active(); return raw.query({ sql, timeout: 30_000 }, values); },
         execute(sql, values) { active(); return raw.execute({ sql, timeout: 30_000 }, values); },
       };
-      validatePaths(options, io);
-      const [rows] = await connection.query("SELECT @@version AS version, @@datadir AS datadir, @@socket AS socket, @@skip_networking AS skipNetworking, @@lower_case_table_names AS lowerCaseTableNames, @@sql_mode AS sqlMode");
+      profile.validatePaths(options);
+      const identitySql = "SELECT @@version AS version, @@datadir AS datadir, @@socket AS socket, @@skip_networking AS skipNetworking, @@lower_case_table_names AS lowerCaseTableNames, @@sql_mode AS sqlMode";
+      const [rows] = await connection.query(identitySql + (profile.kind === "linux-isolated-vm" ? ", @@event_scheduler AS eventScheduler" : ""));
       const row = rows[0];
-      receipt.server = { ...validateServerIdentity(row, paths, io), lowerCaseTableNames: Number(row.lowerCaseTableNames), sqlMode: row.sqlMode };
+      receipt.server = { ...profile.validateServerIdentity(row, paths), lowerCaseTableNames: Number(row.lowerCaseTableNames), sqlMode: row.sqlMode };
       requireSafe([0, 1, 2].includes(receipt.server.lowerCaseTableNames) && typeof row.sqlMode === "string", "SERVER_SETTINGS_INVALID");
+      if (profile.kind === "linux-isolated-vm") {
+        const [plugins] = await connection.query("SELECT PLUGIN_STATUS AS pluginStatus FROM information_schema.plugins WHERE PLUGIN_NAME='mysqlx'");
+        Object.assign(receipt.server, validateLinuxPluginRows(plugins));
+      }
       const [current] = await connection.query("SELECT DATABASE() AS schemaName");
       requireSafe(current[0]?.schemaName === (database ?? null), "CURRENT_SCHEMA_MISMATCH");
       await connection.query("SET time_zone = '+00:00'");
@@ -270,10 +283,10 @@ export async function runRehearsal(options, { environment = process.env, argv = 
     await apply(sourceConnection, "repeat");
     receipt.repeat = compareSnapshots(before, await readSnapshot(sourceConnection));
     const dumpPath = path.join(paths.root, `historical-prerequisite-${randomBytes(8).toString("hex")}.sql`);
-    validateBinaries(paths.root, options.bindir, io);
+    profile.validateBinaries(paths.root, options.bindir);
     dumpFd = io.openSync(dumpPath, "wx+", 0o600);
     receipt.dump = { path: dumpPath, mode: "0600", status: "writing" };
-    await native({ binary: binaries.mysqldump, args: nativeArguments("dump", paths.socket, source),
+    await nativeRunner({ binary: binaries.mysqldump, args: profile.nativeArguments("dump", paths.socket, source),
       root: paths.root, outputFd: dumpFd, signal: controller.signal });
     const stat = io.fstatSync(dumpFd);
     requireSafe(stat.isFile() && (stat.mode & 0o777) === 0o600 && stat.size > 0 && stat.size <= MAX_BYTES, "PRIVATE_BOUNDED_DUMP_REQUIRED");
@@ -282,7 +295,8 @@ export async function runRehearsal(options, { environment = process.env, argv = 
     receipt.dump = { path: dumpPath, mode: "0600", status: "validated", ...validateDump(bytes, Object.keys(before.structure)) };
     io.closeSync(dumpFd); dumpFd = undefined;
     const restoredConnection = await createSchema(restored);
-    await native({ binary: binaries.mysql, args: nativeArguments("restore", paths.socket, restored),
+    profile.validateBinaries(paths.root, options.bindir);
+    await nativeRunner({ binary: binaries.mysql, args: profile.nativeArguments("restore", paths.socket, restored),
       root: paths.root, input: bytes, signal: controller.signal });
     receipt.restoration = compareSnapshots(before, await readSnapshot(restoredConnection));
     await apply(restoredConnection, "restored_repeat");
@@ -306,6 +320,9 @@ export async function runRehearsal(options, { environment = process.env, argv = 
     for (const raw of connections) raw.destroy();
     receipt.finishedAt = new Date().toISOString();
   }
+  // Never label preflight, partial apply, failed restore or failed cleanup as
+  // Linux validation. This flag covers only the source-derived chain above.
+  receipt.caseSensitiveLinuxValidated = receipt.status === "completed" && profile.kind === "linux-isolated-vm";
   io.writeFileSync(output, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o600 });
   return receipt;
 }
