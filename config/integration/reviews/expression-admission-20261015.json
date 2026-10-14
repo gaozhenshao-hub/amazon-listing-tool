@@ -1,0 +1,31 @@
+{
+  "version": "amazon-p1-source-review/1",
+  "reviewedOn": "2026-10-15",
+  "control": "K06",
+  "decision": "local-reviewed-expression-admission-gate-not-persisted-acceptance",
+  "priorSourceHead": "eddc792a75ed2fd45bb3ce19f510d6e2d1d5e78f",
+  "scope": "Share existing project/group and workspace/project/selection/group/session/confirmed validation before active-job lookup, Agent creation, job creation and scheduling; worker repeats it",
+  "files": [
+    { "path": "server/domains/image/services/expressionLinkageJob.ts", "sha256": "c4257ea9d1ec28b240a1fee7c289a8c13f2e34c2f6d7f8c011487ffb992a5e2c" },
+    { "path": "server/domains/image/services/expressionLinkageJob.authorization.behavior.test.ts", "sha256": "f9dd1dff3f918ae9fda435363876b37698fcd3205b0973cd3aacf28c374884fd" }
+  ],
+  "verification": {
+    "redBeforeFix": { "passed": 13, "failed": 13 },
+    "greenAfterFix": { "passed": 26, "failed": 0 },
+    "implementerAndIndependentNeighborCasesPassedEach": 49,
+    "rootNewDateAndEnqueueCasesPassed": 34,
+    "rootFullCandidateUnit": { "actualSession": 51694, "actualExitCode": 0, "passed": 5437, "originalSkipped": 14, "seconds": 92.83 },
+    "rootFullProductionTypecheck": { "actualSession": 33141, "actualExitCode": 0, "incremental": false },
+    "rootNineFileScopedLintExitCode": 0,
+    "independentWholeSourceAndScopedSqlReview": true,
+    "behaviorTestsUseControlledDbAndAgentJobModelBoundaries": true,
+    "newPatchPersistedHttpRevalidated": false
+  },
+  "unchanged": ["original error type and messages", "valid active-job reuse after validation", "schedule-failure cancellation", "legacy and NULL policies", "HTTP schema", "worker confirmed-facts and model pipeline", "original SQL and ledger"],
+  "limitations": ["No live DB, worker, provider or model was executed by these tests", "Confirmed facts remain validated by the worker, not claimed as fully admitted before enqueue", "Fresh actual HTTP zero-side-effect refusal and full-table readback remain pending"],
+  "rollback": "Revert this source/test/review commit; no schema or data change",
+  "deployed": false,
+  "publicPush": false,
+  "fullT24Complete": false,
+  "p1Complete": false
+}

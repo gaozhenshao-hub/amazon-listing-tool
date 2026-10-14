@@ -73,15 +73,23 @@ function expressionInputHash(input: { selectionHash: string; facts: Array<{ asse
   })).digest("hex");
 }
 
+async function requireConfirmedExpressionSelection(
+  db: Parameters<typeof getExpressionGroupForProject>[0],
+  input: { workspaceId: number; projectId: number; groupId: number; sessionId: number; selectionVersionId: number },
+) {
+  const group = await getExpressionGroupForProject(db, input.projectId, input.groupId);
+  if (!group) throw new Error("表达方向不存在或无权访问");
+  const selection = await getExpressionSelectionById(db, input.workspaceId, input.projectId, input.selectionVersionId);
+  if (!selection || selection.groupId !== input.groupId || selection.sessionId !== input.sessionId) throw new Error("表达图片选择版本不存在");
+  if (selection.status !== "confirmed") throw new Error("只有已确认的图片选择版本可以进入AI分析");
+  return { group, selection };
+}
+
 async function runExpressionAnalysis(job: AiJobSnapshot, context: AiJobHandlerContext) {
   const input = expressionAnalysisJobInput.parse(job.input);
   const workspaceId = Number(job.workspaceId);
   const db = await requireDb("expression linkage analysis job");
-  const group = await getExpressionGroupForProject(db, input.projectId, input.groupId);
-  if (!group) throw new Error("表达方向不存在或无权访问");
-  const selection = await getExpressionSelectionById(db, workspaceId, input.projectId, input.selectionVersionId);
-  if (!selection || selection.groupId !== input.groupId || selection.sessionId !== input.sessionId) throw new Error("表达图片选择版本不存在");
-  if (selection.status !== "confirmed") throw new Error("只有已确认的图片选择版本可以进入AI分析");
+  const { group, selection } = await requireConfirmedExpressionSelection(db, { ...input, workspaceId });
   const selectedAssetIds = Array.isArray(selection.selectedAssetIds) ? selection.selectedAssetIds.map(Number) : [];
   const rows = await listSelectedExpressionFacts(db, workspaceId, selection.id);
   if (!selectedAssetIds.length || rows.length !== selectedAssetIds.length) throw new Error("已选图片的确认事实不完整，请回到竞品全图分析复核");
@@ -228,6 +236,8 @@ export async function getLatestStep0SynthesisJob(userId: number, projectId: numb
 export async function startExpressionAnalysisJob(input: {
   projectId: number; sessionId: number; groupId: number; selectionVersionId: number; userId: number; workspaceId: number;
 }) {
+  const db = await requireDb("expression linkage analysis admission");
+  await requireConfirmedExpressionSelection(db, input);
   const active = await getLatestExpressionAnalysisJob(input.userId, input.projectId, input.groupId);
   if (active?.status === "queued" || active?.status === "running") return active;
   const agentRunId = await ensureImageWorkflowAgentRun(input);
