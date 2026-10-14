@@ -218,8 +218,9 @@ test("real offline CLI generates the current filtered source projection without 
   assert.equal(metadata.tableCount, 287);
   assert.equal(metadata.tableCount, metadata.tableNames.length);
   assert.equal(metadata.ddlCount, 406);
-  assert.equal(metadata.sqlSha256, "d330a73df3419ae5a4a5bc064d31e6596d39bbe4e300febe37e99591eb5824a0");
-  assert.equal(metadata.sourceSha256, "1348efaf7bb30e9c9e262d9ab8c8ca3ffec85428bdaaf9b391f841466988d926");
+  // Reviewed current ORM alignment, distinct from the older pinned rehearsal artifact.
+  assert.equal(metadata.sqlSha256, "c2ea534b048427e7b3b464dd37ec442524cf5e8dd1ec80fac3e514259957a6aa");
+  assert.equal(metadata.sourceSha256, "7b0b730998509d2ba70dc7b771bf5a6233146c58b35d2ef83bf028945a2c1a6f");
   assert.match(sql, /UNIQUE\(`distillationProjectId`,`sourceKey`,`claim`\(191\)\)/);
   assert.match(sql, /CONSTRAINT `uk_emperor_scheduled_tasks_external_task_uid` UNIQUE\(`externalTaskUid`\)/);
   assert.match(sql, /CREATE INDEX `idx_emperor_scheduled_tasks_workspace_managed` ON `emperor_scheduled_tasks` \(`workspaceId`,`systemManaged`\);/);

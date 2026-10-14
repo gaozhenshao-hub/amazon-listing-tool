@@ -355,7 +355,8 @@ function workflow({ failDdl = false, failNative = false, nonempty = false, failC
   const actual = fs;
   const uid = process.getuid();
   const io = { ...fs,
-    realpathSync: value => value === "/etc/os-release" ? "/usr/lib/os-release" : [root, options.socket, options.datadir, "/usr/lib/os-release", "/usr/bin", "/usr/bin/mysql", "/usr/bin/mysqldump"].includes(value.replace(/\/$/, "")) ? value.replace(/\/$/, "") : actual.realpathSync(value),
+    // The artifacts parent is part of this virtual output fixture, not a checkout prerequisite.
+    realpathSync: value => value === "/etc/os-release" ? "/usr/lib/os-release" : [root, options.socket, options.datadir, "/usr/lib/os-release", "/usr/bin", "/usr/bin/mysql", "/usr/bin/mysqldump", path.dirname(options.output)].includes(value.replace(/\/$/, "")) ? value.replace(/\/$/, "") : actual.realpathSync(value),
     lstatSync: value => [root, options.socket, options.datadir, "/usr/lib/os-release", "/usr/bin", "/usr/bin/mysql", "/usr/bin/mysqldump"].includes(value)
       ? { size: 50, uid: value === root ? uid : 0, mode: value === root ? 0o40700 : 0o100755,
         isDirectory: () => [root, options.datadir, "/usr/bin"].includes(value), isSocket: () => value === options.socket,

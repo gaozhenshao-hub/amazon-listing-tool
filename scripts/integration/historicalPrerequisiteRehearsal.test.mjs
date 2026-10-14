@@ -28,12 +28,19 @@ const ledger = () => plan.map(item => ({ migrationName: item.fileName, checksum:
 const tables = ["app_schema_migrations", "emperor_scheduled_tasks"];
 const dump = Buffer.from(tables.map(name => `CREATE TABLE \`${name}\` (\n  \`id\` int NOT NULL\n);`).join("\n")
   + "\nINSERT INTO `emperor_scheduled_tasks` VALUES (1);\n");
+const historicalAiOs = fs.readFileSync(new URL("./fixtures/aligned-source-projection-20261014/ai_os.ts.fixture", import.meta.url));
+// Exact public ee7dd28762bbd04d29872b7aa6dfd58c846ec50d^ Git blob.
+// This injected test read preserves the diagnostic's old guard, not its current
+// execution eligibility. The real current file is separately required to fail.
+assert.equal(hash(historicalAiOs), SOURCE_PINS["drizzle/schema/ai_os.ts"]);
+const historicalRead = filename => filename === path.join(repo, "drizzle/schema/ai_os.ts")
+  ? historicalAiOs : fs.readFileSync(filename);
 
 function sourceIo(overrides = {}) {
   return {
     lstatSync: fs.lstatSync,
     realpathSync: fs.realpathSync,
-    readFileSync: fs.readFileSync,
+    readFileSync: historicalRead,
     ...overrides,
   };
 }
@@ -99,16 +106,22 @@ test("fixed prerequisite has exactly 15 original columns and none of the eight l
   assert.doesNotMatch(PREREQUISITE_SQL, /\b(?:INSERT|DROP|USE|DATABASE|IF NOT EXISTS)\b|app_schema_migrations|(?:^|;)\s*UPDATE\b/);
 });
 
-test("source pins validate current read-only sources and state limited provenance", () => {
-  const result = validateSources();
+test("source pins validate the historical public fixture and preserve limited provenance", () => {
+  const result = validateSources(sourceIo());
   assert.deepEqual(result.sourcePins, SOURCE_PINS); assert.equal(result.fixtureSha256, hash(PREREQUISITE_SQL));
   assert.equal(result.provenance, "current_source_minus_0180_columns_not_recovered_historical_ddl");
+});
+
+test("real current source is not accepted under the old prerequisite's source pins", () => {
+  assert.equal(hash(fs.readFileSync(path.join(repo, "drizzle/schema/ai_os.ts"))),
+    "f6210f7c976ccb2e7a50adac5ba32158b746c172131f2a5a0817b4fe9b5e8e2a");
+  assert.throws(() => validateSources(), code("PREREQUISITE_SOURCE_DRIFT"));
 });
 
 test("source pin drift, symlink, non-file, oversized and noncanonical sources are refused", () => {
   for (const relative of Object.keys(SOURCE_PINS)) {
     const target = path.join(repo, relative);
-    assert.throws(() => validateSources(sourceIo({ readFileSync: filename => filename === target ? Buffer.from("drift") : fs.readFileSync(filename) })), code("PREREQUISITE_SOURCE_DRIFT"));
+    assert.throws(() => validateSources(sourceIo({ readFileSync: filename => filename === target ? Buffer.from("drift") : historicalRead(filename) })), code("PREREQUISITE_SOURCE_DRIFT"));
     assert.throws(() => validateSources(sourceIo({ realpathSync: filename => filename === target ? `${target}.other` : filename })), code("PREREQUISITE_SOURCE_DRIFT"));
     for (const override of [{ isSymbolicLink: () => true }, { isFile: () => false }, { size: 256 * 1024 }]) {
       assert.throws(() => validateSources(sourceIo({ lstatSync: filename => filename === target

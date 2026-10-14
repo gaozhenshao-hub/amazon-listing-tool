@@ -19,16 +19,29 @@ const paths = { root, socket: `${root}/mysql.sock`, datadir: `${root}/data` };
 const output = path.join(repo, "artifacts/source-projection-unit.json");
 const digest = value => createHash("sha256").update(value).digest("hex");
 const errorCode = value => error => error.code === value;
-let temporary, directory, metadata, sql, artifact;
+const historicalFixture = fileURLToPath(new URL("./fixtures/aligned-source-projection-20261014/", import.meta.url));
+const historicalMetadataSha256 = "8e216c7c03a26915fb9e8e43d8055f9c61858aca27ca0efd111ab58aff36e0b8";
+let temporary, directory, currentDirectory, metadata, sql, artifact;
 
 before(async () => {
   temporary = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), "source-projection-rehearsal-test-")));
   directory = path.join(temporary, "exported");
-  // Real offline export, not SQL execution and not a database connection.
-  await exportSourceProjection({ repoRoot: repo, outputDirectory: directory });
+  fs.mkdirSync(directory);
+  // Authentic public historical export, not a regenerated current artifact with
+  // its hash relabeled. Only mocked workflows use this historical source audit.
+  for (const [name, expected] of [["source-projection.sql", PROJECTION_SQL_SHA256],
+    ["source-projection.metadata.json", historicalMetadataSha256]]) {
+    const source = path.join(historicalFixture, name);
+    assert.equal(digest(fs.readFileSync(source)), expected);
+    fs.copyFileSync(source, path.join(directory, name));
+  }
   metadata = JSON.parse(fs.readFileSync(path.join(directory, "source-projection.metadata.json"), "utf8"));
   sql = fs.readFileSync(path.join(directory, "source-projection.sql"), "utf8");
-  artifact = validateProjectionArtifact(directory);
+  artifact = validateProjectionArtifact(directory, { sourceFiles: metadata.sourceFiles });
+  currentDirectory = path.join(temporary, "current-exported");
+  // Real current offline export is separately checked to remain inadmissible
+  // to this old diagnostic. No SQL execution or database connection occurs.
+  await exportSourceProjection({ repoRoot: repo, outputDirectory: currentDirectory });
 });
 after(() => { if (temporary) fs.rmSync(temporary, { recursive: true, force: true }); });
 
@@ -42,7 +55,8 @@ function fakeFs(overrides = {}) {
   const writes = [];
   return {
     ...fs,
-    realpathSync: value => [root, paths.socket, paths.datadir, `${paths.datadir}/`].includes(value) ? value.replace(/\/$/, "") : fs.realpathSync(value),
+    // Output is mocked too: do not depend on an ignored local artifacts directory.
+    realpathSync: value => [root, paths.socket, paths.datadir, `${paths.datadir}/`, path.dirname(output)].includes(value) ? value.replace(/\/$/, "") : fs.realpathSync(value),
     lstatSync: value => [root, paths.socket, paths.datadir].includes(value)
       ? { isDirectory: () => value !== paths.socket, isSocket: () => value === paths.socket, isSymbolicLink: () => false }
       : fs.lstatSync(value),
@@ -99,14 +113,32 @@ test("requires every explicit local argument and refuses remote/duplicate/unknow
     [...args(), "--host", "localhost"], [...args(), "--output", output], [...args(), "--retry"]]) assert.throws(() => parseArguments(invalid));
 });
 
-test("validates aligned source hashes, exact fixed SQL and all 406 single-DDL blocks offline", () => {
+test("validates authentic historical aligned hashes and all 406 single-DDL blocks offline", () => {
   assert.equal(digest(sql), PROJECTION_SQL_SHA256);
   assert.equal(artifact.statements.length, 406);
   assert.equal(artifact.tableNames.length, 287);
-  assert.deepEqual(metadata.sourceFiles, currentSourceFiles());
+  assert.equal(digest(fs.readFileSync(path.join(directory, "source-projection.metadata.json"))), historicalMetadataSha256);
+  assert.notDeepEqual(metadata.sourceFiles, currentSourceFiles());
   assert.equal(artifact.sourceSha256, digest(JSON.stringify(metadata.sourceFiles)));
   assert.equal(artifact.sourceSha256, PROJECTION_SOURCE_SHA256);
   assert.ok(artifact.statements.every(statement => normalizeCreateStatement(statement) === statement));
+});
+
+test("current reviewed source cannot impersonate the historical export or enter the old workflow", async () => {
+  const current = JSON.parse(fs.readFileSync(path.join(currentDirectory, "source-projection.metadata.json"), "utf8"));
+  assert.equal(current.sqlSha256, "c2ea534b048427e7b3b464dd37ec442524cf5e8dd1ec80fac3e514259957a6aa");
+  assert.equal(current.sourceSha256, "7b0b730998509d2ba70dc7b771bf5a6233146c58b35d2ef83bf028945a2c1a6f");
+  assert.deepEqual(current.sourceFiles, currentSourceFiles());
+  assert.throws(() => validateProjectionArtifact(currentDirectory), errorCode("PROJECTION_SOURCE_HASH_MISMATCH"));
+  assert.throws(() => validateProjectionArtifact(directory));
+  for (const projectionDirectory of [directory, currentDirectory]) {
+    const fixture = workflowFixture();
+    await assert.rejects(runProjectionRehearsal({ ...options(), "projection-directory": projectionDirectory },
+      { ...fixture.dependencies, auditSources: currentSourceFiles }));
+    assert.equal(fixture.loads(), 0);
+    assert.equal(fixture.events.length, 0);
+    assert.equal(fixture.io.writes.length, 0);
+  }
 });
 
 test("preserves the superseded 405-DDL source/SQL pins for audit, not current execution", async () => {

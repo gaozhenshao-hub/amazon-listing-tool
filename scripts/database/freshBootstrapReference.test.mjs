@@ -383,10 +383,11 @@ test("CLI requires explicit isolated reference mode and two distinct new outputs
 function workflow({ failDdl = false, nonempty = false, failCleanup = false } = {}) {
   const value = options(), calls = [], configs = [], writes = new Map(), uid = process.getuid(), actual = fs;
   let currentSchema, count = 0, destroyed = 0, callback;
-  const special = [root, value.socket, value.datadir, "/usr/lib/os-release"], io = { ...fs,
+  // The output parent belongs to this mock filesystem, not an untracked checkout directory.
+  const special = [root, value.socket, value.datadir, "/usr/lib/os-release", path.join(repo, "artifacts")], io = { ...fs,
     realpathSync: filename => filename === "/etc/os-release" ? "/usr/lib/os-release" : special.includes(filename.replace(/\/$/, "")) ? filename.replace(/\/$/, "") : actual.realpathSync(filename),
     lstatSync: filename => special.includes(filename) ? { size: 50, uid: filename === root ? uid : 0, mode: filename === root ? 0o40700 : 0o100755,
-      isDirectory: () => [root, value.datadir].includes(filename), isFile: () => filename === "/usr/lib/os-release", isSocket: () => filename === value.socket, isSymbolicLink: () => false } : actual.lstatSync(filename),
+      isDirectory: () => [root, value.datadir, path.join(repo, "artifacts")].includes(filename), isFile: () => filename === "/usr/lib/os-release", isSocket: () => filename === value.socket, isSymbolicLink: () => false } : actual.lstatSync(filename),
     readFileSync: (filename, ...rest) => filename === "/usr/lib/os-release" ? 'ID=ubuntu\nVERSION_ID="24.04"\n' : actual.readFileSync(filename, ...rest),
     existsSync: filename => [value.output, value.receiptOutput].includes(filename) ? false : actual.existsSync(filename),
     writeFileSync: (filename, bytes, flags) => { assert.deepEqual(flags, { flag: "wx", mode: 0o600 }); assert.ok([value.output, value.receiptOutput].includes(filename)); writes.set(filename, Buffer.from(bytes)); },

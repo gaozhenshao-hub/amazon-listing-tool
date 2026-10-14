@@ -233,12 +233,13 @@ function workflow({ baselineFail = false, failSql = "", failNative = false, chan
   const { artifact, options, prerequisite } = inputs(), databases = new Map(), events = [], configs = [], writes = new Map(), fds = new Map();
   let nextFd = 10001, loadCount = 0, nativeCount = 0, destroyed = 0, baselineCount = 0, timerCallback;
   const uid = process.getuid(), actual = fs;
-  const special = [root, options.socket, options.datadir, "/usr/lib/os-release", "/usr/bin", "/usr/bin/mysql", "/usr/bin/mysqldump"];
+  // Output files and their parent are virtual; clean archives need no pre-existing artifacts directory.
+  const special = [root, options.socket, options.datadir, "/usr/lib/os-release", "/usr/bin", "/usr/bin/mysql", "/usr/bin/mysqldump", path.dirname(options.output)];
   const io = { ...fs,
     realpathSync: filename => filename === "/etc/os-release" ? "/usr/lib/os-release" : special.includes(filename.replace(/\/$/, "")) || writes.has(filename)
       ? filename.replace(/\/$/, "") : actual.realpathSync(filename),
     lstatSync: filename => special.includes(filename) ? { size: 50, uid: filename === root ? uid : 0, mode: filename === root ? 0o40700 : 0o100755,
-      isDirectory: () => [root, options.datadir, "/usr/bin"].includes(filename), isSocket: () => filename === options.socket,
+      isDirectory: () => [root, options.datadir, "/usr/bin", path.dirname(options.output)].includes(filename), isSocket: () => filename === options.socket,
       isFile: () => ["/usr/lib/os-release", "/usr/bin/mysql", "/usr/bin/mysqldump"].includes(filename), isSymbolicLink: () => false } : actual.lstatSync(filename),
     existsSync: filename => writes.has(filename) || (filename === options.output ? false : actual.existsSync(filename)),
     openSync: (filename, ...rest) => {
