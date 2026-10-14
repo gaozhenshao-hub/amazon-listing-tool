@@ -1,8 +1,11 @@
 {
   "version": "amazon-fresh-bootstrap/1",
   "executionScope": "local-or-ci-only",
-  "planSha256": "7c4a068d198258c14c721d02ac1464d629458987b73b1e207b21da23e3a76044",
-  "structureContract": null,
+  "planSha256": "fc95f0e9a3a390cb3d760f5434e79f328deade75d1b002acec1e48fc241782b3",
+  "structureContract": {
+    "path": "drizzle/bootstrap/structure-contract.json",
+    "sha256": "3d95821c31a137f320f3014fbe4badbb65cce8c94b84464384c95caaf2beec3a"
+  },
   "structureContractAdmission": "Generate independent reference from pinned public schema plus reviewed historical indexes/FKs/collations; bind full 13-collection catalog JSON and SHA256 here. Candidate bootstrap output is never its own expected oracle.",
   "requiredBusinessTables": [
     "acquisition_asset_candidates",
@@ -1025,7 +1028,19 @@
     },
     {
       "path": "drizzle/bootstrap/0003_listing_and_image_source_columns.sql",
-      "sha256": "9cc939d49cd9e1d6612240d2d855e40a7798a16e67add1f2f0f48ad962f617ec"
+      "sha256": "b763d6fe7c8e9c2002c3062007555ab60b03abff852aee978307e0d7e0b7cd9a"
+    },
+    {
+      "path": "drizzle/bootstrap/0004_current_source_alignment.sql",
+      "sha256": "fd857432bc118f6b46a4c2df975ef60aaac23ab103632940076018e7c9d78930"
+    },
+    {
+      "path": "drizzle/bootstrap/0005_offsite_empty_table_alignment.sql",
+      "sha256": "c097bebd7144fbc47ced0e360037fbaddb61350306664db13745ee64a16a0ea6"
+    },
+    {
+      "path": "drizzle/bootstrap/0005_offsite_empty_table_alignment.sources.json",
+      "sha256": "669ac115c6eb07433a9d4d803ff67964078532c032b45459edfb32d99e3ba29a"
     },
     {
       "path": "drizzle/dsp_migration.sql",

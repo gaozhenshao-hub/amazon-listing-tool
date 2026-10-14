@@ -1,9 +1,10 @@
--- FRESH BOOTSTRAP ONLY. Twenty current-source columns absent from the historical SQL chain.
+-- FRESH BOOTSTRAP ONLY. Twenty-six current-source columns absent from the historical SQL chain.
 -- Strict ADDs intentionally fail on unexpected state; no IF NOT EXISTS / silent skip.
 -- Source: migrate_update.mjs and drizzle/schema/{listing,image}.ts.
 ALTER TABLE `listings`
   ADD COLUMN `itemHighlights` TEXT NULL,
-  ADD COLUMN `itemHighlightsCn` TEXT NULL;
+  ADD COLUMN `itemHighlightsCn` TEXT NULL,
+  ADD COLUMN `agentRunId` VARCHAR(80) NULL;
 ALTER TABLE `listingVersions`
   ADD COLUMN `itemHighlights` TEXT NULL,
   ADD COLUMN `itemHighlightsCn` TEXT NULL;
@@ -25,3 +26,9 @@ ALTER TABLE `kb_images`
   ADD COLUMN `tagComposition` VARCHAR(20) NULL,
   ADD COLUMN `tagColorSchemeV2` VARCHAR(30) NULL,
   ADD COLUMN `tagDesignStyleV2` VARCHAR(30) NULL;
+ALTER TABLE `image_workflow_sessions`
+  ADD COLUMN `step0AiResult` TEXT NULL,
+  ADD COLUMN `step0UserEdit` TEXT NULL,
+  ADD COLUMN `step0Confirmed` INT NOT NULL DEFAULT 0,
+  ADD COLUMN `agentRunId` VARCHAR(80) NULL,
+  ADD COLUMN `step5DesignerUploads` TEXT NULL;

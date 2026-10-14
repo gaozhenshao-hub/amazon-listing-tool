@@ -9,6 +9,25 @@ import { checkPostconditions } from "./integration/freshHistoricalLineage.mjs";
 import { BOOTSTRAP_VERSION, RECEIPT_MIGRATION, assertCatalogMatches, fingerprint, insist,
   loadFreshBootstrapPlan, loadStructureContract, readFreshCatalog, sha256, validateStructureContract } from "./database/freshBootstrapPlan.mjs";
 
+export const EMPTY_ALIGNMENT_MIGRATION = "bootstrap/0005_offsite_empty_table_alignment.sql";
+export const EMPTY_ALIGNMENT_TABLES = Object.freeze([
+  "off_ai_analysis_logs", "off_attribution_links", "off_campaign_analytics", "off_campaigns",
+  "off_collaborations", "off_content_calendar", "off_content_submissions", "off_influencer_scores",
+  "off_influencers", "off_matrix_groups", "off_outreach_messages", "off_social_accounts",
+]);
+
+// These obsolete definitions may be replaced only during an original empty
+// installation. Recheck immediately before their migration starts, so a future
+// seed cannot turn the replacement into deletion of initialized records.
+export async function verifyEmptyAlignmentTables(connection) {
+  for (const table of EMPTY_ALIGNMENT_TABLES) {
+    const [rows] = await connection.query(`SELECT COUNT(*) AS rowCount FROM \`${table}\``);
+    insist(rows?.length === 1 && String(rows[0].rowCount) === "0", "FRESH_ALIGNMENT_TABLE_NOT_EMPTY");
+  }
+  return { migrationName: EMPTY_ALIGNMENT_MIGRATION, tables: [...EMPTY_ALIGNMENT_TABLES],
+    checkedAt: new Date().toISOString() };
+}
+
 export function parseArguments(args) {
   const options = { execute: false };
   for (let index = 0; index < args.length; index++) {
@@ -106,6 +125,9 @@ export function validateExecutedLedger(rows, bundle, schema, { completed = true 
       && proof?.version === BOOTSTRAP_VERSION && proof.runId === receipt.runId && proof.schema === schema
       && proof.planSha256 === bundle.planSha256 && proof.sourcesSha256 === bundle.sourcesSha256
       && proof.sequence === item.order, "FRESH_MIGRATION_EXECUTION_PROOF_INVALID");
+    if (item.fileName === EMPTY_ALIGNMENT_MIGRATION) insist(proof.emptyAlignment?.migrationName === EMPTY_ALIGNMENT_MIGRATION
+      && fingerprint(proof.emptyAlignment.tables) === fingerprint(EMPTY_ALIGNMENT_TABLES)
+      && Number.isFinite(Date.parse(proof.emptyAlignment.checkedAt)), "FRESH_EMPTY_ALIGNMENT_PROOF_INVALID");
   }
   if (completed) insist(receipt.ledgerExecutionSha256 === ledgerExecutionHash(rows)
     && receipt.structure?.catalogSha256 && typeof receipt.completedAt === "string", "FRESH_COMPLETION_RECEIPT_INVALID");
@@ -119,9 +141,12 @@ function provenanceConnection(connection, bundle, receipt, state) {
   return {
     query: (...args) => connection.query(...args),
     async execute(sql, values) {
+      const startsMigration = typeof sql === "string" && /INSERT INTO app_schema_migrations\s+\(migrationName,checksum,status,executionId,startedAt,finishedAt,error,metadata\)/.test(sql)
+        && sql.includes("VALUES (?,?,'started',?,NOW(),NULL,NULL,JSON_OBJECT('order',?))");
+      const emptyAlignment = startsMigration && values?.[0] === EMPTY_ALIGNMENT_MIGRATION
+        ? await verifyEmptyAlignmentTables(connection) : null;
       const result = await connection.execute(sql, values);
-      if (typeof sql === "string" && /INSERT INTO app_schema_migrations\s+\(migrationName,checksum,status,executionId,startedAt,finishedAt,error,metadata\)/.test(sql)
-        && sql.includes("VALUES (?,?,'started',?,NOW(),NULL,NULL,JSON_OBJECT('order',?))")) {
+      if (startsMigration) {
         const [name, checksum, executionId, order] = values;
         const item = bundle.plan[order];
         insist(item?.fileName === name && item.checksum === checksum && !state.started.has(name), "UNEXPECTED_FRESH_EXECUTION_RECORD");
@@ -129,6 +154,7 @@ function provenanceConnection(connection, bundle, receipt, state) {
         const proof = name === RECEIPT_MIGRATION ? { ...receipt, sequence: order }
           : { version: BOOTSTRAP_VERSION, runId: receipt.runId, schema: receipt.schema,
             planSha256: bundle.planSha256, sourcesSha256: bundle.sourcesSha256, sequence: order };
+        if (emptyAlignment) proof.emptyAlignment = emptyAlignment;
         const [update] = await connection.execute("UPDATE app_schema_migrations SET metadata=? WHERE migrationName=? AND checksum=? AND executionId=? AND status='started'",
           [JSON.stringify({ order, freshBootstrap: proof }), name, checksum, executionId]);
         insist(update.affectedRows === 1, "FRESH_PROVENANCE_WRITE_FAILED");

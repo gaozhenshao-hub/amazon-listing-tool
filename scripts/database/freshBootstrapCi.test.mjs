@@ -20,6 +20,8 @@ const nativeFiles = [
   "scripts/bootstrap-fresh-database.test.mjs",
   "scripts/database/freshBootstrapPlan.test.mjs",
   "scripts/database/freshBootstrapCi.test.mjs",
+  "scripts/database/freshBootstrapColumnOrder.test.mjs",
+  "scripts/database/freshBootstrapReference.test.mjs",
 ];
 const ciUrl = "mysql://root:root@127.0.0.1:3306/amazon_listing_ci";
 const job = name => {

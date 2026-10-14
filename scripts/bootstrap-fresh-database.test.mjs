@@ -7,7 +7,8 @@ import { DDL_CATALOG } from "./integration/exportProductionDdl.mjs";
 import { CHOSEN, CHOSEN_SHA256 } from "./integration/freshHistoricalLineage.mjs";
 import { catalogFixture, contractFixture } from "./database/freshBootstrapFixtures.test-helper.mjs";
 import { RECEIPT_MIGRATION, loadFreshBootstrapPlan } from "./database/freshBootstrapPlan.mjs";
-import { executeFreshBootstrap, main, parseArguments, validateExecutedLedger, validateTarget } from "./bootstrap-fresh-database.mjs";
+import { EMPTY_ALIGNMENT_MIGRATION, EMPTY_ALIGNMENT_TABLES, executeFreshBootstrap, main, parseArguments,
+  validateExecutedLedger, validateTarget, verifyEmptyAlignmentTables } from "./bootstrap-fresh-database.mjs";
 
 const bundle = loadFreshBootstrapPlan(), options = { execute: true, schema: "amazon_listing_ci", environment: "ci" };
 const environment = { FRESH_BOOTSTRAP_DATABASE_URL: "mysql://unit_user:unit_password@127.0.0.1:3306/amazon_listing_ci" };
@@ -80,7 +81,11 @@ function fakeDatabase(settings = {}) {
       ["lingxing_product_weekly_source_period_idx", ["workspaceId", "source_kind", "week_start_date", "week_end_date"]],
     ].flatMap(([indexName, columns]) => columns.map((columnName, index) => ({ indexName, columnName, seqInIndex: index + 1,
       nonUnique: 1, subPart: null, indexType: "BTREE", isVisible: "YES", collation: "A" })))];
-    if (sql.startsWith("SELECT COUNT(*) AS rowCount FROM")) return [[{ rowCount: state.unexpectedSeed ? 1 : 0 }]];
+    if (sql.startsWith("SELECT COUNT(*) AS rowCount FROM")) {
+      const table = /`([^`]+)`/.exec(sql)?.[1];
+      return [[{ rowCount: EMPTY_ALIGNMENT_TABLES.includes(table)
+        ? Number(state.nonemptyAlignmentTable === table) : state.unexpectedSeed ? 1 : 0 }]];
+    }
     if (sql.startsWith("SELECT slug,workspaceId,status,scope,version,isSystem,manifest")) {
       const prompts = filename => [...readFileSync(new URL(`../drizzle/${filename}`, import.meta.url), "utf8").matchAll(/'systemPrompt',\s*'([^']*)'/g)].map(match => match[1]);
       const summary = readFileSync(new URL("../drizzle/0202_competitor_gallery_analysis_scope.sql", import.meta.url), "utf8").match(/'\$\.implementation\.systemPrompt',\s*'([^']*)'/)[1];
@@ -144,11 +149,11 @@ test("target validation rejects production, remote or implicit targets and retry
   assert.equal(socket.socketPath, "/private/tmp/unit.sock");
 });
 
-test("complete mock contract executes all 176 statements via real runner with prior empty proof and actual succeeded records", async () => {
+test("complete mock contract executes the full plan via real runner with prior empty proof and actual succeeded records", async () => {
   const mock = fakeDatabase(), result = await run(mock);
-  assert.equal(result.mode, "initialized-empty-schema"); assert.equal(result.migrationsExecuted, 176);
+  assert.equal(result.mode, "initialized-empty-schema"); assert.equal(result.migrationsExecuted, bundle.plan.length);
   assert.deepEqual(mock.state.executedSql, bundle.plan.map(item => item.fileName));
-  assert.equal(mock.state.started.length, 176); assert.equal(mock.state.rows.size, 176);
+  assert.equal(mock.state.started.length, bundle.plan.length); assert.equal(mock.state.rows.size, bundle.plan.length);
   assert.equal(mock.state.rows.get(CHOSEN).checksum, CHOSEN_SHA256);
   const receipt = validateExecutedLedger([...mock.state.rows.values()], bundle, options.schema);
   assert.equal(receipt.stage, "completed"); assert.equal(receipt.originalEmpty.objects.tables, 0);
@@ -222,8 +227,26 @@ test("unexpected live seed, stale latest Skill, or same-table-count schema drift
     const mock = fakeDatabase(settings);
     if (Object.keys(settings).length === 0) mock.state.catalog.indexes[0].nonUnique = 1;
     await assert.rejects(run(mock));
-    assert.equal(mock.state.rows.size, 176); assert.ok([...mock.state.rows.values()].every(row => row.status === "succeeded"));
+    assert.equal(mock.state.rows.size, bundle.plan.length); assert.ok([...mock.state.rows.values()].every(row => row.status === "succeeded"));
     assert.equal(JSON.parse(mock.state.rows.get(RECEIPT_MIGRATION).metadata).freshBootstrap.stage, "failed");
     const count = mock.state.started.length; await assert.rejects(run(mock)); assert.equal(mock.state.started.length, count);
+  }
+});
+
+test("empty-table replacement refuses any row before its ledger start or destructive SQL", async () => {
+  const calls = [];
+  const malformed = { query: async sql => { calls.push(sql); return [[{ rowCount: null }]]; } };
+  await assert.rejects(verifyEmptyAlignmentTables(malformed), code("FRESH_ALIGNMENT_TABLE_NOT_EMPTY"));
+  assert.equal(calls.length, 1);
+  if (!bundle.plan.some(item => item.fileName === EMPTY_ALIGNMENT_MIGRATION)) return;
+  for (const table of [EMPTY_ALIGNMENT_TABLES[0], EMPTY_ALIGNMENT_TABLES.at(-1)]) {
+    const mock = fakeDatabase({ nonemptyAlignmentTable: table });
+    await assert.rejects(run(mock), code("FRESH_ALIGNMENT_TABLE_NOT_EMPTY"));
+    assert.equal(mock.state.rows.has(EMPTY_ALIGNMENT_MIGRATION), false);
+    assert.equal(mock.state.executedSql.includes(EMPTY_ALIGNMENT_MIGRATION), false);
+    assert.equal(JSON.parse(mock.state.rows.get(RECEIPT_MIGRATION).metadata).freshBootstrap.stage, "failed");
+    const before = mock.state.executedSql.length;
+    await assert.rejects(run(mock), code("FRESH_LEDGER_NOT_EXACT_COMPLETE"));
+    assert.equal(mock.state.executedSql.length, before);
   }
 });

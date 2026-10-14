@@ -9,6 +9,7 @@ import { DDL_CATALOG, validateCatalog as validatePhysicalCatalog, validateTableD
 
 export const REPOSITORY_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 export const BOOTSTRAP_VERSION = "amazon-fresh-bootstrap/1";
+export const EXPECTED_BOOTSTRAP_PLAN_LENGTH = 178;
 export const CONTRACT_VERSION = "amazon-fresh-structure/1";
 export const MANIFEST_PATH = "drizzle/bootstrap/manifest.json";
 export const RECEIPT_MIGRATION = "bootstrap/0001_scheduled_tasks_prerequisite.sql";
@@ -26,6 +27,8 @@ export const BOOTSTRAP_FILES = Object.freeze([
   RECEIPT_MIGRATION,
   "bootstrap/0002_kb_tag_definitions.sql",
   "bootstrap/0003_listing_and_image_source_columns.sql",
+  "bootstrap/0004_current_source_alignment.sql",
+  "bootstrap/0005_offsite_empty_table_alignment.sql",
 ]);
 export const sha256 = value => createHash("sha256").update(value).digest("hex");
 export const canonical = value => Array.isArray(value) ? value.map(canonical)
@@ -78,7 +81,7 @@ export function loadFreshBootstrapPlan(root = REPOSITORY_ROOT) {
   const [prerequisite, ...tail] = entries(BOOTSTRAP_FILES);
   const plan = [prerequisite, ...selected.plan.slice(0, insertion), ...entries(MANUAL_FRESH_FILES),
     ...selected.plan.slice(insertion), ...tail].map((item, order) => ({ ...item, order }));
-  insist(plan.length === 176 && new Set(plan.map(item => item.fileName)).size === plan.length, "BOOTSTRAP_PLAN_INVALID");
+  insist(plan.length === EXPECTED_BOOTSTRAP_PLAN_LENGTH && new Set(plan.map(item => item.fileName)).size === plan.length, "BOOTSTRAP_PLAN_INVALID");
   for (const entry of plan) insist(pins.get(`drizzle/${entry.fileName}`) === entry.checksum, "BOOTSTRAP_MIGRATION_NOT_PINNED");
   const planSha256 = fingerprint(plan.map(item => [item.fileName, item.checksum]));
   insist(planSha256 === manifest.planSha256, "BOOTSTRAP_PLAN_CHANGED");

@@ -1,0 +1,79 @@
+{
+  "version": "amazon-fresh-public-reference/1",
+  "projection": {
+    "sqlSha256": "d330a73df3419ae5a4a5bc064d31e6596d39bbe4e300febe37e99591eb5824a0",
+    "sourceSha256": "1348efaf7bb30e9c9e262d9ab8c8ca3ffec85428bdaaf9b391f841466988d926",
+    "metadataSha256": "8e216c7c03a26915fb9e8e43d8055f9c61858aca27ca0efd111ab58aff36e0b8",
+    "tableCount": 287,
+    "ddlCount": 406
+  },
+  "sources": [
+    { "path": "drizzle/0118_listing_competitor_human_review.sql", "sha256": "defd1d854e4cb41e24e6776e41a38fcad56d7aab95942fd9bea951d5e81127c8" },
+    { "path": "drizzle/0130_ai_operations_runtime.sql", "sha256": "65522fe2e9751a942ad840cfa534ac53d4c4071b6bd25fbf11a18f02ad13e834" },
+    { "path": "drizzle/0131_dev_panorama_market_insights.sql", "sha256": "16c262b1f857250f9e2f6fa280ac84714c72e3dfcb897636cff9f12d9287ab8b" },
+    { "path": "drizzle/0132_dev_project_progress_list.sql", "sha256": "36f9ec315bf27f186313805630bb800c01918aaac9f5b53b8f563cc54b9eecee" },
+    { "path": "drizzle/0137_dev_project_operator_stage.sql", "sha256": "f28fe9962fe6ba6d300b577af88ab652f318ce15e0a43bf52cba82d5589dce54" },
+    { "path": "drizzle/0138_dev_project_landing_stage.sql", "sha256": "a04dbacaeed1785b263f0c32b7d3132a92198a8e9bf613bd927216557aa44243" },
+    { "path": "drizzle/0151_step5_segment_run_status.sql", "sha256": "28fa1cd63a9a04da8c0ebedaf64f253934783361d032278dc52af41fcfe6552e" },
+    { "path": "drizzle/0153_emperor_run_ledger_v2.sql", "sha256": "90df721da6f65584b254745a6dc8a92e5a3c4be44c1f54b9f65b347a72747a79" },
+    { "path": "drizzle/0154_emperor_skill_quality_gates.sql", "sha256": "f610b7dbd261eae93030f73380b43a8665130c8ecaf62fb6372bdb764f1a5c9a" },
+    { "path": "drizzle/0155_emperor_skill_feedback_rollouts.sql", "sha256": "07d57118d2deee78ac53ab4cf6156af0b860ef5d5886ef4cafbda85b12895cae" },
+    { "path": "drizzle/0156_emperor_harness_completion.sql", "sha256": "37e343db4b0f28e93045311622b8fbc89a7d46be68440f86d9dabf5fbbaac648" },
+    { "path": "drizzle/0168_emperor_context_provenance_projection.sql", "sha256": "2a7eb8a764e23e5686a7957424de881c79e2dfae5367c08773a35b512a7955b2" },
+    { "path": "drizzle/0180_emperor_lingxing_scheduled_task_unification.sql", "sha256": "86128ad785f71aeaff7c2e47a2646892458aa12d1d86256a036f6e5d89635296" },
+    { "path": "drizzle/0189_claim_ledger_consistency_decisions.sql", "sha256": "c5a2399cb59ed04b60574f4743f07d7f0551a8b188c9bb022a4962bdc97324f1" },
+    { "path": "drizzle/0201_amazon_monitor_provider_jobs.sql", "sha256": "8184c0c95d1a75ef6c98eabbf08708af3d62b25a25edc887de20d4280ab54b20" },
+    { "path": "drizzle/0203_external_knowledge_caller_bindings.sql", "sha256": "d6ba975ecdc34ff70ae8c905cb9cca38cb7d69a5f50cd72ca0637917cd1d4722" },
+    { "path": "drizzle/0204_listing_revision_governance.sql", "sha256": "560dd6dc756795fde46d136c606cc28288f27097faad283b79a31f26bfb6c725" },
+    { "path": "drizzle/0205_image_asset_policy.sql", "sha256": "3d236d7df2782dba0beca90a3be40634d6ea618710b2f1ad7a979eb6dfce87ee" },
+    { "path": "drizzle/bootstrap/0001_scheduled_tasks_prerequisite.sql", "sha256": "c37def8e231f03a1a379d5a51f7c35d038c948d2953775d1122b7823c06534bd" },
+    { "path": "scripts/run-database-migrations.mjs", "sha256": "5ed6ad3b13e14cd7e92f32a31b8398bf83af13643ac64793fb10a2234f5cc638" }
+  ],
+  "rawTableSources": [
+    { "path": "drizzle/0153_emperor_run_ledger_v2.sql", "tables": ["emperor_context_manifests", "emperor_run_ledger_events", "emperor_run_traces"] },
+    { "path": "drizzle/0154_emperor_skill_quality_gates.sql", "tables": ["emperor_skill_eval_cases", "emperor_skill_eval_results", "emperor_skill_release_gates", "emperor_skill_version_snapshots"] },
+    { "path": "drizzle/0155_emperor_skill_feedback_rollouts.sql", "tables": ["emperor_skill_rollout_decisions", "emperor_skill_rollout_plans"] },
+    { "path": "drizzle/0156_emperor_harness_completion.sql", "tables": ["emperor_execution_presets", "emperor_harness_feedback_signals", "emperor_harness_review_requests", "emperor_parallel_branches", "emperor_parallel_plans"] },
+    { "path": "drizzle/0168_emperor_context_provenance_projection.sql", "tables": ["emperor_context_source_provenance"] }
+  ],
+  "replacements": [
+    { "table": "competitorComparisonReports", "path": "drizzle/0118_listing_competitor_human_review.sql", "collation": "utf8mb4_unicode_ci", "reason": "Preserve the public project FK, named indexes and explicit utf8mb4_unicode_ci." },
+    { "table": "emperor_external_knowledge_callers", "path": "drizzle/0203_external_knowledge_caller_bindings.sql", "reason": "Preserve the public connector FK, named unique constraints and workspace-active index." },
+    { "table": "amazon_monitor_schedules", "path": "drizzle/0201_amazon_monitor_provider_jobs.sql", "collation": "utf8mb4_unicode_ci", "reason": "Preserve public named indexes and explicit utf8mb4_unicode_ci." },
+    { "table": "amazon_monitor_runs", "path": "drizzle/0201_amazon_monitor_provider_jobs.sql", "collation": "utf8mb4_unicode_ci", "reason": "Preserve public named indexes and explicit utf8mb4_unicode_ci." },
+    { "table": "ai_operational_alerts", "path": "drizzle/0130_ai_operations_runtime.sql", "collation": "utf8mb4_unicode_ci" },
+    { "table": "dev_panorama_market_insights", "path": "drizzle/0131_dev_panorama_market_insights.sql", "collation": "utf8mb4_unicode_ci" },
+    { "table": "dev_project_progress", "path": "drizzle/0132_dev_project_progress_list.sql", "collation": "utf8mb4_unicode_ci", "columnAdditions": [{ "path": "drizzle/0137_dev_project_operator_stage.sql", "statementIndex": 0 }, { "path": "drizzle/0138_dev_project_landing_stage.sql", "statementIndex": 0 }] },
+    { "table": "knowledge_claim_ledger_consistency_decisions", "path": "drizzle/0189_claim_ledger_consistency_decisions.sql", "collation": "utf8mb4_unicode_ci" },
+    { "table": "listing_fact_revisions", "path": "drizzle/0204_listing_revision_governance.sql", "collation": "utf8mb4_unicode_ci" },
+    { "table": "listing_core_revisions", "path": "drizzle/0204_listing_revision_governance.sql", "collation": "utf8mb4_unicode_ci" },
+    { "table": "listing_bullet_candidates", "path": "drizzle/0204_listing_revision_governance.sql", "collation": "utf8mb4_unicode_ci" },
+    { "table": "listing_review_revisions", "path": "drizzle/0204_listing_revision_governance.sql", "collation": "utf8mb4_unicode_ci" },
+    { "table": "listing_complete_snapshots", "path": "drizzle/0204_listing_revision_governance.sql", "collation": "utf8mb4_unicode_ci" },
+    { "table": "image_assets", "path": "drizzle/0205_image_asset_policy.sql", "collation": "utf8mb4_unicode_ci" },
+    { "table": "image_asset_policy_revisions", "path": "drizzle/0205_image_asset_policy.sql", "collation": "utf8mb4_unicode_ci" },
+    { "table": "image_asset_source_references", "path": "drizzle/0205_image_asset_policy.sql", "collation": "utf8mb4_unicode_ci" },
+    { "table": "image_acquisition_capability_coverage_revisions", "path": "drizzle/0205_image_asset_policy.sql", "collation": "utf8mb4_unicode_ci" }
+  ],
+  "columnComments": [
+    { "table": "image_workflow_sessions", "path": "drizzle/0151_step5_segment_run_status.sql", "statementIndex": 0, "columns": ["step5RunSegments", "step5RunFailedGroup", "step5RunFailedModule"] }
+  ],
+  "scheduledTaskReplacement": {
+    "table": "emperor_scheduled_tasks",
+    "createSource": "drizzle/bootstrap/0001_scheduled_tasks_prerequisite.sql",
+    "ddlSource": "drizzle/0180_emperor_lingxing_scheduled_task_unification.sql",
+    "ddlStatementIndices": [0, 1, 2],
+    "reason": "Source-derived public prerequisite plus only immutable 0180 DDL; retain bin collation, historical column order and indexes, with no scheduler seeds."
+  },
+  "ledger": {
+    "path": "scripts/run-database-migrations.mjs",
+    "functionName": "ensureLedger",
+    "table": "app_schema_migrations"
+  },
+  "scope": {
+    "productionDdlUsed": false,
+    "candidateDatabaseUsed": false,
+    "seedsExecuted": false,
+    "contractAutoApproved": false
+  }
+}

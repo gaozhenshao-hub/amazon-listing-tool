@@ -1,0 +1,159 @@
+{
+  "version": "amazon-fresh-offsite-empty-table-alignment/1",
+  "executionScope": "guarded-fresh-local-or-ci-only",
+  "sqlFile": "drizzle/bootstrap/0005_offsite_empty_table_alignment.sql",
+  "sqlSha256": "c097bebd7144fbc47ced0e360037fbaddb61350306664db13745ee64a16a0ea6",
+  "sources": [
+    {
+      "path": "drizzle/0058_massive_vindicator.sql",
+      "sha256": "36fb6251cd787fb05d87cc605ddcbc639c7d0f785421139cdb980318e8277e0c",
+      "bytes": 6598
+    },
+    {
+      "path": "drizzle/0116_ops_workspace_isolation.sql",
+      "sha256": "0011967a0b99fcd28395d3d2df296e856b57bb358f5dbbe5f134d59e7ae52fd4",
+      "bytes": 34411
+    },
+    {
+      "path": "drizzle/schema/ops.ts",
+      "sha256": "4fd0d94cb4fc9c165b68d6612d9201de0ff981506a13b10d68a0ef685e729d10",
+      "bytes": 127680
+    }
+  ],
+  "projection": {
+    "mode": "source-derived-projection",
+    "sqlSha256": "d330a73df3419ae5a4a5bc064d31e6596d39bbe4e300febe37e99591eb5824a0",
+    "metadataSha256": "8e216c7c03a26915fb9e8e43d8055f9c61858aca27ca0efd111ab58aff36e0b8",
+    "sourceSha256": "1348efaf7bb30e9c9e262d9ab8c8ca3ffec85428bdaaf9b391f841466988d926"
+  },
+  "requiredGuard": {
+    "wholeDatabaseInitiallyEmpty": true,
+    "immediatePreFileZeroRowCountForEveryTable": true,
+    "tableNames": [
+      "off_ai_analysis_logs",
+      "off_attribution_links",
+      "off_campaign_analytics",
+      "off_campaigns",
+      "off_collaborations",
+      "off_content_calendar",
+      "off_content_submissions",
+      "off_influencer_scores",
+      "off_influencers",
+      "off_matrix_groups",
+      "off_outreach_messages",
+      "off_social_accounts"
+    ],
+    "noResumeAfterPartialFailure": true,
+    "neverBaselineExistingDatabase": true
+  },
+  "statementCounts": {
+    "dropTable": 12,
+    "createTable": 12,
+    "createIndex": 12,
+    "total": 36
+  },
+  "tables": [
+    {
+      "name": "off_ai_analysis_logs",
+      "columnCount": 14,
+      "createSha256": "64b783903ac987cf453c974eb9f30c8e6a011e3ec6f0d230adb734dcf70a986a",
+      "projectionCreateCopiedVerbatim": true,
+      "retainedWorkspaceIndex": "idx_off_ai_analysis_logs_workspace",
+      "workspaceIndexSha256": "cbe22d59bc8ebef6cf01b1a20eab307ea9e2acd60d82104d70f2d991b83bf83e"
+    },
+    {
+      "name": "off_attribution_links",
+      "columnCount": 20,
+      "createSha256": "aa584d061743923eeed529d1844f43b668941225439c52fdae2f528ab73f92f0",
+      "projectionCreateCopiedVerbatim": true,
+      "retainedWorkspaceIndex": "idx_off_attribution_links_workspace",
+      "workspaceIndexSha256": "2a1d1537e06e9aeb48ad37c6a1624403ec157488c26c0005591955758a1af5a2"
+    },
+    {
+      "name": "off_campaign_analytics",
+      "columnCount": 17,
+      "createSha256": "0aa4a61cfa898650f65cfcabcd79acd13a6cff23a086c02d30937064d32adb81",
+      "projectionCreateCopiedVerbatim": true,
+      "retainedWorkspaceIndex": "idx_off_campaign_analytics_workspace",
+      "workspaceIndexSha256": "78088bc8f0efc8dc7875a9a5b9b1abbcd9189d815d870ebca6bd1823fcff4444"
+    },
+    {
+      "name": "off_campaigns",
+      "columnCount": 19,
+      "createSha256": "82ee67cd116a63fd209f659fc83b70a2f6e574622a381cc72e3048890980e358",
+      "projectionCreateCopiedVerbatim": true,
+      "retainedWorkspaceIndex": "idx_off_campaigns_workspace",
+      "workspaceIndexSha256": "cb8ddd4db1981b0686b4cfde13e4355064a69268186b296508e58f6c1045906c"
+    },
+    {
+      "name": "off_collaborations",
+      "columnCount": 15,
+      "createSha256": "235b927ada5c43497acfe684eecf98a616078743b1b2bbb832ab966ef590126f",
+      "projectionCreateCopiedVerbatim": true,
+      "retainedWorkspaceIndex": "idx_off_collaborations_workspace",
+      "workspaceIndexSha256": "d47bf138b6bf15b9282b261ce012ca7e799fb26bfea623a3dd902629a92c94c4"
+    },
+    {
+      "name": "off_content_calendar",
+      "columnCount": 20,
+      "createSha256": "7a47b6e896df6461c1f80607a939f5121884a15165e17698d271b4acd4b9b19d",
+      "projectionCreateCopiedVerbatim": true,
+      "retainedWorkspaceIndex": "idx_off_content_calendar_workspace",
+      "workspaceIndexSha256": "b877568109b6fd030ad11a3b0f0c2f320281535761018a69549aa2036adeccc3"
+    },
+    {
+      "name": "off_content_submissions",
+      "columnCount": 17,
+      "createSha256": "9846839785a9158f214dd64426effbb0a49b126bdc05f9e43b2f98b045a7e2e5",
+      "projectionCreateCopiedVerbatim": true,
+      "retainedWorkspaceIndex": "idx_off_content_submissions_workspace",
+      "workspaceIndexSha256": "c234899760901eb66cdd7491a635becd152428b21c53e9cc5f45742fa3e2a6ea"
+    },
+    {
+      "name": "off_influencer_scores",
+      "columnCount": 12,
+      "createSha256": "24139dfd703bce5dd93064cce8242f42834a7dc14c47e22f3816e12422eb94b8",
+      "projectionCreateCopiedVerbatim": true,
+      "retainedWorkspaceIndex": "idx_off_influencer_scores_workspace",
+      "workspaceIndexSha256": "26b62821d1198dd69715d718712ce1dffd8a343cc798ccb3c7d1aef593a14915"
+    },
+    {
+      "name": "off_influencers",
+      "columnCount": 25,
+      "createSha256": "fad261bdf6204d96ef2a5fee240b42c81c9ce5205ba005e1c0f10ff474547a02",
+      "projectionCreateCopiedVerbatim": true,
+      "retainedWorkspaceIndex": "idx_off_influencers_workspace",
+      "workspaceIndexSha256": "61f28431ff955f5d91980726d50c51bccf5e3cc534410d4e910f0e68fd39db7f"
+    },
+    {
+      "name": "off_matrix_groups",
+      "columnCount": 14,
+      "createSha256": "5bd9bf90338fc2aa232ef0aef27bcfd24d9e0ba3b65d880ef473be8db0ccc645",
+      "projectionCreateCopiedVerbatim": true,
+      "retainedWorkspaceIndex": "idx_off_matrix_groups_workspace",
+      "workspaceIndexSha256": "b226049a30fb2c85ea9d9e1248db49f1f59772740a414c26334d2bffd86044ee"
+    },
+    {
+      "name": "off_outreach_messages",
+      "columnCount": 17,
+      "createSha256": "4c4e84ec48d3d25f5ce00817587046f2465a33e48ca80c2cdef054ab5831d3ba",
+      "projectionCreateCopiedVerbatim": true,
+      "retainedWorkspaceIndex": "idx_off_outreach_messages_workspace",
+      "workspaceIndexSha256": "1e855cc2cd5ec12ecec05b072b08f741f9939230ce8f16e5f525269e27028174"
+    },
+    {
+      "name": "off_social_accounts",
+      "columnCount": 20,
+      "createSha256": "6c114bf014167b052bf2980a7fa3d1fb4a23c8c1e422d9639e9b8d547b5a8c3d",
+      "projectionCreateCopiedVerbatim": true,
+      "retainedWorkspaceIndex": "idx_off_social_accounts_workspace",
+      "workspaceIndexSha256": "d581d5b6d9bcb73ad25b7df9bd78a92acd4ebd1adb727ad4db4f2484be1d56f3"
+    }
+  ],
+  "productionDdlUsed": false,
+  "candidateDatabaseUsed": false,
+  "sqlExecuted": false,
+  "businessRowsRead": false,
+  "dmlIncluded": false,
+  "automaticRetry": false
+}

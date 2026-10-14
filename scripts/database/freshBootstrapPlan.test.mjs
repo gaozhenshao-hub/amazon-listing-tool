@@ -20,31 +20,197 @@ test("plan is inert under an inherited database URL and never loads an execution
   });
   assert.equal(result.status, 0); assert.equal(result.stderr, "");
   const plan = JSON.parse(result.stdout);
-  assert.equal(plan.databaseConnected, false); assert.equal(plan.migrationCount, 176);
+  assert.equal(plan.databaseConnected, false); assert.equal(plan.migrationCount, 178);
   assert.equal(plan.structureContractBound, Boolean(bundle.manifest.structureContract));
   assert.equal(plan.sourcesSha256, bundle.sourcesSha256);
 });
 
-test("176 real entries retain the 165 lineage, insert 0196–0203 exactly after 0195, and exclude alternatives/drafts", () => {
+test("178 real entries retain the 165 lineage, insert 0196–0203 exactly after 0195, and exclude alternatives/drafts", () => {
   const names = bundle.plan.map(item => item.fileName), index = names.indexOf("0195_parent_asin_weekly_mcp_emperor_projection.sql");
   assert.equal(names[0], RECEIPT_MIGRATION);
   assert.deepEqual(names.slice(index + 1, index + 9), MANUAL_FRESH_FILES);
   assert.equal(names[index + 9], "0204_listing_revision_governance.sql");
-  assert.deepEqual(names.slice(-2), BOOTSTRAP_FILES.slice(1));
+  assert.deepEqual(names.slice(-4), BOOTSTRAP_FILES.slice(1));
   assert.equal(bundle.excluded.length, 3);
   assert.ok(names.every(name => !/^019[123]_|^020[67]_/.test(name)));
   assert.equal(fingerprint(bundle.plan.map(item => [item.fileName, sha256(item.sql)])), bundle.planSha256);
   assert.ok(bundle.plan.every((item, index) => item.order === index));
 });
 
-test("bootstrap SQL has strict prerequisite/table/20-column operations without seeds or silent skip", () => {
+test("bootstrap SQL has strict prerequisite/table/26-column operations without seeds or silent skip", () => {
   const newSql = bundle.plan.filter(item => item.fileName.startsWith("bootstrap/"));
-  assert.equal(newSql.length, 3);
-  for (const item of newSql) assert.doesNotMatch(item.sql.replace(/^--.*$/gm, ""), /\b(?:IF NOT EXISTS|INSERT INTO|REPLACE INTO|DROP TABLE)\b/i);
-  assert.equal([...newSql[2].sql.matchAll(/ADD COLUMN/g)].length, 20);
+  assert.equal(newSql.length, 5);
+  for (const item of newSql.slice(0, 4)) assert.doesNotMatch(item.sql.replace(/^--.*$/gm, ""), /\b(?:IF NOT EXISTS|INSERT INTO|REPLACE INTO|DROP TABLE)\b/i);
+  assert.equal(newSql[4].fileName, "bootstrap/0005_offsite_empty_table_alignment.sql");
+  assert.equal([...newSql[4].sql.matchAll(/^DROP TABLE /gm)].length, 12);
+  assert.equal([...newSql[4].sql.matchAll(/^CREATE TABLE /gm)].length, 12);
+  assert.equal([...newSql[4].sql.matchAll(/^CREATE INDEX /gm)].length, 12);
+  assert.doesNotMatch(newSql[4].sql.replace(/^--.*$/gm, ""), /\b(?:IF EXISTS|IF NOT EXISTS)\b|(?:^|;)\s*(?:INSERT|REPLACE|UPDATE|DELETE)\b/i);
+  assert.equal([...newSql[2].sql.matchAll(/ADD COLUMN/g)].length, 26);
+  assert.match(newSql[2].sql, /ALTER TABLE `listings`\s+ADD COLUMN `itemHighlights` TEXT NULL,\s+ADD COLUMN `itemHighlightsCn` TEXT NULL,\s+ADD COLUMN `agentRunId` VARCHAR\(80\) NULL;/);
+  assert.match(newSql[2].sql, /ALTER TABLE `image_workflow_sessions`\s+ADD COLUMN `step0AiResult` TEXT NULL,\s+ADD COLUMN `step0UserEdit` TEXT NULL,\s+ADD COLUMN `step0Confirmed` INT NOT NULL DEFAULT 0,\s+ADD COLUMN `agentRunId` VARCHAR\(80\) NULL,\s+ADD COLUMN `step5DesignerUploads` TEXT NULL;/);
+  assert.doesNotMatch(newSql[2].sql.replace(/^--.*$/gm, ""), /\b(?:AFTER|FIRST|MODIFY|CHANGE)\b/i);
   assert.doesNotMatch(newSql[0].sql, /`workspaceId`|`triggerMode`|`lastBatchId`/);
   for (const source of bundle.manifest.sources) assert.equal(sha256(readPublicFile(bundle.root, source.path)), source.sha256);
   assert.equal(bundle.manifest.skillSeeds.find(seed => seed.slug.endsWith("gallery.summary")).version, 2);
+});
+
+test("fresh-only source alignment changes exactly 17 definitions, adds six plain columns and renames two status columns", () => {
+  const sql = bundle.plan.find(item => item.fileName === "bootstrap/0004_current_source_alignment.sql").sql.replace(/^--.*$/gm, "");
+  assert.equal([...sql.matchAll(/MODIFY COLUMN/g)].length, 17);
+  assert.equal([...sql.matchAll(/ADD COLUMN/g)].length, 6);
+  assert.equal([...sql.matchAll(/CHANGE COLUMN/g)].length, 2);
+  assert.doesNotMatch(sql, /\b(?:AFTER|FIRST|DROP TABLE|IF EXISTS|IF NOT EXISTS|INSERT|UPDATE|DELETE)\b/i);
+  assert.equal([...sql.matchAll(/DROP INDEX/g)].length, 1);
+  assert.equal([...sql.matchAll(/CREATE INDEX/g)].length, 1);
+  assert.match(sql, /DROP INDEX `idx_sh_asin_week` ON `saihu_product_weekly`;\s+ALTER TABLE `saihu_product_weekly`\s+MODIFY COLUMN `asin` varchar\(2000\),\s+MODIFY COLUMN `parent_asin` varchar\(500\);\s+CREATE INDEX `idx_sh_asin_week` ON `saihu_product_weekly` \(`asin`\(191\), `week_start_date`\);/);
+  assert.doesNotMatch(sql, /CREATE UNIQUE INDEX/i);
+  const expected = [
+    [
+      "ad_keyword_weekly",
+      "MODIFY",
+      "brand_search_count",
+      "int"
+    ],
+    [
+      "emperor_conversation_plan_steps",
+      "MODIFY",
+      "approvalRequired",
+      "int NOT NULL DEFAULT 0"
+    ],
+    [
+      "execution_reviews",
+      "ADD",
+      "target_week_label",
+      "varchar(50)"
+    ],
+    [
+      "inventory_config",
+      "ADD",
+      "production_time_days",
+      "int DEFAULT 15"
+    ],
+    [
+      "knowledge_claim_ledgers",
+      "MODIFY",
+      "isCurrent",
+      "int NOT NULL DEFAULT 1"
+    ],
+    [
+      "lingxing_product_weekly",
+      "MODIFY",
+      "asin",
+      "varchar(2000)"
+    ],
+    [
+      "lingxing_product_weekly",
+      "MODIFY",
+      "parent_asin",
+      "varchar(500)"
+    ],
+    [
+      "lingxing_product_weekly",
+      "MODIFY",
+      "price",
+      "varchar(200)"
+    ],
+    [
+      "off_influencers",
+      "MODIFY",
+      "handle",
+      "varchar(200) NOT NULL"
+    ],
+    [
+      "ops_ad_mcp_campaign_daily_facts",
+      "MODIFY",
+      "workspaceId",
+      "int"
+    ],
+    [
+      "ops_ad_mcp_fact_revisions",
+      "MODIFY",
+      "workspaceId",
+      "int"
+    ],
+    [
+      "ops_ad_mcp_product_daily_facts",
+      "MODIFY",
+      "workspaceId",
+      "int"
+    ],
+    [
+      "ops_ad_mcp_profiles",
+      "MODIFY",
+      "workspaceId",
+      "int"
+    ],
+    [
+      "ops_asin_daily_snapshots",
+      "MODIFY",
+      "is_valid",
+      "int NOT NULL DEFAULT 1"
+    ],
+    [
+      "ops_asin_lifecycle_statuses",
+      "MODIFY",
+      "workspaceId",
+      "int"
+    ],
+    [
+      "ops_inventory_planning_parameters",
+      "MODIFY",
+      "is_active",
+      "int NOT NULL DEFAULT 1"
+    ],
+    [
+      "ops_monthly_financial_profits",
+      "MODIFY",
+      "workspaceId",
+      "int"
+    ],
+    [
+      "ops_plans",
+      "ADD",
+      "parent_asin",
+      "varchar(20)"
+    ],
+    [
+      "product_profiles",
+      "ADD",
+      "chinese_name",
+      "varchar(500)"
+    ],
+    [
+      "product_weekly_ops",
+      "ADD",
+      "ad_sales",
+      "decimal(12,2) DEFAULT '0'"
+    ],
+    [
+      "saihu_product_weekly",
+      "MODIFY",
+      "asin",
+      "varchar(2000)"
+    ],
+    [
+      "saihu_product_weekly",
+      "MODIFY",
+      "parent_asin",
+      "varchar(500)"
+    ],
+    [
+      "team_tasks",
+      "ADD",
+      "meeting_record_id",
+      "int"
+    ]
+  ];
+  const actual = [...sql.matchAll(/ALTER TABLE `([^`]+)`\s+([^;]+);/g)].flatMap(([, table, body]) =>
+    [...body.matchAll(/(ADD|MODIFY) COLUMN `([^`]+)`\s+((?:(?!,\s*(?:ADD|MODIFY) COLUMN)[\s\S])+?)(?=,\s*(?:ADD|MODIFY) COLUMN|$)/g)]
+      .map(([, operation, column, definition]) => [table, operation, column, definition.trim()]));
+  assert.deepEqual(actual.sort((a, b) => (a[0] + "." + a[2]).localeCompare(b[0] + "." + b[2])), expected);
+  assert.match(sql, /CHANGE COLUMN `status` `inventory_planning_version_status` enum\('draft','confirmed','superseded'\) NOT NULL DEFAULT 'draft'/);
+  assert.match(sql, /CHANGE COLUMN `status` `replenishment_plan_status` enum\('draft','confirmed','cancelled','completed'\) NOT NULL DEFAULT 'draft'/);
 });
 
 test("unapproved structure is a pre-connection blocker, not a fabricated complete catalog", () => {
