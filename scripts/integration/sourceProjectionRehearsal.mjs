@@ -13,8 +13,17 @@ import {
 } from "./sourceProjection.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)).replace(/\/$/, "");
-export const PROJECTION_SQL_SHA256 = "582a5babb990537759adb633a28e82dae668112ca2a9e3e505e626b2424d46f2";
-const tableCount = 287, ddlCount = 405;
+// Retain the original projection identity: its separate failed rehearsal is
+// evidence, not something to overwrite or silently relabel as the aligned run.
+export const PRE_INDEX_ALIGNMENT_PROJECTION_PIN = Object.freeze({
+  sqlSha256: "582a5babb990537759adb633a28e82dae668112ca2a9e3e505e626b2424d46f2",
+  sourceSha256: "253fbc80b84b53600c19abfa8f9c5d4d4d3c0f4244dcd140ce5a8c86a8fc2f07",
+  tableCount: 287, ddlCount: 405, retainedForAuditOnly: true,
+});
+// Source declarations now match the unchanged 0180/0187 historical indexes.
+export const PROJECTION_SQL_SHA256 = "d330a73df3419ae5a4a5bc064d31e6596d39bbe4e300febe37e99591eb5824a0";
+export const PROJECTION_SOURCE_SHA256 = "1348efaf7bb30e9c9e262d9ab8c8ca3ffec85428bdaaf9b391f841466988d926";
+const tableCount = 287, ddlCount = 406;
 const digest = value => createHash("sha256").update(value).digest("hex");
 const requireSafe = (condition, code) => {
   if (!condition) throw Object.assign(new Error(code), { code });
@@ -61,7 +70,8 @@ export function validateProjectionArtifact(directory, { io = fs, sourceFiles = c
     && metadata.productionClone === false && metadata.databaseConnected === false && metadata.sqlExecuted === false
     && metadata.migrationLedgerWritten === false && metadata.schemaEntry === "drizzle/schema/index.ts"
     && metadata.sqlFile === "source-projection.sql", "PROJECTION_METADATA_INVALID");
-  requireSafe(same(metadata.sourceFiles, sourceFiles) && metadata.sourceSha256 === digest(JSON.stringify(sourceFiles)),
+  requireSafe(same(metadata.sourceFiles, sourceFiles) && metadata.sourceSha256 === digest(JSON.stringify(sourceFiles))
+    && metadata.sourceSha256 === PROJECTION_SOURCE_SHA256,
     "PROJECTION_SOURCE_HASH_MISMATCH");
   requireSafe(metadata.tableCount === tableCount && metadata.ddlCount === ddlCount
     && same(metadata.excludedTables, EXCLUDED_TABLES), "PROJECTION_SCOPE_CHANGED");
@@ -110,6 +120,7 @@ export async function runProjectionRehearsal(options, {
     formatVersion: 1, mode: "source-derived-projection-rehearsal", status: "running", startedAt: new Date().toISOString(),
     schema, nodeVersion: process.version, sqlSha256: artifact.sqlSha256, metadataSha256: artifact.metadataSha256,
     sourceSha256: artifact.sourceSha256, expectedTableCount: tableCount, expectedDdlCount: ddlCount, ddlSucceeded: 0,
+    previousProjectionPin: PRE_INDEX_ALIGNMENT_PROJECTION_PIN,
     productionValidated: false, historicalUpgradeValidated: false, migrationLedgerWritten: false,
     caseSensitiveLinuxValidated: false, seeded: false,
     limitations: ["Source-derived local diagnostic, not a production clone or historical migration/upgrade rehearsal.",

@@ -25,6 +25,7 @@ const ORM_FACTORIES = new Set([
   "mysqlTable", "text", "timestamp", "tinyint", "uniqueIndex", "varchar",
 ]);
 const COLUMN_METHODS = new Set(["autoincrement", "primaryKey", "notNull", "default", "defaultNow", "onUpdateNow", "unique", "on", "$defaultFn"]);
+const CLAIM_PREFIX_SCHEMA = "drizzle/schema/skillDistillation.ts";
 const sha256 = value => createHash("sha256").update(value).digest("hex");
 class ProjectionError extends Error {
   constructor(code) { super(code); this.code = code; }
@@ -48,10 +49,11 @@ export function inspectSchemaModule(source, filename, ts) {
         if (binding.propertyName || binding.isTypeOnly) fail("UNREVIEWED_SCHEMA_IMPORT");
         const name = binding.name.text;
         if (!(moduleName === "drizzle-orm/mysql-core" && ORM_FACTORIES.has(name))
+          && !(filename === CLAIM_PREFIX_SCHEMA && moduleName === "drizzle-orm" && name === "sql")
           && !(moduleName === "../../server/domains/ops/workspaceContext" && name === "currentOpsWorkspaceId")) fail("UNREVIEWED_SCHEMA_IMPORT");
         names.add(name);
       }
-      if (moduleName !== "drizzle-orm/mysql-core") dependencies.push(WORKSPACE_HELPER);
+      if (moduleName === "../../server/domains/ops/workspaceContext") dependencies.push(WORKSPACE_HELPER);
     } else if (ts.isExportDeclaration(statement)) {
       const specifier = statement.moduleSpecifier?.text;
       if (!isIndex || !/^\.\/[A-Za-z][A-Za-z0-9_]*$/.test(specifier ?? "")) fail("UNREVIEWED_SCHEMA_EXPORT");
@@ -60,10 +62,32 @@ export function inspectSchemaModule(source, filename, ts) {
       fail("UNREVIEWED_SCHEMA_STATEMENT");
     }
   }
+  let currentTable;
+  const column = (node, name) => node && ts.isPropertyAccessExpression(node)
+    && ts.isIdentifier(node.expression) && node.expression.text === "table" && node.name.text === name;
+  function reviewedClaimPrefix(node, inTableCallback) {
+    // This is one historical 0187 index expression, not general SQL admission.
+    // Keep its source spelling, table, index, columns and literal prefix exact.
+    const onCall = node.parent;
+    if (filename !== CLAIM_PREFIX_SCHEMA || !inTableCallback || !names.has("sql")
+      || currentTable?.exportName !== "knowledgeDistillationEvidence" || currentTable?.physicalName !== "knowledge_distillation_evidence"
+      || !ts.isIdentifier(node.tag) || node.tag.text !== "sql" || node.typeArguments?.length
+      || node.getText(ast) !== 'sql`${table.claim}(191)`'
+      || !ts.isTemplateExpression(node.template) || node.template.head.text !== "" || node.template.templateSpans.length !== 1
+      || !column(node.template.templateSpans[0].expression, "claim") || node.template.templateSpans[0].literal.text !== "(191)"
+      || !onCall || !ts.isCallExpression(onCall) || onCall.arguments.length !== 3 || onCall.arguments[2] !== node
+      || !column(onCall.arguments[0], "distillationProjectId") || !column(onCall.arguments[1], "sourceKey")) return false;
+    const on = onCall.expression;
+    if (!ts.isPropertyAccessExpression(on) || on.name.text !== "on" || !ts.isCallExpression(on.expression)) return false;
+    const factory = on.expression;
+    return ts.isIdentifier(factory.expression) && factory.expression.text === "uniqueIndex" && factory.arguments.length === 1
+      && ts.isStringLiteral(factory.arguments[0]) && factory.arguments[0].text === "uq_kdistill_evidence_project_source_claim";
+  }
   function expression(node, inTableCallback = false) {
     if (ts.isStringLiteral(node) || ts.isNumericLiteral(node)
       || [ts.SyntaxKind.NullKeyword, ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword].includes(node.kind)) return;
-    if (ts.isIdentifier(node) && (names.has(node.text) || (inTableCallback && node.text === "table"))) return;
+    if (ts.isIdentifier(node) && ((names.has(node.text) && node.text !== "sql") || (inTableCallback && node.text === "table"))) return;
+    if (ts.isTaggedTemplateExpression(node) && reviewedClaimPrefix(node, inTableCallback)) return;
     if (ts.isAsExpression(node)) return expression(node.expression, inTableCallback);
     if (ts.isParenthesizedExpression(node)) return expression(node.expression, inTableCallback);
     if (ts.isPrefixUnaryExpression(node) && [ts.SyntaxKind.MinusToken, ts.SyntaxKind.PlusToken].includes(node.operator)) return expression(node.operand, inTableCallback);
@@ -105,6 +129,8 @@ export function inspectSchemaModule(source, filename, ts) {
       }
       if (!ts.isIdentifier(declaration.name) || !init || !ts.isCallExpression(init)
         || !ts.isIdentifier(init.expression) || init.expression.text !== "mysqlTable") fail("UNREVIEWED_SCHEMA_STATEMENT");
+      currentTable = { exportName: declaration.name.text,
+        physicalName: ts.isStringLiteral(init.arguments[0]) ? init.arguments[0].text : undefined };
       expression(init);
     }
   }

@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, int, json, longtext, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, index, int, json, longtext, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
 // Generic AI job runs for long-running Emperor Skill / LLM tasks.
 export const aiJobs = mysqlTable("ai_jobs", {
@@ -809,7 +809,10 @@ export const emperorScheduledTasks = mysqlTable("emperor_scheduled_tasks", {
   createdByUserId: int("createdByUserId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("uk_emperor_scheduled_tasks_external_task_uid").on(table.externalTaskUid),
+  index("idx_emperor_scheduled_tasks_workspace_managed").on(table.workspaceId, table.systemManaged),
+]);
 
 export type EmperorScheduledTask = typeof emperorScheduledTasks.$inferSelect;
 export type InsertEmperorScheduledTask = typeof emperorScheduledTasks.$inferInsert;

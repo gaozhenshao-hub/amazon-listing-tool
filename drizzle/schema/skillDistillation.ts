@@ -1,4 +1,5 @@
 import { decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import { sql } from "drizzle-orm";
 
 /** 知识蒸馏项目仅保存受控来源引用与规则生命周期，绝不保存源知识正文或附件。 */
 export const knowledgeDistillationProjects = mysqlTable("knowledge_distillation_projects", {
@@ -62,7 +63,8 @@ export const knowledgeDistillationEvidence = mysqlTable("knowledge_distillation_
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => [
-  uniqueIndex("uq_kdistill_evidence_project_source_claim").on(table.distillationProjectId, table.sourceKey, table.claim),
+  // Match 0187's prefix index without truncating the stored TEXT claim.
+  uniqueIndex("uq_kdistill_evidence_project_source_claim").on(table.distillationProjectId, table.sourceKey, sql`${table.claim}(191)`),
   index("idx_kdistill_evidence_project_status").on(table.distillationProjectId, table.status),
 ]);
 

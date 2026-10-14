@@ -8,7 +8,8 @@ import { spawnSync } from "node:child_process";
 import test, { after, before } from "node:test";
 import { exportSourceProjection, EXCLUDED_TABLES, normalizeCreateStatement } from "./sourceProjection.mjs";
 import {
-  currentSourceFiles, main, parseArguments, PROJECTION_SQL_SHA256, runProjectionRehearsal,
+  currentSourceFiles, main, parseArguments, PRE_INDEX_ALIGNMENT_PROJECTION_PIN,
+  PROJECTION_SQL_SHA256, PROJECTION_SOURCE_SHA256, runProjectionRehearsal,
   validateProjectionArtifact, validateResultTables,
 } from "./sourceProjectionRehearsal.mjs";
 
@@ -98,13 +99,37 @@ test("requires every explicit local argument and refuses remote/duplicate/unknow
     [...args(), "--host", "localhost"], [...args(), "--output", output], [...args(), "--retry"]]) assert.throws(() => parseArguments(invalid));
 });
 
-test("validates current source hashes, exact fixed SQL and all 405 single-DDL blocks offline", () => {
+test("validates aligned source hashes, exact fixed SQL and all 406 single-DDL blocks offline", () => {
   assert.equal(digest(sql), PROJECTION_SQL_SHA256);
-  assert.equal(artifact.statements.length, 405);
+  assert.equal(artifact.statements.length, 406);
   assert.equal(artifact.tableNames.length, 287);
   assert.deepEqual(metadata.sourceFiles, currentSourceFiles());
   assert.equal(artifact.sourceSha256, digest(JSON.stringify(metadata.sourceFiles)));
+  assert.equal(artifact.sourceSha256, PROJECTION_SOURCE_SHA256);
   assert.ok(artifact.statements.every(statement => normalizeCreateStatement(statement) === statement));
+});
+
+test("preserves the superseded 405-DDL source/SQL pins for audit, not current execution", async () => {
+  assert.deepEqual(PRE_INDEX_ALIGNMENT_PROJECTION_PIN, {
+    sqlSha256: "582a5babb990537759adb633a28e82dae668112ca2a9e3e505e626b2424d46f2",
+    sourceSha256: "253fbc80b84b53600c19abfa8f9c5d4d4d3c0f4244dcd140ce5a8c86a8fc2f07",
+    tableCount: 287, ddlCount: 405, retainedForAuditOnly: true,
+  });
+  assert.equal(Object.isFrozen(PRE_INDEX_ALIGNMENT_PROJECTION_PIN), true);
+  assert.notEqual(PRE_INDEX_ALIGNMENT_PROJECTION_PIN.sqlSha256, PROJECTION_SQL_SHA256);
+  assert.notEqual(PRE_INDEX_ALIGNMENT_PROJECTION_PIN.sourceSha256, PROJECTION_SOURCE_SHA256);
+  const io = fakeFs({ readFileSync: (filename, encoding) => filename.endsWith("metadata.json")
+    ? JSON.stringify({ ...metadata, sqlSha256: PRE_INDEX_ALIGNMENT_PROJECTION_PIN.sqlSha256 }) : fs.readFileSync(filename, encoding) });
+  const fixture = workflowFixture({ io });
+  await assert.rejects(runProjectionRehearsal(options(), fixture.dependencies), errorCode("PROJECTION_SQL_HASH_MISMATCH"));
+  assert.equal(fixture.loads(), 0);
+});
+
+test("self-consistent metadata and local source drift still require an explicit new source pin", () => {
+  const changedSources = metadata.sourceFiles.map((value, index) => index === 0 ? { ...value, sha256: "0".repeat(64) } : value);
+  const io = fakeFs({ readFileSync: (filename, encoding) => filename.endsWith("metadata.json")
+    ? JSON.stringify({ ...metadata, sourceFiles: changedSources, sourceSha256: digest(JSON.stringify(changedSources)) }) : fs.readFileSync(filename, encoding) });
+  assert.throws(() => validateProjectionArtifact(directory, { io, sourceFiles: changedSources }), errorCode("PROJECTION_SOURCE_HASH_MISMATCH"));
 });
 
 test("rejects changed SQL and forged metadata before loading any connector", async () => {
@@ -113,7 +138,7 @@ test("rejects changed SQL and forged metadata before loading any connector", asy
     value => ({ ...value, sourceSha256: "0".repeat(64) }),
     value => ({ ...value, sourceFiles: value.sourceFiles.slice(1) }),
     value => ({ ...value, tableNames: [...value.tableNames.slice(1), "forged"] }),
-    value => ({ ...value, tableCount: 286 }), value => ({ ...value, ddlCount: 404 }),
+    value => ({ ...value, tableCount: 286 }), value => ({ ...value, ddlCount: 405 }),
     value => ({ ...value, excludedTables: [] }), value => ({ ...value, productionClone: true }),
     value => ({ ...value, migrationLedgerWritten: true }), value => ({ ...value, sqlExecuted: true }),
     value => ({ ...value, mode: "production-clone" }), value => ({ ...value, sqlFile: "../elsewhere.sql" }),
@@ -163,13 +188,14 @@ test("every fresh connection verifies actual instance identity before any DDL", 
 
 test("one successful rehearsal uses one schema/session, unprepared single DDL and exact table validation", async () => {
   const fixture = workflowFixture(), receipt = await runProjectionRehearsal(options(), fixture.dependencies);
-  assert.equal(receipt.status, "completed"); assert.equal(receipt.ddlSucceeded, 405);
+  assert.equal(receipt.status, "completed"); assert.equal(receipt.ddlSucceeded, 406);
   assert.equal(fixture.connections.length, 1); assert.equal(fixture.connections[0].destroyed, 1);
   assert.equal(fixture.events.filter(value => value.startsWith("USE ")).length, 1);
   assert.match(fixture.events[0], /^SELECT @@version/); assert.match(fixture.events[1], /^CREATE DATABASE/);
   assert.deepEqual(fixture.events.slice(4, -1), artifact.statements);
   assert.deepEqual(receipt.validation, { tableCount: 287, exactTableNames: true, excludedTablesAbsent: true, migrationLedgerAbsent: true });
   assert.equal(receipt.server.lowerCaseTableNames, 2); assert.equal(receipt.server.sqlMode, server().sqlMode);
+  assert.deepEqual(receipt.previousProjectionPin, PRE_INDEX_ALIGNMENT_PROJECTION_PIN);
   for (const field of ["productionValidated", "historicalUpgradeValidated", "migrationLedgerWritten", "caseSensitiveLinuxValidated", "seeded"]) assert.equal(receipt[field], false);
   assert.equal(fixture.io.writes.length, 1); assert.deepEqual(fixture.io.writes[0].flags, { flag: "wx", mode: 0o600 });
   assert.equal(JSON.parse(fixture.io.writes[0].value).schema, receipt.schema);
@@ -217,7 +243,7 @@ test("missing/extra/case-changed/duplicate/view table results cannot claim succe
     rows => rows.map(row => ({ ...row, tableName: row.tableName.toLowerCase() })),
     rows => [...rows.slice(1), rows[1]], rows => rows.map(row => ({ ...row, tableType: "VIEW" }))]) {
     const fixture = workflowFixture({ tableTransform }), receipt = await runProjectionRehearsal(options(), fixture.dependencies);
-    assert.equal(receipt.status, "failed"); assert.equal(receipt.ddlSucceeded, 405); assert.equal(receipt.validation, undefined);
+    assert.equal(receipt.status, "failed"); assert.equal(receipt.ddlSucceeded, 406); assert.equal(receipt.validation, undefined);
   }
   assert.throws(() => validateResultTables([{ tableName: "app_schema_migrations", tableType: "BASE TABLE" }], ["app_schema_migrations"]), errorCode("PROJECTION_FORBIDDEN_TABLE_PRESENT"));
 });

@@ -20,6 +20,8 @@ const table = name => ({ table: true, name });
 const exportsFixture = () => ({ users: table("users"), ...Object.fromEntries(EXCLUDED_TABLES.map((name, i) => [`renamedDraftExport${i}`, table(name)])) });
 const schemaFile = "drizzle/schema/example.ts";
 const declaration = 'import { mysqlTable, int, varchar, index } from "drizzle-orm/mysql-core";\nexport const example = mysqlTable("example", { id: int("id").primaryKey(), name: varchar("name", { length: 80 }).notNull() }, table => [index("ix").on(table.name)]);';
+const claimFile = "drizzle/schema/skillDistillation.ts";
+const claimDeclaration = 'import { mysqlTable, int, varchar, text, uniqueIndex } from "drizzle-orm/mysql-core";\nimport { sql } from "drizzle-orm";\nexport const knowledgeDistillationEvidence = mysqlTable("knowledge_distillation_evidence", { distillationProjectId: int("distillationProjectId").notNull(), sourceKey: varchar("sourceKey", {length:80}).notNull(), claim: text("claim").notNull() }, table => [uniqueIndex("uq_kdistill_evidence_project_source_claim").on(table.distillationProjectId, table.sourceKey, sql`${table.claim}(191)`)]);';
 const buildFixture = overrides => buildProjection({ exports: exportsFixture(), isTable, getTableName,
   generateSnapshot: async tables => ({ tables }),
   generateMigration: async () => ['CREATE TABLE `users` (`id` int);', 'CREATE INDEX `ix` ON `users` (`id`);'],
@@ -50,6 +52,33 @@ test("rejects hidden expression execution, globals, getters and unreviewed callb
     'new Date()', '{ get value() { return 1; } }', 'globalThis["fetch"]("x")', 'int("id").$defaultFn(() => 1)']) {
     assert.throws(() => inspectSchemaModule(`import { mysqlTable, int } from "drizzle-orm/mysql-core"; export const t = mysqlTable("t", { id: ${expression} });`, schemaFile, ts));
   }
+});
+
+test("admits only the exact reviewed 0187 claim prefix at its named table/index position", () => {
+  assert.deepEqual(inspectSchemaModule(claimDeclaration, claimFile, ts), []);
+  for (const filename of [schemaFile, "drizzle/schema/ai_os.ts", "drizzle/schema/index.ts", `./${claimFile}`]) {
+    assert.throws(() => inspectSchemaModule(claimDeclaration, filename, ts));
+  }
+  for (const [from, to] of [
+    ['from "drizzle-orm"', 'from "some-sql-library"'], ['{ sql }', '{ sql as raw }'], ['{ sql }', '{ sql, eq }'],
+    ["knowledgeDistillationEvidence =", "anotherExport ="], ['mysqlTable("knowledge_distillation_evidence"', 'mysqlTable("another_table"'],
+    ["uq_kdistill_evidence_project_source_claim", "another_index"], ['uniqueIndex("uq_', 'index("uq_'],
+    [".on(table.distillationProjectId, table.sourceKey,", ".on(table.sourceKey, table.distillationProjectId,"],
+    [".on(table.distillationProjectId, table.sourceKey,", ".on(table.distillationProjectId,"],
+    ['sql`${table.claim}(191)`)', 'sql`${table.claim}(191)`, table.sourceKey)'],
+    ['claim: text("claim").notNull()', 'claim: text("claim").default(sql)'],
+  ]) assert.throws(() => inspectSchemaModule(claimDeclaration.replace(from, to), claimFile, ts), undefined, `${from} -> ${to}`);
+});
+
+test("rejects dynamic/raw/other SQL tags even inside the approved schema and index", () => {
+  const reviewed = 'sql`${table.claim}(191)`';
+  for (const expression of [
+    'sql`${table.claim}(190)`', 'sql`${table.claim}(192)`', 'sql`${table.claim}(${191})`', 'sql`${table.claim}${"(191)"}`',
+    'sql`LEFT(${table.claim},191)`', 'sql`(${table.claim})(191)`', 'sql`${table.sourceKey}(191)`', 'sql`${table["claim"]}(191)`',
+    'sql`${table.claim.toString()}(191)`', 'sql`${table.claim}(191); DROP TABLE x`', 'sql`claim(191)`',
+    'sql`${table.claim}\\x28191)`', 'sql`${table.claim}\\u0028191)`', 'sql<string>`${table.claim}(191)`',
+    'sql.raw("claim(191)")', 'sql.join([table.claim])', 'sql("claim(191)")', 'sql', 'other`${table.claim}(191)`',
+  ]) assert.throws(() => inspectSchemaModule(claimDeclaration.replace(reviewed, expression), claimFile, ts), undefined, expression);
 });
 
 test("audits the actual source import closure without importing it or loading .env", () => {
@@ -188,7 +217,12 @@ test("real offline CLI generates the current filtered source projection without 
   const sql = readFileSync(join(outputDirectory, "source-projection.sql"), "utf8");
   assert.equal(metadata.tableCount, 287);
   assert.equal(metadata.tableCount, metadata.tableNames.length);
-  assert.ok(metadata.ddlCount > metadata.tableCount);
+  assert.equal(metadata.ddlCount, 406);
+  assert.equal(metadata.sqlSha256, "d330a73df3419ae5a4a5bc064d31e6596d39bbe4e300febe37e99591eb5824a0");
+  assert.equal(metadata.sourceSha256, "1348efaf7bb30e9c9e262d9ab8c8ca3ffec85428bdaaf9b391f841466988d926");
+  assert.match(sql, /UNIQUE\(`distillationProjectId`,`sourceKey`,`claim`\(191\)\)/);
+  assert.match(sql, /CONSTRAINT `uk_emperor_scheduled_tasks_external_task_uid` UNIQUE\(`externalTaskUid`\)/);
+  assert.match(sql, /CREATE INDEX `idx_emperor_scheduled_tasks_workspace_managed` ON `emperor_scheduled_tasks` \(`workspaceId`,`systemManaged`\);/);
   assert.deepEqual(metadata.excludedTables, EXCLUDED_TABLES);
   assert.ok(EXCLUDED_TABLES.every(name => !sql.includes(`\`${name}\``)));
   assert.equal(metadata.sqlSha256, createHash("sha256").update(sql).digest("hex"));
