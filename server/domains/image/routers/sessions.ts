@@ -270,10 +270,6 @@ export const imageSessionProcedures = {
         clearData.step0AiResult = null;
         clearData.step0UserEdit = null;
         clearData.step0Confirmed = 0;
-        await supersedeExpressionLinkageForStep0Reset({
-          workspaceId: Number(project.workspaceId || ctx.workspaceId || 0),
-          projectId: input.projectId,
-        });
       }
       if (input.step <= 1) {
         clearData.step1AiResult = null;
@@ -333,7 +329,12 @@ export const imageSessionProcedures = {
         actorRole: ctx.user.role,
         fromStep: input.step as 0 | 1 | 2 | 3 | 4 | 5 | 6,
         legacyPatch: clearData,
-      }).catch(asImageWorkflowVersionTrpcError);
+      }, input.step === 0 ? {
+        afterScopeRevisionAdvanced: tx => supersedeExpressionLinkageForStep0Reset(tx, {
+          workspaceId: Number(project.workspaceId || ctx.workspaceId || 0),
+          projectId: input.projectId,
+        }),
+      } : undefined).catch(asImageWorkflowVersionTrpcError);
       void syncStepUnlockToAgent({
         agentRunId: session.agentRunId,
         stepNumber: input.step,

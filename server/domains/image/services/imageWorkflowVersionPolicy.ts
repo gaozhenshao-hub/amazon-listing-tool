@@ -1210,7 +1210,13 @@ export async function invalidateImageWorkflowStages(input: ImageWorkflowScopeAct
   targetStep?: ImageWorkflowStep;
   /** Prevent a cancellation of an old run from overwriting a newer Step 5 run. */
   expectedStep5RunId?: string | null;
-}): Promise<{ scopeRevision: number; invalidatedSteps: readonly ImageWorkflowStep[] }> {
+}, options: {
+  /** Internal service composition only, never accepted from HTTP input.
+   * Runs after the locked revision CAS and before events/projection writes.
+   * Use only this executor; failures roll back the entire invalidation.
+   */
+  afterScopeRevisionAdvanced?: (tx: DbExecutor) => Promise<void>;
+} = {}): Promise<{ scopeRevision: number; invalidatedSteps: readonly ImageWorkflowStep[] }> {
   const store = createDrizzleImageWorkflowVersionStore();
   try {
     return await store.transaction(async tx => {
@@ -1246,6 +1252,7 @@ export async function invalidateImageWorkflowStages(input: ImageWorkflowScopeAct
       if (!await store.advanceScopeRevision(tx, { ...input, expectedRevision: revision })) {
         fail("CONFLICT", "图片建议会话已被其他编辑更新，请刷新后重试");
       }
+      await options.afterScopeRevisionAdvanced?.(tx);
       if (events.length) await store.appendStateEvents(tx, events);
       const payload: Record<string, unknown> = {
         ...input.legacyPatch,

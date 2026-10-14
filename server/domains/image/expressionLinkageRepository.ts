@@ -11,6 +11,12 @@ import {
 } from "../../../drizzle/schema/image";
 import type { DbExecutor } from "../../repositories/dbClient";
 
+/** Read through the caller's locked transaction, not the display repository's connection. */
+export async function listExpressionGroupIdsForReset(tx: DbExecutor, projectId: number): Promise<Array<{ id: number }>> {
+  return tx.select({ id: expressionGroups.id }).from(expressionGroups)
+    .where(eq(expressionGroups.projectId, projectId)).orderBy(expressionGroups.sortOrder);
+}
+
 export async function getExpressionGroupForProject(db: DbExecutor, projectId: number, groupId: number) {
   const rows = await db.select().from(expressionGroups).where(and(
     eq(expressionGroups.projectId, projectId),

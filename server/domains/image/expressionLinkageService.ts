@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ImageExpressionAnalysisVersion } from "../../../drizzle/schema/image";
-import { requireDb } from "../../repositories/dbClient";
+import { requireDb, type DbExecutor } from "../../repositories/dbClient";
 import * as imageDb from "./repository";
 import {
   ExpressionGroupAnalysisSchema,
@@ -26,6 +26,7 @@ import {
   getLatestExpressionSelection,
   getLatestStep0Synthesis,
   listConfirmedExpressionAnalyses,
+  listExpressionGroupIdsForReset,
   listExpressionSelectionLinks,
   nextExpressionAnalysisVersion,
   nextExpressionSelectionVersion,
@@ -392,19 +393,19 @@ export async function getExpressionLinkageSessionState(input: { workspaceId?: nu
   return { groups: groupStates, synthesis, expressionArtifact, compositeArtifact };
 }
 
-export async function supersedeExpressionLinkageForStep0Reset(input: { workspaceId?: number | null; projectId: number }) {
+/** Caller must hold the version scope lock and own the surrounding transaction.
+ * Immutable asset links remain evidence of the superseded selection versions.
+ */
+export async function supersedeExpressionLinkageForStep0Reset(tx: DbExecutor, input: { workspaceId?: number | null; projectId: number }) {
   const workspaceId = workspaceIdOrThrow(input.workspaceId);
-  const db = await requireDb("reset expression linkage");
-  const groups = await imageDb.getExpressionGroupsByProject(input.projectId);
-  await db.transaction(async (tx) => {
-    for (const group of groups) {
-      await supersedeExpressionSelections(tx, workspaceId, input.projectId, group.id);
-      await supersedeExpressionAnalyses(tx, workspaceId, input.projectId, group.id);
-    }
-    await supersedeStep0Synthesis(tx, workspaceId, input.projectId);
-    await supersedeStep0Artifacts(tx, workspaceId, input.projectId, "expression_summary");
-    await supersedeStep0Artifacts(tx, workspaceId, input.projectId, "composite");
-  });
+  const groups = await listExpressionGroupIdsForReset(tx, input.projectId);
+  for (const group of groups) {
+    await supersedeExpressionSelections(tx, workspaceId, input.projectId, group.id);
+    await supersedeExpressionAnalyses(tx, workspaceId, input.projectId, group.id);
+  }
+  await supersedeStep0Synthesis(tx, workspaceId, input.projectId);
+  await supersedeStep0Artifacts(tx, workspaceId, input.projectId, "expression_summary");
+  await supersedeStep0Artifacts(tx, workspaceId, input.projectId, "composite");
 }
 
 export function synthesisInputHash(input: { galleryArtifactId: number; expressionArtifactId: number; expressionAnalysisIds: number[] }) {

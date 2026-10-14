@@ -1,0 +1,33 @@
+{
+  "version": "amazon-p1-source-review/1",
+  "reviewedOn": "2026-10-15",
+  "control": "K06",
+  "decision": "local-reviewed-same-transaction-reset-not-real-MySQL-acceptance",
+  "priorSourceHead": "eddc792a75ed2fd45bb3ce19f510d6e2d1d5e78f",
+  "scope": "Step0-only internal awaited transaction hook after existing scope lock and revision CAS; linkage, version events, legacy session projection and Step4 projection commit or roll back together",
+  "files": [
+    { "path": "server/domains/image/routers/sessions.ts", "sha256": "44ea348ebff03666c08e1c01237eb2d8d3fbdbbedf2bfb3967b26d2277e05424" },
+    { "path": "server/domains/image/services/imageWorkflowVersionPolicy.ts", "sha256": "825863a1976a20d76b533acac2c45f4bed3ccfc09fa3cb0e00377d1d0963d13a" },
+    { "path": "server/domains/image/expressionLinkageService.ts", "sha256": "6613700dc6ac2acb28a6d04713fadb9803b4aa2313f886d97809c23e8ba096d7" },
+    { "path": "server/domains/image/expressionLinkageRepository.ts", "sha256": "73d2e776ef4ca7d2802d50a15cab34d8ee2f46a861dc77bde7074f78cca1193d" },
+    { "path": "server/imageWorkflow.resetAtomicity.behavior.test.ts", "sha256": "3cd8d820d3d92aea80564c030d94639a238338fedb768fdfbf1c02856bfd70c7" }
+  ],
+  "verification": {
+    "redBeforeFix": { "passed": 9, "failed": 12 },
+    "greenAfterFix": { "passed": 21, "failed": 0 },
+    "implementerAndIndependentNeighborCasesPassedEach": 73,
+    "rootFullCandidateUnit": { "actualSession": 51694, "actualExitCode": 0, "passed": 5437, "originalSkipped": 14, "seconds": 92.83 },
+    "rootFullProductionTypecheck": { "actualSession": 33141, "actualExitCode": 0, "incremental": false },
+    "rootNineFileScopedLintExitCode": 0,
+    "rootAndIndependentWholeDiffAndTestReview": true,
+    "completeRowControlledRollbackFaults": ["missing scopes", "missing snapshots", "missing events", "CAS zero", "group read", "each of two group selection writes", "each of two group analysis writes", "synthesis write", "both artifact-type writes", "event after write", "legacy zero", "legacy write", "Step4 write", "no transaction", "foreign scope"],
+    "newPatchPersistedHttpRevalidated": false
+  },
+  "unchanged": ["original project-wide reset semantics", "workspace/project predicates", "immutable asset_links", "competitor_gallery", "snapshot content", "Step1 and Step6 linkage behavior", "HTTP input schema", "0206 and 0207 SQL", "commit-before-Agent-sync ordering"],
+  "limitations": ["Bottom-level Drizzle transaction state is controlled, not a MySQL engine", "MySQL AUTO_INCREMENT counters are not claimed to roll back", "Independent expression writers have not all been moved onto the scope lock; universal linearizability is not claimed", "Actual dedicated migration, HTTP and SQL rollback/recovery acceptance remain pending"],
+  "rollback": "Revert this isolated source/test/review commit; no migration or production writes performed",
+  "deployed": false,
+  "publicPush": false,
+  "fullT24Complete": false,
+  "p1Complete": false
+}
