@@ -11,6 +11,8 @@ export type StorageProvider = "forge" | "s3" | "oss" | "local" | "external";
 type StorageGetOptions = {
   /** Only server-controlled callers may select this shorter S3/OSS signature TTL. */
   expiresSeconds?: number;
+  /** Persisted provider identity must not be silently rebound to the active provider. */
+  expectedProvider?: string;
 };
 type S3CompatibleStorageConfig = {
   provider: "s3" | "oss";
@@ -34,43 +36,61 @@ export function parseStorageUri(uri: string): { provider: StorageProvider | stri
   return { provider: match[1], key: normalizeKey(match[2]) };
 }
 
-function getConfiguredStorageHosts(): string[] {
-  return [ENV.s3Endpoint, ENV.s3PublicEndpoint]
-    .filter(Boolean)
-    .flatMap((endpoint) => {
-      try {
-        return [new URL(endpoint).hostname.toLowerCase()];
-      } catch {
-        return [];
-      }
-    });
+function parseUnambiguousStorageHttpUrl(reference: string): { url: URL; segments: string[] } | null {
+  // Inspect the original path before URL normalizes dot segments or backslashes.
+  if (Array.from(reference).some(character => character.charCodeAt(0) <= 32 || character === "\\")) return null;
+  const parts = /^https?:\/\/([^/?#]+)([^?#]*)/i.exec(reference);
+  if (!parts || parts[1].includes("%")) return null;
+  const url = new URL(reference);
+  if (url.username || url.password || url.hash) return null;
+  const path = parts[2];
+  const segments = !path || path === "/" ? [] : path.slice(1).split("/").map(decodeURIComponent);
+  if (segments.some(segment => !segment || segment === "." || segment === ".."
+    || /[/\\]/u.test(segment)
+    || Array.from(segment).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127))) return null;
+  return { url, segments };
 }
 
 /**
  * Extract an object key only from a legacy S3-compatible pre-signed URL that
- * points to a configured storage endpoint. The strict host check prevents an
- * arbitrary external URL from being reinterpreted as a private object key.
+ * identifies the configured bucket at a configured endpoint. Regional endpoint
+ * suffixes alone do not identify a bucket and must never authorize re-signing.
  */
 export function parseLegacyPresignedObjectKey(reference: string): string | null {
   try {
-    const url = new URL(reference);
+    const provider = getActiveStorageProvider();
+    if (provider !== "s3" && provider !== "oss") return null;
+    const bucket = ENV.s3Bucket.trim();
+    if (!bucket || !/^[a-z0-9][a-z0-9.-]*$/u.test(bucket) || bucket.endsWith(".") || bucket.includes("..")) return null;
+    const parsed = parseUnambiguousStorageHttpUrl(reference);
+    if (!parsed) return null;
+    const { url, segments } = parsed;
     const queryKeys = Array.from(url.searchParams.keys()).map((key) => key.toLowerCase());
     const isPresigned = queryKeys.some((key) =>
       key.startsWith("x-amz-") || key === "signature" || key === "ossaccesskeyid" || key === "expires"
     );
     if (!isPresigned) return null;
 
-    const hostname = url.hostname.toLowerCase();
-    const configuredHosts = getConfiguredStorageHosts();
-    const matchesConfiguredEndpoint = configuredHosts.some((host) =>
-      hostname === host || hostname.endsWith(`.${host}`)
-    );
-    if (!matchesConfiguredEndpoint) return null;
-
-    const segments = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
-    const bucket = ENV.s3Bucket.trim();
-    if (bucket && segments[0] === bucket) segments.shift();
-    return segments.length > 0 ? normalizeKey(segments.join("/")) : null;
+    for (const endpoint of [ENV.s3Endpoint, ENV.s3PublicEndpoint].filter(Boolean)) {
+      let configured: ReturnType<typeof parseUnambiguousStorageHttpUrl>;
+      try { configured = parseUnambiguousStorageHttpUrl(endpoint.endsWith("/") ? endpoint.slice(0, -1) : endpoint); } catch { continue; }
+      if (!configured || configured.url.search || url.protocol !== configured.url.protocol || url.port !== configured.url.port) continue;
+      // Only the endpoint root or an explicitly bucket-qualified path is known.
+      // Custom path prefixes must not be guessed into the current private bucket.
+      if (configured.segments.length > 1 || (configured.segments.length === 1 && configured.segments[0] !== bucket)) continue;
+      const host = configured.url.hostname;
+      const bucketInHost = host.startsWith(`${bucket}.`);
+      let objectSegments: string[] | null = null;
+      if (!configured.segments.length && (url.hostname === (bucketInHost ? host : `${bucket}.${host}`))) {
+        objectSegments = segments;
+      } else if (!bucketInHost && url.hostname === host && segments[0] === bucket) {
+        objectSegments = segments.slice(1);
+      }
+      // Decode exactly once. Literal '%' (including text such as '%2f') is
+      // part of the object key; GetObjectCommand receives it without re-decoding.
+      if (objectSegments?.length) return objectSegments.join("/");
+    }
+    return null;
   } catch {
     return null;
   }
@@ -83,10 +103,10 @@ export function parseLegacyPresignedObjectKey(reference: string): string | null 
  */
 export async function resolveStoredObjectUrl(reference: string): Promise<string> {
   const parsed = parseStorageUri(reference);
-  if (parsed) return (await storageGet(parsed.key)).url;
+  if (parsed) return (await storageGet(parsed.key, { expectedProvider: parsed.provider })).url;
 
   const legacyKey = parseLegacyPresignedObjectKey(reference);
-  if (legacyKey) return (await storageGet(legacyKey)).url;
+  if (legacyKey) return (await storageGet(legacyKey, { expectedProvider: getActiveStorageProvider() })).url;
 
   return reference;
 }
@@ -278,6 +298,9 @@ export async function storageGet(
   options: StorageGetOptions = {}
 ): Promise<{ key: string; url: string; }> {
   const provider = getActiveStorageProvider();
+  if (options.expectedProvider !== undefined && options.expectedProvider !== provider) {
+    throw new Error("Stored object provider does not match the active storage provider");
+  }
   if (provider === "s3" || provider === "oss") {
     const config = getS3CompatibleStorageConfig();
     const key = normalizeKey(relKey);

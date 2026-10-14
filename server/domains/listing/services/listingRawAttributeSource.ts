@@ -20,7 +20,7 @@ export async function readCompleteAttributeText(file: RawAttributeFile, workspac
   if (!parsed || !new Set(["forge", "s3", "oss"]).has(parsed.provider)) {
     throw new Error("产品属性原始存储路径不受控，停止事实核验");
   }
-  const { url: signedUrl } = await storageGet(parsed.key);
+  const { url: signedUrl } = await storageGet(parsed.key, { expectedProvider: parsed.provider });
   const url = new URL(signedUrl);
   const response = await safeHttpRequest(url, {
     method: "GET", timeoutMs: 20_000, maxResponseBytes: 2 * 1024 * 1024,

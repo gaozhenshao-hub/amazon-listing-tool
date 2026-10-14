@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb, withDbTransaction, type DbExecutor } from "../../../repositories/dbClient";
 import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
-import { buildStorageUri, parseStorageUri, storageGet, storagePut, type StorageProvider } from "../../../storage";
+import { buildStorageUri, parseStorageUri, resolveStoredObjectUrl, storageGet, storagePut, type StorageProvider } from "../../../storage";
 import { recordHarnessFeedback } from "./harnessCompletion";
 
 export type ArtifactDomain = "listing" | "image" | "ads" | "video" | "agent" | "project" | "file" | "ops" | "tool" | "other";
@@ -788,14 +788,16 @@ async function resolveStoredArtifactContent(row: Record<string, any>) {
     return parseJson(row.contentJson, row.contentJson);
   }
   const parsedUri = row.storageUri ? parseStorageUri(String(row.storageUri)) : null;
-  let downloadUrl = row.storagePublicUrl || row.publicUrl || null;
-  if (!downloadUrl && parsedUri?.provider === "forge") {
-    downloadUrl = (await storageGet(parsedUri.key)).url;
-  }
+  // The durable identity takes precedence over a cached, possibly expired URL.
+  // Provider mismatch must fail closed, not fall back to a different object URL.
+  let downloadUrl = parsedUri
+    ? (await storageGet(parsedUri.key, { expectedProvider: parsedUri.provider })).url
+    : row.storagePublicUrl || row.publicUrl || null;
   if (!downloadUrl && /^https?:\/\//i.test(String(row.storageUri || ""))) {
     downloadUrl = row.storageUri;
   }
   if (!downloadUrl) return null;
+  if (!parsedUri) downloadUrl = await resolveStoredObjectUrl(String(downloadUrl));
   const url = new URL(downloadUrl);
   const response = await safeHttpRequest(url, {
     method: "GET",

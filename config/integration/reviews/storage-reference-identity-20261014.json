@@ -1,0 +1,43 @@
+{
+  "version": "amazon-protected-baseline-review/1",
+  "reviewedOn": "2026-10-14",
+  "control": "K06",
+  "decision": "explicit_local_reviewed_allowance_not_full_storage_acceptance",
+  "scope": [
+    "Preserve persisted provider identity through generic URI, artifact, complete Listing source and competitor gallery reads.",
+    "Reject a mismatched expected provider before SDK signing or storage HTTP; do not switch configuration or guess cross-provider credentials.",
+    "Refresh legacy signed URLs only with matching configured protocol, port, endpoint and explicit bucket identity.",
+    "Prefer persistent artifact URI over cached transient URL; retain inline content and unknown external URL behavior.",
+    "Decode legacy keys once; preserve literal-percent names without admitting decoded separators or dot path segments."
+  ],
+  "protectedFile": {
+    "path": "server/storage.ts",
+    "baseline": { "gitBlobSha1": "465654a27b81818d1e48178f93b656e4ee679e94", "sha256": "8c11373e51efebcb6359bb01279916aa3f85e5e457743d1162d6f9d73a178b77" },
+    "reviewed": { "gitBlobSha1": "de6884c85b2f7d92833454be2f1a6c620622e8c9", "sha256": "ac12160a4c84f03fe94e85bdb0de00f28c8fa947b48a8d7d9e5f0e100d1fbf60" }
+  },
+  "otherReviewedFiles": [
+    { "path": "server/domains/ai_os/services/artifactLifecycle.ts", "sha256": "6f655cdc31c8fc13cbed5064566b0c1ecc27fcc6754ca756e38f3e8fdf307002" },
+    { "path": "server/domains/listing/services/listingRawAttributeSource.ts", "sha256": "01274e0d2df5fda92844df83cf843d21b730bb9181b394f5659ec2f10f6b0bfb" },
+    { "path": "server/domains/image/services/competitorGalleryJob.ts", "sha256": "e8215652320817a2a0727a27269801a8e78cebe8cf63430dc3bb2095a0226b4d" },
+    { "path": "server/storage.referenceIdentity.test.ts", "sha256": "6349ac1acfc146872ab1de42bed5aba0748c50bcb315488436a1f3d24021340d" },
+    { "path": "server/storage.consumersIdentity.test.ts", "sha256": "6f6ea5f0292427bb09d860f6d9607e7f6d2292f0f6902ac88141a47dc7ddd8fa" }
+  ],
+  "verification": {
+    "newControlledCases": 81,
+    "rootSevenFileCasesPassed": 96,
+    "implementationAgentAdjacentCasesPassed": 101,
+    "rootFullTypecheckPassed": true,
+    "implementationAgentScopedLintWarnings": 0,
+    "independentSourceAndHashReviewPassed": true,
+    "realProvidersDatabaseModelAndVmUsedForTheseTests": false
+  },
+  "unchanged": { "baselineHashesRetained": true, "existingProtectedTests": true, "providerConfiguration": true, "privatePdfTtl": true, "accessPolicies": true, "dependencies": true },
+  "deployed": false,
+  "limitations": [
+    "No true object-bucket anonymous ACL, signature-expiry denial, byte identity or joint database/object recovery has been accepted.",
+    "storage:// provider/key does not encode bucket identity; changing a bucket within the same provider still requires explicit migration/provenance.",
+    "Unproven custom CNAME/path-prefix references retain their old URL; compatibility with every historical object is not claimed.",
+    "Gallery may update synthetic subject status before signing; tests do not prove all database side effects are zero.",
+    "Positive gallery cases stop at a mocked model boundary, not completed generation. Full T25 and P1 remain pending."
+  ]
+}

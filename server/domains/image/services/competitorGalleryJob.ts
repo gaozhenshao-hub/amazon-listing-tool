@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { storageGet } from "../../../storage";
+import { parseStorageUri, storageGet } from "../../../storage";
 import type { AcquisitionAssetCandidate } from "../../../../drizzle/schema/acquisition";
 import type { ImageCompetitorAssetFact } from "../../../../drizzle/schema/image";
 import {
@@ -50,9 +50,9 @@ export const competitorGalleryJobInput = z.object({
 });
 
 async function assetAccessUrl(storageKey: string | null) {
-  if (!storageKey?.startsWith("storage://")) throw new Error("竞品图片缺少已确认S3证据");
-  const key = storageKey.replace(/^storage:\/\/[^/]+\//, "");
-  return (await storageGet(key)).url;
+  const parsed = storageKey ? parseStorageUri(storageKey) : null;
+  if (!parsed) throw new Error("竞品图片缺少已确认S3证据");
+  return (await storageGet(parsed.key, { expectedProvider: parsed.provider })).url;
 }
 
 async function runCompetitorGalleryAnalysis(job: AiJobSnapshot, context: AiJobHandlerContext) {
