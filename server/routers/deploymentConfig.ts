@@ -12,6 +12,7 @@ import { kbSyncLogs, remoteUsageSnapshots, users, usageStats, systemSettings } f
 import { eq, desc, sql, and, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
+import { canManageDeploymentSync } from "@shared/deploymentSyncAuthorization";
 
 // Sync config setting keys
 const SYNC_SETTING_KEYS = {
@@ -92,7 +93,12 @@ export const deploymentConfigRouter = router({
     }),
 
   // 手动触发同步（通过前端调用后端Express API）
-  triggerSync: protectedProcedure.mutation(async () => {
+  triggerSync: protectedProcedure.mutation(async ({ ctx }) => {
+    // Apply the existing configuration-admin policy before reading configuration
+    // or invoking the server-authenticated, instance-wide peer sync operation.
+    if (!canManageDeploymentSync(ctx.user.role)) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "只有管理员可以触发系统同步" });
+    }
     if (!ENV.peerSyncEnabled || !ENV.peerApiUrl) {
       return { success: false, error: "对端同步未配置" };
     }
@@ -293,7 +299,7 @@ export const deploymentConfigRouter = router({
       peerSyncEnabled: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      if (ctx.user.role !== "super_admin" && ctx.user.role !== "admin") {
+      if (!canManageDeploymentSync(ctx.user.role)) {
         throw new TRPCError({ code: "FORBIDDEN", message: "只有管理员可以修改同步配置" });
       }
       const db = await getDb();
@@ -339,7 +345,10 @@ export const deploymentConfigRouter = router({
     }),
 
   // 测试对端API连接
-  testPeerConnection: protectedProcedure.mutation(async () => {
+  testPeerConnection: protectedProcedure.mutation(async ({ ctx }) => {
+    if (!canManageDeploymentSync(ctx.user.role)) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "只有管理员可以测试对端连接" });
+    }
     // Read from DB first, fallback to ENV
     const db = await getDb();
     let peerApiUrl = ENV.peerApiUrl;

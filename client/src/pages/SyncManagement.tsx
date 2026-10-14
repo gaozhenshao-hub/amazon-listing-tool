@@ -6,6 +6,8 @@
 
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { canManageDeploymentSync } from "@shared/deploymentSyncAuthorization";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -69,10 +71,13 @@ function DeploymentInfoCard() {
 }
 
 // ===== 同步状态卡片 =====
-function SyncStatusCard() {
+export function SyncStatusCard() {
+  const { user } = useAuth();
+  const canManageSync = canManageDeploymentSync(user?.role);
   const { data, isLoading, refetch } = trpc.deploymentConfig.getSyncStatus.useQuery();
   const triggerSync = trpc.deploymentConfig.triggerSync.useMutation();
   const handleTriggerSync = async () => {
+    if (!canManageSync) return;
     try {
       const result = await triggerSync.mutateAsync();
       if (result.success) {
@@ -100,7 +105,7 @@ function SyncStatusCard() {
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4 mr-1" /> 刷新
             </Button>
-            <Button size="sm" onClick={handleTriggerSync} disabled={!data?.enabled || triggerSync.isPending}>
+            <Button size="sm" onClick={handleTriggerSync} disabled={!canManageSync || !data?.enabled || triggerSync.isPending}>
               <ArrowUpDown className="h-4 w-4 mr-1" />
               {triggerSync.isPending ? "同步中..." : "手动同步"}
             </Button>
@@ -476,7 +481,9 @@ function LocalSyncInfoCard() {
 }
 
 // ===== 同步API配置卡片 =====
-function SyncConfigCard() {
+export function SyncConfigCard() {
+  const { user } = useAuth();
+  const canManageSync = canManageDeploymentSync(user?.role);
   const { data, isLoading, refetch } = trpc.deploymentConfig.getSyncConfig.useQuery();
   const updateConfig = trpc.deploymentConfig.updateSyncConfig.useMutation({
     onSuccess: () => { toast.success("同步配置已保存"); refetch(); },
@@ -499,6 +506,7 @@ function SyncConfigCard() {
   }
 
   const handleSave = () => {
+    if (!canManageSync) return;
     updateConfig.mutate({
       peerApiUrl,
       peerApiKey: peerApiKey === "••••••••" ? undefined : peerApiKey,
@@ -507,6 +515,7 @@ function SyncConfigCard() {
   };
 
   const handleTest = async () => {
+    if (!canManageSync) return;
     try {
       const result = await testConnection.mutateAsync();
       if (result.success) {
@@ -520,6 +529,7 @@ function SyncConfigCard() {
   };
 
   const generateRandomKey = () => {
+    if (!canManageSync) return;
     // Generate a UUID-like random key
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     const segments = [8, 4, 4, 4, 12];
@@ -565,7 +575,7 @@ function SyncConfigCard() {
             <Label className="text-base font-medium">启用对端同步</Label>
             <p className="text-sm text-muted-foreground">开启后可与对端系统进行知识库双向同步</p>
           </div>
-          <Switch checked={peerSyncEnabled} onCheckedChange={setPeerSyncEnabled} />
+          <Switch checked={peerSyncEnabled} onCheckedChange={setPeerSyncEnabled} disabled={!canManageSync} />
         </div>
 
         {/* API地址 */}
@@ -573,6 +583,7 @@ function SyncConfigCard() {
           <Label htmlFor="peerApiUrl">对端API地址</Label>
           <Input
             id="peerApiUrl"
+            disabled={!canManageSync}
             placeholder="例如: https://other-instance.manus.space"
             value={peerApiUrl}
             onChange={(e) => setPeerApiUrl(e.target.value)}
@@ -585,7 +596,7 @@ function SyncConfigCard() {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="peerApiKey">同步密钥</Label>
-            <Button variant="ghost" size="sm" onClick={generateRandomKey} className="gap-1 h-7 text-xs">
+            <Button variant="ghost" size="sm" onClick={generateRandomKey} disabled={!canManageSync} className="gap-1 h-7 text-xs">
               <KeyRound className="h-3 w-3" /> 生成随机密钥
             </Button>
           </div>
@@ -593,6 +604,7 @@ function SyncConfigCard() {
             <div className="relative flex-1">
               <Input
                 id="peerApiKey"
+                disabled={!canManageSync}
                 type={showKey ? "text" : "password"}
                 placeholder="输入同步认证密钥，或点击右侧生成"
                 value={peerApiKey}
@@ -618,14 +630,14 @@ function SyncConfigCard() {
 
         {/* 操作按钮 */}
         <div className="flex gap-3 pt-2">
-          <Button onClick={handleSave} disabled={updateConfig.isPending} className="gap-2">
+          <Button onClick={handleSave} disabled={!canManageSync || updateConfig.isPending} className="gap-2">
             {updateConfig.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             保存配置
           </Button>
           <Button
             variant="outline"
             onClick={handleTest}
-            disabled={testConnection.isPending || !peerApiUrl}
+            disabled={!canManageSync || testConnection.isPending || !peerApiUrl}
             className="gap-2"
           >
             {testConnection.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plug className="h-4 w-4" />}
