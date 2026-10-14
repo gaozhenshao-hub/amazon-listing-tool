@@ -1,9 +1,9 @@
 {
   "version": "amazon-fresh-public-reference/1",
   "projection": {
-    "sqlSha256": "d330a73df3419ae5a4a5bc064d31e6596d39bbe4e300febe37e99591eb5824a0",
-    "sourceSha256": "1348efaf7bb30e9c9e262d9ab8c8ca3ffec85428bdaaf9b391f841466988d926",
-    "metadataSha256": "8e216c7c03a26915fb9e8e43d8055f9c61858aca27ca0efd111ab58aff36e0b8",
+    "sqlSha256": "c2ea534b048427e7b3b464dd37ec442524cf5e8dd1ec80fac3e514259957a6aa",
+    "sourceSha256": "7b0b730998509d2ba70dc7b771bf5a6233146c58b35d2ef83bf028945a2c1a6f",
+    "metadataSha256": "50b58633c982736e9210c9182cd7cbe38d5187c6dc7cb96624d85cfb38b4e85f",
     "tableCount": 287,
     "ddlCount": 406
   },

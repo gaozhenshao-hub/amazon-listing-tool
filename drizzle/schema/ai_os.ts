@@ -115,7 +115,7 @@ export const aiStorageObjects = mysqlTable("ai_storage_objects", {
   id: int("id").autoincrement().primaryKey(),
   workspaceId: int("workspaceId"),
   storageId: varchar("storageId", { length: 80 }).unique().notNull(),
-  provider: mysqlEnum("provider", ["forge", "s3", "local", "external"]).default("forge").notNull(),
+  provider: mysqlEnum("provider", ["forge", "s3", "oss", "local", "external"]).default("forge").notNull(),
   bucket: varchar("bucket", { length: 128 }),
   objectKey: text("objectKey").notNull(),
   storageUri: text("storageUri").notNull(),

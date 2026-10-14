@@ -16,15 +16,15 @@
     },
     {
       "path": "drizzle/schema/ops.ts",
-      "sha256": "4fd0d94cb4fc9c165b68d6612d9201de0ff981506a13b10d68a0ef685e729d10",
-      "bytes": 127680
+      "sha256": "cdc63f7557ee0c086a120501bb24c8ad897a24540ec2fb00813f7b5f05a11d11",
+      "bytes": 127693
     }
   ],
   "projection": {
     "mode": "source-derived-projection",
-    "sqlSha256": "d330a73df3419ae5a4a5bc064d31e6596d39bbe4e300febe37e99591eb5824a0",
-    "metadataSha256": "8e216c7c03a26915fb9e8e43d8055f9c61858aca27ca0efd111ab58aff36e0b8",
-    "sourceSha256": "1348efaf7bb30e9c9e262d9ab8c8ca3ffec85428bdaaf9b391f841466988d926"
+    "sqlSha256": "c2ea534b048427e7b3b464dd37ec442524cf5e8dd1ec80fac3e514259957a6aa",
+    "metadataSha256": "50b58633c982736e9210c9182cd7cbe38d5187c6dc7cb96624d85cfb38b4e85f",
+    "sourceSha256": "7b0b730998509d2ba70dc7b771bf5a6233146c58b35d2ef83bf028945a2c1a6f"
   },
   "requiredGuard": {
     "wholeDatabaseInitiallyEmpty": true,

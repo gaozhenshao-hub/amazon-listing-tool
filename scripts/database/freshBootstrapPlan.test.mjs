@@ -55,9 +55,9 @@ test("bootstrap SQL has strict prerequisite/table/26-column operations without s
   assert.equal(bundle.manifest.skillSeeds.find(seed => seed.slug.endsWith("gallery.summary")).version, 2);
 });
 
-test("fresh-only source alignment changes exactly 17 definitions, adds six plain columns and renames two status columns", () => {
+test("fresh-only source alignment changes exactly 22 definitions, adds six plain columns and renames two status columns", () => {
   const sql = bundle.plan.find(item => item.fileName === "bootstrap/0004_current_source_alignment.sql").sql.replace(/^--.*$/gm, "");
-  assert.equal([...sql.matchAll(/MODIFY COLUMN/g)].length, 17);
+  assert.equal([...sql.matchAll(/MODIFY COLUMN/g)].length, 22);
   assert.equal([...sql.matchAll(/ADD COLUMN/g)].length, 6);
   assert.equal([...sql.matchAll(/CHANGE COLUMN/g)].length, 2);
   assert.doesNotMatch(sql, /\b(?:AFTER|FIRST|DROP TABLE|IF EXISTS|IF NOT EXISTS|INSERT|UPDATE|DELETE)\b/i);
@@ -89,6 +89,36 @@ test("fresh-only source alignment changes exactly 17 definitions, adds six plain
       "ADD",
       "production_time_days",
       "int DEFAULT 15"
+    ],
+    [
+      "kb_image_sets",
+      "MODIFY",
+      "workspaceId",
+      "int NOT NULL"
+    ],
+    [
+      "kb_listing_copywriting",
+      "MODIFY",
+      "workspaceId",
+      "int NOT NULL"
+    ],
+    [
+      "kb_operation_skills",
+      "MODIFY",
+      "workspaceId",
+      "int NOT NULL"
+    ],
+    [
+      "kb_product_innovations",
+      "MODIFY",
+      "workspaceId",
+      "int NOT NULL"
+    ],
+    [
+      "kb_videos",
+      "MODIFY",
+      "workspaceId",
+      "int NOT NULL"
     ],
     [
       "knowledge_claim_ledgers",

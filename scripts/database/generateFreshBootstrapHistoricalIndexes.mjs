@@ -10,9 +10,9 @@ import { splitPublicStatements } from "./freshBootstrapReference.mjs";
 
 export function buildHistoricalIndexInventory({ projectionSql, metadataBytes, bundle = loadFreshBootstrapPlan() }) {
   const projectionMetadata=JSON.parse(metadataBytes);
-  must(sha256(projectionSql)==='d330a73df3419ae5a4a5bc064d31e6596d39bbe4e300febe37e99591eb5824a0'
-   && sha256(metadataBytes)==='8e216c7c03a26915fb9e8e43d8055f9c61858aca27ca0efd111ab58aff36e0b8'
-   && projectionMetadata.sourceSha256==='1348efaf7bb30e9c9e262d9ab8c8ca3ffec85428bdaaf9b391f841466988d926', 'public projection pins changed');
+  must(sha256(projectionSql)==='c2ea534b048427e7b3b464dd37ec442524cf5e8dd1ec80fac3e514259957a6aa'
+   && sha256(metadataBytes)==='50b58633c982736e9210c9182cd7cbe38d5187c6dc7cb96624d85cfb38b4e85f'
+   && projectionMetadata.sourceSha256==='7b0b730998509d2ba70dc7b771bf5a6233146c58b35d2ef83bf028945a2c1a6f', 'public projection pins changed');
   function must(x,message){if(!x)throw Error(message);}
   function splitList(text){
     const out=[];let start=0,depth=0,quote=null;

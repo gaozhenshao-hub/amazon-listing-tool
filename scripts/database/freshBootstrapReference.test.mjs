@@ -9,10 +9,11 @@ import { fileURLToPath } from "node:url";
 import { DDL_CATALOG } from "../integration/exportProductionDdl.mjs";
 import { exportSourceProjection } from "../integration/sourceProjection.mjs";
 import { loadFreshBootstrapPlan, readPublicFile, sha256, fingerprint } from "./freshBootstrapPlan.mjs";
-import { deriveHistoricalColumnOrder } from "./freshBootstrapColumnOrder.mjs";
+import { deriveHistoricalColumnOrder, replayPublicColumnOrder } from "./freshBootstrapColumnOrder.mjs";
 import { REFERENCE_VERSION, SOURCE_MANIFEST_PATH, SOURCE_MANIFEST_SHA256, INDEX_MANIFEST_PATH, INDEX_MANIFEST_SHA256, splitPublicStatements,
   splitDefinitionList, parseIndexColumns, referenceIndexDefinitions, referencePrimaryKeys,
-  describeReferenceStatement, extractLedgerCreate, deriveCommentOverlay, deriveColumnAddition, assembleReferenceDraft, assembleReferencePlan, reorderCreateColumns, loadFreshReferencePlan, validateReferenceCatalog,
+  describeReferenceStatement, extractLedgerCreate, deriveCommentOverlay, deriveColumnAddition, assembleReferenceDraft, assembleReferencePlan, reorderCreateColumns,
+  tracePublicColumnDeclarations, deriveCurrentTimestampDefault, loadFreshReferencePlan, validateReferenceCatalog,
   constructReferenceContract, parseArguments, runPublicSourceReference, main } from "./freshBootstrapReference.mjs";
 
 const repo = fileURLToPath(new URL("../../", import.meta.url)).replace(/\/$/, ""), clone = value => structuredClone(value);
@@ -72,6 +73,111 @@ test("historical ordinal replay never silently drops a current-source field and 
   assert.ok(result.indexOf("`note`") < result.indexOf("`id`"));
   assert.ok(result.includes("`status` enum('a,b','c') DEFAULT 'a,b'")); assert.ok(result.includes("`note` text COMMENT 'retain me'"));
   assert.throws(() => reorderCreateColumns(sql, ["id", "status"]), code("REFERENCE_REORDER_COLUMN_COVERAGE_CHANGED"));
+});
+
+test("temporal defaults map only a same-precision final public CURRENT_TIMESTAMP token and preserve all other bytes", () => {
+  for (const type of ["timestamp", "datetime", "timestamp(6)", "datetime(3)"]) {
+    const precision = /\(([0-6])\)/.exec(type)?.[1] ?? "";
+    const projectedDefinition = `\`createdAt\` ${type} NOT NULL DEFAULT (now(${precision})) ON UPDATE CURRENT_TIMESTAMP${precision ? `(${precision})` : ""} COMMENT 'DEFAULT (now()) remains literal'`;
+    const sourceToken = `CURRENT_TIMESTAMP${precision ? `(${precision})` : ""}`;
+    const sourceDefinition = `\`createdAt\` ${type} NOT NULL DEFAULT ${sourceToken} ON UPDATE ${sourceToken} COMMENT 'historical comment' AFTER \`id\``;
+    const result = deriveCurrentTimestampDefault({ projectedDefinition, sourceDefinition });
+    assert.equal(result.changed, true); assert.equal(result.precision, Number(precision || 0));
+    assert.equal(result.definition, projectedDefinition.replace(`DEFAULT (now(${precision}))`, `DEFAULT ${sourceToken}`));
+    assert.ok(result.definition.endsWith("COMMENT 'DEFAULT (now()) remains literal'"));
+  }
+  for (const sourceDefinition of ["`createdAt` timestamp DEFAULT (now())", "`createdAt` timestamp DEFAULT NULL",
+    "`createdAt` timestamp NULL COMMENT 'DEFAULT CURRENT_TIMESTAMP'", "`createdAt` timestamp DEFAULT '2000-01-01 00:00:00'"]) {
+    const projectedDefinition = "`createdAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP";
+    assert.deepEqual(deriveCurrentTimestampDefault({ projectedDefinition, sourceDefinition }), { definition: projectedDefinition, changed: false });
+  }
+  for (const projectedDefinition of ["`note` varchar(100) DEFAULT '(now())' COMMENT 'DEFAULT CURRENT_TIMESTAMP'",
+    "`createdAt` timestamp DEFAULT CURRENT_TIMESTAMP", "`createdAt` timestamp NULL COMMENT 'DEFAULT (now())'"]) {
+    assert.deepEqual(deriveCurrentTimestampDefault({ projectedDefinition, sourceDefinition: "`createdAt` timestamp DEFAULT CURRENT_TIMESTAMP" }),
+      { definition: projectedDefinition, changed: false });
+  }
+});
+
+test("temporal default precision, renamed columns, extra expressions and unsupported spellings fail closed", () => {
+  const projectedDefinition = "`createdAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP";
+  for (const sourceDefinition of ["`createdAt` datetime DEFAULT CURRENT_TIMESTAMP", "`other` timestamp DEFAULT CURRENT_TIMESTAMP",
+    "`createdAt` timestamp(3) DEFAULT CURRENT_TIMESTAMP(3)", "`createdAt` timestamp DEFAULT CURRENT_TIMESTAMP(6)"])
+    assert.throws(() => deriveCurrentTimestampDefault({ projectedDefinition, sourceDefinition }), code("REFERENCE_TEMPORAL_PRECISION_OR_TYPE_CHANGED"));
+  for (const sourceDefinition of ["`createdAt` timestamp DEFAULT CURRENT_TIMESTAMP(7)", "`createdAt` timestamp DEFAULT CURRENT_TIMESTAMP(foo)"])
+    assert.throws(() => deriveCurrentTimestampDefault({ projectedDefinition, sourceDefinition }), code("REFERENCE_TEMPORAL_CURRENT_TIMESTAMP_UNSUPPORTED"));
+  for (const sourceDefinition of ["`createdAt` timestamp DEFAULT CURRENT_TIMESTAMP + INTERVAL 1 DAY", "`createdAt` timestamp DEFAULT CURRENT_TIMESTAMP AT TIME ZONE 'UTC'"])
+    assert.throws(() => deriveCurrentTimestampDefault({ projectedDefinition, sourceDefinition }), code("REFERENCE_TEMPORAL_EXPRESSION_TAIL_UNSUPPORTED"));
+  assert.throws(() => deriveCurrentTimestampDefault({ projectedDefinition: projectedDefinition.replace("(now())", "(now(7))"),
+    sourceDefinition: "`createdAt` timestamp DEFAULT CURRENT_TIMESTAMP" }), code("REFERENCE_TEMPORAL_NOW_UNSUPPORTED"));
+  assert.throws(() => deriveCurrentTimestampDefault({ projectedDefinition: `${projectedDefinition} DEFAULT NULL`,
+    sourceDefinition: "`createdAt` timestamp DEFAULT CURRENT_TIMESTAMP" }), code("REFERENCE_TEMPORAL_MULTIPLE_DEFAULTS"));
+});
+
+test("last effective public declarations trace CREATE, repeated no-op CREATE, MODIFY, CHANGE, ADD, DROP and recreate with exact pins", () => {
+  const sql = ["CREATE TABLE `x` (`id` int, `created` timestamp DEFAULT CURRENT_TIMESTAMP, `keep` timestamp DEFAULT (now()))",
+    "CREATE TABLE IF NOT EXISTS `x` (`id` int, `created` timestamp DEFAULT (now()), `keep` timestamp DEFAULT CURRENT_TIMESTAMP)",
+    "ALTER TABLE x MODIFY created timestamp(3) DEFAULT CURRENT_TIMESTAMP(3) AFTER id, ADD COLUMN transient datetime DEFAULT CURRENT_TIMESTAMP FIRST",
+    "ALTER TABLE x CHANGE created renamed timestamp(3) DEFAULT CURRENT_TIMESTAMP(3), DROP COLUMN transient",
+    "CREATE TABLE y (id int, stamp timestamp DEFAULT CURRENT_TIMESTAMP)", "DROP TABLE y",
+    "CREATE TABLE y (id int, stamp timestamp DEFAULT (now()))"].join(";\n") + ";";
+  const entry = { fileName: "0000_fixture.sql", sql, checksum: sha256(sql) }, pin = { path: `drizzle/${entry.fileName}`, sha256: entry.checksum };
+  const bundle = { plan: [entry], planSha256: fingerprint([[entry.fileName, entry.checksum]]),
+    manifest: { sources: [pin] }, sourcesSha256: fingerprint([pin]) };
+  const order = { ...replayPublicColumnOrder({ plan: [entry], pins: new Map([[pin.path, pin.sha256]]), splitPublicStatements, splitDefinitionList }),
+    bootstrapPlanSha256: bundle.planSha256, bootstrapSourcesSha256: bundle.sourcesSha256 };
+  const traced = tracePublicColumnDeclarations({ bundle, order });
+  assert.equal(traced.get("x").get("keep").definition, "`keep` timestamp DEFAULT (now())");
+  assert.equal(traced.get("x").get("keep").source.statementIndex, 0);
+  const renamed = traced.get("x").get("renamed");
+  assert.equal(renamed.definition, "renamed timestamp(3) DEFAULT CURRENT_TIMESTAMP(3)");
+  assert.equal(renamed.source.statementIndex, 3); assert.equal(renamed.source.sha256, entry.checksum);
+  assert.equal(renamed.source.statementSha256, sha256(splitPublicStatements(sql)[3]));
+  assert.equal(renamed.declarationSha256, sha256(renamed.definition));
+  assert.equal(traced.get("x").has("created"), false); assert.equal(traced.get("x").has("transient"), false);
+  assert.equal(traced.get("y").get("stamp").definition, "stamp timestamp DEFAULT (now())");
+  const modified = clone(bundle); modified.plan[0].sql += "\n";
+  assert.throws(() => tracePublicColumnDeclarations({ bundle: modified, order }), code("REFERENCE_DEFAULT_SOURCE_CHANGED"));
+  const invalid = clone(order); invalid.operations[0].statementIndex = 999;
+  assert.throws(() => tracePublicColumnDeclarations({ bundle, order: invalid }), code("REFERENCE_DEFAULT_STATEMENT_MISSING"));
+  invalid.operations[0].statementIndex = 0; invalid.operations[0].operation = "execute-arbitrary";
+  assert.throws(() => tracePublicColumnDeclarations({ bundle, order: invalid }));
+});
+
+test("complete source default overlay leaves genuinely published now() defaults intact and binds every change to final source", () => {
+  const create = name => fullPlan.statements.find(item => item.kind === "create-table" && item.tableName === name).sql;
+  assert.match(create("users"), /`createdAt` timestamp NOT NULL DEFAULT \(now\(\)\)/);
+  assert.match(create("users"), /`updatedAt` timestamp NOT NULL DEFAULT \(now\(\)\) ON UPDATE CURRENT_TIMESTAMP/);
+  assert.match(create("ai_jobs"), /`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP/);
+  assert.match(create("ai_jobs"), /`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP/);
+  assert.equal(fullPlan.temporalDefaultOverlays.length, 176);
+  assert.equal(new Set(fullPlan.temporalDefaultOverlays.map(item => item.tableName)).size, 97);
+  assert.deepEqual(fullPlan.temporalDefaultOverlays, fullPlan.derivation.temporalDefaultOverlays);
+  assert.equal(fullPlan.temporalDefaultOverlays.some(item => item.tableName === "users" || item.tableName.startsWith("off_")), false);
+  const order = deriveHistoricalColumnOrder({ bundle: input.bundle,
+    expectedColumns: Object.fromEntries(Object.entries(fullPlan.expectedColumns).filter(([name]) => name !== "app_schema_migrations")), splitPublicStatements, splitDefinitionList });
+  const traced = tracePublicColumnDeclarations({ bundle: input.bundle, order });
+  for (const item of fullPlan.temporalDefaultOverlays) {
+    const last = traced.get(item.tableName).get(item.columnName);
+    assert.deepEqual(item.source, last.source); assert.equal(item.declarationSha256, sha256(last.definition));
+    assert.equal(item.to.toUpperCase(), "CURRENT_TIMESTAMP"); assert.equal(item.from.toLowerCase(), "(now())");
+    assert.equal(item.precision, 0); assert.match(item.projectedDeclarationSha256, /^[a-f0-9]{64}$/);
+    assert.match(item.referenceDeclarationSha256, /^[a-f0-9]{64}$/);
+  }
+  // Reverse only each evidenced default token and recover the exact prior
+  // reference CREATE. This checks every other byte, not just semantic fields.
+  const draft = assembleReferenceDraft(input);
+  for (const statement of fullPlan.statements) {
+    const original = draft.statements.find(item => item.kind === statement.kind && item.tableName === statement.tableName && item.sql === statement.sql)
+      ?? draft.statements.find(item => item.kind === "create-table" && item.tableName === statement.tableName);
+    if (statement.kind !== "create-table" || statement.tableName === "app_schema_migrations") continue;
+    let reversed = statement.sql;
+    for (const overlay of fullPlan.temporalDefaultOverlays.filter(item => item.tableName === statement.tableName)) {
+      const line = reversed.split("\n").find(value => value.trimStart().startsWith(`\`${overlay.columnName}\` `));
+      assert.ok(line); assert.ok(line.includes(`DEFAULT ${overlay.to}`));
+      reversed = reversed.replace(line, line.replace(`DEFAULT ${overlay.to}`, `DEFAULT ${overlay.from}`));
+    }
+    assert.equal(reversed, reorderCreateColumns(original.sql, fullPlan.expectedColumns[statement.tableName]));
+  }
 });
 
 test("all 903 public keys plus ledger keys retain exact names, uniqueness, order, prefix, direction and the reviewed 43 aliases", () => {

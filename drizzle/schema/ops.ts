@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, tinyint, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 import { currentOpsWorkspaceId } from "../../server/domains/ops/workspaceContext";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -115,7 +115,7 @@ export const opsLingxingSyncSchedules = mysqlTable("ops_lingxing_sync_schedules"
   timezone: varchar("timezone", { length: 64 }).notNull().default("Asia/Shanghai"),
   cronExpression: varchar("cron_expression", { length: 64 }).notNull(),
   enabled: int("enabled").notNull().default(0),
-  autoApply: int("auto_apply").notNull().default(0),
+  autoApply: tinyint("auto_apply").notNull().default(0),
   scheduleCronTaskUid: varchar("schedule_cron_task_uid", { length: 65 }),
   ownerUserId: int("owner_user_id").notNull(),
   lastRunKey: varchar("last_run_key", { length: 80 }),

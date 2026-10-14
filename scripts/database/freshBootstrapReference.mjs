@@ -15,10 +15,10 @@ import { deriveHistoricalColumnOrder } from "./freshBootstrapColumnOrder.mjs";
 export const REFERENCE_VERSION = "amazon-fresh-public-reference/1";
 export const SOURCE_MANIFEST_PATH = "scripts/database/freshBootstrapReference.sources.json";
 export const INDEX_MANIFEST_PATH = "scripts/database/freshBootstrapHistoricalIndexes.sources.json";
-export const INDEX_MANIFEST_SHA256 = "5f5a8671959a6b139201e46db6f76e9088be06ad9bf58460eedfabb37f92a253";
-const INDEX_JSON_SHA256 = "9f83c2ba462aa95670470cd3dfe801d0d088fffc0a4c07719d3acf1ce55546f0";
-export const SOURCE_MANIFEST_SHA256 = "b07f13e62960212d5a3d6b6bb2a88cb295999722bd445b22f9ec0c600c0c5714";
-const CONFIG_JSON_SHA256 = "0c75154f2d2226611f89e26bd7bf668cdf80ae3d73680cd6d541100c9be03455";
+export const INDEX_MANIFEST_SHA256 = "3a0debfa05e99fb4b0b21bb2ae1cbda2d8616324186b5d5e3e752ea5570d5e84";
+const INDEX_JSON_SHA256 = "5b0b0fdb86b8a1879381a7d91af91faee774cf54b340002a37d2c3f95c8c4f9a";
+export const SOURCE_MANIFEST_SHA256 = "d916af921bcb9ea797f88d32f077bdddd3e78f5a4053f9a65f2c3c02979d43c7";
+const CONFIG_JSON_SHA256 = "4697f7e0e0826bc6acb647db0a161feb7a5885eb18bbeb94927e02f55e4213b5";
 const schemaPattern = /^amazon_rehearsal_[a-f0-9]{16}_synthetic$/;
 const identifier = "[A-Za-z_][A-Za-z0-9_]*";
 const quotedIdentifier = `(?:\`(${identifier})\`|(${identifier}))`;
@@ -466,21 +466,152 @@ export function reorderCreateColumns(sql, expectedOrder) {
   insist(isDeepStrictEqual(columnNames(result), order), "REFERENCE_REORDER_COLUMNS_INVALID"); return result;
 }
 
+// Consume the already strict, source-pinned column replay. This records the last
+// effective declaration; a repeated IF NOT EXISTS CREATE is deliberately a no-op.
+// Nothing here executes historical SQL or takes a candidate catalog as input.
+export function tracePublicColumnDeclarations({ bundle, order }) {
+  insist(order.bootstrapPlanSha256 === bundle.planSha256 && order.bootstrapSourcesSha256 === bundle.sourcesSha256,
+    "REFERENCE_DEFAULT_REPLAY_IDENTITY_CHANGED");
+  const entries = new Map(bundle.plan.map(item => [`drizzle/${item.fileName}`, item]));
+  const pins = new Map(bundle.manifest.sources.map(item => [item.path, item.sha256]));
+  const tables = new Map(), cache = new Map();
+  const named = definition => {
+    const match = new RegExp(`^${quotedIdentifier}\\s+`).exec(definition);
+    insist(match, "REFERENCE_DEFAULT_DECLARATION_INVALID"); return match[1] ?? match[2];
+  };
+  for (const operation of order.operations) {
+    const entry = entries.get(operation.path);
+    insist(entry && sha256(entry.sql) === entry.checksum && pins.get(operation.path) === entry.checksum,
+      "REFERENCE_DEFAULT_SOURCE_CHANGED");
+    if (!cache.has(operation.path)) cache.set(operation.path, splitPublicStatements(entry.sql));
+    const raw = cache.get(operation.path)[operation.statementIndex];
+    insist(typeof raw === "string", "REFERENCE_DEFAULT_STATEMENT_MISSING");
+    let sql = raw.trim();
+    while (sql.startsWith("--> statement-breakpoint")) {
+      insist(/^--> statement-breakpoint(?:\r?\n|$)/.test(sql), "REFERENCE_DEFAULT_BREAKPOINT_INVALID");
+      sql = sql.slice("--> statement-breakpoint".length).trim();
+    }
+    const source = { path: operation.path, sha256: entry.checksum, statementIndex: operation.statementIndex,
+      statementSha256: sha256(raw), executableStatementSha256: sha256(sql) };
+    const declaration = definition => ({ definition, declarationSha256: sha256(definition), source });
+    if (operation.operation === "create") {
+      const match = createPattern.exec(sql);
+      insist(match && (match[1] ?? match[2]) === operation.tableName, "REFERENCE_DEFAULT_CREATE_CHANGED");
+      if (tables.has(operation.tableName)) {
+        insist(/^CREATE TABLE IF NOT EXISTS\b/i.test(sql), "REFERENCE_DEFAULT_RECREATE_UNREVIEWED"); continue;
+      }
+      const columns = new Map();
+      for (const definition of createParts(sql).definitions) {
+        if (/^(?:CONSTRAINT|PRIMARY KEY|UNIQUE|KEY|INDEX|FOREIGN KEY|CHECK)\b/i.test(definition)) continue;
+        const name = named(definition); insist(!columns.has(name), "REFERENCE_DEFAULT_DUPLICATE_COLUMN"); columns.set(name, declaration(definition));
+      }
+      tables.set(operation.tableName, columns); continue;
+    }
+    const table = tables.get(operation.tableName); insist(table, "REFERENCE_DEFAULT_TABLE_MISSING");
+    if (operation.operation === "drop-table") { tables.delete(operation.tableName); continue; }
+    if (["drop", "conditional-drop-noop"].includes(operation.operation)) { table.delete(operation.column); continue; }
+    insist(["add", "modify", "change"].includes(operation.operation), "REFERENCE_DEFAULT_OPERATION_UNSUPPORTED");
+    if (operation.path === "drizzle/0112c_ad_dsp_product_link.sql") {
+      // The column replay has already validated this sole literal dynamic ADD.
+      // Retain its literal provenance instead of interpreting any dynamic SQL.
+      const literal = "ALTER TABLE `ad_dsp_reports` ADD COLUMN `product_id` int NULL AFTER `upload_id`";
+      insist(entry.checksum === "4768df2f3f0c3219ec53494aa1a1ee462baba7891caee7624328424f6284a83c"
+        && operation.operation === "add" && operation.tableName === "ad_dsp_reports" && operation.column === "product_id"
+        && operation.statementIndex === 1 && sql.includes(`'${literal}'`), "REFERENCE_DEFAULT_DYNAMIC_UNREVIEWED");
+      sql = literal;
+    }
+    const alter = new RegExp(`^ALTER TABLE\\s+${quotedIdentifier}\\s+([\\s\\S]+)$`, "i").exec(sql);
+    insist(alter && (alter[1] ?? alter[2]) === operation.tableName, "REFERENCE_DEFAULT_ALTER_CHANGED");
+    const candidates = [];
+    for (const clause of splitDefinitionList(alter[3])) {
+      let match, definition;
+      if (operation.operation === "change") {
+        match = new RegExp(`^CHANGE(?: COLUMN)?\\s+${quotedIdentifier}\\s+([\\s\\S]+)$`, "i").exec(clause);
+        if (match && (match[1] ?? match[2]) === operation.oldColumn) definition = match[3];
+      } else {
+        match = new RegExp(`^${operation.operation === "add" ? "ADD" : "MODIFY"}\\s+(?:COLUMN\\s+)?([\\s\\S]+)$`, "i").exec(clause);
+        if (match && !/^(?:CONSTRAINT|PRIMARY KEY|UNIQUE|KEY|INDEX|FOREIGN KEY|CHECK)\b/i.test(match[1])) definition = match[1];
+      }
+      if (definition && named(definition) === operation.column) candidates.push(definition);
+    }
+    insist(candidates.length === 1, "REFERENCE_DEFAULT_DECLARATION_AMBIGUOUS");
+    if (operation.operation !== "add") insist(table.has(operation.oldColumn ?? operation.column), "REFERENCE_DEFAULT_COLUMN_MISSING");
+    else insist(!table.has(operation.column), "REFERENCE_DEFAULT_DUPLICATE_COLUMN");
+    if (operation.oldColumn) table.delete(operation.oldColumn);
+    table.set(operation.column, declaration(candidates[0]));
+  }
+  insist(isDeepStrictEqual([...tables.keys()].sort(), order.tables.map(item => item.name).sort()), "REFERENCE_DEFAULT_TABLE_SET_CHANGED");
+  for (const item of order.tables) insist(isDeepStrictEqual([...tables.get(item.name).keys()].sort(), [...item.columns].sort()),
+    "REFERENCE_DEFAULT_COLUMN_SET_CHANGED");
+  return tables;
+}
+
+// A narrowly source-derived spelling correction, not a catalog normalizer.
+// All bytes except the default expression token survive, including ON UPDATE,
+// nullability, comments and temporal precision. Quoted text cannot trigger it.
+export function deriveCurrentTimestampDefault({ projectedDefinition, sourceDefinition }) {
+  const temporal = definition => {
+    const match = new RegExp(`^${quotedIdentifier}\\s+(timestamp|datetime)(?:\\(([0-6])\\))?(?=\\s|$)`, "i").exec(definition);
+    return match && { name: match[1] ?? match[2], type: match[3].toLowerCase(), precision: Number(match[4] ?? 0) };
+  };
+  const mask = definition => definition.replace(/'(?:\\.|''|[^'\\])*'|"(?:\\.|""|[^"\\])*"|`(?:``|[^`])*`/g, value => " ".repeat(value.length));
+  const projected = temporal(projectedDefinition), original = { definition: projectedDefinition, changed: false };
+  if (!projected) return original;
+  const projectedText = mask(projectedDefinition), sourceText = mask(sourceDefinition);
+  const defaults = [...projectedText.matchAll(/\bDEFAULT\b/gi)];
+  insist(defaults.length <= 1, "REFERENCE_TEMPORAL_MULTIPLE_DEFAULTS");
+  const now = /\bDEFAULT\s+(\(\s*now\(\s*([0-6]?)\s*\)\s*\))(?=\s|$)/i.exec(projectedText);
+  if (!now) {
+    insist(!/\bDEFAULT\s+\(?\s*now\b/i.test(projectedText), "REFERENCE_TEMPORAL_NOW_UNSUPPORTED"); return original;
+  }
+  const sourceDefaults = [...sourceText.matchAll(/\bDEFAULT\b/gi)];
+  insist(sourceDefaults.length <= 1, "REFERENCE_TEMPORAL_MULTIPLE_DEFAULTS");
+  if (!/\bDEFAULT\s+CURRENT_TIMESTAMP\b/i.test(sourceText)) return original;
+  const current = /\bDEFAULT\s+(CURRENT_TIMESTAMP(?:\(\s*([0-6]?)\s*\))?)(?=\s|$)/i.exec(sourceText);
+  insist(current, "REFERENCE_TEMPORAL_CURRENT_TIMESTAMP_UNSUPPORTED");
+  const permittedTail = value => /^(?:\s*$|\s+(?:ON UPDATE\b|COMMENT\b|NOT NULL\b|NULL\b|AFTER\b|FIRST\b))/i.test(value);
+  insist(permittedTail(projectedText.slice(now.index + now[0].length))
+    && permittedTail(sourceText.slice(current.index + current[0].length)), "REFERENCE_TEMPORAL_EXPRESSION_TAIL_UNSUPPORTED");
+  const source = temporal(sourceDefinition);
+  insist(source && source.name === projected.name && source.type === projected.type
+    && source.precision === projected.precision && Number(now[2] || 0) === projected.precision
+    && Number(current[2] || 0) === source.precision, "REFERENCE_TEMPORAL_PRECISION_OR_TYPE_CHANGED");
+  const start = now.index + now[0].length - now[1].length;
+  const sourceStart = current.index + current[0].length - current[1].length;
+  const from = projectedDefinition.slice(start, start + now[1].length), to = sourceDefinition.slice(sourceStart, sourceStart + current[1].length);
+  return { definition: projectedDefinition.slice(0, start) + to + projectedDefinition.slice(start + from.length),
+    changed: true, from, to, type: projected.type, precision: projected.precision };
+}
+
 export function assembleReferencePlan(input) {
   const draft = assembleReferenceDraft(input);
   const expectedColumns = Object.fromEntries(Object.entries(draft.expectedColumns).filter(([name]) => name !== "app_schema_migrations"));
   const order = deriveHistoricalColumnOrder({ bundle: input.bundle, expectedColumns, splitPublicStatements, splitDefinitionList });
   const historical = new Map(order.tables.map(item => [item.name, item]));
+  const declarations = tracePublicColumnDeclarations({ bundle: input.bundle, order }), temporalDefaultOverlays = [];
   const mergeSources = (existing, additional) => [...new Map([...existing, ...additional].map(item => [item.path, item])).values()];
   const statements = draft.statements.map(item => {
     if (item.kind !== "create-table" || item.tableName === "app_schema_migrations") return item;
-    const table = historical.get(item.tableName), sql = reorderCreateColumns(item.sql, table.columns);
+    const table = historical.get(item.tableName), parts = createParts(reorderCreateColumns(item.sql, table.columns));
+    const definitions = parts.definitions.map(definition => {
+      const match = new RegExp(`^${quotedIdentifier}\\s+(?:timestamp|datetime)(?=\\s|\\()`, "i").exec(definition);
+      if (!match) return definition;
+      const columnName = match[1] ?? match[2], source = declarations.get(item.tableName)?.get(columnName);
+      insist(source, "REFERENCE_TEMPORAL_FINAL_SOURCE_MISSING");
+      const derived = deriveCurrentTimestampDefault({ projectedDefinition: definition, sourceDefinition: source.definition });
+      if (derived.changed) temporalDefaultOverlays.push({ tableName: item.tableName, columnName, from: derived.from, to: derived.to,
+        type: derived.type, precision: derived.precision, source: source.source, declarationSha256: source.declarationSha256,
+        projectedDeclarationSha256: sha256(definition), referenceDeclarationSha256: sha256(derived.definition) });
+      return derived.definition;
+    });
+    const sql = `${parts.prefix}\n${definitions.map(value => `  ${value}`).join(",\n")}\n${parts.suffix}`;
     return { ...item, sql, sha256: sha256(sql), sources: mergeSources(item.sources, table.sources) };
   });
   return { ...draft, ordinalValidated: true, statements, statementPlanSha256: fingerprint(statements),
     expectedColumns: { ...Object.fromEntries(order.tables.map(item => [item.name, item.columns])), app_schema_migrations: draft.expectedColumns.app_schema_migrations },
-    columnOrderSha256: fingerprint(order), columnOrderChangedTables: order.changedOrderTableNames,
+    columnOrderSha256: fingerprint(order), columnOrderChangedTables: order.changedOrderTableNames, temporalDefaultOverlays,
     derivation: { ...draft.derivation, columnOrderSha256: fingerprint(order), columnOrderChangedTables: order.changedOrderTableNames,
+      temporalDefaultOverlays,
       tables: draft.derivation.tables.map(item => ({ ...item, sources: mergeSources(item.sources, historical.get(item.name)?.sources ?? []) })) } };
 }
 

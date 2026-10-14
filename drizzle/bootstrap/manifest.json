@@ -1,12 +1,12 @@
 {
   "version": "amazon-fresh-bootstrap/1",
   "executionScope": "local-or-ci-only",
-  "planSha256": "fc95f0e9a3a390cb3d760f5434e79f328deade75d1b002acec1e48fc241782b3",
+  "planSha256": "a9ef4347a1ad1dfe99b90bfa9a04b10ceb479a1e0a220dbd05634241685fa2f0",
   "structureContract": {
     "path": "drizzle/bootstrap/structure-contract.json",
-    "sha256": "3d95821c31a137f320f3014fbe4badbb65cce8c94b84464384c95caaf2beec3a"
+    "sha256": "9323498df4ba3c0619a439f1bcf5fba5369cfe9651b1cd657e3ac2de21b2cd8c"
   },
-  "structureContractAdmission": "Generate independent reference from pinned public schema plus reviewed historical indexes/FKs/collations; bind full 13-collection catalog JSON and SHA256 here. Candidate bootstrap output is never its own expected oracle.",
+  "structureContractAdmission": "Approved independent public source reference: isolated Linux MySQL8.0.46 case0 executed785DDL with303emptytables; full13collection catalog and176 source-proven default tokens verified. No candidate bootstrap database or production export used. Formal fresh initialization/repeat/failure/recovery still requires actual acceptance.",
   "requiredBusinessTables": [
     "acquisition_asset_candidates",
     "acquisition_confirmed_snapshots",
@@ -1032,7 +1032,7 @@
     },
     {
       "path": "drizzle/bootstrap/0004_current_source_alignment.sql",
-      "sha256": "fd857432bc118f6b46a4c2df975ef60aaac23ab103632940076018e7c9d78930"
+      "sha256": "28ade43a46bd7d519b40c717d8ff6c230baf91b9a5ff832b56d9a15444112a4e"
     },
     {
       "path": "drizzle/bootstrap/0005_offsite_empty_table_alignment.sql",
@@ -1040,7 +1040,7 @@
     },
     {
       "path": "drizzle/bootstrap/0005_offsite_empty_table_alignment.sources.json",
-      "sha256": "669ac115c6eb07433a9d4d803ff67964078532c032b45459edfb32d99e3ba29a"
+      "sha256": "aa2e056d4002fb32054ea32b609cb207cea4cf61f6b2a9f926128e5b825e398f"
     },
     {
       "path": "drizzle/dsp_migration.sql",
@@ -1068,7 +1068,7 @@
     },
     {
       "path": "drizzle/schema/ai_os.ts",
-      "sha256": "99aff033bb3b6e3ffe518df787ae2fde017f8afcdeb97c458e26001a580d7f2d"
+      "sha256": "f6210f7c976ccb2e7a50adac5ba32158b746c172131f2a5a0817b4fe9b5e8e2a"
     },
     {
       "path": "drizzle/schema/auth.ts",
@@ -1076,7 +1076,7 @@
     },
     {
       "path": "drizzle/schema/image.ts",
-      "sha256": "e4193191d60764c4e551ca7a983ce43126c67a42c6d97fe89b502fdde25528dd"
+      "sha256": "c5f6d3aea1b65ccf41bb81c0de8a7bf04ecc5dd32db28fd035c6cb8c39b64dea"
     },
     {
       "path": "drizzle/schema/imageAssetPolicies.ts",
@@ -1112,11 +1112,11 @@
     },
     {
       "path": "drizzle/schema/ops.ts",
-      "sha256": "4fd0d94cb4fc9c165b68d6612d9201de0ff981506a13b10d68a0ef685e729d10"
+      "sha256": "cdc63f7557ee0c086a120501bb24c8ad897a24540ec2fb00813f7b5f05a11d11"
     },
     {
       "path": "drizzle/schema/project.ts",
-      "sha256": "1be91fa4afb4981125d3f3a327aef40bace6318bbe45a6035e90d77519c41a5e"
+      "sha256": "efa41fec78824cae1ce0473b41566b80701606ce58b5286702159b1dfa4e3611"
     },
     {
       "path": "drizzle/schema/skillDistillation.ts",

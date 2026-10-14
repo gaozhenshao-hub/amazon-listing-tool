@@ -11,6 +11,13 @@ ALTER TABLE `ops_ad_mcp_product_daily_facts` MODIFY COLUMN `workspaceId` int;
 ALTER TABLE `ops_ad_mcp_fact_revisions` MODIFY COLUMN `workspaceId` int;
 ALTER TABLE `ops_asin_lifecycle_statuses` MODIFY COLUMN `workspaceId` int;
 ALTER TABLE `ops_monthly_financial_profits` MODIFY COLUMN `workspaceId` int;
+-- These five KB definitions require an explicit workspace. Do not retain the
+-- old SQL DEFAULT 1, which could silently assign a missing workspace.
+ALTER TABLE `kb_image_sets` MODIFY COLUMN `workspaceId` int NOT NULL;
+ALTER TABLE `kb_listing_copywriting` MODIFY COLUMN `workspaceId` int NOT NULL;
+ALTER TABLE `kb_operation_skills` MODIFY COLUMN `workspaceId` int NOT NULL;
+ALTER TABLE `kb_product_innovations` MODIFY COLUMN `workspaceId` int NOT NULL;
+ALTER TABLE `kb_videos` MODIFY COLUMN `workspaceId` int NOT NULL;
 ALTER TABLE `ad_keyword_weekly` MODIFY COLUMN `brand_search_count` int;
 ALTER TABLE `off_influencers` MODIFY COLUMN `handle` varchar(200) NOT NULL;
 ALTER TABLE `lingxing_product_weekly`

@@ -132,7 +132,7 @@ test("complete 178-file public plan accounts for 302 tables and every historical
   const bundle = loadFreshBootstrapPlan();
   const result = replayPublicColumnOrder({ ...splitters, plan: bundle.plan, pins: new Map(bundle.manifest.sources.map(item => [item.path, item.sha256])) });
   assert.deepEqual(result.tables.map(item => item.name).sort(), [...bundle.manifest.requiredBusinessTables].sort());
-  assert.equal(bundle.plan.length, 178); assert.equal(result.tables.length, 302); assert.equal(result.operations.length, 1054);
+  assert.equal(bundle.plan.length, 178); assert.equal(result.tables.length, 302); assert.equal(result.operations.length, 1059);
   assert.equal(result.tables.reduce((count, item) => count + item.columns.length, 0), 5477);
   const table = name => result.tables.find(item => item.name === name);
   assert.deepEqual(table("listings").columns.slice(-3), ["itemHighlights", "itemHighlightsCn", "agentRunId"]);
