@@ -3,6 +3,7 @@ import {
   ASSISTANT_CONFIGURATION_MAX_BYTES, AssistantConfigurationSchema,
   AssistantHistoryInputSchema, AssistantRollbackInputSchema, AssistantSaveInputSchema,
   AssistantScopePreconditionSchema,
+  AssistantRulesSaveInputSchema, AssistantRulesRestoreInputSchema,
 } from "../shared/assistantConfigurations";
 
 const binding = () => ({ slug: "listing.example", version: 2, manifestSha256: "a".repeat(64), enabled: false, trigger: "", instructions: "" });
@@ -47,5 +48,22 @@ describe("assistant saved configuration contracts", () => {
       expect(AssistantScopePreconditionSchema.safeParse({ expectedWorkspaceId }).success).toBe(false);
     }
     expect(AssistantScopePreconditionSchema.safeParse({ expectedWorkspaceId: 7, workspaceId: 99 }).success).toBe(false);
+  });
+  it("rules-only requests preserve array boundaries and reject hidden configuration or legacy proposal writes", () => {
+    const input = { expectedWorkspaceId: 7, agentKey: "tagger", expectedRevision: 2, rules: ["一条规则\n第二段", "另一条\r\n示例"] };
+    expect(AssistantRulesSaveInputSchema.parse(input).rules).toEqual(input.rules);
+    expect(AssistantRulesSaveInputSchema.parse({ ...input, rules: [] }).rules).toEqual([]);
+    for (const extra of [{ modelSlug: "changed" }, { config: config() }, { workspaceId: 99 }, { proposalId: "unowned-proposal" }]) {
+      expect(AssistantRulesSaveInputSchema.safeParse({ ...input, ...extra }).success).toBe(false);
+    }
+    expect(AssistantRulesSaveInputSchema.safeParse({ ...input, expectedRevision: undefined }).success).toBe(false);
+    expect(AssistantRulesSaveInputSchema.safeParse({ ...input, rules: [{ instruction: "not a string rule" }] }).success).toBe(false);
+  });
+  it("rules-only restore requires a saved target and the current configuration revision", () => {
+    const input = { expectedWorkspaceId: 7, agentKey: "tagger", expectedRevision: 4, targetRevision: 1 };
+    expect(AssistantRulesRestoreInputSchema.parse(input)).toEqual(input);
+    expect(AssistantRulesRestoreInputSchema.safeParse({ ...input, targetRevision: 0 }).success).toBe(false);
+    expect(AssistantRulesRestoreInputSchema.safeParse({ ...input, expectedRevision: undefined }).success).toBe(false);
+    expect(AssistantRulesRestoreInputSchema.safeParse({ ...input, rules: ["cannot bypass the stored target"] }).success).toBe(false);
   });
 });

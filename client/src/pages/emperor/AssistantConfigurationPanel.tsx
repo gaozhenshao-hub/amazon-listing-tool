@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AGENT_LIBRARY_ROLES, type AgentLibraryKey } from "@shared/agentLibraryContracts";
+import { AGENT_LIBRARY_LIMITS, AGENT_LIBRARY_ROLES, type AgentLibraryKey } from "@shared/agentLibraryContracts";
 import {
   AssistantConfigurationSchema, type AssistantConfiguration, type AssistantConfigurationMetadata,
   type AssistantConfigurationRead as AssistantConfigurationDetail, type AssistantConfigurationOptions,
@@ -10,7 +10,7 @@ export type {
   AssistantConfigurationOptions, AssistantConfigurationHistory,
 } from "@shared/assistantConfigurations";
 import {
-  assistantConfigurationDraftIsStale, createAssistantConfigurationDraft, createAssistantConfigurationRequestGuard,
+  assistantConfigurationDraftIsStale, assistantRuleTextFromTextarea, createAssistantConfigurationDraft, createAssistantConfigurationRequestGuard,
   discardAssistantConfigurationDraft, observeAssistantConfiguration, parseAssistantConfigurationDraft,
   updateAssistantConfigurationDraft, type AssistantConfigurationDraft, type AssistantConfigurationRecord,
 } from "./assistantConfigurationDraft";
@@ -81,7 +81,7 @@ function HistoricalPreview({ revision, config }: { revision: number; config: Ass
     <p>{config.name} · 配置设为{config.enabled ? "启用" : "停用"}（尚未接入业务执行） · {config.modelSlug || "继承业务模型"}</p>
     <p className="whitespace-pre-wrap">{config.description || "无描述"}</p>
     <p className="text-slate-300">长期指令</p><pre className="whitespace-pre-wrap break-words font-sans">{config.instructions || "未设置"}</pre>
-    <p className="text-slate-300">长期规则</p><ul className="list-inside list-disc space-y-1">{config.rules.map((rule, index) => <li key={index}>{rule}</li>)}</ul>
+    <p className="text-slate-300">长期规则</p><ul className="list-inside list-disc space-y-1">{config.rules.map((rule, index) => <li key={index} className="whitespace-pre-wrap break-words">{rule}</li>)}</ul>
     {config.rules.length === 0 && <p>未设置规则</p>}
     <p className="text-slate-300">Skill 绑定</p>{config.skills.map(skill => <div key={skill.slug} className="rounded border border-white/10 p-2"><p className="break-all">{skill.slug} · v{skill.version} · 摘要 {skill.manifestSha256.slice(0, 12)} · 绑定设为{skill.enabled ? "启用" : "停用"}（尚未接入业务执行）</p><p className="whitespace-pre-wrap">触发条件：{skill.trigger || "未设置"}</p><p className="whitespace-pre-wrap">补充指令：{skill.instructions || "未设置"}</p></div>)}
     {config.skills.length === 0 && <p>未绑定 Skill</p>}
@@ -182,7 +182,16 @@ function ConfigurationEditor(props: AssistantConfigurationPanelProps) {
         </select></label>
         <p className="text-xs leading-6 text-slate-500">模型来自服务器当前可用目录，能力以 capabilityTags 为准。{requiresVision ? "此角色需要服务器已验证的 vision 能力。" : ""}模型留空时继承业务策略；独立对话仍未配置。</p>
         <label className="block text-xs text-slate-400">长期指令<textarea aria-label="长期指令" className={inputClass} rows={6} maxLength={12000} value={draft.form.instructions} onChange={event => edit({ instructions: event.target.value })} /></label>
-        <label className="block text-xs text-slate-400">长期规则（每行一条，空行忽略）<textarea aria-label="长期规则" className={inputClass} rows={5} value={draft.form.rulesText} onChange={event => edit({ rulesText: event.target.value })} /></label>
+        <section aria-label="逐条长期规则" className="space-y-3">
+          <h4 className="text-sm text-slate-200">长期规则 · {draft.form.rules.length} 条</h4>
+          <p className="text-xs leading-6 text-slate-500">每个输入框为一条规则，框内换行和序号保留。最多 {AGENT_LIBRARY_LIMITS.rules} 条，每条 {AGENT_LIBRARY_LIMITS.ruleCharacters} 字符，总计 {AGENT_LIBRARY_LIMITS.totalRuleCharacters} 字符。空白条目需填写或明确移除。</p>
+          {draft.form.rules.length === 0 && <p className="text-xs text-slate-400">当前草稿没有长期规则；保存空列表将明确清空本助手的长期规则。</p>}
+          <ol className="space-y-3">{draft.form.rules.map((rule, index) => <li key={index} className="rounded-lg border border-white/10 p-3">
+            <label className="block text-xs text-slate-400">规则 {index + 1}<textarea aria-label={`长期规则 ${index + 1}`} className={inputClass} rows={3} maxLength={AGENT_LIBRARY_LIMITS.ruleCharacters} value={rule.replace(/\r\n/g, "\n")} onChange={event => edit({ rules: draft.form.rules.map((item, position) => position === index ? assistantRuleTextFromTextarea(item, event.target.value) : item) })} /></label>
+            <button type="button" className={`${buttonClass} mt-2`} onClick={() => edit({ rules: draft.form.rules.filter((_, position) => position !== index) })}>移除规则 {index + 1}</button>
+          </li>)}</ol>
+          <button type="button" className={buttonClass} disabled={draft.form.rules.length >= AGENT_LIBRARY_LIMITS.rules} onClick={() => edit({ rules: [...draft.form.rules, ""] })}>添加长期规则</button>
+        </section>
         <div className="space-y-3"><h4 className="text-sm text-slate-200">Skill 绑定</h4><p className="text-xs leading-6 text-slate-500">只能选择服务器返回的当前已发布版本。版本号与内容摘要一并固定，目录刷新不会自动改写草稿。</p>
           {draft.form.skills.map((binding, index) => {
             const exact = available?.skills.some(skill => skill.slug === binding.slug && skill.version === binding.version && skill.manifestSha256 === binding.manifestSha256);
@@ -217,7 +226,7 @@ function ConfigurationEditor(props: AssistantConfigurationPanelProps) {
     <section aria-label="配置版本历史" className="border-t border-white/10 pt-4"><h4 className="text-sm text-slate-200">配置版本历史</h4><p className="mt-2 text-xs leading-6 text-slate-500">恢复历史配置会创建新版本，并按当前版本号检查并发修改。存在草稿时请先保存或明确放弃。</p>
       <ReadNotice state={history} noun="版本历史" scopeKey={scopeKey} />
       {versions?.versions.length === 0 && <p className="mt-3 text-xs text-slate-500">暂无已保存版本。</p>}
-      <ul className="mt-3 space-y-2">{versions?.versions.map(version => <li key={version.revision} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 p-3 text-xs"><span className="text-slate-400">版本 {version.revision} · {version.createdAt}{version.sourceRevision !== null ? ` · 从版本 ${version.sourceRevision} 恢复` : ""}</span><span className="flex gap-2">{props.onReadVersion && <button type="button" className={buttonClass} disabled={!!pending} onClick={() => void readVersion(version.revision)}>查看版本 {version.revision}</button>}<button type="button" className={buttonClass} disabled={!writesEnabled || !draft || draft.dirty || stale || !!pending || checked.kind !== "ready" || draft.expectedRevision === version.revision} onClick={() => void restore(version.revision)}>恢复版本 {version.revision} 为新版本</button></span></li>)}</ul>
+      <ul className="mt-3 space-y-2">{versions?.versions.map(version => <li key={version.revision} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 p-3 text-xs"><span className="text-slate-400">版本 {version.revision} · {version.createdAt}{version.sourceRevision !== null ? ` · 关联来源版本 ${version.sourceRevision}（完整内容以本版配置为准）` : ""}</span><span className="flex gap-2">{props.onReadVersion && <button type="button" className={buttonClass} disabled={!!pending} onClick={() => void readVersion(version.revision)}>查看版本 {version.revision}</button>}<button type="button" className={buttonClass} disabled={!writesEnabled || !draft || draft.dirty || stale || !!pending || checked.kind !== "ready" || draft.expectedRevision === version.revision} onClick={() => void restore(version.revision)}>恢复版本 {version.revision} 为新版本</button></span></li>)}</ul>
       {versions?.nextBeforeRevision != null && props.onLoadHistoryPage && <button type="button" className={`${buttonClass} mt-3`} disabled={!!pending} onClick={() => props.onLoadHistoryPage?.(versions.nextBeforeRevision!)}>读取更早版本</button>}
       {preview && <HistoricalPreview revision={preview.revision} config={preview.config} />}
     </section>

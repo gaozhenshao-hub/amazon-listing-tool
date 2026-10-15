@@ -1,7 +1,7 @@
 import { z } from "zod";
 import {
   AGENT_LIBRARY_LIMITS, AgentLibraryConfigSchema, AgentLibraryKeySchema,
-  AgentLibrarySkillBindingSchema, type AgentLibraryKey,
+  AgentLibraryRulesSchema, AgentLibrarySkillBindingSchema, type AgentLibraryKey,
 } from "./agentLibraryContracts";
 
 /** Configuration only: importing this module never enables or dispatches an Agent. */
@@ -46,6 +46,20 @@ export const AssistantHistoryInputSchema = AssistantKeyInputSchema.extend({
   limit: z.number().int().min(1).max(20).default(10),
 }).strict();
 
+// Rules-only compatibility uses the SAME whole-configuration revision. A rule
+// change invalidates stale model/configuration drafts, and vice versa.
+export const AssistantRulesSaveInputSchema = AssistantKeyInputSchema.extend({
+  expectedRevision: AssistantExpectedRevisionSchema,
+  rules: AgentLibraryRulesSchema,
+}).strict();
+export const AssistantRulesRestoreInputSchema = AssistantKeyInputSchema.extend({
+  expectedRevision: AssistantExpectedRevisionSchema,
+  targetRevision: AssistantRevisionSchema,
+}).strict();
+export type AssistantRulesMemoryRead =
+  | { status: "not-configured"; agentKey: AgentLibraryKey }
+  | { status: "configured"; agentKey: AgentLibraryKey; revision: number; rules: string[]; updatedAt: string };
+
 export type AssistantConfigurationRecord = {
   agentKey: AgentLibraryKey;
   revision: number;
@@ -79,6 +93,7 @@ export type AssistantConfigurationOptions = {
   writeEnabled: boolean;
 };
 export type AssistantConfigurationHistoryItem = {
+  // Related restore source; rules-only restore does not roll back other fields.
   revision: number; sourceRevision: number | null; createdAt: string; createdBy: number;
 };
 export type AssistantConfigurationHistory = {

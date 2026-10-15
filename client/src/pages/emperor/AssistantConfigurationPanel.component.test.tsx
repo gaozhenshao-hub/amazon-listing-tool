@@ -4,6 +4,7 @@ import { TextEncoder } from "node:util";
 import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AGENT_LIBRARY_LIMITS } from "@shared/agentLibraryContracts";
 import type { AssistantConfigurationRecord } from "@shared/assistantConfigurations";
 import AssistantConfigurationPanel, { type AssistantConfigurationPanelProps, type AssistantConfigurationReadState } from "./AssistantConfigurationPanel";
 import { emptyAssistantConfiguration } from "./assistantConfigurationDraft";
@@ -114,6 +115,89 @@ describe("AssistantConfigurationPanel", () => {
     expect(await screen.findByText("已保存版本 2。")).toBeVisible();
   });
 
+  it("preserves multiline rule arrays exactly when changing the model, name and instructions", async () => {
+    const saved = record();
+    const rules = ["1. 第一条\n  - 说明  保留空格", "2. 第二条\r\n  - 条件\r\n  - 反例"];
+    saved.config.rules = rules;
+    const input = props({ writesEnabled: true, detail: ready({ status: "configured", record: saved }) });
+    render(<AssistantConfigurationPanel {...input} />);
+    expect(screen.getByRole("textbox", { name: "长期规则 1" })).toHaveValue(rules[0]);
+    expect(screen.getByRole("textbox", { name: "长期规则 2" })).toHaveValue(rules[1].replace(/\r\n/g, "\n"));
+    fireEvent.change(screen.getByRole("combobox", { name: "专属模型" }), { target: { value: "plain" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "助手名称" }), { target: { value: "只改名称" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "长期指令" }), { target: { value: "只改指令" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存配置为新版本" }));
+    await waitFor(() => expect(input.onSave).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ name: "只改名称", modelSlug: "plain", instructions: "只改指令", rules }) })));
+  });
+
+  it("edits one multiline rule while preserving its separators and all other rule entries", async () => {
+    const saved = record();
+    saved.config.rules = ["1. 保留第一条\n  - 原有空格", "2. 原第二条\r\n  条件一\r\n  条件二"];
+    const input = props({ writesEnabled: true, detail: ready({ status: "configured", record: saved }) });
+    render(<AssistantConfigurationPanel {...input} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "长期规则 2" }), { target: { value: "2. 修改第二条\n  条件一\n  条件二" } });
+    expect(screen.getByRole("textbox", { name: "长期规则 1" })).toHaveValue(saved.config.rules[0]);
+    fireEvent.click(screen.getByRole("button", { name: "保存配置为新版本" }));
+    await waitFor(() => expect(input.onSave).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ rules: [saved.config.rules[0], "2. 修改第二条\r\n  条件一\r\n  条件二"] }) })));
+  });
+
+  it("requires explicit completion or removal of blank rules and saves an explicitly cleared list", async () => {
+    const input = props({ writesEnabled: true });
+    render(<AssistantConfigurationPanel {...input} />);
+    fireEvent.click(screen.getByRole("button", { name: "添加长期规则" }));
+    expect(screen.getByRole("textbox", { name: "长期规则 2" })).toHaveValue("");
+    expect(screen.getByRole("button", { name: "保存配置为新版本" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "保存配置为新版本" }));
+    expect(input.onSave).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole("textbox", { name: "长期规则 2" }), { target: { value: "新增规则\n  一条规则内的说明" } });
+    fireEvent.click(screen.getByRole("button", { name: "移除规则 1" }));
+    expect(screen.getByRole("textbox", { name: "长期规则 1" })).toHaveValue("新增规则\n  一条规则内的说明");
+    expect(screen.queryByRole("textbox", { name: "长期规则 2" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "移除规则 1" }));
+    expect(screen.queryByRole("textbox", { name: /^长期规则 / })).not.toBeInTheDocument();
+    expect(screen.getByText(/保存空列表将明确清空本助手的长期规则/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "保存配置为新版本" }));
+    await waitFor(() => expect(input.onSave).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ rules: [] }) })));
+  });
+
+  it("retains dirty multiline rules during a newer refetch until the draft is explicitly discarded", () => {
+    const saved = record();
+    saved.config.rules = ["旧规则\r\n  说明", "第二条保留规则"];
+    const input = props({ writesEnabled: true, detail: ready({ status: "configured", record: saved }) });
+    const { rerender } = render(<AssistantConfigurationPanel {...input} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "长期规则 1" }), { target: { value: "我的草稿规则\n  继续说明" } });
+    const refreshed = record(2);
+    refreshed.config.rules = ["服务器最新规则\n  服务端说明"];
+    rerender(<AssistantConfigurationPanel {...input} detail={ready({ status: "configured", record: refreshed })} />);
+    expect(screen.getByText(/服务器已有版本 2/)).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "长期规则 1" })).toHaveValue("我的草稿规则\n  继续说明");
+    expect(screen.getByRole("textbox", { name: "长期规则 2" })).toHaveValue("第二条保留规则");
+    expect(screen.getByRole("button", { name: "保存配置为新版本" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "放弃草稿并载入最新已读配置" }));
+    expect(screen.getByRole("textbox", { name: "长期规则 1" })).toHaveValue(refreshed.config.rules[0]);
+    expect(screen.queryByRole("textbox", { name: "长期规则 2" })).not.toBeInTheDocument();
+  });
+
+  it("blocks overlong rules using shared limits without sending a save request", () => {
+    const input = props({ writesEnabled: true });
+    render(<AssistantConfigurationPanel {...input} />);
+    const rule = screen.getByRole("textbox", { name: "长期规则 1" });
+    expect(rule).toHaveAttribute("maxlength", String(AGENT_LIBRARY_LIMITS.ruleCharacters));
+    fireEvent.change(rule, { target: { value: "x".repeat(AGENT_LIBRARY_LIMITS.ruleCharacters + 1) } });
+    expect(screen.getByText(/配置校验未通过/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "保存配置为新版本" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "保存配置为新版本" }));
+    expect(input.onSave).not.toHaveBeenCalled();
+  });
+
+  it("stops adding rules at the shared count limit", () => {
+    const saved = record();
+    saved.config.rules = Array.from({ length: AGENT_LIBRARY_LIMITS.rules }, (_, index) => `规则 ${index + 1}`);
+    render(<AssistantConfigurationPanel {...props({ writesEnabled: true, detail: ready({ status: "configured", record: saved }) })} />);
+    expect(screen.getAllByRole("textbox", { name: /^长期规则 / })).toHaveLength(AGENT_LIBRARY_LIMITS.rules);
+    expect(screen.getByRole("button", { name: "添加长期规则" })).toBeDisabled();
+  });
+
   it("keeps conflicts and subsequent read errors from discarding unsaved instructions", async () => {
     const input = props({ writesEnabled: true, onSave: vi.fn(async () => { throw new Error("ASSISTANT_REVISION_CONFLICT"); }) });
     const { rerender } = render(<AssistantConfigurationPanel {...input} />);
@@ -170,7 +254,9 @@ describe("AssistantConfigurationPanel", () => {
   });
 
   it("previews history through its callback and restores into a new revision with CAS", async () => {
-    const input = props({ writesEnabled: true, detail: ready({ status: "configured", record: record(2) }) });
+    const restored = record(3);
+    restored.config.rules = ["历史多行规则\r\n  继续说明", "历史第二条\n  说明"];
+    const input = props({ writesEnabled: true, detail: ready({ status: "configured", record: record(2) }), onRestore: vi.fn(async () => restored) });
     render(<StrictMode><AssistantConfigurationPanel {...input} /></StrictMode>);
     fireEvent.click(screen.getByRole("button", { name: "查看版本 1" }));
     expect(await screen.findByRole("region", { name: "版本 1 配置预览" })).toHaveTextContent("配置设为停用（尚未接入业务执行）");
@@ -181,6 +267,16 @@ describe("AssistantConfigurationPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "恢复版本 1 为新版本" }));
     await waitFor(() => expect(input.onRestore).toHaveBeenCalledWith({ agentKey: "listing", expectedRevision: 2, targetRevision: 1 }));
     expect(await screen.findByText("已将历史版本 1 恢复为新版本 3。")).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "长期规则 1" })).toHaveValue(restored.config.rules[0].replace(/\r\n/g, "\n"));
+    expect(screen.getByRole("textbox", { name: "长期规则 2" })).toHaveValue(restored.config.rules[1]);
+  });
+
+  it("does not describe a rules-only source link as restoring every historical field", () => {
+    const input = props({ history: ready({ versions: [{ revision: 3, sourceRevision: 1, createdAt: record().updatedAt, createdBy: 1 }], nextBeforeRevision: null }) });
+    render(<AssistantConfigurationPanel {...input} />);
+    expect(screen.getByText(/关联来源版本 1（完整内容以本版配置为准）/)).toBeVisible();
+    expect(screen.queryByText(/从版本 1 恢复/)).not.toBeInTheDocument();
+    expect(input.onRestore).not.toHaveBeenCalled();
   });
 
   it("blocks malformed full configuration without rendering a fabricated empty editor", () => {

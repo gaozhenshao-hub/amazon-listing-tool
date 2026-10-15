@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { TRPCError } from "@trpc/server";
 import { AGENT_LIBRARY_ROLES, AgentLibraryKeySchema, type AgentLibraryKey } from "../../../../shared/agentLibraryContracts";
-import { ASSISTANT_CONFIGURATION_MAX_REVISION, AssistantConfigurationSchema, type AssistantConfiguration, type AssistantConfigurationMetadata, type AssistantConfigurationRead, type AssistantConfigurationOptions, type AssistantConfigurationHistory, type AssistantConfigurationVersion } from "../../../../shared/assistantConfigurations";
+import { ASSISTANT_CONFIGURATION_MAX_REVISION, AssistantConfigurationSchema, AssistantRulesSaveInputSchema, AssistantRulesRestoreInputSchema, type AssistantConfiguration, type AssistantConfigurationMetadata, type AssistantConfigurationRead, type AssistantConfigurationOptions, type AssistantConfigurationHistory, type AssistantConfigurationVersion, type AssistantRulesMemoryRead } from "../../../../shared/assistantConfigurations";
 import { createAssistantConfigurationRepository, type AssistantConfigurationRepository, type ConfigurationSession } from "../repositories/assistantConfigurations";
 
 const MAX_REVISION = ASSISTANT_CONFIGURATION_MAX_REVISION;
@@ -110,11 +110,23 @@ async function validateBindings(session: ConfigurationSession, workspaceId: numb
   }
 }
 
+type ConfigurationChange = { agentKey: AgentLibraryKey; expectedRevision: number } & (
+  | { mode: "configuration"; config: AssistantConfiguration }
+  | { mode: "configuration-restore"; targetRevision: number }
+  | { mode: "rules"; rules: string[] }
+  | { mode: "rules-restore"; targetRevision: number }
+);
+const rulesSaveRequest = AssistantRulesSaveInputSchema.omit({ expectedWorkspaceId: true });
+const rulesRestoreRequest = AssistantRulesRestoreInputSchema.omit({ expectedWorkspaceId: true });
+function rulesProjection(record: NonNullable<Awaited<ReturnType<typeof current>>>): AssistantRulesMemoryRead {
+  return { status: "configured", agentKey: record.agentKey, revision: record.revision, rules: record.config.rules, updatedAt: record.updatedAt };
+}
+
 export function createAssistantConfigurationService(
   repository: AssistantConfigurationRepository = createAssistantConfigurationRepository(),
   writesEnabled: () => boolean = () => process.env.ENABLE_ASSISTANT_CONFIGURATION_WRITES === "true",
 ) {
-  async function save(workspaceId: number, userId: number, input: { agentKey: AgentLibraryKey; expectedRevision: number; config?: AssistantConfiguration; targetRevision?: number }) {
+  async function save(workspaceId: number, userId: number, input: ConfigurationChange) {
     if (writesEnabled() !== true) refuse("ASSISTANT_WRITES_DISABLED");
     workspace(workspaceId); integer(userId); key(input.agentKey);
     const expected = integer(input.expectedRevision, 0);
@@ -123,12 +135,26 @@ export function createAssistantConfigurationService(
       const before = await current(session, workspaceId, input.agentKey);
       if ((before?.revision ?? 0) !== expected) refuse("ASSISTANT_REVISION_CONFLICT", "CONFLICT");
       let config: AssistantConfiguration, sourceRevision: number | null = null;
-      if (input.targetRevision !== undefined) {
+      if (input.mode === "configuration-restore" || input.mode === "rules-restore") {
         sourceRevision = integer(input.targetRevision);
         if (!before || sourceRevision > before.revision) refuse("ASSISTANT_VERSION_NOT_FOUND", "NOT_FOUND");
         const rows = await session.version(workspaceId, input.agentKey, sourceRevision);
         if (!rows.length) refuse("ASSISTANT_VERSION_NOT_FOUND", "NOT_FOUND");
-        config = historyRow(exactlyOne(rows), workspaceId, input.agentKey).config;
+        const historical = historyRow(exactlyOne(rows), workspaceId, input.agentKey).config;
+        // A rules restore is not a full configuration rollback: merge into the
+        // locked CURRENT record, never into a stale client draft or old model.
+        config = input.mode === "rules-restore"
+          ? configuration({ ...before.config, rules: historical.rules }) : historical;
+      } else if (input.mode === "rules") {
+        // Explicit first write only. Reading an unconfigured role never seeds it
+        // and a rules-only first save cannot enable an Agent or choose a model.
+        const base: AssistantConfiguration = before?.config ?? {
+          name: AGENT_LIBRARY_ROLES.find(role => role.key === input.agentKey)!.name,
+          description: "", enabled: false, modelSlug: "", instructions: "", rules: [], skills: [],
+        };
+        // Validate the merged FULL payload (including the 128KiB budget), not
+        // merely the incoming rules. Existing binding checks remain mandatory.
+        config = configuration({ ...base, rules: input.rules });
       } else config = configuration(input.config);
       await validateBindings(session, workspaceId, input.agentKey, config);
       const text = canonicalConfigurationJson(config), hash = configurationHash(config), revision = expected + 1;
@@ -173,6 +199,13 @@ export function createAssistantConfigurationService(
         return record ? { status: "configured" as const, record } : { status: "not-configured" as const, agentKey };
       });
     },
+    async getRules(workspaceId: number, agentKey: AgentLibraryKey): Promise<AssistantRulesMemoryRead> {
+      workspace(workspaceId); key(agentKey);
+      return repository.read(workspaceId, async session => {
+        const record = await current(session, workspaceId, agentKey);
+        return record ? rulesProjection(record) : { status: "not-configured", agentKey };
+      });
+    },
     async options(workspaceId: number): Promise<AssistantConfigurationOptions> {
       workspace(workspaceId);
       return repository.read(workspaceId, async session => ({ writeEnabled: writesEnabled() === true, models: (await session.models(workspaceId)).map(row => model(row, workspaceId)), skills: (await session.skills(workspaceId)).map(row => skill(row, workspaceId)) }));
@@ -204,8 +237,20 @@ export function createAssistantConfigurationService(
         return version;
       });
     },
-    save(workspaceId: number, userId: number, input: { agentKey: AgentLibraryKey; expectedRevision: number; config: AssistantConfiguration }) { return save(workspaceId, userId, input); },
-    rollback(workspaceId: number, userId: number, input: { agentKey: AgentLibraryKey; expectedRevision: number; targetRevision: number }) { return save(workspaceId, userId, input); },
+    save(workspaceId: number, userId: number, input: { agentKey: AgentLibraryKey; expectedRevision: number; config: AssistantConfiguration }) { return save(workspaceId, userId, { ...input, mode: "configuration" }); },
+    rollback(workspaceId: number, userId: number, input: { agentKey: AgentLibraryKey; expectedRevision: number; targetRevision: number }) { return save(workspaceId, userId, { ...input, mode: "configuration-restore" }); },
+    async saveRules(workspaceId: number, userId: number, input: { agentKey: AgentLibraryKey; expectedRevision: number; rules: string[] }): Promise<AssistantRulesMemoryRead> {
+      if (writesEnabled() !== true) refuse("ASSISTANT_WRITES_DISABLED");
+      const parsed = rulesSaveRequest.safeParse(input);
+      if (!parsed.success) refuse("ASSISTANT_RULES_INVALID", "BAD_REQUEST");
+      return rulesProjection(await save(workspaceId, userId, { ...parsed.data, mode: "rules" }));
+    },
+    async restoreRules(workspaceId: number, userId: number, input: { agentKey: AgentLibraryKey; expectedRevision: number; targetRevision: number }): Promise<AssistantRulesMemoryRead> {
+      if (writesEnabled() !== true) refuse("ASSISTANT_WRITES_DISABLED");
+      const parsed = rulesRestoreRequest.safeParse(input);
+      if (!parsed.success) refuse("ASSISTANT_RULES_INVALID", "BAD_REQUEST");
+      return rulesProjection(await save(workspaceId, userId, { ...parsed.data, mode: "rules-restore" }));
+    },
   };
 }
 export const assistantConfigurationService = createAssistantConfigurationService();

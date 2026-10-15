@@ -4,7 +4,7 @@ import {
 } from "@shared/assistantConfigurations";
 export type { AssistantConfigurationRecord } from "@shared/assistantConfigurations";
 
-export type AssistantConfigurationForm = Omit<AssistantConfiguration, "rules"> & { rulesText: string };
+export type AssistantConfigurationForm = AssistantConfiguration;
 export type AssistantConfigurationDraft = {
   agentKey: AgentLibraryKey;
   expectedRevision: number;
@@ -22,8 +22,7 @@ export function emptyAssistantConfiguration(agentKey: AgentLibraryKey): Assistan
 }
 
 function toForm(config: AssistantConfiguration): AssistantConfigurationForm {
-  const { rules, ...fields } = config;
-  return { ...fields, skills: fields.skills.map(skill => ({ ...skill })), rulesText: rules.join("\n") };
+  return { ...config, rules: [...config.rules], skills: config.skills.map(skill => ({ ...skill })) };
 }
 
 export function createAssistantConfigurationDraft(
@@ -63,12 +62,16 @@ export function discardAssistantConfigurationDraft(state: AssistantConfiguration
 }
 
 export function parseAssistantConfigurationDraft(form: AssistantConfigurationForm) {
-  const { rulesText, ...fields } = form;
-  return AssistantConfigurationSchema.safeParse({
-    ...fields,
-    // Blank lines are formatting separators, not empty rules.
-    rules: rulesText.split(/\r?\n/).map(rule => rule.trim()).filter(Boolean),
-  });
+  return AssistantConfigurationSchema.safeParse(form);
+}
+
+/** Native textareas expose LF; retain the edited rule's existing CRLF separators. */
+export function assistantRuleTextFromTextarea(previous: string, value: string): string {
+  if (!previous.includes("\r\n") || value.includes("\r")) return value;
+  const separators = previous.match(/\r\n|\n/g) ?? [];
+  const addedSeparator = separators.every(separator => separator === "\r\n") ? "\r\n" : "\n";
+  let index = 0;
+  return value.replace(/\n/g, () => separators[index++] ?? addedSeparator);
 }
 
 /** Each mounted scope/role owns its callbacks; a later completion cannot cross it. */

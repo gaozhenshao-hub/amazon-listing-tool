@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { AGENT_LIBRARY_KEYS } from "../../../../shared/agentLibraryContracts";
-import { AssistantScopePreconditionSchema, AssistantKeyInputSchema, AssistantSaveInputSchema, AssistantRollbackInputSchema, AssistantHistoryInputSchema, AssistantVersionInputSchema } from "../../../../shared/assistantConfigurations";
+import { AssistantScopePreconditionSchema, AssistantKeyInputSchema, AssistantSaveInputSchema, AssistantRollbackInputSchema, AssistantHistoryInputSchema, AssistantVersionInputSchema, AssistantRulesSaveInputSchema, AssistantRulesRestoreInputSchema } from "../../../../shared/assistantConfigurations";
 import { adminProcedure, protectedProcedure, router } from "../../../_core/trpc";
 import type { TrpcContext } from "../../../_core/context";
 import { actorFromContext, assertResourceAction, workspaceIdFromContext } from "../../../services/securityGovernance";
@@ -27,6 +27,15 @@ export const assistantConfigurationsRouter = router({
     return assistantConfigurationService.listMetadata(workspaceId);
   }),
   get: adminProcedure.input(AssistantKeyInputSchema).query(async ({ ctx, input }) => assistantConfigurationService.get(await authorize(ctx, "update", input.expectedWorkspaceId, input.agentKey), input.agentKey)),
+  getRules: adminProcedure.input(AssistantKeyInputSchema).query(async ({ ctx, input }) => assistantConfigurationService.getRules(await authorize(ctx, "update", input.expectedWorkspaceId, input.agentKey), input.agentKey)),
+  saveRules: adminProcedure.input(AssistantRulesSaveInputSchema).mutation(async ({ ctx, input }) => {
+    const { expectedWorkspaceId, ...request } = input;
+    return assistantConfigurationService.saveRules(await authorize(ctx, "update", expectedWorkspaceId, input.agentKey), ctx.user.id, request);
+  }),
+  restoreRules: adminProcedure.input(AssistantRulesRestoreInputSchema).mutation(async ({ ctx, input }) => {
+    const { expectedWorkspaceId, ...request } = input;
+    return assistantConfigurationService.restoreRules(await authorize(ctx, "update", expectedWorkspaceId, input.agentKey), ctx.user.id, request);
+  }),
   options: adminProcedure.input(AssistantScopePreconditionSchema).query(async ({ ctx, input }) => assistantConfigurationService.options(await authorize(ctx, "update", input.expectedWorkspaceId))),
   history: adminProcedure.input(AssistantHistoryInputSchema)
     .query(async ({ ctx, input }) => {
