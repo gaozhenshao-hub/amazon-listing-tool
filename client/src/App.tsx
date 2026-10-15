@@ -84,6 +84,7 @@ const AcquisitionJobsPage = lazy(() => import("./pages/acquisition/AcquisitionJo
 // ─── Module 3: Operations AI Tools ─────────────────────────────
 const OpsDashboard = lazy(() => import("./pages/ops/OpsDashboard"));
 const OpsInventory = lazy(() => import("./pages/ops/OpsInventory"));
+const OperationsReadOnlyOverview = lazy(() => import("./pages/ops/OperationsReadOnlyOverview"));
 const OpsAds = lazy(() => import("./pages/ops/OpsAds"));
 const OpsProducts = lazy(() => import("./pages/ops/OpsProducts"));
 const OpsProductDetail = lazy(() => import("./pages/ops/OpsProductDetail"));
@@ -252,6 +253,13 @@ function Router() {
         <Route path="/ops/products/import/:source/:parentAsin">{() => <PermissionGuard><OpsProductDetail /></PermissionGuard>}</Route>
         <Route path="/ops/products/:id">{() => <PermissionGuard><OpsProductDetail /></PermissionGuard>}</Route>
         <Route path="/ops/inventory">{() => <PermissionGuard><OpsInventory /></PermissionGuard>}</Route>
+        {MERGED_READONLY_FEATURES_ENABLED && (
+          <Route path="/ops/read-only-overview">{() => (
+            <PermissionGuard moduleId="ops" subModuleId="ops_data_import">
+              <OperationsReadOnlyOverview />
+            </PermissionGuard>
+          )}</Route>
+        )}
         <Route path="/ops/ads">{() => <PermissionGuard><OpsAds /></PermissionGuard>}</Route>
         <Route path="/ops/crawler">{() => <PermissionGuard><OpsCrawlerManager /></PermissionGuard>}</Route>
         <Route path="/ops/shipping/:id">{() => <PermissionGuard><OpsShippingBatchDetail /></PermissionGuard>}</Route>

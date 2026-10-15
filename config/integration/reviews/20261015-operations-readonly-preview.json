@@ -1,0 +1,20 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-operations-readonly-and-local-monthly-preview",
+  "baseline": "0feffb436e8922726c96ebab564c7c44fbb3a759",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanApprovedAcceleratedLocalOrder": true,
+  "changes": "Separate opt-in read-only inventory/cost/manual-financial view and explicitly local, disposable-worker monthly-file preview. Original inventory, product overview, import and replenishment pages remain unchanged.",
+  "permissions": "New route explicitly requires ops/ops_data_import read, including case/trailing-slash router variants. Two existing ops_data.read/workspace queries only; authentication/scoped remount and owned responses avoid prior-identity cache reuse. No new business mutation or permission grant.",
+  "dataBoundaries": "Exact parent/store/country grouping, duplicate/incomplete identities retained, legacy NULL manual financial records separate. Existing API inventory-zero/currency defaults and optional-cost uncertainty are disclosed. No invented monthly details, snapshot completeness, exchange rates or stock valuation.",
+  "filePreview": "File data stays in a bounded disposable browser worker. Source cells, signed exact decimals, missing values, unallocated fees and denominator evidence retained. No file upload, preview-batch persistence, import confirmation, model call or scheduled sync. Unsupported package/formula forms fail explicitly; not a universal spreadsheet parser or OS memory sandbox.",
+  "review": "Root read all new source and actual existing query/middleware contracts. Independent review covered route/UI/worker and parser, and found concrete subtotal/header/formula/container admission defects; initial passes did not prove those boundaries. Exact corrected-source pins, final checks and retained failure history are recorded in the local execution proof.",
+  "verificationScope": "Focused pure and synthetic component tests, scoped lint, production-tsconfig and affected-parser type checks, in-memory changed-source compilation. Actual browser Worker, real ERP fixtures, full integration/release build and database/API acceptance remain separate deferred gates.",
+  "retainedControls": ["K04", "K06", "K09", "K10"],
+  "defaultOff": "VITE_ENABLE_MERGED_READONLY_FEATURES must equal1; build opt-in is not an authorization grant.",
+  "schemaOrDependencyChanges": false,
+  "fullP2Complete": false,
+  "fullP3Complete": false,
+  "productionDeployed": false,
+  "rollback": "Disable the build opt-in or review/revert this isolated local commit. There are no database, imported-fact or uploaded-object changes from this batch."
+}

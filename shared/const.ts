@@ -205,6 +205,7 @@ export const PERMISSION_ROUTE_REGISTRY: Record<string, PermissionRouteRule> = {
   '/ops/products/erp/:source/:parentAsin': { moduleId: 'ops', subModuleId: 'ops_products', enforcement: 'catalog_only' },
   '/ops/products/import/:source/:parentAsin': { moduleId: 'ops', subModuleId: 'ops_products', enforcement: 'catalog_only' },
   '/ops/inventory': { moduleId: 'ops', subModuleId: 'ops_inventory', enforcement: 'catalog_only' },
+  '/ops/read-only-overview': { moduleId: 'ops', subModuleId: 'ops_data_import', enforcement: 'enforced' },
   '/ops/ads': { moduleId: 'ops', subModuleId: 'ops_ads', enforcement: 'catalog_only' },
   '/ops/crawler': { moduleId: 'ops', subModuleId: 'ops_crawler', enforcement: 'catalog_only' },
   '/ops/shipping/:id': { moduleId: 'ops', subModuleId: 'ops_logistics', enforcement: 'catalog_only' },

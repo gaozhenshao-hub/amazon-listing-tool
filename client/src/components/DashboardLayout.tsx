@@ -25,6 +25,7 @@ import {
   History,
   Database,
   DatabaseZap,
+  FileSpreadsheet,
   Gauge,
   Key,
   Target,
@@ -192,6 +193,9 @@ const modules: ModuleDef[] = [
       { icon: ShoppingBag, label: "产品总览", path: "/ops/products" },
       { icon: DatabaseZap, label: "领星同步预览", path: "/ops/lingxing-sync" },
       { icon: Package, label: "库存预警", path: "/ops/inventory" },
+      ...(MERGED_READONLY_FEATURES_ENABLED
+        ? [{ icon: FileSpreadsheet, label: "只读运营对账", path: "/ops/read-only-overview" }]
+        : []),
       { icon: Target, label: "广告优化", path: "/ops/ads" },
       { icon: Activity, label: "广告深度优化", path: "/ops/ad-deep" },
       { icon: Layers, label: "自定义看板", path: "/ops/custom-dashboard" },

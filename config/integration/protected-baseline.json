@@ -26,9 +26,9 @@
         "sha256": "05a4205aecfa3e713f2f29fd91e8e37706727e8d8db0b943cc6b3e44d0cc9bd1"
       },
       "reviewed": {
-        "gitBlobSha1": "e0d03fb50bbfaf22af0adb42ac1b076e8f121b27",
-        "sha256": "69a9454ff377567be8ec1832d45add66678ea74f3b85bc0deb3f75a6f9f17542",
-        "reviewRef": "config/integration/reviews/20261015-agent-library-readonly.json"
+        "gitBlobSha1": "b7bab6d6e557d5d212fe26e39e310c1b1b5607cb",
+        "sha256": "247e15a5d05862a62fe55ee2f6c206ef6c48ee1f2afbed87041ca1e793355799",
+        "reviewRef": "config/integration/reviews/20261015-operations-readonly-preview.json"
       }
     },
     {
