@@ -16,6 +16,10 @@ export const EXCLUDED_TABLES = Object.freeze([
   "image_workflow_snapshot_state_events",
 ].sort());
 const SCHEMA_ENTRY = "drizzle/schema/index.ts";
+export const ASSISTANT_SCHEMA_SOURCE = Object.freeze({
+  path: "drizzle/schema/assistantConfigurations.ts",
+  sha256: "e07c4126be9e5152db9f28ce742291e05290006901ddb37ac2175e06eb66ae2b",
+});
 const WORKSPACE_HELPER = "server/domains/ops/workspaceContext.ts";
 // The only non-schema runtime dependency: AsyncLocalStorage construction and
 // exported helpers, with a type-only cache import. Changes require a new review.
@@ -35,20 +39,32 @@ const fail = code => { throw new ProjectionError(code); };
 // Reject new executable schema constructs rather than importing arbitrary TS.
 // This is a narrow declarative-source admission check, not a hostile-code sandbox.
 export function inspectSchemaModule(source, filename, ts) {
+  // The feature schema adds one CHAR builder and a type-only JSON annotation.
+  // Admit the reviewed whole file, not arbitrary new imports or $type calls.
+  const isAssistant = filename === ASSISTANT_SCHEMA_SOURCE.path;
+  if (isAssistant && sha256(source) !== ASSISTANT_SCHEMA_SOURCE.sha256) fail("ASSISTANT_SCHEMA_REVIEW_REQUIRED");
   const ast = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   if (ast.parseDiagnostics.length) fail("SCHEMA_PARSE_FAILED");
   const dependencies = [], names = new Set();
   const isIndex = filename === SCHEMA_ENTRY;
+  const factoryAllowed = name => ORM_FACTORIES.has(name) || isAssistant && name === "char";
   for (const statement of ast.statements) {
     if (ts.isImportDeclaration(statement)) {
-      if (isIndex || statement.importClause?.isTypeOnly) fail("UNREVIEWED_SCHEMA_IMPORT");
       const moduleName = statement.moduleSpecifier.text;
       const bindings = statement.importClause?.namedBindings;
+      if (statement.importClause?.isTypeOnly) {
+        if (!isAssistant || moduleName !== "../../shared/assistantConfigurations" || statement.importClause.name
+          || !bindings || !ts.isNamedImports(bindings) || bindings.elements.length !== 1
+          || bindings.elements[0].propertyName || bindings.elements[0].name.text !== "AssistantConfiguration") fail("UNREVIEWED_SCHEMA_IMPORT");
+        // Type-only: not a runtime import and not executed by the schema loader.
+        continue;
+      }
+      if (isIndex) fail("UNREVIEWED_SCHEMA_IMPORT");
       if (statement.importClause?.name || !bindings || !ts.isNamedImports(bindings)) fail("UNREVIEWED_SCHEMA_IMPORT");
       for (const binding of bindings.elements) {
         if (binding.propertyName || binding.isTypeOnly) fail("UNREVIEWED_SCHEMA_IMPORT");
         const name = binding.name.text;
-        if (!(moduleName === "drizzle-orm/mysql-core" && ORM_FACTORIES.has(name))
+        if (!(moduleName === "drizzle-orm/mysql-core" && factoryAllowed(name))
           && !(filename === CLAIM_PREFIX_SCHEMA && moduleName === "drizzle-orm" && name === "sql")
           && !(moduleName === "../../server/domains/ops/workspaceContext" && name === "currentOpsWorkspaceId")) fail("UNREVIEWED_SCHEMA_IMPORT");
         names.add(name);
@@ -106,8 +122,17 @@ export function inspectSchemaModule(source, filename, ts) {
       && node.expression.text === "table") return;
     if (ts.isCallExpression(node)) {
       const callee = node.expression;
-      if (ts.isIdentifier(callee) && names.has(callee.text) && ORM_FACTORIES.has(callee.text)) {
+      if (ts.isIdentifier(callee) && names.has(callee.text) && factoryAllowed(callee.text)) {
         node.arguments.forEach(item => expression(item, inTableCallback)); return;
+      }
+      if (isAssistant && ts.isPropertyAccessExpression(callee) && callee.name.text === "$type"
+        && node.arguments.length === 0 && node.typeArguments?.length === 1
+        && ts.isTypeReferenceNode(node.typeArguments[0]) && ts.isIdentifier(node.typeArguments[0].typeName)
+        && node.typeArguments[0].typeName.text === "AssistantConfiguration"
+        && ts.isCallExpression(callee.expression) && ts.isIdentifier(callee.expression.expression)
+        && callee.expression.expression.text === "json" && callee.expression.arguments.length === 1
+        && ts.isStringLiteral(callee.expression.arguments[0]) && callee.expression.arguments[0].text === "config") {
+        return expression(callee.expression, inTableCallback);
       }
       if (ts.isPropertyAccessExpression(callee) && COLUMN_METHODS.has(callee.name.text) && ts.isCallExpression(callee.expression)) {
         expression(callee.expression, inTableCallback);
@@ -295,14 +320,16 @@ export function parseArguments(args) {
   return { repoRoot: options["--repo-root"], outputDirectory: options["--out-dir"] };
 }
 
-export async function exportSourceProjection({ repoRoot, outputDirectory }) {
+/** Reviewed inputs only; never a migration, DB client, or approval factory. */
+export async function loadReviewedProjectionInputs(repoRoot) {
   const root = realpathSync(repoRoot), ownRoot = realpathSync(new URL("../../", import.meta.url));
   if (root !== ownRoot) fail("REPO_MUST_MATCH_TOOL_CHECKOUT");
-  const outputRelative = relative(root, resolve(outputDirectory));
-  if (!outputRelative || (!isAbsolute(outputRelative) && outputRelative !== ".." && !outputRelative.startsWith(`..${sep}`))) fail("OUTPUT_MUST_BE_OUTSIDE_CHECKOUT");
   const require = createRequire(join(root, "package.json"));
   const ts = require("typescript");
-  const sourceFiles = auditSchemaSources(root, ts);
+  const sourceFiles = Object.freeze(auditSchemaSources(root, ts).map(item => Object.freeze(item)));
+  // Retain a private immutable baseline even if callers copy metadata for a
+  // separate projection. This check detects drift; it is not an import sandbox.
+  const sourceBaseline = JSON.stringify(sourceFiles);
   const { tsImport } = require("tsx/esm/api");
   const schema = await tsImport(pathToFileURL(join(root, SCHEMA_ENTRY)).href, { parentURL: import.meta.url, tsconfig: false });
   const { is, getTableName } = require("drizzle-orm"), { MySqlTable } = require("drizzle-orm/mysql-core");
@@ -311,9 +338,22 @@ export async function exportSourceProjection({ repoRoot, outputDirectory }) {
   const readVersion = entry => JSON.parse(readFileSync(join(dirname(require.resolve(entry)), "package.json"), "utf8")).version;
   const versions = { node: process.versions.node, drizzleKit: readVersion("drizzle-kit/api"), drizzleOrm: readVersion("drizzle-orm"),
     tsx: JSON.parse(readFileSync(require.resolve("tsx/package.json"), "utf8")).version };
-  const projection = await buildProjection({ exports: schema, isTable: value => is(value, MySqlTable), getTableName,
-    generateSnapshot: generateMySQLDrizzleJson, generateMigration: generateMySQLMigration, sourceFiles, versions });
-  if (JSON.stringify(sourceFiles) !== JSON.stringify(auditSchemaSources(root, ts))) fail("SOURCE_CHANGED_DURING_GENERATION");
+  const assertUnchanged = () => {
+    if (sourceBaseline !== JSON.stringify(auditSchemaSources(root, ts))) fail("SOURCE_CHANGED_DURING_GENERATION");
+  };
+  assertUnchanged();
+  return { exports: schema, isTable: value => is(value, MySqlTable), getTableName,
+    generateSnapshot: generateMySQLDrizzleJson, generateMigration: generateMySQLMigration, sourceFiles, versions, assertUnchanged };
+}
+
+export async function exportSourceProjection({ repoRoot, outputDirectory }) {
+  const root = realpathSync(repoRoot), ownRoot = realpathSync(new URL("../../", import.meta.url));
+  if (root !== ownRoot) fail("REPO_MUST_MATCH_TOOL_CHECKOUT");
+  const outputRelative = relative(root, resolve(outputDirectory));
+  if (!outputRelative || (!isAbsolute(outputRelative) && outputRelative !== ".." && !outputRelative.startsWith(`..${sep}`))) fail("OUTPUT_MUST_BE_OUTSIDE_CHECKOUT");
+  const inputs = await loadReviewedProjectionInputs(root);
+  const projection = await buildProjection(inputs);
+  inputs.assertUnchanged();
   return writeProjection(outputDirectory, projection);
 }
 

@@ -8,8 +8,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import {
-  EXCLUDED_TABLES, PROJECTION_VERSION, auditSchemaSources, buildProjection,
-  exportSourceProjection, inspectSchemaModule, main, normalizeCreateStatement, parseArguments, selectProjectionTables, writeProjection,
+  ASSISTANT_SCHEMA_SOURCE, EXCLUDED_TABLES, PROJECTION_VERSION, auditSchemaSources, buildProjection,
+  exportSourceProjection, inspectSchemaModule, loadReviewedProjectionInputs, main, normalizeCreateStatement, parseArguments, selectProjectionTables, writeProjection,
 } from "./sourceProjection.mjs";
 
 const require = createRequire(import.meta.url), ts = require("typescript");
@@ -54,6 +54,33 @@ test("rejects hidden expression execution, globals, getters and unreviewed callb
   }
 });
 
+test("admits only the hash-pinned assistant schema with its erased type import and exact JSON annotation", () => {
+  const source = readFileSync(join(repository, ASSISTANT_SCHEMA_SOURCE.path), "utf8");
+  assert.equal(createHash("sha256").update(source).digest("hex"), ASSISTANT_SCHEMA_SOURCE.sha256);
+  assert.deepEqual(inspectSchemaModule(source, ASSISTANT_SCHEMA_SOURCE.path, ts), []);
+  for (const [from, to] of [
+    ['import type { AssistantConfiguration }', 'import { AssistantConfiguration }'],
+    ['import type { AssistantConfiguration }', 'import type { AssistantConfiguration as Other }'],
+    ['../../shared/assistantConfigurations', '../../server/db'],
+    ['$type<AssistantConfiguration>()', '$type<Other>()'],
+    ['$type<AssistantConfiguration>()', '$type<AssistantConfiguration>(fetch("x"))'],
+    ['json("config")', 'json("other")'],
+    ['char("configHash", { length: 64 })', 'char("configHash", { length: 32 })'],
+  ]) assert.throws(() => inspectSchemaModule(source.replace(from, to), ASSISTANT_SCHEMA_SOURCE.path, ts), /ASSISTANT_SCHEMA_REVIEW_REQUIRED/);
+  assert.throws(() => inspectSchemaModule(`${source}\nfetch("https://example.test");`, ASSISTANT_SCHEMA_SOURCE.path, ts), /ASSISTANT_SCHEMA_REVIEW_REQUIRED/);
+  for (const path of [schemaFile, "drizzle/schema/index.ts", `./${ASSISTANT_SCHEMA_SOURCE.path}`])
+    assert.throws(() => inspectSchemaModule(source, path, ts));
+});
+
+test("assistant exceptions do not enable char, type imports or $type in other modules", () => {
+  for (const source of [
+    'import { mysqlTable, char } from "drizzle-orm/mysql-core"; export const t = mysqlTable("t", { hash: char("hash", { length: 64 }) });',
+    'import type { AssistantConfiguration } from "../../shared/assistantConfigurations";',
+    'import { mysqlTable, json } from "drizzle-orm/mysql-core"; export const t = mysqlTable("t", { config: json("config").$type<AssistantConfiguration>() });',
+  ]) assert.throws(() => inspectSchemaModule(source, schemaFile, ts));
+  assert.equal(Object.isFrozen(ASSISTANT_SCHEMA_SOURCE), true);
+});
+
 test("admits only the exact reviewed 0187 claim prefix at its named table/index position", () => {
   assert.deepEqual(inspectSchemaModule(claimDeclaration, claimFile, ts), []);
   for (const filename of [schemaFile, "drizzle/schema/ai_os.ts", "drizzle/schema/index.ts", `./${claimFile}`]) {
@@ -83,9 +110,22 @@ test("rejects dynamic/raw/other SQL tags even inside the approved schema and ind
 
 test("audits the actual source import closure without importing it or loading .env", () => {
   const sources = auditSchemaSources(repository.replace(/\/$/, ""), ts);
-  assert.equal(sources.length, 18);
+  assert.equal(sources.length, 19);
+  assert.ok(sources.some(item => item.path === ASSISTANT_SCHEMA_SOURCE.path && item.sha256 === ASSISTANT_SCHEMA_SOURCE.sha256));
+  assert.ok(!sources.some(item => item.path === "shared/assistantConfigurations.ts"));
   assert.ok(sources.some(item => item.path === "server/domains/ops/workspaceContext.ts"));
   assert.ok(sources.every(item => /^[a-f0-9]{64}$/.test(item.sha256) && !item.path.includes(".env")));
+});
+
+test("reviewed loader retains an immutable source baseline and rejects caller metadata mutation", async () => {
+  const inputs = await loadReviewedProjectionInputs(repository);
+  assert.equal(Object.isFrozen(inputs.sourceFiles), true);
+  assert.ok(inputs.sourceFiles.every(Object.isFrozen));
+  const firstHash = inputs.sourceFiles[0].sha256;
+  assert.throws(() => { inputs.sourceFiles[0].sha256 = "0".repeat(64); }, TypeError);
+  assert.throws(() => { inputs.sourceFiles.push({ path: "other", sha256: "0".repeat(64) }); }, TypeError);
+  assert.equal(inputs.sourceFiles[0].sha256, firstHash);
+  inputs.assertUnchanged();
 });
 
 test("excludes all five physical draft table names regardless of export aliases", () => {
@@ -189,6 +229,7 @@ test("requires explicit paths, rejects apply/DB switches and confines imports to
   for (const args of [[], ["--apply"], ["--database-url", "secret"], ["--repo-root", repository],
     ["--repo-root", repository, "--out-dir", "/tmp/a", "--out-dir", "/tmp/b"]]) assert.throws(() => parseArguments(args));
   await assert.rejects(exportSourceProjection({ repoRoot: temporary(t), outputDirectory: "/tmp/unused" }), /REPO_MUST_MATCH_TOOL_CHECKOUT/);
+  await assert.rejects(loadReviewedProjectionInputs(temporary(t)), /REPO_MUST_MATCH_TOOL_CHECKOUT/);
   await assert.rejects(exportSourceProjection({ repoRoot: repository, outputDirectory: join(repository, "drizzle", "unsafe") }), /OUTPUT_MUST_BE_OUTSIDE_CHECKOUT/);
   await assert.rejects(exportSourceProjection({ repoRoot: repository, outputDirectory: join(repository, "..not-outside") }), /OUTPUT_MUST_BE_OUTSIDE_CHECKOUT/);
 });
@@ -215,12 +256,15 @@ test("real offline CLI generates the current filtered source projection without 
   assert.equal(result.ok, true);
   const metadata = JSON.parse(readFileSync(join(outputDirectory, "source-projection.metadata.json"), "utf8"));
   const sql = readFileSync(join(outputDirectory, "source-projection.sql"), "utf8");
-  assert.equal(metadata.tableCount, 287);
+  assert.equal(metadata.tableCount, 289);
   assert.equal(metadata.tableCount, metadata.tableNames.length);
-  assert.equal(metadata.ddlCount, 406);
-  // Reviewed current ORM alignment, distinct from the older pinned rehearsal artifact.
-  assert.equal(metadata.sqlSha256, "c2ea534b048427e7b3b464dd37ec442524cf5e8dd1ec80fac3e514259957a6aa");
-  assert.equal(metadata.sourceSha256, "7b0b730998509d2ba70dc7b771bf5a6233146c58b35d2ef83bf028945a2c1a6f");
+  assert.equal(metadata.ddlCount, 408);
+  // Current full source includes two dedicated assistant tables. This does not
+  // reapprove the frozen 287-table base or any native migration contract.
+  assert.equal(metadata.sqlSha256, "6223c0db894742328c76960e9ff5a5a9b54681384df0ac04a7d1721d13ef731b");
+  assert.equal(metadata.sourceSha256, "07d0a776f5c6116256a5408bb14c66bb4e98b68f8cf06d22a57b6e2ab7b34678");
+  assert.ok(metadata.tableNames.includes("emperor_assistant_configurations"));
+  assert.ok(metadata.tableNames.includes("emperor_assistant_configuration_versions"));
   assert.match(sql, /UNIQUE\(`distillationProjectId`,`sourceKey`,`claim`\(191\)\)/);
   assert.match(sql, /CONSTRAINT `uk_emperor_scheduled_tasks_external_task_uid` UNIQUE\(`externalTaskUid`\)/);
   assert.match(sql, /CREATE INDEX `idx_emperor_scheduled_tasks_workspace_managed` ON `emperor_scheduled_tasks` \(`workspaceId`,`systemManaged`\);/);

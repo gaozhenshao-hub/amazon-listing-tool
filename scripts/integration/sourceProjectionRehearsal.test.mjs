@@ -126,8 +126,10 @@ test("validates authentic historical aligned hashes and all 406 single-DDL block
 
 test("current reviewed source cannot impersonate the historical export or enter the old workflow", async () => {
   const current = JSON.parse(fs.readFileSync(path.join(currentDirectory, "source-projection.metadata.json"), "utf8"));
-  assert.equal(current.sqlSha256, "c2ea534b048427e7b3b464dd37ec442524cf5e8dd1ec80fac3e514259957a6aa");
-  assert.equal(current.sourceSha256, "7b0b730998509d2ba70dc7b771bf5a6233146c58b35d2ef83bf028945a2c1a6f");
+  assert.equal(current.sqlSha256, "6223c0db894742328c76960e9ff5a5a9b54681384df0ac04a7d1721d13ef731b");
+  assert.equal(current.sourceSha256, "07d0a776f5c6116256a5408bb14c66bb4e98b68f8cf06d22a57b6e2ab7b34678");
+  assert.equal(current.tableCount, 289);
+  assert.equal(current.ddlCount, 408);
   assert.deepEqual(current.sourceFiles, currentSourceFiles());
   assert.throws(() => validateProjectionArtifact(currentDirectory), errorCode("PROJECTION_SOURCE_HASH_MISMATCH"));
   assert.throws(() => validateProjectionArtifact(directory));
