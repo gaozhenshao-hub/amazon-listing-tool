@@ -258,6 +258,7 @@ export const PERMISSION_ROUTE_REGISTRY: Record<string, PermissionRouteRule> = {
   '/emperor/models': { moduleId: 'emperor', subModuleId: 'emperor_models', enforcement: 'catalog_only' },
   '/emperor/mcp': { moduleId: 'emperor', subModuleId: 'emperor_mcp', enforcement: 'catalog_only' },
   '/emperor/agents': { moduleId: 'emperor', subModuleId: 'emperor_agents', enforcement: 'catalog_only' },
+  '/emperor/agent-library': { moduleId: 'emperor', subModuleId: 'emperor_agents', enforcement: 'enforced' },
   '/emperor/usage': { moduleId: 'emperor', subModuleId: 'emperor_usage', enforcement: 'catalog_only' },
   '/emperor/diagnostics': { moduleId: 'emperor', subModuleId: 'emperor_diagnostics', enforcement: 'catalog_only' },
   '/emperor/settings': { moduleId: 'emperor', subModuleId: 'emperor_settings', enforcement: 'catalog_only' },

@@ -24,6 +24,11 @@
       "baseline": {
         "gitBlobSha1": "ddb247998f3e22e56fbf278204661361815cfc0a",
         "sha256": "05a4205aecfa3e713f2f29fd91e8e37706727e8d8db0b943cc6b3e44d0cc9bd1"
+      },
+      "reviewed": {
+        "gitBlobSha1": "e0d03fb50bbfaf22af0adb42ac1b076e8f121b27",
+        "sha256": "69a9454ff377567be8ec1832d45add66678ea74f3b85bc0deb3f75a6f9f17542",
+        "reviewRef": "config/integration/reviews/20261015-agent-library-readonly.json"
       }
     },
     {

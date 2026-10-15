@@ -11,6 +11,7 @@ import { lazy, Suspense, useCallback, type ComponentType } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePerformanceVitals, type PerformanceVital } from "@/lib/performanceVitals";
+import { MERGED_READONLY_FEATURES_ENABLED } from "@/lib/mergedReadOnlyFeatures";
 
 function lazyWithRecovery<T extends ComponentType<any>>(
   loader: () => Promise<{ default: T }>,
@@ -146,6 +147,7 @@ const EmperorHarnessGovernance = lazy(() => import("./pages/emperor/EmperorHarne
 const EmperorModels = lazy(() => import("./pages/emperor/EmperorModels"));
 const EmperorMCP = lazy(() => import("./pages/emperor/EmperorMCP"));
 const EmperorAgents = lazy(() => import("./pages/emperor/EmperorAgents"));
+const EmperorAgentLibrary = lazy(() => import("./pages/emperor/EmperorAgentLibrary"));
 const EmperorUsage = lazy(() => import("./pages/emperor/EmperorUsage"));
 const EmperorDiagnostics = lazy(() => import("./pages/emperor/EmperorDiagnostics"));
 const EmperorExternalKnowledgeAccess = lazy(() => import("./pages/emperor/EmperorExternalKnowledgeAccess"));
@@ -291,6 +293,13 @@ function Router() {
         <Route path="/emperor/models">{() => <PermissionGuard><EmperorModels /></PermissionGuard>}</Route>
         <Route path="/emperor/mcp">{() => <PermissionGuard><EmperorMCP /></PermissionGuard>}</Route>
         <Route path="/emperor/agents">{() => <PermissionGuard><EmperorAgents /></PermissionGuard>}</Route>
+        {MERGED_READONLY_FEATURES_ENABLED && (
+          <Route path="/emperor/agent-library">{() => (
+            <PermissionGuard moduleId="emperor" subModuleId="emperor_agents">
+              <EmperorAgentLibrary />
+            </PermissionGuard>
+          )}</Route>
+        )}
         <Route path="/emperor/usage">{() => <PermissionGuard><EmperorUsage /></PermissionGuard>}</Route>
         <Route path="/emperor/diagnostics">{() => <PermissionGuard><EmperorDiagnostics /></PermissionGuard>}</Route>
         <Route path="/emperor/external-knowledge-access">{() => <PermissionGuard><EmperorExternalKnowledgeAccess /></PermissionGuard>}</Route>

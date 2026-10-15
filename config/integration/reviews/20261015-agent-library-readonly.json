@@ -1,0 +1,17 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-agent-library-readonly",
+  "baseline": "54b5952467256f9e5fbce2f1e007955621c57f58",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanApprovedAcceleratedLocalOrder": true,
+  "changes": "A separate opt-in Agent library page with seven role definitions and existing readable workflows, released Skills and active model metadata. Original Agent management and canvas remain available.",
+  "permissions": "Existing three agent.read/workspace-scoped APIs only. New route has explicit emperor/emperor_agents PermissionGuard, including router case/trailing-slash variants. Build opt-in is not an authorization grant.",
+  "unknownsRemainExplicit": "Dedicated saved assistant configuration, model binding, unified long-term memory and configuration revisions are not read or fabricated by this batch. Slug categorization is not a persisted binding.",
+  "defaultOff": "VITE_ENABLE_MERGED_READONLY_FEATURES must equal1. No initializer, chat, business mutation, model invocation or scheduler is added; existing denied-read security auditing is unchanged.",
+  "review": "Root and independent gallery author read the new page/presentation/panel and actual existing API contracts; a separate reviewer found the route variant gap and verified its explicit-boundary correction.",
+  "verification": { "combinedFocusedFiles": 9, "combinedFocusedTests": 126, "failed": 0, "skipped": 0, "fullUnitSuiteRun": false, "currentSourceUnifiedTypesAndBuild": "recorded separately in local execution record; not claimed by this source review", "actualBrowserOrDatabaseAcceptance": false },
+  "retainedControls": ["K06","K08","K10"],
+  "fullP3Complete": false,
+  "productionDeployed": false,
+  "rollback": "Disable the build opt-in, or revert this isolated local feature commit after reviewing dependent commits. No database rollback is required by this batch."
+}

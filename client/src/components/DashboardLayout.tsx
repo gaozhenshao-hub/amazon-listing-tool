@@ -11,6 +11,7 @@ import { getLoginUrl } from "@/const";
 import { useMarketplace } from "@/contexts/MarketplaceContext";
 import NotificationBell from "@/components/NotificationBell";
 import { useIsMobile } from "@/hooks/useMobile";
+import { MERGED_READONLY_FEATURES_ENABLED } from "@/lib/mergedReadOnlyFeatures";
 import {
   LayoutDashboard,
   LogOut,
@@ -270,6 +271,9 @@ const modules: ModuleDef[] = [
       { icon: ClipboardCheck, label: "质量门禁", path: "/emperor/quality" },
       { icon: Shield, label: "Harness 治理", path: "/emperor/governance" },
       { icon: Network, label: "Agent 编排", path: "/emperor/agents" },
+      ...(MERGED_READONLY_FEATURES_ENABLED
+        ? [{ icon: Bot, label: "Agent 库", path: "/emperor/agent-library" }]
+        : []),
       { icon: Cpu, label: "模型路由", path: "/emperor/models" },
       { icon: Plug, label: "MCP 连接器", path: "/emperor/mcp" },
       { icon: Key, label: "知识库外部访问", path: "/emperor/external-knowledge-access" },
