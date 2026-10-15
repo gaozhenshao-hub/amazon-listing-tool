@@ -31,6 +31,10 @@ import { KbAsinSetGrid } from "./KbAsinSetGrid";
 import { KnowledgeImagePreview } from "@/components/KnowledgeImagePreview";
 import { ASIN_SET_GROUP_OPTIONS, type AsinSetGroupBy } from "./kbImageSetGrouping";
 import { shouldRefreshImageBrowse } from "./kbImageBrowseRefresh";
+import { imageBelongLabel, distinctImageTags } from "./kbImageLabels";
+import { SingleImagePreviewDialog, type BrowseImage } from "./SingleImagePreviewDialog";
+import { activateGalleryItem } from "./galleryInteraction";
+import { MERGED_READONLY_FEATURES_ENABLED } from "@/lib/mergedReadOnlyFeatures";
 
 type ViewMode = "asin" | "waterfall" | "grid";
 
@@ -120,7 +124,12 @@ export default function KBImages() {
   const [asinSetGroupBy, setAsinSetGroupBy] = useState<AsinSetGroupBy>("none");
   const [useV2Filters, setUseV2Filters] = useState(true);
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
+  const [previewImage, setPreviewImage] = useState<BrowseImage | null>(null);
   const [scope, setScope] = useState<KBScope>("shared");
+  const openBrowseImage = (item: BrowseImage) => {
+    if (MERGED_READONLY_FEATURES_ENABLED) setPreviewImage(item);
+    else if (item.imageSetId != null) { setDetailSetId(item.imageSetId); setEditingAnalysis(""); }
+  };
 
   // Use listSets for the ASIN-grouped view (default)
   const { data: sets, isLoading } = trpc.kbImages.listSets.useQuery({ scope }, {
@@ -742,21 +751,23 @@ export default function KBImages() {
                   >
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-4">
                       {rowItems.map((item: any) => (
-                        <Card key={item.id} className="cursor-pointer hover:shadow-lg transition-all overflow-hidden group" onClick={() => { setDetailSetId(item.imageSetId); setEditingAnalysis(""); }}>
-                          {item.imageUrl && (
+                        <Card key={item.id} role={MERGED_READONLY_FEATURES_ENABLED ? "button" : undefined} tabIndex={MERGED_READONLY_FEATURES_ENABLED ? 0 : undefined} aria-label={MERGED_READONLY_FEATURES_ENABLED ? `放大图片 ${item.asin || ""} ${imageBelongLabel(item)} ${item.id}` : undefined}
+                          className={`${MERGED_READONLY_FEATURES_ENABLED ? "cursor-zoom-in focus-visible:ring-2 focus-visible:ring-primary" : "cursor-pointer"} hover:shadow-lg transition-all overflow-hidden group`}
+                          onClick={() => openBrowseImage(item)} onKeyDown={MERGED_READONLY_FEATURES_ENABLED ? event => activateGalleryItem(event, () => openBrowseImage(item)) : undefined}>
+                          {(item.imageUrl || MERGED_READONLY_FEATURES_ENABLED) && (
                             <div className="relative">
-                              <KnowledgeImagePreview src={item.imageUrl} alt="知识库图片" className="w-full object-cover" fallbackClassName="min-h-44 w-full" accessError={item.imageAccessError} />
-                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
+                              <KnowledgeImagePreview key={`${item.id}:${item.imageUrl}`} src={item.imageUrl} alt="知识库图片" className={`w-full ${MERGED_READONLY_FEATURES_ENABLED ? "object-contain" : "object-cover"}`} fallbackClassName="min-h-44 w-full" accessError={item.imageAccessError} />
+                              <div className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
                             </div>
                           )}
                           <CardContent className="p-3">
                             <div className="flex items-center gap-1.5 flex-wrap mb-1">
                               <Badge variant="outline" className="text-[10px]">{item.asin || "N/A"}</Badge>
-                              <Badge variant="secondary" className="text-[10px]">{item.imagePosition === "main" ? "主图" : item.imagePosition === "aplus" ? "A+" : `副图#${item.positionIndex}`}</Badge>
+                              <Badge variant="secondary" className="text-[10px]">{MERGED_READONLY_FEATURES_ENABLED ? imageBelongLabel(item) : item.imagePosition === "main" ? "主图" : item.imagePosition === "aplus" ? "A+" : `副图#${item.positionIndex}`}</Badge>
                             </div>
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {item.tagImageType && <Badge variant="secondary" className="text-[10px]">{item.tagImageType}</Badge>}
-                              {item.tagDesignStyle && <Badge variant="secondary" className="text-[10px]">{item.tagDesignStyle}</Badge>}
+                              {(MERGED_READONLY_FEATURES_ENABLED ? distinctImageTags([item.tagImageType, item.tagDesignStyle]).filter(tag => tag !== imageBelongLabel(item)) : [item.tagImageType, item.tagDesignStyle].filter(Boolean)).map((tag, index) =>
+                                <Badge key={index} variant="secondary" className="text-[10px]">{tag}</Badge>)}
                             </div>
                           </CardContent>
                         </Card>
@@ -811,8 +822,10 @@ export default function KBImages() {
                   >
                     <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 pb-3">
                       {rowItems.map((item: any) => (
-                        <Card key={item.id} className="cursor-pointer hover:shadow-md transition-all overflow-hidden" onClick={() => { setDetailSetId(item.imageSetId); setEditingAnalysis(""); }}>
-                          <KnowledgeImagePreview src={item.imageUrl} alt="知识库图片" className="w-full aspect-square object-cover" fallbackClassName="aspect-square w-full" accessError={item.imageAccessError} />
+                        <Card key={item.id} role={MERGED_READONLY_FEATURES_ENABLED ? "button" : undefined} tabIndex={MERGED_READONLY_FEATURES_ENABLED ? 0 : undefined} aria-label={MERGED_READONLY_FEATURES_ENABLED ? `放大图片 ${item.asin || ""} ${imageBelongLabel(item)} ${item.id}` : undefined}
+                          className={`${MERGED_READONLY_FEATURES_ENABLED ? "cursor-zoom-in focus-visible:ring-2 focus-visible:ring-primary" : "cursor-pointer"} hover:shadow-md transition-all overflow-hidden`}
+                          onClick={() => openBrowseImage(item)} onKeyDown={MERGED_READONLY_FEATURES_ENABLED ? event => activateGalleryItem(event, () => openBrowseImage(item)) : undefined}>
+                          <KnowledgeImagePreview key={`${item.id}:${item.imageUrl}`} src={item.imageUrl} alt="知识库图片" className={`w-full aspect-square ${MERGED_READONLY_FEATURES_ENABLED ? "object-contain" : "object-cover"}`} fallbackClassName="aspect-square w-full" accessError={item.imageAccessError} />
                           <CardContent className="p-2">
                             <Badge variant="outline" className="text-[10px]">{item.asin || "N/A"}</Badge>
                           </CardContent>
@@ -826,6 +839,12 @@ export default function KBImages() {
           </div>
         )
       )}
+
+      {MERGED_READONLY_FEATURES_ENABLED && <SingleImagePreviewDialog image={previewImage} onClose={() => setPreviewImage(null)} onOpenSet={setId => {
+        setPreviewImage(null);
+        setEditingAnalysis("");
+        setDetailSetId(setId);
+      }} />}
 
       {/* Import Dialog */}
       <Dialog open={showImport} onOpenChange={setShowImport}>

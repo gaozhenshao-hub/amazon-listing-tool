@@ -283,6 +283,11 @@
       "baseline": {
         "gitBlobSha1": "86ec761ee26548829ead0376b6c75ed9847fdfcd",
         "sha256": "db191bf3555053bc825c0e5e631a832e2ebbd06b850c45315245f9a23b297016"
+      },
+      "reviewed": {
+        "gitBlobSha1": "af2c26129019f64c13dd812084dc9d292e4b8f45",
+        "sha256": "2a8a1849d690c26893a1139eb343f0270f85dc14cedfab51d244122393aa04d8",
+        "reviewRef": "config/integration/reviews/20261015-gallery-browsing.json"
       }
     },
     {
@@ -294,6 +299,11 @@
       "baseline": {
         "gitBlobSha1": "d7ed6f483ec206949ef4a849a026ddaf3552ddff",
         "sha256": "a87607198360e41816cad44b3000748015bc43c4fe95f6bffde14343693ff426"
+      },
+      "reviewed": {
+        "gitBlobSha1": "57a6306088d557383597ecd2b175c72bd1f86d13",
+        "sha256": "6a6767f3968f4380736d12cddbc5bf161e670678e97cfadc7cb599f922135da0",
+        "reviewRef": "config/integration/reviews/20261015-gallery-browsing.json"
       }
     },
     {

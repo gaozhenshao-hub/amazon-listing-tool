@@ -1,0 +1,15 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-gallery-browsing",
+  "baseline": "54b5952467256f9e5fbce2f1e007955621c57f58",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "changes": "Opt-in single-image original preview, error placeholder, keyboard activation and display-only Chinese tag normalization/deduplication; stable image-ID selection prevents server reorder from switching the active image.",
+  "retained": "K05 min-width constraints,420px main/320px A+ frames, local scrolling, balanced/full-canvas toggle and ResizeObserver remain. Existing detail-set entry, original callbacks and all filters remain; no image pixels, stored tags, signing path, asset policy, RPC or database schema are changed.",
+  "defaultOff": "New preview/labels/keyboard/error UI uses the exact merged-readonly build opt-in. Stable ID selection is a retained-gallery bug fix. Existing behavior remains when the opt-in is off.",
+  "review": "Root and an independent Agent-library author reviewed the complete two-page diff and new helpers. The inherited-object-key custom-tag failure was reproduced, fixed with own-key lookup and independently rechecked.",
+  "verification": { "galleryFocusedTests": 30, "combinedRootFocusedTests": 126, "failed": 0, "skipped": 0, "scopedLintPassed": true, "fullBrowserViewportAcceptance": false, "currentSourceUnifiedTypesAndBuild": "separate execution record" },
+  "notIncluded": "No drag/wheel zoom, new A+/brand-story zoom entry, whole-page redesign or new tagging job API is claimed.",
+  "retainedControls": ["K05","K06","K10"],
+  "productionDeployed": false,
+  "rollback": "Disable the build opt-in for new UI, or revert this isolated local feature commit after dependency review. No database rollback is required."
+}

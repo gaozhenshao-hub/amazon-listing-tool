@@ -6,6 +6,11 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type D
 import { SortableContext, useSortable, verticalListSortingStrategy, horizontalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useBalancedPreviewTransform } from "./useBalancedPreviewTransform";
+import { GalleryImagePreview } from "./GalleryImagePreview";
+import { SingleImagePreviewDialog } from "./SingleImagePreviewDialog";
+import { imageBelongLabel, imageTagLabel, joinImageTags } from "./kbImageLabels";
+import { activateGalleryItem, currentGalleryIndex } from "./galleryInteraction";
+import { MERGED_READONLY_FEATURES_ENABLED } from "@/lib/mergedReadOnlyFeatures";
 
 interface GalleryImage {
   id: number;
@@ -58,22 +63,26 @@ function PreviewFitToggle({ mode, onToggle }: { mode: PreviewFitMode; onToggle: 
 /** Inline tag display for an image — always visible, no click needed */
 function InlineTags({ img, compact = false }: { img: GalleryImage; compact?: boolean }) {
   const tags: { label: string; color: string }[] = [];
-  if (img.tagImageBelong) tags.push({ label: img.tagImageBelong + (img.tagImageBelongSub ? `·${img.tagImageBelongSub}` : ""), color: "bg-indigo-500/80" });
-  if (img.tagImageTypeMain) tags.push({ label: img.tagImageTypeMain + (img.tagImageTypeSub ? `·${img.tagImageTypeSub}` : ""), color: "bg-purple-500/80" });
-  if (img.tagSellingPointCategory) tags.push({ label: img.tagSellingPointCategory + (img.tagSellingPointDetail ? `·${img.tagSellingPointDetail}` : ""), color: "bg-green-500/80" });
+  const joinTags = MERGED_READONLY_FEATURES_ENABLED ? joinImageTags : (main?: string, sub?: string) => (main || "") + (sub ? `·${sub}` : "");
+  const belong = MERGED_READONLY_FEATURES_ENABLED ? imageBelongLabel(img) : img.tagImageBelong ? joinTags(img.tagImageBelong, img.tagImageBelongSub) : "";
+  if (belong) tags.push({ label: belong, color: "bg-indigo-500/80" });
+  if (img.tagImageTypeMain) tags.push({ label: joinTags(img.tagImageTypeMain, img.tagImageTypeSub), color: "bg-purple-500/80" });
+  if (img.tagSellingPointCategory) tags.push({ label: joinTags(img.tagSellingPointCategory, img.tagSellingPointDetail), color: "bg-green-500/80" });
   if (img.tagComposition) tags.push({ label: img.tagComposition, color: "bg-orange-500/80" });
   if (img.tagDesignStyleV2) tags.push({ label: img.tagDesignStyleV2, color: "bg-amber-500/80" });
   if (img.tagColorSchemeV2) tags.push({ label: img.tagColorSchemeV2, color: "bg-pink-500/80" });
   if (img.tagColorV2) tags.push({ label: img.tagColorV2, color: "bg-rose-400/80" });
   if (img.singleImageScore) tags.push({ label: `评分 ${img.singleImageScore}/10`, color: "bg-primary/80" });
 
-  if (tags.length === 0) {
+  const uniqueTags = MERGED_READONLY_FEATURES_ENABLED ? tags.map(tag => ({ ...tag, label: imageTagLabel(tag.label) }))
+    .filter((tag, index, all) => tag.label && all.findIndex(other => other.label === tag.label) === index) : tags;
+  if (uniqueTags.length === 0) {
     return <p className="text-xs text-muted-foreground italic">暂无标签</p>;
   }
   return (
     <div className={`flex min-w-0 max-w-full flex-wrap gap-1 ${compact ? "" : "mt-1"}`}>
-      {tags.map((t, i) => (
-        <Badge key={i} className={`max-w-full whitespace-normal [overflow-wrap:anywhere] text-[9px] border-0 text-white ${t.color}`}>{t.label}</Badge>
+      {uniqueTags.map((t, index) => (
+        <Badge key={index} className={`max-w-full whitespace-normal [overflow-wrap:anywhere] text-[9px] border-0 text-white ${t.color}`}>{t.label}</Badge>
       ))}
     </div>
   );
@@ -92,12 +101,15 @@ function SortableThumbnail({ img, index, isActive, mainCount, onClick }: {
   return (
     <div ref={setNodeRef} style={style} className="relative flex-shrink-0 group/thumb">
       <button
+        type="button"
+        aria-label={`查看商品图片 ${index + 1}`}
+        aria-pressed={isActive}
         className={`relative w-[68px] h-[68px] rounded border-2 overflow-hidden transition-all ${
           isActive ? "border-primary ring-1 ring-primary/30" : "border-transparent hover:border-muted-foreground/30"
         }`}
         onClick={onClick}
       >
-        <img src={img.imageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+        <GalleryImagePreview src={img.imageUrl} accessError={img.imageAccessError} alt="商品缩略图" className={`w-full h-full ${MERGED_READONLY_FEATURES_ENABLED ? "object-contain" : "object-cover"}`} loading="lazy" />
         {index === 0 && (
           <span className="absolute bottom-0 left-0 right-0 bg-blue-500/80 text-white text-[8px] text-center py-0.5">主图</span>
         )}
@@ -133,9 +145,10 @@ function AplusRow({ img, onDeleteImage, renderTagEditor, onReorder }: {
     <div ref={setNodeRef} style={style} className="flex w-full min-w-0 max-w-full flex-col gap-0 border rounded-lg overflow-hidden bg-white group/aprow md:flex-row">
       {/* Left: image */}
       <div ref={previewRef} className="relative w-full min-w-0 h-[320px] shrink-0 overflow-hidden bg-slate-50 md:w-auto md:flex-1">
-        <img
+        <GalleryImagePreview
           src={img.imageUrl}
-          alt=""
+          accessError={img.imageAccessError}
+          alt="A+ 商品图片"
           className="absolute inset-0 h-full w-full object-contain p-2"
           style={{ transform: fitMode === "balanced" ? balancedTransform : undefined }}
           loading="lazy"
@@ -163,7 +176,7 @@ function AplusRow({ img, onDeleteImage, renderTagEditor, onReorder }: {
         {/* A+ sub-module badge */}
         {(img.tagImageBelongSub || (img.aplusModuleType && img.aplusModuleType !== "unknown")) && (
           <Badge className="absolute top-2 left-10 text-[9px] border-0 bg-purple-500/80 text-white">
-            {img.tagImageBelongSub || img.aplusModuleType}
+            {MERGED_READONLY_FEATURES_ENABLED ? imageTagLabel(img.tagImageBelongSub || img.aplusModuleType) : img.tagImageBelongSub || img.aplusModuleType}
           </Badge>
         )}
       </div>
@@ -204,9 +217,11 @@ function BrandStoryItem({ img, isActive, onClick, onDeleteImage }: {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: img.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
   return (
-    <div ref={setNodeRef} style={style} className="relative flex-shrink-0 w-[280px] group/bsitem cursor-pointer" onClick={onClick}>
+    <div ref={setNodeRef} style={style} className="relative flex-shrink-0 w-[280px] group/bsitem cursor-pointer"
+      role={MERGED_READONLY_FEATURES_ENABLED ? "button" : undefined} tabIndex={MERGED_READONLY_FEATURES_ENABLED ? 0 : undefined} aria-label={MERGED_READONLY_FEATURES_ENABLED ? `查看品牌故事图片 ${img.id}` : undefined} aria-pressed={MERGED_READONLY_FEATURES_ENABLED ? isActive : undefined}
+      onClick={onClick} onKeyDown={MERGED_READONLY_FEATURES_ENABLED ? event => activateGalleryItem(event, onClick) : undefined}>
       <div className={`rounded-lg overflow-hidden border-2 transition-all ${isActive ? "border-primary ring-1 ring-primary/30" : "border-transparent hover:border-muted-foreground/30"}`}>
-        <img src={img.imageUrl} alt="" className="w-full h-[160px] object-contain bg-slate-50 p-1" loading="lazy" />
+        <GalleryImagePreview src={img.imageUrl} accessError={img.imageAccessError} alt="品牌故事图片" className="w-full h-[160px] object-contain bg-slate-50 p-1" loading="lazy" />
       </div>
       {/* Drag handle */}
       <div
@@ -245,13 +260,16 @@ export function AmazonStyleGallery({
   const [galleryItems, setGalleryItems] = useState<GalleryImage[]>([]);
   const [aplusItems, setAplusItems] = useState<GalleryImage[]>([]);
   const [brandStoryItems, setBrandStoryItems] = useState<GalleryImage[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentImageId, setCurrentImageId] = useState<number | null>(null);
+  const [zoomedImage, setZoomedImage] = useState<GalleryImage | null>(null);
   const [galleryFitMode, setGalleryFitMode] = useState<PreviewFitMode>("balanced");
   const [activeBrandStoryId, setActiveBrandStoryId] = useState<number | null>(null);
   const brandStoryScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setGalleryItems([...mainImages, ...secondaryImages].sort((a, b) => (a.positionIndex || 0) - (b.positionIndex || 0)));
+    const items = [...mainImages, ...secondaryImages].sort((a, b) => (a.positionIndex || 0) - (b.positionIndex || 0));
+    setGalleryItems(items);
+    setCurrentImageId(id => items[currentGalleryIndex(items, id)]?.id ?? null);
   }, [mainImages, secondaryImages]);
 
   useEffect(() => {
@@ -265,6 +283,7 @@ export function AmazonStyleGallery({
     }
   }, [brandStoryImages, activeBrandStoryId]);
 
+  const currentIndex = currentGalleryIndex(galleryItems, currentImageId);
   const currentImage = galleryItems[currentIndex];
   const { previewRef: galleryPreviewRef, transform: galleryBalancedTransform } = useBalancedPreviewTransform(currentImage?.imageUrl || "");
   const activeBrandStoryImg = brandStoryItems.find((i) => i.id === activeBrandStoryId) || brandStoryItems[0];
@@ -292,17 +311,16 @@ export function AmazonStyleGallery({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const goToPrev = useCallback(() => {
-    setCurrentIndex((prev) => prev > 0 ? prev - 1 : galleryItems.length - 1);
-  }, [galleryItems.length]);
+    setCurrentImageId(id => galleryItems[(currentGalleryIndex(galleryItems, id) - 1 + galleryItems.length) % galleryItems.length]?.id ?? null);
+  }, [galleryItems]);
 
   const goToNext = useCallback(() => {
-    setCurrentIndex((prev) => prev < galleryItems.length - 1 ? prev + 1 : 0);
-  }, [galleryItems.length]);
+    setCurrentImageId(id => galleryItems[(currentGalleryIndex(galleryItems, id) + 1) % galleryItems.length]?.id ?? null);
+  }, [galleryItems]);
 
   const handleThumbnailClick = useCallback((index: number) => {
-    setCurrentIndex(index);
     const img = galleryItems[index];
-    if (img) onSelectImage(selectedImageId === img.id ? null : img.id);
+    if (img) { setCurrentImageId(img.id); onSelectImage(selectedImageId === img.id ? null : img.id); }
   }, [galleryItems, onSelectImage, selectedImageId]);
 
   const handleMainImageClick = useCallback(() => {
@@ -376,12 +394,15 @@ export function AmazonStyleGallery({
                 galleryItems.map((img, idx) => (
                   <button
                     key={img.id}
+                    type="button"
+                    aria-label={`查看商品图片 ${idx + 1}`}
+                    aria-pressed={idx === currentIndex}
                     className={`relative flex-shrink-0 w-[68px] h-[68px] rounded border-2 overflow-hidden transition-all ${
                       idx === currentIndex ? "border-primary ring-1 ring-primary/30" : "border-transparent hover:border-muted-foreground/30"
                     }`}
                     onClick={() => handleThumbnailClick(idx)}
                   >
-                    <img src={img.imageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    <GalleryImagePreview src={img.imageUrl} accessError={img.imageAccessError} alt="商品缩略图" className={`w-full h-full ${MERGED_READONLY_FEATURES_ENABLED ? "object-contain" : "object-cover"}`} loading="lazy" />
                     {idx === 0 && (
                       <span className="absolute bottom-0 left-0 right-0 bg-blue-500/80 text-white text-[8px] text-center py-0.5">主图</span>
                     )}
@@ -403,11 +424,17 @@ export function AmazonStyleGallery({
                     }`}
                     ref={galleryPreviewRef}
                     style={{ height: "420px" }}
+                    role={MERGED_READONLY_FEATURES_ENABLED ? "button" : undefined}
+                    tabIndex={MERGED_READONLY_FEATURES_ENABLED ? 0 : undefined}
+                    aria-label={MERGED_READONLY_FEATURES_ENABLED ? "展开或收起当前图片标签" : undefined}
+                    aria-pressed={MERGED_READONLY_FEATURES_ENABLED ? selectedImageId === currentImage.id : undefined}
                     onClick={handleMainImageClick}
+                    onKeyDown={MERGED_READONLY_FEATURES_ENABLED ? event => activateGalleryItem(event, handleMainImageClick) : undefined}
                   >
-                    <img
+                    <GalleryImagePreview
                       src={currentImage.imageUrl}
-                      alt=""
+                      accessError={currentImage.imageAccessError}
+                      alt="当前商品图片"
                       className="absolute inset-0 h-full w-full object-contain p-2"
                       style={{ transform: galleryFitMode === "balanced" ? galleryBalancedTransform : undefined }}
                       loading="eager"
@@ -421,7 +448,10 @@ export function AmazonStyleGallery({
                         {currentImage.singleImageScore}/10
                       </Badge>
                     )}
-                    <div className="absolute top-2 right-2 z-10"><PreviewFitToggle mode={galleryFitMode} onToggle={() => setGalleryFitMode(mode => mode === "balanced" ? "full" : "balanced")} /></div>
+                    <div className="absolute top-2 right-2 z-10 flex gap-1">
+                      {MERGED_READONLY_FEATURES_ENABLED && <button type="button" className="rounded-full bg-black/45 px-2 py-1 text-[10px] text-white" onClick={event => { event.stopPropagation(); setZoomedImage(currentImage); }}>查看原图</button>}
+                      <PreviewFitToggle mode={galleryFitMode} onToggle={() => setGalleryFitMode(mode => mode === "balanced" ? "full" : "balanced")} />
+                    </div>
                     {/* Tags overlay at bottom */}
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent p-3">
                       <InlineTags img={currentImage} compact />
@@ -435,10 +465,10 @@ export function AmazonStyleGallery({
 
                   {galleryItems.length > 1 && (
                     <>
-                      <Button variant="outline" size="icon" className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-white/90 shadow-md opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); goToPrev(); }}>
+                      <Button variant="outline" size="icon" aria-label="上一张商品图片" className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-white/90 shadow-md opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); goToPrev(); }}>
                         <ChevronLeft className="h-4 w-4" />
                       </Button>
-                      <Button variant="outline" size="icon" className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-white/90 shadow-md opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); goToNext(); }}>
+                      <Button variant="outline" size="icon" aria-label="下一张商品图片" className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-white/90 shadow-md opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); goToNext(); }}>
                         <ChevronRight className="h-4 w-4" />
                       </Button>
                     </>
@@ -464,12 +494,15 @@ export function AmazonStyleGallery({
             {galleryItems.map((img, idx) => (
               <button
                 key={img.id}
+                type="button"
+                aria-label={`查看商品图片 ${idx + 1}`}
+                aria-pressed={idx === currentIndex}
                 className={`relative flex-shrink-0 w-14 h-14 rounded border-2 overflow-hidden transition-all ${
                   idx === currentIndex ? "border-primary ring-1 ring-primary/30" : "border-transparent hover:border-muted-foreground/30"
                 }`}
                 onClick={() => handleThumbnailClick(idx)}
               >
-                <img src={img.imageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+                <GalleryImagePreview src={img.imageUrl} accessError={img.imageAccessError} alt="商品缩略图" className={`w-full h-full ${MERGED_READONLY_FEATURES_ENABLED ? "object-contain" : "object-cover"}`} loading="lazy" />
               </button>
             ))}
           </div>
@@ -587,6 +620,7 @@ export function AmazonStyleGallery({
           )}
         </div>
       )}
+      {MERGED_READONLY_FEATURES_ENABLED && <SingleImagePreviewDialog image={zoomedImage} onClose={() => setZoomedImage(null)} />}
     </div>
   );
 }
