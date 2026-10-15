@@ -36,6 +36,8 @@ import {
 import { Streamdown } from "streamdown";
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { toast } from "sonner";
+import { MERGED_READONLY_FEATURES_ENABLED } from "@/lib/mergedReadOnlyFeatures";
+import { SellingPointSourceEvidence } from "./listing/SellingPointSourceEvidence";
 
 // Type for parsed analysis data
 interface ParsedAnalysis {
@@ -385,20 +387,29 @@ function SellingPointMatrix({
                         <td key={analysis.id} className="px-4 py-4">
                           {!point ? (
                             <span className="text-xs italic text-muted-foreground">该竞品未表达此卖点</span>
-                          ) : isEditing ? (
-                            <Textarea
-                              value={point.text}
-                              onChange={event => updatePoint(rowIndex, analysis.id, event.target.value)}
-                              rows={7}
-                              className="resize-y text-xs leading-5"
-                              aria-label={`${analysis.asin} 的 ${row.theme}`}
-                            />
                           ) : (
-                            <div>
-                              <p className="text-xs leading-relaxed">{point.text}</p>
-                              <span className="mt-2 inline-block text-[10px] text-muted-foreground">
-                                原五点第 {point.bulletIndex + 1} 条 · {point.text.length} 字符
-                              </span>
+                            <div className="space-y-2">
+                              {isEditing ? (
+                                <Textarea
+                                  value={point.text}
+                                  onChange={event => updatePoint(rowIndex, analysis.id, event.target.value)}
+                                  rows={7}
+                                  className="resize-y text-xs leading-5"
+                                  aria-label={`${analysis.asin} 的 ${row.theme}`}
+                                />
+                              ) : (
+                                <div>
+                                  <p className="text-xs leading-relaxed">{point.text}</p>
+                                  <span className="mt-2 inline-block text-[10px] text-muted-foreground">
+                                    {MERGED_READONLY_FEATURES_ENABLED
+                                      ? `对比文本 · ${point.text.length} 字符`
+                                      : `原五点第 ${point.bulletIndex + 1} 条 · ${point.text.length} 字符`}
+                                  </span>
+                                </div>
+                              )}
+                              {MERGED_READONLY_FEATURES_ENABLED && (
+                                <SellingPointSourceEvidence point={point} analysis={analysis} />
+                              )}
                             </div>
                           )}
                         </td>

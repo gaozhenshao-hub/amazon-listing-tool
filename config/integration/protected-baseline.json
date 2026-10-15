@@ -250,6 +250,11 @@
       "baseline": {
         "gitBlobSha1": "56bb213ba04b78eb57e4113bfd36c2bf5d0e8060",
         "sha256": "c71e7a7319825baa2828a9e9a5d4a9f9656d02c3c4e10020a4b497f99553d248"
+      },
+      "reviewed": {
+        "gitBlobSha1": "b53f4896facce6aebf2912393a8e26dc1c39dedd",
+        "sha256": "a5061f1d1748f96cd258ec4db1a5530f61d69dc0819555e03ecd6fd48730a202",
+        "reviewRef": "config/integration/reviews/20261015-selling-point-source-evidence.json"
       }
     },
     {

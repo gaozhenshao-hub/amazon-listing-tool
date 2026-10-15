@@ -1,0 +1,14 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-selling-point-source-evidence",
+  "baseline": "54b5952467256f9e5fbce2f1e007955621c57f58",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "changes": "An opt-in native disclosure in the existing selling-point matrix reads the exact currently saved competitor bullet only after analysisId, ASIN and integer index match. Edited comparison text is not reused as a quotation.",
+  "truthfulBoundary": "Current saved source and text differences are explicit; missing/mismatched references show unavailable. This is not an authenticated historical source snapshot or proof that generated Listing input consumed the research.",
+  "retained": "Only presentation is connected. Existing report selection, editing, save, confirmation, unlock, versions, seven-direction generation and backend normalization are unchanged. No RPC, mutation, migration or model invocation is introduced.",
+  "review": "Root read the source resolver, disclosure, tests and relevant existing report/backend code; an independent reviewer checked the actual ComparisonPage wiring and confirmed unchanged save/confirmation logic.",
+  "verification": { "sourceEvidenceFocusedTests": 43, "combinedRootFocusedTests": 126, "failed": 0, "skipped": 0, "scopedTypeAndLintPassed": true, "currentSourceUnifiedTypesAndBuild": "separate execution record", "actualBrowserOrListingGenerationAcceptance": false },
+  "retainedControls": ["K03","K06","K07"],
+  "productionDeployed": false,
+  "rollback": "Disable the build opt-in, or revert this isolated presentation commit after dependency review. No persisted reports or database rows are changed by this batch."
+}
