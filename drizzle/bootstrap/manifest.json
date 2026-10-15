@@ -1092,7 +1092,7 @@
     },
     {
       "path": "drizzle/schema/index.ts",
-      "sha256": "e2990343f4c0ea8b16d21a78e54c696044b45a0cee5159abb7325411fe68ea29"
+      "sha256": "83ad4960a3116d5d8274ee4377ae42ef6f7d109c074bbddc72c1ab0534d0104c"
     },
     {
       "path": "drizzle/schema/knowledge.ts",
@@ -1160,7 +1160,7 @@
     },
     {
       "path": "scripts/run-database-migrations.mjs",
-      "sha256": "5ed6ad3b13e14cd7e92f32a31b8398bf83af13643ac64793fb10a2234f5cc638"
+      "sha256": "3c82d1f5fd0316e7f1f6c5b3b1e80dcd8ace5041931e71b3daf303cd490ad33b"
     },
     {
       "path": "server/domains/ops/workspaceContext.ts",

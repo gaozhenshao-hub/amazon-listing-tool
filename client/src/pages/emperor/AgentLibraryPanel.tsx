@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { AGENT_LIBRARY_ROLES, type AgentLibraryKey } from "@shared/agentLibraryContracts";
 import { BookOpen, Bot, Eye, GitBranch, Info, Layers, Loader2 } from "lucide-react";
 import {
@@ -10,6 +11,7 @@ type Props = {
   selected: AgentLibraryKey; onSelect: (key: AgentLibraryKey) => void;
   workflows: LibraryReadState<LibraryWorkflow>; skills: LibraryReadState<LibrarySkill>;
   models: LibraryReadState<LibraryModel>;
+  configurationSlot?: ReactNode;
 };
 
 const panelClass = "rounded-xl border border-white/10 bg-white/[0.025] p-5";
@@ -21,8 +23,9 @@ function ReadNotice({ state, noun }: { state: LibraryReadState<unknown>; noun: s
   return null;
 }
 
-export default function AgentLibraryPanel({ selected, onSelect, workflows, skills, models }: Props) {
+export default function AgentLibraryPanel({ selected, onSelect, workflows, skills, models, configurationSlot }: Props) {
   const role = libraryDirectory(selected);
+  const hasConfigurationSlot = configurationSlot != null && configurationSlot !== false;
   const visibleWorkflows = workflows.status === "ready" ? workflows.rows : [];
   const roleWorkflows = visibleWorkflows.filter(item => libraryRoleForWorkflow(item.slug) === selected);
   const relatedSkills = skills.status === "ready"
@@ -49,7 +52,7 @@ export default function AgentLibraryPanel({ selected, onSelect, workflows, skill
           className={`rounded-xl border p-4 text-left transition-colors focus-visible:outline focus-visible:outline-violet-400 ${selected === item.key ? "border-violet-500/50 bg-violet-500/10" : "border-white/10 bg-white/[0.02] hover:bg-white/5"}`}>
           <span className="flex items-center justify-between gap-2"><span className="text-sm font-medium text-slate-100">{item.name}</span><Bot className="h-4 w-4 shrink-0 text-violet-400" /></span>
           <span className="mt-1 block text-xs leading-5 text-slate-400">{item.stages.join(" · ")}</span>
-          <span className="mt-2 block text-[11px] text-amber-300/90">仅角色目录 · 专属配置待读取</span>
+          <span className="mt-2 block text-[11px] text-amber-300/90">{hasConfigurationSlot ? "查看真实配置状态" : "仅角色目录 · 专属配置待读取"}</span>
         </button>)}
       </nav>
 
@@ -57,10 +60,11 @@ export default function AgentLibraryPanel({ selected, onSelect, workflows, skill
         <section className={panelClass} aria-label="角色与配置状态">
           <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs text-violet-300">角色目录 / {role.key}</p><h2 className="mt-1 text-lg font-semibold text-white">{role.name}</h2><p className="mt-2 text-sm text-slate-400">职责目录：{role.stages.join("、")}</p></div>
             {role.requiresVision && <span className="flex items-center gap-1 rounded-md border border-cyan-500/20 px-2 py-1 text-xs text-cyan-300"><Eye className="h-3.5 w-3.5" />角色需要视觉能力</span>}</div>
-          <dl className="mt-5 grid gap-3 rounded-lg bg-black/15 p-4 text-sm sm:grid-cols-2">
+          {hasConfigurationSlot ? <div className="mt-5">{configurationSlot}</div> : <><dl className="mt-5 grid gap-3 rounded-lg bg-black/15 p-4 text-sm sm:grid-cols-2">
             {[["专属配置", "尚未接入读取"], ["专属模型", "未知，未设置默认值"], ["长期规则 / 指令", "尚未接入读取"], ["配置版本 / 启用状态", "未知，不显示为已启用"]].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 text-slate-300">{value}</dd></div>)}
           </dl>
           <p className="mt-3 text-xs leading-6 text-slate-500">当前后端没有 Agent 库专属配置读取接口。下方是已有编排与资源的真实只读记录；不会据此推断已绑定、已授权或会自动执行。视觉需求来自角色定义，模型能力尚不能由本接口验证。</p>
+          </>}
         </section>
 
         <section className={panelClass} aria-label="已有编排配置">
@@ -101,6 +105,6 @@ export default function AgentLibraryPanel({ selected, onSelect, workflows, skill
     </div>
 
     {workflows.status === "ready" && otherWorkflows.length > 0 && <section className={panelClass} aria-label="其他已有编排"><h3 className="text-sm font-medium text-slate-200">其他已有编排 / 业务管理流程</h3><p className="mb-3 mt-2 text-xs text-slate-500">未按目录归类的记录仍保留，不自动改绑或复制。</p><div className="flex flex-wrap gap-3">{otherWorkflows.map(item => <a key={item.id} className={linkClass} href={workflowCanvasHref(item.slug)}>{item.name}</a>)}</div></section>}
-    <p className="flex items-start gap-2 text-xs leading-6 text-slate-500"><Info className="mt-1 h-4 w-4 shrink-0" />本页仅查询与展示，不提供聊天、保存配置、Skill 执行或自动任务。原编排画布、CRUD 和业务执行入口保持不变，继续使用原有权限。</p>
+    <p className="flex items-start gap-2 text-xs leading-6 text-slate-500"><Info className="mt-1 h-4 w-4 shrink-0" />{hasConfigurationSlot ? "本页提供助手专属配置与版本入口，保存和恢复受管理员权限及环境写入开关控制；尚未提供聊天、Skill 执行或自动任务。原编排画布、CRUD 和业务执行入口保持不变，继续使用原有权限。" : "本页仅查询与展示，不提供聊天、保存配置、Skill 执行或自动任务。原编排画布、CRUD 和业务执行入口保持不变，继续使用原有权限。"}</p>
   </div>;
 }

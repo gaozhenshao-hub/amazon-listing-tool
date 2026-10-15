@@ -131,6 +131,7 @@ const dedicatedMigrationFiles = [
 const unreleasedDraftMigrationFiles = new Set([
   "0206_image_workflow_version_snapshots.sql",
   "0207_image_asset_trust_ledger.sql",
+  "0230_assistant_configurations.sql",
 ]);
 
 // Separate from the general release train: these two additive migrations are
@@ -225,6 +226,11 @@ export function loadImageQualityDevelopmentMigrationPlan() {
 
 export function loadImageQualityProductionMigrationPlan() {
   return migrationEntries(imageQualityProductionMigrationFiles, 0);
+}
+
+/** Read-only plan registration; no CLI executor or default release activation. */
+export function loadAssistantConfigurationMigrationPlan() {
+  return migrationEntries(["0230_assistant_configurations.sql"], 0);
 }
 
 function printPlan(plan) {
