@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 
 const mocks = vi.hoisted(() => ({
-  getProject: vi.fn(), getAdminProject: vi.fn(), getAnalyses: vi.fn(), forbidden: vi.fn(),
+  getProject: vi.fn(), getAdminProject: vi.fn(), getAnalyses: vi.fn(), forbidden: vi.fn(), url: vi.fn(),
 }));
 vi.mock("./repositories", () => ({
   getProjectById: mocks.getProject, getProjectByIdAdmin: mocks.getAdminProject,
@@ -28,20 +28,25 @@ vi.mock("./domains/ai_os/services/businessArtifactRegistry", () => ({
   registerCompetitorAnalysisArtifact: mocks.forbidden, registerCompetitorComparisonArtifact: mocks.forbidden,
 }));
 vi.mock("./reviewParser", () => ({ parseReviewFile: mocks.forbidden }));
-vi.mock("./storage", () => ({ resolveStoredObjectUrl: mocks.forbidden }));
+vi.mock("./storage", () => ({ resolveStoredObjectUrl: mocks.url }));
 
 import { analysisRouter } from "./routers/analysis";
+import { competitorRevision } from "./repositories/project/competitorWritePolicy";
+import type { CompetitorAnalysis } from "../drizzle/schema/project";
 
 let project: { id: number; userId: number; workspaceId: number | null };
-const analyses = [{ id: 11, projectId: 3, asin: "B000000011", title: "Selected research",
+const analyses: CompetitorAnalysis[] = [{ id: 11, projectId: 3, asin: "B000000011", title: "Selected research",
   imageUrls: null, price: "0", reviewCount: "0", summaryStatus: "draft", summary: null,
+  bulletPoints: null, rating: null, reviewAnalysis: null, keywords: null, aiSummary: null, summaryVersion: 1,
+  summaryConfirmedAt: null, summaryConfirmedBy: null, createdAt: new Date("2026-01-01"), updatedAt: new Date("2026-01-01"),
   rawData: '{"count":0,"enabled":false}' }];
+const delivery = () => analyses.map(row => ({ ...row, revision: competitorRevision(row) }));
 
-function caller(options: { id?: number; role?: string; workspaceId?: number | null; authenticated?: boolean } = {}) {
+function caller(options: { id?: number; role?: string; workspaceId?: number | null; defaultWorkspaceId?: number | null; authenticated?: boolean } = {}) {
   const workspaceId = options.workspaceId === undefined ? 9 : options.workspaceId;
   return analysisRouter.createCaller({
     user: options.authenticated === false ? null : {
-      id: options.id ?? 7, role: options.role ?? "ops_specialist", defaultWorkspaceId: workspaceId,
+      id: options.id ?? 7, role: options.role ?? "ops_specialist", defaultWorkspaceId: options.defaultWorkspaceId === undefined ? workspaceId : options.defaultWorkspaceId,
     },
     workspaceId, requestId: "synthetic-research-read", req: {}, res: {},
   } as unknown as TrpcContext);
@@ -64,6 +69,7 @@ beforeEach(() => {
     return { ...project };
   });
   mocks.getAnalyses.mockResolvedValue(analyses);
+  mocks.url.mockRejectedValue(new Error("Unexpected storage reference"));
   mocks.forbidden.mockImplementation(() => { throw new Error("Unexpected DB/model/network/storage/import execution"); });
   mocks.getAdminProject.mockImplementation(() => { throw new Error("Unexpected admin owner bypass"); });
 });
@@ -73,6 +79,22 @@ afterEach(() => {
 });
 
 describe("actual analysis.listByProject research selector scope", () => {
+  it("does not replace explicit authenticated NULL with the user's positive default workspace", async () => {
+    project.workspaceId = null;
+    expect(await caller({ workspaceId: null, defaultWorkspaceId: 9 }).listByProject({ projectId: 3, expectedWorkspaceId: null })).toEqual(delivery());
+    expect(mocks.getProject).toHaveBeenCalledWith(3, 7, null);
+  });
+  it("computes a stable persisted revision before expiring image delivery URLs", async () => {
+    const row = { ...analyses[0], imageUrls: '["images/original.jpg"]' };
+    mocks.getAnalyses.mockResolvedValue([row]);
+    mocks.url.mockResolvedValueOnce("https://example.invalid/image?signature=one").mockResolvedValueOnce("https://example.invalid/image?signature=two");
+    const first = await caller().listByProject({ projectId: 3, expectedWorkspaceId: 9 });
+    const second = await caller().listByProject({ projectId: 3, expectedWorkspaceId: 9 });
+    expect(first[0].revision).toBe(competitorRevision(row));
+    expect(second[0].revision).toBe(first[0].revision);
+    expect(first[0].imageUrls).not.toBe(second[0].imageUrls);
+    expect(row.imageUrls).toBe('["images/original.jpg"]');
+  });
   it.each([10, null])("rejects expected workspace %s against authenticated 9 before any repository read", async expectedWorkspaceId => {
     await expect(caller().listByProject({ projectId: 3, expectedWorkspaceId }))
       .rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
@@ -91,7 +113,7 @@ describe("actual analysis.listByProject research selector scope", () => {
     expect(mocks.getProject).toHaveBeenCalledWith(3, 7, 9);
     expect(mocks.getAnalyses).toHaveBeenCalledTimes(1);
     expect(mocks.getAnalyses).toHaveBeenCalledWith(3);
-    expect(result).toEqual(analyses);
+    expect(result).toEqual(delivery());
   });
 
   it("defensively rejects an explicitly foreign parent even if a repository returns it", async () => {
@@ -108,13 +130,13 @@ describe("actual analysis.listByProject research selector scope", () => {
 
   it.each([9, null])("retains legacy NULL-parent owner access in authenticated workspace %s", async workspaceId => {
     project.workspaceId = null;
-    expect(await caller({ workspaceId }).listByProject({ projectId: 3, expectedWorkspaceId: workspaceId })).toEqual(analyses);
+    expect(await caller({ workspaceId }).listByProject({ projectId: 3, expectedWorkspaceId: workspaceId })).toEqual(delivery());
     expect(mocks.getProject).toHaveBeenCalledWith(3, 7, workspaceId);
   });
 
   it.each([9, null])("old callers omitting expected workspace still pass actual scope %s", async workspaceId => {
     project.workspaceId = workspaceId;
-    expect(await caller({ workspaceId }).listByProject({ projectId: 3 })).toEqual(analyses);
+    expect(await caller({ workspaceId }).listByProject({ projectId: 3 })).toEqual(delivery());
     expect(mocks.getProject).toHaveBeenCalledWith(3, 7, workspaceId);
   });
 
@@ -126,7 +148,7 @@ describe("actual analysis.listByProject research selector scope", () => {
   });
 
   it.each(["admin", "super_admin"])("retains existing access for a %s who owns the project", async role => {
-    expect(await caller({ role }).listByProject({ projectId: 3, expectedWorkspaceId: 9 })).toEqual(analyses);
+    expect(await caller({ role }).listByProject({ projectId: 3, expectedWorkspaceId: 9 })).toEqual(delivery());
     expect(mocks.getProject).toHaveBeenCalledWith(3, 7, 9);
   });
 

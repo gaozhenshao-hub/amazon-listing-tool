@@ -28,7 +28,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.f
 
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
 function analysis(id: number, extra = {}) {
-  return { id, asin: `B${String(id).padStart(9, "0")}`, title: `竞品 ${id}`, price: "12.50", rating: "4", reviewCount: 0, bulletPoints: '["<script>原文不是HTML</script>"]', keywords: null, reviewAnalysis: null, rawData: null, summary: `已保存摘要 ${id}`, aiSummary: "AI候选", summaryStatus: "draft", summaryVersion: 1, ...extra };
+  return { id, revision: String(id).repeat(64).slice(0, 64), asin: `B${String(id).padStart(9, "0")}`, title: `竞品 ${id}`, price: "12.50", rating: "4", reviewCount: 0, bulletPoints: '["<script>原文不是HTML</script>"]', keywords: null, reviewAnalysis: null, rawData: null, summary: `已保存摘要 ${id}`, aiSummary: "AI候选", summaryStatus: "draft", summaryVersion: 1, ...extra };
 }
 function report(summary = "服务器报告", ids = [1, 2], projectId = 1) {
   return { id: 90, projectId, analysisIds: ids, selectionKey: [...ids].sort((a, b) => a - b).join("-"), analyzedAsins: ids.map(id => analysis(id).asin), aiSummary: summary, summary, sellingPointRows: [], status: "draft", version: 1, confirmedAt: null };
@@ -53,7 +53,7 @@ describe("comparison owned scope", () => {
   it.each([false, true])("allows the supported explicit null workspace with feature flag=%s", async flag => {
     state.flag = flag; state.auth.user!.defaultWorkspaceId = null;
     render(<ComparisonPage />); await choose(1);
-    expect(state.list).toHaveBeenCalledWith({ projectId: 1 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(state.list).toHaveBeenCalledWith({ projectId: 1, expectedWorkspaceId: null }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(screen.getByText("已选 1/3")).toBeInTheDocument();
   });
   it.each([undefined, 0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1, "11"])("rejects a missing or invalid workspace %s", value => {
@@ -182,13 +182,23 @@ describe("selected saved studies", () => {
     const done = deferred<object>(); state.confirmSummary.mockReturnValueOnce(done.promise);
     render(<ComparisonPage />); await choose(1);
     const button = screen.getByRole("button", { name: "确认此摘要" }); fireEvent.click(button); fireEvent.click(button);
-    expect(state.confirmSummary).toHaveBeenCalledTimes(1); expect(state.confirmSummary).toHaveBeenCalledWith({ projectId: 1, analysisId: 1, summary: "已保存摘要 1" });
+    expect(state.confirmSummary).toHaveBeenCalledTimes(1); expect(state.confirmSummary).toHaveBeenCalledWith({ projectId: 1, analysisId: 1, summary: "已保存摘要 1", expectedWorkspaceId: 11, expectedRevision: analysis(1).revision });
     await act(async () => done.resolve({}));
   });
   it("unlocks a saved confirmed summary without invoking analysis", async () => {
     state.list.mockResolvedValue([analysis(1, { summaryStatus: "confirmed" })]); render(<ComparisonPage />); await choose(1);
     expect(screen.getByRole("button", { name: "确认此摘要" })).toBeDisabled(); fireEvent.click(screen.getByRole("button", { name: "解锁此摘要" }));
-    expect(state.unlockSummary).toHaveBeenCalledWith({ projectId: 1, analysisId: 1 });
+    expect(state.unlockSummary).toHaveBeenCalledWith({ projectId: 1, analysisId: 1, expectedWorkspaceId: 11, expectedRevision: analysis(1).revision });
+  });
+  it("does not write when the server row lacks a complete revision", async () => {
+    state.list.mockResolvedValue([analysis(1, { revision: undefined })]); render(<ComparisonPage />); await choose(1);
+    fireEvent.click(screen.getByRole("button", { name: "确认此摘要" }));
+    expect(state.confirmSummary).not.toHaveBeenCalled();
+  });
+  it("carries explicit NULL into review requests rather than inferring a different workspace", async () => {
+    state.auth.user!.defaultWorkspaceId = null; render(<ComparisonPage />); await choose(1);
+    fireEvent.click(screen.getByRole("button", { name: "确认此摘要" }));
+    expect(state.confirmSummary).toHaveBeenCalledWith(expect.objectContaining({ expectedWorkspaceId: null, expectedRevision: analysis(1).revision }));
   });
   it("refreshes the saved confirmed state and does not infer a task result", async () => {
     render(<ComparisonPage />); await choose(1);

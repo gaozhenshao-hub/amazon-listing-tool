@@ -68,6 +68,23 @@ async function requireProject(scope: ResearchScope) {
   }
 }
 
+function assertSelectedSourceUsable(row: CompetitorAnalysis) {
+  // Preserve legacy records without a source envelope; do not require all
+  // drafts to be confirmed. Known historical/capture-only data is different.
+  if (row.rawData === null) return;
+  if (typeof row.rawData !== "string") return unavailable("所选竞品来源状态无法核验，请重新读取资料");
+  if (row.rawData.trim() === "") return;
+  let raw: unknown;
+  try { raw = JSON.parse(row.rawData); }
+  catch { return unavailable("所选竞品来源状态无法核验，请重新读取资料"); }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return unavailable("所选竞品来源状态无法核验，请重新读取资料");
+  const source = raw as Record<string, unknown>;
+  for (const key of ["analysisStale", "captureOnly"] as const) {
+    if (Object.hasOwn(source, key) && typeof source[key] !== "boolean") return unavailable("所选竞品来源状态无法核验，请重新读取资料");
+    if (source[key] === true) return unavailable("所选竞品资料已变化或尚未分析，不能将历史摘要用于当前生成");
+  }
+}
+
 async function readSelection(scope: ResearchScope, requestedIds: number[] | undefined, mode: ListingResearchBinding["mode"]): Promise<ListingResearchSelection> {
   await requireProject(scope);
   // Explicit empty selections do not touch unrelated research or comparisons.
@@ -83,6 +100,7 @@ async function readSelection(scope: ResearchScope, requestedIds: number[] | unde
   const selected = analysisIds.map(id => {
     const row = byId.get(id);
     if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "所选竞品分析已删除或不属于当前项目，请重新选择" });
+    assertSelectedSourceUsable(row);
     return row;
   });
   let confirmedComparison: CompetitorComparisonReport | null = null;

@@ -20,6 +20,25 @@ describe("saved competitor research", () => {
   it("unlocks only a known confirmed saved summary", () => {
     expect(competitorStudy({ ...row, summaryStatus: "confirmed" })).toMatchObject({ canConfirm: false, canUnlock: true });
   });
+  it.each([{ analysisStale: true }, { captureOnly: true }, { analysisStale: true, captureOnly: true }])("keeps stale/capture-only saved success readable only as historical %j", flags => {
+    const study = competitorStudy({ ...row, rawData: JSON.stringify(flags) });
+    expect(study).toMatchObject({ summary: row.summary, historical: true, canConfirm: false, summarySource: "历史已保存摘要（非当前资料分析）" });
+    expect(competitorStudy({ ...row, summary: null, rawData: JSON.stringify(flags) })).toMatchObject({ summary: row.aiSummary,
+      summarySource: "历史 AI 候选摘要（未确认）", historical: true, canConfirm: false });
+    expect(competitorStudy({ ...row, summaryStatus: "confirmed", rawData: JSON.stringify(flags) })).toMatchObject({ canUnlock: true, canConfirm: false, historical: true });
+  });
+  it.each([undefined, null, "", "{}", '{"legacyAnalysis":{"saved":true}}', '{"analysisStale":false,"captureOnly":false}'])("does not require deepAnalysis for ordinary compatible saved records %s", rawData => {
+    expect(competitorStudy({ ...row, rawData })).toMatchObject({ historical: false, sourceUnknown: false, canConfirm: true });
+  });
+  it.each(["bad JSON", "[]", "null", "false", '{"analysisStale":"true"}', '{"captureOnly":1}', '{"captureOnly":null}'])("does not invent fresh/stale or successful job state for malformed source flags %s", rawData => {
+    expect(competitorStudy({ ...row, rawData })).toMatchObject({ summary: row.summary, analysisStale: false, captureOnly: false,
+      historical: false, sourceUnknown: true, canConfirm: false, summarySource: "已保存摘要（来源状态未核验）" });
+    expect(competitorStudy({ ...row, rawData, summaryStatus: "confirmed" }).canUnlock).toBe(true);
+  });
+  it("does not interpret unknown failure metadata as staleness or a completed analysis", () => {
+    expect(competitorStudy({ ...row, rawData: '{"presentationJob":{"status":"failed"},"errorMessage":"unknown"}' }))
+      .toMatchObject({ summary: row.summary, analysisStale: false, captureOnly: false, historical: false, sourceUnknown: false });
+  });
 });
 describe("comparison response ownership", () => {
   const report = { projectId: 1, analysisIds: [2, 3], selectionKey: "2-3" };

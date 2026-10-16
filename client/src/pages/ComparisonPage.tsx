@@ -458,10 +458,10 @@ export default function ComparisonPage() {
   }
   // Remount all selection, drafts and callbacks; never reuse a project-only shared cache across users/workspaces.
   const scopeKey = JSON.stringify([id, defaultWorkspaceId, role, selectedProjectId]);
-  return <OwnedComparisonPage key={scopeKey} selectedProjectId={selectedProjectId} />;
+  return <OwnedComparisonPage key={scopeKey} selectedProjectId={selectedProjectId} workspaceId={defaultWorkspaceId} />;
 }
 
-function OwnedComparisonPage({ selectedProjectId }: { selectedProjectId: number }) {
+function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProjectId: number; workspaceId: number | null }) {
   const client = trpc.useUtils().client;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [report, setReport] = useState<ComparisonReport | null>(null);
@@ -480,13 +480,13 @@ function OwnedComparisonPage({ selectedProjectId }: { selectedProjectId: number 
   useEffect(() => {
     const controller = new AbortController(); let current = true;
     setIsLoading(true); setReadError(false);
-    void client.analysis.listByProject.query({ projectId: selectedProjectId }, { signal: controller.signal }).then(rows => {
+    void client.analysis.listByProject.query({ projectId: selectedProjectId, expectedWorkspaceId: workspaceId }, { signal: controller.signal }).then(rows => {
       if (current && alive.current) setAnalyses(rows);
     }).catch(() => { if (current && alive.current) setReadError(true); })
       .finally(() => { if (current && alive.current) setIsLoading(false); });
     // Abort is best-effort; the current/alive guards also reject late responses when transport ignores it.
     return () => { current = false; controller.abort(); };
-  }, [client, selectedProjectId, readGeneration]);
+  }, [client, selectedProjectId, workspaceId, readGeneration]);
 
   const selectedAnalysisIds = useMemo(
     () => Array.from(selectedIds).sort((a, b) => a - b),
@@ -559,10 +559,14 @@ function OwnedComparisonPage({ selectedProjectId }: { selectedProjectId: number 
     if (!current || !selectedIds.has(current.id) || studyLocks.current.has(current.id)) return;
     const study = competitorStudy(current);
     if (action === "confirm" ? !study.canConfirm : !study.canUnlock) return;
+    if (typeof current.revision !== "string" || !/^[a-f0-9]{64}$/u.test(current.revision)) {
+      toast.error("竞品版本信息不完整，请刷新后再操作"); return;
+    }
     studyLocks.current.add(current.id); setPendingStudyIds(new Set(studyLocks.current));
     try {
-      if (action === "confirm") await client.analysis.confirmSummary.mutate({ projectId: selectedProjectId, analysisId: current.id, summary: study.summary });
-      else await client.analysis.unlockSummary.mutate({ projectId: selectedProjectId, analysisId: current.id });
+      const input = { projectId: selectedProjectId, analysisId: current.id, expectedWorkspaceId: workspaceId, expectedRevision: current.revision };
+      if (action === "confirm") await client.analysis.confirmSummary.mutate({ ...input, summary: study.summary });
+      else await client.analysis.unlockSummary.mutate(input);
       if (alive.current) setReadGeneration(value => value + 1);
     } catch (error) {
       if (alive.current) toast.error("摘要操作未完成", { description: error instanceof Error ? error.message : "请刷新核对，系统不会自动重试" });

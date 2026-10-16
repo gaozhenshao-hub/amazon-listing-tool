@@ -257,9 +257,9 @@
         "sha256": "c71e7a7319825baa2828a9e9a5d4a9f9656d02c3c4e10020a4b497f99553d248"
       },
       "reviewed": {
-        "gitBlobSha1": "f61367d086c897777217908038e9645b016eef5f",
-        "sha256": "e4cbceab73064e07e6c72df309680bf29fec801e985c5d4f889ca879230dbfff",
-        "reviewRef": "config/integration/reviews/20261016-listing-profile-workflow.json"
+        "gitBlobSha1": "90d43dfa501630cee6804b118b7c45048c639b74",
+        "sha256": "b033ad6980bb42e2b59362e741e50c5f4627130120a7247afd00c3dd926735d9",
+        "reviewRef": "config/integration/reviews/20261016-competitor-review-write-safety.json"
       }
     },
     {
@@ -527,6 +527,11 @@
       "baseline": {
         "gitBlobSha1": "19ffeb06c122df26a63902aa05781efe219446a2",
         "sha256": "d54271c370c11ddaac0ccc6e685b4d6ae91f2361a218671e45e9da38259052df"
+      },
+      "reviewed": {
+        "gitBlobSha1": "1ab4899453ccdc855e2de6c518132954465c677d",
+        "sha256": "484e6bd8395c36ab4a5501d4120e2092018b84e2d40ef194d117ebd4a653aa29",
+        "reviewRef": "config/integration/reviews/20261016-competitor-review-write-safety.json"
       }
     },
     {
@@ -1113,9 +1118,9 @@
         "sha256": "dfc27c614e4c74c026b4efe7c9a1ce3ee073dc0dd12b190b4131dd7001aa6f56"
       },
       "reviewed": {
-        "gitBlobSha1": "c6268d975bb36b1e8ef1faf31c4af947ddbff1bf",
-        "sha256": "fa7a64a8b2228f26ea47561fc898486ad6b49596ce33e0fabb374d4c19669075",
-        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json"
+        "gitBlobSha1": "095490f8367924cf08ef37ca96728ad180373c11",
+        "sha256": "a92a4650da45ef9ac22e3d59b59443ed16fc8515ce256cbcd4363105c78fd7f8",
+        "reviewRef": "config/integration/reviews/20261016-competitor-review-write-safety.json"
       }
     },
     {
@@ -1187,6 +1192,11 @@
       "baseline": {
         "gitBlobSha1": "3ea06ae8c1bfae167ffba572d08fb3755774bc9d",
         "sha256": "026b7a4781b28834ba287fbdec7da86795c67fa39f99b5f96143aae166bda2d7"
+      },
+      "reviewed": {
+        "gitBlobSha1": "7d774bce8f358e331c3f9e659826de1a58872cdb",
+        "sha256": "13d28d3e47ab730f0e50f411c32eb41ea54e9337e2aa92273b9bbcfafd683e0b",
+        "reviewRef": "config/integration/reviews/20261016-competitor-review-write-safety.json"
       }
     },
     {

@@ -235,3 +235,60 @@ describe("exact-set comparison isolation and version binding", () => {
     await expect(assertListingResearchSelection(binding, scope)).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });
+
+describe("selected research source eligibility", () => {
+  it.each([null, "", " \n\t", "{}", '{"analysisStale":false}', '{"captureOnly":false}', '{"analysisStale":false,"captureOnly":false}'])(
+    "retains legacy raw data %j and does not require a normal draft to be confirmed", async rawData => {
+      rows = [analysis(11, { rawData, summaryStatus: "draft" })];
+      const prepared = await prepareListingResearchSelection({ ...scope, analysisIds: [11] });
+      expect(prepared.competitors[0]).toMatchObject({ rawData, summaryStatus: "draft" });
+      expect((await assertListingResearchSelection(prepared.binding, scope)).binding).toEqual(prepared.binding);
+    },
+  );
+
+  it.each([
+    { analysisStale: true }, { captureOnly: true }, { analysisStale: true, captureOnly: true },
+  ])("rejects selected historical records even if their old summary is confirmed: %j", async flags => {
+    rows = [analysis(11, { rawData: JSON.stringify(flags), summaryStatus: "confirmed", summary: "Old confirmed summary" })];
+    await expect(prepareListingResearchSelection({ ...scope, analysisIds: [11] })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(deps.comparison).not.toHaveBeenCalled();
+  });
+
+  it.each(["invalid JSON", "[]", "null", "false", "0", '"text"', '{"analysisStale":"false"}',
+    '{"analysisStale":0}', '{"captureOnly":null}', '{"captureOnly":{}}'])(
+    "rejects selected unknown source state %s before comparison admission", async rawData => {
+      rows = [analysis(11, { rawData })];
+      await expect(prepareListingResearchSelection({ ...scope, analysisIds: [11] })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+      expect(deps.comparison).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['{"analysisStale":true}', '{"captureOnly":true}', "invalid JSON", '{"captureOnly":"true"}'])(
+    "rechecks source eligibility on a persisted job: %s", async rawData => {
+      const { binding } = await prepareListingResearchSelection({ ...scope, analysisIds: [11] });
+      rows = [analysis(11, { rawData })]; deps.comparison.mockClear();
+      await expect(assertListingResearchSelection(binding, scope)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+      expect(deps.comparison).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['{"analysisStale":true}', '{"captureOnly":true}', "invalid JSON", '{"captureOnly":"true"}'])(
+    "does not inspect the source state of an unselected record: %s", async rawData => {
+      const { binding } = await prepareListingResearchSelection({ ...scope, analysisIds: [11] });
+      rows = [analysis(11), analysis(22, { rawData })];
+      expect((await prepareListingResearchSelection({ ...scope, analysisIds: [11] })).binding).toEqual(binding);
+      expect((await assertListingResearchSelection(binding, scope)).binding).toEqual(binding);
+    },
+  );
+
+  it("legacy_all cannot freeze an already historical record into a new current binding", async () => {
+    rows = [analysis(11), analysis(22, { rawData: '{"analysisStale":true}' })];
+    await expect(prepareListingResearchSelection(scope)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+  });
+
+  it("an explicit empty selection ignores unrelated bad source state", async () => {
+    rows = [analysis(11, { rawData: "broken" })];
+    const result = await prepareListingResearchSelection({ ...scope, analysisIds: [] });
+    expect(result.competitors).toEqual([]); expect(deps.analyses).not.toHaveBeenCalled();
+  });
+});

@@ -1,0 +1,92 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-competitor-review-write-safety",
+  "baseline": "7ba22f427c5807c44cd6a9126834899993a98a1d",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "listingSkills": "user-primary",
+    "listingWorkflow": "friend-primary",
+    "competitorAndAttributeInputs": "select authorized saved sources and generate; local upload supplemental",
+    "p5GeneralSkills": "Qingdao-primary",
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary"
+  },
+  "changes": [
+    "Use real parent-project then competitor-row transactions for create/upsert/review/update/delete. Participating application writers serialize project+ASIN inserts; no DB uniqueness migration or external-SQL safety claim.",
+    "Protect confirmed summaries, confirmation metadata, original AI summary and keywords. Preserve human-edited draft summaries while retaining existing unedited-draft AI refresh behavior. Null/omitted incoming sources and review analysis do not erase saved data.",
+    "Merge raw data against the currently locked row. Review-specific writes update only their review envelope; generic upserts preserve review-result/source pairs. Conflicting new-review-create races fail the entire write instead of reporting a different upload as saved.",
+    "Bind human save/confirm/unlock to explicit authenticated workspace and a whole persisted-row SHA256, rechecking parent ownership and the revision inside the write transaction. Repeated identical confirmation is a no-op; real confirm/unlock changes increment versions. Delete now checks the actor/project/workspace and a current revision before writing.",
+    "Compute list revision before signed image delivery URLs. Explicit authenticated NULL does not inherit a positive default. Update both summary UIs to carry the read revision; dirty drafts keep their original revision across refresh/conflict and late callbacks are isolated.",
+    "Mark retained historical summaries stale when source changes, display them honestly, and refuse confirm or Listing-generation admission for selected stale/capture-only/unknown source status. Unselected bad source rows and ordinary legacy drafts are not newly required to pass deep-analysis review.",
+    "Reject invalid new review model results without substituting previous analysis and falsely attaching a new file hash. Keep per-ASIN failure handling and other successful items; no added model retries.",
+    "Remove generated placeholder summary text from the human-confirmation input. Preserve current user Skills, seven directions, FABE, evidence and fact/core/candidate review, existing capture/import entrances, exact selected generation binding and profile conversion jobs."
+  ],
+  "review": {
+    "root": "Read production writers, real friend study flow, schema, summary routes, full revision policy, source selection, import executor and both UI paths. Added real route/service scope and signed-URL revision regression coverage. Only four intentional protection records changed; baseline tuples remain unchanged.",
+    "independent": "Parallel repository, pure-policy and UI authors plus cross-layer audits found and closed stale source admission, new review hash/old result pairing, conflicting no-row upsert success, explicit NULL fallback, unknown TypeScript summary inference and confirmed keywords overwrite. Tests use synthetic mock I/O; they do not establish actual MySQL concurrency.",
+    "previousProtectionRecords": [
+      {
+        "path": "client/src/pages/ComparisonPage.tsx",
+        "source": "reviewed",
+        "gitBlobSha1": "f61367d086c897777217908038e9645b016eef5f",
+        "sha256": "e4cbceab73064e07e6c72df309680bf29fec801e985c5d4f889ca879230dbfff",
+        "reviewRef": "config/integration/reviews/20261016-listing-profile-workflow.json"
+      },
+      {
+        "path": "server/routers/analysis.ts",
+        "source": "reviewed",
+        "gitBlobSha1": "c6268d975bb36b1e8ef1faf31c4af947ddbff1bf",
+        "sha256": "fa7a64a8b2228f26ea47561fc898486ad6b49596ce33e0fabb374d4c19669075",
+        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json"
+      },
+      {
+        "path": "server/services/analysisImportExecution.ts",
+        "source": "baseline",
+        "gitBlobSha1": "3ea06ae8c1bfae167ffba572d08fb3755774bc9d",
+        "sha256": "026b7a4781b28834ba287fbdec7da86795c67fa39f99b5f96143aae166bda2d7"
+      },
+      {
+        "path": "server/analysisImportExecution.test.ts",
+        "source": "baseline",
+        "gitBlobSha1": "19ffeb06c122df26a63902aa05781efe219446a2",
+        "sha256": "d54271c370c11ddaac0ccc6e685b4d6ae91f2361a218671e45e9da38259052df"
+      }
+    ]
+  },
+  "verification": {
+    "rootFocusedUnion": {
+      "files": 18,
+      "passed": 644,
+      "exitCode": 0,
+      "session": 12589
+    },
+    "scopedLint": {
+      "files": 21,
+      "maxWarnings": 0,
+      "exitCode": 0
+    },
+    "configuredTypes": {
+      "incremental": false,
+      "noEmit": true,
+      "exitCode": 0,
+      "session": 82926
+    },
+    "realDatabase": false,
+    "realBrowser": false,
+    "paidModelCalls": 0
+  },
+  "defaultAndRollback": {
+    "newWorkflowFlag": "unchanged; opt-in workflow remains off by default",
+    "newSchema": false,
+    "productionDeployed": false,
+    "compatibility": "Deploy frontend/backend together when approved. Old summary mutation clients without explicit workspace/revision must refresh. Do not treat generic upsert as authority to clear stale markers; a validated current-source reanalysis lane is still required."
+  },
+  "remaining": [
+    "No saved-competitor single/all durable analysis worker or friend four-section analysis added in this batch; those are the next implementation slice. Friend all-button actually loops all eligible project records, not just selected records; any new UI label must match explicit frozen scope.",
+    "Old automatic draft analysis has no full model-dispatch/source/lease transaction protocol. These writer protections do not prove exactly-once models, global cancellation or complete source-bound recomputation.",
+    "Actual MySQL lock/deadlock/rollback/changed-owner concurrency and legacy project deletion lock order still need runtime validation; external direct SQL does not participate in the new parent-lock protocol.",
+    "Summary artifact registration remains existing best-effort behavior, not an atomic authoritative artifact transaction. Parent legacy page caches and all unrelated comparison/report APIs are not certified by this work.",
+    "A stale marker is not automatically erased by generic imports or a manual draft edit. Complete the explicit reanalysis lifecycle and real no-local-upload browser acceptance before rollout.",
+    "Fixed user/Qingdao runtime Skill snapshots, native303 approval, native/0230/P1 and all other original plan gates remain pending. No public push, deployment, scheduler, VM, heavy build or production data writes."
+  ]
+}

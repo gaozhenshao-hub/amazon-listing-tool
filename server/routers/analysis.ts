@@ -16,6 +16,7 @@ import {
 } from "../domains/acquisition/legacyConsumerContracts";
 import { resolveStoredObjectUrl } from "../storage";
 import { workspaceIdFromContext } from "../services/securityGovernance";
+import { competitorReviewScopeSchema, competitorSummaryWriteSchema, competitorSummaryReview, competitorWithRevision, competitorReviewWorkspace } from "../domains/listing/services/competitorSummaryReview";
 import {
   registerCompetitorAnalysisArtifact,
   registerCompetitorComparisonArtifact,
@@ -78,82 +79,29 @@ export const analysisRouter = router({
   listByProject: protectedProcedure
     .input(z.object({ projectId: z.number(), expectedWorkspaceId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable().optional() }))
     .query(async ({ ctx, input }) => {
-      const workspaceId = workspaceIdFromContext(ctx);
+      const workspaceId = competitorReviewWorkspace(ctx);
       if (input.expectedWorkspaceId !== undefined && input.expectedWorkspaceId !== workspaceId) {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "工作区已变化，请重新选择竞品" });
       }
       const project = await db.getProjectById(input.projectId, ctx.user.id, workspaceId);
-      if (!project || (project.workspaceId !== null && project.workspaceId !== workspaceId)) throw new Error("Project not found");
+      if (!project || project.id !== input.projectId || project.userId !== ctx.user.id
+        || (project.workspaceId !== null && project.workspaceId !== workspaceId)) throw new Error("Project not found");
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      return Promise.all(analyses.map(resolveCompetitorImagesForDelivery));
+      // Compute CAS tokens from persisted storage refs, before signed delivery URLs change.
+      return Promise.all(analyses.map(analysis => resolveCompetitorImagesForDelivery(competitorWithRevision(analysis))));
     }),
 
   updateSummary: protectedProcedure
-    .input(z.object({
-      projectId: z.number(),
-      analysisId: z.number(),
-      summary: z.string().trim().min(1).max(20000),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
-      const analysis = await db.getCompetitorAnalysisById(input.analysisId);
-      if (!analysis || analysis.projectId !== input.projectId) throw new Error("Competitor analysis not found");
-      if (analysis.summaryStatus === "confirmed") throw new Error("已确认的竞品分析需要先解锁才能编辑");
-      const updated = await db.updateCompetitorAnalysisSummary(input.analysisId, {
-        summary: input.summary,
-        incrementVersion: true,
-      });
-      await registerCompetitorAnalysisArtifact(input.analysisId, "user_edit").catch(error => {
-        console.warn("[Analysis] Failed to register analysis draft artifact", error);
-      });
-      return updated;
-    }),
+    .input(competitorSummaryWriteSchema)
+    .mutation(({ ctx, input }) => competitorSummaryReview.review(ctx, "save", input)),
 
   confirmSummary: protectedProcedure
-    .input(z.object({
-      projectId: z.number(),
-      analysisId: z.number(),
-      summary: z.string().trim().min(1).max(20000),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
-      const analysis = await db.getCompetitorAnalysisById(input.analysisId);
-      if (!analysis || analysis.projectId !== input.projectId) throw new Error("Competitor analysis not found");
-      if (analysis.summaryStatus === "confirmed" && analysis.summary !== input.summary) {
-        throw new Error("已确认的竞品分析需要先解锁才能修改");
-      }
-      const updated = await db.updateCompetitorAnalysisSummary(input.analysisId, {
-        summary: input.summary,
-        summaryStatus: "confirmed",
-        summaryConfirmedBy: ctx.user.id,
-        summaryConfirmedAt: new Date(),
-        incrementVersion: analysis.summaryStatus !== "confirmed" || analysis.summary !== input.summary,
-      });
-      await registerCompetitorAnalysisArtifact(input.analysisId, analysis.summary === input.summary ? "system" : "user_edit").catch(error => {
-        console.warn("[Analysis] Failed to register confirmed analysis artifact", error);
-      });
-      return updated;
-    }),
+    .input(competitorSummaryWriteSchema)
+    .mutation(({ ctx, input }) => competitorSummaryReview.review(ctx, "confirm", input)),
 
   unlockSummary: protectedProcedure
-    .input(z.object({ projectId: z.number(), analysisId: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
-      const analysis = await db.getCompetitorAnalysisById(input.analysisId);
-      if (!analysis || analysis.projectId !== input.projectId) throw new Error("Competitor analysis not found");
-      const updated = await db.updateCompetitorAnalysisSummary(input.analysisId, {
-        summaryStatus: "draft",
-        summaryConfirmedBy: null,
-        summaryConfirmedAt: null,
-      });
-      await registerCompetitorAnalysisArtifact(input.analysisId, "user_edit").catch(error => {
-        console.warn("[Analysis] Failed to register unlocked analysis artifact", error);
-      });
-      return updated;
-    }),
+    .input(competitorReviewScopeSchema)
+    .mutation(({ ctx, input }) => competitorSummaryReview.review(ctx, "unlock", input)),
 
   getComparisonReport: protectedProcedure
     .input(z.object({
@@ -626,9 +574,7 @@ export const analysisRouter = router({
   // Delete an analysis
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      return db.deleteCompetitorAnalysis(input.id);
-    }),
+    .mutation(({ ctx, input }) => competitorSummaryReview.remove(ctx, input.id)),
 
   // ─── Review Import History ─────────────────────────────────────
 

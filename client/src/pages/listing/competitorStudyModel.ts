@@ -10,6 +10,19 @@ export interface CompetitorStudyRecord {
   aiSummary?: string | null;
   summaryStatus?: string | null;
   summaryVersion?: number | null;
+  rawData?: string | null;
+}
+
+function sourceState(rawData: CompetitorStudyRecord["rawData"]) {
+  if (rawData === undefined || rawData === null || (typeof rawData === "string" && rawData.trim() === "")) return { analysisStale: false, captureOnly: false, sourceUnknown: false };
+  if (typeof rawData !== "string") return { analysisStale: false, captureOnly: false, sourceUnknown: true };
+  try {
+    const raw: unknown = JSON.parse(rawData);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("INVALID_SOURCE_STATE");
+    const flags = raw as Record<string, unknown>;
+    const invalidFlag = ["analysisStale", "captureOnly"].some(key => Object.hasOwn(flags, key) && typeof flags[key] !== "boolean");
+    return { analysisStale: flags.analysisStale === true, captureOnly: flags.captureOnly === true, sourceUnknown: invalidFlag };
+  } catch { return { analysisStale: false, captureOnly: false, sourceUnknown: true }; }
 }
 
 /** Saved fields only: absence is not replaced by an invented analysis or task. */
@@ -27,10 +40,12 @@ export function competitorStudy(record: CompetitorStudyRecord) {
   }
   const validIdentity = Number.isSafeInteger(record.id) && record.id > 0 && /^[A-Z0-9]{10}$/.test(record.asin);
   const confirmed = record.summaryStatus === "confirmed";
+  const source = sourceState(record.rawData), historical = source.analysisStale || source.captureOnly;
+  const summarySource = saved.trim() ? historical ? "历史已保存摘要（非当前资料分析）" : source.sourceUnknown ? "已保存摘要（来源状态未核验）" : "已保存摘要"
+    : summary ? historical ? "历史 AI 候选摘要（未确认）" : source.sourceUnknown ? "AI 候选摘要（来源状态未核验，未确认）" : "AI 候选摘要（未确认）" : "尚无已保存分析摘要";
   return {
-    summary, bullets, bulletsUnavailable, confirmed,
-    summarySource: saved.trim() ? "已保存摘要" : summary ? "AI 候选摘要（未确认）" : "尚无已保存分析摘要",
-    canConfirm: validIdentity && record.summaryStatus === "draft" && !!summary.trim() && summary.length <= 20_000,
+    summary, bullets, bulletsUnavailable, confirmed, ...source, historical, summarySource,
+    canConfirm: validIdentity && !historical && !source.sourceUnknown && record.summaryStatus === "draft" && !!summary.trim() && summary.length <= 20_000,
     canUnlock: validIdentity && confirmed && !!saved.trim(),
     inconsistent: confirmed && !saved.trim(),
   };

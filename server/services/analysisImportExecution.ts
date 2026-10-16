@@ -75,6 +75,18 @@ export async function runAnalysisSkill<T>(input: {
   return result.parsed;
 }
 
+function assertNonEmptyReviewAnalysis(value: unknown): asserts value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) {
+    throw Object.assign(new Error("评论分析返回内容无效，未写入新的评论来源"), { code: "INVALID_OUTPUT" });
+  }
+  const fields = Object.getOwnPropertyDescriptors(value);
+  if (Object.keys(fields).length === 0 || Reflect.ownKeys(value).some(key => typeof key !== "string")
+    || Object.values(fields).some(field => !("value" in field) || !field.enumerable)) {
+    throw Object.assign(new Error("评论分析返回内容无效，未写入新的评论来源"), { code: "INVALID_OUTPUT" });
+  }
+}
+
 export async function executeReviewImport(input: ImportFileInput, userId: number, options: ImportExecutionOptions = {}) {
   const project = await db.getProjectById(input.projectId, userId);
   if (!project) throw new Error("Project not found");
@@ -165,13 +177,17 @@ export async function executeReviewImport(input: ImportFileInput, userId: number
       });
 
       options.signal?.throwIfAborted();
+      // This upload needs its own valid model result. A prior result cannot be
+      // relabeled with the new sourceHash when the new response is empty.
+      assertNonEmptyReviewAnalysis(reviewAnalysis);
+      const reviewAnalysisJson = JSON.stringify(reviewAnalysis);
       let analysisId: number;
 
       if (existingAnalysis) {
         // ASIN matches existing competitor analysis -> update review data
         await db.updateCompetitorAnalysisReviews(existingAnalysis.id, {
           reviewCount: String(reviews.length),
-          reviewAnalysis: reviewAnalysis ? JSON.stringify(reviewAnalysis) : (existingAnalysis.reviewAnalysis ?? undefined),
+          reviewAnalysis: reviewAnalysisJson,
           rawData: JSON.stringify({
             ...existingRawData,
             importedReviews: true,
@@ -211,7 +227,7 @@ export async function executeReviewImport(input: ImportFileInput, userId: number
           price: null,
           rating: null,
           reviewCount: String(reviews.length),
-          reviewAnalysis: reviewAnalysis ? JSON.stringify(reviewAnalysis) : null,
+          reviewAnalysis: reviewAnalysisJson,
           keywords: analysisData.keywords ? JSON.stringify(analysisData.keywords) : null,
           imageUrls: null,
           rawData: JSON.stringify({

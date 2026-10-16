@@ -1,5 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
-import { getDb } from "../dbClient";
+import { TRPCError } from "@trpc/server";
+import { getDb, type DbExecutor } from "../dbClient";
+import { competitorRevision, mergeCompetitorUpdate } from "./competitorWritePolicy";
 import {
   InsertAnalysisVersion,
   InsertCompetitorAnalysis,
@@ -11,17 +13,78 @@ import {
   competitorComparisonReports,
   projectFiles,
   reviewImports,
+  projects,
+  type CompetitorAnalysis,
 } from "../../../drizzle/schema/project";
 
 // --- Competitor Analysis Helpers --------------------------------
 
-export async function createCompetitorAnalysis(data: InsertCompetitorAnalysis) {
+async function competitorTransaction<T>(callback: (tx: DbExecutor) => Promise<T>): Promise<T> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = await db.insert(competitorAnalyses).values(data);
-  const insertId = result[0].insertId;
-  const rows = await db.select().from(competitorAnalyses).where(eq(competitorAnalyses.id, insertId)).limit(1);
+  if (!db || typeof db.transaction !== "function") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "竞品写入需要真实数据库事务" });
+  return db.transaction(callback);
+}
+
+async function lockCompetitorParent(tx: DbExecutor, projectId: number) {
+  if (!Number.isSafeInteger(projectId) || projectId <= 0) throw new TRPCError({ code: "BAD_REQUEST", message: "项目标识无效" });
+  const rows = await tx.select().from(projects).where(eq(projects.id, projectId)).limit(1).for("update");
+  if (rows.length !== 1 || rows[0].id !== projectId) throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
   return rows[0];
+}
+
+async function readLockedCompetitor(tx: DbExecutor, id: number, projectId: number): Promise<CompetitorAnalysis> {
+  const rows = await tx.select().from(competitorAnalyses).where(and(eq(competitorAnalyses.id, id), eq(competitorAnalyses.projectId, projectId))).limit(1).for("update");
+  if (rows.length !== 1 || rows[0].id !== id || rows[0].projectId !== projectId) throw new TRPCError({ code: "NOT_FOUND", message: "Competitor analysis not found" });
+  return rows[0];
+}
+
+type CompetitorWriteGuard = { projectId: number; expectedRevision: string; userId?: number; workspaceId?: number | null };
+async function withLockedCompetitor<T>(id: number, guard: CompetitorWriteGuard | undefined, callback: (tx: DbExecutor, row: CompetitorAnalysis) => Promise<T>): Promise<T> {
+  if (!Number.isSafeInteger(id) || id <= 0) throw new TRPCError({ code: "BAD_REQUEST", message: "竞品标识无效" });
+  if (guard && (!/^[a-f0-9]{64}$/u.test(guard.expectedRevision)
+    || (Object.hasOwn(guard, "workspaceId") && guard.userId === undefined)
+    || (guard.userId !== undefined && (!Number.isSafeInteger(guard.userId) || guard.userId <= 0
+      || !Object.hasOwn(guard, "workspaceId") || (guard.workspaceId !== null
+        && (!Number.isSafeInteger(guard.workspaceId) || (guard.workspaceId as number) <= 0)))))) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "竞品写入校验范围无效" });
+  }
+  return competitorTransaction(async tx => {
+    // Legacy callers do not supply a parent. This discovery read takes no row lock;
+    // the authoritative read is repeated only after the parent is locked.
+    const projectId = guard?.projectId ?? (await tx.select({ projectId: competitorAnalyses.projectId }).from(competitorAnalyses).where(eq(competitorAnalyses.id, id)).limit(1))[0]?.projectId;
+    if (projectId === undefined) throw new TRPCError({ code: "NOT_FOUND", message: "Competitor analysis not found" });
+    const parent = await lockCompetitorParent(tx, projectId);
+    if (guard?.userId !== undefined && (parent.userId !== guard.userId
+      || (parent.workspaceId !== null && parent.workspaceId !== guard.workspaceId))) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
+    }
+    const row = await readLockedCompetitor(tx, id, projectId);
+    if (guard && competitorRevision(row) !== guard.expectedRevision) throw new TRPCError({ code: "CONFLICT", message: "竞品资料已变化，请刷新后重试" });
+    return callback(tx, row);
+  });
+}
+
+async function saveCompetitor(data: InsertCompetitorAnalysis, createOnly: boolean) {
+  return competitorTransaction(async tx => {
+    await lockCompetitorParent(tx, data.projectId);
+    const matches: CompetitorAnalysis[] = await tx.select().from(competitorAnalyses).where(and(
+      eq(competitorAnalyses.projectId, data.projectId), eq(competitorAnalyses.asin, data.asin),
+    )).limit(2).for("update");
+    if (matches.length > 1 || (createOnly && matches.length)) throw new TRPCError({ code: "CONFLICT", message: "同项目竞品记录已存在或不唯一" });
+    if (matches[0]) {
+      const update = mergeCompetitorUpdate(matches[0], data, { kind: "upsert" });
+      if (Object.keys(update).length) await tx.update(competitorAnalyses).set(update).where(and(eq(competitorAnalyses.id, matches[0].id), eq(competitorAnalyses.projectId, data.projectId)));
+      return readLockedCompetitor(tx, matches[0].id, data.projectId);
+    }
+    const result = await tx.insert(competitorAnalyses).values(data);
+    const insertId = result[0]?.insertId;
+    if (!Number.isSafeInteger(insertId) || insertId <= 0) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "竞品写入未返回有效标识" });
+    return readLockedCompetitor(tx, insertId, data.projectId);
+  });
+}
+
+export async function createCompetitorAnalysis(data: InsertCompetitorAnalysis) {
+  return saveCompetitor(data, true);
 }
 
 /**
@@ -29,44 +92,7 @@ export async function createCompetitorAnalysis(data: InsertCompetitorAnalysis) {
  * This prevents duplicate entries when re-uploading the same SellerSprite file.
  */
 export async function upsertCompetitorAnalysis(data: InsertCompetitorAnalysis) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  // Check if an entry with same projectId + asin already exists
-  const existing = await db.select({
-    id: competitorAnalyses.id,
-    summaryStatus: competitorAnalyses.summaryStatus,
-  })
-    .from(competitorAnalyses)
-    .where(and(
-      eq(competitorAnalyses.projectId, data.projectId),
-      eq(competitorAnalyses.asin, data.asin)
-    ))
-    .limit(1);
-  
-  if (existing.length > 0) {
-    // Update existing record
-    const { projectId, asin, ...candidateUpdateData } = data;
-    const updateData = { ...candidateUpdateData };
-    // A fresh AI run must never overwrite a human-confirmed summary.
-    if (existing[0].summaryStatus === "confirmed") {
-      delete updateData.summary;
-      delete updateData.summaryStatus;
-      delete updateData.summaryVersion;
-      delete updateData.summaryConfirmedBy;
-      delete updateData.summaryConfirmedAt;
-    }
-    await db.update(competitorAnalyses)
-      .set(updateData)
-      .where(eq(competitorAnalyses.id, existing[0].id));
-    const rows = await db.select().from(competitorAnalyses).where(eq(competitorAnalyses.id, existing[0].id)).limit(1);
-    return rows[0];
-  } else {
-    // Insert new record
-    const result = await db.insert(competitorAnalyses).values(data);
-    const insertId = result[0].insertId;
-    const rows = await db.select().from(competitorAnalyses).where(eq(competitorAnalyses.id, insertId)).limit(1);
-    return rows[0];
-  }
+  return saveCompetitor(data, false);
 }
 
 export async function getCompetitorAnalysesByProject(projectId: number) {
@@ -92,17 +118,27 @@ export async function updateCompetitorAnalysisSummary(
     summaryConfirmedAt?: Date | null;
     incrementVersion?: boolean;
   },
+  guard?: CompetitorWriteGuard,
 ) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const { incrementVersion, ...values } = data;
-  await db.update(competitorAnalyses)
-    .set({
-      ...values,
-      ...(incrementVersion ? { summaryVersion: sql`${competitorAnalyses.summaryVersion} + 1` } : {}),
-    })
-    .where(eq(competitorAnalyses.id, id));
-  return getCompetitorAnalysisById(id);
+  return withLockedCompetitor(id, guard, async (tx, row) => {
+    const explicitUnlock = data.summaryStatus === "draft" && data.summaryConfirmedBy === null && data.summaryConfirmedAt === null
+      && data.summary === undefined && data.aiSummary === undefined;
+    const repeatedConfirmation = row.summaryStatus === "confirmed" && data.summaryStatus === "confirmed"
+      && data.summary === row.summary && (data.aiSummary === undefined || data.aiSummary === row.aiSummary);
+    if (repeatedConfirmation) return row;
+    if (row.summaryStatus === "confirmed" && !explicitUnlock) {
+      throw new TRPCError({ code: "CONFLICT", message: "已确认的竞品分析需要先解锁才能编辑" });
+    }
+    if (data.summaryStatus === "draft" && !explicitUnlock) throw new TRPCError({ code: "BAD_REQUEST", message: "解锁必须明确清除确认人和确认时间" });
+    const { incrementVersion, ...values } = data;
+    const versionChanged = incrementVersion || data.summaryStatus === "confirmed" || explicitUnlock;
+    if (versionChanged && (!Number.isSafeInteger(row.summaryVersion) || row.summaryVersion < 1 || row.summaryVersion >= 2147483647)) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "竞品摘要版本无效或已达上限" });
+    }
+    await tx.update(competitorAnalyses).set({ ...values, ...(versionChanged ? { summaryVersion: row.summaryVersion + 1 } : {}) })
+      .where(and(eq(competitorAnalyses.id, id), eq(competitorAnalyses.projectId, row.projectId)));
+    return readLockedCompetitor(tx, id, row.projectId);
+  });
 }
 
 export async function createCompetitorComparisonReport(data: InsertCompetitorComparisonReport) {
@@ -163,19 +199,19 @@ export async function updateCompetitorComparisonReport(
   return getCompetitorComparisonReportById(id);
 }
 
-export async function updateCompetitorAnalysisReviews(id: number, data: { reviewCount?: string; reviewAnalysis?: string; rawData?: string }) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(competitorAnalyses).set(data).where(eq(competitorAnalyses.id, id));
-  const rows = await db.select().from(competitorAnalyses).where(eq(competitorAnalyses.id, id)).limit(1);
-  return rows[0];
+export async function updateCompetitorAnalysisReviews(id: number, data: { reviewCount?: string; reviewAnalysis?: string | null; rawData?: string }) {
+  return withLockedCompetitor(id, undefined, async (tx, row) => {
+    const update = mergeCompetitorUpdate(row, data, { kind: "reviews" });
+    if (Object.keys(update).length) await tx.update(competitorAnalyses).set(update).where(and(eq(competitorAnalyses.id, id), eq(competitorAnalyses.projectId, row.projectId)));
+    return readLockedCompetitor(tx, id, row.projectId);
+  });
 }
 
-export async function deleteCompetitorAnalysis(id: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.delete(competitorAnalyses).where(eq(competitorAnalyses.id, id));
-  return { success: true };
+export async function deleteCompetitorAnalysis(id: number, guard?: CompetitorWriteGuard) {
+  return withLockedCompetitor(id, guard, async (tx, row) => {
+    await tx.delete(competitorAnalyses).where(and(eq(competitorAnalyses.id, id), eq(competitorAnalyses.projectId, row.projectId)));
+    return { success: true };
+  });
 }
 
 // --- Review Import Helpers -----------------------------------------
