@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { devProductProfiles, devProjects, projectAssignments } from "../../../../drizzle/schema";
 import type { TrpcContext } from "../../../_core/context";
-import { getDb } from "../../../repositories/dbClient";
+import { getDb, type DbExecutor } from "../../../repositories/dbClient";
 import { actorFromContext, workspaceIdFromContext } from "../../../services/securityGovernance";
 
 type Project = typeof devProjects.$inferSelect;
@@ -81,28 +81,32 @@ export function profileImportSourceHash(workspaceId: number | null, project: Pro
 
 export async function loadProfileImportSource(ctx: TrpcContext, input: {
   devProjectId: number; expectedWorkspaceId?: number | null; expectedSourceHash?: string;
-}) {
+}, options: { executor?: DbExecutor; lock?: "share" } = {}) {
   const workspaceId = profileImportWorkspace(ctx, input.expectedWorkspaceId);
   const actor = actorFromContext(ctx);
-  const database = await getDb();
+  if (options.lock && !options.executor) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "来源锁需要真实事务" });
+  const database = options.executor ?? await getDb();
   if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
-  const [project] = await database.select().from(devProjects).where(and(
+  const parentQuery = database.select().from(devProjects).where(and(
     eq(devProjects.id, input.devProjectId), parentScope(workspaceId, actor.id),
   )).limit(1);
+  const [project] = await (options.lock ? parentQuery.for("share") : parentQuery) as Project[];
   if (!project || project.id !== input.devProjectId || !parentInScope(project, workspaceId, actor.id)) denied();
   if (!elevatedRoles.has(actor.role)) {
-    const assignments = await database.select().from(projectAssignments).where(and(
+    const assignmentQuery = database.select().from(projectAssignments).where(and(
       eq(projectAssignments.projectId, project.id), eq(projectAssignments.projectType, "dev_project"),
       eq(projectAssignments.assignedUserId, actor.id), childScope(projectAssignments.workspaceId, workspaceId),
     )).limit(1);
+    const assignments = await (options.lock ? assignmentQuery.for("share") : assignmentQuery) as typeof projectAssignments.$inferSelect[];
     if (!assignments.some(row => row.projectId === project.id && row.projectType === "dev_project"
       && row.assignedUserId === actor.id && (row.workspaceId === null || row.workspaceId === workspaceId))) denied();
   }
   // Preserve the existing cross-module admin/assignment grant. A development-module
   // role gate would incorrectly deny assigned operations users who lack that module.
-  const profiles = await database.select().from(devProductProfiles).where(and(
+  const profileQuery = database.select().from(devProductProfiles).where(and(
     eq(devProductProfiles.projectId, project.id), childScope(devProductProfiles.workspaceId, workspaceId),
   )).limit(2);
+  const profiles = await (options.lock ? profileQuery.for("share") : profileQuery) as Profile[];
   if (profiles.length > 1) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "产品画像来源不唯一，请先核对来源" });
   const profile = profiles[0] ?? null;
   // Legacy children inherit only their verified parent's scope, never a global fallback.

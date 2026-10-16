@@ -30,6 +30,10 @@ type Project = typeof devProjects.$inferSelect;
 type Profile = typeof devProductProfiles.$inferSelect;
 type Assignment = typeof projectAssignments.$inferSelect;
 const stamp = new Date("2026-10-16T00:00:00.000Z");
+const jobs = vi.hoisted(() => ({ start: vi.fn(), get: vi.fn(), list: vi.fn(), resume: vi.fn() }));
+vi.mock("./domains/listing/services/profileImportJob", () => ({
+  startProfileImportJob: jobs.start, getProfileImportJob: jobs.get, listProfileImportJobs: jobs.list, resumeProfileImportJob: jobs.resume,
+}));
 const project = (patch: Partial<Project> = {}): Project => ({ id: 20, workspaceId: 7, userId: 5, name: "合成来源",
   description: null, targetMarket: "US", platform: "amazon", keywords: null, status: "draft", phase: "project_execution",
   approvedAt: null, approvedScore: null, createdAt: stamp, updatedAt: stamp, ...patch });
@@ -54,6 +58,7 @@ let profiles: Profile[];
 let assignments: Assignment[];
 const queries: { table: unknown; predicate: Parameters<MySqlDialect["sqlToQuery"]>[0] }[] = [];
 beforeEach(() => {
+  Object.values(jobs).forEach(fn => fn.mockReset());
   Object.values(mocks).forEach(fn => fn.mockReset());
   projects = [project()]; profiles = [profile()]; assignments = [assignment()]; queries.length = 0;
   mocks.getDb.mockResolvedValue({ select: () => ({ from: (table: unknown) => {
@@ -182,8 +187,9 @@ describe("profile source snapshots and user-entered facts", () => {
   });
 });
 
-describe("real source-selection router wiring, with synthetic DB/Skill only", () => {
-  it("preserves the no-argument list and detail response while adding a preview hash", async () => {
+describe("source-selection and durable-job route contracts (offline)", () => {
+  const input = { listingProjectId: 10, devProjectId: 20, expectedWorkspaceId: 7, expectedSourceHash: "a".repeat(64) };
+  it("preserves the list and preview response with a complete source hash", async () => {
     const caller = projectAssignmentRouter.createCaller(context());
     expect(await caller.listImportableDevProjects()).toEqual([{ id: 20, name: "合成来源", targetMarket: "US", status: "draft" }]);
     expect(await caller.getDevProjectProfile({ devProjectId: 20, expectedWorkspaceId: 7 })).toMatchObject({
@@ -191,105 +197,63 @@ describe("real source-selection router wiring, with synthetic DB/Skill only", ()
     });
     expect(mocks.skill).not.toHaveBeenCalled();
   });
-  it("all three APIs reject workspace drift before I/O", async () => {
-    const reads = projectAssignmentRouter.createCaller(context()); const writes = projectFileRouter.createCaller(context());
+  it("read APIs reject workspace drift before I/O", async () => {
+    const reads = projectAssignmentRouter.createCaller(context());
     await expect(reads.listImportableDevProjects({ expectedWorkspaceId: 8 })).rejects.toThrow("工作区已变化");
     await expect(reads.getDevProjectProfile({ devProjectId: 20, expectedWorkspaceId: 8 })).rejects.toThrow("工作区已变化");
-    await expect(writes.importFromProfile({ listingProjectId: 10, devProjectId: 20, expectedWorkspaceId: 8 })).rejects.toThrow("工作区已变化");
-    expect(mocks.getDb).not.toHaveBeenCalled(); expect(mocks.authorize).not.toHaveBeenCalled(); expect(mocks.target).not.toHaveBeenCalled();
+    expect(mocks.getDb).not.toHaveBeenCalled();
   });
-  it("rejects an authenticated but cross-workspace Listing target before source loading/Skill", async () => {
-    mocks.target.mockResolvedValue({ id: 10, workspaceId: 8, userId: 19 });
-    await expect(projectFileRouter.createCaller(context()).importFromProfile({ listingProjectId: 10, devProjectId: 20 })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(mocks.getDb).not.toHaveBeenCalled(); expect(mocks.skill).not.toHaveBeenCalled();
+  it("old synchronous clients must refresh and cannot invoke a second untracked model path", async () => {
+    await expect(projectFileRouter.createCaller(context()).importFromProfile(input)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(mocks.skill).not.toHaveBeenCalled(); expect(mocks.createFile).not.toHaveBeenCalled();
+    expect(jobs.start).not.toHaveBeenCalled();
   });
-  it.each(["admin", "ops_specialist"])("preserves %s authorized legacy NULL Listing targets in the active workspace", async role => {
-    mocks.target.mockResolvedValue({ id: 10, workspaceId: null, userId: 19 });
-    const result = await projectFileRouter.createCaller(context(role)).importFromProfile({
-      listingProjectId: 10, devProjectId: 20, expectedWorkspaceId: 7,
-    });
-    expect(result).toMatchObject({ projectId: 10, workspaceId: 7 });
-    expect(mocks.target).toHaveBeenCalledTimes(2);
-    expect(mocks.authorize).toHaveBeenCalledTimes(2);
-    for (const [request] of mocks.authorize.mock.calls) expect(request).toMatchObject({
-      resource: "file", action: "import", workspaceId: 7, projectId: 10, ownerUserId: 19,
-    });
-  });
-  it("preserves an authenticated NULL workspace and owned legacy source without inventing a scope", async () => {
-    projects = [project({ workspaceId: null, userId: 19 })];
-    profiles = [profile({ workspaceId: null, userId: 19 })];
-    mocks.target.mockResolvedValue({ id: 10, workspaceId: null, userId: 19 });
-    const result = await projectFileRouter.createCaller(context("admin", null)).importFromProfile({
-      listingProjectId: 10, devProjectId: 20, expectedWorkspaceId: null,
-    });
-    expect(result).toMatchObject({ projectId: 10, workspaceId: null });
-    expect(mocks.authorize).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: null, action: "import" }));
-  });
-  it("does not bypass file.import authorization for a legacy NULL Listing target", async () => {
-    mocks.target.mockResolvedValue({ id: 10, workspaceId: null, userId: 19 });
-    mocks.authorize.mockRejectedValue(new Error("synthetic legacy file.import denial"));
-    await expect(projectFileRouter.createCaller(context()).importFromProfile({
-      listingProjectId: 10, devProjectId: 20, expectedWorkspaceId: 7,
-    })).rejects.toThrow("synthetic legacy file.import denial");
-    expect(mocks.getDb).not.toHaveBeenCalled(); expect(mocks.skill).not.toHaveBeenCalled();
-    expect(mocks.createFile).not.toHaveBeenCalled();
-  });
-  it("rechecks an explicit foreign Listing scope after analysis before persistence", async () => {
-    mocks.skill.mockImplementation(async () => {
-      mocks.target.mockResolvedValue({ id: 10, workspaceId: 8, userId: 19 });
-      return { choices: [{ message: { content: "{}" } }] };
-    });
-    await expect(projectFileRouter.createCaller(context()).importFromProfile({
-      listingProjectId: 10, devProjectId: 20, expectedWorkspaceId: 7,
-    })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(mocks.skill).toHaveBeenCalledTimes(1); expect(mocks.createFile).not.toHaveBeenCalled();
-  });
-  it("preserves the existing Listing file.import permission guard", async () => {
-    mocks.authorize.mockRejectedValue(new Error("synthetic file.import denial"));
-    await expect(projectFileRouter.createCaller(context()).importFromProfile({ listingProjectId: 10, devProjectId: 20 })).rejects.toThrow("synthetic file.import denial");
-    expect(mocks.getDb).not.toHaveBeenCalled(); expect(mocks.skill).not.toHaveBeenCalled();
-  });
-  it("a stale preview fails before the expensive call or persistence", async () => {
-    await expect(projectFileRouter.createCaller(context()).importFromProfile({ listingProjectId: 10, devProjectId: 20,
-      expectedSourceHash: "0".repeat(64) })).rejects.toMatchObject({ code: "CONFLICT" });
+  it("new start passes the authenticated context and exact preview binding to the durable service", async () => {
+    const ctx = context(), dto = { runId: "profile_" + "b".repeat(64), status: "queued", fileId: null };
+    jobs.start.mockResolvedValue(dto);
+    expect(await projectFileRouter.createCaller(ctx).startProfileImportJob(input)).toBe(dto);
+    expect(jobs.start).toHaveBeenCalledWith(ctx, input);
     expect(mocks.skill).not.toHaveBeenCalled(); expect(mocks.createFile).not.toHaveBeenCalled();
   });
-  it("saves source provenance without silently confirming Listing facts", async () => {
-    const sourceHash = profileImportSourceHash(7, project(), profile());
-    const result = await projectFileRouter.createCaller(context()).importFromProfile({ listingProjectId: 10, devProjectId: 20,
-      expectedWorkspaceId: 7, expectedSourceHash: sourceHash });
-    expect(result).toMatchObject({ id: 50, fileType: "product_attributes", status: "completed", fileUrl: "" });
-    const parsed = JSON.parse(mocks.createFile.mock.calls[0][0].parsedData);
-    expect(parsed.provenance).toMatchObject({ kind: "dev_product_profile", devProjectId: 20, profileId: 30, sourceHash,
-      previewVersionBound: true, factReviewRequired: true, aiSuggestionsIncluded: false });
-    expect(mocks.skill).toHaveBeenCalledTimes(1); expect(mocks.target).toHaveBeenCalledTimes(2);
-    expect(mocks.createFile).toHaveBeenCalledTimes(1); expect(mocks.version).toHaveBeenCalledTimes(1);
-    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ metadata: parsed.provenance }));
+  it.each(["expectedWorkspaceId", "expectedSourceHash"] as const)("cannot start without explicit %s", async key => {
+    const incomplete = { ...input }; delete (incomplete as Record<string, unknown>)[key];
+    await expect(projectFileRouter.createCaller(context()).startProfileImportJob(incomplete)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(jobs.start).not.toHaveBeenCalled();
   });
-  it("old no-hash calls remain current-source imports, not preview-version proof", async () => {
-    await projectFileRouter.createCaller(context()).importFromProfile({ listingProjectId: 10, devProjectId: 20 });
-    expect(JSON.parse(mocks.createFile.mock.calls[0][0].parsedData).provenance.previewVersionBound).toBe(false);
+  it("does not allow client-injected checkpoint/model output", async () => {
+    await expect(projectFileRouter.createCaller(context()).startProfileImportJob({ ...input, checkpoint: { stage: "file_committed" } } as typeof input))
+      .rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(jobs.start).not.toHaveBeenCalled();
   });
-  it("a source edit during analysis rejects before any persistence, with no retry", async () => {
-    mocks.skill.mockImplementation(async () => { profiles = [profile({ appearanceColors: "changed" })]; return { choices: [{ message: { content: "{}" } }] }; });
-    await expect(projectFileRouter.createCaller(context()).importFromProfile({ listingProjectId: 10, devProjectId: 20 })).rejects.toMatchObject({ code: "CONFLICT" });
-    expect(mocks.skill).toHaveBeenCalledTimes(1); expect(mocks.createFile).not.toHaveBeenCalled(); expect(mocks.artifacts).not.toHaveBeenCalled();
+  it("passes literal NULL scope without inventing a workspace", async () => {
+    const ctx = context("admin", null), bound = { ...input, expectedWorkspaceId: null };
+    jobs.start.mockResolvedValue({ runId: "profile_" + "b".repeat(64) });
+    await projectFileRouter.createCaller(ctx).startProfileImportJob(bound);
+    expect(jobs.start).toHaveBeenCalledWith(ctx, bound);
   });
-  it("source assignment revocation during analysis rejects before persistence", async () => {
-    mocks.skill.mockImplementation(async () => { assignments = []; return { choices: [{ message: { content: "{}" } }] }; });
-    await expect(projectFileRouter.createCaller(context("ops_specialist")).importFromProfile({ listingProjectId: 10, devProjectId: 20 })).rejects.toMatchObject({ code: "NOT_FOUND" });
-    expect(mocks.createFile).not.toHaveBeenCalled();
+  it("wires exact list/get/resume, preserving source hash and original runId", async () => {
+    const ctx = context(), caller = projectFileRouter.createCaller(ctx);
+    const scope = { listingProjectId: 10, expectedWorkspaceId: 7 };
+    const bound = { ...scope, runId: "profile_" + "b".repeat(64) };
+    jobs.list.mockResolvedValue([]); jobs.get.mockResolvedValue({ ...bound }); jobs.resume.mockResolvedValue({ ...bound, status: "queued" });
+    await caller.listProfileImportJobs(scope);
+    await caller.getProfileImportJob(bound);
+    await caller.resumeProfileImportJob({ ...bound, expectedSourceHash: input.expectedSourceHash });
+    expect(jobs.list).toHaveBeenCalledWith(ctx, scope);
+    expect(jobs.get).toHaveBeenCalledWith(ctx, bound);
+    expect(jobs.resume).toHaveBeenCalledWith(ctx, { ...bound, expectedSourceHash: input.expectedSourceHash });
   });
-  it("target revocation during analysis rejects before persistence", async () => {
-    mocks.skill.mockImplementation(async () => { mocks.target.mockResolvedValue(null); return { choices: [{ message: { content: "{}" } }] }; });
-    await expect(projectFileRouter.createCaller(context()).importFromProfile({ listingProjectId: 10, devProjectId: 20 })).rejects.toThrow("Project not found");
-    expect(mocks.createFile).not.toHaveBeenCalled();
-  });
-  it("all three selection APIs still require authentication", async () => {
+  it("all selection/job APIs still require authentication", async () => {
     const ctx = context(); ctx.user = null;
-    await expect(projectAssignmentRouter.createCaller(ctx).listImportableDevProjects()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-    await expect(projectAssignmentRouter.createCaller(ctx).getDevProjectProfile({ devProjectId: 20 })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-    await expect(projectFileRouter.createCaller(ctx).importFromProfile({ listingProjectId: 10, devProjectId: 20 })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    const caller = projectFileRouter.createCaller(ctx), scope = { listingProjectId: 10, expectedWorkspaceId: 7 };
+    const bound = { ...scope, runId: "profile_" + "b".repeat(64) };
+    for (const promise of [
+      projectAssignmentRouter.createCaller(ctx).listImportableDevProjects(),
+      projectAssignmentRouter.createCaller(ctx).getDevProjectProfile({ devProjectId: 20 }),
+      caller.importFromProfile(input), caller.startProfileImportJob(input), caller.listProfileImportJobs(scope),
+      caller.getProfileImportJob(bound), caller.resumeProfileImportJob({ ...bound, expectedSourceHash: input.expectedSourceHash }),
+    ]) await expect(promise).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    for (const fn of Object.values(jobs)) expect(fn).not.toHaveBeenCalled();
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
 });

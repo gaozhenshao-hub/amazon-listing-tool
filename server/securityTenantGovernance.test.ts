@@ -106,7 +106,7 @@ describe("security tenant governance v1", () => {
     expect(service).toContain("security_access_policies");
     expect(service).toContain("security_audit_logs");
 
-    const membershipCheck = service.indexOf("actorCanUseWorkspace(input.actor, workspaceId)");
+    const membershipCheck = service.indexOf("actorCanUseWorkspace(input.actor, workspaceId, read)");
     const ownerBypass = service.indexOf("input.ownerUserId && input.ownerUserId === input.actor.id");
     expect(membershipCheck).toBeGreaterThan(0);
     expect(ownerBypass).toBeGreaterThan(membershipCheck);

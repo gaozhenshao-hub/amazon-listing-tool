@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { PROFILE_IMPORT_JOB_KIND } from "../../shared/profileImportJob";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { listAiJobsForUser } from "../repositories/ai_os";
 import {
@@ -289,7 +290,10 @@ async function runOpsReplenishmentPlan(input: z.infer<typeof opsReplenishmentJob
   };
 }
 
-function assertCanReadJob(user: { id: number; role?: string }, job: { userId: number }) {
+function assertCanReadJob(user: { id: number; role?: string }, job: { userId: number; kind?: string }) {
+  if (job.kind === PROFILE_IMPORT_JOB_KIND) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "PROFILE_IMPORT_USE_DEDICATED_ENDPOINT" });
+  }
   const isAdmin = user.role === "admin" || user.role === "super_admin";
   if (!isAdmin && job.userId !== user.id) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Cannot read this AI job" });
@@ -447,8 +451,9 @@ export const aiJobsRouter = router({
     .input(z.object({
       limit: z.number().min(1).max(200).optional(),
     }).optional())
-    .query(({ input }) => {
-      return listAiJobDeadLetterRuns({ limit: input?.limit });
+    .query(async ({ input }) => {
+      const rows = await listAiJobDeadLetterRuns({ limit: input?.limit });
+      return rows.filter(row => row.kind !== PROFILE_IMPORT_JOB_KIND);
     }),
 
   operationalAlerts: adminProcedure
@@ -467,7 +472,7 @@ export const aiJobsRouter = router({
     }).optional())
     .query(async ({ ctx, input }) => {
       const rows = await listAiJobsForUser(ctx.user.id, input || {});
-      return rows.map(buildAiJobSnapshot);
+      return rows.filter(row => row.kind !== PROFILE_IMPORT_JOB_KIND).map(buildAiJobSnapshot);
     }),
 
   bindingIntegrity: protectedProcedure

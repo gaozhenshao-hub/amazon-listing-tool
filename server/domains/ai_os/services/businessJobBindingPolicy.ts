@@ -32,6 +32,13 @@ export function assertBusinessJobAgentBinding(input: {
   kind: string;
   input: unknown;
 }): BusinessJobAgentBinding | null {
+  if (input.kind === PROFILE_IMPORT_JOB_KIND) {
+    const profileBinding = readBusinessJobAgentBinding(input.input);
+    if (input.module !== "listing" || profileBinding?.agentNodeId !== "N3") {
+      throw new Error("Product profile conversion must bind the Listing N3 agent node");
+    }
+    return profileBinding;
+  }
   if (!isBusinessAiJobModule(input.module)) return null;
   const binding = readBusinessJobAgentBinding(input.input);
   if (binding) return binding;
@@ -39,3 +46,4 @@ export function assertBusinessJobAgentBinding(input: {
     `Business AI Job ${input.module}/${input.kind} must include agentRunId and agentNodeId`,
   );
 }
+import { PROFILE_IMPORT_JOB_KIND } from "@shared/profileImportJob";

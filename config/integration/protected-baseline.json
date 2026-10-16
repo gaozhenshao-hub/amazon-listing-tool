@@ -445,6 +445,11 @@
       "baseline": {
         "gitBlobSha1": "bb156a213c07585a3c34d8d464e9625278733ca1",
         "sha256": "b3684a0e402946b9114559e50489f41ccc59e92159cc050baba43849f5061e7d"
+      },
+      "reviewed": {
+        "gitBlobSha1": "686c90e8f93d82d321315f1ebc89ba247433fc17",
+        "sha256": "06802bc107b00d50dd7bbbdcca78c2892f54105533ba6abe7e94cb67375edfd2",
+        "reviewRef": "config/integration/reviews/20261016-listing-durable-profile-conversion.json"
       }
     },
     {
@@ -555,6 +560,11 @@
       "baseline": {
         "gitBlobSha1": "e865beb2aacce5c7f206c08e3c639fe348b8d3b1",
         "sha256": "22cf601101ed0d041974c62d83a8c795969c5338a305a7c264dbe2d83c918490"
+      },
+      "reviewed": {
+        "gitBlobSha1": "6d6630fcdcf348ad7616be372f89571eb912e831",
+        "sha256": "ddf4deccd6497e2bc1c4038d3605dee4ef176ea8497876d54e413a8d19f70c68",
+        "reviewRef": "config/integration/reviews/20261016-listing-durable-profile-conversion.json"
       }
     },
     {
@@ -1085,6 +1095,11 @@
       "baseline": {
         "gitBlobSha1": "ac1c85d578fcd11d7db89a0849097103a179ffd2",
         "sha256": "f32e7e884932429c07c4978699ba88d9144803fc17634f7542d18abd5fc19d8d"
+      },
+      "reviewed": {
+        "gitBlobSha1": "c4dec0782283bb6cceef09f43dd7a5fab651aa8d",
+        "sha256": "f61737f2c51907cffb88f07e7f6638ecb873fea806f1685d56b2070fdc1fbd91",
+        "reviewRef": "config/integration/reviews/20261016-listing-durable-profile-conversion.json"
       }
     },
     {
@@ -1196,9 +1211,9 @@
         "sha256": "d23348bbbda0f947b23da72d15344c6a666078dec9bd1b9a04a2c8fd7722b604"
       },
       "reviewed": {
-        "gitBlobSha1": "9f31f2bb0ebde9a3134f039322910212e63dfe1a",
-        "sha256": "f7337348728e9aa8c35847cf7ec66b19b2d1e3a134cd9cc6e6f310bbf8bee577",
-        "reviewRef": "config/integration/reviews/mutation-audit-result-20261015.json; optionalctx fordeniedaudit only; Root and independent124controlled cases/typecheck/source review; permissionpolicy unchanged; fixed realHTTP retest pending"
+        "gitBlobSha1": "97e58a5deed61cd55382d3bf4c90f88132e9146b",
+        "sha256": "862b645dab502d7492cf3885ca63e96619e7272ce551a40a5606b0cfb486971f",
+        "reviewRef": "config/integration/reviews/20261016-listing-durable-profile-conversion.json"
       }
     },
     {

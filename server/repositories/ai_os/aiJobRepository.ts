@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { PROFILE_IMPORT_JOB_KIND } from "../../../shared/profileImportJob";
 import type { AiJob, AiJobDeadLetter, InsertAiJob } from "../../../drizzle/schema";
 import { aiJobDeadLetters, aiJobs, aiJobWorkers } from "../../../drizzle/schema";
 import { requireDb, withDbTransaction, type DbExecutor } from "../dbClient";
@@ -27,6 +28,37 @@ export async function updateAiJobByRunId(runId: string, data: Partial<InsertAiJo
   return rows[0] || null;
 }
 
+/** This lane never changes the conversion's private input or committed receipt.
+ * The database predicate, not the runner's earlier read, fences late workers. */
+export async function updateOwnedProfileImportJob(
+  runId: string,
+  change: { type: "progress"; progress: number } | { type: "fail"; errorMessage: string }
+    | { type: "heartbeat"; leaseSeconds: number } | { type: "release" },
+  guard: { expectedWorkerId?: string; expectedAttempt?: number },
+) {
+  if (typeof guard.expectedWorkerId !== "string" || !guard.expectedWorkerId.trim()
+    || guard.expectedWorkerId.length > 128 || !Number.isSafeInteger(guard.expectedAttempt)
+    || (guard.expectedAttempt ?? 0) < 1) return null;
+  if (change.type === "progress" && !Number.isFinite(change.progress)) return null;
+  if (change.type === "heartbeat" && !Number.isFinite(change.leaseSeconds)) return null;
+  const db = await requireDb("Profile import owned job update");
+  const values = change.type === "progress"
+    ? { progress: Math.min(Math.max(Math.floor(change.progress), 0), 99), lastHeartbeatAt: new Date() }
+    : change.type === "heartbeat"
+      ? { leaseUntil: sql`DATE_ADD(NOW(), INTERVAL ${Math.min(Math.max(Math.floor(change.leaseSeconds), 30), 7200)} SECOND)`, lastHeartbeatAt: new Date() }
+      : change.type === "release"
+        ? { leaseUntil: null, lockedBy: null, lastHeartbeatAt: null }
+        : { status: "failed" as const, progress: 100, errorMessage: change.errorMessage,
+      leaseUntil: null, lockedBy: null, lastHeartbeatAt: null, completedAt: new Date() };
+  const [result] = await db.update(aiJobs).set(values).where(and(
+    eq(aiJobs.runId, runId), eq(aiJobs.kind, PROFILE_IMPORT_JOB_KIND), eq(aiJobs.status, "running"),
+    eq(aiJobs.lockedBy, guard.expectedWorkerId), eq(aiJobs.attempt, guard.expectedAttempt!),
+    gt(aiJobs.leaseUntil, sql`NOW()`),
+  ));
+  if (result.affectedRows !== 1) return null;
+  return getAiJobByRunId(runId);
+}
+
 export async function claimAiJobByRunId(
   runId: string,
   opts: { workerId: string; leaseSeconds?: number; progress?: number },
@@ -34,7 +66,7 @@ export async function claimAiJobByRunId(
   const db = await requireDb("AI Job repository");
   const leaseSeconds = Math.min(Math.max(opts.leaseSeconds || 900, 30), 7200);
   const progress = Math.min(Math.max(opts.progress ?? 10, 0), 99);
-  await db.execute(sql`
+  const result = await db.execute(sql`
     UPDATE ai_jobs
     SET
       status = 'running',
@@ -51,9 +83,13 @@ export async function claimAiJobByRunId(
       AND status IN ('queued', 'running')
       AND (nextRunAt IS NULL OR nextRunAt <= NOW())
       AND (lockedBy IS NULL OR lockedBy = ${opts.workerId} OR leaseUntil IS NULL OR leaseUntil < NOW())
+      AND (kind <> ${PROFILE_IMPORT_JOB_KIND} OR
+        (status = 'queued' AND lockedBy IS NULL AND leaseUntil IS NULL) OR
+        (status = 'running' AND leaseUntil < NOW()))
   `);
   const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
   const job = rows[0] || null;
+  if (job?.kind === PROFILE_IMPORT_JOB_KIND && (result[0] as { affectedRows?: number })?.affectedRows !== 1) return null;
   return job && job.status === "running" && job.lockedBy === opts.workerId ? job : null;
 }
 

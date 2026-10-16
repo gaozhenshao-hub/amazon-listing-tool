@@ -1,4 +1,5 @@
 import type { AiJob, AiJobDeadLetter, AiJobWorker, InsertAiJob } from "../../../../drizzle/schema";
+import { PROFILE_IMPORT_JOB_KIND } from "../../../../shared/profileImportJob";
 import os from "os";
 import {
   claimAiJobByRunId,
@@ -15,6 +16,7 @@ import {
   releaseAiJobLease,
   retryAiJobByRunId,
   updateAiJobByRunId,
+  updateOwnedProfileImportJob,
 } from "../../../repositories/ai_os";
 import { shouldProcessAiJobs } from "../../../_core/runtime";
 import { recordAiOsMetric } from "./observability";
@@ -396,6 +398,7 @@ export async function createAiJobRun(input: {
   recoveryOfRunId?: string | null;
   recoveryReason?: string | null;
 }) {
+  if (input.kind === PROFILE_IMPORT_JOB_KIND) throw new Error("PROFILE_IMPORT_USE_DEDICATED_ENDPOINT");
   assertBusinessJobAgentBinding({
     module: input.module,
     kind: input.kind,
@@ -452,6 +455,10 @@ export async function updateAiJobProgress(
 ) {
   const existing = await getAiJobRun(runId);
   if (!existing || existing.status !== "running") return existing;
+  if (existing.kind === PROFILE_IMPORT_JOB_KIND) {
+    const updated = await updateOwnedProfileImportJob(runId, { type: "progress", progress }, guard);
+    return updated ? buildAiJobSnapshot(updated) : getAiJobRun(runId);
+  }
   if (!aiJobMutationAllowed(existing, guard)) return existing;
 
   const job = await updateAiJobByRunId(runId, {
@@ -463,6 +470,13 @@ export async function updateAiJobProgress(
 
 export async function completeAiJob(runId: string, output: unknown, guard: AiJobMutationGuard = {}) {
   const existing = await getAiJobRun(runId);
+  if (existing?.kind === PROFILE_IMPORT_JOB_KIND) {
+    // Only the domain transaction may publish file_committed + succeeded.
+    // Never replace its receipt with a handler's return value.
+    if (existing.status === "succeeded") return existing;
+    if (existing.status !== "running" || !aiJobMutationAllowed(existing, guard)) return existing;
+    throw new Error("PROFILE_IMPORT_COMMIT_REQUIRED");
+  }
   if (existing?.status === "canceled") return existing;
   if (!aiJobMutationAllowed(existing, guard)) return existing;
   if (existing?.status !== "running") return existing;
@@ -524,6 +538,14 @@ export async function failAiJob(runId: string, error: unknown, guard: AiJobMutat
   const existing = await getAiJobRun(runId);
   if (existing?.status === "canceled") return existing;
   if (existing?.status === "succeeded") return existing;
+  if (existing?.kind === PROFILE_IMPORT_JOB_KIND) {
+    const updated = await updateOwnedProfileImportJob(runId, {
+      type: "fail", errorMessage: "PROFILE_IMPORT_FAILED_REVIEW_REQUIRED",
+    }, guard);
+    // The private checkpoint is retained only on the original anchor. Do not
+    // copy model results into generic dead-letter or metrics payloads.
+    return updated ? buildAiJobSnapshot(updated) : getAiJobRun(runId);
+  }
   if (!aiJobMutationAllowed(existing, guard)) return existing;
   const errorMessage = serializeAiJobError(error);
 
@@ -563,6 +585,7 @@ export async function retryAiJob(runId: string, error: unknown, guard: AiJobMuta
   const existing = await getAiJobRun(runId);
   if (!existing || existing.status === "canceled") return existing;
   if (!isActiveAiJob(existing.status)) return existing;
+  if (existing.kind === PROFILE_IMPORT_JOB_KIND) return failAiJob(runId, error, guard);
   if (!aiJobMutationAllowed(existing, guard)) return existing;
   const failure = classifyAiJobFailure(error);
   void recordAiOsMetric({
@@ -593,6 +616,8 @@ export async function retryAiJob(runId: string, error: unknown, guard: AiJobMuta
 }
 
 export async function cancelAiJob(runId: string, reason = "AI job canceled") {
+  const existing = await getAiJobRun(runId);
+  if (existing?.kind === PROFILE_IMPORT_JOB_KIND) throw new Error("PROFILE_IMPORT_USE_DEDICATED_ENDPOINT");
   activeAbortControllers.get(runId)?.abort(reason);
   const job = await updateAiJobByRunId(runId, {
     status: "canceled",
@@ -625,6 +650,7 @@ export async function cancelAiJob(runId: string, reason = "AI job canceled") {
 export async function recoverAiJob(runId: string, reason = "User requested failure recovery") {
   const existing = await getAiJobRun(runId);
   if (!existing) throw new Error("AI job not found");
+  if (existing.kind === PROFILE_IMPORT_JOB_KIND) throw new Error("PROFILE_IMPORT_USE_DEDICATED_ENDPOINT");
   if (existing.status !== "failed" && existing.status !== "canceled") {
     throw new Error("Only failed or canceled AI jobs can be recovered");
   }
@@ -695,8 +721,13 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
     if (current.status === "canceled") return current;
 
     const leaseSeconds = Math.min(Math.max(current.timeoutSeconds || DEFAULT_JOB_TIMEOUT_SECONDS, 5), 7200);
+    const ownedGuard = { expectedWorkerId: WORKER_ID, expectedAttempt: current.attempt };
+    const profileImport = current.kind === PROFILE_IMPORT_JOB_KIND;
     heartbeat = setInterval(() => {
-      void heartbeatAiJobLease(runId, WORKER_ID, leaseSeconds).catch((error) => {
+      const refresh = profileImport
+        ? updateOwnedProfileImportJob(runId, { type: "heartbeat", leaseSeconds }, ownedGuard)
+        : heartbeatAiJobLease(runId, WORKER_ID, leaseSeconds);
+      void refresh.catch((error) => {
         console.warn(`[AI Job] Failed to heartbeat ${runId}:`, error);
       });
     }, Math.min(Math.max(Math.floor(leaseSeconds * 1000 / 3), 5_000), 60_000));
@@ -719,7 +750,13 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
   } finally {
     if (heartbeat) clearInterval(heartbeat);
     if (timeoutHandle) clearTimeout(timeoutHandle);
-    await releaseAiJobLease(runId, WORKER_ID).catch(() => null);
+    if (existing.kind === PROFILE_IMPORT_JOB_KIND) {
+      await updateOwnedProfileImportJob(runId, { type: "release" }, {
+        expectedWorkerId: WORKER_ID, expectedAttempt: current?.attempt,
+      }).catch(() => null);
+    } else {
+      await releaseAiJobLease(runId, WORKER_ID).catch(() => null);
+    }
     activeAbortControllers.delete(runId);
     runningRunIds.delete(runId);
     void reportAiJobWorkerHeartbeat().catch(() => null);

@@ -1,0 +1,281 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-listing-durable-profile-conversion",
+  "baseline": "479083ed292e1348ae081edc71fdeb3512021b2f",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "listingSkills": "user-primary",
+    "listingWorkflow": "friend-primary",
+    "competitorAndAttributeInputs": "select authorized saved sources and generate; uploads optional"
+  },
+  "changes": [
+    "Replace synchronous profile-to-attributes import with a deterministic original ai_jobs anchor, compact exact-owner start/get/list/resume APIs and an explicitly registered independent worker. Legacy synchronous callers fail with a refresh instruction rather than treating a queued job as a saved file.",
+    "Persist reserved, model_dispatched, analysis_ready and file_committed checkpoints. Mark dispatch before the only pinned published Rufus Skill invocation. Reclaimed/unknown dispatches cannot repeat the model. Resume safe failures on the same runId; saved analysis resumes persistence only.",
+    "A strict real transaction atomically writes the attribute file, initial analysis version, three complete inline artifacts, safe success audit and authoritative file receipt. Readbacks and SQL worker/attempt/lease fences reject partial, stale or lossy results. No new schema or cloud storage call.",
+    "Reload actor/default workspace/role and target import permissions, exact source assignment and complete source hash under transaction locks. Keep established NULL-parent rules. Lock and verify actual Listing Agent/N3 identities; cancellation blocks subsequent execution/commit. Source-only derivation and job-first lock ordering avoid the identified policy/job deadlock.",
+    "New-kind-only runtime claim/progress/fail/heartbeat/release CAS and dedicated completion rule; generic create/cancel/recover/read/confirm routes cannot bypass the protocol or expose private input checkpoints. Other kinds retain their prior paths.",
+    "Explicit preview and submit, compact task polling, refresh recovery, exact-tuple lost-ACK lookup, no automatic mutation retry, same-source unknown barrier and fresh-preview same-run resume. Preserve authenticated owner epochs and drafts, including auth-suspension settlement; each completion dispatches the five read invalidations once.",
+    "Normalize one complete human-entered source for model/file/hash, keep source-row hash separate, and add exact-scoped inline artifact reading for long raw sources before fact review. AI suggestions are not fact inputs. Latest valid completed file wins over older analyses; seven directions and fact/core/candidate review remain unchanged.",
+    "Hide only inaccessible/missing historical sources from job lists after locking/authorizing the current actor/target. Do not swallow DB/schema/current authorization errors or allow direct reads of revoked sources. Parent-canceled tasks show non-resumable status."
+  ],
+  "defaultAndRollback": {
+    "newWorkflowFlag": "Existing VITE_ENABLE_MERGED_LISTING_WORKFLOW remains unchanged and off by default; DataFiles profile-selection entry already exists independently of that Generate-page flag.",
+    "productionDeployed": false,
+    "rollback": "No schema/data rewrite. Do not roll back while new-kind jobs are queued/running: first drain or explicitly settle them and preserve their checkpoint evidence. Old importFromProfile clients must refresh after coordinated frontend/backend rollout. Actual deploy and runtime rollback remain unaccepted."
+  },
+  "review": {
+    "root": "Read the actual router/source permissions, worker registration, schemas, job/runtime repository, artifact lookup, fact consumer and UI contracts. Added strict transactional authorization and exact route/summary regressions. Only intentional four protected records receive reviewed hashes; original baseline tuples are unchanged.",
+    "independent": "Parallel authors plus cross-layer review found and fixed SQL PROCEDURE quoting, source normalization/full raw fact readability, current-version artifact namespace, JSON-key readback, job/policy lock inversion, auth-suspension ACK uncertainty and repeated completion invalidation.",
+    "previousProtectionRecords": [
+      {
+        "path": "server/_core/aiWorker.ts",
+        "source": "baseline",
+        "gitBlobSha1": "bb156a213c07585a3c34d8d464e9625278733ca1",
+        "sha256": "b3684a0e402946b9114559e50489f41ccc59e92159cc050baba43849f5061e7d"
+      },
+      {
+        "path": "server/domains/ai_os/services/jobRunner.ts",
+        "source": "baseline",
+        "gitBlobSha1": "e865beb2aacce5c7f206c08e3c639fe348b8d3b1",
+        "sha256": "22cf601101ed0d041974c62d83a8c795969c5338a305a7c264dbe2d83c918490"
+      },
+      {
+        "path": "server/repositories/ai_os/aiJobRepository.ts",
+        "source": "baseline",
+        "gitBlobSha1": "ac1c85d578fcd11d7db89a0849097103a179ffd2",
+        "sha256": "f32e7e884932429c07c4978699ba88d9144803fc17634f7542d18abd5fc19d8d"
+      },
+      {
+        "path": "server/services/securityGovernance.ts",
+        "source": "reviewed",
+        "gitBlobSha1": "9f31f2bb0ebde9a3134f039322910212e63dfe1a",
+        "sha256": "f7337348728e9aa8c35847cf7ec66b19b2d1e3a134cd9cc6e6f310bbf8bee577",
+        "reviewRef": "config/integration/reviews/mutation-audit-result-20261015.json; optionalctx fordeniedaudit only; Root and independent124controlled cases/typecheck/source review; permissionpolicy unchanged; fixed realHTTP retest pending"
+      }
+    ]
+  },
+  "verification": {
+    "rootFocusedUnion": {
+      "files": 21,
+      "passed": 470,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "completionChunk": "36c059",
+      "invocationSession": 39227,
+      "realModelCalls": 0
+    },
+    "rootScopedLint": {
+      "files": 28,
+      "exitCode": 0,
+      "completionChunk": "16dc02",
+      "invocationSession": 84116
+    },
+    "configuredTypecheck": {
+      "command": "tsc --noEmit --incremental false --pretty false",
+      "exitCode": 0,
+      "invocationSession": 62597,
+      "completionChunk": "2186af",
+      "scope": "Entire configured include/exclude, strict true; this is not a build/native/database/browser acceptance."
+    },
+    "protectedBaseline": {
+      "files": 106,
+      "requiredDependencies": 2,
+      "reviewedRecords": 21,
+      "changedReviewedRecords": 4,
+      "originalBaselineRecordsUnchanged": true,
+      "originalBaselineRecordsHash": "9e1463b908abd5dafca47ca41baaf01fb3784dbecea00bf1757962f6f4d42bf6",
+      "exitCode": 0,
+      "completionChunk": "7a1c1d"
+    },
+    "nativeDatabaseBrowserOrModelAcceptance": false,
+    "subsetRunsAreNotAdditionalUniqueTests": true,
+    "notes": [
+      "Initial union caught an old literal string assertion for the authorization helper; updated it for the new transaction read argument without removing membership-before-owner verification. Added runtime authorization tests."
+    ],
+    "boundedDiffCheck": {
+      "exitCode": 0,
+      "completionChunk": "77a407"
+    }
+  },
+  "files": [
+    {
+      "path": "shared/profileImportJob.ts",
+      "size": 610,
+      "sha256": "3757a3f7b46b50756ef1c8fdc13c1b1f5f6b824e252c0a5db7a67cb9d2d2beb4",
+      "gitBlobSha1": "4412285e3cca522c411b47e235d7848930abc1b9"
+    },
+    {
+      "path": "server/services/securityGovernance.ts",
+      "size": 13387,
+      "sha256": "862b645dab502d7492cf3885ca63e96619e7272ce551a40a5606b0cfb486971f",
+      "gitBlobSha1": "97e58a5deed61cd55382d3bf4c90f88132e9146b"
+    },
+    {
+      "path": "server/securityGovernance.strictAuthorization.test.ts",
+      "size": 5059,
+      "sha256": "d24677470f3b159ae83fca8661561db549bcbb5a29bed576a0a218016caaa5ed",
+      "gitBlobSha1": "45441d09e44ba455eeb19de8ba6fbd7c61924d16"
+    },
+    {
+      "path": "server/routers/projectFile.ts",
+      "size": 34308,
+      "sha256": "a9f4245d9323f54128508c5bb77c59eb87cee8a4555df952263af8e7b673f27b",
+      "gitBlobSha1": "3ded777b7206bc44858062534e4dce6917e385d7"
+    },
+    {
+      "path": "server/routers/projectFileAnalysisState.ts",
+      "size": 1544,
+      "sha256": "6b232f83020829d55f2f5bba1a1b63506b81538309a22960ade360ba4f831379",
+      "gitBlobSha1": "c04dec27eb54a778a1154c3be7fce1a2f8ae0b67"
+    },
+    {
+      "path": "server/projectFile.analysisState.test.ts",
+      "size": 1937,
+      "sha256": "1051b64b33d647a6a58a001bd2818a9295f5fa64ff66a417b8aeff51ea4549f0",
+      "gitBlobSha1": "7e4fca8806e025ba0cc279c4c73191ee0786c874"
+    },
+    {
+      "path": "server/profileImportBinding.test.ts",
+      "size": 1288,
+      "sha256": "0fd31cc16f2122cec531d7bd4ae37dd095393667af25fd08f443d194f30af0a6",
+      "gitBlobSha1": "6d601a560366b6d0c37429593e5cf1ab31524b7d"
+    },
+    {
+      "path": "server/profileImportSource.test.ts",
+      "size": 18703,
+      "sha256": "1ef4c8f3b96da5dcd4aea1253a0644abcdfbc3da6981269298885f7fb95f73f1",
+      "gitBlobSha1": "61cc43efb44598a95c06c5ae2a4bf8862966e85d"
+    },
+    {
+      "path": "server/_core/aiWorker.ts",
+      "size": 4702,
+      "sha256": "06802bc107b00d50dd7bbbdcca78c2892f54105533ba6abe7e94cb67375edfd2",
+      "gitBlobSha1": "686c90e8f93d82d321315f1ebc89ba247433fc17"
+    },
+    {
+      "path": "server/domains/ai_os/services/businessJobBindingPolicy.ts",
+      "size": 1738,
+      "sha256": "664d0bb1262132f8441d7a64507d494a793f9c2ea2eb70b966891c1a0c571daf",
+      "gitBlobSha1": "983980ed378b669f57881cf6e2eaf99dac305a93"
+    },
+    {
+      "path": "server/domains/ai_os/services/jobRunner.ts",
+      "size": 32224,
+      "sha256": "ddf4deccd6497e2bc1c4038d3605dee4ef176ea8497876d54e413a8d19f70c68",
+      "gitBlobSha1": "6d6630fcdcf348ad7616be372f89571eb912e831"
+    },
+    {
+      "path": "server/repositories/ai_os/aiJobRepository.ts",
+      "size": 12288,
+      "sha256": "f61737f2c51907cffb88f07e7f6638ecb873fea806f1685d56b2070fdc1fbd91",
+      "gitBlobSha1": "c4dec0782283bb6cceef09f43dd7a5fab651aa8d"
+    },
+    {
+      "path": "server/routers/aiJobs.ts",
+      "size": 26012,
+      "sha256": "a8ee65cbab3c8be14d93e8f09585fd7c54296e3d2362a3a45519ac42ca436bde",
+      "gitBlobSha1": "305f66a7395648b6d005696dbdc732ef86a76238"
+    },
+    {
+      "path": "server/profileImportJob.runtime.test.ts",
+      "size": 9553,
+      "sha256": "74a61ef07628a99ac5091b7b735d8ce6743293be263dd5e79bee3b2a9188a2ab",
+      "gitBlobSha1": "3f037c30335f818b366412ea3628dd63b514c9f3"
+    },
+    {
+      "path": "server/profileImportJob.runtimeRepository.test.ts",
+      "size": 12084,
+      "sha256": "81ee3156c9425a89b1374fa3994b3c24d243ebda61bc765239edf3b298499931",
+      "gitBlobSha1": "4011fb812e5b577841e5e167ffddd53324bf1b9c"
+    },
+    {
+      "path": "server/profileImportJob.genericRoutes.test.ts",
+      "size": 5493,
+      "sha256": "5790a2978a06ff0d72c046d982bf17e49968e72eac8c0d203702a89b6ba4a9f6",
+      "gitBlobSha1": "27eb56cd93e9e95db221050bdc7373a594789ecd"
+    },
+    {
+      "path": "server/domains/listing/services/profileImportJob.ts",
+      "size": 19109,
+      "sha256": "00a0f3ff67eddfae08d227552355c9c77d858eb7a02bfa93014bc6457eaa2c63",
+      "gitBlobSha1": "e918986cd506fe078adad2ab4045859e40661d48"
+    },
+    {
+      "path": "server/domains/listing/services/profileImportJob.test.ts",
+      "size": 35552,
+      "sha256": "176628a7ebfe67ac45d4851428da0ca8443e15f07e9918884ddf6ba7af49a813",
+      "gitBlobSha1": "8ea8f80b7f3d79a8b96a7fba5be01256eae594a7"
+    },
+    {
+      "path": "server/repositories/listing/profileImportJobRepository.ts",
+      "size": 23014,
+      "sha256": "7dc4a957ca98bf1825129a1590d818e0308376a8b5aa41d3629f821d572f1fbc",
+      "gitBlobSha1": "607eb847defe28e2f516bbc09f95220de065ee9c"
+    },
+    {
+      "path": "server/repositories/listing/profileImportJobRepository.test.ts",
+      "size": 6595,
+      "sha256": "38b7bc7840f6de6e92bcbcc6a38179e43e0f963f8cb0a8e5a280ac8ee2de0dd3",
+      "gitBlobSha1": "3e5ab64c8ccf70f89c5904148907112fd677847f"
+    },
+    {
+      "path": "server/domains/listing/services/profileImportSource.ts",
+      "size": 9425,
+      "sha256": "c516a556a08cdc487ced59ab30bdad09e36b865f0925ddff9cb4fbb37773d4f2",
+      "gitBlobSha1": "22da0e05d33baefdad0ec28e5a6a415b3c572ad1"
+    },
+    {
+      "path": "server/domains/listing/services/listingRawAttributeSource.ts",
+      "size": 5739,
+      "sha256": "4d1926cb543a0a8959b3955939cd53f9b09376ae523f277cebeb7788521491e9",
+      "gitBlobSha1": "37718c7611708f078016b83d23039a976724a5ec"
+    },
+    {
+      "path": "server/listingRawAttributeSource.test.ts",
+      "size": 12419,
+      "sha256": "1c33b7bf29630d766df4c13820d6441effe301f5f84fd684c50d4555508f5dfd",
+      "gitBlobSha1": "3dee4c50e2b10119d8f37e49173893e6520a05f6"
+    },
+    {
+      "path": "client/src/pages/listing/ProductProfileAttributeSource.tsx",
+      "size": 25073,
+      "sha256": "82907c0c29f5fb570cfa5a3efbfbe72861a0da339a79c090f422a1b1729a42e7",
+      "gitBlobSha1": "39aacb1d0a52f31182893838fdb67697a4da7a2a"
+    },
+    {
+      "path": "client/src/pages/listing/ProductProfileAttributeSource.component.test.tsx",
+      "size": 42635,
+      "sha256": "3ea159721938e8d02d1f0a73162e3b1183064f38035b905482d1db77d576f3b5",
+      "gitBlobSha1": "6c7522312072c34f0e9878b214f85233d9be9ea9"
+    },
+    {
+      "path": "client/src/pages/listing/profileImportJobState.ts",
+      "size": 2446,
+      "sha256": "ab3eece15077f1cd1946e28c04f26c01586b6b5781efc6f03aa735c1e492e07a",
+      "gitBlobSha1": "e1182483a1bdf7f3cb27383cdfdebbba003adb0e"
+    },
+    {
+      "path": "client/src/pages/listing/profileImportJobState.test.ts",
+      "size": 4188,
+      "sha256": "bf6387696c02cc3b3314daf2c67aac3350ff43f86187adb9e7ac3f2ff241caaf",
+      "gitBlobSha1": "c37967306c27d9331353fe3cd6e4cf2b16a4c2f4"
+    },
+    {
+      "path": "server/securityTenantGovernance.test.ts",
+      "size": 6208,
+      "sha256": "7cd088f28d49a7294f941315031f3bf8958854cb53f728a131276cb8cde1b068",
+      "gitBlobSha1": "d8d11288c05e32d2be94f300683dc72fc5739863"
+    }
+  ],
+  "deferred": [
+    "Real MySQL multi-process claim, rollback, crash/restart, uncertain dispatch and cancellation races; MySQL JSON/text behavior and actual worker/Agent integration.",
+    "Browser acceptance of no-local-upload profile/research selection through reviewed facts and seven directions; no paid model validation performed.",
+    "Original P1/native/0230 and remaining P2-P6 gates, fixed user/Qingdao runtime Skill snapshots and approved production rollout remain pending."
+  ],
+  "noProductionWrites": true,
+  "noPublicPush": true,
+  "noPaidCalls": true,
+  "taskboardUsed": false,
+  "reaUsed": false
+}

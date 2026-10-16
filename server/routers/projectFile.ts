@@ -18,9 +18,9 @@ import {
   A9_KEYWORD_GRADING_PROMPT,
 } from "../analysisPrompts";
 import { TRPCError } from "@trpc/server";
-import { convertProfileSourceToText, loadProfileImportSource, profileImportWorkspace } from "../domains/listing/services/profileImportSource";
+import { startProfileImportJob, getProfileImportJob, listProfileImportJobs, resumeProfileImportJob } from "../domains/listing/services/profileImportJob";
 import { buildProjectFileEmperorSkill } from "./projectFileSkillRoutes";
-import { buildCompletedAnalysisUpdate } from "./projectFileAnalysisState";
+import { buildCompletedAnalysisUpdate, buildProjectFileAnalysisSummary } from "./projectFileAnalysisState";
 import { normalizeRufusProductIdentity } from "./projectFileRufusIdentity";
 
 // ─── File Parsers ─────────────────────────────────────────────────
@@ -928,46 +928,11 @@ export const projectFileRouter = router({
 
       const files = await db.getProjectFilesByProject(input.projectId);
 
-      const summary: Record<string, any> = {
-        productAttributes: null,
-        competitorListings: null,
-        cosmoScenes: null,
-        a9Keywords: null,
-        hasAllFiles: false,
-        fileCount: files.length,
-      };
-
-      for (const file of files) {
-        if (file.status !== "completed" || !file.analysisResult) continue;
-
-        try {
-          const result = JSON.parse(file.analysisResult);
-          switch (file.fileType) {
-            case "product_attributes":
-              summary.productAttributes = result;
-              break;
-            case "competitor_listings":
-              summary.competitorListings = result;
-              break;
-            case "search_term_report":
-              summary.cosmoScenes = result;
-              break;
-            case "aba_keywords":
-              summary.a9Keywords = result;
-              break;
-          }
-        } catch {}
-      }
-
-      // N3 readiness: only product_attributes is required (v2 architecture)
-      summary.n3Ready = !!summary.productAttributes;
-      // Legacy compat: hasAllFiles now equals n3Ready
-      summary.hasAllFiles = summary.n3Ready;
-
-      return summary;
+      return buildProjectFileAnalysisSummary(files);
     }),
 
-  // ─── Import from Product Profile (模块一产品画像导入) ─────────────
+  // Legacy callers expect a synchronously saved file. Do not return a job as if
+  // it were that file, or let an old client bypass persistent deduplication.
   importFromProfile: protectedProcedure
     .input(z.object({
       listingProjectId: z.number().int().positive(),
@@ -975,88 +940,40 @@ export const projectFileRouter = router({
       expectedWorkspaceId: z.number().int().positive().nullable().optional(),
       expectedSourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
     }).strict())
-    .mutation(async ({ ctx, input }) => {
-      const workspaceId = profileImportWorkspace(ctx, input.expectedWorkspaceId);
-      const requireTarget = async () => {
-        const target = await assertProjectFileAccess(ctx, input.listingProjectId, "import");
-        // Legacy NULL projects retain the repository + file.import authorization
-        // above; only an explicit foreign scope is rejected here.
-        if (target.workspaceId !== workspaceId
-          || (target.project.workspaceId !== null && target.project.workspaceId !== workspaceId)) {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Listing项目不属于当前工作区" });
-        }
-      };
-      await requireTarget();
-      const source = await loadProfileImportSource(ctx, input);
-      if (!source.profile || !source.sourceHash) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该项目尚未创建产品画像数据" });
-      const profileText = convertProfileSourceToText(source.profile, source.project.name);
-
-      // This legacy operation remains synchronous; it is not a durable background job.
-      const analysisResult = await analyzeRufusAttributes(profileText);
-      // Recheck both authorization and the complete source immediately before persistence.
-      // Even old callers without a preview hash are bound to the source loaded above.
-      await requireTarget();
-      await loadProfileImportSource(ctx, { devProjectId: input.devProjectId,
-        expectedWorkspaceId: workspaceId, expectedSourceHash: source.sourceHash });
-      const provenance = { kind: "dev_product_profile", devProjectId: source.project.id,
-        profileId: source.profile.id, sourceHash: source.sourceHash,
-        projectUpdatedAt: source.project.updatedAt.toISOString(), profileUpdatedAt: source.profile.updatedAt.toISOString(),
-        previewVersionBound: input.expectedSourceHash !== undefined, aiSuggestionsIncluded: false, factReviewRequired: true };
-      const parsedProfileData = { type: "text", lineCount: profileText.split("\n").length, charCount: profileText.length,
-        source: "product_profile_import", provenance };
-
-      // 7. Save as a projectFile record
-      const record = await db.createProjectFile({
-        workspaceId,
-        projectId: input.listingProjectId,
-        userId: ctx.user.id,
-        fileType: "product_attributes",
-        filename: `产品画像导入_${source.project.name}.txt`,
-        fileUrl: "",
-        fileSize: Buffer.byteLength(profileText, "utf-8"),
-        rawContentHash: createContentHash(profileText),
-        parsedDataHash: createContentHash(parsedProfileData),
-        rawContent: databaseTextPreview(profileText),
-        parsedData: databaseParsedPreview(parsedProfileData),
-        ...buildCompletedAnalysisUpdate(analysisResult),
-      });
-      await registerProjectFileArtifacts({
-        workspaceId,
-        projectId: input.listingProjectId,
-        userId: ctx.user.id,
-        projectFileId: record.id,
-        fileType: "product_attributes",
-        filename: record.filename,
-        fileSizeBytes: Buffer.byteLength(profileText, "utf-8"),
-        rawContent: profileText,
-        parsedData: parsedProfileData,
-        analysisResult,
-        analysisSourceType: "ai_output",
-        changeNote: `从产品画像导入 (${source.project.name})`,
-      });
-
-      // 8. Save initial version history
-      await db.createAnalysisVersion({
-        projectFileId: record.id,
-        userId: ctx.user.id,
-        version: 1,
-        analysisResult: JSON.stringify(analysisResult),
-        changeType: "auto_analysis",
-        changeNote: `从产品画像导入 (${source.project.name})`,
-      });
-      await recordSecurityAuditLog({
-        ctx,
-        workspaceId,
-        action: "file.import_from_profile",
-        resourceType: "file",
-        resourceId: record.id,
-        resourceName: record.filename,
-        projectId: input.listingProjectId,
-        status: "success",
-        riskLevel: "medium",
-        metadata: provenance,
-      });
-
-      return record;
+    .mutation(() => {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "产品画像生成已升级为后台任务，请刷新页面后重新选择画像并确认生成" });
     }),
+
+  startProfileImportJob: protectedProcedure
+    .input(z.object({
+      listingProjectId: z.number().int().positive(),
+      devProjectId: z.number().int().positive(),
+      expectedWorkspaceId: z.number().int().positive().nullable(),
+      expectedSourceHash: z.string().regex(/^[a-f0-9]{64}$/),
+    }).strict())
+    .mutation(({ ctx, input }) => startProfileImportJob(ctx, input)),
+
+  listProfileImportJobs: protectedProcedure
+    .input(z.object({
+      listingProjectId: z.number().int().positive(),
+      expectedWorkspaceId: z.number().int().positive().nullable(),
+    }).strict())
+    .query(({ ctx, input }) => listProfileImportJobs(ctx, input)),
+
+  getProfileImportJob: protectedProcedure
+    .input(z.object({
+      listingProjectId: z.number().int().positive(),
+      runId: z.string().min(1).max(80),
+      expectedWorkspaceId: z.number().int().positive().nullable(),
+    }).strict())
+    .query(({ ctx, input }) => getProfileImportJob(ctx, input)),
+
+  resumeProfileImportJob: protectedProcedure
+    .input(z.object({
+      listingProjectId: z.number().int().positive(),
+      runId: z.string().min(1).max(80),
+      expectedWorkspaceId: z.number().int().positive().nullable(),
+      expectedSourceHash: z.string().regex(/^[a-f0-9]{64}$/),
+    }).strict())
+    .mutation(({ ctx, input }) => resumeProfileImportJob(ctx, input)),
 });
