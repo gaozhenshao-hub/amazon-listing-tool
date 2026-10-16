@@ -57,19 +57,12 @@ export function ListingGenerationPreparationSummary({
           </div>
           <div className="flex gap-2 flex-wrap">
             {analysisCount > 0 && <Badge variant="secondary"><CheckCircle2 className="h-3 w-3 mr-1" />已有竞品数据</Badge>}
-            {fileSummary && Number(fileSummary.fileCount || 0) > 0 && (
-              <Badge variant={fileSummary.hasAllFiles ? "default" : "secondary"}
-                className={fileSummary.hasAllFiles ? "bg-green-600" : ""}>
-                {fileSummary.hasAllFiles ? (
-                  <><CheckCircle2 className="h-3 w-3 mr-1" />4/4 分析模块就绪</>
-                ) : (
-                  <>{[
-                    fileSummary.productAttributes ? 1 : 0,
-                    fileSummary.competitorListings ? 1 : 0,
-                    fileSummary.cosmoScenes ? 1 : 0,
-                    fileSummary.a9Keywords ? 1 : 0,
-                  ].reduce((a: number, b: number) => a + b, 0)}/4 分析模块</>
-                )}
+            {fileSummary && (
+              <Badge variant={fileSummary.productAttributes ? "default" : "secondary"}
+                className={fileSummary.productAttributes ? "bg-green-600" : ""}>
+                {fileSummary.productAttributes ? (
+                  <><CheckCircle2 className="h-3 w-3 mr-1" />本品属性分析已生成</>
+                ) : "尚未生成本品属性分析"}
               </Badge>
             )}
             {kwReadiness && (
@@ -86,6 +79,8 @@ export function ListingGenerationPreparationSummary({
         </div>
       </CardContent>
     </Card>
+
+    <p className="text-xs text-muted-foreground">属性分析可由产品画像生成或补充导入；生成内容仍以已确认的本品事实为准。</p>
 
     {kwReadiness && !kwReadiness.allDone && (
       <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/30">

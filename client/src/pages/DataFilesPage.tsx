@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import ProjectSelector from "@/components/ProjectSelector";
@@ -33,16 +33,15 @@ import {
   RotateCcw,
   Clock,
   FileDown,
-  Import,
-  Package,
   HelpCircle,
   MessageSquare,
 } from "lucide-react";
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { shouldShowProjectFileError } from "./dataFiles/displayState";
 import { getRufusIdentityEntries } from "./dataFiles/rufusIdentity";
 import { getRufusUsageScenarios } from "./dataFiles/rufusUsageScenarios";
+import ProductProfileAttributeSource from "./listing/ProductProfileAttributeSource";
 
 type FileType = "product_attributes";
 
@@ -403,7 +402,7 @@ function EditableSceneList({
 }
 
 // ─── Analysis Result Card (View + Edit Mode) ────────────────────
-function AnalysisResultCard({
+export function AnalysisResultCard({
   fileType,
   result,
   fileId,
@@ -417,6 +416,7 @@ function AnalysisResultCard({
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<any>(null);
+  const [editOrigin, setEditOrigin] = useState<{ fileId: number; projectId: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
@@ -457,17 +457,21 @@ function AnalysisResultCard({
 
   const startEdit = () => {
     setEditData(JSON.parse(JSON.stringify(result))); // deep clone
+    setEditOrigin({ fileId, projectId });
     setEditing(true);
     setExpanded(true);
   };
 
   const cancelEdit = () => {
     setEditData(null);
+    setEditOrigin(null);
     setEditing(false);
   };
 
   const saveEdit = () => {
-    if (!editData) return;
+    // A profile import can refresh latestFile while this draft remains open.
+    // Never retarget an old draft to the newly generated source record.
+    if (!editData || !editOrigin || editOrigin.fileId !== fileId || editOrigin.projectId !== projectId) return;
     setSaving(true);
     updateMutation.mutate({
       fileId,
@@ -479,6 +483,7 @@ function AnalysisResultCard({
   if (!result) return null;
 
   const data = editing ? editData : result;
+  const sourceChanged = editing && (editOrigin?.fileId !== fileId || editOrigin?.projectId !== projectId);
   const rufusIdentityEntries = getRufusIdentityEntries(data?.productIdentity);
   const rufusUsageScenarios = getRufusUsageScenarios(data?.usageScenarios);
 
@@ -705,7 +710,7 @@ function AnalysisResultCard({
                 size="sm"
                 className="h-6 px-2 text-xs"
                 onClick={saveEdit}
-                disabled={saving}
+                disabled={saving || sourceChanged}
               >
                 {saving ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
                 保存
@@ -714,6 +719,7 @@ function AnalysisResultCard({
           )}
         </div>
       </div>
+      {sourceChanged && <p role="alert" className="text-xs text-amber-800">属性来源已更新，原编辑稿仍保留，可先复制。为避免覆盖新来源，当前草稿不能保存；取消编辑后可查看新属性。</p>}
       {showHistory && (
         <div className="p-3 rounded-lg border border-amber-200 bg-amber-50/30 space-y-2">
           <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-amber-200">
@@ -795,202 +801,6 @@ function AnalysisResultCard({
   );
 }
 
-// ─── Import from Product Profile Button ─────────────────────────
-function ImportFromProfileButton({ projectId }: { projectId: number }) {
-  const [open, setOpen] = useState(false);
-  const [selectedDevProjectId, setSelectedDevProjectId] = useState<string>("");
-  const utils = trpc.useUtils();
-
-  // Query available dev projects for import
-  const { data: importableProjects, isLoading: loadingProjects } = trpc.projectAssignment.listImportableDevProjects.useQuery(
-    undefined,
-    { enabled: open }
-  );
-
-  // Get profile preview when a project is selected
-  const { data: profilePreview, isLoading: loadingPreview } = trpc.projectAssignment.getDevProjectProfile.useQuery(
-    { devProjectId: Number(selectedDevProjectId) },
-    { enabled: !!selectedDevProjectId && open }
-  );
-
-  const importMutation = trpc.projectFile.importFromProfile.useMutation({
-    onSuccess: () => {
-      utils.projectFile.listByType.invalidate({ projectId, fileType: "product_attributes" });
-      utils.projectFile.listByProject.invalidate({ projectId });
-      utils.projectFile.getAnalysisSummary.invalidate({ projectId });
-      toast.success("产品画像数据已成功导入并完成AI分析");
-      setOpen(false);
-      setSelectedDevProjectId("");
-    },
-    onError: (err) => toast.error(`导入失败: ${err.message}`),
-  });
-
-  const handleImport = () => {
-    if (!selectedDevProjectId) {
-      toast.error("请先选择一个产品开发项目");
-      return;
-    }
-    importMutation.mutate({
-      listingProjectId: projectId,
-      devProjectId: Number(selectedDevProjectId),
-    });
-  };
-
-  const hasProfile = profilePreview?.profile !== null;
-
-  // Build profile summary for preview
-  const profileSummary = useMemo(() => {
-    if (!profilePreview?.profile) return null;
-    const p = profilePreview.profile;
-    const sections: string[] = [];
-    const checkField = (field: string, label: string) => {
-      const val = (p as any)[field];
-      if (val) {
-        try {
-          const parsed = typeof val === "string" ? JSON.parse(val) : val;
-          if (parsed && (Array.isArray(parsed) ? parsed.length > 0 : Object.keys(parsed).length > 0)) {
-            sections.push(label);
-          }
-        } catch {
-          if (typeof val === "string" && val.trim()) sections.push(label);
-        }
-      }
-    };
-    checkField("appearanceColors", "外观设计");
-    checkField("appearanceAiSuggestion", "外观设计(AI)");
-    checkField("mainFunctions", "功能特点");
-    checkField("functionsAiSuggestion", "功能特点(AI)");
-    checkField("costBreakdown", "产品成本");
-    checkField("packageDimensions", "包装尺寸");
-    checkField("userPersona", "用户画像");
-    checkField("usageScenarios", "使用场景");
-    checkField("productMap", "产品地图");
-    return sections;
-  }, [profilePreview?.profile]);
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSelectedDevProjectId(""); }}>
-      <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full border-dashed border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-        >
-          <Import className="h-3.5 w-3.5 mr-2" />
-          从产品画像导入
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[520px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5 text-blue-600" />
-            从产品画像导入
-          </DialogTitle>
-          <DialogDescription>
-            选择已分配给您的产品开发项目，将其产品画像数据自动转换为本品属性表并进行AI分析
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-2">
-          {/* Project Selector */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">选择产品开发项目</label>
-            <Select value={selectedDevProjectId} onValueChange={setSelectedDevProjectId}>
-              <SelectTrigger>
-                <SelectValue placeholder={loadingProjects ? "加载中..." : "请选择项目"} />
-              </SelectTrigger>
-              <SelectContent>
-                {importableProjects?.map((p: any) => (
-                  <SelectItem key={p.id} value={String(p.id)}>
-                    <div className="flex items-center gap-2">
-                      <span>{p.name}</span>
-                      {p.targetMarket && (
-                        <Badge variant="outline" className="text-[10px] ml-1">{p.targetMarket}</Badge>
-                      )}
-                    </div>
-                  </SelectItem>
-                ))}
-                {importableProjects?.length === 0 && (
-                  <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    <AlertTriangle className="h-5 w-5 mx-auto mb-2 text-amber-500" />
-                    <p>暂无可导入的项目</p>
-                    <p className="text-xs mt-1">请联系管理员分配产品开发项目</p>
-                  </div>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Profile Preview */}
-          {selectedDevProjectId && (
-            <div className="space-y-2">
-              {loadingPreview ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground py-4 justify-center">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  加载产品画像...
-                </div>
-              ) : hasProfile ? (
-                <Card className="border-blue-200 bg-blue-50/50">
-                  <CardContent className="p-3 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
-                      <span className="text-sm font-medium">产品画像数据可用</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      项目: {profilePreview?.project?.name}
-                    </p>
-                    {profileSummary && profileSummary.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {profileSummary.map((s, i) => (
-                          <Badge key={i} variant="secondary" className="text-[10px]">{s}</Badge>
-                        ))}
-                      </div>
-                    )}
-                    <p className="text-xs text-blue-600">
-                      导入后将自动运行Rufus属性分析，提取核心规格、材质、性能等参数
-                    </p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card className="border-amber-200 bg-amber-50/50">
-                  <CardContent className="p-3">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-amber-500" />
-                      <span className="text-sm font-medium text-amber-700">该项目尚未创建产品画像</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      请先在产品开发模块中完成产品画像的创建
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>取消</Button>
-          <Button
-            onClick={handleImport}
-            disabled={!selectedDevProjectId || !hasProfile || importMutation.isPending}
-          >
-            {importMutation.isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                导入并分析中...
-              </>
-            ) : (
-              <>
-                <Import className="h-4 w-4 mr-2" />
-                确认导入
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId: number }) {
   const config = FILE_TYPE_CONFIG[fileType];
@@ -1082,7 +892,7 @@ function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId
   }
 
   return (
-    <Card className={`${hasCompletedFile ? config.borderColor : ""} transition-all`}>
+    <Card id={fileType === "product_attributes" ? "product-attributes-source-history" : undefined} className={`${hasCompletedFile ? config.borderColor : ""} transition-all`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-3">
@@ -1148,11 +958,6 @@ function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId
             模板
           </Button>
         </div>
-
-        {/* Import from Product Profile */}
-        {fileType === "product_attributes" && (
-          <ImportFromProfileButton projectId={projectId} />
-        )}
 
         {latestFile && (
           <div className="space-y-2">
@@ -1442,7 +1247,7 @@ export default function DataFilesPage() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">数据文件管理 (N3)</h1>
-          <p className="text-muted-foreground mt-1">上传本品属性表（必须）和买家问题库，作为Listing生成的前置数据</p>
+          <p className="text-muted-foreground mt-1">选择产品画像生成本品属性来源；上传作为可选补充，进入生成前仍须人工核对事实</p>
         </div>
         <ProjectSelector />
       </div>
@@ -1463,7 +1268,7 @@ export default function DataFilesPage() {
                 <div className="flex items-center gap-6">
                   <div className="flex items-center gap-2">
                     <div className={`h-2.5 w-8 rounded-full transition-colors ${n3Ready ? "bg-green-500" : "bg-red-400"}`} />
-                    <span className="text-sm font-medium text-indigo-900">产品属性表：{n3Ready ? "✓ 已就绪" : "待上传（必须）"}</span>
+                    <span className="text-sm font-medium text-indigo-900">产品属性分析：{n3Ready ? "✓ 已有结果（事实仍须审核）" : "待选择画像生成或补充资料"}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className={`h-2.5 w-8 rounded-full transition-colors ${bqReady ? "bg-green-500" : "bg-amber-300"}`} />
@@ -1471,18 +1276,20 @@ export default function DataFilesPage() {
                   </div>
                 </div>
                 {n3Ready ? (
-                  <Badge className="bg-green-600"><CheckCircle2 className="h-3 w-3 mr-1" />G1 前置数据已就绪</Badge>
+                  <Badge className="bg-green-600"><CheckCircle2 className="h-3 w-3 mr-1" />已有属性分析，不代表事实已确认</Badge>
                 ) : (
-                  <Badge variant="outline" className="text-red-600 border-red-300"><AlertTriangle className="h-3 w-3 mr-1" />产品属性表必须上传才能开始Listing生成</Badge>
+                  <Badge variant="outline" className="text-red-600 border-red-300"><AlertTriangle className="h-3 w-3 mr-1" />请先选择画像生成属性，或补充已有资料</Badge>
                 )}
               </div>
             </CardContent>
           </Card>
 
-          {/* 产品属性表上传 */}
+          <ProductProfileAttributeSource projectId={selectedProjectId} />
+
+          {/* Optional supplemental upload; profile selection is the primary source entry. */}
           <div className="grid grid-cols-1 gap-4">
             {FILE_TYPES.map((ft) => (
-              <FileUploadCard key={ft} fileType={ft} projectId={selectedProjectId} />
+              <FileUploadCard key={`${selectedProjectId}:${ft}`} fileType={ft} projectId={selectedProjectId} />
             ))}
           </div>
 

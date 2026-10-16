@@ -12,6 +12,7 @@ import { useMarketplace } from "@/contexts/MarketplaceContext";
 import NotificationBell from "@/components/NotificationBell";
 import { useIsMobile } from "@/hooks/useMobile";
 import { MERGED_READONLY_FEATURES_ENABLED } from "@/lib/mergedReadOnlyFeatures";
+import { MERGED_LISTING_WORKFLOW_ENABLED } from "@/lib/mergedListingWorkflow";
 import {
   LayoutDashboard,
   LogOut,
@@ -155,24 +156,31 @@ const modules: ModuleDef[] = [
     prefix: "/listing",
     enabled: true,
     items: [
+      ...(MERGED_LISTING_WORKFLOW_ENABLED ? [
+        { icon: Search, label: "1. Listing 抓取", path: "/listing/analysis" },
+        { icon: GitCompareArrows, label: "2. Listing 对比及分析", path: "/listing/comparison" },
+        { icon: Sparkles, label: "3. 智能 Listing 生成", path: "/listing/generate" },
+      ] : []),
       { icon: LayoutGrid, label: "工作流画布", path: "/listing/canvas" },
       {
         id: "listing-preparation",
         icon: Layers,
-        label: "前置准备层",
+        label: MERGED_LISTING_WORKFLOW_ENABLED ? "项目与补充资料" : "前置准备层",
         items: [
           { icon: LayoutDashboard, label: "项目管理", path: "/listing" },
-          { icon: Search, label: "竞品分析", path: "/listing/analysis" },
-          { icon: GitCompareArrows, label: "竞品对比", path: "/listing/comparison" },
+          ...(!MERGED_LISTING_WORKFLOW_ENABLED ? [
+            { icon: Search, label: "竞品分析", path: "/listing/analysis" },
+            { icon: GitCompareArrows, label: "竞品对比", path: "/listing/comparison" },
+          ] : []),
           { icon: History, label: "导入历史", path: "/listing/review-history" },
           { icon: Key, label: "关键词管理", path: "/listing/keywords" },
-          { icon: Database, label: "数据文件", path: "/listing/data-files" },
+          { icon: Database, label: MERGED_LISTING_WORKFLOW_ENABLED ? "本品属性与补充资料" : "数据文件", path: "/listing/data-files" },
           { icon: MessageSquareText, label: "评论聚合分析", path: "/listing/review-aggregation" },
           { icon: HelpCircle, label: "买家问题库", path: "/listing/buyer-questions" },
         ],
       },
       { icon: Target, label: "广告架构", path: "/listing/ad-structure" },
-      { icon: Sparkles, label: "Listing生成", path: "/listing/generate" },
+      ...(!MERGED_LISTING_WORKFLOW_ENABLED ? [{ icon: Sparkles, label: "Listing生成", path: "/listing/generate" }] : []),
       { icon: FileText, label: "结果预览", path: "/listing/preview" },
       { icon: Gauge, label: "Listing评分", path: "/listing/score" },
       { icon: Image, label: "智能图片建议", path: "/listing/image-workflow" },

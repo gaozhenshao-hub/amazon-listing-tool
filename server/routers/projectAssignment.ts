@@ -6,9 +6,9 @@ import {
   projectAssignments,
   users,
   devProjects,
-  devProductProfiles,
   projects,
 } from "../../drizzle/schema";
+import { listProfileImportSources, loadProfileImportSource } from "../domains/listing/services/profileImportSource";
 
 // ═══════════════════════════════════════════════════════════════
 // Project Assignment Router
@@ -301,82 +301,15 @@ export const projectAssignmentRouter = router({
   // ─── Get product profile from dev_project (cross-module reference) ───
   getDevProjectProfile: protectedProcedure
     .input(z.object({
-      devProjectId: z.number(),
-    }))
-    .query(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new Error("Database not available");
-
-      // Check if user has assignment or is admin
-      const isAdmin = ["super_admin", "admin", "ops_manager"].includes(ctx.user.role);
-      if (!isAdmin) {
-        const assignment = await db.select().from(projectAssignments).where(
-          and(
-            eq(projectAssignments.projectId, input.devProjectId),
-            eq(projectAssignments.projectType, "dev_project"),
-            eq(projectAssignments.assignedUserId, ctx.user.id)
-          )
-        ).limit(1);
-        if (!assignment.length) throw new Error("您没有该项目的访问权限");
-      }
-
-      // Get project info
-      const project = await db.select().from(devProjects)
-        .where(eq(devProjects.id, input.devProjectId))
-        .limit(1);
-      if (!project.length) throw new Error("项目不存在");
-
-      // Get product profile
-      const profile = await db.select().from(devProductProfiles)
-        .where(eq(devProductProfiles.projectId, input.devProjectId))
-        .limit(1);
-
-      return {
-        project: project[0],
-        profile: profile[0] || null,
-      };
-    }),
+      devProjectId: z.number().int().positive(),
+      expectedWorkspaceId: z.number().int().positive().nullable().optional(),
+    }).strict())
+    .query(({ ctx, input }) => loadProfileImportSource(ctx, input)),
 
   // ─── List available dev projects for import (in listing module) ───
-  listImportableDevProjects: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) throw new Error("Database not available");
-
-    const isAdmin = ["super_admin", "admin", "ops_manager"].includes(ctx.user.role);
-
-    if (isAdmin) {
-      // Admin can see all dev projects
-      const allProjects = await db.select({
-        id: devProjects.id,
-        name: devProjects.name,
-        targetMarket: devProjects.targetMarket,
-        status: devProjects.status,
-      }).from(devProjects).orderBy(desc(devProjects.updatedAt));
-      return allProjects;
-    }
-
-    // Regular user: only see assigned dev projects
-    const assignments = await db.select().from(projectAssignments).where(
-      and(
-        eq(projectAssignments.assignedUserId, ctx.user.id),
-        eq(projectAssignments.projectType, "dev_project")
-      )
-    );
-
-    if (!assignments.length) return [];
-
-    const projectIds = assignments.map(a => a.projectId);
-    const assignedProjects = await db.select({
-      id: devProjects.id,
-      name: devProjects.name,
-      targetMarket: devProjects.targetMarket,
-      status: devProjects.status,
-    }).from(devProjects)
-      .where(inArray(devProjects.id, projectIds))
-      .orderBy(desc(devProjects.updatedAt));
-
-    return assignedProjects;
-  }),
+  listImportableDevProjects: protectedProcedure
+    .input(z.object({ expectedWorkspaceId: z.number().int().positive().nullable().optional() }).strict().optional())
+    .query(({ ctx, input }) => listProfileImportSources(ctx, input?.expectedWorkspaceId)),
 
   // ─── List available projects for assignment (admin dropdown) ───
   listAvailableProjects: managerProcedure

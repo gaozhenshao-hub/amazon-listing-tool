@@ -34,10 +34,15 @@ import {
   X,
 } from "lucide-react";
 import { Streamdown } from "streamdown";
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo, useRef } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import { MERGED_READONLY_FEATURES_ENABLED } from "@/lib/mergedReadOnlyFeatures";
 import { SellingPointSourceEvidence } from "./listing/SellingPointSourceEvidence";
+import { MERGED_LISTING_WORKFLOW_ENABLED } from "@/lib/mergedListingWorkflow";
+import ListingStages from "./listing/ListingStages";
+import CompetitorStudyComparison from "./listing/CompetitorStudyComparison";
+import { competitorStudy, matchesComparisonSelection, type CompetitorStudyRecord } from "./listing/competitorStudyModel";
 
 // Type for parsed analysis data
 interface ParsedAnalysis {
@@ -136,39 +141,25 @@ const ASIN_COLORS = [
 
 // AI Summary Section Component
 function AISummarySection({
-  projectId,
-  selectedIds,
   selectedAnalyses,
   report,
   summaryDraft,
   isEditing,
   onSummaryChange,
-  onReportGenerated,
+  onGenerate,
+  isGenerating,
+  generationDisabled,
 }: {
-  projectId: number;
-  selectedIds: Set<number>;
   selectedAnalyses: ParsedAnalysis[];
   report: ComparisonReport | null;
   summaryDraft: string;
   isEditing: boolean;
   onSummaryChange: (summary: string) => void;
-  onReportGenerated: (report: ComparisonReport) => void;
+  onGenerate: () => void;
+  isGenerating: boolean;
+  generationDisabled: boolean;
 }) {
   const [isCopied, setIsCopied] = useState(false);
-  const summaryMutation = trpc.analysis.comparisonSummary.useMutation({
-    onSuccess: (data) => {
-      onReportGenerated(data.report as ComparisonReport);
-      toast.success("结构化竞品对比已生成");
-    },
-    onError: error => toast.error("生成失败", { description: error.message }),
-  });
-
-  const handleGenerate = () => {
-    summaryMutation.mutate({
-      projectId,
-      analysisIds: Array.from(selectedIds),
-    });
-  };
 
   const handleCopy = async () => {
     if (!summaryDraft) return;
@@ -197,11 +188,11 @@ function AISummarySection({
               </CardDescription>
             </div>
             <Button
-              onClick={handleGenerate}
-              disabled={summaryMutation.isPending || selectedAnalyses.length < 2 || report?.status === "confirmed"}
+              onClick={onGenerate}
+              disabled={generationDisabled || isGenerating || selectedAnalyses.length < 2 || report?.status === "confirmed"}
               className="shrink-0"
             >
-              {summaryMutation.isPending ? (
+              {isGenerating ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   AI 分析中...
@@ -215,7 +206,7 @@ function AISummarySection({
             </Button>
           </div>
         </CardHeader>
-        {summaryMutation.isPending && (
+        {isGenerating && (
           <CardContent className="pt-0">
             <div className="space-y-3">
               <div className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -287,7 +278,7 @@ function AISummarySection({
       )}
 
       {/* Empty State */}
-      {!report && !summaryMutation.isPending && (
+      {!report && !isGenerating && (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Sparkles className="h-8 w-8 text-muted-foreground mb-4" />
@@ -454,29 +445,57 @@ function SellingPointMatrix({
 
 export default function ComparisonPage() {
   const { selectedProjectId } = useProject();
+  const auth = useAuth();
+  if (auth.loading) return <p role="status">正在确认登录状态…</p>;
+  if (auth.error || !auth.user) return <p role="alert">请先确认登录状态，未读取竞品数据。</p>;
+  const { id, defaultWorkspaceId, role } = auth.user;
+  if (!Number.isSafeInteger(id) || id <= 0 || (defaultWorkspaceId !== null
+    && (typeof defaultWorkspaceId !== "number" || !Number.isSafeInteger(defaultWorkspaceId) || defaultWorkspaceId <= 0))) {
+    return <p role="alert">当前用户 / 工作区信息不完整，未读取竞品数据。</p>;
+  }
+  if (!selectedProjectId || !Number.isSafeInteger(selectedProjectId) || selectedProjectId <= 0) {
+    return <div className="space-y-4">{MERGED_LISTING_WORKFLOW_ENABLED && <ListingStages />}<ProjectSelector /><p>请先在项目管理中创建并选择一个项目</p></div>;
+  }
+  // Remount all selection, drafts and callbacks; never reuse a project-only shared cache across users/workspaces.
+  const scopeKey = JSON.stringify([id, defaultWorkspaceId, role, selectedProjectId]);
+  return <OwnedComparisonPage key={scopeKey} selectedProjectId={selectedProjectId} />;
+}
+
+function OwnedComparisonPage({ selectedProjectId }: { selectedProjectId: number }) {
+  const client = trpc.useUtils().client;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [report, setReport] = useState<ComparisonReport | null>(null);
   const [summaryDraft, setSummaryDraft] = useState("");
   const [sellingPointRows, setSellingPointRows] = useState<ComparisonSellingPointRow[]>([]);
   const [isEditingReport, setIsEditingReport] = useState(false);
-  const utils = trpc.useUtils();
-
-  const { data: analyses, isLoading } = trpc.analysis.listByProject.useQuery(
-    { projectId: selectedProjectId! },
-    { enabled: !!selectedProjectId }
-  );
+  const [analyses, setAnalyses] = useState<Awaited<ReturnType<typeof client.analysis.listByProject.query>>>();
+  const [isLoading, setIsLoading] = useState(true), [readError, setReadError] = useState(false);
+  const [readGeneration, setReadGeneration] = useState(0), [reportGeneration, setReportGeneration] = useState(0);
+  const [comparisonReportQuery, setReportRead] = useState({ isFetching: false, isError: false });
+  const [pendingReportAction, setPendingReportAction] = useState<string | null>(null);
+  const [pendingStudyIds, setPendingStudyIds] = useState<Set<number>>(new Set());
+  const alive = useRef(false), selectionEpoch = useRef(0), draftRevision = useRef(0), dirty = useRef(false);
+  const reportActionLock = useRef(false), studyLocks = useRef(new Set<number>());
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => {
+    const controller = new AbortController(); let current = true;
+    setIsLoading(true); setReadError(false);
+    void client.analysis.listByProject.query({ projectId: selectedProjectId }, { signal: controller.signal }).then(rows => {
+      if (current && alive.current) setAnalyses(rows);
+    }).catch(() => { if (current && alive.current) setReadError(true); })
+      .finally(() => { if (current && alive.current) setIsLoading(false); });
+    // Abort is best-effort; the current/alive guards also reject late responses when transport ignores it.
+    return () => { current = false; controller.abort(); };
+  }, [client, selectedProjectId, readGeneration]);
 
   const selectedAnalysisIds = useMemo(
     () => Array.from(selectedIds).sort((a, b) => a - b),
     [selectedIds],
   );
   const selectionKey = selectedAnalysisIds.join("-");
-  const comparisonReportQuery = trpc.analysis.getComparisonReport.useQuery(
-    { projectId: selectedProjectId!, analysisIds: selectedAnalysisIds },
-    { enabled: !!selectedProjectId && selectedAnalysisIds.length >= 2 },
-  );
 
   const applyReport = useCallback((nextReport: ComparisonReport | null, editing = false) => {
+    dirty.current = false; draftRevision.current++;
     setReport(nextReport);
     setSummaryDraft(nextReport?.summary || "");
     setSellingPointRows(nextReport?.sellingPointRows || []);
@@ -484,70 +503,71 @@ export default function ComparisonPage() {
   }, []);
 
   useEffect(() => {
-    applyReport(null);
-  }, [applyReport, selectionKey, selectedProjectId]);
+    if (selectedAnalysisIds.length < 2) return;
+    const controller = new AbortController(), epoch = selectionEpoch.current, revision = draftRevision.current;
+    let current = true;
+    setReportRead({ isFetching: true, isError: false });
+    void client.analysis.getComparisonReport.query({ projectId: selectedProjectId, analysisIds: selectedAnalysisIds }, { signal: controller.signal }).then(value => {
+      if (!current || !alive.current || epoch !== selectionEpoch.current) return;
+      if (value !== null && !matchesComparisonSelection(value, selectedProjectId, selectedAnalysisIds)) throw new Error("REPORT_SCOPE_MISMATCH");
+      if (!dirty.current && !reportActionLock.current && revision === draftRevision.current) applyReport(value as ComparisonReport | null);
+    }).catch(() => { if (current && alive.current && epoch === selectionEpoch.current) setReportRead({ isFetching: false, isError: true }); })
+      .finally(() => { if (current && alive.current && epoch === selectionEpoch.current) setReportRead(previous => ({ ...previous, isFetching: false })); });
+    return () => { current = false; controller.abort(); };
+  }, [client, selectedProjectId, selectedAnalysisIds, selectionKey, reportGeneration, applyReport]);
 
-  useEffect(() => {
-    if (comparisonReportQuery.data) {
-      applyReport(comparisonReportQuery.data as ComparisonReport);
+  function changeSelection(next: Set<number>) {
+    selectionEpoch.current++; reportActionLock.current = false;
+    setPendingReportAction(null); setReportRead({ isFetching: false, isError: false });
+    applyReport(null); setSelectedIds(next);
+  }
+  function editSummary(value: string) { dirty.current = true; draftRevision.current++; setSummaryDraft(value); }
+  function editRows(value: ComparisonSellingPointRow[]) { dirty.current = true; draftRevision.current++; setSellingPointRows(value); }
+  function beginEditing() { dirty.current = true; setIsEditingReport(true); }
+  async function runReportAction(kind: "generate" | "save" | "confirm" | "unlock") {
+    if (reportActionLock.current || selectedAnalysisIds.length < 2 || (kind !== "generate" && !report)) return;
+    if (kind === "generate" && (dirty.current || report?.status === "confirmed")) return;
+    const epoch = selectionEpoch.current, revision = draftRevision.current;
+    reportActionLock.current = true; setPendingReportAction(kind);
+    try {
+      const input = { projectId: selectedProjectId, reportId: report?.id ?? 0, summary: summaryDraft, sellingPointRows };
+      const value = kind === "generate" ? (await client.analysis.comparisonSummary.mutate({ projectId: selectedProjectId, analysisIds: selectedAnalysisIds })).report
+        : kind === "save" ? await client.analysis.updateComparisonReport.mutate(input)
+          : kind === "confirm" ? await client.analysis.confirmComparisonReport.mutate(input)
+            : await client.analysis.unlockComparisonReport.mutate({ projectId: selectedProjectId, reportId: input.reportId });
+      if (!alive.current || epoch !== selectionEpoch.current) return;
+      if (!matchesComparisonSelection(value, selectedProjectId, selectedAnalysisIds)) throw new Error("REPORT_SCOPE_MISMATCH");
+      if (revision === draftRevision.current) {
+        applyReport(value as ComparisonReport, kind === "unlock");
+        if (kind === "unlock") dirty.current = true;
+      } else toast.info("请求已完成，期间编辑的本地草稿已保留，请核对后再保存");
+      toast.success(kind === "generate" ? "结构化竞品对比已生成" : kind === "save" ? "竞品对比草稿已保存" : kind === "confirm" ? "竞品对比已确认并锁定" : "竞品对比已解锁");
+    } catch (error) {
+      if (alive.current && epoch === selectionEpoch.current) toast.error("对比操作未完成", { description: error instanceof Error ? error.message : "请刷新核对，系统不会自动重试" });
+    } finally {
+      if (alive.current && epoch === selectionEpoch.current) { reportActionLock.current = false; setPendingReportAction(null); }
     }
-  }, [applyReport, comparisonReportQuery.data]);
-
-  const refreshComparisonReport = async () => {
-    if (!selectedProjectId || selectedAnalysisIds.length < 2) return;
-    await utils.analysis.getComparisonReport.invalidate({
-      projectId: selectedProjectId,
-      analysisIds: selectedAnalysisIds,
-    });
-  };
-
-  const updateReportMutation = trpc.analysis.updateComparisonReport.useMutation({
-    onSuccess: async data => {
-      applyReport(data as ComparisonReport);
-      await refreshComparisonReport();
-      toast.success("竞品对比草稿已保存");
-    },
-    onError: error => toast.error("保存失败", { description: error.message }),
-  });
-  const confirmReportMutation = trpc.analysis.confirmComparisonReport.useMutation({
-    onSuccess: async data => {
-      applyReport(data as ComparisonReport);
-      await refreshComparisonReport();
-      toast.success("竞品对比已确认并锁定");
-    },
-    onError: error => toast.error("确认失败", { description: error.message }),
-  });
-  const unlockReportMutation = trpc.analysis.unlockComparisonReport.useMutation({
-    onSuccess: async data => {
-      applyReport(data as ComparisonReport, true);
-      await refreshComparisonReport();
-      toast.success("竞品对比已解锁");
-    },
-    onError: error => toast.error("解锁失败", { description: error.message }),
-  });
-  const reportMutationPending = updateReportMutation.isPending
-    || confirmReportMutation.isPending
-    || unlockReportMutation.isPending;
-
-  const saveReport = () => {
-    if (!selectedProjectId || !report) return;
-    updateReportMutation.mutate({
-      projectId: selectedProjectId,
-      reportId: report.id,
-      summary: summaryDraft,
-      sellingPointRows,
-    });
-  };
-
-  const confirmReport = () => {
-    if (!selectedProjectId || !report) return;
-    confirmReportMutation.mutate({
-      projectId: selectedProjectId,
-      reportId: report.id,
-      summary: summaryDraft,
-      sellingPointRows,
-    });
-  };
+  }
+  const reportMutationPending = pendingReportAction !== null;
+  const updateReportMutation = { isPending: pendingReportAction === "save" };
+  const confirmReportMutation = { isPending: pendingReportAction === "confirm" };
+  const unlockReportMutation = { isPending: pendingReportAction === "unlock" };
+  const saveReport = () => { void runReportAction("save"); };
+  const confirmReport = () => { void runReportAction("confirm"); };
+  async function reviewStudy(analysis: CompetitorStudyRecord, action: "confirm" | "unlock") {
+    const current = analyses?.find(row => row.id === analysis.id && row.asin === analysis.asin);
+    if (!current || !selectedIds.has(current.id) || studyLocks.current.has(current.id)) return;
+    const study = competitorStudy(current);
+    if (action === "confirm" ? !study.canConfirm : !study.canUnlock) return;
+    studyLocks.current.add(current.id); setPendingStudyIds(new Set(studyLocks.current));
+    try {
+      if (action === "confirm") await client.analysis.confirmSummary.mutate({ projectId: selectedProjectId, analysisId: current.id, summary: study.summary });
+      else await client.analysis.unlockSummary.mutate({ projectId: selectedProjectId, analysisId: current.id });
+      if (alive.current) setReadGeneration(value => value + 1);
+    } catch (error) {
+      if (alive.current) toast.error("摘要操作未完成", { description: error instanceof Error ? error.message : "请刷新核对，系统不会自动重试" });
+    } finally { studyLocks.current.delete(current.id); if (alive.current) setPendingStudyIds(new Set(studyLocks.current)); }
+  }
 
   // Parse selected analyses
   const selectedAnalyses = useMemo(() => {
@@ -559,25 +579,23 @@ export default function ComparisonPage() {
 
   // Toggle selection
   const toggleSelection = (id: number) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
+      const next = new Set(selectedIds);
       if (next.has(id)) {
         next.delete(id);
       } else {
-        if (next.size >= 8) return prev; // Max 8 items
+        if (next.size >= 8) return; // Max 8 items
         next.add(id);
       }
-      return next;
-    });
+      changeSelection(next);
   };
 
   // Select all / deselect all
   const toggleAll = () => {
     if (!analyses) return;
     if (selectedIds.size === analyses.length || selectedIds.size >= 8) {
-      setSelectedIds(new Set());
+      changeSelection(new Set());
     } else {
-      setSelectedIds(new Set(analyses.slice(0, 8).map(a => a.id)));
+      changeSelection(new Set(analyses.slice(0, 8).map(a => a.id)));
     }
   };
 
@@ -642,6 +660,7 @@ export default function ComparisonPage() {
 
   return (
     <div className="space-y-6">
+      {MERGED_LISTING_WORKFLOW_ENABLED && <ListingStages />}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">竞品对比</h1>
@@ -649,7 +668,7 @@ export default function ComparisonPage() {
             选择多个已分析的ASIN进行并排比较，发现竞品差异和机会
           </p>
         </div>
-        <ProjectSelector />
+        <div className="flex items-center gap-2"><Button variant="outline" onClick={() => { setReadGeneration(value => value + 1); setReportGeneration(value => value + 1); }}>刷新已保存研究</Button><ProjectSelector /></div>
       </div>
 
       {!selectedProjectId ? (
@@ -665,6 +684,8 @@ export default function ComparisonPage() {
             <Card key={i}><CardContent className="p-6"><div className="h-20 bg-muted animate-pulse rounded" /></CardContent></Card>
           ))}
         </div>
+      ) : readError ? (
+        <p role="alert">竞品读取失败，未将错误当作空数据；请刷新核对当前权限与项目。</p>
       ) : !analyses || analyses.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-16">
@@ -673,7 +694,7 @@ export default function ComparisonPage() {
             <p className="text-muted-foreground text-xs mt-1">请先在竞品分析页面分析至少2个ASIN</p>
           </CardContent>
         </Card>
-      ) : analyses.length < 2 ? (
+      ) : analyses.length < 2 && !MERGED_LISTING_WORKFLOW_ENABLED ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <BarChart3 className="h-8 w-8 text-muted-foreground mb-4" />
@@ -725,7 +746,9 @@ export default function ComparisonPage() {
                       onClick={() => toggleSelection(analysis.id)}
                     >
                       <Checkbox
+                        aria-label={`选择 ${analysis.asin}`}
                         checked={isSelected}
+                        onClick={event => event.stopPropagation()}
                         onCheckedChange={() => toggleSelection(analysis.id)}
                         className="mt-0.5 shrink-0"
                       />
@@ -760,6 +783,15 @@ export default function ComparisonPage() {
             </CardContent>
           </Card>
 
+          {MERGED_LISTING_WORKFLOW_ENABLED && <CompetitorStudyComparison
+            analyses={analyses.filter(row => selectedIds.has(row.id))}
+            pendingIds={pendingStudyIds}
+            onConfirm={analysis => { void reviewStudy(analysis, "confirm"); }}
+            onUnlock={analysis => { void reviewStudy(analysis, "unlock"); }}
+          />}
+          {comparisonReportQuery.isError && <p role="alert">历史对比报告读取失败或范围不匹配；未覆盖本地草稿，请刷新核对。</p>}
+          {dirty.current && <p role="status" className="text-sm text-amber-700">本地编辑中的报告已保留，刷新不会覆盖。切换所选竞品会离开此草稿。</p>}
+
           {/* Comparison Results */}
           {selectedAnalyses.length >= 2 && (
             <Tabs defaultValue="overview" className="space-y-4">
@@ -782,10 +814,7 @@ export default function ComparisonPage() {
                         size="sm"
                         variant="outline"
                         disabled={reportMutationPending}
-                        onClick={() => selectedProjectId && unlockReportMutation.mutate({
-                          projectId: selectedProjectId,
-                          reportId: report.id,
-                        })}
+                        onClick={() => { void runReportAction("unlock"); }}
                       >
                         {unlockReportMutation.isPending
                           ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -827,7 +856,7 @@ export default function ComparisonPage() {
                       </>
                     ) : (
                       <>
-                        <Button size="sm" variant="outline" onClick={() => setIsEditingReport(true)}>
+                        <Button size="sm" variant="outline" onClick={beginEditing}>
                           <FilePenLine className="h-4 w-4" />
                           编辑
                         </Button>
@@ -1358,7 +1387,7 @@ export default function ComparisonPage() {
                     selectedAnalyses={selectedAnalyses}
                     rows={sellingPointRows}
                     isEditing={isEditingReport}
-                    onChange={setSellingPointRows}
+                    onChange={editRows}
                     colorIndexFor={analysisId => Math.max(0, analyses?.findIndex(item => item.id === analysisId) ?? 0)}
                   />
                 ) : (
@@ -1381,17 +1410,14 @@ export default function ComparisonPage() {
               {/* AI Summary Tab */}
               <TabsContent value="ai-summary">
                 <AISummarySection
-                  projectId={selectedProjectId!}
-                  selectedIds={selectedIds}
                   selectedAnalyses={selectedAnalyses}
                   report={report}
                   summaryDraft={summaryDraft}
                   isEditing={isEditingReport}
-                  onSummaryChange={setSummaryDraft}
-                  onReportGenerated={nextReport => {
-                    applyReport(nextReport);
-                    void refreshComparisonReport();
-                  }}
+                  onSummaryChange={editSummary}
+                  onGenerate={() => { void runReportAction("generate"); }}
+                  isGenerating={pendingReportAction === "generate"}
+                  generationDisabled={reportMutationPending || dirty.current}
                 />
               </TabsContent>
             </Tabs>

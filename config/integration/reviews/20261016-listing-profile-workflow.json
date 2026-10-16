@@ -1,0 +1,232 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-listing-profile-selection-and-workflow",
+  "baseline": "0f5ac3be7dc18272d896f3941865e64087719107",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "listingSkills": "user-primary",
+    "listingWorkflow": "friend-primary",
+    "competitorAndAttributeInputs": "select saved authorized sources and generate; local upload optional"
+  },
+  "changes": [
+    "Opt-in three-stage navigation on existing canonical routes. Navigation reads current ProjectContext only; it does not change project from URL or start work.",
+    "Shared product-profile selector: open -> authorized source list -> full source preview/version -> explicit generation request. Existing DataFiles entry remains available; new Generate entry is opt-in.",
+    "Profile list/detail/import share authenticated workspace and existing admin/assignment grants. Reject explicit foreign scopes; preserve legitimate nullable legacy projects. Bind complete source hash, recheck source and target after AI analysis, and store provenance. AI suggestion fallback is excluded; human fact review remains required.",
+    "Selected saved competitors show original bullets and saved summaries with existing confirm/unlock endpoints. Existing 2-8 structured comparison report edit/save/confirm/unlock is retained. Auth/project owned reads and stale-response/draft guards replace project-only shared cache on this page.",
+    "Correct readiness and mandatory-upload wording. Preserve Listing seven directions, strategy, bilingual/FABE output, B4_order, source evidence, approved facts/core/candidate gates, and current user Skill invocation."
+  ],
+  "defaultAndRollback": {
+    "newWorkflowFlag": "VITE_ENABLE_MERGED_LISTING_WORKFLOW=1; absent or other value is off",
+    "notDisabledByFlag": "Existing DataFiles profile entry safety replacement, profile API workspace/version checks, Comparison read ownership safeguards, and truthful source wording are active source changes.",
+    "rollback": "Revert this isolated source commit after dependency review, or disable the flag for only the new navigation/Generate entry/study panel. No schema or historical data rewrite.",
+    "productionDeployed": false
+  },
+  "review": {
+    "root": "Read actual source and relevant original APIs/repositories, all changed UI/router diffs, complete source helper and independent findings. Root found and requested the Comparison nullable scope correction.",
+    "independent": "Backend author reviewed profile UI; profile UI author reviewed backend; third reviewer reviewed Root navigation/readiness/fact wording. Found target-NULL and UI-NULL compatibility regressions were narrowly repaired with regression cases.",
+    "previousReviewedRecords": [
+      {
+        "path": "client/src/pages/ComparisonPage.tsx",
+        "gitBlobSha1": "b53f4896facce6aebf2912393a8e26dc1c39dedd",
+        "sha256": "a5061f1d1748f96cd258ec4db1a5530f61d69dc0819555e03ecd6fd48730a202",
+        "reviewRef": "config/integration/reviews/20261015-selling-point-source-evidence.json"
+      }
+    ]
+  },
+  "verification": {
+    "rootFocusedUnion": {
+      "files": 15,
+      "passed": 223,
+      "failed": 0,
+      "skipped": 0,
+      "terminalExitCode": 0,
+      "completionChunk": "98b266",
+      "realModelCalls": 0
+    },
+    "rootScopedLint": {
+      "files": 24,
+      "exitCode": 0,
+      "completionChunk": "9e47eb"
+    },
+    "boundedDiffCheck": {
+      "exitCode": 0
+    },
+    "configuredTypecheck": {
+      "command": "node node_modules/typescript/bin/tsc --noEmit --incremental false",
+      "exitCode": 0,
+      "completionChunk": "02df9c",
+      "scope": "Existing configured include/exclude; no full build or native runtime acceptance"
+    },
+    "protectedBaseline": {
+      "files": 106,
+      "requiredDependencies": 2,
+      "reviewedRecords": 13,
+      "exitCode": 0,
+      "completionChunk": "c95dbd",
+      "originalBaselineRecordsUnchanged": true
+    },
+    "nativeDatabaseBrowserOrModelAcceptance": false
+  },
+  "retainedControls": [
+    "K01",
+    "K03",
+    "K06",
+    "K07",
+    "K10"
+  ],
+  "notYetImplemented": [
+    "Selected analysisIds do not yet constrain Listing generation job inputs; friend source also lacks that binding. Final generation must bind exact selection and source versions, including aggregation/comparison side inputs.",
+    "Profile conversion remains the pre-existing synchronous multi-write operation; not a durable background job, not transactionally exactly-once.",
+    "No analyzeCollected durable worker was introduced; existing collection/import queues remain unchanged.",
+    "Source hash pre/post checks do not establish a database transaction or global writer CAS.",
+    "Old same-file DataFiles edit CAS and other pages' pre-existing query cache ownership are outside this batch.",
+    "Qingdao and user backend Skill runtime snapshots still need to be fixed and verified; no runtime Skill configuration has been replaced.",
+    "Full P1-P6 acceptance, Linux runtime equivalence, production deploy and paid end-to-end validation remain pending."
+  ],
+  "files": [
+    {
+      "path": "client/src/lib/mergedListingWorkflow.ts",
+      "size": 319,
+      "sha256": "9f484c4bb29fa5ef83b3b45ce84c1912375af1f8c4bf4fa5c44cf908542c71a7",
+      "gitBlobSha1": "5b49c4a27da813d7da2c4bec92715d700f9cb5a3"
+    },
+    {
+      "path": "client/src/pages/listing/ListingStages.tsx",
+      "size": 1134,
+      "sha256": "d03e17ba6873acfc9e7704b945c19d6e7eb18fbaf46a3b1ce0d022f935289514",
+      "gitBlobSha1": "da0da9e87d75729b234ba0cab62f4391178062a2"
+    },
+    {
+      "path": "client/src/pages/listing/ListingStages.component.test.tsx",
+      "size": 2316,
+      "sha256": "56bdb8f792192bcd2855c6ab7f5b10e055323d6a356ea0e4fab7f6853529e5b9",
+      "gitBlobSha1": "79e293cf6866be17663267f750d8ed22fc8d941b"
+    },
+    {
+      "path": "client/src/components/DashboardLayout.tsx",
+      "size": 34741,
+      "sha256": "580819dc8cd35501cb99127c3834d13709281e6ba744680f689112995d2f8dc2",
+      "gitBlobSha1": "515dd1b7c7edb4e9494a2b2b1596795afcf2d217"
+    },
+    {
+      "path": "client/src/pages/AnalysisPage.tsx",
+      "size": 92289,
+      "sha256": "7128e5cb87589933e28eeccd808d04b08330982fce63410c239e5e1d13029fb1",
+      "gitBlobSha1": "8bd48eed438b12395ac074c169e51bc6dbefe980"
+    },
+    {
+      "path": "client/src/pages/ComparisonPage.tsx",
+      "size": 73088,
+      "sha256": "e4cbceab73064e07e6c72df309680bf29fec801e985c5d4f889ca879230dbfff",
+      "gitBlobSha1": "f61367d086c897777217908038e9645b016eef5f"
+    },
+    {
+      "path": "client/src/pages/ComparisonPage.component.test.tsx",
+      "size": 17429,
+      "sha256": "a4f3180aa2c4cea168d3979f51269220d91ac68a8ae86131743ab1771d2632bf",
+      "gitBlobSha1": "a5534bbebe88ca1777665227dd1c9804d271b11c"
+    },
+    {
+      "path": "client/src/pages/listing/CompetitorStudyComparison.tsx",
+      "size": 4126,
+      "sha256": "1d3c40514ac7379369db90a8d181ca54946046670ac5d89fc61900e27a5e28fd",
+      "gitBlobSha1": "46a8a8ab5793d0e50b5a3bb01b8e7485dff2db4e"
+    },
+    {
+      "path": "client/src/pages/listing/competitorStudyModel.ts",
+      "size": 2478,
+      "sha256": "3a05f17e5a133462063e5e4362a828f439f28c7d64ea49b7a1aad5affb525401",
+      "gitBlobSha1": "6eab896900853e2750bc8320c26b066ddb1b751b"
+    },
+    {
+      "path": "client/src/pages/listing/competitorStudyComparison.test.ts",
+      "size": 2529,
+      "sha256": "bfbd75f895e1f53716553030cea4a4f878aeb8a8ce2ec28579eb8734bf8368bd",
+      "gitBlobSha1": "792a54d79063bc917bcd8fa0a8452f018e37a689"
+    },
+    {
+      "path": "client/src/pages/DataFilesPage.tsx",
+      "size": 53181,
+      "sha256": "2a54f36e266f8e330888d2b8c5fe0c8caac4bb9f68195cfc979cb88de1a174d5",
+      "gitBlobSha1": "151ec62e762adab2249c2f835089d658301d08c9"
+    },
+    {
+      "path": "client/src/pages/DataFilesPage.component.test.tsx",
+      "size": 7172,
+      "sha256": "303a0953f7aaf3be1cc7709c4fe6769cab0e7b15fd69cf4df0313bdf8a47a340",
+      "gitBlobSha1": "4ff24df1aeecae26b086966eb8d2092434397a18"
+    },
+    {
+      "path": "client/src/pages/listing/ProductProfileAttributeSource.tsx",
+      "size": 14002,
+      "sha256": "867dc56d00a5e8be648bbbf603658a4c02450799402dd2fa1d063a29bd9571b6",
+      "gitBlobSha1": "9810b83688cd83b3b864571ea9da6572ad099414"
+    },
+    {
+      "path": "client/src/pages/listing/ProductProfileAttributeSource.component.test.tsx",
+      "size": 19408,
+      "sha256": "87c3811953c434d064543028f4be3b49f26abad8b8bc6ff005a0ead2ce545e8a",
+      "gitBlobSha1": "bfb6656d61ebcf50dc5200711ef42fe63f39fef4"
+    },
+    {
+      "path": "client/src/pages/GeneratePage.tsx",
+      "size": 119121,
+      "sha256": "b9564cafaac3ba1134ef245e46cef23d6cf5d4696fc818cd79d2f03bd06cd220",
+      "gitBlobSha1": "9815ed72106ca8054a0669464fde8d151c782c34"
+    },
+    {
+      "path": "client/src/pages/listing/ListingGenerationPreparationSummary.tsx",
+      "size": 5684,
+      "sha256": "ce4c775ec22f557b3ced51866b191e78f5ba4ac998d041f9367e8234af6a840d",
+      "gitBlobSha1": "29aae4b23027f9f248ec8cac3c681b1e839258a5"
+    },
+    {
+      "path": "client/src/pages/listing/ListingGenerationPreparationSummary.test.tsx",
+      "size": 2115,
+      "sha256": "b885389eef406838d289dff31f237333cf5dcc5d4767819fbd7229a273314008",
+      "gitBlobSha1": "eadf246c83843129349f49a9cb986b32c68f539e"
+    },
+    {
+      "path": "client/src/components/listing/FactReviewPanel.tsx",
+      "size": 6732,
+      "sha256": "7a50f2cb1420663b4892f5c27b7257bebda8e827845557c929d69a66b712a58e",
+      "gitBlobSha1": "d3feedf9c0b4dc69829f4ab6d9293e670f1b3db2"
+    },
+    {
+      "path": "server/routers/projectAssignment.ts",
+      "size": 13685,
+      "sha256": "d19d344f81309fc60b65c618bbf29918018640d4ee6c0797a7b1452477a199ae",
+      "gitBlobSha1": "ac0e0bbad3f80706b8b7f4e96ae2e2ccad3748bd"
+    },
+    {
+      "path": "server/routers/projectFile.ts",
+      "size": 37848,
+      "sha256": "d034aef2bdd9a15f61316773822ef6d86b3f30cde1b0d0e1091d6d9ca1104816",
+      "gitBlobSha1": "fd3331b6e202c61b2b8bb9e19abbdf12f30b28d8"
+    },
+    {
+      "path": "server/domains/listing/services/profileImportSource.ts",
+      "size": 8872,
+      "sha256": "d99d5c86ce2f6331de4f084f8f82f3f45d375c7b61abfda4553263ce753e5d9b",
+      "gitBlobSha1": "cbe91eea1f11ca7c4be2dfd0311d782a6b2f8a5f"
+    },
+    {
+      "path": "server/profileImportSource.test.ts",
+      "size": 22164,
+      "sha256": "fe4fdf65c9ff5656e85a577e309fe1bc10502006bda9c0e18dfbd13098adea65",
+      "gitBlobSha1": "1fb4e32f9167e5563eecf949e01fd27138939eb7"
+    },
+    {
+      "path": "server/domains/listing/services/listingFactSource.ts",
+      "size": 4345,
+      "sha256": "e2feee97f5effae917212d7d0b7226c5c2e95abb88a3e4fb234a794da04ff618",
+      "gitBlobSha1": "09eed9513d6fb4ed534a2cfa69bd0aeae97e6b1a"
+    },
+    {
+      "path": "server/domains/listing/services/listingRawAttributeSource.ts",
+      "size": 1983,
+      "sha256": "0695c342c64cc6b77782afa4cf8e15c3218bd533dd5f82620e404eda8f68f4b0",
+      "gitBlobSha1": "23688faf8dd4bb72109db1e070ed7ccc7a9bce68"
+    }
+  ]
+}

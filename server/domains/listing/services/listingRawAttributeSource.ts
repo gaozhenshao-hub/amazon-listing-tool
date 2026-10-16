@@ -14,7 +14,7 @@ export async function readCompleteAttributeText(file: RawAttributeFile, workspac
   const preview = file.rawContent || "";
   if (preview.length > 0 && preview.length < 4_000) return preview;
   if (!file.rawStorageUri || !file.rawContentHash) {
-    throw new Error("产品属性原始上传仅有截断预览或已失去完整来源；请重新上传或人工核实资料");
+    throw new Error("产品属性原文仅有截断预览或已失去完整来源；请重新选择画像生成、补充导入或人工核实资料");
   }
   const parsed = parseStorageUri(file.rawStorageUri);
   if (!parsed || !new Set(["forge", "s3", "oss"]).has(parsed.provider)) {
@@ -32,7 +32,7 @@ export async function readCompleteAttributeText(file: RawAttributeFile, workspac
   const normalized = full.replace(/\r\n?/gu, "\n").trim();
   const hash = createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
   if (hash !== file.rawContentHash || (preview && !normalized.startsWith(preview))) {
-    throw new Error("产品属性原始上传指纹不匹配，停止事实核验");
+    throw new Error("产品属性原始来源指纹不匹配，停止事实核验");
   }
   return normalized;
 }

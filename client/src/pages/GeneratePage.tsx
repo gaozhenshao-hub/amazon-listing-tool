@@ -66,6 +66,9 @@ import {
 } from "./listing/useListingGenerationJob";
 import { LISTING_STEPS, ListingWorkflowNavigation } from "./listing/ListingWorkflowNavigation";
 import { sanitizeSelectedSellingPoint } from "@shared/listingFactSafety";
+import ProductProfileAttributeSource from "./listing/ProductProfileAttributeSource";
+import ListingStages from "./listing/ListingStages";
+import { MERGED_LISTING_WORKFLOW_ENABLED } from "@/lib/mergedListingWorkflow";
 
 function bulletFingerprint(bullet: { subtitle?: string; fullText?: string } | null | undefined) {
   return `${bullet?.subtitle || ""}\u0000${bullet?.fullText || ""}`;
@@ -476,11 +479,12 @@ export default function GeneratePage() {
 
   const handleGenerateCores = () => {
     if (!selectedProjectId) return;
-    // 强制前置检查：产品属性表必须已上传
+    // Either selected-profile conversion or supplemental upload can supply the
+    // analyzed source; neither path confirms product facts automatically.
     if (!fileSummary?.productAttributes) {
-      toast.error("请先在『数据文件』上传『产品属性表』，才能开始生成卖点", {
+      toast.error("请先选择产品画像生成属性来源，或在数据文件中补充本品资料；分析完成后仍须审核事实", {
         action: {
-          label: "前往上传",
+          label: "管理属性来源",
           onClick: () => window.location.href = "/listing/data-files",
         },
         duration: 6000,
@@ -985,6 +989,7 @@ export default function GeneratePage() {
 
   return (
     <div className="space-y-6">
+      {MERGED_LISTING_WORKFLOW_ENABLED && <ListingStages />}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">智能Listing创建工作台</h1>
@@ -1439,6 +1444,7 @@ export default function GeneratePage() {
             kwReadiness={kwReadiness}
             onManageKeywords={() => setLocation("/listing/keywords")}
           />
+          {MERGED_LISTING_WORKFLOW_ENABLED && selectedProjectId && <ProductProfileAttributeSource projectId={selectedProjectId} />}
 
           {/* Step-by-Step Bullet Crafting Section - Main Content */}
           <Card className="border-teal-200 bg-gradient-to-br from-teal-50/50 to-transparent dark:from-teal-950/20">

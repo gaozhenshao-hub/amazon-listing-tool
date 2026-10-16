@@ -12,12 +12,12 @@ export async function getCurrentRawFactSuggestions(projectId: number, workspaceI
   const file = files.filter((entry) => entry.fileType === "product_attributes")
     .sort((left, right) => Number(right.createdAt) - Number(left.createdAt) || right.id - left.id)[0];
   if (!file || file.lifecycleState === "deleted") return { status: "no_source" as const, file: null, suggestions: [] };
-  if (file.workspaceId !== workspaceId) throw new Error("最新属性文件未绑定当前工作空间，请重新上传后审核");
+  if (file.workspaceId !== workspaceId) throw new Error("最新属性来源未绑定当前工作空间，请重新选择产品画像生成或补充导入后审核");
   if (file.status !== "completed") return { status: "source_not_ready" as const, file: null, suggestions: [] };
   if (!file.rawContentHash) return { status: "legacy_unverified" as const, file: null, suggestions: [] };
   const raw = await readCompleteAttributeText(file, workspaceId);
   const hash = createHash("sha256").update(JSON.stringify(raw.replace(/\r\n?/gu, "\n").trim())).digest("hex");
-  if (hash !== file.rawContentHash) throw new Error("属性文件原文已变化，请重新上传后再核对事实");
+  if (hash !== file.rawContentHash) throw new Error("属性来源原文已变化，请重新生成或补充导入后再核对事实");
   return { status: "reviewable" as const, file: { id: file.id, rawHash: hash, createdAt: file.createdAt },
     suggestions: parseRawAttributeFacts(raw) };
 }
@@ -29,7 +29,7 @@ function factLedgerUnavailable(message: string): never {
 /**
  * Resolves the only facts that may be supplied to a fact-bound Listing model job.
  * The raw-file read is intentionally repeated here: a queued job must not inherit
- * a fact revision after its original upload has changed or become unavailable.
+ * a fact revision after its original source has changed or become unavailable.
  */
 export async function resolveCurrentConfirmedListingFacts(input: {
   projectId: number;
@@ -48,7 +48,7 @@ export async function resolveCurrentConfirmedListingFacts(input: {
       source_not_ready: "当前原始属性文件尚未解析完成",
       legacy_unverified: "当前原始属性文件缺少哈希，无法作为0204事实依据",
     }[source.status];
-    return factLedgerUnavailable(`${reason}；请上传并人工确认至少一条真实产品事实后再生成`);
+    return factLedgerUnavailable(`${reason}；请从产品画像生成属性表或补充导入，并人工确认至少一条真实产品事实后再生成`);
   }
 
   const db = await getDb();

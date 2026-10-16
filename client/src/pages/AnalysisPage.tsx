@@ -44,6 +44,8 @@ import {
 } from "lucide-react";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
+import { MERGED_LISTING_WORKFLOW_ENABLED } from "@/lib/mergedListingWorkflow";
+import ListingStages from "./listing/ListingStages";
 
 type BatchItemStatus = "pending" | "scraping" | "analyzing" | "done" | "failed";
 
@@ -748,6 +750,7 @@ function ProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number 
 
   return (
     <div className="space-y-6">
+      {MERGED_LISTING_WORKFLOW_ENABLED && <ListingStages />}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">竞品分析</h1>

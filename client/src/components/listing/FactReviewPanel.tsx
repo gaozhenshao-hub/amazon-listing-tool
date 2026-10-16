@@ -37,9 +37,9 @@ export function FactReviewPanel({ projectId }: Props) {
     </div>
     {suggestions.isLoading && <p className="text-sm text-slate-500">正在读取完整原始属性表…</p>}
     {suggestions.error && <p role="alert" className="text-sm text-red-700">原始表核对失败：{suggestions.error.message}</p>}
-    {source?.status === "legacy_unverified" && <p role="alert" className="text-sm text-amber-800">历史属性上传没有可核验原文指纹；请重新上传或补充真实产品资料，不能自动确认。</p>}
-    {source?.status === "source_not_ready" && <p role="alert" className="text-sm text-amber-800">最新原始属性表尚未完成上传与解析，请等待完成或重新上传；旧上传不能替代当前事实来源。</p>}
-    {source?.status === "no_source" && <p role="alert" className="text-sm text-amber-800">尚无可核验的产品属性表，请先上传本品资料。</p>}
+    {source?.status === "legacy_unverified" && <p role="alert" className="text-sm text-amber-800">历史属性来源缺少可核验原文；请重新选择产品画像生成属性表，或补充真实产品资料，不能自动确认。</p>}
+    {source?.status === "source_not_ready" && <p role="alert" className="text-sm text-amber-800">最新属性来源尚未完成分析，请等待完成或核对来源；旧属性表不能替代当前事实来源。</p>}
+    {source?.status === "no_source" && <p role="alert" className="text-sm text-amber-800">尚无可核验的产品属性表，请先选择产品画像生成；也可补充导入本品资料。</p>}
     {reviews.error && <p role="alert" className="text-sm text-red-700">事实版本读取失败：{reviews.error.message}</p>}
     {source?.status === "reviewable" && rows.length === 0 && <p className="text-sm text-slate-600">这一页没有可审核字段；纯文本说明、空值、示例和外部商品标识不会自动作为事实。</p>}
     <div className="space-y-2">
