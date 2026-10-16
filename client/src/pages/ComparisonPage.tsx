@@ -42,6 +42,7 @@ import { SellingPointSourceEvidence } from "./listing/SellingPointSourceEvidence
 import { MERGED_LISTING_WORKFLOW_ENABLED } from "@/lib/mergedListingWorkflow";
 import ListingStages from "./listing/ListingStages";
 import CompetitorStudyComparison from "./listing/CompetitorStudyComparison";
+import CompetitorResearchJobs from "./listing/CompetitorResearchJobs";
 import { competitorStudy, matchesComparisonSelection, type CompetitorStudyRecord } from "./listing/competitorStudyModel";
 
 // Type for parsed analysis data
@@ -674,6 +675,10 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
         </div>
         <div className="flex items-center gap-2"><Button variant="outline" onClick={() => { setReadGeneration(value => value + 1); setReportGeneration(value => value + 1); }}>刷新已保存研究</Button><ProjectSelector /></div>
       </div>
+
+      {MERGED_LISTING_WORKFLOW_ENABLED && <CompetitorResearchJobs projectId={selectedProjectId} workspaceId={workspaceId}
+        analyses={!isLoading && !readError ? analyses || [] : []} selectedIds={selectedAnalysisIds}
+        onCompleted={() => setReadGeneration(value => value + 1)} />}
 
       {!selectedProjectId ? (
         <Card className="border-dashed">

@@ -10,6 +10,7 @@ const state = vi.hoisted(() => {
     flag: true, projectId: 1 as number | null,
     auth: { loading: false, error: null as Error | null, user: { id: 7, defaultWorkspaceId: 11, role: "admin" } as { id: number; defaultWorkspaceId: number | null; role: string } | null },
     list, report, generate, save, confirm, unlock, confirmSummary, unlockSummary,
+    researchProps: [] as Array<{ projectId: number; workspaceId: number | null; analyses: Array<{ id: number; revision: string }>; selectedIds: number[]; onCompleted: () => void }>,
     client: { analysis: { listByProject: { query: list }, getComparisonReport: { query: report }, comparisonSummary: { mutate: generate }, updateComparisonReport: { mutate: save }, confirmComparisonReport: { mutate: confirm }, unlockComparisonReport: { mutate: unlock }, confirmSummary: { mutate: confirmSummary }, unlockSummary: { mutate: unlockSummary } } },
   };
 });
@@ -19,6 +20,10 @@ vi.mock("@/lib/trpc", () => ({ trpc: { useUtils: () => ({ client: state.client }
 vi.mock("@/lib/mergedListingWorkflow", () => ({ get MERGED_LISTING_WORKFLOW_ENABLED() { return state.flag; } }));
 vi.mock("@/lib/mergedReadOnlyFeatures", () => ({ MERGED_READONLY_FEATURES_ENABLED: false }));
 vi.mock("./listing/ListingStages", () => ({ default: () => <nav aria-label="Listing 阶段">流程阶段</nav> }));
+vi.mock("./listing/CompetitorResearchJobs", () => ({ default: (props: (typeof state.researchProps)[number]) => {
+  state.researchProps.push(props);
+  return <section aria-label="已保存竞品资料分析任务"><button onClick={props.onCompleted}>模拟资料分析保存完成</button></section>;
+} }));
 vi.mock("@/components/ProjectSelector", () => ({ default: () => <span>项目选择器</span> }));
 vi.mock("streamdown", () => ({ Streamdown: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 // Keep all report panes inspectable; these tests target ownership, not Radix tab navigation.
@@ -37,7 +42,7 @@ async function choose(id: number) { await waitFor(() => expect(screen.getByRole(
 async function selectTwo() { await choose(1); await choose(2); }
 const refresh = () => fireEvent.click(screen.getByRole("button", { name: "刷新已保存研究" }));
 beforeEach(() => {
-  vi.clearAllMocks(); state.flag = true; state.projectId = 1;
+  vi.clearAllMocks(); state.researchProps.length = 0; state.flag = true; state.projectId = 1;
   state.auth = { loading: false, error: null, user: { id: 7, defaultWorkspaceId: 11, role: "admin" } };
   state.list.mockReset().mockResolvedValue([analysis(1), analysis(2), analysis(3)]);
   state.report.mockReset().mockResolvedValue(null);
@@ -171,6 +176,28 @@ describe("existing structured report preservation", () => {
 });
 
 describe("selected saved studies", () => {
+  it("passes the exact owned all-record list and independent selected ids into the enabled research lane", async () => {
+    render(<ComparisonPage />); await choose(2);
+    const props = state.researchProps.at(-1)!;
+    expect(props.projectId).toBe(1); expect(props.workspaceId).toBe(11); expect(props.selectedIds).toEqual([2]);
+    expect(props.analyses.map(row => row.id)).toEqual([1, 2, 3]); expect(props.analyses[0].revision).toBe(analysis(1).revision);
+  });
+  it("research completion refreshes source records without remounting the lane or discarding a dirty report", async () => {
+    state.report.mockResolvedValue(report()); render(<ComparisonPage />); await selectTwo(); await screen.findByText("服务器报告");
+    fireEvent.click(screen.getByRole("button", { name: "编辑" })); fireEvent.change(screen.getByPlaceholderText(/编辑市场概览/), { target: { value: "研究刷新期间保留的草稿" } });
+    const next = deferred<ReturnType<typeof analysis>[]>(); state.list.mockReturnValueOnce(next.promise);
+    fireEvent.click(screen.getByRole("button", { name: "模拟资料分析保存完成" }));
+    await waitFor(() => expect(state.list).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("region", { name: "已保存竞品资料分析任务" })).toBeInTheDocument();
+    expect(state.researchProps.at(-1)!.analyses).toEqual([]);
+    await act(async () => next.resolve([analysis(1), analysis(2), analysis(3)]));
+    expect(await screen.findByDisplayValue("研究刷新期间保留的草稿")).toBeInTheDocument(); expect(state.researchProps.at(-1)!.selectedIds).toEqual([1, 2]);
+    expect(state.confirmSummary).not.toHaveBeenCalled(); expect(state.generate).not.toHaveBeenCalled();
+  });
+  it("never mounts the new job lane when the workflow flag is off", async () => {
+    state.flag = false; render(<ComparisonPage />); await choose(1);
+    expect(screen.queryByRole("region", { name: "已保存竞品资料分析任务" })).not.toBeInTheDocument(); expect(state.researchProps).toHaveLength(0);
+  });
   it("shows one selected study, literal source text, and no fabricated task state", async () => {
     state.list.mockResolvedValue([analysis(1)]); render(<ComparisonPage />); await choose(1);
     const card = screen.getByRole("article", { name: `${analysis(1).asin} 研究` });

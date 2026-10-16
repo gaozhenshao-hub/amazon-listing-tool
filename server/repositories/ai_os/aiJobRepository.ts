@@ -1,5 +1,7 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { PROFILE_IMPORT_JOB_KIND } from "../../../shared/profileImportJob";
+import { COMPETITOR_RESEARCH_JOB_KIND } from "../../../shared/competitorResearchJob";
+import { isCheckpointedListingJob } from "../../../shared/checkpointedListingJob";
 import type { AiJob, AiJobDeadLetter, InsertAiJob } from "../../../drizzle/schema";
 import { aiJobDeadLetters, aiJobs, aiJobWorkers } from "../../../drizzle/schema";
 import { requireDb, withDbTransaction, type DbExecutor } from "../dbClient";
@@ -28,8 +30,9 @@ export async function updateAiJobByRunId(runId: string, data: Partial<InsertAiJo
   return rows[0] || null;
 }
 
-/** This lane never changes the conversion's private input or committed receipt.
- * The database predicate, not the runner's earlier read, fences late workers. */
+/** Shared lease fence for the profile conversion and selected competitor lanes.
+ * The historical export name is retained for existing runner integrations.
+ * Neither lane's private checkpoint or committed receipt is changed here. */
 export async function updateOwnedProfileImportJob(
   runId: string,
   change: { type: "progress"; progress: number } | { type: "fail"; errorMessage: string }
@@ -51,7 +54,7 @@ export async function updateOwnedProfileImportJob(
         : { status: "failed" as const, progress: 100, errorMessage: change.errorMessage,
       leaseUntil: null, lockedBy: null, lastHeartbeatAt: null, completedAt: new Date() };
   const [result] = await db.update(aiJobs).set(values).where(and(
-    eq(aiJobs.runId, runId), eq(aiJobs.kind, PROFILE_IMPORT_JOB_KIND), eq(aiJobs.status, "running"),
+    eq(aiJobs.runId, runId), inArray(aiJobs.kind, [PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND]), eq(aiJobs.status, "running"),
     eq(aiJobs.lockedBy, guard.expectedWorkerId), eq(aiJobs.attempt, guard.expectedAttempt!),
     gt(aiJobs.leaseUntil, sql`NOW()`),
   ));
@@ -83,13 +86,13 @@ export async function claimAiJobByRunId(
       AND status IN ('queued', 'running')
       AND (nextRunAt IS NULL OR nextRunAt <= NOW())
       AND (lockedBy IS NULL OR lockedBy = ${opts.workerId} OR leaseUntil IS NULL OR leaseUntil < NOW())
-      AND (kind <> ${PROFILE_IMPORT_JOB_KIND} OR
+      AND (kind NOT IN (${PROFILE_IMPORT_JOB_KIND}, ${COMPETITOR_RESEARCH_JOB_KIND}) OR
         (status = 'queued' AND lockedBy IS NULL AND leaseUntil IS NULL) OR
         (status = 'running' AND leaseUntil < NOW()))
   `);
   const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
   const job = rows[0] || null;
-  if (job?.kind === PROFILE_IMPORT_JOB_KIND && (result[0] as { affectedRows?: number })?.affectedRows !== 1) return null;
+  if (isCheckpointedListingJob(job?.kind) && (result[0] as { affectedRows?: number })?.affectedRows !== 1) return null;
   return job && job.status === "running" && job.lockedBy === opts.workerId ? job : null;
 }
 

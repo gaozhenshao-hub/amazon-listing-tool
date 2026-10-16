@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 import { PROFILE_IMPORT_JOB_KIND } from "../shared/profileImportJob";
+import { COMPETITOR_RESEARCH_JOB_KIND } from "../shared/competitorResearchJob";
+import { checkpointedListingJobError } from "../shared/checkpointedListingJob";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), list: vi.fn(), deadLetters: vi.fn(), cancel: vi.fn(), recover: vi.fn(),
   confirm: vi.fn(), audit: vi.fn(), start: vi.fn(), metric: vi.fn() }));
@@ -28,7 +30,7 @@ vi.mock("./domains/ai_os/services/businessJobCheckpointBinder", () => ({ auditBu
 
 import { aiJobsRouter } from "./routers/aiJobs";
 
-const privateJob = { runId: "profile-anchor", kind: PROFILE_IMPORT_JOB_KIND, module: "listing", status: "succeeded",
+const privateJob = { runId: "profile-anchor", kind: PROFILE_IMPORT_JOB_KIND as string, module: "listing", status: "succeeded",
   userId: 7, input: { checkpoint: { modelResult: "PRIVATE-CHECKPOINT" } }, output: { private: "PRIVATE-RESULT" } };
 const legacyJob = { runId: "legacy", kind: "legacy", module: "other", status: "running", userId: 7,
   input: { old: "public-compatibility" }, output: null };
@@ -42,10 +44,11 @@ beforeEach(() => {
   mocks.cancel.mockResolvedValue(legacyJob);
 });
 
-describe("generic AI job API does not expose durable profile checkpoints", () => {
+describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND])("generic AI job API does not expose %s checkpoints", kind => {
+  beforeEach(() => { privateJob.kind = kind; });
   it.each(["user", "admin", "super_admin"])("%s cannot get/cancel/retry/confirm the private job", async role => {
     const api = caller(role);
-    const denied = { code: "PRECONDITION_FAILED", message: "PROFILE_IMPORT_USE_DEDICATED_ENDPOINT" };
+    const denied = { code: "PRECONDITION_FAILED", message: checkpointedListingJobError(kind, "USE_DEDICATED_ENDPOINT") };
     await expect(api.get({ runId: privateJob.runId })).rejects.toMatchObject(denied);
     await expect(api.cancel({ runId: privateJob.runId })).rejects.toMatchObject(denied);
     await expect(api.retry({ runId: privateJob.runId })).rejects.toMatchObject(denied);

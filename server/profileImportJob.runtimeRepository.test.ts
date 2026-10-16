@@ -3,6 +3,8 @@ import { drizzle } from "drizzle-orm/mysql-proxy";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { aiJobs, type AiJob } from "../drizzle/schema";
 import { PROFILE_IMPORT_JOB_KIND } from "../shared/profileImportJob";
+import { COMPETITOR_RESEARCH_JOB_KIND } from "../shared/competitorResearchJob";
+import { isCheckpointedListingJob } from "../shared/checkpointedListingJob";
 
 const mocks = vi.hoisted(() => ({ requireDb: vi.fn() }));
 vi.mock("./repositories/dbClient", () => ({ requireDb: mocks.requireDb, withDbTransaction: vi.fn() }));
@@ -10,10 +12,11 @@ import { claimAiJobByRunId, updateOwnedProfileImportJob } from "./repositories/a
 
 const NOW = new Date("2026-10-16T00:00:00.000Z");
 const guard = { expectedWorkerId: "worker-A", expectedAttempt: 2 };
-const predicate = "where (`ai_jobs`.`runId` = ? and `ai_jobs`.`kind` = ? and `ai_jobs`.`status` = ? and `ai_jobs`.`lockedBy` = ? and `ai_jobs`.`attempt` = ? and `ai_jobs`.`leaseUntil` > NOW())";
+const predicate = "where (`ai_jobs`.`runId` = ? and `ai_jobs`.`kind` in (?, ?) and `ai_jobs`.`status` = ? and `ai_jobs`.`lockedBy` = ? and `ai_jobs`.`attempt` = ? and `ai_jobs`.`leaseUntil` > NOW())";
+let currentKind: string = PROFILE_IMPORT_JOB_KIND;
 type Change = Parameters<typeof updateOwnedProfileImportJob>[1];
 function fixture(patch: Partial<AiJob> = {}): AiJob {
-  return { id: 1, runId: "profile-anchor", kind: PROFILE_IMPORT_JOB_KIND, module: "listing", status: "running",
+  return { id: 1, runId: "profile-anchor", kind: currentKind, module: "listing", status: "running",
     attempt: 2, progress: 20, lockedBy: "worker-A", leaseUntil: new Date(NOW.getTime() + 60_000),
     input: { checkpoint: "analysis_ready", privateModel: "private-model-result" }, output: { fileId: 19 },
     userId: 7, createdAt: NOW, updatedAt: NOW, ...patch } as AiJob;
@@ -28,11 +31,11 @@ function database(row = fixture(), beforeUpdate?: (row: AiJob) => void, forcedAf
     calls.push({ sql, params, method });
     if (method === "execute") {
       expect(sql).toContain(predicate);
-      expect(params.slice(-5)).toEqual(["profile-anchor", PROFILE_IMPORT_JOB_KIND, "running", "worker-A", 2]);
+      expect(params.slice(-6)).toEqual(["profile-anchor", PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, "running", "worker-A", 2]);
       const setSql = sql.split(" where ")[0];
       expect(setSql).not.toMatch(/`input`|`output`|`attempt`|`runId`/);
       beforeUpdate?.(row);
-      const eligible = row.runId === "profile-anchor" && row.kind === PROFILE_IMPORT_JOB_KIND
+      const eligible = row.runId === "profile-anchor" && isCheckpointedListingJob(row.kind)
         && row.status === "running" && row.lockedBy === "worker-A" && row.attempt === 2
         && row.leaseUntil instanceof Date && row.leaseUntil > NOW;
       if (eligible) {
@@ -58,7 +61,8 @@ function database(row = fixture(), beforeUpdate?: (row: AiJob) => void, forcedAf
 beforeEach(() => { mocks.requireDb.mockReset(); vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW); });
 afterEach(() => vi.useRealTimers());
 
-describe("profile conversion atomic runner mutations", () => {
+describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND])("%s atomic runner mutations", kind => {
+  beforeEach(() => { currentKind = kind; });
   it.each([0, 12.8, 130])("progress %s has the full SQL fence and never changes the checkpoint", async progress => {
     const { row, calls } = database();
     const input = structuredClone(row.input), output = structuredClone(row.output);
@@ -125,7 +129,8 @@ describe("profile conversion atomic runner mutations", () => {
   });
 });
 
-describe("profile conversion claims require an actual unique lease transition", () => {
+describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND])("%s claims require an actual unique lease transition", kind => {
+  beforeEach(() => { currentKind = kind; });
   function claimDatabase(row: AiJob, affectedOverride?: number) {
     const calls: { sql: string; params: unknown[] }[] = [];
     const columns = Object.values(getTableColumns(aiJobs));
@@ -136,12 +141,12 @@ describe("profile conversion claims require an actual unique lease transition", 
         expect(normalized).toContain("WHERE runId = ? AND status IN ('queued', 'running')");
         expect(normalized).toContain("AND (nextRunAt IS NULL OR nextRunAt <= NOW())");
         expect(normalized).toContain("AND (lockedBy IS NULL OR lockedBy = ? OR leaseUntil IS NULL OR leaseUntil < NOW())");
-        expect(normalized).toContain("AND (kind <> ? OR (status = 'queued' AND lockedBy IS NULL AND leaseUntil IS NULL) OR (status = 'running' AND leaseUntil < NOW()))");
-        expect(params).toEqual([10, "worker-A", 900, "profile-anchor", "worker-A", PROFILE_IMPORT_JOB_KIND]);
+        expect(normalized).toContain("AND (kind NOT IN (?, ?) OR (status = 'queued' AND lockedBy IS NULL AND leaseUntil IS NULL) OR (status = 'running' AND leaseUntil < NOW()))");
+        expect(params).toEqual([10, "worker-A", 900, "profile-anchor", "worker-A", PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND]);
         const priorEligible = ["queued", "running"].includes(row.status)
           && (!row.nextRunAt || row.nextRunAt <= NOW)
           && (!row.lockedBy || row.lockedBy === "worker-A" || !row.leaseUntil || row.leaseUntil < NOW);
-        const profileEligible = row.kind !== PROFILE_IMPORT_JOB_KIND
+        const profileEligible = !isCheckpointedListingJob(row.kind)
           || (row.status === "queued" && row.lockedBy === null && row.leaseUntil === null)
           || (row.status === "running" && row.leaseUntil !== null && row.leaseUntil < NOW);
         const affectedRows = affectedOverride ?? Number(priorEligible && profileEligible);

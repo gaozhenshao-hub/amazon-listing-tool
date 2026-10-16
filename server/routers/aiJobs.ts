@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { PROFILE_IMPORT_JOB_KIND } from "../../shared/profileImportJob";
+import { isCheckpointedListingJob, checkpointedListingJobError } from "../../shared/checkpointedListingJob";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { listAiJobsForUser } from "../repositories/ai_os";
 import {
@@ -291,8 +291,8 @@ async function runOpsReplenishmentPlan(input: z.infer<typeof opsReplenishmentJob
 }
 
 function assertCanReadJob(user: { id: number; role?: string }, job: { userId: number; kind?: string }) {
-  if (job.kind === PROFILE_IMPORT_JOB_KIND) {
-    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "PROFILE_IMPORT_USE_DEDICATED_ENDPOINT" });
+  if (isCheckpointedListingJob(job.kind)) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: checkpointedListingJobError(job.kind, "USE_DEDICATED_ENDPOINT") });
   }
   const isAdmin = user.role === "admin" || user.role === "super_admin";
   if (!isAdmin && job.userId !== user.id) {
@@ -453,7 +453,7 @@ export const aiJobsRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const rows = await listAiJobDeadLetterRuns({ limit: input?.limit });
-      return rows.filter(row => row.kind !== PROFILE_IMPORT_JOB_KIND);
+      return rows.filter(row => !isCheckpointedListingJob(row.kind));
     }),
 
   operationalAlerts: adminProcedure
@@ -472,7 +472,7 @@ export const aiJobsRouter = router({
     }).optional())
     .query(async ({ ctx, input }) => {
       const rows = await listAiJobsForUser(ctx.user.id, input || {});
-      return rows.filter(row => row.kind !== PROFILE_IMPORT_JOB_KIND).map(buildAiJobSnapshot);
+      return rows.filter(row => !isCheckpointedListingJob(row.kind)).map(buildAiJobSnapshot);
     }),
 
   bindingIntegrity: protectedProcedure

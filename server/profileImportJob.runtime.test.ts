@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiJob } from "../drizzle/schema";
 import { PROFILE_IMPORT_JOB_KIND } from "../shared/profileImportJob";
+import { COMPETITOR_RESEARCH_JOB_KIND } from "../shared/competitorResearchJob";
+import { checkpointedListingJobError } from "../shared/checkpointedListingJob";
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(), owned: vi.fn(), update: vi.fn(), create: vi.fn(), retry: vi.fn(), claim: vi.fn(),
@@ -48,7 +50,8 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-describe("profile import runner is a fenced host, not a second business commit", () => {
+describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND])("%s runner is a fenced host, not a second business commit", kind => {
+  beforeEach(() => { row.kind = kind; });
   it("routes progress through the atomic repository guard without touching input/output", async () => {
     const input = structuredClone(row.input);
     await updateAiJobProgress(row.runId, 91, guard());
@@ -72,7 +75,7 @@ describe("profile import runner is a fenced host, not a second business commit",
   it("provider failure cannot create a duplicate retry or generic dead-letter copy", async () => {
     const input = structuredClone(row.input);
     await retryAiJob(row.runId, new Error("provider timeout PRIVATE"), guard());
-    expect(row.status).toBe("failed"); expect(row.errorMessage).toBe("PROFILE_IMPORT_FAILED_REVIEW_REQUIRED");
+    expect(row.status).toBe("failed"); expect(row.errorMessage).toBe(checkpointedListingJobError(kind, "FAILED_REVIEW_REQUIRED"));
     expect(row.input).toEqual(input); expect(row.output).toBeNull();
     for (const fn of [mocks.retry, mocks.create, mocks.update, mocks.metric, mocks.deadLetter]) expect(fn).not.toHaveBeenCalled();
   });
@@ -85,21 +88,21 @@ describe("profile import runner is a fenced host, not a second business commit",
   });
 
   it("returning a value without the business transaction cannot mark success", async () => {
-    await expect(completeAiJob(row.runId, { ok: true }, guard())).rejects.toThrow("PROFILE_IMPORT_COMMIT_REQUIRED");
+    await expect(completeAiJob(row.runId, { ok: true }, guard())).rejects.toThrow(checkpointedListingJobError(kind, "COMMIT_REQUIRED"));
     expect(row.status).toBe("running"); expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it.each(["queued", "running", "succeeded", "failed", "canceled"] as const)("generic cancel/recover rejects %s without changing the anchor", async status => {
     row.status = status; const before = structuredClone(row);
-    await expect(cancelAiJob(row.runId)).rejects.toThrow("PROFILE_IMPORT_USE_DEDICATED_ENDPOINT");
-    await expect(recoverAiJob(row.runId)).rejects.toThrow("PROFILE_IMPORT_USE_DEDICATED_ENDPOINT");
+    await expect(cancelAiJob(row.runId)).rejects.toThrow(checkpointedListingJobError(kind, "USE_DEDICATED_ENDPOINT"));
+    await expect(recoverAiJob(row.runId)).rejects.toThrow(checkpointedListingJobError(kind, "USE_DEDICATED_ENDPOINT"));
     expect(row).toEqual(before); expect(mocks.create).not.toHaveBeenCalled(); expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it("generic creation cannot introduce a random conversion anchor", async () => {
-    const input = { kind: PROFILE_IMPORT_JOB_KIND, module: "listing", userId: 7 };
-    await expect(createAiJobRun(input)).rejects.toThrow("PROFILE_IMPORT_USE_DEDICATED_ENDPOINT");
-    await expect(startRegisteredAiJob(input)).rejects.toThrow("PROFILE_IMPORT_USE_DEDICATED_ENDPOINT");
+    const input = { kind, module: "listing", userId: 7 };
+    await expect(createAiJobRun(input)).rejects.toThrow(checkpointedListingJobError(kind, "USE_DEDICATED_ENDPOINT"));
+    await expect(startRegisteredAiJob(input)).rejects.toThrow(checkpointedListingJobError(kind, "USE_DEDICATED_ENDPOINT"));
     expect(mocks.create).not.toHaveBeenCalled();
   });
 

@@ -1,5 +1,5 @@
 import type { AiJob, AiJobDeadLetter, AiJobWorker, InsertAiJob } from "../../../../drizzle/schema";
-import { PROFILE_IMPORT_JOB_KIND } from "../../../../shared/profileImportJob";
+import { isCheckpointedListingJob, checkpointedListingJobError } from "../../../../shared/checkpointedListingJob";
 import os from "os";
 import {
   claimAiJobByRunId,
@@ -398,7 +398,7 @@ export async function createAiJobRun(input: {
   recoveryOfRunId?: string | null;
   recoveryReason?: string | null;
 }) {
-  if (input.kind === PROFILE_IMPORT_JOB_KIND) throw new Error("PROFILE_IMPORT_USE_DEDICATED_ENDPOINT");
+  if (isCheckpointedListingJob(input.kind)) throw new Error(checkpointedListingJobError(input.kind, "USE_DEDICATED_ENDPOINT"));
   assertBusinessJobAgentBinding({
     module: input.module,
     kind: input.kind,
@@ -455,7 +455,7 @@ export async function updateAiJobProgress(
 ) {
   const existing = await getAiJobRun(runId);
   if (!existing || existing.status !== "running") return existing;
-  if (existing.kind === PROFILE_IMPORT_JOB_KIND) {
+  if (isCheckpointedListingJob(existing.kind)) {
     const updated = await updateOwnedProfileImportJob(runId, { type: "progress", progress }, guard);
     return updated ? buildAiJobSnapshot(updated) : getAiJobRun(runId);
   }
@@ -470,12 +470,12 @@ export async function updateAiJobProgress(
 
 export async function completeAiJob(runId: string, output: unknown, guard: AiJobMutationGuard = {}) {
   const existing = await getAiJobRun(runId);
-  if (existing?.kind === PROFILE_IMPORT_JOB_KIND) {
-    // Only the domain transaction may publish file_committed + succeeded.
+  if (isCheckpointedListingJob(existing?.kind) && existing) {
+    // Only the domain transaction may publish a committed checkpoint + succeeded.
     // Never replace its receipt with a handler's return value.
     if (existing.status === "succeeded") return existing;
     if (existing.status !== "running" || !aiJobMutationAllowed(existing, guard)) return existing;
-    throw new Error("PROFILE_IMPORT_COMMIT_REQUIRED");
+    throw new Error(checkpointedListingJobError(existing.kind, "COMMIT_REQUIRED"));
   }
   if (existing?.status === "canceled") return existing;
   if (!aiJobMutationAllowed(existing, guard)) return existing;
@@ -538,9 +538,9 @@ export async function failAiJob(runId: string, error: unknown, guard: AiJobMutat
   const existing = await getAiJobRun(runId);
   if (existing?.status === "canceled") return existing;
   if (existing?.status === "succeeded") return existing;
-  if (existing?.kind === PROFILE_IMPORT_JOB_KIND) {
+  if (isCheckpointedListingJob(existing?.kind) && existing) {
     const updated = await updateOwnedProfileImportJob(runId, {
-      type: "fail", errorMessage: "PROFILE_IMPORT_FAILED_REVIEW_REQUIRED",
+      type: "fail", errorMessage: checkpointedListingJobError(existing.kind, "FAILED_REVIEW_REQUIRED"),
     }, guard);
     // The private checkpoint is retained only on the original anchor. Do not
     // copy model results into generic dead-letter or metrics payloads.
@@ -585,7 +585,7 @@ export async function retryAiJob(runId: string, error: unknown, guard: AiJobMuta
   const existing = await getAiJobRun(runId);
   if (!existing || existing.status === "canceled") return existing;
   if (!isActiveAiJob(existing.status)) return existing;
-  if (existing.kind === PROFILE_IMPORT_JOB_KIND) return failAiJob(runId, error, guard);
+  if (isCheckpointedListingJob(existing.kind)) return failAiJob(runId, error, guard);
   if (!aiJobMutationAllowed(existing, guard)) return existing;
   const failure = classifyAiJobFailure(error);
   void recordAiOsMetric({
@@ -617,7 +617,7 @@ export async function retryAiJob(runId: string, error: unknown, guard: AiJobMuta
 
 export async function cancelAiJob(runId: string, reason = "AI job canceled") {
   const existing = await getAiJobRun(runId);
-  if (existing?.kind === PROFILE_IMPORT_JOB_KIND) throw new Error("PROFILE_IMPORT_USE_DEDICATED_ENDPOINT");
+  if (isCheckpointedListingJob(existing?.kind)) throw new Error(checkpointedListingJobError(existing?.kind, "USE_DEDICATED_ENDPOINT"));
   activeAbortControllers.get(runId)?.abort(reason);
   const job = await updateAiJobByRunId(runId, {
     status: "canceled",
@@ -650,7 +650,7 @@ export async function cancelAiJob(runId: string, reason = "AI job canceled") {
 export async function recoverAiJob(runId: string, reason = "User requested failure recovery") {
   const existing = await getAiJobRun(runId);
   if (!existing) throw new Error("AI job not found");
-  if (existing.kind === PROFILE_IMPORT_JOB_KIND) throw new Error("PROFILE_IMPORT_USE_DEDICATED_ENDPOINT");
+  if (isCheckpointedListingJob(existing.kind)) throw new Error(checkpointedListingJobError(existing.kind, "USE_DEDICATED_ENDPOINT"));
   if (existing.status !== "failed" && existing.status !== "canceled") {
     throw new Error("Only failed or canceled AI jobs can be recovered");
   }
@@ -722,9 +722,9 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
 
     const leaseSeconds = Math.min(Math.max(current.timeoutSeconds || DEFAULT_JOB_TIMEOUT_SECONDS, 5), 7200);
     const ownedGuard = { expectedWorkerId: WORKER_ID, expectedAttempt: current.attempt };
-    const profileImport = current.kind === PROFILE_IMPORT_JOB_KIND;
+    const checkpointedListingJob = isCheckpointedListingJob(current.kind);
     heartbeat = setInterval(() => {
-      const refresh = profileImport
+      const refresh = checkpointedListingJob
         ? updateOwnedProfileImportJob(runId, { type: "heartbeat", leaseSeconds }, ownedGuard)
         : heartbeatAiJobLease(runId, WORKER_ID, leaseSeconds);
       void refresh.catch((error) => {
@@ -750,7 +750,7 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
   } finally {
     if (heartbeat) clearInterval(heartbeat);
     if (timeoutHandle) clearTimeout(timeoutHandle);
-    if (existing.kind === PROFILE_IMPORT_JOB_KIND) {
+    if (isCheckpointedListingJob(existing.kind)) {
       await updateOwnedProfileImportJob(runId, { type: "release" }, {
         expectedWorkerId: WORKER_ID, expectedAttempt: current?.attempt,
       }).catch(() => null);

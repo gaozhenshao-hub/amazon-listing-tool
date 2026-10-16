@@ -1,0 +1,131 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-saved-competitor-research-jobs",
+  "baseline": "62332351b68fd18fdda9ce2c16c193b2e7f22ba7",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "listingSkills": "user-primary",
+    "listingWorkflow": "friend-primary",
+    "competitorAndAttributeInputs": "select authorized saved sources and generate; uploads supplemental",
+    "p5GeneralSkills": "Qingdao-primary",
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary"
+  },
+  "changes": [
+    "Implement dedicated saved-competitor single-item durable analysis. UI freezes explicit ids/revisions for selected or all eligible project records, submits independently, retains partial failure outcomes and polls safe task DTOs; selecting one creates exactly one task. No server-side reselection or mandatory upload.",
+    "One deterministic owner/workspace/project/analysis/source-hash anchor. Reserved -> model_dispatched -> analysis_ready -> analysis_committed checkpoints; model-dispatch unknown state never automatically recalls a model. Explicit safe resume stays on the original runId.",
+    "Real domain transactions repeat current actor/policy, parent ownership, source, full-row revision, Agent/N1 cancellation and SQL worker/attempt/unexpired-lease checks. Source changes, human edits and confirmation cannot be overwritten by a late result.",
+    "Atomically save a draft competitor result, increment its summaryVersion, create immutable draft evidence and safe audit metadata, and finalize the job receipt. Human-edited summary remains; current model fields are replaced or removed together so planners do not mix old advantages/weaknesses. Original sources/review pair are retained.",
+    "Use the current user listing.competitor.analyze Skill, require Released snapshot, bind version/system prompt through the existing runner API and validate returned Skill identity/version/system/manifest hashes. One attempt and no fallback. This is not complete pre-dispatch manifest/model pinning.",
+    "Project/run scope is rechecked for writes, project/read for histories, project/cancel for cancellation. Bad/missing source rows expose only safe historical DTOs and cannot resume; unrelated rows remain visible. Missing Agent metadata does not prevent authorized cancellation.",
+    "Worker explicitly registers the new kind. Generic job payload/read/retry/cancel/confirmation routes exclude both checkpointed Listing kinds; SQL claim and worker updates share precise lease fences. Read-only binding audit excludes these kinds before LIMIT. Other kind behavior retained.",
+    "Source context includes saved Listing claims and explicitly secondary review analysis; actual review originals and image pixels are not read. An 80 KiB source bound rejects oversized context without silent truncation. Trusted source/progress flags are not supplied by model output.",
+    "UI preserves selected comparison/report drafts on completion; explicit scope/user/epoch guards discard late replies. Lost acknowledgments trigger status reads, not automatic mutation retries. Cancellation does not promise provider termination or refunds. History is labeled latest 100 tasks.",
+    "Product attributes retain the prior saved-profile selection/preview/durable conversion lane. User seven directions, FABE, provenance and fact/core/candidate review stay unchanged. Workflow flag stays opt-in/off by default."
+  ],
+  "review": {
+    "root": "Reviewed actual service/repository, source formatter/prompt, current planner, runtime fences, dedicated routes, UI binding and five intentional baseline-protected changes.",
+    "independent": "Pure-source and cross-layer reviewers found and closed stale top-level AI field reuse and unverified returned Skill identity; root also requested malformed historical source isolation, missing-Agent cancellation and completed-anchor race tests. Runtime reviewer verified generic payload/write boundaries and identified the audit metadata exclusion.",
+    "previousProtectionRecords": [
+      {
+        "path": "client/src/pages/ComparisonPage.tsx",
+        "baseline": {
+          "gitBlobSha1": "56bb213ba04b78eb57e4113bfd36c2bf5d0e8060",
+          "sha256": "c71e7a7319825baa2828a9e9a5d4a9f9656d02c3c4e10020a4b497f99553d248"
+        },
+        "previousReviewed": {
+          "gitBlobSha1": "90d43dfa501630cee6804b118b7c45048c639b74",
+          "sha256": "b033ad6980bb42e2b59362e741e50c5f4627130120a7247afd00c3dd926735d9",
+          "reviewRef": "config/integration/reviews/20261016-competitor-review-write-safety.json"
+        }
+      },
+      {
+        "path": "server/_core/aiWorker.ts",
+        "baseline": {
+          "gitBlobSha1": "bb156a213c07585a3c34d8d464e9625278733ca1",
+          "sha256": "b3684a0e402946b9114559e50489f41ccc59e92159cc050baba43849f5061e7d"
+        },
+        "previousReviewed": {
+          "gitBlobSha1": "686c90e8f93d82d321315f1ebc89ba247433fc17",
+          "sha256": "06802bc107b00d50dd7bbbdcca78c2892f54105533ba6abe7e94cb67375edfd2",
+          "reviewRef": "config/integration/reviews/20261016-listing-durable-profile-conversion.json"
+        }
+      },
+      {
+        "path": "server/domains/ai_os/services/jobRunner.ts",
+        "baseline": {
+          "gitBlobSha1": "e865beb2aacce5c7f206c08e3c639fe348b8d3b1",
+          "sha256": "22cf601101ed0d041974c62d83a8c795969c5338a305a7c264dbe2d83c918490"
+        },
+        "previousReviewed": {
+          "gitBlobSha1": "6d6630fcdcf348ad7616be372f89571eb912e831",
+          "sha256": "ddf4deccd6497e2bc1c4038d3605dee4ef176ea8497876d54e413a8d19f70c68",
+          "reviewRef": "config/integration/reviews/20261016-listing-durable-profile-conversion.json"
+        }
+      },
+      {
+        "path": "server/repositories/ai_os/aiJobRepository.ts",
+        "baseline": {
+          "gitBlobSha1": "ac1c85d578fcd11d7db89a0849097103a179ffd2",
+          "sha256": "f32e7e884932429c07c4978699ba88d9144803fc17634f7542d18abd5fc19d8d"
+        },
+        "previousReviewed": {
+          "gitBlobSha1": "c4dec0782283bb6cceef09f43dd7a5fab651aa8d",
+          "sha256": "f61737f2c51907cffb88f07e7f6638ecb873fea806f1685d56b2070fdc1fbd91",
+          "reviewRef": "config/integration/reviews/20261016-listing-durable-profile-conversion.json"
+        }
+      },
+      {
+        "path": "server/routers/analysis.ts",
+        "baseline": {
+          "gitBlobSha1": "3a8806630114264cc6cda6196567ee3cce9a38bc",
+          "sha256": "dfc27c614e4c74c026b4efe7c9a1ce3ee073dc0dd12b190b4131dd7001aa6f56"
+        },
+        "previousReviewed": {
+          "gitBlobSha1": "095490f8367924cf08ef37ca96728ad180373c11",
+          "sha256": "a92a4650da45ef9ac22e3d59b59443ed16fc8515ce256cbcd4363105c78fd7f8",
+          "reviewRef": "config/integration/reviews/20261016-competitor-review-write-safety.json"
+        }
+      }
+    ],
+    "baselineFieldsUnchanged": true
+  },
+  "verification": {
+    "rootFocusedUnion": {
+      "files": 17,
+      "passed": 759,
+      "exitCode": 0,
+      "session": 45832
+    },
+    "scopedLint": {
+      "files": 25,
+      "maxWarnings": 0,
+      "exitCode": 0
+    },
+    "configuredTypes": {
+      "noEmit": true,
+      "incremental": false,
+      "exitCode": 0,
+      "session": 74243
+    },
+    "realDatabase": false,
+    "realBrowser": false,
+    "realWorker": false,
+    "paidModelCalls": 0
+  },
+  "defaultAndRollback": {
+    "workflowFlag": "unchanged; off by default",
+    "newSchema": false,
+    "productionDeployed": false,
+    "rollback": "Local-only isolated source commit; revert this batch before any rollout. No production migration/data rollback needed because none ran."
+  },
+  "remaining": [
+    "Friend four-section title/selling/buyer/overall deep analysis is not implemented by this current-Skill single-call lane. Raw review original pagination, denominators, image OCR, per-stage durable checkpoints and faithful friend source workflows remain required. Retained old deepAnalysis is explicitly marked stale; do not promote it as current.",
+    "Actual MySQL concurrency/rollback, lease recovery, worker scheduling, scoped browser no-upload flow and real Skill execution remain unaccepted. These offline tests are not production or P4/P5 acceptance.",
+    "Existing generic automatic acquisition/import AI paths are unchanged and do not inherit this new lane's model-dispatch protocol. Parent project deletion's reverse lock order and all unrelated comparison/report APIs still need runtime/security work.",
+    "Current runtime API pre-dispatch pins version and system prompt only. Manifest is checked on returned result; saved userPrompt hash is provenance. This batch does not pin a model or certify immutable user/Qingdao production Skill snapshots.",
+    "Same source is intentionally not automatically reanalyzed after a successful/unknown run. Original-client stale revisions may return conflict and require readback; manual inspection is required for unknown model outcomes.",
+    "Admin worker runtime status retains run-id metadata; not all administrative metadata is hidden. No generalized all-site isolation claim.",
+    "Native303 remains UNAPPROVED, native/0230/P1 gates and all original plan requirements remain. No production, public push, paid model, scheduler, VM or heavy build action."
+  ]
+}

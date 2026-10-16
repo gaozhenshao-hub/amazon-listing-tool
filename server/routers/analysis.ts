@@ -17,6 +17,7 @@ import {
 import { resolveStoredObjectUrl } from "../storage";
 import { workspaceIdFromContext } from "../services/securityGovernance";
 import { competitorReviewScopeSchema, competitorSummaryWriteSchema, competitorSummaryReview, competitorWithRevision, competitorReviewWorkspace } from "../domains/listing/services/competitorSummaryReview";
+import { competitorResearchJob, competitorResearchScopeSchema, startCompetitorResearchJobSchema, competitorResearchOperationSchema } from "../domains/listing/services/competitorResearchJob";
 import {
   registerCompetitorAnalysisArtifact,
   registerCompetitorComparisonArtifact,
@@ -94,6 +95,22 @@ export const analysisRouter = router({
   updateSummary: protectedProcedure
     .input(competitorSummaryWriteSchema)
     .mutation(({ ctx, input }) => competitorSummaryReview.review(ctx, "save", input)),
+
+  startResearchJob: protectedProcedure
+    .input(startCompetitorResearchJobSchema)
+    .mutation(({ ctx, input }) => competitorResearchJob.start(ctx, input)),
+  getResearchJob: protectedProcedure
+    .input(competitorResearchOperationSchema)
+    .query(({ ctx, input }) => competitorResearchJob.get(ctx, input)),
+  listResearchJobs: protectedProcedure
+    .input(competitorResearchScopeSchema)
+    .query(({ ctx, input }) => competitorResearchJob.list(ctx, input)),
+  resumeResearchJob: protectedProcedure
+    .input(competitorResearchOperationSchema)
+    .mutation(({ ctx, input }) => competitorResearchJob.resume(ctx, input)),
+  cancelResearchJob: protectedProcedure
+    .input(competitorResearchOperationSchema)
+    .mutation(({ ctx, input }) => competitorResearchJob.cancel(ctx, input)),
 
   confirmSummary: protectedProcedure
     .input(competitorSummaryWriteSchema)
