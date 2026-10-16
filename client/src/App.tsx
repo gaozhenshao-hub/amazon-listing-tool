@@ -42,6 +42,7 @@ const ProjectDetailPage = lazy(() => import("./pages/ProjectDetailPage"));
 const ComparisonPage = lazy(() => import("./pages/ComparisonPage"));
 const ReviewHistoryPage = lazy(() => import("./pages/ReviewHistoryPage"));
 const DataFilesPage = lazy(() => import("./pages/DataFilesPage"));
+const CompetitorReviewsPage = lazy(() => import("./pages/listing/CompetitorReviewsPage"));
 const ScorePage = lazy(() => import("./pages/ScorePage"));
 const ImageSuggestionsPage = lazy(() => import("./pages/ImageSuggestionsPage"));
 const ImageWorkflowPage = lazyWithRecovery(
@@ -194,6 +195,7 @@ function Router() {
         <Route path="/listing/generate">{() => <PermissionGuard><GeneratePage /></PermissionGuard>}</Route>
         <Route path="/listing/preview">{() => <PermissionGuard><PreviewPage /></PermissionGuard>}</Route>
         <Route path="/listing/comparison">{() => <PermissionGuard><ComparisonPage /></PermissionGuard>}</Route>
+        <Route path="/listing/competitors/:analysisId/reviews">{() => <PermissionGuard moduleId="listing" subModuleId="listing_analysis"><CompetitorReviewsPage /></PermissionGuard>}</Route>
         <Route path="/listing/review-history">{() => <PermissionGuard><ReviewHistoryPage /></PermissionGuard>}</Route>
         <Route path="/listing/data-files">{() => <PermissionGuard><DataFilesPage /></PermissionGuard>}</Route>
         <Route path="/listing/score">{() => <PermissionGuard><ScorePage /></PermissionGuard>}</Route>

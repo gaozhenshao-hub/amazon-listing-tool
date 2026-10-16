@@ -39,6 +39,7 @@ function report(summary = "服务器报告", ids = [1, 2], projectId = 1) {
   return { id: 90, projectId, analysisIds: ids, selectionKey: [...ids].sort((a, b) => a - b).join("-"), analyzedAsins: ids.map(id => analysis(id).asin), aiSummary: summary, summary, sellingPointRows: [], status: "draft", version: 1, confirmedAt: null };
 }
 async function choose(id: number) { await waitFor(() => expect(screen.getByRole("checkbox", { name: `选择 ${analysis(id).asin}` })).toBeEnabled()); fireEvent.click(screen.getByRole("checkbox", { name: `选择 ${analysis(id).asin}` })); }
+async function chooseResearch(id: number) { await waitFor(() => expect(screen.getByRole("checkbox", { name: `研究选择 ${analysis(id).asin}` })).toBeEnabled()); fireEvent.click(screen.getByRole("checkbox", { name: `研究选择 ${analysis(id).asin}` })); }
 async function selectTwo() { await choose(1); await choose(2); }
 const refresh = () => fireEvent.click(screen.getByRole("button", { name: "刷新已保存研究" }));
 beforeEach(() => {
@@ -178,12 +179,15 @@ describe("existing structured report preservation", () => {
 describe("selected saved studies", () => {
   it("passes the exact owned all-record list and independent selected ids into the enabled research lane", async () => {
     render(<ComparisonPage />); await choose(2);
+    expect(state.researchProps.at(-1)!.selectedIds).toEqual([]);
+    await chooseResearch(2);
     const props = state.researchProps.at(-1)!;
     expect(props.projectId).toBe(1); expect(props.workspaceId).toBe(11); expect(props.selectedIds).toEqual([2]);
     expect(props.analyses.map(row => row.id)).toEqual([1, 2, 3]); expect(props.analyses[0].revision).toBe(analysis(1).revision);
   });
   it("research completion refreshes source records without remounting the lane or discarding a dirty report", async () => {
     state.report.mockResolvedValue(report()); render(<ComparisonPage />); await selectTwo(); await screen.findByText("服务器报告");
+    await chooseResearch(1); await chooseResearch(2);
     fireEvent.click(screen.getByRole("button", { name: "编辑" })); fireEvent.change(screen.getByPlaceholderText(/编辑市场概览/), { target: { value: "研究刷新期间保留的草稿" } });
     const next = deferred<ReturnType<typeof analysis>[]>(); state.list.mockReturnValueOnce(next.promise);
     fireEvent.click(screen.getByRole("button", { name: "模拟资料分析保存完成" }));
@@ -199,36 +203,37 @@ describe("selected saved studies", () => {
     expect(screen.queryByRole("region", { name: "已保存竞品资料分析任务" })).not.toBeInTheDocument(); expect(state.researchProps).toHaveLength(0);
   });
   it("shows one selected study, literal source text, and no fabricated task state", async () => {
-    state.list.mockResolvedValue([analysis(1)]); render(<ComparisonPage />); await choose(1);
+    state.list.mockResolvedValue([analysis(1)]); render(<ComparisonPage />); await chooseResearch(1);
     const card = screen.getByRole("article", { name: `${analysis(1).asin} 研究` });
     expect(within(card).getByText("已保存摘要 1")).toBeInTheDocument(); expect(within(card).getByText("<script>原文不是HTML</script>")).toBeInTheDocument();
-    expect(card.querySelector("script")).toBeNull(); expect(screen.getByText(/尚未限定 Listing 生成/)).toBeInTheDocument();
+    expect(card.querySelector("script")).toBeNull(); expect(screen.getByText(/不代表四项深度分析已完成/)).toBeInTheDocument();
+    expect(within(card).getByRole("link", { name: `查看 ${analysis(1).asin} 原评论` })).toHaveAttribute("href", "/listing/competitors/1/reviews?projectId=1");
     expect(screen.getByRole("link", { name: "前往竞品采集、分析与后台任务" })).toHaveAttribute("href", "/listing/analysis");
   });
   it("confirms only the exact saved summary and suppresses double dispatch", async () => {
     const done = deferred<object>(); state.confirmSummary.mockReturnValueOnce(done.promise);
-    render(<ComparisonPage />); await choose(1);
+    render(<ComparisonPage />); await chooseResearch(1);
     const button = screen.getByRole("button", { name: "确认此摘要" }); fireEvent.click(button); fireEvent.click(button);
     expect(state.confirmSummary).toHaveBeenCalledTimes(1); expect(state.confirmSummary).toHaveBeenCalledWith({ projectId: 1, analysisId: 1, summary: "已保存摘要 1", expectedWorkspaceId: 11, expectedRevision: analysis(1).revision });
     await act(async () => done.resolve({}));
   });
   it("unlocks a saved confirmed summary without invoking analysis", async () => {
-    state.list.mockResolvedValue([analysis(1, { summaryStatus: "confirmed" })]); render(<ComparisonPage />); await choose(1);
+    state.list.mockResolvedValue([analysis(1, { summaryStatus: "confirmed" })]); render(<ComparisonPage />); await chooseResearch(1);
     expect(screen.getByRole("button", { name: "确认此摘要" })).toBeDisabled(); fireEvent.click(screen.getByRole("button", { name: "解锁此摘要" }));
     expect(state.unlockSummary).toHaveBeenCalledWith({ projectId: 1, analysisId: 1, expectedWorkspaceId: 11, expectedRevision: analysis(1).revision });
   });
   it("does not write when the server row lacks a complete revision", async () => {
-    state.list.mockResolvedValue([analysis(1, { revision: undefined })]); render(<ComparisonPage />); await choose(1);
+    state.list.mockResolvedValue([analysis(1, { revision: undefined })]); render(<ComparisonPage />); await chooseResearch(1);
     fireEvent.click(screen.getByRole("button", { name: "确认此摘要" }));
     expect(state.confirmSummary).not.toHaveBeenCalled();
   });
   it("carries explicit NULL into review requests rather than inferring a different workspace", async () => {
-    state.auth.user!.defaultWorkspaceId = null; render(<ComparisonPage />); await choose(1);
+    state.auth.user!.defaultWorkspaceId = null; render(<ComparisonPage />); await chooseResearch(1);
     fireEvent.click(screen.getByRole("button", { name: "确认此摘要" }));
     expect(state.confirmSummary).toHaveBeenCalledWith(expect.objectContaining({ expectedWorkspaceId: null, expectedRevision: analysis(1).revision }));
   });
   it("refreshes the saved confirmed state and does not infer a task result", async () => {
-    render(<ComparisonPage />); await choose(1);
+    render(<ComparisonPage />); await chooseResearch(1);
     state.list.mockResolvedValueOnce([analysis(1, { summaryStatus: "confirmed", summaryVersion: 2 }), analysis(2)]);
     fireEvent.click(screen.getByRole("button", { name: "确认此摘要" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "解锁此摘要" })).toBeEnabled());
@@ -238,5 +243,31 @@ describe("selected saved studies", () => {
     state.list.mockResolvedValue(Array.from({ length: 9 }, (_, index) => analysis(index + 1))); render(<ComparisonPage />);
     for (let id = 1; id <= 9; id++) await choose(id);
     expect(screen.getByText("已选 8/8")).toBeInTheDocument(); expect(screen.getByRole("checkbox", { name: `选择 ${analysis(9).asin}` })).not.toBeChecked();
+  });
+  it("research can select and review more than eight without selecting a legacy report or reading one", async () => {
+    state.list.mockResolvedValue(Array.from({ length: 10 }, (_, index) => analysis(index + 1))); render(<ComparisonPage />);
+    await screen.findByRole("button", { name: "选择全部研究竞品" }); fireEvent.click(screen.getByRole("button", { name: "选择全部研究竞品" }));
+    expect(screen.getByText("研究已选 10/10")).toBeInTheDocument(); expect(screen.getByText("已选 0/8")).toBeInTheDocument();
+    expect(screen.getAllByRole("article", { name: /研究$/ })).toHaveLength(10);
+    expect(state.researchProps.at(-1)!.selectedIds).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]); expect(state.report).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "清空研究选择" })); expect(screen.queryAllByRole("article", { name: /研究$/ })).toHaveLength(0);
+  });
+  it("research checkbox changes preserve the exact legacy report selection and dirty draft", async () => {
+    state.report.mockResolvedValue(report()); render(<ComparisonPage />); await selectTwo(); await screen.findByText("服务器报告");
+    fireEvent.click(screen.getByRole("button", { name: "编辑" })); fireEvent.change(screen.getByPlaceholderText(/编辑市场概览/), { target: { value: "报告草稿独立于研究" } });
+    await chooseResearch(3); expect(screen.getByDisplayValue("报告草稿独立于研究")).toBeInTheDocument();
+    expect(screen.getByText("已选 2/3")).toBeInTheDocument(); expect(state.report).toHaveBeenCalledTimes(1);
+    expect(state.researchProps.at(-1)!.selectedIds).toEqual([3]); await choose(3);
+    expect(screen.getByText("研究已选 1/3")).toBeInTheDocument(); expect(screen.getByRole("article", { name: `${analysis(3).asin} 研究` })).toBeInTheDocument();
+  });
+  it.each(["user", "workspace", "role", "project"])("clears both research and report selection on %s change", async field => {
+    const view = render(<ComparisonPage />); await chooseResearch(1); await choose(2);
+    if (field === "user") state.auth.user!.id = 8;
+    if (field === "workspace") state.auth.user!.defaultWorkspaceId = null;
+    if (field === "role") state.auth.user!.role = "reader";
+    if (field === "project") state.projectId = 2;
+    view.rerender(<ComparisonPage />); await screen.findByText("研究已选 0/3");
+    expect(screen.getByText("已选 0/3")).toBeInTheDocument(); expect(screen.queryByRole("article", { name: `${analysis(1).asin} 研究` })).not.toBeInTheDocument();
+    expect(state.researchProps.at(-1)!.selectedIds).toEqual([]);
   });
 });

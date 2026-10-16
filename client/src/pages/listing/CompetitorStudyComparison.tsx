@@ -2,7 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { competitorStudy, type CompetitorStudyRecord } from "./competitorStudyModel";
 
-export default function CompetitorStudyComparison({ analyses, pendingIds, onConfirm, onUnlock }: {
+export default function CompetitorStudyComparison({ projectId, analyses, pendingIds, onConfirm, onUnlock }: {
+  projectId?: number;
   analyses: CompetitorStudyRecord[];
   pendingIds: ReadonlySet<number>;
   onConfirm: (analysis: CompetitorStudyRecord, summary: string) => void;
@@ -10,10 +11,10 @@ export default function CompetitorStudyComparison({ analyses, pendingIds, onConf
 }) {
   return <section aria-label="选中竞品并排研究" className="space-y-3">
     <div><h2 className="text-lg font-semibold">选中竞品 · 并排研究</h2>
-      <p className="text-sm text-muted-foreground">所选范围仅用于本页研究与对比，尚未限定 Listing 生成的竞品输入。这里展示已保存内容，不会自动采集或启动分析。</p>
+      <p className="text-sm text-muted-foreground">研究选择与旧结构化报告、生成页已确认的范围相互独立。这里展示已保存内容，不会自动采集或启动分析，也不代表四项深度分析已完成。</p>
       <a className="text-sm text-primary underline" href="/listing/analysis">前往竞品采集、分析与后台任务</a>
     </div>
-    {!analyses.length ? <p className="text-sm text-muted-foreground">从上方选择竞品；单个可先审阅，2–8 个可继续结构化对比。</p> :
+    {!analyses.length ? <p className="text-sm text-muted-foreground">从上方研究选择中勾选竞品，可并排审阅任意多个；旧结构化报告仍单独选择 2–8 个。</p> :
       <div className="overflow-x-auto pb-3"><div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${analyses.length}, minmax(340px, 1fr))` }}>
         {analyses.map(analysis => {
           const study = competitorStudy(analysis), pending = pendingIds.has(analysis.id);
@@ -23,6 +24,8 @@ export default function CompetitorStudyComparison({ analyses, pendingIds, onConf
               {Number.isSafeInteger(analysis.summaryVersion) && (analysis.summaryVersion ?? 0) > 0 && <span className="text-xs">v{analysis.summaryVersion}</span>}
             </div><h3 className="whitespace-pre-wrap break-words font-medium">{analysis.title || "未保存标题"}</h3>
               <p className="text-xs text-muted-foreground">价格：{analysis.price || "未提供"} · 评分：{analysis.rating || "未提供"} · 评论数：{analysis.reviewCount ?? "未提供"}</p>
+              {Number.isSafeInteger(projectId) && (projectId ?? 0) > 0 && Number.isSafeInteger(analysis.id) && analysis.id > 0 && <a className="inline-block text-sm text-primary underline"
+                href={`/listing/competitors/${analysis.id}/reviews?projectId=${projectId}`}>查看 {analysis.asin} 原评论</a>}
             </header>
             <details><summary className="cursor-pointer text-sm font-medium">已保存五点原文（{study.bullets.length} 条）</summary>
               {study.bulletsUnavailable ? <p role="alert" className="text-sm">原文字段无法读取，请回分析页核对。</p> : study.bullets.length ? <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm">{study.bullets.map((text, index) => <li key={index} className="whitespace-pre-wrap break-words">{text || "空条目"}</li>)}</ol> : <p className="text-sm text-muted-foreground">尚无已保存五点原文。</p>}

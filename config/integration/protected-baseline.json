@@ -26,9 +26,9 @@
         "sha256": "05a4205aecfa3e713f2f29fd91e8e37706727e8d8db0b943cc6b3e44d0cc9bd1"
       },
       "reviewed": {
-        "gitBlobSha1": "b7bab6d6e557d5d212fe26e39e310c1b1b5607cb",
-        "sha256": "247e15a5d05862a62fe55ee2f6c206ef6c48ee1f2afbed87041ca1e793355799",
-        "reviewRef": "config/integration/reviews/20261015-operations-readonly-preview.json"
+        "gitBlobSha1": "7632fe9df2c0adb8fd2a9910b52f982c9406228c",
+        "sha256": "164c1266491700935f7344c7bee816d412c474a9856b086b5451752e9d66a6c2",
+        "reviewRef": "config/integration/reviews/20261016-competitor-review-corpus.json"
       }
     },
     {
@@ -257,9 +257,9 @@
         "sha256": "c71e7a7319825baa2828a9e9a5d4a9f9656d02c3c4e10020a4b497f99553d248"
       },
       "reviewed": {
-        "gitBlobSha1": "b5c2e914084dd20b495ceaeeb0ae38573b84d4d8",
-        "sha256": "f818d9b5d454ec40be87d05e7ca52a567144963951539e34aab795abbfd6b2e5",
-        "reviewRef": "config/integration/reviews/20261016-saved-competitor-research-jobs.json"
+        "gitBlobSha1": "9ce23a16ac821aaf1535056c742e5096b6dccf1e",
+        "sha256": "924918024ef87f0b8276c5dd9f0f7a2c8f251f8e1dcfca11d1fc664223f672db",
+        "reviewRef": "config/integration/reviews/20261016-competitor-review-corpus.json"
       }
     },
     {
@@ -1118,9 +1118,9 @@
         "sha256": "dfc27c614e4c74c026b4efe7c9a1ce3ee073dc0dd12b190b4131dd7001aa6f56"
       },
       "reviewed": {
-        "gitBlobSha1": "41372d16b2708fb8c5028676b52c9227dd508ee5",
-        "sha256": "0a5448d40281717ba4a618c190dfc10fdb0cbcc0a8b0de44b7efcd2c9ee112d0",
-        "reviewRef": "config/integration/reviews/20261016-saved-competitor-research-jobs.json"
+        "gitBlobSha1": "4fa231543e50fcea5d26d0412363ec0ec6db4481",
+        "sha256": "918ec23fd98c0dfa503c0173283033a53ad46afece2815f0ac6e0114db4f0bf8",
+        "reviewRef": "config/integration/reviews/20261016-competitor-review-corpus.json"
       }
     },
     {

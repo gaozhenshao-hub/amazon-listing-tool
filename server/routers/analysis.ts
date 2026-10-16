@@ -18,6 +18,7 @@ import { resolveStoredObjectUrl } from "../storage";
 import { workspaceIdFromContext } from "../services/securityGovernance";
 import { competitorReviewScopeSchema, competitorSummaryWriteSchema, competitorSummaryReview, competitorWithRevision, competitorReviewWorkspace } from "../domains/listing/services/competitorSummaryReview";
 import { competitorResearchJob, competitorResearchScopeSchema, startCompetitorResearchJobSchema, competitorResearchOperationSchema } from "../domains/listing/services/competitorResearchJob";
+import { competitorReviewRead, competitorReviewsPageSchema } from "../domains/listing/services/competitorReviewRead";
 import {
   registerCompetitorAnalysisArtifact,
   registerCompetitorComparisonArtifact,
@@ -76,6 +77,9 @@ async function resolveCompetitorImagesForDelivery<T extends { imageUrls?: string
 }
 
 export const analysisRouter = router({
+  listCompetitorReviews: protectedProcedure
+    .input(competitorReviewsPageSchema)
+    .query(({ ctx, input }) => competitorReviewRead.list(ctx, input)),
   // Get all analyses for a project
   listByProject: protectedProcedure
     .input(z.object({ projectId: z.number(), expectedWorkspaceId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable().optional() }))

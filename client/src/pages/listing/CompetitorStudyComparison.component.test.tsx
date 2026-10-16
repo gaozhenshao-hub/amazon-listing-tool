@@ -8,7 +8,7 @@ const row = { id: 3, asin: "B000000003", title: "已保存商品", summary: "此
   summaryStatus: "draft", summaryVersion: 2, bulletPoints: '["真实五点原文"]' };
 function mount(patch: Partial<typeof row> & { rawData?: string | null } = {}, pendingIds = new Set<number>()) {
   const onConfirm = vi.fn(), onUnlock = vi.fn();
-  const view = render(<CompetitorStudyComparison analyses={[{ ...row, ...patch }]} pendingIds={pendingIds} onConfirm={onConfirm} onUnlock={onUnlock} />);
+  const view = render(<CompetitorStudyComparison projectId={7} analyses={[{ ...row, ...patch }]} pendingIds={pendingIds} onConfirm={onConfirm} onUnlock={onUnlock} />);
   return { ...view, onConfirm, onUnlock };
 }
 afterEach(cleanup);
@@ -18,6 +18,7 @@ describe("saved competitor research source state", () => {
     const { onConfirm, onUnlock } = mount();
     expect(screen.getByText(row.summary)).toBeInTheDocument(); expect(screen.getByText("真实五点原文")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "前往竞品采集、分析与后台任务" })).toHaveAttribute("href", "/listing/analysis");
+    expect(screen.getByRole("link", { name: `查看 ${row.asin} 原评论` })).toHaveAttribute("href", "/listing/competitors/3/reviews?projectId=7");
     fireEvent.click(screen.getByRole("button", { name: "确认此摘要" }));
     expect(onConfirm).toHaveBeenCalledOnce(); expect(onConfirm.mock.calls[0][1]).toBe(row.summary); expect(onUnlock).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: /一键分析|重新分析|全部分析/ })).not.toBeInTheDocument();
@@ -67,5 +68,10 @@ describe("saved competitor research source state", () => {
     const { onConfirm, onUnlock } = mount({ rawData: '{"analysisStale":true}', summaryStatus: "confirmed" }, new Set([row.id]));
     for (const label of ["确认此摘要", "解锁此摘要"]) { const button = screen.getByRole("button", { name: label }); expect(button).toBeDisabled(); fireEvent.click(button); }
     expect(onConfirm).not.toHaveBeenCalled(); expect(onUnlock).not.toHaveBeenCalled();
+  });
+  it("does not invent a review source link without an explicit valid parent project", () => {
+    render(<CompetitorStudyComparison analyses={[row]} pendingIds={new Set()} onConfirm={vi.fn()} onUnlock={vi.fn()} />);
+    expect(screen.queryByRole("link", { name: /原评论/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/不代表四项深度分析已完成/)).toBeInTheDocument();
   });
 });

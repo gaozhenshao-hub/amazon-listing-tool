@@ -1,0 +1,79 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-competitor-original-review-corpus",
+  "baseline": "2918c2df1c18b3fdd10371972989e3ec4931a7bd",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "listingSkills": "user-primary",
+    "listingWorkflow": "friend-primary",
+    "competitorAndAttributeInputs": "select authorized saved sources and generate; uploads supplemental",
+    "p5GeneralSkills": "Qingdao-primary",
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary"
+  },
+  "changes": [
+    "Implement read-only original review recovery from existing analysis.import.reviews jobs, not new upload or model analysis. Bind active actor, explicit authenticated workspace, strict project.read without ownership fast-path, owned parent and exact competitor. Legacy NULL parent jobs remain precisely NULL-scoped.",
+    "Bound candidate metadata to 20 plus one overflow sentinel, exact binary filename, direct successful output.results member analysisId/ASIN/status and same job scope. Fetch originals one at a time only after authorization; 32MiB serialized input and 64MiB cumulative input bounds. Recompute original file SHA256 against persisted competitor reviewImport source hash.",
+    "Reauthorize and recheck whole competitor revision, parent scope, input hash and direct successful receipt before returning. Page requests bind user/workspace/source job, parser version, full corpus and source hash; subsequent pages cannot silently use a changed source. Raw uploaded Base64, other-ASIN text and SQL errors never enter the page DTO.",
+    "Pure bounded original parser supports UTF-8 CSV and restricted XLSX. No longest-column guessing, majority-group ASIN assignment, truncation or inferred zero/false. Exact row ASIN or globally unambiguous filename fallback; all rows classified, stable review IDs, original field values and sheet/record locators, explicit deterministic duplicate occurrences.",
+    "20MiB file, 64MiB actual expanded ZIP, 32MiB entry, 256 entries, 500000 pre-parser cumulative XML cells and per-address range gates; CRC, actual inflate bounds, consumed stream bytes, ZIP member layout, XML/formula/external relationship guards precede SheetJS. Eight sheets and aggregate 20000 data rows are post-parse limits, not an OS/CPU sandbox.",
+    "Read-only per-ASIN independent original-review route with explicit Listing permission guard, owner/workspace epoch isolation, complete page/coverage validation, stable hash paging, safe fixed error categories and honest unavailable state. Totals represent recoverable deduplicated source-file rows, never Amazon total reviews or completed model coverage.",
+    "Separate new research selection from the legacy 2–8 comparison report selection. Research jobs and side-by-side saved-source review accept more than eight explicit selected records; existing report contracts/drafts and generation's separate confirmed selection remain unchanged.",
+    "Existing profile-to-attributes selected generation, user seven directions/FABE and fact/core/candidate review retained. New UI remains behind unchanged off-by-default merged Listing flag."
+  ],
+  "review": {
+    "root": "Read parser, SQL repository, service, routes, new page, source selection diff, original prompt contracts and friend reference. Necessary changed-scope offline test, lint, configured type and protection results are recorded in the immutable batch proof.",
+    "independent": "Reviewer identified ownership permission bypass, loose recursive JSON_CONTAINS receipt matching, UTF8 serialization identity, missing final receipt revalidation, numeric ASIN JSON ambiguity and pre-parser aggregate XML cell budget. Implemented strict read policy, direct JSON_TABLE member tests, utf8mb4 serialization, repeated final checks and cumulative preflight. UI author also closed unknown-route public fallback and misleading blanket PRECONDITION_FAILED messaging.",
+    "previousProtectionRecords": [
+      {
+        "path": "client/src/App.tsx",
+        "previousReviewed": {
+          "gitBlobSha1": "b7bab6d6e557d5d212fe26e39e310c1b1b5607cb",
+          "sha256": "247e15a5d05862a62fe55ee2f6c206ef6c48ee1f2afbed87041ca1e793355799",
+          "reviewRef": "config/integration/reviews/20261015-operations-readonly-preview.json"
+        }
+      },
+      {
+        "path": "client/src/pages/ComparisonPage.tsx",
+        "previousReviewed": {
+          "gitBlobSha1": "b5c2e914084dd20b495ceaeeb0ae38573b84d4d8",
+          "sha256": "f818d9b5d454ec40be87d05e7ca52a567144963951539e34aab795abbfd6b2e5",
+          "reviewRef": "config/integration/reviews/20261016-saved-competitor-research-jobs.json"
+        }
+      },
+      {
+        "path": "server/routers/analysis.ts",
+        "previousReviewed": {
+          "gitBlobSha1": "41372d16b2708fb8c5028676b52c9227dd508ee5",
+          "sha256": "0a5448d40281717ba4a618c190dfc10fdb0cbcc0a8b0de44b7efcd2c9ee112d0",
+          "reviewRef": "config/integration/reviews/20261016-saved-competitor-research-jobs.json"
+        }
+      }
+    ],
+    "baselineFieldsUnchanged": true,
+    "baselineTupleSha256": "b5a228f5b51180bc6f903384d146997cda316f77da807e7abcb20ce7b4faee40"
+  },
+  "verification": {
+    "reference": "See outputs/amazon-system-accelerated-competitor-review-corpus-batch-20261016-r1.json in the parent workspace for frozen source and actual command receipts.",
+    "realDatabase": false,
+    "realBrowser": false,
+    "paidModelCalls": 0
+  },
+  "defaults": {
+    "newSchema": false,
+    "corpusWrites": false,
+    "newUploads": false,
+    "modelCalls": 0,
+    "workflowFlag": "unchanged off by default",
+    "productionDeployed": false,
+    "rollback": "Revert this local-only isolated source batch; no production migration or data was changed."
+  },
+  "remaining": [
+    "Full friend four-section title/selling/buyer/overall pipeline, real image evidence, per-stage persistent checkpoints and approved additive output/Skill contracts remain required. This page does not change legacy analysis into deep research or feed original reviews into existing model jobs.",
+    "Raw acquisition/page reviews and questions are not normalized in the current snapshot contract. This batch recovers only the current reviewImport file with an authorized retained successful-member job; it does not merge every historical import or implement independent long-lived supplemental-review storage.",
+    "Legacy XLS, XLSX with formulas, descriptors, external relations, binary/thumbnail parts, unsupported sheets and unsupported headers are explicitly rejected. Old synchronous imports or deleted/unacknowledged original tasks cannot be reconstructed from model summaries. These gaps remain, not silently marked complete.",
+    "Actual MySQL JSON_TABLE/transaction/query performance, real import files, browser paging, workload/CPU behavior, original preservation after deletion and full scoped no-upload workflow still require integration acceptance. Offline SQL adapter fixtures are not actual database execution.",
+    "Strict policy use here does not remediate all prior permission owner shortcuts or all report APIs. Current source SHA is not historical runtime proof. User/Qingdao saved Skill snapshots, native303/0230/P1 and all original P0–P6 acceptance remain pending.",
+    "No production, public push, scheduler, paid model, VM or heavy release build ran; available host space must be rechecked before runtime work."
+  ]
+}

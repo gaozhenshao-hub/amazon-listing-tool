@@ -465,6 +465,8 @@ export default function ComparisonPage() {
 function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProjectId: number; workspaceId: number | null }) {
   const client = trpc.useUtils().client;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  // Research is not the legacy 2–8 record comparison-report selection.
+  const [researchSelectedIds, setResearchSelectedIds] = useState<Set<number>>(new Set());
   const [report, setReport] = useState<ComparisonReport | null>(null);
   const [summaryDraft, setSummaryDraft] = useState("");
   const [sellingPointRows, setSellingPointRows] = useState<ComparisonSellingPointRow[]>([]);
@@ -494,6 +496,8 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
     [selectedIds],
   );
   const selectionKey = selectedAnalysisIds.join("-");
+  const researchAnalysisIds = useMemo(() => Array.from(researchSelectedIds)
+    .filter(id => analyses?.some(row => row.id === id)).sort((a, b) => a - b), [analyses, researchSelectedIds]);
 
   const applyReport = useCallback((nextReport: ComparisonReport | null, editing = false) => {
     dirty.current = false; draftRevision.current++;
@@ -557,7 +561,7 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
   const confirmReport = () => { void runReportAction("confirm"); };
   async function reviewStudy(analysis: CompetitorStudyRecord, action: "confirm" | "unlock") {
     const current = analyses?.find(row => row.id === analysis.id && row.asin === analysis.asin);
-    if (!current || !selectedIds.has(current.id) || studyLocks.current.has(current.id)) return;
+    if (!current || !researchSelectedIds.has(current.id) || studyLocks.current.has(current.id)) return;
     const study = competitorStudy(current);
     if (action === "confirm" ? !study.canConfirm : !study.canUnlock) return;
     if (typeof current.revision !== "string" || !/^[a-f0-9]{64}$/u.test(current.revision)) {
@@ -676,8 +680,21 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
         <div className="flex items-center gap-2"><Button variant="outline" onClick={() => { setReadGeneration(value => value + 1); setReportGeneration(value => value + 1); }}>刷新已保存研究</Button><ProjectSelector /></div>
       </div>
 
+      {MERGED_LISTING_WORKFLOW_ENABLED && !isLoading && !readError && !!analyses?.length && <section aria-label="研究竞品选择" className="space-y-3 rounded-xl border p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">选择并排研究 ASIN</h2>
+          <p className="text-xs text-muted-foreground">可选择任意多个已保存竞品。此范围用于下方资料分析与并排审阅，不改变旧结构化报告的 2–8 个选择或生成页已确认的范围。</p></div>
+          <Button variant="outline" size="sm" onClick={() => setResearchSelectedIds(researchAnalysisIds.length === analyses.length ? new Set() : new Set(analyses.map(row => row.id)))}>
+            {researchAnalysisIds.length === analyses.length ? "清空研究选择" : "选择全部研究竞品"}</Button></div>
+        <p className="text-sm">研究已选 {researchAnalysisIds.length}/{analyses.length}</p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{analyses.map(row => <label key={row.id} className="flex items-start gap-2 rounded border p-3 text-sm">
+          <Checkbox aria-label={`研究选择 ${row.asin}`} checked={researchSelectedIds.has(row.id)} onCheckedChange={checked => setResearchSelectedIds(previous => {
+            const next = new Set(previous); if (checked === true) next.add(row.id); else next.delete(row.id); return next;
+          })} /><span><strong>{row.asin}</strong><span className="mt-1 block line-clamp-2 text-xs text-muted-foreground">{row.title || "未保存标题"}</span></span>
+        </label>)}</div>
+      </section>}
+
       {MERGED_LISTING_WORKFLOW_ENABLED && <CompetitorResearchJobs projectId={selectedProjectId} workspaceId={workspaceId}
-        analyses={!isLoading && !readError ? analyses || [] : []} selectedIds={selectedAnalysisIds}
+        analyses={!isLoading && !readError ? analyses || [] : []} selectedIds={researchAnalysisIds}
         onCompleted={() => setReadGeneration(value => value + 1)} />}
 
       {!selectedProjectId ? (
@@ -793,7 +810,8 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
           </Card>
 
           {MERGED_LISTING_WORKFLOW_ENABLED && <CompetitorStudyComparison
-            analyses={analyses.filter(row => selectedIds.has(row.id))}
+            projectId={selectedProjectId}
+            analyses={analyses.filter(row => researchSelectedIds.has(row.id))}
             pendingIds={pendingStudyIds}
             onConfirm={analysis => { void reviewStudy(analysis, "confirm"); }}
             onUnlock={analysis => { void reviewStudy(analysis, "unlock"); }}
