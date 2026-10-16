@@ -1,0 +1,4022 @@
+{
+  "version": "assistant-source-projection-partition/1",
+  "mode": "offline-assistant-projection-partition-candidate",
+  "status": "pending-native",
+  "approvedForExecution": false,
+  "databaseConnected": false,
+  "sqlExecuted": false,
+  "DBExecutions": 0,
+  "dedicatedMigration": {
+    "path": "drizzle/0230_assistant_configurations.sql",
+    "sha256": "88b08b6852381336d06af255e25c6dd6a5ed574b7ed27c94b2b86db34fe080e8"
+  },
+  "assistantSchema": {
+    "path": "drizzle/schema/assistantConfigurations.ts",
+    "sha256": "e07c4126be9e5152db9f28ce742291e05290006901ddb37ac2175e06eb66ae2b"
+  },
+  "indexSource": {
+    "path": "drizzle/schema/index.ts",
+    "sha256": "83ad4960a3116d5d8274ee4377ae42ef6f7d109c074bbddc72c1ab0534d0104c"
+  },
+  "dedicatedTables": [
+    "emperor_assistant_configuration_versions",
+    "emperor_assistant_configurations"
+  ],
+  "unchangedExistingExclusions": [
+    "image_asset_license_evidence_revisions",
+    "image_controlled_upload_receipts",
+    "image_workflow_snapshot_state_events",
+    "image_workflow_stage_snapshots",
+    "image_workflow_version_scopes"
+  ],
+  "actualSourceFiles": [
+    {
+      "path": "drizzle/schema/acquisition.ts",
+      "sha256": "fd203c102235ce3f1c5c8510a880c1bdd89f920998e9e481b1821919ac69857c"
+    },
+    {
+      "path": "drizzle/schema/ads.ts",
+      "sha256": "257b12961beb58ab5627a08999efadfee9a2067ec4dc5ffc2525fd6c9cf394a0"
+    },
+    {
+      "path": "drizzle/schema/ai_os.ts",
+      "sha256": "f6210f7c976ccb2e7a50adac5ba32158b746c172131f2a5a0817b4fe9b5e8e2a"
+    },
+    {
+      "path": "drizzle/schema/assistantConfigurations.ts",
+      "sha256": "e07c4126be9e5152db9f28ce742291e05290006901ddb37ac2175e06eb66ae2b"
+    },
+    {
+      "path": "drizzle/schema/auth.ts",
+      "sha256": "47ae30b38a7f72e74726b77d7dd5f2995c2c371ba46f95c933fed2032b14f2d4"
+    },
+    {
+      "path": "drizzle/schema/image.ts",
+      "sha256": "c5f6d3aea1b65ccf41bb81c0de8a7bf04ecc5dd32db28fd035c6cb8c39b64dea"
+    },
+    {
+      "path": "drizzle/schema/imageAssetPolicies.ts",
+      "sha256": "0bcda167aded1bfa9dcf78287433761b0d40e0878f9606cfbfec72725cf0daca"
+    },
+    {
+      "path": "drizzle/schema/imageAssetTrustLedger.ts",
+      "sha256": "445b64e1f7afab5baa692b5d2acd35acbdee9c5f5d9af523717f2bb45f3e3a83"
+    },
+    {
+      "path": "drizzle/schema/imageWorkflowVersions.ts",
+      "sha256": "c84958f3b33a838a921db2ff7113974f3a586a35b5198c2512a38c76d31f1cf3"
+    },
+    {
+      "path": "drizzle/schema/index.ts",
+      "sha256": "83ad4960a3116d5d8274ee4377ae42ef6f7d109c074bbddc72c1ab0534d0104c"
+    },
+    {
+      "path": "drizzle/schema/knowledge.ts",
+      "sha256": "7f462909b1c41c7211fb06911aa3d7910ee1502e54ff340b5468b456563b2079"
+    },
+    {
+      "path": "drizzle/schema/listing.ts",
+      "sha256": "8eea3dc5e7f1a6bcd572605ffac7b9acc7bce48c31529113b0780dbf17ce4c4f"
+    },
+    {
+      "path": "drizzle/schema/listingRevisions.ts",
+      "sha256": "b57935085ad2a910830a1e2e509f2a39d83ba88216f958891e51713045919a4a"
+    },
+    {
+      "path": "drizzle/schema/monitoring.ts",
+      "sha256": "502bcbd219005df91ea8e0913d51b58630421e36fc1a7d11607c45fa6e6015e5"
+    },
+    {
+      "path": "drizzle/schema/ops.ts",
+      "sha256": "cdc63f7557ee0c086a120501bb24c8ad897a24540ec2fb00813f7b5f05a11d11"
+    },
+    {
+      "path": "drizzle/schema/project.ts",
+      "sha256": "efa41fec78824cae1ce0473b41566b80701606ce58b5286702159b1dfa4e3611"
+    },
+    {
+      "path": "drizzle/schema/skillDistillation.ts",
+      "sha256": "b87499d2aeaea8129231b2ebeb92dd470d275fc474d24cc4a5086ac63b9ad461"
+    },
+    {
+      "path": "drizzle/schema/video.ts",
+      "sha256": "6eb078c74386762843274b513bcf6cbc1d6ae72e03ed6a1cfc101761f9ef9f48"
+    },
+    {
+      "path": "server/domains/ops/workspaceContext.ts",
+      "sha256": "a25652858ed79f28291c9a3fe459bf6b152d43c4195daead5b488cca2023999b"
+    }
+  ],
+  "actualSourceSha256": "07d0a776f5c6116256a5408bb14c66bb4e98b68f8cf06d22a57b6e2ab7b34678",
+  "historicalSourceAncestry": {
+    "historicalSourceSha256": "7b0b730998509d2ba70dc7b771bf5a6233146c58b35d2ef83bf028945a2c1a6f",
+    "actualCurrentMetadataUsesHistoricalVector": false,
+    "proof": "Only remove the pinned assistant schema and substitute the pinned historical index digest in the current source vector.",
+    "removedSource": "drizzle/schema/assistantConfigurations.ts",
+    "substitutedIndexSha256": "e2990343f4c0ea8b16d21a78e54c696044b45a0cee5159abb7325411fe68ea29"
+  },
+  "baseWholeSqlIdentity": {
+    "sha256": "c2ea534b048427e7b3b464dd37ec442524cf5e8dd1ec80fac3e514259957a6aa",
+    "historicalSha256": "c2ea534b048427e7b3b464dd37ec442524cf5e8dd1ec80fac3e514259957a6aa",
+    "exactBytes": true
+  },
+  "projections": {
+    "full": {
+      "sqlSha256": "6223c0db894742328c76960e9ff5a5a9b54681384df0ac04a7d1721d13ef731b",
+      "sourceSha256": "07d0a776f5c6116256a5408bb14c66bb4e98b68f8cf06d22a57b6e2ab7b34678",
+      "metadataSha256": "da3637663718515c3db8d0290da4cf09a0e948901c40c891811f9e760e5e13b4",
+      "tableCount": 289,
+      "ddlCount": 408,
+      "tableNames": [
+        "acquisition_asset_candidates",
+        "acquisition_confirmed_snapshots",
+        "acquisition_consumer_links",
+        "acquisition_jobs",
+        "acquisition_provider_profiles",
+        "acquisition_raw_artifacts",
+        "acquisition_runs",
+        "acquisition_snapshot_revisions",
+        "acquisition_source_snapshots",
+        "adStructures",
+        "ad_analysis_tasks",
+        "ad_automation_rules",
+        "ad_campaign_reports",
+        "ad_clinic_records",
+        "ad_competitor_ranks",
+        "ad_daily_business_reports",
+        "ad_daily_impression_share_reports",
+        "ad_daily_placement_reports",
+        "ad_daily_sb_benchmark_reports",
+        "ad_daily_search_term_reports",
+        "ad_diagnoses",
+        "ad_dsp_reports",
+        "ad_hourly_reports",
+        "ad_keyword_meta",
+        "ad_keyword_tiers",
+        "ad_keyword_weekly",
+        "ad_order_hourly",
+        "ad_placement_reports",
+        "ad_portfolio_mappings",
+        "ad_product_stages",
+        "ad_report_analysis_records",
+        "ad_report_imports",
+        "ad_report_uploads",
+        "ad_search_term_reports",
+        "ad_sop_tasks",
+        "ai_artifact_consumptions",
+        "ai_artifact_selection_events",
+        "ai_artifacts",
+        "ai_data_archive_items",
+        "ai_data_archive_runs",
+        "ai_job_dead_letters",
+        "ai_job_workers",
+        "ai_jobs",
+        "ai_operational_alerts",
+        "ai_storage_objects",
+        "amazon_monitor_runs",
+        "amazon_monitor_schedules",
+        "analysisVersions",
+        "asin_logs",
+        "asin_permissions",
+        "asin_status_cache",
+        "asin_tag_assignments",
+        "asin_tag_definitions",
+        "batch_logs",
+        "batch_products",
+        "batch_step_configs",
+        "budget_tracking",
+        "buyer_questions",
+        "check_item_overrides",
+        "competitorAnalyses",
+        "competitorComparisonReports",
+        "competitor_ad_benchmarks",
+        "competitor_image_analyses",
+        "competitor_monitors",
+        "competitor_reports",
+        "competitor_snapshots",
+        "conversion_check_items",
+        "conversion_comparisons",
+        "conversion_scores",
+        "conversion_suggestions",
+        "custom_dashboards",
+        "customer_profiles",
+        "dashboard_widgets",
+        "data_imports",
+        "database_slow_query_samples",
+        "dev_analysis_reports",
+        "dev_analysis_stage_conflicts",
+        "dev_analysis_stages",
+        "dev_bom_items",
+        "dev_bom_summary",
+        "dev_external_data",
+        "dev_global_suppliers",
+        "dev_import_apply_snapshots",
+        "dev_import_batches",
+        "dev_manual_assets",
+        "dev_module_locks",
+        "dev_mold_costs",
+        "dev_offsite_analyses",
+        "dev_panorama_market_insights",
+        "dev_panorama_status",
+        "dev_panorama_versions",
+        "dev_product_manuals",
+        "dev_product_profiles",
+        "dev_product_tags",
+        "dev_products",
+        "dev_profit_calculations",
+        "dev_project_progress",
+        "dev_project_scores",
+        "dev_project_tag_categories",
+        "dev_project_tag_items",
+        "dev_projects",
+        "dev_reviews",
+        "dev_suppliers",
+        "dev_tag_dimensions",
+        "dev_test_reports",
+        "dev_time_plans",
+        "dev_uploaded_files",
+        "email_replies",
+        "email_templates",
+        "emperor_agent_artifacts",
+        "emperor_agent_checkpoints",
+        "emperor_agent_events",
+        "emperor_agent_runs",
+        "emperor_agent_template_versions",
+        "emperor_agents",
+        "emperor_ai_os_evaluations",
+        "emperor_ai_os_metrics",
+        "emperor_assistant_configuration_versions",
+        "emperor_assistant_configurations",
+        "emperor_conversation_attachments",
+        "emperor_conversation_knowledge_refs",
+        "emperor_conversation_messages",
+        "emperor_conversation_plan_steps",
+        "emperor_conversation_plans",
+        "emperor_conversations",
+        "emperor_execution_recovery_requests",
+        "emperor_execution_state_snapshots",
+        "emperor_external_knowledge_callers",
+        "emperor_knowledge",
+        "emperor_mcp_connectors",
+        "emperor_model_providers",
+        "emperor_scheduled_tasks",
+        "emperor_secret_key_versions",
+        "emperor_skill_runs",
+        "emperor_skills",
+        "emperor_tool_runs",
+        "emperor_tool_secrets",
+        "emperor_tools",
+        "execution_reviews",
+        "expression_group_images",
+        "expression_groups",
+        "image_acquisition_capability_coverage_revisions",
+        "image_asset_policy_revisions",
+        "image_asset_source_references",
+        "image_assets",
+        "image_competitor_asset_facts",
+        "image_competitor_gallery_analysis_versions",
+        "image_competitor_gallery_selection_versions",
+        "image_competitor_research_subjects",
+        "image_expression_analysis_versions",
+        "image_expression_asset_links",
+        "image_expression_selection_versions",
+        "image_step0_synthesis_versions",
+        "image_workflow_sessions",
+        "image_workflow_step0_artifacts",
+        "image_workflow_step4_image_versions",
+        "inventory_config",
+        "inventory_snapshots",
+        "kb_bot_conversations",
+        "kb_bot_messages",
+        "kb_call_logs",
+        "kb_feedback",
+        "kb_image_sets",
+        "kb_images",
+        "kb_intel_collect_logs",
+        "kb_intel_items",
+        "kb_intel_sources",
+        "kb_listing_copywriting",
+        "kb_operation_skills",
+        "kb_product_innovations",
+        "kb_sync_logs",
+        "kb_tag_definitions",
+        "kb_transfer_item_receipts",
+        "kb_transfer_stages",
+        "kb_videos",
+        "keyword_daily_records",
+        "keyword_monitors",
+        "keyword_snapshots",
+        "keyword_trackings",
+        "keywords",
+        "knowledge_claim_ledger_consistency_decisions",
+        "knowledge_claim_ledger_links",
+        "knowledge_claim_ledgers",
+        "knowledge_distillation_evidence",
+        "knowledge_distillation_projects",
+        "knowledge_distillation_sources",
+        "knowledge_skill_drafts",
+        "knowledge_skill_feedback",
+        "knowledge_skill_review_events",
+        "lingxing_api_logs",
+        "lingxing_config",
+        "lingxing_product_weekly",
+        "listingVersions",
+        "listing_bullet_candidates",
+        "listing_complete_snapshots",
+        "listing_core_revisions",
+        "listing_fact_revisions",
+        "listing_review_revisions",
+        "listings",
+        "login_logs",
+        "meeting_records",
+        "negativeKeywords",
+        "notifications",
+        "off_ai_analysis_logs",
+        "off_attribution_links",
+        "off_campaign_analytics",
+        "off_campaigns",
+        "off_collaborations",
+        "off_content_calendar",
+        "off_content_submissions",
+        "off_influencer_scores",
+        "off_influencers",
+        "off_matrix_groups",
+        "off_outreach_messages",
+        "off_social_accounts",
+        "operator_name_mappings",
+        "ops_ad_mcp_campaign_daily_facts",
+        "ops_ad_mcp_fact_revisions",
+        "ops_ad_mcp_product_daily_facts",
+        "ops_ad_mcp_profiles",
+        "ops_asin_daily_snapshots",
+        "ops_asin_lifecycle_statuses",
+        "ops_external_sync_batches",
+        "ops_external_sync_confirmations",
+        "ops_external_sync_rows",
+        "ops_import_history",
+        "ops_inventory_owner_assignment_audits",
+        "ops_inventory_owner_assignments",
+        "ops_inventory_planning_parameters",
+        "ops_inventory_planning_versions",
+        "ops_lingxing_sync_schedules",
+        "ops_local_inventory_adjustments",
+        "ops_monthly_financial_profits",
+        "ops_plan_actions",
+        "ops_plan_summaries",
+        "ops_plans",
+        "ops_replenishment_plans",
+        "organizations",
+        "product_basic_info",
+        "product_logs",
+        "product_monthly_summary",
+        "product_ops_daily_records",
+        "product_ops_plans",
+        "product_profiles",
+        "product_todos",
+        "product_variants",
+        "product_weekly_ops",
+        "production_config",
+        "profit_alert_rules",
+        "profit_snapshots",
+        "projectFiles",
+        "project_assignments",
+        "projects",
+        "promotion_phases",
+        "remote_usage_snapshots",
+        "replenishment_predictions",
+        "return_analysis_cache",
+        "reviewAggregations",
+        "reviewImports",
+        "review_records",
+        "review_replies",
+        "role_permissions",
+        "saihu_product_weekly",
+        "search_term_actions",
+        "security_access_policies",
+        "security_audit_logs",
+        "sellingPointDrafts",
+        "service_tasks",
+        "shipping_batches",
+        "sop_access_grants",
+        "step_time_history",
+        "step_time_templates",
+        "system_settings",
+        "team_tasks",
+        "usage_stats",
+        "user_settings",
+        "users",
+        "video_competitor_scripts",
+        "video_competitor_summary",
+        "video_edit_scripts",
+        "video_product_snapshots",
+        "video_script_sections",
+        "video_script_shots",
+        "video_script_subtopics",
+        "video_script_versions",
+        "video_scripts",
+        "video_spv_segments",
+        "workspace_memberships",
+        "workspaces"
+      ]
+    },
+    "base": {
+      "sqlSha256": "c2ea534b048427e7b3b464dd37ec442524cf5e8dd1ec80fac3e514259957a6aa",
+      "sourceSha256": "07d0a776f5c6116256a5408bb14c66bb4e98b68f8cf06d22a57b6e2ab7b34678",
+      "metadataSha256": "aa771a42d03025adaff67ebbfc93cb6fc8ecad8421a7879447b1e395c2290dbf",
+      "tableCount": 287,
+      "ddlCount": 406,
+      "tableNames": [
+        "acquisition_asset_candidates",
+        "acquisition_confirmed_snapshots",
+        "acquisition_consumer_links",
+        "acquisition_jobs",
+        "acquisition_provider_profiles",
+        "acquisition_raw_artifacts",
+        "acquisition_runs",
+        "acquisition_snapshot_revisions",
+        "acquisition_source_snapshots",
+        "adStructures",
+        "ad_analysis_tasks",
+        "ad_automation_rules",
+        "ad_campaign_reports",
+        "ad_clinic_records",
+        "ad_competitor_ranks",
+        "ad_daily_business_reports",
+        "ad_daily_impression_share_reports",
+        "ad_daily_placement_reports",
+        "ad_daily_sb_benchmark_reports",
+        "ad_daily_search_term_reports",
+        "ad_diagnoses",
+        "ad_dsp_reports",
+        "ad_hourly_reports",
+        "ad_keyword_meta",
+        "ad_keyword_tiers",
+        "ad_keyword_weekly",
+        "ad_order_hourly",
+        "ad_placement_reports",
+        "ad_portfolio_mappings",
+        "ad_product_stages",
+        "ad_report_analysis_records",
+        "ad_report_imports",
+        "ad_report_uploads",
+        "ad_search_term_reports",
+        "ad_sop_tasks",
+        "ai_artifact_consumptions",
+        "ai_artifact_selection_events",
+        "ai_artifacts",
+        "ai_data_archive_items",
+        "ai_data_archive_runs",
+        "ai_job_dead_letters",
+        "ai_job_workers",
+        "ai_jobs",
+        "ai_operational_alerts",
+        "ai_storage_objects",
+        "amazon_monitor_runs",
+        "amazon_monitor_schedules",
+        "analysisVersions",
+        "asin_logs",
+        "asin_permissions",
+        "asin_status_cache",
+        "asin_tag_assignments",
+        "asin_tag_definitions",
+        "batch_logs",
+        "batch_products",
+        "batch_step_configs",
+        "budget_tracking",
+        "buyer_questions",
+        "check_item_overrides",
+        "competitorAnalyses",
+        "competitorComparisonReports",
+        "competitor_ad_benchmarks",
+        "competitor_image_analyses",
+        "competitor_monitors",
+        "competitor_reports",
+        "competitor_snapshots",
+        "conversion_check_items",
+        "conversion_comparisons",
+        "conversion_scores",
+        "conversion_suggestions",
+        "custom_dashboards",
+        "customer_profiles",
+        "dashboard_widgets",
+        "data_imports",
+        "database_slow_query_samples",
+        "dev_analysis_reports",
+        "dev_analysis_stage_conflicts",
+        "dev_analysis_stages",
+        "dev_bom_items",
+        "dev_bom_summary",
+        "dev_external_data",
+        "dev_global_suppliers",
+        "dev_import_apply_snapshots",
+        "dev_import_batches",
+        "dev_manual_assets",
+        "dev_module_locks",
+        "dev_mold_costs",
+        "dev_offsite_analyses",
+        "dev_panorama_market_insights",
+        "dev_panorama_status",
+        "dev_panorama_versions",
+        "dev_product_manuals",
+        "dev_product_profiles",
+        "dev_product_tags",
+        "dev_products",
+        "dev_profit_calculations",
+        "dev_project_progress",
+        "dev_project_scores",
+        "dev_project_tag_categories",
+        "dev_project_tag_items",
+        "dev_projects",
+        "dev_reviews",
+        "dev_suppliers",
+        "dev_tag_dimensions",
+        "dev_test_reports",
+        "dev_time_plans",
+        "dev_uploaded_files",
+        "email_replies",
+        "email_templates",
+        "emperor_agent_artifacts",
+        "emperor_agent_checkpoints",
+        "emperor_agent_events",
+        "emperor_agent_runs",
+        "emperor_agent_template_versions",
+        "emperor_agents",
+        "emperor_ai_os_evaluations",
+        "emperor_ai_os_metrics",
+        "emperor_conversation_attachments",
+        "emperor_conversation_knowledge_refs",
+        "emperor_conversation_messages",
+        "emperor_conversation_plan_steps",
+        "emperor_conversation_plans",
+        "emperor_conversations",
+        "emperor_execution_recovery_requests",
+        "emperor_execution_state_snapshots",
+        "emperor_external_knowledge_callers",
+        "emperor_knowledge",
+        "emperor_mcp_connectors",
+        "emperor_model_providers",
+        "emperor_scheduled_tasks",
+        "emperor_secret_key_versions",
+        "emperor_skill_runs",
+        "emperor_skills",
+        "emperor_tool_runs",
+        "emperor_tool_secrets",
+        "emperor_tools",
+        "execution_reviews",
+        "expression_group_images",
+        "expression_groups",
+        "image_acquisition_capability_coverage_revisions",
+        "image_asset_policy_revisions",
+        "image_asset_source_references",
+        "image_assets",
+        "image_competitor_asset_facts",
+        "image_competitor_gallery_analysis_versions",
+        "image_competitor_gallery_selection_versions",
+        "image_competitor_research_subjects",
+        "image_expression_analysis_versions",
+        "image_expression_asset_links",
+        "image_expression_selection_versions",
+        "image_step0_synthesis_versions",
+        "image_workflow_sessions",
+        "image_workflow_step0_artifacts",
+        "image_workflow_step4_image_versions",
+        "inventory_config",
+        "inventory_snapshots",
+        "kb_bot_conversations",
+        "kb_bot_messages",
+        "kb_call_logs",
+        "kb_feedback",
+        "kb_image_sets",
+        "kb_images",
+        "kb_intel_collect_logs",
+        "kb_intel_items",
+        "kb_intel_sources",
+        "kb_listing_copywriting",
+        "kb_operation_skills",
+        "kb_product_innovations",
+        "kb_sync_logs",
+        "kb_tag_definitions",
+        "kb_transfer_item_receipts",
+        "kb_transfer_stages",
+        "kb_videos",
+        "keyword_daily_records",
+        "keyword_monitors",
+        "keyword_snapshots",
+        "keyword_trackings",
+        "keywords",
+        "knowledge_claim_ledger_consistency_decisions",
+        "knowledge_claim_ledger_links",
+        "knowledge_claim_ledgers",
+        "knowledge_distillation_evidence",
+        "knowledge_distillation_projects",
+        "knowledge_distillation_sources",
+        "knowledge_skill_drafts",
+        "knowledge_skill_feedback",
+        "knowledge_skill_review_events",
+        "lingxing_api_logs",
+        "lingxing_config",
+        "lingxing_product_weekly",
+        "listingVersions",
+        "listing_bullet_candidates",
+        "listing_complete_snapshots",
+        "listing_core_revisions",
+        "listing_fact_revisions",
+        "listing_review_revisions",
+        "listings",
+        "login_logs",
+        "meeting_records",
+        "negativeKeywords",
+        "notifications",
+        "off_ai_analysis_logs",
+        "off_attribution_links",
+        "off_campaign_analytics",
+        "off_campaigns",
+        "off_collaborations",
+        "off_content_calendar",
+        "off_content_submissions",
+        "off_influencer_scores",
+        "off_influencers",
+        "off_matrix_groups",
+        "off_outreach_messages",
+        "off_social_accounts",
+        "operator_name_mappings",
+        "ops_ad_mcp_campaign_daily_facts",
+        "ops_ad_mcp_fact_revisions",
+        "ops_ad_mcp_product_daily_facts",
+        "ops_ad_mcp_profiles",
+        "ops_asin_daily_snapshots",
+        "ops_asin_lifecycle_statuses",
+        "ops_external_sync_batches",
+        "ops_external_sync_confirmations",
+        "ops_external_sync_rows",
+        "ops_import_history",
+        "ops_inventory_owner_assignment_audits",
+        "ops_inventory_owner_assignments",
+        "ops_inventory_planning_parameters",
+        "ops_inventory_planning_versions",
+        "ops_lingxing_sync_schedules",
+        "ops_local_inventory_adjustments",
+        "ops_monthly_financial_profits",
+        "ops_plan_actions",
+        "ops_plan_summaries",
+        "ops_plans",
+        "ops_replenishment_plans",
+        "organizations",
+        "product_basic_info",
+        "product_logs",
+        "product_monthly_summary",
+        "product_ops_daily_records",
+        "product_ops_plans",
+        "product_profiles",
+        "product_todos",
+        "product_variants",
+        "product_weekly_ops",
+        "production_config",
+        "profit_alert_rules",
+        "profit_snapshots",
+        "projectFiles",
+        "project_assignments",
+        "projects",
+        "promotion_phases",
+        "remote_usage_snapshots",
+        "replenishment_predictions",
+        "return_analysis_cache",
+        "reviewAggregations",
+        "reviewImports",
+        "review_records",
+        "review_replies",
+        "role_permissions",
+        "saihu_product_weekly",
+        "search_term_actions",
+        "security_access_policies",
+        "security_audit_logs",
+        "sellingPointDrafts",
+        "service_tasks",
+        "shipping_batches",
+        "sop_access_grants",
+        "step_time_history",
+        "step_time_templates",
+        "system_settings",
+        "team_tasks",
+        "usage_stats",
+        "user_settings",
+        "users",
+        "video_competitor_scripts",
+        "video_competitor_summary",
+        "video_edit_scripts",
+        "video_product_snapshots",
+        "video_script_sections",
+        "video_script_shots",
+        "video_script_subtopics",
+        "video_script_versions",
+        "video_scripts",
+        "video_spv_segments",
+        "workspace_memberships",
+        "workspaces"
+      ]
+    },
+    "delta": {
+      "sqlSha256": "b5b29c48c325764949b011784c625f5eed1b33a89ca535fe73a4e3846fb81999",
+      "sourceSha256": "07d0a776f5c6116256a5408bb14c66bb4e98b68f8cf06d22a57b6e2ab7b34678",
+      "metadataSha256": "9c07ca49d061d546f2fb948dcdce39f5565f91e6c3acea72ec6afc8f9165c4cc",
+      "tableCount": 2,
+      "ddlCount": 2,
+      "tableNames": [
+        "emperor_assistant_configuration_versions",
+        "emperor_assistant_configurations"
+      ]
+    }
+  },
+  "statementPartition": [
+    {
+      "sourceIndex": 0,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "acquisition_asset_candidates",
+      "indexName": null,
+      "sha256": "27868f8654c21971b47fdc5d06c6b17e48370c6088351b8b14f45c0d82cb30b9"
+    },
+    {
+      "sourceIndex": 1,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "acquisition_confirmed_snapshots",
+      "indexName": null,
+      "sha256": "95a7b6b111db790d058caad86b8840f64186c931948045eb3450e8926a9fbc3f"
+    },
+    {
+      "sourceIndex": 2,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "acquisition_consumer_links",
+      "indexName": null,
+      "sha256": "734d620f283238b8d5001bf1b6ab2edaf790b9ca55496e4c6b480b6b90687116"
+    },
+    {
+      "sourceIndex": 3,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "acquisition_jobs",
+      "indexName": null,
+      "sha256": "bc563705cb50cc0397553feaa6774055d536a30932e96b43de1a74ce25b161be"
+    },
+    {
+      "sourceIndex": 4,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "acquisition_provider_profiles",
+      "indexName": null,
+      "sha256": "1e3c609505fac9f22397f1eadc9c44a7714b05e3dc55d851326b2682e51c5e90"
+    },
+    {
+      "sourceIndex": 5,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "acquisition_raw_artifacts",
+      "indexName": null,
+      "sha256": "d28fa82f0988bb84785037399c17e9d776173401a1048cc4ecb7e19011b0a04e"
+    },
+    {
+      "sourceIndex": 6,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "acquisition_runs",
+      "indexName": null,
+      "sha256": "ef9b4055851fe44a76d482b0a8704d03a9cc9681d9356face53c58157f501f03"
+    },
+    {
+      "sourceIndex": 7,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "acquisition_snapshot_revisions",
+      "indexName": null,
+      "sha256": "559af8b26435043fa8d3e72fbb9fa62d44e129eb6edd83b91a2e8e4244a21007"
+    },
+    {
+      "sourceIndex": 8,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "acquisition_source_snapshots",
+      "indexName": null,
+      "sha256": "7647e1546ddb2227b4004e601d163c0e4e9eb5926100bb0a3a97d35a206c9adb"
+    },
+    {
+      "sourceIndex": 9,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_analysis_tasks",
+      "indexName": null,
+      "sha256": "e64efc706d0448874879711371f4a9e7492925a2baf42299c9b46755e68d3e33"
+    },
+    {
+      "sourceIndex": 10,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_automation_rules",
+      "indexName": null,
+      "sha256": "f72a12b41680fc8060ebd88a286e501eeac31b9541f4212524f048d650f246f5"
+    },
+    {
+      "sourceIndex": 11,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_campaign_reports",
+      "indexName": null,
+      "sha256": "a00e1825b0267726a24a083660d9b14530f43d1e37e209e33e337903ba418058"
+    },
+    {
+      "sourceIndex": 12,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_clinic_records",
+      "indexName": null,
+      "sha256": "7bead51ca79619cd5917d7b4f13513b9d171e1b863016c3986cacd1047d2dc56"
+    },
+    {
+      "sourceIndex": 13,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_competitor_ranks",
+      "indexName": null,
+      "sha256": "d66c00588330bc4080e77ce73eb3f7563ba9802ec85d265bb6b5df917d17c74a"
+    },
+    {
+      "sourceIndex": 14,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_daily_business_reports",
+      "indexName": null,
+      "sha256": "19dec836dddfe99ec268011dd6129a5d948c494916123828f3a873f17266112d"
+    },
+    {
+      "sourceIndex": 15,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_daily_impression_share_reports",
+      "indexName": null,
+      "sha256": "23a6cafa3cc13392da3c37e71b4106603a50592dd0d9ec72f2c0cf3f7ac60625"
+    },
+    {
+      "sourceIndex": 16,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_daily_placement_reports",
+      "indexName": null,
+      "sha256": "c83f7424c1044a5fb0ae2e5d2316a655f69692dd32fac56f7a962fa3cf2c7545"
+    },
+    {
+      "sourceIndex": 17,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_daily_sb_benchmark_reports",
+      "indexName": null,
+      "sha256": "3a8bb01a0094adc16a173726b3fc2181eaf909812dc7e3ddff818a7357cd1e66"
+    },
+    {
+      "sourceIndex": 18,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_daily_search_term_reports",
+      "indexName": null,
+      "sha256": "c3ddfd851dbf68b91a01eb2624e8cf004cade19aa7041d342c3eac8b65b22e6c"
+    },
+    {
+      "sourceIndex": 19,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_diagnoses",
+      "indexName": null,
+      "sha256": "1a5ceb8b61676ca5eecd5e1aa163c31b5ac78fadb68c006dd56126f352ece261"
+    },
+    {
+      "sourceIndex": 20,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_dsp_reports",
+      "indexName": null,
+      "sha256": "4dfe83f7f4b57ed51986faef832da3ec949a00f7c25388aeb54886f638ea26e8"
+    },
+    {
+      "sourceIndex": 21,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_hourly_reports",
+      "indexName": null,
+      "sha256": "36e34b66abf03a8a44f0b97fb62aa26f805ed0563e0389cf7b66dedd848a5904"
+    },
+    {
+      "sourceIndex": 22,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_keyword_meta",
+      "indexName": null,
+      "sha256": "b3ca4fa425846a48a48d3e5a8c96ed285889909587dbc5025c9fd64318702021"
+    },
+    {
+      "sourceIndex": 23,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_keyword_tiers",
+      "indexName": null,
+      "sha256": "5c11e8f00277ab80c1871a1810ac791dd075135c4b1869712d0307c63d0fc925"
+    },
+    {
+      "sourceIndex": 24,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_keyword_weekly",
+      "indexName": null,
+      "sha256": "bffb15595f2f2e4c130832ed9df80310c805665dd5ca25bc640fe63bca762c10"
+    },
+    {
+      "sourceIndex": 25,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_order_hourly",
+      "indexName": null,
+      "sha256": "cbbc2484e1d9a09cacd8c6c05b7b177328ff68f3d31c786964366ea1ac15eb2c"
+    },
+    {
+      "sourceIndex": 26,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_placement_reports",
+      "indexName": null,
+      "sha256": "29479ec45d02faf868da731649e782377ca9ec80703f67c2b373070549c5f68e"
+    },
+    {
+      "sourceIndex": 27,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_portfolio_mappings",
+      "indexName": null,
+      "sha256": "4cbe74402c98f43ccb54a021f1effccee451ff3e59fc3d258ff5cbad0bd5c565"
+    },
+    {
+      "sourceIndex": 28,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_product_stages",
+      "indexName": null,
+      "sha256": "8f84cab03f6f9bfc7b2b6bfd8feb4c1971d89f2fcb0056356114a66cfcc3e413"
+    },
+    {
+      "sourceIndex": 29,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_report_analysis_records",
+      "indexName": null,
+      "sha256": "4171989f27925649de92da49843815c47b3f99869db33b9c38554a5f8f70469f"
+    },
+    {
+      "sourceIndex": 30,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_report_imports",
+      "indexName": null,
+      "sha256": "fc3db60c42a8f540d6938e1df5d0c503d8142848a57be511eef8a112b3cf6f00"
+    },
+    {
+      "sourceIndex": 31,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_report_uploads",
+      "indexName": null,
+      "sha256": "4ea5937d4257664535bfe77e27eca32d51d7bcf3f9de005abc3067cbfe475af7"
+    },
+    {
+      "sourceIndex": 32,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_search_term_reports",
+      "indexName": null,
+      "sha256": "e8920e84b543d2269fba950a24862069abdb17fe5082e6c9a29e3ed0eae14987"
+    },
+    {
+      "sourceIndex": 33,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ad_sop_tasks",
+      "indexName": null,
+      "sha256": "070c09747a5789821a38999fb11e7792cf89a9b98e1a9f7333807651a3b482d1"
+    },
+    {
+      "sourceIndex": 34,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "adStructures",
+      "indexName": null,
+      "sha256": "37dee39fa3fff381609ed1ea23ba02cb6a10a3cc95ccd9366d20190de0be8d44"
+    },
+    {
+      "sourceIndex": 35,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ai_artifact_consumptions",
+      "indexName": null,
+      "sha256": "ec48fe6cbd7619a2c04dfcff1d88a93247af5159c5f65b3f9cf0c3be9269183e"
+    },
+    {
+      "sourceIndex": 36,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ai_artifact_selection_events",
+      "indexName": null,
+      "sha256": "f61ebc6388f3d3b1ce28339ac17a38b5044b19627935ce96fd4e938d2a03042e"
+    },
+    {
+      "sourceIndex": 37,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ai_artifacts",
+      "indexName": null,
+      "sha256": "b73a799051e7edf50c499008e4c3e1d39cb25c4d7b2cdcee5de244a2bc305512"
+    },
+    {
+      "sourceIndex": 38,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ai_data_archive_items",
+      "indexName": null,
+      "sha256": "04db3a53486f091c34187785b7473144761e74748137832f404206f0e7b31045"
+    },
+    {
+      "sourceIndex": 39,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ai_data_archive_runs",
+      "indexName": null,
+      "sha256": "bf0422b4dfbeb82030671dc76ad71ffefe0ea8f435c65e30f7da2a680613aacb"
+    },
+    {
+      "sourceIndex": 40,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ai_job_dead_letters",
+      "indexName": null,
+      "sha256": "e4a4ab2e664d134d6f036b8d50b89b96d6a3c3e262f213734076bfa893ecb88a"
+    },
+    {
+      "sourceIndex": 41,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ai_job_workers",
+      "indexName": null,
+      "sha256": "fde5aa0d8916dcd4ec0a3ad632fc85e76c9595174018db3806a02c2b7ec7f07e"
+    },
+    {
+      "sourceIndex": 42,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ai_jobs",
+      "indexName": null,
+      "sha256": "5b3e0bf2e212aa1571793deadd1301a0d9caa60a010e0ffa7d8643bdf22b86e9"
+    },
+    {
+      "sourceIndex": 43,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ai_operational_alerts",
+      "indexName": null,
+      "sha256": "63213bbc34f6f521ccd4ec57c93fe47310d1ad01513254c9d31619015a729f32"
+    },
+    {
+      "sourceIndex": 44,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ai_storage_objects",
+      "indexName": null,
+      "sha256": "890ea7e5d9e1a8a4bc16d5f515e2585f92de7614812669ae13f2b32a206823ff"
+    },
+    {
+      "sourceIndex": 45,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "amazon_monitor_runs",
+      "indexName": null,
+      "sha256": "ef1e437268ee1fc39864932b38d5d31665caedc9cde7203628ebd04831c4e536"
+    },
+    {
+      "sourceIndex": 46,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "amazon_monitor_schedules",
+      "indexName": null,
+      "sha256": "64478fdebeb447abd6416e8f18e2ad51b8d87a20fac19be0cc4a4b2b8bfac3a5"
+    },
+    {
+      "sourceIndex": 47,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "analysisVersions",
+      "indexName": null,
+      "sha256": "15d200424c75e8f528ec25f0896d94a83fe40bbbbe3c3a4a499ba308989cdd21"
+    },
+    {
+      "sourceIndex": 48,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "asin_logs",
+      "indexName": null,
+      "sha256": "f7d769e2b6ac62108445391c19e5a2ad3bbd0646a4a3e1fd0a946e992c01a4d3"
+    },
+    {
+      "sourceIndex": 49,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "asin_permissions",
+      "indexName": null,
+      "sha256": "7457fff888c02a15a2a67e3d35f1bc85e9e01434ea3cda696e43de86d81cd6a5"
+    },
+    {
+      "sourceIndex": 50,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "asin_status_cache",
+      "indexName": null,
+      "sha256": "5064c3d83a5289d1830d2f68af2b141cdb1ee1b2bb1f5a6e9b6ffb7e3412720c"
+    },
+    {
+      "sourceIndex": 51,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "asin_tag_assignments",
+      "indexName": null,
+      "sha256": "63f1a6af3327c74e0629200b453584f00ec5440fcb697c07bd06992bd2e410b5"
+    },
+    {
+      "sourceIndex": 52,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "asin_tag_definitions",
+      "indexName": null,
+      "sha256": "5854f7dee9342b0dc51222dbab78dc3d41c7a6b96605c9d4a24c029a81753092"
+    },
+    {
+      "sourceIndex": 53,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "batch_logs",
+      "indexName": null,
+      "sha256": "bd2d72577cadb8f16cc404361e785d4ca7e7391888a293c8e5c105160ec56d98"
+    },
+    {
+      "sourceIndex": 54,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "batch_products",
+      "indexName": null,
+      "sha256": "252f6971f0f129da0df7c5fc871d65a90756e2365398ba7035a950d0568e70f0"
+    },
+    {
+      "sourceIndex": 55,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "batch_step_configs",
+      "indexName": null,
+      "sha256": "c8f4a633ef9bbca8e52eb28a7c57378d1a457711609338be494c3dc1135eaf84"
+    },
+    {
+      "sourceIndex": 56,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "budget_tracking",
+      "indexName": null,
+      "sha256": "3a6a844fb3ec3b3ae1edfca0462e29b7acc631e56ebf3b83e6caad86da8464c0"
+    },
+    {
+      "sourceIndex": 57,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "buyer_questions",
+      "indexName": null,
+      "sha256": "415ca99a7ae2819d347b0f7d832606015d9129d25d1ca9f3a8fabdca3671a215"
+    },
+    {
+      "sourceIndex": 58,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "check_item_overrides",
+      "indexName": null,
+      "sha256": "94ffac69f6f589119c94cdadfeb08726ebd1e2ce933760b9301fa22456243b38"
+    },
+    {
+      "sourceIndex": 59,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "competitor_ad_benchmarks",
+      "indexName": null,
+      "sha256": "1220390a7cf7942fd16fa356e3d82e8af114817e36dfd92584ec3038fcad65fa"
+    },
+    {
+      "sourceIndex": 60,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "competitorAnalyses",
+      "indexName": null,
+      "sha256": "6bed539edb1787433c1881ce22e7a03770c3969b33ad1fe159f885061bb118d5"
+    },
+    {
+      "sourceIndex": 61,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "competitorComparisonReports",
+      "indexName": null,
+      "sha256": "dd6150fcdc08428b9a2284321b098e950738eb5021837dd5b49878bd31959637"
+    },
+    {
+      "sourceIndex": 62,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "competitor_image_analyses",
+      "indexName": null,
+      "sha256": "04f70ca6fb9441aa2fc24dc1033004c86ac5400f5e18c1a8cbe3c634374f6319"
+    },
+    {
+      "sourceIndex": 63,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "competitor_monitors",
+      "indexName": null,
+      "sha256": "686b77c5c8359b1d4338f044d69f433b914175d6f3ad554e4d9a966f9e3cb4d0"
+    },
+    {
+      "sourceIndex": 64,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "competitor_reports",
+      "indexName": null,
+      "sha256": "d7f60ff60a7ed375f9f38bacbebd8bd49e7572da0233573ca31613d4c23b42e0"
+    },
+    {
+      "sourceIndex": 65,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "competitor_snapshots",
+      "indexName": null,
+      "sha256": "697699d02f179d5274767b8325fddd2f82373dfdab468c23fdc0852d1e80883f"
+    },
+    {
+      "sourceIndex": 66,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "conversion_check_items",
+      "indexName": null,
+      "sha256": "312329c1869c589699a6f67374c9095ac75e218cf3d5dc26d22fa996ef235dbf"
+    },
+    {
+      "sourceIndex": 67,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "conversion_comparisons",
+      "indexName": null,
+      "sha256": "243b115a228974ebb6c8c64982db8251252f1f7c7e72df8336b065c95584df36"
+    },
+    {
+      "sourceIndex": 68,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "conversion_scores",
+      "indexName": null,
+      "sha256": "438242b37b8f352b66e4551d1889f12c549e80986473786a6e8dad8c64b9fd55"
+    },
+    {
+      "sourceIndex": 69,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "conversion_suggestions",
+      "indexName": null,
+      "sha256": "866d47112acc4efba094a1dbb97a22b94c99c5a109018aa05cdca522f9cdae71"
+    },
+    {
+      "sourceIndex": 70,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "custom_dashboards",
+      "indexName": null,
+      "sha256": "d90171c16eeb055eaa58b3a19f56e35e74deae0470250972d3acf1abf3ef58da"
+    },
+    {
+      "sourceIndex": 71,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "customer_profiles",
+      "indexName": null,
+      "sha256": "7fd6027d41f8d13e91ea19453ce33cb2bbe689c34ba6f4cb1b45e2403526cbaa"
+    },
+    {
+      "sourceIndex": 72,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dashboard_widgets",
+      "indexName": null,
+      "sha256": "e324461ca5978facf22a93daa369128f65053f4393f693f7615d79a78f24e1c5"
+    },
+    {
+      "sourceIndex": 73,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "data_imports",
+      "indexName": null,
+      "sha256": "7457d3d3f5baf1f0f09be064baa2f0b83ec09e5814e0f521d46b0cee5a713475"
+    },
+    {
+      "sourceIndex": 74,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "database_slow_query_samples",
+      "indexName": null,
+      "sha256": "67ea4b123532f232ffec8decf00ac8eddbf2a9525b83e13cc7ef304125f7856c"
+    },
+    {
+      "sourceIndex": 75,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_analysis_reports",
+      "indexName": null,
+      "sha256": "dbe63fcee2d82aac1d9bff348e72726af87bdb930d20a0f7dc99c03afc116d05"
+    },
+    {
+      "sourceIndex": 76,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_analysis_stage_conflicts",
+      "indexName": null,
+      "sha256": "8c4247a2b58b151ab4c2f9871632e1fa9fec51031d665885b11d6e968e235f33"
+    },
+    {
+      "sourceIndex": 77,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_analysis_stages",
+      "indexName": null,
+      "sha256": "2c1eb2ee4216830c792b1c5860e5972e5db3359ad48a7cc21f139d0cf9330067"
+    },
+    {
+      "sourceIndex": 78,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_bom_items",
+      "indexName": null,
+      "sha256": "f9d6cc120ac43314a55b2f027657e6c5127badf7f3ca4a9ef381038a9853b758"
+    },
+    {
+      "sourceIndex": 79,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_bom_summary",
+      "indexName": null,
+      "sha256": "a5962984ccd41855ff4a0b9807958276224f4c55c49b166d9eb88d37df5af6c1"
+    },
+    {
+      "sourceIndex": 80,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_external_data",
+      "indexName": null,
+      "sha256": "8ff4cb8f2f08bf99a936e2713099d395c9577b6c88d25b384c4504f1082b3e9d"
+    },
+    {
+      "sourceIndex": 81,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_global_suppliers",
+      "indexName": null,
+      "sha256": "4d1c52a703279d6f59f05d2fbb7d83b0963c641068ef747d80b0cd8bdd1d685b"
+    },
+    {
+      "sourceIndex": 82,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_import_apply_snapshots",
+      "indexName": null,
+      "sha256": "da5677c44374767b203cd0b5c63c9739380b654183fd01fdc98d7bba2f9509c5"
+    },
+    {
+      "sourceIndex": 83,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_import_batches",
+      "indexName": null,
+      "sha256": "5e2ab3a2accc3fe68d1e4e4c20c7bd9c4d22d259f8c1db88b38b418c909ab751"
+    },
+    {
+      "sourceIndex": 84,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_manual_assets",
+      "indexName": null,
+      "sha256": "640896c5391b09b6347b0290f5516e650803b40fd3d1ef3863589a2057f3c6f6"
+    },
+    {
+      "sourceIndex": 85,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_module_locks",
+      "indexName": null,
+      "sha256": "1ea8a98147cb095c0219a87c1569e301c0641ad1fd58532a896068c415166f59"
+    },
+    {
+      "sourceIndex": 86,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_mold_costs",
+      "indexName": null,
+      "sha256": "1c0a98d52e70dd733d803302224b3168f91d7c0f1f1dead590be51cf62975c72"
+    },
+    {
+      "sourceIndex": 87,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_offsite_analyses",
+      "indexName": null,
+      "sha256": "fdee50d2b7fcb687fe5b0a15599bc0af340c9e69ee52ec2c06b2806bec0350d5"
+    },
+    {
+      "sourceIndex": 88,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_panorama_market_insights",
+      "indexName": null,
+      "sha256": "04f8515cfe0fa7e937374c8d6d2018aca61039098eac591541cbb32628967a30"
+    },
+    {
+      "sourceIndex": 89,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_panorama_status",
+      "indexName": null,
+      "sha256": "eb4e94fc141a1b5a1afa66d71761186ef6cb0479d057e3ce1bee4e40f55f2ea4"
+    },
+    {
+      "sourceIndex": 90,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_panorama_versions",
+      "indexName": null,
+      "sha256": "8096a4ee8bc6c4e6d895aeb1e8e931f462db3898b85a040d0892decab58d49ed"
+    },
+    {
+      "sourceIndex": 91,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_product_manuals",
+      "indexName": null,
+      "sha256": "c6a46e8a218791efaf656efeef8e3442005137fa3d9ba5b0ec738a274ab37202"
+    },
+    {
+      "sourceIndex": 92,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_product_profiles",
+      "indexName": null,
+      "sha256": "f00d406a980a0cff23f86e454d2cdb61a8b9e7a8451798c0ffd27ae33a66b2d7"
+    },
+    {
+      "sourceIndex": 93,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_product_tags",
+      "indexName": null,
+      "sha256": "9545899870e0fb90a0d1351c7e8973e834e973f08b2d6a2bddedd4b995cc5090"
+    },
+    {
+      "sourceIndex": 94,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_products",
+      "indexName": null,
+      "sha256": "6e11eafcb7d9d610f211e236cd14c0961991ece1f36bd22c5db380eb86624709"
+    },
+    {
+      "sourceIndex": 95,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_profit_calculations",
+      "indexName": null,
+      "sha256": "81870c264031abfadda7bf2f35325de507d98b740519e27394ae31092ee15766"
+    },
+    {
+      "sourceIndex": 96,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_project_progress",
+      "indexName": null,
+      "sha256": "ba815d2287ce137619b4e75b3b085f131a339556fac273783e61182914f3568b"
+    },
+    {
+      "sourceIndex": 97,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_project_scores",
+      "indexName": null,
+      "sha256": "08940008095ec87cfd34b81077fab660fbafb4a9f014187cc7db46e8f79d7dfa"
+    },
+    {
+      "sourceIndex": 98,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_project_tag_categories",
+      "indexName": null,
+      "sha256": "b65f4311fe6974356cb76c7d2755eafcef1a9b0c7ca8fc22d8d891fa3eb1e95c"
+    },
+    {
+      "sourceIndex": 99,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_project_tag_items",
+      "indexName": null,
+      "sha256": "9bc5682a81c015f80734ce4a411ec0cebc39e29c200cf75f3fb256c0bed6307c"
+    },
+    {
+      "sourceIndex": 100,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_projects",
+      "indexName": null,
+      "sha256": "186279c6985525d6a4d3a50bf2b98f59b45545e44e32ae8df078ddd15a90006d"
+    },
+    {
+      "sourceIndex": 101,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_reviews",
+      "indexName": null,
+      "sha256": "dbaafd4868c9e2301cc20547b1d31c1151b542af501b79e301157754c66aa9ac"
+    },
+    {
+      "sourceIndex": 102,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_suppliers",
+      "indexName": null,
+      "sha256": "e912f83754509334aa2f08f6c536116b5b37fa208b86473bc05e8e1909b95b37"
+    },
+    {
+      "sourceIndex": 103,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_tag_dimensions",
+      "indexName": null,
+      "sha256": "e0e3077f1e518869fce21308ab9c514fc5d9d2629468c5eda64b943e89d592a1"
+    },
+    {
+      "sourceIndex": 104,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_test_reports",
+      "indexName": null,
+      "sha256": "308c5e1859564769f5031ea073ec45c207c2abc2b0a834959c8733f6c0b57bdd"
+    },
+    {
+      "sourceIndex": 105,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_time_plans",
+      "indexName": null,
+      "sha256": "67abc3554668a9e4763114560e7c5e210997db37acc61606e29c0e707c05dde8"
+    },
+    {
+      "sourceIndex": 106,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "dev_uploaded_files",
+      "indexName": null,
+      "sha256": "8abcd6f99a3169593cde25d0cf98a3af56d3c566b73b90a722cc20bac070f81d"
+    },
+    {
+      "sourceIndex": 107,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "email_replies",
+      "indexName": null,
+      "sha256": "fb1dd704a4662a6ab5c17bc1b8a0e0d889b4780e5b48751765af76d8b2d129a1"
+    },
+    {
+      "sourceIndex": 108,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "email_templates",
+      "indexName": null,
+      "sha256": "e92031ae3309cb0fe17403c2b39ccc056ce10d6df00c538fbd48ea54112843b4"
+    },
+    {
+      "sourceIndex": 109,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_agent_artifacts",
+      "indexName": null,
+      "sha256": "a4bdbc276e656a99a24f5e13496e91dfdde6baeaf5fa440bb18e3b8cb739b30d"
+    },
+    {
+      "sourceIndex": 110,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_agent_checkpoints",
+      "indexName": null,
+      "sha256": "14f0969e1e5e4dc6776cc6c0aecf24a54755a7680e01d20ab652397839191a48"
+    },
+    {
+      "sourceIndex": 111,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_agent_events",
+      "indexName": null,
+      "sha256": "4ec0b961ad1d1fb705503b961d392d6de7459863b1a8ebe2e3981ebad536ed67"
+    },
+    {
+      "sourceIndex": 112,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_agent_runs",
+      "indexName": null,
+      "sha256": "9fa7ece81a1ad08e4bb633f4d5d70627f73a4dff9146550cc3d217a270977823"
+    },
+    {
+      "sourceIndex": 113,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_agent_template_versions",
+      "indexName": null,
+      "sha256": "6a5f12699bc99ad2e3624d6602754d331caa5ae3ad0113f4c43c0834a8abda9b"
+    },
+    {
+      "sourceIndex": 114,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_agents",
+      "indexName": null,
+      "sha256": "fbdcc768b3d0e0647d7e12f127f31abd24d62f4bc85cc933f727cee00db50329"
+    },
+    {
+      "sourceIndex": 115,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_ai_os_evaluations",
+      "indexName": null,
+      "sha256": "994ac158747c9a37cd38ffff25849fede310e7d2e06e4ba82ca074ac1bf004f9"
+    },
+    {
+      "sourceIndex": 116,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_ai_os_metrics",
+      "indexName": null,
+      "sha256": "3ee5ec55de1d4a7b27f23aa0c92320ddefa10027830c6a789d6ea23e54dfbdc3"
+    },
+    {
+      "sourceIndex": 117,
+      "partition": "delta",
+      "kind": "create-table",
+      "tableName": "emperor_assistant_configuration_versions",
+      "indexName": null,
+      "sha256": "eecaa3995a93d7a5300546e6877854f921ef72180d1a32c8060721284ab8f6b0"
+    },
+    {
+      "sourceIndex": 118,
+      "partition": "delta",
+      "kind": "create-table",
+      "tableName": "emperor_assistant_configurations",
+      "indexName": null,
+      "sha256": "f471fe8580c5690211fd8235dee37b32107d2f41dec709bf83c942054aeb5575"
+    },
+    {
+      "sourceIndex": 119,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_conversation_attachments",
+      "indexName": null,
+      "sha256": "a1e0615d37c19b1199e791a070abbd8225a261dde603c88107df5124040d4525"
+    },
+    {
+      "sourceIndex": 120,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_conversation_knowledge_refs",
+      "indexName": null,
+      "sha256": "4780d578896974b24dbef77aebb6e046c6f81c2aa48ac6689bcaa526ad83f385"
+    },
+    {
+      "sourceIndex": 121,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_conversation_messages",
+      "indexName": null,
+      "sha256": "3f4aa146868af6e8cc528e5290e31981262c1fb0b9314b492a9156916838d49a"
+    },
+    {
+      "sourceIndex": 122,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_conversation_plan_steps",
+      "indexName": null,
+      "sha256": "8e91bdd3e552751a9c9899d0882ae6a00496f13a9fa1afdbe6718b68c804e6cc"
+    },
+    {
+      "sourceIndex": 123,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_conversation_plans",
+      "indexName": null,
+      "sha256": "621a17b24f5735107abd48ca7d512b19b0f3bf630f08af4e6b93b7e7baf9ba18"
+    },
+    {
+      "sourceIndex": 124,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_conversations",
+      "indexName": null,
+      "sha256": "9e146892b934a72a868fe8180f6ea58d2735123d21b84f1beb8f4601d3a64f08"
+    },
+    {
+      "sourceIndex": 125,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_execution_recovery_requests",
+      "indexName": null,
+      "sha256": "5b3ee7781f55fea60549c60bafcd1386e10a9d177f0cb2eb7b2de2f36dcfdc3b"
+    },
+    {
+      "sourceIndex": 126,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_execution_state_snapshots",
+      "indexName": null,
+      "sha256": "9c5a0fb194ece7a37a42916763a092d9c661deaffb1375448d9939f2e651a352"
+    },
+    {
+      "sourceIndex": 127,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_external_knowledge_callers",
+      "indexName": null,
+      "sha256": "b832c76efcfdc65f4a3781e940e6e69dd0f953b6bd2c0d57bea2623dd10729b6"
+    },
+    {
+      "sourceIndex": 128,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_knowledge",
+      "indexName": null,
+      "sha256": "dbffd25aa83ebc3a454a4f388bf82dd2d2e1a3d7de3db7966d5c57682808e79c"
+    },
+    {
+      "sourceIndex": 129,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_mcp_connectors",
+      "indexName": null,
+      "sha256": "604c8e48315256882bcd0d685ce6e1619ce3f9a7b0d4514452f7c88df82fa8f2"
+    },
+    {
+      "sourceIndex": 130,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_model_providers",
+      "indexName": null,
+      "sha256": "a9388bd48ffccb07def68cb9eae36f5623368b950e4031ba053f6f7aa4bb0e15"
+    },
+    {
+      "sourceIndex": 131,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_scheduled_tasks",
+      "indexName": null,
+      "sha256": "cb4e42128cfd3c1183d622261fecba7eed350b883778d182578886831a5ccfa3"
+    },
+    {
+      "sourceIndex": 132,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_secret_key_versions",
+      "indexName": null,
+      "sha256": "6fbdff86f1adea7038651da3d0ad495284182a0860f9493b2b4bec23cee70362"
+    },
+    {
+      "sourceIndex": 133,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_skill_runs",
+      "indexName": null,
+      "sha256": "c8a00c49e992cee27ac3736f7337b30a36838dfe1c942be4529ede588adaa839"
+    },
+    {
+      "sourceIndex": 134,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_skills",
+      "indexName": null,
+      "sha256": "63a87d979dddf4742b38f3e7fd3c7c1467f3cef0d8b5de0e43b5437b7529acdd"
+    },
+    {
+      "sourceIndex": 135,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_tool_runs",
+      "indexName": null,
+      "sha256": "137cc28c42867b4858dd5269f320c102bfb1d13d7616316138b47e3ac2ae7e4d"
+    },
+    {
+      "sourceIndex": 136,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_tool_secrets",
+      "indexName": null,
+      "sha256": "0d5902cedb009d47a08cc0538a10f9c11726a95d05a5d128e5ef14c88221c183"
+    },
+    {
+      "sourceIndex": 137,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "emperor_tools",
+      "indexName": null,
+      "sha256": "9e1faaae7d69948a9d55cffcf01434ec229021542fc040ff60242a43ba64255a"
+    },
+    {
+      "sourceIndex": 138,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "execution_reviews",
+      "indexName": null,
+      "sha256": "10715770553506adbaeb1aff793e244df3f71cec981752de0d7887cea68fdd4e"
+    },
+    {
+      "sourceIndex": 139,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "expression_group_images",
+      "indexName": null,
+      "sha256": "763ef124fa8a1fbc7183f19be9b2b9f05bc818cc749e1a6f8f93e6b4f0b4c60e"
+    },
+    {
+      "sourceIndex": 140,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "expression_groups",
+      "indexName": null,
+      "sha256": "5bcd3c837a3daeaff707cf457ca3aadc0e42cb60a1fe4472477a358a6e940280"
+    },
+    {
+      "sourceIndex": 141,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_acquisition_capability_coverage_revisions",
+      "indexName": null,
+      "sha256": "7f3438640dcd4eccfaad5a1b3c6ee5cd24d9ecbc0906ea6f40f73c5bd4cd2458"
+    },
+    {
+      "sourceIndex": 142,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_asset_policy_revisions",
+      "indexName": null,
+      "sha256": "177a3b7d6522434bd4c5035eaa29c052701935b5537cf4f0312d2b9d2c47d6d9"
+    },
+    {
+      "sourceIndex": 143,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_asset_source_references",
+      "indexName": null,
+      "sha256": "c2dae890d82bf0066229628bd4ccb0f1ea2186b613b0ff89fec8b90c9775fc1e"
+    },
+    {
+      "sourceIndex": 144,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_assets",
+      "indexName": null,
+      "sha256": "8fe8ad89591e7babde44aca4de3e8afb49d757655dce5a4ef348a84537243fd0"
+    },
+    {
+      "sourceIndex": 145,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_competitor_asset_facts",
+      "indexName": null,
+      "sha256": "c70385ec7d90ab158fd39130b6a3aa08d5a1985fab6aec78c3ad4964498dc0f4"
+    },
+    {
+      "sourceIndex": 146,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_competitor_gallery_analysis_versions",
+      "indexName": null,
+      "sha256": "c2ac9a8d17bcb458c8a91ccd8bdccaade866dbc368df226049bcb8b34aa665e7"
+    },
+    {
+      "sourceIndex": 147,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_competitor_gallery_selection_versions",
+      "indexName": null,
+      "sha256": "16932ed8b5505834787e83e12fcf431678720d77627e0ebd45d6588336566ff6"
+    },
+    {
+      "sourceIndex": 148,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_competitor_research_subjects",
+      "indexName": null,
+      "sha256": "34d73de9190fd6feb62396db7232dd77b8621d5c45a4b3a166950fcbc07b8269"
+    },
+    {
+      "sourceIndex": 149,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_expression_analysis_versions",
+      "indexName": null,
+      "sha256": "c3257d12bcaeadf2049a23a79705da1585f0f1ffcd04a0ebe1c8bd3d2ee659ed"
+    },
+    {
+      "sourceIndex": 150,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_expression_asset_links",
+      "indexName": null,
+      "sha256": "e58466ff92f74930d591032406ae6d02df257182956080ecd16a1c08bc10acd2"
+    },
+    {
+      "sourceIndex": 151,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_expression_selection_versions",
+      "indexName": null,
+      "sha256": "83156708c510be3d02d8fead50bf31d1cbdd99f973da831188b2882eb6e7a86a"
+    },
+    {
+      "sourceIndex": 152,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_step0_synthesis_versions",
+      "indexName": null,
+      "sha256": "edaaba5b21ca2dd4a8d190409f7214de670f695a3bf2d8e067477b736e944c75"
+    },
+    {
+      "sourceIndex": 153,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_workflow_sessions",
+      "indexName": null,
+      "sha256": "de705a888e8e07975cbc60bba23aa1d938b6e95abd1408fe525cf6a730483b15"
+    },
+    {
+      "sourceIndex": 154,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_workflow_step0_artifacts",
+      "indexName": null,
+      "sha256": "6c59d8b83726a9ae23ee31b0f524286d95db9b0d8b7caca662418ded8ba626a1"
+    },
+    {
+      "sourceIndex": 155,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "image_workflow_step4_image_versions",
+      "indexName": null,
+      "sha256": "b3ce521e52bf7a0a07dcf958ffc146408ac11f246fb37fcdb29bfd0b96b9826f"
+    },
+    {
+      "sourceIndex": 156,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "inventory_config",
+      "indexName": null,
+      "sha256": "fcc997002684cb7cfdd242198e539df2c9c3c117ca3a41d9e06a86c92e88359a"
+    },
+    {
+      "sourceIndex": 157,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "inventory_snapshots",
+      "indexName": null,
+      "sha256": "9e08ffb01dc4452d1d80158bf55491daffe083bf38aba110fe6534934178b22a"
+    },
+    {
+      "sourceIndex": 158,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_bot_conversations",
+      "indexName": null,
+      "sha256": "f1e5655196b2742b15bf69e8e75f4b85022631a2f9f7f227543c7370b4ba3b32"
+    },
+    {
+      "sourceIndex": 159,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_bot_messages",
+      "indexName": null,
+      "sha256": "e11fe26c7402b08ec31485c47347fb753fa2d43ff77240c65ffb481d00847932"
+    },
+    {
+      "sourceIndex": 160,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_call_logs",
+      "indexName": null,
+      "sha256": "45d39913e72a2269a584008e8d1971e3884d3c8287f4c0bb3b00262e0cd916c5"
+    },
+    {
+      "sourceIndex": 161,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_feedback",
+      "indexName": null,
+      "sha256": "773c783636cf604ac21914e0e113111ac4d940475c154d82213d24a804382f3a"
+    },
+    {
+      "sourceIndex": 162,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_image_sets",
+      "indexName": null,
+      "sha256": "eba0684f3a1171ec10381dfc586d6c3fd5bef945a68b340572e5f5ea056bb310"
+    },
+    {
+      "sourceIndex": 163,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_images",
+      "indexName": null,
+      "sha256": "895787b6d26b3b1e7ebe0a40818a8d3328b1ac705f861135c9191bba4a300ea9"
+    },
+    {
+      "sourceIndex": 164,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_intel_collect_logs",
+      "indexName": null,
+      "sha256": "8eb6984b55886e701843e1d3db4d00c2b4118f17f683fd75b665d8c59c6cf9e9"
+    },
+    {
+      "sourceIndex": 165,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_intel_items",
+      "indexName": null,
+      "sha256": "b074c5d390ff6412de7b3ddd94424140a0f99aa1407291a423b425e42c6c1bd6"
+    },
+    {
+      "sourceIndex": 166,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_intel_sources",
+      "indexName": null,
+      "sha256": "5539e7b054d33c8956a6436dc4db80d68322801953ef2a3b5f2fdd0310f59d32"
+    },
+    {
+      "sourceIndex": 167,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_listing_copywriting",
+      "indexName": null,
+      "sha256": "6f27135619cc32ba2f5d3849592d93e8f72b22c66643762b3c6a0144c3a67969"
+    },
+    {
+      "sourceIndex": 168,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_operation_skills",
+      "indexName": null,
+      "sha256": "e71f373f5ef920e0e70d6e603f913aeca8862a7f93fb024b28be60b43a8c53e6"
+    },
+    {
+      "sourceIndex": 169,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_product_innovations",
+      "indexName": null,
+      "sha256": "3a7503c78eafe9ef6f859ee7719b6f5e367a1f92b8170c5d8ca47d22bb812ea4"
+    },
+    {
+      "sourceIndex": 170,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_sync_logs",
+      "indexName": null,
+      "sha256": "dfa98b1da638728a7b01c8e4edc88d8b51c281d306eb4cd95f44168b7d1f16d8"
+    },
+    {
+      "sourceIndex": 171,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_tag_definitions",
+      "indexName": null,
+      "sha256": "1f6de503a881ff3a8674a90ae188caa254bbc42e55f94a697dcfe498dd4c288a"
+    },
+    {
+      "sourceIndex": 172,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_transfer_item_receipts",
+      "indexName": null,
+      "sha256": "177a380d07c97075feadce61b43ae9a825ade26137c785ec5bdc6f8a09487349"
+    },
+    {
+      "sourceIndex": 173,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_transfer_stages",
+      "indexName": null,
+      "sha256": "ef4bffe47acb0c922e34e6e7551c17722be0dc8543fcb58adcf01cc2f6406bd8"
+    },
+    {
+      "sourceIndex": 174,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "kb_videos",
+      "indexName": null,
+      "sha256": "e17b59db885d78ad4f93c2727dd760ceaf53d051e9ec9cc25eb86aa0b4475704"
+    },
+    {
+      "sourceIndex": 175,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "keyword_daily_records",
+      "indexName": null,
+      "sha256": "dc7309f98ffcfc851680c7d0489f81a08574893f8b64731a23aebd4eb0571078"
+    },
+    {
+      "sourceIndex": 176,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "keyword_monitors",
+      "indexName": null,
+      "sha256": "9791e2f8b06493539218d563662997d8009fc5038642ee176f033fb498f9bb09"
+    },
+    {
+      "sourceIndex": 177,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "keyword_snapshots",
+      "indexName": null,
+      "sha256": "85dea617727f9c07d64dab475df4f99a8467e1d962f9cb2642870ac144bbac19"
+    },
+    {
+      "sourceIndex": 178,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "keyword_trackings",
+      "indexName": null,
+      "sha256": "d949c3b5a4453ed57dd3b2b8623e73465752c7a80eaaf35383ccae3e0818a24b"
+    },
+    {
+      "sourceIndex": 179,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "keywords",
+      "indexName": null,
+      "sha256": "d4156ed75a19e8f67c29d8531445cb84688cdab181b1e28bef87948963860b4d"
+    },
+    {
+      "sourceIndex": 180,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "knowledge_claim_ledger_consistency_decisions",
+      "indexName": null,
+      "sha256": "2fed7af2a5331b20e4d7c40d3e47051d81b3a0c45ca98f0946a6a5ef0c597ed3"
+    },
+    {
+      "sourceIndex": 181,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "knowledge_claim_ledger_links",
+      "indexName": null,
+      "sha256": "d6a984d93ac97e58a06f25c6a58a885dd3b32d0131d5f3f079f689c329620f5e"
+    },
+    {
+      "sourceIndex": 182,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "knowledge_claim_ledgers",
+      "indexName": null,
+      "sha256": "9217d6faaa7b217cda7e5ff304102ab8499bfc2a36ceb8072b5c2c9001685836"
+    },
+    {
+      "sourceIndex": 183,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "knowledge_distillation_evidence",
+      "indexName": null,
+      "sha256": "67e74ab3209c89bd12e20d5858d589aac4adf7d4ee97c1f4b1ab5473e2d76f7f"
+    },
+    {
+      "sourceIndex": 184,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "knowledge_distillation_projects",
+      "indexName": null,
+      "sha256": "de341594a5e40a121ee87d4a8ae7155a981f2fa2606e331852de9edef9d880a8"
+    },
+    {
+      "sourceIndex": 185,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "knowledge_distillation_sources",
+      "indexName": null,
+      "sha256": "accf30707a8d4622fd7b1d70f5c53aa545f08b31da99db8116e2bd93afd572b1"
+    },
+    {
+      "sourceIndex": 186,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "knowledge_skill_drafts",
+      "indexName": null,
+      "sha256": "bbc1a35959da185dc23e3f0bda2a8a09b9a452d9d56f738572328e8b3e24fe74"
+    },
+    {
+      "sourceIndex": 187,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "knowledge_skill_feedback",
+      "indexName": null,
+      "sha256": "63f7021720d378aad4254967d72621b467cdb60f28806683e403a09ca85a1a17"
+    },
+    {
+      "sourceIndex": 188,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "knowledge_skill_review_events",
+      "indexName": null,
+      "sha256": "f18907bd83cef4229d1001dee76aefaa6f58660e103e27c20b9541e300c8a5df"
+    },
+    {
+      "sourceIndex": 189,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "lingxing_api_logs",
+      "indexName": null,
+      "sha256": "11f69425f9c26b219d4a228e89dbb8019c6cbb6d1a9adbf0f46a62d6fb6f6dc2"
+    },
+    {
+      "sourceIndex": 190,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "lingxing_config",
+      "indexName": null,
+      "sha256": "b098c21219437ecc560c455d6b9f44261044828fcf6b5e906507509a86fe2c37"
+    },
+    {
+      "sourceIndex": 191,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "lingxing_product_weekly",
+      "indexName": null,
+      "sha256": "ac1f371352631c112bb553019443e2d83e6fe7314b82f2dace60e37e8ad87e37"
+    },
+    {
+      "sourceIndex": 192,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "listing_bullet_candidates",
+      "indexName": null,
+      "sha256": "0ac9196f3533c4d46aff5284ca73c9590195442fcd66ec18a23cdc0a6d2fdc7a"
+    },
+    {
+      "sourceIndex": 193,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "listing_complete_snapshots",
+      "indexName": null,
+      "sha256": "77b4691bcf103220cc7e7fb4192407647950e03a177b9b0f4ce6014c51db2e1b"
+    },
+    {
+      "sourceIndex": 194,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "listing_core_revisions",
+      "indexName": null,
+      "sha256": "3cc24077d32c2aefe61cab4e41583a84de43a81397f98c9c0046353f9c55e1fa"
+    },
+    {
+      "sourceIndex": 195,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "listing_fact_revisions",
+      "indexName": null,
+      "sha256": "38ae2dc2fd6c167ad5452a3fbe79de91a793e6c03c26eebe6f83eb6de00b83f3"
+    },
+    {
+      "sourceIndex": 196,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "listing_review_revisions",
+      "indexName": null,
+      "sha256": "8b0e604f5560dba31c73258d8a0bafba8bd3eb5baba7c493a74d0aa08ac23341"
+    },
+    {
+      "sourceIndex": 197,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "listingVersions",
+      "indexName": null,
+      "sha256": "03f9450713015da471575c0d795569e4b56eca1a1fa91ca64e79fc3ee4afadfe"
+    },
+    {
+      "sourceIndex": 198,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "listings",
+      "indexName": null,
+      "sha256": "d4826c574ed3f7aeac34d6749bf560df989746200f9c958457406031ccb4084f"
+    },
+    {
+      "sourceIndex": 199,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "login_logs",
+      "indexName": null,
+      "sha256": "bd0160d098fbd484c17a59e95438b2ae5b306ec6d7d080417a53a54c27e2dc8d"
+    },
+    {
+      "sourceIndex": 200,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "meeting_records",
+      "indexName": null,
+      "sha256": "91d0341702475c2f27f1d05bd6bddc954682262decb1403e359a57b60304b592"
+    },
+    {
+      "sourceIndex": 201,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "negativeKeywords",
+      "indexName": null,
+      "sha256": "7f8434cf02fd3315fdb6745261156aa2c3db07949bfd80aacd8b713d8f56d0d5"
+    },
+    {
+      "sourceIndex": 202,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "notifications",
+      "indexName": null,
+      "sha256": "5d338ddd442158890c6fc55b7f2e480da578e5e644011f2e56b2a9204e09cb8c"
+    },
+    {
+      "sourceIndex": 203,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "off_ai_analysis_logs",
+      "indexName": null,
+      "sha256": "64b783903ac987cf453c974eb9f30c8e6a011e3ec6f0d230adb734dcf70a986a"
+    },
+    {
+      "sourceIndex": 204,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "off_attribution_links",
+      "indexName": null,
+      "sha256": "aa584d061743923eeed529d1844f43b668941225439c52fdae2f528ab73f92f0"
+    },
+    {
+      "sourceIndex": 205,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "off_campaign_analytics",
+      "indexName": null,
+      "sha256": "0aa4a61cfa898650f65cfcabcd79acd13a6cff23a086c02d30937064d32adb81"
+    },
+    {
+      "sourceIndex": 206,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "off_campaigns",
+      "indexName": null,
+      "sha256": "82ee67cd116a63fd209f659fc83b70a2f6e574622a381cc72e3048890980e358"
+    },
+    {
+      "sourceIndex": 207,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "off_collaborations",
+      "indexName": null,
+      "sha256": "235b927ada5c43497acfe684eecf98a616078743b1b2bbb832ab966ef590126f"
+    },
+    {
+      "sourceIndex": 208,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "off_content_calendar",
+      "indexName": null,
+      "sha256": "7a47b6e896df6461c1f80607a939f5121884a15165e17698d271b4acd4b9b19d"
+    },
+    {
+      "sourceIndex": 209,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "off_content_submissions",
+      "indexName": null,
+      "sha256": "9846839785a9158f214dd64426effbb0a49b126bdc05f9e43b2f98b045a7e2e5"
+    },
+    {
+      "sourceIndex": 210,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "off_influencer_scores",
+      "indexName": null,
+      "sha256": "24139dfd703bce5dd93064cce8242f42834a7dc14c47e22f3816e12422eb94b8"
+    },
+    {
+      "sourceIndex": 211,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "off_influencers",
+      "indexName": null,
+      "sha256": "fad261bdf6204d96ef2a5fee240b42c81c9ce5205ba005e1c0f10ff474547a02"
+    },
+    {
+      "sourceIndex": 212,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "off_matrix_groups",
+      "indexName": null,
+      "sha256": "5bd9bf90338fc2aa232ef0aef27bcfd24d9e0ba3b65d880ef473be8db0ccc645"
+    },
+    {
+      "sourceIndex": 213,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "off_outreach_messages",
+      "indexName": null,
+      "sha256": "4c4e84ec48d3d25f5ce00817587046f2465a33e48ca80c2cdef054ab5831d3ba"
+    },
+    {
+      "sourceIndex": 214,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "off_social_accounts",
+      "indexName": null,
+      "sha256": "6c114bf014167b052bf2980a7fa3d1fb4a23c8c1e422d9639e9b8d547b5a8c3d"
+    },
+    {
+      "sourceIndex": 215,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "operator_name_mappings",
+      "indexName": null,
+      "sha256": "fd8e97c0942b712b5a30408eab8301397b2d62596902ccd4e509bc3865ab5860"
+    },
+    {
+      "sourceIndex": 216,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_ad_mcp_campaign_daily_facts",
+      "indexName": null,
+      "sha256": "7533224a40d871ed5b607e71511686f04a0f0d0e4dc50e92120b554dd3e829bc"
+    },
+    {
+      "sourceIndex": 217,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_ad_mcp_fact_revisions",
+      "indexName": null,
+      "sha256": "1576f274bd60a3452068a88592e42713d35e98a1b1b0fcf4d89ef08f2ee721c8"
+    },
+    {
+      "sourceIndex": 218,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_ad_mcp_product_daily_facts",
+      "indexName": null,
+      "sha256": "4e75cc904b11721deef7918b912015f992b2ab8caa748cb077d1764d42b20a48"
+    },
+    {
+      "sourceIndex": 219,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_ad_mcp_profiles",
+      "indexName": null,
+      "sha256": "5748f0e1a65294686c4d42a6545e209222d30c730ebbb977eba273008f59323d"
+    },
+    {
+      "sourceIndex": 220,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_asin_daily_snapshots",
+      "indexName": null,
+      "sha256": "7344b2e9e13b831d846775950f5c546d386ec6989edb2acfef3f89e4b4509e5e"
+    },
+    {
+      "sourceIndex": 221,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_asin_lifecycle_statuses",
+      "indexName": null,
+      "sha256": "fb74cf6ce177d15f4c4b2f7cf11efbb5ff776c0deaa15687a74e90879ed1f7e4"
+    },
+    {
+      "sourceIndex": 222,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_external_sync_batches",
+      "indexName": null,
+      "sha256": "339dc677c2845c9eb46a822d8de2f3a6618486ed9b10e325da64d796dd0ee18f"
+    },
+    {
+      "sourceIndex": 223,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_external_sync_confirmations",
+      "indexName": null,
+      "sha256": "906c6c216f472697f7cc11c0ede49067935a7765c67407387556cfc8a7fc2952"
+    },
+    {
+      "sourceIndex": 224,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_external_sync_rows",
+      "indexName": null,
+      "sha256": "9366381a6e94ff17989fcd6067d0ce17014b3a1736d5cd1b89ea25f8206d7340"
+    },
+    {
+      "sourceIndex": 225,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_import_history",
+      "indexName": null,
+      "sha256": "e526fa56044b3693ca49c1155798d7d99548bd3e26033e28d0ec2aea36f4705e"
+    },
+    {
+      "sourceIndex": 226,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_inventory_owner_assignment_audits",
+      "indexName": null,
+      "sha256": "7d97fa74e60935a5da1118f91ca9a9c2acc85fd979a823d2fe14d8b94e59e536"
+    },
+    {
+      "sourceIndex": 227,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_inventory_owner_assignments",
+      "indexName": null,
+      "sha256": "217da5c69ba8382cd3be2e16ed021b409815050febc6b8f842e391f3c016c54d"
+    },
+    {
+      "sourceIndex": 228,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_inventory_planning_parameters",
+      "indexName": null,
+      "sha256": "a05b6da82c23f0194b6dd367b4cf0c1b70871cbb6b4bd2431944a1f67dbbcceb"
+    },
+    {
+      "sourceIndex": 229,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_inventory_planning_versions",
+      "indexName": null,
+      "sha256": "e490aa84196ca64412b318669440fd7021132ef8e56923cda3d2b1e41bf82531"
+    },
+    {
+      "sourceIndex": 230,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_lingxing_sync_schedules",
+      "indexName": null,
+      "sha256": "b252a3afe489da17274b42edeef31eb5eac2631a80a7b9a4e9b3725da82de96f"
+    },
+    {
+      "sourceIndex": 231,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_local_inventory_adjustments",
+      "indexName": null,
+      "sha256": "9880065914afe9fa78e5d0e0393087bb2c65594dd456da232a88c4b0969a855c"
+    },
+    {
+      "sourceIndex": 232,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_monthly_financial_profits",
+      "indexName": null,
+      "sha256": "53408dc726718448ac1d14a96fc339b9b4cc6a24fd3707a9acfc43b4b1c74699"
+    },
+    {
+      "sourceIndex": 233,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_plan_actions",
+      "indexName": null,
+      "sha256": "338f7532588bfe72b1081abfe0d5dc456c98915a85e562a967b0e68ea814545e"
+    },
+    {
+      "sourceIndex": 234,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_plan_summaries",
+      "indexName": null,
+      "sha256": "ab2f54f087d83917a5671a1181d1d71e31d8ad9665b75144b04363003a84df9d"
+    },
+    {
+      "sourceIndex": 235,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_plans",
+      "indexName": null,
+      "sha256": "69720d41cb8d916baa4af6a7e814de61a070683b9992055473a8ba8a33c06f08"
+    },
+    {
+      "sourceIndex": 236,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "ops_replenishment_plans",
+      "indexName": null,
+      "sha256": "3aaae3a8779f45390fe3ceee9568561ed2ce85d88f7f217c3f83bff974e03b0e"
+    },
+    {
+      "sourceIndex": 237,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "organizations",
+      "indexName": null,
+      "sha256": "f303f4e86224cbd63eb76d239df1d2dc8453089640ce4d6140443c32bd6b7819"
+    },
+    {
+      "sourceIndex": 238,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "product_basic_info",
+      "indexName": null,
+      "sha256": "0599b2099ae5ee8b1c8f36e7d3feef3114e099260791f4964f60ab4eb8978659"
+    },
+    {
+      "sourceIndex": 239,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "product_logs",
+      "indexName": null,
+      "sha256": "b327e50ea9a8758414af7d658de63ec71a7430a7c0b85d414cba6230ec1f2dce"
+    },
+    {
+      "sourceIndex": 240,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "product_monthly_summary",
+      "indexName": null,
+      "sha256": "4a12fe732bf80c157d4c7775e40d3e4ce75938c3f27a32032299ef790e41cc4d"
+    },
+    {
+      "sourceIndex": 241,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "product_ops_daily_records",
+      "indexName": null,
+      "sha256": "bcf4e64cb318647e14607b2b37ed4781e9833f8b147b199ecb603cef0efb4b0d"
+    },
+    {
+      "sourceIndex": 242,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "product_ops_plans",
+      "indexName": null,
+      "sha256": "6eadc56efeffe45c1e3c8d1d9023f9d8b2ed6254f7b7adfb3f0a68d9d0daad6d"
+    },
+    {
+      "sourceIndex": 243,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "product_profiles",
+      "indexName": null,
+      "sha256": "3e087e891eac2cf4baeb2bd3505682e6ab77c1e5a3bc7340499a399a2e5c6832"
+    },
+    {
+      "sourceIndex": 244,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "product_todos",
+      "indexName": null,
+      "sha256": "32b30781cba817bbab19ef7fbeda0cf5f4b6db95e26ed963f4b5851ca84a3819"
+    },
+    {
+      "sourceIndex": 245,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "product_variants",
+      "indexName": null,
+      "sha256": "3bab107703d807423a21634d01fc044ea8b51e8835b71e3184f8947a14f05fcb"
+    },
+    {
+      "sourceIndex": 246,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "product_weekly_ops",
+      "indexName": null,
+      "sha256": "8d8a065d73d5ce142fe75f9dc98891de9511f113ae88d84c97f6540ae5e9df7b"
+    },
+    {
+      "sourceIndex": 247,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "production_config",
+      "indexName": null,
+      "sha256": "1a052d11ac89b3031e04e67e4f706ce82202149090a08176029d764579aac055"
+    },
+    {
+      "sourceIndex": 248,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "profit_alert_rules",
+      "indexName": null,
+      "sha256": "d8fb7c39c7c2da384bcb0fca3ed69ecf7b3656bcc6a97fe75f937c29670c08d0"
+    },
+    {
+      "sourceIndex": 249,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "profit_snapshots",
+      "indexName": null,
+      "sha256": "8f1f2ea2d7a30a0e3d3d0b9d9be6635c351a04aebd5181203a3213fba3c06ffc"
+    },
+    {
+      "sourceIndex": 250,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "project_assignments",
+      "indexName": null,
+      "sha256": "30c2b3f45cd67a47b9894a2078a851ba8d818efaa7ad28c3fd76e893588ed726"
+    },
+    {
+      "sourceIndex": 251,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "projectFiles",
+      "indexName": null,
+      "sha256": "528c7ead72b1e099ba3c6cda3d9bfb56acf539f43677c34e5e3c76ed380f6d5a"
+    },
+    {
+      "sourceIndex": 252,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "projects",
+      "indexName": null,
+      "sha256": "e5dcc4d18bd6176788afc6dcf5426fe8db11508947956d2252404033b29dd22a"
+    },
+    {
+      "sourceIndex": 253,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "promotion_phases",
+      "indexName": null,
+      "sha256": "2cfb9e4fd8fc0accf06fb4b2d78f3180a35c70edc6b99aff0a4291c7a80a1d97"
+    },
+    {
+      "sourceIndex": 254,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "remote_usage_snapshots",
+      "indexName": null,
+      "sha256": "a42e0b1a69f23ea93075d8305da671f363cc8860009667e91a28c0e62e68b71f"
+    },
+    {
+      "sourceIndex": 255,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "replenishment_predictions",
+      "indexName": null,
+      "sha256": "093ae986d95c7bda79f7b8c1c62f91b544524e6dc31f2aee05321aa10c7971d9"
+    },
+    {
+      "sourceIndex": 256,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "return_analysis_cache",
+      "indexName": null,
+      "sha256": "60e05f4bcda9f3c3d7988cfe895ba09ad2790c63daf5ed02fc594ddc024029db"
+    },
+    {
+      "sourceIndex": 257,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "reviewAggregations",
+      "indexName": null,
+      "sha256": "0a63e838afe521790e9943e2f2f20dbcb758e8f94fafc0063abf3a3498021aa6"
+    },
+    {
+      "sourceIndex": 258,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "reviewImports",
+      "indexName": null,
+      "sha256": "68df0bddcb4a0eab57d68951227350ad12d1393de740c805164b598e64c30c20"
+    },
+    {
+      "sourceIndex": 259,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "review_records",
+      "indexName": null,
+      "sha256": "8fdc23cf172ea56fb29af424b215dcb2d09ae7d85eadaea531dae958ee220c7b"
+    },
+    {
+      "sourceIndex": 260,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "review_replies",
+      "indexName": null,
+      "sha256": "9971bd891baab2d29903c0f42aa02e8913a472d3fdb7928f3a322f51b76e7e7a"
+    },
+    {
+      "sourceIndex": 261,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "role_permissions",
+      "indexName": null,
+      "sha256": "04d768cf2e227ede7cd253e9c7dc68799bbab8eb685e0ae322002c6ea5c447f3"
+    },
+    {
+      "sourceIndex": 262,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "saihu_product_weekly",
+      "indexName": null,
+      "sha256": "25ae1202e10f908894a9ebf0ffcd388f06423d97e3d4dcd063bfc55aa5efacc4"
+    },
+    {
+      "sourceIndex": 263,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "search_term_actions",
+      "indexName": null,
+      "sha256": "7b87ab42e1826a218ffa3b4b6b6b8f476d1574a3a81e72326204990b5b5bfd1c"
+    },
+    {
+      "sourceIndex": 264,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "security_access_policies",
+      "indexName": null,
+      "sha256": "51dd70afbc715880a9d5e82b540a7f0bde1147365001d444841aeb79f7279d79"
+    },
+    {
+      "sourceIndex": 265,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "security_audit_logs",
+      "indexName": null,
+      "sha256": "a139c3d359660bef6f09ec5a7ebf637bceb75fdb46bd5139f80da37e580ede5e"
+    },
+    {
+      "sourceIndex": 266,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "sellingPointDrafts",
+      "indexName": null,
+      "sha256": "293c933d59439a23057dfb4e66b8914c94330955befef3f3e5919fc9016a0379"
+    },
+    {
+      "sourceIndex": 267,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "service_tasks",
+      "indexName": null,
+      "sha256": "41dbb5811eac22997e4c441d37bac69faa5293b1d5b3f5a9a71b246bc07149d5"
+    },
+    {
+      "sourceIndex": 268,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "shipping_batches",
+      "indexName": null,
+      "sha256": "b01b45c04a55c654464c5f6a25866c8f6365fb77bdd2c5d1cde38376f8bf793e"
+    },
+    {
+      "sourceIndex": 269,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "sop_access_grants",
+      "indexName": null,
+      "sha256": "6995c6c61d378acab758ca778e1422fa4fd2805ff39d56d851ac324644c8d41c"
+    },
+    {
+      "sourceIndex": 270,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "step_time_history",
+      "indexName": null,
+      "sha256": "bb3cbb0af598c8fdd03ba0d9e080bca97abfb0555d676ccb9c66ab59ba8066e5"
+    },
+    {
+      "sourceIndex": 271,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "step_time_templates",
+      "indexName": null,
+      "sha256": "99a672384aea5d82a775a7abc7725dfdab55252d222fa26950b8304faad9f09a"
+    },
+    {
+      "sourceIndex": 272,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "system_settings",
+      "indexName": null,
+      "sha256": "6f537ecc2529b8132d50d6d091ba477907a3e62f19e6da2a000e1b07668e07a8"
+    },
+    {
+      "sourceIndex": 273,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "team_tasks",
+      "indexName": null,
+      "sha256": "f4675ae0d857f6791e04bff4404025c054318140c11b3f847661441015960da5"
+    },
+    {
+      "sourceIndex": 274,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "usage_stats",
+      "indexName": null,
+      "sha256": "fc81c356d9e7ca582c660629115d31cd034d3fc00d96e7ba5aff12023e9a85e8"
+    },
+    {
+      "sourceIndex": 275,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "user_settings",
+      "indexName": null,
+      "sha256": "2cf67babdf31cd868b14849bf4749964d111befdd25ec1a232ee8642c27cd157"
+    },
+    {
+      "sourceIndex": 276,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "users",
+      "indexName": null,
+      "sha256": "ee9d4500d310943de3ec01616fea48f2e7a52943dab24bc06649381677ef8a16"
+    },
+    {
+      "sourceIndex": 277,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "video_competitor_scripts",
+      "indexName": null,
+      "sha256": "6845c9557dffdbde5fd6b1a94906d857e96c6826afca5d934f999318f917a236"
+    },
+    {
+      "sourceIndex": 278,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "video_competitor_summary",
+      "indexName": null,
+      "sha256": "0a70aba8641f4854592d85e81369bbbad29c59f7d7abaccd9120bf7ee2eeffbe"
+    },
+    {
+      "sourceIndex": 279,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "video_edit_scripts",
+      "indexName": null,
+      "sha256": "72c6aeffb54fa3434a1ae92b40c4b52b979209df1722e4e3438ed9bbdad2dfe9"
+    },
+    {
+      "sourceIndex": 280,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "video_product_snapshots",
+      "indexName": null,
+      "sha256": "af465b6253309716c5aa4ab2dac4cedc0822dffbb3f720904c7646f5a04cbc8e"
+    },
+    {
+      "sourceIndex": 281,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "video_script_sections",
+      "indexName": null,
+      "sha256": "c00501df151867da6b3694696139505d41949092c965a65cf527d68a4cd1c8dd"
+    },
+    {
+      "sourceIndex": 282,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "video_script_shots",
+      "indexName": null,
+      "sha256": "d4b38eeecae74d5d6b100bf8f840ef0441969cb4218c99673493b794cb8ccb21"
+    },
+    {
+      "sourceIndex": 283,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "video_script_subtopics",
+      "indexName": null,
+      "sha256": "80644712266702176319172dd0e724d3aa21bf038fecca186ecc3d6831973646"
+    },
+    {
+      "sourceIndex": 284,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "video_script_versions",
+      "indexName": null,
+      "sha256": "a03bed3a97133ab6213c45fd52b78897cc195d00df78c660fa3af9051078a81f"
+    },
+    {
+      "sourceIndex": 285,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "video_scripts",
+      "indexName": null,
+      "sha256": "0527867f5bb422f11a49789f887dec977ecd86393f4c1eb24d2d1a135bdb4b5c"
+    },
+    {
+      "sourceIndex": 286,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "video_spv_segments",
+      "indexName": null,
+      "sha256": "af33b4461cccf4362868b00edc6c552587f9d3e4887b0972864eb9547b38c01d"
+    },
+    {
+      "sourceIndex": 287,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "workspace_memberships",
+      "indexName": null,
+      "sha256": "6cafacfa8ce40323cc18296ab16ed6ac131fc70f8786f7882314748f62787f79"
+    },
+    {
+      "sourceIndex": 288,
+      "partition": "base",
+      "kind": "create-table",
+      "tableName": "workspaces",
+      "indexName": null,
+      "sha256": "d438b1c9babd46acd372837b60840a5cfb3a8a909fdbdf8d174dd0d5c1240b61"
+    },
+    {
+      "sourceIndex": 289,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "acquisition_asset_candidates",
+      "indexName": "idx_acq_asset_snapshot_status",
+      "sha256": "1176244d37d35f5e8121c70e3f3ab7157d12a5581cc7f7c63ebb8f9a2e76794c"
+    },
+    {
+      "sourceIndex": 290,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "acquisition_asset_candidates",
+      "indexName": "idx_acq_asset_content_hash",
+      "sha256": "9474fc91b5c59de5e728e41eaf4903bd158dfc17ca7e87a2d7e4cca3af1d60de"
+    },
+    {
+      "sourceIndex": 291,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "acquisition_confirmed_snapshots",
+      "indexName": "idx_acq_confirmed_subject",
+      "sha256": "79e3598d5cd2e78c3006e6e6b05e5ea66f23a6a69b4a81e032efa0b6c8e6ebe8"
+    },
+    {
+      "sourceIndex": 292,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "acquisition_consumer_links",
+      "indexName": "idx_acq_consumer_snapshot",
+      "sha256": "a5a556f0dabe73eee42e7f3357b63041a495e998a717c878bef079681cbf5988"
+    },
+    {
+      "sourceIndex": 293,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "acquisition_jobs",
+      "indexName": "idx_acq_job_ws_status",
+      "sha256": "f673cdbc0a88720eb59f1c6fae756e4dd5a98f9c81000ba15be30e3c98ecae3d"
+    },
+    {
+      "sourceIndex": 294,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "acquisition_jobs",
+      "indexName": "idx_acq_job_subject",
+      "sha256": "0467b5349206f26caaa792e3a2997d71994f455594ffdc94ccf0be9de0d34e2f"
+    },
+    {
+      "sourceIndex": 295,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "acquisition_provider_profiles",
+      "indexName": "idx_acq_profile_ws_status",
+      "sha256": "d5cd5241e74c42b0f955d315cf913d8b370e36bfcc0f6bfa823d615df4d3b78c"
+    },
+    {
+      "sourceIndex": 296,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "acquisition_raw_artifacts",
+      "indexName": "idx_acq_artifact_ws_run",
+      "sha256": "ede784631b037976513ef9b4d8d891c9ed49c88a3823f34dc5dce5eaabf77b3c"
+    },
+    {
+      "sourceIndex": 297,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "acquisition_runs",
+      "indexName": "idx_acq_run_provider_run",
+      "sha256": "a04ea436fedf5a767851d31e0dedcc4bce6539d3799309752534bbaa56f58869"
+    },
+    {
+      "sourceIndex": 298,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "acquisition_runs",
+      "indexName": "idx_acq_run_ws_status",
+      "sha256": "1165d83482738982624c9268968ce8c499da55f0edc9136e7fc439a88b389c43"
+    },
+    {
+      "sourceIndex": 299,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "acquisition_snapshot_revisions",
+      "indexName": "idx_acq_revision_ws_created",
+      "sha256": "7e6277c30b08ebb859974ad93376b5ad9193056647c54d943da249dd57cdff99"
+    },
+    {
+      "sourceIndex": 300,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "acquisition_source_snapshots",
+      "indexName": "idx_acq_snapshot_subject",
+      "sha256": "55c8951f41399848cb0ecd63c6875824be5a2d8da9b6bc16ec982856992386f8"
+    },
+    {
+      "sourceIndex": 301,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "acquisition_source_snapshots",
+      "indexName": "idx_acq_snapshot_job",
+      "sha256": "873f77b9a6799c4d19e0a0a94f27bf9403f46bb75fdb5db4838d5edfdf45736e"
+    },
+    {
+      "sourceIndex": 302,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ad_keyword_weekly",
+      "indexName": "idx_ad_keyword_workspace_profile_period",
+      "sha256": "a9807db767914df12e0be3d932cb343af7508c46771dbd0d70512542840a60de"
+    },
+    {
+      "sourceIndex": 303,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "amazon_monitor_runs",
+      "indexName": "idx_amazon_monitor_run_subject",
+      "sha256": "2aeefa40f0cb809e66f42ebfc2dac0426911a1a6ce167276e610186450905244"
+    },
+    {
+      "sourceIndex": 304,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "amazon_monitor_runs",
+      "indexName": "idx_amazon_monitor_run_status",
+      "sha256": "fd49aa88bd26a88af089b7d3504bd34587bb278b957d56de31ea46f76bdca971"
+    },
+    {
+      "sourceIndex": 305,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "amazon_monitor_runs",
+      "indexName": "idx_amazon_monitor_run_provider",
+      "sha256": "18521fd2b418cff3616f9077b0949d73219d1e67cff4e1117b6536ad19364970"
+    },
+    {
+      "sourceIndex": 306,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "amazon_monitor_schedules",
+      "indexName": "idx_amazon_monitor_schedule_status",
+      "sha256": "cb9d610426a361f898fe9912bb798201b69e1d115635d0e40c5518e7abea065c"
+    },
+    {
+      "sourceIndex": 307,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "competitorComparisonReports",
+      "indexName": "idx_competitor_comparison_project_selection",
+      "sha256": "0f543b63cfa3c187bef155501067c83be045a35147fd922976dcb697f828faf3"
+    },
+    {
+      "sourceIndex": 308,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "competitorComparisonReports",
+      "indexName": "idx_competitor_comparison_workspace_status",
+      "sha256": "28bf08ca19e701da0efa171e81466764db471645e540568882c0cae479c6e05f"
+    },
+    {
+      "sourceIndex": 309,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_analysis_reports",
+      "indexName": "idx_dev_reports_workspace_project",
+      "sha256": "933d1df9142793a7e9afd5db6ae38eebdf2e086a9eef25d254fbec18a562e145"
+    },
+    {
+      "sourceIndex": 310,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_analysis_stage_conflicts",
+      "indexName": "idx_dev_stage_conflicts_project_type",
+      "sha256": "f09ce800a181912063f517940dded2b24275b784422a266463b0181c73f6a168"
+    },
+    {
+      "sourceIndex": 311,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_analysis_stages",
+      "indexName": "idx_dev_analysis_stages_run",
+      "sha256": "3e6350a9e5fc80754a17164df3ccf8e646aad112b19d684256e3a9ef24e2da01"
+    },
+    {
+      "sourceIndex": 312,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_analysis_stages",
+      "indexName": "idx_dev_analysis_stages_runtime",
+      "sha256": "d2ee2ea3277b4c5f7bc4953edf2abaf0fa3159442bc254cda843168ffd9fa53c"
+    },
+    {
+      "sourceIndex": 313,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_analysis_stages",
+      "indexName": "idx_dev_stages_workspace_project",
+      "sha256": "b0bc541ab10a601eceabaeb207e6610f9d83c9e06f9349f95203280aced6accc"
+    },
+    {
+      "sourceIndex": 314,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_bom_items",
+      "indexName": "idx_dev_bom_workspace_project",
+      "sha256": "07801197b100ef346ec09a9308413f3fb927610523fbc62ff06a743e013fc87d"
+    },
+    {
+      "sourceIndex": 315,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_bom_summary",
+      "indexName": "idx_dev_bom_summary_workspace_project",
+      "sha256": "feacd696c7683bfe3e07fb094420ed5ea5a5296331ce1a85785105b8ed06ac44"
+    },
+    {
+      "sourceIndex": 316,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_external_data",
+      "indexName": "idx_dev_external_workspace_project",
+      "sha256": "9f7ca7def77816125e145f3be000a059fe85e0c5e6a66237ec9c1d6cd386f2ef"
+    },
+    {
+      "sourceIndex": 317,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_global_suppliers",
+      "indexName": "idx_dev_global_suppliers_workspace_user",
+      "sha256": "db85e338a090c186b0d07aefe7cf66d2053eef770235e5cc89901a23a81b7bf2"
+    },
+    {
+      "sourceIndex": 318,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_import_apply_snapshots",
+      "indexName": "idx_dev_import_snapshots_workspace_project",
+      "sha256": "51cdb6f5eb116076b868de1bc4809e3f8fede4cb3fae91518b332b175cd0b97f"
+    },
+    {
+      "sourceIndex": 319,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_import_batches",
+      "indexName": "idx_dev_import_batches_workspace_project_status",
+      "sha256": "e4b1454d602cac7872e319c86efba452f7cb3ff0d465cd78737fb9d39cf873cd"
+    },
+    {
+      "sourceIndex": 320,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_import_batches",
+      "indexName": "idx_dev_import_batches_uploaded_file",
+      "sha256": "963ba8b71121e7faa9cdafee7b2a931a0d1d9df160f5a4953672247bb1b8b5a2"
+    },
+    {
+      "sourceIndex": 321,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_import_batches",
+      "indexName": "idx_dev_import_batch_project_status",
+      "sha256": "616fdf2ab93a9f12698ec06d013ca101a248465caaf70820c8f4f4074ff487ed"
+    },
+    {
+      "sourceIndex": 322,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_manual_assets",
+      "indexName": "idx_dev_assets_workspace_project",
+      "sha256": "cc5a5e124cc2658f9cd540f93f2004bdc43430688c2aecff8d23e9ba47a962c3"
+    },
+    {
+      "sourceIndex": 323,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_module_locks",
+      "indexName": "idx_dev_locks_workspace_project",
+      "sha256": "e95bb9e2baf73b2cab5d834131f555aa04cb57d305bdddc305bbbc9d023f9f1c"
+    },
+    {
+      "sourceIndex": 324,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_mold_costs",
+      "indexName": "idx_dev_molds_workspace_project",
+      "sha256": "8266d2fcb5b52247de212c266bd5184e93c41dc03788c28507cbf45446d143af"
+    },
+    {
+      "sourceIndex": 325,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_offsite_analyses",
+      "indexName": "idx_dev_offsite_workspace_project",
+      "sha256": "e52863f26d6ea9f83434ab095ddb2d52c229083ae131e40acf69ee23a0314cf2"
+    },
+    {
+      "sourceIndex": 326,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_panorama_market_insights",
+      "indexName": "idx_dev_panorama_market_insights_workspace_project",
+      "sha256": "c7245cad6b1891afb732116de9287e8163295a9ab7af733c1efec4906846ee1c"
+    },
+    {
+      "sourceIndex": 327,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_panorama_market_insights",
+      "indexName": "idx_dev_panorama_market_insights_run",
+      "sha256": "6712630457372fcc761859c0d69721af5f6a5b21cd724ae42f354919e11f9e6e"
+    },
+    {
+      "sourceIndex": 328,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_panorama_status",
+      "indexName": "idx_dev_panorama_workspace_project",
+      "sha256": "e0552ebc274ece2423a46d87fc21b211f1312106faf9ed02f9fca091a1c0b7b8"
+    },
+    {
+      "sourceIndex": 329,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_panorama_versions",
+      "indexName": "idx_dev_panorama_version_project_status",
+      "sha256": "c1f0de31ac9d767345ab2724bc1bab7cd251fd2e6d3bfcfe2b9550d421bd5caf"
+    },
+    {
+      "sourceIndex": 330,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_product_manuals",
+      "indexName": "idx_dev_manuals_workspace_project",
+      "sha256": "a081ca7bae8fb0c8691d99760acb15bb5394a1fb0a56d0af25c0f88ebbc230f1"
+    },
+    {
+      "sourceIndex": 331,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_product_profiles",
+      "indexName": "idx_dev_profiles_workspace_project",
+      "sha256": "4d629d33a95bc1325a2bfc4a6f18ca8dc73ddc8b1311182300fef781e6ed4c45"
+    },
+    {
+      "sourceIndex": 332,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_product_tags",
+      "indexName": "idx_dev_product_tags_workspace_project",
+      "sha256": "9d0da1dc2fd5feee93f68b6b6789fe24bdbea9f85f576de4494d51832c841fe0"
+    },
+    {
+      "sourceIndex": 333,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_products",
+      "indexName": "idx_dev_products_workspace_project",
+      "sha256": "63503606a23bb6a3ce45deb54e07e75c10d36e50e3f6f0d7a089393653180a4f"
+    },
+    {
+      "sourceIndex": 334,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_profit_calculations",
+      "indexName": "idx_dev_profit_workspace_project",
+      "sha256": "a4c93cebc462aa7e05f017837fba10c96882b669efa3795962cdb347af79a500"
+    },
+    {
+      "sourceIndex": 335,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_project_progress",
+      "indexName": "idx_dev_project_progress_workspace_project",
+      "sha256": "589a31f9b61a63310d5534f7c9a98557e967a5acfa51dc9da13ca4860e6e3fbe"
+    },
+    {
+      "sourceIndex": 336,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_project_scores",
+      "indexName": "idx_dev_scores_workspace_project",
+      "sha256": "4be32cc414a956ba1ae64174d985482780105d92ca166f99f1016fa18e1a5e6b"
+    },
+    {
+      "sourceIndex": 337,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_project_tag_categories",
+      "indexName": "idx_dev_tag_categories_workspace_project",
+      "sha256": "5e9d50df165a502f78383316dbd97ccdb8799c9abfbbbb32f63909cbdd3269f7"
+    },
+    {
+      "sourceIndex": 338,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_project_tag_items",
+      "indexName": "idx_dev_tag_items_workspace_project",
+      "sha256": "370ef11bd84b8f91b1ab270bbb38b2b66001675660395edf352e4ec123be50f8"
+    },
+    {
+      "sourceIndex": 339,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_projects",
+      "indexName": "idx_dev_projects_workspace_status",
+      "sha256": "e38e72a615bd147e9dccb4d306e271f5b5f8da4571e6185ac964cde493a8f58a"
+    },
+    {
+      "sourceIndex": 340,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_projects",
+      "indexName": "idx_dev_projects_workspace_owner",
+      "sha256": "8cf0827bcf7ab652c747840567deaab7779fa1843c4cefa6df8d7ab1b28649cf"
+    },
+    {
+      "sourceIndex": 341,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_reviews",
+      "indexName": "idx_dev_reviews_workspace_project",
+      "sha256": "b64309432cb996cd854be085786183f1452d4e6e36f466d9ca83bc1e9fa7594b"
+    },
+    {
+      "sourceIndex": 342,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_suppliers",
+      "indexName": "idx_dev_suppliers_workspace_project",
+      "sha256": "e4d39488c87d7eadb04fd9a1eb8930ffa5e94f749ac954bd930b87fa2c019cec"
+    },
+    {
+      "sourceIndex": 343,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_tag_dimensions",
+      "indexName": "idx_dev_dimensions_workspace_user",
+      "sha256": "7eb26a6dc356d7af80e9eccb0961b761ed92fe24d717fc9d750bbb02a74dacb6"
+    },
+    {
+      "sourceIndex": 344,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_test_reports",
+      "indexName": "idx_dev_tests_workspace_project",
+      "sha256": "722dceb2f15689d95a153a0407d11f180acd2827d0e05c1ee3a883dda77311d9"
+    },
+    {
+      "sourceIndex": 345,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_time_plans",
+      "indexName": "idx_dev_time_workspace_project",
+      "sha256": "3c1fecb00ec9660c79f9d916b60ff2f4b753350670bfc583a37c84905bc048de"
+    },
+    {
+      "sourceIndex": 346,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "dev_uploaded_files",
+      "indexName": "idx_dev_files_workspace_project",
+      "sha256": "9f8f5476ef4310b143415e3a78a68cdeaf795a7958489ffa483b94795b7bec37"
+    },
+    {
+      "sourceIndex": 347,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "emperor_scheduled_tasks",
+      "indexName": "idx_emperor_scheduled_tasks_workspace_managed",
+      "sha256": "47a1f6d6915a91d3ef255a1d93b4f6a4e69b234ee5fe050be43732d66d634da3"
+    },
+    {
+      "sourceIndex": 348,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_acquisition_capability_coverage_revisions",
+      "indexName": "idx_image_acq_coverage_scope_state",
+      "sha256": "798c72edb6f18406b6ba7a3b08d33f3b625c3ebde1cb63c2e9f5bda48325e1a9"
+    },
+    {
+      "sourceIndex": 349,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_acquisition_capability_coverage_revisions",
+      "indexName": "idx_image_acq_coverage_consumer",
+      "sha256": "8f23a54eacaf63040cf66a382fb696a17ae1140310751c0a41c9ebbae699a4be"
+    },
+    {
+      "sourceIndex": 350,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_asset_policy_revisions",
+      "indexName": "idx_image_asset_policy_scope_review",
+      "sha256": "95f8aed0358df1087245b5c98c59b739890f35910e1b73de278c6ee1f786a711"
+    },
+    {
+      "sourceIndex": 351,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_asset_policy_revisions",
+      "indexName": "idx_image_asset_policy_asset_revision",
+      "sha256": "dfdfc4be7b148d3e388ac657891c38b71c5fb7e0bb940bee75aa869d043d7e69"
+    },
+    {
+      "sourceIndex": 352,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_asset_source_references",
+      "indexName": "idx_image_asset_source_asset_scope",
+      "sha256": "9ec25c50ca9ed3f0a2b5fcbd2470b8d1721a82252772bf389b846ec30264e72f"
+    },
+    {
+      "sourceIndex": 353,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_asset_source_references",
+      "indexName": "idx_image_asset_source_snapshot_role_position",
+      "sha256": "ea115dce36792df533eaa23f871bff64facb4c2a3c0983f07fae7a09b8d05a96"
+    },
+    {
+      "sourceIndex": 354,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_assets",
+      "indexName": "idx_image_asset_workspace_created",
+      "sha256": "7e46ed30b879226b37ee14fe9e53f8b140daf699c5141637589296840bd9fcd9"
+    },
+    {
+      "sourceIndex": 355,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_competitor_asset_facts",
+      "indexName": "idx_image_comp_fact_subject_status",
+      "sha256": "a5ffe7e0dece89c8ebf92a3487f9378f044b824b2c104d1e32186b29a8452b59"
+    },
+    {
+      "sourceIndex": 356,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_competitor_gallery_analysis_versions",
+      "indexName": "idx_image_comp_gallery_project_status",
+      "sha256": "d08e5c27899fc321db4ddd378591dfa6193ab3510de85170c6b2949527ce7972"
+    },
+    {
+      "sourceIndex": 357,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_competitor_gallery_selection_versions",
+      "indexName": "idx_image_comp_gallery_selection_current",
+      "sha256": "d987f4cb677145b54a83345cc2878dd1584355635daac9f634599f16d5e71ea0"
+    },
+    {
+      "sourceIndex": 358,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_competitor_research_subjects",
+      "indexName": "idx_image_comp_subject_project_role",
+      "sha256": "028f0f94c9bda143c1c1aab52223fc0a8ffaab58ee3d18a9decbb7294b354c12"
+    },
+    {
+      "sourceIndex": 359,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_expression_analysis_versions",
+      "indexName": "idx_image_expr_analysis_current",
+      "sha256": "5faaa5d691c96f55a99f9c58df9231c9c7281b064d8b56a3ae1d2bd881857a68"
+    },
+    {
+      "sourceIndex": 360,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_expression_asset_links",
+      "indexName": "idx_image_expr_asset_group",
+      "sha256": "7bc60d06d2bb7778cb599d6ee0eb474faffac25cefa65e834f3de8ca2f6c6637"
+    },
+    {
+      "sourceIndex": 361,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_expression_selection_versions",
+      "indexName": "idx_image_expr_selection_current",
+      "sha256": "5cc288007ffae4a96dd16796ef7632efc26f57455045c68cab0046a937e8e42a"
+    },
+    {
+      "sourceIndex": 362,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_step0_synthesis_versions",
+      "indexName": "idx_image_step0_synthesis_current",
+      "sha256": "e67a7f0b18f7233115a0876ed5a75570ababe79d246dead969883b125f2dfd6c"
+    },
+    {
+      "sourceIndex": 363,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "image_workflow_step0_artifacts",
+      "indexName": "idx_image_step0_artifact_current",
+      "sha256": "fc8b564aafc3c22ce7eb5bf7dee04be9759d082d85ee5b7074658559242284f0"
+    },
+    {
+      "sourceIndex": 364,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "knowledge_claim_ledger_consistency_decisions",
+      "indexName": "idx_claim_consistency_workspace_ledger",
+      "sha256": "5a64e1273e86da136d51138e276b1fa94768b5824f6a509f6e71c2b1f53f2f13"
+    },
+    {
+      "sourceIndex": 365,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "knowledge_claim_ledger_consistency_decisions",
+      "indexName": "idx_claim_consistency_issue",
+      "sha256": "b26c2705b91f6e037676e0c5b26444243d84f829ef5d3b3cfa503b7f07838e7f"
+    },
+    {
+      "sourceIndex": 366,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "knowledge_claim_ledger_links",
+      "indexName": "idx_claim_ledger_link_ledger_status",
+      "sha256": "edee18046d91fdff8c7603b7dc4949586db58ad3efc224705020a3432af6f305"
+    },
+    {
+      "sourceIndex": 367,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "knowledge_claim_ledgers",
+      "indexName": "idx_claim_ledger_workspace_project",
+      "sha256": "3a0e9bae50ff9010968be3f1e6773f2744b922f7dac3587a13318a8281523405"
+    },
+    {
+      "sourceIndex": 368,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "knowledge_distillation_evidence",
+      "indexName": "idx_kdistill_evidence_project_status",
+      "sha256": "b9de897978a5860e67363a052c97cbd13e231878cb516e3d59942e13c2cc2204"
+    },
+    {
+      "sourceIndex": 369,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "knowledge_distillation_projects",
+      "indexName": "idx_kdistill_project_workspace_status",
+      "sha256": "1e88b9a406caa0924fa1a403d92a74a079be8250b1642f77f033c0769a9c2f79"
+    },
+    {
+      "sourceIndex": 370,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "knowledge_distillation_sources",
+      "indexName": "idx_kdistill_source_project_status",
+      "sha256": "776d931c6756372a3db683dd2be92a07bf8c0c3464a6123d0f35e10b1e6d102d"
+    },
+    {
+      "sourceIndex": 371,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "knowledge_distillation_sources",
+      "indexName": "idx_kdistill_source_workspace_domain",
+      "sha256": "4cdf9799a8af051214c8fb37888a858a3e20ac52ece8e24a5dd2799e4a8c81d6"
+    },
+    {
+      "sourceIndex": 372,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "knowledge_skill_drafts",
+      "indexName": "idx_kdistill_draft_project_status",
+      "sha256": "0de368283c416da344135a9758baad39d8e0a9a0e710e555adb5f9e4aadc2f8f"
+    },
+    {
+      "sourceIndex": 373,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "knowledge_skill_drafts",
+      "indexName": "idx_kdistill_draft_workspace_type",
+      "sha256": "8727c4a77d17ca2aeba678306dd669ee24b6682c1c2b53c95b2c4f1d38dcb7b9"
+    },
+    {
+      "sourceIndex": 374,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "knowledge_skill_feedback",
+      "indexName": "idx_kdistill_feedback_skill",
+      "sha256": "0dbb9bf0ae1244a5541032b3b10207ac36987e46dcd760cf591128c8368cc164"
+    },
+    {
+      "sourceIndex": 375,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "knowledge_skill_review_events",
+      "indexName": "idx_kdistill_review_project_created",
+      "sha256": "8ac2021d640e6d7bb1398d654e04663db57eac078175fb503d9ffac2072d1375"
+    },
+    {
+      "sourceIndex": 376,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "knowledge_skill_review_events",
+      "indexName": "idx_kdistill_review_draft_created",
+      "sha256": "b72b1f73426592be2e142cf1865f1741151cdb8048e38aabfbd4dfc3f362427b"
+    },
+    {
+      "sourceIndex": 377,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "lingxing_product_weekly",
+      "indexName": "lingxing_product_weekly_source_period_idx",
+      "sha256": "ae37f079f64637cfc2af008cc8811102bcd4ac1603b88cea253393bc305d7797"
+    },
+    {
+      "sourceIndex": 378,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "lingxing_product_weekly",
+      "indexName": "lingxing_product_weekly_source_batch_idx",
+      "sha256": "650cdaa1e85fde91f65f5233526719c0bba3f4f4fa4913969682878f871e11c8"
+    },
+    {
+      "sourceIndex": 379,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "listing_bullet_candidates",
+      "indexName": "idx_listing_bullet_current",
+      "sha256": "84a99be7388869406bea41ce14978848d2b89d9e7e176effd60370b82d3d2231"
+    },
+    {
+      "sourceIndex": 380,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "listing_bullet_candidates",
+      "indexName": "idx_listing_bullet_job",
+      "sha256": "a09ff35b89a50e117b691855fc66c8079a520b08bd9566ba4cfad81965ea7d1a"
+    },
+    {
+      "sourceIndex": 381,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "listing_complete_snapshots",
+      "indexName": "idx_listing_complete_timeline",
+      "sha256": "c8c8416aa4300c21c7bfdde48b0281d27b4e317f727c3c8598a18234c019cd39"
+    },
+    {
+      "sourceIndex": 382,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "listing_complete_snapshots",
+      "indexName": "idx_listing_complete_approval",
+      "sha256": "d14276523a855387dea9ad8321691c5d319125fa8c12933a3e3dd448b1a1a77c"
+    },
+    {
+      "sourceIndex": 383,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "listing_core_revisions",
+      "indexName": "idx_listing_core_current",
+      "sha256": "175d4fe8392b0da6b948ff22dfbd9c5cd51a26d6d809c6ce4dc99abc47f2eb2f"
+    },
+    {
+      "sourceIndex": 384,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "listing_fact_revisions",
+      "indexName": "idx_listing_fact_scope_status",
+      "sha256": "fd90a790a3d904ac21bdbafeff31b67b788491ef4434d435cd644e1146cb8ce0"
+    },
+    {
+      "sourceIndex": 385,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "listing_fact_revisions",
+      "indexName": "idx_listing_fact_source",
+      "sha256": "4284169c49dc7d5504f058bb7e2d44cbfdd82c5e997360cdc7efd613edae7a79"
+    },
+    {
+      "sourceIndex": 386,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "listing_review_revisions",
+      "indexName": "idx_listing_review_listing_audit",
+      "sha256": "41323f4ce89a2fb0090ce0dbfd37386c90661ab7d44f57f7a1d04097e57ad9dc"
+    },
+    {
+      "sourceIndex": 387,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_ad_mcp_campaign_daily_facts",
+      "indexName": "idx_ops_ad_mcp_campaign_week_lookup",
+      "sha256": "fe7057353da029dd24eebef222e8340a19e1abe75cf338f6c7f23f5c12c6ee86"
+    },
+    {
+      "sourceIndex": 388,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_ad_mcp_campaign_daily_facts",
+      "indexName": "idx_ops_ad_mcp_campaign_batch",
+      "sha256": "5fc66fc8f0f657d5400aee2dd1770abab865b41837645a018ea5985d7170fe2d"
+    },
+    {
+      "sourceIndex": 389,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_ad_mcp_fact_revisions",
+      "indexName": "idx_ops_ad_mcp_fact_revisions_fact",
+      "sha256": "e61e43ad0326a934af74bf4373bb5999e546251d96bf7459b1f0257678c4b850"
+    },
+    {
+      "sourceIndex": 390,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_ad_mcp_fact_revisions",
+      "indexName": "idx_ops_ad_mcp_fact_revisions_batch",
+      "sha256": "3b0e2d52956c0351b5b76f5e0d12348a51705dfc809e1cb63da2a7b31cd75c35"
+    },
+    {
+      "sourceIndex": 391,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_ad_mcp_product_daily_facts",
+      "indexName": "idx_ops_ad_mcp_product_parent_week_lookup",
+      "sha256": "0b962cfd4aa0f8c72d07f8eeeb40f59bacff99a771226c87709e3d16372ff550"
+    },
+    {
+      "sourceIndex": 392,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_ad_mcp_product_daily_facts",
+      "indexName": "idx_ops_ad_mcp_product_child_week_lookup",
+      "sha256": "61509798edec26648a802e9f9897c64f8093c70a18d3b6883e5ebe7d7d33a12f"
+    },
+    {
+      "sourceIndex": 393,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_ad_mcp_product_daily_facts",
+      "indexName": "idx_ops_ad_mcp_product_batch",
+      "sha256": "feeca716f1fa252c01d967a9e6bb88b0052f5684be84f468659952b1b4846a5d"
+    },
+    {
+      "sourceIndex": 394,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_ad_mcp_profiles",
+      "indexName": "idx_ops_ad_mcp_profiles_store_country",
+      "sha256": "300392873cb921d69806b60b7fbb265c1ede9bb208bc0935e6e7707bec45428e"
+    },
+    {
+      "sourceIndex": 395,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_asin_daily_snapshots",
+      "indexName": "ops_asin_daily_source_identity_idx",
+      "sha256": "8d5b9ed5d0fdb609dbef1c16d2df230a2980ebb6df7c63628d3884fda1c3ea53"
+    },
+    {
+      "sourceIndex": 396,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_asin_daily_snapshots",
+      "indexName": "ops_asin_daily_batch_hash_idx",
+      "sha256": "d779ec56cfac97d0e6fbcf5cb72c3a4dbffbbc058228eb71134dab8198ecde1d"
+    },
+    {
+      "sourceIndex": 397,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_asin_lifecycle_statuses",
+      "indexName": "ops_asin_lifecycle_asin_store_country_idx",
+      "sha256": "792eb02dc2f50c5801c8e70933cfcb414853760b0d33450fbc9e032ff6b3a475"
+    },
+    {
+      "sourceIndex": 398,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_asin_lifecycle_statuses",
+      "indexName": "ops_asin_lifecycle_status_idx",
+      "sha256": "52531b529bb489a38b4fa1bfbe41f750e4c7fe9f69d9be6a195a6d23331086e5"
+    },
+    {
+      "sourceIndex": 399,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_external_sync_batches",
+      "indexName": "idx_ops_external_sync_batches_workspace_status",
+      "sha256": "75b7ea806a2ae69eb972ec25cb8b658489610296f057f806f733dcca10d05559"
+    },
+    {
+      "sourceIndex": 400,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_external_sync_batches",
+      "indexName": "idx_ops_external_sync_batches_domain",
+      "sha256": "fd6b41a53dc86043ead9873a2bda9a9cef248dd97af33c3942983407bd31413c"
+    },
+    {
+      "sourceIndex": 401,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_external_sync_confirmations",
+      "indexName": "idx_ops_external_sync_confirmations_batch",
+      "sha256": "f55cd7d0af79be6b982191ed41dab04c389475483bf104364e5fac096768d144"
+    },
+    {
+      "sourceIndex": 402,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_external_sync_rows",
+      "indexName": "idx_ops_external_sync_rows_batch",
+      "sha256": "b3b8a51c9c3abd2672e959da4bb63341e836652ec015383fc5782c92e8fb480e"
+    },
+    {
+      "sourceIndex": 403,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_external_sync_rows",
+      "indexName": "idx_ops_external_sync_rows_entity",
+      "sha256": "2ab4bd2f8ee9ebdfbbb54eff410021c264f778c82f3d4a679aa5ae75ea4cd8f6"
+    },
+    {
+      "sourceIndex": 404,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_inventory_owner_assignment_audits",
+      "indexName": "idx_ops_inventory_owner_assignment_audit",
+      "sha256": "3eee6645000c4c7e7a7b11c8a7c6dc67fc321df407472b0316eecaceb4a47ae3"
+    },
+    {
+      "sourceIndex": 405,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_inventory_owner_assignments",
+      "indexName": "idx_ops_inventory_owner_assignment_active",
+      "sha256": "71b844852e32fbf602f0f6a72e924b165375ebd4b3744c91130f7555f411e366"
+    },
+    {
+      "sourceIndex": 406,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_inventory_owner_assignments",
+      "indexName": "idx_ops_inventory_owner_assignment_assignee",
+      "sha256": "44b95874a1eabe1a1bb8e7af11781f84cee15705aedcd83230367b9515b83c16"
+    },
+    {
+      "sourceIndex": 407,
+      "partition": "base",
+      "kind": "create-index",
+      "tableName": "ops_lingxing_sync_schedules",
+      "indexName": "idx_ops_lingxing_sync_schedules_task_uid",
+      "sha256": "22a93b000a1175c6c42dd831a9a434229061ee8e3eb148d55a0116bc75e0a755"
+    }
+  ],
+  "statementComparison": {
+    "scope": "Exact CREATE statement internal bytes after the fixed two-line generated header; only outer statement whitespace and semicolon framing are removed.",
+    "bodyCommentsOutsideQuotedLiteralsOrIdentifiers": "rejected",
+    "semanticNormalization": false
+  },
+  "relativeStatementOrderPreserved": true,
+  "fullEqualsBasePlusDelta": true,
+  "expectedReleaseOrder": [
+    {
+      "phase": "existing-base-bootstrap",
+      "physicalTableCount": 303,
+      "contractModified": false
+    },
+    {
+      "phase": "separate-dedicated-0230",
+      "migration": {
+        "path": "drizzle/0230_assistant_configurations.sql",
+        "sha256": "88b08b6852381336d06af255e25c6dd6a5ed574b7ed27c94b2b86db34fe080e8"
+      },
+      "tables": [
+        "emperor_assistant_configuration_versions",
+        "emperor_assistant_configurations"
+      ]
+    }
+  ],
+  "executionBoundary": "Evidence only: preserve the 303-table bootstrap contract, then separately review 0230. No contract, manifest, historical inventory or native admission is updated."
+}
