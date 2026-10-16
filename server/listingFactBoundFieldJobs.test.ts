@@ -29,6 +29,7 @@ vi.mock("./domains/listing/repository", () => ({
   getKeywordsByProject: mocks.getKeywords,
   getActiveBuyerQuestionsByProject: mocks.getQuestions,
   getLatestConfirmedCompetitorComparisonReport: mocks.getComparison,
+  getLatestCompetitorComparisonReport: mocks.getComparison,
   getProjectFilesByProject: vi.fn(),
 }));
 vi.mock("./domains/listing/service", () => ({ runEmperorSkill: mocks.runSkill }));
@@ -58,6 +59,8 @@ import {
   runListingGenerationJob,
   startListingGenerationJob,
 } from "./domains/listing/services/generationJob";
+import { prepareListingResearchSelection } from "./domains/listing/services/listingResearchSelection";
+import type { ListingResearchBinding } from "../shared/listingResearchSelection";
 
 const rawHash = "a".repeat(64);
 const changedHash = "b".repeat(64);
@@ -76,6 +79,7 @@ const project = {
   productSpecs: JSON.stringify({ capacity: "999 L" }),
 };
 const binding = { sourceFileId: 71, rawHash, factRevisionIds: [41] };
+let researchBinding: ListingResearchBinding;
 
 function parsedFor(operation: string) {
   if (operation === "sellingPoints") return {
@@ -107,11 +111,12 @@ function job(
     projectId: 3,
     userId: 7,
     workspaceId: 9,
-    input: { projectId: 3, operation, nodeId, scopeKey: "main", ...(factBinding ? { factBinding } : {}) },
+    input: { projectId: 3, operation, nodeId, scopeKey: "main", ...(factBinding ? { factBinding } : {}),
+      ...(operation === "sellingPoints" ? { analysisIds: researchBinding.analysisIds, researchBinding } : {}) },
   } as any;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetAllMocks();
   mocks.getProject.mockResolvedValue(project);
   mocks.listJobs.mockResolvedValue([]);
@@ -127,6 +132,9 @@ beforeEach(() => {
   }));
   mocks.createJob.mockResolvedValue({ runId: "new-job", progress: 5 });
   mocks.schedule.mockResolvedValue(undefined);
+  researchBinding = (await prepareListingResearchSelection({ projectId: 3, workspaceId: 9 })).binding;
+  mocks.getProject.mockClear();
+  mocks.getAnalyses.mockClear();
 });
 
 describe("0204 fact-bound Listing field jobs", () => {
@@ -195,6 +203,7 @@ describe("0204 fact-bound Listing field jobs", () => {
       sceneTags: JSON.stringify(["travel"]), intentTag: "portable organization", isNegative: 0 }]);
     mocks.getQuestions.mockResolvedValue([{ id: 51, projectId: 3, question: "Is it easy to carry?", status: "active", priority: "high",
       source: "competitor_review", suggestedAnswer: "UNVERIFIED product promise" }]);
+    researchBinding = (await prepareListingResearchSelection({ projectId: 3, workspaceId: 9, analysisIds: [81] })).binding;
     const task = job("sellingPoints");
     task.input.emphasis = "Focus on travel buyers";
     const result = await runListingGenerationJob(task, { signal: new AbortController().signal } as any);
@@ -214,9 +223,11 @@ describe("0204 fact-bound Listing field jobs", () => {
     expect(call.context).not.toContain("999 L");
     expect(mocks.buildContext).not.toHaveBeenCalled();
     expect(mocks.loadEnriched).not.toHaveBeenCalled();
-    for (const getter of [mocks.getAnalyses, mocks.getReviews, mocks.getKeywords, mocks.getQuestions, mocks.getComparison]) {
+    for (const getter of [mocks.getAnalyses, mocks.getKeywords, mocks.getQuestions]) {
       expect(getter).toHaveBeenCalledWith(3);
     }
+    expect(mocks.getReviews).not.toHaveBeenCalled();
+    expect(mocks.getComparison).toHaveBeenCalledWith(3, "81");
     expect(result.sellingPoints).toHaveLength(7);
     expect(result.researchLimitations).toContainEqual(expect.stringContaining("已确认竞品对比"));
     expect(result.researchLimitations).not.toContainEqual(expect.stringContaining("缺少可用评论洞察"));
@@ -264,8 +275,10 @@ describe("0204 fact-bound Listing field jobs", () => {
   });
 
   it("G1 does not relabel a research database failure as missing evidence", async () => {
-    mocks.getReviews.mockRejectedValue(new Error("review database unavailable"));
-    await expect(runListingGenerationJob(job("sellingPoints"), { signal: new AbortController().signal } as any)).rejects.toThrow("review database unavailable");
+    mocks.getAnalyses.mockResolvedValue([{ id: 81, projectId: 3, asin: "B000000081" }]);
+    researchBinding = (await prepareListingResearchSelection({ projectId: 3, workspaceId: 9, analysisIds: [81] })).binding;
+    mocks.getAnalyses.mockRejectedValue(new Error("selected research database unavailable"));
+    await expect(runListingGenerationJob(job("sellingPoints"), { signal: new AbortController().signal } as any)).rejects.toThrow("selected research database unavailable");
     expect(mocks.runSkill).not.toHaveBeenCalled();
   });
 });

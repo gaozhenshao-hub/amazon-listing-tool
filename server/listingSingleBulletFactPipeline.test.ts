@@ -11,7 +11,8 @@ vi.mock("./domains/listing/routerContext", () => ({
 vi.mock("./domains/listing/repository", () => ({ getProjectByIdAdmin: mocks.getProject,
   getCompetitorAnalysesByProject: mocks.getAnalyses, getProjectFilesByProject: mocks.getFiles,
   getReviewAggregationByProject: vi.fn(async () => null), getKeywordsByProject: vi.fn(async () => []),
-  getActiveBuyerQuestionsByProject: vi.fn(async () => []), getLatestConfirmedCompetitorComparisonReport: vi.fn(async () => null) }));
+  getActiveBuyerQuestionsByProject: vi.fn(async () => []), getLatestConfirmedCompetitorComparisonReport: vi.fn(async () => null),
+  getLatestCompetitorComparisonReport: vi.fn(async () => null) }));
 vi.mock("./domains/listing/service", () => ({ runEmperorSkill: mocks.runSkill }));
 vi.mock("./domains/ai_os/services/jobRunner", () => ({
   registerAiJobHandler: vi.fn(), listAiJobRunsForUser: mocks.listJobs, updateAiJobProgress: mocks.progress,
@@ -33,6 +34,9 @@ vi.mock("./domains/listing/services/listingFactSource", async importOriginal => 
 }));
 
 import { runListingGenerationJob } from "./domains/listing/services/generationJob";
+import { prepareListingResearchSelection } from "./domains/listing/services/listingResearchSelection";
+import type { ListingResearchBinding } from "../shared/listingResearchSelection";
+let researchBinding: ListingResearchBinding;
 
 const project = { id: 1, workspaceId: 9, productName: "Test Case", brand: "Example Brand",
   productFeatures: JSON.stringify(["Padded shell", "Power: [如：1200W]"]), productSpecs: JSON.stringify({ power: "[如：1200W]" }) };
@@ -50,15 +54,17 @@ function makeJob(input: Record<string, unknown>) {
     input: { projectId: 1, nodeId: "G1", scopeKey: "bullet-0",
       ...(input.operation === "sellingPoints" ? { factBinding: {
         sourceFileId: 11, rawHash: "b".repeat(64), factRevisionIds: [23],
-      } } : {}),
+      }, analysisIds: researchBinding.analysisIds, researchBinding } : {}),
       ...(input.operation === "singleBullet" ? { coreRevisionId: 12, coreInputHash: "a".repeat(64) } : {}), ...input } } as any;
 }
 const handler = { signal: new AbortController().signal } as any;
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
   mocks.getProject.mockResolvedValue(project);
   mocks.getAnalyses.mockResolvedValue([]);
+  researchBinding = (await prepareListingResearchSelection({ projectId: 1, workspaceId: 9, analysisIds: [] })).binding;
+  mocks.getProject.mockClear();
   mocks.validateBullets.mockReturnValue({ valid: true, issues: [] });
   mocks.resolveCore.mockImplementation(async () => ({ sellingPoint: core, factRevisions: [{ id: 23, attributeKey: "Feature", value: "Padded shell" }] }));
   mocks.persistCandidate.mockResolvedValue({ id: 61, candidateRevision: 1 });

@@ -69,17 +69,51 @@ import { sanitizeSelectedSellingPoint } from "@shared/listingFactSafety";
 import ProductProfileAttributeSource from "./listing/ProductProfileAttributeSource";
 import ListingStages from "./listing/ListingStages";
 import { MERGED_LISTING_WORKFLOW_ENABLED } from "@/lib/mergedListingWorkflow";
+import ListingResearchSelection, { ListingResearchRunSummary, useListingResearchSelection } from "./listing/ListingResearchSelection";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { useQueryClient } from "@tanstack/react-query";
+import { listingIdentity, listingReviewQueryMatches } from "./listing/listingResearchSelectionState";
+import { useOwnedListingReviewLedger } from "./listing/useListingGenerationJob";
 
 function bulletFingerprint(bullet: { subtitle?: string; fullText?: string } | null | undefined) {
   return `${bullet?.subtitle || ""}\u0000${bullet?.fullText || ""}`;
 }
 
 export default function GeneratePage() {
+  const auth = useAuth(), { selectedProjectId } = useProject(), queryClient = useQueryClient();
+  const actor = listingIdentity(auth.user);
+  const identity = actor ? JSON.stringify([actor.userId, actor.workspaceId, actor.role, selectedProjectId]) : null;
+  const boundary = useRef({ identity, epoch: 0 });
+  if (boundary.current.identity !== identity) boundary.current = { identity, epoch: boundary.current.epoch + 1 };
+  const token = boundary.current;
+  const [prepared, setPrepared] = useState<typeof token | null>(null);
+  const shown = useRef<typeof token | null>(null);
+  useEffect(() => {
+    if (!identity) return;
+    // Review children and locked Listing recovery use project-only query keys.
+    // Remove only this project's five recovery entries before a new owner; never
+    // seed a new owner from old shared cache or clear a same-owner dirty draft.
+    if (selectedProjectId) queryClient.removeQueries({ predicate: query => listingReviewQueryMatches(query.queryKey, selectedProjectId) });
+    setPrepared(token);
+  }, [identity, queryClient, selectedProjectId, token]);
+  if (!actor) return <p role={auth.loading ? "status" : "alert"}>{auth.loading ? "正在确认生成页身份…" : "请先确认登录与工作区身份。"}</p>;
+  if (prepared !== token) return <p role="status">正在切换当前项目的生成范围…</p>;
+  const hidden = auth.loading || !!auth.error;
+  if (!hidden) shown.current = token;
+  // Only an already-mounted same-owner editor survives a background auth read.
+  // A new owner must not mount private query consumers before auth settles.
+  if (hidden && shown.current !== token) return <p role="status">正在确认生成页身份…</p>;
+  return <>{hidden && <p role="status">正在重新确认当前身份，已有编辑稿暂时保留…</p>}
+    <div hidden={hidden}><GeneratePageContent key={`${identity}:${token.epoch}`} /></div></>;
+}
+
+function GeneratePageContent() {
   const { selectedProjectId } = useProject();
   const [, setLocation] = useLocation();
   // Free-text emphasis is not an evidence channel for fact-bound AI jobs.
   const emphasis = "";
   const [distillationBinding, setDistillationBinding] = useState<DistillationBinding>({ ledgerKey: null, skillSlugs: [] });
+  const researchSelection = useListingResearchSelection(selectedProjectId || 0, MERGED_LISTING_WORKFLOW_ENABLED);
 
   // Step-by-step bullet generation state
   const sellingPointPlan = useSellingPointPlanRecovery(selectedProjectId);
@@ -87,8 +121,9 @@ export default function GeneratePage() {
   const coreRevisionRef = useRef(0);
   const [confirmedCores, setConfirmedCores] = useState<boolean[]>([]);
   const [coreFactSelection, setCoreFactSelection] = useState<Record<number, number[]>>({});
-  const reviewedFactsQuery = trpc.listing.listReviewedFacts.useQuery({ projectId: selectedProjectId! }, { enabled: !!selectedProjectId });
-  const reviewedCoresQuery = trpc.listing.listCurrentCores.useQuery({ projectId: selectedProjectId! }, { enabled: !!selectedProjectId });
+  const ownedReviewLedger = useOwnedListingReviewLedger(selectedProjectId || 0);
+  const reviewedFactsQuery = ownedReviewLedger.facts;
+  const reviewedCoresQuery = ownedReviewLedger.cores;
   const reviewCoreMutation = trpc.listing.reviewCore.useMutation();
   const reviewUtils = trpc.useUtils();
   const confirmedFactIds = useMemo(() => new Set((reviewedFactsQuery.data || [])
@@ -121,10 +156,11 @@ export default function GeneratePage() {
   const [confirmedBullets, setConfirmedBullets] = useState<Record<number, boolean>>({});
   const [editingCore, setEditingCore] = useState<number | null>(null);
   useEffect(() => {
-    if (!sellingPointCores?.length || !reviewedCoresQuery.data || reviewedFactsQuery.isLoading || reviewedFactsQuery.isError) return;
+    const reviewedCores = reviewedCoresQuery.data;
+    if (!sellingPointCores?.length || !reviewedCores || reviewedFactsQuery.isLoading || reviewedFactsQuery.isError) return;
     setConfirmedCores((previous) => {
       const next = sellingPointCores.map((point, idx) => !point || editingCore === idx ? false : Boolean(
-        reviewedCoresQuery.data.some((item) => item.sellingPointIndex === idx && item.status === "confirmed"
+        reviewedCores.some((item) => item.sellingPointIndex === idx && item.status === "confirmed"
           && (!point.serverCoreId || item.coreId === point.serverCoreId)
           && item.buyerReason === coreReason(point)
           && hasCurrentConfirmedEvidence(item, confirmedFactIds))));
@@ -351,6 +387,7 @@ export default function GeneratePage() {
     nodeId: "G1",
     operation: "sellingPoints",
     scopeKey: "main",
+    includeHistory: true,
     distillationBinding,
     onSucceeded: (data: any) => {
       // Normalize field name variants (backend may return selling_points / points / cores / themes)
@@ -384,16 +421,14 @@ export default function GeneratePage() {
   const cancelListingJob = trpc.listing.cancelGenerationJob.useMutation();
   const handledBulletJobRuns = useRef(new Set<string>());
   const requestedBulletFingerprints = useRef(new Map<string, string>());
-  const g1JobsQuery = trpc.listing.listGenerationRuns.useQuery(
-    { projectId: selectedProjectId || 0, nodeId: "G1" },
-    {
-      enabled: !!selectedProjectId,
-      refetchInterval: (query) => ((query.state.data as any[]) || []).some((job) => job.status === "queued" || job.status === "running") ? 2_000 : false,
-    },
-  );
-  const g1Jobs = useMemo(() => (g1JobsQuery.data || []) as any[], [g1JobsQuery.data]);
+  const g1JobsQuery = { isLoading: sellingPointsJob.isLoadingRun, refetch: sellingPointsJob.refetch };
+  const g1Jobs = sellingPointsJob.history;
+  const sellingPointOwnerRef = useRef(sellingPointsJob.responseOwner);
+  sellingPointOwnerRef.current = sellingPointsJob.responseOwner;
+  const coreStartPending = useRef({ owner: sellingPointsJob.responseOwner, pending: false });
+  if (coreStartPending.current.owner !== sellingPointsJob.responseOwner) coreStartPending.current = { owner: sellingPointsJob.responseOwner, pending: false };
   useEffect(() => {
-    if (!selectedProjectId || sellingPointsJob.isLoadingRun || reviewedCoresQuery.isLoading
+    if (!selectedProjectId || !sellingPointsJob.ownerKey || sellingPointsJob.readError || sellingPointsJob.isLoadingRun || reviewedCoresQuery.isLoading
       || reviewedCoresQuery.isError || !reviewedCoresQuery.data) return;
     if (sellingPointPlan.awaitingNewRun && sellingPointsJob.run?.runId !== sellingPointPlan.ignoredRunId
       && ["failed", "canceled"].includes(sellingPointsJob.run?.status)) {
@@ -405,7 +440,7 @@ export default function GeneratePage() {
     // is already queried for bullet recovery; no extra endpoint is required.
     if (!run && g1JobsQuery.isLoading && !sellingPointPlan.awaitingNewRun) return;
     restoreSellingPointPlan(run?.runId || null, run?.output || null, reviewedCoresQuery.data);
-  }, [selectedProjectId, sellingPointsJob.isLoadingRun, sellingPointsJob.run, reviewedCoresQuery.data,
+  }, [selectedProjectId, sellingPointsJob.ownerKey, sellingPointsJob.readError, sellingPointsJob.isLoadingRun, sellingPointsJob.run, reviewedCoresQuery.data,
     reviewedCoresQuery.isLoading, reviewedCoresQuery.isError, restoreSellingPointPlan,
     g1Jobs, g1JobsQuery.isLoading, sellingPointPlan.awaitingNewRun, sellingPointPlan.ignoredRunId, settleUnsuccessfulAttempt]);
 
@@ -479,6 +514,11 @@ export default function GeneratePage() {
 
   const handleGenerateCores = () => {
     if (!selectedProjectId) return;
+    // Validate before preparing/clearing any existing plan or draft. [] is only
+    // available after an operator explicitly confirms not using competitors.
+    const researchPayload = researchSelection.payload;
+    if (!researchPayload) { toast.error("请先确认本次竞品研究范围，也可明确确认不使用竞品"); return; }
+    if (!sellingPointsJob.ownerKey || sellingPointsJob.isStarting || sellingPointsJob.isGenerating || coreStartPending.current.pending) return;
     // Either selected-profile conversion or supplemental upload can supply the
     // analyzed source; neither path confirms product facts automatically.
     if (!fileSummary?.productAttributes) {
@@ -491,6 +531,7 @@ export default function GeneratePage() {
       });
       return;
     }
+    coreStartPending.current.pending = true;
     coreRevisionRef.current += 1;
     sellingPointPlan.prepare(sellingPointsJob.run?.runId || null);
     setCoreFactSelection({});
@@ -498,9 +539,10 @@ export default function GeneratePage() {
     setGeneratedBullets({});
     setConfirmedBullets({});
     setStepBulletPhase("idle");
-    void sellingPointsJob.start({ emphasis: emphasis.trim() || undefined }).then((job) => {
-      if (!job) settleUnsuccessfulAttempt();
-    });
+    const requestOwner = sellingPointsJob.responseOwner;
+    void sellingPointsJob.start({ emphasis: emphasis.trim() || undefined, ...researchPayload }).then((job) => {
+      if (!job && sellingPointOwnerRef.current === requestOwner) settleUnsuccessfulAttempt();
+    }).finally(() => { if (coreStartPending.current.owner === requestOwner) coreStartPending.current.pending = false; });
   };
 
   const handleConfirmCore = async (idx: number) => {
@@ -526,6 +568,7 @@ export default function GeneratePage() {
         buyerReason: coreReason(sellingPointCores[idx]), factRevisionIds: factIds,
         expectedRevision: known?.revision || 0, decision: "confirm" });
       await reviewUtils.listing.listCurrentCores.invalidate({ projectId: selectedProjectId });
+      await ownedReviewLedger.refetch();
       setConfirmedCores(prev => { const next = [...prev]; next[idx] = true; return next; });
       setEditingCore(null);
       toast.success("核心及所选产品事实已记录为人工确认版本");
@@ -1445,6 +1488,10 @@ export default function GeneratePage() {
             onManageKeywords={() => setLocation("/listing/keywords")}
           />
           {MERGED_LISTING_WORKFLOW_ENABLED && selectedProjectId && <ProductProfileAttributeSource projectId={selectedProjectId} />}
+          {MERGED_LISTING_WORKFLOW_ENABLED && <ListingResearchSelection selection={researchSelection} disabled={sellingPointsJob.isGenerating} />}
+          {!MERGED_LISTING_WORKFLOW_ENABLED && <p className="text-xs text-muted-foreground">当前为原有生成入口，竞品采用范围以任务返回记录为准；不会采用其他页面的本地勾选。</p>}
+          <ListingResearchRunSummary run={sellingPointsJob.run} />
+          {sellingPointsJob.readError && <p role="alert" className="text-xs text-red-700">当前任务读取失败；请重新读取后核对已有任务，不要重复生成。<button type="button" className="ml-2 underline" onClick={() => void sellingPointsJob.refetch()}>重新读取任务</button></p>}
 
           {/* Step-by-Step Bullet Crafting Section - Main Content */}
           <Card className="border-teal-200 bg-gradient-to-br from-teal-50/50 to-transparent dark:from-teal-950/20">
@@ -1469,7 +1516,7 @@ export default function GeneratePage() {
                   <p className="text-xs text-slate-600">候选入口直接使用当前项目的服务端核心版本；刷新后无需重跑模型。核心或事实已失效的历史只供审计，不能错绑到当前核心。</p>
                 </div>
                 {reviewedCoresQuery.isLoading && <p className="text-xs text-slate-600">正在恢复已审核核心与候选入口…</p>}
-                {reviewedCoresQuery.isError && <p role="alert" className="text-xs text-red-700">无法恢复候选入口：{reviewedCoresQuery.error.message}</p>}
+                {reviewedCoresQuery.isError && <p role="alert" className="text-xs text-red-700">无法恢复候选入口：{reviewedCoresQuery.error?.message}</p>}
                 {!reviewedCoresQuery.isLoading && !reviewedCoresQuery.isError && currentConfirmedCoreBindings.length === 0 && <p className="text-xs text-slate-600">当前项目暂无仍有效且已确认的核心；请先审核事实并确认核心后再创建或继续审阅候选。</p>}
                 {currentConfirmedCoreBindings.map((core) => <CandidateReviewPanel
                   key={`candidate-active-${selectedProjectId}-${core.id}`}

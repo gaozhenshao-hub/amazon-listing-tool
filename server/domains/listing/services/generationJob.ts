@@ -40,6 +40,8 @@ import { resolveConfirmedListingCore } from "./listingConfirmedCore";
 import { persistGeneratedBulletCandidate } from "./listingCandidateProvenance";
 import { resolveCurrentConfirmedListingFacts } from "./listingFactSource";
 import { buildSellingPointPlanningResearch, formatSellingPointPlanningContext, normalizeSellingPointPlanningOutput, sellingPointResearchLimitations } from "./sellingPointPlanning";
+import { listingResearchBindingSchema, listingResearchIdsSchema, type ListingResearchBinding } from "../../../../shared/listingResearchSelection";
+import { assertListingResearchSelection, prepareListingResearchSelection } from "./listingResearchSelection";
 
 export const LISTING_JOB_MODULE = "listing";
 
@@ -80,6 +82,8 @@ export const listingGenerationJobInput = z.object({
   agentRunId: z.string().max(80).optional(),
   agentNodeId: z.enum(["G1", "G2", "G3", "G4", "G5"]).optional(),
   emphasis: z.string().max(4_000).optional(),
+  analysisIds: listingResearchIdsSchema.optional(),
+  researchBinding: listingResearchBindingSchema.optional(),
   existingTitle: z.string().max(2_000).optional(),
   sellingPoint: sellingPointSchema.optional(),
   coreRevisionId: z.number().int().positive().optional(),
@@ -100,6 +104,37 @@ export const listingGenerationJobInput = z.object({
 });
 
 export type ListingGenerationJobInput = z.infer<typeof listingGenerationJobInput>;
+
+/** Only the server-derived job snapshot can select research at execution time.
+ * Old queued jobs must be re-created, never silently rebound to today's rows. */
+async function resolveBoundResearch(job: AiJobSnapshot, input: ListingGenerationJobInput) {
+  if (input.operation !== "sellingPoints") return null;
+  if (!input.researchBinding || !input.analysisIds
+    || job.projectId !== input.projectId
+    || JSON.stringify(input.analysisIds) !== JSON.stringify(input.researchBinding.analysisIds)) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "卖点方向任务缺少一致的竞品选集及来源版本，请重新选择并创建任务" });
+  }
+  return assertListingResearchSelection(input.researchBinding, {
+    projectId: input.projectId, workspaceId: job.workspaceId ?? null,
+  });
+}
+
+/** Admission check used both before Agent/Listing side effects and at enqueue. */
+export function assertListingResearchJobCompatible(active: AiJobSnapshot, input: {
+  projectId: number; userId: number; workspaceId?: number | null;
+  operation: ListingGenerationOperation; scopeKey?: string; researchBinding?: ListingResearchBinding;
+}) {
+  if (input.operation !== "sellingPoints") return;
+  const parsed = listingGenerationJobInput.safeParse(active.input);
+  if (!parsed.success || active.projectId !== input.projectId || active.userId !== input.userId
+    || (active.workspaceId ?? null) !== (input.workspaceId ?? null)
+    || parsed.data.operation !== input.operation || parsed.data.scopeKey !== (input.scopeKey || "main")
+    || !parsed.data.researchBinding || !input.researchBinding
+    || JSON.stringify(parsed.data.analysisIds) !== JSON.stringify(input.researchBinding.analysisIds)
+    || JSON.stringify(parsed.data.researchBinding) !== JSON.stringify(input.researchBinding)) {
+    throw new TRPCError({ code: "CONFLICT", message: "已有后台任务使用不同竞品范围或来源版本，请先查看或取消原任务，再提交新选集" });
+  }
+}
 
 const OPERATION_CONFIG: Record<Exclude<ListingGenerationOperation, "batch">, {
   nodeKey: ListingGenerationNodeKey;
@@ -302,16 +337,20 @@ export async function syncListingPreparationNodes(input: {
   userId: number;
   workspaceId?: number | null;
   agentRunId?: string | null;
+  researchBinding?: ListingResearchBinding;
 }) {
   if (!input.agentRunId) return;
   const project = await db.getProjectByIdAdmin(input.projectId, input.workspaceId ?? null);
   if (!project) return;
+  const selectedResearch = input.researchBinding ? await assertListingResearchSelection(input.researchBinding, {
+    projectId: input.projectId, workspaceId: input.workspaceId ?? null,
+  }) : null;
   const [analyses, comparison, enrichedData, keywords, reviewAggregation, buyerQuestions] = await Promise.all([
-    db.getCompetitorAnalysesByProject(input.projectId),
-    db.getLatestConfirmedCompetitorComparisonReport(input.projectId),
+    selectedResearch ? Promise.resolve(selectedResearch.competitors) : db.getCompetitorAnalysesByProject(input.projectId),
+    selectedResearch ? Promise.resolve(selectedResearch.confirmedComparison) : db.getLatestConfirmedCompetitorComparisonReport(input.projectId),
     loadEnrichedData(input.projectId),
     db.getKeywordsByProject(input.projectId),
-    db.getReviewAggregationByProject(input.projectId),
+    selectedResearch ? Promise.resolve(null) : db.getReviewAggregationByProject(input.projectId),
     db.getActiveBuyerQuestionsByProject(input.projectId),
   ]);
   const shared = {
@@ -360,7 +399,13 @@ export async function syncListingPreparationNodes(input: {
   await syncListingPreparationNodeConfirmed({
     ...shared,
     nodeId: "N5",
-    output: reviewAggregation || { available: false, reason: "暂无评论聚合分析" },
+    output: selectedResearch ? {
+      source: "selected_competitor_review_analysis", researchSelection: selectedResearch.binding,
+      projectAggregationExcluded: true,
+      records: analyses.slice(0, 20).map(analysis => ({ analysisId: analysis.id, asin: analysis.asin,
+        reviewAnalysis: analysis.reviewAnalysis ? compactText(analysis.reviewAnalysis, 1_000) : null })),
+      omittedRecordCount: Math.max(0, analyses.length - 20),
+    } : reviewAggregation || { available: false, reason: "暂无评论聚合分析" },
   });
 }
 
@@ -380,8 +425,9 @@ function jobTargetsNode(job: AiJobSnapshot, nodeId: ListingAgentNodeId) {
     : parsed.data.nodeId === nodeId;
 }
 
-export async function listListingGenerationJobs(userId: number, projectId: number) {
-  return listAiJobRunsForUser(userId, { module: LISTING_JOB_MODULE, projectId, limit: 100 });
+export async function listListingGenerationJobs(userId: number, projectId: number, workspaceId?: number | null) {
+  const jobs = await listAiJobRunsForUser(userId, { module: LISTING_JOB_MODULE, projectId, limit: 100 });
+  return workspaceId === undefined ? jobs : jobs.filter(job => job.workspaceId === workspaceId);
 }
 
 export async function getLatestListingNodeJob(
@@ -389,8 +435,9 @@ export async function getLatestListingNodeJob(
   projectId: number,
   nodeId: ListingAgentNodeId,
   scopeKey?: string,
+  workspaceId?: number | null,
 ) {
-  const jobs = await listListingGenerationJobs(userId, projectId);
+  const jobs = await listListingGenerationJobs(userId, projectId, workspaceId);
   return jobs.find((job) => {
     if (!jobTargetsNode(job, nodeId)) return false;
     if (!scopeKey) return true;
@@ -456,15 +503,16 @@ async function buildJobContext(
       "Use only the confirmed facts above for any product specification, material, performance, certification, compatibility, warranty, pack quantity, comparison, or benefit claim. Do not infer our product facts from competitor data, reviews, keywords, historical Listing text, or general category knowledge. If the facts do not support a claim, omit it rather than guessing.",
     ].join("\n");
     if (operation === "sellingPoints") {
-      const [competitors, reviewAggregation, keywords, buyerQuestions, confirmedComparison] = await Promise.all([
-        db.getCompetitorAnalysesByProject(input.projectId),
-        db.getReviewAggregationByProject(input.projectId),
+      const selectedResearch = await resolveBoundResearch(job, input);
+      if (!selectedResearch) throw new Error("卖点方向缺少已绑定竞品研究");
+      const [keywords, buyerQuestions] = await Promise.all([
         db.getKeywordsByProject(input.projectId),
         db.getActiveBuyerQuestionsByProject(input.projectId),
-        db.getLatestConfirmedCompetitorComparisonReport(input.projectId),
       ]);
       const planningResearch = buildSellingPointPlanningResearch({
-        projectId: input.projectId, competitors, reviewAggregation, keywords, buyerQuestions, confirmedComparison,
+        projectId: input.projectId, competitors: selectedResearch.competitors,
+        reviewAggregation: null, keywords, buyerQuestions,
+        confirmedComparison: selectedResearch.confirmedComparison, researchSelection: selectedResearch.binding,
       });
       return {
         project: identity, analyses: [], enrichedData: {}, rawExamples: [],
@@ -540,6 +588,7 @@ async function callListingSkill(
   variables: Record<string, unknown>,
   onExecution?: (audit: { runId: string; modelSlug: string | null; fallbackCount: number | null; skillVersion: string | null; executionPreset: string }) => void,
 ) {
+  await resolveBoundResearch(job, input);
   if (requiresCurrentFactBinding(input.operation)) {
     if (!job.workspaceId) {
       throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204事实账本需要当前工作空间，Worker拒绝执行未绑定人审事实的AI任务" });
@@ -580,6 +629,7 @@ async function callListingSkill(
   if (requiresCurrentFactBinding(input.operation)) {
     await resolveBoundFactsBeforeModel(input, job.workspaceId!);
   }
+  await resolveBoundResearch(job, input);
   onExecution?.({
     runId: result.runId,
     modelSlug: result.modelSlug || null,
@@ -702,7 +752,13 @@ async function runOperation(
     if (!("planningResearch" in built.variables) || !built.variables.planningResearch) {
       throw new Error("卖点方向缺少研究来源状态，不能展示未经核验的策划结果");
     }
-    return normalizeSellingPoints(parsed, built.variables.planningResearch);
+    const selectedResearch = await resolveBoundResearch(job, input);
+    if (!selectedResearch) throw new Error("卖点方向缺少已绑定竞品研究");
+    return { ...normalizeSellingPoints(parsed, built.variables.planningResearch),
+      // Never trust a model-supplied selection or version label.
+      researchSelection: { ...selectedResearch.binding, analyzedAsins: [...new Set(selectedResearch.competitors
+        .map(row => row.asin).filter(asin => typeof asin === "string" && asin.trim().length > 0))] },
+    };
   }
   if (operation === "singleBullet") {
     let bullet = parsed;
@@ -789,7 +845,7 @@ async function reportNodeProgress(job: AiJobSnapshot, input: ListingGenerationJo
 }
 
 async function latestJobStillOwnsNode(job: AiJobSnapshot, nodeId: ListingAgentNodeId) {
-  const latest = await getLatestListingNodeJob(job.userId, Number(job.projectId), nodeId);
+  const latest = await getLatestListingNodeJob(job.userId, Number(job.projectId), nodeId, undefined, job.workspaceId ?? null);
   return latest?.runId === job.runId;
 }
 
@@ -846,6 +902,7 @@ export async function runListingGenerationJob(job: AiJobSnapshot, context: AiJob
   if (input.operation === "batch" || input.operation === "bullets") {
     throw new Error("历史整套卖点任务未绑定逐条已审事实与核心版本，Worker拒绝执行模型调用；请从人审候选重新开始");
   }
+  await resolveBoundResearch(job, input);
   await reportNodeProgress(job, input, input.nodeId, 15);
   let executionInput = input;
   if (input.operation === "singleBullet") {
@@ -861,13 +918,14 @@ export async function runListingGenerationJob(job: AiJobSnapshot, context: AiJob
     return { skipped: true, reason: `${input.nodeId} 已有更新的任务` };
   }
   await reportNodeProgress(job, input, input.nodeId, 90);
+  await resolveBoundResearch(job, input);
   return result;
 }
 
 export async function startListingGenerationJob(input: ListingGenerationJobInput & {
   userId: number;
   workspaceId?: number | null;
-}) {
+}, preparedResearchBinding?: ListingResearchBinding) {
   if (input.operation === "batch" || input.operation === "bullets") {
     throw new Error("旧整套卖点任务缺少逐条已审事实及核心版本绑定，拒绝创建模型任务；请使用单条候选人审流程");
   }
@@ -890,8 +948,23 @@ export async function startListingGenerationJob(input: ListingGenerationJobInput
     // service-derived raw hash and current confirmed fact revisions.
     jobInput = { ...input, factBinding: factBindingFromCurrentFacts(currentFacts) };
   }
-  const active = await getLatestListingNodeJob(input.userId, input.projectId, input.nodeId);
-  if (active?.status === "queued" || active?.status === "running") return active;
+  if (input.operation === "sellingPoints") {
+    // The optional second argument is internal preflight state, never part of
+    // the public RPC. It is revalidated, not accepted as browser authority.
+    const research = preparedResearchBinding
+      ? await assertListingResearchSelection(preparedResearchBinding, { projectId: input.projectId, workspaceId: input.workspaceId ?? null })
+      : await prepareListingResearchSelection({ projectId: input.projectId, workspaceId: input.workspaceId ?? null, analysisIds: input.analysisIds });
+    if (preparedResearchBinding && (research.binding.mode !== (input.analysisIds === undefined ? "legacy_all" : "explicit")
+      || (input.analysisIds !== undefined && JSON.stringify([...listingResearchIdsSchema.parse(input.analysisIds)].sort((a, b) => a - b)) !== JSON.stringify(research.binding.analysisIds)))) {
+      throw new TRPCError({ code: "CONFLICT", message: "竞品选集在提交过程中发生变化，请重新确认" });
+    }
+    jobInput = { ...jobInput, analysisIds: research.binding.analysisIds, researchBinding: research.binding };
+  }
+  const active = await getLatestListingNodeJob(input.userId, input.projectId, input.nodeId, input.scopeKey || "main", input.workspaceId ?? null);
+  if (active?.status === "queued" || active?.status === "running") {
+    assertListingResearchJobCompatible(active, jobInput);
+    return active;
+  }
   const label = OPERATION_CONFIG[input.operation].label;
   const skillSlug = OPERATION_CONFIG[input.operation].skillSlug;
   const job = await createAiJobRun({
@@ -942,11 +1015,12 @@ export async function startListingGenerationJob(input: ListingGenerationJobInput
 export async function cancelListingGenerationJob(input: {
   userId: number;
   projectId: number;
+  workspaceId: number | null;
   nodeId: ListingAgentNodeId;
   scopeKey?: string;
   agentRunId?: string | null;
 }) {
-  const job = await getLatestListingNodeJob(input.userId, input.projectId, input.nodeId, input.scopeKey);
+  const job = await getLatestListingNodeJob(input.userId, input.projectId, input.nodeId, input.scopeKey, input.workspaceId);
   if (!job || (job.status !== "queued" && job.status !== "running")) return job;
   const canceled = await cancelAiJob(job.runId, `用户取消 ${input.nodeId} Listing 生成任务`);
   await syncListingNodeJobFailed({

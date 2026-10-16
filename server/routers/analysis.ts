@@ -15,6 +15,7 @@ import {
   projectCompetitorConsumerRef,
 } from "../domains/acquisition/legacyConsumerContracts";
 import { resolveStoredObjectUrl } from "../storage";
+import { workspaceIdFromContext } from "../services/securityGovernance";
 import {
   registerCompetitorAnalysisArtifact,
   registerCompetitorComparisonArtifact,
@@ -75,10 +76,14 @@ async function resolveCompetitorImagesForDelivery<T extends { imageUrls?: string
 export const analysisRouter = router({
   // Get all analyses for a project
   listByProject: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.number(), expectedWorkspaceId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable().optional() }))
     .query(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
+      const workspaceId = workspaceIdFromContext(ctx);
+      if (input.expectedWorkspaceId !== undefined && input.expectedWorkspaceId !== workspaceId) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "工作区已变化，请重新选择竞品" });
+      }
+      const project = await db.getProjectById(input.projectId, ctx.user.id, workspaceId);
+      if (!project || (project.workspaceId !== null && project.workspaceId !== workspaceId)) throw new Error("Project not found");
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       return Promise.all(analyses.map(resolveCompetitorImagesForDelivery));
     }),

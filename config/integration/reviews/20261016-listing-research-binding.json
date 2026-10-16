@@ -1,0 +1,280 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-listing-selected-research-binding",
+  "baseline": "ad8479dc1d95f2f70baa48d4d419b1c8e0fb7dcf",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "listingSkills": "user-primary",
+    "listingWorkflow": "friend-primary",
+    "competitorAndAttributeInputs": "select authorized saved sources and generate; uploads optional"
+  },
+  "changes": [
+    "Bind explicitly selected competitor analysis IDs from GeneratePage through public/legacy start admission, persisted job input, N1/N2/N5 preparation, planning context and server-derived result provenance. Validate all requested IDs before creating Agent/Listing/job side effects.",
+    "Explicit [] excludes competitor research. Omitted legacy input freezes current IDs once; later rows do not join restored jobs. Historical queued G1 jobs without binding fail closed. Active tasks with different selection/version conflict within the same authenticated workspace and scope.",
+    "Canonical full-row hashes bind selected research and an exact confirmed comparison. Revalidate before/after Skill invocation and after awaited final progress update; never trust a model-supplied selection.",
+    "Unbound project-wide review aggregation and other-selection comparison are omitted. Use selected analyses' per-ASIN reviews. Project-level keywords/questions remain separately labelled, not attributed to the selected competitors.",
+    "Fresh owner-scoped UI reads, explicit confirmation, actual/frozen task range display, authority-parameter protection and epoch-based late-response guards. Public job history/cancel precisely filter authenticated workspace, including legitimate NULL scope.",
+    "Generate content is remounted on user/workspace/role/project changes. Remove only five current-project recovery caches before mounting; own fresh fact/core reads instead of restoring shared cached reviews. Preserve same-owner background-refresh dirty drafts.",
+    "Preserve seven bilingual directions, FABE, overall strategy, B4_order, citations, current user Skill invocation and reviewed fact/core/candidate gates. Previous profile-selection entry remains the primary attribute source."
+  ],
+  "defaultAndRollback": {
+    "newWorkflowFlag": "VITE_ENABLE_MERGED_LISTING_WORKFLOW=1; absent or other value remains off",
+    "notDisabledByFlag": "Server selection snapshots/validation, authenticated task filtering, owner-safe job recovery and the Generate owner boundary remain active. Flag gates the explicit new selector, not these safeguards.",
+    "rollback": "Revert this isolated source commit after dependency review. No schema or historical data rewrite; old unbound pending G1 tasks require re-creation after rollout.",
+    "productionDeployed": false
+  },
+  "review": {
+    "root": "Read actual sources and relevant original APIs/repositories, new helper/hook/planner contracts and bounded diffs; ran final focused union, configured nonincremental typecheck, scoped lint and protected baseline checks.",
+    "independent": "Source helper/planning/frontend authors plus independent end-to-end and UI reviewer. Fixed final-progress source drift, mixed-workspace legacy-parent task exposure, missing/duplicate ASIN output and whole-page stale draft recovery; added real hook composition regressions.",
+    "previousProtectionRecords": [
+      {
+        "path": "client/src/pages/GeneratePage.tsx",
+        "source": "reviewed",
+        "gitBlobSha1": "9815ed72106ca8054a0669464fde8d151c782c34",
+        "sha256": "b9564cafaac3ba1134ef245e46cef23d6cf5d4696fc818cd79d2f03bd06cd220",
+        "reviewRef": "config/integration/reviews/20261016-listing-profile-workflow.json"
+      },
+      {
+        "path": "server/domains/listing/services/generationJob.ts",
+        "source": "baseline",
+        "gitBlobSha1": "925d8743f8db575b3d0e27d191889ede069d119c",
+        "sha256": "be7aa49e377677dc94263869bd96d976e551f1dcb8607836cba7344801cc3e64"
+      },
+      {
+        "path": "server/domains/listing/services/sellingPointPlanning.test.ts",
+        "source": "baseline",
+        "gitBlobSha1": "3a084bfae55ee02f15f8eb8cf5579bb8dace9e03",
+        "sha256": "647a348fd17c7bc418878deeb88a317b896f6118473ba902c4d5bfb2d270c526"
+      },
+      {
+        "path": "server/domains/listing/services/sellingPointPlanning.ts",
+        "source": "baseline",
+        "gitBlobSha1": "4a99bca81fcb6a67c5bf1937b24b0fa7bc71f2c1",
+        "sha256": "416a96e042e577683800d0fd5eaba6ede97655a5906faeb74ff03cee88d78aa2"
+      },
+      {
+        "path": "server/listingFactBoundFieldJobs.test.ts",
+        "source": "baseline",
+        "gitBlobSha1": "7423b938b0ed31230db09605662244ba1265258a",
+        "sha256": "f16eb18d81a537cfa24cebb28c8459238e7074a5307d0d4df5d9df32eee38e2f"
+      },
+      {
+        "path": "server/routers/analysis.ts",
+        "source": "baseline",
+        "gitBlobSha1": "3a8806630114264cc6cda6196567ee3cce9a38bc",
+        "sha256": "dfc27c614e4c74c026b4efe7c9a1ce3ee073dc0dd12b190b4131dd7001aa6f56"
+      }
+    ]
+  },
+  "verification": {
+    "rootFocusedUnion": {
+      "files": 20,
+      "passed": 492,
+      "failed": 0,
+      "skipped": 0,
+      "terminalExitCode": 0,
+      "completionChunk": "0f91ff",
+      "invocationSession": 37836,
+      "realModelCalls": 0
+    },
+    "rootScopedLint": {
+      "files": 22,
+      "exitCode": 0,
+      "completionChunk": "840fc9",
+      "invocationSession": 45213
+    },
+    "configuredTypecheck": {
+      "command": "node node_modules/typescript/bin/tsc --noEmit --pretty false --incremental false",
+      "exitCode": 0,
+      "completionChunk": "9805d5",
+      "invocationSession": 52944,
+      "scope": "Configured include/exclude, strict true. No full build/native/runtime acceptance."
+    },
+    "protectedBaseline": {
+      "files": 106,
+      "requiredDependencies": 2,
+      "originalBaselineRecordsHash": "9e1463b908abd5dafca47ca41baaf01fb3784dbecea00bf1757962f6f4d42bf6",
+      "originalBaselineRecordsUnchanged": true,
+      "changedReviewedRecords": 6,
+      "reviewedRecords": 18,
+      "exitCode": 0,
+      "completionChunk": "475dd3"
+    },
+    "nativeDatabaseBrowserOrModelAcceptance": false,
+    "subsetRunsAreNotAdditionalUniqueTests": true,
+    "finalNarrowRerun": {
+      "files": 1,
+      "passed": 9,
+      "failed": 0,
+      "exitCode": 0,
+      "completionChunk": "a6de29",
+      "scopedLintExitCode": 0,
+      "reason": "After capturing a narrowed reviewed-core array; does not add unique tests to the 492-case union."
+    },
+    "operationalNotes": [
+      "Final source-typecheck caught a callback narrowing issue; fixed by capturing the validated core array. A manifest patch attempt omitted record-ending commas and failed atomically; original manifest hash and absent new review verified before correction."
+    ],
+    "boundedDiffCheck": {
+      "exitCode": 0,
+      "completionChunks": [
+        "ea9c3d",
+        "b2458f"
+      ]
+    }
+  },
+  "retainedControls": [
+    "K01",
+    "K02",
+    "K03",
+    "K04",
+    "K05",
+    "K06",
+    "K07",
+    "K08",
+    "K09",
+    "K10"
+  ],
+  "notYetImplemented": [
+    "Source rechecks are not a DB transaction/global writer CAS and do not verify each internal provider fallback separately. This batch preserves existing Skill retries; no paid model was invoked.",
+    "Exact comparison ID membership plus current full report hash does not retroactively prove which historic source revisions originally produced that report. True historical generation provenance remains a future migration concern.",
+    "Profile conversion remains pre-existing synchronous multi-write, not a durable background job with transaction/idempotence recovery.",
+    "No analyzeCollected persistent worker lifecycle added; existing import/collection queues are unchanged.",
+    "Only five current-project recovery query families and owned Listing reads were addressed; other metadata/readiness caches and old review-RPC server preconditions are outside this batch. HTTP transport cancellation itself is not claimed.",
+    "Qingdao and user backend Skill runtime snapshots remain to be fixed and verified; no runtime Skill configuration was replaced.",
+    "Full P1-P6 acceptance, Linux/native equivalence, browser/DB/model integration, production deploy and private-source publication remain pending."
+  ],
+  "files": [
+    {
+      "path": "client/src/pages/GeneratePage.tsx",
+      "size": 123343,
+      "sha256": "4ddc63747a94f4d8c0de621a3cd11edbf6b40ee0ac108f74e0996d5613f24c84",
+      "gitBlobSha1": "34006cbde8c6752439684c0990c2b69f8bbdadee"
+    },
+    {
+      "path": "client/src/pages/listing/useListingGenerationJob.tsx",
+      "size": 18088,
+      "sha256": "a677b0bc3301804a467d7c8910a20e01a0d1e88cd6d54df64694a311aa3a1540",
+      "gitBlobSha1": "bcb9fb23d610f136bded0e4577e5a891633cebfb"
+    },
+    {
+      "path": "client/src/pages/listing/ListingResearchSelection.tsx",
+      "size": 8132,
+      "sha256": "6dd669df0a33897901c369e4e1ff055be5646841ace2ea4b5cfa65cf612b4539",
+      "gitBlobSha1": "79b8f2efbd21050a93cc728b604299338afa3e87"
+    },
+    {
+      "path": "client/src/pages/listing/listingResearchSelectionState.ts",
+      "size": 4015,
+      "sha256": "af196662c5e06216cfa5ee8b2cdb65077e164fe3d66efc9f6a9af1f961adf0bc",
+      "gitBlobSha1": "30eb352f125d891082db694631ffae5c2bea5a84"
+    },
+    {
+      "path": "client/src/pages/listing/ListingResearchSelection.component.test.tsx",
+      "size": 9645,
+      "sha256": "000ce6de1be5b86b0dd939a0b9f335a657602bf12e6012df31fd68ed9da45c8a",
+      "gitBlobSha1": "efbd6439744251fb04974931a513f97b3797c1f5"
+    },
+    {
+      "path": "client/src/pages/listing/useListingGenerationJob.component.test.tsx",
+      "size": 12552,
+      "sha256": "6de4d280487d010e2cfd1cc0f18c118a7109f49c9ee4f30d80e2ae112f0a0f70",
+      "gitBlobSha1": "d06f67a2e2681beadeb3ca558cb41ef48b5e775e"
+    },
+    {
+      "path": "client/src/pages/GeneratePage.researchSelection.component.test.tsx",
+      "size": 16393,
+      "sha256": "d39cdb7e48409628eab8f8386000d18de4d113ad5459639738184e8774b3a8b3",
+      "gitBlobSha1": "3a05a3c72c9c5ae88b214f907826309bc6ecd5bd"
+    },
+    {
+      "path": "shared/listingResearchSelection.ts",
+      "size": 1010,
+      "sha256": "9dbe1efde4df24cc9aad79a46f6e779e4eae21db3c8985e5cfc0090909c2a572",
+      "gitBlobSha1": "71af11faaf33d120e0e7ee9bcd299c3a33c0657a"
+    },
+    {
+      "path": "server/domains/listing/services/listingResearchSelection.ts",
+      "size": 8805,
+      "sha256": "32bbb57958c8707b960a5b0fbaf686c9e44b4f6b2edcfbb0ba1f0f6fb2fd33bb",
+      "gitBlobSha1": "517ea6861e6ae3f5347a506767553b5d22a38dbb"
+    },
+    {
+      "path": "server/listingResearchSelection.test.ts",
+      "size": 17171,
+      "sha256": "5993821d30139a51abb818e3038a58cfa90a6d168d83f22d127d4440109af933",
+      "gitBlobSha1": "0a81cb31e5b95e602df99bbae89818614dcc74bc"
+    },
+    {
+      "path": "server/domains/listing/services/sellingPointPlanning.ts",
+      "size": 21746,
+      "sha256": "864a1adea587b35eb70bc015b71e8c544194adddb490600c7c4036cd06ca02a9",
+      "gitBlobSha1": "ee151204d917512e38d03018b4e0374a994cbc3e"
+    },
+    {
+      "path": "server/domains/listing/services/sellingPointPlanning.test.ts",
+      "size": 21268,
+      "sha256": "3a622f3ee9a90640ed6012a5ab5f3658dacd5534a699d2551d599f14f75a47ed",
+      "gitBlobSha1": "5916960982d01c6d655d6b1b2e9d0879a2acf936"
+    },
+    {
+      "path": "server/domains/listing/repository.ts",
+      "size": 396,
+      "sha256": "818f4f613783701642a5188536623d7ed663b898e6db71098226353d43736867",
+      "gitBlobSha1": "523dfe315c683affb8b4aa5ed45f0ef8a8e06c62"
+    },
+    {
+      "path": "server/domains/listing/services/generationJob.ts",
+      "size": 56375,
+      "sha256": "c82549c60ea14a8d7b63bfa8bd97b61d833126b1f9b1cb35042626357d2db9af",
+      "gitBlobSha1": "ba4a43c777f04c8c8ed1b17badd9f6d30af1180c"
+    },
+    {
+      "path": "server/domains/listing/routers/jobControl.ts",
+      "size": 8177,
+      "sha256": "9a76f2345e7128b8aa98b24560dc0425dee6c91c3ea6fdac934ea3031e53c362",
+      "gitBlobSha1": "40eb4421548230ebc400b3cd50fbe1165ab5a55f"
+    },
+    {
+      "path": "server/domains/listing/routers/editing.ts",
+      "size": 38241,
+      "sha256": "789a06e92cbfc576ae00bc76d1671fab921e6707047853976a810f0a6d1db86b",
+      "gitBlobSha1": "571b5183448f58dd59ad70451892e55e5cf88cab"
+    },
+    {
+      "path": "server/routers/analysis.ts",
+      "size": 32928,
+      "sha256": "fa7a64a8b2228f26ea47561fc898486ad6b49596ce33e0fabb374d4c19669075",
+      "gitBlobSha1": "c6268d975bb36b1e8ef1faf31c4af947ddbff1bf"
+    },
+    {
+      "path": "server/listingResearchJobs.test.ts",
+      "size": 35267,
+      "sha256": "fb14d43caa8852e62de24df3763eae98392eec9b36df1655f7d3a45548b27ae1",
+      "gitBlobSha1": "cbabd931c61d102b059c52852f33e7888ef70c76"
+    },
+    {
+      "path": "server/listingResearchReadScope.test.ts",
+      "size": 7346,
+      "sha256": "ffc8f94debbed145b85fe6283db6f77035d248a0e0c70562b4468864631509c3",
+      "gitBlobSha1": "f6011eb14f07f1689b3161b8487c207be3475798"
+    },
+    {
+      "path": "server/listingFactBoundFieldJobs.test.ts",
+      "size": 15568,
+      "sha256": "8c6cf04558d1e702ccb3b5e34362914fb1b38bbb44f226740578999611cd72f6",
+      "gitBlobSha1": "3ec91baf91c3aa88e75684e7c8b2ab3918bd2504"
+    },
+    {
+      "path": "server/listingSingleBulletFactPipeline.test.ts",
+      "size": 11230,
+      "sha256": "46672209a265b2835fda321f39efb010898e33b8cb20de9558dc5261caa142c3",
+      "gitBlobSha1": "b6a54e4e6bf0ca8e3a440f026d517fffc1f2c7bb"
+    },
+    {
+      "path": "server/listingJobWorkspaceScopeV7.test.ts",
+      "size": 3195,
+      "sha256": "b6a2ca1dcf782c34f6633cbdfa419f4d5c071297c9d80f3625b78145fbf246db",
+      "gitBlobSha1": "1e671597eeded7fc49dfa196cffe22e6d4832304"
+    }
+  ]
+}

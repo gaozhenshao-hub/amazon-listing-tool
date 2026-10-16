@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ListingResearchBinding } from "../../../../shared/listingResearchSelection";
 import {
   buildSellingPointPlanningResearch, formatSellingPointPlanningContext,
   normalizeSellingPointPlanningOutput, sellingPointResearchLimitations,
@@ -110,6 +111,109 @@ describe("G1 research-only planning context", () => {
     expect(research.competitors.omittedRecordCount).toBeGreaterThan(0);
     expect(research.reviews.records.length).toBeGreaterThan(0);
     expect(sellingPointResearchLimitations(research).join(" ")).toContain("上下文长度限制");
+  });
+});
+
+describe("bound competitor research selection", () => {
+  const selected = { id: 81, projectId: 3, asin: "B000000081", title: "SELECTED TITLE",
+    reviewAnalysis: { painPoints: [{ issue: "SELECTED REVIEW", frequency: 4, sourceAsins: ["B000000082"] }] } };
+  const unselected = { id: 82, projectId: 3, asin: "B000000082", title: "UNSELECTED TITLE",
+    reviewAnalysis: { painPoints: [{ issue: "UNSELECTED REVIEW", frequency: 99 }] } };
+  const aggregation = { id: 91, projectId: 3, status: "completed", painPoints: [{ point: "UNBOUND AGGREGATE", frequency: 100 }] };
+  const binding = (analysisIds = [81], mode: ListingResearchBinding["mode"] = "explicit"): ListingResearchBinding => ({
+    version: 1, projectId: 3, workspaceId: null, mode, analysisIds, sourceHash: "a".repeat(64),
+  });
+  const comparison = { id: 71, projectId: 3, status: "confirmed", selectionKey: "81", analysisIds: "[81]", summary: "EXACT COMPARISON" };
+
+  it.each(["explicit", "legacy_all"] as const)("retains selected per-ASIN reviews but excludes project aggregate and new rows for %s", mode => {
+    const research = buildSellingPointPlanningResearch({ ...emptyInput, researchSelection: binding([81], mode),
+      competitors: [unselected, selected], reviewAggregation: aggregation, confirmedComparison: comparison });
+    expect(research.competitors.records).toHaveLength(1);
+    expect(research.reviews.records).toEqual([expect.objectContaining({
+      sourceId: "competitorAnalyses:81:reviewAnalysis:painPoints:1", sourceAsins: ["B000000081"], insight: "SELECTED REVIEW", frequency: 4,
+    })]);
+    expect(research.comparison.records[0].summary).toBe("EXACT COMPARISON");
+    expect(JSON.stringify(research)).not.toMatch(/UNSELECTED|UNBOUND AGGREGATE|B000000082/);
+    expect(research.reviews.aggregationStatus).toBe("omitted_selection_binding");
+    expect(research.researchSelection).toMatchObject({ ...binding([81], mode), reviewAggregation: "omitted-unbound-project-aggregation" });
+  });
+
+  it("explicit empty IDs exclude all three competitor sections without excluding project keywords/questions", () => {
+    const research = buildSellingPointPlanningResearch({ ...emptyInput, researchSelection: binding([]),
+      competitors: [selected, unselected], reviewAggregation: aggregation, confirmedComparison: { ...comparison, analysisIds: "[]", selectionKey: "" },
+      keywords: [{ id: 61, projectId: 3, keyword: "travel case", sceneTags: ["travel"] }],
+      buyerQuestions: [{ id: 51, projectId: 3, status: "active", question: "What fits?" }],
+    });
+    for (const section of [research.competitors, research.reviews, research.comparison]) expect(section.records).toEqual([]);
+    expect(research.keywords.records).toHaveLength(1);
+    expect(research.scenes.records).toHaveLength(1);
+    expect(research.buyerQuestions.records).toHaveLength(1);
+    expect(research.researchSelection).toMatchObject({ keywordScope: "project", buyerQuestionScope: "project" });
+    const limitations = sellingPointResearchLimitations(research).join(" ");
+    expect(limitations).toContain("空选集");
+    expect(limitations).toContain("项目级评论聚合");
+    expect(limitations).toContain("不代表来自所选竞品");
+    expect(formatSellingPointPlanningContext({ factContext: "Confirmed fact 41", research })).not.toMatch(/SELECTED REVIEW|EXACT COMPARISON|UNBOUND AGGREGATE/);
+  });
+
+  it("rejects missing, duplicate or foreign selected records instead of silently shrinking the binding", () => {
+    for (const competitors of [[], [selected, selected], [{ ...selected, projectId: 99 }], [{ ...selected, id: "81" }]]) {
+      expect(() => buildSellingPointPlanningResearch({ ...emptyInput, researchSelection: binding(), competitors })).toThrow(/竞品/);
+    }
+    expect(() => buildSellingPointPlanningResearch({ ...emptyInput, researchSelection: binding([81, 82]), competitors: [selected] })).toThrow(/竞品/);
+  });
+
+  it("rejects malformed binding metadata and a different project", () => {
+    for (const researchSelection of [
+      { ...binding(), projectId: 99 }, { ...binding(), analysisIds: [81, 81] },
+      { ...binding(), analysisIds: [82, 81] }, { ...binding(), sourceHash: "not-a-hash" },
+    ]) expect(() => buildSellingPointPlanningResearch({ ...emptyInput, researchSelection, competitors: [selected, unselected] })).toThrow();
+  });
+
+  it.each([
+    { projectId: 99 }, { status: "draft" }, { selectionKey: "81-82" }, { analysisIds: "[81,82]" },
+    { analysisIds: "[81,81]" }, { analysisIds: '["81"]' }, { analysisIds: "broken" }, { analysisIds: undefined },
+  ])("omits comparison not exactly confirmed for the bound project/IDs/key: %j", override => {
+    const research = buildSellingPointPlanningResearch({ ...emptyInput, researchSelection: binding(), competitors: [selected],
+      confirmedComparison: { ...comparison, ...override } });
+    expect(research.comparison.records).toEqual([]);
+    expect(research.reviews.records).toHaveLength(1);
+  });
+
+  it("matches comparison ID sets without mutating stored ID order or caller metadata", () => {
+    const researchSelection = binding([81, 82]);
+    const storedIds = [82, 81];
+    const research = buildSellingPointPlanningResearch({ ...emptyInput, researchSelection, competitors: [unselected, selected],
+      confirmedComparison: { ...comparison, selectionKey: "81-82", analysisIds: storedIds } });
+    expect(research.comparison.records).toHaveLength(1);
+    expect(research.competitors.records.map(row => row.sourceId)).toEqual(["competitorAnalyses:81", "competitorAnalyses:82"]);
+    expect(storedIds).toEqual([82, 81]);
+    researchSelection.analysisIds.push(99);
+    expect(research.researchSelection?.analysisIds).toEqual([81, 82]);
+  });
+
+  it("keeps valid selected review citations and refuses unselected IDs/ASINs and unbound aggregation citations", () => {
+    const research = buildSellingPointPlanningResearch({ ...emptyInput, researchSelection: binding(),
+      competitors: [selected, unselected], reviewAggregation: aggregation });
+    const plan = validPlan();
+    plan.sellingPoints[0].addressesGap = "competitorAnalyses:81:reviewAnalysis:painPoints:1, ASIN B000000081, identifies a buyer concern.";
+    expect(normalizeSellingPointPlanningOutput(plan, research).sellingPoints).toHaveLength(7);
+    for (const id of ["competitorAnalyses:82", "B000000082", "reviewAggregations:91:painPoints:1"]) {
+      plan.sellingPoints[0].addressesGap = `Evidence gap from ${id}`;
+      expect(() => normalizeSellingPointPlanningOutput(plan, research)).toThrow(/未提供的研究来源/);
+    }
+  });
+
+  it("does not promote embedded review sourceAsins into the bound selection when the selected row has no ASIN", () => {
+    const research = buildSellingPointPlanningResearch({ ...emptyInput, researchSelection: binding(),
+      competitors: [{ ...selected, asin: "" }] });
+    expect(research.reviews.records).toHaveLength(1);
+    expect(research.reviews.records[0]).toMatchObject({ sourceId: "competitorAnalyses:81:reviewAnalysis:painPoints:1", sourceAsins: [] });
+    const plan = validPlan();
+    plan.sellingPoints[0].addressesGap = "Review concern: competitorAnalyses:81:reviewAnalysis:painPoints:1";
+    expect(normalizeSellingPointPlanningOutput(plan, research).sellingPoints).toHaveLength(7);
+    plan.sellingPoints[0].addressesGap = "Review concern: B000000082";
+    expect(() => normalizeSellingPointPlanningOutput(plan, research)).toThrow(/未提供的研究来源/);
   });
 });
 

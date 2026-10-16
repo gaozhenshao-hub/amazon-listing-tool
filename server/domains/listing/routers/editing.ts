@@ -7,7 +7,8 @@ import {
   syncStepLockToAgent,
   syncStepUnlockToAgent,
 } from "../listingAgentBridge";
-import { startListingJobForContext } from "./jobControl";
+import { resolveExpectedListingWorkspace, startListingJobForContext } from "./jobControl";
+import { listingResearchIdsSchema } from "../../../../shared/listingResearchSelection";
 import { validateSingleBulletQuality, type ListingGenerationJobInput } from "../services/generationJob";
 import { containsTemplateFactInFreeText, excludeRawExamplesFromFactTree, formatSingleBulletIdentity, rawAttributeExampleValues, sanitizeListingProjectFacts, sanitizeSelectedSellingPoint, selectedPointContainsRawExamples } from "../../../../shared/listingFactSafety";
 import { readCompleteAttributeText } from "../services/listingRawAttributeSource";
@@ -699,26 +700,29 @@ const sellingPointJobSchema = z.object({
 });
 
 async function queueEditingJob(ctx: any, input: any, operation: "sellingPoints" | "singleBullet" | "qa") {
-  const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
+  const { expectedWorkspaceId, ...payload } = input;
+  const workspaceId = resolveExpectedListingWorkspace(ctx, expectedWorkspaceId);
+  const project = await resolveProjectAccess(input.projectId, ctx.user, workspaceId);
   ensureWriteAccess(project, ctx.user);
-  const reviewedCore = operation === "singleBullet" && ctx.workspaceId
-    ? await resolveConfirmedListingCore({ projectId: input.projectId, workspaceId: ctx.workspaceId,
+  const reviewedCore = operation === "singleBullet" && workspaceId
+    ? await resolveConfirmedListingCore({ projectId: input.projectId, workspaceId,
       coreRevisionId: input.coreRevisionId, coreInputHash: input.coreInputHash }) : null;
   return startListingJobForContext({
-    ...input,
+    ...payload,
     operation,
     nodeId: operation === "qa" ? "G5" : "G1",
     scopeKey: reviewedCore ? `bullet-${reviewedCore.sellingPoint.index}` : "main",
     ...(reviewedCore ? { sellingPoint: reviewedCore.sellingPoint } : {}),
     userId: ctx.user.id,
-    workspaceId: ctx.workspaceId ?? null,
+    workspaceId,
   });
 }
 
 export const listingEditingProcedures = {
   ...legacyListingEditingProcedures,
   generateSellingPointsCores: protectedProcedure
-    .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
+    .input(z.object({ projectId: z.number(), emphasis: z.string().optional(), analysisIds: listingResearchIdsSchema.optional(),
+      expectedWorkspaceId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable().optional() }))
     .mutation(({ ctx, input }) => queueEditingJob(ctx, input, "sellingPoints")),
   generateSingleBullet: protectedProcedure
     .input(z.object({

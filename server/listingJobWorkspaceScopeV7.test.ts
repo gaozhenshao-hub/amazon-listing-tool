@@ -18,6 +18,7 @@ vi.mock("./domains/listing/services/generationJob", async () => {
     nodeId: z.enum(["G1", "G2", "G3", "G4", "G5"]),
     scopeKey: z.string().default("main"),
     agentRunId: z.string().optional(),
+    researchBinding: z.unknown().optional(),
   }),
   getLatestListingNodeJob: mocks.latest, listListingGenerationJobs: mocks.list,
   startListingGenerationJob: mocks.start, cancelListingGenerationJob: mocks.cancel,
