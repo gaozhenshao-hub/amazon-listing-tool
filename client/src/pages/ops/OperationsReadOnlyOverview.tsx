@@ -8,6 +8,7 @@ import MonthlyFinancialFilePreview from "./MonthlyFinancialFilePreview";
 import OperationsCostSheetReadOnly from "./OperationsCostSheetReadOnly";
 import MonthlyFinancialReadOnly from "./MonthlyFinancialReadOnly";
 import InventorySnapshotReadOnly from "./InventorySnapshotReadOnly";
+import ProfitBoardReadOnly from "./ProfitBoardReadOnly";
 import {
   filterReadGroups,
   financialReadGroups,
@@ -574,6 +575,7 @@ export default function OperationsReadOnlyOverview() {
       <OperationsCostSheetReadOnly key={`costs:${scopeKey}`} />
       <MonthlyFinancialReadOnly key={`monthly:${scopeKey}`} />
       <InventorySnapshotReadOnly key={`inventory-snapshot:${scopeKey}`} />
+      <ProfitBoardReadOnly key={`profit-board:${scopeKey}`} />
       <MonthlyFinancialFilePreview
         key={`file:${scopeKey}`}
         scopeKey={scopeKey}

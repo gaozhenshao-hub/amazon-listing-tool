@@ -53,6 +53,9 @@ vi.mock("./MonthlyFinancialReadOnly", () => ({
 vi.mock("./InventorySnapshotReadOnly", () => ({
   default: () => <section aria-label="完整库存入口">完整库存独立只读入口</section>,
 }));
+vi.mock("./ProfitBoardReadOnly", () => ({
+  default: () => <section aria-label="完整利润看板入口">完整利润看板独立只读入口</section>,
+}));
 
 const row = (
   changes: Partial<InventoryReadRecord> = {}
@@ -236,6 +239,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
       expect(screen.queryByLabelText("完整成本表入口")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("完整月报入口")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("完整库存入口")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("完整利润看板入口")).not.toBeInTheDocument();
     }
   );
   it("calls only two existing query methods with abort signals and refreshes on explicit request", async () => {
@@ -244,6 +248,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
     expect(screen.getByLabelText("完整成本表入口")).toBeVisible();
     expect(screen.getByLabelText("完整月报入口")).toBeVisible();
     expect(screen.getByLabelText("完整库存入口")).toBeVisible();
+    expect(screen.getByLabelText("完整利润看板入口")).toBeVisible();
     expect(controls.inventory).toHaveBeenCalledTimes(1);
     expect(controls.financial).toHaveBeenCalledTimes(1);
     expect(controls.inventory.mock.calls[0][0]).toEqual({ marketplace: "ALL" });
@@ -277,6 +282,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
       const priorCostEntry = screen.getByLabelText("完整成本表入口");
       const priorMonthlyEntry = screen.getByLabelText("完整月报入口");
       const priorInventoryEntry = screen.getByLabelText("完整库存入口");
+      const priorProfitEntry = screen.getByLabelText("完整利润看板入口");
       controls.auth.user = {
         id: kind === "user" ? 2 : 1,
         defaultWorkspaceId: kind === "workspace" ? 20 : 10,
@@ -290,6 +296,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
       expect(screen.getByLabelText("完整成本表入口")).not.toBe(priorCostEntry);
       expect(screen.getByLabelText("完整月报入口")).not.toBe(priorMonthlyEntry);
       expect(screen.getByLabelText("完整库存入口")).not.toBe(priorInventoryEntry);
+      expect(screen.getByLabelText("完整利润看板入口")).not.toBe(priorProfitEntry);
       await act(async () => {
         fresh.resolve({
           asOfDate: "2026-10-02",
@@ -316,6 +323,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
     expect(screen.queryByLabelText("完整成本表入口")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("完整月报入口")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("完整库存入口")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("完整利润看板入口")).not.toBeInTheDocument();
     expect(controls.inventory).toHaveBeenCalledTimes(1);
     controls.inventory.mockRejectedValueOnce(new Error("permission revoked"));
     controls.auth.loading = false;

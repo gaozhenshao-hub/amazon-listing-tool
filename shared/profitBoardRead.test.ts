@@ -1,0 +1,187 @@
+import { describe, expect, it } from "vitest";
+import { buildProfitBoardReadResult, buildProfitBoardReadFailure, profitBoardMonths, ProfitBoardReadInputSchema, ProfitBoardReadResultSchema, ProfitBoardReadError, type ProfitBoardMonthSelection, type ProfitBoardReadInput } from "./profitBoardRead";
+import { MONTHLY_FINANCIAL_METRICS, parseMonthlyFinancialBatch, findMonthlyFinancialSnapshot, type MonthlyFinancialBatchRecord, type MonthlyFinancialMetrics } from "./monthlyFinancialRead";
+
+const identity = { userId: 7, workspaceId: 11 };
+const input: ProfitBoardReadInput = { expectedWorkspaceId: 11, month: "2026-10", storeName: "Store", country: "US", search: "", groupOffset: 0, groupLimit: 20 };
+function row(values: Record<string, unknown> = {}) { return { yearMonth: "2026-10", storeName: "Store", site: "US", parentAsin: "P", asin: "A", sku: "SKU", title: "Historical title", operator: "Source Owner", ...Object.fromEntries(MONTHLY_FINANCIAL_METRICS.map(key => [key, 0])) as MonthlyFinancialMetrics, financialProfit: 20, salesAmount: 100, salesQty: 10, raw: { currency: "USD", original: { costs: [-9, null, { value: true }] } }, ...values }; }
+function record(rows = [row()], patch: Partial<MonthlyFinancialBatchRecord> = {}): MonthlyFinancialBatchRecord { return { id: 90, workspaceId: 11, userId: 7, status: "completed", fileName: "source.xlsx", fileHash: "a".repeat(64), totalRows: rows.length, skippedRows: 0, unallocatedRows: rows.filter(row => !row.parentAsin).length, months: [...new Set(rows.map(row => row.yearMonth))], createdAt: "2026-10-10 10:00:00.123000", confirmedAt: "2026-10-10 11:00:00.000000", fileReferenceKind: "storage", payload: rows, ...patch }; }
+function selections(rows = [row()], scoped = false): ProfitBoardMonthSelection[] {
+  const parsed = parseMonthlyFinancialBatch(record(rows));
+  return profitBoardMonths(input.month).map(month => ({ month, selection: { selected: rows.some(row => row.yearMonth === month) ? parsed : null, scannedBatchIds: [90], complete: true }, metadataVisibility: scoped ? "scoped" : "full", ...(scoped ? { authorizedRowRefs: parsed.rows.filter(row => row.yearMonth === month && row.storeName === "Store" && row.country === "US").map(({ batchId, rowIndex }) => ({ batchId, rowIndex })) } : {}) }));
+}
+const build = (rows = [row()], patch: Partial<ProfitBoardReadInput> = {}) => buildProfitBoardReadResult({ identity, input: { ...input, ...patch }, selections: selections(rows) });
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+describe("six-calendar-month profit board source contract", () => {
+  it("uses exact calendar months across years and leap years", () => {
+    expect(profitBoardMonths("2026-02")).toEqual(["2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02"]);
+    expect(profitBoardMonths("2024-03")).toEqual(["2023-10", "2023-11", "2023-12", "2024-01", "2024-02", "2024-03"]);
+  });
+  it.each(["2026-00", "2026-13", "0000-01", "2026-1", "1000-01"])("rejects invalid or out-of-range complete window %s", month => expect(ProfitBoardReadInputSchema.safeParse({ ...input, month }).success).toBe(false));
+  it.each([{ groupLimit: 0 }, { groupLimit: 51 }, { groupOffset: -1 }, { operatorId: 7 }, { userId: 1 }, { storeName: " " }, { expectedWorkspaceId: 0 }])("rejects malformed or client ownership controls", patch => expect(ProfitBoardReadInputSchema.safeParse({ ...input, ...patch }).success).toBe(false));
+  it("canonicalizes marketplace without guessing currency", () => {
+    expect(ProfitBoardReadInputSchema.parse({ ...input, country: "美国" }).country).toBe("US");
+    expect(build([row({ raw: {} })]).products[0].currency).toBeNull();
+  });
+  it("retains complete original row, all normalized metrics, raw signs and month source", () => {
+    const source = row({ commission: 9, raw: { currency: "USD", original: { negative: -9, nested: [0, null, { yes: true }] } } }), result = build([source]);
+    expect(result.pageRows[0].raw).toEqual(source.raw); expect(Object.keys(result.pageRows[0].metrics)).toEqual([...MONTHLY_FINANCIAL_METRICS]);
+    expect(result.sources[5]).toMatchObject({ month: "2026-10", status: "selected", selectedBatchId: 90, batch: { fileName: "source.xlsx", timestampBasis: "database_datetime_without_timezone" } });
+    expect(result.products[0].sourceRows).toEqual([{ batchId: 90, rowIndex: 0 }]);
+  });
+  it("never marks incomplete six-month scan ready or returns partial source data", () => {
+    const selected = selections(); selected[1].selection.complete = false; const result = buildProfitBoardReadResult({ identity, input, selections: selected });
+    expect(result.status).toBe("invalid"); expect(result.sources).toEqual([]); expect(result.pageRows).toEqual([]);
+  });
+  it.each(["missing", "not_found", "invalid"] as const)("has explicit empty %s failure", status => {
+    const result = buildProfitBoardReadFailure({ identity, input, status, reasonCode: "explicit", missingReason: "不可读取" }); expect(result.status).toBe(status); expect(result.page.totalRows).toBe(0); expect(result.partitions).toEqual([]);
+  });
+  it("requires all six distinct selected month receipts", () => {
+    expect(() => buildProfitBoardReadResult({ identity, input, selections: selections().slice(1) })).toThrow(ProfitBoardReadError);
+    const values = selections(); values[0].month = values[1].month; expect(() => buildProfitBoardReadResult({ identity, input, selections: values })).toThrow(ProfitBoardReadError);
+  });
+  it.each(["workspace", "completed", "lastid", "count", "source"])("rejects forged winner %s", kind => {
+    const values = selections(), selected = values[5].selection;
+    if (kind === "workspace") selected.selected!.batch.workspaceId = 99;
+    if (kind === "completed") selected.selected!.batch.status = "deleted";
+    if (kind === "lastid") selected.scannedBatchIds = [91];
+    if (kind === "count") selected.selected!.batch.totalRows = 99;
+    if (kind === "source") selected.selected!.rows[0].batchId = 91;
+    expect(() => buildProfitBoardReadResult({ identity, input, selections: values })).toThrow(ProfitBoardReadError);
+  });
+});
+
+describe("regressions against original friend profit aggregation", () => {
+  it("does not turn a missing prior parent into zero or a fabricated new-profit ranking", () => {
+    const result = build([row({ parentAsin: "A", financialProfit: 10 }), row({ yearMonth: "2026-09", parentAsin: "B", asin: "B", financialProfit: 20 })]);
+    const product = result.products.find(product => product.parentAsin === "A")!;
+    expect(product.previous.status).toBe("missing_product"); expect(product.previous.profit).toBeNull(); expect(product.comparison.profit.delta).toBeNull(); expect(result.partitions[0].rising).toEqual([]);
+    expect(result.partitions[0].trend[5]).toMatchObject({ status: "partial", profit: 10, observedProducts: 1, missingProducts: 1 });
+  });
+  it("partitions currencies and excludes other store/site before aggregation", () => {
+    const result = build([row({ financialProfit: 100 }), row({ asin: "CAD", raw: { currency: "CAD" }, financialProfit: 200 }), row({ asin: "OTHER", storeName: "Other", financialProfit: 999 }), row({ asin: "CA", site: "CA", financialProfit: 999 })]);
+    expect(result.partitions).toHaveLength(2); expect(result.partitions.map(partition => partition.trend[5].profit).sort()).toEqual([100, 200]); expect(result.pageRows).toHaveLength(2);
+  });
+  it("never adds a reported parent total to its child-derived total", () => {
+    const result = build([row({ asin: "", financialProfit: 100 }), row({ financialProfit: 50 })]);
+    expect(result.partitions.map(partition => [partition.basis, partition.trend[5].profit])).toEqual([["child_rows", 50], ["reported_parent_row", 100]]);
+    expect(result.products.find(product => product.basis === "reported_parent_row")?.children).toEqual([]);
+  });
+  it("uses each month's historical parent identity and never current metadata reassignment", () => {
+    const result = build([row({ yearMonth: "2026-09", parentAsin: "OLD", financialProfit: 5 }), row({ parentAsin: "NEW", financialProfit: 9 })]);
+    expect(result.products.map(product => product.parentAsin).sort()).toEqual(["NEW", "OLD"]);
+    expect(result.products.find(product => product.parentAsin === "NEW")!.previous.profit).toBeNull(); expect(result.products.find(product => product.parentAsin === "OLD")!.previous.profit).toBe(5);
+    expect(result.pageRows.map(row => row.parentAsin)).toEqual(["OLD", "NEW"]);
+  });
+  it("keeps duplicate reported totals ambiguous instead of summing or picking one", () => {
+    const result = build([row({ asin: "", sku: "P1", financialProfit: 100 }), row({ asin: "", sku: "P2", financialProfit: 200 })]);
+    expect(result.products[0].current.status).toBe("ambiguous"); expect(result.products[0].current.profit).toBeNull(); expect(result.partitions[0].trend[5].profit).toBeNull(); expect(result.pageRows).toHaveLength(2);
+  });
+  it("keeps unallocated rows and ambiguous parents separate from all products and rankings", () => {
+    const result = build([row({ parentAsin: "", asin: "U", financialProfit: 30 }), row({ asin: "AMB", raw: { currency: "USD", api: { parentAsinList: ["P1", "P2"] } }, financialProfit: 40 }), row({ financialProfit: 20 })]);
+    const part = result.partitions.find(partition => partition.basis === "unallocated_rows")!; expect(part.trend[5].profit).toBe(70); expect(part.rising).toEqual([]); expect(result.products.filter(product => product.basis === "unallocated_rows").every(product => product.parentAsin === null)).toBe(true);
+  });
+  it("keeps unknown currency per original row without any cross-period amount comparisons", () => {
+    const result = build([row({ raw: {}, financialProfit: 1 }), row({ raw: {}, asin: "B", financialProfit: 2 }), row({ raw: {}, yearMonth: "2026-09", financialProfit: 3 })]);
+    expect(result.partitions).toHaveLength(3); expect(result.partitions.every(partition => partition.unknownSource && !partition.rising.length && !partition.falling.length)).toBe(true);
+    expect(result.products.every(product => product.comparison.profit.delta === null && product.current.margin === null)).toBe(true); expect(result.pageRows.map(row => row.metrics.financialProfit)).toEqual([3, 1, 2]);
+  });
+});
+
+describe("profit math, full parent drilldown, full-filter ranking and paging", () => {
+  it("uses ratio of sums with numerator and denominator rather than averaging margins", () => {
+    const result = build([row({ financialProfit: 10, salesAmount: 100 }), row({ asin: "B", financialProfit: 90, salesAmount: 300 })]);
+    expect(result.products[0].current.margin).toBe(0.25); expect(result.products[0].current.marginBasis).toMatchObject({ numerator: 100, denominator: 400 });
+  });
+  it.each([null, 0, -1])("does not fabricate margin for unknown/non-positive sales %s", salesAmount => expect(build([row({ salesAmount })]).products[0].current.margin).toBeNull());
+  it("preserves unknown versus true zero and raw negative profits", () => {
+    const result = build([row({ financialProfit: null }), row({ asin: "B", financialProfit: 0 })]); expect(result.products[0].current.profit).toBeNull();
+    const loss = build([row({ financialProfit: -10 }), row({ yearMonth: "2026-09", financialProfit: -20 })]); expect(loss.products[0].comparison.profit).toMatchObject({ delta: 10, relativePercent: 50, direction: "up" });
+  });
+  it.each([{ prior: 0, now: 5, transition: "new_profit" }, { prior: 0, now: -5, transition: "new_loss" }, { prior: -5, now: 5, transition: "loss_to_profit" }, { prior: 5, now: -5, transition: "profit_to_loss" }])("preserves zero/loss change meaning $transition", ({ prior, now, transition }) => {
+    const result = build([row({ financialProfit: now }), row({ yearMonth: "2026-09", financialProfit: prior })]); expect(result.products[0].comparison.profit.transition).toBe(transition);
+  });
+  it("searches full historical parent groups while retaining every sibling and original row", () => {
+    const result = build([row({ asin: "A", title: "First" }), row({ asin: "SECOND", title: "Needle" }), row({ parentAsin: "OTHER", asin: "C" })], { search: "needle" });
+    expect(result.products).toHaveLength(1); expect(result.products[0].children.map(child => child.asin)).toEqual(["A", "SECOND"]); expect(result.pageRows).toHaveLength(2); expect(result.partitions[0].trend[5].profit).toBe(40);
+  });
+  it("preserves HTML-looking source names as plain data", () => expect(build([row({ title: "<script>alert(1)</script>" })]).products[0].title).toBe("<script>alert(1)</script>"));
+  it("ranks all matching parents before page slicing and supplies an exact reachable product offset", () => {
+    const rows = Array.from({ length: 12 }, (_, index) => [row({ parentAsin: `P${index.toString().padStart(2, "0")}`, asin: `A${index}`, financialProfit: index * 10 }), row({ parentAsin: `P${index.toString().padStart(2, "0")}`, asin: `A${index}`, yearMonth: "2026-09", financialProfit: 50 })]).flat();
+    const result = build(rows, { groupLimit: 2 }); expect(result.products).toHaveLength(2); expect(result.page.totalGroups).toBe(12); expect(result.partitions[0].trend[5].profit).toBe(660);
+    const top = result.partitions[0].rising[0]; expect(top.parentAsin).toBe("P11"); expect(top.productOffset).toBe(11);
+    const target = build(rows, { groupLimit: 2, groupOffset: 10 }); expect(target.products.some(product => product.id === top.productId)).toBe(true); expect(target.pageRows).toHaveLength(4);
+    expect(result.partitions[0].rising).toHaveLength(5); expect(result.partitions[0].falling).toHaveLength(5);
+  });
+  it("does not split an original ASIN across its multiple SKU rows", () => {
+    const result = build([row({ sku: "ONE" }), row({ sku: "TWO" })]); expect(result.products[0].children).toHaveLength(1); expect(result.products[0].children[0].skus).toEqual(["ONE", "TWO"]); expect(result.products[0].children[0].current.profit).toBe(40);
+  });
+  it("distinguishes no search match from storage/source failure", () => {
+    const result = build(undefined, { search: "nothing" }); expect(result.status).toBe("ready"); expect(result.page.totalGroups).toBe(0); expect(result.sources).toHaveLength(6);
+  });
+});
+
+describe("whole-scope replacement and per-month current authorization", () => {
+  it("selects the newer whole store/month batch before filtering a requested parent", () => {
+    const newest = record([row({ parentAsin: "NEW", asin: "NEW" })], { id: 91 }), older = record([row({ parentAsin: "OLD" })]);
+    const values = selections(); values[5].selection = findMonthlyFinancialSnapshot([newest, older], { yearMonth: "2026-10", storeName: "Store", country: "US" }, true);
+    const result = buildProfitBoardReadResult({ identity, input: { ...input, parentAsin: "OLD" }, selections: values }); expect(result.sources[5].selectedBatchId).toBe(91); expect(result.products).toEqual([]); expect(result.pageRows).toEqual([]);
+  });
+  it("does not authorize earlier months using a later month's owner receipt", () => {
+    const values = selections([row(), row({ yearMonth: "2026-09", financialProfit: 30 })], true); values[4].authorizedRowRefs = [];
+    const result = buildProfitBoardReadResult({ identity, input, selections: values });
+    expect(result.products[0].previous.status).toBe("not_visible"); expect(result.products[0].previous.profit).toBeNull(); expect(result.partitions[0].rising).toEqual([]); expect(result.pageRows).toHaveLength(1);
+    expect(result.sources[4]).toMatchObject({ status: "not_visible", batch: null, selectedBatchId: null, visibleRows: 0, selection: { scannedCount: null } });
+  });
+  it("makes missing and unauthorized scoped months indistinguishable without filenames/hashes/counts", () => {
+    const values = selections([row(), row({ yearMonth: "2026-09" })], true); values[4].authorizedRowRefs = [];
+    const result = buildProfitBoardReadResult({ identity, input, selections: values });
+    const { month: _one, ...absent } = result.sources[0], { month: _two, ...denied } = result.sources[4]; expect(absent).toEqual(denied);
+    expect(JSON.stringify(result.sources)).not.toContain("source.xlsx"); expect(JSON.stringify(result.sources)).not.toContain("fileHash"); expect(JSON.stringify(result.sources)).not.toContain("totalRows");
+  });
+  it.each(["missing", "outside", "duplicate"])("rejects %s authorization membership", kind => {
+    const values = selections(undefined, true);
+    if (kind === "missing") delete values[5].authorizedRowRefs;
+    if (kind === "outside") values[5].authorizedRowRefs = [{ batchId: 90, rowIndex: 999 }];
+    if (kind === "duplicate") values[5].authorizedRowRefs = [{ batchId: 90, rowIndex: 0 }, { batchId: 90, rowIndex: 0 }];
+    expect(() => buildProfitBoardReadResult({ identity, input, selections: values })).toThrow(ProfitBoardReadError);
+  });
+  it("returns only authorized source rows and parents even if original batch contains secrets", () => {
+    const values = selections([row(), row({ asin: "SECRET", parentAsin: "SECRET", title: "SECRET" })], true); values[5].authorizedRowRefs = [{ batchId: 90, rowIndex: 0 }];
+    const result = buildProfitBoardReadResult({ identity, input, selections: values }); expect(JSON.stringify(result)).not.toContain("SECRET"); expect(result.page.totalRows).toBe(1);
+  });
+});
+
+describe("strict response and bounded original data", () => {
+  it.each(["identity", "request", "source", "metric", "margin", "rawscope", "rowref", "children", "page", "partition", "ranking", "sources_missing", "product_id", "child_id", "trend_source", "trend_ratio", "rank_offset", "raw_extra", "visible_count"])("rejects forged response %s", kind => {
+    const result = clone(build([row({ financialProfit: 40 }), row({ yearMonth: "2026-09", financialProfit: 20 })]));
+    if (kind === "identity") result.identity.workspaceId++;
+    if (kind === "request") result.request.month = "2026-09";
+    if (kind === "source") result.sources[5].selectedBatchId = 123;
+    if (kind === "metric") result.products[0].current.profit = 999;
+    if (kind === "margin") result.products[0].points[5].margin = 999;
+    if (kind === "rawscope") result.pageRows[0].storeName = "Other";
+    if (kind === "rowref") result.products[0].sourceRows[0].rowIndex = 99;
+    if (kind === "children") result.products[0].children = [];
+    if (kind === "page") result.page.hasMore = true;
+    if (kind === "partition") result.partitions[0].currency = "CAD";
+    if (kind === "ranking") result.partitions[0].rising[0].delta = 999;
+    if (kind === "sources_missing") result.sources = [];
+    if (kind === "product_id") result.products[0].id = "wrong";
+    if (kind === "child_id") result.products[0].children[0].id = "wrong";
+    if (kind === "trend_source") result.partitions[0].trend[5].sourceRows[0].batchId = 999;
+    if (kind === "trend_ratio") result.partitions[0].trend[5].marginBasis.denominator = 999;
+    if (kind === "rank_offset") result.partitions[0].rising[0].productOffset = 999;
+    if (kind === "raw_extra") result.pageRows.push(clone(result.pageRows[0]));
+    if (kind === "visible_count") result.sources[5].visibleRows = 0;
+    expect(ProfitBoardReadResultSchema.safeParse(result).success).toBe(false);
+  });
+  it("rejects nonfinite/cyclic original raw instead of dropping it", () => {
+    const cycle: Record<string, unknown> = {}; cycle.self = cycle;
+    expect(() => parseMonthlyFinancialBatch(record([row({ raw: cycle })]))).toThrow(); expect(() => parseMonthlyFinancialBatch(record([row({ financialProfit: Infinity })]))).toThrow();
+  });
+  it("does not mutate normalized source metrics or original raw data", () => {
+    const values = selections(), before = clone(values); buildProfitBoardReadResult({ identity, input, selections: values }); expect(values).toEqual(before);
+  });
+});

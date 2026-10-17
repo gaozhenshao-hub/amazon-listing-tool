@@ -1,0 +1,185 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "friend-six-month-profit-board-readonly",
+  "baseline": "8180d688acae72ea11e41138a7952db232e9143b",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary",
+    "generalP5Skills": "Qingdao-primary",
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSelection": "friend-primary; select saved competitor data and an authorized product profile, preview and generate; upload supplemental, never mandatory"
+  },
+  "localOnly": true,
+  "scope": "Friend-style six-month saved-source profit trends, month comparison rankings and full parent/child drilldown. No financial write, edition refresh, archive, note, source collection or model call.",
+  "preserve": [
+    "existing Lingxing routes and data contracts",
+    "prior cost, monthly, inventory, Listing and Agent integrations",
+    "P0-P6/K01-K10/T01-T28/image62/master27/supplements12"
+  ],
+  "changes": [
+    "Add profitBoardRead.get and the profit view to the opt-in authenticated readonly operations overview; existing routes, default-off gate and auth/permission remounts remain.",
+    "Fix up to201 completed candidate identities and byte lengths with one bounded locking SQL query within the current actor/permission transaction. Read only those exact IDs and validate unchanged status/size. Select each of six complete month/store/country source winners before any owner, parent or search filter; never fill missing parents from an older source.",
+    "Ordinary access uses current numeric exact store/canonical country/parent manual assignment or fully confirmed source-name mappings independently for every parent-month. A different manual owner blocks mapping fallback. Only validated Saihu batch plus original sellfox_monthly_api row marker allows saihu-specific mapping; uploaded or unknown sources require all-source mapping. No saved ownerIds, usernames, uploader shortcut or task permission grants access.",
+    "Ordinary zero-visible months and truly absent months both become not_visible with no batch/id/scannedCount. Scoped visible metadata omits filename/hash/uploader/global row counts. Unallocated or ambiguous rows never grant ordinary ownership; manager source rows retain them independently.",
+    "Group all authorized search-matched parent rows before pagination. Keep currencies, reported-parent rows, child-derived groups and independent unallocated originals separate; unknown currency is per-original-row, without monetary ranking. Preserve reported historical parent identity.",
+    "Recalculate profit, quantity, sales and ratio-of-sums margin from source rows; retain unknowns, negative amounts, real zeros and zero-denominator distinctions. Missing month/product does not become zero or a new-product growth claim. Charts break across missing months; partial trend sums disclose missing groups.",
+    "Top-five rising/falling rankings use all matching authorized groups, not page aggregates. productOffset locates full detail across parent pages. All child groups and complete raw financial rows remain accessible through local20-row pages, with source batch/index, original fees, numerator/denominator and provenance.",
+    "Strict result contract validates source/calendar/identity/page/ref consistency, exact page-source replay and computed parent/child values. UI clears old data on scope/identity/permission/source-version changes, aborts late requests and requires a new first-page read if the six-source/partition fingerprint changes. Original text stays escaped; tables scroll locally."
+  ],
+  "pending": [
+    "Actual MySQL driver/projections/FOR SHARE statement consistency, current authorization revocation locks, resource budgets and authenticated business browser acceptance are not tested by mocked SQL fixtures.",
+    "Saved completed is not proof of whole shop/month coverage. Incomplete legacy financial payloads and subtotal rows lost by older parsers cannot be reconstructed. Scan bounds reject instead of claiming full data.",
+    "P4 controlled upload/confirmation/replacement/revocation and atomic consistency for current financial facts, profit/product boards and stale AI results remain; no migration or financial write introduced here.",
+    "Friend archive/freeze versus financial-restatement policy is not approved; note writes, actual archived editions, operator/buddy selection and saved scope assignment need their own scoped integration.",
+    "General Skill Qingdao and Listing Skill user approvals, remaining P1/native303 and P4-P6 runtime/release gates remain. Full objective and P1 are not completed."
+  ],
+  "review": {
+    "root": "Read original friend pure calculation and server/UI sources; executed four synthetic regressions against exact friend SHA: missing previous parent becomes zero/new, cross-store/currency merge, parent/child double count, and current metadata rewrites old parent. Required fixed candidate selection, per-month ownership and no raw/source metadata leakage; reviewed both server and page.",
+    "independent": "Shared author independently read backend; backend author independently replayed shared unknown/zero/currency/parent/source privacy contracts; UI author independently checked root wiring, backend SQL and actual friend0211/current owner/mapping schema names. No remaining determinate blocker found in this readonly local scope. Author tests are distinct from independent review.",
+    "protectedManifestSha256": "23c7665c328f8f1fb367c66e893f81e65014244d1f4d77002076964f72e72d12",
+    "baselineTupleSha256": "b5a228f5b51180bc6f903384d146997cda316f77da807e7abcb20ce7b4faee40"
+  },
+  "verification": {
+    "focusedUnion": {
+      "exitCode": 0,
+      "sessions": [
+        57253,
+        17052
+      ],
+      "files": 5,
+      "tests": 267,
+      "breakdown": {
+        "sharedAndRouter": 97,
+        "repository": 72,
+        "profitUi": 61,
+        "overview": 13,
+        "overviewModel": 24
+      }
+    },
+    "scopedLint": {
+      "files": 11,
+      "exitCode": 0
+    },
+    "configuredTypes": {
+      "command": "./node_modules/.bin/tsc --noEmit --incremental false",
+      "session": 74715,
+      "status": "passed-after-source-freeze",
+      "exitCode": 0,
+      "note": "Same configured nonincremental process naturally finished0; no source edits, reduced scope or replacement process. Existing configured test exclusions unchanged."
+    },
+    "protectedGuard": {
+      "session": 75273,
+      "exitCode": 0,
+      "files": 106,
+      "dependencies": 2,
+      "reviewedRecords": 25
+    },
+    "diffCheck": {
+      "files": 11,
+      "session": 2781,
+      "exitCode": 0
+    },
+    "actualSyntheticBrowser": {
+      "component": "actual monthly source parser + profit builder + pure presentation, not authenticated application or actual database",
+      "verified": [
+        "Six saved months/15 full parent groups/216 source rows show6 chart points5 segments; currentUSD822, sales3600 and margin822/3600. First page5 groups does not reduce ranking/trend scope.",
+        "Click ranking P14 at offset0 loads parent offset10 and auto-expands its six original rows; clicking P00 returns offset0 with22 children/132 raw rows.",
+        "Child page21-22/22 and source page121-132/132 reachable; batch105 row21 disclosure preserves original fees, metric ratios and raw. Literal img title stays text; zero img nodes.",
+        "Missing July gives5 points3 segments and an explicit missing source; missing September P00 keeps previous metricsnull and excludes P00 from ranking.",
+        "Same-parent CAD60, USD child822, USD reported-parent250 and USD unallocated-5 remain four independent partitions; no mixed currency or parent/child double sum.",
+        "Scoped fixture shows only22 parent rows per visible month, hides filename/hash/global counts, and July without authorized rows is not_visible with no batch. Presentation test does not prove actual authorization.",
+        "Search C0-21 retains whole P00 group, all22 children and132 raw rows. Unknown currency leaves216 independent source partitions reachable and draws zero monetary points.",
+        "Zero previous values show explicit zero-base transitions and no relative percent; negativeUSD-12 preserved and zero-sales margin unknown. Missing/invalid states remain distinct and return no fabricated zero board.",
+        "Explicit August baseline reread changes six-period window toMarch-August and resets parent offset. Monthly source selection alone does not trigger reread.",
+        "Desktop1280/document1265/parenttable1231:1500; mobile390/document375/parenttable341:1500 and trendtable315:980. No document overflow. No console warning/error; viewport reset and temporary tab closed."
+      ],
+      "screenshots": [
+        "outputs/profit-readonly-browser-20261017/desktop.png",
+        "outputs/profit-readonly-browser-20261017/desktop-trend.png",
+        "outputs/profit-readonly-browser-20261017/desktop-full.png",
+        "outputs/profit-readonly-browser-20261017/mobile.png"
+      ],
+      "server": {
+        "session": 8284,
+        "pid": 60692,
+        "url": "http://127.0.0.1:5173/",
+        "explicitlyStopped": true,
+        "exitCode": 143,
+        "observedRequests": 26,
+        "allObservedMethods": "GET"
+      },
+      "viewportReset": true,
+      "tabClosed": true,
+      "authenticatedApp": false,
+      "database": false
+    },
+    "implementationFinding": "UI empty optional parent originally serialized an explicit undefined rejected by strict input JSON. Author removed the absent field, keeping shared contract strict; final61 component tests and root267 aggregate pass.",
+    "paidModelCalls": 0,
+    "productionDeployed": false
+  },
+  "defaults": {
+    "localOnly": true,
+    "newMigration": false,
+    "writeEnabled": false,
+    "fullP1Complete": false,
+    "fullObjectiveComplete": false
+  },
+  "sourceFiles": [
+    {
+      "path": "client/src/pages/ops/OperationsReadOnlyOverview.component.test.tsx",
+      "bytes": 13297,
+      "sha256": "ca5583931752fe0be874e3b769b306f1ddb926913a47fd07ddeb18e9f16227fb"
+    },
+    {
+      "path": "client/src/pages/ops/OperationsReadOnlyOverview.tsx",
+      "bytes": 21986,
+      "sha256": "aa2d305cdb2b6f18170c6ca325269632bfca7a6913368d756967d99317ba2568"
+    },
+    {
+      "path": "client/src/pages/ops/ProfitBoardReadOnly.component.test.tsx",
+      "bytes": 27081,
+      "sha256": "a185c19a760c1b13e24573b9de34a875e8068466ab5b9de29d44ea7b8199dca3"
+    },
+    {
+      "path": "client/src/pages/ops/ProfitBoardReadOnly.tsx",
+      "bytes": 27566,
+      "sha256": "1bd85b7172b930df14018d056ee758782427a9c24e281d0c555e53be0c227585"
+    },
+    {
+      "path": "server/domains/ops/profitBoardReadRepository.test.ts",
+      "bytes": 25086,
+      "sha256": "2290623b9d3526c7120bfd1dd09b8fba093c75e2862b053c2f7fd74a4c7bd387"
+    },
+    {
+      "path": "server/domains/ops/profitBoardReadRepository.ts",
+      "bytes": 19436,
+      "sha256": "b48630853a0c80bc59695e7ebe2f3e04064833fbe22f806b6242f153dc57c5b0"
+    },
+    {
+      "path": "server/routers.ts",
+      "bytes": 10098,
+      "sha256": "bc79f6bdb8b24e88bc79578160a003e1e41749ff01108897f260b505442f7f1e"
+    },
+    {
+      "path": "server/routers/profitBoardRead.test.ts",
+      "bytes": 2661,
+      "sha256": "795b8c44eb0623479999a6ef97020b180cf45d464c2ad58138eeee02e785cc76"
+    },
+    {
+      "path": "server/routers/profitBoardRead.ts",
+      "bytes": 402,
+      "sha256": "bf67545503a7a8321a4a8a8313740940b022095e51de9b54bae71035345df531"
+    },
+    {
+      "path": "shared/profitBoardRead.test.ts",
+      "bytes": 19720,
+      "sha256": "faa18fb2505686d3f99013b61249b5ecfb608cc9970f52557955b6bacba625cc"
+    },
+    {
+      "path": "shared/profitBoardRead.ts",
+      "bytes": 36988,
+      "sha256": "994db4ab0d55a5348b01a103357d127228f477e3475c98775df978b205d3c5b0"
+    }
+  ]
+}
