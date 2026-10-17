@@ -1,0 +1,193 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "friend-complete-inventory-snapshot-readonly",
+  "baseline": "17da61659120bc7c479d9df3895b6f24ed34bbf2",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary",
+    "generalP5Skills": "Qingdao-primary",
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSelection": "friend-primary; upload supplemental"
+  },
+  "localOnly": true,
+  "scope": "Complete saved inventory, FBA component/accounting/mapping and separate age view; pure source compatibility and strict saved-source reads. No synchronization or production writes.",
+  "preserve": [
+    "original Lingxing replenishment input/route",
+    "all prior cost/monthly/Listing/Agent batches",
+    "P0-P6/K01-K10/T01-T28/image62/master27/supplements12"
+  ],
+  "pending": [
+    "Native MySQL driver/transactions/locks/revocation and actual authenticated app acceptance",
+    "Actual complete source collection/account catalog/field-map approval registry and P4 atomic persistence/migration0223 remain unimplemented in this batch",
+    "Source replay proves only provided arrays and declared source-field consistency, not complete live collection or approved vendor field meaning",
+    "Legacy v1 lacks shop/account/raw components. Saved ownerIds/names cannot authorize current readers. No fabricated recovery",
+    "Friend operator/buddy selector complete UX and persisted full scope assignment still require integration; no broadened access inferred",
+    "User/Qingdao Skill approvals, remaining P1/native303 and P4-P6 runtime/release gates remain"
+  ],
+  "changes": [
+    "Register inventorySnapshotRead.get and mount InventorySnapshotReadOnly in the opt-in authenticated operations overview. Preserve the old Qingdao/Lingxing inventory and replenishment route; no refresh mutation, collection, schema initialization or scheduler is copied.",
+    "Canonical v2 retains all nine required source arrays, optional auxiliary-parent completeness list, original references and explicit row-bound scope-field mappings. Replay all saved source arrays and compare the whole canonical result; provided arrays are not proof of live all-account/pagination completeness or approved vendor field semantics.",
+    "Validate every shared FBA copy before deduplication, including all actual components, purchase value, original age null/zero and snapshot dates. Known/unknown or cross-account physical-pool ambiguity rejects rather than duplicates or silently merges stock. Preserve shipped/receiving/inboundWorking separately; planned stock and auxiliary stock never inflate goods inventory.",
+    "Domestic and on-order purchase value remain CNY purchase-cost amounts, not payment amounts. Unique listing candidates require matching explicit source scope; multi-MSKU allocation remains independent unless the optional latest actual-shipment rule has an explicit approval reference and matching shipment, batch and nested-item identity. Preserve allocationEvidence with approval/ref/item index/date/scope.",
+    "Catalog and auxiliary metadata must be row-bound to the same complete scope for verified stock; unrelated account labels cannot leak through matching commodity IDs. All raw bound scopes, including omitted zero-stock records, participate in account ambiguity checks. Unknown legacy owner names/IDs are not authorization.",
+    "Strict current actor/role/workspace/resource permission checks and current business ownership run within one read transaction. Missing table, no record, invalid payload and unverifiable ownership remain distinct. Ordinary readers need exact scope plus all shared-physical-stock scopes authorized; filtered metadata hides workspace counts. No unauthorized fallback to old snapshots.",
+    "Group by full verified source scope and parent, preserving every child and independent unknown legacy groups. Search matches whole parent groups before aggregation; regular and age group pagination have independent offsets. Known/unknown age totals are independent, zero real stock with old age remains visible, and non-FBA age is not_applicable rather than unknown or observed zero.",
+    "Complete stock/FBA/aux/age and original source details render as escaped text, with original epoch and Asia/Shanghai display separated from age dates. Auth/permission/scope changes clear and abort owned state. Paging pins id/runId/capturedAt/version; stale response sequences cannot replace current results. Tables scroll locally without document overflow."
+  ],
+  "review": {
+    "root": "Read actual friend inventory mapper/schema/producer/source-fetch paths, reproduced old same-total/different-components and null-age/zero-age acceptance, and reviewed mapping/read boundaries and root mounts. Required group-first search, verified metadata/source scope isolation, full physical closure and complete raw scope universe.",
+    "independent": "Backend reviewer reproduced cross-account commodity metadata leakage, mismatched nested shipment item acceptance, and trim inconsistency that hid a zero-stock second account. Author corrected all; independent actual replay returned no foreign label and shipment_item_scope_conflict, and final repo regression118 passed. UI reviewer independently verified root route/mount/auth wiring and preserved gates.",
+    "protectedManifestSha256": "23c7665c328f8f1fb367c66e893f81e65014244d1f4d77002076964f72e72d12",
+    "baselineTupleSha256": "b5a228f5b51180bc6f903384d146997cda316f77da807e7abcb20ce7b4faee40"
+  },
+  "verification": {
+    "focusedUnion": {
+      "exitCode": 0,
+      "session": 53331,
+      "files": 5,
+      "tests": 367,
+      "durationSeconds": 6.92,
+      "breakdown": {
+        "sharedAndRouter": 149,
+        "repository": 118,
+        "inventoryUi": 63,
+        "overview": 13,
+        "overviewModel": 24
+      }
+    },
+    "scopedLint": {
+      "files": 13,
+      "exitCode": 0
+    },
+    "protectedGuard": {
+      "session": 34692,
+      "exitCode": 0,
+      "files": 106,
+      "dependencies": 2,
+      "reviewedRecords": 25
+    },
+    "configuredTypes": {
+      "command": "./node_modules/.bin/tsc --noEmit --incremental false",
+      "session": 76065,
+      "status": "passed-after-source-freeze",
+      "exitCode": 0,
+      "note": "Same original process waited while reading workspace sources, then naturally finished with exit0. No source edits, skipped files or replacement process during the final check; existing configured test exclusions unchanged."
+    },
+    "actualSyntheticBrowser": {
+      "component": "real shared mapper/builders and pure presentation; not authenticated app or DB",
+      "verified": [
+        "15 FBA and domestic source rows produce16 rows/14 full groups. Goods230/CNY2300,aux7/CNY70,plan100,inboundWorking1500; payment1 never used as purchase value",
+        "Regular group offsets0->5->10 preserve all16 rows including full3-row PARENT-A and stable overall totals",
+        "Search CHILD-SIBLING retains CHILD-0 and domestic row:1group/3rows,goods48/CNY480",
+        "Scoped fixture hides other account/shop and sets global sourceCounts=null; this is presentation not actual authorization acceptance",
+        "Unknown purchase value stays unknown; age180 with null first segment yields13known+1unknown parent groups with separate48/CNY480 totals; unknown group is reachable at age offset10",
+        "Age365 uses only known365+ values:14known0unknown,firstparent6 instead of12; zero-stock fixture retains old365+age3 and180date/segments",
+        "Legacyv1 keeps scope/FBA components/inboundWorking unknown and never guesses country or owner; missing/invalid/scope_unverifiable each displays explicit distinct message",
+        "Literal img title renders as text,zero img nodes; FBA component disclosure shows all11 components,original140CNY and age1/2/3/2026-10-01",
+        "Desktop1280/document1265/table1231:2200; narrow390/document375/table341:2200, no document horizontal overflow",
+        "No console errors, viewport reset, temporary tab closed"
+      ],
+      "screenshots": [
+        "outputs/inventory-readonly-browser-20261017/desktop.png",
+        "outputs/inventory-readonly-browser-20261017/desktop-full.png",
+        "outputs/inventory-readonly-browser-20261017/mobile.png"
+      ],
+      "server": {
+        "session": 48978,
+        "pid": 58998,
+        "url": "http://127.0.0.1:5173/",
+        "explicitlyStopped": true,
+        "exitCode": 143,
+        "observedRequests": 25,
+        "allObservedMethods": "GET"
+      },
+      "viewportReset": true,
+      "tabClosed": true,
+      "authenticatedApp": false,
+      "database": false
+    },
+    "priorFinding": "The repository test for whitespace marketplaceId initially failed (ready instead of scope_unverifiable); mapping/universe normalization was aligned and final frozen union passes.",
+    "paidModelCalls": 0,
+    "productionDeployed": false,
+    "diffCheck": {
+      "files": 13,
+      "session": 24916,
+      "exitCode": 0
+    }
+  },
+  "defaults": {
+    "localOnly": true,
+    "newMigration": false,
+    "writeEnabled": false,
+    "fullP1Complete": false,
+    "fullObjectiveComplete": false
+  },
+  "sourceFiles": [
+    {
+      "path": "client/src/pages/ops/InventorySnapshotReadOnly.component.test.tsx",
+      "bytes": 27309,
+      "sha256": "dd73d59b4b73caf609ecc0b22e30fb7a6e17c581cc19cf8b9b601786a404195e"
+    },
+    {
+      "path": "client/src/pages/ops/InventorySnapshotReadOnly.tsx",
+      "bytes": 24445,
+      "sha256": "08aab135ff9a91752dbe7211f09357751853e168cbbee9d97f4d29f061c1a555"
+    },
+    {
+      "path": "client/src/pages/ops/OperationsReadOnlyOverview.component.test.tsx",
+      "bytes": 12707,
+      "sha256": "3827b37a640a98d43afe780d731019439510984e1e90f672b22a70da77703ae0"
+    },
+    {
+      "path": "client/src/pages/ops/OperationsReadOnlyOverview.tsx",
+      "bytes": 21866,
+      "sha256": "b1e3d0e65db51c1e97657461a1ed0dd8871986fa409a070260b396e3b9ed923c"
+    },
+    {
+      "path": "server/domains/ops/inventorySnapshotReadRepository.test.ts",
+      "bytes": 32983,
+      "sha256": "5be6ec69abd8d6cc3ad1c4ad50eb343f201502636a5fa767531d11ed3aa7e97e"
+    },
+    {
+      "path": "server/domains/ops/inventorySnapshotReadRepository.ts",
+      "bytes": 15089,
+      "sha256": "85cf73b78aa179027e3883ed2576655ef031f2f67ffcf742ff7376b2622ab026"
+    },
+    {
+      "path": "server/routers.ts",
+      "bytes": 9989,
+      "sha256": "3988f8c91e269ff40a40e2876ab3e57d7ed5116b3a6f3df5b0d031c61ad703d8"
+    },
+    {
+      "path": "server/routers/inventorySnapshotRead.test.ts",
+      "bytes": 3031,
+      "sha256": "db79ff3388117fb776009d9d075e9963f9f47ea2821d816c188f6d126e851d95"
+    },
+    {
+      "path": "server/routers/inventorySnapshotRead.ts",
+      "bytes": 524,
+      "sha256": "4b44649af695be9a4a8ae381bc7f18dc885740ee530ea9901a8f63e0766080bd"
+    },
+    {
+      "path": "shared/inventorySnapshotMapping.test.ts",
+      "bytes": 19355,
+      "sha256": "899ec90bee11f9a2bf0882fe8cd037f33fc9a7cc76b75cfe1691d11bc5041d72"
+    },
+    {
+      "path": "shared/inventorySnapshotMapping.ts",
+      "bytes": 38299,
+      "sha256": "cad6e2b60a9bcd3f2d4c6a3026cea5ffbb94d3c932a9055dafc6109b7b16a66f"
+    },
+    {
+      "path": "shared/inventorySnapshotRead.test.ts",
+      "bytes": 17208,
+      "sha256": "269ee2a5c59f88312dfe7b1e74dc655dd68c82d13952d4a336e11bc0bb482d34"
+    },
+    {
+      "path": "shared/inventorySnapshotRead.ts",
+      "bytes": 24099,
+      "sha256": "cb6d9064feaa1884ad9840b3a37f3da5605cec6ae4f383ee203da18a328ef1aa"
+    }
+  ]
+}

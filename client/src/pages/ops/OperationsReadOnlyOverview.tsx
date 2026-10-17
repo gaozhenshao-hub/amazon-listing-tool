@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import MonthlyFinancialFilePreview from "./MonthlyFinancialFilePreview";
 import OperationsCostSheetReadOnly from "./OperationsCostSheetReadOnly";
 import MonthlyFinancialReadOnly from "./MonthlyFinancialReadOnly";
+import InventorySnapshotReadOnly from "./InventorySnapshotReadOnly";
 import {
   filterReadGroups,
   financialReadGroups,
@@ -572,6 +573,7 @@ export default function OperationsReadOnlyOverview() {
       <ScopedOperationsReadOnly key={`reads:${scopeKey}`} />
       <OperationsCostSheetReadOnly key={`costs:${scopeKey}`} />
       <MonthlyFinancialReadOnly key={`monthly:${scopeKey}`} />
+      <InventorySnapshotReadOnly key={`inventory-snapshot:${scopeKey}`} />
       <MonthlyFinancialFilePreview
         key={`file:${scopeKey}`}
         scopeKey={scopeKey}
