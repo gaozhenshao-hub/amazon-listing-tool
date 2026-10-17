@@ -1,6 +1,7 @@
 import type { EmperorAgentDag } from "./agentRunner/runtimeCore";
 import { PROFILE_IMPORT_JOB_KIND } from "../../../../shared/profileImportJob";
 import { COMPETITOR_RESEARCH_JOB_KIND } from "../../../../shared/competitorResearchJob";
+import { COMPETITOR_DEEP_EXECUTION_JOB_KIND } from "../../../../shared/competitorDeepExecutionJob";
 import { parseJson, rawExecute } from "./agentRunner/runtimeCore";
 import {
   markBusinessManagedNodeCanceled,
@@ -182,8 +183,8 @@ function expectedCheckpointStatuses(jobStatus: string, metadata: Record<string, 
 export async function auditBusinessJobCheckpointBindings(input: BindingAuditInput) {
   // Dedicated checkpoint lanes must not leak task metadata through this generic
   // read. Exclude in SQL before LIMIT so legacy jobs still occupy the result set.
-  const filters = ["j.userId=?", "j.kind NOT IN (?,?)"];
-  const params: unknown[] = [input.userId, PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND];
+  const filters = ["j.userId=?", "j.kind NOT IN (?,?,?)"];
+  const params: unknown[] = [input.userId, PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR_DEEP_EXECUTION_JOB_KIND];
   if (input.module) {
     filters.push("j.module=?");
     params.push(input.module);

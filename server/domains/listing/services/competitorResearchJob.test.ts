@@ -123,7 +123,8 @@ describe("single competitor durable analysis with actual service/repository/sour
     expect(queued.stage).toBe("reserved"); expect(d.skill).not.toHaveBeenCalled();
     expect(d.trace.find(t => t.sql.startsWith("INSERT INTO ai_jobs"))?.sql).toContain("`procedure`");
     const done = await d.run(); expect(done.stage).toBe("analysis_committed"); expect(done.status).toBe("succeeded");
-    expect(d.skill).toHaveBeenCalledOnce(); expect(d.skill.mock.calls[0][0]).toMatchObject({ skillSlug: "listing.competitor.analyze", userId: 3, workspaceId: 7, projectId: 11, skillVersionPolicy: "pinned", expectedSkillVersion: "4", expectedSkillPromptHash: "a".repeat(16), maxModelAttempts: 1, fallbackModels: [] });
+    expect(d.skill).toHaveBeenCalledOnce(); expect(d.skill.mock.calls[0][0]).toMatchObject({ skillSlug: "listing.competitor.analyze", userId: 3, workspaceId: 7, projectId: 11, skillVersionPolicy: "pinned", expectedSkillVersion: "4", expectedSkillPromptHash: "a".repeat(16),
+      expectedSkillUserPromptHash: "b".repeat(16), expectedSkillManifestHash: "c".repeat(16), expectedSkillStatus: "Released", maxModelAttempts: 1, fallbackModels: [] });
     expect(d.state.analyses[0]).toMatchObject({ aiSummary: "New research", summary: "New research", summaryStatus: "draft", summaryVersion: 2, reviewAnalysis: before.reviewAnalysis });
     expect(JSON.parse(d.state.analyses[0].rawData!)).toMatchObject({ analysisStale: false, captureOnly: false, sellerSpriteData: { monthlySales: 0, hasAplus: false }, research: { sourceHash: source.sourceHash, jobRunId: queued.runId } });
     expect(buildCompetitorResearchSource(d.state.analyses[0]).sourceHash).toBe(source.sourceHash);

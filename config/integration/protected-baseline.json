@@ -613,6 +613,11 @@
       "baseline": {
         "gitBlobSha1": "2fe924bcda8e3cc1fc60c53ee5b94ca6aa3ce5ac",
         "sha256": "ec7a969f2fb780835b4bcc4265fbe035ecb11fa6b86a268a087cf61be164f46f"
+      },
+      "reviewed": {
+        "gitBlobSha1": "aca10e719bfa13f898e9fc50b0354cf7d8d05a7f",
+        "sha256": "95060b9c0d84ca767b4888e54a117cd49195d4504d6d4c9b18e732a9d372b894",
+        "reviewRef": "config/integration/reviews/20261017-competitor-deep-checkpoints.json"
       }
     },
     {
@@ -1107,9 +1112,9 @@
         "sha256": "f32e7e884932429c07c4978699ba88d9144803fc17634f7542d18abd5fc19d8d"
       },
       "reviewed": {
-        "gitBlobSha1": "5eb28d13759f5134325419b9c67422115bf40ce5",
-        "sha256": "484568c9b9257c2f3ed623ace8cbf4f3733cc41b3c6a013ddac142ee94f49a16",
-        "reviewRef": "config/integration/reviews/20261016-saved-competitor-research-jobs.json"
+        "gitBlobSha1": "819c0dbac852f42b7583274e47baacdaf9cc03b8",
+        "sha256": "861ed7ff3f8c8cb1ea7b10c267ecd1b754c3acb4f0621e41d05ef977ffd406ff",
+        "reviewRef": "config/integration/reviews/20261017-competitor-deep-checkpoints.json"
       }
     },
     {

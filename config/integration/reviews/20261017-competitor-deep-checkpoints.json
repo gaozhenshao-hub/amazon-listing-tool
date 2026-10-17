@@ -1,0 +1,54 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-selected-competitor-four-column-contract-and-checkpoints",
+  "baseline": "46349ace33383e2a052dba4d847732eade3feaee",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSourceSelection": "friend-primary; select authorized saved competitor/profile sources and generate; uploads supplemental",
+    "generalP5Skills": "Qingdao-primary",
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary"
+  },
+  "changes": [
+    "Add pending-review source-only four-column contracts for title, selling points, all original review batches, synthesis and summary. Exact original citation spans, full bullet-translation coverage, complete per-batch review accounting and cross-batch theme coverage are required. Counts and percentages use unique imported reviews, never model-reported frequency labels or a claimed market denominator.",
+    "Summary claims reference already validated entries and distinguish seller claims, review feedback and inference. Images and actual questions remain explicitly unavailable; review-derived concerns are not passed off as real Q&A. Missing review originals remain unknown, distinct from a verified file with zero matching reviews. Raw and derived outputs are bounded at 64 KiB without truncation.",
+    "Add a resumable sequential execution kernel: pending -> missing or dispatched -> succeeded. Persist dispatch before invocation, one model invocation per dispatch, revalidate all stored raw results on restart, reject repeated model run receipts and ambiguous outcomes instead of automatically replaying. Completed results still require fresh authorization/source/lease/cancellation checks. Requests bind exact evidence and a pending approved-user-Skill-plan shape; the shape alone is not approval.",
+    "Add real-transaction-required SQL CAS storage with fixed actor/workspace/project/analysis, fresh active-user and strict project.run authorization without owner bypass, parent legacy-NULL identity, complete competitor revision/draft state, Agent/N1 and worker lease checks. Use bounded MySQL CAST input text plus its actual SHA2 as the SQL CAS token, not application-canonical JSON. Require one-step transition, exact acknowledgement and full readback. No reservation, worker, publication or model invocation is wired for this new lane.",
+    "Extend generic job guards, claim/lease mutation fences and generic binding-audit SQL exclusions to the reserved new lane so private original evidence cannot leak or be replayed through generic operations. Existing profile and selected-research guards remain.",
+    "Add opt-in stored user-template/manifest hashes and Released-state checks to the existing Skill runner before model lookup, execution record writes or provider invocation. New explicit pins override latest/rollout; callers without new pins retain old behavior. Existing selected-competitor worker supplies all three new pins. Hash semantics remain the existing truncated SHA-256/JSON.stringify snapshot, not a new incompatible hashing scheme. Model registry/override, caller context and attachment identity are not pinned by these fields.",
+    "Keep user Listing Skill prompts/seeds, seven directions/FABE/overall strategy, human fact/core/candidate review and friend-primary no-upload selection unchanged. No compatible Skill version has been published or approved by this source batch."
+  ],
+  "review": {
+    "root": "Read shared validators, kernel, SQL adapter and tests, current runner call order and every generic protection change. Root regression union and scoped lint are recorded in the parent proof. Original protected baseline tuples remain unchanged.",
+    "independent": "Separate reviewers found and closed terminal-result authorization/cancel omission, summary unknown-vs-zero input ambiguity and cross-stage reused model receipt. SQL adapter independently reviewed with its 71 offline fixtures passing; no new blocking finding. These reviews do not prove original evidence reservation authenticity, native MySQL behavior or actual provider semantics.",
+    "previousProtectionRecords": [
+      {
+        "path": "server/domains/ai_os/services/skillRunner.ts",
+        "previousReviewed": null,
+        "baseline": { "gitBlobSha1": "2fe924bcda8e3cc1fc60c53ee5b94ca6aa3ce5ac", "sha256": "ec7a969f2fb780835b4bcc4265fbe035ecb11fa6b86a268a087cf61be164f46f" }
+      },
+      {
+        "path": "server/repositories/ai_os/aiJobRepository.ts",
+        "previousReviewed": { "gitBlobSha1": "5eb28d13759f5134325419b9c67422115bf40ce5", "sha256": "484568c9b9257c2f3ed623ace8cbf4f3733cc41b3c6a013ddac142ee94f49a16", "reviewRef": "config/integration/reviews/20261016-saved-competitor-research-jobs.json" }
+      }
+    ],
+    "baselineFieldsUnchanged": true,
+    "baselineTupleSha256": "b5a228f5b51180bc6f903384d146997cda316f77da807e7abcb20ce7b4faee40"
+  },
+  "verification": {
+    "reference": "Parent outputs/amazon-system-accelerated-competitor-deep-batch-20261017-r1.json holds final command receipts and file hashes.",
+    "rootFocusedUnion": { "files": 14, "passed": 478, "exitCode": 0, "session": 64574 },
+    "scopedLint": { "files": 20, "exitCode": 0, "session": 78233 },
+    "realDatabase": false,
+    "realBrowser": false,
+    "paidModelCalls": 0
+  },
+  "defaults": { "newSchema": false, "newWorkerRegistered": false, "newRouteRegistered": false, "skillPublished": false, "workflowEnabledByDefault": false, "productionDeployed": false },
+  "remaining": [
+    "Trusted approved compatibility-Skill resolver, original-evidence-authenticated reservation, complete model/configuration/context budget pinning, real Skill adapter and final result/artifact publication remain unimplemented for the new deep lane. A caller-supplied authority literal or checksum must never count as approval/provenance.",
+    "The 256 KiB request cap excludes prompt/token overhead; larger synthesis is refused rather than silently sampled. Hierarchical synthesis and large-input/model budget policy remain. Original review retention still depends on saved import payload; page acquisition, independent long-lived originals, image OCR and actual questions remain.",
+    "Offline SQL fixtures do not prove native MySQL concurrency/rollback/driver types/clock behavior, process restart, browser rendering or no-upload end-to-end operation. Generic protections do not register a runnable deep job.",
+    "All original P0-P6, K01-K10, T01-T28, image62/master27/supplements12 remain in scope. P1 is incomplete; native303 is unapproved and native/0230 gates remain. No production/public push, scheduler, DB migration, VM or paid call occurred."
+  ]
+}

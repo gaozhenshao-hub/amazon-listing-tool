@@ -234,7 +234,10 @@ export function createCompetitorResearchJobService(dependencies: Partial<typeof 
         if (signal.aborted) researchError("CONFLICT", "COMPETITOR_RESEARCH_CANCELED");
         const result = await deps.skill({ skillSlug: "listing.competitor.analyze", userId: b.userId, workspaceId: b.workspaceId, projectId: b.projectId,
           variables: { context }, context, migrationSource: "competitor_research.saved_source", skillVersionPolicy: "pinned",
-          expectedSkillVersion: snapshot.version, expectedSkillPromptHash: snapshot.systemPromptHash, maxModelAttempts: 1, fallbackModels: [], signal,
+          expectedSkillVersion: snapshot.version, expectedSkillPromptHash: snapshot.systemPromptHash,
+          expectedSkillUserPromptHash: snapshot.userPromptHash, expectedSkillManifestHash: snapshot.manifestHash,
+          expectedSkillStatus: "Released",
+          maxModelAttempts: 1, fallbackModels: [], signal,
           validate: (content: string) => { let value: unknown; try { value = JSON.parse(content); } catch { return researchError("PRECONDITION_FAILED", "COMPETITOR_RESEARCH_ANALYSIS_INVALID"); } return normalizeCompetitorResearchResult(value); },
         }).catch(() => researchError("INTERNAL_SERVER_ERROR", "COMPETITOR_RESEARCH_MODEL_FAILED_REVIEW_REQUIRED"));
         if (result.skillSlug !== "listing.competitor.analyze" || result.skillVersion !== snapshot.version || result.skillPromptHash !== snapshot.systemPromptHash

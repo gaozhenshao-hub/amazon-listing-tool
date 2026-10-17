@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiJob } from "../drizzle/schema";
 import { PROFILE_IMPORT_JOB_KIND } from "../shared/profileImportJob";
 import { COMPETITOR_RESEARCH_JOB_KIND } from "../shared/competitorResearchJob";
+import { COMPETITOR_DEEP_EXECUTION_JOB_KIND } from "../shared/competitorDeepExecutionJob";
 import { checkpointedListingJobError } from "../shared/checkpointedListingJob";
 
 const mocks = vi.hoisted(() => ({
@@ -50,7 +51,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND])("%s runner is a fenced host, not a second business commit", kind => {
+describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR_DEEP_EXECUTION_JOB_KIND])("%s runner is a fenced host, not a second business commit", kind => {
   beforeEach(() => { row.kind = kind; });
   it("routes progress through the atomic repository guard without touching input/output", async () => {
     const input = structuredClone(row.input);

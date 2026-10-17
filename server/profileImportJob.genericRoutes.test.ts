@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 import { PROFILE_IMPORT_JOB_KIND } from "../shared/profileImportJob";
 import { COMPETITOR_RESEARCH_JOB_KIND } from "../shared/competitorResearchJob";
+import { COMPETITOR_DEEP_EXECUTION_JOB_KIND } from "../shared/competitorDeepExecutionJob";
 import { checkpointedListingJobError } from "../shared/checkpointedListingJob";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), list: vi.fn(), deadLetters: vi.fn(), cancel: vi.fn(), recover: vi.fn(),
@@ -44,7 +45,7 @@ beforeEach(() => {
   mocks.cancel.mockResolvedValue(legacyJob);
 });
 
-describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND])("generic AI job API does not expose %s checkpoints", kind => {
+describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR_DEEP_EXECUTION_JOB_KIND])("generic AI job API does not expose %s checkpoints", kind => {
   beforeEach(() => { privateJob.kind = kind; });
   it.each(["user", "admin", "super_admin"])("%s cannot get/cancel/retry/confirm the private job", async role => {
     const api = caller(role);

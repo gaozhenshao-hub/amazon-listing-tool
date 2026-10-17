@@ -118,6 +118,14 @@ export type RunSkillInput<T> = {
   skillVersionPolicy?: SkillVersionPolicy;
   expectedSkillVersion?: string | number;
   expectedSkillPromptHash?: string;
+  /** Stored (unrendered) template hash from getEmperorSkillRuntimeSnapshot:
+   * SHA-256 hex truncated to 16 lowercase characters, not full SHA-256. */
+  expectedSkillUserPromptHash?: string;
+  /** Existing JSON.stringify(manifest) snapshot hash. This does not pin the
+   * separately resolved model registry, Skill modelOverride or caller context. */
+  expectedSkillManifestHash?: string;
+  /** Opt-in release-state fence for approved, checkpointed workflows. */
+  expectedSkillStatus?: "Released";
   executionPreset?: SkillExecutionPreset;
   maxModelAttempts?: number;
   signal?: AbortSignal;
@@ -445,12 +453,34 @@ function buildSkillRuntimeSnapshot(skill: SkillRow, manifest: SkillManifest): Sk
   };
 }
 
-function assertSkillSnapshotCompatible(
-  snapshot: SkillRuntimeSnapshot,
-  input: Pick<RunSkillInput<unknown>, "skillVersionPolicy" | "expectedSkillVersion" | "expectedSkillPromptHash">,
-) {
-  const policy = input.skillVersionPolicy || ((input.expectedSkillVersion || input.expectedSkillPromptHash) ? "snapshot" : "latest");
+type SkillSnapshotExpectations = Pick<RunSkillInput<unknown>, "skillVersionPolicy" | "expectedSkillVersion" | "expectedSkillPromptHash"
+  | "expectedSkillUserPromptHash" | "expectedSkillManifestHash" | "expectedSkillStatus">;
+
+function hasContentSnapshotPins(input: SkillSnapshotExpectations): boolean {
+  return input.expectedSkillUserPromptHash !== undefined || input.expectedSkillManifestHash !== undefined || input.expectedSkillStatus !== undefined;
+}
+
+function validateContentSnapshotPins(input: SkillSnapshotExpectations): void {
+  if (input.expectedSkillStatus !== undefined && input.expectedSkillStatus !== "Released") {
+    throw new SkillRunError("SKILL_VERSION_MISMATCH", "Expected Skill status must be Released", false);
+  }
+  for (const [field, label] of [["expectedSkillUserPromptHash", "user prompt"], ["expectedSkillManifestHash", "manifest"]] as const) {
+    const value = input[field];
+    if (value !== undefined && (typeof value !== "string" || !/^[a-f0-9]{16}$/u.test(value))) {
+      throw new SkillRunError("SKILL_VERSION_MISMATCH", `Expected Skill ${label} hash must be 16 lowercase hexadecimal characters`, false);
+    }
+  }
+}
+
+function assertSkillSnapshotCompatible(snapshot: SkillRuntimeSnapshot, input: SkillSnapshotExpectations) {
+  // New explicit content pins cannot be silently overridden by `latest`.
+  // Calls without these fields retain their existing version-policy behavior.
+  const policy = hasContentSnapshotPins(input) ? "snapshot"
+    : input.skillVersionPolicy || ((input.expectedSkillVersion || input.expectedSkillPromptHash) ? "snapshot" : "latest");
   if (policy === "latest") return;
+  if (input.expectedSkillStatus !== undefined && snapshot.status !== input.expectedSkillStatus) {
+    throw new SkillRunError("SKILL_VERSION_MISMATCH", "Skill release state changed after approval", false);
+  }
 
   const expectedVersion = input.expectedSkillVersion === undefined ? "" : normalizeSkillVersion(input.expectedSkillVersion);
   if (expectedVersion && expectedVersion !== snapshot.version) {
@@ -467,6 +497,12 @@ function assertSkillSnapshotCompatible(
       `Skill '${snapshot.slug}' prompt changed after the Agent run started`,
       false,
     );
+  }
+  if (input.expectedSkillUserPromptHash !== undefined && input.expectedSkillUserPromptHash !== snapshot.userPromptHash) {
+    throw new SkillRunError("SKILL_VERSION_MISMATCH", "Skill user prompt snapshot mismatch", false);
+  }
+  if (input.expectedSkillManifestHash !== undefined && input.expectedSkillManifestHash !== snapshot.manifestHash) {
+    throw new SkillRunError("SKILL_VERSION_MISMATCH", "Skill manifest snapshot mismatch", false);
   }
 }
 
@@ -705,9 +741,10 @@ async function callModel(
 }
 
 export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Promise<RunSkillResult<T>> {
+  validateContentSnapshotPins(input);
   const skill = await getSkill(input.skillSlug, input.workspaceId ?? null);
   // Fixed-version and implicit snapshot runs must not drift into a live rollout.
-  const rollout = input.skillVersionPolicy !== "snapshot" && input.skillVersionPolicy !== "pinned"
+  const rollout = !hasContentSnapshotPins(input) && input.skillVersionPolicy !== "snapshot" && input.skillVersionPolicy !== "pinned"
     && (input.skillVersionPolicy === "latest" || (input.expectedSkillVersion === undefined && !input.expectedSkillPromptHash))
     ? await resolveActiveSkillRollout({
       skillSlug: skill.slug,

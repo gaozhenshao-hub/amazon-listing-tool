@@ -32,7 +32,7 @@ export function assertBusinessJobAgentBinding(input: {
   kind: string;
   input: unknown;
 }): BusinessJobAgentBinding | null {
-  if (input.kind === COMPETITOR_RESEARCH_JOB_KIND) {
+  if (input.kind === COMPETITOR_RESEARCH_JOB_KIND || input.kind === COMPETITOR_DEEP_EXECUTION_JOB_KIND) {
     const binding = readBusinessJobAgentBinding(input.input);
     if (input.module !== "listing" || binding?.agentNodeId !== "N1") {
       throw new Error("Competitor research must bind the Listing N1 agent node");
@@ -55,3 +55,4 @@ export function assertBusinessJobAgentBinding(input: {
 }
 import { PROFILE_IMPORT_JOB_KIND } from "@shared/profileImportJob";
 import { COMPETITOR_RESEARCH_JOB_KIND } from "@shared/competitorResearchJob";
+import { COMPETITOR_DEEP_EXECUTION_JOB_KIND } from "@shared/competitorDeepExecutionJob";
