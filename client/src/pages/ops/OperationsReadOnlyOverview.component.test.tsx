@@ -42,6 +42,11 @@ vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => controls.auth }));
 vi.mock("@/lib/trpc", () => ({
   trpc: { useUtils: () => ({ client: controls.client }) },
 }));
+// Separate live-query/security tests cover this child; these checks prove the
+// real overview mounts it only within the authenticated identity boundary.
+vi.mock("./OperationsCostSheetReadOnly", () => ({
+  default: () => <section aria-label="完整成本表入口">完整成本表独立只读入口</section>,
+}));
 
 const row = (
   changes: Partial<InventoryReadRecord> = {}
@@ -222,11 +227,13 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
       expect(
         screen.queryByLabelText("选择本地月报文件")
       ).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("完整成本表入口")).not.toBeInTheDocument();
     }
   );
   it("calls only two existing query methods with abort signals and refreshes on explicit request", async () => {
     const { unmount } = render(<OperationsReadOnlyOverview />);
     await screen.findByText("接口产品");
+    expect(screen.getByLabelText("完整成本表入口")).toBeVisible();
     expect(controls.inventory).toHaveBeenCalledTimes(1);
     expect(controls.financial).toHaveBeenCalledTimes(1);
     expect(controls.inventory.mock.calls[0][0]).toEqual({ marketplace: "ALL" });
@@ -257,6 +264,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
       const oldSignal = controls.inventory.mock.calls[0][1]
         .signal as AbortSignal;
       const priorFileInput = screen.getByLabelText("选择本地月报文件");
+      const priorCostEntry = screen.getByLabelText("完整成本表入口");
       controls.auth.user = {
         id: kind === "user" ? 2 : 1,
         defaultWorkspaceId: kind === "workspace" ? 20 : 10,
@@ -267,6 +275,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
       expect(screen.getByLabelText("选择本地月报文件")).not.toBe(
         priorFileInput
       );
+      expect(screen.getByLabelText("完整成本表入口")).not.toBe(priorCostEntry);
       await act(async () => {
         fresh.resolve({
           asOfDate: "2026-10-02",
@@ -290,6 +299,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
     controls.auth.loading = true;
     rerender(<OperationsReadOnlyOverview />);
     expect(screen.queryByText("接口产品")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("完整成本表入口")).not.toBeInTheDocument();
     expect(controls.inventory).toHaveBeenCalledTimes(1);
     controls.inventory.mockRejectedValueOnce(new Error("permission revoked"));
     controls.auth.loading = false;

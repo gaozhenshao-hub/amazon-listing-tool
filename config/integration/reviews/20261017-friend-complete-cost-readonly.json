@@ -1,0 +1,104 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "friend-complete-cost-sheet-readonly",
+  "baseline": "f0f3bb92b06bda77bf3dd5258e2af850a231caaa",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary",
+    "generalP5Skills": "Qingdao-primary",
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSelection": "friend-primary; upload supplemental"
+  },
+  "changes": [
+    "Wire a separate productCostsReadOnly.get query and the complete read-only cost sheet into the existing authenticated operations overview. Preserve old inventory parameters and manual financial ledger independently.",
+    "Retain every friend saved setting and row, up to500 saved rows, current id/version/updater/time, unmatched saved rows and every admitted report observation. Native/string JSON compatibility; strict structure, identities, duplicates, unknown-versus-zero and bounded bytes/counts. No fake version history.",
+    "Show all14 cost/source columns with pagination and table-only horizontal scroll. Explicit query only, no mutation or model hooks; auth/workspace/role/read guards, abort/sequence, response scope/identity validation and old result clearing. Private target events excluded by manus-no-record; no claim all telemetry disabled.",
+    "Revalidate active actor/role/workspace in the read transaction, enforce strict ops_data.read, then exact assigned user or confirmed source-specific operator mapping. Managers still require policy. Same-day owner conflicts reject; empty names never grant access. SQL scope includes workspace,parentASIN,store,canonical country. No auto-create/DDL/default save.",
+    "Read optional report fee/lineage columns only when metadata proves presence. Preserve Qingdao sourceKind/batch/trace/schema version and actual raw signed fee/denominator. Only confirmed cost-table ER_NO_SUCH_TABLE yields not_connected; weekly missing structure is a precondition error, other errors do not become empty data.",
+    "Pin friend calculation rules/version/date; use saved standardGoodsConfirmed. Label fixed15% single-unit profit as assumption, not accounting profit; never substitute predicted/report FBA for saved actual FBA, never allocate multi-SKU parent averages. Same-day cross-source/channel conflicts suppress profit. Preserve120 rate cells with independent golden expectations."
+  ],
+  "review": {
+    "root": "Compared friend full payload/UI/facts/fee rule with current schema and exact API/overview wiring. Found and repaired one transcribed largePeak rate before final checks.",
+    "independent": "Reviewer found actual Drizzle raw execute returns TIMESTAMP strings, unlike initial Date fixture. Repaired SQL to project UNIX_TIMESTAMP(updated_at)*1000 and strictly accept numeric/DECIMAL-string epoch milliseconds;27 driver/time-boundary tests added. Reviewer rechecked final implementation; no remaining definite source-level blocker.",
+    "protectedManifestUnchanged": true,
+    "protectedManifestSha256": "23c7665c328f8f1fb367c66e893f81e65014244d1f4d77002076964f72e72d12",
+    "baselineTupleSha256": "b5a228f5b51180bc6f903384d146997cda316f77da807e7abcb20ce7b4faee40"
+  },
+  "verification": {
+    "focusedUnion": {
+      "files": 6,
+      "passed": 393,
+      "session": 14048,
+      "exitCode": 0,
+      "includesSharedTestsViaRoute": 195,
+      "previousBeforeDriverRepair": 366
+    },
+    "scopedLint": {
+      "files": 11,
+      "session": 3171,
+      "exitCode": 0
+    },
+    "protectedGuard": {
+      "files": 106,
+      "dependencies": 2,
+      "reviewedRecords": 25,
+      "session": 14028,
+      "exitCode": 0
+    },
+    "configuredTypes": {
+      "command": "./node_modules/.bin/tsc --noEmit --incremental false",
+      "initialSession": 86283,
+      "initialExitCode": 0,
+      "finalFrozenSession": 88628,
+      "status": "passed-after-source-freeze",
+      "exitCode": 0,
+      "note": "Initial check overlapped driver repair; final run starts after source freeze. Existing *.test.ts exclusion unchanged."
+    },
+    "actualSyntheticBrowser": {
+      "component": "real shared builder and presentational component, isolated local page",
+      "verified": [
+        "complete14 columns/current version/all settings/orphan rows",
+        "fixed15% profit74 and zero-cost85, savedFBA5 distinct from reportFBA6",
+        "cross-source conflict and aggregate rows do not calculate profit",
+        "literal image-like text does not create an img",
+        "missing table,not_saved,corrupt do not show saved/default costs",
+        "unconfirmed standard goods suppress prediction without changing actual-cost calculation",
+        "26 rows page20+6 with keyboard Enter and reset on fixture replacement",
+        "expanded source evidence with signed-24 raw fee,denominator4 and Qingdao lineage",
+        "desktop1265/no document overflow;table1197/2300",
+        "narrow client375/no document overflow;table307/2300"
+      ],
+      "desktopScreenshot": "outputs/cost-readonly-browser-20261017/desktop-final.jpg",
+      "narrowScreenshot": "outputs/cost-readonly-browser-20261017/mobile-final.jpg",
+      "trialScreenshot": "mobile-immediate-viewport-trial.jpg is a pre-render scaled capture, not acceptance",
+      "viewportReset": true,
+      "tabClosed": true,
+      "server": {
+        "session": 48884,
+        "pid": 54549,
+        "explicitlyStopped": true,
+        "exitCode": 143,
+        "observedRequests": 54,
+        "allObservedMethods": "GET"
+      },
+      "authenticatedApp": false,
+      "database": false
+    },
+    "paidModelCalls": 0,
+    "productionDeployed": false
+  },
+  "remaining": [
+    "Native MySQL SQL/epoch projection/schema inspection/locks/concurrent revocation and real authorized business-browser requests remain unverified. A typed SQL fixture is not native proof.",
+    "0302 remains reserved-only P4; no schema registration/execution/data import. Missing real table must honestly show not_connected. Cost save/version CAS and complete write/recovery/rollback remain required for final friend feature.",
+    "Full monthly immutable imports/history/detail, replace/revoke downstream consistency, cost/inventory reconciliation and profit AI remain in original scope. Current manual ledger/local preview/this cost read is not complete operations acceptance.",
+    "All P0-P6,K01-K10,T01-T28,image62/master27/supplements12 retained; P1 incomplete/native303 unapproved, Listing default-off, source/Skill approval and production/release gates unchanged."
+  ],
+  "defaults": {
+    "localOnly": true,
+    "newMigration": false,
+    "writeEnabled": false,
+    "fullP1Complete": false,
+    "fullObjectiveComplete": false
+  }
+}

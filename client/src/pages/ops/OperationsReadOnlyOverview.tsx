@@ -5,6 +5,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import MonthlyFinancialFilePreview from "./MonthlyFinancialFilePreview";
+import OperationsCostSheetReadOnly from "./OperationsCostSheetReadOnly";
 import {
   filterReadGroups,
   financialReadGroups,
@@ -568,6 +569,7 @@ export default function OperationsReadOnlyOverview() {
   return (
     <>
       <ScopedOperationsReadOnly key={`reads:${scopeKey}`} />
+      <OperationsCostSheetReadOnly key={`costs:${scopeKey}`} />
       <MonthlyFinancialFilePreview
         key={`file:${scopeKey}`}
         scopeKey={scopeKey}

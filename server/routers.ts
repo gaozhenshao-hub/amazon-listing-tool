@@ -82,6 +82,7 @@ import { videoScriptRouter } from "./routers/videoScript";
 import { taskManagementRouter } from "./routers/taskManagement";
 // Data Import Center
 import { dataImportRouter } from "./routers/dataImport";
+import { productCostsReadOnlyRouter } from "./routers/productCostsReadOnly";
 import { lingxingSyncRouter } from "./routers/lingxingSync";
 import { operatorMappingRouter } from "./routers/operatorMapping";
 import { inventoryOwnerAssignmentsRouter } from "./routers/inventoryOwnerAssignments";
@@ -196,6 +197,7 @@ export const appRouter = router({
   videoScript: videoScriptRouter,
   // Data Import Center
   dataImport: dataImportRouter,
+  productCostsReadOnly: productCostsReadOnlyRouter,
   lingxingSync: lingxingSyncRouter,
   operatorMapping: operatorMappingRouter,
   inventoryOwnerAssignments: inventoryOwnerAssignmentsRouter,
