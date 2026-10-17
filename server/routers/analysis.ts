@@ -20,6 +20,7 @@ import { competitorReviewScopeSchema, competitorSummaryWriteSchema, competitorSu
 import { competitorResearchJob, competitorResearchScopeSchema, startCompetitorResearchJobSchema, competitorResearchOperationSchema } from "../domains/listing/services/competitorResearchJob";
 import { competitorReviewRead, competitorReviewsPageSchema } from "../domains/listing/services/competitorReviewRead";
 import { competitorResearchEvidence, competitorResearchEvidenceSchema } from "../domains/listing/services/competitorResearchEvidence";
+import { competitorDeepResultRead, competitorDeepResultReadSchema } from "../domains/listing/services/competitorDeepResultRead";
 import {
   registerCompetitorAnalysisArtifact,
   registerCompetitorComparisonArtifact,
@@ -87,6 +88,9 @@ async function resolveCompetitorImagesForDelivery<T extends { imageUrls?: string
 }
 
 export const analysisRouter = router({
+  getCompetitorDeepResult: protectedProcedure
+    .input(competitorDeepResultReadSchema)
+    .query(({ ctx, input }) => competitorDeepResultRead.read(ctx, input)),
   previewResearchEvidence: protectedProcedure
     .input(competitorResearchEvidenceSchema)
     .query(({ ctx, input }) => competitorResearchEvidence.preview(ctx, input)),

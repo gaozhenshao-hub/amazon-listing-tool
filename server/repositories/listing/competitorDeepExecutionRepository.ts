@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { TRPCError } from "@trpc/server";
 import { sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -8,15 +9,22 @@ import { canonicalCompetitorResearchEvidence as canonical, verifyCompetitorResea
 import type { CompetitorAnalysis } from "../../../drizzle/schema/project";
 import { createCompetitorDeepExecution, deepSkillPlanSchema, type DeepExecutionJournal,
   type DeepExecutionStore, type DeepSkillPlan } from "../../domains/listing/services/competitorDeepExecution";
+import { buildCompetitorDeepResult, COMPETITOR_DEEP_RESULT_MAX_BYTES } from "../../domains/listing/services/competitorDeepResult";
 import { assertResourceAction } from "../../services/securityGovernance";
 import { getDb, type DbExecutor } from "../dbClient";
 import { competitorRevision } from "../project/competitorWritePolicy";
 
-/** Worker-internal checkpoint storage only. This does not reserve jobs, approve
- * Skills/evidence, register a worker, call a model, or publish a research result.
+/** Worker-internal checkpoint storage and atomic draft publication only. This
+ * does not reserve jobs, approve Skills/evidence, register a worker or call a model.
  * The trusted reservation/worker must authenticate the initial complete evidence
  * and approved Skill plan; self-consistent hashes are not source provenance. */
 export const COMPETITOR_DEEP_INPUT_MAX_BYTES = 16 * 1024 * 1024;
+const PUBLICATION_METADATA_MAX_BYTES = 16 * 1024;
+const PUBLICATION_AUDIT_SNAPSHOT_MAX_BYTES = 16 * 1024;
+const PUBLICATION_BEFORE_SNAPSHOT_MAX_BYTES = 1024 * 1024;
+// MySQL JSON text rendering may add spaces/escapes. Bound that wire separately
+// from the canonical payload limit; never select the unbounded native JSON too.
+const JSON_WIRE_EXPANSION = 8;
 const id = z.number().int().positive().safe();
 const hash = z.string().regex(/^[a-f0-9]{64}$/u);
 const exactText = (maximum: number) => z.string().min(1).max(maximum).refine(value => value.trim() === value && value.length > 0);
@@ -24,6 +32,13 @@ const scopeSchema = z.object({ runId: exactText(80), lockedBy: exactText(128),
   attempt: id, userId: id, workspaceId: id.nullable(), projectId: id, analysisId: id }).strict();
 const outerSchema = z.object({ version: z.literal(1), evidence: z.unknown(), skills: z.unknown(), journal: z.unknown(),
   agentRunId: exactText(80), agentNodeId: z.literal("N1") }).strict();
+const publicationReceiptBaseSchema = z.object({ version: z.literal(1), kind: z.literal("competitor_deep_research"),
+  runId: exactText(80), analysisId: id, artifactId: exactText(128), artifactHash: hash, resultHash: hash,
+  evidenceHash: hash, skillPlanHash: hash, journalHash: hash, sourceRevision: hash, summaryVersion: id,
+  generatedAt: z.string().datetime(), reviewRequired: z.literal(true), deepResearchComplete: z.literal(false) }).strict();
+export const competitorDeepPublicationReceiptSchema = publicationReceiptBaseSchema.extend({ committedRevision: hash }).strict();
+export type CompetitorDeepPublicationReceipt = z.infer<typeof competitorDeepPublicationReceiptSchema>;
+export interface CompetitorDeepPublicationStore extends DeepExecutionStore { publish(): Promise<CompetitorDeepPublicationReceipt> }
 export type CompetitorDeepStoredInput = { version: 1; evidence: CompetitorResearchEvidencePlan; skills: DeepSkillPlan;
   journal: DeepExecutionJournal; agentRunId: string; agentNodeId: "N1" };
 export type CompetitorDeepExecutionScope = z.infer<typeof scopeSchema> & { signal: AbortSignal };
@@ -45,6 +60,14 @@ function encoded(value: unknown): string {
   // walk only its inert clone, never caller getters/toJSON.
   validUtf8(JSON.parse(text));
   return text;
+}
+function publicationJsonMatches(text: unknown, expected: string, canonicalMaximum: number): boolean {
+  if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > canonicalMaximum * JSON_WIRE_EXPANSION
+    || Buffer.from(text, "utf8").toString("utf8") !== text) return false;
+  try {
+    const actual = encoded(JSON.parse(text));
+    return Buffer.byteLength(actual, "utf8") <= canonicalMaximum && actual === expected;
+  } catch { return false; }
 }
 export function decodeCompetitorDeepExecutionInput(value: unknown): CompetitorDeepStoredInput {
   try {
@@ -80,7 +103,8 @@ function statement(text: string, params: unknown[]): SQL {
 }
 // The text/hash pair is MySQL's actual JSON rendering, NOT our canonical JSON.
 // Bound extraction prevents an oversized stored input from being returned whole.
-const JOB_SQL = `SELECT runId,kind,module,userId,workspaceId,projectId,status,attempt,maxAttempts,lockedBy,leaseUntil,
+const JOB_SQL = `SELECT runId,kind,module,userId,workspaceId,projectId,status,progress,attempt,maxAttempts,lockedBy,leaseUntil,errorMessage,completedAt,
+  IF(OCTET_LENGTH(CAST(output AS CHAR CHARACTER SET utf8mb4))<=16384,CAST(output AS CHAR CHARACTER SET utf8mb4),NULL) AS outputText,
   IF(OCTET_LENGTH(CAST(input AS CHAR CHARACTER SET utf8mb4))<=${COMPETITOR_DEEP_INPUT_MAX_BYTES},CAST(input AS CHAR CHARACTER SET utf8mb4),NULL) AS inputText,
   OCTET_LENGTH(CAST(input AS CHAR CHARACTER SET utf8mb4)) AS inputBytes,
   SHA2(CAST(input AS CHAR CHARACTER SET utf8mb4),256) AS inputTextHash
@@ -103,7 +127,7 @@ function assertTransition(current: DeepExecutionJournal, next: DeepExecutionJour
 export function createCompetitorDeepExecutionStore(
   request: CompetitorDeepExecutionScope,
   dependencies: { database?: () => Promise<CompetitorDeepExecutionDatabase | null>; permission?: typeof assertResourceAction } = {},
-): DeepExecutionStore {
+): CompetitorDeepPublicationStore {
   const { signal, ...fields } = request;
   let scope: z.infer<typeof scopeSchema>;
   try { scope = scopeSchema.parse(fields); } catch { return fail("DEEP_STORE_SCOPE_INVALID"); }
@@ -151,7 +175,7 @@ export function createCompetitorDeepExecutionStore(
     if (b.userId !== scope.userId || b.workspaceId !== scope.workspaceId || b.projectId !== scope.projectId || b.analysisId !== scope.analysisId) fail("DEEP_STORE_SCOPE_CHANGED", "CONFLICT");
     return { ...row, inputText: row.inputText, inputTextHash: row.inputTextHash as string, input };
   }
-  async function authorized(tx: DbExecutor): Promise<Job> {
+  async function authorized(tx: DbExecutor): Promise<Job & { analysis: CompetitorAnalysis; actorRole: string }> {
     // Shared lock order: job -> actor/policy -> parent -> competitor -> Agent.
     const job = await locked(tx), identity = job.input.evidence.identity;
     const users = await rows(tx, "SELECT id,role,status,defaultWorkspaceId FROM users WHERE id=? FOR SHARE", [scope.userId]);
@@ -182,7 +206,7 @@ export function createCompetitorDeepExecutionStore(
     const binding = canonical({ ...job.input, journal: null });
     if (immutableBinding !== null && immutableBinding !== binding) fail("DEEP_STORE_BINDING_CHANGED", "CONFLICT");
     assertLease(job); immutableBinding = binding;
-    return job;
+    return { ...job, analysis, actorRole: user.role };
   }
   async function read(): Promise<DeepExecutionJournal> {
     return transaction(async (tx, guard) => { const job = await authorized(tx); assertLease(job);
@@ -215,5 +239,116 @@ export function createCompetitorDeepExecutionStore(
       assertLease(saved); guard.expiresAt = new Date(saved.leaseUntil as Date | string).getTime(); return saved.input.journal;
     });
   }
-  return { read, compareAndSwap, assertCurrent };
+  async function publish(): Promise<CompetitorDeepPublicationReceipt> {
+    return transaction(async (tx, guard) => {
+      const job = await authorized(tx), current = job.analysis, source = job.input.evidence.identity;
+      guard.expiresAt = new Date(job.leaseUntil as Date | string).getTime();
+      if (current.summaryVersion >= 2147483647 || job.actorRole.length > 64) fail("DEEP_STORE_PUBLICATION_INVALID");
+      // Rebuild from the locked input, never from a caller's derived output.
+      const generatedAt = new Date().toISOString();
+      let result: ReturnType<typeof buildCompetitorDeepResult>;
+      try { result = buildCompetitorDeepResult({ evidence: job.input.evidence, skills: job.input.skills,
+        journal: job.input.journal, jobRunId: scope.runId, generatedAt }); }
+      catch { return fail("DEEP_STORE_RESULT_INVALID"); }
+      if (!result.summaryText || result.deepAnalysis.status !== "ready_for_review"
+        || result.deepAnalysis.deepResearchComplete !== false) fail("DEEP_STORE_RESULT_INCOMPLETE");
+      const contentJson = encoded(result);
+      if (Buffer.byteLength(contentJson, "utf8") > COMPETITOR_DEEP_RESULT_MAX_BYTES) fail("DEEP_STORE_RESULT_TOO_LARGE");
+      const artifactHash = digest(contentJson), artifactId = `deep_${digest(scope.runId)}`, auditId = `deep_audit_${digest(scope.runId)}`;
+      const version = current.summaryVersion + 1;
+      const receiptBase = publicationReceiptBaseSchema.parse({ version: 1, kind: "competitor_deep_research", runId: scope.runId,
+        analysisId: scope.analysisId, artifactId, artifactHash, resultHash: result.resultHash, evidenceHash: job.input.evidence.evidenceHash,
+        skillPlanHash: job.input.journal.skillPlanHash, journalHash: job.input.journal.journalHash, sourceRevision: source.revision,
+        summaryVersion: version, generatedAt, reviewRequired: true, deepResearchComplete: false });
+      let raw: Record<string, unknown>;
+      try {
+        const prior: unknown = current.rawData?.trim() ? JSON.parse(current.rawData) : {};
+        if (!prior || typeof prior !== "object" || Array.isArray(prior)) fail("DEEP_STORE_SOURCE_INVALID");
+        raw = { ...prior };
+      } catch { return fail("DEEP_STORE_SOURCE_INVALID"); }
+      // Preserve every original/legacy field, including research variants,
+      // reviews, purchaseBadge and prior deepAnalysis. Stale flags prevent those
+      // historical AI fields from being advertised as this new candidate. Only
+      // the new publication receipt/reference lives in this 64 KiB TEXT column;
+      // refuse overflow rather than deleting history to make the result fit.
+      const rawData = encoded({ ...raw, deepResearchPublication: receiptBase,
+        deepAnalysisRef: { artifactId, jobRunId: scope.runId, resultHash: result.resultHash },
+        analysisStale: true, deepAnalysisStale: true, captureOnly: false });
+      if (Buffer.byteLength(rawData, "utf8") > 65535) fail("DEEP_STORE_SOURCE_TOO_LARGE");
+      const summary = current.summary?.trim() && current.summary !== current.aiSummary ? current.summary : result.summaryText;
+      const metadata = { ...receiptBase, agentRunId: job.input.agentRunId, agentNodeId: "N1" };
+      const finalModel = job.input.journal.steps.find(step => step.stage === "summary")?.modelReceipt;
+      if (!finalModel) fail("DEEP_STORE_RESULT_INCOMPLETE");
+      const artifactKey = `listing.competitor_deep.${source.asin}`, metadataJson = encoded(metadata);
+      if (Buffer.byteLength(metadataJson, "utf8") > PUBLICATION_METADATA_MAX_BYTES) fail("DEEP_STORE_PUBLICATION_INVALID");
+      // Keep the complete old SQL row in audit history, including old top-level
+      // AI fields and the untouched rawData string. Dates are explicitly JSON
+      // ISO strings, not implicit toJSON calls or lossy object serialization.
+      const beforeSnapshotJson = encoded(Object.fromEntries(Object.entries(current)
+        .map(([key, value]) => [key, value instanceof Date ? value.toISOString() : value])));
+      if (Buffer.byteLength(beforeSnapshotJson, "utf8") > PUBLICATION_BEFORE_SNAPSHOT_MAX_BYTES) fail("DEEP_STORE_SOURCE_TOO_LARGE");
+      async function write(text: string, params: unknown[]) {
+        assertLease(job);
+        const result = await tx.execute(statement(text, params)), ack = Array.isArray(result) ? result[0] : null;
+        if (ack?.affectedRows !== 1 || ack.warningStatus !== 0) fail("DEEP_STORE_WRITE_UNCONFIRMED", "CONFLICT");
+        assertLease(job);
+      }
+      await write("INSERT INTO ai_artifacts (workspaceId,artifactId,domain,artifactKey,artifactType,sourceType,sourceId,sourceTable,sourceRowId,runId,agentSlug,nodeId,projectId,userId,status,version,isCurrent,contentJson,contentHash,mimeType,fileSizeBytes,retentionClass,metadata,sourceSkillRunId,sourceAiJobRunId) VALUES (?,?,'listing',?,'json','ai_output',?,'competitorAnalyses',?,?, 'listing.full.workflow','N1',?,?,'draft',?,0,?,?,'application/json',?,'hot',?,?,?)",
+        [scope.workspaceId, artifactId, artifactKey, String(scope.analysisId), String(scope.analysisId), job.input.agentRunId, scope.projectId,
+          scope.userId, version, contentJson, artifactHash, Buffer.byteLength(contentJson, "utf8"), metadataJson, finalModel.runId, scope.runId]);
+      await write("UPDATE competitorAnalyses SET aiSummary=?,summary=?,keywords=NULL,rawData=?,summaryVersion=?,updatedAt=CURRENT_TIMESTAMP WHERE id=? AND projectId=? AND summaryStatus='draft' AND summaryVersion=?",
+        [result.summaryText, summary, rawData, version, scope.analysisId, scope.projectId, current.summaryVersion]);
+      const expected = { ...current, aiSummary: result.summaryText, summary, keywords: null, rawData, summaryVersion: version };
+      const firstSavedAnalyses = await rows(tx, "SELECT * FROM competitorAnalyses WHERE projectId=? AND id=? FOR UPDATE", [scope.projectId, scope.analysisId]);
+      if (firstSavedAnalyses.length !== 1 || !(firstSavedAnalyses[0].updatedAt instanceof Date)
+        || !isDeepStrictEqual({ ...firstSavedAnalyses[0], updatedAt: current.updatedAt }, expected)) fail("DEEP_STORE_ANALYSIS_READBACK_MISMATCH", "CONFLICT");
+      const receipt = competitorDeepPublicationReceiptSchema.parse({ ...receiptBase,
+        committedRevision: competitorRevision(firstSavedAnalyses[0] as CompetitorAnalysis) });
+      const receiptJson = encoded(receipt);
+      if (Buffer.byteLength(receiptJson, "utf8") > PUBLICATION_AUDIT_SNAPSHOT_MAX_BYTES) fail("DEEP_STORE_PUBLICATION_INVALID");
+      await write("INSERT INTO security_audit_logs (auditId,workspaceId,actorUserId,actorRole,action,resourceType,resourceId,projectId,agentRunId,toolSlug,status,riskLevel,beforeSnapshot,afterSnapshot,metadata) VALUES (?,?,?,?,'analysis.research.deep','project',?,?,?,'listing.competitor.deep','success','medium',?,?,?)",
+        [auditId, scope.workspaceId, scope.userId, job.actorRole, String(scope.analysisId), scope.projectId, job.input.agentRunId, beforeSnapshotJson, receiptJson, metadataJson]);
+      await write("UPDATE ai_jobs SET output=?,status='succeeded',progress=100,errorMessage=NULL,completedAt=CURRENT_TIMESTAMP,leaseUntil=NULL,lockedBy=NULL,lastHeartbeatAt=NULL,updatedAt=CURRENT_TIMESTAMP WHERE runId=? AND kind=? AND module='listing' AND userId=? AND workspaceId<=>? AND projectId=? AND status='running' AND lockedBy=? AND attempt=? AND leaseUntil>CURRENT_TIMESTAMP AND SHA2(CAST(input AS CHAR CHARACTER SET utf8mb4),256)=?",
+        [receiptJson, scope.runId, COMPETITOR_DEEP_EXECUTION_JOB_KIND, scope.userId, scope.workspaceId, scope.projectId, scope.lockedBy, scope.attempt, job.inputTextHash]);
+      const savedJobs = await rows(tx, JOB_SQL, [scope.runId]), saved = savedJobs[0];
+      if (savedJobs.length !== 1 || saved.runId !== scope.runId || saved.kind !== job.kind || saved.module !== "listing"
+        || saved.userId !== scope.userId || saved.workspaceId !== scope.workspaceId || saved.projectId !== scope.projectId
+        || saved.status !== "succeeded" || saved.progress !== 100 || saved.attempt !== scope.attempt || saved.maxAttempts !== 1
+        || saved.lockedBy !== null || saved.leaseUntil !== null || saved.errorMessage !== null
+        || !(saved.completedAt instanceof Date) || !Number.isFinite(saved.completedAt.getTime())
+        || saved.inputText !== job.inputText || saved.inputTextHash !== job.inputTextHash || typeof saved.outputText !== "string"
+        || !isDeepStrictEqual(JSON.parse(saved.outputText), receipt)) fail("DEEP_STORE_RECEIPT_READBACK_MISMATCH", "CONFLICT");
+      const analyses = await rows(tx, "SELECT * FROM competitorAnalyses WHERE projectId=? AND id=? FOR UPDATE", [scope.projectId, scope.analysisId]);
+      if (analyses.length !== 1 || !(analyses[0].updatedAt instanceof Date)
+        || !isDeepStrictEqual({ ...analyses[0], updatedAt: current.updatedAt }, expected)
+        || competitorRevision(analyses[0] as CompetitorAnalysis) !== receipt.committedRevision) fail("DEEP_STORE_ANALYSIS_READBACK_MISMATCH", "CONFLICT");
+      const artifacts = await rows(tx, `SELECT workspaceId,artifactId,domain,artifactKey,artifactType,sourceType,sourceId,sourceTable,sourceRowId,runId,agentSlug,nodeId,projectId,userId,status,version,isCurrent,contentHash,mimeType,fileSizeBytes,retentionClass,sourceSkillRunId,sourceAiJobRunId,
+        IF(OCTET_LENGTH(CAST(contentJson AS CHAR CHARACTER SET utf8mb4))<=${COMPETITOR_DEEP_RESULT_MAX_BYTES * JSON_WIRE_EXPANSION},CAST(contentJson AS CHAR CHARACTER SET utf8mb4),NULL) AS contentJsonText,
+        IF(OCTET_LENGTH(CAST(metadata AS CHAR CHARACTER SET utf8mb4))<=${PUBLICATION_METADATA_MAX_BYTES * JSON_WIRE_EXPANSION},CAST(metadata AS CHAR CHARACTER SET utf8mb4),NULL) AS metadataText
+        FROM ai_artifacts WHERE sourceAiJobRunId=? LIMIT 2 FOR SHARE`, [scope.runId]);
+      const artifact = artifacts[0];
+      const expectedArtifact = { workspaceId: scope.workspaceId, artifactId, domain: "listing", artifactKey, artifactType: "json", sourceType: "ai_output",
+        sourceId: String(scope.analysisId), sourceTable: "competitorAnalyses", sourceRowId: String(scope.analysisId), runId: job.input.agentRunId,
+        agentSlug: "listing.full.workflow", nodeId: "N1", projectId: scope.projectId, userId: scope.userId, status: "draft", version,
+        isCurrent: 0, contentHash: artifactHash, mimeType: "application/json", fileSizeBytes: Buffer.byteLength(contentJson, "utf8"),
+        retentionClass: "hot", sourceSkillRunId: finalModel.runId, sourceAiJobRunId: scope.runId };
+      if (artifacts.length !== 1 || Object.entries(expectedArtifact).some(([key, value]) => artifact[key] !== value)
+        || !publicationJsonMatches(artifact.contentJsonText, contentJson, COMPETITOR_DEEP_RESULT_MAX_BYTES)
+        || !publicationJsonMatches(artifact.metadataText, metadataJson, PUBLICATION_METADATA_MAX_BYTES)) fail("DEEP_STORE_ARTIFACT_READBACK_MISMATCH", "CONFLICT");
+      const audits = await rows(tx, `SELECT auditId,workspaceId,actorUserId,actorRole,action,resourceType,resourceId,projectId,agentRunId,toolSlug,status,riskLevel,
+        IF(OCTET_LENGTH(CAST(beforeSnapshot AS CHAR CHARACTER SET utf8mb4))<=${PUBLICATION_BEFORE_SNAPSHOT_MAX_BYTES * JSON_WIRE_EXPANSION},CAST(beforeSnapshot AS CHAR CHARACTER SET utf8mb4),NULL) AS beforeSnapshotText,
+        IF(OCTET_LENGTH(CAST(afterSnapshot AS CHAR CHARACTER SET utf8mb4))<=${PUBLICATION_AUDIT_SNAPSHOT_MAX_BYTES * JSON_WIRE_EXPANSION},CAST(afterSnapshot AS CHAR CHARACTER SET utf8mb4),NULL) AS afterSnapshotText,
+        IF(OCTET_LENGTH(CAST(metadata AS CHAR CHARACTER SET utf8mb4))<=${PUBLICATION_METADATA_MAX_BYTES * JSON_WIRE_EXPANSION},CAST(metadata AS CHAR CHARACTER SET utf8mb4),NULL) AS metadataText
+        FROM security_audit_logs WHERE auditId=? LIMIT 2 FOR SHARE`, [auditId]);
+      const audit = audits[0], expectedAudit = { auditId, workspaceId: scope.workspaceId, actorUserId: scope.userId, actorRole: job.actorRole,
+        action: "analysis.research.deep", resourceType: "project", resourceId: String(scope.analysisId), projectId: scope.projectId,
+        agentRunId: job.input.agentRunId, toolSlug: "listing.competitor.deep", status: "success", riskLevel: "medium" };
+      if (audits.length !== 1 || Object.entries(expectedAudit).some(([key, value]) => audit[key] !== value)
+        || !publicationJsonMatches(audit.beforeSnapshotText, beforeSnapshotJson, PUBLICATION_BEFORE_SNAPSHOT_MAX_BYTES)
+        || !publicationJsonMatches(audit.afterSnapshotText, receiptJson, PUBLICATION_AUDIT_SNAPSHOT_MAX_BYTES)
+        || !publicationJsonMatches(audit.metadataText, metadataJson, PUBLICATION_METADATA_MAX_BYTES)) fail("DEEP_STORE_AUDIT_READBACK_MISMATCH", "CONFLICT");
+      assertLease(job); return receipt;
+    });
+  }
+  return { read, compareAndSwap, assertCurrent, publish };
 }

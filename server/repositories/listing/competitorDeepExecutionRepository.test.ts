@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { COMPETITOR_DEEP_EXECUTION_JOB_KIND } from "../../../shared/competitorDeepExecutionJob";
 import { buildCompetitorResearchEvidencePlan, canonicalCompetitorResearchEvidence as canonical } from "../../../shared/competitorResearchEvidence";
 import { createCompetitorDeepExecution, type DeepExecutionJournal, type DeepSkillPlan } from "../../domains/listing/services/competitorDeepExecution";
+import { buildCompetitorDeepResult, COMPETITOR_DEEP_RESULT_MAX_BYTES } from "../../domains/listing/services/competitorDeepResult";
 import { competitorRevision } from "../project/competitorWritePolicy";
 import type { CompetitorAnalysis } from "../../../drizzle/schema/project";
 import { COMPETITOR_DEEP_INPUT_MAX_BYTES, createCompetitorDeepExecutionStore, decodeCompetitorDeepExecutionInput,
@@ -14,6 +15,15 @@ import { COMPETITOR_DEEP_INPUT_MAX_BYTES, createCompetitorDeepExecutionStore, de
 const hash = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 const clone = <T>(value: T): T => structuredClone(value);
 const dialect = new MySqlDialect();
+function boundedJsonProjection(query: string, row: Record<string, unknown>) {
+  const projected = { ...row };
+  // Model each bounded alias without pretending to prove MySQL's JSON renderer.
+  for (const match of query.matchAll(/IF\(OCTET_LENGTH\(CAST\((\w+) AS CHAR CHARACTER SET utf8mb4\)\)<=([0-9]+),CAST\(\1 AS CHAR CHARACTER SET utf8mb4\),NULL\) AS (\w+)/gu)) {
+    const alias = match[3], text = projected[alias];
+    if (typeof text === "string" && Buffer.byteLength(text, "utf8") > Number(match[2])) projected[alias] = null;
+  }
+  return projected;
+}
 function analysis(): CompetitorAnalysis {
   return { id: 21, projectId: 11, asin: "B000000001", title: "Lamp", bulletPoints: null, imageUrls: null, price: null, rating: null,
     reviewCount: null, reviewAnalysis: null, keywords: null, rawData: null, aiSummary: null, summary: null, summaryStatus: "draft",
@@ -51,20 +61,39 @@ async function successfulTitle(stored: CompetitorDeepStoredInput): Promise<DeepE
       skillPromptHash: "a".repeat(16), skillManifestHash: "c".repeat(16), modelSlug: "synthetic-model" } }), new AbortController().signal);
   return next;
 }
+async function settled(row = analysis()): Promise<CompetitorDeepStoredInput> {
+  const stored = input(row), kernel = createCompetitorDeepExecution(stored.evidence, stored.skills);
+  let journal = stored.journal;
+  const transport = { read: async () => journal, compareAndSwap: async (_old: string, value: DeepExecutionJournal) => journal = value,
+    assertCurrent: async () => undefined };
+  for (let i = 0; i < journal.steps.length; i++) await kernel.runNext(transport, async request => {
+    const source = stored.evidence.listingSources[0], citation = { sourceId: source.sourceId, start: 0, end: source.text.length, quote: source.text };
+    const raw = request.stage === "title" ? titleRaw(stored) : request.stage === "selling"
+      ? { points: [{ name: "Lamp", description: "Seller identifies a lamp", strength: "中", occurrences: [citation], goldenQuote: citation }], bulletTranslations: [] }
+      : { positioning: { text: "A lamp", basis: "seller_claim", references: ["title:keyword:1"] }, advantages: [], weaknesses: [], learnings: [], opportunities: [] };
+    return { raw, receipt: { runId: `synthetic-${request.stage}`, skillSlug: request.binding.skillSlug, skillVersion: "1",
+      skillPromptHash: "a".repeat(16), skillManifestHash: "c".repeat(16), modelSlug: "synthetic-model" } };
+  }, new AbortController().signal);
+  return { ...stored, journal };
+}
 function fixture(stored = input(), fixedScope = scope()) {
   const row = analysis();
   let state = {
     job: { runId: fixedScope.runId, kind: COMPETITOR_DEEP_EXECUTION_JOB_KIND, module: "listing", userId: fixedScope.userId, workspaceId: fixedScope.workspaceId,
-      projectId: fixedScope.projectId, status: "running", attempt: 1, maxAttempts: 1, lockedBy: "worker-one", leaseUntil: new Date(Date.now() + 60_000), inputText: JSON.stringify(stored, null, 2) },
+      projectId: fixedScope.projectId, status: "running", progress: 90, attempt: 1, maxAttempts: 1, lockedBy: "worker-one" as string | null,
+      leaseUntil: new Date(Date.now() + 60_000) as Date | null, inputText: JSON.stringify(stored, null, 2),
+      outputText: null as string | null, errorMessage: null as string | null, completedAt: null as Date | null },
     user: { id: 3, role: "admin", status: "active", defaultWorkspaceId: fixedScope.workspaceId },
     project: { id: 11, userId: 3, workspaceId: stored.evidence.identity.sourceWorkspaceId }, analysis: row,
     agents: [{ runId: stored.agentRunId, agentSlug: "listing.full.workflow", userId: 3, workspaceId: fixedScope.workspaceId, projectId: 11, status: "running" }],
     nodes: [{ runId: stored.agentRunId, agentSlug: "listing.full.workflow", nodeId: "N1", workspaceId: fixedScope.workspaceId, status: "running" }],
+    artifacts: [] as Record<string, unknown>[], audits: [] as Record<string, unknown>[],
   };
   type State = typeof state;
   const calls: { sql: string; params: unknown[] }[] = [];
   const control = {
     ack: { affectedRows: 1, warningStatus: 0 } as unknown, readPatch: {} as Record<string, unknown>, policyDeny: false,
+    ackByTable: {} as Record<string, unknown>, artifactReadPatch: {} as Record<string, unknown>, auditReadPatch: {} as Record<string, unknown>,
     afterWrite: undefined as ((draft: State) => void) | undefined,
     afterQuery: undefined as ((query: string, draft: State) => void) | undefined,
     afterBody: undefined as (() => void) | undefined, afterCommit: undefined as (() => void) | undefined,
@@ -89,10 +118,40 @@ function fixture(stored = input(), fixedScope = scope()) {
           else if (q.sql.includes("FROM emperor_agent_runs")) output = [draft.agents, []];
           else if (q.sql.includes("FROM emperor_agent_checkpoints")) output = [draft.nodes, []];
           else if (q.sql.includes("FROM security_access_policies")) output = [[{ effect: "deny" }], []];
-          else if (q.sql.startsWith("UPDATE ai_jobs")) {
+          else if (q.sql.includes("FROM ai_artifacts")) output = [draft.artifacts.map(item => ({ ...boundedJsonProjection(q.sql, item), ...control.artifactReadPatch })), []];
+          else if (q.sql.includes("FROM security_audit_logs")) output = [draft.audits.map(item => ({ ...boundedJsonProjection(q.sql, item), ...control.auditReadPatch })), []];
+          else if (q.sql.startsWith("UPDATE ai_jobs SET input=")) {
             if (q.params[8] !== hash(draft.job.inputText)) return [{ affectedRows: 0, warningStatus: 0 }, []];
             draft.job.inputText = JSON.stringify(JSON.parse(String(q.params[0])), null, 2); // native JSON formatting differs from our canonical wire
             control.afterWrite?.(draft); output = [control.ack, []];
+          } else if (q.sql.startsWith("INSERT INTO ai_artifacts")) {
+            const p = q.params;
+            draft.artifacts.push({ workspaceId: p[0], artifactId: p[1], domain: "listing", artifactKey: p[2], artifactType: "json", sourceType: "ai_output",
+              sourceId: p[3], sourceTable: "competitorAnalyses", sourceRowId: p[4], runId: p[5], agentSlug: "listing.full.workflow", nodeId: "N1",
+              projectId: p[6], userId: p[7], status: "draft", version: p[8], isCurrent: 0, contentJsonText: JSON.stringify(JSON.parse(String(p[9])), null, 2),
+              contentHash: p[10], mimeType: "application/json", fileSizeBytes: p[11], retentionClass: "hot", metadataText: p[12], sourceSkillRunId: p[13], sourceAiJobRunId: p[14] });
+            output = [control.ackByTable.ai_artifacts ?? control.ack, []];
+          } else if (q.sql.startsWith("INSERT INTO security_audit_logs")) {
+            const p = q.params;
+            draft.audits.push({ auditId: p[0], workspaceId: p[1], actorUserId: p[2], actorRole: p[3], action: "analysis.research.deep",
+              resourceType: "project", resourceId: p[4], projectId: p[5], agentRunId: p[6], toolSlug: "listing.competitor.deep", status: "success",
+              riskLevel: "medium", beforeSnapshotText: p[7], afterSnapshotText: p[8], metadataText: p[9] });
+            output = [control.ackByTable.security_audit_logs ?? control.ack, []];
+          } else if (q.sql.startsWith("UPDATE competitorAnalyses")) {
+            const p = q.params;
+            if (p[4] !== draft.analysis.id || p[5] !== draft.analysis.projectId || p[6] !== draft.analysis.summaryVersion || draft.analysis.summaryStatus !== "draft") return [{ affectedRows: 0, warningStatus: 0 }, []];
+            Object.assign(draft.analysis, { aiSummary: p[0], summary: p[1], keywords: null, rawData: p[2], summaryVersion: p[3], updatedAt: new Date() });
+            output = [control.ackByTable.competitorAnalyses ?? control.ack, []];
+          } else if (q.sql.startsWith("UPDATE ai_jobs SET output=")) {
+            const p = q.params;
+            expect(q.sql).toContain("leaseUntil>CURRENT_TIMESTAMP AND SHA2(CAST(input AS CHAR CHARACTER SET utf8mb4),256)=?");
+            const eligible = p[1] === draft.job.runId && p[2] === draft.job.kind && draft.job.module === "listing"
+              && p[3] === draft.job.userId && p[4] === draft.job.workspaceId && p[5] === draft.job.projectId
+              && draft.job.status === "running" && p[6] === draft.job.lockedBy && p[7] === draft.job.attempt
+              && draft.job.leaseUntil && draft.job.leaseUntil > new Date() && p[8] === hash(draft.job.inputText);
+            if (!eligible) return [{ affectedRows: 0, warningStatus: 0 }, []];
+            Object.assign(draft.job, { outputText: p[0], status: "succeeded", progress: 100, errorMessage: null, completedAt: new Date(), lockedBy: null, leaseUntil: null });
+            output = [control.ackByTable.ai_jobs ?? control.ack, []];
           } else throw new Error(`Unrecognized fixture SQL: ${q.sql}`);
           control.afterQuery?.(q.sql, draft); return output;
         };
@@ -105,7 +164,7 @@ function fixture(stored = input(), fixedScope = scope()) {
   return { get state() { return state; }, control, calls, db, permission, fixedScope,
     get transactions() { return transactions; }, get rollbacks() { return rollbacks; },
     store: () => createCompetitorDeepExecutionStore(fixedScope, { database: async () => db, permission }),
-    writes: () => calls.filter(q => q.sql.startsWith("UPDATE")),
+    writes: () => calls.filter(q => /^(UPDATE|INSERT)/u.test(q.sql)),
   };
 }
 afterEach(() => vi.restoreAllMocks());
@@ -263,7 +322,7 @@ describe("deep worker checkpoint SQL adapter (offline controlled SQL fixture)", 
     const s = input(), next = await dispatched(s), f = fixture(s), original = f.state.job.inputText;
     f.control.afterWrite = draft => { draft.job.leaseUntil = new Date(0); };
     await expect(f.store().compareAndSwap(s.journal.journalHash, next)).rejects.toThrow("DEEP_STORE_LEASE_LOST"); expect(f.state.job.inputText).toBe(original);
-    const f2 = fixture(s), expiresAt = f2.state.job.leaseUntil.getTime();
+    const f2 = fixture(s), expiresAt = f2.state.job.leaseUntil!.getTime();
     f2.control.afterCommit = () => { vi.spyOn(Date, "now").mockReturnValue(expiresAt + 1); };
     await expect(f2.store().compareAndSwap(s.journal.journalHash, next)).rejects.toThrow("DEEP_STORE_LEASE_LOST");
     // Commit may already have happened; the caller must not call the model on this rejected ACK.
@@ -281,5 +340,244 @@ describe("deep worker checkpoint SQL adapter (offline controlled SQL fixture)", 
     await expect(f.store().compareAndSwap(s.journal.journalHash, next)).rejects.toThrow("DEEP_STORE_FAILED");
     expect(decodeCompetitorDeepExecutionInput(f.state.job.inputText).journal.steps[0].status).toBe("dispatched");
     expect(f.writes()).toHaveLength(1);
+  });
+});
+
+describe("atomic deep-result publication (offline SQL fixture, no models)", () => {
+  it("replays the locked journal and publishes a content-free receipt plus an immutable draft artifact", async () => {
+    const stored = await settled(), f = fixture(stored), beforeInput = f.state.job.inputText;
+    const receipt = await f.store().publish();
+    expect(receipt).toMatchObject({ version: 1, kind: "competitor_deep_research", runId: "deep-synthetic", analysisId: 21,
+      summaryVersion: 2, reviewRequired: true, deepResearchComplete: false, sourceRevision: stored.evidence.identity.revision });
+    expect(receipt.committedRevision).toBe(competitorRevision(f.state.analysis));
+    expect(receipt.committedRevision).not.toBe(receipt.sourceRevision);
+    expect(f.state.job).toMatchObject({ status: "succeeded", progress: 100, lockedBy: null, leaseUntil: null });
+    expect(f.state.job.inputText).toBe(beforeInput); expect(JSON.parse(f.state.job.outputText!)).toEqual(receipt);
+    const rebuilt = buildCompetitorDeepResult({ jobRunId: receipt.runId, generatedAt: receipt.generatedAt,
+      evidence: stored.evidence, skills: stored.skills, journal: stored.journal });
+    // Pass only the exact builder API, never an artifact supplied by the caller.
+    expect(rebuilt.resultHash).toBe(receipt.resultHash);
+    expect(JSON.parse(String(f.state.artifacts[0].contentJsonText))).toEqual(rebuilt);
+    expect(hash(canonical(rebuilt))).toBe(receipt.artifactHash);
+    expect(f.state.artifacts[0]).toMatchObject({ status: "draft", isCurrent: 0, sourceSkillRunId: "synthetic-summary", sourceAiJobRunId: receipt.runId });
+    expect(f.writes().map(call => call.sql.match(/^(?:INSERT INTO|UPDATE) (\w+)/u)?.[1])).toEqual(["ai_artifacts", "competitorAnalyses", "security_audit_logs", "ai_jobs"]);
+    expect(f.transactions).toBe(1); expect(f.permission).toHaveBeenCalledOnce(); expect(f.rollbacks).toBe(0);
+    expect(JSON.stringify(receipt)).not.toMatch(/A lamp|灯|Seller identifies/);
+    const raw = JSON.parse(f.state.analysis.rawData!);
+    expect(raw.deepAnalysisRef).toEqual({ artifactId: receipt.artifactId, jobRunId: receipt.runId, resultHash: receipt.resultHash });
+    expect(raw.deepResearchPublication).not.toHaveProperty("committedRevision"); expect(raw).not.toHaveProperty("deepAnalysis");
+    expect(raw).not.toHaveProperty("research");
+    expect(raw).toMatchObject({ deepAnalysisStale: true, analysisStale: true, captureOnly: false });
+    expect(JSON.parse(String(f.state.audits[0].afterSnapshotText))).toEqual(receipt);
+  });
+
+  it("preserves all original research/legacy AI fields and a human summary, with a complete before snapshot", async () => {
+    const row = analysis(); row.aiSummary = "old generated"; row.summary = "Human-edited summary"; row.keywords = '["old"]';
+    row.reviewAnalysis = "original review analysis";
+    row.rawData = JSON.stringify({ source: "capture", scrapedData: { title: "original" }, reviewImport: { sourceHash: "x" }, importedReviews: [{ body: "Original" }],
+      arbitrary: { keep: true }, analysis: { old: true }, titleAnalysis: "old", bulletPointsAnalysis: "old", keywords: ["old"], advantages: ["old"],
+      weaknesses: ["old"], summary: "old", competitivePositioning: "old", deepAnalysis: { old: true },
+      research: { variants: [{ asin: "B000000002", color: "yellow" }], reviews: [{ sourceReviewId: "R1", body: "Exact original text" }], purchaseBadge: "100+ bought in past month" } });
+    const f = fixture(await settled(row)); f.state.analysis = clone(row);
+    await f.store().publish();
+    expect(f.state.analysis.summary).toBe(row.summary); expect(f.state.analysis.aiSummary).not.toBe(row.aiSummary);
+    expect(f.state.analysis.reviewAnalysis).toBe(row.reviewAnalysis); expect(f.state.analysis.keywords).toBeNull();
+    const raw = JSON.parse(f.state.analysis.rawData!);
+    expect(raw).toMatchObject(JSON.parse(row.rawData));
+    expect(raw.deepAnalysis).toEqual({ old: true });
+    expect(raw).toMatchObject({ analysisStale: true, deepAnalysisStale: true, deepResearchPublication: { reviewRequired: true, deepResearchComplete: false } });
+    const before = JSON.parse(String(f.state.audits[0].beforeSnapshotText));
+    expect(before).toEqual({ ...row, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() });
+    expect(before.rawData).toBe(row.rawData); expect(before.keywords).toBe(row.keywords); expect(before.aiSummary).toBe(row.aiSummary);
+  });
+
+  it("replaces only an unedited AI draft summary, without confirming it", async () => {
+    const row = analysis(); row.aiSummary = "old generated"; row.summary = row.aiSummary;
+    const f = fixture(await settled(row)); f.state.analysis = row;
+    await f.store().publish(); expect(f.state.analysis.summary).toBe(f.state.analysis.aiSummary);
+    expect(f.state.analysis.summaryStatus).toBe("draft"); expect(f.state.analysis.summaryConfirmedBy).toBeNull();
+  });
+
+  it.each(["pending", "dispatched", "no-summary"])("does not publish %s or mutate anything", async which => {
+    const row = analysis(); if (which === "no-summary") row.title = null;
+    const stored = which === "no-summary" ? await settled(row) : input(row);
+    if (which === "dispatched") stored.journal = await dispatched(stored);
+    const f = fixture(stored); f.state.analysis = row; const before = clone(f.state);
+    await expect(f.store().publish()).rejects.toThrow(which === "no-summary" ? "DEEP_STORE_RESULT_INCOMPLETE" : "DEEP_STORE_RESULT_INVALID");
+    expect(f.state).toEqual(before); expect(f.writes()).toHaveLength(0);
+  });
+
+  it.each(["denied", "owner", "workspace", "source", "confirmed", "canceledAgent", "expired", "wrongAttempt"])("reauthorizes %s before publication writes", async which => {
+    const f = fixture(await settled());
+    if (which === "denied") f.control.policyDeny = true;
+    if (which === "owner") f.state.project.userId++;
+    if (which === "workspace") f.state.user.defaultWorkspaceId = 8;
+    if (which === "source") f.state.analysis.price = "10";
+    if (which === "confirmed") f.state.analysis.summaryStatus = "confirmed";
+    if (which === "canceledAgent") f.state.agents[0].status = "canceled";
+    if (which === "expired") f.state.job.leaseUntil = new Date(0);
+    if (which === "wrongAttempt") f.state.job.attempt++;
+    const before = clone(f.state); await expect(f.store().publish()).rejects.toThrow(/^DEEP_STORE_/u);
+    expect(f.state).toEqual(before); expect(f.writes()).toHaveLength(0);
+  });
+
+  it.each(["ai_artifacts", "competitorAnalyses", "security_audit_logs", "ai_jobs"])("rolls back all writes on non-exact %s ACK", async table => {
+    for (const ack of [{ affectedRows: 0, warningStatus: 0 }, { affectedRows: 2, warningStatus: 0 }, { affectedRows: 1, warningStatus: 1 }, {}]) {
+      const f = fixture(await settled()), before = clone(f.state); f.control.ackByTable[table] = ack;
+      await expect(f.store().publish()).rejects.toThrow("DEEP_STORE_WRITE_UNCONFIRMED");
+      expect(f.state).toEqual(before); expect(f.rollbacks).toBe(1);
+    }
+  });
+
+  it.each(["artifactContent", "artifactMetadata", "artifactScope", "artifactCurrent", "auditBefore", "auditSnapshot", "auditMetadata", "auditScope", "analysis", "jobInput", "jobOutput"])("rolls back a changed %s readback", async which => {
+    const f = fixture(await settled()), before = clone(f.state);
+    if (which === "artifactContent") f.control.artifactReadPatch.contentJsonText = '{"forged":true}';
+    if (which === "artifactMetadata") f.control.artifactReadPatch.metadataText = '{}';
+    if (which === "artifactScope") f.control.artifactReadPatch.userId = 4;
+    if (which === "artifactCurrent") f.control.artifactReadPatch.isCurrent = 1;
+    if (which === "auditBefore") f.control.auditReadPatch.beforeSnapshotText = '{}';
+    if (which === "auditSnapshot") f.control.auditReadPatch.afterSnapshotText = '{}';
+    if (which === "auditMetadata") f.control.auditReadPatch.metadataText = '{}';
+    if (which === "auditScope") f.control.auditReadPatch.workspaceId = 8;
+    f.control.afterQuery = (query, draft) => {
+      if (which === "analysis" && query.startsWith("UPDATE competitorAnalyses")) draft.analysis.summary = "changed";
+      if (query.startsWith("UPDATE ai_jobs SET output=")) {
+        if (which === "jobInput") draft.job.inputText += " ";
+        if (which === "jobOutput") draft.job.outputText = '{}';
+      }
+    };
+    await expect(f.store().publish()).rejects.toThrow(/^DEEP_STORE_.*READBACK_MISMATCH$/u); expect(f.state).toEqual(before);
+  });
+
+  it.each(["artifact", "analysis", "audit", "job"])("rolls back query failure at %s without unsafe error details", async where => {
+    const f = fixture(await settled()), before = clone(f.state);
+    f.control.throwOn = { artifact: "INSERT INTO ai_artifacts", analysis: "UPDATE competitorAnalyses", audit: "INSERT INTO security_audit_logs", job: "UPDATE ai_jobs SET output=" }[where]!;
+    await expect(f.store().publish()).rejects.toThrow("DEEP_STORE_FAILED"); expect(f.state).toEqual(before);
+  });
+
+  it("refuses oversized retained rawData without truncating or removing originals", async () => {
+    const row = analysis(); row.rawData = JSON.stringify({ deepAnalysis: { original: "x".repeat(65530) } });
+    const f = fixture(await settled(row)); f.state.analysis = row;
+    await expect(f.store().publish()).rejects.toThrow("DEEP_STORE_SOURCE_TOO_LARGE"); expect(f.writes()).toHaveLength(0); expect(f.state.analysis.rawData).toBe(row.rawData);
+  });
+
+  it("refuses an oversized complete before snapshot before writing without discarding old AI history", async () => {
+    const row = analysis(); row.aiSummary = "旧摘要".repeat(120000); row.summary = "Human summary";
+    const f = fixture(await settled(row)); f.state.analysis = row; const before = clone(f.state);
+    await expect(f.store().publish()).rejects.toThrow("DEEP_STORE_SOURCE_TOO_LARGE");
+    expect(f.writes()).toHaveLength(0); expect(f.state).toEqual(before);
+  });
+
+  it("stores a full artifact larger than rawData TEXT capacity without embedding or truncating it", async () => {
+    const row = analysis(); row.title = "Lamp ".repeat(3000).trim();
+    const f = fixture(await settled(row)); f.state.analysis = row;
+    const receipt = await f.store().publish(), artifact = f.state.artifacts[0];
+    expect(artifact.fileSizeBytes).toBeGreaterThan(65535);
+    expect(artifact.fileSizeBytes).toBeLessThanOrEqual(512 * 1024);
+    expect(Buffer.byteLength(f.state.analysis.rawData!, "utf8")).toBeLessThan(4096);
+    const candidate = JSON.parse(String(artifact.contentJsonText));
+    expect(candidate.deepAnalysis.title.keywords[0].text).toBe(row.title);
+    expect(candidate.deepAnalysis.trace.listingSources[0].text).toBe(row.title);
+    expect(hash(canonical(candidate))).toBe(receipt.artifactHash);
+  });
+
+  it("selects only explicit non-JSON columns plus independently bounded JSON aliases", async () => {
+    const f = fixture(await settled()); await f.store().publish();
+    const artifact = f.calls.find(call => call.sql.includes("FROM ai_artifacts"))!.sql;
+    const audit = f.calls.find(call => call.sql.includes("FROM security_audit_logs"))!.sql;
+    for (const query of [artifact, audit]) {
+      expect(query).not.toMatch(/\bSELECT\s+(?:\w+\.)?\*/iu);
+      expect(query.split("IF(")[0]).not.toMatch(/\b(contentJson|metadata|beforeSnapshot|afterSnapshot)\b/u);
+      expect(query).toContain("LIMIT 2 FOR SHARE");
+    }
+    expect(artifact).toContain(`contentJson AS CHAR CHARACTER SET utf8mb4))<=${COMPETITOR_DEEP_RESULT_MAX_BYTES * 8}`);
+    expect(artifact).toContain("metadata AS CHAR CHARACTER SET utf8mb4))<=131072");
+    expect(audit).toContain("beforeSnapshot AS CHAR CHARACTER SET utf8mb4))<=8388608");
+    expect(audit).toContain("afterSnapshot AS CHAR CHARACTER SET utf8mb4))<=131072");
+    expect(audit).toContain("metadata AS CHAR CHARACTER SET utf8mb4))<=131072");
+  });
+
+  it("accepts equivalent expanded database JSON wire above canonical caps without weakening those caps", async () => {
+    const f = fixture(await settled());
+    // Deliberately exaggerated legal JSON whitespace tests the independent wire
+    // budget. This fixture is not a claim about one exact MySQL renderer format.
+    f.control.afterQuery = (query, draft) => {
+      if (query.startsWith("INSERT INTO ai_artifacts")) {
+        draft.artifacts[0].contentJsonText = " ".repeat(COMPETITOR_DEEP_RESULT_MAX_BYTES + 1) + draft.artifacts[0].contentJsonText;
+        draft.artifacts[0].metadataText = " ".repeat(16 * 1024 + 1) + draft.artifacts[0].metadataText;
+      }
+      if (query.startsWith("INSERT INTO security_audit_logs")) {
+        draft.audits[0].beforeSnapshotText = " ".repeat(1024 * 1024 + 1) + draft.audits[0].beforeSnapshotText;
+        for (const field of ["afterSnapshotText", "metadataText"]) draft.audits[0][field] = " ".repeat(16 * 1024 + 1) + draft.audits[0][field];
+      }
+    };
+    const receipt = await f.store().publish(), stored = String(f.state.artifacts[0].contentJsonText);
+    expect(Buffer.byteLength(stored, "utf8")).toBeGreaterThan(COMPETITOR_DEEP_RESULT_MAX_BYTES);
+    const canon = canonical(JSON.parse(stored));
+    expect(Buffer.byteLength(canon, "utf8")).toBeLessThanOrEqual(COMPETITOR_DEEP_RESULT_MAX_BYTES);
+    expect(hash(canon)).toBe(receipt.artifactHash); expect(f.rollbacks).toBe(0);
+  });
+
+  const jsonReadbacks = [
+    { table: "ai_artifacts", field: "contentJsonText", cap: COMPETITOR_DEEP_RESULT_MAX_BYTES },
+    { table: "ai_artifacts", field: "metadataText", cap: 16 * 1024 },
+    { table: "security_audit_logs", field: "beforeSnapshotText", cap: 1024 * 1024 },
+    { table: "security_audit_logs", field: "afterSnapshotText", cap: 16 * 1024 },
+    { table: "security_audit_logs", field: "metadataText", cap: 16 * 1024 },
+  ];
+  it.each(jsonReadbacks)("rejects $table.$field over its own wire bound in SQL and application readback", async ({ table, field, cap }) => {
+    for (const bypassSqlProjection of [false, true]) {
+      const f = fixture(await settled()), before = clone(f.state), value = " ".repeat(cap * 8 + 1);
+      if (bypassSqlProjection) (table === "ai_artifacts" ? f.control.artifactReadPatch : f.control.auditReadPatch)[field] = value;
+      else f.control.afterQuery = (query, draft) => {
+        if (query.startsWith(`INSERT INTO ${table}`)) (table === "ai_artifacts" ? draft.artifacts : draft.audits)[0][field] = value;
+      };
+      await expect(f.store().publish()).rejects.toThrow(table === "ai_artifacts" ? "DEEP_STORE_ARTIFACT_READBACK_MISMATCH" : "DEEP_STORE_AUDIT_READBACK_MISMATCH");
+      expect(f.state).toEqual(before); expect(f.rollbacks).toBe(1);
+    }
+  });
+  it.each(jsonReadbacks)("rejects $table.$field whose UTF8 canonical bytes exceed the cap even inside the wire bound", async ({ table, field, cap }) => {
+    const f = fixture(await settled()), before = clone(f.state), value = canonical({ extra: "中".repeat(Math.ceil(cap / 3)) });
+    expect(Buffer.byteLength(value, "utf8")).toBeGreaterThan(cap);
+    expect(Buffer.byteLength(value, "utf8")).toBeLessThan(cap * 8);
+    (table === "ai_artifacts" ? f.control.artifactReadPatch : f.control.auditReadPatch)[field] = value;
+    await expect(f.store().publish()).rejects.toThrow(table === "ai_artifacts" ? "DEEP_STORE_ARTIFACT_READBACK_MISMATCH" : "DEEP_STORE_AUDIT_READBACK_MISMATCH");
+    expect(f.state).toEqual(before);
+  });
+
+  it("rejects lease loss between artifact and job writes and rolls the whole publication back", async () => {
+    const f = fixture(await settled()), before = clone(f.state);
+    f.control.afterQuery = (query, draft) => { if (query.startsWith("INSERT INTO ai_artifacts")) draft.job.leaseUntil = new Date(0); };
+    await expect(f.store().publish()).rejects.toThrow("DEEP_STORE_WRITE_UNCONFIRMED");
+    expect(f.state).toEqual(before); expect(f.rollbacks).toBe(1);
+  });
+
+  it("does not acknowledge an expired post-commit lease as successful publication", async () => {
+    const f = fixture(await settled()), expiresAt = f.state.job.leaseUntil!.getTime();
+    f.control.afterCommit = () => { vi.spyOn(Date, "now").mockReturnValue(expiresAt + 1); };
+    await expect(f.store().publish()).rejects.toThrow("DEEP_STORE_LEASE_LOST");
+    expect(f.state.job.status).toBe("succeeded"); expect(f.state.analysis.summaryVersion).toBe(2);
+  });
+
+  it("serializes concurrent publication and refuses a second succeeded job without another version or artifact", async () => {
+    const f = fixture(await settled()); const results = await Promise.allSettled([f.store().publish(), f.store().publish()]);
+    expect(results.map(value => value.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect(f.state.analysis.summaryVersion).toBe(2); expect(f.state.artifacts).toHaveLength(1); expect(f.state.audits).toHaveLength(1);
+    expect(f.writes()).toHaveLength(4);
+  });
+
+  it("rolls back cancellation after artifact insertion", async () => {
+    const controller = new AbortController(), fixed = scope(); fixed.signal = controller.signal;
+    const f = fixture(await settled(), fixed), before = clone(f.state);
+    f.control.afterQuery = query => { if (query.startsWith("INSERT INTO ai_artifacts")) controller.abort(); };
+    await expect(f.store().publish()).rejects.toThrow("DEEP_STORE_LEASE_LOST"); expect(f.state).toEqual(before);
+  });
+
+  it("does not report success after commit acknowledgement is lost, and cannot publish twice", async () => {
+    const f = fixture(await settled()); f.control.afterCommit = () => { throw new Error("PRIVATE LOST ACK"); };
+    await expect(f.store().publish()).rejects.toThrow("DEEP_STORE_FAILED");
+    expect(f.state.job.status).toBe("succeeded"); expect(f.state.artifacts).toHaveLength(1);
+    f.control.afterCommit = undefined;
+    await expect(f.store().publish()).rejects.toThrow("DEEP_STORE_LEASE_LOST"); expect(f.writes()).toHaveLength(4);
   });
 });

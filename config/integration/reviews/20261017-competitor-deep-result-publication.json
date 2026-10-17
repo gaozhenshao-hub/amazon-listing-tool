@@ -1,0 +1,52 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "selected-competitor-deep-result-draft-publication-and-authorized-read",
+  "baseline": "713bdc2ee290eba7358749e4cc23d47606a48a2c",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSourceSelection": "friend-primary; select authorized saved competitor/profile sources, preview and generate; uploads supplemental",
+    "generalP5Skills": "Qingdao-primary",
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary"
+  },
+  "changes": [
+    "Replay all settled stage outputs to build a bounded four-column display artifact with exact citations, original review member IDs, unique-review counts and explicit sample denominators. Show at most three complete original examples per theme with shown/omitted counts. Full original evidence and batch outputs remain in job input; this is not independent permanent original storage.",
+    "Add worker-internal atomic publication of a draft artifact, candidate summary/version, audit and successful job receipt. Require fresh strict authorization, full draft source revision, Agent/N1 and lease checks, acknowledged transaction and complete readbacks. Preserve human-edited summary and all prior rawData, including friend research variants/reviews/purchaseBadge and legacy deepAnalysis. Store the full prior SQL row in audit.beforeSnapshot; replace neither old research nor its originals with the new receipt.",
+    "Store only a new deepResearchPublication receipt and deepAnalysisRef in rawData. Historical AI fields are stale, not silently reused. Keep the artifact draft/isCurrent=0, reviewRequired=true and deepResearchComplete=false. Distinguish committedRevision from sourceRevision without self-referential hashes. Refuse oversized payloads, unknown commit outcomes and repeated publication rather than truncating or rerunning a model.",
+    "Add strict read-only analysis.getCompetitorDeepResult query. Resolve references only from a freshly authorized selected competitor, then reauthorize under publication-compatible lock order. Verify job, source/Skill-plan/journal, publication receipt, artifact identity, metadata, canonical size and hashes; reconstruct the result from original recorded outputs before delivery. Changed current sources return sourceChanged=true, not a fresh or confirmed result.",
+    "Separate bounded MySQL JSON wire representation from canonical content limits. Artifact/audit reads use explicit columns, bounded JSON aliases and exact readback checks; no SELECT * defeats the payload guard. Existing user Listing prompts, seven directions/FABE/overall strategy and human confirmation remain unchanged."
+  ],
+  "review": {
+    "root": "Read result builder, SQL publisher, reader and route/test changes. Confirmed query-only dispatch and complete current-source revision checks. Fixed independent findings before acceptance: legacy research overwrite, unique old deepAnalysis loss, unbounded SELECT * JSON extraction and native-format-versus-canonical size mismatch.",
+    "independent": "Separate read-only reviewer traced authorization, lock order, two-transaction revalidation, receipt/artifact replay and stale-history semantics; no reproducible blocking issue remained in the reviewed scope. Offline fixtures do not prove native MySQL locking, driver types or browser behavior.",
+    "previousProtectionRecords": [{
+      "path": "server/routers/analysis.ts",
+      "previousReviewed": {
+        "gitBlobSha1": "89d63fc40c00590e7b423428ec26b45026727a5d",
+        "sha256": "fcec5ebfe91cb99a55589283e129e6c5936e45d1a3a315623db1d97b3dbad7db",
+        "reviewRef": "config/integration/reviews/20261017-competitor-evidence-preview.json"
+      }
+    }],
+    "baselineFieldsUnchanged": true,
+    "baselineTupleSha256": "b5a228f5b51180bc6f903384d146997cda316f77da807e7abcb20ce7b4faee40"
+  },
+  "verification": {
+    "rootFocusedUnion": { "files": 8, "passed": 349, "exitCode": 0, "session": 43891 },
+    "routeSubset": { "files": 2, "passed": 25, "exitCode": 0, "session": 36203, "includedInUnion": true },
+    "scopedLint": { "files": 8, "exitCode": 0 },
+    "protectedGuard": { "files": 106, "dependencies": 2, "reviewedRecords": 25, "exitCode": 0, "session": 94456 },
+    "configuredTypes": { "status": "not-accepted", "session": 20778, "reason": "Configured tsc stalled during existing workspace source reads, no diagnostic or successful completion. Root terminated this owned process; complete type gate remains deferred, not waived or reported as passing." },
+    "realDatabase": false,
+    "realWorker": false,
+    "realBrowserWorkflow": false,
+    "paidModelCalls": 0
+  },
+  "defaults": { "newSchema": false, "newWorkerRegistered": false, "newReadOnlyQuery": true, "newStartMutation": false, "skillPublished": false, "workflowEnabledByDefault": false, "productionDeployed": false },
+  "remaining": [
+    "Trusted compatibility-Skill approval/resolver, original-evidence-authenticated reservation, complete model/configuration/context budget pinning and real Skill/worker wiring are still absent for the deep lane. No authority literal, Released status or old single-call job proves new-contract approval. The independent compatible-version question awaits a user answer.",
+    "The friend four-column UI does not yet consume this new read query. Preserve sourceChanged/incomplete-source semantics when connecting it; never treat truthy deepAnalysis as complete. Existing saved-profile conversion and saved-competitor single-call analysis are different already-wired paths and remain default-off behind the merged workflow flag.",
+    "Complete configured types, native DB transaction/concurrency/recovery, actual browser no-upload chain and approved model acceptance before corresponding enablement. This batch is local source integration only under the approved accelerated ordering.",
+    "Images/OCR, actual questions, independent long-lived originals and large-input synthesis/model budgets remain pending. All P0-P6, K01-K10, T01-T28, image62/master27/supplements12 remain in scope. P1 is incomplete and native303 unapproved. No production mutation, public push, deployment, scheduler, VM or paid model call."
+  ]
+}
