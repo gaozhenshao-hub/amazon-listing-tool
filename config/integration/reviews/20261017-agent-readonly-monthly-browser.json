@@ -1,0 +1,117 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "agent-workflow-exact-readonly-skill-and-monthly-browser-privacy",
+  "baseline": "0425a38037d524afad83dd44fd82c6f930b387b3",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSelection": "friend-primary; upload supplemental",
+    "generalP5Skills": "Qingdao-primary",
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary"
+  },
+  "changes": [
+    "Show friend-style workflow node type, required/scheduler/humanGate and incoming edge kind/required. Use a validated complete topological order only when exact node membership and every dependency agree; otherwise show original order and truthful validation state. Optional configuration does not waive the current executor's upstream confirmation checks.",
+    "Add exact encoded Skill links and a separate ?skill= read-only route. No legacy management/list/edit/run hooks mount for targeted or invalid links. Direct requests are keyed by user/workspace/role/slug, abort on replacement, discard late replies, validate identity/provenance, clear denied/error state and never fall back to similar or cached Skills. Prompt text is complete, escaped, and explicitly current registry rather than pinned execution approval.",
+    "Add getReadonly using existing emperor_skill.read authority, active actor/role/workspace revalidation and a scoped read transaction. Exact binary slug and current-workspace/global candidates, no draft/denial fallback, Released-only. Fetch bounded metadata and two prompt fields, not arbitrary manifest/provider/tool secrets; sanitize failures. Old get/list/CRUD/run are unchanged and are not claimed secured by this new endpoint.",
+    "Exclude the actual monthly local-preview section from the existing development collector's target events with manus-no-record. The unchanged collector is tested in a controlled realm with an unmarked positive control and outside-event sentinel. This does not disable or claim absence of all telemetry."
+  ],
+  "review": {
+    "root": "Read implementation, shared schemas, actual collector boundary, route diff, existing parser golden fixtures and protection manifest. Full configured tsc caught two privacy-test typing errors; replaced undeclared jsdom import with a minimal local runtime contract and unsafe metrics cast with complete typed fields. No dependency/configuration exclusion added.",
+    "independent": "Separate reviewer read backend/shared/tests against actual authorization, context, DB session and ORM. No new reproducible blocking issue; native SQL and concurrent revocation remain unverified.",
+    "protectedManifestUnchanged": true,
+    "protectedManifestSha256": "23c7665c328f8f1fb367c66e893f81e65014244d1f4d77002076964f72e72d12",
+    "baselineTupleSha256": "b5a228f5b51180bc6f903384d146997cda316f77da807e7abcb20ce7b4faee40"
+  },
+  "verification": {
+    "focusedUnion": {
+      "files": 11,
+      "passed": 277,
+      "session": 70671,
+      "exitCode": 0,
+      "finalAfterTypeRepair": "passed; same277 tests after the privacy test type-only repair",
+      "priorPassingSession": 29910
+    },
+    "scopedLint": {
+      "files": 16,
+      "exitCode": 0,
+      "repairedPrivacyTestLintExitCode": 0
+    },
+    "protectedGuard": {
+      "files": 106,
+      "dependencies": 2,
+      "reviewedRecords": 25,
+      "session": 16244,
+      "exitCode": 0
+    },
+    "configuredTypes": {
+      "initialSession": 42278,
+      "initialExitCode": 2,
+      "initialErrors": "Two privacy-test typing errors, since repaired",
+      "finalSession": 57452,
+      "status": "passed-after-type-repair",
+      "exitCode": 0,
+      "command": "./node_modules/.bin/tsc --noEmit --incremental false",
+      "note": "Configured exclusions still omit *.test.ts; no exclusions changed."
+    },
+    "actualBrowserWorker": {
+      "browser": "Codex in-app browser",
+      "scope": "Actual React component, real native module Worker, browser File/structured clone and source parser. Only synthetic fixtures; no auth/business RPC/DB/model/collector in this isolated page.",
+      "passedCases": 16,
+      "cases": [
+        "CSV BOM/quotes/multiline and exact 0.3/0.6 sum; refund 1/5, no source-subtotal double count",
+        "Stored XLSX",
+        "Deflate XLSX: all ten ZIP entries method8",
+        "Formula cache99 not accepted as profit; original99 and1+1 visible",
+        "Unknown distinct from zero; negative -2.1; markup literal/no embedded img",
+        "Unclosed CSV rejected",
+        "Empty file rejected before read",
+        "Legacy XLS rejected",
+        "26 rows paginate25+1; prior row detail cleared",
+        "Scope clears completed file",
+        "Same file selects a fresh Worker",
+        "In-flight cancel: created/posted/terminated, no reply",
+        "In-flight identity switch: created/posted/terminated, no reply",
+        "In-flight unmount: created/posted/terminated, no reply",
+        "File A-to-B: old Worker terminated before reply, B succeeds and is shown",
+        "ERP double header: profit30.1, sales100.3, purchase-20, storage-2 excluding percentage, margin301/1003"
+      ],
+      "desktop": {
+        "viewport": 1265,
+        "documentScroll": 1265,
+        "tableMinWidth": 980
+      },
+      "narrow": {
+        "viewport": 375,
+        "documentScroll": 375,
+        "tableViewport": 301,
+        "tableScroll": 980
+      },
+      "harnessCorrections": "Initial dependency optimization/hot reload interrupted a trial. Stabilized with existing dependencies and watch/HMR disabled. Initial independent fixture omitted Tailwind source scanning, producing false layout overflow; final layout uses repository CSS plus explicit repository source scan. These were harness repairs, not production UI defects.",
+      "serverBoundary": "Loopback-only, no env files/Manus plugin; CSP local-only and middleware rejects non-GET/HEAD. Observed runtime requests were GET only, no business API/upload/model request.",
+      "viewportReset": true,
+      "temporaryTabClosed": true,
+      "previewServerStopped": true,
+      "actualTwentySecondTimeout": false,
+      "actualCustomerERPFile": false,
+      "authenticatedBusinessWorkflow": false
+    },
+    "realDatabase": false,
+    "realModel": false,
+    "paidModelCalls": 0
+  },
+  "remaining": [
+    "Native MySQL JSON projection, read locks, concurrent permission revocation, direct authenticated API/browser and actual Agent target navigation remain release gates. Current schema has globally unique slug; workspace/global same-slug precedence is synthetic defensive coverage, not proof of actual duplicate storage.",
+    "Existing legacy Skill read/list and other routes were not globally hardened in this batch. New query neither expands permissions nor approves/binds/publishes Skills. User Listing compatibility-version decision and Qingdao/User source provenance approval remain outstanding.",
+    "Monthly preview is pure in-memory P2, not persisted upload/import/application, real ERP reconciliation or complete cost/inventory/financial functionality. Actual browser20s timer expiry remains untested; bounded task unit tests do not replace that runtime case.",
+    "Full P0-P6, K01-K10, T01-T28, image62/master27/supplements12 remain. P1 incomplete/native303 unapproved, merged Listing flag default-off; no DB/schema/production/scheduler/public push/VM/build mutation."
+  ],
+  "defaults": {
+    "localOnly": true,
+    "newSchema": false,
+    "skillPublished": false,
+    "productionDeployed": false,
+    "fullP1Complete": false,
+    "fullObjectiveComplete": false
+  }
+}

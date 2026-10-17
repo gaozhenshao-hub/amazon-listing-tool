@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentLibraryKey } from "@shared/agentLibraryContracts";
 import AgentLibraryPanel from "./AgentLibraryPanel";
@@ -61,7 +61,7 @@ describe("Agent library role navigation", () => {
     expect(screen.getAllByText("查看真实配置状态")).toHaveLength(7);
     expect(screen.getByText(/本页提供助手专属配置与版本入口/)).toHaveTextContent("尚未提供聊天、Skill 执行或自动任务");
     expect(screen.getByText("前置节点：collect")).toBeVisible();
-    expect(screen.getByText("Skill：listing.copy · 版本引用：v2")).toBeVisible();
+    expect(screen.getByText(/版本引用：v2/)).toHaveTextContent("Skill：listing.copy · 版本引用：v2");
     expect(screen.getByText("节点显式模型：registry-model（不是助手级绑定）")).toBeVisible();
     expect(screen.getByText("配置了人工确认")).toBeVisible();
     expect(screen.getByRole("link", { name: "打开原编排画布" })).toHaveAttribute("href", "/emperor/agents/listing.saved/canvas");
@@ -70,5 +70,42 @@ describe("Agent library role navigation", () => {
     expect(screen.getByRole("link", { name: "打开原 Skill 库" })).toHaveAttribute("href", "/emperor/skills");
     expect(screen.getByText("注册表模型")).toBeVisible();
     expect(screen.getByText("注册表默认标记（非助手绑定）")).toBeVisible();
+  });
+
+  it("shows validated DAG order and metadata without promising optional edges bypass runtime", () => {
+    render(<AgentLibraryPanel selected="listing" onSelect={() => {}}
+      workflows={{ status: "ready", rows: [{ id: 1, slug: "listing.flow", name: "真实依赖", status: "draft", triggerType: "manual",
+        dagDefinition: { nodes: [{ id: "end", label: "输出", nodeType: "skill_node", skillSlug: "listing.exact /?+", required: true, scheduler: "manual", humanGate: true },
+          { id: "start", label: "模型节点", nodeType: "llm_node", required: false, scheduler: "auto", humanGate: false }],
+        edges: [{ source: "start", target: "end", kind: "optional", required: false }] },
+        validation: { valid: true, errors: [], warnings: [{ code: "note", message: "真实校验警告" }], topologicalNodeIds: ["start", "end"] },
+      }] }} skills={{ status: "ready", rows: [] }} models={{ status: "ready", rows: [] }} />);
+    const nodes = within(screen.getByRole("list", { name: "真实依赖 节点" })).getAllByRole("listitem");
+    expect(nodes[0]).toHaveTextContent("模型节点");
+    expect(nodes[0]).toHaveTextContent("节点类型：llm_node");
+    expect(nodes[0]).toHaveTextContent("required）：否");
+    expect(nodes[0]).toHaveTextContent("scheduler）：auto");
+    expect(nodes[0]).toHaveTextContent("humanGate）：否");
+    expect(nodes[0]).toHaveTextContent("不能据此判断是否调用模型或工具");
+    expect(nodes[1]).toHaveTextContent("输出");
+    expect(screen.getByRole("list", { name: "end 入边配置" })).toHaveTextContent("start → end · 边类型（kind）：optional · 必需边（required）：否");
+    expect(screen.getByRole("list", { name: "编排校验警告" })).toHaveTextContent("真实校验警告");
+    expect(screen.getByText(/当前执行器对全部入边/)).toHaveTextContent("也不能据此认为可跳过上游门禁");
+    expect(screen.getByText(/按服务端校验的完整拓扑顺序/)).toHaveTextContent("同层节点可并列");
+    expect(screen.getByRole("link", { name: "listing.exact /?+" })).toHaveAttribute("href", "/emperor/skills?skill=listing.exact%20%2F%3F%2B");
+    expect(screen.queryByText(/无需.*模型/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /运行|保存|执行|启动/ })).not.toBeInTheDocument();
+  });
+
+  it("shows static source order and errors when server validation fails", () => {
+    render(<AgentLibraryPanel selected="listing" onSelect={() => {}}
+      workflows={{ status: "ready", rows: [{ id: 1, slug: "listing.flow", name: "错误流程", status: "draft", triggerType: "manual",
+        dagDefinition: { nodes: [{ id: "b", label: "原第一项" }, { id: "a", label: "原第二项" }], edges: [] },
+        validation: { valid: false, errors: [{ code: "invalid", message: "节点类型不支持" }], warnings: [], topologicalNodeIds: ["a", "b"] },
+      }] }} skills={{ status: "ready", rows: [] }} models={{ status: "ready", rows: [] }} />);
+    const nodes = within(screen.getByRole("list", { name: "错误流程 节点" })).getAllByRole("listitem");
+    expect(nodes[0]).toHaveTextContent("原第一项");
+    expect(screen.getByText(/服务端校验未通过或信息不完整/)).toBeVisible();
+    expect(screen.getByRole("list", { name: "编排校验错误" })).toHaveTextContent("节点类型不支持");
   });
 });

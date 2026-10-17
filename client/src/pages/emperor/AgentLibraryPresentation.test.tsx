@@ -4,7 +4,7 @@ import { AGENT_LIBRARY_KEYS, AGENT_LIBRARY_ROLES } from "@shared/agentLibraryCon
 import AgentLibraryPanel from "./AgentLibraryPanel";
 import {
   firstVisibleBySlug, libraryDirectory, libraryReadState, libraryRoleForSkill,
-  libraryRoleForWorkflow, libraryWorkflowNodes, workflowCanvasHref,
+  libraryRoleForWorkflow, libraryWorkflowNodes, libraryWorkflowView, librarySkillHref, workflowCanvasHref,
   type LibraryReadState, type LibraryWorkflow,
 } from "./AgentLibraryPresentation";
 
@@ -51,7 +51,8 @@ describe("Agent library read-only presentation", () => {
 
   it("reads only explicit node configuration, never inventing model/version/rules", () => {
     const nodes = libraryWorkflowNodes({ nodes: [{ id: "a" }, { id: "b", label: "输出", skillSlug: "listing.copy", skillVersionRef: "released:v2" }], edges: [{ from: "a", to: "b" }] });
-    expect(nodes[0]).toEqual({ id: "a", label: "a", skillSlug: null, modelSlug: null, skillVersionRef: null, humanGate: false, parentIds: [] });
+    expect(nodes[0]).toEqual({ id: "a", label: "a", skillSlug: null, modelSlug: null, skillVersionRef: null, humanGate: null, parentIds: [],
+      nodeType: null, subtitle: null, required: null, scheduler: null, incomingEdges: [] });
     expect(nodes[1].parentIds).toEqual(["a"]);
     expect(nodes[1].skillVersionRef).toBe("released:v2");
     expect(libraryWorkflowNodes(null)).toEqual([]);
@@ -60,6 +61,7 @@ describe("Agent library read-only presentation", () => {
 
   it("keeps workflow navigation within the existing encoded canvas route", () => {
     expect(workflowCanvasHref("a/b?x#y")).toBe("/emperor/agents/a%2Fb%3Fx%23y/canvas");
+    expect(librarySkillHref("a/b?x#y&z=+ 中")).toBe("/emperor/skills?skill=a%2Fb%3Fx%23y%26z%3D%2B%20%E4%B8%AD");
   });
 
   it("renders authentic records, distinct catalog/config labels, and no execution controls", () => {
@@ -93,5 +95,60 @@ describe("Agent library read-only presentation", () => {
       workflows={ready([{ ...workflow, name: "<script>alert(1)</script>" }])} skills={ready([])} models={ready([])} />);
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+describe("workflow topology is a validated display order, never an execution plan", () => {
+  const dag = {
+    nodes: [{ id: "join", nodeType: "skill_node", required: true, scheduler: "manual", humanGate: true, skillSlug: "listing.copy" },
+      { id: "left", nodeType: "llm_node", required: false, scheduler: "auto", humanGate: false, subtitle: "并行分支" }, { id: "right" }],
+    edges: [{ source: "left", target: "join", kind: "suggested", required: false }, { from: "right", to: "join", kind: "optional" }],
+  };
+  const validation = { valid: true, errors: [], warnings: [{ code: "test.warning", message: "真实警告" }], topologicalNodeIds: ["left", "right", "join"] };
+  it("uses an exact complete valid order and preserves all configured edge metadata", () => {
+    const before = JSON.stringify(dag), view = libraryWorkflowView(dag, validation);
+    expect(view.order).toBe("validated_topological");
+    expect(view.nodes.map(node => node.id)).toEqual(["left", "right", "join"]);
+    expect(view.nodes[0]).toMatchObject({ nodeType: "llm_node", subtitle: "并行分支", required: false, scheduler: "auto", humanGate: false, skillSlug: null });
+    expect(view.nodes[2]).toMatchObject({ required: true, scheduler: "manual", humanGate: true, parentIds: ["left", "right"], incomingEdges: [
+      { source: "left", target: "join", kind: "suggested", required: false }, { source: "right", target: "join", kind: "optional", required: null },
+    ] });
+    expect(view.warnings).toEqual(["test.warning: 真实警告"]);
+    expect(JSON.stringify(dag)).toBe(before);
+  });
+  it.each([
+    undefined, null, {}, { ...validation, valid: false }, { ...validation, errors: [{}] },
+    { ...validation, warnings: null }, { ...validation, errors: null },
+    { ...validation, topologicalNodeIds: [] }, { ...validation, topologicalNodeIds: ["left", "join"] },
+    { ...validation, topologicalNodeIds: ["left", "left", "join"] },
+    { ...validation, topologicalNodeIds: ["left", "extra", "join"] },
+    { ...validation, topologicalNodeIds: ["join", "left", "right"] },
+    { ...validation, topologicalNodeIds: [1, "right", "join"] },
+  ])("keeps original ordering for missing/inconsistent validation %#", receipt => {
+    const view = libraryWorkflowView(dag, receipt);
+    expect(view.order).toBe("static");
+    expect(view.nodes.map(node => node.id)).toEqual(["join", "left", "right"]);
+    expect(view.orderReason).toContain("静态原序");
+  });
+  it.each([
+    { ...dag, edges: [{ source: "absent", target: "join" }] },
+    { ...dag, edges: [{ source: "join", target: "join" }] },
+    { ...dag, edges: [null] }, { ...dag, edges: null },
+    { ...dag, nodes: [...dag.nodes, { id: "join" }] },
+    { ...dag, nodes: [...dag.nodes, null] },
+    { nodes: [], edges: [] },
+  ])("rejects topology with malformed or non-matching DAG %#", input => {
+    expect(libraryWorkflowView(input, validation).order).toBe("static");
+  });
+  it("matches runtime alias precedence rather than nullish fallback", () => {
+    const view = libraryWorkflowView({ ...dag, edges: [{ source: "", from: "left", target: "", to: "join", required: false }] }, validation);
+    expect(view.order).toBe("validated_topological");
+    expect(view.nodes[2].parentIds).toEqual(["left"]);
+  });
+  it("displays errors and warnings without turning missing fields into configured false", () => {
+    const view = libraryWorkflowView(dag, { ...validation, valid: false, errors: [{ code: "dag.cycle_detected", message: "Cycle" }] });
+    expect(view.errors).toEqual(["dag.cycle_detected: Cycle"]);
+    expect(view.nodes[2].required).toBeNull();
+    expect(view.nodes[2].humanGate).toBeNull();
   });
 });

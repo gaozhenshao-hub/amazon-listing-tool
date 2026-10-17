@@ -1,4 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useSearch } from "wouter";
+import SkillReadOnlyTarget, { skillReadOnlyRoute } from "./SkillReadOnlyTarget";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -554,6 +556,14 @@ function SkillFormDialog({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function EmperorSkillLibrary() {
+  const target = skillReadOnlyRoute(useSearch());
+  // Explicit targets mount no legacy list, edit, history or run hooks. The
+  // original management page remains available only at the untargeted route.
+  return target.kind === "management" ? <SkillManagementLibrary />
+    : <SkillReadOnlyTarget slug={target.kind === "detail" ? target.slug : null} />;
+}
+
+function SkillManagementLibrary() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 

@@ -67,7 +67,7 @@ function LocalMonthlyPreview() {
   const selectedRow = rows.find(row => rowIdentity(row) === selected);
   const pageCount = Math.max(1, Math.ceil((preview?.rows.length ?? 0) / PAGE_SIZE));
 
-  return <section aria-label="月报本地内存预览" className="mx-auto mt-6 max-w-[1600px] min-w-0 space-y-4 rounded-xl border bg-card p-5">
+  return <section aria-label="月报本地内存预览" className="manus-no-record mx-auto mt-6 max-w-[1600px] min-w-0 space-y-4 rounded-xl border bg-card p-5">
     <header><h2 className="text-lg font-semibold">月报文件本地预览</h2><p className="mt-2 text-sm text-muted-foreground">仅解析当前文件，不上传、不保存、不替换手工台账或财务快照。离开页面、切换身份或清空即移除预览；没有导入确认功能。</p></header>
     <p className="text-xs leading-6 text-muted-foreground">支持受限 .xlsx 与 UTF-8 逗号 CSV，最大5MiB；含嵌图、共享 / 数组公式或特殊 ZIP 的 Excel 可能被明确拒绝，可核对原表后另存 CSV。有解压、表格规模与20秒处理预算。未知值不补零，费用沿用源正负号，公式缓存不作已计算金额。不猜父体、店铺、站点、币种或月份；同一文件不代表完整月报。原字段可展开核对。</p>
     <div className="flex flex-wrap items-center gap-3">

@@ -3,7 +3,7 @@ import { AGENT_LIBRARY_ROLES, type AgentLibraryKey } from "@shared/agentLibraryC
 import { BookOpen, Bot, Eye, GitBranch, Info, Layers, Loader2 } from "lucide-react";
 import {
   firstVisibleBySlug, libraryDirectory, libraryRoleForSkill, libraryRoleForWorkflow,
-  libraryWorkflowNodes, workflowCanvasHref,
+  libraryWorkflowView, librarySkillHref, workflowCanvasHref,
   type LibraryModel, type LibraryReadState, type LibrarySkill, type LibraryWorkflow,
 } from "./AgentLibraryPresentation";
 
@@ -16,6 +16,31 @@ type Props = {
 
 const panelClass = "rounded-xl border border-white/10 bg-white/[0.025] p-5";
 const linkClass = "text-xs text-violet-300 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-violet-400";
+const configuredFlag = (value: boolean | null) => value === null ? "未返回显式配置" : value ? "是" : "否";
+
+function WorkflowCard({ workflow }: { workflow: LibraryWorkflow }) {
+  const view = libraryWorkflowView(workflow.dagDefinition, workflow.validation);
+  return <article className="rounded-lg border border-white/10 p-4">
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="text-sm font-medium text-slate-100">{workflow.name}</h4><p className="mt-1 break-all text-xs text-slate-500">{workflow.slug}</p></div><a className={linkClass} href={workflowCanvasHref(workflow.slug)}>打开原编排画布</a></div>
+    {workflow.description && <p className="mt-2 text-xs leading-6 text-slate-400">{workflow.description}</p>}
+    <p className="mt-2 text-xs text-slate-400">保存状态：{workflow.status} · 触发配置：{workflow.triggerType}</p>
+    <p className="mt-2 text-xs text-amber-200">{view.orderReason}</p>
+    {view.errors.length > 0 && <ul aria-label="编排校验错误" className="mt-2 break-words text-xs text-red-300">{view.errors.map((issue, index) => <li key={index}>{issue}</li>)}</ul>}
+    {view.warnings.length > 0 && <ul aria-label="编排校验警告" className="mt-2 break-words text-xs text-amber-300">{view.warnings.map((issue, index) => <li key={index}>{issue}</li>)}</ul>}
+    <ul aria-label={`${workflow.name} 节点`} className="mt-3 space-y-2">{view.nodes.map((node, index) => <li key={`${index}:${node.id}`} className="rounded-md bg-white/[0.025] px-3 py-2 text-xs leading-6 text-slate-400">
+      <p className="font-medium text-slate-200">{node.label} <span className="font-normal text-slate-500">({node.id})</span>{node.humanGate === true && <span className="ml-2 text-amber-300">配置了人工确认</span>}</p>
+      {node.subtitle && <p className="break-words">{node.subtitle}</p>}
+      <p>节点类型：{node.nodeType || "未返回显式类型"}</p>
+      <p>必需节点（required）：{configuredFlag(node.required)} · 调度配置（scheduler）：{node.scheduler || "未返回显式配置"} · 人工门禁（humanGate）：{configuredFlag(node.humanGate)}</p>
+      <p>前置节点：{node.parentIds.join("、") || "未配置"}</p>
+      {node.incomingEdges.length > 0 && <ul aria-label={`${node.id} 入边配置`}>{node.incomingEdges.map((edge, edgeIndex) => <li key={edgeIndex} className="break-words">{edge.source || "来源缺失"} → {node.id} · 边类型（kind）：{edge.kind || "未返回显式配置"} · 必需边（required）：{configuredFlag(edge.required)}</li>)}</ul>}
+      {node.skillSlug ? <p className="break-all">Skill：<a className={linkClass} href={librarySkillHref(node.skillSlug)}>{node.skillSlug}</a>{node.skillVersionRef ? ` · 版本引用：${node.skillVersionRef}` : " · 未返回显式版本引用"}</p>
+        : <p>未配置 Skill slug；不能据此判断是否调用模型或工具。</p>}
+      {node.modelSlug && <p className="break-all">节点显式模型：{node.modelSlug}（不是助手级绑定）</p>}
+    </li>)}</ul>
+    {view.nodes.length === 0 && <p className="mt-3 text-xs text-slate-500">没有可展示的 DAG 节点。</p>}
+  </article>;
+}
 
 function ReadNotice({ state, noun }: { state: LibraryReadState<unknown>; noun: string }) {
   if (state.status === "error") return <p role="alert" className="text-sm text-red-300">{noun}读取失败：{state.message}。未将失败视为空记录；请刷新重试。</p>;
@@ -69,21 +94,10 @@ export default function AgentLibraryPanel({ selected, onSelect, workflows, skill
 
         <section className={panelClass} aria-label="已有编排配置">
           <h3 className="flex items-center gap-2 font-medium text-slate-100"><GitBranch className="h-4 w-4 text-violet-400" />已有编排配置</h3>
-          <p className="mb-4 mt-2 text-xs leading-6 text-slate-500">按 slug 规则归类，不是保存的助手绑定。节点显示原 DAG 的静态配置和依赖，不代表执行顺序或运行状态。</p>
+          <p className="mb-4 mt-2 text-xs leading-6 text-slate-500">按 slug 规则归类，不是保存的助手绑定或执行授权。节点显示原 DAG 配置及服务端校验结果，不启动任务。当前执行器对全部入边检查上游 confirmed / skipped；即使边标记为 suggested / optional 或 required=false，也不能据此认为可跳过上游门禁。Skill 链接只读当前可见详情，不代表节点版本已解析或已授权执行。</p>
           <ReadNotice state={workflows} noun="编排" />
           {workflows.status === "ready" && roleWorkflows.length === 0 && <p className="text-sm text-slate-400">当前权限范围内，没有归入此角色的编排记录。不会自动创建模板。</p>}
-          <div className="space-y-4">{roleWorkflows.map(workflow => <article key={workflow.id} className="rounded-lg border border-white/10 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="text-sm font-medium text-slate-100">{workflow.name}</h4><p className="mt-1 break-all text-xs text-slate-500">{workflow.slug}</p></div><a className={linkClass} href={workflowCanvasHref(workflow.slug)}>打开原编排画布</a></div>
-            {workflow.description && <p className="mt-2 text-xs leading-6 text-slate-400">{workflow.description}</p>}
-            <p className="mt-2 text-xs text-slate-400">保存状态：{workflow.status} · 触发配置：{workflow.triggerType}</p>
-            <ul className="mt-3 space-y-2">{libraryWorkflowNodes(workflow.dagDefinition).map(node => <li key={node.id} className="rounded-md bg-white/[0.025] px-3 py-2 text-xs leading-6 text-slate-400">
-              <p className="font-medium text-slate-200">{node.label} <span className="font-normal text-slate-500">({node.id})</span>{node.humanGate && <span className="ml-2 text-amber-300">配置了人工确认</span>}</p>
-              <p>前置节点：{node.parentIds.join("、") || "未配置"}</p>
-              {node.skillSlug && <p className="break-all">Skill：{node.skillSlug}{node.skillVersionRef ? ` · 版本引用：${node.skillVersionRef}` : " · 未返回显式版本引用"}</p>}
-              {node.modelSlug && <p className="break-all">节点显式模型：{node.modelSlug}（不是助手级绑定）</p>}
-            </li>)}</ul>
-            {libraryWorkflowNodes(workflow.dagDefinition).length === 0 && <p className="mt-3 text-xs text-slate-500">没有可展示的 DAG 节点。</p>}
-          </article>)}</div>
+          <div className="space-y-4">{roleWorkflows.map(workflow => <WorkflowCard key={workflow.id} workflow={workflow} />)}</div>
         </section>
 
         <section className={panelClass} aria-label="相关 Skill 目录">
@@ -91,7 +105,7 @@ export default function AgentLibraryPanel({ selected, onSelect, workflows, skill
           <p className="mb-4 mt-2 text-xs leading-6 text-slate-500">仅展示当前权限范围内已发布 Skill，按 slug 目录归类；不是已启用绑定。具体版本、模型覆盖与运行仍在原 Skill 页面管理。</p>
           <ReadNotice state={skills} noun="Skill" />
           {skills.status === "ready" && relatedSkills.length === 0 && <p className="text-sm text-slate-400">未读取到可归入此角色的已发布 Skill。</p>}
-          <ul className="space-y-2">{relatedSkills.map(skill => <li key={skill.slug} className="rounded-lg border border-white/10 p-3"><p className="text-sm text-slate-200">{skill.name}</p><p className="mt-1 break-all font-mono text-xs text-slate-500">{skill.slug}</p>{skill.description && <p className="mt-2 text-xs leading-6 text-slate-400">{skill.description}</p>}</li>)}</ul>
+          <ul className="space-y-2">{relatedSkills.map(skill => <li key={skill.slug} className="rounded-lg border border-white/10 p-3"><p className="text-sm text-slate-200">{skill.name}</p><a className={`${linkClass} mt-1 inline-block break-all font-mono`} href={librarySkillHref(skill.slug)}>{skill.slug}</a>{skill.description && <p className="mt-2 text-xs leading-6 text-slate-400">{skill.description}</p>}</li>)}</ul>
         </section>
 
         <section className={panelClass} aria-label="可用模型目录">

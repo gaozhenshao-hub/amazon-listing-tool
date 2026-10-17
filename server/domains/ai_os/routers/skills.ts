@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { EmperorSkillReadInputSchema } from "../../../../shared/emperorSkillRead";
 import { adminProcedure, protectedProcedure, router } from "../../../_core/trpc";
 import { workspaceIdFromContext } from "../../../services/securityGovernance";
 import { getSkillBySlug, normalizeSkillVersionForDb, parseManifest, rawExecute } from "../routerContext";
@@ -39,8 +40,12 @@ import {
   buildGovernedHighQualityManifest,
   isHighQualitySkill,
 } from "../services/highQualitySkillGovernance";
+import { skillReadonlyService } from "../services/skillReadonly";
 
 export const emperorSkillsRouter = router({
+  getReadonly: protectedProcedure.input(EmperorSkillReadInputSchema)
+    .query(({ ctx, input }) => skillReadonlyService.read(ctx, input)),
+
   list: protectedProcedure
     .input(z.object({
       category: z.string().optional(),
