@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import type { TrpcContext } from "../../../_core/context";
-import type { CompetitorReviewPage } from "../../../../shared/competitorReviewCorpus";
+import type { CompetitorReviewCorpus, CompetitorReviewPage } from "../../../../shared/competitorReviewCorpus";
 import { competitorRevision } from "../../../repositories/project/competitorWritePolicy";
 import { competitorReviewReadRepository, reviewReadError, MAX_REVIEW_SOURCE_CANDIDATES,
   MAX_REVIEW_JOB_INPUT_BYTES, type CompetitorReviewReadSession, type ReviewJobCandidate, type ReviewJobScope } from "../../../repositories/listing/competitorReviewReadRepository";
@@ -17,6 +17,21 @@ export const competitorReviewsPageSchema = z.object({
   pageSize: z.number().int().min(1).max(50).default(30),
 }).strict().refine(value => value.page === 1 || value.expectedCorpusHash !== undefined, { message: "A fixed corpus is required after page one" });
 type Request = z.infer<typeof competitorReviewsPageSchema>;
+// Server-only complete read: pagination is a presentation concern, never the
+// input boundary for research. Callers may pin both the row and original file.
+export const competitorReviewSourceSchema = z.object({
+  projectId: id, analysisId: id, expectedWorkspaceId: id.nullable(),
+  expectedRevision: hash.optional(), expectedCorpusHash: hash.optional(),
+}).strict();
+type SourceRequest = z.infer<typeof competitorReviewSourceSchema>;
+export type AuthorizedCompetitorReviewSource = {
+  identity: { userId: number; workspaceId: number | null; sourceWorkspaceId: number | null;
+    projectId: number; analysisId: number; asin: string; revision: string };
+  listing: { title: string | null; bulletPoints: string | null };
+  reviews: { status: "available"; authorizedCorpusHash: string;
+    source: { runId: string; fileName: string; fileHash: string }; corpus: CompetitorReviewCorpus }
+    | { status: "unavailable"; reason: string };
+};
 type Scope = ReviewJobScope & { analysisId: number };
 const defaults = { repository: competitorReviewReadRepository, permission: assertResourceAction, parse: buildCompetitorReviewCorpus };
 const digest = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
@@ -76,11 +91,12 @@ export function createCompetitorReviewReadService(dependencies: Partial<typeof d
     if (!row || row.id !== scope.analysisId || row.projectId !== scope.projectId || !/^[A-Z0-9]{10}$/u.test(row.asin))
       reviewReadError("NOT_FOUND", "COMPETITOR_REVIEWS_ANALYSIS_UNAVAILABLE");
     return { revision: competitorRevision(row), asin: row.asin, meta: sourceMeta(row.rawData),
+      listing: { title: row.title, bulletPoints: row.bulletPoints },
       jobScope: { userId: scope.userId, projectId: scope.projectId, workspaceId: parent.workspaceId as number | null } };
   }
-  async function list(ctx: TrpcContext, raw: Request): Promise<CompetitorReviewPage> {
+  async function readFullCorpus(ctx: TrpcContext, raw: SourceRequest): Promise<AuthorizedCompetitorReviewSource> {
     try {
-      const input = competitorReviewsPageSchema.parse(raw);
+      const input = competitorReviewSourceSchema.parse(raw);
       const workspaceId = ctx.workspaceId !== undefined ? ctx.workspaceId : ctx.user?.defaultWorkspaceId;
       if (!ctx.user || !id.safeParse(ctx.user.id).success || (workspaceId !== null && !id.safeParse(workspaceId).success))
         reviewReadError("FORBIDDEN", "COMPETITOR_REVIEWS_ACTOR_INVALID");
@@ -88,6 +104,8 @@ export function createCompetitorReviewReadService(dependencies: Partial<typeof d
       const scope: Scope = { userId: ctx.user.id, projectId: input.projectId, analysisId: input.analysisId, workspaceId: workspaceId as number | null };
       const initial = await deps.repository.transaction(async session => {
         const owned = await authorized(session, scope);
+        if (input.expectedRevision !== undefined && input.expectedRevision !== owned.revision)
+          reviewReadError("CONFLICT", "COMPETITOR_REVIEWS_SOURCE_CHANGED");
         const candidates = owned.meta ? await session.candidates(owned.jobScope, owned.meta.fileName, scope.analysisId, owned.asin) : [];
         if (candidates.length > MAX_REVIEW_SOURCE_CANDIDATES) reviewReadError("PRECONDITION_FAILED", "COMPETITOR_REVIEWS_SOURCE_HISTORY_LIMIT");
         return { ...owned, candidates };
@@ -99,11 +117,12 @@ export function createCompetitorReviewReadService(dependencies: Partial<typeof d
         if (candidate && (!initial.meta || !await session.stillCurrent(initial.jobScope, candidate, initial.meta.fileName, scope.analysisId, initial.asin)))
           reviewReadError("CONFLICT", "COMPETITOR_REVIEWS_SOURCE_CHANGED");
       }
-      const unavailable = async (reason: string): Promise<CompetitorReviewPage> => {
+      const binding = { identity: { ...scope, sourceWorkspaceId: initial.jobScope.workspaceId,
+        asin: initial.asin, revision: initial.revision }, listing: initial.listing };
+      const unavailable = async (reason: string): Promise<AuthorizedCompetitorReviewSource> => {
         await deps.repository.transaction(session => revalidate(session));
         if (input.expectedCorpusHash) reviewReadError("CONFLICT", "COMPETITOR_REVIEWS_SOURCE_CHANGED");
-        return { status: "unavailable", reason, projectId: scope.projectId, analysisId: scope.analysisId, asin: initial.asin,
-          parserVersion: null, corpusHash: null, source: null, coverage: null, items: [], page: input.page, pageSize: input.pageSize, total: null };
+        return { ...binding, reviews: { status: "unavailable", reason } };
       };
       if (!initial.meta) return await unavailable("未记录可核验的评论原文件；已有 AI 摘要不等于原评论，商品累计评论数也不是可读取数量。");
       if (!initial.candidates.length) return await unavailable("未找到当前来源对应且有成功回执的原文件任务；旧同步导入或原任务已删除时，无法由摘要恢复原评论。");
@@ -125,16 +144,29 @@ export function createCompetitorReviewReadService(dependencies: Partial<typeof d
           sourceWorkspaceId: initial.jobScope.workspaceId, runId: candidate.runId, corpusHash: corpus.corpusHash }));
         if (input.expectedCorpusHash !== undefined && input.expectedCorpusHash !== corpusHash)
           reviewReadError("CONFLICT", "COMPETITOR_REVIEWS_CORPUS_CHANGED");
-        const start = (input.page - 1) * input.pageSize;
-        if (input.page > 1 && start >= corpus.items.length) reviewReadError("PRECONDITION_FAILED", "COMPETITOR_REVIEWS_PAGE_OUT_OF_RANGE");
         await deps.repository.transaction(session => revalidate(session, candidate));
-        return { status: "available", reason: null, projectId: scope.projectId, analysisId: scope.analysisId, asin: initial.asin,
-          corpusHash, parserVersion: corpus.parserVersion, source: { runId: candidate.runId, fileName: initial.meta.fileName, fileHash: initial.meta.fileHash },
-          coverage: corpus.coverage, items: corpus.items.slice(start, start + input.pageSize), page: input.page, pageSize: input.pageSize, total: corpus.items.length };
+        return { ...binding, reviews: { status: "available", authorizedCorpusHash: corpusHash,
+          source: { runId: candidate.runId, fileName: initial.meta.fileName, fileHash: initial.meta.fileHash }, corpus } };
       }
       return await unavailable("当前有权访问的导入任务中未找到与评论来源哈希一致的原文件；同名文件不能替代原文证据。");
     } catch (error) { return safeError(error); }
   }
-  return { list };
+  async function list(ctx: TrpcContext, raw: Request): Promise<CompetitorReviewPage> {
+    try {
+      const { page, pageSize, ...input } = competitorReviewsPageSchema.parse(raw);
+      const result = await readFullCorpus(ctx, input);
+      const { projectId, analysisId, asin } = result.identity;
+      if (result.reviews.status === "unavailable") return {
+        status: "unavailable", reason: result.reviews.reason, projectId, analysisId, asin,
+        parserVersion: null, corpusHash: null, source: null, coverage: null, items: [], page, pageSize, total: null,
+      };
+      const { corpus, source, authorizedCorpusHash: corpusHash } = result.reviews;
+      const start = (page - 1) * pageSize;
+      if (page > 1 && start >= corpus.items.length) reviewReadError("PRECONDITION_FAILED", "COMPETITOR_REVIEWS_PAGE_OUT_OF_RANGE");
+      return { status: "available", reason: null, projectId, analysisId, asin, corpusHash, parserVersion: corpus.parserVersion,
+        source, coverage: corpus.coverage, items: corpus.items.slice(start, start + pageSize), page, pageSize, total: corpus.items.length };
+    } catch (error) { return safeError(error); }
+  }
+  return { list, readFullCorpus };
 }
 export const competitorReviewRead = createCompetitorReviewReadService();

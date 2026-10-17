@@ -8,7 +8,9 @@ import type { CompetitorAnalysis } from "../drizzle/schema/project";
 import { createCompetitorReviewReadRepository, competitorReviewReadSession } from "./repositories/listing/competitorReviewReadRepository";
 import { buildCompetitorReviewCorpus } from "./domains/listing/services/competitorReviewCorpus";
 vi.mock("./services/securityGovernance", () => ({ assertResourceAction: vi.fn() }));
-import { createCompetitorReviewReadService, competitorReviewsPageSchema } from "./domains/listing/services/competitorReviewRead";
+import { createCompetitorReviewReadService, competitorReviewsPageSchema, competitorReviewSourceSchema } from "./domains/listing/services/competitorReviewRead";
+import { competitorRevision } from "./repositories/project/competitorWritePolicy";
+import { createCompetitorResearchEvidenceService } from "./domains/listing/services/competitorResearchEvidence";
 
 const digest = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 const dialect = new MySqlDialect(), asin = "B000000001", filename = `${asin}-Reviews.csv`;
@@ -193,5 +195,77 @@ describe("authorized original competitor review pages (real service, SQL adapter
     const repository = createCompetitorReviewReadRepository(async () => ({})), callback = vi.fn();
     await expect(repository.transaction(callback)).rejects.toMatchObject({ message: "COMPETITOR_REVIEWS_TRANSACTION_REQUIRED" });
     expect(callback).not.toHaveBeenCalled();
+  });
+});
+
+describe("server-only complete authorized corpus for selected research", () => {
+  const request = { projectId: 11, analysisId: 21, expectedWorkspaceId: 7 };
+  it("connects the real authorized reader, SQL adapter, original parser and evidence preview without a model", async () => {
+    const f = fixture(), evidence = createCompetitorResearchEvidenceService({ readFullCorpus: f.service.readFullCorpus });
+    const result = await evidence.preview(f.ctx, { ...request, expectedRevision: competitorRevision(f.analysis) });
+    expect(result).toMatchObject({ modelRead: false, listing: { titleAvailable: true, bulletCount: 0 },
+      reviews: { status: "available", total: 35, scope: "complete_file_not_market_total" } });
+    expect(result.reviews.batches.reduce((sum, batch) => sum + batch.count, 0)).toBe(35);
+    expect(f.parse).toHaveBeenCalledOnce(); expect(f.trace.every(q => q.text.startsWith("SELECT"))).toBe(true);
+  });
+  it("returns every original in one parse and binds listing and reviews to the same whole-row revision", async () => {
+    const f = fixture(); f.analysis.bulletPoints = '["保存的五点原文"]';
+    const expectedRevision = competitorRevision(f.analysis);
+    const result = await f.service.readFullCorpus(f.ctx, { ...request, expectedRevision });
+    expect(result.identity).toEqual({ userId: 3, workspaceId: 7, sourceWorkspaceId: 7, projectId: 11, analysisId: 21, asin, revision: expectedRevision });
+    expect(result.listing).toEqual({ title: "title", bulletPoints: f.analysis.bulletPoints });
+    expect(result.reviews.status).toBe("available");
+    if (result.reviews.status !== "available") throw new Error();
+    expect(result.reviews.corpus.items).toHaveLength(35);
+    expect(result.reviews.corpus.items.at(-1)?.body).toBe("原文 34");
+    expect(f.parse).toHaveBeenCalledOnce();
+    expect(f.trace.filter(q => q.text.startsWith("SELECT CAST(input"))).toHaveLength(1);
+    expect(f.trace.every(q => q.text.startsWith("SELECT"))).toBe(true);
+    const page = await f.service.list(f.ctx, f.request);
+    expect(result.reviews.authorizedCorpusHash).toBe(page.corpusHash);
+    expect(result.reviews.corpus.corpusHash).not.toBe(page.corpusHash);
+    expect(JSON.stringify(result)).not.toMatch(/not original|fileBase64|aiSummary/);
+  });
+  it("refuses a stale row before loading its original file", async () => {
+    const f = fixture();
+    await expect(f.service.readFullCorpus(f.ctx, { ...request, expectedRevision: "c".repeat(64) })).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(f.parse).not.toHaveBeenCalled(); expect(f.trace.some(q => q.text.includes("ai_jobs"))).toBe(false);
+  });
+  it("does not silently truncate long originals at the old 12,000-character prompt limit", async () => {
+    const f = fixture(), body = "原文".repeat(7000) + "尾部证据";
+    const bytes = Buffer.from(`ASIN,Content\n${asin},${body}`), payload = JSON.parse(f.job.input);
+    payload.fileBase64 = bytes.toString("base64"); f.job.input = JSON.stringify(payload);
+    f.analysis.rawData = JSON.stringify({ reviewImport: { filename, sourceHash: digest(bytes) } });
+    const result = await f.service.readFullCorpus(f.ctx, request);
+    if (result.reviews.status !== "available") throw new Error();
+    expect(result.reviews.corpus.items[0].body).toBe(body);
+    expect(result.reviews.corpus.coverage.scope).toBe("complete_file_not_market_total");
+  });
+  it("keeps a complete empty import distinct from an unavailable original", async () => {
+    const f = fixture(), bytes = Buffer.from("ASIN,Content\nB000000002,其他竞品"), payload = JSON.parse(f.job.input);
+    payload.fileBase64 = bytes.toString("base64"); f.job.input = JSON.stringify(payload);
+    f.analysis.rawData = JSON.stringify({ reviewImport: { filename, sourceHash: digest(bytes) } });
+    const empty = await f.service.readFullCorpus(f.ctx, request);
+    expect(empty.reviews).toMatchObject({ status: "available", corpus: { items: [], coverage: { uniqueReviews: 0, otherAsinRows: 1 } } });
+    f.analysis.rawData = "{}";
+    expect((await f.service.readFullCorpus(f.ctx, request)).reviews).toEqual({ status: "unavailable", reason: expect.any(String) });
+  });
+  it("binds legacy NULL parent scope independently of authenticated workspace", async () => {
+    const f = fixture(); f.project.workspaceId = null; f.job.workspaceId = null;
+    const result = await f.service.readFullCorpus(f.ctx, request);
+    expect(result.identity).toMatchObject({ workspaceId: 7, sourceWorkspaceId: null });
+    expect(result.reviews.status).toBe("available");
+  });
+  it.each(["title", "bulletPoints", "owner", "receipt"])("revalidates %s after full parsing", async change => {
+    const f = fixture(); f.setDuringParse(() => {
+      if (change === "title") f.analysis.title = "changed";
+      if (change === "bulletPoints") f.analysis.bulletPoints = '["changed"]';
+      if (change === "owner") f.project.userId = 99;
+      if (change === "receipt") f.job.results = [];
+    });
+    await expect(f.service.readFullCorpus(f.ctx, request)).rejects.toBeInstanceOf(TRPCError);
+  });
+  it.each([{ page: 1 }, { pageSize: 1 }, { userId: 999 }, { expectedRevision: "invalid" }, { corpus: {} }])("rejects unsupported server-read fields %#", extra => {
+    expect(competitorReviewSourceSchema.safeParse({ ...request, ...extra }).success).toBe(false);
   });
 });

@@ -19,6 +19,7 @@ import { workspaceIdFromContext } from "../services/securityGovernance";
 import { competitorReviewScopeSchema, competitorSummaryWriteSchema, competitorSummaryReview, competitorWithRevision, competitorReviewWorkspace } from "../domains/listing/services/competitorSummaryReview";
 import { competitorResearchJob, competitorResearchScopeSchema, startCompetitorResearchJobSchema, competitorResearchOperationSchema } from "../domains/listing/services/competitorResearchJob";
 import { competitorReviewRead, competitorReviewsPageSchema } from "../domains/listing/services/competitorReviewRead";
+import { competitorResearchEvidence, competitorResearchEvidenceSchema } from "../domains/listing/services/competitorResearchEvidence";
 import {
   registerCompetitorAnalysisArtifact,
   registerCompetitorComparisonArtifact,
@@ -86,6 +87,9 @@ async function resolveCompetitorImagesForDelivery<T extends { imageUrls?: string
 }
 
 export const analysisRouter = router({
+  previewResearchEvidence: protectedProcedure
+    .input(competitorResearchEvidenceSchema)
+    .query(({ ctx, input }) => competitorResearchEvidence.preview(ctx, input)),
   listCompetitorReviews: protectedProcedure
     .input(competitorReviewsPageSchema)
     .query(({ ctx, input }) => competitorReviewRead.list(ctx, input)),

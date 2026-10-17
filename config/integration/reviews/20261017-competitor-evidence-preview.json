@@ -1,0 +1,57 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-selected-competitor-evidence-preview",
+  "baseline": "8967d7aabda043fb9ce36b561dad6f367b62e7a8",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "listingSkills": "user-primary",
+    "listingWorkflow": "friend-primary",
+    "inputs": "select authorized saved competitor and own-product profile data, preview/generate; uploads supplementary, never mandatory",
+    "generalP5Skills": "Qingdao-primary",
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary"
+  },
+  "changes": [
+    "Refactor the original review reader into a single complete server-only read plus the unchanged bounded public pagination DTO. Complete input retains full actor/workspace/source-workspace/project/analysis/ASIN/revision, original import receipt/file hash, parser hash and separately authorization-bound corpus hash. Initial/final real-transaction authorization and current-source checks are shared, not bypassed.",
+    "Prepare a versioned evidence envelope from the exact selected saved title/bullets and complete imported original corpus. Stable source IDs, UTF-16 exact citation spans, all original review metadata/occurrences, deterministic hashes and complete-file coverage are retained. No old AI summary or first-page/first-12000-character shortcut becomes an original corpus.",
+    "Bound each canonical UTF-8 review batch by 60 reviews and 24576 bytes, including evidence identity and original occurrence fields. Each unique review appears exactly once. A single oversized review explicitly refuses; no slicing or silent partial coverage. This limit does not include future model prompt overhead.",
+    "Add an authenticated read-only preview endpoint requiring explicit workspace and exact row revision. The browser receives only identity, hashes, source availability/counts and batch metadata, not review body/author/raw cells/filename. Missing original remains unknown, distinct from a verified file containing zero matching reviews.",
+    "Selected competitor cards offer an explicit preview action without upload or automatic model calls. User/role/workspace/project/ASIN/revision changes destroy prior state; aborted/late replies are ignored, inconsistent summaries are refused. Existing summary confirmation, historical analysis, review pages and default-off feature flag remain.",
+    "Keep the user's Listing prompts, seven directions/FABE/overall strategy, review contracts and friend-primary selection workflow. No Skill version/manifest/seed, production data, scheduler or paid model is changed. Evidence preparation is not model-read or four-stage research completion."
+  ],
+  "review": {
+    "root": "Read the fixed friend four-stage implementation, current user Skill seed contracts, current corpus/authorization/SQL/UI call chains and both delegated shared/UI implementations; connected and exercised the real read service, SQL executor fixture, original parser, plan and preview. No actual database/model/browser acceptance is claimed.",
+    "peer": "vm_structure_r3 independently read the root complete-reader/loader/repository/route changes and reported no new concrete blocking finding. Its own shared/UI implementations were reviewed by root; this is not an independent full-system security sign-off.",
+    "previousProtectionRecords": [
+      {
+        "path": "server/routers/analysis.ts",
+        "previousReviewed": {
+          "gitBlobSha1": "454a55f6143a3c9dded909cedbb6db1b7d39c17a",
+          "sha256": "d05ef36635dbddaf0b6ac2571699924593fc908679f2a68da71e65d43256e06a",
+          "reviewRef": "config/integration/reviews/20261017-competitor-capture-selection.json"
+        }
+      }
+    ],
+    "baselineFieldsUnchanged": true,
+    "baselineTupleSha256": "b5a228f5b51180bc6f903384d146997cda316f77da807e7abcb20ce7b4faee40"
+  },
+  "verification": {
+    "reference": "See parent-workspace outputs/amazon-system-accelerated-competitor-evidence-batch-20261017-r1.json for final command receipts and source hashes.",
+    "realDatabase": false,
+    "realBrowser": false,
+    "paidModelCalls": 0
+  },
+  "defaults": {
+    "newSchema": false,
+    "workflowEnabledByDefault": false,
+    "productionDeployed": false,
+    "rollback": "Revert only this isolated local source batch. No production data/migration changed."
+  },
+  "remaining": [
+    "The full evidence envelope is transient server memory, not a durable research checkpoint or independent long-lived review store. Retained import input remains the original source; deleted legacy import payload cannot be recovered from AI summaries.",
+    "Images/OCR, page reviews, product questions and four-stage model outputs are not added. User Skill-compatible output schema/version approval and actual released Skill/model pinning remain; no friend prompt replaces the user's authority.",
+    "Future model execution must freeze source/Skill/model versions, budget prompt overhead separately, persist per-stage/batch receipts and prevent blind replay after ambiguous paid calls. Exact source quote validation alone does not attest semantic correctness.",
+    "Offline SQL fixtures/component tests do not establish real MySQL lock/rollback behavior, browser rendering or worker integration. Real no-upload workflow acceptance and controlled enablement remain.",
+    "All original P0-P6, K01-K10, T01-T28 and image62/master27/supplements12 requirements remain. P1 is incomplete; native303 remains unapproved and native/0230 gates are retained. Host free space remains below the 8GiB heavy-runtime gate."
+  ]
+}

@@ -1,6 +1,7 @@
 export interface CompetitorStudyRecord {
   id: number;
   asin: string;
+  revision?: string;
   title?: string | null;
   price?: string | null;
   rating?: string | null;

@@ -3,6 +3,8 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import CompetitorStudyComparison from "./CompetitorStudyComparison";
+vi.mock("./CompetitorResearchEvidencePreview", () => ({ default: (props: { analysisId: number; projectId: number; revision: string }) =>
+  <div data-testid="research-evidence-preview">{JSON.stringify(props)}</div> }));
 
 const row = { id: 3, asin: "B000000003", title: "已保存商品", summary: "此前成功保存的精确摘要", aiSummary: "旧 AI 候选",
   summaryStatus: "draft", summaryVersion: 2, bulletPoints: '["真实五点原文"]' };
@@ -73,5 +75,13 @@ describe("saved competitor research source state", () => {
     render(<CompetitorStudyComparison analyses={[row]} pendingIds={new Set()} onConfirm={vi.fn()} onUnlock={vi.fn()} />);
     expect(screen.queryByRole("link", { name: /原评论/ })).not.toBeInTheDocument();
     expect(screen.getByText(/不代表四项深度分析已完成/)).toBeInTheDocument();
+  });
+  it("connects the selected saved record to an exact-revision evidence preview without upload", () => {
+    render(<CompetitorStudyComparison projectId={7} analyses={[{ ...row, revision: "a".repeat(64) }]} pendingIds={new Set()} onConfirm={vi.fn()} onUnlock={vi.fn()} />);
+    expect(screen.getByTestId("research-evidence-preview")).toHaveTextContent(JSON.stringify({ projectId: 7, analysisId: row.id, asin: row.asin, revision: "a".repeat(64) }));
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+  });
+  it("does not pretend an unversioned legacy card is a pinned research input", () => {
+    mount(); expect(screen.queryByTestId("research-evidence-preview")).not.toBeInTheDocument();
   });
 });

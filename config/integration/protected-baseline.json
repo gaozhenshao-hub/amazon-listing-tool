@@ -1123,9 +1123,9 @@
         "sha256": "dfc27c614e4c74c026b4efe7c9a1ce3ee073dc0dd12b190b4131dd7001aa6f56"
       },
       "reviewed": {
-        "gitBlobSha1": "454a55f6143a3c9dded909cedbb6db1b7d39c17a",
-        "sha256": "d05ef36635dbddaf0b6ac2571699924593fc908679f2a68da71e65d43256e06a",
-        "reviewRef": "config/integration/reviews/20261017-competitor-capture-selection.json"
+        "gitBlobSha1": "89d63fc40c00590e7b423428ec26b45026727a5d",
+        "sha256": "fcec5ebfe91cb99a55589283e129e6c5936e45d1a3a315623db1d97b3dbad7db",
+        "reviewRef": "config/integration/reviews/20261017-competitor-evidence-preview.json"
       }
     },
     {
