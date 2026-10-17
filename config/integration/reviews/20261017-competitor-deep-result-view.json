@@ -1,0 +1,96 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "selected-competitor-friend-structured-saved-result-view",
+  "baseline": "f5bf4226050bd867190f84a425316d77b1e41387",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSourceSelection": "friend-primary; choose authorized saved competitor/profile sources, preview and generate; upload supplemental, not mandatory",
+    "generalP5Skills": "Qingdao-primary",
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary"
+  },
+  "changes": [
+    "Connect the selected saved competitor card to an explicit read of the authorized getCompetitorDeepResult query. No upload, generation mutation, model call, polling or shared result cache. Use user/workspace/role/project/analysis/ASIN/revision plus owner epoch to hide stale state and ignore late responses, including A-B-A scope changes.",
+    "Validate the bounded browser response against the actual server-builder artifact: exact identities/revision, source spans, stage receipt/display consistency, listing frequency, complete imported-review denominator, unique theme membership, original-order complete review samples/omissions and summary basis/references. Freeze the validated projection. Browser shape validation is not independent model replay or Skill approval.",
+    "Render friend-ordered title, selling-point, buyer/review and summary sections with English originals, Chinese translations, exact citations, six-column selling table, review counts/percentages, original/platform IDs and file locations. Treat unknown/missing as distinct from zero; retain sourceChanged historical warning and explicit unconfirmed/incomplete scope.",
+    "Keep the existing merged-workflow flag default-off, saved-profile and competitor-selection flow, user Listing Skills, seven directions/FABE/overallStrategy/B4_order and human review gates unchanged. A saved four-section candidate is not automatically usable in Listing generation."
+  ],
+  "review": {
+    "root": "Reviewed eight implementation/test files and actual server contract. Corrected the reader test's loading/not-available wait race. No protected source changed.",
+    "independent": "Separate read-only reviewer checked all four implementation files and corresponding tests against the server builder/reader; no reproducible blocking issue found in this scope.",
+    "baselineFieldsUnchanged": true,
+    "baselineTupleSha256": "b5a228f5b51180bc6f903384d146997cda316f77da807e7abcb20ce7b4faee40"
+  },
+  "verification": {
+    "rootFocusedUnion": {
+      "files": 6,
+      "passed": 229,
+      "exitCode": 0,
+      "session": 25623
+    },
+    "scopedLint": {
+      "files": 8,
+      "exitCode": 0
+    },
+    "protectedGuard": {
+      "files": 106,
+      "dependencies": 2,
+      "reviewedRecords": 25,
+      "exitCode": 0,
+      "session": 20436
+    },
+    "configuredTypes": {
+      "status": "passed",
+      "session": 86354,
+      "command": "./node_modules/.bin/tsc --noEmit --incremental false",
+      "exitCode": 0,
+      "startedAfterSourceFreeze": true,
+      "note": "Configured exclude still omits *.test.ts; production modules and .component.test.tsx are included. This does not prove browser/DB/model workflow."
+    },
+    "syntheticBrowser": {
+      "passed": true,
+      "realAppWorkflow": false,
+      "browser": "Codex in-app browser",
+      "method": "Actual React panel SSR with repository Tailwind CSS and a real builder/parser synthetic fixture, localhost-only, no database/model/business data",
+      "desktop": {
+        "viewportWidth": 1280,
+        "documentScrollWidth": 1265,
+        "panelWidth": 1040,
+        "tableViewportWidth": 1006,
+        "tableScrollWidth": 1006
+      },
+      "narrow": {
+        "viewportWidth": 390,
+        "documentScrollWidth": 375,
+        "panelWidth": 343,
+        "tableViewportWidth": 309,
+        "tableScrollWidth": 672
+      },
+      "expandedOriginalReview": {
+        "fullLongBody": true,
+        "shownOriginalBlocks": 3,
+        "embeddedImages": 0,
+        "documentScrollWidth": 375
+      },
+      "viewportReset": true
+    },
+    "realDatabase": false,
+    "realWorker": false,
+    "realBrowserWorkflow": false,
+    "paidModelCalls": 0
+  },
+  "defaults": {
+    "newSchema": false,
+    "newWorkerRegistered": false,
+    "newStartMutation": false,
+    "skillPublished": false,
+    "workflowEnabledByDefault": false,
+    "productionDeployed": false
+  },
+  "remaining": [
+    "Trusted compatible user-Skill approval/resolver, source-authenticated reservation, model configuration/budget pins, real invocation and new deep worker/start flow are still absent. The separate compatibility-version question remains unanswered; synthetic Released/approvalRef fixtures grant no authority.",
+    "Real database concurrency/transactions/recovery, actual authenticated browser no-upload workflow, actual worker and approved model acceptance remain separate release gates. Synthetic SSR verifies this display only, not the parent app, transport, authorization enforcement, source generation or model output.",
+    "Images/OCR, actual questions, independent long-lived original storage and large-input model budgets remain pending. Existing full P0-P6/K01-K10/T01-T28/image62/master27/supplements12 scope is unchanged. P1 remains incomplete, native303 unapproved; no production mutation, public push/deployment, scheduler or VM."
+  ]
+}

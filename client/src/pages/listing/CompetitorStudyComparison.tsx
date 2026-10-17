@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { competitorStudy, type CompetitorStudyRecord } from "./competitorStudyModel";
 import CompetitorResearchEvidencePreview from "./CompetitorResearchEvidencePreview";
+import CompetitorDeepResultReader from "./CompetitorDeepResultReader";
 
 export default function CompetitorStudyComparison({ projectId, analyses, pendingIds, onConfirm, onUnlock }: {
   projectId?: number;
@@ -32,7 +33,10 @@ export default function CompetitorStudyComparison({ projectId, analyses, pending
               {study.bulletsUnavailable ? <p role="alert" className="text-sm">原文字段无法读取，请回分析页核对。</p> : study.bullets.length ? <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm">{study.bullets.map((text, index) => <li key={index} className="whitespace-pre-wrap break-words">{text || "空条目"}</li>)}</ol> : <p className="text-sm text-muted-foreground">尚无已保存五点原文。</p>}
             </details>
             {Number.isSafeInteger(projectId) && (projectId ?? 0) > 0 && typeof analysis.revision === "string" && /^[a-f0-9]{64}$/u.test(analysis.revision)
-              && <CompetitorResearchEvidencePreview projectId={projectId!} analysisId={analysis.id} asin={analysis.asin} revision={analysis.revision} />}
+              && <>
+                <CompetitorResearchEvidencePreview projectId={projectId!} analysisId={analysis.id} asin={analysis.asin} revision={analysis.revision} />
+                <CompetitorDeepResultReader projectId={projectId!} analysisId={analysis.id} asin={analysis.asin} revision={analysis.revision} />
+              </>}
             <div><h4 className="text-sm font-medium">{study.summarySource}</h4>
               <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{study.summary || "请到竞品分析页完成分析后刷新；不根据缺失字段推测任务状态。"}</p>
               {study.historical && <p role="alert" className="text-sm text-amber-700">{study.analysisStale
