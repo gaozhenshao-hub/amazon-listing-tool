@@ -20,6 +20,9 @@ describe("legacy acquisition consumer contracts", () => {
   });
 
   it("rejects malformed or cross-type references", () => {
+    expect(parseLegacySnapshotConsumerRef("project_competitor", projectCompetitorConsumerRef(8, "b012345678", true))).toEqual({ type: "project_competitor", projectId: 8, asin: "B012345678", captureOnly: true });
+    expect(() => parseLegacySnapshotConsumerRef("project_competitor", "project-competitor:8:B012345678:automatic")).toThrow();
+    expect(() => parseLegacySnapshotConsumerRef("project_competitor", "project-competitor:9007199254740993:B012345678")).toThrow();
     expect(() => parseLegacySnapshotConsumerRef("kb_listing", "kb-product:12")).toThrow();
     expect(() => parseLegacySnapshotConsumerRef("project_competitor", "project-competitor:8:BAD")).toThrow();
     expect(() => parseLegacySnapshotConsumerRef("conversion_collector", "conversion-collector:UK:B012345678")).toThrow();

@@ -64,14 +64,39 @@ async function withLockedCompetitor<T>(id: number, guard: CompetitorWriteGuard |
   });
 }
 
-async function saveCompetitor(data: InsertCompetitorAnalysis, createOnly: boolean) {
+type LegacyAcquisitionGuard = { userId: number; workspaceId: number; rejectCapturedSource: true };
+function assertNotCaptured(row: CompetitorAnalysis) {
+  if (!row.rawData) return;
+  let raw: unknown;
+  try { raw = JSON.parse(row.rawData); } catch { throw new TRPCError({ code: "PRECONDITION_FAILED", message: "COMPETITOR_LEGACY_SOURCE_INVALID" }); }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "COMPETITOR_LEGACY_SOURCE_INVALID" });
+  if (Object.hasOwn(raw, "acquisitionCapture")) throw new TRPCError({ code: "CONFLICT", message: "COMPETITOR_LEGACY_CAPTURE_PROTECTED" });
+}
+/** A queued legacy job checks this before spending on a model; commit repeats
+ * the same fence so capture during the call cannot be overwritten. */
+export async function assertLegacyCompetitorAcquisitionWritable(projectId: number, asin: string, guard: LegacyAcquisitionGuard) {
   return competitorTransaction(async tx => {
-    await lockCompetitorParent(tx, data.projectId);
+    const parent = await lockCompetitorParent(tx, projectId);
+    if (parent.userId !== guard.userId || parent.workspaceId !== guard.workspaceId) throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
+    const matches: CompetitorAnalysis[] = await tx.select().from(competitorAnalyses).where(and(eq(competitorAnalyses.projectId, projectId), eq(competitorAnalyses.asin, asin))).limit(2).for("update");
+    if (matches.length > 1) throw new TRPCError({ code: "CONFLICT", message: "同项目竞品记录不唯一" });
+    if (matches[0]) assertNotCaptured(matches[0]);
+  });
+}
+async function saveCompetitor(data: InsertCompetitorAnalysis, createOnly: boolean, legacyGuard?: LegacyAcquisitionGuard) {
+  return competitorTransaction(async tx => {
+    const parent = await lockCompetitorParent(tx, data.projectId);
+    if (legacyGuard && (parent.userId !== legacyGuard.userId || parent.workspaceId !== legacyGuard.workspaceId)) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
+    }
     const matches: CompetitorAnalysis[] = await tx.select().from(competitorAnalyses).where(and(
       eq(competitorAnalyses.projectId, data.projectId), eq(competitorAnalyses.asin, data.asin),
     )).limit(2).for("update");
     if (matches.length > 1 || (createOnly && matches.length)) throw new TRPCError({ code: "CONFLICT", message: "同项目竞品记录已存在或不唯一" });
     if (matches[0]) {
+      // A previously queued automatic analysis must never overwrite the new
+      // selected-generation lane, even when its model completed after capture.
+      if (legacyGuard) assertNotCaptured(matches[0]);
       const update = mergeCompetitorUpdate(matches[0], data, { kind: "upsert" });
       if (Object.keys(update).length) await tx.update(competitorAnalyses).set(update).where(and(eq(competitorAnalyses.id, matches[0].id), eq(competitorAnalyses.projectId, data.projectId)));
       return readLockedCompetitor(tx, matches[0].id, data.projectId);
@@ -91,8 +116,8 @@ export async function createCompetitorAnalysis(data: InsertCompetitorAnalysis) {
  * Upsert competitor analysis: if same projectId+asin exists, update it; otherwise insert new.
  * This prevents duplicate entries when re-uploading the same SellerSprite file.
  */
-export async function upsertCompetitorAnalysis(data: InsertCompetitorAnalysis) {
-  return saveCompetitor(data, false);
+export async function upsertCompetitorAnalysis(data: InsertCompetitorAnalysis, legacyGuard?: LegacyAcquisitionGuard) {
+  return saveCompetitor(data, false, legacyGuard);
 }
 
 export async function getCompetitorAnalysesByProject(projectId: number) {

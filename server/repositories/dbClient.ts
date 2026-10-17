@@ -39,11 +39,13 @@ export async function closeDbConnection() {
 export async function withDbTransaction<T>(
   context: string,
   callback: (tx: DbExecutor) => Promise<T>,
+  options: { required?: boolean } = {},
 ): Promise<T> {
   const db = await requireDb(context);
   const transactional = db as any;
   if (typeof transactional.transaction === "function") {
     return transactional.transaction((tx: DbExecutor) => callback(tx));
   }
+  if (options.required) throw new Error(`${context}: real database transaction required`);
   return callback(db);
 }

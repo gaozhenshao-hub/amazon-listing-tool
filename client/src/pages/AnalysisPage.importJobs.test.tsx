@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 const mocks = vi.hoisted(() => {
   const jobs: any[] = [];
   const start = vi.fn();
+  const capture = vi.fn();
   const previewReviews = vi.fn();
   const previewSellerSprite = vi.fn();
   const mutationOptions = vi.fn();
@@ -22,8 +23,8 @@ const mocks = vi.hoisted(() => {
       },
     },
   };
-  const state = { jobs, otherProjectJobs: [] as any[], projectId: 1, queryError: null as any };
-  return { state, start, previewReviews, previewSellerSprite, mutationOptions, utils, invalidateAnalyses, success: vi.fn(), info: vi.fn(), error: vi.fn() };
+  const state = { jobs, otherProjectJobs: [] as any[], projectId: 1, queryError: null as any, merged: false, user: { id: 7, role: "ops_specialist", defaultWorkspaceId: 3 as number | null } };
+  return { state, start, capture, previewReviews, previewSellerSprite, mutationOptions, utils, invalidateAnalyses, success: vi.fn(), info: vi.fn(), error: vi.fn() };
 });
 
 vi.mock("@/lib/trpc", () => ({
@@ -32,7 +33,7 @@ vi.mock("@/lib/trpc", () => ({
     analysis: {
       listByProject: { useQuery: () => ({ data: [], isLoading: false }) },
       listImportJobs: { useQuery: ({ projectId }: { projectId: number }) => ({ data: projectId === 1 ? mocks.state.jobs : mocks.state.otherProjectJobs, isLoading: false, error: mocks.state.queryError, refetch: vi.fn() }) },
-      analyzeAsin: { useMutation: () => ({ mutateAsync: vi.fn() }) },
+      analyzeAsin: { useMutation: () => ({ mutateAsync: mocks.capture }) },
       analyzeManual: { useMutation: () => ({ mutateAsync: vi.fn() }) },
       delete: { useMutation: () => ({ mutateAsync: vi.fn() }) },
       startImportJob: { useMutation: (options: unknown) => { mocks.mutationOptions(options); return { mutateAsync: mocks.start }; } },
@@ -42,6 +43,8 @@ vi.mock("@/lib/trpc", () => ({
   },
 }));
 vi.mock("@/contexts/ProjectContext", () => ({ useProject: () => ({ selectedProjectId: mocks.state.projectId }) }));
+vi.mock("@/lib/mergedListingWorkflow", () => ({ get MERGED_LISTING_WORKFLOW_ENABLED() { return mocks.state.merged; } }));
+vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: mocks.state.user, error: null }) }));
 vi.mock("@/components/ProjectSelector", () => ({ default: () => null }));
 vi.mock("@/pages/listing/CompetitorAnalysisSummaryEditor", () => ({ CompetitorAnalysisSummaryEditor: () => null }));
 vi.mock("sonner", () => ({ toast: { success: mocks.success, info: mocks.info, error: mocks.error } }));
@@ -59,6 +62,9 @@ beforeEach(() => {
   mocks.state.otherProjectJobs = [];
   mocks.state.projectId = 1;
   mocks.state.queryError = null;
+  mocks.state.merged = false;
+  mocks.state.user = { id: 7, role: "ops_specialist", defaultWorkspaceId: 3 };
+  mocks.capture.mockReset().mockResolvedValue({ status: "collected" });
   mocks.start.mockReset().mockResolvedValue(queuedJob);
   mocks.previewSellerSprite.mockReset().mockResolvedValue({ success: true, products: [{ asin: "B000000001" }, { asin: "B000000002" }] });
   mocks.previewReviews.mockReset().mockResolvedValue({ totalRows: 2, parsedRows: 2, skippedRows: 0, columns: ["ASIN"], detectedFormat: "CSV", detectedAsins: ["B000000001"], previewReviews: [] });
@@ -73,6 +79,35 @@ async function upload(container: HTMLElement, mode: "卖家精灵" | "评论导�
 }
 
 describe("AnalysisPage durable import submission", () => {
+  it("uses saved-source capture mode with explicit workspace instead of requiring upload", async () => {
+    mocks.state.merged = true;
+    render(<AnalysisPage />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "B012345678" } });
+    fireEvent.click(screen.getByRole("button", { name: "采集并保存竞品资料" }));
+    await waitFor(() => expect(mocks.capture).toHaveBeenCalledWith({ projectId: 1, asin: "B012345678", captureOnly: true, expectedWorkspaceId: 3 }));
+    await waitFor(() => expect(mocks.success).toHaveBeenCalledWith("竞品资料已保存，待选择分析", expect.any(Object)));
+    expect(screen.getByRole("link", { name: "选择已保存竞品并生成分析" })).toBeInTheDocument();
+    expect(mocks.start).not.toHaveBeenCalled();
+  });
+  it("ignores a late capture response after workspace changed", async () => {
+    mocks.state.merged = true;
+    let finish!: (value: unknown) => void;
+    mocks.capture.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const view = render(<AnalysisPage />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "B012345678" } });
+    fireEvent.click(screen.getByRole("button", { name: "采集并保存竞品资料" }));
+    await waitFor(() => expect(mocks.capture).toHaveBeenCalledOnce());
+    mocks.state.user = { ...mocks.state.user, defaultWorkspaceId: 4 }; view.rerender(<AnalysisPage />);
+    finish({ status: "collected" });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(mocks.success).not.toHaveBeenCalled(); expect(mocks.invalidateAnalyses).not.toHaveBeenCalled();
+  });
+  it("does not silently fall back from an unavailable workspace", () => {
+    mocks.state.merged = true; mocks.state.user.defaultWorkspaceId = null;
+    render(<AnalysisPage />);
+    expect(screen.getByText("请登录有效工作区后选择竞品资料。")).toBeInTheDocument();
+    expect(mocks.capture).not.toHaveBeenCalled();
+  });
   it("queues once, releases submission loading, and retains only failed SellerSprite rows for manual retry", async () => {
     let resolveSubmit!: (value: unknown) => void;
     mocks.start.mockImplementationOnce(() => new Promise(resolve => { resolveSubmit = resolve; }));

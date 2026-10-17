@@ -46,6 +46,8 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { MERGED_LISTING_WORKFLOW_ENABLED } from "@/lib/mergedListingWorkflow";
 import ListingStages from "./listing/ListingStages";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { competitorAcquisitionStatus } from "./listing/competitorAcquisitionStatus";
 
 type BatchItemStatus = "pending" | "scraping" | "analyzing" | "done" | "failed";
 
@@ -78,18 +80,27 @@ interface FilePreview {
 
 export default function AnalysisPage() {
   const { selectedProjectId } = useProject();
+  if (MERGED_LISTING_WORKFLOW_ENABLED) return <SelectedProjectAnalysisPage selectedProjectId={selectedProjectId} />;
   // Uploads and their pending callbacks belong to one project. Remounting the
   // form prevents both stale UI locks and late responses from leaking to another.
   return <ProjectAnalysisPage key={selectedProjectId ?? "no-project"} selectedProjectId={selectedProjectId} />;
 }
 
-function ProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number | null }) {
+function SelectedProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number | null }) {
+  const { user, error } = useAuth();
+  if (!user || error || !Number.isSafeInteger(user.defaultWorkspaceId) || Number(user.defaultWorkspaceId) <= 0) return <p>请登录有效工作区后选择竞品资料。</p>;
+  return <ProjectAnalysisPage key={`${user.id}:${user.role}:${user.defaultWorkspaceId}:${selectedProjectId}`} selectedProjectId={selectedProjectId} captureWorkspaceId={user.defaultWorkspaceId!} />;
+}
+
+function ProjectAnalysisPage({ selectedProjectId, captureWorkspaceId }: { selectedProjectId: number | null; captureWorkspaceId?: number }) {
   const [asinInput, setAsinInput] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const abortRef = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; abortRef.current = true; }; }, []);
 
   // Input mode state
   const [inputMode, setInputMode] = useState<InputMode>("auto");
@@ -621,17 +632,20 @@ function ProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number 
         const result = await analyzeAsin.mutateAsync({
           projectId: selectedProjectId,
           asin: items[i].asin,
+          ...(captureWorkspaceId ? { captureOnly: true, expectedWorkspaceId: captureWorkspaceId } : {}),
         });
-
+        if (!alive.current || abortRef.current) break;
+        const outcome = competitorAcquisitionStatus(result.status, Boolean(captureWorkspaceId));
         setBatchItems(prev => prev.map((item, idx) =>
           idx === i ? {
             ...item,
-            status: "done",
-            title: result.reviewRequired ? "采集任务已创建，等待人工审核" : "已复用确认快照，AI分析已排队",
+            status: outcome.failed ? "failed" : "done",
+            title: outcome.title,
           } : item
         ));
-        successCount++;
+        if (outcome.failed) failCount++; else successCount++;
       } catch (error: any) {
+        if (!alive.current) return;
         setBatchItems(prev => prev.map((item, idx) =>
           idx === i ? {
             ...item,
@@ -648,6 +662,7 @@ function ProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number 
       }
     }
 
+    if (!alive.current) return;
     setIsProcessing(false);
     utils.analysis.listByProject.invalidate({ projectId: selectedProjectId! });
 
@@ -655,7 +670,7 @@ function ProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number 
       toast.info("批量分析已取消");
     } else {
       toast.success(`批量采集任务已创建`, {
-        description: `已受理 ${successCount} 个，失败 ${failCount} 个，共 ${items.length} 个ASIN；请到采集任务中心审核Snapshot`,
+        description: `已受理 ${successCount} 个，失败 ${failCount} 个，共 ${items.length} 个ASIN；请到采集任务中心查看安全入库进度`,
       });
       if (failedAsins.length > 0) {
         toast.info("部分采集任务创建失败", {
@@ -666,7 +681,7 @@ function ProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number 
     }
 
     setAsinInput("");
-  }, [selectedProjectId, uniqueAsins, analyzeAsin, utils]);
+  }, [selectedProjectId, uniqueAsins, analyzeAsin, utils, captureWorkspaceId]);
 
   // Single ASIN analysis
   const handleSingleAnalyze = useCallback(async () => {
@@ -688,22 +703,22 @@ function ProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number 
     const asin = uniqueAsins[0];
     setBatchItems([{ asin, status: "scraping" }]);
     setIsProcessing(true);
+    abortRef.current = false;
 
     try {
       const result = await analyzeAsin.mutateAsync({
         projectId: selectedProjectId,
         asin,
+        ...(captureWorkspaceId ? { captureOnly: true, expectedWorkspaceId: captureWorkspaceId } : {}),
       });
-
-      setBatchItems([{ asin, status: "done", title: result.reviewRequired ? "采集任务已创建，等待人工审核" : "已复用确认快照，AI分析已排队" }]);
+      if (!alive.current || abortRef.current) return;
+      const outcome = competitorAcquisitionStatus(result.status, Boolean(captureWorkspaceId));
+      setBatchItems([{ asin, status: outcome.failed ? "failed" : "done", title: outcome.title }]);
       utils.analysis.listByProject.invalidate({ projectId: selectedProjectId! });
-      toast.success(result.reviewRequired ? "受控采集任务已创建" : "已开始竞品AI分析", {
-        description: result.reviewRequired
-          ? `请到采集任务中心审核 ${asin} 的Snapshot，确认后才会运行AI分析`
-          : `已复用已确认Snapshot，不需要重复采集`,
-      });
+      (outcome.failed ? toast.error : toast.success)(outcome.title, { description: outcome.description });
       setAsinInput("");
     } catch (error: any) {
+      if (!alive.current) return;
       setBatchItems([{ asin, status: "failed", error: error.message }]);
       toast.error("采集任务创建失败", {
         description: "请检查Provider配置、预算或ASIN格式；系统不会自动回退旧爬虫。也可使用手工或文件导入模式。",
@@ -713,7 +728,7 @@ function ProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number 
     } finally {
       setIsProcessing(false);
     }
-  }, [selectedProjectId, uniqueAsins, analyzeAsin, utils, handleBatchAnalyze]);
+  }, [selectedProjectId, uniqueAsins, analyzeAsin, utils, handleBatchAnalyze, captureWorkspaceId]);
 
   const handleCancel = () => {
     abortRef.current = true;
@@ -755,7 +770,7 @@ function ProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number 
         <div>
           <h1 className="text-2xl font-bold tracking-tight">竞品分析</h1>
           <p className="text-muted-foreground mt-1">
-            输入竞品ASIN创建受控采集任务，人工确认Snapshot后再进行AI深度分析
+            {captureWorkspaceId ? "采集或选择已保存的竞品资料，再选择生成分析；评论与卖家精灵上传是补充入口" : "输入竞品 ASIN 创建受控采集任务，安全入库后查看分析任务进度"}
           </p>
         </div>
         <ProjectSelector />
@@ -819,7 +834,7 @@ function ProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number 
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Globe className="h-4 w-4" />
-                      自动爬取分析
+                      {captureWorkspaceId ? "采集竞品资料" : "自动爬取分析"}
                     </CardTitle>
                     <Button
                       variant="ghost"
@@ -835,7 +850,7 @@ function ProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number 
                   <CardDescription>
                     {isBatchMode
                       ? "输入多个ASIN码（每行一个，或用逗号/空格分隔），最多20个。"
-                      : "输入ASIN码，工具将自动从亚马逊爬取产品数据并进行AI深度分析。"
+                      : captureWorkspaceId ? "输入 ASIN 采集原始资料，安全保存后到竞品信息页选择分析；采集不会自动调用分析模型。" : "输入 ASIN 创建采集任务，安全入库后再排队分析。"
                     }
                   </CardDescription>
                 </CardHeader>
@@ -945,16 +960,17 @@ function ProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number 
                     ) : (
                       <>
                         <Zap className="h-4 w-4 mr-2" />
-                        {uniqueAsins.length > 1
-                          ? `批量采集 & 审核后分析 (${uniqueAsins.length}个)`
-                          : "受控采集 & 审核后分析"
+                        {captureWorkspaceId ? `采集并保存竞品资料${uniqueAsins.length > 1 ? ` (${uniqueAsins.length}个)` : ""}` : uniqueAsins.length > 1
+                          ? `批量采集并分析 (${uniqueAsins.length}个)`
+                          : "受控采集并分析"
                         }
                       </>
                     )}
                   </Button>
+                  {captureWorkspaceId && <Button asChild variant="outline"><a href="/listing/comparison">选择已保存竞品并生成分析</a></Button>}
 
                   <div className="pt-2 space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">受控采集并待人工确认的内容：</p>
+                    <p className="text-xs font-medium text-muted-foreground">采集可用字段与后续分析能力（以实际返回为准）：</p>
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         { icon: Package, label: "产品标题" },

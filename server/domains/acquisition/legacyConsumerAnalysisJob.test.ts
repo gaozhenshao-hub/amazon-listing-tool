@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   startRegisteredAiJob: vi.fn(),
   registerAiJobHandler: vi.fn(),
   startLegacyConsumerAgentRun: vi.fn(),
+  assertWritable: vi.fn(), skill: vi.fn(), snapshot: vi.fn(), requireDb: vi.fn(),
 }));
 
 vi.mock("../../services/aiJobRunner", () => ({
@@ -16,14 +17,16 @@ vi.mock("./legacyConsumerAgent", () => ({
   startLegacyConsumerAgentRun: mocks.startLegacyConsumerAgentRun,
   markLegacyConsumerAgentRunning: vi.fn(),
   markLegacyConsumerAgentWaitingHuman: vi.fn(),
-  markLegacyConsumerAgentFailed: vi.fn(),
+  markLegacyConsumerAgentFailed: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock("../ai_os/services/skillRunner", () => ({ runEmperorSkill: vi.fn(), safeParseSkillJSON: vi.fn() }));
+vi.mock("../ai_os/services/skillRunner", () => ({ runEmperorSkill: mocks.skill, safeParseSkillJSON: vi.fn() }));
 vi.mock("../ai_os/services/businessArtifactRegistry", () => ({ registerCompetitorAnalysisArtifact: vi.fn() }));
-vi.mock("../../repositories", () => ({ upsertCompetitorAnalysis: vi.fn() }));
-vi.mock("../../repositories/dbClient", () => ({ requireDb: vi.fn() }));
+vi.mock("../../repositories", () => ({ upsertCompetitorAnalysis: vi.fn(), assertLegacyCompetitorAcquisitionWritable: mocks.assertWritable }));
+vi.mock("../../repositories/dbClient", () => ({ requireDb: mocks.requireDb, getDb: vi.fn() }));
+vi.mock("./legacyConsumerProjection", () => ({ loadConfirmedSnapshotForConsumer: mocks.snapshot }));
 
 import { startLegacyConsumerAnalysisJob } from "./legacyConsumerAnalysisJob";
+const handler = mocks.registerAiJobHandler.mock.calls[0][0].handler;
 
 describe("legacy confirmed snapshot analysis job", () => {
   beforeEach(() => {
@@ -56,5 +59,19 @@ describe("legacy confirmed snapshot analysis job", () => {
     });
     expect(result).toBeNull();
     expect(mocks.startRegisteredAiJob).not.toHaveBeenCalled();
+  });
+  it("refuses automatic AI for a captured competitor even if called directly", async () => {
+    expect(await startLegacyConsumerAnalysisJob({ consumerType: "project_competitor", projectId: 21, workspaceId: 4, userId: 7,
+      asin: "B012345678", confirmedSnapshotId: 9, captureOnly: true, analysisId: 20 })).toBeNull();
+    expect(mocks.startRegisteredAiJob).not.toHaveBeenCalled(); expect(mocks.startLegacyConsumerAgentRun).not.toHaveBeenCalled();
+  });
+  it("checks a previously queued job before spending on a model", async () => {
+    mocks.requireDb.mockResolvedValue({});
+    mocks.snapshot.mockResolvedValue({ confirmed: { asin: "B012345678" }, data: { asin: "B012345678", title: "Saved", bulletPoints: [], reviewCount: null } });
+    mocks.assertWritable.mockRejectedValueOnce(new Error("COMPETITOR_LEGACY_CAPTURE_PROTECTED"));
+    await expect(handler({ runId: "old-job", attempt: 1, maxAttempts: 2, input: { consumerType: "project_competitor", businessId: 21, workspaceId: 4,
+      userId: 7, asin: "B012345678", confirmedSnapshotId: 9, agentRunId: "agent-1", agentNodeId: "analysis" } })).rejects.toThrow("COMPETITOR_LEGACY_CAPTURE_PROTECTED");
+    expect(mocks.assertWritable).toHaveBeenCalledWith(21, "B012345678", { userId: 7, workspaceId: 4, rejectCapturedSource: true });
+    expect(mocks.skill).not.toHaveBeenCalled();
   });
 });

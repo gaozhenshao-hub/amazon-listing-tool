@@ -1,0 +1,68 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-selected-competitor-capture",
+  "baseline": "14efaff80a5019e269e91ad755778a2b92f375a4",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "listingSkills": "user-primary",
+    "listingWorkflow": "friend-primary",
+    "inputs": "select saved authorized competitor/profile data and generate; uploads supplemental",
+    "p5GeneralSkills": "Qingdao-primary",
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary"
+  },
+  "changes": [
+    "New opt-in capture-v1 consumer reference persists selected-generation mode independently of legacy automatic analysis. Existing default-off merged Listing flag controls the entry; this is not production enablement.",
+    "Capture is projected inside the same required real transaction as snapshot admission/cache activation and consumer links. Active actor, exact workspace, strict project.update without owner shortcut, actual parent owner, current system-confirmed snapshot, semantic original snapshot and approved same-snapshot image storage refs are checked under locks.",
+    "Dedicated capture write avoids generic AI upsert: source columns and namespaced capture identity change, historical raw analysis/reviews, edited summary and confirmation/version fields remain. Changed source is explicitly captureOnly/stale; same source replay after analysis is a no-op. Duplicate rows, older or changed same-ID snapshots, invalid/oversized content, warning/zero writes and failed readback refuse.",
+    "Legacy queued analysis checks the capture fence before model dispatch and again under parent/competitor locks at commit. An already-dispatched call cannot be retroactively canceled, but its result cannot overwrite captured data.",
+    "Cache capture identity includes confirmed snapshot ID. Repeated capture cache requests reauthorize/reproject inside a transaction without another provider/model job. Legacy non-capture cache/KB flows remain.",
+    "Single/batch UI sends explicit current workspace only in the new selected mode, remounts on actor/role/workspace/project change, ignores late capture responses and distinguishes pending, collected, queue failure and unknown analysis states. Upload imports remain supplemental and their existing tests remain."
+  ],
+  "review": {
+    "root": "Inspected actual current and fixed friend call chains, then reviewed source/auth/transaction/history boundaries and tested changed behavior. Subagent read-only analysis identified the original capture/automatic-analysis gap and unsafe generic upsert; implementation delegation subsequently failed on usage limits, so no independent post-implementation sign-off is claimed.",
+    "previousProtectionRecords": [
+      {
+        "path": "client/src/pages/AnalysisPage.importJobs.test.tsx",
+        "previousReviewed": null
+      },
+      {
+        "path": "client/src/pages/AnalysisPage.tsx",
+        "previousReviewed": {
+          "gitBlobSha1": "8bd48eed438b12395ac074c169e51bc6dbefe980",
+          "sha256": "7128e5cb87589933e28eeccd808d04b08330982fce63410c239e5e1d13029fb1",
+          "reviewRef": "config/integration/reviews/20261016-listing-profile-workflow.json"
+        }
+      },
+      {
+        "path": "server/routers/analysis.ts",
+        "previousReviewed": {
+          "gitBlobSha1": "4fa231543e50fcea5d26d0412363ec0ec6db4481",
+          "sha256": "918ec23fd98c0dfa503c0173283033a53ad46afece2815f0ac6e0114db4f0bf8",
+          "reviewRef": "config/integration/reviews/20261016-competitor-review-corpus.json"
+        }
+      }
+    ],
+    "baselineFieldsUnchanged": true,
+    "baselineTupleSha256": "b5a228f5b51180bc6f903384d146997cda316f77da807e7abcb20ce7b4faee40"
+  },
+  "verification": {
+    "reference": "See parent-workspace outputs/amazon-system-accelerated-competitor-capture-batch-20261017-r1.json for actual final receipts.",
+    "realDatabase": false,
+    "realBrowser": false,
+    "paidModelCalls": 0
+  },
+  "defaults": {
+    "newSchema": false,
+    "workflowFlag": "unchanged off by default",
+    "productionDeployed": false,
+    "rollback": "Revert the isolated local source batch; no production data or migration changed."
+  },
+  "remaining": [
+    "Offline SQL-executor fixtures do not prove actual MySQL locks, transaction rollback, cache activation concurrency, real image storage or browser/worker behavior. Full no-upload runtime integration and controlled enablement remain.",
+    "Acquisition v1 persisted contentHash was based on pre-MySQL insertion-order JSON. It is bound, not falsely recomputed from reordered JSON. New capture sourceHash is canonical and binds actual normalized fields/assets; raw provider bytes are not downloaded/revalidated in this batch.",
+    "Current approved source fields/images are saved, not new page reviews/questions/subtitle research. Friend four-section deep research, image OCR evidence, independent long-lived raw corpus and per-stage checkpoints remain; existing user Skills and seven-direction review contracts were not modified.",
+    "Generic legacy acquisition request preflight and all earlier report/auth APIs are not globally remediated by this projection-specific update-policy guard. Production worker versions/queues must be coordinated at release; already-dispatched legacy model calls may finish but are fenced at commit in this version.",
+    "Native303 remains unapproved; native/0230 and all original P0-P6 gates remain. Actual user/Qingdao released Skill snapshots are not newly pinned. No public push, production deployment, DB migration, scheduler, VM or paid calls occurred."
+  ]
+}

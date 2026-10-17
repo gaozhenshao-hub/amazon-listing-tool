@@ -149,5 +149,5 @@ export async function confirmSnapshotForDirectIngestion(input: {
       projection,
       directIngestion: true as const,
     };
-  });
+  }, { required: true });
 }

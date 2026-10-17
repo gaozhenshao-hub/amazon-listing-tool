@@ -228,6 +228,11 @@
       "baseline": {
         "gitBlobSha1": "18a863fc0ce8f2b14b6670e6310f7f6eb578354a",
         "sha256": "30f9285172fc22f2050263f2a9bbd81e215c03807c1f77933bbd546e2409a785"
+      },
+      "reviewed": {
+        "gitBlobSha1": "3dcb3576f23da7662aa2366396ec9c83e8af4612",
+        "sha256": "62365d82836c089da2e67cf82a9ead834e1b7ab4a450bb7c8d4c259fe520b7d5",
+        "reviewRef": "config/integration/reviews/20261017-competitor-capture-selection.json"
       }
     },
     {
@@ -241,9 +246,9 @@
         "sha256": "7213602df42b78b5a62621e7080992ef94d122a7b3b81ee4cbf34df187b1fe78"
       },
       "reviewed": {
-        "gitBlobSha1": "8bd48eed438b12395ac074c169e51bc6dbefe980",
-        "sha256": "7128e5cb87589933e28eeccd808d04b08330982fce63410c239e5e1d13029fb1",
-        "reviewRef": "config/integration/reviews/20261016-listing-profile-workflow.json"
+        "gitBlobSha1": "68750899f99a05f82f8e6e6aebae1f2f412a3f47",
+        "sha256": "12e0ec62af006f93faf361855fa9e3b29df99c17d4b7fcab1db28ff5fb02fe05",
+        "reviewRef": "config/integration/reviews/20261017-competitor-capture-selection.json"
       }
     },
     {
@@ -1118,9 +1123,9 @@
         "sha256": "dfc27c614e4c74c026b4efe7c9a1ce3ee073dc0dd12b190b4131dd7001aa6f56"
       },
       "reviewed": {
-        "gitBlobSha1": "4fa231543e50fcea5d26d0412363ec0ec6db4481",
-        "sha256": "918ec23fd98c0dfa503c0173283033a53ad46afece2815f0ac6e0114db4f0bf8",
-        "reviewRef": "config/integration/reviews/20261016-competitor-review-corpus.json"
+        "gitBlobSha1": "454a55f6143a3c9dded909cedbb6db1b7d39c17a",
+        "sha256": "d05ef36635dbddaf0b6ac2571699924593fc908679f2a68da71e65d43256e06a",
+        "reviewRef": "config/integration/reviews/20261017-competitor-capture-selection.json"
       }
     },
     {

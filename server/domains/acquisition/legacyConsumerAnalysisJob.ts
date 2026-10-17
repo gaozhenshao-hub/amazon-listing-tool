@@ -156,6 +156,8 @@ async function executeLegacyConsumerAnalysis(job: AiJobSnapshot) {
       ));
       output = { consumerType: input.consumerType, recordId: input.businessId, analysis };
     } else {
+      await projectDb.assertLegacyCompetitorAcquisitionWritable(input.businessId, input.asin,
+        { userId: input.userId, workspaceId: input.workspaceId, rejectCapturedSource: true });
       const analysis = await runProjectCompetitorAnalysis(input, context);
       const gallery = snapshot.assets
         .filter((asset: any) => asset.role === "main" || asset.role === "secondary")
@@ -182,7 +184,7 @@ async function executeLegacyConsumerAnalysis(job: AiJobSnapshot) {
         aiSummary: summary,
         summary,
         summaryStatus: "draft",
-      });
+      }, { userId: input.userId, workspaceId: input.workspaceId, rejectCapturedSource: true });
       await registerCompetitorAnalysisArtifact(saved.id, "ai_output");
       output = { consumerType: input.consumerType, projectId: input.businessId, analysisId: saved.id, analysis };
     }
@@ -210,6 +212,7 @@ async function executeLegacyConsumerAnalysis(job: AiJobSnapshot) {
 
 export async function startLegacyConsumerAnalysisJob(projection: LegacyConsumerProjection) {
   if (projection.consumerType === "conversion_collector") return null;
+  if (projection.consumerType === "project_competitor" && projection.captureOnly) return null;
   const consumerType: LegacyAnalysisConsumerType = projection.consumerType;
   const businessId = projection.consumerType === "project_competitor"
     ? projection.projectId

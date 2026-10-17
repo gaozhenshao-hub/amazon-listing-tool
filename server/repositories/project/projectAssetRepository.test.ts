@@ -9,10 +9,29 @@ vi.mock("../dbClient", () => ({ getDb: dbMock.getDb }));
 import {
   createCompetitorAnalysis, deleteCompetitorAnalysis, updateCompetitorAnalysisReviews,
   updateCompetitorAnalysisSummary, upsertCompetitorAnalysis,
+  assertLegacyCompetitorAcquisitionWritable,
 } from "./projectAssetRepository";
 import { competitorRevision } from "./competitorWritePolicy";
 
 const now = new Date("2026-10-16T00:00:00.000Z");
+describe("late legacy automatic acquisition results", () => {
+  it("cannot overwrite a capture-only source even with a completed model result", async () => {
+    const initial = row({ rawData: JSON.stringify({ acquisitionCapture: { version: 1 }, captureOnly: true }) });
+    const f = database([initial]); dbMock.getDb.mockResolvedValue(f.db);
+    await expect(upsertCompetitorAnalysis({ projectId: 1, asin: initial.asin, title: "late old title", summary: "late AI" },
+      { userId: 7, workspaceId: 9, rejectCapturedSource: true })).rejects.toThrow("COMPETITOR_LEGACY_CAPTURE_PROTECTED");
+    expect(f.rows()).toEqual([initial]);
+    expect(f.events.some(event => event.type === "update")).toBe(false);
+    await expect(assertLegacyCompetitorAcquisitionWritable(1, initial.asin,
+      { userId: 7, workspaceId: 9, rejectCapturedSource: true })).rejects.toThrow("COMPETITOR_LEGACY_CAPTURE_PROTECTED");
+  });
+  it("rechecks the old job's owner and exact workspace under the parent lock", async () => {
+    const f = database([row()], [1], { userId: 8, workspaceId: 9 }); dbMock.getDb.mockResolvedValue(f.db);
+    await expect(upsertCompetitorAnalysis({ projectId: 1, asin: "B000000001" },
+      { userId: 7, workspaceId: 9, rejectCapturedSource: true })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(f.events.some(event => event.type === "update")).toBe(false);
+  });
+});
 function row(overrides: Partial<CompetitorAnalysis> = {}): CompetitorAnalysis {
   return {
     id: 10, projectId: 1, asin: "B000000001", title: "Current title", bulletPoints: null,

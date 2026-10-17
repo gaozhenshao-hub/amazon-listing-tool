@@ -41,6 +41,7 @@ import { triggerConsumerPostConfirmation } from "./postConfirmation";
 import { confirmSnapshotForDirectIngestion } from "./snapshotReview";
 import { uncoveredCapabilitySummary } from "./capabilityCoverage";
 import { isApiConnectionSecretConfigured } from "../apiConnections/service";
+import { parseLegacySnapshotConsumerRef } from "./legacyConsumerContracts";
 
 export const AcquisitionJobRequestSchema = z.object({
   workspaceId: z.number().int().positive(),
@@ -113,6 +114,8 @@ function providerRequestHash(input: unknown) {
 
 export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest) {
   const input = AcquisitionJobRequestSchema.parse(rawInput);
+  const target = input.consumerType === "project_competitor" ? parseLegacySnapshotConsumerRef("project_competitor", input.consumerRef) : null;
+  const captureOnly = target?.type === "project_competitor" && target.captureOnly === true;
   const db = await requireDb("Amazon acquisition job");
   const configuredProfile = await getApifyProviderProfile(db, input.workspaceId);
   // Cache-only requests do not need a Provider profile or secret: a retained
@@ -130,11 +133,14 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
       requestedCapabilities: input.capabilities,
     });
     if (cached?.complete) {
-      const idempotencyKey = buildAcquisitionIdempotencyKey({ ...input, cachePolicy: "confirmed_cache" });
+      const idempotencyKey = buildAcquisitionIdempotencyKey({ ...input, cachePolicy: captureOnly ? `confirmed_cache:${cached.snapshot.id}` : "confirmed_cache" });
       const existing = await findAcquisitionJobByIdempotency(db, input.workspaceId, idempotencyKey);
-      if (existing) return { jobId: existing.id, status: existing.status, cacheHitSnapshotId: existing.cacheHitSnapshotId, aiJobRunId: null };
+      if (existing && !captureOnly) return { jobId: existing.id, status: existing.status, cacheHitSnapshotId: existing.cacheHitSnapshotId, aiJobRunId: null };
+      if (existing && (existing.status !== "confirmed" || existing.requestedBy !== input.requestedBy || existing.cacheHitSnapshotId !== cached.snapshot.id)) {
+        throw new Error("COMPETITOR_CAPTURE_CACHE_CHANGED");
+      }
       const reused = await withDbTransaction("Reuse confirmed Amazon acquisition snapshot", async tx => {
-        const jobId = await createAcquisitionJob(tx, {
+        const jobId = existing?.id ?? await createAcquisitionJob(tx, {
           workspaceId: input.workspaceId,
           requestedBy: input.requestedBy,
           providerProfileId: configuredProfile?.id ?? null,
@@ -163,7 +169,7 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
           activatedBy: input.requestedBy,
         });
         return { jobId, status: "confirmed" as const, cacheHitSnapshotId: cached.snapshot.id, aiJobRunId: null, projection };
-      });
+      }, { required: true });
       const postConfirmation = await triggerConsumerPostConfirmation(reused.projection);
       return { ...reused, ...postConfirmation };
     }

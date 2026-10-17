@@ -39,25 +39,34 @@ async function startProjectCompetitorAcquisition(input: {
   workspaceId: number;
   userId: number;
   asin: string;
+  captureOnly?: boolean;
 }) {
   const asin = input.asin.trim().toUpperCase();
   const job = await startAmazonAcquisitionJob({
     workspaceId: input.workspaceId,
     requestedBy: input.userId,
     consumerType: "project_competitor",
-    consumerRef: projectCompetitorConsumerRef(input.projectId, asin),
+    consumerRef: projectCompetitorConsumerRef(input.projectId, asin, input.captureOnly),
     marketplace: "US",
     asin,
     capabilities: [...PROJECT_COMPETITOR_ACQUISITION_CAPABILITIES],
     cachePolicy: "prefer_cache",
     maxChargeUsd: PROJECT_COMPETITOR_MAX_USD,
   });
+  if (["failed", "canceled"].includes(job.status)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "采集任务未成功，请在采集任务中心查看原因" });
+  const analysisJobStatus = "analysisJobStatus" in job ? job.analysisJobStatus : null;
+  const analysisJobRunId = "analysisJobRunId" in job ? job.analysisJobRunId : null;
+  const status = job.status !== "confirmed" ? "direct_ingestion_pending" as const
+    : input.captureOnly ? "collected" as const
+      : analysisJobStatus === "failed_to_queue" ? "analysis_queue_failed" as const
+        : analysisJobRunId ? "analysis_queued" as const : "analysis_status_unknown" as const;
   return {
     asin,
-    status: job.status === "confirmed" ? "analysis_queued" as const : "direct_ingestion_pending" as const,
+    status,
     jobId: job.jobId,
     cacheHitSnapshotId: job.cacheHitSnapshotId,
-    analysisJobRunId: "analysisJobRunId" in job ? job.analysisJobRunId : null,
+    analysisJobRunId,
+    analysisJobStatus,
     directIngestion: true,
     directIngestionPending: job.status !== "confirmed",
     reviewRequired: false,
@@ -253,17 +262,21 @@ export const analysisRouter = router({
       };
     }),
 
-  // Analyze a single competitor ASIN - auto-scrape + LLM analysis
+  // New selected-generation callers explicitly opt into durable capture-only.
   analyzeAsin: protectedProcedure
     .input(z.object({
       projectId: z.number(),
       asin: z.string().min(10).max(10),
+      captureOnly: z.boolean().optional(),
+      expectedWorkspaceId: z.number().int().positive().safe().nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const workspaceId = input.captureOnly ? competitorReviewWorkspace(ctx) : workspaceIdFromContext(ctx);
+      if (input.captureOnly && input.expectedWorkspaceId !== workspaceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "工作区已变化，请重新选择项目" });
+      const project = input.captureOnly ? await db.getProjectById(input.projectId, ctx.user.id, workspaceId) : await db.getProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
-
-      await db.updateProject(input.projectId, ctx.user.id, { status: "analyzing" });
+      if (project.userId !== ctx.user.id || (input.captureOnly && project.workspaceId !== workspaceId)) throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
+      if (!input.captureOnly) await db.updateProject(input.projectId, ctx.user.id, { status: "analyzing" });
 
       if (!project.workspaceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "项目尚未绑定工作空间" });
       return startProjectCompetitorAcquisition({
@@ -271,6 +284,7 @@ export const analysisRouter = router({
         workspaceId: project.workspaceId,
         userId: ctx.user.id,
         asin: input.asin,
+        captureOnly: input.captureOnly,
       });
     }),
 
@@ -279,20 +293,24 @@ export const analysisRouter = router({
     .input(z.object({
       projectId: z.number(),
       asins: z.array(z.string().min(10).max(10)).min(1).max(20),
+      captureOnly: z.boolean().optional(),
+      expectedWorkspaceId: z.number().int().positive().safe().nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const workspaceId = input.captureOnly ? competitorReviewWorkspace(ctx) : workspaceIdFromContext(ctx);
+      if (input.captureOnly && input.expectedWorkspaceId !== workspaceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "工作区已变化，请重新选择项目" });
+      const project = input.captureOnly ? await db.getProjectById(input.projectId, ctx.user.id, workspaceId) : await db.getProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
-
-      await db.updateProject(input.projectId, ctx.user.id, { status: "analyzing" });
+      if (project.userId !== ctx.user.id || (input.captureOnly && project.workspaceId !== workspaceId)) throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
+      if (!input.captureOnly) await db.updateProject(input.projectId, ctx.user.id, { status: "analyzing" });
 
       // Deduplicate ASINs
-      const uniqueAsins = Array.from(new Set(input.asins));
+      const uniqueAsins = Array.from(new Set(input.asins.map(asin => asin.trim().toUpperCase())));
 
       if (!project.workspaceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "项目尚未绑定工作空间" });
       const results: Array<{
         asin: string;
-        status: "analysis_queued" | "direct_ingestion_pending" | "failed";
+        status: "collected" | "analysis_queued" | "direct_ingestion_pending" | "analysis_queue_failed" | "analysis_status_unknown" | "failed";
         jobId?: number;
         directIngestionPending?: boolean;
         error?: string;
@@ -306,6 +324,7 @@ export const analysisRouter = router({
             asin,
             userId: ctx.user.id,
             workspaceId: project.workspaceId,
+            captureOnly: input.captureOnly,
           });
           results.push(result);
         } catch (error: any) {
@@ -319,9 +338,9 @@ export const analysisRouter = router({
 
       }
 
-      const successCount = results.filter(r => r.status === "analysis_queued").length;
-      const partialCount = results.filter(r => r.status === "direct_ingestion_pending").length;
-      const failedCount = results.filter(r => r.status === "failed").length;
+      const successCount = results.filter(r => r.status === "analysis_queued" || r.status === "collected").length;
+      const partialCount = results.filter(r => r.status === "direct_ingestion_pending" || r.status === "analysis_status_unknown").length;
+      const failedCount = results.filter(r => r.status === "failed" || r.status === "analysis_queue_failed").length;
 
       return {
         total: uniqueAsins.length,
