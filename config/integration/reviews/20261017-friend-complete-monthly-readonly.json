@@ -1,0 +1,126 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "friend-complete-monthly-financial-readonly",
+  "baseline": "aa6275e976b5acfea3f4628d7734f2c6d3993eaf",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary",
+    "generalP5Skills": "Qingdao-primary",
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSelection": "friend-primary; upload supplemental"
+  },
+  "changes": [
+    "Register monthlyFinancialRead.listBatches/getBatch/getEffectiveSnapshot and mount the full read-only monthly view in the authenticated operations overview. Keep the old manual profit ledger, pure in-memory file preview and complete cost reader independent.",
+    "Preserve all19 normalized stored metrics, nested raw JSON/original signed fees, explicit currency evidence, source batch id/row index, all expense components including FBA/FBM sales and seven advertising types, promotion LD/coupon/Vine, ratio numerators/denominators, weighted averages and organic sales. No inference of USD from site/file name.",
+    "Group by month/store/canonical site/currency and parent/child identity. Keep reported parent rows separate from derived child totals and keep unallocated or ambiguous rows separate. Unknown currency rows do not silently aggregate across sources. Existing normalized metrics are not rewritten.",
+    "True keyset batch history includes previewing/completed/deleted and is not a fixed latest100 list. Detail pages retain original row indexes and exact authorized counts. Effective snapshot chooses newest completed full month/store/site before parent or uploader filters, never backfills missing parents from older versions, and does not claim coverage verification.",
+    "Strict transactional active actor/role/workspace and ops_data.read enforcement. Manager or uploader can read permitted metadata, but ordinary uploaders still require exact business ownership for rows. Confirmed source-specific userID mappings or explicit assignments replace friend name-only parent allowlist. Other uploaders' rows expose only authorized scope and minimal source metadata, not file name/hash/global counts.",
+    "Bound native/string JSON as whole valid documents (8MiB canonical payload,10000rows,depth16,200000nodes,string32768; transport64MiB; response12MiB). Snapshot scans at most200batches/32MiB and reports incomplete rather than returning a truncated or obsolete result. Missing table, missing batch and corrupt data are distinct. No schema initialization or file fetching.",
+    "DATE_FORMAT projects original DATETIME(3) calendar text with database_datetime_without_timezone, never fabricated UTC. Original uploaded-file hash and Saihu mapped-JSON hash are distinct; fileUrl is neither fetched nor rendered as a download hyperlink.",
+    "Separate UI request lanes with abort/sequence and identity/scope/permission remounts. All22 table columns, complete raw detail and separately paged full-scope aggregates; escaped text, table-only horizontal overflow and manus-no-record marker."
+  ],
+  "review": {
+    "root": "Compared source repository/parser/details and adapter with new wire/query/UI contracts. Corrected missing API subcomponents, ASIN-without-parent allocation and separate reported-parent totals before freeze.",
+    "independent": "Reviewer reproduced Excel total+parts double counting of adOrders/adSales. Corrected per-group total/leaf selection, conflicts return unknown and preserve evidence; all rows aggregate pre-validated per-row results. Independent replay confirmed 10orders/500sales/40cost ->4perorder/8%ACOS, doubled row aggregate preserves4/8%. UI displays aggregationBasis.",
+    "protectedManifestUnchanged": true,
+    "protectedManifestSha256": "23c7665c328f8f1fb367c66e893f81e65014244d1f4d77002076964f72e72d12",
+    "baselineTupleSha256": "b5a228f5b51180bc6f903384d146997cda316f77da807e7abcb20ce7b4faee40"
+  },
+  "verification": {
+    "focusedUnion": {
+      "files": 5,
+      "passed": 419,
+      "session": 23200,
+      "exitCode": 0,
+      "breakdown": {
+        "sharedViaRouter": 177,
+        "router": 29,
+        "repository": 115,
+        "monthlyUi": 61,
+        "overview": 13,
+        "overviewModel": 24
+      }
+    },
+    "initialBeforeFreeze": {
+      "session": 31889,
+      "exitCode": 1,
+      "failed": 2,
+      "explanation": "UI assertions counted nested table cells/rows; corrected to direct children. Initial run overlapped author work. Final frozen suite is authoritative."
+    },
+    "scopedLint": {
+      "files": 12,
+      "session": 39783,
+      "exitCode": 0
+    },
+    "protectedGuard": {
+      "files": 106,
+      "dependencies": 2,
+      "reviewedRecords": 25,
+      "session": 64147,
+      "exitCode": 0
+    },
+    "configuredTypes": {
+      "command": "./node_modules/.bin/tsc --noEmit --incremental false",
+      "session": 60642,
+      "status": "passed-after-source-freeze",
+      "exitCode": 0,
+      "priorRunsStopped": [
+        32720,
+        17349
+      ],
+      "note": "Prior checks overlapped source changes and were explicitly terminated, not counted as success. Existing *.test.ts exclusion unchanged. Final process temporarily waited reading distributedScopedCache.ts; the same original session was observed to finish naturally with exit0. No source replacement or skipped files."
+    },
+    "actualSyntheticBrowser": {
+      "component": "real shared builders and presentation components; no authenticated app or DB",
+      "verified": [
+        "22 top-level columns including19 metrics; literal markup rendered as text,zero img elements",
+        "26 original rows vs25 selected month/store/site rows; true page offset0->5 and original row index5 via keyboard Enter",
+        "history keyset fixtures show all statuses,second page IDs32/31",
+        "scope-limited output hides other uploader fileName/hash/global count and other shop",
+        "new scope winner32 omits old parent,zero matching rows without old backfill",
+        "missing/not_found/invalid remain distinct and never masquerade as zero amounts",
+        "unknown currency distinct from explicitUSD, zero and negative values retained",
+        "total+parts retains adOrders4/adSales40,adCost12 => perorder3/ACOS.3; source paths and aggregationBasis visible",
+        "desktop client1265=document scroll1265;table1231/3200",
+        "narrow client375=document scroll375;table341/3200"
+      ],
+      "desktopScreenshot": "outputs/monthly-readonly-browser-20261017/desktop-final.jpg",
+      "narrowScreenshot": "outputs/monthly-readonly-browser-20261017/mobile-final.jpg",
+      "viewportReset": true,
+      "tabClosed": true,
+      "finalServer": {
+        "session": 25715,
+        "pid": 56849,
+        "explicitlyStopped": true,
+        "exitCode": 143,
+        "observedRequests": 25,
+        "allObservedMethods": "GET"
+      },
+      "initialServer": {
+        "session": 19786,
+        "pid": 56267,
+        "explicitlyStopped": true,
+        "exitCode": 143,
+        "note": "Restarted after source changes because watch/HMR disabled; final verification used fresh process and reload."
+      },
+      "authenticatedApp": false,
+      "database": false
+    },
+    "paidModelCalls": 0,
+    "productionDeployed": false
+  },
+  "remaining": [
+    "Native MySQL SELECT/projection/JSON/transactions/locks/concurrent revocation and actual authorized business-browser requests remain unverified. Offline SQL fixtures and synthetic presentation do not prove those gates.",
+    "0308 remains reserved-only P4; no registration/execution/migration or monthly upload/confirm/replace/revoke write enabled. Completeness approval and replacement/revocation consistency across financial facts, boards and stale AI remain required.",
+    "Source rows previously discarded by old parser (such as skipped spreadsheet subtotal rows) cannot be recovered from saved payload; batch skippedRows and original available raw fields remain explicit. Historical normalization is preserved, not certified as original raw accounting truth.",
+    "Complete inventory shared-stock/valuation/mapping and reconciliation, P5 profit AI/Agent persistent execution and full P0-P6/K01-K10/T01-T28/image62/master27/supplements12 remain in scope. P1 incomplete/native303 unapproved, Listing default-off and exact Skill approval/release gates unchanged."
+  ],
+  "defaults": {
+    "localOnly": true,
+    "newMigration": false,
+    "writeEnabled": false,
+    "fullP1Complete": false,
+    "fullObjectiveComplete": false
+  }
+}

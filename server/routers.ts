@@ -83,6 +83,7 @@ import { taskManagementRouter } from "./routers/taskManagement";
 // Data Import Center
 import { dataImportRouter } from "./routers/dataImport";
 import { productCostsReadOnlyRouter } from "./routers/productCostsReadOnly";
+import { monthlyFinancialReadRouter } from "./routers/monthlyFinancialRead";
 import { lingxingSyncRouter } from "./routers/lingxingSync";
 import { operatorMappingRouter } from "./routers/operatorMapping";
 import { inventoryOwnerAssignmentsRouter } from "./routers/inventoryOwnerAssignments";
@@ -198,6 +199,7 @@ export const appRouter = router({
   // Data Import Center
   dataImport: dataImportRouter,
   productCostsReadOnly: productCostsReadOnlyRouter,
+  monthlyFinancialRead: monthlyFinancialReadRouter,
   lingxingSync: lingxingSyncRouter,
   operatorMapping: operatorMappingRouter,
   inventoryOwnerAssignments: inventoryOwnerAssignmentsRouter,

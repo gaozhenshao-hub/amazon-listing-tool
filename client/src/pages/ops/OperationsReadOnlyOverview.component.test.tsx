@@ -47,6 +47,9 @@ vi.mock("@/lib/trpc", () => ({
 vi.mock("./OperationsCostSheetReadOnly", () => ({
   default: () => <section aria-label="完整成本表入口">完整成本表独立只读入口</section>,
 }));
+vi.mock("./MonthlyFinancialReadOnly", () => ({
+  default: () => <section aria-label="完整月报入口">完整月报独立只读入口</section>,
+}));
 
 const row = (
   changes: Partial<InventoryReadRecord> = {}
@@ -228,12 +231,14 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
         screen.queryByLabelText("选择本地月报文件")
       ).not.toBeInTheDocument();
       expect(screen.queryByLabelText("完整成本表入口")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("完整月报入口")).not.toBeInTheDocument();
     }
   );
   it("calls only two existing query methods with abort signals and refreshes on explicit request", async () => {
     const { unmount } = render(<OperationsReadOnlyOverview />);
     await screen.findByText("接口产品");
     expect(screen.getByLabelText("完整成本表入口")).toBeVisible();
+    expect(screen.getByLabelText("完整月报入口")).toBeVisible();
     expect(controls.inventory).toHaveBeenCalledTimes(1);
     expect(controls.financial).toHaveBeenCalledTimes(1);
     expect(controls.inventory.mock.calls[0][0]).toEqual({ marketplace: "ALL" });
@@ -248,7 +253,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
     unmount();
     expect(secondSignal.aborted).toBe(true);
   });
-  it.each(["user", "workspace"])(
+  it.each(["user", "workspace", "role"])(
     "never displays late prior %s responses after an identity switch",
     async kind => {
       const old = deferred<{ asOfDate: string; rows: InventoryReadRecord[] }>();
@@ -265,10 +270,11 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
         .signal as AbortSignal;
       const priorFileInput = screen.getByLabelText("选择本地月报文件");
       const priorCostEntry = screen.getByLabelText("完整成本表入口");
+      const priorMonthlyEntry = screen.getByLabelText("完整月报入口");
       controls.auth.user = {
         id: kind === "user" ? 2 : 1,
         defaultWorkspaceId: kind === "workspace" ? 20 : 10,
-        role: "ops_specialist",
+        role: kind === "role" ? "ops_manager" : "ops_specialist",
       };
       rerender(<OperationsReadOnlyOverview />);
       expect(oldSignal.aborted).toBe(true);
@@ -276,6 +282,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
         priorFileInput
       );
       expect(screen.getByLabelText("完整成本表入口")).not.toBe(priorCostEntry);
+      expect(screen.getByLabelText("完整月报入口")).not.toBe(priorMonthlyEntry);
       await act(async () => {
         fresh.resolve({
           asOfDate: "2026-10-02",
@@ -300,6 +307,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
     rerender(<OperationsReadOnlyOverview />);
     expect(screen.queryByText("接口产品")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("完整成本表入口")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("完整月报入口")).not.toBeInTheDocument();
     expect(controls.inventory).toHaveBeenCalledTimes(1);
     controls.inventory.mockRejectedValueOnce(new Error("permission revoked"));
     controls.auth.loading = false;
