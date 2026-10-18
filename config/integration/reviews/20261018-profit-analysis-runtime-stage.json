@@ -1,0 +1,42 @@
+{
+  "schema": "amazon-integration-review/v1",
+  "batch": "P5-profit-analysis-evidence-preparation-strict-stage",
+  "baseline": "1ae13c0abbd1bf7ada404398f9fbe2626265f2a7",
+  "previousReview": "config/integration/reviews/20261018-assistant-private-runtime.json",
+  "status": "local_runtime_stage_reviewed_no_business_execution_enabled",
+  "sourcePolicy": "R2 unchanged: profit business Skill must use approved Qingdao source. No friend prompt, generic conversation coach, legacy ops.profit.analysis response, or unverified registry row is substituted.",
+  "protectedFile": {
+    "path": "server/domains/ai_os/services/skillRunner.ts",
+    "control": "K08",
+    "previousGitBlobSha1": "741a1238d7262de4bfdd034becc9626b0fca357d",
+    "reviewedGitBlobSha1": "9eb1551a769311cede1a45897ff3a3a27745585f",
+    "reviewedSha256": "667172d3b87530070601069227cff4c34e5297da7b65539b8e60e7d9d4d903a9"
+  },
+  "acceptedChange": [
+    "Add trusted profit_analysis stage to the strict execution enum. A stage label supplies no permission, source approval, provider configuration or execution entry point.",
+    "Map this stage to fixed ops.profit.private.strict audit source/operation. The strict path keeps metadata-only audit records, excluding financial/prompt/response bodies and credential values.",
+    "Keep route/reply audit source assistant.private.strict and operation ai_os.assistant.private.strict unchanged. Existing conversation service/worker contracts still restrict their own prepared stages.",
+    "No change to full Skill/model pins, current-model verification, registered credentials, spend/context limits, one attempt, no fallback, awaited dispatch fence, private error handling or legacy execution branch."
+  ],
+  "verification": {
+    "focusedStrictRuntimeTests": 91,
+    "independentRelatedRuntimeRegressionTests": 166,
+    "independentFiles": 5,
+    "networkAndDatabase": "mock_only",
+    "independentReview": "No blocking finding in stage/audit diff; current public profit router exposes only readonly preview."
+  },
+  "runtimePrerequisitesNotSatisfied": [
+    "Actual approved Qingdao profit Skill manifest/version and output adapter",
+    "Actual model policy, pricing and permitted spend",
+    "Dedicated persistent job, save CAS, cancellation, unknown-outcome recovery and worker wiring",
+    "Native database and authenticated business workflow acceptance"
+  ],
+  "actualDatabase": false,
+  "actualProvider": false,
+  "modelCalls": 0,
+  "migrationExecuted": false,
+  "runtimeEnabled": false,
+  "pushed": false,
+  "deployed": false,
+  "fullObjectiveComplete": false
+}

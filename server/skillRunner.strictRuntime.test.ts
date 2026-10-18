@@ -67,6 +67,37 @@ describe("strict registered model resolution", () => {
   });
 });
 describe("private strict single-dispatch Skill execution", () => {
+  it.each(["route", "reply", "profit_analysis"] as const)("uses fixed %s audit identity without storing private financial/conversation bodies", async stage => {
+    const request = await input(); request.strictExecution!.stage = stage;
+    await runEmperorSkill(request);
+    const source = stage === "profit_analysis" ? "ops.profit.private.strict" : "assistant.private.strict";
+    const operation = stage === "profit_analysis" ? source : "ai_os.assistant.private.strict";
+    const insertion = sqlCalls().find(q => q.sql.startsWith("INSERT INTO emperor_skill_runs"))!;
+    expect(insertion.params[7]).toBe(source);
+    expect(JSON.parse(insertion.params[9] as string)).toMatchObject({ privateExecution: true, stage });
+    expect(mocks.http.mock.calls[0][1].auditContext).toEqual({ workspaceId: 7, operation });
+    expect(request.strictExecution!.beforeDispatch).toHaveBeenCalledWith(expect.objectContaining({ stage }));
+    expect(mocks.http).toHaveBeenCalledOnce(); expect(mocks.invokeLLM).not.toHaveBeenCalled();
+    for (const secret of ["PRIVATE_SYSTEM", "PRIVATE_TEMPLATE", "PRIVATE_DOCUMENT", "PRIVATE_VARIABLE", "PRIVATE_REPLY", "PRIVATE_SECRET_KEY"]) expect(auditText()).not.toContain(secret);
+  });
+  it.each(["profit", "ops.profit.analysis", "finance.monthly.profit", "", null])("rejects unregistered business stage %s without registry access or dispatch", async stage => {
+    const request = await input(); (request.strictExecution as unknown as { stage: unknown }).stage = stage;
+    mocks.execute.mockClear();
+    await expect(runEmperorSkill(request)).rejects.toMatchObject({ code: "STRICT_RUNTIME_OPTIONS_INVALID" });
+    expect(mocks.execute).not.toHaveBeenCalled(); noCalls();
+  });
+  it.each(["missingPin", "changedModel", "deniedFence", "unknownOutcome", "arbitraryAuditTag"])("profit stage preserves strict admission and single-dispatch behavior: %s", async kind => {
+    const request = await input(); request.strictExecution!.stage = "profit_analysis";
+    if (kind === "missingPin") request.expectedSkillManifestHash = undefined;
+    if (kind === "changedModel") models[0].modelId = "unapproved-model";
+    if (kind === "deniedFence") request.strictExecution!.beforeDispatch = async () => { throw new Error("PRIVATE_FINANCE_TRANSACTION"); };
+    if (kind === "unknownOutcome") mocks.http.mockRejectedValue(new Error("PRIVATE_FINANCE_PROVIDER_BODY"));
+    if (kind === "arbitraryAuditTag") (request.strictExecution as unknown as Record<string, unknown>).operation = "assistant.private.strict";
+    await expect(runEmperorSkill(request)).rejects.toBeInstanceOf(StrictSkillRuntimeError);
+    expect(mocks.http).toHaveBeenCalledTimes(kind === "unknownOutcome" ? 1 : 0);
+    expect(mocks.invokeLLM).not.toHaveBeenCalled(); expect(mocks.rollout).not.toHaveBeenCalled();
+    expect(auditText()).not.toMatch(/PRIVATE_FINANCE|PRIVATE_DOCUMENT|PRIVATE_SECRET_KEY/u);
+  });
   it("awaits the fence after audit preparation and dispatches exactly the registered endpoint/model once", async () => {
     const request = await input(); let release!: () => void;
     request.strictExecution!.beforeDispatch = vi.fn(async receipt => {

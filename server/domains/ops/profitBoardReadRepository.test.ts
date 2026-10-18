@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MySqlDialect } from "drizzle-orm/mysql-core";
 import type { SQL } from "drizzle-orm";
 import type { TrpcContext } from "../../_core/context";
+import type { DbExecutor } from "../../repositories/dbClient";
 import { MONTHLY_FINANCIAL_METRICS } from "../../../shared/monthlyFinancialRead";
 import { normalizeMarketplaceCode } from "../../../shared/marketplaceIdentity";
 import { createProfitBoardReadRepository } from "./profitBoardReadRepository";
@@ -38,7 +39,14 @@ const execute = vi.fn(async (statement: SQL) => {
   throw new Error(`Unexpected query ${query.sql}`);
 });
 const transaction = vi.fn(async <T>(body: (tx: { execute: typeof execute }) => Promise<T>) => { try { const result = await body({ execute }); commits++; return result; } catch (error) { rollbacks++; throw error; } });
-const database = vi.fn(async () => ({ transaction }));
+// Keep generic callback/result correlation across vi.fn's unknown return.
+async function transactionAdapter<T>(body: (tx: DbExecutor) => Promise<T>): Promise<T> {
+  let result: Promise<T> | undefined;
+  await transaction(tx => { result = body(tx); return result; });
+  if (!result) throw new Error("Transaction mock did not execute its callback");
+  return result;
+}
+const database = vi.fn(async () => ({ transaction: transactionAdapter }));
 const repo = createProfitBoardReadRepository({ database });
 function regular() { actors[0].role = "ops_specialist"; return context("ops_specialist"); }
 beforeEach(() => {
@@ -46,6 +54,12 @@ beforeEach(() => {
   failures = {}; candidateOverride = null; detailOverride = null; assignmentOverride = null; mappingOverride = null; afterCandidates = null; queries = []; commits = 0; rollbacks = 0;
 });
 describe("profit board same-transaction fixed six-month source set", () => {
+  it("retains exactly the existing six months after the private selector also supports seven explicit months", async () => {
+    batches = [batch({}, [businessRow({ yearMonth: "2026-03" }), businessRow({ yearMonth: "2026-04" })])];
+    const result = await repo.get(context(), input);
+    expect(result.months).toEqual(["2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"]);
+    expect(result.sources).toHaveLength(6); expect(JSON.stringify(result)).not.toContain('"month":"2026-03"');
+  });
   it("preserves the original profit-specific driver guard after extracting monthly source helpers", async () => {
     execute.mockResolvedValueOnce([[null] as unknown as Row[], []]);
     await expect(repo.get(context(), input)).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: "PROFIT_BOARD_READ_RESPONSE_INVALID" });

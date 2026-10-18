@@ -2,54 +2,13 @@ import { TRPCError } from "@trpc/server";
 import type { TrpcContext } from "../../_core/context";
 import { getDb, type DbExecutor } from "../../repositories/dbClient";
 import { assertResourceAction } from "../../services/securityGovernance";
-import { MonthlyFinancialReadError, parseMonthlyFinancialBatch, monthlyFinancialRowMatchesScope } from "../../../shared/monthlyFinancialRead";
-import { ProfitBoardReadInputSchema, ProfitBoardReadError, profitBoardMonths, buildProfitBoardReadResult, buildProfitBoardReadFailure, type ProfitBoardReadInput, type ProfitBoardMonthSelection } from "../../../shared/profitBoardRead";
-import { MonthlyBoardReadGuardError, SourceTableMissing, InvalidSource, IncompleteScan, positiveId, SCAN_BYTES_MAX, SCAN_BATCHES_MAX, query, noSuchTable, projection, sourceRecord, authorizeMonths, type Row, type Code, type Session } from "./monthlyBoardReadCore";
+import { MonthlyFinancialReadError } from "../../../shared/monthlyFinancialRead";
+import { ProfitBoardReadInputSchema, ProfitBoardReadError, profitBoardMonths, buildProfitBoardReadResult, buildProfitBoardReadFailure, type ProfitBoardReadInput } from "../../../shared/profitBoardRead";
+import { MonthlyBoardReadGuardError, SourceTableMissing, InvalidSource, IncompleteScan, positiveId, query, authorizeMonths, type Code, type Session } from "./monthlyBoardReadCore";
+import { selectMonthlyBoardSnapshots } from "./monthlyBoardSnapshotSelection";
 
 export interface ProfitBoardReadDatabase { transaction?<T>(body: (tx: DbExecutor) => Promise<T>): Promise<T> }
 function fail(message: string, code: Code = "PRECONDITION_FAILED"): never { throw new TRPCError({ code, message }); }
-async function selectMonths(session: Session, input: ProfitBoardReadInput): Promise<ProfitBoardMonthSelection[]> {
-  const selections: ProfitBoardMonthSelection[] = profitBoardMonths(input.month).map(month => ({ month, selection: { selected: null, scannedBatchIds: [], complete: false }, metadataVisibility: session.manager ? "full" : "scoped" }));
-  let candidates: Row[];
-  try {
-    // Fix and lock the candidate identities in one statement. Repeating
-    // locking keyset reads could otherwise admit a newly completed old import
-    // between months, even inside one transaction at READ COMMITTED.
-    candidates = await query(session.tx, `SELECT id,workspaceId,status,
-      OCTET_LENGTH(CAST(payload AS CHAR CHARACTER SET utf8mb4)) AS payloadBytes,
-      OCTET_LENGTH(CAST(months AS CHAR CHARACTER SET utf8mb4)) AS monthsBytes
-      FROM ops_monthly_profit_imports WHERE workspaceId=? AND status='completed' ORDER BY id DESC LIMIT 201 FOR SHARE`, [session.identity.workspaceId]);
-  } catch (error) { if (noSuchTable(error)) throw new SourceTableMissing(); throw error; }
-  if (candidates.length > SCAN_BATCHES_MAX + 1 || candidates.some((row, index) => !positiveId(row.id) || row.workspaceId !== session.identity.workspaceId || row.status !== "completed"
-    || index > 0 && Number(row.id) >= Number(candidates[index - 1].id) || typeof row.payloadBytes !== "number" || !Number.isSafeInteger(row.payloadBytes) || row.payloadBytes < 0
-    || typeof row.monthsBytes !== "number" || !Number.isSafeInteger(row.monthsBytes) || row.monthsBytes < 0)) throw new InvalidSource();
-  let scannedBytes = 0;
-  for (let count = 0; count < Math.min(candidates.length, SCAN_BATCHES_MAX); count++) {
-    const candidate = candidates[count];
-    const remaining = SCAN_BYTES_MAX - scannedBytes;
-    if (remaining <= 0 || Number(candidate.payloadBytes) + Number(candidate.monthsBytes) > remaining) throw new IncompleteScan();
-    let selected: Row[];
-    try {
-      // Never add newly inserted/completed candidates, nor use uploader,
-      // parent or ownership predicates to change a whole-scope winner.
-      selected = await query(session.tx, `SELECT ${projection(remaining)} FROM ops_monthly_profit_imports WHERE workspaceId=? AND id=? LIMIT 2 FOR SHARE`, [session.identity.workspaceId, candidate.id]);
-    } catch (error) { if (noSuchTable(error)) throw new SourceTableMissing(); throw error; }
-    const row = selected[0];
-    if (selected.length !== 1 || row.id !== candidate.id || row.payloadBytes !== candidate.payloadBytes || row.monthsBytes !== candidate.monthsBytes) throw new InvalidSource();
-    const saved = sourceRecord(row, session.identity.workspaceId), parsed = parseMonthlyFinancialBatch(saved);
-    scannedBytes += Number(row.payloadBytes) + Number(row.monthsBytes);
-    for (const item of selections) {
-      if (item.selection.complete) continue;
-      item.selection.scannedBatchIds.push(saved.id);
-      if (parsed.rows.some(source => monthlyFinancialRowMatchesScope(source, { yearMonth: item.month, storeName: input.storeName, country: input.country }))) {
-        item.selection.selected = parsed; item.selection.complete = true;
-      }
-    }
-    if (selections.every(item => item.selection.complete)) return selections;
-  }
-  if (candidates.length <= SCAN_BATCHES_MAX) { for (const item of selections) item.selection.complete = true; return selections; }
-  throw new IncompleteScan();
-}
 function sanitized(error: unknown): never {
   if (error instanceof MonthlyBoardReadGuardError) fail(`PROFIT_BOARD_READ_${error.message}`, error.code as Code);
   if (error instanceof TRPCError && /^PROFIT_BOARD_READ_[A-Z_]+$/u.test(error.message)) throw error;
@@ -75,7 +34,7 @@ export function createProfitBoardReadRepository(dependencies: { database?: () =>
         await permission({ actor: { id: actor.id as number, role: actor.role as string, defaultWorkspaceId: workspaceId }, resource: "ops_data", action: "read", workspaceId, authorizationRead: { executor: tx, strict: true, lock: true } });
         const session: Session = { tx, identity: { userId: actor.id as number, workspaceId }, manager: ["super_admin", "admin", "ops_manager"].includes(actor.role as string) };
         try {
-          const selections = await selectMonths(session, input);
+          const { selections } = await selectMonthlyBoardSnapshots(session, { months: profitBoardMonths(input.month), storeName: input.storeName, country: input.country });
           await authorizeMonths(session, input, selections);
           return buildProfitBoardReadResult({ identity: session.identity, input, selections });
         } catch (error) {

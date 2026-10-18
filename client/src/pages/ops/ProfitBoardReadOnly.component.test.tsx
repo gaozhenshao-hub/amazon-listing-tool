@@ -21,7 +21,7 @@ const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
 const METRICS: MonthlyFinancialMetrics = { financialProfit: 0, salesQty: 0, salesAmount: 0, otherIncome: 0, discount: 0, purchaseCost: 0, freight: 0, fbaFee: 0, commission: 0, advertising: 0, promotion: 0, storage: 0, otherFees: 0, refundAmount: 0, refundQty: 0, returnQty: 0, ld: 0, coupon: 0, vine: 0 };
 function input(values: Partial<ProfitBoardReadInput> = {}) { return ProfitBoardReadInputSchema.parse({ expectedWorkspaceId: 11, month: "2026-10", storeName: "合成店铺", country: "US", search: "", groupOffset: 0, groupLimit: 12, ...values }); }
-type FixtureOptions = { groups?: number; children?: number; userId?: number; sourceIdOffset?: number; currency?: string | null; missingMonth?: string; missingParentMonth?: string; scoped?: boolean; label?: string; kinds?: boolean; zeroPrevious?: boolean; unknownMetric?: boolean };
+type FixtureOptions = { groups?: number; children?: number; userId?: number; sourceIdOffset?: number; currency?: string | null; missingMonth?: string; missingParentMonth?: string; scoped?: boolean; label?: string; kinds?: boolean; zeroPrevious?: boolean; unknownMetric?: boolean; detailRows?: Array<{ metrics?: Partial<MonthlyFinancialMetrics>; raw?: Record<string, unknown> }> };
 /** Real source parser and shared six-month selection/financial builder. No UI
  * fixture synthesizes a ranking or calculates its own financial result. */
 function result(request = input(), options: FixtureOptions = {}): ProfitBoardReadResult {
@@ -34,9 +34,9 @@ function result(request = input(), options: FixtureOptions = {}): ProfitBoardRea
       for (let child = 0; child < (group === 0 ? options.children ?? 2 : 1); child++) {
         const direction = group === 1 ? -1 : 1;
         const previous = options.zeroPrevious && monthIndex === 4;
-        rows.push({ ...METRICS, financialProfit: options.unknownMetric ? null : previous ? 0 : direction * (monthIndex + 1) * (group + 1), salesQty: previous ? 0 : 2, salesAmount: previous ? 0 : 100,
-          yearMonth: month, parentAsin: `P${String(group).padStart(2, "0")}`, asin: `C${group}-${child}`, sku: `SKU${group}-${child}`, title: options.label ?? `合成产品 ${group}`, storeName: request.storeName, site: request.country, operator: "来源备注非授权",
-          raw: { ...(options.currency === null ? {} : { currency: options.currency ?? "USD" }), untouched: ["<img src=x onerror=alert(1)>", "https://example.test/not-download"], "5:订单支出/销售佣金": -12.5 } });
+        for (const [detailIndex, detail] of (options.detailRows ?? [{}]).entries()) rows.push({ ...METRICS, financialProfit: options.unknownMetric ? null : previous ? 0 : direction * (monthIndex + 1) * (group + 1), salesQty: previous ? 0 : 2, salesAmount: previous ? 0 : 100, ...detail.metrics,
+          yearMonth: month, parentAsin: `P${String(group).padStart(2, "0")}`, asin: `C${group}-${child}`, sku: `SKU${group}-${child}${detailIndex ? `-${detailIndex}` : ""}`, title: options.label ?? `合成产品 ${group}`, storeName: request.storeName, site: request.country, operator: "来源备注非授权",
+          raw: { ...(options.currency === null ? {} : { currency: options.currency ?? "USD" }), untouched: ["<img src=x onerror=alert(1)>", "https://example.test/not-download"], "5:订单支出/销售佣金": -12.5, ...detail.raw } });
       }
     }
     if (options.kinds) rows.push(
@@ -97,6 +97,99 @@ describe("profit board readonly identity gates", () => {
 });
 
 describe("complete friend-style readonly presentation", () => {
+  it("renders all twenty monthly columns with nine income/expense disclosures, fixed headers and six-month limits", () => {
+    render(<ProfitBoardReadOnlyContent result={result()} />); fireEvent.click(screen.getByRole("button", { name: "展开 P00 全部子体与原行" }));
+    const table = screen.getByRole("region", { name: "C0-0 子体六期明细" }), query = within(table);
+    expect(query.getAllByRole("columnheader")).toHaveLength(20);
+    for (const title of ["月份 / 来源", "财务毛利润", "利润率", "销量", "销售额", "其他收入", "促销折扣", "采购成本", "头程费用", "FBA 配送费", "销售佣金", "广告费", "推广费", "仓储费", "其他费用", "退款金额", "退款量", "退款率", "退货量", "退货率"]) expect(query.getByRole("columnheader", { name: title })).toBeInTheDocument();
+    for (const title of ["销售额", "其他收入", "促销折扣", "采购成本", "头程费用", "FBA 配送费", "销售佣金", "广告费", "推广费"]) expect(query.getByRole("button", { name: `C0-0 子体六期明细 2026-10 ${title}明细` })).toBeInTheDocument();
+    expect(query.getAllByRole("row")).toHaveLength(7);
+    expect(table).toHaveClass("overflow-auto", "max-h-[70vh]"); expect(table).toHaveAttribute("tabindex", "0");
+    expect(table.querySelector("thead")).toHaveClass("sticky", "top-0"); expect(query.getByRole("columnheader", { name: "月份 / 来源" })).toHaveClass("sticky", "left-0");
+    expect(screen.getAllByText(/当前接口仅含以上六个月，非全部历史月份/)).toHaveLength(3);
+    expect(controls.query).not.toHaveBeenCalled(); expect(screen.queryByRole("button", { name: /分析利润|重新分析/ })).not.toBeInTheDocument();
+  });
+  it("uses the existing financial derivation for weighted costs and all denominators while exposing original signs and references", () => {
+    const data = result(input(), { groups: 1, children: 1, detailRows: [
+      { metrics: { salesQty: 2, salesAmount: 100, purchaseCost: 10, advertising: 4 }, raw: { "9:平均费用/平均采购成本": 4, "1:广告订单量/SP": 1, "2:广告销售额/SP": 20 } },
+      { metrics: { salesQty: 6, salesAmount: 300, purchaseCost: 60, advertising: 12 }, raw: { "1:广告订单量/SP": 3, "2:广告销售额/SP": 60 } },
+    ] });
+    render(<ProfitBoardReadOnlyContent result={data} />); fireEvent.click(screen.getByRole("button", { name: "展开 P00 全部子体与原行" }));
+    const button = screen.getByRole("button", { name: "C0-0 子体六期明细 2026-10 采购成本明细" }); fireEvent.click(button);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    const panel = within(screen.getByRole("region", { name: "C0-0 子体六期明细 2026-10 采购成本完整明细" }));
+    expect(panel.getByText(/采购成本：8.5 · 分子 68 \/ 分母 8 · 原表报告 1 行 \/ 计算 1 行/)).toBeInTheDocument();
+    for (const title of ["ACOS", "广告订单成本", "广告费 / 销售额", "单件广告成本", "广告销售占比", "退款率", "退货率"]) expect(panel.getByRole("columnheader", { name: title })).toBeInTheDocument();
+    expect(panel.getAllByText(/原值 -12.5 × -1 ＝ 12.5/)).toHaveLength(2);
+    expect(panel.getByText("本月全部来源原行（2 行）")).toBeInTheDocument();
+    expect(panel.getByText(/批次 105 \/ 原行索引 1/)).toBeInTheDocument();
+    expect(panel.getAllByText(/"5:订单支出\/销售佣金": -12.5/)).toHaveLength(2);
+    fireEvent.click(button); expect(screen.queryByRole("region", { name: "C0-0 子体六期明细 2026-10 采购成本完整明细" })).not.toBeInTheDocument();
+  });
+  it("retains unknown metrics, real zero and negative values without making missing month rows zero", () => {
+    render(<ProfitBoardReadOnlyContent result={result(input(), { groups: 1, children: 1, missingMonth: "2026-07", detailRows: [{ metrics: { financialProfit: -2, advertising: null, purchaseCost: 0, salesQty: 0, salesAmount: 0 } }] })} />);
+    fireEvent.click(screen.getByRole("button", { name: "展开 P00 全部子体与原行" }));
+    const table = within(screen.getByRole("region", { name: "C0-0 子体六期明细" }));
+    const current = table.getAllByRole("row")[1], missing = table.getAllByRole("row")[4];
+    expect(within(current).getByText("-2.00")).toHaveClass("text-red-600");
+    expect(within(current).getByRole("button", { name: /采购成本明细/ })).toHaveTextContent("0.00");
+    expect(within(current).getByRole("button", { name: /广告费明细/ })).toHaveTextContent("未知 / 未提供");
+    expect(missing).toHaveTextContent("2026-07"); expect(within(missing).getAllByText("未知 / 未提供")).toHaveLength(19); expect(within(missing).queryByText("0.00")).not.toBeInTheDocument();
+    fireEvent.click(within(current).getByRole("button", { name: /广告费明细/ }));
+    expect(screen.getAllByText(/分子或分母未知、分母非正/).length).toBeGreaterThan(0);
+  });
+  it("keeps unknown-currency monthly records separate and does not calculate money ratios", () => {
+    const data = result(input(), { groups: 1, children: 1, currency: null, detailRows: [{ metrics: { purchaseCost: 3 } }, { metrics: { purchaseCost: 7 } }] });
+    render(<ProfitBoardReadOnlyContent result={data} initialProductId={data.products[0].id} />);
+    const table = within(screen.getByRole("region", { name: "C0-0 子体六期明细" }));
+    const row = table.getAllByRole("row").find(item => within(item).queryByRole("button", { name: /采购成本明细/ }))!;
+    expect(row).toHaveTextContent("币种未知（原值） · 1 条原行"); expect(row).toHaveTextContent("未知 / 未提供");
+    fireEvent.click(within(row).getByRole("button", { name: /采购成本明细/ }));
+    expect(screen.getAllByText(/来源币种未知或冲突；保留原分子分母，不计算单件费用/).length).toBeGreaterThan(0);
+    expect(screen.queryByText("本月全部来源原行（2 行）")).not.toBeInTheDocument();
+  });
+  it("keeps every original monthly source reachable, including the second source page", () => {
+    const data = result(input(), { groups: 1, children: 1, detailRows: Array.from({ length: 22 }, (_, index) => ({ raw: { marker: `source-${index}` } })) });
+    render(<ProfitBoardReadOnlyContent result={data} />); fireEvent.click(screen.getByRole("button", { name: "展开 P00 全部子体与原行" }));
+    fireEvent.click(screen.getByRole("button", { name: "C0-0 子体六期明细 2026-10 销售额明细" }));
+    const panel = within(screen.getByRole("region", { name: "C0-0 子体六期明细 2026-10 销售额完整明细" }));
+    expect(panel.getByText("本月全部来源原行（22 行）")).toBeInTheDocument();
+    expect(panel.queryByText(/批次 105 \/ 原行索引 21/)).not.toBeInTheDocument();
+    fireEvent.click(panel.getByRole("button", { name: "月表来源下一页" }));
+    expect(panel.getByText(/批次 105 \/ 原行索引 21/)).toBeInTheDocument(); expect(panel.getByRole("button", { name: "月表来源下一页" })).toBeDisabled();
+    fireEvent.click(panel.getByRole("button", { name: "月表来源上一页" })); expect(panel.getByText(/批次 105 \/ 原行索引 0/)).toBeInTheDocument();
+    expect(document.querySelector("img[src=x]")).toBeNull(); expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+  it("keeps reported parent totals and unallocated fees in independent full monthly tables", () => {
+    const data = result(input(), { kinds: true });
+    const parent = data.products.find(product => product.basis === "reported_parent_row")!;
+    const view = render(<ProfitBoardReadOnlyContent result={data} initialProductId={parent.id} />);
+    let details = within(screen.getByRole("region", { name: "选中产品完整钻取" }));
+    expect(details.getByText(/此组没有可核验的子体明细/)).toBeInTheDocument();
+    expect(within(details.getByRole("region", { name: "选中父体六期完整月报" })).getAllByText("20.00")).toHaveLength(6);
+    expect(details.queryByText("来源备注非授权")).not.toBeInTheDocument();
+    view.unmount();
+    const unallocated = data.products.find(product => product.basis === "unallocated_rows")!;
+    render(<ProfitBoardReadOnlyContent result={data} initialProductId={unallocated.id} />);
+    details = within(screen.getByRole("region", { name: "选中产品完整钻取" }));
+    expect(within(details.getByRole("region", { name: "选中父体六期完整月报" })).getAllByText("-4.00")).toHaveLength(1);
+    expect(details.queryByRole("region", { name: "C0-0 子体六期明细" })).not.toBeInTheDocument();
+  });
+  it("does not present a partial source set as a complete monthly table", () => {
+    const data = result(); data.pageRows = data.pageRows.slice(1);
+    render(<ProfitBoardReadOnlyContent result={data} initialProductId={data.products[0].id} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("来源引用未完整返回");
+    expect(screen.queryByRole("region", { name: "选中父体六期完整月报" })).not.toBeInTheDocument();
+  });
+  it("mounts the optional evidence preview slot only for the explicitly selected product", () => {
+    const data = result(), preview = vi.fn(product => <p>合成双月依据 {product.parentAsin}</p>);
+    render(<ProfitBoardReadOnlyContent result={data} renderProfitAnalysis={preview} />);
+    expect(preview).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "展开 P00 全部子体与原行" }));
+    expect(preview).toHaveBeenLastCalledWith(data.products[0]); expect(screen.getByText("合成双月依据 P00")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "收起产品明细" })); expect(screen.queryByText("合成双月依据 P00")).not.toBeInTheDocument();
+    expect(controls.query).not.toHaveBeenCalled();
+  });
   it("renders six-month chart and values, full-source top fives, four metrics and monthly data entries without RPC", () => {
     const data = result(input({ groupLimit: 1 }), { groups: 8 }); render(<ProfitBoardReadOnlyContent result={data} />);
     expect(controls.query).not.toHaveBeenCalled(); expect(screen.getAllByRole("img")).toHaveLength(1);

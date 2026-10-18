@@ -97,16 +97,26 @@ export function strictModelSnapshotFromRow(workspaceId: number, slug: string, ra
   const body = { version: 1 as const, workspaceId, model: parsed.data };
   return { ...body, configurationHash: strictRuntimeHash(body) };
 }
+export const StrictSkillStageSchema = z.enum(["route", "reply", "profit_analysis"]);
+export type StrictSkillStage = z.infer<typeof StrictSkillStageSchema>;
+/** Fixed server-owned audit identities. A stage is not authorization to run a
+ * business Skill: callers still supply approved pins and the durable fence. */
+export function strictSkillAuditIdentity(stage: StrictSkillStage) {
+  if (!StrictSkillStageSchema.safeParse(stage).success) return strictRuntimeRefuse("STRICT_RUNTIME_OPTIONS_INVALID");
+  return stage === "profit_analysis"
+    ? { migrationSource: "ops.profit.private.strict", operation: "ops.profit.private.strict" } as const
+    : { migrationSource: "assistant.private.strict", operation: "ai_os.assistant.private.strict" } as const;
+}
 export type StrictSkillDispatchReceipt = {
-  runId: string; stage: "route" | "reply"; requestHash: string; modelConfigurationHash: string; bindingHash: string;
+  runId: string; stage: StrictSkillStage; requestHash: string; modelConfigurationHash: string; bindingHash: string;
   budget: { textBytes: number; imageCount: number; imageBytes: number; contextAdmissionUnits: number;
     outputTokens: number; contextLimit: number; tokenEstimateIsExact: false };
 };
 export type StrictSkillExecutionOptions = {
   modelSnapshot: StrictRegisteredModelSnapshot;
-  /** Server-owned hash of the complete approved Agent/rules/context/attachment snapshot. */
+  /** Server-owned hash of the complete approved business/Agent, rules and input snapshot. */
   bindingHash: string;
-  stage: "route" | "reply";
+  stage: StrictSkillStage;
   expectedSkillModelOverride: string | null;
   expectedSkillTimeoutSeconds: number;
   /** Trusted per-stage spend admission; not an assertion of the provider's final bill. */
@@ -126,7 +136,7 @@ export function parseStrictExecutionOptions(raw: StrictSkillExecutionOptions): S
     if (!("value" in field) || !field.enumerable) return strictRuntimeRefuse("STRICT_RUNTIME_OPTIONS_INVALID");
     if (key !== "beforeDispatch") copied[key] = field.value;
   }
-  const schema = z.object({ modelSnapshot: StrictRegisteredModelSnapshotSchema, bindingHash: hash, stage: z.enum(["route", "reply"]),
+  const schema = z.object({ modelSnapshot: StrictRegisteredModelSnapshotSchema, bindingHash: hash, stage: StrictSkillStageSchema,
     expectedSkillModelOverride: name.nullable(), expectedSkillTimeoutSeconds: z.number().int().min(5).max(600),
     maxCostCents: z.number().int().min(0).max(1000000000),
     imageBudget: z.object({ policyId: name, maxInputTokensPerImage: z.number().int().min(1).max(10000000) }).strict().optional() }).strict();

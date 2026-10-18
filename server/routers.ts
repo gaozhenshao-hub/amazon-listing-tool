@@ -91,6 +91,7 @@ import { inventorySnapshotRefreshRouter } from "./routers/inventorySnapshotRefre
 import { inventoryPlanningWriteRouter } from "./routers/inventoryPlanningWrite";
 import { inventoryGovernanceWriteRouter } from "./routers/inventoryGovernanceWrite";
 import { profitBoardReadRouter } from "./routers/profitBoardRead";
+import { profitAnalysisRouter } from "./routers/profitAnalysis";
 import { productBoardReadRouter } from "./routers/productBoardRead";
 import { productTaskReadRouter } from "./routers/productTaskRead";
 import { productTaskWriteRouter } from "./routers/productTaskWrite";
@@ -217,6 +218,7 @@ export const appRouter = router({
   inventoryPlanningWrite: inventoryPlanningWriteRouter,
   inventoryGovernanceWrite: inventoryGovernanceWriteRouter,
   profitBoardRead: profitBoardReadRouter,
+  profitAnalysis: profitAnalysisRouter,
   productBoardRead: productBoardReadRouter,
   productTaskRead: productTaskReadRouter,
   productTaskWrite: productTaskWriteRouter,

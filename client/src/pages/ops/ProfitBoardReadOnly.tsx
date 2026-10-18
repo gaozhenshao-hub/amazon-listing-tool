@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import { trpc } from "@/lib/trpc";
 import { subscribeMonthlyFinancialChanges } from "./monthlyFinancialWriteEvents";
+import { aggregateMonthlyFinancialRows } from "@shared/monthlyFinancialRead";
+import { ProfitMonthlyDetails } from "./ProfitMonthlyDetails";
+import ProfitAnalysisPreview from "./ProfitAnalysisPreview";
 import {
   ProfitBoardReadInputSchema, ProfitBoardReadResultSchema,
   type ProfitBoardReadInput, type ProfitBoardReadResult, type ProfitBoardPoint,
@@ -31,6 +34,7 @@ function Shell({ children }: { children: ReactNode }) {
   return <section aria-label="利润看板只读查看" className="manus-no-record min-w-0 max-w-full space-y-5 overflow-hidden rounded-xl border bg-card p-4 md:p-5">
     <header className="space-y-2"><h2 className="text-lg font-semibold">利润看板 · 已保存批次只读对比</h2>
       <p className="text-sm text-muted-foreground">六个月趋势、当月与上月四项指标、增长 / 下降前五名及完整父子明细。只读取已保存批次，不同步、保存备注、归档或调用模型。</p>
+      <p className="text-xs text-muted-foreground">产品明细内可单独预览双月分析依据（不调用模型）。</p>
       <p className="text-xs text-muted-foreground">按已保存批次选择；尚未核验店铺 / 月度完整覆盖。榜单只是可见来源的变化，不代表完整财务对账或因果解释。币种与汇总依据分区，不合并美国、加拿大、墨西哥。</p>
     </header>{children}
   </section>;
@@ -88,13 +92,20 @@ function Change({ product, metric }: { product: Pick<ProfitBoardProduct, "compar
 }
 function ProductDetail({ product, rows }: { product: ProfitBoardProduct; rows: ProfitBoardReadResult["pageRows"] }) {
   const [childOffset, setChildOffset] = useState(0), [sourceOffset, setSourceOffset] = useState(0);
-  const refs = new Set(product.sourceRows.map(ref => `${ref.batchId}:${ref.rowIndex}`)), originals = rows.filter(row => refs.has(`${row.batchId}:${row.rowIndex}`));
+  const { originals, groups, complete } = useMemo(() => {
+    const refs = new Set(product.sourceRows.map(ref => `${ref.batchId}:${ref.rowIndex}`));
+    const originals = rows.filter(row => refs.has(`${row.batchId}:${row.rowIndex}`));
+    return { originals, groups: aggregateMonthlyFinancialRows(originals), complete: originals.length === refs.size };
+  }, [product.sourceRows, rows]);
+  if (!complete) return <section aria-label="选中产品完整钻取"><p role="alert">该产品来源引用未完整返回，未展示部分月报汇总。请重新读取。</p></section>;
   return <section aria-label="选中产品完整钻取" className="min-w-0 space-y-4 rounded border p-3"><h4 className="font-semibold">{product.parentAsin ?? "未分配原行"} · {product.title || "品名未提供"}</h4><p>{BASIS_LABELS[product.basis]} · {product.currency ?? "币种未知"}。保留各月报告时父子关系，不按最新父体重分历史。</p>
-    <PointTable label="选中父体六期完整指标" points={product.points} currency={product.currency} />
+    <ProfitMonthlyDetails label="选中父体六期完整月报" groups={groups.filter(group => group.dimension === (product.basis === "unallocated_rows" ? "unallocated" : "parent"))} points={product.points} rows={originals} />
+    <details><summary className="cursor-pointer">六期观测状态、四指标及比较口径</summary><PointTable label="选中父体六期完整指标" points={product.points} currency={product.currency} /></details>
     <h5 className="font-medium">全部子体（{product.children.length} 个）</h5>
     {!product.children.length ? <p>此组没有可核验的子体明细；原报表父体合计或未分配原行不伪造子体。</p> : <><LocalPager label="子体" offset={childOffset} total={product.children.length} size={LOCAL_LIMIT} onPage={setChildOffset} />
       {product.children.slice(childOffset, childOffset + LOCAL_LIMIT).map(child => <details key={child.id} className="min-w-0 rounded border p-3"><summary className="cursor-pointer break-words">{child.asin} · {child.title || "名称未提供"} · 当月利润 {metricText(child.current.profit, "profit", product.currency)}</summary>
-        <p className="my-2 break-words">SKU：{child.skus.join("、") || "未提供"}</p><PointTable label={`${child.asin} 子体六期明细`} points={child.points} currency={product.currency} />
+        <p className="my-2 break-words">SKU：{child.skus.join("、") || "未提供"}</p><ProfitMonthlyDetails label={`${child.asin} 子体六期明细`} groups={groups.filter(group => group.dimension === "asin" && group.asin === child.asin)} points={child.points} rows={originals} />
+        <Raw value={child.points} label={`${child.asin} 六期观测状态、分子分母与全部来源引用`} />
         {METRICS.map(metric => <p className="mt-2 text-xs" key={metric}>{METRIC_LABELS[metric]}：<Change product={{ comparison: child.comparison, currency: product.currency }} metric={metric} /></p>)}
       </details>)}</>}
     <h5 className="font-medium">全部来源原行 / 费用与分母（{originals.length} 行）</h5><p className="text-xs">每条保留批次 ID、原行索引、币种证据、19 项指标、全部费用、分子分母及 raw。原文仅文本展示，不作为下载或跳转地址。</p>
@@ -117,8 +128,8 @@ function MonthSource({ source }: { source: ProfitBoardReadResult["sources"][numb
 
 /** Presentation only. It neither reads data nor interprets saved owner IDs as
  * authorization. All financial arithmetic and ranking come from the server DTO. */
-export function ProfitBoardReadOnlyContent({ result, onPage, onMonth, initialProductId }: {
-  result: ProfitBoardReadResult; onPage?: (offset: number, productId?: string) => void; onMonth?: (month: string) => void; initialProductId?: string;
+export function ProfitBoardReadOnlyContent({ result, onPage, onMonth, initialProductId, renderProfitAnalysis }: {
+  result: ProfitBoardReadResult; onPage?: (offset: number, productId?: string) => void; onMonth?: (month: string) => void; initialProductId?: string; renderProfitAnalysis?: (product: ProfitBoardProduct) => ReactNode;
 }) {
   const [month, setMonth] = useState(result.request.month), [selectedId, setSelectedId] = useState(initialProductId ?? ""), [partitionOffset, setPartitionOffset] = useState(0);
   const selected = result.products.find(product => product.id === selectedId), selectedMonth = result.sources.find(source => source.month === month) ?? result.sources.at(-1);
@@ -142,7 +153,7 @@ export function ProfitBoardReadOnlyContent({ result, onPage, onMonth, initialPro
         <th scope="row" className={cellClass}><p>{product.parentAsin ?? "未分配 / 歧义原行"}</p><p>{product.title || "名称未提供"}</p><p>{product.currency ?? "币种未知"} · {BASIS_LABELS[product.basis]}</p><button type="button" className={buttonClass} onClick={() => setSelectedId(product.id)}>展开 {product.parentAsin ?? product.title} 全部子体与原行</button></th>
         {METRICS.flatMap(metric => [<td className={cellClass} key={`${metric}:current`}>{metricText(product.current[metric], metric, product.currency)}</td>, <td className={cellClass} key={`${metric}:previous`}>{metricText(product.previous[metric], metric, product.currency)}</td>, <td className={cellClass} key={`${metric}:change`}><Change product={product} metric={metric} /></td>])}
       </tr>)}</tbody></table></ScrollTable>}
-      {selected && <><button type="button" className={buttonClass} onClick={() => setSelectedId("")}>收起产品明细</button><ProductDetail key={selected.id} product={selected} rows={result.pageRows} /></>}
+      {selected && <><button type="button" className={buttonClass} onClick={() => setSelectedId("")}>收起产品明细</button><ProductDetail key={selected.id} product={selected} rows={result.pageRows} />{renderProfitAnalysis?.(selected)}</>}
     </section>
   </div>;
 }
@@ -191,7 +202,7 @@ function OwnedProfitBoard({ owner }: { owner: Owner }) {
     {state.status === "loading" && <p role="status">正在读取六个月已保存利润来源…</p>}
     {state.status === "invalid" && <p role="alert">利润看板范围不完整或不合法，未发送请求。</p>}
     {state.status === "error" && <p role="alert">利润看板读取失败，或身份、权限、范围、来源及回包完整性已变化。旧数据已清除，未回退缓存或补零；请显式从首页重新读取。</p>}
-    {state.status === "ready" && <ProfitBoardReadOnlyContent key={sequence.current} result={state.result} initialProductId={state.selectedId} onPage={(offset, productId) => { void read(offset, state.result, productId); }} onMonth={month => { void read(0, undefined, undefined, month); }} />}
+    {state.status === "ready" && <ProfitBoardReadOnlyContent key={sequence.current} result={state.result} initialProductId={state.selectedId} onPage={(offset, productId) => { void read(offset, state.result, productId); }} onMonth={month => { void read(0, undefined, undefined, month); }} renderProfitAnalysis={product => product.parentAsin && (product.basis === "child_rows" || product.basis === "reported_parent_row") ? <ProfitAnalysisPreview key={`preview:${product.id}`} identity={state.result.identity} scope={{ storeName: state.result.request.storeName, country: state.result.request.country, parentAsin: product.parentAsin, currency: product.currency, basis: product.basis }} months={state.result.months} /> : null} />}
   </Shell>;
 }
 export default function ProfitBoardReadOnly() {

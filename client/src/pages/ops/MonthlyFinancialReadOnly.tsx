@@ -172,7 +172,11 @@ export function MonthlyFinancialHistoryContent({ result, onSelect }: { result: M
 }
 
 function FinancialDetails({ details }: { details: MonthlyFinancialDetails }) {
-  return <details><summary className="cursor-pointer">全部费用原始明细、分子与分母</summary><div className="mt-3 space-y-4">
+  return <details><summary className="cursor-pointer">全部费用原始明细、分子与分母</summary><FinancialDetailsContent details={details} /></details>;
+}
+/** Shared presentation only; callers supply the existing verified financial DTO. */
+export function FinancialDetailsContent({ details }: { details: MonthlyFinancialDetails }) {
+  return <div className="mt-3 min-w-0 space-y-4">
     <ScrollTable label="全部费用构成明细"><table className="min-w-[950px] w-full text-left text-xs"><thead><tr>{["项目", "保存标准化值", "可识别原字段合计", "差额", "全部原始构成 / 符号", "缺失说明"].map(text => <th className="p-2" key={text}>{text}</th>)}</tr></thead><tbody>{MONTHLY_FINANCIAL_METRICS.map(key => {
       const field = details.fields[key]; return <tr key={key}><th className={cellClass} scope="row">{metricLabels[key]}</th><td className={cellClass}>{shown(field.reportedValue)}</td><td className={cellClass}>{shown(field.componentTotal)}</td><td className={cellClass}>{shown(field.remainder)}</td>
         <td className={cellClass}>{field.components.length ? field.components.map((part, index) => <p className="mb-2" key={index}>{part.label} · 原值 {shown(part.rawValue)} × {part.multiplier} ＝ {shown(part.value)}<br />来源路径：{part.rawPath}</p>) : "未提供原字段构成，不能补零"}</td><td className={cellClass}>取值依据：{field.aggregationBasis}<br />{field.missingReason ?? "无已报告缺失"}</td></tr>;
@@ -182,7 +186,7 @@ function FinancialDetails({ details }: { details: MonthlyFinancialDetails }) {
     <ScrollTable label="月报比例和分母"><table className="min-w-[900px] w-full text-left text-xs"><thead><tr>{["比例 / 单价", "分子", "分母", "值与单位", "口径 / 未计算原因"].map(text => <th className="p-2" key={text}>{text}</th>)}</tr></thead><tbody>{Object.entries(details.ratios).map(([key, ratio]) => <tr key={key}><th className={cellClass}>{metricLabels[key] ?? key}</th><td className={cellClass}>{shown(ratio.numerator)}</td><td className={cellClass}>{shown(ratio.denominator)}</td><td className={cellClass}>{shown(ratio.value)} · {ratio.unit === "fraction" ? "比例小数（1 = 100%）" : "每单位金额"}</td><td className={cellClass}>{ratio.basis}<br />{ratio.missingReason}</td></tr>)}</tbody></table></ScrollTable>
     <h5 className="font-medium">平均费用：保留加权分子 / 分母，不平均各行比例</h5>
     {Object.entries(details.averages).map(([key, average]) => <p key={key}>{metricLabels[key]}：{shown(average.value)} · 分子 {shown(average.numerator)} / 分母 {shown(average.denominator)} · 原表报告 {average.reportedRows} 行 / 计算 {average.calculatedRows} 行<br />{average.basis}<br />{average.missingReason}</p>)}
-  </div></details>;
+  </div>;
 }
 function RowTable({ rows }: { rows: MonthlyFinancialReadRow[] }) {
   return <ScrollTable label="月报完整行横向表"><table className="min-w-[3200px] w-full text-left text-xs"><thead><tr>{["来源行 / 身份", "币种 / 分配", ...MONTHLY_FINANCIAL_METRICS.map(key => metricLabels[key]), "费用、比例与完整原文"].map(text => <th className="whitespace-nowrap p-3" key={text}>{text}</th>)}</tr></thead>

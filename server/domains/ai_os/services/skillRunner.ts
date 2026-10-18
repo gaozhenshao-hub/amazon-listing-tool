@@ -22,7 +22,7 @@ import {
 import { resolveActiveSkillRollout } from "./skillRollout";
 import { StrictSkillRuntimeError, STRICT_SKILL_LIMITS,
   strictModelSnapshotFromRow, strictRuntimeCanonical, strictRuntimeHash, strictRuntimeRefuse, strictSkillMessages,
-  parseStrictExecutionOptions, strictCostUpperBound,
+  parseStrictExecutionOptions, strictCostUpperBound, strictSkillAuditIdentity,
   type StrictRegisteredModelSnapshot, type StrictSkillExecutionOptions } from "./strictSkillRuntime";
 export type { StrictRegisteredModelSnapshot, StrictSkillExecutionOptions, StrictSkillDispatchReceipt } from "./strictSkillRuntime";
 
@@ -825,7 +825,7 @@ async function runStrictEmperorSkill<T>(input: RunSkillInput<T>): Promise<RunSki
   const body = strictRuntimeCanonical(payload), requestHash = strictRuntimeHash(payload);
   const apiKey = resolveGovernedModelApiKey(model.model.apiKeyRef);
   if (!apiKey?.trim()) return strictRuntimeRefuse("STRICT_MODEL_CREDENTIAL_UNAVAILABLE");
-  const runId = generateRunId(), startedAt = new Date();
+  const runId = generateRunId(), startedAt = new Date(), auditIdentity = strictSkillAuditIdentity(strict.stage);
   const metadata = { privateExecution: true, stage: strict.stage, bindingHash: strict.bindingHash, requestHash,
     modelConfigurationHash: model.configurationHash, skillVersion: snapshot.version, skillPromptHash: snapshot.systemPromptHash,
     skillUserPromptHash: snapshot.userPromptHash, skillManifestHash: snapshot.manifestHash, budget: prepared.budget,
@@ -833,7 +833,7 @@ async function runStrictEmperorSkill<T>(input: RunSkillInput<T>): Promise<RunSki
     pricingBasis: "registered_rates_and_conservative_admission_not_provider_invoice" };
   await rawExecute("INSERT INTO emperor_skill_runs (workspaceId,runId,skillSlug,skillName,skillVersion,skillPromptHash,skillManifestHash,migrationSource,userId,input,status,modelSlug,provider,startedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     [request.workspaceId, runId, skill.slug, skill.name, Number(snapshot.version) || 1, snapshot.systemPromptHash, snapshot.manifestHash,
-      "assistant.private.strict", request.userId, JSON.stringify(metadata), "running", model.model.slug, "custom", startedAt]);
+      auditIdentity.migrationSource, request.userId, JSON.stringify(metadata), "running", model.model.slug, "custom", startedAt]);
   let dispatched = false;
   try {
     if (signal?.aborted) return strictRuntimeRefuse("STRICT_RUNTIME_CANCELED");
@@ -847,7 +847,7 @@ async function runStrictEmperorSkill<T>(input: RunSkillInput<T>): Promise<RunSki
     const response = await safeHttpRequest(model.model.endpoint, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body, signal, timeoutMs: snapshot.timeoutSeconds * 1000, maxResponseBytes: STRICT_SKILL_LIMITS.responseBytes, maxRedirects: 0,
       allowedHosts: [new URL(model.model.endpoint).hostname], allowPrivateNetwork: false,
-      auditContext: { workspaceId: request.workspaceId, operation: "ai_os.assistant.private.strict" } });
+      auditContext: { workspaceId: request.workspaceId, operation: auditIdentity.operation } });
     if (!response.ok) return strictRuntimeRefuse("STRICT_RUNTIME_PROVIDER_FAILED");
     const result = response.json() as { choices?: Array<{ message?: { content?: unknown } }>; usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } };
     const content = result?.choices?.[0]?.message?.content;
