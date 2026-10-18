@@ -1,0 +1,54 @@
+{
+  "schema": "amazon-integration-review/v1",
+  "batch": "P5-A2-private-conversation-service-worker-ui",
+  "baseline": "a81f3d1a5fe3deb72c6500da86a357ca78ae2ab4",
+  "status": "local_source_and_synthetic_ui_verified_runtime_not_enabled",
+  "sourcePolicy": "R2 preserved: general P5 Skills Qingdao; operations additions friend and Lingxing Qingdao; Listing Skills user, workflow and competitor/product selection friend. Fixed friend source 383b69e6bc9d8b3d2f1d380422390ea200541628.",
+  "implemented": [
+    "Authenticated private options/thread/history/submit/check/cancel/attachment APIs. Current actor, membership, Agent directory and exact resource permissions are checked in the transaction; administrators cannot read another user's private conversations.",
+    "Existing configuration revision authority reused. Trusted server-only approved execution mapping is separate from contextual Skill binding. Runtime pins actual full Skill, saved configuration/rules and registered model/budget; friend route/reply field adapters preserve original prompt inputs and validate outputs.",
+    "Metadata-only bounded private queue and real existing aiWorker lifecycle integration. Each route/reply stage commits a lease-bound dispatch fence with freshly checked authorization/configuration/model/Skill before a network call outside the transaction.",
+    "Per-stage at-most-once dispatch: uncertain provider outcomes are not retried. Expired dispatched turns become unknown; route_ready resumes only reply; reply_ready finishes locally. Lost commit acknowledgements and shutdown do not discard paid durable results.",
+    "Private work/coach UI, automatic/explicit contextual Skill, project history, file/image preview and paste, original UUID recovery/check/cancel. Identity or permission loss clears private content; intentional Agent switching warns about dirty drafts.",
+    "Full candidate rules display without automatic application. Existing configuration editor remains the single rule authority; direct proposal confirmation is explicitly unavailable in this slice."
+  ],
+  "verification": {
+    "sourceProof": { "sha256": "8d4d9d999432b70186c66f6837826c0a1a875a519e4e8997a9b8efe64a96eb6f", "baselineBlobs": 2694, "unchangedNonOverlayBlobs": 2686, "overlays": 26 },
+    "focusedTests": { "passed": 718, "failed": 0, "files": 26 },
+    "lint": { "files": 24, "warnings": 0, "exitCode": 0 },
+    "fullUnchangedTsconfig": { "incremental": false, "compilerFiles": 3827, "diagnostics": 0, "exitCode": 0 },
+    "testInclusiveTypecheck": { "exitCode": 0 },
+    "protectedBaseline": { "files": 106, "dependencies": 2, "failures": 0 },
+    "clientRuntimeIdentifiers": { "exitCode": 0 },
+    "serverBundles": ["web", "aiWorker", "scheduler"],
+    "actualSyntheticBrowser": { "coachReplyAndCompleteRules": true, "workExplicitSkill": true, "lostAckOriginalUuidRecovery": true, "gateOffCheckAndCancel": true, "noDuplicateSubmit": true, "consoleErrors": 0, "responsiveWidths": [534, 1425, 375], "horizontalOverflow": false, "realProviderCalls": 0 },
+    "independentReview": "Backend/UI/runtime peer reviews and final separate Queue21+Worker30 recheck found no remaining blocking source issue. Real database/provider guarantees remain unaccepted."
+  },
+  "reviewCorrections": [
+    "Compare submitted configuration revision/hash with actual saved configuration before accepting a new operation; original-UUID recovery remains first.",
+    "Use exact thread resource permissions; reject the complete thread list when policy disallows an included thread. Membership/user/workspace revocation maps to FORBIDDEN so the UI clears private state.",
+    "Allow the full legal 128KiB configuration body plus its immutable snapshot envelope; retain the original configuration limit.",
+    "Preserve paid ready results across shutdown/heartbeat failures and ambiguous result/finish acknowledgements. Current authorization is still required, but a later model/config edit cannot erase an already-paid frozen reply.",
+    "Keep logical/context hashes distinct from actual strict provider payload hash, validating both receipt identity and durable stage result.",
+    "Initial full-type errors in never-return narrowing, lock literal and generic mock were repaired without changing runtime behavior. Initial failed type logs are retained beside final passing evidence."
+  ],
+  "notImplementedByThisBatch": [
+    "Proposal-to-existing-configuration human confirmation with expected revision, durable operation UUID and journal recovery",
+    "Approval resolution from current real registry/source decisions; default approval resolver remains empty and returns SOURCE_UNAVAILABLE",
+    "Native MySQL schema/engine/index/locking/concurrency and 9MiB private attachment transactions, authenticated full UI and actual provider/budget validation",
+    "Actual per-Skill business dispatch, reserved competitor-deep worker and complete profit AI result workflow",
+    "All remaining original P1 and P6 acceptance, remote history/sensitive-content review, backup/rollback and final public push/deployment"
+  ],
+  "enablement": "Both ENABLE_ASSISTANT_CONVERSATION_WRITES and ENABLE_ASSISTANT_CONVERSATION_WORKER must be exactly true; default off. Worker role only. Real approved execution mappings must also exist; no fixture/seed is treated as approval.",
+  "migrationRegistered": false,
+  "migrationExecuted": false,
+  "actualDatabase": false,
+  "actualProvider": false,
+  "modelCalls": 0,
+  "pushed": false,
+  "deployed": false,
+  "fullP1Complete": false,
+  "fullP5Complete": false,
+  "fullObjectiveComplete": false,
+  "retainedReleaseScope": "All original P0-P6, K01-K10, T01-T28, image62, master27, supplements12 and release/rollback gates remain required. Public main publication is authorized, but no release acceptance is implied by this source batch."
+}

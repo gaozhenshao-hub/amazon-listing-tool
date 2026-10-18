@@ -1,0 +1,22 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+const methods = vi.hoisted(() => Object.fromEntries(["options", "createThread", "threads", "history", "submit", "check", "cancel", "attachments", "attachment"].map(name => [name, vi.fn()])));
+vi.mock("../services/assistantConversations", () => ({ assistantConversationService: methods }));
+import { assistantConversationsRouter } from "./assistantConversations";
+import type { TrpcContext } from "../../../_core/context";
+
+const threadId = "11111111-1111-4111-8111-111111111111", operationId = "22222222-2222-4222-8222-222222222222", time = "2026-10-18 09:00:00.000000";
+const identity = { workspaceId: 7, userId: 3, agentKey: "listing" as const }, base = { expectedWorkspaceId: 7, agentKey: "listing" as const }, scope = { ...base, threadId }, op = { ...scope, operationId };
+const thread = { threadId, title: "Private", version: 1, activeOperationId: null, createdAt: time, updatedAt: time };
+const operation = { identity, thread, operation: null, reasonCode: "OPERATION_UNKNOWN", runtimeEnabled: false };
+const ctx = { user: { id: 3, role: "ops_specialist", defaultWorkspaceId: 7 }, workspaceId: 7, req: { headers: {} }, res: {} } as TrpcContext;
+beforeEach(() => { Object.values(methods).forEach(method => method.mockReset()); });
+describe("private assistant RPC boundaries", () => {
+  it.each(["options", "threads", "history", "check", "attachments", "attachment"])("protects %s from anonymous access", async method => { const caller = assistantConversationsRouter.createCaller({ ...ctx, user: null }) as any; await expect(caller[method](method === "options" || method === "threads" ? base : method === "history" ? scope : method === "attachment" ? { ...op, ordinal: 0 } : op)).rejects.toMatchObject({ code: "UNAUTHORIZED" }); expect(methods[method]).not.toHaveBeenCalled(); });
+  it.each(["createThread", "submit", "cancel"])("protects %s mutation from anonymous access", async method => { const caller = assistantConversationsRouter.createCaller({ ...ctx, user: null }) as any; await expect(caller[method](op)).rejects.toMatchObject({ code: "UNAUTHORIZED" }); expect(methods[method]).not.toHaveBeenCalled(); });
+  it("forwards authenticated context intact and validates safe check output", async () => { methods.check.mockResolvedValue(operation); const caller = assistantConversationsRouter.createCaller(ctx); expect(await caller.check(op)).toEqual(operation); expect(methods.check).toHaveBeenCalledWith(expect.objectContaining({ user: ctx.user, workspaceId: 7 }), op); });
+  it("uses exact strict inputs; client cannot inject owner, role, config or body snapshots", async () => { const caller = assistantConversationsRouter.createCaller(ctx); await expect(caller.check({ ...op, userId: 4 } as any)).rejects.toMatchObject({ code: "BAD_REQUEST" }); await expect(caller.createThread({ ...scope, title: "Title", runtime: {} } as any)).rejects.toMatchObject({ code: "BAD_REQUEST" }); expect(methods.check).not.toHaveBeenCalled(); expect(methods.createThread).not.toHaveBeenCalled(); });
+  it("rejects unsafe extra output rather than accidentally leaking service internals", async () => { methods.check.mockResolvedValue({ ...operation, rawRuntime: "secret" }); await expect(assistantConversationsRouter.createCaller(ctx).check(op)).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" }); });
+  it("preserves create-thread UUID and title while submit remains its own mutation", async () => { methods.createThread.mockResolvedValue({ identity, thread }); const caller = assistantConversationsRouter.createCaller(ctx); await caller.createThread({ ...scope, title: "Private" }); expect(methods.createThread.mock.calls[0][1]).toEqual({ ...scope, title: "Private" }); expect(methods.submit).not.toHaveBeenCalled(); });
+  it("does not add confirmRules or generic job/provider execution bypass routes", () => { const procedures = Object.keys(assistantConversationsRouter._def.procedures); expect(procedures.sort()).toEqual(["options", "createThread", "threads", "history", "submit", "check", "cancel", "attachments", "attachment"].sort()); });
+  it("keeps unknown check as query and cancel as a mutation without implicit retry", () => { expect(assistantConversationsRouter._def.procedures.check._def.type).toBe("query"); expect(assistantConversationsRouter._def.procedures.cancel._def.type).toBe("mutation"); expect(assistantConversationsRouter._def.procedures.submit._def.type).toBe("mutation"); });
+});

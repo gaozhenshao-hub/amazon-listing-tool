@@ -1,6 +1,7 @@
 import { router } from "../../_core/trpc";
 import { emperorAgentsRouter } from "./routers/agents";
 import { assistantConfigurationsRouter } from "./routers/assistantConfigurations";
+import { assistantConversationsRouter } from "./routers/assistantConversations";
 import { emperorArtifactsRouter } from "./routers/artifacts";
 import { emperorDiagnosticsRouter } from "./routers/diagnostics";
 import { emperorConversationsRouter } from "./routers/conversations";
@@ -31,6 +32,7 @@ export * from "./routerContext";
 
 export const emperorRouter = router({
   assistantConfigurations: assistantConfigurationsRouter,
+  assistantConversations: assistantConversationsRouter,
   skills: emperorSkillsRouter,
   run: emperorRunRouter,
   models: emperorModelsRouter,

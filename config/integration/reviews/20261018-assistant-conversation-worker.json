@@ -1,0 +1,15 @@
+{
+  "schema": "reviewed-integration-change/v1",
+  "baseline": "a81f3d1a5fe3deb72c6500da86a357ca78ae2ab4",
+  "path": "server/_core/aiWorker.ts",
+  "priorReview": "config/integration/reviews/inventory-manual-worker-20261018.json",
+  "change": "Add private assistant-conversation worker lifecycle beside the existing inventory worker; include its abort/drain in graceful shutdown. Existing generic queue and node recovery remain unchanged.",
+  "controls": ["K01", "K06", "K08", "K10"],
+  "scope": "Worker role only, both ENABLE_ASSISTANT_CONVERSATION_WRITES and ENABLE_ASSISTANT_CONVERSATION_WORKER must be exactly true. No scheduling, seeding, generic ai_jobs registration, automatic unknown-stage retry or production activation.",
+  "privacy": "Discovery reads bounded identity hints only; each claim, heartbeat, dispatch and publication reacquires current membership/resource authority. Logs contain fixed outcome codes, not conversation content.",
+  "execution": "Route/reply calls run outside SQL transactions, after exact runtime pins and durable lease-bound dispatch checkpoint. Ready results recover without paying for their completed stage again.",
+  "verification": "Frozen candidate test/type/lint/bundle evidence is recorded by the separate P5-A2 integration batch. This hash review alone is not runtime or release acceptance.",
+  "databaseWritesPerformed": false,
+  "providerCallsPerformed": false,
+  "deployed": false
+}

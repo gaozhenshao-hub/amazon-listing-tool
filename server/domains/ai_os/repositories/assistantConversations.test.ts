@@ -3,12 +3,24 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { MySqlDialect } from "drizzle-orm/mysql-core";
 import type { SQL } from "drizzle-orm";
-import { assistantConversationCanonical, assistantConversationRequestHash, assistantConversationSchemaReady, createAssistantConversationRepository, type AssistantConversationDatabase, type AssistantConversationEnqueueInput, type AssistantConversationSession } from "./assistantConversations";
+import { ASSISTANT_CONVERSATION_LIMITS, assistantConversationCanonical, assistantConversationRequestHash, assistantConversationSchemaReady, createAssistantConversationRepository, type AssistantConversationDatabase, type AssistantConversationEnqueueInput, type AssistantConversationSession } from "./assistantConversations";
+import { AssistantConfigurationSchema } from "../../../../shared/assistantConfigurations";
+import { configurationHash } from "../services/assistantConfigurations";
 
 type Row = Record<string, any>;
 const THREADS = "assistant_conversation_threads", TURNS = "assistant_conversation_turns", FILES = "assistant_conversation_attachments";
 const identity = { workspaceId: 7, userId: 3 }, threadId = "11111111-1111-4111-8111-111111111111", operationId = "22222222-2222-4222-8222-222222222222", secondId = "33333333-3333-4333-8333-333333333333";
 const sha = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex");
+it("admits a maximum legal 128KiB configuration body plus its immutable scope/revision envelope", () => {
+  const config = { name: "A", description: "", enabled: true, modelSlug: "model", instructions: "", rules: [], skills: Array.from({ length: 17 }, (_, i) => ({ slug: `s${i}`, enabled: true, trigger: "", instructions: "a".repeat(7400), version: 1, manifestSha256: "a".repeat(64) })) };
+  config.instructions = "b".repeat(128 * 1024 - Buffer.byteLength(JSON.stringify(config)));
+  expect(Buffer.byteLength(JSON.stringify(config))).toBe(128 * 1024);
+  expect(AssistantConfigurationSchema.safeParse(config).success).toBe(true);
+  const saved = { workspaceId: 7, agentKey: "listing", revision: 1, hash: configurationHash(config), config };
+  expect(() => assistantConversationCanonical(saved, ASSISTANT_CONVERSATION_LIMITS.configuration)).not.toThrow();
+  expect(AssistantConfigurationSchema.safeParse({ ...config, instructions: config.instructions + "x" }).success).toBe(false);
+  expect(() => assistantConversationCanonical({ body: "x".repeat(129 * 1024) }, ASSISTANT_CONVERSATION_LIMITS.configuration)).toThrow("JSON_LIMIT");
+});
 const ddl = readFileSync(new URL("../../../../drizzle/0231_assistant_conversations.sql", import.meta.url), "utf8");
 function split(value: string) { let depth = 0, quote = false, start = 0; const output: string[] = []; for (let i = 0; i < value.length; i++) { const char = value[i]; if (char === "'") quote = !quote; if (!quote) { if (char === "(") depth++; if (char === ")") depth--; if (char === "," && depth === 0) { output.push(value.slice(start, i).trim()); start = i + 1; } } } output.push(value.slice(start).trim()); return output; }
 /** Metadata is derived from the candidate's actual DDL, not invented permissive varchar fixtures. */

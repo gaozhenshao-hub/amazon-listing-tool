@@ -9,7 +9,7 @@ const controls = vi.hoisted(() => {
   return {
     auth: { loading: false, error: null as Error | null, user: { id: 7, defaultWorkspaceId: 11 as number | null, role: "admin" } as { id: number; defaultWorkspaceId: number | null; role: string } | null },
     permissions: { isLoading: false, canRead: vi.fn(), canEdit: vi.fn() },
-    list, skills, models, bridgeMount: vi.fn(), bridgeUnmount: vi.fn(),
+    list, skills, models, bridgeMount: vi.fn(), bridgeUnmount: vi.fn(), conversationMount: vi.fn(), conversationUnmount: vi.fn(),
     client: { emperor: { agents: { list: { query: list }, getAvailableSkills: { query: skills }, getAvailableModels: { query: models } } } },
   };
 });
@@ -29,6 +29,20 @@ vi.mock("./AssistantConfigurationBridge", async () => {
     return <div data-testid="configuration-bridge" data-agent={props.agentKey} data-scope={props.scopeKey} data-workspace={props.workspaceId} data-can-edit={String(props.canEdit)}>配置插槽</div>;
   } };
 });
+vi.mock("./AssistantConversationBridge", async () => {
+  const { useEffect } = await import("react");
+  return { default: function Conversation(props: { agentKey: string; scopeKey: string; workspaceId: number; userId: number; role: string; onDirtyChange?: (dirty: boolean) => void }) {
+    const { agentKey, scopeKey, workspaceId, userId, role } = props;
+    useEffect(() => {
+      const owner = { agentKey, scopeKey, workspaceId, userId, role };
+      controls.conversationMount(owner);
+      return () => { controls.conversationUnmount(owner); };
+    }, [agentKey, scopeKey, workspaceId, userId, role]);
+    return <div data-testid="conversation-bridge" data-agent={agentKey} data-user={userId} data-workspace={workspaceId}>
+      <button type="button" onClick={() => props.onDirtyChange?.(true)}>模拟未发送草稿</button>
+    </div>;
+  } };
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void, reject!: (error: Error) => void;
@@ -44,6 +58,7 @@ async function settled() { await waitFor(() => expect(refresh()).toHaveAttribute
 function noBusinessReads() {
   for (const query of queries()) expect(query).not.toHaveBeenCalled();
   expect(controls.bridgeMount).not.toHaveBeenCalled();
+  expect(controls.conversationMount).not.toHaveBeenCalled();
   expect(screen.queryByTestId("configuration-bridge")).not.toBeInTheDocument();
 }
 
@@ -55,7 +70,54 @@ beforeEach(() => {
   controls.permissions.canEdit.mockReset().mockReturnValue(true);
   for (const query of queries()) query.mockReset().mockResolvedValue([]);
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+describe("private conversation slot ownership", () => {
+  it("conversation directory revocation immediately unmounts private content without removing configuration", async () => {
+    const view = render(<EmperorAgentLibrary />); await settled();
+    fireEvent.click(screen.getByRole("button", { name: "模拟未发送草稿" }));
+    controls.permissions.canRead.mockImplementation((_module: string, subModule: string) => subModule !== "emperor_conversations");
+    view.rerender(<EmperorAgentLibrary />);
+    expect(screen.queryByTestId("conversation-bridge")).not.toBeInTheDocument();
+    expect(screen.getByTestId("configuration-bridge")).toBeInTheDocument();
+    expect(controls.conversationUnmount).toHaveBeenCalledTimes(1);
+    expect(controls.bridgeUnmount).not.toHaveBeenCalled();
+    expect(screen.getByText(/当前没有私有对话读取权限/)).toBeVisible();
+  });
+  it("requires confirmation to discard a dirty conversation on Agent switch", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<EmperorAgentLibrary />); await settled();
+    fireEvent.click(screen.getByRole("button", { name: "模拟未发送草稿" }));
+    fireEvent.click(screen.getByRole("button", { name: /图片策划助手/ }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("conversation-bridge")).toHaveAttribute("data-agent", "listing");
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: /图片策划助手/ }));
+    expect(screen.getByTestId("conversation-bridge")).toHaveAttribute("data-agent", "images");
+    expect(controls.conversationUnmount).toHaveBeenCalledWith(expect.objectContaining({ agentKey: "listing" }));
+  });
+  it("identity change clears dirty private content immediately without old-owner confirmation", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const view = render(<EmperorAgentLibrary />); await settled();
+    fireEvent.click(screen.getByRole("button", { name: "模拟未发送草稿" }));
+    controls.auth.user = { id: 8, defaultWorkspaceId: 12, role: "admin" };
+    view.rerender(<EmperorAgentLibrary />); await settled();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.getByTestId("conversation-bridge")).toHaveAttribute("data-user", "8");
+    expect(screen.getByTestId("conversation-bridge")).toHaveAttribute("data-workspace", "12");
+    expect(controls.conversationUnmount).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, workspaceId: 11 }));
+  });
+  it("resource refresh preserves the owned conversation and dirty state", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<EmperorAgentLibrary />); await settled();
+    fireEvent.click(screen.getByRole("button", { name: "模拟未发送草稿" }));
+    fireEvent.click(refresh()); await settled();
+    expect(controls.conversationMount).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /图片策划助手/ }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/对话引用 Skill 不代表执行了业务任务/)).toBeVisible();
+  });
+});
 
 describe("Agent library authenticated scope admission", () => {
   it.each([

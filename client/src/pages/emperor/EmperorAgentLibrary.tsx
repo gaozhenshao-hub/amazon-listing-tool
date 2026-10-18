@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, GitBranch, RefreshCw } from "lucide-react";
 import type { AgentLibraryKey } from "@shared/agentLibraryContracts";
 import { SECURITY_RESOURCE_MODULES } from "@shared/const";
@@ -8,10 +8,11 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import AgentLibraryPanel from "./AgentLibraryPanel";
 import AssistantConfigurationBridge from "./AssistantConfigurationBridge";
+import AssistantConversationBridge from "./AssistantConversationBridge";
 import type { LibraryModel, LibraryReadState, LibrarySkill, LibraryWorkflow } from "./AgentLibraryPresentation";
 
 /** Mounted only for one authenticated scope; no business rows enter shared caches. */
-function OwnedLibrary({ scopeKey, workspaceId, canEdit }: { scopeKey: string; workspaceId: number; canEdit: boolean }) {
+function OwnedLibrary({ scopeKey, workspaceId, userId, role, canEdit, canReadConversations }: { scopeKey: string; workspaceId: number; userId: number; role: string; canEdit: boolean; canReadConversations: boolean }) {
   const client = trpc.useUtils().client;
   const [selected, setSelected] = useState<AgentLibraryKey>("listing");
   const [workflows, setWorkflows] = useState<LibraryReadState<LibraryWorkflow>>({ status: "loading" });
@@ -19,6 +20,15 @@ function OwnedLibrary({ scopeKey, workspaceId, canEdit }: { scopeKey: string; wo
   const [models, setModels] = useState<LibraryReadState<LibraryModel>>({ status: "loading" });
   const [refreshing, setRefreshing] = useState(true), [generation, setGeneration] = useState(0);
   const sequence = useRef(0);
+  const conversationDirty = useRef(false);
+  const onConversationDirtyChange = useCallback((dirty: boolean) => { conversationDirty.current = dirty; }, []);
+  useEffect(() => { if (!canReadConversations) conversationDirty.current = false; }, [canReadConversations]);
+  function selectAgent(next: AgentLibraryKey) {
+    if (next === selected) return;
+    if (conversationDirty.current && !window.confirm("当前对话有未发送内容或未完成的回执确认。切换助手将清空未发送草稿；已提交任务仍可回到原助手查询。是否继续？")) return;
+    conversationDirty.current = false;
+    setSelected(next);
+  }
   useEffect(() => {
     const controller = new AbortController(), ticket = ++sequence.current;
     let active = true;
@@ -56,10 +66,13 @@ function OwnedLibrary({ scopeKey, workspaceId, canEdit }: { scopeKey: string; wo
     </header>
     <div className="mx-auto max-w-[1600px] space-y-6 px-5 py-6 md:px-8">
       <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs leading-6 text-amber-200/90">专属配置按当前工作区读取，未保存和读取失败会分别显示；保存与恢复版本受管理员权限及服务器写入开关控制。资源目录不是助手绑定，查看、刷新和保存配置都不会启动 AI 或业务任务。</p>
-      <AgentLibraryPanel selected={selected} onSelect={setSelected}
+      <AgentLibraryPanel selected={selected} onSelect={selectAgent}
         workflows={workflows} skills={skills} models={models}
         configurationSlot={<AssistantConfigurationBridge key={JSON.stringify([scopeKey, selected, canEdit])}
-          agentKey={selected} scopeKey={scopeKey} workspaceId={workspaceId} canEdit={canEdit} />} />
+          agentKey={selected} scopeKey={scopeKey} workspaceId={workspaceId} canEdit={canEdit} />}
+        conversationSlot={canReadConversations ? <AssistantConversationBridge key={JSON.stringify([scopeKey, selected])}
+          agentKey={selected} scopeKey={scopeKey} workspaceId={workspaceId} userId={userId} role={role}
+          onDirtyChange={onConversationDirtyChange} /> : <p role="status" className="text-sm text-slate-400">当前没有私有对话读取权限；配置和资源目录仍按原权限显示。</p>} />
     </div>
   </main>;
 }
@@ -79,6 +92,8 @@ export default function EmperorAgentLibrary() {
   if (!permissions.canRead(moduleId, subModuleId)) return <p role="alert" className="p-8">没有读取 Agent 库的权限。</p>;
   // Matches the real adminProcedure roles; resource edit permission alone is insufficient.
   const canEdit = ["super_admin", "admin"].includes(user.role) && permissions.canEdit(moduleId, subModuleId);
+  const conversationModule = SECURITY_RESOURCE_MODULES.conversation;
+  const canReadConversations = permissions.canRead(conversationModule.moduleId, conversationModule.subModuleId);
   const scopeKey = JSON.stringify([user.id, workspaceId, user.role, canEdit]);
-  return <OwnedLibrary key={scopeKey} scopeKey={scopeKey} workspaceId={workspaceId} canEdit={canEdit} />;
+  return <OwnedLibrary key={scopeKey} scopeKey={scopeKey} workspaceId={workspaceId} userId={user.id} role={user.role} canEdit={canEdit} canReadConversations={canReadConversations} />;
 }

@@ -452,9 +452,9 @@
         "sha256": "b3684a0e402946b9114559e50489f41ccc59e92159cc050baba43849f5061e7d"
       },
       "reviewed": {
-        "gitBlobSha1": "84e0d8f7014df9ddfcb8ca4cd802bffbb2b9a471",
-        "sha256": "7ae942e25528ca7e30b55e596315cd3aeae6383cc7fddd0dd562c22e40bb37b0",
-        "reviewRef": "config/integration/reviews/inventory-manual-worker-20261018.json"
+        "gitBlobSha1": "3e290ed020099d4795d40ba6fac9bd62a813dcd7",
+        "sha256": "26b6fa462913715861b16a4e7067b678d2b09e4671f7ea7222ab96595d403947",
+        "reviewRef": "config/integration/reviews/20261018-assistant-conversation-worker.json"
       }
     },
     {

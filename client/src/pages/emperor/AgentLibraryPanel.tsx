@@ -12,6 +12,7 @@ type Props = {
   workflows: LibraryReadState<LibraryWorkflow>; skills: LibraryReadState<LibrarySkill>;
   models: LibraryReadState<LibraryModel>;
   configurationSlot?: ReactNode;
+  conversationSlot?: ReactNode;
 };
 
 const panelClass = "rounded-xl border border-white/10 bg-white/[0.025] p-5";
@@ -48,9 +49,10 @@ function ReadNotice({ state, noun }: { state: LibraryReadState<unknown>; noun: s
   return null;
 }
 
-export default function AgentLibraryPanel({ selected, onSelect, workflows, skills, models, configurationSlot }: Props) {
+export default function AgentLibraryPanel({ selected, onSelect, workflows, skills, models, configurationSlot, conversationSlot }: Props) {
   const role = libraryDirectory(selected);
   const hasConfigurationSlot = configurationSlot != null && configurationSlot !== false;
+  const hasConversationSlot = conversationSlot != null && conversationSlot !== false;
   const visibleWorkflows = workflows.status === "ready" ? workflows.rows : [];
   const roleWorkflows = visibleWorkflows.filter(item => libraryRoleForWorkflow(item.slug) === selected);
   const relatedSkills = skills.status === "ready"
@@ -92,6 +94,8 @@ export default function AgentLibraryPanel({ selected, onSelect, workflows, skill
           </>}
         </section>
 
+        {hasConversationSlot && <section className={panelClass} aria-label="助手私有对话">{conversationSlot}</section>}
+
         <section className={panelClass} aria-label="已有编排配置">
           <h3 className="flex items-center gap-2 font-medium text-slate-100"><GitBranch className="h-4 w-4 text-violet-400" />已有编排配置</h3>
           <p className="mb-4 mt-2 text-xs leading-6 text-slate-500">按 slug 规则归类，不是保存的助手绑定或执行授权。节点显示原 DAG 配置及服务端校验结果，不启动任务。当前执行器对全部入边检查上游 confirmed / skipped；即使边标记为 suggested / optional 或 required=false，也不能据此认为可跳过上游门禁。Skill 链接只读当前可见详情，不代表节点版本已解析或已授权执行。</p>
@@ -119,6 +123,6 @@ export default function AgentLibraryPanel({ selected, onSelect, workflows, skill
     </div>
 
     {workflows.status === "ready" && otherWorkflows.length > 0 && <section className={panelClass} aria-label="其他已有编排"><h3 className="text-sm font-medium text-slate-200">其他已有编排 / 业务管理流程</h3><p className="mb-3 mt-2 text-xs text-slate-500">未按目录归类的记录仍保留，不自动改绑或复制。</p><div className="flex flex-wrap gap-3">{otherWorkflows.map(item => <a key={item.id} className={linkClass} href={workflowCanvasHref(item.slug)}>{item.name}</a>)}</div></section>}
-    <p className="flex items-start gap-2 text-xs leading-6 text-slate-500"><Info className="mt-1 h-4 w-4 shrink-0" />{hasConfigurationSlot ? "本页提供助手专属配置与版本入口，保存和恢复受管理员权限及环境写入开关控制；尚未提供聊天、Skill 执行或自动任务。原编排画布、CRUD 和业务执行入口保持不变，继续使用原有权限。" : "本页仅查询与展示，不提供聊天、保存配置、Skill 执行或自动任务。原编排画布、CRUD 和业务执行入口保持不变，继续使用原有权限。"}</p>
+    <p className="flex items-start gap-2 text-xs leading-6 text-slate-500"><Info className="mt-1 h-4 w-4 shrink-0" />{hasConversationSlot ? "私有对话按当前用户、工作区及助手隔离，发送受当前权限、配置、可信 Skill 和后台开关控制。对话引用 Skill 不代表执行了业务任务；候选规则须人工复核。原配置、编排与业务执行入口保持不变。" : hasConfigurationSlot ? "本页提供助手专属配置与版本入口，保存和恢复受管理员权限及环境写入开关控制；尚未提供聊天、Skill 执行或自动任务。原编排画布、CRUD 和业务执行入口保持不变，继续使用原有权限。" : "本页仅查询与展示，不提供聊天、保存配置、Skill 执行或自动任务。原编排画布、CRUD 和业务执行入口保持不变，继续使用原有权限。"}</p>
   </div>;
 }

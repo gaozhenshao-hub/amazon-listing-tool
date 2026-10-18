@@ -4,7 +4,9 @@ import { z } from "zod";
 import { requireDb } from "../../../repositories/dbClient";
 import { assistantConversationLeaseRecovery, canTransitionAssistantConversation } from "../../../../shared/assistantConversation";
 
-export const ASSISTANT_CONVERSATION_LIMITS = Object.freeze({ request: 1024 * 1024, configuration: 128 * 1024, runtime: 512 * 1024, result: 256 * 1024, dispatch: 16 * 1024, extraction: 256 * 1024, file: 3 * 1024 * 1024, files: 3, page: 50, read: 8 * 1024 * 1024 });
+// Configuration's public body remains 128KiB; the private immutable snapshot also
+// includes its bounded workspace/Agent/revision/hash envelope.
+export const ASSISTANT_CONVERSATION_LIMITS = Object.freeze({ request: 1024 * 1024, configuration: 129 * 1024, runtime: 512 * 1024, result: 256 * 1024, dispatch: 16 * 1024, extraction: 256 * 1024, file: 3 * 1024 * 1024, files: 3, page: 50, read: 8 * 1024 * 1024 });
 const THREADS = "assistant_conversation_threads", TURNS = "assistant_conversation_turns", ATTACHMENTS = "assistant_conversation_attachments";
 const UUID = z.string().uuid().refine(value => value === value.toLowerCase()), HASH = z.string().regex(/^[a-f0-9]{64}$/u), ID = z.number().int().min(1).max(2147483647), VERSION = z.number().int().min(0).max(2147483646);
 const TIME = z.string().regex(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$/u), CODE = z.string().regex(/^[A-Z][A-Z0-9_]{0,99}$/u);
