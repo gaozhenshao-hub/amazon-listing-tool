@@ -19,7 +19,7 @@ function capture(month = "2026-09", sourceMonths = [month], amount = 12): Operat
     return parseMonthlyFinancialBatch(record).rows;
   });
   return buildOperationsBoardEditionCapture({ scope, month, rows, scannedBatches: sourceMonths.map((_month, index) => ({ id: 41 + index, recordHash: "b".repeat(64) })).reverse(),
-    sources: sourceMonths.map((month, index) => ({ month, batchId: 41 + index, recordHash: "b".repeat(64), rowCount: 1 })) });
+    sources: sourceMonths.map((month, index) => ({ month, batchId: 41 + index, recordHash: "b".repeat(64), rowCount: 1, origin: { kind: "unknown", hashBasis: "unknown", sourceRunId: null } })) });
 }
 function edition(snapshot = capture(), patch: Partial<OperationsBoardEdition> = {}): OperationsBoardEdition {
   return { id: 9, scope, month: snapshot.month, revision: 1, version: 4, kind: "original", status: "current", originalEditionId: null,

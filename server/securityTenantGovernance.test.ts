@@ -2,8 +2,10 @@ import fs from "fs";
 import path from "path";
 import { describe, expect, it } from "vitest";
 import {
+  PERMISSION_RESOURCE_REGISTRY,
   SECURITY_ACTIONS,
   SECURITY_PERMISSION_MATRIX,
+  SECURITY_RESOURCE_MODULES,
   SECURITY_RESOURCES,
 } from "../shared/const";
 
@@ -24,6 +26,13 @@ describe("security tenant governance v1", () => {
       "tool",
       "agent",
       "ops_data",
+      "ops_board",
+      "ops_task",
+      "ops_cost_sheet",
+      "ops_monthly_import",
+      "ops_inventory_collection",
+      "ops_inventory_planning",
+      "ops_inventory_governance",
       "offsite_campaign",
       "emperor_skill",
       "conversation",
@@ -49,6 +58,12 @@ describe("security tenant governance v1", () => {
     expect(SECURITY_PERMISSION_MATRIX.super_admin?.tool).toEqual(SECURITY_ACTIONS);
     expect(SECURITY_PERMISSION_MATRIX.admin?.tool).toEqual(expect.arrayContaining(["manage_secret", "rotate_secret"]));
     expect(SECURITY_PERMISSION_MATRIX.ops_specialist?.tool || []).not.toContain("rotate_secret");
+  });
+
+  it("maps the board resource only to the operations dashboard directory", () => {
+    const expectedDirectory = { moduleId: "ops", subModuleId: "ops_dashboard" };
+    expect(PERMISSION_RESOURCE_REGISTRY.ops_board).toEqual(expectedDirectory);
+    expect(SECURITY_RESOURCE_MODULES.ops_board).toEqual(expectedDirectory);
   });
 
   it("ships a tenant migration with workspace scope, audit logs, and secret key versions", () => {

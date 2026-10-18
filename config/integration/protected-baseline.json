@@ -1241,9 +1241,9 @@
         "sha256": "d23348bbbda0f947b23da72d15344c6a666078dec9bd1b9a04a2c8fd7722b604"
       },
       "reviewed": {
-        "gitBlobSha1": "97e58a5deed61cd55382d3bf4c90f88132e9146b",
-        "sha256": "862b645dab502d7492cf3885ca63e96619e7272ce551a40a5606b0cfb486971f",
-        "reviewRef": "config/integration/reviews/20261016-listing-durable-profile-conversion.json"
+        "gitBlobSha1": "fd7a2bf92ede7bff6a026c094ae04005dde933e5",
+        "sha256": "08a62fc046c5404de3b66a171e0d11e6048b6ed1a0409a265994e1e2d41a1fcf",
+        "reviewRef": "config/integration/reviews/20261018-operations-board-shared-authorization.json; optional shared reads only; old default UPDATE and prior K06 authorization/audit behavior retained"
       }
     },
     {

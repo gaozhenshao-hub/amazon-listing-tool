@@ -10,8 +10,10 @@ import {
   type OperationsBoardLifecyclePlan,
 } from "./operationsBoardLifecycle";
 
-/** Internal SQL adapter only. The caller MUST hold the workspace write lock in
+/** Internal SQL adapter only. The caller MUST hold the workspace lock in
  * a real transaction, admit the actual schema, and authorize the current actor.
+ * readOnly uses shared locks and forbids every mutation; writes require the
+ * exclusive workspace lock before loading any business rows.
  * No method opens/commits a transaction, performs authorization or catches a SQL
  * failure. A thrown error MUST abort the caller's whole transaction. */
 export interface OperationsBoardEditionExecutor { execute(query: SQL): Promise<unknown> }
@@ -50,9 +52,11 @@ const captureSize = "OCTET_LENGTH(CAST(e.capture AS CHAR CHARACTER SET utf8mb4))
 const metadata = "e.id,e.workspace_id AS workspaceId,e.state_id AS stateId,e.month,e.revision,e.version,e.kind,e.status,e.original_edition_id AS originalEditionId,e.source_hash AS sourceHash,e.created_by AS createdBy,DATE_FORMAT(e.created_at,'%Y-%m-%d %H:%i:%s.%f') AS createdAt,DATE_FORMAT(e.updated_at,'%Y-%m-%d %H:%i:%s.%f') AS updatedAt,DATE_FORMAT(e.archived_at,'%Y-%m-%d %H:%i:%s.%f') AS archivedAt";
 
 export function createOperationsBoardEditionStore(input: {
-  tx: OperationsBoardEditionExecutor; identity: { workspaceId: number; userId: number }; role: string;
+  tx: OperationsBoardEditionExecutor; identity: { workspaceId: number; userId: number }; role: string; readOnly?: boolean;
 }) {
   const { tx, identity, role } = input;
+  const lock = input.readOnly ? "FOR SHARE" : "FOR UPDATE";
+  function writable() { if (input.readOnly) fail("READ_ONLY_STORE"); }
   const creators = new Map<number, number>();
   if (!positive(identity.workspaceId) || !positive(identity.userId) || typeof role !== "string" || !role || !tx || typeof tx.execute !== "function") fail("IDENTITY_INVALID");
   function scopeOf(raw: OperationsBoardEditionScope) {
@@ -71,6 +75,7 @@ export function createOperationsBoardEditionStore(input: {
     return result[0] as Row[];
   }
   async function write(text: string, values: unknown[], inserting = false): Promise<number> {
+    writable();
     const result = await tx.execute(statement(text, values)), header = Array.isArray(result) ? result[0] : null;
     if (!header || typeof header !== "object" || !("affectedRows" in header) || header.affectedRows !== 1) fail("WRITE_CONFLICT");
     if (inserting && (!("insertId" in header) || !positive(header.insertId))) fail("INSERT_ID_INVALID");
@@ -84,7 +89,7 @@ export function createOperationsBoardEditionStore(input: {
   async function stateRow(scope: OperationsBoardEditionScope): Promise<StateRow | null> {
     // The exact plaintext alternative detects a corrupt/different hash rather
     // than interpreting it as absent and creating a second scope.
-    const found = await rows("SELECT s.id,s.workspace_id AS workspaceId,s.scope_key AS scopeKey,s.store_name AS storeName,s.country,s.current_month AS currentMonth,s.current_edition_id AS currentEditionId,s.version,DATE_FORMAT(s.created_at,'%Y-%m-%d %H:%i:%s.%f') AS createdAt,DATE_FORMAT(s.updated_at,'%Y-%m-%d %H:%i:%s.%f') AS updatedAt FROM ops_board_states s WHERE s.workspace_id=? AND (s.scope_key=? OR (BINARY s.store_name=BINARY ? AND BINARY s.country=BINARY ?)) LIMIT 3 FOR UPDATE", scopeValues(scope));
+    const found = await rows(`SELECT s.id,s.workspace_id AS workspaceId,s.scope_key AS scopeKey,s.store_name AS storeName,s.country,s.current_month AS currentMonth,s.current_edition_id AS currentEditionId,s.version,DATE_FORMAT(s.created_at,'%Y-%m-%d %H:%i:%s.%f') AS createdAt,DATE_FORMAT(s.updated_at,'%Y-%m-%d %H:%i:%s.%f') AS updatedAt FROM ops_board_states s WHERE s.workspace_id=? AND (s.scope_key=? OR (BINARY s.store_name=BINARY ? AND BINARY s.country=BINARY ?)) LIMIT 3 ${lock}`, scopeValues(scope));
     if (!found.length) return null;
     const row = found[0];
     if (found.length !== 1 || !positive(row.id) || row.workspaceId !== scope.workspaceId || row.scopeKey !== operationsBoardEditionScopeKey(scope) || row.storeName !== scope.storeName || row.country !== scope.country
@@ -95,12 +100,12 @@ export function createOperationsBoardEditionStore(input: {
   async function editionRow(scope: OperationsBoardEditionScope, stateId: number, editionId: number): Promise<OperationsBoardEdition | null> {
     if (!positive(editionId)) fail("EDITION_ID_INVALID");
     const params = [...scopeValues(scope), stateId, editionId];
-    const sizes = await rows(`SELECT e.id,${captureSize} AS captureBytes ${editionFrom} WHERE ${exactState} AND e.state_id=? AND e.id=? LIMIT 2 FOR UPDATE`, params);
+    const sizes = await rows(`SELECT e.id,${captureSize} AS captureBytes ${editionFrom} WHERE ${exactState} AND e.state_id=? AND e.id=? LIMIT 2 ${lock}`, params);
     if (!sizes.length) return null;
     if (sizes.length !== 1 || sizes[0].id !== editionId || typeof sizes[0].captureBytes !== "number" || !Number.isSafeInteger(sizes[0].captureBytes) || sizes[0].captureBytes <= 0 || sizes[0].captureBytes > MAX_CAPTURE) fail("CAPTURE_BUDGET");
     // Both the preflight and wire projection are bounded; no unbounded JSON is
     // fetched first and measured later. The row lock spans both statements.
-    const found = await rows(`SELECT ${metadata},${captureSize} AS captureBytes,IF(${captureSize}<=?,e.capture,NULL) AS capture ${editionFrom} WHERE ${exactState} AND e.state_id=? AND e.id=? LIMIT 2 FOR UPDATE`, [MAX_CAPTURE, ...params]);
+    const found = await rows(`SELECT ${metadata},${captureSize} AS captureBytes,IF(${captureSize}<=?,e.capture,NULL) AS capture ${editionFrom} WHERE ${exactState} AND e.state_id=? AND e.id=? LIMIT 2 ${lock}`, [MAX_CAPTURE, ...params]);
     const row = found[0];
     if (found.length !== 1 || !row || row.id !== editionId || row.workspaceId !== scope.workspaceId || row.stateId !== stateId || !positive(row.createdBy) || row.captureBytes !== sizes[0].captureBytes || row.capture === null
       || !validTime(row.createdAt) || !validTime(row.updatedAt) || row.archivedAt !== null && !validTime(row.archivedAt)) fail("EDITION_INVALID");
@@ -174,7 +179,7 @@ export function createOperationsBoardEditionStore(input: {
     const scope = scopeOf(raw), current = await stateRow(scope); return current ? editionRow(scope, current.id, editionId) : null;
   }
   async function initializeExplicitAdmin(raw: OperationsBoardEditionScope, rawCapture: OperationsBoardEditionCapture, expected?: OperationsBoardEditionStoreExpected) {
-    admin(); const scope = scopeOf(raw), capture = captureOf(rawCapture, scope), current = await loaded(scope); expectedMatches(current?.value ?? null, expected);
+    writable(); admin(); const scope = scopeOf(raw), capture = captureOf(rawCapture, scope), current = await loaded(scope); expectedMatches(current?.value ?? null, expected);
     if (current) fail("ALREADY_INITIALIZED");
     const stamp = await now();
     const stateId = await write("INSERT INTO ops_board_states (workspace_id,scope_key,store_name,country,current_month,current_edition_id,version,created_at,updated_at) VALUES (?,?,?,?,?,NULL,1,?,?)", [...scopeValues(scope), capture.month, stamp, stamp], true);
@@ -184,6 +189,7 @@ export function createOperationsBoardEditionStore(input: {
       currentMonth: capture.month, currentEditionId: null, version: 1, createdAt: stamp, updatedAt: stamp }, null, plan, stamp);
   }
   async function refreshExisting(raw: OperationsBoardEditionScope, rawCapture: OperationsBoardEditionCapture, expected?: OperationsBoardEditionStoreExpected) {
+    writable();
     if (!["admin", "super_admin", "ops_manager"].includes(role)) fail("REFRESH_ROLE_REQUIRED");
     const scope = scopeOf(raw), capture = captureOf(rawCapture, scope), current = await loaded(scope); expectedMatches(current?.value ?? null, expected);
     if (!current) return null;
@@ -193,7 +199,7 @@ export function createOperationsBoardEditionStore(input: {
     return apply(scope, current.row, current.value.currentEdition, plan, stamp);
   }
   async function publishRevision(raw: OperationsBoardEditionScope, originalId: number, rawCapture: OperationsBoardEditionCapture, expected?: OperationsBoardEditionStoreExpected) {
-    admin(); const scope = scopeOf(raw), capture = captureOf(rawCapture, scope), current = await loaded(scope); expectedMatches(current?.value ?? null, expected);
+    writable(); admin(); const scope = scopeOf(raw), capture = captureOf(rawCapture, scope), current = await loaded(scope); expectedMatches(current?.value ?? null, expected);
     if (!current) fail("NOT_INITIALIZED");
     const original = await editionRow(scope, current.row.id, originalId); if (!original) fail("ORIGINAL_MISSING");
     const all = await rows(`SELECT ${metadata} ${editionFrom} WHERE ${exactState} AND e.state_id=? AND BINARY e.month=BINARY ? ORDER BY e.revision,e.id LIMIT 10001 FOR UPDATE`, [...scopeValues(scope), current.row.id, original.month]);

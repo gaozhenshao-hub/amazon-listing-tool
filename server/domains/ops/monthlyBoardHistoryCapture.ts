@@ -37,15 +37,15 @@ export function prepareOperationsBoardHistoryCapture(records: readonly MonthlyFi
     capture(input: MonthlyBoardHistoryScope) {
       const scope = checkedScope({ storeName: input.storeName, country: input.country });
       if (!/^[1-9]\d{3}-(?:0[1-9]|1[0-2])$/u.test(input.month)) throw new InvalidSource();
-      const winners = new Map<string, { batchId: number; recordHash: string; rows: ReturnType<typeof parseMonthlyFinancialBatch>["rows"] }>();
+      const winners = new Map<string, { batchId: number; recordHash: string; origin: ReturnType<typeof parseMonthlyFinancialBatch>["batch"]["origin"]; rows: ReturnType<typeof parseMonthlyFinancialBatch>["rows"] }>();
       for (const { batch, recordHash } of parsed) {
         const matching = batch.rows.filter(row => row.yearMonth <= input.month && monthlyFinancialRowMatchesScope(row, { ...scope, yearMonth: row.yearMonth }));
-        for (const row of matching) if (!winners.has(row.yearMonth)) winners.set(row.yearMonth, { batchId: batch.batch.id, recordHash, rows: matching.filter(other => other.yearMonth === row.yearMonth) });
+        for (const row of matching) if (!winners.has(row.yearMonth)) winners.set(row.yearMonth, { batchId: batch.batch.id, recordHash, origin: batch.batch.origin, rows: matching.filter(other => other.yearMonth === row.yearMonth) });
       }
       const selected = [...winners].sort(([a], [b]) => a.localeCompare(b));
       return buildOperationsBoardEditionCapture({ scope, month: input.month,
         scannedBatches: parsed.map(({ batch, recordHash }) => ({ id: batch.batch.id, recordHash })),
-        sources: selected.map(([month, source]) => ({ month, batchId: source.batchId, recordHash: source.recordHash, rowCount: source.rows.length })),
+        sources: selected.map(([month, source]) => ({ month, batchId: source.batchId, recordHash: source.recordHash, rowCount: source.rows.length, origin: source.origin })),
         rows: selected.flatMap(([, source]) => source.rows) });
     },
   };
@@ -107,7 +107,7 @@ export async function captureOperationsBoardEdition(session: Session, input: Mon
   const sources = history.selections.map(selection => {
     const batchId = selection.selection.selected!.batch.id, recordHash = hashes.get(batchId);
     if (!recordHash || selection.metadataVisibility !== "full" || selection.authorizedRowRefs !== undefined) throw new InvalidSource();
-    return { month: selection.month, batchId, recordHash, rowCount: rows.filter(row => row.yearMonth === selection.month).length };
+    return { month: selection.month, batchId, recordHash, rowCount: rows.filter(row => row.yearMonth === selection.month).length, origin: selection.selection.selected!.batch.origin };
   });
   return buildOperationsBoardEditionCapture({ scope, month: input.month, scannedBatches: history.scannedBatches, sources, rows });
 }

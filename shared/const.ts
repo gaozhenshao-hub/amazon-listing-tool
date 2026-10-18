@@ -285,6 +285,9 @@ export const PERMISSION_RESOURCE_REGISTRY = {
   tool: { moduleId: 'emperor', subModuleId: 'emperor_mcp' },
   agent: { moduleId: 'emperor', subModuleId: 'emperor_agents' },
   ops_data: { moduleId: 'ops', subModuleId: 'ops_dashboard' },
+  // Board archives, responsible-person notes and explicit numeric pairings are
+  // separate from financial imports, task writes and supplier synchronization.
+  ops_board: { moduleId: 'ops', subModuleId: 'ops_dashboard' },
   // Task actions are additionally row-scoped on the server. They do not grant
   // financial writes, sync, task deletion, or access to another assignee's task.
   ops_task: { moduleId: 'ops', subModuleId: 'ops_tasks' },
@@ -370,6 +373,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     agent: [...SECURITY_ACTIONS],
     conversation: [...SECURITY_ACTIONS],
     ops_data: [...SECURITY_ACTIONS],
+    ops_board: ['read', 'create', 'update', 'assign'],
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
     ops_cost_sheet: ['read', 'update'],
     ops_monthly_import: ['read', 'create', 'update', 'delete'],
@@ -386,6 +390,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     agent: ['read', 'create', 'update', 'delete', 'run', 'confirm', 'cancel'],
     conversation: ['read', 'create', 'update', 'delete', 'upload', 'run', 'confirm', 'cancel'],
     ops_data: ['read', 'import', 'export', 'update', 'delete', 'sync'],
+    ops_board: ['read', 'create', 'update', 'assign'],
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
     ops_cost_sheet: ['read', 'update'],
     ops_monthly_import: ['read', 'create', 'update', 'delete'],
@@ -401,6 +406,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     agent: ['read', 'run', 'confirm', 'cancel'],
     conversation: ['read', 'create', 'update', 'upload', 'run', 'confirm', 'cancel'],
     ops_data: ['read', 'import', 'export', 'update', 'sync'],
+    ops_board: ['read', 'update'],
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
     ops_cost_sheet: ['read', 'update'],
     ops_monthly_import: ['read', 'create', 'update', 'delete'],
@@ -416,6 +422,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     agent: ['read', 'run', 'confirm'],
     conversation: ['read', 'create', 'update', 'upload', 'run', 'confirm'],
     ops_data: ['read'],
+    ops_board: ['read', 'update'],
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete'],
     ops_cost_sheet: ['read', 'update'],
   },
@@ -432,6 +439,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     project: ['read'],
     file: ['read', 'export'],
     ops_data: ['read', 'export'],
+    ops_board: ['read'],
   },
   purchaser: {
     project: ['read'],

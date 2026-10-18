@@ -14,7 +14,7 @@ function capture(month = "2026-09", options: { rowsMonth?: string; empty?: boole
   const record: MonthlyFinancialBatchRecord = { id: batch, workspaceId: 7, userId: 3, fileName: "SYNTHETIC.csv", fileHash: "a".repeat(64), status: "completed", totalRows: 1, skippedRows: 0, unallocatedRows: 0, months: [period], createdAt: stamp, confirmedAt: stamp,
     payload: [{ yearMonth: period, parentAsin: "SYNTHETIC-PARENT", asin: "SYNTHETIC-CHILD", sku: "SYNTHETIC-SKU", title: "合成完整原文", storeName: scope.storeName, site: "美国", operator: "SYNTHETIC", raw: { currency: "USD", original: "不能覆盖归档原文" }, ...Object.fromEntries(MONTHLY_FINANCIAL_METRICS.map(key => [key, key === "financialProfit" ? options.profit ?? -5 : null])) }] };
   return buildOperationsBoardEditionCapture({ scope, month, scannedBatches: options.empty ? [] : [{ id: batch, recordHash: "b".repeat(64) }],
-    sources: options.empty ? [] : [{ month: period, batchId: batch, recordHash: "b".repeat(64), rowCount: 1 }], rows: options.empty ? [] : parseMonthlyFinancialBatch(record).rows });
+    sources: options.empty ? [] : [{ month: period, batchId: batch, recordHash: "b".repeat(64), rowCount: 1, origin: parseMonthlyFinancialBatch(record).batch.origin }], rows: options.empty ? [] : parseMonthlyFinancialBatch(record).rows });
 }
 let states: Row[], editions: Row[], notes: Row[], queries: { sql: string; params: unknown[] }[], nextState: number, nextEdition: number, clock: string;
 let readNative: boolean, failSql: string | null, failError: Error, affectedOverride: number | null, insertIdOverride: unknown;
@@ -79,6 +79,18 @@ beforeEach(() => {
 });
 
 describe("same-transaction edition SQL lifecycle", () => {
+  it("readOnly loads use shared locks and cannot mutate even as admin", async () => {
+    const saved = await initialized(); queries = [];
+    const readonly = createOperationsBoardEditionStore({ tx: executor, identity, role: "admin", readOnly: true });
+    expect(await readonly.load(scope)).toMatchObject({ stateId: saved.stateId });
+    expect(await readonly.get(scope, saved.currentEdition.id)).toEqual(saved.currentEdition);
+    expect(queries.every(item => item.sql.startsWith("SELECT") && item.sql.endsWith("FOR SHARE"))).toBe(true);
+    queries = [];
+    await expect(readonly.initializeExplicitAdmin(scope, capture())).rejects.toThrow("READ_ONLY_STORE");
+    await expect(readonly.refreshExisting(scope, capture())).rejects.toThrow("READ_ONLY_STORE");
+    await expect(readonly.publishRevision(scope, saved.currentEdition.id, capture())).rejects.toThrow("READ_ONLY_STORE");
+    expect(queries).toEqual([]);
+  });
   it("load and get on an absent scope never create anything", async () => {
     expect(await store().load(scope)).toBeNull(); expect(await store().get(scope, 5)).toBeNull();
     expect(states).toEqual([]); expect(queries.every(query => query.sql.startsWith("SELECT"))).toBe(true);

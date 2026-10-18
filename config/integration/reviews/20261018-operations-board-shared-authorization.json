@@ -1,0 +1,44 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "operations-board-archive-notes-and-direct-partners",
+  "baseline": "15cb21a924df227b69a6c713d223d8b77f2b64e5",
+  "control": "K06",
+  "humanDecision": "Approved accelerated local integration, workspace-local explicit numeric partners with read-only access, and responsible-user/admin notes. Production enablement and all original release gates remain deferred, not waived.",
+  "file": "server/services/securityGovernance.ts",
+  "previousReviewed": {
+    "gitBlobSha1": "97e58a5deed61cd55382d3bf4c90f88132e9146b",
+    "sha256": "862b645dab502d7492cf3885ca63e96619e7272ce551a40a5606b0cfb486971f",
+    "reviewRef": "config/integration/reviews/20261016-listing-durable-profile-conversion.json"
+  },
+  "reviewed": {
+    "gitBlobSha1": "fd7a2bf92ede7bff6a026c094ae04005dde933e5",
+    "sha256": "08a62fc046c5404de3b66a171e0d11e6048b6ed1a0409a265994e1e2d41a1fcf"
+  },
+  "intentionalDelta": [
+    "Add optional server-owned authorizationRead.lockMode: share or update. Omitted and explicit update preserve the previous FOR UPDATE SQL. share uses FOR SHARE on the same caller-owned strict transaction.",
+    "Reject an invalid explicit mode before administrator and owner fast paths. No client RPC accepts this setting.",
+    "Archive readers and direct partner authorization opt into shared policy locks to avoid opposite actor-role lock ordering. Existing writers and all unchanged callers retain their old default behavior."
+  ],
+  "preserved": [
+    "All original baseline hashes, K01-K10 entries and 106 protected files remain; only this existing reviewed tuple changes.",
+    "No change to membership, role policy evaluation, actor ownership rules, super-admin behavior, denial/audit behavior, credential resolution or database connection ownership.",
+    "No production configuration, migration, provider, task worker, stored data or public repository write."
+  ],
+  "review": {
+    "author": "edition_lifecycle implemented and verified the optional lock mode and current archive access path.",
+    "independent": "product_ui_review inspected all three hunks (11 additions, 4 removals), actual old-default SQL paths, strict policy reads and fast-path placement; no authorization expansion or regression found.",
+    "root": "Inspected the actual diff and reran 13 existing strict authorization tests, 17 new shared-read tests and 75 archive access tests: 105 passed. Independent core rerun: 30 passed. The protected guard first correctly rejected this deliberate K06 drift; no automatic accept mode was used."
+  },
+  "verification": {
+    "legacyStrictTests": 13,
+    "newLockTests": 17,
+    "archiveAccessTests": 75,
+    "coreCommands": [
+      "node_modules/.bin/vitest run server/securityGovernance.strictAuthorization.test.ts server/securityGovernance.sharedRead.test.ts server/domains/ops/operationsBoardAccess.test.ts --maxWorkers=2 --minWorkers=1",
+      "node_modules/.bin/eslint server/services/securityGovernance.ts server/securityGovernance.sharedRead.test.ts --max-warnings=0"
+    ],
+    "nativeDatabaseConcurrencyAccepted": false,
+    "productionDeployed": false,
+    "remaining": "Actual MySQL row/gap lock, concurrent policy revocation, direct-partner concurrent reads and transaction/commit failure acceptance remain part of the full release gates. SQL fixtures only verify requested lock syntax and policy outcomes."
+  }
+}

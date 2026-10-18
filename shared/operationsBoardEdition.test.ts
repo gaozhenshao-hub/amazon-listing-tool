@@ -21,14 +21,50 @@ const identity = { userId: 3, workspaceId: 7 };
 const base = { expectedWorkspaceId: 7, scope: requestScope };
 const operationId = "a7d29fe8-2c53-4c34-bfe7-cbe34c102125";
 const stamp = "2026-10-18 08:09:10.123456";
+const unknownOrigin = { kind: "unknown", hashBasis: "unknown", sourceRunId: null } as const;
 function rows(period = "2026-09", batchId = 41) {
   const payload = [{ yearMonth: period, parentAsin: "SYNTHETIC-PARENT", asin: "SYNTHETIC-CHILD", sku: "SYNTHETIC-SKU", title: "合成产品 <script>not executable</script>", storeName: scope.storeName, site: "美国站", operator: "SYNTHETIC Owner", raw: { currency: "USD", "1:原始说明/完整原文": "合成原文\n保留两行" }, ...Object.fromEntries(MONTHLY_FINANCIAL_METRICS.map(key => [key, key === "financialProfit" ? -7 : key === "salesQty" ? 0 : null])) }];
   const record: MonthlyFinancialBatchRecord = { id: batchId, workspaceId: 7, userId: 3, fileName: "SYNTHETIC.xlsx", fileHash: "a".repeat(64), status: "completed", totalRows: 1, skippedRows: 0, unallocatedRows: 0, months: [period], payload, createdAt: stamp, confirmedAt: stamp };
   return parseMonthlyFinancialBatch(record).rows;
 }
 function capture(period = "2026-09"): OperationsBoardEditionCapture {
-  return buildOperationsBoardEditionCapture({ scope, month: "2026-09", scannedBatches: [{ id: 41, recordHash: "b".repeat(64) }], sources: [{ month: period, batchId: 41, recordHash: "b".repeat(64), rowCount: 1 }], rows: rows(period) });
+  return buildOperationsBoardEditionCapture({ scope, month: "2026-09", scannedBatches: [{ id: 41, recordHash: "b".repeat(64) }], sources: [{ month: period, batchId: 41, recordHash: "b".repeat(64), rowCount: 1, origin: unknownOrigin }], rows: rows(period) });
 }
+
+describe("trusted archived batch provenance", () => {
+  it.each([
+    { kind: "uploaded_file", hashBasis: "original_file_bytes", sourceRunId: null },
+    { kind: "saihu_sync", hashBasis: "mapped_json_bytes", sourceRunId: 31 },
+    unknownOrigin,
+  ] as const)("keeps a complete server-derived origin %j in both hashes", origin => {
+    const value = capture(), previous = value.sourceHash;
+    value.sources[0].origin = origin;
+    expect(OperationsBoardEditionCaptureSchema.safeParse(resign(value)).success).toBe(true);
+    if (origin.kind !== "unknown") expect(value.sourceHash).not.toBe(previous);
+  });
+  it.each([
+    undefined, null,
+    { kind: "saihu_sync", hashBasis: "mapped_json_bytes", sourceRunId: null },
+    { kind: "saihu_sync", hashBasis: "original_file_bytes", sourceRunId: 1 },
+    { kind: "uploaded_file", hashBasis: "original_file_bytes", sourceRunId: 1 },
+    { kind: "uploaded_file", hashBasis: "unknown", sourceRunId: null },
+    { kind: "unknown", hashBasis: "unknown", sourceRunId: 1 },
+    { kind: "unknown", hashBasis: "mapped_json_bytes", sourceRunId: null },
+  ])("does not infer or repair incomplete source origin %j", origin => {
+    const value = capture(); (value.sources[0] as unknown as Record<string, unknown>).origin = origin;
+    expect(OperationsBoardEditionCaptureSchema.safeParse(value).success).toBe(false);
+  });
+  it("rejects an origin change without a new server capture proof", () => {
+    const value = capture(); value.sources[0].origin = { kind: "saihu_sync", hashBasis: "mapped_json_bytes", sourceRunId: 31 };
+    expect(OperationsBoardEditionCaptureSchema.safeParse(value).success).toBe(false);
+  });
+  it("rejects conflicting origins for the same batch across historical months", () => {
+    const value = capture(), older = { ...rows("2026-08")[0], rowIndex: 1 };
+    value.rows.unshift(older); value.sources.unshift({ ...value.sources[0], month: "2026-08", origin: { kind: "uploaded_file", hashBasis: "original_file_bytes", sourceRunId: null } });
+    value.coverage.months.unshift("2026-08"); value.coverage.rowCount++;
+    expect(OperationsBoardEditionCaptureSchema.safeParse(resign(value)).success).toBe(false);
+  });
+});
 function resign(value: OperationsBoardEditionCapture) {
   value.selectionHash = operationsBoardEditionSelectionHash(value); value.sourceHash = operationsBoardEditionSourceHash(value); return value;
 }
@@ -106,7 +142,7 @@ describe("complete immutable financial source captures", () => {
   });
   it("captures more than six months without substituting a page or recent window", () => {
     const all = Array.from({ length: 9 }, (_, index) => rows(`2026-${String(index + 1).padStart(2, "0")}`, 41 + index)).flat();
-    const value = buildOperationsBoardEditionCapture({ scope, month: "2026-09", rows: all, scannedBatches: Array.from({ length: 9 }, (_, index) => ({ id: 49 - index, recordHash: "a".repeat(64) })), sources: all.map(row => ({ month: row.yearMonth, batchId: row.batchId, recordHash: "a".repeat(64), rowCount: 1 })) });
+    const value = buildOperationsBoardEditionCapture({ scope, month: "2026-09", rows: all, scannedBatches: Array.from({ length: 9 }, (_, index) => ({ id: 49 - index, recordHash: "a".repeat(64) })), sources: all.map(row => ({ month: row.yearMonth, batchId: row.batchId, recordHash: "a".repeat(64), rowCount: 1, origin: unknownOrigin })) });
     expect(value.coverage.months).toHaveLength(9); expect(value.rows).toHaveLength(9);
   });
   it.each(["rows", "counts", "month", "scope", "batch", "hash", "candidate order", "candidate duplicate", "source duplicate", "duplicate row", "incomplete"])("rejects %s capture mismatch even after a dishonest rehash", kind => {

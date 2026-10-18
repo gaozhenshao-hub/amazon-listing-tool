@@ -16,7 +16,8 @@ function batch(id: number, rows: Row[] = [rawRow()]) {
   return { id, workspaceId: 11, userId: 7, fileName: "SYNTHETIC.xlsx", fileHash: "a".repeat(64), status: "completed", totalRows: rows.length, skippedRows: 0, unallocatedRows: rows.filter(row => !row.parentAsin).length,
     months, monthsBytes: Buffer.byteLength(months), payload, payloadBytes: Buffer.byteLength(payload), createdAt: "2026-10-18 01:02:03.000000", confirmedAt: "2026-10-18 02:03:04.000000", fileReferenceKind: "storage" as const, sourceRunId: null };
 }
-function fixture(initial: ReturnType<typeof batch>[], options: { manager?: boolean; candidatePatch?: (rows: Row[]) => Row[]; afterCandidates?: () => void } = {}) {
+type SavedBatch = Omit<ReturnType<typeof batch>, "fileReferenceKind" | "sourceRunId"> & { fileReferenceKind: "storage" | "saihu_sync_run" | "unknown"; sourceRunId: number | null };
+function fixture(initial: SavedBatch[], options: { manager?: boolean; candidatePatch?: (rows: Row[]) => Row[]; afterCandidates?: () => void } = {}) {
   const records = initial, calls: { sql: string; params: unknown[] }[] = [];
   const tx = { async execute(statement: SQL) {
     const query = new MySqlDialect().sqlToQuery(statement); calls.push(query);
@@ -31,6 +32,19 @@ function fixture(initial: ReturnType<typeof batch>[], options: { manager?: boole
 }
 
 describe("complete immutable shop/site edition source capture", () => {
+  it.each([
+    { fileReferenceKind: "storage", sourceRunId: null, kind: "uploaded_file", hashBasis: "original_file_bytes" },
+    { fileReferenceKind: "saihu_sync_run", sourceRunId: 17, kind: "saihu_sync", hashBasis: "mapped_json_bytes" },
+    { fileReferenceKind: "unknown", sourceRunId: null, kind: "unknown", hashBasis: "unknown" },
+  ] as const)("both capture paths retain saved origin, never raw claims: %j", origin => {
+    const record: SavedBatch = { ...batch(5, [rawRow({ raw: { source: "sellfox_monthly_api", forgedOrigin: "saihu_sync" } })]), fileReferenceKind: origin.fileReferenceKind, sourceRunId: origin.sourceRunId };
+    const prepared = prepareOperationsBoardHistoryCapture([record], 11).capture(input);
+    expect(prepared.sources[0].origin).toEqual({ kind: origin.kind, hashBasis: origin.hashBasis, sourceRunId: origin.sourceRunId });
+    return captureOperationsBoardEdition(fixture([record]).session, input).then(selected => {
+      expect(selected.sources[0].origin).toEqual(prepared.sources[0].origin);
+      expect(selected.sourceHash).toBe(prepared.sourceHash);
+    });
+  });
   it("captures all saved historical rows, not six months or a product page, without owner/name filtering", async () => {
     const records = Array.from({ length: 20 }, (_, index) => batch(100 + index, [rawRow({ yearMonth: `${2025 + Math.floor(index / 12)}-${String(index % 12 + 1).padStart(2, "0")}`, operator: index % 2 ? "SYNTHETIC other owner" : "" })]));
     const source = fixture(records), result = await captureOperationsBoardEdition(source.session, input);

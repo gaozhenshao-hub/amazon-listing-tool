@@ -32,9 +32,10 @@ export type ResourceActionCheck = {
   projectId?: number | null;
   resourceId?: string | number | null;
   ownerUserId?: number | null;
-  /** Strict business commits must read policy on their existing transaction.
-   * The caller owns the transaction and locks/reloads the actor and resource. */
-  authorizationRead?: { executor: DbExecutor; strict: true; lock: true };
+  /** Strict authorization reads policy on the caller's existing transaction.
+   * The caller locks/reloads its actor and resource. Read-only participants
+   * may opt into SHARE; the omitted mode preserves existing UPDATE locks. */
+  authorizationRead?: { executor: DbExecutor; strict: true; lock: true; lockMode?: "share" | "update" };
 };
 
 export type SecurityAuditInput = {
@@ -92,7 +93,7 @@ async function rawSecurityQuery(sqlStr: string, params: unknown[] = [], read?: R
   const db = read ? read.executor : await getDb();
   if (read && (!db || typeof db.execute !== "function")) throw new Error("Strict authorization requires a transaction executor");
   if (!db) return [];
-  if (read?.lock) sqlStr += " FOR UPDATE";
+  if (read?.lock) sqlStr += read.lockMode === "share" ? " FOR SHARE" : " FOR UPDATE";
   let result: any;
   if (params.length > 0) {
     const parts = sqlStr.split("?");
@@ -227,6 +228,12 @@ export async function hasResourceAction(input: ResourceActionCheck): Promise<boo
   const read = input.authorizationRead;
   if (read && (!read.executor || typeof read.executor.execute !== "function")) {
     throw new Error("Strict authorization requires a transaction executor");
+  }
+  // Shared authorization is opt-in for read-only transaction participants.
+  // Existing strict writers retain UPDATE locks; unknown modes cannot silently
+  // weaken locking, including on administrator/owner permission fast paths.
+  if (read && read.lockMode !== undefined && read.lockMode !== "share" && read.lockMode !== "update") {
+    throw new Error("Strict authorization requires a valid lock mode");
   }
   if (isAdminRole(input.actor.role) && input.actor.role === "super_admin") return true;
 

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import SHA256 from "crypto-js/sha256";
 import { normalizeMarketplaceCode } from "./marketplaceIdentity";
-import { MonthlyFinancialReadRowSchema, monthlyFinancialJsonBytes, type MonthlyFinancialReadRow } from "./monthlyFinancialRead";
+import { MonthlyFinancialBatchMetadataSchema, MonthlyFinancialReadRowSchema, monthlyFinancialJsonBytes, type MonthlyFinancialReadRow } from "./monthlyFinancialRead";
 
 /** Internal captures are complete, pre-authorization source snapshots. They are
  * not accepted by a public mutation and must not be returned to ordinary users. */
@@ -71,7 +71,15 @@ export type OperationsBoardEditionSaveNoteInput = z.infer<typeof OperationsBoard
 export const OperationsBoardEditionRecoverInputSchema = z.object({ ...baseInput, operationId: uuid, decision: z.enum(["check", "cancel"]) }).strict();
 export type OperationsBoardEditionRecoverInput = z.infer<typeof OperationsBoardEditionRecoverInputSchema>;
 
-export const OperationsBoardEditionSourceSchema = z.object({ month, batchId: id, recordHash: hash, rowCount: z.number().int().min(1).max(10_000) }).strict();
+// This proof is captured from server-parsed saved batch metadata, never from a
+// row's raw.source. It participates in both capture hashes and survives archive
+// freezing, so live owner mappings cannot mistake an uploaded file for ERP data.
+export const OperationsBoardEditionSourceSchema = z.object({ month, batchId: id, recordHash: hash,
+  rowCount: z.number().int().min(1).max(10_000), origin: MonthlyFinancialBatchMetadataSchema.shape.origin,
+}).strict().superRefine(({ origin }, ctx) => {
+  if (origin.kind === "saihu_sync" ? origin.sourceRunId === null || origin.hashBasis !== "mapped_json_bytes"
+    : origin.sourceRunId !== null || origin.hashBasis !== (origin.kind === "uploaded_file" ? "original_file_bytes" : "unknown")) issue(ctx, "Trusted source origin mismatch");
+});
 export type OperationsBoardEditionSource = z.infer<typeof OperationsBoardEditionSourceSchema>;
 const scanSchema = z.object({ id, recordHash: hash }).strict();
 const captureFields = {
@@ -105,6 +113,12 @@ function validateRows(rows: MonthlyFinancialReadRow[], scope: OperationsBoardEdi
  * The repository must scan the full fixed candidate set in one transaction. */
 export const OperationsBoardEditionCaptureSchema = bounded(OPERATIONS_BOARD_EDITION_LIMITS.captureBytes).pipe(z.object(captureFields).strict().superRefine((value, ctx) => {
   const scanned = new Map(value.scannedBatches.map(item => [item.id, item.recordHash]));
+  const origins = new Map<number, string>();
+  for (const source of value.sources) {
+    const origin = operationsBoardEditionCanonical(source.origin);
+    if (origins.has(source.batchId) && origins.get(source.batchId) !== origin) issue(ctx, "One saved batch cannot have conflicting source origins");
+    origins.set(source.batchId, origin);
+  }
   if (scanned.size !== value.scannedBatches.length || value.scannedBatches.some((item, index) => index > 0 && item.id >= value.scannedBatches[index - 1].id)) issue(ctx, "Candidate scan must be complete, unique and descending");
   if (value.sources.some((source, index) => source.month > value.month || index > 0 && source.month <= value.sources[index - 1].month || scanned.get(source.batchId) !== source.recordHash)) issue(ctx, "Selection has no matching fixed candidate proof");
   if (value.coverage.rowCount !== value.rows.length || !same(value.coverage.months, value.sources.map(source => source.month))) issue(ctx, "Full capture coverage mismatch");
