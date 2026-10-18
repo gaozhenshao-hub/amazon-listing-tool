@@ -66,7 +66,7 @@ export const listingAbTestingProcedures = {
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
-      const context = buildProductContext(project, analyses, enrichedData);
+      const context = buildProductContext(project, analyses, enrichedData, { projectId: input.projectId, workspaceId: ctx.workspaceId ?? null, userId: ctx.user.id });
 
       const styles: Array<{
         id: string; name: string; nameEn: string; description: string;

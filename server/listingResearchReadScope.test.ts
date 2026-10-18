@@ -40,7 +40,8 @@ const analyses: CompetitorAnalysis[] = [{ id: 11, projectId: 3, asin: "B00000001
   bulletPoints: null, rating: null, reviewAnalysis: null, keywords: null, aiSummary: null, summaryVersion: 1,
   summaryConfirmedAt: null, summaryConfirmedBy: null, createdAt: new Date("2026-01-01"), updatedAt: new Date("2026-01-01"),
   rawData: '{"count":0,"enabled":false}' }];
-const delivery = () => analyses.map(row => ({ ...row, revision: competitorRevision(row) }));
+const delivery = () => analyses.map(row => ({ ...row, revision: competitorRevision(row),
+  salesCalibrationWritable: false, activeResearch: { status: "legacy" } }));
 
 function caller(options: { id?: number; role?: string; workspaceId?: number | null; defaultWorkspaceId?: number | null; authenticated?: boolean } = {}) {
   const workspaceId = options.workspaceId === undefined ? 9 : options.workspaceId;
@@ -59,6 +60,7 @@ function expectNoRead() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubEnv("ENABLE_LISTING_SALES_CALIBRATION_WRITES", undefined);
   project = { id: 3, userId: 7, workspaceId: 9 };
   // Models getProjectById's existing owner predicate and legacy NULL scope
   // policy; it grants no extra role-based/admin access.
@@ -74,11 +76,21 @@ beforeEach(() => {
   mocks.getAdminProject.mockImplementation(() => { throw new Error("Unexpected admin owner bypass"); });
 });
 afterEach(() => {
+  vi.unstubAllEnvs();
   expect(mocks.forbidden).not.toHaveBeenCalled();
   expect(mocks.getAdminProject).not.toHaveBeenCalled();
 });
 
 describe("actual analysis.listByProject research selector scope", () => {
+  it("rejects a changed expected actor before any repository read", async () => {
+    await expect(caller().listByProject({ projectId: 3, expectedUserId: 8, expectedWorkspaceId: 9 }))
+      .rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expectNoRead();
+  });
+  it("returns exact default-off capability and legacy proof metadata for the matching actor", async () => {
+    expect(await caller().listByProject({ projectId: 3, expectedUserId: 7, expectedWorkspaceId: 9 })).toEqual(delivery());
+    expect(mocks.getProject).toHaveBeenCalledWith(3, 7, 9);
+  });
   it("does not replace explicit authenticated NULL with the user's positive default workspace", async () => {
     project.workspaceId = null;
     expect(await caller({ workspaceId: null, defaultWorkspaceId: 9 }).listByProject({ projectId: 3, expectedWorkspaceId: null })).toEqual(delivery());

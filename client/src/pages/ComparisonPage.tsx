@@ -451,10 +451,13 @@ function SellingPointMatrix({
 export default function ComparisonPage() {
   const { selectedProjectId } = useProject();
   const auth = useAuth();
-  if (auth.loading) return <p role="status">正在确认登录状态…</p>;
-  if (auth.error || !auth.user) return <p role="alert">请先确认登录状态，未读取竞品数据。</p>;
+  const scopeKey = auth.user ? JSON.stringify([auth.user.id, auth.user.defaultWorkspaceId, auth.user.role, selectedProjectId]) : null;
+  const boundary = useRef({ scopeKey, epoch: 0 }), shown = useRef<object | null>(null);
+  if (boundary.current.scopeKey !== scopeKey) boundary.current = { scopeKey, epoch: boundary.current.epoch + 1 };
+  const token = boundary.current;
+  if (auth.error || !auth.user) { shown.current = null; return <p role="alert">请先确认登录状态，未读取竞品数据。</p>; }
   const { id, defaultWorkspaceId, role } = auth.user;
-  if (!Number.isSafeInteger(id) || id <= 0 || (defaultWorkspaceId !== null
+  if (!Number.isSafeInteger(id) || id <= 0 || typeof role !== "string" || !role.trim() || (defaultWorkspaceId !== null
     && (typeof defaultWorkspaceId !== "number" || !Number.isSafeInteger(defaultWorkspaceId) || defaultWorkspaceId <= 0))) {
     return <p role="alert">当前用户 / 工作区信息不完整，未读取竞品数据。</p>;
   }
@@ -462,11 +465,13 @@ export default function ComparisonPage() {
     return <div className="space-y-4">{MERGED_LISTING_WORKFLOW_ENABLED && <ListingStages />}<ProjectSelector /><p>请先在项目管理中创建并选择一个项目</p></div>;
   }
   // Remount all selection, drafts and callbacks; never reuse a project-only shared cache across users/workspaces.
-  const scopeKey = JSON.stringify([id, defaultWorkspaceId, role, selectedProjectId]);
-  return <OwnedComparisonPage key={scopeKey} selectedProjectId={selectedProjectId} workspaceId={defaultWorkspaceId} />;
+  if (!auth.loading) shown.current = token;
+  if (auth.loading && shown.current !== token) return <p role="status">正在确认登录状态…</p>;
+  return <>{auth.loading && <p role="status">正在确认登录状态，当前草稿暂时保留…</p>}
+    <div hidden={auth.loading}><OwnedComparisonPage key={`${scopeKey}:${token.epoch}`} selectedProjectId={selectedProjectId} workspaceId={defaultWorkspaceId} suspended={auth.loading} /></div></>;
 }
 
-function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProjectId: number; workspaceId: number | null }) {
+function OwnedComparisonPage({ selectedProjectId, workspaceId, suspended }: { selectedProjectId: number; workspaceId: number | null; suspended: boolean }) {
   const client = trpc.useUtils().client;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   // Research is not the legacy 2–8 record comparison-report selection.
@@ -484,6 +489,7 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
   const [reportNeedsReview, setReportNeedsReview] = useState(false), [freshReport, setFreshReport] = useState<ComparisonReport | null>(null);
   const alive = useRef(false), selectionEpoch = useRef(0), draftRevision = useRef(0), dirty = useRef(false);
   const sourceEpoch = useRef(0);
+  const adoptionDrafts = useRef(new Set<number>());
   const reportActionLock = useRef(false), studyLocks = useRef(new Set<number>());
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
@@ -544,6 +550,10 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
     // Refresh actual sources and report CAS without replacing an edited report.
     sourceEpoch.current++; setReportNeedsReview(true); setFreshReport(null);
     setReadGeneration(value => value + 1); setReportGeneration(value => value + 1);
+  }
+  function changeResearchSelection(next: Set<number>) {
+    if ([...adoptionDrafts.current].some(id => !next.has(id)) && !window.confirm("取消选择会丢弃该竞品未提交的人工采纳摘要；未决原请求编号仍保留。是否继续？")) return;
+    setResearchSelectedIds(next);
   }
   async function runReportAction(kind: "generate" | "save" | "confirm" | "unlock") {
     if (reportActionLock.current || selectedAnalysisIds.length < 2 || (kind !== "generate" && !report)) return;
@@ -708,13 +718,13 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
       {MERGED_LISTING_WORKFLOW_ENABLED && !isLoading && !readError && !!analyses?.length && <section aria-label="研究竞品选择" className="space-y-3 rounded-xl border p-4">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">选择并排研究 ASIN</h2>
           <p className="text-xs text-muted-foreground">可选择任意多个已保存竞品。此范围用于下方资料分析与并排审阅，不改变旧结构化报告的 2–8 个选择或生成页已确认的范围。</p></div>
-          <Button variant="outline" size="sm" onClick={() => setResearchSelectedIds(researchAnalysisIds.length === analyses.length ? new Set() : new Set(analyses.map(row => row.id)))}>
+          <Button variant="outline" size="sm" onClick={() => changeResearchSelection(researchAnalysisIds.length === analyses.length ? new Set() : new Set(analyses.map(row => row.id)))}>
             {researchAnalysisIds.length === analyses.length ? "清空研究选择" : "选择全部研究竞品"}</Button></div>
         <p className="text-sm">研究已选 {researchAnalysisIds.length}/{analyses.length}</p>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{analyses.map(row => <label key={row.id} className="flex items-start gap-2 rounded border p-3 text-sm">
-          <Checkbox aria-label={`研究选择 ${row.asin}`} checked={researchSelectedIds.has(row.id)} onCheckedChange={checked => setResearchSelectedIds(previous => {
-            const next = new Set(previous); if (checked === true) next.add(row.id); else next.delete(row.id); return next;
-          })} /><span><strong>{row.asin}</strong><span className="mt-1 block line-clamp-2 text-xs text-muted-foreground">{row.title || "未保存标题"}</span></span>
+          <Checkbox aria-label={`研究选择 ${row.asin}`} checked={researchSelectedIds.has(row.id)} onCheckedChange={checked => {
+            const next = new Set(researchSelectedIds); if (checked === true) next.add(row.id); else next.delete(row.id); changeResearchSelection(next);
+          }} /><span><strong>{row.asin}</strong><span className="mt-1 block line-clamp-2 text-xs text-muted-foreground">{row.title || "未保存标题"}</span></span>
         </label>)}</div>
       </section>}
 
@@ -722,6 +732,8 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
         analyses={!isLoading && !readError ? analyses || [] : []} selectedIds={researchAnalysisIds}
         onCompleted={() => setReadGeneration(value => value + 1)} />}
 
+      {isLoading && <div className="space-y-4">{[1, 2].map(i => <Card key={i}><CardContent className="p-6"><div className="h-20 bg-muted animate-pulse rounded" /></CardContent></Card>)}</div>}
+      <div hidden={isLoading}>
       {!selectedProjectId ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-16">
@@ -729,12 +741,6 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
             <p className="text-muted-foreground">请先在项目管理中创建并选择一个项目</p>
           </CardContent>
         </Card>
-      ) : isLoading ? (
-        <div className="space-y-4">
-          {[1, 2].map(i => (
-            <Card key={i}><CardContent className="p-6"><div className="h-20 bg-muted animate-pulse rounded" /></CardContent></Card>
-          ))}
-        </div>
       ) : readError ? (
         <p role="alert">竞品读取失败，未将错误当作空数据；请刷新核对当前权限与项目。</p>
       ) : !analyses || analyses.length === 0 ? (
@@ -840,6 +846,9 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
             pendingIds={pendingStudyIds}
             onResearchCompleted={() => setReadGeneration(value => value + 1)}
             onSalesSaved={salesSaved}
+            onAdopted={salesSaved}
+            suspended={suspended || isLoading}
+            onAdoptionDirtyChange={(id, dirty) => { if (dirty) adoptionDrafts.current.add(id); else adoptionDrafts.current.delete(id); }}
             onConfirm={analysis => { void reviewStudy(analysis, "confirm"); }}
             onUnlock={analysis => { void reviewStudy(analysis, "unlock"); }}
           />}
@@ -1495,6 +1504,7 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

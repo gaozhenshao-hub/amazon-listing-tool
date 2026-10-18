@@ -1,5 +1,8 @@
+import { CompetitorActiveResearchDeliverySchema, competitorDeepAdoptionHash } from "@shared/competitorDeepAdoption";
+
 export interface CompetitorStudyRecord {
   id: number;
+  projectId?: number;
   asin: string;
   revision?: string;
   title?: string | null;
@@ -12,6 +15,7 @@ export interface CompetitorStudyRecord {
   summaryStatus?: string | null;
   summaryVersion?: number | null;
   rawData?: string | null;
+  activeResearch?: unknown;
 }
 
 function sourceState(rawData: CompetitorStudyRecord["rawData"]) {
@@ -41,12 +45,22 @@ export function competitorStudy(record: CompetitorStudyRecord) {
   }
   const validIdentity = Number.isSafeInteger(record.id) && record.id > 0 && /^[A-Z0-9]{10}$/.test(record.asin);
   const confirmed = record.summaryStatus === "confirmed";
-  const source = sourceState(record.rawData), historical = source.analysisStale || source.captureOnly;
+  const source = sourceState(record.rawData), delivery = CompetitorActiveResearchDeliverySchema.safeParse(record.activeResearch);
+  const adopted = delivery.success && delivery.data.status === "adopted_deep" ? delivery.data : null;
+  const adoptedDeep = !!adopted && adopted.identity.analysisId === record.id && adopted.identity.asin === record.asin
+    && adopted.identity.projectId === record.projectId && adopted.currentRevision === record.revision
+    && adopted.ref.summaryVersion === record.summaryVersion && confirmed && !!saved.trim()
+    && adopted.ref.summaryHash === competitorDeepAdoptionHash(saved.trim());
+  const deliveryUnknown = record.activeResearch !== undefined && (!delivery.success || delivery.data.status === "unavailable"
+    || delivery.data.status === "adopted_deep" && !adoptedDeep);
+  source.sourceUnknown ||= deliveryUnknown;
+  const historical = !adoptedDeep && (source.analysisStale || source.captureOnly);
   const summarySource = saved.trim() ? historical ? "历史已保存摘要（非当前资料分析）" : source.sourceUnknown ? "已保存摘要（来源状态未核验）" : "已保存摘要"
     : summary ? historical ? "历史 AI 候选摘要（未确认）" : source.sourceUnknown ? "AI 候选摘要（来源状态未核验，未确认）" : "AI 候选摘要（未确认）" : "尚无已保存分析摘要";
   return {
-    summary, bullets, bulletsUnavailable, confirmed, ...source, historical, summarySource,
-    canConfirm: validIdentity && !historical && !source.sourceUnknown && record.summaryStatus === "draft" && !!summary.trim() && summary.length <= 20_000,
+    summary, bullets, bulletsUnavailable, confirmed, ...source, historical, adoptedDeep, adoptionNeedsReview: deliveryUnknown,
+    summarySource: adoptedDeep ? "人工已采纳四栏正式研究摘要（范围受限）" : summarySource,
+    canConfirm: validIdentity && !adoptedDeep && !historical && !source.sourceUnknown && record.summaryStatus === "draft" && !!summary.trim() && summary.length <= 20_000,
     canUnlock: validIdentity && confirmed && !!saved.trim(),
     inconsistent: confirmed && !saved.trim(),
   };

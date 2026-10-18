@@ -26,6 +26,14 @@ vi.mock("./listing/CompetitorResearchJobs", () => ({ default: (props: (typeof st
 } }));
 vi.mock("./listing/CompetitorDeepResearchJobControls", () => ({ default: (props: { analysisId: number; onCompleted?: () => void }) =>
   <button onClick={props.onCompleted}>模拟四栏候选保存 {props.analysisId}</button> }));
+vi.mock("./listing/CompetitorDeepAdoptionEditor", async () => {
+  const React = await import("react");
+  return { default: function SyntheticAdoptionEditor(props: { analysisId: number; onAdopted?: () => void; suspended?: boolean; onDirtyChange?: (dirty: boolean) => void }) {
+    const [draft, setDraft] = React.useState("");
+    return <div hidden={props.suspended}><input aria-label={`合成采纳草稿 ${props.analysisId}`} value={draft} onChange={event => { setDraft(event.target.value); props.onDirtyChange?.(true); }} />
+      <button disabled={props.suspended} onClick={props.onAdopted}>模拟正式采纳 {props.analysisId}</button></div>;
+  } };
+});
 vi.mock("./listing/CompetitorSalesEditor", async importOriginal => {
   const original = await importOriginal<typeof import("./listing/CompetitorSalesEditor")>();
   return { ...original, default: (props: { analysis: { id: number }; onSaved?: () => void }) => <button onClick={props.onSaved}>模拟销量校准保存 {props.analysis.id}</button> };
@@ -59,9 +67,32 @@ beforeEach(() => {
   state.unlock.mockReset().mockResolvedValue(report());
   state.confirmSummary.mockReset().mockResolvedValue({}); state.unlockSummary.mockReset().mockResolvedValue({});
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("comparison owned scope", () => {
+  it.each(["auth", "list"])("same-owner %s refresh keeps an adoption draft mounted but hidden", async kind => {
+    const view = render(<ComparisonPage />); await chooseResearch(1);
+    fireEvent.change(screen.getByRole("textbox", { name: "合成采纳草稿 1" }), { target: { value: "尚未提交的采纳草稿" } });
+    const pending = deferred<unknown>();
+    if (kind === "auth") { state.auth.loading = true; view.rerender(<ComparisonPage />); }
+    else { state.list.mockReturnValueOnce(pending.promise); refresh(); }
+    expect(screen.getByDisplayValue("尚未提交的采纳草稿")).not.toBeVisible();
+    if (kind === "auth") { state.auth.loading = false; view.rerender(<ComparisonPage />); }
+    else await act(async () => pending.resolve([analysis(1), analysis(2), analysis(3)]));
+    expect(screen.getByRole("textbox", { name: "合成采纳草稿 1" })).toHaveValue("尚未提交的采纳草稿"); expect(state.generate).not.toHaveBeenCalled();
+  });
+  it("asks before deselecting an unsaved adoption and preserves a declined draft", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false); render(<ComparisonPage />); await chooseResearch(1);
+    fireEvent.change(screen.getByRole("textbox", { name: "合成采纳草稿 1" }), { target: { value: "不丢草稿" } }); await chooseResearch(1);
+    expect(window.confirm).toHaveBeenCalledOnce(); expect(screen.getByRole("textbox", { name: "合成采纳草稿 1" })).toHaveValue("不丢草稿");
+  });
+  it("adoption refreshes real owned sources while preserving and pausing a dirty comparison", async () => {
+    state.report.mockResolvedValue(report()); render(<ComparisonPage />); await selectTwo(); await screen.findByText("服务器报告");
+    fireEvent.click(screen.getByRole("button", { name: "编辑" })); fireEvent.change(screen.getByPlaceholderText(/编辑市场概览/), { target: { value: "不能被采纳覆盖的报告" } }); await chooseResearch(1);
+    const calls = state.list.mock.calls.length; fireEvent.click(screen.getByRole("button", { name: "模拟正式采纳 1" }));
+    await waitFor(() => expect(state.list).toHaveBeenCalledTimes(calls + 1)); expect(screen.getByDisplayValue("不能被采纳覆盖的报告")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存草稿" })).toBeDisabled(); expect(state.confirmSummary).not.toHaveBeenCalled(); expect(state.generate).not.toHaveBeenCalled();
+  });
   it("refreshes saved research after four-column completion without automatically confirming or generating a report", async () => {
     render(<ComparisonPage />); await chooseResearch(1);
     const calls = state.list.mock.calls.length;

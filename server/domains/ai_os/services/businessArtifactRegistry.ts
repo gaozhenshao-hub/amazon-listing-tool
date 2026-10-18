@@ -1,6 +1,8 @@
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../repositories/dbClient";
 import type { DbExecutor } from "../../../repositories/dbClient";
+import { readActiveCompetitorResearch, renderActiveCompetitorResearchContext } from "../../../services/competitorActiveResearch";
+import { getCompetitorAnalysisById } from "../../../repositories/project/projectAssetRepository";
 import {
   competitorAnalyses,
   competitorComparisonReports,
@@ -384,18 +386,22 @@ export async function registerCompetitorAnalysisArtifact(
 ) {
   const db = await getDb();
   if (!db) return null;
-  const [analysis] = await db.select().from(competitorAnalyses)
-    .where(eq(competitorAnalyses.id, analysisId))
-    .limit(1);
+  const analysis = await getCompetitorAnalysisById(analysisId);
   if (!analysis) return null;
+  const active = readActiveCompetitorResearch(analysis);
+  // An unadopted/invalidated deep candidate must not republish retained old AI
+  // as a current final business artifact. Its immutable source remains intact.
+  if (active.status === "unavailable") return null;
   return registerBusinessArtifact({
     domain: "listing",
     artifactKey: `listing.competitor_analysis.${analysis.asin}`,
     sourceTable: "competitorAnalyses",
     sourceRowId: analysis.id,
     projectId: analysis.projectId,
-    userId: analysis.summaryConfirmedBy,
-    content: analysis,
+    ...(active.status === "adopted_deep" ? { workspaceId: active.identity.workspaceId } : {}),
+    userId: active.status === "adopted_deep" ? active.identity.userId : analysis.summaryConfirmedBy,
+    content: active.status === "adopted_deep" ? { kind: "adopted_competitor_deep_research_reference", identity: active.identity,
+      reference: active.ref, currentRevision: active.currentRevision, context: renderActiveCompetitorResearchContext(analysis) } : analysis,
     sourceType,
     status: analysis.summaryStatus === "confirmed" ? "final" : "draft",
     metadata: {

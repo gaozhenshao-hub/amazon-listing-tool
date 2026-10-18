@@ -99,8 +99,9 @@ function rawObject(value: string | null | undefined, incoming = false): JsonObje
 export function stripIncomingManualSales(data: InsertCompetitorAnalysis): InsertCompetitorAnalysis {
   if (data.rawData === null || data.rawData === undefined) return data;
   const raw = rawObject(data.rawData, true);
-  if (!Object.hasOwn(raw, "manualSales")) return data;
+  if (!Object.hasOwn(raw, "manualSales") && !Object.hasOwn(raw, "deepAdoptionRef")) return data;
   delete raw.manualSales;
+  delete raw.deepAdoptionRef;
   return { ...data, rawData: canonical(raw) };
 }
 
@@ -145,6 +146,9 @@ export function mergeCompetitorUpdate(
   const raw: JsonObject = options.kind === "reviews" ? { ...oldRaw } : { ...newRaw, ...oldRaw };
   if (Object.hasOwn(oldRaw, "manualSales")) raw.manualSales = oldRaw.manualSales;
   else delete raw.manualSales;
+  // Only the dedicated, transactional human-adoption lane can mint/replace it.
+  if (Object.hasOwn(oldRaw, "deepAdoptionRef")) raw.deepAdoptionRef = oldRaw.deepAdoptionRef;
+  else delete raw.deepAdoptionRef;
   const update: Update = {};
   const confirmed = existing.summaryStatus === "confirmed";
   const humanEdited = Boolean(existing.summary?.trim()) && existing.summary !== existing.aiSummary;

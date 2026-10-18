@@ -64,7 +64,9 @@ import { listingFactRevisions } from "../drizzle/schema/listingRevisions";
 import { router } from "./_core/trpc";
 import { listingJobControlProcedures, startListingJobForContext } from "./domains/listing/routers/jobControl";
 import { prepareListingResearchSelection } from "./domains/listing/services/listingResearchSelection";
-import { runListingGenerationJob, startListingGenerationJob } from "./domains/listing/services/generationJob";
+import { runListingGenerationJob, startListingGenerationJob, syncListingPreparationNodes } from "./domains/listing/services/generationJob";
+import { issueActiveCompetitorResearch } from "./services/competitorActiveResearch";
+import { competitorRevision } from "./repositories/project/competitorWritePolicy";
 
 const stamp = new Date("2026-10-16T00:00:00.000Z");
 const rawText = "Material: ABS plastic";
@@ -346,6 +348,20 @@ describe("G1 active-job identity and research conflicts", () => {
 });
 
 describe("legacy NULL-project history is isolated by the authenticated job workspace", () => {
+  it.each([{ workspaceId: 10, userId: 7 }, { workspaceId: null, userId: 7 }, { workspaceId: 9, userId: 8 }])(
+    "rejects privately adopted research before any N0-N5 preparation write: %j", async scope => {
+      const row = analysis(11, { rawData: '{"deepAdoptionRef":{}}' });
+      // A trusted-issuance boundary fixture isolates this consumer check. The
+      // writer→loader→selection suite independently verifies real proof replay.
+      issueActiveCompetitorResearch(row, { status: "adopted_deep", identity: { userId: 7, workspaceId: 9,
+        sourceWorkspaceId: null, projectId: 3, analysisId: 11, asin: row.asin }, currentRevision: competitorRevision(row),
+        ref: {} as never, result: {} as never, summary: "Private external research" });
+      mocks.getProject.mockResolvedValue({ ...project, workspaceId: null });
+      mocks.getAnalyses.mockResolvedValue([row]);
+      await expect(syncListingPreparationNodes({ projectId: 3, ...scope, agentRunId: "synthetic-agent" }))
+        .rejects.toThrow("DEEP_ADOPTION_SOURCE_SCOPE_CHANGED");
+      noWritesOrModels();
+    });
   async function mixedHistory() {
     const base = await boundJob();
     // Parent visibility is intentionally shared by the legacy NULL policy.

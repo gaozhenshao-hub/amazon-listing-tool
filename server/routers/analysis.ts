@@ -24,6 +24,9 @@ import { competitorResearchJob, competitorResearchScopeSchema, startCompetitorRe
 import { competitorReviewRead, competitorReviewsPageSchema } from "../domains/listing/services/competitorReviewRead";
 import { competitorResearchEvidence, competitorResearchEvidenceSchema } from "../domains/listing/services/competitorResearchEvidence";
 import { competitorDeepResultRead, competitorDeepResultReadSchema } from "../domains/listing/services/competitorDeepResultRead";
+import { competitorDeepAdoption } from "../domains/listing/services/competitorDeepAdoption";
+import { CompetitorDeepAdoptionInputSchema, CompetitorDeepAdoptionOperationInputSchema, CompetitorDeepAdoptionResultSchema } from "../../shared/competitorDeepAdoption";
+import { readActiveCompetitorResearch, renderActiveCompetitorResearchContext } from "../services/competitorActiveResearch";
 import { competitorDeepJob } from "../domains/listing/services/competitorDeepJob";
 import { CompetitorDeepOptionsInputSchema, CompetitorDeepOptionsResultSchema, CompetitorDeepStartInputSchema, CompetitorDeepOperationInputSchema, CompetitorDeepJobViewSchema } from "../../shared/competitorDeepExecutionJob";
 import {
@@ -96,6 +99,14 @@ export const analysisRouter = router({
   getCompetitorDeepResult: protectedProcedure
     .input(competitorDeepResultReadSchema)
     .query(({ ctx, input }) => competitorDeepResultRead.read(ctx, input)),
+  deepAdoptionOptions: protectedProcedure.input(competitorDeepResultReadSchema)
+    .query(({ ctx, input }) => competitorDeepAdoption.options(ctx, input)),
+  adoptDeepResult: protectedProcedure.input(CompetitorDeepAdoptionInputSchema).output(CompetitorDeepAdoptionResultSchema)
+    .mutation(({ ctx, input }) => competitorDeepAdoption.adopt(ctx, input)),
+  checkDeepAdoption: protectedProcedure.input(CompetitorDeepAdoptionOperationInputSchema).output(CompetitorDeepAdoptionResultSchema)
+    .query(({ ctx, input }) => competitorDeepAdoption.check(ctx, input)),
+  cancelDeepAdoption: protectedProcedure.input(CompetitorDeepAdoptionOperationInputSchema).output(CompetitorDeepAdoptionResultSchema)
+    .mutation(({ ctx, input }) => competitorDeepAdoption.cancel(ctx, input)),
   previewResearchEvidence: protectedProcedure
     .input(competitorResearchEvidenceSchema)
     .query(({ ctx, input }) => competitorResearchEvidence.preview(ctx, input)),
@@ -392,6 +403,13 @@ export const analysisRouter = router({
 
       // Build comprehensive context for LLM
       const competitorSummaries = selectedAnalyses.map(a => {
+        const active = readActiveCompetitorResearch(a);
+        if (active.status !== "legacy") {
+          // A verified adopted result is its own typed external research source;
+          // never mix retained legacy AI fields into the current comparison.
+          return [`### ASIN: ${a.asin}`, `- Title: ${a.title || "N/A"}`, `- Price: ${a.price || "N/A"}`,
+            renderComparisonSalesContext(a.rawData, a.asin), renderActiveCompetitorResearchContext(a)].join("\n");
+        }
         const keywords = a.keywords ? JSON.parse(a.keywords) : null;
         const reviewAnalysis = a.reviewAnalysis ? JSON.parse(a.reviewAnalysis) : null;
         const rawData = a.rawData ? JSON.parse(a.rawData) : null;

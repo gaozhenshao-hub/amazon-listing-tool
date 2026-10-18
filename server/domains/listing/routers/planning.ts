@@ -58,7 +58,7 @@ export const listingPlanningProcedures = {
         resolveWorkflowGuidance({ workspaceId, ...input.distillationBinding }),
       ]);
       const config = PLANNING_CONFIG[input.planningType];
-      const baseContext = buildProductContext(project, analyses, enrichedData);
+      const baseContext = buildProductContext(project, analyses, enrichedData, { projectId: input.projectId, workspaceId: ctx.workspaceId ?? null, userId: ctx.user.id });
       const prompt = compact(`${baseContext}\n\n--- 用户显式选择的蒸馏指导（只读） ---\n${JSON.stringify(guidance)}\n\n--- 规划任务：${config.label} ---\n${config.focus}\n${input.emphasis?.trim() ? `用户重点：${input.emphasis.trim()}` : ""}\n仅输出一个JSON对象：{schema,planningType,summary,items,claimMappings,risks,requiresHumanReview:true}。items必须是可编辑建议数组；没有证据支持时标记为待验证，不得编造。`);
       const result = await runEmperorSkill<any>({
         skillSlug: "listing.sellingpoints.generate",

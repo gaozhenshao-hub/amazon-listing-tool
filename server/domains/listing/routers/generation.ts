@@ -60,7 +60,7 @@ const legacyListingGenerationProcedures = {
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
-      let context = buildProductContext(project, analyses, enrichedData);
+      let context = buildProductContext(project, analyses, enrichedData, { projectId: input.projectId, workspaceId: ctx.workspaceId ?? null, userId: ctx.user.id });
       if (input.emphasis?.trim()) {
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
@@ -102,7 +102,7 @@ const legacyListingGenerationProcedures = {
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
-      let context = buildProductContext(project, analyses, enrichedData);
+      let context = buildProductContext(project, analyses, enrichedData, { projectId: input.projectId, workspaceId: ctx.workspaceId ?? null, userId: ctx.user.id });
       if (input.emphasis?.trim()) {
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
@@ -144,7 +144,7 @@ const legacyListingGenerationProcedures = {
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
-      let context = buildProductContext(project, analyses, enrichedData);
+      let context = buildProductContext(project, analyses, enrichedData, { projectId: input.projectId, workspaceId: ctx.workspaceId ?? null, userId: ctx.user.id });
       if (input.emphasis?.trim()) {
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
@@ -183,7 +183,7 @@ const legacyListingGenerationProcedures = {
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
-      let context = buildProductContext(project, analyses, enrichedData);
+      let context = buildProductContext(project, analyses, enrichedData, { projectId: input.projectId, workspaceId: ctx.workspaceId ?? null, userId: ctx.user.id });
       if (input.emphasis?.trim()) {
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
@@ -224,7 +224,7 @@ const legacyListingGenerationProcedures = {
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
-      let context = buildProductContext(project, analyses, enrichedData);
+      let context = buildProductContext(project, analyses, enrichedData, { projectId: input.projectId, workspaceId: ctx.workspaceId ?? null, userId: ctx.user.id });
       if (input.emphasis?.trim()) {
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }

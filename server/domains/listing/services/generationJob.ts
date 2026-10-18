@@ -42,6 +42,8 @@ import { resolveCurrentConfirmedListingFacts } from "./listingFactSource";
 import { buildSellingPointPlanningResearch, formatSellingPointPlanningContext, normalizeSellingPointPlanningOutput, sellingPointResearchLimitations } from "./sellingPointPlanning";
 import { listingResearchBindingSchema, listingResearchIdsSchema, type ListingResearchBinding } from "../../../../shared/listingResearchSelection";
 import { assertListingResearchSelection, prepareListingResearchSelection } from "./listingResearchSelection";
+import { readActiveCompetitorResearch, renderActiveCompetitorResearchContext } from "./competitorActiveResearch";
+import { assertActiveCompetitorResearchScope } from "../../../services/competitorActiveResearch";
 
 export const LISTING_JOB_MODULE = "listing";
 
@@ -353,6 +355,11 @@ export async function syncListingPreparationNodes(input: {
     selectedResearch ? Promise.resolve(null) : db.getReviewAggregationByProject(input.projectId),
     db.getActiveBuyerQuestionsByProject(input.projectId),
   ]);
+  // Reject private adopted research from another scope before any preparation
+  // checkpoint/artifact is written, including the legacy unbound path.
+  for (const analysis of analyses) assertActiveCompetitorResearchScope(analysis, readActiveCompetitorResearch(analysis), {
+    projectId: input.projectId, workspaceId: input.workspaceId ?? null, userId: input.userId,
+  });
   const shared = {
     agentRunId: input.agentRunId,
     projectId: input.projectId,
@@ -376,8 +383,9 @@ export async function syncListingPreparationNodes(input: {
     output: analyses.slice(0, 20).map((analysis: any) => ({
       id: analysis.id,
       asin: analysis.asin,
-      summary: analysis.summary || compactText(analysis.analysisResult, 1_000),
-      summaryStatus: analysis.summaryStatus,
+      summary: readActiveCompetitorResearch(analysis).status === "legacy"
+        ? analysis.summary || compactText(analysis.analysisResult, 1_000) : renderActiveCompetitorResearchContext(analysis),
+      summaryStatus: readActiveCompetitorResearch(analysis).status === "unavailable" ? "unavailable" : analysis.summaryStatus,
     })),
   });
   await syncListingPreparationNodeConfirmed({
@@ -399,11 +407,14 @@ export async function syncListingPreparationNodes(input: {
   await syncListingPreparationNodeConfirmed({
     ...shared,
     nodeId: "N5",
-    output: selectedResearch ? {
-      source: "selected_competitor_review_analysis", researchSelection: selectedResearch.binding,
+    output: selectedResearch || analyses.some(analysis => readActiveCompetitorResearch(analysis).status !== "legacy") ? {
+      source: "current_competitor_review_research", researchSelection: selectedResearch?.binding ?? null,
       projectAggregationExcluded: true,
       records: analyses.slice(0, 20).map(analysis => ({ analysisId: analysis.id, asin: analysis.asin,
-        reviewAnalysis: analysis.reviewAnalysis ? compactText(analysis.reviewAnalysis, 1_000) : null })),
+        reviewAnalysis: readActiveCompetitorResearch(analysis).status === "legacy"
+          ? analysis.reviewAnalysis ? compactText(analysis.reviewAnalysis, 1_000) : null : null,
+        ...(readActiveCompetitorResearch(analysis).status !== "legacy"
+          ? { activeResearch: renderActiveCompetitorResearchContext(analysis) } : {}) })),
       omittedRecordCount: Math.max(0, analyses.length - 20),
     } : reviewAggregation || { available: false, reason: "暂无评论聚合分析" },
   });
@@ -563,7 +574,9 @@ async function buildJobContext(
   }
   const safeGuidance = !guardFacts || !distillationGuidance || !containsTemplateFactInFreeText(JSON.stringify(distillationGuidance))
     ? distillationGuidance : null;
-  let context = buildProductContext(safeProject, analyses, safeEnriched);
+  let context = buildProductContext(safeProject, analyses, safeEnriched, {
+    projectId: input.projectId, workspaceId: job.workspaceId ?? null, userId: job.userId,
+  });
   if (artifactContext && (!guardFacts || !containsTemplateFactInFreeText(artifactContext))) context += `\n\n${artifactContext}`;
   if (safeGuidance) context += `\n\n--- 用户显式选择的知识蒸馏指导（只读） ---\n${compactText(safeGuidance, 6_000)}`;
   if (input.emphasis?.trim()) {

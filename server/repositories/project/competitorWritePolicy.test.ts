@@ -73,6 +73,16 @@ describe("competitorRevision full persisted row", () => {
 });
 
 describe("locked competitor update merge", () => {
+  it.each(["upsert", "reviews"] as const)("%s cannot create, replace or erase server-owned adoption proof", kind => {
+    const ref = { artifactId: "server-verified-original", preserved: true }, incoming = { rawData: JSON.stringify({ deepAdoptionRef: { artifactId: "forged" } }) };
+    expect(merged(record({ rawData: JSON.stringify({ deepAdoptionRef: ref }) }), incoming, kind).raw.deepAdoptionRef).toEqual(ref);
+    expect(merged(record({ rawData: JSON.stringify({ deepAdoptionRef: ref }) }), { rawData: "{}" }, kind).raw.deepAdoptionRef).toEqual(ref);
+    expect(merged(record({ rawData: "{}" }), incoming, kind).raw).not.toHaveProperty("deepAdoptionRef");
+  });
+  it("first acquisition cannot mint adoption authority", () => {
+    const value = stripIncomingManualSales({ projectId: 11, asin: "B000000001", rawData: JSON.stringify({ deepAdoptionRef: { forged: true }, original: true }) });
+    expect(JSON.parse(value.rawData!)).toEqual({ original: true });
+  });
   it.each(["upsert", "reviews"] as const)("%s retains exact human calibration despite a forged incoming override", kind => {
     const manualSales = { version: 1, value: 0, sourceNote: "Human evidence", updatedAt: "2026-10-19T00:00:00.000Z", updatedBy: 7 };
     const existing = record({ rawData: JSON.stringify({ manualSales, sellerSpriteData: { monthlySales: 400 } }) });

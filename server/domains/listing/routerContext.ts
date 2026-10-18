@@ -3,6 +3,8 @@ import { protectedProcedure, router } from "../../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { invokeBusinessSkill } from "../ai_os/services/businessSkillGateway";
 import { readCompetitorSales } from "../../../shared/competitorSales";
+import { readActiveCompetitorResearch, renderActiveCompetitorResearchContext } from "./services/competitorActiveResearch";
+import { assertActiveCompetitorResearchScope } from "../../services/competitorActiveResearch";
 import * as db from "./repository";
 import { runEmperorSkill } from "./service";
 import {
@@ -448,7 +450,8 @@ export function buildProductContext(project: any, analyses: any[], enrichedData?
   keywordStrategyMatrix?: any;
   reviewAggregation?: any;
   confirmedComparisonReport?: any;
-}) {
+}, scope?: { projectId: number; workspaceId: number | null | undefined; userId?: number }) {
+  for (const analysis of analyses) assertActiveCompetitorResearchScope(analysis, readActiveCompetitorResearch(analysis), scope);
   const parts: string[] = [];
   parts.push(`Product: ${project.productName || project.name}`);
   if (project.brand) parts.push(`Brand: ${project.brand}`);
@@ -507,6 +510,9 @@ export function buildProductContext(project: any, analyses: any[], enrichedData?
   // ─── Module 2: Multi-Competitor Analysis (竞品对比结果) ────────
   // Data source: competitor ASIN analyses + review analysis results
   if (analyses.length > 0) {
+    const hasDeepResearch = analyses.some(analysis => readActiveCompetitorResearch(analysis).status !== "legacy");
+    const legacyAggregation = hasDeepResearch ? null : enrichedData?.reviewAggregation;
+    if (hasDeepResearch && enrichedData?.reviewAggregation) parts.push("Unbound project review aggregation excluded: it cannot establish current adopted deep-source provenance.");
     parts.push("\n--- [Module 2] Multi-Competitor Analysis (竞品格局分析 - 基于竞品对比结果) ---");
 
     // Extract parity (common selling points across competitors)
@@ -518,6 +524,7 @@ export function buildProductContext(project: any, analyses: any[], enrichedData?
     const allAdvantages: string[] = [];
 
     for (const analysis of analyses) {
+      if (readActiveCompetitorResearch(analysis).status !== "legacy") continue;
       // Extract bullet points as selling points
       if (analysis.bulletPoints) {
         try {
@@ -532,7 +539,7 @@ export function buildProductContext(project: any, analyses: any[], enrichedData?
       }
 
       // Extract review insights (fallback if no aggregation)
-      if (!enrichedData?.reviewAggregation && analysis.reviewAnalysis) {
+      if (!legacyAggregation && analysis.reviewAnalysis) {
         try {
           const ra = JSON.parse(analysis.reviewAnalysis);
           if (ra.painPoints) allPainPoints.push(...ra.painPoints.map((p: any) => p.issue || p));
@@ -564,8 +571,8 @@ export function buildProductContext(project: any, analyses: any[], enrichedData?
     }
 
     // ─── Kano Model Aggregated Review Analysis (if available) ─────
-    if (enrichedData?.reviewAggregation) {
-      const agg = enrichedData.reviewAggregation;
+    if (legacyAggregation) {
+      const agg = legacyAggregation;
       parts.push("\nKano Model Aggregated Review Analysis (卡诺模型聚合评论分析):");
       if (agg.painPoints) {
         try {
@@ -667,6 +674,10 @@ export function buildProductContext(project: any, analyses: any[], enrichedData?
       if (analysis.price) parts.push(`  Price: ${analysis.price}`);
       if (analysis.rating) parts.push(`  Rating: ${analysis.rating}`);
       if (analysis.reviewCount) parts.push(`  Review Count: ${analysis.reviewCount}`);
+      if (readActiveCompetitorResearch(analysis).status !== "legacy") {
+        parts.push(renderActiveCompetitorResearchContext(analysis));
+        continue;
+      }
       if (analysis.summaryStatus === "confirmed" && analysis.summary) {
         parts.push(`  Human-confirmed Competitor Summary:\n${analysis.summary}`);
       }

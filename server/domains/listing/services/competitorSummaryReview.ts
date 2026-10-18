@@ -6,6 +6,7 @@ import { getProjectById } from "../../../repositories/project/projectRepository"
 import { getCompetitorAnalysisById, updateCompetitorAnalysisSummary, deleteCompetitorAnalysis } from "../../../repositories/project/projectAssetRepository";
 import { competitorRevision } from "../../../repositories/project/competitorWritePolicy";
 import { registerCompetitorAnalysisArtifact } from "../../ai_os/services/businessArtifactRegistry";
+import { getActiveCompetitorResearchDelivery } from "./competitorActiveResearch";
 
 const id = z.number().int().positive().safe();
 export const competitorReviewScopeSchema = z.object({
@@ -26,7 +27,8 @@ export function competitorReviewWorkspace(ctx: TrpcContext): number | null {
 }
 
 export function competitorWithRevision(row: CompetitorAnalysis) {
-  return { ...row, revision: competitorRevision(row) };
+  const activeResearch = getActiveCompetitorResearchDelivery(row);
+  return { ...row, revision: competitorRevision(row), activeResearch };
 }
 
 function assertConfirmable(row: CompetitorAnalysis) {

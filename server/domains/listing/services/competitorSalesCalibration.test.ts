@@ -29,7 +29,8 @@ describe("manual calibration service", () => {
     expect(save).toHaveBeenCalledTimes(1);
     expect(save).toHaveBeenCalledWith(10, { version: 1, value: 0, sourceNote: "Evidence", updatedAt: stamp.toISOString(), updatedBy: 7 },
       { projectId: 1, expectedRevision: input.expectedRevision, userId: 7, workspaceId: 9 });
-    expect(result).toEqual({ ...analysis(), revision: competitorRevision(analysis()), salesCalibrationWritable: true, identity: { userId: 7, workspaceId: 9 } });
+    expect(result).toEqual({ ...analysis(), revision: competitorRevision(analysis()), activeResearch: { status: "legacy" },
+      salesCalibrationWritable: true, identity: { userId: 7, workspaceId: 9 } });
   });
   it("reset is explicitly null and never invents fallback numbers", async () => {
     const save = vi.fn().mockResolvedValue(analysis()), service = createCompetitorSalesCalibrationService({ save, enabled: () => true });

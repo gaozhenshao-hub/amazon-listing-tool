@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../../_core/trpc";
 import * as db from "./repository";
+import { assertActiveCompetitorResearchScope, readActiveCompetitorResearch, renderActiveCompetitorResearchContext } from "../../services/competitorActiveResearch";
 import { devDb, kbDb } from "./repository";
 import {
   STEP0_COMPETITOR_IMAGE_ANALYSIS_PROMPT,
@@ -139,13 +140,15 @@ export const step5JobInput = z.object({
 });
 
 // ─── Helper: Build context from project data ─────────────────────
-export async function buildImageWorkflowContext(projectId: number) {
+export async function buildImageWorkflowContext(projectId: number, sourceScope?: { userId: number; workspaceId: number | null }) {
   const parts: string[] = [];
 
   // Load project info
   const projects = await db.getProjectsByUser(0); // We'll get it differently
   // Actually we need to load by projectId - let's use the analyses route
   const analyses = await db.getCompetitorAnalysesByProject(projectId);
+  for (const row of analyses) assertActiveCompetitorResearchScope(row, readActiveCompetitorResearch(row),
+    sourceScope ? { ...sourceScope, projectId } : undefined);
 
   // Load product attributes from file analysis
   const files = await db.getProjectFilesByProject(projectId);
@@ -189,6 +192,10 @@ export async function buildImageWorkflowContext(projectId: number) {
   if (analyses.length > 0) {
     parts.push("\n--- 竞品分析 ---");
     for (const row of analyses) {
+      if (readActiveCompetitorResearch(row).status !== "legacy") {
+        parts.push(`竞品 ASIN: ${row.asin}`, renderActiveCompetitorResearchContext(row));
+        continue;
+      }
       const artifact = await resolveCurrentBusinessArtifact({
         domain: "listing",
         artifactKey: `listing.competitor_analysis.${row.asin}`,
@@ -231,7 +238,10 @@ export async function buildImageWorkflowContext(projectId: number) {
   }
 
   // Load review aggregation (Kano model)
-  const reviewAgg = await db.getReviewAggregationByProject(projectId);
+  // A project-wide aggregation has no exact adopted-result/source binding.
+  // It must not silently reintroduce the old insights excluded above.
+  const reviewAgg = analyses.some(row => readActiveCompetitorResearch(row).status !== "legacy")
+    ? null : await db.getReviewAggregationByProject(projectId);
   if (reviewAgg && reviewAgg.status === "completed") {
     parts.push("\n--- 评论聚合分析 ---");
     if (reviewAgg.painPoints) {

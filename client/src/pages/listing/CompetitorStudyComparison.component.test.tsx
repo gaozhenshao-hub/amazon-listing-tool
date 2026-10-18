@@ -9,6 +9,8 @@ vi.mock("./CompetitorDeepResultReader", () => ({ default: (props: { analysisId: 
   <div data-testid="saved-deep-result">{JSON.stringify(props)}</div> }));
 vi.mock("./CompetitorDeepResearchJobControls", () => ({ default: (props: { analysisId: number; onCompleted?: () => void }) =>
   <button onClick={props.onCompleted}>模拟四栏候选保存 {props.analysisId}</button> }));
+vi.mock("./CompetitorDeepAdoptionEditor", () => ({ default: (props: { analysisId: number; onAdopted?: () => void; suspended?: boolean }) =>
+  <button disabled={props.suspended} onClick={props.onAdopted}>模拟正式采纳 {props.analysisId}</button> }));
 
 const row = { id: 3, asin: "B000000003", title: "已保存商品", summary: "此前成功保存的精确摘要", aiSummary: "旧 AI 候选",
   summaryStatus: "draft", summaryVersion: 2, bulletPoints: '["真实五点原文"]' };
@@ -95,5 +97,10 @@ describe("saved competitor research source state", () => {
     render(<CompetitorStudyComparison projectId={7} analyses={[{ ...row, revision: "a".repeat(64) }]} pendingIds={new Set()} onConfirm={confirm} onUnlock={vi.fn()} onResearchCompleted={refresh} />);
     fireEvent.click(screen.getByRole("button", { name: "模拟四栏候选保存 3" }));
     expect(refresh).toHaveBeenCalledOnce(); expect(confirm).not.toHaveBeenCalled();
+  });
+  it("routes explicit adoption to its own refresh callback without invoking legacy confirmation", () => {
+    const adopted = vi.fn(), confirm = vi.fn(); render(<CompetitorStudyComparison projectId={7} analyses={[{ ...row, revision: "a".repeat(64) }]}
+      pendingIds={new Set()} onConfirm={confirm} onUnlock={vi.fn()} onAdopted={adopted} />);
+    fireEvent.click(screen.getByRole("button", { name: "模拟正式采纳 3" })); expect(adopted).toHaveBeenCalledOnce(); expect(confirm).not.toHaveBeenCalled();
   });
 });

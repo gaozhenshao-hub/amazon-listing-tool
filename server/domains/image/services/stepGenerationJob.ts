@@ -178,7 +178,7 @@ async function generateStep0(job: AiJobSnapshot, context: AiJobHandlerContext, p
 }
 
 async function generateStep1(job: AiJobSnapshot, context: AiJobHandlerContext, project: any, distillationGuidance = "") {
-  const productContext = compactText(await buildImageWorkflowContext(Number(job.projectId)), 18_000);
+  const productContext = compactText(await buildImageWorkflowContext(Number(job.projectId), { userId: job.userId, workspaceId: job.workspaceId }), 18_000);
   const contextHint = productContext || "暂无竞品、评论或关键词数据。请根据产品名称、品牌和类目，结合亚马逊运营经验生成完整卖点体系。";
   const composite = await getConfirmedCompositeContext(Number(job.workspaceId || project.workspaceId || 0), Number(job.projectId));
   const compositeContext = composite
@@ -202,7 +202,7 @@ async function generateStep1(job: AiJobSnapshot, context: AiJobHandlerContext, p
 async function generateStep2(job: AiJobSnapshot, context: AiJobHandlerContext, project: any, session: any, distillationGuidance = "") {
   if (!session.step1Confirmed) throw new Error("请先确认 Step 1 卖点梳理");
   const sellingPoints = compactText(session.step1UserEdit || session.step1AiResult, 8_000);
-  const productContext = compactText(await buildImageWorkflowContext(Number(job.projectId)), 12_000);
+  const productContext = compactText(await buildImageWorkflowContext(Number(job.projectId), { userId: job.userId, workspaceId: job.workspaceId }), 12_000);
   const step0Summary = session.step0AiResult
     ? `\n\n--- 竞品图片分析总结 ---\n${compactText(session.step0AiResult, 3_000)}`
     : "";

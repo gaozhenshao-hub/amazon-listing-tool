@@ -16,9 +16,9 @@
       "name": "Listing 竞品研究与生成",
       "route": "/listing/comparison",
       "continueAt": "/listing/generate",
-      "steps": "选择项目和授权竞品；可查看原评论与研究依据。销量区区分人工报告总量、已保存 ASIN 购买提示及卖家精灵估算；人工校准须填写来源说明，也可明确恢复采集值。核对四栏条件、明确计费确认后提交后台研究，保存的四栏候选目前只读复核。既有竞品研究的可确认摘要流程独立保留；生成页可选择已合规确认的研究范围和本品画像、生成属性、审核事实及七条方向。",
-      "boundary": "四栏默认关闭。unknown／not_found／提交超时只核对或取消原 UUID，不重新发起；成功候选不自动确认，不自动改 Listing。四栏候选正式采纳为已确认摘要及下游生成来源的受控入口尚未接通；不得借清除 stale 标记冒充已采纳。",
-      "sourceFiles": ["client/src/pages/ComparisonPage.tsx", "client/src/pages/listing/CompetitorDeepResearchJobControls.tsx", "client/src/pages/GeneratePage.tsx"]
+      "steps": "选择项目和授权竞品；可查看原评论与研究依据。销量区区分人工报告总量、已保存 ASIN 购买提示及卖家精灵估算；人工校准须填写来源说明，也可明确恢复采集值。核对四栏条件、明确计费确认后提交后台研究。成功候选先只读复核，再通过“审阅并采纳四栏候选”核对完整内容、人工摘要和来源限制并显式确认；优先保留当前人工摘要，不自动用 AI 覆盖。生成页可选择已合规确认的研究范围和本品画像、生成属性、审核事实及七条方向。",
+      "boundary": "四栏执行与人工采纳分别默认关闭。unknown／not_found／提交超时只核对或取消各自原 UUID，不自动重新发起；成功候选不自动确认，不自动改 Listing。人工采纳不调用模型，只有服务端完整核验且仍与当前来源、人工确认版本相符的正式投影可供下游使用；保留旧 stale 标记，失效来源不得回退旧 AI。",
+      "sourceFiles": ["client/src/pages/ComparisonPage.tsx", "client/src/pages/listing/CompetitorDeepResearchJobControls.tsx", "client/src/pages/listing/CompetitorDeepAdoptionEditor.tsx", "client/src/pages/GeneratePage.tsx"]
     },
     {
       "name": "皇帝中台 Agent 库",
@@ -81,6 +81,7 @@
   "backendFlags": {
     "rule": "下列开关均以精确字符串 true 启用，未配置保持关闭；开关不代替权限、schema、来源审批、模型注册或凭据配置。按所试用模块单独启用，不一键全开。",
     "listingDeep": ["ENABLE_COMPETITOR_DEEP_WRITES", "ENABLE_COMPETITOR_DEEP_WORKER"],
+    "listingDeepHumanAdoption": ["ENABLE_LISTING_DEEP_ADOPTION_WRITES"],
     "listingSalesCalibration": ["ENABLE_LISTING_SALES_CALIBRATION_WRITES"],
     "agentConversation": ["ENABLE_ASSISTANT_CONVERSATION_WRITES", "ENABLE_ASSISTANT_CONVERSATION_WORKER"],
     "agentConfigurationAndRuleConfirmation": ["ENABLE_ASSISTANT_CONFIGURATION_WRITES"],
@@ -119,7 +120,7 @@
       { "feature": "归档、备注与数字搭档", "planner": "scripts/integration/operationsBoardSchemaPlan.mjs", "candidate": "0313_integration_ops_profit_board.sql", "runtimeAdmission": "server/domains/ops/operationsBoardSchemaAdmission.ts", "note": "新四表与朋友旧三表是不同结构；旧数据迁移和金额／版本对账独立验收，不能按名称相似认定等价。" },
       { "feature": "Agent 配置与私有对话", "ddl": ["drizzle/0230_assistant_configurations.sql", "drizzle/0231_assistant_conversations.sql"], "planner": "scripts/integration/aiFeatureTargetSchemaPlan.mjs", "runtimeAdmission": "server/domains/ai_os/repositories/assistantConversations.ts", "note": "八表纯评估中的五张配置／私有线程／回合／附件表；按完整稳定原始 metadata 比对类型、默认、可空性和完整索引。只列精确缺表 CREATE 候选，不自动修复或采用部分安装；对象目录、台账、备份与执行批准仍分开核验，不把旧通用对话表当新私有存储。" },
       { "feature": "利润 AI", "ddl": ["drizzle/0309_integration_profit_analysis.sql"], "planner": "scripts/integration/aiFeatureTargetSchemaPlan.mjs", "runtimeAdmission": "server/domains/ops/profitAnalysisJobRepository.ts", "note": "同一八表纯评估中的三张私有报告／运行／保存回执表，各自保留独立 UUID 约束。所有评估结果始终 executable=false、productionApproved=false，未在本文注册或执行；不等同朋友原同步报告表。" },
-      { "feature": "四栏竞品后台研究", "source": "server/repositories/listing/competitorDeepExecutionRepository.ts", "note": "复用受控 ai_jobs 专属任务类型及逐阶段检查点，核对 ai_jobs、competitorAnalyses 和审计依赖，不新造 OCR／问答来源。" }
+      { "feature": "四栏竞品后台研究及人工采纳", "source": "server/repositories/listing/competitorDeepExecutionRepository.ts", "adoptionSource": "server/repositories/listing/competitorDeepAdoptionRepository.ts", "note": "复用受控 ai_jobs 专属任务类型及逐阶段检查点；采纳另存不可变 ai_artifacts user_edit 记录，竞品只存受保护引用，同事务审核回执和比较确认失效。核对 ai_jobs、ai_artifacts、competitorAnalyses、项目及审计表的精确结构与事务依赖；不新造 OCR／问答来源。" }
     ],
     "prohibitedShortcut": "不得对旧库直接执行 baseline、db:push、通用 db:migrate 或批量重放朋友 SQL 来跳过对账；也不能改 checksum 或把旧迁移标成已执行。先完成目标结构、台账、数据、备份和兼容性核对，再审批最小增量。"
   },
@@ -144,9 +145,24 @@
     "researchBoundary": "版本化销量上下文参与新的研究输入与来源哈希，但只是外部竞品线索，不是本品性能或真实市场总量的证明。深度研究中不把销量塞入评论、引用、主题频次或样本分母；旧证据计划缺少销量上下文时不补造。",
     "legacyAmbiguity": "历史共享项目存在跨工作区确认报告时，不由当前校准请求顺带跨工作区修复；需单独核对范围。原数据不删，未知或歧义阻断不能当作不存在。"
   },
+  "listingDeepHumanAdoption": {
+    "storage": "原候选、任务检查点和旧 AI 内容不覆盖；人工采纳另存完整不可变 ai_artifacts user_edit 记录，竞品只保存受保护 deepAdoptionRef。固定操作 UUID、当前整行 revision、结果／证据哈希及人工确认共同绑定；审计与相关比较确认失效同事务提交。",
+    "currentValidity": "committed 回执只证明该操作曾提交，不证明当前仍有效。当前摘要、确认版本／时间、来源指纹和完整原候选重放均一致才可用；解锁／编辑会失效，同源可经显式审核用新 UUID 重新采纳，不重新调用模型。来源变化须重新研究，不删除旧历史或清除 stale 冒充当前来源。",
+    "consumers": "服务端核验后的正式投影供七条方向、Listing 研究选集／上下文、比较生成与确认、Agent 准备节点及广告／图片／评论分析消费。私有来源仍绑定有效 actor／workspace 与项目；旧项目 workspace=null 不扩大其私有任务范围。无法核验时不回退旧 AI。",
+    "evidenceLimit": "评论计数与百分比只代表已保存导入样本，不是市场全量；评论主题衍生 concern 不是真实问答。不把样本主题强行当既有 Kano 分类。模型上下文采用有界且标明省略的代表摘录，保留计数、分母、版本化来源；完整采纳结果仍在不可变记录，原证据仍在原任务输入，不冒充独立长期原件库。",
+    "recovery": "新写入默认关闭；关闭后仍按当前身份检查并核对／取消原 UUID。unknown、丢 ACK、超时不自动重发或换 UUID；本地恢复元数据不保存摘要正文。同身份刷新保留脏草稿，切换身份／项目隐藏旧资料，迟到响应不能串范围。",
+    "friendAcceptance": [
+      "真实数据库及事务、原件／审计记录和完整候选重放；首次采纳与同源编辑后重新采纳。",
+      "真实生成输入、七方向引用和比较 capture／publish／confirm 与当前选择来源一致；来源变化、缺原件、撤权和跨工作区均不回退旧 AI。",
+      "丢 ACK、写入开关关闭后的原 UUID 核对／取消、并发 CAS、同身份脏草稿保留及切身份隔离。",
+      "真实模型质量与费用、Web／worker 联调及生产回滚另行验收；本次人工采纳不产生模型调用。"
+    ],
+    "sourceFiles": ["server/domains/listing/services/competitorDeepAdoption.ts", "server/repositories/listing/competitorDeepAdoptionRepository.ts", "server/domains/listing/services/competitorActiveResearch.ts", "server/services/competitorActiveResearch.ts", "client/src/pages/listing/CompetitorDeepAdoptionEditor.tsx"]
+  },
   "stillOpen": [
-    "四栏深度研究候选目前只读；正式采纳到已确认摘要／生成来源仍需补齐版本、来源与人工审核适配。销量上下文接入不解除该缺口，不复活旧 AI 字段。",
+    "四栏正式采纳的受控源码已接入，但仍需朋友在真实权限、数据库及 Web／worker 环境验收；不以合成协议测试或前端可见推定正式启用。",
     "四栏竞品图片／OCR、问答及长期原评论原件来源仍不完整；现可核验样本不等于市场全量，未接来源不得标完成。",
+    "采集草稿审核／驳回／重试、补图修订和补充多原件历史、Agent 逐业务 Skill dispatch、赛狐受控日／月同步及双调度隔离仍未全部实现；不能改写成仅待业务验收。",
     "真实目标数据库结构、旧数据迁移对账、存储权限、Web／worker 联调、真实模型质量及真实费用验收仍交朋友和维护者执行。",
     "页面可达、合成测试通过、开关开启和真实业务全部完成是不同状态；不得用摘要页面或少量示例代替朋友完整流程。",
     "权限收回、跨工作区、未知回执、并发保存、备份回滚及旧 writer 并存必须继续核验。"

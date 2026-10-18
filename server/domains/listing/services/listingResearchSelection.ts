@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { TRPCError } from "@trpc/server";
+import { assertActiveCompetitorResearchScope } from "../../../services/competitorActiveResearch";
 import { z } from "zod";
 import {
   listingResearchBindingSchema, listingResearchIdsSchema, type ListingResearchBinding,
 } from "../../../../shared/listingResearchSelection";
 import type { CompetitorAnalysis, CompetitorComparisonReport } from "../../../../drizzle/schema/project";
+import { cloneActiveResearch, readActiveCompetitorResearch } from "./competitorActiveResearch";
 import {
   getCompetitorAnalysesByProject, getLatestCompetitorComparisonReport, getProjectByIdAdmin,
 } from "../repository";
@@ -68,7 +70,17 @@ async function requireProject(scope: ResearchScope) {
   }
 }
 
-function assertSelectedSourceUsable(row: CompetitorAnalysis) {
+function assertSelectedSourceUsable(row: CompetitorAnalysis, scope: ResearchScope) {
+  const active = readActiveCompetitorResearch(row);
+  if (active.status === "unavailable") return unavailable("所选深度研究未正式采纳或来源已变化，不能使用历史分析生成");
+  if (active.status === "adopted_deep") {
+    // A legacy NULL project is accessible under the caller's existing policy,
+    // but its privately adopted research remains bound to its exact workspace.
+    try { assertActiveCompetitorResearchScope(row, active, scope); } catch {
+      throw new TRPCError({ code: "FORBIDDEN", message: "所选深度研究不属于当前工作区或来源身份不匹配" });
+    }
+    return;
+  }
   // Preserve legacy records without a source envelope; do not require all
   // drafts to be confirmed. Known historical/capture-only data is different.
   if (row.rawData === null) return;
@@ -100,7 +112,7 @@ async function readSelection(scope: ResearchScope, requestedIds: number[] | unde
   const selected = analysisIds.map(id => {
     const row = byId.get(id);
     if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "所选竞品分析已删除或不属于当前项目，请重新选择" });
-    assertSelectedSourceUsable(row);
+    assertSelectedSourceUsable(row, scope);
     return row;
   });
   let confirmedComparison: CompetitorComparisonReport | null = null;
@@ -126,9 +138,11 @@ async function readSelection(scope: ResearchScope, requestedIds: number[] | unde
   // objects through this result. Dates and zero/false values are preserved.
   const hashInput = { version: 1, ...scope, mode, analysisIds, competitors: selected, confirmedComparison };
   const sourceHash = createHash("sha256").update(sourceText(hashInput)).digest("hex");
+  const snapshots = structuredClone(selected);
+  selected.forEach((row, index) => cloneActiveResearch(row, snapshots[index]));
   return {
     binding: { version: 1, ...scope, mode, analysisIds, sourceHash },
-    competitors: structuredClone(selected), confirmedComparison: structuredClone(confirmedComparison), reviewAggregation: null,
+    competitors: snapshots, confirmedComparison: structuredClone(confirmedComparison), reviewAggregation: null,
   };
 }
 

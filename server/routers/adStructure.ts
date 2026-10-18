@@ -7,6 +7,7 @@ import {
   getKeywordsByProject, getCompetitorAnalysesByProject,
 } from "../repositories";
 import { AD_STRUCTURE_PROMPT } from "../adStructurePrompt";
+import { assertActiveCompetitorResearchScope, readActiveCompetitorResearch, renderActiveCompetitorResearchContext } from "../services/competitorActiveResearch";
 import {
   recordBusinessArtifactUse,
   resolveCurrentBusinessArtifact,
@@ -77,6 +78,10 @@ function buildCompetitorSummary(project: any, competitors: any[]): string {
   parts.push(`\n共有 ${competitors.length} 个竞品分析数据:\n`);
 
   for (const comp of competitors) {
+    if (readActiveCompetitorResearch(comp).status !== "legacy") {
+      parts.push(`#### 竞品 ASIN: ${comp.asin}\n${renderActiveCompetitorResearchContext(comp)}`);
+      continue;
+    }
     const compParts: string[] = [];
     compParts.push(`#### 竞品 ASIN: ${comp.asin}`);
     if (comp.title) compParts.push(`  标题: ${comp.title}`);
@@ -151,7 +156,13 @@ export const adStructureRouter = router({
             projectId: input.projectId,
           }).catch(() => null),
         ]);
+        for (const row of competitorRows) assertActiveCompetitorResearchScope(row, readActiveCompetitorResearch(row), {
+          projectId: input.projectId, workspaceId: ctx.workspaceId, userId: ctx.user.id,
+        });
         const competitors = await Promise.all(competitorRows.map(async (competitor) => {
+          // Current adopted research cannot be replaced by an older generic
+          // whole-row artifact containing retained legacy AI fields.
+          if (readActiveCompetitorResearch(competitor).status !== "legacy") return competitor;
           const artifact = await resolveCurrentBusinessArtifact({
             domain: "listing",
             artifactKey: `listing.competitor_analysis.${competitor.asin}`,
@@ -313,12 +324,17 @@ export const adStructureRouter = router({
         getKeywordsByProject(input.projectId),
       ]);
 
+      for (const row of competitors) assertActiveCompetitorResearchScope(row, readActiveCompetitorResearch(row), {
+        projectId: input.projectId, workspaceId: ctx.workspaceId, userId: ctx.user.id,
+      });
+
       if (!competitors.length) return { estimates: [], summary: null };
 
       // Build our keyword set for overlap calculation
       const ourKeywords = new Set(keywords.map(k => k.keyword.toLowerCase()));
 
       const estimates = competitors.map((comp: any) => {
+        const activeResearch = readActiveCompetitorResearch(comp);
         // 1. Rating score (lower rating = better opportunity, max 25)
         const rating = parseFloat(comp.rating) || 4.0;
         const ratingScore = rating <= 3.5 ? 25 : rating <= 4.0 ? 20 : rating <= 4.3 ? 15 : rating <= 4.5 ? 10 : 5;
@@ -345,7 +361,7 @@ export const adStructureRouter = router({
         // 4. Keyword overlap score (more overlap = more relevant target, max 25)
         let kwOverlap = 0;
         let compKeywords: string[] = [];
-        if (comp.keywords) {
+        if (activeResearch.status === "legacy" && comp.keywords) {
           try {
             const kwData = JSON.parse(comp.keywords);
             const allKws: string[] = [];
@@ -367,7 +383,7 @@ export const adStructureRouter = router({
         // Extract review pain points for targeting rationale
         let painPoints: string[] = [];
         let delightPoints: string[] = [];
-        if (comp.reviewAnalysis) {
+        if (activeResearch.status === "legacy" && comp.reviewAnalysis) {
           try {
             const review = JSON.parse(comp.reviewAnalysis);
             painPoints = (review.painPoints || []).slice(0, 3).map((p: any) => typeof p === 'string' ? p : p.point || p.description || '');
@@ -394,6 +410,11 @@ export const adStructureRouter = router({
           sharedKeywords: compKeywords.filter(k => ourKeywords.has(k.toLowerCase())).slice(0, 10),
           painPoints,
           delightPoints,
+          ...(activeResearch.status === "legacy" ? {} : { researchSource: {
+            status: activeResearch.status,
+            context: renderActiveCompetitorResearchContext(comp),
+            note: "四栏主题不等同于旧 Kano 痛点／爽点分类；未用保留的旧 AI 字段补齐。",
+          } }),
           recommendation: totalScore >= 75
             ? "强烈推荐定投：该竞品存在明显弱点，定投ROI预期较高"
             : totalScore >= 55

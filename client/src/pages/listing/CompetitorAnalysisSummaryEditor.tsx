@@ -13,6 +13,7 @@ type Analysis = {
   id: number; projectId: number; asin: string; revision: string;
   rawData: string | null; aiSummary: string | null; summary: string | null;
   summaryStatus: "draft" | "confirmed"; summaryVersion: number; summaryConfirmedAt: Date | string | null;
+  activeResearch?: unknown;
 };
 type Props = { projectId: number; analysis: Analysis };
 const isRevision = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
@@ -144,6 +145,8 @@ function OwnedSummaryEditor({ projectId, analysis, workspaceId, suspended }: Pro
     </div>
     <div className="space-y-3 p-4">
       {source.historical && <p role="alert" className="text-sm text-amber-700">{source.analysisStale ? "资料已变化，旧摘要仅作历史参考；需要重新分析当前资料后再确认。" : "当前仅保存采集资料，旧摘要不代表当前资料分析；需要重新分析后再确认。"}可保留人工编辑草稿。</p>}
+      {source.adoptedDeep && <p className="text-sm">当前正式摘要来自已核验的四栏人工采纳；不表示图片、OCR、真实问答或完整全量研究已完成，旧分析历史状态仍保留。</p>}
+      {source.adoptionNeedsReview && <p role="alert" className="text-sm">四栏正式研究当前需重新核验。若已解锁或编辑摘要，请到竞品并排研究使用“审阅并采纳四栏候选”重新人工确认；普通摘要确认不能替代采纳，同源重采纳不调用模型。</p>}
       {source.sourceUnknown && <p role="alert" className="text-sm text-amber-700">来源状态无法核验，不能确认摘要；可保留人工草稿，请到分析页核对。</p>}
       {!isRevision(base.revision) && <p role="alert">摘要版本无法核验，未启用保存或确认；请重新读取。</p>}
       {notice && <p role="status" className="text-sm">{notice}</p>}

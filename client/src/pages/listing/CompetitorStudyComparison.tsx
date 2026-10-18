@@ -4,9 +4,10 @@ import { competitorStudy, type CompetitorStudyRecord } from "./competitorStudyMo
 import CompetitorResearchEvidencePreview from "./CompetitorResearchEvidencePreview";
 import CompetitorDeepResultReader from "./CompetitorDeepResultReader";
 import CompetitorDeepResearchJobControls from "./CompetitorDeepResearchJobControls";
+import CompetitorDeepAdoptionEditor from "./CompetitorDeepAdoptionEditor";
 import CompetitorSalesEditor, { CompetitorSalesSummary, type CompetitorSalesRecord } from "./CompetitorSalesEditor";
 
-export default function CompetitorStudyComparison({ projectId, analyses, pendingIds, onConfirm, onUnlock, onResearchCompleted, onSalesSaved }: {
+export default function CompetitorStudyComparison({ projectId, analyses, pendingIds, onConfirm, onUnlock, onResearchCompleted, onSalesSaved, onAdopted, onAdoptionDirtyChange, suspended = false }: {
   projectId?: number;
   analyses: (CompetitorStudyRecord & Pick<CompetitorSalesRecord, "projectId" | "salesCalibrationWritable">)[];
   pendingIds: ReadonlySet<number>;
@@ -14,6 +15,9 @@ export default function CompetitorStudyComparison({ projectId, analyses, pending
   onUnlock: (analysis: CompetitorStudyRecord) => void;
   onResearchCompleted?: () => void;
   onSalesSaved?: () => void | Promise<void>;
+  onAdopted?: () => void | Promise<void>;
+  onAdoptionDirtyChange?: (analysisId: number, dirty: boolean) => void;
+  suspended?: boolean;
 }) {
   return <section aria-label="选中竞品并排研究" className="space-y-3">
     <div><h2 className="text-lg font-semibold">选中竞品 · 并排研究</h2>
@@ -34,7 +38,7 @@ export default function CompetitorStudyComparison({ projectId, analyses, pending
                 href={`/listing/competitors/${analysis.id}/reviews?projectId=${projectId}`}>查看 {analysis.asin} 原评论</a>}
             </header>
             {projectId && analysis.projectId === projectId
-              ? <CompetitorSalesEditor projectId={projectId} analysis={analysis} onSaved={onSalesSaved} />
+              ? <CompetitorSalesEditor projectId={projectId} analysis={analysis} onSaved={onSalesSaved} suspended={suspended} />
               : <CompetitorSalesSummary analysis={analysis} />}
             <details><summary className="cursor-pointer text-sm font-medium">已保存五点原文（{study.bullets.length} 条）</summary>
               {study.bulletsUnavailable ? <p role="alert" className="text-sm">原文字段无法读取，请回分析页核对。</p> : study.bullets.length ? <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm">{study.bullets.map((text, index) => <li key={index} className="whitespace-pre-wrap break-words">{text || "空条目"}</li>)}</ol> : <p className="text-sm text-muted-foreground">尚无已保存五点原文。</p>}
@@ -44,6 +48,8 @@ export default function CompetitorStudyComparison({ projectId, analyses, pending
                 <CompetitorResearchEvidencePreview projectId={projectId!} analysisId={analysis.id} asin={analysis.asin} revision={analysis.revision} />
                 <CompetitorDeepResearchJobControls projectId={projectId!} analysisId={analysis.id} asin={analysis.asin} revision={analysis.revision} onCompleted={onResearchCompleted} />
                 <CompetitorDeepResultReader projectId={projectId!} analysisId={analysis.id} asin={analysis.asin} revision={analysis.revision} />
+                <CompetitorDeepAdoptionEditor projectId={projectId!} analysisId={analysis.id} asin={analysis.asin} revision={analysis.revision}
+                  suspended={suspended} onAdopted={onAdopted} onDirtyChange={dirty => onAdoptionDirtyChange?.(analysis.id, dirty)} />
               </>}
             <div><h4 className="text-sm font-medium">{study.summarySource}</h4>
               <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{study.summary || "请到竞品分析页完成分析后刷新；不根据缺失字段推测任务状态。"}</p>
@@ -52,6 +58,8 @@ export default function CompetitorStudyComparison({ projectId, analyses, pending
                 : "当前仅保存采集资料，旧摘要不代表当前资料分析；需要重新分析后再确认。"}</p>}
               {study.sourceUnknown && <p role="alert" className="text-sm text-amber-700">来源状态无法核验，不能确认摘要；请到分析页核对。此状态不代表分析任务成功、失败或资料已过期。</p>}
               {study.inconsistent && <p role="alert" className="text-sm text-amber-700">确认状态缺少已保存原文，请先在分析页核对。</p>}
+              {study.adoptedDeep && <p className="text-xs text-muted-foreground">正式摘要已由服务端核验人工采纳；仍仅限已保存标题、五点及导入评论样本，不表示图片、OCR、真实问答或完整全量研究已完成。旧分析历史状态保留。</p>}
+              {study.adoptionNeedsReview && <p role="alert" className="text-sm">四栏正式研究当前需重新核验。解锁或修改摘要后，请使用上方“审阅并采纳四栏候选”重新人工采纳；同源候选是否可用由服务端核验，不会因此重新调用模型。未决原请求须先核对或取消。</p>}
             </div>
             <div className="flex flex-wrap gap-2"><Button size="sm" disabled={pending || !study.canConfirm} onClick={() => { if (!pending && study.canConfirm) onConfirm(analysis, study.summary); }}>确认此摘要</Button>
               <Button size="sm" variant="outline" disabled={pending || !study.canUnlock} onClick={() => { if (!pending && study.canUnlock) onUnlock(analysis); }}>解锁此摘要</Button>

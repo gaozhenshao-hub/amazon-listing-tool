@@ -1,0 +1,77 @@
+{
+  "schema": "integration-protection-review/v1",
+  "purpose": "Controlled human adoption of immutable competitor deep research and actual current-source consumers",
+  "parentCommit": "b2f41f043dd69803146037a0229b6b5e316c3f39",
+  "userPriority": "Main functional merge first, full business acceptance by the user's friend. Necessary build and data-safety checks retained. No taskboard or REA.",
+  "protectedFiles": [
+    {
+      "path": "client/src/pages/ComparisonPage.tsx",
+      "controls": ["K03"],
+      "gitBlobSha1": "be54e8bf27bea6501f57ac8857309fb3ba7a3172",
+      "sha256": "1031f0aae5e631d2c632de9f4bad562671c7c757ca5caaab7e15eabece7de3db",
+      "decision": "Add explicit human-adoption review to selected competitor cards; retain legacy report selection and generation. Preserve dirty drafts across same-identity refresh, hide/suspend editors and portals while authorization reloads, and remount on identity changes. Adoption invalidates report readiness but never silently overwrites a manual draft."
+    },
+    {
+      "path": "server/domains/image/routerContext.ts",
+      "controls": ["K06"],
+      "gitBlobSha1": "3044c93c8d46d46d174aaa874d646e2ffa204d4b",
+      "sha256": "96f6e4a677b040f35496df5acc4b3998e8b0ae1821648894969eaf15b688957e",
+      "decision": "Read replay-verified adopted research through the cross-domain pure provenance leaf, with the actual worker actor/workspace. Missing or mismatched scope rejects; unverified deep sources never use retained AI or generic whole-row artifacts. Exclude unbound project aggregation when deep sources are present; retain all existing image authorization and legacy behavior."
+    },
+    {
+      "path": "server/domains/listing/routerContext.ts",
+      "controls": ["K07"],
+      "gitBlobSha1": "59088d4e83247860faa640d60f6fc14da3559208",
+      "sha256": "7c850cd5f4dd8d2a2baf534a42fd9a528e8e23353cc751cd29c71fac97c99437",
+      "decision": "Require current explicit scope for adopted private research and render bounded typed external evidence. All actual context callers pass server actor/workspace. Keep existing sales source labels and legacy path; do not revive retained AI or unbound project aggregation."
+    },
+    {
+      "path": "server/domains/listing/services/generationJob.ts",
+      "controls": ["K03"],
+      "gitBlobSha1": "d108e16c663ba609b0148b7c34e58c0b3367da01",
+      "sha256": "6d94b6b8c08c5deac7790ab60fa48fcc13fb1e4ad9b9ba43c909ee279cba2613",
+      "decision": "Preserve exact selected research binding and all prior fact and model gates. Verify adopted actor/workspace before any preparation-node write, including legacy-unbound preparation. N1/N5 and actual generation contexts use verified deep research, not old reviewAnalysis; omitted records remain explicit."
+    },
+    {
+      "path": "server/domains/listing/services/sellingPointPlanning.ts",
+      "controls": ["K03"],
+      "gitBlobSha1": "2a46a24eb02486d1f67b3f1216638160a2ccf3dd",
+      "sha256": "a2c798691ab9d72a59f9552cf435d890bce53dfb242f42e222d3d378c8856286",
+      "decision": "Keep seven directions and user Listing Skills. Adopted evidence uses exact immutable artifact/entry references, sample counts, denominators and declared bounded excerpts. Derived concerns are not real Q&A or preclassified Kano. Only exact supplied same-version references are admissible; invalid deep sources cannot fall back to old AI."
+    },
+    {
+      "path": "server/routers/analysis.ts",
+      "controls": ["K01"],
+      "gitBlobSha1": "cc0ac88bc85a1ea2a06ea7e0fc55cde90cd74add",
+      "sha256": "1e7a75992cfbe43543733e8ef52579c451cf318052fe604371838507fec798a8",
+      "decision": "Add scoped options/adopt/check/cancel endpoints with strict contracts and default-off new writes. Preserve all original import/research/result routes and actor/project/workspace enforcement. Comparison captures replay-verified selected sources, calls models outside the transaction and rejects late changed sources; only human confirmation changes approval state."
+    }
+  ],
+  "invariants": [
+    "Original protected baseline hashes, dependency declarations and all prior review references are preserved. No automatic guard acceptance or source-approval hash refresh.",
+    "Original candidate, job journal and stale AI remain unchanged. Full human adoption is a separate immutable user_edit artifact; the row stores only a protected small reference. Audit and comparison invalidation are transactional.",
+    "Adopt requires whole-row revision, exact candidate/evidence hashes and explicit human limitations confirmation. Check/cancel recover only the original UUID, including when new writes are off. A committed historical receipt is separate from current active validity.",
+    "Full source replay and current summary/hash/version/actor/time determine active validity. Same-source re-adoption after manual editing is explicit and does not call a model. Changes to source invalidate the prior adoption.",
+    "Comparison reuses current locked parent/analysis rows and reads immutable terminal proofs without reverse job locks or nested transactions. Old REPEATABLE READ snapshots are never substituted for these current rows.",
+    "Private adopted evidence remains bound to its effective actor/workspace; NULL legacy parent scope grants no cross-workspace private job access. Artifact registration retains the actual adopted workspace/user.",
+    "Full results and evidence remain bounded and exact in storage. Model excerpts explicitly count omitted IDs, examples, characters and references; themes retain actual sample denominators, never market-total or real-Q&A claims."
+  ],
+  "independentReview": "Root reviewed actual protected diffs and route/consumer wiring. Independent backend/UI review found and closed missing confirmation-time validity, comparison selection hydration and effective-workspace source isolation. Real writer-to-hydration-to-selection/comparison protocol fixtures exercise actual business functions; these are not native MySQL acceptance.",
+  "checks": {
+    "originalConfigTypes": { "files": 3921, "diagnostics": 0, "excludesUnchanged": true },
+    "ui": { "files": 6, "passed": 173 },
+    "finalUnifiedUnitAndTestInclusiveTypes": "Recorded separately in the release proof after final frozen-source execution. Do not infer native or production readiness from these checks."
+  },
+  "boundaries": [
+    "ENABLE_LISTING_DEEP_ADOPTION_WRITES requires exact true and defaults off. Human adoption does not invoke a model or replace source/model execution approvals.",
+    "Comparison sourceHash is current CAS, not a retrospective historical generated-source archive.",
+    "Images/OCR, real Q&A and independent permanent multi-original storage are still incomplete. Original 62/27/12, T01-T28, P0-P6 and K01-K10 scope remains.",
+    "Acquisition revision/draft review, remaining Agent business dispatch, controlled daily/monthly source sync and dual-scheduler isolation are not reclassified as acceptance-only.",
+    "Fresh-database approval source binding remains separately unresolved. No approval checksum was changed or initialization bypassed. Real target schema, ledger/data reconciliation, safe runtime, release/rollback and full business acceptance remain required."
+  ],
+  "handoff": "docs/main-feature-handoff.json",
+  "productionWrites": false,
+  "modelCalls": 0,
+  "productionDeployed": false,
+  "fullObjectiveComplete": false
+}

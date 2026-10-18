@@ -19,7 +19,8 @@ export const competitorDeepResultReadSchema = z.object({ projectId: id, analysis
 const pointerSchema = z.object({ artifactId: z.string().regex(/^deep_[a-f0-9]{64}$/u),
   jobRunId: z.string().min(1).max(80).refine(value => value.trim() === value), resultHash: hash }).strict();
 type Request = z.infer<typeof competitorDeepResultReadSchema>;
-type Scope = { userId: number; workspaceId: number | null; projectId: number; analysisId: number };
+export type CompetitorDeepResultScope = { userId: number; workspaceId: number | null; projectId: number; analysisId: number };
+type Scope = CompetitorDeepResultScope;
 type Identity = Scope & { sourceWorkspaceId: number | null; asin: string };
 export type AuthorizedCompetitorDeepResult = { identity: Identity; currentRevision: string; reviewRequired: true } &
   ({ status: "not_available"; sourceChanged: false } | { status: "available"; sourceChanged: boolean; result: CompetitorDeepResult });
@@ -103,52 +104,58 @@ export function createCompetitorDeepResultReadService(dependencies: {
     if (!Array.isArray(value) || !Array.isArray(value[0])) fail("DEEP_RESULT_READ_RESPONSE_INVALID");
     return value[0] as Record<string, unknown>[];
   }
-  async function authorized(tx: DbExecutor, scope: Scope, expectedRevision: string) {
-    const users = await rows(tx, "SELECT id,role,status,defaultWorkspaceId FROM users WHERE id=? FOR SHARE", [scope.userId]), user = users[0];
+  async function authorized(tx: DbExecutor, scope: Scope, expectedRevision: string | undefined, lock: "share" | "update" = "share") {
+    const clause = lock === "update" ? "FOR UPDATE" : "FOR SHARE";
+    const users = await rows(tx, `SELECT id,role,status,defaultWorkspaceId FROM users WHERE id=? ${clause}`, [scope.userId]), user = users[0];
     if (users.length !== 1 || user.id !== scope.userId || user.status !== "active" || user.defaultWorkspaceId !== scope.workspaceId
       || typeof user.role !== "string" || !user.role.trim()) fail("DEEP_RESULT_READ_ACTOR_CHANGED", "FORBIDDEN");
-    await permission({ actor: { id: scope.userId, role: user.role, defaultWorkspaceId: scope.workspaceId }, resource: "project", action: "read",
+    if (lock === "update" && scope.workspaceId !== null) {
+      const workspaces = await rows(tx, "SELECT id,status FROM workspaces WHERE id=? FOR SHARE", [scope.workspaceId]);
+      const members = await rows(tx, "SELECT userId,workspaceId,status FROM workspace_memberships WHERE userId=? AND workspaceId=? LIMIT 2 FOR SHARE", [scope.userId, scope.workspaceId]);
+      if (workspaces.length !== 1 || workspaces[0].id !== scope.workspaceId || workspaces[0].status !== "active"
+        || members.length !== 1 || members[0].userId !== scope.userId || members[0].workspaceId !== scope.workspaceId || members[0].status !== "active") fail("DEEP_RESULT_READ_ACTOR_CHANGED", "FORBIDDEN");
+    }
+    await permission({ actor: { id: scope.userId, role: user.role, defaultWorkspaceId: scope.workspaceId }, resource: "project", action: lock === "update" ? "update" : "read",
       workspaceId: scope.workspaceId, projectId: scope.projectId, resourceId: scope.projectId,
       authorizationRead: { executor: tx, strict: true, lock: true } });
-    const parents = await rows(tx, "SELECT id,userId,workspaceId FROM projects WHERE id=? FOR SHARE", [scope.projectId]), parent = parents[0];
+    const parents = await rows(tx, `SELECT id,userId,workspaceId FROM projects WHERE id=? ${clause}`, [scope.projectId]), parent = parents[0];
     if (parents.length !== 1 || parent.id !== scope.projectId || parent.userId !== scope.userId
       || (parent.workspaceId !== null && parent.workspaceId !== scope.workspaceId)) fail("DEEP_RESULT_READ_PROJECT_UNAVAILABLE", "NOT_FOUND");
-    const found = await rows(tx, analysisSelect, [scope.projectId, scope.analysisId]);
+    const found = await rows(tx, analysisSelect.replace(/FOR SHARE$/u, clause), [scope.projectId, scope.analysisId]);
     if (found.length !== 1 || found[0].columnsWithinLimit !== 1) fail("DEEP_RESULT_READ_ANALYSIS_UNAVAILABLE", "NOT_FOUND");
     const { columnsWithinLimit: _limit, ...record } = found[0], analysis = record as CompetitorAnalysis;
     if (analysis.id !== scope.analysisId || analysis.projectId !== scope.projectId || !/^[A-Z0-9]{10}$/u.test(analysis.asin)) fail("DEEP_RESULT_READ_ANALYSIS_UNAVAILABLE", "NOT_FOUND");
     const currentRevision = competitorRevision(analysis);
-    if (currentRevision !== expectedRevision) fail("DEEP_RESULT_READ_SOURCE_CHANGED", "CONFLICT");
+    if (expectedRevision !== undefined && currentRevision !== expectedRevision) fail("DEEP_RESULT_READ_SOURCE_CHANGED", "CONFLICT");
     return { identity: { ...scope, sourceWorkspaceId: parent.workspaceId as number | null, asin: analysis.asin },
-      analysis, currentRevision, pointer: pointer(analysis.rawData) };
+      analysis, currentRevision, pointer: pointer(analysis.rawData), actorRole: user.role };
   }
-  async function read(ctx: TrpcContext, raw: Request): Promise<AuthorizedCompetitorDeepResult> {
-    try {
-      const parsed = competitorDeepResultReadSchema.safeParse(raw);
-      if (!parsed.success) fail("DEEP_RESULT_READ_INPUT_INVALID", "BAD_REQUEST");
-      const input = parsed.data, workspaceId = ctx.workspaceId !== undefined ? ctx.workspaceId : ctx.user?.defaultWorkspaceId;
-      if (!ctx.user || !id.safeParse(ctx.user.id).success || (workspaceId !== null && !id.safeParse(workspaceId).success)) fail("DEEP_RESULT_READ_ACTOR_INVALID", "FORBIDDEN");
-      if (workspaceId !== input.expectedWorkspaceId) fail("DEEP_RESULT_READ_WORKSPACE_CHANGED", "CONFLICT");
-      const scope: Scope = { userId: ctx.user.id, workspaceId: workspaceId as number | null, projectId: input.projectId, analysisId: input.analysisId };
-      // Discover only an authorized pointer first, releasing parent locks before
-      // taking the job lock to match the publication job→actor→parent lock order.
-      const initial = await transaction(tx => authorized(tx, scope, input.expectedRevision));
-      if (!initial.pointer) return { status: "not_available", identity: initial.identity, currentRevision: initial.currentRevision,
-        sourceChanged: false, reviewRequired: true };
-      const reference = initial.pointer;
-      return await transaction<AuthorizedCompetitorDeepResult>(async tx => {
-        const jobs = await rows(tx, jobSelect, [reference.jobRunId]);
-        const owned = await authorized(tx, scope, input.expectedRevision);
-        if (canonical(owned.pointer) !== canonical(reference) || canonical(owned.identity) !== canonical(initial.identity)) fail("DEEP_RESULT_READ_SOURCE_CHANGED", "CONFLICT");
-        const job = jobs[0];
-        if (jobs.length !== 1 || job.runId !== reference.jobRunId || job.kind !== COMPETITOR_DEEP_EXECUTION_JOB_KIND || job.module !== "listing"
-          || job.status !== "succeeded" || job.progress !== 100 || job.maxAttempts !== 1 || !id.safeParse(job.attempt).success
-          || job.userId !== scope.userId || job.workspaceId !== scope.workspaceId || job.projectId !== scope.projectId
+  /** Caller-owned transaction. Locks the job before actor, parent and analysis.
+   * The update mode authorizes human project updates, never model execution. */
+  async function target(tx: DbExecutor, scope: Scope & { jobRunId: string }, expectedRevision: string | undefined,
+    lock: "share" | "update" = "share") {
+    const jobs = await rows(tx, jobSelect.replace(/FOR SHARE$/u, lock === "update" ? "FOR UPDATE" : "FOR SHARE"), [scope.jobRunId]);
+    const { jobRunId: _job, ...identityScope } = scope;
+    const owned = await authorized(tx, identityScope, expectedRevision, lock), job = jobs[0];
+    if (jobs.length !== 1 || job.runId !== scope.jobRunId || job.kind !== COMPETITOR_DEEP_EXECUTION_JOB_KIND || job.module !== "listing"
+      || job.userId !== scope.userId || job.workspaceId !== scope.workspaceId || job.projectId !== scope.projectId) fail("DEEP_RESULT_READ_JOB_INVALID");
+    let stored: ReturnType<typeof decodeCompetitorDeepExecutionInput>;
+    try { stored = decodeCompetitorDeepExecutionInput(jsonPayload(job, "input", COMPETITOR_DEEP_INPUT_MAX_BYTES)); }
+    catch { return fail("DEEP_RESULT_READ_JOB_INPUT_INVALID"); }
+    if (stored.evidence.identity.analysisId !== scope.analysisId || stored.evidence.identity.userId !== scope.userId
+      || stored.evidence.identity.workspaceId !== scope.workspaceId || stored.evidence.identity.projectId !== scope.projectId
+      || stored.evidence.identity.sourceWorkspaceId !== owned.identity.sourceWorkspaceId || stored.evidence.identity.asin !== owned.identity.asin) fail("DEEP_RESULT_READ_BINDING_INVALID");
+    return { ...owned, job, stored };
+  }
+  async function verified(tx: DbExecutor, scope: Scope & { jobRunId: string }, expectedRevision: string,
+    lock: "share" | "update" = "share") {
+        const owned = await target(tx, scope, expectedRevision, lock), reference = owned.pointer;
+        if (!reference || reference.jobRunId !== scope.jobRunId) fail("DEEP_RESULT_READ_SOURCE_CHANGED", "CONFLICT");
+        const job = owned.job;
+        if (job.status !== "succeeded" || job.progress !== 100 || job.maxAttempts !== 1 || !id.safeParse(job.attempt).success
           || job.lockedBy !== null || job.leaseUntil !== null || job.errorMessage !== null
           || !(job.completedAt instanceof Date) || !Number.isFinite(job.completedAt.getTime())) fail("DEEP_RESULT_READ_JOB_INVALID");
-        let stored: ReturnType<typeof decodeCompetitorDeepExecutionInput>;
-        try { stored = decodeCompetitorDeepExecutionInput(jsonPayload(job, "input", COMPETITOR_DEEP_INPUT_MAX_BYTES)); }
-        catch { return fail("DEEP_RESULT_READ_JOB_INPUT_INVALID"); }
+        const stored = owned.stored;
         const receiptParsed = competitorDeepPublicationReceiptSchema.safeParse(jsonPayload(job, "output", OUTPUT_LIMIT));
         if (!receiptParsed.success) fail("DEEP_RESULT_READ_RECEIPT_INVALID");
         const receipt = receiptParsed.data, identity = stored.evidence.identity;
@@ -179,11 +186,39 @@ export function createCompetitorDeepResultReadService(dependencies: {
         catch { return fail("DEEP_RESULT_READ_REPLAY_INVALID"); }
         if (!result.summaryText || result.deepAnalysis.status !== "ready_for_review" || result.resultHash !== receipt.resultHash
           || canonical(result) !== contentText) fail("DEEP_RESULT_READ_REPLAY_MISMATCH");
+        return { ...owned, result, receipt, pointer: reference };
+  }
+  async function read(ctx: TrpcContext, raw: Request): Promise<AuthorizedCompetitorDeepResult> {
+    try {
+      const parsed = competitorDeepResultReadSchema.safeParse(raw);
+      if (!parsed.success) fail("DEEP_RESULT_READ_INPUT_INVALID", "BAD_REQUEST");
+      const input = parsed.data, workspaceId = ctx.workspaceId !== undefined ? ctx.workspaceId : ctx.user?.defaultWorkspaceId;
+      if (!ctx.user || !id.safeParse(ctx.user.id).success || (workspaceId !== null && !id.safeParse(workspaceId).success)) fail("DEEP_RESULT_READ_ACTOR_INVALID", "FORBIDDEN");
+      if (workspaceId !== input.expectedWorkspaceId) fail("DEEP_RESULT_READ_WORKSPACE_CHANGED", "CONFLICT");
+      const scope: Scope = { userId: ctx.user.id, workspaceId: workspaceId as number | null, projectId: input.projectId, analysisId: input.analysisId };
+      // Discover only an authorized pointer first, releasing parent locks before
+      // taking the job lock to match the publication job→actor→parent lock order.
+      const initial = await transaction(tx => authorized(tx, scope, input.expectedRevision));
+      if (!initial.pointer) return { status: "not_available", identity: initial.identity, currentRevision: initial.currentRevision,
+        sourceChanged: false, reviewRequired: true };
+      const reference = initial.pointer;
+      return await transaction<AuthorizedCompetitorDeepResult>(async tx => {
+        const owned = await verified(tx, { ...scope, jobRunId: reference.jobRunId }, input.expectedRevision);
+        if (canonical(owned.pointer) !== canonical(reference) || canonical(owned.identity) !== canonical(initial.identity)) fail("DEEP_RESULT_READ_SOURCE_CHANGED", "CONFLICT");
         return { status: "available", identity: owned.identity, currentRevision: owned.currentRevision,
-          sourceChanged: receipt.committedRevision !== owned.currentRevision, reviewRequired: true, result };
+          sourceChanged: owned.receipt.committedRevision !== owned.currentRevision, reviewRequired: true, result: owned.result };
       });
     } catch (error) { return safeError(error); }
   }
-  return { read };
+  return { read, verified, target };
 }
 export const competitorDeepResultRead = createCompetitorDeepResultReadService();
+/** Internal only: caller supplies a real transaction, never a public RPC executor. */
+export function loadVerifiedCompetitorDeepResult(tx: DbExecutor, scope: Scope & { jobRunId: string }, expectedRevision: string,
+  options: { lock: "share" | "update"; permission?: typeof assertResourceAction } = { lock: "share" }) {
+  return createCompetitorDeepResultReadService({ permission: options.permission }).verified(tx, scope, expectedRevision, options.lock);
+}
+export function lockCompetitorDeepAdoptionTarget(tx: DbExecutor, scope: Scope & { jobRunId: string },
+  permission: typeof assertResourceAction = assertResourceAction) {
+  return createCompetitorDeepResultReadService({ permission }).target(tx, scope, undefined, "update");
+}

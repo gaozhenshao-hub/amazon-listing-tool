@@ -1,8 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { competitorStudy, matchesComparisonSelection } from "./competitorStudyModel";
+import { competitorDeepAdoptionHash as hash } from "@shared/competitorDeepAdoption";
 
 const row = { id: 3, asin: "B000000003", summary: "保存原文", aiSummary: "AI 候选", summaryStatus: "draft", bulletPoints: '["五点原文"]' };
 describe("saved competitor research", () => {
+  const accepted = () => ({ ...row, projectId: 5, revision: "a".repeat(64), summaryVersion: 2, summaryStatus: "confirmed", rawData: '{"analysisStale":true,"captureOnly":true}',
+    activeResearch: { status: "adopted_deep", identity: { userId: 7, workspaceId: 11, sourceWorkspaceId: 11, projectId: 5, analysisId: row.id, asin: row.asin }, currentRevision: "a".repeat(64),
+      ref: { version: 1, kind: "competitor_deep_adoption", artifactId: "deep_adopt_" + "b".repeat(64), operationId: "11111111-1111-4111-8111-111111111111", jobRunId: "synthetic-job",
+        resultHash: "c".repeat(64), evidenceHash: "d".repeat(64), sourceFingerprint: "e".repeat(64), projectionHash: "f".repeat(64), summaryHash: hash(row.summary), summaryVersion: 2, adoptedBy: 7, adoptedAt: "2026-10-19T01:00:00.000Z" } } });
+  it("uses only the server-issued delivery bound to current summary/revision, without deleting legacy stale flags", () => {
+    const value = accepted(); expect(competitorStudy(value)).toMatchObject({ adoptedDeep: true, historical: false, analysisStale: true, captureOnly: true, confirmed: true, canConfirm: false });
+    expect(competitorStudy({ ...value, activeResearch: undefined, rawData: JSON.stringify({ analysisStale: true, deepAdoptionRef: value.activeResearch.ref }) })).toMatchObject({ adoptedDeep: false, historical: true });
+  });
+  it.each(["revision", "project", "asin", "summary", "version", "unlocked", "unavailable"])("does not accept stale/mismatched %s delivery as confirmed research", kind => {
+    const value = accepted();
+    if (kind === "revision") value.revision = "9".repeat(64); if (kind === "project") value.projectId = 9; if (kind === "asin") value.asin = "B000000009";
+    if (kind === "summary") value.summary = "编辑后摘要"; if (kind === "version") value.summaryVersion = 3; if (kind === "unlocked") value.summaryStatus = "draft";
+    const input = kind === "unavailable" ? { ...value, activeResearch: { status: "unavailable", reasonCode: "SOURCE_CHANGED" } } : value;
+    expect(competitorStudy(input)).toMatchObject({ adoptedDeep: false, sourceUnknown: true, canConfirm: false, adoptionNeedsReview: true });
+  });
   it("prefers the exact saved text, never reconstructs a missing analysis", () => {
     expect(competitorStudy(row)).toMatchObject({ summary: "保存原文", canConfirm: true, bullets: ["五点原文"] });
     expect(competitorStudy({ ...row, summary: null, aiSummary: null })).toMatchObject({ summary: "", canConfirm: false });

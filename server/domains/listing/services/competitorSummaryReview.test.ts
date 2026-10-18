@@ -203,7 +203,7 @@ describe("confirmation, saved drafts, guard forwarding and artifacts", () => {
   it("returns the entire actually saved row with a fresh revision and does not rewrite the pre-read row", async () => {
     const { service, dependencies, existing, saved } = setup(); const original = structuredClone(existing);
     const result = await service.review(ctx(), "save", { ...scope(), summary: "Saved draft" });
-    expect(result).toEqual({ ...saved, revision: competitorRevision(saved) });
+    expect(result).toEqual({ ...saved, revision: competitorRevision(saved), activeResearch: { status: "legacy" } });
     expect(result.revision).not.toBe(competitorRevision(existing));
     expect(existing).toEqual(original);
     expect(dependencies.registerCompetitorAnalysisArtifact).toHaveBeenCalledWith(3, "user_edit");
