@@ -1,0 +1,46 @@
+{
+  "schema": "integration-protection-review/v1",
+  "parentCommit": "548ef743a0c50d9f654d2c3b8c141352b0ea9b6d",
+  "purpose": "Saved Listing configuration in new deep v2 tasks, plus explicit image Step2 and development market-overview business verticals; preserve old task recovery",
+  "protectedFiles": [
+    {
+      "path": "server/_core/aiWorker.ts",
+      "controls": [
+        "K01"
+      ],
+      "gitBlobSha1": "9cacb1781c9697705c25ef2fcfc876544b473380",
+      "sha256": "5bcc6133fc45538d3a373fee9bf1385da7debec1f4a3f2548930cd4eb8821597",
+      "decision": "Add two exact-default-off dedicated workers and their drains; preserve all existing handlers, backlogs and drain registrations. New flags do not globally disable old model jobs."
+    },
+    {
+      "path": "server/repositories/ai_os/aiJobRepository.ts",
+      "controls": [
+        "K02"
+      ],
+      "gitBlobSha1": "dd9d84e59c92507d2fedf2e85aa081bf5a4e2763",
+      "sha256": "d9a94d49056de98910f97bee171156108683c6df682e36659ec6770c85c7dc12",
+      "decision": "Exclude the two additional private lanes from every generic read/mutation/claim/lease/retry/deadletter/discovery path with fixed SQL literals. Keep original tagger bound-parameter contract, atomic claims and existing Listing checkpoint allowlist."
+    }
+  ],
+  "retainedRules": [
+    "Original 106 baseline records, both dependency declarations and every prior review reference remain. No schema, migration, bootstrap checksum or source approval is adopted by this review.",
+    "New Listing deep reservations require saved listing configuration and separately approved competitor_deep_agent_evidence_v2. Existing v1 tasks retain their original immutable contract and approval, without new configuration or Agent-permission requirements.",
+    "Image planning and development market execution are explicit stage adapters, not global runner replacements. Both require exact saved configuration, independently approved Qingdao Skill/model/source, fresh transactional authority and conservative fee authorization.",
+    "One-shot dispatch ACK is committed before the provider call. Unverified in-flight/canceled outcomes remain unknown and never authorize an automatic second charge. Complete validated replies returned after advisory metric failure may still be saved under the original lease and cancellation checks.",
+    "Image source preserves full original rows and legacy review aggregates internally. Human-adopted deep research is exclusive in model input; unsafe old batch AI is explicitly excluded and counted, never silently mixed with new adopted proof.",
+    "Image Step0/1 confirmation, current policy/evidence/receipt checks, source capture and manual draft application share caller-owned transactions. Existing policy approval rules and public-method behavior remain. Human application advances scope revision; legacy final draft publication rechecks the frozen fence and writes under one scope lock.",
+    "Development source uses a complete confirmed panorama and all live product/tag fingerprints. Invalid calendar dates, noncanonical month aliases and insufficient trend/seasonality evidence cannot become invented claims. Applying a candidate archives complete prior raw/edited bodies and clears the old runId under CAS.",
+    "Private sources/candidates/apply artifacts remain unavailable through generic artifact export/select/rollback/consumption or generic job retry/cancel, including administrator-known IDs. Ordinary legacy jobs and artifacts retain their previous behavior."
+  ],
+  "independentReview": "Root reviewed protected diffs and actual route/worker composition. Independent source review reproduced and closed Step0 confirmation, stale-AI mixing, source engine/JSON bounds and date/month evidence defects. Dedicated protocol tests use synthetic SQL/HTTP and actual strict adapters, not production/native acceptance.",
+  "boundaries": [
+    "No production schema/data writes, source approvals, real model invocation, service restart or cutover in this batch.",
+    "Only image Step2 and development market_overview receive these new configured-business adapters. Other image/development stages, remaining Listing generation adapters, knowledge/video dispatch and controlled synchronization remain implementation work, not acceptance-only.",
+    "Full P0-P6, K01-K10, T01-T28, image62/master27/supplement12 and all thirteen release gates remain. Friend business/native/storage/provider/rollback acceptance is separate from source merge."
+  ],
+  "handoff": "docs/main-feature-handoff.json",
+  "productionWrites": false,
+  "modelCalls": 0,
+  "productionDeployed": false,
+  "fullObjectiveComplete": false
+}

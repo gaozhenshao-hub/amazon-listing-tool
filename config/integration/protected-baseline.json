@@ -457,9 +457,9 @@
         "sha256": "b3684a0e402946b9114559e50489f41ccc59e92159cc050baba43849f5061e7d"
       },
       "reviewed": {
-        "gitBlobSha1": "b3f86e6098666bec0df135cd886e2f124f0ad6fc",
-        "sha256": "3358fc42103df1457d7de939b04d5e34aef6e7a8abc7fc1750c35ffddf519a81",
-        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior worker registrations and drains; config/integration/reviews/20261019-image-tagging-business.json"
+        "gitBlobSha1": "9cacb1781c9697705c25ef2fcfc876544b473380",
+        "sha256": "5bcc6133fc45538d3a373fee9bf1385da7debec1f4a3f2548930cd4eb8821597",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior worker registrations and drains; config/integration/reviews/20261019-image-tagging-business.json; config/integration/reviews/20261019-configured-business-verticals.json"
       }
     },
     {
@@ -1147,9 +1147,9 @@
         "sha256": "f32e7e884932429c07c4978699ba88d9144803fc17634f7542d18abd5fc19d8d"
       },
       "reviewed": {
-        "gitBlobSha1": "4b78b2d418da0a125e4e3c3481341b075e0fe2d5",
-        "sha256": "f0f748edeea3d3c81c590a7aa2dd00e8e9f26443559d156cf1825c3578f07450",
-        "reviewRef": "config/integration/reviews/20261018-competitor-deep-dedicated-lane.json; preserve previous checkpoints review; config/integration/reviews/20261019-image-tagging-business.json"
+        "gitBlobSha1": "dd9d84e59c92507d2fedf2e85aa081bf5a4e2763",
+        "sha256": "d9a94d49056de98910f97bee171156108683c6df682e36659ec6770c85c7dc12",
+        "reviewRef": "config/integration/reviews/20261018-competitor-deep-dedicated-lane.json; preserve previous checkpoints review; config/integration/reviews/20261019-image-tagging-business.json; config/integration/reviews/20261019-configured-business-verticals.json"
       }
     },
     {

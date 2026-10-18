@@ -16,6 +16,7 @@ import { toast } from "sonner";
 
 import { OUTLINE_APLUS_CATEGORIES, OUTLINE_APLUS_MODULES, findOutlineAplusModule, normalizeImageOutline } from "./aplusModules";
 import { ImageStepGenerationStatus, useImageStepGenerationJob } from "./useImageStepGenerationJob";
+import ImagePlanningWorkflow from "./ImagePlanningWorkflow";
 
 export function Step2AplusSubmoduleEditor({
   submodule,
@@ -59,6 +60,8 @@ export function Step2ImageOutline({
   const [optimizingModuleIndex, setOptimizingModuleIndex] = useState<number | null>(null);
   const [lockingSubmoduleKey, setLockingSubmoduleKey] = useState<string | null>(null);
   const [isDraftSaving, setIsDraftSaving] = useState(false);
+  const [isDraftScheduled, setIsDraftScheduled] = useState(false);
+  const [planningApplyPending, setPlanningApplyPending] = useState(false);
   const [lastDraftSavedAt, setLastDraftSavedAt] = useState<number | null>(null);
   const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generationJob = useImageStepGenerationJob({
@@ -91,8 +94,11 @@ export function Step2ImageOutline({
   const scheduleDraftSave = (draft: any) => {
     if (isLocked) return;
     const normalizedDraft = normalizeImageOutline(draft);
+    setIsDraftScheduled(true);
     if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
     draftSaveTimerRef.current = setTimeout(() => {
+      draftSaveTimerRef.current = null;
+      setIsDraftScheduled(false);
       setIsDraftSaving(true);
       void saveDraftMutation.mutateAsync({
         projectId,
@@ -108,6 +114,7 @@ export function Step2ImageOutline({
   };
 
   const handleUnlock = async () => {
+    if (planningApplyPending) return;
     try {
       await unlockMutation.mutateAsync({ projectId });
       await utils.imageWorkflow.getSession.invalidate({ projectId });
@@ -119,11 +126,12 @@ export function Step2ImageOutline({
   };
 
   const handleGenerate = async () => {
+    if (planningApplyPending) return;
     await generationJob.start();
   };
 
   const handleConfirm = async () => {
-    if (!editData) return;
+    if (!editData || planningApplyPending) return;
     try {
       const normalizedData = normalizeImageOutline(editData);
       const incompleteImage = normalizedData.secondaryImages.find((image: any) =>
@@ -145,21 +153,21 @@ export function Step2ImageOutline({
   const isConfirmed = isLocked;
 
   const updateSecondaryImage = (idx: number, field: string, value: any) => {
-    if (!editData) return;
+    if (!editData || planningApplyPending) return;
     const newData = { ...editData, secondaryImages: [...(editData.secondaryImages || [])] };
     newData.secondaryImages[idx] = { ...newData.secondaryImages[idx], [field]: value };
     setEditData(newData);
   };
 
   const updateAPlusModule = (idx: number, field: string, value: any) => {
-    if (!editData) return;
+    if (!editData || planningApplyPending) return;
     const newData = { ...editData, aPlusModules: [...(editData.aPlusModules || [])] };
     newData.aPlusModules[idx] = { ...newData.aPlusModules[idx], [field]: value };
     setEditData(newData);
   };
 
   const updateAPlusSubmoduleRemark = (idx: number, remark: string) => {
-    if (!editData) return;
+    if (!editData || planningApplyPending) return;
     const newData = { ...editData, aPlusModules: [...(editData.aPlusModules || [])] };
     const count = remark.match(/(?:^|\s)(\d{1,2})\s*(?:种|个|张|组|项|场景|步骤|面板)/)?.[1];
     newData.aPlusModules[idx] = {
@@ -186,7 +194,7 @@ export function Step2ImageOutline({
   };
 
   const updateAPlusSubmodule = (moduleIndex: number, submoduleIndex: number, field: string, value: any) => {
-    if (!editData) return;
+    if (!editData || planningApplyPending) return;
     const newData = { ...editData, aPlusModules: [...(editData.aPlusModules || [])] };
     const module = { ...newData.aPlusModules[moduleIndex] };
     const subModules = [...(module.subModules || [])];
@@ -200,6 +208,7 @@ export function Step2ImageOutline({
   };
 
   const lockAplusSubmodule = async (moduleIndex: number, submoduleIndex: number) => {
+    if (planningApplyPending) return;
     const key = `${moduleIndex}-${submoduleIndex}`;
     setLockingSubmoduleKey(key);
     try {
@@ -214,6 +223,7 @@ export function Step2ImageOutline({
   };
 
   const updateAPlusModuleStyle = async (idx: number, moduleType: string) => {
+    if (planningApplyPending) return;
     const selected = OUTLINE_APLUS_MODULES.find((m) => m.id === moduleType);
     if (!selected || !editData) return;
     if (editData.aPlusModules?.[idx]?.selectedModuleType === selected.id) return;
@@ -236,6 +246,7 @@ export function Step2ImageOutline({
 
   return (
     <div className="space-y-4">
+      <fieldset disabled={planningApplyPending} className="min-w-0">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -286,9 +297,21 @@ export function Step2ImageOutline({
           onRetry={generationJob.start}
         />
       </Card>
+      </fieldset>
+
+      {session?.id && <ImagePlanningWorkflow projectId={projectId} sessionId={session.id} canEdit={canEdit && !isConfirmed}
+        draftBusy={isDraftSaving || isDraftScheduled || generationJob.isGenerating || confirmMutation.isPending || optimizeAplusMutation.isPending || lockAplusSubmoduleMutation.isPending || unlockMutation.isPending}
+        onApplyPendingChange={setPlanningApplyPending}
+        sourceVersion={JSON.stringify([session.step2AiResult, session.step2UserEdit, session.step2Confirmed])}
+        beforeApply={() => !draftSaveTimerRef.current && !isDraftSaving && window.confirm("将完整候选应用为当前未确认大纲草稿，替换当前编辑内容；不会自动确认。继续吗？")}
+        onApplied={async candidate => {
+          if (candidate) setEditData(normalizeImageOutline(candidate, { forceDefaultAplus: true, recoverMissingSecondaryContent: false }));
+          await utils.imageWorkflow.getSession.invalidate({ projectId });
+        }} />}
+      {planningApplyPending && <p role="status">人工应用尚未核验终态，原大纲编辑、自动保存和确认已暂停。请先核对或取消原应用请求。</p>}
 
       {editData && !generationJob.isGenerating && (
-        <>
+        <fieldset disabled={planningApplyPending} className="min-w-0 space-y-4">
           {/* Main Image */}
           <Card>
             <CardHeader className="pb-3">
@@ -615,7 +638,7 @@ export function Step2ImageOutline({
               </CardContent>
             </Card>
           )}
-        </>
+        </fieldset>
       )}
     </div>
   );

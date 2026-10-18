@@ -114,6 +114,7 @@ export function competitorDeepJobSession(executor: DbExecutor, permission = asse
   return { executor, rows, write, admit, job, authorize, fence, bound, lease, agent,
     async reserve(input: CompetitorDeepStoredInput) {
       const stored = decodeCompetitorDeepExecutionInput(input); if (!stored.reservation) deepJobError("RUNTIME_REQUIRED");
+      if (stored.reservation.runtime.version !== 2) deepJobError("CONFIGURATION_SNAPSHOT_REQUIRED");
       const b = stored.evidence.identity, runId = deepRunId(b, stored.reservation.request.operationId);
       await write("INSERT INTO ai_jobs (runId,kind,module,`procedure`,workspaceId,userId,projectId,skillSlug,input,status,progress,queueName,attempt,maxAttempts,timeoutSeconds) VALUES (?,?,?,?,?,?,?,?,?,'queued',0,'analysis',0,1,7200)",
         [runId, COMPETITOR_DEEP_EXECUTION_JOB_KIND, "listing", "analysis.startCompetitorDeepResearch", b.workspaceId, b.userId, b.projectId, stored.skills.title.skillSlug, JSON.stringify(stored)]);

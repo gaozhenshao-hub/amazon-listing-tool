@@ -1,12 +1,22 @@
 /** This lane owns its private checkpoints and immutable candidates. Generic
  * infrastructure must never turn it into a retryable/manager-readable job. */
 export const PRIVATE_IMAGE_TAGGING_JOB_KIND = "knowledge.image_tagging.v1";
+export const PRIVATE_IMAGE_PLANNING_JOB_KIND = "image.workflow.outline.v1";
+export const PRIVATE_DEVELOPMENT_MARKET_JOB_KIND = "product.development.market_overview.v1";
+export const PRIVATE_BUSINESS_JOB_KINDS = [PRIVATE_IMAGE_TAGGING_JOB_KIND, PRIVATE_IMAGE_PLANNING_JOB_KIND, PRIVATE_DEVELOPMENT_MARKET_JOB_KIND] as const;
 export const PRIVATE_IMAGE_TAGGING_ARTIFACT_KEYS = [
   "knowledge.image_tagging.source.v1", "knowledge.image_tagging.candidate.v1",
 ] as const;
+export const PRIVATE_CONFIGURED_BUSINESS_ARTIFACT_KEYS = ["image.workflow.outline.source.v1", "image.workflow.outline.candidate.v1", "image.workflow.outline.apply.v1",
+  "product.development.market_overview.source.v1", "product.development.market_overview.candidate.v1", "product.development.market_overview.apply.v1"] as const;
+/** Fixed server SQL only. The existing tagger exclusion remains independently
+ * bound; these extra lanes cannot change its queue/lease parameter contract. */
+export function additionalPrivateBusinessJobExclusion(): string {
+  return "kind NOT IN ('image.workflow.outline.v1','product.development.market_overview.v1')";
+}
 
 export function isDedicatedOnlyAiJob(kind: unknown): boolean {
-  return kind === PRIVATE_IMAGE_TAGGING_JOB_KIND;
+  return PRIVATE_BUSINESS_JOB_KINDS.some(value => value === kind);
 }
 
 export function assertGenericAiJobKind(kind: unknown): void {
@@ -14,7 +24,7 @@ export function assertGenericAiJobKind(kind: unknown): void {
 }
 
 export function isDedicatedOnlyArtifact(row: { artifactKey?: unknown; sourceTable?: unknown; sourceAiJobRunId?: unknown }): boolean {
-  return PRIVATE_IMAGE_TAGGING_ARTIFACT_KEYS.some(key => key === row.artifactKey)
+  return [...PRIVATE_IMAGE_TAGGING_ARTIFACT_KEYS, ...PRIVATE_CONFIGURED_BUSINESS_ARTIFACT_KEYS].some(key => key === row.artifactKey)
     || (["kb_images", "kb_image_sets"].includes(String(row.sourceTable)) && row.sourceAiJobRunId != null);
 }
 
@@ -23,6 +33,7 @@ export function isDedicatedOnlyArtifact(row: { artifactKey?: unknown; sourceTabl
  * reserved keys or KB job-backed source records. No payload is hydrated. */
 export function genericArtifactPredicate(alias: "a" | "ai_artifacts" = "a"): string {
   return `(${alias}.artifactKey NOT IN ('knowledge.image_tagging.source.v1','knowledge.image_tagging.candidate.v1')
+    AND ${alias}.artifactKey NOT IN ('image.workflow.outline.source.v1','image.workflow.outline.candidate.v1','image.workflow.outline.apply.v1','product.development.market_overview.source.v1','product.development.market_overview.candidate.v1','product.development.market_overview.apply.v1')
     AND NOT (COALESCE(${alias}.sourceTable,'') IN ('kb_images','kb_image_sets') AND ${alias}.sourceAiJobRunId IS NOT NULL)
-    AND NOT EXISTS (SELECT 1 FROM ai_jobs private_job WHERE private_job.runId=${alias}.sourceAiJobRunId AND private_job.kind='knowledge.image_tagging.v1'))`;
+    AND NOT EXISTS (SELECT 1 FROM ai_jobs private_job WHERE private_job.runId=${alias}.sourceAiJobRunId AND (private_job.kind='knowledge.image_tagging.v1' OR private_job.kind IN ('image.workflow.outline.v1','product.development.market_overview.v1'))))`;
 }

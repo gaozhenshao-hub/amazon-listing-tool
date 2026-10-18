@@ -217,7 +217,7 @@ export function MarketOverviewResult({ result, productCount }: { result: any; pr
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">季节性特征</CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              <Badge variant="secondary" className="text-xs">{seasonality.hasSeasonality ? "有季节性" : "无明显季节性"}</Badge>
+              <Badge variant="secondary" className="text-xs">{seasonality.hasSeasonality === null ? "季节性证据不足，暂不判断" : seasonality.hasSeasonality ? "有季节性" : "无明显季节性"}</Badge>
               {seasonality.peakMonths?.length > 0 && <p className="text-xs"><span className="text-muted-foreground">旺季: </span><span className="font-medium text-emerald-600 dark:text-emerald-400">{seasonality.peakMonths.join(", ")}</span></p>}
               {seasonality.lowMonths?.length > 0 && <p className="text-xs"><span className="text-muted-foreground">淡季: </span><span className="font-medium text-red-600 dark:text-red-400">{seasonality.lowMonths.join(", ")}</span></p>}
               {seasonality.description && <p className="text-xs text-muted-foreground">{seasonality.description}</p>}

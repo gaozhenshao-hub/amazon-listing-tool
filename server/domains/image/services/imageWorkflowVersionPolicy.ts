@@ -505,7 +505,7 @@ function collectContentAssetBindings(content: unknown): ContentAssetBinding[] {
 export async function bindConfirmedStageAssets(input: ImageWorkflowScopeActor & {
   step: ImageWorkflowStep;
   content: unknown;
-}): Promise<readonly ImageAssetDependency[]> {
+}, options: { executor?: DbExecutor } = {}): Promise<readonly ImageAssetDependency[]> {
   const references = externalImageReferences(input.content);
   if (!references.length) return [];
   if (references.some(reference => reference.startsWith("data:image/"))) {
@@ -519,12 +519,18 @@ export async function bindConfirmedStageAssets(input: ImageWorkflowScopeActor & 
     if (current && current !== binding.assetId) fail("CONFLICT", "同一图片引用声明了冲突的受控资产身份");
     bindingByReference.set(canonical, binding.assetId);
   }
-  const policies = await imageAssetPolicyService.listCurrentPolicies({
+  const policyScope = {
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     actorId: input.actorId,
     actorRole: input.actorRole,
-  });
+  };
+  const policies = options.executor
+    ? await imageAssetPolicyService.listCurrentPoliciesInTransaction(options.executor, policyScope)
+    : await imageAssetPolicyService.listCurrentPolicies(policyScope);
+  const requireCurrent = (use: Parameters<typeof imageAssetPolicyService.requireCurrentApprovedAssetUse>[0]) => options.executor
+    ? imageAssetPolicyService.requireCurrentApprovedAssetUseInTransaction(options.executor, use)
+    : imageAssetPolicyService.requireCurrentApprovedAssetUse(use);
   const policyByAsset = new Map(policies.map(policy => [policy.assetId, policy]));
   const dependencies: ImageAssetDependency[] = [];
   const analysisOnly = input.step === 0;
@@ -539,12 +545,12 @@ export async function bindConfirmedStageAssets(input: ImageWorkflowScopeActor & 
     // Step 4 has the additional source-use gate. Its actual bundle inclusion is
     // independently checked as approved_deliverable below.
     if (input.step === 4) {
-      await imageAssetPolicyService.requireCurrentApprovedAssetUse({
+      await requireCurrent({
         workspaceId: input.workspaceId, projectId: input.projectId, actorId: input.actorId, actorRole: input.actorRole,
         assetId, allowedUse: "step4_reference", expectedRevision: policy.revision,
       });
     }
-    const approved = await imageAssetPolicyService.requireCurrentApprovedAssetUse({
+    const approved = await requireCurrent({
       workspaceId: input.workspaceId, projectId: input.projectId, actorId: input.actorId, actorRole: input.actorRole,
       assetId, allowedUse: analysisOnly ? "analysis_reference_only" : "approved_deliverable", expectedRevision: policy.revision,
     });
@@ -567,9 +573,9 @@ export async function bindConfirmedStageAssets(input: ImageWorkflowScopeActor & 
   return dependencies;
 }
 
-async function assertCurrentExportAssetPolicies(input: ImageWorkflowScopeActor, snapshots: readonly StoredStageSnapshot[]) {
+async function assertCurrentExportAssetPolicies(tx: DbExecutor, input: ImageWorkflowScopeActor, snapshots: readonly StoredStageSnapshot[]) {
   for (const snapshot of snapshots) for (const dependency of snapshot.assetDependencies) {
-    const approved = await imageAssetPolicyService.requireCurrentApprovedAssetUse({
+    const approved = await imageAssetPolicyService.requireCurrentApprovedAssetUseInTransaction(tx, {
       workspaceId: input.workspaceId, projectId: input.projectId, actorId: input.actorId, actorRole: input.actorRole,
       assetId: dependency.assetId,
       allowedUse: dependency.allowedUse,
@@ -878,9 +884,9 @@ export function createDrizzleImageWorkflowVersionStore(): ImageWorkflowVersionSt
 export function createImageWorkflowVersionPolicyService<Tx>(
   store: ImageWorkflowVersionStore<Tx>,
   hooks: {
-    prepareRequest?: (request: StageConfirmationRequest, snapshots: readonly StoredStageSnapshot[]) => Promise<StageConfirmationRequest>;
+    prepareRequest?: (request: StageConfirmationRequest, snapshots: readonly StoredStageSnapshot[], tx: Tx) => Promise<StageConfirmationRequest>;
     resolveContentRevision?: (request: StageConfirmationRequest, snapshots: readonly StoredStageSnapshot[]) => number;
-    validateDependencies?: (request: StageConfirmationRequest, snapshots: readonly StoredStageSnapshot[]) => Promise<void>;
+    validateDependencies?: (request: StageConfirmationRequest, snapshots: readonly StoredStageSnapshot[], tx: Tx) => Promise<void>;
     afterConfirmed?: (tx: Tx, result: {
       request: StageConfirmationRequest;
       snapshot: ImmutableStageSnapshot;
@@ -912,11 +918,11 @@ export function createImageWorkflowVersionPolicyService<Tx>(
       }
       const snapshots = await store.listSnapshots(tx, scope);
       const current = currentConfirmedByStep(snapshots, scope);
-      const preparedRequest = hooks.prepareRequest ? await hooks.prepareRequest(request, snapshots) : request;
+      const preparedRequest = hooks.prepareRequest ? await hooks.prepareRequest(request, snapshots, tx) : request;
       const effectiveRequest = hooks.resolveContentRevision
         ? { ...preparedRequest, contentRevision: hooks.resolveContentRevision(preparedRequest, snapshots) }
         : preparedRequest;
-      await hooks.validateDependencies?.(effectiveRequest, snapshots);
+      await hooks.validateDependencies?.(effectiveRequest, snapshots, tx);
       const dependencies = IMAGE_WORKFLOW_STEPS.filter(step => step < effectiveRequest.step).map((step) => {
         const upstream = current.get(step);
         if (!upstream) fail("PRECONDITION_FAILED", `Step ${effectiveRequest.step} 缺少当前人工确认的上游 Step ${step}`);
@@ -1020,17 +1026,17 @@ export async function confirmHumanImageWorkflowStage(input: ImageWorkflowScopeAc
       return store.getScopeRevision(tx, input);
     });
     const service = createImageWorkflowVersionPolicyService(store, {
-      prepareRequest: async (request) => ({
+      prepareRequest: async (request, _snapshots, tx) => ({
         ...request,
         assetDependencies: await bindConfirmedStageAssets({
           ...input,
           step: request.step,
           content: request.content,
-        }),
+        }, { executor: tx }),
       }),
       resolveContentRevision: nextServerContentRevision,
-      validateDependencies: async (_request, snapshots) => {
-        await assertCurrentExportAssetPolicies(input, snapshots.filter(snapshot => snapshot.state === "confirmed"));
+      validateDependencies: async (_request, snapshots, tx) => {
+        await assertCurrentExportAssetPolicies(tx, input, snapshots.filter(snapshot => snapshot.state === "confirmed"));
       },
       afterConfirmed: async (tx, result) => {
         const payload = confirmationProjection(result.request.step, result.snapshot.content, result.invalidation);
@@ -1123,7 +1129,7 @@ export async function requireCurrentImageWorkflowUpstream(input: ImageWorkflowSc
       const snapshots = await store.listSnapshots(tx, input);
       assertCurrentUpstreamChain(input, snapshots, input.targetStep);
       await assertLegacyProjectionCurrent(tx, input, IMAGE_WORKFLOW_STEPS.filter(step => step < input.targetStep));
-      await assertCurrentExportAssetPolicies(input, snapshots.filter(snapshot => snapshot.step < input.targetStep));
+      await assertCurrentExportAssetPolicies(tx, input, snapshots.filter(snapshot => snapshot.step < input.targetStep));
       return snapshots;
     });
   } catch (error) {
@@ -1152,7 +1158,7 @@ export async function captureImageWorkflowWorkerFence(input: ImageWorkflowScopeA
       const upstreamDigest = workerUpstreamDigest(input, snapshots, input.targetStep);
       if (input.targetStep > 0) {
         await assertLegacyProjectionCurrent(tx, input, IMAGE_WORKFLOW_STEPS.filter(step => step < input.targetStep));
-        await assertCurrentExportAssetPolicies(input, snapshots.filter(snapshot => snapshot.step < input.targetStep));
+        await assertCurrentExportAssetPolicies(tx, input, snapshots.filter(snapshot => snapshot.step < input.targetStep));
       }
       return { scopeRevision, upstreamDigest };
     });
@@ -1183,7 +1189,7 @@ export async function verifyImageWorkflowWorkerFence(input: ImageWorkflowScopeAc
       }
       if (input.targetStep > 0) {
         await assertLegacyProjectionCurrent(tx, input, IMAGE_WORKFLOW_STEPS.filter(step => step < input.targetStep));
-        await assertCurrentExportAssetPolicies(input, snapshots.filter(snapshot => snapshot.step < input.targetStep));
+        await assertCurrentExportAssetPolicies(tx, input, snapshots.filter(snapshot => snapshot.step < input.targetStep));
       }
       return snapshots;
     });
@@ -1233,7 +1239,7 @@ export async function invalidateImageWorkflowStages(input: ImageWorkflowScopeAct
         }
         if (targetStep > 0) {
           await assertLegacyProjectionCurrent(tx, input, IMAGE_WORKFLOW_STEPS.filter(step => step < targetStep));
-          await assertCurrentExportAssetPolicies(input, snapshots.filter(snapshot => snapshot.step < targetStep));
+          await assertCurrentExportAssetPolicies(tx, input, snapshots.filter(snapshot => snapshot.step < targetStep));
         }
       }
       const current = currentConfirmedByStep(snapshots, input);
@@ -1341,7 +1347,7 @@ export async function getApprovedImageWorkflowExport(input: ImageWorkflowScopeAc
       if (!snapshots.length) fail("PRECONDITION_FAILED", IMAGE_WORKFLOW_VERSION_REPAIR_MESSAGE);
       await assertLegacyProjectionCurrent(tx, input, IMAGE_WORKFLOW_STEPS);
       const approved = buildExportableImageWorkflowSnapshot({ scope: input, snapshots });
-      await assertCurrentExportAssetPolicies(input, snapshots);
+      await assertCurrentExportAssetPolicies(tx, input, snapshots);
       return approved;
     });
   } catch (error) {

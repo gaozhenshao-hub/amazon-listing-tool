@@ -9,6 +9,8 @@ import { createSourceApprovalFileLoader } from "../../../services/sourceApproval
 import { DEEP_STAGES, CompetitorDeepApprovalSchema, CompetitorDeepRuntimeSnapshotSchema, deepRuntimeHash,
   type CompetitorDeepRuntimeSnapshot, type CompetitorDeepApproval } from "./competitorDeepRuntimeContract";
 import { deepSkillPlanSchema, type DeepExecutionRequest, type DeepModelReceipt } from "./competitorDeepExecution";
+import { loadCompetitorDeepConfiguration, authorizeCompetitorDeepAgent, CompetitorDeepConfigurationError } from "./competitorDeepConfiguration";
+import type { assertResourceAction } from "../../../services/securityGovernance";
 type Executor = { execute(query: SQL): Promise<unknown> };
 type Identity = { userId: number; workspaceId: number };
 export class CompetitorDeepRuntimeError extends Error {
@@ -17,7 +19,7 @@ export class CompetitorDeepRuntimeError extends Error {
 function fail(code: string): never { throw new CompetitorDeepRuntimeError(code); }
 export function createFixedCompetitorDeepApprovalResolver(raw: unknown) {
   const values = z.array(CompetitorDeepApprovalSchema).max(1000).parse(raw);
-  if (new Set(values.map(value => `${value.workspaceId}:${value.stage}`)).size !== values.length) fail("APPROVAL_AMBIGUOUS");
+  if (new Set(values.map(value => `${value.workspaceId}:${value.stage}:${value.inputContract}`)).size !== values.length) fail("APPROVAL_AMBIGUOUS");
   return (workspaceId: number) => values.filter(value => value.workspaceId === workspaceId).map(value => structuredClone(value));
 }
 export function createFileCompetitorDeepApprovalResolver() {
@@ -32,45 +34,57 @@ async function one(executor: Executor, text: string, args: unknown[]) {
   return response[0][0] as Record<string, unknown>;
 }
 export function createCompetitorDeepRuntime(deps: { approvals?: (workspaceId: number) => Promise<CompetitorDeepApproval[]>;
-  runSkill?: typeof runEmperorSkill; credential?: typeof resolveGovernedModelApiKey } = {}) {
+  runSkill?: typeof runEmperorSkill; credential?: typeof resolveGovernedModelApiKey; permission?: typeof assertResourceAction } = {}) {
   const approvals = deps.approvals ?? createFileCompetitorDeepApprovalResolver(), run = deps.runSkill ?? runEmperorSkill;
   const credential = deps.credential ?? resolveGovernedModelApiKey;
-  async function build(executor: Executor, workspaceId: number) {
+  async function build(executor: Executor, workspaceId: number, version: 1 | 2, identity: Identity) {
     if (!Number.isSafeInteger(workspaceId) || workspaceId <= 0) fail("WORKSPACE_REQUIRED");
-    const approved = createFixedCompetitorDeepApprovalResolver(await approvals(workspaceId))(workspaceId);
+    const inputContract = version === 1 ? "competitor_deep_evidence_v1" : "competitor_deep_agent_evidence_v2";
+    const approved = createFixedCompetitorDeepApprovalResolver(await approvals(workspaceId))(workspaceId).filter(item => item.inputContract === inputContract);
     if (approved.length !== 5) fail("SOURCE_UNAVAILABLE");
+    if (identity.workspaceId !== workspaceId) fail("IDENTITY_INVALID");
+    if (version === 2) await authorizeCompetitorDeepAgent(executor, identity, deps.permission);
+    const configuration = version === 2 ? await loadCompetitorDeepConfiguration(executor, workspaceId) : null;
     const stages = [], originals: AssistantConversationRegistrySkill[] = [];
     for (const key of DEEP_STAGES) {
       const approval = approved.find(item => item.stage === key)!;
       const skill = assistantConversationSkillSnapshotFromRow(await one(executor,
         "SELECT id,workspaceId,scope,slug,name,version,status,modelOverride,timeout_seconds,IF(OCTET_LENGTH(manifest)<=1048576,manifest,NULL) AS manifest FROM emperor_skills WHERE BINARY slug=BINARY ? AND (workspaceId=? OR (workspaceId IS NULL AND scope='global')) LIMIT 2 FOR SHARE", [approval.skillSlug, workspaceId]));
+      if (configuration) {
+        const binding = configuration.config.skills.find(item => item.slug === skill.pin.slug && item.enabled);
+        if (!binding || binding.version !== skill.pin.version || binding.manifestSha256 !== skill.pin.manifestSha256) fail("CONFIGURATION_SKILL_MISMATCH");
+        const modelSlug = configuration.config.modelSlug || skill.pin.modelOverride;
+        if (!modelSlug || modelSlug !== approval.modelSlug) fail("MODEL_BINDING_MISMATCH");
+      }
       const model = strictModelSnapshotFromRow(workspaceId, approval.modelSlug, await one(executor,
         "SELECT workspaceId,slug,name,provider,modelId,baseUrl,apiKeyRef,isActive,capabilityTags,maxContextTokens,costPer1kInputTokens,costPer1kOutputTokens FROM emperor_model_providers WHERE BINARY slug=BINARY ? AND (workspaceId=? OR workspaceId IS NULL) LIMIT 2 FOR SHARE", [approval.modelSlug, workspaceId]));
       if (!credential(model.model.apiKeyRef)) fail("MODEL_CREDENTIAL_UNAVAILABLE");
       stages.push({ approval, skill: skill.pin, model }); originals.push(skill);
     }
-    const body = { version: 1 as const, workspaceId, stages };
+    const body = configuration ? { version: 2 as const, workspaceId, configuration, stages } : { version: 1 as const, workspaceId, stages };
     const runtime = CompetitorDeepRuntimeSnapshotSchema.parse({ ...body, snapshotHash: deepRuntimeHash(body) });
     const skills = deepSkillPlanSchema.parse({ version: 1, authority: "user-primary", approvalRef: runtime.snapshotHash,
       ...Object.fromEntries(stages.map(item => [item.approval.stage, { skillSlug: item.skill.slug, version: String(item.skill.version), status: "Released",
         systemPromptHash: item.skill.systemPromptSha256.slice(0, 16), userPromptHash: item.skill.userPromptSha256.slice(0, 16), manifestHash: item.skill.manifestRawSha256.slice(0, 16) }])) });
     return { runtime, skills, originals };
   }
-  async function revalidate(executor: Executor, runtime: CompetitorDeepRuntimeSnapshot) {
-    const expected = CompetitorDeepRuntimeSnapshotSchema.parse(runtime), current = await safeBuild(executor, expected.workspaceId);
+  async function revalidate(executor: Executor, runtime: CompetitorDeepRuntimeSnapshot, identity: Identity) {
+    const expected = CompetitorDeepRuntimeSnapshotSchema.parse(runtime);
+    const current = await safeBuild(executor, expected.workspaceId, expected.version, identity);
     if (current.runtime.snapshotHash !== expected.snapshotHash) fail("APPROVED_RUNTIME_CHANGED");
     return current;
   }
-  async function safeBuild(executor: Executor, workspaceId: number) {
-    try { return await build(executor, workspaceId); } catch (error) { if (error instanceof CompetitorDeepRuntimeError) throw error; return fail("REGISTRY_UNAVAILABLE"); }
+  async function safeBuild(executor: Executor, workspaceId: number, version: 1 | 2, identity: Identity) {
+    try { return await build(executor, workspaceId, version, identity); } catch (error) { if (error instanceof CompetitorDeepRuntimeError) throw error;
+      if (error instanceof CompetitorDeepConfigurationError) return fail(error.code); return fail("REGISTRY_UNAVAILABLE"); }
   }
   type Prepared = Readonly<{ requestHash: string; snapshotHash: string }>;
   const preparedStages = new WeakMap<Prepared, { used: boolean; built: Awaited<ReturnType<typeof build>>; identity: Identity; request: DeepExecutionRequest }>();
   return {
-    async prepare(executor: Executor, workspaceId: number) { const { runtime, skills } = await safeBuild(executor, workspaceId); return { runtime, skills }; },
+    async prepare(executor: Executor, identity: Identity) { const { runtime, skills } = await safeBuild(executor, identity.workspaceId, 2, identity); return { runtime, skills }; },
     revalidate,
     async prepareStage(input: { executor: Executor; identity: Identity; runtime: CompetitorDeepRuntimeSnapshot; request: DeepExecutionRequest }): Promise<Prepared> {
-      const built = await revalidate(input.executor, input.runtime);
+      const built = await revalidate(input.executor, input.runtime, input.identity);
       const prepared = Object.freeze({ requestHash: input.request.requestHash, snapshotHash: built.runtime.snapshotHash });
       preparedStages.set(prepared, { used: false, built, identity: structuredClone(input.identity), request: structuredClone(input.request) }); return prepared;
     },
@@ -85,9 +99,15 @@ export function createCompetitorDeepRuntime(deps: { approvals?: (workspaceId: nu
       const index = DEEP_STAGES.indexOf(key as typeof DEEP_STAGES[number]);
       if (index < 0 || canonical(input.request.binding) !== canonical(skills[DEEP_STAGES[index]])) fail("SKILL_BINDING_CHANGED");
       const item = runtime.stages[index], skill = originals[index];
-      const context = canonical({ schema: "competitor-deep-input/v1", inputContract: item.approval.inputContract, request: input.request });
+      const config = runtime.version === 2 ? runtime.configuration : null, binding = config?.config.skills.find(value => value.slug === item.skill.slug && value.enabled);
+      const context = config && binding ? canonical({ schema: "competitor-deep-agent-input/v2", inputContract: item.approval.inputContract,
+        agent: { key: "listing", revision: config.revision, hash: config.hash, instructions: config.config.instructions, rules: config.config.rules,
+          skill: { slug: binding.slug, trigger: binding.trigger, instructions: binding.instructions } },
+        authority: "saved_agent_guidance_does_not_override_evidence_citations_output_contract_or_human_review", request: input.request })
+        : canonical({ schema: "competitor-deep-input/v1", inputContract: item.approval.inputContract, request: input.request });
       if (Buffer.byteLength(context) > STRICT_SKILL_LIMITS.textBytes) fail("INPUT_LIMIT");
-      const userPrompt = renderSkillTemplate(skill.userPrompt, { context });
+      const variables = config ? { agentKey: "listing", agentRevision: config.revision, stage: key } : {};
+      const userPrompt = renderSkillTemplate(skill.userPrompt, { context, ...variables });
       if (!userPrompt.includes(context)) fail("INPUT_CONTRACT_UNSUPPORTED");
       const admission = strictSkillMessages(skill.systemPrompt, userPrompt, [], item.model, item.skill.maxTokens);
       if (strictCostUpperBound(item.model, admission.budget.contextAdmissionUnits, admission.budget.outputTokens) > item.approval.maxCostCents) fail("COST_BUDGET_EXCEEDED");
@@ -97,7 +117,7 @@ export function createCompetitorDeepRuntime(deps: { approvals?: (workspaceId: nu
       let dispatched = false, runId: string | null = null, calls = 0;
       const validate = (text: string): unknown => { if (Buffer.byteLength(text) > STRICT_SKILL_LIMITS.responseBytes) fail("OUTPUT_LIMIT");
         const raw: unknown = JSON.parse(text); canonical(raw); return raw; };
-      const result = await run({ skillSlug: item.skill.slug, userId: input.identity.userId, workspaceId: runtime.workspaceId, context, variables: {}, attachments: [], skillVersionPolicy: "pinned",
+      const result = await run({ skillSlug: item.skill.slug, userId: input.identity.userId, workspaceId: runtime.workspaceId, context, variables, attachments: [], skillVersionPolicy: "pinned",
         expectedSkillVersion: String(item.skill.version), expectedSkillStatus: "Released", expectedSkillPromptHash: item.skill.systemPromptSha256.slice(0, 16),
         expectedSkillUserPromptHash: item.skill.userPromptSha256.slice(0, 16), expectedSkillManifestHash: item.skill.manifestRawSha256.slice(0, 16),
         modelOverride: item.model.model.slug, fallbackModels: [], maxModelAttempts: 1, executionPreset: "standard", migrationSource: "listing.competitor.deep.strict",
@@ -110,7 +130,7 @@ export function createCompetitorDeepRuntime(deps: { approvals?: (workspaceId: nu
             let verified = false, open = true, verifying = false, invalid = false;
             try { await input.beforeDispatch(receipt, executor => {
               const pending = (async () => { if (!open || verifying) { invalid = true; fail("FRESH_VERIFICATION_REUSED"); } verifying = true;
-                await revalidate(executor, runtime); if (!open) { invalid = true; fail("FRESH_VERIFICATION_NOT_AWAITED"); } verified = true; })();
+                await revalidate(executor, runtime, input.identity); if (!open) { invalid = true; fail("FRESH_VERIFICATION_NOT_AWAITED"); } verified = true; })();
               void pending.catch(() => { invalid = true; }); return pending;
             }); } finally { open = false; }
             if (!verified || invalid || input.signal.aborted) fail("DISPATCH_DENIED");

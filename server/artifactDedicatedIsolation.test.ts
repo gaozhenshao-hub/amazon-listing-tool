@@ -1,6 +1,7 @@
 import { MySqlDialect } from "drizzle-orm/mysql-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
+import { PRIVATE_CONFIGURED_BUSINESS_ARTIFACT_KEYS } from "./repositories/ai_os/dedicatedJobPolicy";
 const io = vi.hoisted(() => ({ execute: vi.fn(), getDb: vi.fn(), transaction: vi.fn(), storage: vi.fn(), http: vi.fn(), raw: vi.fn() }));
 vi.mock("./repositories/dbClient", () => ({ getDb: io.getDb, withDbTransaction: io.transaction }));
 vi.mock("./storage", () => ({ buildStorageUri: vi.fn(), parseStorageUri: vi.fn(), resolveStoredObjectUrl: io.storage, storageGet: io.storage, storagePut: io.storage }));
@@ -28,6 +29,9 @@ const cases = [
   { artifactKey: "ordinary-looking", sourceTable: "kb_images", sourceAiJobRunId: "missing-job" },
   { artifactKey: "ordinary-looking", sourceTable: "kb_image_sets", sourceAiJobRunId: "missing-job" },
   { artifactKey: "ordinary-looking", sourceTable: "other", sourceAiJobRunId: "private-job" },
+  ...PRIVATE_CONFIGURED_BUSINESS_ARTIFACT_KEYS.map(artifactKey => ({ artifactKey, sourceTable: "image_workflow_sessions", sourceAiJobRunId: "missing-job" })),
+  { artifactKey: "ordinary-looking", sourceTable: "other", sourceAiJobRunId: "private-outline-job" },
+  { artifactKey: "ordinary-looking", sourceTable: "other", sourceAiJobRunId: "private-market-job" },
 ];
 let target: Record<string, unknown>;
 const calls: Array<{ sql: string; params: unknown[] }> = [];
@@ -37,6 +41,8 @@ function checkPredicate(query: string) {
   expect(query).toContain("sourceAiJobRunId IS NOT NULL");
   expect(query).toContain("NOT EXISTS (SELECT 1 FROM ai_jobs private_job WHERE private_job.runId=");
   expect(query).toContain("private_job.kind='knowledge.image_tagging.v1'");
+  expect(query).toContain("private_job.kind IN ('image.workflow.outline.v1','product.development.market_overview.v1')");
+  for (const key of PRIVATE_CONFIGURED_BUSINESS_ARTIFACT_KEYS) expect(query).toContain(`'${key}'`);
   if (query.includes("LIMIT")) expect(query.indexOf("private_job.kind")).toBeLessThan(query.indexOf("LIMIT"));
 }
 beforeEach(() => {
@@ -47,15 +53,16 @@ beforeEach(() => {
     const query = dialect.sqlToQuery(statement); calls.push(query); checkPredicate(query.sql);
     expect(query.sql).toMatch(/^SELECT/u); // refusal precedes any UPDATE/INSERT
     const reserved = String(target.artifactKey).startsWith("knowledge.image_tagging.")
+      || PRIVATE_CONFIGURED_BUSINESS_ARTIFACT_KEYS.some(key => key === target.artifactKey)
       || ["kb_images", "kb_image_sets"].includes(String(target.sourceTable)) && target.sourceAiJobRunId != null
-      || target.sourceAiJobRunId === "private-job";
+      || ["private-job", "private-outline-job", "private-market-job"].includes(String(target.sourceAiJobRunId));
     return [reserved ? [] : [target]];
   });
   io.getDb.mockResolvedValue({ execute: io.execute });
   io.transaction.mockImplementation(async (_label: string, body: (tx: { execute: typeof io.execute }) => Promise<unknown>) => body({ execute: io.execute }));
 });
 
-describe("private tagger artifacts cannot be resolved/exported through workspace-only APIs", () => {
+describe("private business artifacts cannot be resolved/exported through workspace-only APIs", () => {
   it.each(cases)("blocks ID references, scope lists and project exports for $artifactKey / $sourceTable", async patch => {
     Object.assign(target, patch);
     expect(await resolveUnifiedArtifact({ ...scope, artifactId: "known-private-id", currentOnly: false, confirmedOnly: false })).toBeNull();
@@ -87,6 +94,12 @@ describe("private tagger artifacts cannot be resolved/exported through workspace
     expect(calls).toEqual([]); expect(io.storage).not.toHaveBeenCalled();
   });
 
+  it.each(PRIVATE_CONFIGURED_BUSINESS_ARTIFACT_KEYS)("refuses generic registration of %s even with no linked job", async artifactKey => {
+    await expect(registerUnifiedArtifact({ workspaceId: 42, artifactKey, sourceTable: null, sourceAiJobRunId: null,
+      content: "forged-current", isCurrent: true })).rejects.toThrow("DEDICATED_ENDPOINT");
+    expect(calls).toEqual([]); expect(io.storage).not.toHaveBeenCalled();
+  });
+
   it("does not hydrate a private key even if a faulty driver returns a row excluded by the SQL", async () => {
     io.execute.mockResolvedValue([[target]]);
     await expect(resolveUnifiedArtifact({ ...scope, artifactId: "known-private-id" })).rejects.toThrow("DEDICATED_ENDPOINT");
@@ -103,6 +116,7 @@ describe("private tagger artifacts cannot be resolved/exported through workspace
     for (const mode of ["archive", "delete"] as const) {
       const jobs = DATA_LIFECYCLE_POLICIES.find(item => item.slug === "ai_jobs.completed")!;
       expect(buildLifecycleCandidateSql(jobs, mode, "'2026-01-01'")).toContain("kind <> 'knowledge.image_tagging.v1'");
+      expect(buildLifecycleCandidateSql(jobs, mode, "'2026-01-01'")).toContain("kind NOT IN ('image.workflow.outline.v1','product.development.market_overview.v1')");
       const artifacts = DATA_LIFECYCLE_POLICIES.find(item => item.slug === "ai_artifacts.versions")!;
       checkPredicate(buildLifecycleCandidateSql(artifacts, mode, "'2026-01-01'"));
     }

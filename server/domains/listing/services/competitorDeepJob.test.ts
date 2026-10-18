@@ -27,6 +27,7 @@ describe("dedicated deep service reservation and recovery", () => {
   it("accepts the complete strict start shape and persists before returning queued without model", async () => {
     const h = await harness(), result = await h.service.start(ctx, h.h.input); expect(result.status).toBe("queued"); expect(h.session.reserve).toHaveBeenCalledTimes(1); expect(h.h.paid()).toBe(0);
     expect(h.getRow()?.input.reservation?.request).toEqual(h.h.input);
+    expect(h.getRow()?.input.reservation?.runtime).toMatchObject({ version: 2, configuration: { agentKey: "listing", revision: 1, hash: h.h.configuration.configHash, config: h.h.config } });
   });
   it("stable run ID ignores unrelated evidence identity fields", async () => {
     const h = await harness(); expect(deepRunId(h.h.evidence.identity, h.h.input.operationId)).toBe(deepRunId(syntheticIdentity, h.h.input.operationId));
@@ -34,7 +35,19 @@ describe("dedicated deep service reservation and recovery", () => {
   });
   it("replays same UUID before changed approvals/evidence and even when writes disabled", async () => {
     const h = await harness(); await h.service.start(ctx, h.h.input); h.disable(); h.changeRevision(); h.h.setApprovals([]); h.evidence.load.mockClear();
+    h.h.configuration.configText = "invalid current config"; h.h.permission.mockRejectedValue(new Error("AGENT_REVOKED"));
     expect((await h.service.start(ctx, h.h.input)).sourceChanged).toBe(true); expect(h.evidence.load).not.toHaveBeenCalled(); expect(h.session.reserve).toHaveBeenCalledTimes(1);
+  });
+  it("disabled saved Agent returns a fixed capability reason and prevents reservation", async () => {
+    const h = await harness(); h.h.config.enabled = false; h.h.saveConfiguration();
+    const options = await h.service.options(ctx, { projectId: 11, analysisId: 21, expectedWorkspaceId: 7, expectedRevision: h.h.input.expectedRevision });
+    expect(options.capability).toEqual({ available: false, reasonCode: "CONFIGURATION_DISABLED" });
+    await expect(h.service.start(ctx, h.h.input)).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: "COMPETITOR_DEEP_CONFIGURATION_DISABLED" });
+    expect(h.session.reserve).not.toHaveBeenCalled(); expect(h.ensureAgent).not.toHaveBeenCalled();
+  });
+  it("config changes between preparation and reservation fail CAS without persisting a mixed job", async () => {
+    const h = await harness(); h.ensureAgent.mockImplementation(async () => { h.h.config.rules.push("CHANGED_BEFORE_RESERVE"); h.h.saveConfiguration(); return "synthetic-agent"; });
+    await expect(h.service.start(ctx, h.h.input)).rejects.toThrow("APPROVED_RUNTIME_CHANGED"); expect(h.session.reserve).not.toHaveBeenCalled(); expect(h.h.paid()).toBe(0);
   });
   it("rejects different request content under the same UUID", async () => {
     const h = await harness(); await h.service.start(ctx, h.h.input); await expect(h.service.start(ctx, { ...h.h.input, expectedEvidenceHash: "b".repeat(64) })).rejects.toThrow("OPERATION_CONTENT_CONFLICT");

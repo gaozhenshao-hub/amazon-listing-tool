@@ -2,7 +2,7 @@ import { getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql-proxy";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { aiJobs, type AiJob, type InsertAiJob } from "../drizzle/schema";
-import { PRIVATE_IMAGE_TAGGING_JOB_KIND as kind } from "./repositories/ai_os/dedicatedJobPolicy";
+import { PRIVATE_BUSINESS_JOB_KINDS, PRIVATE_IMAGE_TAGGING_JOB_KIND } from "./repositories/ai_os/dedicatedJobPolicy";
 
 const io = vi.hoisted(() => ({ requireDb: vi.fn(), transaction: vi.fn(), metric: vi.fn() }));
 vi.mock("./repositories/dbClient", () => ({ requireDb: io.requireDb, getDb: io.requireDb, withDbTransaction: io.transaction }));
@@ -13,6 +13,7 @@ import { assertBusinessJobAgentBinding } from "./domains/ai_os/services/business
 
 const calls: Array<{ sql: string; params: unknown[] }> = [];
 let legacy = false;
+let kind: string = PRIVATE_IMAGE_TAGGING_JOB_KIND;
 const row = { id: 1, runId: "same-known-run-id", workspaceId: 42, userId: 7, kind,
   module: "knowledge", status: "running", input: { private: "original-source" }, output: { private: "candidate" },
   progress: 10, attempt: 1, maxAttempts: 1, timeoutSeconds: 60, createdAt: new Date(0), updatedAt: new Date(0) };
@@ -25,7 +26,8 @@ beforeEach(() => {
     // rely on the test mock to hide it after an unguarded SELECT/UPDATE.
     expect(sql).toMatch(/kind[` ]*(?:<>|!=)|kind`? in/i);
     if (/kind`? in/i.test(sql)) expect(params).not.toContain(kind);
-    else expect(params).toContain(kind);
+    else expect(params).toContain(PRIVATE_IMAGE_TAGGING_JOB_KIND);
+    expect(sql).toContain("kind NOT IN ('image.workflow.outline.v1','product.development.market_overview.v1')");
     if (/^\s*select/i.test(sql)) return { rows: legacy && sql.includes("from `ai_jobs`") ? [columns.map(column => {
       const value = ({ ...row, kind: "legacy.analysis" } as Record<string, unknown>)[column.name];
       return value instanceof Date ? column.mapToDriverValue(value as never) : value ?? null;
@@ -37,7 +39,8 @@ beforeEach(() => {
   io.metric.mockResolvedValue(undefined);
 });
 
-describe("private image tagging jobs cannot enter generic infrastructure", () => {
+describe.each(PRIVATE_BUSINESS_JOB_KINDS)("private %s jobs cannot enter generic infrastructure", privateKind => {
+  beforeEach(() => { kind = privateKind; row.kind = privateKind; });
   it.each([
     ["read", () => repo.getAiJobByRunId(row.runId)],
     ["claim", () => repo.claimAiJobByRunId(row.runId, { workerId: "generic" })],

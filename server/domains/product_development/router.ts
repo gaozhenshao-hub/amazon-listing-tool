@@ -16,11 +16,23 @@ import {
 } from "./schema";
 import { productDevelopmentService as service } from "./service";
 import type { ProductDevelopmentContext } from "./types";
+import { protectedProcedure as authenticatedProcedure } from "../../_core/trpc";
+import { DevelopmentMarketOperationSchema, DevelopmentMarketStartSchema, DevelopmentMarketApplySchema, DevelopmentMarketApplyOperationSchema } from "../../../shared/developmentMarket";
+import { developmentMarketService } from "./analysis/developmentMarketService";
 
 const domainContext = (ctx: unknown) => ctx as ProductDevelopmentContext;
 
 // Attribute tagging remains owned by the devTagging router; analysis begins after confirmation.
 export const productDevelopmentAnalysisRouter = router({
+  // Dedicated market vertical performs authoritative fresh policy checks in
+  // its transaction; it does not inherit legacy actor-role/nullable scope.
+  marketPreview: authenticatedProcedure.input(DevelopmentMarketOperationSchema).query(({ ctx, input }) => developmentMarketService.preview(ctx, input)),
+  marketStart: authenticatedProcedure.input(DevelopmentMarketStartSchema).mutation(({ ctx, input }) => developmentMarketService.start(ctx, input)),
+  marketCheck: authenticatedProcedure.input(DevelopmentMarketOperationSchema).query(({ ctx, input }) => developmentMarketService.check(ctx, input)),
+  marketCancel: authenticatedProcedure.input(DevelopmentMarketOperationSchema).mutation(({ ctx, input }) => developmentMarketService.cancel(ctx, input)),
+  marketApply: authenticatedProcedure.input(DevelopmentMarketApplySchema).mutation(({ ctx, input }) => developmentMarketService.apply(ctx, input)),
+  marketApplyCheck: authenticatedProcedure.input(DevelopmentMarketApplyOperationSchema).query(({ ctx, input }) => developmentMarketService.applyCheck(ctx, input)),
+  marketApplyCancel: authenticatedProcedure.input(DevelopmentMarketApplyOperationSchema).mutation(({ ctx, input }) => developmentMarketService.applyCancel(ctx, input)),
   getStages: protectedProcedure.input(projectIdInput).query(({ input }) => service.getStages(input.projectId)),
   getStageGating: protectedProcedure.input(projectIdInput).query(({ input }) => service.getStageGating(input.projectId)),
   getStage: protectedProcedure.input(stageInput).query(({ input }) => service.getStage(input.projectId, input.stageType)),

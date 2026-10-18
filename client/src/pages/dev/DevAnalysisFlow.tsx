@@ -44,6 +44,7 @@ import {
 } from "recharts";
 import { StageFormEditor, StageResultDisplay } from "./analysis";
 import { DEV_ANALYSIS_STAGES as STAGES, type DevAnalysisStageKey as StageKey } from "./analysis/stageDefinitions";
+import DevelopmentMarketWorkflow from "./analysis/DevelopmentMarketWorkflow";
 
 /* ─── Status Helpers ─── */
 const statusConfig: Record<string, { text: string; color: string }> = {
@@ -467,6 +468,7 @@ export default function DevAnalysisFlow() {
               )}
               {/* Actions */}
               <div className="space-y-2">
+                {activeStage === "market_overview" && <DevelopmentMarketWorkflow projectId={projectId} onApplied={invalidateAll} />}
                 {(() => {
                   const stageData = stageMap[activeStage];
                   const status = effectiveStageStatus(stageData);

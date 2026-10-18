@@ -5,7 +5,7 @@ import { getDb, withDbTransaction, type DbExecutor } from "../../../repositories
 import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { buildStorageUri, parseStorageUri, resolveStoredObjectUrl, storageGet, storagePut, type StorageProvider } from "../../../storage";
 import { recordHarnessFeedback } from "./harnessCompletion";
-import { genericArtifactPredicate, isDedicatedOnlyArtifact } from "../../../repositories/ai_os/dedicatedJobPolicy";
+import { genericArtifactPredicate, isDedicatedOnlyArtifact, additionalPrivateBusinessJobExclusion } from "../../../repositories/ai_os/dedicatedJobPolicy";
 
 function assertGenericArtifact(row: { artifactKey?: unknown; sourceTable?: unknown; sourceAiJobRunId?: unknown }) {
   if (isDedicatedOnlyArtifact(row)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "IMAGE_TAGGING_USE_DEDICATED_ENDPOINT" });
@@ -76,7 +76,7 @@ export const DATA_LIFECYCLE_POLICIES: DataLifecyclePolicy[] = [
     workspaceColumn: "workspaceId",
     lifecycleColumn: "retentionClass",
     archiveBatchColumn: "archiveBatchId",
-    terminalWhere: "status IN ('succeeded','failed','canceled') AND kind <> 'knowledge.image_tagging.v1'",
+    terminalWhere: `status IN ('succeeded','failed','canceled') AND kind <> 'knowledge.image_tagging.v1' AND ${additionalPrivateBusinessJobExclusion()}`,
     archiveAfterDays: 180,
     deleteAfterDays: 730,
     archiveValue: "archive",

@@ -1,12 +1,16 @@
 import { createHash } from "node:crypto";
 import sharp from "sharp";
+import { getTableName, type Table } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DbExecutor } from "./repositories/dbClient";
 import { createImageAssetReceipt } from "./domains/image/services/imageAssetReceipt";
+import { createImageAssetPolicyService } from "./domains/image/services/imageAssetPolicyService";
 import {
   createImageAssetTrustLedgerService,
   type ImageAssetTrustLedgerStore,
   type StoredEvidence,
   type StoredReceipt,
+  type VerifyCurrentPolicyEvidenceInput,
 } from "./domains/image/services/imageAssetTrustLedgerService";
 
 const originalSecret = process.env.JWT_SECRET;
@@ -223,6 +227,141 @@ afterEach(() => {
 });
 
 describe("Phase C image asset trust ledger", () => {
+  it("runs the real default policy and ledger readers on one caller executor with all six existing row locks", async () => {
+    const state = newState();
+    const evidenceId = "license_00000000-0000-4000-8000-000000000044";
+    const primary = await registerVerifiedEvidence({ state, now: () => baseTime, bytes: await imageBytes(), evidenceId });
+    const contentHash = primary.trustedAsset.contentHash;
+    const assetId = `asset_${contentHash}`;
+    const rows: Record<string, unknown[]> = {
+      projects: [{ id: 51, workspaceId: 7, userId: 17 }],
+      image_assets: [{ id: 1, assetId, workspaceId: 7, contentHash, storageRef: primary.trustedAsset.storageRef, createdBy: 17 }],
+      image_asset_policy_revisions: [{ assetId, workspaceId: 7, projectId: 51, originKind: "own_product",
+        originRecordType: "controlled_upload_receipt", originRecordId: primary.key, contentHash,
+        allowedUsesJson: ["step4_reference"], licenseEvidenceJson: policyEvidence(evidenceId), reviewState: "approved",
+        revision: 2, policyHash: "a".repeat(64), createdBy: 17, reviewedBy: 99, reviewedAt: baseTime }],
+      image_controlled_upload_receipts: state.receipts,
+      image_asset_license_evidence_revisions: [state.evidence[state.evidence.length - 1]],
+    };
+    const locks: string[] = [];
+    const transaction = vi.fn(async () => { throw new Error("nested transaction forbidden"); });
+    const tx = { transaction, select() {
+      let tableName = "";
+      const query = {
+        from(table: Table) { tableName = getTableName(table); return query; },
+        where() { return query; }, orderBy() { return query; },
+        limit(value: number) { expect(value).toBe(1); return query; },
+        async for(lock: string) { expect(lock).toBe("update"); locks.push(tableName); return rows[tableName] ?? []; },
+      };
+      return query;
+    } } as unknown as DbExecutor;
+    // No store overrides: both services execute their unchanged Drizzle readers.
+    const ledger = createImageAssetTrustLedgerService({ now: () => baseTime });
+    const policy = createImageAssetPolicyService({ verifyCurrentPolicyEvidenceInTransaction: ledger.verifyCurrentPolicyEvidenceInTransaction });
+    const input = { ...owner, assetId, expectedRevision: 2, allowedUse: "step4_reference" as const };
+    await expect(policy.requireCurrentApprovedAssetUseInTransaction(tx, input)).resolves.toMatchObject({ assetId, revision: 2, contentHash });
+    expect(locks).toEqual(["projects", "image_assets", "image_asset_policy_revisions",
+      "image_controlled_upload_receipts", "image_asset_license_evidence_revisions", "image_controlled_upload_receipts"]);
+    expect(transaction).not.toHaveBeenCalled();
+    await expect(policy.requireCurrentApprovedAssetUseInTransaction(tx, { ...input, actorId: 18 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(policy.requireCurrentApprovedAssetUseInTransaction(tx, { ...input, workspaceId: 8 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    state.receipts[0].revokedAt = baseTime;
+    await expect(policy.requireCurrentApprovedAssetUseInTransaction(tx, input)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("reuses the caller executor for both receipt and latest license family without opening or committing a transaction", async () => {
+    const state = newState();
+    const evidenceId = "license_00000000-0000-4000-8000-000000000040";
+    const primary = await registerVerifiedEvidence({ state, now: () => baseTime, bytes: await imageBytes(), evidenceId });
+    const tx = {} as DbExecutor;
+    const store = memoryStore(state);
+    const transaction = vi.fn(async () => { throw new Error("nested transaction forbidden"); });
+    const order: string[] = [];
+    const subject = createImageAssetTrustLedgerService({ now: () => baseTime, store: { ...store, transaction,
+      async findReceiptByStorageKey(actualTx, key) { expect(actualTx).toBe(tx); order.push("receipt-key"); return store.findReceiptByStorageKey(actualTx, key); },
+      async findLatestEvidence(actualTx, id) { expect(actualTx).toBe(tx); order.push("latest-evidence"); return store.findLatestEvidence(actualTx, id); },
+      async findReceiptById(actualTx, id) { expect(actualTx).toBe(tx); order.push("receipt-id"); return store.findReceiptById(actualTx, id); },
+    } });
+    const input: VerifyCurrentPolicyEvidenceInput = { workspaceId: 7, projectId: 51, originKind: "own_product",
+      originRecordType: "controlled_upload_receipt", originRecordId: primary.key,
+      asset: primary.trustedAsset, evidence: policyEvidence(evidenceId) };
+    const before = structuredClone(state);
+    await expect(primary.service.verifyCurrentPolicyEvidence(input)).resolves.toBe(true);
+    await expect(subject.verifyCurrentPolicyEvidenceInTransaction(tx, input)).resolves.toBe(true);
+    expect(order).toEqual(["receipt-key", "latest-evidence", "receipt-id"]);
+    expect(transaction).not.toHaveBeenCalled();
+    expect(state).toEqual(before);
+  });
+
+  it.each([
+    "receipt-revoked", "receipt-expired", "evidence-revoked", "evidence-expired", "evidence-unreviewed",
+    "newer-pending", "workspace", "project", "content-hash", "storage-ref", "origin-record",
+    "origin-kind", "proof-type", "grant", "uploader", "receipt-id", "evidence-asset-id",
+  ] as const)("retains the original %s denial in the caller transaction", async failure => {
+    const state = newState();
+    const evidenceId = "license_00000000-0000-4000-8000-000000000041";
+    const primary = await registerVerifiedEvidence({ state, now: () => baseTime, bytes: await imageBytes(), evidenceId });
+    const input: VerifyCurrentPolicyEvidenceInput = { workspaceId: 7, projectId: 51, originKind: "own_product",
+      originRecordType: "controlled_upload_receipt", originRecordId: primary.key,
+      asset: { contentHash: primary.trustedAsset.contentHash, storageRef: primary.trustedAsset.storageRef }, evidence: policyEvidence(evidenceId) };
+    const latest = state.evidence[state.evidence.length - 1];
+    if (failure === "receipt-revoked") state.receipts[0].revokedAt = baseTime;
+    if (failure === "receipt-expired") state.receipts[0].expiresAt = baseTime;
+    if (failure === "evidence-revoked") latest.status = "revoked";
+    if (failure === "evidence-expired") latest.expiresAt = baseTime;
+    if (failure === "evidence-unreviewed") latest.reviewedBy = null;
+    if (failure === "newer-pending") state.evidence.push({ ...latest, version: latest.version + 1, status: "pending_review" });
+    if (failure === "workspace") input.workspaceId = 8;
+    if (failure === "project") input.projectId = 52;
+    if (failure === "content-hash") input.asset.contentHash = "f".repeat(64);
+    if (failure === "storage-ref") input.asset.storageRef = "storage://forge/unapproved.png";
+    if (failure === "origin-record") input.originRecordType = "legacy_url";
+    if (failure === "origin-kind") input.originKind = "designer_upload";
+    if (failure === "proof-type") input.evidence!.proofType = "changed";
+    if (failure === "grant") input.evidence!.grantSummary = "changed";
+    if (failure === "uploader") latest.createdBy = 18;
+    if (failure === "receipt-id") latest.controlledUploadReceiptId = 999;
+    if (failure === "evidence-asset-id") latest.assetId = "asset_other";
+    const before = structuredClone(state);
+    const transaction = vi.fn(async () => { throw new Error("nested transaction forbidden"); });
+    const subject = createImageAssetTrustLedgerService({ now: () => baseTime, store: { ...memoryStore(state), transaction } });
+    await expect(primary.service.verifyCurrentPolicyEvidence(input)).resolves.toBe(false);
+    await expect(subject.verifyCurrentPolicyEvidenceInTransaction({} as DbExecutor, input)).resolves.toBe(false);
+    expect(transaction).not.toHaveBeenCalled();
+    expect(state).toEqual(before);
+  });
+
+  it("does not change the legacy method's two owned transactions", async () => {
+    const state = newState();
+    const evidenceId = "license_00000000-0000-4000-8000-000000000042";
+    const primary = await registerVerifiedEvidence({ state, now: () => baseTime, bytes: await imageBytes(), evidenceId });
+    const store = memoryStore(state);
+    const transaction = vi.spyOn(store, "transaction");
+    const subject = createImageAssetTrustLedgerService({ now: () => baseTime, store });
+    await expect(subject.verifyCurrentPolicyEvidence({ workspaceId: 7, projectId: 51, originKind: "own_product",
+      originRecordType: "controlled_upload_receipt", originRecordId: primary.key,
+      asset: primary.trustedAsset, evidence: policyEvidence(evidenceId) })).resolves.toBe(true);
+    expect(transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses unavailable license storage without opening a fallback transaction", async () => {
+    const state = newState();
+    const evidenceId = "license_00000000-0000-4000-8000-000000000043";
+    const primary = await registerVerifiedEvidence({ state, now: () => baseTime, bytes: await imageBytes(), evidenceId });
+    const transaction = vi.fn(async () => { throw new Error("nested transaction forbidden"); });
+    const subject = createImageAssetTrustLedgerService({ now: () => baseTime, store: { ...memoryStore(state), transaction,
+      async findLatestEvidence() { throw new Error("synthetic missing ledger table"); },
+    } });
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await expect(subject.verifyCurrentPolicyEvidenceInTransaction({} as DbExecutor, { workspaceId: 7, projectId: 51,
+        originKind: "own_product", originRecordType: "controlled_upload_receipt", originRecordId: primary.key,
+        asset: primary.trustedAsset, evidence: policyEvidence(evidenceId) })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+      expect(transaction).not.toHaveBeenCalled();
+    } finally { log.mockRestore(); }
+  });
+
   it("captures actual server bytes and rejects blank bytes or storage-key reuse", async () => {
     const state = newState();
     const bytes = await imageBytes();

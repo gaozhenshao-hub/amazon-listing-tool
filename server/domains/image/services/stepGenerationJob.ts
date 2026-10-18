@@ -41,6 +41,7 @@ import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
 import { getConfirmedCompositeContext } from "../expressionLinkageService";
 import {
   captureImageWorkflowWorkerFence,
+  invalidateImageWorkflowStages,
   projectCurrentImageWorkflowSnapshotsToSession,
   verifyImageWorkflowWorkerFence,
 } from "./imageWorkflowVersionPolicy";
@@ -317,19 +318,18 @@ export async function runImageStepGenerationJob(job: AiJobSnapshot, context: AiJ
   if (!latestSession || Number(latestSession[`step${input.step}Confirmed` as keyof typeof latestSession] || 0) === 1) {
     return { skipped: true, reason: `Step ${input.step} session is no longer writable` };
   }
-  // A changed scope or upstream version makes this result archival only; never
-  // project a late model response into the current session.
-  await verifyImageWorkflowWorkerFence({
+  await reportProgress(job, input.step, 90, input.agentRunId);
+  // The revision check and legacy projection must share the same scope lock.
+  // A separate verification followed by updateImageWorkflowSession permits a
+  // late legacy response to overwrite a newer manually applied draft.
+  await invalidateImageWorkflowStages({
     ...scope,
     actorId: job.userId,
     actorRole: input.actorRole,
+    fromStep: input.step,
     targetStep: input.step,
     fence: { scopeRevision: input.scopeRevision, upstreamDigest: input.upstreamDigest },
-  });
-  await reportProgress(job, input.step, 90, input.agentRunId);
-  await db.updateImageWorkflowSession(input.sessionId, {
-    [`step${input.step}AiResult`]: JSON.stringify(result),
-    currentStep: input.step,
+    legacyPatch: { [`step${input.step}AiResult`]: JSON.stringify(result) },
   });
   return result;
 }

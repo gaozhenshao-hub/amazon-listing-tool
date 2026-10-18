@@ -40,6 +40,12 @@ describe("deep SQL protocol fixtures (not native database acceptance)", () => {
     const h = await harness(), old = clone(h.h.stored); delete old.reservation; expect(decodeCompetitorDeepExecutionInput(old)).toEqual(old);
     await expect(h.session.reserve(old)).rejects.toThrow("RUNTIME_REQUIRED");
   });
+  it("historical v1 config-free reservations replay unchanged but cannot create new jobs", async () => {
+    const h = await harness(), old = await deepFixture(1);
+    expect(decodeCompetitorDeepExecutionInput(old.stored)).toEqual(old.stored);
+    await expect(h.session.reserve(old.stored)).rejects.toThrow("CONFIGURATION_SNAPSHOT_REQUIRED");
+    expect(h.calls.some(call => call.sql.startsWith("INSERT"))).toBe(false);
+  });
   it("rejects changed logical request hash or Skill binding", async () => {
     const h = await harness(), bad = clone(h.h.stored); bad.reservation!.request.expectedEvidenceHash = "b".repeat(64); expect(() => decodeCompetitorDeepExecutionInput(bad)).toThrow("INPUT_INVALID");
     const other = clone(h.h.stored); other.reservation!.runtime.stages[0].skill.version++; expect(() => decodeCompetitorDeepExecutionInput(other)).toThrow("INPUT_INVALID");

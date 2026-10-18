@@ -51,7 +51,7 @@ export function createCompetitorDeepJobService(dependencies: Partial<typeof defa
         const current = await session.authorize(scope, "read");
         if (current.revision !== input.expectedRevision) deepJobError("SOURCE_CHANGED", "CONFLICT");
         let reasonCode: string | null = !deps.enabled() ? "WRITES_DISABLED" : !deps.workerEnabled() ? "WORKER_DISABLED" : identity.workspaceId === null ? "WORKSPACE_REQUIRED" : current.analysis.summaryStatus !== "draft" ? "RECORD_CONFIRMED" : null;
-        if (!reasonCode) try { await session.authorize(scope, "run"); await deps.runtime.prepare(session.executor, identity.workspaceId!); }
+        if (!reasonCode) try { await session.authorize(scope, "run"); await deps.runtime.prepare(session.executor, { userId: identity.userId, workspaceId: identity.workspaceId! }); }
         catch (error) { if (error instanceof CompetitorDeepRuntimeError) reasonCode = error.code;
           else if (error instanceof TRPCError && error.code === "FORBIDDEN") reasonCode = "RUN_NOT_AUTHORIZED"; else throw error; }
         return CompetitorDeepOptionsResultSchema.parse({ identity, projectId: input.projectId, analysisId: input.analysisId, revision: input.expectedRevision,
@@ -77,7 +77,7 @@ export function createCompetitorDeepJobService(dependencies: Partial<typeof defa
       if (evidence.evidenceHash !== input.expectedEvidenceHash) deepJobError("EVIDENCE_CHANGED", "CONFLICT");
       const prepared = await deps.repository.transaction(async session => { const current = await session.authorize(scope, "run");
         if (current.revision !== input.expectedRevision || current.analysis.summaryStatus !== "draft") deepJobError("SOURCE_CHANGED", "CONFLICT");
-        return deps.runtime.prepare(session.executor, identity.workspaceId!); });
+        return deps.runtime.prepare(session.executor, { userId: identity.userId, workspaceId: identity.workspaceId! }).catch(safe); });
       const agentRunId = await deps.ensureAgent({ ...identity, projectId: input.projectId }); if (!agentRunId) deepJobError("AGENT_UNAVAILABLE");
       return await deps.repository.transaction(async session => {
         const row = await session.job(deepRunId(identity, input.operationId)), current = await session.authorize(scope, "run");
@@ -86,7 +86,7 @@ export function createCompetitorDeepJobService(dependencies: Partial<typeof defa
         if (await session.fence(scope, input.operationId)) return deepPublicView(identity, input, null, current.revision, true);
         if (!deps.enabled() || !deps.workerEnabled()) deepJobError("WRITES_DISABLED");
         if (current.revision !== input.expectedRevision || current.analysis.summaryStatus !== "draft" || current.sourceWorkspaceId !== evidence.identity.sourceWorkspaceId) deepJobError("SOURCE_CHANGED", "CONFLICT");
-        await deps.runtime.revalidate(session.executor, prepared.runtime);
+        await deps.runtime.revalidate(session.executor, prepared.runtime, { userId: identity.userId, workspaceId: identity.workspaceId! }).catch(safe);
         const stored = { version: 1 as const, evidence, skills: prepared.skills, journal: createCompetitorDeepExecution(evidence, prepared.skills).initial(), agentRunId, agentNodeId: "N1" as const,
           reservation: { request: input, requestHash: deepRuntimeHash({ identity, request: input }), runtime: prepared.runtime } };
         await session.agent(stored);

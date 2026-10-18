@@ -53,7 +53,12 @@ export function createCompetitorDeepProcessor(overrides: Partial<typeof defaults
           await session.write("UPDATE ai_jobs SET status='failed',errorMessage='COMPETITOR_DEEP_MODEL_RESULT_UNKNOWN',lockedBy=NULL,leaseUntil=NULL,completedAt=NOW(),updatedAt=NOW() WHERE runId=? AND status=?", [runId, row.status]); return null;
         }
         if (row.status === "queued" && row.attempt !== 0 || row.status === "running" && row.attempt !== 1) deepJobError("ATTEMPT_INVALID");
-        await deps.runtime.revalidate(session.executor, row.input.reservation!.runtime); active();
+        // Complete immutable results only need local publication. A later config
+        // edit must not force another model call or discard paid checkpoints.
+        const complete = row.input.journal.steps.every(step => step.status === "succeeded" || step.status === "missing")
+          && row.input.journal.steps.some(step => step.stage === "summary" && step.status === "succeeded");
+        if (!complete) await deps.runtime.revalidate(session.executor, row.input.reservation!.runtime, { userId: row.userId, workspaceId: row.input.reservation!.runtime.workspaceId });
+        active();
         await session.write("UPDATE ai_jobs SET status='running',attempt=1,lockedBy=?,leaseUntil=DATE_ADD(NOW(),INTERVAL 180 SECOND),lastHeartbeatAt=NOW(),startedAt=COALESCE(startedAt,NOW()),updatedAt=NOW() WHERE runId=? AND status=? AND (status='queued' OR leaseUntil<NOW())", [token, runId, row.status]);
         const saved = await session.job(runId); if (!saved) deepJobError("CLAIM_UNKNOWN"); session.lease(saved, token); return saved;
       });

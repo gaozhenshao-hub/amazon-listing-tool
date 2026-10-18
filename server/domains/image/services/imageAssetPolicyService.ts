@@ -149,6 +149,9 @@ export type PublicPolicySummary = {
 };
 
 export type AuthorizedAssetUse = PublicPolicySummary & { contentHash: string; storageRef: string };
+export type CurrentPolicyEvidenceInTransactionVerifier = (
+  tx: DbExecutor, input: Parameters<CurrentPolicyEvidenceVerifier>[0]
+) => Promise<boolean>;
 
 function fail(code: "BAD_REQUEST" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PRECONDITION_FAILED" | "INTERNAL_SERVER_ERROR", message: string): never {
   throw new TRPCError({ code, message });
@@ -380,11 +383,14 @@ export function createImageAssetPolicyService(dependencies: {
   resolveReceiptAsset?: ReceiptAssetResolver;
   verifyLicenseEvidence?: LicenseEvidenceVerifier;
   verifyCurrentPolicyEvidence?: CurrentPolicyEvidenceVerifier;
+  verifyCurrentPolicyEvidenceInTransaction?: CurrentPolicyEvidenceInTransactionVerifier;
 } = {}) {
   const store = dependencies.store ?? drizzleStore();
   const resolveReceiptAsset = dependencies.resolveReceiptAsset ?? unavailableReceiptResolver;
   const verifyLicenseEvidence = dependencies.verifyLicenseEvidence ?? unavailableLicenseVerifier;
   const verifyCurrentPolicyEvidence = dependencies.verifyCurrentPolicyEvidence ?? unavailableCurrentPolicyEvidenceVerifier;
+  // Never fall back to the old verifier here: it owns independent transactions.
+  const verifyCurrentPolicyEvidenceInTransaction = dependencies.verifyCurrentPolicyEvidenceInTransaction ?? unavailableCurrentPolicyEvidenceVerifier;
 
   async function verifiedReceipt(input: {
     reference: string;
@@ -548,23 +554,32 @@ export function createImageAssetPolicyService(dependencies: {
     });
   }
 
-  async function listCurrentPolicies(input: ScopeActor): Promise<PublicPolicySummary[]> {
-    return store.transaction(async tx => {
-      await store.lockAuthorizedProject(tx, input);
-      const currentByAsset = new Map<string, StoredPolicy>();
-      for (const policy of await store.listPolicies(tx, input)) if (!currentByAsset.has(policy.assetId)) currentByAsset.set(policy.assetId, policy);
-      return [...currentByAsset.values()].map(policySummary);
-    });
+  async function listCurrentPoliciesBody(tx: DbExecutor, input: ScopeActor): Promise<PublicPolicySummary[]> {
+    await store.lockAuthorizedProject(tx, input);
+    const currentByAsset = new Map<string, StoredPolicy>();
+    for (const policy of await store.listPolicies(tx, input)) if (!currentByAsset.has(policy.assetId)) currentByAsset.set(policy.assetId, policy);
+    return [...currentByAsset.values()].map(policySummary);
   }
 
-  async function requireCurrentApprovedAssetUse(input: CurrentAssetUseInput): Promise<AuthorizedAssetUse> {
-    return store.transaction(async tx => {
+  async function listCurrentPolicies(input: ScopeActor): Promise<PublicPolicySummary[]> {
+    return store.transaction(tx => listCurrentPoliciesBody(tx, input));
+  }
+
+  /** Same scoped current summaries for an already-locked confirmation transaction. */
+  async function listCurrentPoliciesInTransaction(tx: DbExecutor, input: ScopeActor): Promise<PublicPolicySummary[]> {
+    if (!tx || typeof tx !== "object") fail("PRECONDITION_FAILED", "图片用途读取缺少调用者事务");
+    return listCurrentPoliciesBody(tx, input);
+  }
+
+  async function requireCurrentApprovedAssetUseBody(
+    tx: DbExecutor, input: CurrentAssetUseInput, verifyEvidence: CurrentPolicyEvidenceVerifier
+  ): Promise<AuthorizedAssetUse> {
       await store.lockAuthorizedProject(tx, input);
       const asset = await store.findAssetById(tx, input.workspaceId, input.assetId);
       if (!asset?.contentHash) fail("NOT_FOUND", "图片资产不存在或缺少可核验字节身份");
       const policy = requireCurrentApproval(await store.findLatestPolicy(tx, input), input);
       if (policy.originKind === "own_product" || policy.originKind === "designer_upload") {
-        const evidenceStillValid = await verifyCurrentPolicyEvidence({
+        const evidenceStillValid = await verifyEvidence({
           workspaceId: input.workspaceId,
           projectId: input.projectId,
           originKind: policy.originKind,
@@ -578,7 +593,20 @@ export function createImageAssetPolicyService(dependencies: {
         }
       }
       return { ...policySummary(policy), contentHash: asset.contentHash, storageRef: asset.storageRef };
-    });
+  }
+
+  async function requireCurrentApprovedAssetUse(input: CurrentAssetUseInput): Promise<AuthorizedAssetUse> {
+    return store.transaction(tx => requireCurrentApprovedAssetUseBody(tx, input, verifyCurrentPolicyEvidence));
+  }
+
+  /** Internal caller-owned transaction bridge; no new authority or writes.
+   * Both the current policy and any receipt/license evidence remain locked in
+   * the transaction that consumes the approved asset. */
+  async function requireCurrentApprovedAssetUseInTransaction(
+    tx: DbExecutor, input: CurrentAssetUseInput
+  ): Promise<AuthorizedAssetUse> {
+    if (!tx || typeof tx !== "object") fail("PRECONDITION_FAILED", "图片用途读取缺少调用者事务");
+    return requireCurrentApprovedAssetUseBody(tx, input, evidenceInput => verifyCurrentPolicyEvidenceInTransaction(tx, evidenceInput));
   }
 
   /**
@@ -630,7 +658,7 @@ export function createImageAssetPolicyService(dependencies: {
     });
   }
 
-  return { registerReceiptAsset, registerCompetitorResearchAsset, reviewAssetPolicy, listCurrentPolicies, requireCurrentApprovedAssetUse, requireApprovedReceiptAssetUse };
+  return { registerReceiptAsset, registerCompetitorResearchAsset, reviewAssetPolicy, listCurrentPolicies, listCurrentPoliciesInTransaction, requireCurrentApprovedAssetUse, requireCurrentApprovedAssetUseInTransaction, requireApprovedReceiptAssetUse };
 }
 
 /** The production singleton has no fallback resolver/verifier. Missing ledger
@@ -639,4 +667,5 @@ export const imageAssetPolicyService = createImageAssetPolicyService({
   resolveReceiptAsset: imageAssetTrustLedgerService.resolveReceiptAsset,
   verifyLicenseEvidence: imageAssetTrustLedgerService.verifyLicenseEvidence,
   verifyCurrentPolicyEvidence: imageAssetTrustLedgerService.verifyCurrentPolicyEvidence,
+  verifyCurrentPolicyEvidenceInTransaction: imageAssetTrustLedgerService.verifyCurrentPolicyEvidenceInTransaction,
 });

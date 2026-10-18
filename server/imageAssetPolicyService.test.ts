@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DbExecutor } from "./repositories/dbClient";
 import type { ImageAssetPolicyStore, StoredAsset, StoredPolicy, StoredSourceReference } from "./domains/image/services/imageAssetPolicyService";
 import { createImageAssetPolicyService } from "./domains/image/services/imageAssetPolicyService";
 import { createImageAssetReceipt } from "./domains/image/services/imageAssetReceipt";
@@ -82,6 +83,23 @@ function service(state: MemoryState, licenseValid = true, currentEvidenceValid =
   });
 }
 
+async function approvedState(origin: "own_product" | "competitor_reference" = "own_product") {
+  const state: MemoryState = { assets: [], sources: [], policies: [] };
+  const setup = service(state);
+  const registered = origin === "own_product"
+    ? await setup.registerReceiptAsset({ ...baseScope, expectedRevision: 0, originKind: "own_product",
+      receiptReference: receipt(), requestedUses: ["step4_reference"], licenseEvidence: evidence,
+      source: { sourceRole: "main", sourcePosition: 0 } })
+    : await setup.registerCompetitorResearchAsset({ ...baseScope, expectedRevision: 0,
+      acquisitionRecordId: "candidate-88", verifiedAsset: { contentHash, storageRef: "storage://forge/research.png" },
+      source: { sourceSnapshotId: 91, sourceRole: "main", sourcePosition: 0 } });
+  const approved = await setup.reviewAssetPolicy({ ...baseScope, actorRole: "admin", assetId: registered.assetId,
+    expectedRevision: registered.revision, decision: "approve",
+    allowedUses: origin === "own_product" ? ["step4_reference"] : ["analysis_reference_only"] });
+  return { state, setup, input: { ...baseScope, assetId: approved.assetId, expectedRevision: approved.revision,
+    allowedUse: origin === "own_product" ? "step4_reference" as const : "analysis_reference_only" as const } };
+}
+
 beforeEach(() => { process.env.JWT_SECRET = "stage-c-local-test-secret"; });
 afterEach(() => {
   if (originalSecret === undefined) delete process.env.JWT_SECRET;
@@ -89,6 +107,132 @@ afterEach(() => {
 });
 
 describe("Phase C image asset policy service", () => {
+  it("lists identical latest summaries in the supplied transaction without exposing older evidence or taking ownership", async () => {
+    const { state, setup } = await approvedState();
+    const expected = await setup.listCurrentPolicies(baseScope);
+    const before = structuredClone(state);
+    const tx = {} as DbExecutor;
+    const store = memoryStore(state);
+    const transaction = vi.fn(async () => { throw new Error("nested transaction forbidden"); });
+    const order: string[] = [];
+    const subject = createImageAssetPolicyService({ store: { ...store, transaction,
+      async lockAuthorizedProject(actualTx, input) { expect(actualTx).toBe(tx); order.push("project"); return store.lockAuthorizedProject(actualTx, input); },
+      async listPolicies(actualTx, input) { expect(actualTx).toBe(tx); order.push("policies"); return store.listPolicies(actualTx, input); },
+    } });
+    await expect(subject.listCurrentPoliciesInTransaction(tx, baseScope)).resolves.toEqual(expected);
+    expect(expected).toHaveLength(1);
+    expect(expected[0].revision).toBe(2);
+    expect(JSON.stringify(expected)).not.toContain(evidence.grantSummary);
+    expect(order).toEqual(["project", "policies"]);
+    expect(transaction).not.toHaveBeenCalled();
+    expect(state).toEqual(before);
+  });
+
+  it.each(["workspace", "actor"] as const)("keeps %s denial before reading policy summaries in the caller transaction", async failure => {
+    const { state } = await approvedState();
+    const store = memoryStore(state);
+    const list = vi.spyOn(store, "listPolicies");
+    const transaction = vi.spyOn(store, "transaction");
+    const subject = createImageAssetPolicyService({ store });
+    await expect(subject.listCurrentPoliciesInTransaction({} as DbExecutor, { ...baseScope,
+      ...(failure === "workspace" ? { workspaceId: 8 } : { actorId: 18 }),
+    })).rejects.toThrow(failure === "workspace" ? "unexpected project scope" : "unexpected actor");
+    expect(list).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("keeps legacy list transaction ownership and fails before reads if a caller transaction is missing", async () => {
+    const { state } = await approvedState();
+    const store = memoryStore(state);
+    const transaction = vi.spyOn(store, "transaction");
+    const subject = createImageAssetPolicyService({ store });
+    await expect(subject.listCurrentPolicies(baseScope)).resolves.toHaveLength(1);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    const lock = vi.spyOn(store, "lockAuthorizedProject");
+    await expect(subject.listCurrentPoliciesInTransaction(null as unknown as DbExecutor, baseScope)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(lock).not.toHaveBeenCalled();
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses exactly the caller transaction for policy and evidence without calling either legacy transaction path", async () => {
+    const { state, setup, input } = await approvedState();
+    const expected = await setup.requireCurrentApprovedAssetUse(input);
+    const before = structuredClone(state);
+    const tx = {} as DbExecutor;
+    const store = memoryStore(state);
+    const transaction = vi.fn(async () => { throw new Error("nested transaction forbidden"); });
+    const legacyVerifier = vi.fn(async () => { throw new Error("legacy verifier forbidden"); });
+    const order: string[] = [];
+    const verifier = vi.fn(async (actualTx, actualInput) => {
+      expect(actualTx).toBe(tx);
+      expect(actualInput).toMatchObject({ workspaceId: 7, projectId: 51, originKind: "own_product", evidence });
+      order.push("evidence");
+      return true;
+    });
+    const subject = createImageAssetPolicyService({ store: { ...store, transaction,
+      async lockAuthorizedProject(actualTx, value) { expect(actualTx).toBe(tx); order.push("project"); return store.lockAuthorizedProject(actualTx, value); },
+      async findAssetById(actualTx, ...args) { expect(actualTx).toBe(tx); order.push("asset"); return store.findAssetById(actualTx, ...args); },
+      async findLatestPolicy(actualTx, value) { expect(actualTx).toBe(tx); order.push("policy"); return store.findLatestPolicy(actualTx, value); },
+    }, verifyCurrentPolicyEvidence: legacyVerifier, verifyCurrentPolicyEvidenceInTransaction: verifier });
+    await expect(subject.requireCurrentApprovedAssetUseInTransaction(tx, input)).resolves.toEqual(expected);
+    expect(order).toEqual(["project", "asset", "policy", "evidence"]);
+    expect(transaction).not.toHaveBeenCalled();
+    expect(legacyVerifier).not.toHaveBeenCalled();
+    expect(verifier).toHaveBeenCalledTimes(1);
+    expect(state).toEqual(before);
+  });
+
+  it("never falls back to the legacy verifier when the explicit transaction verifier is missing", async () => {
+    const { state, input } = await approvedState();
+    const legacyVerifier = vi.fn(async () => true);
+    const transaction = vi.fn(async () => { throw new Error("nested transaction forbidden"); });
+    const subject = createImageAssetPolicyService({ store: { ...memoryStore(state), transaction }, verifyCurrentPolicyEvidence: legacyVerifier });
+    await expect(subject.requireCurrentApprovedAssetUseInTransaction({} as DbExecutor, input)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(legacyVerifier).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it.each(["revision", "revoked", "scope", "actor", "use", "evidence"] as const)("preserves the existing %s rejection in the transaction bridge", async failure => {
+    const { state, setup, input } = await approvedState();
+    if (failure === "revision") input.expectedRevision -= 1;
+    if (failure === "revoked") state.policies[state.policies.length - 1].reviewState = "revoked";
+    if (failure === "scope") input.workspaceId = 8;
+    if (failure === "actor") input.actorId = 18;
+    if (failure === "use") input.allowedUse = "analysis_reference_only";
+    const original = failure === "evidence" ? service(state, true, false) : setup;
+    const before = structuredClone(state);
+    const transaction = vi.fn(async () => { throw new Error("nested transaction forbidden"); });
+    const subject = createImageAssetPolicyService({ store: { ...memoryStore(state), transaction },
+      verifyCurrentPolicyEvidenceInTransaction: async () => failure !== "evidence" });
+    const legacyOutcome = await original.requireCurrentApprovedAssetUse(input).then(() => null, (error: Error) => error);
+    expect(legacyOutcome).toBeInstanceOf(Error);
+    await expect(subject.requireCurrentApprovedAssetUseInTransaction({} as DbExecutor, input)).rejects.toThrow(legacyOutcome!.message);
+    expect(transaction).not.toHaveBeenCalled();
+    expect(state).toEqual(before);
+  });
+
+  it("keeps competitor research evidence analysis-only without invoking a production license verifier", async () => {
+    const { state, input } = await approvedState("competitor_reference");
+    const verifier = vi.fn(async () => { throw new Error("unexpected license lookup"); });
+    const subject = createImageAssetPolicyService({ store: memoryStore(state), verifyCurrentPolicyEvidenceInTransaction: verifier });
+    await expect(subject.requireCurrentApprovedAssetUseInTransaction({} as DbExecutor, input)).resolves.toMatchObject({ originKind: "competitor_research" });
+    await expect(subject.requireCurrentApprovedAssetUseInTransaction({} as DbExecutor, { ...input, allowedUse: "step4_reference" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(verifier).not.toHaveBeenCalled();
+  });
+
+  it("keeps the legacy public transaction ownership and verifier unchanged", async () => {
+    const { state, input } = await approvedState();
+    const store = memoryStore(state);
+    const transaction = vi.spyOn(store, "transaction");
+    const legacyVerifier = vi.fn(async () => true);
+    const txVerifier = vi.fn(async () => { throw new Error("unexpected new path"); });
+    const subject = createImageAssetPolicyService({ store, verifyCurrentPolicyEvidence: legacyVerifier, verifyCurrentPolicyEvidenceInTransaction: txVerifier });
+    await expect(subject.requireCurrentApprovedAssetUse(input)).resolves.toMatchObject({ reviewState: "approved" });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(legacyVerifier).toHaveBeenCalledTimes(1);
+    expect(txVerifier).not.toHaveBeenCalled();
+  });
+
   it("shares byte identity while preserving every distinct source role reference", async () => {
     const state: MemoryState = { assets: [], sources: [], policies: [] };
     const subject = service(state);
@@ -145,7 +289,7 @@ describe("Phase C image asset policy service", () => {
     await expect(subject.requireCurrentApprovedAssetUse({ ...baseScope, assetId: registered.assetId,
       expectedRevision: registered.revision, allowedUse: "step4_reference" })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     const approved = await subject.reviewAssetPolicy({ ...baseScope, actorRole: "admin", assetId: registered.assetId,
-      expectedRevision: registered.revision, decision: "approve", receiptReference: receipt(), licenseEvidence: evidence });
+      expectedRevision: registered.revision, decision: "approve", licenseEvidence: evidence });
     await expect(subject.requireCurrentApprovedAssetUse({ ...baseScope, assetId: approved.assetId,
       expectedRevision: registered.revision, allowedUse: "step4_reference" })).rejects.toMatchObject({ code: "CONFLICT" });
     await expect(subject.requireCurrentApprovedAssetUse({ ...baseScope, assetId: approved.assetId,
@@ -165,7 +309,7 @@ describe("Phase C image asset policy service", () => {
     await expect(subject.requireApprovedReceiptAssetUse({ ...baseScope, receiptReference: signed,
       kind: "step4-ref", allowedUse: "step4_reference" })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     const approved = await subject.reviewAssetPolicy({ ...baseScope, actorRole: "admin", assetId: registered.assetId,
-      expectedRevision: registered.revision, decision: "approve", receiptReference: signed, licenseEvidence: evidence });
+      expectedRevision: registered.revision, decision: "approve", licenseEvidence: evidence });
     await expect(subject.requireApprovedReceiptAssetUse({ ...baseScope, receiptReference: signed,
       kind: "step4-ref", allowedUse: "step4_reference" })).resolves.toMatchObject({ assetId: approved.assetId });
   });
@@ -178,7 +322,7 @@ describe("Phase C image asset policy service", () => {
       receiptReference: signed, requestedUses: ["step4_reference"], licenseEvidence: evidence,
       source: { sourceRole: "main", sourcePosition: 0 } });
     const approved = await setup.reviewAssetPolicy({ ...baseScope, actorRole: "admin", assetId: registered.assetId,
-      expectedRevision: registered.revision, decision: "approve", receiptReference: signed, licenseEvidence: evidence });
+      expectedRevision: registered.revision, decision: "approve", licenseEvidence: evidence });
     await expect(service(state, true, false).requireCurrentApprovedAssetUse({ ...baseScope,
       assetId: approved.assetId, expectedRevision: approved.revision, allowedUse: "step4_reference" }))
       .rejects.toMatchObject({ code: "PRECONDITION_FAILED" });

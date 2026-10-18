@@ -5,8 +5,8 @@ import { deepFixture, clone } from "./competitorDeepJob.testFixture";
 import { deepPublicView } from "./competitorDeepJob";
 import type { CompetitorDeepJobSession, DeepJob } from "../../../repositories/listing/competitorDeepJobRepository";
 import type { CompetitorDeepPublicationStore } from "../../../repositories/listing/competitorDeepExecutionRepository";
-async function harness() {
-  const h = await deepFixture(); let job = clone(h.job), enabled = true, fenced = false, evidenceChanged = false, publishLostAck = false, failPublish = false;
+async function harness(version: 1 | 2 = 2) {
+  const h = await deepFixture(version); let job = clone(h.job), enabled = true, fenced = false, evidenceChanged = false, publishLostAck = false, failPublish = false;
   const writes: string[] = [];
   const session = { executor: h.executor, agent: vi.fn(async () => undefined), job: vi.fn(async () => clone(job)), authorize: vi.fn(async () => ({ revision: h.input.expectedRevision, analysis: { summaryStatus: "draft" }, sourceWorkspaceId: 7 })),
     fence: vi.fn(async () => fenced), lease: vi.fn((row: DeepJob, token: string) => { if (row.status !== "running" || row.lockedBy !== token || !row.leaseUntil || new Date(row.leaseUntil).getTime() <= Date.now()) throw new Error("LOST_LEASE"); }),
@@ -67,5 +67,32 @@ describe("deep dedicated processor: real kernel and synthetic provider", () => {
     const h = await harness(); h.failNextPublish(); await h.process(h.h.job.runId, new AbortController().signal);
     expect(h.job().status).toBe("running"); expect(new Date(h.job().leaseUntil!).getTime()).toBeLessThan(Date.now()); expect(h.h.paid()).toBe(3);
     await h.process(h.h.job.runId, new AbortController().signal); expect(h.job().status).toBe("succeeded"); expect(h.h.paid()).toBe(3); expect(h.store.publish).toHaveBeenCalledTimes(2);
+  });
+  it("old v1 jobs still finish under their original approvals without reading new configuration", async () => {
+    const h = await harness(1); h.h.configuration.configText = "invalid new configuration";
+    await h.process(h.h.job.runId, new AbortController().signal); expect(h.h.paid()).toBe(3); expect(h.store.publish).toHaveBeenCalledTimes(1);
+    expect(h.h.permission).not.toHaveBeenCalled(); expect(h.h.calls.every(call => JSON.parse(String(call.context)).schema === "competitor-deep-input/v1")).toBe(true);
+  });
+  it("an upgraded v1 task resumes after a paid checkpoint without repeating it or adopting new rules", async () => {
+    const h = await harness(1), old = { ...h.job(), status: "running" as const, attempt: 1, lockedBy: "old", leaseUntil: new Date(0) }; h.setJob(old);
+    const kernel = createCompetitorDeepExecution(old.input.evidence, old.input.skills);
+    await kernel.runNext(h.store, async (request, signal) => {
+      const prepared = await h.h.runtime.prepareStage({ executor: h.h.executor, identity: { userId: 3, workspaceId: 7 }, runtime: old.input.reservation!.runtime, request });
+      return h.h.runtime.invoke({ prepared, signal, beforeDispatch: async (_receipt, verify) => { await verify(h.h.executor); } });
+    }, new AbortController().signal);
+    expect(h.h.paid()).toBe(1); expect(h.job().input.journal.steps[0].status).toBe("succeeded");
+    h.h.configuration.configText = "unreadable post-upgrade config"; h.h.permission.mockRejectedValue(new Error("NEW_PERMISSION_REVOKED"));
+    await h.process(old.runId, new AbortController().signal);
+    expect(h.h.paid()).toBe(3); expect(h.job().status).toBe("succeeded");
+    expect(h.h.calls.filter(call => call.skillSlug === "synthetic.title")).toHaveLength(1);
+  });
+  it("a changed config before claim blocks new work without altering frozen inputs", async () => {
+    const h = await harness(), frozen = clone(h.job().input); h.h.config.rules.push("NEW_RULE"); h.h.saveConfiguration();
+    await h.process(h.h.job.runId, new AbortController().signal); expect(h.h.paid()).toBe(0); expect(h.job().input).toEqual(frozen); expect(h.store.publish).not.toHaveBeenCalled();
+  });
+  it("complete paid results recover locally despite later config or approval changes", async () => {
+    const h = await harness(); h.failNextPublish(); await h.process(h.h.job.runId, new AbortController().signal);
+    expect(h.job().status).toBe("running"); h.h.config.enabled = false; h.h.saveConfiguration(); h.h.setApprovals([]);
+    await h.process(h.h.job.runId, new AbortController().signal); expect(h.job().status).toBe("succeeded"); expect(h.h.paid()).toBe(3);
   });
 });

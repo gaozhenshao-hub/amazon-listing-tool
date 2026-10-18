@@ -19,6 +19,12 @@ import { buildStep4ConfirmedSnapshot } from "../step4Snapshot";
 import { requireStep4DraftAssets } from "./references";
 import { preserveLockedAplusSubmodules } from "../step2AplusLockedSubmodules";
 import { rebuildStep4DisplaySnapshot } from "./sessions";
+import {
+  ImagePlanningPreviewInputSchema, ImagePlanningStartInputSchema, ImagePlanningOperationInputSchema,
+  ImagePlanningApplyInputSchema, ImagePlanningApplyOperationInputSchema, ImagePlanningHistoryInputSchema,
+  ImagePlanningPreviewSchema, ImagePlanningJobViewSchema, ImagePlanningApplyReceiptSchema, ImagePlanningHistorySchema,
+} from "../../../../shared/imagePlanning";
+import { imagePlanningService } from "../services/imagePlanningService";
 
 const {
   APLUS_MODULE_STYLE_GUIDE,
@@ -136,6 +142,25 @@ function parseStep4ConfirmedVersion(content: string | null): Record<string, unkn
 }
 
 export const imageWorkflowStepProcedures = {
+
+  // These endpoints use the dedicated transaction's fresh session/project and
+  // Agent policy checks; no generic job path can read or mutate their payloads.
+  planningPreview: protectedProcedure.input(ImagePlanningPreviewInputSchema).output(ImagePlanningPreviewSchema)
+    .query(({ ctx, input }) => imagePlanningService.preview(ctx, input)),
+  planningStart: protectedProcedure.input(ImagePlanningStartInputSchema).output(ImagePlanningJobViewSchema)
+    .mutation(({ ctx, input }) => imagePlanningService.start(ctx, input)),
+  planningCheck: protectedProcedure.input(ImagePlanningOperationInputSchema).output(ImagePlanningJobViewSchema)
+    .query(({ ctx, input }) => imagePlanningService.check(ctx, input)),
+  planningCancel: protectedProcedure.input(ImagePlanningOperationInputSchema).output(ImagePlanningJobViewSchema)
+    .mutation(({ ctx, input }) => imagePlanningService.cancel(ctx, input)),
+  planningHistory: protectedProcedure.input(ImagePlanningHistoryInputSchema).output(ImagePlanningHistorySchema)
+    .query(({ ctx, input }) => imagePlanningService.history(ctx, input)),
+  planningApply: protectedProcedure.input(ImagePlanningApplyInputSchema).output(ImagePlanningApplyReceiptSchema)
+    .mutation(({ ctx, input }) => imagePlanningService.apply(ctx, input)),
+  planningApplyCheck: protectedProcedure.input(ImagePlanningApplyOperationInputSchema).output(ImagePlanningApplyReceiptSchema)
+    .query(({ ctx, input }) => imagePlanningService.applyCheck(ctx, input)),
+  planningApplyCancel: protectedProcedure.input(ImagePlanningApplyOperationInputSchema).output(ImagePlanningApplyReceiptSchema)
+    .mutation(({ ctx, input }) => imagePlanningService.applyCancel(ctx, input)),
 
   startStepGeneration: protectedProcedure
     .input(z.object({

@@ -102,6 +102,25 @@ function memoryStore(state: MemoryState): ImageWorkflowVersionStore<object> {
 }
 
 describe("image workflow Phase D version policy", () => {
+  it("passes the same locked transaction to asset preparation and dependency verification hooks", async () => {
+    const state: MemoryState = { revision: 0, snapshots: [], events: [], lockedScopes: [] };
+    const executor = { marker: "same-synthetic-transaction" };
+    const store = memoryStore(state);
+    store.transaction = async callback => callback(executor);
+    const observed: object[] = [];
+    const service = createImageWorkflowVersionPolicyService(store, {
+      prepareRequest: async (request, _snapshots, tx) => { observed.push(tx); return request; },
+      validateDependencies: async (_request, _snapshots, tx) => { observed.push(tx); },
+      afterConfirmed: async tx => { observed.push(tx); },
+    });
+    await service.confirmStage({ ...scope, actorId: 17, expectedScopeRevision: 0, step: 0,
+      content: { research: "synthetic human confirmation" }, contentRevision: 1,
+      contentOrigin: "human_confirmed", sourceConfirmed: true });
+    expect(observed).toHaveLength(3);
+    expect(observed.every(tx => tx === executor)).toBe(true);
+    expect(state.revision).toBe(1);
+  });
+
   it("uses canonical immutable digests independent of JSON object-key order", () => {
     expect(immutableDigest({ second: [2, { z: true, a: null }], first: 1 }))
       .toBe(immutableDigest({ first: 1, second: [2, { a: null, z: true }] }));

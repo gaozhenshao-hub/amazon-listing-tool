@@ -97,13 +97,15 @@ export function strictModelSnapshotFromRow(workspaceId: number, slug: string, ra
   const body = { version: 1 as const, workspaceId, model: parsed.data };
   return { ...body, configurationHash: strictRuntimeHash(body) };
 }
-export const StrictSkillStageSchema = z.enum(["route", "reply", "profit_analysis", "competitor_deep", "image_tagging"]);
+export const StrictSkillStageSchema = z.enum(["route", "reply", "profit_analysis", "competitor_deep", "image_tagging", "image_outline", "development_market_overview"]);
 export type StrictSkillStage = z.infer<typeof StrictSkillStageSchema>;
 /** Fixed server-owned audit identities. A stage is not authorization to run a
  * business Skill: callers still supply approved pins and the durable fence. */
 export function strictSkillAuditIdentity(stage: StrictSkillStage) {
   if (!StrictSkillStageSchema.safeParse(stage).success) return strictRuntimeRefuse("STRICT_RUNTIME_OPTIONS_INVALID");
   if (stage === "image_tagging") return { migrationSource: "knowledge.image_tagging.strict", operation: "knowledge.image_tagging.strict" } as const;
+  if (stage === "image_outline") return { migrationSource: "image.workflow.outline.strict", operation: "image.workflow.outline.strict" } as const;
+  if (stage === "development_market_overview") return { migrationSource: "product.development.market_overview.strict", operation: "product.development.market_overview.strict" } as const;
   if (stage === "competitor_deep") return { migrationSource: "listing.competitor.deep.strict", operation: "listing.competitor.deep.strict" } as const;
   return stage === "profit_analysis"
     ? { migrationSource: "ops.profit.private.strict", operation: "ops.profit.private.strict" } as const
