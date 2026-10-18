@@ -12,8 +12,11 @@ import { splitExternalOperatorNames } from "./operatorNameResolution";
 type Row = Record<string, unknown>;
 type Code = "UNAUTHORIZED" | "FORBIDDEN" | "BAD_REQUEST" | "PRECONDITION_FAILED" | "INTERNAL_SERVER_ERROR";
 type SourceKind = "lingxing" | "saihu";
-type AuthorizedSource = { fact: OperationsCostSheetSourceRow; operator: string | null };
-type Storage = Parameters<typeof buildOperationsCostSheetReadResult>[0]["storage"];
+export type CostSheetAuthorizedSource = { fact: OperationsCostSheetSourceRow; operator: string | null };
+type AuthorizedSource = CostSheetAuthorizedSource;
+export type CostSheetStorage = Parameters<typeof buildOperationsCostSheetReadResult>[0]["storage"];
+type Storage = CostSheetStorage;
+type Lock = "share" | "update";
 export interface CostSheetReadDatabase { transaction?<T>(body: (tx: DbExecutor) => Promise<T>): Promise<T> }
 const id = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= 2_147_483_647;
 function fail(message: string, code: Code = "PRECONDITION_FAILED"): never { throw new TRPCError({ code, message }); }
@@ -91,7 +94,7 @@ function date(value: unknown): string | null {
   if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) fail("COST_SHEET_READ_SOURCE_INVALID");
   return value;
 }
-async function loadSources(tx: DbExecutor, kind: SourceKind, scope: OperationsCostSheetScope, asOfDate: string): Promise<AuthorizedSource[]> {
+async function loadSources(tx: DbExecutor, kind: SourceKind, scope: OperationsCostSheetScope, asOfDate: string, lock: Lock = "share"): Promise<AuthorizedSource[]> {
   const table = kind === "lingxing" ? "lingxing_product_weekly" : "saihu_product_weekly", countryColumn = kind === "lingxing" ? "country" : "site";
   const known = await columns(tx, table, ["id", "workspaceId", "parent_asin", "store_name", countryColumn, "week_end_date", "operator"]);
   const optional = { importId: "import_id", sku: "sku", msku: "msku", asin: "asin", currency: "currency", actualFbaUnitFee: "actual_fba_unit_fee", actualFbaTotalFee: "actual_fba_total_fee", fbaSalesQty: "fba_sales_qty",
@@ -105,11 +108,21 @@ async function loadSources(tx: DbExecutor, kind: SourceKind, scope: OperationsCo
   if (!known.has("avg_price") && !known.has("price")) missingColumns.push("price");
   if (!known.has("product_name") && !known.has("title")) missingColumns.push("name");
   if (!known.has("report_date")) missingColumns.push("reportDate");
+  let lockedIds: number[] | undefined;
+  if (lock === "update") {
+    const boundedFields = ["parent_asin", "store_name", countryColumn, "operator", "week_end_date", ...Object.values(optional), "avg_price", "price", "product_name", "title", "report_date"].filter(column => known.has(column));
+    const bytes = boundedFields.map(column => `COALESCE(OCTET_LENGTH(CAST(${column} AS CHAR CHARACTER SET utf8mb4)),0)`).join("+");
+    const candidates = await tableRows(tx, table, `SELECT id,${bytes} AS bodyBytes FROM ${table} WHERE ${scopedWhere("workspaceId", countryColumn)} ORDER BY id DESC LIMIT 501 FOR UPDATE`, scopeParams(scope));
+    if (candidates.length > 500 || new Set(candidates.map(row => row.id)).size !== candidates.length || candidates.some(row => !id(row.id) || typeof row.bodyBytes !== "number" || !Number.isSafeInteger(row.bodyBytes) || row.bodyBytes < 0 || row.bodyBytes > 65536)
+      || candidates.reduce((total, row) => total + Number(row.bodyBytes), 0) > 4 * 1024 * 1024) fail("COST_SHEET_READ_SOURCE_LIMIT");
+    lockedIds = candidates.map(row => row.id as number);
+  }
   const selected = await tableRows(tx, table, `SELECT id,workspaceId,parent_asin AS parentAsin,store_name AS storeName,${countryColumn} AS country,operator,
     ${reportDate} AS date,${name} AS name,${price} AS price,${priceField} AS priceField,
     ${Object.entries(optional).map(([alias, column]) => field(column, alias)).join(",")}
-    FROM ${table} WHERE ${scopedWhere("workspaceId", countryColumn)} ORDER BY id DESC LIMIT 501 FOR SHARE`, scopeParams(scope));
+    FROM ${table} WHERE ${scopedWhere("workspaceId", countryColumn)} ORDER BY id DESC LIMIT 501 FOR ${lock === "update" ? "UPDATE" : "SHARE"}`, scopeParams(scope));
   if (selected.length > 500 || new Set(selected.map(row => row.id)).size !== selected.length) fail("COST_SHEET_READ_SOURCE_LIMIT");
+  if (lockedIds && (selected.length !== lockedIds.length || selected.some((row, index) => row.id !== lockedIds[index]))) fail("COST_SHEET_READ_SOURCE_INVALID");
   return selected.map(row => {
     if (!id(row.id) || !scopeMatches(row, scope) || (row.importId !== null && !id(row.importId)) || (row.sourceBatchId !== null && !id(row.sourceBatchId))) fail("COST_SHEET_READ_SOURCE_INVALID");
     const report = date(row.date);
@@ -131,7 +144,7 @@ async function assignment(tx: DbExecutor, scope: OperationsCostSheetScope, userI
   if (selected[0].assigneeUserId !== userId) fail("COST_SHEET_READ_OWNER_DENIED", "FORBIDDEN");
   return true;
 }
-async function confirmedSourceOwner(tx: DbExecutor, scope: OperationsCostSheetScope, sources: AuthorizedSource[], userId: number) {
+async function confirmedSourceOwner(tx: DbExecutor, scope: OperationsCostSheetScope, sources: AuthorizedSource[], userId: number, activeOwnerIds?: ReadonlySet<number>) {
   if (!sources.length || sources.some(source => source.fact.date === null)) fail("COST_SHEET_READ_OWNER_UNVERIFIED", "FORBIDDEN");
   const latestDate = sources.map(source => source.fact.date!).sort().at(-1)!;
   const latest = sources.filter(source => source.fact.date === latestDate), userSets: string[] = [];
@@ -148,7 +161,7 @@ async function confirmedSourceOwner(tx: DbExecutor, scope: OperationsCostSheetSc
     const owners = new Map<string, number>();
     for (const name of names) {
       const ids = new Set(mappings.filter(row => row.externalName === name).map(row => row.systemUserId as number));
-      if (ids.size !== 1) fail("COST_SHEET_READ_OWNER_UNVERIFIED", "FORBIDDEN");
+      if (ids.size !== 1 || activeOwnerIds && [...ids].some(value => !activeOwnerIds.has(value))) fail("COST_SHEET_READ_OWNER_UNVERIFIED", "FORBIDDEN");
       owners.set(name, [...ids][0]);
     }
     for (const source of matching) {
@@ -169,13 +182,13 @@ function savedTimestamp(epochMs: unknown): string {
   if (!Number.isSafeInteger(value) || value < 0 || value > 253_402_300_799_999) fail("COST_SHEET_READ_SAVED_INVALID");
   return new Date(value).toISOString();
 }
-async function saved(tx: DbExecutor, scope: OperationsCostSheetScope): Promise<Storage> {
+async function saved(tx: DbExecutor, scope: OperationsCostSheetScope, lock: Lock = "share"): Promise<Storage> {
   try {
     await columns(tx, "ops_cost_sheets", ["id", "workspace_id", "parent_asin", "store_name", "country", "version", "updated_by", "updated_at", "payload"]);
     const selected = await tableRows(tx, "ops_cost_sheets", `SELECT id,workspace_id AS workspaceId,parent_asin AS parentAsin,store_name AS storeName,country,
       version,updated_by AS updatedBy,UNIX_TIMESTAMP(updated_at)*1000 AS updatedAtEpochMs,IF(OCTET_LENGTH(CAST(payload AS CHAR CHARACTER SET utf8mb4))<=${OPERATIONS_COST_SHEET_PAYLOAD_MAX_BYTES},CAST(payload AS CHAR CHARACTER SET utf8mb4),NULL) AS payload,
       OCTET_LENGTH(CAST(payload AS CHAR CHARACTER SET utf8mb4)) AS payloadBytes
-      FROM ops_cost_sheets WHERE ${scopedWhere("workspace_id", "country")} LIMIT 2 FOR SHARE`, scopeParams(scope));
+      FROM ops_cost_sheets WHERE ${scopedWhere("workspace_id", "country")} LIMIT 2 FOR ${lock === "update" ? "UPDATE" : "SHARE"}`, scopeParams(scope));
     if (!selected.length) return { status: "not_saved" };
     const record = selected[0];
     if (selected.length !== 1 || !id(record.id) || !scopeMatches(record, scope) || !id(record.version) || !id(record.updatedBy)) fail("COST_SHEET_READ_SAVED_INVALID");
@@ -190,6 +203,32 @@ async function saved(tx: DbExecutor, scope: OperationsCostSheetScope): Promise<S
     throw error;
   }
 }
+export interface CostSheetReadSession {
+  tx: DbExecutor;
+  identity: { userId: number; workspaceId: number };
+  role: string;
+  scope: OperationsCostSheetScope;
+  asOfDate: string;
+}
+/** Already-authorized transaction only. Write callers hold the actor lock,
+ * request update locks and supply current active numeric workspace members.
+ * The original read path retains its existing authorization and source rules. */
+export async function loadCostSheetReadState(session: CostSheetReadSession, options: { lock?: Lock; activeOwnerIds?: ReadonlySet<number> } = {}) {
+  const { tx, identity, role, scope, asOfDate } = session;
+  if (identity.workspaceId !== scope.workspaceId) fail("COST_SHEET_READ_WORKSPACE_CHANGED", "FORBIDDEN");
+  const manager = ["super_admin", "admin", "ops_manager"].includes(role);
+  const assigned = manager ? false : await assignment(tx, scope, identity.userId);
+  const sources = [...await loadSources(tx, "lingxing", scope, asOfDate, options.lock), ...await loadSources(tx, "saihu", scope, asOfDate, options.lock)];
+  if (sources.length > 500) fail("COST_SHEET_READ_SOURCE_LIMIT");
+  if (!manager && !assigned) await confirmedSourceOwner(tx, scope, sources, identity.userId, options.activeOwnerIds);
+  const storage = await saved(tx, scope, options.lock);
+  const readResult = buildOperationsCostSheetReadResult({ identity, scope, asOfDate, storage, sources: sources.map(source => source.fact) });
+  return { readResult, sources, storage };
+}
+export type CostSheetReadState = Awaited<ReturnType<typeof loadCostSheetReadState>>;
+// Narrow SQL primitives permit the write path to use identical scope matching
+// and current-source projections without opening a second transaction.
+export { statement as costSheetSql, rows as costSheetRows, id as costSheetId, scopedWhere as costSheetScopedWhere, scopeParams as costSheetScopeParams };
 function sanitized(error: unknown): never {
   if (error instanceof TRPCError && /^COST_SHEET_READ_[A-Z_]+$/u.test(error.message)) throw error;
   if (error instanceof TRPCError && ["FORBIDDEN", "UNAUTHORIZED"].includes(error.code)) fail("COST_SHEET_READ_ACCESS_DENIED", "FORBIDDEN");
@@ -219,13 +258,7 @@ export function createCostSheetReadRepository(dependencies: { database?: () => P
         if (actors.length !== 1 || actor.id !== ctx.user!.id || actor.role !== ctx.user!.role || actor.status !== "active" || actor.defaultWorkspaceId !== workspaceId) fail("COST_SHEET_READ_ACTOR_CHANGED", "FORBIDDEN");
         await permission({ actor: { id: actor.id as number, role: actor.role as string, defaultWorkspaceId: workspaceId }, resource: "ops_data", action: "read",
           workspaceId, resourceId: JSON.stringify([scope.parentAsin, scope.storeName, scope.country]), authorizationRead: { executor: tx, strict: true, lock: true } });
-        const manager = ["super_admin", "admin", "ops_manager"].includes(actor.role as string);
-        const assigned = manager ? false : await assignment(tx, scope, actor.id as number);
-        const sources = [...await loadSources(tx, "lingxing", scope, asOfDate), ...await loadSources(tx, "saihu", scope, asOfDate)];
-        if (sources.length > 500) fail("COST_SHEET_READ_SOURCE_LIMIT");
-        if (!manager && !assigned) await confirmedSourceOwner(tx, scope, sources, actor.id as number);
-        const storage = await saved(tx, scope);
-        return buildOperationsCostSheetReadResult({ identity: { userId: actor.id as number, workspaceId }, scope, asOfDate, storage, sources: sources.map(source => source.fact) });
+        return (await loadCostSheetReadState({ tx, identity: { userId: actor.id as number, workspaceId }, role: actor.role as string, scope, asOfDate })).readResult;
       });
     } catch (error) { return sanitized(error); }
   }

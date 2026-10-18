@@ -6,11 +6,11 @@ import { buildOperationsCostSheetReadResult, type BuildOperationsCostSheetReadIn
 import OperationsCostSheetReadOnly, { OperationsCostSheetReadOnlyContent } from "./OperationsCostSheetReadOnly";
 
 const controls = vi.hoisted(() => {
-  const query = vi.fn();
+  const query = vi.fn(), options = vi.fn(), save = vi.fn(), recover = vi.fn();
   return {
     auth: { loading: false, error: null as Error | null, user: { id: 7, defaultWorkspaceId: 11 as number | null | undefined, role: "admin" } as { id: number; defaultWorkspaceId: number | null | undefined; role: string } | null },
-    permissions: { isLoading: false, canRead: vi.fn() }, query,
-    client: { productCostsReadOnly: { get: { query } } },
+    permissions: { isLoading: false, canRead: vi.fn() }, query, options, save, recover,
+    client: { productCostsReadOnly: { get: { query } }, productCostsWrite: { options: { query: options }, save: { mutate: save }, recover: { mutate: recover } } },
   };
 });
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => controls.auth }));
@@ -46,10 +46,30 @@ beforeEach(() => {
   controls.auth = { loading: false, error: null, user: { id: 7, defaultWorkspaceId: 11, role: "admin" } };
   controls.permissions.isLoading = false; controls.permissions.canRead.mockReset().mockReturnValue(true);
   controls.query.mockReset().mockResolvedValue(result());
+  controls.options.mockReset(); controls.save.mockReset(); controls.recover.mockReset(); localStorage.clear();
 });
 afterEach(cleanup);
 
 describe("explicit, owned cost-sheet read", () => {
+  it("adds a separately authorized editor after read and refreshes exact-scope read data after save", async () => {
+    const before = result(); let after = before;
+    controls.options.mockImplementation(async () => ({ identity: after.identity, scope: after.scope, readResult: after, snapshotKey: "a".repeat(64), capabilities: { save: { status: "available", reasonCode: null } } }));
+    controls.query.mockImplementation(async () => after);
+    controls.save.mockImplementation(async request => {
+      const source = fixture(); if (source.storage.status === "saved") { source.storage.record.payload = request.payload; source.storage.record.version = 5; }
+      after = result(source);
+      return { identity: after.identity, scope: after.scope, operationId: request.operationId, status: "committed", version: 5, snapshotKey: "a".repeat(64), reasonCode: null };
+    });
+    render(<OperationsCostSheetReadOnly />); enter(); submit(); await ready();
+    expect(controls.options).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole("button", { name: "检查成本编辑权限" }));
+    fireEvent.click(await screen.findByRole("button", { name: "打开完整成本编辑" }));
+    fireEvent.change(screen.getByLabelText("item-1 产品成本（人民币 / 件）"), { target: { value: "6" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存完整成本" }));
+    await waitFor(() => expect(controls.query).toHaveBeenCalledTimes(2));
+    expect(controls.query.mock.calls[1][0]).toEqual({ expectedWorkspaceId: 11, parentAsin: "B000000001", storeName: "Synthetic Store", country: "US" });
+    await waitFor(() => expect(screen.getByRole("region", { name: "已保存完整成本设置" })).toHaveTextContent("版本 5"));
+    expect(screen.getAllByRole("region", { name: "完整成本编辑入口" })).toHaveLength(1);
+  });
   it("does not query until explicit submission and sends only the selected scope", async () => {
     const view = render(<OperationsCostSheetReadOnly />);
     expect(controls.query).not.toHaveBeenCalled(); enter(); expect(controls.query).not.toHaveBeenCalled(); submit(); await ready();

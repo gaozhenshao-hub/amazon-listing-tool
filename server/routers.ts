@@ -83,6 +83,7 @@ import { taskManagementRouter } from "./routers/taskManagement";
 // Data Import Center
 import { dataImportRouter } from "./routers/dataImport";
 import { productCostsReadOnlyRouter } from "./routers/productCostsReadOnly";
+import { productCostsWriteRouter } from "./routers/productCostsWrite";
 import { monthlyFinancialReadRouter } from "./routers/monthlyFinancialRead";
 import { inventorySnapshotReadRouter } from "./routers/inventorySnapshotRead";
 import { profitBoardReadRouter } from "./routers/profitBoardRead";
@@ -204,6 +205,7 @@ export const appRouter = router({
   // Data Import Center
   dataImport: dataImportRouter,
   productCostsReadOnly: productCostsReadOnlyRouter,
+  productCostsWrite: productCostsWriteRouter,
   monthlyFinancialRead: monthlyFinancialReadRouter,
   inventorySnapshotRead: inventorySnapshotReadRouter,
   profitBoardRead: profitBoardReadRouter,

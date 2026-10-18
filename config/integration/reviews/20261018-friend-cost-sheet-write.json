@@ -1,0 +1,263 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "friend-complete-cost-sheet-write",
+  "baseline": "e7b7feec35fcb9930e7c0de08ed97ef982bff0fa",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "localOnly": true,
+  "humanDecision": {
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary",
+    "generalP5Skills": "Qingdao-primary",
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSelection": "friend-primary; select, preview and generate; upload supplemental"
+  },
+  "scope": "Local P4 source integration of complete cost editing and CAS/UUID recovery at standalone and exact-product entries. Default-off. Not actual database, migration or authenticated production acceptance.",
+  "preserve": [
+    "P0-P6/K01-K10/T01-T28/image62/master27/supplements12",
+    "All previously accepted task/readonly/profit/inventory/monthly/Listing/Agent batches and their remaining release gates",
+    "Existing Lingxing contracts, immutable original read-only formula/provenance/null semantics, private friend source confidentiality",
+    "Four unrelated untracked migration ledger helpers; protected and migration-admission manifests unchanged"
+  ],
+  "changes": [
+    "Independent ops_cost_sheet read/update permissions for scoped operations roles; does not widen ops_data or ops_task authority. Strict directory read/edit, fresh actor/membership/policy and complete numeric owner mapping under a transaction.",
+    "options/save/recover routes, default-off ENABLE_MERGED_OPS_COST_WRITES. Exact workspace/parent/store/canonical-country identity, active combined source owners, bounded complete sources and saved state. No request executes DDL.",
+    "Full snapshot CAS plus saved version CAS, including source and saved payload projection; textual MySQL JSON key order/whitespace normalized, full observation and legacy rows retained, source-empty state cannot save. Native dates/getters/undefined/nonfinite projections rejected.",
+    "Same actor serialization, physical-collation conflict protection, InnoDB and schema/unique index checks, single INSERT or version-guarded UPDATE, complete readback and immutable operation receipt in one transaction. No silent repair of duplicate/corrupt old costs.",
+    "UUID result recovery/cancel fence remains available after release switch rollback under current read authority. A lost commit acknowledgment never silently retries with a new UUID or assumes absence means rollback.",
+    "Complete friend-style cost summary/editor at product and standalone entries: eight row inputs, FX/freight settings, actual standard-goods checkbox, live existing formulas, source/currency/ambiguity safeguards, exact report FBA versus explicit actual FBA distinction, 15% commission/non-accounting-profit label.",
+    "Saved historical orphan rows remain identical and read-only. New rows begin null, new draft freight9 is explicitly an unsaved setting, not financial evidence. All rows paginated without truncating payload; at most500 saved rows/1MiB.",
+    "Explicit conflict comparison retains draft, requires final cancel/commit outcome, and merges only locally changed fields onto latest full payload after validation. Dirty close confirmation, cross-entry refresh and identity-bound pending metadata persist no cost values.",
+    "Money/percentage summary formats two decimals without altering calculation precision; finite scientific notation preserves legitimate tiny saved inputs. Wide table scrolls within a zero-minimum responsive dialog, not across the whole page.",
+    "Pure structure planner retains existing0302 reservation only; exact compatible structure deduplicates. Missing table proposes explicit InnoDB DDL string, incompatible/required-extra/undefined-default/prefix-unique/nontransactional structure refuses. No migration registration or execution."
+  ],
+  "review": {
+    "root": "Reviewed shared write and journal, transaction repository, routes, schema planner, integration entrypoints and actual synthetic browser; independently verified frozen candidate and full types.",
+    "independent": "Separate backend/shared/UI owners and cross-review of pure structure planner; undefined extra-column default fixed and negative tests added.",
+    "findingsResolved": [
+      "Undefined extra-column default could be mistaken for a real default in schema planning",
+      "Saved tiny numeric values render as scientific notation and must remain editable/preservable",
+      "Full cost summary should not render unbounded floating decimal strings",
+      "Initial synthetic Vite mock syntax/dependency-scan failure repaired before final UI validation; no production runtime error was observed"
+    ],
+    "protectedManifestChanged": false,
+    "migrationLedgerChanged": false
+  },
+  "verification": {
+    "focusedUnion": {
+      "exitCode": 0,
+      "files": 14,
+      "tests": 682,
+      "sessions": [
+        98716,
+        6521
+      ],
+      "breakdown": {
+        "readSharedAndRouter": 209,
+        "writeRouter": 17,
+        "readRepository": 106,
+        "writeRepository": 60,
+        "journalAndShared": 66,
+        "costResourcePermission": 3,
+        "taskResourcePermission": 3,
+        "actionsUi": 40,
+        "readUi": 43,
+        "productBoardUi": 88,
+        "overviewUi": 13,
+        "integrationPermissions": 18,
+        "strictAuthorization": 13,
+        "permissionDirectory": 3
+      },
+      "note": "11-file648 plus disjoint3-file34; imported shared tests counted once; earlier agent and root intermediate runs are not additive."
+    },
+    "nodeTests": {
+      "schemaPlanner": 29,
+      "admission": 17,
+      "total": 46,
+      "exitCode": 0,
+      "chunk": "1ce67f"
+    },
+    "scopedLint": {
+      "files": 21,
+      "session": 84924,
+      "exitCode": 0,
+      "warnings": 0
+    },
+    "configuredTypes": {
+      "status": "passed-full-configured-nonincremental-frozen-candidate",
+      "session": 90974,
+      "exitCode": 0,
+      "filesInCompilerProgram": 3776,
+      "diagnostics": [],
+      "command": "node_modules/.bin/tsc --noEmit --incremental false --pretty false --listFiles",
+      "directory": "/Users/gavin/.cache/amazon-cost-write-candidate-20261018.AH7TKk",
+      "verifiedBaselineBlobs": 2573,
+      "verifiedOverlays": 23,
+      "changedSourceFiles": 21,
+      "fullTsconfigUnchanged": true,
+      "sourceProof": "outputs/amazon-cost-write-candidate-source-proof-20261018.json"
+    },
+    "protectedGuard": {
+      "files": 106,
+      "dependencies": 2,
+      "reviewedRecords": 25,
+      "exitCode": 0,
+      "chunk": "fccd12"
+    },
+    "diffCheck": {
+      "requiredBeforeCommit": true
+    },
+    "actualSyntheticBrowser": {
+      "scope": "Real OperationsCostSheetActions controller and shared contracts, synthetic in-memory client only; no backend DB/model/network integration claim.",
+      "verified": [
+        "No cost query until explicit check; complete27row summary includes historical orphan; product summary opens full editor.",
+        "All8 row inputs and actual standard-goods checkbox changed; explicit packaging0 remains0, untouched missing fields remainnull, saved orphan productCost88 remainsunchanged.",
+        "v3→v4save; simulated v4→v5 conflict preserves draft35 vs saved28; final cancellation then explicit merge commitsv6 with no automatic retry.",
+        "Lost acknowledgment commitsv7; originalUUID kept; explicitly closing draft does not cancel it; recover(check) after release disable confirmsv7 without another save. Final4save calls (one refused conflict),2recoverycalls,2payloadrows,27readrows.",
+        "Desktop1280 body1280/dialogclient1212=scroll1212 and tableRegionclient1147<scroll2200.",
+        "Mobile390x844 document390/dialogbbox358,client341=scroll341; innerwide table client276<scroll2200. No horizontal body/dialog overflow after responsive reflow.",
+        "Final render after frozen-source reload shows two-decimal33.07USD/66.14% atv4, and confirmed unavailable-for-new-save but recoverablev7.",
+        "No warning/error after harness repair/restart; earlier04:48 initial harness React dependency-scan failures retained, not misrepresented as production failure."
+      ],
+      "references": [
+        "outputs/cost-write-browser-20261018/desktop.png",
+        "outputs/cost-write-browser-20261018/mobile.png",
+        "outputs/cost-write-browser-20261018/conflict.png",
+        "outputs/cost-write-browser-20261018/recovery.png",
+        "outputs/cost-write-browser-20261018/entry.tsx",
+        "outputs/cost-write-browser-20261018/mock.ts",
+        "outputs/cost-write-browser-20261018/serve.mjs",
+        "outputs/cost-write-browser-20261018/styles.css"
+      ],
+      "notVerified": [
+        "Actual MySQL isolation/gap locks/deadlocks/CAS/audit/ownership revocation/native driver behavior",
+        "Actual existing schema/data reconciliation and0302 migration/rollback",
+        "Authenticated full product/standalone production wrappers",
+        "Original friend legacy writer coexistence and production feature enablement"
+      ]
+    }
+  },
+  "release": {
+    "flagDefault": "off",
+    "actualDatabase": false,
+    "actualAuthenticatedWorkflow": false,
+    "migrationExecuted": false,
+    "migrationRegistered": false,
+    "modelCalls": 0,
+    "productionDeployed": false,
+    "pushed": false,
+    "fullP1Complete": false,
+    "fullObjectiveComplete": false
+  },
+  "next": [
+    "Controlled real cost schema/data/native CAS/recovery/authenticated browser acceptance before enabling writes; retain all historical costs/versions/receipts on rollback.",
+    "Continue monthly persisted upload/preview/confirm/replace/revoke and inventory controlled writes, coherent product/profit derived views under original source priorities.",
+    "Retain remaining P1-P6, Listing selected workflow/Skills and Agent model/scheduler gates. Private-source final destination/visibility must be settled before push; no public push inferred."
+  ],
+  "sourceFiles": [
+    {
+      "path": "shared/const.ts",
+      "bytes": 23510,
+      "sha256": "9cdc16fd711488bfd1484665ff84fc14273d2ba706c82663ea0f8b911084ba13"
+    },
+    {
+      "path": "shared/operationsCostSheetWrite.ts",
+      "bytes": 12673,
+      "sha256": "6cd6406f39e38b8a0b97d64dbfcb2630e6f6d595b32b52012d38f42f0291e684"
+    },
+    {
+      "path": "shared/operationsCostSheetWrite.test.ts",
+      "bytes": 17766,
+      "sha256": "e7e7b4879088a2c816dc8da2af22f2a7c521a8aab7140eb54f7dd10c92dd81f6"
+    },
+    {
+      "path": "server/routers.ts",
+      "bytes": 10550,
+      "sha256": "e3abb3bcfaa4735af232a5917baadb1516e006b5ec4c302f17da9019f9210a7e"
+    },
+    {
+      "path": "server/costSheetPermissions.test.ts",
+      "bytes": 1643,
+      "sha256": "306b07c04d516ccdc9fe3d28ffcce6fa106e9d15bb679f1e35ddf73951480c10"
+    },
+    {
+      "path": "server/domains/ops/costSheetReadRepository.ts",
+      "bytes": 22709,
+      "sha256": "046cc0f2893188d4e66a0af732002375cf09b22dcc4066455d8260ab2718c511"
+    },
+    {
+      "path": "server/domains/ops/costSheetReadRepository.test.ts",
+      "bytes": 24661,
+      "sha256": "d3e38e4dd518353f475ce5b82be9162abb4b47dc3f7571833a8bc9182fedd1c5"
+    },
+    {
+      "path": "server/domains/ops/costSheetWriteRepository.ts",
+      "bytes": 25029,
+      "sha256": "b2d762146c28289f7eede3b84babe991dcd32891c6a5ad2fa992f90d31595635"
+    },
+    {
+      "path": "server/domains/ops/costSheetWriteRepository.test.ts",
+      "bytes": 27321,
+      "sha256": "894f54444d91431061a7186bfd25f9b1d0e23dbace2e23f6dc54e0b4888d3578"
+    },
+    {
+      "path": "server/domains/ops/costSheetOperationJournal.ts",
+      "bytes": 6295,
+      "sha256": "43f14d22ed52e1d071f90acc23245777dba773096b9e63363a24c50934f1aa32"
+    },
+    {
+      "path": "server/domains/ops/costSheetOperationJournal.test.ts",
+      "bytes": 7218,
+      "sha256": "267785831d9c7ef4c2638d9c41cd80507acea2cb43bbbf4dbaa036a9aa0907f1"
+    },
+    {
+      "path": "server/routers/productCostsWrite.ts",
+      "bytes": 838,
+      "sha256": "3a4631c99736aa414da1e36b4690adb56b019e32ce123eda04b5942a640cfc9b"
+    },
+    {
+      "path": "server/routers/productCostsWrite.test.ts",
+      "bytes": 3965,
+      "sha256": "350151e71b82eb270ab18229db11d3cea69aa3518dc87c0b14796e8b660e5fc4"
+    },
+    {
+      "path": "client/src/pages/ops/OperationsCostSheetActions.tsx",
+      "bytes": 32808,
+      "sha256": "967463a6b4b24f89cb692514e71647d8093df254783b7a69cdb52db8b569b094"
+    },
+    {
+      "path": "client/src/pages/ops/OperationsCostSheetActions.component.test.tsx",
+      "bytes": 26553,
+      "sha256": "d62833ceb890880ba179887381cb44545f3df6aba0d192e7ba26dd86356bf38c"
+    },
+    {
+      "path": "client/src/pages/ops/OperationsCostSheetReadOnly.tsx",
+      "bytes": 16606,
+      "sha256": "10be579f1659f63fa878094fc23f2d674d9ba0ac22c88adc3134d43b627871fa"
+    },
+    {
+      "path": "client/src/pages/ops/OperationsCostSheetReadOnly.component.test.tsx",
+      "bytes": 19163,
+      "sha256": "4dd4ff2c41e6af22951377881f5652c6ff394568c53a87add34903ad9817297d"
+    },
+    {
+      "path": "client/src/pages/ops/ProductBoardReadOnly.tsx",
+      "bytes": 27592,
+      "sha256": "d74be8f44a913ff5395a66a7c70ded8183b9d472bc4443a50f479c4a598722d4"
+    },
+    {
+      "path": "client/src/pages/ops/ProductBoardReadOnly.component.test.tsx",
+      "bytes": 35035,
+      "sha256": "775894eb09c793e56251c1efe473297b509ebbdf80850763ea314911977553f5"
+    },
+    {
+      "path": "scripts/integration/costSheetSchemaPlan.mjs",
+      "bytes": 6933,
+      "sha256": "0aa6b45fc79f47f096009f119af05534d0ca529ee857ab880a81637bbe19c9a5"
+    },
+    {
+      "path": "scripts/integration/costSheetSchemaPlan.test.mjs",
+      "bytes": 5132,
+      "sha256": "5a5d4fe7bf409e96d96684ab8844f6670e31a3cb0c95d877a203d47705eb0cd0"
+    }
+  ]
+}

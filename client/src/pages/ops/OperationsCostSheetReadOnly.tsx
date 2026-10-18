@@ -3,10 +3,12 @@ import {
   OperationsCostSheetReadInputSchema,
   OperationsCostSheetReadResultSchema,
   type OperationsCostSheetReadResult,
+  type OperationsCostSheetScope,
 } from "@shared/operationsCostSheetRead";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import { trpc } from "@/lib/trpc";
+import { OperationsCostSheetActions, subscribeOperationsCostSheetChanges } from "./OperationsCostSheetActions";
 
 const PAGE_SIZE = 20;
 const positiveId = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= 2_147_483_647;
@@ -17,8 +19,8 @@ type ReadState = { status: "idle" | "loading" | "error" | "invalid" } | { status
 
 function Shell({ children }: { children: ReactNode }) {
   return <section aria-label="完整成本表只读查看" className="manus-no-record min-w-0 max-w-full space-y-4 overflow-hidden rounded-xl border bg-card p-4 md:p-5">
-    <header className="space-y-2"><h2 className="text-lg font-semibold">完整成本表 · 只读</h2>
-      <p className="text-sm text-muted-foreground">按父 ASIN、店铺和站点明确读取已保存的完整成本设置。不会保存、上传、执行模型，也不会用旧库存参数代替成本表。修改查询范围后旧结果即清除，需再次点击读取。</p></header>
+    <header className="space-y-2"><h2 className="text-lg font-semibold">完整成本表 · 来源查看与授权编辑</h2>
+      <p className="text-sm text-muted-foreground">按父 ASIN、店铺和站点明确读取已保存的完整成本设置。查看不会自动保存、上传或执行模型，也不会用旧库存参数代替成本表；编辑需单独核验权限并确认保存。修改查询范围后旧结果即清除，需再次点击读取。</p></header>
     {children}
   </section>;
 }
@@ -101,12 +103,14 @@ function OwnedCostSheet({ owner }: { owner: Owner }) {
   const client = trpc.useUtils().client;
   const [scope, setScope] = useState({ parentAsin: "", storeName: "", country: "" });
   const [state, setState] = useState<ReadState>({ status: "idle" });
+  const [actionScope, setActionScope] = useState<OperationsCostSheetScope | null>(null);
   const sequence = useRef(0), pending = useRef<AbortController | null>(null);
+  const readRef = useRef(read); readRef.current = read;
   useEffect(() => () => { sequence.current++; pending.current?.abort(); }, []);
-  function clear() { sequence.current++; pending.current?.abort(); pending.current = null; setState({ status: "idle" }); }
+  function clear(preserveActions = false) { sequence.current++; pending.current?.abort(); pending.current = null; setState({ status: "idle" }); if (!preserveActions) setActionScope(null); }
   function change(field: keyof typeof scope, value: string) { clear(); setScope(previous => ({ ...previous, [field]: value })); }
-  async function read(event: FormEvent) {
-    event.preventDefault(); clear();
+  async function read(event?: FormEvent) {
+    event?.preventDefault(); clear(true);
     const input = OperationsCostSheetReadInputSchema.safeParse({ ...scope, expectedWorkspaceId: owner.workspaceId });
     if (!input.success) { setState({ status: "invalid" }); return; }
     const ticket = ++sequence.current, controller = new AbortController(); pending.current = controller;
@@ -119,25 +123,31 @@ function OwnedCostSheet({ owner }: { owner: Owner }) {
       if (!parsed.success || parsed.data.identity.userId !== owner.userId || parsed.data.identity.workspaceId !== owner.workspaceId
         || parsed.data.scope.workspaceId !== owner.workspaceId || parsed.data.scope.parentAsin !== input.data.parentAsin
         || parsed.data.scope.storeName !== input.data.storeName || parsed.data.scope.country !== input.data.country) {
-        setState({ status: "error" }); return;
+        setState({ status: "error" }); setActionScope(null); return;
       }
       setState({ status: "ready", result: parsed.data });
-    } catch { if (current()) setState({ status: "error" }); }
+      setActionScope(parsed.data.scope);
+    } catch { if (current()) { setState({ status: "error" }); setActionScope(null); } }
     finally { if (current()) pending.current = null; }
   }
+  useEffect(() => subscribeOperationsCostSheetChanges(notice => {
+    if (notice.userId === owner.userId && actionScope && notice.scope.workspaceId === actionScope.workspaceId
+      && notice.scope.storeName === actionScope.storeName && notice.scope.country === actionScope.country && notice.scope.parentAsin === actionScope.parentAsin) void readRef.current();
+  }), [owner.userId, actionScope]);
   return <Shell>
     <form onSubmit={event => { void read(event); }} className="space-y-3" aria-label="成本表查询范围">
       <div className="grid min-w-0 gap-3 sm:grid-cols-3">{([
         ["parentAsin", "父 ASIN"], ["storeName", "店铺名称"], ["country", "站点 / 国家代码"],
       ] as const).map(([field, label]) => <label key={field} className="min-w-0 text-sm">{label}<input className="mt-1 w-full min-w-0 rounded border bg-background p-2" value={scope[field]} onChange={event => change(field, event.currentTarget.value)} autoComplete="off" /></label>)}</div>
       <div className="flex flex-wrap gap-3"><button type="submit" className="rounded border px-3 py-2" aria-busy={state.status === "loading"}>读取此范围成本表</button>
-        <button type="button" className="rounded border px-3 py-2" onClick={clear}>取消读取并清除结果</button></div>
+        <button type="button" className="rounded border px-3 py-2" onClick={() => clear()}>取消读取并清除结果</button></div>
     </form>
     {state.status === "idle" && <p className="text-sm">选择范围后点击读取；当前没有读取成本数据。</p>}
     {state.status === "loading" && <p role="status">正在读取所选范围的完整成本表…</p>}
     {state.status === "invalid" && <p role="alert">请完整填写合法的父 ASIN、店铺和站点；未发送读取请求。</p>}
     {state.status === "error" && <p role="alert">读取失败、权限或范围已变化，或返回数据不完整。旧结果已清除；未回退缓存、旧库存参数或默认成本。可核对范围后显式重读。</p>}
     {state.status === "ready" && <OperationsCostSheetReadOnlyContent key={sequence.current} result={state.result} />}
+    {actionScope && <OperationsCostSheetActions owner={owner} scope={actionScope} />}
   </Shell>;
 }
 

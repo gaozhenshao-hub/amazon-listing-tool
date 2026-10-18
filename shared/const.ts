@@ -285,6 +285,9 @@ export const PERMISSION_RESOURCE_REGISTRY = {
   // Task actions are additionally row-scoped on the server. They do not grant
   // financial writes, sync, task deletion, or access to another assignee's task.
   ops_task: { moduleId: 'ops', subModuleId: 'ops_tasks' },
+  // Saving a scoped cost sheet does not authorize report imports, inventory
+  // synchronization, task assignment, or other mutations of ops_data.
+  ops_cost_sheet: { moduleId: 'ops', subModuleId: 'ops_data_import' },
   offsite_campaign: { moduleId: 'offsite', subModuleId: 'offsite_campaigns' },
   emperor_skill: { moduleId: 'emperor', subModuleId: 'emperor_skills' },
   conversation: { moduleId: 'emperor', subModuleId: 'emperor_conversations' },
@@ -355,6 +358,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     conversation: [...SECURITY_ACTIONS],
     ops_data: [...SECURITY_ACTIONS],
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
+    ops_cost_sheet: ['read', 'update'],
   },
   admin: {
     project: ['read', 'create', 'update', 'delete', 'assign'],
@@ -366,6 +370,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     conversation: ['read', 'create', 'update', 'delete', 'upload', 'run', 'confirm', 'cancel'],
     ops_data: ['read', 'import', 'export', 'update', 'delete', 'sync'],
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
+    ops_cost_sheet: ['read', 'update'],
   },
   ops_manager: {
     project: ['read', 'create', 'update', 'assign'],
@@ -376,6 +381,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     conversation: ['read', 'create', 'update', 'upload', 'run', 'confirm', 'cancel'],
     ops_data: ['read', 'import', 'export', 'update', 'sync'],
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
+    ops_cost_sheet: ['read', 'update'],
   },
   ops_specialist: {
     project: ['read', 'create', 'update'],
@@ -386,6 +392,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     conversation: ['read', 'create', 'update', 'upload', 'run', 'confirm'],
     ops_data: ['read'],
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete'],
+    ops_cost_sheet: ['read', 'update'],
   },
   product_dev: {
     project: ['read', 'create', 'update'],

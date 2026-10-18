@@ -64,6 +64,14 @@ describe("explicit readonly product board gates", () => {
 });
 
 describe("complete product rankings and source drilldown", () => {
+  it("mounts the optional exact-product cost entry only inside the expanded product row", () => {
+    const costEntry = vi.fn(product => <div>成本入口 {product.parentAsin}</div>);
+    render(<ProductBoardReadOnlyContent result={result()} renderProductCosts={costEntry} />);
+    expect(costEntry).not.toHaveBeenCalled(); openProduct();
+    expect(screen.getByText("成本入口 P00")).toBeInTheDocument();
+    expect(costEntry).toHaveBeenCalledWith(expect.objectContaining({ parentAsin: "P00" }));
+    expect(controls.query).not.toHaveBeenCalled();
+  });
   it.each([["高退货率产品", "P00"], ["高利润产品", "P00"], ["亏损产品", "P01"], ["全部产品", "P00"]] as const)("%s expands and collapses complete detail immediately after its own parent row", (section, parent) => {
     render(<ProductBoardReadOnlyContent result={result()} />); const board = within(screen.getByRole("region", { name: section }));
     const toggle = board.getByRole("button", { name: `展开 ${parent} 全部子体与原行` }), row = toggle.closest("tr")!;

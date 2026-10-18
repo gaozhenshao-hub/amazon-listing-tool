@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MySqlDialect } from "drizzle-orm/mysql-core";
 import type { SQL } from "drizzle-orm";
 import type { TrpcContext } from "../../_core/context";
-import { createCostSheetReadRepository } from "./costSheetReadRepository";
+import { createCostSheetReadRepository, loadCostSheetReadState } from "./costSheetReadRepository";
 
 type Row = Record<string, unknown>;
 const input = { parentAsin: "B000000001", storeName: "Store Exact", country: "US", expectedWorkspaceId: 7 };
@@ -40,8 +40,8 @@ const execute = vi.fn(async (statement: SQL) => {
   if (query.sql.includes("FROM role_permissions")) return [[], []];
   if (query.sql.includes("FROM ops_inventory_owner_assignments")) return [assignments, []];
   if (query.sql.includes("FROM operator_name_mappings")) return [mappings, []];
-  if (query.sql.includes("FROM lingxing_product_weekly")) return [lingxing, []];
-  if (query.sql.includes("FROM saihu_product_weekly")) return [saihu, []];
+  if (query.sql.includes("FROM lingxing_product_weekly")) return [query.sql.includes("AS bodyBytes") ? lingxing.map(row => ({ id: row.id, bodyBytes: 1000 })) : lingxing, []];
+  if (query.sql.includes("FROM saihu_product_weekly")) return [query.sql.includes("AS bodyBytes") ? saihu.map(row => ({ id: row.id, bodyBytes: 1000 })) : saihu, []];
   if (query.sql.includes("FROM ops_cost_sheets")) return [costs, []];
   throw new Error(`Unexpected query ${query.sql}`);
 });
@@ -268,5 +268,24 @@ describe("complete friend cost sheet read-only repository", () => {
   it("requires a transaction; client cannot select another date/user/table", async () => {
     await expect(createCostSheetReadRepository({ database: async () => ({}) }).read(context(), input)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     for (const extra of [{ asOfDate: "2020-01-01" }, { userId: 5 }, { table: "other" }]) await expect(read(context(), { ...input, ...extra })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+  it("reusable write loader keeps complete sources/payload and uses update locks without a nested transaction", async () => {
+    const loaded = await loadCostSheetReadState({ tx: { execute }, identity: { userId: 3, workspaceId: 7 }, role: "ops_manager", scope, asOfDate: "2026-10-17" }, { lock: "update", activeOwnerIds: new Set([3]) });
+    expect(loaded.readResult.saved?.payload).toEqual(payload()); expect(loaded.sources[0].operator).toBe("Alice");
+    expect(transaction).not.toHaveBeenCalled();
+    for (const table of ["lingxing_product_weekly", "saihu_product_weekly", "ops_cost_sheets"]) {
+      const selected = queries.filter(query => query.sql.includes(`FROM ${table}`));
+      expect(selected.length).toBeGreaterThan(0); expect(selected.every(query => query.sql.endsWith("FOR UPDATE"))).toBe(true);
+    }
+  });
+  it.each([{ active: [3] }, { active: [4] }, { active: [] }])("write loader rejects incomplete current active numeric owner set %j", async ({ active }) => {
+    lingxing[0].operator = "Alice/Bob"; mappings = [mapping(), mapping({ id: 92, externalName: "Bob", systemUserId: 4 })];
+    await expect(loadCostSheetReadState({ tx: { execute }, identity: { userId: 3, workspaceId: 7 }, role: "ops_specialist", scope, asOfDate: "2026-10-17" }, { lock: "update", activeOwnerIds: new Set(active) })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+  it("write loader accepts only fully resolved active compound owners, and prevents foreign scope sessions", async () => {
+    lingxing[0].operator = "Alice/Bob"; mappings = [mapping(), mapping({ id: 92, externalName: "Bob", systemUserId: 4 })];
+    const session = { tx: { execute }, identity: { userId: 3, workspaceId: 7 }, role: "ops_specialist", scope, asOfDate: "2026-10-17" };
+    expect((await loadCostSheetReadState(session, { lock: "update", activeOwnerIds: new Set([3, 4]) })).readResult.status).toBe("saved");
+    await expect(loadCostSheetReadState({ ...session, identity: { userId: 3, workspaceId: 8 } }, { lock: "update" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
