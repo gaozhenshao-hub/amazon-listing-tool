@@ -1,7 +1,6 @@
 export * from "./auth";
 export * from "./ai_os";
 export * from "./assistantConfigurations";
-export * from "./assistantConversations";
 export * from "./knowledge";
 export * from "./project";
 export * from "./listing";
@@ -20,7 +19,6 @@ export * from "./monitoring";
 export * as authSchema from "./auth";
 export * as aiOsSchema from "./ai_os";
 export * as assistantConfigurationsSchema from "./assistantConfigurations";
-export * as assistantConversationsSchema from "./assistantConversations";
 export * as knowledgeSchema from "./knowledge";
 export * as projectSchema from "./project";
 export * as listingSchema from "./listing";

@@ -11,6 +11,7 @@ import {
   ASSISTANT_SCHEMA_SOURCE, EXCLUDED_TABLES, PROJECTION_VERSION, auditSchemaSources, buildProjection,
   exportSourceProjection, inspectSchemaModule, loadReviewedProjectionInputs, main, normalizeCreateStatement, parseArguments, selectProjectionTables, writeProjection,
 } from "./sourceProjection.mjs";
+import { loadFreshBootstrapPlan, loadOfflineGeneralPlan } from "../database/freshBootstrapPlan.mjs";
 
 const require = createRequire(import.meta.url), ts = require("typescript");
 const repository = fileURLToPath(new URL("../../", import.meta.url));
@@ -115,6 +116,44 @@ test("audits the actual source import closure without importing it or loading .e
   assert.ok(!sources.some(item => item.path === "shared/assistantConfigurations.ts"));
   assert.ok(sources.some(item => item.path === "server/domains/ops/workspaceContext.ts"));
   assert.ok(sources.every(item => /^[a-f0-9]{64}$/.test(item.sha256) && !item.path.includes(".env")));
+});
+
+test("private conversation declarations stay outside the reviewed public bootstrap source closure", () => {
+  const path = "drizzle/schema/assistantConversations.ts";
+  const source = readFileSync(join(repository, path), "utf8");
+  const sources = auditSchemaSources(repository.replace(/\/$/, ""), ts);
+  assert.ok(!sources.some(item => item.path === path));
+  // Keeping a separately admitted feature does not broaden the public source
+  // inspector to arbitrary customType callbacks or unreviewed column builders.
+  assert.throws(() => inspectSchemaModule(source, path, ts), { code: "UNREVIEWED_SCHEMA_IMPORT" });
+  assert.ok(!loadOfflineGeneralPlan().some(item => item.fileName === "0231_assistant_conversations.sql"));
+  const bootstrap = loadFreshBootstrapPlan();
+  assert.ok(!bootstrap.plan.some(item => item.fileName === "0231_assistant_conversations.sql"));
+  assert.ok(!bootstrap.manifest.requiredBusinessTables.some(name => name.startsWith("assistant_conversation_")));
+});
+
+test("private conversation schema and candidate DDL retain all three independently importable tables", async () => {
+  const { tsImport } = require("tsx/esm/api");
+  const schema = await tsImport(new URL("../../drizzle/schema/assistantConversations.ts", import.meta.url).href,
+    { parentURL: import.meta.url, tsconfig: false });
+  const { getTableName: actualTableName, getTableColumns } = require("drizzle-orm");
+  const expected = ["assistant_conversation_attachments", "assistant_conversation_threads", "assistant_conversation_turns"];
+  assert.deepEqual(Object.values(schema).map(actualTableName).sort(), expected);
+  for (const value of Object.values(schema)) {
+    const columns = getTableColumns(value);
+    assert.equal(columns.workspaceId.name, "workspace_id");
+    assert.equal(columns.userId.name, "user_id");
+  }
+  assert.equal(getTableColumns(schema.assistantConversationAttachments).originalBytes.getSQLType(), "mediumblob");
+  const ddl = readFileSync(join(repository, "drizzle/0231_assistant_conversations.sql"), "utf8");
+  assert.deepEqual([...ddl.matchAll(/^CREATE TABLE (assistant_conversation_[a-z]+) \(/gm)].map(match => match[1]).sort(), expected);
+  const inputs = await loadReviewedProjectionInputs(repository);
+  const selected = selectProjectionTables(inputs.exports, inputs.isTable, inputs.getTableName);
+  assert.ok(expected.every(name => !selected.tableNames.includes(name)));
+  assert.equal(inputs.exports.assistantConversationsSchema, undefined);
+  assert.equal(inputs.exports.assistantConversationThreads, undefined);
+  assert.equal(inputs.exports.assistantConversationTurns, undefined);
+  assert.equal(inputs.exports.assistantConversationAttachments, undefined);
 });
 
 test("reviewed loader retains an immutable source baseline and rejects caller metadata mutation", async () => {
