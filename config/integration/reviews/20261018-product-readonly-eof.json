@@ -1,0 +1,26 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "product-readonly-terminal-newline",
+  "baseline": "cd6d791f689c3640b8e2241637993f3a1ad18796",
+  "scope": "Remove exactly one redundant EOF LF from monthlyBoardReadCore.ts; no executable token, type or business behavior changed.",
+  "finding": "Post-commit full-tree git diff --check detected an extra EOF blank line in a newly added file; prior working-tree diff had not covered untracked additions. Retain that exit2 as a formatting finding, not a clean full-tree pass.",
+  "verification": {
+    "onlyOneTerminalNewlineRemoved": true,
+    "byteComparisonExitCode": 0,
+    "namedBaselineDiffCheckExitCode": 0,
+    "priorConfiguredTypecheckSession": 42187,
+    "priorConfiguredTypecheckExitCode": 0,
+    "reranTypecheck": false,
+    "priorFocusedTests": 779,
+    "reranFocusedTests": false
+  },
+  "sourceFiles": [
+    {
+      "path": "server/domains/ops/monthlyBoardReadCore.ts",
+      "bytes": 12304,
+      "sha256": "52505f2fc2fa031ef69aef0c355cdb76c463f8791f8b5e7a1f58c8df4939e171"
+    }
+  ],
+  "localOnly": true,
+  "productionDeployed": false
+}

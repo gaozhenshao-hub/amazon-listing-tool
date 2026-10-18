@@ -144,4 +144,3 @@ export async function authorizeMonths(session: Session, input: MonthlyBoardScope
     group.item.authorizedRowRefs = refs;
   }
 }
-
