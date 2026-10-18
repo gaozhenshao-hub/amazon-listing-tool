@@ -1,0 +1,243 @@
+import { createHash, randomUUID } from "node:crypto";
+import { sql, type SQL } from "drizzle-orm";
+import { z } from "zod";
+import { requireDb } from "../../../repositories/dbClient";
+import { assistantConversationLeaseRecovery, canTransitionAssistantConversation } from "../../../../shared/assistantConversation";
+
+export const ASSISTANT_CONVERSATION_LIMITS = Object.freeze({ request: 1024 * 1024, configuration: 128 * 1024, runtime: 512 * 1024, result: 256 * 1024, dispatch: 16 * 1024, extraction: 256 * 1024, file: 3 * 1024 * 1024, files: 3, page: 50, read: 8 * 1024 * 1024 });
+const THREADS = "assistant_conversation_threads", TURNS = "assistant_conversation_turns", ATTACHMENTS = "assistant_conversation_attachments";
+const UUID = z.string().uuid().refine(value => value === value.toLowerCase()), HASH = z.string().regex(/^[a-f0-9]{64}$/u), ID = z.number().int().min(1).max(2147483647), VERSION = z.number().int().min(0).max(2147483646);
+const TIME = z.string().regex(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$/u), CODE = z.string().regex(/^[A-Z][A-Z0-9_]{0,99}$/u);
+const STATES = ["queued", "route_dispatched", "route_ready", "reply_dispatched", "reply_ready", "succeeded", "failed", "canceled", "unknown"] as const;
+export type AssistantTurnState = typeof STATES[number];
+export type AssistantConversationIdentity = { workspaceId: number; userId: number };
+export interface AssistantConversationExecutor { execute(query: SQL): Promise<unknown> }
+export interface AssistantConversationDatabase { transaction<T>(body: (tx: AssistantConversationExecutor) => Promise<T>): Promise<T> }
+export class AssistantConversationStorageError extends Error {
+  constructor(public readonly code: string, public readonly conflict = false) { super(`ASSISTANT_CONVERSATION_${code}`); this.name = "AssistantConversationStorageError"; }
+}
+function refuse(code: string, conflict = false): never { throw new AssistantConversationStorageError(code, conflict); }
+function parse<T>(schema: z.ZodType<T>, value: unknown): T { const result = schema.safeParse(value); if (!result.success) refuse("DATA_INVALID"); return result.data; }
+export function assistantConversationCanonical(value: unknown, maxBytes = ASSISTANT_CONVERSATION_LIMITS.request): string {
+  const seen = new Set<object>(); let nodes = 0;
+  function visit(item: unknown, depth: number): unknown {
+    if (++nodes > 200000 || depth > 40) refuse("JSON_LIMIT");
+    if (item === null || typeof item === "string" || typeof item === "boolean") return item;
+    if (typeof item === "number" && Number.isFinite(item) && !Object.is(item, -0)) return item;
+    if (!item || typeof item !== "object" || seen.has(item) || !Array.isArray(item) && Object.getPrototypeOf(item) !== Object.prototype) refuse("JSON_INVALID");
+    seen.add(item);
+    const descriptors = Object.getOwnPropertyDescriptors(item);
+    if (Reflect.ownKeys(item).some(key => typeof key !== "string") || Object.values(descriptors).some(descriptor => !("value" in descriptor))) refuse("JSON_INVALID");
+    const result = Array.isArray(item) ? item.map(child => visit(child, depth + 1)) : Object.fromEntries(Object.keys(item).sort().map(key => [key, visit(descriptors[key].value, depth + 1)]));
+    if (Array.isArray(item) && (Object.keys(item).length !== item.length || Object.keys(item).some((key, index) => key !== String(index)))) refuse("JSON_INVALID");
+    seen.delete(item); return result;
+  }
+  const text = JSON.stringify(visit(value, 0)); if (Buffer.byteLength(text) > maxBytes) refuse("JSON_LIMIT"); return text;
+}
+const digest = (text: string | Uint8Array) => createHash("sha256").update(text).digest("hex");
+function json(value: unknown, maxBytes: number): unknown { let decoded = value; if (typeof value === "string") { if (Buffer.byteLength(value) > maxBytes * 4) refuse("JSON_LIMIT"); try { decoded = JSON.parse(value); } catch { refuse("JSON_INVALID"); } } return JSON.parse(assistantConversationCanonical(decoded, maxBytes)); }
+function identity(value: AssistantConversationIdentity) { return parse(z.object({ workspaceId: ID, userId: ID }).strict(), value); }
+function statement(text: string, values: unknown[] = []): SQL { const parts = text.split("?"); if (parts.length !== values.length + 1) refuse("SQL_INVALID"); return sql.join(parts.flatMap((part, i) => i < values.length ? [sql.raw(part), sql`${values[i]}`] : [sql.raw(part)]), sql.raw("")); }
+type Row = Record<string, unknown>;
+async function rows(tx: AssistantConversationExecutor, text: string, values: unknown[] = []): Promise<Row[]> { const raw = await tx.execute(statement(text, values)); if (!Array.isArray(raw) || !Array.isArray(raw[0]) || raw[0].some(row => !row || typeof row !== "object" || Array.isArray(row))) refuse("READ_INVALID"); return raw[0]; }
+async function write(tx: AssistantConversationExecutor, text: string, values: unknown[] = []) { const raw = await tx.execute(statement(text, values)); if (!Array.isArray(raw) || !raw[0] || typeof raw[0] !== "object" || (raw[0] as Row).affectedRows !== 1) refuse("WRITE_UNVERIFIABLE"); }
+const timestamp = (column: string, alias: string) => `DATE_FORMAT(${column},'%Y-%m-%d %H:%i:%s.%f') AS ${alias}`;
+const threadProjection = `id,workspace_id AS workspaceId,user_id AS userId,thread_id AS threadId,agent_key AS agentKey,title,creation_hash AS creationHash,version,next_sequence AS nextSequence,active_turn AS activeTurn,${timestamp("created_at", "createdAt")},${timestamp("updated_at", "updatedAt")}`;
+const jsonColumns = { request: "request_snapshot", configuration: "configuration_snapshot", runtime: "runtime_snapshot", routeDispatch: "route_dispatch", routeResult: "route_result", replyDispatch: "reply_dispatch", replyResult: "reply_result", proposal: "proposal" } as const;
+const jsonLimits: Record<keyof typeof jsonColumns, number> = { request: ASSISTANT_CONVERSATION_LIMITS.request, configuration: ASSISTANT_CONVERSATION_LIMITS.configuration, runtime: ASSISTANT_CONVERSATION_LIMITS.runtime, routeDispatch: ASSISTANT_CONVERSATION_LIMITS.dispatch, routeResult: ASSISTANT_CONVERSATION_LIMITS.result, replyDispatch: ASSISTANT_CONVERSATION_LIMITS.dispatch, replyResult: ASSISTANT_CONVERSATION_LIMITS.result, proposal: ASSISTANT_CONVERSATION_LIMITS.configuration };
+const turnBytes = Object.values(jsonColumns).map(column => `COALESCE(OCTET_LENGTH(${column}),0)`).join("+");
+const turnProjection = `id,workspace_id AS workspaceId,user_id AS userId,operation_id AS operationId,thread_id AS threadId,agent_key AS agentKey,sequence,expected_thread_version AS expectedThreadVersion,request_hash AS requestHash,snapshot_hash AS snapshotHash,mode,state,lease_token AS leaseToken,lease_owner AS leaseOwner,attempt,${timestamp("lease_expires_at", "leaseExpiresAt")},${timestamp("heartbeat_at", "heartbeatAt")},${Object.entries(jsonColumns).map(([alias, column]) => `IF(OCTET_LENGTH(${column})<=${jsonLimits[alias as keyof typeof jsonColumns] * 4},${column},NULL) AS ${alias},OCTET_LENGTH(${column}) AS ${alias}Bytes`).join(",")},error_code AS errorCode,${timestamp("created_at", "createdAt")},${timestamp("updated_at", "updatedAt")},${timestamp("completed_at", "completedAt")}`;
+const threadSchema = z.object({ id: ID, workspaceId: ID, userId: ID, threadId: UUID, agentKey: z.string().regex(/^[a-z][a-z0-9_]{0,31}$/u), title: z.string().min(1).max(80), creationHash: HASH, version: ID.max(2147483646), nextSequence: ID, activeTurn: UUID.nullable(), createdAt: TIME, updatedAt: TIME }).strict();
+export type AssistantConversationThread = z.infer<typeof threadSchema>;
+const turnSchema = z.object({ id: ID, workspaceId: ID, userId: ID, operationId: UUID, threadId: UUID, agentKey: threadSchema.shape.agentKey, sequence: ID.nullable(), expectedThreadVersion: VERSION.nullable(), requestHash: HASH.nullable(), snapshotHash: HASH.nullable(), mode: z.enum(["work", "coach"]).nullable(), state: z.enum(STATES), leaseToken: UUID.nullable(), leaseOwner: z.string().min(1).max(128).nullable(), attempt: VERSION, leaseExpiresAt: TIME.nullable(), heartbeatAt: TIME.nullable(), request: z.unknown(), configuration: z.unknown(), runtime: z.unknown(), routeDispatch: z.unknown(), routeResult: z.unknown(), replyDispatch: z.unknown(), replyResult: z.unknown(), proposal: z.unknown(), errorCode: CODE.nullable(), createdAt: TIME, updatedAt: TIME, completedAt: TIME.nullable() }).strict();
+export type AssistantConversationTurn = z.infer<typeof turnSchema>;
+const terminal = (state: AssistantTurnState) => ["succeeded", "failed", "canceled", "unknown"].includes(state);
+const dispatched = (state: AssistantTurnState) => state === "route_dispatched" || state === "reply_dispatched";
+function turnRecord(raw: Row): AssistantConversationTurn {
+  const value = { ...raw };
+  for (const key of Object.keys(jsonColumns) as Array<keyof typeof jsonColumns>) { const bytes = value[`${key}Bytes`]; if (bytes !== null && (!Number.isSafeInteger(Number(bytes)) || Number(bytes) > jsonLimits[key] * 4 || value[key] === null)) refuse("JSON_LIMIT"); value[key] = value[key] === null ? null : json(value[key], jsonLimits[key]); delete value[`${key}Bytes`]; }
+  const turn = parse(turnSchema, value);
+  const tombstone = turn.sequence === null;
+  if (tombstone ? turn.state !== "canceled" || turn.requestHash !== null || turn.snapshotHash !== null || turn.mode !== null || turn.expectedThreadVersion !== null || turn.request !== null || turn.configuration !== null || turn.runtime !== null
+    : turn.requestHash === null || turn.snapshotHash === null || turn.mode === null || turn.expectedThreadVersion === null || turn.request === null || turn.configuration === null || turn.runtime === null) refuse("TURN_INVALID");
+  if ((turn.leaseToken === null) !== (turn.leaseOwner === null) || (turn.leaseToken === null) !== (turn.leaseExpiresAt === null) || terminal(turn.state) && (turn.leaseToken !== null || turn.completedAt === null) || !terminal(turn.state) && turn.completedAt !== null) refuse("TURN_INVALID");
+  if (["route_dispatched", "route_ready"].includes(turn.state) && turn.routeDispatch === null || turn.state === "route_ready" && turn.routeResult === null || ["reply_dispatched", "reply_ready", "succeeded"].includes(turn.state) && turn.replyDispatch === null || ["reply_ready", "succeeded"].includes(turn.state) && turn.replyResult === null) refuse("CHECKPOINT_INVALID");
+  if (turn.routeResult !== null && turn.routeDispatch === null || turn.replyResult !== null && turn.replyDispatch === null || turn.proposal !== null && turn.replyResult === null || turn.replyDispatch !== null && turn.routeDispatch !== null && turn.routeResult === null
+    || turn.mode === "coach" && turn.routeDispatch !== null || turn.mode !== "coach" && turn.proposal !== null
+    || turn.state === "queued" && [turn.routeDispatch, turn.routeResult, turn.replyDispatch, turn.replyResult, turn.proposal].some(item => item !== null)
+    || turn.state === "route_dispatched" && [turn.routeResult, turn.replyDispatch, turn.replyResult, turn.proposal].some(item => item !== null)
+    || turn.state === "route_ready" && [turn.replyDispatch, turn.replyResult, turn.proposal].some(item => item !== null)
+    || turn.state === "reply_dispatched" && [turn.replyResult, turn.proposal].some(item => item !== null)
+    || tombstone && (turn.attempt !== 0 || [turn.routeDispatch, turn.routeResult, turn.replyDispatch, turn.replyResult, turn.proposal].some(item => item !== null))) refuse("CHECKPOINT_INVALID");
+  return turn;
+}
+
+type ColumnSpec = { type: string; nullable?: true; length?: number; enum?: string[] };
+const int = { type: "int" }, uuid = { type: "char", length: 36 }, hash = { type: "char", length: 64 }, date = { type: "datetime" }, js = { type: "json", nullable: true } as const;
+const columns: Record<string, Record<string, ColumnSpec>> = {
+  [THREADS]: { id: int, workspace_id: int, user_id: int, thread_id: uuid, agent_key: { type: "varchar", length: 32 }, title: { type: "varchar", length: 80 }, creation_hash: hash, version: int, next_sequence: int, active_turn: { ...uuid, nullable: true }, created_at: date, updated_at: date },
+  [TURNS]: { id: int, workspace_id: int, user_id: int, operation_id: uuid, thread_id: uuid, agent_key: { type: "varchar", length: 32 }, sequence: { ...int, nullable: true }, expected_thread_version: { ...int, nullable: true }, request_hash: { ...hash, nullable: true }, snapshot_hash: { ...hash, nullable: true }, mode: { type: "enum", enum: ["work", "coach"], nullable: true }, state: { type: "enum", enum: [...STATES] }, lease_token: { ...uuid, nullable: true }, lease_owner: { type: "varchar", length: 128, nullable: true }, attempt: int, lease_expires_at: { ...date, nullable: true }, heartbeat_at: { ...date, nullable: true }, error_code: { type: "varchar", length: 100, nullable: true }, created_at: date, updated_at: date, completed_at: { ...date, nullable: true }, ...Object.fromEntries(Object.values(jsonColumns).map(column => [column, js])) },
+  [ATTACHMENTS]: { id: int, workspace_id: int, user_id: int, operation_id: uuid, ordinal: int, file_name: { type: "varchar", length: 180 }, mime_type: { type: "varchar", length: 128 }, byte_size: int, content_hash: hash, original_bytes: { type: "mediumblob" }, extraction: { type: "json" }, created_at: date },
+};
+const requiredIndexes: Record<string, Array<{ keys: string[]; unique: boolean }>> = {
+  [THREADS]: [{ keys: ["id"], unique: true }, { keys: ["workspace_id", "user_id", "thread_id"], unique: true }, { keys: ["workspace_id", "user_id", "agent_key", "id"], unique: false }],
+  [TURNS]: [{ keys: ["id"], unique: true }, { keys: ["workspace_id", "user_id", "operation_id"], unique: true }, { keys: ["workspace_id", "user_id", "thread_id", "sequence"], unique: true }, { keys: ["state", "lease_expires_at", "id"], unique: false }],
+  [ATTACHMENTS]: [{ keys: ["id"], unique: true }, { keys: ["workspace_id", "user_id", "operation_id", "ordinal"], unique: true }],
+};
+/** Exact new-table admission; no DDL or auto repair. Existing auth tables must also be transactional. */
+export async function assistantConversationSchemaReady(tx: AssistantConversationExecutor): Promise<boolean> {
+  const names = Object.keys(columns), allNames = [...names, "workspaces", "users", "workspace_memberships"];
+  const tables = await rows(tx, `SELECT TABLE_NAME AS tableName,ENGINE AS engine,TABLE_COLLATION AS collation FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (${allNames.map(() => "?").join(",")})`, allNames);
+  const fields = await rows(tx, `SELECT TABLE_NAME AS tableName,COLUMN_NAME AS columnName,DATA_TYPE AS dataType,COLUMN_TYPE AS columnType,IS_NULLABLE AS isNullable,EXTRA AS extra,CHARACTER_MAXIMUM_LENGTH AS maxLength,DATETIME_PRECISION AS precisionValue,COLLATION_NAME AS collation,COLUMN_DEFAULT AS defaultValue FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (${names.map(() => "?").join(",")})`, names);
+  const indexes = await rows(tx, `SELECT TABLE_NAME AS tableName,INDEX_NAME AS indexName,COLUMN_NAME AS columnName,SEQ_IN_INDEX AS sequence,NON_UNIQUE AS nonUnique,SUB_PART AS prefixLength FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (${names.map(() => "?").join(",")})`, names);
+  if (tables.length !== allNames.length || new Set(tables.map(row => row.tableName)).size !== tables.length || tables.some(row => !allNames.includes(String(row.tableName)) || row.engine !== "InnoDB" || names.includes(String(row.tableName)) && row.collation !== "utf8mb4_bin") || fields.length !== Object.values(columns).reduce((total, value) => total + Object.keys(value).length, 0) || new Set(fields.map(row => `${row.tableName}:${row.columnName}`)).size !== fields.length || indexes.length > 100) return false;
+  for (const row of fields) { const expected = columns[String(row.tableName)]?.[String(row.columnName)]; if (!expected || row.dataType !== expected.type || row.isNullable !== (expected.nullable ? "YES" : "NO") || row.extra !== (row.columnName === "id" ? "auto_increment" : "") || row.defaultValue !== null || typeof row.columnType !== "string" || /unsigned/iu.test(row.columnType) || expected.length && (Number(row.maxLength) !== expected.length || row.collation !== "utf8mb4_bin") || expected.enum && (row.columnType !== `enum(${expected.enum.map(value => `'${value}'`).join(",")})` || row.collation !== "utf8mb4_bin") || expected.type === "datetime" && Number(row.precisionValue) !== 3) return false; }
+  const groups = new Map<string, Row[]>(); for (const row of indexes) { if (!names.includes(String(row.tableName)) || ![0, 1].includes(Number(row.nonUnique)) || row.prefixLength !== null || !ID.safeParse(Number(row.sequence)).success) return false; const key = `${row.tableName}:${row.indexName}`; groups.set(key, [...(groups.get(key) ?? []), row]); }
+  const actual = [...groups.values()].map(group => group.sort((a, b) => Number(a.sequence) - Number(b.sequence)));
+  const matches = (group: Row[], table: string, wanted: { keys: string[]; unique: boolean }) => group[0].tableName === table && Number(group[0].nonUnique) === (wanted.unique ? 0 : 1) && group.length === wanted.keys.length && group.every((row, i) => Number(row.sequence) === i + 1 && row.columnName === wanted.keys[i] && row.nonUnique === group[0].nonUnique);
+  return Object.entries(requiredIndexes).every(([table, wanted]) => wanted.every(index => actual.some(group => matches(group, table, index)))) && actual.every(group => Number(group[0].nonUnique) !== 0 || requiredIndexes[String(group[0].tableName)].some(index => matches(group, String(group[0].tableName), index)));
+}
+
+export type AssistantConversationAttachmentInput = { fileName: string; mimeType: string; bytes: Uint8Array; contentHash: string; extraction: unknown };
+export type AssistantConversationEnqueueInput = { operationId: string; threadId: string; expectedThreadVersion: number; mode: "work" | "coach"; request: unknown; configuration: unknown; runtime: unknown; attachments: AssistantConversationAttachmentInput[]; requestHash: string };
+function attachmentInput(value: AssistantConversationAttachmentInput, ordinal: number) {
+  parse(z.object({ fileName: z.string().min(1).max(180), mimeType: z.string().regex(/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/u).max(128), contentHash: HASH }).strict(), { fileName: value.fileName, mimeType: value.mimeType, contentHash: value.contentHash });
+  if (!(value.bytes instanceof Uint8Array) || value.bytes.length < 1 || value.bytes.length > ASSISTANT_CONVERSATION_LIMITS.file || digest(value.bytes) !== value.contentHash) refuse("ATTACHMENT_INVALID");
+  return { ordinal, fileName: value.fileName, mimeType: value.mimeType, contentHash: value.contentHash, byteSize: value.bytes.length, extraction: json(value.extraction, ASSISTANT_CONVERSATION_LIMITS.extraction) };
+}
+export function assistantConversationRequestHash(owner: AssistantConversationIdentity, input: Omit<AssistantConversationEnqueueInput, "requestHash">): string {
+  identity(owner); parse(UUID, input.operationId); parse(UUID, input.threadId); parse(VERSION, input.expectedThreadVersion); parse(z.enum(["work", "coach"]), input.mode);
+  if (!Array.isArray(input.attachments) || input.attachments.length > ASSISTANT_CONVERSATION_LIMITS.files) refuse("ATTACHMENT_LIMIT");
+  return logicalHash(owner, input, input.attachments.map((value, ordinal) => { parse(z.string().min(1).max(180), value.fileName); if (!(value.bytes instanceof Uint8Array) || value.bytes.length < 1 || value.bytes.length > ASSISTANT_CONVERSATION_LIMITS.file || digest(value.bytes) !== parse(HASH, value.contentHash)) refuse("ATTACHMENT_INVALID"); return { ordinal, fileName: value.fileName, contentHash: value.contentHash, byteSize: value.bytes.length }; }));
+}
+function logicalHash(owner: AssistantConversationIdentity, input: Pick<AssistantConversationEnqueueInput, "operationId" | "threadId" | "expectedThreadVersion" | "mode" | "request">, attachments: Array<{ ordinal: number; fileName: string; contentHash: string; byteSize: number }>) { return digest(assistantConversationCanonical({ identity: owner, operationId: input.operationId, threadId: input.threadId, expectedThreadVersion: input.expectedThreadVersion, mode: input.mode, request: json(input.request, ASSISTANT_CONVERSATION_LIMITS.request), attachments: attachments.map(({ ordinal, fileName, contentHash, byteSize }) => ({ ordinal, fileName, contentHash, byteSize })) }, 2 * 1024 * 1024)); }
+function snapshotHash(requestHash: string, configuration: unknown, runtime: unknown, attachments: Array<ReturnType<typeof attachmentInput>>) { return digest(assistantConversationCanonical({ requestHash, configuration: json(configuration, ASSISTANT_CONVERSATION_LIMITS.configuration), runtime: json(runtime, ASSISTANT_CONVERSATION_LIMITS.runtime), attachments }, 2 * 1024 * 1024)); }
+export type AssistantConversationLease = { operationId: string; threadId: string; leaseToken: string; workerId: string; attempt: number };
+export type AssistantConversationCheckpoint =
+  | { expectedState: "queued"; nextState: "route_dispatched"; dispatchReceipt: unknown }
+  | { expectedState: "queued"; nextState: "reply_dispatched"; dispatchReceipt: unknown }
+  | { expectedState: "route_ready"; nextState: "reply_dispatched"; dispatchReceipt: unknown }
+  | { expectedState: "route_dispatched"; nextState: "route_ready"; result: unknown }
+  | { expectedState: "reply_dispatched"; nextState: "reply_ready"; result: unknown; proposal: unknown | null };
+
+function session(tx: AssistantConversationExecutor, owner: AssistantConversationIdentity, actor: { id: number; role: string }, enabled: () => boolean, readOnly: boolean) {
+  let active = true;
+  function check(writeEnabled = false, mutating = writeEnabled) { if (!active) refuse("SESSION_CLOSED"); if (mutating && readOnly) refuse("READ_ONLY_SESSION"); if (writeEnabled && enabled() !== true) refuse("WRITES_DISABLED"); }
+  function verifyThread(value: AssistantConversationThread) { if (value.workspaceId !== owner.workspaceId || value.userId !== owner.userId || value.creationHash !== digest(assistantConversationCanonical({ identity: owner, threadId: value.threadId, agentKey: value.agentKey, title: value.title }))) refuse("SCOPE_MISMATCH"); return value; }
+  async function thread(threadId: string) { check(); parse(UUID, threadId); const found = await rows(tx, `SELECT ${threadProjection} FROM ${THREADS} WHERE workspace_id=? AND user_id=? AND BINARY thread_id=BINARY ? LIMIT 2 FOR UPDATE`, [owner.workspaceId, owner.userId, threadId]); if (found.length !== 1) refuse("THREAD_UNAVAILABLE"); const result = verifyThread(parse(threadSchema, found[0])); if (result.threadId !== threadId) refuse("SCOPE_MISMATCH"); return result; }
+  async function attachmentMetadata(operationId: string) {
+    const found = await rows(tx, `SELECT id,workspace_id AS workspaceId,user_id AS userId,operation_id AS operationId,ordinal,file_name AS fileName,mime_type AS mimeType,byte_size AS byteSize,content_hash AS contentHash,IF(OCTET_LENGTH(extraction)<=?,extraction,NULL) AS extraction,OCTET_LENGTH(extraction) AS extractionBytes,OCTET_LENGTH(original_bytes) AS actualBytes FROM ${ATTACHMENTS} WHERE workspace_id=? AND user_id=? AND operation_id=? ORDER BY ordinal LIMIT 4 FOR SHARE`, [ASSISTANT_CONVERSATION_LIMITS.extraction * 4, owner.workspaceId, owner.userId, operationId]);
+    if (found.length > 3) refuse("ATTACHMENT_LIMIT"); return found.map((row, i) => { if (row.workspaceId !== owner.workspaceId || row.userId !== owner.userId || row.operationId !== operationId || row.ordinal !== i || !ID.safeParse(row.id).success || !ID.safeParse(row.byteSize).success || Number(row.byteSize) > ASSISTANT_CONVERSATION_LIMITS.file || Number(row.actualBytes) !== row.byteSize || !Number.isSafeInteger(Number(row.extractionBytes)) || Number(row.extractionBytes) > ASSISTANT_CONVERSATION_LIMITS.extraction * 4 || row.extraction === null) refuse("ATTACHMENT_INVALID"); parse(HASH, row.contentHash); parse(z.string().min(1).max(180), row.fileName); parse(z.string().min(1).max(128), row.mimeType); return { ordinal: i, fileName: row.fileName as string, mimeType: row.mimeType as string, byteSize: row.byteSize as number, contentHash: row.contentHash as string, extraction: json(row.extraction, ASSISTANT_CONVERSATION_LIMITS.extraction) }; });
+  }
+  async function verifyImmutable(value: AssistantConversationTurn) { const metadata = await attachmentMetadata(value.operationId); if (value.sequence === null) { if (metadata.length) refuse("TURN_INVALID"); return; } if (logicalHash(owner, { ...value, mode: value.mode!, expectedThreadVersion: value.expectedThreadVersion! }, metadata) !== value.requestHash || snapshotHash(value.requestHash!, value.configuration, value.runtime, metadata) !== value.snapshotHash) refuse("IMMUTABLE_SNAPSHOT_CHANGED", true); }
+  async function turn(operationId: string) { check(); parse(UUID, operationId); const found = await rows(tx, `SELECT ${turnProjection} FROM ${TURNS} WHERE workspace_id=? AND user_id=? AND BINARY operation_id=BINARY ? LIMIT 2 FOR UPDATE`, [owner.workspaceId, owner.userId, operationId]); if (found.length > 1) refuse("TURN_INVALID"); if (!found.length) return null; const result = turnRecord(found[0]); if (result.workspaceId !== owner.workspaceId || result.userId !== owner.userId || result.operationId !== operationId) refuse("SCOPE_MISMATCH"); await verifyImmutable(result); return result; }
+  async function bound(threadId: string, operationId: string) { const current = await thread(threadId), value = await turn(operationId); if (!value || value.threadId !== current.threadId || value.agentKey !== current.agentKey) refuse("TURN_UNAVAILABLE"); return { current, value }; }
+  async function lease(binding: AssistantConversationLease) { const state = await bound(binding.threadId, binding.operationId); parse(UUID, binding.leaseToken); parse(ID, binding.attempt); if (state.current.activeTurn !== binding.operationId || state.value.leaseToken !== binding.leaseToken || state.value.leaseOwner !== binding.workerId || state.value.attempt !== binding.attempt || terminal(state.value.state)) refuse("LEASE_LOST", true); const alive = await rows(tx, `SELECT id FROM ${TURNS} WHERE workspace_id=? AND user_id=? AND operation_id=? AND lease_token=? AND attempt=? AND lease_expires_at>NOW(3) FOR UPDATE`, [owner.workspaceId, owner.userId, binding.operationId, binding.leaseToken, binding.attempt]); if (alive.length !== 1 || alive[0].id !== state.value.id) refuse("LEASE_LOST", true); return state; }
+  async function terminalize(current: AssistantConversationThread, value: AssistantConversationTurn, state: "succeeded" | "failed" | "canceled" | "unknown", errorCode: string | null, guard?: AssistantConversationLease) { if (current.activeTurn !== value.operationId || current.version >= 2147483646) refuse("THREAD_CONFLICT", true); await write(tx, `UPDATE ${TURNS} SET state=?,error_code=?,lease_token=NULL,lease_owner=NULL,lease_expires_at=NULL,heartbeat_at=NULL,completed_at=NOW(3),updated_at=NOW(3) WHERE workspace_id=? AND user_id=? AND operation_id=? AND state=?${guard ? " AND lease_token=? AND attempt=? AND lease_expires_at>NOW(3)" : ""}`, [state, errorCode, owner.workspaceId, owner.userId, value.operationId, value.state, ...(guard ? [guard.leaseToken, guard.attempt] : [])]); await write(tx, `UPDATE ${THREADS} SET active_turn=NULL,version=version+1,updated_at=NOW(3) WHERE workspace_id=? AND user_id=? AND thread_id=? AND version=? AND active_turn=?`, [owner.workspaceId, owner.userId, current.threadId, current.version, value.operationId]); const result = await bound(current.threadId, value.operationId); if (result.value.state !== state || result.value.errorCode !== errorCode || result.current.activeTurn !== null || result.current.version !== current.version + 1) refuse("WRITE_UNVERIFIABLE"); return result.value; }
+  const api = {
+    executor: tx, identity: owner, actor, thread, turn,
+    async createThread(input: { threadId: string; agentKey: string; title: string }) {
+      check(true); parse(UUID, input.threadId); parse(threadSchema.shape.agentKey, input.agentKey); parse(threadSchema.shape.title, input.title);
+      const creationHash = digest(assistantConversationCanonical({ identity: owner, ...input }));
+      const found = await rows(tx, `SELECT ${threadProjection} FROM ${THREADS} WHERE workspace_id=? AND user_id=? AND thread_id=? LIMIT 2 FOR UPDATE`, [owner.workspaceId, owner.userId, input.threadId]);
+      if (found.length) { const existing = await thread(input.threadId); if (existing.creationHash !== creationHash || existing.agentKey !== input.agentKey || existing.title !== input.title) refuse("THREAD_CONTENT_CONFLICT", true); return existing; }
+      await write(tx, `INSERT INTO ${THREADS} (workspace_id,user_id,thread_id,agent_key,title,creation_hash,version,next_sequence,active_turn,created_at,updated_at) VALUES (?,?,?,?,?,?,1,1,NULL,NOW(3),NOW(3))`, [owner.workspaceId, owner.userId, input.threadId, input.agentKey, input.title, creationHash]); return thread(input.threadId);
+    },
+    async threads(input: { agentKey: string; beforeId?: number; limit: number }) {
+      check(); const limit = parse(z.number().int().min(1).max(50), input.limit); parse(threadSchema.shape.agentKey, input.agentKey); if (input.beforeId !== undefined) parse(ID, input.beforeId);
+      const found = await rows(tx, `SELECT ${threadProjection} FROM ${THREADS} WHERE workspace_id=? AND user_id=? AND BINARY agent_key=BINARY ?${input.beforeId !== undefined ? " AND id<?" : ""} ORDER BY id DESC LIMIT ? FOR SHARE`, [owner.workspaceId, owner.userId, input.agentKey, ...(input.beforeId !== undefined ? [input.beforeId] : []), limit + 1]);
+      if (found.length > limit + 1) refuse("READ_LIMIT"); const items = found.map(row => verifyThread(parse(threadSchema, row))); if (items.some((item, i) => item.agentKey !== input.agentKey || i > 0 && item.id >= items[i - 1].id || input.beforeId !== undefined && item.id >= input.beforeId)) refuse("SCOPE_MISMATCH"); return { items: items.slice(0, limit), nextBeforeId: items.length > limit ? items[limit - 1].id : null };
+    },
+    async history(threadId: string, input: { beforeSequence?: number; limit: number }) {
+      const current = await thread(threadId), limit = parse(z.number().int().min(1).max(ASSISTANT_CONVERSATION_LIMITS.page), input.limit); if (input.beforeSequence !== undefined) parse(ID, input.beforeSequence);
+      const filter = `workspace_id=? AND user_id=? AND thread_id=? AND sequence IS NOT NULL${input.beforeSequence !== undefined ? " AND sequence<?" : ""}`, params = [owner.workspaceId, owner.userId, threadId, ...(input.beforeSequence === undefined ? [] : [input.beforeSequence]), limit + 1];
+      const budget = await rows(tx, `SELECT id,operation_id AS operationId,(${turnBytes}) AS bytes FROM ${TURNS} WHERE ${filter} ORDER BY sequence DESC LIMIT ? FOR SHARE`, params);
+      if (budget.length > limit + 1 || budget.some(row => !ID.safeParse(row.id).success || !UUID.safeParse(row.operationId).success || !Number.isSafeInteger(Number(row.bytes)) || Number(row.bytes) < 0) || new Set(budget.map(row => row.operationId)).size !== budget.length) refuse("READ_LIMIT");
+      let readBytes = budget.reduce((total, row) => total + Number(row.bytes), 0);
+      if (readBytes > ASSISTANT_CONVERSATION_LIMITS.read) refuse("READ_LIMIT");
+      // Immutable verification also loads each turn's extracted attachment text.
+      // Include precisely this page (and its lookahead) before reading any JSON or
+      // original bytes; otherwise a legal 50-turn page can amplify to >24MiB.
+      if (budget.length) {
+        const operations = budget.map(row => row.operationId as string), maximum = operations.length * ASSISTANT_CONVERSATION_LIMITS.files;
+        const attachmentBudget = await rows(tx, `SELECT operation_id AS operationId,ordinal,OCTET_LENGTH(extraction) AS bytes FROM ${ATTACHMENTS} WHERE workspace_id=? AND user_id=? AND operation_id IN (${operations.map(() => "?").join(",")}) ORDER BY operation_id,ordinal LIMIT ? FOR SHARE`, [owner.workspaceId, owner.userId, ...operations, maximum + 1]);
+        const seen = new Set<string>();
+        if (attachmentBudget.length > maximum || attachmentBudget.some(row => { const key = `${row.operationId}:${row.ordinal}`; if (!operations.includes(String(row.operationId)) || !z.number().int().min(0).max(2).safeParse(row.ordinal).success || seen.has(key) || !Number.isSafeInteger(Number(row.bytes)) || Number(row.bytes) < 1 || Number(row.bytes) > ASSISTANT_CONVERSATION_LIMITS.extraction * 4) return true; seen.add(key); return false; })) refuse("READ_LIMIT");
+        readBytes += attachmentBudget.reduce((total, row) => total + Number(row.bytes), 0);
+        if (readBytes > ASSISTANT_CONVERSATION_LIMITS.read) refuse("READ_LIMIT");
+      }
+      const found = await rows(tx, `SELECT ${turnProjection} FROM ${TURNS} WHERE ${filter} ORDER BY sequence DESC LIMIT ? FOR SHARE`, params); const items = found.map(turnRecord);
+      if (items.length !== budget.length || items.some((value, i) => value.id !== budget[i].id || value.threadId !== threadId || value.agentKey !== current.agentKey || value.workspaceId !== owner.workspaceId || value.userId !== owner.userId || value.sequence === null || i > 0 && value.sequence >= items[i - 1].sequence!)) refuse("HISTORY_INVALID");
+      for (const item of items) await verifyImmutable(item);
+      return { thread: current, items: items.slice(0, limit), nextBeforeSequence: items.length > limit ? items[limit - 1].sequence : null };
+    },
+    async enqueue(input: AssistantConversationEnqueueInput) {
+      check(true); const requestHash = assistantConversationRequestHash(owner, input); if (parse(HASH, input.requestHash) !== requestHash) refuse("REQUEST_HASH_MISMATCH", true);
+      const current = await thread(input.threadId), previous = await turn(input.operationId);
+      if (previous) { if (previous.threadId !== input.threadId || previous.agentKey !== current.agentKey) refuse("OPERATION_SCOPE_CONFLICT", true); if (previous.requestHash === null || previous.state === "canceled") refuse("OPERATION_CANCELED", true); if (previous.requestHash !== requestHash) refuse("OPERATION_CONTENT_CONFLICT", true); return { thread: current, turn: previous, created: false }; }
+      if (current.version !== input.expectedThreadVersion || current.activeTurn !== null || current.version >= 2147483645 || current.nextSequence >= 2147483646) refuse("THREAD_CONFLICT", true);
+      const immutableHash = snapshotHash(requestHash, input.configuration, input.runtime, input.attachments.map(attachmentInput));
+      await write(tx, `INSERT INTO ${TURNS} (workspace_id,user_id,operation_id,thread_id,agent_key,sequence,expected_thread_version,request_hash,snapshot_hash,mode,request_snapshot,configuration_snapshot,runtime_snapshot,state,attempt,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',0,NOW(3),NOW(3))`, [owner.workspaceId, owner.userId, input.operationId, input.threadId, current.agentKey, current.nextSequence, current.version, requestHash, immutableHash, input.mode, assistantConversationCanonical(input.request), assistantConversationCanonical(input.configuration, ASSISTANT_CONVERSATION_LIMITS.configuration), assistantConversationCanonical(input.runtime, ASSISTANT_CONVERSATION_LIMITS.runtime)]);
+      for (let ordinal = 0; ordinal < input.attachments.length; ordinal++) { const file = attachmentInput(input.attachments[ordinal], ordinal); await write(tx, `INSERT INTO ${ATTACHMENTS} (workspace_id,user_id,operation_id,ordinal,file_name,mime_type,byte_size,content_hash,original_bytes,extraction,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,NOW(3))`, [owner.workspaceId, owner.userId, input.operationId, ordinal, file.fileName, file.mimeType, file.byteSize, file.contentHash, Buffer.from(input.attachments[ordinal].bytes), assistantConversationCanonical(file.extraction, ASSISTANT_CONVERSATION_LIMITS.extraction)]); }
+      await write(tx, `UPDATE ${THREADS} SET version=version+1,next_sequence=next_sequence+1,active_turn=?,updated_at=NOW(3) WHERE workspace_id=? AND user_id=? AND thread_id=? AND version=? AND active_turn IS NULL`, [input.operationId, owner.workspaceId, owner.userId, input.threadId, current.version]);
+      const result = await bound(input.threadId, input.operationId); if (result.value.requestHash !== requestHash || result.value.snapshotHash !== immutableHash || result.value.state !== "queued" || result.current.activeTurn !== input.operationId || result.current.version !== current.version + 1) refuse("WRITE_UNVERIFIABLE");
+      for (let ordinal = 0; ordinal < input.attachments.length; ordinal++) await api.attachmentBytes(input.threadId, input.operationId, ordinal);
+      return { thread: result.current, turn: result.value, created: true };
+    },
+    async claim(input: { threadId: string; operationId: string; workerId: string; leaseSeconds: number }) {
+      check(true); parse(z.string().min(1).max(128), input.workerId); const seconds = parse(z.number().int().min(30).max(7200), input.leaseSeconds), { current, value } = await bound(input.threadId, input.operationId);
+      if (terminal(value.state)) return { turn: value, lease: null };
+      if (current.activeTurn !== value.operationId) refuse("THREAD_CONFLICT", true);
+      const eligible = await rows(tx, `SELECT id FROM ${TURNS} WHERE workspace_id=? AND user_id=? AND operation_id=? AND (lease_expires_at IS NULL OR lease_expires_at<=NOW(3)) FOR UPDATE`, [owner.workspaceId, owner.userId, input.operationId]);
+      if (!eligible.length) return { turn: value, lease: null }; if (eligible.length !== 1 || eligible[0].id !== value.id) refuse("TURN_INVALID");
+      if (assistantConversationLeaseRecovery(value.state) === "mark_unknown") return { turn: await terminalize(current, value, "unknown", "MODEL_RESULT_UNKNOWN"), lease: null };
+      if (value.attempt >= 2147483646) refuse("ATTEMPT_EXHAUSTED"); const token = randomUUID();
+      await write(tx, `UPDATE ${TURNS} SET lease_token=?,lease_owner=?,attempt=attempt+1,lease_expires_at=DATE_ADD(NOW(3),INTERVAL ? SECOND),heartbeat_at=NOW(3),updated_at=NOW(3) WHERE workspace_id=? AND user_id=? AND operation_id=? AND state=? AND (lease_expires_at IS NULL OR lease_expires_at<=NOW(3))`, [token, input.workerId, seconds, owner.workspaceId, owner.userId, input.operationId, value.state]);
+      const leased = (await bound(input.threadId, input.operationId)).value; if (leased.leaseToken !== token || leased.attempt !== value.attempt + 1) refuse("WRITE_UNVERIFIABLE"); return { turn: leased, lease: { operationId: input.operationId, threadId: input.threadId, leaseToken: token, workerId: input.workerId, attempt: leased.attempt } };
+    },
+    async heartbeat(binding: AssistantConversationLease, leaseSeconds: number) { check(true); await lease(binding); const seconds = parse(z.number().int().min(30).max(7200), leaseSeconds); await write(tx, `UPDATE ${TURNS} SET lease_expires_at=DATE_ADD(NOW(3),INTERVAL ? SECOND),heartbeat_at=NOW(3) WHERE workspace_id=? AND user_id=? AND operation_id=? AND lease_token=? AND attempt=? AND lease_expires_at>NOW(3)`, [seconds, owner.workspaceId, owner.userId, binding.operationId, binding.leaseToken, binding.attempt]); },
+    async checkpoint(binding: AssistantConversationLease, change: AssistantConversationCheckpoint) {
+      check(true); const { value } = await lease(binding); const allowed: Record<string, string[]> = { queued: ["route_dispatched", "reply_dispatched"], route_dispatched: ["route_ready"], route_ready: ["reply_dispatched"], reply_dispatched: ["reply_ready"] };
+      if (value.state !== change.expectedState || !allowed[value.state]?.includes(change.nextState) || !canTransitionAssistantConversation(value.state, change.nextState) || value.mode === "coach" && change.nextState === "route_dispatched" || change.nextState === "reply_ready" && value.mode !== "coach" && change.proposal !== null) refuse("CHECKPOINT_CONFLICT", true);
+      let assignments: string, values: unknown[];
+      if (change.nextState === "route_dispatched" || change.nextState === "reply_dispatched") { if (!("dispatchReceipt" in change) || change.dispatchReceipt === null) refuse("CHECKPOINT_INVALID"); assignments = `${change.nextState === "route_dispatched" ? "route_dispatch" : "reply_dispatch"}=?`; values = [assistantConversationCanonical(change.dispatchReceipt, ASSISTANT_CONVERSATION_LIMITS.dispatch)]; }
+      else { if (!("result" in change) || change.result === null) refuse("CHECKPOINT_INVALID"); assignments = `${change.nextState === "route_ready" ? "route_result" : "reply_result"}=?`; values = [assistantConversationCanonical(change.result, ASSISTANT_CONVERSATION_LIMITS.result)]; if (change.nextState === "reply_ready") { assignments += ",proposal=?"; values.push(change.proposal === null ? null : assistantConversationCanonical(change.proposal, ASSISTANT_CONVERSATION_LIMITS.configuration)); } }
+      await write(tx, `UPDATE ${TURNS} SET state=?,${assignments},updated_at=NOW(3) WHERE workspace_id=? AND user_id=? AND operation_id=? AND state=? AND lease_token=? AND attempt=? AND lease_expires_at>NOW(3)`, [change.nextState, ...values, owner.workspaceId, owner.userId, binding.operationId, change.expectedState, binding.leaseToken, binding.attempt]); const updated = (await bound(binding.threadId, binding.operationId)).value;
+      const expected = { routeDispatch: value.routeDispatch, routeResult: value.routeResult, replyDispatch: value.replyDispatch, replyResult: value.replyResult, proposal: value.proposal };
+      if (change.nextState === "route_dispatched") expected.routeDispatch = change.dispatchReceipt;
+      else if (change.nextState === "reply_dispatched") expected.replyDispatch = change.dispatchReceipt;
+      else if (change.nextState === "route_ready") expected.routeResult = change.result;
+      else { expected.replyResult = change.result; expected.proposal = change.proposal; }
+      if (updated.state !== change.nextState || Object.keys(expected).some(key => assistantConversationCanonical(updated[key as keyof typeof expected], ASSISTANT_CONVERSATION_LIMITS.result) !== assistantConversationCanonical(expected[key as keyof typeof expected], ASSISTANT_CONVERSATION_LIMITS.result))) refuse("WRITE_UNVERIFIABLE"); return updated;
+    },
+    async finish(binding: AssistantConversationLease) { check(true); const { current, value } = await lease(binding); if (value.state !== "reply_ready") refuse("CHECKPOINT_CONFLICT", true); return terminalize(current, value, "succeeded", null, binding); },
+    async fail(binding: AssistantConversationLease, errorCode: string) { check(true); parse(CODE, errorCode); const { current, value } = await lease(binding); return terminalize(current, value, dispatched(value.state) ? "unknown" : "failed", errorCode, binding); },
+    async cancel(input: { threadId: string; operationId: string }) {
+      check(false, true); const current = await thread(input.threadId); parse(UUID, input.operationId); const previous = await turn(input.operationId);
+      if (previous) { if (previous.threadId !== current.threadId || previous.agentKey !== current.agentKey) refuse("OPERATION_SCOPE_CONFLICT", true); if (previous.state === "unknown") { await write(tx, `UPDATE ${TURNS} SET state='canceled',error_code='USER_CANCELED',updated_at=NOW(3) WHERE workspace_id=? AND user_id=? AND operation_id=? AND state='unknown'`, [owner.workspaceId, owner.userId, previous.operationId]); return (await bound(current.threadId, previous.operationId)).value; } if (terminal(previous.state)) return previous; return terminalize(current, previous, "canceled", "USER_CANCELED"); }
+      await write(tx, `INSERT INTO ${TURNS} (workspace_id,user_id,operation_id,thread_id,agent_key,state,attempt,error_code,created_at,updated_at,completed_at) VALUES (?,?,?,?,?,'canceled',0,'USER_CANCELED',NOW(3),NOW(3),NOW(3))`, [owner.workspaceId, owner.userId, input.operationId, input.threadId, current.agentKey]); const result = await turn(input.operationId); if (!result || result.state !== "canceled" || result.sequence !== null) refuse("WRITE_UNVERIFIABLE"); return result;
+    },
+    async attachments(threadId: string, operationId: string) {
+      await bound(threadId, operationId);
+      return attachmentMetadata(operationId);
+    },
+    async attachmentBytes(threadId: string, operationId: string, ordinal: number) { parse(z.number().int().min(0).max(2), ordinal); const meta = (await api.attachments(threadId, operationId))[ordinal]; if (!meta) refuse("ATTACHMENT_UNAVAILABLE"); const found = await rows(tx, `SELECT IF(OCTET_LENGTH(original_bytes)=? AND OCTET_LENGTH(original_bytes)<=?,original_bytes,NULL) AS originalBytes FROM ${ATTACHMENTS} WHERE workspace_id=? AND user_id=? AND operation_id=? AND ordinal=? FOR SHARE`, [meta.byteSize, ASSISTANT_CONVERSATION_LIMITS.file, owner.workspaceId, owner.userId, operationId, ordinal]); const bytes = found[0]?.originalBytes; if (found.length !== 1 || !(bytes instanceof Uint8Array) || bytes.length !== meta.byteSize || digest(bytes) !== meta.contentHash) refuse("ATTACHMENT_INVALID"); return { ...meta, bytes: Buffer.from(bytes) }; },
+  };
+  return { api, close: () => { active = false; } };
+}
+export type AssistantConversationSession = ReturnType<typeof session>["api"];
+export function createAssistantConversationRepository(options: { database?: () => Promise<AssistantConversationDatabase>; enabled?: () => boolean } = {}) {
+  const database = options.database ?? (async () => await requireDb("Private assistant conversations") as unknown as AssistantConversationDatabase), enabled = options.enabled ?? (() => process.env.ENABLE_ASSISTANT_CONVERSATION_WRITES === "true");
+  async function transact<T>(rawIdentity: AssistantConversationIdentity, body: (session: AssistantConversationSession) => Promise<T>, readOnly: boolean): Promise<T> {
+    const owner = identity(rawIdentity), db = await database(); if (!db || typeof db.transaction !== "function") refuse("TRANSACTION_REQUIRED");
+    try { return await db.transaction(async tx => {
+      if (!await assistantConversationSchemaReady(tx)) refuse("SCHEMA_UNAVAILABLE");
+      const workspace = await rows(tx, "SELECT id,status FROM workspaces WHERE id=? FOR UPDATE", [owner.workspaceId]); if (workspace.length !== 1 || workspace[0].id !== owner.workspaceId || workspace[0].status !== "active") refuse("WORKSPACE_UNAVAILABLE");
+      const users = await rows(tx, "SELECT id,role,status FROM users WHERE id=? FOR UPDATE", [owner.userId]); if (users.length !== 1 || users[0].id !== owner.userId || users[0].status !== "active" || typeof users[0].role !== "string") refuse("ACTOR_UNAVAILABLE");
+      const members = await rows(tx, "SELECT id,workspaceId,userId,status FROM workspace_memberships WHERE workspaceId=? AND userId=? ORDER BY id LIMIT 2 FOR SHARE", [owner.workspaceId, owner.userId]); if (members.length !== 1 || !ID.safeParse(members[0].id).success || members[0].workspaceId !== owner.workspaceId || members[0].userId !== owner.userId || members[0].status !== "active") refuse("MEMBERSHIP_UNAVAILABLE");
+      const current = session(tx, owner, { id: owner.userId, role: users[0].role as string }, enabled, readOnly); try { return await body(current.api); } finally { current.close(); }
+    }); } catch (error) { if (error instanceof AssistantConversationStorageError) throw error; const code = error && typeof error === "object" && "code" in error ? String(error.code) : ""; if (code === "ER_DUP_ENTRY" || code === "ER_LOCK_DEADLOCK") refuse("CONCURRENT_CONFLICT", true); refuse("STORAGE_OUTCOME_UNKNOWN"); }
+  }
+  return { read: <T>(owner: AssistantConversationIdentity, body: (session: AssistantConversationSession) => Promise<T>) => transact(owner, body, true), transaction: <T>(owner: AssistantConversationIdentity, body: (session: AssistantConversationSession) => Promise<T>) => transact(owner, body, false) };
+}
+export const assistantConversationRepository = createAssistantConversationRepository();

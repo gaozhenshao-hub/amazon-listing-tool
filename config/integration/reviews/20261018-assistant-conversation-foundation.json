@@ -1,0 +1,60 @@
+{
+  "schema": "amazon-integration-review/v1",
+  "batch": "P5-A1-private-agent-conversation-foundation",
+  "baseline": "de2de1f8e22a8ee218d5dd66feef787b63675f25",
+  "status": "local_source_foundation_verified_not_execution_complete",
+  "sourcePolicy": "R2 unchanged: general P5 Skills Qingdao; operations additions friend and Lingxing Qingdao; Listing Skills user, workflows and competitor/product selection friend.",
+  "implemented": [
+    "Private workspace/user/Agent threads, per-turn logical UUID hash, separate immutable configuration/runtime/extraction hash, stable history pagination and original attachment BLOB storage.",
+    "Thread serialization, database-time leases and attempt tokens, per-stage durable route/reply receipts and results, explicit cancel tombstones and no re-dispatch of unknown stages. Read sessions cannot write; checks and cancellation remain available with writes disabled.",
+    "Source-faithful work/coach planning: automatic work with enabled bindings uses route then reply; explicit selection or coaching uses reply only. A contextual business Skill is not represented as an executed business operation.",
+    "Private exact context binds saved configuration/rules, enabled Skill full manifest, original bytes and recent six completed turns. Historical document extracts are preserved with original coverage; historical images require reattachment.",
+    "Image/TXT/MD/CSV/JSON/PDF/DOCX/XLSX parsing with original source limits, canonical base64/type checks, bounded archive admission and explicit truncation/coverage. No public storage URL or implicit OCR/recalculation.",
+    "Opt-in strict registered-model runtime, full Released Skill pins, per-stage budget admission, no fallback/redirect/retry and awaited pre-dispatch authorization/fence callback. Public audit contains metadata only; advisory metrics do not discard paid replies.",
+    "Candidate three-table DDL and schema exports only. Existing default Skill body, ai_jobs, worker, router, schedulers and configuration/rules store are unchanged."
+  ],
+  "verification": {
+    "sourceProof": { "sha256": "668953e17e23b9bca10c5032a1ee75865d5f535e5d500c45d249419132c9c713", "baselineBlobs": 2679, "unchangedNonOverlayBlobs": 2676, "overlays": 17 },
+    "focusedTests": { "passed": 298, "failed": 0, "files": 10, "breakdown": { "protocol": 19, "repository": 60, "attachments": 70, "context": 23, "strictRuntime": 78, "priorRuntime": 48 } },
+    "lint": { "files": 14, "warnings": 0, "exitCode": 0 },
+    "fullUnchangedTsconfig": { "incremental": false, "compilerFiles": 3816, "diagnostics": 0, "exitCode": 0 },
+    "testInclusiveTypecheck": { "exitCode": 0 },
+    "protectedBaseline": { "files": 106, "dependencies": 2, "reviewedRecords": 25, "failures": 0 },
+    "serverBundles": ["web", "aiWorker", "scheduler"],
+    "legacyDefaultSkillBody": { "unchanged": true, "sha256": "be0f2303e45548a21c1df7a694b479f76645998717665b345d986c3903969367" },
+    "nativeParserSamples": "Local synthetic real PNG/JPEG/WebP/GIF, 1/31-page and blank PDFs, DOCX and six-sheet/301-row XLSX. Database, provider and HTTP clients are mocked; this is not real MySQL/provider acceptance.",
+    "browserAcceptance": "Not claimed: this source-only batch does not modify or connect the UI."
+  },
+  "reviewCorrections": [
+    "Do not confuse metadata-only metrics with critical receipt storage or fabricate a quality score for hidden content.",
+    "Scope the strict call-count update to the exact Skill workspace, preserving all legacy default paths.",
+    "Preserve 40000 Unicode code points and historical document follow-up; legal non-BMP text is not rejected by a UTF-16 counter or 128KiB extraction limit.",
+    "Include attachment extraction bytes in the complete history-page budget: 50 turns with three legal 40000-emoji files exceed 24MiB and are explicitly rejected; smaller complete pages remain readable.",
+    "Add final SQL lease fences, complete checkpoint readback and read-session mutation refusal. Initial narrowing/type errors were repaired before the final frozen full-typecheck pass."
+  ],
+  "notImplementedByThisBatch": [
+    "Authenticated service/router integration, current resource/Agent permission checks within the private transaction, actual turn drain through the existing aiWorker and private status/attachment projection",
+    "Conversation UI, explicit/automatic Skill controls, attachment preview/paste, recovery/cancel affordances and human candidate-rule confirmation through the existing unique configuration revision",
+    "Trusted approved route/reply Skill and exact model-budget snapshot builder. Selected contextual business Skill is not the actual route/reply execution Skill.",
+    "Per-Skill actual business dispatch, reserved competitor-deep handler and profit AI durable result flow"
+  ],
+  "nextIntegrationConstraints": [
+    "Preserve separate logical request hash and actual provider payload hash; use the same UUID on uncertain acknowledgements.",
+    "Before and after a paid stage, recheck current membership/resource/configuration/lease/cancel authority. Never hold a database transaction during the provider call.",
+    "Store bounded pinned references and exact hashes; do not serialize the whole context result including image data URLs into the 512KiB runtime JSON. Actual context and image/provider budgets must be explicit, with no silent truncation.",
+    "The runtime helper alone is not an approval or idempotency guarantee. Its pre-dispatch callback must commit the turn-owned fence before each permitted provider stage.",
+    "Do not seed friend coaching prompts or accept synthetic Released fixtures as real Qingdao/user Skill approval."
+  ],
+  "enablement": "ENABLE_ASSISTANT_CONVERSATION_WRITES requires exact true and defaults off. No caller/worker is connected in this foundation batch.",
+  "migrationRegistered": false,
+  "migrationExecuted": false,
+  "actualDatabase": false,
+  "actualProvider": false,
+  "modelCalls": 0,
+  "pushed": false,
+  "deployed": false,
+  "fullP1Complete": false,
+  "fullP5Complete": false,
+  "fullObjectiveComplete": false,
+  "retainedReleaseScope": "All original P0-P6, K01-K10, T01-T28, image62, master27, supplements12, actual-runtime checks, source provenance, public-release sensitive-content review, backup and rollback remain required."
+}

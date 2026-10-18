@@ -1,0 +1,32 @@
+{
+  "version": "amazon-protected-baseline-review/1",
+  "reviewedOn": "2026-10-18",
+  "control": "K08",
+  "decision": "explicit_local_reviewed_allowance_not_production_acceptance",
+  "protectedFile": {
+    "path": "server/domains/ai_os/services/skillRunner.ts",
+    "baseline": { "gitBlobSha1": "2fe924bcda8e3cc1fc60c53ee5b94ca6aa3ce5ac", "sha256": "ec7a969f2fb780835b4bcc4265fbe035ecb11fa6b86a268a087cf61be164f46f" },
+    "previousReviewed": { "gitBlobSha1": "aca10e719bfa13f898e9fc50b0354cf7d8d05a7f", "sha256": "95060b9c0d84ca767b4888e54a117cd49195d4504d6d4c9b18e732a9d372b894", "reviewRef": "config/integration/reviews/20261017-competitor-deep-checkpoints.json" },
+    "reviewed": { "gitBlobSha1": "741a1238d7262de4bfdd034becc9626b0fca357d", "sha256": "e4a995a0d41c8b1f1f48606001c13c363876531c88fc9697adf0963e155075fb" }
+  },
+  "scope": [
+    "Add an explicit server-only strictExecution branch. The entire original default execution body remains unchanged; no existing caller is converted in this batch.",
+    "Resolve one exact active registered custom model, controlled credential reference, canonical HTTPS endpoint, model configuration hash and explicit price/context/image budgets. No alias, default, fallback, hidden retry or redirect is allowed in this opt-in lane.",
+    "Require full Released Skill snapshot pins, exact modelOverride and timeout, and an awaited per-stage beforeDispatch callback. The calling domain must atomically enforce fresh authorization, immutable approval and its persistent dispatch fence.",
+    "Private input, attachments, prompts, replies and validation failures never enter generic Skill audit/evaluation stores. Strict execution writes metadata only; advisory metrics/call counts cannot discard a validated paid reply.",
+    "The strict runtime alone does not authorize execution or prevent a caller from invoking it twice. Its intended caller is the new private turn-owned queue, not the generic ai_jobs retry/recover path.",
+    "No Skill or model is seeded or approved by this code. No route, worker, feature activation, model call, production database change or migration execution occurs in this batch."
+  ],
+  "verification": {
+    "rootReadCompleteDiff": true,
+    "legacyDefaultBodyPreserved": true,
+    "strictAndLegacyTests": "Frozen-candidate checks are recorded in the separate P5-A1 batch evidence, including exact final source hashes.",
+    "fullTypecheckAndBundles": "Required on the final frozen candidate, not inferred from subagent checks."
+  },
+  "remaining": [
+    "P5 service/router/worker/UI integration and candidate-rule human confirmation using the existing unique configuration store",
+    "Trusted approved Qingdao general Skill and user Listing Skill/model provenance; fixtures are not approvals",
+    "Actual MySQL schema, locking, large attachment transaction and authenticated/private workflow acceptance",
+    "Actual provider budget/endpoint/credential acceptance, original release gates, final push and deployment"
+  ]
+}

@@ -20,6 +20,11 @@ import {
   type HighQualitySkillGovernance,
 } from "./highQualitySkillGovernance";
 import { resolveActiveSkillRollout } from "./skillRollout";
+import { StrictSkillRuntimeError, STRICT_SKILL_LIMITS,
+  strictModelSnapshotFromRow, strictRuntimeCanonical, strictRuntimeHash, strictRuntimeRefuse, strictSkillMessages,
+  parseStrictExecutionOptions, strictCostUpperBound,
+  type StrictRegisteredModelSnapshot, type StrictSkillExecutionOptions } from "./strictSkillRuntime";
+export type { StrictRegisteredModelSnapshot, StrictSkillExecutionOptions, StrictSkillDispatchReceipt } from "./strictSkillRuntime";
 
 export type SkillRunErrorCode =
   | "SKILL_NOT_FOUND"
@@ -130,6 +135,8 @@ export type RunSkillInput<T> = {
   maxModelAttempts?: number;
   signal?: AbortSignal;
   validate?: (content: string) => T;
+  /** Server-only opt-in; never pass untrusted RPC options through to this field. */
+  strictExecution?: StrictSkillExecutionOptions;
 };
 
 export type RunSkillResult<T = string> = {
@@ -150,6 +157,8 @@ export type RunSkillResult<T = string> = {
   fallbackCount: number;
   executionPreset: SkillExecutionPreset;
   governance: HighQualitySkillGovernance | null;
+  /** Strict private lane only; advisory stores do not discard a validated reply. */
+  auditWarnings?: Array<"METRICS_UNAVAILABLE" | "CALL_COUNT_UNAVAILABLE">;
 };
 
 export type SkillVersionPolicy = "latest" | "snapshot" | "pinned";
@@ -740,7 +749,154 @@ async function callModel(
   };
 }
 
+/** No default/alias/fallback lookup. A duplicate registry identity is not a choice. */
+export async function resolveStrictRegisteredModelSnapshot(input: { workspaceId: number; modelSlug: string }): Promise<StrictRegisteredModelSnapshot> {
+  try {
+    const captured = JSON.parse(strictRuntimeCanonical(input)) as { workspaceId: number; modelSlug: string };
+    if (Object.keys(captured).sort().join(",") !== "modelSlug,workspaceId" || !Number.isSafeInteger(captured.workspaceId)
+      || captured.workspaceId < 1 || captured.workspaceId > 2147483647 || typeof captured.modelSlug !== "string"
+      || !captured.modelSlug || captured.modelSlug.length > 256) return strictRuntimeRefuse("STRICT_MODEL_CONFIGURATION_INVALID");
+    const rows = await rawExecute("SELECT workspaceId,slug,provider,modelId,baseUrl,apiKeyRef,isActive,capabilityTags,maxContextTokens,costPer1kInputTokens,costPer1kOutputTokens FROM emperor_model_providers WHERE slug=? AND (workspaceId=? OR workspaceId IS NULL)", [captured.modelSlug, captured.workspaceId]);
+    if (rows.length !== 1) return strictRuntimeRefuse("STRICT_MODEL_UNAVAILABLE");
+    const snapshot = strictModelSnapshotFromRow(captured.workspaceId, captured.modelSlug, rows[0]);
+    if (!resolveGovernedModelApiKey(snapshot.model.apiKeyRef)?.trim()) return strictRuntimeRefuse("STRICT_MODEL_CREDENTIAL_UNAVAILABLE");
+    return snapshot;
+  } catch (error) {
+    if (error instanceof StrictSkillRuntimeError) throw error;
+    return strictRuntimeRefuse("STRICT_MODEL_UNAVAILABLE");
+  }
+}
+
+async function runStrictEmperorSkill<T>(input: RunSkillInput<T>): Promise<RunSkillResult<T>> {
+  // Snapshot all caller data before the first await; accessors/non-JSON values are rejected.
+  if (!input || Object.getPrototypeOf(input) !== Object.prototype) return strictRuntimeRefuse("STRICT_RUNTIME_INPUT_INVALID");
+  for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(input))) {
+    if (!("value" in descriptor) || !descriptor.enumerable) return strictRuntimeRefuse("STRICT_RUNTIME_INPUT_INVALID");
+  }
+  const strict = parseStrictExecutionOptions(input.strictExecution!);
+  const { beforeDispatch } = strict;
+  const validate = input.validate, signal = input.signal;
+  if ((validate !== undefined && typeof validate !== "function") || (signal !== undefined && !(signal instanceof AbortSignal))) return strictRuntimeRefuse("STRICT_RUNTIME_INPUT_INVALID");
+  const raw: Record<string, unknown> = {};
+  for (const key of Reflect.ownKeys(input)) {
+    if (typeof key !== "string") return strictRuntimeRefuse("STRICT_RUNTIME_INPUT_INVALID");
+    const field = Object.getOwnPropertyDescriptor(input, key)!;
+    if (!("value" in field) || !field.enumerable) return strictRuntimeRefuse("STRICT_RUNTIME_INPUT_INVALID");
+    if (!["strictExecution", "validate", "signal"].includes(key) && field.value !== undefined) raw[key] = field.value;
+  }
+  const request = JSON.parse(strictRuntimeCanonical(raw)) as RunSkillInput<T>;
+  if (!Number.isSafeInteger(request.workspaceId) || Number(request.workspaceId) < 1 || request.workspaceId !== strict.modelSnapshot.workspaceId
+    || !Number.isSafeInteger(request.userId) || request.userId < 1 || request.userId > 2147483647 || request.skillVersionPolicy !== "pinned"
+    || request.expectedSkillStatus !== "Released" || request.maxModelAttempts !== 1
+    || !Array.isArray(request.fallbackModels) || request.fallbackModels.length !== 0
+    || request.modelOverride !== strict.modelSnapshot.model.slug || request.legacySystemPrompt !== undefined
+    || typeof request.expectedSkillVersion !== "string" || !/^[1-9]\d*$/u.test(request.expectedSkillVersion) || Number(request.expectedSkillVersion) > 2147483647
+    || ![request.expectedSkillPromptHash, request.expectedSkillUserPromptHash, request.expectedSkillManifestHash].every(value => typeof value === "string" && /^[a-f0-9]{16}$/u.test(value))
+    || (request.executionPreset !== undefined && request.executionPreset !== "standard")
+    || typeof request.skillSlug !== "string" || !request.skillSlug || request.skillSlug.length > 128
+    || (request.context !== undefined && typeof request.context !== "string") || (request.emphasis !== undefined && typeof request.emphasis !== "string")
+    || !request.variables || Object.getPrototypeOf(request.variables) !== Object.prototype) return strictRuntimeRefuse("STRICT_RUNTIME_INPUT_INVALID");
+  if (signal?.aborted) return strictRuntimeRefuse("STRICT_RUNTIME_CANCELED");
+  const skills = await rawExecute("SELECT * FROM emperor_skills WHERE slug=? AND (workspaceId=? OR (workspaceId IS NULL AND scope='global'))", [request.skillSlug, request.workspaceId]);
+  if (skills.length !== 1 || skills[0].slug !== request.skillSlug || (skills[0].workspaceId !== null && skills[0].workspaceId !== request.workspaceId)
+    || (skills[0].workspaceId === null && skills[0].scope !== "global")) return strictRuntimeRefuse("STRICT_RUNTIME_SKILL_UNAVAILABLE");
+  const skill = skills[0] as SkillRow, manifest = parseJson<SkillManifest>(skill.manifest, {});
+  strictRuntimeCanonical(manifest);
+  if (String(skill.version) !== request.expectedSkillVersion) return strictRuntimeRefuse("STRICT_RUNTIME_SKILL_CHANGED");
+  const snapshot = buildSkillRuntimeSnapshot(skill, manifest);
+  try { assertSkillSnapshotCompatible(snapshot, request); }
+  catch { return strictRuntimeRefuse("STRICT_RUNTIME_SKILL_CHANGED"); }
+  if (snapshot.modelOverride !== strict.expectedSkillModelOverride || snapshot.timeoutSeconds !== strict.expectedSkillTimeoutSeconds
+    || !snapshot.systemPromptLength) return strictRuntimeRefuse("STRICT_RUNTIME_SKILL_CHANGED");
+  const implementation = manifest.implementation || {};
+  if (implementation.temperature !== undefined && (typeof implementation.temperature !== "number" || !Number.isFinite(implementation.temperature)
+    || implementation.temperature < 0 || implementation.temperature > 2)) return strictRuntimeRefuse("STRICT_RUNTIME_CONFIGURATION_INVALID");
+  if (implementation.supportsJsonMode !== undefined && typeof implementation.supportsJsonMode !== "boolean") return strictRuntimeRefuse("STRICT_RUNTIME_CONFIGURATION_INVALID");
+  const variables = { context: request.context || "", emphasis: request.emphasis || "", ...request.variables };
+  const systemPrompt = implementation.systemPrompt || "", userPrompt = renderSkillTemplate(implementation.userPromptTemplate || "{{context}}", variables);
+  const model = await resolveStrictRegisteredModelSnapshot({ workspaceId: request.workspaceId!, modelSlug: strict.modelSnapshot.model.slug });
+  if (strictRuntimeCanonical(model) !== strictRuntimeCanonical(strict.modelSnapshot)) return strictRuntimeRefuse("STRICT_MODEL_CHANGED");
+  const prepared = strictSkillMessages(systemPrompt, userPrompt, request.attachments, model, implementation.maxTokens ?? 4096, strict.imageBudget);
+  const estimatedMaxCostCents = strictCostUpperBound(model, prepared.budget.contextAdmissionUnits, prepared.budget.outputTokens);
+  if (estimatedMaxCostCents > strict.maxCostCents) return strictRuntimeRefuse("STRICT_RUNTIME_COST_BUDGET_EXCEEDED");
+  const payload = { model: model.model.modelId, messages: prepared.messages, max_tokens: prepared.budget.outputTokens,
+    ...(implementation.temperature === undefined ? {} : { temperature: implementation.temperature }),
+    ...(implementation.supportsJsonMode ? { response_format: { type: "json_object" } } : {}) };
+  const body = strictRuntimeCanonical(payload), requestHash = strictRuntimeHash(payload);
+  const apiKey = resolveGovernedModelApiKey(model.model.apiKeyRef);
+  if (!apiKey?.trim()) return strictRuntimeRefuse("STRICT_MODEL_CREDENTIAL_UNAVAILABLE");
+  const runId = generateRunId(), startedAt = new Date();
+  const metadata = { privateExecution: true, stage: strict.stage, bindingHash: strict.bindingHash, requestHash,
+    modelConfigurationHash: model.configurationHash, skillVersion: snapshot.version, skillPromptHash: snapshot.systemPromptHash,
+    skillUserPromptHash: snapshot.userPromptHash, skillManifestHash: snapshot.manifestHash, budget: prepared.budget,
+    estimatedMaxCostCents, maxCostCents: strict.maxCostCents, imageBudget: strict.imageBudget ?? null,
+    pricingBasis: "registered_rates_and_conservative_admission_not_provider_invoice" };
+  await rawExecute("INSERT INTO emperor_skill_runs (workspaceId,runId,skillSlug,skillName,skillVersion,skillPromptHash,skillManifestHash,migrationSource,userId,input,status,modelSlug,provider,startedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    [request.workspaceId, runId, skill.slug, skill.name, Number(snapshot.version) || 1, snapshot.systemPromptHash, snapshot.manifestHash,
+      "assistant.private.strict", request.userId, JSON.stringify(metadata), "running", model.model.slug, "custom", startedAt]);
+  let dispatched = false;
+  try {
+    if (signal?.aborted) return strictRuntimeRefuse("STRICT_RUNTIME_CANCELED");
+    // This awaited callback owns the durable dispatch fence and fresh authorization.
+    // After it there is no provider selection, fallback, database read, or retry.
+    try { await beforeDispatch({ runId, stage: strict.stage, requestHash, modelConfigurationHash: model.configurationHash,
+      bindingHash: strict.bindingHash, budget: structuredClone(prepared.budget) }); }
+    catch { return strictRuntimeRefuse("STRICT_RUNTIME_DISPATCH_DENIED"); }
+    if (signal?.aborted) return strictRuntimeRefuse("STRICT_RUNTIME_CANCELED");
+    dispatched = true;
+    const response = await safeHttpRequest(model.model.endpoint, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body, signal, timeoutMs: snapshot.timeoutSeconds * 1000, maxResponseBytes: STRICT_SKILL_LIMITS.responseBytes, maxRedirects: 0,
+      allowedHosts: [new URL(model.model.endpoint).hostname], allowPrivateNetwork: false,
+      auditContext: { workspaceId: request.workspaceId, operation: "ai_os.assistant.private.strict" } });
+    if (!response.ok) return strictRuntimeRefuse("STRICT_RUNTIME_PROVIDER_FAILED");
+    const result = response.json() as { choices?: Array<{ message?: { content?: unknown } }>; usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } };
+    const content = result?.choices?.[0]?.message?.content;
+    if (typeof content !== "string" || !content.trim() || Buffer.byteLength(content) > STRICT_SKILL_LIMITS.responseBytes) return strictRuntimeRefuse("STRICT_RUNTIME_OUTPUT_INVALID");
+    if (signal?.aborted) return strictRuntimeRefuse("STRICT_RUNTIME_CANCELED");
+    const inputTokens = result.usage?.prompt_tokens, outputTokens = result.usage?.completion_tokens;
+    if (!Number.isSafeInteger(inputTokens) || !Number.isSafeInteger(outputTokens) || Number(inputTokens) < 0 || Number(outputTokens) < 0
+      || Number(inputTokens) > model.model.maxContextTokens || Number(outputTokens) > prepared.budget.outputTokens) return strictRuntimeRefuse("STRICT_RUNTIME_USAGE_INVALID");
+    let parsed: T;
+    try { parsed = validate ? validate(content) : content as T; }
+    catch { return strictRuntimeRefuse("STRICT_RUNTIME_OUTPUT_INVALID"); }
+    const costCents = strictCostUpperBound(model, Number(inputTokens), Number(outputTokens));
+    if (costCents > strict.maxCostCents) return strictRuntimeRefuse("STRICT_RUNTIME_COST_BUDGET_EXCEEDED");
+    const durationMs = Date.now() - startedAt.getTime();
+    const output = { ...metadata, outputHash: strictRuntimeHash(content), inputTokens, outputTokens, costCents, durationMs };
+    await rawExecute("UPDATE emperor_skill_runs SET status=?,output=?,modelSlug=?,provider=?,inputTokens=?,outputTokens=?,durationMs=?,costCents=?,completedAt=? WHERE runId=?",
+      ["succeeded", JSON.stringify(output), model.model.slug, "custom", inputTokens, outputTokens, durationMs, costCents, new Date(), runId]);
+    const auditWarnings: NonNullable<RunSkillResult["auditWarnings"]> = [];
+    try {
+      await rawExecute(`UPDATE emperor_skills SET callCount = callCount + 1 WHERE slug = ? AND workspaceId ${skill.workspaceId === null ? "IS NULL" : "= ?"}`,
+        skill.workspaceId === null ? [skill.slug] : [skill.slug, skill.workspaceId]);
+    } catch { auditWarnings.push("CALL_COUNT_UNAVAILABLE"); }
+    // No heuristic "quality score" for an opaque private result. Only metadata
+    // enters advisory stores; their failure must not discard a paid, validated
+    // reply. The caller must still persist that reply in its turn-owned store.
+    try {
+      const metricReceipt = await recordAiOsMetric({ entityType: "skill", entityId: runId, metricName: "skill.tokens", metricValue: Number(inputTokens) + Number(outputTokens), status: "succeeded",
+        workspaceId: request.workspaceId, userId: request.userId, skillSlug: skill.slug, metadata: output });
+      if (metricReceipt.recorded !== true) auditWarnings.push("METRICS_UNAVAILABLE");
+    } catch { auditWarnings.push("METRICS_UNAVAILABLE"); }
+    return { runId, skillSlug: skill.slug, skillName: skill.name, skillVersion: snapshot.version, skillPromptHash: snapshot.systemPromptHash,
+      skillManifestHash: snapshot.manifestHash, content, parsed, modelSlug: model.model.slug, provider: "custom", durationMs,
+      costCents, inputTokens: Number(inputTokens), outputTokens: Number(outputTokens), fallbackCount: 0, executionPreset: "standard", governance: getHighQualitySkillGovernance(skill.slug), auditWarnings };
+  } catch (error) {
+    const code = error instanceof StrictSkillRuntimeError ? error.code : signal?.aborted ? "STRICT_RUNTIME_CANCELED" : "STRICT_RUNTIME_RESULT_UNKNOWN";
+    // No provider body, callback cause, SQL params, or validation exception is retained.
+    try { await rawExecute("UPDATE emperor_skill_runs SET status=?,errorMessage=?,durationMs=?,completedAt=? WHERE runId=?",
+      ["failed", `${code}; dispatched=${dispatched ? "yes" : "no"}`, Date.now() - startedAt.getTime(), new Date(), runId]); } catch { /* Unknown audit acknowledgement is not permission to retry. */ }
+    return strictRuntimeRefuse(code);
+  }
+}
+
 export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Promise<RunSkillResult<T>> {
+  const strictDescriptor = Object.getOwnPropertyDescriptor(input, "strictExecution");
+  if (strictDescriptor && !("value" in strictDescriptor)) return strictRuntimeRefuse("STRICT_RUNTIME_INPUT_INVALID");
+  if (strictDescriptor?.value !== undefined) {
+    try { return await runStrictEmperorSkill(input); }
+    catch (error) { if (error instanceof StrictSkillRuntimeError) throw error; return strictRuntimeRefuse("STRICT_RUNTIME_UNAVAILABLE"); }
+  }
   validateContentSnapshotPins(input);
   const skill = await getSkill(input.skillSlug, input.workspaceId ?? null);
   // Fixed-version and implicit snapshot runs must not drift into a live rollout.
