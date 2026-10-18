@@ -162,21 +162,25 @@ function acceptResult(raw: unknown, input: ProfitBoardReadInput, owner: Owner) {
   const result = ProfitBoardReadResultSchema.parse(raw);
   if (result.identity.userId !== owner.userId || result.identity.workspaceId !== owner.workspaceId || JSON.stringify(result.request) !== JSON.stringify(input)) throw new Error("PROFIT_READ_SCOPE_CHANGED");
   if (!["super_admin", "admin", "ops_manager"].includes(owner.role) && result.sources.some(source => source.batch?.visibility === "full" && source.batch.userId !== owner.userId)) throw new Error("PROFIT_READ_METADATA_DENIED");
+  if (result.ownership && !["super_admin", "admin", "ops_manager"].includes(owner.role) && (result.ownership.status !== "ready" || result.ownership.visibility !== "scoped" || result.ownership.operators.some(operator => operator.userId !== owner.userId))) throw new Error("PROFIT_OWNER_DIRECTORY_DENIED");
+  if (input.operatorId !== undefined && result.status === "ready" && (result.ownership?.status !== "ready" || !result.ownership.operators.some(operator => operator.userId === input.operatorId) || result.products.some(product => !product.parentAsin || !result.ownership!.parents.some(parent => parent.parentAsin === product.parentAsin && parent.status === "resolved" && parent.operatorIds.includes(input.operatorId!))))) throw new Error("PROFIT_OWNER_FILTER_CHANGED");
   return result;
 }
-const pageBinding = (result: ProfitBoardReadResult) => JSON.stringify({ months: result.months, sources: result.sources, partitions: result.partitions, totalGroups: result.page.totalGroups, totalRows: result.page.totalRows });
+const pageBinding = (result: ProfitBoardReadResult) => JSON.stringify({ months: result.months, sources: result.sources, partitions: result.partitions, ownership: result.ownership, totalGroups: result.page.totalGroups, totalRows: result.page.totalRows });
 function OwnedProfitBoard({ owner }: { owner: Owner }) {
   const client = trpc.useUtils().client;
   const [scope, setScope] = useState({ month: "", storeName: "", country: "", parentAsin: "", search: "" }), [state, setState] = useState<ReadState>({ status: "idle" });
+  const [ownership, setOwnership] = useState<ProfitBoardReadResult["ownership"] | null>(null), [operatorId, setOperatorId] = useState<number | undefined>();
+  const canViewAll = ["super_admin", "admin", "ops_manager"].includes(owner.role);
   const sequence = useRef(0), pending = useRef<AbortController | null>(null), active = useRef(false);
   useEffect(() => () => { sequence.current++; pending.current?.abort(); }, []);
   function clear() { sequence.current++; pending.current?.abort(); pending.current = null; active.current = false; setState({ status: "idle" }); }
   async function read(offset = 0, previous?: ProfitBoardReadResult, selectedId?: string, requestedMonth?: string) {
     clear(); const month = requestedMonth ?? scope.month;
-    if (requestedMonth !== undefined) setScope(value => ({ ...value, month: requestedMonth }));
+    if (requestedMonth !== undefined) { setOwnership(null); setScope(value => ({ ...value, month: requestedMonth })); }
     const { parentAsin, ...otherScope } = scope;
-    const parsed = ProfitBoardReadInputSchema.safeParse({ ...otherScope, month, ...(parentAsin.trim() ? { parentAsin: parentAsin.trim() } : {}), expectedWorkspaceId: owner.workspaceId, groupOffset: offset, groupLimit: GROUP_LIMIT });
-    if (!parsed.success) { setState({ status: "invalid" }); return; }
+    const parsed = ProfitBoardReadInputSchema.safeParse({ ...otherScope, month, ...(parentAsin.trim() ? { parentAsin: parentAsin.trim() } : {}), ...(operatorId === undefined ? {} : { operatorId }), expectedWorkspaceId: owner.workspaceId, groupOffset: offset, groupLimit: GROUP_LIMIT });
+    if (!parsed.success) { setOwnership(null); setState({ status: "invalid" }); return; }
     active.current = true;
     const ticket = ++sequence.current, controller = new AbortController(); pending.current = controller;
     const current = () => ticket === sequence.current && !controller.signal.aborted;
@@ -186,16 +190,23 @@ function OwnedProfitBoard({ owner }: { owner: Owner }) {
       if (!current()) return;
       const result = acceptResult(raw, parsed.data, owner);
       if (previous && (result.status !== "ready" || pageBinding(previous) !== pageBinding(result)) || selectedId && !result.products.some(product => product.id === selectedId)) throw new Error("PROFIT_READ_SOURCES_CHANGED");
-      if (current()) setState({ status: "ready", result, ...(selectedId ? { selectedId } : {}) });
-    } catch { if (current()) setState({ status: "error" }); }
+      if (current()) { setOwnership(result.ownership ?? null); setState({ status: "ready", result, ...(selectedId ? { selectedId } : {}) }); }
+    } catch { if (current()) { setOwnership(null); setState({ status: "error" }); } }
     finally { if (current()) pending.current = null; }
   }
   const readRef = useRef(read); readRef.current = read;
   useEffect(() => subscribeMonthlyFinancialChanges(notice => {
-    if (notice.action !== "upload" && notice.userId === owner.userId && notice.workspaceId === owner.workspaceId && active.current) void readRef.current();
-  }), [owner.userId, owner.workspaceId]);
+    if (notice.action !== "upload" && notice.workspaceId === owner.workspaceId) { setOwnership(null); if (active.current) void readRef.current(); }
+  }), [owner.workspaceId]);
   return <Shell><form aria-label="利润看板读取范围" className="space-y-3" onSubmit={event => { event.preventDefault(); void read(); }}>
-    <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">{([ ["month", "基准月份（YYYY-MM）"], ["storeName", "店铺"], ["country", "站点 / 国家代码"], ["parentAsin", "父 ASIN（可选）"], ["search", "产品搜索（保留完整父组）"] ] as const).map(([key, label]) => <label className="min-w-0 text-sm" key={key}>{label}<input className="mt-1 w-full min-w-0 rounded border bg-background p-2" aria-label={`利润看板${label}`} autoComplete="off" value={scope[key]} onChange={event => { const value = event.currentTarget.value; clear(); setScope(old => ({ ...old, [key]: value })); }} /></label>)}</div>
+    <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">{([ ["month", "基准月份（YYYY-MM）"], ["storeName", "店铺"], ["country", "站点 / 国家代码"], ["parentAsin", "父 ASIN（可选）"], ["search", "产品搜索（保留完整父组）"] ] as const).map(([key, label]) => <label className="min-w-0 text-sm" key={key}>{label}<input className="mt-1 w-full min-w-0 rounded border bg-background p-2" aria-label={`利润看板${label}`} autoComplete="off" value={scope[key]} onChange={event => { const value = event.currentTarget.value; clear(); setOwnership(null); setOperatorId(undefined); setScope(old => ({ ...old, [key]: value })); }} /></label>)}</div>
+    <label className="block min-w-0 text-sm">运营<select aria-label="利润看板运营" className="mt-1 block w-full min-w-0 max-w-md rounded border bg-background p-2" value={operatorId ?? "all"} disabled={ownership?.status !== "ready" || state.status === "loading"} onChange={event => {
+      const value = event.currentTarget.value, selected = value === "all" ? undefined : Number(value); clear();
+      if (ownership?.status !== "ready" || selected !== undefined && (!positiveId(selected) || !ownership.operators.some(operator => operator.userId === selected))) { setOwnership(null); setState({ status: "error" }); return; }
+      setOperatorId(selected);
+    }}><option value="all">{canViewAll ? "全部运营" : "自己"}</option>{operatorId !== undefined && !ownership?.operators.some(operator => operator.userId === operatorId) && <option value={operatorId}>待重新核验 · ID {operatorId}</option>}{ownership?.operators.map(operator => <option key={operator.userId} value={operator.userId}>{operator.displayName} · ID {operator.userId}</option>)}</select></label>
+    {operatorId !== undefined && <button type="button" className={buttonClass} onClick={() => { clear(); setOperatorId(undefined); setOwnership(null); }}>清除运营筛选</button>}
+    <p className="text-xs">{ownership?.status === "unavailable" ? "运营目录不可用；仅保留管理员无运营筛选的授权财务，不表示产品未分配负责人。" : ownership ? `当前数字负责人目录（${ownership.visibility === "full" ? "工作区授权目录" : "仅本人授权目录"}）；选择后点击读取，由服务器在分页前筛选完整父体。` : "请先读取当前范围以核验数字负责人目录；未核验时不能选择其他运营。"} 搭档关系尚未配置，不按姓名推断“自己和搭档”。负责人依据为当前人工分配或已确认来源映射，不是历史归档负责人。</p>
     <p className="text-xs text-muted-foreground">父 ASIN 留空时只读取服务器当前授权父体；搜索和留空都不是权限。不会按保存的姓名或 ownerIds 授权；不跨店 / 站点合计。</p>
     <div className="flex flex-wrap gap-3"><button type="submit" className={buttonClass}>读取已有利润看板</button><button type="button" className={buttonClass} onClick={clear}>取消并清除利润看板</button></div>
   </form>

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { normalizeMarketplaceCode } from "./marketplaceIdentity";
+import { OperationsBoardOwnershipSchema, validateOperationsBoardOwnershipForRows, filterOperationsBoardRowsByOperator, validateOperationsBoardOwnershipPage, type OperationsBoardOwnership } from "./operationsBoardOwnership";
 import { MonthlyFinancialReadRowSchema, MonthlyFinancialVisibleBatchMetadataSchema, monthlyFinancialJsonBytes, monthlyFinancialRowMatchesScope, type MonthlyFinancialReadIdentity, type MonthlyFinancialReadRow, type MonthlyFinancialSnapshotSelection, type MonthlyFinancialVisibleBatchMetadata } from "./monthlyFinancialRead";
 
 /** Supplied, authorized historical snapshots only; no collection, writes,
@@ -13,7 +14,7 @@ const currencySchema = z.string().regex(/^[A-Z]{3}$/u).nullable();
 const number = z.number().finite().nullable();
 const identitySchema = z.object({ userId: id, workspaceId: id }).strict();
 export type ProfitBoardReadIdentity = MonthlyFinancialReadIdentity;
-export const ProfitBoardReadInputSchema = z.object({ expectedWorkspaceId: id, month: monthSchema.refine(value => value >= "1000-06"), storeName: text(200), country: text(50).transform(normalizeMarketplaceCode), parentAsin: text().optional(), search: z.string().max(200), groupOffset: z.number().int().min(0).max(PROFIT_BOARD_READ_LIMITS.products), groupLimit: z.number().int().min(1).max(50) }).strict();
+export const ProfitBoardReadInputSchema = z.object({ expectedWorkspaceId: id, month: monthSchema.refine(value => value >= "1000-06"), storeName: text(200), country: text(50).transform(normalizeMarketplaceCode), parentAsin: text().optional(), operatorId: id.optional(), search: z.string().max(200), groupOffset: z.number().int().min(0).max(PROFIT_BOARD_READ_LIMITS.products), groupLimit: z.number().int().min(1).max(50) }).strict();
 export type ProfitBoardReadInput = z.infer<typeof ProfitBoardReadInputSchema>;
 export const ProfitBoardSourceRefSchema = z.object({ batchId: id, rowIndex: z.number().int().min(0).max(9999) }).strict();
 export type ProfitBoardSourceRef = z.infer<typeof ProfitBoardSourceRefSchema>;
@@ -31,7 +32,7 @@ export const ProfitBoardPartitionSchema = z.object({ id: text(4000), storeName: 
 export type ProfitBoardPartition = z.infer<typeof ProfitBoardPartitionSchema>;
 const sourceSchema = z.object({ month: monthSchema, status: z.enum(["selected", "not_found", "not_visible"]), batch: MonthlyFinancialVisibleBatchMetadataSchema.nullable(), selectedBatchId: id.nullable(), selection: z.object({ rule: z.literal("latest_completed_batch_per_month_store_site"), complete: z.literal(true), scannedCount: z.number().int().min(0).max(200).nullable() }).strict(), visibleRows: z.number().int().min(0).max(10000), missingReason: z.string().nullable() }).strict();
 const pageSchema = z.object({ offset: z.number().int().nonnegative(), limit: z.number().int().min(1).max(50), totalGroups: z.number().int().min(0).max(PROFIT_BOARD_READ_LIMITS.products), totalRows: z.number().int().min(0).max(PROFIT_BOARD_READ_LIMITS.rows), nextOffset: z.number().int().nonnegative().nullable(), hasMore: z.boolean() }).strict();
-const resultSchema = z.object({ identity: identitySchema, request: ProfitBoardReadInputSchema, status: z.enum(["ready", "missing", "not_found", "invalid"]), reasonCode: z.string().nullable(), missingReason: z.string().nullable(), months: z.array(monthSchema).length(6), previousMonth: monthSchema, analysisBasis: z.literal("all_authorized_search_matched_groups"), timestampBasis: z.literal("database_datetime_without_timezone"), sources: z.array(sourceSchema).max(6), partitions: z.array(ProfitBoardPartitionSchema).max(PROFIT_BOARD_READ_LIMITS.products), products: z.array(ProfitBoardProductSchema).max(50), pageRows: z.array(MonthlyFinancialReadRowSchema).max(PROFIT_BOARD_READ_LIMITS.rows), page: pageSchema }).strict();
+const resultSchema = z.object({ identity: identitySchema, request: ProfitBoardReadInputSchema, ownership: OperationsBoardOwnershipSchema.optional(), status: z.enum(["ready", "missing", "not_found", "invalid"]), reasonCode: z.string().nullable(), missingReason: z.string().nullable(), months: z.array(monthSchema).length(6), previousMonth: monthSchema, analysisBasis: z.literal("all_authorized_search_matched_groups"), timestampBasis: z.literal("database_datetime_without_timezone"), sources: z.array(sourceSchema).max(6), partitions: z.array(ProfitBoardPartitionSchema).max(PROFIT_BOARD_READ_LIMITS.products), products: z.array(ProfitBoardProductSchema).max(50), pageRows: z.array(MonthlyFinancialReadRowSchema).max(PROFIT_BOARD_READ_LIMITS.rows), page: pageSchema }).strict();
 export const ProfitBoardReadResultSchema = resultSchema.superRefine((value, ctx) => validateResult(value, message => ctx.addIssue({ code: z.ZodIssueCode.custom, message })));
 export type ProfitBoardReadResult = z.infer<typeof ProfitBoardReadResultSchema>;
 export type ProfitBoardMonthSelection = { month: string; selection: MonthlyFinancialSnapshotSelection; authorizedRowRefs?: ProfitBoardSourceRef[]; metadataVisibility: "full" | "scoped" };
@@ -79,8 +80,13 @@ function validateResult(value: z.infer<typeof resultSchema>, issue: (message: st
   if (value.identity.workspaceId !== value.request.expectedWorkspaceId || !equal(value.months, profitBoardMonths(value.request.month)) || value.previousMonth !== value.months[4]) issue("Identity/calendar mismatch");
   if (value.status === "ready" ? value.reasonCode !== null || value.missingReason !== null : !value.reasonCode?.trim() || !value.missingReason?.trim()) issue("Status/reason mismatch");
   if (value.page.offset !== value.request.groupOffset || value.page.limit !== value.request.groupLimit) issue("Request page mismatch");
-  if (value.status !== "ready") { if (value.sources.length || value.partitions.length || value.products.length || value.pageRows.length || value.page.totalGroups || value.page.totalRows || value.page.hasMore || value.page.nextOffset !== null) issue("Failure may not leak partial data"); return; }
+  if (value.status !== "ready") { if (value.ownership || value.sources.length || value.partitions.length || value.products.length || value.pageRows.length || value.page.totalGroups || value.page.totalRows || value.page.hasMore || value.page.nextOffset !== null) issue("Failure may not leak partial data"); return; }
   if (value.sources.length !== 6 || value.sources.some((source, index) => source.month !== value.months[index])) { issue("Six original month sources required"); return; }
+  validateOperationsBoardOwnershipPage({ ownership: value.ownership, operatorId: value.request.operatorId, userId: value.identity.userId, parentAsin: value.request.parentAsin, month: value.request.month, rows: value.pageRows, products: [...value.products, ...value.partitions.flatMap(partition => [...partition.rising, ...partition.falling])] }, issue);
+  if (value.ownership && value.sources.some(source => (source.selection.scannedCount === null ? "scoped" : "full") !== value.ownership!.visibility)) issue("Ownership/source visibility mismatch");
+  if (value.ownership && value.request.operatorId === undefined && !value.request.search.trim() && value.page.offset === 0 && value.products.length === value.page.totalGroups) {
+    try { validateOperationsBoardOwnershipForRows(value.ownership, value.pageRows, value.identity.userId); } catch { issue("Complete page ownership directory does not replay original parents"); }
+  }
   const sourceByMonth = new Map(value.sources.map(source => [source.month, source]));
   for (const source of value.sources) {
     if (source.status === "selected" ? !source.batch || source.batch.status !== "completed" || source.batch.confirmedAt === null || source.selectedBatchId !== source.batch.id || source.batch.visibility === "full" && source.batch.workspaceId !== value.identity.workspaceId : source.batch !== null || source.selectedBatchId !== null || source.visibleRows !== 0) issue("Source metadata mismatch");
@@ -152,7 +158,7 @@ function validateResult(value: z.infer<typeof resultSchema>, issue: (message: st
   try { if (monthlyFinancialJsonBytes(value) > PROFIT_BOARD_READ_LIMITS.resultBytes) issue("Result limit"); } catch { issue("Bounded JSON required"); }
 }
 
-export function buildProfitBoardReadResult(value: { identity: ProfitBoardReadIdentity; input: ProfitBoardReadInput; selections: ProfitBoardMonthSelection[] }): ProfitBoardReadResult {
+export function buildProfitBoardReadResult(value: { identity: ProfitBoardReadIdentity; input: ProfitBoardReadInput; selections: ProfitBoardMonthSelection[]; ownership?: OperationsBoardOwnership }): ProfitBoardReadResult {
   const input = ProfitBoardReadInputSchema.parse(value.input), identity = identitySchema.parse(value.identity), months = profitBoardMonths(input.month);
   if (identity.workspaceId !== input.expectedWorkspaceId || value.selections.length !== 6 || new Set(value.selections.map(item => item.month)).size !== 6 || value.selections.some(item => !months.includes(item.month))) throw new ProfitBoardReadError("selection_identity");
   const sources: z.infer<typeof sourceSchema>[] = [], selectedRows: MonthlyFinancialReadRow[] = [];
@@ -174,8 +180,14 @@ export function buildProfitBoardReadResult(value: { identity: ProfitBoardReadIde
     sources.push({ month, status: visible ? "selected" : "not_visible", batch: visible ? metadata(selected.batch, item.metadataVisibility) : null, selectedBatchId: visible ? selected.batch.id : null, selection: { rule: "latest_completed_batch_per_month_store_site", complete: true, scannedCount: item.metadataVisibility === "full" ? scannedBatchIds.length : null }, visibleRows: rows.length, missingReason: visible ? null : "该月没有当前可见授权范围；不披露其他父体批次资料" });
   }
   if (selectedRows.length > PROFIT_BOARD_READ_LIMITS.rows) throw new ProfitBoardReadError("row_limit");
+  let ownership: OperationsBoardOwnership | undefined, filteredRows: MonthlyFinancialReadRow[];
+  try {
+    ownership = value.ownership === undefined ? undefined : validateOperationsBoardOwnershipForRows(value.ownership, selectedRows, identity.userId);
+    if (ownership && value.selections.some(selection => selection.metadataVisibility !== ownership!.visibility)) throw new Error("visibility");
+    filteredRows = filterOperationsBoardRowsByOperator(selectedRows, ownership, input.operatorId);
+  } catch { throw new ProfitBoardReadError("ownership_invalid"); }
   const groups = new Map<string, { partitionId: string; parentAsin: string | null; basis: ProfitBoardBasis; currency: string | null; rows: MonthlyFinancialReadRow[]; unknownSource: ProfitBoardSourceRef | null }>();
-  for (const row of selectedRows) {
+  for (const row of filteredRows) {
     const basis: ProfitBoardBasis = ["unallocated", "ambiguous"].includes(row.allocation) ? "unallocated_rows" : row.allocation === "parent_only" ? "reported_parent_row" : "child_rows", unknownSource = row.currency === null ? { batchId: row.batchId, rowIndex: row.rowIndex } : null;
     const partitionId = JSON.stringify([input.storeName, input.country, row.currency, basis, unknownSource]);
     const parentAsin = basis === "unallocated_rows" ? null : row.parentAsin, key = JSON.stringify([partitionId, parentAsin, basis === "unallocated_rows" ? [row.batchId, row.rowIndex] : null]);
@@ -213,5 +225,5 @@ export function buildProfitBoardReadResult(value: { identity: ProfitBoardReadIde
     return { id: partitionId, storeName: input.storeName, country: input.country, currency: first.currency, basis: first.basis, unknownSource: source.unknownSource, productCount: values.length, trend, rising: eligible.filter(product => product.comparison.profit.delta! > 0).sort((a, b) => b.comparison.profit.delta! - a.comparison.profit.delta! || a.id.localeCompare(b.id)).slice(0, 5).map(rank), falling: eligible.filter(product => product.comparison.profit.delta! < 0).sort((a, b) => a.comparison.profit.delta! - b.comparison.profit.delta! || a.id.localeCompare(b.id)).slice(0, 5).map(rank), missingReason: first.currency === null ? "币种未知的每个原行独立显示；不跨行或跨期比较金额" : first.basis === "reported_parent_row" ? "原报表父体合计单独分区，不与子体派生合计相加" : first.basis === "unallocated_rows" ? "未分配/父体歧义原行独立，不摊入父体或增长下降排名" : null };
   });
   const pageProducts = products.slice(input.groupOffset, input.groupOffset + input.groupLimit), pageRefs = new Set(pageProducts.flatMap(product => product.sourceRows.map(refKey))), pageRows = selectedRows.filter(row => pageRefs.has(refKey(row))), hasMore = input.groupOffset + pageProducts.length < products.length;
-  return checkedResult({ identity, request: input, status: "ready", reasonCode: null, missingReason: null, months, previousMonth: months[4], analysisBasis: "all_authorized_search_matched_groups", timestampBasis: "database_datetime_without_timezone", sources, partitions, products: pageProducts, pageRows, page: { offset: input.groupOffset, limit: input.groupLimit, totalGroups: products.length, totalRows: matched.reduce((sum, [, group]) => sum + group.rows.length, 0), nextOffset: hasMore ? input.groupOffset + pageProducts.length : null, hasMore } });
+  return checkedResult({ identity, request: input, ...(ownership ? { ownership } : {}), status: "ready", reasonCode: null, missingReason: null, months, previousMonth: months[4], analysisBasis: "all_authorized_search_matched_groups", timestampBasis: "database_datetime_without_timezone", sources, partitions, products: pageProducts, pageRows, page: { offset: input.groupOffset, limit: input.groupLimit, totalGroups: products.length, totalRows: matched.reduce((sum, [, group]) => sum + group.rows.length, 0), nextOffset: hasMore ? input.groupOffset + pageProducts.length : null, hasMore } });
 }

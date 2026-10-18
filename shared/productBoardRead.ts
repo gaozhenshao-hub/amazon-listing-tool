@@ -2,6 +2,7 @@ import { z } from "zod";
 import { normalizeMarketplaceCode } from "./marketplaceIdentity";
 import { MONTHLY_FINANCIAL_LIMITS, MonthlyFinancialReadRowSchema, MonthlyFinancialVisibleBatchMetadataSchema, MonthlyFinancialRatioSchema, monthlyFinancialRatio, monthlyFinancialJsonBytes, monthlyFinancialRowMatchesScope, type MonthlyFinancialReadRow, type MonthlyFinancialReadIdentity, type MonthlyFinancialVisibleBatchMetadata } from "./monthlyFinancialRead";
 import type { ProfitBoardMonthSelection } from "./profitBoardRead";
+import { OperationsBoardOwnershipSchema, validateOperationsBoardOwnershipForRows, filterOperationsBoardRowsByOperator, validateOperationsBoardOwnershipPage, type OperationsBoardOwnership } from "./operationsBoardOwnership";
 
 /** Read-only source projection, not a frozen edition, actual receipt ledger,
  * inventory signal, task permission, current product mapping or model output. */
@@ -23,7 +24,7 @@ const monthSchema = z.string().regex(/^[1-9]\d{3}-(?:0[1-9]|1[0-2])$/u);
 const number = z.number().finite().nullable(), currencySchema = z.string().regex(/^[A-Z]{3}$/u).nullable();
 const identitySchema = z.object({ userId: id, workspaceId: id }).strict();
 const offsetSchema = z.number().int().min(0).max(PRODUCT_BOARD_READ_LIMITS.products);
-export const ProductBoardReadInputSchema = z.object({ expectedWorkspaceId: id, month: monthSchema.refine(value => value >= "1000-03"), storeName: text(200), country: text(50).transform(normalizeMarketplaceCode), parentAsin: text().optional(), search: z.string().max(200), highReturnsOffset: offsetSchema, highProfitOffset: offsetSchema, losingOffset: offsetSchema, allOffset: offsetSchema, pageSize: z.number().int().min(1).max(20) }).strict();
+export const ProductBoardReadInputSchema = z.object({ expectedWorkspaceId: id, month: monthSchema.refine(value => value >= "1000-03"), storeName: text(200), country: text(50).transform(normalizeMarketplaceCode), parentAsin: text().optional(), operatorId: id.optional(), search: z.string().max(200), highReturnsOffset: offsetSchema, highProfitOffset: offsetSchema, losingOffset: offsetSchema, allOffset: offsetSchema, pageSize: z.number().int().min(1).max(20) }).strict();
 export type ProductBoardReadInput = z.infer<typeof ProductBoardReadInputSchema>;
 export type ProductBoardReadIdentity = MonthlyFinancialReadIdentity;
 export type ProductBoardMonthSelection = ProfitBoardMonthSelection;
@@ -50,7 +51,7 @@ export type ProductBoardReadSection = z.infer<typeof sectionSchema>;
 const sectionsSchema = z.object({ highReturns: sectionSchema, highProfit: sectionSchema, losing: sectionSchema, all: sectionSchema }).strict();
 const sourceSchema = z.object({ month: monthSchema, status: z.enum(["selected", "not_found", "not_visible"]), selectedBatchId: id.nullable(), batch: MonthlyFinancialVisibleBatchMetadataSchema.nullable(), visibleRows: z.number().int().min(0).max(10000), missingReason: z.string().nullable() }).strict();
 const historySchema = z.object({ complete: z.literal(true), scannedCount: z.number().int().min(0).max(200).nullable(), visibility: z.enum(["full", "scoped"]), firstVisibleMonth: monthSchema.nullable(), sourceMeaning: z.literal("all_saved_effective_history_at_read_time_not_archived_edition") }).strict();
-const resultSchema = z.object({ identity: identitySchema, request: ProductBoardReadInputSchema, status: z.enum(["ready", "missing", "not_found", "invalid"]), reasonCode: z.string().nullable(), missingReason: z.string().nullable(), history: historySchema.nullable(), periods: periodsSchema.nullable(), sources: z.array(sourceSchema).max(1200), sections: sectionsSchema, products: z.array(ProductBoardProductSchema).max(80), pageRows: z.array(MonthlyFinancialReadRowSchema).max(PRODUCT_BOARD_READ_LIMITS.rows), matchedRows: z.number().int().min(0).max(PRODUCT_BOARD_READ_LIMITS.rows), timestampBasis: z.literal("database_datetime_without_timezone") }).strict();
+const resultSchema = z.object({ identity: identitySchema, request: ProductBoardReadInputSchema, ownership: OperationsBoardOwnershipSchema.optional(), status: z.enum(["ready", "missing", "not_found", "invalid"]), reasonCode: z.string().nullable(), missingReason: z.string().nullable(), history: historySchema.nullable(), periods: periodsSchema.nullable(), sources: z.array(sourceSchema).max(1200), sections: sectionsSchema, products: z.array(ProductBoardProductSchema).max(80), pageRows: z.array(MonthlyFinancialReadRowSchema).max(PRODUCT_BOARD_READ_LIMITS.rows), matchedRows: z.number().int().min(0).max(PRODUCT_BOARD_READ_LIMITS.rows), timestampBasis: z.literal("database_datetime_without_timezone") }).strict();
 export const ProductBoardReadResultSchema = resultSchema.superRefine((value, ctx) => validateResult(value, message => ctx.addIssue({ code: z.ZodIssueCode.custom, message })));
 export type ProductBoardReadResult = z.infer<typeof ProductBoardReadResultSchema>;
 
@@ -111,7 +112,7 @@ export function buildProductBoardReadFailure(value: { identity: ProductBoardRead
   return checkedResult({ identity: value.identity, request: input, status: value.status, reasonCode: value.reasonCode, missingReason: value.missingReason, history: null, periods: null, sources: [], sections: Object.fromEntries(PRODUCT_BOARD_SECTIONS.map(key => [key, section(input, key, [])])), products: [], pageRows: [], matchedRows: 0, timestampBasis: "database_datetime_without_timezone" });
 }
 function visibleMetadata(batch: NonNullable<ProductBoardMonthSelection["selection"]["selected"]>["batch"], visibility: "full" | "scoped"): MonthlyFinancialVisibleBatchMetadata { return visibility === "full" ? batch : { visibility, id: batch.id, status: batch.status, createdAt: batch.createdAt, confirmedAt: batch.confirmedAt, timestampBasis: batch.timestampBasis }; }
-export function buildProductBoardReadResult(value: { identity: ProductBoardReadIdentity; input: ProductBoardReadInput; selections: ProductBoardMonthSelection[]; history: { complete: boolean; scannedCount: number; visibility: "full" | "scoped" } }): ProductBoardReadResult {
+export function buildProductBoardReadResult(value: { identity: ProductBoardReadIdentity; input: ProductBoardReadInput; selections: ProductBoardMonthSelection[]; ownership?: OperationsBoardOwnership; history: { complete: boolean; scannedCount: number; visibility: "full" | "scoped" } }): ProductBoardReadResult {
   const input = ProductBoardReadInputSchema.parse(value.input), identity = identitySchema.parse(value.identity);
   if (identity.workspaceId !== input.expectedWorkspaceId) throw new ProductBoardReadError("identity_mismatch");
   if (!value.history.complete) return buildProductBoardReadFailure({ identity, input, status: "invalid", reasonCode: "history_incomplete", missingReason: "未证明已扫描全部有效历史，不用近三月或近六个月冒充累计，不返回部分榜单" });
@@ -140,12 +141,18 @@ export function buildProductBoardReadResult(value: { identity: ProductBoardReadI
   }
   if (selectedRows.length > PRODUCT_BOARD_READ_LIMITS.rows) throw new ProductBoardReadError("row_limit");
   if (new Set(selectedRows.map(refKey)).size !== selectedRows.length) throw new ProductBoardReadError("duplicate_original_reference");
+  let ownership: OperationsBoardOwnership | undefined, filteredRows: MonthlyFinancialReadRow[];
+  try {
+    ownership = value.ownership === undefined ? undefined : validateOperationsBoardOwnershipForRows(value.ownership, selectedRows, identity.userId);
+    if (ownership && ownership.visibility !== value.history.visibility) throw new Error("visibility");
+    filteredRows = filterOperationsBoardRowsByOperator(selectedRows, ownership, input.operatorId);
+  } catch { throw new ProductBoardReadError("ownership_invalid"); }
   const firstVisibleMonth = selectedRows.length ? selectedRows.reduce((first, row) => row.yearMonth < first ? row.yearMonth : first, input.month) : null, totalStart = firstVisibleMonth ?? input.month, quarterStart = fromSerial(serial(input.month) - 2), start = totalStart < quarterStart ? totalStart : quarterStart;
   const timeline = productBoardCalendarMonths(start, input.month), periods = { month: { start: input.month, end: input.month, months: [input.month] }, quarter: { start: quarterStart, end: input.month, months: productBoardCalendarMonths(quarterStart, input.month) }, total: { start: totalStart, end: input.month, months: productBoardCalendarMonths(totalStart, input.month) } };
   const sources = timeline.map(month => sourceByMonth.get(month) ?? { month, status: value.history.visibility === "full" ? "not_found" as const : "not_visible" as const, batch: null, selectedBatchId: null, visibleRows: 0, missingReason: value.history.visibility === "full" ? "该月份店铺/国家没有有效已确认快照" : "该月没有当前可见来源；不区分无源、无权或其他父体数据" });
   const sourcesMap = new Map(sources.map(source => [source.month, source]));
   const groups = new Map<string, { id: string; partitionId: string; parentAsin: string | null; basis: Basis; currency: string | null; rows: MonthlyFinancialReadRow[] }>();
-  for (const row of selectedRows) {
+  for (const row of filteredRows) {
     const basis: Basis = ["unallocated", "ambiguous"].includes(row.allocation) ? "unallocated_rows" : row.allocation === "parent_only" ? "reported_parent_row" : "child_rows", unknownSource = row.currency === null ? { batchId: row.batchId, rowIndex: row.rowIndex } : null;
     const partitionId = JSON.stringify([input.storeName, input.country, row.currency, basis, unknownSource]), parentAsin = basis === "unallocated_rows" ? null : row.parentAsin, key = JSON.stringify([partitionId, parentAsin, basis === "unallocated_rows" ? [row.batchId, row.rowIndex] : null]);
     const group = groups.get(key) ?? { id: key, partitionId, parentAsin, basis, currency: row.currency, rows: [] }; group.rows.push(row); groups.set(key, group);
@@ -165,7 +172,7 @@ export function buildProductBoardReadResult(value: { identity: ProductBoardReadI
   for (const product of candidates) if (product.currency !== null && product.profit !== null && product.profit < 0) { const items = losses.get(product.partitionId) ?? []; items.push(product); losses.set(product.partitionId, items); }
   const losing = [...losses].sort(([a], [b]) => a.localeCompare(b)).flatMap(([, products]) => products.sort((a, b) => a.profit! - b.profit! || a.id.localeCompare(b.id)).slice(0, 10));
   const sections = { highReturns: section(input, "highReturns", highReturns), highProfit: section(input, "highProfit", highProfit), losing: section(input, "losing", losing), all: section(input, "all", matched) }, pageIds = new Set(Object.values(sections).flatMap(section => section.entries.map(entry => entry.productId))), products = matched.filter(group => pageIds.has(group.id)).map(group => product(group, periods, sourcesMap)), pageRefs = new Set(products.flatMap(product => product.sourceRows.map(refKey)));
-  return checkedResult({ identity, request: input, status: "ready", reasonCode: null, missingReason: null, history: { complete: true, scannedCount: value.history.visibility === "full" ? value.history.scannedCount : null, visibility: value.history.visibility, firstVisibleMonth, sourceMeaning: "all_saved_effective_history_at_read_time_not_archived_edition" }, periods, sources, sections, products, pageRows: selectedRows.filter(row => pageRefs.has(refKey(row))), matchedRows: matched.reduce((sum, group) => sum + group.rows.length, 0), timestampBasis: "database_datetime_without_timezone" });
+  return checkedResult({ identity, request: input, ...(ownership ? { ownership } : {}), status: "ready", reasonCode: null, missingReason: null, history: { complete: true, scannedCount: value.history.visibility === "full" ? value.history.scannedCount : null, visibility: value.history.visibility, firstVisibleMonth, sourceMeaning: "all_saved_effective_history_at_read_time_not_archived_edition" }, periods, sources, sections, products, pageRows: selectedRows.filter(row => pageRefs.has(refKey(row))), matchedRows: matched.reduce((sum, group) => sum + group.rows.length, 0), timestampBasis: "database_datetime_without_timezone" });
 }
 
 function validateResult(value: z.infer<typeof resultSchema>, issue: (message: string) => void) {
@@ -175,9 +182,14 @@ function validateResult(value: z.infer<typeof resultSchema>, issue: (message: st
     const { entries, page, rule } = value.sections[key];
     if (page.offset !== value.request[`${key}Offset`] || page.limit !== value.request.pageSize || rule !== sectionRules[key] || entries.length !== Math.min(page.limit, Math.max(0, page.totalProducts - page.offset)) || entries.some((entry, index) => entry.position !== page.offset + index) || new Set(entries.map(entry => entry.productId)).size !== entries.length || page.hasMore !== (page.offset + entries.length < page.totalProducts) || page.nextOffset !== (page.hasMore ? page.offset + entries.length : null)) issue("Section page mismatch");
   }
-  if (value.status !== "ready") { if (value.history || value.periods || value.sources.length || value.products.length || value.pageRows.length || value.matchedRows || Object.values(value.sections).some(section => section.page.totalProducts)) issue("Unavailable result may not contain partial data"); return; }
+  if (value.status !== "ready") { if (value.ownership || value.history || value.periods || value.sources.length || value.products.length || value.pageRows.length || value.matchedRows || Object.values(value.sections).some(section => section.page.totalProducts)) issue("Unavailable result may not contain partial data"); return; }
   if (!value.history || !value.periods) { issue("Complete history and periods required"); return; }
   const { history, periods } = value;
+  validateOperationsBoardOwnershipPage({ ownership: value.ownership, operatorId: value.request.operatorId, userId: value.identity.userId, parentAsin: value.request.parentAsin, month: value.request.month, rows: value.pageRows, products: value.products }, issue);
+  if (value.ownership && value.ownership.visibility !== history.visibility) issue("Ownership/source visibility mismatch");
+  if (value.ownership && value.request.operatorId === undefined && !value.request.search.trim() && value.sections.all.page.offset === 0 && value.sections.all.entries.length === value.sections.all.page.totalProducts) {
+    try { validateOperationsBoardOwnershipForRows(value.ownership, value.pageRows, value.identity.userId); } catch { issue("Complete page ownership directory does not replay original parents"); }
+  }
   if ((history.visibility === "scoped") !== (history.scannedCount === null) || periods.total.start !== (history.firstVisibleMonth ?? value.request.month) || periods.month.start !== value.request.month || periods.quarter.start !== fromSerial(serial(value.request.month) - 2)) issue("History/period basis mismatch");
   for (const key of PRODUCT_BOARD_PERIODS) { try { if (periods[key].end !== value.request.month || !equal(periods[key].months, productBoardCalendarMonths(periods[key].start, periods[key].end))) issue("Calendar period mismatch"); } catch { issue("Calendar limit"); } }
   const timelineStart = periods.total.start < periods.quarter.start ? periods.total.start : periods.quarter.start;

@@ -14,7 +14,11 @@ describe("productBoardRead protected single source-backed query", () => {
     expect(await productBoardReadRouter.createCaller(ctx).get(input)).toEqual({ status: "ready" }); expect(mock.get).toHaveBeenCalledWith(ctx, input);
   });
   it("rejects no-login callers before repository", async () => { await expect(productBoardReadRouter.createCaller({ ...ctx, user: null }).get(input)).rejects.toMatchObject({ code: "UNAUTHORIZED" }); expect(mock.get).not.toHaveBeenCalled(); });
-  it.each([{ operatorId: 3 }, { ownerIds: [3] }, { role: "admin" }, { refresh: true }, { editionId: 1 }, { note: "write" }, { payload: [] }, { sourceIds: [1] }, { batchId: 1 }, { userId: 3 }])("rejects caller authority/writes %j", async patch => {
+  it("forwards a numeric operator as a filter without changing the authenticated actor", async () => {
+    await productBoardReadRouter.createCaller(ctx).get({ ...input, operatorId: 4 });
+    expect(mock.get).toHaveBeenCalledWith(ctx, { ...input, operatorId: 4 });
+  });
+  it.each([{ operatorId: "3" }, { operatorId: 0 }, { operatorId: 1.5 }, { operatorId: 2147483648 }, { ownerIds: [3] }, { role: "admin" }, { refresh: true }, { editionId: 1 }, { note: "write" }, { payload: [] }, { sourceIds: [1] }, { batchId: 1 }, { userId: 3 }])("rejects caller authority/writes %j", async patch => {
     await expect(productBoardReadRouter.createCaller(ctx).get({ ...input, ...patch } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" }); expect(mock.get).not.toHaveBeenCalled();
   });
   it.each([{ expectedWorkspaceId: null }, { month: "2026-13" }, { storeName: "" }, { country: "" }, { parentAsin: "" }, { search: "x".repeat(201) }, { allOffset: -1 }, { highReturnsOffset: -1 }, { highProfitOffset: -1 }, { losingOffset: -1 }, { pageSize: 0 }, { pageSize: 21 }])("rejects malformed calendar/scope/page %j", async patch => {

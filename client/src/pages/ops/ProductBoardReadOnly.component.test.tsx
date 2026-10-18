@@ -8,6 +8,7 @@ import { ProductBoardReadInputSchema, buildProductBoardReadResult, buildProductB
 import { MONTHLY_FINANCIAL_METRICS, parseMonthlyFinancialBatch, type MonthlyFinancialBatchRecord } from "@shared/monthlyFinancialRead";
 import { profitBoardMonths } from "@shared/profitBoardRead";
 import type { ProfitAnalysisWorkflowProps } from "./ProfitAnalysisWorkflow";
+import type { OperationsBoardOwnership } from "@shared/operationsBoardOwnership";
 
 const controls = vi.hoisted(() => ({ auth: { loading: false, error: null as Error | null, user: { id: 7, defaultWorkspaceId: 11, role: "admin" } as { id: number; defaultWorkspaceId: number | null | undefined; role: string } | null }, permissions: { isLoading: false, canRead: vi.fn() }, query: vi.fn() }));
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => controls.auth }));
@@ -18,7 +19,7 @@ vi.mock("./ProfitAnalysisWorkflow", () => ({ default: (props: ProfitAnalysisWork
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
 function input(patch: Partial<ProductBoardReadInput> = {}): ProductBoardReadInput { return ProductBoardReadInputSchema.parse({ expectedWorkspaceId: 11, month: "2026-10", storeName: "合成店铺", country: "US", search: "", highReturnsOffset: 0, highProfitOffset: 0, losingOffset: 0, allOffset: 0, pageSize: 10, ...patch }); }
-type Options = { groups?: number; children?: number; scoped?: boolean; userId?: number; sourceOffset?: number; label?: string; missingMonth?: string; empty?: boolean; unknown?: boolean; zero?: boolean; kinds?: boolean; longHistory?: boolean };
+type Options = { ownership?: OperationsBoardOwnership; groups?: number; children?: number; scoped?: boolean; userId?: number; sourceOffset?: number; label?: string; missingMonth?: string; empty?: boolean; unknown?: boolean; zero?: boolean; kinds?: boolean; longHistory?: boolean };
 /** Actual monthly source parser and product board builder; UI tests do not
  * synthesize financial/ranking output or override the shared validator. */
 function result(request = input(), options: Options = {}): ProductBoardReadResult {
@@ -33,7 +34,7 @@ function result(request = input(), options: Options = {}): ProductBoardReadResul
     const parsed = parseMonthlyFinancialBatch(record);
     return { month, metadataVisibility: options.scoped ? "scoped" : "full", selection: { selected: parsed, scannedBatchIds: [id], complete: true }, ...(options.scoped ? { authorizedRowRefs: parsed.rows.map(({ batchId, rowIndex }) => ({ batchId, rowIndex })) } : {}) };
   });
-  return buildProductBoardReadResult({ identity: { userId: options.userId ?? 7, workspaceId: request.expectedWorkspaceId }, input: request, selections, history: { complete: true, scannedCount: options.empty ? 0 : months.length, visibility: options.scoped ? "scoped" : "full" } });
+  return buildProductBoardReadResult({ identity: { userId: options.userId ?? 7, workspaceId: request.expectedWorkspaceId }, input: request, selections, history: { complete: true, scannedCount: options.empty ? 0 : months.length, visibility: options.scoped ? "scoped" : "full" }, ...(options.ownership ? { ownership: options.ownership } : {}) });
 }
 function fillScope() { fireEvent.change(screen.getByLabelText("产品看板基准月份（YYYY-MM）"), { target: { value: "2026-10" } }); fireEvent.change(screen.getByLabelText("产品看板店铺"), { target: { value: "合成店铺" } }); fireEvent.change(screen.getByLabelText("产品看板站点 / 国家代码"), { target: { value: "美国" } }); }
 const readButton = () => screen.getByRole("button", { name: "读取已有产品看板" });
@@ -41,6 +42,117 @@ async function readReady() { fireEvent.click(readButton()); await screen.findByR
 function openProduct(parent = "P00") { fireEvent.click(within(screen.getByRole("region", { name: "全部产品" })).getByRole("button", { name: `展开 ${parent} 全部子体与原行` })); return within(screen.getByRole("region", { name: "产品完整钻取" })); }
 beforeEach(() => { controls.auth = { loading: false, error: null, user: { id: 7, defaultWorkspaceId: 11, role: "admin" } }; controls.permissions.isLoading = false; controls.permissions.canRead.mockReset().mockReturnValue(true); controls.query.mockReset(); });
 afterEach(cleanup);
+function ownership(groups = 2, scoped = false, unavailable = false): OperationsBoardOwnership {
+  return { version: 1, status: unavailable ? "unavailable" : "ready", reasonCode: unavailable ? "registry_unavailable" : null,
+    meaning: "current_manual_else_latest_visible_financial_mapping_not_archive", visibility: scoped ? "scoped" : "full",
+    operators: unavailable ? [] : (scoped ? [7] : [7, 8]).map(userId => ({ userId, displayName: "SYNTHETIC 同名运营" })),
+    parents: Array.from({ length: groups }, (_, index) => ({ parentAsin: `P${String(index).padStart(2, "0")}`, operatorIds: unavailable ? [] : [scoped ? 7 : index % 2 ? 8 : 7],
+      status: unavailable ? "unresolved" : "resolved", basis: unavailable ? "none" : "manual", sourceMonth: null, reasonCode: unavailable ? "registry_unavailable" : null })),
+    partners: { status: "not_configured", reasonCode: "trusted_partner_relationship_not_configured" } };
+}
+const ownerSelect = () => screen.getByRole("combobox", { name: "产品看板运营" });
+describe("产品看板数字负责人范围", () => {
+  it("requires an explicit directory read; legacy unscreened fixtures cannot authorize a selection", async () => {
+    controls.query.mockResolvedValue(result()); render(<ProductBoardReadOnly />); expect(ownerSelect()).toBeDisabled(); expect(controls.query).not.toHaveBeenCalled();
+    fillScope(); await readReady(); expect(ownerSelect()).toBeDisabled(); expect(screen.getByText(/请先读取当前范围以核验数字负责人目录/)).toBeInTheDocument();
+  });
+  it("distinguishes duplicate display names by numeric ID and filters on the server from page zero", async () => {
+    controls.query.mockImplementation(async request => result(request, { ownership: ownership() })); render(<ProductBoardReadOnly />); fillScope(); await readReady();
+    expect(within(ownerSelect()).getByRole("option", { name: "SYNTHETIC 同名运营 · ID 7" })).toBeInTheDocument();
+    expect(within(ownerSelect()).getByRole("option", { name: "SYNTHETIC 同名运营 · ID 8" })).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("region", { name: "全部产品" })).getByRole("button", { name: "展开 P00 全部子体与原行" }));
+    expect(screen.getByLabelText("已核来源利润流程")).toBeInTheDocument();
+    fireEvent.change(ownerSelect(), { target: { value: "8" } });
+    expect(screen.queryByRole("region", { name: "全部产品" })).not.toBeInTheDocument(); expect(screen.queryByLabelText("已核来源利润流程")).not.toBeInTheDocument();
+    expect(controls.query).toHaveBeenCalledTimes(1); expect(ownerSelect()).toBeEnabled();
+    await readReady(); expect(controls.query.mock.calls[1][0]).toEqual(input({ operatorId: 8 }));
+    expect(within(screen.getByRole("region", { name: "全部产品" })).queryByRole("button", { name: "展开 P00 全部子体与原行" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "全部产品" })).getByRole("button", { name: "展开 P01 全部子体与原行" })).toBeInTheDocument();
+    fireEvent.change(ownerSelect(), { target: { value: "all" } }); await readReady(); expect(controls.query.mock.calls[2][0]).toEqual(input());
+  });
+  it("ordinary users have only their own verified numeric entry and no invented partner grant", async () => {
+    controls.auth.user!.role = "ops_specialist"; controls.query.mockImplementation(async request => result(request, { scoped: true, ownership: ownership(2, true) }));
+    render(<ProductBoardReadOnly />); fillScope(); await readReady(); expect(within(ownerSelect()).getByRole("option", { name: "自己" })).toBeInTheDocument();
+    expect(within(ownerSelect()).queryByRole("option", { name: "全部运营" })).not.toBeInTheDocument(); expect(within(ownerSelect()).getAllByRole("option")).toHaveLength(2);
+    expect(screen.getAllByText(/搭档关系尚未配置/).length).toBeGreaterThan(0); fireEvent.change(ownerSelect(), { target: { value: "7" } }); await readReady();
+    expect(controls.query.mock.calls[1][0]).toEqual(input({ operatorId: 7 }));
+  });
+  it("manager registry-unavailable fallback remains unfiltered finance, not unassigned products", async () => {
+    controls.query.mockResolvedValue(result(input(), { ownership: ownership(2, false, true) })); render(<ProductBoardReadOnly />); fillScope(); await readReady();
+    expect(ownerSelect()).toBeDisabled(); expect(screen.getByText(/运营目录不可用；仅保留管理员无运营筛选的授权财务/)).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "全部产品" })).toBeInTheDocument(); expect(controls.query.mock.calls[0][0]).toEqual(input());
+  });
+  it.each(["missing", "request", "directory", "parent", "unavailable"])("rejects %s selected-owner evidence without falling back to all", async kind => {
+    controls.query.mockResolvedValueOnce(result(input(), { ownership: ownership() })); render(<ProductBoardReadOnly />); fillScope(); await readReady();
+    fireEvent.change(ownerSelect(), { target: { value: "8" } });
+    const bad = clone(result(input({ operatorId: 8 }), { ownership: ownership() }));
+    if (kind === "missing") delete bad.ownership;
+    if (kind === "request") delete bad.request.operatorId;
+    if (kind === "directory") bad.ownership!.operators = bad.ownership!.operators.filter(value => value.userId !== 8);
+    if (kind === "parent") bad.ownership!.parents.forEach(value => { value.operatorIds = [7]; });
+    if (kind === "unavailable") bad.ownership = ownership(2, false, true);
+    controls.query.mockResolvedValue(bad); fireEvent.click(readButton()); await screen.findByRole("alert");
+    expect(screen.queryByRole("region", { name: "全部产品" })).not.toBeInTheDocument(); expect(ownerSelect()).toHaveValue("8"); expect(ownerSelect()).toBeDisabled();
+    fireEvent.click(readButton()); await waitFor(() => expect(controls.query).toHaveBeenCalledTimes(3));
+    expect(controls.query.mock.calls[2][0].operatorId).toBe(8);
+  });
+  it.each(["invalid response", "service error"])("explicitly clears an invalid selected operator after %s without automatically reading all", async kind => {
+    controls.query.mockResolvedValueOnce(result(input(), { ownership: ownership() })); render(<ProductBoardReadOnly />); fillScope(); await readReady();
+    expect(screen.queryByRole("button", { name: "清除运营筛选" })).not.toBeInTheDocument(); fireEvent.change(ownerSelect(), { target: { value: "8" } });
+    if (kind === "service error") controls.query.mockRejectedValueOnce(new Error("SYNTHETIC denied"));
+    else { const bad = result(input({ operatorId: 8 }), { ownership: ownership() }); delete bad.ownership; controls.query.mockResolvedValueOnce(bad); }
+    fireEvent.click(readButton()); await screen.findByRole("alert"); expect(ownerSelect()).toBeDisabled(); expect(ownerSelect()).toHaveValue("8");
+    fireEvent.click(screen.getByRole("button", { name: "清除运营筛选" }));
+    expect(ownerSelect()).toHaveValue("all"); expect(ownerSelect()).toBeDisabled(); expect(screen.queryByRole("button", { name: "清除运营筛选" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "全部产品" })).not.toBeInTheDocument(); expect(screen.queryByLabelText("已核来源利润流程")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument(); expect(controls.query).toHaveBeenCalledTimes(2); expect(screen.getByLabelText("产品看板店铺")).toHaveValue("合成店铺");
+    controls.query.mockImplementationOnce(async request => result(request, { ownership: ownership() })); await readReady();
+    expect(controls.query.mock.calls[2][0]).toEqual(input()); expect(ownerSelect()).toBeEnabled();
+  });
+  it.each(["full", "foreign", "unavailable"])("ordinary user rejects %s ownership directory even with scoped financial metadata", async kind => {
+    controls.auth.user!.role = "ops_specialist"; const bad = result(input(), { scoped: true, ownership: ownership(2, true) });
+    if (kind === "full") bad.ownership!.visibility = "full";
+    if (kind === "foreign") bad.ownership!.operators.push({ userId: 8, displayName: "SYNTHETIC other" });
+    if (kind === "unavailable") bad.ownership = ownership(2, true, true);
+    controls.query.mockResolvedValue(bad); render(<ProductBoardReadOnly />); fillScope(); fireEvent.click(readButton()); await screen.findByRole("alert");
+    expect(screen.queryByRole("region", { name: "全部产品" })).not.toBeInTheDocument(); expect(ownerSelect()).toBeDisabled(); expect(screen.queryByRole("option", { name: /SYNTHETIC other/ })).not.toBeInTheDocument();
+  });
+  it.each(["基准月份（YYYY-MM）", "店铺", "站点 / 国家代码", "父 ASIN（可选）", "产品搜索（保留完整父组）"])("scope edit %s clears its entire directory and old selection immediately", async field => {
+    controls.query.mockResolvedValue(result(input(), { ownership: ownership() })); render(<ProductBoardReadOnly />); fillScope(); await readReady();
+    fireEvent.change(ownerSelect(), { target: { value: "8" } }); fireEvent.change(screen.getByLabelText("产品看板" + field), { target: { value: "changed" } });
+    expect(ownerSelect()).toBeDisabled(); expect(ownerSelect()).toHaveValue("all"); expect(within(ownerSelect()).queryByRole("option", { name: /ID 8/ })).not.toBeInTheDocument();
+    expect(controls.query).toHaveBeenCalledTimes(1);
+  });
+  it.each(["actor", "workspace", "role", "permission"])("%s change clears the private directory", async kind => {
+    controls.query.mockResolvedValue(result(input(), { ownership: ownership() })); const ui = render(<ProductBoardReadOnly />); fillScope(); await readReady();
+    if (kind === "actor") controls.auth.user!.id = 8; if (kind === "workspace") controls.auth.user!.defaultWorkspaceId = 12; if (kind === "role") controls.auth.user!.role = "ops_specialist"; if (kind === "permission") controls.permissions.canRead.mockReturnValue(false);
+    ui.rerender(<ProductBoardReadOnly />); expect(screen.queryByRole("option", { name: "SYNTHETIC 同名运营 · ID 8" })).not.toBeInTheDocument(); expect(controls.query).toHaveBeenCalledTimes(1);
+  });
+  it("another actor's same-workspace commit clears old ownership and finance, then rereads exactly once with the selected ID", async () => {
+    controls.query.mockImplementation(async request => result(request, { ownership: ownership() })); render(<ProductBoardReadOnly />); fillScope(); await readReady();
+    fireEvent.change(ownerSelect(), { target: { value: "8" } }); await readReady(); const response = deferred<ProductBoardReadResult>(); controls.query.mockReturnValueOnce(response.promise);
+    act(() => publishMonthlyFinancialChange({ userId: 88, workspaceId: 11, action: "confirm", batchId: 800 }));
+    expect(controls.query).toHaveBeenCalledTimes(3); expect(controls.query.mock.calls[2][0]).toEqual(input({ operatorId: 8 }));
+    expect(ownerSelect()).toBeDisabled(); expect(screen.queryByRole("region", { name: "全部产品" })).not.toBeInTheDocument(); expect(within(ownerSelect()).queryByRole("option", { name: "SYNTHETIC 同名运营 · ID 8" })).not.toBeInTheDocument();
+    await act(async () => response.resolve(result(input({ operatorId: 8 }), { ownership: ownership() })));
+    expect(ownerSelect()).toHaveValue("8"); expect(ownerSelect()).toBeEnabled(); expect(controls.query).toHaveBeenCalledTimes(3);
+    act(() => publishMonthlyFinancialChange({ userId: 88, workspaceId: 12, action: "confirm", batchId: 800 })); act(() => publishMonthlyFinancialChange({ userId: 88, workspaceId: 11, action: "upload", batchId: 800 }));
+    expect(ownerSelect()).toBeEnabled(); expect(controls.query).toHaveBeenCalledTimes(3);
+  });
+  it("a source change while the selection is unsubmitted clears the retained directory without starting a read", async () => {
+    controls.query.mockResolvedValue(result(input(), { ownership: ownership() })); render(<ProductBoardReadOnly />); fillScope(); await readReady();
+    fireEvent.change(ownerSelect(), { target: { value: "8" } }); act(() => publishMonthlyFinancialChange({ userId: 88, workspaceId: 11, action: "revoke", batchId: 800 }));
+    expect(ownerSelect()).toBeDisabled(); expect(ownerSelect()).toHaveValue("8"); expect(controls.query).toHaveBeenCalledTimes(1);
+  });
+  it("rejects ownership changes during pagination rather than mixing owner scopes", async () => {
+    const original = ownership(30); controls.query.mockImplementationOnce(async request => result(request, { groups: 30, ownership: original }));
+    render(<ProductBoardReadOnly />); fillScope(); await readReady();
+    const changed = clone(original); changed.operators[1].displayName = "SYNTHETIC changed";
+    controls.query.mockImplementationOnce(async request => result(request, { groups: 30, ownership: changed }));
+    fireEvent.click(screen.getByRole("button", { name: "全部产品下一页" })); await screen.findByRole("alert");
+    expect(screen.queryByRole("region", { name: "全部产品" })).not.toBeInTheDocument(); expect(ownerSelect()).toBeDisabled();
+  });
+});
 
 describe("product board profit workflow integration", () => {
   it.each([
@@ -95,7 +207,7 @@ describe("explicit readonly product board gates", () => {
     act(() => publishMonthlyFinancialChange({ userId: 7, workspaceId: 12, action: "confirm", batchId: 80 }));
     act(() => publishMonthlyFinancialChange({ userId: 7, workspaceId: 11, action: "upload", batchId: 80 }));
     expect(controls.query).toHaveBeenCalledTimes(1);
-    act(() => publishMonthlyFinancialChange({ userId: 7, workspaceId: 11, action: "confirm", batchId: 80 }));
+    act(() => publishMonthlyFinancialChange({ userId: 8, workspaceId: 11, action: "confirm", batchId: 80 }));
     await waitFor(() => expect(controls.query).toHaveBeenCalledTimes(2));
     expect(controls.query.mock.calls[1][0]).toEqual(input()); expect(screen.getByLabelText("产品看板店铺")).toHaveValue("合成店铺");
     fireEvent.change(screen.getByLabelText("产品看板店铺"), { target: { value: "New draft scope" } });

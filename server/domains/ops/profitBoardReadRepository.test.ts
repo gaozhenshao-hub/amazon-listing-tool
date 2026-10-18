@@ -18,16 +18,21 @@ const batch = (patch: Row = {}, business: Row[] = [businessRow()]): Row => {
 };
 const assignment = (patch: Row = {}): Row => ({ id: 51, workspaceId: 7, parentAsin: parent, storeName: input.storeName, country: "美国", assigneeUserId: 3, isActive: 1, ...patch });
 const mapping = (patch: Row = {}): Row => ({ id: 61, workspaceId: 7, externalName: "Alice", sourceType: "all", systemUserId: 3, isConfirmed: 1, ...patch });
-let actors: Row[], batches: Row[], assignments: Row[], mappings: Row[], policies: Row[], overrides: Row[];
+const member = (userId: number, patch: Row = {}): Row => ({ id: userId + 100, workspaceId: 7, userId, membershipStatus: "active", actorId: userId, actorStatus: "active", defaultWorkspaceId: 7, displayName: "Same Name", nameBytes: 9, nameCharacters: 9, ...patch });
+let actors: Row[], batches: Row[], assignments: Row[], mappings: Row[], policies: Row[], overrides: Row[], members: Row[];
 let failures: Record<string, unknown>, candidateOverride: Row[] | null, detailOverride: Row[] | null, assignmentOverride: Row[] | null, mappingOverride: Row[] | null;
 let afterCandidates: (() => void) | null, queries: { sql: string; params: unknown[] }[], commits: number, rollbacks: number;
 const execute = vi.fn(async (statement: SQL) => {
   const query = new MySqlDialect().sqlToQuery(statement); queries.push(query);
-  for (const table of ["users", "ops_monthly_profit_imports", "ops_inventory_owner_assignments", "operator_name_mappings", "security_access_policies", "role_permissions"]) if (query.sql.includes(`FROM ${table}`) && failures[table]) throw failures[table];
+  for (const table of ["users", "ops_monthly_profit_imports", "ops_inventory_owner_assignments", "operator_name_mappings", "workspace_memberships", "security_access_policies", "role_permissions"]) if (query.sql.includes(`FROM ${table}`) && failures[table]) throw failures[table];
+  if (query.sql.includes("FROM workspace_memberships")) return [members.filter(row => row.workspaceId === query.params[0] && query.params.slice(1).includes(row.userId)), []];
   if (query.sql.includes("FROM users")) return [actors, []];
   if (query.sql.includes("FROM security_access_policies")) return [policies, []];
   if (query.sql.includes("FROM role_permissions")) return [overrides, []];
-  if (query.sql.includes("FROM ops_inventory_owner_assignments")) return [assignmentOverride ?? assignments.filter(row => row.workspaceId === query.params[0] && row.storeName === query.params[1] && normalizeMarketplaceCode(String(row.country)) === query.params[2] && row.isActive === 1 && query.params.slice(3).includes(row.parentAsin)), []];
+  if (query.sql.includes("FROM ops_inventory_owner_assignments")) {
+    const allCountries = query.sql.includes("ORDER BY id");
+    return [assignmentOverride ?? assignments.filter(row => row.workspaceId === query.params[0] && row.storeName === query.params[1] && (allCountries || normalizeMarketplaceCode(String(row.country)) === query.params[2]) && row.isActive === 1 && query.params.slice(allCountries ? 2 : 3).includes(row.parentAsin)), []];
+  }
   if (query.sql.includes("FROM operator_name_mappings")) return [mappingOverride ?? mappings.filter(row => row.workspaceId === query.params[0] && row.isConfirmed === 1 && (query.sql.includes("IN ('saihu','all')") ? ["saihu", "all"] : ["all"]).includes(String(row.sourceType)) && query.params.slice(1).includes(row.externalName)), []];
   if (query.sql.includes("FROM ops_monthly_profit_imports")) {
     if (query.sql.includes("LIMIT 201")) {
@@ -49,7 +54,79 @@ async function transactionAdapter<T>(body: (tx: DbExecutor) => Promise<T>): Prom
 const database = vi.fn(async () => ({ transaction: transactionAdapter }));
 const repo = createProfitBoardReadRepository({ database });
 function regular() { actors[0].role = "ops_specialist"; return context("ops_specialist"); }
+describe("profit board current numeric-owner directory integration", () => {
+  it("filters whole parents before paging, retains all historical siblings, and never uses duplicate display names as identity", async () => {
+    batches = [batch({}, [
+      businessRow({ operator: "Alice/Bob" }), businessRow({ asin: "CHILD-2", operator: "Alice/Bob" }),
+      businessRow({ yearMonth: "2026-08", operator: "Former" }),
+      businessRow({ parentAsin: "FOREIGN", asin: "CHILD-3", operator: "Alice", title: "NOT_SELECTED_PARENT" }),
+    ])];
+    mappings = [mapping(), mapping({ id: 62, externalName: "Bob", systemUserId: 4 })];
+    const result = await repo.get(context(), { ...input, operatorId: 4, ...{ groupLimit: 1 } });
+    expect(result.status).toBe("ready");
+    expect(result.products.map(item => item.parentAsin)).toEqual([parent]);
+    expect(result.pageRows).toHaveLength(3);
+    expect(result.pageRows.every(row => row.parentAsin === parent)).toBe(true);
+    expect(result.ownership?.operators).toEqual([{ userId: 3, displayName: "Same Name" }, { userId: 4, displayName: "Same Name" }]);
+    expect(result.ownership?.parents.find(item => item.parentAsin === parent)).toMatchObject({ operatorIds: [3, 4], sourceMonth: "2026-09" });
+    expect(queries.find(query => query.sql.includes("FROM workspace_memberships"))?.sql).toMatch(/FOR SHARE$/u);
+    expect(queries.every(query => /^SELECT /u.test(query.sql))).toBe(true);
+  });
+  it("a live manual numeric owner takes precedence over historical and current operator names", async () => {
+    assignments = [assignment({ assigneeUserId: 4 })]; mappings = [mapping()];
+    const result = await repo.get(context(), { ...input, operatorId: 4 });
+    expect(result.status).toBe("ready"); expect(result.products).toHaveLength(1);
+    expect(result.ownership?.parents[0]).toMatchObject({ basis: "manual", sourceMonth: null, operatorIds: [4] });
+    expect(queries.some(query => query.sql.includes("FROM operator_name_mappings"))).toBe(false);
+  });
+  it("ordinary callers can narrow only existing authorized rows and cannot select a co-owner or partner", async () => {
+    batches = [batch({}, [businessRow({ operator: "Alice/Bob" })])];
+    mappings = [mapping(), mapping({ id: 62, externalName: "Bob", systemUserId: 4 })];
+    const own = await repo.get(regular(), { ...input, operatorId: 3 });
+    expect(own.status).toBe("ready"); expect(own.products).toHaveLength(1);
+    expect(own.ownership).toMatchObject({ visibility: "scoped", operators: [{ userId: 3, displayName: "Same Name" }], partners: { status: "not_configured" } });
+    expect(own.ownership?.parents[0].operatorIds).toEqual([3]);
+    const peer = await repo.get(context("ops_specialist"), { ...input, operatorId: 4 });
+    expect(peer.status).toBe("invalid"); expect(peer.products).toEqual([]); expect(peer.pageRows).toEqual([]);
+  });
+  it.each(["ops_inventory_owner_assignments", "operator_name_mappings", "workspace_memberships"])("manager unfiltered legacy read survives an explicitly missing %s without inventing a directory", async table => {
+    mappings = [mapping()]; failures[table] = { cause: { code: "ER_NO_SUCH_TABLE" } };
+    const all = await repo.get(context(), input);
+    expect(all.status).toBe("ready"); expect(all.products).toHaveLength(1);
+    expect(all.ownership).toMatchObject({ status: "unavailable", reasonCode: "registry_unavailable", operators: [], parents: [{ parentAsin: parent, operatorIds: [], status: "unresolved", basis: "none", sourceMonth: null, reasonCode: "registry_unavailable" }] });
+    await expect(repo.get(context(), { ...input, operatorId: 3 })).rejects.toMatchObject({ message: "PROFIT_BOARD_READ_OWNER_REGISTRY_UNAVAILABLE" });
+  });
+  it("does not turn unknown registry outages or invalid member records into successful all-owner fallback", async () => {
+    mappings = [mapping()]; failures.workspace_memberships = { code: "ETIMEDOUT", message: "PRIVATE_ERROR" };
+    await expect(repo.get(context(), input)).rejects.toMatchObject({ message: "PROFIT_BOARD_READ_FAILED" });
+    failures = {}; members = [member(3, { actorId: 4 })];
+    await expect(repo.get(context(), input)).rejects.toMatchObject({ message: "PROFIT_BOARD_READ_OWNER_MEMBER_INVALID" });
+  });
+  it("ordinary authorization never bypasses a missing source-owner registry", async () => {
+    failures.ops_inventory_owner_assignments = { code: "ER_NO_SUCH_TABLE" };
+    await expect(repo.get(regular(), input)).rejects.toMatchObject({ message: "PROFIT_BOARD_READ_FAILED" });
+    expect(queries.some(query => query.sql.includes("FROM workspace_memberships"))).toBe(false);
+  });
+  it.each([{ membershipStatus: "disabled" }, { actorStatus: "disabled" }, { defaultWorkspaceId: 8 }])("rejects stale numeric selection when its member is no longer active in this workspace %j", async patch => {
+    mappings = [mapping()]; members = [member(3, patch)];
+    const all = await repo.get(context(), input);
+    expect(all.status).toBe("ready"); expect(all.products).toHaveLength(1);
+    expect(all.ownership?.operators).toEqual([]);
+    expect(all.ownership?.parents[0]).toMatchObject({ status: "unresolved", reasonCode: "owner_inactive" });
+    const stale = await repo.get(context(), { ...input, operatorId: 3 });
+    expect(stale.status).toBe("invalid"); expect(stale.products).toEqual([]); expect(stale.pageRows).toEqual([]);
+  });
+  it("source events and subsequent reads resolve ownership fresh rather than reusing a prior ID directory", async () => {
+    assignments = [assignment()];
+    expect((await repo.get(context(), { ...input, operatorId: 3 })).status).toBe("ready");
+    assignments = [assignment({ assigneeUserId: 4 })];
+    expect((await repo.get(context(), { ...input, operatorId: 3 })).status).toBe("invalid");
+    expect((await repo.get(context(), { ...input, operatorId: 4 })).status).toBe("ready");
+    expect(transaction).toHaveBeenCalledTimes(3);
+  });
+});
 beforeEach(() => {
+  members = [member(3), member(4)];
   vi.clearAllMocks(); actors = [{ id: 3, role: "ops_manager", status: "active", defaultWorkspaceId: 7 }]; batches = [batch()]; assignments = []; mappings = []; policies = []; overrides = [];
   failures = {}; candidateOverride = null; detailOverride = null; assignmentOverride = null; mappingOverride = null; afterCandidates = null; queries = []; commits = 0; rollbacks = 0;
 });
@@ -207,7 +284,7 @@ describe("profit board complete ordinary-user parent-month authorization", () =>
     const rows = Array.from({ length: 501 }, (_, index) => businessRow({ parentAsin: `P${index}`, asin: `C${index}`, sku: `SKU-${index}` }));
     batches = [batch({}, rows)]; assignments = rows.map((row, index) => assignment({ id: 51 + index, parentAsin: row.parentAsin }));
     const result = await repo.get(regular(), { ...input, groupLimit: 1 }); expect(result.status).toBe("ready"); expect(result.page.totalGroups).toBe(501); expect(result.page.totalRows).toBe(501);
-    const ownerQueries = queries.filter(query => query.sql.includes("FROM ops_inventory_owner_assignments")); expect(ownerQueries).toHaveLength(2); expect(ownerQueries.map(query => query.params.length)).toEqual([503, 4]);
+    const ownerQueries = queries.filter(query => query.sql.includes("FROM ops_inventory_owner_assignments")); expect(ownerQueries).toHaveLength(4); expect(ownerQueries.map(query => query.params.length)).toEqual([503, 4, 502, 3]);
     expect(result.partitions[0].trend[5].profit).toBe(6012);
   });
   it.each(["users", "security_access_policies", "role_permissions", "ops_inventory_owner_assignments", "operator_name_mappings"])("missing %s is never relabeled missing financial source", async table => {
@@ -230,7 +307,7 @@ describe("profit board complete ordinary-user parent-month authorization", () =>
   it.each([null, {}])("requires a real transactional database %j", async db => {
     const service = createProfitBoardReadRepository({ database: async () => db }); await expect(service.get(context(), input)).rejects.toMatchObject({ message: "PROFIT_BOARD_READ_TRANSACTION_REQUIRED" });
   });
-  it.each([{ month: "2026-00" }, { month: "1000-01" }, { userId: 3 }, { operatorId: 3 }, { groupLimit: 51 }, { expectedWorkspaceId: null }])("repository also rejects malformed and authority-bearing input before DB %j", async patch => {
+  it.each([{ month: "2026-00" }, { month: "1000-01" }, { userId: 3 }, { operatorId: "3" }, { operatorId: 0 }, { operatorId: 1.5 }, { groupLimit: 51 }, { expectedWorkspaceId: null }])("repository also rejects malformed and authority-bearing input before DB %j", async patch => {
     await expect(repo.get(context(), { ...input, ...patch } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" }); expect(database).not.toHaveBeenCalled();
   });
   it("does not claim success on failed transaction completion", async () => {

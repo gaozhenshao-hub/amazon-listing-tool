@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import "./operationsBoardOwnership.test";
+import { buildUnavailableOperationsBoardOwnership, type OperationsBoardOwnership } from "./operationsBoardOwnership";
 import { buildProductBoardReadFailure, buildProductBoardReadResult, productBoardCalendarMonths, ProductBoardReadError, ProductBoardReadInputSchema, ProductBoardReadResultSchema, PRODUCT_BOARD_SECTIONS, PRODUCT_BOARD_READ_LIMITS, type ProductBoardMonthSelection, type ProductBoardReadInput, type ProductBoardReadResult } from "./productBoardRead";
 import { MONTHLY_FINANCIAL_METRICS, parseMonthlyFinancialBatch, findMonthlyFinancialSnapshot, monthlyFinancialJsonBytes, type MonthlyFinancialBatchRecord, type MonthlyFinancialMetrics } from "./monthlyFinancialRead";
 
@@ -16,6 +18,87 @@ const build = (rows = [row()], patch: Partial<ProductBoardReadInput> = {}) => fr
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const parent = (result: ProductBoardReadResult, value = "P") => result.products.find(product => product.parentAsin === value)!;
 const entries = (result: ProductBoardReadResult, key: typeof PRODUCT_BOARD_SECTIONS[number]) => result.sections[key].entries.map(entry => result.products.find(product => product.id === entry.productId)!);
+
+function owners(rows: ReturnType<typeof row>[], assignment: Record<string, number[]> = {}): OperationsBoardOwnership {
+  const parsed = parseMonthlyFinancialBatch(record(rows)).rows.filter(row => row.storeName === "Store" && row.country === "US" && ["child", "parent_only"].includes(row.allocation));
+  return { version: 1, meaning: "current_manual_else_latest_visible_financial_mapping_not_archive", status: "ready", reasonCode: null, visibility: "full", operators: [{ userId: 7, displayName: "Synthetic A" }, { userId: 8, displayName: "Synthetic B" }, { userId: 9, displayName: "Synthetic C" }], parents: [...new Set(parsed.map(row => row.parentAsin))].map(parentAsin => ({ parentAsin, operatorIds: assignment[parentAsin] ?? [7], status: "resolved", basis: "confirmed_source_mapping", sourceMonth: parsed.filter(row => row.parentAsin === parentAsin).map(row => row.yearMonth).sort().at(-1)!, reasonCode: null })), partners: { status: "not_configured", reasonCode: "trusted_partner_relationship_not_configured" } };
+}
+const owned = (rows: ReturnType<typeof row>[], patch: Partial<ProductBoardReadInput> = {}, ownership = owners(rows)) => buildProductBoardReadResult({ identity, input: { ...input, ...patch }, selections: selections(rows), history: { complete: true, scannedCount: 1, visibility: "full" }, ownership });
+
+describe("product board whole-parent operator filtering", () => {
+  it("preserves legacy input and result shapes when the optional metadata is absent", () => {
+    expect(ProductBoardReadInputSchema.parse(input)).toEqual(input); expect(build()).not.toHaveProperty("ownership");
+    expect(ProductBoardReadInputSchema.parse({ ...input, operatorId: 7 }).operatorId).toBe(7);
+    expect(() => build([row()], { operatorId: 7 })).toThrow(ProductBoardReadError);
+  });
+  it("keeps all history, duplicate child SKU rows and original fees for a shared parent once", () => {
+    const rows = [row({ yearMonth: "2024-01", operator: "Old owner", financialProfit: 5 }), row({ operator: "New owner", financialProfit: 20 }), row({ sku: "SECOND", operator: "Other name", financialProfit: 30, commission: 9 }), row({ parentAsin: "OTHER", asin: "OTHER", financialProfit: 1000 })], ownership = owners(rows, { P: [7, 8], OTHER: [8] });
+    const result = owned(rows, { operatorId: 7 }, ownership);
+    expect(result.pageRows).toHaveLength(3); expect(result.matchedRows).toBe(3); expect(result.periods?.total.months).toHaveLength(34);
+    expect(result.products).toHaveLength(1); expect(parent(result).financial.profit).toBe(50); expect(parent(result).rates.total.profit).toBe(55);
+    expect(parent(result).children).toHaveLength(1); expect(parent(result).children[0].skus).toEqual(["SKU", "SECOND"]);
+    expect(result.pageRows[2].metrics.commission).toBe(9); expect(result.pageRows[2].raw).toEqual(rows[2].raw);
+    expect(owned(rows, { operatorId: 8 }, ownership).matchedRows).toBe(4);
+  });
+  it("filters complete parents before all three rankings and all-products pagination", () => {
+    const rows = Array.from({ length: 6 }, (_, index) => row({ parentAsin: `P${index}`, asin: `A${index}`, financialProfit: index < 4 ? 2000 + index : -200 - index, salesQty: 100, returnQty: 10 }));
+    const ownership = owners(rows, { P0: [8], P1: [7], P2: [8], P3: [7], P4: [8], P5: [7] }), result = owned(rows, { operatorId: 7, pageSize: 1 }, ownership);
+    expect(result.sections.all.page).toMatchObject({ totalProducts: 3, hasMore: true, nextOffset: 1 });
+    expect(result.sections.highProfit.page.totalProducts).toBe(2); expect(result.sections.highReturns.page.totalProducts).toBe(3); expect(result.sections.losing.page.totalProducts).toBe(1);
+    expect(entries(result, "highProfit")[0].parentAsin).toBe("P3"); expect(entries(result, "losing")[0].parentAsin).toBe("P5");
+    expect(result.products.every(product => ["P1", "P3", "P5"].includes(product.parentAsin!))).toBe(true); expect(result.matchedRows).toBe(3);
+    expect(owned(rows, { operatorId: 7, allOffset: 1, pageSize: 1 }, ownership).sections.all.entries[0].position).toBe(1);
+  });
+  it("retains currency and reported-parent isolation plus unknown values", () => {
+    const rows = [row({ financialProfit: null }), row({ asin: "CAD", raw: { currency: "CAD" }, financialProfit: 2000 }), row({ asin: "UNKNOWN", raw: {} }), row({ asin: "", financialProfit: 5000 }), row({ parentAsin: "", asin: "UNALLOCATED" })];
+    const result = owned(rows, { operatorId: 7 }); expect(result.products).toHaveLength(4); expect(result.pageRows).toHaveLength(4);
+    expect(result.products.find(product => product.basis === "child_rows" && product.currency === "USD")!.financial.profit).toBeNull();
+    expect(result.sections.highProfit.page.totalProducts).toBe(0); expect(result.products.find(product => product.currency === null)?.financial.status).toBe("unknown_currency");
+    expect(owned(rows).pageRows).toHaveLength(5);
+  });
+  it("does not attribute unresolved parents and does not merge unallocated originals", () => {
+    const rows = [row(), row({ parentAsin: "Q", asin: "Q" }), row({ parentAsin: "", asin: "U" })], ownership = owners(rows);
+    ownership.parents[1] = { ...ownership.parents[1], status: "conflict", operatorIds: [], reasonCode: "mapping_conflict" };
+    expect(owned(rows, {}, ownership).matchedRows).toBe(3); expect(owned(rows, { operatorId: 7 }, ownership).matchedRows).toBe(1);
+    expect(owned(rows, { operatorId: 9 }, ownership)).toMatchObject({ products: [], pageRows: [], matchedRows: 0 });
+  });
+  it("metadata covers full authorized scope even when searching or paging", () => {
+    const rows = [row(), row({ parentAsin: "Q", asin: "Q" })], ownership = owners(rows);
+    expect(owned(rows, { search: "does not match" }, ownership).ownership?.parents).toHaveLength(2);
+    const incomplete = clone(ownership); incomplete.parents.pop(); expect(() => owned(rows, { search: "A" }, incomplete)).toThrow(ProductBoardReadError);
+    expect(() => owned(rows, { parentAsin: "P" }, ownership)).toThrow(ProductBoardReadError);
+    expect(owned(rows, { parentAsin: "P" }, { ...ownership, parents: [ownership.parents[0]] }).products).toHaveLength(1);
+  });
+  it("retains unfiltered financial reads for explicitly unavailable owner registry", () => {
+    const rows = [row(), row({ parentAsin: "", asin: "U" })], ownership = buildUnavailableOperationsBoardOwnership(parseMonthlyFinancialBatch(record(rows)).rows, "full");
+    const result = owned(rows, {}, ownership); expect(result.products).toEqual(build(rows).products); expect(result.ownership?.status).toBe("unavailable");
+    expect(() => owned(rows, { operatorId: 7 }, ownership)).toThrow(ProductBoardReadError);
+  });
+  it.each(["missing", "selected", "parent", "stale", "visibility", "future"])("rejects forged %s ownership response", kind => {
+    const result = clone(owned([row()], { operatorId: 7 }));
+    if (kind === "missing") delete result.ownership;
+    if (kind === "selected") result.ownership!.parents[0].operatorIds = [8];
+    if (kind === "parent") result.ownership!.parents[0].parentAsin = "OTHER";
+    if (kind === "stale") result.ownership!.parents[0].sourceMonth = "2026-09";
+    if (kind === "visibility") result.ownership!.visibility = "scoped";
+    if (kind === "future") result.ownership!.parents[0].sourceMonth = "2026-11";
+    expect(ProductBoardReadResultSchema.safeParse(result).success).toBe(false);
+  });
+  it("failure can echo selected operator but cannot leak a partial directory", () => {
+    const result = buildProductBoardReadFailure({ identity, input: { ...input, operatorId: 7 }, status: "missing", reasonCode: "missing", missingReason: "不可读取" });
+    expect(result.request.operatorId).toBe(7); expect(ProductBoardReadResultSchema.safeParse({ ...result, ownership: owners([row()]) }).success).toBe(false);
+  });
+  it("full unfiltered response cannot invent a hidden parent or a newer mapping month", () => {
+    const result = clone(owned([row({ yearMonth: "2026-09" })]));
+    result.ownership!.parents[0].sourceMonth = "2026-10"; expect(ProductBoardReadResultSchema.safeParse(result).success).toBe(false);
+    result.ownership!.parents[0].sourceMonth = "2026-09"; result.ownership!.parents.push({ ...result.ownership!.parents[0], parentAsin: "HIDDEN" }); expect(ProductBoardReadResultSchema.safeParse(result).success).toBe(false);
+  });
+  it("accepts scoped self filtering without exposing co-owners", () => {
+    const rows = [row()], ownership = owners(rows); ownership.visibility = "scoped"; ownership.operators = [ownership.operators[0]];
+    const result = buildProductBoardReadResult({ identity, input: { ...input, operatorId: 7 }, selections: selections(rows, true), history: { complete: true, scannedCount: 1, visibility: "scoped" }, ownership });
+    expect(result.pageRows).toHaveLength(1); expect(result.ownership?.operators.map(operator => operator.userId)).toEqual([7]);
+  });
+});
 
 describe("complete product board calendar and source contract", () => {
   it("uses three calendar months, including year and leap-year boundaries", () => {

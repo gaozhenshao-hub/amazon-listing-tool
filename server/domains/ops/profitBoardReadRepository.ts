@@ -3,6 +3,8 @@ import type { TrpcContext } from "../../_core/context";
 import { getDb, type DbExecutor } from "../../repositories/dbClient";
 import { assertResourceAction } from "../../services/securityGovernance";
 import { MonthlyFinancialReadError } from "../../../shared/monthlyFinancialRead";
+import { OperationsBoardOwnershipError } from "../../../shared/operationsBoardOwnership";
+import { resolveOperationsBoardOwnership, unavailableOperationsBoardOwnership } from "./operationsBoardOwnership";
 import { ProfitBoardReadInputSchema, ProfitBoardReadError, profitBoardMonths, buildProfitBoardReadResult, buildProfitBoardReadFailure, type ProfitBoardReadInput } from "../../../shared/profitBoardRead";
 import { MonthlyBoardReadGuardError, SourceTableMissing, InvalidSource, IncompleteScan, positiveId, query, authorizeMonths, type Code, type Session } from "./monthlyBoardReadCore";
 import { selectMonthlyBoardSnapshots } from "./monthlyBoardSnapshotSelection";
@@ -36,11 +38,20 @@ export function createProfitBoardReadRepository(dependencies: { database?: () =>
         try {
           const { selections } = await selectMonthlyBoardSnapshots(session, { months: profitBoardMonths(input.month), storeName: input.storeName, country: input.country });
           await authorizeMonths(session, input, selections);
-          return buildProfitBoardReadResult({ identity: session.identity, input, selections });
+          const ownership = await resolveOperationsBoardOwnership(session, input, selections).catch(error => {
+            // This directory narrows already authorized rows; it never grants
+            // access. A missing registry must not disable a manager's existing
+            // unfiltered read, but a selected operator can never fall back to all.
+            if (session.manager && input.operatorId === undefined && error instanceof MonthlyBoardReadGuardError && error.message === "OWNER_REGISTRY_UNAVAILABLE") {
+              return unavailableOperationsBoardOwnership(session, input, selections);
+            }
+            throw error;
+          });
+          return buildProfitBoardReadResult({ identity: session.identity, input, selections, ownership });
         } catch (error) {
           if (error instanceof SourceTableMissing) return buildProfitBoardReadFailure({ identity: session.identity, input, status: "missing", reasonCode: "table_missing", missingReason: "月度财务来源表尚未接通，不代表利润为零" });
           if (error instanceof IncompleteScan) return buildProfitBoardReadFailure({ identity: session.identity, input, status: "invalid", reasonCode: "scan_incomplete", missingReason: "有界扫描未能完整确定六个月来源；不返回部分看板或回退旧批次" });
-          if (error instanceof InvalidSource || error instanceof MonthlyFinancialReadError || error instanceof ProfitBoardReadError) return buildProfitBoardReadFailure({ identity: session.identity, input, status: "invalid", reasonCode: "invalid_source", missingReason: "候选财务批次或看板完整性无法核验；不截断、补零或回退旧来源" });
+          if (error instanceof InvalidSource || error instanceof MonthlyFinancialReadError || error instanceof ProfitBoardReadError || error instanceof OperationsBoardOwnershipError) return buildProfitBoardReadFailure({ identity: session.identity, input, status: "invalid", reasonCode: "invalid_source", missingReason: "候选财务批次、负责人筛选或看板完整性无法核验；不截断、补零或回退旧来源" });
           throw error;
         }
       });

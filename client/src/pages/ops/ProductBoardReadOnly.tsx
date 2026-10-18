@@ -29,7 +29,7 @@ function Shell({ children }: { children: ReactNode }) {
     <header className="space-y-2"><h2 className="text-lg font-semibold">产品看板 · 已保存财务来源只读研究</h2>
       <p className="text-sm text-muted-foreground">高退货率、高利润、亏损及全部产品；当月、近三个月和全部可见已保存历史，父体与全部子体可钻取。</p>
       <p className="text-xs text-muted-foreground">按已保存批次选择，尚未核验店铺 / 月度完整覆盖。不同币种和汇总依据不合并；不补零、不汇率换算、不自动同步或调用模型。</p>
-      <p className="text-xs text-muted-foreground">这是当前授权来源的只读计算，不是已冻结归档。运营 / 搭档筛选、实际归档、任务编辑与附件操作尚未接入本区域。</p>
+      <p className="text-xs text-muted-foreground">这是当前授权来源的只读计算，不是已冻结归档。数字运营筛选经服务端核验；搭档关系尚未配置。任务、成本与分析通过各自授权入口操作，备注和冻结归档尚未接入。</p>
     </header>{children}
   </section>;
 }
@@ -111,21 +111,23 @@ export function ProductBoardReadOnlyContent({ result, onPage, renderProductTasks
         return <RankedProductRow key={entry.productId} section={section} product={product} position={entry.position} rows={result.pageRows} renderProductTasks={renderProductTasks} renderProductCosts={renderProductCosts} renderProductAnalysis={renderProductAnalysis} />;
       })}</tbody></table></ScrollTable>}
     </section>; })}
-    <p className="text-xs">负利润和负派生额以红字提示，负派生额产品行以浅红底提示。派生额 = 财务利润 + 采购成本 + 头程，不是实际回款。库存滞销判断、负责人 / 搭档筛选、任务和冻结归档不由本看板推断或伪造。</p>
+    <p className="text-xs">负利润和负派生额以红字提示，负派生额产品行以浅红底提示。派生额 = 财务利润 + 采购成本 + 头程，不是实际回款。库存滞销判断、搭档关系和冻结归档不由本看板推断或伪造。</p>
   </div>;
 }
 type ReadState = { status: "idle" | "loading" | "error" | "invalid" } | { status: "ready"; result: ProductBoardReadResult };
-const pageBinding = (result: ProductBoardReadResult) => JSON.stringify({ history: result.history, periods: result.periods, sources: result.sources, matchedRows: result.matchedRows, sections: SECTIONS.map(key => ({ key, total: result.sections[key].page.totalProducts, rule: result.sections[key].rule, basis: result.sections[key].analysisBasis })) });
+const pageBinding = (result: ProductBoardReadResult) => JSON.stringify({ history: result.history, periods: result.periods, sources: result.sources, ownership: result.ownership, matchedRows: result.matchedRows, sections: SECTIONS.map(key => ({ key, total: result.sections[key].page.totalProducts, rule: result.sections[key].rule, basis: result.sections[key].analysisBasis })) });
 function OwnedProductBoard({ owner }: { owner: Owner }) {
   const client = trpc.useUtils().client;
   const [scope, setScope] = useState({ month: "", storeName: "", country: "", parentAsin: "", search: "" }), [state, setState] = useState<ReadState>({ status: "idle" });
+  const [ownership, setOwnership] = useState<ProductBoardReadResult["ownership"] | null>(null), [operatorId, setOperatorId] = useState<number | undefined>();
+  const canViewAll = ["super_admin", "admin", "ops_manager"].includes(owner.role);
   const sequence = useRef(0), pending = useRef<AbortController | null>(null), active = useRef(false);
   useEffect(() => () => { sequence.current++; pending.current?.abort(); }, []);
   function clear() { sequence.current++; pending.current?.abort(); pending.current = null; active.current = false; setState({ status: "idle" }); }
   async function read(section?: Section, offset?: number, previous?: ProductBoardReadResult) {
     clear(); const { parentAsin, ...rest } = scope;
-    const parsed = ProductBoardReadInputSchema.safeParse({ ...rest, ...(parentAsin.trim() ? { parentAsin: parentAsin.trim() } : {}), expectedWorkspaceId: owner.workspaceId, highReturnsOffset: previous?.request.highReturnsOffset ?? 0, highProfitOffset: previous?.request.highProfitOffset ?? 0, losingOffset: previous?.request.losingOffset ?? 0, allOffset: previous?.request.allOffset ?? 0, pageSize: PAGE_SIZE, ...(section ? { [`${section}Offset`]: offset } : {}) });
-    if (!parsed.success) { setState({ status: "invalid" }); return; }
+    const parsed = ProductBoardReadInputSchema.safeParse({ ...rest, ...(parentAsin.trim() ? { parentAsin: parentAsin.trim() } : {}), ...(operatorId === undefined ? {} : { operatorId }), expectedWorkspaceId: owner.workspaceId, highReturnsOffset: previous?.request.highReturnsOffset ?? 0, highProfitOffset: previous?.request.highProfitOffset ?? 0, losingOffset: previous?.request.losingOffset ?? 0, allOffset: previous?.request.allOffset ?? 0, pageSize: PAGE_SIZE, ...(section ? { [`${section}Offset`]: offset } : {}) });
+    if (!parsed.success) { setOwnership(null); setState({ status: "invalid" }); return; }
     active.current = true;
     const request: ProductBoardReadInput = parsed.data, ticket = ++sequence.current, controller = new AbortController(); pending.current = controller;
     const current = () => sequence.current === ticket && !controller.signal.aborted;
@@ -136,15 +138,25 @@ function OwnedProductBoard({ owner }: { owner: Owner }) {
       const result = ProductBoardReadResultSchema.parse(raw);
       if (result.identity.userId !== owner.userId || result.identity.workspaceId !== owner.workspaceId || JSON.stringify(result.request) !== JSON.stringify(request)) throw new Error("PRODUCT_SCOPE_CHANGED");
       if (!["super_admin", "admin", "ops_manager"].includes(owner.role) && (result.history?.visibility === "full" || result.sources.some(source => source.batch?.visibility === "full"))) throw new Error("PRODUCT_METADATA_DENIED");
+      if (result.ownership && !canViewAll && (result.ownership.status !== "ready" || result.ownership.visibility !== "scoped" || result.ownership.operators.some(operator => operator.userId !== owner.userId))) throw new Error("PRODUCT_OWNER_DIRECTORY_DENIED");
+      if (request.operatorId !== undefined && result.status === "ready" && (result.ownership?.status !== "ready" || !result.ownership.operators.some(operator => operator.userId === request.operatorId) || result.products.some(product => !product.parentAsin || !result.ownership!.parents.some(parent => parent.parentAsin === product.parentAsin && parent.status === "resolved" && parent.operatorIds.includes(request.operatorId!))))) throw new Error("PRODUCT_OWNER_FILTER_CHANGED");
       if (previous && (result.status !== "ready" || pageBinding(previous) !== pageBinding(result))) throw new Error("PRODUCT_SOURCES_CHANGED");
-      if (current()) setState({ status: "ready", result });
-    } catch { if (current()) setState({ status: "error" }); } finally { if (current()) pending.current = null; }
+      if (current()) { setOwnership(result.ownership ?? null); setState({ status: "ready", result }); }
+    } catch { if (current()) { setOwnership(null); setState({ status: "error" }); } } finally { if (current()) pending.current = null; }
   }
   const readRef = useRef(read); readRef.current = read;
   useEffect(() => subscribeMonthlyFinancialChanges(notice => {
-    if (notice.action !== "upload" && notice.userId === owner.userId && notice.workspaceId === owner.workspaceId && active.current) void readRef.current();
-  }), [owner.userId, owner.workspaceId]);
-  return <Shell><form aria-label="产品看板读取范围" className="space-y-3" onSubmit={event => { event.preventDefault(); void read(); }}><div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">{([["month", "基准月份（YYYY-MM）"], ["storeName", "店铺"], ["country", "站点 / 国家代码"], ["parentAsin", "父 ASIN（可选）"], ["search", "产品搜索（保留完整父组）"]] as const).map(([key, label]) => <label key={key} className="min-w-0 text-sm">{label}<input aria-label={`产品看板${label}`} autoComplete="off" className="mt-1 w-full min-w-0 rounded border bg-background p-2" value={scope[key]} onChange={event => { const value = event.currentTarget.value; clear(); setScope(old => ({ ...old, [key]: value })); }} /></label>)}</div><p className="text-xs">父 ASIN 留空只请求当前授权范围；店铺 / 国家及搜索不是授权，不使用姓名或保存的 ownerIds 扩权。</p><div className="flex flex-wrap gap-3"><button type="submit" className={buttonClass}>读取已有产品看板</button><button type="button" className={buttonClass} onClick={clear}>取消并清除产品看板</button></div></form>
+    if (notice.action !== "upload" && notice.workspaceId === owner.workspaceId) { setOwnership(null); if (active.current) void readRef.current(); }
+  }), [owner.workspaceId]);
+  return <Shell><form aria-label="产品看板读取范围" className="space-y-3" onSubmit={event => { event.preventDefault(); void read(); }}><div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">{([["month", "基准月份（YYYY-MM）"], ["storeName", "店铺"], ["country", "站点 / 国家代码"], ["parentAsin", "父 ASIN（可选）"], ["search", "产品搜索（保留完整父组）"]] as const).map(([key, label]) => <label key={key} className="min-w-0 text-sm">{label}<input aria-label={`产品看板${label}`} autoComplete="off" className="mt-1 w-full min-w-0 rounded border bg-background p-2" value={scope[key]} onChange={event => { const value = event.currentTarget.value; clear(); setOwnership(null); setOperatorId(undefined); setScope(old => ({ ...old, [key]: value })); }} /></label>)}</div>
+    <label className="block min-w-0 text-sm">运营<select aria-label="产品看板运营" className="mt-1 block w-full min-w-0 max-w-md rounded border bg-background p-2" value={operatorId ?? "all"} disabled={ownership?.status !== "ready" || state.status === "loading"} onChange={event => {
+      const value = event.currentTarget.value, selected = value === "all" ? undefined : Number(value); clear();
+      if (ownership?.status !== "ready" || selected !== undefined && (!positiveId(selected) || !ownership.operators.some(operator => operator.userId === selected))) { setOwnership(null); setState({ status: "error" }); return; }
+      setOperatorId(selected);
+    }}><option value="all">{canViewAll ? "全部运营" : "自己"}</option>{operatorId !== undefined && !ownership?.operators.some(operator => operator.userId === operatorId) && <option value={operatorId}>待重新核验 · ID {operatorId}</option>}{ownership?.operators.map(operator => <option key={operator.userId} value={operator.userId}>{operator.displayName} · ID {operator.userId}</option>)}</select></label>
+    {operatorId !== undefined && <button type="button" className={buttonClass} onClick={() => { clear(); setOperatorId(undefined); setOwnership(null); }}>清除运营筛选</button>}
+    <p className="text-xs">{ownership?.status === "unavailable" ? "运营目录不可用；仅保留管理员无运营筛选的授权财务，不表示产品未分配负责人。" : ownership ? `当前数字负责人目录（${ownership.visibility === "full" ? "工作区授权目录" : "仅本人授权目录"}）；选择后点击读取，由服务器在分页前筛选完整父体。` : "请先读取当前范围以核验数字负责人目录；未核验时不能选择其他运营。"} 搭档关系尚未配置，不按姓名推断“自己和搭档”。负责人依据为当前人工分配或已确认来源映射，不是历史归档负责人。</p>
+    <p className="text-xs">父 ASIN 留空只请求当前授权范围；店铺 / 国家及搜索不是授权，不使用姓名或保存的 ownerIds 扩权。</p><div className="flex flex-wrap gap-3"><button type="submit" className={buttonClass}>读取已有产品看板</button><button type="button" className={buttonClass} onClick={clear}>取消并清除产品看板</button></div></form>
     {state.status === "loading" && <p role="status">正在核验全部已保存历史与产品榜单…</p>}{state.status === "invalid" && <p role="alert">产品看板范围不完整或不合法，未发送请求。</p>}{state.status === "error" && <p role="alert">产品看板读取失败，或身份、权限、范围、历史来源及回包完整性已变化。旧数据已清除，不回退缓存；请显式从首页重新读取。</p>}{state.status === "ready" && <ProductBoardReadOnlyContent key={sequence.current} result={state.result} onPage={(section, offset) => { void read(section, offset, state.result); }} renderProductTasks={product => product.parentAsin ? <ProductTasksEmbeddedReadOnly product={{ workspaceId: state.result.identity.workspaceId, storeName: state.result.request.storeName, country: state.result.request.country, parentAsin: product.parentAsin }} /> : null} renderProductCosts={product => product.parentAsin ? <OperationsCostSheetEmbeddedActions scope={{ workspaceId: state.result.identity.workspaceId, storeName: state.result.request.storeName, country: state.result.request.country, parentAsin: product.parentAsin }} /> : null}
       renderProductAnalysis={product => <div className="min-w-0 space-y-4 py-4"><ProductFinancialHistory product={product} rows={state.result.pageRows} sources={state.result.sources} />{product.parentAsin && state.result.request.month >= "1000-06" && (product.basis === "child_rows" || product.basis === "reported_parent_row") && <ProfitAnalysisWorkflow identity={state.result.identity} scope={{ storeName: state.result.request.storeName, country: state.result.request.country, parentAsin: product.parentAsin, currency: product.currency, basis: product.basis }} months={profitBoardMonths(state.result.request.month)} />}</div>} />}
   </Shell>;
