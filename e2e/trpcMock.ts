@@ -1,5 +1,7 @@
 import type { Page, Route } from "@playwright/test";
 
+type FixtureError = { message: string; code: number; data: { code: string; httpStatus: number } };
+
 const USER = {
   id: 1,
   name: "E2E 管理员",
@@ -14,6 +16,11 @@ function fixtureFor(procedure: string, overrides: Record<string, unknown>): unkn
     "roleManagement.myPermissions": { modules: [], detailedPermissions: [] },
     "operations.getMarketplaces": [{ code: "US", name: "美国", region: "NA", sids: [], storeNames: [] }],
     "operations.getUserSettings": { default_marketplace: "US" },
+    "dataImport.getInventoryPlanningFromImport": { asOfDate: null, rows: [] },
+    "operations.listTagDefinitions": [],
+    "operations.listTagAssignments": [],
+    "shippingBatch.getInventoryPipelineSummary": { batches: [], batchCount: 0 },
+    "shippingBatch.getPredictions": [],
     "project.getById": { id: 1, name: "E2E 空气套件", brand: "E2E Brand", marketplace: "US" },
     "devProject.getById": { id: 1, name: "E2E 空气套件", status: "analyzing" },
     "devProject.getProducts": [],
@@ -46,13 +53,13 @@ function fixtureFor(procedure: string, overrides: Record<string, unknown>): unkn
   return null;
 }
 
-async function fulfillTrpc(route: Route, overrides: Record<string, unknown>) {
+async function fulfillTrpc(route: Route, overrides: Record<string, unknown>, errors: Record<string, FixtureError>) {
   const requestUrl = new URL(route.request().url());
   const encodedPath = requestUrl.pathname.split("/api/trpc/")[1] || "";
   const procedures = decodeURIComponent(encodedPath).split(",").filter(Boolean);
-  const payload = procedures.map((procedure) => ({
-    result: { data: { json: fixtureFor(procedure, overrides) } },
-  }));
+  const payload = procedures.map((procedure) => Object.prototype.hasOwnProperty.call(errors, procedure)
+    ? { error: { json: errors[procedure] } }
+    : { result: { data: { json: fixtureFor(procedure, overrides) } } });
   await route.fulfill({
     status: 200,
     contentType: "application/json",
@@ -60,9 +67,9 @@ async function fulfillTrpc(route: Route, overrides: Record<string, unknown>) {
   });
 }
 
-export async function installRealPageFixtures(page: Page, overrides: Record<string, unknown> = {}) {
+export async function installRealPageFixtures(page: Page, overrides: Record<string, unknown> = {}, errors: Record<string, FixtureError> = {}) {
   await page.addInitScript(() => {
     localStorage.setItem("selectedProjectId", "1");
   });
-  await page.route("**/api/trpc/**", route => fulfillTrpc(route, overrides));
+  await page.route("**/api/trpc/**", route => fulfillTrpc(route, overrides, errors));
 }

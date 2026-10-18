@@ -6,7 +6,7 @@ const pages = [
   { name: "Listing", path: "/listing/canvas", heading: "工作流画布" },
   { name: "图片", path: "/listing/image-workflow", heading: "智能图片建议" },
   { name: "广告", path: "/ops/ads", heading: "广告智能分析" },
-  { name: "运营", path: "/ops/inventory", heading: "库存预警中心" },
+  { name: "运营", path: "/ops/inventory", heading: "库存规划工作台" },
   { name: "视频", path: "/listing/video-script", heading: "视频脚本生成" },
 ];
 
