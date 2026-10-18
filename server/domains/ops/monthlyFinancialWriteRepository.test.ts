@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { TRPCError } from "@trpc/server";
 import { MySqlDialect } from "drizzle-orm/mysql-core";
 import type { SQL } from "drizzle-orm";
 import type { TrpcContext } from "../../_core/context";
@@ -6,6 +7,7 @@ import { createMonthlyFinancialWriteRepository } from "./monthlyFinancialWriteRe
 import { MonthlyFinancialPreparedUploadSchema, monthlyFinancialOperationKey, type MonthlyFinancialPreparedUpload } from "./monthlyFinancialOperationJournal";
 import { parseMonthlyFinancialImport, monthlyFinancialImportBytesHash, monthlyFinancialImportHash } from "../../../shared/monthlyFinancialImport";
 import { findMonthlyFinancialSnapshot, type MonthlyFinancialBatchRecord } from "../../../shared/monthlyFinancialRead";
+import type { MonthlyOperationsBoardTransition } from "./monthlyOperationsBoardSynchronization";
 
 type Row = Record<string, unknown>;
 const operationId = "11111111-1111-4111-8111-111111111111", op2 = "22222222-2222-4222-8222-222222222222", op3 = "33333333-3333-4333-8333-333333333333";
@@ -24,6 +26,8 @@ const index = (tableName: string, indexName: string, columns: string[], nonUniqu
 let batches: Row[], artifacts: Row[], audits: Row[], actors: Row[], memberships: Row[], workspaces: Row[], policies: Row[];
 let cols: Record<string, Row[]>, indexes: Row[], engines: Row[], queries: { sql: string; params: unknown[] }[], objects: Map<string, Uint8Array>;
 let enabled: boolean, commitLost: number, failAt: Record<string, unknown>, nextBatchId: number, tail: Promise<unknown>, candidateExtraBytes: number;
+let boardWrites: { batchId: number; status: string }[];
+const synchronizeBoards = vi.fn(async (_transition: MonthlyOperationsBoardTransition): Promise<void> => {});
 const permission = vi.fn(async (_request: unknown) => {});
 const execute = vi.fn(async (sql: SQL) => {
   const query = new MySqlDialect().sqlToQuery(sql), text = query.sql, values = query.params; queries.push(query);
@@ -64,13 +68,13 @@ const execute = vi.fn(async (sql: SQL) => {
   if (text.includes("LIMIT 0")) { const error = Object.assign(new Error("missing"), { code: "ER_NO_SUCH_TABLE" }); throw error; }
   throw new Error(`Unexpected SQL ${text}`);
 });
-const transaction = vi.fn(<T>(body: (tx: { execute: typeof execute }) => Promise<T>) => {
+async function transaction<T>(body: (tx: { execute: typeof execute }) => Promise<T>): Promise<T> {
   const run = tail.then(async () => {
-    const snapshot = structuredClone({ batches, artifacts, audits }); let result: T;
-    try { result = await body({ execute }); } catch (error) { ({ batches, artifacts, audits } = snapshot); throw error; }
+    const snapshot = structuredClone({ batches, artifacts, audits, boardWrites }); let result: T;
+    try { result = await body({ execute }); } catch (error) { ({ batches, artifacts, audits, boardWrites } = snapshot); throw error; }
     if (commitLost > 0 && --commitLost === 0) throw new Error("COMMIT acknowledgement lost"); return result;
   }); tail = run.catch(() => {}); return run;
-});
+}
 const storage = {
   assertAvailable: vi.fn((): "s3" => "s3"), capability: vi.fn(() => ({ status: "available" as const, reasonCode: null })),
   prepare: vi.fn((identity: { workspaceId: number; userId: number }, op: string, metadata: { fileName: string; format: "csv" | "xlsx"; fileHash: string; byteSize: number; requestHash: string }) => { const objectKey = `monthly-financial/${identity.workspaceId}/${monthlyFinancialOperationKey(identity, op)}.${metadata.format}`; return MonthlyFinancialPreparedUploadSchema.parse({ ...metadata, identity, operationId: op, action: "upload", parserVersion: "monthly-financial-import-v1", provider: "s3", objectKey, storageUri: `storage://s3/${objectKey}` }); }),
@@ -78,7 +82,7 @@ const storage = {
   readVerified: vi.fn(async (prepared: MonthlyFinancialPreparedUpload) => { if (failAt.verify) throw failAt.verify; const bytes = objects.get(prepared.objectKey); if (!bytes || bytes.length !== prepared.byteSize || monthlyFinancialImportBytesHash(bytes) !== prepared.fileHash) throw new Error("object not verified"); return bytes; }),
   download: vi.fn(async (_prepared: MonthlyFinancialPreparedUpload) => ({ url: "https://private.example/file?signature=short", expiresSeconds: 60 })),
 };
-const repository = createMonthlyFinancialWriteRepository({ database: async () => ({ transaction }), permission, storage, enabled: () => enabled });
+const repository = createMonthlyFinancialWriteRepository({ database: async () => ({ transaction }), permission, storage, enabled: () => enabled, synchronizeBoards });
 const policy = (operations: string[] = ["read", "edit", "delete"], workspaceId: number | null = 7) => ({ id: workspaceId === null ? 1 : 2, workspaceId, role: "ops_manager", modules: ["ops"], detailedPermissions: [{ moduleId: "ops", operations: ["read", "edit", "delete"], subModules: [{ subModuleId: "ops_data_import", operations }] }] });
 async function uploaded(patch: Row = {}) { const result = await repository.upload(context(), command(patch)); expect(result.status).toBe("committed"); return result.batchId!; }
 async function transitionCommand(batchId: number, op = op2) { const state = await repository.inspect(context(), inspectInput(batchId)); return { expectedWorkspaceId: 7, operationId: op, batchId, expectedBatchVersion: state.batchVersion, expectedImpactKey: state.impact.key, fullScopeAcknowledged: true as const }; }
@@ -86,7 +90,8 @@ async function oldBatch(idValue: number, items = [source()], patch: Row = {}) {
   const parsed = await parseMonthlyFinancialImport(csv(items), "旧月报.csv"); const record = { id: idValue, workspaceId: 7, userId: 4, fileName: "旧月报.csv", fileHash: parsed.fileHash, fileUrl: "saihu-sync-run:5", fileReferenceKind: "saihu_sync_run", sourceRunId: 5, status: "completed", totalRows: parsed.totalRows, skippedRows: parsed.skippedRows, unallocatedRows: parsed.unallocatedRows, months: JSON.stringify(parsed.months), payload: JSON.stringify(parsed.rows), createdAt: "2026-10-01 00:00:00.000000", confirmedAt: "2026-10-01 00:00:01.000000", ...patch }; batches.push(record); return record;
 }
 beforeEach(() => {
-  vi.clearAllMocks(); batches = []; artifacts = []; audits = []; policies = []; queries = []; objects = new Map(); enabled = true; commitLost = 0; failAt = {}; nextBatchId = 100; tail = Promise.resolve(); candidateExtraBytes = 0;
+  vi.clearAllMocks(); batches = []; artifacts = []; audits = []; policies = []; queries = []; objects = new Map(); enabled = true; commitLost = 0; failAt = {}; nextBatchId = 100; tail = Promise.resolve(); candidateExtraBytes = 0; boardWrites = [];
+  synchronizeBoards.mockImplementation(async () => {});
   actors = [{ id: 3, role: "ops_manager", status: "active", defaultWorkspaceId: 7 }, { id: 4, role: "ops_manager", status: "active", defaultWorkspaceId: 7 }];
   memberships = [3, 4].map(userId => ({ id: userId + 10, userId, workspaceId: 7, status: "active" })); workspaces = [{ id: 7, status: "active" }];
   cols = { ops_monthly_profit_imports: batchColumns(), ops_monthly_import_artifacts: artifactColumns(), security_audit_logs: auditColumns() };
@@ -128,6 +133,64 @@ describe("monthly persistent upload and transactional financial lifecycle", () =
   it("cancel before delayed confirm creates a permanent fence without changing the batch", async () => { const batchId = await uploaded(), input = await transitionCommand(batchId); await repository.recover(context(), { expectedWorkspaceId: 7, operationId: op2, decision: "cancel" }); expect((await repository.confirm(context(), input)).status).toBe("cancelled"); expect(batches[0].status).toBe("previewing"); });
   it("download uses only the persisted prepared record and exact version", async () => { const batchId = await uploaded(), state = await repository.inspect(context(), inspectInput(batchId)); const value = await repository.download(context(), { expectedWorkspaceId: 7, batchId, expectedBatchVersion: state.batchVersion }); expect(value).toMatchObject({ fileName: "月报.csv", byteSize: csv().length, expiresSeconds: 60 }); expect(storage.download).toHaveBeenCalledTimes(1); await expect(repository.download(context(), { expectedWorkspaceId: 7, batchId, expectedBatchVersion: "f".repeat(64) })).rejects.toMatchObject({ code: "CONFLICT" }); });
   it("legacy batches remain inspectable and revocable but no invented original/download/confirm", async () => { await oldBatch(80); const value = await repository.inspect(context(), inspectInput(80)); expect(value.preview).toBeNull(); expect(value.capabilities.download.status).toBe("unavailable"); expect(value.capabilities.revoke.status).toBe("available"); await repository.revoke(context(), await transitionCommand(80)); expect(batches[0].status).toBe("deleted"); });
+});
+
+describe("archive participation in the original monthly transaction", () => {
+  it("passes complete post-state to the same transaction before its final receipt for confirm and revoke", async () => {
+    await oldBatch(80, [source({ 时间: "2025-01" }), source({ 店铺: "Other Store" })]);
+    const batchId = await uploaded();
+    synchronizeBoards.mockImplementation(async input => {
+      expect(input.tx.execute).toBe(execute); expect(input.identity).toEqual({ userId: 3, workspaceId: 7 });
+      expect(input.actor).toEqual({ id: 3, role: "ops_manager", defaultWorkspaceId: 7 });
+      expect(input.completedAfter.map(batch => batch.id)).toEqual(input.action === "confirm" ? [batchId, 80] : [80]);
+      expect(input.completedAfter.at(-1)?.payload).toContain("2025-01");
+      expect(batches.find(batch => batch.id === batchId)?.status).toBe(input.afterBatch.status);
+      expect(audits.filter(row => String(row.metadataText).includes(`\"action\":\"${input.action}\"`))).toHaveLength(0);
+      boardWrites.push({ batchId, status: input.afterBatch.status });
+    });
+    await repository.confirm(context(), await transitionCommand(batchId));
+    await repository.revoke(context(), await transitionCommand(batchId, op3));
+    expect(synchronizeBoards.mock.calls.map(([value]) => [value.beforeBatch.status, value.afterBatch.status])).toEqual([["previewing", "completed"], ["completed", "deleted"]]);
+    expect(boardWrites).toEqual([{ batchId, status: "completed" }, { batchId, status: "deleted" }]);
+  });
+  it("rolls back prospective status and archive writes when archive reconciliation rejects", async () => {
+    const batchId = await uploaded(), input = await transitionCommand(batchId);
+    synchronizeBoards.mockImplementation(async () => { boardWrites.push({ batchId, status: "completed" }); throw new TRPCError({ code: "PRECONDITION_FAILED", message: "OPERATIONS_BOARD_SYNC_RECONCILIATION_FAILED" }); });
+    await expect(repository.confirm(context(), input)).rejects.toThrow("OPERATIONS_BOARD_SYNC_RECONCILIATION_FAILED");
+    expect(batches[0].status).toBe("previewing"); expect(boardWrites).toEqual([]); expect(audits).toHaveLength(2);
+    expect((await repository.recover(context(), { expectedWorkspaceId: 7, operationId: op2, decision: "check" })).status).toBe("unknown");
+  });
+  it("rolls back archive writes and batch status if the final journal fails", async () => {
+    const batchId = await uploaded(), input = await transitionCommand(batchId);
+    synchronizeBoards.mockImplementation(async () => { boardWrites.push({ batchId, status: "completed" }); failAt.journal = new Error("final journal unavailable"); });
+    expect((await repository.confirm(context(), input)).status).toBe("unknown");
+    expect(batches[0].status).toBe("previewing"); expect(boardWrites).toEqual([]); expect(audits).toHaveLength(2);
+  });
+  it("lost commit acknowledgement then check/replay never invokes the archive participant twice", async () => {
+    const batchId = await uploaded(), input = await transitionCommand(batchId);
+    synchronizeBoards.mockImplementation(async value => { boardWrites.push({ batchId, status: value.afterBatch.status }); });
+    commitLost = 1; expect((await repository.confirm(context(), input)).status).toBe("unknown");
+    expect(boardWrites).toHaveLength(1); expect(batches[0].status).toBe("completed");
+    const recovered = await repository.recover(context(), { expectedWorkspaceId: 7, operationId: op2, decision: "check" });
+    expect(recovered.status).toBe("committed"); expect(await repository.confirm(context(), input)).toEqual(recovered);
+    expect(synchronizeBoards).toHaveBeenCalledTimes(1); expect(boardWrites).toHaveLength(1);
+  });
+  it("cancelled operations and upload/inspect/recovery never create archive work", async () => {
+    const batchId = await uploaded(), input = await transitionCommand(batchId);
+    await repository.recover(context(), { expectedWorkspaceId: 7, operationId: op2, decision: "cancel" });
+    expect((await repository.confirm(context(), input)).status).toBe("cancelled"); expect(synchronizeBoards).not.toHaveBeenCalled();
+  });
+  it("rechecks current permissions before either the batch or archive participant writes", async () => {
+    const batchId = await uploaded(), input = await transitionCommand(batchId); policies = [policy(["read"])];
+    await expect(repository.confirm(context(), input)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(synchronizeBoards).not.toHaveBeenCalled(); expect(batches[0].status).toBe("previewing");
+  });
+  it("a failed revoke participant preserves the previously completed source and receipt", async () => {
+    const batchId = await uploaded(); await repository.confirm(context(), await transitionCommand(batchId));
+    const auditBefore = structuredClone(audits); synchronizeBoards.mockImplementation(async () => { throw new TRPCError({ code: "PRECONDITION_FAILED", message: "OPERATIONS_BOARD_SCHEMA_MIGRATION_REQUIRED" }); });
+    await expect(repository.revoke(context(), await transitionCommand(batchId, op3))).rejects.toThrow("OPERATIONS_BOARD_SCHEMA_MIGRATION_REQUIRED");
+    expect(batches[0].status).toBe("completed"); expect(audits).toEqual(auditBefore);
+  });
 });
 
 describe("monthly scope CAS, fixed candidates and freshness", () => {

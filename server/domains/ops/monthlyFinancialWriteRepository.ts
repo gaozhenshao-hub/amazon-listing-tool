@@ -22,6 +22,7 @@ import { getDb, type DbExecutor } from "../../repositories/dbClient";
 import { assertResourceAction } from "../../services/securityGovernance";
 import { projection, positiveId as id, query as rows, noSuchTable, SCAN_BATCHES_MAX, SCAN_BYTES_MAX, PAYLOAD_WIRE_MAX, MONTHS_WIRE_MAX } from "./monthlyBoardReadCore";
 import { monthlyFinancialImportStorage, MonthlyFinancialImportStorageError } from "./monthlyFinancialImportStorage";
+import { synchronizeOperationsBoardsAfterMonthlyTransition } from "./monthlyOperationsBoardSynchronization";
 import {
   createMonthlyFinancialOperationJournal, MonthlyFinancialPreparedUploadSchema, MonthlyFinancialJournalError,
   monthlyFinancialOperationRequestHash, type MonthlyFinancialPreparedUpload,
@@ -209,11 +210,13 @@ export function createMonthlyFinancialWriteRepository(dependencies: {
   database?: () => Promise<MonthlyFinancialWriteDatabase | null>; permission?: typeof assertResourceAction;
   directory?: typeof strictMonthlyFinancialDirectory; journal?: typeof createMonthlyFinancialOperationJournal;
   storage?: typeof monthlyFinancialImportStorage; parseImport?: typeof parseMonthlyFinancialImport; enabled?: () => boolean;
+  synchronizeBoards?: typeof synchronizeOperationsBoardsAfterMonthlyTransition;
 } = {}) {
   const database = dependencies.database ?? getDb, permission = dependencies.permission ?? assertResourceAction,
     directory = dependencies.directory ?? strictMonthlyFinancialDirectory, journal = dependencies.journal ?? createMonthlyFinancialOperationJournal,
     storage = dependencies.storage ?? monthlyFinancialImportStorage, parseImport = dependencies.parseImport ?? parseMonthlyFinancialImport,
-    enabled = dependencies.enabled ?? (() => process.env.ENABLE_MERGED_OPS_MONTHLY_WRITES === "true");
+    enabled = dependencies.enabled ?? (() => process.env.ENABLE_MERGED_OPS_MONTHLY_WRITES === "true"),
+    synchronizeBoards = dependencies.synchronizeBoards ?? synchronizeOperationsBoardsAfterMonthlyTransition;
   async function authorize(current: Session, action: "read" | "create" | "update" | "delete") {
     await permission({ actor: current.actor, workspaceId: current.identity.workspaceId, resource: "ops_monthly_import", action, authorizationRead: { executor: current.tx, strict: true, lock: true } });
     await directory(current.tx, current.role, current.identity.workspaceId, action === "read" ? "read" : action === "delete" ? "delete" : "edit");
@@ -348,9 +351,10 @@ export function createMonthlyFinancialWriteRepository(dependencies: {
         : "UPDATE ops_monthly_profit_imports SET status='deleted' WHERE workspaceId=? AND id=? AND status=?", [current.identity.workspaceId, input.batchId, ...(action === "revoke" ? [state.record.status] : [])])));
       // Admission uses actual MySQL JSON wire sizes after the prospective
       // update. Exceeding any existing consumer budget rolls back the status.
-      await completedCandidates(current);
+      const completedAfter = await completedCandidates(current);
       const record = await batchById(current, input.batchId), artifact = await artifactByBatch(current, record);
       if (record.status !== (action === "confirm" ? "completed" : "deleted")) fail("TRANSITION_UNVERIFIABLE");
+      await synchronizeBoards({ tx: current.tx, identity: current.identity, actor: current.actor, action, beforeBatch: state.record, afterBatch: record, completedAfter });
       return operation.finalize(receipt(current, input.operationId, action, record, artifact), requestHash);
     }); } catch (error) { if (knownError(error)) return sanitized(error); if (captured) return unknown(captured, input.operationId); return sanitized(error); }
   }
