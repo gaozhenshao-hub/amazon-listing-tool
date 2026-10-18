@@ -7,9 +7,10 @@ import { AssistantConversationSubmitInputSchema, planAssistantConversation, vali
   validateAssistantConversationRoute, type AssistantConversationStage } from "../../../../shared/assistantConversation";
 import { assistantConversationCanonical, type AssistantConversationExecutor } from "../repositories/assistantConversations";
 import { buildAssistantConversationContext, type AssistantConversationIdentity, type AssistantConversationHistoryContext,
-  type AssistantConversationSavedConfiguration, type AssistantConversationContextSkill } from "./assistantConversationContext";
+  type AssistantConversationSavedConfiguration } from "./assistantConversationContext";
 import type { ParsedAssistantConversationAttachment } from "./assistantConversationAttachments";
-import { configurationHash, skillManifestHash } from "./assistantConfigurations";
+import { configurationHash, AssistantConversationSkillPinSchema as pinSchema, AssistantConversationSourceApprovalSchema, AssistantConversationRuntimeError, assistantConversationSkillSnapshotFromRow, assistantConversationSkillSnapshotHash, assistantConversationSkillScopeMatches, type AssistantConversationSourceApproval, type AssistantConversationRegistrySkill } from "./assistantConversationSourcePrimitives";
+export { AssistantConversationSkillPinSchema, AssistantConversationSourceApprovalSchema, AssistantConversationRuntimeError, assistantConversationSkillSnapshotFromRow, assistantConversationSkillSnapshotHash, assistantConversationSkillScopeMatches, type AssistantConversationSkillPin, type AssistantConversationSourceApproval, type AssistantConversationRegistrySkill } from "./assistantConversationSourcePrimitives";
 import { runEmperorSkill, renderSkillTemplate, safeParseSkillJSON, type StrictSkillDispatchReceipt } from "./skillRunner";
 import { StrictRegisteredModelSnapshotSchema, strictModelSnapshotFromRow, strictSkillMessages, strictCostUpperBound,
   type StrictRegisteredModelSnapshot } from "./strictSkillRuntime";
@@ -19,44 +20,11 @@ const id = z.number().int().min(1).max(2147483647), hash = z.string().regex(/^[a
 const text = (max: number) => z.string().min(1).max(max).refine(value => value.trim() === value && !/[\u0000-\u001f\u007f]/u.test(value));
 const uuid = z.string().uuid().refine(value => value === value.toLowerCase());
 const IdentitySchema = z.object({ workspaceId: id, userId: id, agentKey: AgentLibraryKeySchema, threadId: uuid }).strict();
-const imageBudgetSchema = z.object({ policyId: text(256), maxInputTokensPerImage: z.number().int().min(1).max(10_000_000) }).strict();
-const pinSchema = z.object({
-  id, workspaceId: id.nullable(), scope: text(32), slug: text(128), name: text(255), version: id, status: z.literal("Released"),
-  manifestSha256: hash, manifestRawSha256: hash, systemPromptSha256: hash, userPromptSha256: hash,
-  modelOverride: text(256).nullable(), timeoutSeconds: z.number().int().min(5).max(600),
-  maxTokens: z.number().int().min(1).max(32768), temperature: z.number().min(0).max(2).nullable(), supportsJsonMode: z.boolean(),
-}).strict();
-export type AssistantConversationSkillPin = z.infer<typeof pinSchema>;
-
-/** Server-reviewed mapping only. Neither RPC data, a Released tag nor a seed
- * script is an approval. The mapping pins the complete registry row projection. */
-export const AssistantConversationSourceApprovalSchema = z.object({
-  workspaceId: id, agentKey: AgentLibraryKeySchema, purpose: z.enum(["route", "reply", "context"]),
-  skillSlug: text(128), skillSnapshotHash: hash,
-  source: z.object({ origin: z.enum(["qingdao", "user_listing", "reviewed_supplement"]), revision: text(256), approvalRef: text(512) }).strict(),
-  inputContract: z.enum(["private_context_v1", "friend_route_v1", "friend_reply_v1", "context_only"]),
-  outputContract: z.enum(["route_slug_v1", "route_skill_slug_v1", "reply_v1", "context_only"]),
-  modelConfigurationHash: hash.nullable(), maxCostCents: z.number().int().min(0).max(1_000_000_000).nullable(),
-  imageBudget: imageBudgetSchema.nullable(),
-}).strict().superRefine((value, context) => {
-  if (value.purpose === "context" ? value.outputContract !== "context_only" || value.maxCostCents !== null || value.modelConfigurationHash !== null || value.imageBudget !== null
-    : value.maxCostCents === null || value.modelConfigurationHash === null || (value.purpose === "reply" ? value.outputContract !== "reply_v1" : !value.outputContract.startsWith("route_")))
-    context.addIssue({ code: "custom", message: "APPROVAL_CONTRACT_INVALID" });
-  if (value.skillSlug.startsWith("listing.") && value.source.origin !== "user_listing")
-    context.addIssue({ code: "custom", message: "LISTING_SOURCE_MUST_BE_USER" });
-  if (value.purpose === "context" ? value.inputContract !== "context_only"
-    : value.inputContract === "context_only" || value.purpose === "route" && value.inputContract === "friend_reply_v1" || value.purpose === "reply" && value.inputContract === "friend_route_v1")
-    context.addIssue({ code: "custom", message: "APPROVAL_INPUT_CONTRACT_INVALID" });
-});
-export type AssistantConversationSourceApproval = z.infer<typeof AssistantConversationSourceApprovalSchema>;
 export type AssistantConversationApprovalResolver = (input: {
   executor: AssistantConversationExecutor; identity: AssistantConversationIdentity;
   purpose: "route" | "reply" | "context"; skillSlug?: string;
 }) => Promise<AssistantConversationSourceApproval | null>;
 
-export class AssistantConversationRuntimeError extends Error {
-  constructor(readonly code: string) { super(`ASSISTANT_CONVERSATION_${code}`); this.name = "AssistantConversationRuntimeError"; }
-}
 function fail(code: string): never { throw new AssistantConversationRuntimeError(code); }
 const sha = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 const canonical = (value: unknown, maxBytes = 512 * 1024) => assistantConversationCanonical(value, maxBytes);
@@ -81,7 +49,7 @@ export function createFixedAssistantConversationApprovalResolver(records: readon
   };
 }
 
-type RegistrySkill = { pin: AssistantConversationSkillPin; context: AssistantConversationContextSkill; manifest: Record<string, unknown>; systemPrompt: string; userPrompt: string };
+type RegistrySkill = AssistantConversationRegistrySkill;
 type Row = Record<string, unknown>;
 async function rows(executor: AssistantConversationExecutor, query: string, values: unknown[]): Promise<Row[]> {
   const parts = query.split("?");
@@ -95,19 +63,9 @@ async function rows(executor: AssistantConversationExecutor, query: string, valu
 async function loadSkill(executor: AssistantConversationExecutor, workspaceId: number, slug: string): Promise<RegistrySkill> {
   const found = await rows(executor, "SELECT id,workspaceId,scope,slug,name,version,status,modelOverride,timeout_seconds,IF(OCTET_LENGTH(manifest)<=1048576,manifest,NULL) AS manifest FROM emperor_skills WHERE BINARY slug=BINARY ? AND (workspaceId=? OR (workspaceId IS NULL AND scope='global')) LIMIT 2 FOR SHARE", [slug, workspaceId]);
   if (found.length !== 1) fail("SKILL_UNAVAILABLE");
-  const row = found[0];
-  let manifest: unknown;
-  try { manifest = typeof row.manifest === "string" ? JSON.parse(row.manifest) : row.manifest; canonical(manifest, 256 * 1024); }
-  catch { return fail("SKILL_UNAVAILABLE"); }
-  const schema = z.object({ implementation: z.object({ systemPrompt: z.string().min(1), userPromptTemplate: z.string().optional(), maxTokens: z.number().int().min(1).max(32768).optional(), temperature: z.number().min(0).max(2).optional(), supportsJsonMode: z.boolean().optional() }).passthrough() }).passthrough();
-  const result = schema.safeParse(manifest);
-  if (!result.success) fail("SKILL_UNAVAILABLE");
-  const implementation = result.data.implementation;
-  const pin = parsed(pinSchema, { id: row.id, workspaceId: row.workspaceId, scope: row.scope, slug: row.slug, name: row.name, version: row.version, status: row.status,
-    manifestSha256: skillManifestHash(manifest), manifestRawSha256: sha(JSON.stringify(manifest)), systemPromptSha256: sha(implementation.systemPrompt), userPromptSha256: sha(implementation.userPromptTemplate ?? ""),
-    modelOverride: row.modelOverride || null, timeoutSeconds: Number(row.timeout_seconds || 120), maxTokens: implementation.maxTokens ?? 4096, temperature: implementation.temperature ?? null, supportsJsonMode: implementation.supportsJsonMode ?? false });
-  if (pin.slug !== slug || !(pin.workspaceId === workspaceId || pin.workspaceId === null && pin.scope === "global")) fail("SKILL_UNAVAILABLE");
-  return { pin, context: { workspaceId: pin.workspaceId, scope: pin.scope, slug, name: pin.name, version: pin.version, status: pin.status, manifest }, manifest: manifest as Record<string, unknown>, systemPrompt: implementation.systemPrompt, userPrompt: implementation.userPromptTemplate || "{{context}}" };
+  const result = assistantConversationSkillSnapshotFromRow(found[0]);
+  if (!assistantConversationSkillScopeMatches(result.pin, workspaceId, slug)) fail("SKILL_UNAVAILABLE");
+  return result;
 }
 async function loadModel(executor: AssistantConversationExecutor, workspaceId: number, slug: string) {
   const found = await rows(executor, "SELECT workspaceId,slug,name,provider,modelId,baseUrl,apiKeyRef,isActive,capabilityTags,maxContextTokens,costPer1kInputTokens,costPer1kOutputTokens FROM emperor_model_providers WHERE BINARY slug=BINARY ? AND (workspaceId=? OR workspaceId IS NULL) LIMIT 2 FOR SHARE", [slug, workspaceId]);
@@ -229,7 +187,7 @@ export function createAssistantConversationRuntime(dependencies: {
     const approval = parsed(AssistantConversationSourceApprovalSchema, raw);
     if (approval.workspaceId !== input.identity.workspaceId || approval.agentKey !== input.identity.agentKey || approval.purpose !== purpose || slug !== undefined && approval.skillSlug !== slug) fail("SOURCE_UNAVAILABLE");
     const skill = await loadSkill(input.executor, input.identity.workspaceId, approval.skillSlug);
-    if (digest(skill.pin) !== approval.skillSnapshotHash) fail("APPROVED_SOURCE_CHANGED");
+    if (assistantConversationSkillSnapshotHash(skill.pin) !== approval.skillSnapshotHash) fail("APPROVED_SOURCE_CHANGED");
     return { skill, approval };
   }
   async function load(input: BaseInput, stages: readonly AssistantConversationStage[]): Promise<Loaded> {

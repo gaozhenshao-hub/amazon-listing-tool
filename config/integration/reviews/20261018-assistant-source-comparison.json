@@ -1,0 +1,45 @@
+{
+  "schema": "amazon-integration-review/v1",
+  "batch": "P5-A4-source-comparison-and-readonly-discovery-foundation",
+  "baseline": "7ccf27e123c6340e6dcaf2f64d50f77edd0d7876",
+  "status": "local_source_verified_actual_registry_and_runtime_mapping_pending",
+  "sourcePolicy": "R2 unchanged: general business Skills Qingdao; operations additions friend and Lingxing Qingdao; Listing Skills user, workflow and competitor/product selection friend. The two fixed general conversation supplements are not business-Skill replacements.",
+  "implemented": [
+    "Bounded read-only discovery of exactly four registry/configuration tables. Two independent observations, explicit schema and MySQL prerequisites, per-query and total deadlines, fixed safe error codes, no partial inventory after overflow or drift.",
+    "Server-local source evidence capture validates the complete saved configuration before projecting bindings and fingerprints. Configuration/rule/prompt bodies and credential values are not exported.",
+    "Compare only the exact reviewed friend route/coach manifests at fixed revision. Canonical semantic manifest comparison tolerates native JSON key order; runtime admission retains the actual exact row/prompt/manifest snapshot hash.",
+    "Missing or ambiguous rows, unsupported scope, changed source, unverified credential or model policy, inadequate spend budget, and unreviewed enabled business context all block the complete mapping. No partial approvals, default workspace, silent shared-to-global promotion, or arbitrary source approval.",
+    "Pure primitives are reused by the existing repository, configuration service and runtime through identical exports. Error classes/prefixes, hashes, defaults and runtime checks remain unchanged.",
+    "Teamorouter constants and endpoint canonicalization are mechanically moved to the pure strict runtime module and re-exported. Catalog content, managed credential resolution, fallback policy and old execution behavior are preserved."
+  ],
+  "verification": {
+    "sourceProof": {"sha256":"aaceda65a644f46b526549ce50f09fc73e81466d8f78e121b5ad8fa635b55ee4","baselineBlobs":2725,"verifiedBaselineBeforeOverlay":2725,"overlays":13},
+    "focusedTests": {"passed":979,"failed":0,"pending":0,"files":37},
+    "readonlyProbeMockTests": {"passed":19,"failed":0,"actualDatabase":false},
+    "lint": {"files":12,"exitCode":0,"warnings":0},
+    "fullUnchangedTsconfig": {"incremental":false,"compilerFiles":3836,"diagnostics":0,"exitCode":0},
+    "testInclusiveTypecheck": {"exitCode":0},
+    "protectedBaseline": {"files":106,"dependencies":2,"failures":0,"originalHashesRetained":true},
+    "clientRuntimeIdentifiers": {"exitCode":0},
+    "serverBundles": ["web","aiWorker","scheduler"],
+    "independentMechanicalEquivalence": {"differentialCases":40,"matched":40,"additionalIndependentTests":150},
+    "standaloneImportBoundary": {"localModules":5,"externalModules":["node:crypto","zod","@trpc/server"],"dbEnvOrRunnerImported":false},
+    "fixedReviewArtifactSmoke": {"sourceReviewed":true,"runtimeReady":false,"runtimeApprovals":null,"actualRegistryRead":false},
+    "sensitiveContentReview": {"frozenCodeFiles":12,"bytes":248447,"blockingFindingsDetected":0,"syntheticFixtureMatches":2}
+  },
+  "protectedCatalogReview": {
+    "originalGitBlobSha1":"bc032bdf11a414ab81247d9d8e62cf30e6c21a65",
+    "reviewedGitBlobSha1":"d46e98d450c3608677a696de753cf02db650f7d7",
+    "reviewedSha256":"67049cb91e0c45a89dc65439287a9eeb9675f9c78079a4f6fb8611e9d51a8eb0",
+    "decision":"Accept only the reviewed mechanical extraction and re-exports under K08; no provider call, routing, key or fallback policy change."
+  },
+  "notImplementedByThisBatch": [
+    "Actual production registry discovery or source/policy evidence capture. Discovery SQL has only mock validation, not native MySQL acceptance.",
+    "Approval of enabled Qingdao/user Listing business contexts, actual source deployment provenance, credential availability, provider pricing and permitted budgets.",
+    "Runtime mapping injection, database migration or gate activation; the default source resolver remains empty.",
+    "Native DB, authenticated full application, actual model or per-business-Skill execution acceptance, remaining P1/P6 and release/rollback gates."
+  ],
+  "migrationRegistered":false,"migrationExecuted":false,"actualDatabase":false,"actualProvider":false,"modelCalls":0,"pushed":false,"deployed":false,
+  "fullP1Complete":false,"fullP5Complete":false,"fullObjectiveComplete":false,
+  "retainedReleaseScope":"All original P0-P6/K01-K10/T01-T28/image62/master27/supplements12 and 13 release gates remain required. Local source verification is not release acceptance."
+}

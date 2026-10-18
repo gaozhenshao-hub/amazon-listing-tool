@@ -15,27 +15,10 @@ export type AssistantTurnState = typeof STATES[number];
 export type AssistantConversationIdentity = { workspaceId: number; userId: number };
 export interface AssistantConversationExecutor { execute(query: SQL): Promise<unknown> }
 export interface AssistantConversationDatabase { transaction<T>(body: (tx: AssistantConversationExecutor) => Promise<T>): Promise<T> }
-export class AssistantConversationStorageError extends Error {
-  constructor(public readonly code: string, public readonly conflict = false) { super(`ASSISTANT_CONVERSATION_${code}`); this.name = "AssistantConversationStorageError"; }
-}
+export { AssistantConversationStorageError, assistantConversationCanonical } from "../services/assistantConversationSourcePrimitives";
+import { AssistantConversationStorageError, assistantConversationCanonical } from "../services/assistantConversationSourcePrimitives";
 function refuse(code: string, conflict = false): never { throw new AssistantConversationStorageError(code, conflict); }
 function parse<T>(schema: z.ZodType<T>, value: unknown): T { const result = schema.safeParse(value); if (!result.success) refuse("DATA_INVALID"); return result.data; }
-export function assistantConversationCanonical(value: unknown, maxBytes = ASSISTANT_CONVERSATION_LIMITS.request): string {
-  const seen = new Set<object>(); let nodes = 0;
-  function visit(item: unknown, depth: number): unknown {
-    if (++nodes > 200000 || depth > 40) refuse("JSON_LIMIT");
-    if (item === null || typeof item === "string" || typeof item === "boolean") return item;
-    if (typeof item === "number" && Number.isFinite(item) && !Object.is(item, -0)) return item;
-    if (!item || typeof item !== "object" || seen.has(item) || !Array.isArray(item) && Object.getPrototypeOf(item) !== Object.prototype) refuse("JSON_INVALID");
-    seen.add(item);
-    const descriptors = Object.getOwnPropertyDescriptors(item);
-    if (Reflect.ownKeys(item).some(key => typeof key !== "string") || Object.values(descriptors).some(descriptor => !("value" in descriptor))) refuse("JSON_INVALID");
-    const result = Array.isArray(item) ? item.map(child => visit(child, depth + 1)) : Object.fromEntries(Object.keys(item).sort().map(key => [key, visit(descriptors[key].value, depth + 1)]));
-    if (Array.isArray(item) && (Object.keys(item).length !== item.length || Object.keys(item).some((key, index) => key !== String(index)))) refuse("JSON_INVALID");
-    seen.delete(item); return result;
-  }
-  const text = JSON.stringify(visit(value, 0)); if (Buffer.byteLength(text) > maxBytes) refuse("JSON_LIMIT"); return text;
-}
 const digest = (text: string | Uint8Array) => createHash("sha256").update(text).digest("hex");
 function json(value: unknown, maxBytes: number): unknown { let decoded = value; if (typeof value === "string") { if (Buffer.byteLength(value) > maxBytes * 4) refuse("JSON_LIMIT"); try { decoded = JSON.parse(value); } catch { refuse("JSON_INVALID"); } } return JSON.parse(assistantConversationCanonical(decoded, maxBytes)); }
 function identity(value: AssistantConversationIdentity) { return parse(z.object({ workspaceId: ID, userId: ID }).strict(), value); }

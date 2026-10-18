@@ -13,6 +13,7 @@ import { configurationHash, skillManifestHash } from "./assistantConfigurations"
 import { parseAssistantConversationAttachment } from "./assistantConversationAttachments";
 import { strictModelSnapshotFromRow } from "./strictSkillRuntime";
 import { createAssistantConversationRuntime, createFixedAssistantConversationApprovalResolver, AssistantConversationRuntimeSnapshotSchema,
+  assistantConversationSkillSnapshotFromRow, assistantConversationSkillSnapshotHash, assistantConversationSkillScopeMatches,
   type AssistantConversationSourceApproval, type AssistantConversationRuntimePrepareInput } from "./assistantConversationRuntime";
 import type { RunSkillInput, RunSkillResult } from "./skillRunner";
 
@@ -68,6 +69,23 @@ function harness() {
 }
 
 describe("trusted assistant source and runtime preparation", () => {
+  it("uses the same pure registry fingerprint for source comparison and live runtime", async () => {
+    const h = harness(), snapshot = assistantConversationSkillSnapshotFromRow(h.registry[0]);
+    expect(snapshot.pin).toEqual(pin(h.registry[0]));
+    expect(assistantConversationSkillSnapshotHash(snapshot.pin)).toBe(h.approvals[0].skillSnapshotHash);
+    const prepared = await h.runtime.prepare(h.input);
+    expect(prepared.runtimeSnapshot.stages[0].pin).toEqual(snapshot.pin);
+    expect(assistantConversationSkillScopeMatches(snapshot.pin, identity.workspaceId, snapshot.pin.slug)).toBe(true);
+  });
+  it("does not let pure capture turn NULL/shared into globally executable scope", async () => {
+    const h = harness(); Object.assign(h.registry[0], { workspaceId: null, scope: "shared" });
+    const snapshot = assistantConversationSkillSnapshotFromRow(h.registry[0]);
+    expect(snapshot.pin).toMatchObject({ workspaceId: null, scope: "shared" });
+    expect(assistantConversationSkillScopeMatches(snapshot.pin, identity.workspaceId, snapshot.pin.slug)).toBe(false);
+    const approvals = h.approvals.map((approval, index) => index ? approval : { ...approval, skillSnapshotHash: assistantConversationSkillSnapshotHash(snapshot.pin) });
+    const runtime = createAssistantConversationRuntime({ approvalResolver: createFixedAssistantConversationApprovalResolver(approvals), runSkill: h.runSkill });
+    await expect(runtime.prepare(h.input)).rejects.toMatchObject({ code: "SKILL_UNAVAILABLE" }); expect(h.calls()).toBe(0);
+  });
   it("does not treat Released registry rows as approval or touch a default provider", async () => {
     const h = harness(), runtime = createAssistantConversationRuntime();
     expect(await runtime.availability(h.input)).toMatchObject({ available: false, reasonCode: "SOURCE_UNAVAILABLE", model: null, skills: [] });

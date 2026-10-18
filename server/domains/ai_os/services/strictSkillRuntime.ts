@@ -1,6 +1,22 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { canonicalizeTeamorouterOpenAiBaseUrl, TEAMOROUTER_CREDENTIAL_REF } from "./teamorouterCatalog";
+/** Pure endpoint identity; credential resolution stays in teamorouterCatalog. */
+export const TEAMOROUTER_OPENAI_BASE_URL = "https://api.teamorouter.cn/v1";
+export const TEAMOROUTER_DIRECT_HOST = "api.teamorouter.cn";
+export const TEAMOROUTER_LEGACY_SOCKS_HOST = "api.teamorouter.com";
+export const TEAMOROUTER_CREDENTIAL_REF = "env:EXTERNAL_LLM_API_KEY";
+
+/** Canonicalize only the retired Teamorouter OpenAI endpoint; leave all other providers untouched. */
+export function canonicalizeTeamorouterOpenAiBaseUrl(baseUrl: string): string {
+  try {
+    const url = new URL(baseUrl);
+    if (url.hostname !== TEAMOROUTER_LEGACY_SOCKS_HOST) return baseUrl;
+    url.hostname = TEAMOROUTER_DIRECT_HOST;
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return baseUrl;
+  }
+}
 
 /** Opt-in only. These are admission limits, not a tokenizer or a billing quote. */
 export const STRICT_SKILL_LIMITS = Object.freeze({ textBytes: 1024 * 1024, imageCount: 3,

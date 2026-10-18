@@ -629,6 +629,11 @@
       "baseline": {
         "gitBlobSha1": "bc032bdf11a414ab81247d9d8e62cf30e6c21a65",
         "sha256": "d90be816b0bbbbc8dd3b209cdcf0fb927cbce020687ef1262ef2abb070c791c5"
+      },
+      "reviewed": {
+        "gitBlobSha1": "d46e98d450c3608677a696de753cf02db650f7d7",
+        "sha256": "67049cb91e0c45a89dc65439287a9eeb9675f9c78079a4f6fb8611e9d51a8eb0",
+        "reviewRef": "config/integration/reviews/20261018-assistant-source-comparison.json; pure endpoint constants/canonicalizer extraction only, preserve catalog, credential resolution, default fallback and prior K08 behavior"
       }
     },
     {

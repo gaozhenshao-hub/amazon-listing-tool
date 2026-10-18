@@ -1,9 +1,7 @@
 import { ENV } from "../../../_core/env";
 
-export const TEAMOROUTER_OPENAI_BASE_URL = "https://api.teamorouter.cn/v1";
-export const TEAMOROUTER_DIRECT_HOST = "api.teamorouter.cn";
-export const TEAMOROUTER_LEGACY_SOCKS_HOST = "api.teamorouter.com";
-export const TEAMOROUTER_CREDENTIAL_REF = "env:EXTERNAL_LLM_API_KEY";
+import { TEAMOROUTER_CREDENTIAL_REF } from "./strictSkillRuntime";
+export { TEAMOROUTER_OPENAI_BASE_URL, TEAMOROUTER_DIRECT_HOST, TEAMOROUTER_LEGACY_SOCKS_HOST, TEAMOROUTER_CREDENTIAL_REF, canonicalizeTeamorouterOpenAiBaseUrl } from "./strictSkillRuntime";
 
 export type TeamorouterCatalogModel = {
   slug: string;
@@ -69,17 +67,6 @@ export function resolveGovernedModelApiKey(reference?: string | null): string {
   return reference?.trim() || "";
 }
 
-/** Canonicalize only the retired Teamorouter OpenAI endpoint; leave all other providers untouched. */
-export function canonicalizeTeamorouterOpenAiBaseUrl(baseUrl: string): string {
-  try {
-    const url = new URL(baseUrl);
-    if (url.hostname !== TEAMOROUTER_LEGACY_SOCKS_HOST) return baseUrl;
-    url.hostname = TEAMOROUTER_DIRECT_HOST;
-    return url.toString().replace(/\/$/, "");
-  } catch {
-    return baseUrl;
-  }
-}
 
 export function defaultTeamorouterFallbacks(forgeApiKey = ENV.forgeApiKey): string[] {
   if (forgeApiKey) return ["manus-default", "teamo-gemini-3-8-flash"];

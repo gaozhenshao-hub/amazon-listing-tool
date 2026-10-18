@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import { canonicalConfigurationJson, configurationHash, skillManifestHash } from "./assistantConversationSourcePrimitives";
+export { canonicalConfigurationJson, configurationHash, skillManifestHash } from "./assistantConversationSourcePrimitives";
 import { isDeepStrictEqual } from "node:util";
 import { TRPCError } from "@trpc/server";
 import { AGENT_LIBRARY_ROLES, AgentLibraryKeySchema, type AgentLibraryKey } from "../../../../shared/agentLibraryContracts";
@@ -23,27 +24,6 @@ function key(value: AgentLibraryKey): AgentLibraryKey {
 function json(value: unknown): unknown {
   try { return typeof value === "string" ? JSON.parse(value) : value; }
   catch { return refuse("ASSISTANT_DATA_INVALID"); }
-}
-/** Stable JSON for this validated JSON-only configuration; not an execution signature. */
-export function canonicalConfigurationJson(value: AssistantConfiguration): string {
-  const sort = (item: unknown): unknown => Array.isArray(item) ? item.map(sort)
-    : item && typeof item === "object" ? Object.fromEntries(Object.keys(item).sort().map(name => [name, sort((item as Record<string, unknown>)[name])])) : item;
-  return JSON.stringify(sort(value));
-}
-export function configurationHash(value: AssistantConfiguration): string {
-  return createHash("sha256").update(canonicalConfigurationJson(value)).digest("hex");
-}
-export function skillManifestHash(value: unknown): string {
-  const manifest = json(value);
-  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) refuse("ASSISTANT_SKILL_MANIFEST_INVALID");
-  const sort = (item: unknown): unknown => {
-    if (item === null || typeof item === "string" || typeof item === "boolean") return item;
-    if (typeof item === "number" && Number.isFinite(item)) return item;
-    if (Array.isArray(item)) return item.map(sort);
-    if (item && typeof item === "object" && Object.getPrototypeOf(item) === Object.prototype) return Object.fromEntries(Object.keys(item).sort().map(name => [name, sort((item as Row)[name])]));
-    return refuse("ASSISTANT_SKILL_MANIFEST_INVALID");
-  };
-  return createHash("sha256").update(JSON.stringify(sort(manifest))).digest("hex");
 }
 function configuration(value: unknown, persisted = false): AssistantConfiguration {
   const raw = persisted ? json(value) : value;
