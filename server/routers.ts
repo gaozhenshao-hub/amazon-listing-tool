@@ -88,6 +88,7 @@ import { inventorySnapshotReadRouter } from "./routers/inventorySnapshotRead";
 import { profitBoardReadRouter } from "./routers/profitBoardRead";
 import { productBoardReadRouter } from "./routers/productBoardRead";
 import { productTaskReadRouter } from "./routers/productTaskRead";
+import { productTaskWriteRouter } from "./routers/productTaskWrite";
 import { lingxingSyncRouter } from "./routers/lingxingSync";
 import { operatorMappingRouter } from "./routers/operatorMapping";
 import { inventoryOwnerAssignmentsRouter } from "./routers/inventoryOwnerAssignments";
@@ -208,6 +209,7 @@ export const appRouter = router({
   profitBoardRead: profitBoardReadRouter,
   productBoardRead: productBoardReadRouter,
   productTaskRead: productTaskReadRouter,
+  productTaskWrite: productTaskWriteRouter,
   lingxingSync: lingxingSyncRouter,
   operatorMapping: operatorMappingRouter,
   inventoryOwnerAssignments: inventoryOwnerAssignmentsRouter,

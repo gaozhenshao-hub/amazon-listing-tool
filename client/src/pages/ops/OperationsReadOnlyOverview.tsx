@@ -193,8 +193,9 @@ export function OperationsReadOnlyContent({
       </header>
       <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-6 text-amber-900">
         只读范围沿用现有接口权限。库存为当前工作区接口已返回的运营快照与规划结果；财务仅当前用户的手工台账，不是完整
-        ERP 月报。不会启动新抓取、文件上传、定时同步或 AI。未知、冲突及旧 NULL
-        范围记录不会自动归属。
+        ERP 月报。此库存/财务读取不会启动新抓取、文件上传、定时同步或
+        AI；独立任务区的编辑及附件操作须另行核验服务端开关与当前权限。未知、冲突及旧
+        NULL 范围记录不会自动归属。
       </p>
       <div className="grid gap-3 sm:grid-cols-3">
         {[

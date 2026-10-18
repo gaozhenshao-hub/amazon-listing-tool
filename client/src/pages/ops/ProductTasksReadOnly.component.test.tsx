@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ProductTasksReadOnly, { ProductTasksEmbeddedReadOnly, ProductTasksReadOnlyContent } from "./ProductTasksReadOnly";
 import { ProductTaskListInputSchema, ProductTaskDetailInputSchema, buildProductTaskListResult, buildProductTaskDetailResult, buildProductTaskReadFailure, type ProductTaskListInput, type ProductTaskDetailInput, type ProductTaskListResult, type ProductTaskDetailResult, type ProductTaskReadSource, type ProductTaskSourceRecord, type ProductTaskCapabilities } from "@shared/productTaskRead";
 
-const controls = vi.hoisted(() => ({ auth: { loading: false, error: null as Error | null, user: { id: 7, defaultWorkspaceId: 11, role: "admin" } as { id: number; defaultWorkspaceId: number | null | undefined; role: string } | null }, permissions: { isLoading: false, canRead: vi.fn() }, list: vi.fn(), detail: vi.fn() }));
+const controls = vi.hoisted(() => ({ auth: { loading: false, error: null as Error | null, user: { id: 7, defaultWorkspaceId: 11, role: "admin" } as { id: number; defaultWorkspaceId: number | null | undefined; role: string } | null }, permissions: { isLoading: false, canRead: vi.fn() }, list: vi.fn(), detail: vi.fn(), options: vi.fn(), execute: vi.fn() }));
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => controls.auth }));
 vi.mock("@/hooks/usePermissions", () => ({ usePermissions: () => controls.permissions }));
-vi.mock("@/lib/trpc", () => ({ trpc: { useUtils: () => ({ client: { productTaskRead: { list: { query: controls.list }, detail: { query: controls.detail } } } }) } }));
+vi.mock("@/lib/trpc", () => ({ trpc: { useUtils: () => ({ client: { productTaskRead: { list: { query: controls.list }, detail: { query: controls.detail } }, productTaskWrite: { options: { query: controls.options }, execute: { mutate: controls.execute } } } }) } }));
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const product = { workspaceId: 11, storeName: "合成店A", country: "US", parentAsin: "P001" };
 const capabilities: ProductTaskCapabilities = { completionNotes: "available", boardProduct: "available", profiles: "available", attachments: "available", partners: "unavailable" };
@@ -31,7 +31,7 @@ function deferred<T>() { let resolve!: (value: T) => void; const promise = new P
 const readButton = () => screen.getByRole("button", { name: "读取已有任务" });
 async function ready() { fireEvent.click(readButton()); await screen.findByLabelText("任务五状态统计"); }
 const openTask = (id = 28) => { fireEvent.click(screen.getByRole("button", { name: `查看任务 ${id} 详情` })); return within(screen.getByRole("region", { name: `任务 ${id} 完整详情` })); };
-beforeEach(() => { controls.auth = { loading: false, error: null, user: { id: 7, defaultWorkspaceId: 11, role: "admin" } }; controls.permissions.isLoading = false; controls.permissions.canRead.mockReset().mockReturnValue(true); controls.list.mockReset(); controls.detail.mockReset(); });
+beforeEach(() => { localStorage.clear(); controls.auth = { loading: false, error: null, user: { id: 7, defaultWorkspaceId: 11, role: "admin" } }; controls.permissions.isLoading = false; controls.permissions.canRead.mockReset().mockReturnValue(true); controls.list.mockReset(); controls.detail.mockReset(); controls.options.mockReset(); controls.execute.mockReset(); });
 afterEach(cleanup);
 
 describe("task reader authorization and exact product gates", () => {
@@ -44,6 +44,19 @@ describe("task reader authorization and exact product gates", () => {
 });
 
 describe("friend task workflow, source fidelity and complete metadata", () => {
+  it("optional action callbacks preserve pure rendering while exposing friend row controls", () => {
+    const edit = vi.fn(), quickUpdate = vi.fn(), download = vi.fn(), removeAttachment = vi.fn();
+    render(<ProductTasksReadOnlyContent result={result()} detail={detailResult()} actions={{ busy: false, edit, quickUpdate, download, removeAttachment }} />);
+    fireEvent.change(screen.getByLabelText("任务 28 快速状态"), { target: { value: "review" } });
+    expect(quickUpdate).toHaveBeenCalledWith(expect.objectContaining({ id: 28 }), { status: "review" });
+    fireEvent.change(screen.getByLabelText("任务 28 快速类型"), { target: { value: "其他" } });
+    expect(quickUpdate).toHaveBeenCalledWith(expect.objectContaining({ id: 28 }), { category: "其他" });
+    expect(screen.getByText(/附件操作按当前授权执行/)).toBeInTheDocument();
+    expect(controls.list).not.toHaveBeenCalled();
+    const opened = openTask();
+    fireEvent.click(opened.getByRole("button", { name: "下载 合成附件-25.xlsx" }));
+    expect(download).toHaveBeenCalledWith(expect.objectContaining({ id: 28 }), 25);
+  });
   it("keeps all five statuses and server-wide counts despite a two-task page", () => { const data = result(input({ limit: 2 })); render(<ProductTasksReadOnlyContent result={data} />); const stats = screen.getByLabelText("任务五状态统计"); expect(stats).toHaveTextContent("全部任务28"); expect(stats).toHaveTextContent("未完成（四态）23"); for (const label of ["待规划", "未开始", "进行中", "待审核", "已完成"]) expect(within(stats).getByText(label)).toBeInTheDocument(); expect(screen.getByText(/本页 2 \/ 全筛选 28/)).toBeInTheDocument(); expect(screen.getByRole("button", { name: "任务列表下一页" })).toBeDisabled(); });
   it.each(["none", "type", "status", "product"] as const)("%s groups retain every page task exactly once and full matching group counts", groupBy => { const data = result(input({ limit: 50, groupBy })); render(<ProductTasksReadOnlyContent result={data} />); expect(screen.getAllByRole("button", { name: /^查看任务 \d+ 详情$/ })).toHaveLength(28); for (const item of data.items) expect(screen.getByRole("button", { name: `查看任务 ${item.id} 详情` })).toBeInTheDocument(); for (const group of data.groups) expect(screen.getByRole("region", { name: `任务分组 ${group.label}` })).toHaveTextContent(`本页 ${group.pageCount} / 全筛选组 ${group.total}`); expect(screen.getByText("历史自定义类型")).toBeInTheDocument(); });
   it("exact embedded task area preserves all four pending states and folds done tasks separately", () => { const data = result(input({ limit: 50, product })); render(<ProductTasksReadOnlyContent result={data} embedded />); const pending = within(screen.getByRole("region", { name: "产品未完成任务" })); for (const label of ["待规划", "未开始", "进行中", "待审核"]) expect(pending.getAllByText(label).length).toBeGreaterThan(0); expect(screen.queryByRole("button", { name: /^查看任务 25：/ })).not.toBeInTheDocument(); fireEvent.click(screen.getByRole("button", { name: /^已完成任务 ·/ })); expect(screen.getByRole("button", { name: /^查看任务 25：/ })).toBeInTheDocument(); expect(controls.list).not.toHaveBeenCalled(); });
@@ -58,6 +71,24 @@ describe("friend task workflow, source fidelity and complete metadata", () => {
 });
 
 describe("task filters, identity and asynchronous response isolation", () => {
+  it("confirmed quick update refreshes both active global and exact-product readers from first pages", async () => {
+    const cap = { status: "available", reasonCode: null };
+    controls.options.mockResolvedValue({ identity: { userId: 7, workspaceId: 11 }, members: [{ id: 7, displayName: "当前负责人" }], capabilities: { create: cap, update: cap, upload: cap, download: cap, deleteAttachment: cap, partners: { status: "unavailable", reasonCode: "UNAVAILABLE" } } });
+    controls.list.mockImplementation(async request => result(request));
+    controls.execute.mockImplementation(async request => ({ identity: { userId: 7, workspaceId: 11 }, operationId: request.operationId, action: "update", status: "committed", taskId: request.taskId, attachmentId: null, taskVersion: "b".repeat(64), reasonCode: null }));
+    render(<><ProductTasksReadOnly /><ProductTasksEmbeddedReadOnly product={product} /></>);
+    const global = within(screen.getByRole("region", { name: "产品任务只读查看" })), inline = within(screen.getByRole("region", { name: "产品内嵌任务只读区域" }));
+    fireEvent.click(global.getByRole("button", { name: "读取已有任务" }));
+    fireEvent.click(inline.getByRole("button", { name: "读取此产品任务" }));
+    await waitFor(() => expect(screen.getAllByLabelText("任务五状态统计")).toHaveLength(2));
+    fireEvent.click(global.getByRole("button", { name: "检查任务操作权限" }));
+    await global.findByLabelText("任务 28 快速状态");
+    fireEvent.change(global.getByLabelText("任务 28 快速状态"), { target: { value: "backlog" } });
+    await waitFor(() => expect(controls.list).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(screen.getAllByLabelText("任务五状态统计")).toHaveLength(2));
+    expect(controls.list.mock.calls.slice(2).map(([request]) => request.cursor)).toEqual([null, null]);
+    expect(controls.list.mock.calls.slice(2).map(([request]) => request.product)).toEqual([null, product]);
+  });
   it.each([["筛选运营负责人", "7", "assigneeId", 7], ["筛选任务类型", "category:listing优化", "category", "listing优化"], ["筛选任务状态", "review", "status", "review"], ["搜索任务或商品", "合成任务", "search", "合成任务"], ["任务分组", "type", "groupBy", "type"], ["筛选任务关联状态", "unlinked", "association", "unlinked"]] as const)("%s clears displayed data immediately and sends exact explicit filter", async (label, value, key, expected) => { controls.list.mockImplementation(async request => result(request)); render(<ProductTasksReadOnly />); await ready(); fireEvent.change(screen.getByLabelText(label), { target: { value } }); expect(screen.queryByLabelText("任务五状态统计")).not.toBeInTheDocument(); expect(controls.list).toHaveBeenCalledTimes(1); await ready(); expect(controls.list.mock.calls[1][0][key]).toEqual(expected); });
   it("keeps unassigned selection distinct from all numeric assignees", async () => { controls.list.mockImplementation(async request => result(request)); render(<ProductTasksReadOnly />); fireEvent.change(screen.getByLabelText("筛选运营负责人"), { target: { value: "unassigned" } }); await ready(); expect(controls.list.mock.calls[0][0]).toMatchObject({ assigneeId: null, unassignedOnly: true }); });
   it.each(["user", "workspace", "role", "logout", "auth pending", "auth error", "permission pending", "dashboard denied", "tasks denied"])("%s clears displayed list/detail and aborts outstanding details", async kind => {

@@ -12,7 +12,8 @@ import { ProductTaskListInputSchema, ProductTaskDetailInputSchema, ProductTaskRe
 type Row = Record<string, unknown>;
 type Code = "UNAUTHORIZED" | "FORBIDDEN" | "BAD_REQUEST" | "PRECONDITION_FAILED" | "INTERNAL_SERVER_ERROR";
 type Identity = { userId: number; workspaceId: number };
-type Session = { tx: DbExecutor; identity: Identity; all: boolean; assigneeIds: number[] };
+export type ProductTaskReadSession = { tx: DbExecutor; identity: Identity; all: boolean; assigneeIds: number[] };
+type Session = ProductTaskReadSession;
 type Table = "team_tasks" | "product_profiles" | "ops_task_attachments";
 export interface ProductTaskReadDatabase { transaction?<T>(body: (tx: DbExecutor) => Promise<T>): Promise<T> }
 const TASK_LIMIT = 5000, WIRE_BYTES_MAX = 8 * 1024 * 1024, ROW_BYTES_MAX = 128 * 1024, CHUNK = 200;
@@ -68,7 +69,9 @@ function permissionJson(value: unknown): unknown {
   if (Buffer.byteLength(value, "utf8") > 65536) fail("DIRECTORY_POLICY_INVALID", "FORBIDDEN");
   try { return JSON.parse(value); } catch { return fail("DIRECTORY_POLICY_INVALID", "FORBIDDEN"); }
 }
-async function assertTaskDirectory(tx: DbExecutor, role: string, workspaceId: number) {
+/** Shared directory gate. A task write never implies dashboard edit or finance
+ * access, but it must retain both read gates and the task-specific operation. */
+export async function strictTaskDirectory(tx: DbExecutor, role: string, workspaceId: number, operation: "read" | "edit" | "delete" = "read") {
   if (role === "super_admin") return;
   const records = await query(tx, "SELECT id,workspaceId,role,modules,detailedPermissions FROM role_permissions WHERE role=? AND (workspaceId=? OR workspaceId IS NULL) ORDER BY workspaceId IS NULL ASC,id DESC LIMIT 3 FOR SHARE", [role, workspaceId]);
   if (records.length > 2 || new Set(records.map(row => row.workspaceId)).size !== records.length || records.some(row => !positiveId(row.id) || row.role !== role || row.workspaceId !== null && row.workspaceId !== workspaceId)) fail("DIRECTORY_POLICY_INVALID", "FORBIDDEN");
@@ -85,6 +88,7 @@ async function assertTaskDirectory(tx: DbExecutor, role: string, workspaceId: nu
   for (const subModuleId of ["ops_dashboard", "ops_tasks"]) {
     const sub = module.subModules?.find(item => item.subModuleId === subModuleId);
     if (!(sub?.operations ?? module.operations).includes("read")) fail("DIRECTORY_DENIED", "FORBIDDEN");
+    if (subModuleId === "ops_tasks" && !(sub?.operations ?? module.operations).includes(operation)) fail("DIRECTORY_DENIED", "FORBIDDEN");
   }
 }
 const taskFields = { productProfileId: "product_profile_id", creatorId: "user_id", title: "title", description: "description", status: "task_status", priority: "task_priority_team", category: "category", assigneeId: "assignee_id", assigneeName: "assignee_name", startDate: "start_date", dueDate: "due_date", estimatedHours: "estimated_hours", actualHours: "actual_hours", tags: "tags" };
@@ -95,13 +99,16 @@ function textBytes(values: unknown[]) {
   if (values.some(value => value !== null && typeof value !== "string" && !(typeof value === "number" && Number.isFinite(value)))) throw new InvalidSource();
   return values.reduce<number>((sum, value) => sum + (value === null ? 0 : Buffer.byteLength(String(value), "utf8")), 0);
 }
-type SourceData = Omit<ProductTaskReadSource, "input">;
+export type ProductTaskSourceData = Omit<ProductTaskReadSource, "input">;
+type SourceData = ProductTaskSourceData;
 type Capabilities = ProductTaskReadSource["capabilities"];
 function emptyCapabilities(): Capabilities {
   return { completionNotes: "unavailable", boardProduct: "unavailable", profiles: "unavailable", attachments: "unavailable", partners: "unavailable" };
 }
 const canReadTask = (session: Session, row: Row) => row.workspaceId === session.identity.workspaceId && (session.all || typeof row.assigneeId === "number" && session.assigneeIds.includes(row.assigneeId));
-async function load(session: Session, taskId?: number): Promise<SourceData> {
+/** Callers must authorize the session first. Write callers also lock the target
+ * task FOR UPDATE before using this same complete source for a version CAS. */
+export async function loadProductTaskReadSource(session: Session, taskId?: number): Promise<SourceData> {
   const taskColumns = await columns(session.tx, "team_tasks"), capabilities = emptyCapabilities();
   if (!taskColumns) throw new MissingSource();
   required(taskColumns, ["id", "workspaceId", ...Object.values(taskFields), "completed_at", "createdAt", "updatedAt"]);
@@ -215,14 +222,14 @@ export function createProductTaskReadRepository(dependencies: { database?: () =>
         const actors = await query(tx, "SELECT id,role,status,defaultWorkspaceId FROM users WHERE id=? FOR SHARE", [ctx.user!.id]), actor = actors[0];
         if (actors.length !== 1 || actor.id !== ctx.user!.id || actor.role !== ctx.user!.role || actor.status !== "active" || actor.defaultWorkspaceId !== workspaceId) fail("ACTOR_CHANGED", "FORBIDDEN");
         await permission({ actor: { id: actor.id as number, role: actor.role as string, defaultWorkspaceId: workspaceId }, resource: "ops_data", action: "read", workspaceId, authorizationRead: { executor: tx, strict: true, lock: true } });
-        await assertTaskDirectory(tx, actor.role as string, workspaceId);
+        await strictTaskDirectory(tx, actor.role as string, workspaceId);
         const session: Session = { tx, identity: { userId: actor.id as number, workspaceId }, all: ["admin", "super_admin"].includes(actor.role as string), assigneeIds: [actor.id as number] };
         function failure(status: "missing" | "invalid", reasonCode: string, missingReason: string) {
           const base = { identity: session.identity, status, reasonCode, missingReason, capabilities: emptyCapabilities() };
           return kind === "list" ? buildProductTaskReadFailure({ ...base, input: input as ProductTaskListInput, kind: "list" }) : buildProductTaskReadFailure({ ...base, input: input as ProductTaskDetailInput, kind: "detail" });
         }
         try {
-          const source = await load(session, kind === "detail" ? (input as ProductTaskDetailInput).taskId : undefined);
+          const source = await loadProductTaskReadSource(session, kind === "detail" ? (input as ProductTaskDetailInput).taskId : undefined);
           return kind === "list" ? buildProductTaskListResult({ ...source, input: input as ProductTaskListInput }) : buildProductTaskDetailResult({ ...source, input: input as ProductTaskDetailInput });
         } catch (error) {
           if (error instanceof MissingSource) return failure("missing", "table_missing", "运营任务来源表尚未接通，不表示没有任务");

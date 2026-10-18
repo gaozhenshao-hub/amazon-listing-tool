@@ -1,0 +1,276 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "friend-scoped-product-task-write",
+  "baseline": "77ac9852087ba93c725f209125fad35f890ec507",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "localOnly": true,
+  "humanDecision": {
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary",
+    "generalP5Skills": "Qingdao-primary",
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSelection": "friend-primary; select, preview and generate; upload supplemental"
+  },
+  "scope": "Local P4 source integration for global and exact-product task create/update/attachments. Default-off; not actual database, private storage or production acceptance.",
+  "preserve": [
+    "P0-P6/K01-K10/T01-T28/image62/master27/supplements12",
+    "prior cost/monthly/inventory/profit/product/Listing/Agent integrations",
+    "existing Lingxing contracts and user-primary Listing Skills",
+    "unrelated four untracked migration ledger helpers"
+  ],
+  "changes": [
+    "Add independent ops_task action permissions plus strict ops_tasks directory operations without expanding ops_data, scheduler, financial or model authority. Lock current actor, membership and policy in the transaction. Only admin/super_admin see all task rows; assignment permission does not grant ops_manager all-task reads.",
+    "Add options/products/execute/recover/download endpoints. Feature ENABLE_MERGED_OPS_TASK_WRITES remains default-off. Runtime checks actual schema, InnoDB, single-column primary/unique audit key, nullable product ID and required extensions; no request runs DDL.",
+    "Reuse saved exact workspace/store/country/parent identity. Candidate selection follows friend newest parent mapping, original-parent/day suppression, Saturday-Friday daily/legacy overlap, then latest effective metadata. Resolve every operator component to current active numeric workspace members. Unknown, ambiguous or legacy coverage is partial.",
+    "Create optional-product tasks with five statuses, numeric assignee, immutable saved product identity, medium priority, reminders disabled. Edit title/category/status/date/completion notes with full task-version CAS; preserve description and unrelated legacy fields; reopening clears completion timestamp, repeated done preserves prior completion timestamp. No task deletion or reassignment endpoint.",
+    "Create immutable transaction-coupled operation receipts keyed by actor/workspace/UUID. Same UUID with different payload conflicts; an unknown outcome stays unknown until checked. Actor lock serializes late commands versus cancel fence. Check/cancel remains available when release switch is disabled, subject to current read authority.",
+    "Attachments use private configured S3/OSS only, deterministic scoped key, durable prepared receipt before one PUT, bounded size/SHA verification, then fresh authority/version validation and metadata commit. Explicit recovery verifies existing object without PUT. Download reauthorizes and issues short-lived signed URL; deleting unlinks metadata but retains stored object.",
+    "Global and embedded task pages share actual create/edit/quick status/category/multi-file controls, streamed bounded downloads, stale scope guards and persistent recovery UUIDs. Each file independently commits with honest partial-success state. Existing invalid filename/extension metadata is retained without unsafe download.",
+    "Explicit clear-due-date control, UTF8 note limit and no truncation of legacy text. Narrow dialog uses zero-minimum grid tracks rather than hiding overflow.",
+    "Pure schema planner proposes only compatible nullable product profile ID, completion_notes, board_product, and scoped attachment table/index. Existing equivalent structure deduplicates; incompatible structure fails. Candidate0316 is not registered/executed and migration-admission ledger is unchanged. Old Drizzle projection unchanged to preserve pre-migration SELECT compatibility."
+  ],
+  "review": {
+    "root": "Reviewed repository, routes, schema planner, permissions and actual synthetic browser. Full unchanged configured types and final union passed on independently materialized Git baseline and frozen sources.",
+    "independent": "Separate shared/backend/UI reviewers checked authority, idempotency, storage boundaries and candidate equivalence. Independent candidate review27/27 passed after ownership fixes.",
+    "findingsResolved": [
+      "Disabled release must not block checking/cancelling previously issued operations",
+      "Unmapped/ambiguous/inactive/foreign numeric operator components cannot claim complete source coverage",
+      "Parent/day suppression must precede latest owner selection; Date objects and invalid report levels/dates fail closed",
+      "Null reportDate/reportLevel rows remain legacy weekly even when columns exist; overlapping legacy weeks cannot override daily source ownership",
+      "Cumulative task-body and UTF8 TEXT limits, bounded streaming download and unsupported old attachment names",
+      "Explicit date clear required for native date input; mobile dialog min-content overflow corrected"
+    ],
+    "protectedManifestChanged": false,
+    "migrationLedgerChanged": false
+  },
+  "verification": {
+    "focusedUnion": {
+      "session": 97793,
+      "exitCode": 0,
+      "files": 16,
+      "tests": 831,
+      "breakdown": {
+        "candidates": 27,
+        "journalAndShared": 63,
+        "taskReadRepository": 80,
+        "productBoardRepository": 70,
+        "writeRepository": 31,
+        "storage": 25,
+        "writeRouter": 19,
+        "permissionDirectory": 3,
+        "newResourcePermissions": 3,
+        "strictAuthorization": 13,
+        "overview": 13,
+        "taskReadSharedAndRouter": 137,
+        "productBoardSharedAndRouter": 142,
+        "actionsUi": 28,
+        "taskReadUi": 90,
+        "productBoardUi": 87
+      },
+      "note": "Imported shared suites included once; earlier814+16 runs are superseded, not additive."
+    },
+    "nodeTests": {
+      "schemaPlanner": 16,
+      "admission": 17,
+      "exitCode": 0,
+      "chunks": [
+        "112de4",
+        "98a85b"
+      ]
+    },
+    "scopedLint": {
+      "files": 24,
+      "exitCode": 0,
+      "initialSession": 71934,
+      "finalChangedUiSession": 36236,
+      "warnings": 0
+    },
+    "configuredTypes": {
+      "status": "passed-full-configured-nonincremental-frozen-candidate",
+      "session": 40528,
+      "exitCode": 0,
+      "command": "node_modules/.bin/tsc --noEmit --incremental false",
+      "directory": "/Users/gavin/.cache/amazon-task-write-candidate-20261018.5d6oMg",
+      "verifiedBaselineBlobs": 2557,
+      "verifiedFrozenOverlays": 25,
+      "fullTsconfigUnchanged": true,
+      "sourceProof": "outputs/amazon-task-write-candidate-source-proof-20261018.json"
+    },
+    "protectedGuard": {
+      "chunk": "82b1be",
+      "files": 106,
+      "dependencies": 2,
+      "reviewedRecords": 25,
+      "exitCode": 0,
+      "scope": "Verified frozen candidate; worktree invocation interrupted on cloud-hydrated reads, not accepted."
+    },
+    "diffCheck": {
+      "requiredBeforeCommit": true
+    },
+    "actualSyntheticBrowser": {
+      "scope": "Actual ProductTaskActions controller + pure ProductTasksReadOnlyContent + shared validators; synthetic in-memory client, not authenticated backend/database/private storage.",
+      "verified": [
+        "No query until explicit options check; create unlinked review task; choosing another numeric assignee clears selected product.",
+        "Edit preserves legacy category and multiline notes. Explicit clear button saves null date and displays 未填写. Five-state update visibly reflected.",
+        "Lost-acknowledgment simulation keeps original UUID and recover(check) acknowledges existing commit after simulated release disable, without duplicate task update.",
+        "Embedded source preselects exact server-checked product and shows separate pending/done sections.",
+        "390x844 dialog bbox358/client341/scroll341 and document390: no horizontal dialog or body overflow; vertically scrollable save button reachable.",
+        "Final desktop shows saved review status, cleared date and retained original product/notes. Console warn/error empty."
+      ],
+      "references": [
+        "outputs/product-task-write-browser-20261018/desktop.png",
+        "outputs/product-task-write-browser-20261018/mobile.png",
+        "outputs/product-task-write-browser-20261018/entry.tsx",
+        "outputs/product-task-write-browser-20261018/mock.ts",
+        "outputs/product-task-write-browser-20261018/serve.mjs",
+        "outputs/product-task-write-browser-20261018/styles.css"
+      ],
+      "notVerified": [
+        "Real MySQL transaction/locking/revocation and JSON projections",
+        "Real private S3/OSS upload/download recovery",
+        "Authenticated production wrapper and old task paths",
+        "Email/reminder scheduling or task reassignment"
+      ]
+    }
+  },
+  "release": {
+    "flagDefault": "off",
+    "actualDatabase": false,
+    "actualPrivateStorage": false,
+    "actualAuthenticatedWorkflow": false,
+    "migrationExecuted": false,
+    "migrationRegistered": false,
+    "modelCalls": 0,
+    "productionDeployed": false,
+    "pushed": false,
+    "fullP1Complete": false,
+    "fullObjectiveComplete": false
+  },
+  "next": [
+    "Controlled real schema/native/storage and authenticated-browser task acceptance before enabling writes; retain recovery receipts and objects on rollback.",
+    "Continue friend complete cost/monthly/inventory controlled writes and coherent derived views; no migration/admission or unknown-commit shortcuts.",
+    "Preserve remaining P1-native/security/recovery, Listing selected workflows/Skills, Agent AI and P6 rollout gates. Private friend source must not be public-pushed without exact destination/visibility authorization."
+  ],
+  "sourceFiles": [
+    {
+      "path": "shared/const.ts",
+      "bytes": 23131,
+      "sha256": "366beaf2351044009446583b516dc07b1b7d9354a766cc0db48ab218e98b5b2a"
+    },
+    {
+      "path": "shared/productTaskWrite.ts",
+      "bytes": 12080,
+      "sha256": "d5c25b18861ac4e8366f55b8c009eb41935d701fff29b05aaee646c5777ab0c8"
+    },
+    {
+      "path": "shared/productTaskWrite.test.ts",
+      "bytes": 7164,
+      "sha256": "a7868d52b3ac8a7188d942ed3913e6040b5a6f13707ccdae9bf3200cbaa6200b"
+    },
+    {
+      "path": "server/routers.ts",
+      "bytes": 10433,
+      "sha256": "5091a4bf00a6b0008ab1e5352ea18cf39d8532f747c631d7f1b3cc526c6748e5"
+    },
+    {
+      "path": "server/productTaskPermissions.test.ts",
+      "bytes": 1747,
+      "sha256": "90e3012895c383bf8e9ca28a93a4c48cc5762ceb27fca7374581c1f14104f5d4"
+    },
+    {
+      "path": "server/domains/ops/productTaskReadRepository.ts",
+      "bytes": 24382,
+      "sha256": "d503c03c60e0f0d91d3480e858b8a86d3f724abfebc37dae7efa4fe56079b234"
+    },
+    {
+      "path": "server/domains/ops/productTaskReadRepository.test.ts",
+      "bytes": 30887,
+      "sha256": "fda03535303c950829ed9e0c4471c4832aa78cbb8a3500739a824cc05511864a"
+    },
+    {
+      "path": "server/domains/ops/productTaskWriteRepository.ts",
+      "bytes": 30706,
+      "sha256": "14efb4a3a136a71514ea3e02acebbc7923d22d69d268ff0796ce523eeafc153e"
+    },
+    {
+      "path": "server/domains/ops/productTaskWriteRepository.test.ts",
+      "bytes": 25324,
+      "sha256": "5330018700d8f5830c5da2e1cafacc24ac64a2354092f5dac53b44bc9feacbf4"
+    },
+    {
+      "path": "server/domains/ops/productTaskWriteCandidates.ts",
+      "bytes": 19921,
+      "sha256": "9fc25cc7881a7aefdbc7cd901023de64ca4ec1b9ca2fc15f375af39a1ad4d46f"
+    },
+    {
+      "path": "server/domains/ops/productTaskWriteCandidates.test.ts",
+      "bytes": 12736,
+      "sha256": "a0d54d8968de9c8ca39c2485657039e47fd15a1cf5fa97e052097dea8dbc37b6"
+    },
+    {
+      "path": "server/domains/ops/productTaskOperationJournal.ts",
+      "bytes": 10827,
+      "sha256": "7c72ed09e4e836b032fb96ab0805411572dbe7400f2f10db279220f62f1afb31"
+    },
+    {
+      "path": "server/domains/ops/productTaskOperationJournal.test.ts",
+      "bytes": 7965,
+      "sha256": "b035329b0ddc123dd5ace28d28416b04fee71a96f10174d1430e37b0bdead21e"
+    },
+    {
+      "path": "server/domains/ops/productTaskAttachmentStorage.ts",
+      "bytes": 7115,
+      "sha256": "4dd702aa51753ac98c3f9c0107458eee086916b10203b04491a4756350e74638"
+    },
+    {
+      "path": "server/domains/ops/productTaskAttachmentStorage.test.ts",
+      "bytes": 5976,
+      "sha256": "4ae4ecbec1d70e755e2d8f3d8e99eabd1e49cf7603e61d9fd5313b8b7e4a6b31"
+    },
+    {
+      "path": "server/routers/productTaskWrite.ts",
+      "bytes": 1180,
+      "sha256": "b8a4bf8f7ce49eddb4627aab2b39cdfa0eac8785c29ac75ad1c4eb4da6329fb2"
+    },
+    {
+      "path": "server/routers/productTaskWrite.test.ts",
+      "bytes": 3740,
+      "sha256": "9394bbb292cb809d226f5e4c9e03a4fee0df9dc25a887e5672e3c223c31fb960"
+    },
+    {
+      "path": "client/src/pages/ops/ProductTaskActions.tsx",
+      "bytes": 54857,
+      "sha256": "628fdd0f44e6bf10b317a59f39f42712e535d4c3c3e4153882f1fa7d4992aefa"
+    },
+    {
+      "path": "client/src/pages/ops/ProductTaskActions.component.test.tsx",
+      "bytes": 30287,
+      "sha256": "eadc98d071fdb1bcb258cdb2aa11480b7ac37976abb8e283f7dff2db6409c205"
+    },
+    {
+      "path": "client/src/pages/ops/ProductTasksReadOnly.tsx",
+      "bytes": 53309,
+      "sha256": "66464b89a7fe9bf8729211fc7f359d66abc5cd5acde90ae1bb4f2bcf8ace7f76"
+    },
+    {
+      "path": "client/src/pages/ops/ProductTasksReadOnly.component.test.tsx",
+      "bytes": 35445,
+      "sha256": "24bfbd510b22c0bf545d78f9cf2232e75c330b312dd3132665951052e7edfddc"
+    },
+    {
+      "path": "client/src/pages/ops/OperationsReadOnlyOverview.tsx",
+      "bytes": 22351,
+      "sha256": "bef43157d981fab2e6c8631d1640e25d3bb13ca542443174ee8559a5c57f1bd0"
+    },
+    {
+      "path": "scripts/integration/productTaskSchemaPlan.mjs",
+      "bytes": 6028,
+      "sha256": "faedd8f52606c67bf9abdb71c9fc02e3615827f523c2861ff334755d281176df"
+    },
+    {
+      "path": "scripts/integration/productTaskSchemaPlan.test.mjs",
+      "bytes": 4340,
+      "sha256": "860344d1d5bfa4c6ac87d4227497c3c48dfb67c846c4b147386d9be9aab53e87"
+    }
+  ]
+}

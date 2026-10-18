@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MySqlDialect } from "drizzle-orm/mysql-core";
 import type { SQL } from "drizzle-orm";
 import type { TrpcContext } from "../../_core/context";
-import { createProductTaskReadRepository } from "./productTaskReadRepository";
+import { createProductTaskReadRepository, strictTaskDirectory } from "./productTaskReadRepository";
+import type { DbExecutor } from "../../repositories/dbClient";
 
 type Row = Record<string, unknown>;
 const time = "2026-10-18 10:20:30.000000";
@@ -187,6 +188,31 @@ describe("product tasks exact task authority and directory permission", () => {
   it("does not grant ops by default to a specialist absent a current override", async () => {
     actors[0].role = "ops_specialist"; await expect(repo.list(ctx("ops_specialist"), input)).rejects.toMatchObject({ message: "PRODUCT_TASK_READ_DIRECTORY_DENIED" });
     overrides = [roleOverride({ role: "ops_specialist" })]; expect((await repo.list(ctx("ops_specialist"), input)).status).toBe("ready");
+  });
+});
+
+describe("task-specific write directory gate preserves independent reads", () => {
+  const gate = (operation: "read" | "edit" | "delete") => strictTaskDirectory({ execute } as unknown as DbExecutor, "ops_manager", 7, operation);
+  const permission = (dashboard: string[], task: string[]) => {
+    overrides = [roleOverride({ detailedPermissions: JSON.stringify([{ moduleId: "ops", operations: [], subModules: [
+      { subModuleId: "ops_dashboard", operations: dashboard }, { subModuleId: "ops_tasks", operations: task },
+    ] }]) })];
+  };
+  it("task editing does not require financial dashboard editing", async () => {
+    permission(["read"], ["read", "edit"]); await expect(gate("edit")).resolves.toBeUndefined();
+  });
+  it.each(["edit", "delete"] as const)("%s never inherits financial editing", async operation => {
+    permission(["read", "edit", "delete"], ["read"]); await expect(gate(operation)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+  it.each(["edit", "delete"] as const)("%s still requires task reading", async operation => {
+    permission(["read"], [operation]); await expect(gate(operation)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+  it.each(["edit", "delete"] as const)("%s still requires dashboard reading", async operation => {
+    permission([], ["read", operation]); await expect(gate(operation)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+  it("attachment deletion needs its separate directory operation", async () => {
+    permission(["read"], ["read", "edit"]); await expect(gate("delete")).rejects.toMatchObject({ code: "FORBIDDEN" });
+    permission(["read"], ["read", "delete"]); await expect(gate("delete")).resolves.toBeUndefined();
   });
 });
 

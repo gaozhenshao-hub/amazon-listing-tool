@@ -282,6 +282,9 @@ export const PERMISSION_RESOURCE_REGISTRY = {
   tool: { moduleId: 'emperor', subModuleId: 'emperor_mcp' },
   agent: { moduleId: 'emperor', subModuleId: 'emperor_agents' },
   ops_data: { moduleId: 'ops', subModuleId: 'ops_dashboard' },
+  // Task actions are additionally row-scoped on the server. They do not grant
+  // financial writes, sync, task deletion, or access to another assignee's task.
+  ops_task: { moduleId: 'ops', subModuleId: 'ops_tasks' },
   offsite_campaign: { moduleId: 'offsite', subModuleId: 'offsite_campaigns' },
   emperor_skill: { moduleId: 'emperor', subModuleId: 'emperor_skills' },
   conversation: { moduleId: 'emperor', subModuleId: 'emperor_conversations' },
@@ -351,6 +354,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     agent: [...SECURITY_ACTIONS],
     conversation: [...SECURITY_ACTIONS],
     ops_data: [...SECURITY_ACTIONS],
+    ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
   },
   admin: {
     project: ['read', 'create', 'update', 'delete', 'assign'],
@@ -361,6 +365,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     agent: ['read', 'create', 'update', 'delete', 'run', 'confirm', 'cancel'],
     conversation: ['read', 'create', 'update', 'delete', 'upload', 'run', 'confirm', 'cancel'],
     ops_data: ['read', 'import', 'export', 'update', 'delete', 'sync'],
+    ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
   },
   ops_manager: {
     project: ['read', 'create', 'update', 'assign'],
@@ -370,6 +375,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     agent: ['read', 'run', 'confirm', 'cancel'],
     conversation: ['read', 'create', 'update', 'upload', 'run', 'confirm', 'cancel'],
     ops_data: ['read', 'import', 'export', 'update', 'sync'],
+    ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
   },
   ops_specialist: {
     project: ['read', 'create', 'update'],
@@ -379,6 +385,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     agent: ['read', 'run', 'confirm'],
     conversation: ['read', 'create', 'update', 'upload', 'run', 'confirm'],
     ops_data: ['read'],
+    ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete'],
   },
   product_dev: {
     project: ['read', 'create', 'update'],
