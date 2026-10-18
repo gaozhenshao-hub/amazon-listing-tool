@@ -19,7 +19,7 @@ import {
   type OperationsBoardEditionNote, type OperationsBoardEditionSummary,
 } from "../../../shared/operationsBoardEdition";
 import { authorizeOperationsBoardAccess, authorizeOperationsBoardCapture, canUpdateOperationsBoard, type OperationsBoardAccessSession } from "./operationsBoardAccess";
-import { createOperationsBoardEditionStore, OperationsBoardEditionStoreError } from "./operationsBoardEditionStore";
+import { createOperationsBoardEditionStore, OperationsBoardEditionStoreError, OPERATIONS_BOARD_CAPTURE_BYTES_SQL } from "./operationsBoardEditionStore";
 import { createOperationsBoardPartnerStore } from "./operationsBoardPartnerStore";
 import { createOperationsBoardNoteStore, OperationsBoardNoteStoreError } from "./operationsBoardNoteStore";
 import { createOperationsBoardOperationJournal, OperationsBoardOperationJournalError } from "./operationsBoardOperationJournal";
@@ -209,7 +209,7 @@ export function createOperationsBoardRepository(deps: {
       if (input.cursor && input.cursor.historyVersion !== historyVersion) fail("HISTORY_CHANGED", "CONFLICT");
       const items: OperationsBoardEditionSummary[] = [];
       if (loaded) {
-        const candidates = await query(session.tx, "SELECT e.id,e.workspace_id AS workspaceId,e.state_id AS stateId,OCTET_LENGTH(CAST(e.capture AS CHAR CHARACTER SET utf8mb4)) AS captureBytes FROM ops_board_editions e JOIN ops_board_states s ON s.id=e.state_id AND s.workspace_id=e.workspace_id WHERE s.workspace_id=? AND BINARY s.scope_key=BINARY ? AND BINARY s.store_name=BINARY ? AND BINARY s.country=BINARY ? AND e.state_id=? AND e.status='archived' AND e.id<? ORDER BY e.id DESC LIMIT 201 FOR SHARE", [scope.workspaceId, operationsBoardEditionScopeKey(scope), scope.storeName, scope.country, loaded.stateId, input.cursor?.beforeId ?? 2147483648]);
+        const candidates = await query(session.tx, `SELECT e.id,e.workspace_id AS workspaceId,e.state_id AS stateId,${OPERATIONS_BOARD_CAPTURE_BYTES_SQL} AS captureBytes FROM ops_board_editions e JOIN ops_board_states s ON s.id=e.state_id AND s.workspace_id=e.workspace_id WHERE s.workspace_id=? AND BINARY s.scope_key=BINARY ? AND BINARY s.store_name=BINARY ? AND BINARY s.country=BINARY ? AND e.state_id=? AND e.status='archived' AND e.id<? ORDER BY e.id DESC LIMIT 201 FOR SHARE`, [scope.workspaceId, operationsBoardEditionScopeKey(scope), scope.storeName, scope.country, loaded.stateId, input.cursor?.beforeId ?? 2147483648]);
         if (candidates.length > 201 || candidates.some((row, index) => !positiveId(row.id) || row.workspaceId !== scope.workspaceId || row.stateId !== loaded.stateId
           || Number(row.id) >= (input.cursor?.beforeId ?? 2147483648) || index > 0 && Number(row.id) >= Number(candidates[index - 1].id)
           || typeof row.captureBytes !== "number" || !Number.isSafeInteger(row.captureBytes) || row.captureBytes <= 0)) fail("HISTORY_INVALID");

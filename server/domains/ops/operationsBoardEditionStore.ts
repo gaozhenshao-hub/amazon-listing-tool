@@ -48,7 +48,14 @@ const equal = (a: unknown, b: unknown) => operationsBoardEditionCanonical(a) ===
 const scopeValues = (scope: OperationsBoardEditionScope) => [scope.workspaceId, operationsBoardEditionScopeKey(scope), scope.storeName, scope.country];
 const exactState = "s.workspace_id=? AND BINARY s.scope_key=BINARY ? AND BINARY s.store_name=BINARY ? AND BINARY s.country=BINARY ?";
 const editionFrom = "FROM ops_board_editions e JOIN ops_board_states s ON s.id=e.state_id AND s.workspace_id=e.workspace_id";
-const captureSize = "OCTET_LENGTH(CAST(e.capture AS CHAR CHARACTER SET utf8mb4))";
+// JSON binary numbers may be rendered with fewer digits by MySQL. Store the
+// canonical capture as a JSON string so its signed numbers survive exactly.
+// JSON_UNQUOTE also reads legacy JSON-object captures; both formats still pass
+// the complete capture/schema/hash validators. Bound logical UTF-8 text before
+// projecting it, rather than counting JSON-string escape overhead as data.
+export const OPERATIONS_BOARD_CAPTURE_TEXT_SQL = "CAST(JSON_UNQUOTE(e.capture) AS CHAR CHARACTER SET utf8mb4)";
+export const OPERATIONS_BOARD_CAPTURE_BYTES_SQL = `OCTET_LENGTH(${OPERATIONS_BOARD_CAPTURE_TEXT_SQL})`;
+const captureSize = OPERATIONS_BOARD_CAPTURE_BYTES_SQL;
 const metadata = "e.id,e.workspace_id AS workspaceId,e.state_id AS stateId,e.month,e.revision,e.version,e.kind,e.status,e.original_edition_id AS originalEditionId,e.source_hash AS sourceHash,e.created_by AS createdBy,DATE_FORMAT(e.created_at,'%Y-%m-%d %H:%i:%s.%f') AS createdAt,DATE_FORMAT(e.updated_at,'%Y-%m-%d %H:%i:%s.%f') AS updatedAt,DATE_FORMAT(e.archived_at,'%Y-%m-%d %H:%i:%s.%f') AS archivedAt";
 
 export function createOperationsBoardEditionStore(input: {
@@ -105,7 +112,7 @@ export function createOperationsBoardEditionStore(input: {
     if (sizes.length !== 1 || sizes[0].id !== editionId || typeof sizes[0].captureBytes !== "number" || !Number.isSafeInteger(sizes[0].captureBytes) || sizes[0].captureBytes <= 0 || sizes[0].captureBytes > MAX_CAPTURE) fail("CAPTURE_BUDGET");
     // Both the preflight and wire projection are bounded; no unbounded JSON is
     // fetched first and measured later. The row lock spans both statements.
-    const found = await rows(`SELECT ${metadata},${captureSize} AS captureBytes,IF(${captureSize}<=?,e.capture,NULL) AS capture ${editionFrom} WHERE ${exactState} AND e.state_id=? AND e.id=? LIMIT 2 ${lock}`, [MAX_CAPTURE, ...params]);
+    const found = await rows(`SELECT ${metadata},${captureSize} AS captureBytes,IF(${captureSize}<=?,${OPERATIONS_BOARD_CAPTURE_TEXT_SQL},NULL) AS capture ${editionFrom} WHERE ${exactState} AND e.state_id=? AND e.id=? LIMIT 2 ${lock}`, [MAX_CAPTURE, ...params]);
     const row = found[0];
     if (found.length !== 1 || !row || row.id !== editionId || row.workspaceId !== scope.workspaceId || row.stateId !== stateId || !positive(row.createdBy) || row.captureBytes !== sizes[0].captureBytes || row.capture === null
       || !validTime(row.createdAt) || !validTime(row.updatedAt) || row.archivedAt !== null && !validTime(row.archivedAt)) fail("EDITION_INVALID");
@@ -137,7 +144,7 @@ export function createOperationsBoardEditionStore(input: {
     const status = originalId === null ? "current" : "archived", kind = originalId === null ? "original" : "revision";
     // INSERT ... SELECT binds the new row to the same exact plaintext scope and
     // hash. Its true auto-increment result is then checked by the pure planner.
-    const editionId = await write(`INSERT INTO ops_board_editions (workspace_id,state_id,month,revision,version,kind,status,original_edition_id,capture,source_hash,created_by,created_at,updated_at,archived_at) SELECT s.workspace_id,s.id,?,?,1,?,?,?,?,?,?,?,?,? FROM ops_board_states s WHERE ${exactState} AND s.id=?`,
+    const editionId = await write(`INSERT INTO ops_board_editions (workspace_id,state_id,month,revision,version,kind,status,original_edition_id,capture,source_hash,created_by,created_at,updated_at,archived_at) SELECT s.workspace_id,s.id,?,?,1,?,?,?,JSON_QUOTE(?),?,?,?,?,? FROM ops_board_states s WHERE ${exactState} AND s.id=?`,
       [capture.month, revision, kind, status, originalId, operationsBoardEditionCanonical(capture), capture.sourceHash, identity.userId, stamp, stamp, originalId === null ? null : stamp, ...scopeValues(scope), stateId], true);
     creators.set(editionId, identity.userId); return editionId;
   }
@@ -152,7 +159,7 @@ export function createOperationsBoardEditionStore(input: {
         // old capture into an UPDATE when the next month arrives.
         await write(`UPDATE ops_board_editions e JOIN ops_board_states s ON s.id=e.state_id AND s.workspace_id=e.workspace_id SET e.version=?,e.status=?,e.updated_at=?,e.archived_at=? ${guard}`,
           [changed.version, changed.status, changed.updatedAt, changed.archivedAt, ...guardValues]);
-      } else await write(`UPDATE ops_board_editions e JOIN ops_board_states s ON s.id=e.state_id AND s.workspace_id=e.workspace_id SET e.version=?,e.status=?,e.capture=?,e.source_hash=?,e.updated_at=?,e.archived_at=? ${guard}`,
+      } else await write(`UPDATE ops_board_editions e JOIN ops_board_states s ON s.id=e.state_id AND s.workspace_id=e.workspace_id SET e.version=?,e.status=?,e.capture=JSON_QUOTE(?),e.source_hash=?,e.updated_at=?,e.archived_at=? ${guard}`,
         [changed.version, changed.status, operationsBoardEditionCanonical(changed.capture), changed.sourceHash, changed.updatedAt, changed.archivedAt, ...guardValues]);
     }
     if (plan.kind !== "noop") {

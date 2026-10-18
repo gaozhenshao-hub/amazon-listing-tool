@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { MySqlDialect } from "drizzle-orm/mysql-core";
 import type { SQL } from "drizzle-orm";
 import { MONTHLY_FINANCIAL_METRICS, parseMonthlyFinancialBatch, type MonthlyFinancialBatchRecord } from "../../../shared/monthlyFinancialRead";
-import { buildOperationsBoardEditionCapture, operationsBoardEditionScopeKey, type OperationsBoardEditionCapture } from "../../../shared/operationsBoardEdition";
+import { buildOperationsBoardEditionCapture, operationsBoardEditionCanonical, operationsBoardEditionScopeKey, type OperationsBoardEditionCapture } from "../../../shared/operationsBoardEdition";
 import { createOperationsBoardEditionStore, type OperationsBoardEditionExecutor } from "./operationsBoardEditionStore";
 
 type Row = Record<string, unknown>;
@@ -16,14 +16,43 @@ function capture(month = "2026-09", options: { rowsMonth?: string; empty?: boole
   return buildOperationsBoardEditionCapture({ scope, month, scannedBatches: options.empty ? [] : [{ id: batch, recordHash: "b".repeat(64) }],
     sources: options.empty ? [] : [{ month: period, batchId: batch, recordHash: "b".repeat(64), rowCount: 1, origin: parseMonthlyFinancialBatch(record).batch.origin }], rows: options.empty ? [] : parseMonthlyFinancialBatch(record).rows });
 }
+const preciseValues = [9.900990099009901, 9.813725490196079];
+const mysqlRoundedValues = [9.9009900990099, 9.81372549019608];
+const escapedOriginal = "合成原文 😀 \"quoted\" \\path\\file\nline\ttab\rreturn\u0000null O'Reilly ?";
+function precisionCapture(month = "2026-09", batch = 41, marker = "original"): OperationsBoardEditionCapture {
+  const record: MonthlyFinancialBatchRecord = { id: batch, workspaceId: 7, userId: 3, fileName: "SYNTHETIC-native-precision.csv", fileHash: "a".repeat(64),
+    status: "completed", totalRows: 2, skippedRows: 0, unallocatedRows: 0, months: [month], createdAt: stamp, confirmedAt: stamp,
+    fileReferenceKind: "storage", sourceRunId: null, payload: [0, 1].map(index => ({
+      ...Object.fromEntries(MONTHLY_FINANCIAL_METRICS.map(key => [key, 0])), financialProfit: 1000 + index, salesAmount: 101 + index, salesQty: 10,
+      yearMonth: month, parentAsin: `SYNTHETIC-PARENT-${index}`, asin: `SYNTHETIC-CHILD-${index}`, sku: `SYNTHETIC-SKU-${index}`,
+      title: "合成完整原文", storeName: scope.storeName, site: "美国", operator: "SYNTHETIC",
+      raw: { currency: "USD", original: escapedOriginal, marker },
+    })) };
+  const parsed = parseMonthlyFinancialBatch(record);
+  return buildOperationsBoardEditionCapture({ scope, month, scannedBatches: [{ id: batch, recordHash: "b".repeat(64) }],
+    sources: [{ month, batchId: batch, recordHash: "b".repeat(64), rowCount: parsed.rows.length, origin: parsed.batch.origin }], rows: parsed.rows });
+}
 let states: Row[], editions: Row[], notes: Row[], queries: { sql: string; params: unknown[] }[], nextState: number, nextEdition: number, clock: string;
-let readNative: boolean, failSql: string | null, failError: Error, affectedOverride: number | null, insertIdOverride: unknown;
+let failSql: string | null, failError: Error, affectedOverride: number | null, insertIdOverride: unknown;
 let beforeWrite: ((text: string) => void) | null, afterWrite: ((text: string) => void) | null, oversized: boolean, forcedRows: ((text: string, rows: Row[]) => Row[]) | null;
 const clone = <T>(value: T): T => structuredClone(value);
 const exact = (params: unknown[], offset: number) => states.filter(state => state.workspaceId === params[offset] && state.scopeKey === params[offset + 1] && state.storeName === params[offset + 2] && state.country === params[offset + 3]);
-function readEdition(row: Row) {
-  const text = String(row.capture), captureBytes = Buffer.byteLength(text);
-  return { ...row, captureBytes: oversized ? 64 * 1024 * 1024 + 1 : captureBytes, capture: readNative ? JSON.parse(text) : text };
+// These model the storage/wire codec, not MySQL's numeric parser. The separately
+// executed native regression supplied the two exact rounded values above. The
+// physical column is JSON text representing either a legacy object or a new
+// JSON string; JSON_UNQUOTE returns logical UTF-8 text in both cases.
+function logicalCapture(physical: unknown): string {
+  const parsed: unknown = JSON.parse(String(physical));
+  return typeof parsed === "string" ? parsed : JSON.stringify(parsed);
+}
+function storedCapture(value: unknown, text: string): unknown {
+  return text.includes("JSON_QUOTE(?)") ? JSON.stringify(value) : value;
+}
+function readEdition(row: Row, text: string) {
+  const unquoted = text.includes("JSON_UNQUOTE(e.capture)");
+  const wire = unquoted ? logicalCapture(row.capture) : String(row.capture);
+  const captureBytes = Buffer.byteLength(wire, "utf8");
+  return { ...row, captureBytes: oversized ? 64 * 1024 * 1024 + 1 : captureBytes, capture: wire };
 }
 const executor: OperationsBoardEditionExecutor = { async execute(statement: SQL) {
   const query = new MySqlDialect().sqlToQuery(statement), text = query.sql, values = query.params; queries.push(query);
@@ -38,7 +67,7 @@ const executor: OperationsBoardEditionExecutor = { async execute(statement: SQL)
     } else if (text.includes("FROM ops_board_editions")) {
       const offset = text.includes("IF(") ? 1 : 0, matched = exact(values, offset).find(row => row.id === values[offset + 4]);
       found = matched ? editions.filter(row => row.workspaceId === matched.workspaceId && row.stateId === matched.id && (text.includes("ORDER BY e.revision") ? row.month === values[offset + 5] : row.id === values[offset + 5])) : [];
-      found = found.map(readEdition);
+      found = found.map(row => readEdition(row, text));
       if (text.includes("ORDER BY e.revision")) found.sort((a, b) => Number(a.revision) - Number(b.revision));
     } else throw new Error(`Unexpected fixture read: ${text}`);
     return [clone(forcedRows ? forcedRows(text, found) : found), []];
@@ -51,12 +80,12 @@ const executor: OperationsBoardEditionExecutor = { async execute(statement: SQL)
     const matched = exact(values, 11).find(row => row.id === values[15]);
     if (matched) {
       inserted = nextEdition++;
-      editions.push({ id: inserted, workspaceId: matched.workspaceId, stateId: matched.id, month: values[0], revision: values[1], version: 1, kind: values[2], status: values[3], originalEditionId: values[4], capture: values[5], sourceHash: values[6], createdBy: values[7], createdAt: values[8], updatedAt: values[9], archivedAt: values[10] }); affected = 1;
+      editions.push({ id: inserted, workspaceId: matched.workspaceId, stateId: matched.id, month: values[0], revision: values[1], version: 1, kind: values[2], status: values[3], originalEditionId: values[4], capture: storedCapture(values[5], text), sourceHash: values[6], createdBy: values[7], createdAt: values[8], updatedAt: values[9], archivedAt: values[10] }); affected = 1;
     }
   } else if (text.startsWith("UPDATE ops_board_editions")) {
-    const offset = text.includes("e.capture=?") ? 6 : 4, matched = exact(values, offset).find(row => row.id === values[offset + 4]);
+    const offset = text.includes("e.capture=") ? 6 : 4, matched = exact(values, offset).find(row => row.id === values[offset + 4]);
     const row = editions.find(item => matched && item.workspaceId === matched.workspaceId && item.stateId === matched.id && item.id === values[offset + 5] && item.version === values[offset + 6] && item.sourceHash === values[offset + 7] && item.status === "current" && item.kind === "original" && item.originalEditionId === null && item.month === values[offset + 8] && item.revision === 1);
-    if (row) { Object.assign(row, offset === 6 ? { version: values[0], status: values[1], capture: values[2], sourceHash: values[3], updatedAt: values[4], archivedAt: values[5] } : { version: values[0], status: values[1], updatedAt: values[2], archivedAt: values[3] }); affected = 1; }
+    if (row) { Object.assign(row, offset === 6 ? { version: values[0], status: values[1], capture: storedCapture(values[2], text), sourceHash: values[3], updatedAt: values[4], archivedAt: values[5] } : { version: values[0], status: values[1], updatedAt: values[2], archivedAt: values[3] }); affected = 1; }
   } else if (text.startsWith("UPDATE ops_board_states")) {
     const row = exact(values, 4).find(item => item.id === values[8] && item.version === values[9] && item.currentEditionId === values[10] && item.currentMonth === values[11]
       && editions.some(edition => edition.workspaceId === item.workspaceId && edition.stateId === item.id && edition.id === values[12] && edition.version === values[13] && edition.sourceHash === values[14] && edition.status === "current"));
@@ -74,7 +103,7 @@ async function initialized() { return transaction(() => store().initializeExplic
 async function advanced() { const first = await initialized(); clock = "2026-10-18 01:00:00.123000"; const next = await transaction(() => store("ops_manager").refreshExisting(scope, capture("2026-11", { batch: 42 }))); return { first, next: next! }; }
 beforeEach(() => {
   states = []; editions = []; notes = []; queries = []; nextState = 91; nextEdition = 501; clock = stamp;
-  readNative = false; failSql = null; failError = new Error("fixture SQL failure"); affectedOverride = null; insertIdOverride = undefined;
+  failSql = null; failError = new Error("fixture SQL failure"); affectedOverride = null; insertIdOverride = undefined;
   beforeWrite = null; afterWrite = null; oversized = false; forcedRows = null;
 });
 
@@ -143,7 +172,7 @@ describe("same-transaction edition SQL lifecycle", () => {
     expect(editions.map(row => row.month)).toEqual(["2026-09", "2026-12"]); expect(next?.plan.kind).toBe("advance");
     const archived = await store().get(scope, 501); expect(archived?.status).toBe("archived"); expect(archived?.capture).toEqual(oldCapture);
     expect(notes).toEqual(savedNotes); expect(next?.plan.notes.emptyEditionIds).toEqual([502]);
-    expect(queries.find(query => query.sql.startsWith("UPDATE ops_board_editions"))?.sql).not.toContain("e.capture=?");
+    expect(queries.find(query => query.sql.startsWith("UPDATE ops_board_editions"))?.sql).not.toContain("e.capture=");
   });
   it("revoke-to-empty preserves current month with older historical rows and no archive fallback", async () => {
     const { first, next } = await advanced(); const emptyCurrent = capture("2026-11", { rowsMonth: "2026-09" });
@@ -165,8 +194,93 @@ describe("same-transaction edition SQL lifecycle", () => {
     await initialized(); await expect(store("ops_manager").publishRevision(scope, 501, capture())).rejects.toThrow("ADMIN_REQUIRED");
     await expect(transaction(() => store().publishRevision(scope, 501, capture()))).rejects.toThrow("REVISION_INVALID"); expect(editions).toHaveLength(1);
   });
-  it("native JSON object and text both reconstruct the complete same capture", async () => {
-    const first = await initialized(); readNative = true; expect(await store().load(scope)).toEqual({ stateId: first.stateId, state: first.state, currentEdition: first.currentEdition });
+  it("legacy JSON object and exact JSON scalar string reconstruct the same capture through text projection", async () => {
+    const first = await initialized();
+    expect(typeof JSON.parse(String(editions[0].capture))).toBe("string");
+    expect(await store().load(scope)).toEqual({ stateId: first.stateId, state: first.state, currentEdition: first.currentEdition });
+    editions[0].capture = operationsBoardEditionCanonical(first.currentEdition.capture);
+    expect(typeof JSON.parse(String(editions[0].capture))).toBe("object");
+    expect(await store().load(scope)).toEqual({ stateId: first.stateId, state: first.state, currentEdition: first.currentEdition });
+  });
+});
+
+describe("exact canonical capture JSON-column codec", () => {
+  it("INSERT quotes one canonical parameter and retains the two native-MySQL precision regression values", async () => {
+    const precise = precisionCapture();
+    expect(precise.rows.map(row => row.details.ratios.profitMargin.value)).toEqual(preciseValues);
+    const result = await transaction(() => store().initializeExplicitAdmin(scope, precise));
+    const insert = queries.find(query => query.sql.startsWith("INSERT INTO ops_board_editions"))!;
+    expect(insert.sql).toContain("JSON_QUOTE(?)");
+    expect(insert.params[5]).toBe(operationsBoardEditionCanonical(precise));
+    expect(insert.params[5]).not.toBe(JSON.stringify(operationsBoardEditionCanonical(precise)));
+    expect(insert.sql).not.toContain(String(preciseValues[0]));
+    expect(insert.sql).not.toContain(escapedOriginal);
+    expect(typeof JSON.parse(String(editions[0].capture))).toBe("string");
+    expect(JSON.parse(String(editions[0].capture))).toBe(operationsBoardEditionCanonical(precise));
+    expect(result.currentEdition.capture).toEqual(precise);
+    expect(result.currentEdition.sourceHash).toBe(precise.sourceHash);
+    expect(result.currentEdition.capture.rows.map(row => row.details.ratios.profitMargin.value)).toEqual(preciseValues);
+    expect(result.currentEdition.capture.rows[0].raw.original).toBe(escapedOriginal);
+  });
+  it("same-month refresh quotes the canonical parameter without changing raw Unicode or floating-point values", async () => {
+    await initialized(); queries = []; clock = "2026-10-18 01:00:00.123000";
+    const precise = precisionCapture("2026-09", 42, "refreshed"), result = await transaction(() => store().refreshExisting(scope, precise));
+    expect(result?.plan.kind).toBe("refresh");
+    const update = queries.find(query => query.sql.startsWith("UPDATE ops_board_editions"))!;
+    expect(update.sql).toContain("e.capture=JSON_QUOTE(?)"); expect(update.params[2]).toBe(operationsBoardEditionCanonical(precise));
+    expect(typeof JSON.parse(String(editions[0].capture))).toBe("string");
+    expect(result?.currentEdition.capture).toEqual(precise); expect(result?.currentEdition.sourceHash).toBe(precise.sourceHash);
+    expect((await store().load(scope))?.currentEdition.capture.rows.map(row => row.details.ratios.profitMargin.value)).toEqual(preciseValues);
+  });
+  it.each(["scalar", "legacy_object"] as const)("freezing %s preserves physical capture bytes and never requotes the archived payload", async format => {
+    const precise = precisionCapture(), first = await transaction(() => store().initializeExplicitAdmin(scope, precise));
+    if (format === "legacy_object") editions[0].capture = operationsBoardEditionCanonical(precise);
+    const physical = editions[0].capture; queries = []; clock = "2026-10-18 01:00:00.123000";
+    const next = await transaction(() => store().refreshExisting(scope, precisionCapture("2026-11", 43, "next")));
+    expect(next?.plan.kind).toBe("advance"); expect(editions[0].capture).toBe(physical);
+    const archiveUpdate = queries.find(query => query.sql.startsWith("UPDATE ops_board_editions"))!;
+    expect(archiveUpdate.sql).not.toContain("e.capture="); expect(archiveUpdate.sql).not.toContain("JSON_QUOTE");
+    expect((await store().get(scope, first.currentEdition.id))?.capture).toEqual(precise);
+  });
+  it("new revisions use the same exact codec without rewriting original or current captures", async () => {
+    const first = await transaction(() => store().initializeExplicitAdmin(scope, precisionCapture())); clock = "2026-10-18 01:00:00.123000";
+    await transaction(() => store().refreshExisting(scope, precisionCapture("2026-11", 42)));
+    const originalBytes = editions[0].capture, currentBytes = editions[1].capture; queries = [];
+    const precise = precisionCapture("2026-09", 44, "revision"), result = await transaction(() => store().publishRevision(scope, first.currentEdition.id, precise));
+    expect(result.publishedEdition?.capture).toEqual(precise); expect(result.publishedEdition?.sourceHash).toBe(precise.sourceHash);
+    expect(editions[0].capture).toBe(originalBytes); expect(editions[1].capture).toBe(currentBytes);
+    expect(queries.find(query => query.sql.startsWith("INSERT INTO ops_board_editions"))?.sql).toContain("JSON_QUOTE(?)");
+  });
+  it.each(["scalar", "legacy_object"] as const)("refuses %s whose derived values were rounded by MySQL instead of forgiving the hash mismatch", async format => {
+    const precise = precisionCapture(); await transaction(() => store().initializeExplicitAdmin(scope, precise));
+    const rounded = clone(precise); rounded.rows.forEach((row, index) => { row.details.ratios.profitMargin.value = mysqlRoundedValues[index]; });
+    expect(rounded.selectionHash).toBe(precise.selectionHash); expect(rounded.sourceHash).toBe(precise.sourceHash);
+    const text = operationsBoardEditionCanonical(rounded); editions[0].capture = format === "scalar" ? JSON.stringify(text) : text; queries = [];
+    await expect(store().load(scope)).rejects.toThrow("CAPTURE_INVALID");
+    expect(queries.every(query => query.sql.startsWith("SELECT"))).toBe(true);
+    expect(editions[0].sourceHash).toBe(precise.sourceHash);
+  });
+  it.each(["not JSON", "{}", "[]", "null", "true", "7", '{"version":1,"codec":"untrusted"}'])("refuses non-capture logical text %s without parse fallback", async logical => {
+    await initialized(); editions[0].capture = JSON.stringify(logical);
+    await expect(store().load(scope)).rejects.toThrow("CAPTURE_INVALID");
+  });
+  it("does not recursively unwrap a double-encoded capture", async () => {
+    const precise = precisionCapture(); await transaction(() => store().initializeExplicitAdmin(scope, precise));
+    editions[0].capture = JSON.stringify(JSON.stringify(operationsBoardEditionCanonical(precise)));
+    await expect(store().load(scope)).rejects.toThrow("CAPTURE_INVALID");
+  });
+  it("uses logical UTF-8 bytes consistently for preflight and bounded wire projection, not escaped storage bytes or JS length", async () => {
+    const precise = precisionCapture(); await transaction(() => store().initializeExplicitAdmin(scope, precise)); queries = [];
+    const logical = operationsBoardEditionCanonical(precise), logicalBytes = Buffer.byteLength(logical, "utf8"), physicalBytes = Buffer.byteLength(String(editions[0].capture), "utf8");
+    expect(logicalBytes).toBeGreaterThan(logical.length); expect(physicalBytes).toBeGreaterThan(logicalBytes);
+    forcedRows = (_text, result) => { for (const row of result) if ("captureBytes" in row) expect(row.captureBytes).toBe(logicalBytes); return result; };
+    expect((await store().load(scope))?.currentEdition.capture).toEqual(precise);
+    const preflight = queries.find(query => query.sql.includes(" AS captureBytes") && !query.sql.includes("IF("))!;
+    const wire = queries.find(query => query.sql.includes("IF("))!;
+    const logicalProjection = "CAST(JSON_UNQUOTE(e.capture) AS CHAR CHARACTER SET utf8mb4)";
+    expect(preflight.sql).toContain(`OCTET_LENGTH(${logicalProjection})`);
+    expect(wire.sql).toContain(`OCTET_LENGTH(${logicalProjection})<=?,${logicalProjection},NULL)`);
+    expect(wire.params[0]).toBe(64 * 1024 * 1024);
   });
 });
 
@@ -214,9 +328,9 @@ describe("bounded immutable reads and transaction failure propagation", () => {
   });
   it.each(["invalid_json", "mismatched_hash", "mismatched_workspace"])("rejects corrupt full capture: %s", async kind => {
     await initialized();
-    if (kind === "invalid_json") editions[0].capture = "{";
+    if (kind === "invalid_json") editions[0].capture = JSON.stringify("{");
     else if (kind === "mismatched_hash") editions[0].sourceHash = "f".repeat(64);
-    else { const current = JSON.parse(String(editions[0].capture)); current.scope.workspaceId = 8; editions[0].capture = JSON.stringify(current); }
+    else { const current = JSON.parse(logicalCapture(editions[0].capture)); current.scope.workspaceId = 8; editions[0].capture = JSON.stringify(JSON.stringify(current)); }
     await expect(store().load(scope)).rejects.toThrow("CAPTURE_INVALID");
   });
   it.each(["wrong_hash", "wrong_plaintext", "duplicate", "missing_pointer"])("does not trust hash alone or coerce bad state: %s", async kind => {
