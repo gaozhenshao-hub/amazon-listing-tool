@@ -21,12 +21,12 @@
       "sourceFiles": ["client/src/pages/VideoScriptPage.tsx", "client/src/pages/video/VideoWorkflowControls.tsx", "server/domains/video/videoWorkflowRepository.ts", "server/domains/video/videoWorkflowLegacyJob.ts"]
     },
     {
-      "name": "赛狐日／月报受控手工同步",
+      "name": "赛狐日／月报手工同步与显式暂停周期计划",
       "route": "/ops/data-import",
-      "steps": "在原运营导入页展开赛狐同步；按明确周期读取配置与店铺／站点影响基准，手工创建后台原件采集。记录完整原始响应及分页／覆盖证明后展示规范化预览，人工复核再应用或撤销。日报进入版本化日事实和周覆盖；月报复用原受控财务确认／撤销及看板同步内核。",
-      "boundary": "日报周六至周五与领星周一至周日分开；USD 月结利润不混充日运营利润。API JSON 不冒充上传文件。官方 OpenAPI 日期、月结口径、字段及空店铺证明的批准合同尚未提供，空示例没有执行权限；新日报候选表未注册或落库。自动周期生成及同目标双调度协调尚未实现，当前 worker 仅消费明确的手工请求，不自动应用。",
-      "recovery": "采集、应用和撤销各有独立 UUID，未知只核对／取消原操作；本地仅保存按身份隔离的恢复元数据，不保存报表、凭据或原响应。新旧周汇总不能精确拆分时明确提示重叠，不能伪装完整周或空列表。历史保留完整版本，当前安全预算为 200 条日报版本及 200 条工作区捕获任务；超限明确拒绝，不截断成最新全量。月报明确空店铺在旧消费者无法表达时禁止应用，不造零 ASIN。",
-      "sourceFiles": ["client/src/pages/ops/SaihuReportSync.tsx", "server/routers/saihuReportSync.ts", "server/domains/ops/saihuReportRepository.ts", "server/domains/ops/monthlyFinancialWriteRepository.ts"]
+      "steps": "在原运营导入页展开赛狐同步；按明确周期读取配置与店铺／站点影响基准，手工创建后台原件采集。记录完整原始响应及分页／覆盖证明后展示规范化预览，人工复核再应用或撤销。日报进入版本化日事实和周覆盖；月报复用原受控财务确认／撤销及看板同步内核。技术管理区可显式读取批准来源、编辑完整周期政策并先存暂停草案；重新预览完整范围与下一发生时间，分别确认后才可激活。周期任务也只生成待人工复核的捕获，不自动应用。",
+      "boundary": "日报周六至周五与领星周一至周日分开；USD 月结利润不混充日运营利润。API JSON 不冒充上传文件。官方 OpenAPI 日期、月结口径、字段及空店铺证明的批准合同尚未提供，空示例没有执行权限；新日报及计划候选表未注册或落库。周期计划仅为默认关闭、单个显式工作区的 queue-only 首批实现，不代表完整跨进程同目标锁、调度公平性或长期历史策略已完成；延迟与补偿政策目前在入队事务核验，排队后实际派发时效尚待 C2 校验，不能据此启用正式自动运行。scheduler enabled 也不是 worker 健康证明；不改变领星调度。",
+      "recovery": "采集、应用和撤销各有独立 UUID，未知只核对／取消原操作；本地仅保存按身份隔离的恢复元数据，不保存报表、凭据或原响应。计划保存／激活／暂停另用固定操作 UUID；每次发生仅按工作区、稳定 planId 和原 scheduledFor 固定捕获编号，改版不重造编号，完整当时政策和来源留私有快照。缺失政策、错位旧游标、过期及补偿超限均须明确复核，不自动猜测新日期。新旧周汇总不能精确拆分时明确提示重叠，不能伪装完整周或空列表。历史保留完整版本，当前安全预算为 200 条日报版本及 200 条工作区捕获任务；超限明确拒绝，不截断成最新全量。月报明确空店铺在旧消费者无法表达时禁止应用，不造零 ASIN。",
+      "sourceFiles": ["client/src/pages/ops/SaihuReportSync.tsx", "client/src/pages/ops/SaihuReportSchedule.tsx", "server/routers/saihuReportSync.ts", "server/routers/saihuReportSchedule.ts", "server/domains/ops/saihuReportRepository.ts", "server/domains/ops/saihuReportScheduleRepository.ts", "server/domains/ops/monthlyFinancialWriteRepository.ts"]
     },
     {
       "name": "已保存配置驱动的原知识问答",
@@ -144,6 +144,8 @@
     "knowledgeQa": ["ENABLE_KNOWLEDGE_QA_WRITES", "ENABLE_KNOWLEDGE_QA_WORKER"],
     "videoWorkflow": ["ENABLE_VIDEO_WORKFLOW_WRITES", "ENABLE_VIDEO_WORKFLOW_WORKER"],
     "saihuManualReportCapture": ["ENABLE_SAIHU_REPORT_WRITES", "ENABLE_SAIHU_REPORT_CAPTURE_WORKER"],
+    "saihuQueueOnlySchedule": ["ENABLE_SAIHU_REPORT_SCHEDULER"],
+    "saihuScheduleRolloutScope": "另需 SAIHU_REPORT_SCHEDULE_WORKSPACE_ID 为一个明确批准的数字工作区；不是全工作区广播。周期、时区、时分、首个原发生时间、补报政策／上限、月结最早可取日及预览积压预算均显式配置，不用缺省值代替批准。计划始终先存暂停，启 flag 不自动激活。",
     "listingDeepHumanAdoption": ["ENABLE_LISTING_DEEP_ADOPTION_WRITES"],
     "listingSalesCalibration": ["ENABLE_LISTING_SALES_CALIBRATION_WRITES"],
     "optionalAcquisitionReview": ["ENABLE_ACQUISITION_REVIEW_WRITES"],
@@ -198,7 +200,8 @@
       { "feature": "利润 AI", "ddl": ["drizzle/0309_integration_profit_analysis.sql"], "planner": "scripts/integration/aiFeatureTargetSchemaPlan.mjs", "runtimeAdmission": "server/domains/ops/profitAnalysisJobRepository.ts", "note": "同一八表纯评估中的三张私有报告／运行／保存回执表，各自保留独立 UUID 约束。所有评估结果始终 executable=false、productionApproved=false，未在本文注册或执行；不等同朋友原同步报告表。" },
       { "feature": "四栏竞品后台研究及人工采纳", "source": "server/repositories/listing/competitorDeepExecutionRepository.ts", "adoptionSource": "server/repositories/listing/competitorDeepAdoptionRepository.ts", "note": "复用受控 ai_jobs 专属任务类型及逐阶段检查点；采纳另存不可变 ai_artifacts user_edit 记录，竞品只存受保护引用，同事务审核回执和比较确认失效。核对 ai_jobs、ai_artifacts、competitorAnalyses、项目及审计表的精确结构与事务依赖；不新造 OCR／问答来源。" },
       { "feature": "知识问答及视频受控执行", "source": ["server/domains/knowledge/knowledgeQaStorePrimitives.ts", "server/domains/video/videoWorkflowSource.ts"], "note": "复用受控任务／私有产物／审计及配置表；视频另依赖原全套 video 表和六节点 Agent 表、确认日志。按运行时精确准入核对，不能只验证新旗标关闭或 Web 可启动。旧视频 writer 保护也需这些结构，不将未满足目标说成可直接生产试用。" },
-      { "feature": "赛狐受控日报版本", "candidate": "config/integration/candidates/ops_saihu_daily_report_batches.sql", "source": "drizzle/schema/saihuReport.ts", "runtimeAdmission": "server/domains/ops/saihuReportStore.ts", "note": "仅未批准候选，不导出至中央 schema、不登记迁移、不自动落库。精确核对新表、私有任务／原件／预览／回执、旧周数据及月报／看板同事务依赖；真实供应商合同和数据迁移对账仍独立。" }
+      { "feature": "赛狐受控日报版本", "candidate": "config/integration/candidates/ops_saihu_daily_report_batches.sql", "source": "drizzle/schema/saihuReport.ts", "runtimeAdmission": "server/domains/ops/saihuReportStore.ts", "note": "仅未批准候选，不导出至中央 schema、不登记迁移、不自动落库。精确核对新表、私有任务／原件／预览／回执、旧周数据及月报／看板同事务依赖；真实供应商合同和数据迁移对账仍独立。" },
+      { "feature": "赛狐显式周期计划", "candidate": "config/integration/candidates/ops_saihu_report_schedules.sql", "source": "drizzle/schema/saihuReportSchedule.ts", "planner": "scripts/integration/saihuReportScheduleSchemaPlan.mjs", "runtimeAdmission": "server/domains/ops/saihuReportScheduleRepository.ts", "note": "独立候选，未注册、未批准、未执行；不进入既有 fresh 基础计划或旧 52／81f 141 表只读证据。按实际目标单独核对所有列、唯一／发现索引、对象和同事务 capture 依赖；不能为试用直接建表。" }
     ],
     "prohibitedShortcut": "不得对旧库直接执行 baseline、db:push、通用 db:migrate 或批量重放朋友 SQL 来跳过对账；也不能改 checksum 或把旧迁移标成已执行。先完成目标结构、台账、数据、备份和兼容性核对，再审批最小增量。"
   },
@@ -245,8 +248,8 @@
   },
   "schedulerDrain": {
     "sourceFiles": ["server/_core/scheduler.ts", "server/_core/trackedSchedulerWork.ts", "server/_core/schedulerShutdown.ts"],
-    "rule": "先关闭四类 scheduler 新触发，再等待实际初始／周期任务、子任务、指标和 nextRun 尾写完成，最后释放仍持有的 leader 锁并关闭共享 DB。grace 超时只报告 NOT DRAINED 并继续等待；失锁不再声称拥有互斥锁。",
-    "boundary": "只修复现有 scheduler 排空，不提供完整同目标双调度协调，不新增赛狐周期、不改变领星业务周期。部署时仍需核对 systemd 强制终止期限、旧实例和 backlog，单元测试不是生产停机演练。"
+    "rule": "先关闭原四类及新增 queue-only 赛狐计划触发，再等待实际初始／周期任务、子任务、指标和 nextRun／发生事务尾写完成，最后释放仍持有的 leader 锁并关闭共享 DB。grace 超时只报告 NOT DRAINED 并继续等待；失锁不再声称拥有互斥锁。",
+    "boundary": "提供现有 scheduler 排空和默认关闭的赛狐显式周期入队，不提供完整跨进程同目标双调度协调，也不改变领星业务周期。部署时仍需核对 systemd 强制终止期限、旧实例和 backlog，单元测试不是生产停机演练。"
   },
   "localCiDatabase": {
     "entry": "scripts/bootstrap-fresh-database-current-source.mjs",
@@ -260,7 +263,7 @@
     "四栏竞品图片／OCR、问答及长期原评论原件来源仍不完整；现可核验样本不等于市场全量，未接来源不得标完成。",
     "采集的可选审核、驳回和逐图补充源码已接入；真实 MySQL 事务／对象存储／撤权／丢 ACK 与历史版本仍待验收。粘贴评论预览／保存、补充多原件独立长期历史仍未全部实现，不能把未实现部分改写成仅待验收。",
     "打标签 Agent、图片 Step2 大纲、新品 market_overview、知识问答及视频七操作已接入各自配置执行；新四栏任务接入 listing 配置并保留旧 v1 恢复。仍需真实 MySQL、私有对象存储、独立来源审批、模型和 Web／worker 验收。其他 Agent 逐业务 Skill dispatch、其余图片／新品阶段仍未全部实现；不能改写成仅待业务验收。",
-    "赛狐日／月手工捕获、预览、人工应用／撤销及读端源码已接通；官方响应合同尚未批准，新日报表未落库。C 自动周期、同目标双调度协调和长期完整历史策略尚未实现，月报空店铺表达限制保留；不是只剩业务验收。",
+    "赛狐日／月手工捕获、预览、人工应用／撤销及首批显式暂停周期计划源码已接通；官方响应合同尚未批准，新日报／计划表未落库。C 完整跨进程同目标双调度协调、跨工作区公平性、排队后派发时效与长期完整历史策略尚未实现，200 条安全预算及月报空店铺表达限制保留；不是只剩业务验收，不据首批 C1 启用正式自动运行。",
     "真实目标数据库结构、旧数据迁移对账、存储权限、Web／worker 联调、真实模型质量及真实费用验收仍交朋友和维护者执行。",
     "页面可达、合成测试通过、开关开启和真实业务全部完成是不同状态；不得用摘要页面或少量示例代替朋友完整流程。",
     "权限收回、跨工作区、未知回执、并发保存、备份回滚及旧 writer 并存必须继续核验。"

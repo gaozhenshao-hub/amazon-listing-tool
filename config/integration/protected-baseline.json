@@ -484,9 +484,9 @@
         "sha256": "f712fce46fc9ace0d10e20dcba03bab567b21b0f1ebdf0ae9c64b2dbb42dfcdb"
       },
       "reviewed": {
-        "gitBlobSha1": "cc8bb7b2cb8a0ba0d7d58c9a9b6969fd054c611c",
-        "sha256": "c1a2ca1e037dddbd95dd5131fcc776397163f353cc36c1f7d1fbcb035c573581",
-        "reviewRef": "config/integration/reviews/20261019-main-business-continuation.json"
+        "gitBlobSha1": "1271f51413e17a3312320bb45dbbd0b763f0d78d",
+        "sha256": "73b99c05562f4afada6c3220c690fbe026f5a1b3fff465e7f85fab7d25d90f81",
+        "reviewRef": "config/integration/reviews/20261019-main-business-continuation.json; config/integration/reviews/20261019-saihu-schedule-entry.json"
       }
     },
     {

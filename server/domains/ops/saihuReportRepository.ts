@@ -155,6 +155,20 @@ export function createSaihuReportRepository(
     schema = dependencies.schema ?? assertSaihuReportSchema,
     configuration = dependencies.configuration ?? saihuReportConfiguration,
     monthly = dependencies.monthly ?? monthlyFinancialWriteRepository;
+  const activeSessions = new WeakMap<
+    MonthlyFinancialWriteSession,
+    "read" | "create" | "update" | "delete"
+  >();
+  function requireSession(
+    current: MonthlyFinancialWriteSession,
+    create = false
+  ) {
+    if (
+      !activeSessions.has(current) ||
+      (create && activeSessions.get(current) !== "create")
+    )
+      saihuReportFail("TRANSACTION_SESSION_REQUIRED");
+  }
   async function transaction<T>(
     identity: SaihuReportIdentity,
     action: "read" | "create" | "update" | "delete",
@@ -166,7 +180,12 @@ export function createSaihuReportRepository(
     return db.transaction(async tx => {
       const current = await authorize(tx, identity, action);
       await schema(tx);
-      return body(current);
+      activeSessions.set(current, action);
+      try {
+        return await body(current);
+      } finally {
+        activeSessions.delete(current);
+      }
     });
   }
   async function historyHash(current: MonthlyFinancialWriteSession) {
@@ -328,137 +347,150 @@ export function createSaihuReportRepository(
     identity: SaihuReportIdentity,
     scope: SaihuReportScope
   ) {
-    return transaction(identity, "read", async current => {
-      const currentHistoryHash = await historyHash(current);
-      let config: SaihuReportConfiguration | null = null,
-        reasonCode: string | null = enabled() ? null : "WRITES_NOT_ENABLED";
-      try {
-        config = await configurationFor(current, scope);
-      } catch (error) {
-        if (error instanceof SaihuReportError) reasonCode = error.code;
-        else throw error;
-      }
-      if (!closedPeriod(scope)) reasonCode = "REPORT_PERIOD_NOT_CLOSED";
-      if (scope.kind === "monthly" && !monthly.server.writesEnabled())
-        reasonCode = "MONTHLY_WRITES_NOT_ENABLED";
-      return {
-        identity,
-        scope,
-        historyHash: currentHistoryHash,
-        configurationHash: config?.configurationHash ?? null,
-        shops: config?.contract.shops ?? [],
-        capability: {
-          status: reasonCode
-            ? ("unavailable" as const)
-            : ("available" as const),
-          reasonCode,
-        },
-        reportingCalendar:
-          scope.kind === "daily" ? "saturday_friday" : "settlement_month",
-        currency: "USD",
-        autoApply: false as const,
-      };
-    });
+    return transaction(identity, "read", current =>
+      previewInTransaction(current, scope)
+    );
+  }
+  async function previewInTransaction(
+    current: MonthlyFinancialWriteSession,
+    scope: SaihuReportScope
+  ) {
+    requireSession(current);
+    const identity = current.identity;
+    const currentHistoryHash = await historyHash(current);
+    let config: SaihuReportConfiguration | null = null,
+      reasonCode: string | null = enabled() ? null : "WRITES_NOT_ENABLED";
+    try {
+      config = await configurationFor(current, scope);
+    } catch (error) {
+      if (error instanceof SaihuReportError) reasonCode = error.code;
+      else throw error;
+    }
+    if (!closedPeriod(scope)) reasonCode = "REPORT_PERIOD_NOT_CLOSED";
+    if (scope.kind === "monthly" && !monthly.server.writesEnabled())
+      reasonCode = "MONTHLY_WRITES_NOT_ENABLED";
+    return {
+      identity,
+      scope,
+      historyHash: currentHistoryHash,
+      configurationHash: config?.configurationHash ?? null,
+      shops: config?.contract.shops ?? [],
+      capability: {
+        status: reasonCode ? ("unavailable" as const) : ("available" as const),
+        reasonCode,
+      },
+      reportingCalendar:
+        scope.kind === "daily" ? "saturday_friday" : "settlement_month",
+      currency: "USD",
+      autoApply: false as const,
+    };
   }
   async function start(
     identity: SaihuReportIdentity,
     raw: SaihuReportStartInput
   ) {
+    return transaction(identity, "create", current =>
+      startInTransaction(current, raw)
+    );
+  }
+  async function startInTransaction(
+    current: MonthlyFinancialWriteSession,
+    raw: SaihuReportStartInput
+  ) {
+    requireSession(current, true);
+    const identity = current.identity;
     const input = SaihuReportStartInputSchema.parse(raw),
       requestHash = saihuReportHash({ identity, request: input });
     if (input.expectedWorkspaceId !== identity.workspaceId)
       saihuReportFail("WORKSPACE_CHANGED");
-    return transaction(identity, "create", async current => {
-      const cancelled = await audit(current, input.operationId, "cancel");
-      if (cancelled) return cancelled;
-      const previous = await audit(current, input.operationId, "start");
-      if (previous) {
-        if (
-          previous.status !== "cancelled" &&
-          previous.requestHash !== requestHash
-        )
-          saihuReportFail("OPERATION_CONFLICT");
-        return previous;
-      }
-      gate();
-      if (!closedPeriod(input.scope))
-        saihuReportFail("REPORT_PERIOD_NOT_CLOSED");
-      if (input.scope.kind === "monthly" && !monthly.server.writesEnabled())
-        saihuReportFail("MONTHLY_WRITES_NOT_ENABLED");
-      const config = await configurationFor(current, input.scope);
+    const cancelled = await audit(current, input.operationId, "cancel");
+    if (cancelled) return cancelled;
+    const previous = await audit(current, input.operationId, "start");
+    if (previous) {
       if (
-        config.configurationHash !== input.expectedConfigurationHash ||
-        (await historyHash(current)) !== input.expectedHistoryHash
+        previous.status !== "cancelled" &&
+        previous.requestHash !== requestHash
       )
-        saihuReportFail("SOURCE_OR_CONFIGURATION_CHANGED");
-      const pending = await saihuReportRows(
-        current.tx,
-        "SELECT runId,userId,IF(OCTET_LENGTH(CAST(input AS CHAR CHARACTER SET utf8mb4))<=262144,CAST(input AS CHAR CHARACTER SET utf8mb4),NULL) AS input,IF(OCTET_LENGTH(CAST(output AS CHAR CHARACTER SET utf8mb4))<=65536,CAST(output AS CHAR CHARACTER SET utf8mb4),NULL) AS output FROM ai_jobs WHERE workspaceId=? AND kind=? AND projectId IS NULL AND status IN ('queued','running','succeeded','failed') ORDER BY id LIMIT 201 FOR UPDATE",
-        [identity.workspaceId, SAIHU_REPORT_KIND],
-        201
-      );
-      if (pending.length > 200) saihuReportFail("PENDING_BUDGET");
-      for (const row of pending) {
-        const frozen = SaihuReportFrozenInputSchema.parse(
-            saihuReportJson(row.input, 262144)
-          ),
-          output = SaihuReportOutputSchema.parse(
-            saihuReportJson(row.output, 65536)
-          );
-        if (
-          frozen.identity.workspaceId !== identity.workspaceId ||
-          frozen.identity.userId !== row.userId ||
-          row.runId !== saihuReportRunId(frozen.identity, frozen.operationId)
-        )
-          saihuReportFail("JOB_SCOPE_INVALID");
-        if (
-          !output.applied &&
-          !output.revoked &&
-          ["queued", "running", "preview", "unknown"].includes(output.state) &&
-          scopeOverlaps(frozen.request.scope, input.scope)
-        )
-          saihuReportFail("RESOLVE_PENDING_SCOPE_FIRST");
-      }
-      const frozen = SaihuReportFrozenInputSchema.parse({
-          version: 1,
-          identity,
-          operationId: input.operationId,
-          request: input,
-          requestHash,
-          connectionVersion: config.connectionVersion,
-          contractHash: config.contractHash,
-          contract: config.contract,
-        }),
-        runId = saihuReportRunId(identity, input.operationId);
-      await saihuReportWrite(
-        current.tx,
-        "INSERT INTO ai_jobs (workspaceId,runId,kind,module,procedure,status,progress,queueName,attempt,maxAttempts,timeoutSeconds,userId,projectId,input,output) VALUES (?,?,?,'ops','opsSaihuReport.start','queued',0,'saihu-report',0,1,3600,?,NULL,?,?)",
-        [
-          identity.workspaceId,
-          runId,
-          SAIHU_REPORT_KIND,
-          identity.userId,
-          json(frozen),
-          json(initial()),
-        ]
-      );
-      const run = await readSaihuReportRun(
-        current.tx,
-        identity,
-        input.operationId
-      );
-      if (!run || saihuReportHash(run.input) !== saihuReportHash(frozen))
-        saihuReportFail("ACK_UNVERIFIABLE");
-      return audit(current, input.operationId, "start", {
+        saihuReportFail("OPERATION_CONFLICT");
+      return previous;
+    }
+    gate();
+    if (!closedPeriod(input.scope)) saihuReportFail("REPORT_PERIOD_NOT_CLOSED");
+    if (input.scope.kind === "monthly" && !monthly.server.writesEnabled())
+      saihuReportFail("MONTHLY_WRITES_NOT_ENABLED");
+    const config = await configurationFor(current, input.scope);
+    if (
+      config.configurationHash !== input.expectedConfigurationHash ||
+      (await historyHash(current)) !== input.expectedHistoryHash
+    )
+      saihuReportFail("SOURCE_OR_CONFIGURATION_CHANGED");
+    const pending = await saihuReportRows(
+      current.tx,
+      "SELECT runId,userId,IF(OCTET_LENGTH(CAST(input AS CHAR CHARACTER SET utf8mb4))<=262144,CAST(input AS CHAR CHARACTER SET utf8mb4),NULL) AS input,IF(OCTET_LENGTH(CAST(output AS CHAR CHARACTER SET utf8mb4))<=65536,CAST(output AS CHAR CHARACTER SET utf8mb4),NULL) AS output FROM ai_jobs WHERE workspaceId=? AND kind=? AND projectId IS NULL AND status IN ('queued','running','succeeded','failed') ORDER BY id LIMIT 201 FOR UPDATE",
+      [identity.workspaceId, SAIHU_REPORT_KIND],
+      201
+    );
+    if (pending.length > 200) saihuReportFail("PENDING_BUDGET");
+    for (const row of pending) {
+      const frozen = SaihuReportFrozenInputSchema.parse(
+          saihuReportJson(row.input, 262144)
+        ),
+        output = SaihuReportOutputSchema.parse(
+          saihuReportJson(row.output, 65536)
+        );
+      if (
+        frozen.identity.workspaceId !== identity.workspaceId ||
+        frozen.identity.userId !== row.userId ||
+        row.runId !== saihuReportRunId(frozen.identity, frozen.operationId)
+      )
+        saihuReportFail("JOB_SCOPE_INVALID");
+      if (
+        !output.applied &&
+        !output.revoked &&
+        ["queued", "running", "preview", "unknown"].includes(output.state) &&
+        scopeOverlaps(frozen.request.scope, input.scope)
+      )
+        saihuReportFail("RESOLVE_PENDING_SCOPE_FIRST");
+    }
+    const frozen = SaihuReportFrozenInputSchema.parse({
+        version: 1,
         identity,
         operationId: input.operationId,
-        runOperationId: input.operationId,
-        action: "start",
-        status: "committed",
+        request: input,
         requestHash,
-        batchId: null,
-        resultHash: saihuReportHash(frozen),
-      });
+        connectionVersion: config.connectionVersion,
+        contractHash: config.contractHash,
+        contract: config.contract,
+      }),
+      runId = saihuReportRunId(identity, input.operationId);
+    await saihuReportWrite(
+      current.tx,
+      "INSERT INTO ai_jobs (workspaceId,runId,kind,module,procedure,status,progress,queueName,attempt,maxAttempts,timeoutSeconds,userId,projectId,input,output) VALUES (?,?,?,'ops','opsSaihuReport.start','queued',0,'saihu-report',0,1,3600,?,NULL,?,?)",
+      [
+        identity.workspaceId,
+        runId,
+        SAIHU_REPORT_KIND,
+        identity.userId,
+        json(frozen),
+        json(initial()),
+      ]
+    );
+    const run = await readSaihuReportRun(
+      current.tx,
+      identity,
+      input.operationId
+    );
+    if (!run || saihuReportHash(run.input) !== saihuReportHash(frozen))
+      saihuReportFail("ACK_UNVERIFIABLE");
+    return audit(current, input.operationId, "start", {
+      identity,
+      operationId: input.operationId,
+      runOperationId: input.operationId,
+      action: "start",
+      status: "committed",
+      requestHash,
+      batchId: null,
+      resultHash: saihuReportHash(frozen),
     });
   }
   async function check(
@@ -1108,6 +1140,12 @@ export function createSaihuReportRepository(
     };
   }
   return {
+    server: {
+      withTransaction: transaction,
+      previewInTransaction,
+      startInTransaction,
+      writesEnabled: () => enabled(),
+    },
     preview,
     start,
     check,

@@ -87,6 +87,7 @@ import { productCostsWriteRouter } from "./routers/productCostsWrite";
 import { monthlyFinancialReadRouter } from "./routers/monthlyFinancialRead";
 import { monthlyFinancialWriteRouter } from "./routers/monthlyFinancialWrite";
 import { saihuReportSyncRouter } from "./routers/saihuReportSync";
+import { saihuReportScheduleRouter } from "./routers/saihuReportSchedule";
 import { inventorySnapshotReadRouter } from "./routers/inventorySnapshotRead";
 import { inventorySnapshotRefreshRouter } from "./routers/inventorySnapshotRefresh";
 import { inventoryPlanningWriteRouter } from "./routers/inventoryPlanningWrite";
@@ -216,6 +217,7 @@ export const appRouter = router({
   monthlyFinancialRead: monthlyFinancialReadRouter,
   monthlyFinancialWrite: monthlyFinancialWriteRouter,
   opsSaihuReport: saihuReportSyncRouter,
+  opsSaihuSchedule: saihuReportScheduleRouter,
   inventorySnapshotRead: inventorySnapshotReadRouter,
   inventorySnapshotRefresh: inventorySnapshotRefreshRouter,
   inventoryPlanningWrite: inventoryPlanningWriteRouter,

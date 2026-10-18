@@ -1,0 +1,24 @@
+{
+  "schema": "integration-central-entry-review/v1",
+  "reviewer": "Root integration agent",
+  "scope": "central wiring only; not whole feature or production approval",
+  "decision": "reviewed narrow central addition",
+  "base": "81f5f4ff678281e8de146b6291bcdcd0b0db8ffc",
+  "preservedScheduler": {
+    "previousBlob": "cc8bb7b2cb8a0ba0d7d58c9a9b6969fd054c611c",
+    "previousSha256": "c1a2ca1e037dddbd95dd5131fcc776397163f353cc36c1f7d1fbcb035c573581",
+    "reviewedBlob": "1271f51413e17a3312320bb45dbbd0b763f0d78d",
+    "reviewedSha256": "73b99c05562f4afada6c3220c690fbe026f5a1b3fff465e7f85fab7d25d90f81"
+  },
+  "review": [
+    "Only add the queue-only Saihu scheduler after existing leader acquisition. Retain all four original scheduler starts/stops, leader-loss ownership semantics, signal handlers and the real drain coordinator.",
+    "The new stop participates in the same stop-all-first barrier; its accepted occurrence transaction must settle before lock release or database close. A fifth deferred-stop regression passes together with the original three entrypoint regressions.",
+    "Register the dedicated schedule router without replacing the manual report endpoint. The schedule occurrence artifact key is reserved in both JavaScript registration protection and every generic artifact SQL predicate, including the orphan/mislabeled-job defense.",
+    "All 83 private artifact isolation tests pass with the additional reserved key. The default-off schedule factory does not start timers or connect to a provider. No candidate table is exported into the central schema or registered as a migration."
+  ],
+  "necessaryChecks": "Root independently ran scheduler entrypoint 4 and private artifact isolation 83 tests: 87/87, chunk35aed6.",
+  "featureBatchStillUnderIndependentReview": true,
+  "newFeatureSchemaApproved": false,
+  "productionApproved": false,
+  "productionDeployed": false
+}

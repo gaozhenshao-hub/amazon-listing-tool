@@ -26,6 +26,7 @@ import {
   type SaihuReportPending,
 } from "./saihuReportPending";
 import { publishMonthlyFinancialChange } from "./monthlyFinancialWriteEvents";
+import { SaihuReportScheduleController } from "./SaihuReportSchedule";
 
 const button = "rounded border px-3 py-2 text-sm disabled:opacity-50",
   cell = "border-b px-2 py-2 text-left align-top";
@@ -390,8 +391,9 @@ function OwnedSaihuReportSync({ identity }: { identity: SaihuReportIdentity }) {
       aria-label="赛狐受控日月报"
     >
       <h3 className="font-semibold">赛狐日／月报 · 受控手工同步</h3>
+      <SaihuReportScheduleController identity={identity} />
       <p className="text-sm text-muted-foreground">
-        先采集原件与完整性预览，再由人工应用。不会替代领星周一至周日口径，不启动定时同步。日报周六至周五，月报为
+        先采集原件与完整性预览，再由人工应用。不会替代领星周一至周日口径；手工采集不启用定时，周期计划需单独明确激活。日报周六至周五，月报为
         USD 结算利润，不能混填运营利润。
       </p>
       {error && <p role="alert">{error}</p>}

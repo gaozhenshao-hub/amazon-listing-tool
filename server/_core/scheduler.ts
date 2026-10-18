@@ -9,6 +9,7 @@ import { closeDbConnection } from "../repositories/dbClient";
 import { assertStartupConfig } from "./startupValidation";
 import { startAiOsOperationalScheduler } from "../domains/ai_os/services/operationalScheduler";
 import { startLocalLingxingScheduleRunner } from "../domains/ops/localLingxingScheduler";
+import { startSaihuReportScheduler } from "../domains/ops/saihuReportScheduler";
 import { createSchedulerShutdown } from "./schedulerShutdown";
 
 const shutdownGraceMs = Math.min(
@@ -85,6 +86,7 @@ async function main() {
     startTodoReminderScheduler();
     stops.push(startAiOsOperationalScheduler());
     stops.push(startLocalLingxingScheduleRunner());
+    stops.push(startSaihuReportScheduler());
   } catch (error) {
     await stop("startup_failure");
     throw error;
