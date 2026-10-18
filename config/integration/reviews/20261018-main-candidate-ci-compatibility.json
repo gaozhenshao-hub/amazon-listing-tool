@@ -1,0 +1,42 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "main-candidate-ci-compatibility",
+  "baseline": "ad8479dc1d95f2f70baa48d4d419b1c8e0fb7dcf",
+  "parent": "e83a2bf760f58b4be48f482f51ecd58c93f5bade",
+  "reason": "Repair eight failures found by the unchanged full unit gate; retain its assertions, source-complexity limit and all runtime authority checks.",
+  "changes": [
+    "Extract only the existing controlled custom selling-point JSX. Draft state, owner identity, handlers, seven-direction rendering, evidence confirmation and paid actions remain in GeneratePage. The original 2150-line limit is unchanged; GeneratePage now has 2018 lines.",
+    "Update source-contract tests to assert the existing owner/epoch ledger boundary and both actual menu-flag branches with all 16 routes unique and present.",
+    "Give old valid research fixtures explicit parseable stale/captureOnly flags; add five negative cases proving enqueue and worker reject unknown, stale, capture-only and malformed sources without job creation, scheduling or model dispatch.",
+    "Move the original context DTO to an import-free type-only leaf and preserve the old public type export. Runtime module output is unchanged; dependency-cycle checks remain enabled.",
+    "Test the reviewed current-to-historical bootstrap evidence bridge without changing historical manifests or adding execution permission; explicitly forbid research database access in read-only coverage tests."
+  ],
+  "review": {
+    "root": "Read all 12 changed/new sources and tests, the previous K03 protection records and original guarded implementations. Only two reviewed pins change; all original baseline entries and control membership remain unchanged.",
+    "independent": "Independent reviewer compared emitted runtime JS for both type-import modules with parent HEAD: identical. Normalized extracted JSX equals its original subtree except the controlled isExpanding prop alias. No new permission, default flag, DDL or runtime source approval.",
+    "authorFocusedChecks": "Backend 38, AI type/source/architecture 169 and frontend/owner/menu 67 tests passed; overlapping targeted runs are not summed as unique total. Scoped lint/type checks passed. Full business/native/model-quality acceptance is deferred to the friend, not declared passed."
+  },
+  "previousProtectionRecords": [
+    {
+      "path": "client/src/pages/GeneratePage.tsx",
+      "gitBlobSha1": "34006cbde8c6752439684c0990c2b69f8bbdadee",
+      "sha256": "4ddc63747a94f4d8c0de621a3cd11edbf6b40ee0ac108f74e0996d5613f24c84",
+      "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json"
+    },
+    {
+      "path": "server/listingFactBoundFieldJobs.test.ts",
+      "gitBlobSha1": "3ec91baf91c3aa88e75684e7c8b2ab3918bd2504",
+      "sha256": "8c6cf04558d1e702ccb3b5e34362914fb1b38bbb44f226740578999611cd72f6",
+      "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json"
+    }
+  ],
+  "files": [
+    { "path": "client/src/pages/GeneratePage.tsx", "gitBlobSha1": "29d9ec4613da24db293da02e35e946d4b7f998da", "sha256": "72335ee508ba57ec1a6c811c1d42d6bccc1ee8abd5fd3e683c363f84066c03a7" },
+    { "path": "server/listingFactBoundFieldJobs.test.ts", "gitBlobSha1": "1510cba2533458c4036a05a7882ea158be3f48a0", "sha256": "6f7321bd577161d15fa9110576be144336be538e800c1978592b3e328430b59a" }
+  ],
+  "retainedControls": ["K01", "K02", "K03", "K04", "K05", "K06", "K07", "K08", "K09", "K10"],
+  "productionDeployed": false,
+  "schemaChanged": false,
+  "runtimeApprovalAdded": false,
+  "businessAcceptancePassed": false
+}

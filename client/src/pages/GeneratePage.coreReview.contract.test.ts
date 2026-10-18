@@ -7,7 +7,14 @@ const worker = readFileSync(fileURLToPath(new URL("../../../server/domains/listi
 
 describe("Listing human-approved fact/core UI contract", () => {
   it("lists source fact revisions and requires operator evidence selection before confirming a core", () => {
-    expect(page).toContain("listReviewedFacts.useQuery");
+    expect(page).toContain("const ownedReviewLedger = useOwnedListingReviewLedger(selectedProjectId || 0)");
+    expect(page).toContain("const reviewedFactsQuery = ownedReviewLedger.facts");
+    expect(page).toContain("const reviewedCoresQuery = ownedReviewLedger.cores");
+    expect(hook).toContain("listingRequestOwner(auth.user, projectId, auth.loading || !!auth.error)");
+    expect(hook).toContain("client.listing.listReviewedFacts.query({ projectId }, { signal: controller.signal })");
+    expect(hook).toContain("client.listing.listCurrentCores.query({ projectId }, { signal: controller.signal })");
+    expect(hook).toContain("controller.signal.aborted || epoch.current !== token");
+    expect(page).not.toContain("listReviewedFacts.useQuery");
     expect(page).toContain("reviewCoreMutation.mutateAsync");
     expect(page).toContain("请先在上方确认原始属性表中的本品事实，再勾选至少一条支持该卖点的证据");
     expect(page).toContain("选择本条卖点的已确认事实（必选）");
@@ -19,7 +26,11 @@ describe("Listing human-approved fact/core UI contract", () => {
     expect(worker).toContain("await resolveConfirmedListingCore({ projectId: input.projectId, workspaceId: job.workspaceId");
   });
   it("drops other-project async G1 output and clears selections when the current project changes", () => {
-    expect(hook).toContain("fetchedRun?.projectId === input.projectId ? fetchedRun : null");
+    expect(hook).toContain("!jobMatchesOwner(job, { userId, workspaceId, projectId }, nodeId, operation, scopeKey)");
+    expect(hook).toContain("job.userId === owner.userId && job.workspaceId === owner.workspaceId && job.projectId === owner.projectId");
+    expect(hook).toContain("data?.projectId === owner.projectId && (data.scopeKey || \"main\") === scopeKey");
+    expect(page).toContain("JSON.stringify([actor.userId, actor.workspaceId, actor.role, selectedProjectId])");
+    expect(page).toContain("<GeneratePageContent key={`${identity}:${token.epoch}`} />");
     expect(page).toContain("setCoreFactSelection({});");
     expect(page).toContain("lastCoreProjectRef.current = selectedProjectId;");
     expect(page).toContain("setGeneratedBullets({});");

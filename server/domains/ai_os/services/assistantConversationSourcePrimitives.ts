@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { AgentLibraryKeySchema } from "../../../../shared/agentLibraryContracts";
 import type { AssistantConfiguration } from "../../../../shared/assistantConfigurations";
-import type { AssistantConversationContextSkill } from "./assistantConversationContext";
+import type { AssistantConversationContextSkill } from "./assistantConversationSourceTypes";
 
 /** Pure existing fingerprints/admission only: no DB, environment, registry fetch,
  * model execution, singleton construction, or source approval occurs on import.

@@ -197,7 +197,8 @@ describe("0204 fact-bound Listing field jobs", () => {
   it("G1 passes same-project research separately from confirmed product facts, without loading extracted attributes", async () => {
     mocks.listJobs.mockResolvedValue([job("sellingPoints")]);
     mocks.getAnalyses.mockResolvedValue([{ id: 81, projectId: 3, asin: "B000000081", title: "Competitor 9000W product",
-      bulletPoints: JSON.stringify(["Competitor lifetime warranty"]), rawData: "DO NOT PASS RAW UPLOAD",
+      bulletPoints: JSON.stringify(["Competitor lifetime warranty"]),
+      rawData: JSON.stringify({ analysisStale: false, captureOnly: false, untrustedUpload: "DO NOT PASS RAW UPLOAD" }),
       reviewAnalysis: JSON.stringify({ painPoints: [{ issue: "Difficult to carry", frequency: 12 }] }) }]);
     mocks.getKeywords.mockResolvedValue([{ id: 61, projectId: 3, keyword: "travel storage", monthlySearchVolume: 200,
       sceneTags: JSON.stringify(["travel"]), intentTag: "portable organization", isNegative: 0 }]);
@@ -275,10 +276,33 @@ describe("0204 fact-bound Listing field jobs", () => {
   });
 
   it("G1 does not relabel a research database failure as missing evidence", async () => {
-    mocks.getAnalyses.mockResolvedValue([{ id: 81, projectId: 3, asin: "B000000081" }]);
+    mocks.getAnalyses.mockResolvedValue([{ id: 81, projectId: 3, asin: "B000000081",
+      rawData: JSON.stringify({ analysisStale: false, captureOnly: false }) }]);
     researchBinding = (await prepareListingResearchSelection({ projectId: 3, workspaceId: 9, analysisIds: [81] })).binding;
     mocks.getAnalyses.mockRejectedValue(new Error("selected research database unavailable"));
     await expect(runListingGenerationJob(job("sellingPoints"), { signal: new AbortController().signal } as any)).rejects.toThrow("selected research database unavailable");
+    expect(mocks.runSkill).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing state projection", undefined],
+    ["malformed envelope", "DO NOT PASS RAW UPLOAD"],
+    ["stale analysis", JSON.stringify({ analysisStale: true, captureOnly: false })],
+    ["capture without analysis", JSON.stringify({ analysisStale: false, captureOnly: true })],
+    ["unverifiable state flag", JSON.stringify({ analysisStale: "false", captureOnly: false })],
+  ])("G1 rejects %s before enqueue or model dispatch", async (_label, rawData) => {
+    const source = { id: 81, projectId: 3, asin: "B000000081",
+      rawData: JSON.stringify({ analysisStale: false, captureOnly: false }) };
+    mocks.getAnalyses.mockResolvedValue([source]);
+    researchBinding = (await prepareListingResearchSelection({ projectId: 3, workspaceId: 9, analysisIds: [81] })).binding;
+    mocks.getAnalyses.mockResolvedValue([{ ...source, rawData }]);
+    await expect(startListingGenerationJob({ projectId: 3, userId: 7, workspaceId: 9,
+      operation: "sellingPoints", nodeId: "G1", scopeKey: "main", analysisIds: [81] }))
+      .rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    await expect(runListingGenerationJob(job("sellingPoints"), { signal: new AbortController().signal } as any))
+      .rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(mocks.createJob).not.toHaveBeenCalled();
+    expect(mocks.schedule).not.toHaveBeenCalled();
     expect(mocks.runSkill).not.toHaveBeenCalled();
   });
 });

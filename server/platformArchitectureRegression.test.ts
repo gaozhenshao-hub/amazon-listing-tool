@@ -8,6 +8,45 @@ function lines(relativePath: string) {
   return fs.readFileSync(repoPath(relativePath), "utf8").split("\n").length;
 }
 
+type MenuSnapshot = { id?: string; label?: string; path?: string; items?: MenuSnapshot[] };
+
+// Resolve only the Listing menu's declarative AST; never import the application
+// or execute arbitrary source. Icons do not affect route/branch semantics.
+function listingMenuSnapshot(source: string, merged: boolean): MenuSnapshot {
+  const file = ts.createSourceFile("DashboardLayout.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let listing: ts.ObjectLiteralExpression | undefined;
+  const visit = (node: ts.Node) => {
+    if (ts.isObjectLiteralExpression(node) && node.properties.some(property =>
+      ts.isPropertyAssignment(property) && property.name.getText(file) === "id"
+      && ts.isStringLiteral(property.initializer) && property.initializer.text === "listing")) listing = node;
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  if (!listing) throw new Error("Listing menu is missing");
+  const read = (expression: ts.Expression): unknown => {
+    if (ts.isStringLiteral(expression)) return expression.text;
+    if (expression.kind === ts.SyntaxKind.TrueKeyword) return true;
+    if (expression.kind === ts.SyntaxKind.FalseKeyword) return false;
+    if (ts.isIdentifier(expression) && expression.text === "MERGED_LISTING_WORKFLOW_ENABLED") return merged;
+    if (ts.isParenthesizedExpression(expression)) return read(expression.expression);
+    if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.ExclamationToken) return !read(expression.operand);
+    if (ts.isConditionalExpression(expression)) return read(read(expression.condition) ? expression.whenTrue : expression.whenFalse);
+    if (ts.isArrayLiteralExpression(expression)) return expression.elements.flatMap(element => {
+      if (!ts.isSpreadElement(element)) return [read(element)];
+      const value = read(element.expression);
+      if (!Array.isArray(value)) throw new Error("Menu spread is not an array");
+      return value;
+    });
+    if (ts.isObjectLiteralExpression(expression)) return Object.fromEntries(expression.properties.flatMap(property => {
+      if (!ts.isPropertyAssignment(property)) throw new Error("Unsupported menu property");
+      const name = property.name.getText(file);
+      return name === "icon" ? [] : [[name, read(property.initializer)]];
+    }));
+    throw new Error(`Unsupported Listing menu expression: ${expression.getText(file)}`);
+  };
+  return read(listing) as MenuSnapshot;
+}
+
 function tableFromQueryExpression(expression: ts.Expression, sourceFile: ts.SourceFile): string | null {
   if (ts.isCallExpression(expression)) {
     if (
@@ -36,23 +75,35 @@ describe("platform architecture regression", () => {
     expect(nestedLayoutPages).toEqual([]);
   });
 
-  it("groups Listing preparation routes into one collapsible sidebar layer", () => {
+  it.each([false, true])("preserves unique complete Listing routes and preparation navigation with merged=%s", merged => {
     const layout = fs.readFileSync(repoPath("client/src/components/DashboardLayout.tsx"), "utf8");
-    expect(layout).toContain('id: "listing-preparation"');
-    expect(layout).toContain('label: "前置准备层"');
     expect(layout).toContain("aria-expanded={expanded}");
-
-    for (const route of [
-      "/listing",
-      "/listing/analysis",
-      "/listing/comparison",
-      "/listing/review-history",
-      "/listing/data-files",
-      "/listing/keywords",
-      "/listing/review-aggregation",
-      "/listing/buyer-questions",
-    ]) {
-      expect(layout.match(new RegExp(`path: "${route}"`, "g")), route).toHaveLength(1);
+    const listing = listingMenuSnapshot(layout, merged), items = listing.items!;
+    const preparation = items.filter(item => item.id === "listing-preparation");
+    expect(preparation).toHaveLength(1);
+    expect(preparation[0].label).toBe(merged ? "项目与补充资料" : "前置准备层");
+    const flatten = (nodes: MenuSnapshot[]): MenuSnapshot[] => nodes.flatMap(node => [node, ...flatten(node.items || [])]);
+    const paths = flatten(items).flatMap(item => item.path ? [item.path] : []);
+    expect(paths.slice().sort()).toEqual([
+      "/listing", "/listing/analysis", "/listing/comparison", "/listing/generate", "/listing/canvas",
+      "/listing/review-history", "/listing/data-files", "/listing/keywords", "/listing/review-aggregation", "/listing/buyer-questions",
+      "/listing/ad-structure", "/listing/preview", "/listing/score", "/listing/image-workflow", "/listing/quality", "/listing/video-script",
+    ].sort());
+    expect(new Set(paths).size).toBe(paths.length);
+    expect(preparation[0].items?.find(item => item.path === "/listing/data-files")?.label).toBe(merged ? "本品属性与补充资料" : "数据文件");
+    if (merged) {
+      expect(items.slice(0, 3)).toEqual([
+        { label: "1. Listing 抓取", path: "/listing/analysis" },
+        { label: "2. Listing 对比及分析", path: "/listing/comparison" },
+        { label: "3. 智能 Listing 生成", path: "/listing/generate" },
+      ]);
+      expect(preparation[0].items?.some(item => item.path === "/listing/analysis" || item.path === "/listing/comparison")).toBe(false);
+    } else {
+      expect(preparation[0].items).toEqual(expect.arrayContaining([
+        { label: "竞品分析", path: "/listing/analysis" }, { label: "竞品对比", path: "/listing/comparison" },
+      ]));
+      expect(items.find(item => item.path === "/listing/generate")?.label).toBe("Listing生成");
+      expect(items.some(item => item.path === "/listing/analysis" || item.path === "/listing/comparison")).toBe(false);
     }
   });
 

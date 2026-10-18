@@ -283,9 +283,9 @@
         "sha256": "0bb405c09c0a47385dc48f7cf3a16e6e3d0150f3e7618d02b59e6d5f86d666fc"
       },
       "reviewed": {
-        "gitBlobSha1": "34006cbde8c6752439684c0990c2b69f8bbdadee",
-        "sha256": "4ddc63747a94f4d8c0de621a3cd11edbf6b40ee0ac108f74e0996d5613f24c84",
-        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json"
+        "gitBlobSha1": "29d9ec4613da24db293da02e35e946d4b7f998da",
+        "sha256": "72335ee508ba57ec1a6c811c1d42d6bccc1ee8abd5fd3e683c363f84066c03a7",
+        "reviewRef": "config/integration/reviews/20261018-main-candidate-ci-compatibility.json"
       }
     },
     {
@@ -1067,9 +1067,9 @@
         "sha256": "f16eb18d81a537cfa24cebb28c8459238e7074a5307d0d4df5d9df32eee38e2f"
       },
       "reviewed": {
-        "gitBlobSha1": "3ec91baf91c3aa88e75684e7c8b2ab3918bd2504",
-        "sha256": "8c6cf04558d1e702ccb3b5e34362914fb1b38bbb44f226740578999611cd72f6",
-        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json"
+        "gitBlobSha1": "1510cba2533458c4036a05a7882ea158be3f48a0",
+        "sha256": "6f7321bd577161d15fa9110576be144336be538e800c1978592b3e328430b59a",
+        "reviewRef": "config/integration/reviews/20261018-main-candidate-ci-compatibility.json"
       }
     },
     {

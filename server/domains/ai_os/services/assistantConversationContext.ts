@@ -10,6 +10,8 @@ import {
 import { configurationHash, skillManifestHash } from "./assistantConfigurations";
 import type { ParsedAssistantConversationAttachment } from "./assistantConversationAttachments";
 import { assistantConversationRequestHash } from "../repositories/assistantConversations";
+import type { AssistantConversationContextSkill } from "./assistantConversationSourceTypes";
+export type { AssistantConversationContextSkill } from "./assistantConversationSourceTypes";
 
 const uuid = z.string().uuid().transform(value => value.toLowerCase());
 const IdentitySchema = z.object({
@@ -41,10 +43,6 @@ const SavedConfigurationSchema = z.object({
   revision: AssistantRevisionSchema, hash: AssistantDigestSchema, config: AssistantConfigurationSchema,
 }).strict();
 export type AssistantConversationSavedConfiguration = z.infer<typeof SavedConfigurationSchema>;
-export type AssistantConversationContextSkill = {
-  workspaceId: number | null; scope: string; slug: string; name: string;
-  version: number; status: string; manifest: unknown;
-};
 
 function fail(code: string): never { throw new Error(`ASSISTANT_CONVERSATION_${code}`); }
 const hash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");

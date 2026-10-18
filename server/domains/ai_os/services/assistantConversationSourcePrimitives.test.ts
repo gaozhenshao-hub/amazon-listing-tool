@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { build } from "esbuild";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
+import ts from "typescript";
+import type { AssistantConversationContextSkill as PublicContextSkill } from "./assistantConversationContext";
+import type { AssistantConversationContextSkill as LeafContextSkill } from "./assistantConversationSourceTypes";
 import * as pure from "./assistantConversationSourcePrimitives";
 import * as repository from "../repositories/assistantConversations";
 import * as configuration from "./assistantConfigurations";
@@ -10,6 +14,26 @@ import * as strict from "./strictSkillRuntime";
 import * as catalog from "./teamorouterCatalog";
 
 describe("standalone readonly source probe import boundary", () => {
+  it("shares the original context DTO through a type-only dependency leaf without a service back-edge", () => {
+    const parse = (name: string) => ts.createSourceFile(name, readFileSync(new URL(`./${name}.ts`, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+    const leaf = parse("assistantConversationSourceTypes");
+    expect(leaf.statements).toHaveLength(1);
+    expect(leaf.statements.every(ts.isTypeAliasDeclaration)).toBe(true);
+    for (const name of ["assistantConversationContext", "assistantConversationSourcePrimitives"]) {
+      const imports = parse(name).statements.filter(ts.isImportDeclaration);
+      const target = imports.filter(item => ts.isStringLiteral(item.moduleSpecifier) && item.moduleSpecifier.text === "./assistantConversationSourceTypes");
+      expect(target).toHaveLength(1);
+      expect(target[0].importClause?.isTypeOnly).toBe(true);
+      if (name === "assistantConversationSourcePrimitives") expect(imports.some(item => ts.isStringLiteral(item.moduleSpecifier) && item.moduleSpecifier.text === "./assistantConversationContext")).toBe(false);
+    }
+    expectTypeOf<PublicContextSkill>().toEqualTypeOf<LeafContextSkill>();
+    expectTypeOf<pure.AssistantConversationRegistrySkill["context"]>().toEqualTypeOf<LeafContextSkill>();
+    expectTypeOf<LeafContextSkill>().toEqualTypeOf<{
+      workspaceId: number | null; scope: string; slug: string; name: string;
+      version: number; status: string; manifest: unknown;
+    }>();
+  });
+
   it("bundles and evaluates only pure local dependencies without DB/env/runner or app initialization", async () => {
     const result = await build({ entryPoints: ["server/domains/ai_os/services/assistantConversationSourceComparison.ts"], bundle: true, platform: "node", format: "cjs", packages: "external", write: false, metafile: true });
     expect(Object.keys(result.metafile!.inputs).sort()).toEqual([

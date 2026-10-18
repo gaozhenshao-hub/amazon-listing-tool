@@ -6,6 +6,9 @@ import { describe, expect, it } from "vitest";
 import { getTableConfig, MySqlDialect } from "drizzle-orm/mysql-core";
 import type { SQL } from "drizzle-orm";
 import {
+  bindFreshRunnerEvidence, FRESH_SOURCE_EVIDENCE, reviewFreshRunnerSource,
+} from "../scripts/database/freshBootstrapSourceEvidence.mjs";
+import {
   emperorAssistantConfigurations, emperorAssistantConfigurationVersions,
 } from "../drizzle/schema/assistantConfigurations";
 
@@ -116,12 +119,49 @@ describe("assistant configuration independent schema and opt-in registration", (
     expect(registration.drafts).toContain(migrationName);
   });
 
-  it.each(["scripts/run-database-migrations.mjs", "drizzle/schema/index.ts"])("keeps fresh-bootstrap source admission coherent with the reviewed %s", path => {
+  it("keeps the schema barrel directly bound to the reviewed fresh-bootstrap source", () => {
+    const path = "drizzle/schema/index.ts";
     const manifest = JSON.parse(read("drizzle/bootstrap/manifest.json"));
     const pins = manifest.sources.filter((item: { path: string }) => item.path === path);
     expect(pins).toHaveLength(1);
     // This is only the public source admission check, not a fresh DB bootstrap.
     expect(pins[0].sha256).toBe(sha(read(path)));
+  });
+
+  it("binds the current runner through reviewed evidence without changing historical pins or approval", () => {
+    const path = "scripts/run-database-migrations.mjs";
+    const manifestText = read("drizzle/bootstrap/manifest.json");
+    const manifest = JSON.parse(manifestText);
+    const original = structuredClone(manifest);
+    const pins = manifest.sources.filter((item: { path: string }) => item.path === path);
+    expect(pins).toHaveLength(1);
+    expect(pins[0].sha256).toBe("3c82d1f5fd0316e7f1f6c5b3b1e80dcd8ace5041931e71b3daf303cd490ad33b");
+    expect(sha(manifestText)).toBe(FRESH_SOURCE_EVIDENCE.manifest);
+    const reviewed = reviewFreshRunnerSource(runner);
+    const bound = bindFreshRunnerEvidence(manifest, runner);
+    expect(sha(reviewed.previous)).toBe(pins[0].sha256);
+    expect(bound.proof).toEqual(reviewed.proof);
+    expect(bound.proof).toMatchObject({
+      currentSha256: sha(runner), previousSha256: pins[0].sha256,
+      approval: "UNAPPROVED", executionPermissionAdded: false,
+    });
+    expect(bound.manifest.sources).toEqual(manifest.sources.map((item: { path: string; sha256: string }) =>
+      item.path === path ? { ...item, sha256: sha(runner) } : item));
+    expect(bound.manifest.structureContract).toEqual(manifest.structureContract);
+    expect(bound.manifest.structureContractAdmission).toEqual(manifest.structureContractAdmission);
+    expect(manifest).toEqual(original);
+    expect(read("drizzle/bootstrap/manifest.json")).toBe(manifestText);
+  });
+
+  it("refuses unreviewed runner bytes or a rewritten historical pin", () => {
+    const manifest = JSON.parse(read("drizzle/bootstrap/manifest.json"));
+    expect(() => bindFreshRunnerEvidence(manifest, `${runner}\n`)).toThrowError(
+      expect.objectContaining({ code: "FRESH_SOURCE_EVIDENCE_SOURCE_CHANGED" }),
+    );
+    manifest.sources.find((item: { path: string }) => item.path === "scripts/run-database-migrations.mjs").sha256 = sha(runner);
+    expect(() => bindFreshRunnerEvidence(manifest, runner)).toThrowError(
+      expect.objectContaining({ code: "FRESH_SOURCE_EVIDENCE_SOURCE_CHANGED" }),
+    );
   });
 
   it("exposes only a read-only one-file plan loader, with no assistant CLI apply branch", () => {
