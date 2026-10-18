@@ -18,6 +18,9 @@ import { storagePut } from "../storage";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { summarizeParentAsinWeeks, summarizeVariantSales } from "../domains/ops/productOverview/dailyAggregation";
 import { calculateInventoryPlan } from "../domains/ops/inventoryPlanning/calculator";
+import { assertLegacyInventoryPlanningWriteAllowed } from "../domains/ops/inventoryPlanningLegacyGate";
+import { loadInventoryPlanningManualReader } from "../domains/ops/inventoryPlanningManualRead";
+import { INVENTORY_PLANNING_LIMITS } from "../../shared/inventoryPlanningWrite";
 import { evaluateThreeMonthZeroDiscontinuation, evaluateThreeMonthZeroWeeklyDiscontinuation } from "../domains/ops/lifecycle/zeroValueDiscontinuation";
 import { buildCompleteCoverageEvidence, type DailyPerformanceEvidenceRow } from "../domains/ops/lifecycle/completeCoverageEvidence";
 import { collectCompletedDailyBackfillDates } from "../domains/ops/historicalBackfillCoverage";
@@ -872,37 +875,27 @@ export const dataImportRouter = router({
         .where(eq(opsAsinLifecycleStatuses.workspaceId, workspaceId));
       const lifecycleByKey = new Map(lifecycleStatuses.map(status => [`${status.asin}::${status.storeName}::${status.country}`, status]));
 
-      let locals: any[] = [];
-      let parameters: any[] = [];
-      try {
-        [locals, parameters] = await Promise.all([
-          db!.select().from(opsLocalInventoryAdjustments)
+      const resolveManualState = await loadInventoryPlanningManualReader({
+        identity: { workspaceId, userId: ctx.user.id },
+        loadLocals: () => db!.select().from(opsLocalInventoryAdjustments)
             .where(and(
               eq(opsLocalInventoryAdjustments.workspaceId, workspaceId),
               eq(opsLocalInventoryAdjustments.userId, ctx.user.id),
-              eq(opsLocalInventoryAdjustments.status, "confirmed"),
-            )),
-          db!.select().from(opsInventoryPlanningParameters)
+            )).limit(INVENTORY_PLANNING_LIMITS.locals + 1),
+        loadParameters: () => db!.select().from(opsInventoryPlanningParameters)
             .where(and(
               eq(opsInventoryPlanningParameters.workspaceId, workspaceId),
               eq(opsInventoryPlanningParameters.userId, ctx.user.id),
-              eq(opsInventoryPlanningParameters.isActive, 1),
-            )),
-        ]);
-      } catch (error) {
-        console.error("[InventoryPlanning] optional local inventory or parameter query failed", { workspaceId, userId: ctx.user.id, error });
-      }
+            )).limit(INVENTORY_PLANNING_LIMITS.parameters + 1),
+      });
 
       const latestRows = inventoryPlanningSource.filter(row => row.reportDate === asOfDate);
       const planningRows = latestRows.map(latest => {
         const lifecycle = lifecycleByKey.get(`${latest.asin}::${latest.storeName}::${latest.country}`);
         const history = scopedSnapshots.filter(row => row.sourceType !== "lx_inventory_mcp" && row.asin === latest.asin && row.storeName === latest.storeName && row.country === latest.country);
-        const local = locals
-          .filter(item => item.asin === latest.asin && item.storeName === latest.storeName && item.country === latest.country && item.effectiveDate <= asOfDate)
-          .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate) || b.id - a.id)[0];
-        const parameter = parameters.find(item => item.scopeType === "asin" && item.asin === latest.asin && item.storeName === latest.storeName && item.country === latest.country)
-          || parameters.find(item => item.scopeType === "store_country" && item.storeName === latest.storeName && item.country === latest.country)
-          || parameters.find(item => item.scopeType === "workspace");
+        const manualState = resolveManualState({ scopeType: "asin", asin: latest.asin, storeName: latest.storeName, country: latest.country }, asOfDate);
+        const local = manualState.local.current;
+        const parameter = manualState.parameters.effective;
         const plan = calculateInventoryPlan({
           asOfDate,
           fbaAvailable: latest.fbaAvailable || latest.availableStock || 0,
@@ -947,7 +940,8 @@ export const dataImportRouter = router({
           operatorSource,
           externalOperator,
           localInventory: local?.localQty || 0,
-          localInventoryConfirmedAt: local?.confirmedAt || null, parameterScope: parameter?.scopeType || "workspace",
+          localInventoryConfirmedAt: local?.confirmedAt || null, parameterScope: manualState.parameters.resolvedFrom,
+          configuredTargetCoverDays: parameter.targetCoverDays,
           productCost, estimatedFirstLegCost, actualFirstLegCost, estimatedFbaFee, actualFbaFee, sellingPrice, estimatedDimensions, actualDimensions, estimatedWeight, actualWeight, dimensionUnit: parameter?.dimensionUnit ?? "in", weightUnit: parameter?.weightUnit ?? "lb", currency: parameter?.currency ?? "USD",
           estimatedBreakEven, actualBreakEven,
           lifecycleStatus: lifecycle?.status || "active",
@@ -997,6 +991,7 @@ export const dataImportRouter = router({
   confirmLocalInventory: protectedProcedure
     .input(z.object({ asin: z.string().min(1), storeName: z.string().min(1), country: z.string().min(1), effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), localQty: z.number().int().min(0), reason: z.string().max(500).optional() }))
     .mutation(async ({ ctx, input }) => {
+      assertLegacyInventoryPlanningWriteAllowed();
       const db = await getDb();
       const current = await db!.select().from(opsLocalInventoryAdjustments)
         .where(opsWorkspaceCondition(opsLocalInventoryAdjustments, currentOpsWorkspaceId(), and(
@@ -1021,6 +1016,7 @@ export const dataImportRouter = router({
       if (value.scopeType === "asin" && (!value.asin || !value.storeName || !value.country)) issue.addIssue({ code: "custom", message: "ASIN、店铺和国家不能为空" });
     }))
     .mutation(async ({ ctx, input }) => {
+      assertLegacyInventoryPlanningWriteAllowed();
       const db = await getDb();
       const planningParameterValues = {
         userId: ctx.user.id,

@@ -7,6 +7,9 @@ const productsPageSource = readFileSync(resolve(process.cwd(), "client/src/pages
 const detailPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsProductDetail.tsx"), "utf8");
 const parentWeeklyOverviewSource = readFileSync(resolve(process.cwd(), "server/domains/ops/productOverview/parentWeeklyOverview.ts"), "utf8");
 const inventoryPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsInventory.tsx"), "utf8");
+const planningEditorSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/InventoryPlanningEditor.tsx"), "utf8");
+const planningValuesSource = readFileSync(resolve(process.cwd(), "shared/inventoryPlanningWrite.ts"), "utf8");
+const manualReaderSource = readFileSync(resolve(process.cwd(), "server/domains/ops/inventoryPlanningManualRead.ts"), "utf8");
 const purchasePlanningSource = readFileSync(resolve(process.cwd(), "shared/inventoryPurchasePlanning.ts"), "utf8");
 const lingxingSyncSource = readFileSync(resolve(process.cwd(), "server/routers/lingxingSync.ts"), "utf8");
 const ownerAssignmentRouterSource = readFileSync(resolve(process.cwd(), "server/routers/inventoryOwnerAssignments.ts"), "utf8");
@@ -51,9 +54,12 @@ describe("导入模式库存规划接口契约", () => {
     expect(routerSource).toContain("const actualBreakEven = sellingPrice !== null");
     expect(productsPageSource).toContain("产品基本信息（USD）");
     expect(productsPageSource).toContain("costPanelOpen");
-    expect(productsPageSource).toContain("saveInventoryPlanningParameters");
-    expect(productsPageSource).toContain("sellingPrice * 0.85");
-    expect(productsPageSource).toContain("产品基本信息已保存，平手价和采购成本已同步更新");
+    expect(productsPageSource).toContain("InventoryPlanningEditor");
+    expect(productsPageSource).toContain("onEditCostParameters");
+    expect(productsPageSource).not.toContain("saveInventoryPlanningParameters");
+    expect(productsPageSource).toContain("* 0.85");
+    expect(planningEditorSource).toContain("client.inventoryPlanningWrite.execute.mutate");
+    for (const field of ["productCost", "estimatedFirstLegCost", "actualFirstLegCost", "estimatedFbaFee", "actualFbaFee", "sellingPrice", "estimatedDimensions", "actualDimensions", "estimatedWeight", "actualWeight", "dimensionUnit", "weightUnit", "currency"]) expect(planningEditorSource).toContain(field);
     expect(productsPageSource).toContain("预估尺寸 (in/cm)");
     expect(productsPageSource).toContain("实际尺寸 (in/cm)");
     expect(productsPageSource).toContain("预估重量 (lb/kg)");
@@ -184,8 +190,12 @@ describe("导入模式库存规划接口契约", () => {
   });
 
   it("库存规划以子 ASIN 独立覆盖生产、物流和缓冲时间，父 ASIN 不参与计算覆盖", () => {
-    expect(routerSource).toContain('item.scopeType === "asin" && item.asin === latest.asin');
+    expect(routerSource).toContain('resolveManualState({ scopeType: "asin", asin: latest.asin, storeName: latest.storeName, country: latest.country }, asOfDate)');
     expect(routerSource).not.toContain('item.scopeType === "parent_asin" && item.parentAsin === latest.parentAsin');
+    expect(manualReaderSource).toContain("createInventoryPlanningStateResolver");
+    expect(planningValuesSource).toContain('lookup({ scopeType: "store_country", storeName: scope.storeName, country: scope.country })');
+    expect(planningValuesSource).toContain('lookup({ scopeType: "workspace" })');
+    expect(planningValuesSource).toContain("Parent parameters must not be inherited");
     expect(inventoryPageSource).toContain("子 ASIN 库存规划表");
     expect(inventoryPageSource).toContain('scopeType: "asin"');
     expect(inventoryPageSource).not.toContain('scopeType: "parent_asin"');
@@ -209,8 +219,33 @@ describe("导入模式库存规划接口契约", () => {
   it("库存页以库存规划工作台替代旧预警主界面，并允许确认本地库存", () => {
     expect(inventoryPageSource).toContain("库存规划工作台");
     expect(inventoryPageSource).toContain("getInventoryPlanningFromImport");
-    expect(inventoryPageSource).toContain("confirmLocalInventory");
+    expect(inventoryPageSource).toContain("InventoryPlanningEditor");
+    expect(inventoryPageSource).not.toContain("confirmLocalInventory");
+    expect(planningEditorSource).toContain('action === "confirmLocal"');
     expect(inventoryPageSource).toContain("默认总货期");
+  });
+
+  it("人工记录读取失败明确报错，两个入口均显示重试而不以零库存/默认成本代替", () => {
+    expect(routerSource).toContain("loadInventoryPlanningManualReader");
+    expect(routerSource).not.toContain("optional local inventory or parameter query failed");
+    expect(manualReaderSource).toContain("PRECONDITION_FAILED");
+    expect(inventoryPageSource).toContain("planningError");
+    expect(inventoryPageSource).toContain("重新读取库存规划");
+    expect(productsPageSource).toContain("inventoryPlanningError");
+    expect(productsPageSource).toContain("重新读取产品成本与规划");
+    expect(routerSource).toContain("configuredTargetCoverDays: parameter.targetCoverDays");
+  });
+
+  it("启用新人工写路径时先阻断两个旧 writer，两个页面都不静默回退旧接口", () => {
+    const oldLocal = routerSource.slice(routerSource.indexOf("confirmLocalInventory: protectedProcedure"), routerSource.indexOf("saveInventoryPlanningParameters: protectedProcedure"));
+    const oldParameters = routerSource.slice(routerSource.indexOf("saveInventoryPlanningParameters: protectedProcedure"));
+    for (const source of [oldLocal, oldParameters]) {
+      expect(source.indexOf("assertLegacyInventoryPlanningWriteAllowed();")).toBeGreaterThan(0);
+      expect(source.indexOf("assertLegacyInventoryPlanningWriteAllowed();")).toBeLessThan(source.indexOf("await getDb()"));
+    }
+    expect(inventoryPageSource).not.toContain("saveInventoryPlanningParameters");
+    expect(productsPageSource).not.toContain("confirmLocalInventory");
+    expect(planningEditorSource).toContain("client.inventoryPlanningWrite.recover.mutate");
   });
 
   it("月度采购表按建议订货日归集三个月计划，并且只对已录入成本计算采购资金", () => {

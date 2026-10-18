@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import InventoryPlanningEditor, { subscribeInventoryPlanningChanges, type InventoryPlanningEditorTarget } from "./InventoryPlanningEditor";
 import { MANAGER_ROLES } from "@shared/const";
 import { buildUnifiedProductOverview } from "@shared/unifiedProductOverview";
 import { countLegacyFinancialProfitMonths, hasVerifiedSourceScope, isSameSourceProductScope, selectFinancialProfitsForProduct, shouldWaitForProductOverviewFallback } from "./productOverviewScope";
@@ -273,7 +274,7 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 }
 
 // ─── Product Row Component ───
-function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, ownerCandidates = [], isManagerOrAbove = false, onAssignSourceOwner, isAssigningSourceOwner = false, sortKey, sortDir, onSort, productionConfig, planningRows, financialProfits = [], legacyFinancialProfitMonths = 0, onSaveCostParameters, onSaveFinancialProfits }: {
+function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, ownerCandidates = [], isManagerOrAbove = false, onAssignSourceOwner, isAssigningSourceOwner = false, sortKey, sortDir, onSort, productionConfig, planningRows, financialProfits = [], legacyFinancialProfitMonths = 0, onEditCostParameters, onSaveFinancialProfits }: {
   product: ProductOverview;
   onNavigate: (product: ProductOverview) => void;
   onDelete: (id: number) => void;
@@ -291,7 +292,7 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
   productionConfig?: { productionTimeDays: number; shippingTimeDays: number; notes: string | null };
   planningRows?: any[];
   financialProfits?: any[];
-  onSaveCostParameters?: (row: any, values: Record<string, string>) => void;
+  onEditCostParameters?: (row: any) => void;
   legacyFinancialProfitMonths?: number;
   onSaveFinancialProfits?: (scope: { parentAsin: string; storeName?: string; country?: string; entries: Array<{ yearMonth: string; financialProfit: number }> }) => void;
 }) {
@@ -302,7 +303,6 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
   const [prodDays, setProdDays] = useState(productionConfig?.productionTimeDays ?? 15);
   const [shipDays, setShipDays] = useState(productionConfig?.shippingTimeDays ?? 30);
   const [costPanelOpen, setCostPanelOpen] = useState(false);
-  const [costDrafts, setCostDrafts] = useState<Record<string, Record<string, string>>>({});
   const [financialProfitOpen, setFinancialProfitOpen] = useState(false);
   const [financialProfitDrafts, setFinancialProfitDrafts] = useState<Record<string, string>>({});
   const hasManagedProfile = product.id > 0;
@@ -322,10 +322,6 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
   }), [financialProfits, financialProfitDrafts]);
   const productPlanningRows = useMemo(() => (planningRows || []).filter((row: any) => isSameSourceProductScope(row, product)), [planningRows, product]);
 
-  const getCostValue = (row: any, field: string) => costDrafts[row.asin]?.[field] ?? (row[field] == null ? "" : String(row[field]));
-  const updateCostDraft = (asin: string, field: string, value: string) => {
-    setCostDrafts(current => ({ ...current, [asin]: { ...(current[asin] || {}), [field]: value } }));
-  };
 
   // Compute inventory status
   const inventoryStatus = useMemo(() => {
@@ -601,23 +597,24 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
                     </thead>
                     <tbody>
                       {productPlanningRows.map((row: any) => {
-                        const toNumber = (field: string) => Number(getCostValue(row, field) || 0);
-                        const sellingPrice = toNumber("sellingPrice");
-                        const estimatedBreakEven = sellingPrice * 0.85 - toNumber("productCost") - toNumber("estimatedFirstLegCost") - toNumber("estimatedFbaFee");
-                        const actualBreakEven = sellingPrice * 0.85 - toNumber("productCost") - toNumber("actualFirstLegCost") - toNumber("actualFbaFee");
+                        const margin = (firstLeg: string, fba: string) => {
+                          const values = [row.sellingPrice, row.productCost, row[firstLeg], row[fba]].map(asFiniteMetric);
+                          return values.some(value => value === null) ? null : values[0]! * 0.85 - values[1]! - values[2]! - values[3]!;
+                        };
+                        const estimatedBreakEven = margin("estimatedFirstLegCost", "estimatedFbaFee"), actualBreakEven = margin("actualFirstLegCost", "actualFbaFee");
                         const fields = [
                           ["productCost", "产品成本"], ["estimatedFirstLegCost", "预估头程"], ["actualFirstLegCost", "实际头程"], ["estimatedFbaFee", "预估 FBA"], ["actualFbaFee", "实际 FBA"], ["sellingPrice", "售价"],
                         ] as const;
                         return <tr key={`${row.asin}-${row.storeName}-${row.country}`} className="border-b last:border-0">
                           <td className="px-2 py-1.5"><div className="font-medium">{row.asin}</div><div className="text-muted-foreground">{row.sku || "—"}</div></td>
-                          {fields.map(([field, label]) => <td key={field} className="px-1 py-1 text-right"><Input aria-label={`${row.asin}${label}`} type="number" min="0" step="0.01" className="h-7 w-[88px] text-right text-[11px]" value={getCostValue(row, field)} placeholder="0.00" onChange={event => updateCostDraft(row.asin, field, event.target.value)} /></td>)}
-                          <td className="px-1 py-1"><Input aria-label={`${row.asin}预估尺寸`} className="h-7 w-[120px] text-[11px]" value={getCostValue(row, "estimatedDimensions")} placeholder="长×宽×高" onChange={event => updateCostDraft(row.asin, "estimatedDimensions", event.target.value)} /></td>
-                          <td className="px-1 py-1"><Input aria-label={`${row.asin}实际尺寸`} className="h-7 w-[120px] text-[11px]" value={getCostValue(row, "actualDimensions")} placeholder="长×宽×高" onChange={event => updateCostDraft(row.asin, "actualDimensions", event.target.value)} /></td>
-                          <td className="px-1 py-1 text-right"><Input aria-label={`${row.asin}预估重量`} type="number" min="0" step="0.001" className="h-7 w-[92px] text-right text-[11px]" value={getCostValue(row, "estimatedWeight")} placeholder="0.000" onChange={event => updateCostDraft(row.asin, "estimatedWeight", event.target.value)} /></td>
-                          <td className="px-1 py-1 text-right"><Input aria-label={`${row.asin}实际重量`} type="number" min="0" step="0.001" className="h-7 w-[92px] text-right text-[11px]" value={getCostValue(row, "actualWeight")} placeholder="0.000" onChange={event => updateCostDraft(row.asin, "actualWeight", event.target.value)} /></td>
-                          <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${estimatedBreakEven < 0 ? "text-red-600" : "text-emerald-700"}`}>${estimatedBreakEven.toFixed(2)}</td>
-                          <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${actualBreakEven < 0 ? "text-red-600" : "text-emerald-700"}`}>${actualBreakEven.toFixed(2)}</td>
-                          <td className="px-2 py-1 text-center"><Button size="sm" className="h-7 text-[11px]" onClick={() => onSaveCostParameters?.(row, costDrafts[row.asin] || {})}>保存</Button></td>
+                          {fields.map(([field, label]) => <td key={field} aria-label={`${row.asin}${label}`} className="px-2 py-1.5 text-right">{row[field] == null ? "未知" : fmtCurrency(row[field])}</td>)}
+                          <td className="px-2 py-1.5">{row.estimatedDimensions == null ? "未知" : `${row.estimatedDimensions} ${row.dimensionUnit ?? "单位未知"}`}</td>
+                          <td className="px-2 py-1.5">{row.actualDimensions == null ? "未知" : `${row.actualDimensions} ${row.dimensionUnit ?? "单位未知"}`}</td>
+                          <td className="px-2 py-1.5 text-right">{row.estimatedWeight == null ? "未知" : `${row.estimatedWeight} ${row.weightUnit ?? "单位未知"}`}</td>
+                          <td className="px-2 py-1.5 text-right">{row.actualWeight == null ? "未知" : `${row.actualWeight} ${row.weightUnit ?? "单位未知"}`}</td>
+                          <td title="15%佣金假设下测算余额，非会计利润" className={`px-2 py-1.5 text-right tabular-nums font-medium ${estimatedBreakEven !== null && estimatedBreakEven < 0 ? "text-red-600" : "text-emerald-700"}`}>{estimatedBreakEven === null ? "未知" : `$${estimatedBreakEven.toFixed(2)}`}</td>
+                          <td title="15%佣金假设下测算余额，非会计利润" className={`px-2 py-1.5 text-right tabular-nums font-medium ${actualBreakEven !== null && actualBreakEven < 0 ? "text-red-600" : "text-emerald-700"}`}>{actualBreakEven === null ? "未知" : `$${actualBreakEven.toFixed(2)}`}</td>
+                          <td className="px-2 py-1 text-center"><Button size="sm" className="h-7 text-[11px]" disabled={!onEditCostParameters} onClick={() => onEditCostParameters?.(row)}>读取并编辑完整成本</Button></td>
                         </tr>;
                       })}
                     </tbody>
@@ -804,6 +801,7 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
 export default function OpsProducts() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
+  const [planningEditorTarget, setPlanningEditorTarget] = useState<InventoryPlanningEditorTarget | null>(null);
   const isManagerOrAbove = user?.role && (MANAGER_ROLES as readonly string[]).includes(user.role);
   const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("active");
@@ -905,9 +903,14 @@ export default function OpsProducts() {
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "ALL",
   });
 
-  const { data: inventoryPlanning } = trpc.dataImport.getInventoryPlanningFromImport.useQuery({
+  const { data: inventoryPlanning, isError: inventoryPlanningError, isFetching: inventoryPlanningFetching, refetch: refetchInventoryPlanning } = trpc.dataImport.getInventoryPlanningFromImport.useQuery({
     marketplace: marketplaceFilter,
   });
+  const planningOwnerKey = JSON.stringify([user?.id, user?.defaultWorkspaceId, user?.role, marketplaceFilter, inventoryPlanning?.asOfDate]);
+  useEffect(() => { setPlanningEditorTarget(null); }, [planningOwnerKey]);
+  useEffect(() => subscribeInventoryPlanningChanges(notice => {
+    if (notice.userId === user?.id && notice.workspaceId === user?.defaultWorkspaceId) void utils.dataImport.getInventoryPlanningFromImport.invalidate();
+  }), [user?.id, user?.defaultWorkspaceId, utils]);
   const { data: monthlyFinancialProfits } = trpc.dataImport.getMonthlyFinancialProfits.useQuery();
 
   // Production config for inventory status
@@ -915,13 +918,6 @@ export default function OpsProducts() {
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "US",
   });
 
-  const savePlanningParametersMut = trpc.dataImport.saveInventoryPlanningParameters.useMutation({
-    onSuccess: () => {
-      void utils.dataImport.getInventoryPlanningFromImport.invalidate();
-      toast.success("产品基本信息已保存，平手价和采购成本已同步更新");
-    },
-    onError: (error) => toast.error("产品基本信息保存失败", { description: error.message }),
-  });
   const saveMonthlyFinancialProfitsMut = trpc.dataImport.saveMonthlyFinancialProfits.useMutation({
     onSuccess: () => { void utils.dataImport.getMonthlyFinancialProfits.invalidate(); toast.success("财务利润已保存，趋势图已更新"); },
     onError: (error) => toast.error("财务利润保存失败", { description: error.message }),
@@ -1018,6 +1014,8 @@ export default function OpsProducts() {
 
   return (
     <div className="space-y-4">
+      <InventoryPlanningEditor target={planningEditorTarget} onClose={() => setPlanningEditorTarget(null)} />
+      {inventoryPlanningError && <section role="alert" className="space-y-2 rounded border p-3 text-sm"><p>库存规划及产品成本来源不可读，未使用旧成本、零值或默认值替代。六个月财务利润仍为独立功能。</p><Button variant="outline" onClick={() => void refetchInventoryPlanning()}>重新读取产品成本与规划</Button></section>}
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-xs text-blue-800">
         <Badge variant="outline" className="border-blue-200 bg-white text-blue-700">统一产品视图</Badge>
         <span>同一父ASIN、店铺和站点仅显示一张卡片；领星ASIN周数据经系统汇总为父ASIN自然周事实，ERP仅补充未覆盖的历史周。</span>
@@ -1306,36 +1304,11 @@ export default function OpsProducts() {
                 }
               }}
               productionConfig={productionConfigs?.[product.parentAsin]}
-              planningRows={inventoryPlanning?.rows || []}
+              planningRows={inventoryPlanningError ? [] : inventoryPlanning?.rows || []}
               financialProfits={selectFinancialProfitsForProduct(monthlyFinancialProfits || [], product)}
               legacyFinancialProfitMonths={countLegacyFinancialProfitMonths(monthlyFinancialProfits || [], product)}
               onSaveFinancialProfits={(scope) => saveMonthlyFinancialProfitsMut.mutate(scope)}
-              onSaveCostParameters={(row, values) => savePlanningParametersMut.mutate({
-                scopeType: "asin",
-                asin: row.asin,
-                parentAsin: row.parentAsin,
-                storeName: row.storeName,
-                country: row.country,
-                productionDays: Number(row.productionDays ?? 30),
-                shippingDays: Number(row.shippingDays ?? 30),
-                bufferDays: Number(row.bufferDays ?? 10),
-                targetCoverDays: Number(row.targetCoverDays ?? 30),
-                moq: Number(row.moq ?? 0),
-                packSize: Number(row.packSize ?? 1),
-                productCost: Number(values.productCost ?? row.productCost ?? 0),
-                estimatedFirstLegCost: Number(values.estimatedFirstLegCost ?? row.estimatedFirstLegCost ?? 0),
-                actualFirstLegCost: Number(values.actualFirstLegCost ?? row.actualFirstLegCost ?? 0),
-                estimatedFbaFee: Number(values.estimatedFbaFee ?? row.estimatedFbaFee ?? 0),
-                actualFbaFee: Number(values.actualFbaFee ?? row.actualFbaFee ?? 0),
-                sellingPrice: Number(values.sellingPrice ?? row.sellingPrice ?? 0),
-                estimatedDimensions: String(values.estimatedDimensions ?? row.estimatedDimensions ?? "") || undefined,
-                actualDimensions: String(values.actualDimensions ?? row.actualDimensions ?? "") || undefined,
-                estimatedWeight: values.estimatedWeight === "" ? undefined : Number(values.estimatedWeight ?? row.estimatedWeight ?? 0),
-                actualWeight: values.actualWeight === "" ? undefined : Number(values.actualWeight ?? row.actualWeight ?? 0),
-                dimensionUnit: "in",
-                weightUnit: "lb",
-                currency: "USD",
-              })}
+              onEditCostParameters={!inventoryPlanningError && !inventoryPlanningFetching && inventoryPlanning?.asOfDate && user?.defaultWorkspaceId ? row => setPlanningEditorTarget({ owner: { userId: user.id, workspaceId: user.defaultWorkspaceId!, role: user.role }, scope: { scopeType: "asin", asin: row.asin, storeName: row.storeName, country: row.country }, asOfDate: inventoryPlanning.asOfDate!, marketplace: marketplaceFilter, mode: "cost" }) : undefined}
             />
           ))}
         </div>

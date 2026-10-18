@@ -1,0 +1,67 @@
+{
+  "schema": "amazon-system-integration-review/v1",
+  "date": "2026-10-18",
+  "batch": "P4-B1-inventory-manual-and-product-parameters",
+  "decision": "local_source_integration_with_changed_module_checks_not_runtime_release_acceptance",
+  "baseline": "c566f1be8615975ead4e506587f2391cefb960a2",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "implemented": [
+    "Both inventory and product overview manual editors use one fresh-read, field-patch, full manual-state compare-and-swap contract. All19 values, four scopes, explicit null, decimal precision and existing cm/kg/in/lb units are retained.",
+    "Canonical child identity excludes legacy parent metadata. Old conflicting duplicate parameter rows are refused rather than arbitrarily selected, merged or erased. Exact raw country identity is retained with alias/collation conflict detection.",
+    "First child save inherits complete effective store/workspace parameters before applying only explicit edits. Parent-ASIN parameters remain independent and never override child calculations. Original per-user manual values remain private to that user within the workspace.",
+    "Local absolute quantities support all valid historical and future effective dates. Atomic insertion and superseding preserves all history, including deterministic same-date highest-ID selection. Future records do not change current-as-of quantities.",
+    "Required transactions, workspace/actor locks, fresh numeric active membership and manager/directory/resource policy, bounded complete saved-state reads and durable final UUID receipts. Explicit check/cancel remains available with the write flag off and current read/cancel authorization.",
+    "Original planning reads no longer turn failed/manual malformed queries into zero stock or defaults. Both pages display failure and retry. Configured targetCoverDays is separate from derived coverage values.",
+    "Default-off new writer has an explicit cutoff for the two old mutations when enabled. New pages never fall back to the unsafe legacy writers; old in-flight requests must be drained before release enablement.",
+    "Component-owned UUID/target association preserves another window's dirty draft after recovery, even for the same ASIN. Cross-window reservations, cancellation confirmation binding, same-UUID recovery and explicit rebase protect unknown outcomes. Original decimal strings are checked before numeric conversion to prevent underflow or rounding.",
+    "Inventory and monthly purchase CSV controls now use current React handlers instead of stale DOM-injected closures. Original filters, sorting, owner/lifecycle controls, legacy diagnostics, six-month financial trend and purchase calculations remain."
+  ],
+  "sourceCasBoundary": "Complete relevant actor-private manual rows plus whole-marketplace source-selection directory and current selected-date target facts. This manual-write batch does not publish a replenishment calculation or bind all30-day sales history. Existing calculation/read algorithm remains unchanged.",
+  "sourcePriority": "Preserve whole-marketplace lx_inventory_mcp priority; otherwise existing lingxing/lingxing_mcp/saihu daily facts. Independent P4-A supplier inventory snapshot is not substituted into planning.",
+  "verification": {
+    "frozenCandidate": { "baselineBlobs": 2642, "finalUnchangedNonOverlayBlobs": 2635, "exactOverlays": 25, "sourceProofSha256": "7c908533b4c3a341029cbb6eeb910a71ce50274aec688a057c4c48fc4cfb1351", "allUnrelatedUntrackedLedgerHelpersExcluded": true },
+    "focusedUnion": { "testFiles": 16, "tests": 359, "passed": 359, "failed": 0, "exitCode": 0,
+      "breakdown": { "sharedAndJournal": 122, "repository": 72, "router": 15, "manualReader": 16, "legacyCutoff": 7, "permissions": 3, "pageContracts": 25, "dateWorkspaceBehavior": 8, "erpContract": 3, "lifecycleContract": 3, "overviewDailyContract": 2, "calculator": 5, "schemaContract": 4, "overviewScope": 3, "financialRenderState": 1, "editorComponent": 70 } },
+    "pureIndexPlanner": { "tests": 36, "passed": 36, "executedDdl": false },
+    "lint": { "files": 23, "warnings": 0, "exitCode": 0 },
+    "fullTypecheck": { "unchangedTsconfig": true, "incremental": false, "compilerFiles": 3802, "diagnostics": 0, "exitCode": 0 },
+    "protectedBaseline": { "files": 106, "dependencies": 2, "reviewedRecords": 25, "failures": 0 },
+    "clientRuntimeIdentifiers": "passed",
+    "serverBundles": ["web", "aiWorker", "scheduler"],
+    "independentReview": ["Shared/repository exact fields, identity, transactions and journal independently cross-reviewed", "UI cross-window draft loss and numeric string precision defects corrected and independently re-reviewed"],
+    "syntheticBrowser": {
+      "realComponent": "InventoryPlanningEditorController",
+      "componentSha256": "7171b99f14dc0921c8bcdce3fe548dab3e49bb134894f132e21000031c4aa5d5",
+      "transport": "In-memory schema-checked synthetic RPC only; no authenticated production application, DB or provider",
+      "verified": ["1e-400 rejected before any execute; valid productCost18.75 patch is the only edited field and cm/kg/null/target75 preserved", "Future2026-11-01 absolute28 record appended while asOf2026-10-18 remains9", "Lost commit acknowledgement checked via sameUUID with writes disabled:1 execute,1 business write,1 check,1 successful broadcast", "Unknown uncommitted request:1 execute,1 check,1 cancel,0 business writes; draft retained and new save blocked until explicit rebase", "Read failure shows no fabricated editable defaults", "390px iframe:document388/scroll388,dialog client339/scroll339; no horizontal overflow and valid edit saved"],
+      "artifacts": ["outputs/inventory-planning-browser-20261018/cost-success-final.png", "outputs/inventory-planning-browser-20261018/future-local-final.png", "outputs/inventory-planning-browser-20261018/recovered-commit-final.png", "outputs/inventory-planning-browser-20261018/cancelled-draft-final.png", "outputs/inventory-planning-browser-20261018/read-failure-final.png", "outputs/inventory-planning-browser-20261018/narrow-editor-final.png"],
+      "limitations": ["Cross-tab distinct draft behavior is covered by70 component tests and independent review, not claimed as real multi-tab DB acceptance", "Initial pre-final Vite process cached old module after reload because watching was disabled; final acceptance used a newly restarted server with frozen final source", "Synthetic iframe is a narrow component viewport, not complete authenticated two-page browser acceptance"],
+      "cleanup": "Temporary tab8 closed; final test server PID93926 terminated after verification; no global viewport override"
+    }
+  },
+  "schemaPlan": {
+    "candidate": "unassigned_inventory_planning_actor_indexes",
+    "migrationNumber": null,
+    "plannedOnly": true,
+    "preserves0314InventoryCollection": true,
+    "registered": false,
+    "executed": false,
+    "notes": "Only three actor-aware existing-manual-table index requirements; current0143 parent index can satisfy one. No automatic CREATE baseline, UNIQUE repair, backfill, alias merge or history deletion."
+  },
+  "remaining": [
+    "Actual MySQL schemas, native locks/isolation, full collation/duplicate checks, concurrent old writers/imports, transactional readback and unknown commit recovery",
+    "Separate reviewed index migration assignment and safe backup/recovery, legacy in-flight writer drain and authenticated two-page acceptance before enabling",
+    "P4-B2 shared-workspace owner assign/revoke/reactivation and lifecycle restore versus automatic-writer races remain unimplemented",
+    "P1-P6, K01-K10, T01-T28, image62/master27/supplements12, Listing/Agent/operations and all prior runtime/storage/configuration/release gates remain",
+    "Final approved publication to gaozhenshao-hub/amazon-listing-tool main requires current remote-history validation, secrets/business-data exclusion and necessary release checks"
+  ],
+  "productionDatabaseChanged": false,
+  "providerCalls": 0,
+  "modelCalls": 0,
+  "scheduledSyncChanged": false,
+  "flagEnabled": false,
+  "pushed": false,
+  "deployed": false,
+  "fullP1Complete": false,
+  "fullObjectiveComplete": false
+}

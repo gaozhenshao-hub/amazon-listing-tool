@@ -1144,9 +1144,9 @@
         "sha256": "eb2c9057f6ba6de8fa0fa8ccf9120e0a5804c6706bc107861aecbe9abd0a31e9"
       },
       "reviewed": {
-        "gitBlobSha1": "3038566c62b912acc18972ca101d1db3d38779fa",
-        "sha256": "b5829f4f6efad587c7c177283f2079e37d0e4495cca95fc329bac5c92ab9393e",
-        "reviewRef": "config/integration/reviews/date-range-workspace-20261015.json; explicit currentWS-or-legacy AND originaluser scope; Root34new/full5437unit14oldskip/types/scopedlint and independent8case source review; actualHTTP still pending"
+        "gitBlobSha1": "3d91e7281ec297be08bcf9465c42a3a25fc1bebc",
+        "sha256": "20e483102fe019899eb3b470d324a562b6b673f586e49e21723dc82606803697",
+        "reviewRef": "config/integration/reviews/inventory-planning-read-write-20261018.json; retain date-range/workspace review; actor-private complete manual state read and explicit legacy writer cutoff only"
       }
     },
     {

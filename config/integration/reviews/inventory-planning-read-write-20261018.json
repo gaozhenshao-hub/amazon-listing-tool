@@ -1,0 +1,29 @@
+{
+  "version": "amazon-protected-baseline-review/1",
+  "reviewedOn": "2026-10-18",
+  "control": "K09",
+  "decision": "explicit_local_reviewed_allowance_not_production_acceptance",
+  "scope": [
+    "Replace catch-and-continue empty manual arrays with complete bounded actor-private parameter/local history reads and a strict indexed resolver. Read failure is not zero inventory or confirmed defaults.",
+    "Preserve child ASIN then store-country then workspace then system defaults. Parent-ASIN parameters remain stored but do not override child calculations. Preserve all cost, packaging, unit, date and local confirmation lineage fields.",
+    "Detect conflicting duplicate child parameter identities even if legacy parent metadata differs. Retain raw country identity and same-date highest-ID local selection; do not merge or repair existing rows.",
+    "Add configuredTargetCoverDays separately from calculated coverage. Keep calculateInventoryPlan formula, original day-source selection and all other legacy APIs unchanged.",
+    "Before any DB access, block only the two legacy manual mutations when ENABLE_MERGED_OPS_INVENTORY_PLANNING_WRITES is exactly true. Old compatibility remains when false; new pages never fall back to unsafe writers. Drain old in-flight requests before enabling new writes."
+  ],
+  "protectedFile": {
+    "path": "server/routers/dataImport.ts",
+    "baseline": { "gitBlobSha1": "65ea86c5448be8126c8495e524468923c654f3c5", "sha256": "eb2c9057f6ba6de8fa0fa8ccf9120e0a5804c6706bc107861aecbe9abd0a31e9" },
+    "previousReviewed": { "gitBlobSha1": "3038566c62b912acc18972ca101d1db3d38779fa", "sha256": "b5829f4f6efad587c7c177283f2079e37d0e4495cca95fc329bac5c92ab9393e", "reviewRef": "config/integration/reviews/date-range-workspace-20261015.json" },
+    "reviewed": { "gitBlobSha1": "3d91e7281ec297be08bcf9465c42a3a25fc1bebc", "sha256": "20e483102fe019899eb3b470d324a562b6b673f586e49e21723dc82606803697" }
+  },
+  "verification": {
+    "rootInitialChecks": { "manualReader": 16, "legacyCutoff": 7, "resourcePermissions": 3, "existingPageContracts": 25, "exitCode": 0 },
+    "focusedUnion": "Final frozen-source evidence is recorded in the separate inventory planning integration review after all final checks."
+  },
+  "unchanged": { "baselineHashesRetained": true, "originalDateAndWorkspaceGates": true, "actorPrivateManualSemantics": true, "sharedOwnerLifecycleSemantics": true, "lingxingSourcePriority": true, "inventoryFormula": true, "listingAndImportHandlers": true, "financialTrend": true, "production": true },
+  "remaining": [
+    "Actual MySQL schema, indexes, collation collisions, concurrent transactions, same-operation recovery and release checks",
+    "P4-B2 owner assignment and lifecycle shared writes are not accepted by this batch",
+    "All original P1-P6, K01-K10, T01-T28 and image/expression/release gates remain; no migration or flag activation"
+  ]
+}
