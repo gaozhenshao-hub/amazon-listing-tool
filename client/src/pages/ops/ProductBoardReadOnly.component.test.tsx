@@ -10,6 +10,7 @@ const controls = vi.hoisted(() => ({ auth: { loading: false, error: null as Erro
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => controls.auth }));
 vi.mock("@/hooks/usePermissions", () => ({ usePermissions: () => controls.permissions }));
 vi.mock("@/lib/trpc", () => ({ trpc: { useUtils: () => ({ client: { productBoardRead: { get: { query: controls.query } } } }) } }));
+vi.mock("./ProductTasksReadOnly", () => ({ ProductTasksEmbeddedReadOnly: ({ product }: { product: unknown }) => <section aria-label="精确产品任务入口">{JSON.stringify(product)}</section> }));
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
 function input(patch: Partial<ProductBoardReadInput> = {}): ProductBoardReadInput { return ProductBoardReadInputSchema.parse({ expectedWorkspaceId: 11, month: "2026-10", storeName: "合成店铺", country: "US", search: "", highReturnsOffset: 0, highProfitOffset: 0, losingOffset: 0, allOffset: 0, pageSize: 10, ...patch }); }
@@ -38,6 +39,22 @@ beforeEach(() => { controls.auth = { loading: false, error: null, user: { id: 7,
 afterEach(cleanup);
 
 describe("explicit readonly product board gates", () => {
+  it("mounts a separately authorized task reader only for an expanded exact product and clears it on scope edits", async () => {
+    controls.query.mockResolvedValue(result()); render(<ProductBoardReadOnly />); fillScope(); await readReady();
+    expect(screen.queryByLabelText("精确产品任务入口")).not.toBeInTheDocument();
+    openProduct();
+    expect(screen.getByLabelText("精确产品任务入口")).toHaveTextContent(JSON.stringify({ workspaceId: 11, storeName: "合成店铺", country: "US", parentAsin: "P00" }));
+    fireEvent.change(screen.getByLabelText("产品看板站点 / 国家代码"), { target: { value: "CA" } });
+    expect(screen.queryByLabelText("精确产品任务入口")).not.toBeInTheDocument();
+    expect(controls.query).toHaveBeenCalledTimes(1);
+  });
+  it("never invents an exact task product for unallocated originals", () => {
+    const tasks = vi.fn(() => <p>任务入口</p>);
+    render(<ProductBoardReadOnlyContent result={result(input(), { kinds: true })} renderProductTasks={tasks} />);
+    const board = within(screen.getByRole("region", { name: "全部产品" }));
+    for (const toggle of board.getAllByRole("button", { name: "展开 未分配原行 全部子体与原行" })) fireEvent.click(toggle);
+    expect(tasks).not.toHaveBeenCalled();
+  });
   it("does no automatic read and excludes private controls from the debug collector", () => { const view = render(<ProductBoardReadOnly />); expect(controls.query).not.toHaveBeenCalled(); expect(view.container.firstElementChild).toHaveClass("manus-no-record"); expect(controls.permissions.canRead).toHaveBeenCalledWith("ops", "ops_data_import"); expect(screen.queryByRole("button", { name: /上传|保存|同步|AI|归档|下载/ })).not.toBeInTheDocument(); });
   it.each([
     ["auth pending", () => { controls.auth.loading = true; }], ["auth error", () => { controls.auth.error = new Error("private-error"); }], ["logout", () => { controls.auth.user = null; }], ["invalid id", () => { controls.auth.user!.id = 0; }], ["null workspace", () => { controls.auth.user!.defaultWorkspaceId = null; }], ["missing workspace", () => { controls.auth.user!.defaultWorkspaceId = undefined; }], ["negative workspace", () => { controls.auth.user!.defaultWorkspaceId = -1; }], ["empty role", () => { controls.auth.user!.role = ""; }], ["permission pending", () => { controls.permissions.isLoading = true; }], ["permission denied", () => { controls.permissions.canRead.mockReturnValue(false); }],

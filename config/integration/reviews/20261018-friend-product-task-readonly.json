@@ -1,0 +1,244 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "friend-global-and-inline-product-task-readonly",
+  "baseline": "ab15ff63f6071c3afbe7ecb851536a2602e8e815",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary",
+    "generalP5Skills": "Qingdao-primary",
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSelection": "friend-primary; select, preview and generate; upload supplemental"
+  },
+  "localOnly": true,
+  "scope": "Global saved task board including legitimate unlinked tasks, and separately authorized exact workspace/store/country/parent product inline tasks. Readonly part of the friend workflow; not the complete task module or production acceptance.",
+  "preserve": [
+    "P0-P6/K01-K10/T01-T28/image62/master27/supplements12",
+    "prior product/profit/monthly/inventory/cost/Listing/Agent integrations",
+    "existing Lingxing contracts and user-primary Listing Skills"
+  ],
+  "changes": [
+    "Register productTaskRead.list/detail, mount global readonly view in default-off operations overview and exact-product task reader only after product expansion; both require explicit read.",
+    "Keep backlog/todo/in_progress/review/done, numeric assignee and raw category/status/search filters, four group modes, complete filtered statistics before stable createdAt/id cursor pages. Pending means all four non-done states.",
+    "Lock current actor and strict ops_data.read plus ops_dashboard/ops_tasks directory permissions within the same transaction. Only admin/super_admin see all workspace tasks; operations managers do not inherit full-financial access. No hardcoded-name buddy expansion.",
+    "Read fixed authorized candidate set, tasks/profiles/attachments under FOR SHARE; bound task/attachment count at5000, source8MiB and result4MiB, including UTF8 attachment budgets before body loading. No storage paths or signed links returned.",
+    "Prefer complete saved product snapshot as one source; never patch missing snapshot fields from a different current profile. Preserve profile change diagnostics and distinguish unlinked/incomplete/conflict/unavailable; bind exact workspace/store/country/parent.",
+    "Keep original task description, original date/invalid-date diagnostics, completed time, multiline completion notes and raw legacy fields. Missing optional columns or tables are unavailable, not empty or zero.",
+    "Independent task and attachment paging with full metadata, source/view/task hashes and abort/sequence guards. Any detail permission/version/response failure clears entire old read results and requires explicit reload.",
+    "Strict response validators replay evidence and page/all-filter statistics; explicit filters constrain full totals, not merely visible rows. Ordinary UI also rejects foreign numeric-assignee statistics.",
+    "Keep task rows cross-month without reassigning old associations or conferring financial/sync rights."
+  ],
+  "review": {
+    "root": "Inspected complete repository/router/shared/UI implementation and root integration; corrected root test's multiple unallocated row selector. Ran final union and real IAB synthetic cases. Verified 13 source/candidate hashes and unchanged tsconfig.",
+    "independent": "Backend reviewed shared/route source boundary; UI reviewer reproduced full-statistics filter and old-detail retention bugs, repaired and covered with seven component regressions. Shared reviewer tightened evidence replay and seven full-statistics filter constraints. No author test is represented as actual database proof.",
+    "findingsResolved": [
+      "Historical snapshot without title must not use a rebound current product's title",
+      "Complete evidence cannot be downgraded to pretend unlinked/incomplete",
+      "Full statistics obey explicit filters and page counts/group counts",
+      "Ordinary task readers reject other assignees in full statistics",
+      "Detail failure clears old task contents even when attachments unavailable",
+      "Attachment filename permits valid multibyte names within500chars/2000UTF8bytes; metadata size checked before names"
+    ],
+    "protectedManifestSha256": "23c7665c328f8f1fb367c66e893f81e65014244d1f4d77002076964f72e72d12",
+    "baselineTupleSha256": "b5a228f5b51180bc6f903384d146997cda316f77da807e7abcb20ce7b4faee40"
+  },
+  "verification": {
+    "focusedUnion": {
+      "session": 13004,
+      "exitCode": 0,
+      "files": 7,
+      "tests": 609,
+      "breakdown": {
+        "taskSharedAndRouter": 137,
+        "taskRepository": 72,
+        "taskUi": 88,
+        "overview": 13,
+        "productUi": 87,
+        "productSharedAndRouter": 142,
+        "productRepository": 70
+      },
+      "note": "Imported shared suites counted once. Earlier592-run failed one ambiguous test selector and is not accepted/additive; corrected final609 naturally passed."
+    },
+    "scopedLint": {
+      "chunk": "dedf7a",
+      "files": 13,
+      "exitCode": 0
+    },
+    "configuredTypes": {
+      "status": "passed-full-configured-nonincremental-frozen-candidate",
+      "exitCode": 0,
+      "session": 59354,
+      "command": "node_modules/.bin/tsc --noEmit --incremental false",
+      "directory": "/Users/gavin/.cache/amazon-task-candidate-20261018.eXCEcQ",
+      "verifiedBaselineBlobs": 2556,
+      "verifiedFrozenOverlays": 13,
+      "fullTsconfigUnchanged": true,
+      "sourceProof": {
+        "path": "outputs/amazon-task-candidate-source-proof-20261018.json",
+        "bytes": 4011,
+        "sha256": "558830a83851826fcaf91500b7e2213e530bc023751e2b10b96fbb44882f5274"
+      },
+      "earlierConfiguredIncremental": {
+        "session": 41959,
+        "exitCode": 0,
+        "note": "Unchanged config has incremental=true and shared node_modules tsbuildinfo; separately reran nonincremental for accepted full check."
+      }
+    },
+    "protectedGuard": {
+      "chunk": "9977e1",
+      "files": 106,
+      "dependencies": 2,
+      "reviewedRecords": 25,
+      "exitCode": 0
+    },
+    "diffCheck": {
+      "trackedNamedPathsExitCode": 0,
+      "all13SourceWhitespaceAndEofChecks": true,
+      "allNewAndChangedPathsRequiredBeforeCommit": true
+    },
+    "actualSyntheticBrowser": {
+      "scope": "Actual shared builder/schema + pure UI, synthetic fixtures and harness controls. Not a real authenticated wrapper/database/production test.",
+      "verified": [
+        "34 tasks ordered34..1 at identical timestamps; pages20+14 and return-to-first preserve all. Five-state totals7,7,7,7,6 and pending28.",
+        "Task34 displays full long description and multiline notes; literal HTML remains text, no img nodes.25 metadata files paginate20+5 and return; no download links.",
+        "Four group modes preserve raw category and all-filter counts; four store/country combinations with same parent remain separate.29 exactA/US tasks, pending24/done5; done rows collapsed until explicit expansion.",
+        "review filter returns7; search for description suffix returns1 without summary truncation. Same display-name assignees stay separate; ordinary fixture contains only17 even-ID tasks assigneduser7.",
+        "Missing optional columns/attachmenttable show unknown; missing whole task table and incomplete sources show no table/falsezero. Final whole-table-missing fixture capabilities corrected to all unavailable and rerun.",
+        "Desktop1280 document1265; mobile390 document375. Mobile local table326->1400; no horizontal body overflow; mobile page2 returns14/34.",
+        "Console warn/error empty, temporary tab closed and viewport restored."
+      ],
+      "references": [
+        {
+          "path": "outputs/product-task-readonly-browser-20261018/desktop.png",
+          "bytes": 104197,
+          "sha256": "801343434ff25bc7daba9f49697d48382b8b56a50e755cb40f91743d2f496bc5"
+        },
+        {
+          "path": "outputs/product-task-readonly-browser-20261018/mobile.png",
+          "bytes": 41661,
+          "sha256": "ad48b502ac3a32eef49e07c4ce13efaccd34e19a8fe9c808f8a9402b15e688a7"
+        },
+        {
+          "path": "outputs/product-task-readonly-browser-20261018/entry.tsx",
+          "bytes": 8617,
+          "sha256": "9fb4a8018adba5f765fcf9daa5ad173c23b14a8b07a611281d9c266ccb763513"
+        },
+        {
+          "path": "outputs/product-task-readonly-browser-20261018/serve.mjs",
+          "bytes": 2404,
+          "sha256": "0615c13ba432d1e585f2ddec7ebb20242fef99b5c744678ded50f6be6c1dde8a"
+        },
+        {
+          "path": "outputs/product-task-readonly-browser-20261018/styles.css",
+          "bytes": 214,
+          "sha256": "9a3ca31e970def536d6470a816f921206e170da53080063d0e7290974f8d6fa7"
+        },
+        {
+          "path": "outputs/product-task-readonly-browser-20261018/index.html",
+          "bytes": 275,
+          "sha256": "879ca642bedaf5f98c0e27bcabf1ed74f3190ed93d7dc0d732eca38fd54bf99e"
+        }
+      ],
+      "servers": [
+        {
+          "session": 11282,
+          "pid": 79360,
+          "exitCode": 143,
+          "reason": "explicit stop to load frozen source",
+          "observedGetRequests": 26
+        },
+        {
+          "session": 7400,
+          "pid": 79519,
+          "exitCode": 143,
+          "reason": "explicit stop after fixture missing-table capability correction",
+          "observedGetRequests": 26
+        },
+        {
+          "session": 25109,
+          "pid": 79692,
+          "exitCode": 143,
+          "reason": "final temporary harness stopped",
+          "observedGetRequests": 26
+        }
+      ],
+      "mutatingRequestsObserved": 0,
+      "modelCalls": 0
+    }
+  },
+  "pending": [
+    "Actual MySQL driver/JSON/column capabilities, locks/revocation/concurrency/performance and authenticated business browser workflow remain unaccepted; no DDL or database writes in this batch.",
+    "Controlled P4 task creation/edit/assignee and exact product candidates, trusted numeric buddy read relationships, and private attachment upload/download/delete lifecycle remain.",
+    "Task schema prerequisites (nullable productProfileId,completion_notes,board_product,attachment table/indexes) require audited migration/adoption/recovery; do not execute friend's manual script automatically.",
+    "Tasks persist across months; profit archive/reason notes belong to a distinct model. Latest complete month/operator filters, archive/restatement policies, monthly15th scheduling and formal product/profit/task business tabs remain.",
+    "General P5 Qingdao Skill approvals and Listing user Skill approvals, worker/model/config/budget, original evidence acquisition, P1/native303 and full P4-P6/release gates remain. Full objective not complete.",
+    "Final GitHub push repository/branch must be resolved; private friend access does not authorize public disclosure. Production not deployed."
+  ],
+  "sourceFiles": [
+    {
+      "path": "shared/productTaskRead.ts",
+      "size": 40068,
+      "sha256": "0bcef4c6adedc914aabb87137873cee0a43caea45ecdd91329b65e163664e4a4"
+    },
+    {
+      "path": "shared/productTaskRead.test.ts",
+      "size": 27028,
+      "sha256": "918b2a1648ae4a5f8d0ca70afd6bd66dbc60a59f5e439e70b6b96d8b292573b5"
+    },
+    {
+      "path": "server/domains/ops/productTaskReadRepository.ts",
+      "size": 23696,
+      "sha256": "b17237775a86c1658263b4896880e7642e8d7fa1d8e3525af2c00e6b8c9b54c5"
+    },
+    {
+      "path": "server/domains/ops/productTaskReadRepository.test.ts",
+      "size": 29094,
+      "sha256": "1a501ba4fcc72a42818bd89944c305feb5d89d5239417bdeed4bada212f4a97d"
+    },
+    {
+      "path": "server/routers/productTaskRead.ts",
+      "size": 572,
+      "sha256": "19f92650dd7dd2aaf747580d822c4570fba9f2817bd573815778330e9060b48b"
+    },
+    {
+      "path": "server/routers/productTaskRead.test.ts",
+      "size": 4103,
+      "sha256": "d7c8c4b1389c70493e276591ab3a15432fe2bbfb3e64b83319c4367fd4c77be5"
+    },
+    {
+      "path": "server/routers.ts",
+      "size": 10320,
+      "sha256": "bc19c98a121f7f0db28af1b0b1e79cdcf008675e4e6b8c3a2ab876c0c343ac6f"
+    },
+    {
+      "path": "client/src/pages/ops/ProductTasksReadOnly.tsx",
+      "size": 33114,
+      "sha256": "b88e347f0747c95a19e623af5d77713a47270f363576aeaa0c39272da4e95869"
+    },
+    {
+      "path": "client/src/pages/ops/ProductTasksReadOnly.component.test.tsx",
+      "size": 32102,
+      "sha256": "1b17bf375bb7576dc23e114d5558b62e7f5694702741f5033b13df299c038e53"
+    },
+    {
+      "path": "client/src/pages/ops/OperationsReadOnlyOverview.tsx",
+      "size": 22234,
+      "sha256": "03a1af0501d2234f2eb39fdeda9f1c83eb5fe54d7230ed785d7ed1ad37c4dbd9"
+    },
+    {
+      "path": "client/src/pages/ops/OperationsReadOnlyOverview.component.test.tsx",
+      "size": 14471,
+      "sha256": "9b0cdbda55e82f249bf0302ea5a8461039e86e611cb9f36069aa821f9b0bb761"
+    },
+    {
+      "path": "client/src/pages/ops/ProductBoardReadOnly.tsx",
+      "size": 26996,
+      "sha256": "c5242ff37ab72ab954c1b8b8c8e230249d4a9231e2abbda1aa37cc956ab42c64"
+    },
+    {
+      "path": "client/src/pages/ops/ProductBoardReadOnly.component.test.tsx",
+      "size": 34477,
+      "sha256": "ada0c2af32e6d40ce5053d022e5823184911a587902819989b9e88db81b66099"
+    }
+  ]
+}
