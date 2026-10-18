@@ -11,6 +11,8 @@ import { competitorRevision } from "../project/competitorWritePolicy";
 import type { CompetitorAnalysis } from "../../../drizzle/schema/project";
 import { COMPETITOR_DEEP_INPUT_MAX_BYTES, createCompetitorDeepExecutionStore, decodeCompetitorDeepExecutionInput,
   type CompetitorDeepStoredInput, type CompetitorDeepExecutionScope } from "./competitorDeepExecutionRepository";
+import { deepFixture } from "../../domains/listing/services/competitorDeepJob.testFixture";
+import { deepRuntimeHash } from "../../domains/listing/services/competitorDeepRuntimeContract";
 
 const hash = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 const clone = <T>(value: T): T => structuredClone(value);
@@ -84,6 +86,8 @@ function fixture(stored = input(), fixedScope = scope()) {
       leaseUntil: new Date(Date.now() + 60_000) as Date | null, inputText: JSON.stringify(stored, null, 2),
       outputText: null as string | null, errorMessage: null as string | null, completedAt: null as Date | null },
     user: { id: 3, role: "admin", status: "active", defaultWorkspaceId: fixedScope.workspaceId },
+    workspace: { id: fixedScope.workspaceId, status: "active" },
+    members: [{ userId: 3, workspaceId: fixedScope.workspaceId, status: "active" }],
     project: { id: 11, userId: 3, workspaceId: stored.evidence.identity.sourceWorkspaceId }, analysis: row,
     agents: [{ runId: stored.agentRunId, agentSlug: "listing.full.workflow", userId: 3, workspaceId: fixedScope.workspaceId, projectId: 11, status: "running" }],
     nodes: [{ runId: stored.agentRunId, agentSlug: "listing.full.workflow", nodeId: "N1", workspaceId: fixedScope.workspaceId, status: "running" }],
@@ -113,6 +117,8 @@ function fixture(stored = input(), fixedScope = scope()) {
           let output: unknown;
           if (q.sql.includes("FROM ai_jobs")) output = [[{ ...draft.job, inputBytes: Buffer.byteLength(draft.job.inputText, "utf8"), inputTextHash: hash(draft.job.inputText), ...control.readPatch }], []];
           else if (q.sql.includes("FROM users")) output = [[draft.user], []];
+          else if (q.sql.includes("FROM workspaces")) output = [[draft.workspace], []];
+          else if (q.sql.includes("FROM workspace_memberships")) output = [draft.members, []];
           else if (q.sql.includes("FROM projects")) output = [[draft.project], []];
           else if (q.sql.includes("FROM competitorAnalyses")) output = [[draft.analysis], []];
           else if (q.sql.includes("FROM emperor_agent_runs")) output = [draft.agents, []];
@@ -340,6 +346,27 @@ describe("deep worker checkpoint SQL adapter (offline controlled SQL fixture)", 
     await expect(f.store().compareAndSwap(s.journal.journalHash, next)).rejects.toThrow("DEEP_STORE_FAILED");
     expect(decodeCompetitorDeepExecutionInput(f.state.job.inputText).journal.steps[0].status).toBe("dispatched");
     expect(f.writes()).toHaveLength(1);
+  });
+});
+
+describe("new reserved deep jobs retain fresh workspace authority at persistence", () => {
+  async function reserved() {
+    const h = await deepFixture(), evidence = input().evidence, request = { ...h.input, expectedRevision: evidence.identity.revision, expectedEvidenceHash: evidence.evidenceHash };
+    return { ...h.stored, evidence, journal: createCompetitorDeepExecution(evidence, h.skills).initial(),
+      reservation: { request, requestHash: deepRuntimeHash({ identity: { userId: 3, workspaceId: 7 }, request }), runtime: h.snapshot } };
+  }
+  it("reads new full runtime and original legacy journals without manufacturing approval", async () => {
+    const f = fixture(await reserved()); expect(await f.store().read()).toEqual(decodeCompetitorDeepExecutionInput(f.state.job.inputText).journal);
+    expect(f.calls.some(call => call.sql.includes("workspace_memberships") && call.sql.includes("FOR SHARE"))).toBe(true);
+    const legacy = fixture(); await legacy.store().read(); expect(legacy.calls.some(call => call.sql.includes("workspace_memberships"))).toBe(false);
+  });
+  it.each(["disabled", "invited"])("rejects %s membership before result checkpoint", async status => {
+    const stored = await reserved(), next = await dispatched(stored), f = fixture(stored); f.state.members[0].status = status;
+    await expect(f.store().compareAndSwap(stored.journal.journalHash, next)).rejects.toMatchObject({ code: "FORBIDDEN" }); expect(f.writes()).toHaveLength(0);
+  });
+  it("rejects a disabled workspace and duplicate memberships", async () => {
+    const f = fixture(await reserved()); f.state.workspace.status = "disabled"; await expect(f.store().read()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const other = fixture(await reserved()); other.state.members.push(clone(other.state.members[0])); await expect(other.store().read()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
 

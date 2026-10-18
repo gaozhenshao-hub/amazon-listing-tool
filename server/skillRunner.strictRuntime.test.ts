@@ -67,11 +67,11 @@ describe("strict registered model resolution", () => {
   });
 });
 describe("private strict single-dispatch Skill execution", () => {
-  it.each(["route", "reply", "profit_analysis"] as const)("uses fixed %s audit identity without storing private financial/conversation bodies", async stage => {
+  it.each(["route", "reply", "profit_analysis", "competitor_deep"] as const)("uses fixed %s audit identity without storing private source bodies", async stage => {
     const request = await input(); request.strictExecution!.stage = stage;
     await runEmperorSkill(request);
-    const source = stage === "profit_analysis" ? "ops.profit.private.strict" : "assistant.private.strict";
-    const operation = stage === "profit_analysis" ? source : "ai_os.assistant.private.strict";
+    const source = stage === "competitor_deep" ? "listing.competitor.deep.strict" : stage === "profit_analysis" ? "ops.profit.private.strict" : "assistant.private.strict";
+    const operation = stage === "profit_analysis" || stage === "competitor_deep" ? source : "ai_os.assistant.private.strict";
     const insertion = sqlCalls().find(q => q.sql.startsWith("INSERT INTO emperor_skill_runs"))!;
     expect(insertion.params[7]).toBe(source);
     expect(JSON.parse(insertion.params[9] as string)).toMatchObject({ privateExecution: true, stage });
@@ -80,14 +80,15 @@ describe("private strict single-dispatch Skill execution", () => {
     expect(mocks.http).toHaveBeenCalledOnce(); expect(mocks.invokeLLM).not.toHaveBeenCalled();
     for (const secret of ["PRIVATE_SYSTEM", "PRIVATE_TEMPLATE", "PRIVATE_DOCUMENT", "PRIVATE_VARIABLE", "PRIVATE_REPLY", "PRIVATE_SECRET_KEY"]) expect(auditText()).not.toContain(secret);
   });
-  it.each(["profit", "ops.profit.analysis", "finance.monthly.profit", "", null])("rejects unregistered business stage %s without registry access or dispatch", async stage => {
+  it.each(["profit", "ops.profit.analysis", "finance.monthly.profit", "competitor", "listing.competitor.deep", "title", "buyers:0", "", null])("rejects unregistered business stage %s without registry access or dispatch", async stage => {
     const request = await input(); (request.strictExecution as unknown as { stage: unknown }).stage = stage;
     mocks.execute.mockClear();
     await expect(runEmperorSkill(request)).rejects.toMatchObject({ code: "STRICT_RUNTIME_OPTIONS_INVALID" });
     expect(mocks.execute).not.toHaveBeenCalled(); noCalls();
   });
-  it.each(["missingPin", "changedModel", "deniedFence", "unknownOutcome", "arbitraryAuditTag"])("profit stage preserves strict admission and single-dispatch behavior: %s", async kind => {
-    const request = await input(); request.strictExecution!.stage = "profit_analysis";
+  it.each((["profit_analysis", "competitor_deep"] as const).flatMap(stage =>
+    ["missingPin", "changedModel", "deniedFence", "unknownOutcome", "arbitraryAuditTag"].map(kind => ({ stage, kind }))))("$stage preserves strict admission and single-dispatch behavior: $kind", async ({ stage, kind }) => {
+    const request = await input(); request.strictExecution!.stage = stage;
     if (kind === "missingPin") request.expectedSkillManifestHash = undefined;
     if (kind === "changedModel") models[0].modelId = "unapproved-model";
     if (kind === "deniedFence") request.strictExecution!.beforeDispatch = async () => { throw new Error("PRIVATE_FINANCE_TRANSACTION"); };

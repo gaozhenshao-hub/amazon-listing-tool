@@ -24,6 +24,8 @@ vi.mock("./listing/CompetitorResearchJobs", () => ({ default: (props: (typeof st
   state.researchProps.push(props);
   return <section aria-label="已保存竞品资料分析任务"><button onClick={props.onCompleted}>模拟资料分析保存完成</button></section>;
 } }));
+vi.mock("./listing/CompetitorDeepResearchJobControls", () => ({ default: (props: { analysisId: number; onCompleted?: () => void }) =>
+  <button onClick={props.onCompleted}>模拟四栏候选保存 {props.analysisId}</button> }));
 vi.mock("@/components/ProjectSelector", () => ({ default: () => <span>项目选择器</span> }));
 vi.mock("streamdown", () => ({ Streamdown: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 // Keep all report panes inspectable; these tests target ownership, not Radix tab navigation.
@@ -56,6 +58,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("comparison owned scope", () => {
+  it("refreshes saved research after four-column completion without automatically confirming or generating a report", async () => {
+    render(<ComparisonPage />); await chooseResearch(1);
+    const calls = state.list.mock.calls.length;
+    state.list.mockResolvedValue([analysis(1, { revision: "e".repeat(64), summary: "四栏已保存候选" }), analysis(2), analysis(3)]);
+    fireEvent.click(screen.getByRole("button", { name: "模拟四栏候选保存 1" }));
+    await waitFor(() => expect(state.list).toHaveBeenCalledTimes(calls + 1));
+    expect(await screen.findByText("四栏已保存候选")).toBeInTheDocument();
+    expect(state.confirmSummary).not.toHaveBeenCalled(); expect(state.generate).not.toHaveBeenCalled();
+  });
   it.each([false, true])("allows the supported explicit null workspace with feature flag=%s", async flag => {
     state.flag = flag; state.auth.user!.defaultWorkspaceId = null;
     render(<ComparisonPage />); await choose(1);

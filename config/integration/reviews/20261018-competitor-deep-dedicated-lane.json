@@ -1,0 +1,15 @@
+{
+  "schema": "amazon-integration-review/v1",
+  "batch": "competitor-deep-dedicated-lane-and-strict-audit",
+  "baseline": "db6ab2f8b8b9cd66510f85d210ffeb6a325a71fd",
+  "previousQueueReview": "config/integration/reviews/20261017-competitor-deep-checkpoints.json",
+  "decision": "Exclude only the deep kind from both generic candidate selection and payload hydration. Preserve ID-only SQL sorting, ordinary import priority, hydration order restoration and atomic claim. The dedicated worker owns deep checkpoints and unknown dispatches.",
+  "protectedFiles": [
+    {"path":"server/repositories/ai_os/aiJobRepository.ts","gitBlobSha1":"65d93cf57fe7665474049ba3aa803f5081a58ed4","sha256":"425613aa1d81f309885d134d13465f731005fb876e693e5b096891b9efb0ba9e"},
+    {"path":"server/aiJobRepository.queue.test.ts","gitBlobSha1":"d47a3908303e6837e3dc79a5742aa00f6ff3c9dd","sha256":"8dc4b1d516ddefc1599d379305029857079f986475e22fda36d437d3eefce353"}
+  ],
+  "strictStage": "Add only competitor_deep with fixed listing.competitor.deep.strict audit source/operation. No changes to legacy runner, full Skill/model pins, context/spend admission, awaited dispatch fence, single attempt or no-fallback rule.",
+  "necessaryChecks": {"strictTests":101,"queueTests":18,"lintFiles":4,"lintWarnings":0,"independentReadOnlyReview":"No blocking source finding; no model/database execution."},
+  "fullBusinessAcceptance": "Delegated to the user's friend under the explicit main-function-first delivery adjustment; not represented as passed.",
+  "modelCalls":0,"productionWrites":false,"pushed":false,"deployed":false
+}

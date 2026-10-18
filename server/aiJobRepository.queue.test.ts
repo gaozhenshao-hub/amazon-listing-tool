@@ -2,6 +2,7 @@ import { getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql-proxy";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { aiJobs, type AiJob } from "../drizzle/schema";
+import { COMPETITOR_DEEP_EXECUTION_JOB_KIND } from "../shared/competitorDeepExecutionJob";
 
 const mocks = vi.hoisted(() => ({ requireDb: vi.fn() }));
 vi.mock("./repositories/dbClient", () => ({
@@ -43,12 +44,12 @@ function queueDatabase(initialRows: JobFixture[], options: {
   const calls: RecordedQuery[] = [];
   const columns = Object.values(getTableColumns(aiJobs));
   const encodedNow = aiJobs.nextRunAt.mapToDriverValue(NOW);
-  const recoverableParams = ["queued", encodedNow, "running", encodedNow];
-  const isRecoverable = (row: JobFixture) => (
+  const recoverableParams = ["queued", encodedNow, "running", encodedNow, COMPETITOR_DEEP_EXECUTION_JOB_KIND];
+  const isRecoverable = (row: JobFixture) => row.kind !== COMPETITOR_DEEP_EXECUTION_JOB_KIND && ((
     row.status === "queued" && (row.nextRunAt === null || row.nextRunAt.getTime() < NOW.getTime())
   ) || (
     row.status === "running" && (row.leaseUntil === null || row.leaseUntil.getTime() < NOW.getTime())
-  );
+  ));
   const db = drizzle(async (sql, params, method) => {
     calls.push({ sql, params, method });
     if (options.failAtQuery === calls.length) throw options.databaseError;
@@ -57,11 +58,12 @@ function queueDatabase(initialRows: JobFixture[], options: {
     // Missing/reduced predicates fail here, rather than letting the mock silently
     // filter rows on behalf of a regressed production query.
     expect(sql).toContain(recoverableSql);
+    expect(sql).toContain("`ai_jobs`.`kind` <> ?");
 
     if (calls.length === 1) {
       expect(sql).toMatch(/^select `id` from `ai_jobs` where /);
       expect(sql).toContain(" order by `ai_jobs`.`priority` desc, `ai_jobs`.`nextRunAt` asc, `ai_jobs`.`createdAt` asc limit ?");
-      expect(params.slice(0, 4)).toEqual(recoverableParams);
+      expect(params.slice(0, 5)).toEqual(recoverableParams);
       const limit = params.at(-1) as number;
       const candidates = rows.filter(isRecoverable).sort((a, b) =>
         b.priority - a.priority ||
@@ -75,8 +77,8 @@ function queueDatabase(initialRows: JobFixture[], options: {
     expect(calls.length).toBe(2);
     expect(sql).not.toMatch(/\border by\b|\blimit\b/i);
     expect(sql).toMatch(/where \(`ai_jobs`\.`id` in \(\?(?:, \?)*\) and /);
-    expect(params.slice(-4)).toEqual(recoverableParams);
-    const ids = new Set(params.slice(0, -4));
+    expect(params.slice(-5)).toEqual(recoverableParams);
+    const ids = new Set(params.slice(0, -5));
     const hydrated = rows.filter(row => ids.has(row.id) && isRecoverable(row)).reverse();
     return {
       rows: hydrated.map(row => columns.map(column => {
@@ -117,7 +119,7 @@ describe("AI job queue scans keep payloads outside MySQL sorting", () => {
     expect(calls[0].sql).not.toContain("`output`");
     expect(calls[1].sql.split(" from ")[0]).toContain("`input`");
     expect(calls[1].sql.split(" from ")[0]).toContain("`output`");
-    expect(calls[1].params.slice(0, -4)).toEqual([3, 4, 2, 1]);
+    expect(calls[1].params.slice(0, -5)).toEqual([3, 4, 2, 1]);
   });
 
   it("avoids the payload query for an empty candidate set", async () => {
@@ -155,7 +157,7 @@ describe("AI job queue scans keep payloads outside MySQL sorting", () => {
     });
     const result = await listRecoverableAiJobs({ limit: 25 });
     expect(result.map(row => row.id)).toEqual([1, 8]);
-    expect(calls[1].params.slice(0, -4)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(calls[1].params.slice(0, -5)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
   it("returns no stale candidate placeholders if every selected row disappears", async () => {
@@ -174,7 +176,7 @@ describe("AI job queue scans keep payloads outside MySQL sorting", () => {
     const result = await listRecoverableAiJobs({ limit: requested });
     expect(calls[0].params.at(-1)).toBe(bounded);
     expect(result).toHaveLength(bounded);
-    expect(calls[1].params.slice(0, -4)).toHaveLength(bounded);
+    expect(calls[1].params.slice(0, -5)).toHaveLength(bounded);
     expect(result.map(row => row.id)).toEqual(Array.from({ length: bounded }, (_, index) => index + 1));
   });
 
@@ -183,6 +185,30 @@ describe("AI job queue scans keep payloads outside MySQL sorting", () => {
     const { calls } = queueDatabase([job(1)], { failAtQuery, databaseError });
     await expect(listRecoverableAiJobs({ limit: 25 })).rejects.toMatchObject({ cause: databaseError });
     expect(calls).toHaveLength(failAtQuery);
+  });
+
+  it("does not let high-priority deep checkpoints consume an ordinary import candidate slot", async () => {
+    const { calls } = queueDatabase([
+      job(1, { priority: 0 }),
+      job(2, { priority: 999, kind: COMPETITOR_DEEP_EXECUTION_JOB_KIND, input: { privateCheckpoint: "not_hydrated" } }),
+      job(3, { priority: 999, kind: COMPETITOR_DEEP_EXECUTION_JOB_KIND, status: "running", leaseUntil: PAST }),
+    ]);
+    expect((await listRecoverableAiJobs({ limit: 1 })).map(row => row.id)).toEqual([1]);
+    expect(calls[1].params.slice(0, -5)).toEqual([1]);
+  });
+
+  it("does not read any payload when the only candidates belong to the dedicated deep lane", async () => {
+    const { calls } = queueDatabase([job(1, { kind: COMPETITOR_DEEP_EXECUTION_JOB_KIND })]);
+    await expect(listRecoverableAiJobs()).resolves.toEqual([]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("rechecks lane eligibility during hydration rather than returning a newly deep row", async () => {
+    const { calls } = queueDatabase([job(1), job(2)], {
+      afterCandidates(rows) { rows[0].kind = COMPETITOR_DEEP_EXECUTION_JOB_KIND; },
+    });
+    expect((await listRecoverableAiJobs()).map(row => row.id)).toEqual([2]);
+    expect(calls).toHaveLength(2);
   });
 
   it("propagates failure to obtain a database connection before issuing any query", async () => {

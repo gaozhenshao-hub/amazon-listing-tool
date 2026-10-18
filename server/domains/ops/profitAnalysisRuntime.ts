@@ -15,6 +15,7 @@ import { runEmperorSkill, renderSkillTemplate, type StrictSkillDispatchReceipt }
 import { STRICT_SKILL_LIMITS, StrictRegisteredModelSnapshotSchema, StrictSkillRuntimeError, strictModelSnapshotFromRow,
   strictSkillMessages, strictCostUpperBound, strictRuntimeHash, type StrictRegisteredModelSnapshot } from "../ai_os/services/strictSkillRuntime";
 import { resolveGovernedModelApiKey } from "../ai_os/services/teamorouterCatalog";
+import { createSourceApprovalFileLoader, SourceApprovalFileError } from "../../services/sourceApprovalFileLoader";
 
 /** Server-only execution bridge. An approved Qingdao mapping is required; a
  * Released label, configuration binding, registry seed or test fixture is not approval. */
@@ -66,6 +67,17 @@ export function createFixedProfitAnalysisApprovalResolver(records: readonly Prof
   return async input => {
     const value = copy.find(row => row.workspaceId === input.identity.workspaceId);
     return value ? structuredClone(value) : null;
+  };
+}
+
+/** Lazy server deployment mapping; the original Qingdao-only schema and fixed
+ * resolver still validate every record, including duplicate workspaces. */
+export function createFileProfitAnalysisApprovalResolver(): ProfitAnalysisApprovalResolver {
+  const load = createSourceApprovalFileLoader({ kind: "profit_analysis", decode: records =>
+    createFixedProfitAnalysisApprovalResolver(z.array(ProfitAnalysisSourceApprovalSchema).max(1000).parse(records)) });
+  return async input => {
+    try { const result = await load(); return result.status === "ready" ? result.value(input) : null; }
+    catch (error) { return fail(error instanceof SourceApprovalFileError ? `APPROVAL_${error.code}` : "SOURCE_UNAVAILABLE"); }
   };
 }
 const budgetSchema = z.object({ textBytes: z.number().int().nonnegative(), imageCount: z.literal(0), imageBytes: z.literal(0),
@@ -138,7 +150,7 @@ export function createProfitAnalysisRuntime(dependencies: {
   approvalResolver?: ProfitAnalysisApprovalResolver; runSkill?: typeof runEmperorSkill;
   credentialResolver?: (reference: string) => string | null | undefined;
 } = {}) {
-  const approvalResolver = dependencies.approvalResolver ?? createFixedProfitAnalysisApprovalResolver([]);
+  const approvalResolver = dependencies.approvalResolver ?? createFileProfitAnalysisApprovalResolver();
   const runSkill = dependencies.runSkill ?? runEmperorSkill, credentialResolver = dependencies.credentialResolver ?? resolveGovernedModelApiKey;
   type Built = { runtimeSnapshot: ProfitAnalysisRuntimeSnapshot; input: Captured; skill: AssistantConversationRegistrySkill;
     context: string; variables: Record<string, unknown> };

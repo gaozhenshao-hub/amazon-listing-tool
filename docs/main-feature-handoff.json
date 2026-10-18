@@ -1,0 +1,147 @@
+{
+  "documentType": "主要功能源码交接说明（不是任务看板）",
+  "language": "zh-CN",
+  "deliveryBoundary": [
+    "本文件说明真实源码入口与接手条件；源码合并不等于已部署、目标库结构已满足、真实模型可用或完整验收通过。",
+    "优先交付主要功能合并，完整业务使用与验收交由朋友继续；必要的权限、来源、未知请求恢复和防重复付费边界不取消。",
+    "不记录线上地址、提交版本、真实凭据、审批正文或未经验证的表状态；实际目标结构检查由独立证据附后。"
+  ],
+  "sourcePriority": {
+    "listing": "流程以朋友版为主，Skill 以用户自己的版本为主；允许选择授权竞品与本品画像生成属性，不强制本地上传。",
+    "operations": "新增运营功能以朋友版为主；领星数据与既有规划口径以青岛版为主。",
+    "agentSkills": "通用 P5 Skill 以青岛版为主；朋友通用路由／教练仅可作为有真实审阅证据的补充，不能替换用户 Listing Skill。"
+  },
+  "trialEntrances": [
+    {
+      "name": "Listing 竞品研究与生成",
+      "route": "/listing/comparison",
+      "continueAt": "/listing/generate",
+      "steps": "选择项目和授权竞品；可查看原评论与研究依据。核对四栏条件、明确计费确认后提交后台研究；查看保存结果并人工确认摘要，再到生成页选择研究范围和本品画像、生成属性、审核事实及七条方向。",
+      "boundary": "四栏默认关闭。unknown／not_found／提交超时只核对或取消原 UUID，不重新发起；成功候选不自动确认，不自动改 Listing。",
+      "sourceFiles": ["client/src/pages/ComparisonPage.tsx", "client/src/pages/listing/CompetitorDeepResearchJobControls.tsx", "client/src/pages/GeneratePage.tsx"]
+    },
+    {
+      "name": "皇帝中台 Agent 库",
+      "route": "/emperor/agent-library",
+      "steps": "选择 Agent；保留配置、工作／教练模式、显式／自动 Skill、私有线程历史和附件。候选规则由人编辑并确认共享影响后保存。",
+      "boundary": "对话能力不是业务 Skill 已执行。审批文件、模型配置、数据库与 worker 未就绪时明确不可用；规则确认与对话提交是独立操作。",
+      "sourceFiles": ["client/src/pages/emperor/EmperorAgentLibrary.tsx", "client/src/pages/emperor/AssistantConversationBridge.tsx", "client/src/pages/emperor/AssistantRuleConfirmationBridge.tsx"]
+    },
+    {
+      "name": "完整产品看板与运营任务",
+      "route": "/ops/product-board",
+      "relatedRoutes": ["/ops/product-tasks", "/ops/products"],
+      "steps": "选择店铺、站点和时间范围，显式读取；保留运营负责人筛选、完整父子体、榜单、原行分页、产品成本及任务入口。需要归档时另行打开当前／历史归档看板，管理员预览影响后初始化或建立修订。",
+      "boundary": "归档不是实时来源的别名；数字搭档只授予直接只读范围，不能递归授权或代替本人编辑权限。备注与版本切换保留冲突及未决 UUID 恢复。",
+      "sourceFiles": ["client/src/pages/ops/OperationsCenter.tsx", "client/src/pages/ops/ProductBoardReadOnly.tsx", "client/src/pages/ops/OperationsBoardEditionWorkspace.tsx", "client/src/pages/ops/ProductTasksReadOnly.tsx"]
+    },
+    {
+      "name": "利润看板、完整月份明细与利润 AI",
+      "route": "/ops/profit-board",
+      "steps": "读取所选范围，查看完整产品月报、收入／费用明细和原来源；在产品内选择分析月份、预览双月依据，再明确生成。草稿、人工保存报告和运行历史分别查看。",
+      "boundary": "不能以本页分页数据作为完整 AI 输入；缺月、未知币种和过期资料不补零或冒充可保存。生成与保存使用不同固定 UUID，历史报告保持私有身份。",
+      "sourceFiles": ["client/src/pages/ops/ProfitBoardReadOnly.tsx", "client/src/pages/ops/ProfitAnalysisWorkflow.tsx", "client/src/pages/ops/ProfitAnalysisReportView.tsx"]
+    },
+    {
+      "name": "库存规划与独立库存采集",
+      "route": "/ops/inventory",
+      "relatedRoutes": ["/ops/read-only-overview"],
+      "steps": "保留领星库存规划、采购表、筛选和导出；人工确认本地绝对库存、日期理由及参数。通过“完整库存与采集”打开独立来源快照，显式发起全来源采集并查看进度。",
+      "boundary": "独立采集不替换领星规划口径；失败保留原成功快照，不承诺供应商未公开的分页完整性。人工库存、成本参数和负责人治理由各自开关控制。",
+      "sourceFiles": ["client/src/pages/ops/OpsInventory.tsx", "client/src/pages/ops/InventoryPlanningEditor.tsx", "client/src/pages/ops/InventoryGovernanceEditor.tsx", "client/src/pages/ops/InventorySnapshotRefresh.tsx"]
+    },
+    {
+      "name": "月报持久导入与完整成本表",
+      "route": "/ops/read-only-overview",
+      "steps": "区分本机文件预览与持久上传；完整查看原行、单元格和所有警告，确认月份／店铺／站点以及替换影响后再确认或撤销。成本入口支持全部字段、设置、计算预览和冲突核对。",
+      "boundary": "未保存草稿不是已入库；未知值不补零，历史孤儿成本行不静默删除。月报确认／撤销与已初始化归档必须保持事务同步。",
+      "sourceFiles": ["client/src/pages/ops/OperationsReadOnlyOverview.tsx", "client/src/pages/ops/MonthlyFinancialWrite.tsx", "client/src/pages/ops/OperationsCostSheetActions.tsx"]
+    }
+  ],
+  "commands": {
+    "note": "在仓库根目录及已准备的依赖环境运行；这些是 package.json 中的命令说明，不表示已在目标环境执行。不要直接把构建命令当发布或数据库迁移。",
+    "typecheck": "pnpm check",
+    "buildAllEntrypoints": "pnpm build",
+    "developmentWeb": "pnpm dev",
+    "developmentWorker": "pnpm worker:ai",
+    "productionWeb": "APP_PROCESS_ROLE=web pnpm start",
+    "productionWorker": "pnpm start:worker:ai",
+    "schedulerOnlyAfterSeparateAcceptance": "pnpm start:scheduler",
+    "source": "package.json",
+    "processRules": [
+      "Web 与 worker 使用同一已验证构建、环境范围、受审来源文件和 SHA；只启动 Web 不等于后台任务会被消费。",
+      "worker 命令已设置 AI_JOB_RUNNER_MODE=worker 和 APP_PROCESS_ROLE=worker；不要为试用额外打开定时同步。",
+      "VITE 变量在构建时生效；仅在运行中改服务端环境不会让已有前端 bundle 出现新入口。"
+    ]
+  },
+  "frontendBuildFlags": {
+    "VITE_ENABLE_MERGED_LISTING_WORKFLOW": { "enabledValue": "1", "default": "关闭", "purpose": "整合 Listing 外层流程与四栏入口" },
+    "VITE_ENABLE_MERGED_READONLY_FEATURES": { "enabledValue": "1", "default": "关闭", "purpose": "整合运营、Agent 库及正式看板入口；名称中的 READONLY 不表示已授予后台写权限" }
+  },
+  "backendFlags": {
+    "rule": "下列开关均以精确字符串 true 启用，未配置保持关闭；开关不代替权限、schema、来源审批、模型注册或凭据配置。按所试用模块单独启用，不一键全开。",
+    "listingDeep": ["ENABLE_COMPETITOR_DEEP_WRITES", "ENABLE_COMPETITOR_DEEP_WORKER"],
+    "agentConversation": ["ENABLE_ASSISTANT_CONVERSATION_WRITES", "ENABLE_ASSISTANT_CONVERSATION_WORKER"],
+    "agentConfigurationAndRuleConfirmation": ["ENABLE_ASSISTANT_CONFIGURATION_WRITES"],
+    "profitAnalysis": ["ENABLE_PROFIT_ANALYSIS_WRITES", "ENABLE_PROFIT_ANALYSIS_WORKER"],
+    "productTasks": ["ENABLE_MERGED_OPS_TASK_WRITES"],
+    "costSheet": ["ENABLE_MERGED_OPS_COST_WRITES"],
+    "monthlyFinancial": ["ENABLE_MERGED_OPS_MONTHLY_WRITES"],
+    "boardEditionsNotesAndPartners": ["ENABLE_MERGED_OPS_BOARD_EDITIONS"],
+    "inventoryCollection": ["ENABLE_MERGED_OPS_INVENTORY_COLLECTION"],
+    "inventoryPlanning": ["ENABLE_MERGED_OPS_INVENTORY_PLANNING_WRITES"],
+    "inventoryOwnersAndLifecycle": ["ENABLE_MERGED_OPS_INVENTORY_GOVERNANCE_WRITES"],
+    "recovery": "关闭新写入不代表可以遗弃未决操作。按各模块提供的原 UUID 核对／取消处理；恢复仍要求当前身份和权限，不能换 UUID 盲目重发。"
+  },
+  "runtimeSourceApprovals": {
+    "documentation": "docs/runtime-source-approvals.md",
+    "loader": "server/services/sourceApprovalFileLoader.ts",
+    "environmentPairs": [
+      ["ASSISTANT_CONVERSATION_APPROVAL_FILE", "ASSISTANT_CONVERSATION_APPROVAL_SHA256"],
+      ["PROFIT_ANALYSIS_APPROVAL_FILE", "PROFIT_ANALYSIS_APPROVAL_SHA256"],
+      ["LISTING_DEEP_ANALYSIS_APPROVAL_FILE", "LISTING_DEEP_ANALYSIS_APPROVAL_SHA256"]
+    ],
+    "requirements": "每对同时配置受控部署目录的绝对 JSON 路径与完整文件原始字节 SHA-256。真实记录必须根据目标注册表及来源证据生成并通过现有 schema；不复制示例 hash、不把 Released 或绑定视为批准。文件和真实映射不进入公开仓库、不使用 VITE 前缀、不包含密钥正文。",
+    "examples": ["config/examples/assistant-conversation-approvals.example.json", "config/examples/profit-analysis-approvals.example.json", "config/examples/listing-deep-analysis-approvals.example.json"],
+    "examplesAreNotApproval": true
+  },
+  "schemaDependencies": {
+    "status": "本文件未核验任何目标数据库表状态；编号预留、DDL 文件、pure planner 和运行时准入不是迁移执行证明。",
+    "admissionManifest": "config/integration/migration-admission.json",
+    "items": [
+      { "feature": "产品任务", "planner": "scripts/integration/productTaskSchemaPlan.mjs", "candidate": "0316_integration_ops_task_board.sql", "note": "核对 team_tasks 原列、产品关联、完成说明、附件表及审计；不得丢旧任务。" },
+      { "feature": "完整成本表", "planner": "scripts/integration/costSheetSchemaPlan.mjs", "candidate": "0302_integration_ops_cost_sheets.sql", "note": "核对精确范围唯一键、完整 JSON、CAS 版本和历史孤儿行。" },
+      { "feature": "持久月报", "planner": "scripts/integration/monthlyFinancialSchemaPlan.mjs", "candidate": "0308_integration_monthly_profit_imports.sql", "note": "核对批次、原件私有存储、规范化报告及确认／替换／撤销关联；原件下载另需真实存储权限与 CORS 验收。" },
+      { "feature": "库存采集", "planner": "scripts/integration/inventoryCollectionSchemaPlan.mjs", "candidate": "0314_integration_inventory_snapshot.sql", "note": "核对原子发布、快照任务、连接和数字映射；供应商配置仍需受控凭据。" },
+      { "feature": "人工库存与参数", "planner": "scripts/integration/inventoryPlanningSchemaPlan.mjs", "candidate": null, "note": "actor 索引增量尚未分配迁移号；按完整实库快照规划，不虚构已落库。" },
+      { "feature": "归档、备注与数字搭档", "planner": "scripts/integration/operationsBoardSchemaPlan.mjs", "candidate": "0313_integration_ops_profit_board.sql", "runtimeAdmission": "server/domains/ops/operationsBoardSchemaAdmission.ts", "note": "新四表与朋友旧三表是不同结构；旧数据迁移和金额／版本对账独立验收，不能按名称相似认定等价。" },
+      { "feature": "Agent 配置与私有对话", "ddl": ["drizzle/0230_assistant_configurations.sql", "drizzle/0231_assistant_conversations.sql"], "runtimeAdmission": "server/domains/ai_os/repositories/assistantConversations.ts", "note": "配置、私有线程、回合、附件及规则确认审计均需结构核对；不把旧通用对话表当新私有存储。" },
+      { "feature": "利润 AI", "ddl": ["drizzle/0309_integration_profit_analysis.sql"], "runtimeAdmission": "server/domains/ops/profitAnalysisJobRepository.ts", "note": "候选三表用于私有报告、运行、保存回执；不等于朋友原同步报告表，也没有在本文被注册或执行。" },
+      { "feature": "四栏竞品后台研究", "source": "server/repositories/listing/competitorDeepExecutionRepository.ts", "note": "复用受控 ai_jobs 专属任务类型及逐阶段检查点，核对 ai_jobs、competitorAnalyses 和审计依赖，不新造 OCR／问答来源。" }
+    ],
+    "prohibitedShortcut": "不得对旧库直接执行 baseline、db:push、通用 db:migrate 或批量重放朋友 SQL 来跳过对账；也不能改 checksum 或把旧迁移标成已执行。先完成目标结构、台账、数据、备份和兼容性核对，再审批最小增量。"
+  },
+  "monthlyAndBoardCoordination": {
+    "knownRisk": "月报写入与归档开关独立。若归档已初始化而 ENABLE_MERGED_OPS_BOARD_EDITIONS 关闭，月报确认／撤销可以不更新该归档；重新打开开关不会自动追平停用期间的差异。",
+    "safeHandoff": [
+      "月报与归档按同一发布方案协调启停；Web 和 worker 配置一致，并保留所有未决 UUID。",
+      "新 monthlyFinancialWrite 确认／撤销在归档开关开启时调用同事务同步；未初始化范围仍需管理员显式初始化。",
+      "正式使用前核对并隔离旧月报／旧看板 writer、旧实例、脚本和直接 SQL；前端入口隐藏不能证明旧 writer 已禁止绕行。不能宣称所有旧写路径已完成封堵。",
+      "停用期间已有月报变化时，先暂停相关写入、按真实批次与版本核对差异，再进行单独批准的修复或修订；重开 flag 不是回填、对账或追平操作。"
+    ],
+    "sourceFiles": ["server/domains/ops/monthlyFinancialWriteRepository.ts", "server/domains/ops/monthlyOperationsBoardSynchronization.ts", "server/domains/ops/operationsBoardRepository.ts"]
+  },
+  "stillOpen": [
+    "四栏竞品图片／OCR、问答及长期原评论原件来源仍不完整；现可核验样本不等于市场全量，未接来源不得标完成。",
+    "真实目标数据库结构、旧数据迁移对账、存储权限、Web／worker 联调、真实模型质量及真实费用验收仍交朋友和维护者执行。",
+    "页面可达、合成测试通过、开关开启和真实业务全部完成是不同状态；不得用摘要页面或少量示例代替朋友完整流程。",
+    "权限收回、跨工作区、未知回执、并发保存、备份回滚及旧 writer 并存必须继续核验。"
+  ],
+  "acceptanceTransfer": {
+    "owner": "朋友负责接手业务使用与完整验收，维护者提供受控环境、来源和结构证据。",
+    "retainedSuites": ["Listing／Agent／图片 62 项", "master 27 项", "补充 12 项", "T01–T28", "原 P0–P6 与 K01–K10 保留项"],
+    "planAttachment": "amazon-system-merge-plan-20261016-r2.md（原方案交接附件）",
+    "executionEvidenceAttachment": "amazon-system-execution-20261013.json（执行证据交接附件）",
+    "rule": "这些要求完整保留，未在本文件默认判通过或删除；不使用任务看板。先完成主要功能源码交接，不以全量验收前置阻断本地功能合并；正式启用与发布仍依据真实环境和风险验收。"
+  }
+}

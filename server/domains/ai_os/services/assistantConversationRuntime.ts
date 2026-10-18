@@ -15,6 +15,7 @@ import { runEmperorSkill, renderSkillTemplate, safeParseSkillJSON, type StrictSk
 import { StrictRegisteredModelSnapshotSchema, strictModelSnapshotFromRow, strictSkillMessages, strictCostUpperBound,
   type StrictRegisteredModelSnapshot } from "./strictSkillRuntime";
 import { resolveGovernedModelApiKey } from "./teamorouterCatalog";
+import { createSourceApprovalFileLoader, SourceApprovalFileError } from "../../../services/sourceApprovalFileLoader";
 
 const id = z.number().int().min(1).max(2147483647), hash = z.string().regex(/^[a-f0-9]{64}$/u);
 const text = (max: number) => z.string().min(1).max(max).refine(value => value.trim() === value && !/[\u0000-\u001f\u007f]/u.test(value));
@@ -35,9 +36,9 @@ function parsed<T>(schema: z.ZodType<T>, value: unknown): T {
   return result.data;
 }
 
-/** A usable injection seam for a reviewed server mapping, intentionally empty
- * by default. A future verified source decision can populate it without asking
- * users to manufacture hashes, changing old Skills, or seeding a database. */
+/** A copied server-reviewed mapping. Registry bindings and Released labels do
+ * not constitute approval; the application's default resolver loads a pinned,
+ * explicitly configured local deployment file through this same validation. */
 export function createFixedAssistantConversationApprovalResolver(records: readonly AssistantConversationSourceApproval[]): AssistantConversationApprovalResolver {
   const copies = parsed(z.array(AssistantConversationSourceApprovalSchema).max(1000), records);
   const keys = copies.map(row => `${row.workspaceId}/${row.agentKey}/${row.purpose}/${row.purpose === "context" ? row.skillSlug : ""}`);
@@ -46,6 +47,16 @@ export function createFixedAssistantConversationApprovalResolver(records: readon
     const row = copies.find(value => value.workspaceId === input.identity.workspaceId && value.agentKey === input.identity.agentKey
       && value.purpose === input.purpose && (input.skillSlug === undefined || value.skillSlug === input.skillSlug));
     return row ? structuredClone(row) : null;
+  };
+}
+
+/** Lazy server deployment mapping: no file or environment access on import. */
+export function createFileAssistantConversationApprovalResolver(): AssistantConversationApprovalResolver {
+  const load = createSourceApprovalFileLoader({ kind: "assistant_conversation", decode: records =>
+    createFixedAssistantConversationApprovalResolver(z.array(AssistantConversationSourceApprovalSchema).max(1000).parse(records)) });
+  return async input => {
+    try { const result = await load(); return result.status === "ready" ? result.value(input) : null; }
+    catch (error) { return fail(error instanceof SourceApprovalFileError ? `APPROVAL_${error.code}` : "SOURCE_UNAVAILABLE"); }
   };
 }
 
@@ -170,7 +181,7 @@ export function createAssistantConversationRuntime(dependencies: {
   approvalResolver?: AssistantConversationApprovalResolver;
   runSkill?: typeof runEmperorSkill;
 } = {}) {
-  const approvalResolver = dependencies.approvalResolver ?? createFixedAssistantConversationApprovalResolver([]);
+  const approvalResolver = dependencies.approvalResolver ?? createFileAssistantConversationApprovalResolver();
   const runSkill = dependencies.runSkill ?? runEmperorSkill;
   type Loaded = { model: StrictRegisteredModelSnapshot; modelName: string; stages: Array<{ stage: AssistantConversationStage; skill: RegistrySkill; approval: AssistantConversationSourceApproval }>; contextual: Array<{ skill: RegistrySkill; approval: AssistantConversationSourceApproval }> };
   const prepared = new WeakMap<AssistantConversationPreparedStage, { used: boolean; input: FreshInput; runtime: AssistantConversationRuntimeSnapshot; loaded: Loaded; context: ReturnType<typeof buildAssistantConversationContext>; stage: AssistantConversationStage }>();

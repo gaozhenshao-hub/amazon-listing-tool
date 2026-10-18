@@ -21,6 +21,8 @@ import { competitorResearchJob, competitorResearchScopeSchema, startCompetitorRe
 import { competitorReviewRead, competitorReviewsPageSchema } from "../domains/listing/services/competitorReviewRead";
 import { competitorResearchEvidence, competitorResearchEvidenceSchema } from "../domains/listing/services/competitorResearchEvidence";
 import { competitorDeepResultRead, competitorDeepResultReadSchema } from "../domains/listing/services/competitorDeepResultRead";
+import { competitorDeepJob } from "../domains/listing/services/competitorDeepJob";
+import { CompetitorDeepOptionsInputSchema, CompetitorDeepOptionsResultSchema, CompetitorDeepStartInputSchema, CompetitorDeepOperationInputSchema, CompetitorDeepJobViewSchema } from "../../shared/competitorDeepExecutionJob";
 import {
   registerCompetitorAnalysisArtifact,
   registerCompetitorComparisonArtifact,
@@ -88,6 +90,10 @@ async function resolveCompetitorImagesForDelivery<T extends { imageUrls?: string
 }
 
 export const analysisRouter = router({
+  competitorDeepOptions: protectedProcedure.input(CompetitorDeepOptionsInputSchema).output(CompetitorDeepOptionsResultSchema).query(({ ctx, input }) => competitorDeepJob.options(ctx, input)),
+  startCompetitorDeepResearch: protectedProcedure.input(CompetitorDeepStartInputSchema).output(CompetitorDeepJobViewSchema).mutation(({ ctx, input }) => competitorDeepJob.start(ctx, input)),
+  checkCompetitorDeepResearch: protectedProcedure.input(CompetitorDeepOperationInputSchema).output(CompetitorDeepJobViewSchema).query(({ ctx, input }) => competitorDeepJob.check(ctx, input)),
+  cancelCompetitorDeepResearch: protectedProcedure.input(CompetitorDeepOperationInputSchema).output(CompetitorDeepJobViewSchema).mutation(({ ctx, input }) => competitorDeepJob.cancel(ctx, input)),
   getCompetitorDeepResult: protectedProcedure
     .input(competitorDeepResultReadSchema)
     .query(({ ctx, input }) => competitorDeepResultRead.read(ctx, input)),

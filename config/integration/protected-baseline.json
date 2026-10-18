@@ -267,9 +267,9 @@
         "sha256": "c71e7a7319825baa2828a9e9a5d4a9f9656d02c3c4e10020a4b497f99553d248"
       },
       "reviewed": {
-        "gitBlobSha1": "9ce23a16ac821aaf1535056c742e5096b6dccf1e",
-        "sha256": "924918024ef87f0b8276c5dd9f0f7a2c8f251f8e1dcfca11d1fc664223f672db",
-        "reviewRef": "config/integration/reviews/20261016-competitor-review-corpus.json"
+        "gitBlobSha1": "6307bb59e4464d58d29590230d9bf5125f3d1808",
+        "sha256": "668d0dd8c7630c3bf50ee58042e29a69318e74ac35488985a219c8798ec2c2d1",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve original review-corpus and selection behavior"
       }
     },
     {
@@ -457,9 +457,9 @@
         "sha256": "b3684a0e402946b9114559e50489f41ccc59e92159cc050baba43849f5061e7d"
       },
       "reviewed": {
-        "gitBlobSha1": "ac469a76d5b181685cad7b992cbc3c45738d6ea3",
-        "sha256": "e9e43e7b8a4f6bf1a86a601f16e301d8aa8b4f5c8af784d5e046e4bc7505361f",
-        "reviewRef": "config/integration/reviews/20261018-profit-analysis-durable-worker.json"
+        "gitBlobSha1": "fb4354d782eeecaa172a87799bca15b876cc1a3a",
+        "sha256": "c24807bbad6ff431d087708427d02e903af23f6a29ccf8b28fc533562d613f07",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior worker registrations and drains"
       }
     },
     {
@@ -515,6 +515,11 @@
       "baseline": {
         "gitBlobSha1": "65345cfb152d8373627c7debcedf1c719c2d00a5",
         "sha256": "fee0ecae4f403c271e591fa8f03b1a3edb52acfec07a85bb7ea22929fa65a1a6"
+      },
+      "reviewed": {
+        "gitBlobSha1": "d47a3908303e6837e3dc79a5742aa00f6ff3c9dd",
+        "sha256": "8dc4b1d516ddefc1599d379305029857079f986475e22fda36d437d3eefce353",
+        "reviewRef": "config/integration/reviews/20261018-competitor-deep-dedicated-lane.json"
       }
     },
     {
@@ -1122,9 +1127,9 @@
         "sha256": "f32e7e884932429c07c4978699ba88d9144803fc17634f7542d18abd5fc19d8d"
       },
       "reviewed": {
-        "gitBlobSha1": "819c0dbac852f42b7583274e47baacdaf9cc03b8",
-        "sha256": "861ed7ff3f8c8cb1ea7b10c267ecd1b754c3acb4f0621e41d05ef977ffd406ff",
-        "reviewRef": "config/integration/reviews/20261017-competitor-deep-checkpoints.json"
+        "gitBlobSha1": "65d93cf57fe7665474049ba3aa803f5081a58ed4",
+        "sha256": "425613aa1d81f309885d134d13465f731005fb876e693e5b096891b9efb0ba9e",
+        "reviewRef": "config/integration/reviews/20261018-competitor-deep-dedicated-lane.json; preserve previous checkpoints review"
       }
     },
     {
@@ -1138,9 +1143,9 @@
         "sha256": "dfc27c614e4c74c026b4efe7c9a1ce3ee073dc0dd12b190b4131dd7001aa6f56"
       },
       "reviewed": {
-        "gitBlobSha1": "506fdde47eae65211dd395bb3d70a995bbf27e6d",
-        "sha256": "71297467ce313cffb0c5fa6ad3fc8f4534519883a33cf73c3a0fe7662baed7af",
-        "reviewRef": "config/integration/reviews/20261017-competitor-deep-result-publication.json"
+        "gitBlobSha1": "dd86dc5b8d13fc0a2a6f69ae69396c1a6b77c813",
+        "sha256": "b3e2820d0fbded00d0da3594ec40910cc7885f5400d31cdb07cc4348658c5b10",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior import/research/result routes"
       }
     },
     {

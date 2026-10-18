@@ -3,13 +3,15 @@ import { Badge } from "@/components/ui/badge";
 import { competitorStudy, type CompetitorStudyRecord } from "./competitorStudyModel";
 import CompetitorResearchEvidencePreview from "./CompetitorResearchEvidencePreview";
 import CompetitorDeepResultReader from "./CompetitorDeepResultReader";
+import CompetitorDeepResearchJobControls from "./CompetitorDeepResearchJobControls";
 
-export default function CompetitorStudyComparison({ projectId, analyses, pendingIds, onConfirm, onUnlock }: {
+export default function CompetitorStudyComparison({ projectId, analyses, pendingIds, onConfirm, onUnlock, onResearchCompleted }: {
   projectId?: number;
   analyses: CompetitorStudyRecord[];
   pendingIds: ReadonlySet<number>;
   onConfirm: (analysis: CompetitorStudyRecord, summary: string) => void;
   onUnlock: (analysis: CompetitorStudyRecord) => void;
+  onResearchCompleted?: () => void;
 }) {
   return <section aria-label="选中竞品并排研究" className="space-y-3">
     <div><h2 className="text-lg font-semibold">选中竞品 · 并排研究</h2>
@@ -35,6 +37,7 @@ export default function CompetitorStudyComparison({ projectId, analyses, pending
             {Number.isSafeInteger(projectId) && (projectId ?? 0) > 0 && typeof analysis.revision === "string" && /^[a-f0-9]{64}$/u.test(analysis.revision)
               && <>
                 <CompetitorResearchEvidencePreview projectId={projectId!} analysisId={analysis.id} asin={analysis.asin} revision={analysis.revision} />
+                <CompetitorDeepResearchJobControls projectId={projectId!} analysisId={analysis.id} asin={analysis.asin} revision={analysis.revision} onCompleted={onResearchCompleted} />
                 <CompetitorDeepResultReader projectId={projectId!} analysisId={analysis.id} asin={analysis.asin} revision={analysis.revision} />
               </>}
             <div><h4 className="text-sm font-medium">{study.summarySource}</h4>
@@ -48,7 +51,7 @@ export default function CompetitorStudyComparison({ projectId, analyses, pending
             <div className="flex flex-wrap gap-2"><Button size="sm" disabled={pending || !study.canConfirm} onClick={() => { if (!pending && study.canConfirm) onConfirm(analysis, study.summary); }}>确认此摘要</Button>
               <Button size="sm" variant="outline" disabled={pending || !study.canUnlock} onClick={() => { if (!pending && study.canUnlock) onUnlock(analysis); }}>解锁此摘要</Button>
             </div>
-            <p className="text-xs text-muted-foreground">确认 / 解锁仅更新此条已保存摘要；编辑请回分析页。任务的真实排队、失败与重试信息以原后台任务页为准。</p>
+            <p className="text-xs text-muted-foreground">确认 / 解锁仅更新此条已保存摘要；编辑请回分析页。四栏研究进度与原请求恢复见上方，旧采集 / 分析任务仍在原后台任务页。</p>
           </article>;
         })}
       </div></div>}

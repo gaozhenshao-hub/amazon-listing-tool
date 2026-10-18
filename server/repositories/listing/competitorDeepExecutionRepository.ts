@@ -13,6 +13,7 @@ import { buildCompetitorDeepResult, COMPETITOR_DEEP_RESULT_MAX_BYTES } from "../
 import { assertResourceAction } from "../../services/securityGovernance";
 import { getDb, type DbExecutor } from "../dbClient";
 import { competitorRevision } from "../project/competitorWritePolicy";
+import { CompetitorDeepReservationSchema, deepRuntimeHash, type CompetitorDeepReservation } from "../../domains/listing/services/competitorDeepRuntimeContract";
 
 /** Worker-internal checkpoint storage and atomic draft publication only. This
  * does not reserve jobs, approve Skills/evidence, register a worker or call a model.
@@ -31,7 +32,7 @@ const exactText = (maximum: number) => z.string().min(1).max(maximum).refine(val
 const scopeSchema = z.object({ runId: exactText(80), lockedBy: exactText(128),
   attempt: id, userId: id, workspaceId: id.nullable(), projectId: id, analysisId: id }).strict();
 const outerSchema = z.object({ version: z.literal(1), evidence: z.unknown(), skills: z.unknown(), journal: z.unknown(),
-  agentRunId: exactText(80), agentNodeId: z.literal("N1") }).strict();
+  agentRunId: exactText(80), agentNodeId: z.literal("N1"), reservation: CompetitorDeepReservationSchema.optional() }).strict();
 const publicationReceiptBaseSchema = z.object({ version: z.literal(1), kind: z.literal("competitor_deep_research"),
   runId: exactText(80), analysisId: id, artifactId: exactText(128), artifactHash: hash, resultHash: hash,
   evidenceHash: hash, skillPlanHash: hash, journalHash: hash, sourceRevision: hash, summaryVersion: id,
@@ -40,7 +41,7 @@ export const competitorDeepPublicationReceiptSchema = publicationReceiptBaseSche
 export type CompetitorDeepPublicationReceipt = z.infer<typeof competitorDeepPublicationReceiptSchema>;
 export interface CompetitorDeepPublicationStore extends DeepExecutionStore { publish(): Promise<CompetitorDeepPublicationReceipt> }
 export type CompetitorDeepStoredInput = { version: 1; evidence: CompetitorResearchEvidencePlan; skills: DeepSkillPlan;
-  journal: DeepExecutionJournal; agentRunId: string; agentNodeId: "N1" };
+  journal: DeepExecutionJournal; agentRunId: string; agentNodeId: "N1"; reservation?: CompetitorDeepReservation };
 export type CompetitorDeepExecutionScope = z.infer<typeof scopeSchema> & { signal: AbortSignal };
 export interface CompetitorDeepExecutionDatabase {
   execute(statement: SQL): Promise<unknown>;
@@ -76,7 +77,19 @@ export function decodeCompetitorDeepExecutionInput(value: unknown): CompetitorDe
     const raw = outerSchema.parse(JSON.parse(encoded(source)));
     const evidence = verifyCompetitorResearchEvidencePlan(raw.evidence, digest), skills = deepSkillPlanSchema.parse(raw.skills);
     const journal = createCompetitorDeepExecution(evidence, skills).inspect(raw.journal).journal;
-    const input = { version: 1 as const, evidence, skills, journal, agentRunId: raw.agentRunId, agentNodeId: raw.agentNodeId };
+    if (raw.reservation) {
+      const { request, requestHash, runtime } = raw.reservation, identity = evidence.identity;
+      if (request.projectId !== identity.projectId || request.analysisId !== identity.analysisId || request.expectedWorkspaceId !== identity.workspaceId
+        || request.expectedRevision !== identity.revision || request.expectedEvidenceHash !== evidence.evidenceHash || runtime.workspaceId !== identity.workspaceId
+        || requestHash !== deepRuntimeHash({ identity: { userId: identity.userId, workspaceId: identity.workspaceId }, request })
+        || runtime.snapshotHash !== skills.approvalRef || runtime.stages.some(item => {
+          const binding = skills[item.approval.stage]; return binding.skillSlug !== item.skill.slug || binding.version !== String(item.skill.version)
+            || binding.systemPromptHash !== item.skill.systemPromptSha256.slice(0, 16) || binding.userPromptHash !== item.skill.userPromptSha256.slice(0, 16)
+            || binding.manifestHash !== item.skill.manifestRawSha256.slice(0, 16);
+        })) fail("DEEP_STORE_INPUT_INVALID");
+    }
+    const input = { version: 1 as const, evidence, skills, journal, agentRunId: raw.agentRunId, agentNodeId: raw.agentNodeId,
+      ...(raw.reservation ? { reservation: raw.reservation } : {}) };
     encoded(input);
     return input;
   } catch (error) {
@@ -182,6 +195,14 @@ export function createCompetitorDeepExecutionStore(
     const user = users[0];
     if (users.length !== 1 || user.id !== scope.userId || user.status !== "active" || user.defaultWorkspaceId !== scope.workspaceId
       || typeof user.role !== "string" || !user.role.trim()) fail("DEEP_STORE_ACTOR_CHANGED", "FORBIDDEN");
+    // New reservations require current workspace membership at EVERY durable
+    // checkpoint/publication, not merely when the provider was dispatched.
+    if (job.input.reservation) {
+      const workspaces = await rows(tx, "SELECT id,status FROM workspaces WHERE id=? FOR SHARE", [scope.workspaceId]);
+      const members = await rows(tx, "SELECT userId,workspaceId,status FROM workspace_memberships WHERE userId=? AND workspaceId=? LIMIT 2 FOR SHARE", [scope.userId, scope.workspaceId]);
+      if (workspaces.length !== 1 || workspaces[0].id !== scope.workspaceId || workspaces[0].status !== "active"
+        || members.length !== 1 || members[0].userId !== scope.userId || members[0].workspaceId !== scope.workspaceId || members[0].status !== "active") fail("DEEP_STORE_ACTOR_CHANGED", "FORBIDDEN");
+    }
     // Deliberately omit ownerUserId: parent ownership is not a policy bypass.
     await permission({ actor: { id: scope.userId, role: user.role, defaultWorkspaceId: scope.workspaceId }, resource: "project", action: "run",
       workspaceId: scope.workspaceId, projectId: scope.projectId, resourceId: scope.projectId,

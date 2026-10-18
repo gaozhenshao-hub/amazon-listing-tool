@@ -1,0 +1,27 @@
+{
+  "schema": "amazon-integration-review/v1",
+  "batch": "main-functional-merge-candidate",
+  "baseline": "db6ab2f8b8b9cd66510f85d210ffeb6a325a71fd",
+  "userPriority": "Deliver main functional source merge first within the requested travel window; full business acceptance and trial use go to the user's friend.",
+  "sourcePolicy": "General P5 Qingdao; operations additions friend and Lingxing Qingdao; Listing user Skills and friend workflow/selection.",
+  "protectedChanges": [
+    {"path":"client/src/pages/ComparisonPage.tsx","gitBlobSha1":"6307bb59e4464d58d29590230d9bf5125f3d1808","sha256":"668d0dd8c7630c3bf50ee58042e29a69318e74ac35488985a219c8798ec2c2d1","decision":"Only pass the existing readGeneration refresh callback to the research cards. Preserve selection, comparison, seven-direction source and manual confirmation behavior."},
+    {"path":"server/_core/aiWorker.ts","gitBlobSha1":"fb4354d782eeecaa172a87799bca15b876cc1a3a","sha256":"c24807bbad6ff431d087708427d02e903af23f6a29ccf8b28fc533562d613f07","decision":"Start and await drain of one default-off dedicated deep lane. Preserve every existing handler, heartbeat, generic dispatch and other domain drain."},
+    {"path":"server/routers/analysis.ts","gitBlobSha1":"dd86dc5b8d13fc0a2a6f69ae69396c1a6b77c813","sha256":"b3e2820d0fbded00d0da3594ec40910cc7885f5400d31cdb07cc4348658c5b10","decision":"Add four protected typed options/start/check/cancel procedures. Existing imports, review corpus, saved-result reads and other procedures unchanged."}
+  ],
+  "otherImplementedChanges": [
+    "Actual durable deep reservation and dedicated worker reuse the existing kernel/checkpoint/publication store; five explicit user-primary Skill/model approvals, source revision, request UUID and spend pins are frozen.",
+    "Unknown dispatched stages never call a model again; a fully completed journal can recover local publication with the original UUID. New reservations recheck workspace membership and Agent authority at durable boundaries.",
+    "Agent conversation and profit application instances now lazily load explicit server-only file/SHA approvals through the unchanged source policy schemas; no auto-approval, seed or prompt replacement.",
+    "Explicit null workspace on monthly writes no longer falls back to a default workspace. Omitted legacy context retains its prior fallback."
+  ],
+  "necessaryChecks": {"backendFocusedTests":288,"uiFocusedTestsBeforeFinalReasonAliases":127,"uiControlsFinalTests":29,"sourceApprovalFocusedTests":140,"monthlyFocusedTests":136,"strictRunnerTests":101,"genericQueueTests":18,"countsAreSeparateOverlappingSuitesNotASummedTotal":true},
+  "independentSourceReview": "Entry-shape and strict pinned-call omissions found and fixed before handoff. Queue/strict/loader and final backend cancellation/unknown/lease paths reviewed; no remaining confirmed source blocker. This is not native or provider acceptance.",
+  "runtimeBoundary": "All new writes/workers default off. Real schema, approved compatible Skill versions, model configuration/budget and deployment inputs remain prerequisites. Full original acceptance is preserved and handed over, not marked passed.",
+  "handoff": "docs/main-feature-handoff.json",
+  "sourceApprovals": "docs/runtime-source-approvals.md",
+  "modelCalls": 0,
+  "productionWrites": false,
+  "fullBusinessAcceptancePassed": false,
+  "fullObjectiveComplete": false
+}

@@ -813,6 +813,7 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
             projectId={selectedProjectId}
             analyses={analyses.filter(row => researchSelectedIds.has(row.id))}
             pendingIds={pendingStudyIds}
+            onResearchCompleted={() => setReadGeneration(value => value + 1)}
             onConfirm={analysis => { void reviewStudy(analysis, "confirm"); }}
             onUnlock={analysis => { void reviewStudy(analysis, "unlock"); }}
           />}

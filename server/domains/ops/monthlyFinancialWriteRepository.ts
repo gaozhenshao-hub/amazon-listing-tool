@@ -223,7 +223,9 @@ export function createMonthlyFinancialWriteRepository(dependencies: {
   }
   async function session<T>(ctx: TrpcContext, expectedWorkspaceId: number, body: (current: Session) => Promise<T>) {
     if (!ctx.user) fail("LOGIN_REQUIRED", "UNAUTHORIZED");
-    const workspaceId = ctx.workspaceId ?? ctx.user.defaultWorkspaceId;
+    // Only an omitted legacy context may use the default; explicit null means
+    // there is no selected workspace and must not regain one implicitly.
+    const workspaceId = ctx.workspaceId !== undefined ? ctx.workspaceId : ctx.user.defaultWorkspaceId;
     if (!id(ctx.user.id) || !id(workspaceId) || workspaceId !== expectedWorkspaceId || !managerRoles.includes(ctx.user.role)) fail("WORKSPACE_OR_ROLE_DENIED", "FORBIDDEN");
     const db = await database(); if (!db || typeof db.transaction !== "function") fail("TRANSACTION_REQUIRED");
     return db.transaction(async tx => {

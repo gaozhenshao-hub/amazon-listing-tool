@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { MySqlDialect } from "drizzle-orm/mysql-core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ execute: vi.fn(), getDb: vi.fn(), invokeLLM: vi.fn(), http: vi.fn(), rollout: vi.fn(), key: vi.fn(), evaluation: vi.fn(), metric: vi.fn() }));
 vi.mock("../../../repositories/dbClient", () => ({ getDb: mocks.getDb }));
 vi.mock("../../../_core/llm", () => ({ invokeLLM: mocks.invokeLLM }));
@@ -13,6 +16,7 @@ import { configurationHash, skillManifestHash } from "./assistantConfigurations"
 import { parseAssistantConversationAttachment } from "./assistantConversationAttachments";
 import { strictModelSnapshotFromRow } from "./strictSkillRuntime";
 import { createAssistantConversationRuntime, createFixedAssistantConversationApprovalResolver, AssistantConversationRuntimeSnapshotSchema,
+  assistantConversationRuntime,
   assistantConversationSkillSnapshotFromRow, assistantConversationSkillSnapshotHash, assistantConversationSkillScopeMatches,
   type AssistantConversationSourceApproval, type AssistantConversationRuntimePrepareInput } from "./assistantConversationRuntime";
 import type { RunSkillInput, RunSkillResult } from "./skillRunner";
@@ -24,7 +28,14 @@ const identity = { workspaceId: 3, userId: 7, agentKey: "listing" as const, thre
 const operationId = "b7d29fe8-2c53-4c34-bfe7-cbe34c102125";
 const dialect = new MySqlDialect();
 const model = { workspaceId: 3, slug: "test-model", name: "Synthetic model", provider: "custom", modelId: "test-model-id", baseUrl: "https://example.invalid/v1", apiKeyRef: "env:EXTERNAL_LLM_API_KEY", isActive: 1, capabilityTags: ["text", "vision"], maxContextTokens: 2000000, costPer1kInputTokens: "0.001", costPer1kOutputTokens: "0.002" };
-beforeEach(() => { vi.clearAllMocks(); mocks.key.mockReturnValue("SYNTHETIC_SECRET_NEVER_REAL"); });
+const approvalDirectories: string[] = [];
+beforeEach(() => { vi.clearAllMocks(); mocks.key.mockReturnValue("SYNTHETIC_SECRET_NEVER_REAL"); vi.stubEnv("ASSISTANT_CONVERSATION_APPROVAL_FILE", undefined); vi.stubEnv("ASSISTANT_CONVERSATION_APPROVAL_SHA256", undefined); });
+afterEach(async () => { vi.unstubAllEnvs(); for (const directory of approvalDirectories.splice(0)) await rm(directory, { recursive: true, force: true }); });
+async function configuredApprovalFile(records: unknown[]) {
+  const directory = await mkdtemp(join(tmpdir(), "assistant-approval-unit-")); approvalDirectories.push(directory);
+  const path = join(directory, "approvals.json"), body = JSON.stringify({ version: 1, kind: "assistant_conversation", records });
+  await writeFile(path, body, { mode: 0o600 }); vi.stubEnv("ASSISTANT_CONVERSATION_APPROVAL_FILE", path); vi.stubEnv("ASSISTANT_CONVERSATION_APPROVAL_SHA256", sha(body)); return path;
+}
 function skill(id: number, slug: string) {
   return { id, workspaceId: 3, scope: "workspace", slug, name: `Synthetic ${slug}`, version: 2, status: "Released", modelOverride: null, timeout_seconds: 120,
     manifest: { implementation: { systemPrompt: `Synthetic ${slug}: follow provided data`, userPromptTemplate: "{{context}}", maxTokens: 4096, temperature: 0.2, supportsJsonMode: true }, contract: { syntheticOnly: true } } };
@@ -145,6 +156,39 @@ describe("trusted assistant source and runtime preparation", () => {
     await expect(h.runtime.prepareStage({ ...h.input, runtimeSnapshot: value.runtimeSnapshot, stage: "route" })).rejects.toThrow("INPUT_SNAPSHOT_CHANGED");
     const other = harness(), ready = await other.runtime.prepare(other.input); other.input.savedConfiguration.config.rules.push("changed");
     await expect(other.runtime.revalidate({ ...other.input, runtimeSnapshot: ready.runtimeSnapshot })).rejects.toThrow("CONFIGURATION_STALE");
+  });
+});
+
+describe("application assistant singleton uses explicit server file approvals", () => {
+  it("loads a reviewed file configured after module construction without dispatching a model", async () => {
+    const h = harness(); await configuredApprovalFile(h.approvals);
+    expect(await assistantConversationRuntime.availability(h.input)).toMatchObject({ available: true, reasonCode: null });
+    const prepared = await assistantConversationRuntime.prepare(h.input); expect(prepared.runtimeSnapshot.stages).toHaveLength(2);
+    expect(mocks.invokeLLM).not.toHaveBeenCalled(); expect(mocks.http).not.toHaveBeenCalled(); expect(h.calls()).toBe(0);
+  });
+  it("fails closed before registry access when complete file bytes no longer match the deployment SHA", async () => {
+    const h = harness(), path = await configuredApprovalFile(h.approvals), runtime = createAssistantConversationRuntime({ runSkill: h.runSkill });
+    const { runtimeSnapshot } = await runtime.prepare(h.input); h.execute.mockClear(); await writeFile(path, JSON.stringify({ version: 1, kind: "assistant_conversation", records: [] }));
+    await expect(runtime.prepareStage({ ...h.input, runtimeSnapshot, stage: "route", routeResult: null })).rejects.toMatchObject({ code: "APPROVAL_HASH_MISMATCH" });
+    expect(h.execute).not.toHaveBeenCalled(); expect(h.calls()).toBe(0);
+  });
+  it.each(["duplicate", "wrong_listing_source"])("does not relax the fixed approval schema for %s files", async kind => {
+    const h = harness(), records = kind === "duplicate" ? [...h.approvals, h.approvals[0]] : h.approvals.map((record, index) => index === 2 ? { ...record, source: { ...record.source, origin: "qingdao" } } : record);
+    await configuredApprovalFile(records);
+    expect(await assistantConversationRuntime.availability(h.input)).toMatchObject({ available: false, reasonCode: "APPROVAL_RECORDS_INVALID" });
+    expect(h.execute).not.toHaveBeenCalled(); expect(h.calls()).toBe(0);
+  });
+  it("rechecks an intentionally updated approval file and rejects a revoked stage", async () => {
+    const h = harness(), path = await configuredApprovalFile(h.approvals), runtime = createAssistantConversationRuntime({ runSkill: h.runSkill });
+    const { runtimeSnapshot } = await runtime.prepare(h.input), body = JSON.stringify({ version: 1, kind: "assistant_conversation", records: [] });
+    await writeFile(path, body); vi.stubEnv("ASSISTANT_CONVERSATION_APPROVAL_SHA256", sha(body)); h.execute.mockClear();
+    await expect(runtime.prepareStage({ ...h.input, runtimeSnapshot, stage: "route", routeResult: null })).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE" });
+    expect(h.execute).not.toHaveBeenCalled(); expect(h.calls()).toBe(0);
+  });
+  it("preserves explicit resolver injection and never silently falls back from an invalid default file", async () => {
+    const h = harness(); vi.stubEnv("ASSISTANT_CONVERSATION_APPROVAL_FILE", "invalid-relative.json");
+    await expect(h.runtime.prepare(h.input)).resolves.toHaveProperty("runtimeSnapshot");
+    expect(await assistantConversationRuntime.availability(h.input)).toMatchObject({ available: false, reasonCode: "APPROVAL_CONFIGURATION_INVALID" });
   });
 });
 

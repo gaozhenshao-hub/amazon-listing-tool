@@ -208,6 +208,52 @@ describe("monthly scope CAS, fixed candidates and freshness", () => {
 
 describe("current manager, workspace and strict directory authorization", () => {
   it.each(["ops_specialist", "viewer", "developer", "finance"])("does not delegate all report ranges to %s", async role => { actors[0].role = role; await expect(repository.options(context(role), { expectedWorkspaceId: 7 })).rejects.toMatchObject({ code: "FORBIDDEN" }); expect(queries).toHaveLength(0); });
+  it.each(["options", "confirm", "revoke", "recover"] as const)("rejects explicit null workspace before database or side effects: %s", async action => {
+    const database = vi.fn(async () => ({ transaction })), parseImport = vi.fn(parseMonthlyFinancialImport);
+    const isolated = createMonthlyFinancialWriteRepository({ database, parseImport, permission, storage, enabled: () => enabled, synchronizeBoards });
+    const ctx = { ...context(), workspaceId: null };
+    const transition = { expectedWorkspaceId: 7, operationId, batchId: 100, expectedBatchVersion: "a".repeat(64), expectedImpactKey: "b".repeat(64), fullScopeAcknowledged: true as const };
+    const result = action === "options" ? isolated.options(ctx, { expectedWorkspaceId: 7 })
+      : action === "recover" ? isolated.recover(ctx, { expectedWorkspaceId: 7, operationId, decision: "cancel" })
+        : isolated[action](ctx, transition);
+    await expect(result).rejects.toMatchObject({ code: "FORBIDDEN", message: "MONTHLY_FINANCIAL_WRITE_WORKSPACE_OR_ROLE_DENIED" });
+    expect(database).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled(); expect(parseImport).not.toHaveBeenCalled();
+    expect(permission).not.toHaveBeenCalled(); expect(synchronizeBoards).not.toHaveBeenCalled();
+    for (const method of Object.values(storage)) expect(method).not.toHaveBeenCalled();
+    expect({ batches, artifacts, audits, boardWrites, objects: objects.size }).toEqual({ batches: [], artifacts: [], audits: [], boardWrites: [], objects: 0 });
+  });
+  it("null-workspace upload retains existing parse order but cannot acquire database or storage", async () => {
+    const database = vi.fn(async () => ({ transaction })), parseImport = vi.fn(parseMonthlyFinancialImport);
+    const isolated = createMonthlyFinancialWriteRepository({ database, parseImport, permission, storage, enabled: () => enabled, synchronizeBoards });
+    await expect(isolated.upload({ ...context(), workspaceId: null }, command())).rejects.toMatchObject({ code: "FORBIDDEN", message: "MONTHLY_FINANCIAL_WRITE_WORKSPACE_OR_ROLE_DENIED" });
+    expect(parseImport).toHaveBeenCalledTimes(1); expect(database).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled();
+    expect(permission).not.toHaveBeenCalled(); expect(synchronizeBoards).not.toHaveBeenCalled();
+    for (const method of Object.values(storage)) expect(method).not.toHaveBeenCalled();
+    expect({ batches, artifacts, audits, boardWrites, objects: objects.size }).toEqual({ batches: [], artifacts: [], audits: [], boardWrites: [], objects: 0 });
+  });
+  it("preserves omitted-workspace fallback through options, confirmation, revocation and recovery", async () => {
+    const ctx = { ...context(), workspaceId: undefined };
+    expect((await repository.options(ctx, { expectedWorkspaceId: 7 })).identity).toEqual({ userId: 3, workspaceId: 7 });
+    const uploadedResult = await repository.upload(ctx, command()); expect(uploadedResult.status).toBe("committed");
+    const batchId = uploadedResult.batchId!;
+    expect((await repository.confirm(ctx, await transitionCommand(batchId))).batchStatus).toBe("completed");
+    expect((await repository.revoke(ctx, await transitionCommand(batchId, op3))).batchStatus).toBe("deleted");
+    expect((await repository.recover(ctx, { expectedWorkspaceId: 7, operationId: op3, decision: "check" })).batchStatus).toBe("deleted");
+    expect(queries.filter(query => query.sql.includes("FROM workspaces")).every(query => query.params[0] === 7)).toBe(true);
+  });
+  it.each([
+    { workspaceId: undefined, expectedWorkspaceId: 8 },
+    { workspaceId: 8, expectedWorkspaceId: 7 },
+    { workspaceId: 7, expectedWorkspaceId: 8 },
+  ])("does not use default workspace to repair a mismatched scope: %j", async ({ workspaceId, expectedWorkspaceId }) => {
+    const database = vi.fn(async () => ({ transaction }));
+    const isolated = createMonthlyFinancialWriteRepository({ database, permission, storage, enabled: () => enabled, synchronizeBoards });
+    await expect(isolated.options({ ...context(), workspaceId }, { expectedWorkspaceId })).rejects.toMatchObject({ code: "FORBIDDEN", message: "MONTHLY_FINANCIAL_WRITE_WORKSPACE_OR_ROLE_DENIED" });
+    expect(database).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled(); expect(permission).not.toHaveBeenCalled();
+    expect(synchronizeBoards).not.toHaveBeenCalled();
+    for (const method of Object.values(storage)) expect(method).not.toHaveBeenCalled();
+    expect({ batches, artifacts, audits, boardWrites, objects: objects.size }).toEqual({ batches: [], artifacts: [], audits: [], boardWrites: [], objects: 0 });
+  });
   it.each(["inactive_actor", "changed_role", "changed_workspace", "inactive_workspace", "missing_membership", "disabled_membership", "duplicate_membership"])("rejects %s", async cause => { if (cause === "inactive_actor") actors[0].status = "disabled"; if (cause === "changed_role") actors[0].role = "admin"; if (cause === "changed_workspace") actors[0].defaultWorkspaceId = 8; if (cause === "inactive_workspace") workspaces[0].status = "disabled"; if (cause === "missing_membership") memberships = []; if (cause === "disabled_membership") memberships[0].status = "disabled"; if (cause === "duplicate_membership") memberships.push({ ...memberships[0], id: 100 }); await expect(repository.options(context(), { expectedWorkspaceId: 7 })).rejects.toMatchObject({ code: "FORBIDDEN" }); });
   it("ops_data policy allow cannot override explicit import directory denial", async () => { policies = [policy([])]; await expect(repository.options(context(), { expectedWorkspaceId: 7 })).rejects.toMatchObject({ code: "FORBIDDEN" }); });
   it("workspace directory overrides permissive global directory", async () => { policies = [policy([], 7), policy(undefined, null)]; await expect(repository.options(context(), { expectedWorkspaceId: 7 })).rejects.toMatchObject({ code: "FORBIDDEN" }); });

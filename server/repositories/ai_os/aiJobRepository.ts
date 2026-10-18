@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { PROFILE_IMPORT_JOB_KIND } from "../../../shared/profileImportJob";
 import { COMPETITOR_RESEARCH_JOB_KIND } from "../../../shared/competitorResearchJob";
 import { COMPETITOR_DEEP_EXECUTION_JOB_KIND } from "../../../shared/competitorDeepExecutionJob";
@@ -174,10 +174,13 @@ export async function listAiJobsForUser(
 export async function listRecoverableAiJobs(opts: { limit?: number } = {}) {
   const db = await requireDb("AI Job repository");
   const now = new Date();
-  const recoverable = or(
+  const recoverable = and(or(
     and(eq(aiJobs.status, "queued"), or(isNull(aiJobs.nextRunAt), lt(aiJobs.nextRunAt, now))),
     and(eq(aiJobs.status, "running"), or(isNull(aiJobs.leaseUntil), lt(aiJobs.leaseUntil, now))),
-  );
+  ), ne(aiJobs.kind, COMPETITOR_DEEP_EXECUTION_JOB_KIND));
+  // Deep research has a dedicated metadata-only lane and immutable per-stage
+  // dispatch fences. Never hydrate its large private checkpoints here, even
+  // while that lane is disabled; it must not crowd out ordinary imports.
   // Keep large input/output JSON out of MySQL's filesort buffer.
   const candidates = await db
     .select({ id: aiJobs.id })

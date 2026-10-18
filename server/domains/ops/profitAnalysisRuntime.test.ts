@@ -1,9 +1,14 @@
 import { MySqlDialect } from "drizzle-orm/mysql-core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-const external = vi.hoisted(() => ({ db: vi.fn(() => { throw new Error("NO_REAL_DATABASE"); }), provider: vi.fn(() => { throw new Error("NO_REAL_PROVIDER"); }) }));
+import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const external = vi.hoisted(() => ({ db: vi.fn(() => { throw new Error("NO_REAL_DATABASE"); }), provider: vi.fn(() => { throw new Error("NO_REAL_PROVIDER"); }), key: vi.fn() }));
 vi.mock("../../repositories/dbClient", () => ({ getDb: external.db }));
 vi.mock("../../_core/llm", () => ({ invokeLLM: external.provider }));
 vi.mock("../../infrastructure/http/safeHttpClient", () => ({ SafeHttpError: class extends Error {}, safeHttpRequest: external.provider }));
+vi.mock("../ai_os/services/teamorouterCatalog", async importOriginal => ({ ...await importOriginal<object>(), resolveGovernedModelApiKey: external.key }));
 import { MONTHLY_FINANCIAL_METRICS, parseMonthlyFinancialBatch, type MonthlyFinancialBatchRecord } from "../../../shared/monthlyFinancialRead";
 import { buildProfitAnalysisEvidence, ProfitAnalysisResultSchema, type ProfitAnalysisSource, type ProfitAnalysisEvidence } from "../../../shared/profitAnalysis";
 import { configurationHash, assistantConversationSkillSnapshotFromRow, assistantConversationSkillSnapshotHash } from "../ai_os/services/assistantConversationSourcePrimitives";
@@ -12,7 +17,7 @@ import type { AssistantConversationSavedConfiguration } from "../ai_os/services/
 import { renderSkillTemplate, type RunSkillInput, type RunSkillResult } from "../ai_os/services/skillRunner";
 import { strictModelSnapshotFromRow, strictRuntimeHash, strictSkillMessages, StrictSkillRuntimeError } from "../ai_os/services/strictSkillRuntime";
 import { createProfitAnalysisRuntime, createFixedProfitAnalysisApprovalResolver, ProfitAnalysisRuntimeSnapshotSchema, ProfitAnalysisSourceApprovalSchema,
-  type ProfitAnalysisSourceApproval, type ProfitAnalysisRuntimeInput } from "./profitAnalysisRuntime";
+  profitAnalysisRuntime, type ProfitAnalysisSourceApproval, type ProfitAnalysisRuntimeInput } from "./profitAnalysisRuntime";
 
 const clone = <T>(value: T): T => structuredClone(value);
 const identity = { workspaceId: 3, userId: 7 }, operationId = "b7d29fe8-2c53-4c34-bfe7-cbe34c102125";
@@ -82,7 +87,14 @@ function harness(unchanged = false) {
     setOutput: (value: unknown) => { output = value; }, failProvider: (error: unknown) => { providerFailure = error; }, skipFence: () => { skipFence = true; },
     setParsed: (value: unknown) => { parsedOverride = value; }, alterReceipt: (fn: (value: Record<string, unknown>) => void) => { alterReceipt = fn; } };
 }
-beforeEach(() => vi.clearAllMocks());
+const approvalDirectories: string[] = [];
+beforeEach(() => { vi.clearAllMocks(); external.key.mockReturnValue("SYNTHETIC_NEVER_REAL"); vi.stubEnv("PROFIT_ANALYSIS_APPROVAL_FILE", undefined); vi.stubEnv("PROFIT_ANALYSIS_APPROVAL_SHA256", undefined); });
+afterEach(async () => { vi.unstubAllEnvs(); for (const directory of approvalDirectories.splice(0)) await rm(directory, { recursive: true, force: true }); });
+async function configuredApprovalFile(records: unknown[]) {
+  const directory = await mkdtemp(join(tmpdir(), "profit-approval-unit-")); approvalDirectories.push(directory);
+  const path = join(directory, "approvals.json"), body = JSON.stringify({ version: 1, kind: "profit_analysis", records });
+  await writeFile(path, body, { mode: 0o600 }); vi.stubEnv("PROFIT_ANALYSIS_APPROVAL_FILE", path); vi.stubEnv("PROFIT_ANALYSIS_APPROVAL_SHA256", createHash("sha256").update(body).digest("hex")); return path;
+}
 async function ready(h = harness()) { const { runtimeSnapshot } = await h.runtime.prepare(h.input); const stage = await h.runtime.prepareStage({ ...h.input, runtimeSnapshot }); return { h, runtimeSnapshot, stage }; }
 
 describe("profit runtime trusted approval and complete capture", () => {
@@ -209,6 +221,38 @@ describe("profit runtime trusted approval and complete capture", () => {
     const h = harness(); h.models[0].maxContextTokens = 4096;
     h.getApproval().modelConfigurationHash = strictModelSnapshotFromRow(3, h.models[0].slug, h.models[0]).configurationHash;
     await expect(h.runtime.prepare(h.input)).rejects.toMatchObject({ code: "PAYLOAD_BUDGET_UNAVAILABLE" }); expect(h.calls()).toBe(0);
+  });
+});
+
+describe("application profit singleton uses explicit server file approvals", () => {
+  it("loads a reviewed file configured after module construction without provider execution", async () => {
+    const h = harness(); await configuredApprovalFile([h.getApproval()]);
+    const { runtimeSnapshot } = await profitAnalysisRuntime.prepare(h.input);
+    expect(runtimeSnapshot.approval).toEqual(h.getApproval()); expect(external.provider).not.toHaveBeenCalled(); expect(external.db).not.toHaveBeenCalled();
+  });
+  it("revalidates exact file bytes before registry, credential or provider access", async () => {
+    const h = harness(), path = await configuredApprovalFile([h.getApproval()]), runtime = createProfitAnalysisRuntime({ runSkill: h.runSkill, credentialResolver: h.credentialResolver });
+    const { runtimeSnapshot } = await runtime.prepare(h.input); h.executor.execute.mockClear(); h.credentialResolver.mockClear();
+    await writeFile(path, JSON.stringify({ version: 1, kind: "profit_analysis", records: [] }));
+    await expect(runtime.prepareStage({ ...h.input, runtimeSnapshot })).rejects.toMatchObject({ code: "APPROVAL_HASH_MISMATCH" });
+    expect(h.executor.execute).not.toHaveBeenCalled(); expect(h.credentialResolver).not.toHaveBeenCalled(); expect(h.calls()).toBe(0);
+  });
+  it.each(["duplicate", "wrong_source"])("reuses the original schema and fixed resolver for %s", async kind => {
+    const h = harness(), record = h.getApproval();
+    await configuredApprovalFile(kind === "duplicate" ? [record, record] : [{ ...record, source: { ...record.source, origin: "reviewed_supplement" } }]);
+    await expect(profitAnalysisRuntime.prepare(h.input)).rejects.toMatchObject({ code: "APPROVAL_RECORDS_INVALID" });
+    expect(h.executor.execute).not.toHaveBeenCalled(); expect(external.key).not.toHaveBeenCalled(); expect(external.provider).not.toHaveBeenCalled();
+  });
+  it("fails closed when the approval is intentionally removed and the new file hash is configured", async () => {
+    const h = harness(), path = await configuredApprovalFile([h.getApproval()]), runtime = createProfitAnalysisRuntime({ runSkill: h.runSkill, credentialResolver: h.credentialResolver });
+    const { runtimeSnapshot } = await runtime.prepare(h.input), body = JSON.stringify({ version: 1, kind: "profit_analysis", records: [] });
+    await writeFile(path, body); vi.stubEnv("PROFIT_ANALYSIS_APPROVAL_SHA256", createHash("sha256").update(body).digest("hex")); h.executor.execute.mockClear();
+    await expect(runtime.prepareStage({ ...h.input, runtimeSnapshot })).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE" }); expect(h.executor.execute).not.toHaveBeenCalled(); expect(h.calls()).toBe(0);
+  });
+  it("keeps explicit injected resolvers usable without bypassing the application's bad configuration", async () => {
+    const h = harness(); vi.stubEnv("PROFIT_ANALYSIS_APPROVAL_FILE", "invalid-relative.json");
+    await expect(h.runtime.prepare(h.input)).resolves.toHaveProperty("runtimeSnapshot");
+    await expect(profitAnalysisRuntime.prepare(h.input)).rejects.toMatchObject({ code: "APPROVAL_CONFIGURATION_INVALID" });
   });
 });
 
