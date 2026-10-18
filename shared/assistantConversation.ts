@@ -63,9 +63,16 @@ export const AssistantConversationSubmitInputSchema = AssistantConversationThrea
 export const AssistantConversationOperationInputSchema = AssistantConversationThreadInputSchema.extend({ operationId: uuid }).strict();
 export const AssistantConversationConfirmRulesInputSchema = AssistantConversationOperationInputSchema.extend({
   confirmationId: uuid,
+  expectedProposalHash: AssistantDigestSchema,
   expectedConfigurationRevision: AssistantRevisionSchema,
+  expectedConfigurationHash: AssistantDigestSchema,
   rules: AgentLibraryRulesSchema,
-}).strict();
+  confirmSharedScope: z.literal(true),
+  confirmClearAll: z.boolean(),
+}).strict().superRefine((value, context) => {
+  if (value.confirmationId === value.operationId) context.addIssue({ code: "custom", path: ["confirmationId"], message: "Confirmation requires a distinct operation UUID" });
+  if (value.rules.length === 0 && !value.confirmClearAll) context.addIssue({ code: "custom", path: ["confirmClearAll"], message: "Clearing all shared rules requires explicit confirmation" });
+});
 
 export const ASSISTANT_CONVERSATION_STATES = [
   "queued", "route_dispatched", "route_ready", "reply_dispatched", "reply_ready",

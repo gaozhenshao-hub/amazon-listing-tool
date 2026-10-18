@@ -153,4 +153,19 @@ describe("private conversation owned bridge", () => {
     fireEvent.click(screen.getByRole("button", { name: "同 UUID 重试创建会话" })); await screen.findByText(/私有会话已创建/);
     expect(client.createThread.mutate.mock.calls[1][0]).toEqual(client.createThread.mutate.mock.calls[0][0]); expect(client.submit.mutate).not.toHaveBeenCalled();
   });
+  it("opens only successful coach proposals explicitly and merges rule draft into parent dirty guard", async () => {
+    const client = { ...api(), ruleProposal: { query: vi.fn().mockResolvedValue({ identity, threadId, operationId, proposalHash: "b".repeat(64), proposedRules: ["完整候选\n同条换行"], baseConfiguration: { revision: 3, hash: "a".repeat(64) }, currentConfiguration: { revision: 3, hash: "a".repeat(64) }, capability: { available: true, reasonCode: null }, sharedScope: "workspace_agent" }) }, confirmRules: { mutate: vi.fn() }, checkRuleConfirmation: { query: vi.fn() }, cancelRuleConfirmation: { mutate: vi.fn() } };
+    client.history.query.mockImplementation(async input => ({ identity, thread: thread(input.threadId), items: input.threadId === threadId ? [{ ...turn(), mode: "coach", proposedRules: ["完整候选\n同条换行"] }] : [], nextBeforeSequence: null, runtimeEnabled: true }));
+    const onDirtyChange = vi.fn(); render(<AssistantConversationController owner={owner} api={client} onDirtyChange={onDirtyChange} />); await screen.findByRole("option", { name: "私人项目" }); fireEvent.change(screen.getByLabelText("私有项目会话"), { target: { value: threadId } });
+    const button = await screen.findByRole("button", { name: "审核第 1 轮候选规则", hidden: true }); expect(client.ruleProposal.query).not.toHaveBeenCalled(); fireEvent.click(button); await screen.findByLabelText("第 1 条规则");
+    fireEvent.change(screen.getByLabelText("第 1 条规则"), { target: { value: "规则编辑草稿" } }); await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
+    vi.mocked(window.confirm).mockReturnValue(false); fireEvent.change(screen.getByLabelText("私有项目会话"), { target: { value: otherThreadId } }); expect(screen.getByLabelText("第 1 条规则")).toHaveValue("规则编辑草稿"); expect(client.history.query).toHaveBeenCalledTimes(1);
+    vi.mocked(window.confirm).mockReturnValue(true); fireEvent.change(screen.getByLabelText("私有项目会话"), { target: { value: otherThreadId } }); await waitFor(() => expect(screen.queryByLabelText("第 1 条规则")).not.toBeInTheDocument()); expect(client.confirmRules.mutate).not.toHaveBeenCalled();
+  });
+  it("rule read revocation quarantines both rule content and original private conversation", async () => {
+    const client = { ...api(), ruleProposal: { query: vi.fn().mockRejectedValue(Object.assign(new Error("denied"), { data: { code: "FORBIDDEN" } })) }, confirmRules: { mutate: vi.fn() }, checkRuleConfirmation: { query: vi.fn() }, cancelRuleConfirmation: { mutate: vi.fn() } };
+    client.history.query.mockResolvedValue({ identity, thread: thread(), items: [{ ...turn(), mode: "coach", proposedRules: ["私有候选"] }], nextBeforeSequence: null, runtimeEnabled: true });
+    render(<AssistantConversationController owner={owner} api={client} />); await screen.findByRole("option", { name: "私人项目" }); fireEvent.change(screen.getByLabelText("私有项目会话"), { target: { value: threadId } }); fireEvent.click(await screen.findByRole("button", { name: "审核第 1 轮候选规则", hidden: true }));
+    await screen.findByText(/私有记录和草稿已清除/); expect(screen.queryByText("私有回复 1")).not.toBeInTheDocument(); expect(screen.queryByText("私有候选")).not.toBeInTheDocument();
+  });
 });

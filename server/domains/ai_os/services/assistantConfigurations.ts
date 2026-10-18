@@ -122,6 +122,49 @@ function rulesProjection(record: NonNullable<Awaited<ReturnType<typeof current>>
   return { status: "configured", agentKey: record.agentKey, revision: record.revision, rules: record.config.rules, updatedAt: record.updatedAt };
 }
 
+/** Same-executor write primitive. The caller owns the transaction, fresh actor
+ * authorization and feature gates. Never opens or commits a nested transaction. */
+export async function saveAssistantConfigurationInSession(
+  session: ConfigurationSession,
+  workspaceId: number,
+  userId: number,
+  input: ConfigurationChange & { expectedHash?: string },
+) {
+  workspace(workspaceId); integer(userId); key(input.agentKey);
+  const expected = integer(input.expectedRevision, 0);
+  if (expected >= MAX_REVISION) refuse("ASSISTANT_REVISION_EXHAUSTED");
+  const before = await current(session, workspaceId, input.agentKey);
+  if ((before?.revision ?? 0) !== expected) refuse("ASSISTANT_REVISION_CONFLICT", "CONFLICT");
+  if (input.expectedHash !== undefined && (!/^[a-f0-9]{64}$/u.test(input.expectedHash) || !before || configurationHash(before.config) !== input.expectedHash)) refuse("ASSISTANT_REVISION_CONFLICT", "CONFLICT");
+  let config: AssistantConfiguration, sourceRevision: number | null = null;
+  if (input.mode === "configuration-restore" || input.mode === "rules-restore") {
+    sourceRevision = integer(input.targetRevision);
+    if (!before || sourceRevision > before.revision) refuse("ASSISTANT_VERSION_NOT_FOUND", "NOT_FOUND");
+    const rows = await session.version(workspaceId, input.agentKey, sourceRevision);
+    if (!rows.length) refuse("ASSISTANT_VERSION_NOT_FOUND", "NOT_FOUND");
+    const historical = historyRow(exactlyOne(rows), workspaceId, input.agentKey).config;
+    // Rules-only restore retains every other field of the locked CURRENT config.
+    config = input.mode === "rules-restore"
+      ? configuration({ ...before.config, rules: historical.rules }) : historical;
+  } else if (input.mode === "rules") {
+    const base: AssistantConfiguration = before?.config ?? {
+      name: AGENT_LIBRARY_ROLES.find(role => role.key === input.agentKey)!.name,
+      description: "", enabled: false, modelSlug: "", instructions: "", rules: [], skills: [],
+    };
+    // Explicit first write stays disabled. Validate the complete merged body,
+    // not only the rules, preserving the existing 128KiB configuration limit.
+    config = configuration({ ...base, rules: input.rules });
+  } else config = configuration(input.config);
+  await validateBindings(session, workspaceId, input.agentKey, config);
+  const text = canonicalConfigurationJson(config), hash = configurationHash(config), revision = expected + 1;
+  if (before) await session.update(workspaceId, input.agentKey, expected, text, hash, userId);
+  else await session.insert(workspaceId, input.agentKey, text, hash, userId);
+  await session.append(workspaceId, input.agentKey, revision, text, hash, sourceRevision, userId);
+  const result = await current(session, workspaceId, input.agentKey);
+  if (!result || result.revision !== revision || !isDeepStrictEqual(result.config, config)) refuse("ASSISTANT_DATA_INVALID");
+  return result;
+}
+
 export function createAssistantConfigurationService(
   repository: AssistantConfigurationRepository = createAssistantConfigurationRepository(),
   writesEnabled: () => boolean = () => process.env.ENABLE_ASSISTANT_CONFIGURATION_WRITES === "true",
@@ -131,40 +174,7 @@ export function createAssistantConfigurationService(
     workspace(workspaceId); integer(userId); key(input.agentKey);
     const expected = integer(input.expectedRevision, 0);
     if (expected >= MAX_REVISION) refuse("ASSISTANT_REVISION_EXHAUSTED");
-    return repository.transaction(workspaceId, async session => {
-      const before = await current(session, workspaceId, input.agentKey);
-      if ((before?.revision ?? 0) !== expected) refuse("ASSISTANT_REVISION_CONFLICT", "CONFLICT");
-      let config: AssistantConfiguration, sourceRevision: number | null = null;
-      if (input.mode === "configuration-restore" || input.mode === "rules-restore") {
-        sourceRevision = integer(input.targetRevision);
-        if (!before || sourceRevision > before.revision) refuse("ASSISTANT_VERSION_NOT_FOUND", "NOT_FOUND");
-        const rows = await session.version(workspaceId, input.agentKey, sourceRevision);
-        if (!rows.length) refuse("ASSISTANT_VERSION_NOT_FOUND", "NOT_FOUND");
-        const historical = historyRow(exactlyOne(rows), workspaceId, input.agentKey).config;
-        // A rules restore is not a full configuration rollback: merge into the
-        // locked CURRENT record, never into a stale client draft or old model.
-        config = input.mode === "rules-restore"
-          ? configuration({ ...before.config, rules: historical.rules }) : historical;
-      } else if (input.mode === "rules") {
-        // Explicit first write only. Reading an unconfigured role never seeds it
-        // and a rules-only first save cannot enable an Agent or choose a model.
-        const base: AssistantConfiguration = before?.config ?? {
-          name: AGENT_LIBRARY_ROLES.find(role => role.key === input.agentKey)!.name,
-          description: "", enabled: false, modelSlug: "", instructions: "", rules: [], skills: [],
-        };
-        // Validate the merged FULL payload (including the 128KiB budget), not
-        // merely the incoming rules. Existing binding checks remain mandatory.
-        config = configuration({ ...base, rules: input.rules });
-      } else config = configuration(input.config);
-      await validateBindings(session, workspaceId, input.agentKey, config);
-      const text = canonicalConfigurationJson(config), hash = configurationHash(config), revision = expected + 1;
-      if (before) await session.update(workspaceId, input.agentKey, expected, text, hash, userId);
-      else await session.insert(workspaceId, input.agentKey, text, hash, userId);
-      await session.append(workspaceId, input.agentKey, revision, text, hash, sourceRevision, userId);
-      const result = await current(session, workspaceId, input.agentKey);
-      if (!result || result.revision !== revision || !isDeepStrictEqual(result.config, config)) refuse("ASSISTANT_DATA_INVALID");
-      return result;
-    });
+    return repository.transaction(workspaceId, session => saveAssistantConfigurationInSession(session, workspaceId, userId, input));
   }
   return {
     async listMetadata(workspaceId: number): Promise<{ items: AssistantConfigurationMetadata[] }> {

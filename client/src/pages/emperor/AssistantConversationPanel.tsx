@@ -33,6 +33,7 @@ export type AssistantConversationPanelProps = {
   onFiles: (files: File[]) => void; onRemoveFile: (id: string) => void; onSend: () => void;
   onCheck: () => void; onCancel: () => void; onCancelAcknowledged: (value: boolean) => void;
   onRecoverMessage?: (operationId: string) => void;
+  onReviewRules?: (operationId: string) => void;
 };
 const button = "min-h-10 rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:opacity-40";
 const input = "block w-full min-w-0 max-w-full rounded-lg border border-white/15 bg-[#101622] px-3 py-2 text-sm text-slate-100";
@@ -85,7 +86,7 @@ export default function AssistantConversationPanel(props: AssistantConversationP
           </div>
           <div className="mr-2 min-w-0 rounded-xl border border-white/10 p-3 sm:mr-5"><p className="break-words text-xs text-violet-300">{labels[item.state]} · 配置 v{item.configurationRevision}{item.selectedSkillSlug ? ` · 上下文 Skill：${item.selectedSkillSlug}` : ""}</p>{item.reply !== null && <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-7 [overflow-wrap:anywhere]">{item.reply}</p>}{item.errorCode && <p className="mt-2 break-words text-xs text-amber-300">原因：{item.errorCode}</p>}
             {props.onRecoverMessage && !["succeeded", "failed", "canceled"].includes(item.state) && <button type="button" className={`${button} mt-2`} disabled={props.busy || !props.locksAvailable || !!props.pending && props.pending.operationId !== item.operationId} onClick={() => props.onRecoverMessage?.(item.operationId)}>管理第 {item.sequence} 轮原对话</button>}
-            {item.proposedRules !== null && <details className="mt-3 border-t border-white/10 pt-3"><summary className="text-sm">{item.proposedRules.length} 条完整候选规则（尚未生效）</summary><ol className="mt-2 list-decimal space-y-2 pl-5 text-sm">{item.proposedRules.map((rule, index) => <li className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" key={index}>{rule}</li>)}</ol><p className="mt-3 text-xs text-amber-200">本批候选规则确认尚未接通，不会自动保存。现有规则编辑器仍是唯一配置入口；候选基于 v{item.configurationRevision}，须人工核对当前版本后再修改。</p></details>}
+            {item.proposedRules !== null && <details className="mt-3 border-t border-white/10 pt-3"><summary className="text-sm">{item.proposedRules.length} 条完整候选规则（不会自动生效）</summary><ol className="mt-2 list-decimal space-y-2 pl-5 text-sm">{item.proposedRules.map((rule, index) => <li className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" key={index}>{rule}</li>)}</ol>{props.onReviewRules && item.mode === "coach" && item.state === "succeeded" ? <><p className="mt-3 text-xs text-amber-200">候选基于 v{item.configurationRevision}；须重新核对来源和当前配置，人工编辑完整列表后明确确认。此前是否已应用应以配置与确认回执为准。</p><button type="button" className={`${button} mt-2`} disabled={props.busy} onClick={() => props.onReviewRules?.(item.operationId)}>审核第 {item.sequence} 轮候选规则</button></> : <p className="mt-3 text-xs text-amber-200">候选规则确认尚未接通或当前对话尚未成功，不会自动保存。现有规则编辑器仍是唯一配置入口；候选基于 v{item.configurationRevision}，须人工核对当前版本后再修改。</p>}</details>}
           </div>
         </article>)}
       </div>

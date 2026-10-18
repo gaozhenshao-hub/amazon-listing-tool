@@ -1,0 +1,44 @@
+{
+  "schema": "amazon-integration-review/v1",
+  "batch": "P5-A3-private-proposal-human-confirmation",
+  "baseline": "d120149602f62078b230e615e684f42944ad2f10",
+  "status": "local_source_and_synthetic_ui_verified_runtime_not_enabled",
+  "sourcePolicy": "R2 unchanged: general P5 Skills Qingdao; operations additions friend and Lingxing Qingdao; Listing Skills user, workflow and competitor/product selection friend.",
+  "implemented": [
+    "Four authenticated APIs for proposal read, confirmation, original confirmation check and permanent cancellation. Only caller-owned successful coach output with equal complete proposal and reply rules is confirmable.",
+    "Explicit whole-workspace full-list replacement, editable complete rules and extra empty-set acknowledgement. Immutable proposal/base hashes and current configuration CAS prevent automatic rebase or overwrite.",
+    "Existing full configuration authority reused through same-session helper. Configuration update, existing history append and metadata-only durable confirmation receipt commit or roll back together. All non-rule configuration fields remain unchanged.",
+    "Independent confirmation UUID, distinct from original turn UUID. Scope/user/thread/turn/request binding, idempotent original-result recovery and permanent canceled receipt prevent a delayed or repeated confirmation from creating another revision.",
+    "Current admin/super_admin, membership, both directory permissions, exact conversation.confirm and agent.update checked in the private transaction. Recovery still requires current authority but works with new-write gates off.",
+    "Actual schema admission for configuration/history/audit tables; no automatic DDL or new rule authority. Optional missing confirmation schema disables only this lane, while real query/data errors remain failures.",
+    "Owned UI pending metadata contains only identity/UUID/revision/hashes. WebLocks, cross-tab reconciliation, permission quarantine and late-response handling preserve unrelated drafts. Saving does not overwrite an already-open configuration editor."
+  ],
+  "verification": {
+    "sourceProof": {"sha256":"92d2e82e057db3e090c2c6ca55e9a258c894cefb94b315d8a21424e449e477aa","baselineBlobs":2713,"verifiedBaselineBeforeOverlay":2713,"overlays":20},
+    "focusedTests": {"passed":908,"failed":0,"pending":0,"files":33},
+    "lint": {"files":20,"warnings":0,"exitCode":0},
+    "fullUnchangedTsconfig": {"incremental":false,"compilerFiles":3834,"diagnostics":0,"exitCode":0},
+    "testInclusiveTypecheck": {"exitCode":0},
+    "protectedBaseline": {"files":106,"dependencies":2,"failures":0},
+    "clientRuntimeIdentifiers": {"exitCode":0},
+    "serverBundles": ["web","aiWorker","scheduler"],
+    "actualSyntheticBrowser": {"completeMultilineRules":true,"sharedScopeConsent":true,"explicitEmptyConsent":true,"lostAckNoDuplicateSave":true,"gateOffRecovery":true,"unknownCheckAndCancel":true,"versionConflictPreservesDraft":true,"responsiveWidths":[1425,375],"horizontalOverflow":false,"duringAcceptanceConsoleErrors":0,"realModelCalls":0},
+    "independentReview": "Separate protocol/UI/journal/service review found no remaining blocking source issue. Native database isolation/durability and authenticated full application acceptance are not claimed."
+  },
+  "reviewCorrections": [
+    "Use indexed auditId equality plus exact binary comparison, avoiding a non-sargable binary-only lookup.",
+    "Maintain the optional confirmation capability boundary so an explicitly unavailable new schema cannot hide existing conversation reads.",
+    "Reject a confirmation UUID identical to the source turn UUID on both server and pending-client metadata contracts.",
+    "Keep canceled/unknown receipts free of success hashes; validate successful receipt fields and all target bindings."
+  ],
+  "enablement": "New confirmations require both existing ENABLE_ASSISTANT_CONFIGURATION_WRITES and ENABLE_ASSISTANT_CONVERSATION_WRITES. No worker/model call is needed for confirmation. Defaults remain off, current approved route/reply source mapping remains unresolved.",
+  "notImplementedByThisBatch": [
+    "Current real registry/source/model approval mapping; default runtime remains SOURCE_UNAVAILABLE.",
+    "Native MySQL schema/engine/index/locking/concurrency, attachment transaction and authenticated full application acceptance.",
+    "Actual per-Skill business dispatch, competitor-deep and complete profit AI execution.",
+    "Remaining original P1/P6 gates, production reconciliation, remote history and sensitive-content review, backups/rollback, final public push and deployment."
+  ],
+  "migrationRegistered":false,"migrationExecuted":false,"actualDatabase":false,"actualProvider":false,"modelCalls":0,"pushed":false,"deployed":false,
+  "fullP1Complete":false,"fullP5Complete":false,"fullObjectiveComplete":false,
+  "retainedReleaseScope":"All original P0-P6/K01-K10/T01-T28/image62/master27/supplements12 and 13 release gates remain required. No release acceptance is implied by this local batch."
+}

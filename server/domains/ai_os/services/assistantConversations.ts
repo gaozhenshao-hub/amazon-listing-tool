@@ -8,17 +8,19 @@ import { AgentLibraryKeySchema, AgentLibraryRulesSchema, type AgentLibraryKey } 
 import { AssistantConfigurationSchema } from "../../../../shared/assistantConfigurations";
 import { AssistantConversationCreateThreadInputSchema, AssistantConversationThreadsInputSchema, AssistantConversationHistoryInputSchema, AssistantConversationSubmitInputSchema, AssistantConversationOperationInputSchema, validateAssistantConversationReply, validateAssistantConversationRoute } from "../../../../shared/assistantConversation";
 import { AssistantConversationOptionsInputSchema, AssistantConversationAttachmentInputSchema, AssistantConversationOptionsResultSchema, AssistantConversationThreadResultSchema, AssistantConversationThreadsResultSchema, AssistantConversationHistoryResultSchema, AssistantConversationOperationResultSchema, AssistantConversationAttachmentsResultSchema, AssistantConversationAttachmentResultSchema, AssistantConversationAttachmentMetadataSchema, AssistantConversationPublicThreadSchema, AssistantConversationPublicTurnSchema } from "../../../../shared/assistantConversationRead";
+import { AssistantRuleProposalInputSchema, AssistantRuleProposalResultSchema, AssistantRuleConfirmationInputSchema, AssistantRuleConfirmationOperationInputSchema, AssistantRuleConfirmationResultSchema } from "../../../../shared/assistantRuleConfirmation";
 import type { TrpcContext } from "../../../_core/context";
 import { assertResourceAction, workspaceIdFromContext } from "../../../services/securityGovernance";
 import { assistantConversationRepository, AssistantConversationStorageError, assistantConversationCanonical, assistantConversationRequestHash, type AssistantConversationSession, type AssistantConversationThread, type AssistantConversationTurn } from "../repositories/assistantConversations";
 import { configurationSession } from "../repositories/assistantConfigurations";
-import { configurationHash } from "./assistantConfigurations";
+import { configurationHash, saveAssistantConfigurationInSession } from "./assistantConfigurations";
+import { createAssistantRuleConfirmationJournal, assertAssistantRuleConfirmationJournalSchema, AssistantRuleConfirmationJournalError } from "../repositories/assistantRuleConfirmationJournal";
 import { parseAssistantConversationAttachments, AssistantConversationAttachmentError, type ParsedAssistantConversationAttachment } from "./assistantConversationAttachments";
 import { assistantConversationRuntime, AssistantConversationRuntimeError } from "./assistantConversationRuntime";
 import type { AssistantConversationSavedConfiguration, AssistantConversationHistoryContext, AssistantConversationIdentity } from "./assistantConversationContext";
 
 type Session = AssistantConversationSession;
-type Action = "read" | "create" | "run" | "cancel" | "upload" | "export";
+type Action = "read" | "create" | "run" | "cancel" | "upload" | "export" | "confirm";
 type Row = Record<string, unknown>;
 const id = z.number().int().positive().max(2147483647), hash = z.string().regex(/^[a-f0-9]{64}$/u);
 const savedSchema = z.object({ workspaceId: id, agentKey: AgentLibraryKeySchema, revision: id, hash, config: AssistantConfigurationSchema }).strict();
@@ -33,8 +35,34 @@ async function rows(session: Session, text: string, values: unknown[] = []): Pro
 /** FOR SHARE/UPDATE is an authorization fence only on transactional tables.
  * This is read-only runtime admission, never a migration or an engine rewrite. */
 async function transactionalTables(session: Session, tables: readonly string[]) { const found = await rows(session, `SELECT TABLE_NAME AS tableName,ENGINE AS engine FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (${tables.map(() => "?").join(",")})`, [...tables]); if (found.length !== tables.length || new Set(found.map(row => row.tableName)).size !== tables.length || found.some(row => !tables.includes(String(row.tableName)) || row.engine !== "InnoDB")) fail("TRANSACTION_SCHEMA_UNAVAILABLE"); }
+/** The new confirmation lane needs the actual unique current/history authority,
+ * not merely a SELECT that happens to succeed. Old configuration APIs are unchanged. */
+async function configurationWriteSchema(session: Session) {
+  const tables = ["emperor_assistant_configurations", "emperor_assistant_configuration_versions"];
+  await transactionalTables(session, tables);
+  const fields = await rows(session, "SELECT TABLE_NAME AS tableName,COLUMN_NAME AS columnName,DATA_TYPE AS dataType,COLUMN_TYPE AS columnType,IS_NULLABLE AS nullable,CHARACTER_MAXIMUM_LENGTH AS maxLength,COLLATION_NAME AS collation,COLUMN_DEFAULT AS defaultValue,EXTRA AS extra FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (?,?)", tables);
+  const indexes = await rows(session, "SELECT TABLE_NAME AS tableName,INDEX_NAME AS indexName,COLUMN_NAME AS columnName,SEQ_IN_INDEX AS sequence,NON_UNIQUE AS nonUnique,SUB_PART AS prefixLength FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (?,?)", tables);
+  for (const [position, table] of tables.entries()) {
+    const columns = fields.filter(row => row.tableName === table), names = ["id", "workspaceId", "agentKey", "revision", "config", "configHash", position === 0 ? "updatedBy" : "sourceRevision", "createdAt", position === 0 ? "updatedAt" : "createdBy"];
+    if (new Set(columns.map(row => row.columnName)).size !== columns.length) fail("RULE_CONFIGURATION_SCHEMA_UNAVAILABLE");
+    for (const columnName of names) {
+      const value = columns.find(row => row.columnName === columnName); if (!value || typeof value.extra !== "string" || /virtual generated|stored generated/iu.test(value.extra) || typeof value.columnType !== "string" || /unsigned|zerofill/iu.test(value.columnType) || value.nullable !== (columnName === "sourceRevision" ? "YES" : "NO")) fail("RULE_CONFIGURATION_SCHEMA_UNAVAILABLE");
+      if (columnName === "agentKey" || columnName === "configHash") { if (value.dataType !== (columnName === "agentKey" ? "varchar" : "char") || Number(value.maxLength) !== (columnName === "agentKey" ? 32 : 64) || value.collation !== "utf8mb4_bin" || value.extra !== "") fail("RULE_CONFIGURATION_SCHEMA_UNAVAILABLE"); }
+      else if (columnName === "config") { if (value.dataType !== "json" || value.extra !== "") fail("RULE_CONFIGURATION_SCHEMA_UNAVAILABLE"); }
+      else if (["createdAt", "updatedAt"].includes(columnName)) { if (value.dataType !== "timestamp" || typeof value.defaultValue !== "string" || !/^current_timestamp(?:\(\d*\))?$/iu.test(value.defaultValue) || /auto_increment/iu.test(value.extra) || columnName === "createdAt" && /on update/iu.test(value.extra)) fail("RULE_CONFIGURATION_SCHEMA_UNAVAILABLE"); }
+      else if (value.dataType !== "int" || (columnName === "id" ? value.extra.toLowerCase() !== "auto_increment" : value.extra !== "")) fail("RULE_CONFIGURATION_SCHEMA_UNAVAILABLE");
+    }
+    if (columns.some(row => !names.includes(String(row.columnName)) && (row.nullable !== "YES" && (row.defaultValue === null || row.defaultValue === undefined)))) fail("RULE_CONFIGURATION_SCHEMA_UNAVAILABLE");
+    const groups = new Map<string, Row[]>();
+    for (const value of indexes.filter(row => row.tableName === table)) { if (typeof value.indexName !== "string" || !Number.isSafeInteger(Number(value.sequence)) || Number(value.sequence) < 1 || ![0, 1].includes(Number(value.nonUnique)) || value.prefixLength !== null) fail("RULE_CONFIGURATION_SCHEMA_UNAVAILABLE"); const group = groups.get(value.indexName) ?? []; group.push(value); groups.set(value.indexName, group); }
+    const wanted = position === 0 ? ["workspaceId", "agentKey"] : ["workspaceId", "agentKey", "revision"]; let primary = false, scope = false;
+    for (const [name, entries] of groups) { entries.sort((a, b) => Number(a.sequence) - Number(b.sequence)); if (entries.some((entry, i) => Number(entry.sequence) !== i + 1 || Number(entry.nonUnique) !== Number(entries[0].nonUnique))) fail("RULE_CONFIGURATION_SCHEMA_UNAVAILABLE"); if (Number(entries[0].nonUnique) !== 0) continue; const columns = entries.map(entry => entry.columnName); if (name === "PRIMARY" && isDeepStrictEqual(columns, ["id"])) primary = true; else if (isDeepStrictEqual(columns, wanted)) scope = true; else fail("RULE_CONFIGURATION_SCHEMA_UNAVAILABLE"); }
+    if (!primary || !scope) fail("RULE_CONFIGURATION_SCHEMA_UNAVAILABLE");
+  }
+}
 function safeInside(error: unknown): never {
   if (error instanceof AssistantConversationStorageError) throw error;
+  if (error instanceof AssistantRuleConfirmationJournalError) fail(error.code, /CONFLICT|MISMATCH|CANCELED/u.test(error.code));
   if (error instanceof AssistantConversationRuntimeError) fail(`RUNTIME_${error.code}`);
   if (error instanceof AssistantConversationAttachmentError) fail(`ATTACHMENT_${error.code}`);
   if (error instanceof TRPCError && ["FORBIDDEN", "UNAUTHORIZED"].includes(error.code)) fail("ACCESS_DENIED");
@@ -69,10 +97,12 @@ export function createAssistantConversationService(dependencies: {
   parseAttachments?: typeof parseAssistantConversationAttachments;
   writesEnabled?: () => boolean;
   workerEnabled?: () => boolean;
+  configurationWritesEnabled?: () => boolean;
 } = {}) {
   const repository = dependencies.repository ?? assistantConversationRepository, permission = dependencies.permission ?? assertResourceAction, runtime = dependencies.runtime ?? assistantConversationRuntime, parseAttachments = dependencies.parseAttachments ?? parseAssistantConversationAttachments;
   const writesEnabled = dependencies.writesEnabled ?? (() => process.env.ENABLE_ASSISTANT_CONVERSATION_WRITES === "true"), workerEnabled = dependencies.workerEnabled ?? (() => process.env.ENABLE_ASSISTANT_CONVERSATION_WORKER === "true");
   const runtimeEnabled = () => writesEnabled() === true && workerEnabled() === true;
+  const configurationWritesEnabled = dependencies.configurationWritesEnabled ?? (() => process.env.ENABLE_ASSISTANT_CONFIGURATION_WRITES === "true");
   async function directory(session: Session, action: Action) {
     if (session.actor.role === "super_admin") return;
     const records = await rows(session, "SELECT id,workspaceId,role,IF(OCTET_LENGTH(modules)<=65536,modules,NULL) AS modules,IF(detailedPermissions IS NULL OR OCTET_LENGTH(detailedPermissions)<=65536,detailedPermissions,NULL) AS detailedPermissions,OCTET_LENGTH(detailedPermissions) AS detailBytes FROM role_permissions WHERE role=? AND (workspaceId=? OR workspaceId IS NULL) ORDER BY workspaceId IS NULL,id LIMIT 3 FOR SHARE", [session.actor.role, session.identity.workspaceId]);
@@ -84,16 +114,18 @@ export function createAssistantConversationService(dependencies: {
     const detailed = record.detailedPermissions === null ? [] : parse(details, json(record.detailedPermissions, 65536));
     if (!modules.includes("emperor")) fail("DIRECTORY_DENIED");
     const module = detailed.find(value => value.moduleId === "emperor"); if (!module) return;
-    for (const sub of ["emperor_agents", "emperor_conversations"]) { const available = module.subModules?.find(value => value.subModuleId === sub)?.operations ?? module.operations; if (!available.includes("read") || !["read", "export"].includes(action) && sub === "emperor_conversations" && !available.includes("edit") || action === "run" && sub === "emperor_agents" && !available.includes("edit")) fail("DIRECTORY_DENIED"); }
+    for (const sub of ["emperor_agents", "emperor_conversations"]) { const available = module.subModules?.find(value => value.subModuleId === sub)?.operations ?? module.operations; if (!available.includes("read") || !["read", "export"].includes(action) && sub === "emperor_conversations" && !available.includes("edit") || ["run", "confirm"].includes(action) && sub === "emperor_agents" && !available.includes("edit")) fail("DIRECTORY_DENIED"); }
   }
   async function authorizeSession(session: Session, agentKey: AgentLibraryKey, action: Action, threadId?: string): Promise<void> {
     try {
+      if (action === "confirm" && !["admin", "super_admin"].includes(session.actor.role)) fail("ACCESS_DENIED");
       AgentLibraryKeySchema.parse(agentKey); await transactionalTables(session, ["role_permissions", "security_access_policies"]); await directory(session, action);
       const common = { actor: session.actor, workspaceId: session.identity.workspaceId, authorizationRead: { executor: session.executor, strict: true as const, lock: true as const } };
       await permission({ ...common, resource: "agent", action: "read", resourceId: agentKey });
       await permission({ ...common, resource: "conversation", action: "read", ...(threadId ? { resourceId: threadId } : {}) });
       if (action !== "read") await permission({ ...common, resource: "conversation", action, ...(threadId ? { resourceId: threadId } : {}) });
       if (action === "run") await permission({ ...common, resource: "agent", action: "run", resourceId: agentKey });
+      if (action === "confirm") await permission({ ...common, resource: "agent", action: "update", resourceId: agentKey });
     } catch (error) { safeInside(error); }
   }
   async function loadSavedConfiguration(session: Session, agentKey: AgentLibraryKey): Promise<AssistantConversationSavedConfiguration | null> {
@@ -155,6 +187,33 @@ export function createAssistantConversationService(dependencies: {
   const identity = (session: Session, agentKey: AgentLibraryKey) => ({ ...session.identity, agentKey });
   async function operation(session: Session, agentKey: AgentLibraryKey, thread: AssistantConversationThread, turn: AssistantConversationTurn | null) { if (turn) assertTurn(turn, thread); return AssistantConversationOperationResultSchema.parse({ identity: identity(session, agentKey), thread: publicThread(thread), operation: turn ? await publicTurn(session, turn) : null, reasonCode: turn ? null : "OPERATION_UNKNOWN", runtimeEnabled: runtimeEnabled() }); }
   async function capability(session: Session, agentKey: AgentLibraryKey, action: Action) { try { await authorizeSession(session, agentKey, action); return { available: true, reasonCode: null }; } catch (error) { if (error instanceof AssistantConversationStorageError && ["ACCESS_DENIED", "DIRECTORY_DENIED"].includes(error.code)) return { available: false, reasonCode: error.code }; throw error; } }
+  async function ruleCapability(session: Session, agentKey: AgentLibraryKey) {
+    const access = await capability(session, agentKey, "confirm"); if (!access.available) return access;
+    if (!writesEnabled() || !configurationWritesEnabled()) return { available: false, reasonCode: "RULE_WRITES_DISABLED" };
+    try { await configurationWriteSchema(session); await assertAssistantRuleConfirmationJournalSchema(session.executor); }
+    catch (error) {
+      // The optional confirmation lane must not disable existing conversation
+      // reads when only its additional write schema is unavailable. Query and
+      // data failures remain errors rather than invented capabilities.
+      if (error instanceof AssistantConversationStorageError && error.code === "RULE_CONFIGURATION_SCHEMA_UNAVAILABLE"
+        || error instanceof AssistantRuleConfirmationJournalError && error.code === "JOURNAL_SCHEMA_UNAVAILABLE") return { available: false, reasonCode: error.code };
+      throw error;
+    }
+    return { available: true, reasonCode: null };
+  }
+  async function boundRuleTurn(session: Session, input: z.infer<typeof AssistantRuleProposalInputSchema>) {
+    const thread = assertThread(await session.thread(input.threadId), input.agentKey), turn = await session.turn(input.operationId);
+    if (!turn) fail("TURN_UNAVAILABLE"); assertTurn(turn, thread); return turn;
+  }
+  function ruleSource(turn: AssistantConversationTurn) {
+    if (turn.state !== "succeeded" || turn.mode !== "coach" || turn.proposal === null || !turn.requestHash) fail("RULE_PROPOSAL_UNAVAILABLE");
+    const saved = configurationOf(turn), reply = validateAssistantConversationReply("coach", turn.replyResult), proposedRules = parse(AgentLibraryRulesSchema, turn.proposal);
+    if (!isDeepStrictEqual(proposedRules, turn.proposal) || !isDeepStrictEqual(proposedRules, reply.proposedRules)) fail("RULE_PROPOSAL_INVALID");
+    const baseConfiguration = { revision: saved.revision, hash: saved.hash };
+    const proposalHash = createHash("sha256").update(assistantConversationCanonical({ identity: { workspaceId: turn.workspaceId, userId: turn.userId, agentKey: turn.agentKey }, threadId: turn.threadId, operationId: turn.operationId, requestHash: turn.requestHash, baseConfiguration, proposedRules })).digest("hex");
+    return { proposalHash, proposedRules, baseConfiguration };
+  }
+  function ruleJournal(session: Session, input: z.infer<typeof AssistantRuleConfirmationOperationInputSchema>) { return createAssistantRuleConfirmationJournal(session.executor, { ...session.identity, agentKey: input.agentKey, threadId: input.threadId, operationId: input.operationId, confirmationId: input.confirmationId, actorRole: session.actor.role }); }
   return {
     authorizeSession, loadSavedConfiguration, loadHistoryContext, hydrateTurn,
     async options(ctx: TrpcContext, raw: unknown) { const input = AssistantConversationOptionsInputSchema.parse(raw); return invoke(ctx, input.expectedWorkspaceId, false, async session => {
@@ -165,7 +224,9 @@ export function createAssistantConversationService(dependencies: {
       if (create.available && !writesEnabled()) Object.assign(create, { available: false, reasonCode: "WRITES_DISABLED" });
       if (submit.available && (!runtimeEnabled() || !available.available)) Object.assign(submit, { available: false, reasonCode: !writesEnabled() ? "WRITES_DISABLED" : !workerEnabled() ? "WORKER_DISABLED" : available.reasonCode ?? "RUNTIME_UNAVAILABLE" });
       if (upload.available && !submit.available) Object.assign(upload, { available: false, reasonCode: submit.reasonCode });
-      return AssistantConversationOptionsResultSchema.parse({ identity: identity(session, input.agentKey), configuration: saved ? { revision: saved.revision, hash: saved.hash, name: saved.config.name, enabled: saved.config.enabled, modelSlug: saved.config.modelSlug, modelName: available.model?.name ?? null, vision: available.model?.vision ?? null } : null, skills: available.skills, capabilities: { create, submit, cancel, upload, download, confirmRules: { available: false, reasonCode: "RULE_CONFIRMATION_NOT_CONNECTED" } }, executionKind: "conversation_only", businessExecutionAvailable: false, runtimeEnabled: runtimeEnabled() });
+      const confirmRules = await ruleCapability(session, input.agentKey);
+      if (confirmRules.available && !saved) Object.assign(confirmRules, { available: false, reasonCode: "CONFIGURATION_UNAVAILABLE" });
+      return AssistantConversationOptionsResultSchema.parse({ identity: identity(session, input.agentKey), configuration: saved ? { revision: saved.revision, hash: saved.hash, name: saved.config.name, enabled: saved.config.enabled, modelSlug: saved.config.modelSlug, modelName: available.model?.name ?? null, vision: available.model?.vision ?? null } : null, skills: available.skills, capabilities: { create, submit, cancel, upload, download, confirmRules }, executionKind: "conversation_only", businessExecutionAvailable: false, runtimeEnabled: runtimeEnabled() });
     }); },
     async createThread(ctx: TrpcContext, raw: unknown) { const input = AssistantConversationCreateThreadInputSchema.parse(raw); return invoke(ctx, input.expectedWorkspaceId, true, async session => { await authorizeSession(session, input.agentKey, "create", input.threadId); if (!writesEnabled()) fail("WRITES_DISABLED"); const thread = await session.createThread({ threadId: input.threadId, agentKey: input.agentKey, title: input.title }); return AssistantConversationThreadResultSchema.parse({ identity: identity(session, input.agentKey), thread: publicThread(assertThread(thread, input.agentKey)) }); }); },
     async threads(ctx: TrpcContext, raw: unknown) { const input = AssistantConversationThreadsInputSchema.parse(raw); return invoke(ctx, input.expectedWorkspaceId, false, async session => { await authorizeSession(session, input.agentKey, "read"); const result = await session.threads(input); for (const thread of result.items) { assertThread(thread, input.agentKey); await authorizeSession(session, input.agentKey, "read", thread.threadId); } return AssistantConversationThreadsResultSchema.parse({ identity: identity(session, input.agentKey), items: result.items.map(publicThread), nextBeforeId: result.nextBeforeId }); }); },
@@ -188,6 +249,38 @@ export function createAssistantConversationService(dependencies: {
     async cancel(ctx: TrpcContext, raw: unknown) { const input = AssistantConversationOperationInputSchema.parse(raw); return invoke(ctx, input.expectedWorkspaceId, true, async session => { await authorizeSession(session, input.agentKey, "cancel", input.threadId); assertThread(await session.thread(input.threadId), input.agentKey); const turn = await session.cancel(input); return operation(session, input.agentKey, await session.thread(input.threadId), turn); }); },
     async attachments(ctx: TrpcContext, raw: unknown) { const input = AssistantConversationOperationInputSchema.parse(raw); return invoke(ctx, input.expectedWorkspaceId, false, async session => { await authorizeSession(session, input.agentKey, "read", input.threadId); const thread = assertThread(await session.thread(input.threadId), input.agentKey), turn = await session.turn(input.operationId); if (!turn) fail("TURN_UNAVAILABLE"); assertTurn(turn, thread); return AssistantConversationAttachmentsResultSchema.parse({ identity: identity(session, input.agentKey), threadId: input.threadId, operationId: input.operationId, items: (await session.attachments(input.threadId, input.operationId)).map(attachmentMetadata) }); }); },
     async attachment(ctx: TrpcContext, raw: unknown) { const input = AssistantConversationAttachmentInputSchema.parse(raw); return invoke(ctx, input.expectedWorkspaceId, false, async session => { await authorizeSession(session, input.agentKey, "export", input.threadId); const thread = assertThread(await session.thread(input.threadId), input.agentKey), turn = await session.turn(input.operationId); if (!turn) fail("TURN_UNAVAILABLE"); assertTurn(turn, thread); const file = await session.attachmentBytes(input.threadId, input.operationId, input.ordinal); return AssistantConversationAttachmentResultSchema.parse({ identity: identity(session, input.agentKey), threadId: input.threadId, operationId: input.operationId, file: attachmentMetadata(file), base64: file.bytes.toString("base64") }); }); },
+    async ruleProposal(ctx: TrpcContext, raw: unknown) { const input = AssistantRuleProposalInputSchema.parse(raw); return invoke(ctx, input.expectedWorkspaceId, false, async session => {
+      await authorizeSession(session, input.agentKey, "confirm", input.threadId);
+      const source = ruleSource(await boundRuleTurn(session, input)), current = await loadSavedConfiguration(session, input.agentKey), access = await ruleCapability(session, input.agentKey);
+      if (!current || current.revision !== source.baseConfiguration.revision || current.hash !== source.baseConfiguration.hash) Object.assign(access, { available: false, reasonCode: current ? "CONFIGURATION_CONFLICT" : "CONFIGURATION_UNAVAILABLE" });
+      return AssistantRuleProposalResultSchema.parse({ identity: identity(session, input.agentKey), threadId: input.threadId, operationId: input.operationId, ...source, currentConfiguration: current ? { revision: current.revision, hash: current.hash } : null, capability: access, sharedScope: "workspace_agent" });
+    }); },
+    async confirmRules(ctx: TrpcContext, raw: unknown) { const input = AssistantRuleConfirmationInputSchema.parse(raw); return invoke(ctx, input.expectedWorkspaceId, true, async session => {
+      await authorizeSession(session, input.agentKey, "confirm", input.threadId);
+      const turn = await boundRuleTurn(session, input), journal = ruleJournal(session, input), requestHash = createHash("sha256").update(assistantConversationCanonical({ identity: identity(session, input.agentKey), request: input })).digest("hex");
+      const previous = await journal.read();
+      // Recovery is independent of a later configuration/model update and disabled
+      // write gates. The original UUID/content may never create a second version.
+      if (previous.final) { if (previous.final.status === "committed" && previous.final.requestHash !== requestHash) fail("RULE_CONFIRMATION_CONTENT_CONFLICT", true); return previous.final; }
+      if (!writesEnabled() || !configurationWritesEnabled()) fail("RULE_WRITES_DISABLED");
+      const source = ruleSource(turn);
+      if (source.proposalHash !== input.expectedProposalHash || source.baseConfiguration.revision !== input.expectedConfigurationRevision || source.baseConfiguration.hash !== input.expectedConfigurationHash) fail("RULE_PROPOSAL_CONFLICT", true);
+      await configurationWriteSchema(session);
+      const current = await loadSavedConfiguration(session, input.agentKey);
+      if (!current || current.revision !== input.expectedConfigurationRevision || current.hash !== input.expectedConfigurationHash) fail("CONFIGURATION_CONFLICT", true);
+      const saved = await saveAssistantConfigurationInSession(configurationSession(session.executor, true), session.identity.workspaceId, session.identity.userId, { mode: "rules", agentKey: input.agentKey, expectedRevision: input.expectedConfigurationRevision, expectedHash: input.expectedConfigurationHash, rules: input.rules });
+      // Full helper readback protects the unchanged fields; a durable metadata-only
+      // receipt is the final write of this same private transaction.
+      return journal.finalize(AssistantRuleConfirmationResultSchema.parse({ identity: identity(session, input.agentKey), threadId: input.threadId, operationId: input.operationId, confirmationId: input.confirmationId, status: "committed", requestHash, proposalHash: source.proposalHash, configurationRevision: saved.revision, configurationHash: configurationHash(saved.config), reasonCode: null }));
+    }); },
+    async checkRuleConfirmation(ctx: TrpcContext, raw: unknown) { const input = AssistantRuleConfirmationOperationInputSchema.parse(raw); return invoke(ctx, input.expectedWorkspaceId, false, async session => {
+      await authorizeSession(session, input.agentKey, "confirm", input.threadId); await boundRuleTurn(session, input);
+      const previous = await ruleJournal(session, input).read();
+      return previous.final ?? AssistantRuleConfirmationResultSchema.parse({ identity: identity(session, input.agentKey), threadId: input.threadId, operationId: input.operationId, confirmationId: input.confirmationId, status: "unknown", requestHash: null, proposalHash: null, configurationRevision: null, configurationHash: null, reasonCode: "CONFIRMATION_UNKNOWN" });
+    }); },
+    async cancelRuleConfirmation(ctx: TrpcContext, raw: unknown) { const input = AssistantRuleConfirmationOperationInputSchema.parse(raw); return invoke(ctx, input.expectedWorkspaceId, true, async session => {
+      await authorizeSession(session, input.agentKey, "confirm", input.threadId); await boundRuleTurn(session, input); return ruleJournal(session, input).cancel();
+    }); },
   };
 }
 export const assistantConversationService = createAssistantConversationService();

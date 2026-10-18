@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import type { AgentLibraryKey } from "@shared/agentLibraryContracts";
 import {
@@ -13,6 +13,7 @@ import {
 } from "@shared/assistantConversationRead";
 import { trpc } from "@/lib/trpc";
 import AssistantConversationPanel, { type ConversationMessageView, type ConversationReadView, type ConversationThreadView } from "./AssistantConversationPanel";
+import AssistantRuleConfirmationBridge, { type AssistantRuleConfirmationClient, type RuleConfirmationTarget } from "./AssistantRuleConfirmationBridge";
 import {
   CONVERSATION_PENDING_EVENT, conversationPendingKey, conversationLocksAvailable, readConversationPending,
   reserveConversationPending, releaseConversationPending, readConversationFiles, disposeConversationFiles,
@@ -21,7 +22,7 @@ import {
 
 type Query<T> = { query: (input: T, options?: { signal?: AbortSignal }) => Promise<unknown> };
 type Mutation<T> = { mutate: (input: T) => Promise<unknown> };
-export type AssistantConversationClient = {
+export type AssistantConversationClient = Partial<AssistantRuleConfirmationClient> & {
   options: Query<z.input<typeof AssistantConversationOptionsInputSchema>>;
   threads: Query<z.input<typeof AssistantConversationThreadsInputSchema>>;
   history: Query<z.input<typeof AssistantConversationHistoryInputSchema>>;
@@ -81,6 +82,9 @@ function OwnedConversation({ owner, api, onDirtyChange }: { owner: Owner; api: A
   const [cancelFor, setCancelFor] = useState<string | null>(null), [storageError, setStorageError] = useState(false);
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState(""), [denied, setDenied] = useState(false);
   const [runtimeEnabled, setRuntimeEnabled] = useState(false), [createUnknown, setCreateUnknown] = useState<{ threadId: string; title: string } | null>(null);
+  const [ruleTarget, setRuleTarget] = useState<RuleConfirmationTarget | null>(null), [ruleDirty, setRuleDirty] = useState(false);
+  const onRuleDirtyChange = useCallback((value: boolean) => setRuleDirty(value), []);
+  const ruleApi = api.ruleProposal && api.confirmRules && api.checkRuleConfirmation && api.cancelRuleConfirmation ? api as AssistantConversationClient & AssistantRuleConfirmationClient : null;
   const life = useRef({ active: false, denied: false, epoch: 0, controllers: new Set<AbortController>() });
   const lane = useRef({ busy: false, id: 0 });
   const ownStorage = useRef(false), previousPending = useRef<string | null | undefined>(undefined);
@@ -88,7 +92,7 @@ function OwnedConversation({ owner, api, onDirtyChange }: { owner: Owner; api: A
   const selectedId = useRef<string | null>(null), historyTicket = useRef(0), optionsTicket = useRef(0), threadsTicket = useRef(0), fileBusy = useRef(false);
   filesRef.current = files;
   const scope = { expectedWorkspaceId: owner.workspaceId, agentKey: owner.agentKey };
-  const dirty = !!message || files.length > 0 || !!title || !!createUnknown;
+  const dirty = !!message || files.length > 0 || !!title || !!createUnknown || ruleDirty;
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
   const callbacks = useRef({ reload: () => {}, check: () => {}, sync: () => {} });
   const storageKey = conversationPendingKey(owner);
@@ -102,7 +106,7 @@ function OwnedConversation({ owner, api, onDirtyChange }: { owner: Owner; api: A
     if (!deniedError(error)) return false;
     life.current.denied = true; life.current.epoch++; for (const controller of life.current.controllers) controller.abort();
     lane.current.busy = false; lane.current.id++; setBusy(false); setDenied(true); setOptions({ status: "error", message: "当前私有读取权限已变化" });
-    setThreads({ status: "error", message: "当前私有读取权限已变化" }); setHistory(null); setThread(null); selectedId.current = null; setMessage(""); setTitle(""); clearFiles(); setPending(null); setCreateUnknown(null); setCancelFor(null); submitted.current = null;
+    setThreads({ status: "error", message: "当前私有读取权限已变化" }); setHistory(null); setThread(null); selectedId.current = null; setMessage(""); setTitle(""); clearFiles(); setPending(null); setCreateUnknown(null); setCancelFor(null); setRuleTarget(null); setRuleDirty(false); submitted.current = null;
     return true;
   }
   async function loadOptions() {
@@ -147,8 +151,8 @@ function OwnedConversation({ owner, api, onDirtyChange }: { owner: Owner; api: A
   }
   function selectThread(threadId: string) {
     if (!threadId || threadId === selectedId.current || lane.current.busy || fileBusy.current || life.current.denied) return;
-    if (dirtyRef.current && !window.confirm("切换会话将丢弃未发送草稿和附件，是否继续？")) return;
-    historyTicket.current++; selectedId.current = threadId; submitted.current = null; dirtyRevision.current++; setMessage(""); setTitle(""); clearFiles(); setCreateUnknown(null);
+    if (dirtyRef.current && !window.confirm("切换会话将丢弃未发送消息、附件和规则草稿，是否继续？已提交操作仍可恢复。")) return;
+    historyTicket.current++; selectedId.current = threadId; submitted.current = null; dirtyRevision.current++; setMessage(""); setTitle(""); clearFiles(); setCreateUnknown(null); setRuleTarget(null);
     setThread(threads.status === "ready" ? threads.value.items.find(item => item.threadId === threadId) ?? null : null); void loadHistory(threadId);
   }
   function beginAction() {
@@ -241,15 +245,16 @@ function OwnedConversation({ owner, api, onDirtyChange }: { owner: Owner; api: A
   }
   async function createThread(retry = false) {
     if (pending || storageError || fileBusy.current || options.status !== "ready" || !options.value.capabilities.create.available || createUnknown && !retry) return;
-    if (!retry && (message || files.length) && !window.confirm("创建新会话将丢弃当前未发送消息和附件，是否继续？")) return;
+    if (!retry && (message || files.length || ruleDirty) && !window.confirm("创建新会话将丢弃当前未发送消息、附件和规则草稿，是否继续？")) return;
     const request = beginAction(); if (!request) return;
     try {
       const input = AssistantConversationCreateThreadInputSchema.parse({ ...scope, threadId: createUnknown?.threadId ?? crypto.randomUUID(), title: createUnknown?.title ?? title });
+      setRuleTarget(null);
       setCreateUnknown({ threadId: input.threadId, title: input.title });
       const result = AssistantConversationThreadResultSchema.parse(await api.createThread.mutate(input));
       if (!request.current()) return; sameOwner(result.identity, owner);
       if (result.thread.threadId !== input.threadId || result.thread.title !== input.title) throw new Error("SCOPE_MISMATCH");
-      setCreateUnknown(null); setTitle(""); setMessage(""); clearFiles(); dirtyRevision.current++; submitted.current = null;
+      setCreateUnknown(null); setTitle(""); setMessage(""); clearFiles(); setRuleTarget(null); dirtyRevision.current++; submitted.current = null;
       selectedId.current = result.thread.threadId; setThread(result.thread); void loadHistory(result.thread.threadId); void loadThreads(); setNotice("私有会话已创建；没有启动模型。");
     } catch (error) { if (request.current() && !quarantine(error)) setNotice("新会话创建结果尚未确认；保留同一会话 UUID，可显式核对或同 UUID 重试，不会调用模型。"); }
     finally { request.done(); }
@@ -261,7 +266,7 @@ function OwnedConversation({ owner, api, onDirtyChange }: { owner: Owner; api: A
       const result = checkedHistory(await api.history.query({ ...scope, threadId: createUnknown.threadId, limit: 10 }, { signal: request.signal }), owner, createUnknown.threadId);
       if (!request.current()) return;
       if (result.thread.title !== createUnknown.title) throw new Error("SCOPE_MISMATCH");
-      selectedId.current = result.thread.threadId; setThread(result.thread); setHistory({ status: "ready", value: result }); setCreateUnknown(null); setTitle(""); setMessage(""); clearFiles(); dirtyRevision.current++; void loadThreads(); setNotice("已核对到原私有会话，没有重新创建或调用模型。");
+      selectedId.current = result.thread.threadId; setThread(result.thread); setHistory({ status: "ready", value: result }); setCreateUnknown(null); setTitle(""); setMessage(""); clearFiles(); setRuleTarget(null); dirtyRevision.current++; void loadThreads(); setNotice("已核对到原私有会话，没有重新创建或调用模型。");
     } catch (error) { if (request.current() && !quarantine(error)) setNotice("尚未核实新会话；可继续核对或显式使用同一会话 UUID 重试。不会自动新建其他会话。"); }
     finally { request.done(); }
   }
@@ -315,7 +320,17 @@ function OwnedConversation({ owner, api, onDirtyChange }: { owner: Owner; api: A
       onLoadHistory={() => { if (history?.status === "ready" && history.value.nextBeforeSequence !== null) void loadHistory(history.value.thread.threadId, history.value.nextBeforeSequence); }}
       onCreateThread={() => void createThread()} onTitle={value => { setTitle(value); dirtyRevision.current++; }} onMode={value => { setMode(value); dirtyRevision.current++; }} onSkill={value => { setSkillSlug(value); dirtyRevision.current++; }} onMessage={value => { setMessage(value); dirtyRevision.current++; }}
       onFiles={incoming => void pickFiles(incoming)} onRemoveFile={id => { const removed = filesRef.current.find(file => file.id === id); if (removed) disposeConversationFiles([removed]); filesRef.current = filesRef.current.filter(file => file.id !== id); setFiles(filesRef.current); dirtyRevision.current++; }}
-      onSend={() => void send()} onCheck={() => void recover()} onCancel={() => void recover(true)} onCancelAcknowledged={value => setCancelFor(value ? pending?.operationId ?? null : null)} onRecoverMessage={id => void recoverHistoryMessage(id)} />
+      onSend={() => void send()} onCheck={() => void recover()} onCancel={() => void recover(true)} onCancelAcknowledged={value => setCancelFor(value ? pending?.operationId ?? null : null)} onRecoverMessage={id => void recoverHistoryMessage(id)}
+      onReviewRules={ruleApi ? id => {
+        const row = history?.status === "ready" ? history.value.items.find(item => item.operationId === id) : null;
+        if (!row || row.mode !== "coach" || row.state !== "succeeded" || row.proposedRules === null || life.current.denied || createUnknown) return;
+        if (ruleTarget?.threadId === row.threadId && ruleTarget.operationId === id) return;
+        if (ruleDirty && !window.confirm("切换候选将丢弃当前未保存的规则草稿，是否继续？已提交确认仍可恢复。")) return;
+        setRuleTarget({ threadId: row.threadId, operationId: id });
+      } : undefined} />
+    {ruleApi && !denied && <AssistantRuleConfirmationBridge owner={owner} api={ruleApi} target={ruleTarget}
+      onTargetClose={() => setRuleTarget(null)} onDirtyChange={onRuleDirtyChange}
+      onDenied={() => quarantine({ data: { code: "FORBIDDEN" } })} onSaved={() => { void loadOptions(); }} />}
   </>;
 }
 export default function AssistantConversationBridge(props: AssistantConversationBridgeProps) {
