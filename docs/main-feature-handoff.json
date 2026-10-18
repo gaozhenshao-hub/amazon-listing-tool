@@ -92,7 +92,7 @@
     "inventoryPlanning": ["ENABLE_MERGED_OPS_INVENTORY_PLANNING_WRITES"],
     "inventoryOwnersAndLifecycle": ["ENABLE_MERGED_OPS_INVENTORY_GOVERNANCE_WRITES"],
     "recovery": "关闭新写入不代表可以遗弃未决操作。按各模块提供的原 UUID 核对／取消处理；恢复仍要求当前身份和权限，不能换 UUID 盲目重发。",
-    "genericAiHistoryRecovery": "通用 AI Job 历史的“恢复任务”不同于上述原回执核对：服务端以原 runId 找到任务，再新建 recoveryOfRunId 关联任务，可能重新调用模型并产生费用。查看、展开或刷新历史不会自动恢复；历史读取失败或重读期间不把旧缓存当最新状态开放恢复／取消。"
+    "genericAiHistoryRecovery": "通用 AI Job 历史的“恢复任务”不同于上述原回执核对：服务端以原 runId 找到任务，再新建 recoveryOfRunId 关联任务，可能重新调用模型并产生费用。查看、展开或刷新历史不会自动恢复；历史读取失败或重读期间不把旧缓存当最新状态开放恢复／取消。此面板的恢复和取消显式禁用请求自动重试；这不保证手动重复点击或跨会话丢失回执的幂等性，未知结果仍须先核对。"
   },
   "runtimeSourceApprovals": {
     "documentation": "docs/runtime-source-approvals.md",

@@ -36,6 +36,7 @@ function observeSafety(page: Page) {
   const pageErrors: string[] = [];
   const externalRequests: string[] = [];
   const mutations: Array<{ procedure: string; input: unknown }> = [];
+  const telemetryMutations: Array<{ procedure: string; input: unknown }> = [];
   page.on("pageerror", error => pageErrors.push(error.message));
   page.on("request", request => {
     const url = new URL(request.url());
@@ -43,9 +44,16 @@ function observeSafety(page: Page) {
     if (request.method() !== "POST" || !url.pathname.includes("/api/trpc/")) return;
     const procedures = decodeURIComponent(url.pathname.split("/api/trpc/")[1]).split(",");
     const body = request.postDataJSON();
-    procedures.forEach((procedure, index) => mutations.push({ procedure, input: body[String(index)]?.json }));
+    procedures.forEach((procedure, index) => {
+      const call = { procedure, input: body[String(index)]?.json };
+      // The real application's ambient vitals POST is fulfilled by the same
+      // local fixture. Separate exactly that known telemetry procedure; every
+      // business/model mutation still needs an explicit matching user action.
+      if (procedure === "performance.recordVitals") telemetryMutations.push(call);
+      else mutations.push(call);
+    });
   });
-  return { pageErrors, externalRequests, mutations };
+  return { pageErrors, externalRequests, mutations, telemetryMutations };
 }
 
 const jobFixtures = {
@@ -162,3 +170,37 @@ test("任务历史RPC失败不能显示暂无任务或开放恢复取消", async
   expect(safety.pageErrors).toEqual([]);
   expect(safety.externalRequests).toEqual([]);
 });
+
+for (const action of [
+  { procedure: "aiJobs.retry", button: "恢复任务", runId: failedJob.runId, reason: "用户从任务历史恢复" },
+  { procedure: "aiJobs.cancel", button: "取消", runId: runningJob.runId, reason: "用户从任务历史取消" },
+]) {
+  test(`${action.button}响应可重试错误时仍只发一次，禁止应用全局自动重放`, async ({ page }) => {
+    const safety = observeSafety(page);
+    const message = `SYNTHETIC ${action.procedure} retryable failure`;
+    await installRealPageFixtures(page, jobFixtures, {
+      [action.procedure]: {
+        message,
+        code: -32603,
+        data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 500, appCode: "INTERNAL_ERROR", retryable: true },
+      },
+    });
+    await page.goto("/ops/inventory");
+    await expect(page.getByRole("heading", { name: "库存规划工作台", exact: true })).toBeVisible();
+    const history = page.getByTestId("ai-job-history");
+    await history.getByRole("button", { name: /运营后台任务历史/ }).click();
+    await expect(history.getByRole("button", { name: action.button, exact: true })).toBeVisible();
+    expect(safety.mutations).toEqual([]);
+    const firstRequest = page.waitForRequest(request => request.method() === "POST" && request.url().includes(action.procedure));
+    await history.getByRole("button", { name: action.button, exact: true }).click();
+    await firstRequest;
+    // Real main.tsx config retries at 1.5s and another 3s; observe beyond both windows.
+    await page.waitForTimeout(5_100);
+    expect(safety.mutations).toEqual([
+      { procedure: action.procedure, input: { runId: action.runId, reason: action.reason } },
+    ]);
+    await expect(page.getByPlaceholder("输入 Agent Run ID")).toHaveCount(0);
+    expect(safety.pageErrors).toEqual([]);
+    expect(safety.externalRequests).toEqual([]);
+  });
+}

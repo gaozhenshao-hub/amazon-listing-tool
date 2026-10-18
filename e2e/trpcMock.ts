@@ -1,6 +1,6 @@
 import type { Page, Route } from "@playwright/test";
 
-type FixtureError = { message: string; code: number; data: { code: string; httpStatus: number } };
+type FixtureError = { message: string; code: number; data: { code: string; httpStatus: number; appCode?: string; retryable?: boolean } };
 
 const USER = {
   id: 1,

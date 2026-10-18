@@ -57,6 +57,7 @@ export function AiJobHistoryPanel({
     { enabled: open, refetchInterval: open ? 8_000 : false },
   );
   const cancelJob = trpc.aiJobs.cancel.useMutation({
+    retry: false,
     onSuccess: async () => {
       toast.success("任务已取消");
       await utils.aiJobs.list.invalidate();
@@ -64,6 +65,8 @@ export function AiJobHistoryPanel({
     onError: (error) => toast.error(error.message || "取消失败"),
   });
   const retryJob = trpc.aiJobs.retry.useMutation({
+    // Recovery creates a new associated task; a lost response must not create another automatically.
+    retry: false,
     onSuccess: async () => {
       toast.success("已创建恢复任务，原失败记录仍会保留");
       await utils.aiJobs.list.invalidate();

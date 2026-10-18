@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   query: { data: undefined as unknown, isLoading: false, isFetching: false, isError: false, isSuccess: true, refetch: vi.fn() },
   cancel: vi.fn(),
   retry: vi.fn(),
+  cancelOptions: vi.fn(),
+  retryOptions: vi.fn(),
 }));
 vi.mock("@/lib/trpc", () => ({
   trpc: {
@@ -14,8 +16,8 @@ vi.mock("@/lib/trpc", () => ({
     aiJobs: {
       list: { useQuery: () => mocks.query },
       bindingIntegrity: { useQuery: () => ({ isSuccess: true, data: { healthy: true } }) },
-      cancel: { useMutation: () => ({ isPending: false, mutate: mocks.cancel }) },
-      retry: { useMutation: () => ({ isPending: false, mutate: mocks.retry }) },
+      cancel: { useMutation: (options: unknown) => { mocks.cancelOptions(options); return { isPending: false, mutate: mocks.cancel }; } },
+      retry: { useMutation: (options: unknown) => { mocks.retryOptions(options); return { isPending: false, mutate: mocks.retry }; } },
     },
   },
 }));
@@ -37,6 +39,14 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("AiJobHistoryPanel query truthfulness", () => {
+  it("explicitly disables global automatic retries for both recovery and cancellation", () => {
+    openPanel();
+    expect(mocks.retryOptions).toHaveBeenCalledWith(expect.objectContaining({ retry: false }));
+    expect(mocks.cancelOptions).toHaveBeenCalledWith(expect.objectContaining({ retry: false }));
+    expect(mocks.retry).not.toHaveBeenCalled();
+    expect(mocks.cancel).not.toHaveBeenCalled();
+  });
+
   it("shows only a successful empty response as empty, with the paid-recovery explanation", () => {
     openPanel();
     expect(screen.getByText("暂无后台任务记录")).toBeInTheDocument();
