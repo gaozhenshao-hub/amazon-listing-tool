@@ -41,9 +41,43 @@ function parseRows<S extends z.ZodTypeAny>(schema: S, rows: unknown[]): z.infer<
   return parsed.data;
 }
 
+function isMissingTable(error: unknown): boolean {
+  // Drizzle wraps the MySQL error in .cause. Inspect only bounded structured
+  // driver fields, never message text; contradictory wrappers fail closed.
+  const seen = new Set<object>();
+  let current = error, verified = false;
+  try {
+    for (let depth = 0; depth < 5; depth++) {
+      if (!current || typeof current !== "object" || seen.has(current)) return false;
+      seen.add(current);
+      const item = current as { code?: unknown; errno?: unknown; sqlState?: unknown; sqlstate?: unknown; cause?: unknown };
+      if ((item.code !== undefined && item.code !== "ER_NO_SUCH_TABLE") || (item.errno !== undefined && item.errno !== 1146)
+        || (item.sqlState !== undefined && item.sqlState !== "42S02") || (item.sqlstate !== undefined && item.sqlstate !== "42S02")) return false;
+      if (item.code === "ER_NO_SUCH_TABLE" && item.errno === 1146) verified = true;
+      if (item.cause === undefined || item.cause === null) return verified;
+      current = item.cause;
+    }
+  } catch { return false; }
+  return false;
+}
+
+async function verifyTablesAbsent(tx: DbExecutor, databaseName: string): Promise<void> {
+  // Empty information_schema output can also mean insufficient visibility.
+  // Zero-row fixed-table probes distinguish that from confirmed absence;
+  // they neither scan business data nor create anything.
+  for (const name of tables) {
+    try { await tx.execute(sql`SELECT 1 AS probe FROM ${sql.identifier(databaseName)}.${sql.identifier(name)} LIMIT 0`); }
+    catch (error) {
+      if (isMissingTable(error)) continue;
+      fail("READ_UNAVAILABLE");
+    }
+    fail("METADATA_INVALID");
+  }
+}
+
 /** Read-only structural admission in the caller's existing transaction. No own
  * connection/transaction, DDL, data scan, migration approval or hidden repair. */
-export async function assertOperationsBoardSchema(tx: DbExecutor): Promise<void> {
+async function inspectSchema(tx: DbExecutor, verifyAbsence: boolean): Promise<"absent" | "ready"> {
   if (!tx || typeof tx.execute !== "function") fail("READ_UNAVAILABLE");
   const databaseRows = await readRows(tx, sql`SELECT DATABASE() AS databaseName`, 1);
   const database = z.array(z.object({ databaseName: identifier }).strict()).length(1).safeParse(databaseRows);
@@ -92,5 +126,21 @@ export async function assertOperationsBoardSchema(tx: DbExecutor): Promise<void>
   let plan;
   try { plan = planOperationsBoardSchema({ complete: true, databaseVerified: true, reservedFile: OPERATIONS_BOARD_SCHEMA_CANDIDATE, tables: snapshotTables }); }
   catch { return fail("INCOMPATIBLE"); }
+  if (snapshotTables.every(table => !table.exists)) {
+    if (verifyAbsence) await verifyTablesAbsent(tx, databaseName);
+    return "absent";
+  }
   if (plan.state !== "structure_ready" || plan.statements.length !== 0) fail("MIGRATION_REQUIRED");
+  return "ready";
+}
+
+/** Unlike admission, allows only independently verified complete absence. */
+export function inspectOperationsBoardSchema(tx: DbExecutor): Promise<"absent" | "ready"> {
+  return inspectSchema(tx, true);
+}
+
+export async function assertOperationsBoardSchema(tx: DbExecutor): Promise<void> {
+  // Enabled writers still require migration. Absence needs no extra probes
+  // here because it never grants permission to continue.
+  if (await inspectSchema(tx, false) === "absent") fail("MIGRATION_REQUIRED");
 }

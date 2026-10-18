@@ -4,7 +4,7 @@ import { parseMonthlyFinancialBatch, type MonthlyFinancialBatchRecord } from "..
 import { OperationsBoardEditionScopeSchema, operationsBoardEditionScopeKey } from "../../../shared/operationsBoardEdition";
 import { prepareOperationsBoardHistoryCapture } from "./monthlyBoardHistoryCapture";
 import { createOperationsBoardEditionStore } from "./operationsBoardEditionStore";
-import { assertOperationsBoardSchema } from "./operationsBoardSchemaAdmission";
+import { assertOperationsBoardSchema, inspectOperationsBoardSchema } from "./operationsBoardSchemaAdmission";
 import { positiveId } from "./monthlyBoardReadCore";
 
 export type MonthlyOperationsBoardTransition = {
@@ -26,12 +26,13 @@ function fail(reason: string): never { throw new TRPCError({ code: "PRECONDITION
 export function createMonthlyOperationsBoardSynchronization(dependencies: {
   enabled?: () => boolean;
   admit?: typeof assertOperationsBoardSchema;
+  inspect?: typeof inspectOperationsBoardSchema;
   store?: typeof createOperationsBoardEditionStore;
 } = {}) {
   const enabled = dependencies.enabled ?? (() => process.env.ENABLE_MERGED_OPS_BOARD_EDITIONS === "true");
   const admit = dependencies.admit ?? assertOperationsBoardSchema, store = dependencies.store ?? createOperationsBoardEditionStore;
+  const inspect = dependencies.inspect ?? inspectOperationsBoardSchema;
   return async (transition: MonthlyOperationsBoardTransition): Promise<void> => {
-    if (!enabled()) return;
     const { tx, identity, actor, action, beforeBatch, afterBatch, completedAfter } = transition;
     if (!positiveId(identity.userId) || !positiveId(identity.workspaceId) || actor.id !== identity.userId || actor.defaultWorkspaceId !== identity.workspaceId
       || !["admin", "super_admin", "ops_manager"].includes(actor.role)) fail("CALLER_INVALID");
@@ -40,9 +41,15 @@ export function createMonthlyOperationsBoardSynchronization(dependencies: {
     // Deleting a preview changes no current financial fact or archive.
     if (action === "revoke" && beforeBatch.status === "previewing") return;
     try {
-      await admit(tx);
-      const post = prepareOperationsBoardHistoryCapture(completedAfter, identity.workspaceId);
-      if (action === "confirm" ? !completedAfter.some(batch => batch.id === afterBatch.id) : completedAfter.some(batch => batch.id === afterBatch.id)) fail("POST_STATE_INVALID");
+      const syncEnabled = enabled();
+      if (syncEnabled) await admit(tx);
+      else {
+        const structure = await inspect(tx);
+        if (structure === "absent") return;
+        if (structure !== "ready") fail("SCHEMA_UNVERIFIED");
+      }
+      const post = syncEnabled ? prepareOperationsBoardHistoryCapture(completedAfter, identity.workspaceId) : null;
+      if (syncEnabled && (action === "confirm" ? !completedAfter.some(batch => batch.id === afterBatch.id) : completedAfter.some(batch => batch.id === afterBatch.id))) fail("POST_STATE_INVALID");
       // Derive affected identities only from the original stored batches, not
       // client scope, uploader names, owner filters or a page of preview rows.
       const scopes = new Map<string, ReturnType<typeof OperationsBoardEditionScopeSchema.parse>>();
@@ -56,6 +63,10 @@ export function createMonthlyOperationsBoardSynchronization(dependencies: {
         // First opt-in is the separate explicit administrator action. A monthly
         // import must not manufacture historical editions for an absent scope.
         if (!existing) continue;
+        // The caller holds the workspace write lock; load also locks this
+        // exact scope in the same transaction. Turning off the UI/worker flag
+        // must not silently leave an already-initialized archive stale.
+        if (!syncEnabled || !post) fail("DISABLED_FOR_INITIALIZED_SCOPE");
         const latest = post.latestMonth({ storeName: scope.storeName, country: scope.country });
         const month = latest && latest > existing.state.currentMonth! ? latest : existing.state.currentMonth!;
         await editions.refreshExisting(scope, post.capture({ storeName: scope.storeName, country: scope.country, month }));

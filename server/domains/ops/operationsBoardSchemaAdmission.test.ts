@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MySqlDialect } from "drizzle-orm/mysql-core";
 import type { SQL } from "drizzle-orm";
-import { assertOperationsBoardSchema } from "./operationsBoardSchemaAdmission";
+import { assertOperationsBoardSchema, inspectOperationsBoardSchema } from "./operationsBoardSchemaAdmission";
 
 // The admission module imports DbExecutor as a type only. Any accidental
 // runtime database import is a failure; all execution below is an SQL fixture.
@@ -13,9 +13,16 @@ const databaseName = "synthetic_board_schema";
 let databaseRows: Row[], tableRows: Row[], columnRows: Row[], indexRows: Row[];
 let queries: { sql: string; params: unknown[] }[], failure: string | null;
 let resultOverride: ((text: string, result: unknown) => unknown) | null;
+let absentProbe: ((name: string) => unknown) | null;
+const missingTable = () => Object.assign(new Error("synthetic private database details"), { code: "ER_NO_SUCH_TABLE", errno: 1146, sqlState: "42S02" });
 const execute = vi.fn(async (statement: SQL): Promise<unknown> => {
   const query = new MySqlDialect().sqlToQuery(statement); queries.push(query);
   if (failure && query.sql.includes(failure)) throw new Error("synthetic secret mysql://user:password@host/private_db SELECT hidden_key");
+  const probedName = names.find(name => query.sql === `SELECT 1 AS probe FROM \`${databaseName}\`.\`${name}\` LIMIT 0`);
+  if (probedName) {
+    if (absentProbe) return absentProbe(probedName);
+    throw missingTable();
+  }
   const rows = query.sql.includes("information_schema.TABLES") ? tableRows
     : query.sql.includes("information_schema.COLUMNS") ? columnRows
       : query.sql.includes("information_schema.STATISTICS") ? indexRows
@@ -55,7 +62,7 @@ function metadata(version: "5.7" | "8.0" = "8.0") {
 const col = (tableIndex: number, name: string) => columnRows.find(row => row.tableName === names[tableIndex] && row.columnName === name)!;
 const ix = (tableIndex: number, name: string) => indexRows.filter(row => row.tableName === names[tableIndex] && row.indexName === name);
 const expectFailure = (reason: string) => expect(assertOperationsBoardSchema(tx)).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: `OPERATIONS_BOARD_SCHEMA_${reason}` });
-beforeEach(() => { metadata(); queries = []; failure = null; resultOverride = null; execute.mockClear(); });
+beforeEach(() => { metadata(); queries = []; failure = null; resultOverride = null; absentProbe = null; execute.mockClear(); });
 
 describe("operations-board exact structural admission", () => {
   it.each(["5.7", "8.0"] as const)("accepts complete MySQL %s metadata through the real pure planner", async version => {
@@ -85,6 +92,7 @@ describe("operations-board exact structural admission", () => {
   });
   it("rejects four genuinely absent tables instead of initializing a new archive", async () => {
     tableRows = []; columnRows = []; indexRows = []; await expectFailure("MIGRATION_REQUIRED");
+    expect(queries).toHaveLength(4);
     expect(queries.every(query => /^\s*SELECT\b/u.test(query.sql))).toBe(true);
   });
   it("does not cache readiness across requests", async () => {
@@ -183,5 +191,61 @@ describe("operations-board exact structural admission", () => {
   it.each([null, {}, [[], []], [null, []], [[null], []], [[[]], []], [[{}]], [[], [], []]])("rejects invalid driver identity result %j", async value => {
     resultOverride = (text, result) => text === "SELECT DATABASE() AS databaseName" ? value : result;
     await expect(assertOperationsBoardSchema(tx)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+  });
+});
+
+describe("operations-board absence inspection for disabled monthly synchronization", () => {
+  it("returns ready with the original four queries and no absence probe", async () => {
+    await expect(inspectOperationsBoardSchema(tx)).resolves.toBe("ready"); expect(queries).toHaveLength(4);
+  });
+  it("requires empty complete metadata and four fixed zero-row missing-table proofs", async () => {
+    tableRows = []; columnRows = []; indexRows = [];
+    await expect(inspectOperationsBoardSchema(tx)).resolves.toBe("absent"); expect(queries).toHaveLength(8);
+    expect(queries.slice(4)).toEqual(names.map(name => ({ sql: `SELECT 1 AS probe FROM \`${databaseName}\`.\`${name}\` LIMIT 0`, params: [] })));
+  });
+  it("accepts structured missing-table errors wrapped by Drizzle without exposing their cause", async () => {
+    tableRows = []; columnRows = []; indexRows = [];
+    absentProbe = () => { throw new Error("Failed query: private SQL", { cause: missingTable() }); };
+    await expect(inspectOperationsBoardSchema(tx)).resolves.toBe("absent"); expect(queries).toHaveLength(8);
+  });
+  it.each(names)("rejects empty metadata when physical table %s can be queried", async existingName => {
+    tableRows = []; columnRows = []; indexRows = [];
+    absentProbe = name => { if (name === existingName) return [[], []]; throw missingTable(); };
+    await expect(inspectOperationsBoardSchema(tx)).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: "OPERATIONS_BOARD_SCHEMA_METADATA_INVALID" });
+  });
+  it.each(names)("still rejects partial installation without probing absent %s", async absentName => {
+    tableRows = tableRows.filter(row => row.tableName !== absentName); columnRows = columnRows.filter(row => row.tableName !== absentName); indexRows = indexRows.filter(row => row.tableName !== absentName);
+    await expect(inspectOperationsBoardSchema(tx)).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: "OPERATIONS_BOARD_SCHEMA_MIGRATION_REQUIRED" });
+    expect(queries).toHaveLength(4);
+  });
+  const unknownErrors: [string, () => unknown][] = [
+    ["permission denied", () => ({ code: "ER_TABLEACCESS_DENIED_ERROR", errno: 1142, sqlState: "42000" })],
+    ["connection failure", () => ({ code: "ECONNRESET" })],
+    ["message only", () => new Error("ER_NO_SUCH_TABLE errno1146")],
+    ["missing errno", () => ({ code: "ER_NO_SUCH_TABLE" })],
+    ["missing code", () => ({ errno: 1146, sqlState: "42S02" })],
+    ["string errno", () => ({ code: "ER_NO_SUCH_TABLE", errno: "1146" })],
+    ["contradictory errno", () => ({ code: "ER_NO_SUCH_TABLE", errno: 1142 })],
+    ["contradictory code", () => ({ code: "ER_TABLEACCESS_DENIED_ERROR", errno: 1146 })],
+    ["contradictory SQLSTATE", () => ({ ...missingTable(), sqlState: "42000" })],
+    ["contradictory alternate SQLSTATE", () => ({ ...missingTable(), sqlstate: "42000" })],
+    ["contradictory wrapper", () => ({ code: "ECONNRESET", cause: missingTable() })],
+    ["contradictory nested error", () => ({ ...missingTable(), cause: { errno: 1142 } })],
+    ["split proof across wrappers", () => ({ code: "ER_NO_SUCH_TABLE", cause: { errno: 1146 } })],
+    ["too deeply wrapped", () => ({ cause: { cause: { cause: { cause: { cause: missingTable() } } } } })],
+    ["cyclic cause", () => { const error = missingTable() as Error & { cause?: unknown }; error.cause = error; return error; }],
+    ["throwing property", () => ({ get code() { throw new Error("private key"); } })],
+    ["primitive cause", () => ({ ...missingTable(), cause: "private details" })],
+  ];
+  it.each(unknownErrors)("does not equate %s with proven absence", async (_name, error) => {
+    tableRows = []; columnRows = []; indexRows = []; absentProbe = () => { throw error(); };
+    let received: unknown; try { await inspectOperationsBoardSchema(tx); } catch (caught) { received = caught; }
+    expect(received).toMatchObject({ code: "PRECONDITION_FAILED", message: "OPERATIONS_BOARD_SCHEMA_READ_UNAVAILABLE" });
+    expect(received).toHaveProperty("cause", undefined); expect(JSON.stringify(received)).not.toMatch(/private|ER_NO_SUCH_TABLE|1146/u);
+    expect(queries).toHaveLength(5);
+  });
+  it("does not cache absence when an archive appears on a later request", async () => {
+    tableRows = []; columnRows = []; indexRows = []; await expect(inspectOperationsBoardSchema(tx)).resolves.toBe("absent");
+    metadata(); await expect(inspectOperationsBoardSchema(tx)).resolves.toBe("ready"); expect(queries).toHaveLength(12);
   });
 });

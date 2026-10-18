@@ -7,7 +7,9 @@ import { createMonthlyFinancialWriteRepository } from "./monthlyFinancialWriteRe
 import { MonthlyFinancialPreparedUploadSchema, monthlyFinancialOperationKey, type MonthlyFinancialPreparedUpload } from "./monthlyFinancialOperationJournal";
 import { parseMonthlyFinancialImport, monthlyFinancialImportBytesHash, monthlyFinancialImportHash } from "../../../shared/monthlyFinancialImport";
 import { findMonthlyFinancialSnapshot, type MonthlyFinancialBatchRecord } from "../../../shared/monthlyFinancialRead";
-import type { MonthlyOperationsBoardTransition } from "./monthlyOperationsBoardSynchronization";
+import { createMonthlyOperationsBoardSynchronization, type MonthlyOperationsBoardTransition } from "./monthlyOperationsBoardSynchronization";
+import { prepareOperationsBoardHistoryCapture } from "./monthlyBoardHistoryCapture";
+import { planOperationsBoardInitialization } from "./operationsBoardLifecycle";
 
 type Row = Record<string, unknown>;
 const operationId = "11111111-1111-4111-8111-111111111111", op2 = "22222222-2222-4222-8222-222222222222", op3 = "33333333-3333-4333-8333-333333333333";
@@ -136,6 +138,35 @@ describe("monthly persistent upload and transactional financial lifecycle", () =
 });
 
 describe("archive participation in the original monthly transaction", () => {
+  it.each(["confirm", "revoke"] as const)("the real disabled-sync guard rolls back %s and its final receipt for an initialized scope (fixture store)", async action => {
+    const batchId = await uploaded();
+    if (action === "revoke") await repository.confirm(context(), await transitionCommand(batchId));
+    const input = await transitionCommand(batchId, action === "confirm" ? op2 : op3), before = structuredClone({ batches, artifacts, audits });
+    const unexpected = async (): Promise<never> => { throw new Error("Unexpected archive operation in disabled-sync fixture"); };
+    const refreshExisting = vi.fn(unexpected);
+    synchronizeBoards.mockImplementation(async transition => {
+      const completed = transition.action === "confirm" ? transition.afterBatch : transition.beforeBatch;
+      const sync = createMonthlyOperationsBoardSynchronization({ enabled: () => false,
+        inspect: async tx => {
+          expect(tx.execute).toBe(execute);
+          expect(queries.some(query => query.sql.includes("FROM workspaces") && query.sql.includes("FOR UPDATE"))).toBe(true);
+          return "ready";
+        },
+        store: () => ({ get: unexpected, initializeExplicitAdmin: unexpected, publishRevision: unexpected, refreshExisting, load: async scope => {
+          expect(scope).toEqual({ workspaceId: 7, storeName: "Exact Store", country: "US" });
+          const initial = planOperationsBoardInitialization({ role: "admin", state: { scope, version: 0, currentMonth: null, currentEditionId: null, status: "uninitialized" }, currentEdition: null,
+            capture: prepareOperationsBoardHistoryCapture([completed], 7).capture({ ...scope, month: "2026-09" }), now: "2026-10-18 12:10:00.000000", nextEditionId: 9 });
+          return { stateId: 1, state: initial.state, currentEdition: initial.currentEdition! };
+        } }),
+      });
+      await sync(transition);
+    });
+    queries = [];
+    await expect(repository[action](context(), input)).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: "OPERATIONS_BOARD_SYNC_DISABLED_FOR_INITIALIZED_SCOPE" });
+    expect({ batches, artifacts, audits }).toEqual(before); expect(refreshExisting).not.toHaveBeenCalled();
+    expect((await repository.recover(context(), { expectedWorkspaceId: 7, operationId: input.operationId, decision: "check" })).status).toBe("unknown");
+    expect(synchronizeBoards).toHaveBeenCalledTimes(action === "confirm" ? 1 : 2);
+  });
   it("passes complete post-state to the same transaction before its final receipt for confirm and revoke", async () => {
     await oldBatch(80, [source({ 时间: "2025-01" }), source({ 店铺: "Other Store" })]);
     const batchId = await uploaded();

@@ -21,6 +21,10 @@ const PAGE_SIZE = 25;
 const buttonClass = "min-h-10 rounded border px-3 py-2 text-sm disabled:opacity-50";
 const cellClass = "border-b p-3 align-top whitespace-pre-wrap break-words";
 const positiveId = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= 2147483647;
+const boardSyncDisabledError = z.object({
+  message: z.literal("OPERATIONS_BOARD_SYNC_DISABLED_FOR_INITIALIZED_SCOPE"),
+  data: z.object({ code: z.literal("PRECONDITION_FAILED") }),
+});
 const PendingSchema = z.object({
   version: z.literal(1), userId: z.number().int().positive(), workspaceId: z.number().int().positive(),
   operationId: z.string().uuid(), action: z.enum(["upload", "confirm", "revoke"]),
@@ -233,7 +237,12 @@ function OwnedMonthlyFinancialWrite({ owner }: { owner: MonthlyFinancialWriteOwn
       const input = action === "upload" ? null : MonthlyFinancialWriteConfirmInputSchema.parse({ expectedWorkspaceId: owner.workspaceId, operationId, batchId: operation.batchId, expectedBatchVersion: operation.batchVersion, expectedImpactKey: operation.impactKey, fullScopeAcknowledged: true });
       const raw = action === "upload" ? await client.monthlyFinancialWrite.upload.mutate(upload!, { signal: request.signal }) : action === "confirm" ? await client.monthlyFinancialWrite.confirm.mutate(input!, { signal: request.signal }) : await client.monthlyFinancialWrite.revoke.mutate(input!, { signal: request.signal });
       await acceptReceipt(raw, operation, request.current);
-    } catch { if (request.current()) { setDialog(null); setAcknowledged(false); if (operation) { failRead(); setMessage("提交结果未知或发生版本冲突。原 UUID 已保留，原文件不清除；请检查结果或获得取消确认后再重新检查当前预览，不能自动重发。"); } else setMessage("文件 / 授权 / 确认范围不合法，或恢复记录无法安全保存；没有发送新请求。请检查文件和权限。"); } }
+    } catch (error) { if (request.current()) { setDialog(null); setAcknowledged(false); if (operation) {
+      failRead();
+      setMessage(boardSyncDisabledError.safeParse(error).success
+        ? "归档同步已停用，但受影响范围已有归档，服务端已拒绝本次月报变更。原 UUID 已保留，请先检查原结果或获得取消确认，再由维护者核对月报与归档启停配置及历史差异；不要自动重发或仅重开开关冒充追平。"
+        : "提交结果未知或发生版本冲突。原 UUID 已保留，原文件不清除；请检查结果或获得取消确认后再重新检查当前预览，不能自动重发。");
+    } else setMessage("文件 / 授权 / 确认范围不合法，或恢复记录无法安全保存；没有发送新请求。请检查文件和权限。"); } }
     finally { writeLock.current = false; if (request.current()) setBusy(false); }
   }
   async function recover(decision: "check" | "complete_upload" | "cancel") {

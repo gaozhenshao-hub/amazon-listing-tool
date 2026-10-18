@@ -123,14 +123,16 @@
     "prohibitedShortcut": "不得对旧库直接执行 baseline、db:push、通用 db:migrate 或批量重放朋友 SQL 来跳过对账；也不能改 checksum 或把旧迁移标成已执行。先完成目标结构、台账、数据、备份和兼容性核对，再审批最小增量。"
   },
   "monthlyAndBoardCoordination": {
-    "knownRisk": "月报写入与归档开关独立。若归档已初始化而 ENABLE_MERGED_OPS_BOARD_EDITIONS 关闭，月报确认／撤销可以不更新该归档；重新打开开关不会自动追平停用期间的差异。",
+    "controlledWriteRule": "新受控月报确认／已确认批次撤销在归档开关关闭时，不再无条件跳过同步。只有同一事务严格证实四张归档表均不存在（元数据与固定表零行查询均证明缺表），或精确兼容结构下受影响店铺／站点均未初始化归档，才允许月报独立变更；任一受影响范围已初始化则拒绝整次变更。部分结构、权限不明或读取失败均不能当作无归档。撤销未确认预览不改变财务事实，无需触及归档。",
+    "knownRisk": "此保护仅覆盖新的受控 monthlyFinancialWrite 路径，不证明旧 writer 已被隔离，也不修复旧版本或停用期间已有的月报／归档差异；重新打开开关不会自动追平。",
     "safeHandoff": [
       "月报与归档按同一发布方案协调启停；Web 和 worker 配置一致，并保留所有未决 UUID。",
+      "收到 OPERATIONS_BOARD_SYNC_DISABLED_FOR_INITIALIZED_SCOPE 时，不换 UUID 重发、不先强行打开开关；先检查原回执或获得取消确认，再核对启停配置及历史差异。该拒绝必须使月报状态与原操作最终回执一起回滚，不能留下成功假象。",
       "新 monthlyFinancialWrite 确认／撤销在归档开关开启时调用同事务同步；未初始化范围仍需管理员显式初始化。",
       "正式使用前核对并隔离旧月报／旧看板 writer、旧实例、脚本和直接 SQL；前端入口隐藏不能证明旧 writer 已禁止绕行。不能宣称所有旧写路径已完成封堵。",
       "停用期间已有月报变化时，先暂停相关写入、按真实批次与版本核对差异，再进行单独批准的修复或修订；重开 flag 不是回填、对账或追平操作。"
     ],
-    "sourceFiles": ["server/domains/ops/monthlyFinancialWriteRepository.ts", "server/domains/ops/monthlyOperationsBoardSynchronization.ts", "server/domains/ops/operationsBoardRepository.ts"]
+    "sourceFiles": ["server/domains/ops/monthlyFinancialWriteRepository.ts", "server/domains/ops/monthlyOperationsBoardSynchronization.ts", "server/domains/ops/operationsBoardSchemaAdmission.ts", "server/domains/ops/operationsBoardRepository.ts"]
   },
   "stillOpen": [
     "四栏竞品图片／OCR、问答及长期原评论原件来源仍不完整；现可核验样本不等于市场全量，未接来源不得标完成。",

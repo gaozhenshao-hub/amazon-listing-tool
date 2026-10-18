@@ -172,6 +172,28 @@ describe("persistent import confirmation and complete preview", () => {
 });
 
 describe("unknown receipts, version fencing and read isolation", () => {
+  it.each(["confirm", "revoke"] as const)("explains disabled archive synchronization for %s without releasing the original UUID or retrying", async action => {
+    if (action === "revoke") currentRecord = record(80, "completed");
+    controls[action].mockRejectedValue(Object.assign(new Error("OPERATIONS_BOARD_SYNC_DISABLED_FOR_INITIALIZED_SCOPE"), { data: { code: "PRECONDITION_FAILED" } }));
+    const notice = vi.fn(), unsubscribe = subscribeMonthlyFinancialChanges(notice);
+    await loaded(); selectFile();
+    fireEvent.click(screen.getByRole("button", { name: action === "confirm" ? "核对并确认本批次生效" : "核对并撤销本批次" }));
+    const dialog = await screen.findByRole("dialog"); fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("button", { name: action === "confirm" ? "明确确认整范围替换" : "明确撤销整批" }));
+    await screen.findByText(/归档同步已停用，但受影响范围已有归档/);
+    expect(readMonthlyFinancialPending(owner)).toMatchObject({ action, operationId: uuid, batchId: 80 });
+    expect(controls[action]).toHaveBeenCalledTimes(1); expect(controls.recover).not.toHaveBeenCalled(); expect(notice).not.toHaveBeenCalled();
+    expect(screen.getByText(/选择：合成月报/)).toBeVisible(); expect(screen.queryByLabelText("服务端持久月报预览")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(); unsubscribe();
+  });
+  it("does not interpret a matching message with another RPC code as a verified archive rejection", async () => {
+    controls.confirm.mockRejectedValue(Object.assign(new Error("OPERATIONS_BOARD_SYNC_DISABLED_FOR_INITIALIZED_SCOPE"), { data: { code: "INTERNAL_SERVER_ERROR" } }));
+    await loaded(); fireEvent.click(screen.getByRole("button", { name: "核对并确认本批次生效" }));
+    const dialog = await screen.findByRole("dialog"); fireEvent.click(within(dialog).getByRole("checkbox")); fireEvent.click(within(dialog).getByRole("button", { name: "明确确认整范围替换" }));
+    await screen.findByText(/提交结果未知或发生版本冲突/);
+    expect(screen.queryByText(/归档同步已停用，但受影响范围已有归档/)).not.toBeInTheDocument();
+    expect(readMonthlyFinancialPending(owner)?.operationId).toBe(uuid); expect(controls.confirm).toHaveBeenCalledTimes(1);
+  });
   it("keeps UUID after network loss and does not retry on reload", async () => {
     controls.upload.mockRejectedValue(new Error("network-lost")); const view = render(<MonthlyFinancialWriteController owner={owner} />); await check(); selectFile(); fireEvent.click(screen.getByRole("button", { name: "持久上传并生成待确认预览" }));
     await screen.findByText(/提交结果未知或发生版本冲突/); expect(readMonthlyFinancialPending(owner)?.operationId).toBe(uuid); expect(screen.getByText(/选择：合成月报/)).toBeVisible();
