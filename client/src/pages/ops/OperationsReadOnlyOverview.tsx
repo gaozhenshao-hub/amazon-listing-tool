@@ -579,7 +579,7 @@ export default function OperationsReadOnlyOverview() {
       <OperationsCostSheetReadOnly key={`costs:${scopeKey}`} />
       <MonthlyFinancialReadOnly key={`monthly:${scopeKey}`} />
       <MonthlyFinancialWrite key={`monthly-write:${scopeKey}`} />
-      <InventorySnapshotReadOnly key={`inventory-snapshot:${scopeKey}`} />
+      <InventorySnapshotReadOnly key={`inventory-snapshot:${scopeKey}`} withRefresh />
       <ProfitBoardReadOnly key={`profit-board:${scopeKey}`} />
       <ProductBoardReadOnly key={`product-board:${scopeKey}`} />
       <ProductTasksReadOnly key={`product-tasks:${scopeKey}`} />

@@ -90,8 +90,11 @@ function sanitized(error: unknown): never {
 
 async function readLatest(tx: DbExecutor, workspaceId: number) {
   let selected: Row[];
+  const columns = await rows(tx, "SELECT COLUMN_NAME AS columnName FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='ops_inventory_snapshots' AND COLUMN_NAME='run_source'", []);
+  if (columns.length > 1 || columns.some(row => row.columnName !== "run_source")) throw new SnapshotRecordInvalid();
+  const runSource = columns.length ? "run_source" : "'saihu_sync'";
   try {
-    selected = await rows(tx, `SELECT id,workspace_id AS workspaceId,run_id AS runId,captured_at AS capturedAt,
+    selected = await rows(tx, `SELECT id,workspace_id AS workspaceId,run_id AS runId,captured_at AS capturedAt,${runSource} AS runSource,
       IF(OCTET_LENGTH(CAST(payload AS CHAR CHARACTER SET utf8mb4))<=${INVENTORY_READ_LIMITS.wireBytes},CAST(payload AS CHAR CHARACTER SET utf8mb4),NULL) AS payload,
       OCTET_LENGTH(CAST(payload AS CHAR CHARACTER SET utf8mb4)) AS payloadBytes
       FROM ops_inventory_snapshots WHERE workspace_id=? ORDER BY id DESC LIMIT 1 FOR SHARE`, [workspaceId]);
@@ -102,7 +105,7 @@ async function readLatest(tx: DbExecutor, workspaceId: number) {
   }
   if (!selected.length) return null;
   const row = selected[0];
-  if (selected.length !== 1 || !positiveId(row.id) || row.workspaceId !== workspaceId || !positiveId(row.runId)
+  if (selected.length !== 1 || !positiveId(row.id) || row.workspaceId !== workspaceId || !positiveId(row.runId) || !["saihu_sync", "manual_collection"].includes(String(row.runSource))
     || typeof row.payloadBytes !== "number" || !Number.isSafeInteger(row.payloadBytes) || row.payloadBytes < 0 || row.payloadBytes > INVENTORY_READ_LIMITS.wireBytes) throw new SnapshotRecordInvalid();
   const capturedAt = timestamp(row.capturedAt);
   if (typeof row.payload === "string" && Buffer.byteLength(row.payload, "utf8") !== row.payloadBytes) throw new SnapshotRecordInvalid();
@@ -110,7 +113,7 @@ async function readLatest(tx: DbExecutor, workspaceId: number) {
   // v2 raw sources. Never trust serialized derived rows or slice a bad body.
   const parsed = parseInventorySnapshot(row.payload);
   if (parsed.capturedAt !== capturedAt) throw new SnapshotRecordInvalid();
-  return { record: { id: row.id, workspaceId, runId: row.runId, capturedAt, payload: row.payload }, parsed };
+  return { record: { id: row.id, workspaceId, runId: row.runId, runSource: row.runSource as "saihu_sync" | "manual_collection", capturedAt, payload: row.payload }, parsed };
 }
 function accountIsUnambiguous(universe: ParsedInventorySnapshot["scopeUniverse"], scope: ExactScope) {
   // This is coverage of the complete saved source arrays, not a live account

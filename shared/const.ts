@@ -291,6 +291,9 @@ export const PERMISSION_RESOURCE_REGISTRY = {
   // Whole month/store/country imports are a separate manager operation.
   // This grants neither scheduled sync nor access to another resource.
   ops_monthly_import: { moduleId: 'ops', subModuleId: 'ops_data_import' },
+  // Explicit manager-only full inventory collection; not planning edits or a
+  // grant to enable the supplier's weekly/monthly/inventory schedules.
+  ops_inventory_collection: { moduleId: 'ops', subModuleId: 'ops_inventory' },
   offsite_campaign: { moduleId: 'offsite', subModuleId: 'offsite_campaigns' },
   emperor_skill: { moduleId: 'emperor', subModuleId: 'emperor_skills' },
   conversation: { moduleId: 'emperor', subModuleId: 'emperor_conversations' },
@@ -363,6 +366,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
     ops_cost_sheet: ['read', 'update'],
     ops_monthly_import: ['read', 'create', 'update', 'delete'],
+    ops_inventory_collection: ['read', 'create', 'cancel'],
   },
   admin: {
     project: ['read', 'create', 'update', 'delete', 'assign'],
@@ -376,6 +380,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
     ops_cost_sheet: ['read', 'update'],
     ops_monthly_import: ['read', 'create', 'update', 'delete'],
+    ops_inventory_collection: ['read', 'create', 'cancel'],
   },
   ops_manager: {
     project: ['read', 'create', 'update', 'assign'],
@@ -388,6 +393,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
     ops_cost_sheet: ['read', 'update'],
     ops_monthly_import: ['read', 'create', 'update', 'delete'],
+    ops_inventory_collection: ['read', 'create', 'cancel'],
   },
   ops_specialist: {
     project: ['read', 'create', 'update'],

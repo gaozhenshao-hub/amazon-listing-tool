@@ -1,0 +1,156 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "friend-complete-inventory-manual-collection",
+  "baseline": "1e905d5895177827f6716e9ed9458da28461a74c",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "localOnly": true,
+  "scope": "P4-A controlled explicit Saihu collection, durable queue, complete bounded source validation, atomic snapshot publication and original-operation recovery. Not production or live-provider acceptance.",
+  "humanDecision": {
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary",
+    "generalP5Skills": "Qingdao-primary",
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSelection": "friend-primary; select, preview and generate; upload supplementary",
+    "publication": {
+      "repository": "https://github.com/gaozhenshao-hub/amazon-listing-tool",
+      "branch": "main",
+      "visibility": "PUBLIC",
+      "rightToPublishPrivateSourceConfirmed": true,
+      "actualPush": false
+    }
+  },
+  "preserve": [
+    "P0-P6/K01-K10/T01-T28/image62/master27/supplements12 and all prior batches/runtime/release gates",
+    "Qingdao Lingxing inventory-planning authority, current per-user manual quantity/parameters and existing read-only formulas",
+    "Original source arrays, unknown/null values, CNY valuation, shared North America physical-stock deduplication and explicit scope provenance",
+    "Existing AI queue behavior, shutdown draining, scheduler state and all unrelated migration ledger helpers"
+  ],
+  "changes": [
+    "Ten complete bounded inventory sources, all declared pages and product details, with fully paginated shop catalog before/after and stable accountSourceVersion. Proof attests advertised_api_full_pagination, not whole-account business coverage or authorization.",
+    "Independent manager-only ops_inventory_collection read/create/cancel resource. Fresh persisted actor/role, workspace, active membership and actual directory/resource authorization at queue, claim, heartbeat and finish; no sync, secret or AI permission expansion.",
+    "Durable workspace-serialized queue and UUID/request hash. Original-operation recovery, permanent cancellation tombstone and cross-actor UUID isolation; no arbitrary snapshot-save API.",
+    "120-second token-fenced lease, 30-second heartbeat, pending-job authority checks, expired-run failure without automatic recrawl. Unexpired active jobs and disabled-workspace heads do not block other workspaces.",
+    "Config and snapshot CAS; complete proof validation; job success receipt and new snapshot commit atomically. Unknown commit acknowledgement stays result_unknown, never triggers fail/refetch; failures retain prior successful snapshot.",
+    "Snapshot run_source namespace separates manual_collection and legacy saihu_sync IDs. Existing read schemas without run_source remain readable with explicit legacy provenance; malformed saved source is rejected.",
+    "Existing encrypted workspace Saihu configuration read under exact transactional schema/index validation. Public options expose versions only; credential decryption remains worker-only. No config writer, secret UI or token cache added.",
+    "Fixed official host and endpoint/body allowlist, private-address blocking, no redirects, one token request and no automatic HTTP/token retry. Fatal UTF-8 decoding, bounded wire payload, cloned inputs and credential snapshot prevent malformed or mutable data admission.",
+    "Default-off ENABLE_MERGED_OPS_INVENTORY_COLLECTION worker. Worker/all roles supported; web additionally requires INVENTORY_COLLECTION_IN_PROCESS=true; scheduler never consumes or seeds jobs. Heartbeat authority loss, shutdown and feature rollback abort collection.",
+    "Explicit UI capability check/start, progress polling, same-UUID recovery/cancel, metadata-only local record, actor/workspace isolation and navigator.locks serialization. Unsupported locks prohibit new collection but preserve original-operation recovery.",
+    "Only successful confirmed publication refreshes already-open same-actor/workspace inventory views; filters retained and both parent-group page offsets reset. Unknown/failure/cancel never replace saved inventory. Cancel consent and actions bind the displayed and persisted UUID.",
+    "Pure schema plan preserves reserved0314 for P6: explicit jobs/snapshots schemas and checked legacy index-to-namespaced index ALTER. Incompatible/partial schema fails closed. No migration registration, DDL execution, schedule seeding or production activation."
+  ],
+  "limits": {
+    "rowsPerSource": 10000,
+    "pagesPerSource": 100,
+    "singleWireBytes": 4194304,
+    "totalWireBytes": 16777216,
+    "sourcesOrSnapshotBytes": 8388608,
+    "proofBytes": 16777216,
+    "collectionBytes": 25165824,
+    "receipts": 11500,
+    "requestTimeoutMs": 60000,
+    "requestPacingMs": 1300,
+    "collectionDeadlineMs": 3600000,
+    "note": "Exceeding any limit fails explicitly and preserves old snapshot. Static detail capacity is not a promise all admitted counts finish within the independent one-hour deadline."
+  },
+  "review": {
+    "root": "Reviewed full collector/repository/config/transport/worker/schema/UI boundaries, runtime bootstrap diff and synthetic real-controller browser states; exact frozen source validated.",
+    "independent": "Backend/shared/UI implementation plus cross-review; schema runtime/planner agreement and cross-window recovery reviewed.",
+    "findingsResolved": [
+      "Fatal UTF-8 decode now rejects malformed wire bytes instead of silent replacement.",
+      "Typed ten-source initialization fixes sole initial full-tsc diagnostic without reduced includes.",
+      "Concurrent tabs cannot overwrite a pending UUID; cancel selection resets on UUID change and compares persisted operation before action.",
+      "No-lock browsers can recover existing operations but cannot start unsafe concurrent writes.",
+      "Worker draining starts promptly without delaying existing AI or web shutdown coordination."
+    ],
+    "protectedReview": "config/integration/reviews/inventory-manual-worker-20261018.json",
+    "migrationLedgerChanged": false
+  },
+  "verification": {
+    "focusedUnion": {
+      "exitCode": 0,
+      "session": 72765,
+      "files": 20,
+      "tests": 731,
+      "breakdown": {
+        "permissions": 3,
+        "collectorContract": 101,
+        "config": 19,
+        "transport": 32,
+        "transportIndependentReview": 13,
+        "worker": 16,
+        "workerIndependentReview": 12,
+        "collectionRepository": 63,
+        "refreshRouterAndShared": 31,
+        "readRepository": 123,
+        "readRouterAndShared": 149,
+        "refreshUi": 55,
+        "readUi": 69,
+        "overviewUi": 13,
+        "runtimeBootstrap": 6,
+        "aiJobRunner": 6,
+        "aiQueue": 15,
+        "runtimeDraining": 1,
+        "safeHttpClient": 1,
+        "monthlyPermissions": 3
+      },
+      "note": "One final combined run; wrapper-imported shared tests counted once. No real provider/database/model."
+    },
+    "nodeTests": { "planner": 33, "admissionContract": 17, "total": 50, "exitCode": 0 },
+    "lint": { "files": 32, "warnings": 0, "exitCode": 0, "session": 11756 },
+    "bundles": { "entries": ["server/_core/index.ts", "server/_core/aiWorker.ts"], "exitCode": 0, "executed": false },
+    "configuredTypes": {
+      "exitCode": 0,
+      "session": 60893,
+      "compilerFiles": 3794,
+      "diagnostics": [],
+      "unchangedFullTsconfig": true,
+      "incremental": false,
+      "verifiedBaselineBlobs": 2605,
+      "verifiedSourceOverlays": 36,
+      "sourceProofSha256": "0b76e3cd8866f82350adebe2dfa38314d9f7f1ea3a1dcdc58f346234feeff182",
+      "proofUnchangedDuringCheck": true,
+      "note": "This review-only JSON is the37th commit file and not a TypeScript input."
+    },
+    "protectedGuard": { "files": 106, "dependencies": 2, "reviewedRecords": 25, "exitCode": 0 },
+    "admissionExecution": { "executed": false, "note": "One diagnostic invocation without baseline/source arguments safely rejected; contract tests are not actual migration admission or SQL acceptance." },
+    "syntheticBrowser": {
+      "scope": "Real controller/read-only components, synthetic in-memory RPC. No authenticated server/provider/database workflow.",
+      "verified": [
+        "Initial reads do not start collection. Explicit start moves queued0/10 to running4/10 and success10/10.",
+        "Successful snapshot41 to42 triggers one inventory reread; search and365-day filter retained, both page offsets12 to0.",
+        "Second start loses acknowledgement; same UUID recovered with publication flag disabled then cancelled once. Snapshot42 remains unchanged and no duplicate start.",
+        "Third start collection_deadline failure displays explicit old-snapshot preservation; snapshot42 still unchanged.",
+        "Desktop screenshot and390px requested narrow viewport verified; clientWidth375 equals scrollWidth375, controller343px. No outer horizontal overflow.",
+        "Final visible counters3starts/4progress/1check/1cancel/5inventory reads. Browser warning/error logs empty. Temporary viewport reset, agent tab closed and owned server stopped."
+      ],
+      "artifacts": [
+        "outputs/inventory-collection-browser-20261018/success-desktop.png",
+        "outputs/inventory-collection-browser-20261018/cancel-recovered-desktop.png",
+        "outputs/inventory-collection-browser-20261018/failure-mobile.png"
+      ]
+    }
+  },
+  "release": {
+    "flagDefault": "off",
+    "actualDatabase": false,
+    "actualProvider": false,
+    "actualAuthenticatedWorkflow": false,
+    "migrationExecuted": false,
+    "migrationRegistered": false,
+    "scheduleSeeded": false,
+    "modelCalls": 0,
+    "pushed": false,
+    "deployed": false,
+    "fullP1Complete": false,
+    "fullObjectiveComplete": false,
+    "remaining": [
+      "Actual MySQL schema/historical data reconciliation, transaction/lease/concurrency/CAS/cancellation/unknown-commit/revocation acceptance and rollback",
+      "Controlled workspace credential/configuration and explicit scope mappings, real provider pagination/detail/response limits, native dependencies and authenticated UI acceptance",
+      "P4-B1 complete per-user manual inventory and planning/cost/package persistence across both OpsInventory and OpsProducts; preserve field groups, units/nulls, canonical scopes and reject historical ambiguity",
+      "P4-B2 shared lifecycle restore/discontinue and owner assign/revoke with strict numeric membership, audit and cancelled-assignment reactivation",
+      "P6 migration0314 admission/recovery, deployment enablement and dual scheduler coordination; no automatic sync from this source batch",
+      "All prior P1-P6, Listing/Agent/Skills, product/profit operational selection, complete-month/freeze/backfill, formal entries, storage and release gates remain"
+    ]
+  }
+}

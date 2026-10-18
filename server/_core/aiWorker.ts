@@ -28,6 +28,7 @@ import {
 } from "../services/aiJobRunner";
 import { recoverTimedOutAgentNodes } from "../services/emperorAgentRunner";
 import { assertStartupConfig } from "./startupValidation";
+import { startInventoryCollectionWorker } from "../domains/ops/inventoryCollectionWorker";
 
 const pollMs = Math.min(
   Math.max(Number(process.env.AI_JOB_WORKER_POLL_MS || 5000), 1000),
@@ -83,6 +84,7 @@ async function main() {
   process.env.AI_JOB_RUNNER_MODE = process.env.AI_JOB_RUNNER_MODE || "worker";
   process.env.APP_PROCESS_ROLE = process.env.APP_PROCESS_ROLE || "worker";
   assertStartupConfig({ entrypoint: "worker", role: "worker" });
+  const stopInventoryCollectionWorker = startInventoryCollectionWorker("worker");
   const handlers = listAiJobHandlerRegistrations()
     .map(handler => handler.id)
     .join(", ");
@@ -108,10 +110,11 @@ async function main() {
     if (stopped) return;
     stopped = true;
     clearInterval(interval);
+    const inventoryDrain = stopInventoryCollectionWorker();
     console.log(`[AI Worker] received ${signal}, draining in-flight jobs`);
     try {
       await markAiJobWorkerDraining({ signal });
-      const drainResult = await waitForAiJobsToDrain(shutdownGraceMs);
+      const [drainResult] = await Promise.all([waitForAiJobsToDrain(shutdownGraceMs), inventoryDrain]);
       if (!drainResult.drained) {
         console.warn(
           `[AI Worker] shutdown grace elapsed; running=${drainResult.runningRunIds.join(",") || "none"} ` +

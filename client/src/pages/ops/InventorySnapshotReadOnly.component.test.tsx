@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import InventorySnapshotReadOnly, { InventorySnapshotReadOnlyContent } from "./InventorySnapshotReadOnly";
+import { publishInventorySnapshotChange } from "./InventorySnapshotRefresh";
 import {
   buildInventorySnapshotReadFailure, buildInventorySnapshotReadResult, InventorySnapshotReadInputSchema,
   mapInventorySources, parseInventorySnapshot, planInventoryScopeAccess,
@@ -56,6 +57,51 @@ beforeEach(() => {
   controls.permissions.isLoading = false; controls.permissions.canRead.mockReset().mockReturnValue(true); controls.query.mockReset();
 });
 afterEach(cleanup);
+
+describe("committed collection refreshes already opened inventory only", () => {
+  it("keeps filters and resets both page cursors, clearing the old result before fresh read", async () => {
+    controls.query.mockImplementation((request: InventorySnapshotReadInput) => Promise.resolve(result(request, payload(13))));
+    render(<InventorySnapshotReadOnly />);
+    fireEvent.change(screen.getByLabelText("库存搜索"), { target: { value: "ASIN" } });
+    fireEvent.change(screen.getByLabelText("库存超龄口径"), { target: { value: "365" } });
+    await readReady(); fireEvent.click(screen.getByRole("button", { name: "库存父组下一页" }));
+    await waitFor(() => expect(controls.query.mock.calls.at(-1)?.[0].groupOffset).toBe(12));
+    await screen.findByText(/快照 ID：41/);
+    const delayed = deferred<InventorySnapshotReadResult>(); controls.query.mockReturnValueOnce(delayed.promise);
+    act(() => publishInventorySnapshotChange({ userId: 7, workspaceId: 11, snapshotId: 42 }));
+    expect(screen.queryByText(/快照 ID：41/)).not.toBeInTheDocument();
+    const request = controls.query.mock.calls.at(-1)![0] as InventorySnapshotReadInput;
+    expect(request).toEqual(input({ search: "ASIN", ageThreshold: 365 }));
+    await act(async () => { delayed.resolve(result(request)); }); await screen.findByText(/快照 ID：41/);
+  });
+  it("keeps an opened exact scope and unpaired filter", async () => {
+    controls.query.mockImplementation((request: InventorySnapshotReadInput) => Promise.resolve(result(request)));
+    render(<InventorySnapshotReadOnly />); fireEvent.click(screen.getByLabelText(/读取工作区可见的全部/)); fillScope();
+    fireEvent.click(screen.getByLabelText("仅未配对库存")); await readReady();
+    act(() => publishInventorySnapshotChange({ userId: 7, workspaceId: 11, snapshotId: 42 }));
+    await waitFor(() => expect(controls.query).toHaveBeenCalledTimes(2));
+    expect(controls.query.mock.calls[1][0]).toEqual(input({ unpaired: true, exactScope: scope }));
+  });
+  it("never opens an unread, changed or explicitly cleared scope on a commit event", async () => {
+    controls.query.mockImplementation((request: InventorySnapshotReadInput) => Promise.resolve(result(request)));
+    render(<InventorySnapshotReadOnly />); act(() => publishInventorySnapshotChange({ userId: 7, workspaceId: 11, snapshotId: 42 })); expect(controls.query).not.toHaveBeenCalled();
+    await readReady(); fireEvent.change(screen.getByLabelText("库存搜索"), { target: { value: "changed" } });
+    act(() => publishInventorySnapshotChange({ userId: 7, workspaceId: 11, snapshotId: 42 })); expect(controls.query).toHaveBeenCalledTimes(1);
+    await readReady(); fireEvent.click(screen.getByRole("button", { name: "取消并清除库存" }));
+    act(() => publishInventorySnapshotChange({ userId: 7, workspaceId: 11, snapshotId: 42 })); expect(controls.query).toHaveBeenCalledTimes(2);
+  });
+  it("ignores other identities and events after read authority is revoked", async () => {
+    controls.query.mockResolvedValue(result()); const view = render(<InventorySnapshotReadOnly />); await readReady();
+    act(() => { publishInventorySnapshotChange({ userId: 8, workspaceId: 11, snapshotId: 42 }); publishInventorySnapshotChange({ userId: 7, workspaceId: 12, snapshotId: 42 }); });
+    expect(controls.query).toHaveBeenCalledTimes(1); controls.permissions.canRead.mockReturnValue(false); view.rerender(<InventorySnapshotReadOnly />);
+    act(() => publishInventorySnapshotChange({ userId: 7, workspaceId: 11, snapshotId: 42 })); expect(controls.query).toHaveBeenCalledTimes(1);
+  });
+  it("only the optional wrapper adds the controlled collection entry, without automatic queries", () => {
+    render(<InventorySnapshotReadOnly withRefresh />);
+    expect(screen.getByRole("region", { name: "完整库存显式采集" })).toBeVisible(); expect(controls.query).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "明确开始全来源库存采集" })).toBeDisabled();
+  });
+});
 
 describe("inventory snapshot read ownership gates", () => {
   it("requires an explicit read and has no sync, upload or write action", () => {
@@ -196,10 +242,10 @@ describe("explicit scope, pagination and stale-response isolation", () => {
     expect(controls.query.mock.calls[2][0]).toEqual(input({ groupOffset: 12, agedGroupOffset: 12 }));
     await readReady(); expect(controls.query.mock.calls[3][0]).toEqual(input());
   });
-  it.each(["id", "runId", "capturedAt", "version"] as const)("rejects paging across a changed snapshot %s", async field => {
+  it.each(["id", "runId", "runSource", "capturedAt", "version"] as const)("rejects paging across a changed snapshot %s", async field => {
     const data = payload(13); controls.query.mockImplementation((request: InventorySnapshotReadInput) => {
       const next = result(request, data);
-      if (request.groupOffset) { if (field === "version") next.snapshot!.version = 1; else next.snapshot![field] += 1; }
+      if (request.groupOffset) { if (field === "version") next.snapshot!.version = 1; else if (field === "runSource") next.snapshot!.runSource = "manual_collection"; else next.snapshot![field] += 1; }
       return Promise.resolve(next);
     });
     render(<InventorySnapshotReadOnly />); await readReady(); fireEvent.click(screen.getByRole("button", { name: "库存父组下一页" }));

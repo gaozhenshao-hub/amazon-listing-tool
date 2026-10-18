@@ -54,7 +54,7 @@ vi.mock("./MonthlyFinancialWrite", () => ({
   default: () => <section aria-label="持久月报入口">月报持久上传与确认入口</section>,
 }));
 vi.mock("./InventorySnapshotReadOnly", () => ({
-  default: () => <section aria-label="完整库存入口">完整库存独立只读入口</section>,
+  default: ({ withRefresh }: { withRefresh?: boolean }) => <section aria-label="完整库存入口">完整库存独立只读入口{withRefresh && <span>显式采集恢复入口已接入</span>}</section>,
 }));
 vi.mock("./ProfitBoardReadOnly", () => ({
   default: () => <section aria-label="完整利润看板入口">完整利润看板独立只读入口</section>,
@@ -261,6 +261,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
     expect(screen.getByLabelText("完整月报入口")).toBeVisible();
     expect(screen.getByLabelText("持久月报入口")).toBeVisible();
     expect(screen.getByLabelText("完整库存入口")).toBeVisible();
+    expect(screen.getByText("显式采集恢复入口已接入")).toBeVisible();
     expect(screen.getByLabelText("完整利润看板入口")).toBeVisible();
     expect(screen.getByLabelText("完整产品看板入口")).toBeVisible();
     expect(screen.getByLabelText("完整运营任务入口")).toBeVisible();

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import { trpc } from "@/lib/trpc";
+import InventorySnapshotRefresh, { subscribeInventorySnapshotChanges } from "./InventorySnapshotRefresh";
 import {
   InventorySnapshotReadInputSchema, InventorySnapshotReadResultSchema, inventoryAgeQuantity,
   type InventorySnapshotReadInput, type InventorySnapshotReadResult,
@@ -105,6 +106,7 @@ export function InventorySnapshotReadOnlyContent({ result, onPage }: { result: I
   return <div className="min-w-0 max-w-full space-y-5">
     <section aria-label="已保存库存快照来源" className="space-y-2 break-words text-sm">
       <p>快照 ID：{snapshot.id} · 来源任务：{snapshot.runId} · 版本：{snapshot.version} · 货值币种：{snapshot.currency}</p>
+      <p>任务来源：{snapshot.runSource === "manual_collection" ? "显式库存采集" : "已有赛狐同步"}（同编号不跨来源混用）</p>
       <p>采集开始：{capturedTime(snapshot.startedAt)} · 完成：{capturedTime(snapshot.capturedAt)}（Asia/Shanghai 时区）</p>
       <p>采集开始原值：{snapshot.startedAt} · 采集完成原值：{snapshot.capturedAt}（Unix 毫秒）</p>
       <p>可见范围：{snapshot.visibility === "full" ? "工作区管理可见范围" : "当前已授权精确业务范围（不含工作区总计）"} · 库存源的采集时间不等于库龄快照日期，也不代表本次重新同步。</p>
@@ -145,14 +147,16 @@ function OwnedInventory({ owner }: { owner: Owner }) {
   const [scope, setScope] = useState({ parentAsin: "", storeName: "", country: "", accountId: "" });
   const [allScopes, setAllScopes] = useState(manager), [search, setSearch] = useState(""), [unpaired, setUnpaired] = useState(false);
   const [threshold, setThreshold] = useState<180 | 365>(180), [state, setState] = useState<ReadState>({ status: "idle" });
-  const sequence = useRef(0), pending = useRef<AbortController | null>(null);
+  const sequence = useRef(0), pending = useRef<AbortController | null>(null), active = useRef(false);
+  const changeHandler = useRef<(notice: { userId: number; workspaceId: number }) => void>(() => {});
   useEffect(() => () => { sequence.current++; pending.current?.abort(); }, []);
-  function clear() { sequence.current++; pending.current?.abort(); pending.current = null; setState({ status: "idle" }); }
+  function clear(preserveActive = false) { sequence.current++; pending.current?.abort(); pending.current = null; setState({ status: "idle" }); if (!preserveActive) active.current = false; }
   async function read(groupOffset = 0, agedGroupOffset = 0, expectedSnapshot?: NonNullable<InventorySnapshotReadResult["snapshot"]>) {
-    clear();
+    clear(true);
     const parsed = InventorySnapshotReadInputSchema.safeParse({ expectedWorkspaceId: owner.workspaceId, search, unpaired, ageThreshold: threshold,
       groupOffset, groupLimit: GROUP_LIMIT, agedGroupOffset, agedGroupLimit: GROUP_LIMIT, ...(manager && allScopes ? {} : { exactScope: scope }) });
-    if (!parsed.success) { setState({ status: "invalid" }); return; }
+    if (!parsed.success) { active.current = false; setState({ status: "invalid" }); return; }
+    active.current = true;
     const ticket = ++sequence.current, controller = new AbortController(); pending.current = controller;
     const current = () => ticket === sequence.current && !controller.signal.aborted;
     setState({ status: "loading" });
@@ -161,11 +165,15 @@ function OwnedInventory({ owner }: { owner: Owner }) {
       if (!current()) return;
       const result = acceptResult(raw, parsed.data, owner);
       if (expectedSnapshot && (result.snapshot?.id !== expectedSnapshot.id || result.snapshot.runId !== expectedSnapshot.runId
-        || result.snapshot.capturedAt !== expectedSnapshot.capturedAt || result.snapshot.version !== expectedSnapshot.version)) throw new Error("INVENTORY_SNAPSHOT_CHANGED");
+        || result.snapshot.runSource !== expectedSnapshot.runSource || result.snapshot.capturedAt !== expectedSnapshot.capturedAt || result.snapshot.version !== expectedSnapshot.version)) throw new Error("INVENTORY_SNAPSHOT_CHANGED");
       if (current()) setState({ status: "ready", result });
-    } catch { if (current()) setState({ status: "error" }); }
+    } catch { if (current()) { active.current = false; setState({ status: "error" }); } }
     finally { if (current()) pending.current = null; }
   }
+  changeHandler.current = notice => {
+    if (notice.userId === owner.userId && notice.workspaceId === owner.workspaceId && active.current) void read();
+  };
+  useEffect(() => subscribeInventorySnapshotChanges(notice => changeHandler.current(notice)), []);
   return <Shell>
     <form aria-label="库存只读查询范围" className="space-y-3" onSubmit={event => { event.preventDefault(); void read(); }}>
       {manager && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={allScopes} onChange={event => { clear(); setAllScopes(event.currentTarget.checked); }} />读取工作区可见的全部已保存范围（管理员）</label>}
@@ -178,7 +186,7 @@ function OwnedInventory({ owner }: { owner: Owner }) {
         <label className="text-sm">超龄口径<select aria-label="库存超龄口径" className="mt-1 block w-full rounded border bg-background p-2" value={threshold} onChange={event => { clear(); setThreshold(event.currentTarget.value === "365" ? 365 : 180); }}><option value="180">181 天及以上</option><option value="365">超过 365 天</option></select></label>
       </div>
       <label className="flex items-center gap-2 text-sm"><input aria-label="仅未配对库存" type="checkbox" checked={unpaired} onChange={event => { clear(); setUnpaired(event.currentTarget.checked); }} />仅未配对 / 未分配库存（筛选不扩大权限）</label>
-      <div className="flex flex-wrap gap-3"><button type="submit" className={buttonClass}>读取已有库存快照</button><button type="button" className={buttonClass} onClick={clear}>取消并清除库存</button></div>
+      <div className="flex flex-wrap gap-3"><button type="submit" className={buttonClass}>读取已有库存快照</button><button type="button" className={buttonClass} onClick={() => clear()}>取消并清除库存</button></div>
     </form>
     {state.status === "loading" && <p role="status">正在读取已保存库存快照…</p>}
     {state.status === "invalid" && <p role="alert">库存查询范围不完整或不合法，未发送请求。</p>}
@@ -187,7 +195,7 @@ function OwnedInventory({ owner }: { owner: Owner }) {
   </Shell>;
 }
 
-export default function InventorySnapshotReadOnly() {
+function InventorySnapshotReader() {
   const auth = useAuth(), permissions = usePermissions();
   if (auth.loading) return <Shell><p role="status">正在确认库存读取身份…</p></Shell>;
   if (auth.error) return <Shell><p role="alert">身份读取失败，库存数据已隐藏。</p></Shell>;
@@ -197,4 +205,8 @@ export default function InventorySnapshotReadOnly() {
   if (!permissions.canRead("ops", "ops_data_import")) return <Shell><p role="alert">没有库存读取权限，旧数据已隐藏。</p></Shell>;
   const owner = { userId: user.id, workspaceId: user.defaultWorkspaceId, role: user.role };
   return <OwnedInventory key={JSON.stringify([owner.userId, owner.workspaceId, owner.role])} owner={owner} />;
+}
+
+export default function InventorySnapshotReadOnly({ withRefresh = false }: { withRefresh?: boolean } = {}) {
+  return <>{withRefresh && <InventorySnapshotRefresh />}<InventorySnapshotReader /></>;
 }

@@ -1,0 +1,24 @@
+{
+  "version": "amazon-protected-baseline-review/1",
+  "reviewedOn": "2026-10-18",
+  "control": "K01",
+  "decision": "explicit_local_reviewed_allowance_not_production_acceptance",
+  "scope": [
+    "Add a separate default-off consumer for explicitly queued manual inventory jobs in the existing worker process.",
+    "Signal inventory stop immediately on process shutdown, then await its bounded drain concurrently with AI draining; do not delay original AI mark-draining or web shutdown timers. Preserve every original AI job import, registration, polling, heartbeat and draining call.",
+    "Web consumer requires both inventory feature flag and explicit embedded mode. Scheduler role never collects inventory; no schedule or task seeds are created."
+  ],
+  "protectedFile": {
+    "path": "server/_core/aiWorker.ts",
+    "baseline": { "gitBlobSha1": "bb156a213c07585a3c34d8d464e9625278733ca1", "sha256": "b3684a0e402946b9114559e50489f41ccc59e92159cc050baba43849f5061e7d" },
+    "previousReviewed": { "gitBlobSha1": "607db025d0348dee0164e0052e775539a6d6118d", "sha256": "726be08af4788b6818467de19c1ae99213c0ed2be3a46e3060ac841beedad933", "reviewRef": "config/integration/reviews/20261016-saved-competitor-research-jobs.json" },
+    "reviewed": { "gitBlobSha1": "84e0d8f7014df9ddfcb8ca4cd802bffbb2b9a471", "sha256": "7ae942e25528ca7e30b55e596315cd3aeae6383cc7fddd0dd562c22e40bb37b0" }
+  },
+  "verification": {
+    "independentReviews": ["Collector/transport/worker reviewed by shared-contract agent", "Worker/config/planner compared against transactional repository by backend agent"],
+    "safetyFixes": ["Fatal UTF-8 decode preserves source bytes instead of silent replacement", "Freeze signed requests before asynchronous waits", "Commit acknowledgement loss never marks a potentially committed job failed or re-fetches data"],
+    "rootFrozenUnion": "Recorded separately in 20261018-friend-inventory-collection.json after final candidate checks."
+  },
+  "unchanged": { "baselineHashesRetained": true, "aiJobQueueAndRecovery": true, "listingAndImportHandlers": true, "lingxing": true, "supplierSchedules": true, "production": true },
+  "remaining": ["Actual database/schema migration and concurrent lock/lease acceptance", "Authorized supplier collection and verified scope mappings", "Explicit worker deployment, off/on/shutdown acceptance and all release gates"]
+}

@@ -15,7 +15,7 @@ const legacyRow = (patch: Row = {}): Row => ({ id: "row-1", parentAsin: scope.pa
   domestic: stock(2), purchase: stock(3), shipping: stock(1), fba: stock(4), total: stock(10), aux: [{ id: "aux-1", sku: "AUX-original", name: "辅料原文", stock: stock(2), shared: true, note: "跨产品共享" }],
   notes: ["原始注释<script>alert(1)</script>"], age: { days181To270: 1, days271To365: 1, days365Plus: 1, dates: ["2026-10-15"] }, ...patch });
 const legacy = (patch: Row = {}, rows: Row[] = [legacyRow()]): Row => ({ version: 1, currency: "CNY", capturedAt: 1_792_224_000_000, startedAt: 1_792_223_000_000, rows, warnings: ["private-global-warning"], sourceCounts: { ...Object.fromEntries(INVENTORY_SOURCE_KEYS.map(key => [key, 0])), fba: 1, warehouse: 1, privateGlobalSource: 123 }, ...patch });
-const record = (patch: Row = {}, payload: unknown = legacy()): Row => { const wire = JSON.stringify(payload); return { id: 11, workspaceId: 7, runId: 21, capturedAt: "1792224000000", payload: wire, payloadBytes: Buffer.byteLength(wire), ...patch }; };
+const record = (patch: Row = {}, payload: unknown = legacy()): Row => { const wire = JSON.stringify(payload); return { id: 11, workspaceId: 7, runId: 21, runSource: "saihu_sync", capturedAt: "1792224000000", payload: wire, payloadBytes: Buffer.byteLength(wire), ...patch }; };
 const assignment = (patch: Row = {}): Row => ({ id: 51, workspaceId: 7, parentAsin: scope.parentAsin, storeName: scope.storeName, country: "美国", assigneeUserId: 3, isActive: 1, ...patch });
 const mapping = (patch: Row = {}): Row => ({ id: 61, workspaceId: 7, externalName: "Current Owner", sourceType: "saihu", systemUserId: 3, isConfirmed: 1, ...patch });
 const fba = (patch: InventoryRaw = {}): InventoryRaw => ({ id: 1, shareKey: "stock-1", marketplaceId: "ATVPDKIKX0DER", currency: "CNY", asin: "B000000002", sku: "MSKU-v2", commodityId: "commodity-1", available: 4, reservedTransfer: 0, reservedProcessing: 0, reservedCustomerorders: 0, unfulfillable: 0, research: 0, inTransit: 0, inboundShipped: 0, inboundReceiving: 0, inboundWorking: 2, totalInventory: 4, purchaseCosts: 40, invAge181To270Days: 1, invAge271To365Days: 0, invAge365PlusDays: 1, devList: [{ devName: "Current Owner" }], parent: scope.parentAsin, store: scope.storeName, country: scope.country, account: scope.accountId, ...patch });
@@ -26,11 +26,12 @@ function snapshotV2(fbaRows = [fba()], scopeBindings: InventoryScopeBinding[] = 
   const sources: InventorySources = { warehouses: [], warehouse: [], fba: fbaRows, commodities: [], aux: [], listings: [], shipping: [], shippingItems: [], details: [], ...other };
   return mapInventorySources({ sources, capturedAt: 1_792_224_000_000, startedAt: 1_792_223_000_000, scopeBindings });
 }
-let actors: Row[], records: Row[], assignments: Row[], mappings: Row[], policies: Row[], overrides: Row[];
+let actors: Row[], records: Row[], assignments: Row[], mappings: Row[], policies: Row[], overrides: Row[], namespaceColumns: Row[];
 let assignmentResult: ((params: unknown[]) => Row[]) | null;
 let failures: Record<string, unknown>, queries: { sql: string; params: unknown[] }[], commits: number, rollbacks: number;
 const execute = vi.fn(async (statement: SQL) => {
   const query = new MySqlDialect().sqlToQuery(statement); queries.push(query);
+  if (query.sql.includes("information_schema.COLUMNS")) return [namespaceColumns, []];
   for (const table of ["users", "ops_inventory_snapshots", "ops_inventory_owner_assignments", "operator_name_mappings", "security_access_policies", "role_permissions"]) if (query.sql.includes(`FROM ${table}`) && failures[table]) throw failures[table];
   if (query.sql.includes("FROM users")) return [actors, []];
   if (query.sql.includes("FROM security_access_policies")) return [policies, []];
@@ -47,10 +48,19 @@ const database = vi.fn(async () => ({ transaction }));
 const repo = createInventorySnapshotReadRepository({ database });
 function regular() { actors[0].role = "ops_specialist"; return context("ops_specialist"); }
 beforeEach(() => {
-  vi.clearAllMocks(); queries = []; failures = {}; commits = 0; rollbacks = 0;
+  vi.clearAllMocks(); queries = []; failures = {}; commits = 0; rollbacks = 0; namespaceColumns = [];
   actors = [{ id: 3, role: "ops_manager", status: "active", defaultWorkspaceId: 7 }]; assignments = []; assignmentResult = null; mappings = []; policies = []; overrides = []; records = [record()];
 });
 describe("inventory snapshot read-only source and live security boundary", () => {
+  it("reads old schema with an explicit legacy namespace literal", async () => {
+    const result = await repo.get(context(), input); expect(result.snapshot?.runSource).toBe("saihu_sync"); expect(queries.find(query => query.sql.includes("FROM ops_inventory_snapshots"))?.sql).toContain("'saihu_sync' AS runSource");
+  });
+  it("keeps manual collection job IDs separate from old sync IDs", async () => {
+    namespaceColumns = [{ columnName: "run_source" }]; records = [record({ runSource: "manual_collection" })]; expect((await repo.get(context(), input)).snapshot?.runSource).toBe("manual_collection"); expect(queries.find(query => query.sql.includes("FROM ops_inventory_snapshots"))?.sql).toContain("run_source AS runSource");
+  });
+  it.each([null, "other", "MANUAL_COLLECTION"])("rejects unknown persisted namespace %j", async runSource => {
+    namespaceColumns = [{ columnName: "run_source" }]; records = [record({ runSource })]; expect((await repo.get(context(), input)).status).toBe("invalid");
+  });
   it("reads latest saved v1 for an authorized manager without treating its owners as authority", async () => {
     const result = await repo.get(context(), input), text = JSON.stringify(result);
     expect(result.status).toBe("ready"); expect(result.identity).toEqual({ userId: 3, workspaceId: 7 });

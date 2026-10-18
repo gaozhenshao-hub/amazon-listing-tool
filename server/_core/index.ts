@@ -41,6 +41,7 @@ import {
 import { assertStartupConfig } from "./startupValidation";
 import { registerRuntimeHealthRoutes, setRuntimeDraining } from "./runtimeHealth";
 import { resolveListenHost } from "./listenHost";
+import { startInventoryCollectionWorker } from "../domains/ops/inventoryCollectionWorker";
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
     const server = net.createServer();
@@ -121,6 +122,7 @@ async function startServer() {
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
   const listenHost = resolveListenHost();
+  let stopInventoryCollectionWorker: (() => Promise<void>) | null = null;
 
   if (port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
@@ -128,6 +130,7 @@ async function startServer() {
 
   server.listen(port, listenHost, () => {
     console.log(`Server running on http://localhost:${port}/ role=${role}`);
+    stopInventoryCollectionWorker = startInventoryCollectionWorker(role);
     // Start usage tracking background flush
     if (shouldStartWebLocalTasks(role)) {
       startUsageTracking();
@@ -233,6 +236,7 @@ async function startServer() {
     shutdownPromise = (async () => {
     console.log(`[Server] received ${signal}, shutting down gracefully`);
     setRuntimeDraining(true);
+    const inventoryDrain = stopInventoryCollectionWorker?.();
     const graceMs = Math.min(Math.max(Number(process.env.SHUTDOWN_GRACE_MS || 20_000), 5_000), 60_000);
     const forceCloseTimer = setTimeout(() => {
       console.warn(`[Server] grace period ${graceMs}ms reached; closing idle connections`);
@@ -247,6 +251,7 @@ async function startServer() {
       });
     });
     clearTimeout(forceCloseTimer);
+    await inventoryDrain;
     if (shouldStartWebLocalTasks(role)) {
       await stopUsageTracking().catch(error =>
         console.error("[UsageTracking] Stop failed:", error)

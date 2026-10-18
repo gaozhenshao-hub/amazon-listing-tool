@@ -452,9 +452,9 @@
         "sha256": "b3684a0e402946b9114559e50489f41ccc59e92159cc050baba43849f5061e7d"
       },
       "reviewed": {
-        "gitBlobSha1": "607db025d0348dee0164e0052e775539a6d6118d",
-        "sha256": "726be08af4788b6818467de19c1ae99213c0ed2be3a46e3060ac841beedad933",
-        "reviewRef": "config/integration/reviews/20261016-saved-competitor-research-jobs.json"
+        "gitBlobSha1": "84e0d8f7014df9ddfcb8ca4cd802bffbb2b9a471",
+        "sha256": "7ae942e25528ca7e30b55e596315cd3aeae6383cc7fddd0dd562c22e40bb37b0",
+        "reviewRef": "config/integration/reviews/inventory-manual-worker-20261018.json"
       }
     },
     {
