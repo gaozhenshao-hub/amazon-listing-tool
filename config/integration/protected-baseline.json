@@ -452,9 +452,9 @@
         "sha256": "b3684a0e402946b9114559e50489f41ccc59e92159cc050baba43849f5061e7d"
       },
       "reviewed": {
-        "gitBlobSha1": "3e290ed020099d4795d40ba6fac9bd62a813dcd7",
-        "sha256": "26b6fa462913715861b16a4e7067b678d2b09e4671f7ea7222ab96595d403947",
-        "reviewRef": "config/integration/reviews/20261018-assistant-conversation-worker.json"
+        "gitBlobSha1": "ac469a76d5b181685cad7b992cbc3c45738d6ea3",
+        "sha256": "e9e43e7b8a4f6bf1a86a601f16e301d8aa8b4f5c8af784d5e046e4bc7505361f",
+        "reviewRef": "config/integration/reviews/20261018-profit-analysis-durable-worker.json"
       }
     },
     {

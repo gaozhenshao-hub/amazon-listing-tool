@@ -16,7 +16,7 @@ import { query, positiveId, SourceTableMissing, InvalidSource, IncompleteScan, M
 export interface ProfitAnalysisSnapshotDatabase { transaction?<T>(body: (tx: DbExecutor) => Promise<T>): Promise<T> }
 /** This session is created only after fresh same-transaction authorization.
  * Future job/save callers must recreate it, never persist or trust a client copy. */
-export type ProfitAnalysisSnapshotSession = Session & { authorizationEvidence: unknown };
+export type ProfitAnalysisSnapshotSession = Session & { actor: { id: number; role: string; defaultWorkspaceId: number }; authorizationEvidence: unknown };
 class Unavailable extends Error { constructor(readonly reasonCode: string) { super(reasonCode); } }
 function fail(code: string, type: Code = "PRECONDITION_FAILED"): never { throw new TRPCError({ code: type, message: `PROFIT_ANALYSIS_${code}` }); }
 const digest = monthlyFinancialImportHash;
@@ -171,6 +171,29 @@ export async function loadProfitAnalysisSnapshot(session: ProfitAnalysisSnapshot
     selectionHash, authorizationHash, sourceHash: digest({ version: 1, selectionHash, records: [...recordHashes], scope: input.scope, previousMonth, month: input.month }) });
 }
 
+/** Reacquire current authorization inside the job/save transaction. The worker
+ * supplies only an owner identity; it never impersonates a cached HTTP role. */
+export async function authorizeProfitAnalysisSnapshot(tx: DbExecutor, input: {
+  identity: Session["identity"]; expectedRole?: string;
+}, permission: typeof assertResourceAction = assertResourceAction): Promise<ProfitAnalysisSnapshotSession> {
+  const { identity, expectedRole } = input, workspaceId = identity.workspaceId;
+  if (!positiveId(identity.userId) || !positiveId(workspaceId)) fail("IDENTITY_INVALID", "FORBIDDEN");
+  const workspace = await query(tx, "SELECT id,status FROM workspaces WHERE id=? FOR SHARE", [workspaceId]);
+  if (workspace.length !== 1 || workspace[0].id !== workspaceId || workspace[0].status !== "active") fail("WORKSPACE_UNAVAILABLE", "FORBIDDEN");
+  const actors = await query(tx, "SELECT id,role,status,defaultWorkspaceId FROM users WHERE id=? FOR SHARE", [identity.userId]), actor = actors[0];
+  if (actors.length !== 1 || actor.id !== identity.userId || typeof actor.role !== "string" || !actor.role
+    || expectedRole !== undefined && actor.role !== expectedRole || actor.status !== "active" || actor.defaultWorkspaceId !== workspaceId) fail("ACTOR_CHANGED", "FORBIDDEN");
+  const membership = await query(tx, "SELECT id,workspaceId,userId,role,status FROM workspace_memberships WHERE workspaceId=? AND userId=? ORDER BY id LIMIT 2 FOR SHARE", [workspaceId, identity.userId]);
+  if (membership.length !== 1 || !positiveId(membership[0].id) || membership[0].workspaceId !== workspaceId || membership[0].userId !== identity.userId || membership[0].status !== "active" || typeof membership[0].role !== "string" || !membership[0].role || membership[0].role.length > 64) fail("MEMBERSHIP_UNAVAILABLE", "FORBIDDEN");
+  const manager = ["super_admin", "admin", "ops_manager"].includes(actor.role);
+  await schema(tx, manager);
+  const directoryEvidence = await directory(tx, actor.role, workspaceId);
+  const currentActor = { id: identity.userId, role: actor.role, defaultWorkspaceId: workspaceId };
+  await permission({ actor: currentActor, resource: "ops_data", action: "read", workspaceId, authorizationRead: { executor: tx, strict: true, lock: true } });
+  const policies = await policyEvidence(tx, actor, workspaceId);
+  return { tx, identity, actor: currentActor, manager, authorizationEvidence: { actor, workspace: workspace[0], membership: membership[0], directory: directoryEvidence, policies } };
+}
+
 export function createProfitAnalysisSnapshotRepository(dependencies: { database?: () => Promise<ProfitAnalysisSnapshotDatabase | null>; permission?: typeof assertResourceAction } = {}) {
   const database = dependencies.database ?? getDb, permission = dependencies.permission ?? assertResourceAction;
   async function get(ctx: TrpcContext, raw: ProfitAnalysisPreviewInput) {
@@ -182,18 +205,7 @@ export function createProfitAnalysisSnapshotRepository(dependencies: { database?
       const identity = { userId: ctx.user.id, workspaceId }, db = await database(); if (!db?.transaction) fail("TRANSACTION_REQUIRED");
       return await db.transaction(async tx => {
         try {
-          const workspace = await query(tx, "SELECT id,status FROM workspaces WHERE id=? FOR SHARE", [workspaceId]);
-          if (workspace.length !== 1 || workspace[0].id !== workspaceId || workspace[0].status !== "active") fail("WORKSPACE_UNAVAILABLE", "FORBIDDEN");
-          const actors = await query(tx, "SELECT id,role,status,defaultWorkspaceId FROM users WHERE id=? FOR SHARE", [identity.userId]), actor = actors[0];
-          if (actors.length !== 1 || actor.id !== identity.userId || actor.role !== ctx.user!.role || actor.status !== "active" || actor.defaultWorkspaceId !== workspaceId) fail("ACTOR_CHANGED", "FORBIDDEN");
-          const membership = await query(tx, "SELECT id,workspaceId,userId,role,status FROM workspace_memberships WHERE workspaceId=? AND userId=? ORDER BY id LIMIT 2 FOR SHARE", [workspaceId, identity.userId]);
-          if (membership.length !== 1 || !positiveId(membership[0].id) || membership[0].workspaceId !== workspaceId || membership[0].userId !== identity.userId || membership[0].status !== "active" || typeof membership[0].role !== "string" || !membership[0].role || membership[0].role.length > 64) fail("MEMBERSHIP_UNAVAILABLE", "FORBIDDEN");
-          const manager = ["super_admin", "admin", "ops_manager"].includes(String(actor.role));
-          await schema(tx, manager);
-          const directoryEvidence = await directory(tx, String(actor.role), workspaceId);
-          await permission({ actor: { id: identity.userId, role: String(actor.role), defaultWorkspaceId: workspaceId }, resource: "ops_data", action: "read", workspaceId, authorizationRead: { executor: tx, strict: true, lock: true } });
-          const policies = await policyEvidence(tx, actor, workspaceId);
-          const session = { tx, identity, manager, authorizationEvidence: { actor, workspace: workspace[0], membership: membership[0], directory: directoryEvidence, policies } };
+          const session = await authorizeProfitAnalysisSnapshot(tx, { identity, expectedRole: ctx.user!.role }, permission);
           const source = await loadProfitAnalysisSnapshot(session, input);
           return buildProfitAnalysisPreviewResult({ identity, input, source });
         } catch (error) {

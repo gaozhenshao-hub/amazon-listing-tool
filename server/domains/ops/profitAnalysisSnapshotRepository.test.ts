@@ -5,7 +5,7 @@ import type { TrpcContext } from "../../_core/context";
 import type { DbExecutor } from "../../repositories/dbClient";
 import { MONTHLY_FINANCIAL_METRICS } from "../../../shared/monthlyFinancialRead";
 import { ProfitAnalysisPreviewResultSchema, type ProfitAnalysisPreviewInput } from "../../../shared/profitAnalysis";
-import { createProfitAnalysisSnapshotRepository } from "./profitAnalysisSnapshotRepository";
+import { createProfitAnalysisSnapshotRepository, authorizeProfitAnalysisSnapshot } from "./profitAnalysisSnapshotRepository";
 
 type Row = Record<string, unknown>;
 const input: ProfitAnalysisPreviewInput = { expectedWorkspaceId: 7, month: "2026-09", scope: { storeName: "Exact Store", country: "US", parentAsin: "PARENT", currency: "USD", basis: "child_rows" } };
@@ -64,6 +64,22 @@ beforeEach(() => {
   failures = {}; engines = null; candidates = null; afterCandidates = null; queries = [];
 });
 describe("authorized complete profit analysis snapshots", () => {
+  it("reuses a fresh same-transaction identity for worker/save without trusting an old HTTP role", async () => {
+    actor[0].role = "admin";
+    const session = await authorizeProfitAnalysisSnapshot({ execute }, { identity: { userId: 3, workspaceId: 7 } }, permission);
+    expect(session.actor).toEqual({ id: 3, role: "admin", defaultWorkspaceId: 7 });
+    expect(session.tx.execute).toBe(execute); expect(session.manager).toBe(true);
+    expect(queries.every(query => /^SELECT /u.test(query.sql))).toBe(true);
+    await expect(authorizeProfitAnalysisSnapshot({ execute }, { identity: { userId: 3, workspaceId: 7 }, expectedRole: "ops_manager" }, permission))
+      .rejects.toMatchObject({ code: "FORBIDDEN", message: "PROFIT_ANALYSIS_ACTOR_CHANGED" });
+  });
+  it("the reusable worker authority rejects stale workspace membership and nonnumeric owner IDs", async () => {
+    memberships[0].status = "disabled";
+    await expect(authorizeProfitAnalysisSnapshot({ execute }, { identity: { userId: 3, workspaceId: 7 } }, permission)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    queries = [];
+    await expect(authorizeProfitAnalysisSnapshot({ execute }, { identity: { userId: "3" as never, workspaceId: 7 } }, permission)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(queries).toHaveLength(0);
+  });
   it("builds dual-month evidence in one read-only transaction with private source proof", async () => {
     const result = await repo.get(context(), input); expect(ProfitAnalysisPreviewResultSchema.parse(result)).toEqual(result);
     expect(result).toMatchObject({ status: "ready", canGenerate: false, evidence: { parentBefore: 6, parentAfter: 12, delta: 6 } });

@@ -1,0 +1,19 @@
+{
+  "schema": "reviewed-integration-change/v1",
+  "baseline": "0abe1ad5fb0615aade842f2896558467e3842d54",
+  "path": "server/_core/aiWorker.ts",
+  "priorReview": "config/integration/reviews/20261018-assistant-conversation-worker.json",
+  "previousReviewedSha256": "26b6fa462913715861b16a4e7067b678d2b09e4671f7ea7222ab96595d403947",
+  "reviewedSha256": "e9e43e7b8a4f6bf1a86a601f16e301d8aa8b4f5c8af784d5e046e4bc7505361f",
+  "change": "Add the private profit-analysis worker lifecycle and graceful shutdown drain beside the existing inventory and assistant workers. Existing generic queue handlers, node recovery, inventory and assistant behavior remain unchanged.",
+  "controls": ["K01", "K06", "K08", "K10"],
+  "scope": "Worker role only; ENABLE_PROFIT_ANALYSIS_WRITES and ENABLE_PROFIT_ANALYSIS_WORKER must both be exactly true. No generic ai_jobs registration, scheduling, registry seeding, migration registration or production activation.",
+  "privacy": "Bounded metadata-only discovery; private workspace/user/full-scope journals. Every claim, dispatch and result publication reacquires fresh identity, permissions and source ownership. Errors and logs use fixed codes.",
+  "execution": "Provider work is outside SQL transactions and behind a durable fixed-UUID dispatch fence. Expired dispatched work becomes unknown, never automatic retry. Paid replies may finish their authorized lease-bound checkpoint after a stop; canceled/revoked/expired ownership still fences writes. Ready results recover locally without another provider call. Save uses a separate UUID and source/result/report CAS and never writes financial facts.",
+  "configuration": "Reuse exact saved finance configuration; actual approved Qingdao Skill/model evidence is still required. Default approval resolver is empty; no borrowed Listing Skill, invented fallback prompt or provider call is enabled.",
+  "verification": "Frozen source, related tests, full application plus changed-test types, protected baselines and server bundles are recorded in the separate durable-profit integration receipt. This source review does not replace native MySQL, authenticated browser, provider or release acceptance.",
+  "databaseWritesPerformed": false,
+  "providerCallsPerformed": false,
+  "migrationRegistered": false,
+  "deployed": false
+}

@@ -31,10 +31,10 @@ const details = z.array(z.object({ moduleId: name, operations, subModules: z.arr
 function fail(code: string, conflict = false): never { throw new AssistantConversationStorageError(code, conflict); }
 function parse<T>(schema: z.ZodType<T>, value: unknown): T { const result = schema.safeParse(value); if (!result.success) fail("DATA_INVALID"); return result.data; }
 function json(value: unknown, max: number): unknown { try { const text = typeof value === "string" ? value : assistantConversationCanonical(value, max); if (Buffer.byteLength(text) > max) fail("DATA_LIMIT"); const result: unknown = JSON.parse(text); assistantConversationCanonical(result, max); return result; } catch (error) { if (error instanceof AssistantConversationStorageError) throw error; return fail("DATA_INVALID"); } }
-async function rows(session: Session, text: string, values: unknown[] = []): Promise<Row[]> { const parts = text.split("?"); if (parts.length !== values.length + 1) fail("SQL_INVALID"); const statement = sql.join(parts.flatMap((part, i) => i < values.length ? [sql.raw(part), sql`${values[i]}`] : [sql.raw(part)]), sql.raw("")); const result = await session.executor.execute(statement); if (!Array.isArray(result) || !Array.isArray(result[0]) || result[0].some(row => !row || typeof row !== "object" || Array.isArray(row))) fail("DATA_INVALID"); return result[0]; }
+async function rows(session: Pick<Session, "executor">, text: string, values: unknown[] = []): Promise<Row[]> { const parts = text.split("?"); if (parts.length !== values.length + 1) fail("SQL_INVALID"); const statement = sql.join(parts.flatMap((part, i) => i < values.length ? [sql.raw(part), sql`${values[i]}`] : [sql.raw(part)]), sql.raw("")); const result = await session.executor.execute(statement); if (!Array.isArray(result) || !Array.isArray(result[0]) || result[0].some(row => !row || typeof row !== "object" || Array.isArray(row))) fail("DATA_INVALID"); return result[0]; }
 /** FOR SHARE/UPDATE is an authorization fence only on transactional tables.
  * This is read-only runtime admission, never a migration or an engine rewrite. */
-async function transactionalTables(session: Session, tables: readonly string[]) { const found = await rows(session, `SELECT TABLE_NAME AS tableName,ENGINE AS engine FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (${tables.map(() => "?").join(",")})`, [...tables]); if (found.length !== tables.length || new Set(found.map(row => row.tableName)).size !== tables.length || found.some(row => !tables.includes(String(row.tableName)) || row.engine !== "InnoDB")) fail("TRANSACTION_SCHEMA_UNAVAILABLE"); }
+async function transactionalTables(session: Pick<Session, "executor">, tables: readonly string[]) { const found = await rows(session, `SELECT TABLE_NAME AS tableName,ENGINE AS engine FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (${tables.map(() => "?").join(",")})`, [...tables]); if (found.length !== tables.length || new Set(found.map(row => row.tableName)).size !== tables.length || found.some(row => !tables.includes(String(row.tableName)) || row.engine !== "InnoDB")) fail("TRANSACTION_SCHEMA_UNAVAILABLE"); }
 /** The new confirmation lane needs the actual unique current/history authority,
  * not merely a SELECT that happens to succeed. Old configuration APIs are unchanged. */
 async function configurationWriteSchema(session: Session) {
@@ -128,7 +128,7 @@ export function createAssistantConversationService(dependencies: {
       if (action === "confirm") await permission({ ...common, resource: "agent", action: "update", resourceId: agentKey });
     } catch (error) { safeInside(error); }
   }
-  async function loadSavedConfiguration(session: Session, agentKey: AgentLibraryKey): Promise<AssistantConversationSavedConfiguration | null> {
+  async function loadSavedConfiguration(session: Pick<Session, "executor" | "identity">, agentKey: AgentLibraryKey): Promise<AssistantConversationSavedConfiguration | null> {
     try {
       // A returned configuration is used to prepare/revalidate the locked model
       // and Skill registry in this same transaction, including worker hooks.
