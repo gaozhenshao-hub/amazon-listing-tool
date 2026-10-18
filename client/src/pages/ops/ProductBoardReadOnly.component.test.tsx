@@ -6,12 +6,15 @@ import ProductBoardReadOnly, { ProductBoardReadOnlyContent } from "./ProductBoar
 import { publishMonthlyFinancialChange } from "./monthlyFinancialWriteEvents";
 import { ProductBoardReadInputSchema, buildProductBoardReadResult, buildProductBoardReadFailure, type ProductBoardReadInput, type ProductBoardReadResult, type ProductBoardMonthSelection } from "@shared/productBoardRead";
 import { MONTHLY_FINANCIAL_METRICS, parseMonthlyFinancialBatch, type MonthlyFinancialBatchRecord } from "@shared/monthlyFinancialRead";
+import { profitBoardMonths } from "@shared/profitBoardRead";
+import type { ProfitAnalysisWorkflowProps } from "./ProfitAnalysisWorkflow";
 
 const controls = vi.hoisted(() => ({ auth: { loading: false, error: null as Error | null, user: { id: 7, defaultWorkspaceId: 11, role: "admin" } as { id: number; defaultWorkspaceId: number | null | undefined; role: string } | null }, permissions: { isLoading: false, canRead: vi.fn() }, query: vi.fn() }));
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => controls.auth }));
 vi.mock("@/hooks/usePermissions", () => ({ usePermissions: () => controls.permissions }));
 vi.mock("@/lib/trpc", () => ({ trpc: { useUtils: () => ({ client: { productBoardRead: { get: { query: controls.query } } } }) } }));
 vi.mock("./ProductTasksReadOnly", () => ({ ProductTasksEmbeddedReadOnly: ({ product }: { product: unknown }) => <section aria-label="精确产品任务入口">{JSON.stringify(product)}</section> }));
+vi.mock("./ProfitAnalysisWorkflow", () => ({ default: (props: ProfitAnalysisWorkflowProps) => <section aria-label="已核来源利润流程">{JSON.stringify(props)}</section> }));
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
 function input(patch: Partial<ProductBoardReadInput> = {}): ProductBoardReadInput { return ProductBoardReadInputSchema.parse({ expectedWorkspaceId: 11, month: "2026-10", storeName: "合成店铺", country: "US", search: "", highReturnsOffset: 0, highProfitOffset: 0, losingOffset: 0, allOffset: 0, pageSize: 10, ...patch }); }
@@ -38,6 +41,51 @@ async function readReady() { fireEvent.click(readButton()); await screen.findByR
 function openProduct(parent = "P00") { fireEvent.click(within(screen.getByRole("region", { name: "全部产品" })).getByRole("button", { name: `展开 ${parent} 全部子体与原行` })); return within(screen.getByRole("region", { name: "产品完整钻取" })); }
 beforeEach(() => { controls.auth = { loading: false, error: null, user: { id: 7, defaultWorkspaceId: 11, role: "admin" } }; controls.permissions.isLoading = false; controls.permissions.canRead.mockReset().mockReturnValue(true); controls.query.mockReset(); });
 afterEach(cleanup);
+
+describe("product board profit workflow integration", () => {
+  it.each([
+    ["P00", "USD", "child_rows"], ["CAD-P", "CAD", "child_rows"],
+    ["REPORTED-P", "USD", "reported_parent_row"], ["UNKNOWN-P", null, "child_rows"],
+  ] as const)("passes the exact verified identity, currency and basis for %s only after expansion", async (parentAsin, currency, basis) => {
+    controls.query.mockImplementation(async request => result(request, { kinds: true }));
+    render(<ProductBoardReadOnly />); fillScope();
+    fireEvent.change(screen.getByLabelText("产品看板父 ASIN（可选）"), { target: { value: parentAsin } });
+    await readReady(); expect(screen.queryByLabelText("已核来源利润流程")).not.toBeInTheDocument();
+    const all = within(screen.getByRole("region", { name: "全部产品" }));
+    fireEvent.click(all.getAllByRole("button", { name: `展开 ${parentAsin} 全部子体与原行` })[0]);
+    expect(JSON.parse(screen.getByLabelText("已核来源利润流程").textContent!)).toEqual({
+      identity: { userId: 7, workspaceId: 11 }, scope: { storeName: "合成店铺", country: "US", parentAsin, currency, basis }, months: profitBoardMonths("2026-10"),
+    });
+    expect(screen.getByRole("region", { name: "产品完整历史月报" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("产品看板店铺"), { target: { value: "另一店铺" } });
+    expect(screen.queryByLabelText("已核来源利润流程")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "产品完整历史月报" })).not.toBeInTheDocument();
+    expect(controls.query).toHaveBeenCalledTimes(1);
+  });
+  it("retains every earlier month in the expanded product while the workflow gets six quick-month entries", async () => {
+    controls.query.mockImplementation(async request => result(request, { longHistory: true, groups: 1, children: 1 }));
+    render(<ProductBoardReadOnly />); fillScope(); await readReady(); openProduct();
+    const history = within(screen.getByRole("region", { name: "产品完整历史月报" }));
+    const monthly = within(history.getByRole("region", { name: "父体全部历史月报" }));
+    expect(monthly.getAllByRole("columnheader")).toHaveLength(20);
+    expect(monthly.queryByText("2024-01")).not.toBeInTheDocument();
+    fireEvent.click(history.getAllByRole("button", { name: "月表下一页" })[0]);
+    expect(monthly.getByText("2024-01")).toBeInTheDocument();
+    fireEvent.click(monthly.getByRole("button", { name: "2024-01 查看本月全部来源" }));
+    expect(screen.getByRole("region", { name: "父体全部历史月报 2024-01 来源完整明细" })).toHaveTextContent("批次 100 / 原行索引 0");
+    expect(JSON.parse(screen.getByLabelText("已核来源利润流程").textContent!).months).toEqual(profitBoardMonths("2026-10"));
+    expect(controls.query).toHaveBeenCalledTimes(1);
+  });
+  it("keeps unallocated originals inspectable without inventing a profit workflow scope", async () => {
+    controls.query.mockImplementation(async request => result(request, { groups: 0, kinds: true }));
+    render(<ProductBoardReadOnly />); fillScope(); await readReady();
+    const all = within(screen.getByRole("region", { name: "全部产品" }));
+    for (const toggle of all.getAllByRole("button", { name: "展开 未分配原行 全部子体与原行" })) fireEvent.click(toggle);
+    expect(all.getAllByRole("region", { name: "产品完整钻取" })).toHaveLength(3);
+    expect(screen.queryByLabelText("已核来源利润流程")).not.toBeInTheDocument();
+    expect(controls.query).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("explicit readonly product board gates", () => {
   it("refreshes the opened exact product scope on commit and not on upload or foreign notices", async () => {

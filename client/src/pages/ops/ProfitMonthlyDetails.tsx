@@ -52,18 +52,18 @@ function MonthlySources({ group, rows }: { group: MonthlyFinancialAggregate; row
   </section>;
 }
 
-/** Complete six-period monthly presentation. It performs no RPC or AI work. */
-export function ProfitMonthlyDetails({ label, groups, points, rows }: {
-  label: string; groups: MonthlyFinancialAggregate[]; points: ProfitBoardPoint[]; rows: MonthlyFinancialReadRow[];
+/** Complete supplied monthly presentation. It performs no RPC or AI work. */
+export function ProfitMonthlyDetails({ label, groups, points, rows, historyComplete = false }: {
+  label: string; groups: MonthlyFinancialAggregate[]; points: Pick<ProfitBoardPoint, "month" | "missingReason">[]; rows: MonthlyFinancialReadRow[]; historyComplete?: boolean;
 }) {
   const [expanded, setExpanded] = useState<{ key: string; field: string } | null>(null), [offset, setOffset] = useState(0);
-  const entries = [...points].reverse().flatMap<{ point: ProfitBoardPoint; group: MonthlyFinancialAggregate | null; key: string }>(point => {
+  const entries = [...points].reverse().flatMap<{ point: Pick<ProfitBoardPoint, "month" | "missingReason">; group: MonthlyFinancialAggregate | null; key: string }>(point => {
     const monthly = groups.filter(group => group.scope.yearMonth === point.month);
     return monthly.length ? monthly.map(group => ({ point, group, key: groupKey(group) })) : [{ point, group: null, key: point.month }];
   });
   function toggle(key: string, field: string) { setExpanded(current => current?.key === key && current.field === field ? null : { key, field }); }
   return <div className="min-w-0 max-w-full space-y-2">
-    <p className="text-xs">当前接口仅含以上六个月，非全部历史月份。每行保留同月 / 同店铺 / 同国家 / 同币种及汇总依据；金额未转换币种。点击收入或费用查看完整明细、分母、加权均价和来源。</p>
+    <p className="text-xs">{historyComplete ? "已读取该范围全部可见已确认历史月份，所有月份可逐页查看；不表示店铺整月覆盖完整。" : "当前接口仅含以上六个月，非全部历史月份。"}每行保留同月 / 同店铺 / 同国家 / 同币种及汇总依据；金额未转换币种。点击收入或费用查看完整明细、分母、加权均价和来源。</p>
     {entries.length > ROW_LIMIT && <nav aria-label={`${label}月表分页`} className="flex flex-wrap gap-3 text-sm"><span>{offset + 1}–{Math.min(offset + ROW_LIMIT, entries.length)} / {entries.length}</span><button type="button" className={buttonClass} disabled={offset === 0} onClick={() => { setOffset(Math.max(0, offset - ROW_LIMIT)); setExpanded(null); }}>月表上一页</button><button type="button" className={buttonClass} disabled={offset + ROW_LIMIT >= entries.length} onClick={() => { setOffset(offset + ROW_LIMIT); setExpanded(null); }}>月表下一页</button></nav>}
     <div role="region" aria-label={label} tabIndex={0} className="min-w-0 max-w-full max-h-[70vh] overflow-auto rounded border focus-visible:outline focus-visible:outline-2">
       <table className="w-full min-w-[2600px] text-right text-xs"><thead className="sticky top-0 z-20 bg-muted"><tr><th scope="col" className="sticky left-0 z-30 min-w-52 bg-muted p-3 text-left">月份 / 来源</th>{COLUMNS.map(([key, title]) => <th scope="col" className="whitespace-nowrap p-3" key={key}>{title}</th>)}</tr></thead>

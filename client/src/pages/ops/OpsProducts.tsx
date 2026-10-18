@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import InventoryPlanningEditor, { subscribeInventoryPlanningChanges, type InventoryPlanningEditorTarget } from "./InventoryPlanningEditor";
 import InventoryGovernanceEditor, { subscribeInventoryGovernanceChanges, type InventoryGovernanceEditorTarget } from "./InventoryGovernanceEditor";
+import ProductMonthlyFinancialDialog, { type ProductMonthlyFinancialTarget } from "./ProductMonthlyFinancialDialog";
 import { MANAGER_ROLES } from "@shared/const";
 import { buildUnifiedProductOverview } from "@shared/unifiedProductOverview";
 import { countLegacyFinancialProfitMonths, hasVerifiedSourceScope, isSameSourceProductScope, selectFinancialProfitsForProduct, shouldWaitForProductOverviewFallback } from "./productOverviewScope";
@@ -275,7 +276,7 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 }
 
 // ─── Product Row Component ───
-function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, isManagerOrAbove = false, onManageSourceOwner, sortKey, sortDir, onSort, productionConfig, planningRows, financialProfits = [], legacyFinancialProfitMonths = 0, onEditCostParameters, onSaveFinancialProfits }: {
+function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, isManagerOrAbove = false, onManageSourceOwner, sortKey, sortDir, onSort, productionConfig, planningRows, financialProfits = [], legacyFinancialProfitMonths = 0, onEditCostParameters, onSaveFinancialProfits, onViewFinancialReport }: {
   product: ProductOverview;
   onNavigate: (product: ProductOverview) => void;
   onDelete: (id: number) => void;
@@ -292,6 +293,7 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
   planningRows?: any[];
   financialProfits?: any[];
   onEditCostParameters?: (row: any) => void;
+  onViewFinancialReport?: () => void;
   legacyFinancialProfitMonths?: number;
   onSaveFinancialProfits?: (scope: { parentAsin: string; storeName?: string; country?: string; entries: Array<{ yearMonth: string; financialProfit: number }> }) => void;
 }) {
@@ -450,6 +452,8 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
             <ResponsiveContainer width="100%" height="100%"><LineChart data={profitTrend} margin={{ top: 0, right: 2, left: 2, bottom: 0 }}><XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} /><YAxis hide /><RechartsTooltip formatter={(value) => [value == null ? "待填写" : `$${Number(value).toFixed(2)}`, "财务利润"]} /><Line connectNulls type="monotone" dataKey="financialProfit" name="财务利润" stroke="#7c3aed" strokeWidth={2} dot={{ r: 2 }} /></LineChart></ResponsiveContainer>
           </div>
           }
+
+          {hasScopedSourceIdentity && product.marketplace !== "ALL" && onViewFinancialReport && <Button variant="outline" size="sm" className="shrink-0 text-xs" aria-label={`查看 ${product.parentAsin} 已确认月报与分析`} onClick={onViewFinancialReport}>月报与利润分析</Button>}
 
           {/* Product Name (品名) */}
           {product.chineseName && (
@@ -787,6 +791,7 @@ export default function OpsProducts() {
   const { user } = useAuth();
   const [planningEditorTarget, setPlanningEditorTarget] = useState<InventoryPlanningEditorTarget | null>(null);
   const [governanceTarget, setGovernanceTarget] = useState<InventoryGovernanceEditorTarget | null>(null);
+  const [financialTarget, setFinancialTarget] = useState<ProductMonthlyFinancialTarget | null>(null);
   const isManagerOrAbove = user?.role && (MANAGER_ROLES as readonly string[]).includes(user.role);
   const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("active");
@@ -998,6 +1003,7 @@ export default function OpsProducts() {
     <div className="space-y-4">
       <InventoryPlanningEditor target={planningEditorTarget} onClose={() => setPlanningEditorTarget(null)} />
       <InventoryGovernanceEditor target={governanceTarget} onClose={() => setGovernanceTarget(null)} />
+      <ProductMonthlyFinancialDialog target={financialTarget} onClose={() => setFinancialTarget(null)} />
       {inventoryPlanningError && <section role="alert" className="space-y-2 rounded border p-3 text-sm"><p>库存规划及产品成本来源不可读，未使用旧成本、零值或默认值替代。六个月财务利润仍为独立功能。</p><Button variant="outline" onClick={() => void refetchInventoryPlanning()}>重新读取产品成本与规划</Button></section>}
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-xs text-blue-800">
         <Badge variant="outline" className="border-blue-200 bg-white text-blue-700">统一产品视图</Badge>
@@ -1289,6 +1295,7 @@ export default function OpsProducts() {
               financialProfits={selectFinancialProfitsForProduct(monthlyFinancialProfits || [], product)}
               legacyFinancialProfitMonths={countLegacyFinancialProfitMonths(monthlyFinancialProfits || [], product)}
               onSaveFinancialProfits={(scope) => saveMonthlyFinancialProfitsMut.mutate(scope)}
+              onViewFinancialReport={user?.defaultWorkspaceId && product.parentAsin && product.storeName && product.marketplace ? () => setFinancialTarget({ identity: { userId: user.id, workspaceId: user.defaultWorkspaceId! }, parentAsin: product.parentAsin, storeName: product.storeName!, country: product.marketplace! }) : undefined}
               onEditCostParameters={!inventoryPlanningError && !inventoryPlanningFetching && inventoryPlanning?.asOfDate && user?.defaultWorkspaceId ? row => setPlanningEditorTarget({ owner: { userId: user.id, workspaceId: user.defaultWorkspaceId!, role: user.role }, scope: { scopeType: "asin", asin: row.asin, storeName: row.storeName, country: row.country }, asOfDate: inventoryPlanning.asOfDate!, marketplace: marketplaceFilter, mode: "cost" }) : undefined}
             />
           ))}

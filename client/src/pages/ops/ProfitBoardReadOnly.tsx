@@ -5,7 +5,7 @@ import { trpc } from "@/lib/trpc";
 import { subscribeMonthlyFinancialChanges } from "./monthlyFinancialWriteEvents";
 import { aggregateMonthlyFinancialRows } from "@shared/monthlyFinancialRead";
 import { ProfitMonthlyDetails } from "./ProfitMonthlyDetails";
-import ProfitAnalysisPreview from "./ProfitAnalysisPreview";
+import ProfitAnalysisWorkflow from "./ProfitAnalysisWorkflow";
 import {
   ProfitBoardReadInputSchema, ProfitBoardReadResultSchema,
   type ProfitBoardReadInput, type ProfitBoardReadResult, type ProfitBoardPoint,
@@ -33,8 +33,8 @@ function metricText(value: number | null, metric: Metric, currency: string | nul
 function Shell({ children }: { children: ReactNode }) {
   return <section aria-label="利润看板只读查看" className="manus-no-record min-w-0 max-w-full space-y-5 overflow-hidden rounded-xl border bg-card p-4 md:p-5">
     <header className="space-y-2"><h2 className="text-lg font-semibold">利润看板 · 已保存批次只读对比</h2>
-      <p className="text-sm text-muted-foreground">六个月趋势、当月与上月四项指标、增长 / 下降前五名及完整父子明细。只读取已保存批次，不同步、保存备注、归档或调用模型。</p>
-      <p className="text-xs text-muted-foreground">产品明细内可单独预览双月分析依据（不调用模型）。</p>
+      <p className="text-sm text-muted-foreground">六个月趋势、当月与上月四项指标、增长 / 下降前五名及完整父子明细。读取看板只使用已保存批次，不同步、保存备注、归档或调用模型；利润分析须在独立流程中明确发起。</p>
+      <p className="text-xs text-muted-foreground">产品明细内可读取双月依据、查看历史分析；生成与手动保存需另行确认，不随读取看板自动执行。</p>
       <p className="text-xs text-muted-foreground">按已保存批次选择；尚未核验店铺 / 月度完整覆盖。榜单只是可见来源的变化，不代表完整财务对账或因果解释。币种与汇总依据分区，不合并美国、加拿大、墨西哥。</p>
     </header>{children}
   </section>;
@@ -202,7 +202,7 @@ function OwnedProfitBoard({ owner }: { owner: Owner }) {
     {state.status === "loading" && <p role="status">正在读取六个月已保存利润来源…</p>}
     {state.status === "invalid" && <p role="alert">利润看板范围不完整或不合法，未发送请求。</p>}
     {state.status === "error" && <p role="alert">利润看板读取失败，或身份、权限、范围、来源及回包完整性已变化。旧数据已清除，未回退缓存或补零；请显式从首页重新读取。</p>}
-    {state.status === "ready" && <ProfitBoardReadOnlyContent key={sequence.current} result={state.result} initialProductId={state.selectedId} onPage={(offset, productId) => { void read(offset, state.result, productId); }} onMonth={month => { void read(0, undefined, undefined, month); }} renderProfitAnalysis={product => product.parentAsin && (product.basis === "child_rows" || product.basis === "reported_parent_row") ? <ProfitAnalysisPreview key={`preview:${product.id}`} identity={state.result.identity} scope={{ storeName: state.result.request.storeName, country: state.result.request.country, parentAsin: product.parentAsin, currency: product.currency, basis: product.basis }} months={state.result.months} /> : null} />}
+    {state.status === "ready" && <ProfitBoardReadOnlyContent key={sequence.current} result={state.result} initialProductId={state.selectedId} onPage={(offset, productId) => { void read(offset, state.result, productId); }} onMonth={month => { void read(0, undefined, undefined, month); }} renderProfitAnalysis={product => product.parentAsin && (product.basis === "child_rows" || product.basis === "reported_parent_row") ? <ProfitAnalysisWorkflow key={`analysis:${product.id}`} identity={state.result.identity} scope={{ storeName: state.result.request.storeName, country: state.result.request.country, parentAsin: product.parentAsin, currency: product.currency, basis: product.basis }} months={state.result.months} /> : null} />}
   </Shell>;
 }
 export default function ProfitBoardReadOnly() {

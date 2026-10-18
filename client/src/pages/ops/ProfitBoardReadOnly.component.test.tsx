@@ -9,6 +9,7 @@ import {
   type ProfitBoardReadInput, type ProfitBoardReadResult, type ProfitBoardMonthSelection,
 } from "@shared/profitBoardRead";
 import { parseMonthlyFinancialBatch, type MonthlyFinancialBatchRecord, type MonthlyFinancialMetrics } from "@shared/monthlyFinancialRead";
+import type { ProfitAnalysisWorkflowProps } from "./ProfitAnalysisWorkflow";
 
 const controls = vi.hoisted(() => ({
   auth: { loading: false, error: null as Error | null, user: { id: 7, defaultWorkspaceId: 11, role: "admin" } as { id: number; defaultWorkspaceId: number | null | undefined; role: string } | null },
@@ -17,6 +18,7 @@ const controls = vi.hoisted(() => ({
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => controls.auth }));
 vi.mock("@/hooks/usePermissions", () => ({ usePermissions: () => controls.permissions }));
 vi.mock("@/lib/trpc", () => ({ trpc: { useUtils: () => ({ client: { profitBoardRead: { get: { query: controls.query } } } }) } }));
+vi.mock("./ProfitAnalysisWorkflow", () => ({ default: (props: ProfitAnalysisWorkflowProps) => <section aria-label="已核来源利润流程">{JSON.stringify(props)}</section> }));
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
 const METRICS: MonthlyFinancialMetrics = { financialProfit: 0, salesQty: 0, salesAmount: 0, otherIncome: 0, discount: 0, purchaseCost: 0, freight: 0, fbaFee: 0, commission: 0, advertising: 0, promotion: 0, storage: 0, otherFees: 0, refundAmount: 0, refundQty: 0, returnQty: 0, ld: 0, coupon: 0, vine: 0 };
@@ -57,6 +59,54 @@ function fillScope(values = { month: "2026-10", storeName: "合成店铺", count
 async function readReady() { fireEvent.click(readButton()); await screen.findByRole("region", { name: "完整父体列表" }); }
 beforeEach(() => { controls.auth = { loading: false, error: null, user: { id: 7, defaultWorkspaceId: 11, role: "admin" } }; controls.permissions.isLoading = false; controls.permissions.canRead.mockReset().mockReturnValue(true); controls.query.mockReset(); });
 afterEach(cleanup);
+
+describe("profit board workflow integration", () => {
+  it.each([
+    ["P00", "CAD", "child_rows"], ["EUR-P", "EUR", "child_rows"],
+    ["ORIGINAL-P", "USD", "reported_parent_row"],
+  ] as const)("passes exact verified identity, six months and %s scope to the selected workflow", async (parentAsin, currency, basis) => {
+    controls.query.mockImplementation(async request => result(request, { currency: "CAD", kinds: true }));
+    render(<ProfitBoardReadOnly />); fillScope(); await readReady();
+    expect(screen.queryByLabelText("已核来源利润流程")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: `展开 ${parentAsin} 全部子体与原行` }));
+    expect(JSON.parse(screen.getByLabelText("已核来源利润流程").textContent!)).toEqual({
+      identity: { userId: 7, workspaceId: 11 }, scope: { storeName: "合成店铺", country: "US", parentAsin, currency, basis }, months: profitBoardMonths("2026-10"),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "收起产品明细" }));
+    expect(screen.queryByLabelText("已核来源利润流程")).not.toBeInTheDocument();
+    expect(controls.query).toHaveBeenCalledTimes(1);
+  });
+  it("preserves unknown currency instead of guessing USD for a selected original row", async () => {
+    controls.query.mockImplementation(async request => result(request, { groups: 1, children: 1, currency: null }));
+    render(<ProfitBoardReadOnly />); fillScope(); await readReady();
+    fireEvent.click(screen.getAllByRole("button", { name: "展开 P00 全部子体与原行" })[0]);
+    expect(JSON.parse(screen.getByLabelText("已核来源利润流程").textContent!)).toEqual({
+      identity: { userId: 7, workspaceId: 11 }, scope: { storeName: "合成店铺", country: "US", parentAsin: "P00", currency: null, basis: "child_rows" }, months: profitBoardMonths("2026-10"),
+    });
+    expect(controls.query).toHaveBeenCalledTimes(1);
+  });
+  it("switches the selected exact parent and removes the workflow for unallocated originals", async () => {
+    controls.query.mockImplementation(async request => result(request, { kinds: true }));
+    render(<ProfitBoardReadOnly />); fillScope(); await readReady();
+    fireEvent.click(screen.getByRole("button", { name: "展开 P00 全部子体与原行" }));
+    expect(JSON.parse(screen.getByLabelText("已核来源利润流程").textContent!).scope.parentAsin).toBe("P00");
+    fireEvent.click(screen.getByRole("button", { name: "展开 P01 全部子体与原行" }));
+    expect(JSON.parse(screen.getByLabelText("已核来源利润流程").textContent!).scope.parentAsin).toBe("P01");
+    fireEvent.click(screen.getAllByRole("button", { name: "展开 未分配费用 全部子体与原行" })[0]);
+    expect(screen.getByRole("region", { name: "选中产品完整钻取" })).toHaveTextContent("未分配原行");
+    expect(screen.queryByLabelText("已核来源利润流程")).not.toBeInTheDocument();
+    expect(controls.query).toHaveBeenCalledTimes(1);
+  });
+  it("clears the integrated workflow on permission loss without retaining the selected private scope", async () => {
+    controls.query.mockResolvedValue(result()); const ui = render(<ProfitBoardReadOnly />); fillScope(); await readReady();
+    fireEvent.click(screen.getByRole("button", { name: "展开 P00 全部子体与原行" }));
+    expect(screen.getByLabelText("已核来源利润流程")).toBeInTheDocument();
+    controls.permissions.canRead.mockReturnValue(false); ui.rerender(<ProfitBoardReadOnly />);
+    expect(screen.queryByLabelText("已核来源利润流程")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "选中产品完整钻取" })).not.toBeInTheDocument();
+    expect(controls.query).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("profit board readonly identity gates", () => {
   it("re-reads an opened scope from page zero after commit without expanding an unopened scope", async () => {

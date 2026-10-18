@@ -76,7 +76,7 @@ function OwnedPreview({ identity, scope, months }: Props) {
   }
   return <section aria-label="利润分析依据预览" className="manus-no-record min-w-0 max-w-full space-y-3 rounded border p-3">
     <h4 className="font-semibold">利润分析 · 双月依据预览</h4>
-    <p className="text-sm">只读取已确认月报并计算证据，不调用模型、不生成草稿、不保存财务数据。青岛利润 Skill 与专属持久执行流程尚未启用。</p>
+    <p className="text-sm">只读取已确认月报并计算证据，不调用模型、不生成草稿、不保存财务数据。生成与保存须在利润分析区域另行确认，且受当前权限及青岛 Skill 配置约束。</p>
     <p className="text-xs text-muted-foreground">预览是读取时的来源快照，并非实时同步；其他标签页或外部月报更新后，请重新读取。</p>
     <label className="block text-sm">分析月份<select aria-label="利润分析月份" className="ml-3 rounded border bg-background p-2" value={month} onChange={event => { clear(); setMonth(event.currentTarget.value); }}>{months.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
     <div className="flex flex-wrap gap-3"><button type="button" className={buttonClass} disabled={state.status === "loading"} onClick={() => { void read(); }}>读取双月分析依据</button><button type="button" className={buttonClass} onClick={() => clear()}>清除分析依据</button></div>
