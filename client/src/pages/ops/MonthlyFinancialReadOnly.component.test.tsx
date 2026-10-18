@@ -201,6 +201,46 @@ describe("explicit keyset history and complete source presentation", () => {
     fireEvent.click(screen.getByRole("button", { name: "上一页原始行" })); await expectBatchVisible();
     expect(controls.getBatch.mock.calls[2][0].rowOffset).toBe(0);
   });
+  it("keeps an aggregate page click made immediately when an asynchronous read becomes visible", async () => {
+    const source = record(80, Array.from({ length: 21 }, (_, index) => row(index)));
+    const pending = deferred<MonthlyFinancialBatchResult>();
+    controls.getBatch.mockReturnValue(pending.promise);
+    render(<MonthlyFinancialReadOnly />); requestBatch();
+    // A DOM observer runs after the commit, before React's passive effects.
+    // A user can already click the mounted pager at this boundary.
+    const clicked = new Promise<void>(resolve => {
+      const observer = new MutationObserver(() => {
+        const groups = screen.queryByRole("region", { name: "月报父子与未分配完整汇总" });
+        if (!groups) return;
+        observer.disconnect();
+        fireEvent.click(within(groups).getByRole("button", { name: "下一页汇总" }));
+        resolve();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+    pending.resolve(batchResult(batchInput, source));
+    await clicked;
+    await act(async () => {});
+    const groups = screen.getByRole("region", { name: "月报父子与未分配完整汇总" });
+    expect(within(groups).getByText(/^共 22 组/)).toHaveTextContent("共 22 组 · 第 2 / 3 页");
+    expect(controls.getBatch).toHaveBeenCalledTimes(1);
+  });
+  it("preserves aggregate paging for the same result and resets it for a replacement source with the same group count", () => {
+    const original = batchResult(batchInput, record(80, Array.from({ length: 21 }, (_, index) => row(index))));
+    const view = render(<MonthlyFinancialBatchContent result={original} />);
+    const groups = () => screen.getByRole("region", { name: "月报父子与未分配完整汇总" });
+    fireEvent.click(within(groups()).getByRole("button", { name: "下一页汇总" }));
+    view.rerender(<MonthlyFinancialBatchContent result={original} />);
+    expect(within(groups()).getByText(/^共 22 组/)).toHaveTextContent("第 2 / 3 页");
+    const replacement = batchResult(batchInput, record(80, Array.from({ length: 21 }, (_, index) => row(index, { asin: `REPLACED-${index}` }))));
+    view.rerender(<MonthlyFinancialBatchContent result={replacement} />);
+    expect(within(groups()).getByText(/^共 22 组/)).toHaveTextContent("第 1 / 3 页");
+    expect(within(groups()).getByRole("button", { name: "上一页汇总" })).toBeDisabled();
+    expect(groups()).toHaveTextContent("REPLACED-0");
+    expect(groups()).not.toHaveTextContent("CHILD-");
+    fireEvent.click(within(groups()).getByRole("button", { name: "下一页汇总" }));
+    expect(within(groups()).getByText(/^共 22 组/)).toHaveTextContent("第 2 / 3 页");
+  });
   it("keeps reported parent, child-derived parent, unallocated and cross-store groups distinct", () => {
     const source = record(80, [row(), row(1, { asin: "", sku: "parent", salesAmount: 1000 }), row(2, { parentAsin: "", asin: "", sku: "unallocated" }), row(3, { storeName: "另一店铺" })]);
     render(<MonthlyFinancialBatchContent result={batchResult(batchInput, source)} />);

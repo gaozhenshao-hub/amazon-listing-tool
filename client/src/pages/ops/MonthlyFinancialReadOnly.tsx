@@ -197,8 +197,12 @@ function RowTable({ rows }: { rows: MonthlyFinancialReadRow[] }) {
     </tr>)}</tbody></table></ScrollTable>;
 }
 function AggregateTable({ groups }: { groups: MonthlyFinancialAggregate[] }) {
-  const [page, setPage] = useState(0), size = 10;
-  useEffect(() => { setPage(0); }, [groups]);
+  const [pagination, setPagination] = useState({ groups, page: 0 }), size = 10;
+  // Reset with the data change, before the pager is interactive. A passive
+  // effect can otherwise overwrite a click made just after an async read mounts.
+  const page = pagination.groups === groups ? pagination.page : 0;
+  if (pagination.groups !== groups) setPagination({ groups, page: 0 });
+  const setPage = (next: number) => setPagination({ groups, page: next });
   const pages = Math.max(1, Math.ceil(groups.length / size)), current = Math.min(page, pages - 1);
   return <section aria-label="月报父子与未分配完整汇总" className="min-w-0 space-y-3"><h4 className="font-medium">父体、子体及未分配汇总</h4>
     <p className="text-xs">覆盖当前授权筛选后的全部行，不是只汇总当前原始行页。各维度是不同视图，不能把父体、子体、父体原报表行及未分配项目重复相加。未知币种不跨来源行求和。</p>
