@@ -32,6 +32,7 @@ import { startInventoryCollectionWorker } from "../domains/ops/inventoryCollecti
 import { startAssistantConversationWorker } from "../domains/ai_os/services/assistantConversationWorker";
 import { startProfitAnalysisWorker } from "../domains/ops/profitAnalysisWorker";
 import { startCompetitorDeepWorker } from "../domains/listing/services/competitorDeepWorker";
+import { startImageTaggingWorker } from "../domains/knowledge/imageTaggingWorker";
 
 const pollMs = Math.min(
   Math.max(Number(process.env.AI_JOB_WORKER_POLL_MS || 5000), 1000),
@@ -91,6 +92,7 @@ async function main() {
   const stopAssistantConversationWorker = startAssistantConversationWorker("worker");
   const stopProfitAnalysisWorker = startProfitAnalysisWorker("worker");
   const stopCompetitorDeepWorker = startCompetitorDeepWorker("worker");
+  const stopImageTaggingWorker = startImageTaggingWorker("worker");
   const handlers = listAiJobHandlerRegistrations()
     .map(handler => handler.id)
     .join(", ");
@@ -120,10 +122,11 @@ async function main() {
     const conversationDrain = stopAssistantConversationWorker();
     const profitDrain = stopProfitAnalysisWorker();
     const competitorDeepDrain = stopCompetitorDeepWorker();
+    const imageTaggingDrain = stopImageTaggingWorker();
     console.log(`[AI Worker] received ${signal}, draining in-flight jobs`);
     try {
       await markAiJobWorkerDraining({ signal });
-      const [drainResult] = await Promise.all([waitForAiJobsToDrain(shutdownGraceMs), inventoryDrain, conversationDrain, profitDrain, competitorDeepDrain]);
+      const [drainResult] = await Promise.all([waitForAiJobsToDrain(shutdownGraceMs), inventoryDrain, conversationDrain, profitDrain, competitorDeepDrain, imageTaggingDrain]);
       if (!drainResult.drained) {
         console.warn(
           `[AI Worker] shutdown grace elapsed; running=${drainResult.runningRunIds.join(",") || "none"} ` +

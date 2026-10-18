@@ -17,6 +17,13 @@ function ReadOnlyLibrary() {
 }
 
 describe("Agent library role navigation", () => {
+  it("links the tagger to explicit image-set business execution, not conversation auto-run", () => {
+    render(<ReadOnlyLibrary />); expect(screen.queryByRole("link", { name: /标签业务任务/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /打标签的小酷/ }));
+    expect(screen.getByRole("link", { name: "打开图片知识库 · 标签业务任务" })).toHaveAttribute("href", "/knowledge/images");
+    expect(screen.getByText(/结果先作为候选，逐图人工确认后才应用/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /启动|应用/ })).toBeNull();
+  });
   it("switches between seven roles without starting a task or changing resource data", () => {
     render(<ReadOnlyLibrary />);
     expect(screen.getAllByRole("button")).toHaveLength(7);

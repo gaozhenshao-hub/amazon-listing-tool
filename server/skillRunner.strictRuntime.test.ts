@@ -67,6 +67,34 @@ describe("strict registered model resolution", () => {
   });
 });
 describe("private strict single-dispatch Skill execution", () => {
+  it("admits the reviewed single-image tagging policy with its own immutable audit stage", async () => {
+    const request = await input(); request.strictExecution!.stage = "image_tagging";
+    request.strictExecution!.imageBudget = { policyId: "synthetic-tagging-policy", maxInputTokensPerImage: 8192, stage: "image_tagging", maxImageBytes: 8388608, maxImages: 1 };
+    request.attachments = [{ type: "image_url", image_url: { url: `data:image/png;base64,${Buffer.alloc(4 * 1024 * 1024, 1).toString("base64")}` } }];
+    await runEmperorSkill(request);
+    expect(mocks.http).toHaveBeenCalledOnce(); expect(mocks.http.mock.calls[0][1].auditContext.operation).toBe("knowledge.image_tagging.strict");
+    expect(request.strictExecution!.beforeDispatch).toHaveBeenCalledWith(expect.objectContaining({ stage: "image_tagging", budget: expect.objectContaining({ imageCount: 1, imageBytes: 4 * 1024 * 1024 }) }));
+  });
+  it.each(["route", "reply", "profit_analysis", "competitor_deep"] as const)("cannot borrow the 8 MiB tagging policy for %s", async stage => {
+    const request = await input(); request.strictExecution!.stage = stage;
+    request.strictExecution!.imageBudget = { policyId: "synthetic", maxInputTokensPerImage: 8192, stage: "image_tagging", maxImageBytes: 8388608, maxImages: 1 };
+    mocks.execute.mockClear(); await expect(runEmperorSkill(request)).rejects.toMatchObject({ code: "STRICT_RUNTIME_OPTIONS_INVALID" });
+    expect(mocks.execute).not.toHaveBeenCalled(); noCalls();
+  });
+  it.each(["two_images", "oversize", "changed_limit"])("rejects invalid tagging image policy: %s", async kind => {
+    const request = await input(); request.strictExecution!.stage = "image_tagging";
+    request.strictExecution!.imageBudget = { policyId: "synthetic", maxInputTokensPerImage: 8192, stage: "image_tagging", maxImageBytes: 8388608, maxImages: 1 };
+    const attachment = { type: "image_url" as const, image_url: { url: `data:image/png;base64,${Buffer.alloc(kind === "oversize" ? 8388609 : 4, 1).toString("base64")}` } };
+    request.attachments = kind === "two_images" ? [attachment, attachment] : [attachment];
+    if (kind === "changed_limit") (request.strictExecution!.imageBudget as { maxImageBytes: number }).maxImageBytes++;
+    await expect(runEmperorSkill(request)).rejects.toBeInstanceOf(StrictSkillRuntimeError); noCalls();
+  });
+  it.each([undefined, { policyId: "synthetic", maxInputTokensPerImage: 8192 }])("requires tagging-specific image policy rather than implicit 3 MiB defaults", async imageBudget => {
+    const request = await input(); request.strictExecution!.stage = "image_tagging";
+    if (imageBudget === undefined) delete request.strictExecution!.imageBudget; else request.strictExecution!.imageBudget = imageBudget;
+    mocks.execute.mockClear(); await expect(runEmperorSkill(request)).rejects.toMatchObject({ code: "STRICT_RUNTIME_OPTIONS_INVALID" });
+    expect(mocks.execute).not.toHaveBeenCalled(); noCalls();
+  });
   it.each(["route", "reply", "profit_analysis", "competitor_deep"] as const)("uses fixed %s audit identity without storing private source bodies", async stage => {
     const request = await input(); request.strictExecution!.stage = stage;
     await runEmperorSkill(request);

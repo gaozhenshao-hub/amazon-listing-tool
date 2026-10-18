@@ -4,6 +4,7 @@ import { PROFILE_IMPORT_JOB_KIND } from "../shared/profileImportJob";
 import { COMPETITOR_RESEARCH_JOB_KIND } from "../shared/competitorResearchJob";
 import { COMPETITOR_DEEP_EXECUTION_JOB_KIND } from "../shared/competitorDeepExecutionJob";
 import { checkpointedListingJobError } from "../shared/checkpointedListingJob";
+import { PRIVATE_IMAGE_TAGGING_JOB_KIND, isDedicatedOnlyAiJob } from "./repositories/ai_os/dedicatedJobPolicy";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), list: vi.fn(), deadLetters: vi.fn(), cancel: vi.fn(), recover: vi.fn(),
   confirm: vi.fn(), audit: vi.fn(), start: vi.fn(), metric: vi.fn() }));
@@ -45,11 +46,11 @@ beforeEach(() => {
   mocks.cancel.mockResolvedValue(legacyJob);
 });
 
-describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR_DEEP_EXECUTION_JOB_KIND])("generic AI job API does not expose %s checkpoints", kind => {
+describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR_DEEP_EXECUTION_JOB_KIND, PRIVATE_IMAGE_TAGGING_JOB_KIND])("generic AI job API does not expose %s checkpoints", kind => {
   beforeEach(() => { privateJob.kind = kind; });
   it.each(["user", "admin", "super_admin"])("%s cannot get/cancel/retry/confirm the private job", async role => {
     const api = caller(role);
-    const denied = { code: "PRECONDITION_FAILED", message: checkpointedListingJobError(kind, "USE_DEDICATED_ENDPOINT") };
+    const denied = { code: "PRECONDITION_FAILED", message: isDedicatedOnlyAiJob(kind) ? "IMAGE_TAGGING_USE_DEDICATED_ENDPOINT" : checkpointedListingJobError(kind, "USE_DEDICATED_ENDPOINT") };
     await expect(api.get({ runId: privateJob.runId })).rejects.toMatchObject(denied);
     await expect(api.cancel({ runId: privateJob.runId })).rejects.toMatchObject(denied);
     await expect(api.retry({ runId: privateJob.runId })).rejects.toMatchObject(denied);

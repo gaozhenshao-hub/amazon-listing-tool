@@ -21,6 +21,7 @@ import {
 import { shouldProcessAiJobs } from "../../../_core/runtime";
 import { recordAiOsMetric } from "./observability";
 import { assertBusinessJobAgentBinding } from "./businessJobBindingPolicy";
+import { assertGenericAiJobKind, isDedicatedOnlyAiJob } from "../../../repositories/ai_os/dedicatedJobPolicy";
 
 export type AiJobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
 
@@ -105,6 +106,7 @@ export function listAiJobHandlerRegistrations() {
 }
 
 export function resolveAiJobHandler(job: AiJobSnapshot): AiJobHandler | null {
+  if (isDedicatedOnlyAiJob(job.kind)) return null;
   for (const registration of handlerRegistrations.values()) {
     if (registration.match(job)) return registration.handler;
   }
@@ -325,7 +327,7 @@ function buildDeadLetterSnapshot(row: AiJobDeadLetter) {
 
 export async function listAiJobDeadLetterRuns(opts: { limit?: number } = {}) {
   const rows = await listAiJobDeadLetters({ limit: opts.limit });
-  return rows.map(buildDeadLetterSnapshot);
+  return rows.filter(row => !isDedicatedOnlyAiJob(row.kind)).map(buildDeadLetterSnapshot);
 }
 
 export function calculateAiJobRetryDelayMs(attempt: number): number {
@@ -344,6 +346,7 @@ function normalizeJsonValue(value: unknown): unknown {
 }
 
 export function buildAiJobSnapshot(job: AiJob): AiJobSnapshot {
+  assertGenericAiJobKind(job.kind);
   return {
     runId: job.runId,
     kind: job.kind,
@@ -398,6 +401,7 @@ export async function createAiJobRun(input: {
   recoveryOfRunId?: string | null;
   recoveryReason?: string | null;
 }) {
+  assertGenericAiJobKind(input.kind);
   if (isCheckpointedListingJob(input.kind)) throw new Error(checkpointedListingJobError(input.kind, "USE_DEDICATED_ENDPOINT"));
   assertBusinessJobAgentBinding({
     module: input.module,
@@ -689,7 +693,7 @@ export async function recoverAiJob(runId: string, reason = "User requested failu
 
 export async function getAiJobRun(runId: string) {
   const job = await getAiJobByRunId(runId);
-  return job ? buildAiJobSnapshot(job) : null;
+  return job && !isDedicatedOnlyAiJob(job.kind) ? buildAiJobSnapshot(job) : null;
 }
 
 export async function listAiJobRunsForUser(
@@ -697,7 +701,7 @@ export async function listAiJobRunsForUser(
   opts: { module?: string; projectId?: number; status?: InsertAiJob["status"]; limit?: number } = {},
 ) {
   const jobs = await listAiJobsForUser(userId, opts);
-  return jobs.map(buildAiJobSnapshot);
+  return jobs.filter(job => !isDedicatedOnlyAiJob(job.kind)).map(buildAiJobSnapshot);
 }
 
 export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<T>) {

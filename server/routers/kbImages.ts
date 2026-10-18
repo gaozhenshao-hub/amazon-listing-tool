@@ -13,6 +13,9 @@ import { acquisitionAssetCandidates, acquisitionConfirmedSnapshots } from "../..
 import { startAmazonAcquisitionJob } from "../domains/acquisition/acquisitionJobs";
 import { readManualKbImageCoverage, type ManualKbImageCoverage } from "../domains/acquisition/kbManualImageCoverage";
 import { createManualKbImageDeliveryGate } from "../domains/acquisition/kbManualImageDelivery";
+import { ImageTaggingPreviewInputSchema, ImageTaggingSubmitInputSchema, ImageTaggingOperationInputSchema,
+  ImageTaggingApplyInputSchema, ImageTaggingApplyOperationInputSchema, ImageTaggingHistoryInputSchema,
+  ImageTaggingPreviewSchema, ImageTaggingJobViewSchema, ImageTaggingApplyReceiptSchema, ImageTaggingHistorySchema } from "../../shared/imageTagging";
 import {
   KB_IMAGE_IMPORT_CAPABILITIES,
   KbImageImportAsinSchema,
@@ -557,7 +560,26 @@ async function runSummaryOnly(setId: number, asin: string, userId: number) {
   }
 }
 
+// Keep the optional business lane inert when legacy image endpoints are used.
+// This is module loading only, never a model call or configuration fallback.
+const taggingService = async () => (await import("../domains/knowledge/imageTaggingService")).imageTaggingService;
 export const kbImagesRouter = router({
+  taggingPreview: workspaceScopedProcedure("knowledge").input(ImageTaggingPreviewInputSchema).output(ImageTaggingPreviewSchema)
+    .query(async ({ ctx, input }) => (await taggingService()).preview(ctx, input)),
+  taggingStart: workspaceScopedProcedure("knowledge").input(ImageTaggingSubmitInputSchema).output(ImageTaggingJobViewSchema)
+    .mutation(async ({ ctx, input }) => (await taggingService()).start(ctx, input)),
+  taggingCheck: workspaceScopedProcedure("knowledge").input(ImageTaggingOperationInputSchema).output(ImageTaggingJobViewSchema)
+    .query(async ({ ctx, input }) => (await taggingService()).check(ctx, input)),
+  taggingCancel: workspaceScopedProcedure("knowledge").input(ImageTaggingOperationInputSchema).output(ImageTaggingJobViewSchema)
+    .mutation(async ({ ctx, input }) => (await taggingService()).cancel(ctx, input)),
+  taggingHistory: workspaceScopedProcedure("knowledge").input(ImageTaggingHistoryInputSchema).output(ImageTaggingHistorySchema)
+    .query(async ({ ctx, input }) => (await taggingService()).history(ctx, input)),
+  taggingApply: workspaceScopedProcedure("knowledge").input(ImageTaggingApplyInputSchema).output(ImageTaggingApplyReceiptSchema)
+    .mutation(async ({ ctx, input }) => (await taggingService()).apply(ctx, input)),
+  taggingApplyCheck: workspaceScopedProcedure("knowledge").input(ImageTaggingApplyOperationInputSchema).output(ImageTaggingApplyReceiptSchema)
+    .query(async ({ ctx, input }) => (await taggingService()).applyCheck(ctx, input)),
+  taggingApplyCancel: workspaceScopedProcedure("knowledge").input(ImageTaggingApplyOperationInputSchema).output(ImageTaggingApplyReceiptSchema)
+    .mutation(async ({ ctx, input }) => (await taggingService()).applyCancel(ctx, input)),
   // List all image sets
   listSets: workspaceScopedProcedure("knowledge")
     .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())

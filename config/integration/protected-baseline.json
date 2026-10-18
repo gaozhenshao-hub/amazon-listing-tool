@@ -326,9 +326,9 @@
         "sha256": "a87607198360e41816cad44b3000748015bc43c4fe95f6bffde14343693ff426"
       },
       "reviewed": {
-        "gitBlobSha1": "815f185cf317256493147902b95e8f9323cc38d6",
-        "sha256": "f1afc6eb308d0d8e91db85bd78645d120ba51df0b19b21945690f84ce2ced2b4",
-        "reviewRef": "config/integration/reviews/20261015-gallery-browsing.json; config/integration/reviews/20261019-acquisition-manual-revisions.json"
+        "gitBlobSha1": "ca94932bafa4c5eddf75cd4c47affead1a0a8ac5",
+        "sha256": "54090f50daf744d4f49342b70f506e64a9136db811eb1cb8074b3821162be07e",
+        "reviewRef": "config/integration/reviews/20261015-gallery-browsing.json; config/integration/reviews/20261019-acquisition-manual-revisions.json; config/integration/reviews/20261019-image-tagging-business.json"
       }
     },
     {
@@ -457,9 +457,9 @@
         "sha256": "b3684a0e402946b9114559e50489f41ccc59e92159cc050baba43849f5061e7d"
       },
       "reviewed": {
-        "gitBlobSha1": "fb4354d782eeecaa172a87799bca15b876cc1a3a",
-        "sha256": "c24807bbad6ff431d087708427d02e903af23f6a29ccf8b28fc533562d613f07",
-        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior worker registrations and drains"
+        "gitBlobSha1": "b3f86e6098666bec0df135cd886e2f124f0ad6fc",
+        "sha256": "3358fc42103df1457d7de939b04d5e34aef6e7a8abc7fc1750c35ffddf519a81",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior worker registrations and drains; config/integration/reviews/20261019-image-tagging-business.json"
       }
     },
     {
@@ -517,9 +517,9 @@
         "sha256": "fee0ecae4f403c271e591fa8f03b1a3edb52acfec07a85bb7ea22929fa65a1a6"
       },
       "reviewed": {
-        "gitBlobSha1": "d47a3908303e6837e3dc79a5742aa00f6ff3c9dd",
-        "sha256": "8dc4b1d516ddefc1599d379305029857079f986475e22fda36d437d3eefce353",
-        "reviewRef": "config/integration/reviews/20261018-competitor-deep-dedicated-lane.json"
+        "gitBlobSha1": "f9622b069bb642646e55159b34e4a27ffb0d8335",
+        "sha256": "8ab889b31a1c1cf28a3d135f0ff94eeb84ac4824af009738bb15a00680d3fc7d",
+        "reviewRef": "config/integration/reviews/20261018-competitor-deep-dedicated-lane.json; config/integration/reviews/20261019-image-tagging-business.json"
       }
     },
     {
@@ -582,9 +582,9 @@
         "sha256": "22cf601101ed0d041974c62d83a8c795969c5338a305a7c264dbe2d83c918490"
       },
       "reviewed": {
-        "gitBlobSha1": "d608d82a1797f9214c985617b39a5920e7ccfae6",
-        "sha256": "a08d916792a790a04dbceedbc89c2311fd450d19ed215838a55a0fd725972fd7",
-        "reviewRef": "config/integration/reviews/20261016-saved-competitor-research-jobs.json"
+        "gitBlobSha1": "cfacbdbd96f008969c57b803fe49400967a0322e",
+        "sha256": "4fcc138ac57bfd38205a79ef1fce47e4723a705d1bcb887a242ceccd904d128c",
+        "reviewRef": "config/integration/reviews/20261016-saved-competitor-research-jobs.json; config/integration/reviews/20261019-image-tagging-business.json"
       }
     },
     {
@@ -1147,9 +1147,9 @@
         "sha256": "f32e7e884932429c07c4978699ba88d9144803fc17634f7542d18abd5fc19d8d"
       },
       "reviewed": {
-        "gitBlobSha1": "65d93cf57fe7665474049ba3aa803f5081a58ed4",
-        "sha256": "425613aa1d81f309885d134d13465f731005fb876e693e5b096891b9efb0ba9e",
-        "reviewRef": "config/integration/reviews/20261018-competitor-deep-dedicated-lane.json; preserve previous checkpoints review"
+        "gitBlobSha1": "4b78b2d418da0a125e4e3c3481341b075e0fe2d5",
+        "sha256": "f0f748edeea3d3c81c590a7aa2dd00e8e9f26443559d156cf1825c3578f07450",
+        "reviewRef": "config/integration/reviews/20261018-competitor-deep-dedicated-lane.json; preserve previous checkpoints review; config/integration/reviews/20261019-image-tagging-business.json"
       }
     },
     {
@@ -1195,9 +1195,9 @@
         "sha256": "03291353d69a8b3265a72136371871897bd98e639755143590f9b02383e0c984"
       },
       "reviewed": {
-        "gitBlobSha1": "3b55a4c523d54ebff77936f1d03a15a2eb146b6c",
-        "sha256": "c1fdaf1fde3253457462c4879c3bf6404dc15e426002ec1a625f693c15f7ada6",
-        "reviewRef": "config/integration/reviews/20261019-acquisition-manual-revisions.json"
+        "gitBlobSha1": "5d0aa788baeb4dddec1704ef03e7ca81c603163c",
+        "sha256": "735608543c7c1ecd06dc6129e5e7207dfba0594552966bd6e4a7202be360b025",
+        "reviewRef": "config/integration/reviews/20261019-acquisition-manual-revisions.json; config/integration/reviews/20261019-image-tagging-business.json"
       }
     },
     {

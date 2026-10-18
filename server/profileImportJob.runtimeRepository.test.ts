@@ -6,6 +6,7 @@ import { PROFILE_IMPORT_JOB_KIND } from "../shared/profileImportJob";
 import { COMPETITOR_RESEARCH_JOB_KIND } from "../shared/competitorResearchJob";
 import { COMPETITOR_DEEP_EXECUTION_JOB_KIND } from "../shared/competitorDeepExecutionJob";
 import { isCheckpointedListingJob } from "../shared/checkpointedListingJob";
+import { PRIVATE_IMAGE_TAGGING_JOB_KIND } from "./repositories/ai_os/dedicatedJobPolicy";
 
 const mocks = vi.hoisted(() => ({ requireDb: vi.fn() }));
 vi.mock("./repositories/dbClient", () => ({ requireDb: mocks.requireDb, withDbTransaction: vi.fn() }));
@@ -48,9 +49,9 @@ function database(row = fixture(), beforeUpdate?: (row: AiJob) => void, forcedAf
       return { rows: [{ affectedRows: forcedAffected ?? Number(eligible) }] };
     }
     expect(method).toBe("all");
-    expect(sql).toContain("from `ai_jobs` where `ai_jobs`.`runId` = ? limit ?");
-    expect(params).toEqual(["profile-anchor", 1]);
-    return { rows: [columns.map(column => {
+    expect(sql).toContain("from `ai_jobs` where (`ai_jobs`.`runId` = ? and `ai_jobs`.`kind` <> ?) limit ?");
+    expect(params).toEqual(["profile-anchor", PRIVATE_IMAGE_TAGGING_JOB_KIND, 1]);
+    return { rows: row.kind === PRIVATE_IMAGE_TAGGING_JOB_KIND ? [] : [columns.map(column => {
       const value = row[column.name as keyof AiJob];
       return value instanceof Date ? column.mapToDriverValue(value as never) : value ?? null;
     })] };
@@ -97,7 +98,7 @@ describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR
   });
 
   const stale: Partial<AiJob>[] = [{ status: "queued" }, { status: "succeeded" }, { status: "canceled" },
-    { status: "failed" }, { kind: "legacy" }, { attempt: 3 }, { lockedBy: "worker-B" },
+    { status: "failed" }, { kind: "legacy" }, { kind: PRIVATE_IMAGE_TAGGING_JOB_KIND }, { attempt: 3 }, { lockedBy: "worker-B" },
     { leaseUntil: null }, { leaseUntil: NOW }, { leaseUntil: new Date(NOW.getTime() - 1) }];
   it.each(stale)("read/write race %# cannot overwrite a new owner or terminal row", async changed => {
     for (const change of [{ type: "progress", progress: 80 }, { type: "fail", errorMessage: "safe" },
@@ -139,12 +140,12 @@ describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR
       calls.push({ sql, params });
       if (method === "execute") {
         const normalized = sql.replace(/\s+/g, " ");
-        expect(normalized).toContain("WHERE runId = ? AND status IN ('queued', 'running')");
+        expect(normalized).toContain("WHERE runId = ? AND kind <> ? AND status IN ('queued', 'running')");
         expect(normalized).toContain("AND (nextRunAt IS NULL OR nextRunAt <= NOW())");
         expect(normalized).toContain("AND (lockedBy IS NULL OR lockedBy = ? OR leaseUntil IS NULL OR leaseUntil < NOW())");
         expect(normalized).toContain("AND (kind NOT IN (?, ?, ?) OR (status = 'queued' AND lockedBy IS NULL AND leaseUntil IS NULL) OR (status = 'running' AND leaseUntil < NOW()))");
-        expect(params).toEqual([10, "worker-A", 900, "profile-anchor", "worker-A", PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR_DEEP_EXECUTION_JOB_KIND]);
-        const priorEligible = ["queued", "running"].includes(row.status)
+        expect(params).toEqual([10, "worker-A", 900, "profile-anchor", PRIVATE_IMAGE_TAGGING_JOB_KIND, "worker-A", PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR_DEEP_EXECUTION_JOB_KIND]);
+        const priorEligible = row.kind !== PRIVATE_IMAGE_TAGGING_JOB_KIND && ["queued", "running"].includes(row.status)
           && (!row.nextRunAt || row.nextRunAt <= NOW)
           && (!row.lockedBy || row.lockedBy === "worker-A" || !row.leaseUntil || row.leaseUntil < NOW);
         const profileEligible = !isCheckpointedListingJob(row.kind)
@@ -155,8 +156,8 @@ describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR
           leaseUntil: new Date(NOW.getTime() + 900_000) });
         return { rows: [{ affectedRows }] };
       }
-      expect(params).toEqual(["profile-anchor", 1]);
-      return { rows: [columns.map(column => {
+      expect(params).toEqual(["profile-anchor", PRIVATE_IMAGE_TAGGING_JOB_KIND, 1]);
+      return { rows: row.kind === PRIVATE_IMAGE_TAGGING_JOB_KIND ? [] : [columns.map(column => {
         const value = row[column.name as keyof AiJob];
         return value instanceof Date ? column.mapToDriverValue(value as never) : value ?? null;
       })] };
@@ -178,6 +179,7 @@ describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR
     { status: "queued", lockedBy: "worker-A", leaseUntil: null },
     { status: "queued", lockedBy: null, leaseUntil: new Date(NOW.getTime() - 1) },
     { status: "succeeded" }, { status: "failed" }, { status: "canceled" },
+    { kind: PRIVATE_IMAGE_TAGGING_JOB_KIND, status: "queued", lockedBy: null, leaseUntil: null },
   ] satisfies Partial<AiJob>[])("denies nonclaimable state %# even when the read-back owner matches", async patch => {
     const { row } = claimDatabase(fixture(patch));
     await expect(claimAiJobByRunId(row.runId, { workerId: "worker-A" })).resolves.toBeNull();

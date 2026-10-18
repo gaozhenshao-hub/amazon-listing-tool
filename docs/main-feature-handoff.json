@@ -13,6 +13,15 @@
   },
   "trialEntrances": [
     {
+      "name": "打标签 Agent 的逐图业务执行",
+      "route": "/knowledge/images",
+      "relatedRoutes": ["/emperor/agent-library"],
+      "steps": "打开本人图片集后展开独立打标签面板，显式预览完整图片集、缺口和已确认保护范围；核对配置版本、青岛 Skill、模型与本批授权费用上限后提交。逐图候选包含八项标签、提亮色和证据，核对原图后可编辑并分批确认应用或排除。",
+      "boundary": "不是聊天页代替业务执行，也不使用旧 reAnalyze 自动改标签。配置、Skill、模型、来源和原件在任务中固定并在派发前复核。既有人工确认标签不参与计费；空字符串表示已明确未知，不是尚未识别。只应用八项标签及三项既有兼容字段，保留分析正文、评分、套图标签和全部原图。",
+      "recovery": "开始和人工应用使用独立固定 UUID。超时或已派发但结果未知仅核对或取消原 UUID，不换 UUID 自动重付费；当前来源变化须重新审核。本人既有候选与回执仍可在新写入关闭后读取和取消；普通通用任务／Artifact 接口不能绕过专用私有读取。",
+      "sourceFiles": ["client/src/pages/knowledge/ImageTaggingWorkflow.tsx", "server/domains/knowledge/imageTaggingService.ts", "server/domains/knowledge/imageTaggingWorker.ts"]
+    },
+    {
       "name": "采集后的可选人工审核与图片修订",
       "route": "/knowledge/acquisition",
       "steps": "默认仍直接录入安全保存的图片。终态任务可显式打开逐快照审核，查看完整原始规范化资料和有效草稿、编辑字段、逐图保留／排除、另存草稿，再独立确认或驳回。失败图片可按原资产重取，或以文件／剪贴板补充原字节图片。",
@@ -95,6 +104,7 @@
     "agentConversation": ["ENABLE_ASSISTANT_CONVERSATION_WRITES", "ENABLE_ASSISTANT_CONVERSATION_WORKER"],
     "agentConfigurationAndRuleConfirmation": ["ENABLE_ASSISTANT_CONFIGURATION_WRITES"],
     "profitAnalysis": ["ENABLE_PROFIT_ANALYSIS_WRITES", "ENABLE_PROFIT_ANALYSIS_WORKER"],
+    "imageTagging": ["ENABLE_IMAGE_TAGGING_WRITES", "ENABLE_IMAGE_TAGGING_WORKER"],
     "productTasks": ["ENABLE_MERGED_OPS_TASK_WRITES"],
     "costSheet": ["ENABLE_MERGED_OPS_COST_WRITES"],
     "monthlyFinancial": ["ENABLE_MERGED_OPS_MONTHLY_WRITES"],
@@ -111,11 +121,13 @@
     "environmentPairs": [
       ["ASSISTANT_CONVERSATION_APPROVAL_FILE", "ASSISTANT_CONVERSATION_APPROVAL_SHA256"],
       ["PROFIT_ANALYSIS_APPROVAL_FILE", "PROFIT_ANALYSIS_APPROVAL_SHA256"],
-      ["LISTING_DEEP_ANALYSIS_APPROVAL_FILE", "LISTING_DEEP_ANALYSIS_APPROVAL_SHA256"]
+      ["LISTING_DEEP_ANALYSIS_APPROVAL_FILE", "LISTING_DEEP_ANALYSIS_APPROVAL_SHA256"],
+      ["IMAGE_TAGGING_APPROVAL_FILE", "IMAGE_TAGGING_APPROVAL_SHA256"]
     ],
     "requirements": "每对同时配置受控部署目录的绝对 JSON 路径与完整文件原始字节 SHA-256。真实记录必须根据目标注册表及来源证据生成并通过现有 schema；不复制示例 hash、不把 Released 或绑定视为批准。文件和真实映射不进入公开仓库、不使用 VITE 前缀、不包含密钥正文。",
-    "examples": ["config/examples/assistant-conversation-approvals.example.json", "config/examples/profit-analysis-approvals.example.json", "config/examples/listing-deep-analysis-approvals.example.json"],
-    "examplesAreNotApproval": true
+    "examples": ["config/examples/assistant-conversation-approvals.example.json", "config/examples/profit-analysis-approvals.example.json", "config/examples/listing-deep-analysis-approvals.example.json", "config/examples/image-tagging-approvals.example.json"],
+    "examplesAreNotApproval": true,
+    "imageTaggingContract": { "source": "server/domains/knowledge/imageTaggingRuntimeContract.ts", "kind": "image_tagging", "origin": "qingdao", "inputContract": "image_tagging_evidence_v1", "outputContract": "image_tagging_labels_v1", "requirements": "精确绑定目标工作区、已保存 tagger 配置及完整 Skill/model 快照；审批包含原件单图 8MiB、每图输入预算和费用上限。配置 modelSlug 为空仅继承该已审批 Skill 的原 modelOverride，缺失明确不可用；不能换成猜测模型。空示例没有任何获批记录。" }
   },
   "schemaDependencies": {
     "status": "本文件未核验任何目标数据库表状态；编号预留、DDL 文件、pure planner 和运行时准入不是迁移执行证明。",
@@ -172,7 +184,7 @@
     "四栏正式采纳的受控源码已接入，但仍需朋友在真实权限、数据库及 Web／worker 环境验收；不以合成协议测试或前端可见推定正式启用。",
     "四栏竞品图片／OCR、问答及长期原评论原件来源仍不完整；现可核验样本不等于市场全量，未接来源不得标完成。",
     "采集的可选审核、驳回和逐图补充源码已接入；真实 MySQL 事务／对象存储／撤权／丢 ACK 与历史版本仍待验收。粘贴评论预览／保存、补充多原件独立长期历史仍未全部实现，不能把未实现部分改写成仅待验收。",
-    "Agent 逐业务 Skill dispatch、赛狐受控日／月同步及双调度隔离仍未全部实现；不能改写成仅待业务验收。",
+    "打标签 Agent 的逐图候选与人工应用源码已接通；仍需真实 MySQL、私有对象存储、青岛 Skill 审批、模型和 Web／worker 验收。其他 Agent 逐业务 Skill dispatch、赛狐受控日／月同步及双调度隔离仍未全部实现；不能改写成仅待业务验收。",
     "真实目标数据库结构、旧数据迁移对账、存储权限、Web／worker 联调、真实模型质量及真实费用验收仍交朋友和维护者执行。",
     "页面可达、合成测试通过、开关开启和真实业务全部完成是不同状态；不得用摘要页面或少量示例代替朋友完整流程。",
     "权限收回、跨工作区、未知回执、并发保存、备份回滚及旧 writer 并存必须继续核验。"

@@ -32,6 +32,7 @@ export function assertBusinessJobAgentBinding(input: {
   kind: string;
   input: unknown;
 }): BusinessJobAgentBinding | null {
+  assertGenericAiJobKind(input.kind);
   if (input.kind === COMPETITOR_RESEARCH_JOB_KIND || input.kind === COMPETITOR_DEEP_EXECUTION_JOB_KIND) {
     const binding = readBusinessJobAgentBinding(input.input);
     if (input.module !== "listing" || binding?.agentNodeId !== "N1") {
@@ -56,3 +57,4 @@ export function assertBusinessJobAgentBinding(input: {
 import { PROFILE_IMPORT_JOB_KIND } from "@shared/profileImportJob";
 import { COMPETITOR_RESEARCH_JOB_KIND } from "@shared/competitorResearchJob";
 import { COMPETITOR_DEEP_EXECUTION_JOB_KIND } from "@shared/competitorDeepExecutionJob";
+import { assertGenericAiJobKind } from "../../../repositories/ai_os/dedicatedJobPolicy";

@@ -36,6 +36,7 @@ import { SingleImagePreviewDialog, type BrowseImage } from "./SingleImagePreview
 import { activateGalleryItem } from "./galleryInteraction";
 import { MERGED_READONLY_FEATURES_ENABLED } from "@/lib/mergedReadOnlyFeatures";
 import ManualImageRevisionNotice from "./ManualImageRevisionNotice";
+import ImageTaggingWorkflow from "./ImageTaggingWorkflow";
 
 type ViewMode = "asin" | "waterfall" | "grid";
 
@@ -103,6 +104,7 @@ export default function KBImages() {
   const [viewMode, setViewMode] = useState<ViewMode>("asin");
   const [activeMainTab, setActiveMainTab] = useState<"browse" | "tags">("browse");
   const [detailSetId, setDetailSetId] = useState<number | null>(null);
+  const taggingDirty = useRef(false);
   const [analyzingPoll, setAnalyzingPoll] = useState(false);
   const [editingAnalysis, setEditingAnalysis] = useState("");
 
@@ -936,7 +938,11 @@ export default function KBImages() {
       </Dialog>
 
       {/* ═══ ASIN Set Detail Dialog — Images Grouped by Position ═══ */}
-      <Dialog open={!!detailSetId} onOpenChange={(open) => !open && setDetailSetId(null)}>
+      <Dialog open={!!detailSetId} onOpenChange={(open) => {
+        if (open) return;
+        if (taggingDirty.current && !window.confirm("标签候选有未提交的人工编辑。关闭会丢弃本地草稿，已提交的原请求仍可回来核对。是否继续？")) return;
+        taggingDirty.current = false; setDetailSetId(null);
+      }}>
         <DialogContent data-testid="kb-image-set-detail" className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] lg:w-[60vw] lg:max-w-[60vw] min-w-0 grid-cols-[minmax(0,1fr)] max-h-[90vh] overflow-x-hidden overflow-y-auto">
           {(detailSet || detailSetPlaceholder) ? (() => {
             const d = (detailSet || detailSetPlaceholder) as any;
@@ -959,6 +965,9 @@ export default function KBImages() {
                 <div className="min-w-0 max-w-full space-y-6">
                   {d.productTitle && <h3 className="font-medium text-lg [overflow-wrap:anywhere]">{d.productTitle}</h3>}
                   <ManualImageRevisionNotice manual={d.originInstanceId === "manual_acquisition_review_v1"} coverage={d.sourceCoverage} />
+                  {detailSetId !== null && <ImageTaggingWorkflow key={detailSetId} setId={detailSetId}
+                    onDirtyChange={value => { taggingDirty.current = value; }}
+                    onApplied={async () => { await Promise.all([utils.kbImages.getSet.invalidate({ id: detailSetId }), utils.kbImages.listSets.invalidate(), utils.kbImages.listAllImages.invalidate()]); }} />}
 
                   {d.acquisitionCoverage?.partial && (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">

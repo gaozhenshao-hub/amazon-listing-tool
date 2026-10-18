@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { isCheckpointedListingJob, checkpointedListingJobError } from "../../shared/checkpointedListingJob";
+import { isDedicatedOnlyAiJob } from "../repositories/ai_os/dedicatedJobPolicy";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { listAiJobsForUser } from "../repositories/ai_os";
 import {
@@ -291,6 +292,9 @@ async function runOpsReplenishmentPlan(input: z.infer<typeof opsReplenishmentJob
 }
 
 function assertCanReadJob(user: { id: number; role?: string }, job: { userId: number; kind?: string }) {
+  if (isDedicatedOnlyAiJob(job.kind)) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "IMAGE_TAGGING_USE_DEDICATED_ENDPOINT" });
+  }
   if (isCheckpointedListingJob(job.kind)) {
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: checkpointedListingJobError(job.kind, "USE_DEDICATED_ENDPOINT") });
   }
@@ -453,7 +457,7 @@ export const aiJobsRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const rows = await listAiJobDeadLetterRuns({ limit: input?.limit });
-      return rows.filter(row => !isCheckpointedListingJob(row.kind));
+      return rows.filter(row => !isCheckpointedListingJob(row.kind) && !isDedicatedOnlyAiJob(row.kind));
     }),
 
   operationalAlerts: adminProcedure
@@ -472,7 +476,7 @@ export const aiJobsRouter = router({
     }).optional())
     .query(async ({ ctx, input }) => {
       const rows = await listAiJobsForUser(ctx.user.id, input || {});
-      return rows.filter(row => !isCheckpointedListingJob(row.kind)).map(buildAiJobSnapshot);
+      return rows.filter(row => !isCheckpointedListingJob(row.kind) && !isDedicatedOnlyAiJob(row.kind)).map(buildAiJobSnapshot);
     }),
 
   bindingIntegrity: protectedProcedure

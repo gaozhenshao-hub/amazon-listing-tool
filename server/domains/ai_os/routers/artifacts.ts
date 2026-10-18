@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { genericArtifactPredicate } from "../../../repositories/ai_os/dedicatedJobPolicy";
 import { protectedProcedure, router } from "../../../_core/trpc";
 import {
   actorFromContext,
@@ -111,11 +112,12 @@ export const emperorArtifactsRouter = router({
     .query(async ({ ctx, input }) => {
       await assertArtifactAction(ctx, "read", input.artifactId);
       const workspaceId = workspaceIdFromContext(ctx);
-      const scope = workspaceId === null ? "workspaceId IS NULL" : "workspaceId=?";
+      const scope = workspaceId === null ? "c.workspaceId IS NULL" : "c.workspaceId=?";
       return rawExecute(
-        `SELECT * FROM ai_artifact_consumptions
-         WHERE artifactId=? AND ${scope}
-         ORDER BY createdAt DESC LIMIT ?`,
+        `SELECT c.* FROM ai_artifact_consumptions c
+         INNER JOIN ai_artifacts a ON a.artifactId=c.artifactId AND a.workspaceId <=> c.workspaceId
+         WHERE c.artifactId=? AND ${scope} AND ${genericArtifactPredicate()}
+         ORDER BY c.createdAt DESC LIMIT ?`,
         [input.artifactId, ...(workspaceId === null ? [] : [workspaceId]), input.limit || 100],
       );
     }),

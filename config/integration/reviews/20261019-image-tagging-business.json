@@ -1,0 +1,29 @@
+{
+  "schema": "integration-protection-review/v1",
+  "parentCommit": "77dcf7ded67244f60abc8b62510edae94e8e6089",
+  "purpose": "Explicit tagger business dispatch using saved configuration and Qingdao Skill, immutable per-image candidates and human label application",
+  "protectedFiles": [
+    { "path": "client/src/pages/knowledge/KBImages.tsx", "controls": ["K05"], "gitBlobSha1": "ca94932bafa4c5eddf75cd4c47affead1a0a8ac5", "sha256": "54090f50daf744d4f49342b70f506e64a9136db811eb1cb8074b3821162be07e", "decision": "Add independent tagging workflow and dirty-close confirmation; preserve exact image bytes, containment layout, manual revision notice, existing browse and analysis controls." },
+    { "path": "server/_core/aiWorker.ts", "controls": ["K01", "K02"], "gitBlobSha1": "b3f86e6098666bec0df135cd886e2f124f0ad6fc", "sha256": "3358fc42103df1457d7de939b04d5e34aef6e7a8abc7fc1750c35ffddf519a81", "decision": "Add exact-default-off dedicated worker and bounded drain; preserve every existing registration and drain, with no scheduler or generic handler replacement." },
+    { "path": "server/aiJobRepository.queue.test.ts", "controls": ["K02"], "gitBlobSha1": "f9622b069bb642646e55159b34e4a27ffb0d8335", "sha256": "8ab889b31a1c1cf28a3d135f0ff94eeb84ac4824af009738bb15a00680d3fc7d", "decision": "Append exact tagger exclusion parameter to actual SQL assertions and add the same dedicated-lane negative cases; preserve prior deep-lane, two-stage payload and lease checks." },
+    { "path": "server/domains/ai_os/services/jobRunner.ts", "controls": ["K01", "K02"], "gitBlobSha1": "cfacbdbd96f008969c57b803fe49400967a0322e", "sha256": "4fcc138ac57bfd38205a79ef1fce47e4723a705d1bcb887a242ceccd904d128c", "decision": "Reject only dedicated tagger create/snapshot/handler paths and exclude it from generic history; retain ordinary jobs and all existing checkpoint guards." },
+    { "path": "server/repositories/ai_os/aiJobRepository.ts", "controls": ["K01", "K02"], "gitBlobSha1": "4b78b2d418da0a125e4e3c3481341b075e0fe2d5", "sha256": "f0f748edeea3d3c81c590a7aa2dd00e8e9f26443559d156cf1825c3578f07450", "decision": "Exclude dedicated tagger from generic read/mutation/claim/retry/deadletter/queue SQL; preserve atomic existing claims, workspace filters and checkpoint authority." },
+    { "path": "server/routers/kbImages.ts", "controls": ["K05", "K06"], "gitBlobSha1": "5d0aa788baeb4dddec1704ef03e7ca81c603163c", "sha256": "735608543c7c1ecd06dc6129e5e7207dfba0594552966bd6e4a7202be360b025", "decision": "Add eight strict workspace knowledge RPCs loading the dedicated service only on explicit use; preserve inert legacy endpoints and private manual-version delivery checks." }
+  ],
+  "retainedRules": [
+    "Original baseline bytes, all prior review references and both dependency declarations remain; no schema, migration, bootstrap checksum or source approval is adopted by this review.",
+    "Only exact true write/worker flags permit new paid work; active resource authority, saved config, independently approved Qingdao Skill/model/source and conservative fee cap are required.",
+    "Whole owned image set capture includes every image up to 300 without silent truncation. Initially human-confirmed rows are never charged. Null means never classified; intentional empty string is not missing.",
+    "Actual original image bytes are read outside DB transactions; bounded full decode, exact private provider or known Amazon CDN, zero redirects and manual-content hash binding; no image alteration or arbitrary browser URL.",
+    "Every paid stage has a committed one-shot dispatch fence. Unknown provider outcome never authorizes another call. Start/apply use separate fixed UUIDs, immutable artifacts, complete ACK readback and cancel journals.",
+    "Manual source proof is replayed on the same transaction before target image locks. Explicit apply preserves original images, AI/human bodies, set tags and scores; only reviewed eight tag fields and three legacy mirrors change.",
+    "Private candidates and sources cannot be hydrated, consumed, exported, selected or retried through generic job/artifact paths. Ordinary generic consumption retains its prior best-effort missing-store behavior."
+  ],
+  "independentReview": "Root reviewed protected diffs and runtime composition. Independent UI review found and closed a second-read revocation race and own-partial-apply false staleness; backend review closed generic artifact bypass and avoided changing normal missing-store consumption semantics. Synthetic tests cover actual source/runtime/repository/execution paths, not native database acceptance.",
+  "boundaries": ["No production schema/data writes, new source approval, real model invocation, service restart or cutover in this batch.", "Other Agent adapters, controlled daily/monthly synchronization and dual-scheduler isolation remain unfinished, not acceptance-only.", "All original P0-P6, K01-K10, T01-T28, image62/master27/supplement12 and thirteen release gates remain; full business/native/storage/provider/rollback acceptance belongs to the friend and maintainer."],
+  "handoff": "docs/main-feature-handoff.json",
+  "productionWrites": false,
+  "modelCalls": 0,
+  "productionDeployed": false,
+  "fullObjectiveComplete": false
+}

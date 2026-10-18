@@ -83,11 +83,11 @@ export type ManualSnapshotPersistentProof = { confirmed: Record<string, unknown>
   identity: AcquisitionReviewIdentity; scope: AcquisitionReviewReadInput; job: Record<string, unknown>; snapshot: Record<string, unknown>;
   revision: Record<string, unknown>; envelope: ManualSnapshotRevision; contentHash: string; allAssets: ManualSnapshotAsset[]; publicationState: "active" | "superseded" };
 type VerifyRead = (tx: ManualSnapshotReviewExecutor, proof: ManualSnapshotPersistentProof) => Promise<unknown>;
-async function readManualSnapshotPublication(db: DbExecutor, workspaceId: number, confirmedSnapshotId: number, target: ManualReadTarget, purpose: "active" | "history", verify?: VerifyRead): Promise<ManualSnapshotPersistentProof | null> {
+async function readManualSnapshotPublicationInTransaction(tx: ManualSnapshotReviewExecutor, workspaceId: number, confirmedSnapshotId: number, target: ManualReadTarget, purpose: "active" | "history", verify?: VerifyRead): Promise<ManualSnapshotPersistentProof | null> {
   id.parse(workspaceId); id.parse(confirmedSnapshotId);
   if (target.projectId !== null) id.parse(target.projectId); else id.parse(target.userId);
-  if (!db || typeof db.transaction !== "function") return fail();
-  return db.transaction(async (tx: ManualSnapshotReviewExecutor) => {
+  if (!tx || typeof tx.execute !== "function") return fail();
+  try {
     // Hints do not authorize data. Match writer workspace -> actor/member ->
     // consumer parent -> job -> source; never hold job while waiting on parent.
     const [hint] = await rows(tx, "SELECT id,workspace_id AS workspaceId,snapshot_id AS snapshotId,revision_id AS revisionId,is_current AS isCurrent FROM acquisition_confirmed_snapshots WHERE id=? AND workspace_id=?", [confirmedSnapshotId, workspaceId], 1);
@@ -167,10 +167,14 @@ async function readManualSnapshotPublication(db: DbExecutor, workspaceId: number
       identity, scope, job, snapshot: source, revision: revisionRow, envelope, contentHash, allAssets, publicationState: links[0].status as "active" | "superseded" };
     await verify?.(tx, proof);
     return proof;
-  }).catch((error: unknown) => {
+  } catch (error: unknown) {
     if (error instanceof z.ZodError || error instanceof SyntaxError || error instanceof Error && error.message === "ACQUISITION_REVIEW_REVISION_INVALID") return fail();
     throw error; // Database/authorization failures are not fabricated empty history.
-  });
+  }
+}
+async function readManualSnapshotPublication(db: DbExecutor, workspaceId: number, confirmedSnapshotId: number, target: ManualReadTarget, purpose: "active" | "history", verify?: VerifyRead): Promise<ManualSnapshotPersistentProof | null> {
+  if (!db || typeof db.transaction !== "function") return fail();
+  return db.transaction((tx: ManualSnapshotReviewExecutor) => readManualSnapshotPublicationInTransaction(tx, workspaceId, confirmedSnapshotId, target, purpose, verify));
 }
 export function readManualImageWorkflowSnapshot(db: DbExecutor, workspaceId: number, confirmedSnapshotId: number, projectId: number) {
   return readManualSnapshotPublication(db, workspaceId, confirmedSnapshotId, { consumerType: "image_workflow", projectId }, "active");
@@ -187,4 +191,10 @@ export function readManualKbImageSnapshot(db: DbExecutor, workspaceId: number, c
 }
 export function readManualKbImageSnapshotHistory(db: DbExecutor, workspaceId: number, confirmedSnapshotId: number, userId: number, verify?: VerifyRead) {
   return readManualSnapshotPublication(db, workspaceId, confirmedSnapshotId, { consumerType: "kb_images", projectId: null, userId }, "history", verify);
+}
+/** Existing transaction only, active model-use proof. The caller establishes
+ * workspace/actor authority first; this reader preserves publication lock order
+ * and invokes target locking only after the durable source has been replayed. */
+export function readManualKbImageSnapshotInTransaction(tx: ManualSnapshotReviewExecutor, workspaceId: number, confirmedSnapshotId: number, userId: number, verify?: VerifyRead) {
+  return readManualSnapshotPublicationInTransaction(tx, workspaceId, confirmedSnapshotId, { consumerType: "kb_images", projectId: null, userId }, "active", verify);
 }

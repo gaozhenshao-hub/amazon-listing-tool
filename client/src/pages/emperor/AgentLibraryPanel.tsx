@@ -92,6 +92,10 @@ export default function AgentLibraryPanel({ selected, onSelect, workflows, skill
           </dl>
           <p className="mt-3 text-xs leading-6 text-slate-500">当前后端没有 Agent 库专属配置读取接口。下方是已有编排与资源的真实只读记录；不会据此推断已绑定、已授权或会自动执行。视觉需求来自角色定义，模型能力尚不能由本接口验证。</p>
           </>}
+          {selected === "tagger" && <div className="mt-4 rounded-lg border border-cyan-500/20 p-3 text-xs leading-6 text-slate-300">
+            <a className={linkClass} href="/knowledge/images">打开图片知识库 · 标签业务任务</a>
+            <p>进入具体图片集后，先核对整套图片、专属配置和费用上限，再显式启动一次识别；结果先作为候选，逐图人工确认后才应用。查看本卡片和私有对话不会启动标签任务。</p>
+          </div>}
         </section>
 
         {hasConversationSlot && <section className={panelClass} aria-label="助手私有对话">{conversationSlot}</section>}

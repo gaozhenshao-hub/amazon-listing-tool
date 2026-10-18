@@ -11,6 +11,7 @@ const configuration = {
   assistant_conversation: { path: "ASSISTANT_CONVERSATION_APPROVAL_FILE", hash: "ASSISTANT_CONVERSATION_APPROVAL_SHA256" },
   profit_analysis: { path: "PROFIT_ANALYSIS_APPROVAL_FILE", hash: "PROFIT_ANALYSIS_APPROVAL_SHA256" },
   listing_deep_analysis: { path: "LISTING_DEEP_ANALYSIS_APPROVAL_FILE", hash: "LISTING_DEEP_ANALYSIS_APPROVAL_SHA256" },
+  image_tagging: { path: "IMAGE_TAGGING_APPROVAL_FILE", hash: "IMAGE_TAGGING_APPROVAL_SHA256" },
 } as const;
 export type SourceApprovalFileKind = keyof typeof configuration;
 type ErrorCode = "CONFIGURATION_INVALID" | "FILE_UNAVAILABLE" | "FILE_UNSAFE" | "FILE_LIMIT" | "FILE_CHANGED" | "HASH_MISMATCH" | "DOCUMENT_INVALID" | "RECORDS_INVALID";

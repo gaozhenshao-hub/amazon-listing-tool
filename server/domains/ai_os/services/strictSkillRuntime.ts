@@ -97,12 +97,13 @@ export function strictModelSnapshotFromRow(workspaceId: number, slug: string, ra
   const body = { version: 1 as const, workspaceId, model: parsed.data };
   return { ...body, configurationHash: strictRuntimeHash(body) };
 }
-export const StrictSkillStageSchema = z.enum(["route", "reply", "profit_analysis", "competitor_deep"]);
+export const StrictSkillStageSchema = z.enum(["route", "reply", "profit_analysis", "competitor_deep", "image_tagging"]);
 export type StrictSkillStage = z.infer<typeof StrictSkillStageSchema>;
 /** Fixed server-owned audit identities. A stage is not authorization to run a
  * business Skill: callers still supply approved pins and the durable fence. */
 export function strictSkillAuditIdentity(stage: StrictSkillStage) {
   if (!StrictSkillStageSchema.safeParse(stage).success) return strictRuntimeRefuse("STRICT_RUNTIME_OPTIONS_INVALID");
+  if (stage === "image_tagging") return { migrationSource: "knowledge.image_tagging.strict", operation: "knowledge.image_tagging.strict" } as const;
   if (stage === "competitor_deep") return { migrationSource: "listing.competitor.deep.strict", operation: "listing.competitor.deep.strict" } as const;
   return stage === "profit_analysis"
     ? { migrationSource: "ops.profit.private.strict", operation: "ops.profit.private.strict" } as const
@@ -123,7 +124,9 @@ export type StrictSkillExecutionOptions = {
   /** Trusted per-stage spend admission; not an assertion of the provider's final bill. */
   maxCostCents: number;
   /** Images require an explicitly approved provider-specific admission policy. */
-  imageBudget?: { policyId: string; maxInputTokensPerImage: number };
+  imageBudget?: { policyId: string; maxInputTokensPerImage: number;
+    /** Only the separately approved single-image tagging lane may exceed 3 MiB. */
+    stage?: "image_tagging"; maxImageBytes?: 8388608; maxImages?: 1 };
   beforeDispatch: (receipt: StrictSkillDispatchReceipt) => Promise<void>;
 };
 export function parseStrictExecutionOptions(raw: StrictSkillExecutionOptions): StrictSkillExecutionOptions {
@@ -140,11 +143,20 @@ export function parseStrictExecutionOptions(raw: StrictSkillExecutionOptions): S
   const schema = z.object({ modelSnapshot: StrictRegisteredModelSnapshotSchema, bindingHash: hash, stage: StrictSkillStageSchema,
     expectedSkillModelOverride: name.nullable(), expectedSkillTimeoutSeconds: z.number().int().min(5).max(600),
     maxCostCents: z.number().int().min(0).max(1000000000),
-    imageBudget: z.object({ policyId: name, maxInputTokensPerImage: z.number().int().min(1).max(10000000) }).strict().optional() }).strict();
+    imageBudget: strictImageBudgetSchema.optional() }).strict();
   const parsed = schema.safeParse(JSON.parse(strictRuntimeCanonical(copied)));
   if (!parsed.success) return strictRuntimeRefuse("STRICT_RUNTIME_OPTIONS_INVALID");
+  if (parsed.data.stage === "image_tagging"
+    ? !parsed.data.imageBudget || !("stage" in parsed.data.imageBudget)
+    : parsed.data.imageBudget && "stage" in parsed.data.imageBudget)
+    return strictRuntimeRefuse("STRICT_RUNTIME_OPTIONS_INVALID");
   return { ...parsed.data, beforeDispatch: descriptor.value };
 }
+const strictImageBudgetSchema = z.union([
+  z.object({ policyId: name, maxInputTokensPerImage: z.number().int().min(1).max(10000000) }).strict(),
+  z.object({ policyId: name, maxInputTokensPerImage: z.number().int().min(1).max(10000000),
+    stage: z.literal("image_tagging"), maxImageBytes: z.literal(8388608), maxImages: z.literal(1) }).strict(),
+]);
 export function strictCostUpperBound(snapshot: StrictRegisteredModelSnapshot, inputTokens: number, outputTokens: number): number {
   const rates = [snapshot.model.costPer1kInputTokens, snapshot.model.costPer1kOutputTokens];
   if (rates.some(value => value === null) || !Number.isSafeInteger(inputTokens) || !Number.isSafeInteger(outputTokens)
@@ -162,15 +174,20 @@ export function strictSkillMessages(system: string, user: string, rawAttachments
   if (textBytes > STRICT_SKILL_LIMITS.textBytes) return strictRuntimeRefuse("STRICT_RUNTIME_INPUT_TOO_LARGE");
   const attachments: Array<{ type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } }> = [];
   const raw = rawAttachments ?? [];
-  if (!Array.isArray(raw) || raw.length > STRICT_SKILL_LIMITS.imageCount) return strictRuntimeRefuse("STRICT_RUNTIME_ATTACHMENTS_INVALID");
+  const parsedImageBudget = imageBudget === undefined ? undefined : strictImageBudgetSchema.safeParse(imageBudget);
+  if (parsedImageBudget && !parsedImageBudget.success) return strictRuntimeRefuse("STRICT_RUNTIME_IMAGE_BUDGET_REQUIRED");
+  const tagging = parsedImageBudget?.success && "stage" in parsedImageBudget.data;
+  const maxImageBytes = tagging ? 8388608 : STRICT_SKILL_LIMITS.imageBytes;
+  if (!Array.isArray(raw) || raw.length > (tagging ? 1 : STRICT_SKILL_LIMITS.imageCount)
+    || tagging && raw.length !== 1) return strictRuntimeRefuse("STRICT_RUNTIME_ATTACHMENTS_INVALID");
   let imageBytes = 0;
   for (const item of raw) {
-    const parsed = z.object({ type: z.literal("image_url"), image_url: z.object({ url: z.string().max(4200000), detail: z.enum(["auto", "low", "high"]).optional() }).strict() }).strict().safeParse(item);
+    const parsed = z.object({ type: z.literal("image_url"), image_url: z.object({ url: z.string().max(tagging ? 11184900 : 4200000), detail: z.enum(["auto", "low", "high"]).optional() }).strict() }).strict().safeParse(item);
     if (!parsed.success) return strictRuntimeRefuse("STRICT_RUNTIME_ATTACHMENTS_INVALID");
     const comma = parsed.data.image_url.url.indexOf(","), prefix = parsed.data.image_url.url.slice(0, comma), content = parsed.data.image_url.url.slice(comma + 1);
     if (!/^data:image\/(?:png|jpeg|webp|gif);base64$/u.test(prefix) || !content || content.length % 4 !== 0 || /[^A-Za-z0-9+/=]/u.test(content)) return strictRuntimeRefuse("STRICT_RUNTIME_ATTACHMENTS_INVALID");
     const bytes = Buffer.from(content, "base64");
-    if (!bytes.length || bytes.length > STRICT_SKILL_LIMITS.imageBytes || bytes.toString("base64") !== content) return strictRuntimeRefuse("STRICT_RUNTIME_ATTACHMENTS_INVALID");
+    if (!bytes.length || bytes.length > maxImageBytes || bytes.toString("base64") !== content) return strictRuntimeRefuse("STRICT_RUNTIME_ATTACHMENTS_INVALID");
     imageBytes += bytes.length; attachments.push(parsed.data);
   }
   if (attachments.length && !snapshot.model.capabilityTags.includes("vision")) return strictRuntimeRefuse("STRICT_MODEL_VISION_REQUIRED");

@@ -5,6 +5,11 @@ import { getDb, withDbTransaction, type DbExecutor } from "../../../repositories
 import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { buildStorageUri, parseStorageUri, resolveStoredObjectUrl, storageGet, storagePut, type StorageProvider } from "../../../storage";
 import { recordHarnessFeedback } from "./harnessCompletion";
+import { genericArtifactPredicate, isDedicatedOnlyArtifact } from "../../../repositories/ai_os/dedicatedJobPolicy";
+
+function assertGenericArtifact(row: { artifactKey?: unknown; sourceTable?: unknown; sourceAiJobRunId?: unknown }) {
+  if (isDedicatedOnlyArtifact(row)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "IMAGE_TAGGING_USE_DEDICATED_ENDPOINT" });
+}
 
 export type ArtifactDomain = "listing" | "image" | "ads" | "video" | "agent" | "project" | "file" | "ops" | "tool" | "other";
 export type UnifiedArtifactType = "json" | "text" | "markdown" | "html" | "image" | "file" | "table" | "video" | "audio" | "other";
@@ -71,7 +76,7 @@ export const DATA_LIFECYCLE_POLICIES: DataLifecyclePolicy[] = [
     workspaceColumn: "workspaceId",
     lifecycleColumn: "retentionClass",
     archiveBatchColumn: "archiveBatchId",
-    terminalWhere: "status IN ('succeeded','failed','canceled')",
+    terminalWhere: "status IN ('succeeded','failed','canceled') AND kind <> 'knowledge.image_tagging.v1'",
     archiveAfterDays: 180,
     deleteAfterDays: 730,
     archiveValue: "archive",
@@ -138,7 +143,7 @@ export const DATA_LIFECYCLE_POLICIES: DataLifecyclePolicy[] = [
     timeColumn: "createdAt",
     workspaceColumn: "workspaceId",
     lifecycleColumn: "retentionClass",
-    terminalWhere: "status IN ('final','superseded','archived')",
+    terminalWhere: `status IN ('final','superseded','archived') AND ${genericArtifactPredicate("ai_artifacts")}`,
     archiveAfterDays: 365,
     deleteAfterDays: 1095,
     archiveValue: "archive",
@@ -484,6 +489,7 @@ export async function registerUnifiedArtifact(input: {
   executor?: DbExecutor;
   failOnError?: boolean;
 }): Promise<RegisteredArtifact | null> {
+  assertGenericArtifact(input);
   if (!lifecycleStoreAvailable) {
     if (input.failOnError) throw new Error("Artifact lifecycle store is unavailable");
     return null;
@@ -745,11 +751,11 @@ function unifiedArtifactQueryWhere(input: UnifiedArtifactScope & {
 }, params: unknown[]) {
   if (input.artifactId) {
     params.push(input.artifactId);
-    const clauses = ["a.`artifactId`=?"];
+    const clauses = ["a.`artifactId`=?", genericArtifactPredicate()];
     if (input.workspaceId !== undefined) clauses.push(exactNullableClause("workspaceId", input.workspaceId, params).replace("`workspaceId`", "a.`workspaceId`"));
     return clauses.join(" AND ");
   }
-  const clauses: string[] = [];
+  const clauses: string[] = [genericArtifactPredicate()];
   if (input.workspaceId !== undefined) {
     clauses.push(exactNullableClause("workspaceId", input.workspaceId, params).replace("`workspaceId`", "a.`workspaceId`"));
   }
@@ -818,6 +824,7 @@ async function resolveStoredArtifactContent(row: Record<string, any>) {
 
 async function hydrateUnifiedArtifactRow(row: Record<string, any> | null): Promise<UnifiedArtifactRecord | null> {
   if (!row) return null;
+  assertGenericArtifact(row);
   const content = await resolveStoredArtifactContent(row);
   return {
     ...row,
@@ -908,14 +915,17 @@ export async function listUnifiedArtifactVersions(input: UnifiedArtifactScope & 
     input.executor,
   );
   if (input.includeContent) return Promise.all(rows.map((row) => hydrateUnifiedArtifactRow(row)));
-  return rows.map((row) => ({
-    ...row,
-    version: Number(row.version || 1),
-    isCurrent: Number(row.isCurrent || 0),
-    content: null,
-    ref: buildUnifiedArtifactRef(row.artifactId, Number(row.version || 1)),
-    currentRef: buildUnifiedArtifactCurrentRef(unifiedArtifactScopeFromRow(row)),
-  }) as UnifiedArtifactRecord);
+  return rows.map((row) => {
+    assertGenericArtifact(row);
+    return ({
+      ...row,
+      version: Number(row.version || 1),
+      isCurrent: Number(row.isCurrent || 0),
+      content: null,
+      ref: buildUnifiedArtifactRef(row.artifactId, Number(row.version || 1)),
+      currentRef: buildUnifiedArtifactCurrentRef(unifiedArtifactScopeFromRow(row)),
+    }) as UnifiedArtifactRecord;
+  });
 }
 
 async function recordArtifactSelectionEvent(input: {
@@ -973,11 +983,12 @@ export async function selectUnifiedArtifactVersion(input: {
       ? ""
       : ` AND ${exactNullableClause("workspaceId", input.workspaceId, params)}`;
     const target = (await rawExecute(
-      `SELECT * FROM ai_artifacts WHERE artifactId=?${workspaceClause} FOR UPDATE`,
+      `SELECT * FROM ai_artifacts WHERE artifactId=?${workspaceClause} AND ${genericArtifactPredicate("ai_artifacts")} FOR UPDATE`,
       params,
       tx,
     ))[0];
     if (!target) throw new Error("Artifact version not found");
+    assertGenericArtifact(target);
     // Listing's operational row, immutable complete snapshot and Artifact
     // current pointer are one CAS transaction. Merely selecting a historical
     // pointer would bypass human review and leave these three sources split.
@@ -1089,7 +1100,17 @@ export async function recordUnifiedArtifactConsumption(input: {
   metadata?: Record<string, unknown>;
   executor?: DbExecutor;
 }) {
+  assertGenericArtifact(input.artifact);
+  // Caller-provided ref/key are not authority. Resolve only non-private
+  // persisted metadata before recording a generic downstream consumption.
   try {
+    const visible = await rawExecute(
+      `SELECT a.artifactId FROM ai_artifacts a WHERE a.artifactId=? AND ${genericArtifactPredicate()} LIMIT 1`,
+      [input.artifact.artifactId], input.executor,
+    );
+    // Preserve best-effort consumption tracking for missing/legacy artifacts;
+    // neither absence nor an excluded private record authorizes a new record.
+    if (!visible[0]) return;
     await rawExecute(
       `INSERT INTO ai_artifact_consumptions
        (consumptionId,workspaceId,projectId,artifactId,artifactKey,artifactVersion,artifactRef,consumerDomain,consumerType,consumerId,runId,nodeId,metadata)
@@ -1124,7 +1145,7 @@ export async function resolveCurrentProjectArtifacts(input: {
   limit?: number;
 }) {
   const params: unknown[] = [input.projectId];
-  const clauses = ["a.projectId=?", "a.status='final'", "a.isCurrent=1"];
+  const clauses = ["a.projectId=?", "a.status='final'", "a.isCurrent=1", genericArtifactPredicate()];
   if (input.workspaceId !== undefined) {
     clauses.push(exactNullableClause("workspaceId", input.workspaceId, params).replace("`workspaceId`", "a.`workspaceId`"));
   }
