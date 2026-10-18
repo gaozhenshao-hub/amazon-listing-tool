@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildUnavailableOperationsBoardOwnership, type OperationsBoardOwnership } from "./operationsBoardOwnership";
-import { buildProfitBoardReadResult, buildProfitBoardReadFailure, profitBoardMonths, ProfitBoardReadInputSchema, ProfitBoardReadResultSchema, ProfitBoardReadError, type ProfitBoardMonthSelection, type ProfitBoardReadInput } from "./profitBoardRead";
+import { buildProfitBoardReadResult, buildProfitBoardReadFailure, buildProfitBoardBodyProjection, profitBoardMonths, ProfitBoardReadInputSchema, ProfitBoardReadResultSchema, ProfitBoardReadError, type ProfitBoardMonthSelection, type ProfitBoardReadInput } from "./profitBoardRead";
 import { MONTHLY_FINANCIAL_METRICS, parseMonthlyFinancialBatch, findMonthlyFinancialSnapshot, type MonthlyFinancialBatchRecord, type MonthlyFinancialMetrics } from "./monthlyFinancialRead";
 
 const identity = { userId: 7, workspaceId: 11 };
@@ -13,6 +13,31 @@ function selections(rows = [row()], scoped = false): ProfitBoardMonthSelection[]
 }
 const build = (rows = [row()], patch: Partial<ProfitBoardReadInput> = {}) => buildProfitBoardReadResult({ identity, input: { ...input, ...patch }, selections: selections(rows) });
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+describe("metadata-free profit body extraction", () => {
+  function bodySource(rows = [row()]) {
+    const original = parseMonthlyFinancialBatch(record(rows)).rows;
+    return { input, rows: original, sources: profitBoardMonths(input.month).map(month => ({ month, status: original.some(row => row.yearMonth === month) ? "selected" as const : "not_found" as const,
+      selectedBatchId: original.some(row => row.yearMonth === month) ? 90 : null, visibleRows: original.filter(row => row.yearMonth === month).length })) };
+  }
+  it("preserves full trends, top-five, ratios and detail pages exactly without requiring batch metadata", () => {
+    const rows = [row({ yearMonth: "2026-09", financialProfit: -10 }), row({ financialProfit: 20 }), row({ parentAsin: "OTHER", asin: "OTHER", financialProfit: 0 })], live = build(rows), body = buildProfitBoardBodyProjection(bodySource(rows));
+    for (const key of ["months", "previousMonth", "analysisBasis", "partitions", "products", "pageRows", "page"] as const) expect(body[key]).toEqual(live[key]);
+    expect(body).not.toHaveProperty("sources"); expect(live.sources.at(-1)?.batch).toHaveProperty("fileName", "source.xlsx");
+  });
+  it.each(["calendar", "batch", "count", "duplicate"])("rejects a broken %s proof before presentation", kind => {
+    const source = bodySource();
+    if (kind === "calendar") source.sources[0].month = "2020-01";
+    if (kind === "batch") source.sources[5].selectedBatchId = 91;
+    if (kind === "count") source.sources[5].visibleRows = 0;
+    if (kind === "duplicate") source.rows.push(source.rows[0]);
+    expect(() => buildProfitBoardBodyProjection(source)).toThrow(ProfitBoardReadError);
+  });
+  it("keeps the live full-source admission rather than making incomplete source selection acceptable", () => {
+    const source = selections(); source[5].selection.complete = false;
+    expect(buildProfitBoardReadResult({ identity, input, selections: source })).toMatchObject({ status: "invalid", reasonCode: "scan_incomplete", products: [] });
+  });
+});
 
 function owners(rows: ReturnType<typeof row>[], assignment: Record<string, number[]> = {}): OperationsBoardOwnership {
   const parsed = parseMonthlyFinancialBatch(record(rows)).rows.filter(row => row.storeName === "Store" && row.country === "US" && ["child", "parent_only"].includes(row.allocation));

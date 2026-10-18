@@ -26,6 +26,7 @@ import { createOperationsBoardOperationJournal, OperationsBoardOperationJournalE
 import { assertOperationsBoardSchema } from "./operationsBoardSchemaAdmission";
 import { captureOperationsBoardEdition } from "./monthlyBoardHistoryCapture";
 import { positiveId, query } from "./monthlyBoardReadCore";
+import { filterOperationsBoardEditionRowsByOperator, OperationsBoardEditionOwnershipError } from "../../../shared/operationsBoardEditionOwnership";
 
 export interface OperationsBoardDatabase { transaction<T>(body: (tx: DbExecutor) => Promise<T>): Promise<T> }
 type Identity = { workspaceId: number; userId: number };
@@ -41,6 +42,7 @@ function fail(reason: string, code: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN"
   throw new TRPCError({ code, message: `OPERATIONS_BOARD_${reason}` });
 }
 function sanitize(error: unknown): never {
+  if (error instanceof OperationsBoardEditionOwnershipError) fail(error.code === "OPERATOR_NOT_VISIBLE" ? "OPERATOR_NOT_VISIBLE" : "OWNERSHIP_INVALID", error.code === "OPERATOR_NOT_VISIBLE" ? "FORBIDDEN" : "PRECONDITION_FAILED");
   if (error instanceof TRPCError && /^OPERATIONS_BOARD_[A-Z_]+$/u.test(error.message)) throw error;
   if (error instanceof TRPCError && ["UNAUTHORIZED", "FORBIDDEN"].includes(error.code)) fail("ACCESS_DENIED", error.code as "FORBIDDEN");
   if (error instanceof OperationsBoardEditionError || error instanceof OperationsBoardEditionStoreError || error instanceof OperationsBoardOperationJournalError || error instanceof OperationsBoardNoteStoreError) {
@@ -154,24 +156,30 @@ export function createOperationsBoardRepository(deps: {
       await admit(session.tx); const scope = scopeOf(session, input), source = store(session), loaded = await source.load(scope);
       const state = loaded?.state ?? uninitialized(scope), edition = input.editionId === null ? loaded?.currentEdition ?? null : await source.get(scope, input.editionId);
       const base = { identity: session.identity, scope, request: input, state, visibility: session.manager ? "full" as const : "scoped" as const };
+      const meaning = input.operatorId === undefined ? "all_currently_authorized_edition_rows" as const : "all_currently_authorized_edition_rows_matching_operator" as const;
       if (!edition) {
         const empty = { ...base, edition: null, status: input.editionId === null ? "uninitialized" as const : "not_found" as const,
           reasonCode: input.editionId === null ? "not_initialized" : "edition_not_found", authorizationHash: session.authorizationHash,
-          rows: [], sources: [], coverage: { complete: true as const, meaning: "all_currently_authorized_edition_rows" as const, rowCount: 0 }, notes: [] };
+          rows: [], sources: [], coverage: { complete: true as const, meaning, rowCount: 0 }, ownership: null, notes: [] };
         return OperationsBoardEditionReadResultSchema.parse({ ...empty, viewKey: operationsBoardEditionHash(empty) });
       }
-      const related = await partners(session), access = await authorizeCapture(session, edition.capture, { partnerSessions: related.sessions });
+      const related = await partners(session), access = await authorizeCapture(session, edition.capture, { partnerSessions: related.sessions, includeOwnership: true });
       if (!session.manager && !access.authorizedRows.length) {
         const hidden = { ...base, edition: null, status: "not_found" as const, reasonCode: "edition_not_found",
           authorizationHash: operationsBoardEditionHash({ access: access.authorizationHash, pairs: related.proof }), rows: [], sources: [],
-          coverage: { complete: true as const, meaning: "all_currently_authorized_edition_rows" as const, rowCount: 0 }, notes: [] };
+          coverage: { complete: true as const, meaning, rowCount: 0 }, ownership: null, notes: [] };
         return OperationsBoardEditionReadResultSchema.parse({ ...hidden, viewKey: operationsBoardEditionHash(hidden) });
       }
+      if (!access.ownership) fail("OWNERSHIP_UNAVAILABLE");
+      const selected = filterOperationsBoardEditionRowsByOperator(access.authorizedRows, access.ownership, session.identity.userId, input.operatorId);
+      const selectedSources = access.sources.flatMap(source => {
+        const rowCount = selected.rows.filter(row => row.yearMonth === source.month).length; return rowCount ? [{ ...source, rowCount }] : [];
+      });
       const editable = enabled() && edition.status === "current" && await canUpdate(session, permission);
-      const notes = await notesFor(session, edition, access, editable);
+      const notes = await notesFor(session, edition, { ...access, authorizedRows: selected.rows }, editable);
       const result = { ...base, edition: summary(edition), status: edition.status === "current" && state.status === "current_empty" ? "current_empty" as const : "ready" as const, reasonCode: null,
-        authorizationHash: operationsBoardEditionHash({ access: access.authorizationHash, pairs: related.proof, editable }), rows: access.authorizedRows, sources: access.sources,
-        coverage: { complete: true as const, meaning: "all_currently_authorized_edition_rows" as const, rowCount: access.authorizedRows.length }, notes };
+        authorizationHash: operationsBoardEditionHash({ access: access.authorizationHash, pairs: related.proof, editable, ownership: selected.ownership }), rows: selected.rows, sources: selectedSources,
+        coverage: { complete: true as const, meaning, rowCount: selected.rows.length }, ownership: selected.ownership, notes };
       return OperationsBoardEditionReadResultSchema.parse({ ...result, viewKey: operationsBoardEditionHash(result, OPERATIONS_BOARD_EDITION_LIMITS.publicBytes) });
     }); } catch (error) { return sanitize(error); }
   }

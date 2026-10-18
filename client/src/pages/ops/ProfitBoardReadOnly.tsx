@@ -6,6 +6,11 @@ import { subscribeMonthlyFinancialChanges } from "./monthlyFinancialWriteEvents"
 import { aggregateMonthlyFinancialRows } from "@shared/monthlyFinancialRead";
 import { ProfitMonthlyDetails } from "./ProfitMonthlyDetails";
 import ProfitAnalysisWorkflow from "./ProfitAnalysisWorkflow";
+import { buildOperationsBoardEditionProfitProjection, type OperationsBoardEditionProfitProjection } from "@shared/operationsBoardEditionProjection";
+import { OperationsBoardEditionStateInputSchema, type OperationsBoardEditionReadResult } from "@shared/operationsBoardEdition";
+import { normalizeMarketplaceCode } from "@shared/marketplaceIdentity";
+import { OperationsBoardEditionWorkspace } from "./OperationsBoardEditionWorkspace";
+import { EditionSourceHistory, EditionMonthSources, EditionCurrentProductTools } from "./OperationsBoardEditionDisplay";
 import {
   ProfitBoardReadInputSchema, ProfitBoardReadResultSchema,
   type ProfitBoardReadInput, type ProfitBoardReadResult, type ProfitBoardPoint,
@@ -33,7 +38,7 @@ function metricText(value: number | null, metric: Metric, currency: string | nul
 function Shell({ children }: { children: ReactNode }) {
   return <section aria-label="利润看板只读查看" className="manus-no-record min-w-0 max-w-full space-y-5 overflow-hidden rounded-xl border bg-card p-4 md:p-5">
     <header className="space-y-2"><h2 className="text-lg font-semibold">利润看板 · 已保存批次只读对比</h2>
-      <p className="text-sm text-muted-foreground">六个月趋势、当月与上月四项指标、增长 / 下降前五名及完整父子明细。读取看板只使用已保存批次，不同步、保存备注、归档或调用模型；利润分析须在独立流程中明确发起。</p>
+      <p className="text-sm text-muted-foreground">六个月趋势、当月与上月四项指标、增长 / 下降前五名及完整父子明细。实时来源与月度版本分别读取；备注、归档修订和利润分析均需明确发起，不随读取自动执行。</p>
       <p className="text-xs text-muted-foreground">产品明细内可读取双月依据、查看历史分析；生成与手动保存需另行确认，不随读取看板自动执行。</p>
       <p className="text-xs text-muted-foreground">按已保存批次选择；尚未核验店铺 / 月度完整覆盖。榜单只是可见来源的变化，不代表完整财务对账或因果解释。币种与汇总依据分区，不合并美国、加拿大、墨西哥。</p>
     </header>{children}
@@ -74,11 +79,11 @@ function TrendChart({ partition }: { partition: ProfitBoardPartition }) {
     </g>)}
   </svg><p className="text-xs text-muted-foreground">{partition.currency ? `纵轴：${partition.currency}；横轴：月份。缺失处不连线；部分观测详见数值表。` : "币种未知，仅保留原行金额，不绘制金额趋势或进行跨期排名。"}</p></div>;
 }
-function Ranking({ partition, direction, onSelect }: { partition: ProfitBoardPartition; direction: "rising" | "falling"; onSelect: (id: string, offset: number) => void }) {
+function Ranking({ partition, direction, onSelect, renderNote }: { partition: ProfitBoardPartition; direction: "rising" | "falling"; onSelect: (id: string, offset: number) => void; renderNote?: (parentAsin: string) => ReactNode }) {
   const title = direction === "rising" ? "利润增长前五名" : "利润下降前五名", rows = partition[direction];
   return <section aria-label={`${partition.id} ${title}`} className="space-y-2"><h5 className="font-medium">{title}</h5><p className="text-xs">基于全部匹配授权父组，不是当前页。只有两期同币种可比数据参与；点击读取完整父子来源。</p>
     {!rows.length ? <p className="text-sm">没有符合该方向的两期可比记录；不解释为零变化。</p> : <ScrollTable label={`${title}横向表`}><table className="w-full min-w-[1200px] text-left text-xs"><thead><tr>{["产品 / 读取明细", ...METRICS.flatMap(key => [`${METRIC_LABELS[key]}（当月）`, `${METRIC_LABELS[key]}（上月）`]), "利润变化"].map(text => <th className="p-3" key={text}>{text}</th>)}</tr></thead><tbody>{rows.map(rank => <tr key={rank.productId}>
-      <th scope="row" className={cellClass}><p>{rank.title || "名称未提供"}</p><p>{rank.parentAsin ?? "未分配"}</p><button type="button" className={buttonClass} onClick={() => onSelect(rank.productId, rank.productOffset)}>查看 {rank.parentAsin ?? rank.title} 完整父子明细</button><p>{rank.sourceRows.length} 个来源引用（引用本身不等同已返回原文）</p></th>
+      <th scope="row" className={cellClass}><p>{rank.title || "名称未提供"}</p><p>{rank.parentAsin ?? "未分配"}</p><button type="button" className={buttonClass} onClick={() => onSelect(rank.productId, rank.productOffset)}>查看 {rank.parentAsin ?? rank.title} 完整父子明细</button>{rank.parentAsin && renderNote?.(rank.parentAsin)}<p>{rank.sourceRows.length} 个来源引用（引用本身不等同已返回原文）</p></th>
       {METRICS.flatMap(key => [<td key={`${key}:current`} className={cellClass}>{metricText(rank.current[key], key, rank.currency)}</td>, <td key={`${key}:previous`} className={cellClass}>{metricText(rank.previous[key], key, rank.currency)}</td>])}
       <td className={cellClass}>{metricText(rank.delta, "profit", rank.currency)}</td>
     </tr>)}</tbody></table></ScrollTable>}
@@ -128,33 +133,48 @@ function MonthSource({ source }: { source: ProfitBoardReadResult["sources"][numb
 
 /** Presentation only. It neither reads data nor interprets saved owner IDs as
  * authorization. All financial arithmetic and ranking come from the server DTO. */
-export function ProfitBoardReadOnlyContent({ result, onPage, onMonth, initialProductId, renderProfitAnalysis }: {
-  result: ProfitBoardReadResult; onPage?: (offset: number, productId?: string) => void; onMonth?: (month: string) => void; initialProductId?: string; renderProfitAnalysis?: (product: ProfitBoardProduct) => ReactNode;
+export function ProfitBoardReadOnlyContent({ result, onPage, onMonth, initialProductId, renderProfitAnalysis, renderNote }: {
+  result: ProfitBoardReadResult | OperationsBoardEditionProfitProjection; onPage?: (offset: number, productId?: string) => void; onMonth?: (month: string) => void; initialProductId?: string; renderProfitAnalysis?: (product: ProfitBoardProduct) => ReactNode; renderNote?: (parentAsin: string) => ReactNode;
 }) {
   const [month, setMonth] = useState(result.request.month), [selectedId, setSelectedId] = useState(initialProductId ?? ""), [partitionOffset, setPartitionOffset] = useState(0);
-  const selected = result.products.find(product => product.id === selectedId), selectedMonth = result.sources.find(source => source.month === month) ?? result.sources.at(-1);
+  const selected = result.products.find(product => product.id === selectedId), selectedMonth = "header" in result ? undefined : result.sources.find(source => source.month === month) ?? result.sources.at(-1);
   function select(id: string, offset: number) { if (result.products.some(product => product.id === id)) setSelectedId(id); else onPage?.(Math.floor(offset / result.page.limit) * result.page.limit, id); }
-  if (result.status !== "ready") return <div role={result.status === "invalid" ? "alert" : "status"} className="space-y-2"><p>{result.status === "missing" ? "利润月报来源表尚未接通，不表示零记录。" : result.status === "not_found" ? "没有当前可读取来源，不显示为零利润。" : "来源损坏、不完整或超出限额；不返回部分看板或更旧批次。"}</p><p>{result.missingReason}</p><p className="text-xs">状态依据：{result.reasonCode}</p></div>;
+  if (!("header" in result) && result.status !== "ready") return <div role={result.status === "invalid" ? "alert" : "status"} className="space-y-2"><p>{result.status === "missing" ? "利润月报来源表尚未接通，不表示零记录。" : result.status === "not_found" ? "没有当前可读取来源，不显示为零利润。" : "来源损坏、不完整或超出限额；不返回部分看板或更旧批次。"}</p><p>{result.missingReason}</p><p className="text-xs">状态依据：{result.reasonCode}</p></div>;
   return <div className="min-w-0 space-y-5">
     <p className="break-words text-sm">范围：{result.request.storeName} / {result.request.country} / {result.request.parentAsin ?? "全部当前授权父体"} · 基准月 {result.request.month} 对比 {result.previousMonth} · 搜索：{result.request.search || "无"}</p>
-    <section aria-label="六个月数据入口" className="space-y-3"><h3 className="font-semibold">六个月数据与来源</h3><p className="text-xs">这是各期当前已保存来源的对比，不是已冻结归档版本；没有创建归档、备注或财务重述记录。</p><div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">{result.sources.map(source => <button key={source.month} type="button" aria-pressed={selectedMonth?.month === source.month} className={`${buttonClass} text-left`} onClick={() => setMonth(source.month)}>{source.month}<span className="mt-1 block text-xs">{source.status === "selected" ? `来源批次 ${source.selectedBatchId}` : source.status === "not_visible" ? "无当前可见来源" : "缺月度来源"}</span></button>)}</div>
+    {"header" in result ? <><EditionMonthSources months={result.months} sources={result.header.sources} /><EditionSourceHistory header={result.header} /></> : <section aria-label="六个月数据入口" className="space-y-3"><h3 className="font-semibold">六个月数据与来源</h3><p className="text-xs">这是各期当前已保存来源的对比，不是已冻结归档版本；没有创建归档、备注或财务重述记录。</p><div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">{result.sources.map(source => <button key={source.month} type="button" aria-pressed={selectedMonth?.month === source.month} className={`${buttonClass} text-left`} onClick={() => setMonth(source.month)}>{source.month}<span className="mt-1 block text-xs">{source.status === "selected" ? `来源批次 ${source.selectedBatchId}` : source.status === "not_visible" ? "无当前可见来源" : "缺月度来源"}</span></button>)}</div>
       {selectedMonth && <><MonthSource source={selectedMonth} />{onMonth && <button type="button" className={buttonClass} onClick={() => onMonth(selectedMonth.month)}>以 {selectedMonth.month} 为基准重新读取六个月</button>}</>}
-    </section>
+    </section>}
     <section aria-label="币种与汇总依据分区" className="min-w-0 space-y-4"><h3 className="font-semibold">六个月趋势与全筛选榜单</h3><p className="text-sm">共 {result.partitions.length} 个独立分区、{result.page.totalGroups} 个完整父组 / 独立原行、{result.page.totalRows} 个来源行。统计覆盖全部授权搜索匹配组，非本页；不同币种、父体原报表及子体派生合计不能相加。</p>
       <LocalPager label="利润分区" offset={partitionOffset} total={result.partitions.length} size={PARTITION_LIMIT} onPage={setPartitionOffset} />
       {result.partitions.slice(partitionOffset, partitionOffset + PARTITION_LIMIT).map(partition => <section key={partition.id} className="min-w-0 space-y-4 rounded border p-3"><h4 className="font-medium">{partition.currency ?? "币种未知（每个原行独立）"} · {BASIS_LABELS[partition.basis]} · {partition.productCount} 组</h4><p className="text-xs">{partition.missingReason}</p>
         <TrendChart partition={partition} /><PointTable label={`${partition.id} 六期趋势完整数值`} points={partition.trend} currency={partition.currency} />
-        <Ranking partition={partition} direction="rising" onSelect={select} /><Ranking partition={partition} direction="falling" onSelect={select} />
+        <Ranking partition={partition} direction="rising" onSelect={select} renderNote={renderNote} /><Ranking partition={partition} direction="falling" onSelect={select} renderNote={renderNote} />
       </section>)}
     </section>
     <section aria-label="完整父体列表" className="min-w-0 space-y-3"><h3 className="font-semibold">完整父组 / 独立原行列表</h3><p className="text-sm">本页 {result.products.length} / 全筛选 {result.page.totalGroups} 组；父组不拆页。页内来源 {result.pageRows.length} 行不等于全筛选 {result.page.totalRows} 行。</p>
       <nav aria-label="父体列表分页" className="flex flex-wrap gap-3"><button type="button" className={buttonClass} disabled={!onPage || result.page.offset === 0} onClick={() => onPage?.(Math.max(0, result.page.offset - result.page.limit))}>父体上一页</button><span className="self-center text-sm">偏移 {result.page.offset} · 每页最多 {result.page.limit} 组</span><button type="button" className={buttonClass} disabled={!onPage || !result.page.hasMore} onClick={() => result.page.nextOffset !== null && onPage?.(result.page.nextOffset)}>父体下一页</button></nav>
       {!result.products.length ? <p>当前筛选页没有可见产品，不补造零值产品。</p> : <ScrollTable label="父体当月上月四指标横向表"><table className="w-full min-w-[1500px] text-left text-xs"><thead><tr>{["父体 / 来源组", ...METRICS.flatMap(key => [`${METRIC_LABELS[key]} ${result.request.month}`, `${METRIC_LABELS[key]} ${result.previousMonth}`, `${METRIC_LABELS[key]} 变化`])].map(text => <th className="p-3" key={text}>{text}</th>)}</tr></thead><tbody>{result.products.map(product => <tr key={product.id}>
-        <th scope="row" className={cellClass}><p>{product.parentAsin ?? "未分配 / 歧义原行"}</p><p>{product.title || "名称未提供"}</p><p>{product.currency ?? "币种未知"} · {BASIS_LABELS[product.basis]}</p><button type="button" className={buttonClass} onClick={() => setSelectedId(product.id)}>展开 {product.parentAsin ?? product.title} 全部子体与原行</button></th>
+        <th scope="row" className={cellClass}><p>{product.parentAsin ?? "未分配 / 歧义原行"}</p><p>{product.title || "名称未提供"}</p><p>{product.currency ?? "币种未知"} · {BASIS_LABELS[product.basis]}</p><button type="button" className={buttonClass} onClick={() => setSelectedId(product.id)}>展开 {product.parentAsin ?? product.title} 全部子体与原行</button>{product.parentAsin && renderNote?.(product.parentAsin)}</th>
         {METRICS.flatMap(metric => [<td className={cellClass} key={`${metric}:current`}>{metricText(product.current[metric], metric, product.currency)}</td>, <td className={cellClass} key={`${metric}:previous`}>{metricText(product.previous[metric], metric, product.currency)}</td>, <td className={cellClass} key={`${metric}:change`}><Change product={product} metric={metric} /></td>])}
       </tr>)}</tbody></table></ScrollTable>}
-      {selected && <><button type="button" className={buttonClass} onClick={() => setSelectedId("")}>收起产品明细</button><ProductDetail key={selected.id} product={selected} rows={result.pageRows} />{renderProfitAnalysis?.(selected)}</>}
+      {selected && <><button type="button" className={buttonClass} onClick={() => setSelectedId("")}>收起产品明细</button>{selected.parentAsin && renderNote?.(selected.parentAsin)}<ProductDetail key={selected.id} product={selected} rows={result.pageRows} />{renderProfitAnalysis?.(selected)}</>}
     </section>
+  </div>;
+}
+
+export function ProfitEditionContent({ read, renderNote }: { read: OperationsBoardEditionReadResult; renderNote: (parentAsin: string) => ReactNode }) {
+  const [search, setSearch] = useState(""), [appliedSearch, setAppliedSearch] = useState("");
+  const [page, setPage] = useState<{ offset: number; selectedId?: string }>({ offset: 0 });
+  const computed = useMemo(() => {
+    try { return { result: buildOperationsBoardEditionProfitProjection({ read, input: { search: appliedSearch, groupOffset: page.offset, groupLimit: GROUP_LIMIT } }), error: false }; }
+    catch { return { result: null, error: true }; }
+  }, [read, appliedSearch, page.offset]);
+  const result = computed.result;
+  if (computed.error || !result) return <p role="alert">归档利润原行或完整计算依据无法核验，未显示部分趋势，也未回退实时来源。请重新读取。</p>;
+  return <div className="min-w-0 space-y-4"><form className="flex flex-wrap items-end gap-3" aria-label="归档利润搜索" onSubmit={event => { event.preventDefault(); setAppliedSearch(search); setPage({ offset: 0 }); }}><label className="text-sm">版本内利润产品搜索<input aria-label="版本内利润产品搜索" maxLength={200} className="ml-2 rounded border p-2" value={search} onChange={event => setSearch(event.currentTarget.value)} /></label><button className={buttonClass} type="submit">筛选完整利润父组</button></form>
+    <ProfitBoardReadOnlyContent key={JSON.stringify([appliedSearch, page])} result={result} renderNote={renderNote} initialProductId={page.selectedId} onPage={(offset, selectedId) => setPage({ offset, selectedId })}
+      renderProfitAnalysis={product => product.parentAsin && (product.basis === "child_rows" || product.basis === "reported_parent_row") ? <EditionCurrentProductTools><ProfitAnalysisWorkflow identity={read.identity} scope={{ storeName: read.scope.storeName, country: read.scope.country, parentAsin: product.parentAsin, currency: product.currency, basis: product.basis }} months={result.months} /></EditionCurrentProductTools> : null} />
   </div>;
 }
 
@@ -171,6 +191,7 @@ function OwnedProfitBoard({ owner }: { owner: Owner }) {
   const client = trpc.useUtils().client;
   const [scope, setScope] = useState({ month: "", storeName: "", country: "", parentAsin: "", search: "" }), [state, setState] = useState<ReadState>({ status: "idle" });
   const [ownership, setOwnership] = useState<ProfitBoardReadResult["ownership"] | null>(null), [operatorId, setOperatorId] = useState<number | undefined>();
+  const [editionScope, setEditionScope] = useState<{ storeName: string; country: string } | null>(null);
   const canViewAll = ["super_admin", "admin", "ops_manager"].includes(owner.role);
   const sequence = useRef(0), pending = useRef<AbortController | null>(null), active = useRef(false);
   useEffect(() => () => { sequence.current++; pending.current?.abort(); }, []);
@@ -198,6 +219,14 @@ function OwnedProfitBoard({ owner }: { owner: Owner }) {
   useEffect(() => subscribeMonthlyFinancialChanges(notice => {
     if (notice.action !== "upload" && notice.workspaceId === owner.workspaceId) { setOwnership(null); if (active.current) void readRef.current(); }
   }), [owner.workspaceId]);
+  function openEditions() {
+    const parsed = OperationsBoardEditionStateInputSchema.safeParse({ expectedWorkspaceId: owner.workspaceId, scope: { storeName: scope.storeName.trim(), country: normalizeMarketplaceCode(scope.country.trim()) } });
+    if (!parsed.success) { clear(); setState({ status: "invalid" }); return; }
+    clear(); setEditionScope(parsed.data.scope);
+  }
+  if (editionScope) return <Shell><button type="button" className={buttonClass} onClick={() => {
+    if (window.confirm("返回实时来源读取？未保存备注草稿将丢失；已提交但结果未知的操作仍保留原操作编号，可重新进入核对。")) setEditionScope(null);
+  }}>返回实时来源读取</button><OperationsBoardEditionWorkspace owner={owner} scope={editionScope} renderContent={(result, renderNote) => <ProfitEditionContent key={result.viewKey} read={result} renderNote={renderNote} />} /></Shell>;
   return <Shell><form aria-label="利润看板读取范围" className="space-y-3" onSubmit={event => { event.preventDefault(); void read(); }}>
     <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">{([ ["month", "基准月份（YYYY-MM）"], ["storeName", "店铺"], ["country", "站点 / 国家代码"], ["parentAsin", "父 ASIN（可选）"], ["search", "产品搜索（保留完整父组）"] ] as const).map(([key, label]) => <label className="min-w-0 text-sm" key={key}>{label}<input className="mt-1 w-full min-w-0 rounded border bg-background p-2" aria-label={`利润看板${label}`} autoComplete="off" value={scope[key]} onChange={event => { const value = event.currentTarget.value; clear(); setOwnership(null); setOperatorId(undefined); setScope(old => ({ ...old, [key]: value })); }} /></label>)}</div>
     <label className="block min-w-0 text-sm">运营<select aria-label="利润看板运营" className="mt-1 block w-full min-w-0 max-w-md rounded border bg-background p-2" value={operatorId ?? "all"} disabled={ownership?.status !== "ready" || state.status === "loading"} onChange={event => {
@@ -208,7 +237,7 @@ function OwnedProfitBoard({ owner }: { owner: Owner }) {
     {operatorId !== undefined && <button type="button" className={buttonClass} onClick={() => { clear(); setOperatorId(undefined); setOwnership(null); }}>清除运营筛选</button>}
     <p className="text-xs">{ownership?.status === "unavailable" ? "运营目录不可用；仅保留管理员无运营筛选的授权财务，不表示产品未分配负责人。" : ownership ? `当前数字负责人目录（${ownership.visibility === "full" ? "工作区授权目录" : "仅本人授权目录"}）；选择后点击读取，由服务器在分页前筛选完整父体。` : "请先读取当前范围以核验数字负责人目录；未核验时不能选择其他运营。"} 搭档关系尚未配置，不按姓名推断“自己和搭档”。负责人依据为当前人工分配或已确认来源映射，不是历史归档负责人。</p>
     <p className="text-xs text-muted-foreground">父 ASIN 留空时只读取服务器当前授权父体；搜索和留空都不是权限。不会按保存的姓名或 ownerIds 授权；不跨店 / 站点合计。</p>
-    <div className="flex flex-wrap gap-3"><button type="submit" className={buttonClass}>读取已有利润看板</button><button type="button" className={buttonClass} onClick={clear}>取消并清除利润看板</button></div>
+    <div className="flex flex-wrap gap-3"><button type="submit" className={buttonClass}>读取已有利润看板</button><button type="button" className={buttonClass} onClick={clear}>取消并清除利润看板</button><button type="button" className={buttonClass} onClick={openEditions}>打开当前／历史归档看板</button></div><p className="text-xs">归档入口只需店铺和站点；基准月由选中的版本决定，不沿用实时搜索或运营筛选。</p>
   </form>
     {state.status === "loading" && <p role="status">正在读取六个月已保存利润来源…</p>}
     {state.status === "invalid" && <p role="alert">利润看板范围不完整或不合法，未发送请求。</p>}

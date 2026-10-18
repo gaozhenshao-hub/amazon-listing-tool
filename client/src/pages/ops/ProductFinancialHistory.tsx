@@ -7,7 +7,7 @@ type Product = ProductBoardReadResult["products"][number];
 /** Reuses the complete server-authorized history and existing financial
  * aggregation. No old hand-maintained profit or cost-sheet value is an input. */
 export function ProductFinancialHistory({ product, rows, sources }: {
-  product: Product; rows: ProductBoardReadResult["pageRows"]; sources: ProductBoardReadResult["sources"];
+  product: Product; rows: ProductBoardReadResult["pageRows"]; sources: ReadonlyArray<{ month: string; missingReason: string | null }>;
 }) {
   const [offset, setOffset] = useState(0), size = 20;
   const { originals, groups, complete } = useMemo(() => {

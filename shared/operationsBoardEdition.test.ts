@@ -88,7 +88,9 @@ function preview(): OperationsBoardEditionPreviewResult {
 function execute() { const current = preview(); return { ...current.request, operationId, expectedStateVersion: 0, expectedSourceHash: current.sourceHash!, expectedPreviewKey: current.previewKey! }; }
 function read(): OperationsBoardEditionReadResult {
   const original = edition();
-  return { identity, scope, request: { ...base, editionId: null }, state: state(), edition: summary(original), status: "ready", reasonCode: null, visibility: "scoped", authorizationHash: "c".repeat(64), rows: original.capture.rows, sources: original.capture.sources, coverage: { complete: true, meaning: "all_currently_authorized_edition_rows", rowCount: 1 }, notes: [note()], viewKey: "d".repeat(64) };
+  return { identity, scope, request: { ...base, editionId: null }, state: state(), edition: summary(original), status: "ready", reasonCode: null, visibility: "scoped", authorizationHash: "c".repeat(64), rows: original.capture.rows, sources: original.capture.sources, coverage: { complete: true, meaning: "all_currently_authorized_edition_rows", rowCount: 1 }, notes: [note()], viewKey: "d".repeat(64),
+    ownership: { version: 1, meaning: "current_authorization_not_historical_membership", visibility: "scoped", operators: [{ userId: 3, displayName: "Current user", relation: "self" }],
+      parents: [{ parentAsin: "SYNTHETIC-PARENT", operatorIds: [3], status: "resolved", basis: "confirmed_source_mapping", sourceMonth: "2026-09" }], selectedOperatorId: null } };
 }
 
 describe("exact policy-bound requests", () => {
@@ -101,6 +103,10 @@ describe("exact policy-bound requests", () => {
     ["recover", OperationsBoardEditionRecoverInputSchema, { ...base, operationId, decision: "check" }],
   ] as const;
   it.each(cases)("accepts exact %s input without rewriting it", (_name, schema, value) => { expect(schema.parse(value)).toEqual(value); });
+  it("accepts numeric-only operator filtering without accepting partner or name authority", () => {
+    expect(OperationsBoardEditionReadInputSchema.parse({ ...base, editionId: null, operatorId: 4 }).operatorId).toBe(4);
+    for (const operatorId of ["4", "External A", 0, null, -1, 1.5, 2147483648]) expect(OperationsBoardEditionReadInputSchema.safeParse({ ...base, editionId: null, operatorId }).success).toBe(false);
+  });
   it.each(cases)("rejects caller source, authority and pagination-as-capture on %s", (_name, schema, value) => {
     for (const extra of [{ rows: [] }, { capture: capture() }, { userId: 8 }, { role: "admin" }, { canEdit: true }, { partnerId: 8 }, { sourceHash: "a".repeat(64) }, { force: true }]) expect(schema.safeParse({ ...value, ...extra }).success).toBe(false);
     expect(schema.safeParse({ ...value, scope: { ...requestScope, parentAsin: "OTHER" } }).success).toBe(false);
@@ -290,7 +296,21 @@ describe("sanitized full authorized reads and stable archive history", () => {
   });
   it("allows an explicitly empty current month retaining older visible history", () => {
     const value = read(), old = capture("2026-08"); value.state.status = "current_empty"; value.status = "current_empty"; value.rows = old.rows; value.sources = old.sources;
+    value.ownership!.parents[0].sourceMonth = "2026-08";
     expect(OperationsBoardEditionReadResultSchema.parse(value).rows).toHaveLength(1);
+  });
+  it("requires visible read ownership and matching numeric selection coverage", () => {
+    const value = read(); expect(OperationsBoardEditionReadResultSchema.safeParse({ ...value, ownership: null }).success).toBe(false);
+    value.request.operatorId = 3; value.ownership!.selectedOperatorId = 3;
+    expect(OperationsBoardEditionReadResultSchema.safeParse(value).success).toBe(false);
+    value.coverage.meaning = "all_currently_authorized_edition_rows_matching_operator";
+    expect(OperationsBoardEditionReadResultSchema.safeParse(value).success).toBe(true);
+    value.request.operatorId = 4; expect(OperationsBoardEditionReadResultSchema.safeParse(value).success).toBe(false);
+  });
+  it("requires null ownership for an absent or hidden edition", () => {
+    const hidden = { ...read(), edition: null, status: "not_found", reasonCode: "edition_not_found", rows: [], sources: [], notes: [], coverage: { complete: true, meaning: "all_currently_authorized_edition_rows", rowCount: 0 } };
+    expect(OperationsBoardEditionReadResultSchema.safeParse(hidden).success).toBe(false);
+    expect(OperationsBoardEditionReadResultSchema.safeParse({ ...hidden, ownership: null }).success).toBe(true);
   });
   it("requires a consistent descending history cursor and refuses changed history between pages", () => {
     const archived = (id: number) => summary(edition({ id, status: "archived", archivedAt: stamp }));

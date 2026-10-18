@@ -36,6 +36,11 @@ const resultSchema = z.object({ identity: identitySchema, request: ProfitBoardRe
 export const ProfitBoardReadResultSchema = resultSchema.superRefine((value, ctx) => validateResult(value, message => ctx.addIssue({ code: z.ZodIssueCode.custom, message })));
 export type ProfitBoardReadResult = z.infer<typeof ProfitBoardReadResultSchema>;
 export type ProfitBoardMonthSelection = { month: string; selection: MonthlyFinancialSnapshotSelection; authorizedRowRefs?: ProfitBoardSourceRef[]; metadataVisibility: "full" | "scoped" };
+/** The shared presentation math needs only real per-month availability and row
+ * membership. It must never fabricate live import metadata for an edition. */
+export const ProfitBoardBodySourceSchema = z.object({ month: monthSchema, status: z.enum(["selected", "not_found", "not_visible"]), selectedBatchId: id.nullable(), visibleRows: z.number().int().min(0).max(10000) }).strict();
+export type ProfitBoardBodySource = z.infer<typeof ProfitBoardBodySourceSchema>;
+export type ProfitBoardBodyProjection = Pick<ProfitBoardReadResult, "months" | "previousMonth" | "analysisBasis" | "partitions" | "products" | "pageRows" | "page">;
 
 export function profitBoardMonths(month: string): string[] {
   monthSchema.parse(month);
@@ -57,7 +62,7 @@ function change(current: number | null, previous: number | null, margin = false)
 function comparison(current: ProfitBoardPoint, previous: ProfitBoardPoint, comparable: boolean) {
   return { profit: change(comparable ? current.profit : null, comparable ? previous.profit : null), qty: change(comparable ? current.qty : null, comparable ? previous.qty : null), sales: change(comparable ? current.sales : null, comparable ? previous.sales : null), margin: change(comparable ? current.margin : null, comparable ? previous.margin : null, true) };
 }
-function point(month: string, rows: MonthlyFinancialReadRow[], source: z.infer<typeof sourceSchema>, currency: string | null, basis: ProfitBoardBasis): ProfitBoardPoint {
+function point(month: string, rows: MonthlyFinancialReadRow[], source: Pick<ProfitBoardBodySource, "status">, currency: string | null, basis: ProfitBoardBasis): ProfitBoardPoint {
   let status: ProfitBoardPoint["status"] = rows.length ? currency === null ? "unknown_currency" : "observed" : source.status === "not_found" ? "missing_month" : source.status === "not_visible" ? "not_visible" : "missing_product";
   const ambiguous = basis === "reported_parent_row" && rows.length > 1;
   if (ambiguous) status = "ambiguous";
@@ -186,6 +191,27 @@ export function buildProfitBoardReadResult(value: { identity: ProfitBoardReadIde
     if (ownership && value.selections.some(selection => selection.metadataVisibility !== ownership!.visibility)) throw new Error("visibility");
     filteredRows = filterOperationsBoardRowsByOperator(selectedRows, ownership, input.operatorId);
   } catch { throw new ProfitBoardReadError("ownership_invalid"); }
+  const body = buildProfitBoardBodyProjection({ input, rows: selectedRows, filteredRows, sources: sources.map(({ month, status, selectedBatchId, visibleRows }) => ({ month, status, selectedBatchId, visibleRows })) });
+  return checkedResult({ identity, request: input, ...(ownership ? { ownership } : {}), status: "ready", reasonCode: null, missingReason: null, timestampBasis: "database_datetime_without_timezone", sources, ...body });
+}
+
+/** Pure, complete-filter-before-pagination presentation. Authorization and
+ * whole-scope source selection stay in the caller; this accepts no metadata
+ * shortcuts, synthetic batches or owner grant inferred from names. */
+export function buildProfitBoardBodyProjection(value: { input: ProfitBoardReadInput; rows: MonthlyFinancialReadRow[]; filteredRows?: MonthlyFinancialReadRow[]; sources: ProfitBoardBodySource[] }): ProfitBoardBodyProjection {
+  const input = ProfitBoardReadInputSchema.parse(value.input), selectedRows = value.rows, filteredRows = value.filteredRows ?? selectedRows, months = profitBoardMonths(input.month);
+  if (selectedRows.length > PROFIT_BOARD_READ_LIMITS.rows || filteredRows.length > selectedRows.length || value.sources.length !== 6) throw new ProfitBoardReadError("body_limit");
+  const sources = value.sources.map(source => ProfitBoardBodySourceSchema.parse(source)), sourceIndex = new Map(sources.map(source => [source.month, source]));
+  if (sourceIndex.size !== 6 || sources.some((source, index) => source.month !== months[index] || (source.status === "selected" ? source.selectedBatchId === null : source.selectedBatchId !== null || source.visibleRows !== 0))) throw new ProfitBoardReadError("body_sources");
+  const originals = new Map<string, MonthlyFinancialReadRow>(), counts = new Map<string, number>();
+  for (const row of selectedRows) {
+    MonthlyFinancialReadRowSchema.parse(row); const source = sourceIndex.get(row.yearMonth), key = refKey(row);
+    if (originals.has(key) || row.storeName !== input.storeName || row.country !== input.country || source?.status !== "selected" || source.selectedBatchId !== row.batchId
+      || input.parentAsin && (row.parentAsin !== input.parentAsin || ["ambiguous", "unallocated"].includes(row.allocation))) throw new ProfitBoardReadError("body_row_membership");
+    originals.set(key, row); counts.set(row.yearMonth, (counts.get(row.yearMonth) ?? 0) + 1);
+  }
+  if ([...counts].some(([month, count]) => count > sourceIndex.get(month)!.visibleRows) || new Set(filteredRows.map(refKey)).size !== filteredRows.length
+    || filteredRows.some(row => !equal(originals.get(refKey(row)), row))) throw new ProfitBoardReadError("body_filtered_membership");
   const groups = new Map<string, { partitionId: string; parentAsin: string | null; basis: ProfitBoardBasis; currency: string | null; rows: MonthlyFinancialReadRow[]; unknownSource: ProfitBoardSourceRef | null }>();
   for (const row of filteredRows) {
     const basis: ProfitBoardBasis = ["unallocated", "ambiguous"].includes(row.allocation) ? "unallocated_rows" : row.allocation === "parent_only" ? "reported_parent_row" : "child_rows", unknownSource = row.currency === null ? { batchId: row.batchId, rowIndex: row.rowIndex } : null;
@@ -225,5 +251,7 @@ export function buildProfitBoardReadResult(value: { identity: ProfitBoardReadIde
     return { id: partitionId, storeName: input.storeName, country: input.country, currency: first.currency, basis: first.basis, unknownSource: source.unknownSource, productCount: values.length, trend, rising: eligible.filter(product => product.comparison.profit.delta! > 0).sort((a, b) => b.comparison.profit.delta! - a.comparison.profit.delta! || a.id.localeCompare(b.id)).slice(0, 5).map(rank), falling: eligible.filter(product => product.comparison.profit.delta! < 0).sort((a, b) => a.comparison.profit.delta! - b.comparison.profit.delta! || a.id.localeCompare(b.id)).slice(0, 5).map(rank), missingReason: first.currency === null ? "币种未知的每个原行独立显示；不跨行或跨期比较金额" : first.basis === "reported_parent_row" ? "原报表父体合计单独分区，不与子体派生合计相加" : first.basis === "unallocated_rows" ? "未分配/父体歧义原行独立，不摊入父体或增长下降排名" : null };
   });
   const pageProducts = products.slice(input.groupOffset, input.groupOffset + input.groupLimit), pageRefs = new Set(pageProducts.flatMap(product => product.sourceRows.map(refKey))), pageRows = selectedRows.filter(row => pageRefs.has(refKey(row))), hasMore = input.groupOffset + pageProducts.length < products.length;
-  return checkedResult({ identity, request: input, ...(ownership ? { ownership } : {}), status: "ready", reasonCode: null, missingReason: null, months, previousMonth: months[4], analysisBasis: "all_authorized_search_matched_groups", timestampBasis: "database_datetime_without_timezone", sources, partitions, products: pageProducts, pageRows, page: { offset: input.groupOffset, limit: input.groupLimit, totalGroups: products.length, totalRows: matched.reduce((sum, [, group]) => sum + group.rows.length, 0), nextOffset: hasMore ? input.groupOffset + pageProducts.length : null, hasMore } });
+  const body: ProfitBoardBodyProjection = { months, previousMonth: months[4], analysisBasis: "all_authorized_search_matched_groups", partitions, products: pageProducts, pageRows, page: { offset: input.groupOffset, limit: input.groupLimit, totalGroups: products.length, totalRows: matched.reduce((sum, [, group]) => sum + group.rows.length, 0), nextOffset: hasMore ? input.groupOffset + pageProducts.length : null, hasMore } };
+  if (monthlyFinancialJsonBytes(body) > PROFIT_BOARD_READ_LIMITS.resultBytes) throw new ProfitBoardReadError("body_result_limit");
+  return body;
 }

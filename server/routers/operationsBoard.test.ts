@@ -34,7 +34,7 @@ const partnerUnknown = { identity, operationId, status: "unknown", requestHash: 
 const outputs = {
   state: { identity, scope, request: requests.state, state, capabilities: { initialize: unavailable, publishRevision: unavailable } },
   read: { identity, scope, request: requests.read, state, edition: null, status: "uninitialized", reasonCode: "not_initialized", visibility: "full", authorizationHash: hash,
-    rows: [], sources: [], coverage: { complete: true, meaning: "all_currently_authorized_edition_rows", rowCount: 0 }, notes: [], viewKey: hash },
+    rows: [], sources: [], coverage: { complete: true, meaning: "all_currently_authorized_edition_rows", rowCount: 0 }, ownership: null, notes: [], viewKey: hash },
   history: { identity, scope, request: requests.history, state, historyVersion: hash, items: [], page: { nextCursor: null, hasMore: false } },
   preview: { identity, scope, request: requests.preview, state, original: null, targetMonth: null, sourceHash: null, sourceRowCount: null, previewKey: null,
     capability: unavailable, effects: { movesCurrent: true, preservesOriginal: true, copiesNotes: false, createsPastEditions: false } },

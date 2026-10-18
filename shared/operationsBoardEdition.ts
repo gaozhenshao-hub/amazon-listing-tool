@@ -2,6 +2,7 @@ import { z } from "zod";
 import SHA256 from "crypto-js/sha256";
 import { normalizeMarketplaceCode } from "./marketplaceIdentity";
 import { MonthlyFinancialBatchMetadataSchema, MonthlyFinancialReadRowSchema, monthlyFinancialJsonBytes, type MonthlyFinancialReadRow } from "./monthlyFinancialRead";
+import { OperationsBoardEditionOwnershipSchema, validateOperationsBoardEditionOwnershipResult } from "./operationsBoardEditionOwnership";
 
 /** Internal captures are complete, pre-authorization source snapshots. They are
  * not accepted by a public mutation and must not be returned to ordinary users. */
@@ -52,7 +53,7 @@ export function operationsBoardEditionScopeKey(scope: OperationsBoardEditionScop
 const baseInput = { expectedWorkspaceId: id, scope: requestScope };
 export const OperationsBoardEditionStateInputSchema = z.object(baseInput).strict();
 export type OperationsBoardEditionStateInput = z.infer<typeof OperationsBoardEditionStateInputSchema>;
-export const OperationsBoardEditionReadInputSchema = z.object({ ...baseInput, editionId: id.nullable() }).strict();
+export const OperationsBoardEditionReadInputSchema = z.object({ ...baseInput, editionId: id.nullable(), operatorId: id.optional() }).strict();
 export type OperationsBoardEditionReadInput = z.infer<typeof OperationsBoardEditionReadInputSchema>;
 export const OperationsBoardEditionHistoryCursorSchema = z.object({ beforeId: id, historyVersion: hash }).strict();
 export const OperationsBoardEditionHistoryInputSchema = z.object({ ...baseInput, cursor: OperationsBoardEditionHistoryCursorSchema.nullable(), limit: z.number().int().min(1).max(50) }).strict();
@@ -180,16 +181,20 @@ export type OperationsBoardEditionStateResult = z.infer<typeof OperationsBoardEd
 export const OperationsBoardEditionReadResultSchema = bounded(OPERATIONS_BOARD_EDITION_LIMITS.publicBytes).pipe(z.object({ ...scopedResponse, request: OperationsBoardEditionReadInputSchema,
   state: OperationsBoardEditionStateSchema, edition: OperationsBoardEditionSummarySchema.nullable(), status: z.enum(["ready", "current_empty", "uninitialized", "not_found", "unavailable"]), reasonCode: reason.nullable(),
   visibility: z.enum(["full", "scoped"]), authorizationHash: hash, rows: z.array(MonthlyFinancialReadRowSchema).max(60_000), sources: z.array(OperationsBoardEditionSourceSchema).max(1200),
-  coverage: z.object({ complete: z.literal(true), meaning: z.literal("all_currently_authorized_edition_rows"), rowCount: z.number().int().min(0).max(60_000) }).strict(),
+  coverage: z.object({ complete: z.literal(true), meaning: z.enum(["all_currently_authorized_edition_rows", "all_currently_authorized_edition_rows_matching_operator"]), rowCount: z.number().int().min(0).max(60_000) }).strict(),
+  ownership: OperationsBoardEditionOwnershipSchema.nullable(),
   notes: z.array(OperationsBoardEditionNoteSchema).max(60_000), viewKey: hash,
 }).strict().superRefine((value, ctx) => {
   bindResponse(value, ctx); if (!same(value.scope, value.state.scope)) issue(ctx, "Read state scope mismatch");
   const ready = value.status === "ready" || value.status === "current_empty";
   if (ready ? !value.edition || value.reasonCode !== null : value.edition !== null || value.rows.length > 0 || value.sources.length > 0 || value.notes.length > 0 || value.reasonCode === null) issue(ctx, "Read availability mismatch");
-  if (value.coverage.rowCount !== value.rows.length) issue(ctx, "Authorized rows must be complete");
+  if (value.coverage.rowCount !== value.rows.length || value.coverage.meaning !== (value.request.operatorId === undefined ? "all_currently_authorized_edition_rows" : "all_currently_authorized_edition_rows_matching_operator")) issue(ctx, "Authorized selected rows must be complete");
   if (value.sources.some((source, index) => index > 0 && source.month <= value.sources[index - 1].month)) issue(ctx, "Visible sources must be unique and chronologically ordered");
-  if (!value.edition) return;
+  if (!value.edition) { if (value.ownership !== null) issue(ctx, "Hidden or absent editions must not reveal a member directory"); return; }
   const edition = value.edition;
+  if (value.ownership === null) issue(ctx, "Visible edition needs its current authorized owner directory");
+  else validateOperationsBoardEditionOwnershipResult({ ownership: value.ownership, rows: value.rows, userId: value.identity.userId,
+    operatorId: value.request.operatorId, visibility: value.visibility, month: edition.month }, message => issue(ctx, message));
   if (!same(edition.scope, value.scope) || (value.request.editionId === null ? edition.id !== value.state.currentEditionId || edition.status !== "current" : edition.id !== value.request.editionId)) issue(ctx, "Read edition scope/pointer mismatch");
   if (value.status === "current_empty" && (edition.status !== "current" || value.state.status !== "current_empty" || value.sources.some(source => source.month === edition.month))) issue(ctx, "Empty current cannot masquerade as a historical edition");
   if (edition.status === "current" && value.state.status === "current_empty" && value.status !== "current_empty") issue(ctx, "Current empty must be explicit");

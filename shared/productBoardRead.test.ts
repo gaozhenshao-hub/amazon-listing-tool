@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import "./operationsBoardOwnership.test";
+import "./operationsBoardEditionProjection.test";
 import { buildUnavailableOperationsBoardOwnership, type OperationsBoardOwnership } from "./operationsBoardOwnership";
-import { buildProductBoardReadFailure, buildProductBoardReadResult, productBoardCalendarMonths, ProductBoardReadError, ProductBoardReadInputSchema, ProductBoardReadResultSchema, PRODUCT_BOARD_SECTIONS, PRODUCT_BOARD_READ_LIMITS, type ProductBoardMonthSelection, type ProductBoardReadInput, type ProductBoardReadResult } from "./productBoardRead";
+import { buildProductBoardReadFailure, buildProductBoardReadResult, buildProductBoardBodyProjection, productBoardCalendarMonths, ProductBoardReadError, ProductBoardReadInputSchema, ProductBoardReadResultSchema, PRODUCT_BOARD_SECTIONS, PRODUCT_BOARD_READ_LIMITS, type ProductBoardMonthSelection, type ProductBoardReadInput, type ProductBoardReadResult } from "./productBoardRead";
 import { MONTHLY_FINANCIAL_METRICS, parseMonthlyFinancialBatch, findMonthlyFinancialSnapshot, monthlyFinancialJsonBytes, type MonthlyFinancialBatchRecord, type MonthlyFinancialMetrics } from "./monthlyFinancialRead";
 
 const identity = { userId: 7, workspaceId: 11 };
@@ -18,6 +19,34 @@ const build = (rows = [row()], patch: Partial<ProductBoardReadInput> = {}) => fr
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const parent = (result: ProductBoardReadResult, value = "P") => result.products.find(product => product.parentAsin === value)!;
 const entries = (result: ProductBoardReadResult, key: typeof PRODUCT_BOARD_SECTIONS[number]) => result.sections[key].entries.map(entry => result.products.find(product => product.id === entry.productId)!);
+
+describe("metadata-free product body extraction", () => {
+  function bodySource(rows = [row()]) {
+    const original = parseMonthlyFinancialBatch(record(rows)).rows;
+    return { input, rows: original, sources: [...new Set(original.map(row => row.yearMonth))].map(month => ({ month, status: "selected" as const, selectedBatchId: 90, visibleRows: original.filter(row => row.yearMonth === month).length })) };
+  }
+  it("is byte-equivalent in financial bodies while the live header still carries only its real metadata", () => {
+    const rows = [row({ yearMonth: "2024-01" }), row({ financialProfit: 2001, salesQty: 100, returnQty: 12 }), row({ parentAsin: "OTHER", asin: "B", financialProfit: -9 })];
+    const body = buildProductBoardBodyProjection(bodySource(rows)), live = build(rows);
+    for (const key of ["periods", "sections", "products", "pageRows", "matchedRows"] as const) expect(body[key]).toEqual(live[key]);
+    expect(body.firstVisibleMonth).toBe(live.history?.firstVisibleMonth); expect(body).not.toHaveProperty("sources"); expect(body).not.toHaveProperty("history");
+    expect(live.sources.at(-1)?.batch).toHaveProperty("fileName", "source.xlsx");
+  });
+  it("retains live pre-owner history coverage while grouping only an exact filtered row subset", () => {
+    const source = bodySource([row({ yearMonth: "2024-01", parentAsin: "OLD", asin: "OLD" }), row()]);
+    const body = buildProductBoardBodyProjection({ ...source, filteredRows: [source.rows[1]] });
+    expect(body.firstVisibleMonth).toBe("2024-01"); expect(body.periods.total.months).toHaveLength(34); expect(body.matchedRows).toBe(1); expect(body.products[0].parentAsin).toBe("P");
+  });
+  it.each(["duplicate", "outside", "changed"])("refuses %s filtered row membership without inventing a batch", kind => {
+    const source = bodySource(); const changed = clone(source.rows[0]); changed.metrics.financialProfit = 100;
+    const filteredRows = kind === "duplicate" ? [source.rows[0], source.rows[0]] : kind === "outside" ? [{ ...source.rows[0], rowIndex: 5 }] : [changed];
+    expect(() => buildProductBoardBodyProjection({ ...source, filteredRows })).toThrow(ProductBoardReadError);
+  });
+  it("still refuses incomplete or contradictory live batch metadata before reaching pure math", () => {
+    const source = selections(); source[0].selection.selected!.batch.totalRows++;
+    expect(() => fromSelections(source)).toThrow(ProductBoardReadError);
+  });
+});
 
 function owners(rows: ReturnType<typeof row>[], assignment: Record<string, number[]> = {}): OperationsBoardOwnership {
   const parsed = parseMonthlyFinancialBatch(record(rows)).rows.filter(row => row.storeName === "Store" && row.country === "US" && ["child", "parent_only"].includes(row.allocation));

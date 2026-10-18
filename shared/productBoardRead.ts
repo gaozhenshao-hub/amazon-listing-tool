@@ -54,6 +54,14 @@ const historySchema = z.object({ complete: z.literal(true), scannedCount: z.numb
 const resultSchema = z.object({ identity: identitySchema, request: ProductBoardReadInputSchema, ownership: OperationsBoardOwnershipSchema.optional(), status: z.enum(["ready", "missing", "not_found", "invalid"]), reasonCode: z.string().nullable(), missingReason: z.string().nullable(), history: historySchema.nullable(), periods: periodsSchema.nullable(), sources: z.array(sourceSchema).max(1200), sections: sectionsSchema, products: z.array(ProductBoardProductSchema).max(80), pageRows: z.array(MonthlyFinancialReadRowSchema).max(PRODUCT_BOARD_READ_LIMITS.rows), matchedRows: z.number().int().min(0).max(PRODUCT_BOARD_READ_LIMITS.rows), timestampBasis: z.literal("database_datetime_without_timezone") }).strict();
 export const ProductBoardReadResultSchema = resultSchema.superRefine((value, ctx) => validateResult(value, message => ctx.addIssue({ code: z.ZodIssueCode.custom, message })));
 export type ProductBoardReadResult = z.infer<typeof ProductBoardReadResultSchema>;
+/** Math inputs deliberately contain no uploader, filename, import timestamps or
+ * other live-batch metadata. Their caller must have selected and authorized the
+ * complete source rows before calling this projection. */
+export const ProductBoardBodySourceSchema = z.object({ month: monthSchema, status: z.enum(["selected", "not_found", "not_visible"]), selectedBatchId: id.nullable(), visibleRows: z.number().int().min(0).max(10000) }).strict();
+export type ProductBoardBodySource = z.infer<typeof ProductBoardBodySourceSchema>;
+export type ProductBoardBodyProjection = Pick<ProductBoardReadResult, "sections" | "products" | "pageRows" | "matchedRows"> & {
+  periods: NonNullable<ProductBoardReadResult["periods"]>; firstVisibleMonth: string | null;
+};
 
 const sectionRules: Record<ProductBoardSection, string> = {
   highReturns: "子体派生父组：近三个日历月已观测销量 ≥ 50 且退货量合计/销量合计 > 8%，按退货率降序；不完整期间显式标注，不用未知补零",
@@ -88,14 +96,14 @@ function financial(rows: MonthlyFinancialReadRow[], basis: Basis, currency: stri
   const value = currency === null || conflict ? null : sum([profit, purchase, freight]);
   return { status, qty, sales, profit, purchase, freight, margin: monthlyFinancialRatio(currency === null ? null : profit, sales, "明确同币种已保存财务利润合计 ÷ 正销售额合计；不平均百分比"), cashProxy: { value, components: { profit, purchase, freight }, currency, formula: "financialProfit + purchaseCost + freight", accountingStatus: "derived_not_actual_receipts", sourceRows, missingReason: value === null ? "金额、币种或唯一原报表依据未知；不可推算" : "仅利润+采购成本+头程的代数代理值；不是实际回款、到账或现金流" }, sourceRows, missingReason: status === "observed" ? null : status === "missing" ? "当月没有可见原行，不补零" : status === "ambiguous" ? "同月多个原报表父体合计不相加、不择一" : status === "unknown_currency" ? "来源币种不明确；每原行独立，不排名金额或推算回款" : "至少一个已保存指标未知，不补零" };
 }
-function rate(period: z.infer<typeof periodSchema>, rows: MonthlyFinancialReadRow[], basis: Basis, sources: Map<string, z.infer<typeof sourceSchema>>): ProductBoardRate {
+function rate(period: z.infer<typeof periodSchema>, rows: MonthlyFinancialReadRow[], basis: Basis, sources: ReadonlyMap<string, Pick<ProductBoardBodySource, "status">>): ProductBoardRate {
   const selected = rows.filter(row => row.yearMonth >= period.start && row.yearMonth <= period.end), observedMonths = [...new Set(selected.map(row => row.yearMonth))].sort(), missingMonths = period.months.filter(month => !observedMonths.includes(month)), unavailableMonths = period.months.filter(month => sources.get(month)?.status !== "selected");
   const conflict = ambiguous(selected, basis), metric = (key: "financialProfit" | "salesQty" | "salesAmount" | "returnQty" | "refundQty") => conflict ? null : sum(selected.map(row => row.metrics[key]));
   const salesQty = metric("salesQty"), salesAmount = metric("salesAmount"), profit = metric("financialProfit"), returns = metric("returnQty"), refunds = metric("refundQty");
   const complete = missingMonths.length === 0 && unavailableMonths.length === 0, status = !selected.length ? "missing" : conflict ? "ambiguous" : !complete || [salesQty, salesAmount, profit, returns, refunds].some(value => value === null) ? "partial" : "observed";
   return { status, salesQty, salesAmount, profit, returns, refunds, returnRate: monthlyFinancialRatio(returns, salesQty, "期间已观测退货量合计 ÷ 同期间已观测销量合计；不是百分比平均"), refundRate: monthlyFinancialRatio(refunds, salesQty, "期间已观测退款量合计 ÷ 同期间已观测销量合计；不是退款订单率"), coverage: { start: period.start, end: period.end, expectedMonths: period.months.length, observedMonths, missingMonths, unavailableMonths, complete, basis: "visible_original_rows_per_product_not_workspace_month_count" }, sourceRows: refs(selected), missingReason: status === "observed" ? null : status === "missing" ? "该产品/子体在期间没有可见原行，不解释为零" : status === "ambiguous" ? "期间含同月重复原报表父体合计，不相加" : "只展示已观测原行合计；月份未完整覆盖或指标未知，不以零补齐" };
 }
-function product(value: { id: string; partitionId: string; parentAsin: string | null; basis: Basis; currency: string | null; rows: MonthlyFinancialReadRow[] }, periods: z.infer<typeof periodsSchema>, sources: Map<string, z.infer<typeof sourceSchema>>): ProductBoardProduct {
+function product(value: { id: string; partitionId: string; parentAsin: string | null; basis: Basis; currency: string | null; rows: MonthlyFinancialReadRow[] }, periods: z.infer<typeof periodsSchema>, sources: ReadonlyMap<string, Pick<ProductBoardBodySource, "status">>): ProductBoardProduct {
   const rates = (rows: MonthlyFinancialReadRow[]) => Object.fromEntries(PRODUCT_BOARD_PERIODS.map(key => [key, rate(periods[key], rows, value.basis, sources)])) as z.infer<typeof ratesSchema>;
   const latestTitle = (rows: MonthlyFinancialReadRow[]) => [...rows].sort((a, b) => b.yearMonth.localeCompare(a.yearMonth) || a.rowIndex - b.rowIndex)[0]?.title ?? "";
   const childRows = new Map<string, MonthlyFinancialReadRow[]>();
@@ -147,10 +155,32 @@ export function buildProductBoardReadResult(value: { identity: ProductBoardReadI
     if (ownership && ownership.visibility !== value.history.visibility) throw new Error("visibility");
     filteredRows = filterOperationsBoardRowsByOperator(selectedRows, ownership, input.operatorId);
   } catch { throw new ProductBoardReadError("ownership_invalid"); }
-  const firstVisibleMonth = selectedRows.length ? selectedRows.reduce((first, row) => row.yearMonth < first ? row.yearMonth : first, input.month) : null, totalStart = firstVisibleMonth ?? input.month, quarterStart = fromSerial(serial(input.month) - 2), start = totalStart < quarterStart ? totalStart : quarterStart;
-  const timeline = productBoardCalendarMonths(start, input.month), periods = { month: { start: input.month, end: input.month, months: [input.month] }, quarter: { start: quarterStart, end: input.month, months: productBoardCalendarMonths(quarterStart, input.month) }, total: { start: totalStart, end: input.month, months: productBoardCalendarMonths(totalStart, input.month) } };
-  const sources = timeline.map(month => sourceByMonth.get(month) ?? { month, status: value.history.visibility === "full" ? "not_found" as const : "not_visible" as const, batch: null, selectedBatchId: null, visibleRows: 0, missingReason: value.history.visibility === "full" ? "该月份店铺/国家没有有效已确认快照" : "该月没有当前可见来源；不区分无源、无权或其他父体数据" });
-  const sourcesMap = new Map(sources.map(source => [source.month, source]));
+  const body = buildProductBoardBodyProjection({ input, rows: selectedRows, filteredRows, sources: [...sourceByMonth.values()].map(({ month, status, selectedBatchId, visibleRows }) => ({ month, status, selectedBatchId, visibleRows })) });
+  const { firstVisibleMonth, ...presentation } = body, start = body.periods.total.start < body.periods.quarter.start ? body.periods.total.start : body.periods.quarter.start;
+  const sources = productBoardCalendarMonths(start, input.month).map(month => sourceByMonth.get(month) ?? { month, status: value.history.visibility === "full" ? "not_found" as const : "not_visible" as const, batch: null, selectedBatchId: null, visibleRows: 0, missingReason: value.history.visibility === "full" ? "该月份店铺/国家没有有效已确认快照" : "该月没有当前可见来源；不区分无源、无权或其他父体数据" });
+  return checkedResult({ identity, request: input, ...(ownership ? { ownership } : {}), status: "ready", reasonCode: null, missingReason: null, history: { complete: true, scannedCount: value.history.visibility === "full" ? value.history.scannedCount : null, visibility: value.history.visibility, firstVisibleMonth, sourceMeaning: "all_saved_effective_history_at_read_time_not_archived_edition" }, sources, ...presentation, timestampBasis: "database_datetime_without_timezone" });
+}
+
+/** Shared math only: no source selection, owner directory or permission grant.
+ * filteredRows must be an exact subset of rows already narrowed by the caller's
+ * numeric owner policy. Retaining rows for coverage preserves the live builder's
+ * pre-owner-filter history basis; an edition passes its already filtered rows. */
+export function buildProductBoardBodyProjection(value: { input: ProductBoardReadInput; rows: MonthlyFinancialReadRow[]; filteredRows?: MonthlyFinancialReadRow[]; sources: ProductBoardBodySource[] }): ProductBoardBodyProjection {
+  const input = ProductBoardReadInputSchema.parse(value.input), selectedRows = value.rows, filteredRows = value.filteredRows ?? selectedRows;
+  if (selectedRows.length > PRODUCT_BOARD_READ_LIMITS.rows || filteredRows.length > selectedRows.length || value.sources.length > PRODUCT_BOARD_READ_LIMITS.historyMonths) throw new ProductBoardReadError("body_limit");
+  const sources = value.sources.map(source => ProductBoardBodySourceSchema.parse(source)), sourcesMap = new Map(sources.map(source => [source.month, source]));
+  if (sourcesMap.size !== sources.length || sources.some(source => source.month > input.month || (source.status === "selected" ? source.selectedBatchId === null : source.selectedBatchId !== null || source.visibleRows !== 0))) throw new ProductBoardReadError("body_sources");
+  const originals = new Map<string, MonthlyFinancialReadRow>(), counts = new Map<string, number>();
+  for (const raw of selectedRows) {
+    const row = MonthlyFinancialReadRowSchema.parse(raw), source = sourcesMap.get(row.yearMonth), key = refKey(row);
+    if (originals.has(key) || row.yearMonth > input.month || row.storeName !== input.storeName || row.country !== input.country || source?.status !== "selected" || source.selectedBatchId !== row.batchId
+      || input.parentAsin && (row.parentAsin !== input.parentAsin || ["ambiguous", "unallocated"].includes(row.allocation))) throw new ProductBoardReadError("body_row_membership");
+    originals.set(key, row); counts.set(row.yearMonth, (counts.get(row.yearMonth) ?? 0) + 1);
+  }
+  if ([...counts].some(([month, count]) => count > sourcesMap.get(month)!.visibleRows) || new Set(filteredRows.map(refKey)).size !== filteredRows.length
+    || filteredRows.some(row => !equal(originals.get(refKey(row)), row))) throw new ProductBoardReadError("body_filtered_membership");
+  const firstVisibleMonth = selectedRows.length ? selectedRows.reduce((first, row) => row.yearMonth < first ? row.yearMonth : first, input.month) : null, totalStart = firstVisibleMonth ?? input.month, quarterStart = fromSerial(serial(input.month) - 2);
+  const periods = { month: { start: input.month, end: input.month, months: [input.month] }, quarter: { start: quarterStart, end: input.month, months: productBoardCalendarMonths(quarterStart, input.month) }, total: { start: totalStart, end: input.month, months: productBoardCalendarMonths(totalStart, input.month) } };
   const groups = new Map<string, { id: string; partitionId: string; parentAsin: string | null; basis: Basis; currency: string | null; rows: MonthlyFinancialReadRow[] }>();
   for (const row of filteredRows) {
     const basis: Basis = ["unallocated", "ambiguous"].includes(row.allocation) ? "unallocated_rows" : row.allocation === "parent_only" ? "reported_parent_row" : "child_rows", unknownSource = row.currency === null ? { batchId: row.batchId, rowIndex: row.rowIndex } : null;
@@ -172,7 +202,9 @@ export function buildProductBoardReadResult(value: { identity: ProductBoardReadI
   for (const product of candidates) if (product.currency !== null && product.profit !== null && product.profit < 0) { const items = losses.get(product.partitionId) ?? []; items.push(product); losses.set(product.partitionId, items); }
   const losing = [...losses].sort(([a], [b]) => a.localeCompare(b)).flatMap(([, products]) => products.sort((a, b) => a.profit! - b.profit! || a.id.localeCompare(b.id)).slice(0, 10));
   const sections = { highReturns: section(input, "highReturns", highReturns), highProfit: section(input, "highProfit", highProfit), losing: section(input, "losing", losing), all: section(input, "all", matched) }, pageIds = new Set(Object.values(sections).flatMap(section => section.entries.map(entry => entry.productId))), products = matched.filter(group => pageIds.has(group.id)).map(group => product(group, periods, sourcesMap)), pageRefs = new Set(products.flatMap(product => product.sourceRows.map(refKey)));
-  return checkedResult({ identity, request: input, ...(ownership ? { ownership } : {}), status: "ready", reasonCode: null, missingReason: null, history: { complete: true, scannedCount: value.history.visibility === "full" ? value.history.scannedCount : null, visibility: value.history.visibility, firstVisibleMonth, sourceMeaning: "all_saved_effective_history_at_read_time_not_archived_edition" }, periods, sources, sections, products, pageRows: selectedRows.filter(row => pageRefs.has(refKey(row))), matchedRows: matched.reduce((sum, group) => sum + group.rows.length, 0), timestampBasis: "database_datetime_without_timezone" });
+  const body = { firstVisibleMonth, periods, sections, products, pageRows: selectedRows.filter(row => pageRefs.has(refKey(row))), matchedRows: matched.reduce((sum, group) => sum + group.rows.length, 0) };
+  if (resultJsonBytes(body) > PRODUCT_BOARD_READ_LIMITS.resultBytes) throw new ProductBoardReadError("body_result_limit");
+  return body;
 }
 
 function validateResult(value: z.infer<typeof resultSchema>, issue: (message: string) => void) {

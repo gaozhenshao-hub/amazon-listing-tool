@@ -32,7 +32,7 @@ function fixture() {
   const session: OperationsBoardAccessSession = { tx, identity, actor: { id: 3, role: "ops_specialist", defaultWorkspaceId: 7 }, role: "ops_specialist",
     manager: false, operation: "read", write: false, authorizationEvidence: { workspaceId: 7, membershipId: 73, directoryHash: "c".repeat(64), grants: ["ops_data:read", "ops_board:read"] }, authorizationHash: "b".repeat(64) };
   const authorize: NonNullable<Dependencies["authorize"]> = vi.fn(async (_tx, input) => ({ ...session, identity: input.identity, operation: input.operation, write: input.write ?? input.operation !== "read" }));
-  const authorizeCapture: NonNullable<Dependencies["authorizeCapture"]> = vi.fn(async () => ({ authorizedRows: [], sources: [], responsibleUserIdsByParent: new Map<string, number[]>(), canEditParents: new Set<string>(), authorizationHash: "d".repeat(64), visibility: "scoped" as const }));
+  const authorizeCapture: NonNullable<Dependencies["authorizeCapture"]> = vi.fn(async () => ({ authorizedRows: [], sources: [], responsibleUserIdsByParent: new Map<string, number[]>(), canEditParents: new Set<string>(), authorizationHash: "d".repeat(64), ownership: null, visibility: "scoped" as const }));
   const load = vi.fn(async () => ({ stateId: 1, state, currentEdition: current }));
   const get = vi.fn(async (_scope: unknown, id: number) => id === historical.id ? historical : id === current.id ? current : null);
   const store = vi.fn(() => ({ load, get })) as unknown as NonNullable<Dependencies["store"]>;

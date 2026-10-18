@@ -235,11 +235,12 @@ describe("profit board readonly identity gates", () => {
     act(() => publishMonthlyFinancialChange({ userId: 7, workspaceId: 11, action: "confirm", batchId: 80 }));
     expect(controls.query).toHaveBeenCalledTimes(2);
   });
-  it("has an explicit action only, privacy exclusion and no write, AI or archive control", () => {
+  it("has privacy exclusion and an explicit edition viewer but no direct write or AI action", () => {
     const view = render(<ProfitBoardReadOnly />);
     expect(controls.query).not.toHaveBeenCalled(); expect(view.container.firstElementChild).toHaveClass("manus-no-record");
     expect(controls.permissions.canRead).toHaveBeenCalledWith("ops", "ops_data_import");
-    expect(screen.queryByRole("button", { name: /保存|上传|同步|生成|归档/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /保存|上传|同步|生成|初始化|发布修订/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开当前／历史归档看板" })).toBeInTheDocument();
   });
   it.each([
     ["auth pending", () => { controls.auth.loading = true; }], ["auth failed", () => { controls.auth.error = new Error("private-cookie"); }],

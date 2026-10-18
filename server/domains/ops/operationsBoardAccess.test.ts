@@ -39,6 +39,7 @@ const execute = vi.fn(async (statement: SQL) => {
   const call = new MySqlDialect().sqlToQuery(statement); calls.push(call);
   if (failOn && call.sql.includes(failOn)) throw Error("private database diagnostics");
   if (call.sql.includes("FROM workspaces")) return [override.workspace ?? workspaces.filter(row => row.id === call.params[0]), []];
+  if (call.sql.includes("FROM users WHERE id IN")) return [actors.filter(row => call.params.includes(row.id)).map(row => ({ ...row, displayName: typeof row.name === "string" ? row.name : null, nameBytes: typeof row.name === "string" ? Buffer.byteLength(row.name) : null })), []];
   if (call.sql.includes("FROM users")) return [override.actor ?? actors.filter(row => row.id === call.params[0]), []];
   if (call.sql.includes("FROM role_permissions")) return [override.directory ?? directories.filter(row => row.role === call.params[0] && (row.workspaceId === call.params[1] || row.workspaceId === null)), []];
   if (call.sql.includes("FROM ops_inventory_owner_assignments")) return [override.manual ?? manualRows.filter(row => row.workspaceId === call.params[0] && row.storeName === call.params[1] && row.isActive === 1 && call.params.slice(2).includes(row.parentAsin)), []];
@@ -260,6 +261,67 @@ describe("current numeric owner capture visibility", () => {
   it("unknown/conflicting ownership never grants ambiguous or unallocated rows to ordinary actors", async () => {
     const source = capture([rawRow({ raw: { currency: "USD", api: { parentAsinList: ["P1", "P2"] } } }), rawRow({ parentAsin: "", asin: "UNALLOC" })]);
     const result = await authorize(await session(), source); expect(result.authorizedRows).toEqual([]); expect(result.canEditParents.size).toBe(0);
+  });
+});
+
+describe("archive-only current owner display directory", () => {
+  it("keeps current account display names separate from frozen operator/raw text", async () => {
+    actors[0].name = "  当前账号姓名  ";
+    const s = await session(), source = capture(), before = structuredClone(source);
+    const result = await authorize(s, source, { includeOwnership: true });
+    expect(result.ownership).toMatchObject({ meaning: "current_authorization_not_historical_membership", visibility: "scoped", selectedOperatorId: null,
+      operators: [{ userId: 3, displayName: "当前账号姓名", relation: "self" }],
+      parents: [{ parentAsin: parent, operatorIds: [3], basis: "confirmed_source_mapping", sourceMonth: "2026-10", status: "resolved" }] });
+    expect(result.authorizedRows[0].operator).toBe("External A"); expect(source).toEqual(before);
+    expect(calls.find(call => call.sql.includes("FROM users WHERE id IN"))?.sql).toMatch(/FOR SHARE$/u);
+  });
+  it("queries only displayed current owners and never copies the source name as an account name", async () => {
+    const result = await authorize(await session(), capture(), { includeOwnership: true });
+    expect(result.ownership?.operators).toEqual([{ userId: 3, displayName: "用户 #3", relation: "self" }]);
+    expect(calls.filter(call => call.sql.includes("FROM users WHERE id IN")).map(call => call.params)).toEqual([[3]]);
+  });
+  it("displays only actual owners among directly paired readers, not the partner's manager-wide grant", async () => {
+    const s = await session(), partner = await session(4), source = capture([rawRow(), rawRow({ parentAsin: "P2", asin: "C2", operator: "External B" }), rawRow({ parentAsin: "P3", asin: "C3", operator: "External C" })]);
+    const result = await authorize(s, source, { partnerSessions: [partner], includeOwnership: true });
+    expect(result.ownership?.operators).toEqual([{ userId: 3, displayName: "用户 #3", relation: "self" }, { userId: 4, displayName: "用户 #4", relation: "direct_partner" }]);
+    expect(result.ownership?.parents.map(parent => parent.parentAsin)).toEqual(["P2", "SYN-P1"]);
+    expect(result.authorizedRows).toHaveLength(2); expect(result.canEditParents.has("P2")).toBe(false);
+  });
+  it("does not disclose an unrelated active co-owner to a scoped reader", async () => {
+    const result = await authorize(await session(), capture([rawRow({ operator: "External A/External C" })]), { includeOwnership: true });
+    expect(result.ownership?.operators.map(owner => owner.userId)).toEqual([3]); expect(result.ownership?.parents[0].operatorIds).toEqual([3]);
+    expect(calls.filter(call => call.sql.includes("FROM users WHERE id IN")).map(call => call.params)).toEqual([[3]]);
+  });
+  it("manager display can name current workspace owners without treating them as partners", async () => {
+    const result = await authorize(await session(4), capture(), { includeOwnership: true });
+    expect(result.ownership?.operators).toEqual([{ userId: 3, displayName: "用户 #3", relation: "workspace_owner" }]);
+    expect(result.canEditParents.has(parent)).toBe(false);
+  });
+  it("uses current manual owner priority for display and filter evidence", async () => {
+    manualRows = [manual({ assigneeUserId: 4 })];
+    const result = await authorize(await session(), capture(), { partnerSessions: [await session(4)], includeOwnership: true });
+    expect(result.ownership?.parents).toEqual([{ parentAsin: parent, operatorIds: [4], status: "resolved", basis: "manual", sourceMonth: null }]);
+    expect(result.canEditParents.has(parent)).toBe(false);
+  });
+  it("uses the latest visible source month rather than exposing a newer hidden owner", async () => {
+    const source = capture([rawRow({ yearMonth: "2026-09" }), rawRow({ operator: "External C" })]);
+    const result = await authorize(await session(), source, { includeOwnership: true });
+    expect(result.authorizedRows.map(row => row.yearMonth)).toEqual(["2026-09"]);
+    expect(result.ownership?.parents[0]).toMatchObject({ operatorIds: [3], sourceMonth: "2026-09" });
+    expect(result.canEditParents.has(parent)).toBe(false);
+  });
+  it("returns an empty directory and does not query names for a zero-grant capture", async () => {
+    const result = await authorize(await session(), capture([rawRow({ operator: "External C" })]), { includeOwnership: true });
+    expect(result.ownership?.parents).toEqual([]); expect(result.ownership?.operators).toEqual([]);
+    expect(calls.some(call => call.sql.includes("FROM users WHERE id IN"))).toBe(false);
+  });
+  it("does not do display-directory reads on history/note authorization paths", async () => {
+    expect((await authorize(await session(), capture())).ownership).toBeNull();
+    expect(calls.some(call => call.sql.includes("FROM users WHERE id IN"))).toBe(false);
+  });
+  it("fails closed for unavailable current names instead of substituting archived operator text", async () => {
+    const s = await session(); failOn = "FROM users WHERE id IN";
+    await expect(authorize(s, capture(), { includeOwnership: true })).rejects.toThrow("READ_UNAVAILABLE");
   });
 });
 

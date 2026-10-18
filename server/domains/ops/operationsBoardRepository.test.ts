@@ -17,6 +17,7 @@ import { OperationsBoardOperationJournalError } from "./operationsBoardOperation
 import type { OperationsBoardEditionStoreLoaded } from "./operationsBoardEditionStore";
 import type { OperationsBoardAccessSession } from "./operationsBoardAccess";
 import { createOperationsBoardRepository, type OperationsBoardDatabase } from "./operationsBoardRepository";
+import { OperationsBoardEditionOwnershipSchema } from "../../../shared/operationsBoardEditionOwnership";
 
 /** Protocol/transaction orchestration fixtures only. These deliberately do not
  * pretend to prove MySQL locking, schema readiness, or persistent durability;
@@ -84,10 +85,20 @@ function fixture() {
     return { tx: executor, identity: input.identity, actor: { id: input.identity.userId, defaultWorkspaceId: 7, role }, role, manager: ["admin", "super_admin", "ops_manager"].includes(role),
       operation: input.operation, write: input.write ?? input.operation !== "read", authorizationEvidence: { workspaceId: 7, membershipId: 73, directoryHash: "c".repeat(64), grants: ["ops_data:read", "ops_board:read"] }, authorizationHash: controls.authorization };
   });
-  const authorizeCapture = vi.fn<NonNullable<Dependencies["authorizeCapture"]>>(async (session, capture) => {
+  const authorizeCapture = vi.fn<NonNullable<Dependencies["authorizeCapture"]>>(async (session, capture, options) => {
     const authorizedRows = controls.hiddenEditions.has(capture.sourceHash) ? [] : capture.rows.filter(row => !controls.invisibleParents.has(row.parentAsin));
+    const latest = new Map<string, string>();
+    for (const row of authorizedRows) if (!latest.has(row.parentAsin) || latest.get(row.parentAsin)! < row.yearMonth) latest.set(row.parentAsin, row.yearMonth);
+    const parentOwners = [...latest].map(([parentAsin, sourceMonth]) => {
+      const userId = parentAsin === parent ? 3 : 4;
+      const operatorIds = session.manager || userId === session.identity.userId || options?.partnerSessions?.some(partner => partner.identity.userId === userId) ? [userId] : [];
+      return { parentAsin, sourceMonth, operatorIds, status: operatorIds.length ? "resolved" : "unresolved", basis: "confirmed_source_mapping" };
+    });
+    const ids = [...new Set(parentOwners.flatMap(parent => parent.operatorIds))].sort((a, b) => a - b);
+    const ownership = options?.includeOwnership ? OperationsBoardEditionOwnershipSchema.parse({ version: 1, meaning: "current_authorization_not_historical_membership", visibility: session.manager ? "full" : "scoped",
+      operators: ids.map(userId => ({ userId, displayName: `Current user ${userId}`, relation: userId === 3 ? "self" : options?.partnerSessions?.some(partner => partner.identity.userId === userId) ? "direct_partner" : "workspace_owner" })), parents: parentOwners, selectedOperatorId: null }) : null;
     return { authorizedRows, sources: capture.sources.flatMap(source => { const rowCount = authorizedRows.filter(row => row.yearMonth === source.month).length; return rowCount ? [{ ...source, rowCount }] : []; }),
-      responsibleUserIdsByParent: new Map([[parent, [3]]]), canEditParents: new Set([parent]), authorizationHash: controls.authorization, visibility: session.manager ? "full" : "scoped" };
+      responsibleUserIdsByParent: new Map([[parent, [3]]]), canEditParents: new Set([parent]), authorizationHash: controls.authorization, ownership, visibility: session.manager ? "full" : "scoped" };
   });
   const load = vi.fn(async () => clone(memory.loaded));
   const get = vi.fn(async (_scope: unknown, id: number) => clone(memory.editions.get(id) ?? null));
@@ -153,6 +164,39 @@ function fixture() {
 }
 
 describe("board facade complete authorized reads and explicit lifecycle", () => {
+  it("filters a numeric current operator only after authorization, before note/source coverage", async () => {
+    const f = fixture(), original = clone(f.current.capture);
+    const result = await f.repository.read(context(), { ...base, editionId: null, operatorId: 4 });
+    expect(result.request.operatorId).toBe(4); expect(result.rows.map(row => row.parentAsin)).toEqual([hiddenParent, hiddenParent]);
+    expect(result.ownership?.selectedOperatorId).toBe(4); expect(result.ownership?.operators.map(owner => owner.userId)).toEqual([3, 4]);
+    expect(result.sources.map(source => source.rowCount)).toEqual([1, 1]); expect(result.notes.map(note => note.parentAsin)).toEqual([hiddenParent]);
+    expect(result.coverage).toEqual({ complete: true, meaning: "all_currently_authorized_edition_rows_matching_operator", rowCount: 2 });
+    expect(f.current.capture).toEqual(original); expect(result.rows[0].operator).toBe("SYNTHETIC_OWNER");
+    expect(f.authorizeCapture.mock.calls[0][2]?.includeOwnership).toBe(true);
+  });
+  it("direct partner operator filter remains read-only for notes", async () => {
+    const f = fixture(); f.controls.role = "ops_specialist"; f.controls.partnerIds = [4];
+    const result = await f.repository.read(context("ops_specialist"), { ...base, editionId: null, operatorId: 4 });
+    expect(result.ownership?.operators.find(owner => owner.userId === 4)?.relation).toBe("direct_partner");
+    expect(result.rows.every(row => row.parentAsin === hiddenParent)).toBe(true); expect(result.notes.every(note => !note.canEdit && note.editBasis === "readonly")).toBe(true);
+  });
+  it("rejects an invisible numeric operator and does not filter by raw name", async () => {
+    const f = fixture(); f.controls.role = "ops_specialist"; f.controls.invisibleParents.add(hiddenParent);
+    await expect(f.repository.read(context("ops_specialist"), { ...base, editionId: null, operatorId: 4 })).rejects.toMatchObject({ code: "FORBIDDEN", message: "OPERATIONS_BOARD_OPERATOR_NOT_VISIBLE" });
+    await expect(f.repository.read(context(), { ...base, editionId: null, operatorId: "3" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(f.sqlCalls.some(call => call.sql.includes("ops_board_notes"))).toBe(false);
+  });
+  it("hidden and absent edition results disclose no current directory even with an operator request", async () => {
+    const f = fixture(); f.controls.role = "ops_specialist"; f.controls.hiddenEditions.add(f.current.sourceHash);
+    const hidden = await f.repository.read(context("ops_specialist"), { ...base, editionId: null, operatorId: 999 });
+    expect(hidden).toMatchObject({ status: "not_found", edition: null, ownership: null, rows: [] });
+    f.uninitialize(); expect((await f.repository.read(context("ops_specialist"), { ...base, editionId: null, operatorId: 999 })).ownership).toBeNull();
+  });
+  it("binds numeric selection and current display metadata into the public view key", async () => {
+    const f = fixture(), all = await f.repository.read(context(), { ...base, editionId: null });
+    const filtered = await f.repository.read(context(), { ...base, editionId: null, operatorId: 3 });
+    expect(all.viewKey).not.toBe(filtered.viewKey); expect(all.edition?.sourceHash).toBe(filtered.edition?.sourceHash);
+  });
   it("returns only authorized rows and notes with complete per-source visible counts, never the private capture", async () => {
     const f = fixture(); f.controls.role = "ops_specialist"; f.controls.invisibleParents.add(hiddenParent);
     f.memory().notes.set(`501:${hiddenParent}`, { editionId: 501, parentAsin: hiddenParent, note: "SYNTHETIC_PRIVATE_NOTE", version: 1, updatedBy: 4, updatedAt: stamp, canEdit: false, editBasis: "readonly" });

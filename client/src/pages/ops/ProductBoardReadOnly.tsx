@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import { trpc } from "@/lib/trpc";
@@ -9,6 +9,11 @@ import { subscribeMonthlyFinancialChanges } from "./monthlyFinancialWriteEvents"
 import { profitBoardMonths } from "@shared/profitBoardRead";
 import { ProductFinancialHistory } from "./ProductFinancialHistory";
 import ProfitAnalysisWorkflow from "./ProfitAnalysisWorkflow";
+import { buildOperationsBoardEditionProductProjection, type OperationsBoardEditionProductProjection } from "@shared/operationsBoardEditionProjection";
+import { OperationsBoardEditionStateInputSchema, type OperationsBoardEditionReadResult } from "@shared/operationsBoardEdition";
+import { normalizeMarketplaceCode } from "@shared/marketplaceIdentity";
+import { OperationsBoardEditionWorkspace } from "./OperationsBoardEditionWorkspace";
+import { EditionSourceHistory, EditionCurrentProductTools } from "./OperationsBoardEditionDisplay";
 
 type Owner = { userId: number; workspaceId: number; role: string };
 type Section = "highReturns" | "highProfit" | "losing" | "all";
@@ -29,7 +34,7 @@ function Shell({ children }: { children: ReactNode }) {
     <header className="space-y-2"><h2 className="text-lg font-semibold">产品看板 · 已保存财务来源只读研究</h2>
       <p className="text-sm text-muted-foreground">高退货率、高利润、亏损及全部产品；当月、近三个月和全部可见已保存历史，父体与全部子体可钻取。</p>
       <p className="text-xs text-muted-foreground">按已保存批次选择，尚未核验店铺 / 月度完整覆盖。不同币种和汇总依据不合并；不补零、不汇率换算、不自动同步或调用模型。</p>
-      <p className="text-xs text-muted-foreground">这是当前授权来源的只读计算，不是已冻结归档。数字运营筛选经服务端核验；搭档关系尚未配置。任务、成本与分析通过各自授权入口操作，备注和冻结归档尚未接入。</p>
+      <p className="text-xs text-muted-foreground">实时来源与月度版本分别读取；归档入口保留历史原版、修订、备注和数字搭档配置。数字运营筛选经服务端核验，任务、成本与分析仍通过各自授权入口操作。</p>
     </header>{children}
   </section>;
 }
@@ -84,7 +89,7 @@ function SourceHistory({ result }: { result: ProductBoardReadResult }) {
 }
 const RETURN_METRICS = ["退货量", "退货率", "退款量", "退款率", "销量", "销售额", "利润", "原行覆盖"];
 const FINANCIAL_METRICS = ["销量", "销售额", "财务利润", "利润率", "采购成本", "头程", "派生额（非实际回款）"];
-function RankedProductRow({ section, product, position, rows, renderProductTasks, renderProductCosts, renderProductAnalysis }: { section: Section; product: Product; position: number; rows: ProductBoardReadResult["pageRows"]; renderProductTasks?: (product: Product) => ReactNode; renderProductCosts?: (product: Product) => ReactNode; renderProductAnalysis?: (product: Product) => ReactNode }) {
+function RankedProductRow({ section, product, position, rows, renderProductTasks, renderProductCosts, renderProductAnalysis, renderNote }: { section: Section; product: Product; position: number; rows: ProductBoardReadResult["pageRows"]; renderProductTasks?: (product: Product) => ReactNode; renderProductCosts?: (product: Product) => ReactNode; renderProductAnalysis?: (product: Product) => ReactNode; renderNote?: (parentAsin: string) => ReactNode }) {
   const [expanded, setExpanded] = useState(false), detailId = useId(), name = product.parentAsin ?? product.title;
   const toggle = () => setExpanded(value => !value);
   const metrics = section === "highReturns" ? PERIODS.flatMap(period => {
@@ -93,25 +98,46 @@ function RankedProductRow({ section, product, position, rows, renderProductTasks
   }) : [numberText(product.financial.qty), amount(product.financial.sales, product.currency), amount(product.financial.profit, product.currency), percent(product.financial.margin.value), amount(product.financial.purchase, product.currency), amount(product.financial.freight, product.currency), amount(product.financial.cashProxy.value, product.currency)].map((text, index) => ({ label: FINANCIAL_METRICS[index], text, emphasis: index === 2 ? negativeClass(product.financial.profit) : index === 6 ? negativeClass(product.financial.cashProxy.value) : "" }));
   const negativeProxy = product.financial.cashProxy.value !== null && product.financial.cashProxy.value < 0;
   return <Fragment><tr className={negativeProxy ? "bg-red-50" : "hover:bg-muted/20"}>
-    <th scope="row" className={cellClass}>{position + 1} · {product.title || "名称未提供"}<br />{product.parentAsin ?? "未分配"}<br /><button type="button" className={buttonClass} aria-expanded={expanded} aria-controls={detailId} onClick={toggle}>{expanded ? "收起" : "展开"} {name} 全部子体与原行</button><p className="mt-1 text-xs font-normal">{product.children.length} 个子体；也可点击指标展开 / 收起。</p></th>
+    <th scope="row" className={cellClass}>{position + 1} · {product.title || "名称未提供"}<br />{product.parentAsin ?? "未分配"}<br /><button type="button" className={buttonClass} aria-expanded={expanded} aria-controls={detailId} onClick={toggle}>{expanded ? "收起" : "展开"} {name} 全部子体与原行</button>{product.parentAsin && renderNote?.(product.parentAsin)}<p className="mt-1 text-xs font-normal">{product.children.length} 个子体；也可点击指标展开 / 收起。</p></th>
     <td className={cellClass}>{product.currency ?? "币种未知"}<br />{BASIS_LABELS[product.basis]}<br />{STATUS_LABELS[product.financial.status]}</td>
     {metrics.map(metric => <td key={metric.label} className={`${cellClass} ${metric.emphasis}`}><button type="button" className="text-left underline decoration-dotted underline-offset-4 hover:text-primary" aria-label={`${name} ${metric.label} ${expanded ? "收起" : "展开"}子体与原行`} aria-expanded={expanded} aria-controls={detailId} onClick={toggle}>{metric.text}</button></td>)}
   </tr>{expanded && <tr><td colSpan={metrics.length + 2} className="border-b bg-muted/20 p-3"><div id={detailId}>{product.parentAsin && renderProductCosts?.(product)}<ProductDetail product={product} rows={rows} />{product.parentAsin && renderProductAnalysis?.(product)}{product.parentAsin && renderProductTasks?.(product)}</div></td></tr>}</Fragment>;
 }
 /** Pure presentation: the server supplies full-scope ranking, all arithmetic
  * and original rows. No saved owner IDs or source text grants access here. */
-export function ProductBoardReadOnlyContent({ result, onPage, renderProductTasks, renderProductCosts, renderProductAnalysis }: { result: ProductBoardReadResult; onPage?: (section: Section, offset: number) => void; renderProductTasks?: (product: Product) => ReactNode; renderProductCosts?: (product: Product) => ReactNode; renderProductAnalysis?: (product: Product) => ReactNode }) {
-  if (result.status !== "ready") return <div role={result.status === "invalid" ? "alert" : "status"}><p>{result.status === "missing" ? "产品看板财务来源表尚未接通，不是零记录。" : result.status === "not_found" ? "没有当前可读取产品来源，不是零销量或利润。" : "来源不完整、损坏或超出限额；不返回部分榜单或回退旧来源。"}</p><p>{result.missingReason}</p><p className="text-xs">状态依据：{result.reasonCode}</p></div>;
+export function ProductBoardReadOnlyContent({ result, onPage, renderProductTasks, renderProductCosts, renderProductAnalysis, renderNote }: { result: ProductBoardReadResult | OperationsBoardEditionProductProjection; onPage?: (section: Section, offset: number) => void; renderProductTasks?: (product: Product) => ReactNode; renderProductCosts?: (product: Product) => ReactNode; renderProductAnalysis?: (product: Product) => ReactNode; renderNote?: (parentAsin: string) => ReactNode }) {
+  if (!("header" in result) && result.status !== "ready") return <div role={result.status === "invalid" ? "alert" : "status"}><p>{result.status === "missing" ? "产品看板财务来源表尚未接通，不是零记录。" : result.status === "not_found" ? "没有当前可读取产品来源，不是零销量或利润。" : "来源不完整、损坏或超出限额；不返回部分榜单或回退旧来源。"}</p><p>{result.missingReason}</p><p className="text-xs">状态依据：{result.reasonCode}</p></div>;
   return <div className="min-w-0 space-y-5"><p className="text-sm break-words">范围：{result.request.storeName} / {result.request.country} / {result.request.parentAsin ?? "全部当前授权父体"} · 基准月 {result.request.month} · 搜索：{result.request.search || "无"}</p>
-    <SourceHistory result={result} /><p className="text-sm">全筛选 {result.sections.all.page.totalProducts} 个父组 / 独立原行，{result.matchedRows} 个来源行；四页并集返回 {result.products.length} 组、{result.pageRows.length} 行，不是只取榜首来源。不同币种及汇总依据不可相加。</p>
+    {"header" in result ? <EditionSourceHistory header={result.header} /> : <SourceHistory result={result} />}<p className="text-sm">全筛选 {result.sections.all.page.totalProducts} 个父组 / 独立原行，{result.matchedRows} 个来源行；四页并集返回 {result.products.length} 组、{result.pageRows.length} 行，不是只取榜首来源。不同币种及汇总依据不可相加。</p>
     {SECTIONS.map(section => { const data = result.sections[section]; return <section key={section} aria-label={LABELS[section]} className="min-w-0 space-y-3 rounded border p-3"><h3 className="font-semibold">{LABELS[section]} · 全筛选 {data.page.totalProducts} 组</h3><p className="text-xs">{data.rule}；榜单基于全部授权搜索匹配组，不是当前页。</p>
       <nav aria-label={`${LABELS[section]}分页`} className="flex flex-wrap items-center gap-3"><button type="button" className={buttonClass} disabled={!onPage || data.page.offset === 0} onClick={() => onPage?.(section, Math.max(0, data.page.offset - data.page.limit))}>{LABELS[section]}上一页</button><span className="text-sm">本页 {data.entries.length} / {data.page.totalProducts} · 偏移 {data.page.offset}</span><button type="button" className={buttonClass} disabled={!onPage || !data.page.hasMore} onClick={() => data.page.nextOffset !== null && onPage?.(section, data.page.nextOffset)}>{LABELS[section]}下一页</button></nav>
       {!data.entries.length ? <p>没有符合本页条件的可见产品，不解释为零销量 / 零利润。</p> : <ScrollTable label={`${LABELS[section]}横向表`}><table className={`w-full text-left text-xs ${section === "highReturns" ? "min-w-[2400px]" : "min-w-[1200px]"}`}><thead className={tableHeadClass}><tr>{["位置 / 产品 / 钻取", "币种 / 依据", ...(section === "highReturns" ? PERIODS.flatMap(period => RETURN_METRICS.map(metric => `${PERIOD_LABELS[period]} ${metric}`)) : FINANCIAL_METRICS)].map(value => <th className="p-3" key={value}>{value}</th>)}</tr></thead><tbody>{data.entries.map(entry => {
         const product = result.products.find(product => product.id === entry.productId)!;
-        return <RankedProductRow key={entry.productId} section={section} product={product} position={entry.position} rows={result.pageRows} renderProductTasks={renderProductTasks} renderProductCosts={renderProductCosts} renderProductAnalysis={renderProductAnalysis} />;
+        return <RankedProductRow key={entry.productId} section={section} product={product} position={entry.position} rows={result.pageRows} renderProductTasks={renderProductTasks} renderProductCosts={renderProductCosts} renderProductAnalysis={renderProductAnalysis} renderNote={renderNote} />;
       })}</tbody></table></ScrollTable>}
     </section>; })}
     <p className="text-xs">负利润和负派生额以红字提示，负派生额产品行以浅红底提示。派生额 = 财务利润 + 采购成本 + 头程，不是实际回款。库存滞销判断、搭档关系和冻结归档不由本看板推断或伪造。</p>
+  </div>;
+}
+/** The same full rankings/drilldowns render both live and edition sources.
+ * Edition paging never asks the live API to fill a missing archived month. */
+export function ProductEditionContent({ read, renderNote }: { read: OperationsBoardEditionReadResult; renderNote: (parentAsin: string) => ReactNode }) {
+  const [search, setSearch] = useState(""), [appliedSearch, setAppliedSearch] = useState("");
+  const [offsets, setOffsets] = useState({ highReturnsOffset: 0, highProfitOffset: 0, losingOffset: 0, allOffset: 0 });
+  const computed = useMemo(() => {
+    try { return { result: buildOperationsBoardEditionProductProjection({ read, input: { search: appliedSearch, ...offsets, pageSize: PAGE_SIZE } }), error: false }; }
+    catch { return { result: null, error: true }; }
+  }, [read, appliedSearch, offsets]);
+  const result = computed.result;
+  if (computed.error || !result) return <p role="alert">归档产品原行或完整计算依据无法核验，未显示部分榜单，也未回退实时来源。请重新读取。</p>;
+  const historyPoints = result.periods.total.months.map(month => ({ month, missingReason: read.sources.some(source => source.month === month) ? null : "此版本当前授权范围无该月原行，不补零" }));
+  return <div className="min-w-0 space-y-4"><form className="flex flex-wrap items-end gap-3" aria-label="归档产品搜索" onSubmit={event => { event.preventDefault(); setAppliedSearch(search); setOffsets({ highReturnsOffset: 0, highProfitOffset: 0, losingOffset: 0, allOffset: 0 }); }}><label className="text-sm">版本内产品搜索<input aria-label="版本内产品搜索" maxLength={200} className="ml-2 rounded border p-2" value={search} onChange={event => setSearch(event.currentTarget.value)} /></label><button className={buttonClass} type="submit">筛选完整父组</button></form>
+    <ProductBoardReadOnlyContent key={JSON.stringify([appliedSearch, offsets])} result={result} renderNote={renderNote} onPage={(section, offset) => setOffsets(value => ({ ...value, [`${section}Offset`]: offset }))}
+      renderProductAnalysis={product => <div className="min-w-0 space-y-4"><ProductFinancialHistory product={product} rows={result.pageRows} sources={historyPoints} />{product.parentAsin && <EditionCurrentProductTools>
+        <OperationsCostSheetEmbeddedActions scope={{ workspaceId: read.identity.workspaceId, storeName: read.scope.storeName, country: read.scope.country, parentAsin: product.parentAsin }} />
+        {result.request.month >= "1000-06" && (product.basis === "child_rows" || product.basis === "reported_parent_row") && <ProfitAnalysisWorkflow identity={read.identity} scope={{ storeName: read.scope.storeName, country: read.scope.country, parentAsin: product.parentAsin, currency: product.currency, basis: product.basis }} months={profitBoardMonths(result.request.month)} />}
+        <ProductTasksEmbeddedReadOnly product={{ workspaceId: read.identity.workspaceId, storeName: read.scope.storeName, country: read.scope.country, parentAsin: product.parentAsin }} />
+      </EditionCurrentProductTools>}</div>} />
   </div>;
 }
 type ReadState = { status: "idle" | "loading" | "error" | "invalid" } | { status: "ready"; result: ProductBoardReadResult };
@@ -120,6 +146,7 @@ function OwnedProductBoard({ owner }: { owner: Owner }) {
   const client = trpc.useUtils().client;
   const [scope, setScope] = useState({ month: "", storeName: "", country: "", parentAsin: "", search: "" }), [state, setState] = useState<ReadState>({ status: "idle" });
   const [ownership, setOwnership] = useState<ProductBoardReadResult["ownership"] | null>(null), [operatorId, setOperatorId] = useState<number | undefined>();
+  const [editionScope, setEditionScope] = useState<{ storeName: string; country: string } | null>(null);
   const canViewAll = ["super_admin", "admin", "ops_manager"].includes(owner.role);
   const sequence = useRef(0), pending = useRef<AbortController | null>(null), active = useRef(false);
   useEffect(() => () => { sequence.current++; pending.current?.abort(); }, []);
@@ -148,6 +175,14 @@ function OwnedProductBoard({ owner }: { owner: Owner }) {
   useEffect(() => subscribeMonthlyFinancialChanges(notice => {
     if (notice.action !== "upload" && notice.workspaceId === owner.workspaceId) { setOwnership(null); if (active.current) void readRef.current(); }
   }), [owner.workspaceId]);
+  function openEditions() {
+    const parsed = OperationsBoardEditionStateInputSchema.safeParse({ expectedWorkspaceId: owner.workspaceId, scope: { storeName: scope.storeName.trim(), country: normalizeMarketplaceCode(scope.country.trim()) } });
+    if (!parsed.success) { clear(); setState({ status: "invalid" }); return; }
+    clear(); setEditionScope(parsed.data.scope);
+  }
+  if (editionScope) return <Shell><button type="button" className={buttonClass} onClick={() => {
+    if (window.confirm("返回实时来源读取？未保存备注草稿将丢失；已提交但结果未知的操作仍保留原操作编号，可重新进入核对。")) setEditionScope(null);
+  }}>返回实时来源读取</button><OperationsBoardEditionWorkspace owner={owner} scope={editionScope} renderContent={(result, renderNote) => <ProductEditionContent key={result.viewKey} read={result} renderNote={renderNote} />} /></Shell>;
   return <Shell><form aria-label="产品看板读取范围" className="space-y-3" onSubmit={event => { event.preventDefault(); void read(); }}><div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">{([["month", "基准月份（YYYY-MM）"], ["storeName", "店铺"], ["country", "站点 / 国家代码"], ["parentAsin", "父 ASIN（可选）"], ["search", "产品搜索（保留完整父组）"]] as const).map(([key, label]) => <label key={key} className="min-w-0 text-sm">{label}<input aria-label={`产品看板${label}`} autoComplete="off" className="mt-1 w-full min-w-0 rounded border bg-background p-2" value={scope[key]} onChange={event => { const value = event.currentTarget.value; clear(); setOwnership(null); setOperatorId(undefined); setScope(old => ({ ...old, [key]: value })); }} /></label>)}</div>
     <label className="block min-w-0 text-sm">运营<select aria-label="产品看板运营" className="mt-1 block w-full min-w-0 max-w-md rounded border bg-background p-2" value={operatorId ?? "all"} disabled={ownership?.status !== "ready" || state.status === "loading"} onChange={event => {
       const value = event.currentTarget.value, selected = value === "all" ? undefined : Number(value); clear();
@@ -156,7 +191,7 @@ function OwnedProductBoard({ owner }: { owner: Owner }) {
     }}><option value="all">{canViewAll ? "全部运营" : "自己"}</option>{operatorId !== undefined && !ownership?.operators.some(operator => operator.userId === operatorId) && <option value={operatorId}>待重新核验 · ID {operatorId}</option>}{ownership?.operators.map(operator => <option key={operator.userId} value={operator.userId}>{operator.displayName} · ID {operator.userId}</option>)}</select></label>
     {operatorId !== undefined && <button type="button" className={buttonClass} onClick={() => { clear(); setOperatorId(undefined); setOwnership(null); }}>清除运营筛选</button>}
     <p className="text-xs">{ownership?.status === "unavailable" ? "运营目录不可用；仅保留管理员无运营筛选的授权财务，不表示产品未分配负责人。" : ownership ? `当前数字负责人目录（${ownership.visibility === "full" ? "工作区授权目录" : "仅本人授权目录"}）；选择后点击读取，由服务器在分页前筛选完整父体。` : "请先读取当前范围以核验数字负责人目录；未核验时不能选择其他运营。"} 搭档关系尚未配置，不按姓名推断“自己和搭档”。负责人依据为当前人工分配或已确认来源映射，不是历史归档负责人。</p>
-    <p className="text-xs">父 ASIN 留空只请求当前授权范围；店铺 / 国家及搜索不是授权，不使用姓名或保存的 ownerIds 扩权。</p><div className="flex flex-wrap gap-3"><button type="submit" className={buttonClass}>读取已有产品看板</button><button type="button" className={buttonClass} onClick={clear}>取消并清除产品看板</button></div></form>
+    <p className="text-xs">父 ASIN 留空只请求当前授权范围；店铺 / 国家及搜索不是授权，不使用姓名或保存的 ownerIds 扩权。</p><div className="flex flex-wrap gap-3"><button type="submit" className={buttonClass}>读取已有产品看板</button><button type="button" className={buttonClass} onClick={clear}>取消并清除产品看板</button><button type="button" className={buttonClass} onClick={openEditions}>打开当前／历史归档看板</button></div><p className="text-xs">归档入口只需店铺和站点；基准月由选中的版本决定，不沿用实时搜索或运营筛选。</p></form>
     {state.status === "loading" && <p role="status">正在核验全部已保存历史与产品榜单…</p>}{state.status === "invalid" && <p role="alert">产品看板范围不完整或不合法，未发送请求。</p>}{state.status === "error" && <p role="alert">产品看板读取失败，或身份、权限、范围、历史来源及回包完整性已变化。旧数据已清除，不回退缓存；请显式从首页重新读取。</p>}{state.status === "ready" && <ProductBoardReadOnlyContent key={sequence.current} result={state.result} onPage={(section, offset) => { void read(section, offset, state.result); }} renderProductTasks={product => product.parentAsin ? <ProductTasksEmbeddedReadOnly product={{ workspaceId: state.result.identity.workspaceId, storeName: state.result.request.storeName, country: state.result.request.country, parentAsin: product.parentAsin }} /> : null} renderProductCosts={product => product.parentAsin ? <OperationsCostSheetEmbeddedActions scope={{ workspaceId: state.result.identity.workspaceId, storeName: state.result.request.storeName, country: state.result.request.country, parentAsin: product.parentAsin }} /> : null}
       renderProductAnalysis={product => <div className="min-w-0 space-y-4 py-4"><ProductFinancialHistory product={product} rows={state.result.pageRows} sources={state.result.sources} />{product.parentAsin && state.result.request.month >= "1000-06" && (product.basis === "child_rows" || product.basis === "reported_parent_row") && <ProfitAnalysisWorkflow identity={state.result.identity} scope={{ storeName: state.result.request.storeName, country: state.result.request.country, parentAsin: product.parentAsin, currency: product.currency, basis: product.basis }} months={profitBoardMonths(state.result.request.month)} />}</div>} />}
   </Shell>;

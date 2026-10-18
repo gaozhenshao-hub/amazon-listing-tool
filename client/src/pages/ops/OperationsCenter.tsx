@@ -46,7 +46,7 @@ function EnabledOperationsCenter({ initialPanel = "legacy" }: OperationsCenterPr
       <div className="flex w-max min-w-full gap-2">{visibleEntries.map(entry => <a key={entry.panel} href={entry.href} aria-current={initialPanel === entry.panel ? "page" : undefined}
         className={`whitespace-nowrap rounded-md border px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 ${initialPanel === entry.panel ? "border-primary bg-primary/10 font-medium" : "hover:bg-muted"}`}>{entry.label}</a>)}</div>
     </nav>
-    <p className="text-xs text-muted-foreground">任务、产品与利润使用各自完整页面；当前看板按已保存来源读取，不表示已冻结归档。读取页面不会自动发起模型生成。</p>
+    <p className="text-xs text-muted-foreground">任务、产品与利润使用各自完整页面；产品／利润可分别读取实时已保存来源和月度归档版本。读取页面不会自动初始化归档、改写备注或发起模型生成。</p>
     <PendingPage key={`${initialPanel}:${identityKey}`}>{content}</PendingPage>
   </section>;
 }

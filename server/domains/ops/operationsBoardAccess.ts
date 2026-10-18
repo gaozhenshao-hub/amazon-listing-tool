@@ -6,6 +6,7 @@ import { ROLE_MODULE_ACCESS } from "../../../shared/const";
 import { normalizeMarketplaceCode } from "../../../shared/marketplaceIdentity";
 import { OperationsBoardEditionCaptureSchema, operationsBoardEditionHash, type OperationsBoardEditionCapture } from "../../../shared/operationsBoardEdition";
 import type { MonthlyFinancialReadRow } from "../../../shared/monthlyFinancialRead";
+import { OperationsBoardEditionOwnershipSchema, type OperationsBoardEditionOwnership } from "../../../shared/operationsBoardEditionOwnership";
 import { positiveId, query, type Row } from "./monthlyBoardReadCore";
 import { splitExternalOperatorNames } from "./operatorNameResolution";
 
@@ -193,11 +194,29 @@ async function activeOwners(session: OperationsBoardAccessSession, ids: number[]
   return { records, active };
 }
 
+async function visibleOwnerNames(session: OperationsBoardAccessSession, ids: number[]) {
+  const names = new Map<number, string>();
+  for (const group of chunks(ids)) {
+    const rows = await read(session.tx, `SELECT id,status,defaultWorkspaceId,IF(OCTET_LENGTH(name)<=800,name,NULL) AS displayName,OCTET_LENGTH(name) AS nameBytes
+      FROM users WHERE id IN (${group.map(() => "?").join(",")}) ORDER BY id LIMIT 501 FOR SHARE`, group);
+    if (rows.length !== group.length) fail("OWNER_DIRECTORY_INVALID", "PRECONDITION_FAILED");
+    for (const row of rows) {
+      if (!positiveId(row.id) || !group.includes(row.id) || names.has(row.id) || row.status !== "active" || row.defaultWorkspaceId !== session.identity.workspaceId
+        || (row.displayName === null ? row.nameBytes !== null : typeof row.displayName !== "string" || !Number.isSafeInteger(row.nameBytes) || row.nameBytes !== Buffer.byteLength(row.displayName, "utf8") || row.nameBytes > 800)
+        || typeof row.displayName === "string" && row.displayName.trim().length > 200) fail("OWNER_DIRECTORY_INVALID", "PRECONDITION_FAILED");
+      // A current account without a name is explicitly identified by its ID;
+      // neither an old spreadsheet name nor a historical identity is invented.
+      names.set(row.id, typeof row.displayName === "string" && row.displayName.trim() ? row.displayName.trim() : `用户 #${row.id}`);
+    }
+  }
+  return names;
+}
+
 /** Only direct, freshly authorized partner sessions supplied after the caller's
  * current pairing lookup may extend READ visibility. This does not discover
  * pairs, recurse, grant import/task/model access or lend any editing capability. */
 export async function authorizeOperationsBoardCapture(session: OperationsBoardAccessSession, raw: OperationsBoardEditionCapture,
-  options: { partnerSessions?: OperationsBoardAccessSession[] } = {}) {
+  options: { partnerSessions?: OperationsBoardAccessSession[]; includeOwnership?: boolean } = {}) {
   if (!issued.has(session)) fail("SESSION_INVALID");
   const capture = OperationsBoardEditionCaptureSchema.parse(raw), partners = options.partnerSessions ?? [];
   if (capture.scope.workspaceId !== session.identity.workspaceId || !Array.isArray(partners) || partners.length > MAX_PARTNERS
@@ -244,9 +263,29 @@ export async function authorizeOperationsBoardCapture(session: OperationsBoardAc
   const responsibleUserIdsByParent = new Map([...latest].filter(([parent]) => visibleParents.has(parent)).map(([parent, group]) => [parent, [...group.owners]]));
   const canEditParents = new Set([...visibleParents].filter(parent => isAdmin(session.role) || responsibleUserIdsByParent.get(parent)?.includes(session.identity.userId)));
   const sources = capture.sources.flatMap(source => { const rowCount = authorizedRows.filter(row => row.yearMonth === source.month).length; return rowCount ? [{ ...source, rowCount }] : []; });
+  let ownership: OperationsBoardEditionOwnership | null = null;
+  if (options.includeOwnership) {
+    // Display/filter evidence is the latest VISIBLE original row per parent,
+    // evaluated with today's mapping/membership. Note-edit authority above is
+    // deliberately independent and cannot be inherited from a partner.
+    const visibleRefs = new Set(authorizedRows.map(row => `${row.batchId}:${row.rowIndex}`)), visibleLatest = new Map<string, OwnerResolution>();
+    for (const group of groups) if (group.rows.some(row => visibleRefs.has(`${row.batchId}:${row.rowIndex}`))
+      && (!visibleLatest.has(group.parent) || group.month > visibleLatest.get(group.parent)!.month)) visibleLatest.set(group.parent, group);
+    const parentOwners = [...visibleLatest].sort(([a], [b]) => a.localeCompare(b)).map(([parentAsin, group]) => {
+      const operatorIds = group.owners.filter(owner => session.manager || readIds.has(owner));
+      return { parentAsin, operatorIds, status: operatorIds.length ? "resolved" as const : "unresolved" as const,
+        basis: manual.byParent.has(parentAsin) ? "manual" as const : "confirmed_source_mapping" as const,
+        sourceMonth: manual.byParent.has(parentAsin) ? null : group.month };
+    });
+    const visibleIds = [...new Set(parentOwners.flatMap(parent => parent.operatorIds))].sort((a, b) => a - b), names = await visibleOwnerNames(session, visibleIds);
+    const partnerIds = new Set(partners.map(partner => partner.identity.userId));
+    ownership = OperationsBoardEditionOwnershipSchema.parse({ version: 1, meaning: "current_authorization_not_historical_membership", visibility: session.manager ? "full" : "scoped",
+      operators: visibleIds.map(userId => ({ userId, displayName: names.get(userId), relation: userId === session.identity.userId ? "self" : partnerIds.has(userId) ? "direct_partner" : "workspace_owner" })),
+      parents: parentOwners, selectedOperatorId: null });
+  }
   const authorizationHash = operationsBoardEditionHash({ schema: "operations-board-capture-access/v1", sourceHash: capture.sourceHash, actor: session.authorizationHash,
     partners: partners.map(partner => ({ userId: partner.identity.userId, authorizationHash: partner.authorizationHash })).sort((a, b) => a.userId - b.userId),
     ownerRules: manual.records, mappings: mapped.records, members: members.records,
     grantedRows: authorizedRows.map(row => [row.batchId, row.rowIndex]), editableParents: [...canEditParents].sort() });
-  return { authorizedRows, sources, responsibleUserIdsByParent, canEditParents, authorizationHash, visibility: session.manager ? "full" as const : "scoped" as const };
+  return { authorizedRows, sources, responsibleUserIdsByParent, canEditParents, authorizationHash, ownership, visibility: session.manager ? "full" as const : "scoped" as const };
 }
