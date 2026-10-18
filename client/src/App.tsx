@@ -92,7 +92,7 @@ const OpsProductDetail = lazy(() => import("./pages/ops/OpsProductDetail"));
 const OpsCrawlerManager = lazy(() => import("./pages/ops/OpsCrawlerManager"));
 const OpsShippingBatchDetail = lazy(() => import("./pages/ops/OpsShippingBatchDetail"));
 const OpsLogistics = lazy(() => import("./pages/ops/OpsLogistics"));
-const OpsDashboardUpgrade = lazy(() => import("./pages/ops/OpsDashboardUpgrade"));
+const OperationsCenter = lazy(() => import("./pages/ops/OperationsCenter"));
 const OpsCustomDashboard = lazy(() => import("./pages/ops/OpsCustomDashboard"));
 const OpsTaskManagement = lazy(() => import("./pages/ops/OpsTaskManagement"));
 const OpsDataImport = lazy(() => import("./pages/ops/OpsDataImport"));
@@ -262,11 +262,32 @@ function Router() {
             </PermissionGuard>
           )}</Route>
         )}
+        {MERGED_READONLY_FEATURES_ENABLED && (
+          <Route path="/ops/product-board">{() => (
+            <PermissionGuard moduleId="ops" subModuleId="ops_data_import">
+              <OperationsCenter initialPanel="products" />
+            </PermissionGuard>
+          )}</Route>
+        )}
+        {MERGED_READONLY_FEATURES_ENABLED && (
+          <Route path="/ops/profit-board">{() => (
+            <PermissionGuard moduleId="ops" subModuleId="ops_data_import">
+              <OperationsCenter initialPanel="profit" />
+            </PermissionGuard>
+          )}</Route>
+        )}
+        {MERGED_READONLY_FEATURES_ENABLED && (
+          <Route path="/ops/product-tasks">{() => (
+            <PermissionGuard moduleId="ops" subModuleId="ops_tasks">
+              <OperationsCenter initialPanel="tasks" />
+            </PermissionGuard>
+          )}</Route>
+        )}
         <Route path="/ops/ads">{() => <PermissionGuard><OpsAds /></PermissionGuard>}</Route>
         <Route path="/ops/crawler">{() => <PermissionGuard><OpsCrawlerManager /></PermissionGuard>}</Route>
         <Route path="/ops/shipping/:id">{() => <PermissionGuard><OpsShippingBatchDetail /></PermissionGuard>}</Route>
         <Route path="/ops/logistics">{() => <PermissionGuard><OpsLogistics /></PermissionGuard>}</Route>
-        <Route path="/ops/dashboard-upgrade">{() => <PermissionGuard><OpsDashboardUpgrade /></PermissionGuard>}</Route>
+        <Route path="/ops/dashboard-upgrade">{() => <PermissionGuard><OperationsCenter /></PermissionGuard>}</Route>
         <Route path="/ops/custom-dashboard">{() => <PermissionGuard><OpsCustomDashboard /></PermissionGuard>}</Route>
         <Route path="/ops/data-import">{() => <PermissionGuard><OpsDataImport /></PermissionGuard>}</Route>
         <Route path="/ops/lingxing-sync">{() => <PermissionGuard><OpsLingxingSync /></PermissionGuard>}</Route>

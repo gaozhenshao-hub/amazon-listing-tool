@@ -99,6 +99,7 @@ import {
   parseListingAgentNodeContext,
 } from "@/components/workflow";
 import { WorkspaceTabs } from "@/components/workspace";
+import MergedOperationsMenuEntry from "@/components/MergedOperationsMenuEntry";
 
 // ─── Module definitions ────────────────────────────────────────
 type ModuleId = "home" | "dev" | "listing" | "ops" | "service" | "knowledge" | "admin" | "offsite" | "emperor";
@@ -107,6 +108,7 @@ interface MenuItem {
   icon: LucideIcon;
   label: string;
   path: string;
+  requiredOpsDirectory?: "ops_tasks" | "ops_data_import";
 }
 
 interface MenuGroup {
@@ -202,7 +204,12 @@ const modules: ModuleDef[] = [
       { icon: DatabaseZap, label: "领星同步预览", path: "/ops/lingxing-sync" },
       { icon: Package, label: "库存预警", path: "/ops/inventory" },
       ...(MERGED_READONLY_FEATURES_ENABLED
-        ? [{ icon: FileSpreadsheet, label: "只读运营对账", path: "/ops/read-only-overview" }]
+        ? [
+          { icon: ClipboardList, label: "产品任务", path: "/ops/product-tasks", requiredOpsDirectory: "ops_tasks" as const },
+          { icon: TrendingUp, label: "利润看板", path: "/ops/profit-board", requiredOpsDirectory: "ops_data_import" as const },
+          { icon: ShoppingBag, label: "产品看板", path: "/ops/product-board", requiredOpsDirectory: "ops_data_import" as const },
+          { icon: FileSpreadsheet, label: "只读运营对账", path: "/ops/read-only-overview" },
+        ]
         : []),
       { icon: Target, label: "广告优化", path: "/ops/ads" },
       { icon: Activity, label: "广告深度优化", path: "/ops/ad-deep" },
@@ -479,7 +486,7 @@ function DashboardLayoutContent({
   const renderMenuEntries = (mobile: boolean) => activeModule?.items.map((entry) => {
     if (!isMenuGroup(entry)) {
       const active = isMenuActive(entry);
-      return (
+      const button = (
         <button
           key={entry.path}
           type="button"
@@ -497,6 +504,9 @@ function DashboardLayoutContent({
           <span className="truncate">{entry.label}</span>
         </button>
       );
+      return entry.requiredOpsDirectory
+        ? <MergedOperationsMenuEntry key={entry.path} directory={entry.requiredOpsDirectory}>{button}</MergedOperationsMenuEntry>
+        : button;
     }
 
     const groupActive = entry.items.some(isMenuActive);

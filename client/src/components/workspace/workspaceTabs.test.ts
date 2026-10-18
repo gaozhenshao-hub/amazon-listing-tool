@@ -23,6 +23,29 @@ describe("global workspace tabs", () => {
       .toBe("Agent画布 · listing.full.workflow");
   });
 
+  it.each([
+    ["/ops/product-board", "产品看板"],
+    ["/ops/profit-board", "利润看板"],
+    ["/ops/product-tasks", "产品任务"],
+  ])("uses the exact operations title for %s including query and hash", (path, label) => {
+    for (const suffix of ["", "?month=2026-10&operatorId=7", "#details", "?storeName=Store%20A&country=US#details"]) {
+      const href = `${path}${suffix}`;
+      expect(resolveWorkspaceTabLabel(href)).toBe(label);
+      expect(readWorkspaceTabs(JSON.stringify([{ href, lastActiveAt: 1 }]))).toEqual([{ href, label, lastActiveAt: 1 }]);
+      expect(upsertWorkspaceTab([], { href, label: "", lastActiveAt: 1 })).toEqual([{ href, label, lastActiveAt: 1 }]);
+    }
+    const href = normalizeWorkspaceHref(path, "month=2026-10", "details");
+    expect(href).toBe(`${path}?month=2026-10#details`);
+    expect(resolveWorkspaceTabLabel(href)).toBe(label);
+  });
+
+  it("keeps existing operations labels and preferred labels unchanged", () => {
+    expect(resolveWorkspaceTabLabel("/ops/products?country=US#history")).toBe("产品总览");
+    expect(resolveWorkspaceTabLabel("/ops/tasks?status=pending")).toBe("任务管理");
+    expect(resolveWorkspaceTabLabel("/ops/product-board", " 自定义标签 ")).toBe("自定义标签");
+    expect(resolveWorkspaceTabLabel("/ops/product-board-other")).toBe("product board other");
+  });
+
   it("adds, revisits, and removes tabs without losing the other open pages", () => {
     const first = upsertWorkspaceTab([], {
       href: "/listing/canvas",

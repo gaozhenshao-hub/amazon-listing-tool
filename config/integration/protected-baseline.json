@@ -26,9 +26,9 @@
         "sha256": "05a4205aecfa3e713f2f29fd91e8e37706727e8d8db0b943cc6b3e44d0cc9bd1"
       },
       "reviewed": {
-        "gitBlobSha1": "7632fe9df2c0adb8fd2a9910b52f982c9406228c",
-        "sha256": "164c1266491700935f7344c7bee816d412c474a9856b086b5451752e9d66a6c2",
-        "reviewRef": "config/integration/reviews/20261016-competitor-review-corpus.json"
+        "gitBlobSha1": "de7f146a4d033cbb06109bd39234041927282d58",
+        "sha256": "909e345a7689ee84f3e0808d615952b3306ad13a782f00a772f6d4532f46d07f",
+        "reviewRef": "config/integration/reviews/20261018-operations-center-entry.json"
       }
     },
     {
@@ -117,6 +117,11 @@
       "baseline": {
         "gitBlobSha1": "7584bc6daad17001a8e1abc7dc37e94771cec9b4",
         "sha256": "8fa7d463e662d16c20018f018e35f1d28ecab0f5acd18b13b847967149772ebf"
+      },
+      "reviewed": {
+        "gitBlobSha1": "f8e82118c40f91964cb36a0214a56657984c0b6d",
+        "sha256": "d18c3fe0839fef9c2e214e573c10e85c444153f298524e5e6bd97eade236f23d",
+        "reviewRef": "config/integration/reviews/20261018-operations-center-entry.json"
       }
     },
     {

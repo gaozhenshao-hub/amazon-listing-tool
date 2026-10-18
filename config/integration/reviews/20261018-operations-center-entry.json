@@ -1,0 +1,51 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "accelerated-formal-operations-center-entry",
+  "baseline": "9dee977452c73eb3d7780f846bf0c6a2e429aea7",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "changes": [
+    "Add opt-in product-task, profit-board and product-board routes to the existing center flow. Each route has an explicit enforced directory guard, and each new panel also checks valid user/workspace, current dashboard plus matching read permission. Only the selected panel mounts.",
+    "Preserve the existing center path and default legacy promotion calendar, health, alerts and explicit briefing behavior. Flag-off resolves to the unmodified legacy component. No old route, legacy product overview, task management or read-only diagnostic page is removed.",
+    "Add only three exact workspace tab titles. Existing tab persistence, normalization, query/hash behavior and all other route labels remain unchanged.",
+    "Add three flagged sidebar items with isolated per-entry visibility gates. Old sidebar items do not acquire new permission hooks when integration is disabled. Menu visibility does not authorize backend reads or writes."
+  ],
+  "review": {
+    "root": "Reviewed complete App and workspace label diffs against the fixed parent, plus sidebar, permission registry and lazy wrapper. New routes do not overlap product detail routes. Feature flags, legacy page bodies, source reads, models and mutation implementations are unchanged.",
+    "independent": "Independent reviewer read all eleven initial source/test files and complete six pre-existing-file diffs. Confirmed no blocking issue in the two protected changes: only three explicit flag-gated routes and default-compatible wrapper in App; only three exact tab labels in workspaceTabState. No existing route, permission policy, persistence function or old title is removed.",
+    "previousProtectionRecords": [
+      {
+        "path": "client/src/App.tsx",
+        "previousReviewed": {
+          "gitBlobSha1": "7632fe9df2c0adb8fd2a9910b52f982c9406228c",
+          "sha256": "164c1266491700935f7344c7bee816d412c474a9856b086b5451752e9d66a6c2",
+          "reviewRef": "config/integration/reviews/20261016-competitor-review-corpus.json"
+        }
+      },
+      {
+        "path": "client/src/components/workspace/workspaceTabState.ts",
+        "previousBaseline": {
+          "gitBlobSha1": "7584bc6daad17001a8e1abc7dc37e94771cec9b4",
+          "sha256": "8fa7d463e662d16c20018f018e35f1d28ecab0f5acd18b13b847967149772ebf"
+        }
+      }
+    ],
+    "baselineFieldsUnchanged": true,
+    "otherProtectionRecordsUnchanged": true
+  },
+  "verification": {
+    "reference": "Parent-workspace outputs/amazon-system-accelerated-operations-center-batch-20261018.json records final frozen source and actual command/browser receipts; this review record is not itself a test pass.",
+    "realDatabase": false,
+    "realProvider": false,
+    "paidModelCalls": 0
+  },
+  "defaults": {
+    "integrationFlag": "unchanged off by default",
+    "newSchema": false,
+    "dataWrites": false,
+    "productionDeployed": false
+  },
+  "remaining": [
+    "Approved shop/site-specific versioned archives, separately saved historical revisions, responsible-user notes and explicit read-only digital-partner relationships are not implemented by navigation.",
+    "Native database, authenticated business-page, approved Qingdao Skill/model and all original release gates remain necessary before enablement and deployment."
+  ]
+}

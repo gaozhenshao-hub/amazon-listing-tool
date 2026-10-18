@@ -13,7 +13,7 @@ const source = (path: string) => readFileSync(resolve(process.cwd(), path), "utf
 
 describe("统一权限目录同步", () => {
   it("让每一个模块目录都拥有子模块定义，并让每条注册路由指向有效目录", () => {
-    const moduleIds = new Set(PERMISSION_MODULES.map((module) => module.id));
+    const moduleIds = new Set<string>(PERMISSION_MODULES.map((module) => module.id));
     const subModuleIds = new Set(Object.values(SUB_MODULES).flat().map((subModule) => subModule.id));
 
     expect(moduleIds).toEqual(new Set(Object.keys(SUB_MODULES)));
@@ -32,6 +32,21 @@ describe("统一权限目录同步", () => {
     expect(source("server/routers/roleManagement.ts")).toContain("PERMISSION_MODULES");
     expect(source("client/src/components/PermissionGuard.tsx")).toContain("PERMISSION_ROUTE_REGISTRY");
     expect(source("client/src/components/PermissionGuard.tsx")).toContain('routeMatch?.enforcement === "catalog_only"');
+  });
+
+  it.each([
+    ["/ops/product-board", "ops_data_import"],
+    ["/ops/profit-board", "ops_data_import"],
+    ["/ops/product-tasks", "ops_tasks"],
+  ])("正式运营入口 %s 使用既有子目录强制守卫", (path, subModuleId) => {
+    expect(PERMISSION_ROUTE_REGISTRY[path]).toEqual({ moduleId: "ops", subModuleId, enforcement: "enforced" });
+    expect(PERMISSION_ROUTE_REGISTRY[`${path}-other`]).toBeUndefined();
+  });
+
+  it("不改变旧运营路由的兼容执行策略", () => {
+    expect(PERMISSION_ROUTE_REGISTRY["/ops/products"]).toEqual({ moduleId: "ops", subModuleId: "ops_products", enforcement: "catalog_only" });
+    expect(PERMISSION_ROUTE_REGISTRY["/ops/tasks"]).toEqual({ moduleId: "ops", subModuleId: "ops_tasks", enforcement: "catalog_only" });
+    expect(PERMISSION_ROUTE_REGISTRY["/ops/read-only-overview"]).toEqual({ moduleId: "ops", subModuleId: "ops_data_import", enforcement: "enforced" });
   });
 
   it("从同一资源目录派生后端资源级授权映射，并覆盖站外和皇帝资源", () => {
