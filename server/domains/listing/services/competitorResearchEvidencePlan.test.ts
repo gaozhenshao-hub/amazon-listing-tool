@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { CompetitorReviewCorpus, CompetitorReviewItem } from "../../../../shared/competitorReviewCorpus";
+import { readCompetitorSales } from "../../../../shared/competitorSales";
 import {
   assertCompetitorResearchEvidenceQuote as quote,
   buildCompetitorResearchEvidencePlan as build,
@@ -54,6 +55,29 @@ function repinPlan(value: CompetitorResearchEvidencePlan) {
 }
 
 describe("pure competitor research evidence — not model or authorization proof", () => {
+  it("binds optional versioned sales context without changing exact listing/review sources, batches or quotes", () => {
+    const original = input(), old = build(original, sha256);
+    const projection = readCompetitorSales({ manualSales: { version: 1, value: 123, sourceNote: "Synthetic external source", updatedAt: "2026-10-19T00:00:00.000Z", updatedBy: 3 }, purchaseBadge: "100+" }, ASIN);
+    const plan = build({ ...original, salesContext: { version: 1, projection } }, sha256);
+    expect(plan.evidenceHash).not.toBe(old.evidenceHash); expect(plan.listingSources).toEqual(old.listingSources); expect(plan.reviews).toEqual(old.reviews);
+    expect(encodeCompetitorResearchBatch(plan, 0, sha256)).toBe(encodeCompetitorResearchBatch(old, 0, sha256));
+    expect(verify(plan, sha256)).toEqual(plan); expect(summarize(plan, sha256).reviews).toEqual(summarize(old, sha256).reviews);
+    expect(JSON.stringify(summarize(plan, sha256))).not.toContain("Synthetic external source");
+    expect(() => quote(plan, { sourceId: "salesContext", start: 0, end: 3, quote: "123" }, sha256)).toThrow("EVIDENCE_QUOTE_MISMATCH");
+  });
+  it("keeps legacy no-sales plan bytes and hash unchanged through verification instead of filling a default", () => {
+    const old = build(input(), sha256), encoded = canonical(old), hash = old.evidenceHash;
+    expect(old).not.toHaveProperty("salesContext"); const restored = verify(JSON.parse(encoded), sha256);
+    expect(restored).not.toHaveProperty("salesContext"); expect(restored.evidenceHash).toBe(hash); expect(canonical(restored)).toBe(encoded);
+  });
+  it("cannot alter sales context while retaining a saved evidence hash", () => {
+    const plan = build({ ...input(), salesContext: { version: 1, projection: readCompetitorSales({ purchaseBadge: "100+" }, ASIN) } }, sha256);
+    plan.salesContext!.projection.value = 200;
+    expect(() => verify(plan, sha256)).toThrow("EVIDENCE_PLAN_CHANGED");
+  });
+  it.each([null, { version: 2 }, { version: 1, projection: { value: 999 } }, { version: 1, projection: readCompetitorSales(null, ASIN), quoteSource: true }])("rejects malformed sales context %#", salesContext => {
+    expect(() => build({ ...input(), salesContext } as CompetitorResearchEvidenceInput, sha256)).toThrow("EVIDENCE_INPUT_INVALID");
+  });
   it("preserves exact listing text, complete original reviews and two distinct ID kinds", () => {
     const source = input(), plan = build(source, sha256), r = reviews(plan);
     expect(plan.listingSources.map(s => s.text)).toEqual([source.title, ...source.bullets]);

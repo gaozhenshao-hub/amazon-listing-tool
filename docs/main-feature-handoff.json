@@ -16,8 +16,8 @@
       "name": "Listing 竞品研究与生成",
       "route": "/listing/comparison",
       "continueAt": "/listing/generate",
-      "steps": "选择项目和授权竞品；可查看原评论与研究依据。核对四栏条件、明确计费确认后提交后台研究；查看保存结果并人工确认摘要，再到生成页选择研究范围和本品画像、生成属性、审核事实及七条方向。",
-      "boundary": "四栏默认关闭。unknown／not_found／提交超时只核对或取消原 UUID，不重新发起；成功候选不自动确认，不自动改 Listing。",
+      "steps": "选择项目和授权竞品；可查看原评论与研究依据。销量区区分人工报告总量、已保存 ASIN 购买提示及卖家精灵估算；人工校准须填写来源说明，也可明确恢复采集值。核对四栏条件、明确计费确认后提交后台研究，保存的四栏候选目前只读复核。既有竞品研究的可确认摘要流程独立保留；生成页可选择已合规确认的研究范围和本品画像、生成属性、审核事实及七条方向。",
+      "boundary": "四栏默认关闭。unknown／not_found／提交超时只核对或取消原 UUID，不重新发起；成功候选不自动确认，不自动改 Listing。四栏候选正式采纳为已确认摘要及下游生成来源的受控入口尚未接通；不得借清除 stale 标记冒充已采纳。",
       "sourceFiles": ["client/src/pages/ComparisonPage.tsx", "client/src/pages/listing/CompetitorDeepResearchJobControls.tsx", "client/src/pages/GeneratePage.tsx"]
     },
     {
@@ -81,6 +81,7 @@
   "backendFlags": {
     "rule": "下列开关均以精确字符串 true 启用，未配置保持关闭；开关不代替权限、schema、来源审批、模型注册或凭据配置。按所试用模块单独启用，不一键全开。",
     "listingDeep": ["ENABLE_COMPETITOR_DEEP_WRITES", "ENABLE_COMPETITOR_DEEP_WORKER"],
+    "listingSalesCalibration": ["ENABLE_LISTING_SALES_CALIBRATION_WRITES"],
     "agentConversation": ["ENABLE_ASSISTANT_CONVERSATION_WRITES", "ENABLE_ASSISTANT_CONVERSATION_WORKER"],
     "agentConfigurationAndRuleConfirmation": ["ENABLE_ASSISTANT_CONFIGURATION_WRITES"],
     "profitAnalysis": ["ENABLE_PROFIT_ANALYSIS_WRITES", "ENABLE_PROFIT_ANALYSIS_WORKER"],
@@ -134,7 +135,17 @@
     ],
     "sourceFiles": ["server/domains/ops/monthlyFinancialWriteRepository.ts", "server/domains/ops/monthlyOperationsBoardSynchronization.ts", "server/domains/ops/operationsBoardSchemaAdmission.ts", "server/domains/ops/operationsBoardRepository.ts"]
   },
+  "listingSalesAndComparisonReview": {
+    "calibration": "人工校准只写竞品原有 rawData 的版本化 manualSales，来源说明必填，操作者和时间由服务器生成；恢复只移除人工覆盖，不覆盖采集值、不自动重分析、不更新本品事实。未开放写入开关时只读。",
+    "observedCoverage": "购买提示的 covered/total 只计算已保存的观测 ASIN 集合，单 ASIN 不是全子体采齐证明；部分提示合计保留下限和未知覆盖。卖家精灵月销量单列为估算，不与购买提示或人工总量混加。旧无完整来源元数据的人工值需复核，不能当作本批已核验校准。",
+    "sourceInvalidation": "实际校准变更保留旧研究正文并标过期，相关已确认对比在同事务撤回为草稿、清除确认状态并递增版本。对比读取与审核采用报告及当前选择来源的独立 CAS；选择来源仍过期时不能确认或发起新的对比生成。重新分析或重新确认都必须明确进行，不自动恢复旧确认。",
+    "comparisonProvenanceBoundary": "reportRevision 与 sourceHash 用于当前读取／审核和迟到生成提交的并发校验，并非每份历史对比生成时的持久来源档案。旧正文保留供重审，不将新读取 token 冒充旧生成溯源。",
+    "recovery": "销量校准不是模型调用，也没有新增计费或独立 UUID 任务。网络结果未知时保留本地草稿和原 revision，显式重新读取核对已保存值与来源；不换 revision 盲目重发。报告修改同样不得以重读覆盖脏草稿。",
+    "researchBoundary": "版本化销量上下文参与新的研究输入与来源哈希，但只是外部竞品线索，不是本品性能或真实市场总量的证明。深度研究中不把销量塞入评论、引用、主题频次或样本分母；旧证据计划缺少销量上下文时不补造。",
+    "legacyAmbiguity": "历史共享项目存在跨工作区确认报告时，不由当前校准请求顺带跨工作区修复；需单独核对范围。原数据不删，未知或歧义阻断不能当作不存在。"
+  },
   "stillOpen": [
+    "四栏深度研究候选目前只读；正式采纳到已确认摘要／生成来源仍需补齐版本、来源与人工审核适配。销量上下文接入不解除该缺口，不复活旧 AI 字段。",
     "四栏竞品图片／OCR、问答及长期原评论原件来源仍不完整；现可核验样本不等于市场全量，未接来源不得标完成。",
     "真实目标数据库结构、旧数据迁移对账、存储权限、Web／worker 联调、真实模型质量及真实费用验收仍交朋友和维护者执行。",
     "页面可达、合成测试通过、开关开启和真实业务全部完成是不同状态；不得用摘要页面或少量示例代替朋友完整流程。",

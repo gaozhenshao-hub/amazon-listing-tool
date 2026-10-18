@@ -268,8 +268,15 @@ describe("lightweight actual analysis router wiring (no heavy router import)", (
   it("list binds the same explicit-null workspace and computes revision before delivery URL signing", () => {
     const list = source.slice(source.indexOf("listByProject:"), source.indexOf("updateSummary:"));
     expect(list).toContain("competitorReviewWorkspace(ctx)");
-    expect(list).toContain("resolveCompetitorImagesForDelivery(competitorWithRevision(analysis))");
+    expect(list).toContain("resolveCompetitorImagesForDelivery({ ...competitorWithRevision(analysis), salesCalibrationWritable: salesCalibrationWritable() })");
     expect(list).toContain("db.getProjectById(input.projectId, ctx.user.id, workspaceId)");
+  });
+  it("list rejects an explicitly changed caller before any project read while keeping omitted-user legacy requests", () => {
+    const list = source.slice(source.indexOf("listByProject:"), source.indexOf("updateSummary:"));
+    expect(list).toContain("expectedUserId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional()");
+    expect(list).toContain("input.expectedUserId !== undefined && input.expectedUserId !== ctx.user.id");
+    const rejection = list.indexOf('throw new TRPCError({ code: "PRECONDITION_FAILED", message: "用户已变化，请重新读取竞品" })');
+    expect(rejection).toBeGreaterThan(-1); expect(rejection).toBeLessThan(list.indexOf("db.getProjectById"));
   });
   it("delete uses the owned service instead of the former unguarded repository call", () => {
     const remove = source.slice(source.indexOf("  delete: protectedProcedure"), source.indexOf("  listReviewImports:"));

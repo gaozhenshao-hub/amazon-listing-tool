@@ -53,7 +53,9 @@ export function createCompetitorResearchEvidenceService(dependencies: Partial<ty
       if (!Array.isArray(bullets) || bullets.length > 100
         || !bullets.every(value => typeof value === "string" && value.trim() && value.length <= 32_000))
         fail("PRECONDITION_FAILED", "COMPETITOR_EVIDENCE_LISTING_INVALID");
-      return buildCompetitorResearchEvidencePlan({ identity, title: title?.trim() ? title : null, bullets, reviews: source.reviews }, digest);
+      return buildCompetitorResearchEvidencePlan({ identity, title: title?.trim() ? title : null, bullets, reviews: source.reviews,
+        ...(source.salesContext === undefined ? {} : { salesContext: source.salesContext }),
+      }, digest);
     } catch (error) { return safeError(error); }
   }
   async function preview(ctx: TrpcContext, raw: Request) {

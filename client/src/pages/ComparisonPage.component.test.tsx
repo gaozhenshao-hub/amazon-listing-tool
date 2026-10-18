@@ -26,6 +26,10 @@ vi.mock("./listing/CompetitorResearchJobs", () => ({ default: (props: (typeof st
 } }));
 vi.mock("./listing/CompetitorDeepResearchJobControls", () => ({ default: (props: { analysisId: number; onCompleted?: () => void }) =>
   <button onClick={props.onCompleted}>模拟四栏候选保存 {props.analysisId}</button> }));
+vi.mock("./listing/CompetitorSalesEditor", async importOriginal => {
+  const original = await importOriginal<typeof import("./listing/CompetitorSalesEditor")>();
+  return { ...original, default: (props: { analysis: { id: number }; onSaved?: () => void }) => <button onClick={props.onSaved}>模拟销量校准保存 {props.analysis.id}</button> };
+});
 vi.mock("@/components/ProjectSelector", () => ({ default: () => <span>项目选择器</span> }));
 vi.mock("streamdown", () => ({ Streamdown: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 // Keep all report panes inspectable; these tests target ownership, not Radix tab navigation.
@@ -38,7 +42,7 @@ function analysis(id: number, extra = {}) {
   return { id, revision: String(id).repeat(64).slice(0, 64), asin: `B${String(id).padStart(9, "0")}`, title: `竞品 ${id}`, price: "12.50", rating: "4", reviewCount: 0, bulletPoints: '["<script>原文不是HTML</script>"]', keywords: null, reviewAnalysis: null, rawData: null, summary: `已保存摘要 ${id}`, aiSummary: "AI候选", summaryStatus: "draft", summaryVersion: 1, ...extra };
 }
 function report(summary = "服务器报告", ids = [1, 2], projectId = 1) {
-  return { id: 90, projectId, analysisIds: ids, selectionKey: [...ids].sort((a, b) => a - b).join("-"), analyzedAsins: ids.map(id => analysis(id).asin), aiSummary: summary, summary, sellingPointRows: [], status: "draft", version: 1, confirmedAt: null };
+  return { id: 90, projectId, analysisIds: ids, selectionKey: [...ids].sort((a, b) => a - b).join("-"), analyzedAsins: ids.map(id => analysis(id).asin), aiSummary: summary, summary, sellingPointRows: [], status: "draft", version: 1, confirmedAt: null, reportRevision: "a".repeat(64), sourceHash: "b".repeat(64) };
 }
 async function choose(id: number) { await waitFor(() => expect(screen.getByRole("checkbox", { name: `选择 ${analysis(id).asin}` })).toBeEnabled()); fireEvent.click(screen.getByRole("checkbox", { name: `选择 ${analysis(id).asin}` })); }
 async function chooseResearch(id: number) { await waitFor(() => expect(screen.getByRole("checkbox", { name: `研究选择 ${analysis(id).asin}` })).toBeEnabled()); fireEvent.click(screen.getByRole("checkbox", { name: `研究选择 ${analysis(id).asin}` })); }
@@ -134,7 +138,7 @@ describe("existing structured report preservation", () => {
     fireEvent.change(screen.getByPlaceholderText(/编辑市场概览/), { target: { value: "未保存的人工草稿" } });
     state.report.mockResolvedValue(report("远端刷新")); refresh();
     await waitFor(() => expect(state.report).toHaveBeenCalledTimes(2));
-    expect(await screen.findByDisplayValue("未保存的人工草稿")).toBeInTheDocument(); expect(screen.queryByText("远端刷新")).not.toBeInTheDocument();
+    expect(await screen.findByDisplayValue("未保存的人工草稿")).toBeInTheDocument(); expect(screen.getByText("远端刷新")).not.toBeVisible();
   });
   it("keeps edits made while a save was pending", async () => {
     state.report.mockResolvedValue(report()); const save = deferred<ReturnType<typeof report>>(); state.save.mockReturnValueOnce(save.promise);
@@ -146,23 +150,26 @@ describe("existing structured report preservation", () => {
     expect(screen.getByDisplayValue("提交后的继续编辑")).toBeInTheDocument();
     expect(state.save).toHaveBeenCalledWith(expect.objectContaining({ projectId: 1, reportId: 90, summary: "提交草稿" }));
   });
-  it("does not let a read started before a save replace the acknowledged report", async () => {
+  it("blocks writes during a pending report read, preserves the draft, and requires explicit adoption", async () => {
     state.report.mockResolvedValueOnce(report()); render(<ComparisonPage />); await selectTwo(); await screen.findByText("服务器报告");
     const stale = deferred<ReturnType<typeof report>>(); state.report.mockReturnValueOnce(stale.promise); refresh();
     await waitFor(() => expect(state.report).toHaveBeenCalledTimes(2));
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
     fireEvent.change(screen.getByPlaceholderText(/编辑市场概览/), { target: { value: "已保存新报告" } });
     fireEvent.click(screen.getByRole("button", { name: "保存草稿" }));
-    await screen.findByText("已保存新报告"); await act(async () => stale.resolve(report("读取的旧版本")));
-    expect(screen.getByText("已保存新报告")).toBeInTheDocument(); expect(screen.queryByText("读取的旧版本")).not.toBeInTheDocument();
+    expect(state.save).not.toHaveBeenCalled(); await act(async () => stale.resolve(report("读取版本")));
+    expect(screen.getByDisplayValue("已保存新报告")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存草稿" })).toBeDisabled();
+    fireEvent.click(await screen.findByRole("button", { name: "采用已读取对比版本，保留本地草稿" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存草稿" })); await screen.findByText("已保存新报告");
   });
   it("preserves actual report confirm and unlock endpoints", async () => {
     state.report.mockResolvedValue(report()); render(<ComparisonPage />); await selectTwo(); await screen.findByText("服务器报告");
     fireEvent.click(screen.getByRole("button", { name: "确认结果" }));
     fireEvent.click(await screen.findByRole("button", { name: "解锁编辑" }));
     await screen.findByDisplayValue("服务器报告");
-    expect(state.confirm).toHaveBeenCalledWith({ projectId: 1, reportId: 90, summary: "服务器报告", sellingPointRows: [] });
-    expect(state.unlock).toHaveBeenCalledWith({ projectId: 1, reportId: 90 });
+    expect(state.confirm).toHaveBeenCalledWith({ projectId: 1, expectedWorkspaceId: 11, reportId: 90, summary: "服务器报告", sellingPointRows: [], expectedReportRevision: "a".repeat(64), expectedSourceHash: "b".repeat(64) });
+    expect(state.unlock).toHaveBeenCalledWith({ projectId: 1, expectedWorkspaceId: 11, reportId: 90, expectedReportRevision: "a".repeat(64), expectedSourceHash: "b".repeat(64) });
   });
   it("cannot apply a pending save to a new owner or refresh that owner's reads", async () => {
     state.report.mockResolvedValue(report()); const old = deferred<ReturnType<typeof report>>(); state.save.mockReturnValueOnce(old.promise);
@@ -176,7 +183,7 @@ describe("existing structured report preservation", () => {
   it("discards a generated result after selection changes", async () => {
     const generated = deferred<{ report: ReturnType<typeof report> }>(); state.generate.mockReturnValueOnce(generated.promise);
     render(<ComparisonPage />); await selectTwo(); fireEvent.click(screen.getByRole("button", { name: "生成结构化对比" }));
-    expect(state.generate).toHaveBeenCalledWith({ projectId: 1, analysisIds: [1, 2] });
+    expect(state.generate).toHaveBeenCalledWith({ projectId: 1, expectedWorkspaceId: 11, analysisIds: [1, 2] });
     await choose(2); await choose(3); await act(async () => generated.resolve({ report: report("旧生成结果") }));
     expect(screen.queryByText("旧生成结果")).not.toBeInTheDocument();
   });
@@ -188,6 +195,36 @@ describe("existing structured report preservation", () => {
 });
 
 describe("selected saved studies", () => {
+  it("sales calibration refreshes locally owned data/report tokens without overwriting a dirty report", async () => {
+    state.list.mockResolvedValue([analysis(1, { projectId: 1 }), analysis(2, { projectId: 1 })]); state.report.mockResolvedValue(report());
+    render(<ComparisonPage />); await selectTwo(); await chooseResearch(1); await screen.findByText("服务器报告");
+    fireEvent.click(screen.getByRole("button", { name: "编辑" })); fireEvent.change(screen.getByPlaceholderText(/编辑市场概览/), { target: { value: "人工保留的对比草稿" } });
+    const fresh = { ...report("校准后需重审的原报告"), reportRevision: "c".repeat(64), sourceHash: "d".repeat(64) };
+    state.report.mockResolvedValue(fresh); fireEvent.click(screen.getByRole("button", { name: "模拟销量校准保存 1" }));
+    await waitFor(() => expect(state.list).toHaveBeenCalledTimes(2)); await waitFor(() => expect(state.report).toHaveBeenCalledTimes(2));
+    expect(screen.getByDisplayValue("人工保留的对比草稿")).toBeInTheDocument(); expect(screen.getByRole("button", { name: "保存草稿" })).toBeDisabled();
+    expect(state.generate).not.toHaveBeenCalled(); expect(state.save).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "采用已读取对比版本，保留本地草稿" })); fireEvent.click(screen.getByRole("button", { name: "保存草稿" }));
+    await waitFor(() => expect(state.save).toHaveBeenCalledOnce());
+    expect(state.save).toHaveBeenCalledWith(expect.objectContaining({ expectedWorkspaceId: 11, expectedReportRevision: fresh.reportRevision, expectedSourceHash: fresh.sourceHash, summary: "人工保留的对比草稿" }));
+  });
+  it.each(["reportRevision", "sourceHash"])("a report missing %s stays read-only", async field => {
+    state.report.mockResolvedValue({ ...report(), [field]: undefined }); render(<ComparisonPage />); await selectTwo();
+    await screen.findByText("服务器报告"); expect(screen.getByRole("button", { name: "确认结果" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "编辑" })); expect(screen.getByRole("button", { name: "保存草稿" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "保存草稿" })); expect(state.save).not.toHaveBeenCalled(); expect(state.confirm).not.toHaveBeenCalled();
+    expect(state.report).toHaveBeenCalledWith({ projectId: 1, expectedWorkspaceId: 11, analysisIds: [1, 2] }, expect.anything());
+  });
+  it("a sales change cannot let a late report save overwrite the old draft or re-enable review", async () => {
+    state.list.mockResolvedValue([analysis(1, { projectId: 1 }), analysis(2, { projectId: 1 })]); state.report.mockResolvedValue(report());
+    const pending = deferred<ReturnType<typeof report>>(); state.save.mockReturnValueOnce(pending.promise);
+    render(<ComparisonPage />); await selectTwo(); await chooseResearch(1); await screen.findByText("服务器报告");
+    fireEvent.click(screen.getByRole("button", { name: "编辑" })); fireEvent.change(screen.getByPlaceholderText(/编辑市场概览/), { target: { value: "待核对草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存草稿" })); fireEvent.click(screen.getByRole("button", { name: "模拟销量校准保存 1" }));
+    await act(async () => pending.resolve(report("旧来源保存回执")));
+    expect(screen.getByDisplayValue("待核对草稿")).toBeInTheDocument(); expect(screen.queryByText("旧来源保存回执")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存草稿" })).toBeDisabled(); expect(state.save).toHaveBeenCalledOnce();
+  });
   it("passes the exact owned all-record list and independent selected ids into the enabled research lane", async () => {
     render(<ComparisonPage />); await choose(2);
     expect(state.researchProps.at(-1)!.selectedIds).toEqual([]);

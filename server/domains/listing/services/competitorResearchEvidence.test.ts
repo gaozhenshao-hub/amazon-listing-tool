@@ -5,6 +5,7 @@ import type { TrpcContext } from "../../../_core/context";
 import type { AuthorizedCompetitorReviewSource } from "./competitorReviewRead";
 import { buildCompetitorReviewCorpus } from "./competitorReviewCorpus";
 import { createCompetitorResearchEvidenceService } from "./competitorResearchEvidence";
+import { readCompetitorSales } from "../../../../shared/competitorSales";
 
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const asin = "B000000001", revision = "a".repeat(64);
@@ -23,6 +24,14 @@ function fixture(rows = 125) {
   return { source, readFullCorpus, service: createCompetitorResearchEvidenceService({ readFullCorpus }) };
 }
 describe("selected saved research evidence loader (offline, no model or writes)", () => {
+  it("carries server-authorized sales to evidence without changing original-review coverage or leaking notes in preview", async () => {
+    const f = fixture(3), before = await f.service.load(ctx, request);
+    f.source.salesContext = { version: 1, projection: readCompetitorSales({ manualSales: { version: 1, value: 75, sourceNote: "Sensitive synthetic source note", updatedAt: "2026-10-19T00:00:00.000Z", updatedBy: 3 }, purchaseBadge: "100+" }, asin) };
+    const after = await f.service.load(ctx, request);
+    expect(after.salesContext).toEqual(f.source.salesContext); expect(after.evidenceHash).not.toBe(before.evidenceHash);
+    expect(after.reviews).toEqual(before.reviews); expect(after.listingSources).toEqual(before.listingSources);
+    expect(JSON.stringify(await f.service.preview(ctx, request))).not.toContain("Sensitive synthetic source note");
+  });
   it("loads the complete original once, binds exact selection and returns only source coverage for preview", async () => {
     const f = fixture(), result = await f.service.preview(ctx, request);
     expect(f.readFullCorpus).toHaveBeenCalledOnce(); expect(f.readFullCorpus).toHaveBeenCalledWith(ctx, request);

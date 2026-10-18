@@ -4,14 +4,16 @@ import { competitorStudy, type CompetitorStudyRecord } from "./competitorStudyMo
 import CompetitorResearchEvidencePreview from "./CompetitorResearchEvidencePreview";
 import CompetitorDeepResultReader from "./CompetitorDeepResultReader";
 import CompetitorDeepResearchJobControls from "./CompetitorDeepResearchJobControls";
+import CompetitorSalesEditor, { CompetitorSalesSummary, type CompetitorSalesRecord } from "./CompetitorSalesEditor";
 
-export default function CompetitorStudyComparison({ projectId, analyses, pendingIds, onConfirm, onUnlock, onResearchCompleted }: {
+export default function CompetitorStudyComparison({ projectId, analyses, pendingIds, onConfirm, onUnlock, onResearchCompleted, onSalesSaved }: {
   projectId?: number;
-  analyses: CompetitorStudyRecord[];
+  analyses: (CompetitorStudyRecord & Pick<CompetitorSalesRecord, "projectId" | "salesCalibrationWritable">)[];
   pendingIds: ReadonlySet<number>;
   onConfirm: (analysis: CompetitorStudyRecord, summary: string) => void;
   onUnlock: (analysis: CompetitorStudyRecord) => void;
   onResearchCompleted?: () => void;
+  onSalesSaved?: () => void | Promise<void>;
 }) {
   return <section aria-label="选中竞品并排研究" className="space-y-3">
     <div><h2 className="text-lg font-semibold">选中竞品 · 并排研究</h2>
@@ -31,6 +33,9 @@ export default function CompetitorStudyComparison({ projectId, analyses, pending
               {Number.isSafeInteger(projectId) && (projectId ?? 0) > 0 && Number.isSafeInteger(analysis.id) && analysis.id > 0 && <a className="inline-block text-sm text-primary underline"
                 href={`/listing/competitors/${analysis.id}/reviews?projectId=${projectId}`}>查看 {analysis.asin} 原评论</a>}
             </header>
+            {projectId && analysis.projectId === projectId
+              ? <CompetitorSalesEditor projectId={projectId} analysis={analysis} onSaved={onSalesSaved} />
+              : <CompetitorSalesSummary analysis={analysis} />}
             <details><summary className="cursor-pointer text-sm font-medium">已保存五点原文（{study.bullets.length} 条）</summary>
               {study.bulletsUnavailable ? <p role="alert" className="text-sm">原文字段无法读取，请回分析页核对。</p> : study.bullets.length ? <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm">{study.bullets.map((text, index) => <li key={index} className="whitespace-pre-wrap break-words">{text || "空条目"}</li>)}</ol> : <p className="text-sm text-muted-foreground">尚无已保存五点原文。</p>}
             </details>

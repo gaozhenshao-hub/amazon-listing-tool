@@ -17,6 +17,9 @@ import {
 import { resolveStoredObjectUrl } from "../storage";
 import { workspaceIdFromContext } from "../services/securityGovernance";
 import { competitorReviewScopeSchema, competitorSummaryWriteSchema, competitorSummaryReview, competitorWithRevision, competitorReviewWorkspace } from "../domains/listing/services/competitorSummaryReview";
+import { CompetitorSalesCalibrationInputSchema } from "../../shared/competitorSales";
+import { competitorSalesCalibration, salesCalibrationWritable } from "../domains/listing/services/competitorSalesCalibration";
+import { comparisonReadSchema, comparisonReviewSchema, comparisonWriteSchema, comparisonReviewService, renderComparisonSalesContext } from "../domains/listing/services/comparisonReviewService";
 import { competitorResearchJob, competitorResearchScopeSchema, startCompetitorResearchJobSchema, competitorResearchOperationSchema } from "../domains/listing/services/competitorResearchJob";
 import { competitorReviewRead, competitorReviewsPageSchema } from "../domains/listing/services/competitorReviewRead";
 import { competitorResearchEvidence, competitorResearchEvidenceSchema } from "../domains/listing/services/competitorResearchEvidence";
@@ -25,15 +28,11 @@ import { competitorDeepJob } from "../domains/listing/services/competitorDeepJob
 import { CompetitorDeepOptionsInputSchema, CompetitorDeepOptionsResultSchema, CompetitorDeepStartInputSchema, CompetitorDeepOperationInputSchema, CompetitorDeepJobViewSchema } from "../../shared/competitorDeepExecutionJob";
 import {
   registerCompetitorAnalysisArtifact,
-  registerCompetitorComparisonArtifact,
 } from "../domains/ai_os/services/businessArtifactRegistry";
 import {
-  comparisonSelectionKey,
-  comparisonSellingPointRowsSchema,
   formatComparisonSummary,
   formatCompetitorAnalysisSummary,
   normalizeSellingPointRows,
-  serializeComparisonReport,
 } from "../domains/listing/competitorHumanReview";
 
 const PROJECT_COMPETITOR_MAX_USD = 0.1;
@@ -105,9 +104,13 @@ export const analysisRouter = router({
     .query(({ ctx, input }) => competitorReviewRead.list(ctx, input)),
   // Get all analyses for a project
   listByProject: protectedProcedure
-    .input(z.object({ projectId: z.number(), expectedWorkspaceId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable().optional() }))
+    .input(z.object({ projectId: z.number(), expectedWorkspaceId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable().optional(),
+      expectedUserId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional() }))
     .query(async ({ ctx, input }) => {
       const workspaceId = competitorReviewWorkspace(ctx);
+      if (input.expectedUserId !== undefined && input.expectedUserId !== ctx.user.id) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "用户已变化，请重新读取竞品" });
+      }
       if (input.expectedWorkspaceId !== undefined && input.expectedWorkspaceId !== workspaceId) {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "工作区已变化，请重新选择竞品" });
       }
@@ -116,8 +119,11 @@ export const analysisRouter = router({
         || (project.workspaceId !== null && project.workspaceId !== workspaceId)) throw new Error("Project not found");
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       // Compute CAS tokens from persisted storage refs, before signed delivery URLs change.
-      return Promise.all(analyses.map(analysis => resolveCompetitorImagesForDelivery(competitorWithRevision(analysis))));
+      return Promise.all(analyses.map(analysis => resolveCompetitorImagesForDelivery({ ...competitorWithRevision(analysis), salesCalibrationWritable: salesCalibrationWritable() })));
     }),
+
+  calibrateSales: protectedProcedure.input(CompetitorSalesCalibrationInputSchema)
+    .mutation(({ ctx, input }) => competitorSalesCalibration.calibrate(ctx, input)),
 
   updateSummary: protectedProcedure
     .input(competitorSummaryWriteSchema)
@@ -148,96 +154,20 @@ export const analysisRouter = router({
     .mutation(({ ctx, input }) => competitorSummaryReview.review(ctx, "unlock", input)),
 
   getComparisonReport: protectedProcedure
-    .input(z.object({
-      projectId: z.number(),
-      analysisIds: z.array(z.number()).min(2).max(8),
-    }))
-    .query(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
-      const report = await db.getLatestCompetitorComparisonReport(
-        input.projectId,
-        comparisonSelectionKey(input.analysisIds),
-      );
-      return serializeComparisonReport(report);
-    }),
+    .input(comparisonReadSchema)
+    .query(({ ctx, input }) => comparisonReviewService.read(ctx, input)),
 
   updateComparisonReport: protectedProcedure
-    .input(z.object({
-      projectId: z.number(),
-      reportId: z.number(),
-      summary: z.string().trim().min(1).max(30000),
-      sellingPointRows: comparisonSellingPointRowsSchema,
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
-      const report = await db.getCompetitorComparisonReportById(input.reportId);
-      if (!report || report.projectId !== input.projectId) throw new Error("Competitor comparison report not found");
-      if (report.status === "confirmed") throw new Error("已确认的竞品对比需要先解锁才能编辑");
-      const updated = await db.updateCompetitorComparisonReport(input.reportId, {
-        summary: input.summary,
-        sellingPointRows: JSON.stringify(input.sellingPointRows),
-        incrementVersion: true,
-      });
-      await registerCompetitorComparisonArtifact(input.reportId, "user_edit").catch(error => {
-        console.warn("[Analysis] Failed to register comparison draft artifact", error);
-      });
-      return serializeComparisonReport(updated);
-    }),
+    .input(comparisonWriteSchema)
+    .mutation(({ ctx, input }) => comparisonReviewService.review(ctx, "save", input)),
 
   confirmComparisonReport: protectedProcedure
-    .input(z.object({
-      projectId: z.number(),
-      reportId: z.number(),
-      summary: z.string().trim().min(1).max(30000),
-      sellingPointRows: comparisonSellingPointRowsSchema,
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
-      const report = await db.getCompetitorComparisonReportById(input.reportId);
-      if (!report || report.projectId !== input.projectId) throw new Error("Competitor comparison report not found");
-      const serializedRows = JSON.stringify(input.sellingPointRows);
-      if (
-        report.status === "confirmed"
-        && (report.summary !== input.summary || report.sellingPointRows !== serializedRows)
-      ) {
-        throw new Error("已确认的竞品对比需要先解锁才能修改");
-      }
-      const updated = await db.updateCompetitorComparisonReport(input.reportId, {
-        summary: input.summary,
-        sellingPointRows: serializedRows,
-        status: "confirmed",
-        confirmedBy: ctx.user.id,
-        confirmedAt: new Date(),
-        incrementVersion: report.status !== "confirmed"
-          || report.summary !== input.summary
-          || report.sellingPointRows !== serializedRows,
-      });
-      await registerCompetitorComparisonArtifact(input.reportId, "user_edit").catch(error => {
-        console.warn("[Analysis] Failed to register confirmed comparison artifact", error);
-      });
-      return serializeComparisonReport(updated);
-    }),
+    .input(comparisonWriteSchema)
+    .mutation(({ ctx, input }) => comparisonReviewService.review(ctx, "confirm", input)),
 
   unlockComparisonReport: protectedProcedure
-    .input(z.object({ projectId: z.number(), reportId: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
-      const report = await db.getCompetitorComparisonReportById(input.reportId);
-      if (!report || report.projectId !== input.projectId) throw new Error("Competitor comparison report not found");
-      const updated = await db.updateCompetitorComparisonReport(input.reportId, {
-        status: "draft",
-        confirmedBy: null,
-        confirmedAt: null,
-      });
-      await registerCompetitorComparisonArtifact(input.reportId, "user_edit").catch(error => {
-        console.warn("[Analysis] Failed to register unlocked comparison artifact", error);
-      });
-      return serializeComparisonReport(updated);
-    }),
+    .input(comparisonReviewSchema)
+    .mutation(({ ctx, input }) => comparisonReviewService.review(ctx, "unlock", input)),
 
   // Preview only from an already confirmed controlled snapshot; never calls a provider.
   scrapeAsin: protectedProcedure
@@ -455,22 +385,10 @@ export const analysisRouter = router({
 
   // AI comparison summary - generate diff report and optimization suggestions
   comparisonSummary: protectedProcedure
-    .input(z.object({
-      projectId: z.number(),
-      analysisIds: z.array(z.number()).min(2).max(8),
-    }))
+    .input(comparisonReadSchema)
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
-
-      // Fetch all selected analyses
-      const allAnalyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const requestedAnalysisIds = [...new Set(input.analysisIds)].sort((a, b) => a - b);
-      const selectedAnalyses = allAnalyses.filter(a => requestedAnalysisIds.includes(a.id));
-
-      if (selectedAnalyses.length !== requestedAnalysisIds.length) {
-        throw new Error("部分竞品分析不存在或不属于当前项目");
-      }
+      const captured = await comparisonReviewService.capture(ctx, input);
+      const { project, analyses: selectedAnalyses } = captured;
 
       // Build comprehensive context for LLM
       const competitorSummaries = selectedAnalyses.map(a => {
@@ -486,6 +404,7 @@ export const analysisRouter = router({
         parts.push(`- Price: ${a.price || "N/A"}`);
         parts.push(`- Rating: ${a.rating || "N/A"}`);
         parts.push(`- Review Count: ${a.reviewCount || "N/A"}`);
+        parts.push(renderComparisonSalesContext(a.rawData, a.asin));
 
         if (bulletPoints.length > 0) {
           parts.push(`- Bullet Points (${bulletPoints.length}):`);
@@ -537,29 +456,10 @@ export const analysisRouter = router({
 
       const summary = formatComparisonSummary(comparisonData);
       const sellingPointRows = normalizeSellingPointRows(comparisonData, selectedAnalyses);
-      const selectionKey = comparisonSelectionKey(requestedAnalysisIds);
-      const previousReport = await db.getLatestCompetitorComparisonReport(input.projectId, selectionKey);
-      const report = await db.createCompetitorComparisonReport({
-        workspaceId: project.workspaceId ?? null,
-        projectId: input.projectId,
-        userId: ctx.user.id,
-        selectionKey,
-        analysisIds: JSON.stringify(requestedAnalysisIds),
-        analyzedAsins: JSON.stringify(selectedAnalyses.map(a => a.asin)),
-        aiSummary: summary,
-        summary,
-        sellingPointRows: JSON.stringify(sellingPointRows),
-        status: "draft",
-        version: (previousReport?.version || 0) + 1,
-      });
-
-      if (!report) throw new Error("Failed to save competitor comparison report");
-      await registerCompetitorComparisonArtifact(report.id, "ai_output").catch(error => {
-        console.warn("[Analysis] Failed to register comparison artifact", error);
-      });
+      const report = await comparisonReviewService.publish(ctx, input, captured.sourceHash, summary, sellingPointRows);
 
       return {
-        report: serializeComparisonReport(report),
+        report,
         summary,
         sellingPointRows,
         analyzedAsins: selectedAnalyses.map(a => a.asin),

@@ -6,6 +6,7 @@ import { buildCompetitorResearchSource, normalizeCompetitorResearchResult } from
 
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
+const manualSales = { version: 1, value: 123, sourceNote: "Synthetic documented estimate", updatedAt: "2026-10-19T00:00:00.000Z", updatedBy: 3 };
 function row(overrides: Partial<CompetitorAnalysis> = {}): CompetitorAnalysis {
   return {
     id: 7, projectId: 11, asin: "B000000001", title: "Portable storage case",
@@ -42,6 +43,37 @@ function model() {
 }
 
 describe("saved competitor research source", () => {
+  it("uses versioned manual sales first without distributing them or hiding an independent estimate", () => {
+    const source = buildCompetitorResearchSource(row({ rawData: raw({ manualSales,
+      sellerSpriteData: { monthlySales: 800 }, research: { variants: [{ asin: "B000000001", status: "collected", boughtPastMonth: "50+" }, { asin: "B000000002", status: "failed" }] } }) }));
+    const payload = JSON.parse(source.context.split("\n").at(-1)!);
+    expect(payload.sources.sales).toMatchObject({ manualState: "valid", manual: manualSales, value: 123, source: "manual_calibration", sellerSpriteEstimate: 800, covered: 1, total: 2, partial: true });
+    expect(payload.sources.sales).not.toHaveProperty("variants"); expect(source.context).toContain("禁止将人工总量分摊到子体");
+    expect(source.context).toContain("不可信来源说明"); expect(source.context).toContain("不能作为评论样本分母");
+  });
+  it.each([
+    { value: 124 }, { sourceNote: "Different source" }, { updatedAt: "2026-10-19T00:01:00.000Z" }, { updatedBy: 4 },
+  ])("binds calibration metadata change %j to the actual source hash and context", patch => {
+    const before = buildCompetitorResearchSource(row({ rawData: raw({ manualSales }) }));
+    const after = buildCompetitorResearchSource(row({ rawData: raw({ manualSales: { ...manualSales, ...patch } }) }));
+    expect(after.sourceHash).not.toBe(before.sourceHash); expect(after.context).not.toBe(before.context);
+  });
+  it("restoring collected sales changes the manual source back to the exact no-manual projection", () => {
+    const collected = { purchaseBadge: "100+", sellerSpriteData: { monthlySales: 800 } };
+    const before = buildCompetitorResearchSource(row({ rawData: raw(collected) }));
+    const calibrated = buildCompetitorResearchSource(row({ rawData: raw({ ...collected, manualSales }) }));
+    expect(calibrated.sourceHash).not.toBe(before.sourceHash);
+    expect(buildCompetitorResearchSource(row({ rawData: raw(collected) }))).toMatchObject({ sourceHash: before.sourceHash, context: before.context });
+  });
+  it("keeps badge lower bounds/coverage and legacy manual metadata unverified, bound without unknown text leakage", () => {
+    const saved = { manualSales: { value: 999, privateLegacyField: "NOT RESEARCH CONTENT" },
+      research: { variants: [{ asin: "B000000001", status: "collected", boughtPastMonth: "50+" }, { asin: "B000000002", status: "failed" }] } };
+    const source = buildCompetitorResearchSource(row({ rawData: raw(saved) }));
+    const payload = JSON.parse(source.context.split("\n").at(-1)!);
+    expect(payload.sources.sales).toMatchObject({ manualState: "invalid", manual: null, value: 50, source: "purchase_badges", lowerBound: true, covered: 1, total: 2, partial: true });
+    expect(source.context).not.toContain("NOT RESEARCH CONTENT");
+    expect(buildCompetitorResearchSource(row({ rawData: raw({ ...saved, manualSales: { value: 998 } }) })).sourceHash).not.toBe(source.sourceHash);
+  });
   it("binds the real saved content and explicitly demotes secondary review claims", () => {
     const source = buildCompetitorResearchSource(row());
     expect(source.evidence).toEqual({ originalReviewsAvailable: false, reviewAnalysisAvailable: true, listingAvailable: true });

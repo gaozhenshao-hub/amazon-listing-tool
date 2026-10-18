@@ -77,6 +77,13 @@ describe("capture-only competitor projection (offline transaction-executor fixtu
     for (const field of ["reviewAnalysis", "keywords", "aiSummary", "summary", "summaryStatus", "summaryVersion", "summaryConfirmedAt", "summaryConfirmedBy"] as const) expect(f.state.competitors[0][field]).toEqual(old[field]);
     expect(JSON.parse(f.state.competitors[0].rawData!)).toMatchObject({ ...JSON.parse(old.rawData!), captureOnly: true, analysisStale: true });
   });
+  it("recapture keeps the exact human sales override and independent SellerSprite estimate", async () => {
+    const manualSales = { version: 1, value: 0, sourceNote: "Synthetic human calibration", updatedAt: "2026-10-19T00:00:00.000Z", updatedBy: 7 };
+    const old = row(), f = fixture([{ ...old, rawData: JSON.stringify({ ...JSON.parse(old.rawData!), manualSales, sellerSpriteData: { monthlySales: 450 } }) }]);
+    await save({ db: f.db, ...scope });
+    expect(JSON.parse(f.state.competitors[0].rawData!)).toMatchObject({ manualSales, sellerSpriteData: { monthlySales: 450 }, captureOnly: true, analysisStale: true });
+    expect(f.state.competitors[0].summary).toBe(old.summary);
+  });
   it("same source replay is a no-op even after selected analysis completed", async () => {
     const f = fixture(); await save({ db: f.db, ...scope });
     const raw = JSON.parse(f.state.competitors[0].rawData!);

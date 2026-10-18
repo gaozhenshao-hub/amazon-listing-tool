@@ -251,9 +251,9 @@
         "sha256": "7213602df42b78b5a62621e7080992ef94d122a7b3b81ee4cbf34df187b1fe78"
       },
       "reviewed": {
-        "gitBlobSha1": "68750899f99a05f82f8e6e6aebae1f2f412a3f47",
-        "sha256": "12e0ec62af006f93faf361855fa9e3b29df99c17d4b7fcab1db28ff5fb02fe05",
-        "reviewRef": "config/integration/reviews/20261017-competitor-capture-selection.json"
+        "gitBlobSha1": "9190ba27589723221a57fab39644dbf654f7d031",
+        "sha256": "360fee649cc6a6534f3dfb283b1c93877844d1486c2749e5557255e90a799fda",
+        "reviewRef": "config/integration/reviews/20261017-competitor-capture-selection.json; config/integration/reviews/20261019-competitor-sales-calibration.json"
       }
     },
     {
@@ -267,9 +267,9 @@
         "sha256": "c71e7a7319825baa2828a9e9a5d4a9f9656d02c3c4e10020a4b497f99553d248"
       },
       "reviewed": {
-        "gitBlobSha1": "6307bb59e4464d58d29590230d9bf5125f3d1808",
-        "sha256": "668d0dd8c7630c3bf50ee58042e29a69318e74ac35488985a219c8798ec2c2d1",
-        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve original review-corpus and selection behavior"
+        "gitBlobSha1": "68fff4e22b1004c6b7ea7f407eba9bf012cf9433",
+        "sha256": "06bf4ef920201b3bc1929e8ca5b3df1f79c876df775d2d7c6fe759bb48d2702d",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve original review-corpus and selection behavior; config/integration/reviews/20261019-competitor-sales-calibration.json"
       }
     },
     {
@@ -710,6 +710,11 @@
       "baseline": {
         "gitBlobSha1": "eb8dd14d5dc7aca8e733bc4f4eb7570acfb5d176",
         "sha256": "80f74245e2286bcc9e63b41a9e0096166fb764c76fce99913b75d4f06abe813f"
+      },
+      "reviewed": {
+        "gitBlobSha1": "360cbe2079f7e365774983a3f112d1f1c3806748",
+        "sha256": "c2c8422972d95d5f47a18458f0a3069248922b828e2026b527143066087aca96",
+        "reviewRef": "config/integration/reviews/20261019-competitor-sales-calibration.json"
       }
     },
     {
@@ -843,9 +848,9 @@
         "sha256": "647a348fd17c7bc418878deeb88a317b896f6118473ba902c4d5bfb2d270c526"
       },
       "reviewed": {
-        "gitBlobSha1": "5916960982d01c6d655d6b1b2e9d0879a2acf936",
-        "sha256": "3a622f3ee9a90640ed6012a5ab5f3658dacd5534a699d2551d599f14f75a47ed",
-        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json"
+        "gitBlobSha1": "9d7b29e06c50015fa355140e4e40283c20bede67",
+        "sha256": "b850ec69f706e810e7724e6882be21c958bd4ac6a7b6b49824dd0083a93ca94b",
+        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json; config/integration/reviews/20261019-competitor-sales-calibration.json"
       }
     },
     {
@@ -859,9 +864,9 @@
         "sha256": "416a96e042e577683800d0fd5eaba6ede97655a5906faeb74ff03cee88d78aa2"
       },
       "reviewed": {
-        "gitBlobSha1": "ee151204d917512e38d03018b4e0374a994cbc3e",
-        "sha256": "864a1adea587b35eb70bc015b71e8c544194adddb490600c7c4036cd06ca02a9",
-        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json"
+        "gitBlobSha1": "5debabb91cd9a61027bfc827493e1a9fbd8644e0",
+        "sha256": "b6fd773b20ed6830ea3aaf5786c8fe357f0a946d4b05a41b0b4533ed23619590",
+        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json; config/integration/reviews/20261019-competitor-sales-calibration.json"
       }
     },
     {
@@ -1143,9 +1148,9 @@
         "sha256": "dfc27c614e4c74c026b4efe7c9a1ce3ee073dc0dd12b190b4131dd7001aa6f56"
       },
       "reviewed": {
-        "gitBlobSha1": "dd86dc5b8d13fc0a2a6f69ae69396c1a6b77c813",
-        "sha256": "b3e2820d0fbded00d0da3594ec40910cc7885f5400d31cdb07cc4348658c5b10",
-        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior import/research/result routes"
+        "gitBlobSha1": "26de9a0d8cb82751ebea78f38e6881e7c709274f",
+        "sha256": "d5f80677a96318c26eb20fecbc581bbd6907254def6a22061700fd13f095f149",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior import/research/result routes; config/integration/reviews/20261019-competitor-sales-calibration.json"
       }
     },
     {

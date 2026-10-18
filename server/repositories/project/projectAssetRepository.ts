@@ -1,7 +1,9 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getDb, type DbExecutor } from "../dbClient";
-import { competitorRevision, mergeCompetitorUpdate } from "./competitorWritePolicy";
+import { competitorRevision, competitorDataHash, mergeCompetitorUpdate, stripIncomingManualSales } from "./competitorWritePolicy";
+import { CompetitorManualSalesSchema, type CompetitorManualSales } from "../../../shared/competitorSales";
+import { z } from "zod";
 import {
   InsertAnalysisVersion,
   InsertCompetitorAnalysis,
@@ -15,6 +17,7 @@ import {
   reviewImports,
   projects,
   type CompetitorAnalysis,
+  type CompetitorComparisonReport,
 } from "../../../drizzle/schema/project";
 
 // --- Competitor Analysis Helpers --------------------------------
@@ -84,6 +87,7 @@ export async function assertLegacyCompetitorAcquisitionWritable(projectId: numbe
   });
 }
 async function saveCompetitor(data: InsertCompetitorAnalysis, createOnly: boolean, legacyGuard?: LegacyAcquisitionGuard) {
+  data = stripIncomingManualSales(data);
   return competitorTransaction(async tx => {
     const parent = await lockCompetitorParent(tx, data.projectId);
     if (legacyGuard && (parent.userId !== legacyGuard.userId || parent.workspaceId !== legacyGuard.workspaceId)) {
@@ -222,6 +226,188 @@ export async function updateCompetitorComparisonReport(
     })
     .where(eq(competitorComparisonReports.id, id));
   return getCompetitorComparisonReportById(id);
+}
+
+// Human sales calibration and comparison review share the same project lock as
+// acquisition. These methods never call a provider or manufacture provenance for
+// an older report: sourceHash describes the currently selected persisted rows.
+export type CompetitorOwnerScope = { projectId: number; userId: number; workspaceId: number | null };
+const comparisonIdsSchema = z.array(z.number().int().positive().safe()).min(2).max(8)
+  .refine(ids => new Set(ids).size === ids.length, "Duplicate analyses");
+const comparisonFields = ["id", "workspaceId", "projectId", "userId", "selectionKey", "analysisIds", "analyzedAsins", "aiSummary", "summary", "sellingPointRows", "status", "version", "confirmedBy", "confirmedAt", "createdAt", "updatedAt"] as const;
+function comparisonFailure(reason: string, code: "BAD_REQUEST" | "CONFLICT" | "PRECONDITION_FAILED" | "NOT_FOUND" = "PRECONDITION_FAILED"): never {
+  throw new TRPCError({ code, message: `COMPETITOR_COMPARISON_${reason}` });
+}
+function textBudget(value: unknown) {
+  if (typeof value !== "string" || Buffer.byteLength(value, "utf8") > 65535) comparisonFailure("TEXT_LIMIT");
+}
+function acknowledged(result: unknown) {
+  const header = Array.isArray(result) ? result[0] : null;
+  if (!header || header.affectedRows !== 1 || header.warningStatus !== 0) comparisonFailure("WRITE_UNVERIFIED", "CONFLICT");
+}
+function instant(now = new Date()) {
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime())) comparisonFailure("CLOCK_INVALID");
+  return new Date(Math.floor(now.getTime() / 1000) * 1000);
+}
+function reportIds(report: CompetitorComparisonReport): number[] {
+  let ids: number[];
+  try { ids = comparisonIdsSchema.parse(JSON.parse(report.analysisIds)); } catch { return comparisonFailure("SELECTION_INVALID"); }
+  ids.sort((a, b) => a - b);
+  if (report.selectionKey !== ids.join("-")) comparisonFailure("SELECTION_INVALID");
+  return ids;
+}
+export function competitorComparisonRevision(row: CompetitorComparisonReport) {
+  if (!row || Object.keys(row).length !== comparisonFields.length || comparisonFields.some(key => !Object.hasOwn(row, key))
+    || !["draft", "confirmed"].includes(row.status) || !Number.isSafeInteger(row.version) || row.version < 1
+    || ![row.id, row.projectId, row.userId].every(value => Number.isSafeInteger(value) && value > 0)
+    || row.workspaceId !== null && (!Number.isSafeInteger(row.workspaceId) || row.workspaceId <= 0)
+    || row.confirmedBy !== null && (!Number.isSafeInteger(row.confirmedBy) || row.confirmedBy <= 0)
+    || ![row.createdAt, row.updatedAt].every(value => value instanceof Date && Number.isFinite(value.getTime()))
+    || row.confirmedAt !== null && (!(row.confirmedAt instanceof Date) || !Number.isFinite(row.confirmedAt.getTime()))) comparisonFailure("RECORD_INVALID");
+  for (const key of ["selectionKey", "analysisIds", "analyzedAsins", "aiSummary", "summary", "sellingPointRows"] as const) textBudget(row[key]);
+  reportIds(row); return competitorDataHash(row);
+}
+async function ownerParent(tx: DbExecutor, scope: CompetitorOwnerScope) {
+  if (!scope || ![scope.projectId, scope.userId].every(value => Number.isSafeInteger(value) && value > 0)
+    || !Object.hasOwn(scope, "workspaceId") || scope.workspaceId !== null && (!Number.isSafeInteger(scope.workspaceId) || scope.workspaceId <= 0)) comparisonFailure("SCOPE_INVALID", "BAD_REQUEST");
+  const parent = await lockCompetitorParent(tx, scope.projectId);
+  if (parent.userId !== scope.userId || parent.workspaceId !== null && parent.workspaceId !== scope.workspaceId) comparisonFailure("PROJECT_UNAVAILABLE", "NOT_FOUND");
+  return parent;
+}
+async function selectedSources(tx: DbExecutor, scope: CompetitorOwnerScope, rawIds: number[]) {
+  const ids = comparisonIdsSchema.parse(rawIds).sort((a, b) => a - b), analyses: CompetitorAnalysis[] = [];
+  for (const id of ids) analyses.push(await readLockedCompetitor(tx, id, scope.projectId));
+  const sourceHash = competitorDataHash({ schema: "competitor-comparison-current-source/v1", ...scope,
+    analyses: analyses.map(row => ({ id: row.id, revision: competitorRevision(row) })) });
+  return { analyses, sourceHash, analysisIds: ids };
+}
+function assertComparisonSourcesCurrent(analyses: CompetitorAnalysis[]) {
+  for (const row of analyses) {
+    if (row.rawData === null || row.rawData.trim() === "") continue;
+    let raw: Record<string, unknown>;
+    try { const value: unknown = JSON.parse(row.rawData); if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid"); raw = value as Record<string, unknown>; }
+    catch { return comparisonFailure("SOURCE_STATE_INVALID"); }
+    for (const key of ["analysisStale", "captureOnly"]) {
+      if (Object.hasOwn(raw, key) && typeof raw[key] !== "boolean") comparisonFailure("SOURCE_STATE_INVALID");
+      if (raw[key] === true) comparisonFailure("SOURCE_REANALYSIS_REQUIRED", "CONFLICT");
+    }
+  }
+}
+async function lockedReport(tx: DbExecutor, id: number, scope: CompetitorOwnerScope, _parentWorkspace: number | null) {
+  const rows: CompetitorComparisonReport[] = await tx.select().from(competitorComparisonReports)
+    .where(and(eq(competitorComparisonReports.id, id), eq(competitorComparisonReports.projectId, scope.projectId))).limit(1).for("update");
+  const row = rows[0];
+  // Reports retain their existing project-level sharing semantics, including a
+  // previous creator after project transfer. A concrete report workspace must
+  // still equal the current context; NULL legacy parent is not that equality.
+  if (rows.length !== 1 || row.id !== id || row.projectId !== scope.projectId || row.workspaceId !== null && row.workspaceId !== scope.workspaceId) comparisonFailure("REPORT_UNAVAILABLE", "NOT_FOUND");
+  competitorComparisonRevision(row); return row;
+}
+async function persistReport(tx: DbExecutor, before: CompetitorComparisonReport, values: Partial<CompetitorComparisonReport>, scope: CompetitorOwnerScope, parentWorkspace: number | null) {
+  const expected = { ...before, ...values };
+  competitorComparisonRevision(expected);
+  acknowledged(await tx.update(competitorComparisonReports).set(values).where(and(eq(competitorComparisonReports.id, before.id), eq(competitorComparisonReports.projectId, scope.projectId), eq(competitorComparisonReports.version, before.version))));
+  const saved = await lockedReport(tx, before.id, scope, parentWorkspace);
+  if (competitorComparisonRevision(saved) !== competitorComparisonRevision(expected)) comparisonFailure("READBACK_FAILED", "CONFLICT");
+  return saved;
+}
+function nextReportVersion(row: CompetitorComparisonReport) {
+  if (row.version >= 2147483647) comparisonFailure("VERSION_LIMIT"); return row.version + 1;
+}
+export async function calibrateCompetitorSales(id: number, manual: CompetitorManualSales | null, guard: CompetitorWriteGuard & CompetitorOwnerScope) {
+  if (manual !== null) {
+    manual = CompetitorManualSalesSchema.parse(manual);
+    if (manual.updatedBy !== guard.userId) comparisonFailure("ACTOR_INVALID", "BAD_REQUEST");
+  }
+  return withLockedCompetitor(id, guard, async (tx, row) => {
+    let raw: Record<string, unknown>;
+    try { const value: unknown = row.rawData === null ? {} : JSON.parse(row.rawData);
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid"); raw = value as Record<string, unknown>;
+    } catch { return comparisonFailure("SOURCE_INVALID"); }
+    if (manual === null && !Object.hasOwn(raw, "manualSales")) return row;
+    if (manual === null) delete raw.manualSales; else raw.manualSales = manual;
+    raw.analysisStale = true;
+    const rawData = JSON.stringify(raw); textBudget(rawData);
+    const updatedAt = instant(), expected = { ...row, rawData, updatedAt };
+    acknowledged(await tx.update(competitorAnalyses).set({ rawData, updatedAt }).where(and(eq(competitorAnalyses.id, id), eq(competitorAnalyses.projectId, guard.projectId))));
+    const saved = await readLockedCompetitor(tx, id, guard.projectId);
+    if (competitorRevision(saved) !== competitorRevision(expected)) comparisonFailure("READBACK_FAILED", "CONFLICT");
+    // Bounded metadata only; malformed/oversized selections cannot silently
+    // evade invalidation. Full report bodies are loaded one at a time.
+    const refs: { id: number; analysisIds: string | null; selectionBytes: number }[] = await tx.select({ id: competitorComparisonReports.id,
+      analysisIds: sql`CASE WHEN OCTET_LENGTH(${competitorComparisonReports.analysisIds}) <= 512 THEN ${competitorComparisonReports.analysisIds} ELSE NULL END`,
+      selectionBytes: sql`OCTET_LENGTH(${competitorComparisonReports.analysisIds})` })
+      .from(competitorComparisonReports).where(and(eq(competitorComparisonReports.projectId, guard.projectId), eq(competitorComparisonReports.status, "confirmed"))).limit(1001).for("update");
+    if (refs.length > 1000) comparisonFailure("SCAN_LIMIT");
+    for (const ref of refs) {
+      if (!Number.isSafeInteger(ref.selectionBytes) || ref.selectionBytes < 1 || ref.selectionBytes > 512 || ref.analysisIds === null) comparisonFailure("SELECTION_INVALID");
+      let ids: number[]; try { ids = comparisonIdsSchema.parse(JSON.parse(ref.analysisIds)); } catch { return comparisonFailure("SELECTION_INVALID"); }
+      if (!ids.includes(id)) continue;
+      const parent = await lockCompetitorParent(tx, guard.projectId);
+      const report = await lockedReport(tx, ref.id, guard, parent.workspaceId);
+      await persistReport(tx, report, { status: "draft", confirmedBy: null, confirmedAt: null, version: nextReportVersion(report), updatedAt }, guard, parent.workspaceId);
+    }
+    return saved;
+  });
+}
+export async function captureCompetitorComparisonSources(scope: CompetitorOwnerScope, analysisIds: number[]) {
+  return competitorTransaction(async tx => {
+    const project = await ownerParent(tx, scope), selected = await selectedSources(tx, scope, analysisIds);
+    assertComparisonSourcesCurrent(selected.analyses); return { project, ...selected };
+  });
+}
+export async function readCompetitorComparisonReport(scope: CompetitorOwnerScope, analysisIds: number[]) {
+  return competitorTransaction(async tx => {
+    const parent = await ownerParent(tx, scope), source = await selectedSources(tx, scope, analysisIds);
+    const rows: CompetitorComparisonReport[] = await tx.select().from(competitorComparisonReports)
+      .where(and(eq(competitorComparisonReports.projectId, scope.projectId), eq(competitorComparisonReports.selectionKey, source.analysisIds.join("-"))))
+      .orderBy(desc(competitorComparisonReports.createdAt), desc(competitorComparisonReports.id)).limit(1).for("update");
+    if (!rows.length) return null;
+    const report = await lockedReport(tx, rows[0].id, scope, parent.workspaceId);
+    return { report, reportRevision: competitorComparisonRevision(report), sourceHash: source.sourceHash };
+  });
+}
+export async function reviewCompetitorComparisonReport(scope: CompetitorOwnerScope, input: { reportId: number; expectedReportRevision: string; expectedSourceHash: string;
+  action: "save" | "confirm" | "unlock"; summary?: string; sellingPointRows?: string }) {
+  return competitorTransaction(async tx => {
+    const parent = await ownerParent(tx, scope), report = await lockedReport(tx, input.reportId, scope, parent.workspaceId);
+    const source = await selectedSources(tx, scope, reportIds(report));
+    if (competitorComparisonRevision(report) !== input.expectedReportRevision || source.sourceHash !== input.expectedSourceHash) comparisonFailure("SOURCE_OR_REPORT_CHANGED", "CONFLICT");
+    if (!["save", "confirm", "unlock"].includes(input.action)) comparisonFailure("ACTION_INVALID", "BAD_REQUEST");
+    if (input.action === "confirm") assertComparisonSourcesCurrent(source.analyses);
+    if (input.action !== "unlock") {
+      textBudget(input.summary); textBudget(input.sellingPointRows);
+      if (report.status === "confirmed" && (input.action === "save" || report.summary !== input.summary || report.sellingPointRows !== input.sellingPointRows)) comparisonFailure("UNLOCK_REQUIRED", "CONFLICT");
+      if (report.status === "confirmed") return { report, reportRevision: competitorComparisonRevision(report), sourceHash: source.sourceHash };
+    }
+    const stamp = instant(), values = input.action === "unlock" ? { status: "draft" as const, confirmedBy: null, confirmedAt: null }
+      : { summary: input.summary!, sellingPointRows: input.sellingPointRows!, ...(input.action === "confirm" ? { status: "confirmed" as const, confirmedBy: scope.userId, confirmedAt: stamp } : {}) };
+    const saved = await persistReport(tx, report, { ...values, version: nextReportVersion(report), updatedAt: stamp }, scope, parent.workspaceId);
+    return { report: saved, reportRevision: competitorComparisonRevision(saved), sourceHash: source.sourceHash };
+  });
+}
+export async function createCompetitorComparisonReportFromSnapshot(scope: CompetitorOwnerScope, input: { analysisIds: number[]; expectedSourceHash: string; summary: string; sellingPointRows: string }) {
+  return competitorTransaction(async tx => {
+    const parent = await ownerParent(tx, scope), source = await selectedSources(tx, scope, input.analysisIds);
+    if (source.sourceHash !== input.expectedSourceHash) comparisonFailure("SOURCE_CHANGED_DURING_GENERATION", "CONFLICT");
+    assertComparisonSourcesCurrent(source.analyses);
+    textBudget(input.summary); textBudget(input.sellingPointRows);
+    const selectionKey = source.analysisIds.join("-"), stamp = instant();
+    const previous: CompetitorComparisonReport[] = await tx.select().from(competitorComparisonReports)
+      .where(and(eq(competitorComparisonReports.projectId, scope.projectId), eq(competitorComparisonReports.selectionKey, selectionKey)))
+      .orderBy(desc(competitorComparisonReports.createdAt), desc(competitorComparisonReports.id)).limit(1).for("update");
+    if (previous.length) competitorComparisonRevision(previous[0]);
+    const data = { workspaceId: parent.workspaceId, projectId: scope.projectId, userId: scope.userId, selectionKey,
+      analysisIds: JSON.stringify(source.analysisIds), analyzedAsins: JSON.stringify(source.analyses.map(row => row.asin)), aiSummary: input.summary, summary: input.summary,
+      sellingPointRows: input.sellingPointRows, status: "draft" as const, version: previous.length ? nextReportVersion(previous[0]) : 1,
+      confirmedBy: null, confirmedAt: null, createdAt: stamp, updatedAt: stamp };
+    const result = await tx.insert(competitorComparisonReports).values(data); acknowledged(result);
+    const insertId = result[0]?.insertId;
+    if (!Number.isSafeInteger(insertId) || insertId <= 0) comparisonFailure("WRITE_UNVERIFIED");
+    const saved = await lockedReport(tx, insertId, scope, parent.workspaceId);
+    if (competitorComparisonRevision(saved) !== competitorComparisonRevision({ ...data, id: insertId })) comparisonFailure("READBACK_FAILED", "CONFLICT");
+    return { report: saved, reportRevision: competitorComparisonRevision(saved), sourceHash: source.sourceHash };
+  });
 }
 
 export async function updateCompetitorAnalysisReviews(id: number, data: { reviewCount?: string; reviewAnalysis?: string | null; rawData?: string }) {

@@ -58,6 +58,9 @@ function digest(value: unknown): string {
   return createHash("sha256").update(canonical(value)).digest("hex");
 }
 
+/** Server-only exact persisted-value hash used by comparison CAS. */
+export const competitorDataHash = digest;
+
 function validateRecord(row: CompetitorAnalysis): void {
   const fields = dataObject(row);
   if (Object.keys(fields).length !== RECORD_FIELDS.length || RECORD_FIELDS.some(key => !fields[key])) return invalid("COMPETITOR_RECORD_INVALID");
@@ -91,8 +94,20 @@ function rawObject(value: string | null | undefined, incoming = false): JsonObje
   return parsed as JsonObject;
 }
 
+/** Acquisition/import callers cannot mint a trusted human calibration, even on
+ * the first insert. Existing calibrations are retained by the locked merger. */
+export function stripIncomingManualSales(data: InsertCompetitorAnalysis): InsertCompetitorAnalysis {
+  if (data.rawData === null || data.rawData === undefined) return data;
+  const raw = rawObject(data.rawData, true);
+  if (!Object.hasOwn(raw, "manualSales")) return data;
+  delete raw.manualSales;
+  return { ...data, rawData: canonical(raw) };
+}
+
 function sourceRevision(row: Pick<CompetitorAnalysis, "projectId" | "asin" | typeof SOURCE_COLUMNS[number]>, raw: JsonObject): string {
   const sources = Object.fromEntries(RAW_SOURCE_KEYS.filter(key => Object.hasOwn(raw, key)).map(key => [key, raw[key]]));
+  // Human calibration is source evidence, but never an acquisition-writable key.
+  if (Object.hasOwn(raw, "manualSales")) sources.manualSales = raw.manualSales;
   // The upload digest, not an AI summary or display filename, identifies the
   // original review file. This does not claim original review text is persisted.
   const reviewImport = raw.reviewImport;
@@ -128,6 +143,8 @@ export function mergeCompetitorUpdate(
   // A review writer carries an old whole-object spread, so only its explicit
   // review envelope is allowed to replace an existing key.
   const raw: JsonObject = options.kind === "reviews" ? { ...oldRaw } : { ...newRaw, ...oldRaw };
+  if (Object.hasOwn(oldRaw, "manualSales")) raw.manualSales = oldRaw.manualSales;
+  else delete raw.manualSales;
   const update: Update = {};
   const confirmed = existing.summaryStatus === "confirmed";
   const humanEdited = Boolean(existing.summary?.trim()) && existing.summary !== existing.aiSummary;

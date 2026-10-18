@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import ProjectSelector from "@/components/ProjectSelector";
 import { useProject } from "@/contexts/ProjectContext";
 import { CompetitorAnalysisSummaryEditor } from "@/pages/listing/CompetitorAnalysisSummaryEditor";
+import CompetitorSalesEditor from "./listing/CompetitorSalesEditor";
 import { ImportJobPanel, getImportJobOutcome, type ImportJobView } from "@/components/analysis/ImportJobPanel";
 import {
   Search,
@@ -48,6 +49,7 @@ import { MERGED_LISTING_WORKFLOW_ENABLED } from "@/lib/mergedListingWorkflow";
 import ListingStages from "./listing/ListingStages";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { competitorAcquisitionStatus } from "./listing/competitorAcquisitionStatus";
+import { listingIdentity, listingRequestOwner } from "./listing/listingResearchSelectionState";
 
 type BatchItemStatus = "pending" | "scraping" | "analyzing" | "done" | "failed";
 
@@ -80,10 +82,22 @@ interface FilePreview {
 
 export default function AnalysisPage() {
   const { selectedProjectId } = useProject();
-  if (MERGED_LISTING_WORKFLOW_ENABLED) return <SelectedProjectAnalysisPage selectedProjectId={selectedProjectId} />;
+  const auth = useAuth(), identity = listingIdentity(auth.user);
+  const ownerKey = identity ? JSON.stringify([identity.userId, identity.workspaceId, identity.role, selectedProjectId]) : null;
+  const boundary = useRef({ ownerKey, epoch: 0 }), shown = useRef<object | null>(null);
+  if (boundary.current.ownerKey !== ownerKey) boundary.current = { ownerKey, epoch: boundary.current.epoch + 1 };
+  const token = boundary.current;
+  if (auth.error || !identity) { shown.current = null; return <p role="alert">请确认有效用户与工作区后读取竞品资料。</p>; }
+  if (!auth.loading) shown.current = token;
+  if (auth.loading && shown.current !== token) return <p role="status">正在确认竞品读取身份…</p>;
   // Uploads and their pending callbacks belong to one project. Remounting the
-  // form prevents both stale UI locks and late responses from leaking to another.
-  return <ProjectAnalysisPage key={selectedProjectId ?? "no-project"} selectedProjectId={selectedProjectId} />;
+  // form prevents cross-owner callbacks. Same-owner authentication refresh only
+  // suspends the mounted form, preserving pending uploads and unsaved sales.
+  return <>{auth.loading && <p role="status">正在确认竞品读取身份，当前草稿暂时保留…</p>}
+    <div hidden={auth.loading} key={`${ownerKey}:${token.epoch}`}>
+      {MERGED_LISTING_WORKFLOW_ENABLED ? <SelectedProjectAnalysisPage selectedProjectId={selectedProjectId} />
+        : <ProjectAnalysisPage selectedProjectId={selectedProjectId} />}
+    </div></>;
 }
 
 function SelectedProjectAnalysisPage({ selectedProjectId }: { selectedProjectId: number | null }) {
@@ -93,6 +107,7 @@ function SelectedProjectAnalysisPage({ selectedProjectId }: { selectedProjectId:
 }
 
 function ProjectAnalysisPage({ selectedProjectId, captureWorkspaceId }: { selectedProjectId: number | null; captureWorkspaceId?: number }) {
+  const readAuth = useAuth(), readOwner = listingRequestOwner(readAuth.user, selectedProjectId ?? 0);
   const [asinInput, setAsinInput] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [isBatchMode, setIsBatchMode] = useState(false);
@@ -181,10 +196,23 @@ function ProjectAnalysisPage({ selectedProjectId, captureWorkspaceId }: { select
   const previewItemLocks = useRef(new Set<number>());
   const handledJobResults = useRef(new Set<string>());
 
-  const { data: analyses, isLoading: loadingAnalyses } = trpc.analysis.listByProject.useQuery(
-    { projectId: selectedProjectId! },
-    { enabled: !!selectedProjectId }
+  const analysesQuery = trpc.analysis.listByProject.useQuery(
+    { projectId: selectedProjectId!, expectedUserId: readOwner?.userId, expectedWorkspaceId: readOwner?.workspaceId },
+    { enabled: !!readOwner && !readAuth.loading && !readAuth.error, refetchOnMount: "always", retry: false }
   );
+  // A project-only cached row is not a fresh authorization receipt. Never pass
+  // its raw/source notes to an editor while the owned read is pending or failed.
+  const freshAnalyses = !!readOwner && !readAuth.loading && !readAuth.error && analysesQuery.isSuccess
+    && analysesQuery.isFetchedAfterMount && !analysesQuery.isFetching && !analysesQuery.isError;
+  const invalidAnalyses = freshAnalyses && (!Array.isArray(analysesQuery.data)
+    || analysesQuery.data.some(row => !row || typeof row !== "object" || row.projectId !== selectedProjectId || !Number.isSafeInteger(row.id) || row.id <= 0)
+    || new Set(analysesQuery.data.map(row => row.id)).size !== analysesQuery.data.length);
+  const lastAuthorizedAnalyses = useRef<typeof analysesQuery.data>(undefined);
+  if (analysesQuery.isError || invalidAnalyses) lastAuthorizedAnalyses.current = undefined;
+  else if (freshAnalyses) lastAuthorizedAnalyses.current = analysesQuery.data;
+  const analyses = lastAuthorizedAnalyses.current;
+  const analysesUnavailable = analysesQuery.isError || invalidAnalyses;
+  const loadingAnalyses = !!selectedProjectId && !analysesUnavailable && !freshAnalyses;
 
   const utils = trpc.useUtils();
 
@@ -1445,18 +1473,21 @@ function ProjectAnalysisPage({ selectedProjectId, captureWorkspaceId }: { select
           <div className="lg:col-span-3 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">分析结果</h2>
-              {analyses && analyses.length > 0 && (
+              {!loadingAnalyses && analyses && analyses.length > 0 && (
                 <Badge variant="secondary">{analyses.length} 条分析</Badge>
               )}
             </div>
 
-            {loadingAnalyses ? (
+            {loadingAnalyses && (
               <div className="space-y-3">
                 {[1, 2].map((i) => (
                   <Card key={i}><CardContent className="p-6"><div className="h-24 bg-muted animate-pulse rounded" /></CardContent></Card>
                 ))}
               </div>
-            ) : !analyses || analyses.length === 0 ? (
+            )}
+            <div hidden={loadingAnalyses}>
+            {analysesUnavailable ? <div role="alert" className="space-y-2 rounded border p-3"><p>竞品资料读取失败或范围无法核验，已隐藏旧结果，不表示没有资料。</p>
+              <Button variant="outline" onClick={() => void analysesQuery.refetch()}>重新读取竞品资料</Button></div> : !analyses || analyses.length === 0 ? (
               <Card className="border-dashed">
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <Search className="h-8 w-8 text-muted-foreground mb-3" />
@@ -1605,6 +1636,7 @@ function ProjectAnalysisPage({ selectedProjectId, captureWorkspaceId }: { select
                               </div>
                             )}
 
+                            <CompetitorSalesEditor projectId={selectedProjectId} analysis={analysis} suspended={loadingAnalyses} />
                             <CompetitorAnalysisSummaryEditor
                               projectId={selectedProjectId}
                               analysis={analysis}
@@ -1792,6 +1824,7 @@ function ProjectAnalysisPage({ selectedProjectId, captureWorkspaceId }: { select
                 </div>
               </ScrollArea>
             )}
+            </div>
           </div>
         </div>
       )}

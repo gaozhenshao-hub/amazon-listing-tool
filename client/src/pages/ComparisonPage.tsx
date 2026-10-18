@@ -95,7 +95,11 @@ interface ComparisonReport {
   status: "draft" | "confirmed";
   version: number;
   confirmedAt: Date | string | null;
+  reportRevision?: string;
+  sourceHash?: string;
 }
+const reportToken = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
+const reportHasTokens = (value: ComparisonReport | null): value is ComparisonReport & { reportRevision: string; sourceHash: string } => !!value && reportToken(value.reportRevision) && reportToken(value.sourceHash);
 
 function parseJson(str: string | null): any {
   if (!str) return null;
@@ -477,14 +481,16 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
   const [comparisonReportQuery, setReportRead] = useState({ isFetching: false, isError: false });
   const [pendingReportAction, setPendingReportAction] = useState<string | null>(null);
   const [pendingStudyIds, setPendingStudyIds] = useState<Set<number>>(new Set());
+  const [reportNeedsReview, setReportNeedsReview] = useState(false), [freshReport, setFreshReport] = useState<ComparisonReport | null>(null);
   const alive = useRef(false), selectionEpoch = useRef(0), draftRevision = useRef(0), dirty = useRef(false);
+  const sourceEpoch = useRef(0);
   const reportActionLock = useRef(false), studyLocks = useRef(new Set<number>());
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
-    const controller = new AbortController(); let current = true;
+    const controller = new AbortController(), sourceTicket = sourceEpoch.current; let current = true;
     setIsLoading(true); setReadError(false);
     void client.analysis.listByProject.query({ projectId: selectedProjectId, expectedWorkspaceId: workspaceId }, { signal: controller.signal }).then(rows => {
-      if (current && alive.current) setAnalyses(rows);
+      if (current && alive.current && sourceTicket === sourceEpoch.current) setAnalyses(rows);
     }).catch(() => { if (current && alive.current) setReadError(true); })
       .finally(() => { if (current && alive.current) setIsLoading(false); });
     // Abort is best-effort; the current/alive guards also reject late responses when transport ignores it.
@@ -501,6 +507,7 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
 
   const applyReport = useCallback((nextReport: ComparisonReport | null, editing = false) => {
     dirty.current = false; draftRevision.current++;
+    setReportNeedsReview(false); setFreshReport(null);
     setReport(nextReport);
     setSummaryDraft(nextReport?.summary || "");
     setSellingPointRows(nextReport?.sellingPointRows || []);
@@ -509,17 +516,20 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
 
   useEffect(() => {
     if (selectedAnalysisIds.length < 2) return;
-    const controller = new AbortController(), epoch = selectionEpoch.current, revision = draftRevision.current;
+    const controller = new AbortController(), epoch = selectionEpoch.current, revision = draftRevision.current, sourceTicket = sourceEpoch.current;
     let current = true;
     setReportRead({ isFetching: true, isError: false });
-    void client.analysis.getComparisonReport.query({ projectId: selectedProjectId, analysisIds: selectedAnalysisIds }, { signal: controller.signal }).then(value => {
-      if (!current || !alive.current || epoch !== selectionEpoch.current) return;
+    void client.analysis.getComparisonReport.query({ projectId: selectedProjectId, expectedWorkspaceId: workspaceId, analysisIds: selectedAnalysisIds }, { signal: controller.signal }).then(value => {
+      if (!current || !alive.current || epoch !== selectionEpoch.current || sourceTicket !== sourceEpoch.current) return;
       if (value !== null && !matchesComparisonSelection(value, selectedProjectId, selectedAnalysisIds)) throw new Error("REPORT_SCOPE_MISMATCH");
       if (!dirty.current && !reportActionLock.current && revision === draftRevision.current) applyReport(value as ComparisonReport | null);
+      else if (dirty.current && !reportActionLock.current) {
+        setFreshReport(value as ComparisonReport | null); setReportNeedsReview(true);
+      }
     }).catch(() => { if (current && alive.current && epoch === selectionEpoch.current) setReportRead({ isFetching: false, isError: true }); })
       .finally(() => { if (current && alive.current && epoch === selectionEpoch.current) setReportRead(previous => ({ ...previous, isFetching: false })); });
     return () => { current = false; controller.abort(); };
-  }, [client, selectedProjectId, selectedAnalysisIds, selectionKey, reportGeneration, applyReport]);
+  }, [client, selectedProjectId, workspaceId, selectedAnalysisIds, selectionKey, reportGeneration, applyReport]);
 
   function changeSelection(next: Set<number>) {
     selectionEpoch.current++; reportActionLock.current = false;
@@ -529,31 +539,46 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
   function editSummary(value: string) { dirty.current = true; draftRevision.current++; setSummaryDraft(value); }
   function editRows(value: ComparisonSellingPointRow[]) { dirty.current = true; draftRevision.current++; setSellingPointRows(value); }
   function beginEditing() { dirty.current = true; setIsEditingReport(true); }
+  function salesSaved() {
+    // This page owns its reads, rather than a project-only shared query cache.
+    // Refresh actual sources and report CAS without replacing an edited report.
+    sourceEpoch.current++; setReportNeedsReview(true); setFreshReport(null);
+    setReadGeneration(value => value + 1); setReportGeneration(value => value + 1);
+  }
   async function runReportAction(kind: "generate" | "save" | "confirm" | "unlock") {
     if (reportActionLock.current || selectedAnalysisIds.length < 2 || (kind !== "generate" && !report)) return;
-    if (kind === "generate" && (dirty.current || report?.status === "confirmed")) return;
-    const epoch = selectionEpoch.current, revision = draftRevision.current;
+    if (kind === "generate" && (dirty.current || report?.status === "confirmed" || reportNeedsReview)) return;
+    if (kind !== "generate" && (!reportHasTokens(report) || reportNeedsReview || comparisonReportQuery.isError || comparisonReportQuery.isFetching)) return;
+    const epoch = selectionEpoch.current, revision = draftRevision.current, sourceTicket = sourceEpoch.current;
     reportActionLock.current = true; setPendingReportAction(kind);
     try {
-      const input = { projectId: selectedProjectId, reportId: report?.id ?? 0, summary: summaryDraft, sellingPointRows };
-      const value = kind === "generate" ? (await client.analysis.comparisonSummary.mutate({ projectId: selectedProjectId, analysisIds: selectedAnalysisIds })).report
+      const input = { projectId: selectedProjectId, expectedWorkspaceId: workspaceId, reportId: report?.id ?? 0, summary: summaryDraft, sellingPointRows,
+        expectedReportRevision: report?.reportRevision ?? "", expectedSourceHash: report?.sourceHash ?? "" };
+      const value = kind === "generate" ? (await client.analysis.comparisonSummary.mutate({ projectId: selectedProjectId, expectedWorkspaceId: workspaceId, analysisIds: selectedAnalysisIds })).report
         : kind === "save" ? await client.analysis.updateComparisonReport.mutate(input)
           : kind === "confirm" ? await client.analysis.confirmComparisonReport.mutate(input)
-            : await client.analysis.unlockComparisonReport.mutate({ projectId: selectedProjectId, reportId: input.reportId });
+            : await client.analysis.unlockComparisonReport.mutate({ projectId: selectedProjectId, expectedWorkspaceId: workspaceId, reportId: input.reportId,
+              expectedReportRevision: input.expectedReportRevision, expectedSourceHash: input.expectedSourceHash });
       if (!alive.current || epoch !== selectionEpoch.current) return;
-      if (!matchesComparisonSelection(value, selectedProjectId, selectedAnalysisIds)) throw new Error("REPORT_SCOPE_MISMATCH");
+      if (sourceTicket !== sourceEpoch.current) { setReportNeedsReview(true); toast.info("期间销量来源已变化，原回执未覆盖草稿；请刷新并核对当前对比版本"); return; }
+      if (!matchesComparisonSelection(value, selectedProjectId, selectedAnalysisIds) || !reportHasTokens(value as ComparisonReport)
+        || (kind !== "generate" && (value?.id !== report?.id || value?.sourceHash !== input.expectedSourceHash))) throw new Error("REPORT_SCOPE_MISMATCH");
       if (revision === draftRevision.current) {
         applyReport(value as ComparisonReport, kind === "unlock");
         if (kind === "unlock") dirty.current = true;
       } else toast.info("请求已完成，期间编辑的本地草稿已保留，请核对后再保存");
       toast.success(kind === "generate" ? "结构化竞品对比已生成" : kind === "save" ? "竞品对比草稿已保存" : kind === "confirm" ? "竞品对比已确认并锁定" : "竞品对比已解锁");
     } catch (error) {
-      if (alive.current && epoch === selectionEpoch.current) toast.error("对比操作未完成", { description: error instanceof Error ? error.message : "请刷新核对，系统不会自动重试" });
+      if (alive.current && epoch === selectionEpoch.current) {
+        setReportNeedsReview(true); setFreshReport(null);
+        toast.error("对比操作未确认完成", { description: "草稿已保留，请刷新并核对范围、来源和版本；系统不会自动重试。" });
+      }
     } finally {
       if (alive.current && epoch === selectionEpoch.current) { reportActionLock.current = false; setPendingReportAction(null); }
     }
   }
   const reportMutationPending = pendingReportAction !== null;
+  const reportReviewDisabled = reportMutationPending || reportNeedsReview || comparisonReportQuery.isFetching || comparisonReportQuery.isError || !reportHasTokens(report);
   const updateReportMutation = { isPending: pendingReportAction === "save" };
   const confirmReportMutation = { isPending: pendingReportAction === "confirm" };
   const unlockReportMutation = { isPending: pendingReportAction === "unlock" };
@@ -814,11 +839,18 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
             analyses={analyses.filter(row => researchSelectedIds.has(row.id))}
             pendingIds={pendingStudyIds}
             onResearchCompleted={() => setReadGeneration(value => value + 1)}
+            onSalesSaved={salesSaved}
             onConfirm={analysis => { void reviewStudy(analysis, "confirm"); }}
             onUnlock={analysis => { void reviewStudy(analysis, "unlock"); }}
           />}
           {comparisonReportQuery.isError && <p role="alert">历史对比报告读取失败或范围不匹配；未覆盖本地草稿，请刷新核对。</p>}
           {dirty.current && <p role="status" className="text-sm text-amber-700">本地编辑中的报告已保留，刷新不会覆盖。切换所选竞品会离开此草稿。</p>}
+          {report && !reportHasTokens(report) && <p role="alert">对比报告缺少可核验的版本／来源标识，仅供查看；请重新读取后再保存、确认或解锁。</p>}
+          {reportNeedsReview && <p role="alert">销量来源或报告版本需要重新核对，当前对比草稿已保留，写入已暂停。</p>}
+          {freshReport && reportHasTokens(freshReport) && <div className="space-y-2 rounded border p-3"><details><summary>查看重新读取的报告原文与版本</summary><p>v{freshReport.version} · {freshReport.status === "confirmed" ? "已确认" : "待确认"}</p><p className="whitespace-pre-wrap">{freshReport.summary}</p></details>
+            <Button variant="outline" disabled={reportMutationPending || comparisonReportQuery.isFetching || comparisonReportQuery.isError} onClick={() => {
+              if (reportActionLock.current) return; setReport(freshReport); setFreshReport(null); setReportNeedsReview(false); draftRevision.current++;
+            }}>采用已读取对比版本，保留本地草稿</Button></div>}
 
           {/* Comparison Results */}
           {selectedAnalyses.length >= 2 && (
@@ -841,7 +873,7 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={reportMutationPending}
+                        disabled={reportReviewDisabled}
                         onClick={() => { void runReportAction("unlock"); }}
                       >
                         {unlockReportMutation.isPending
@@ -855,7 +887,7 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
                           size="sm"
                           variant="ghost"
                           disabled={reportMutationPending}
-                          onClick={() => applyReport(report)}
+                          onClick={() => { const stillNeedsReview = reportNeedsReview && !freshReport; applyReport(freshReport ?? report); setReportNeedsReview(stillNeedsReview); }}
                         >
                           <X className="h-4 w-4" />
                           取消
@@ -863,7 +895,7 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={reportMutationPending || !summaryDraft.trim()}
+                          disabled={reportReviewDisabled || !summaryDraft.trim()}
                           onClick={saveReport}
                         >
                           {updateReportMutation.isPending
@@ -873,7 +905,7 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
                         </Button>
                         <Button
                           size="sm"
-                          disabled={reportMutationPending || !summaryDraft.trim()}
+                          disabled={reportReviewDisabled || !summaryDraft.trim()}
                           onClick={confirmReport}
                         >
                           {confirmReportMutation.isPending
@@ -888,7 +920,7 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
                           <FilePenLine className="h-4 w-4" />
                           编辑
                         </Button>
-                        <Button size="sm" disabled={reportMutationPending} onClick={confirmReport}>
+                        <Button size="sm" disabled={reportReviewDisabled} onClick={confirmReport}>
                           {confirmReportMutation.isPending
                             ? <Loader2 className="h-4 w-4 animate-spin" />
                             : <CheckCircle2 className="h-4 w-4" />}
@@ -1445,7 +1477,7 @@ function OwnedComparisonPage({ selectedProjectId, workspaceId }: { selectedProje
                   onSummaryChange={editSummary}
                   onGenerate={() => { void runReportAction("generate"); }}
                   isGenerating={pendingReportAction === "generate"}
-                  generationDisabled={reportMutationPending || dirty.current}
+                  generationDisabled={reportMutationPending || dirty.current || reportNeedsReview}
                 />
               </TabsContent>
             </Tabs>

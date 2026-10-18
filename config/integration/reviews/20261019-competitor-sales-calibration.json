@@ -1,0 +1,166 @@
+{
+  "schema": "amazon-integration-review/v1",
+  "batch": "competitor-sales-calibration-and-source-consumers",
+  "parent": "e8096a8c4d4c71aee83ce4204e836b534b07cd8b",
+  "userPriority": "Main functional merge first; full business acceptance and trial use by the user's friend. Necessary safety/build checks remain. No taskboard.",
+  "sourcePolicy": "General P5 Qingdao; operations additions friend and Lingxing Qingdao; Listing user Skills and friend workflow/selection.",
+  "protectedChanges": [
+    {
+      "path": "client/src/pages/AnalysisPage.tsx",
+      "controls": [
+        "K01"
+      ],
+      "before": {
+        "gitBlobSha1": "68750899f99a05f82f8e6e6aebae1f2f412a3f47",
+        "sha256": "12e0ec62af006f93faf361855fa9e3b29df99c17d4b7fcab1db28ff5fb02fe05",
+        "reviewRef": "config/integration/reviews/20261017-competitor-capture-selection.json"
+      },
+      "after": {
+        "gitBlobSha1": "9190ba27589723221a57fab39644dbf654f7d031",
+        "sha256": "360fee649cc6a6534f3dfb283b1c93877844d1486c2749e5557255e90a799fda",
+        "reviewRef": "config/integration/reviews/20261017-competitor-capture-selection.json; config/integration/reviews/20261019-competitor-sales-calibration.json"
+      },
+      "decision": "Owner/workspace keyed fresh mount reads guard actual AnalysisPage entry. Same-owner auth/list refresh hides and suspends without unmounting drafts or pending operations; invalid current scope clears old rows. Preserve imports and acquisition behavior."
+    },
+    {
+      "path": "client/src/pages/ComparisonPage.tsx",
+      "controls": [
+        "K03"
+      ],
+      "before": {
+        "gitBlobSha1": "6307bb59e4464d58d29590230d9bf5125f3d1808",
+        "sha256": "668d0dd8c7630c3bf50ee58042e29a69318e74ac35488985a219c8798ec2c2d1",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve original review-corpus and selection behavior"
+      },
+      "after": {
+        "gitBlobSha1": "68fff4e22b1004c6b7ea7f407eba9bf012cf9433",
+        "sha256": "06bf4ef920201b3bc1929e8ca5b3df1f79c876df775d2d7c6fe759bb48d2702d",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve original review-corpus and selection behavior; config/integration/reviews/20261019-competitor-sales-calibration.json"
+      },
+      "decision": "Sales-save refresh invalidates actual source/report read epochs. Require report/current-source CAS for save/confirm/unlock; reject late ACK, preserve dirty drafts and require explicit new-version adoption. Existing seven-direction and source selection flow remain."
+    },
+    {
+      "path": "server/domains/listing/routerContext.ts",
+      "controls": [
+        "K07"
+      ],
+      "before": {
+        "gitBlobSha1": "eb8dd14d5dc7aca8e733bc4f4eb7570acfb5d176",
+        "sha256": "80f74245e2286bcc9e63b41a9e0096166fb764c76fce99913b75d4f06abe813f"
+      },
+      "after": {
+        "gitBlobSha1": "360cbe2079f7e365774983a3f112d1f1c3806748",
+        "sha256": "c2c8422972d95d5f47a18458f0a3069248922b828e2026b527143066087aca96",
+        "reviewRef": "config/integration/reviews/20261019-competitor-sales-calibration.json"
+      },
+      "decision": "Actual product context receives the shared source-labeled external sales projection; do not replace business Skills or promote competitor data into our product facts."
+    },
+    {
+      "path": "server/domains/listing/services/sellingPointPlanning.test.ts",
+      "controls": [
+        "K03"
+      ],
+      "before": {
+        "gitBlobSha1": "5916960982d01c6d655d6b1b2e9d0879a2acf936",
+        "sha256": "3a622f3ee9a90640ed6012a5ab5f3658dacd5534a699d2551d599f14f75a47ed",
+        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json"
+      },
+      "after": {
+        "gitBlobSha1": "9d7b29e06c50015fa355140e4e40283c20bede67",
+        "sha256": "b850ec69f706e810e7724e6882be21c958bd4ac6a7b6b49824dd0083a93ca94b",
+        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json; config/integration/reviews/20261019-competitor-sales-calibration.json"
+      },
+      "decision": "Extend existing seven-direction tests for manual priority, observed coverage and invalid legacy calibration while retaining all prior assertions."
+    },
+    {
+      "path": "server/domains/listing/services/sellingPointPlanning.ts",
+      "controls": [
+        "K03"
+      ],
+      "before": {
+        "gitBlobSha1": "ee151204d917512e38d03018b4e0374a994cbc3e",
+        "sha256": "864a1adea587b35eb70bc015b71e8c544194adddb490600c7c4036cd06ca02a9",
+        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json"
+      },
+      "after": {
+        "gitBlobSha1": "5debabb91cd9a61027bfc827493e1a9fbd8644e0",
+        "sha256": "b6fd773b20ed6830ea3aaf5786c8fe357f0a946d4b05a41b0b4533ed23619590",
+        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json; config/integration/reviews/20261019-competitor-sales-calibration.json"
+      },
+      "decision": "Supply external sales to actual seven-direction research with provenance, missingness and no-sales-as-proof rules. Preserve user-primary Skill, seven slots, confirmed-facts-only claims and ranking logic."
+    },
+    {
+      "path": "server/routers/analysis.ts",
+      "controls": [
+        "K01"
+      ],
+      "before": {
+        "gitBlobSha1": "dd86dc5b8d13fc0a2a6f69ae69396c1a6b77c813",
+        "sha256": "b3e2820d0fbded00d0da3594ec40910cc7885f5400d31cdb07cc4348658c5b10",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior import/research/result routes"
+      },
+      "after": {
+        "gitBlobSha1": "26de9a0d8cb82751ebea78f38e6881e7c709274f",
+        "sha256": "d5f80677a96318c26eb20fecbc581bbd6907254def6a22061700fd13f095f149",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior import/research/result routes; config/integration/reviews/20261019-competitor-sales-calibration.json"
+      },
+      "decision": "Add default-off human calibration and optional expectedUserId checked before database read. Existing imports, corpora, snapshot/deep jobs and human-summary routes remain. Report operations use parent lock, workspace/owner and full persisted CAS."
+    }
+  ],
+  "implementation": [
+    "Only the human route creates versioned manualSales, with a required source note and server actor/time. Zero is valid; reset removes only the manual overlay, not acquired data. Acquisition cannot mint or overwrite trusted calibration.",
+    "One project/analysis transaction checks the whole persisted CAS, UTF-8 text budget, write acknowledgement and exact readback. A real calibration marks previous research stale and unconfirms related reports while retaining their bodies; reset without an overlay is a no-write no-op.",
+    "Shared projection preserves lower bounds, unknown children, duplicate/conflicting badges and saved observed-ASIN coverage. Manual total is never distributed to children; SellerSprite remains an independent estimate, not added to other sources.",
+    "Actual legacy analysis, comparison, product context, seven-direction planning and deep selling/summary requests consume the projection. Source notes are untrusted data, never product facts, review quotations, theme frequency or sample denominators.",
+    "Optional salesContext on stored deep plans preserves absent-field historical hashes. Sales alone cannot unlock missing Listing/review stages. Late comparison generation refuses changed current sources.",
+    "Both UI entries isolate actor/workspace/project/record. Unknown ACK never resubmits automatically; dirty report drafts require explicit adoption of fresh tokens. Same-owner pauses preserve drafts and pending state; successful loss of scope hides stale content."
+  ],
+  "checks": {
+    "backendAndSharedDeduplicated": {
+      "files": 17,
+      "passed": 864
+    },
+    "uiDeduplicated": {
+      "files": 6,
+      "passed": 188
+    },
+    "combinedDisjointEntries": {
+      "files": 23,
+      "passed": 1052
+    },
+    "originalConfigTypes": {
+      "sourceFiles": 3911,
+      "diagnostics": 0,
+      "excludesUnchanged": true
+    },
+    "changedTestInclusiveTypes": {
+      "sourceFiles": 3924,
+      "additionalRoots": 13,
+      "diagnostics": 0,
+      "excludesUnchanged": true
+    },
+    "changedTypescriptLint": {
+      "files": 32,
+      "exitCode": 0
+    },
+    "clientAndThreeServerBuilds": {
+      "passed": true,
+      "bothMergedFrontendFlags": true,
+      "notNativeRuntimeAcceptance": true
+    }
+  },
+  "independentReview": "Root reviewed repository locks/CAS, routes and actual consumers. Independent final review closed cross-identity cached source disclosure, invalid successful reread retention, and same-owner refresh draft loss. Consumer review verified actual model request input, old-plan compatibility and evidence boundaries. Production error-shape probe with synthetic DB/ACK failures confirmed no SQL, parameter, host or stack disclosure.",
+  "boundaries": [
+    "ENABLE_LISTING_SALES_CALIBRATION_WRITES defaults off; a flag does not replace authorization or target schema readiness.",
+    "Comparison sourceHash is current read/review CAS, not persistent generated-source provenance for every historical report.",
+    "Deep output remains a read-only candidate; formal source-bound human adoption into confirmed summary/generation is still open. Never clear stale flags to revive old AI fields.",
+    "Legacy cross-workspace report ambiguity fails closed. Artifact registration remains best-effort, not an atomic artifact guarantee.",
+    "Fresh database approval binding is a separate unresolved gate. No approval hash was rewritten, no initialization bypassed, and no native/production readiness inferred from unit checks."
+  ],
+  "handoff": "docs/main-feature-handoff.json",
+  "modelCalls": 0,
+  "productionWrites": false,
+  "productionDeployed": false,
+  "fullBusinessAcceptancePassed": false,
+  "fullObjectiveComplete": false
+}

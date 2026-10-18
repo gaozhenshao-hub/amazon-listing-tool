@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CompetitorSalesProjectionSchema } from "./competitorSales";
 import {
   COMPETITOR_REVIEW_PARSER_VERSION,
   type CompetitorReviewCorpus,
@@ -53,12 +54,18 @@ export const competitorEvidenceIdentitySchema = z.object({
   userId: id, workspaceId: id.nullable(), sourceWorkspaceId: id.nullable(), projectId: id, analysisId: id, asin, revision: hash,
 }).strict();
 export type CompetitorEvidenceIdentity = z.infer<typeof competitorEvidenceIdentitySchema>;
+// Independent external context, never a quote source or review denominator.
+// Optional on stored v1 plans so historical hashes remain exactly verifiable.
+export const competitorResearchSalesContextSchema = z.object({ version: z.literal(1), projection: CompetitorSalesProjectionSchema }).strict();
+export type CompetitorResearchSalesContext = z.infer<typeof competitorResearchSalesContextSchema>;
 export type CompetitorResearchEvidenceInput = {
   identity: CompetitorEvidenceIdentity; title: string | null; bullets: string[];
+  salesContext?: CompetitorResearchSalesContext;
   reviews: { status: "available"; corpus: CompetitorReviewCorpus; source: z.infer<typeof authorizedSourceSchema>; authorizedCorpusHash: string }
     | { status: "unavailable"; reason: string };
 };
 const inputSchema = z.object({ identity: competitorEvidenceIdentitySchema, title: text.nullable(), bullets: z.array(text),
+  salesContext: competitorResearchSalesContextSchema.optional(),
   reviews: z.discriminatedUnion("status", [z.object({ status: z.literal("available"), corpus: corpusSchema,
     source: authorizedSourceSchema, authorizedCorpusHash: hash }).strict(),
     z.object({ status: z.literal("unavailable"), reason: text.max(1000) }).strict()]),
@@ -69,6 +76,7 @@ const batchSchema = z.object({ batchId: text, items: z.array(review).min(1).max(
 const planSchema = z.object({
   version: z.literal(1), identity: competitorEvidenceIdentitySchema,
   listingSources: z.array(listingSourceSchema),
+  salesContext: competitorResearchSalesContextSchema.optional(),
   reviews: z.discriminatedUnion("status", [
     z.object({ status: z.literal("available"), parserVersion: z.literal(COMPETITOR_REVIEW_PARSER_VERSION), parserCorpusHash: hash,
       authorizedCorpusHash: hash, source: authorizedSourceSchema,
@@ -205,7 +213,9 @@ export function buildCompetitorResearchEvidencePlan(raw: CompetitorResearchEvide
     reviews = { status: "available", parserVersion: corpus.parserVersion, parserCorpusHash: corpus.corpusHash, authorizedCorpusHash, source,
       coverage: corpus.coverage, total: corpus.items.length, batches };
   }
-  const body = { version: 1 as const, identity, listingSources, reviews, batchLimits: { reviews: 60 as const, utf8Bytes: 24576 as const }, modelRead: false as const };
+  const body = { version: 1 as const, identity, listingSources, reviews,
+    ...(input.salesContext === undefined ? {} : { salesContext: input.salesContext }),
+    batchLimits: { reviews: 60 as const, utf8Bytes: 24576 as const }, modelRead: false as const };
   return { ...body, evidenceHash: digest(body, sha256) };
 }
 
@@ -217,6 +227,7 @@ export function verifyCompetitorResearchEvidencePlan(value: unknown, sha256: Com
   if (titles.length > 1) fail("EVIDENCE_PLAN_CHANGED");
   const rebuilt = buildCompetitorResearchEvidencePlan({ identity: plan.identity, title: titles[0]?.text ?? null,
     bullets: plan.listingSources.filter(source => source.kind === "bullet").map(source => source.text),
+    ...(plan.salesContext === undefined ? {} : { salesContext: plan.salesContext }),
     reviews: plan.reviews.status === "unavailable" ? { status: "unavailable", reason: plan.reviews.reason } : { status: "available",
       source: plan.reviews.source, authorizedCorpusHash: plan.reviews.authorizedCorpusHash, corpus: {
       parserVersion: plan.reviews.parserVersion, corpusHash: plan.reviews.parserCorpusHash, projectId: plan.identity.projectId,

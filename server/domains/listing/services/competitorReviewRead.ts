@@ -3,6 +3,8 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import type { TrpcContext } from "../../../_core/context";
 import type { CompetitorReviewCorpus, CompetitorReviewPage } from "../../../../shared/competitorReviewCorpus";
+import { readCompetitorSales } from "../../../../shared/competitorSales";
+import type { CompetitorResearchSalesContext } from "../../../../shared/competitorResearchEvidence";
 import { competitorRevision } from "../../../repositories/project/competitorWritePolicy";
 import { competitorReviewReadRepository, reviewReadError, MAX_REVIEW_SOURCE_CANDIDATES,
   MAX_REVIEW_JOB_INPUT_BYTES, type CompetitorReviewReadSession, type ReviewJobCandidate, type ReviewJobScope } from "../../../repositories/listing/competitorReviewReadRepository";
@@ -28,6 +30,7 @@ export type AuthorizedCompetitorReviewSource = {
   identity: { userId: number; workspaceId: number | null; sourceWorkspaceId: number | null;
     projectId: number; analysisId: number; asin: string; revision: string };
   listing: { title: string | null; bulletPoints: string | null };
+  salesContext?: CompetitorResearchSalesContext;
   reviews: { status: "available"; authorizedCorpusHash: string;
     source: { runId: string; fileName: string; fileHash: string }; corpus: CompetitorReviewCorpus }
     | { status: "unavailable"; reason: string };
@@ -92,6 +95,7 @@ export function createCompetitorReviewReadService(dependencies: Partial<typeof d
       reviewReadError("NOT_FOUND", "COMPETITOR_REVIEWS_ANALYSIS_UNAVAILABLE");
     return { revision: competitorRevision(row), asin: row.asin, meta: sourceMeta(row.rawData),
       listing: { title: row.title, bulletPoints: row.bulletPoints },
+      salesContext: { version: 1 as const, projection: readCompetitorSales(row.rawData, row.asin) },
       jobScope: { userId: scope.userId, projectId: scope.projectId, workspaceId: parent.workspaceId as number | null } };
   }
   async function readFullCorpus(ctx: TrpcContext, raw: SourceRequest): Promise<AuthorizedCompetitorReviewSource> {
@@ -118,7 +122,7 @@ export function createCompetitorReviewReadService(dependencies: Partial<typeof d
           reviewReadError("CONFLICT", "COMPETITOR_REVIEWS_SOURCE_CHANGED");
       }
       const binding = { identity: { ...scope, sourceWorkspaceId: initial.jobScope.workspaceId,
-        asin: initial.asin, revision: initial.revision }, listing: initial.listing };
+        asin: initial.asin, revision: initial.revision }, listing: initial.listing, salesContext: initial.salesContext };
       const unavailable = async (reason: string): Promise<AuthorizedCompetitorReviewSource> => {
         await deps.repository.transaction(session => revalidate(session));
         if (input.expectedCorpusHash) reviewReadError("CONFLICT", "COMPETITOR_REVIEWS_SOURCE_CHANGED");

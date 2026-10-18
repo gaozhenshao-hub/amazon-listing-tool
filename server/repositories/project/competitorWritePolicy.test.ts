@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CompetitorAnalysis, InsertCompetitorAnalysis } from "../../../drizzle/schema/project";
-import { competitorRevision, mergeCompetitorUpdate } from "./competitorWritePolicy";
+import { competitorRevision, mergeCompetitorUpdate, stripIncomingManualSales } from "./competitorWritePolicy";
 
 function record(overrides: Partial<CompetitorAnalysis> = {}): CompetitorAnalysis {
   return {
@@ -73,6 +73,16 @@ describe("competitorRevision full persisted row", () => {
 });
 
 describe("locked competitor update merge", () => {
+  it.each(["upsert", "reviews"] as const)("%s retains exact human calibration despite a forged incoming override", kind => {
+    const manualSales = { version: 1, value: 0, sourceNote: "Human evidence", updatedAt: "2026-10-19T00:00:00.000Z", updatedBy: 7 };
+    const existing = record({ rawData: JSON.stringify({ manualSales, sellerSpriteData: { monthlySales: 400 } }) });
+    expect(merged(existing, { rawData: JSON.stringify({ manualSales: { ...manualSales, value: 999 }, sellerSpriteData: { monthlySales: 800 } }) }, kind).raw.manualSales).toEqual(manualSales);
+    expect(merged(record({ rawData: "{}" }), { rawData: JSON.stringify({ manualSales }) }, kind).raw).not.toHaveProperty("manualSales");
+  });
+  it("first acquisition insert cannot mint manualSales and keeps unrelated evidence", () => {
+    expect(JSON.parse(stripIncomingManualSales({ projectId: 11, asin: "B000000001", rawData: JSON.stringify({ manualSales: { value: 100 }, sellerSpriteData: { monthlySales: 3 }, other: true }) }).rawData!))
+      .toEqual({ sellerSpriteData: { monthlySales: 3 }, other: true });
+  });
   it("preserves confirmed state, original AI and human summary even against a full draft candidate", () => {
     const existing = record({ summaryStatus: "confirmed", summaryConfirmedBy: 7, summaryConfirmedAt: new Date("2026-01-03T00:00:00Z") });
     const result = merged(existing, {

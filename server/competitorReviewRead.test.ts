@@ -11,6 +11,7 @@ vi.mock("./services/securityGovernance", () => ({ assertResourceAction: vi.fn() 
 import { createCompetitorReviewReadService, competitorReviewsPageSchema, competitorReviewSourceSchema } from "./domains/listing/services/competitorReviewRead";
 import { competitorRevision } from "./repositories/project/competitorWritePolicy";
 import { createCompetitorResearchEvidenceService } from "./domains/listing/services/competitorResearchEvidence";
+import { readCompetitorSales } from "../shared/competitorSales";
 
 const digest = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 const dialect = new MySqlDialect(), asin = "B000000001", filename = `${asin}-Reviews.csv`;
@@ -200,6 +201,26 @@ describe("authorized original competitor review pages (real service, SQL adapter
 
 describe("server-only complete authorized corpus for selected research", () => {
   const request = { projectId: 11, analysisId: 21, expectedWorkspaceId: 7 };
+  it("derives sales from the same authorized revision and does not expose them as review rows or counts", async () => {
+    const f = fixture(), saved = JSON.parse(f.analysis.rawData!);
+    f.analysis.rawData = JSON.stringify({ ...saved, manualSales: { version: 1, value: 321, sourceNote: "Synthetic note", updatedAt: "2026-10-19T00:00:00.000Z", updatedBy: 3 }, sellerSpriteData: { monthlySales: 900 } });
+    const expectedRevision = competitorRevision(f.analysis), evidence = createCompetitorResearchEvidenceService({ readFullCorpus: f.service.readFullCorpus });
+    const plan = await evidence.load(f.ctx, { ...request, expectedRevision });
+    expect(plan.identity.revision).toBe(expectedRevision); expect(plan.salesContext).toEqual({ version: 1, projection: readCompetitorSales(f.analysis.rawData, asin) });
+    expect(plan.reviews.total).toBe(35); expect(plan.listingSources).toHaveLength(1);
+    const page = await f.service.list(f.ctx, f.request); expect(JSON.stringify(page)).not.toMatch(/Synthetic note|salesContext|manualSales/);
+  });
+  it("rejects calibration changed while original reviews were being parsed", async () => {
+    const f = fixture(), expectedRevision = competitorRevision(f.analysis);
+    f.setDuringParse(() => { f.analysis.rawData = JSON.stringify({ ...JSON.parse(f.analysis.rawData!), manualSales: { version: 1, value: 321, sourceNote: "Changed source", updatedAt: "2026-10-19T00:00:00.000Z", updatedBy: 3 } }); });
+    await expect(f.service.readFullCorpus(f.ctx, { ...request, expectedRevision })).rejects.toMatchObject({ code: "CONFLICT", message: "COMPETITOR_REVIEWS_SOURCE_CHANGED" });
+  });
+  it("keeps sales context when reviews are unavailable without inventing review samples", async () => {
+    const f = fixture(); f.analysis.rawData = JSON.stringify({ purchaseBadge: "100+" });
+    const result = await f.service.readFullCorpus(f.ctx, request);
+    expect(result.salesContext?.projection).toMatchObject({ source: "purchase_badges", value: 100, lowerBound: true });
+    expect(result.reviews.status).toBe("unavailable"); expect(f.parse).not.toHaveBeenCalled();
+  });
   it("connects the real authorized reader, SQL adapter, original parser and evidence preview without a model", async () => {
     const f = fixture(), evidence = createCompetitorResearchEvidenceService({ readFullCorpus: f.service.readFullCorpus });
     const result = await evidence.preview(f.ctx, { ...request, expectedRevision: competitorRevision(f.analysis) });
