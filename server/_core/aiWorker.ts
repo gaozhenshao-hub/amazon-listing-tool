@@ -35,6 +35,9 @@ import { startCompetitorDeepWorker } from "../domains/listing/services/competito
 import { startImageTaggingWorker } from "../domains/knowledge/imageTaggingWorker";
 import { startImagePlanningWorker } from "../domains/image/services/imagePlanningWorker";
 import { startDevelopmentMarketWorker } from "../domains/product_development/analysis/developmentMarketWorker";
+import { startKnowledgeQaWorker } from "../domains/knowledge/knowledgeQaWorker";
+import { startVideoWorkflowWorker } from "../domains/video/videoWorkflowWorker";
+import { startSaihuReportCaptureWorker } from "../domains/ops/saihuReportCaptureWorker";
 
 const pollMs = Math.min(
   Math.max(Number(process.env.AI_JOB_WORKER_POLL_MS || 5000), 1000),
@@ -97,6 +100,9 @@ async function main() {
   const stopImageTaggingWorker = startImageTaggingWorker("worker");
   const imagePlanningWorker = startImagePlanningWorker("worker");
   const stopDevelopmentMarketWorker = startDevelopmentMarketWorker("worker");
+  const knowledgeQaWorker = startKnowledgeQaWorker("worker");
+  const videoWorkflowWorker = startVideoWorkflowWorker("worker");
+  const stopSaihuReportCaptureWorker = startSaihuReportCaptureWorker("worker");
   const handlers = listAiJobHandlerRegistrations()
     .map(handler => handler.id)
     .join(", ");
@@ -129,10 +135,13 @@ async function main() {
     const imageTaggingDrain = stopImageTaggingWorker();
     const imagePlanningDrain = imagePlanningWorker?.stop();
     const developmentMarketDrain = stopDevelopmentMarketWorker();
+    const knowledgeQaDrain = knowledgeQaWorker?.stop(shutdownGraceMs);
+    const videoWorkflowDrain = videoWorkflowWorker?.stop(shutdownGraceMs);
+    const saihuReportDrain = stopSaihuReportCaptureWorker();
     console.log(`[AI Worker] received ${signal}, draining in-flight jobs`);
     try {
       await markAiJobWorkerDraining({ signal });
-      const [drainResult] = await Promise.all([waitForAiJobsToDrain(shutdownGraceMs), inventoryDrain, conversationDrain, profitDrain, competitorDeepDrain, imageTaggingDrain, imagePlanningDrain, developmentMarketDrain]);
+      const [drainResult] = await Promise.all([waitForAiJobsToDrain(shutdownGraceMs), inventoryDrain, conversationDrain, profitDrain, competitorDeepDrain, imageTaggingDrain, imagePlanningDrain, developmentMarketDrain, knowledgeQaDrain, videoWorkflowDrain, saihuReportDrain]);
       if (!drainResult.drained) {
         console.warn(
           `[AI Worker] shutdown grace elapsed; running=${drainResult.runningRunIds.join(",") || "none"} ` +

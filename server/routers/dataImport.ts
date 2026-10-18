@@ -32,6 +32,7 @@ import { resolveConfirmedExternalOperator, splitExternalOperatorNames } from "..
 import { mergeErpProducts } from "@shared/erpProductMerge";
 import { normalizeMarketplaceCode } from "@shared/marketplaceIdentity";
 import { isCompleteNaturalWeek, summarizeParentAsinAdMcpWeek } from "../domains/ops/productOverview/adMcpWeeklySummary";
+import { withSaihuLegacyWrite, readControlledSaihuOverview } from "../domains/ops/saihuReportLegacy";
 
 function matchesLingxingMarketplace(row: { country?: string | null; storeName?: string | null }, marketplace: string) {
   if (marketplace === "ALL") return true;
@@ -351,6 +352,17 @@ export const dataImportRouter = router({
         if (!response.ok) throw new Error(`文件下载失败: HTTP ${response.status}`);
         const buffer = response.body;
         const result = parseExcelBuffer(buffer, importRecord.fileName);
+        if (result.sourceType === "saihu") {
+          const workspaceId = currentOpsWorkspaceId(); if (!workspaceId || !db) throw new Error("SAIHU_REPORT_WORKSPACE_CHANGED");
+          return await withSaihuLegacyWrite(db, { workspaceId, userId: ctx.user.id }, async tx => {
+            const [fresh] = await tx.select().from(dataImports).where(and(eq(dataImports.id, input.importId), eq(dataImports.userId, ctx.user.id), eq(dataImports.workspaceId, workspaceId))).for("update");
+            if (!fresh || fresh.status === "completed" || fresh.fileName !== importRecord.fileName || fresh.totalRows !== importRecord.totalRows || fresh.weekStartDate !== importRecord.weekStartDate || fresh.weekEndDate !== importRecord.weekEndDate || fresh.fileUrl !== importRecord.fileUrl || fresh.sourceType !== "saihu") throw new Error("SAIHU_REPORT_LEGACY_IMPORT_CHANGED");
+            await tx.delete(saihuProductWeekly).where(and(eq(saihuProductWeekly.workspaceId, workspaceId), eq(saihuProductWeekly.userId, ctx.user.id), eq(saihuProductWeekly.weekStartDate, result.dateRange.startDate), eq(saihuProductWeekly.weekEndDate, result.dateRange.endDate)));
+            for (let i = 0; i < result.allRows.length; i += 50) await tx.insert(saihuProductWeekly).values(result.allRows.slice(i, i + 50).map(row => ({ ...row, workspaceId, importId: input.importId, userId: ctx.user.id, weekStartDate: result.dateRange.startDate, weekEndDate: result.dateRange.endDate })) as any);
+            await tx.update(dataImports).set({ status: "completed", importedRows: result.allRows.length, skippedRows: 0 }).where(and(eq(dataImports.workspaceId, workspaceId), eq(dataImports.id, input.importId)));
+            return { success: true, importedRows: result.allRows.length, skippedRows: 0 };
+          });
+        }
 
         // A repeated daily file replaces the active snapshot batch for the same source period,
         // while the old import record and original file remain auditable.
@@ -502,6 +514,10 @@ export const dataImportRouter = router({
         .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), and(eq(dataImports.id, input.importId), eq(dataImports.userId, ctx.user.id))));
 
       if (!record) throw new Error("记录不存在");
+      if (record.sourceType === "saihu") {
+        const workspaceId = currentOpsWorkspaceId(); if (!workspaceId || !db) throw new Error("SAIHU_REPORT_WORKSPACE_CHANGED");
+        return withSaihuLegacyWrite(db, { workspaceId, userId: ctx.user.id }, async tx => { const [fresh] = await tx.select().from(dataImports).where(and(eq(dataImports.workspaceId, workspaceId), eq(dataImports.id, input.importId), eq(dataImports.userId, ctx.user.id))).for("update"); if (!fresh || fresh.sourceType !== "saihu") throw new Error("SAIHU_REPORT_LEGACY_IMPORT_CHANGED"); await tx.delete(saihuProductWeekly).where(and(eq(saihuProductWeekly.workspaceId, workspaceId), eq(saihuProductWeekly.importId, input.importId))); await tx.delete(dataImports).where(and(eq(dataImports.workspaceId, workspaceId), eq(dataImports.id, input.importId))); return { success: true }; });
+      }
 
       // Delete associated data
       if (record.sourceType === "lingxing") {
@@ -678,7 +694,7 @@ export const dataImportRouter = router({
       if (input.sourceType === "erp") {
         const [lingxingProducts, saihuProducts] = await Promise.all([
           buildOverviewFromLingxing(db!, effectiveUserId, weeksToShow, input.marketplace),
-          buildOverviewFromSaihu(db!, effectiveUserId, weeksToShow, input.marketplace),
+          buildOverviewFromSaihu(db!, effectiveUserId, weeksToShow, input.marketplace, ctx.user.id),
         ]);
         // 日粒度领星数据和赛狐周度数据统一呈现；同店铺、同站点的同父 ASIN
         // 优先保留领星记录，避免双 ERP 导入时重复累计。
@@ -689,7 +705,7 @@ export const dataImportRouter = router({
       } else if (input.sourceType === "lingxing") {
         result = await buildOverviewFromLingxing(db!, effectiveUserId, weeksToShow, input.marketplace);
       } else {
-        result = await buildOverviewFromSaihu(db!, effectiveUserId, weeksToShow, input.marketplace);
+        result = await buildOverviewFromSaihu(db!, effectiveUserId, weeksToShow, input.marketplace, ctx.user.id);
       }
       // Apply operator-based permission filtering for non-admin users
       return filterByOperatorPermission(result, ctx.user) as typeof result;
@@ -1217,7 +1233,7 @@ export const dataImportRouter = router({
       if (input.sourceType === "lingxing") {
         return buildProductDetailFromLingxing(db!, effectiveUserId, input.parentAsin, input.marketplace, input.storeName, input.country);
       } else {
-        return buildProductDetailFromSaihu(db!, effectiveUserId, input.parentAsin, input.marketplace);
+        return buildProductDetailFromSaihu(db!, effectiveUserId, input.parentAsin, input.marketplace, ctx.user.id, input.storeName, input.country);
       }
     }),
 
@@ -1535,7 +1551,9 @@ async function buildOverviewFromLingxing(db: any, userId: number, weeksToShow: n
 // Helper: Build product overview from Saihu imported data
 // Saihu data is at ASIN level, needs aggregation by parent ASIN
 // ═══════════════════════════════════════════════════════
-async function buildOverviewFromSaihu(db: any, userId: number, weeksToShow: number, marketplace: string) {
+async function buildOverviewFromSaihu(db: any, userId: number, weeksToShow: number, marketplace: string, actorUserId: number) {
+  const workspaceId = currentOpsWorkspaceId();
+  if (workspaceId) { const controlled = await readControlledSaihuOverview(db, { workspaceId, userId: actorUserId }, marketplace, weeksToShow, userId); if (controlled) { if (controlled.legacyOverlaps.length) throw new Error("SAIHU_REPORT_LEGACY_WEEK_OVERLAP_REVIEW_REQUIRED"); await applyOperatorMappings(db, controlled.products, "saihu"); return controlled.products; } }
   // Get distinct week ranges
   const weekRanges = await db.selectDistinct({
     weekStartDate: saihuProductWeekly.weekStartDate,
@@ -1918,7 +1936,9 @@ async function buildProductDetailFromLingxing(db: any, userId: number, parentAsi
 // Helper: Build product detail from Saihu imported data
 // Saihu data is at ASIN level, needs aggregation by parent ASIN
 // ═══════════════════════════════════════════════════════
-async function buildProductDetailFromSaihu(db: any, userId: number, parentAsin: string, marketplace: string) {
+async function buildProductDetailFromSaihu(db: any, userId: number, parentAsin: string, marketplace: string, actorUserId: number, storeName?: string, country?: string) {
+  const workspaceId = currentOpsWorkspaceId();
+  if (workspaceId) { const controlled = await readControlledSaihuOverview(db, { workspaceId, userId: actorUserId }, marketplace, 52, userId); if (controlled) { if (controlled.legacyOverlaps.some(row => (!storeName || row.storeName === storeName) && (!country || row.country === normalizeMarketplaceCode(country)))) throw new Error("SAIHU_REPORT_LEGACY_WEEK_OVERLAP_REVIEW_REQUIRED"); const matches = controlled.products.filter(product => product.parentAsin === parentAsin && (!storeName || product.storeName === storeName) && (!country || product.marketplace === normalizeMarketplaceCode(country))); if (matches.length > 1) throw new Error("SAIHU_REPORT_EXACT_STORE_SCOPE_REQUIRED"); if (!matches.length) return null; const { weeks, ...product } = matches[0]; return { product, weeks, extraInfo: { sku: null, msku: null, bsrMain: null, bsrSub: null, fbaAvailable: null, fbaInTransit: null, fbaDaysOfSupply: null, listingDate: null, developer: null, sourceKind: "saihu_daily_controlled", originalParentAttribution: true, legacyOverlaps: controlled.legacyOverlaps } }; } }
   // Get all data for this parentAsin
   const allData = await db.select().from(saihuProductWeekly)
     .where(and(

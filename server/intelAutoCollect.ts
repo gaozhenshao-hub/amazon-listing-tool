@@ -18,6 +18,7 @@ import {
 } from "../drizzle/schema";
 import { eq, and, lte, isNotNull, sql } from "drizzle-orm";
 import { safeHttpRequest } from "./infrastructure/http/safeHttpClient";
+import { createTrackedSchedulerWork } from "./_core/trackedSchedulerWork";
 
 // ─── Interval Constants ────────────────────────────
 const INTERVAL_MAP: Record<string, number> = {
@@ -897,25 +898,36 @@ export async function collectFromSource(
 }
 
 // ─── Scheduler Class ───────────────────────────────
-class IntelScheduler {
+export class IntelScheduler {
   private intervalId: ReturnType<typeof setInterval> | null = null;
+  private initialTimer: ReturnType<typeof setTimeout> | null = null;
   private isRunning = false;
   private activeCollections = new Set<number>(); // source IDs currently being collected
+  private work = createTrackedSchedulerWork();
+  private draining: Promise<void> | null = null;
+
+  constructor(private readonly dependencies: { database?: typeof getDb; collect?: typeof collectFromSource } = {}) {}
 
   start() {
-    if (this.intervalId) return;
+    if (this.intervalId || this.draining) return;
+    if (!this.work.accepting) this.work = createTrackedSchedulerWork();
     console.log("[IntelScheduler] Starting auto-collect scheduler (check every 60s)");
-    this.intervalId = setInterval(() => this.checkAndRun(), SCHEDULER_CHECK_INTERVAL);
+    const check = () => { void this.work.run(() => this.checkAndRun()); };
+    this.intervalId = setInterval(check, SCHEDULER_CHECK_INTERVAL);
     // Run initial check after 10 seconds
-    setTimeout(() => this.checkAndRun(), 10000);
+    this.initialTimer = setTimeout(check, 10000);
   }
 
   stop() {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-      console.log("[IntelScheduler] Stopped auto-collect scheduler");
-    }
+    this.work.stop();
+    if (this.intervalId) clearInterval(this.intervalId);
+    if (this.initialTimer) clearTimeout(this.initialTimer);
+    this.intervalId = null;
+    this.initialTimer = null;
+    if (!this.draining) this.draining = this.work.drain().then(() => {
+      console.log("[IntelScheduler] Auto-collect scheduler drained");
+    }).finally(() => { this.draining = null; });
+    return this.draining;
   }
 
   isActive() {
@@ -927,11 +939,11 @@ class IntelScheduler {
   }
 
   private async checkAndRun() {
-    if (this.isRunning) return; // Prevent overlapping checks
+    if (this.isRunning || !this.isActive()) return; // Prevent overlapping checks and late triggers
     this.isRunning = true;
 
     try {
-      const _d = await getDb();
+      const _d = await (this.dependencies.database ?? getDb)();
       if (!_d) return;
 
       const now = Date.now();
@@ -963,6 +975,7 @@ class IntelScheduler {
       const allDueSources = [...dueSources, ...uninitializedSources];
 
       for (const source of allDueSources) {
+        if (!this.isActive()) break;
         // Skip if already collecting or too many failures
         if (this.activeCollections.has(source.id)) continue;
         if ((source.consecutiveFailures || 0) >= MAX_CONSECUTIVE_FAILURES) {
@@ -983,8 +996,9 @@ class IntelScheduler {
 
         // Start collection in background
         this.activeCollections.add(source.id);
-        this.runCollection(source).finally(() => {
-          this.activeCollections.delete(source.id);
+        void this.work.run(async () => {
+          try { await this.runCollection(source); }
+          finally { this.activeCollections.delete(source.id); }
         });
       }
     } catch (err) {
@@ -997,7 +1011,7 @@ class IntelScheduler {
   private async runCollection(source: typeof kbIntelSources.$inferSelect) {
     try {
       console.log(`[IntelScheduler] Auto-collecting from: ${source.name} (ID: ${source.id})`);
-      const result = await collectFromSource(
+      const result = await (this.dependencies.collect ?? collectFromSource)(
         {
           id: source.id,
           userId: source.userId,
@@ -1013,7 +1027,7 @@ class IntelScheduler {
       console.log(`[IntelScheduler] Collection complete for ${source.name}: found=${result.totalFound}, new=${result.totalNew}, recommended=${result.totalRecommended}`);
 
       // Update next run time
-      const _d = await getDb();
+      const _d = await (this.dependencies.database ?? getDb)();
       if (_d) {
         const nextRun = calculateNextRunTime(
           source.autoCollectInterval,

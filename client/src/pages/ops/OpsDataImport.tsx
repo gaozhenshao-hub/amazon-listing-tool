@@ -24,6 +24,7 @@ import OpsPlanImportTab from "./OpsPlanImportTab";
 import OpsReviewImportTab from "./OpsReviewImportTab";
 import ImportWizardTab from "./ImportWizardTab";
 import { formatAsiaShanghaiAuditTime } from "@shared/asiaShanghaiAuditTime";
+import SaihuReportSync from "./SaihuReportSync";
 
 // ─── Status Badge ───
 function StatusBadge({ status }: { status: string }) {
@@ -255,12 +256,14 @@ export default function OpsDataImport() {
         <TabsList>
           <TabsTrigger value="wizard">ERP 导入向导</TabsTrigger>
           <TabsTrigger value="upload">ERP 数据上传</TabsTrigger>
+          <TabsTrigger value="saihu-controlled">赛狐日／月报同步</TabsTrigger>
           <TabsTrigger value="ad-report">广告报表</TabsTrigger>
           <TabsTrigger value="daily-report">每日报告</TabsTrigger>
           <TabsTrigger value="ops-plan">运营计划</TabsTrigger>
           <TabsTrigger value="review-import">执行复盘</TabsTrigger>
           <TabsTrigger value="history">导入历史</TabsTrigger>
         </TabsList>
+        <TabsContent value="saihu-controlled"><SaihuReportSync /></TabsContent>
 
         {/* Wizard Tab */}
         <TabsContent value="wizard" className="space-y-4">

@@ -14,6 +14,8 @@ const configuration = {
   image_tagging: { path: "IMAGE_TAGGING_APPROVAL_FILE", hash: "IMAGE_TAGGING_APPROVAL_SHA256" },
   image_planning: { path: "IMAGE_PLANNING_APPROVAL_FILE", hash: "IMAGE_PLANNING_APPROVAL_SHA256" },
   development_market: { path: "DEVELOPMENT_MARKET_APPROVAL_FILE", hash: "DEVELOPMENT_MARKET_APPROVAL_SHA256" },
+  knowledge_qa: { path: "KNOWLEDGE_QA_APPROVAL_FILE", hash: "KNOWLEDGE_QA_APPROVAL_SHA256" },
+  video_workflow: { path: "VIDEO_WORKFLOW_APPROVAL_FILE", hash: "VIDEO_WORKFLOW_APPROVAL_SHA256" },
 } as const;
 export type SourceApprovalFileKind = keyof typeof configuration;
 type ErrorCode = "CONFIGURATION_INVALID" | "FILE_UNAVAILABLE" | "FILE_UNSAFE" | "FILE_LIMIT" | "FILE_CHANGED" | "HASH_MISMATCH" | "DOCUMENT_INVALID" | "RECORDS_INVALID";

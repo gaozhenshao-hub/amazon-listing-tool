@@ -1,23 +1,16 @@
 import { z } from "zod";
-import * as db from "../../repositories";
+import { videoWorkflowLegacyJobBridge } from "./videoWorkflowLegacyJob";
 import * as vsDb from "../../videoScriptDb";
 import {
   COMPETITOR_SCRIPT_ANALYSIS_PROMPT,
   COMPETITOR_SUMMARY_PROMPT,
   EDIT_SCRIPT_PROMPT,
-  PRODUCT_INFO_EXTRACTION_PROMPT,
   SECTION_PLANNING_PROMPT,
   SHOT_DETAIL_PROMPT,
   SUBTOPIC_EXPANSION_PROMPT,
   buildStylePresetPrompt,
   getVideoTypeTemplate,
 } from "../../videoScriptPrompts";
-import { getL1Index, getL2Summary, formatForPrompt, logKbCallBatch } from "../../kbContextEngine";
-import {
-  registerVideoArtifact,
-  recordBusinessArtifactUse,
-  resolveCurrentBusinessArtifact,
-} from "../ai_os/services/businessArtifactRegistry";
 import {
   cancelAiJob,
   generateAiJobRunId,
@@ -116,90 +109,24 @@ async function updateVideoStageStatus(videoScriptId: number, stage: VideoStage, 
   });
 }
 
-async function buildProductContext(projectId: number) {
-  const parts: string[] = [];
-  const files = await db.getProjectFilesByProject(projectId);
-  for (const file of files) {
-    if (file.status !== "completed" || !file.analysisResult) continue;
-    try {
-      const artifact = await resolveCurrentBusinessArtifact({
-        domain: "listing",
-        artifactKey: `project_file.${file.fileType}.analysis`,
-        sourceTable: "projectFiles",
-        sourceRowId: file.id,
-        projectId,
-      }).catch(() => null);
-      if (artifact) {
-        await recordBusinessArtifactUse({
-          artifact,
-          consumerDomain: "video",
-          consumerType: "business_operation",
-          consumerId: `video.context:${projectId}`,
-          projectId,
-          metadata: { source: "project_file", fileType: file.fileType },
-        });
-      }
-      const parsed: any = artifact?.content || JSON.parse(file.analysisResult);
-      if (file.fileType === "product_attributes") {
-        parts.push("--- 产品属性 ---");
-        if (parsed.uniqueSellingPoints?.length) parts.push(`独特卖点: ${parsed.uniqueSellingPoints.join("; ")}`);
-        if (parsed.coreSpecs?.length) parts.push(`核心参数: ${parsed.coreSpecs.map((spec: any) => `${spec.attribute}: ${spec.value}`).join("; ")}`);
-      }
-    } catch {}
-  }
-  const analyses = await db.getCompetitorAnalysesByProject(projectId);
-  if (analyses.length) {
-    parts.push("\n--- 竞品分析 ---");
-    for (const row of analyses) {
-      const artifact = await resolveCurrentBusinessArtifact({
-        domain: "listing",
-        artifactKey: `listing.competitor_analysis.${row.asin}`,
-        sourceTable: "competitorAnalyses",
-        sourceRowId: row.id,
-        projectId,
-      }).catch(() => null);
-      const analysis: any = artifact?.content && typeof artifact.content === "object" ? { ...row, ...artifact.content } : row;
-      parts.push(`竞品 ASIN: ${analysis.asin}`);
-      if (analysis.title) parts.push(`标题: ${analysis.title}`);
-      if (analysis.bulletPoints) parts.push(`五点: ${analysis.bulletPoints}`);
-    }
-  }
-  const listingArtifact = await resolveCurrentBusinessArtifact({ domain: "listing", artifactKey: "listing.content", projectId }).catch(() => null);
-  const listings = listingArtifact?.content && typeof listingArtifact.content === "object"
-    ? [((listingArtifact.content as any).listing)].filter(Boolean)
-    : await db.getListingsByProject(projectId);
-  if (listings.length) {
-    parts.push("\n--- Listing内容 ---");
-    for (const listing of listings) {
-      if (listing.title) parts.push(`标题: ${listing.title}`);
-      if (listing.bulletPoints) parts.push(`五点: ${listing.bulletPoints}`);
-      if (listing.description) parts.push(`描述: ${listing.description}`);
-    }
-  }
-  const review = await db.getReviewAggregationByProject(projectId);
-  if (review) {
-    parts.push("\n--- 评论分析 ---");
-    if (review.painPoints) parts.push(`痛点: ${review.painPoints}`);
-    if (review.keyThemes) parts.push(`关键主题: ${review.keyThemes}`);
-    if (review.overallSentiment) parts.push(`整体情感: ${review.overallSentiment}`);
-  }
-  return parts.join("\n");
-}
-
 async function callVideoSkill(input: {
   operation: VideoGenerationOperation;
   prompt: string;
   job: AiJobSnapshot;
   signal: AbortSignal;
+  sourceHash: string;
+  sourceScope: { projectId: number; videoScriptId: number; operation: VideoGenerationOperation; competitorScriptId?: number; rawContent?: string };
+  frozenPrompt: string;
 }) {
   const config = operationConfig[input.operation];
+  await videoWorkflowLegacyJobBridge.verify(input.job, input.sourceScope, input.sourceHash);
   const result = await runEmperorSkill<Record<string, any>>({
     skillSlug: config.skillSlug,
     userId: input.job.userId,
     workspaceId: input.job.workspaceId,
     context: JSON.stringify({
       task: input.operation,
-      legacyTaskPrompt: input.prompt,
+      legacyTaskPrompt: input.frozenPrompt,
       outputContract: "Return valid JSON only. Preserve all requested fields and arrays.",
     }),
     variables: { operation: input.operation },
@@ -231,35 +158,19 @@ async function ensureCurrentVideoJob(job: AiJobSnapshot, input: z.infer<typeof v
   if (newer) throw new Error(`视频任务已被更新的任务 ${newer.runId} 替代`);
 }
 
-async function knowledgeBaseExamples(job: AiJobSnapshot, script: any, action: string, limit: number) {
-  try {
-    const levelOne = await getL1Index({ userId: job.userId, types: ["video"], keyword: script?.scriptName || "", scope: "all" });
-    if (!levelOne.length) return "";
-    const ids = levelOne.slice(0, limit).map((item) => item.id);
-    const levelTwo = await getL2Summary(ids, ["video"]);
-    await logKbCallBatch(ids.map((id) => ({
-      userId: job.userId,
-      callerModule: "video_script",
-      callerAction: action,
-      kbItemId: id,
-      kbItemType: "video",
-      loadLevel: levelTwo.length ? "L2" as const : "L1" as const,
-    })));
-    return formatForPrompt(levelTwo.length ? levelTwo : levelOne, levelTwo.length ? "L2" : "L1");
-  } catch (error) {
-    console.warn(`[Video Job] ${action} knowledge base context unavailable:`, error);
-    return "";
-  }
-}
-
-async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, input: z.infer<typeof videoGenerationJobInputSchema>) {
+async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, input: z.infer<typeof videoGenerationJobInputSchema>, captured?: (sourceHash: string) => void) {
   await ensureCurrentVideoJob(job, input);
+  const frozenSource = await videoWorkflowLegacyJobBridge.capture(job, input), sourceHash = frozenSource.sourceHash;
+  captured?.(sourceHash);
+  const frozenPrompt = String((frozenSource.context as Record<string, unknown>).legacyTaskPrompt);
+  const publish = <T>(body: () => Promise<T>) => videoWorkflowLegacyJobBridge.publish(job, input, sourceHash, input.operation, body);
   if (input.operation === "competitor_analysis") {
     if (!input.competitorScriptId || !input.rawContent) throw new Error("竞品脚本内容不能为空");
     const prompt = COMPETITOR_SCRIPT_ANALYSIS_PROMPT.replace("{competitor_content}", input.rawContent);
-    const analysis = await callVideoSkill({ operation: input.operation, prompt, job, signal });
+    const analysis = await callVideoSkill({ operation: input.operation, prompt, job, signal, sourceHash, sourceScope: input, frozenPrompt });
     await ensureCurrentVideoJob(job, input);
-    await vsDb.updateCompetitorScript(input.competitorScriptId, {
+    return publish(async () => {
+    await vsDb.updateCompetitorScript(input.competitorScriptId!, {
       rawContent: input.rawContent,
       structureAnalysis: JSON.stringify(analysis.structure_analysis || {}),
       visualLanguage: JSON.stringify(analysis.visual_language || {}),
@@ -269,6 +180,7 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
       reusablePatterns: JSON.stringify(analysis.reusable_patterns || []),
     });
     return { analysis };
+    });
   }
   if (input.operation === "competitor_summary") {
     const competitors = await vsDb.getCompetitorScriptsByVideoScript(input.videoScriptId);
@@ -281,8 +193,9 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
       strengths: competitor.strengths,
       weaknesses: competitor.weaknesses,
     })), null, 2));
-    const summary = await callVideoSkill({ operation: input.operation, prompt, job, signal });
+    const summary = await callVideoSkill({ operation: input.operation, prompt, job, signal, sourceHash, sourceScope: input, frozenPrompt });
     await ensureCurrentVideoJob(job, input);
+    return publish(async () => {
     await vsDb.upsertCompetitorSummary({
       videoScriptId: input.videoScriptId,
       competitorScriptIds: JSON.stringify(competitors.map((competitor) => competitor.id)),
@@ -292,11 +205,13 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
       recommendedStructure: JSON.stringify(summary.recommended_structure || {}),
     });
     return { summary };
+    });
   }
   if (input.operation === "product_info") {
-    const prompt = PRODUCT_INFO_EXTRACTION_PROMPT.replace("{product_data}", await buildProductContext(input.projectId));
-    const productInfo = await callVideoSkill({ operation: input.operation, prompt, job, signal });
+    const prompt = frozenPrompt;
+    const productInfo = await callVideoSkill({ operation: input.operation, prompt, job, signal, sourceHash, sourceScope: input, frozenPrompt });
     await ensureCurrentVideoJob(job, input);
+    return publish(async () => {
     await vsDb.upsertProductSnapshot({
       videoScriptId: input.videoScriptId,
       basicInfo: JSON.stringify(productInfo.basic_info || {}),
@@ -307,6 +222,7 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
       dataSources: JSON.stringify({ projectId: input.projectId, extractedAt: new Date().toISOString() }),
     });
     return { productInfo };
+    });
   }
   if (input.operation === "sections") {
     const [script, snapshot, summary] = await Promise.all([
@@ -314,7 +230,7 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
       vsDb.getProductSnapshot(input.videoScriptId),
       vsDb.getCompetitorSummary(input.videoScriptId),
     ]);
-    const examples = await knowledgeBaseExamples(job, script, "generateSections", 5);
+    const examples = JSON.stringify(frozenSource.tables.kb_videos ?? []);
     const videoType = script?.videoType || "main_video";
     const stylePreset = (script as any)?.stylePreset || "minimal_white";
     const prompt = SECTION_PLANNING_PROMPT
@@ -326,8 +242,9 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
       .replace("{style_preset}", buildStylePresetPrompt(stylePreset))
       .replace("{target_duration}", script?.targetDuration?.toString() || "60")
       .replace("{spv_segment_index}", "N/A");
-    const result = await callVideoSkill({ operation: input.operation, prompt, job, signal });
+    const result = await callVideoSkill({ operation: input.operation, prompt, job, signal, sourceHash, sourceScope: input, frozenPrompt });
     await ensureCurrentVideoJob(job, input);
+    return publish(async () => {
     const sections = Array.isArray(result.sections) ? await vsDb.saveSections(input.videoScriptId, result.sections.map((section: any, index: number) => ({
       videoScriptId: input.videoScriptId,
       sectionCode: section.section_code || `MBP${index + 1}`,
@@ -343,6 +260,7 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
       sortOrder: index,
     }))) : [];
     return { sections };
+    });
   }
   if (input.operation === "subtopics") {
     const [sections, snapshot] = await Promise.all([
@@ -352,8 +270,9 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
     const prompt = SUBTOPIC_EXPANSION_PROMPT
       .replace("{sections}", JSON.stringify(sections))
       .replace("{product_info}", snapshot ? JSON.stringify({ sellingPoints: snapshot.sellingPointsHierarchy, painPoints: snapshot.painPoints }) : "无产品信息");
-    const result = await callVideoSkill({ operation: input.operation, prompt, job, signal });
+    const result = await callVideoSkill({ operation: input.operation, prompt, job, signal, sourceHash, sourceScope: input, frozenPrompt });
     await ensureCurrentVideoJob(job, input);
+    return publish(async () => {
     for (const section of Array.isArray(result.sections) ? result.sections : []) {
       const dbSection = sections.find((candidate) => candidate.sectionCode === section.section_code);
       if (!dbSection || !Array.isArray(section.subtopics)) continue;
@@ -368,6 +287,7 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
       })));
     }
     return { subtopics: await vsDb.getSubtopicsByVideoScript(input.videoScriptId) };
+    });
   }
   if (input.operation === "shots") {
     const [sections, snapshot, summary, script] = await Promise.all([
@@ -386,7 +306,7 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
         subtopics: subtopics.map((subtopic) => ({ name: subtopic.subtopicName, name_en: subtopic.subtopicNameEn, duration: subtopic.durationBudget, shot_count: subtopic.shotCount })),
       });
     }
-    const examples = await knowledgeBaseExamples(job, script, "generateShots", 3);
+    const examples = JSON.stringify(frozenSource.tables.kb_videos ?? []);
     const videoType = script?.videoType || "main_video";
     const prompt = SHOT_DETAIL_PROMPT
       .replace("{subtopics_structure}", JSON.stringify(subtopicsStructure, null, 2))
@@ -395,8 +315,9 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
       .replace("{video_type}", videoType)
       .replace("{video_type_template}", getVideoTypeTemplate(videoType))
       .replace("{style_preset}", buildStylePresetPrompt((script as any)?.stylePreset || "minimal_white"));
-    const result = await callVideoSkill({ operation: input.operation, prompt, job, signal });
+    const result = await callVideoSkill({ operation: input.operation, prompt, job, signal, sourceHash, sourceScope: input, frozenPrompt });
     await ensureCurrentVideoJob(job, input);
+    return publish(async () => {
     const generatedShots = Array.isArray(result.shots) ? result.shots : [];
     for (const section of sections) {
       const subtopics = await vsDb.getSubtopicsBySection(section.id);
@@ -429,6 +350,7 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
       }
     }
     return { shots: await vsDb.getAllShotsByVideoScript(input.videoScriptId) };
+    });
   }
   const sections = await vsDb.getSections(input.videoScriptId);
   const allShots = await vsDb.getAllShotsByVideoScript(input.videoScriptId);
@@ -439,8 +361,9 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
     shooting_method: section.shootingMethod,
     shot_count: allShots.filter((shot) => shot.sectionCode === section.sectionCode).length,
   })), null, 2));
-  const result = await callVideoSkill({ operation: input.operation, prompt, job, signal });
+  const result = await callVideoSkill({ operation: input.operation, prompt, job, signal, sourceHash, sourceScope: input, frozenPrompt });
   await ensureCurrentVideoJob(job, input);
+  return publish(async () => {
   const editScripts = Array.isArray(result.edit_scripts) ? await vsDb.saveEditScripts(input.videoScriptId, result.edit_scripts.map((editScript: any, index: number) => ({
     videoScriptId: input.videoScriptId,
     editName: editScript.edit_name,
@@ -452,6 +375,7 @@ async function executeVideoOperation(job: AiJobSnapshot, signal: AbortSignal, in
     sortOrder: index,
   }))) : [];
   return { editScripts };
+  });
 }
 
 function bindingInput(job: AiJobSnapshot, input: z.infer<typeof videoGenerationJobInputSchema>, extra: Record<string, unknown> = {}) {
@@ -472,30 +396,25 @@ function bindingInput(job: AiJobSnapshot, input: z.infer<typeof videoGenerationJ
 
 async function handleVideoGenerationJob(job: AiJobSnapshot, { signal }: { signal: AbortSignal }) {
   const input = videoGenerationJobInputSchema.parse(job.input);
-  await businessJobCheckpointBinder.sync("running", bindingInput(job, input, { progress: Math.max(job.progress, 10) }));
-  await updateVideoStageStatus(input.videoScriptId, operationConfig[input.operation].stage, "running");
+  let sourceHash: string | null = null;
   try {
     await updateAiJobProgress(job.runId, 25, { expectedAttempt: job.attempt });
-    const output = await executeVideoOperation(job, signal, input);
+    const output = await executeVideoOperation(job, signal, input, value => { sourceHash = value; });
     await updateAiJobProgress(job.runId, 90, { expectedAttempt: job.attempt });
-    await registerVideoArtifact(input.videoScriptId, "ai_output", { confirmed: false });
-    await businessJobCheckpointBinder.sync("succeeded", bindingInput(job, input, { output, progress: 100 }));
-    await updateVideoStageStatus(input.videoScriptId, operationConfig[input.operation].stage, "generated");
+    // Business state, DAG and artifact already committed under the same source
+    // fence. Only this Job's progress/state may change after that ACK.
     return output;
   } catch (error) {
     const failure = classifyBusinessJobFailure({ error, signal, attempt: job.attempt, maxAttempts: job.maxAttempts });
     if (/替代/.test(failure.message)) {
       await cancelAiJob(job.runId, failure.message);
-      await businessJobCheckpointBinder.sync("canceled", bindingInput(job, input, { errorMessage: failure.message, failureKind: "cancel" }));
       return { canceled: true, reason: failure.message };
     }
-    await businessJobCheckpointBinder.sync(failure.lifecycleStatus, bindingInput(job, input, {
-      errorMessage: failure.message,
-      failureKind: failure.failureKind,
-      finalAttempt: failure.finalAttempt,
-      progress: failure.finalAttempt ? 100 : Math.max(job.progress, 15),
-    })).catch((syncError) => console.warn("[Video Job] Failed to sync failure:", syncError));
-    if (failure.finalAttempt) await updateVideoStageStatus(input.videoScriptId, operationConfig[input.operation].stage, failure.lifecycleStatus);
+    if (failure.finalAttempt && sourceHash !== null) {
+      await videoWorkflowLegacyJobBridge.failCurrent(job, input, sourceHash, failure.lifecycleStatus).catch(() => {
+        // A changed/unknown business version is never overwritten by late Job failure.
+      });
+    }
     throw error;
   }
 }
@@ -515,6 +434,11 @@ export async function queueVideoGenerationJob(input: {
   rawContent?: string;
   userId: number;
   workspaceId?: number | null;
+}) {
+  return videoWorkflowLegacyJobBridge.reserve({userId:input.userId,workspaceId:input.workspaceId??null},input,()=>queueLegacyVideoGenerationJob(input));
+}
+async function queueLegacyVideoGenerationJob(input: {
+  videoScriptId:number;projectId:number;operation:VideoGenerationOperation;competitorScriptId?:number;rawContent?:string;userId:number;workspaceId?:number|null;
 }) {
   const base = videoGenerationJobInputSchema.omit({ agentRunId: true, agentNodeId: true }).parse(input);
   const agent = await ensureVideoAgentRun(input);
@@ -562,8 +486,8 @@ export async function cancelVideoGenerationJob(input: { runId: string; userId: n
   if (!job || job.userId !== input.userId || job.module !== VIDEO_JOB_MODULE) throw new Error("视频任务不存在或无权访问");
   const parsed = videoGenerationJobInputSchema.parse(job.input);
   await cancelAiJob(job.runId, "用户取消视频生成任务");
-  await businessJobCheckpointBinder.sync("canceled", bindingInput(job, parsed, { errorMessage: "用户取消视频生成任务", failureKind: "cancel", progress: 100 }));
-  await updateVideoStageStatus(parsed.videoScriptId, operationConfig[parsed.operation].stage, "canceled");
+  // The old job's cancellation is not permission to overwrite a newer script
+  // or human gate. Its durable job status remains visible in legacy history.
   return getAiJobRun(job.runId);
 }
 
@@ -572,8 +496,8 @@ export async function retryVideoGenerationJob(input: { runId: string; userId: nu
   if (!existing || existing.userId !== input.userId || existing.module !== VIDEO_JOB_MODULE) throw new Error("视频任务不存在或无权访问");
   const recovered = await recoverAiJob(existing.runId, "用户请求重试视频生成任务");
   const parsed = videoGenerationJobInputSchema.parse(recovered.input);
-  await businessJobCheckpointBinder.sync("queued", bindingInput(recovered, parsed, { progress: recovered.progress }));
-  await updateVideoStageStatus(parsed.videoScriptId, operationConfig[parsed.operation].stage, "queued");
+  // Recovery preserves the original job protocol; source/version admission is
+  // repeated by the worker before any provider call or business publication.
   return recovered;
 }
 

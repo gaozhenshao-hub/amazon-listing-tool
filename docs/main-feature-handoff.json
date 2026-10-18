@@ -13,6 +13,30 @@
   },
   "trialEntrances": [
     {
+      "name": "原视频六阶段与七种受控生成操作",
+      "route": "/listing/video-script/:id",
+      "steps": "沿用原视频编辑页、六阶段、人工确认、版本和 Excel 导出；各阶段嵌入独立受控执行面板。竞品分析／汇总、产品信息、段落、子主题、镜头和剪辑脚本共七种操作分别预览完整来源、已保存 video 配置、四项 Skill 与模型和费用，显式开始后先保存候选，再人工应用至原草稿。",
+      "boundary": "保留朋友视频业务提示词和原层级，不用通用聊天代替生成。Skill 采用独立青岛来源审批。当前只消费已保存文本和明确授权的知识引用，不读取或解析视频／图片媒体原件；引用 URL 不代表媒体已分析。产品研究只使用当前核验的人工采纳投影或明确的人审旧字段，不混入旧 AI／混合评论聚合。",
+      "recovery": "生成和人工应用各用独立 UUID，未知只核对／取消原编号。旧任务沿用原 provider 协议，不覆盖新配置；最终业务写入须重新校验完整来源并与版本、原六节点人审投影在同一事务提交。新版草稿不能被旧生成晚到覆盖；旧正式产物仅在 script.version 仍匹配时可作当前投影。",
+      "sourceFiles": ["client/src/pages/VideoScriptPage.tsx", "client/src/pages/video/VideoWorkflowControls.tsx", "server/domains/video/videoWorkflowRepository.ts", "server/domains/video/videoWorkflowLegacyJob.ts"]
+    },
+    {
+      "name": "赛狐日／月报受控手工同步",
+      "route": "/ops/data-import",
+      "steps": "在原运营导入页展开赛狐同步；按明确周期读取配置与店铺／站点影响基准，手工创建后台原件采集。记录完整原始响应及分页／覆盖证明后展示规范化预览，人工复核再应用或撤销。日报进入版本化日事实和周覆盖；月报复用原受控财务确认／撤销及看板同步内核。",
+      "boundary": "日报周六至周五与领星周一至周日分开；USD 月结利润不混充日运营利润。API JSON 不冒充上传文件。官方 OpenAPI 日期、月结口径、字段及空店铺证明的批准合同尚未提供，空示例没有执行权限；新日报候选表未注册或落库。自动周期生成及同目标双调度协调尚未实现，当前 worker 仅消费明确的手工请求，不自动应用。",
+      "recovery": "采集、应用和撤销各有独立 UUID，未知只核对／取消原操作；本地仅保存按身份隔离的恢复元数据，不保存报表、凭据或原响应。新旧周汇总不能精确拆分时明确提示重叠，不能伪装完整周或空列表。历史保留完整版本，当前安全预算为 200 条日报版本及 200 条工作区捕获任务；超限明确拒绝，不截断成最新全量。月报明确空店铺在旧消费者无法表达时禁止应用，不造零 ASIN。",
+      "sourceFiles": ["client/src/pages/ops/SaihuReportSync.tsx", "server/routers/saihuReportSync.ts", "server/domains/ops/saihuReportRepository.ts", "server/domains/ops/monthlyFinancialWriteRepository.ts"]
+    },
+    {
+      "name": "已保存配置驱动的原知识问答",
+      "route": "/knowledge/bot",
+      "steps": "在原知识助手页输入问题或选择建议问题，先显式预览完整匹配来源、最近六条对话上下文、已保存 knowledge 配置和总费用上限，再确认开始。保留 L1 索引、L2 摘要、L3 详情及产品创意／Listing／图片／运营 SOP／视频五类引用、详情跳转、逐引用反馈和分页对话记录。旧数字编号对话另以只读记录保留，不作为新版上下文。",
+      "boundary": "每轮按来源数量和实际选择进行零至三次调用，不以选取失败时的前五条充当有效结果。来源仅为同工作区已确认共享且当前有权读取的知识；后续问答也复核历史回答携带的祖先来源权限。不新增上传、OCR、外网检索或知识库自动写入。问答 Skill 的青岛真实来源审批未就绪时保持不可用，不借用聊天或 Listing 审批。",
+      "recovery": "首次计费前固定两个 Skill、模型、配置与完整来源；各阶段先获持久派发确认再出站。未知只核对或取消原 UUID，已付费的中间检查点继续剩余阶段，不重新付费执行已完成阶段。新写入关闭后保留原编号恢复；对话管理回执未知先重读，不自动再修改。",
+      "sourceFiles": ["client/src/pages/knowledge/KnowledgeQaWorkspace.tsx", "server/domains/knowledge/knowledgeQaService.ts", "server/domains/knowledge/knowledgeQaWorker.ts"]
+    },
+    {
       "name": "已保存配置驱动的图片 Step 2 大纲",
       "route": "/listing/image-workflow",
       "steps": "在原图片工作流完成 Step0/1 人工确认，打开图片大纲的独立受控执行面板，显式预览来源、配置／Skill／模型版本和费用，再提交一次后台执行。完整主图、六张副图、品牌故事及七个 A+ 模块先保存候选；人工应用到未确认草稿后，继续原编辑及确认流程。",
@@ -25,7 +49,7 @@
       "route": "/dev/projects",
       "continueAt": "/dev/project/:id/analysis",
       "steps": "进入原新品项目分析页的市场概况阶段，确认全景及标签后显式预览统计依据、development 配置、青岛 Skill、模型和费用。后台单次生成完整市场结果，人工应用后沿用原结果展示和人工确认。",
-      "boundary": "只覆盖 market_overview，其他分析阶段和视频不计入配置接通。完整已确认全景版本、全部产品／标签指纹和统计结果固定；以全景确认日期计算日期敏感指标。月度／季节性证据不足返回未知，不用零值或虚构趋势补齐。devProjectId 不冒充 Listing projectId。",
+      "boundary": "本入口只覆盖 market_overview，其他新品分析阶段不计入该适配。视频为另列的独立业务入口。完整已确认全景版本、全部产品／标签指纹和统计结果固定；以全景确认日期计算日期敏感指标。月度／季节性证据不足返回未知，不用零值或虚构趋势补齐。devProjectId 不冒充 Listing projectId。",
       "recovery": "候选不自动覆盖；应用时不可变另存旧 AI 与人工结果、原子 CAS 并失效下游确认，旧 runId 晚到不能覆盖。开始与应用各自 UUID，派发未知不自动再收费；原 UUID 核对／取消仍检查当前身份和权限。",
       "sourceFiles": ["client/src/pages/dev/analysis/DevelopmentMarketWorkflow.tsx", "server/domains/product_development/analysis/developmentMarketService.ts", "server/domains/product_development/analysis/developmentMarketWorker.ts"]
     },
@@ -117,6 +141,9 @@
     "listingDeep": ["ENABLE_COMPETITOR_DEEP_WRITES", "ENABLE_COMPETITOR_DEEP_WORKER"],
     "imagePlanning": ["ENABLE_IMAGE_PLANNING_WRITES", "ENABLE_IMAGE_PLANNING_WORKER"],
     "developmentMarket": ["ENABLE_DEVELOPMENT_MARKET_WRITES", "ENABLE_DEVELOPMENT_MARKET_WORKER"],
+    "knowledgeQa": ["ENABLE_KNOWLEDGE_QA_WRITES", "ENABLE_KNOWLEDGE_QA_WORKER"],
+    "videoWorkflow": ["ENABLE_VIDEO_WORKFLOW_WRITES", "ENABLE_VIDEO_WORKFLOW_WORKER"],
+    "saihuManualReportCapture": ["ENABLE_SAIHU_REPORT_WRITES", "ENABLE_SAIHU_REPORT_CAPTURE_WORKER"],
     "listingDeepHumanAdoption": ["ENABLE_LISTING_DEEP_ADOPTION_WRITES"],
     "listingSalesCalibration": ["ENABLE_LISTING_SALES_CALIBRATION_WRITES"],
     "optionalAcquisitionReview": ["ENABLE_ACQUISITION_REVIEW_WRITES"],
@@ -144,13 +171,17 @@
       ["LISTING_DEEP_ANALYSIS_APPROVAL_FILE", "LISTING_DEEP_ANALYSIS_APPROVAL_SHA256"],
       ["IMAGE_TAGGING_APPROVAL_FILE", "IMAGE_TAGGING_APPROVAL_SHA256"],
       ["IMAGE_PLANNING_APPROVAL_FILE", "IMAGE_PLANNING_APPROVAL_SHA256"],
-      ["DEVELOPMENT_MARKET_APPROVAL_FILE", "DEVELOPMENT_MARKET_APPROVAL_SHA256"]
+      ["DEVELOPMENT_MARKET_APPROVAL_FILE", "DEVELOPMENT_MARKET_APPROVAL_SHA256"],
+      ["KNOWLEDGE_QA_APPROVAL_FILE", "KNOWLEDGE_QA_APPROVAL_SHA256"],
+      ["VIDEO_WORKFLOW_APPROVAL_FILE", "VIDEO_WORKFLOW_APPROVAL_SHA256"]
     ],
     "requirements": "每对同时配置受控部署目录的绝对 JSON 路径与完整文件原始字节 SHA-256。真实记录必须根据目标注册表及来源证据生成并通过现有 schema；不复制示例 hash、不把 Released 或绑定视为批准。文件和真实映射不进入公开仓库、不使用 VITE 前缀、不包含密钥正文。",
-    "examples": ["config/examples/assistant-conversation-approvals.example.json", "config/examples/profit-analysis-approvals.example.json", "config/examples/listing-deep-analysis-approvals.example.json", "config/examples/image-tagging-approvals.example.json", "config/examples/image-planning-approvals.example.json", "config/examples/development-market-approvals.example.json"],
+    "examples": ["config/examples/assistant-conversation-approvals.example.json", "config/examples/profit-analysis-approvals.example.json", "config/examples/listing-deep-analysis-approvals.example.json", "config/examples/image-tagging-approvals.example.json", "config/examples/image-planning-approvals.example.json", "config/examples/development-market-approvals.example.json", "config/examples/knowledge-qa-approvals.example.json", "config/examples/video-workflow-approvals.example.json"],
     "examplesAreNotApproval": true,
     "listingConfigurationContract": "新四栏任务固定已保存 listing 配置、全部规则与五个启用 Skill 版本／manifest，输入合同 competitor_deep_agent_evidence_v2、输出 competitor_deep_claims_v1，Skill 来源仍为 user_listing。旧 v1 任务继续原配置无关合同与原审批，不临时读取新配置或新增 Agent 权限作为旧恢复前提；v1 批准不自动授权 v2。",
     "configuredBusinessContracts": { "source": "server/domains/ai_os/services/configuredBusinessRuntimeContract.ts", "imagePlanning": ["images", "image_outline", "image.step2.outline", "image_planning_evidence_v1", "image_planning_outline_v1"], "developmentMarket": ["development", "development_market_overview", "dev.analysis.market_overview", "development_market_evidence_v1", "development_market_analysis_v1"], "origin": "qingdao", "requirements": "两个独立批准文件只覆盖这两个阶段；已保存配置及绑定、完整 Skill／model 快照、来源与保守费用预算在派发前重新校验。配置 modelSlug 为空只继承原获批 Skill 的 modelOverride，不猜模型。不自动审核，不把示例、Released 或绑定当来源批准。" },
+    "knowledgeQaContract": { "source": "server/domains/knowledge/knowledgeQaRuntimeContract.ts", "kind": "knowledge_qa", "origin": "qingdao", "agentKey": "knowledge", "stages": ["knowledge_select", "knowledge_answer"], "skillSlugs": ["knowledge.qa.select", "knowledge.qa.answer"], "inputContract": "knowledge_qa_evidence_v1", "outputContracts": ["knowledge_qa_selection_v1", "knowledge_qa_markdown_v1"], "requirements": "选择为 JSON，最终回答为中文 Markdown，不把二者伪装成同一通用 JSON 业务。首次费用确认固定两个批准版本，动态分阶段上下文仍绑定原快照；没有真实青岛来源批准不启用。" },
+    "videoWorkflowContract": { "source": "server/domains/video/videoConfiguredRuntimeContract.ts", "kind": "video_workflow", "origin": "qingdao", "agentKey": "video", "operationMap": "shared/videoWorkflow.ts", "stages": ["video_competitor_analysis", "video_section_plan", "video_shot_detail", "video_edit_script"], "skillSlugs": ["video.competitor.analysis", "video.section.plan", "video.shot.detail", "video.edit.script"], "requirements": "七种原业务操作精确映射四项 Skill 及各自输入／输出合同；完整已保存 video 配置、来源和 Skill/model 在费用前固定，不借用聊天、Listing 或另一操作的审批。" },
     "imageTaggingContract": { "source": "server/domains/knowledge/imageTaggingRuntimeContract.ts", "kind": "image_tagging", "origin": "qingdao", "inputContract": "image_tagging_evidence_v1", "outputContract": "image_tagging_labels_v1", "requirements": "精确绑定目标工作区、已保存 tagger 配置及完整 Skill/model 快照；审批包含原件单图 8MiB、每图输入预算和费用上限。配置 modelSlug 为空仅继承该已审批 Skill 的原 modelOverride，缺失明确不可用；不能换成猜测模型。空示例没有任何获批记录。" }
   },
   "schemaDependencies": {
@@ -165,7 +196,9 @@
       { "feature": "归档、备注与数字搭档", "planner": "scripts/integration/operationsBoardSchemaPlan.mjs", "candidate": "0313_integration_ops_profit_board.sql", "runtimeAdmission": "server/domains/ops/operationsBoardSchemaAdmission.ts", "note": "新四表与朋友旧三表是不同结构；旧数据迁移和金额／版本对账独立验收，不能按名称相似认定等价。" },
       { "feature": "Agent 配置与私有对话", "ddl": ["drizzle/0230_assistant_configurations.sql", "drizzle/0231_assistant_conversations.sql"], "planner": "scripts/integration/aiFeatureTargetSchemaPlan.mjs", "runtimeAdmission": "server/domains/ai_os/repositories/assistantConversations.ts", "note": "八表纯评估中的五张配置／私有线程／回合／附件表；按完整稳定原始 metadata 比对类型、默认、可空性和完整索引。只列精确缺表 CREATE 候选，不自动修复或采用部分安装；对象目录、台账、备份与执行批准仍分开核验，不把旧通用对话表当新私有存储。" },
       { "feature": "利润 AI", "ddl": ["drizzle/0309_integration_profit_analysis.sql"], "planner": "scripts/integration/aiFeatureTargetSchemaPlan.mjs", "runtimeAdmission": "server/domains/ops/profitAnalysisJobRepository.ts", "note": "同一八表纯评估中的三张私有报告／运行／保存回执表，各自保留独立 UUID 约束。所有评估结果始终 executable=false、productionApproved=false，未在本文注册或执行；不等同朋友原同步报告表。" },
-      { "feature": "四栏竞品后台研究及人工采纳", "source": "server/repositories/listing/competitorDeepExecutionRepository.ts", "adoptionSource": "server/repositories/listing/competitorDeepAdoptionRepository.ts", "note": "复用受控 ai_jobs 专属任务类型及逐阶段检查点；采纳另存不可变 ai_artifacts user_edit 记录，竞品只存受保护引用，同事务审核回执和比较确认失效。核对 ai_jobs、ai_artifacts、competitorAnalyses、项目及审计表的精确结构与事务依赖；不新造 OCR／问答来源。" }
+      { "feature": "四栏竞品后台研究及人工采纳", "source": "server/repositories/listing/competitorDeepExecutionRepository.ts", "adoptionSource": "server/repositories/listing/competitorDeepAdoptionRepository.ts", "note": "复用受控 ai_jobs 专属任务类型及逐阶段检查点；采纳另存不可变 ai_artifacts user_edit 记录，竞品只存受保护引用，同事务审核回执和比较确认失效。核对 ai_jobs、ai_artifacts、competitorAnalyses、项目及审计表的精确结构与事务依赖；不新造 OCR／问答来源。" },
+      { "feature": "知识问答及视频受控执行", "source": ["server/domains/knowledge/knowledgeQaStorePrimitives.ts", "server/domains/video/videoWorkflowSource.ts"], "note": "复用受控任务／私有产物／审计及配置表；视频另依赖原全套 video 表和六节点 Agent 表、确认日志。按运行时精确准入核对，不能只验证新旗标关闭或 Web 可启动。旧视频 writer 保护也需这些结构，不将未满足目标说成可直接生产试用。" },
+      { "feature": "赛狐受控日报版本", "candidate": "config/integration/candidates/ops_saihu_daily_report_batches.sql", "source": "drizzle/schema/saihuReport.ts", "runtimeAdmission": "server/domains/ops/saihuReportStore.ts", "note": "仅未批准候选，不导出至中央 schema、不登记迁移、不自动落库。精确核对新表、私有任务／原件／预览／回执、旧周数据及月报／看板同事务依赖；真实供应商合同和数据迁移对账仍独立。" }
     ],
     "prohibitedShortcut": "不得对旧库直接执行 baseline、db:push、通用 db:migrate 或批量重放朋友 SQL 来跳过对账；也不能改 checksum 或把旧迁移标成已执行。先完成目标结构、台账、数据、备份和兼容性核对，再审批最小增量。"
   },
@@ -204,11 +237,30 @@
     ],
     "sourceFiles": ["server/domains/listing/services/competitorDeepAdoption.ts", "server/repositories/listing/competitorDeepAdoptionRepository.ts", "server/domains/listing/services/competitorActiveResearch.ts", "server/services/competitorActiveResearch.ts", "client/src/pages/listing/CompetitorDeepAdoptionEditor.tsx"]
   },
+  "saihuSourceContract": {
+    "environmentPair": ["SAIHU_REPORT_CONTRACT_FILE", "SAIHU_REPORT_CONTRACT_SHA256"],
+    "schema": "server/domains/ops/saihuReportContract.ts",
+    "example": "config/examples/saihu-report-contracts.example.json",
+    "rule": "这是供应商 API 来源合同，不是模型 Skill 审批。部署目录内保存受审原件与完整字节 hash；仅接受已核验官方文档、精确工作区／店铺／站点、请求和响应字段、周期、币种、结算口径及明确空范围证明。凭据继续受控引用，不放入合同、前端或公开仓库。空 records 不授权执行，未知字段不靠旧 mapper 或示例猜测。"
+  },
+  "schedulerDrain": {
+    "sourceFiles": ["server/_core/scheduler.ts", "server/_core/trackedSchedulerWork.ts", "server/_core/schedulerShutdown.ts"],
+    "rule": "先关闭四类 scheduler 新触发，再等待实际初始／周期任务、子任务、指标和 nextRun 尾写完成，最后释放仍持有的 leader 锁并关闭共享 DB。grace 超时只报告 NOT DRAINED 并继续等待；失锁不再声称拥有互斥锁。",
+    "boundary": "只修复现有 scheduler 排空，不提供完整同目标双调度协调，不新增赛狐周期、不改变领星业务周期。部署时仍需核对 systemd 强制终止期限、旧实例和 backlog，单元测试不是生产停机演练。"
+  },
+  "localCiDatabase": {
+    "entry": "scripts/bootstrap-fresh-database-current-source.mjs",
+    "selection": "--contract current-source-20261019",
+    "review": "config/integration/reviews/20261019-current-source-local-ci.json",
+    "rule": "为原 178 条迁移及 303 表完整基线另立当前源码身份的 local/CI-only 契约，保留旧 manifest、旧结构契约、全部 SQL 和生产准入原样。新入口仍要求明确 local/ci 环境、loopback 目标、特定合成库名和原空库／完整回执校验；不是通用 db:migrate 或生产迁移命令。",
+    "boundary": "这只恢复基础合成测试环境的合法源码绑定，未批准 0230／0231／0309、新赛狐日报或其他候选 DDL；不证明新增功能所需表已齐备。真实初始化、零写重复及 DB 测试结果另看本次 CI，不能从本说明推定通过。"
+  },
   "stillOpen": [
     "四栏正式采纳的受控源码已接入，但仍需朋友在真实权限、数据库及 Web／worker 环境验收；不以合成协议测试或前端可见推定正式启用。",
     "四栏竞品图片／OCR、问答及长期原评论原件来源仍不完整；现可核验样本不等于市场全量，未接来源不得标完成。",
     "采集的可选审核、驳回和逐图补充源码已接入；真实 MySQL 事务／对象存储／撤权／丢 ACK 与历史版本仍待验收。粘贴评论预览／保存、补充多原件独立长期历史仍未全部实现，不能把未实现部分改写成仅待验收。",
-    "打标签 Agent 的逐图候选、图片 Step2 大纲和新品 market_overview 的已保存配置执行及人工应用源码已接通；新四栏任务接入 listing 配置并保留旧 v1 恢复。仍需真实 MySQL、私有对象存储、来源审批、模型和 Web／worker 验收。其他 Agent 逐业务 Skill dispatch、其余图片／新品阶段、视频、赛狐受控日／月同步及双调度隔离仍未全部实现；不能改写成仅待业务验收。",
+    "打标签 Agent、图片 Step2 大纲、新品 market_overview、知识问答及视频七操作已接入各自配置执行；新四栏任务接入 listing 配置并保留旧 v1 恢复。仍需真实 MySQL、私有对象存储、独立来源审批、模型和 Web／worker 验收。其他 Agent 逐业务 Skill dispatch、其余图片／新品阶段仍未全部实现；不能改写成仅待业务验收。",
+    "赛狐日／月手工捕获、预览、人工应用／撤销及读端源码已接通；官方响应合同尚未批准，新日报表未落库。C 自动周期、同目标双调度协调和长期完整历史策略尚未实现，月报空店铺表达限制保留；不是只剩业务验收。",
     "真实目标数据库结构、旧数据迁移对账、存储权限、Web／worker 联调、真实模型质量及真实费用验收仍交朋友和维护者执行。",
     "页面可达、合成测试通过、开关开启和真实业务全部完成是不同状态；不得用摘要页面或少量示例代替朋友完整流程。",
     "权限收回、跨工作区、未知回执、并发保存、备份回滚及旧 writer 并存必须继续核验。"

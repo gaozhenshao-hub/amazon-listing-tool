@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { toast } from "sonner";
+import KnowledgeQaWorkspace from "./KnowledgeQaWorkspace";
 
 // ─── Types ───────────────────────────────────────
 
@@ -424,6 +425,12 @@ function MessageFeedback({
 // ─── Main Component ──────────────────────────────────────────
 
 export default function KBBot() {
+  return <KnowledgeQaWorkspace legacyView={() => <LegacyKBBot readOnly />} />;
+}
+
+/** Retain the original history rendering without routing old unscoped records
+ * into the new workspace-scoped retrieval or bypassing its fee confirmation. */
+export function LegacyKBBot({ readOnly = true }: { readOnly?: boolean }) {
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const [inputValue, setInputValue] = useState("");
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
@@ -523,7 +530,7 @@ export default function KBBot() {
 
   const handleSend = () => {
     const msg = inputValue.trim();
-    if (!msg || chatMutation.isPending) return;
+    if (readOnly || !msg || chatMutation.isPending) return;
 
     // Add user message to local state immediately
     const userMsg: ChatMessage = {
@@ -624,6 +631,7 @@ export default function KBBot() {
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-destructive hover:text-destructive"
+                      disabled={readOnly}
                       onClick={() => setShowClearConfirm(true)}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -696,6 +704,7 @@ export default function KBBot() {
                         setEditTitleId(conv.id);
                         setEditTitleValue(conv.title || "");
                       }}
+                      disabled={readOnly}
                     >
                       <Edit3 className="w-3 h-3" />
                     </Button>
@@ -707,6 +716,7 @@ export default function KBBot() {
                         e.stopPropagation();
                         setShowDeleteConfirm(conv.id);
                       }}
+                      disabled={readOnly}
                     >
                       <Trash2 className="w-3 h-3" />
                     </Button>
@@ -735,7 +745,7 @@ export default function KBBot() {
               <Bot className="w-4 h-4 text-primary" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold">AI知识助手</h2>
+              <h2 className="text-sm font-semibold">{readOnly ? "旧版知识助手记录（只读）" : "AI知识助手"}</h2>
               <p className="text-[10px] text-muted-foreground">
                 基于知识库的智能检索与问答
               </p>
@@ -776,6 +786,7 @@ export default function KBBot() {
                     <button
                       key={idx}
                       onClick={() => {
+                        if (readOnly) return;
                         setInputValue(prompt);
                         // Auto-send after a small delay
                         setTimeout(() => {
@@ -797,7 +808,7 @@ export default function KBBot() {
                           });
                         }, 50);
                       }}
-                      disabled={chatMutation.isPending}
+                      disabled={readOnly || chatMutation.isPending}
                       className="text-left px-3 py-2.5 rounded-lg border border-border/60 bg-card hover:bg-accent text-xs leading-relaxed transition-colors disabled:opacity-50"
                     >
                       {prompt}
@@ -856,7 +867,7 @@ export default function KBBot() {
                           )}
 
                           {/* Feedback Buttons */}
-                          {message.references && message.references.length > 0 && (
+                          {!readOnly && message.references && message.references.length > 0 && (
                             <MessageFeedback
                               messageId={message.id}
                               references={message.references}
@@ -908,6 +919,7 @@ export default function KBBot() {
               <Textarea
                 ref={textareaRef}
                 value={inputValue}
+                disabled={readOnly}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="输入你的问题，AI将从知识库中检索相关内容..."
@@ -917,7 +929,7 @@ export default function KBBot() {
               <Button
                 type="submit"
                 size="icon"
-                disabled={!inputValue.trim() || chatMutation.isPending}
+                disabled={readOnly || !inputValue.trim() || chatMutation.isPending}
                 className="shrink-0 h-10 w-10"
               >
                 {chatMutation.isPending ? (
@@ -950,11 +962,11 @@ export default function KBBot() {
             <Button
               variant="destructive"
               onClick={() => {
-                if (showDeleteConfirm) {
+                if (!readOnly && showDeleteConfirm) {
                   deleteMutation.mutate({ conversationId: showDeleteConfirm });
                 }
               }}
-              disabled={deleteMutation.isPending}
+              disabled={readOnly || deleteMutation.isPending}
             >
               {deleteMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-1" />
@@ -980,8 +992,8 @@ export default function KBBot() {
             </Button>
             <Button
               variant="destructive"
-              onClick={() => clearAllMutation.mutate()}
-              disabled={clearAllMutation.isPending}
+              onClick={() => { if (!readOnly) clearAllMutation.mutate(); }}
+              disabled={readOnly || clearAllMutation.isPending}
             >
               {clearAllMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-1" />

@@ -1,8 +1,12 @@
 import { z } from "zod";
+import { videoWorkflowLegacyRequest } from "../domains/video/videoWorkflowLegacy";
+import { currentVideoWorkflowTransaction } from "../domains/video/videoWorkflowTransaction";
+import { videoWorkflowService } from "../domains/video/videoWorkflowService";
+import { VideoWorkflowOptionsInputSchema, VideoWorkflowStartInputSchema, VideoWorkflowOperationInputSchema, VideoWorkflowApplyInputSchema, VideoWorkflowApplyOperationInputSchema } from "../../shared/videoWorkflow";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { projects } from "../../drizzle/schema/project";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure as baseProtectedProcedure, router } from "../_core/trpc";
 import { requireDb } from "../repositories/dbClient";
 import * as vsDb from "../videoScriptDb";
 import { generateVideoScriptExcel } from "../videoScriptExcel";
@@ -20,6 +24,11 @@ import {
   type VideoGenerationOperation,
 } from "../domains/video/videoGenerationJob";
 import { confirmVideoStage, type VideoStage } from "../domains/video/videoAgent";
+import { captureVideoWorkflowTables } from "../domains/video/videoWorkflowSource";
+import { saveVideoWorkflowVersion, restoreVideoWorkflowVersion } from "../domains/video/videoWorkflowPublication";
+import { VideoWorkflowHistoryInputSchema } from "../../shared/videoWorkflow";
+
+const protectedProcedure = baseProtectedProcedure.use(async ({ ctx, next, path, type, getRawInput }) => videoWorkflowLegacyRequest(ctx, path, type, await getRawInput(), next));
 
 async function resolveVideoScriptExportAccess(videoScriptId: number, ctx: {
   user: { role: string }; workspaceId?: number | null;
@@ -53,9 +62,10 @@ async function queueVideoJob(input: {
 }) {
   const script = await vsDb.getVideoScriptById(input.videoScriptId);
   if (!script) throw new Error("视频脚本不存在");
+  if (input.projectId !== undefined && input.projectId !== script.projectId) throw new TRPCError({ code: "FORBIDDEN", message: "VIDEO_WORKFLOW_ACCESS_DENIED" });
   return queueVideoGenerationJob({
     videoScriptId: input.videoScriptId,
-    projectId: input.projectId || script.projectId,
+    projectId: input.projectId ?? script.projectId,
     operation: input.operation,
     competitorScriptId: input.competitorScriptId,
     rawContent: input.rawContent,
@@ -65,6 +75,14 @@ async function queueVideoJob(input: {
 }
 
 export const videoScriptRouter = router({
+  workflowHistory: baseProtectedProcedure.input(VideoWorkflowHistoryInputSchema).query(({ctx,input}) => videoWorkflowService.history(ctx,input)),
+  workflowOptions: baseProtectedProcedure.input(VideoWorkflowOptionsInputSchema).query(({ctx,input}) => videoWorkflowService.options(ctx,input)),
+  workflowStart: baseProtectedProcedure.input(VideoWorkflowStartInputSchema).mutation(({ctx,input}) => videoWorkflowService.start(ctx,input)),
+  workflowCheck: baseProtectedProcedure.input(VideoWorkflowOperationInputSchema).query(({ctx,input}) => videoWorkflowService.check(ctx,input)),
+  workflowCancel: baseProtectedProcedure.input(VideoWorkflowOperationInputSchema).mutation(({ctx,input}) => videoWorkflowService.cancel(ctx,input)),
+  workflowApply: baseProtectedProcedure.input(VideoWorkflowApplyInputSchema).mutation(({ctx,input}) => videoWorkflowService.apply(ctx,input)),
+  workflowApplyCheck: baseProtectedProcedure.input(VideoWorkflowApplyOperationInputSchema).query(({ctx,input}) => videoWorkflowService.applyCheck(ctx,input)),
+  workflowApplyCancel: baseProtectedProcedure.input(VideoWorkflowApplyOperationInputSchema).mutation(({ctx,input}) => videoWorkflowService.applyCancel(ctx,input)),
   // ─── CRUD: Video Script Projects ──────────────────────────────
 
   create: protectedProcedure
@@ -427,8 +445,8 @@ export const videoScriptRouter = router({
       const stageStatus = typeof script.stageStatus === "string"
         ? JSON.parse(script.stageStatus)
         : script.stageStatus || {};
-      stageStatus[input.fromStage] = "completed";
-      stageStatus[input.toStage] = "in_progress";
+      stageStatus[input.fromStage] = "confirmed";
+      if (stageStatus[input.toStage] !== "confirmed") stageStatus[input.toStage] = "in_progress";
       await vsDb.updateVideoScript(input.videoScriptId, {
         currentStage: input.toStage as any,
         stageStatus: JSON.stringify(stageStatus),
@@ -460,6 +478,13 @@ export const videoScriptRouter = router({
     .mutation(async ({ ctx, input }) => {
       const script = await vsDb.getVideoScriptById(input.videoScriptId);
       if (!script) throw new Error("Video script not found");
+      const tx = currentVideoWorkflowTransaction();
+      if (tx) {
+        const tables = await captureVideoWorkflowTables(tx, { expectedWorkspaceId: ctx.workspaceId ?? ctx.user.defaultWorkspaceId!, projectId: script.projectId, videoScriptId: script.id });
+        const id = await saveVideoWorkflowVersion(tx, tables, ctx.user.id, input.versionNote ?? `版本 ${script.version}`);
+        await vsDb.updateVideoScript(script.id, { version: Number(script.version) + 1, versionNote: input.versionNote });
+        return { id, version: script.version };
+      }
       const sections = await vsDb.getSections(input.videoScriptId);
       const subtopics = await vsDb.getSubtopicsByVideoScript(input.videoScriptId);
       const shots = await vsDb.getAllShotsByVideoScript(input.videoScriptId);
@@ -477,7 +502,7 @@ export const videoScriptRouter = router({
         version: currentVersion + 1,
         versionNote: input.versionNote,
       } as any);
-      await registerVideoArtifact(input.videoScriptId, "user_edit", { confirmed: true });
+      if (!currentVideoWorkflowTransaction()) await registerVideoArtifact(input.videoScriptId, "user_edit", { confirmed: true });
       return { id, version: currentVersion };
     }),
 
@@ -489,16 +514,23 @@ export const videoScriptRouter = router({
 
   rollbackVersion: protectedProcedure
     .input(z.object({ versionId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const version = await vsDb.getVersionById(input.versionId);
       if (!version) throw new Error("Version not found");
+      const tx = currentVideoWorkflowTransaction();
+      if (tx) {
+        const script = await vsDb.getVideoScriptById(version.videoScriptId);
+        if (!script) throw new Error("Video script not found");
+        const restored = await restoreVideoWorkflowVersion(tx, { expectedWorkspaceId: ctx.workspaceId ?? ctx.user.defaultWorkspaceId!, projectId: script.projectId, videoScriptId: script.id }, version.snapshotData);
+        return { success: true, restoredVersion: version.version, ...restored };
+      }
       const snapshot = typeof version.snapshotData === "string"
         ? JSON.parse(version.snapshotData)
         : version.snapshotData;
       if (snapshot.sections) {
         await vsDb.saveSections(version.videoScriptId, snapshot.sections);
       }
-      await registerVideoArtifact(version.videoScriptId, "user_edit", { confirmed: true });
+      if (!currentVideoWorkflowTransaction()) await registerVideoArtifact(version.videoScriptId, "user_edit", { confirmed: true });
       return { success: true, restoredVersion: version.version };
     }),
 
@@ -587,14 +619,14 @@ export const videoScriptRouter = router({
       await vsDb.updateVideoScript(input.videoScriptId, {
         stageStatus: JSON.stringify(stageStatus),
       });
-      await confirmVideoStage({
+      if (!currentVideoWorkflowTransaction()) await confirmVideoStage({
         videoScriptId: input.videoScriptId,
         projectId: script.projectId,
         stage: input.stage as VideoStage,
         userId: ctx.user.id,
         workspaceId: ctx.workspaceId,
       });
-      await registerVideoArtifact(input.videoScriptId, "user_edit", { confirmed: true });
+      if (!currentVideoWorkflowTransaction()) await registerVideoArtifact(input.videoScriptId, "user_edit", { confirmed: true });
       return { success: true };
     }),
 

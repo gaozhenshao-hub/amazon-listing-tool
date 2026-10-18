@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createTrackedSchedulerWork } from "../../../_core/trackedSchedulerWork";
 import { notifyOwner } from "../../../_core/notification";
 import {
   listOperationalAlerts,
@@ -110,7 +111,7 @@ async function persistAndNotify(candidates: OperationalAlertCandidate[]) {
     } catch (error) {
       console.warn(`[AI OS Alert] ${candidate.title}:`, error);
     }
-    void recordAiOsMetric({
+    await recordAiOsMetric({
       entityType: "job",
       entityId: candidate.fingerprint,
       metricName: "operations.alert",
@@ -123,10 +124,14 @@ async function persistAndNotify(candidates: OperationalAlertCandidate[]) {
 }
 
 export async function runAiOsOperationalHealthCheck() {
-  const [worker, database] = await Promise.all([
+  // One failed read must not detach its still-running sibling from drain.
+  const [workerResult, databaseResult] = await Promise.allSettled([
     buildWorkerQueueHealth(1),
     buildDatabaseObservabilitySection(1),
   ]);
+  if (workerResult.status === "rejected") throw workerResult.reason;
+  if (databaseResult.status === "rejected") throw databaseResult.reason;
+  const worker = workerResult.value, database = databaseResult.value;
   const requireWorker = process.env.REQUIRE_AI_JOB_WORKER !== "false"
     && process.env.NODE_ENV === "production";
   const candidates = deriveOperationalAlerts({
@@ -163,6 +168,7 @@ export async function listAiOsOperationalAlerts(input: { status?: "open" | "reso
 }
 
 export function startAiOsOperationalScheduler() {
+  const work = createTrackedSchedulerWork();
   const healthIntervalMs = Math.min(
     Math.max(Number(process.env.AI_OS_HEALTH_CHECK_INTERVAL_MS || 5 * 60_000), 60_000),
     24 * 60 * 60_000,
@@ -171,19 +177,21 @@ export function startAiOsOperationalScheduler() {
     Math.max(Number(process.env.DATA_LIFECYCLE_SWEEP_INTERVAL_MS || 24 * 60 * 60_000), 60 * 60_000),
     7 * 24 * 60 * 60_000,
   );
-  const healthTimer = setInterval(() => void runAiOsOperationalHealthCheck().catch((error) => {
+  const healthTimer = setInterval(() => void work.run(runAiOsOperationalHealthCheck).catch((error) => {
     console.error("[AI OS] operational health check failed:", error);
   }), healthIntervalMs);
-  const archiveTimer = setInterval(() => void runScheduledDataLifecycleSweep().catch((error) => {
+  const archiveTimer = setInterval(() => void work.run(runScheduledDataLifecycleSweep).catch((error) => {
     console.error("[AI OS] lifecycle sweep failed:", error);
   }), archiveIntervalMs);
-  const initialHealth = setTimeout(() => void runAiOsOperationalHealthCheck().catch(() => undefined), 30_000);
-  const initialArchive = setTimeout(() => void runScheduledDataLifecycleSweep().catch(() => undefined), 60_000);
+  const initialHealth = setTimeout(() => void work.run(runAiOsOperationalHealthCheck).catch(() => undefined), 30_000);
+  const initialArchive = setTimeout(() => void work.run(runScheduledDataLifecycleSweep).catch(() => undefined), 60_000);
   for (const timer of [healthTimer, archiveTimer, initialHealth, initialArchive]) (timer as any).unref?.();
   return () => {
+    work.stop();
     clearInterval(healthTimer);
     clearInterval(archiveTimer);
     clearTimeout(initialHealth);
     clearTimeout(initialArchive);
+    return work.drain();
   };
 }

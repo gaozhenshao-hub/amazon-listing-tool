@@ -5,6 +5,12 @@
  * 回答中附带引用来源卡片（可展开查看原文、可点击跳转），支持多轮对话和上下文记忆。
  */
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
+import { knowledgeQaService } from "../domains/knowledge/knowledgeQaService";
+import { KnowledgeQaPreviewInputSchema, KnowledgeQaStartInputSchema, KnowledgeQaOperationInputSchema, KnowledgeQaPageInputSchema, KnowledgeQaHistoryInputSchema,
+  KnowledgeQaRenameInputSchema, KnowledgeQaDeleteInputSchema, KnowledgeQaClearInputSchema, KnowledgeQaFeedbackInputSchema,
+  KnowledgeQaPreviewSchema, KnowledgeQaViewSchema, KnowledgeQaCancelSchema, KnowledgeQaThreadsSchema, KnowledgeQaHistorySchema,
+  KnowledgeQaRenameResultSchema, KnowledgeQaDeleteResultSchema, KnowledgeQaClearResultSchema, KnowledgeQaFeedbackResultSchema } from "../../shared/knowledgeQa";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { getDb } from "../repositories/dbClient";
@@ -88,6 +94,9 @@ async function listConversations(userId: number) {
 
 async function deleteConversation(id: number, userId: number) {
   const _d = await db();
+  // Legacy numeric conversations are never the private UUID/artifact threads.
+  // Check the owner before deleting children, not after destructive work.
+  if (!await getConversation(id, userId)) throw new TRPCError({ code: "NOT_FOUND", message: "旧版对话不存在或无权访问" });
   // Delete messages first
   await _d.delete(kbBotMessages).where(eq(kbBotMessages.conversationId, id));
   // Then delete conversation
@@ -490,6 +499,16 @@ async function generateTitle(message: string): Promise<string> {
 // ─── Router ──────────────────────────────────────
 
 export const kbBotRouter = router({
+  qaPreview: protectedProcedure.input(KnowledgeQaPreviewInputSchema).output(KnowledgeQaPreviewSchema).query(({ ctx, input }) => knowledgeQaService.preview(ctx, input)),
+  qaStart: protectedProcedure.input(KnowledgeQaStartInputSchema).output(KnowledgeQaViewSchema).mutation(({ ctx, input }) => knowledgeQaService.start(ctx, input)),
+  qaCheck: protectedProcedure.input(KnowledgeQaOperationInputSchema).output(KnowledgeQaViewSchema).query(({ ctx, input }) => knowledgeQaService.check(ctx, input)),
+  qaCancel: protectedProcedure.input(KnowledgeQaOperationInputSchema).output(KnowledgeQaCancelSchema).mutation(({ ctx, input }) => knowledgeQaService.cancel(ctx, input)),
+  qaThreads: protectedProcedure.input(KnowledgeQaPageInputSchema).output(KnowledgeQaThreadsSchema).query(({ ctx, input }) => knowledgeQaService.threads(ctx, input)),
+  qaHistory: protectedProcedure.input(KnowledgeQaHistoryInputSchema).output(KnowledgeQaHistorySchema).query(({ ctx, input }) => knowledgeQaService.history(ctx, input)),
+  qaRename: protectedProcedure.input(KnowledgeQaRenameInputSchema).output(KnowledgeQaRenameResultSchema).mutation(({ ctx, input }) => knowledgeQaService.rename(ctx, input)),
+  qaDelete: protectedProcedure.input(KnowledgeQaDeleteInputSchema).output(KnowledgeQaDeleteResultSchema).mutation(({ ctx, input }) => knowledgeQaService.delete(ctx, input)),
+  qaClear: protectedProcedure.input(KnowledgeQaClearInputSchema).output(KnowledgeQaClearResultSchema).mutation(({ ctx, input }) => knowledgeQaService.clear(ctx, input)),
+  qaFeedback: protectedProcedure.input(KnowledgeQaFeedbackInputSchema).output(KnowledgeQaFeedbackResultSchema).mutation(({ ctx, input }) => knowledgeQaService.feedback(ctx, input)),
   /**
    * Send a message and get AI response
    * If no conversationId provided, creates a new conversation
@@ -502,6 +521,7 @@ export const kbBotRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      if (process.env.ENABLE_KNOWLEDGE_QA_WRITES === "true") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "新版知识问答已启用，请使用带费用确认和原编号恢复的发送入口；旧版记录仍可只读查看。" });
       const userId = ctx.user.id;
       let conversationId = input.conversationId;
 

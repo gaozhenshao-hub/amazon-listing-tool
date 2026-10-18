@@ -9,19 +9,15 @@ import { closeDbConnection } from "../repositories/dbClient";
 import { assertStartupConfig } from "./startupValidation";
 import { startAiOsOperationalScheduler } from "../domains/ai_os/services/operationalScheduler";
 import { startLocalLingxingScheduleRunner } from "../domains/ops/localLingxingScheduler";
+import { createSchedulerShutdown } from "./schedulerShutdown";
 
 const shutdownGraceMs = Math.min(
   Math.max(Number(process.env.SCHEDULER_SHUTDOWN_GRACE_MS || 10_000), 1_000),
   120_000
 );
 
-let stopped = false;
-let releaseLock: (() => Promise<void>) | null = null;
 let stopScheduler: ((signal: string) => Promise<void>) | null = null;
-
-async function sleep(ms: number) {
-  await new Promise(resolve => setTimeout(resolve, ms));
-}
+let leaderLost = false;
 
 async function main() {
   process.env.APP_PROCESS_ROLE = process.env.APP_PROCESS_ROLE || "scheduler";
@@ -31,11 +27,10 @@ async function main() {
   });
   const lock = createSchedulerLeaderLock({
     onConnectionLost: () => {
-      console.error("[Scheduler] leader lock connection was lost; stopping timers before systemd restarts this scheduler instance.");
-      void stopScheduler?.("leader_lock_lost").finally(() => {
-        process.exitCode = 1;
-        setImmediate(() => process.exit(1));
-      });
+      leaderLost = true;
+      process.exitCode = 1;
+      console.error("[Scheduler] leader ownership lost; stopping new triggers and draining accepted work without claiming the lock is still held.");
+      void stopScheduler?.("leader_lock_lost");
     },
   });
   const lockTimeoutSeconds = Math.min(
@@ -53,40 +48,47 @@ async function main() {
     await lock.release().catch(() => null);
     return;
   }
-  releaseLock = () => lock.release();
   console.log(
     `[Scheduler] started role=${report.role} lock=${result.lockName} owner=${result.ownerId}`
   );
 
-  intelScheduler.start();
-  startTodoReminderScheduler();
-  const stopAiOsOperationalScheduler = startAiOsOperationalScheduler();
-  const stopLocalLingxingScheduleRunner = startLocalLingxingScheduleRunner();
-
-  const stop = async (signal: string) => {
-    if (stopped) return;
-    stopped = true;
-    console.log(`[Scheduler] received ${signal}, stopping timers`);
-    try {
-      intelScheduler.stop();
-      stopTodoReminderScheduler();
-      stopAiOsOperationalScheduler();
-      stopLocalLingxingScheduleRunner();
-      await sleep(Math.min(shutdownGraceMs, 5_000));
-      await releaseLock?.();
-      await closeDbConnection().catch(error => {
-        console.warn("[Scheduler] shared database connection was already unavailable during shutdown:", error);
-      });
-      console.log("[Scheduler] stopped");
-    } catch (error) {
-      console.error("[Scheduler] graceful shutdown failed:", error);
+  const stops: Array<() => void | Promise<void>> = [() => intelScheduler.stop(), stopTodoReminderScheduler];
+  const shutdown = createSchedulerShutdown({
+    stops,
+    graceMs: shutdownGraceMs,
+    releaseLock: () => lock.release(),
+    closeDatabase: closeDbConnection,
+    onDeadline: lost => {
       process.exitCode = 1;
-    }
+      console.error(`[Scheduler] shutdown deadline ${shutdownGraceMs}ms exceeded: NOT DRAINED; shared DB remains open; ${lost ? "leader ownership already lost" : "leader lock has not been released"}. Waiting for accepted work; no automatic retry.`);
+    },
+    onDrained: lost => {
+      console.log(lost ? "[Scheduler] accepted work drained after leader loss; no lock ownership claimed" : "[Scheduler] stopped after verified drain");
+      // Only now is a failed-leader restart safe for these tracked handlers.
+      if (lost) setImmediate(() => process.exit(1));
+    },
+  });
+  const stop = async (signal: string) => {
+    console.log(`[Scheduler] received ${signal}, closing new triggers and awaiting actual work`);
+    await shutdown(leaderLost ? "leader_lock_lost" : signal).catch(error => {
+      console.error("[Scheduler] shutdown NOT VERIFIED; lock/database cleanup not declared complete:", error);
+      process.exitCode = 1;
+    });
   };
   stopScheduler = stop;
 
   process.once("SIGINT", () => void stop("SIGINT"));
   process.once("SIGTERM", () => void stop("SIGTERM"));
+  try {
+    if (leaderLost) { await stop("leader_lock_lost"); return; }
+    intelScheduler.start();
+    startTodoReminderScheduler();
+    stops.push(startAiOsOperationalScheduler());
+    stops.push(startLocalLingxingScheduleRunner());
+  } catch (error) {
+    await stop("startup_failure");
+    throw error;
+  }
 }
 
 void main().catch(error => {

@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { emperorScheduledTasks } from "../../../drizzle/schema";
 import { getDb } from "../../repositories/dbClient";
 import { runLingxingScheduledDraft } from "./lingxingScheduledDrafts";
+import { createTrackedSchedulerWork } from "../../_core/trackedSchedulerWork";
 
 const LOCAL_LINGXING_SCHEDULER_ENABLED = "LINGXING_LOCAL_SCHEDULER_ENABLED";
 const REFRESH_INTERVAL_MS = 60_000;
@@ -120,10 +121,12 @@ async function persistNextRun(taskId: number, nextRunAt: Date | null) {
 export function startLocalLingxingScheduleRunner() {
   if (!isLocalLingxingSchedulerEnabled()) {
     console.log(`[LingXingLocalScheduler] disabled; set ${LOCAL_LINGXING_SCHEDULER_ENABLED}=true only on an independent deployment.`);
-    return () => undefined;
+    return () => Promise.resolve();
   }
 
   let stopped = false;
+  const work = createTrackedSchedulerWork();
+  let draining: Promise<void> | null = null;
   const scheduled = new Map<number, { signature: string; task: LocalScheduledTask }>();
 
   const refresh = async () => {
@@ -142,6 +145,7 @@ export function startLocalLingxingScheduleRunner() {
       eq(emperorScheduledTasks.triggerMode, "heartbeat"),
       inArray(emperorScheduledTasks.dataDomain, [...supportedDomains]),
     ));
+    if (stopped) return;
     const current = new Map(rows.map((row) => [row.id, toLocalLingxingScheduleTask(row)]));
 
     for (const [id, existing] of scheduled.entries()) {
@@ -156,7 +160,7 @@ export function startLocalLingxingScheduleRunner() {
     for (const item of current.values()) {
       if (!item || scheduled.has(item.id) || stopped) continue;
       let task: LocalScheduledTask;
-      const runTask = async (scheduledFor: Date) => {
+      const runTask = (scheduledFor: Date) => work.run(async () => {
         try {
           await runLingxingScheduledDraft(item.externalTaskUid, scheduledFor);
           console.log(`[LingXingLocalScheduler] completed ${item.dataDomain} at ${scheduledFor.toISOString()}`);
@@ -167,7 +171,7 @@ export function startLocalLingxingScheduleRunner() {
             console.error(`[LingXingLocalScheduler] failed to persist next run for ${item.dataDomain}:`, error);
           });
         }
-      };
+      });
       task = item.dataDomain === "parent_asin_weekly_mcp" && isDefaultParentWeeklyCron(item.cronExpr)
         ? scheduleParentWeeklyTask(runTask)
         : cron.schedule(item.cronExpr, async (context) => runTask(context.date), { timezone: "UTC", noOverlap: true, name: `lingxing:${item.dataDomain}` });
@@ -177,16 +181,27 @@ export function startLocalLingxingScheduleRunner() {
     }
   };
 
-  void refresh().catch((error) => console.error("[LingXingLocalScheduler] initial refresh failed:", error));
-  const refreshTimer = setInterval(() => void refresh().catch((error) => {
+  void work.run(refresh).catch((error) => console.error("[LingXingLocalScheduler] initial refresh failed:", error));
+  const refreshTimer = setInterval(() => void work.run(refresh).catch((error) => {
     console.error("[LingXingLocalScheduler] refresh failed:", error);
   }), REFRESH_INTERVAL_MS);
   refreshTimer.unref?.();
 
   return () => {
+    if (draining) return draining;
     stopped = true;
+    work.stop();
     clearInterval(refreshTimer);
-    for (const entry of scheduled.values()) void entry.task.destroy();
+    const destroys = [...scheduled.values()].map(entry => {
+      try { return Promise.resolve(entry.task.destroy()); }
+      catch (error) { return Promise.reject(error); }
+    });
     scheduled.clear();
+    draining = (async () => {
+      const results = await Promise.allSettled([...destroys, work.drain()]);
+      const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+      if (failure) throw new Error("LINGXING_SCHEDULER_DRAIN_UNVERIFIED", { cause: failure.reason });
+    })();
+    return draining;
   };
 }

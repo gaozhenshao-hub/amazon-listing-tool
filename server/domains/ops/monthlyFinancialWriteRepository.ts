@@ -18,6 +18,7 @@ import {
   monthlyFinancialImportHash, MONTHLY_FINANCIAL_IMPORT_LIMITS, type MonthlyFinancialImport,
 } from "../../../shared/monthlyFinancialImport";
 import type { TrpcContext } from "../../_core/context";
+import { MonthlyFinancialApiPreparedSchema, MonthlyFinancialApiManifestSchema, isMonthlyFinancialApiArtifact, validateMonthlyFinancialApiArtifact, type MonthlyFinancialApiPrepared, type MonthlyFinancialApiManifest } from "../../../shared/monthlyFinancialApiSource";
 import { getDb, type DbExecutor } from "../../repositories/dbClient";
 import { assertResourceAction } from "../../services/securityGovernance";
 import { projection, positiveId as id, query as rows, noSuchTable, SCAN_BATCHES_MAX, SCAN_BYTES_MAX, PAYLOAD_WIRE_MAX, MONTHS_WIRE_MAX } from "./monthlyBoardReadCore";
@@ -30,7 +31,8 @@ import {
 
 type Row = Record<string, unknown>;
 type Identity = { userId: number; workspaceId: number };
-type Session = { tx: DbExecutor; identity: Identity; actor: { id: number; role: string; defaultWorkspaceId: number }; role: string };
+export type MonthlyFinancialWriteSession = { tx: DbExecutor; identity: Identity; actor: { id: number; role: string; defaultWorkspaceId: number }; role: string };
+type Session = MonthlyFinancialWriteSession;
 type Capability = { status: "available" | "unavailable"; reasonCode: string | null };
 type Column = { nullable: boolean; dataType: string; columnType: string; extra: string; maxLength: number | null; defaultValue: unknown; collation: string | null };
 export interface MonthlyFinancialWriteDatabase { transaction?<T>(body: (tx: DbExecutor) => Promise<T>): Promise<T> }
@@ -177,13 +179,15 @@ async function artifactByBatch(current: Session, record: MonthlyFinancialBatchRe
   if (!found.length) return null;
   const row = found[0];
   if (row.batchId !== record.id || row.workspaceId !== current.identity.workspaceId || typeof row.payloadHash !== "string" || !/^[a-f0-9]{64}$/u.test(row.payloadHash)) fail("ARTIFACT_INVALID");
-  let prepared: MonthlyFinancialPreparedUpload, manifest: MonthlyFinancialImport["manifest"];
+  let prepared: MonthlyFinancialPreparedUpload | MonthlyFinancialApiPrepared, manifest: MonthlyFinancialImport["manifest"] | MonthlyFinancialApiManifest;
   try {
-    prepared = MonthlyFinancialPreparedUploadSchema.parse(JSON.parse(wire(row.prepared, row.preparedBytes, PREPARED_WIRE_MAX)));
-    manifest = MonthlyFinancialImportManifestSchema.parse(JSON.parse(wire(row.manifest, row.manifestBytes, MANIFEST_WIRE_MAX)));
+    const rawPrepared = JSON.parse(wire(row.prepared, row.preparedBytes, PREPARED_WIRE_MAX)), rawManifest = JSON.parse(wire(row.manifest, row.manifestBytes, MANIFEST_WIRE_MAX));
+    if (isMonthlyFinancialApiArtifact({ prepared: rawPrepared, manifest: rawManifest })) { prepared = MonthlyFinancialApiPreparedSchema.parse(rawPrepared); manifest = MonthlyFinancialApiManifestSchema.parse(rawManifest); }
+    else { prepared = MonthlyFinancialPreparedUploadSchema.parse(rawPrepared); manifest = MonthlyFinancialImportManifestSchema.parse(rawManifest); }
   } catch { return fail("ARTIFACT_INVALID"); }
-  if (prepared.identity.workspaceId !== record.workspaceId || prepared.identity.userId !== record.userId || prepared.fileName !== record.fileName || prepared.fileHash !== record.fileHash || row.storageReference !== prepared.storageUri
-    || manifest.fileName !== prepared.fileName || manifest.format !== prepared.format || manifest.byteLength !== prepared.byteSize || manifest.parserVersion !== prepared.parserVersion) fail("ARTIFACT_MISMATCH");
+  if ("kind" in prepared) { if (row.storageReference !== `saihu-sync-run:${prepared.sourceRunId}`) fail("ARTIFACT_MISMATCH"); validateMonthlyFinancialApiArtifact(record, prepared, manifest, row.payloadHash); }
+  else { const fileManifest = MonthlyFinancialImportManifestSchema.parse(manifest); if (prepared.identity.workspaceId !== record.workspaceId || prepared.identity.userId !== record.userId || prepared.fileName !== record.fileName || prepared.fileHash !== record.fileHash || row.storageReference !== prepared.storageUri
+    || fileManifest.fileName !== prepared.fileName || fileManifest.format !== prepared.format || fileManifest.byteLength !== prepared.byteSize || fileManifest.parserVersion !== prepared.parserVersion) fail("ARTIFACT_MISMATCH"); }
   const artifact = { prepared, manifest, payloadHash: row.payloadHash };
   // Version construction also verifies the complete canonical stored payload.
   monthlyFinancialBatchVersion(record, artifact);
@@ -211,12 +215,14 @@ export function createMonthlyFinancialWriteRepository(dependencies: {
   directory?: typeof strictMonthlyFinancialDirectory; journal?: typeof createMonthlyFinancialOperationJournal;
   storage?: typeof monthlyFinancialImportStorage; parseImport?: typeof parseMonthlyFinancialImport; enabled?: () => boolean;
   synchronizeBoards?: typeof synchronizeOperationsBoardsAfterMonthlyTransition;
+  verifyApiArtifact?: (tx: DbExecutor, prepared: MonthlyFinancialApiPrepared, manifest: MonthlyFinancialApiManifest, rows: unknown, purpose: "prepare" | "confirm" | "revoke") => Promise<void>;
 } = {}) {
   const database = dependencies.database ?? getDb, permission = dependencies.permission ?? assertResourceAction,
     directory = dependencies.directory ?? strictMonthlyFinancialDirectory, journal = dependencies.journal ?? createMonthlyFinancialOperationJournal,
     storage = dependencies.storage ?? monthlyFinancialImportStorage, parseImport = dependencies.parseImport ?? parseMonthlyFinancialImport,
     enabled = dependencies.enabled ?? (() => process.env.ENABLE_MERGED_OPS_MONTHLY_WRITES === "true"),
     synchronizeBoards = dependencies.synchronizeBoards ?? synchronizeOperationsBoardsAfterMonthlyTransition;
+  const verifyApiArtifact = dependencies.verifyApiArtifact ?? (async (tx, prepared, manifest, payload, purpose) => { const { verifySaihuMonthlyArtifact } = await import("./saihuReportPublication"); await verifySaihuMonthlyArtifact(tx, prepared, manifest, payload, purpose); });
   async function authorize(current: Session, action: "read" | "create" | "update" | "delete") {
     await permission({ actor: current.actor, workspaceId: current.identity.workspaceId, resource: "ops_monthly_import", action, authorizationRead: { executor: current.tx, strict: true, lock: true } });
     await directory(current.tx, current.role, current.identity.workspaceId, action === "read" ? "read" : action === "delete" ? "delete" : "edit");
@@ -262,7 +268,7 @@ export function createMonthlyFinancialWriteRepository(dependencies: {
     const record = await batchById(current, batchId), artifact = ready.artifactReady ? await artifactByBatch(current, record) : null;
     const completed = await completedCandidates(current);
     const impact = buildMonthlyFinancialWriteImpact({ target: record, completed, complete: true, blockingReasons: artifact?.manifest.blockingReasons });
-    return { record, artifact, impact };
+    return { record, artifact, impact, completed };
   }
   async function options(ctx: TrpcContext, raw: MonthlyFinancialWriteOptionsInput) {
     const input = MonthlyFinancialWriteOptionsInputSchema.parse(raw);
@@ -274,6 +280,7 @@ export function createMonthlyFinancialWriteRepository(dependencies: {
     try { return await session(ctx, input.expectedWorkspaceId, async current => {
       const ready = await schema(current.tx), state = await loaded(current, input.batchId, ready), caps = await capabilities(current, ready);
       if (!state.artifact) { caps.confirm = unavailable("original_manifest_unavailable"); caps.download = unavailable("original_manifest_unavailable"); }
+      if (state.artifact && isMonthlyFinancialApiArtifact(state.artifact)) { caps.confirm = unavailable("use_saihu_report_api_preview"); caps.download = unavailable("api_source_not_uploaded_file"); }
       if (state.record.status !== "previewing") caps.confirm = unavailable("batch_not_previewing");
       if (state.impact.blockingReasons.length || state.impact.scopes.some(scope => scope.confirmWinnerId !== state.record.id)) caps.confirm = unavailable("impact_blocked");
       if (state.record.status === "deleted") caps.revoke = unavailable("batch_already_deleted");
@@ -331,11 +338,10 @@ export function createMonthlyFinancialWriteRepository(dependencies: {
       return sanitized(error);
     }
   }
-  async function transition(ctx: TrpcContext, raw: MonthlyFinancialWriteConfirmInput | MonthlyFinancialWriteRevokeInput, action: "confirm" | "revoke"): Promise<MonthlyFinancialWriteResult> {
+  async function transitionInTransaction(current: Session, raw: MonthlyFinancialWriteConfirmInput | MonthlyFinancialWriteRevokeInput, action: "confirm" | "revoke"): Promise<MonthlyFinancialWriteResult> {
     const input = (action === "confirm" ? MonthlyFinancialWriteConfirmInputSchema : MonthlyFinancialWriteRevokeInputSchema).parse(raw);
-    const requestHash = monthlyFinancialOperationRequestHash(action, input); let captured: Identity | null = null;
-    try { return await session(ctx, input.expectedWorkspaceId, async current => {
-      captured = current.identity;
+    if (current.identity.workspaceId !== input.expectedWorkspaceId) fail("WORKSPACE_OR_ROLE_DENIED", "FORBIDDEN");
+    const requestHash = monthlyFinancialOperationRequestHash(action, input);
       if (!enabled()) fail("NOT_ENABLED"); await authorize(current, action === "confirm" ? "update" : "delete");
       const ready = await schema(current.tx); if (!ready.base) fail("SCHEMA_NOT_READY");
       const operation = log(current, input.operationId), existing = await operation.read();
@@ -345,6 +351,8 @@ export function createMonthlyFinancialWriteRepository(dependencies: {
       }
       if (existing.prepared) fail("OPERATION_CONFLICT", "CONFLICT");
       const state = await loaded(current, input.batchId, ready);
+      if (state.artifact && isMonthlyFinancialApiArtifact(state.artifact)) await verifyApiArtifact(current.tx, MonthlyFinancialApiPreparedSchema.parse(state.artifact.prepared), MonthlyFinancialApiManifestSchema.parse(state.artifact.manifest), JSON.parse(state.record.payload as string), action);
+      if (action === "confirm" && state.artifact && isMonthlyFinancialApiArtifact(state.artifact)) { const { assertSaihuMonthlyReplacement } = await import("./saihuReportPublication"); assertSaihuMonthlyReplacement(state.record, state.completed); }
       if (monthlyFinancialBatchVersion(state.record, state.artifact) !== input.expectedBatchVersion || state.impact.key !== input.expectedImpactKey) fail("VERSION_OR_IMPACT_CONFLICT", "CONFLICT");
       if (action === "confirm" && (!state.artifact || state.record.status !== "previewing" || state.impact.blockingReasons.length || !state.impact.scopes.length || state.impact.scopes.some(scope => scope.confirmWinnerId !== state.record.id))) fail("CONFIRM_BLOCKED", "CONFLICT");
       if (action === "revoke" && state.record.status === "deleted") fail("ALREADY_DELETED", "CONFLICT");
@@ -358,7 +366,21 @@ export function createMonthlyFinancialWriteRepository(dependencies: {
       if (record.status !== (action === "confirm" ? "completed" : "deleted")) fail("TRANSITION_UNVERIFIABLE");
       await synchronizeBoards({ tx: current.tx, identity: current.identity, actor: current.actor, action, beforeBatch: state.record, afterBatch: record, completedAfter });
       return operation.finalize(receipt(current, input.operationId, action, record, artifact), requestHash);
-    }); } catch (error) { if (knownError(error)) return sanitized(error); if (captured) return unknown(captured, input.operationId); return sanitized(error); }
+  }
+  async function transition(ctx: TrpcContext, raw: MonthlyFinancialWriteConfirmInput | MonthlyFinancialWriteRevokeInput, action: "confirm" | "revoke"): Promise<MonthlyFinancialWriteResult> {
+    const input = (action === "confirm" ? MonthlyFinancialWriteConfirmInputSchema : MonthlyFinancialWriteRevokeInputSchema).parse(raw); let captured: Identity | null = null;
+    try { return await session(ctx, input.expectedWorkspaceId, current => { captured = current.identity; return transitionInTransaction(current, input, action); }); }
+    catch (error) { if (knownError(error)) return sanitized(error); if (captured) return unknown(captured, input.operationId); return sanitized(error); }
+  }
+  async function createApiPreviewInTransaction(current: Session, rawPrepared: MonthlyFinancialApiPrepared, rawManifest: MonthlyFinancialApiManifest, payload: unknown) {
+    const prepared = MonthlyFinancialApiPreparedSchema.parse(rawPrepared), manifest = MonthlyFinancialApiManifestSchema.parse(rawManifest);
+    if (!enabled()) fail("NOT_ENABLED"); await authorize(current, "create"); if (!(await schema(current.tx)).base) fail("SCHEMA_NOT_READY");
+    if (prepared.identity.workspaceId !== current.identity.workspaceId || prepared.identity.userId !== current.identity.userId) fail("WORKSPACE_OR_ROLE_DENIED", "FORBIDDEN");
+    await verifyApiArtifact(current.tx, prepared, manifest, payload, "prepare");
+    const rows = z.array(z.object({ yearMonth: z.string() }).passthrough()).max(10000).parse(payload), months = [...new Set(rows.map(row => row.yearMonth))].sort();
+    const result = affected(await current.tx.execute(statement("INSERT INTO ops_monthly_profit_imports (workspaceId,userId,fileName,fileHash,fileUrl,status,totalRows,skippedRows,unallocatedRows,months,payload,createdAt,confirmedAt) VALUES (?,?,?,?,?,'previewing',?,0,?,?,?,CURRENT_TIMESTAMP(3),NULL)", [current.identity.workspaceId, current.identity.userId, `Saihu API ${months.join(",")}.json`, manifest.payloadHash, `saihu-sync-run:${prepared.sourceRunId}`, rows.length, (payload as Array<{ parentAsin: string }>).filter(row => !row.parentAsin).length, JSON.stringify(months), JSON.stringify(payload)])));
+    if (!id(result.insertId)) fail("INSERT_UNVERIFIABLE"); affected(await current.tx.execute(statement("INSERT INTO ops_monthly_import_artifacts (batch_id,workspace_id,prepared,payload_hash,manifest,created_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP(3))", [result.insertId, current.identity.workspaceId, JSON.stringify(prepared), manifest.payloadHash, JSON.stringify(manifest)])));
+    const state = await loaded(current, result.insertId, await schema(current.tx)); if (!state.artifact || !isMonthlyFinancialApiArtifact(state.artifact) || state.artifact.payloadHash !== manifest.payloadHash) fail("INSERT_UNVERIFIABLE"); return state;
   }
   async function recover(ctx: TrpcContext, raw: MonthlyFinancialWriteRecoverInput): Promise<MonthlyFinancialWriteResult> {
     const input = MonthlyFinancialWriteRecoverInputSchema.parse(raw); let captured: Identity | null = null;
@@ -387,11 +409,13 @@ export function createMonthlyFinancialWriteRepository(dependencies: {
       const ready = await schema(current.tx); if (!ready.base) fail("SCHEMA_NOT_READY");
       const record = await batchById(current, input.batchId), artifact = await artifactByBatch(current, record);
       if (!artifact) fail("ORIGINAL_UNAVAILABLE");
+      if (isMonthlyFinancialApiArtifact(artifact)) fail("API_SOURCE_NOT_UPLOADED_FILE");
       const batchVersion = monthlyFinancialBatchVersion(record, artifact); if (batchVersion !== input.expectedBatchVersion) fail("VERSION_CONFLICT", "CONFLICT");
-      const result = await storage.download(artifact.prepared);
-      return MonthlyFinancialWriteDownloadResultSchema.parse({ ...result, identity: current.identity, batchId: record.id, batchVersion, fileName: record.fileName, fileHash: record.fileHash, byteSize: artifact.prepared.byteSize });
+      const prepared = MonthlyFinancialPreparedUploadSchema.parse(artifact.prepared), result = await storage.download(prepared);
+      return MonthlyFinancialWriteDownloadResultSchema.parse({ ...result, identity: current.identity, batchId: record.id, batchVersion, fileName: record.fileName, fileHash: record.fileHash, byteSize: prepared.byteSize });
     }); } catch (error) { return sanitized(error); }
   }
-  return { options, upload, inspect, confirm: (ctx: TrpcContext, input: MonthlyFinancialWriteConfirmInput) => transition(ctx, input, "confirm"), revoke: (ctx: TrpcContext, input: MonthlyFinancialWriteRevokeInput) => transition(ctx, input, "revoke"), recover, download };
+  return { options, upload, inspect, confirm: (ctx: TrpcContext, input: MonthlyFinancialWriteConfirmInput) => transition(ctx, input, "confirm"), revoke: (ctx: TrpcContext, input: MonthlyFinancialWriteRevokeInput) => transition(ctx, input, "revoke"), recover, download,
+    server: { transitionInTransaction, createApiPreviewInTransaction, writesEnabled: () => enabled(), completedInTransaction: async (current: Session) => { await authorize(current, "read"); if (!(await schema(current.tx)).base) fail("SCHEMA_NOT_READY"); return completedCandidates(current); }, inspectInTransaction: async (current: Session, batchId: number) => { await authorize(current, "read"); return loaded(current, batchId, await schema(current.tx)); } } };
 }
 export const monthlyFinancialWriteRepository = createMonthlyFinancialWriteRepository();

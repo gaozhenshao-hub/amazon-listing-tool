@@ -1,0 +1,58 @@
+{
+  "schema": "integration-protection-review/v1",
+  "parentCommit": "305b90f1385d31764a9296af55ac8504c5cc697b",
+  "purpose": "Knowledge QA and video configured business adapters, explicit Saihu manual capture, and actual scheduler drain; this is source integration, not production approval",
+  "protectedFiles": [
+    {
+      "path": "server/_core/aiWorker.ts",
+      "controls": ["K01"],
+      "gitBlobSha1": "7c1f6769804b176a7e70fd0f3cc865be764955df",
+      "sha256": "8f05a3a781da305427047718c3ca076cb88c444ebf48cb50e22e7516d82ebeba",
+      "decision": "Register three exact-default-off dedicated workers and their explicit stops without removing any existing handler, backlog, timer or drain. New feature flags do not globally stop old paid jobs."
+    },
+    {
+      "path": "server/_core/scheduler.ts",
+      "controls": ["K09"],
+      "gitBlobSha1": "cc8bb7b2cb8a0ba0d7d58c9a9b6969fd054c611c",
+      "sha256": "c1a2ca1e037dddbd95dd5131fcc776397163f353cc36c1f7d1fbcb035c573581",
+      "decision": "Stop every timer admission synchronously, await actual accepted work and bookkeeping, and only then release the leader lock and close the shared DB. A deadline reports NOT DRAINED; leader loss never claims continuing ownership."
+    },
+    {
+      "path": "server/domains/ops/localLingxingScheduler.ts",
+      "controls": ["K09"],
+      "gitBlobSha1": "7a3206fe4c361ea550b71078ce20bc18816a9ed5",
+      "sha256": "c3febca4afab590e86b1efd184e62ab6b1d5a8ba08988ef6875e81bcdaf0626b",
+      "decision": "Track initial/periodic refresh, accepted cron and Monday 08:10 executions, async task destruction and persistNextRun. Retain the exact enabled condition, supported domains, UTC cron and existing source calendar. No new Saihu period or shared-target coordinator is introduced."
+    },
+    {
+      "path": "server/routers/dataImport.ts",
+      "controls": ["K09"],
+      "gitBlobSha1": "c2e8c2b76631d67db21035290ca8fd869a7fe2ff",
+      "sha256": "55568371c39403081665cc2a3c65a9a65ea4520bb85ae12ab8ad1395e8ad81f3",
+      "decision": "Guard legacy Saihu weekly writes under the same workspace transaction; once controlled versions exist the legacy writer cannot replace them. Controlled reads authorize the actual logged-in actor separately from the legacy data owner, retain original parent/store/site identity, and reject unrepresentable overlapping whole weeks instead of returning a false empty or partial total. Lingxing fetching and natural-week calculation are unchanged."
+    }
+  ],
+  "retainedReviewReferences": {
+    "server/_core/aiWorker.ts": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior worker registrations and drains; config/integration/reviews/20261019-image-tagging-business.json; config/integration/reviews/20261019-configured-business-verticals.json",
+    "server/routers/dataImport.ts": "config/integration/reviews/inventory-governance-read-write-20261018.json; retain inventory-planning and date-range/workspace reviews; default-off guarded automatic lifecycle bridge and legacy manual restoration cutoff only"
+  },
+  "independentReview": [
+    "Root read the four protected diffs and scheduler tracking/shutdown implementations. Delayed-promise tests verify real execution and bookkeeping, deadline behavior, initial timers, sibling reads after one rejects, and leader loss. This is not an actual production shutdown rehearsal.",
+    "Root reproduced and closed private-source hash drift, paid-checkpoint stop handling, actual-actor authorization, lost overlap evidence, reserved tRPC procedure name and same-identity UI refresh issues through focused synthetic regressions. Tests do not substitute for native DB, provider or browser acceptance."
+  ],
+  "retainedRules": [
+    "Keep all original 106 protection records, dependency declarations, original baseline hashes and prior review references. This review neither approves nor edits historical SQL, production structure contracts, migration checksums, ledger records or source approvals.",
+    "QA and video keep explicit domain-specific Skill dispatch rather than treating general chat as completed business execution. Every new paid request fixes source/configuration/Skill/model before fees and requires a durable dispatch ACK; unknown operations use their original UUID and do not automatically pay again.",
+    "Saihu uses explicit manual capture and human apply/revoke, preserving exact original response bytes, period/shop/site/currency/caliber and complete paging evidence. API JSON is not relabeled as an uploaded Excel file, and monthly apply reuses the existing same-transaction financial/board kernel.",
+    "New schema candidates and empty approval/contract examples grant no authority. Controlled writes and workers remain default-off until exact target readiness and real source approvals are established."
+  ],
+  "boundaries": [
+    "No real provider calls, production schema/data writes, service restarts or production deployment in this source review.",
+    "Automatic Saihu cycle creation, complete same-target double-scheduler coordination, remaining business-stage adapters, target migration/reconciliation and full friend acceptance remain separate unfinished scope.",
+    "P0-P6, K01-K10, T01-T28, image62/master27/supplement12 and all thirteen release gates remain; no taskboard is introduced."
+  ],
+  "handoff": "docs/main-feature-handoff.json",
+  "productionApproved": false,
+  "productionDeployed": false,
+  "fullObjectiveComplete": false
+}

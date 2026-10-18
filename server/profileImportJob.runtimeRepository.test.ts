@@ -6,7 +6,7 @@ import { PROFILE_IMPORT_JOB_KIND } from "../shared/profileImportJob";
 import { COMPETITOR_RESEARCH_JOB_KIND } from "../shared/competitorResearchJob";
 import { COMPETITOR_DEEP_EXECUTION_JOB_KIND } from "../shared/competitorDeepExecutionJob";
 import { isCheckpointedListingJob } from "../shared/checkpointedListingJob";
-import { PRIVATE_IMAGE_TAGGING_JOB_KIND } from "./repositories/ai_os/dedicatedJobPolicy";
+import { PRIVATE_BUSINESS_JOB_KINDS, PRIVATE_IMAGE_TAGGING_JOB_KIND } from "./repositories/ai_os/dedicatedJobPolicy";
 
 const mocks = vi.hoisted(() => ({ requireDb: vi.fn() }));
 vi.mock("./repositories/dbClient", () => ({ requireDb: mocks.requireDb, withDbTransaction: vi.fn() }));
@@ -49,9 +49,12 @@ function database(row = fixture(), beforeUpdate?: (row: AiJob) => void, forcedAf
       return { rows: [{ affectedRows: forcedAffected ?? Number(eligible) }] };
     }
     expect(method).toBe("all");
-    expect(sql).toContain("from `ai_jobs` where (`ai_jobs`.`runId` = ? and `ai_jobs`.`kind` <> ?) limit ?");
+    expect(sql).toContain("from `ai_jobs` where (`ai_jobs`.`runId` = ? and `ai_jobs`.`kind` <> ? and");
+    expect(sql).toContain("kind NOT IN ('image.workflow.outline.v1','product.development.market_overview.v1')");
+    expect(sql).toContain("kind NOT IN ('knowledge.qa.v1','video.workflow.configured.v1')");
+    expect(sql).toContain(") limit ?");
     expect(params).toEqual(["profile-anchor", PRIVATE_IMAGE_TAGGING_JOB_KIND, 1]);
-    return { rows: row.kind === PRIVATE_IMAGE_TAGGING_JOB_KIND ? [] : [columns.map(column => {
+    return { rows: (PRIVATE_BUSINESS_JOB_KINDS as readonly string[]).includes(row.kind) ? [] : [columns.map(column => {
       const value = row[column.name as keyof AiJob];
       return value instanceof Date ? column.mapToDriverValue(value as never) : value ?? null;
     })] };
@@ -140,12 +143,13 @@ describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR
       calls.push({ sql, params });
       if (method === "execute") {
         const normalized = sql.replace(/\s+/g, " ");
-        expect(normalized).toContain("WHERE runId = ? AND kind <> ? AND status IN ('queued', 'running')");
+        expect(normalized).toContain("WHERE runId = ? AND kind <> ? AND kind NOT IN ('image.workflow.outline.v1','product.development.market_overview.v1')");
+        expect(normalized).toContain("AND kind NOT IN ('knowledge.qa.v1','video.workflow.configured.v1') AND kind <> 'ops.saihu_report_capture.v1' AND status IN ('queued', 'running')");
         expect(normalized).toContain("AND (nextRunAt IS NULL OR nextRunAt <= NOW())");
         expect(normalized).toContain("AND (lockedBy IS NULL OR lockedBy = ? OR leaseUntil IS NULL OR leaseUntil < NOW())");
         expect(normalized).toContain("AND (kind NOT IN (?, ?, ?) OR (status = 'queued' AND lockedBy IS NULL AND leaseUntil IS NULL) OR (status = 'running' AND leaseUntil < NOW()))");
         expect(params).toEqual([10, "worker-A", 900, "profile-anchor", PRIVATE_IMAGE_TAGGING_JOB_KIND, "worker-A", PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR_DEEP_EXECUTION_JOB_KIND]);
-        const priorEligible = row.kind !== PRIVATE_IMAGE_TAGGING_JOB_KIND && ["queued", "running"].includes(row.status)
+        const priorEligible = !(PRIVATE_BUSINESS_JOB_KINDS as readonly string[]).includes(row.kind) && ["queued", "running"].includes(row.status)
           && (!row.nextRunAt || row.nextRunAt <= NOW)
           && (!row.lockedBy || row.lockedBy === "worker-A" || !row.leaseUntil || row.leaseUntil < NOW);
         const profileEligible = !isCheckpointedListingJob(row.kind)
@@ -157,7 +161,7 @@ describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR
         return { rows: [{ affectedRows }] };
       }
       expect(params).toEqual(["profile-anchor", PRIVATE_IMAGE_TAGGING_JOB_KIND, 1]);
-      return { rows: row.kind === PRIVATE_IMAGE_TAGGING_JOB_KIND ? [] : [columns.map(column => {
+      return { rows: (PRIVATE_BUSINESS_JOB_KINDS as readonly string[]).includes(row.kind) ? [] : [columns.map(column => {
         const value = row[column.name as keyof AiJob];
         return value instanceof Date ? column.mapToDriverValue(value as never) : value ?? null;
       })] };

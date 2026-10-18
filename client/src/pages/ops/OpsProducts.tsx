@@ -879,7 +879,7 @@ export default function OpsProducts() {
   } = systemOverviewQuery;
 
   // Import data query (lingxing or saihu)
-  const { data: importProducts, isLoading: importLoading } = trpc.dataImport.getProductOverviewFromImport.useQuery({
+  const { data: importProducts, isLoading: importLoading, error: importSourceError } = trpc.dataImport.getProductOverviewFromImport.useQuery({
     sourceType: "erp",
     weeks: 4,
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "ALL",
@@ -1001,6 +1001,7 @@ export default function OpsProducts() {
 
   return (
     <div className="space-y-4">
+      {importSourceError && <section role="alert" className="space-y-2 rounded border border-amber-400 p-3 text-sm"><p>ERP 历史来源暂不可合并展示，不代表销量为零或没有产品。赛狐受控日数据与旧整周相交时，旧周总额不能拆分；请到受控同步页查看覆盖日、排除周及缺口。领星权威自然周保持独立。</p><Button variant="outline" onClick={() => navigate("/ops/data-import")}>查看赛狐日／月报受控来源</Button></section>}
       <InventoryPlanningEditor target={planningEditorTarget} onClose={() => setPlanningEditorTarget(null)} />
       <InventoryGovernanceEditor target={governanceTarget} onClose={() => setGovernanceTarget(null)} />
       <ProductMonthlyFinancialDialog target={financialTarget} onClose={() => setFinancialTarget(null)} />

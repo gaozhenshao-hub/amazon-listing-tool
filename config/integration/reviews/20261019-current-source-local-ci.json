@@ -1,0 +1,44 @@
+{
+  "schema": "integration-local-ci-source-review/v1",
+  "decisionId": "fresh-current-source-local-ci-20261019",
+  "reviewer": "Root integration agent under the user's authorized main-function merge and necessary verification workflow",
+  "decision": "approved",
+  "executionScope": "local-or-ci-only",
+  "reviewedCandidate": {
+    "descriptorSha256": "064d4c7b738b11eb527a762a444ff23290b6936f13dd2f1d4a9f230e14e9f55a",
+    "compilerSha256": "a28341254a063b00a62bb6523791a04d2a725fd1aff5151abc08f82fd9137ab5",
+    "entrySha256": "7b1d64f35db51199a322e60672a49fbf4f4aa88279400fd265a9ceab3c8d21d1",
+    "testSha256": "0399fdeacff5ec24f61241ddc27769d569b4c5bd1943a89d53f15e451449a858"
+  },
+  "approvedBinding": {
+    "descriptor": "drizzle/bootstrap/current-source-contract.json",
+    "descriptorSha256": "8115d6cff116d2675b12b5c81f8e9af2a080724e88b2044ce018b545b19430b3",
+    "compiler": "scripts/database/freshBootstrapCurrentSourceContract.mjs",
+    "compilerSha256": "ec2346443c2bd9295632dd1aa065a010c988574842089704966c513b991069ec",
+    "entry": "scripts/bootstrap-fresh-database-current-source.mjs",
+    "selection": "current-source-20261019",
+    "sourceCount": 208,
+    "planCount": 178,
+    "catalogTables": 303,
+    "compiledContractSha256": "5d0cb8866a9ab3ecf3a4c5ccdc773416c389efe526991afd5bab932991bd599c",
+    "equivalenceCanonicalSha256": "f046201a1eda372a30aa7507db3c16a0c7f52f0287ff511f7db3a15c8df9b16e"
+  },
+  "independentReview": [
+    "Root read the complete new compiler, strict CLI and synthetic tests, original executor and target validation, exact runner/index reversals and descriptor binding. Root independently reran the fourteen contract regressions and source-equivalence verification before approving the descriptor transformation.",
+    "The original 168 general and 178 fresh ordered SQL/checksum/official tuples remain byte-equivalent. Original complete thirteen-collection catalog, all 303 table derivations, 5487 columns, 1627 index parts, two foreign keys, column order and 176 temporal-default overlays remain unchanged.",
+    "Only the app_schema_migrations derivation's runner source identity is rebound to the already byte-reviewed current runner. The schema index adds two assistant-configuration exports, but both tables remain outside this unchanged fresh plan. The equivalence evidence remains UNAPPROVED and non-executable; this is a separate narrow admission decision, not a change to that evidence.",
+    "Root reviewed final descriptor status/review-reference/scope-note changes, exact new byte pin, and CI's explicit new-entry initialization/repeat commands. The new contract regression is also included in the existing native bootstrap test gate; no DB or model gate is skipped."
+  ],
+  "conditions": [
+    "The new descriptor is pinned by exact file bytes; no environment variable, arbitrary path, arbitrary hash or ignore-source option can approve another descriptor.",
+    "Execution still uses the original executor, explicit local/ci environment, numeric loopback or validated socket, exact synthetic schema name, original-empty checks, full migration execution ledger, complete catalog and zero-write repeat validation. Application DATABASE_URL and production/preload environments are not accepted.",
+    "Old manifest, structure contract, SQL, production migration admission and checksums remain untouched. The old entry still refuses its stale binding rather than silently adopting the new contract.",
+    "0230, 0231, 0309, the Saihu daily-table candidate and every other newly proposed feature migration are NOT approved or added by this decision. The original base alone does not satisfy all new-feature schema dependencies."
+  ],
+  "nativeAcceptance": "not_performed_at_review",
+  "productionApproved": false,
+  "newFeatureSchemasApproved": false,
+  "productionDeployed": false,
+  "sqlExecutedAtReview": false,
+  "modelCalls": 0
+}

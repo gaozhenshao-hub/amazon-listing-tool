@@ -457,9 +457,9 @@
         "sha256": "b3684a0e402946b9114559e50489f41ccc59e92159cc050baba43849f5061e7d"
       },
       "reviewed": {
-        "gitBlobSha1": "9cacb1781c9697705c25ef2fcfc876544b473380",
-        "sha256": "5bcc6133fc45538d3a373fee9bf1385da7debec1f4a3f2548930cd4eb8821597",
-        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior worker registrations and drains; config/integration/reviews/20261019-image-tagging-business.json; config/integration/reviews/20261019-configured-business-verticals.json"
+        "gitBlobSha1": "7c1f6769804b176a7e70fd0f3cc865be764955df",
+        "sha256": "8f05a3a781da305427047718c3ca076cb88c444ebf48cb50e22e7516d82ebeba",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior worker registrations and drains; config/integration/reviews/20261019-image-tagging-business.json; config/integration/reviews/20261019-configured-business-verticals.json; config/integration/reviews/20261019-main-business-continuation.json"
       }
     },
     {
@@ -482,6 +482,11 @@
       "baseline": {
         "gitBlobSha1": "cab116df092cc4404b49603b4338e2558e2a0851",
         "sha256": "f712fce46fc9ace0d10e20dcba03bab567b21b0f1ebdf0ae9c64b2dbb42dfcdb"
+      },
+      "reviewed": {
+        "gitBlobSha1": "cc8bb7b2cb8a0ba0d7d58c9a9b6969fd054c611c",
+        "sha256": "c1a2ca1e037dddbd95dd5131fcc776397163f353cc36c1f7d1fbcb035c573581",
+        "reviewRef": "config/integration/reviews/20261019-main-business-continuation.json"
       }
     },
     {
@@ -916,6 +921,11 @@
       "baseline": {
         "gitBlobSha1": "c466c912bc10d59c645b3ccdc238cd56d920c150",
         "sha256": "14ccbffd336315dd2d23edcc44acbf1fa5c2cf8455ca55e4850ce81f6d8a1a1c"
+      },
+      "reviewed": {
+        "gitBlobSha1": "7a3206fe4c361ea550b71078ce20bc18816a9ed5",
+        "sha256": "c3febca4afab590e86b1efd184e62ab6b1d5a8ba08988ef6875e81bcdaf0626b",
+        "reviewRef": "config/integration/reviews/20261019-main-business-continuation.json"
       }
     },
     {
@@ -1179,9 +1189,9 @@
         "sha256": "eb2c9057f6ba6de8fa0fa8ccf9120e0a5804c6706bc107861aecbe9abd0a31e9"
       },
       "reviewed": {
-        "gitBlobSha1": "c76bb32f7fba071fe12ea2f450a1f85d0cf8074a",
-        "sha256": "7118dbaf61e4d8edb8d196b9fda0e652fcdd52f255baac8533bfcf1e4fb5c126",
-        "reviewRef": "config/integration/reviews/inventory-governance-read-write-20261018.json; retain inventory-planning and date-range/workspace reviews; default-off guarded automatic lifecycle bridge and legacy manual restoration cutoff only"
+        "gitBlobSha1": "c2e8c2b76631d67db21035290ca8fd869a7fe2ff",
+        "sha256": "55568371c39403081665cc2a3c65a9a65ea4520bb85ae12ab8ad1395e8ad81f3",
+        "reviewRef": "config/integration/reviews/inventory-governance-read-write-20261018.json; retain inventory-planning and date-range/workspace reviews; default-off guarded automatic lifecycle bridge and legacy manual restoration cutoff only; config/integration/reviews/20261019-main-business-continuation.json"
       }
     },
     {

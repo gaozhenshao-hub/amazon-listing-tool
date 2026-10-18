@@ -20,7 +20,8 @@ const mocks = vi.hoisted(() => ({
   deleteExpressionGroupImage: vi.fn(), updateImageWorkflowSession: vi.fn(),
   ensureImageWorkflowAgentRun: vi.fn(), startImageStepGenerationJob: vi.fn(),
   startAmazonAcquisitionJob: vi.fn(), invokeBusinessSkill: vi.fn(),
-  storagePut: vi.fn(), resolveStoredObjectUrl: vi.fn(), createPrivateEvidencePreviewUrl: vi.fn(), safeHttpRequest: vi.fn(),
+  storagePut: vi.fn(), resolveStoredObjectUrl: vi.fn(), createPrivateEvidencePreviewUrl: vi.fn(),
+  assertPrivateEvidenceStorageAvailable: vi.fn(), getActiveStorageProvider: vi.fn(), storageGet: vi.fn(), safeHttpRequest: vi.fn(),
 }));
 
 vi.mock("./repositories/dbClient", () => ({
@@ -44,7 +45,9 @@ vi.mock("./kbDb", () => ({
 vi.mock("./domains/acquisition/acquisitionJobs", () => ({ startAmazonAcquisitionJob: mocks.startAmazonAcquisitionJob }));
 vi.mock("./domains/ai_os/services/businessSkillGateway", () => ({ invokeBusinessSkill: mocks.invokeBusinessSkill }));
 vi.mock("./storage", () => ({ storagePut: mocks.storagePut, resolveStoredObjectUrl: mocks.resolveStoredObjectUrl,
-  createPrivateEvidencePreviewUrl: mocks.createPrivateEvidencePreviewUrl }));
+  createPrivateEvidencePreviewUrl: mocks.createPrivateEvidencePreviewUrl,
+  assertPrivateEvidenceStorageAvailable: mocks.assertPrivateEvidenceStorageAvailable,
+  getActiveStorageProvider: mocks.getActiveStorageProvider, storageGet: mocks.storageGet }));
 vi.mock("./infrastructure/http/safeHttpClient", () => ({ safeHttpRequest: mocks.safeHttpRequest }));
 vi.mock("./domains/image/repository", () => ({
   getProjectByIdAdmin: mocks.getProjectByIdAdmin,
@@ -98,7 +101,8 @@ function expectNoBusinessEffects() {
     mocks.insertExpressionGroupImage, mocks.deleteExpressionGroupImage, mocks.updateImageWorkflowSession,
     mocks.ensureImageWorkflowAgentRun, mocks.startImageStepGenerationJob, mocks.startAmazonAcquisitionJob,
     mocks.invokeBusinessSkill, mocks.storagePut, mocks.safeHttpRequest, mocks.resolveStoredObjectUrl,
-    mocks.createPrivateEvidencePreviewUrl]) {
+    mocks.createPrivateEvidencePreviewUrl, mocks.assertPrivateEvidenceStorageAvailable,
+    mocks.getActiveStorageProvider, mocks.storageGet]) {
     expect(spy).not.toHaveBeenCalled();
   }
   // Denial auditing is allowed, but the mocked DB must see no business DML.
@@ -134,10 +138,12 @@ beforeEach(() => {
   mocks.getProjectByIdAdmin.mockResolvedValue({ id: 101, userId: 7, workspaceId: 42 });
   mocks.getExpressionGroupsByProject.mockResolvedValue([]);
   mocks.requireDb.mockRejectedValue(new Error("No real database is permitted"));
-  for (const spy of [mocks.invokeBusinessSkill, mocks.storagePut, mocks.safeHttpRequest,
+  for (const spy of [mocks.invokeBusinessSkill, mocks.storagePut, mocks.safeHttpRequest, mocks.storageGet,
     mocks.startAmazonAcquisitionJob, mocks.startImageStepGenerationJob, mocks.ensureImageWorkflowAgentRun]) {
     spy.mockRejectedValue(new Error("External or queued work is forbidden in permission fixtures"));
   }
+  mocks.assertPrivateEvidenceStorageAvailable.mockImplementation(() => { throw new Error("Private storage access is forbidden in permission fixtures"); });
+  mocks.getActiveStorageProvider.mockImplementation(() => { throw new Error("Storage provider access is forbidden in permission fixtures"); });
 });
 
 describe("integration T24: real tRPC authorization with controlled persistence boundaries", () => {

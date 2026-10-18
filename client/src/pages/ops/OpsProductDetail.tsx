@@ -88,7 +88,7 @@ export default function OpsProductDetail() {
   const importCountry = importSearch.get("country") || undefined;
 
   // ─── Source-backed unified data query ───
-  const { data: importDetail, isLoading: loadingImport } = trpc.dataImport.getProductDetailFromImport.useQuery(
+  const { data: importDetail, isLoading: loadingImport, error: importSourceError } = trpc.dataImport.getProductDetailFromImport.useQuery(
     { parentAsin: importParentAsin || "", sourceType: sourceType || "lingxing", marketplace: "ALL", storeName: importStoreName, country: importCountry },
     { enabled: isSourceBackedView && !!importParentAsin && !!sourceType }
   );
@@ -233,6 +233,7 @@ export default function OpsProductDetail() {
     );
   }
 
+  if (isSourceBackedView && importSourceError) return <section role="alert" className="space-y-3 rounded border p-4"><p>来源数据目前无法安全展示；未将异常、店铺歧义或旧周与受控日的重叠当成空数据／零值。请在赛狐受控同步页查看覆盖与缺口，或指定准确店铺和站点后重新读取。</p><Button variant="outline" onClick={() => navigate("/ops/data-import")}>查看受控来源</Button></section>;
   if (!derivedProduct) {
     return (
       <div className="text-center py-12">

@@ -28,6 +28,8 @@ beforeEach(() => {
     if (/kind`? in/i.test(sql)) expect(params).not.toContain(kind);
     else expect(params).toContain(PRIVATE_IMAGE_TAGGING_JOB_KIND);
     expect(sql).toContain("kind NOT IN ('image.workflow.outline.v1','product.development.market_overview.v1')");
+    expect(sql).toContain("kind NOT IN ('knowledge.qa.v1','video.workflow.configured.v1')");
+    expect(sql).toContain("kind <> 'ops.saihu_report_capture.v1'");
     if (/^\s*select/i.test(sql)) return { rows: legacy && sql.includes("from `ai_jobs`") ? [columns.map(column => {
       const value = ({ ...row, kind: "legacy.analysis" } as Record<string, unknown>)[column.name];
       return value instanceof Date ? column.mapToDriverValue(value as never) : value ?? null;

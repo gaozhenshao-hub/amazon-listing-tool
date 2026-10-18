@@ -97,7 +97,8 @@ export function strictModelSnapshotFromRow(workspaceId: number, slug: string, ra
   const body = { version: 1 as const, workspaceId, model: parsed.data };
   return { ...body, configurationHash: strictRuntimeHash(body) };
 }
-export const StrictSkillStageSchema = z.enum(["route", "reply", "profit_analysis", "competitor_deep", "image_tagging", "image_outline", "development_market_overview"]);
+export const StrictSkillStageSchema = z.enum(["route", "reply", "profit_analysis", "competitor_deep", "image_tagging", "image_outline", "development_market_overview",
+  "knowledge_select", "knowledge_answer", "video_competitor_analysis", "video_section_plan", "video_shot_detail", "video_edit_script"]);
 export type StrictSkillStage = z.infer<typeof StrictSkillStageSchema>;
 /** Fixed server-owned audit identities. A stage is not authorization to run a
  * business Skill: callers still supply approved pins and the durable fence. */
@@ -106,6 +107,12 @@ export function strictSkillAuditIdentity(stage: StrictSkillStage) {
   if (stage === "image_tagging") return { migrationSource: "knowledge.image_tagging.strict", operation: "knowledge.image_tagging.strict" } as const;
   if (stage === "image_outline") return { migrationSource: "image.workflow.outline.strict", operation: "image.workflow.outline.strict" } as const;
   if (stage === "development_market_overview") return { migrationSource: "product.development.market_overview.strict", operation: "product.development.market_overview.strict" } as const;
+  if (stage === "knowledge_select") return { migrationSource: "knowledge.qa.select.strict", operation: "knowledge.qa.select.strict" } as const;
+  if (stage === "knowledge_answer") return { migrationSource: "knowledge.qa.answer.strict", operation: "knowledge.qa.answer.strict" } as const;
+  if (stage === "video_competitor_analysis") return { migrationSource: "video.workflow.competitor.analysis.strict", operation: "video.workflow.competitor.analysis.strict" } as const;
+  if (stage === "video_section_plan") return { migrationSource: "video.workflow.section.plan.strict", operation: "video.workflow.section.plan.strict" } as const;
+  if (stage === "video_shot_detail") return { migrationSource: "video.workflow.shot.detail.strict", operation: "video.workflow.shot.detail.strict" } as const;
+  if (stage === "video_edit_script") return { migrationSource: "video.workflow.edit.script.strict", operation: "video.workflow.edit.script.strict" } as const;
   if (stage === "competitor_deep") return { migrationSource: "listing.competitor.deep.strict", operation: "listing.competitor.deep.strict" } as const;
   return stage === "profit_analysis"
     ? { migrationSource: "ops.profit.private.strict", operation: "ops.profit.private.strict" } as const

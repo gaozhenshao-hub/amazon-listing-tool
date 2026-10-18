@@ -1,5 +1,7 @@
 import { eq, and, desc, asc } from "drizzle-orm";
-import { getDb } from "./repositories/dbClient";
+import { getDb as getRootDb } from "./repositories/dbClient";
+import { currentVideoWorkflowTransaction } from "./domains/video/videoWorkflowTransaction";
+import { videoWorkflowArtifactMatchesScript } from "./domains/video/videoWorkflowAgentProjection";
 import {
   videoScripts, InsertVideoScript,
   videoCompetitorScripts, InsertVideoCompetitorScript,
@@ -14,11 +16,20 @@ import {
 } from "../drizzle/schema";
 import {
   listBusinessArtifactVersions,
-  registerVideoArtifact,
+  registerVideoArtifact as registerOriginalVideoArtifact,
   resolveCurrentBusinessArtifact,
 } from "./domains/ai_os/services/businessArtifactRegistry";
 
+const getDb = async () => currentVideoWorkflowTransaction() ?? await getRootDb();
+const registerVideoArtifact: typeof registerOriginalVideoArtifact = async (...args) => {
+  // The caller's same-TX bridge writes both the full version and formal
+  // business/Agent artifacts after the final business version is known.
+  if (currentVideoWorkflowTransaction()) return null;
+  return registerOriginalVideoArtifact(...args);
+};
+
 async function selectedVideoArtifact(videoScriptId: number) {
+  if (currentVideoWorkflowTransaction()) return null;
   const versions = await listBusinessArtifactVersions({
     workspaceId: undefined,
     domain: "video",
@@ -30,12 +41,17 @@ async function selectedVideoArtifact(videoScriptId: number) {
   // A newer draft means the user is actively editing. Keep showing the working
   // copy until it is explicitly confirmed and promoted to current.
   if (versions[0]?.status === "draft") return null;
-  return resolveCurrentBusinessArtifact({
+  const artifact = await resolveCurrentBusinessArtifact({
     domain: "video",
     artifactKey: "video.script",
     sourceTable: "video_scripts",
     sourceRowId: videoScriptId,
   }).catch(() => null);
+  if (!artifact) return null;
+  const db = await getDb();
+  if (!db) return null;
+  const [script] = await db.select().from(videoScripts).where(eq(videoScripts.id, videoScriptId)).limit(1);
+  return script && videoWorkflowArtifactMatchesScript(artifact, script) ? artifact : null;
 }
 
 async function videoScriptIdForSection(sectionId: number) {
@@ -120,6 +136,7 @@ export async function deleteVideoScript(id: number) {
   await db.delete(videoCompetitorScripts).where(eq(videoCompetitorScripts.videoScriptId, id));
   await db.delete(videoCompetitorSummary).where(eq(videoCompetitorSummary.videoScriptId, id));
   await db.delete(videoProductSnapshots).where(eq(videoProductSnapshots.videoScriptId, id));
+  await db.delete(videoSpvSegments).where(eq(videoSpvSegments.videoScriptId, id));
   await db.delete(videoScripts).where(eq(videoScripts.id, id));
 }
 

@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import VideoWorkflowControls from "./video/VideoWorkflowControls";
 import {
   Plus, Trash2, Play, CheckCircle, ChevronRight, ChevronLeft, Upload,
   FileText, Video, Sparkles, Eye, Edit3, ArrowRight, RefreshCw,
@@ -103,6 +104,9 @@ function parseJson(val: any): any {
 }
 
 type VideoJobOperation = "competitor_analysis" | "competitor_summary" | "product_info" | "sections" | "subtopics" | "shots" | "edit_scripts";
+function LegacyVideoGeneration({ children }: { children: React.ReactNode }) {
+  return <details className="min-w-0 text-sm"><summary>旧协议兼容入口</summary><p className="my-2 text-xs text-muted-foreground">旧生成不叠加本次已保存视频助手配置，可能调用模型计费。新版写入启用时服务端会拒绝旧入口；不会自动回退。</p>{children}</details>;
+}
 
 function useVideoGenerationJob(input: {
   scriptId: number;
@@ -789,9 +793,9 @@ function VideoScriptEditor({ scriptId }: { scriptId: number }) {
         {currentStageIdx === 0 && <Stage0A scriptId={scriptId} projectId={script.data.projectId} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
         {currentStageIdx === 1 && <Stage0B scriptId={scriptId} projectId={script.data.projectId} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
         {currentStageIdx === 2 && <Stage1 scriptId={scriptId} projectId={script.data.projectId} videoType={videoType} targetDuration={Number(script.data.targetDuration) || 60} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
-        {currentStageIdx === 3 && <Stage2 scriptId={scriptId} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
-        {currentStageIdx === 4 && <Stage3 scriptId={scriptId} videoType={videoType} targetDuration={Number(script.data.targetDuration) || 60} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
-        {currentStageIdx === 5 && <Stage4 scriptId={scriptId} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
+        {currentStageIdx === 3 && <Stage2 scriptId={scriptId} projectId={script.data.projectId} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
+        {currentStageIdx === 4 && <Stage3 scriptId={scriptId} projectId={script.data.projectId} videoType={videoType} targetDuration={Number(script.data.targetDuration) || 60} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
+        {currentStageIdx === 5 && <Stage4 scriptId={scriptId} projectId={script.data.projectId} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
       </div>
     </div>
   );
@@ -994,7 +998,7 @@ function Stage0A({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
                       </div>
                       <div className="flex items-center gap-2">
                         {!c.structureAnalysis && c.rawContent && (
-                          <Button
+                          <LegacyVideoGeneration><Button
                             size="sm"
                             variant="outline"
                             onClick={() => analyzeMutation.mutate({ competitorScriptId: c.id, rawContent: c.rawContent })}
@@ -1002,13 +1006,14 @@ function Stage0A({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
                           >
                             {(analyzeMutation.isPending || competitorJob.isActive) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
                             {competitorJob.latest?.status === "queued" ? "排队中" : competitorJob.latest?.status === "running" ? "分析中" : "AI分析"}
-                          </Button>
+                          </Button></LegacyVideoGeneration>
                         )}
                         <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate({ id: c.id })}>
                           <Trash2 className="w-4 h-4 text-destructive" />
                         </Button>
                       </div>
                     </div>
+                    <VideoWorkflowControls projectId={projectId} videoScriptId={scriptId} operation="competitor_analysis" competitorScriptId={c.id} onApplied={async () => { await competitors.refetch(); }} />
                     {c.structureAnalysis && (
                       <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
                         <div className="bg-muted/50 rounded-lg p-3">
@@ -1035,8 +1040,9 @@ function Stage0A({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
                 </Card>
               ))}
 
+              <VideoWorkflowControls projectId={projectId} videoScriptId={scriptId} operation="competitor_summary" onApplied={async () => { await summary.refetch(); }} />
               {competitorList.filter((c: any) => c.structureAnalysis).length >= 2 && (
-                <Button
+                <LegacyVideoGeneration><Button
                   onClick={() => summaryMutation.mutate({ videoScriptId: scriptId })}
                   disabled={summaryMutation.isPending || summaryJob.isActive}
                   className="w-full"
@@ -1044,7 +1050,7 @@ function Stage0A({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
                 >
                   {(summaryMutation.isPending || summaryJob.isActive) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
                   {summaryJob.latest?.status === "queued" ? "汇总排队中" : summaryJob.latest?.status === "running" ? "汇总分析中" : "生成多竞品汇总分析"}
-                </Button>
+                </Button></LegacyVideoGeneration>
               )}
 
               {summary.data && (
@@ -1118,6 +1124,7 @@ function Stage0B({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
         </CardHeader>
         <CardContent className="space-y-4">
           <VideoJobFeedback job={extractionJob} />
+          <VideoWorkflowControls projectId={projectId} videoScriptId={scriptId} operation="product_info" onApplied={async () => { await snapshot.refetch(); }} />
           <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
             <Database className="w-8 h-8 text-primary" />
             <div className="flex-1">
@@ -1126,13 +1133,13 @@ function Stage0B({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
                 产品属性文件 · 竞品分析 · Listing内容 · 评论聚合分析 · 关键词库
               </p>
             </div>
-            <Button
+            <LegacyVideoGeneration><Button
               onClick={() => extractMutation.mutate({ videoScriptId: scriptId, projectId })}
               disabled={extractMutation.isPending || extractionJob.isActive}
             >
               {(extractMutation.isPending || extractionJob.isActive) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
               {extractionJob.latest?.status === "queued" ? "排队中" : extractionJob.latest?.status === "running" ? "提取中" : snapshotData ? "重新提取" : "开始提取"}
-            </Button>
+            </Button></LegacyVideoGeneration>
           </div>
 
           {snapshotData && (
@@ -1273,14 +1280,15 @@ function Stage1({ scriptId, projectId, videoType, targetDuration, onAdvance, onC
         </CardHeader>
         <CardContent className="space-y-4">
           <VideoJobFeedback job={sectionJob} />
+          <VideoWorkflowControls projectId={projectId} videoScriptId={scriptId} operation="sections" onApplied={async () => { await sections.refetch(); }} />
           <div className="flex items-center gap-3">
-            <Button
+            <LegacyVideoGeneration><Button
               onClick={() => generateMutation.mutate({ videoScriptId: scriptId, projectId })}
               disabled={generateMutation.isPending || sectionJob.isActive}
             >
               {(generateMutation.isPending || sectionJob.isActive) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
               {sectionJob.latest?.status === "queued" ? "段落排队中" : sectionJob.latest?.status === "running" ? "段落生成中" : sectionList.length > 0 ? "重新生成段落" : "AI生成段落规划"}
-            </Button>
+            </Button></LegacyVideoGeneration>
             <Badge variant="outline" className="text-xs">
               {VIDEO_TYPE_LABELS[videoType]} · {targetDuration}s
             </Badge>
@@ -1363,8 +1371,8 @@ function Stage1({ scriptId, projectId, videoType, targetDuration, onAdvance, onC
 
 // ─── Stage 2: Subtopic Expansion ────────────────────────────────
 
-function Stage2({ scriptId, onAdvance, onConfirm, isConfirmed }: {
-  scriptId: number; onAdvance: () => void; onConfirm: () => void; isConfirmed: boolean;
+function Stage2({ scriptId, projectId, onAdvance, onConfirm, isConfirmed }: {
+  scriptId: number; projectId: number; onAdvance: () => void; onConfirm: () => void; isConfirmed: boolean;
 }) {
   const sections = trpc.videoScript.getSections.useQuery({ videoScriptId: scriptId });
   const subtopics = trpc.videoScript.getSubtopics.useQuery({ videoScriptId: scriptId });
@@ -1401,13 +1409,14 @@ function Stage2({ scriptId, onAdvance, onConfirm, isConfirmed }: {
         </CardHeader>
         <CardContent className="space-y-4">
           <VideoJobFeedback job={subtopicJob} />
-          <Button
+          <VideoWorkflowControls projectId={projectId} videoScriptId={scriptId} operation="subtopics" onApplied={async () => { await subtopics.refetch(); }} />
+          <LegacyVideoGeneration><Button
             onClick={() => generateMutation.mutate({ videoScriptId: scriptId })}
             disabled={generateMutation.isPending || subtopicJob.isActive}
           >
             {(generateMutation.isPending || subtopicJob.isActive) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
             {subtopicJob.latest?.status === "queued" ? "子主题排队中" : subtopicJob.latest?.status === "running" ? "子主题生成中" : subtopicList.length > 0 ? "重新生成子主题" : "AI展开子主题"}
-          </Button>
+          </Button></LegacyVideoGeneration>
 
           {sectionList.map((sec: any) => {
             const subs = subtopicList.filter((s: any) => s.sectionId === sec.id);
@@ -1463,8 +1472,8 @@ function Stage2({ scriptId, onAdvance, onConfirm, isConfirmed }: {
 
 // ─── Stage 3: Shot Details ──────────────────────────────────────
 
-function Stage3({ scriptId, videoType, targetDuration, onAdvance, onConfirm, isConfirmed }: {
-  scriptId: number; videoType: string; targetDuration: number; onAdvance: () => void; onConfirm: () => void; isConfirmed: boolean;
+function Stage3({ scriptId, projectId, videoType, targetDuration, onAdvance, onConfirm, isConfirmed }: {
+  scriptId: number; projectId: number; videoType: string; targetDuration: number; onAdvance: () => void; onConfirm: () => void; isConfirmed: boolean;
 }) {
   const [showCnFields, setShowCnFields] = useState(false);
   const [expandedShot, setExpandedShot] = useState<number | null>(null);
@@ -1549,14 +1558,15 @@ function Stage3({ scriptId, videoType, targetDuration, onAdvance, onConfirm, isC
             </span>
           </div>
 
+          <VideoWorkflowControls projectId={projectId} videoScriptId={scriptId} operation="shots" onApplied={async () => { await shots.refetch(); }} />
           <div className="flex items-center gap-3">
-            <Button
+            <LegacyVideoGeneration><Button
               onClick={() => generateMutation.mutate({ videoScriptId: scriptId })}
               disabled={generateMutation.isPending || shotJob.isActive}
             >
               {(generateMutation.isPending || shotJob.isActive) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
               {shotJob.latest?.status === "queued" ? "镜头排队中" : shotJob.latest?.status === "running" ? "镜头生成中" : shotList.length > 0 ? "重新生成镜头" : "AI生成镜头明细"}
-            </Button>
+            </Button></LegacyVideoGeneration>
             {shotList.length > 0 && (
               <>
                 <Badge variant="outline" className="text-xs">
@@ -1803,8 +1813,8 @@ function Stage3({ scriptId, videoType, targetDuration, onAdvance, onConfirm, isC
 
 // ─── Stage 4: Edit Scripts ──────────────────────────────────────
 
-function Stage4({ scriptId, onConfirm, isConfirmed }: {
-  scriptId: number; onConfirm: () => void; isConfirmed: boolean;
+function Stage4({ scriptId, projectId, onConfirm, isConfirmed }: {
+  scriptId: number; projectId: number; onConfirm: () => void; isConfirmed: boolean;
 }) {
   const { user } = useAuth();
   const canExport = user?.role === "super_admin";
@@ -1866,13 +1876,14 @@ function Stage4({ scriptId, onConfirm, isConfirmed }: {
         </CardHeader>
         <CardContent className="space-y-4">
           <VideoJobFeedback job={editJob} />
-          <Button
+          <VideoWorkflowControls projectId={projectId} videoScriptId={scriptId} operation="edit_scripts" onApplied={async () => { await editScripts.refetch(); }} />
+          <LegacyVideoGeneration><Button
             onClick={() => generateMutation.mutate({ videoScriptId: scriptId })}
             disabled={generateMutation.isPending || editJob.isActive}
           >
             {(generateMutation.isPending || editJob.isActive) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
             {editJob.latest?.status === "queued" ? "剪辑脚本排队中" : editJob.latest?.status === "running" ? "剪辑脚本生成中" : editList.length > 0 ? "重新生成剪辑方案" : "AI生成剪辑脚本"}
-          </Button>
+          </Button></LegacyVideoGeneration>
 
           {editList.length > 0 && (
             <div className="grid gap-4">

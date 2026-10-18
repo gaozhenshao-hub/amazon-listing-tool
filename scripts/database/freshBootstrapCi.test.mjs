@@ -22,6 +22,7 @@ const nativeFiles = [
   "scripts/database/freshBootstrapCi.test.mjs",
   "scripts/database/freshBootstrapColumnOrder.test.mjs",
   "scripts/database/freshBootstrapReference.test.mjs",
+  "scripts/database/freshBootstrapCurrentSourceContract.test.mjs",
 ];
 const ciUrl = "mysql://root:root@127.0.0.1:3306/amazon_listing_ci";
 const job = name => {
@@ -83,8 +84,8 @@ test("CI targets a fresh local MySQL 8.0.46 service and initializes then verifie
   assert.match(realDbJob, /^ {6}ALLOW_REAL_NETWORK_IN_TESTS: "0"$/m);
   assert.deepEqual(runs, [
     "corepack enable", "pnpm install --frozen-lockfile", "pnpm db:bootstrap:fresh:plan",
-    "pnpm db:bootstrap:fresh --environment ci --schema amazon_listing_ci",
-    "pnpm db:bootstrap:fresh --environment ci --schema amazon_listing_ci",
+    "node scripts/bootstrap-fresh-database-current-source.mjs --execute --contract current-source-20261019 --environment ci --schema amazon_listing_ci",
+    "node scripts/bootstrap-fresh-database-current-source.mjs --execute --contract current-source-20261019 --environment ci --schema amazon_listing_ci",
     "pnpm test:real-db --environment ci --schema amazon_listing_ci",
   ]);
   const executable = realDbJob.replace(/^\s*#.*$/gm, "");
