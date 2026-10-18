@@ -1,0 +1,61 @@
+{
+  "schema": "amazon-system-integration-review/v1",
+  "date": "2026-10-18",
+  "batch": "P4-B2-shared-inventory-owner-and-lifecycle-governance",
+  "decision": "local_source_integration_with_changed_module_checks_not_runtime_release_acceptance",
+  "baseline": "6abf19f5638c11bcd96eeb5b6fc10f0a1e960df7",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "implemented": [
+    "Both inventory and product overview source-owner controls use a fresh workspace-shared editor. Original product-profile owner management remains separate. Current source candidates are distinct from display-only hints and external operator names.",
+    "Assign, revoke and reactivate load all active/inactive rules. Reactivation reuses the original unique-scope row and preserves history; same-name different numeric user IDs and same-ID renames are auditable. The500-target batch is atomic, with accurate created/replaced/reactivated/unchanged/revoked counts.",
+    "Required transaction, workspace-then-actor lock, fresh active user and unique current membership, manager-only resource plus directory policy. Eligible candidates omit emails and default-workspace-only users. Actual invited/disabled/pending directory enum values are handled without treating them as eligible.",
+    "Bounded complete current source directory and latest exact facts, not a cap on all historical source rows. Binary grouping remains ONLY_FULL_GROUP_BY compatible. Every directory group must match selected facts; latest invalid data does not fall back to old authority.",
+    "Exact raw identity is retained; country aliases and actual rule-column collation collisions are refused, never merged or repaired. Complete source/member/rule CAS is checked with post-write source closure, untouched rule preservation and business-audit readback.",
+    "Actor-bound fixed UUID final receipts and cancellation fence use existing security_audit_logs with its real ENUM, nullable and varchar definitions. Check/cancel works with writes disabled under current permissions; unknown outcomes never cause automatic re-execution.",
+    "Manual restoration and both automatic lifecycle callers share the same workspace lock and fresh exact-scope read. Original evidence and permanent active-plus-restoredAt manual protection are retained. Duplicate states, malformed or unknown values, ambiguous scopes and unassigned weekly evidence are not write authority.",
+    "Daily90-day priority and valid weekly fallback are retained, excluding lx_inventory_mcp. Complete daily backfill proof is store/country-specific. Insufficient evidence leaves existing status unchanged instead of asserting active status. All inputs are admitted before writing and full payload is read back.",
+    "Default-off exact-true feature bridge, old owner read/write cutoff and old manual restore cutoff. Existing automatic body is unchanged when disabled. Existing import completion and Lingxing sync use the shared entry; no scheduler edits.",
+    "UI preserves dirty reasons/selections during refresh, cross-window updates, conflicts, unknown receipts and cancellation. New operation requires explicit fresh baseline adoption. Pending local storage contains recovery metadata only, not full reasons or selected business content."
+  ],
+  "preserved": ["P4-B1 actor-private manual stock and all19 parameters", "Manual rule then confirmed Lingxing name mapping then profile then weekly then unmapped fallback", "Original product-profile owner workflow, filters, export and calculations", "Original date/workspace gates, Listing, financial trend, source priority and complete original plan"],
+  "verification": {
+    "frozenCandidate": { "baselineBlobs": 2661, "finalUnchangedNonOverlayBlobs": 2652, "exactOverlays": 26, "sourceProofSha256": "8c951d49d34e7f3f4cacc3062d34f6a4a5e0d51e5ae81286359a4f33831e2d68", "allUnrelatedUntrackedLedgerHelpersExcluded": true },
+    "focusedUnion": { "testFiles": 19, "tests": 411, "passed": 411, "failed": 0, "exitCode": 0,
+      "breakdown": { "repository": 64, "sharedAndJournal": 32, "router": 16, "lifecycleCore": 71, "legacyGate": 8, "legacyRouter": 11, "resourcePermissions": 3, "integrationPermissions": 18, "strictAuthorization": 13, "ownerKeys": 3, "zeroValueHelper": 4, "coverageHelper": 5, "historicalCoverage": 6, "dateWorkspace": 8, "lifecycleContract": 3, "inventoryPlanningContract": 25, "governanceComponent": 50, "planningComponent": 70, "productRenderContract": 1 } },
+    "lint": { "files": 24, "warnings": 0, "exitCode": 0 },
+    "fullTypecheck": { "unchangedTsconfig": true, "incremental": false, "compilerFiles": 3810, "diagnostics": 0, "exitCode": 0 },
+    "protectedBaseline": { "files": 106, "dependencies": 2, "reviewedRecords": 25, "failures": 0 },
+    "clientRuntimeIdentifiers": "passed",
+    "serverBundles": ["web", "aiWorker", "scheduler"],
+    "fullClientProductionBuildClaimed": false,
+    "independentReview": "UI reviewer independently compared actual auth/ops schemas and0144/0185 migrations with final repository, journal, lifecycle and real callers; no additional confirmed blockers after Root corrections. No native database execution was claimed.",
+    "repairedBeforeFinal": ["Journal80-character limit and actual security audit ENUM/nullable/varchar schema", "Strict scope projection from full rule rows", "Binary grouped queries use aggregate raw projections rather than non-grouped columns", "Current membership/user enum values and bounded TEXT name projection", "Lifecycle schema/engine admission and complete payload/audit readback", "Two callback discriminant-narrowing TypeScript errors fixed without behavior change"],
+    "syntheticBrowser": {
+      "realComponent": "InventoryGovernanceEditorController",
+      "componentSha256": "666736506e315a6116c8ca3b35a5656658e734de6274753973a5a0e68bee02ad",
+      "transport": "In-memory schema-checked synthetic RPC, actual browser and actual frozen component; no authenticated production application, DB, Lingxing or model",
+      "verified": ["Inactive rule501 reactivated for same-name user943 instead of942; original ID retained, replaced1/reactivated1", "Lifecycle701 restored with90-day original evidence and supplied reason intact", "Lost ACK:1 execute,1 business write,1 check,1 success notice; check succeeds while writes disabled", "Unknown uncommitted lifecycle request:1 execute,1 cancel,0 business writes; reason draft retained through cancellation and explicit adopt; disabled flag prevents save", "Read failure displays explicit failure without fabricated empty editable records", "390px iframe dialog width356,left16,right372,client339,scroll339: no horizontal overflow"],
+      "artifacts": ["outputs/inventory-governance-browser-20261018/normal-restoration.png", "outputs/inventory-governance-browser-20261018/lost-ack-recovered.png", "outputs/inventory-governance-browser-20261018/cancel-preserves-draft.png", "outputs/inventory-governance-browser-20261018/narrow-owner.png"],
+      "limitations": ["Cross-window distinct draft behavior and full500-target handling covered by component/repository tests, not real multi-tab database acceptance", "Revoke browser smoke occurred before the type-only final correction; final exact component revoke coverage is its50 component tests", "Actual MySQL ONLY_FULL_GROUP_BY, JSON_TABLE/collation, aggregate and row locking remain runtime gates", "Narrow iframe verifies the editor, not complete authenticated two-page workflow"],
+      "cleanup": "Temporary tab9 closed; final server PID96554 terminated, listener absent; no global viewport override; browser error/warning log empty"
+    }
+  },
+  "enablement": { "flag": "ENABLE_MERGED_OPS_INVENTORY_GOVERNANCE_WRITES", "valueRequired": "true", "default": "off", "legacyWriterDrainRequired": true },
+  "remaining": [
+    "Actual MySQL schema/index/collation admission, concurrent managers and auto/manual writers, old in-flight writer drain, permissions revocation and unknown outcome recovery",
+    "History/data ambiguity reconciliation, performance on real volumes and authenticated two-page acceptance before flag activation",
+    "P1-P6, K01-K10, T01-T28, image62/master27/supplements12 and all earlier runtime/storage/configuration/Listing/Agent/release gates remain",
+    "Final public main publication requires current remote history verification, exclusion of secrets/business data and required integration/release gates; approval does not authorize overwriting unrelated remote work"
+  ],
+  "productionDatabaseChanged": false,
+  "migrationRegistered": false,
+  "migrationExecuted": false,
+  "providerCalls": 0,
+  "modelCalls": 0,
+  "scheduledSyncChanged": false,
+  "flagEnabled": false,
+  "pushed": false,
+  "deployed": false,
+  "fullP1Complete": false,
+  "fullObjectiveComplete": false
+}

@@ -295,6 +295,9 @@ export const PERMISSION_RESOURCE_REGISTRY = {
   // grant to enable the supplier's weekly/monthly/inventory schedules.
   ops_inventory_collection: { moduleId: 'ops', subModuleId: 'ops_inventory' },
   ops_inventory_planning: { moduleId: 'ops', subModuleId: 'ops_inventory' },
+  // Workspace-shared owner rules and lifecycle restoration are separate from
+  // actor-private planning values and do not authorize source synchronization.
+  ops_inventory_governance: { moduleId: 'ops', subModuleId: 'ops_inventory' },
   offsite_campaign: { moduleId: 'offsite', subModuleId: 'offsite_campaigns' },
   emperor_skill: { moduleId: 'emperor', subModuleId: 'emperor_skills' },
   conversation: { moduleId: 'emperor', subModuleId: 'emperor_conversations' },
@@ -369,6 +372,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     ops_monthly_import: ['read', 'create', 'update', 'delete'],
     ops_inventory_collection: ['read', 'create', 'cancel'],
     ops_inventory_planning: ['read', 'update', 'cancel'],
+    ops_inventory_governance: ['read', 'update', 'cancel'],
   },
   admin: {
     project: ['read', 'create', 'update', 'delete', 'assign'],
@@ -384,6 +388,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     ops_monthly_import: ['read', 'create', 'update', 'delete'],
     ops_inventory_collection: ['read', 'create', 'cancel'],
     ops_inventory_planning: ['read', 'update', 'cancel'],
+    ops_inventory_governance: ['read', 'update', 'cancel'],
   },
   ops_manager: {
     project: ['read', 'create', 'update', 'assign'],
@@ -398,6 +403,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     ops_monthly_import: ['read', 'create', 'update', 'delete'],
     ops_inventory_collection: ['read', 'create', 'cancel'],
     ops_inventory_planning: ['read', 'update', 'cancel'],
+    ops_inventory_governance: ['read', 'update', 'cancel'],
   },
   ops_specialist: {
     project: ['read', 'create', 'update'],

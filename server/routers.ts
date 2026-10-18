@@ -89,6 +89,7 @@ import { monthlyFinancialWriteRouter } from "./routers/monthlyFinancialWrite";
 import { inventorySnapshotReadRouter } from "./routers/inventorySnapshotRead";
 import { inventorySnapshotRefreshRouter } from "./routers/inventorySnapshotRefresh";
 import { inventoryPlanningWriteRouter } from "./routers/inventoryPlanningWrite";
+import { inventoryGovernanceWriteRouter } from "./routers/inventoryGovernanceWrite";
 import { profitBoardReadRouter } from "./routers/profitBoardRead";
 import { productBoardReadRouter } from "./routers/productBoardRead";
 import { productTaskReadRouter } from "./routers/productTaskRead";
@@ -214,6 +215,7 @@ export const appRouter = router({
   inventorySnapshotRead: inventorySnapshotReadRouter,
   inventorySnapshotRefresh: inventorySnapshotRefreshRouter,
   inventoryPlanningWrite: inventoryPlanningWriteRouter,
+  inventoryGovernanceWrite: inventoryGovernanceWriteRouter,
   profitBoardRead: profitBoardReadRouter,
   productBoardRead: productBoardReadRouter,
   productTaskRead: productTaskReadRouter,

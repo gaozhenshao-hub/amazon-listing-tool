@@ -8,6 +8,7 @@ const detailPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/o
 const parentWeeklyOverviewSource = readFileSync(resolve(process.cwd(), "server/domains/ops/productOverview/parentWeeklyOverview.ts"), "utf8");
 const inventoryPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/OpsInventory.tsx"), "utf8");
 const planningEditorSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/InventoryPlanningEditor.tsx"), "utf8");
+const governanceEditorSource = readFileSync(resolve(process.cwd(), "client/src/pages/ops/InventoryGovernanceEditor.tsx"), "utf8");
 const planningValuesSource = readFileSync(resolve(process.cwd(), "shared/inventoryPlanningWrite.ts"), "utf8");
 const manualReaderSource = readFileSync(resolve(process.cwd(), "server/domains/ops/inventoryPlanningManualRead.ts"), "utf8");
 const purchasePlanningSource = readFileSync(resolve(process.cwd(), "shared/inventoryPurchasePlanning.ts"), "utf8");
@@ -165,18 +166,23 @@ describe("导入模式库存规划接口契约", () => {
 
   it("库存页面提供待分配入口，且人工规则按父ASIN、店铺和站点批量保存并允许审计撤销", () => {
     expect(inventoryPageSource).toContain("待分配负责人");
-    expect(inventoryPageSource).toContain("inventoryOwnerAssignments.assignBatch");
-    expect(inventoryPageSource).toContain("人工库存规则 → 设置页已确认的领星名称映射");
-    expect(ownerAssignmentRouterSource).toContain("uniqueInventoryOwnerAssignmentScopes(input.targets)");
+    expect(inventoryPageSource).toContain("InventoryGovernanceEditor");
+    expect(inventoryPageSource).toContain("sourceHints: unassignedOwnerGroups.map");
+    expect(inventoryPageSource).not.toContain("inventoryOwnerAssignments.assignBatch");
+    expect(governanceEditorSource).toContain("inventoryGovernanceWrite.execute.mutate");
+    expect(governanceEditorSource).toContain("inventoryGovernanceWrite.recover.mutate");
+    expect(ownerAssignmentRouterSource).toContain("assertLegacyInventoryGovernanceWriteAllowed");
     expect(ownerAssignmentRouterSource).toContain("opsInventoryOwnerAssignmentAudits");
     expect(ownerAssignmentRouterSource).toContain("inventory_owner_assignment.assign_batch");
   });
 
   it("来源支持的产品总览行可按父ASIN、店铺和规范站点分配负责人，不依赖手工产品档案", () => {
-    expect(productsPageSource).toContain("onAssignSourceOwner");
-    expect(productsPageSource).toContain("ownerCandidates");
-    expect(productsPageSource).toContain("保存为父ASIN、店铺与站点的人工规则");
-    expect(productsPageSource).toContain("不改写领星原始数据");
+    expect(productsPageSource).toContain("onManageSourceOwner");
+    expect(productsPageSource).toContain("读取并管理来源负责人");
+    expect(productsPageSource).toContain("initialSelection: [scope]");
+    expect(productsPageSource).toContain("不改写产品主档负责人或领星原始数据");
+    expect(productsPageSource).not.toContain("inventoryOwnerAssignments.assignBatch");
+    expect(productsPageSource).not.toContain("inventoryOwnerAssignments.listEligibleUsers");
     expect(parentWeeklyOverviewSource).toContain("manualOwner?.assigneeName || profile?.operator || latest.operator || null");
     expect(parentWeeklyOverviewSource).toContain("operatorSource: manualOwner ? \"manual_assignment\"");
     expect(ownerAssignmentRouterSource).toContain("lingxingProductWeekly.sourceKind");

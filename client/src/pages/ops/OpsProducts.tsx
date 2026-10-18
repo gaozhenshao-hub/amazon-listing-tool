@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import InventoryPlanningEditor, { subscribeInventoryPlanningChanges, type InventoryPlanningEditorTarget } from "./InventoryPlanningEditor";
+import InventoryGovernanceEditor, { subscribeInventoryGovernanceChanges, type InventoryGovernanceEditorTarget } from "./InventoryGovernanceEditor";
 import { MANAGER_ROLES } from "@shared/const";
 import { buildUnifiedProductOverview } from "@shared/unifiedProductOverview";
 import { countLegacyFinancialProfitMonths, hasVerifiedSourceScope, isSameSourceProductScope, selectFinancialProfitsForProduct, shouldWaitForProductOverviewFallback } from "./productOverviewScope";
@@ -274,7 +275,7 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 }
 
 // ─── Product Row Component ───
-function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, ownerCandidates = [], isManagerOrAbove = false, onAssignSourceOwner, isAssigningSourceOwner = false, sortKey, sortDir, onSort, productionConfig, planningRows, financialProfits = [], legacyFinancialProfitMonths = 0, onEditCostParameters, onSaveFinancialProfits }: {
+function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, isManagerOrAbove = false, onManageSourceOwner, sortKey, sortDir, onSort, productionConfig, planningRows, financialProfits = [], legacyFinancialProfitMonths = 0, onEditCostParameters, onSaveFinancialProfits }: {
   product: ProductOverview;
   onNavigate: (product: ProductOverview) => void;
   onDelete: (id: number) => void;
@@ -282,10 +283,8 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
   isSyncing: boolean;
   operatorList: string[];
   onAssign: (productId: number, operator: string) => void;
-  ownerCandidates?: Array<{ id: number; name: string; role: string }>;
   isManagerOrAbove?: boolean;
-  onAssignSourceOwner?: (target: { parentAsin: string; storeName: string; country: string }, assigneeUserId: number) => void;
-  isAssigningSourceOwner?: boolean;
+  onManageSourceOwner?: (target: { parentAsin: string; storeName: string; country: string }) => void;
   sortKey: SortKey;
   sortDir: SortDir;
   onSort: (key: SortKey) => void;
@@ -311,7 +310,7 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
   // Its exact parent/store/site scope is sufficient for source-derived costs and
   // user-maintained financial trend records, without changing source facts.
   const canMaintainScopedOperations = hasManagedProfile || hasScopedSourceIdentity;
-  const canAssignSourceOwner = Boolean(isManagerOrAbove && product.parentAsin && product.storeName && product.marketplace && ownerCandidates.length && onAssignSourceOwner);
+  const canAssignSourceOwner = Boolean(isManagerOrAbove && product.parentAsin && product.storeName && product.marketplace && onManageSourceOwner);
   const bi = product.basicInfo;
   const profitTrend = useMemo(() => Array.from({ length: 6 }, (_, index) => {
     const date = new Date(); date.setMonth(date.getMonth() - 5 + index);
@@ -514,24 +513,9 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
               </Popover>
             );
           })() : canAssignSourceOwner ? (
-            <Popover open={assignOpen} onOpenChange={setAssignOpen}>
-              <PopoverTrigger asChild>
-                <button className={`text-xs rounded px-2 py-1 transition-colors border ${product.operatorSource === "manual_assignment" ? "text-foreground bg-blue-50 border-blue-200 hover:bg-blue-100" : "text-muted-foreground/80 bg-orange-50 border-orange-200 hover:bg-orange-100"}`}>
-                  <User className="h-3 w-3 inline mr-1" />{product.operatorSource === "manual_assignment" && product.operator ? product.operator : "分配负责人"}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-60 p-2" align="end">
-                <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">分配负责人</p>
-                  <p className="text-[11px] text-muted-foreground">保存为父ASIN、店铺与站点的人工规则，不改写领星原始数据。</p>
-                  <div className="max-h-44 overflow-y-auto space-y-0.5">
-                    {ownerCandidates.map((candidate) => <button key={candidate.id} disabled={isAssigningSourceOwner} className={`w-full text-left text-xs px-2 py-1.5 rounded flex items-center gap-1.5 ${product.operatorSource === "manual_assignment" && product.operator === candidate.name ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-muted"}`} onClick={() => onAssignSourceOwner?.({ parentAsin: product.parentAsin, storeName: product.storeName!, country: product.marketplace! }, candidate.id)}>
-                      {product.operatorSource === "manual_assignment" && product.operator === candidate.name ? <UserCheck className="h-3 w-3" /> : <User className="h-3 w-3 text-muted-foreground" />}{candidate.name}<span className="ml-auto text-[10px] text-muted-foreground">{candidate.role}</span>
-                    </button>)}
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
+            <button className="rounded border bg-blue-50 px-2 py-1 text-xs text-blue-800" title="读取当前候选与全部规则后，按父ASIN、店铺与站点管理；不改写产品主档负责人或领星原始数据。" onClick={() => onManageSourceOwner?.({ parentAsin: product.parentAsin, storeName: product.storeName!, country: product.marketplace! })}>
+              <User className="mr-1 inline h-3 w-3" />{product.operatorSource === "manual_assignment" && product.operator ? `${product.operator} · ` : ""}读取并管理来源负责人
+            </button>
           ) : (
             <TooltipProvider><Tooltip><TooltipTrigger asChild><span className="text-xs rounded px-2 py-1 border text-muted-foreground bg-muted/40">未绑定档案</span></TooltipTrigger><TooltipContent>{isManagerOrAbove ? "该行缺少可验证的父ASIN、店铺或站点身份，不能执行负责人分配。" : "需要运营管理员权限才能为来源行分配负责人。"}</TooltipContent></Tooltip></TooltipProvider>
           )}
@@ -802,6 +786,7 @@ export default function OpsProducts() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
   const [planningEditorTarget, setPlanningEditorTarget] = useState<InventoryPlanningEditorTarget | null>(null);
+  const [governanceTarget, setGovernanceTarget] = useState<InventoryGovernanceEditorTarget | null>(null);
   const isManagerOrAbove = user?.role && (MANAGER_ROLES as readonly string[]).includes(user.role);
   const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("active");
@@ -839,14 +824,6 @@ export default function OpsProducts() {
       toast.success(`已分配给 ${data.operator}`);
     },
     onError: (e: any) => toast.error(e.message),
-  });
-  const { data: ownerCandidates = [] } = trpc.inventoryOwnerAssignments.listEligibleUsers.useQuery(undefined, { enabled: Boolean(isManagerOrAbove) });
-  const assignSourceOwnerMut = trpc.inventoryOwnerAssignments.assignBatch.useMutation({
-    onSuccess: (data) => {
-      utils.productOps.getProductOverviewWithWeeks.invalidate();
-      toast.success(`已保存负责人规则：${data.assigneeName}`);
-    },
-    onError: (error: any) => toast.error("负责人分配保存失败", { description: error.message }),
   });
   const [syncingProductId, setSyncingProductId] = useState<number | null>(null);
   const syncSingleProductMut = trpc.productOps.syncWeeklyOpsFromLingxing.useMutation({
@@ -911,6 +888,11 @@ export default function OpsProducts() {
   useEffect(() => subscribeInventoryPlanningChanges(notice => {
     if (notice.userId === user?.id && notice.workspaceId === user?.defaultWorkspaceId) void utils.dataImport.getInventoryPlanningFromImport.invalidate();
   }), [user?.id, user?.defaultWorkspaceId, utils]);
+  const governanceOwnerKey = JSON.stringify([user?.id, user?.defaultWorkspaceId, user?.role]);
+  useEffect(() => { setGovernanceTarget(null); }, [governanceOwnerKey]);
+  useEffect(() => subscribeInventoryGovernanceChanges(notice => {
+    if (notice.workspaceId === user?.defaultWorkspaceId) { void utils.productOps.getProductOverviewWithWeeks.invalidate(); void utils.dataImport.getInventoryPlanningFromImport.invalidate(); }
+  }), [user?.defaultWorkspaceId, utils]);
   const { data: monthlyFinancialProfits } = trpc.dataImport.getMonthlyFinancialProfits.useQuery();
 
   // Production config for inventory status
@@ -1015,6 +997,7 @@ export default function OpsProducts() {
   return (
     <div className="space-y-4">
       <InventoryPlanningEditor target={planningEditorTarget} onClose={() => setPlanningEditorTarget(null)} />
+      <InventoryGovernanceEditor target={governanceTarget} onClose={() => setGovernanceTarget(null)} />
       {inventoryPlanningError && <section role="alert" className="space-y-2 rounded border p-3 text-sm"><p>库存规划及产品成本来源不可读，未使用旧成本、零值或默认值替代。六个月财务利润仍为独立功能。</p><Button variant="outline" onClick={() => void refetchInventoryPlanning()}>重新读取产品成本与规划</Button></section>}
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-xs text-blue-800">
         <Badge variant="outline" className="border-blue-200 bg-white text-blue-700">统一产品视图</Badge>
@@ -1289,10 +1272,8 @@ export default function OpsProducts() {
                 const mode = currentOps.includes(op) ? "remove" : "add";
                 singleAssignMut.mutate({ productIds: [pid], operator: op, mode });
               }}
-              ownerCandidates={ownerCandidates}
               isManagerOrAbove={Boolean(isManagerOrAbove)}
-              isAssigningSourceOwner={assignSourceOwnerMut.isPending}
-              onAssignSourceOwner={(target, assigneeUserId) => assignSourceOwnerMut.mutate({ assigneeUserId, targets: [target] })}
+              onManageSourceOwner={user?.defaultWorkspaceId ? scope => setGovernanceTarget({ owner: { userId: user.id, workspaceId: user.defaultWorkspaceId!, role: user.role }, subject: { kind: "owners" }, initialSelection: [scope] }) : undefined}
               sortKey={sortKey}
               sortDir={sortDir}
               onSort={(key) => {

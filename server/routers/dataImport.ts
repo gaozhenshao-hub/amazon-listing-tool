@@ -19,6 +19,8 @@ import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { summarizeParentAsinWeeks, summarizeVariantSales } from "../domains/ops/productOverview/dailyAggregation";
 import { calculateInventoryPlan } from "../domains/ops/inventoryPlanning/calculator";
 import { assertLegacyInventoryPlanningWriteAllowed } from "../domains/ops/inventoryPlanningLegacyGate";
+import { assertLegacyInventoryGovernanceWriteAllowed } from "../domains/ops/inventoryGovernanceLegacyGate";
+import { refreshGovernedZeroValueDiscontinuationStatuses } from "../domains/ops/lifecycle/inventoryLifecycleGovernance";
 import { loadInventoryPlanningManualReader } from "../domains/ops/inventoryPlanningManualRead";
 import { INVENTORY_PLANNING_LIMITS } from "../../shared/inventoryPlanningWrite";
 import { evaluateThreeMonthZeroDiscontinuation, evaluateThreeMonthZeroWeeklyDiscontinuation } from "../domains/ops/lifecycle/zeroValueDiscontinuation";
@@ -45,6 +47,10 @@ type LifecycleIdentityEvidenceRow = DailyPerformanceEvidenceRow & {
 };
 
 export async function refreshZeroValueDiscontinuationStatuses(db: AppDb, workspaceId: number) {
+  if (process.env.ENABLE_MERGED_OPS_INVENTORY_GOVERNANCE_WRITES === "true") {
+    await refreshGovernedZeroValueDiscontinuationStatuses(db, workspaceId);
+    return;
+  }
   const snapshots = (await db.select().from(opsAsinDailySnapshots)
     .where(eq(opsAsinDailySnapshots.workspaceId, workspaceId)))
     .filter((snapshot) => snapshot.sourceType !== "lx_inventory_mcp");
@@ -966,6 +972,7 @@ export const dataImportRouter = router({
       reason: z.string().trim().min(2, "请填写恢复在售的原因").max(500),
     }))
     .mutation(async ({ ctx, input }) => {
+      assertLegacyInventoryGovernanceWriteAllowed();
       const db = await getDb();
       const workspaceId = ctx.user.defaultWorkspaceId ?? currentOpsWorkspaceId();
       const [existing] = await db!.select().from(opsAsinLifecycleStatuses).where(and(

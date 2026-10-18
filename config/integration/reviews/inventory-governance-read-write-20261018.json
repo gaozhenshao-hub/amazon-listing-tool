@@ -1,0 +1,33 @@
+{
+  "version": "amazon-protected-baseline-review/1",
+  "reviewedOn": "2026-10-18",
+  "control": "K09",
+  "decision": "explicit_local_reviewed_allowance_not_production_acceptance",
+  "scope": [
+    "Add only two imports, an exact-true feature-flag bridge at the existing shared automatic lifecycle entry, and a legacy manual-restoration cutoff before business DB access.",
+    "Default-off keeps the complete old automatic body unchanged. Both existing import completion and Lingxing sync callers use the shared exported entry; no scheduler or Lingxing sync edits.",
+    "The separate governed path requires transactions and common workspace locks, current exact scope state, valid bounded evidence and complete write readback. Duplicate scopes, ambiguous country/collation identities and NULL-workspace evidence never become write authority.",
+    "Retain daily 90-day priority, valid weekly fallback, lx_inventory_mcp exclusion, original raw lifecycle evidence and permanent active-plus-restoredAt manual protection. Insufficient evidence no longer automatically writes active state in the governed path.",
+    "Complete backfill proof is bound to the recorded store and country before missing daily rows can be zero-filled. It does not establish workspace-global coverage.",
+    "ENABLE_MERGED_OPS_INVENTORY_GOVERNANCE_WRITES remains default-off. Drain old in-flight owner and lifecycle writers before activation; verify actual MySQL, schema, concurrency and complete release gates first."
+  ],
+  "protectedFile": {
+    "path": "server/routers/dataImport.ts",
+    "baseline": { "gitBlobSha1": "65ea86c5448be8126c8495e524468923c654f3c5", "sha256": "eb2c9057f6ba6de8fa0fa8ccf9120e0a5804c6706bc107861aecbe9abd0a31e9" },
+    "previousReviewed": { "gitBlobSha1": "3d91e7281ec297be08bcf9465c42a3a25fc1bebc", "sha256": "20e483102fe019899eb3b470d324a562b6b673f586e49e21723dc82606803697", "reviewRef": "config/integration/reviews/inventory-planning-read-write-20261018.json" },
+    "reviewed": { "gitBlobSha1": "c76bb32f7fba071fe12ea2f450a1f85d0cf8074a", "sha256": "7118dbaf61e4d8edb8d196b9fda0e652fcdd52f255baac8533bfcf1e4fb5c126" }
+  },
+  "verification": {
+    "rootReadCompleteDiff": true,
+    "originalAutomaticBodyUnchanged": true,
+    "rootResourceAndAuthorizationChecks": 34,
+    "rootLegacyOwnerRouterChecks": 11,
+    "finalChecks": "Frozen-source type, test, bundle and synthetic browser evidence is recorded in the separate inventory governance integration review."
+  },
+  "unchanged": { "baselineHashesRetained": true, "originalDateAndWorkspaceGates": true, "actorPrivateManualSemantics": true, "productProfileOwnerWorkflow": true, "lingxingSourcePriority": true, "inventoryFormula": true, "listingAndImportHandlers": true, "financialTrend": true, "production": true },
+  "remaining": [
+    "Actual MySQL schema/index/collation and concurrent auto/manual transaction acceptance, including gate-off same-operation recovery and cancellation",
+    "Old writer drain, deployment, provider, scheduler and original full P1-P6/K01-K10/T01-T28 release gates are not waived",
+    "No DDL, migration registration, production database change or feature activation in this batch"
+  ]
+}
