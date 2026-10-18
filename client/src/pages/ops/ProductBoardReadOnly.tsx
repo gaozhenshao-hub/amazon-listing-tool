@@ -5,6 +5,7 @@ import { trpc } from "@/lib/trpc";
 import { ProductBoardReadInputSchema, ProductBoardReadResultSchema, type ProductBoardReadInput, type ProductBoardReadResult } from "@shared/productBoardRead";
 import { ProductTasksEmbeddedReadOnly } from "./ProductTasksReadOnly";
 import { OperationsCostSheetEmbeddedActions } from "./OperationsCostSheetActions";
+import { subscribeMonthlyFinancialChanges } from "./monthlyFinancialWriteEvents";
 
 type Owner = { userId: number; workspaceId: number; role: string };
 type Section = "highReturns" | "highProfit" | "losing" | "all";
@@ -115,13 +116,14 @@ const pageBinding = (result: ProductBoardReadResult) => JSON.stringify({ history
 function OwnedProductBoard({ owner }: { owner: Owner }) {
   const client = trpc.useUtils().client;
   const [scope, setScope] = useState({ month: "", storeName: "", country: "", parentAsin: "", search: "" }), [state, setState] = useState<ReadState>({ status: "idle" });
-  const sequence = useRef(0), pending = useRef<AbortController | null>(null);
+  const sequence = useRef(0), pending = useRef<AbortController | null>(null), active = useRef(false);
   useEffect(() => () => { sequence.current++; pending.current?.abort(); }, []);
-  function clear() { sequence.current++; pending.current?.abort(); pending.current = null; setState({ status: "idle" }); }
+  function clear() { sequence.current++; pending.current?.abort(); pending.current = null; active.current = false; setState({ status: "idle" }); }
   async function read(section?: Section, offset?: number, previous?: ProductBoardReadResult) {
     clear(); const { parentAsin, ...rest } = scope;
     const parsed = ProductBoardReadInputSchema.safeParse({ ...rest, ...(parentAsin.trim() ? { parentAsin: parentAsin.trim() } : {}), expectedWorkspaceId: owner.workspaceId, highReturnsOffset: previous?.request.highReturnsOffset ?? 0, highProfitOffset: previous?.request.highProfitOffset ?? 0, losingOffset: previous?.request.losingOffset ?? 0, allOffset: previous?.request.allOffset ?? 0, pageSize: PAGE_SIZE, ...(section ? { [`${section}Offset`]: offset } : {}) });
     if (!parsed.success) { setState({ status: "invalid" }); return; }
+    active.current = true;
     const request: ProductBoardReadInput = parsed.data, ticket = ++sequence.current, controller = new AbortController(); pending.current = controller;
     const current = () => sequence.current === ticket && !controller.signal.aborted;
     setState({ status: "loading" });
@@ -135,6 +137,10 @@ function OwnedProductBoard({ owner }: { owner: Owner }) {
       if (current()) setState({ status: "ready", result });
     } catch { if (current()) setState({ status: "error" }); } finally { if (current()) pending.current = null; }
   }
+  const readRef = useRef(read); readRef.current = read;
+  useEffect(() => subscribeMonthlyFinancialChanges(notice => {
+    if (notice.action !== "upload" && notice.userId === owner.userId && notice.workspaceId === owner.workspaceId && active.current) void readRef.current();
+  }), [owner.userId, owner.workspaceId]);
   return <Shell><form aria-label="产品看板读取范围" className="space-y-3" onSubmit={event => { event.preventDefault(); void read(); }}><div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">{([["month", "基准月份（YYYY-MM）"], ["storeName", "店铺"], ["country", "站点 / 国家代码"], ["parentAsin", "父 ASIN（可选）"], ["search", "产品搜索（保留完整父组）"]] as const).map(([key, label]) => <label key={key} className="min-w-0 text-sm">{label}<input aria-label={`产品看板${label}`} autoComplete="off" className="mt-1 w-full min-w-0 rounded border bg-background p-2" value={scope[key]} onChange={event => { const value = event.currentTarget.value; clear(); setScope(old => ({ ...old, [key]: value })); }} /></label>)}</div><p className="text-xs">父 ASIN 留空只请求当前授权范围；店铺 / 国家及搜索不是授权，不使用姓名或保存的 ownerIds 扩权。</p><div className="flex flex-wrap gap-3"><button type="submit" className={buttonClass}>读取已有产品看板</button><button type="button" className={buttonClass} onClick={clear}>取消并清除产品看板</button></div></form>
     {state.status === "loading" && <p role="status">正在核验全部已保存历史与产品榜单…</p>}{state.status === "invalid" && <p role="alert">产品看板范围不完整或不合法，未发送请求。</p>}{state.status === "error" && <p role="alert">产品看板读取失败，或身份、权限、范围、历史来源及回包完整性已变化。旧数据已清除，不回退缓存；请显式从首页重新读取。</p>}{state.status === "ready" && <ProductBoardReadOnlyContent key={sequence.current} result={state.result} onPage={(section, offset) => { void read(section, offset, state.result); }} renderProductTasks={product => product.parentAsin ? <ProductTasksEmbeddedReadOnly product={{ workspaceId: state.result.identity.workspaceId, storeName: state.result.request.storeName, country: state.result.request.country, parentAsin: product.parentAsin }} /> : null} renderProductCosts={product => product.parentAsin ? <OperationsCostSheetEmbeddedActions scope={{ workspaceId: state.result.identity.workspaceId, storeName: state.result.request.storeName, country: state.result.request.country, parentAsin: product.parentAsin }} /> : null} />}
   </Shell>;

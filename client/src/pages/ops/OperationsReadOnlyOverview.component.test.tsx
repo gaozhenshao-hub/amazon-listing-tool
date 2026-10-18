@@ -50,6 +50,9 @@ vi.mock("./OperationsCostSheetReadOnly", () => ({
 vi.mock("./MonthlyFinancialReadOnly", () => ({
   default: () => <section aria-label="完整月报入口">完整月报独立只读入口</section>,
 }));
+vi.mock("./MonthlyFinancialWrite", () => ({
+  default: () => <section aria-label="持久月报入口">月报持久上传与确认入口</section>,
+}));
 vi.mock("./InventorySnapshotReadOnly", () => ({
   default: () => <section aria-label="完整库存入口">完整库存独立只读入口</section>,
 }));
@@ -244,6 +247,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
       ).not.toBeInTheDocument();
       expect(screen.queryByLabelText("完整成本表入口")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("完整月报入口")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("持久月报入口")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("完整库存入口")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("完整利润看板入口")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("完整产品看板入口")).not.toBeInTheDocument();
@@ -255,6 +259,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
     await screen.findByText("接口产品");
     expect(screen.getByLabelText("完整成本表入口")).toBeVisible();
     expect(screen.getByLabelText("完整月报入口")).toBeVisible();
+    expect(screen.getByLabelText("持久月报入口")).toBeVisible();
     expect(screen.getByLabelText("完整库存入口")).toBeVisible();
     expect(screen.getByLabelText("完整利润看板入口")).toBeVisible();
     expect(screen.getByLabelText("完整产品看板入口")).toBeVisible();
@@ -291,6 +296,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
       const priorFileInput = screen.getByLabelText("选择本地月报文件");
       const priorCostEntry = screen.getByLabelText("完整成本表入口");
       const priorMonthlyEntry = screen.getByLabelText("完整月报入口");
+      const priorMonthlyWriteEntry = screen.getByLabelText("持久月报入口");
       const priorInventoryEntry = screen.getByLabelText("完整库存入口");
       const priorProfitEntry = screen.getByLabelText("完整利润看板入口");
       const priorProductEntry = screen.getByLabelText("完整产品看板入口");
@@ -307,6 +313,7 @@ describe("fresh authenticated query ownership (synthetic client)", () => {
       );
       expect(screen.getByLabelText("完整成本表入口")).not.toBe(priorCostEntry);
       expect(screen.getByLabelText("完整月报入口")).not.toBe(priorMonthlyEntry);
+      expect(screen.getByLabelText("持久月报入口")).not.toBe(priorMonthlyWriteEntry);
       expect(screen.getByLabelText("完整库存入口")).not.toBe(priorInventoryEntry);
       expect(screen.getByLabelText("完整利润看板入口")).not.toBe(priorProfitEntry);
       expect(screen.getByLabelText("完整产品看板入口")).not.toBe(priorProductEntry);

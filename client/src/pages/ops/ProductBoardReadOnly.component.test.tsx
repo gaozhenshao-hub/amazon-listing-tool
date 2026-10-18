@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ProductBoardReadOnly, { ProductBoardReadOnlyContent } from "./ProductBoardReadOnly";
+import { publishMonthlyFinancialChange } from "./monthlyFinancialWriteEvents";
 import { ProductBoardReadInputSchema, buildProductBoardReadResult, buildProductBoardReadFailure, type ProductBoardReadInput, type ProductBoardReadResult, type ProductBoardMonthSelection } from "@shared/productBoardRead";
 import { MONTHLY_FINANCIAL_METRICS, parseMonthlyFinancialBatch, type MonthlyFinancialBatchRecord } from "@shared/monthlyFinancialRead";
 
@@ -39,6 +40,20 @@ beforeEach(() => { controls.auth = { loading: false, error: null, user: { id: 7,
 afterEach(cleanup);
 
 describe("explicit readonly product board gates", () => {
+  it("refreshes the opened exact product scope on commit and not on upload or foreign notices", async () => {
+    controls.query.mockImplementation(async value => result(value)); render(<ProductBoardReadOnly />);
+    act(() => publishMonthlyFinancialChange({ userId: 7, workspaceId: 11, action: "confirm", batchId: 80 }));
+    expect(controls.query).not.toHaveBeenCalled(); fillScope(); await readReady();
+    act(() => publishMonthlyFinancialChange({ userId: 7, workspaceId: 12, action: "confirm", batchId: 80 }));
+    act(() => publishMonthlyFinancialChange({ userId: 7, workspaceId: 11, action: "upload", batchId: 80 }));
+    expect(controls.query).toHaveBeenCalledTimes(1);
+    act(() => publishMonthlyFinancialChange({ userId: 7, workspaceId: 11, action: "confirm", batchId: 80 }));
+    await waitFor(() => expect(controls.query).toHaveBeenCalledTimes(2));
+    expect(controls.query.mock.calls[1][0]).toEqual(input()); expect(screen.getByLabelText("产品看板店铺")).toHaveValue("合成店铺");
+    fireEvent.change(screen.getByLabelText("产品看板店铺"), { target: { value: "New draft scope" } });
+    act(() => publishMonthlyFinancialChange({ userId: 7, workspaceId: 11, action: "revoke", batchId: 80 }));
+    expect(controls.query).toHaveBeenCalledTimes(2);
+  });
   it("mounts a separately authorized task reader only for an expanded exact product and clears it on scope edits", async () => {
     controls.query.mockResolvedValue(result()); render(<ProductBoardReadOnly />); fillScope(); await readReady();
     expect(screen.queryByLabelText("精确产品任务入口")).not.toBeInTheDocument();

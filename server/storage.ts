@@ -8,6 +8,11 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 type StorageConfig = { baseUrl: string; apiKey: string };
 export type StorageProvider = "forge" | "s3" | "oss" | "local" | "external";
+export type StoragePutOptions = {
+  /** Server-controlled durable upload protocols may forbid SDK-level retries.
+   * Omission keeps every existing caller's configured/default retry behavior. */
+  maxAttempts?: 1;
+};
 type StorageGetOptions = {
   /** Only server-controlled callers may select this shorter S3/OSS signature TTL. */
   expiresSeconds?: number;
@@ -177,7 +182,7 @@ function getS3CompatibleStorageConfig(): S3CompatibleStorageConfig {
   };
 }
 
-function createS3CompatibleClient(config: S3CompatibleStorageConfig, endpoint = config.endpoint): S3Client {
+function createS3CompatibleClient(config: S3CompatibleStorageConfig, endpoint = config.endpoint, options: StoragePutOptions = {}): S3Client {
   return new S3Client({
     region: config.region,
     endpoint,
@@ -186,6 +191,7 @@ function createS3CompatibleClient(config: S3CompatibleStorageConfig, endpoint = 
       accessKeyId: config.accessKeyId,
       secretAccessKey: config.secretAccessKey,
     },
+    ...(options.maxAttempts === 1 ? { maxAttempts: 1 } : {}),
   });
 }
 
@@ -245,13 +251,22 @@ function buildAuthHeaders(apiKey: string): HeadersInit {
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
-  contentType = "application/octet-stream"
+  contentType = "application/octet-stream",
+  options: StoragePutOptions = {}
 ): Promise<{ key: string; url: string; storageUri: string }> {
+  if (!options || typeof options !== "object" || Array.isArray(options)
+    || Object.keys(options).some(key => key !== "maxAttempts")
+    || options.maxAttempts !== undefined && options.maxAttempts !== 1) {
+    throw new Error("Storage PUT only supports the explicit maxAttempts: 1 override");
+  }
   const provider = getActiveStorageProvider();
+  if (options.maxAttempts === 1 && provider !== "s3" && provider !== "oss") {
+    throw new Error("Single-attempt storage PUT requires S3/OSS");
+  }
   if (provider === "s3" || provider === "oss") {
     const config = getS3CompatibleStorageConfig();
     const key = normalizeKey(relKey);
-    const serverClient = createS3CompatibleClient(config);
+    const serverClient = createS3CompatibleClient(config, config.endpoint, options);
     await serverClient.send(new PutObjectCommand({
       Bucket: config.bucket,
       Key: key,

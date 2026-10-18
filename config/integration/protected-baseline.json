@@ -1269,9 +1269,9 @@
         "sha256": "8c11373e51efebcb6359bb01279916aa3f85e5e457743d1162d6f9d73a178b77"
       },
       "reviewed": {
-        "gitBlobSha1": "de6884c85b2f7d92833454be2f1a6c620622e8c9",
-        "sha256": "ac12160a4c84f03fe94e85bdb0de00f28c8fa947b48a8d7d9e5f0e100d1fbf60",
-        "reviewRef": "config/integration/reviews/storage-reference-identity-20261014.json; root96controlled tests/typecheck and independent source review; no provider switch or production release"
+        "gitBlobSha1": "6fe7da29a9b50e4d853d4bd3365979a7883eb60a",
+        "sha256": "7de175e1523ee96f03f453db666c975e7efa10303001fc9a723aaebc81b51510",
+        "reviewRef": "config/integration/reviews/storage-single-attempt-20261018.json; preserves prior identity review and default caller retries; opt-in monthly SDK maxAttempts1; no provider switch or production release"
       }
     },
     {

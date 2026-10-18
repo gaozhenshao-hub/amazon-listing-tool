@@ -43,13 +43,14 @@ export async function query(tx: DbExecutor, text: string, values: unknown[]): Pr
   return result[0] as Row[];
 }
 const safeRunReference = "fileUrl REGEXP '^saihu-sync-run:[1-9][0-9]{0,9}$' AND CAST(SUBSTRING(fileUrl,16) AS UNSIGNED)<=2147483647 AND BINARY fileUrl=BINARY CONCAT('saihu-sync-run:',CAST(CAST(SUBSTRING(fileUrl,16) AS UNSIGNED) AS CHAR))";
+const safePrivateMonthlyReference = "fileUrl REGEXP CONCAT('^storage://(s3|oss)/monthly-financial/',workspaceId,'/[a-f0-9]{64}[.](xlsx|csv)$') AND BINARY fileUrl=BINARY LOWER(fileUrl)";
 export function projection(payloadLimit: number) {
   return `id,workspaceId,userId,fileName,fileHash,status,totalRows,skippedRows,unallocatedRows,
     IF(OCTET_LENGTH(CAST(months AS CHAR CHARACTER SET utf8mb4))<=${MONTHS_WIRE_MAX},CAST(months AS CHAR CHARACTER SET utf8mb4),NULL) AS months,
     OCTET_LENGTH(CAST(months AS CHAR CHARACTER SET utf8mb4)) AS monthsBytes,
     DATE_FORMAT(createdAt,'%Y-%m-%d %H:%i:%s.%f') AS createdAt,
     DATE_FORMAT(confirmedAt,'%Y-%m-%d %H:%i:%s.%f') AS confirmedAt,
-    CASE WHEN ${safeRunReference} THEN 'saihu_sync_run' WHEN fileUrl REGEXP '^(https://|s3://|oss://)' THEN 'storage' ELSE 'unknown' END AS fileReferenceKind,
+    CASE WHEN ${safeRunReference} THEN 'saihu_sync_run' WHEN (${safePrivateMonthlyReference}) OR fileUrl REGEXP '^(https://|s3://|oss://)' THEN 'storage' ELSE 'unknown' END AS fileReferenceKind,
     CASE WHEN ${safeRunReference} THEN CAST(SUBSTRING(fileUrl,16) AS UNSIGNED) ELSE NULL END AS sourceRunId,
     IF(OCTET_LENGTH(CAST(payload AS CHAR CHARACTER SET utf8mb4))<=${payloadLimit},CAST(payload AS CHAR CHARACTER SET utf8mb4),NULL) AS payload,
     OCTET_LENGTH(CAST(payload AS CHAR CHARACTER SET utf8mb4)) AS payloadBytes`;

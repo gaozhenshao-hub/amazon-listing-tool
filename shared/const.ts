@@ -288,6 +288,9 @@ export const PERMISSION_RESOURCE_REGISTRY = {
   // Saving a scoped cost sheet does not authorize report imports, inventory
   // synchronization, task assignment, or other mutations of ops_data.
   ops_cost_sheet: { moduleId: 'ops', subModuleId: 'ops_data_import' },
+  // Whole month/store/country imports are a separate manager operation.
+  // This grants neither scheduled sync nor access to another resource.
+  ops_monthly_import: { moduleId: 'ops', subModuleId: 'ops_data_import' },
   offsite_campaign: { moduleId: 'offsite', subModuleId: 'offsite_campaigns' },
   emperor_skill: { moduleId: 'emperor', subModuleId: 'emperor_skills' },
   conversation: { moduleId: 'emperor', subModuleId: 'emperor_conversations' },
@@ -359,6 +362,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     ops_data: [...SECURITY_ACTIONS],
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
     ops_cost_sheet: ['read', 'update'],
+    ops_monthly_import: ['read', 'create', 'update', 'delete'],
   },
   admin: {
     project: ['read', 'create', 'update', 'delete', 'assign'],
@@ -371,6 +375,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     ops_data: ['read', 'import', 'export', 'update', 'delete', 'sync'],
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
     ops_cost_sheet: ['read', 'update'],
+    ops_monthly_import: ['read', 'create', 'update', 'delete'],
   },
   ops_manager: {
     project: ['read', 'create', 'update', 'assign'],
@@ -382,6 +387,7 @@ export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityR
     ops_data: ['read', 'import', 'export', 'update', 'sync'],
     ops_task: ['read', 'create', 'update', 'upload', 'export', 'delete', 'assign'],
     ops_cost_sheet: ['read', 'update'],
+    ops_monthly_import: ['read', 'create', 'update', 'delete'],
   },
   ops_specialist: {
     project: ['read', 'create', 'update'],

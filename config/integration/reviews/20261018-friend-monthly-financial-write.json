@@ -1,0 +1,373 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "friend-complete-monthly-financial-write",
+  "baseline": "723b954d7e587399a89abed2d2b8cd1896eda74c",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "localOnly": true,
+  "humanDecision": {
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary",
+    "generalP5Skills": "Qingdao-primary",
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSelection": "friend-primary; select, preview and generate; upload supplemental",
+    "publication": {
+      "repository": "https://github.com/gaozhenshao-hub/amazon-listing-tool",
+      "branch": "main",
+      "visibility": "PUBLIC",
+      "rightToPublishPrivateSourceConfirmed": true,
+      "actualPush": false
+    }
+  },
+  "scope": "Local P4 source integration of complete persisted original upload, server-side preview, full-scope confirm/replacement, revoke and durable UUID recovery. Default-off; not actual database, provider, migration or authenticated production acceptance.",
+  "preserve": [
+    "P0-P6/K01-K10/T01-T28/image62/master27/supplements12",
+    "All prior Listing/Agent/task/cost/inventory/profit/product/read-only batches and remaining runtime/release gates",
+    "Qingdao Lingxing authority; original raw financial rows, unknown/null semantics and current complete scope source winner rule",
+    "Four unrelated untracked migration ledger helpers; existing migration admission reservations/ledger unchanged"
+  ],
+  "changes": [
+    "Independent ops_monthly_import read/create/update/delete resource for current manager roles only; current actor, workspace, active membership, ops_data read and actual ops/ops_data_import directory verified in transaction. No uploader ownership bypass grants whole-shop financial control.",
+    "Independent monthlyFinancialWrite options/upload/inspect/confirm/revoke/recover/download routes, default-off ENABLE_MERGED_OPS_MONTHLY_WRITES. No request performs DDL, model calls or sync.",
+    "Bounded original XLSX/strict UTF-8 CSV5MiB,8sheets,100000cells,10000rows; server parses complete admitted original. Raw cells, headers, merges, summary rows, precise original amounts and all warnings retained in16MiB manifest; normalized payload8MiB.",
+    "19 normalized metrics with exact one-time cost sign conversion; totals versus leaves resolved without double count. Missing currencies, invalid precision and duplicate/conflicting amounts stay unknown; formulas are not facts; missing scope/ambiguous parents block confirmation. Original in-memory preview preserved.",
+    "Prepared operation metadata durably commits before one private object PUT. Monthly explicitly opts into AWS SDK maxAttempts1; old callers retain retry configuration. Verified bounded200GET checks original size/SHA; unknown upload can only recover from GET, never repeat PUT.",
+    "Permanent cancellation fence; actor/workspace/UUID/path/provider/hash/request/format/parser identity binding. Batch previewing row, complete manifest, canonical payload and final operation receipt commit atomically; stored artifact replays every original cell to detect deleted rows/blockers or altered identities/values.",
+    "Shared workspace row lock before actor locks serializes different managers. Version and full influence-plan CAS bind complete candidate history. Confirm/revoke checks actual pre/post MySQL JSON wire sizes against200batch/32MiB consumer budgets.",
+    "Confirm replaces full exact month/store/site using largest completed batchID, not uploader, parent or confirmedAt; missing parents never backfill from older batches. Older preview cannot supersede newer confirmed winner. Revoke retains original batch and falls back per scope to previous completed winner.",
+    "Complete explicit UI: source selection distinct from persisted upload, full row/cell/warning pagination, full replacement impacts and acknowledgment, persistent metadata-only pending UUID, same-operation result recovery after write flag rollback. No automatic unknown-operation retries.",
+    "Original download is a fresh authorized mutation per click, private60sHTTPS URL, no redirect/credential/referrer; bounded stream plus exact size/SHA then temporary local object URL. CORS/provider reality deferred.",
+    "Same-owner commit/revoke events clear/reload only currently opened monthly/profit/product scopes; upload refreshes history only. Current consumers calculate from completed sources, not unsafe legacy persisted edition refresh or AI.",
+    "Pure0308 planner reuses reserved number and proposes explicit InnoDB utf8mb4_unicode_ci batch plus artifact tables. No migration registered/executed. Runtime validates actual transactional schema, defaults, indexes, table/text collation; preserves audit nullableJSON and legitimate DEFAULT_GENERATED."
+  ],
+  "review": {
+    "root": "Reviewed repository authorization/transaction lifecycle, shared full-scope contracts, original storage adapter and SDK diff, guarded schema plan, UI source and actual synthetic browser; independently verified complete frozen candidate.",
+    "independent": "Backend/shared/UI owners and cross-review; source and test hashes frozen. Root source proof covers complete baseline, not reduced-file tsc.",
+    "findingsResolved": [
+      "AWS SDK default transport retries violated intended one-PUT despite top-level one call; explicit monthly maxAttempts1 tested through real SDK memory transport.",
+      "Runtime schema lacked collation validation and accepted missing undefined defaults; now aligned to planner.",
+      "Whole stored artifact replay now reconstructs all cells/merges/projections instead of accepting manipulated counters or omissions.",
+      "Two full configured TypeScript errors (nullable audit access and primitive-array includes) corrected; final full types exit0.",
+      "Initial viewport measurement immediately after resize was stale; fresh computed DOM and screenshot verified390px layout with358px dialog."
+    ],
+    "protectedManifestChanged": true,
+    "protectedReview": "config/integration/reviews/storage-single-attempt-20261018.json",
+    "migrationLedgerChanged": false
+  },
+  "verification": {
+    "focusedUnion": {
+      "exitCode": 0,
+      "files": 26,
+      "tests": 1002,
+      "sessions": [
+        50028,
+        48447
+      ],
+      "breakdown": {
+        "monthlySharedJournal": 102,
+        "originalPreview": 94,
+        "monthlyWriteRepository": 80,
+        "monthlyWriteRouter": 25,
+        "monthlyReadRepository": 117,
+        "profitReadRepository": 73,
+        "productReadRepository": 70,
+        "monthlyWriteUi": 45,
+        "monthlyReadUi": 63,
+        "profitReadUi": 62,
+        "productReadUi": 89,
+        "overviewUi": 13,
+        "monthlyStorage": 27,
+        "singleAttemptSdk": 11,
+        "existingStorage": 91,
+        "monthlyPermission": 3,
+        "costPermission": 3,
+        "existingAuthorization": 34
+      },
+      "note": "23file968 plus disjoint3file34. Shared tests imported by journal wrapper and counted once; prior agent runs not additive."
+    },
+    "finalAffectedRecheck": {
+      "exitCode": 0,
+      "session": 24708,
+      "files": 5,
+      "tests": 276,
+      "note": "After the2final narrow TypeScript fixes; remaining union sources unchanged."
+    },
+    "nodeTests": {
+      "schemaPlanner": 37,
+      "admission": 17,
+      "total": 54,
+      "exitCode": 0,
+      "chunks": [
+        "08bd50",
+        "00e05f"
+      ],
+      "note": "Initial combined node command included a nonexistent admission path and ran37only; actual checkMigrationAdmission.test.mjs rerun17 separately, not inferred."
+    },
+    "scopedLint": {
+      "files": 34,
+      "session": 12606,
+      "exitCode": 0,
+      "warnings": 0,
+      "finalChangedTwoFilesExitCode": 0
+    },
+    "configuredTypes": {
+      "status": "passed-full-configured-nonincremental-frozen-candidate",
+      "session": 66260,
+      "exitCode": 0,
+      "filesInCompilerProgram": 3785,
+      "diagnostics": [],
+      "command": "node_modules/.bin/tsc --noEmit --incremental false --pretty false --extendedDiagnostics",
+      "directory": "/Users/gavin/.cache/amazon-monthly-write-candidate-20261018.PJ7saw",
+      "verifiedBaselineBlobs": 2581,
+      "verifiedOverlays": 36,
+      "changedSourceFiles": 36,
+      "fullTsconfigUnchanged": true,
+      "sourceProof": "outputs/amazon-monthly-write-candidate-source-proof-20261018.json",
+      "priorRun": {
+        "session": 88944,
+        "exitCode": 2,
+        "diagnostics": 2,
+        "resolved": true
+      }
+    },
+    "protectedGuard": {
+      "files": 106,
+      "dependencies": 2,
+      "reviewedRecords": 25,
+      "exitCode": 0,
+      "chunk": "811728"
+    },
+    "diffCheck": {
+      "files": 36,
+      "exitCode": 0,
+      "chunk": "b48314",
+      "finalTreeRequiredBeforeCommit": true
+    },
+    "actualSyntheticBrowser": {
+      "scope": "Real MonthlyFinancialWriteController and shared parser/contracts, synthetic in-memory client only. No actual DB, provider, HTTP API/authenticated wrapper or production claim.",
+      "verified": [
+        "Final source reload and explicit permission/inspect request; no mount write. Complete133rows/2412cells/133precisionwarnings; paging through101–125 proves warnings not silently capped100.",
+        "Full replacement dialog explicitly shows current#10/2rows→#11/133rows and1removedparent; unchecked acknowledgement disables confirmation.",
+        "Desktop1280 dialog1024/client1022=scroll1022; mobile390 dialog358/client356=scroll356. Table scroll stays inside dialog, no global horizontal overflow.",
+        "Confirm commits#11once; revoke commits once but throws synthetic lost ACK. Same UUID retained; after disable flag explicitrecover(check) returns final deleted receipt without new confirm/revoke. Counters1confirm/1revoke/1recover.",
+        "Real file chooser accepts local290byte synthetic CSV; selection does not upload. Explicit upload produces#12previewing1row; no auto confirmation. History retains#12previewing,#11deleted,#10completed.",
+        "No browser warnings/errors reported; final source reload and full confirmation dialog rechecked after TypeScript-only fixes. Temporary viewport reset and agent tab closed."
+      ],
+      "references": [
+        "outputs/monthly-write-browser-20261018/desktop-confirm-final.jpg",
+        "outputs/monthly-write-browser-20261018/mobile-confirm.jpg",
+        "outputs/monthly-write-browser-20261018/recovery.jpg",
+        "outputs/monthly-write-browser-20261018/upload-preview.jpg",
+        "outputs/monthly-write-browser-20261018/entry.tsx",
+        "outputs/monthly-write-browser-20261018/mock.ts",
+        "outputs/monthly-write-browser-20261018/serve.mjs",
+        "outputs/monthly-write-browser-20261018/upload.csv"
+      ],
+      "notVerified": [
+        "Actual MySQL locks/deadlocks/native JSON wire/CAS/audit/failure/permission revocation and schema/data reconciliation",
+        "Actual S3/OSS bucket privacy, expiration, CORS, onePUT response loss and joint original/DB recovery",
+        "Authenticated production workflows and real ERP originals",
+        "Legacy original import writers/persisted archived editions coexistence and enablement"
+      ]
+    }
+  },
+  "release": {
+    "flagDefault": "off",
+    "actualDatabase": false,
+    "actualPrivateStorage": false,
+    "actualAuthenticatedWorkflow": false,
+    "migrationExecuted": false,
+    "migrationRegistered": false,
+    "modelCalls": 0,
+    "productionDeployed": false,
+    "pushed": false,
+    "fullP1Complete": false,
+    "fullObjectiveComplete": false
+  },
+  "next": [
+    "Verify native schema/history/permissions and private original storage/full recovery before enablement; retain all historical batches and cancellation/receipt history on rollback.",
+    "Inventory next: do not rebuild existing planning UI; integrate controlled independent snapshot collection/status and precise manual-planning saves with source/authority/null/CAS/recovery contracts. Keep Qingdao Lingxing primary and friend Saihu CNY snapshot separate.",
+    "Retain operational owner/partner filtering, latest complete month, archive/supplement policy, formal entrypoints and full P1-P6/Listing/Agent/image/native/runtime/release gates. Public main destination now explicitly authorized, not a claim of release readiness."
+  ],
+  "sourceFiles": [
+    {
+      "path": "server/storage.ts",
+      "bytes": 14947,
+      "sha256": "7de175e1523ee96f03f453db666c975e7efa10303001fc9a723aaebc81b51510"
+    },
+    {
+      "path": "server/storage.singleAttempt.test.ts",
+      "bytes": 4716,
+      "sha256": "1b80ee41e65e40e3d99b825de8d2c288b14f724ada94dfaaf741f97240152e5f"
+    },
+    {
+      "path": "config/integration/protected-baseline.json",
+      "bytes": 43810,
+      "sha256": "193faa51cf88642bbdde4f50169779fd346ed02f86c6eba058c079d61002fb3b"
+    },
+    {
+      "path": "config/integration/reviews/storage-single-attempt-20261018.json",
+      "bytes": 2431,
+      "sha256": "416047669b58dea3dd234cc65afe3d4f8c4e23cee9ae51e679921c986f08ff1f"
+    },
+    {
+      "path": "shared/const.ts",
+      "bytes": 23922,
+      "sha256": "540ae359b6fa093fc0124fd24e8a83dbee37c39626d7ac6bac3060edcd1a0f52"
+    },
+    {
+      "path": "server/routers.ts",
+      "bytes": 10683,
+      "sha256": "99dbf7c1b064e6e5dcb9b79a49dcf5dcaf6b3b8631407728d47e7776fac6ea1e"
+    },
+    {
+      "path": "server/monthlyFinancialPermissions.test.ts",
+      "bytes": 1867,
+      "sha256": "87b972506e4315c1624662fa0f0fa294ee1614a0b895daa4504fc9238907e6c0"
+    },
+    {
+      "path": "server/domains/ops/monthlyFinancialImportStorage.ts",
+      "bytes": 6450,
+      "sha256": "724de08e7c390eabf3beb902f50998dd15ff1a99346f04e34059da5d230ea459"
+    },
+    {
+      "path": "server/domains/ops/monthlyFinancialImportStorage.test.ts",
+      "bytes": 8400,
+      "sha256": "dab810c23cc4b94e305a8c6e071f9d2209807391cf63a37ca7e8d6454a3b5d75"
+    },
+    {
+      "path": "scripts/integration/monthlyFinancialSchemaPlan.mjs",
+      "bytes": 8461,
+      "sha256": "7a1ee835d0cb755415760da87238092b0dd059e97674a9ce7bc3cd3154effe01"
+    },
+    {
+      "path": "scripts/integration/monthlyFinancialSchemaPlan.test.mjs",
+      "bytes": 6599,
+      "sha256": "2bf845d1435138e8ab0c252816ba0e9da3731112ebcdc80d77ce11cd73fe1d5e"
+    },
+    {
+      "path": "shared/monthlyFinancialWrite.ts",
+      "bytes": 19432,
+      "sha256": "560492299c80e2750a9a047d4d5c54be3cbc284fd3c5d124d759e3065c52e8e5"
+    },
+    {
+      "path": "shared/monthlyFinancialWrite.test.ts",
+      "bytes": 11212,
+      "sha256": "f8f0e3b4dfd41dde3a50eb7de7a414ec6dbce59320c42eaceff0210e50882239"
+    },
+    {
+      "path": "shared/monthlyFinancialImport.ts",
+      "bytes": 34918,
+      "sha256": "a496f51784d8c516c5f1b84194f0639dde0fb3d95c93e0d6022101e34f6eb217"
+    },
+    {
+      "path": "shared/monthlyFinancialImport.test.ts",
+      "bytes": 14775,
+      "sha256": "b31674f359cbdad378897e894469ab09d7770ee6063c051a7f662121ad4f07c2"
+    },
+    {
+      "path": "shared/monthlyFinancialReportPreview.ts",
+      "bytes": 41671,
+      "sha256": "b97f6d86ea8ed7ac99c178144b84bae151e573a6f4f4b3c264cc51395a343a0c"
+    },
+    {
+      "path": "server/domains/ops/monthlyFinancialOperationJournal.ts",
+      "bytes": 11823,
+      "sha256": "e9702f03cd7734d49a7475da51034ff147d907bb1ae5fce051410ec5069914c7"
+    },
+    {
+      "path": "server/domains/ops/monthlyFinancialOperationJournal.test.ts",
+      "bytes": 8514,
+      "sha256": "35192d4696f2dac4434dc5373b708d27aca3b5cbae8e4d33032bfcf22e74076b"
+    },
+    {
+      "path": "server/domains/ops/monthlyFinancialWriteRepository.ts",
+      "bytes": 41663,
+      "sha256": "a87bb25beb52854b81d9409306bf988477572afd633b7160eedba6e44481d6e1"
+    },
+    {
+      "path": "server/domains/ops/monthlyFinancialWriteRepository.test.ts",
+      "bytes": 37260,
+      "sha256": "e913591803ff2dd1a55aee1d71cbc635e38ead1bc1846b1fd53ceac9fd404429"
+    },
+    {
+      "path": "server/routers/monthlyFinancialWrite.ts",
+      "bytes": 1670,
+      "sha256": "24137b4ae13aba991cd19c90b1fcc1a73ee0b43480175b823352061d3681290b"
+    },
+    {
+      "path": "server/routers/monthlyFinancialWrite.test.ts",
+      "bytes": 3914,
+      "sha256": "e852c12e19210a02d57da565fb4882501ae72147f62c3fb047f7256b4c07668e"
+    },
+    {
+      "path": "server/domains/ops/monthlyFinancialReadRepository.ts",
+      "bytes": 21621,
+      "sha256": "82a7af9d4d60f921bf5102f0852c06de3d1ef117da992f4e92c57096a7577598"
+    },
+    {
+      "path": "server/domains/ops/monthlyFinancialReadRepository.test.ts",
+      "bytes": 33414,
+      "sha256": "92adda0e87bf52b70d6a34e5a5fe57830db0fa7b4b143427a6aff512559ce7ae"
+    },
+    {
+      "path": "server/domains/ops/monthlyBoardReadCore.ts",
+      "bytes": 12526,
+      "sha256": "89ae45b0b7470d5d506539f6b3d76a8bff546349975877c2e364daedea2b27eb"
+    },
+    {
+      "path": "client/src/pages/ops/MonthlyFinancialWrite.tsx",
+      "bytes": 39374,
+      "sha256": "3bc15849fd25c5cbd5d0ce365c21d128eea57b847239857984bfe70c6655d949"
+    },
+    {
+      "path": "client/src/pages/ops/MonthlyFinancialWrite.component.test.tsx",
+      "bytes": 31725,
+      "sha256": "4506465c1b8a68aac266e72b1d1e0d9beee85b792426a6668428bb437822e157"
+    },
+    {
+      "path": "client/src/pages/ops/monthlyFinancialWriteEvents.ts",
+      "bytes": 715,
+      "sha256": "6a29e775d7f6668fbdc350f3eaee748459594592c1b68e6c16075b126f41a507"
+    },
+    {
+      "path": "client/src/pages/ops/MonthlyFinancialReadOnly.tsx",
+      "bytes": 33853,
+      "sha256": "bc188cf49ba884e17b33dd91ffde5570f6192f2ad73d5f95ab82ffed6e113a33"
+    },
+    {
+      "path": "client/src/pages/ops/MonthlyFinancialReadOnly.component.test.tsx",
+      "bytes": 32799,
+      "sha256": "18e6b6026d3ebc24c621b5663a38e0db12ff093c5d02680eeeb5806644adbdd9"
+    },
+    {
+      "path": "client/src/pages/ops/ProfitBoardReadOnly.tsx",
+      "bytes": 28040,
+      "sha256": "2acb3e801ea8a3c1e03d4b57760be29b372764e1cbbb1b1030907ce66cd85a9f"
+    },
+    {
+      "path": "client/src/pages/ops/ProfitBoardReadOnly.component.test.tsx",
+      "bytes": 28423,
+      "sha256": "b278c2fe0958181b1a381eed3ec343883e0d9ebe1fde319d108b48fb90e27b47"
+    },
+    {
+      "path": "client/src/pages/ops/ProductBoardReadOnly.tsx",
+      "bytes": 28066,
+      "sha256": "6f8bc6459f6b4fda3359afb74777eab34c6ae68d47f956d0b0e7cedd52c73c1b"
+    },
+    {
+      "path": "client/src/pages/ops/ProductBoardReadOnly.component.test.tsx",
+      "bytes": 36396,
+      "sha256": "47e734a00aacfd40d2e701a72c440fd1f049f732600799014372cbf4253c2953"
+    },
+    {
+      "path": "client/src/pages/ops/OperationsReadOnlyOverview.tsx",
+      "bytes": 22478,
+      "sha256": "99baba90efb090fb160887602567a7059012ac6917af07492dd58f240d4f1feb"
+    },
+    {
+      "path": "client/src/pages/ops/OperationsReadOnlyOverview.component.test.tsx",
+      "bytes": 14953,
+      "sha256": "4c59f699057523531c6e3f0cf30298c7f56e59d5164534118b9c7db1d664e412"
+    }
+  ]
+}

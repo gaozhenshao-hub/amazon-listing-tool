@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import MonthlyFinancialReadOnly, { MonthlyFinancialBatchContent, MonthlyFinancialHistoryContent, MonthlyFinancialSnapshotContent } from "./MonthlyFinancialReadOnly";
+import { publishMonthlyFinancialChange } from "./monthlyFinancialWriteEvents";
 import {
   buildMonthlyFinancialHistoryResult, buildMonthlyFinancialBatchResult, buildMonthlyFinancialSnapshotResult,
   buildMonthlyFinancialHistoryFailure, buildMonthlyFinancialBatchFailure, buildMonthlyFinancialSnapshotFailure,
@@ -74,6 +75,32 @@ function requestSnapshot(parent = "PARENT-A") { fillScope("快照", parent); fir
 async function expectBatchVisible() { await screen.findByText("原始品名-0"); }
 
 describe("monthly financial read ownership gates", () => {
+  it("refreshes only opened read lanes after same-owner committed changes, retaining scopes", async () => {
+    controls.listBatches.mockImplementation(async value => historyResult(value));
+    controls.getBatch.mockImplementation(async value => batchResult(value));
+    controls.getEffectiveSnapshot.mockImplementation(async value => snapshotResult(value));
+    render(<MonthlyFinancialReadOnly />);
+    act(() => publishMonthlyFinancialChange({ ...identity, action: "confirm", batchId: 80 }));
+    for (const query of allQueries()) expect(query).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "读取批次历史" }));
+    await screen.findByRole("button", { name: "选择批次 80" }); requestBatch(); await expectBatchVisible();
+    requestSnapshot(); await screen.findByRole("region", { name: "当前有效月报快照" });
+    act(() => publishMonthlyFinancialChange({ ...identity, action: "revoke", batchId: 80 }));
+    await waitFor(() => { for (const query of allQueries()) expect(query).toHaveBeenCalledTimes(2); });
+    expect(screen.getByLabelText("明细批次 ID")).toHaveValue("80");
+    expect(screen.getByLabelText("快照店铺")).toHaveValue("样本店铺");
+    expect(controls.getEffectiveSnapshot.mock.calls[1][0]).toEqual(snapshotInput);
+    expect(controls.getBatch.mock.calls[1][0]).toEqual(batchInput);
+  });
+  it("does not broaden unopened views or refresh foreign identities on upload notices", async () => {
+    controls.listBatches.mockImplementation(async value => historyResult(value)); render(<MonthlyFinancialReadOnly />);
+    fireEvent.click(screen.getByRole("button", { name: "读取批次历史" })); await screen.findByRole("button", { name: "选择批次 80" });
+    act(() => publishMonthlyFinancialChange({ userId: 8, workspaceId: 11, action: "confirm", batchId: 80 }));
+    expect(controls.listBatches).toHaveBeenCalledTimes(1);
+    act(() => publishMonthlyFinancialChange({ ...identity, action: "upload", batchId: 81 }));
+    await waitFor(() => expect(controls.listBatches).toHaveBeenCalledTimes(2));
+    expect(controls.getBatch).not.toHaveBeenCalled(); expect(controls.getEffectiveSnapshot).not.toHaveBeenCalled();
+  });
   it("starts without private data queries, writes, uploads, or model actions", () => {
     const view = render(<MonthlyFinancialReadOnly />);
     for (const query of allQueries()) expect(query).not.toHaveBeenCalled();

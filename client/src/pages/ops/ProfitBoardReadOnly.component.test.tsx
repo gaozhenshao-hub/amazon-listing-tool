@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ProfitBoardReadOnly, { ProfitBoardReadOnlyContent } from "./ProfitBoardReadOnly";
+import { publishMonthlyFinancialChange } from "./monthlyFinancialWriteEvents";
 import {
   ProfitBoardReadInputSchema, buildProfitBoardReadResult, buildProfitBoardReadFailure, profitBoardMonths,
   type ProfitBoardReadInput, type ProfitBoardReadResult, type ProfitBoardMonthSelection,
@@ -58,6 +59,20 @@ beforeEach(() => { controls.auth = { loading: false, error: null, user: { id: 7,
 afterEach(cleanup);
 
 describe("profit board readonly identity gates", () => {
+  it("re-reads an opened scope from page zero after commit without expanding an unopened scope", async () => {
+    controls.query.mockImplementation(async value => result(value)); render(<ProfitBoardReadOnly />);
+    act(() => publishMonthlyFinancialChange({ userId: 7, workspaceId: 11, action: "confirm", batchId: 80 }));
+    expect(controls.query).not.toHaveBeenCalled(); fillScope(); await readReady();
+    act(() => publishMonthlyFinancialChange({ userId: 8, workspaceId: 11, action: "confirm", batchId: 80 }));
+    act(() => publishMonthlyFinancialChange({ userId: 7, workspaceId: 11, action: "upload", batchId: 80 }));
+    expect(controls.query).toHaveBeenCalledTimes(1);
+    act(() => publishMonthlyFinancialChange({ userId: 7, workspaceId: 11, action: "revoke", batchId: 80 }));
+    await waitFor(() => expect(controls.query).toHaveBeenCalledTimes(2));
+    expect(controls.query.mock.calls[1][0]).toEqual(input()); expect(screen.getByLabelText("利润看板店铺")).toHaveValue("合成店铺");
+    fireEvent.click(screen.getByRole("button", { name: "取消并清除利润看板" }));
+    act(() => publishMonthlyFinancialChange({ userId: 7, workspaceId: 11, action: "confirm", batchId: 80 }));
+    expect(controls.query).toHaveBeenCalledTimes(2);
+  });
   it("has an explicit action only, privacy exclusion and no write, AI or archive control", () => {
     const view = render(<ProfitBoardReadOnly />);
     expect(controls.query).not.toHaveBeenCalled(); expect(view.container.firstElementChild).toHaveClass("manus-no-record");

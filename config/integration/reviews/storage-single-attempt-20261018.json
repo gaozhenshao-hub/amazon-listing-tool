@@ -1,0 +1,33 @@
+{
+  "version": "amazon-protected-baseline-review/1",
+  "reviewedOn": "2026-10-18",
+  "control": "K06",
+  "decision": "explicit_local_reviewed_allowance_not_provider_or_production_acceptance",
+  "scope": [
+    "Add server-controlled storagePut fourth options argument maxAttempts:1 for S3/OSS only; reject unsupported overrides.",
+    "Monthly durable original upload opts in so AWS SDK transport retries cannot violate its one-PUT protocol.",
+    "Omitted/empty options preserve old SDK retry configuration; existing storage consumers, provider identity, signing TTL, credential lookup and authorization are unchanged."
+  ],
+  "protectedFile": {
+    "path": "server/storage.ts",
+    "baseline": { "gitBlobSha1": "465654a27b81818d1e48178f93b656e4ee679e94", "sha256": "8c11373e51efebcb6359bb01279916aa3f85e5e457743d1162d6f9d73a178b77" },
+    "previousReviewed": { "gitBlobSha1": "de6884c85b2f7d92833454be2f1a6c620622e8c9", "sha256": "ac12160a4c84f03fe94e85bdb0de00f28c8fa947b48a8d7d9e5f0e100d1fbf60", "reviewRef": "config/integration/reviews/storage-reference-identity-20261014.json" },
+    "reviewed": { "gitBlobSha1": "6fe7da29a9b50e4d853d4bd3365979a7883eb60a", "sha256": "7de175e1523ee96f03f453db666c975e7efa10303001fc9a723aaebc81b51510" }
+  },
+  "verification": {
+    "independentSourceReview": "Root reviewed exact storage diff and real SDK test transport; no unrelated behavior change found.",
+    "implementationAgentFocusedTests": 129,
+    "newRealSdkInMemoryCases": 11,
+    "realSdkTimeoutTransportAttempts": { "explicitSingleAttempt": 1, "legacyDefault": 3 },
+    "implementationAgentScopedLintFiles": 4,
+    "implementationAgentScopedLintExitCode": 0,
+    "finalRootUnion": "Recorded separately in 20261018-friend-monthly-financial-write.json after frozen candidate checks."
+  },
+  "unchanged": { "baselineHashesRetained": true, "previousReviewRetained": true, "protectedTestsRetained": true, "providerConfiguration": true, "privateDownloadTtl": true, "accessPolicies": true, "dependencies": true },
+  "deployed": false,
+  "limitations": [
+    "Synthetic timeout transport only; no actual S3/OSS requests, credentials, buckets, ACL, CORS or database used.",
+    "A single send does not prove upload success; unknown results still require verified GET and the durable cancellation fence.",
+    "Historical non-monthly storage callers retain their retry behavior and are not newly certified as one-attempt protocols."
+  ]
+}

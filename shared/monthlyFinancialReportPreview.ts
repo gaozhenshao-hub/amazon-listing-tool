@@ -294,12 +294,14 @@ function metricColumns(column: PreviewColumn): PreviewMetricName[] {
   return candidateMetricColumns(column);
 }
 
-export async function parseMonthlyFinancialReportPreview(input: { bytes: Uint8Array | ArrayBuffer; format: "xlsx" | "csv" }): Promise<MonthlyFinancialReportPreview> {
+/** Shared, bounded file admission. Import uses this same security boundary; it
+ * does not opt into a relaxed ZIP/CSV parser or reinterpret cached formulas. */
+export async function loadMonthlyFinancialWorkbook(input: { bytes: Uint8Array | ArrayBuffer; format: "xlsx" | "csv" }): Promise<XLSX.WorkBook> {
   if (!input || !["xlsx", "csv"].includes(input.format) || !(input.bytes instanceof Uint8Array || input.bytes instanceof ArrayBuffer)) fail("INPUT", "请提供 XLSX 或 UTF-8 CSV 内存数据");
   if (!input.bytes.byteLength) fail("EMPTY_FILE", "文件为空");
   if (input.bytes.byteLength > MONTHLY_PREVIEW_LIMITS.bytes) fail("FILE_LIMIT", "文件超过 5 MiB 预览上限");
   // Copy before the asynchronous ZIP check so callers cannot change inspected bytes.
-  const bytes = input.bytes instanceof Uint8Array ? input.bytes.slice() : new Uint8Array(input.bytes.slice(0));
+  const bytes = input.bytes instanceof Uint8Array ? new Uint8Array(input.bytes) : new Uint8Array(input.bytes.slice(0));
   let book: XLSX.WorkBook;
   if (input.format === "csv") book = { SheetNames: ["CSV"], Sheets: { CSV: csvSheet(bytes) } };
   else {
@@ -309,7 +311,48 @@ export async function parseMonthlyFinancialReportPreview(input: { bytes: Uint8Ar
     catch { fail("XLSX_READ", "无法解析 Excel 工作簿"); }
   }
   if (!book.SheetNames.length || book.SheetNames.length > MONTHLY_PREVIEW_LIMITS.sheets) fail("SHEET_LIMIT", "工作表数量为空或超过 8 张");
-  const result: MonthlyFinancialReportPreview = { mode: "memory-preview-only", format: input.format, byteLength: bytes.length, amountConvention: "source-signed-no-conversion", sheets: [], rows: [], summaries: [], warnings: [], excludedFromSummaries: [] };
+  let actual = 0, projected = 0;
+  for (const name of book.SheetNames) {
+    const sheet = book.Sheets[name]; if (!sheet) fail("SHEET_INVALID", "工作表缺失"); let maxRow = -1, maxColumn = -1;
+    for (const range of [sheet["!ref"], sheet["!fullref"]]) if (range) { if (!/^[A-Z]+[1-9]\d*(?::[A-Z]+[1-9]\d*)?$/.test(range)) fail("SHEET_RANGE", "工作表范围无效"); const decoded = XLSX.utils.decode_range(range); if (decoded.e.r >= MONTHLY_PREVIEW_LIMITS.rows || decoded.e.c >= MONTHLY_PREVIEW_LIMITS.columns) fail("SHEET_LIMIT", "工作表声明范围超限，不截断预览"); }
+    for (const [address, original] of Object.entries(sheet)) { if (address.startsWith("!")) continue; if (!/^[A-Z]+[1-9]\d*$/.test(address)) fail("CELL_ADDRESS", "单元格地址无效"); const position = XLSX.utils.decode_cell(address), cell = original as XLSX.CellObject, value = cell.v ?? null;
+      if (position.r >= MONTHLY_PREVIEW_LIMITS.rows || position.c >= MONTHLY_PREVIEW_LIMITS.columns || ++actual > MONTHLY_PREVIEW_LIMITS.cells) fail("SHEET_LIMIT", "实际行、列或单元格数量超限");
+      if (value !== null && !["string", "number", "boolean"].includes(typeof value)) fail("CELL_TYPE", "不支持的单元格类型");
+      const formula = typeof cell.f === "string" ? cell.f : cell.F || typeof value === "string" && value.trimStart().startsWith("=") ? String(cell.F || value) : null;
+      if ([String(value ?? ""), formula || "", String(cell.z ?? "")].some(item => item.length > MONTHLY_PREVIEW_LIMITS.cellCharacters)) fail("CELL_LIMIT", "单元格文本或公式过长");
+      maxRow = Math.max(maxRow, position.r); maxColumn = Math.max(maxColumn, position.c);
+    }
+    projected += (maxRow + 1) * (maxColumn + 1); if (projected > MONTHLY_PREVIEW_LIMITS.cells) fail("SHEET_LIMIT", "所有工作表展开单元格总数量超限");
+  }
+  return book;
+}
+/** Header/identity interpretation shared with persistent import. Validation of
+ * duplicate totals is left to each consumer (preview rejects; import marks unknown). */
+export function monthlyFinancialHeaderColumns(sheet: XLSX.WorkSheet, h: number, topCells: PreviewCell[], next: PreviewCell[]): { columns: PreviewColumn[]; twoLevels: boolean } {
+  const top = topCells.map(cell => clean(cell.value));
+  for (const merge of sheet["!merges"] || []) {
+    if (merge.e.r >= MONTHLY_PREVIEW_LIMITS.rows || merge.e.c >= MONTHLY_PREVIEW_LIMITS.columns) fail("SHEET_LIMIT", "合并单元格范围超限");
+    if (merge.s.r === h && merge.e.r === h && merge.s.c !== merge.e.c) { for (let c = merge.s.c + 1; c <= merge.e.c; c++) { if (top[c]) fail("HEADER_MERGE", "合并表头包含冲突内容"); top[c] = top[merge.s.c]; } }
+    else if (merge.e.r > h + 1 || merge.s.r > h) fail("DATA_MERGE", "不猜测合并数据单元格的金额或归属");
+  }
+  const identityName = (label: string) => label === "月份" ? "时间" : label === "货币" ? "币种" : label;
+  const identityHeader = top.every((group, c) => !identityLabels.has(group) || !clean(next[c].value) || identityName(clean(next[c].value)) === identityName(group));
+  const twoLevels = identityHeader && next.some((cell, c) => { const group = top[c], value = clean(cell.value); return !identityLabels.has(group) && value !== group && !isTotalDetail(value) && metricColumns({ column: "", group, detail: value, rawGroup: "", rawDetail: "" }).length > 0 && !!value; });
+  const sub = twoLevels ? next.map(cell => clean(cell.value)) : top.map(() => "");
+  if ([...topCells, ...(twoLevels ? next : [])].some(cell => cell.formula || cell.error)) fail("HEADER_FORMULA", "表头不得依赖公式或错误缓存");
+  return { twoLevels, columns: top.map((group, c) => ({ column: XLSX.utils.encode_col(c), group: group === "月份" ? "时间" : group === "货币" ? "币种" : group, detail: sub[c], rawGroup: String(topCells[c].value ?? ""), rawDetail: twoLevels ? String(next[c].value ?? "") : "" })) };
+}
+export function monthlyFinancialSourceIdentity(columns: PreviewColumn[], raw: PreviewCell[]) {
+  const get = (label: string) => safeCellText(raw[columns.findIndex(column => column.group === label)]), monthRaw = get("时间"), month = monthRaw?.match(/^([1-9]\d{3})(?:[-/])?(0[1-9]|1[0-2])$/);
+  const kind: "data" | "summary" = [get("时间"), get("ASIN"), get("店铺")].some(value => value && isSummaryLabel(value)) ? "summary" : "data";
+  const asinRaw = get("ASIN"), asin = asinRaw && /^[A-Za-z0-9]{10}$/.test(asinRaw) ? asinRaw.toUpperCase() : null;
+  const parentRaw = get("父ASIN"), parentCandidates = [...new Set((parentRaw || "").toUpperCase().split(/[,，、;；\s]+/).filter(Boolean))], validParents = parentCandidates.every(value => /^[A-Z0-9]{10}$/.test(value)), ambiguous = !validParents || parentCandidates.length > 1;
+  const parentAsin = !ambiguous && parentCandidates.length === 1 ? parentCandidates[0] : null, storeName = get("店铺"), site = get("站点"), yearMonth = month ? `${month[1]}-${month[2]}` : null;
+  return { get, kind, asinRaw, asin, parentRaw, parentCandidates, ambiguous, parentAsin, storeName, site, yearMonth };
+}
+export async function parseMonthlyFinancialReportPreview(input: { bytes: Uint8Array | ArrayBuffer; format: "xlsx" | "csv" }): Promise<MonthlyFinancialReportPreview> {
+  const book = await loadMonthlyFinancialWorkbook(input), bytes = input.bytes;
+  const result: MonthlyFinancialReportPreview = { mode: "memory-preview-only", format: input.format, byteLength: bytes.byteLength, amountConvention: "source-signed-no-conversion", sheets: [], rows: [], summaries: [], warnings: [], excludedFromSummaries: [] };
   const warn = (code: string, message: string, sheet?: string, row?: number, columns?: string[]) => result.warnings.push({ code, message, ...(sheet ? { sheet } : {}), ...(row ? { row } : {}), ...(columns ? { columns } : {}) });
   let cellCount = 0, projectedCellCount = 0;
   for (const name of book.SheetNames) {
@@ -345,23 +388,7 @@ export async function parseMonthlyFinancialReportPreview(input: { bytes: Uint8Ar
       if (labels.includes("ASIN") && (labels.includes("时间") || labels.includes("月份")) && labels.includes("毛利润")) { h = r; break; }
     }
     if (h < 0) { warn("UNRECOGNIZED_SHEET", "前 10 行未识别月报关键表头，该表不参与预览合计", name); continue; }
-    const topCells = rowCells(h), top = topCells.map(cell => clean(cell.value));
-    for (const merge of sheet["!merges"] || []) {
-      if (merge.e.r >= MONTHLY_PREVIEW_LIMITS.rows || merge.e.c >= MONTHLY_PREVIEW_LIMITS.columns) fail("SHEET_LIMIT", "合并单元格范围超限");
-      if (merge.s.r === h && merge.e.r === h && merge.s.c !== merge.e.c) {
-        for (let c = merge.s.c + 1; c <= merge.e.c; c++) { if (top[c]) fail("HEADER_MERGE", "合并表头包含冲突内容"); top[c] = top[merge.s.c]; }
-      } else if (merge.e.r > h + 1 || merge.s.r > h) fail("DATA_MERGE", "不猜测合并数据单元格的金额或归属");
-    }
-    const next = rowCells(h + 1);
-    const identityName = (label: string) => label === "月份" ? "时间" : label === "货币" ? "币种" : label;
-    const identityHeader = top.every((group, c) => !identityLabels.has(group) || !clean(next[c].value) || identityName(clean(next[c].value)) === identityName(group));
-    const twoLevels = identityHeader && next.some((cell, c) => {
-      const group = top[c], value = clean(cell.value);
-      return !identityLabels.has(group) && value !== group && !isTotalDetail(value) && metricColumns({ column: "", group, detail: value, rawGroup: "", rawDetail: "" }).length > 0 && !!value;
-    });
-    const sub = twoLevels ? next.map(cell => clean(cell.value)) : top.map(() => "");
-    if ([...topCells, ...(twoLevels ? next : [])].some(cell => cell.formula || cell.error)) fail("HEADER_FORMULA", "表头不得依赖公式或错误缓存");
-    const columns: PreviewColumn[] = top.map((group, c) => ({ column: XLSX.utils.encode_col(c), group: group === "月份" ? "时间" : group === "货币" ? "币种" : group, detail: sub[c], rawGroup: String(topCells[c].value ?? ""), rawDetail: twoLevels ? String(next[c].value ?? "") : "" }));
+    const { columns, twoLevels } = monthlyFinancialHeaderColumns(sheet, h, rowCells(h), rowCells(h + 1));
     if (columns.some(column => !column.group)) fail("HEADER_EMPTY", "存在无名称列；不把空表头自动归属到左侧分组");
     const seen = new Set<string>();
     for (const column of columns) {
@@ -387,14 +414,7 @@ export async function parseMonthlyFinancialReportPreview(input: { bytes: Uint8Ar
     result.sheets.push({ name, range, headerRows: twoLevels ? [h + 1, h + 2] : [h + 1], columns });
     for (let r = h + (twoLevels ? 2 : 1); r <= maxRow; r++) {
       const raw = rowCells(r); if (raw.every(cell => missing(cell.value) && !cell.formula)) continue;
-      const get = (label: string) => safeCellText(raw[columns.findIndex(column => column.group === label)]);
-      const monthRaw = get("时间"), month = monthRaw?.match(/^([1-9]\d{3})(?:[-/])?(0[1-9]|1[0-2])$/);
-      const kind = [get("时间"), get("ASIN"), get("店铺")].some(value => value && isSummaryLabel(value)) ? "summary" : "data";
-      const asinRaw = get("ASIN"), asin = asinRaw && /^[A-Za-z0-9]{10}$/.test(asinRaw) ? asinRaw.toUpperCase() : null;
-      const parentRaw = get("父ASIN"), parentCandidates = [...new Set((parentRaw || "").toUpperCase().split(/[,，、;；\s]+/).filter(Boolean))];
-      const validParents = parentCandidates.every(value => /^[A-Z0-9]{10}$/.test(value)), ambiguous = !validParents || parentCandidates.length > 1;
-      const parentAsin = !ambiguous && parentCandidates.length === 1 ? parentCandidates[0] : null;
-      const storeName = get("店铺"), site = get("站点"), yearMonth = month ? `${month[1]}-${month[2]}` : null;
+      const { get, kind, asinRaw, asin, parentRaw, parentCandidates, ambiguous, parentAsin, storeName, site, yearMonth } = monthlyFinancialSourceIdentity(columns, raw);
       if (kind === "data" && (!yearMonth || !storeName || !site || asinRaw && !asin || ambiguous)) warn("IDENTITY_UNRESOLVED", "月份/店铺/站点/ASIN/父体有缺失或歧义；保留原行，不猜归属", name, r + 1);
       if (asin && !parentRaw) warn("PARENT_UNKNOWN", "未提供父 ASIN，不用子 ASIN 回填", name, r + 1);
       const parsed = raw.map(amount), currencyRaw = get("币种"), codes = new Set(monetaryIndexes.map(c => parsed[c].currency).filter((code): code is string => !!code));

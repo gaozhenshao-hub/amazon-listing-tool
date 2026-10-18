@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import { trpc } from "@/lib/trpc";
+import { subscribeMonthlyFinancialChanges } from "./monthlyFinancialWriteEvents";
 import {
   ProfitBoardReadInputSchema, ProfitBoardReadResultSchema,
   type ProfitBoardReadInput, type ProfitBoardReadResult, type ProfitBoardPoint,
@@ -156,15 +157,16 @@ const pageBinding = (result: ProfitBoardReadResult) => JSON.stringify({ months: 
 function OwnedProfitBoard({ owner }: { owner: Owner }) {
   const client = trpc.useUtils().client;
   const [scope, setScope] = useState({ month: "", storeName: "", country: "", parentAsin: "", search: "" }), [state, setState] = useState<ReadState>({ status: "idle" });
-  const sequence = useRef(0), pending = useRef<AbortController | null>(null);
+  const sequence = useRef(0), pending = useRef<AbortController | null>(null), active = useRef(false);
   useEffect(() => () => { sequence.current++; pending.current?.abort(); }, []);
-  function clear() { sequence.current++; pending.current?.abort(); pending.current = null; setState({ status: "idle" }); }
+  function clear() { sequence.current++; pending.current?.abort(); pending.current = null; active.current = false; setState({ status: "idle" }); }
   async function read(offset = 0, previous?: ProfitBoardReadResult, selectedId?: string, requestedMonth?: string) {
     clear(); const month = requestedMonth ?? scope.month;
     if (requestedMonth !== undefined) setScope(value => ({ ...value, month: requestedMonth }));
     const { parentAsin, ...otherScope } = scope;
     const parsed = ProfitBoardReadInputSchema.safeParse({ ...otherScope, month, ...(parentAsin.trim() ? { parentAsin: parentAsin.trim() } : {}), expectedWorkspaceId: owner.workspaceId, groupOffset: offset, groupLimit: GROUP_LIMIT });
     if (!parsed.success) { setState({ status: "invalid" }); return; }
+    active.current = true;
     const ticket = ++sequence.current, controller = new AbortController(); pending.current = controller;
     const current = () => ticket === sequence.current && !controller.signal.aborted;
     setState({ status: "loading" });
@@ -177,6 +179,10 @@ function OwnedProfitBoard({ owner }: { owner: Owner }) {
     } catch { if (current()) setState({ status: "error" }); }
     finally { if (current()) pending.current = null; }
   }
+  const readRef = useRef(read); readRef.current = read;
+  useEffect(() => subscribeMonthlyFinancialChanges(notice => {
+    if (notice.action !== "upload" && notice.userId === owner.userId && notice.workspaceId === owner.workspaceId && active.current) void readRef.current();
+  }), [owner.userId, owner.workspaceId]);
   return <Shell><form aria-label="利润看板读取范围" className="space-y-3" onSubmit={event => { event.preventDefault(); void read(); }}>
     <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">{([ ["month", "基准月份（YYYY-MM）"], ["storeName", "店铺"], ["country", "站点 / 国家代码"], ["parentAsin", "父 ASIN（可选）"], ["search", "产品搜索（保留完整父组）"] ] as const).map(([key, label]) => <label className="min-w-0 text-sm" key={key}>{label}<input className="mt-1 w-full min-w-0 rounded border bg-background p-2" aria-label={`利润看板${label}`} autoComplete="off" value={scope[key]} onChange={event => { const value = event.currentTarget.value; clear(); setScope(old => ({ ...old, [key]: value })); }} /></label>)}</div>
     <p className="text-xs text-muted-foreground">父 ASIN 留空时只读取服务器当前授权父体；搜索和留空都不是权限。不会按保存的姓名或 ownerIds 授权；不跨店 / 站点合计。</p>

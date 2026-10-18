@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import { trpc } from "@/lib/trpc";
+import { subscribeMonthlyFinancialChanges } from "./monthlyFinancialWriteEvents";
 import {
   MONTHLY_FINANCIAL_METRICS, MonthlyFinancialHistoryInputSchema, MonthlyFinancialHistoryResultSchema,
   MonthlyFinancialBatchInputSchema, MonthlyFinancialBatchResultSchema, MonthlyFinancialSnapshotInputSchema, MonthlyFinancialSnapshotResultSchema,
@@ -37,12 +38,12 @@ function Shell({ children }: { children: ReactNode }) {
  * invalidation still prevents an earlier scope or request from rendering. */
 function useReadLane<T>() {
   const [state, setState] = useState<ReadState<T>>({ status: "idle" });
-  const sequence = useRef(0), pending = useRef<AbortController | null>(null);
+  const sequence = useRef(0), pending = useRef<AbortController | null>(null), active = useRef(false);
   useEffect(() => () => { sequence.current++; pending.current?.abort(); }, []);
-  function clear() { sequence.current++; pending.current?.abort(); pending.current = null; setState({ status: "idle" }); }
+  function clear(preserveActive = false) { sequence.current++; pending.current?.abort(); pending.current = null; setState({ status: "idle" }); if (!preserveActive) active.current = false; }
   function invalid() { clear(); setState({ status: "invalid" }); }
   async function run(read: (signal: AbortSignal) => Promise<unknown>, accept: (value: unknown) => T) {
-    clear(); const ticket = ++sequence.current, controller = new AbortController(); pending.current = controller;
+    clear(true); active.current = true; const ticket = ++sequence.current, controller = new AbortController(); pending.current = controller;
     const current = () => ticket === sequence.current && !controller.signal.aborted;
     setState({ status: "loading" });
     try {
@@ -53,7 +54,7 @@ function useReadLane<T>() {
     } catch { if (current()) setState({ status: "error" }); }
     finally { if (current()) pending.current = null; }
   }
-  return { state, clear, invalid, run };
+  return { state, clear, invalid, run, active };
 }
 
 function ReadNotice({ state, name }: { state: ReadState<unknown>; name: string }) {
@@ -240,8 +241,8 @@ function OwnedMonthly({ owner }: { owner: Owner }) {
   const [batchId, setBatchId] = useState(""), [batchScope, setBatchScope] = useState(emptyScope), [wholeBatch, setWholeBatch] = useState(manager);
   const [snapshotScope, setSnapshotScope] = useState(emptyScope);
   function selectBatch(value: string) { batch.clear(); setBatchId(value); }
-  function readHistory(cursor: number | null, trail: Array<number | null>) {
-    batch.clear(); setBatchId(""); setCursorTrail(trail);
+  function readHistory(cursor: number | null, trail: Array<number | null>, preserveSelection = false) {
+    if (!preserveSelection) { batch.clear(); setBatchId(""); } setCursorTrail(trail);
     const input = MonthlyFinancialHistoryInputSchema.parse({ expectedWorkspaceId: owner.workspaceId, cursor, limit: 20 });
     void history.run(signal => client.monthlyFinancialRead.listBatches.query(input, { signal }), value => acceptHistory(value, input, owner));
   }
@@ -257,6 +258,14 @@ function OwnedMonthly({ owner }: { owner: Owner }) {
     if (!parsed.success) { snapshot.invalid(); return; }
     void snapshot.run(signal => client.monthlyFinancialRead.getEffectiveSnapshot.query(parsed.data, { signal }), value => acceptSnapshot(value, parsed.data, owner));
   }
+  const changeHandler = useRef((notice: { userId: number; workspaceId: number; action: string; batchId: number }) => {});
+  changeHandler.current = notice => {
+    if (notice.userId !== owner.userId || notice.workspaceId !== owner.workspaceId) return;
+    if (history.active.current) readHistory(null, [null], true);
+    if (batch.active.current && (notice.action !== "upload" || String(notice.batchId) === batchId)) readBatch(0);
+    if (snapshot.active.current && notice.action !== "upload") readSnapshot(0);
+  };
+  useEffect(() => subscribeMonthlyFinancialChanges(notice => changeHandler.current(notice)), []);
   return <Shell>
     <section aria-label="月报批次历史读取" className="min-w-0 space-y-3 border-b pb-5"><h3 className="font-medium">一、完整批次历史</h3>
       <p className="text-sm">{manager ? "管理员可读取当前工作区批次元数据。" : "历史仅展示本人上传的元数据，不因此授予整批业务内容权限。"}选择批次不会自动读取明细。</p>
@@ -272,7 +281,7 @@ function OwnedMonthly({ owner }: { owner: Owner }) {
         <label className="block text-sm">批次 ID（可从历史选择或填写已知 ID）<input className="mt-1 block w-full max-w-sm rounded border bg-background p-2" aria-label="明细批次 ID" value={batchId} onChange={event => selectBatch(event.currentTarget.value)} inputMode="numeric" autoComplete="off" /></label>
         {manager && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={wholeBatch} onChange={event => { batch.clear(); setWholeBatch(event.currentTarget.checked); }} />读取整批（管理员，包含未分配行）</label>}
         {!wholeBatch && <ScopeFields value={batchScope} prefix="明细" onChange={(key, value) => { batch.clear(); setBatchScope(old => ({ ...old, [key]: value })); }} />}
-        <div className="flex gap-3"><button type="submit" className={buttonClass}>读取所选批次明细</button><button className={buttonClass} type="button" onClick={batch.clear}>取消并清除明细</button></div>
+        <div className="flex gap-3"><button type="submit" className={buttonClass}>读取所选批次明细</button><button className={buttonClass} type="button" onClick={() => batch.clear()}>取消并清除明细</button></div>
       </form><ReadNotice state={batch.state} name="批次明细" />
       {batch.state.status === "ready" && <><MonthlyFinancialBatchContent result={batch.state.value} />{batch.state.value.status === "ready" && <nav aria-label="批次明细分页" className="flex gap-3">
         <button className={buttonClass} disabled={batch.state.value.page.rowOffset === 0} onClick={() => { if (batch.state.status === "ready") readBatch(Math.max(0, batch.state.value.page.rowOffset - ROW_PAGE_SIZE)); }}>上一页原始行</button>
@@ -283,7 +292,7 @@ function OwnedMonthly({ owner }: { owner: Owner }) {
       <form aria-label="有效快照查询范围" className="space-y-3" onSubmit={event => { event.preventDefault(); readSnapshot(); }}>
         <ScopeFields value={snapshotScope} prefix="快照" parentOptional={manager} onChange={(key, value) => { snapshot.clear(); setSnapshotScope(old => ({ ...old, [key]: value })); }} />
         <p className="text-xs">{manager ? "父 ASIN 留空时读取该月份 / 店铺 / 站点全范围，含未分配及歧义行。" : "必须指定已授权的真实父 ASIN；不能读取整范围或未分配费用。"}</p>
-        <div className="flex gap-3"><button className={buttonClass} type="submit">读取有效快照</button><button className={buttonClass} type="button" onClick={snapshot.clear}>取消并清除快照</button></div>
+        <div className="flex gap-3"><button className={buttonClass} type="submit">读取有效快照</button><button className={buttonClass} type="button" onClick={() => snapshot.clear()}>取消并清除快照</button></div>
       </form><ReadNotice state={snapshot.state} name="有效快照" />
       {snapshot.state.status === "ready" && <><MonthlyFinancialSnapshotContent result={snapshot.state.value} />{snapshot.state.value.status === "ready" && <nav aria-label="有效快照分页" className="flex gap-3">
         <button className={buttonClass} disabled={snapshot.state.value.page.rowOffset === 0} onClick={() => { if (snapshot.state.status === "ready") readSnapshot(Math.max(0, snapshot.state.value.page.rowOffset - ROW_PAGE_SIZE)); }}>上一页快照行</button>

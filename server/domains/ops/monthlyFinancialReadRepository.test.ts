@@ -4,6 +4,7 @@ import type { SQL } from "drizzle-orm";
 import { MONTHLY_FINANCIAL_METRICS } from "../../../shared/monthlyFinancialRead";
 import type { TrpcContext } from "../../_core/context";
 import { createMonthlyFinancialReadRepository } from "./monthlyFinancialReadRepository";
+import { projection as boardProjection } from "./monthlyBoardReadCore";
 
 type Row = Record<string, unknown>;
 const scope = { yearMonth: "2026-09", parentAsin: "B000000001", storeName: "Exact Store", country: "US" };
@@ -63,6 +64,20 @@ beforeEach(() => {
   actors = [{ id: 3, role: "ops_manager", status: "active", defaultWorkspaceId: 7 }]; assignments = []; mappings = []; policies = []; overrides = []; batches = [batch()];
 });
 describe("monthly financial readonly SQL boundary", () => {
+  it("recognizes only the workspace-bound private monthly object namespace in both projections", async () => {
+    await repo.listBatches(context(), historyInput);
+    const query = queries.find(query => query.sql.includes("FROM ops_monthly_profit_imports"))!;
+    for (const text of [query.sql, boardProjection(1024)]) {
+      expect(text).toContain("^storage://(s3|oss)/monthly-financial/',workspaceId,'/[a-f0-9]{64}[.](xlsx|csv)$");
+      expect(text).toContain("BINARY fileUrl=BINARY LOWER(fileUrl)");
+      expect(text).not.toContain("^(https://|s3://|oss://|storage://)");
+    }
+  });
+  it("private upload origin keeps original-byte hash provenance without exposing the storage URI", async () => {
+    const result = await repo.listBatches(context(), historyInput);
+    expect(result.batches[0].origin).toEqual({ kind: "uploaded_file", hashBasis: "original_file_bytes", sourceRunId: null });
+    expect(JSON.stringify(result)).not.toContain("storage://");
+  });
   it("has exactly three read operations, never initializes schema or fetches storage files", async () => {
     expect(Object.keys(repo)).toEqual(["listBatches", "getBatch", "getEffectiveSnapshot"]);
     await repo.listBatches(context(), historyInput); await repo.getBatch(context(), batchInput); await repo.getEffectiveSnapshot(context(), snapshotInput);

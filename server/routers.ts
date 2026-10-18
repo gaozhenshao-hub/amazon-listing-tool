@@ -85,6 +85,7 @@ import { dataImportRouter } from "./routers/dataImport";
 import { productCostsReadOnlyRouter } from "./routers/productCostsReadOnly";
 import { productCostsWriteRouter } from "./routers/productCostsWrite";
 import { monthlyFinancialReadRouter } from "./routers/monthlyFinancialRead";
+import { monthlyFinancialWriteRouter } from "./routers/monthlyFinancialWrite";
 import { inventorySnapshotReadRouter } from "./routers/inventorySnapshotRead";
 import { profitBoardReadRouter } from "./routers/profitBoardRead";
 import { productBoardReadRouter } from "./routers/productBoardRead";
@@ -207,6 +208,7 @@ export const appRouter = router({
   productCostsReadOnly: productCostsReadOnlyRouter,
   productCostsWrite: productCostsWriteRouter,
   monthlyFinancialRead: monthlyFinancialReadRouter,
+  monthlyFinancialWrite: monthlyFinancialWriteRouter,
   inventorySnapshotRead: inventorySnapshotReadRouter,
   profitBoardRead: profitBoardReadRouter,
   productBoardRead: productBoardReadRouter,
