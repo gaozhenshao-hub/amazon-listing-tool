@@ -152,7 +152,8 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
           })));
           setGenerated(true);
           setCheckScores(undefined);
-          autoCheckTriggered.current = !!configured?.enabled;
+          if (configured?.enabled) autoCheckTriggered.current = true;
+          else autoCheckTriggered.current = false;
           toast.success(`已生成 ${items.length} 组QA`);
         } else {
           toast.error("QA生成结果格式异常");

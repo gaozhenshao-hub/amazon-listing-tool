@@ -174,7 +174,8 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
           setSelectedIdx(null);
           setConfirmed(false);
           setTitleCheckScores(undefined);
-          autoCheckTriggered.current = !!configured?.enabled;
+          if (configured?.enabled) autoCheckTriggered.current = true;
+          else autoCheckTriggered.current = false;
           toast.success(`已生成 ${normalizedTitles.length} 个候选标题（两段式）`);
         } else {
           // Fallback: single title

@@ -106,14 +106,16 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
         setDescription(text);
         setGenerated(true);
         setCheckScores(undefined);
-        autoCheckTriggered.current = !!configured?.enabled;
+        if (configured?.enabled) autoCheckTriggered.current = true;
+        else autoCheckTriggered.current = false;
         toast.success("产品描述已生成");
       } catch {
         const text = typeof data === "string" ? data : JSON.stringify(data);
         setDescription(text);
         setGenerated(true);
         setCheckScores(undefined);
-        autoCheckTriggered.current = !!configured?.enabled;
+        if (configured?.enabled) autoCheckTriggered.current = true;
+        else autoCheckTriggered.current = false;
         toast.success("产品描述已生成");
       }
     },

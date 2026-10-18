@@ -106,14 +106,16 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
         setCategories(cats);
         setGenerated(true);
         setCheckScores(undefined);
-        autoCheckTriggered.current = !!configured?.enabled;
+        if (configured?.enabled) autoCheckTriggered.current = true;
+        else autoCheckTriggered.current = false;
         toast.success("搜索词已生成");
       } catch {
         const text = typeof data === "string" ? data : JSON.stringify(data);
         setSearchTerms(text);
         setGenerated(true);
         setCheckScores(undefined);
-        autoCheckTriggered.current = !!configured?.enabled;
+        if (configured?.enabled) autoCheckTriggered.current = true;
+        else autoCheckTriggered.current = false;
         toast.success("搜索词已生成");
       }
     },
