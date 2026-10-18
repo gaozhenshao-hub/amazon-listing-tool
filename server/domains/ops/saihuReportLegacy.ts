@@ -41,7 +41,11 @@ export async function withSaihuLegacyWrite<T>(
 }
 /** Complete legacy row fingerprints participate in the new source/history CAS.
  * Exact workspace only: NULL-workspace rows are not silently adopted. */
-export async function readSaihuLegacyRows(tx: DbExecutor, workspaceId: number) {
+export async function readSaihuLegacyRows(
+  tx: DbExecutor,
+  workspaceId: number,
+  window?: { start: string; end: string }
+) {
   const cols = Object.entries(getTableColumns(saihuProductWeekly)),
     actual = await saihuReportRows(
       tx,
@@ -56,44 +60,62 @@ export async function readSaihuLegacyRows(tx: DbExecutor, workspaceId: number) {
   )
     return saihuReportFail("LEGACY_SOURCE_SCHEMA_UNVERIFIED");
   const entries = cols
-      .map(([key, column]) => {
-        if (
-          !/^[A-Za-z][A-Za-z0-9_]*$/u.test(key) ||
-          !/^[A-Za-z][A-Za-z0-9_]*$/u.test(column.name)
-        )
-          return saihuReportFail("LEGACY_SOURCE_SCHEMA_UNVERIFIED");
-        return `'${key}',\`${column.name}\``;
-      })
-      .join(","),
-    found = await saihuReportRows(
+    .map(([key, column]) => {
+      if (
+        !/^[A-Za-z][A-Za-z0-9_]*$/u.test(key) ||
+        !/^[A-Za-z][A-Za-z0-9_]*$/u.test(column.name)
+      )
+        return saihuReportFail("LEGACY_SOURCE_SCHEMA_UNVERIFIED");
+      return `'${key}',\`${column.name}\``;
+    })
+    .join(",");
+  let total = 0,
+    cursor: number | null = null;
+  const result: Record<string, unknown>[] = [];
+  for (;;) {
+    const found = await saihuReportRows(
       tx,
-      `SELECT id,IF(OCTET_LENGTH(CAST(JSON_OBJECT(${entries}) AS CHAR CHARACTER SET utf8mb4))<=1048576,CAST(JSON_OBJECT(${entries}) AS CHAR CHARACTER SET utf8mb4),NULL) AS content FROM saihu_product_weekly WHERE workspaceId=? ORDER BY id DESC LIMIT 10001 FOR SHARE`,
-      [workspaceId],
-      10001
+      `SELECT id,IF(OCTET_LENGTH(CAST(JSON_OBJECT(${entries}) AS CHAR CHARACTER SET utf8mb4))<=1048576,CAST(JSON_OBJECT(${entries}) AS CHAR CHARACTER SET utf8mb4),NULL) AS content FROM saihu_product_weekly WHERE workspaceId=?${window ? " AND ((weekStartDate<=? AND weekEndDate>=?) OR weekStartDate IS NULL OR weekEndDate IS NULL OR weekStartDate NOT REGEXP '^20[0-9]{2}-[0-9]{2}-[0-9]{2}$' OR weekEndDate NOT REGEXP '^20[0-9]{2}-[0-9]{2}-[0-9]{2}$')" : ""}${cursor === null ? "" : " AND id<?"} ORDER BY id DESC LIMIT 128 FOR SHARE`,
+      [
+        workspaceId,
+        ...(window ? [window.end, window.start] : []),
+        ...(cursor === null ? [] : [cursor]),
+      ],
+      128
     );
-  if (found.length > 10000) return saihuReportFail("LEGACY_SOURCE_BUDGET");
-  let total = 0;
-  return found.map(row => {
-    total += Buffer.byteLength(String(row.content));
-    if (total > 16 * 1024 * 1024)
-      return saihuReportFail("LEGACY_SOURCE_BUDGET");
-    const value = saihuReportJson(row.content, 1048576);
-    if (
-      !value ||
-      typeof value !== "object" ||
-      Array.isArray(value) ||
-      (value as Record<string, unknown>).id !== row.id ||
-      (value as Record<string, unknown>).workspaceId !== workspaceId
-    )
-      return saihuReportFail("LEGACY_SOURCE_INVALID");
-    return value as Record<string, unknown>;
-  });
+    for (const row of found) {
+      if (
+        typeof row.id !== "number" ||
+        !Number.isSafeInteger(row.id) ||
+        row.id < 1 ||
+        (cursor !== null && row.id >= cursor)
+      )
+        return saihuReportFail("LEGACY_SOURCE_INVALID");
+      cursor = row.id;
+      total += Buffer.byteLength(String(row.content));
+      if (total > 16 * 1024 * 1024)
+        return saihuReportFail("LEGACY_SOURCE_BUDGET");
+      const value = saihuReportJson(row.content, 1048576);
+      if (
+        !value ||
+        typeof value !== "object" ||
+        Array.isArray(value) ||
+        (value as Record<string, unknown>).id !== row.id ||
+        (value as Record<string, unknown>).workspaceId !== workspaceId
+      )
+        return saihuReportFail("LEGACY_SOURCE_INVALID");
+      result.push(value as Record<string, unknown>);
+    }
+    if (found.length < 128) break;
+  }
+  return result;
 }
 export async function saihuLegacyHistoryHash(
   tx: DbExecutor,
-  workspaceId: number
+  workspaceId: number,
+  window?: { start: string; end: string }
 ) {
-  return saihuReportHash(await readSaihuLegacyRows(tx, workspaceId));
+  return saihuReportHash(await readSaihuLegacyRows(tx, workspaceId, window));
 }
 const number = (value: unknown): number | null => {
   if (value === null || value === undefined) return null;

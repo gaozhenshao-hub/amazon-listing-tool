@@ -26,6 +26,19 @@ const reviewed = {
 };
 
 describe("selling point planning recovery", () => {
+  it("explicit configured application preserves all seven directions and metadata without forging a legacy run or confirmation", () => {
+    const { result } = renderHook(() => useSellingPointPlanRecovery(1));
+    act(() => result.current.applyConfigured(output));
+    expect(result.current.points).toEqual(output.sellingPoints); expect(result.current.metadata.overallStrategy).toBe(output.overallStrategy);
+    expect(result.current.metadata.checkListCoverage).toEqual(output.checkListCoverage); expect(result.current.metadata.researchLimitations).toEqual(output.researchLimitations);
+    expect(result.current.dirty).toBe(true); expect(result.current.sourceRunId).toBeNull(); expect(result.current.points?.[0]).not.toHaveProperty("confirmed");
+    act(() => result.current.restore("old-run", { sellingPoints: [{ theme: "OLD" }] }, []));
+    expect(result.current.points).toEqual(output.sellingPoints);
+  });
+  it("ignores a late configured apply callback from a previous project", () => {
+    const { result, rerender } = renderHook(({ projectId }) => useSellingPointPlanRecovery(projectId), { initialProps: { projectId: 1 } });
+    const stale = result.current.applyConfigured; rerender({ projectId: 2 }); act(() => stale(output)); expect(result.current.points).toBeNull();
+  });
   it("uses the last complete planning run when the latest retry failed, never another project or a bullet draft", () => {
     const saved = { runId: "saved", projectId: 1, status: "succeeded", input: { operation: "sellingPoints", scopeKey: "main" }, output };
     const failed = { ...saved, runId: "failed", status: "failed" };

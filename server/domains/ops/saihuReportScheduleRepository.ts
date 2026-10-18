@@ -41,6 +41,7 @@ import {
   saihuReportJson,
 } from "./saihuReportStore";
 import { readSaihuReportRun } from "./saihuReportProtocol";
+import { SAIHU_SCHEDULE_PROCEDURE } from "./saihuReportFrozenScheduleDispatch";
 import type { MonthlyFinancialWriteSession } from "./monthlyFinancialWriteRepository";
 import type { DbExecutor } from "../../repositories/dbClient";
 
@@ -705,6 +706,19 @@ export function createSaihuReportScheduleRepository(
         ready.next.operationId
       );
       if (!run) saihuReportFail("ACK_UNVERIFIABLE");
+      // Relational marker only. Frozen v1 request/input and UUID hashes do not change.
+      await saihuReportWrite(
+        current.tx,
+        "UPDATE ai_jobs SET `procedure`=? WHERE runId=? AND kind=? AND `procedure`='opsSaihuReport.start' AND status='queued'",
+        [SAIHU_SCHEDULE_PROCEDURE, run.runId, "ops.saihu_report_capture.v1"]
+      );
+      const marked = await readSaihuReportRun(
+        current.tx,
+        identity,
+        ready.next.operationId
+      );
+      if (!marked || marked.procedure !== SAIHU_SCHEDULE_PROCEDURE)
+        saihuReportFail("ACK_UNVERIFIABLE");
       const binding = {
           version: 1,
           identity,

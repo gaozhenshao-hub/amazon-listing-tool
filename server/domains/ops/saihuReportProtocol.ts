@@ -10,6 +10,7 @@ import {
   SAIHU_REPORT_PREVIEW_KEY,
   SaihuReportSourceSchema,
   SaihuReportCapturePreviewSchema,
+  SaihuReportReceiptSchema,
   saihuReportHash,
   type SaihuReportIdentity,
 } from "../../../shared/saihuReportSync";
@@ -89,7 +90,7 @@ export async function readSaihuReportRun(
   const runId = saihuReportRunId(identity, operationId),
     rows = await saihuReportRows(
       tx,
-      "SELECT id,workspaceId,userId,runId,kind,module,projectId,status,maxAttempts,IF(OCTET_LENGTH(CAST(input AS CHAR CHARACTER SET utf8mb4))<=262144,CAST(input AS CHAR CHARACTER SET utf8mb4),NULL) AS input,IF(OCTET_LENGTH(CAST(output AS CHAR CHARACTER SET utf8mb4))<=65536,CAST(output AS CHAR CHARACTER SET utf8mb4),NULL) AS output,lockedBy,UNIX_TIMESTAMP(leaseUntil)*1000 AS leaseUntil FROM ai_jobs WHERE runId=? LIMIT 2 FOR UPDATE",
+      "SELECT id,workspaceId,userId,runId,kind,module,`procedure`,projectId,status,maxAttempts,IF(OCTET_LENGTH(CAST(input AS CHAR CHARACTER SET utf8mb4))<=262144,CAST(input AS CHAR CHARACTER SET utf8mb4),NULL) AS input,IF(OCTET_LENGTH(CAST(output AS CHAR CHARACTER SET utf8mb4))<=65536,CAST(output AS CHAR CHARACTER SET utf8mb4),NULL) AS output,lockedBy,UNIX_TIMESTAMP(leaseUntil)*1000 AS leaseUntil FROM ai_jobs WHERE runId=? LIMIT 2 FOR UPDATE",
       [runId],
       2
     );
@@ -104,6 +105,9 @@ export async function readSaihuReportRun(
     row.runId !== runId ||
     row.kind !== SAIHU_REPORT_KIND ||
     row.module !== "ops" ||
+    !["opsSaihuReport.start", "opsSaihuSchedule.occurrence"].includes(
+      String(row.procedure)
+    ) ||
     row.projectId !== null ||
     row.maxAttempts !== 1
   )
@@ -145,11 +149,57 @@ export async function readSaihuReportRun(
   return {
     id: row.id,
     runId,
+    procedure: row.procedure as
+      | "opsSaihuReport.start"
+      | "opsSaihuSchedule.occurrence",
     input,
     output,
     lockedBy: row.lockedBy,
     leaseUntil: row.leaseUntil,
   };
+}
+/** Small durable identity/scope proof for complete metadata window scans.
+ * The original start journal, not a mutable scope hint, binds frozen input. */
+export async function readSaihuReportStartReceipt(
+  tx: SaihuReportExecutor,
+  run: NonNullable<Awaited<ReturnType<typeof readSaihuReportRun>>>
+) {
+  const { identity, operationId } = run.input;
+  const auditId = `saihu_operation_${saihuReportOperationKey(identity, operationId)}`;
+  const rows = await saihuReportRows(
+    tx,
+    "SELECT auditId,workspaceId,actorUserId,action,resourceType,resourceId,status,IF(OCTET_LENGTH(CAST(metadata AS CHAR CHARACTER SET utf8mb4))<=32768,CAST(metadata AS CHAR CHARACTER SET utf8mb4),NULL) AS metadata FROM security_audit_logs WHERE auditId=? LIMIT 2 FOR SHARE",
+    [auditId],
+    2
+  );
+  const row = rows[0];
+  if (
+    rows.length !== 1 ||
+    row.auditId !== auditId ||
+    row.workspaceId !== identity.workspaceId ||
+    row.actorUserId !== identity.userId ||
+    row.action !== "ops.saihu_report.start" ||
+    row.resourceType !== "ops_saihu_report_operation" ||
+    row.resourceId !== operationId ||
+    row.status !== "success"
+  )
+    return saihuReportFail("START_RECEIPT_INVALID");
+  const parsed = SaihuReportReceiptSchema.safeParse(
+    saihuReportJson(row.metadata, 32768)
+  );
+  if (!parsed.success) return saihuReportFail("START_RECEIPT_INVALID");
+  const receipt = parsed.data;
+  if (
+    receipt.status !== "committed" ||
+    receipt.action !== "start" ||
+    receipt.operationId !== operationId ||
+    receipt.runOperationId !== operationId ||
+    saihuReportHash(receipt.identity) !== saihuReportHash(identity) ||
+    receipt.requestHash !== run.input.requestHash ||
+    receipt.resultHash !== saihuReportHash(run.input)
+  )
+    return saihuReportFail("START_RECEIPT_INVALID");
+  return receipt;
 }
 async function artifact(
   tx: SaihuReportExecutor,

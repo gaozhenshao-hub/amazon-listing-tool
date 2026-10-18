@@ -9,6 +9,7 @@ import { listingResearchIdsSchema } from "@shared/listingResearchSelection";
 import { listingOwnerKey, listingRequestOwner, type ListingRequestOwner } from "./listingResearchSelectionState";
 import { listingReviewQueryMatches } from "./listingResearchSelectionState";
 import { useQueryClient } from "@tanstack/react-query";
+import { useListingConfiguredGeneration, useListingConfiguredReceiver } from "./ListingConfiguredGenerationContext";
 
 export type ListingGenerationOperation =
   | "sellingPoints"
@@ -49,7 +50,15 @@ export function useListingGenerationJob(input: {
   includeHistory?: boolean;
   distillationBinding?: { ledgerKey?: string | null; skillSlugs?: string[] };
   onSucceeded: (output: any, job: any) => void;
+  draftFingerprint?: string;
+  onConfiguredApplied?: (output: any) => void;
 }) {
+  const configured = useListingConfiguredGeneration();
+  useListingConfiguredReceiver(`${input.operation}:${input.scopeKey || "main"}`, input.draftFingerprint ?? "", outputs => {
+    if (!Object.hasOwn(outputs, input.operation)) return;
+    if (input.onConfiguredApplied) input.onConfiguredApplied(outputs[input.operation]);
+    else input.onSucceeded({ [input.operation]: outputs[input.operation] }, undefined);
+  });
   const auth = useAuth(), owner = listingRequestOwner(auth.user, input.projectId, auth.loading || !!auth.error);
   const scopeKey = input.scopeKey || "main";
   const identity = owner ? JSON.stringify([listingOwnerKey(owner), input.nodeId, input.operation, scopeKey]) : null;
@@ -113,7 +122,7 @@ export function useListingGenerationJob(input: {
   }, [refetch, run, current.error, current.history, current.loading]);
 
   useEffect(() => {
-    if (!run?.runId) return;
+    if (!run?.runId || configured?.enabled) return;
     if (isActive(run.status)) {
       setActiveRun(previous => previous.key === key && previous.id ? previous : { key, id: run.runId });
       return;
@@ -131,9 +140,16 @@ export function useListingGenerationJob(input: {
     } else if (run.status === "canceled" && wasActive) {
       toast.info(`${OPERATION_LABELS[input.operation]}任务已取消`);
     }
-  }, [activeRunId, input.operation, key, run, token]);
+  }, [activeRunId, configured?.enabled, input.operation, key, run, token]);
 
   const start = useCallback(async (payload: Record<string, unknown> = {}) => {
+    if (configured?.enabled) {
+      if (!owner || !key) return null;
+      const analysisIds = Array.isArray(payload.analysisIds) ? payload.analysisIds as number[] : configured.sourceSelection.analysisIds;
+      if (!analysisIds) { toast.error("请先明确确认本次竞品范围，也可确认不使用竞品"); return null; }
+      configured.request({ operation, analysisIds, coreRevisionIds: typeof payload.coreRevisionId === "number" ? [payload.coreRevisionId] : ["bullets", "batch"].includes(operation) ? configured.sourceSelection.coreRevisionIds : [], emphasis: typeof payload.emphasis === "string" && payload.emphasis.trim() ? payload.emphasis.trim() : null });
+      toast.info("已准备配置化生成，请在页面上方读取来源与费用并明确确认；尚未调用模型"); return null;
+    }
     if (!mounted.current || !key || ownerRef.current !== token || !owner || pendingRef.current.start || pendingRef.current.cancel || isActive(run?.status)) return null;
     if (RESERVED_PAYLOAD_KEYS.some(field => Object.prototype.hasOwnProperty.call(payload, field))
       || (Object.prototype.hasOwnProperty.call(payload, "analysisIds") && (operation !== "sellingPoints" || !listingResearchIdsSchema.safeParse(payload.analysisIds).success))) {
@@ -166,7 +182,7 @@ export function useListingGenerationJob(input: {
       if (pendingRef.current.token === token) pendingRef.current.start = false;
       if (mounted.current && ownerRef.current === token) setPending(previous => ({ ...previous, start: false }));
     }
-  }, [input.distillationBinding, input.nodeId, input.operation, input.projectId, input.scopeKey, key, nodeId, operation, owner, refetch, run?.status, scopeKey, startMutation, token]);
+  }, [configured, input.distillationBinding, input.nodeId, input.operation, input.projectId, input.scopeKey, key, nodeId, operation, owner, refetch, run?.status, scopeKey, startMutation, token]);
 
   const cancel = useCallback(async () => {
     if (!mounted.current || !key || !owner || ownerRef.current !== token || pendingRef.current.start || pendingRef.current.cancel) return;
@@ -193,6 +209,7 @@ export function useListingGenerationJob(input: {
 
   return {
     run,
+    configured: !!configured?.enabled,
     history: key ? current.history : [],
     isLoadingRun: current.loading,
     readError: current.error,

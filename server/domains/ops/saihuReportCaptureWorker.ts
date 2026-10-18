@@ -1,30 +1,31 @@
 import { getDb } from "../../repositories/dbClient";
 import {
-  SAIHU_REPORT_KIND,
-  SaihuReportIdentitySchema,
-  SaihuReportUuid,
-} from "../../../shared/saihuReportSync";
-import {
   saihuReportRepository,
   type SaihuReportLease,
 } from "./saihuReportRepository";
 import { createSaihuReportTransport } from "./saihuReportTransport";
 import { collectSaihuReport } from "./saihuReportCoverage";
 import { SaihuReportError } from "./saihuReportContract";
-import { saihuReportRows } from "./saihuReportStore";
+import { discoverSaihuReportCaptures } from "./saihuReportQueueDiscovery";
+import {
+  acquireSaihuReportExecutionLock,
+  type SaihuReportExecutionLease,
+} from "./saihuReportExecutionLock";
 
 export function createSaihuReportCaptureExecution(
   deps: {
     repository?: typeof saihuReportRepository;
     transport?: typeof createSaihuReportTransport;
     enabled?: () => boolean;
+    acquireLock?: typeof acquireSaihuReportExecutionLock;
   } = {}
 ) {
   const repository = deps.repository ?? saihuReportRepository,
     transport = deps.transport ?? createSaihuReportTransport,
     enabled =
       deps.enabled ??
-      (() => process.env.ENABLE_SAIHU_REPORT_CAPTURE_WORKER === "true");
+      (() => process.env.ENABLE_SAIHU_REPORT_CAPTURE_WORKER === "true"),
+    acquireLock = deps.acquireLock ?? acquireSaihuReportExecutionLock;
   return async function process(input: {
     identity: { userId: number; workspaceId: number };
     operationId: string;
@@ -32,11 +33,12 @@ export function createSaihuReportCaptureExecution(
   }) {
     if (!enabled() || input.signal.aborted) return;
     let lease: SaihuReportLease | null = null,
+      executionLock: SaihuReportExecutionLease | null = null,
       completionAttempted = false,
       heartbeatError = false,
       heartbeat: Promise<void> = Promise.resolve();
-    const controller = new AbortController(),
-      signal = AbortSignal.any([input.signal, controller.signal]);
+    const controller = new AbortController();
+    let signal = AbortSignal.any([input.signal, controller.signal]);
     let timer: ReturnType<typeof setInterval> | null = null;
     const stopHeartbeat = async () => {
       if (timer) clearInterval(timer);
@@ -44,12 +46,24 @@ export function createSaihuReportCaptureExecution(
       await heartbeat;
     };
     try {
-      lease = await repository.claim(input.identity, {
-        expectedWorkspaceId: input.identity.workspaceId,
-        operationId: input.operationId,
-      });
+      executionLock = await acquireLock();
+      if (!executionLock) return;
+      signal = AbortSignal.any([signal, executionLock.signal]);
+      if (signal.aborted || !enabled()) return;
+      await executionLock.assertOwned();
+      lease = await repository.claim(
+        input.identity,
+        {
+          expectedWorkspaceId: input.identity.workspaceId,
+          operationId: input.operationId,
+        },
+        tx => executionLock!.assertDatabase(tx)
+      );
       if (!lease || signal.aborted || !enabled()) return;
-      const frozen = await repository.dispatch(lease),
+      await executionLock.assertOwned();
+      const frozen = await repository.dispatch(lease, tx =>
+          executionLock!.assertDatabase(tx)
+        ),
         credentials = await repository.credentials(lease); // Only after the dispatch transaction ACK may any HTTP read start.
       timer = setInterval(() => {
         heartbeat = heartbeat.then(async () => {
@@ -76,7 +90,10 @@ export function createSaihuReportCaptureExecution(
           beforeRead: async () => {
             if (!enabled() || signal.aborted)
               throw new SaihuReportError("CANCELLED");
-            await repository.beforeRead(lease!);
+            await executionLock!.assertOwned();
+            await repository.beforeRead(lease!, tx =>
+              executionLock!.assertDatabase(tx)
+            );
           },
         }),
         signal
@@ -105,6 +122,7 @@ export function createSaihuReportCaptureExecution(
       }
     } finally {
       await stopHeartbeat();
+      await executionLock?.release();
     }
   };
 }
@@ -126,7 +144,7 @@ export async function drainSaihuReportCapture(
     if (timer) clearTimeout(timer);
   }
 }
-/** This worker only executes explicit queued manual requests. It does NOT
+/** This worker only executes explicit queued requests (manual or scheduled). It does NOT
  * create schedules, derive new periods, seed workspaces, or apply facts. */
 export function startSaihuReportCaptureWorker(role: string) {
   if (
@@ -142,30 +160,12 @@ export function startSaihuReportCaptureWorker(role: string) {
       return;
     const db = await getDb();
     if (!db) return;
-    const hints = await saihuReportRows(
-        db,
-        "SELECT workspaceId,userId,JSON_UNQUOTE(JSON_EXTRACT(input,'$.operationId')) AS operationId FROM ai_jobs WHERE kind=? AND projectId IS NULL AND (status='queued' OR (status='running' AND leaseUntil<CURRENT_TIMESTAMP)) ORDER BY id LIMIT 20",
-        [SAIHU_REPORT_KIND],
-        20
-      ),
-      workspaces = new Set<number>();
+    const hints = await discoverSaihuReportCaptures(db);
     for (const hint of hints) {
       if (stopped) break;
-      const identity = SaihuReportIdentitySchema.safeParse({
-          workspaceId: hint.workspaceId,
-          userId: hint.userId,
-        }),
-        operationId = SaihuReportUuid.safeParse(hint.operationId);
-      if (
-        !identity.success ||
-        !operationId.success ||
-        workspaces.has(identity.data.workspaceId)
-      )
-        continue;
-      workspaces.add(identity.data.workspaceId);
       await processSaihuReportCapture({
-        identity: identity.data,
-        operationId: operationId.data,
+        identity: hint.identity,
+        operationId: hint.operationId,
         signal: controller.signal,
       });
     }

@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+// This suite isolates the original fact-binding protocol. The project-lock
+// serialization itself is exercised by listingConfiguredAgentProjection.test.
+vi.mock("./domains/listing/services/listingConfiguredAgentProjection", () => ({
+  withListingLegacyJobEnqueueFence: async (_scope: unknown, body: () => Promise<unknown>) => body(),
+}));
 
 const mocks = vi.hoisted(() => ({
   createJob: vi.fn(),
@@ -143,6 +148,7 @@ describe("0204 fact-bound Listing field jobs", () => {
     async (operation) => {
       const queued = await startListingGenerationJob({
         projectId: 3,
+        scopeKey: "main",
         userId: 7,
         workspaceId: 9,
         operation,

@@ -71,8 +71,12 @@ export function monthlyFinancialBatchVersion(record: MonthlyFinancialBatchRecord
   return monthlyFinancialWriteHash({ version: api ? "monthly-api-batch-v1" : "monthly-batch-v1", batch: parsed.batch, payloadHash: monthlyFinancialWriteHash(stored), artifact: artifact ? { prepared: artifact.prepared, manifestHash: monthlyFinancialWriteHash(api ? MonthlyFinancialApiManifestSchema.parse(artifact.manifest) : MonthlyFinancialImportManifestSchema.parse(artifact.manifest)), payloadHash: artifact.payloadHash } : null });
 }
 export function buildMonthlyFinancialWriteImpact(input: { target: MonthlyFinancialBatchRecord; completed: MonthlyFinancialBatchRecord[]; complete: boolean; blockingReasons?: string[] }): MonthlyFinancialWriteImpact {
+  // A complete locked window is bounded by actual strict JSON bytes/nodes,
+  // not by its lifetime count of revisions. Hash construction below remains
+  // byte-for-byte v1 compatible; no history representatives are compressed.
+  monthlyFinancialWriteCanonical({ target: input.target, completed: input.completed });
   const target = parseMonthlyFinancialBatch(input.target), complete = input.complete, seen = new Set<number>(), candidates = input.completed.map(record => { if (record.workspaceId !== input.target.workspaceId || record.status !== "completed" || seen.has(record.id)) return fail("MONTHLY_WRITE_HISTORY_INVALID"); seen.add(record.id); return parseMonthlyFinancialBatch(record); });
-  if (candidates.length > 200 || target.batch.status === "completed" && complete && !seen.has(target.batch.id)) return fail("MONTHLY_WRITE_HISTORY_INVALID");
+  if (target.batch.status === "completed" && complete && !seen.has(target.batch.id)) return fail("MONTHLY_WRITE_HISTORY_INVALID");
   const scopeKey = (row: MonthlyFinancialWriteScope) => JSON.stringify([row.yearMonth, row.storeName, row.country]), targets = new Map<string, typeof target.rows>();
   for (const row of target.rows) { const key = scopeKey(row), rows = targets.get(key) ?? []; rows.push(row); targets.set(key, rows); }
   const blockers = new Set(input.blockingReasons ?? []); if (!complete) blockers.add("incomplete_history"); if (!target.rows.length) blockers.add("no_normalized_rows");

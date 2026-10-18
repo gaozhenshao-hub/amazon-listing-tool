@@ -12,7 +12,11 @@ import {
 } from "../../../shared/saihuReportSync";
 import { saihuReportFail } from "./saihuReportContract";
 import type { SaihuReportProjectedProduct } from "../../../shared/saihuReportProjection";
-import { readSaihuReportPublication } from "./saihuReportProtocol";
+import {
+  readSaihuReportPublication,
+  readSaihuReportRun,
+  readSaihuReportStartReceipt,
+} from "./saihuReportProtocol";
 import {
   saihuReportJson,
   saihuReportRows,
@@ -33,15 +37,80 @@ export type SaihuDailyBatch = {
 };
 export async function readSaihuDailyBatches(
   tx: SaihuReportExecutor,
-  workspaceId: number
+  workspaceId: number,
+  window?: { start: string; end: string }
 ): Promise<SaihuDailyBatch[]> {
-  const found = await saihuReportRows(
-    tx,
-    "SELECT id,workspace_id AS workspaceId,user_id AS userId,run_id AS runId,operation_id AS operationId,status,source_hash AS sourceHash,preview_hash AS previewHash,IF(OCTET_LENGTH(CAST(scope AS CHAR CHARACTER SET utf8mb4))<=4096,CAST(scope AS CHAR CHARACTER SET utf8mb4),NULL) AS scope,IF(OCTET_LENGTH(CAST(coverage AS CHAR CHARACTER SET utf8mb4))<=1048576,CAST(coverage AS CHAR CHARACTER SET utf8mb4),NULL) AS coverage,IF(OCTET_LENGTH(CAST(facts AS CHAR CHARACTER SET utf8mb4))<=16777216,CAST(facts AS CHAR CHARACTER SET utf8mb4),NULL) AS facts FROM ops_saihu_daily_report_batches WHERE workspace_id=? ORDER BY id DESC LIMIT 201 FOR UPDATE",
-    [workspaceId],
-    201
-  );
-  if (found.length > 200) return saihuReportFail("HISTORY_BUDGET");
+  // Complete metadata keyset, not a lifetime 200-batch ceiling. Only bodies
+  // belonging to the requested window consume its retained-byte budget.
+  // The caller holds the workspace write fence for the whole transaction.
+  const found: Record<string, unknown>[] = [];
+  let retainedBytes = 0;
+  let cursor: number | null = null;
+  for (;;) {
+    const page = await saihuReportRows(
+      tx,
+      `SELECT id,workspace_id AS workspaceId,user_id AS userId,run_id AS runId,operation_id AS operationId,status,source_hash AS sourceHash,preview_hash AS previewHash,IF(OCTET_LENGTH(CAST(scope AS CHAR CHARACTER SET utf8mb4))<=4096,CAST(scope AS CHAR CHARACTER SET utf8mb4),NULL) AS scope FROM ops_saihu_daily_report_batches WHERE workspace_id=?${cursor === null ? "" : " AND id<?"} ORDER BY id DESC LIMIT 128 FOR UPDATE`,
+      [workspaceId, ...(cursor === null ? [] : [cursor])],
+      128
+    );
+    for (const hint of page) {
+      if (
+        typeof hint.id !== "number" ||
+        !Number.isSafeInteger(hint.id) ||
+        hint.id < 1 ||
+        (cursor !== null && hint.id >= cursor) ||
+        hint.workspaceId !== workspaceId ||
+        typeof hint.userId !== "number" ||
+        typeof hint.operationId !== "string" ||
+        typeof hint.runId !== "string" ||
+        !["previewing", "completed", "revoked"].includes(String(hint.status))
+      )
+        return saihuReportFail("DAILY_BATCH_INVALID");
+      cursor = hint.id;
+      const scope = SaihuReportScopeSchema.parse(
+        saihuReportJson(hint.scope, 4096)
+      );
+      if (scope.kind !== "daily") return saihuReportFail("DAILY_BATCH_INVALID");
+      const run = await readSaihuReportRun(
+        tx,
+        { workspaceId, userId: hint.userId },
+        hint.operationId
+      );
+      if (
+        !run ||
+        run.runId !== hint.runId ||
+        run.output.batchId !== hint.id ||
+        run.output.sourceHash !== hint.sourceHash ||
+        run.output.previewHash !== hint.previewHash ||
+        saihuReportHash(run.input.request.scope) !== saihuReportHash(scope)
+      )
+        return saihuReportFail("DAILY_REPLAY_MISMATCH");
+      await readSaihuReportStartReceipt(tx, run);
+      if (window && (scope.start > window.end || scope.end < window.start))
+        continue;
+      const body = await saihuReportRows(
+        tx,
+        "SELECT id,workspace_id AS workspaceId,user_id AS userId,run_id AS runId,operation_id AS operationId,status,source_hash AS sourceHash,preview_hash AS previewHash,IF(OCTET_LENGTH(CAST(scope AS CHAR CHARACTER SET utf8mb4))<=4096,CAST(scope AS CHAR CHARACTER SET utf8mb4),NULL) AS scope,IF(OCTET_LENGTH(CAST(coverage AS CHAR CHARACTER SET utf8mb4))<=1048576,CAST(coverage AS CHAR CHARACTER SET utf8mb4),NULL) AS coverage,IF(OCTET_LENGTH(CAST(facts AS CHAR CHARACTER SET utf8mb4))<=16777216,CAST(facts AS CHAR CHARACTER SET utf8mb4),NULL) AS facts FROM ops_saihu_daily_report_batches WHERE workspace_id=? AND id=? LIMIT 2 FOR UPDATE",
+        [workspaceId, hint.id],
+        2
+      );
+      if (
+        body.length !== 1 ||
+        body[0].id !== hint.id ||
+        body[0].status !== hint.status ||
+        saihuReportHash(saihuReportJson(body[0].scope, 4096)) !==
+          saihuReportHash(scope)
+      )
+        return saihuReportFail("DAILY_BATCH_CHANGED");
+      retainedBytes +=
+        Buffer.byteLength(String(body[0].facts)) +
+        Buffer.byteLength(String(body[0].coverage));
+      if (retainedBytes > 32 * 1024 * 1024)
+        return saihuReportFail("HISTORY_BUDGET");
+      found.push(body[0]);
+    }
+    if (page.length < 128) break;
+  }
   let bytes = 0,
     previous = Infinity;
   const result: SaihuDailyBatch[] = [];

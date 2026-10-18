@@ -23,6 +23,7 @@ import {
   ArrowDown,
 } from "lucide-react";
 import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
+import { useListingConfiguredGeneration } from "./ListingConfiguredGenerationContext";
 
 // ─── QA 8 Dimensions Definition ─────────────────────────────────────
 const QA_CHECKLIST_DIMENSIONS = [
@@ -55,6 +56,7 @@ interface QAItem {
 }
 
 export default function StepQA({ projectId, emphasis, locked, savedContent, onLock, onUnlock, onComplete }: StepQAProps) {
+  const configured = useListingConfiguredGeneration();
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [generated, setGenerated] = useState(false);
@@ -78,13 +80,14 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
 
   // Auto-trigger checklist when QA items are generated
   useEffect(() => {
-    if (generated && qaItems.length > 0 && !autoCheckTriggered.current && !checkScores) {
+    if (!configured?.enabled && generated && qaItems.length > 0 && !autoCheckTriggered.current && !checkScores) {
       autoCheckTriggered.current = true;
       evaluateCheck.mutate({ qaContent: JSON.stringify(qaItems) });
     }
-  }, [generated, qaItems.length]);
+  }, [generated, qaItems, configured?.enabled, checkScores, evaluateCheck]);
 
   const handleRunCheck = () => {
+    if (configured?.enabled) { toast.info("独立自检仍属旧协议收费辅助能力，请明确切回旧方式后使用；不计入新配置预算"); return; }
     if (qaItems.length === 0) {
       toast.error("请先生成QA问答");
       return;
@@ -117,6 +120,7 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
     projectId,
     nodeId: "G5",
     operation: "qa",
+    draftFingerprint: JSON.stringify([qaItems, editingIdx, editQ, editA, newQ, newA, locked]),
     onSucceeded: (data: any) => {
       try {
         const content = data.qa || data;
@@ -148,7 +152,7 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
           })));
           setGenerated(true);
           setCheckScores(undefined);
-          autoCheckTriggered.current = false;
+          autoCheckTriggered.current = !!configured?.enabled;
           toast.success(`已生成 ${items.length} 组QA`);
         } else {
           toast.error("QA生成结果格式异常");

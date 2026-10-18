@@ -29,7 +29,6 @@ class InvalidMonthlyRecord extends Error {}
 const PAYLOAD_WIRE_MAX = 64 * 1024 * 1024;
 const MONTHS_WIRE_MAX = 64 * 1024;
 const SNAPSHOT_SCAN_BYTES_MAX = 32 * 1024 * 1024;
-const SNAPSHOT_SCAN_BATCHES_MAX = 200;
 function noSuchTable(error: unknown) {
   let current = error;
   for (let depth = 0; depth < 5 && current && typeof current === "object"; depth++) {
@@ -217,42 +216,129 @@ export function createMonthlyFinancialReadRepository(dependencies: { database?: 
       }
     });
   }
-  async function getEffectiveSnapshot(ctx: TrpcContext, raw: MonthlyFinancialSnapshotInput) {
-    if (!ctx.user) fail("MONTHLY_FINANCIAL_READ_LOGIN_REQUIRED", "UNAUTHORIZED");
+  async function getEffectiveSnapshot(
+    ctx: TrpcContext,
+    raw: MonthlyFinancialSnapshotInput
+  ) {
+    if (!ctx.user)
+      fail("MONTHLY_FINANCIAL_READ_LOGIN_REQUIRED", "UNAUTHORIZED");
     const parsed = MonthlyFinancialSnapshotInputSchema.safeParse(raw);
-    if (!parsed.success) fail("MONTHLY_FINANCIAL_READ_INPUT_INVALID", "BAD_REQUEST");
+    if (!parsed.success)
+      fail("MONTHLY_FINANCIAL_READ_INPUT_INVALID", "BAD_REQUEST");
     const input = parsed.data;
     return authorized(ctx, input.expectedWorkspaceId, async session => {
       const { tx, identity, manager } = session;
-      if (!manager && !input.parentAsin) fail("MONTHLY_FINANCIAL_READ_EXACT_SCOPE_REQUIRED", "FORBIDDEN");
-      const selection: MonthlyFinancialSnapshotSelection = { selected: null, scannedBatchIds: [], complete: false };
+      if (!manager && !input.parentAsin)
+        fail("MONTHLY_FINANCIAL_READ_EXACT_SCOPE_REQUIRED", "FORBIDDEN");
+      const selection: MonthlyFinancialSnapshotSelection = {
+        selected: null,
+        scannedBatchIds: [],
+        complete: false,
+      };
       try {
-        let cursor: number | null = null, scanBytes = 0;
-        for (let index = 0; index < SNAPSHOT_SCAN_BATCHES_MAX; index++) {
-          // Crucially no uploader, parent, or name filter. A completed batch
-          // replaces a whole month/store/site, not only the parents it contains.
-          const remainingBytes = SNAPSHOT_SCAN_BYTES_MAX - scanBytes;
-          const selected = await monthlyRows(tx, `SELECT ${projection(true, remainingBytes)} FROM ops_monthly_profit_imports WHERE workspaceId=? AND status='completed'${cursor === null ? "" : " AND id<?"} ORDER BY id DESC LIMIT 1 FOR SHARE`, [identity.workspaceId, ...(cursor === null ? [] : [cursor])]);
-          if (!selected.length) { selection.complete = true; break; }
-          if (selected.length !== 1 || selected[0].status !== "completed" || !positiveId(selected[0].id) || cursor !== null && selected[0].id >= cursor) throw new InvalidMonthlyRecord();
+        // Native whole month/store/site selection, never parent/uploader/name.
+        // The SQL engine considers the complete range before LIMIT; unrelated
+        // historical versions cannot permanently consume a 200-body budget.
+        const scopeCountrySql = countrySql.replace(
+          /\bcountry\b/gu,
+          "scope_rows.site"
+        );
+        const selected = await monthlyRows(
+          tx,
+          `SELECT ${projection(true, SNAPSHOT_SCAN_BYTES_MAX)} FROM ops_monthly_profit_imports WHERE workspaceId=? AND status='completed' AND (JSON_TYPE(payload)<>'ARRAY' OR JSON_TYPE(months)<>'ARRAY' OR JSON_LENGTH(payload)<>totalRows OR EXISTS (SELECT 1 FROM JSON_TABLE(IF(JSON_TYPE(payload)='ARRAY',payload,JSON_ARRAY()), '$[*]' COLUMNS (yearMonth VARCHAR(64) PATH '$.yearMonth',storeName VARCHAR(1024) PATH '$.storeName',site VARCHAR(1024) PATH '$.site')) AS scope_rows WHERE scope_rows.yearMonth=? AND BINARY scope_rows.storeName=BINARY ? AND ${scopeCountrySql}=?)) ORDER BY id DESC LIMIT 1 FOR SHARE`,
+          [
+            identity.workspaceId,
+            input.yearMonth,
+            input.storeName,
+            input.country,
+          ]
+        );
+        if (!selected.length) selection.complete = true;
+        else {
+          if (
+            selected.length !== 1 ||
+            selected[0].status !== "completed" ||
+            !positiveId(selected[0].id)
+          )
+            throw new InvalidMonthlyRecord();
           const byteCount = selected[0].payloadBytes;
-          if (typeof byteCount !== "number" || !Number.isSafeInteger(byteCount) || byteCount < 0) throw new InvalidMonthlyRecord();
-          if (byteCount > remainingBytes) break;
+          if (
+            typeof byteCount !== "number" ||
+            !Number.isSafeInteger(byteCount) ||
+            byteCount < 0
+          )
+            throw new InvalidMonthlyRecord();
+          if (
+            byteCount + Number(selected[0].monthsBytes) >
+            SNAPSHOT_SCAN_BYTES_MAX
+          )
+            return buildMonthlyFinancialSnapshotResult({
+              identity,
+              input,
+              selection,
+            });
           const saved = record(selected[0], identity.workspaceId, true);
-          scanBytes += byteCount + Number(selected[0].monthsBytes);
-          if (scanBytes > SNAPSHOT_SCAN_BYTES_MAX) break;
           const batch = parseMonthlyFinancialBatch(saved);
-          cursor = saved.id; selection.scannedBatchIds.push(saved.id);
-          if (batch.rows.some(row => monthlyFinancialRowMatchesScope(row, { yearMonth: input.yearMonth, storeName: input.storeName, country: input.country }))) {
-            selection.selected = batch; selection.complete = true; break;
-          }
+          if (
+            !batch.rows.some(row =>
+              monthlyFinancialRowMatchesScope(row, {
+                yearMonth: input.yearMonth,
+                storeName: input.storeName,
+                country: input.country,
+              })
+            )
+          )
+            throw new InvalidMonthlyRecord();
+          selection.scannedBatchIds.push(saved.id);
+          selection.selected = batch;
+          selection.complete = true;
         }
-        if (!selection.complete) return buildMonthlyFinancialSnapshotResult({ identity, input, selection });
-        if (!manager) await authorizeScope(session, { yearMonth: input.yearMonth, storeName: input.storeName, country: input.country, parentAsin: input.parentAsin! }, selection.selected?.rows ?? []);
-        return buildMonthlyFinancialSnapshotResult({ identity, input, selection, metadataVisibility: manager || selection.selected?.batch.userId === identity.userId ? "full" : "scoped" });
+        if (!selection.complete)
+          return buildMonthlyFinancialSnapshotResult({
+            identity,
+            input,
+            selection,
+          });
+        if (!manager)
+          await authorizeScope(
+            session,
+            {
+              yearMonth: input.yearMonth,
+              storeName: input.storeName,
+              country: input.country,
+              parentAsin: input.parentAsin!,
+            },
+            selection.selected?.rows ?? []
+          );
+        return buildMonthlyFinancialSnapshotResult({
+          identity,
+          input,
+          selection,
+          metadataVisibility:
+            manager || selection.selected?.batch.userId === identity.userId
+              ? "full"
+              : "scoped",
+        });
       } catch (error) {
-        if (error instanceof MonthlyTableMissing) return buildMonthlyFinancialSnapshotResult({ identity, input, selection, tableMissing: true });
-        if (error instanceof InvalidMonthlyRecord || error instanceof MonthlyFinancialReadError) return buildMonthlyFinancialSnapshotFailure({ identity, input, status: "invalid", reasonCode: "invalid_candidate", missingReason: "候选批次损坏或完整性无法核验；不回退到更旧的月报快照" });
+        if (error instanceof MonthlyTableMissing)
+          return buildMonthlyFinancialSnapshotResult({
+            identity,
+            input,
+            selection,
+            tableMissing: true,
+          });
+        if (
+          error instanceof InvalidMonthlyRecord ||
+          error instanceof MonthlyFinancialReadError
+        )
+          return buildMonthlyFinancialSnapshotFailure({
+            identity,
+            input,
+            status: "invalid",
+            reasonCode: "invalid_candidate",
+            missingReason:
+              "候选批次损坏或完整性无法核验；不回退到更旧的月报快照",
+          });
         throw error;
       }
     });

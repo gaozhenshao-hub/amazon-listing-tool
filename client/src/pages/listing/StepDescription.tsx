@@ -20,6 +20,7 @@ import {
   Eye,
 } from "lucide-react";
 import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
+import { useListingConfiguredGeneration } from "./ListingConfiguredGenerationContext";
 
 // ─── Description 8 Dimensions Definition ─────────────────────────────────
 const DESCRIPTION_CHECKLIST_DIMENSIONS = [
@@ -44,6 +45,7 @@ interface StepDescriptionProps {
 }
 
 export default function StepDescription({ projectId, emphasis, locked, savedContent, onLock, onUnlock, onComplete }: StepDescriptionProps) {
+  const configured = useListingConfiguredGeneration();
   const [description, setDescription] = useState("");
   const [viewMode, setViewMode] = useState<"preview" | "source">("preview");
   const [confirmed, setConfirmed] = useState(false);
@@ -62,13 +64,14 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
 
   // Auto-trigger checklist when description is generated
   useEffect(() => {
-    if (generated && description && !autoCheckTriggered.current && !checkScores) {
+    if (!configured?.enabled && generated && description && !autoCheckTriggered.current && !checkScores) {
       autoCheckTriggered.current = true;
       evaluateCheck.mutate({ description });
     }
-  }, [generated, description, checkScores, evaluateCheck]);
+  }, [generated, description, checkScores, evaluateCheck, configured?.enabled]);
 
   const handleRunCheck = () => {
+    if (configured?.enabled) { toast.info("独立自检仍属旧协议收费辅助能力，请明确切回旧方式后使用；不计入新配置预算"); return; }
     if (!description.trim()) {
       toast.error("请先生成产品描述");
       return;
@@ -81,6 +84,7 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
     projectId,
     nodeId: "G3",
     operation: "description",
+    draftFingerprint: JSON.stringify([description, confirmed, locked]),
     onSucceeded: (data: any) => {
       try {
         const content = data.description || data;
@@ -102,14 +106,14 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
         setDescription(text);
         setGenerated(true);
         setCheckScores(undefined);
-        autoCheckTriggered.current = false;
+        autoCheckTriggered.current = !!configured?.enabled;
         toast.success("产品描述已生成");
       } catch {
         const text = typeof data === "string" ? data : JSON.stringify(data);
         setDescription(text);
         setGenerated(true);
         setCheckScores(undefined);
-        autoCheckTriggered.current = false;
+        autoCheckTriggered.current = !!configured?.enabled;
         toast.success("产品描述已生成");
       }
     },

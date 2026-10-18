@@ -98,7 +98,8 @@ export function strictModelSnapshotFromRow(workspaceId: number, slug: string, ra
   return { ...body, configurationHash: strictRuntimeHash(body) };
 }
 export const StrictSkillStageSchema = z.enum(["route", "reply", "profit_analysis", "competitor_deep", "image_tagging", "image_outline", "development_market_overview",
-  "knowledge_select", "knowledge_answer", "video_competitor_analysis", "video_section_plan", "video_shot_detail", "video_edit_script"]);
+  "knowledge_select", "knowledge_answer", "video_competitor_analysis", "video_section_plan", "video_shot_detail", "video_edit_script",
+  "listing_selling_points", "listing_single_bullet", "listing_bullets", "listing_title", "listing_description", "listing_search_terms", "listing_qa"]);
 export type StrictSkillStage = z.infer<typeof StrictSkillStageSchema>;
 /** Fixed server-owned audit identities. A stage is not authorization to run a
  * business Skill: callers still supply approved pins and the durable fence. */
@@ -114,6 +115,19 @@ export function strictSkillAuditIdentity(stage: StrictSkillStage) {
   if (stage === "video_shot_detail") return { migrationSource: "video.workflow.shot.detail.strict", operation: "video.workflow.shot.detail.strict" } as const;
   if (stage === "video_edit_script") return { migrationSource: "video.workflow.edit.script.strict", operation: "video.workflow.edit.script.strict" } as const;
   if (stage === "competitor_deep") return { migrationSource: "listing.competitor.deep.strict", operation: "listing.competitor.deep.strict" } as const;
+  const listing = {
+    listing_selling_points: "listing.generation.selling_points.strict",
+    listing_single_bullet: "listing.generation.single_bullet.strict",
+    listing_bullets: "listing.generation.bullets.strict",
+    listing_title: "listing.generation.title.strict",
+    listing_description: "listing.generation.description.strict",
+    listing_search_terms: "listing.generation.search_terms.strict",
+    listing_qa: "listing.generation.qa.strict",
+  } as const;
+  if (stage in listing) {
+    const identity = listing[stage as keyof typeof listing];
+    return { migrationSource: identity, operation: identity };
+  }
   return stage === "profit_analysis"
     ? { migrationSource: "ops.profit.private.strict", operation: "ops.profit.private.strict" } as const
     : { migrationSource: "assistant.private.strict", operation: "ai_os.assistant.private.strict" } as const;

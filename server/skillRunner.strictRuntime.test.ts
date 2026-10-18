@@ -10,7 +10,7 @@ vi.mock("./domains/ai_os/services/skillRollout", () => ({ resolveActiveSkillRoll
 vi.mock("./domains/ai_os/services/observability", () => ({ recordAiOsEvaluation: mocks.evaluation, recordAiOsMetric: mocks.metric }));
 vi.mock("./domains/ai_os/services/teamorouterCatalog", async importOriginal => ({ ...await importOriginal<object>(), resolveGovernedModelApiKey: mocks.key }));
 import { runEmperorSkill, resolveStrictRegisteredModelSnapshot, type RunSkillInput } from "./domains/ai_os/services/skillRunner";
-import { strictRuntimeCanonical, strictCostUpperBound, StrictSkillRuntimeError, type StrictSkillExecutionOptions } from "./domains/ai_os/services/strictSkillRuntime";
+import { strictRuntimeCanonical, strictCostUpperBound, strictSkillAuditIdentity, StrictSkillRuntimeError, type StrictSkillExecutionOptions } from "./domains/ai_os/services/strictSkillRuntime";
 
 const dialect = new MySqlDialect(), short = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 16);
 const manifest = { implementation: { systemPrompt: "PRIVATE_SYSTEM", userPromptTemplate: "PRIVATE_TEMPLATE {{context}}", maxTokens: 1000, temperature: 0.2, supportsJsonMode: true } };
@@ -67,6 +67,38 @@ describe("strict registered model resolution", () => {
   });
 });
 describe("private strict single-dispatch Skill execution", () => {
+  it.each([
+    ["listing_selling_points", "listing.generation.selling_points.strict"],
+    ["listing_single_bullet", "listing.generation.single_bullet.strict"],
+    ["listing_bullets", "listing.generation.bullets.strict"],
+    ["listing_title", "listing.generation.title.strict"],
+    ["listing_description", "listing.generation.description.strict"],
+    ["listing_search_terms", "listing.generation.search_terms.strict"],
+    ["listing_qa", "listing.generation.qa.strict"],
+  ] as const)("uses a distinct frozen audit identity for configured %s without selecting a fallback", async (stage, operation) => {
+    const request = await input(); request.strictExecution!.stage = stage;
+    await runEmperorSkill(request);
+    expect(strictSkillAuditIdentity(stage)).toEqual({ migrationSource: operation, operation });
+    expect(request.strictExecution!.beforeDispatch).toHaveBeenCalledWith(expect.objectContaining({ stage, bindingHash: "a".repeat(64) }));
+    expect(mocks.http).toHaveBeenCalledOnce(); expect(mocks.http.mock.calls[0][1].auditContext.operation).toBe(operation);
+    expect(mocks.invokeLLM).not.toHaveBeenCalled(); expect(mocks.rollout).not.toHaveBeenCalled();
+    expect(auditText()).not.toMatch(/PRIVATE_SYSTEM|PRIVATE_DOCUMENT|PRIVATE_SECRET_KEY|PRIVATE_REPLY/u);
+  });
+
+  it.each((["listing_selling_points", "listing_single_bullet", "listing_bullets", "listing_title", "listing_description", "listing_search_terms", "listing_qa"] as const)
+    .flatMap(stage => ["missingPin", "changedModel", "deniedFence", "unknownOutcome", "arbitraryAuditTag"].map(kind => ({ stage, kind }))))("$stage preserves admission and per-attempt single dispatch: $kind", async ({ stage, kind }) => {
+    const request = await input(); request.strictExecution!.stage = stage;
+    if (kind === "missingPin") request.expectedSkillManifestHash = undefined;
+    if (kind === "changedModel") models[0].modelId = "unapproved-model";
+    if (kind === "deniedFence") request.strictExecution!.beforeDispatch = async () => { throw new Error("PRIVATE_LISTING_FENCE"); };
+    if (kind === "unknownOutcome") mocks.http.mockRejectedValue(new Error("PRIVATE_LISTING_PROVIDER"));
+    if (kind === "arbitraryAuditTag") (request.strictExecution as unknown as Record<string, unknown>).operation = "assistant.private.strict";
+    await expect(runEmperorSkill(request)).rejects.toBeInstanceOf(StrictSkillRuntimeError);
+    expect(mocks.http).toHaveBeenCalledTimes(kind === "unknownOutcome" ? 1 : 0);
+    expect(mocks.invokeLLM).not.toHaveBeenCalled(); expect(mocks.rollout).not.toHaveBeenCalled();
+    expect(auditText()).not.toMatch(/PRIVATE_LISTING|PRIVATE_DOCUMENT|PRIVATE_SECRET_KEY/u);
+  });
+
   it("admits the reviewed single-image tagging policy with its own immutable audit stage", async () => {
     const request = await input(); request.strictExecution!.stage = "image_tagging";
     request.strictExecution!.imageBudget = { policyId: "synthetic-tagging-policy", maxInputTokensPerImage: 8192, stage: "image_tagging", maxImageBytes: 8388608, maxImages: 1 };

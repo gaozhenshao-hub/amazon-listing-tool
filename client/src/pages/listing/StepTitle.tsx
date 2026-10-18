@@ -23,6 +23,7 @@ import {
   Layers,
 } from "lucide-react";
 import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
+import { useListingConfiguredGeneration } from "./ListingConfiguredGenerationContext";
 
 // ─── Title 10 Dimensions Definition (Updated for Two-Stage) ─────────────────
 const TITLE_CHECKLIST_DIMENSIONS = [
@@ -88,6 +89,7 @@ interface TitleCandidate {
 }
 
 export default function StepTitle({ projectId, emphasis, locked, savedContent, savedItemHighlights, onLock, onUnlock, onComplete }: StepTitleProps) {
+  const configured = useListingConfiguredGeneration();
   const [candidates, setCandidates] = useState<TitleCandidate[]>([]);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -110,16 +112,17 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
 
   // Auto-trigger title checklist when candidates are generated
   useEffect(() => {
-    if (candidates.length > 0 && selectedIdx !== null && !autoCheckTriggered.current) {
+    if (!configured?.enabled && candidates.length > 0 && selectedIdx !== null && !autoCheckTriggered.current) {
       const c = candidates[selectedIdx];
       if (c?.title && !titleCheckScores) {
         autoCheckTriggered.current = true;
         evaluateTitleCheck.mutate({ title: `${c.title} | ${c.itemHighlights || ""}` });
       }
     }
-  }, [candidates, selectedIdx]);
+  }, [candidates, selectedIdx, configured?.enabled, evaluateTitleCheck, titleCheckScores]);
 
   const handleRunTitleCheck = () => {
+    if (configured?.enabled) { toast.info("独立自检仍属旧协议收费辅助能力，请明确切回旧方式后使用；不计入新配置预算"); return; }
     let titleForCheck: string;
     if (isEditing) {
       titleForCheck = `${editingTitle} | ${editingHighlights}`;
@@ -138,6 +141,7 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
     projectId,
     nodeId: "G2",
     operation: "title",
+    draftFingerprint: JSON.stringify([candidates, selectedIdx, editingTitle, editingHighlights, isEditing, locked]),
     onSucceeded: (data: any) => {
       try {
         const content = data.title || data;
@@ -170,7 +174,7 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
           setSelectedIdx(null);
           setConfirmed(false);
           setTitleCheckScores(undefined);
-          autoCheckTriggered.current = false;
+          autoCheckTriggered.current = !!configured?.enabled;
           toast.success(`已生成 ${normalizedTitles.length} 个候选标题（两段式）`);
         } else {
           // Fallback: single title

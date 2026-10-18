@@ -38,6 +38,7 @@ import { startDevelopmentMarketWorker } from "../domains/product_development/ana
 import { startKnowledgeQaWorker } from "../domains/knowledge/knowledgeQaWorker";
 import { startVideoWorkflowWorker } from "../domains/video/videoWorkflowWorker";
 import { startSaihuReportCaptureWorker } from "../domains/ops/saihuReportCaptureWorker";
+import { startListingConfiguredWorker } from "../domains/listing/services/listingConfiguredWorker";
 
 const pollMs = Math.min(
   Math.max(Number(process.env.AI_JOB_WORKER_POLL_MS || 5000), 1000),
@@ -103,6 +104,7 @@ async function main() {
   const knowledgeQaWorker = startKnowledgeQaWorker("worker");
   const videoWorkflowWorker = startVideoWorkflowWorker("worker");
   const stopSaihuReportCaptureWorker = startSaihuReportCaptureWorker("worker");
+  const listingConfiguredWorker = startListingConfiguredWorker("worker");
   const handlers = listAiJobHandlerRegistrations()
     .map(handler => handler.id)
     .join(", ");
@@ -138,10 +140,11 @@ async function main() {
     const knowledgeQaDrain = knowledgeQaWorker?.stop(shutdownGraceMs);
     const videoWorkflowDrain = videoWorkflowWorker?.stop(shutdownGraceMs);
     const saihuReportDrain = stopSaihuReportCaptureWorker();
+    const listingConfiguredDrain = listingConfiguredWorker?.stop(shutdownGraceMs);
     console.log(`[AI Worker] received ${signal}, draining in-flight jobs`);
     try {
       await markAiJobWorkerDraining({ signal });
-      const [drainResult] = await Promise.all([waitForAiJobsToDrain(shutdownGraceMs), inventoryDrain, conversationDrain, profitDrain, competitorDeepDrain, imageTaggingDrain, imagePlanningDrain, developmentMarketDrain, knowledgeQaDrain, videoWorkflowDrain, saihuReportDrain]);
+      const [drainResult] = await Promise.all([waitForAiJobsToDrain(shutdownGraceMs), inventoryDrain, conversationDrain, profitDrain, competitorDeepDrain, imageTaggingDrain, imagePlanningDrain, developmentMarketDrain, knowledgeQaDrain, videoWorkflowDrain, saihuReportDrain, listingConfiguredDrain]);
       if (!drainResult.drained) {
         console.warn(
           `[AI Worker] shutdown grace elapsed; running=${drainResult.runningRunIds.join(",") || "none"} ` +

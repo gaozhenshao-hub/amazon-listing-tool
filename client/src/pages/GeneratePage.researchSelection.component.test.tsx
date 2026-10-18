@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
 });
 vi.mock("@/lib/mergedListingWorkflow", () => ({ get MERGED_LISTING_WORKFLOW_ENABLED() { return mocks.enabled; } }));
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => mocks.auth }));
+vi.mock("@/hooks/usePermissions", () => ({ usePermissions: () => ({ isLoading: false, canRead: () => true, canEdit: () => true }) }));
 vi.mock("@/contexts/ProjectContext", () => ({ useProject: () => ({ selectedProjectId: 7 }) }));
 vi.mock("wouter", () => ({ useLocation: () => ["/listing/generate", mocks.noop], Link: ({ children }: { children: ReactNode }) => <span>{children}</span> }));
 vi.mock("sonner", () => ({ toast: mocks.toast }));
@@ -141,6 +142,18 @@ describe("real Generate recovery + owned job/review composition", () => {
     view.queryClient.setQueryData(reviewKey("listCurrentCores", 8), []);
     await act(async () => { await view.queryClient.invalidateQueries({ queryKey: reviewKey("listCurrentCores", 8) }); });
     expect(mocks.cores).toHaveBeenCalledTimes(after); expect(mocks.start).not.toHaveBeenCalled();
+  });
+  it("the new lane only prepares explicit sources and retains the real unsent seven-direction draft", async () => {
+    mocks.real = true; mocks.get.mockResolvedValue(savedRun()); mocks.history.mockResolvedValue([savedRun()]);
+    renderPage(); await makeActualDirty();
+    fireEvent.click(screen.getByRole("checkbox", { name: "使用新配置化执行方式" }));
+    await screen.findByText(/Scoped competitor/);
+    fireEvent.click(screen.getByRole("button", { name: "确认不使用竞品" }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "准备七条方向的来源与费用" })));
+    expect(screen.getByText("当前准备：七条卖点方向")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Scope A private dirty direction")).toHaveValue("Scope A private dirty direction");
+    expect(screen.getByTestId("plan-strategy")).toHaveTextContent("Scope A saved strategy");
+    expect(mocks.start).not.toHaveBeenCalled(); expect(mocks.prepare).not.toHaveBeenCalled();
   });
 });
 afterEach(cleanup);

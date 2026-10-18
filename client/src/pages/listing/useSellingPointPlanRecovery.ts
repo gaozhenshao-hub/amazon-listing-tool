@@ -17,12 +17,17 @@ type Action = { projectId: State["projectId"] } & (
   | { type: "prepare"; runId: string | null }
   | { type: "unsuccessful"; run?: { runId: string; status: string } }
   | { type: "restore"; runId: string | null; output: any; reviewedCores: ReviewedCoreRecovery[] }
+  | { type: "applyConfigured"; output: any }
 );
 
 function reducer(state: State, action: Action): State {
   if (action.type === "project") return state.projectId === action.projectId ? state : initialState(action.projectId);
   // Async work from a project that has been left must not mutate the current plan.
   if (state.projectId !== action.projectId) return state;
+  if (action.type === "applyConfigured") {
+    const restored = recoverSellingPointPlan(action.output, []);
+    return { ...initialState(action.projectId), ...restored, dirty: true, hydrated: true, restorationVersion: state.restorationVersion + 1 };
+  }
   if (action.type === "edit") return { ...state, dirty: true, points: typeof action.update === "function" ? action.update(state.points) : action.update };
   if (action.type === "dirty") return { ...state, dirty: true };
   if (action.type === "reset") return { ...initialState(action.projectId), dismissed: true, restorationVersion: state.restorationVersion };
@@ -71,5 +76,6 @@ export function useSellingPointPlanRecovery(projectId: number | null | undefined
   const restore = useCallback((runId: string | null, output: any, reviewedCores: ReviewedCoreRecovery[]) => {
     dispatch({ type: "restore", projectId, runId, output, reviewedCores });
   }, [projectId]);
-  return { ...current, setPoints, markDirty, reset, prepare, restore, settleUnsuccessfulAttempt };
+  const applyConfigured = useCallback((output: any) => dispatch({ type: "applyConfigured", projectId, output }), [projectId]);
+  return { ...current, setPoints, markDirty, reset, prepare, restore, settleUnsuccessfulAttempt, applyConfigured };
 }

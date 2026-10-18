@@ -10,8 +10,10 @@ import { listingPlanningProcedures } from "./routers/planning";
 import { listingFactReviewProcedures } from "./routers/facts";
 import { listingCoreReviewProcedures } from "./routers/cores";
 import { listingCandidateReviewProcedures } from "./routers/candidates";
+import { listingConfiguredProcedures } from "./routers/configured";
 
 export const listingRouter = router({
+  ...listingConfiguredProcedures,
   ...listingReadProcedures,
   ...listingGenerationProcedures,
   ...listingEditingProcedures,

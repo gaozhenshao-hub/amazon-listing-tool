@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  createSaihuReportCaptureExecution,
+  createSaihuReportCaptureExecution as createRealSaihuReportCaptureExecution,
   drainSaihuReportCapture,
 } from "./saihuReportCaptureWorker";
 import {
@@ -11,6 +11,77 @@ import {
 } from "./saihuReportTestFixture";
 import { SaihuReportError } from "./saihuReportContract";
 import type { createSaihuReportTransport } from "./saihuReportTransport";
+import {
+  createSaihuReportExecutionLock,
+  type SaihuReportExecutionLease,
+} from "./saihuReportExecutionLock";
+
+const createSaihuReportCaptureExecution = (
+  deps: Parameters<typeof createRealSaihuReportCaptureExecution>[0]
+) =>
+  createRealSaihuReportCaptureExecution({
+    acquireLock: async () => ({
+      signal: new AbortController().signal,
+      assertOwned: async () => undefined,
+      assertDatabase: async () => undefined,
+      release: async () => undefined,
+    }),
+    ...deps,
+  });
+function executionLock() {
+  const state = {
+    owner: null as number | null,
+    nextId: 1,
+    latest: null as SaihuReportExecutionLease | null,
+    releases: [] as number[],
+  };
+  const acquire = createSaihuReportExecutionLock({
+    connect: async () => {
+      const id = state.nextId++;
+      return {
+        async query(
+          options: { sql: string; timeout: number },
+          _values: unknown[]
+        ) {
+          const metadata = {
+            connectionId: id,
+            serverUuid: "00000000-0000-0000-0000-000000000001",
+            databaseName: "synthetic",
+          };
+          if (options.sql.includes("GET_LOCK")) {
+            if (state.owner !== null)
+              return [[{ ...metadata, acquired: 0 }], []];
+            state.owner = id;
+            return [[{ ...metadata, acquired: 1 }], []];
+          }
+          if (options.sql.includes("IS_USED_LOCK"))
+            return [[{ ...metadata, owner: state.owner }], []];
+          if (options.sql.includes("RELEASE_LOCK")) {
+            if (state.owner !== id) throw new Error("not the owned session");
+            state.releases.push(id);
+            state.owner = null;
+            return [[{ released: 1 }], []];
+          }
+          throw new Error("unexpected lock SQL");
+        },
+        destroy() {
+          if (state.owner === id) state.owner = null;
+        },
+        async end() {
+          if (state.owner === id) state.owner = null;
+        },
+      };
+    },
+  });
+  return {
+    state,
+    acquire: async () => {
+      const lease = await acquire();
+      if (lease) state.latest = lease;
+      return lease;
+    },
+  };
+}
 
 async function queued() {
   const f = createSaihuReportTestFixture(),
@@ -45,6 +116,150 @@ afterEach(() => {
 });
 
 describe("Saihu capture actual repository execution boundaries", () => {
+  it("a competing process cannot claim or read while the same original executor lock is held", async () => {
+    const first = await queued(),
+      second = await queued(),
+      lock = executionLock();
+    let entered!: () => void, release!: () => void;
+    const started = new Promise<void>(done => {
+        entered = done;
+      }),
+      blocked = new Promise<void>(done => {
+        release = done;
+      });
+    let firstReads = 0,
+      secondReads = 0;
+    const transport: typeof createSaihuReportTransport =
+      (_credentials, _contract, _signal, options) => async period => {
+        await options?.beforeRead?.();
+        firstReads++;
+        entered();
+        await blocked;
+        return syntheticSaihuRead([syntheticSaihuRow(period)]);
+      };
+    const other: typeof createSaihuReportTransport =
+      (_credentials, _contract, _signal, options) => async period => {
+        await options?.beforeRead?.();
+        secondReads++;
+        return syntheticSaihuRead([syntheticSaihuRow(period)]);
+      };
+    const a = createSaihuReportCaptureExecution({
+      repository: first.f.repository,
+      enabled: () => true,
+      transport,
+      acquireLock: lock.acquire,
+    });
+    const b = createSaihuReportCaptureExecution({
+      repository: second.f.repository,
+      enabled: () => true,
+      transport: other,
+      acquireLock: lock.acquire,
+    });
+    const pending = a(first.input);
+    await started;
+    await b(second.input);
+    expect(second.f.state.jobs[0].status).toBe("queued");
+    expect(secondReads).toBe(0);
+    release();
+    await pending;
+    await b(second.input);
+    expect(firstReads).toBe(1);
+    expect(secondReads).toBe(1);
+    expect(lock.state.releases).toHaveLength(2);
+  });
+  it("same environment text is not proof that the actual transaction is on the lock's server", async () => {
+    const { f, input } = await queued(),
+      lock = executionLock(),
+      transport = vi.fn<typeof createSaihuReportTransport>();
+    f.control.serverUuid = "00000000-0000-0000-0000-000000000002";
+    await createSaihuReportCaptureExecution({
+      repository: f.repository,
+      enabled: () => true,
+      transport,
+      acquireLock: lock.acquire,
+    })(input);
+    expect(f.state.jobs[0].status).toBe("queued");
+    expect(transport).not.toHaveBeenCalled();
+  });
+  it("losing the session during an outbound read aborts it, keeps unknown recovery on the original UUID and never retries", async () => {
+    const { f, input } = await queued(),
+      lock = executionLock(),
+      failure = vi.spyOn(f.repository, "failure");
+    let started!: () => void,
+      reads = 0;
+    const entered = new Promise<void>(done => {
+      started = done;
+    });
+    const transport: typeof createSaihuReportTransport =
+      (_credentials, _contract, signal, options) => async () => {
+        await options?.beforeRead?.();
+        reads++;
+        started();
+        return new Promise((_resolve, reject) =>
+          signal.addEventListener(
+            "abort",
+            () => reject(new SaihuReportError("CANCELLED")),
+            { once: true }
+          )
+        );
+      };
+    const process = createSaihuReportCaptureExecution({
+      repository: f.repository,
+      enabled: () => true,
+      transport,
+      acquireLock: lock.acquire,
+    });
+    const pending = process(input);
+    await entered;
+    lock.state.owner = 999;
+    await expect(lock.state.latest!.assertOwned()).rejects.toThrow(
+      "EXECUTION_LOCK_LOST"
+    );
+    await pending;
+    expect(failure).not.toHaveBeenCalled();
+    expect(f.state.artifacts).toHaveLength(0);
+    expect(reads).toBe(1);
+    lock.state.owner = null;
+    f.control.now += 121000;
+    await process(input);
+    expect(
+      (
+        await f.repository.check(f.identity, {
+          expectedWorkspaceId: 7,
+          operationId: input.operationId,
+        })
+      ).run?.state
+    ).toBe("unknown");
+    expect(reads).toBe(1);
+  });
+  it("a fully received original response can be saved as a preview after lock loss, without another HTTP call or automatic apply", async () => {
+    const { f, input } = await queued(),
+      lock = executionLock(),
+      failure = vi.spyOn(f.repository, "failure");
+    let reads = 0;
+    const transport: typeof createSaihuReportTransport =
+      (_credentials, _contract, _signal, options) => async period => {
+        await options?.beforeRead?.();
+        reads++;
+        const result = syntheticSaihuRead([syntheticSaihuRow(period)]);
+        lock.state.owner = 999;
+        await lock.state.latest!.assertOwned().catch(() => undefined);
+        return result;
+      };
+    await createSaihuReportCaptureExecution({
+      repository: f.repository,
+      enabled: () => true,
+      transport,
+      acquireLock: lock.acquire,
+    })(input);
+    expect(reads).toBe(1);
+    expect(failure).not.toHaveBeenCalled();
+    expect(f.state.artifacts).toHaveLength(2);
+    expect(f.state.daily[0].status).toBe("previewing");
+    expect(JSON.parse(String(f.state.jobs[0].output)).applied).toBe(false);
+    expect(lock.state.owner).toBe(999);
+    expect(lock.state.releases).toHaveLength(0);
+  });
   it("does not claim or touch a provider while worker is default off", async () => {
     const { f, input } = await queued(),
       claim = vi.spyOn(f.repository, "claim"),

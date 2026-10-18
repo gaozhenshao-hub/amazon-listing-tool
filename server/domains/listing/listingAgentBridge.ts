@@ -36,6 +36,7 @@ import {
 import { normalizeAgentDag } from "../ai_os/services/agentRunner/runtimeCore";
 import { getAgentBySlug } from "../ai_os/services/agentRunner/templateGovernance";
 import { getCheckpoint } from "../ai_os/services/agentRunner/checkpointStore";
+import { withListingLegacyProjectionFence } from "./services/listingConfiguredAgentProjection";
 
 export const LISTING_WORKFLOW_AGENT_SLUG = "listing.full.workflow";
 
@@ -140,7 +141,7 @@ type ListingNodeJobSyncInput = {
   output?: unknown;
 };
 
-export async function syncListingNodeJobQueued(input: ListingNodeJobSyncInput) {
+async function syncListingNodeJobQueuedUnfenced(input: ListingNodeJobSyncInput) {
   try {
     const context = await resolveListingNodeContext(input);
     if (!context) return;
@@ -175,7 +176,7 @@ export async function syncListingNodeJobQueued(input: ListingNodeJobSyncInput) {
   }
 }
 
-export async function syncListingNodeJobRunning(input: ListingNodeJobSyncInput) {
+async function syncListingNodeJobRunningUnfenced(input: ListingNodeJobSyncInput) {
   try {
     const context = await resolveListingNodeContext(input);
     if (!context) return;
@@ -210,7 +211,7 @@ export async function syncListingNodeJobRunning(input: ListingNodeJobSyncInput) 
   }
 }
 
-export async function syncListingNodeJobWaitingHuman(input: ListingNodeJobSyncInput) {
+async function syncListingNodeJobWaitingHumanUnfenced(input: ListingNodeJobSyncInput) {
   try {
     const context = await resolveListingNodeContext(input);
     if (!context) return;
@@ -236,7 +237,7 @@ export async function syncListingNodeJobWaitingHuman(input: ListingNodeJobSyncIn
   }
 }
 
-export async function syncListingNodeJobFailed(input: ListingNodeJobSyncInput & {
+async function syncListingNodeJobFailedUnfenced(input: ListingNodeJobSyncInput & {
   finalAttempt: boolean;
   failureKind?: "error" | "timeout" | "cancel";
 }) {
@@ -271,6 +272,27 @@ export async function syncListingNodeJobFailed(input: ListingNodeJobSyncInput & 
   } catch (error) {
     console.warn(`[ListingBridge] ${input.nodeId} failure sync failed:`, error);
   }
+}
+
+async function guardedLegacyJobProjection(input: ListingNodeJobSyncInput, work: () => Promise<void>) {
+  try { await withListingLegacyProjectionFence(input, work); }
+  catch (error) {
+    // Projection remains best-effort, but an unavailable/corrupt fence must
+    // never fall through to the unfenced old helper or trigger another fee.
+    console.warn(`[ListingBridge] ${input.nodeId} legacy projection fenced:`, error);
+  }
+}
+export async function syncListingNodeJobQueued(input: ListingNodeJobSyncInput) {
+  await guardedLegacyJobProjection(input, () => syncListingNodeJobQueuedUnfenced(input));
+}
+export async function syncListingNodeJobRunning(input: ListingNodeJobSyncInput) {
+  await guardedLegacyJobProjection(input, () => syncListingNodeJobRunningUnfenced(input));
+}
+export async function syncListingNodeJobWaitingHuman(input: ListingNodeJobSyncInput) {
+  await guardedLegacyJobProjection(input, () => syncListingNodeJobWaitingHumanUnfenced(input));
+}
+export async function syncListingNodeJobFailed(input: ListingNodeJobSyncInput & { finalAttempt: boolean; failureKind?: "error" | "timeout" | "cancel" }) {
+  await guardedLegacyJobProjection(input, () => syncListingNodeJobFailedUnfenced(input));
 }
 
 export async function syncListingNodeDraft(input: {

@@ -18,6 +18,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
+import { useListingConfiguredGeneration } from "./ListingConfiguredGenerationContext";
 
 // ─── Search Terms 5 Dimensions Definition ─────────────────────────────────
 const SEARCH_TERMS_CHECKLIST_DIMENSIONS = [
@@ -39,6 +40,7 @@ interface StepSearchTermsProps {
 }
 
 export default function StepSearchTerms({ projectId, emphasis, locked, savedContent, onLock, onUnlock, onComplete }: StepSearchTermsProps) {
+  const configured = useListingConfiguredGeneration();
   const [searchTerms, setSearchTerms] = useState("");
   const [categories, setCategories] = useState<any[]>([]);
   const [confirmed, setConfirmed] = useState(false);
@@ -57,13 +59,14 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
 
   // Auto-trigger checklist when search terms are generated
   useEffect(() => {
-    if (generated && searchTerms && !autoCheckTriggered.current && !checkScores) {
+    if (!configured?.enabled && generated && searchTerms && !autoCheckTriggered.current && !checkScores) {
       autoCheckTriggered.current = true;
       evaluateCheck.mutate({ searchTerms });
     }
-  }, [generated, searchTerms]);
+  }, [generated, searchTerms, configured?.enabled, checkScores, evaluateCheck]);
 
   const handleRunCheck = () => {
+    if (configured?.enabled) { toast.info("独立自检仍属旧协议收费辅助能力，请明确切回旧方式后使用；不计入新配置预算"); return; }
     if (!searchTerms.trim()) {
       toast.error("请先生成搜索词");
       return;
@@ -76,6 +79,7 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
     projectId,
     nodeId: "G4",
     operation: "searchTerms",
+    draftFingerprint: JSON.stringify([searchTerms, categories, confirmed, locked]),
     onSucceeded: (data: any) => {
       try {
         const content = data.searchTerms || data;
@@ -102,14 +106,14 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
         setCategories(cats);
         setGenerated(true);
         setCheckScores(undefined);
-        autoCheckTriggered.current = false;
+        autoCheckTriggered.current = !!configured?.enabled;
         toast.success("搜索词已生成");
       } catch {
         const text = typeof data === "string" ? data : JSON.stringify(data);
         setSearchTerms(text);
         setGenerated(true);
         setCheckScores(undefined);
-        autoCheckTriggered.current = false;
+        autoCheckTriggered.current = !!configured?.enabled;
         toast.success("搜索词已生成");
       }
     },

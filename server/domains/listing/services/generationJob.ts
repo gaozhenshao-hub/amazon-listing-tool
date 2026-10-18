@@ -43,6 +43,7 @@ import { buildSellingPointPlanningResearch, formatSellingPointPlanningContext, n
 import { listingResearchBindingSchema, listingResearchIdsSchema, type ListingResearchBinding } from "../../../../shared/listingResearchSelection";
 import { assertListingResearchSelection, prepareListingResearchSelection } from "./listingResearchSelection";
 import { readActiveCompetitorResearch, renderActiveCompetitorResearchContext } from "./competitorActiveResearch";
+import { withListingLegacyJobEnqueueFence } from "./listingConfiguredAgentProjection";
 import { assertActiveCompetitorResearchScope } from "../../../services/competitorActiveResearch";
 
 export const LISTING_JOB_MODULE = "listing";
@@ -698,6 +699,25 @@ function assertGeneratedFieldOutputSchema(
   return result.data;
 }
 
+/** Pure validation shared by the configured lane. This does not run a Skill,
+ * persist a candidate, retry a provider, or change legacy job behavior. */
+export function validateConfiguredListingOutput(operation: Exclude<ListingGenerationOperation, "batch">, raw: unknown,
+  input: ListingGenerationJobInput, research?: ReturnType<typeof buildSellingPointPlanningResearch>) {
+  let candidate: Record<string, unknown>;
+  try {
+    const parsed = assertGeneratedFieldOutputSchema(operation, raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("JSON object required");
+    candidate = parsed as Record<string, unknown>;
+    if (operation === "sellingPoints") {
+      if (!research) throw new Error("Research binding missing");
+      candidate = normalizeSellingPoints(parsed, research);
+    }
+  } catch { return { candidate: null, issues: ["OUTPUT_CONTRACT_INVALID"], formatInvalid: true }; }
+  const quality = operation === "singleBullet" ? validateSingleBulletQuality(candidate, input)
+    : operation === "title" ? validateTitles(candidate) : operation === "bullets" ? validateBullets(candidate) : { valid: true, issues: [] };
+  return { candidate, issues: quality.valid ? [] : quality.issues.map(String), formatInvalid: false };
+}
+
 async function runOperation(
   job: AiJobSnapshot,
   handlerContext: AiJobHandlerContext,
@@ -980,7 +1000,7 @@ export async function startListingGenerationJob(input: ListingGenerationJobInput
   }
   const label = OPERATION_CONFIG[input.operation].label;
   const skillSlug = OPERATION_CONFIG[input.operation].skillSlug;
-  const job = await createAiJobRun({
+  const job = await withListingLegacyJobEnqueueFence({ projectId: input.projectId, userId: input.userId, workspaceId: input.workspaceId }, () => createAiJobRun({
     kind: `listing.generation.${input.operation}`,
     module: LISTING_JOB_MODULE,
     procedure: "listing.startGenerationJob",
@@ -992,7 +1012,7 @@ export async function startListingGenerationJob(input: ListingGenerationJobInput
     progress: 5,
     maxAttempts: 3,
     timeoutSeconds: 20 * 60,
-  });
+  }));
   await syncListingNodeJobQueued({
     agentRunId: input.agentRunId,
     nodeId: input.nodeId,

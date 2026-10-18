@@ -225,6 +225,8 @@ export function createSaihuReportTestFixture() {
       failAudit: false,
       failBoard: false,
       connectionVersion: "a".repeat(64),
+      serverUuid: "00000000-0000-0000-0000-000000000001",
+      databaseName: "synthetic",
     },
     calls: Array<{ sql: string; params: unknown[] }> = [];
   let tail: Promise<unknown> = Promise.resolve(),
@@ -320,6 +322,12 @@ export function createSaihuReportTestFixture() {
         { affectedRows: 1, warningStatus: 0, insertId },
         [],
       ];
+    if (
+      text === "SELECT @@server_uuid AS serverUuid,DATABASE() AS databaseName"
+    )
+      return result([
+        { serverUuid: control.serverUuid, databaseName: control.databaseName },
+      ]);
     if (text.includes("@@max_allowed_packet"))
       return result([{ maximumPacket: 128 * 1024 * 1024 }]);
     if (text.includes("information_schema.TRIGGERS")) return result([]);
@@ -402,12 +410,34 @@ export function createSaihuReportTestFixture() {
         return result(state.jobs.filter(row => row.runId === p[0]));
       if (text.includes("status IN"))
         return result(
-          state.jobs.filter(
-            row =>
-              row.workspaceId === p[0] &&
-              row.kind === p[1] &&
-              ["queued", "running", "succeeded", "failed"].includes(row.status)
-          )
+          state.jobs
+            .filter(
+              row =>
+                row.workspaceId === p[0] &&
+                row.kind === p[1] &&
+                ["queued", "running", "succeeded", "failed"].includes(
+                  row.status
+                )
+            )
+            .filter(row => {
+              if (!text.includes("JSON_EXTRACT(output,'$.applied')"))
+                return true;
+              const input = JSON.parse(row.input),
+                output = JSON.parse(row.output),
+                scope = input.request?.scope;
+              return (
+                output.applied !== true &&
+                output.revoked !== true &&
+                !["failed", "cancelled"].includes(output.state) &&
+                (!scope ||
+                  !["daily", "monthly"].includes(scope.kind) ||
+                  (scope.kind === p[2] &&
+                    scope.start <= String(p[3]) &&
+                    scope.end >= String(p[4])))
+              );
+            })
+            .sort((a, b) => a.id - b.id)
+            .slice(0, text.includes("LIMIT 1 FOR UPDATE") ? 1 : 201)
         );
       return result(
         state.jobs
@@ -430,6 +460,7 @@ export function createSaihuReportTestFixture() {
         runId: p[1],
         kind: p[2],
         module: "ops",
+        procedure: "opsSaihuReport.start",
         projectId: null,
         maxAttempts: 1,
         status: "queued",
@@ -442,6 +473,18 @@ export function createSaihuReportTestFixture() {
       return write(id);
     }
     if (text.startsWith("UPDATE ai_jobs")) {
+      if (text.includes("SET `procedure`=?")) {
+        const row = state.jobs.find(
+          row =>
+            row.runId === p[1] &&
+            row.kind === p[2] &&
+            row.procedure === "opsSaihuReport.start" &&
+            row.status === "queued"
+        );
+        if (!row) return [{ affectedRows: 0, warningStatus: 0 }, []];
+        row.procedure = p[0];
+        return write();
+      }
       const runId = text.includes("SET status='running'")
           ? p[3]
           : text.includes("SET leaseUntil")
@@ -474,6 +517,7 @@ export function createSaihuReportTestFixture() {
         projectId: null,
         domain: "ops",
         artifactKey: p[3],
+        artifactType: "json",
         sourceType: "tool_output",
         sourceTable: "ai_jobs",
         sourceRowId: p[4],
@@ -489,8 +533,14 @@ export function createSaihuReportTestFixture() {
     if (text.includes("FROM ops_saihu_daily_report_batches"))
       return result(
         state.daily
-          .filter(row => row.workspaceId === p[0])
+          .filter(
+            row =>
+              row.workspaceId === p[0] &&
+              (!text.includes("AND id=?") || row.id === p[1]) &&
+              (!text.includes("AND id<?") || row.id < Number(p[1]))
+          )
           .sort((a, b) => b.id - a.id)
+          .slice(0, text.includes("LIMIT 128") ? 128 : 2)
       );
     if (text.startsWith("INSERT INTO ops_saihu_daily_report_batches")) {
       const id = nextDaily++;
@@ -521,7 +571,19 @@ export function createSaihuReportTestFixture() {
     if (text.includes("FROM saihu_product_weekly"))
       return result(
         state.legacy
-          .filter(row => row.workspaceId === p[0])
+          .filter(
+            row =>
+              row.workspaceId === p[0] &&
+              (!text.includes("weekStartDate<=?") ||
+                typeof row.weekStartDate !== "string" ||
+                typeof row.weekEndDate !== "string" ||
+                (row.weekStartDate <= String(p[1]) &&
+                  row.weekEndDate >= String(p[2]))) &&
+              (!text.includes("AND id<?") ||
+                row.id < Number(p[text.includes("weekStartDate<=?") ? 3 : 1]))
+          )
+          .sort((a, b) => b.id - a.id)
+          .slice(0, 128)
           .map(row => ({ id: row.id, content: JSON.stringify(row) }))
       );
     if (text.includes("FROM ops_monthly_import_artifacts"))
@@ -545,11 +607,19 @@ export function createSaihuReportTestFixture() {
               row.workspaceId === p[0] &&
               (text.includes("status='completed'")
                 ? row.status === "completed"
-                : row.id === p[1])
+                : row.id === p[1]) &&
+              (!text.includes("AND id<?") || row.id < Number(p[1]))
           )
           .sort((a, b) => b.id - a.id)
+          .slice(0, text.includes("LIMIT 128") ? 128 : 2)
           .map(row => ({
             ...row,
+            payloadType: Array.isArray(JSON.parse(row.payload))
+              ? "ARRAY"
+              : "OBJECT",
+            payloadMonths: JSON.stringify(
+              JSON.parse(row.payload).map((item: Row) => item.yearMonth)
+            ),
             payloadBytes: Buffer.byteLength(row.payload),
             monthsBytes: Buffer.byteLength(row.months),
           }))

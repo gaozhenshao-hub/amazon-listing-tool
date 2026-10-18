@@ -144,7 +144,7 @@ describe.each([PROFILE_IMPORT_JOB_KIND, COMPETITOR_RESEARCH_JOB_KIND, COMPETITOR
       if (method === "execute") {
         const normalized = sql.replace(/\s+/g, " ");
         expect(normalized).toContain("WHERE runId = ? AND kind <> ? AND kind NOT IN ('image.workflow.outline.v1','product.development.market_overview.v1')");
-        expect(normalized).toContain("AND kind NOT IN ('knowledge.qa.v1','video.workflow.configured.v1') AND kind <> 'ops.saihu_report_capture.v1' AND status IN ('queued', 'running')");
+        expect(normalized).toContain("AND kind NOT IN ('knowledge.qa.v1','video.workflow.configured.v1') AND kind <> 'ops.saihu_report_capture.v1' AND kind <> 'listing.generation.configured.v1' AND status IN ('queued', 'running')");
         expect(normalized).toContain("AND (nextRunAt IS NULL OR nextRunAt <= NOW())");
         expect(normalized).toContain("AND (lockedBy IS NULL OR lockedBy = ? OR leaseUntil IS NULL OR leaseUntil < NOW())");
         expect(normalized).toContain("AND (kind NOT IN (?, ?, ?) OR (status = 'queued' AND lockedBy IS NULL AND leaseUntil IS NULL) OR (status = 'running' AND leaseUntil < NOW()))");

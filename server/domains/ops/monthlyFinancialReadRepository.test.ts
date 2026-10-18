@@ -5,6 +5,7 @@ import { MONTHLY_FINANCIAL_METRICS } from "../../../shared/monthlyFinancialRead"
 import type { TrpcContext } from "../../_core/context";
 import { createMonthlyFinancialReadRepository } from "./monthlyFinancialReadRepository";
 import { projection as boardProjection } from "./monthlyBoardReadCore";
+import { normalizeMarketplaceCode } from "../../../shared/marketplaceIdentity";
 
 type Row = Record<string, unknown>;
 const scope = { yearMonth: "2026-09", parentAsin: "B000000001", storeName: "Exact Store", country: "US" };
@@ -41,7 +42,14 @@ const execute = vi.fn(async (statement: SQL) => {
     if (sourceOverride[kind]) return [sourceOverride[kind], []];
     let result = batches.filter(row => row.workspaceId === query.params[0]).sort((a, b) => Number(b.id) - Number(a.id));
     if (kind === "batch") result = result.filter(row => row.id === query.params[1]).slice(0, 2);
-    else if (kind === "snapshot") result = result.filter(row => row.status === "completed" && (query.params.length === 1 || Number(row.id) < Number(query.params[1]))).slice(0, 1);
+    else if (kind === "snapshot") result = result.filter(row => {
+      if (row.status !== "completed") return false;
+      if (!query.sql.includes("JSON_TABLE")) return query.params.length === 1 || Number(row.id) < Number(query.params[1]);
+      let payload: unknown, months: unknown;
+      try { payload = JSON.parse(String(row.payload)); months = JSON.parse(String(row.months)); } catch { return true; }
+      if (!Array.isArray(payload) || !Array.isArray(months) || payload.length !== row.totalRows) return true;
+      return payload.some(item => item.yearMonth === query.params[1] && item.storeName === query.params[2] && normalizeMarketplaceCode(item.site) === query.params[3]);
+    }).slice(0, 1);
     else {
       let index = 1;
       if (query.sql.includes("AND userId=?")) { result = result.filter(row => row.userId === query.params[index]); index++; }
@@ -248,13 +256,13 @@ describe("monthly financial readonly SQL boundary", () => {
     const result = await repo.getEffectiveSnapshot(regular(), { ...snapshotInput, parentAsin: scope.parentAsin });
     expect(result.status).toBe("ready"); expect(result.selectedBatchId).toBe(12); expect(result.rows).toEqual([]); expect(result.page.matchedRows).toBe(0);
     expect(result.batch?.visibility).toBe("scoped"); expect(result.selection.scannedCount).toBeNull();
-    const selects = queries.filter(query => query.sql.includes("FROM ops_monthly_profit_imports")); expect(selects).toHaveLength(1); expect(selects[0].params).toEqual([7]);
-    const where = selects[0].sql.slice(selects[0].sql.indexOf("FROM ops_monthly_profit_imports")); expect(where).not.toMatch(/userId|parent|operator|storeName|yearMonth/u);
+    const selects = queries.filter(query => query.sql.includes("FROM ops_monthly_profit_imports")); expect(selects).toHaveLength(1); expect(selects[0].params).toEqual([7, scope.yearMonth, scope.storeName, scope.country]);
+    const where = selects[0].sql.slice(selects[0].sql.indexOf("FROM ops_monthly_profit_imports")); expect(where).not.toMatch(/userId|parent|operator/u); expect(where).toContain("JSON_TABLE");
   });
-  it("scans newer unrelated scope batches by true keyset, retaining only first matching full scope", async () => {
+  it("selects from the complete native whole-scope range without fetching unrelated history bodies", async () => {
     batches = [batch({ id: 14 }, [businessRow({ storeName: "Other" })]), batch({ id: 13 }, [businessRow({ site: "CA" })]), batch({ id: 12 }, [businessRow({ yearMonth: "2026-08" })]), batch({ id: 11 })];
-    const result = await repo.getEffectiveSnapshot(context(), snapshotInput); expect(result.selectedBatchId).toBe(11); expect(result.selection.scannedCount).toBe(4);
-    const queriesToSource = queries.filter(query => query.sql.includes("FROM ops_monthly_profit_imports")); expect(queriesToSource.map(query => query.params)).toEqual([[7], [7, 14], [7, 13], [7, 12]]);
+    const result = await repo.getEffectiveSnapshot(context(), snapshotInput); expect(result.selectedBatchId).toBe(11); expect(result.selection.scannedCount).toBe(1);
+    const queriesToSource = queries.filter(query => query.sql.includes("FROM ops_monthly_profit_imports")); expect(queriesToSource.map(query => query.params)).toEqual([[7, scope.yearMonth, scope.storeName, scope.country]]);
     expect(queriesToSource.every(query => query.sql.endsWith("LIMIT 1 FOR SHARE"))).toBe(true);
   });
   it("preview and deleted batches are not effective; highest completed id wins rather than timestamp", async () => {
@@ -266,10 +274,10 @@ describe("monthly financial readonly SQL boundary", () => {
     const result = await repo.getEffectiveSnapshot(context(), snapshotInput); expect(result.status).toBe("invalid"); expect(result.selectedBatchId).toBeNull();
     expect(queries.filter(query => query.sql.includes("FROM ops_monthly_profit_imports"))).toHaveLength(1);
   });
-  it("bounds snapshot scans explicitly, never marks partial scan as current", async () => {
+  it("201 unrelated historical batches do not manufacture an incomplete current selection", async () => {
     batches = Array.from({ length: 201 }, (_, index) => batch({ id: 1000 - index }, []));
-    const result = await repo.getEffectiveSnapshot(context(), snapshotInput); expect(result.status).toBe("invalid"); expect(result.reasonCode).toBe("scan_incomplete"); expect(result.selection.complete).toBe(false);
-    expect(queries.filter(query => query.sql.includes("FROM ops_monthly_profit_imports"))).toHaveLength(200);
+    const result = await repo.getEffectiveSnapshot(context(), snapshotInput); expect(result.status).toBe("not_found"); expect(result.selection.complete).toBe(true);
+    expect(queries.filter(query => query.sql.includes("FROM ops_monthly_profit_imports"))).toHaveLength(1);
   });
   it("caps aggregate snapshot transport and never fetches an over-budget JSON body", async () => {
     sourceOverride.snapshot = [batch({ payload: null, payloadBytes: 33 * 1024 * 1024 })];
@@ -277,11 +285,11 @@ describe("monthly financial readonly SQL boundary", () => {
     const query = queries.find(query => query.sql.includes("FROM ops_monthly_profit_imports"))!;
     expect(query.sql).toContain("<=33554432"); expect(query.sql).toContain("CAST(payload AS CHAR CHARACTER SET utf8mb4),NULL) AS payload");
   });
-  it("decreases later snapshot transport budgets by already-read payload and month bytes", async () => {
+  it("unrelated source bodies never consume the exact-scope transport budget", async () => {
     const newer = batch({ id: 12 }, [businessRow({ storeName: "Other" })]); batches = [newer, batch()];
     await repo.getEffectiveSnapshot(context(), snapshotInput);
     const selected = queries.filter(query => query.sql.includes("FROM ops_monthly_profit_imports"));
-    expect(selected[1].sql).toContain(`<=${32 * 1024 * 1024 - Number(newer.payloadBytes) - Number(newer.monthsBytes)}`);
+    expect(selected).toHaveLength(1); expect(selected[0].sql).toContain("<=33554432");
   });
   it("ambiguous API parent references are excluded from ordinary scoped rows even with manual owner", async () => {
     assignments = [assignment()]; batches = [batch({}, [businessRow({ raw: { source: "sellfox_monthly_api", api: { parentAsinList: [scope.parentAsin, "B000000009"] } } })])];
@@ -294,7 +302,7 @@ describe("monthly financial readonly SQL boundary", () => {
   it("a bad cursor result cannot masquerade as an effective completed selection", async () => {
     sourceOverride.snapshot = [batch({}, [businessRow({ storeName: "Other" })])];
     const result = await repo.getEffectiveSnapshot(context(), snapshotInput); expect(result.status).toBe("invalid"); expect(result.selectedBatchId).toBeNull();
-    expect(queries.filter(query => query.sql.includes("FROM ops_monthly_profit_imports"))).toHaveLength(2);
+    expect(queries.filter(query => query.sql.includes("FROM ops_monthly_profit_imports"))).toHaveLength(1);
   });
   it.each([{ status: "previewing" }, { status: "deleted" }, { workspaceId: 8 }, { id: 0 }, { payloadBytes: "7" }])("does not accept a malformed effective-source protocol %j", async patch => {
     sourceOverride.snapshot = [batch(patch)]; expect((await repo.getEffectiveSnapshot(context(), snapshotInput)).status).toBe("invalid");

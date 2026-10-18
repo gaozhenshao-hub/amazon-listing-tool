@@ -1,0 +1,108 @@
+{
+  "schema": "integration-reviewed-change/v1",
+  "base": "5703f522e4a391d9ad1bf0e8bc6a2f78f8e2bdad",
+  "decision": "reviewed narrow central and protected integration, not whole-feature acceptance",
+  "protectedChanges": [
+    {
+      "path": "client/src/pages/GeneratePage.tsx",
+      "previous": {
+        "gitBlobSha1": "29d9ec4613da24db293da02e35e946d4b7f998da",
+        "sha256": "72335ee508ba57ec1a6c811c1d42d6bccc1ee8abd5fd3e683c363f84066c03a7",
+        "reviewRef": "config/integration/reviews/20261018-main-candidate-ci-compatibility.json"
+      },
+      "reviewed": {
+        "gitBlobSha1": "accf49782545262492dd45046b56a6217ffcbd9b",
+        "sha256": "fe061581a8a2143f282b46127366cb3e4078f9199cddb0a82bf5bef4ef70baf9",
+        "reviewRef": "config/integration/reviews/20261018-main-candidate-ci-compatibility.json; config/integration/reviews/20261019-listing-configured-main-and-saihu-c2.json"
+      }
+    },
+    {
+      "path": "client/src/pages/listing/SellingPointPlanRecovery.component.test.tsx",
+      "previous": {
+        "gitBlobSha1": "c6a079672f827ac3309757b49372332a3c9f24ab",
+        "sha256": "7ee48ecf8e2ad383934004016640b6ca89385f5ea777eadbae951ef58ce1e9cf"
+      },
+      "reviewed": {
+        "gitBlobSha1": "dd4afc3e2a0d2c77ced094a9d454f5abdefb2b11",
+        "sha256": "ab30e42d29fdf5e76d286fc0bcd025cc55c68b512309ee9225a01f8900b2edf9",
+        "reviewRef": "config/integration/reviews/20261019-listing-configured-main-and-saihu-c2.json"
+      }
+    },
+    {
+      "path": "client/src/pages/listing/useSellingPointPlanRecovery.ts",
+      "previous": {
+        "gitBlobSha1": "8159e68790aa4080a16c7c367c6701ff4313a585",
+        "sha256": "c51a61d3b59b8c8ab6a3996d20e2072659e32a650b7fe32b52c54db536e1fb12"
+      },
+      "reviewed": {
+        "gitBlobSha1": "04cd0d40bcc6ffe60020827ff4a0bc460d05fa6a",
+        "sha256": "23ada8fd4901e6adab55db0e379dfb651efbac1d9b114b0087643f379c162c76",
+        "reviewRef": "config/integration/reviews/20261019-listing-configured-main-and-saihu-c2.json"
+      }
+    },
+    {
+      "path": "server/_core/aiWorker.ts",
+      "previous": {
+        "gitBlobSha1": "7c1f6769804b176a7e70fd0f3cc865be764955df",
+        "sha256": "8f05a3a781da305427047718c3ca076cb88c444ebf48cb50e22e7516d82ebeba",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior worker registrations and drains; config/integration/reviews/20261019-image-tagging-business.json; config/integration/reviews/20261019-configured-business-verticals.json; config/integration/reviews/20261019-main-business-continuation.json"
+      },
+      "reviewed": {
+        "gitBlobSha1": "356836ceaf1819a8905beef439e4419f04de404e",
+        "sha256": "c64cd3ed3c5779e91b1d9cc9b52b665883370afb3e4252e383dc6b8d46dbbfc4",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior worker registrations and drains; config/integration/reviews/20261019-image-tagging-business.json; config/integration/reviews/20261019-configured-business-verticals.json; config/integration/reviews/20261019-main-business-continuation.json; config/integration/reviews/20261019-listing-configured-main-and-saihu-c2.json"
+      }
+    },
+    {
+      "path": "server/domains/listing/services/generationJob.ts",
+      "previous": {
+        "gitBlobSha1": "d108e16c663ba609b0148b7c34e58c0b3367da01",
+        "sha256": "6d94b6b8c08c5deac7790ab60fa48fcc13fb1e4ad9b9ba43c909ee279cba2613",
+        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json; config/integration/reviews/20261019-competitor-deep-human-adoption.json"
+      },
+      "reviewed": {
+        "gitBlobSha1": "52a68e5e00f61004cffc0caa7d08fd0d3135c64f",
+        "sha256": "e50ecad216c35df929e21652c7753a4a2bbca9e2682fb95e4d34fd06e97cc0f1",
+        "reviewRef": "config/integration/reviews/20261016-listing-research-binding.json; config/integration/reviews/20261019-competitor-deep-human-adoption.json; config/integration/reviews/20261019-listing-configured-main-and-saihu-c2.json"
+      }
+    },
+    {
+      "path": "server/listingFactBoundFieldJobs.test.ts",
+      "previous": {
+        "gitBlobSha1": "1510cba2533458c4036a05a7882ea158be3f48a0",
+        "sha256": "6f7321bd577161d15fa9110576be144336be538e800c1978592b3e328430b59a",
+        "reviewRef": "config/integration/reviews/20261018-main-candidate-ci-compatibility.json"
+      },
+      "reviewed": {
+        "gitBlobSha1": "ece6d0441bfcbcfac2f1e8805e744ecc092de491",
+        "sha256": "be42c7d8d80f2fbd624cb44aea7aca89c41ef41c02c648c1b92b31cbd92af21a",
+        "reviewRef": "config/integration/reviews/20261018-main-candidate-ci-compatibility.json; config/integration/reviews/20261019-listing-configured-main-and-saihu-c2.json"
+      }
+    }
+  ],
+  "review": [
+    "Root and independent reviewers read the six exact diffs. Preserve all106 original baseline records, both dependencies, all previous review references and K01-K10; only add these reviewed tuples.",
+    "Preserve original seven directions, bilingual themes/strategy, FABE+B/B4, research provenance, human fact/core/candidate gates and old recovery. Eight main operations explicitly choose the configured lane; no fake legacy runId, hidden auxiliary fees or automatic old fallback.",
+    "Only legacy job acceptance gains project serialization. Preserve original provider/retry policy. Independent review found and closed historical NULL-project compatibility; configured apply retains exact workspace admission.",
+    "Keep every old worker start/stop/drain and signal path. Add only the double-default-off Listing dedicated worker and its awaited drain. Private job and three artifact keys are excluded from generic paths.",
+    "Preserve all original quality validators and bounded correction strategies. New configuration does not silently change old jobs. Three auxiliary Listing Skill adapters remain implementation work, not acceptance-only work.",
+    "Saihu C2 uses the original executor session-lock domain, actual server/db identity, durable workspace fairness, frozen-policy dispatch/page checks and full window history. It does not compress provenance or silently upgrade archive board v1.",
+    "DAG cycles, missing descendant checkpoints and invalid reconstruction of legacy insertion-order hashes were found and fixed with regressions. Existing run snapshots, not current templates, define invalidation. Legacy hash pairs are not historical byte-integrity proof.",
+    "The old fact-bound field Job fixture only mocks the new enqueue fence to execute its original callback and supplies original main scopeKey. No original authorization, source, fact or fee assertion is removed. The actual fence has independent SQL-protocol regressions."
+  ],
+  "necessaryChecksAlreadyObserved": {
+    "rootSaihuRelatedTests": 398,
+    "rootUiRelatedTests": 110,
+    "rootStrictPrivacyApprovalTests": 540,
+    "fullOriginalTypecheckExitCode": 0
+  },
+  "separateGates": [
+    "Final aggregate checks, new scalar-JSON tests and new CI are separately recorded. Original native test launcher remains unchanged; newly prepared native cases are not claimed executed.",
+    "Original P0-P6/K01-K10/T01-T28/image62/master27/supplement12 and all13 release gates remain. Actual target metadata, minimal DDL admission, old writers/backlogs, data reconciliation, source approvals, provider quality/fees and deployment are not granted by this review.",
+    "No flag, schema, registry, migration, approval file or timer is enabled. Archive board v1 retains its explicit 200-candidate implementation limit; production and full friend acceptance remain open."
+  ],
+  "productionApproved": false,
+  "productionDeployed": false,
+  "fullP1Complete": false,
+  "fullObjectiveComplete": false
+}

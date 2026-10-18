@@ -4,6 +4,12 @@ import type { CompetitorAnalysis, CompetitorComparisonReport } from "../drizzle/
 import type { AiJobHandlerContext, AiJobSnapshot } from "./domains/ai_os/services/jobRunner";
 import type { ListingGenerationJobInput } from "./domains/listing/services/generationJob";
 
+// This suite retains the original research-selection and job protocol. The
+// project-lock serialization is covered by listingConfiguredAgentProjection.test.
+vi.mock("./domains/listing/services/listingConfiguredAgentProjection", () => ({
+  withListingLegacyJobEnqueueFence: async (_scope: unknown, body: () => Promise<unknown>) => body(),
+}));
+
 // Keep the route, context permissions, selection/binding service, fact-source
 // validation and planning projection real. Only persistence and external/model
 // boundaries below are in memory; no DB, HTTP, Agent execution or provider runs.

@@ -59,6 +59,7 @@ import {
   type SaihuReportOutput,
 } from "./saihuReportProtocol";
 import { validateSaihuReportSource } from "./saihuReportCoverage";
+import { assertSaihuFrozenScheduleDispatch } from "./saihuReportFrozenScheduleDispatch";
 import {
   saihuMonthlyPayload,
   withSaihuMonthlyTransition,
@@ -188,17 +189,31 @@ export function createSaihuReportRepository(
       }
     });
   }
-  async function historyHash(current: MonthlyFinancialWriteSession) {
-    const daily = await readSaihuDailyBatches(
-        current.tx,
-        current.identity.workspaceId
-      ),
-      completed = await monthly.server.completedInTransaction(current);
+  async function historyHash(
+    current: MonthlyFinancialWriteSession,
+    scope: SaihuReportScope
+  ) {
+    const daily =
+        scope.kind === "daily"
+          ? await readSaihuDailyBatches(
+              current.tx,
+              current.identity.workspaceId,
+              scope
+            )
+          : [],
+      completed =
+        scope.kind === "monthly"
+          ? await monthly.server.completedInTransaction(current, [scope.start])
+          : [];
     return saihuReportHash({
-      legacy: await saihuLegacyHistoryHash(
-        current.tx,
-        current.identity.workspaceId
-      ),
+      legacy:
+        scope.kind === "daily"
+          ? await saihuLegacyHistoryHash(
+              current.tx,
+              current.identity.workspaceId,
+              scope
+            )
+          : saihuReportHash([]),
       daily: daily
         .filter(batch => batch.status !== "previewing")
         .map(({ id, status, sourceHash, previewHash }) => ({
@@ -357,7 +372,7 @@ export function createSaihuReportRepository(
   ) {
     requireSession(current);
     const identity = current.identity;
-    const currentHistoryHash = await historyHash(current);
+    const currentHistoryHash = await historyHash(current, scope);
     let config: SaihuReportConfiguration | null = null,
       reasonCode: string | null = enabled() ? null : "WRITES_NOT_ENABLED";
     try {
@@ -421,16 +436,21 @@ export function createSaihuReportRepository(
     const config = await configurationFor(current, input.scope);
     if (
       config.configurationHash !== input.expectedConfigurationHash ||
-      (await historyHash(current)) !== input.expectedHistoryHash
+      (await historyHash(current, input.scope)) !== input.expectedHistoryHash
     )
       saihuReportFail("SOURCE_OR_CONFIGURATION_CHANGED");
     const pending = await saihuReportRows(
       current.tx,
-      "SELECT runId,userId,IF(OCTET_LENGTH(CAST(input AS CHAR CHARACTER SET utf8mb4))<=262144,CAST(input AS CHAR CHARACTER SET utf8mb4),NULL) AS input,IF(OCTET_LENGTH(CAST(output AS CHAR CHARACTER SET utf8mb4))<=65536,CAST(output AS CHAR CHARACTER SET utf8mb4),NULL) AS output FROM ai_jobs WHERE workspaceId=? AND kind=? AND projectId IS NULL AND status IN ('queued','running','succeeded','failed') ORDER BY id LIMIT 201 FOR UPDATE",
-      [identity.workspaceId, SAIHU_REPORT_KIND],
-      201
+      "SELECT runId,userId,IF(OCTET_LENGTH(CAST(input AS CHAR CHARACTER SET utf8mb4))<=262144,CAST(input AS CHAR CHARACTER SET utf8mb4),NULL) AS input,IF(OCTET_LENGTH(CAST(output AS CHAR CHARACTER SET utf8mb4))<=65536,CAST(output AS CHAR CHARACTER SET utf8mb4),NULL) AS output FROM ai_jobs WHERE workspaceId=? AND kind=? AND projectId IS NULL AND status IN ('queued','running','succeeded','failed') AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(output,'$.applied')),'invalid')<>'true' AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(output,'$.revoked')),'invalid')<>'true' AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(output,'$.state')),'invalid') NOT IN ('failed','cancelled') AND (JSON_UNQUOTE(JSON_EXTRACT(input,'$.request.scope.kind')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(input,'$.request.scope.kind')) NOT IN ('daily','monthly') OR (JSON_UNQUOTE(JSON_EXTRACT(input,'$.request.scope.kind'))=? AND JSON_UNQUOTE(JSON_EXTRACT(input,'$.request.scope.start'))<=? AND JSON_UNQUOTE(JSON_EXTRACT(input,'$.request.scope.end'))>=?)) ORDER BY id LIMIT 1 FOR UPDATE",
+      [
+        identity.workspaceId,
+        SAIHU_REPORT_KIND,
+        input.scope.kind,
+        input.scope.end,
+        input.scope.start,
+      ],
+      1
     );
-    if (pending.length > 200) saihuReportFail("PENDING_BUDGET");
     for (const row of pending) {
       const frozen = SaihuReportFrozenInputSchema.parse(
           saihuReportJson(row.input, 262144)
@@ -465,7 +485,7 @@ export function createSaihuReportRepository(
       runId = saihuReportRunId(identity, input.operationId);
     await saihuReportWrite(
       current.tx,
-      "INSERT INTO ai_jobs (workspaceId,runId,kind,module,procedure,status,progress,queueName,attempt,maxAttempts,timeoutSeconds,userId,projectId,input,output) VALUES (?,?,?,'ops','opsSaihuReport.start','queued',0,'saihu-report',0,1,3600,?,NULL,?,?)",
+      "INSERT INTO ai_jobs (workspaceId,runId,kind,module,`procedure`,status,progress,queueName,attempt,maxAttempts,timeoutSeconds,userId,projectId,input,output) VALUES (?,?,?,'ops','opsSaihuReport.start','queued',0,'saihu-report',0,1,3600,?,NULL,?,?)",
       [
         identity.workspaceId,
         runId,
@@ -562,10 +582,12 @@ export function createSaihuReportRepository(
   }
   async function claim(
     identity: SaihuReportIdentity,
-    raw: SaihuReportOperationInput
+    raw: SaihuReportOperationInput,
+    assertExecutionDatabase?: (tx: DbExecutor) => Promise<void>
   ) {
     const input = SaihuReportOperationInputSchema.parse(raw);
     return transaction(identity, "create", async current => {
+      await assertExecutionDatabase?.(current.tx);
       gate();
       const run = await readSaihuReportRun(
         current.tx,
@@ -633,11 +655,21 @@ export function createSaihuReportRepository(
       );
     });
   }
-  async function dispatch(lease: SaihuReportLease) {
+  async function dispatch(
+    lease: SaihuReportLease,
+    assertExecutionDatabase?: (tx: DbExecutor) => Promise<void>
+  ) {
     return transaction(lease.identity, "create", async current => {
+      await assertExecutionDatabase?.(current.tx);
       gate();
       const run = await leased(current, lease);
       if (run.output.dispatched) saihuReportFail("ALREADY_DISPATCHED");
+      await assertSaihuFrozenScheduleDispatch(
+        current.tx,
+        run,
+        now(),
+        await audit(current, lease.operationId, "start")
+      );
       const config = await configurationFor(current, run.input.request.scope);
       if (
         config.configurationHash !== run.input.request.expectedConfigurationHash
@@ -647,11 +679,21 @@ export function createSaihuReportRepository(
       return run.input;
     });
   }
-  async function beforeRead(lease: SaihuReportLease) {
+  async function beforeRead(
+    lease: SaihuReportLease,
+    assertExecutionDatabase?: (tx: DbExecutor) => Promise<void>
+  ) {
     return transaction(lease.identity, "create", async current => {
+      await assertExecutionDatabase?.(current.tx);
       gate();
       const run = await leased(current, lease);
       if (!run.output.dispatched) saihuReportFail("NOT_DISPATCHED");
+      await assertSaihuFrozenScheduleDispatch(
+        current.tx,
+        run,
+        now(),
+        await audit(current, lease.operationId, "start")
+      );
       const config = await configurationFor(current, run.input.request.scope);
       if (
         config.configurationHash !== run.input.request.expectedConfigurationHash
@@ -823,7 +865,14 @@ export function createSaihuReportRepository(
           request.operationId
         ),
         { preview, run } = proof,
-        daily = await readSaihuDailyBatches(current.tx, identity.workspaceId),
+        daily =
+          preview.scope.kind === "daily"
+            ? await readSaihuDailyBatches(
+                current.tx,
+                identity.workspaceId,
+                preview.scope
+              )
+            : [],
         state =
           run.input.request.scope.kind === "monthly" && run.output.batchId
             ? await monthly.server.inspectInTransaction(
@@ -872,7 +921,7 @@ export function createSaihuReportRepository(
         }
       return {
         run: publicRun(run),
-        historyHash: await historyHash(current),
+        historyHash: await historyHash(current, preview.scope),
         coverage: preview.coverage,
         rows: allRows
           .slice(offset, offset + limit)
@@ -931,7 +980,8 @@ export function createSaihuReportRepository(
           { run, preview } = proof;
         if (
           preview.previewHash !== input.expectedPreviewHash ||
-          (await historyHash(current)) !== input.expectedHistoryHash
+          (await historyHash(current, preview.scope)) !==
+            input.expectedHistoryHash
         )
           saihuReportFail("SOURCE_OR_HISTORY_CHANGED");
         if (
@@ -959,7 +1009,8 @@ export function createSaihuReportRepository(
         if (preview.scope.kind === "daily") {
           const batches = await readSaihuDailyBatches(
               current.tx,
-              identity.workspaceId
+              identity.workspaceId,
+              preview.scope
             ),
             target = batches.find(batch => batch.id === run.output.batchId);
           if (
@@ -980,7 +1031,11 @@ export function createSaihuReportRepository(
             ]
           );
           const saved = (
-            await readSaihuDailyBatches(current.tx, identity.workspaceId)
+            await readSaihuDailyBatches(
+              current.tx,
+              identity.workspaceId,
+              preview.scope
+            )
           ).find(batch => batch.id === target.id);
           if (
             !saved ||
@@ -1033,7 +1088,7 @@ export function createSaihuReportRepository(
           status: "committed",
           requestHash,
           batchId: run.output.batchId,
-          resultHash: await historyHash(current),
+          resultHash: await historyHash(current, preview.scope),
         });
         return audit(current, input.operationId, action, receipt);
       }

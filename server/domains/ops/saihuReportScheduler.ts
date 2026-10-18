@@ -6,7 +6,6 @@ import {
 } from "../../../shared/saihuReportSync";
 import { saihuReportScheduleRepository } from "./saihuReportScheduleRepository";
 import { saihuReportRows } from "./saihuReportStore";
-import { saihuReportFail } from "./saihuReportContract";
 
 type Hint = {
   identity: { userId: number; workspaceId: number };
@@ -39,11 +38,12 @@ export function createSaihuReportScheduler(
       if (!db) return [];
       const rows = await saihuReportRows(
         db,
-        "SELECT workspace_id AS workspaceId,user_id AS userId,plan_id AS planId FROM ops_saihu_report_schedules WHERE workspace_id=? AND status='active' AND next_run_at<=? ORDER BY next_run_at,plan_id LIMIT 21",
+        "SELECT workspace_id AS workspaceId,user_id AS userId,plan_id AS planId FROM ops_saihu_report_schedules WHERE workspace_id=? AND status='active' AND next_run_at<=? ORDER BY updated_at,next_run_at,plan_id LIMIT 20",
         [ws, Date.now()],
-        21
+        20
       );
-      if (rows.length > 20) saihuReportFail("SCHEDULE_DISCOVERY_BUDGET");
+      // Each committed enqueue/attention transition updates this durable row.
+      // A work quantum never makes a 21st due plan permanently unavailable.
       return rows.map(row => ({
         identity: SaihuReportIdentitySchema.parse({
           workspaceId: row.workspaceId,

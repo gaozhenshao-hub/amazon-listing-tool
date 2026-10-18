@@ -21,7 +21,7 @@ import type { TrpcContext } from "../../_core/context";
 import { MonthlyFinancialApiPreparedSchema, MonthlyFinancialApiManifestSchema, isMonthlyFinancialApiArtifact, validateMonthlyFinancialApiArtifact, type MonthlyFinancialApiPrepared, type MonthlyFinancialApiManifest } from "../../../shared/monthlyFinancialApiSource";
 import { getDb, type DbExecutor } from "../../repositories/dbClient";
 import { assertResourceAction } from "../../services/securityGovernance";
-import { projection, positiveId as id, query as rows, noSuchTable, SCAN_BATCHES_MAX, SCAN_BYTES_MAX, PAYLOAD_WIRE_MAX, MONTHS_WIRE_MAX } from "./monthlyBoardReadCore";
+import { projection, positiveId as id, query as rows, noSuchTable, SCAN_BYTES_MAX, PAYLOAD_WIRE_MAX, MONTHS_WIRE_MAX } from "./monthlyBoardReadCore";
 import { monthlyFinancialImportStorage, MonthlyFinancialImportStorageError } from "./monthlyFinancialImportStorage";
 import { synchronizeOperationsBoardsAfterMonthlyTransition } from "./monthlyOperationsBoardSynchronization";
 import {
@@ -148,19 +148,90 @@ async function batchById(current: Session, batchId: number) {
 }
 /** Fix all candidate identities before loading bodies. Newest whole-scope
  * winners are selected in shared code; old parent rows never backfill gaps. */
-async function completedCandidates(current: Session) {
-  const found = await rows(current.tx, "SELECT id,workspaceId,status,OCTET_LENGTH(CAST(payload AS CHAR CHARACTER SET utf8mb4)) AS payloadBytes,OCTET_LENGTH(CAST(months AS CHAR CHARACTER SET utf8mb4)) AS monthsBytes FROM ops_monthly_profit_imports WHERE workspaceId=? AND status='completed' ORDER BY id DESC LIMIT 201 FOR UPDATE", [current.identity.workspaceId]);
-  if (found.length > SCAN_BATCHES_MAX) fail("CONSUMER_BATCH_BUDGET");
-  let bytes = 0, previous = Number.MAX_SAFE_INTEGER;
+async function completedCandidates(current: Session, monthWindow?: string[]) {
+  const found: Row[] = [];
+  let cursor: number | null = null;
+  for (;;) {
+    const page = await rows(
+      current.tx,
+      `SELECT id,workspaceId,status,totalRows,JSON_TYPE(payload) AS payloadType,IF(OCTET_LENGTH(CAST(JSON_EXTRACT(payload,'$[*].yearMonth') AS CHAR CHARACTER SET utf8mb4))<=131072,CAST(JSON_EXTRACT(payload,'$[*].yearMonth') AS CHAR CHARACTER SET utf8mb4),NULL) AS payloadMonths,IF(OCTET_LENGTH(CAST(months AS CHAR CHARACTER SET utf8mb4))<=${MONTHS_WIRE_MAX},CAST(months AS CHAR CHARACTER SET utf8mb4),NULL) AS months,OCTET_LENGTH(CAST(payload AS CHAR CHARACTER SET utf8mb4)) AS payloadBytes,OCTET_LENGTH(CAST(months AS CHAR CHARACTER SET utf8mb4)) AS monthsBytes FROM ops_monthly_profit_imports WHERE workspaceId=? AND status='completed'${cursor === null ? "" : " AND id<?"} ORDER BY id DESC LIMIT 128 FOR UPDATE`,
+      [current.identity.workspaceId, ...(cursor === null ? [] : [cursor])]
+    );
+    if (page.length > 128) fail("CANDIDATES_INVALID");
+    for (const row of page) {
+      if (
+        !id(row.id) ||
+        (cursor !== null && row.id >= cursor) ||
+        row.workspaceId !== current.identity.workspaceId ||
+        row.status !== "completed"
+      )
+        fail("CANDIDATES_INVALID");
+      cursor = row.id;
+      let months: string[];
+      try {
+        months = z
+          .array(z.string().regex(/^[1-9]\d{3}-(?:0[1-9]|1[0-2])$/u))
+          .max(1200)
+          .parse(
+            JSON.parse(wire(row.months, row.monthsBytes, MONTHS_WIRE_MAX))
+          );
+        if (
+          typeof row.payloadMonths !== "string" ||
+          Buffer.byteLength(row.payloadMonths) > 131072
+        )
+          throw new Error("invalid periods");
+        const payloadMonths = z
+          .array(z.string().regex(/^[1-9]\d{3}-(?:0[1-9]|1[0-2])$/u))
+          .max(10000)
+          .parse(JSON.parse(row.payloadMonths));
+        if (
+          new Set(months).size !== months.length ||
+          row.payloadType !== "ARRAY" ||
+          payloadMonths.length !== row.totalRows ||
+          [...new Set(payloadMonths)].sort().join() !==
+            [...months].sort().join()
+        )
+          throw new Error("invalid periods");
+      } catch {
+        throw new MonthlyFinancialReadError("invalid_payload");
+      }
+      if (!monthWindow || months.some(month => monthWindow.includes(month)))
+        found.push(row);
+    }
+    if (page.length < 128) break;
+  }
+  let bytes = 0,
+    previous = Number.MAX_SAFE_INTEGER;
   for (const row of found) {
-    if (!id(row.id) || row.id >= previous || row.workspaceId !== current.identity.workspaceId || row.status !== "completed" || typeof row.payloadBytes !== "number" || !Number.isSafeInteger(row.payloadBytes) || row.payloadBytes < 0 || row.payloadBytes > PAYLOAD_WIRE_MAX || typeof row.monthsBytes !== "number" || !Number.isSafeInteger(row.monthsBytes) || row.monthsBytes < 0 || row.monthsBytes > MONTHS_WIRE_MAX) fail("CANDIDATES_INVALID");
-    previous = row.id; bytes += row.payloadBytes + row.monthsBytes;
+    if (
+      !id(row.id) ||
+      row.id >= previous ||
+      row.workspaceId !== current.identity.workspaceId ||
+      row.status !== "completed" ||
+      typeof row.payloadBytes !== "number" ||
+      !Number.isSafeInteger(row.payloadBytes) ||
+      row.payloadBytes < 0 ||
+      row.payloadBytes > PAYLOAD_WIRE_MAX ||
+      typeof row.monthsBytes !== "number" ||
+      !Number.isSafeInteger(row.monthsBytes) ||
+      row.monthsBytes < 0 ||
+      row.monthsBytes > MONTHS_WIRE_MAX
+    )
+      fail("CANDIDATES_INVALID");
+    previous = row.id;
+    bytes += row.payloadBytes + row.monthsBytes;
   }
   if (bytes > SCAN_BYTES_MAX) fail("CONSUMER_SCAN_BUDGET");
   const records: MonthlyFinancialBatchRecord[] = [];
   for (const row of found) {
     const record = await batchById(current, row.id as number);
-    if (record.status !== "completed" || Buffer.byteLength(record.payload as string, "utf8") !== row.payloadBytes || Buffer.byteLength(record.months as string, "utf8") !== row.monthsBytes) fail("CANDIDATES_CHANGED", "CONFLICT");
+    if (
+      record.status !== "completed" ||
+      Buffer.byteLength(record.payload as string, "utf8") !==
+        row.payloadBytes ||
+      Buffer.byteLength(record.months as string, "utf8") !== row.monthsBytes
+    )
+      fail("CANDIDATES_CHANGED", "CONFLICT");
     records.push(record);
   }
   return records;
@@ -266,7 +337,7 @@ export function createMonthlyFinancialWriteRepository(dependencies: {
   async function loaded(current: Session, batchId: number, ready: Awaited<ReturnType<typeof schema>>) {
     if (!ready.batchReady) fail("SCHEMA_NOT_READY");
     const record = await batchById(current, batchId), artifact = ready.artifactReady ? await artifactByBatch(current, record) : null;
-    const completed = await completedCandidates(current);
+    const completed = await completedCandidates(current, parseMonthlyFinancialBatch(record).batch.months);
     const impact = buildMonthlyFinancialWriteImpact({ target: record, completed, complete: true, blockingReasons: artifact?.manifest.blockingReasons });
     return { record, artifact, impact, completed };
   }
@@ -416,6 +487,6 @@ export function createMonthlyFinancialWriteRepository(dependencies: {
     }); } catch (error) { return sanitized(error); }
   }
   return { options, upload, inspect, confirm: (ctx: TrpcContext, input: MonthlyFinancialWriteConfirmInput) => transition(ctx, input, "confirm"), revoke: (ctx: TrpcContext, input: MonthlyFinancialWriteRevokeInput) => transition(ctx, input, "revoke"), recover, download,
-    server: { transitionInTransaction, createApiPreviewInTransaction, writesEnabled: () => enabled(), completedInTransaction: async (current: Session) => { await authorize(current, "read"); if (!(await schema(current.tx)).base) fail("SCHEMA_NOT_READY"); return completedCandidates(current); }, inspectInTransaction: async (current: Session, batchId: number) => { await authorize(current, "read"); return loaded(current, batchId, await schema(current.tx)); } } };
+    server: { transitionInTransaction, createApiPreviewInTransaction, writesEnabled: () => enabled(), completedInTransaction: async (current: Session, monthWindow?: string[]) => { await authorize(current, "read"); if (!(await schema(current.tx)).base) fail("SCHEMA_NOT_READY"); return completedCandidates(current, monthWindow); }, inspectInTransaction: async (current: Session, batchId: number) => { await authorize(current, "read"); return loaded(current, batchId, await schema(current.tx)); } } };
 }
 export const monthlyFinancialWriteRepository = createMonthlyFinancialWriteRepository();
