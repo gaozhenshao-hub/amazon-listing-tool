@@ -16,6 +16,8 @@ describe("图片知识库工作空间范围契约", () => {
     expect(repositorySource).toContain("imageSetScopeCondition(userId, workspaceId, scope)");
     expect(repositorySource).toContain("eq(kbImageSets.workspaceId, workspaceId)");
     expect(repositorySource).toContain("imageSetIdsMatching(imageSetScopeCondition(userId, workspaceId, scope))");
+    const listProjection = repositorySource.slice(repositorySource.indexOf("const SET_LIST_FIELDS ="), repositorySource.indexOf("export async function listImageSetsWithThumbnails"));
+    expect(listProjection).toContain("workspaceId: kbImageSets.workspaceId");
   });
 
   it("所有图片知识库接口均经过knowledge工作空间授权", () => {
@@ -70,9 +72,14 @@ describe("图片知识库工作空间范围契约", () => {
   });
 
   it("列表和详情交付前动态刷新图片对象访问地址", () => {
-    expect(routerSource).toContain("resolveImagesForDelivery(set.thumbnailImages)");
-    expect(routerSource).toContain("resolveImagesForDelivery(await kbDb.listImagesBySetLight(set.id))");
-    expect(routerSource).toContain("resolveImagesForDelivery(await kbDb.listAllImages");
+    expect(routerSource).toContain("delivery.forSet(set, set.thumbnailImages)");
+    expect(routerSource).toContain("resolveImagesForDelivery(checked.images)");
+    expect(routerSource).toContain("const rawImages = await kbDb.listImagesBySetLight(set.id)");
+    expect(routerSource).toContain("resolveImagesForDelivery(rawImages)");
+    expect(routerSource).toContain('manual && sourceCoverage?.status !== "verified" ? [] : await resolveImagesForDelivery(rawImages)');
+    expect(routerSource.indexOf("readManualKbImageCoverage(db")).toBeLessThan(routerSource.indexOf("resolveImagesForDelivery(rawImages)"));
+    expect(routerSource).toContain("resolveImagesForDelivery(await delivery.selection(rawImages))");
+    expect(exportRouterSource).toContain("createManualKbImageDeliveryGate({ userId: ctx.user.id, workspaceId: ctx.workspaceId! }).selection(images)");
   });
 
   it("Amazon导入通过统一采集Job且刷新确认前保留旧图片", () => {

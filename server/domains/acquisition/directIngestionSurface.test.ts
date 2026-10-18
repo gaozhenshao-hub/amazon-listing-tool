@@ -5,16 +5,22 @@ const root = process.cwd();
 const read = (path: string) => readFileSync(`${root}/${path}`, "utf8");
 
 describe("Amazon acquisition direct-ingestion surface", () => {
-  it("removes the manual snapshot review API and page while safely redirecting old links", () => {
+  it("retains default direct ingestion and exposes optional scoped manual review without automatic analysis", () => {
     const router = read("server/domains/acquisition/router.ts");
     const app = read("client/src/App.tsx");
-    expect(router).not.toContain("saveReview:");
-    expect(router).not.toContain("confirmReview:");
-    expect(router).not.toContain("rejectReview:");
-    expect(router).not.toContain("review: protectedProcedure");
-    expect(app).not.toContain("AcquisitionReviewPage");
+    expect(router).toContain("saveReview: protectedProcedure.input(AcquisitionReviewSaveInputSchema)");
+    expect(router).toContain("confirmReview: protectedProcedure.input(AcquisitionReviewConfirmInputSchema)");
+    expect(router).toContain("rejectReview: protectedProcedure.input(AcquisitionReviewRejectInputSchema)");
+    expect(router).toContain("review: protectedProcedure.input(AcquisitionReviewReadInputSchema)");
+    expect(router).toContain("ingestLegacyPartialJob: protectedProcedure");
+    expect(router).toContain("confirmSnapshotForDirectIngestion({ workspaceId, snapshotId: snapshot.id, requestedBy: ctx.user.id })");
     expect(app).toContain('path="/knowledge/acquisition/review/:snapshotId"');
-    expect(app).toContain('<Redirect to="/knowledge/acquisition" />');
+    expect(app).toContain('<PermissionGuard><AcquisitionReviewPage /></PermissionGuard>');
+    expect(app).toContain('path="/knowledge/acquisition/job/:jobId"');
+    const runtime = read("server/domains/acquisition/manualSnapshotReviewRuntime.ts");
+    expect(runtime).toContain("createManualSnapshotConsumerPublisher");
+    expect(runtime).not.toContain("triggerConsumerPostConfirmation");
+    expect(read("server/domains/acquisition/manualSnapshotReviewRepository.ts")).toContain('process.env.ENABLE_ACQUISITION_REVIEW_WRITES === "true"');
   });
 
   it("presents guarded direct ingestion instead of an acquisition review action", () => {

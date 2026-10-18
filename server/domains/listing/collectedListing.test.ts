@@ -4,6 +4,8 @@ import type { SQL } from "drizzle-orm";
 import type { CompetitorAnalysis } from "../../../drizzle/schema/project";
 import type { NormalizedAmazonSnapshot } from "../../../shared/acquisition";
 import { createCollectedListingSaver } from "./collectedListing";
+import { createManualSnapshotReviewTestFixture } from "../acquisition/manualSnapshotReview.testFixture";
+import { getManualSnapshotPublication } from "../acquisition/manualSnapshotPublication";
 
 const now = new Date("2026-10-17T00:00:00Z");
 const scope = { workspaceId: 3, userId: 7, projectId: 11, asin: "B012345678", confirmedSnapshotId: 9 };
@@ -119,5 +121,46 @@ describe("capture-only competitor projection (offline transaction-executor fixtu
     if (kind === "affected") f.state.affected = 0;
     if (kind === "readback") f.state.breakReadback = true;
     await expect(save({ db: f.db, ...scope })).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+});
+
+describe("manual revision publication through real review repository and saver", () => {
+  const confirmId = "22222222-2222-4222-8222-222222222222";
+  it("publishes the exact revised data/assets while preserving original and all human/research history", async () => {
+    const f = createManualSnapshotReviewTestFixture(), original = structuredClone(f.state.snapshot);
+    const previous = row({ projectId: 11, summaryConfirmedBy: 3 }); f.state.competitors.push(previous);
+    const report = { id: 501, workspaceId: 7, projectId: 11, userId: 3, selectionKey: "20-21", analysisIds: "[20,21]", analyzedAsins: "[\"B012345678\",\"B012345679\"]",
+      aiSummary: "Old model report", summary: "Retained human report", sellingPointRows: "[]", status: "confirmed" as const, version: 4,
+      confirmedBy: 3, confirmedAt: now, createdAt: now, updatedAt: now };
+    f.state.comparisons.push(report, { ...report, id: 502, selectionKey: "22-23", analysisIds: "[22,23]" });
+    let sourceHash: string | undefined;
+    f.control.onPublish = async context => {
+      sourceHash = getManualSnapshotPublication(context.tx, context.confirmedSnapshotId)?.sourceHash;
+      return save({ db: context.tx, workspaceId: 7, userId: 3, projectId: 11, asin: context.snapshot.asin, confirmedSnapshotId: context.confirmedSnapshotId });
+    };
+    await f.service.execute(f.ctx, await f.save()); const view = await f.service.read(f.ctx, f.scope);
+    const result = await f.service.execute(f.ctx, { ...f.scope, operationId: confirmId, expectedRevisionHash: view.revisionHash, action: "confirm", note: null });
+    expect(result.status).toBe("committed"); expect(f.state.competitors[0].title).toBe("Human title");
+    expect(f.state.snapshot).toEqual(original); expect(f.state.confirmed[0].isCurrent).toBe(0);
+    for (const key of ["summary", "summaryStatus", "summaryVersion", "summaryConfirmedBy", "summaryConfirmedAt", "reviewAnalysis", "aiSummary"] as const) expect(f.state.competitors[0][key]).toEqual(previous[key]);
+    expect(JSON.parse(f.state.competitors[0].rawData!)).toMatchObject({ captureOnly: true, analysisStale: true, acquisitionCapture: { sourceHash } });
+    expect(JSON.parse(f.state.competitors[0].imageUrls!)).toEqual([f.state.assets[0].storageKey]);
+    expect(f.state.comparisons[0]).toMatchObject({ status: "draft", version: 5, confirmedBy: null, confirmedAt: null, summary: report.summary, aiSummary: report.aiSummary });
+    expect(f.state.comparisons[1]).toMatchObject({ status: "confirmed", version: 4 });
+    expect(getManualSnapshotPublication(f.tx, result.confirmedSnapshotId!)).toBeNull();
+    await expect(save({ db: f.tx, workspaceId: 7, userId: 3, projectId: 11, asin: f.state.snapshot.asin, confirmedSnapshotId: result.confirmedSnapshotId! })).rejects.toThrow("SNAPSHOT_CHANGED");
+  });
+  it.each(["wrong-tx", "wrong-confirmed-data", "wrong-asset", "wrong-original"])("refuses %s and rolls back all manual publication writes", async fault => {
+    const f = createManualSnapshotReviewTestFixture();
+    f.control.onPublish = async context => {
+      if (fault === "wrong-confirmed-data") f.state.confirmed[0].confirmedData = JSON.stringify({ ...context.effectiveData, title: "Changed after ACK" });
+      if (fault === "wrong-asset") f.state.assets[0].storageKey = "storage://s3/acquisition/7/snapshots/21/other.png";
+      if (fault === "wrong-original") f.state.snapshot.normalizedData.title = "Changed original";
+      return save({ db: fault === "wrong-tx" ? { execute: f.execute } : context.tx, workspaceId: 7, userId: 3, projectId: 11, asin: context.snapshot.asin, confirmedSnapshotId: context.confirmedSnapshotId });
+    };
+    await f.service.execute(f.ctx, await f.save()); const view = await f.service.read(f.ctx, f.scope);
+    expect((await f.service.execute(f.ctx, { ...f.scope, operationId: confirmId, expectedRevisionHash: view.revisionHash, action: "confirm", note: null })).status).toBe("unknown");
+    expect(f.state.revisions).toHaveLength(1); expect(f.state.confirmed).toHaveLength(0); expect(f.state.competitors).toHaveLength(0); expect(f.state.audits).toHaveLength(1);
+    expect(getManualSnapshotPublication(f.tx, 201)).toBeNull();
   });
 });

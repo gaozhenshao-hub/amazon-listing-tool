@@ -26,9 +26,9 @@
         "sha256": "05a4205aecfa3e713f2f29fd91e8e37706727e8d8db0b943cc6b3e44d0cc9bd1"
       },
       "reviewed": {
-        "gitBlobSha1": "de7f146a4d033cbb06109bd39234041927282d58",
-        "sha256": "909e345a7689ee84f3e0808d615952b3306ad13a782f00a772f6d4532f46d07f",
-        "reviewRef": "config/integration/reviews/20261018-operations-center-entry.json"
+        "gitBlobSha1": "a2693b57ea1ea505387a5e8d355940f577a8094c",
+        "sha256": "36828f97b7fb5e2bfe51ad06fc6a39de7dd4356561e5cfeb279cbb2e76d083c2",
+        "reviewRef": "config/integration/reviews/20261018-operations-center-entry.json; config/integration/reviews/20261019-acquisition-manual-revisions.json"
       }
     },
     {
@@ -326,9 +326,9 @@
         "sha256": "a87607198360e41816cad44b3000748015bc43c4fe95f6bffde14343693ff426"
       },
       "reviewed": {
-        "gitBlobSha1": "57a6306088d557383597ecd2b175c72bd1f86d13",
-        "sha256": "6a6767f3968f4380736d12cddbc5bf161e670678e97cfadc7cb599f922135da0",
-        "reviewRef": "config/integration/reviews/20261015-gallery-browsing.json"
+        "gitBlobSha1": "815f185cf317256493147902b95e8f9323cc38d6",
+        "sha256": "f1afc6eb308d0d8e91db85bd78645d120ba51df0b19b21945690f84ce2ced2b4",
+        "reviewRef": "config/integration/reviews/20261015-gallery-browsing.json; config/integration/reviews/20261019-acquisition-manual-revisions.json"
       }
     },
     {
@@ -976,6 +976,11 @@
       "baseline": {
         "gitBlobSha1": "e80ff45f133f56db02deb42305f8b980a43af1bd",
         "sha256": "09d08beeaa1d9b017096a9df080f58a860c60f2f69a7afba48168c84454b2aa3"
+      },
+      "reviewed": {
+        "gitBlobSha1": "6e1835067bb294e53b7dc931c3fbf3f470eb968f",
+        "sha256": "d75d8712c5163a3458214f4f194843263d3042fcaa253fafe0042370d84bd832",
+        "reviewRef": "config/integration/reviews/20261019-acquisition-manual-revisions.json"
       }
     },
     {
@@ -998,6 +1003,11 @@
       "baseline": {
         "gitBlobSha1": "117d15fc3a84fcbe945f24d00b2e93fb96f6fc94",
         "sha256": "c14f52f54613e0aa294cd605811d64d3ffced9e1510d6da5a3a7192b551ecebc"
+      },
+      "reviewed": {
+        "gitBlobSha1": "e6babbb1921875a684b6a016484ab054183a4d92",
+        "sha256": "1537b8312e2da84781423dc9714869902ed57455d93c36d4bd49a04b8272a8dc",
+        "reviewRef": "config/integration/reviews/20261019-acquisition-manual-revisions.json"
       }
     },
     {
@@ -1183,6 +1193,11 @@
       "baseline": {
         "gitBlobSha1": "4cb5a05266b458efb9a968a60912054ea38d636e",
         "sha256": "03291353d69a8b3265a72136371871897bd98e639755143590f9b02383e0c984"
+      },
+      "reviewed": {
+        "gitBlobSha1": "3b55a4c523d54ebff77936f1d03a15a2eb146b6c",
+        "sha256": "c1fdaf1fde3253457462c4879c3bf6404dc15e426002ec1a625f693c15f7ada6",
+        "reviewRef": "config/integration/reviews/20261019-acquisition-manual-revisions.json"
       }
     },
     {

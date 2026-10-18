@@ -64,7 +64,7 @@ async function runCompetitorGalleryAnalysis(job: AiJobSnapshot, context: AiJobHa
   if (!selection || selection.status !== "confirmed" || selection.selectionHash !== input.selectionHash) {
     throw new Error("分析范围未确认或已被新版范围替代，任务未执行");
   }
-  const availableAssets = await listConfirmedAssets(db, Number(job.workspaceId), subject.confirmedSnapshotId);
+  const availableAssets = await listConfirmedAssets(db, Number(job.workspaceId), subject.confirmedSnapshotId, input.projectId);
   const selectedAssetIds = assertGallerySelectionAssets({
     selectedAssetIds: Array.isArray(selection.selectedAssetIds) ? selection.selectedAssetIds.map(Number) : [],
     assets: availableAssets,
@@ -197,7 +197,7 @@ export async function startCompetitorGalleryAnalysisJob(input: {
   if (!selection || selection.status !== "confirmed" || selection.confirmedSnapshotId !== subject.confirmedSnapshotId) {
     throw new Error("请先确认当前竞品的图片分析范围");
   }
-  const assets = await listConfirmedAssets(db, input.workspaceId, subject.confirmedSnapshotId);
+  const assets = await listConfirmedAssets(db, input.workspaceId, subject.confirmedSnapshotId, input.projectId);
   assertGallerySelectionAssets({
     selectedAssetIds: Array.isArray(selection.selectedAssetIds) ? selection.selectedAssetIds.map(Number) : [],
     assets,

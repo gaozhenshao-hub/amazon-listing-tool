@@ -11,6 +11,8 @@ import { resourceConflictError } from "@shared/_core/errors";
 import { requireDb } from "../repositories/dbClient";
 import { acquisitionAssetCandidates, acquisitionConfirmedSnapshots } from "../../drizzle/schema/acquisition";
 import { startAmazonAcquisitionJob } from "../domains/acquisition/acquisitionJobs";
+import { readManualKbImageCoverage, type ManualKbImageCoverage } from "../domains/acquisition/kbManualImageCoverage";
+import { createManualKbImageDeliveryGate } from "../domains/acquisition/kbManualImageDelivery";
 import {
   KB_IMAGE_IMPORT_CAPABILITIES,
   KbImageImportAsinSchema,
@@ -561,10 +563,11 @@ export const kbImagesRouter = router({
     .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
     .query(async ({ ctx, input }) => {
     const sets = await kbDb.listImageSetsWithThumbnails(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
-    return Promise.all(sets.map(async (set) => ({
-      ...set,
-      thumbnailImages: await resolveImagesForDelivery(set.thumbnailImages),
-    })));
+    const delivery = createManualKbImageDeliveryGate({ userId: ctx.user.id, workspaceId: ctx.workspaceId! });
+    return Promise.all(sets.map(async set => {
+      const checked = await delivery.forSet(set, set.thumbnailImages);
+      return { ...set, thumbnailImages: await resolveImagesForDelivery(checked.images), sourceCoverage: checked.sourceCoverage };
+    }));
   }),
 
   // Get image set with all images (lightweight: excludes large analysis fields for fast load)
@@ -573,7 +576,20 @@ export const kbImagesRouter = router({
     .query(async ({ ctx, input }) => {
       const set = await kbDb.getReadableImageSet(input.id, ctx.user.id, ctx.workspaceId!);
       if (!set) return null;
-      const images = await resolveImagesForDelivery(await kbDb.listImagesBySetLight(set.id));
+      const manual = set.originInstanceId === "manual_acquisition_review_v1";
+      if (manual && (set.userId !== ctx.user.id || set.workspaceId !== ctx.workspaceId || set.visibility !== "private")) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "MANUAL_KB_IMAGE_SCOPE_UNAVAILABLE" });
+      }
+      const rawImages = await kbDb.listImagesBySetLight(set.id);
+      let sourceCoverage: ManualKbImageCoverage | null = null;
+      if (manual) {
+        const db = await requireDb("manual image revision coverage");
+        sourceCoverage = await readManualKbImageCoverage(db, { userId: ctx.user.id, workspaceId: ctx.workspaceId! }, set, rawImages);
+      }
+      // A private set alone does not authorize a corrupted storage pointer.
+      // Manual versions must bind every delivered image to durable provenance
+      // before signing; unavailable proof never degrades to unchecked URLs.
+      const images = manual && sourceCoverage?.status !== "verified" ? [] : await resolveImagesForDelivery(rawImages);
       let acquisitionCoverage: { stored: number; missing: number; total: number; partial: boolean } | null = null;
       if (set.originInstanceId === "unified_amazon_acquisition" && set.remoteId) {
         const db = await requireDb("image acquisition coverage");
@@ -590,7 +606,7 @@ export const kbImagesRouter = router({
           acquisitionCoverage = { stored, missing: candidates.length - stored, total: candidates.length, partial: stored < candidates.length };
         }
       }
-      return { ...set, images, acquisitionCoverage };
+      return { ...set, images, acquisitionCoverage, sourceCoverage };
     }),
 
   // Get single image's full analysis data on-demand (lazy load when user expands tag panel)
@@ -622,7 +638,9 @@ export const kbImagesRouter = router({
       tagDesignStyleV2: z.string().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
-      return resolveImagesForDelivery(await kbDb.listAllImages(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine", input));
+      const rawImages = await kbDb.listAllImages(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine", input);
+      const delivery = createManualKbImageDeliveryGate({ userId: ctx.user.id, workspaceId: ctx.workspaceId! });
+      return resolveImagesForDelivery(await delivery.selection(rawImages));
     }),
 
   // Import by ASIN through the governed acquisition job. Projection occurs only after guarded direct ingestion.

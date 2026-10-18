@@ -14,6 +14,8 @@ import {
   imageWorkflowStep0Artifacts,
 } from "../../../drizzle/schema/image";
 import type { DbExecutor } from "../../repositories/dbClient";
+import { readManualImageWorkflowSnapshot, readManualImageWorkflowSnapshotHistory } from "../acquisition/manualImageWorkflowProjection";
+import type { ManualSnapshotAsset } from "../acquisition/manualSnapshotRevision";
 
 export async function listAvailableConfirmedSnapshots(db: DbExecutor, workspaceId: number) {
   return db.select({
@@ -29,18 +31,32 @@ export async function listAvailableConfirmedSnapshots(db: DbExecutor, workspaceI
   )).orderBy(desc(acquisitionConfirmedSnapshots.confirmedAt)).limit(100);
 }
 
-export async function getConfirmedSnapshot(db: DbExecutor, workspaceId: number, confirmedSnapshotId: number) {
+async function getScopedConfirmedSnapshot(db: DbExecutor, workspaceId: number, confirmedSnapshotId: number, projectId?: number, history = false) {
   const rows = await db.select().from(acquisitionConfirmedSnapshots).where(and(
     eq(acquisitionConfirmedSnapshots.workspaceId, workspaceId),
     eq(acquisitionConfirmedSnapshots.id, confirmedSnapshotId),
     eq(acquisitionConfirmedSnapshots.isCurrent, 1),
   )).limit(1);
-  return rows[0] ?? null;
+  if (rows[0]) return { snapshot: rows[0], manualAssets: null };
+  if (projectId === undefined) return null;
+  const manual = await (history ? readManualImageWorkflowSnapshotHistory : readManualImageWorkflowSnapshot)(db, workspaceId, confirmedSnapshotId, projectId);
+  return manual ? { snapshot: manual.confirmed, manualAssets: manual.assets } : null;
 }
 
-export async function listConfirmedAssets(db: DbExecutor, workspaceId: number, confirmedSnapshotId: number) {
-  const snapshot = await getConfirmedSnapshot(db, workspaceId, confirmedSnapshotId);
-  if (!snapshot) return [];
+export async function getConfirmedSnapshot(db: DbExecutor, workspaceId: number, confirmedSnapshotId: number, projectId?: number) {
+  return (await getScopedConfirmedSnapshot(db, workspaceId, confirmedSnapshotId, projectId))?.snapshot ?? null;
+}
+
+async function listScopedConfirmedAssets(db: DbExecutor, workspaceId: number, confirmedSnapshotId: number, projectId?: number, history = false) {
+  const scoped = await getScopedConfirmedSnapshot(db, workspaceId, confirmedSnapshotId, projectId, history);
+  if (!scoped) return [];
+  const snapshot = scoped.snapshot;
+  // Approval belongs to the immutable, fully replayed manual confirmation.
+  // Never mutate or silently approve a shared original acquisition asset row.
+  if (scoped.manualAssets) return scoped.manualAssets.map((asset: ManualSnapshotAsset) => ({ ...asset,
+    createdAt: new Date(`${asset.createdAt.replace(" ", "T").slice(0, 23)}Z`), updatedAt: new Date(`${asset.updatedAt.replace(" ", "T").slice(0, 23)}Z`),
+    reviewedAt: asset.reviewedAt === null ? null : new Date(`${asset.reviewedAt.replace(" ", "T").slice(0, 23)}Z`),
+  }));
   const ids = (Array.isArray(snapshot.confirmedAssetIds) ? snapshot.confirmedAssetIds : [])
     .map(Number).filter((id: number) => Number.isInteger(id) && id > 0);
   if (!ids.length) return [];
@@ -49,6 +65,13 @@ export async function listConfirmedAssets(db: DbExecutor, workspaceId: number, c
     eq(acquisitionAssetCandidates.reviewStatus, "approved"),
     inArray(acquisitionAssetCandidates.id, ids),
   )).orderBy(acquisitionAssetCandidates.role, acquisitionAssetCandidates.positionIndex);
+}
+export function listConfirmedAssets(db: DbExecutor, workspaceId: number, confirmedSnapshotId: number, projectId?: number) {
+  return listScopedConfirmedAssets(db, workspaceId, confirmedSnapshotId, projectId);
+}
+/** Read-only display of explicitly linked older manual gallery versions. */
+export function listHistoricalConfirmedAssets(db: DbExecutor, workspaceId: number, confirmedSnapshotId: number, projectId: number) {
+  return listScopedConfirmedAssets(db, workspaceId, confirmedSnapshotId, projectId, true);
 }
 
 export async function listCompetitorResearchSubjects(db: DbExecutor, workspaceId: number, projectId: number) {

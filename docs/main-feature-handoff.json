@@ -13,6 +13,14 @@
   },
   "trialEntrances": [
     {
+      "name": "采集后的可选人工审核与图片修订",
+      "route": "/knowledge/acquisition",
+      "steps": "默认仍直接录入安全保存的图片。终态任务可显式打开逐快照审核，查看完整原始规范化资料和有效草稿、编辑字段、逐图保留／排除、另存草稿，再独立确认或驳回。失败图片可按原资产重取，或以文件／剪贴板补充原字节图片。",
+      "boundary": "新写入默认关闭；不自动采集页面、不调用模型。审核不改原始快照、原资产或旧确认数据；图片知识库另存私有新版，旧图、人工标签和 AI 留存。确认只绑定本目标来源，不进入工作区全局 ASIN 缓存；知识库文案／产品仅更新来源引用，不覆盖既有生成内容和人工分析。",
+      "recovery": "未知结果仅核对／取消原 UUID；已准备的图片可在关闭新写入后显式完成旧请求，不再上传。刷新不自动确认，不以新 UUID 重发。",
+      "sourceFiles": ["client/src/pages/acquisition/AcquisitionReviewPage.tsx", "server/domains/acquisition/manualSnapshotReviewRuntime.ts", "server/domains/acquisition/manualSnapshotConsumerPublication.ts"]
+    },
+    {
       "name": "Listing 竞品研究与生成",
       "route": "/listing/comparison",
       "continueAt": "/listing/generate",
@@ -83,6 +91,7 @@
     "listingDeep": ["ENABLE_COMPETITOR_DEEP_WRITES", "ENABLE_COMPETITOR_DEEP_WORKER"],
     "listingDeepHumanAdoption": ["ENABLE_LISTING_DEEP_ADOPTION_WRITES"],
     "listingSalesCalibration": ["ENABLE_LISTING_SALES_CALIBRATION_WRITES"],
+    "optionalAcquisitionReview": ["ENABLE_ACQUISITION_REVIEW_WRITES"],
     "agentConversation": ["ENABLE_ASSISTANT_CONVERSATION_WRITES", "ENABLE_ASSISTANT_CONVERSATION_WORKER"],
     "agentConfigurationAndRuleConfirmation": ["ENABLE_ASSISTANT_CONFIGURATION_WRITES"],
     "profitAnalysis": ["ENABLE_PROFIT_ANALYSIS_WRITES", "ENABLE_PROFIT_ANALYSIS_WORKER"],
@@ -162,7 +171,8 @@
   "stillOpen": [
     "四栏正式采纳的受控源码已接入，但仍需朋友在真实权限、数据库及 Web／worker 环境验收；不以合成协议测试或前端可见推定正式启用。",
     "四栏竞品图片／OCR、问答及长期原评论原件来源仍不完整；现可核验样本不等于市场全量，未接来源不得标完成。",
-    "采集草稿审核／驳回／重试、补图修订和补充多原件历史、Agent 逐业务 Skill dispatch、赛狐受控日／月同步及双调度隔离仍未全部实现；不能改写成仅待业务验收。",
+    "采集的可选审核、驳回和逐图补充源码已接入；真实 MySQL 事务／对象存储／撤权／丢 ACK 与历史版本仍待验收。粘贴评论预览／保存、补充多原件独立长期历史仍未全部实现，不能把未实现部分改写成仅待验收。",
+    "Agent 逐业务 Skill dispatch、赛狐受控日／月同步及双调度隔离仍未全部实现；不能改写成仅待业务验收。",
     "真实目标数据库结构、旧数据迁移对账、存储权限、Web／worker 联调、真实模型质量及真实费用验收仍交朋友和维护者执行。",
     "页面可达、合成测试通过、开关开启和真实业务全部完成是不同状态；不得用摘要页面或少量示例代替朋友完整流程。",
     "权限收回、跨工作区、未知回执、并发保存、备份回滚及旧 writer 并存必须继续核验。"

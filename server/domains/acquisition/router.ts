@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { acquisitionConfirmedSnapshots } from "../../../drizzle/schema/acquisition";
 import { adminProcedure, protectedProcedure, router } from "../../_core/trpc";
 import { requireDb } from "../../repositories/dbClient";
@@ -19,6 +19,12 @@ import { getAcquisitionJob, getSourceSnapshotByJob, listAcquisitionJobs, listAss
 import { confirmSnapshotForDirectIngestion } from "./snapshotReview";
 import { ACQUISITION_CONSUMER_TYPES } from "../../../shared/acquisition";
 import { assessConfirmedSnapshotCoverage, IMAGE_ACQUISITION_CAPABILITIES } from "./capabilityCoverage";
+import { AcquisitionReviewReadInputSchema, AcquisitionReviewReadResultSchema, AcquisitionReviewSaveInputSchema,
+  AcquisitionReviewConfirmInputSchema, AcquisitionReviewRejectInputSchema, AcquisitionReviewRecoverInputSchema,
+  AcquisitionReviewWriteResultSchema, AcquisitionReviewImageInputSchema, AcquisitionReviewImageRecoverInputSchema } from "../../../shared/acquisitionReview";
+import { AcquisitionReviewLocationInputSchema, AcquisitionReviewLocationResultSchema } from "../../../shared/acquisitionReviewLocation";
+import { manualSnapshotReviewLocation } from "./manualSnapshotReviewLocation";
+import { configuredManualSnapshotImages, configuredManualSnapshotReview } from "./manualSnapshotReviewRuntime";
 
 function workspaceIdOf(ctx: { workspaceId?: number | null }): number {
   if (!ctx.workspaceId || ctx.workspaceId <= 0) {
@@ -35,6 +41,23 @@ const profileInput = AcquisitionBudgetPolicySchema.safeExtend({
 });
 
 export const amazonAcquisitionRouter = router({
+  reviewJob: protectedProcedure.input(AcquisitionReviewLocationInputSchema).output(AcquisitionReviewLocationResultSchema)
+    .query(({ ctx, input }) => manualSnapshotReviewLocation.read(ctx, input)),
+  review: protectedProcedure.input(AcquisitionReviewReadInputSchema).output(AcquisitionReviewReadResultSchema)
+    .query(({ ctx, input }) => configuredManualSnapshotReview.read(ctx, input)),
+  saveReview: protectedProcedure.input(AcquisitionReviewSaveInputSchema).output(AcquisitionReviewWriteResultSchema)
+    .mutation(({ ctx, input }) => configuredManualSnapshotReview.execute(ctx, input)),
+  confirmReview: protectedProcedure.input(AcquisitionReviewConfirmInputSchema).output(AcquisitionReviewWriteResultSchema)
+    .mutation(({ ctx, input }) => configuredManualSnapshotReview.execute(ctx, input)),
+  rejectReview: protectedProcedure.input(AcquisitionReviewRejectInputSchema).output(AcquisitionReviewWriteResultSchema)
+    .mutation(({ ctx, input }) => configuredManualSnapshotReview.execute(ctx, input)),
+  recoverReview: protectedProcedure.input(AcquisitionReviewRecoverInputSchema).output(AcquisitionReviewWriteResultSchema)
+    .mutation(({ ctx, input }) => configuredManualSnapshotReview.recover(ctx, input)),
+  recoverReviewImage: protectedProcedure.input(AcquisitionReviewImageInputSchema).output(AcquisitionReviewWriteResultSchema)
+    .mutation(({ ctx, input }) => configuredManualSnapshotImages.upload(ctx, input)),
+  recoverReviewImageOperation: protectedProcedure.input(AcquisitionReviewImageRecoverInputSchema).output(AcquisitionReviewWriteResultSchema)
+    .mutation(({ ctx, input }) => configuredManualSnapshotImages.recover(ctx, input)),
+
   createJob: protectedProcedure
     .input(z.object({
       consumerType: z.enum(ACQUISITION_CONSUMER_TYPES),
@@ -69,6 +92,9 @@ export const amazonAcquisitionRouter = router({
       const source = job.cacheHitSnapshotId ? null : await getSourceSnapshotByJob(db, workspaceId, job.id);
       const confirmed = await db.select().from(acquisitionConfirmedSnapshots).where(and(
         eq(acquisitionConfirmedSnapshots.workspaceId, workspaceId),
+        // Optional private manual revisions do not replace the original
+        // direct-ingestion coverage or enter the workspace-wide cache.
+        isNull(acquisitionConfirmedSnapshots.revisionId),
         job.cacheHitSnapshotId
           ? eq(acquisitionConfirmedSnapshots.id, job.cacheHitSnapshotId)
           : eq(acquisitionConfirmedSnapshots.snapshotId, source?.id ?? -1),

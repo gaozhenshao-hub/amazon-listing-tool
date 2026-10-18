@@ -12,6 +12,7 @@ import {
   imageCompetitorResearchSubjects,
 } from "../../../drizzle/schema/image";
 import { requireDb } from "../../repositories/dbClient";
+import { ManualImageWorkflowSourceError } from "../acquisition/manualImageWorkflowProjection";
 import { resolveStoredObjectUrl } from "../../storage";
 import * as imageDb from "./repository";
 import {
@@ -39,6 +40,7 @@ import {
   listCompetitorAssetFacts,
   listCompetitorResearchSubjects,
   listConfirmedAssets,
+  listHistoricalConfirmedAssets,
   listConfirmedGalleryAnalysesForProject,
   markCompetitorFactsConfirmed,
   nextStep0ArtifactVersion,
@@ -92,9 +94,9 @@ export async function addCompetitorResearchSubject(input: {
 }) {
   const workspaceId = workspaceIdOrThrow(input.workspaceId);
   const db = await requireDb("competitor research subject");
-  const snapshot = await getConfirmedSnapshot(db, workspaceId, input.confirmedSnapshotId);
+  const snapshot = await getConfirmedSnapshot(db, workspaceId, input.confirmedSnapshotId, input.projectId);
   if (!snapshot) throw new Error("只能添加当前工作空间的已确认采集Snapshot");
-  const assets = await listConfirmedAssets(db, workspaceId, snapshot.id);
+  const assets = await listConfirmedAssets(db, workspaceId, snapshot.id, input.projectId);
   if (!assets.length) throw new Error("该确认Snapshot没有可用于分析的已批准图片");
   const summary = confirmedDataSummary(snapshot.confirmedData);
   return upsertCompetitorResearchSubject({
@@ -122,7 +124,7 @@ export async function saveCompetitorGallerySelection(input: {
   const db = await requireDb("competitor gallery selection");
   const subject = await getCompetitorResearchSubject(db, workspaceId, input.projectId, input.subjectId);
   if (!subject) throw new Error("竞品研究对象不存在");
-  const assets = await listConfirmedAssets(db, workspaceId, subject.confirmedSnapshotId);
+  const assets = await listConfirmedAssets(db, workspaceId, subject.confirmedSnapshotId, input.projectId);
   const selectedAssetIds = assertGallerySelectionAssets({ selectedAssetIds: input.selectedAssetIds, assets });
   const filters = CompetitorGallerySelectionFilterSchema.parse(input.filters || {});
   const selectionHash = buildCompetitorGallerySelectionHash({
@@ -167,7 +169,7 @@ export async function confirmCompetitorGallerySelectionVersion(input: {
   if (!selection || selection.confirmedSnapshotId !== subject.confirmedSnapshotId) throw new Error("分析范围版本不存在或不属于当前竞品图库");
   if (selection.status === "confirmed") return { success: true, selectionVersionId: selection.id };
   if (selection.status !== "draft") throw new Error("只有当前草稿分析范围可以确认");
-  const assets = await listConfirmedAssets(db, workspaceId, subject.confirmedSnapshotId);
+  const assets = await listConfirmedAssets(db, workspaceId, subject.confirmedSnapshotId, input.projectId);
   const selectedAssetIds = assertGallerySelectionAssets({
     selectedAssetIds: Array.isArray(selection.selectedAssetIds) ? selection.selectedAssetIds.map(Number) : [],
     assets,
@@ -190,16 +192,20 @@ export async function listCompetitorGallerySubjects(input: { workspaceId?: numbe
   const db = await requireDb("competitor gallery subjects");
   const subjects = await listCompetitorResearchSubjects(db, workspaceId, input.projectId);
   return Promise.all(subjects.map(async (subject: ImageCompetitorResearchSubject) => {
-    const [assets, facts, analysis, selection, confirmedSelection] = await Promise.all([
-      listConfirmedAssets(db, workspaceId, subject.confirmedSnapshotId),
+    const [assetRead, facts, analysis, selection, confirmedSelection] = await Promise.all([
+      listHistoricalConfirmedAssets(db, workspaceId, subject.confirmedSnapshotId, input.projectId)
+        .then(assets => ({ assets, unavailable: false }))
+        .catch((error: unknown) => { if (error instanceof ManualImageWorkflowSourceError) return { assets: [], unavailable: true }; throw error; }),
       listCompetitorAssetFacts(db, workspaceId, subject.id),
       getLatestCompetitorGalleryAnalysis(db, workspaceId, subject.id),
       getLatestCompetitorGallerySelection(db, workspaceId, input.projectId, subject.id),
       getLatestConfirmedCompetitorGallerySelection(db, workspaceId, input.projectId, subject.id),
     ]);
+    const assets = assetRead.assets;
     const factByAsset = new Map(facts.map((fact: ImageCompetitorAssetFact) => [fact.acquisitionAssetId, fact]));
     return {
       ...subject,
+      ...(assetRead.unavailable ? { sourceAvailability: { status: "unavailable", reasonCode: "MANUAL_IMAGE_WORKFLOW_SOURCE_UNAVAILABLE" } } : {}),
       assets: await Promise.all(assets.map(async (asset: AcquisitionAssetCandidate) => ({
         id: asset.id,
         role: asset.role,

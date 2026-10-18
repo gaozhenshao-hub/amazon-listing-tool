@@ -35,6 +35,7 @@ import { imageBelongLabel, distinctImageTags } from "./kbImageLabels";
 import { SingleImagePreviewDialog, type BrowseImage } from "./SingleImagePreviewDialog";
 import { activateGalleryItem } from "./galleryInteraction";
 import { MERGED_READONLY_FEATURES_ENABLED } from "@/lib/mergedReadOnlyFeatures";
+import ManualImageRevisionNotice from "./ManualImageRevisionNotice";
 
 type ViewMode = "asin" | "waterfall" | "grid";
 
@@ -957,6 +958,7 @@ export default function KBImages() {
                 </DialogHeader>
                 <div className="min-w-0 max-w-full space-y-6">
                   {d.productTitle && <h3 className="font-medium text-lg [overflow-wrap:anywhere]">{d.productTitle}</h3>}
+                  <ManualImageRevisionNotice manual={d.originInstanceId === "manual_acquisition_review_v1"} coverage={d.sourceCoverage} />
 
                   {d.acquisitionCoverage?.partial && (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">

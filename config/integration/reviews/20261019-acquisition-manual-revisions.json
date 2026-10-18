@@ -1,0 +1,69 @@
+{
+  "schema": "integration-protection-review/v1",
+  "purpose": "Optional append-only acquisition review, original-byte image recovery and exact-consumer private publication",
+  "parentCommit": "39bfe532ea388678d690f87dd977c41d73ec06b3",
+  "userPriority": "Main functional merge candidate first, full business acceptance and trial by the user's friend. Necessary build/data-safety checks retained. No taskboard or REA.",
+  "protectedFiles": [
+    {
+      "path": "client/src/App.tsx",
+      "controls": ["K10"],
+      "gitBlobSha1": "a2693b57ea1ea505387a5e8d355940f577a8094c",
+      "sha256": "36828f97b7fb5e2bfe51ad06fc6a39de7dd4356561e5cfeb279cbb2e76d083c2",
+      "decision": "Restore optional exact snapshot/job review routes behind the existing PermissionGuard. Keep default direct ingestion and every other route unchanged.",
+      "previousReview": "config/integration/reviews/20261018-operations-center-entry.json"
+    },
+    {
+      "path": "client/src/pages/knowledge/KBImages.tsx",
+      "controls": ["K05"],
+      "gitBlobSha1": "815f185cf317256493147902b95e8f9323cc38d6",
+      "sha256": "f1afc6eb308d0d8e91db85bd78645d120ba51df0b19b21945690f84ce2ced2b4",
+      "decision": "Only add the manual-version provenance notice. Original image bytes, containment layout, gallery interaction, tagging and analysis controls remain unchanged.",
+      "previousReview": "config/integration/reviews/20261015-gallery-browsing.json"
+    },
+    {
+      "path": "server/kbImages.workspaceScope.contract.test.ts",
+      "controls": ["K06"],
+      "gitBlobSha1": "e6babbb1921875a684b6a016484ab054183a4d92",
+      "sha256": "1537b8312e2da84781423dc9714869902ed57455d93c36d4bd49a04b8272a8dc",
+      "decision": "Retain all original workspace/owner requirements; extend assertions to durable manual provenance before detail, thumbnail, waterfall and export signing. Original tests are not removed."
+    },
+    {
+      "path": "server/kbDb.ts",
+      "controls": ["K06"],
+      "gitBlobSha1": "6e1835067bb294e53b7dc931c3fbf3f470eb968f",
+      "sha256": "d75d8712c5163a3458214f4f194843263d3042fcaa253fafe0042370d84bd832",
+      "decision": "Add the actual workspaceId database column to the lightweight set projection, never infer it from caller context or weaken the scope check. Query predicates and writes are unchanged; real projection-to-delivery tests cover direct, manual and shared owners."
+    },
+    {
+      "path": "server/routers/kbImages.ts",
+      "controls": ["K06"],
+      "gitBlobSha1": "3b55a4c523d54ebff77936f1d03a15a2eb146b6c",
+      "sha256": "c1fdaf1fde3253457462c4879c3bf6404dc15e426002ec1a625f693c15f7ada6",
+      "decision": "Keep direct reads unchanged. Manual private versions require exact owner/workspace/set/all-assets replay before signing. Unverifiable details show explicit status without URLs; selection/export rejects incomplete packages instead of returning a false-success partial package."
+    }
+  ],
+  "invariants": [
+    "Keep every original protection baseline, dependency declaration and prior review reference. No checksum refresh or automatic acceptance of source or migration approvals.",
+    "Save/reject/confirm append strict immutable revisions. Raw provider artifacts, normalized source, original asset rows and old confirmations are never overwritten or deleted.",
+    "New review writes require exact ENABLE_ACQUISITION_REVIEW_WRITES=true. A current member, current policy and owned exact target are required on every read/write/recovery. Workspace, actor/member, parent, job and source locks use a consistent order.",
+    "Whole-state CAS includes active exact-consumer links; pending drafts retain their starting link identity. Fixed operation UUIDs, request hashes, transactional audit readback and committed binding hashes prevent late drafts and unknown responses from being blindly replayed.",
+    "Image recovery durably prepares before a single PUT, preserves exact original bytes and validates full bounded image decoding. Completion/check/cancel use the original UUID, remain available when new writes are disabled, and never repeat the PUT. Private S3/OSS only; no storage fallback, page crawl or arbitrary browser URL.",
+    "Manual confirmations have isCurrent=0, preserving global ASIN cache semantics. Only exact consumer links with the complete source hash become active; old links and source history remain.",
+    "Publication checks actual target InnoDB engines before the first target write. Confirmations, target projection, link changes and final receipts share the same transaction and complete ACK/readback checks.",
+    "Images become a new private versioned KB set. Old sets, images, tags and AI are not replaced. KB listing/product records only bind a reviewed source reference; existing generated copy, human analysis and review state remain unchanged.",
+    "Competitor source changes preserve old AI and summaries and invalidate affected comparison approvals transactionally. Image-workflow subjects append; active source is required for selection/model input, and precisely linked superseded versions are read-only history.",
+    "Durable source readers replay source/revision/assets/confirmation/audit/links without minting authority from plain stored JSON or a browser DTO. Unverified manual images are not signed through detail, thumbnails, waterfall or knowledge-export selection."
+  ],
+  "independentReview": "Root reviewed actual protected diffs and runtime composition. Independent backend/UI/image review closed missing target-engine admission, reverse reader lock order, unverified image signing and direct/read-version protocol mismatches. Synthetic tests exercise actual review repository → publisher → persistent reader → consumer functions; these are not native MySQL or provider acceptance.",
+  "boundaries": [
+    "No schema change, DDL/DML against production, migration baseline adoption, service restart, cutover or model invocation occurred in this batch.",
+    "Offline fresh-bootstrap source-equivalence evidence is separately and permanently UNAPPROVED/executable=false/productionApproved=false/ciAdmissionGranted=false; the original CI initialization gate still rejects its mismatched binding before opening a connector.",
+    "Pasted review preview/save, independent long-term multi-original storage, remaining Agent business dispatch, controlled daily/monthly source synchronization and dual-scheduler isolation are not reclassified as completed or acceptance-only.",
+    "Original P0–P6, K01–K10, T01–T28, image62/master27/supplement12 and all thirteen release gates remain in scope. Real database, storage, login/browser, model quality/cost and rollback acceptance remain separate."
+  ],
+  "handoff": "docs/main-feature-handoff.json",
+  "productionWrites": false,
+  "modelCalls": 0,
+  "productionDeployed": false,
+  "fullObjectiveComplete": false
+}

@@ -41,6 +41,7 @@ describe("采集缺口补采交互", () => {
       ],
     } });
     render(<AcquisitionJobsPage />);
+    expect(screen.getByRole("link", { name: "可选人工审核／原请求恢复" })).toHaveAttribute("href", "/knowledge/acquisition/job/12");
     fireEvent.click(screen.getByRole("button", { name: "查看入库范围与缺口" }));
     expect(screen.getAllByText("本次未请求")).toHaveLength(2);
     const fillButtons = screen.getAllByRole("button", { name: "预填补采" });

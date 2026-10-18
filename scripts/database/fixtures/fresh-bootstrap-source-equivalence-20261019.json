@@ -1,0 +1,171 @@
+{
+  "version": "amazon-fresh-source-equivalence-candidate/1",
+  "basisCommit": "39bfe532ea388678d690f87dd977c41d73ec06b3",
+  "approval": "UNAPPROVED",
+  "executable": false,
+  "productionApproved": false,
+  "ciAdmissionGranted": false,
+  "runtimeResolver": false,
+  "databaseConnected": false,
+  "sqlExecuted": false,
+  "modelInvoked": false,
+  "scope": "Exact public-source evidence for the existing 178-entry fresh bootstrap only; not approval of new feature schemas or production deployment.",
+  "historicalApproval": {
+    "manifestPath": "drizzle/bootstrap/manifest.json",
+    "manifestFileSha256": "4d31befaf7b484899570fce1b217ea4ef72f3f653388e3c86128933f7e56bd14",
+    "diskManifestSourcesSha256": "fb537531cb839f0da61f86050deeea4ea4af89c45395debc10a463ee8b0c282f",
+    "structureContractPin": {
+      "path": "drizzle/bootstrap/structure-contract.json",
+      "sha256": "9323498df4ba3c0619a439f1bcf5fba5369cfe9651b1cd657e3ac2de21b2cd8c"
+    },
+    "historicalContractPath": "drizzle/bootstrap/structure-contract.json",
+    "historicalContractFileSha256": "9323498df4ba3c0619a439f1bcf5fba5369cfe9651b1cd657e3ac2de21b2cd8c",
+    "historicalContractSourcesSha256": "2be14b13add4cf878e10956d764080866362a1cf5b7afe6fab6ee40e6af30f7f",
+    "historicalContractPlanSha256": "a9ef4347a1ad1dfe99b90bfa9a04b10ceb479a1e0a220dbd05634241685fa2f0",
+    "admissionText": "Approved independent public source reference: isolated Linux MySQL8.0.46 case0 executed785DDL with303emptytables; full13collection catalog and176 source-proven default tokens verified. No candidate bootstrap database or production export used. Formal fresh initialization/repeat/failure/recovery still requires actual acceptance.",
+    "admissionTextIsNewPermission": false
+  },
+  "currentBinding": {
+    "sourcesSha256": "6ad366e459c854e86be2e564642cfae6460c764d40309cb20ce67c7ba9a8cf38",
+    "sourceCount": 208,
+    "historicalSourcesSha256": "2be14b13add4cf878e10956d764080866362a1cf5b7afe6fab6ee40e6af30f7f",
+    "exactSourceChanges": [
+      {
+        "path": "drizzle/schema/index.ts",
+        "historicalSha256": "e2990343f4c0ea8b16d21a78e54c696044b45a0cee5159abb7325411fe68ea29",
+        "currentSha256": "83ad4960a3116d5d8274ee4377ae42ef6f7d109c074bbddc72c1ab0534d0104c"
+      },
+      {
+        "path": "scripts/run-database-migrations.mjs",
+        "historicalSha256": "5ed6ad3b13e14cd7e92f32a31b8398bf83af13643ac64793fb10a2234f5cc638",
+        "currentSha256": "fb98c3b3ba6237b29bfbd5916556054a96d5fb36a25b777378609bd1bdf97e18"
+      }
+    ],
+    "runnerReversal": {
+      "version": 1,
+      "currentSha256": "fb98c3b3ba6237b29bfbd5916556054a96d5fb36a25b777378609bd1bdf97e18",
+      "previousSha256": "3c82d1f5fd0316e7f1f6c5b3b1e80dcd8ace5041931e71b3daf303cd490ad33b",
+      "historicalSha256": "5ed6ad3b13e14cd7e92f32a31b8398bf83af13643ac64793fb10a2234f5cc638",
+      "approval": "UNAPPROVED",
+      "executionPermissionAdded": false
+    },
+    "schemaIndexReversal": {
+      "historicalSha256": "e2990343f4c0ea8b16d21a78e54c696044b45a0cee5159abb7325411fe68ea29",
+      "currentSha256": "83ad4960a3116d5d8274ee4377ae42ef6f7d109c074bbddc72c1ab0534d0104c",
+      "removedOnlyForHistoricalComparison": [
+        "export * from \"./assistantConfigurations\";",
+        "export * as assistantConfigurationsSchema from \"./assistantConfigurations\";"
+      ]
+    },
+    "currentAdmissionRejection": "STRUCTURE_CONTRACT_BINDING_MISMATCH"
+  },
+  "generalPlan": {
+    "count": 168,
+    "exactOrderedSqlAndFlagsEqual": true,
+    "fullOrderedTupleSha256": "6d9e16164e279d90b2d0ecdfaac7516a9e3d1ad809abed98980e33013e213f1b",
+    "orderedNameChecksumFlagsSha256": "956724c8e25be572b24869188678cce2e7e26487c9568da27a936834942bb62f"
+  },
+  "freshPlan": {
+    "count": 178,
+    "planSha256": "a9ef4347a1ad1dfe99b90bfa9a04b10ceb479a1e0a220dbd05634241685fa2f0",
+    "exactOrderedSqlAndFlagsEqual": true,
+    "fullOrderedTupleSha256": "4b493d9668c2194b7c4a8f6c6d735f6cfe44784b2c56b0b8bf7039e64873f3c5",
+    "excludedCandidateFiles": [
+      {
+        "path": "drizzle/0230_assistant_configurations.sql",
+        "sha256": "88b08b6852381336d06af255e25c6dd6a5ed574b7ed27c94b2b86db34fe080e8",
+        "inGeneralPlan": false,
+        "inFreshPlan": false
+      },
+      {
+        "path": "drizzle/0231_assistant_conversations.sql",
+        "sha256": "104137a6178b5a69ce5c849249e9c27c5c2691349fe2377ef1753657f5ac85e5",
+        "inGeneralPlan": false,
+        "inFreshPlan": false
+      },
+      {
+        "path": "drizzle/0309_integration_profit_analysis.sql",
+        "sha256": "1b681081b730fbfea014357fe11d5f4e0d440fcbc8bd29df4adb20088fd0c8c9",
+        "inGeneralPlan": false,
+        "inFreshPlan": false
+      }
+    ]
+  },
+  "ledger": {
+    "table": "app_schema_migrations",
+    "literalBytesEqual": true,
+    "literalSha256": "bb704e32c6f43d28b9447672d0dfbf0a303d59c3ace5e89c1dfc7cd9f4abddf8",
+    "createSqlSha256": "35d3928f8a219e9ef69040849d0c5d5a33a6300607f49bc91b050f1f98c722b0",
+    "parsedCreateSha256": "47bb75113ddaf30729669afc01823e50a8b3c96f84a7a060c56b04e981254e1b",
+    "ledgerRowsRead": false,
+    "ledgerRowsWritten": false,
+    "existingReceiptCompatibilityProven": false
+  },
+  "projection": {
+    "current": {
+      "tables": 289,
+      "ddl": 408,
+      "sqlSha256": "6223c0db894742328c76960e9ff5a5a9b54681384df0ac04a7d1721d13ef731b",
+      "sourceSha256": "07d0a776f5c6116256a5408bb14c66bb4e98b68f8cf06d22a57b6e2ab7b34678",
+      "metadataExceptVersionLabelsSha256": "77f5ffa15cf2f1a89921134adce205f55d8b2962f50b25640f8f9e3dab75bd69"
+    },
+    "historicalBase": {
+      "tables": 287,
+      "ddl": 406,
+      "sqlSha256": "c2ea534b048427e7b3b464dd37ec442524cf5e8dd1ec80fac3e514259957a6aa",
+      "metadataSha256": "50b58633c982736e9210c9182cd7cbe38d5187c6dc7cb96624d85cfb38b4e85f"
+    },
+    "exactPartitionFileSha256": {
+      "full/source-projection.sql": "6223c0db894742328c76960e9ff5a5a9b54681384df0ac04a7d1721d13ef731b",
+      "full/source-projection.metadata.json": "da3637663718515c3db8d0290da4cf09a0e948901c40c891811f9e760e5e13b4",
+      "base/source-projection.sql": "c2ea534b048427e7b3b464dd37ec442524cf5e8dd1ec80fac3e514259957a6aa",
+      "base/source-projection.metadata.json": "aa771a42d03025adaff67ebbfc93cb6fc8ecad8421a7879447b1e395c2290dbf",
+      "delta/source-projection.sql": "b5b29c48c325764949b011784c625f5eed1b33a89ca535fe73a4e3846fb81999",
+      "delta/source-projection.metadata.json": "9c07ca49d061d546f2fb948dcdce39f5565f91e6c3acea72ec6afc8f9165c4cc"
+    },
+    "excludedFromHistoricalBase": [
+      "emperor_assistant_configuration_versions",
+      "emperor_assistant_configurations"
+    ],
+    "generatorVersionLabelsAreNotSourceIdentity": true
+  },
+  "reference": {
+    "tables": 303,
+    "statements": 785,
+    "statementPlanSha256": "71b5280180ba62d1d226f98a635d8136b6677db0ba3722a96345a20ea51f04a6",
+    "statementSqlSequenceSha256": "91a710e5c2ff0a0134949adaed16f9534595819b88f2de77bcdfa631191c1004",
+    "tableDerivationCount": 303,
+    "tableDerivationSha256": "d2a742daf9482fbdc35105c69fa00e5d0fdc10205904587d1117cae1c716c430",
+    "tableDerivationEqual": true,
+    "expectedColumnsSha256": "fb2efd61ba07eeccee6d6adb2b55cfdcd3a1ab8f72bdc0fe7236792517b313eb",
+    "changedColumnOrderTables": 159,
+    "changedColumnOrderTableNamesSha256": "d35dcd2efed227f5f2b9ee5de2a53335b45bdfe00902084dde14d3b934e5b70a",
+    "columnOrderSha256": "3f5a6f56a9c79c7b1cc8ee5c7e42254db365c6901cfadefeb6b6e20eaf0587db",
+    "temporalDefaultOverlayCount": 176,
+    "temporalDefaultOverlaysSha256": "e42ba73dd9d7fd189c20ea41cd71ae3e0785bce5ae616ffc8e01c563c7300502",
+    "temporalDefaultOverlaysEqual": true
+  },
+  "historicalCatalogOnly": {
+    "catalogSha256": "9ffd9dd86e79f9b6df78c3db8a9b12596ef2f203d1f0f3928096bebfcf793d09",
+    "collections": 13,
+    "tables": 303,
+    "columns": 5487,
+    "indexParts": 1627,
+    "foreignKeys": 2,
+    "reusedAsCurrentDatabaseOracle": false,
+    "newlyObservedNativeDatabase": false
+  },
+  "reproduction": {
+    "verify": "node scripts/database/freshBootstrapSourceEquivalenceEvidence.mjs --verify",
+    "tests": "RUN_REAL_LLM_TESTS=0 ALLOW_REAL_NETWORK_IN_TESTS=0 node --test scripts/database/freshBootstrapSourceEquivalenceEvidence.test.mjs",
+    "printCandidate": "node scripts/database/freshBootstrapSourceEquivalenceEvidence.mjs --print-candidate",
+    "outputsAreNotExecutionApproval": true
+  },
+  "independentAdmissionStillRequired": [
+    "Review the exact two-source reversal, every ordered migration byte/checksum/official flag, and explicit exclusion of 0230/0231/0309.",
+    "Review the independent public reference, complete historical catalog, all 303 derivations, ordinals, 176 temporal defaults and ledger literal; no candidate bootstrap database or production export may supply expectations.",
+    "A separately recorded authorized independent decision must name exact source/evidence/contract hashes and local-or-CI-only scope; neither this file nor passing tests grants it.",
+    "Any future admission change must preserve historical approval artifacts, fail before connector loading on mutation, and prove fresh initialization, zero-write repeat and actual DB tests separately.",
+    "Production schema/data/worker/scheduler/cutover permission and feature migration approval are separate and are not granted by a CI-only decision."
+  ]
+}

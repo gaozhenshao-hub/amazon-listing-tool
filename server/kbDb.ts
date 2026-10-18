@@ -181,6 +181,7 @@ export async function listImageSets(userId: number, workspaceId: number, scope: 
 const SET_LIST_FIELDS = {
   id: kbImageSets.id,
   userId: kbImageSets.userId,
+  workspaceId: kbImageSets.workspaceId,
   asin: kbImageSets.asin,
   productTitle: kbImageSets.productTitle,
   category: kbImageSets.category,

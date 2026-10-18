@@ -6,9 +6,12 @@ import { z } from "zod";
 import type { CompetitorAnalysis } from "../../../drizzle/schema/project";
 import type { DbExecutor } from "../../repositories/dbClient";
 import { competitorRevision } from "../../repositories/project/competitorWritePolicy";
+import { invalidateConfirmedCompetitorComparisons } from "../../repositories/project/projectAssetRepository";
 import { encodeResearchJson } from "../../repositories/listing/competitorResearchJobRepository";
 import { assertResourceAction } from "../../services/securityGovernance";
 import { NormalizedAmazonSnapshotSchema } from "../acquisition/contracts";
+import { getManualSnapshotPublication } from "../acquisition/manualSnapshotPublication";
+import { acquisitionReviewHash } from "../../../shared/acquisitionReview";
 
 const id = z.number().int().positive().safe();
 const hash = z.string().regex(/^[a-f0-9]{64}$/u);
@@ -57,14 +60,22 @@ export function createCollectedListingSaver(permission = assertResourceAction) {
       const [parent] = await rows("SELECT id,userId,workspaceId FROM projects WHERE id=? FOR UPDATE", [scope.projectId]);
       if (!parent || parent.id !== scope.projectId || parent.userId !== scope.userId || parent.workspaceId !== scope.workspaceId) fail("PROJECT_UNAVAILABLE", "NOT_FOUND");
       const [confirmed] = await rows("SELECT id,workspace_id AS workspaceId,snapshot_id AS snapshotId,revision_id AS revisionId,asin,marketplace,content_hash AS contentHash,confirmed_data AS confirmedData,confirmed_asset_ids AS confirmedAssetIds,is_current AS isCurrent FROM acquisition_confirmed_snapshots WHERE id=? AND workspace_id=? FOR SHARE", [scope.confirmedSnapshotId, scope.workspaceId]);
-      if (!confirmed || confirmed.id !== scope.confirmedSnapshotId || confirmed.workspaceId !== scope.workspaceId || confirmed.asin !== scope.asin || confirmed.marketplace !== "US" || confirmed.isCurrent !== 1 || confirmed.revisionId !== null) fail("SNAPSHOT_CHANGED", "CONFLICT");
+      const manual = getManualSnapshotPublication(db, scope.confirmedSnapshotId);
+      if (!confirmed || confirmed.id !== scope.confirmedSnapshotId || confirmed.workspaceId !== scope.workspaceId || confirmed.asin !== scope.asin || confirmed.marketplace !== "US"
+        || (manual ? confirmed.isCurrent !== 0 || confirmed.revisionId !== manual.revision.id : confirmed.isCurrent !== 1 || confirmed.revisionId !== null)) fail("SNAPSHOT_CHANGED", "CONFLICT");
+      if (manual && (manual.identity.userId !== scope.userId || manual.identity.workspaceId !== scope.workspaceId
+        || manual.envelope.scope.expectedProjectId !== scope.projectId || manual.envelope.scope.snapshotId !== confirmed.snapshotId
+        || manual.job.consumerType !== "project_competitor" || manual.job.requestedBy !== scope.userId || manual.snapshot.asin !== scope.asin
+        || manual.contentHash !== confirmed.contentHash || acquisitionReviewHash(json(confirmed.confirmedData)) !== acquisitionReviewHash(manual.effectiveData))) fail("MANUAL_PUBLICATION_INVALID", "CONFLICT");
       id.parse(confirmed.snapshotId); hash.parse(confirmed.contentHash);
       const data = NormalizedAmazonSnapshotSchema.parse(json(confirmed.confirmedData));
       const approvedIds = z.array(id).max(1000).parse(json(confirmed.confirmedAssetIds));
       if (new Set(approvedIds).size !== approvedIds.length || data.asin !== scope.asin || data.marketplace !== "US") fail("SNAPSHOT_INVALID");
+      if (manual && !isDeepStrictEqual(approvedIds, manual.assets.map(asset => asset.id))) fail("MANUAL_PUBLICATION_INVALID", "CONFLICT");
       const [source] = await rows("SELECT id,workspace_id AS workspaceId,asin,marketplace,raw_artifact_id AS rawArtifactId,normalized_data AS normalizedData FROM acquisition_source_snapshots WHERE id=? AND workspace_id=? FOR SHARE", [confirmed.snapshotId, scope.workspaceId]);
       if (!source || source.id !== confirmed.snapshotId || source.workspaceId !== scope.workspaceId || source.asin !== scope.asin || source.marketplace !== "US"
-        || !isDeepStrictEqual(data, NormalizedAmazonSnapshotSchema.parse(json(source.normalizedData)))) fail("SNAPSHOT_SOURCE_MISMATCH");
+        || (manual ? source.rawArtifactId !== manual.snapshot.rawArtifactId || acquisitionReviewHash(json(source.normalizedData)) !== acquisitionReviewHash(manual.snapshot.normalizedData)
+          : !isDeepStrictEqual(data, NormalizedAmazonSnapshotSchema.parse(json(source.normalizedData))))) fail("SNAPSHOT_SOURCE_MISMATCH");
       id.parse(source.rawArtifactId);
       // v1 contentHash used insertion-order JSON before MySQL normalizes keys.
       // Bind that persisted identity; do not falsely claim it can be recomputed
@@ -75,14 +86,19 @@ export function createCollectedListingSaver(permission = assertResourceAction) {
         const matches = assets.filter(asset => asset.id === assetId);
         if (matches.length !== 1) fail("ASSET_UNAVAILABLE");
         const asset = matches[0];
-        if (asset.workspaceId !== scope.workspaceId || asset.snapshotId !== confirmed.snapshotId || asset.sourceArtifactId !== source.rawArtifactId || asset.reviewStatus !== "approved"
+        if (manual) {
+          const proven = manual.assets.find(item => item.id === asset.id);
+          if (!proven || ["id", "workspaceId", "snapshotId", "sourceArtifactId", "role", "positionIndex", "sourceUrlHash", "storageKey", "contentHash", "reviewStatus"].some(key => asset[key] !== proven[key as keyof typeof proven])
+            || asset.sourcePath !== proven.sourceJsonPath) fail("MANUAL_PUBLICATION_INVALID", "CONFLICT");
+        }
+        if (asset.workspaceId !== scope.workspaceId || asset.snapshotId !== confirmed.snapshotId || asset.sourceArtifactId !== source.rawArtifactId || !manual && asset.reviewStatus !== "approved"
           || typeof asset.storageKey !== "string" || !asset.storageKey.trim() || !hash.safeParse(asset.contentHash).success
           || !data.assets.some(ref => ref.role === asset.role && ref.positionIndex === asset.positionIndex && ref.sourcePath === asset.sourcePath && ref.sourceUrlHash === asset.sourceUrlHash)) fail("ASSET_INVALID");
         return asset;
       }).sort((a, b) => Number(a.id) - Number(b.id));
       const gallery = approved.filter(asset => asset.role === "main" || asset.role === "secondary")
         .sort((a, b) => (a.role === b.role ? Number(a.positionIndex) - Number(b.positionIndex) : a.role === "main" ? -1 : 1)).map(asset => asset.storageKey);
-      const sourceHash = createHash("sha256").update(encodeResearchJson(stable({ data, assets: approved }), 512 * 1024)).digest("hex");
+      const sourceHash = manual?.sourceHash ?? createHash("sha256").update(encodeResearchJson(stable({ data, assets: approved }), 512 * 1024)).digest("hex");
       const capture = { version: 1 as const, confirmedSnapshotId: scope.confirmedSnapshotId, contentHash: confirmed.contentHash as string, sourceHash };
       const matches = await rows("SELECT * FROM competitorAnalyses WHERE projectId=? AND asin=? LIMIT 2 FOR UPDATE", [scope.projectId, scope.asin]);
       if (matches.length > 1) fail("DUPLICATE_RECORD", "CONFLICT");
@@ -123,6 +139,7 @@ export function createCollectedListingSaver(permission = assertResourceAction) {
       if (!saved || saved.id !== analysisId || saved.projectId !== scope.projectId || saved.asin !== scope.asin || Object.entries(columns).some(([key, value]) => saved[key] !== value)) fail("READBACK_FAILED", "CONFLICT");
       competitorRevision(saved as CompetitorAnalysis);
       if (existing && ["reviewAnalysis", "keywords", "aiSummary", "summary", "summaryStatus", "summaryVersion", "summaryConfirmedBy", "summaryConfirmedAt"].some(key => !isDeepStrictEqual(existing[key as keyof CompetitorAnalysis], saved[key]))) fail("HISTORY_CHANGED", "CONFLICT");
+      if (manual) await invalidateConfirmedCompetitorComparisons(db, { workspaceId: scope.workspaceId, userId: scope.userId, projectId: scope.projectId }, analysisId, new Date(Math.floor(Date.now() / 1000) * 1000));
       return { analysisId };
     } catch (error) {
       if (error instanceof TRPCError && error.message.startsWith("COMPETITOR_CAPTURE_")) throw error;
