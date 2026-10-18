@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
 import { useListingConfiguredGeneration } from "./ListingConfiguredGenerationContext";
+import { useListingAuxiliaryCheck } from "./useListingAuxiliaryCheck";
 
 // ─── Description 8 Dimensions Definition ─────────────────────────────────
 const DESCRIPTION_CHECKLIST_DIMENSIONS = [
@@ -52,6 +53,7 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
   const [generated, setGenerated] = useState(false);
   const [checkScores, setCheckScores] = useState<Record<string, { pass: boolean; notes: string }> | undefined>(undefined);
   const autoCheckTriggered = useRef(false);
+  const auxiliaryCheck = useListingAuxiliaryCheck("checkDescription", { operation: "checkDescription", payload: { description } }, { locked: !!locked, confirmed }, !locked && !!description.trim());
 
   const evaluateCheck = trpc.listing.evaluateDescriptionChecklist.useMutation({
     onSuccess: (data) => {
@@ -71,7 +73,7 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
   }, [generated, description, checkScores, evaluateCheck, configured?.enabled]);
 
   const handleRunCheck = () => {
-    if (configured?.enabled) { toast.info("独立自检仍属旧协议收费辅助能力，请明确切回旧方式后使用；不计入新配置预算"); return; }
+    if (configured?.enabled) { auxiliaryCheck.run(); return; }
     if (!description.trim()) {
       toast.error("请先生成产品描述");
       return;
@@ -276,7 +278,7 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
             {/* 8-Dimension Checklist Panel */}
             <ChecklistPanel
               dimensions={DESCRIPTION_CHECKLIST_DIMENSIONS}
-              checkListScores={checkScores}
+              checkListScores={configured?.enabled ? auxiliaryCheck.scores : checkScores}
               panelTitle="产品描述 - 8维度质量自检"
               checkLabel="8维度自检"
               onRunCheck={handleRunCheck}

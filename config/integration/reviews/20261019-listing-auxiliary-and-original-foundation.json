@@ -1,0 +1,50 @@
+{
+  "schema": "integration-reviewed-change/v1",
+  "base": "3cd50fa2ea91a9dd924620d1045fce67a7f3b2f8",
+  "decision": "reviewed two narrow protected integrations, not production or whole-feature acceptance",
+  "protectedChanges": [
+    {
+      "path": "client/src/pages/GeneratePage.tsx",
+      "previous": {
+        "gitBlobSha1": "accf49782545262492dd45046b56a6217ffcbd9b",
+        "sha256": "fe061581a8a2143f282b46127366cb3e4078f9199cddb0a82bf5bef4ef70baf9",
+        "reviewRef": "config/integration/reviews/20261018-main-candidate-ci-compatibility.json; config/integration/reviews/20261019-listing-configured-main-and-saihu-c2.json"
+      },
+      "reviewed": {
+        "gitBlobSha1": "74cf72b290509a22c81ada327cc5fc29c0c4f646",
+        "sha256": "e68e76d9be5262aefb6d42e37a56554db451d4a32c5a7b403ddf530a39ef61a5"
+      }
+    },
+    {
+      "path": "server/_core/aiWorker.ts",
+      "previous": {
+        "gitBlobSha1": "356836ceaf1819a8905beef439e4419f04de404e",
+        "sha256": "c64cd3ed3c5779e91b1d9cc9b52b665883370afb3e4252e383dc6b8d46dbbfc4",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior worker registrations and drains; config/integration/reviews/20261019-image-tagging-business.json; config/integration/reviews/20261019-configured-business-verticals.json; config/integration/reviews/20261019-main-business-continuation.json; config/integration/reviews/20261019-listing-configured-main-and-saihu-c2.json"
+      },
+      "reviewed": {
+        "gitBlobSha1": "a5f81cfdb5f589604708f2e6b767480f1f9ca625",
+        "sha256": "ffe2108786e6ebb4820a26055808ff19dd5d91a26f19a104c4141d61150187af"
+      }
+    }
+  ],
+  "review": [
+    "Root and independent client/backend reviewers read the exact diffs; preserve all106 original baseline tuples, both dependencies, all prior review references and K01-K10. Only these two reviewed tuples change.",
+    "Generate preserves original seven directions, bilingual logic, FABE+B/B4, facts/core/candidate human gates, original editing and initial plus3 optimization limits. New seven-operation auxiliary lane has its own strict request, source/model policy, private UUID checkpoints and apply receipts; original main8 JSON/hash/recovery does not change.",
+    "FABE and complete self-check reports do not confirm facts, cores or text. Optimize appends the original review_required ledger and uses the existing same-transaction Agent projection, with the auxiliary apply key additionally fencing late legacy callbacks. Generic jobs/artifacts cannot read, retry, cancel, select or export this lane.",
+    "Independent review found and closed re-capture of an old applied report, edit-and-change-back reactivation, stale binding during Web Lock wait, loading/error Listing treated as empty search-term context, and batch filtering by a previous draft's score. Automatic delivery uses the original start binding only; recovered/old reports remain complete and read-only. New relevant DOM cases preserve all131 original checklist assertions.",
+    "Retain all previous worker registrations, signal handling and dedicated drains. Add the default-off auxiliary start/stop. Newly introduced Listing main/aux stop timeouts reject rather than falsely announce stopped while paid cleanup is active. Observe all dedicated drain rejections before an unrelated status-write await, but return and await the original aggregate so central shutdown still reports unhealthy.",
+    "Only the existing FABE gateway's explicit intended listing.keyword.fabe.expand slug/actor scope is corrected; original standard default policy is retained. No global provider retry or fallback rewrite.",
+    "Supplement-original code is backend foundation only: three unregistered table candidates, no RPC/UI/consumer registration and no existing Snapshot/manualReview v1/deep/main8 protocol mutation. Each independent source has one sealed manifest v1; same-source reparse/reassignment/v2 and the complete downstream vertical remain implementation work. Raw originals, normalized manifests and deletion receipts remain independent.",
+    "Original failed CI110aad and frozen proofs remain. The separate3cd50fa2 CI success covers only that commit, including15 native cases, not this changed working tree. This batch final aggregate and CI require separate evidence."
+  ],
+  "separateGates": [
+    "Real target schema/object/ledger and minimal DDL admission; full historical data, old writers/backlogs and backup/rollback reconciliation.",
+    "Real user Listing/Qingdao source approvals, registry and provider/model policy, supplier field/settlement contracts, authenticated business/browser/worker/storage and model quality/fees acceptance.",
+    "Other image/development and business Skill configuration stages, complete supplement-original UI/revision/actual consumers, archive-board capture v1 limits, source synchronization and all previously retained implementation requirements.",
+    "All original P0-P6/K01-K10/T01-T28/image62/master27/supplement12 and all13 release gates remain. No feature flag, timer, registry, approval or schema is enabled by this review."
+  ],
+  "productionDeployed": false,
+  "fullP1Complete": false,
+  "fullObjectiveComplete": false
+}

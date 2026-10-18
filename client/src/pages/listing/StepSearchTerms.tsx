@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
 import { useListingConfiguredGeneration } from "./ListingConfiguredGenerationContext";
+import { useListingAuxiliaryCheck } from "./useListingAuxiliaryCheck";
 
 // ─── Search Terms 5 Dimensions Definition ─────────────────────────────────
 const SEARCH_TERMS_CHECKLIST_DIMENSIONS = [
@@ -34,12 +35,13 @@ interface StepSearchTermsProps {
   emphasis: string;
   locked?: boolean;
   savedContent?: string | null;
+  checkContext?: { title: string; bulletPoints: Array<{ subtitle: string; fullText: string }>; basis: string; ready?: boolean };
   onLock?: () => void;
   onUnlock?: () => void;
   onComplete: () => void;
 }
 
-export default function StepSearchTerms({ projectId, emphasis, locked, savedContent, onLock, onUnlock, onComplete }: StepSearchTermsProps) {
+export default function StepSearchTerms({ projectId, emphasis, locked, savedContent, checkContext, onLock, onUnlock, onComplete }: StepSearchTermsProps) {
   const configured = useListingConfiguredGeneration();
   const [searchTerms, setSearchTerms] = useState("");
   const [categories, setCategories] = useState<any[]>([]);
@@ -47,6 +49,7 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
   const [generated, setGenerated] = useState(false);
   const [checkScores, setCheckScores] = useState<Record<string, { pass: boolean; notes: string }> | undefined>(undefined);
   const autoCheckTriggered = useRef(false);
+  const auxiliaryCheck = useListingAuxiliaryCheck("checkSearchTerms", { operation: "checkSearchTerms", payload: { searchTerms, title: checkContext?.title ?? "", bulletPoints: checkContext?.bulletPoints ?? [] } }, { locked: !!locked, confirmed, contextBasis: checkContext?.basis ?? "未提供跨步骤上下文" }, !locked && !!searchTerms.trim() && checkContext?.ready !== false);
 
   const evaluateCheck = trpc.listing.evaluateSearchTermsChecklist.useMutation({
     onSuccess: (data) => {
@@ -66,7 +69,7 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
   }, [generated, searchTerms, configured?.enabled, checkScores, evaluateCheck]);
 
   const handleRunCheck = () => {
-    if (configured?.enabled) { toast.info("独立自检仍属旧协议收费辅助能力，请明确切回旧方式后使用；不计入新配置预算"); return; }
+    if (configured?.enabled) { auxiliaryCheck.run(); return; }
     if (!searchTerms.trim()) {
       toast.error("请先生成搜索词");
       return;
@@ -285,9 +288,10 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
             )}
 
             {/* 5-Dimension Checklist Panel */}
+            {configured?.enabled && <p className="text-xs text-muted-foreground">自检上下文：{checkContext?.basis ?? "未提供标题或卖点；不会声称完成跨字段去重"}</p>}
             <ChecklistPanel
               dimensions={SEARCH_TERMS_CHECKLIST_DIMENSIONS}
-              checkListScores={checkScores}
+              checkListScores={configured?.enabled ? auxiliaryCheck.scores : checkScores}
               panelTitle="搜索词 - 5维度质量自检"
               checkLabel="5维度自检"
               onRunCheck={handleRunCheck}

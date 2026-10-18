@@ -528,6 +528,7 @@ ${contextSnippet || "No additional product context available."}
 Please expand this keyword/theme into a complete selling point core with FABE direction.`;
 
       const response = await invokeBusinessSkill({
+        emperorSkill: { slug: "listing.keyword.fabe.expand", userId: ctx.user.id, workspaceId: ctx.workspaceId ?? null },
         messages: [
           { role: "system", content: EXPAND_KEYWORD_TO_FABE_PROMPT },
           { role: "user", content: userMessage },

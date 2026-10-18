@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
 import { useListingConfiguredGeneration } from "./ListingConfiguredGenerationContext";
+import { useListingAuxiliaryCheck } from "./useListingAuxiliaryCheck";
 
 // ─── Title 10 Dimensions Definition (Updated for Two-Stage) ─────────────────
 const TITLE_CHECKLIST_DIMENSIONS = [
@@ -100,6 +101,7 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
   const [holidayTerm, setHolidayTerm] = useState("");
   const [titleCheckScores, setTitleCheckScores] = useState<Record<string, { pass: boolean; notes: string }> | undefined>(undefined);
   const autoCheckTriggered = useRef(false);
+  const auxiliaryCheck = useListingAuxiliaryCheck("checkTitle", { operation: "checkTitle", payload: { title: isEditing ? editingTitle : candidates[selectedIdx ?? -1]?.title || "", itemHighlights: isEditing ? editingHighlights : candidates[selectedIdx ?? -1]?.itemHighlights || "" } }, { selectedIdx, isEditing, locked: !!locked, candidates }, !locked && (isEditing ? !!editingTitle.trim() : selectedIdx !== null));
 
   const evaluateTitleCheck = trpc.listing.evaluateTitleChecklist.useMutation({
     onSuccess: (data) => {
@@ -122,7 +124,7 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
   }, [candidates, selectedIdx, configured?.enabled, evaluateTitleCheck, titleCheckScores]);
 
   const handleRunTitleCheck = () => {
-    if (configured?.enabled) { toast.info("独立自检仍属旧协议收费辅助能力，请明确切回旧方式后使用；不计入新配置预算"); return; }
+    if (configured?.enabled) { auxiliaryCheck.run(); return; }
     let titleForCheck: string;
     if (isEditing) {
       titleForCheck = `${editingTitle} | ${editingHighlights}`;
@@ -610,7 +612,14 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
 
             {/* Title 10-Dimension Checklist Panel */}
             {selectedIdx !== null && (
-              <ChecklistPanel
+              configured?.enabled ? <ChecklistPanel
+                dimensions={TITLE_CHECKLIST_DIMENSIONS}
+                checkListScores={auxiliaryCheck.scores}
+                panelTitle="标题 - 10维度质量自检（两段式）"
+                checkLabel="10维度自检"
+                onRunCheck={handleRunTitleCheck}
+                isRunningCheck={false}
+              /> : <ChecklistPanel
                 dimensions={TITLE_CHECKLIST_DIMENSIONS}
                 checkListScores={titleCheckScores}
                 panelTitle="标题 - 10维度质量自检（两段式）"

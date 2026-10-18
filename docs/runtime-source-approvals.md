@@ -1,6 +1,6 @@
 # Runtime source approvals
 
-Agent 对话、利润AI、四栏研究、Listing主要生成、逐图标签、图片大纲、新品市场分析、知识问答和视频流程的应用单例读取各自服务器部署审批文件。没有配置时仍明确不可用；Released、绑定关系、种子记录和示例文件都不构成批准。本项没有启用功能开关、调用模型或修改注册表。
+Agent 对话、利润AI、四栏研究、Listing主要生成及独立辅助、逐图标签、图片大纲、新品市场分析、知识问答和视频流程的应用单例读取各自服务器部署审批文件。没有配置时仍明确不可用；Released、绑定关系、种子记录和示例文件都不构成批准。本项没有启用功能开关、调用模型或修改注册表。
 
 ## 部署配置
 
@@ -10,6 +10,7 @@ Agent 对话、利润AI、四栏研究、Listing主要生成、逐图标签、�
 | 利润分析 | `PROFIT_ANALYSIS_APPROVAL_FILE` | `PROFIT_ANALYSIS_APPROVAL_SHA256` |
 | Listing 四栏深度分析 | `LISTING_DEEP_ANALYSIS_APPROVAL_FILE` | `LISTING_DEEP_ANALYSIS_APPROVAL_SHA256` |
 | Listing 八类主要生成操作 | `LISTING_GENERATION_APPROVAL_FILE` | `LISTING_GENERATION_APPROVAL_SHA256` |
+| Listing 七种独立辅助操作 | `LISTING_AUXILIARY_APPROVAL_FILE` | `LISTING_AUXILIARY_APPROVAL_SHA256` |
 | 逐图标签 | `IMAGE_TAGGING_APPROVAL_FILE` | `IMAGE_TAGGING_APPROVAL_SHA256` |
 | 图片 Step 2 大纲 | `IMAGE_PLANNING_APPROVAL_FILE` | `IMAGE_PLANNING_APPROVAL_SHA256` |
 | 新品市场概况 | `DEVELOPMENT_MARKET_APPROVAL_FILE` | `DEVELOPMENT_MARKET_APPROVAL_SHA256` |
@@ -18,14 +19,15 @@ Agent 对话、利润AI、四栏研究、Listing主要生成、逐图标签、�
 
 两项必须同时配置；不要填写相对路径、URL、符号链接或占位 hash。文件必须位于应用构建目录之外、部署管理员控制的目录内，不能放在上传目录或公开仓库。权限建议 `0600`，禁止组/其他用户写入。Web 和 AI worker 必须具有相同受审版本、可读路径和 SHA 配置；每个进程按自身本地路径读取。**不要**配置 `VITE_` 前缀、向浏览器发送该文件，或把真实映射提交到仓库。
 
-`config/examples/` 中对应九个文件只有结构和空 `records`，不授权任何执行，也不含测试hash。复制到受控部署目录后，由有权限的维护者根据**目标环境真实注册表和已确认来源证据**填写记录。文件最大2MiB、最多1000条记录；整体不可部分通过。以 `shasum -a 256 /绝对路径/审批文件.json`（Linux可用 `sha256sum`）计算最终原始字节hash，包括换行，不要自行估算或使用示例hash。将输出的64位小写摘要配置到对应环境变量。
+`config/examples/` 中对应十个文件只有结构和空 `records`，不授权任何执行，也不含测试hash。复制到受控部署目录后，由有权限的维护者根据**目标环境真实注册表和已确认来源证据**填写记录。文件最大2MiB、最多1000条记录；整体不可部分通过。以 `shasum -a 256 /绝对路径/审批文件.json`（Linux可用 `sha256sum`）计算最终原始字节hash，包括换行，不要自行估算或使用示例hash。将输出的64位小写摘要配置到对应环境变量。
 
 ## 生成真实记录的依据
 
 - 对话记录必须通过 `AssistantConversationSourceApprovalSchema`；每个工作区/Agent 的 `route`、`reply` 各唯一，`context` 按 Skill slug 唯一。启用的上下文 Skill 也必须有对应批准。通用 Skill 以青岛来源为主；`listing.*` 必须是 `user_listing`，不得替换成朋友来源。仅在确有独立审核证据时使用现有 schema 允许的 `reviewed_supplement`，不得把它当默认批准。
 - 利润记录必须通过 `ProfitAnalysisSourceApprovalSchema`，每个工作区一条，`finance`/`profit_analysis`、来源 `qingdao`、`profit_evidence_v1`/`profit_evidence_selection_v1` 合同不变；须填写真实 `revision`、`approvalRef`、`evidenceId` 与证据文件内容摘要 `evidenceHash`。
 - 四栏记录必须通过 `CompetitorDeepApprovalSchema`，同工作区、同输入合同的 `title`、`selling`、`buyers_batch`、`buyers_synthesis`、`summary` 各一条，来源均为 `user_listing`。新任务使用已保存 `listing` 配置，要求 `competitor_deep_agent_evidence_v2`／`competitor_deep_claims_v1`；已有 v1 任务继续原 `competitor_deep_evidence_v1` 合同，不补造新配置或把 v1 审批当作 v2 审批。两种合同可在同文件分别保留五条映射。保留已有用户 Skill；需要兼容新合同的版本应独立审核，不按同名 Skill 自动替换提示词。定义见 `competitorDeepRuntimeContract.ts`。
-- Listing主要生成通过 `ListingConfiguredApprovalSchema`（`listingConfiguredRuntimeContract.ts`），`kind=listing_generation`、来源必须`user_listing`。八类主要操作映射七项原Skill，整套按固定业务顺序执行；输入`listing_generation_context_v1`、输出`listing_generation_original_output_v1`。单条五点、全部五点与标题保留原两轮已知质量修正；每次修正、原质量路线与显式获批后备模型的全部费用必须在开始前固定，未知结果不得前进到新调用。`modelSlug=null`继承原Skill真实模型政策（单条五点保留qualityModelPolicy优先），缺失明确不可用；不能借用对话或四栏审批。方向候选不能替代已确认核心，五点应用仍须原事实人审。关键词扩写、独立优化、独立自检尚未接本合同，不将这八类主要操作称为所有Listing Skill已接完。
+- Listing主要生成通过 `ListingConfiguredApprovalSchema`（`listingConfiguredRuntimeContract.ts`），`kind=listing_generation`、来源必须`user_listing`。八类主要操作映射七项原Skill，整套按固定业务顺序执行；输入`listing_generation_context_v1`、输出`listing_generation_original_output_v1`。单条五点、全部五点与标题保留原两轮已知质量修正；每次修正、原质量路线与显式获批后备模型的全部费用必须在开始前固定，未知结果不得前进到新调用。`modelSlug=null`继承原Skill真实模型政策（单条五点保留qualityModelPolicy优先），缺失明确不可用；不能借用对话或四栏审批。方向候选不能替代已确认核心，五点应用仍须原事实人审。关键词扩写、独立优化、自检使用下述独立合同，不修改本八操作请求或任务恢复协议。
+- Listing辅助通过 `ListingAuxiliaryApprovalSchema`（`listingAuxiliaryRuntimeContract.ts`），`kind=listing_auxiliary`、来源只能`user_listing`。`keywordFabe`、`optimizeBullet`及`checkBullet/title/description/searchTerms/qa`分别绑定原七项Skill；原稿、优化要求、其他五点和搜索词检查所用标题／五点完整保留，QA顺序及priority原类型保留。输入`listing_auxiliary_context_v1`、输出`listing_auxiliary_original_output_v1`，不得借用主要生成或四栏审批。原关键词扩写采用standard默认路线，优化保留quality_first及最多两轮已知质量修正，自检无额外质量修正；所有获批路线及最多九个五点目标的费用先整批授权，未知即停在原UUID。新写入和worker另由`ENABLE_LISTING_AUXILIARY_WRITES/WORKER`双开关控制且默认关闭。FABE与自检仅保存完整不可变报告，不能确认事实、核心或正文；优化进入原待人审候选账本，保留初始稿及最多三次优化。浏览器自动回填只认派发前原稿／选择／锁绑定，变化后或恢复后的旧报告仅只读；不重新捕获当前稿件来证明旧报告适用。
 - 逐图标签记录通过 `ImageTaggingSourceApprovalSchema`，固定 `tagger`、来源 `qingdao`、`image_tagging_evidence_v1`／`image_tagging_labels_v1`，匹配完整原图、Skill/model 快照及每图字节／费用预算。既有人工确认标签不自动重新计费。
 - 图片大纲与新品市场概况通过 `ConfiguredBusinessSourceApprovalSchema`，来源必须 `qingdao`。前者固定 `images`／`image_outline`／`image.step2.outline`、`image_planning_evidence_v1`／`image_planning_outline_v1`；后者固定 `development`／`development_market_overview`／`dev.analysis.market_overview`、`development_market_evidence_v1`／`development_market_analysis_v1`。两者各自文件的 `kind` 必须为 `image_planning` 或 `development_market`，不能互借批准。只覆盖这两个明确阶段，不表示其余图片或新品阶段已接入配置。
 - 知识问答通过 `KnowledgeQaApprovalSchema`（`knowledgeQaRuntimeContract.ts`），`kind=knowledge_qa`、`agentKey=knowledge`，`knowledge_select`／`knowledge.qa.select` 为 `knowledge_qa_selection_v1` JSON，`knowledge_answer`／`knowledge.qa.answer` 为 `knowledge_qa_markdown_v1` Markdown，输入均为 `knowledge_qa_evidence_v1`。两个独立阶段均须真实青岛来源批准；首次计费固定两个版本和总预算，L1/L2 选择各有独立上下文及持久派发回执。最多三次调用，不将通用对话审批当问答批准，不将旧版未绑定工作区对话塞入新上下文。

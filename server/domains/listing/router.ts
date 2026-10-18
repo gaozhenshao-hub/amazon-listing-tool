@@ -11,9 +11,11 @@ import { listingFactReviewProcedures } from "./routers/facts";
 import { listingCoreReviewProcedures } from "./routers/cores";
 import { listingCandidateReviewProcedures } from "./routers/candidates";
 import { listingConfiguredProcedures } from "./routers/configured";
+import { listingAuxiliaryProcedures } from "./routers/auxiliary";
 
 export const listingRouter = router({
   ...listingConfiguredProcedures,
+  ...listingAuxiliaryProcedures,
   ...listingReadProcedures,
   ...listingGenerationProcedures,
   ...listingEditingProcedures,

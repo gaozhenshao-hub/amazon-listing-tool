@@ -283,9 +283,9 @@
         "sha256": "0bb405c09c0a47385dc48f7cf3a16e6e3d0150f3e7618d02b59e6d5f86d666fc"
       },
       "reviewed": {
-        "gitBlobSha1": "accf49782545262492dd45046b56a6217ffcbd9b",
-        "sha256": "fe061581a8a2143f282b46127366cb3e4078f9199cddb0a82bf5bef4ef70baf9",
-        "reviewRef": "config/integration/reviews/20261018-main-candidate-ci-compatibility.json; config/integration/reviews/20261019-listing-configured-main-and-saihu-c2.json"
+        "gitBlobSha1": "74cf72b290509a22c81ada327cc5fc29c0c4f646",
+        "sha256": "e68e76d9be5262aefb6d42e37a56554db451d4a32c5a7b403ddf530a39ef61a5",
+        "reviewRef": "config/integration/reviews/20261018-main-candidate-ci-compatibility.json; config/integration/reviews/20261019-listing-configured-main-and-saihu-c2.json; config/integration/reviews/20261019-listing-auxiliary-and-original-foundation.json"
       }
     },
     {
@@ -467,9 +467,9 @@
         "sha256": "b3684a0e402946b9114559e50489f41ccc59e92159cc050baba43849f5061e7d"
       },
       "reviewed": {
-        "gitBlobSha1": "356836ceaf1819a8905beef439e4419f04de404e",
-        "sha256": "c64cd3ed3c5779e91b1d9cc9b52b665883370afb3e4252e383dc6b8d46dbbfc4",
-        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior worker registrations and drains; config/integration/reviews/20261019-image-tagging-business.json; config/integration/reviews/20261019-configured-business-verticals.json; config/integration/reviews/20261019-main-business-continuation.json; config/integration/reviews/20261019-listing-configured-main-and-saihu-c2.json"
+        "gitBlobSha1": "a5f81cfdb5f589604708f2e6b767480f1f9ca625",
+        "sha256": "ffe2108786e6ebb4820a26055808ff19dd5d91a26f19a104c4141d61150187af",
+        "reviewRef": "config/integration/reviews/20261018-main-functional-candidate.json; preserve all prior worker registrations and drains; config/integration/reviews/20261019-image-tagging-business.json; config/integration/reviews/20261019-configured-business-verticals.json; config/integration/reviews/20261019-main-business-continuation.json; config/integration/reviews/20261019-listing-configured-main-and-saihu-c2.json; config/integration/reviews/20261019-listing-auxiliary-and-original-foundation.json"
       }
     },
     {

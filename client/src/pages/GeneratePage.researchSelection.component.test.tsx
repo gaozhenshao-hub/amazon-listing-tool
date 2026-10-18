@@ -10,11 +10,14 @@ const mocks = vi.hoisted(() => {
   const empty: unknown[] = [], list = vi.fn(), start = vi.fn(), noop = vi.fn(), get = vi.fn(), history = vi.fn(), facts = vi.fn(), cores = vi.fn();
   const points = Array.from({ length: 7 }, (_, index) => ({ index: index + 1, theme: `Preserved direction ${index + 1}`, themeZh: "",
     description: "An existing human draft", descriptionZh: "", fabeDirection: { feature: "", advantage: "", benefit: "", evidence: "" }, targetKeywords: [], addressesGap: "" }));
-  return { enabled: true, real: false, list, start, noop, get, history, facts, cores, empty, points, prepare: vi.fn(), settle: vi.fn(), edit: vi.fn(), markDirty: vi.fn(), restore: vi.fn(),
+  const auxiliaryPreview = vi.fn();
+  return { enabled: true, real: false, realSearchTerms: false, searchSucceeded: null as ((data: { searchTerms: string }) => void) | null,
+    activeQuery: { data: null as Record<string, string> | null | undefined, isLoading: false, isFetching: false, isError: false, isSuccess: true },
+    list, start, noop, get, history, facts, cores, empty, points, auxiliaryPreview, fixtureFacts: empty, fixtureCores: empty, fixtureHistory: empty, prepare: vi.fn(), settle: vi.fn(), edit: vi.fn(), markDirty: vi.fn(), restore: vi.fn(),
     toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() }, owner: { key: "owned-scope" }, run: null as unknown,
     currentJob: null as { refetch: () => Promise<unknown> } | null, queryPaths: [] as string[], auth: { user: { id: 1, role: "admin", defaultWorkspaceId: 9 } as { id: number; role: string; defaultWorkspaceId: number | null } | null, loading: false, error: null as Error | null },
     client: { analysis: { listByProject: { query: list } }, listing: { getGenerationRun: { query: get }, listGenerationRuns: { query: history },
-      listReviewedFacts: { query: facts }, listCurrentCores: { query: cores } } } };
+      listReviewedFacts: { query: facts }, listCurrentCores: { query: cores }, auxiliaryPreview: { query: auxiliaryPreview } } } };
 });
 vi.mock("@/lib/mergedListingWorkflow", () => ({ get MERGED_LISTING_WORKFLOW_ENABLED() { return mocks.enabled; } }));
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => mocks.auth }));
@@ -26,9 +29,9 @@ vi.mock("@/components/ProjectSelector", () => ({ default: () => null }));
 vi.mock("./listing/ProductProfileAttributeSource", () => ({ default: () => <div>Preserved profile source entry</div> }));
 vi.mock("./listing/StepTitle", () => ({ default: () => null }));
 vi.mock("./listing/StepDescription", () => ({ default: () => null }));
-vi.mock("./listing/StepSearchTerms", () => ({ default: () => null }));
+vi.mock("./listing/StepSearchTerms", async importOriginal => { const actual = await importOriginal<typeof import("./listing/StepSearchTerms")>(); return { default: (props: Parameters<typeof actual.default>[0]) => mocks.realSearchTerms ? <actual.default {...props} /> : null }; });
 vi.mock("./listing/StepQA", () => ({ default: () => null }));
-vi.mock("@/components/BulletChecklistPanel", () => ({ default: () => null }));
+vi.mock("@/components/BulletChecklistPanel", () => ({ default: ({ checkListScores }: { checkListScores?: Record<string, unknown> }) => checkListScores && Object.keys(checkListScores).length === 15 ? <span data-testid="complete-original-checklist">Original draft has all 15 scores</span> : null }));
 vi.mock("@/components/LockedContentBar", () => ({ default: () => null }));
 vi.mock("@/components/workflow/DistillationGuidancePicker", () => ({ DistillationGuidancePicker: () => null }));
 vi.mock("@/components/workflow/ListingPlanningPanel", () => ({ ListingPlanningPanel: () => null }));
@@ -46,12 +49,13 @@ vi.mock("./listing/useSellingPointPlanRecovery", async importOriginal => {
 vi.mock("./listing/useListingGenerationJob", async importOriginal => {
   const actual = await importOriginal<typeof import("./listing/useListingGenerationJob")>();
   return { useListingGenerationJob: (input: Parameters<typeof actual.useListingGenerationJob>[0]) => {
+    if (input.operation === "searchTerms") mocks.searchSucceeded = data => input.onSucceeded(data, undefined);
     if (mocks.real) { const result = actual.useListingGenerationJob(input); mocks.currentJob = result; return result; }
-    return ({ run: mocks.run, history: mocks.empty,
+    return ({ run: mocks.run, history: mocks.fixtureHistory,
   isLoadingRun: false, readError: false, ownerKey: "owned-scope", responseOwner: mocks.owner, isGenerating: false, isStarting: false, isCanceling: false,
   start: mocks.start, cancel: mocks.noop, refetch: mocks.noop }); },
   useOwnedListingReviewLedger: (projectId: number) => mocks.real ? actual.useOwnedListingReviewLedger(projectId) : ({
-    facts: { data: mocks.empty, isLoading: false, isError: false, error: null }, cores: { data: mocks.empty, isLoading: false, isError: false, error: null }, refetch: mocks.noop,
+    facts: { data: mocks.fixtureFacts, isLoading: false, isError: false, error: null }, cores: { data: mocks.fixtureCores, isLoading: false, isError: false, error: null }, refetch: mocks.noop,
   }), ListingGenerationJobStatus: () => null };
 });
 vi.mock("@/lib/trpc", () => {
@@ -60,7 +64,7 @@ vi.mock("@/lib/trpc", () => {
     if (field === "then") return undefined;
     if (field === "useUtils") return () => ({ client: mocks.client });
     if (field === "useMutation") return () => mutation;
-    if (field === "useQuery") return () => { mocks.queryPaths.push(path.join(".")); return ({ data: path.join(".") === "project.getById" ? { id: 7, name: "Synthetic target" }
+    if (field === "useQuery") return () => { mocks.queryPaths.push(path.join(".")); if (path.join(".") === "listing.getActive") return { ...mocks.activeQuery, refetch: mocks.noop }; return ({ data: path.join(".") === "project.getById" ? { id: 7, name: "Synthetic target" }
       : path.join(".") === "projectFile.getAnalysisSummary" ? { productAttributes: true, fileCount: 1, hasAllFiles: true }
         : path.join(".") === "listing.getActive" ? null : path.join(".") === "keyword.stats" ? { total: 0 } : mocks.empty,
       isLoading: false, isError: false, refetch: mocks.noop }); };
@@ -69,7 +73,8 @@ vi.mock("@/lib/trpc", () => {
   return { trpc: proxy() };
 });
 const rows = [{ id: 10, projectId: 7, asin: "B000000010", title: "Scoped competitor", summaryStatus: "draft" }];
-beforeEach(() => { vi.clearAllMocks(); mocks.enabled = true; mocks.real = false; mocks.run = null; mocks.list.mockResolvedValue(rows); mocks.start.mockResolvedValue({ runId: "new-run" });
+beforeEach(() => { vi.clearAllMocks(); mocks.enabled = true; mocks.real = false; mocks.realSearchTerms = false; mocks.searchSucceeded = null; mocks.activeQuery = { data: null, isLoading: false, isFetching: false, isError: false, isSuccess: true }; mocks.run = null; mocks.list.mockResolvedValue(rows); mocks.start.mockResolvedValue({ runId: "new-run" });
+  mocks.fixtureFacts = mocks.empty; mocks.fixtureCores = mocks.empty; mocks.fixtureHistory = mocks.empty; mocks.noop.mockReset(); mocks.auxiliaryPreview.mockRejectedValue(new Error("SYNTHETIC no runtime"));
   mocks.queryPaths.length = 0; mocks.currentJob = null;
   mocks.auth = { user: { id: 1, role: "admin", defaultWorkspaceId: 9 }, loading: false, error: null };
   mocks.get.mockResolvedValue(null); mocks.history.mockResolvedValue([]); mocks.facts.mockResolvedValue([]); mocks.cores.mockResolvedValue([]);
@@ -164,6 +169,51 @@ function renderPage(queryClient = new QueryClient({ defaultOptions: { queries: {
 }
 
 describe("Generate research selection wiring", () => {
+  it.each(["loading", "error"])("the real search-terms step cannot prepare checks while saved Listing query is %s, then uses the full successful context", async state => {
+    mocks.realSearchTerms = true;
+    const saved = { title: "FULL SAVED TITLE", itemHighlights: "SAVED HIGHLIGHTS", bulletPoints: JSON.stringify(["SAVED BODY ONE", { subtitle: "SAVED TWO", fullText: "FULL SAVED BODY TWO" }]) };
+    mocks.activeQuery = { data: state === "error" ? saved : undefined, isLoading: state === "loading", isFetching: state === "loading", isError: state === "error", isSuccess: false };
+    const view = renderPage(); await screen.findByText(/Scoped competitor/); fireEvent.click(screen.getByRole("checkbox", { name: "使用新配置化执行方式" })); fireEvent.click(screen.getByRole("button", { name: "确认不使用竞品" }));
+    fireEvent.click(screen.getByText("搜索词").closest("button")!); await act(async () => mocks.searchSucceeded!({ searchTerms: "unsaved exact search terms" }));
+    expect(screen.getByText(state === "error" ? /已保存Listing读取失败/ : /正在读取已保存Listing的标题与全部卖点/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /5维度自检/ })); expect(screen.queryByText("当前辅助操作：搜索词5项自检")).not.toBeInTheDocument(); expect(mocks.auxiliaryPreview).not.toHaveBeenCalled(); expect(mocks.start).not.toHaveBeenCalled(); expect(mocks.noop).not.toHaveBeenCalled();
+    mocks.activeQuery = { data: saved, isLoading: false, isFetching: false, isError: false, isSuccess: true }; view.rerenderPage();
+    expect(screen.getByDisplayValue("unsaved exact search terms")).toBeInTheDocument(); fireEvent.click(screen.getByRole("button", { name: /5维度自检/ })); fireEvent.click(screen.getByRole("button", { name: "读取辅助来源与费用预览" })); await waitFor(() => expect(mocks.auxiliaryPreview).toHaveBeenCalledOnce());
+    expect(mocks.auxiliaryPreview.mock.calls[0][0]).toMatchObject({ operation: "checkSearchTerms", payload: { searchTerms: "unsaved exact search terms", title: "FULL SAVED TITLE | SAVED HIGHLIGHTS", bulletPoints: [{ subtitle: "", fullText: "SAVED BODY ONE" }, { subtitle: "SAVED TWO", fullText: "FULL SAVED BODY TWO" }] } }); expect(mocks.start).not.toHaveBeenCalled(); expect(mocks.noop).not.toHaveBeenCalled();
+  });
+  it("a successful explicit no-Listing result permits honest empty saved context, unlike loading or failure", async () => {
+    mocks.realSearchTerms = true; renderPage(); await screen.findByText(/Scoped competitor/); fireEvent.click(screen.getByRole("checkbox", { name: "使用新配置化执行方式" })); fireEvent.click(screen.getByRole("button", { name: "确认不使用竞品" }));
+    fireEvent.click(screen.getByText("搜索词").closest("button")!); await act(async () => mocks.searchSucceeded!({ searchTerms: "unsaved search terms without saved listing" })); fireEvent.click(screen.getByRole("button", { name: /5维度自检/ })); fireEvent.click(screen.getByRole("button", { name: "读取辅助来源与费用预览" })); await waitFor(() => expect(mocks.auxiliaryPreview).toHaveBeenCalledOnce());
+    expect(mocks.auxiliaryPreview.mock.calls[0][0].payload).toEqual({ searchTerms: "unsaved search terms without saved listing", title: "", bulletPoints: [] }); expect(mocks.start).not.toHaveBeenCalled(); expect(mocks.noop).not.toHaveBeenCalled();
+  });
+  it("prepares keyword FABE from the original add form with no legacy paid call", async () => {
+    renderPage(); await screen.findByText(/Scoped competitor/); fireEvent.click(screen.getByRole("checkbox", { name: "使用新配置化执行方式" })); fireEvent.click(screen.getByRole("button", { name: "确认不使用竞品" }));
+    fireEvent.click(screen.getByRole("button", { name: /手动添加 \(7\/9\)/ })); fireEvent.click(screen.getByRole("button", { name: "AI辅助" })); fireEvent.change(screen.getByPlaceholderText(/例如: waterproof/), { target: { value: "unsaved human keyword" } }); fireEvent.click(screen.getByRole("button", { name: "AI生成FABE" }));
+    expect(screen.getByText("当前辅助操作：关键词FABE扩写")).toBeInTheDocument(); fireEvent.click(screen.getByRole("button", { name: "读取辅助来源与费用预览" })); await waitFor(() => expect(mocks.auxiliaryPreview).toHaveBeenCalledTimes(1));
+    expect(mocks.auxiliaryPreview.mock.calls[0][0]).toMatchObject({ operation: "keywordFabe", analysisIds: [], payload: { keyword: "unsaved human keyword" } }); expect(mocks.noop).not.toHaveBeenCalled(); expect(mocks.start).not.toHaveBeenCalled();
+  });
+  it("prepares all original bullets and optimization with complete local neighbor drafts", async () => {
+    mocks.fixtureFacts = [{ id: 21, status: "confirmed", attributeKey: "material", value: "SYNTHETIC verified" }];
+    mocks.fixtureCores = mocks.points.map((point, i) => ({ id: 100 + i, coreId: `c${i}`, sellingPointIndex: i, buyerReason: `${point.theme}: ${point.description}`, factRevisionIdsJson: [21], status: "confirmed", revision: 1, inputHash: "a".repeat(64) }));
+    mocks.fixtureHistory = mocks.points.map((point, i) => ({ runId: `synthetic-${i}`, status: "succeeded", input: { operation: "singleBullet", scopeKey: `bullet-${i}`, sellingPoint: point }, output: { subtitle: `SYNTHETIC SUBTITLE ${i}`, fullText: `SYNTHETIC COMPLETE BODY ${i}`, candidateId: 200 + i, evidenceUsed: ["material"] } }));
+    mocks.noop.mockResolvedValue({}); renderPage(); await screen.findByText("SYNTHETIC SUBTITLE 6"); await screen.findByText(/Scoped competitor/);
+    fireEvent.click(screen.getByRole("checkbox", { name: "使用新配置化执行方式" })); fireEvent.click(screen.getByRole("button", { name: "确认不使用竞品" })); mocks.noop.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "准备全部卖点自检（先预览整批费用）" })); fireEvent.click(screen.getByRole("button", { name: "读取辅助来源与费用预览" })); await waitFor(() => expect(mocks.auxiliaryPreview).toHaveBeenCalledTimes(1));
+    const bulk = mocks.auxiliaryPreview.mock.calls[0][0]; expect(bulk.operation).toBe("checkBullet"); expect(bulk.payload.items).toHaveLength(7); expect(bulk.payload.items.map((item: { bulletIndex: number }) => item.bulletIndex)).toEqual([0, 1, 2, 3, 4, 5, 6]); expect(bulk.payload.items[6]).toMatchObject({ subtitle: "SYNTHETIC SUBTITLE 6", fullText: "SYNTHETIC COMPLETE BODY 6", candidateId: 206, coreRevisionId: 106 });
+    await screen.findByText(/辅助回执尚未核验/); fireEvent.change(screen.getAllByPlaceholderText(/填写优化方向/)[0], { target: { value: "preserve full local neighbor context" } }); fireEvent.click(screen.getAllByRole("button", { name: "生成优化候选" })[0]); fireEvent.click(screen.getByRole("button", { name: "读取辅助来源与费用预览" })); await waitFor(() => expect(mocks.auxiliaryPreview).toHaveBeenCalledTimes(2));
+    const optimize = mocks.auxiliaryPreview.mock.calls[1][0]; expect(optimize.operation).toBe("optimizeBullet"); expect(optimize.payload.sourceCandidateId).toBe(200); expect(optimize.payload.previousBullets).toHaveLength(6); expect(optimize.payload.previousBullets[5].fullText).toBe("SYNTHETIC COMPLETE BODY 6"); expect(mocks.noop).not.toHaveBeenCalled(); expect(mocks.start).not.toHaveBeenCalled();
+  });
+  it("prepare-all includes a currently unsaved edited bullet even when every original draft has a complete old score", async () => {
+    mocks.fixtureFacts = [{ id: 21, status: "confirmed", attributeKey: "material", value: "SYNTHETIC verified" }];
+    mocks.fixtureCores = mocks.points.map((point, i) => ({ id: 100 + i, coreId: `c${i}`, sellingPointIndex: i, buyerReason: `${point.theme}: ${point.description}`, factRevisionIdsJson: [21], status: "confirmed", revision: 1, inputHash: "a".repeat(64) }));
+    const checkListScores = Object.fromEntries(Array.from({ length: 15 }, (_, i) => [`dimension${i}`, { pass: true, notes: "OLD DRAFT COMPLETE SCORE" }]));
+    mocks.noop.mockResolvedValue({ checkListScores });
+    mocks.fixtureHistory = mocks.points.map((point, i) => ({ runId: `synthetic-scored-${i}`, status: "succeeded", input: { operation: "singleBullet", scopeKey: `bullet-${i}`, sellingPoint: point }, output: { subtitle: `SCORED SUBTITLE ${i}`, fullText: `SCORED BODY ${i}`, candidateId: 200 + i, evidenceUsed: ["material"], checkListScores } }));
+    renderPage(); await screen.findByText("SCORED SUBTITLE 6"); await waitFor(() => expect(screen.getAllByTestId("complete-original-checklist")).toHaveLength(7)); await screen.findByText(/Scoped competitor/); fireEvent.click(screen.getByRole("checkbox", { name: "使用新配置化执行方式" })); fireEvent.click(screen.getByRole("button", { name: "确认不使用竞品" })); mocks.noop.mockClear();
+    fireEvent.click(screen.getAllByRole("button", { name: /^编辑$/ })[0]); fireEvent.change(screen.getByDisplayValue("SCORED SUBTITLE 0"), { target: { value: "CURRENT UNSAVED SUBTITLE" } }); fireEvent.change(screen.getByDisplayValue("SCORED BODY 0"), { target: { value: "CURRENT FULL UNSAVED BODY" } });
+    fireEvent.click(screen.getByRole("button", { name: "准备全部卖点自检（先预览整批费用）" })); fireEvent.click(screen.getByRole("button", { name: "读取辅助来源与费用预览" })); await waitFor(() => expect(mocks.auxiliaryPreview).toHaveBeenCalledOnce());
+    const input = mocks.auxiliaryPreview.mock.calls[0][0]; expect(input.operation).toBe("checkBullet"); expect(input.payload.items).toHaveLength(7); expect(input.payload.items[0]).toEqual({ bulletIndex: 0, subtitle: "CURRENT UNSAVED SUBTITLE", fullText: "CURRENT FULL UNSAVED BODY", coreRevisionId: 100, candidateId: 200, evidenceUsed: [] }); expect(screen.getByDisplayValue("CURRENT FULL UNSAVED BODY")).toBeInTheDocument(); expect(mocks.noop).not.toHaveBeenCalled(); expect(mocks.start).not.toHaveBeenCalled();
+  });
   it("does not prepare, clear or start the existing seven-direction draft until the scope is explicitly confirmed", async () => {
     renderPage(); await screen.findByText(/Scoped competitor/);
     fireEvent.click(generate()); expect(mocks.start).not.toHaveBeenCalled(); expect(mocks.prepare).not.toHaveBeenCalled();

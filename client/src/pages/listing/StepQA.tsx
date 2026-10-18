@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
 import { useListingConfiguredGeneration } from "./ListingConfiguredGenerationContext";
+import { useListingAuxiliaryCheck } from "./useListingAuxiliaryCheck";
 
 // ─── QA 8 Dimensions Definition ─────────────────────────────────────
 const QA_CHECKLIST_DIMENSIONS = [
@@ -68,6 +69,9 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
   const [newA, setNewA] = useState("");
   const [checkScores, setCheckScores] = useState<Record<string, { pass: boolean; notes: string }> | undefined>(undefined);
   const autoCheckTriggered = useRef(false);
+  const auxiliaryItems = qaItems.map((item, i) => i === editingIdx ? { ...item, question: editQ, answer: editA } : item);
+  if (showAddForm && (newQ || newA)) auxiliaryItems.push({ question: newQ, answer: newA, category: "custom", priority: qaItems.length + 1, sourceInsight: "手动添加（未保存稿）" });
+  const auxiliaryCheck = useListingAuxiliaryCheck("checkQa", { operation: "checkQa", payload: { items: auxiliaryItems } }, { locked: !!locked, confirmed, editingIdx, showAddForm, newQ, newA }, !locked && auxiliaryItems.length > 0 && auxiliaryItems.every(item => item.question.trim() && item.answer.trim()));
 
   const evaluateCheck = trpc.listing.evaluateQAChecklist.useMutation({
     onSuccess: (data) => {
@@ -87,7 +91,7 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
   }, [generated, qaItems, configured?.enabled, checkScores, evaluateCheck]);
 
   const handleRunCheck = () => {
-    if (configured?.enabled) { toast.info("独立自检仍属旧协议收费辅助能力，请明确切回旧方式后使用；不计入新配置预算"); return; }
+    if (configured?.enabled) { auxiliaryCheck.run(); return; }
     if (qaItems.length === 0) {
       toast.error("请先生成QA问答");
       return;
@@ -477,7 +481,7 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
             {/* QA 8-Dimension Checklist Panel */}
             <ChecklistPanel
               dimensions={QA_CHECKLIST_DIMENSIONS}
-              checkListScores={checkScores}
+              checkListScores={configured?.enabled ? auxiliaryCheck.scores : checkScores}
               panelTitle="QA问答 - 8维度质量自检"
               checkLabel="8维度自检"
               onRunCheck={handleRunCheck}

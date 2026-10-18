@@ -72,7 +72,7 @@ export function createListingConfiguredWorker(deps: { discover?: ReturnType<type
   };
   const timer = setInterval(() => { void tick(); }, deps.intervalMs ?? 3000); timer.unref?.();
   return { tick, async stop(timeoutMs = 30000) { controller.abort(); clearInterval(timer); if (!work) return;
-    let timeout: ReturnType<typeof setTimeout> | undefined; try { await Promise.race([work, new Promise<void>(resolve => { timeout = setTimeout(resolve, Math.min(60000, Math.max(1, timeoutMs))); })]); }
+    let timeout: ReturnType<typeof setTimeout> | undefined; try { await Promise.race([work, new Promise<void>((_resolve, reject) => { timeout = setTimeout(() => reject(new Error("LISTING_CONFIGURED_WORKER_STOP_TIMEOUT")), Math.min(60000, Math.max(1, timeoutMs))); })]); }
     finally { if (timeout) clearTimeout(timeout); }
   } };
 }

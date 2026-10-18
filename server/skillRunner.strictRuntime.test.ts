@@ -75,6 +75,13 @@ describe("private strict single-dispatch Skill execution", () => {
     ["listing_description", "listing.generation.description.strict"],
     ["listing_search_terms", "listing.generation.search_terms.strict"],
     ["listing_qa", "listing.generation.qa.strict"],
+    ["listing_keyword_fabe", "listing.auxiliary.keyword_fabe.strict"],
+    ["listing_bullet_optimize", "listing.auxiliary.bullet_optimize.strict"],
+    ["listing_check_bullets", "listing.auxiliary.check_bullets.strict"],
+    ["listing_check_title", "listing.auxiliary.check_title.strict"],
+    ["listing_check_description", "listing.auxiliary.check_description.strict"],
+    ["listing_check_searchterms", "listing.auxiliary.check_searchterms.strict"],
+    ["listing_check_qa", "listing.auxiliary.check_qa.strict"],
   ] as const)("uses a distinct frozen audit identity for configured %s without selecting a fallback", async (stage, operation) => {
     const request = await input(); request.strictExecution!.stage = stage;
     await runEmperorSkill(request);
@@ -85,7 +92,8 @@ describe("private strict single-dispatch Skill execution", () => {
     expect(auditText()).not.toMatch(/PRIVATE_SYSTEM|PRIVATE_DOCUMENT|PRIVATE_SECRET_KEY|PRIVATE_REPLY/u);
   });
 
-  it.each((["listing_selling_points", "listing_single_bullet", "listing_bullets", "listing_title", "listing_description", "listing_search_terms", "listing_qa"] as const)
+  it.each((["listing_selling_points", "listing_single_bullet", "listing_bullets", "listing_title", "listing_description", "listing_search_terms", "listing_qa",
+    "listing_keyword_fabe", "listing_bullet_optimize", "listing_check_bullets", "listing_check_title", "listing_check_description", "listing_check_searchterms", "listing_check_qa"] as const)
     .flatMap(stage => ["missingPin", "changedModel", "deniedFence", "unknownOutcome", "arbitraryAuditTag"].map(kind => ({ stage, kind }))))("$stage preserves admission and per-attempt single dispatch: $kind", async ({ stage, kind }) => {
     const request = await input(); request.strictExecution!.stage = stage;
     if (kind === "missingPin") request.expectedSkillManifestHash = undefined;

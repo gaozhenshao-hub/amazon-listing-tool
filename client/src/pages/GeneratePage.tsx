@@ -77,6 +77,8 @@ import { useOwnedListingReviewLedger } from "./listing/useListingGenerationJob";
 import { CustomSellingPointForm } from "./listing/CustomSellingPointForm";
 import ListingConfiguredGenerationControls from "./listing/ListingConfiguredGenerationControls";
 import { ListingConfiguredGenerationProvider, useListingConfiguredGeneration } from "./listing/ListingConfiguredGenerationContext";
+import { ListingAuxiliaryProvider, useListingAuxiliary, useListingAuxiliaryReceiver } from "./listing/ListingAuxiliaryContext";
+import ListingAuxiliaryControls from "./listing/ListingAuxiliaryControls";
 
 function bulletFingerprint(bullet: { subtitle?: string; fullText?: string } | null | undefined) {
   return `${bullet?.subtitle || ""}\u0000${bullet?.fullText || ""}`;
@@ -107,12 +109,13 @@ export default function GeneratePage() {
   // A new owner must not mount private query consumers before auth settles.
   if (hidden && shown.current !== token) return <p role="status">正在确认生成页身份…</p>;
   return <>{hidden && <p role="status">正在重新确认当前身份，已有编辑稿暂时保留…</p>}
-    <div hidden={hidden}><ListingConfiguredGenerationProvider key={`${identity}:${token.epoch}`}><GeneratePageContent /></ListingConfiguredGenerationProvider></div></>;
+    <div hidden={hidden}><ListingConfiguredGenerationProvider key={`${identity}:${token.epoch}`}><ListingAuxiliaryProvider><GeneratePageContent /></ListingAuxiliaryProvider></ListingConfiguredGenerationProvider></div></>;
 }
 
 function GeneratePageContent() {
   const { selectedProjectId } = useProject();
   const configured = useListingConfiguredGeneration();
+  const auxiliary = useListingAuxiliary();
   const [, setLocation] = useLocation();
   // Free-text emphasis is not an evidence channel for fact-bound AI jobs.
   const emphasis = "";
@@ -218,13 +221,32 @@ function GeneratePageContent() {
 
   // Lock state for each step (locked = confirmed + synced to preview)
   const [lockedSteps, setLockedSteps] = useState<Set<number>>(new Set());
+  useListingAuxiliaryReceiver("keywordFabe", JSON.stringify([aiKeyword, aiResult, aiAssistMode, showAddForm, sellingPointCores, lockedSteps.has(1)]), candidate => {
+    setAiResult(candidate.targets[0].result); setAiResultEditing(true);
+    toast.success("完整FABE候选已载入，请编辑后添加，再按原流程确认本品事实及核心");
+  });
+  useListingAuxiliaryReceiver("bulletAuxiliary", JSON.stringify([sellingPointCores, generatedBullets, bulletCandidates, bulletOptimizationNotes, confirmedCores, confirmedBullets, lockedSteps.has(1), editingBullet, editBulletData, editingCore]), () => {});
   const lockedStepsInitialized = useRef(false);
 
   // Load locked steps from DB on mount
-  const { data: activeListing } = trpc.listing.getActive.useQuery(
+  const activeListingQuery = trpc.listing.getActive.useQuery(
     { projectId: selectedProjectId! },
     { enabled: !!selectedProjectId }
   );
+  const { data: activeListing } = activeListingQuery;
+  const auxiliarySearchContext = useMemo(() => {
+    const basis = "已保存标题（不含其他步骤未保存标题候选）；完整已保存卖点加本页当前本地编辑稿，按原顺序合并";
+    if (activeListingQuery.isError) return { title: "", bulletPoints: [], basis: "已保存Listing读取失败，标题与全部卖点上下文不可核验；重新读取成功前不执行自检", ready: false };
+    if (!activeListingQuery.isSuccess || activeListingQuery.isFetching || activeListing === undefined) return { title: "", bulletPoints: [], basis: "正在读取已保存Listing的标题与全部卖点；读取完成前不执行自检", ready: false };
+    try {
+      const saved = activeListing?.bulletPoints ? JSON.parse(activeListing.bulletPoints) : [];
+      if (!Array.isArray(saved) || saved.length > 9) throw new Error("Invalid saved bullets");
+      const byIndex = new Map<number, { subtitle: string; fullText: string }>();
+      saved.forEach((item, i) => { if (typeof item === "string") byIndex.set(i, { subtitle: "", fullText: item }); else if (item && typeof item.subtitle === "string" && typeof item.fullText === "string") byIndex.set(i, item); else throw new Error("Invalid saved bullet"); });
+      Object.entries(generatedBullets).forEach(([key, bullet]) => { const i = Number(key); if (!Number.isInteger(i) || i < 0 || i > 8 || typeof bullet.subtitle !== "string" || typeof bullet.fullText !== "string") throw new Error("Invalid local bullet"); byIndex.set(i, i === editingBullet ? editBulletData : { subtitle: bullet.subtitle, fullText: bullet.fullText }); });
+      return { title: [activeListing?.title, activeListing?.itemHighlights].filter(Boolean).join(" | "), bulletPoints: [...byIndex].sort(([a], [b]) => a - b).map(([, item]) => item), basis, ready: true };
+    } catch { return { title: "", bulletPoints: [], basis: "原卖点上下文无法完整核验；请先重新读取原稿，不执行缺省检查", ready: false }; }
+  }, [activeListing, activeListingQuery.isError, activeListingQuery.isSuccess, activeListingQuery.isFetching, generatedBullets, editingBullet, editBulletData]);
   const updateLockedStepsMut = trpc.listing.updateLockedSteps.useMutation();
   const { mutateAsync: saveChecklistScores } = trpc.listing.saveChecklistScores.useMutation();
   const checklistSaveQueue = useRef<Promise<void>>(Promise.resolve());
@@ -638,7 +660,12 @@ function GeneratePageContent() {
   });
 
   const handleAiExpand = () => {
-    if (configured?.enabled) { toast.info("关键词扩写属于旧协议独立收费辅助能力；请明确切回旧方式后使用，不计入新配置预算"); return; }
+    if (configured?.enabled) {
+      if (!configured.sourceSelection.analysisIds) { toast.error("请先明确本次竞品研究范围，也可明确不使用竞品"); return; }
+      if (!aiKeyword.trim() || aiKeyword.trim().length > 200) { toast.error("请输入1–200字关键词或主题"); return; }
+      auxiliary?.request({ operation: "keywordFabe", analysisIds: configured.sourceSelection.analysisIds, payload: { keyword: aiKeyword.trim() } }, "keywordFabe");
+      toast.info("已准备FABE扩写，请在辅助面板核对完整稿件与费用；尚未调用模型"); return;
+    }
     if (!selectedProjectId || !aiKeyword.trim()) {
       toast.error("请输入关键词或主题");
       return;
@@ -847,7 +874,6 @@ function GeneratePageContent() {
 
   const optimizeBulletMut = trpc.listing.optimizeSingleBullet.useMutation();
   const handleOptimizeBullet = async (idx: number) => {
-    if (configured?.enabled) { toast.info("文案优化属于旧协议独立收费辅助能力；请明确切回旧方式后使用，不计入新配置预算"); return; }
     const approvedCore = confirmedCores[idx] ? coreBinding(idx) : null;
     if (!approvedCore) { toast.error("当前卖点核心未绑定有效的人审事实版本，无法优化"); return; }
     const current = generatedBullets[idx];
@@ -858,6 +884,17 @@ function GeneratePageContent() {
     if (current.staleSource) { toast.error("核心已修改，请先重新生成；旧草案不能作为优化事实来源"); return; }
     if (candidates.length >= 4) { toast.error("每条卖点最多可再优化三次"); return; }
     if (!note) { toast.error("请填写优化方向"); return; }
+    if (configured?.enabled) {
+      if (!configured.sourceSelection.analysisIds) { toast.error("请先明确竞品研究范围"); return; }
+      const previousBullets = Object.entries(latestBulletsRef.current).filter(([key]) => Number(key) !== idx).sort(([a], [b]) => Number(a) - Number(b)).map(([key, bullet]) => Number(key) === editingBullet ? { ...editBulletData } : { subtitle: bullet.subtitle || "", fullText: bullet.fullText || "" });
+      auxiliary?.request({ operation: "optimizeBullet", analysisIds: configured.sourceSelection.analysisIds, payload: { coreRevisionId: approvedCore.id, coreInputHash: approvedCore.inputHash,
+        currentBullet: { subtitle: current.subtitle || "", fullText: current.fullText || "" }, previousBullets, optimizationNote: note, sourceCandidateId: Number.isSafeInteger(current.candidateId) && current.candidateId > 0 ? current.candidateId : null } }, "bulletAuxiliary", (candidate, application) => {
+        const next = { ...candidate.targets[0].result, candidateId: application?.candidateIds[0], optimizationNote: note, manuallyEdited: false, checkListScores: undefined, aiSemanticRelations: undefined };
+        setBulletCandidates(prev => ({ ...prev, [idx]: [...(prev[idx] || [current]), next] })); replaceBulletDraft(idx, next);
+        setConfirmedBullets(prev => ({ ...prev, [idx]: false })); setBulletOptimizationNotes(prev => ({ ...prev, [idx]: "" }));
+        toast.success("优化候选已载入，并进入原待审核账本；尚未确认或锁定");
+      }); toast.info("已准备完整原稿与优化要求，请到辅助面板确认费用"); return;
+    }
     try {
       const previousBullets = Object.entries(confirmedBullets)
         .filter(([bulletIndex, confirmed]) => confirmed && Number(bulletIndex) !== idx)
@@ -929,10 +966,22 @@ function GeneratePageContent() {
   });
 
   // Run 15-dimension checklist evaluation for a bullet
+  const prepareConfiguredBulletChecks = (indices: number[]) => {
+    if (!configured?.sourceSelection.analysisIds) { toast.error("请先明确竞品研究范围"); return; }
+    const items = indices.map(idx => { const original = latestBulletsRef.current[idx], bullet = idx === editingBullet ? { ...original, ...editBulletData, evidenceUsed: [] } : original, core = coreBinding(idx); return { bulletIndex: idx, subtitle: bullet.subtitle || "", fullText: bullet.fullText || "",
+      coreRevisionId: core?.id ?? null, candidateId: Number.isSafeInteger(bullet.candidateId) && bullet.candidateId > 0 ? bullet.candidateId : null, evidenceUsed: Array.isArray(bullet.evidenceUsed) ? bullet.evidenceUsed : [] }; });
+    if (!items.length || items.some(item => !item.subtitle.trim() || !item.fullText.trim())) { toast.info("请先填写完整卖点稿件，再准备自检"); return; }
+    auxiliary?.request({ operation: "checkBullet", analysisIds: configured.sourceSelection.analysisIds, payload: { items } }, "bulletAuxiliary", candidate => {
+      const next = { ...latestBulletsRef.current }; for (const target of candidate.targets) { const inspected = items[target.targetIndex], idx = inspected.bulletIndex;
+        if (next[idx].subtitle !== inspected.subtitle || next[idx].fullText !== inspected.fullText) continue;
+        next[idx] = { ...next[idx], checkListScores: target.result.checkListScores, aiSemanticRelations: target.result.aiSemanticRelations }; }
+      latestBulletsRef.current = next; setGeneratedBullets(next); toast.success(`完整自检报告已保留；未保存编辑稿的报告只供辅助面板对照，不写回旧正文。未调用旧评分保存。`);
+    }); toast.info(`已准备${items.length}条完整稿件，请在辅助面板确认整批费用；尚未调用模型`);
+  };
   const handleRunChecklist = async (idx: number) => {
-    if (configured?.enabled) { toast.info("独立自检属于旧协议收费辅助能力；请明确切回旧方式后使用，不计入新配置预算"); return; }
     const bullet = generatedBullets[idx];
     if (!bullet?.subtitle || !bullet?.fullText) return;
+    if (configured?.enabled) { prepareConfiguredBulletChecks([idx]); return; }
     setEvaluatingChecklist(prev => ({ ...prev, [idx]: true }));
     try {
       const result = await evaluateChecklist.mutateAsync({
@@ -967,7 +1016,7 @@ function GeneratePageContent() {
   // Batch checklist evaluation for all confirmed bullets
   const [batchChecklistRunning, setBatchChecklistRunning] = useState(false);
   const handleBatchChecklist = async () => {
-    if (configured?.enabled) { toast.info("批量自检属于旧协议独立收费辅助能力；请明确切回旧方式后使用，不计入新配置预算"); return; }
+    if (configured?.enabled) { prepareConfiguredBulletChecks(Object.keys(latestBulletsRef.current).map(Number).sort((a, b) => a - b).filter(idx => { const bullet = idx === editingBullet ? editBulletData : latestBulletsRef.current[idx]; return bullet?.subtitle?.trim() && bullet?.fullText?.trim(); })); return; }
     if (!sellingPointCores) return;
     setBatchChecklistRunning(true);
     let successCount = 0;
@@ -1065,6 +1114,7 @@ function GeneratePageContent() {
         <ProjectSelector />
       </div>
       {selectedProjectId && <ListingConfiguredGenerationControls projectId={selectedProjectId} />}
+      {selectedProjectId && <ListingAuxiliaryControls projectId={selectedProjectId} />}
       {configured?.enabled && selectedProjectId && <div className="flex flex-wrap items-center gap-2">
         {(["sellingPoints", "bullets", "batch"] as const).map(operation => <Button key={operation} variant="outline" disabled={!configured.sourceSelection.analysisIds || operation !== "sellingPoints" && !currentConfirmedCoreBindings.length} onClick={() => {
           if (!configured.sourceSelection.analysisIds) return;
@@ -1918,6 +1968,7 @@ function GeneratePageContent() {
                   ); })}
 
                   {/* Summary when all bullets confirmed */}
+                  {configured?.enabled && !allBulletsConfirmed && Object.values(generatedBullets).some(bullet => bullet?.subtitle && bullet?.fullText) && <Button variant="outline" onClick={handleBatchChecklist}>准备全部卖点自检（先预览整批费用）</Button>}
                   {allBulletsConfirmed && (
                     <div className="p-4 rounded-lg border-2 border-green-300 bg-green-50/50">
                       <div className="flex items-center gap-2 mb-2">
@@ -2011,6 +2062,7 @@ function GeneratePageContent() {
               emphasis={emphasis}
               locked={lockedSteps.has(4)}
               savedContent={activeListing?.searchTerms || null}
+              checkContext={auxiliarySearchContext}
               onLock={() => handleLockStep(4)}
               onUnlock={() => { handleUnlockStep(4); toast.info("搜索词已解锁，可重新编辑"); }}
               onComplete={() => handleStepComplete(4)}

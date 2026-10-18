@@ -13,6 +13,7 @@ beforeEach(() => {
   vi.stubEnv("PROFIT_ANALYSIS_APPROVAL_FILE", undefined); vi.stubEnv("PROFIT_ANALYSIS_APPROVAL_SHA256", undefined);
   vi.stubEnv("LISTING_DEEP_ANALYSIS_APPROVAL_FILE", undefined); vi.stubEnv("LISTING_DEEP_ANALYSIS_APPROVAL_SHA256", undefined);
   vi.stubEnv("LISTING_GENERATION_APPROVAL_FILE", undefined); vi.stubEnv("LISTING_GENERATION_APPROVAL_SHA256", undefined);
+  vi.stubEnv("LISTING_AUXILIARY_APPROVAL_FILE", undefined); vi.stubEnv("LISTING_AUXILIARY_APPROVAL_SHA256", undefined);
   vi.stubEnv("IMAGE_TAGGING_APPROVAL_FILE", undefined); vi.stubEnv("IMAGE_TAGGING_APPROVAL_SHA256", undefined);
   vi.stubEnv("IMAGE_PLANNING_APPROVAL_FILE", undefined); vi.stubEnv("IMAGE_PLANNING_APPROVAL_SHA256", undefined);
   vi.stubEnv("DEVELOPMENT_MARKET_APPROVAL_FILE", undefined); vi.stubEnv("DEVELOPMENT_MARKET_APPROVAL_SHA256", undefined);
@@ -91,7 +92,7 @@ describe("explicit bounded server approval file admission", () => {
     const h = loader(vi.fn(() => { throw new Error(`PRIVATE_BODY PRIVATE_KEY ${f.path}`); }));
     await expect(h.load()).rejects.toEqual(new SourceApprovalFileError("RECORDS_INVALID"));
   });
-  it("isolates all nine domain files and never treats another configured domain as fallback", async () => {
+  it("isolates all ten domain files and never treats another configured domain as fallback", async () => {
     await fixture(); const finance = createSourceApprovalFileLoader({ kind: "profit_analysis", decode: rows => rows });
     const listing = createSourceApprovalFileLoader({ kind: "listing_deep_analysis", decode: rows => rows });
     expect(await finance()).toMatchObject({ status: "unavailable" }); expect(await listing()).toMatchObject({ status: "unavailable" });
@@ -101,6 +102,7 @@ describe("explicit bounded server approval file admission", () => {
     expect(await createSourceApprovalFileLoader({ kind: "knowledge_qa", decode: rows => rows })()).toMatchObject({ status: "unavailable" });
     expect(await createSourceApprovalFileLoader({ kind: "video_workflow", decode: rows => rows })()).toMatchObject({ status: "unavailable" });
     expect(await createSourceApprovalFileLoader({ kind: "listing_generation", decode: rows => rows })()).toMatchObject({ status: "unavailable" });
+    expect(await createSourceApprovalFileLoader({ kind: "listing_auxiliary", decode: rows => rows })()).toMatchObject({ status: "unavailable" });
   });
   it("loads tagging only from its explicitly hashed domain file without approving decoded records", async () => {
     const f = await fixture({ version: 1, kind: "image_tagging", records: [{ synthetic: true }] });
@@ -115,6 +117,7 @@ describe("explicit bounded server approval file admission", () => {
     ["knowledge_qa", "KNOWLEDGE_QA_APPROVAL_FILE", "KNOWLEDGE_QA_APPROVAL_SHA256"],
     ["video_workflow", "VIDEO_WORKFLOW_APPROVAL_FILE", "VIDEO_WORKFLOW_APPROVAL_SHA256"],
     ["listing_generation", "LISTING_GENERATION_APPROVAL_FILE", "LISTING_GENERATION_APPROVAL_SHA256"],
+    ["listing_auxiliary", "LISTING_AUXILIARY_APPROVAL_FILE", "LISTING_AUXILIARY_APPROVAL_SHA256"],
   ] as const)("keeps %s independently hashed and domain-specific", async (kind, path, hash) => {
     const f = await fixture({ version: 1, kind, records: [{ synthetic: true }] });
     vi.stubEnv(path, f.path); vi.stubEnv(hash, digest(f.body));
@@ -122,7 +125,7 @@ describe("explicit bounded server approval file admission", () => {
     expect(await load()).toEqual({ status: "ready", value: [{ synthetic: true }] }); expect(decode).toHaveBeenCalledOnce();
     await expect(loader().load()).rejects.toMatchObject({ code: "DOCUMENT_INVALID" });
     const other = ({ image_planning: "development_market", development_market: "image_planning",
-      knowledge_qa: "video_workflow", video_workflow: "knowledge_qa", listing_generation: "listing_deep_analysis" } as const)[kind];
+      knowledge_qa: "video_workflow", video_workflow: "knowledge_qa", listing_generation: "listing_deep_analysis", listing_auxiliary: "listing_generation" } as const)[kind];
     expect(await createSourceApprovalFileLoader({ kind: other, decode: records => records })()).toMatchObject({ status: "unavailable" });
   });
 
@@ -132,6 +135,14 @@ describe("explicit bounded server approval file admission", () => {
     vi.stubEnv("LISTING_GENERATION_APPROVAL_SHA256", digest(f.body));
     const decode = vi.fn(records => records);
     await expect(createSourceApprovalFileLoader({ kind: "listing_generation", decode })()).rejects.toMatchObject({ code: "DOCUMENT_INVALID" });
+    expect(decode).not.toHaveBeenCalled();
+  });
+  it.each(["listing_generation", "listing_deep_analysis"])("does not reuse %s approval for auxiliary execution", async kind => {
+    const f = await fixture({ version: 1, kind, records: [] });
+    vi.stubEnv("LISTING_AUXILIARY_APPROVAL_FILE", f.path);
+    vi.stubEnv("LISTING_AUXILIARY_APPROVAL_SHA256", digest(f.body));
+    const decode = vi.fn(records => records);
+    await expect(createSourceApprovalFileLoader({ kind: "listing_auxiliary", decode })()).rejects.toMatchObject({ code: "DOCUMENT_INVALID" });
     expect(decode).not.toHaveBeenCalled();
   });
 });

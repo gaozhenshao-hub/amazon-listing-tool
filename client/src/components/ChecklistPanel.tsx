@@ -21,7 +21,7 @@ export interface ChecklistDimension {
   description: string;
 }
 
-export type CheckListScores = Record<string, { pass: boolean; notes: string }>;
+export type CheckListScores = Record<string, { pass: boolean; notes: string; reason?: string; suggestion?: string; evidenceQuote?: string; suggestedRevision?: string }>;
 
 interface ChecklistPanelProps {
   /** The dimensions to evaluate against */
@@ -235,6 +235,10 @@ export default function ChecklistPanel({
                         {passed ? "\u2713 " : "\u2717 "}{notes}
                       </p>
                     )}
+                    {score?.reason && <p className="mt-1 whitespace-pre-wrap break-words"><strong>依据：</strong>{score.reason}</p>}
+                    {score?.evidenceQuote && <blockquote className="mt-1 whitespace-pre-wrap break-words border-l-2 pl-2">{score.evidenceQuote}</blockquote>}
+                    {score?.suggestion && <p className="mt-1 whitespace-pre-wrap break-words"><strong>修改建议：</strong>{score.suggestion}</p>}
+                    {score?.suggestedRevision && <p className="mt-1 whitespace-pre-wrap break-words"><strong>供人工编辑参考（未自动应用）：</strong>{score.suggestedRevision}</p>}
                   </div>
 
                   {/* Status Icon */}

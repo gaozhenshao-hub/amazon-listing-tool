@@ -36,6 +36,7 @@ const cases = [
   { artifactKey: "ordinary-looking", sourceTable: "other", sourceAiJobRunId: "private-video-job" },
   { artifactKey: "ordinary-looking", sourceTable: "other", sourceAiJobRunId: "private-saihu-job" },
   { artifactKey: "ordinary-looking", sourceTable: "other", sourceAiJobRunId: "private-listing-job" },
+  { artifactKey: "ordinary-looking", sourceTable: "other", sourceAiJobRunId: "private-listing-auxiliary-job" },
 ];
 let target: Record<string, unknown>;
 const calls: Array<{ sql: string; params: unknown[] }> = [];
@@ -49,6 +50,7 @@ function checkPredicate(query: string) {
   expect(query).toContain("private_job.kind IN ('knowledge.qa.v1','video.workflow.configured.v1')");
   expect(query).toContain("private_job.kind='ops.saihu_report_capture.v1'");
   expect(query).toContain("private_job.kind='listing.generation.configured.v1'");
+  expect(query).toContain("private_job.kind='listing.auxiliary.configured.v1'");
   for (const key of PRIVATE_CONFIGURED_BUSINESS_ARTIFACT_KEYS) expect(query).toContain(`'${key}'`);
   if (query.includes("LIMIT")) expect(query.indexOf("private_job.kind")).toBeLessThan(query.indexOf("LIMIT"));
 }
@@ -62,7 +64,7 @@ beforeEach(() => {
     const reserved = String(target.artifactKey).startsWith("knowledge.image_tagging.")
       || PRIVATE_CONFIGURED_BUSINESS_ARTIFACT_KEYS.some(key => key === target.artifactKey)
       || ["kb_images", "kb_image_sets"].includes(String(target.sourceTable)) && target.sourceAiJobRunId != null
-      || ["private-job", "private-outline-job", "private-market-job", "private-knowledge-job", "private-video-job", "private-saihu-job", "private-listing-job"].includes(String(target.sourceAiJobRunId));
+      || ["private-job", "private-outline-job", "private-market-job", "private-knowledge-job", "private-video-job", "private-saihu-job", "private-listing-job", "private-listing-auxiliary-job"].includes(String(target.sourceAiJobRunId));
     return [reserved ? [] : [target]];
   });
   io.getDb.mockResolvedValue({ execute: io.execute });
@@ -127,6 +129,7 @@ describe("private business artifacts cannot be resolved/exported through workspa
       expect(buildLifecycleCandidateSql(jobs, mode, "'2026-01-01'")).toContain("kind NOT IN ('knowledge.qa.v1','video.workflow.configured.v1')");
       expect(buildLifecycleCandidateSql(jobs, mode, "'2026-01-01'")).toContain("kind <> 'ops.saihu_report_capture.v1'");
       expect(buildLifecycleCandidateSql(jobs, mode, "'2026-01-01'")).toContain("kind <> 'listing.generation.configured.v1'");
+      expect(buildLifecycleCandidateSql(jobs, mode, "'2026-01-01'")).toContain("kind <> 'listing.auxiliary.configured.v1'");
       const artifacts = DATA_LIFECYCLE_POLICIES.find(item => item.slug === "ai_artifacts.versions")!;
       checkPredicate(buildLifecycleCandidateSql(artifacts, mode, "'2026-01-01'"));
     }

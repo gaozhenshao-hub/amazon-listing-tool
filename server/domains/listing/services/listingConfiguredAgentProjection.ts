@@ -7,6 +7,7 @@ import { LISTING_CONFIGURED_KIND, LISTING_CONFIGURED_DEFINITIONS, listingConfigu
 import { listingConfiguredRows as rows, listingConfiguredJson as json,
   listingConfiguredWrite as write, listingConfiguredFail as fail, type ListingConfiguredExecutor } from "./listingConfiguredSource";
 import { emperorAgentRuns, emperorAgentCheckpoints, emperorAgentArtifacts } from "../../../../drizzle/schema/ai_os";
+import { PRIVATE_LISTING_AUXILIARY_JOB_KIND } from "../../../repositories/ai_os/dedicatedJobPolicy";
 
 const agentSlug = "listing.full.workflow";
 type Row = Record<string, unknown>;
@@ -64,11 +65,13 @@ export async function withListingLegacyProjectionFence<T>(scope: Scope & { aiJob
     const jobs = await rows(tx, "SELECT id,runId,workspaceId,userId,projectId,kind,module,`procedure` FROM ai_jobs WHERE runId=? AND BINARY runId=BINARY ? LIMIT 2 FOR SHARE", [scope.aiJobRunId, scope.aiJobRunId], 1);
     const job = jobs[0];
     if (!job || !positive(job.id) || job.workspaceId !== (scope.workspaceId ?? null) || job.userId !== scope.userId || job.projectId !== scope.projectId
-      || job.kind === LISTING_CONFIGURED_KIND || job.module !== "listing" || job.procedure !== "listing.startGenerationJob") fail("LEGACY_JOB_SCOPE_INVALID");
-    const records = await rows(tx, "SELECT workspaceId,userId,projectId,artifactKey,sourceTable,sourceRowId,domain,status,isCurrent,version,IF(OCTET_LENGTH(JSON_UNQUOTE(contentJson))<=16777216,JSON_UNQUOTE(contentJson),NULL) AS contentJson,contentHash FROM ai_artifacts WHERE workspaceId <=> ? AND projectId=? AND artifactKey='listing.generation.apply.v1' AND JSON_CONTAINS(JSON_EXTRACT(JSON_UNQUOTE(contentJson),'$.agentProjection.fencedNodeIds'),JSON_QUOTE(?)) ORDER BY id DESC LIMIT 1 FOR SHARE", [scope.workspaceId ?? null, scope.projectId, scope.nodeId], 1);
+      || job.kind === LISTING_CONFIGURED_KIND || job.kind === PRIVATE_LISTING_AUXILIARY_JOB_KIND || job.module !== "listing" || job.procedure !== "listing.startGenerationJob") fail("LEGACY_JOB_SCOPE_INVALID");
+    const records = await rows(tx, "SELECT workspaceId,userId,projectId,artifactKey,sourceTable,sourceRowId,domain,status,isCurrent,version,IF(OCTET_LENGTH(JSON_UNQUOTE(contentJson))<=16777216,JSON_UNQUOTE(contentJson),NULL) AS contentJson,contentHash FROM ai_artifacts WHERE workspaceId <=> ? AND projectId=? AND artifactKey IN ('listing.generation.apply.v1','listing.auxiliary.apply.v1') AND JSON_CONTAINS(JSON_EXTRACT(JSON_UNQUOTE(contentJson),'$.agentProjection.fencedNodeIds'),JSON_QUOTE(?)) ORDER BY id DESC LIMIT 1 FOR SHARE", [scope.workspaceId ?? null, scope.projectId, scope.nodeId], 1);
     if (records.length) {
       const row = records[0], value = object(json(row.contentJson, 16777216)), identity = object(value.identity), projection = object(value.agentProjection);
-      if (row.domain !== "listing" || row.status !== "draft" || row.isCurrent !== 0 || row.version !== 1 || row.sourceTable !== "projects" || row.sourceRowId !== String(scope.projectId)
+      if (!["listing.generation.apply.v1", "listing.auxiliary.apply.v1"].includes(String(row.artifactKey))
+        || row.artifactKey === "listing.auxiliary.apply.v1" && value.operation !== "optimizeBullet"
+        || row.domain !== "listing" || row.status !== "draft" || row.isCurrent !== 0 || row.version !== 1 || row.sourceTable !== "projects" || row.sourceRowId !== String(scope.projectId)
         || row.workspaceId !== (scope.workspaceId ?? null) || row.projectId !== scope.projectId || identity.workspaceId !== row.workspaceId || identity.userId !== row.userId
         || value.version !== 1 || value.projectId !== scope.projectId || hash(value) !== row.contentHash || projection.version !== 1
         || !Array.isArray(projection.fencedNodeIds) || !projection.fencedNodeIds.includes(scope.nodeId) || !Number.isSafeInteger(value.legacyJobFence) || Number(value.legacyJobFence) < 0) fail("AGENT_PROJECTION_FENCE_INVALID");

@@ -44,7 +44,10 @@ function fixture(withRun = true) {
     if (sql.includes("information_schema.TABLES")) return rows(params.filter(name => name !== control.omitTable).map(name => ({ name, engine: "InnoDB" })));
     if (sql.includes("COALESCE(MAX(id),0)")) return rows([{ maximum: Math.max(0, ...state.jobs.filter(row => row.workspaceId === params[0] && row.projectId === params[1] && row.module === "listing" && row.procedure === "listing.startGenerationJob" && row.kind !== params[2]).map(row => Number(row.id))) }]);
     if (sql.includes("FROM ai_jobs WHERE runId")) return rows(state.jobs.filter(row => row.runId === params[0] && row.runId === params[1]));
-    if (sql.includes("FROM ai_artifacts")) return rows(state.fences.filter(row => row.workspaceId === params[0] && row.projectId === params[1] && (JSON.parse(String(row.contentJson)).agentProjection.fencedNodeIds as string[]).includes(String(params[2]))).slice(-1));
+    if (sql.includes("FROM ai_artifacts")) {
+      expect(sql).toContain("artifactKey IN ('listing.generation.apply.v1','listing.auxiliary.apply.v1')");
+      return rows(state.fences.filter(row => row.workspaceId === params[0] && row.projectId === params[1] && (JSON.parse(String(row.contentJson)).agentProjection.fencedNodeIds as string[]).includes(String(params[2]))).slice(-1));
+    }
     if (sql.startsWith("SELECT id,stateVersion FROM emperor_agent_runs")) return rows(state.runs.filter(row => row.id === params[0]).map(row => ({ id: row.id, stateVersion: Number(row.stateVersion) + (control.mismatchRunVersion ? 1 : 0) })));
     const tableSelect = /FROM `([^`]+)` WHERE (.+) ORDER BY/u.exec(sql);
     if (tableSelect) {
@@ -139,6 +142,25 @@ describe("Listing legacy project serialization and late callbacks", () => {
   it.each(["user", "project", "workspace", "configured"])("rejects mismatched %s job before invoking a legacy bridge", async mode => { const f = fixture(), body = vi.fn(); if (mode === "user") f.state.jobs[0].userId = 4; if (mode === "project") f.state.jobs[0].projectId = 9; if (mode === "workspace") f.state.jobs[0].workspaceId = 9; if (mode === "configured") f.state.jobs[0].kind = LISTING_CONFIGURED_KIND;
     await expect(withListingLegacyProjectionFence({ ...scope, aiJobRunId: "SYNTHETIC-legacy-job", nodeId: "G2" }, body, f.db)).rejects.toThrow("LEGACY_JOB_SCOPE_INVALID"); expect(body).not.toHaveBeenCalled(); });
   it("rejects a corrupt configured fence instead of falling through to the callback", async () => { const f = fixture(), body = vi.fn(); fence(f); f.state.fences[0].contentHash = "0".repeat(64); await expect(withListingLegacyProjectionFence({ ...scope, aiJobRunId: "SYNTHETIC-legacy-job", nodeId: "G3" }, body, f.db)).rejects.toThrow("AGENT_PROJECTION_FENCE_INVALID"); expect(body).not.toHaveBeenCalled(); });
+  it("honors the latest auxiliary optimization fence for legacy callbacks, without rejecting a later legacy job", async () => {
+    const f = fixture(), body = vi.fn(async () => "legacy applied"), request = { ...scope, aiJobRunId: "SYNTHETIC-legacy-job", nodeId: "G3" };
+    fence(f); const row = f.state.fences[0], value = { ...JSON.parse(String(row.contentJson)), operation: "optimizeBullet" };
+    Object.assign(row, { artifactKey: "listing.auxiliary.apply.v1", contentJson: canonical(value), contentHash: hash(value) });
+    expect(await withListingLegacyProjectionFence(request, body, f.db)).toBeUndefined(); expect(body).not.toHaveBeenCalled();
+    f.state.jobs[0].id = 41;
+    expect(await withListingLegacyProjectionFence(request, body, f.db)).toBe("legacy applied"); expect(body).toHaveBeenCalledOnce();
+  });
+  it.each(["keywordFabe", "checkBullet", "checkTitle", "checkDescription", "checkSearchTerms", "checkQa", null])("refuses a forged %s auxiliary projection rather than invoking a legacy callback", async operation => {
+    const f = fixture(), body = vi.fn(); fence(f); const row = f.state.fences[0], value = { ...JSON.parse(String(row.contentJson)), operation };
+    Object.assign(row, { artifactKey: "listing.auxiliary.apply.v1", contentJson: canonical(value), contentHash: hash(value) });
+    await expect(withListingLegacyProjectionFence({ ...scope, aiJobRunId: "SYNTHETIC-legacy-job", nodeId: "G3" }, body, f.db)).rejects.toThrow("AGENT_PROJECTION_FENCE_INVALID");
+    expect(body).not.toHaveBeenCalled(); expect(f.transactions).toEqual(["begin", "rollback"]);
+  });
+  it("refuses a dedicated auxiliary job mislabeled as a legacy generation procedure", async () => {
+    const f = fixture(), body = vi.fn(); f.state.jobs[0].kind = "listing.auxiliary.configured.v1";
+    await expect(withListingLegacyProjectionFence({ ...scope, aiJobRunId: "SYNTHETIC-legacy-job", nodeId: "G2" }, body, f.db)).rejects.toThrow("LEGACY_JOB_SCOPE_INVALID");
+    expect(body).not.toHaveBeenCalled();
+  });
 });
 describe("actual SQL configured Agent projection in caller transaction", () => {
   it("never grants configured apply the legacy NULL-project compatibility exception", async () => {

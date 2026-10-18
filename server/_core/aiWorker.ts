@@ -39,6 +39,8 @@ import { startKnowledgeQaWorker } from "../domains/knowledge/knowledgeQaWorker";
 import { startVideoWorkflowWorker } from "../domains/video/videoWorkflowWorker";
 import { startSaihuReportCaptureWorker } from "../domains/ops/saihuReportCaptureWorker";
 import { startListingConfiguredWorker } from "../domains/listing/services/listingConfiguredWorker";
+import { startListingAuxiliaryWorker } from "../domains/listing/services/listingAuxiliaryWorker";
+import { observeDedicatedWorkerDrains } from "./dedicatedWorkerDrain";
 
 const pollMs = Math.min(
   Math.max(Number(process.env.AI_JOB_WORKER_POLL_MS || 5000), 1000),
@@ -105,6 +107,7 @@ async function main() {
   const videoWorkflowWorker = startVideoWorkflowWorker("worker");
   const stopSaihuReportCaptureWorker = startSaihuReportCaptureWorker("worker");
   const listingConfiguredWorker = startListingConfiguredWorker("worker");
+  const listingAuxiliaryWorker = startListingAuxiliaryWorker("worker");
   const handlers = listAiJobHandlerRegistrations()
     .map(handler => handler.id)
     .join(", ");
@@ -141,10 +144,15 @@ async function main() {
     const videoWorkflowDrain = videoWorkflowWorker?.stop(shutdownGraceMs);
     const saihuReportDrain = stopSaihuReportCaptureWorker();
     const listingConfiguredDrain = listingConfiguredWorker?.stop(shutdownGraceMs);
+    const listingAuxiliaryDrain = listingAuxiliaryWorker?.stop(shutdownGraceMs);
+    // Observe every dedicated drain immediately: a timeout may reject while
+    // the draining-status write is still pending. Preserve that rejection for
+    // the awaited aggregate below instead of an unhandled premature exit.
+    const dedicatedDrain = observeDedicatedWorkerDrains([inventoryDrain, conversationDrain, profitDrain, competitorDeepDrain, imageTaggingDrain, imagePlanningDrain, developmentMarketDrain, knowledgeQaDrain, videoWorkflowDrain, saihuReportDrain, listingConfiguredDrain, listingAuxiliaryDrain]);
     console.log(`[AI Worker] received ${signal}, draining in-flight jobs`);
     try {
       await markAiJobWorkerDraining({ signal });
-      const [drainResult] = await Promise.all([waitForAiJobsToDrain(shutdownGraceMs), inventoryDrain, conversationDrain, profitDrain, competitorDeepDrain, imageTaggingDrain, imagePlanningDrain, developmentMarketDrain, knowledgeQaDrain, videoWorkflowDrain, saihuReportDrain, listingConfiguredDrain]);
+      const [drainResult] = await Promise.all([waitForAiJobsToDrain(shutdownGraceMs), dedicatedDrain]);
       if (!drainResult.drained) {
         console.warn(
           `[AI Worker] shutdown grace elapsed; running=${drainResult.runningRunIds.join(",") || "none"} ` +

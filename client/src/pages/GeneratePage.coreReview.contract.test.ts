@@ -30,7 +30,7 @@ describe("Listing human-approved fact/core UI contract", () => {
     expect(hook).toContain("job.userId === owner.userId && job.workspaceId === owner.workspaceId && job.projectId === owner.projectId");
     expect(hook).toContain("data?.projectId === owner.projectId && (data.scopeKey || \"main\") === scopeKey");
     expect(page).toContain("JSON.stringify([actor.userId, actor.workspaceId, actor.role, selectedProjectId])");
-    expect(page).toContain("<ListingConfiguredGenerationProvider key={`${identity}:${token.epoch}`}><GeneratePageContent /></ListingConfiguredGenerationProvider>");
+    expect(page).toContain("<ListingConfiguredGenerationProvider key={`${identity}:${token.epoch}`}><ListingAuxiliaryProvider><GeneratePageContent /></ListingAuxiliaryProvider></ListingConfiguredGenerationProvider>");
     expect(page).toContain("setCoreFactSelection({});");
     expect(page).toContain("lastCoreProjectRef.current = selectedProjectId;");
     expect(page).toContain("setGeneratedBullets({});");

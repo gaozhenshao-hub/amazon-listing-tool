@@ -16,9 +16,17 @@
       "name": "原Listing八类主要操作的保存配置执行",
       "route": "/listing/generate",
       "steps": "沿用朋友外层流程和原五步编辑页，显式选择保存配置执行方式。七方向、单条五点、全部五点、标题、描述、搜索词、QA及整套共八类主要操作先预览完整来源、规则、用户原Skill版本、模型路线及全部调用费用上限，再明确开始；完整候选另行人工应用。七方向保留中英文主题、方向逻辑、FABE+B、关键词、评论痛点与竞品依据及B4排序；本品事实与核心仍由原流程确认。",
-      "boundary": "新方向候选不是已确认核心。单条／全部五点必须绑定已确认核心及事实版本，应用进入原review_required候选账本，不自动确认或替换已锁定五点。新生成方式不调用旧关键词扩写、独立优化、独立自检；这三项尚未完成保存配置适配，须明确切回旧方式且另有费用。图片和新品的其他阶段也不由本入口覆盖。",
+      "boundary": "新方向候选不是已确认核心。单条／全部五点必须绑定已确认核心及事实版本，应用进入原review_required候选账本，不自动确认或替换已锁定五点。关键词扩写、独立优化、独立自检另走下述独立辅助合同，不混入八类主要请求或自动调用旧收费接口。图片和新品的其他阶段也不由本入口覆盖。",
       "recovery": "开始及应用各用独立固定UUID。已知返回的质量问题仅在原有两轮修正和已批准模型路线预算内继续，每次先保存派发回执与已知返回；未知结果不自动换模型或重新计费。应用与原业务草稿、Agent待人审投影、下游失效、私有完整历史和最终回执同事务；旧Job接受与晚回调加项目锁围栏，不改变旧provider协议。已有AgentRun只使用自己的dagSnapshot，不替换成当前模板。旧16位hash仅能核对原存储配对，MySQL JSON重排后无法重建历史字节；新应用另捕获canonical快照，不是历史原字节完整性证明。",
       "sourceFiles": ["client/src/pages/listing/ListingConfiguredGenerationControls.tsx", "server/domains/listing/services/listingConfiguredService.ts", "server/domains/listing/services/listingConfiguredWorker.ts", "server/domains/listing/services/listingConfiguredAgentProjection.ts"]
+    },
+    {
+      "name": "Listing关键词FABE、独立优化与五类完整自检",
+      "route": "/listing/generate",
+      "steps": "原关键词、单条优化、单条及一键全部卖点自检、标题／描述／搜索词／QA自检按钮在新配置方式下只准备完整稿件。辅助面板另行预览原稿、竞品范围、用户Skill版本、模型及整批费用，明确开始后逐目标保存完整报告；人工应用与主要生成有独立UUID。",
+      "boundary": "不改原八操作协议、不隐藏调用旧收费接口。FABE仅回原可编辑候选，不确认事实或核心；优化保留原初始加三次候选及待人审账本。五点15维、标题10维、描述8维、搜索词5维、QA8维的理由、建议、证据和语义关系完整保留。自检不保存或确认正文，不使用旧自由JSON评分写入。搜索词上下文明确使用已保存标题和完整本地五点，不声称读取其他步骤未保存标题候选。",
+      "recovery": "关闭新写后仍按原UUID核对／取消，未知不换模型或新编号计费。自动回填仅使用预览／派发前捕获的完整原稿、选择和锁绑定；修改后再改回也不能复活旧资格。历史或恢复的完整报告保持只读，不重新捕获当前稿件证明旧结果安全。优化应用与原候选、Agent待人审／下游失效及最终回执同事务，旧晚回调同时服从主要及辅助应用围栏。",
+      "sourceFiles": ["shared/listingAuxiliaryWorkflow.ts", "client/src/pages/listing/ListingAuxiliaryControls.tsx", "server/domains/listing/routers/auxiliary.ts", "server/domains/listing/services/listingAuxiliaryRepository.ts", "server/domains/listing/services/listingAuxiliaryRuntimeContract.ts"]
     },
     {
       "name": "原视频六阶段与七种受控生成操作",
@@ -144,10 +152,23 @@
     "VITE_ENABLE_MERGED_LISTING_WORKFLOW": { "enabledValue": "1", "default": "关闭", "purpose": "整合 Listing 外层流程与四栏入口" },
     "VITE_ENABLE_MERGED_READONLY_FEATURES": { "enabledValue": "1", "default": "关闭", "purpose": "整合运营、Agent 库及正式看板入口；名称中的 READONLY 不表示已授予后台写权限" }
   },
+  "supplementOriginalBackendFoundation": {
+    "status": "仅独立后端基础，不是已接通的评论粘贴／属性导入／采集审核功能",
+    "source": "server/domains/listing/supplementSources/service.ts",
+    "contract": "shared/listingSupplementSources.ts",
+    "implemented": "评论／问题／本品属性三类、文件／剪贴板两种完整原件，显式逐条归属、受限解析及失败原因、私有单次对象写入、按原UUID核对／完成／取消、同名多原件分页／经hash核验下载和独立删除回执。规范化manifest与原件状态分离，删除原件或隐藏源记录不级联删除manifest或已导入业务数据。",
+    "limits": "文件20MiB；剪贴板文本150000字节、HTML500000字节、总封装700000字节；至多20000条、完整manifest32MiB。新解析支持受限CSV／XLSX／文本，不支持的xls可保留原件及失败状态，不改变原旧入口。",
+    "versionBoundary": "每个独立source只保存sealed manifest v1；不提供同source重新解析／重归属追加v2接口。修改资料须新source保留旧份；不能把该基础称为完整原件版本编辑历史。",
+    "notConnected": ["未注册RPC或前端入口", "未改旧Snapshot/manualReview v1/deep/main8协议", "未接采集overlay、评论／问题正式修订或competitorReviewRead／researchEvidence／collectedListing实际消费者", "未改本品projectFiles／人工事实归属链", "未登记或执行候选DDL", "没有真实DB／对象存储／权限并发验收"],
+    "flag": "ENABLE_LISTING_SUPPLEMENT_SOURCE_WRITES，精确true才允许新写入且默认关闭；恢复旧UUID仍须fresh权限",
+    "noAiArtifactsOrModel": true,
+    "remainingVertical": "独立原件基础→预览和人工归属→正式业务版本／事实审核→实际研究消费者→完整历史、下载和原件独立删除界面仍须继续；原全部方案范围及发布关口保留。"
+  },
   "backendFlags": {
     "rule": "下列开关均以精确字符串 true 启用，未配置保持关闭；开关不代替权限、schema、来源审批、模型注册或凭据配置。按所试用模块单独启用，不一键全开。",
     "listingDeep": ["ENABLE_COMPETITOR_DEEP_WRITES", "ENABLE_COMPETITOR_DEEP_WORKER"],
     "listingConfiguredGeneration": ["ENABLE_LISTING_CONFIGURED_WRITES", "ENABLE_LISTING_CONFIGURED_WORKER"],
+    "listingConfiguredAuxiliary": ["ENABLE_LISTING_AUXILIARY_WRITES", "ENABLE_LISTING_AUXILIARY_WORKER"],
     "imagePlanning": ["ENABLE_IMAGE_PLANNING_WRITES", "ENABLE_IMAGE_PLANNING_WORKER"],
     "developmentMarket": ["ENABLE_DEVELOPMENT_MARKET_WRITES", "ENABLE_DEVELOPMENT_MARKET_WORKER"],
     "knowledgeQa": ["ENABLE_KNOWLEDGE_QA_WRITES", "ENABLE_KNOWLEDGE_QA_WORKER"],
@@ -181,6 +202,7 @@
       ["PROFIT_ANALYSIS_APPROVAL_FILE", "PROFIT_ANALYSIS_APPROVAL_SHA256"],
       ["LISTING_DEEP_ANALYSIS_APPROVAL_FILE", "LISTING_DEEP_ANALYSIS_APPROVAL_SHA256"],
       ["LISTING_GENERATION_APPROVAL_FILE", "LISTING_GENERATION_APPROVAL_SHA256"],
+      ["LISTING_AUXILIARY_APPROVAL_FILE", "LISTING_AUXILIARY_APPROVAL_SHA256"],
       ["IMAGE_TAGGING_APPROVAL_FILE", "IMAGE_TAGGING_APPROVAL_SHA256"],
       ["IMAGE_PLANNING_APPROVAL_FILE", "IMAGE_PLANNING_APPROVAL_SHA256"],
       ["DEVELOPMENT_MARKET_APPROVAL_FILE", "DEVELOPMENT_MARKET_APPROVAL_SHA256"],
@@ -188,8 +210,9 @@
       ["VIDEO_WORKFLOW_APPROVAL_FILE", "VIDEO_WORKFLOW_APPROVAL_SHA256"]
     ],
     "requirements": "每对同时配置受控部署目录的绝对 JSON 路径与完整文件原始字节 SHA-256。真实记录必须根据目标注册表及来源证据生成并通过现有 schema；不复制示例 hash、不把 Released 或绑定视为批准。文件和真实映射不进入公开仓库、不使用 VITE 前缀、不包含密钥正文。",
-    "examples": ["config/examples/assistant-conversation-approvals.example.json", "config/examples/profit-analysis-approvals.example.json", "config/examples/listing-deep-analysis-approvals.example.json", "config/examples/listing-generation-approvals.example.json", "config/examples/image-tagging-approvals.example.json", "config/examples/image-planning-approvals.example.json", "config/examples/development-market-approvals.example.json", "config/examples/knowledge-qa-approvals.example.json", "config/examples/video-workflow-approvals.example.json"],
+    "examples": ["config/examples/assistant-conversation-approvals.example.json", "config/examples/profit-analysis-approvals.example.json", "config/examples/listing-deep-analysis-approvals.example.json", "config/examples/listing-generation-approvals.example.json", "config/examples/listing-auxiliary-approvals.example.json", "config/examples/image-tagging-approvals.example.json", "config/examples/image-planning-approvals.example.json", "config/examples/development-market-approvals.example.json", "config/examples/knowledge-qa-approvals.example.json", "config/examples/video-workflow-approvals.example.json"],
     "examplesAreNotApproval": true,
+    "listingAuxiliaryContract": {"source":"server/domains/listing/services/listingAuxiliaryRuntimeContract.ts","kind":"listing_auxiliary","origin":"user_listing","operations":"shared/listingAuxiliaryWorkflow.ts","inputContract":"listing_auxiliary_context_v1","outputContract":"listing_auxiliary_original_output_v1","requirements":"七种独立操作、完整未保存稿件和原始报告；关键词standard、优化原quality_first两次已知修正、自检零质量修正。整批预算与逐目标检查点、未知不重费、独立人审应用；不复用主要生成审批。"},
     "listingConfigurationContract": "新四栏任务固定已保存 listing 配置、全部规则与五个启用 Skill 版本／manifest，输入合同 competitor_deep_agent_evidence_v2、输出 competitor_deep_claims_v1，Skill 来源仍为 user_listing。旧 v1 任务继续原配置无关合同与原审批，不临时读取新配置或新增 Agent 权限作为旧恢复前提；v1 批准不自动授权 v2。",
     "listingGenerationContract": {"source":"server/domains/listing/services/listingConfiguredRuntimeContract.ts","kind":"listing_generation","origin":"user_listing","operations":"shared/listingConfiguredWorkflow.ts","inputContract":"listing_generation_context_v1","outputContract":"listing_generation_original_output_v1","requirements":"按八类主要操作映射七个原Skill；保留原质量修正策略、已确认核心和事实、人审与全部已批准模型路线预算。新私有job与artifact使用canonical JSON文本封装，避免MySQL native JSON浮点重写；不是旧任务协议升级或历史数据重写。"},
     "configuredBusinessContracts": { "source": "server/domains/ai_os/services/configuredBusinessRuntimeContract.ts", "imagePlanning": ["images", "image_outline", "image.step2.outline", "image_planning_evidence_v1", "image_planning_outline_v1"], "developmentMarket": ["development", "development_market_overview", "dev.analysis.market_overview", "development_market_evidence_v1", "development_market_analysis_v1"], "origin": "qingdao", "requirements": "两个独立批准文件只覆盖这两个阶段；已保存配置及绑定、完整 Skill／model 快照、来源与保守费用预算在派发前重新校验。配置 modelSlug 为空只继承原获批 Skill 的 modelOverride，不猜模型。不自动审核，不把示例、Released 或绑定当来源批准。" },
@@ -202,6 +225,7 @@
     "admissionManifest": "config/integration/migration-admission.json",
     "items": [
       {"feature":"Listing八类配置生成与原Agent人审投影","runtimeAdmission":"server/domains/listing/services/listingConfiguredSource.ts","source":"server/domains/listing/services/listingConfiguredAgentProjection.ts","note":"复用原项目、事实/核心/候选、listing、ai_jobs/artifacts、审计及四张Agent表；所有原列、引擎、来源与版本逐项准入。新申请、派发、候选和人工应用使用专属私有协议；不能把原303基线CI或旧52/141表准备证明当完整目标功能准入。"},
+      {"feature":"补充多原件后端基础","runtimeAdmission":"server/domains/listing/supplementSources/store.ts","candidate":"config/integration/candidates/listing_supplement_sources.sql","note":"三张独立sources／manifests／operations候选表，未进入中央schema／迁移／bootstrap。运行时完整列、精确索引、InnoDB、触发器及外键能力准入不是实库证明；没有RPC／UI或下游消费者接通。"},
       { "feature": "产品任务", "planner": "scripts/integration/productTaskSchemaPlan.mjs", "candidate": "0316_integration_ops_task_board.sql", "note": "核对 team_tasks 原列、产品关联、完成说明、附件表及审计；不得丢旧任务。" },
       { "feature": "完整成本表", "planner": "scripts/integration/costSheetSchemaPlan.mjs", "candidate": "0302_integration_ops_cost_sheets.sql", "note": "核对精确范围唯一键、完整 JSON、CAS 版本和历史孤儿行。" },
       { "feature": "持久月报", "planner": "scripts/integration/monthlyFinancialSchemaPlan.mjs", "candidate": "0308_integration_monthly_profit_imports.sql", "note": "核对批次、原件私有存储、规范化报告及确认／替换／撤销关联；原件下载另需真实存储权限与 CORS 验收。" },
@@ -275,7 +299,7 @@
     "四栏竞品图片／OCR、问答及长期原评论原件来源仍不完整；现可核验样本不等于市场全量，未接来源不得标完成。",
     "采集的可选审核、驳回和逐图补充源码已接入；真实 MySQL 事务／对象存储／撤权／丢 ACK 与历史版本仍待验收。粘贴评论预览／保存、补充多原件独立长期历史仍未全部实现，不能把未实现部分改写成仅待验收。",
     "打标签 Agent、图片 Step2 大纲、新品 market_overview、知识问答及视频七操作已接入各自配置执行；新四栏任务接入 listing 配置并保留旧 v1 恢复。仍需真实 MySQL、私有对象存储、独立来源审批、模型和 Web／worker 验收。其他 Agent 逐业务 Skill dispatch、其余图片／新品阶段仍未全部实现；不能改写成仅待业务验收。",
-    "Listing八类主要操作已接保存配置执行；关键词扩写、独立优化及独立自检仍未接该合同。完整真实模型质量/费用/原生DB/撤权并发/旧writer协调仍待；不能把这些实现待办改写成仅待业务验收。",
+    "Listing八类主要操作与七种独立辅助操作已分别接保存配置执行；两合同和原任务恢复保持独立。两个Listing专用worker退出超时明确报未排空，不将仍在保存的已付费结果称为stopped。完整真实模型质量/费用/原生DB/撤权并发/旧writer协调仍待；其余图片/新品业务配置接线等实现待办不因此取消。",
     "赛狐C2源码已补原执行器互斥、跨工作区持久公平发现、排队后实际派发及逐页时效重验、完整历史时间窗；官方合同、新候选DDL与性能/真实DB/生产运行仍未验。归档看板capture v1的200限制、overview完整历史字节限制、旧无marker且缺侧车识别边界、月报空店铺表达限制仍保留；不把C2代码称为完整C或正式自动启用。",
     "真实目标数据库结构、旧数据迁移对账、存储权限、Web／worker 联调、真实模型质量及真实费用验收仍交朋友和维护者执行。",
     "页面可达、合成测试通过、开关开启和真实业务全部完成是不同状态；不得用摘要页面或少量示例代替朋友完整流程。",
