@@ -1,5 +1,5 @@
 import { z } from "zod";
-import SHA256 from "crypto-js/sha256";
+import SHA256 from "crypto-js/sha256.js";
 import { normalizeMarketplaceCode } from "./marketplaceIdentity";
 
 export const INVENTORY_PLANNING_WRITE_VERSION = "inventory-planning-write-v1";

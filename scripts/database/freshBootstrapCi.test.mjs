@@ -101,7 +101,15 @@ test("CI cannot substitute an unapproved structure contract or bypass its pre-co
     environment: { FRESH_BOOTSTRAP_DATABASE_URL: ciUrl, RUN_REAL_LLM_TESTS: "0", ALLOW_REAL_NETWORK_IN_TESTS: "0" },
     load: async () => { loaded++; throw Object.assign(new Error("TEST_STOP_BEFORE_DB"), { code: "TEST_STOP_BEFORE_DB" }); },
   };
-  if (bundle.manifest.structureContract === null) {
+  if (bundle.sourceEvidence !== null) {
+    // Non-executable source classification evidence is not approval to reuse a
+    // historical native contract against a different current source vector.
+    assert.equal(bundle.sourceEvidence.approval, "UNAPPROVED");
+    assert.equal(bundle.sourceEvidence.executionPermissionAdded, false);
+    assert.throws(() => loadStructureContract(bundle), error => error.code === "STRUCTURE_CONTRACT_BINDING_MISMATCH");
+    await assert.rejects(main(args, dependencies), error => error.code === "STRUCTURE_CONTRACT_BINDING_MISMATCH");
+    assert.equal(loaded, 0);
+  } else if (bundle.manifest.structureContract === null) {
     await assert.rejects(main(args, dependencies), error => error.code === "FULL_STRUCTURE_CONTRACT_NOT_APPROVED");
     assert.equal(loaded, 0);
   } else {

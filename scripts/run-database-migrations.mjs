@@ -134,6 +134,13 @@ const unreleasedDraftMigrationFiles = new Set([
   "0230_assistant_configurations.sql",
 ]);
 
+// Byte-reviewed feature candidates, not executable migrations. These retain
+// their original candidate-only SQL; classification is not release approval.
+const unreleasedFeatureMigrationFiles = new Map([
+  ["0231_assistant_conversations.sql", "104137a6178b5a69ce5c849249e9c27c5c2691349fe2377ef1753657f5ac85e5"],
+  ["0309_integration_profit_analysis.sql", "1b681081b730fbfea014357fe11d5f4e0d440fcbc8bd29df4adb20088fd0c8c9"],
+]);
+
 // Separate from the general release train: these two additive migrations are
 // never reached implicitly. Development and production use separate explicit
 // flags and each validates its intended database name before taking the lock.
@@ -203,13 +210,24 @@ export function loadMigrationPlan() {
       throw new Error(`Dedicated migration must not be included in the default plan: ${fileName}`);
     }
   }
+  for (const [fileName, checksum] of unreleasedFeatureMigrationFiles) {
+    const filePath = join(drizzleDir, fileName);
+    if (!existsSync(filePath) || createHash("sha256").update(readFileSync(filePath)).digest("hex") !== checksum) {
+      throw new Error(`Unreleased feature migration source changed: ${fileName}`);
+    }
+    if (files.includes(fileName) || dedicatedMigrationFiles.includes(fileName)
+      || imageQualityDevelopmentMigrationFiles.includes(fileName) || imageQualityProductionMigrationFiles.includes(fileName)) {
+      throw new Error(`Unreleased feature migration must not be executable: ${fileName}`);
+    }
+  }
   const unmanagedFiles = readdirSync(drizzleDir)
     .filter((fileName) => fileName.endsWith(".sql"))
     .filter((fileName) => !files.includes(fileName)
       && !retiredMigrationFiles.has(fileName)
       && !dedicatedMigrationFiles.includes(fileName)
       && !legacyManuallyReleasedMigrationFiles.has(fileName)
-      && !unreleasedDraftMigrationFiles.has(fileName));
+      && !unreleasedDraftMigrationFiles.has(fileName)
+      && !unreleasedFeatureMigrationFiles.has(fileName));
   if (unmanagedFiles.length > 0) {
     throw new Error(`Migration files are not registered in the release plan: ${unmanagedFiles.sort().join(", ")}`);
   }

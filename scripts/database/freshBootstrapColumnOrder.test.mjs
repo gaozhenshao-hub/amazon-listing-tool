@@ -7,7 +7,7 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { exportSourceProjection } from "../integration/sourceProjection.mjs";
 import { REPOSITORY_ROOT, loadFreshBootstrapPlan, sha256 } from "./freshBootstrapPlan.mjs";
-import { splitPublicStatements, splitDefinitionList } from "./freshBootstrapReference.mjs";
+import { splitPublicStatements, splitDefinitionList, loadFreshReferenceInputs } from "./freshBootstrapReference.mjs";
 import { deriveHistoricalColumnOrder, replayPublicColumnOrder } from "./freshBootstrapColumnOrder.mjs";
 
 const splitters = { splitPublicStatements, splitDefinitionList };
@@ -158,11 +158,14 @@ test("production entry refuses missing table sets and plan drift before replay",
   assert.throws(() => deriveHistoricalColumnOrder({ ...splitters, bundle: invalid, expectedColumns }), code("COLUMN_ORDER_PLAN_CHANGED"));
 });
 
-test("real current-source exact-name gate matches all 5477 business fields after explicit fresh repairs, and refuses any missing or extra field", async () => {
+test("reviewed current-source historical base matches all 5477 business fields without adopting dedicated tables, and refuses any missing or extra field", async () => {
   const folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "amazon-public-ordinals-test.")));
   const projectionDirectory = path.join(folder, "projection");
   await exportSourceProjection({ repoRoot: REPOSITORY_ROOT, outputDirectory: projectionDirectory });
-  const bundle = loadFreshBootstrapPlan(), projection = fs.readFileSync(path.join(projectionDirectory, "source-projection.sql"), "utf8");
+  const reviewed = loadFreshReferenceInputs({ projectionDirectory });
+  const bundle = reviewed.input.bundle, projection = reviewed.input.projectionSql;
+  assert.equal(reviewed.proof.approvedForExecution, false);
+  assert.equal(reviewed.proof.currentBootstrapSourcesSha256, loadFreshBootstrapPlan().sourcesSha256);
   const offsite = JSON.parse(fs.readFileSync(path.join(REPOSITORY_ROOT, "drizzle/bootstrap/0005_offsite_empty_table_alignment.sources.json"), "utf8"));
   assert.equal(sha256(projection), offsite.projection.sqlSha256);
   for (const table of offsite.tables) {

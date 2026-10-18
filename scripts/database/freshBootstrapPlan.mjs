@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { parseLiteralRegistry } from "../integration/migrationInventory.mjs";
 import { selectFreshLineage } from "../integration/freshHistoricalLineage.mjs";
 import { DDL_CATALOG, validateCatalog as validatePhysicalCatalog, validateTableDdl } from "../integration/exportProductionDdl.mjs";
+import { bindFreshRunnerEvidence } from "./freshBootstrapSourceEvidence.mjs";
 
 export const REPOSITORY_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 export const BOOTSTRAP_VERSION = "amazon-fresh-bootstrap/1";
@@ -61,7 +62,15 @@ export function loadOfflineGeneralPlan(root = REPOSITORY_ROOT) {
 }
 
 export function loadFreshBootstrapPlan(root = REPOSITORY_ROOT) {
-  const manifest = JSON.parse(readPublicFile(root, MANIFEST_PATH));
+  let manifest = JSON.parse(readPublicFile(root, MANIFEST_PATH));
+  let sourceEvidence = null;
+  const runnerSource = readPublicFile(root, "scripts/run-database-migrations.mjs");
+  if (manifest.sources?.find(item => item.path === "scripts/run-database-migrations.mjs")?.sha256 !== sha256(runnerSource)) {
+    // Keep the historical manifest/approval file intact. Only a byte-proved,
+    // non-executable draft classification may produce current source metadata.
+    const rebound = bindFreshRunnerEvidence(manifest, runnerSource);
+    manifest = rebound.manifest; sourceEvidence = rebound.proof;
+  }
   insist(manifest.version === BOOTSTRAP_VERSION && manifest.executionScope === "local-or-ci-only", "BOOTSTRAP_MANIFEST_VERSION_INVALID");
   insist(Array.isArray(manifest.sources) && manifest.sources.length > 168, "BOOTSTRAP_SOURCE_PINS_MISSING");
   const pins = new Map();
@@ -89,7 +98,7 @@ export function loadFreshBootstrapPlan(root = REPOSITORY_ROOT) {
     && new Set(manifest.requiredBusinessTables).size === 302 && manifest.requiredBusinessTables.every(safeName)
     && !manifest.requiredBusinessTables.includes("app_schema_migrations"), "BOOTSTRAP_TABLE_INVENTORY_INVALID");
   return { version: BOOTSTRAP_VERSION, plan, planSha256, sourcesSha256: fingerprint(manifest.sources),
-    manifest, excluded: selected.excluded, root };
+    manifest, excluded: selected.excluded, root, sourceEvidence };
 }
 
 const exactKeys = (object, keys) => object && !Array.isArray(object)

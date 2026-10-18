@@ -11,6 +11,7 @@ import { validateReplayDdl } from "../integration/productionStructureRehearsal.m
 import { createHistoricalPlatformProfile, validateLinuxPluginRows } from "../integration/historicalPlatformProfile.mjs";
 import { connectionOptions, schemaNames, validateOutput, safeError, sqlOperationText } from "../integration/mysqlRehearsal.mjs";
 import { deriveHistoricalColumnOrder } from "./freshBootstrapColumnOrder.mjs";
+import { buildFreshHistoricalReferenceInput, FRESH_DRAFT_SQL_PINS, FRESH_PARTITION_PINS } from "./freshBootstrapSourceEvidence.mjs";
 
 export const REFERENCE_VERSION = "amazon-fresh-public-reference/1";
 export const SOURCE_MANIFEST_PATH = "scripts/database/freshBootstrapReference.sources.json";
@@ -615,7 +616,7 @@ export function assembleReferencePlan(input) {
       tables: draft.derivation.tables.map(item => ({ ...item, sources: mergeSources(item.sources, historical.get(item.name)?.sources ?? []) })) } };
 }
 
-export function loadFreshReferencePlan({ root = REPOSITORY_ROOT, projectionDirectory, io = fs } = {}) {
+export function loadFreshReferenceInputs({ root = REPOSITORY_ROOT, projectionDirectory, io = fs } = {}) {
   const bundle = loadFreshBootstrapPlan(root), manifestText = readPublicFile(root, SOURCE_MANIFEST_PATH);
   insist(sha256(manifestText) === SOURCE_MANIFEST_SHA256, "REFERENCE_SOURCE_MANIFEST_CHANGED");
   const config = JSON.parse(manifestText);
@@ -632,11 +633,18 @@ export function loadFreshReferencePlan({ root = REPOSITORY_ROOT, projectionDirec
     } finally { io.closeSync(fd); }
   };
   const metadataText = read("source-projection.metadata.json", 1024 * 1024);
-  insist(sha256(metadataText) === config.projection.metadataSha256, "REFERENCE_PROJECTION_METADATA_CHANGED");
   const projectionMetadata = JSON.parse(metadataText), projectionSql = read("source-projection.sql", 8 * 1024 * 1024);
-  const sourceTexts = Object.fromEntries([...config.sources, ...projectionMetadata.sourceFiles].map(item => [item.path, readPublicFile(root, item.path)]));
-  const plan = assembleReferencePlan({ bundle, config, projectionSql, projectionMetadata, sourceTexts, indexInventory });
-  return { bundle, plan };
+  const sourceTexts = Object.fromEntries([...config.sources, ...projectionMetadata.sourceFiles,
+    ...Object.keys(FRESH_DRAFT_SQL_PINS).map(path => ({ path }))].map(item => [item.path, readPublicFile(root, item.path)]));
+  const partitionFiles = Object.fromEntries(Object.keys(FRESH_PARTITION_PINS).map(name => [name,
+    readPublicFile(root, `scripts/integration/fixtures/assistant-source-projection-partition-20261015/${name}`)]));
+  return buildFreshHistoricalReferenceInput({ bundle, config, projectionSql, projectionMetadata, sourceTexts, indexInventory, partitionFiles });
+}
+
+export function loadFreshReferencePlan(options = {}) {
+  const { input, proof } = loadFreshReferenceInputs(options);
+  const plan = assembleReferencePlan(input);
+  return { bundle: input.bundle, plan, sourceEvidence: proof };
 }
 
 export function validateReferenceCatalog(catalog, plan) {
@@ -704,11 +712,12 @@ export async function runPublicSourceReference(options, { io = fs, environment =
   const profile = createHistoricalPlatformProfile(options, { io, runtime }); profile.validateEnvironment(environment, argv);
   const paths = profile.validatePaths(options), output = validateOutput(options.output, io), receiptOutput = validateOutput(options.receiptOutput, io);
   insist(output && receiptOutput && output !== receiptOutput, "REFERENCE_DISTINCT_NEW_OUTPUTS_REQUIRED");
-  const { bundle, plan } = loadFreshReferencePlan({ projectionDirectory: options.projectionDirectory, io }), schema = schemaNames().synthetic;
+  const { bundle, plan, sourceEvidence } = loadFreshReferencePlan({ projectionDirectory: options.projectionDirectory, io }), schema = schemaNames().synthetic;
   const receipt = { formatVersion: 1, mode: REFERENCE_VERSION, status: "running", stage: "connect", startedAt: new Date().toISOString(), schema,
     sourceManifestSha256: SOURCE_MANIFEST_SHA256, statementPlanSha256: plan.statementPlanSha256, bootstrapPlanSha256: bundle.planSha256,
     productionDdlUsed: false, candidateDatabaseUsed: false, bootstrapRunnerInvoked: false, seedsExecuted: false, ledgerRowsWritten: false,
-    structureContractApproved: false, publishedContractPath: null, candidateFile: output, statementsSucceeded: 0, platform: profile.runtime };
+    structureContractApproved: false, sourceEvidence, historicalBaseReconstruction: true,
+    publishedContractPath: null, candidateFile: output, statementsSucceeded: 0, platform: profile.runtime };
   const connections = [], controller = new AbortController(); let candidate;
   const active = () => insist(!controller.signal.aborted, "REFERENCE_DEADLINE_EXCEEDED");
   const timer = timers.setTimeout(() => { controller.abort(); receipt.deadlineExceeded = true;
@@ -752,7 +761,7 @@ export async function runPublicSourceReference(options, { io = fs, environment =
     candidate = constructReferenceContract({ bundle, plan, catalog, platform });
     // Detect source changes during DB work, without deriving expectations from it.
     const rechecked = loadFreshReferencePlan({ projectionDirectory: options.projectionDirectory, io });
-    insist(fingerprint(rechecked.plan) === fingerprint(plan), "REFERENCE_SOURCES_CHANGED_DURING_CAPTURE");
+    insist(fingerprint(rechecked.plan) === fingerprint(plan) && fingerprint(rechecked.sourceEvidence) === fingerprint(sourceEvidence), "REFERENCE_SOURCES_CHANGED_DURING_CAPTURE");
     active(); receipt.catalogSha256 = candidate.catalogSha256; receipt.tableCount = catalog.tables.length;
     receipt.columnCount = catalog.columns.length; receipt.indexParts = catalog.indexes.length; receipt.foreignKeys = catalog.foreignKeys.length;
     receipt.zeroRowTables = plan.tableNames.length; receipt.status = "completed"; receipt.stage = "completed";

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import SHA256 from "crypto-js/sha256";
+import SHA256 from "crypto-js/sha256.js";
 import { normalizeMarketplaceCode } from "./marketplaceIdentity";
 import { MonthlyFinancialBatchMetadataSchema, MonthlyFinancialReadRowSchema, monthlyFinancialJsonBytes, type MonthlyFinancialReadRow } from "./monthlyFinancialRead";
 import { OperationsBoardEditionOwnershipSchema, validateOperationsBoardEditionOwnershipResult } from "./operationsBoardEditionOwnership";

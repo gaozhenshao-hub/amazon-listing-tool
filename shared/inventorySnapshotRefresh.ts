@@ -1,5 +1,5 @@
 import { z } from "zod";
-import SHA256 from "crypto-js/sha256";
+import SHA256 from "crypto-js/sha256.js";
 import { inventoryCanonical, parseInventorySnapshot, type InventorySnapshotRecord } from "./inventorySnapshotRead";
 
 const id = z.number().int().positive().max(2_147_483_647);

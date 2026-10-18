@@ -1,5 +1,5 @@
 import { z } from "zod";
-import SHA256 from "crypto-js/sha256";
+import SHA256 from "crypto-js/sha256.js";
 import { PRODUCT_TASK_STATUSES, ProductTaskProductIdentitySchema } from "./productTaskRead";
 
 export const PRODUCT_TASK_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;

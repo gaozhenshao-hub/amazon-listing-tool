@@ -13,7 +13,7 @@ import { deriveHistoricalColumnOrder, replayPublicColumnOrder } from "./freshBoo
 import { REFERENCE_VERSION, SOURCE_MANIFEST_PATH, SOURCE_MANIFEST_SHA256, INDEX_MANIFEST_PATH, INDEX_MANIFEST_SHA256, splitPublicStatements,
   splitDefinitionList, parseIndexColumns, referenceIndexDefinitions, referencePrimaryKeys,
   describeReferenceStatement, extractLedgerCreate, deriveCommentOverlay, deriveColumnAddition, assembleReferenceDraft, assembleReferencePlan, reorderCreateColumns,
-  tracePublicColumnDeclarations, deriveCurrentTimestampDefault, loadFreshReferencePlan, validateReferenceCatalog,
+  tracePublicColumnDeclarations, deriveCurrentTimestampDefault, loadFreshReferenceInputs, loadFreshReferencePlan, validateReferenceCatalog,
   constructReferenceContract, parseArguments, runPublicSourceReference, main } from "./freshBootstrapReference.mjs";
 
 const repo = fileURLToPath(new URL("../../", import.meta.url)).replace(/\/$/, ""), clone = value => structuredClone(value);
@@ -28,10 +28,11 @@ before(async () => {
   // Recreate the reviewed artifact from public declarations. No dependency on
   // a prior agent's /tmp path and no fixture catalog presented as a real oracle.
   await exportSourceProjection({ repoRoot: repo, outputDirectory: projectionDirectory });
-  const config = JSON.parse(readPublicFile(repo, SOURCE_MANIFEST_PATH)), bundle = loadFreshBootstrapPlan();
-  const projectionMetadata = JSON.parse(fs.readFileSync(path.join(projectionDirectory, "source-projection.metadata.json"), "utf8"));
-  input = { bundle, config, indexInventory: JSON.parse(readPublicFile(repo, INDEX_MANIFEST_PATH)), projectionMetadata, projectionSql: fs.readFileSync(path.join(projectionDirectory, "source-projection.sql"), "utf8"),
-    sourceTexts: Object.fromEntries([...config.sources, ...projectionMetadata.sourceFiles].map(item => [item.path, readPublicFile(repo, item.path)])) };
+  const reviewed = loadFreshReferenceInputs({ projectionDirectory });
+  input = reviewed.input;
+  assert.equal(reviewed.proof.approvedForExecution, false);
+  assert.equal(reviewed.proof.currentBootstrapSourcesSha256, loadFreshBootstrapPlan().sourcesSha256);
+  assert.notEqual(input.bundle.sourcesSha256, reviewed.proof.currentBootstrapSourcesSha256);
   fullPlan = assembleReferencePlan(input);
 });
 
@@ -44,8 +45,10 @@ test("module import is inert with production-looking credentials and never impor
   assert.doesNotMatch(source, /import.*run-database-migrations|dotenv|loadPrivateExport|production-ddl\.json|applyMigrations\(/);
 });
 
-test("complete independent public plan binds projection, every source, 303 exact tables and all replacement exclusions", () => {
+test("complete historical base binds current-source reconstruction evidence, 303 exact tables and all replacement exclusions", () => {
   const result = loadFreshReferencePlan({ projectionDirectory }); assert.deepEqual(result.plan, fullPlan);
+  assert.equal(result.sourceEvidence.kind, "current_sources_to_unchanged_historical_base");
+  assert.equal(result.sourceEvidence.approvedForExecution, false);
   assert.equal(fullPlan.version, REFERENCE_VERSION); assert.equal(fullPlan.tableNames.length, 303); assert.equal(fullPlan.statements.length, 785);
   assert.equal(fullPlan.statements.filter(item => item.kind === "create-table").length, 303);
   assert.equal(fullPlan.statementPlanSha256, fingerprint(fullPlan.statements)); assert.equal(fullPlan.discardedProjectionDdl.length, 45);
@@ -424,6 +427,9 @@ test("mock reference executes only reviewed DDL in a fresh isolated schema, capt
   assert.equal(receipt.status, "completed", JSON.stringify(receipt)); assert.equal(mock.count(), fullPlan.statements.length);
   assert.equal(receipt.tableCount, 303); assert.equal(receipt.columnCount, 5487); assert.equal(receipt.foreignKeys, 2);
   assert.equal(receipt.zeroRowTables, 303); assert.equal(receipt.structureContractApproved, false); assert.equal(receipt.publishedContractPath, null);
+  assert.equal(receipt.historicalBaseReconstruction, true);
+  assert.equal(receipt.sourceEvidence.approvedForExecution, false);
+  assert.equal(receipt.sourceEvidence.currentBootstrapSourcesSha256, loadFreshBootstrapPlan().sourcesSha256);
   assert.equal(receipt.bootstrapRunnerInvoked, false); assert.equal(receipt.ledgerRowsWritten, false); assert.equal(receipt.seedsExecuted, false);
   assert.equal(mock.writes.size, 2); assert.equal(receipt.candidateFileSha256, sha256(mock.writes.get(mock.value.output)));
   assert.equal(mock.calls.some(call => /^\s*(?:INSERT|UPDATE|DELETE|REPLACE|DROP|USE)\b/i.test(call.sql)), false);

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import SHA256 from "crypto-js/sha256";
+import SHA256 from "crypto-js/sha256.js";
 import {
   INVENTORY_READ_LIMITS, InventorySourcesSchema, inventoryJsonBytes,
   mapInventorySources, type InventoryRaw, type InventorySources, type InventoryJson,
