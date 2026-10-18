@@ -86,6 +86,7 @@ import { productCostsReadOnlyRouter } from "./routers/productCostsReadOnly";
 import { monthlyFinancialReadRouter } from "./routers/monthlyFinancialRead";
 import { inventorySnapshotReadRouter } from "./routers/inventorySnapshotRead";
 import { profitBoardReadRouter } from "./routers/profitBoardRead";
+import { productBoardReadRouter } from "./routers/productBoardRead";
 import { lingxingSyncRouter } from "./routers/lingxingSync";
 import { operatorMappingRouter } from "./routers/operatorMapping";
 import { inventoryOwnerAssignmentsRouter } from "./routers/inventoryOwnerAssignments";
@@ -204,6 +205,7 @@ export const appRouter = router({
   monthlyFinancialRead: monthlyFinancialReadRouter,
   inventorySnapshotRead: inventorySnapshotReadRouter,
   profitBoardRead: profitBoardReadRouter,
+  productBoardRead: productBoardReadRouter,
   lingxingSync: lingxingSyncRouter,
   operatorMapping: operatorMappingRouter,
   inventoryOwnerAssignments: inventoryOwnerAssignmentsRouter,

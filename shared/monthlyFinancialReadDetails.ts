@@ -6,18 +6,22 @@ export const MONTHLY_FINANCIAL_AVERAGE_FIELDS = ["purchaseCost", "freight", "fba
 export type MonthlyFinancialJson = string | number | boolean | null | MonthlyFinancialJson[] | { [key: string]: MonthlyFinancialJson };
 export type MonthlyFinancialJsonObject = { [key: string]: MonthlyFinancialJson };
 export const MONTHLY_FINANCIAL_LIMITS = { payloadBytes: 8 * 1024 * 1024, rows: 10_000, jsonDepth: 16, jsonNodes: 200_000, stringLength: 32768, resultBytes: 12 * 1024 * 1024, scanBatches: 200 } as const;
+export type MonthlyFinancialJsonLimits = { jsonDepth: number; jsonNodes: number; stringLength: number };
 
-export function assertMonthlyFinancialJson(value: unknown): asserts value is MonthlyFinancialJson {
+/** Optional limits are for internal derived response envelopes only. Raw
+ * financial payloads keep the unchanged default limits through their parser. */
+export function assertMonthlyFinancialJson(value: unknown, limits: MonthlyFinancialJsonLimits = MONTHLY_FINANCIAL_LIMITS): asserts value is MonthlyFinancialJson {
+  if (![limits.jsonDepth, limits.jsonNodes, limits.stringLength].every(value => Number.isSafeInteger(value) && value > 0)) throw new Error("INVALID_JSON_LIMITS");
   const queue: Array<{ value: unknown; depth: number; exit?: boolean }> = [{ value, depth: 0 }];
   const ancestors = new WeakSet<object>();
   let count = 0;
   while (queue.length) {
     const item = queue.pop()!;
     if (item.exit) { ancestors.delete(item.value as object); continue; }
-    if (++count > MONTHLY_FINANCIAL_LIMITS.jsonNodes || item.depth > MONTHLY_FINANCIAL_LIMITS.jsonDepth) throw new Error("JSON_LIMIT");
+    if (++count > limits.jsonNodes || item.depth > limits.jsonDepth) throw new Error("JSON_LIMIT");
     if (item.value === null || typeof item.value === "boolean") continue;
     if (typeof item.value === "number") { if (!Number.isFinite(item.value)) throw new Error("NONFINITE_JSON"); continue; }
-    if (typeof item.value === "string") { if (item.value.length > MONTHLY_FINANCIAL_LIMITS.stringLength) throw new Error("STRING_LIMIT"); continue; }
+    if (typeof item.value === "string") { if (item.value.length > limits.stringLength) throw new Error("STRING_LIMIT"); continue; }
     if (typeof item.value !== "object" || ancestors.has(item.value)) throw new Error("INVALID_JSON");
     ancestors.add(item.value);
     queue.push({ ...item, exit: true });
@@ -29,13 +33,13 @@ export function assertMonthlyFinancialJson(value: unknown): asserts value is Mon
     if (Array.isArray(item.value) && (Object.keys(item.value).length !== item.value.length || Object.keys(item.value).some((key, index) => key !== String(index)))) throw new Error("INVALID_JSON_ARRAY");
     for (const [key, descriptor] of Object.entries(descriptors)) if (!(Array.isArray(item.value) && key === "length") && (!descriptor.enumerable || !("value" in descriptor))) throw new Error("INVALID_JSON_PROPERTY");
     for (const [key, child] of Object.entries(item.value)) {
-      if (key.length > MONTHLY_FINANCIAL_LIMITS.stringLength) throw new Error("KEY_LIMIT");
+      if (key.length > limits.stringLength) throw new Error("KEY_LIMIT");
       queue.push({ value: child, depth: item.depth + 1 });
     }
   }
 }
-export function monthlyFinancialJsonBytes(value: unknown) {
-  assertMonthlyFinancialJson(value);
+export function monthlyFinancialJsonBytes(value: unknown, limits: MonthlyFinancialJsonLimits = MONTHLY_FINANCIAL_LIMITS) {
+  assertMonthlyFinancialJson(value, limits);
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
 export function parseMonthlyFinancialJson(value: unknown, maxBytes: number = MONTHLY_FINANCIAL_LIMITS.payloadBytes, wireMaxBytes: number = maxBytes): MonthlyFinancialJson {

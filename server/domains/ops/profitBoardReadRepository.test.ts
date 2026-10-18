@@ -46,6 +46,12 @@ beforeEach(() => {
   failures = {}; candidateOverride = null; detailOverride = null; assignmentOverride = null; mappingOverride = null; afterCandidates = null; queries = []; commits = 0; rollbacks = 0;
 });
 describe("profit board same-transaction fixed six-month source set", () => {
+  it("preserves the original profit-specific driver guard after extracting monthly source helpers", async () => {
+    execute.mockResolvedValueOnce([[null] as unknown as Row[], []]);
+    await expect(repo.get(context(), input)).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: "PROFIT_BOARD_READ_RESPONSE_INVALID" });
+    expect(commits).toBe(0); expect(rollbacks).toBe(1);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
   it("only reads monthly sources with locked actor/policy, no editions/refresh/enrichment or writes", async () => {
     const result = await repo.get(context(), input); expect(result.status).toBe("ready"); expect(Object.keys(repo)).toEqual(["get"]);
     expect(result.months).toEqual(["2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"]); expect(result.products[0].current.profit).toBe(12);

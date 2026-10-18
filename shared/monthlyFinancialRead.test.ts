@@ -328,6 +328,22 @@ describe("latest completed whole-scope snapshot before parent/actor filtering", 
 });
 
 describe("bounded, lossless JSON and output self-consistency", () => {
+  it("keeps the raw 200k-node budget unchanged when an internal derived envelope explicitly uses a larger budget", () => {
+    const value = Array(MONTHLY_FINANCIAL_LIMITS.jsonNodes).fill(0), responseLimits = { jsonNodes: 1_000_000, jsonDepth: 24, stringLength: MONTHLY_FINANCIAL_LIMITS.stringLength };
+    expect(() => monthlyFinancialJsonBytes(value)).toThrow("JSON_LIMIT");
+    expect(monthlyFinancialJsonBytes(value, responseLimits)).toBe(400001);
+    expect(() => parseMonthlyFinancialJson(value)).toThrow("JSON_LIMIT");
+    expect(MONTHLY_FINANCIAL_LIMITS).toMatchObject({ jsonNodes: 200000, jsonDepth: 16, stringLength: 32768 });
+  });
+  it.each([0, -1, 1.5, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1])("rejects invalid internal JSON boundary %s without disabling checks", value => {
+    for (const field of ["jsonNodes", "jsonDepth", "stringLength"] as const) expect(() => monthlyFinancialJsonBytes({ valid: true }, { ...MONTHLY_FINANCIAL_LIMITS, [field]: value })).toThrow("INVALID_JSON_LIMITS");
+  });
+  it("keeps strict JSON rejection when internal response limits are explicitly supplied", () => {
+    const responseLimits = { jsonNodes: 1_000_000, jsonDepth: 24, stringLength: MONTHLY_FINANCIAL_LIMITS.stringLength }, cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+    const accessor = Object.defineProperty({}, "value", { enumerable: true, get() { throw new Error("must not invoke getter"); } });
+    for (const value of [cycle, accessor, Array(2), Object.assign([1], { custom: true }), { [Symbol("hidden")]: 1 }, { value: undefined }, { value: Infinity }, { value: 1n }]) expect(() => monthlyFinancialJsonBytes(value, responseLimits)).toThrow();
+  });
   it("accepts repeated references but rejects cycles", () => {
     const reused = { keep: [1, 2] }; expect(parseMonthlyFinancialJson({ a: reused, b: reused })).toEqual({ a: reused, b: reused });
     const cycle: Record<string, unknown> = {}; cycle.self = cycle;

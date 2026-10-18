@@ -1,0 +1,242 @@
+{
+  "schema": "integration-review/v1",
+  "batch": "friend-all-history-product-board-readonly",
+  "baseline": "62102f1488ac7e8292d299958b0de0f1e824e895",
+  "friendSource": "383b69e6bc9d8b3d2f1d380422390ea200541628",
+  "humanDecision": {
+    "operationsAdditions": "friend-primary",
+    "lingxing": "Qingdao-primary",
+    "generalP5Skills": "Qingdao-primary",
+    "listingSkills": "user-primary",
+    "listingWorkflowAndSelection": "friend-primary; select saved competitors and authorized product profile, preview and generate; upload supplemental not mandatory"
+  },
+  "localOnly": true,
+  "scope": "Friend-style product board month/three-calendar-month/all-visible-saved-history metrics, four independent sections, inline complete child and original-source drilldown. This is a current-source readonly projection, not an archived edition or complete product module.",
+  "preserve": [
+    "existing Lingxing routes and data contracts",
+    "prior cost/monthly/inventory/profit/Listing/Agent integrations",
+    "P0-P6/K01-K10/T01-T28/image62/master27/supplements12"
+  ],
+  "changes": [
+    "Add productBoardRead.get and product panel to the existing default-off authenticated readonly operations overview, retaining scope identity remounts. No database migration, writes, sync or model calls.",
+    "Extract shared bounded source/authorization helpers without changing profit selector/get behavior. Preserve PRODUCT versus PROFIT unexpected-error prefixes with explicit repository tests.",
+    "Select complete month/store/canonical-country source winners before owner/parent/search filtering, over all saved visible history rather than six months. Bounded 200 candidates/32MiB reject incomplete scans instead of returning partial rankings.",
+    "Use current numeric scoped authorization independently for historical product months; hide unauthorized old-history dates/global scan counts/source metadata. Task access does not grant financial access.",
+    "Keep child-derived, reported-parent, independent unallocated and currency partitions separate; unknown currency stays per-original-row. Preserve historical parents and unknown/null/zero distinctions; use ratio-of-sums and signed fees.",
+    "Show month, three-calendar-month and all-visible-history coverage separately per parent/child; missing periods never become zero. Derived profit+purchase+freight is labeled not actual cash receipts.",
+    "Compute high-return threshold quantity>=50 and returns/quantity>8%, USD-only monthly profit>1000, per-currency loss top10 and all groups before four independent pages. Any matching child retains the full parent.",
+    "Friend-style inline row/metric expand-collapse, independent section states, all children and raw sources paginated, negative profit/proxy red and proxy-negative rows tinted, locally scrolling 560px tables and sticky thead.",
+    "Strict DTO replays original/page/calculation/calendar/source refs and scope. UI abort/sequence/source-fingerprint guards prevent stale cross-scope or mixed-source pages.",
+    "Repair real-browser failure for valid derived 34-month/22-child response: product result gets separate 1m-node/24-depth validation budget under unchanged12MiB byte cap; raw monthly validation retains200k-node/16-depth defaults and every original raw row stays validated."
+  ],
+  "pending": [
+    "Actual MySQL JSON/projection/locks/current revocation/resource limits and authenticated business browser acceptance remain; synthetic SQL and browser fixtures do not prove these.",
+    "Operator/numeric buddy filters, latest-complete-month default and refresh, frozen snapshots/history/current switch, archive-versus-restatement policy, monthly15th scheduling and formal product/profit/tasks business entry remain.",
+    "Product task readonly/write flows and attachment handling remain; task authorization must not inherit ops_manager full-financial bypass or parent-only cross-shop matching.",
+    "Financial writes/CAS/replace/revoke consistency, sync, AI and P4-P6 release gates remain. Completed saved sources do not attest complete whole-shop/month collection; older parser losses cannot be reconstructed.",
+    "P1/native303 remains unapproved/incomplete; actual Qingdao/User Skill approvals and runtime prerequisites remain. This local batch is not production deployment or full goal completion."
+  ],
+  "review": {
+    "root": "Read restored exact private friend source and ran seven pure original regressions: mixed shop/currency sums, unknown->0, workspace-wide coverage falsely applied to a product, historical parent rewritten, CAD admitted by USD threshold, reported/unallocated originals lost, and task same-parent cross-store/country match. Verified real wide/narrow browser and fixed a JSON-budget blank-screen finding.",
+    "independent": "Shared author independently checked original source and server contract; backend reviewer compared extracted profit selector/get literally and covered error namespaces; UI reviewer checked original friend row-expansion flow and implemented retained pagination/negative/sticky behavior. Author tests distinguished from independent review.",
+    "protectedManifestSha256": "23c7665c328f8f1fb367c66e893f81e65014244d1f4d77002076964f72e72d12",
+    "baselineTupleSha256": "b5a228f5b51180bc6f903384d146997cda316f77da807e7abcb20ce7b4faee40"
+  },
+  "verification": {
+    "focusedUnion": {
+      "session": 58554,
+      "exitCode": 0,
+      "files": 9,
+      "tests": 779,
+      "breakdown": {
+        "productSharedAndRouter": 142,
+        "monthlySharedAndRouter": 214,
+        "productRepository": 70,
+        "profitSharedAndRouter": 97,
+        "profitRepository": 73,
+        "productUi": 85,
+        "profitUi": 61,
+        "overview": 13,
+        "overviewModel": 24
+      },
+      "note": "Import-collected suites counted once in this union; earlier552-run and author356/85 runs are not additive."
+    },
+    "scopedLint": {
+      "session": 96796,
+      "files": 16,
+      "exitCode": 0
+    },
+    "configuredTypes": {
+      "status": "passed-full-configured-candidate-after-source-freeze",
+      "session": 42187,
+      "exitCode": 0,
+      "command": "node_modules/.bin/tsc --noEmit --incremental false",
+      "directory": "/Users/gavin/.cache/amazon-product-candidate-20261018.glQnAd",
+      "baseline": "62102f1488ac7e8292d299958b0de0f1e824e895",
+      "verifiedBaselineBlobs": 2545,
+      "verifiedSourceOverlays": 16,
+      "archiveSha256": "5d3e0cc8697363aff48931d924d6dd47c87d3a8a14b307044dd925475ecc55b4",
+      "sourceProof": "outputs/product-candidate-source-proof-20261018.json",
+      "fullTsconfigUnchanged": true,
+      "note": "Full git baseline archive verified per blob plus all16 frozen overlays. Same configured include/exclude and recovered dependencies. Only unrelated untracked migration tools excluded; no configured source/test exclusions changed. Compiler naturally exited0.",
+      "priorWorkingDirectoryAttempts": [
+        {
+          "session": 60303,
+          "pid": 76479,
+          "exitCode": 143,
+          "reason": "Stopped after source changed; not accepted."
+        },
+        {
+          "session": 67148,
+          "pid": 77063,
+          "exitCode": 143,
+          "reason": "Explicitly stopped after complete verified candidate was prepared; filesystem reads were slow but progressing. Not accepted as a pass."
+        }
+      ]
+    },
+    "protectedGuard": {
+      "outputChunk": "0c9651",
+      "exitCode": 0,
+      "files": 106,
+      "dependencies": 2,
+      "reviewedRecords": 25
+    },
+    "diffCheck": {
+      "files": 16,
+      "exitCode": 0
+    },
+    "actualSyntheticBrowser": {
+      "component": "actual monthly parser + product builder + pure product presentation, not authenticated application or actual database",
+      "verified": [
+        "34 calendar months Jan2024-Oct2026 and15 parent groups/1224 originals; initial four-page union14 groups1190 rows renders. History page21-34 reachable.",
+        "High-profit P00 inline metrics monthQty1100/sales110000/profit24200/margin22%; purchase-2200/freight-440/proxy21560; quarterQty3300/returns330/profit72600; totalQty37400/returns3740/profit822800 and34/34 coverage.",
+        "22-child pager21-22 and37 actual source-next clicks reach741-748/748 with last batch133 row21 and disabled next. Inline collapse removes details.",
+        "Literal img/onerror text remains text; no img nodes. MissingSep parent shows2/3 and33/34 while childAugmissing remains explicit; no missing-as-zero.",
+        "Scoped fixture hides pre-Aug2026 invisible history/global scan counts; presentation only, not real permission acceptance. Unknown profit stays unknown and true zero is0.00 USD.",
+        "Mixed currency produces19 separate groups; USD ranking excludesCAD. SearchC0-21 retains22 children and748 sources of the full parent.",
+        "Incomplete history returns invalid/history_incomplete without partial board; missing table is missing not zero.",
+        "Desktop1280: document1265/scroll1265; mobile390: document375/scroll375. Tables locally overflow at1190->2400 desktop and300->2400 mobile. Max-height560px; thead sticky offset1px after scroll. Negative values computed red.",
+        "Final console warnings/errors empty, viewport reset, temporary tab closed."
+      ],
+      "screenshots": [
+        "outputs/product-readonly-browser-20261018/desktop.png",
+        "outputs/product-readonly-browser-20261018/mobile.png"
+      ],
+      "server": {
+        "session": 45514,
+        "pid": 77026,
+        "url": "http://127.0.0.1:5173/",
+        "explicitlyStopped": true,
+        "exitCode": 143,
+        "observedRequests": 26,
+        "allObservedMethods": "GET"
+      },
+      "viewportReset": true,
+      "tabClosed": true,
+      "authenticatedApp": false,
+      "database": false
+    },
+    "implementationFinding": {
+      "responseBytes": 10350358,
+      "jsonNodes": 370014,
+      "depth": 9,
+      "originalRawNodeLimit": 200000,
+      "derivedNodeLimit": 1000000,
+      "byteLimit": 12582912,
+      "rawChecksUnchanged": true,
+      "fixtureNotTruncated": true,
+      "validationNotBypassed": true
+    },
+    "paidModelCalls": 0,
+    "productionDeployed": false
+  },
+  "defaults": {
+    "localOnly": true,
+    "newMigration": false,
+    "writeEnabled": false,
+    "fullP1Complete": false,
+    "fullObjectiveComplete": false
+  },
+  "sourceFiles": [
+    {
+      "path": "client/src/pages/ops/OperationsReadOnlyOverview.component.test.tsx",
+      "bytes": 13890,
+      "sha256": "5e9a7418b5304a946ed80c4656bec1036b53695e4259c7fd91d7b364be0da82f"
+    },
+    {
+      "path": "client/src/pages/ops/OperationsReadOnlyOverview.tsx",
+      "bytes": 22110,
+      "sha256": "33b517015a31060911d520d8c7a55331a30cb2cb2b37d2256be92695e11450e8"
+    },
+    {
+      "path": "client/src/pages/ops/ProductBoardReadOnly.component.test.tsx",
+      "bytes": 32978,
+      "sha256": "0a2a5ea7744ef664c46f2442811e87d3acdc743e1536d5364fd778a32dc9600d"
+    },
+    {
+      "path": "client/src/pages/ops/ProductBoardReadOnly.tsx",
+      "bytes": 26416,
+      "sha256": "a11207b8cd5fca383d868970597a9e229b84c63c2bfd4dcf95a25e8a8ebe681f"
+    },
+    {
+      "path": "server/domains/ops/monthlyBoardReadCore.ts",
+      "bytes": 12305,
+      "sha256": "a99b7949673ac50bd36e00efaeba64067ceeb7d378516baf83b91a9bbb3787b3"
+    },
+    {
+      "path": "server/domains/ops/productBoardReadRepository.test.ts",
+      "bytes": 24585,
+      "sha256": "a3dff76299f188d468769028d47aafd1d88f79ce70102b8cb7e9f9aedeb128fc"
+    },
+    {
+      "path": "server/domains/ops/productBoardReadRepository.ts",
+      "bytes": 8579,
+      "sha256": "795e8f535d099e0541cc9267b15fae0648de9e82e2c374fc339dd30d00092081"
+    },
+    {
+      "path": "server/domains/ops/profitBoardReadRepository.test.ts",
+      "bytes": 25525,
+      "sha256": "324872adae9a728190e111ce8a4c9a50356db3e69c48f33036dd382573824ce2"
+    },
+    {
+      "path": "server/domains/ops/profitBoardReadRepository.ts",
+      "bytes": 8477,
+      "sha256": "e5a43a62ed4bf9da7b1151a8942e5434291082422521ff406aaeea45f90265a1"
+    },
+    {
+      "path": "server/routers.ts",
+      "bytes": 10211,
+      "sha256": "640a2252fa01bc7379d72936ab3f650e1d031bf7f6880ff83d3587c45674059a"
+    },
+    {
+      "path": "server/routers/productBoardRead.test.ts",
+      "bytes": 2777,
+      "sha256": "6b155a900601cd4ad355dad23dca83a92a9391b49f630304bad8dab69f75fd35"
+    },
+    {
+      "path": "server/routers/productBoardRead.ts",
+      "bytes": 409,
+      "sha256": "d031c04176fba904a30f8266c1f6a4747b2d1b5a5704ea5a2ba1f07dde390120"
+    },
+    {
+      "path": "shared/monthlyFinancialRead.test.ts",
+      "bytes": 38437,
+      "sha256": "d436c17dca1d589c40aca4a511703cc7069d7c76d13a31020e27ef7dc7f89a2a"
+    },
+    {
+      "path": "shared/monthlyFinancialReadDetails.ts",
+      "bytes": 26923,
+      "sha256": "cc55b949b1d7abd0258a76a4fbb4b95b2b6ae5e1f53892414f747f4c34d4ae80"
+    },
+    {
+      "path": "shared/productBoardRead.test.ts",
+      "bytes": 37375,
+      "sha256": "3d2d2f65a5c6d2e0582ff16d75857efa553a0713d7fd52a1b8de6c06aa76af15"
+    },
+    {
+      "path": "shared/productBoardRead.ts",
+      "bytes": 37431,
+      "sha256": "3281278d6bce350f517e9b642da2cd8390902b239c682599e81010b6b03d7e7b"
+    }
+  ]
+}
