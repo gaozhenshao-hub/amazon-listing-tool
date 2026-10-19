@@ -1,0 +1,48 @@
+{
+  "schema": "integration-reviewed-change/v1",
+  "base": "a39bdab91c505e7842d3e3db3087a13aa47be419",
+  "decision": "reviewed optional source-only RPC/UI and exact-boolean transport opt-in, not production or business adoption acceptance",
+  "protectedChanges": [
+    {
+      "path": "client/src/main.tsx",
+      "previous": {
+        "gitBlobSha1": "d7b491e4f3d2504e2d1e0cf993c3d260896e6b84",
+        "sha256": "9ee3aa89c3aadae59f8c2ae1988423a68848dd5f44b8c269d0265ba96af8df96"
+      },
+      "reviewed": {
+        "gitBlobSha1": "dd8ece9dad5497593360bdb500959626c02b7357",
+        "sha256": "cb5bf54292a74be40c0ce9d3b2ce5f6de39f57dffe7ea9dd823b0ce8407dfb8e"
+      }
+    },
+    {
+      "path": "client/src/lib/requestTimeout.ts",
+      "previous": {
+        "gitBlobSha1": "320c5b949b365d087e4b0a1424460fbfd4d5d752",
+        "sha256": "f296bb02a36cbc6544b3a6d13d1e4a5825abb21c56c064dd0c79d9606b2ba76b"
+      },
+      "reviewed": {
+        "gitBlobSha1": "e688f5dd84cc6c8b537a626ff9821c2aaa711223",
+        "sha256": "e93b5738b123a3268f337649999ce9443876d882e223d180eb4cdc8f53df125d"
+      }
+    }
+  ],
+  "review": [
+    "Preserve all106 original baseline tuples, both dependency projections and all earlier review references. Only main transport and exact source upload/read timeout tuples gain reviewed pairs; original requestTimeout tests remain byte-for-byte unchanged.",
+    "Five exact supplement preview/save/complete/download/manifest paths use the declared180-second original-byte budget. Small status requests retain30seconds; query text cannot spoof a source path. No global request timeout extension or automatic retry is introduced.",
+    "The exact existing url/transformer/fetch options object is shared by httpLink and httpBatchLink. Only context.skipBatch === true opts into one independent request. Ordinary simultaneous requests retain batching, credentials, timeout, cache, auth redirects and retry policy. This does not fix or change existing fetch signal overriding behavior.",
+    "Source preview and save use POST and direct client calls without React automatic mutation retries. Each at-most20MiB original is independently submitted. The server still enforces per-input bounds and the existing50MiB total HTTP body limit, not a global arbitrary multi-item batch ban.",
+    "Register eleven protected methods only at listing.supplementSources. Fresh actual ctx identity/workspace and repository actor/member/project/file policies apply; owner shortcuts or client scopes do not grant authority. Strict method/identity/full-input hash and safe metadata echo bind complete original base64/text/html without repeating originals in preview/save responses.",
+    "Independent review found no blocking authorization, recovery or disclosure issue. Fixed public errors do not expose driver/provider messages, keys or URLs. Download authorizes before and after I/O and verifies original size/SHA at server and client before a Blob is delivered.",
+    "DataFiles adds an optional collapsed source-only panel after the selected profile source. Existing profile selection, upload, questions and facts remain. Metadata-only original UUIDs survive refresh; auth/project scope changes hide stale state and abort local waits. Unknown operations use the same check/complete/cancel, including with new writes off, never automatic PUT/DELETE or new UUID retries.",
+    "Original history is keyset-paginated, full manifest records remain separately paginated and deletes explicitly preserve normalized manifests and imported business data. Cross-device delete recovery is not claimed because history does not expose the original pending delete operation ID.",
+    "Three candidate tables remain unregistered and default-off. This batch does not implement formal review/question/attribute adoption, multi-original corpus/evidence v2, source reparse/reassignment v2, selected-analysis question consumption, projectFiles/facts projection or actual research/generation consumer changes. No old Snapshot/manualReview/deep/main8 protocol, hashes or old pending recovery are mutated."
+  ],
+  "separateGates": [
+    "Actual target schema/ledger/history reconciliation, minimal DDL admission, private storage, authenticated permissions, concurrency and production deployment.",
+    "Explicit formal adoption with durable UUID/CAS, deterministic duplicate/conflict handling and same-transaction invalidation, followed by complete versioned consumer integration and human review.",
+    "All original P0-P6/K01-K10/T01-T28/image62/master27/supplement12 and thirteen release gates remain; full business acceptance is handed to the friend, not silently marked passed."
+  ],
+  "productionDeployed": false,
+  "fullP1Complete": false,
+  "fullObjectiveComplete": false
+}

@@ -188,6 +188,11 @@
       "baseline": {
         "gitBlobSha1": "320c5b949b365d087e4b0a1424460fbfd4d5d752",
         "sha256": "f296bb02a36cbc6544b3a6d13d1e4a5825abb21c56c064dd0c79d9606b2ba76b"
+      },
+      "reviewed": {
+        "gitBlobSha1": "e688f5dd84cc6c8b537a626ff9821c2aaa711223",
+        "sha256": "e93b5738b123a3268f337649999ce9443876d882e223d180eb4cdc8f53df125d",
+        "reviewRef": "config/integration/reviews/20261019-supplement-source-rpc-ui.json"
       }
     },
     {
@@ -222,6 +227,11 @@
       "baseline": {
         "gitBlobSha1": "d7b491e4f3d2504e2d1e0cf993c3d260896e6b84",
         "sha256": "9ee3aa89c3aadae59f8c2ae1988423a68848dd5f44b8c269d0265ba96af8df96"
+      },
+      "reviewed": {
+        "gitBlobSha1": "dd8ece9dad5497593360bdb500959626c02b7357",
+        "sha256": "cb5bf54292a74be40c0ce9d3b2ce5f6de39f57dffe7ea9dd823b0ce8407dfb8e",
+        "reviewRef": "config/integration/reviews/20261019-supplement-source-rpc-ui.json"
       }
     },
     {

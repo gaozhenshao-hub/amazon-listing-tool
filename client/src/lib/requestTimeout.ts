@@ -2,6 +2,11 @@ const FILE_IMPORT_PROCEDURES = new Set([
   "analysis.previewReviewFile",
   "analysis.previewSellerSpriteFile",
   "analysis.startImportJob",
+  "listing.supplementSources.preview",
+  "listing.supplementSources.save",
+  "listing.supplementSources.complete",
+  "listing.supplementSources.download",
+  "listing.supplementSources.manifest",
 ]);
 
 /** Uploads include base64 file data and need a larger budget than ordinary reads. */

@@ -42,6 +42,7 @@ import { shouldShowProjectFileError } from "./dataFiles/displayState";
 import { getRufusIdentityEntries } from "./dataFiles/rufusIdentity";
 import { getRufusUsageScenarios } from "./dataFiles/rufusUsageScenarios";
 import ProductProfileAttributeSource from "./listing/ProductProfileAttributeSource";
+import SupplementSourcesPanel from "./listing/SupplementSourcesPanel";
 
 type FileType = "product_attributes";
 
@@ -1226,6 +1227,15 @@ function BuyerQuestionsCard({ projectId }: { projectId: number }) {
   );
 }
 
+function OptionalSupplementSources({ projectId }: { projectId: number }) {
+  const [opened, setOpened] = useState(false);
+  return <details className="min-w-0 rounded border p-4" onToggle={event => { if (event.currentTarget.open) setOpened(true); }}>
+    <summary className="cursor-pointer font-medium">可选：补充评论、问题或属性原件（独立保存与恢复）</summary>
+    <p className="my-2 text-sm text-muted-foreground">不影响上方本品画像选择与现有导入。规范化记录尚未接入正式导入或事实确认。</p>
+    {opened && <SupplementSourcesPanel projectId={projectId} />}
+  </details>;
+}
+
 export default function DataFilesPage() {
   const { selectedProjectId } = useProject();
 
@@ -1285,6 +1295,8 @@ export default function DataFilesPage() {
           </Card>
 
           <ProductProfileAttributeSource projectId={selectedProjectId} />
+
+          <OptionalSupplementSources key={`supplement:${selectedProjectId}`} projectId={selectedProjectId} />
 
           {/* Optional supplemental upload; profile selection is the primary source entry. */}
           <div className="grid grid-cols-1 gap-4">

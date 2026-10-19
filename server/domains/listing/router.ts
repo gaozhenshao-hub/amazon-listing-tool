@@ -12,8 +12,10 @@ import { listingCoreReviewProcedures } from "./routers/cores";
 import { listingCandidateReviewProcedures } from "./routers/candidates";
 import { listingConfiguredProcedures } from "./routers/configured";
 import { listingAuxiliaryProcedures } from "./routers/auxiliary";
+import { listingSupplementSourcesRouter } from "./supplementSources/router";
 
 export const listingRouter = router({
+  supplementSources: listingSupplementSourcesRouter,
   ...listingConfiguredProcedures,
   ...listingAuxiliaryProcedures,
   ...listingReadProcedures,

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({ selectedProjectId: 7 as number | null, update:
 vi.mock("@/contexts/ProjectContext", () => ({ useProject: () => ({ selectedProjectId: mocks.selectedProjectId }) }));
 vi.mock("@/components/ProjectSelector", () => ({ default: () => <div>Project selector</div> }));
 vi.mock("./listing/ProductProfileAttributeSource", () => ({ default: ({ projectId }: { projectId: number }) => <div data-testid="profile-source">Profile source for {projectId}</div> }));
+vi.mock("./listing/SupplementSourcesPanel", () => ({ default: ({ projectId }: { projectId: number }) => <div data-testid="supplement-source">Supplement source for {projectId}</div> }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/trpc", () => {
   const noMutation = { useMutation: () => ({ mutate: mocks.noop, isPending: false }) };
@@ -89,5 +90,13 @@ describe("DataFiles profile-source refresh and dirty drafts", () => {
     expect(view.container.querySelector("#product-attributes-source-history")).toBeInTheDocument();
     expect(screen.getByText(/已有属性分析，不代表事实已确认/)).toBeInTheDocument();
     mocks.selectedProjectId = null; view.rerender(<DataFilesPage />); expect(screen.queryByTestId("profile-source")).not.toBeInTheDocument();
+  });
+
+  it("mounts supplementary originals only after explicitly opening the optional project entry", () => {
+    const view = render(<DataFilesPage />); expect(screen.queryByTestId("supplement-source")).not.toBeInTheDocument();
+    const details = screen.getByText(/可选：补充评论、问题或属性原件/).closest("details")!;
+    details.open = true; fireEvent(details, new Event("toggle")); expect(screen.getByTestId("supplement-source")).toHaveTextContent("Supplement source for 7");
+    expect(screen.getByTestId("profile-source")).toBeInTheDocument(); expect(mocks.noop).not.toHaveBeenCalled();
+    mocks.selectedProjectId = 8; view.rerender(<DataFilesPage />); expect(screen.queryByTestId("supplement-source")).not.toBeInTheDocument();
   });
 });

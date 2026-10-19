@@ -13,6 +13,14 @@
   },
   "trialEntrances": [
     {
+      "name": "可选补充原件、逐条归属预览及原编号恢复",
+      "route": "/listing/data-files",
+      "steps": "在原资料页的本品画像来源下展开可选补充入口，先明确读取权限和开关；每个文件独立预览，可补充评论原文及HTML，逐条选择归属并确认只保存原件。完整历史按时间和编号翻页，同名文件分别保留；原件下载核对大小和SHA，删除需明确目标及保留范围。",
+      "boundary": "只保存原件与sealed manifest v1，不等于正式导入评论／问题、已确认属性或已参与研究生成。每次一个20MiB以内原件；XLS等不支持的解析可保留失败状态，不冒称解析成功。三张候选表尚未注册执行；页面可达不证明目标存储就绪。现有画像选择、旧上传及问题库不替换。",
+      "recovery": "新写入默认关闭；本机只保存作用域、原UUID和hash等元数据，不保存原件内容。未知只核对／完成／取消同一请求，关闭新写入仍可恢复且重验权限。页面停止等待不代表取消服务器操作；不自动重传或重新删除。跨设备未决删除恢复不由当前历史合同提供。",
+      "sourceFiles": ["client/src/pages/listing/SupplementSourcesPanel.tsx", "server/domains/listing/supplementSources/router.ts", "server/domains/listing/supplementSources/transportService.ts"]
+    },
+    {
       "name": "原Listing八类主要操作的保存配置执行",
       "route": "/listing/generate",
       "steps": "沿用朋友外层流程和原五步编辑页，显式选择保存配置执行方式。七方向、单条五点、全部五点、标题、描述、搜索词、QA及整套共八类主要操作先预览完整来源、规则、用户原Skill版本、模型路线及全部调用费用上限，再明确开始；完整候选另行人工应用。七方向保留中英文主题、方向逻辑、FABE+B、关键词、评论痛点与竞品依据及B4排序；本品事实与核心仍由原流程确认。",
@@ -153,16 +161,17 @@
     "VITE_ENABLE_MERGED_READONLY_FEATURES": { "enabledValue": "1", "default": "关闭", "purpose": "整合运营、Agent 库及正式看板入口；名称中的 READONLY 不表示已授予后台写权限" }
   },
   "supplementOriginalBackendFoundation": {
-    "status": "仅独立后端基础，不是已接通的评论粘贴／属性导入／采集审核功能",
+    "status": "独立原件基础与可选RPC／页面已接线，正式业务采纳与研究消费者尚未接通",
     "source": "server/domains/listing/supplementSources/service.ts",
     "contract": "shared/listingSupplementSources.ts",
     "implemented": "评论／问题／本品属性三类、文件／剪贴板两种完整原件，显式逐条归属、受限解析及失败原因、私有单次对象写入、按原UUID核对／完成／取消、同名多原件分页／经hash核验下载和独立删除回执。规范化manifest与原件状态分离，删除原件或隐藏源记录不级联删除manifest或已导入业务数据。",
     "limits": "文件20MiB；剪贴板文本150000字节、HTML500000字节、总封装700000字节；至多20000条、完整manifest32MiB。新解析支持受限CSV／XLSX／文本，不支持的xls可保留原件及失败状态，不改变原旧入口。",
     "versionBoundary": "每个独立source只保存sealed manifest v1；不提供同source重新解析／重归属追加v2接口。修改资料须新source保留旧份；不能把该基础称为完整原件版本编辑历史。",
-    "notConnected": ["未注册RPC或前端入口", "未改旧Snapshot/manualReview v1/deep/main8协议", "未接采集overlay、评论／问题正式修订或competitorReviewRead／researchEvidence／collectedListing实际消费者", "未改本品projectFiles／人工事实归属链", "未登记或执行候选DDL", "没有真实DB／对象存储／权限并发验收"],
+    "rpcAndUi": "listing.supplementSources下11项受保护RPC与原DataFiles可选折叠入口已接线，完整输入hash、严格作用域回显、原UUID恢复、历史和经hash核验下载／删除确认；preview/save逐原件POST且客户端显式不批量。服务端仍是每输入限制和50MiB总body，不是全局单item强制。",
+    "notConnected": ["未改旧Snapshot/manualReview v1/deep/main8协议", "未接采集overlay、评论／问题正式修订或competitorReviewRead／researchEvidence／collectedListing实际消费者", "未改本品projectFiles／人工事实归属链", "未实现同source重新解析／重归属v2或跨设备未决删除metadata读取", "未登记或执行候选DDL", "没有真实DB／对象存储／权限并发验收"],
     "flag": "ENABLE_LISTING_SUPPLEMENT_SOURCE_WRITES，精确true才允许新写入且默认关闭；恢复旧UUID仍须fresh权限",
     "noAiArtifactsOrModel": true,
-    "remainingVertical": "独立原件基础→预览和人工归属→正式业务版本／事实审核→实际研究消费者→完整历史、下载和原件独立删除界面仍须继续；原全部方案范围及发布关口保留。"
+    "remainingVertical": "独立原件→RPC／预览人工归属／历史下载删除界面已源码接通；正式业务采纳与完整多原件证据版本→事实审核→实际研究和规划消费者仍须实现，随后真实环境验收；原全部方案范围及发布关口保留。"
   },
   "backendFlags": {
     "rule": "下列开关均以精确字符串 true 启用，未配置保持关闭；开关不代替权限、schema、来源审批、模型注册或凭据配置。按所试用模块单独启用，不一键全开。",
@@ -225,7 +234,7 @@
     "admissionManifest": "config/integration/migration-admission.json",
     "items": [
       {"feature":"Listing八类配置生成与原Agent人审投影","runtimeAdmission":"server/domains/listing/services/listingConfiguredSource.ts","source":"server/domains/listing/services/listingConfiguredAgentProjection.ts","note":"复用原项目、事实/核心/候选、listing、ai_jobs/artifacts、审计及四张Agent表；所有原列、引擎、来源与版本逐项准入。新申请、派发、候选和人工应用使用专属私有协议；不能把原303基线CI或旧52/141表准备证明当完整目标功能准入。"},
-      {"feature":"补充多原件后端基础","runtimeAdmission":"server/domains/listing/supplementSources/store.ts","candidate":"config/integration/candidates/listing_supplement_sources.sql","note":"三张独立sources／manifests／operations候选表，未进入中央schema／迁移／bootstrap。运行时完整列、精确索引、InnoDB、触发器及外键能力准入不是实库证明；没有RPC／UI或下游消费者接通。"},
+      {"feature":"补充多原件与可选页面","runtimeAdmission":"server/domains/listing/supplementSources/store.ts","candidate":"config/integration/candidates/listing_supplement_sources.sql","note":"三张独立sources／manifests／operations候选表，未进入中央schema／迁移／bootstrap。运行时完整列、精确索引、InnoDB、触发器及外键能力准入不是实库证明；RPC／source-only UI已接线，正式业务采纳及下游消费者未接通。"},
       { "feature": "产品任务", "planner": "scripts/integration/productTaskSchemaPlan.mjs", "candidate": "0316_integration_ops_task_board.sql", "note": "核对 team_tasks 原列、产品关联、完成说明、附件表及审计；不得丢旧任务。" },
       { "feature": "完整成本表", "planner": "scripts/integration/costSheetSchemaPlan.mjs", "candidate": "0302_integration_ops_cost_sheets.sql", "note": "核对精确范围唯一键、完整 JSON、CAS 版本和历史孤儿行。" },
       { "feature": "持久月报", "planner": "scripts/integration/monthlyFinancialSchemaPlan.mjs", "candidate": "0308_integration_monthly_profit_imports.sql", "note": "核对批次、原件私有存储、规范化报告及确认／替换／撤销关联；原件下载另需真实存储权限与 CORS 验收。" },
@@ -297,7 +306,7 @@
   "stillOpen": [
     "四栏正式采纳的受控源码已接入，但仍需朋友在真实权限、数据库及 Web／worker 环境验收；不以合成协议测试或前端可见推定正式启用。",
     "四栏竞品图片／OCR、问答及长期原评论原件来源仍不完整；现可核验样本不等于市场全量，未接来源不得标完成。",
-    "采集的可选审核、驳回和逐图补充源码已接入；真实 MySQL 事务／对象存储／撤权／丢 ACK 与历史版本仍待验收。粘贴评论预览／保存、补充多原件独立长期历史仍未全部实现，不能把未实现部分改写成仅待验收。",
+    "采集的可选审核、驳回和逐图补充源码已接入；真实 MySQL 事务／对象存储／撤权／丢 ACK 与历史版本仍待验收。补充原件的评论粘贴预览／保存、独立历史／下载／删除及RPC／页面已接线；同source v2编辑、正式三类业务采纳及真实研究／规划消费仍未实现，不能改写成仅待验收。",
     "打标签 Agent、图片 Step2 大纲、新品 market_overview、知识问答及视频七操作已接入各自配置执行；新四栏任务接入 listing 配置并保留旧 v1 恢复。仍需真实 MySQL、私有对象存储、独立来源审批、模型和 Web／worker 验收。其他 Agent 逐业务 Skill dispatch、其余图片／新品阶段仍未全部实现；不能改写成仅待业务验收。",
     "Listing八类主要操作与七种独立辅助操作已分别接保存配置执行；两合同和原任务恢复保持独立。两个Listing专用worker退出超时明确报未排空，不将仍在保存的已付费结果称为stopped。完整真实模型质量/费用/原生DB/撤权并发/旧writer协调仍待；其余图片/新品业务配置接线等实现待办不因此取消。",
     "赛狐C2源码已补原执行器互斥、跨工作区持久公平发现、排队后实际派发及逐页时效重验、完整历史时间窗；官方合同、新候选DDL与性能/真实DB/生产运行仍未验。归档看板capture v1的200限制、overview完整历史字节限制、旧无marker且缺侧车识别边界、月报空店铺表达限制仍保留；不把C2代码称为完整C或正式自动启用。",

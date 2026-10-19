@@ -1,7 +1,8 @@
 import { trpc } from "@/lib/trpc";
 import { APP_ERROR_CODES } from "@shared/_core/errors";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, TRPCClientError } from "@trpc/client";
+import { httpBatchLink, httpLink, TRPCClientError } from "@trpc/client";
+import type { AppRouter } from "../../server/routers";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
@@ -11,6 +12,7 @@ import { getLoginUrl } from "./const";
 import "./index.css";
 import { ClientTransportError, isAuthRequiredError, isRetryableAppError } from "./lib/appError";
 import { getRequestTimeoutMs } from "./lib/requestTimeout";
+import { singleRequestOptInLink } from "./lib/singleRequestOptInLink";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -109,9 +111,7 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
-const trpcClient = trpc.createClient({
-  links: [
-    httpBatchLink({
+const httpOptions = {
       url: "/api/trpc",
       transformer: superjson,
       async fetch(input, init) {
@@ -145,8 +145,10 @@ const trpcClient = trpc.createClient({
           throw err;
         }
       },
-    }),
-  ],
+} satisfies Parameters<typeof httpBatchLink<AppRouter>>[0];
+
+const trpcClient = trpc.createClient({
+  links: [singleRequestOptInLink(httpLink<AppRouter>(httpOptions), httpBatchLink<AppRouter>(httpOptions))],
 });
 
 function installAnalytics() {
