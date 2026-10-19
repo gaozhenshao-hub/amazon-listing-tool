@@ -7,9 +7,7 @@ import { listingEvaluationProcedures } from "./routers/evaluation";
 import { listingVersionProcedures } from "./routers/versions";
 import { listingJobControlProcedures } from "./routers/jobControl";
 import { listingPlanningProcedures } from "./routers/planning";
-import { listingFactReviewProcedures } from "./routers/facts";
-import { listingCoreReviewProcedures } from "./routers/cores";
-import { listingCandidateReviewProcedures } from "./routers/candidates";
+import { listingReviewProcedures } from "./routers/review";
 import { listingConfiguredProcedures } from "./routers/configured";
 import { listingAuxiliaryProcedures } from "./routers/auxiliary";
 import { listingSupplementSourcesRouter } from "./supplementSources/router";
@@ -26,7 +24,5 @@ export const listingRouter = router({
   ...listingVersionProcedures,
   ...listingJobControlProcedures,
   ...listingPlanningProcedures,
-  ...listingFactReviewProcedures,
-  ...listingCoreReviewProcedures,
-  ...listingCandidateReviewProcedures,
+  ...listingReviewProcedures,
 });
