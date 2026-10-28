@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MySqlDialect } from "drizzle-orm/mysql-core";
 vi.mock("../../repositories/dbClient", () => ({ requireDb: vi.fn() }));
 import {
   expireKnowledgeCache,
+  sweepKnowledgeCache,
   retainedCacheReferenceRows,
   lockAcquisitionCache,
   ownsCacheReference,
@@ -44,6 +45,7 @@ const db = {
   }),
 };
 beforeEach(() => {
+  vi.stubEnv("KNOWLEDGE_CACHE_CLEANUP_ENABLED", undefined);
   queries = [];
   protectedUse = false;
   job = {
@@ -55,7 +57,14 @@ beforeEach(() => {
     completed_at: new Date("2026-10-20T12:00:00Z"),
   };
 });
+afterEach(() => vi.unstubAllEnvs());
 describe("cache expiry preserves evidence and business references", () => {
+  it("does not read or expire historical caches when deployment cleanup is disabled", async () => {
+    vi.stubEnv("KNOWLEDGE_CACHE_CLEANUP_ENABLED", "false");
+    expect(await expireKnowledgeCache(db, 2, 4, [])).toEqual({ expired: false, reason: "disabled" });
+    expect(await sweepKnowledgeCache(new AbortController().signal)).toEqual({ checked: 0, expired: 0, disabled: true });
+    expect(queries).toEqual([]);
+  });
   it("only queues objects in the exact job's workspace and snapshot/run paths", () => {
     expect(ownsCacheReference("storage://local/acquisition/2/snapshots/7/main/a.jpg", 2, [7], [9])).toBe(true);
     for (const ref of ["storage://local/acquisition/3/snapshots/7/a.jpg", "storage://local/acquisition/2/snapshots/8/a.jpg", "storage://local/acquisition/2/runs/10/a.json", "storage://local/acquisition/2/snapshots/7/../8/a.jpg", "storage://local/acquisition/2/snapshots/7/%2e%2e/a.jpg"])

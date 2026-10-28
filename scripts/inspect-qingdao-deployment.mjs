@@ -34,7 +34,7 @@ try {
   }
   let ledger = [];
   if (tables.some(table => table.TABLE_NAME === 'app_schema_migrations')) {
-    const safeColumns = columns.filter(column => column.TABLE_NAME === 'app_schema_migrations' && /^(id|name|filename|migration_name|checksum|status|applied_at|appliedAt|started_at|startedAt|finished_at|finishedAt|completed_at|created_at|createdAt|updated_at|updatedAt)$/.test(column.COLUMN_NAME)).map(column => connection.escapeId(column.COLUMN_NAME));
+    const safeColumns = columns.filter(column => column.TABLE_NAME === 'app_schema_migrations' && /^(id|name|filename|migration_name|migrationName|checksum|status|applied_at|appliedAt|started_at|startedAt|finished_at|finishedAt|completed_at|created_at|createdAt|updated_at|updatedAt)$/.test(column.COLUMN_NAME)).map(column => connection.escapeId(column.COLUMN_NAME));
     if (safeColumns.length) [ledger] = await connection.query(`SELECT ${safeColumns.join(', ')} FROM app_schema_migrations`);
   }
   await connection.rollback();

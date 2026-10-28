@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { MySqlDialect } from "drizzle-orm/mysql-core";
 const mocks = vi.hoisted(() => ({
   execute: vi.fn(),
@@ -31,6 +31,7 @@ const admin = { workspaceId: 2, userId: 7, role: "admin" },
   dialect = new MySqlDialect();
 let statements: Array<{ sql: string; params: unknown[] }>;
 beforeEach(() => {
+  vi.stubEnv("KNOWLEDGE_CACHE_CLEANUP_ENABLED", undefined);
   vi.clearAllMocks();
   statements = [];
   mocks.transaction.mockImplementation(fn => fn({ execute: mocks.execute }));
@@ -40,7 +41,14 @@ beforeEach(() => {
     return q.sql.startsWith("SELECT") ? [[]] : [{ affectedRows: 1 }];
   });
 });
+afterEach(() => vi.unstubAllEnvs());
 describe("knowledge deletion authorization and lifecycle", () => {
+  it("preserves pending object cleanup and stored bytes while deployment cleanup is disabled", async () => {
+    vi.stubEnv("KNOWLEDGE_CACHE_CLEANUP_ENABLED", "false");
+    expect(await cleanupKnowledgeObjects({ execute: mocks.execute }, new AbortController().signal)).toEqual({ checked: 0, disabled: true });
+    expect(mocks.execute).not.toHaveBeenCalled();
+    expect(mocks.remove).not.toHaveBeenCalled();
+  });
   it.each(["operator", "designer", "user"])(
     "denies %s all deletion and recycle routes before touching data",
     async role => {

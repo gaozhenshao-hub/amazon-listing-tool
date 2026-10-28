@@ -1,10 +1,12 @@
 import { createTrackedSchedulerWork } from "../../_core/trackedSchedulerWork";
 import { requireDb } from "../../repositories/dbClient";
 import { sweepKnowledgeCache } from "../acquisition/cacheExpiry";
+import { knowledgeCacheCleanupEnabled } from "../acquisition/cacheRetention";
 import { cleanupKnowledgeObjects } from "./assetLifecycle";
 
 /** The process-wide scheduler leader admits one bounded sweep at a time. */
 export function startKnowledgeCacheScheduler() {
+  if (!knowledgeCacheCleanupEnabled()) return async () => {};
   const work = createTrackedSchedulerWork();
   const signal = new AbortController().signal;
   const tick = () => {

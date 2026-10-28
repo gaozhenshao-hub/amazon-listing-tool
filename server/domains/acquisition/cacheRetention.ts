@@ -1,5 +1,11 @@
 /** Knowledge-library cache policy. This module only plans; it never deletes records or files. */
 export const KNOWLEDGE_CACHE_RETENTION_DAYS = 7;
+
+/** Preserve the source edition's default; a staged deployment may explicitly
+ * suspend automatic cache expiry and object deletion without stopping workers. */
+export function knowledgeCacheCleanupEnabled(env: NodeJS.ProcessEnv = process.env) {
+  return env.KNOWLEDGE_CACHE_CLEANUP_ENABLED?.trim().toLowerCase() !== "false";
+}
 export type CacheRetentionInput = {
   consumerType: string;
   status: string;

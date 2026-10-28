@@ -1,5 +1,6 @@
 import { layoutWithoutDeletedImages } from "../../../shared/knowledgeAssetLayout";
 import { requestSetCacheExpiry, retainedCacheReferenceRows } from "../acquisition/cacheExpiry";
+import { knowledgeCacheCleanupEnabled } from "../acquisition/cacheRetention";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -294,6 +295,7 @@ export async function cleanupKnowledgeObjects(
   db: Executor,
   signal: AbortSignal
 ) {
+  if (!knowledgeCacheCleanupEnabled()) return { checked: 0, disabled: true };
   const pending = await queryRows<{ id: number; reference: string }>(
     db,
     sql`SELECT id,reference FROM knowledge_object_cleanup WHERE state='pending' ORDER BY id LIMIT 100`

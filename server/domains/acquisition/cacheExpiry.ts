@@ -2,7 +2,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { requireDb } from "../../repositories/dbClient";
 import { queryRows, type Executor } from "../knowledge/assetTargets";
-import { knowledgeCacheRetention } from "./cacheRetention";
+import { knowledgeCacheCleanupEnabled, knowledgeCacheRetention } from "./cacheRetention";
 
 const idsSql = (ids: number[]) =>
   sql.join(
@@ -81,6 +81,7 @@ export async function expireKnowledgeCache(
   jobId: number,
   columns: Column[]
 ) {
+  if (!knowledgeCacheCleanupEnabled()) return { expired: false, reason: "disabled" };
   const [job] = await queryRows<any>(
     db,
     sql`SELECT *,NOW() AS cacheNow FROM acquisition_jobs
@@ -192,6 +193,7 @@ export async function expireKnowledgeCache(
 }
 
 export async function sweepKnowledgeCache(signal: AbortSignal) {
+  if (!knowledgeCacheCleanupEnabled()) return { checked: 0, expired: 0, disabled: true };
   const db = await requireDb(),
     columns = await cacheProofColumns(db);
   const candidates = await queryRows<{ id: number; workspace_id: number }>(

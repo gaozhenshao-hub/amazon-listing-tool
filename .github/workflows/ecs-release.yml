@@ -73,6 +73,15 @@ jobs:
           path: |
             release/image.tar.gz
             release/image.sha256
+            release/commit.txt
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+      - name: Save the native systemd runtime separately
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecs-native-${{ github.sha }}
+          path: |
             release/runtime.tar.gz
             release/runtime.sha256
             release/commit.txt

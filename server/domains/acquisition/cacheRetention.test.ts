@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   knowledgeCacheRetention,
+  knowledgeCacheCleanupEnabled,
   type CacheRetentionInput,
 } from "./cacheRetention";
 
@@ -17,6 +18,12 @@ const job: CacheRetentionInput = {
 };
 
 describe("knowledge acquisition retention plan", () => {
+  it("keeps the friend edition default and supports an explicit deployment suspension", () => {
+    expect(knowledgeCacheCleanupEnabled({})).toBe(true);
+    expect(knowledgeCacheCleanupEnabled({ KNOWLEDGE_CACHE_CLEANUP_ENABLED: "true" })).toBe(true);
+    expect(knowledgeCacheCleanupEnabled({ KNOWLEDGE_CACHE_CLEANUP_ENABLED: "false" })).toBe(false);
+    expect(knowledgeCacheCleanupEnabled({ KNOWLEDGE_CACHE_CLEANUP_ENABLED: " FALSE " })).toBe(false);
+  });
   it("keeps a complete seven days before expiring successful cache", () => {
     expect(knowledgeCacheRetention(job)).toBe("eligible");
     expect(
