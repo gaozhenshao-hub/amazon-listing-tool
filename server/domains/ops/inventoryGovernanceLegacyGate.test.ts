@@ -19,11 +19,10 @@ describe("inventory governance legacy cutoff", () => {
     expect(handler.indexOf(".input(")).toBeLessThan(handler.indexOf("assertLegacyInventoryGovernanceWriteAllowed();"));
     expect(handler.indexOf("assertLegacyInventoryGovernanceWriteAllowed();")).toBeLessThan(handler.indexOf("await getDb()"));
   });
-  it("both existing automatic callers use the same gate-routed export without changing the old helper", () => {
-    const data = readFileSync(new URL("../../routers/dataImport.ts", import.meta.url), "utf8"), lx = readFileSync(new URL("../../routers/lingxingSync.ts", import.meta.url), "utf8");
+  it("the retained file import caller uses the same gate-routed export without changing the old helper", () => {
+    const data = readFileSync(new URL("../../routers/dataImport.ts", import.meta.url), "utf8");
     expect(data).toContain('process.env.ENABLE_MERGED_OPS_INVENTORY_GOVERNANCE_WRITES === "true"');
     expect(data).toContain("await refreshGovernedZeroValueDiscontinuationStatuses(db, workspaceId)");
     expect(data.match(/await refreshZeroValueDiscontinuationStatuses\(/gu)?.length).toBeGreaterThanOrEqual(1);
-    expect(lx).toContain('await import("./dataImport")'); expect(lx).toContain("await refreshZeroValueDiscontinuationStatuses(db, workspaceId)");
   });
 });

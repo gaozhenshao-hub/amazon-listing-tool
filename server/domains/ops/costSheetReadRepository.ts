@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { sql, type SQL } from "drizzle-orm";
-import { OPERATIONS_COST_SHEET_PAYLOAD_MAX_BYTES, OperationsCostSheetReadInputSchema, buildOperationsCostSheetReadResult,
+import { OPERATIONS_COST_SHEET_PAYLOAD_MAX_BYTES, OPERATIONS_COST_SHEET_MAX_SOURCE_ROWS, OperationsCostSheetReadInputSchema, buildOperationsCostSheetReadResult,
   type OperationsCostSheetReadInput, type OperationsCostSheetReadResult, type OperationsCostSheetScope,
   type OperationsCostSheetSourceRow } from "../../../shared/operationsCostSheetRead";
 import { normalizeMarketplaceCode } from "../../../shared/marketplaceIdentity";
@@ -112,16 +112,16 @@ async function loadSources(tx: DbExecutor, kind: SourceKind, scope: OperationsCo
   if (lock === "update") {
     const boundedFields = ["parent_asin", "store_name", countryColumn, "operator", "week_end_date", ...Object.values(optional), "avg_price", "price", "product_name", "title", "report_date"].filter(column => known.has(column));
     const bytes = boundedFields.map(column => `COALESCE(OCTET_LENGTH(CAST(${column} AS CHAR CHARACTER SET utf8mb4)),0)`).join("+");
-    const candidates = await tableRows(tx, table, `SELECT id,${bytes} AS bodyBytes FROM ${table} WHERE ${scopedWhere("workspaceId", countryColumn)} ORDER BY id DESC LIMIT 501 FOR UPDATE`, scopeParams(scope));
-    if (candidates.length > 500 || new Set(candidates.map(row => row.id)).size !== candidates.length || candidates.some(row => !id(row.id) || typeof row.bodyBytes !== "number" || !Number.isSafeInteger(row.bodyBytes) || row.bodyBytes < 0 || row.bodyBytes > 65536)
+    const candidates = await tableRows(tx, table, `SELECT id,${bytes} AS bodyBytes FROM ${table} WHERE ${scopedWhere("workspaceId", countryColumn)} ORDER BY id DESC LIMIT ${OPERATIONS_COST_SHEET_MAX_SOURCE_ROWS + 1} FOR UPDATE`, scopeParams(scope));
+    if (candidates.length > OPERATIONS_COST_SHEET_MAX_SOURCE_ROWS || new Set(candidates.map(row => row.id)).size !== candidates.length || candidates.some(row => !id(row.id) || typeof row.bodyBytes !== "number" || !Number.isSafeInteger(row.bodyBytes) || row.bodyBytes < 0 || row.bodyBytes > 65536)
       || candidates.reduce((total, row) => total + Number(row.bodyBytes), 0) > 4 * 1024 * 1024) fail("COST_SHEET_READ_SOURCE_LIMIT");
     lockedIds = candidates.map(row => row.id as number);
   }
   const selected = await tableRows(tx, table, `SELECT id,workspaceId,parent_asin AS parentAsin,store_name AS storeName,${countryColumn} AS country,operator,
     ${reportDate} AS date,${name} AS name,${price} AS price,${priceField} AS priceField,
     ${Object.entries(optional).map(([alias, column]) => field(column, alias)).join(",")}
-    FROM ${table} WHERE ${scopedWhere("workspaceId", countryColumn)} ORDER BY id DESC LIMIT 501 FOR ${lock === "update" ? "UPDATE" : "SHARE"}`, scopeParams(scope));
-  if (selected.length > 500 || new Set(selected.map(row => row.id)).size !== selected.length) fail("COST_SHEET_READ_SOURCE_LIMIT");
+    FROM ${table} WHERE ${scopedWhere("workspaceId", countryColumn)} ORDER BY id DESC LIMIT ${OPERATIONS_COST_SHEET_MAX_SOURCE_ROWS + 1} FOR ${lock === "update" ? "UPDATE" : "SHARE"}`, scopeParams(scope));
+  if (selected.length > OPERATIONS_COST_SHEET_MAX_SOURCE_ROWS || new Set(selected.map(row => row.id)).size !== selected.length) fail("COST_SHEET_READ_SOURCE_LIMIT");
   if (lockedIds && (selected.length !== lockedIds.length || selected.some((row, index) => row.id !== lockedIds[index]))) fail("COST_SHEET_READ_SOURCE_INVALID");
   return selected.map(row => {
     if (!id(row.id) || !scopeMatches(row, scope) || (row.importId !== null && !id(row.importId)) || (row.sourceBatchId !== null && !id(row.sourceBatchId))) fail("COST_SHEET_READ_SOURCE_INVALID");
@@ -219,7 +219,7 @@ export async function loadCostSheetReadState(session: CostSheetReadSession, opti
   const manager = ["super_admin", "admin", "ops_manager"].includes(role);
   const assigned = manager ? false : await assignment(tx, scope, identity.userId);
   const sources = [...await loadSources(tx, "lingxing", scope, asOfDate, options.lock), ...await loadSources(tx, "saihu", scope, asOfDate, options.lock)];
-  if (sources.length > 500) fail("COST_SHEET_READ_SOURCE_LIMIT");
+  if (sources.length > OPERATIONS_COST_SHEET_MAX_SOURCE_ROWS) fail("COST_SHEET_READ_SOURCE_LIMIT");
   if (!manager && !assigned) await confirmedSourceOwner(tx, scope, sources, identity.userId, options.activeOwnerIds);
   const storage = await saved(tx, scope, options.lock);
   const readResult = buildOperationsCostSheetReadResult({ identity, scope, asOfDate, storage, sources: sources.map(source => source.fact) });

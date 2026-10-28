@@ -27,6 +27,11 @@ const baseSnapshot = {
 };
 
 describe("acquisition direct-ingestion contracts", () => {
+  it("accepts explicit partial admission with blank slots, but never does so automatically",()=>{
+    const assets=[{role:"main",storageKey:null,fieldStatus:"download_failed"},{role:"video",storageKey:"mp4",thumbnailStorageKey:null,fieldStatus:"download_failed"}] as any;
+    expect(directIngestionBlockReason({requestedCapabilities:["image_gallery"],assets,acceptMissing:true})).toBeNull();
+    expect(directIngestionBlockReason({requestedCapabilities:["image_gallery"],assets,requireComplete:true})).not.toBeNull();
+  });
   it("system-confirms returned evidence but preserves not-returned semantics", () => {
     const statuses = confirmSnapshotFieldStatuses(baseSnapshot.fieldEvidence) as Record<string, any>;
     expect(statuses.title.status).toBe("confirmed");
@@ -51,6 +56,13 @@ describe("acquisition direct-ingestion contracts", () => {
         { role: "aplus", fieldStatus: "pending_review", storageKey: "s3://stored" },
       ] as any,
     })).toContain("主图或副图");
+  });
+
+  it("requires every discovered image before knowledge-library admission", () => {
+    const assets=[{role:"main",storageKey:"saved",fieldStatus:"pending_review"},{role:"aplus",storageKey:null,fieldStatus:"download_failed"}];
+    expect(directIngestionBlockReason({requestedCapabilities:["image_gallery"],requireComplete:true,assets:assets as any})).toContain("图片或视频");
+    assets[1]={role:"aplus",storageKey:"manual",fieldStatus:"pending_review"};
+    expect(directIngestionBlockReason({requestedCapabilities:["image_gallery"],requireComplete:true,assets:assets as any})).toBeNull();
   });
 
   it("permits a catalog-only result with no image capability", () => {

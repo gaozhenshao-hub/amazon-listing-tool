@@ -7,15 +7,14 @@ import {
 } from "./contracts";
 
 describe("受控API连接合同", () => {
-  it("仅登记领星、Apify和赛狐，并固定系统级Secret引用命名", () => {
-    expect(Object.keys(API_CONNECTION_DEFINITIONS)).toEqual(["apify", "lingxing", "saihu"]);
-    expect(apiConnectionSecretSlug("apify", "api_token")).toBe("integration.apify.api_token");
-    expect(apiConnectionSecretSlug("lingxing", "mcp_key")).toBe("integration.lingxing.mcp_key");
+  it("仅登记赛狐，并固定系统级Secret引用命名", () => {
+    expect(Object.keys(API_CONNECTION_DEFINITIONS)).toEqual(["saihu"]);
+    expect(apiConnectionSecretSlug("saihu", "client_id")).toBe("integration.saihu.client_id");
   });
 
   it("拒绝空值与未知密钥字段", () => {
     expect(() => ApiConnectionSecretValuesSchema.parse({})).toThrow();
-    expect(() => assertKnownApiConnectionFields("apify", { unexpected: "value" })).toThrow("不允许");
+    expect(() => assertKnownApiConnectionFields("saihu", { unexpected: "value" })).toThrow("不允许");
   });
 
   it("将赛狐明确标为待受限官方API合同，禁止将其误报为已接入", () => {

@@ -136,16 +136,4 @@ describe("business Job QA gate", () => {
     expect(migration).toContain("WHERE `module`='listingWorkflow'");
     expect(migration).toContain("SET `module`='listing'");
   });
-
-  it("uses a true canceled state in every business bridge", () => {
-    for (const path of [
-      "./domains/image/imageWorkflowAgentBridge.ts",
-      "./domains/listing/listingAgentBridge.ts",
-      "./domains/keyword/keywordAgentBridge.ts",
-      "./domains/product_development/analysis/productAnalysisAgent.ts",
-      "./domains/ai_os/services/scopedBusinessAgent.ts",
-    ]) {
-      expect(read(path)).toContain("markBusinessManagedNodeCanceled");
-    }
-  });
 });

@@ -45,7 +45,6 @@ export default defineConfig({
         "client/src/lib/appError.ts",
         "client/src/components/workflow/workflowUtils.ts",
         "client/src/pages/listing/GenerationIndicators.tsx",
-        "client/src/pages/imageWorkflow/StepProgressBar.tsx",
         "shared/_core/errors.ts",
         "server/_core/appError.ts",
       ],

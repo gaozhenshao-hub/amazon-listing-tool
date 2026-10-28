@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import ProjectSelector from "@/components/ProjectSelector";
@@ -33,16 +33,16 @@ import {
   RotateCcw,
   Clock,
   FileDown,
+  Import,
+  Package,
   HelpCircle,
   MessageSquare,
 } from "lucide-react";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { shouldShowProjectFileError } from "./dataFiles/displayState";
 import { getRufusIdentityEntries } from "./dataFiles/rufusIdentity";
 import { getRufusUsageScenarios } from "./dataFiles/rufusUsageScenarios";
-import ProductProfileAttributeSource from "./listing/ProductProfileAttributeSource";
-import SupplementSourcesPanel from "./listing/SupplementSourcesPanel";
 
 type FileType = "product_attributes";
 
@@ -403,7 +403,7 @@ function EditableSceneList({
 }
 
 // ─── Analysis Result Card (View + Edit Mode) ────────────────────
-export function AnalysisResultCard({
+function AnalysisResultCard({
   fileType,
   result,
   fileId,
@@ -417,7 +417,6 @@ export function AnalysisResultCard({
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<any>(null);
-  const [editOrigin, setEditOrigin] = useState<{ fileId: number; projectId: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
@@ -458,21 +457,17 @@ export function AnalysisResultCard({
 
   const startEdit = () => {
     setEditData(JSON.parse(JSON.stringify(result))); // deep clone
-    setEditOrigin({ fileId, projectId });
     setEditing(true);
     setExpanded(true);
   };
 
   const cancelEdit = () => {
     setEditData(null);
-    setEditOrigin(null);
     setEditing(false);
   };
 
   const saveEdit = () => {
-    // A profile import can refresh latestFile while this draft remains open.
-    // Never retarget an old draft to the newly generated source record.
-    if (!editData || !editOrigin || editOrigin.fileId !== fileId || editOrigin.projectId !== projectId) return;
+    if (!editData) return;
     setSaving(true);
     updateMutation.mutate({
       fileId,
@@ -484,7 +479,6 @@ export function AnalysisResultCard({
   if (!result) return null;
 
   const data = editing ? editData : result;
-  const sourceChanged = editing && (editOrigin?.fileId !== fileId || editOrigin?.projectId !== projectId);
   const rufusIdentityEntries = getRufusIdentityEntries(data?.productIdentity);
   const rufusUsageScenarios = getRufusUsageScenarios(data?.usageScenarios);
 
@@ -711,7 +705,7 @@ export function AnalysisResultCard({
                 size="sm"
                 className="h-6 px-2 text-xs"
                 onClick={saveEdit}
-                disabled={saving || sourceChanged}
+                disabled={saving}
               >
                 {saving ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
                 保存
@@ -720,7 +714,6 @@ export function AnalysisResultCard({
           )}
         </div>
       </div>
-      {sourceChanged && <p role="alert" className="text-xs text-amber-800">属性来源已更新，原编辑稿仍保留，可先复制。为避免覆盖新来源，当前草稿不能保存；取消编辑后可查看新属性。</p>}
       {showHistory && (
         <div className="p-3 rounded-lg border border-amber-200 bg-amber-50/30 space-y-2">
           <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-amber-200">
@@ -802,7 +795,7 @@ export function AnalysisResultCard({
   );
 }
 
-
+// ─── Import from Product Profile Button ─────────────────────────
 function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId: number }) {
   const config = FILE_TYPE_CONFIG[fileType];
   const Icon = config.icon;
@@ -893,7 +886,7 @@ function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId
   }
 
   return (
-    <Card id={fileType === "product_attributes" ? "product-attributes-source-history" : undefined} className={`${hasCompletedFile ? config.borderColor : ""} transition-all`}>
+    <Card className={`${hasCompletedFile ? config.borderColor : ""} transition-all`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-3">
@@ -1037,205 +1030,6 @@ function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId
   );
 }
 
-// ─── BuyerQuestionsCard ──────────────────────────────────────────
-function BuyerQuestionsCard({ projectId }: { projectId: number }) {
-  const utils = trpc.useUtils();
-  const xlsxRef = useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editCategory, setEditCategory] = useState("");
-  const [editPriority, setEditPriority] = useState<"high" | "medium" | "low">("medium");
-
-  const { data: readiness } = trpc.buyerQuestions.getReadiness.useQuery(
-    { projectId },
-    { enabled: !!projectId }
-  );
-
-  const { data: questions, isLoading } = trpc.buyerQuestions.list.useQuery(
-    { projectId },
-    { enabled: !!projectId }
-  );
-
-  const importFromXlsx = trpc.buyerQuestions.importFromXlsx.useMutation({
-    onSuccess: (data: { inserted: number; skipped: number; total: number }) => {
-      utils.buyerQuestions.list.invalidate({ projectId });
-      utils.buyerQuestions.getReadiness.invalidate({ projectId });
-      toast.success(`导入完成：${data.inserted} 条新增，${data.skipped} 条跳过（重复）`);
-      setImporting(false);
-    },
-    onError: (err: any) => {
-      toast.error("导入失败: " + err.message);
-      setImporting(false);
-    },
-  });
-
-  const updateQuestion = trpc.buyerQuestions.update.useMutation({
-    onSuccess: () => {
-      utils.buyerQuestions.list.invalidate({ projectId });
-      setEditingId(null);
-      toast.success("已更新");
-    },
-    onError: (err: any) => toast.error("更新失败: " + err.message),
-  });
-
-  const deleteQuestion = trpc.buyerQuestions.delete.useMutation({
-    onSuccess: () => {
-      utils.buyerQuestions.list.invalidate({ projectId });
-      utils.buyerQuestions.getReadiness.invalidate({ projectId });
-      toast.success("已删除");
-    },
-    onError: (err: any) => toast.error("删除失败: " + err.message),
-  });
-
-  const handleXlsxSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { toast.error("文件大小不能超过10MB"); return; }
-    setImporting(true);
-    try {
-      const XLSX = await import("xlsx");
-      const arrayBuffer = await file.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: "array" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-      if (rows.length === 0) { toast.error("文件为空或格式不正确"); setImporting(false); return; }
-      const questions = rows
-        .map((row: any) => {
-          const q = String(row.question || row.Question || row.QUESTION || row["问题"] || "").trim();
-          const qCn = String(row.question_cn || row.questionCn || row["中文翻译"] || "").trim();
-          const cat = String(row.category || row.Category || row["分类"] || "").trim();
-          const pri = String(row.priority || row.Priority || row["优先级"] || "medium").trim();
-          return { question: q, questionCn: qCn || undefined, category: cat || undefined, priority: (["high","medium","low"].includes(pri) ? pri : "medium") as "high"|"medium"|"low" };
-        })
-        .filter((q: any) => q.question.length > 0);
-      if (questions.length === 0) { toast.error("未找到有效问题，请确认列名包含 'question' 字段"); setImporting(false); return; }
-      importFromXlsx.mutate({ projectId, questions });
-    } catch (err: any) {
-      toast.error("文件解析失败: " + (err?.message || "未知错误"));
-      setImporting(false);
-    }
-    e.target.value = "";
-  }, [projectId, importFromXlsx]);
-
-  const priorityConfig: Record<string, { label: string; className: string }> = {
-    high: { label: "高", className: "bg-red-100 text-red-700 border-red-200" },
-    medium: { label: "中", className: "bg-yellow-100 text-yellow-700 border-yellow-200" },
-    low: { label: "低", className: "bg-gray-100 text-gray-600 border-gray-200" },
-  };
-
-  return (
-    <Card className="border-amber-200">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-amber-50"><HelpCircle className="h-5 w-5 text-amber-600" /></div>
-            <div>
-              <CardTitle className="text-base">买家问题库</CardTitle>
-              <CardDescription className="text-xs mt-0.5">上传买家常见问题（xlsx），AI在生成QA时将优先覆盖这些问题</CardDescription>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {readiness?.hasQuestions ? (
-              <Badge className="bg-green-600 text-xs"><CheckCircle2 className="h-3 w-3 mr-1" />{readiness.count} 条问题</Badge>
-            ) : (
-              <Badge variant="outline" className="text-xs text-amber-600 border-amber-300"><AlertTriangle className="h-3 w-3 mr-1" />未上传</Badge>
-            )}
-            <input ref={xlsxRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleXlsxSelect} />
-            <Button size="sm" variant="outline" onClick={() => xlsxRef.current?.click()} disabled={importing} className="text-amber-700 border-amber-300 hover:bg-amber-50">
-              {importing ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />导入中...</> : <><Upload className="h-4 w-4 mr-1" />上传问题库 (.xlsx)</>}
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <div className="rounded-md bg-amber-50 border border-amber-100 p-3 mb-4">
-          <p className="text-xs text-amber-800 font-medium mb-1">📋 Excel 模板格式（支持 .xlsx / .xls / .csv）</p>
-          <p className="text-xs text-amber-700">
-            必填列：<code className="bg-amber-100 px-1 rounded">question</code>（问题原文）&nbsp;｜
-            可选列：<code className="bg-amber-100 px-1 rounded">category</code>（分类）、<code className="bg-amber-100 px-1 rounded">priority</code>（high/medium/low）、<code className="bg-amber-100 px-1 rounded">question_cn</code>（中文翻译）
-          </p>
-        </div>
-        {isLoading ? (
-          <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-        ) : !questions || (questions as any[]).length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-            <MessageSquare className="h-8 w-8 mb-2 opacity-40" />
-            <p className="text-sm">暂无问题，请上传 Excel 文件导入</p>
-          </div>
-        ) : (
-          <div className="rounded-md border overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/40">
-                  <TableHead className="text-xs w-8">#</TableHead>
-                  <TableHead className="text-xs">问题</TableHead>
-                  <TableHead className="text-xs w-24">分类</TableHead>
-                  <TableHead className="text-xs w-16">优先级</TableHead>
-                  <TableHead className="text-xs w-20">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(questions as any[]).map((q: any, idx: number) => (
-                  <TableRow key={q.id}>
-                    <TableCell className="text-muted-foreground text-xs">{idx + 1}</TableCell>
-                    <TableCell>
-                      <p className="text-sm">{q.question}</p>
-                      {q.questionCn && <p className="text-xs text-muted-foreground mt-0.5">{q.questionCn}</p>}
-                    </TableCell>
-                    <TableCell>
-                      {editingId === q.id ? (
-                        <Input value={editCategory} onChange={(e) => setEditCategory(e.target.value)} className="h-7 text-xs w-20" placeholder="分类" />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">{q.category || "—"}</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {editingId === q.id ? (
-                        <Select value={editPriority} onValueChange={(v) => setEditPriority(v as "high"|"medium"|"low")}>
-                          <SelectTrigger className="h-7 text-xs w-16"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="high">高</SelectItem>
-                            <SelectItem value="medium">中</SelectItem>
-                            <SelectItem value="low">低</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Badge variant="outline" className={`text-xs ${priorityConfig[q.priority]?.className || ""}`}>{priorityConfig[q.priority]?.label || q.priority}</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {editingId === q.id ? (
-                        <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => updateQuestion.mutate({ id: q.id, category: editCategory || undefined, priority: editPriority })}><Save className="h-3 w-3" /></Button>
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingId(null)}><X className="h-3 w-3" /></Button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingId(q.id); setEditCategory(q.category || ""); setEditPriority(q.priority || "medium"); }}><Pencil className="h-3 w-3" /></Button>
-                          <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => deleteQuestion.mutate({ id: q.id })}><Trash2 className="h-3 w-3" /></Button>
-                        </div>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function OptionalSupplementSources({ projectId }: { projectId: number }) {
-  const [opened, setOpened] = useState(false);
-  return <details className="min-w-0 rounded border p-4" onToggle={event => { if (event.currentTarget.open) setOpened(true); }}>
-    <summary className="cursor-pointer font-medium">可选：补充评论、问题或属性原件（独立保存与恢复）</summary>
-    <p className="my-2 text-sm text-muted-foreground">不影响上方本品画像选择与现有导入。规范化记录尚未接入正式导入或事实确认。</p>
-    {opened && <SupplementSourcesPanel projectId={projectId} />}
-  </details>;
-}
-
 export default function DataFilesPage() {
   const { selectedProjectId } = useProject();
 
@@ -1257,7 +1051,7 @@ export default function DataFilesPage() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">数据文件管理 (N3)</h1>
-          <p className="text-muted-foreground mt-1">选择产品画像生成本品属性来源；上传作为可选补充，进入生成前仍须人工核对事实</p>
+          <p className="text-muted-foreground mt-1">上传本品属性表（必须）和买家问题库，作为Listing生成的前置数据</p>
         </div>
         <ProjectSelector />
       </div>
@@ -1278,7 +1072,7 @@ export default function DataFilesPage() {
                 <div className="flex items-center gap-6">
                   <div className="flex items-center gap-2">
                     <div className={`h-2.5 w-8 rounded-full transition-colors ${n3Ready ? "bg-green-500" : "bg-red-400"}`} />
-                    <span className="text-sm font-medium text-indigo-900">产品属性分析：{n3Ready ? "✓ 已有结果（事实仍须审核）" : "待选择画像生成或补充资料"}</span>
+                    <span className="text-sm font-medium text-indigo-900">产品属性表：{n3Ready ? "✓ 已就绪" : "待上传（必须）"}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className={`h-2.5 w-8 rounded-full transition-colors ${bqReady ? "bg-green-500" : "bg-amber-300"}`} />
@@ -1286,27 +1080,23 @@ export default function DataFilesPage() {
                   </div>
                 </div>
                 {n3Ready ? (
-                  <Badge className="bg-green-600"><CheckCircle2 className="h-3 w-3 mr-1" />已有属性分析，不代表事实已确认</Badge>
+                  <Badge className="bg-green-600"><CheckCircle2 className="h-3 w-3 mr-1" />G1 前置数据已就绪</Badge>
                 ) : (
-                  <Badge variant="outline" className="text-red-600 border-red-300"><AlertTriangle className="h-3 w-3 mr-1" />请先选择画像生成属性，或补充已有资料</Badge>
+                  <Badge variant="outline" className="text-red-600 border-red-300"><AlertTriangle className="h-3 w-3 mr-1" />产品属性表必须上传才能开始Listing生成</Badge>
                 )}
               </div>
             </CardContent>
           </Card>
 
-          <ProductProfileAttributeSource projectId={selectedProjectId} />
-
-          <OptionalSupplementSources key={`supplement:${selectedProjectId}`} projectId={selectedProjectId} />
-
-          {/* Optional supplemental upload; profile selection is the primary source entry. */}
+          {/* 产品属性表上传 */}
           <div className="grid grid-cols-1 gap-4">
             {FILE_TYPES.map((ft) => (
-              <FileUploadCard key={`${selectedProjectId}:${ft}`} fileType={ft} projectId={selectedProjectId} />
+              <FileUploadCard key={ft} fileType={ft} projectId={selectedProjectId} />
             ))}
           </div>
 
           {/* 买家问题库上传 */}
-          <BuyerQuestionsCard projectId={selectedProjectId} />
+          
         </div>
       )}
     </div>

@@ -5,17 +5,13 @@ const whereClauses: unknown[] = [];
 const queryRows: unknown[][] = [];
 
 function selectBuilder() {
-  return {
-    from: () => ({
-      where: (condition: unknown) => {
-        whereClauses.push(condition);
-        return {
-          limit: async () => queryRows.shift() ?? [],
-          orderBy: async () => queryRows.shift() ?? [],
-        };
-      },
-    }),
+  const builder = {
+    from: () => builder, innerJoin: () => builder, leftJoin: () => builder,
+    where: (condition: unknown) => { whereClauses.push(condition); return builder; },
+    limit: () => builder, offset: () => builder, for: () => builder, orderBy: () => builder,
+    then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve(queryRows.shift() ?? []).then(resolve),
   };
+  return builder;
 }
 
 function writeBuilder() {
@@ -29,6 +25,7 @@ function writeBuilder() {
 }
 
 const dbMock = {
+  transaction: vi.fn(async (body: (tx: unknown) => Promise<unknown>) => body(dbMock)),
   select: vi.fn(() => selectBuilder()),
   update: vi.fn(() => writeBuilder()),
   delete: vi.fn(() => ({
@@ -49,6 +46,31 @@ function renderedSql(condition: unknown) {
 }
 
 describe("KB image tenant SQL predicates", () => {
+  it("limits administrator tag edits to owned or confirmed shared sets in the same workspace", async () => {
+    queryRows.push([{setId:12,layout:null}], [{id:91,imagePosition:"main"}]);
+    await kbDb.updateImageTagsForEditor(91, 7, 42, true, { tagComposition: "一分构图" });
+    const predicate = renderedSql(whereClauses.at(-1));
+    expect(predicate).toContain("`kb_image_sets`.`workspaceId` = ?");
+    expect(predicate).toContain("`kb_image_sets`.`visibility` <> ?");
+    expect(predicate).toContain("`kb_image_sets`.`status` = ?");
+    expect(predicate).toContain("`kb_image_sets`.`userId` = ?");
+  });
+  it("saves an edit from the fourth image only to the module owner", async () => {
+    const hashes = [1,2,3,4].map(n=>String(n).repeat(64));
+    queryRows.push([{setId:12,layout:{version:1,modules:[{id:"four",section:"aplus",kind:"grid",cards:hashes.map(hash=>({images:[{hash}]}))}]}}],
+      hashes.map((hash,index)=>({id:91+index,imagePosition:"aplus",sourceUrlHash:hash})));
+    expect(await kbDb.updateImageTagsForEditor(94,7,42,true,{tagComposition:"多分构图"})).toBe(91);
+    const write = dialect.sqlToQuery(whereClauses.at(-1) as Parameters<MySqlDialect["sqlToQuery"]>[0]);
+    expect(write.params[0]).toBe(91); expect(dbMock.update).toHaveBeenCalledTimes(1);
+  });
+  it("cannot use a member image to bypass scope or replace a missing primary", async () => {
+    queryRows.push([]);
+    await expect(kbDb.updateImageTagsForEditor(94,7,42,true,{tagCategory:"宠物"})).rejects.toThrow("无权限");
+    expect(dbMock.update).not.toHaveBeenCalled();
+    queryRows.push([{setId:12,layout:{version:1,modules:[{id:"four",section:"aplus",kind:"grid",cards:[{images:[{hash:"1".repeat(64)},{hash:"2".repeat(64)}]}]}]}}], [{id:94,imagePosition:"aplus",sourceUrlHash:"2".repeat(64)}]);
+    await expect(kbDb.updateImageTagsForEditor(94,7,42,true,{tagCategory:"宠物"})).rejects.toThrow("首图");
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     whereClauses.length = 0;
     queryRows.length = 0;
@@ -92,4 +114,14 @@ describe("KB image tenant SQL predicates", () => {
     expect(predicates).toContain("`kb_image_sets`.`workspaceId` = ?");
     expect(predicates).toContain("`kb_images`.`imageSetId` = ?");
   });
+});
+
+it("filters independent and linked image colors in SQL before pagination",async()=>{
+  await kbDb.listAllImages(7,42,"shared",{tagCategory:"宠物",tagAccentColor:"__none",tagColorSchemeV2:"白色",groupBy:"type"});
+  const q=dialect.sqlToQuery(whereClauses.at(-1) as Parameters<MySqlDialect["sqlToQuery"]>[0]);
+  expect(q.sql).toContain("`kb_images`.`imageSetId` IS NULL");
+  expect(q.sql).toContain("`kb_images`.`workspaceId` = ?");
+  expect(q.sql).toContain("`kb_image_sets`.`workspaceId` = ?");
+  expect(q.sql).toContain("`kb_images`.`tagAccentColor`,`kb_image_sets`.`setAccentColor`");
+  expect(q.params).toContain("宠物");expect(q.params).toContain("");
 });

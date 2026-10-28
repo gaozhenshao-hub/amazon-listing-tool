@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { CompetitorSalesProjectionSchema } from "./competitorSales";
+import { AdoptedReviewCorpusSchema, AdoptedReviewItemSchema, AdoptedReviewCoverageSchema, AdoptedReviewSourceSchema,
+  AdoptedQuestionEvidenceSchema, type AdoptedReviewCorpus, type AdoptedReviewSource, type AdoptedQuestionEvidence } from "./adoptedCompetitorEvidence";
 import {
   COMPETITOR_REVIEW_PARSER_VERSION,
   type CompetitorReviewCorpus,
@@ -49,7 +51,10 @@ const coverage = z.object({
 }).strict();
 const corpusSchema = z.object({ parserVersion: z.literal(COMPETITOR_REVIEW_PARSER_VERSION), corpusHash: hash,
   projectId: id, analysisId: id, asin, items: z.array(review).max(20000), coverage }).strict();
-const authorizedSourceSchema = z.object({ runId: text.max(255), fileName: text.max(500), fileHash: hash }).strict();
+const authorizedSourceSchema = z.union([z.object({ runId: text.max(255), fileName: text.max(500), fileHash: hash }).strict(), AdoptedReviewSourceSchema]);
+const researchReview = z.union([review, AdoptedReviewItemSchema]);
+const researchCoverage = z.union([coverage, AdoptedReviewCoverageSchema]);
+const parserVersion = z.enum([COMPETITOR_REVIEW_PARSER_VERSION, "competitor-review-adopted/1"]);
 export const competitorEvidenceIdentitySchema = z.object({
   userId: id, workspaceId: id.nullable(), sourceWorkspaceId: id.nullable(), projectId: id, analysisId: id, asin, revision: hash,
 }).strict();
@@ -61,26 +66,29 @@ export type CompetitorResearchSalesContext = z.infer<typeof competitorResearchSa
 export type CompetitorResearchEvidenceInput = {
   identity: CompetitorEvidenceIdentity; title: string | null; bullets: string[];
   salesContext?: CompetitorResearchSalesContext;
-  reviews: { status: "available"; corpus: CompetitorReviewCorpus; source: z.infer<typeof authorizedSourceSchema>; authorizedCorpusHash: string }
+  questions?: AdoptedQuestionEvidence;
+  reviews: { status: "available"; corpus: CompetitorReviewCorpus | AdoptedReviewCorpus; source: z.infer<typeof authorizedSourceSchema>; authorizedCorpusHash: string }
     | { status: "unavailable"; reason: string };
 };
 const inputSchema = z.object({ identity: competitorEvidenceIdentitySchema, title: text.nullable(), bullets: z.array(text),
   salesContext: competitorResearchSalesContextSchema.optional(),
-  reviews: z.discriminatedUnion("status", [z.object({ status: z.literal("available"), corpus: corpusSchema,
+  questions: AdoptedQuestionEvidenceSchema.optional(),
+  reviews: z.discriminatedUnion("status", [z.object({ status: z.literal("available"), corpus: z.union([corpusSchema, AdoptedReviewCorpusSchema]),
     source: authorizedSourceSchema, authorizedCorpusHash: hash }).strict(),
     z.object({ status: z.literal("unavailable"), reason: text.max(1000) }).strict()]),
 }).strict();
 const spanSchema = z.object({ start: z.literal(0), end: count, unit: z.literal("utf16_code_units") }).strict();
 const listingSourceSchema = z.object({ sourceId: text, kind: z.enum(["title", "bullet"]), ordinal: count, text, span: spanSchema }).strict();
-const batchSchema = z.object({ batchId: text, items: z.array(review).min(1).max(60), utf8Bytes: id.max(24 * 1024), sha256: hash }).strict();
+const batchSchema = z.object({ batchId: text, items: z.array(researchReview).min(1).max(60), utf8Bytes: id.max(24 * 1024), sha256: hash }).strict();
 const planSchema = z.object({
   version: z.literal(1), identity: competitorEvidenceIdentitySchema,
   listingSources: z.array(listingSourceSchema),
   salesContext: competitorResearchSalesContextSchema.optional(),
+  questions: AdoptedQuestionEvidenceSchema.optional(),
   reviews: z.discriminatedUnion("status", [
-    z.object({ status: z.literal("available"), parserVersion: z.literal(COMPETITOR_REVIEW_PARSER_VERSION), parserCorpusHash: hash,
+    z.object({ status: z.literal("available"), parserVersion, parserCorpusHash: hash,
       authorizedCorpusHash: hash, source: authorizedSourceSchema,
-      coverage, total: count.max(20000), batches: z.array(batchSchema).max(20000) }).strict(),
+      coverage: researchCoverage, total: count.max(20000), batches: z.array(batchSchema).max(20000) }).strict(),
     z.object({ status: z.literal("unavailable"), reason: text.max(1000), total: z.null(), batches: z.tuple([]) }).strict(),
   ]),
   batchLimits: z.object({ reviews: z.literal(60), utf8Bytes: z.literal(24576) }).strict(),
@@ -90,8 +98,9 @@ export type CompetitorResearchEvidencePlan = z.infer<typeof planSchema>;
 export type CompetitorResearchEvidenceSummary = {
   version: 1; identity: CompetitorEvidenceIdentity; evidenceHash: string; modelRead: false;
   listing: { titleAvailable: boolean; bulletCount: number; sourceCount: number };
+  questions?: { count: number; setHash: string };
   reviews: { status: "available" | "unavailable"; total: number | null; parserCorpusHash: string | null; authorizedCorpusHash: string | null;
-    sourceFileHash: string | null; scope: "complete_file_not_market_total" | null;
+    sourceFileHash: string | null; scope: "complete_file_not_market_total" | "complete_adopted_sources_not_market_total" | null;
     batchCount: number; totalBatchUtf8Bytes: number;
     batches: Array<{ batchId: string; count: number; utf8Bytes: number; sha256: string }> };
 };
@@ -140,10 +149,28 @@ function digest(value: unknown, sha256: CompetitorEvidenceSha256): string {
 }
 const utf8Bytes = (value: unknown) => new TextEncoder().encode(canonicalCompetitorResearchEvidence(value)).byteLength;
 
-function validateCorpus(corpus: CompetitorReviewCorpus, identity: CompetitorEvidenceIdentity, sha256: CompetitorEvidenceSha256) {
+function validateCorpus(corpus: CompetitorReviewCorpus | AdoptedReviewCorpus, identity: CompetitorEvidenceIdentity, sha256: CompetitorEvidenceSha256) {
   if (corpus.projectId !== identity.projectId || corpus.analysisId !== identity.analysisId || corpus.asin !== identity.asin) fail("EVIDENCE_CORPUS_SCOPE");
   const { corpusHash, ...original } = corpus;
   if (digest(original, sha256) !== corpusHash) fail("EVIDENCE_CORPUS_HASH");
+  if (corpus.parserVersion === "competitor-review-adopted/1") {
+    const c = corpus.coverage, sources = new Map(c.sources.map(source => [source.sourceId, source]));
+    const ids = new Set<string>(), locations = new Set<string>(); let matched = 0;
+    if (sources.size !== c.sources.length || c.uniqueReviews !== corpus.items.length
+      || c.matchedRows !== c.uniqueReviews + c.duplicateRows) fail("EVIDENCE_COVERAGE_INVALID");
+    for (const item of corpus.items) {
+      if (item.asin !== identity.asin || ids.has(item.reviewId)) fail("EVIDENCE_REVIEW_ID_INVALID");
+      ids.add(item.reviewId);
+      for (const origin of item.origins) {
+        const source = sources.get(origin.sourceId), location = canonicalCompetitorResearchEvidence([origin.sourceId, origin.locator]);
+        if (!source || source.manifestHash !== origin.manifestHash || source.contentHash !== origin.contentHash
+          || source.fileName !== origin.fileName || locations.has(location)) fail("EVIDENCE_COVERAGE_INVALID");
+        locations.add(location); matched++;
+      }
+    }
+    if (matched !== c.matchedRows) fail("EVIDENCE_COVERAGE_INVALID");
+    return;
+  }
   const c = corpus.coverage, sheets = new Map(c.sheets.map(sheet => [sheet.name, sheet.dataRows]));
   if (sheets.size !== c.sheets.length || c.totalRows !== c.sheets.reduce((sum, sheet) => sum + sheet.dataRows, 0)
     || c.uniqueReviews !== corpus.items.length || c.matchedRows !== c.uniqueReviews + c.duplicateRows
@@ -194,11 +221,13 @@ export function buildCompetitorResearchEvidencePlan(raw: CompetitorResearchEvide
   else {
     const corpus = input.reviews.corpus;
     validateCorpus(corpus, identity, sha256);
-    if (input.reviews.source.fileHash !== corpus.coverage.sourceFileHash || input.reviews.source.fileName !== corpus.coverage.sourceFileName) fail("EVIDENCE_SOURCE_CHANGED");
+    if (corpus.parserVersion === "competitor-review-adopted/1") {
+      if (!("kind" in input.reviews.source) || input.reviews.source.setHash !== corpus.coverage.setHash) fail("EVIDENCE_SOURCE_CHANGED");
+    } else if (!("fileHash" in input.reviews.source) || input.reviews.source.fileHash !== corpus.coverage.sourceFileHash || input.reviews.source.fileName !== corpus.coverage.sourceFileName) fail("EVIDENCE_SOURCE_CHANGED");
     const { source, authorizedCorpusHash } = input.reviews;
     const batches: z.infer<typeof batchSchema>[] = [];
-    let pending: CompetitorReviewItem[] = [];
-    const payload = (items: CompetitorReviewItem[]) => ({ version: 1, identity, parserCorpusHash: corpus.corpusHash, authorizedCorpusHash, source,
+    let pending: z.infer<typeof researchReview>[] = [];
+    const payload = (items: z.infer<typeof researchReview>[]) => ({ version: 1, identity, parserCorpusHash: corpus.corpusHash, authorizedCorpusHash, source,
       batchId: `analysis:${identity.analysisId}:reviews:${batches.length + 1}`, items });
     const flush = () => {
       const body = payload(pending);
@@ -215,6 +244,7 @@ export function buildCompetitorResearchEvidencePlan(raw: CompetitorResearchEvide
   }
   const body = { version: 1 as const, identity, listingSources, reviews,
     ...(input.salesContext === undefined ? {} : { salesContext: input.salesContext }),
+    ...(input.questions === undefined ? {} : { questions: input.questions }),
     batchLimits: { reviews: 60 as const, utf8Bytes: 24576 as const }, modelRead: false as const };
   return { ...body, evidenceHash: digest(body, sha256) };
 }
@@ -228,11 +258,12 @@ export function verifyCompetitorResearchEvidencePlan(value: unknown, sha256: Com
   const rebuilt = buildCompetitorResearchEvidencePlan({ identity: plan.identity, title: titles[0]?.text ?? null,
     bullets: plan.listingSources.filter(source => source.kind === "bullet").map(source => source.text),
     ...(plan.salesContext === undefined ? {} : { salesContext: plan.salesContext }),
+    ...(plan.questions === undefined ? {} : { questions: plan.questions }),
     reviews: plan.reviews.status === "unavailable" ? { status: "unavailable", reason: plan.reviews.reason } : { status: "available",
       source: plan.reviews.source, authorizedCorpusHash: plan.reviews.authorizedCorpusHash, corpus: {
       parserVersion: plan.reviews.parserVersion, corpusHash: plan.reviews.parserCorpusHash, projectId: plan.identity.projectId,
       analysisId: plan.identity.analysisId, asin: plan.identity.asin, items: plan.reviews.batches.flatMap(batch => batch.items), coverage: plan.reviews.coverage,
-    } },
+    } as CompetitorReviewCorpus | AdoptedReviewCorpus },
   }, sha256);
   if (canonicalCompetitorResearchEvidence(rebuilt) !== canonicalCompetitorResearchEvidence(plan)) fail("EVIDENCE_PLAN_CHANGED");
   return rebuilt;
@@ -242,10 +273,11 @@ export function verifyCompetitorResearchEvidencePlan(value: unknown, sha256: Com
 export function summarizeCompetitorResearchEvidencePlan(value: unknown, sha256: CompetitorEvidenceSha256): CompetitorResearchEvidenceSummary {
   const plan = verifyCompetitorResearchEvidencePlan(value, sha256), r = plan.reviews;
   return { version: 1, identity: plan.identity, evidenceHash: plan.evidenceHash, modelRead: false,
+    ...(plan.questions ? { questions: { count: plan.questions.items.length, setHash: plan.questions.setHash } } : {}),
     listing: { titleAvailable: plan.listingSources.some(source => source.kind === "title"), bulletCount: plan.listingSources.filter(source => source.kind === "bullet").length, sourceCount: plan.listingSources.length },
     reviews: { status: r.status, total: r.total, parserCorpusHash: r.status === "available" ? r.parserCorpusHash : null,
       authorizedCorpusHash: r.status === "available" ? r.authorizedCorpusHash : null,
-      sourceFileHash: r.status === "available" ? r.coverage.sourceFileHash : null, scope: r.status === "available" ? r.coverage.scope : null,
+      sourceFileHash: r.status === "available" && r.coverage.scope === "complete_file_not_market_total" ? r.coverage.sourceFileHash : null, scope: r.status === "available" ? r.coverage.scope : null,
       batchCount: r.batches.length, totalBatchUtf8Bytes: r.batches.reduce((sum, batch) => sum + batch.utf8Bytes, 0),
       batches: r.batches.map(batch => ({ batchId: batch.batchId, count: batch.items.length, utf8Bytes: batch.utf8Bytes, sha256: batch.sha256 })) } };
 }

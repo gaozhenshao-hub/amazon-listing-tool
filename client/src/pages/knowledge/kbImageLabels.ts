@@ -16,9 +16,10 @@ export function joinImageTags(...values: Array<string | null | undefined>): stri
 }
 
 export function imageBelongLabel(image: {
+  imageSetId?: number | null;
   tagImageBelong?: string | null;
   tagImageBelongSub?: string | null;
   imagePosition?: string | null;
 }): string {
-  return joinImageTags(imageTagLabel(image.tagImageBelong) || image.imagePosition, image.tagImageBelongSub);
+  return joinImageTags(imageTagLabel(image.tagImageBelong) || (image.imageSetId === null ? "" : image.imagePosition), image.tagImageBelongSub);
 }

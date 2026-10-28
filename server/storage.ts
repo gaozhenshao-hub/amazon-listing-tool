@@ -3,7 +3,10 @@
 
 import { ENV } from './_core/env';
 import { safeHttpRequest } from './infrastructure/http/safeHttpClient';
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand, DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { unlink } from 'node:fs/promises';
+import { verifiedLocalObjectPath } from './infrastructure/localObjectStorage';
+import { putLocalObject, signedLocalObjectUrl } from './infrastructure/localObjectStorage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 type StorageConfig = { baseUrl: string; apiKey: string };
@@ -39,6 +42,23 @@ export function parseStorageUri(uri: string): { provider: StorageProvider | stri
   const match = uri.match(/^storage:\/\/([^/]+)\/(.+)$/);
   if (!match) return null;
   return { provider: match[1], key: normalizeKey(match[2]) };
+}
+
+/** Server-owned garbage collection only, after checking all live references. */
+export async function storageDeleteOwnedObject(reference: string): Promise<void> {
+  const parsed = parseStorageUri(reference);
+  if (!parsed || parsed.provider !== getActiveStorageProvider()) throw new Error("Object storage provider mismatch");
+  if (parsed.provider === "local") {
+    try { await unlink(await verifiedLocalObjectPath(parsed.key)); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    return;
+  }
+  if (parsed.provider === "s3" || parsed.provider === "oss") {
+    const config = getS3CompatibleStorageConfig();
+    await createS3CompatibleClient(config).send(new DeleteObjectCommand({Bucket:config.bucket,Key:parsed.key}));
+    return;
+  }
+  throw new Error("Object storage does not support deletion");
 }
 
 function parseUnambiguousStorageHttpUrl(reference: string): { url: URL; segments: string[] } | null {
@@ -263,6 +283,7 @@ export async function storagePut(
   if (options.maxAttempts === 1 && provider !== "s3" && provider !== "oss") {
     throw new Error("Single-attempt storage PUT requires S3/OSS");
   }
+  if (provider === "local") return putLocalObject(normalizeKey(relKey), data);
   if (provider === "s3" || provider === "oss") {
     const config = getS3CompatibleStorageConfig();
     const key = normalizeKey(relKey);
@@ -315,6 +336,10 @@ export async function storageGet(
   const provider = getActiveStorageProvider();
   if (options.expectedProvider !== undefined && options.expectedProvider !== provider) {
     throw new Error("Stored object provider does not match the active storage provider");
+  }
+  if (provider === "local") {
+    const key = normalizeKey(relKey);
+    return { key, url: signedLocalObjectUrl(key, options.expiresSeconds) };
   }
   if (provider === "s3" || provider === "oss") {
     const config = getS3CompatibleStorageConfig();

@@ -5,11 +5,25 @@ import { AlertCircle, Loader2, RotateCcw, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { listingResearchIdsSchema } from "@shared/listingResearchSelection";
-import { listingOwnerKey, listingRequestOwner, type ListingRequestOwner } from "./listingResearchSelectionState";
-import { listingReviewQueryMatches } from "./listingResearchSelectionState";
-import { useQueryClient } from "@tanstack/react-query";
-import { useListingConfiguredGeneration, useListingConfiguredReceiver } from "./ListingConfiguredGenerationContext";
+
+export type ListingRequestOwner = { userId: number; workspaceId: number | null; role: string; projectId: number };
+type UserIdentity = { id?: unknown; defaultWorkspaceId?: unknown; role?: unknown } | null | undefined;
+export function listingIdentity(user: UserIdentity): Omit<ListingRequestOwner, "projectId"> | null {
+  if (!user || typeof user.id !== "number" || !Number.isSafeInteger(user.id) || user.id <= 0 || typeof user.role !== "string" || !user.role) return null;
+  const workspaceId = user.defaultWorkspaceId;
+  if (workspaceId !== null && (typeof workspaceId !== "number" || !Number.isSafeInteger(workspaceId) || workspaceId <= 0)) return null;
+  return { userId: user.id, workspaceId: workspaceId as number | null, role: user.role };
+}
+export function listingRequestOwner(user: UserIdentity, projectId: number, blocked = false): ListingRequestOwner | null {
+  const identity = listingIdentity(user);
+  return blocked || !identity || !Number.isSafeInteger(projectId) || projectId <= 0 ? null : { ...identity, projectId };
+}
+export const listingOwnerKey = (owner: ListingRequestOwner | null) => owner ? JSON.stringify([owner.userId, owner.workspaceId, owner.role, owner.projectId]) : null;
+
+
+function validAnalysisIds(value: unknown): value is number[] {
+  return Array.isArray(value) && value.length <= 1000 && value.every(id => Number.isSafeInteger(id) && id > 0) && new Set(value).size === value.length;
+}
 
 export type ListingGenerationOperation =
   | "sellingPoints"
@@ -53,12 +67,7 @@ export function useListingGenerationJob(input: {
   draftFingerprint?: string;
   onConfiguredApplied?: (output: any) => void;
 }) {
-  const configured = useListingConfiguredGeneration();
-  useListingConfiguredReceiver(`${input.operation}:${input.scopeKey || "main"}`, input.draftFingerprint ?? "", outputs => {
-    if (!Object.hasOwn(outputs, input.operation)) return;
-    if (input.onConfiguredApplied) input.onConfiguredApplied(outputs[input.operation]);
-    else input.onSucceeded({ [input.operation]: outputs[input.operation] }, undefined);
-  });
+
   const auth = useAuth(), owner = listingRequestOwner(auth.user, input.projectId, auth.loading || !!auth.error);
   const scopeKey = input.scopeKey || "main";
   const identity = owner ? JSON.stringify([listingOwnerKey(owner), input.nodeId, input.operation, scopeKey]) : null;
@@ -122,7 +131,7 @@ export function useListingGenerationJob(input: {
   }, [refetch, run, current.error, current.history, current.loading]);
 
   useEffect(() => {
-    if (!run?.runId || configured?.enabled) return;
+    if (!run?.runId) return;
     if (isActive(run.status)) {
       setActiveRun(previous => previous.key === key && previous.id ? previous : { key, id: run.runId });
       return;
@@ -140,19 +149,12 @@ export function useListingGenerationJob(input: {
     } else if (run.status === "canceled" && wasActive) {
       toast.info(`${OPERATION_LABELS[input.operation]}任务已取消`);
     }
-  }, [activeRunId, configured?.enabled, input.operation, key, run, token]);
+  }, [activeRunId, input.operation, key, run, token]);
 
   const start = useCallback(async (payload: Record<string, unknown> = {}) => {
-    if (configured?.enabled) {
-      if (!owner || !key) return null;
-      const analysisIds = Array.isArray(payload.analysisIds) ? payload.analysisIds as number[] : configured.sourceSelection.analysisIds;
-      if (!analysisIds) { toast.error("请先明确确认本次竞品范围，也可确认不使用竞品"); return null; }
-      configured.request({ operation, analysisIds, coreRevisionIds: typeof payload.coreRevisionId === "number" ? [payload.coreRevisionId] : ["bullets", "batch"].includes(operation) ? configured.sourceSelection.coreRevisionIds : [], emphasis: typeof payload.emphasis === "string" && payload.emphasis.trim() ? payload.emphasis.trim() : null });
-      toast.info("已准备配置化生成，请在页面上方读取来源与费用并明确确认；尚未调用模型"); return null;
-    }
     if (!mounted.current || !key || ownerRef.current !== token || !owner || pendingRef.current.start || pendingRef.current.cancel || isActive(run?.status)) return null;
     if (RESERVED_PAYLOAD_KEYS.some(field => Object.prototype.hasOwnProperty.call(payload, field))
-      || (Object.prototype.hasOwnProperty.call(payload, "analysisIds") && (operation !== "sellingPoints" || !listingResearchIdsSchema.safeParse(payload.analysisIds).success))) {
+      || (Object.prototype.hasOwnProperty.call(payload, "analysisIds") && (operation !== "sellingPoints" || !validAnalysisIds(payload.analysisIds)))) {
       toast.error("任务参数无效，请重新确认生成范围"); return null;
     }
     pendingRef.current.start = true; setPending({ key, start: true, cancel: false });
@@ -182,7 +184,7 @@ export function useListingGenerationJob(input: {
       if (pendingRef.current.token === token) pendingRef.current.start = false;
       if (mounted.current && ownerRef.current === token) setPending(previous => ({ ...previous, start: false }));
     }
-  }, [configured, input.distillationBinding, input.nodeId, input.operation, input.projectId, input.scopeKey, key, nodeId, operation, owner, refetch, run?.status, scopeKey, startMutation, token]);
+  }, [input.distillationBinding, input.nodeId, input.operation, input.projectId, input.scopeKey, key, nodeId, operation, owner, refetch, run?.status, scopeKey, startMutation, token]);
 
   const cancel = useCallback(async () => {
     if (!mounted.current || !key || !owner || ownerRef.current !== token || pendingRef.current.start || pendingRef.current.cancel) return;
@@ -209,7 +211,6 @@ export function useListingGenerationJob(input: {
 
   return {
     run,
-    configured: !!configured?.enabled,
     history: key ? current.history : [],
     isLoadingRun: current.loading,
     readError: current.error,
@@ -234,49 +235,6 @@ function jobMatchesOwner(job: any, owner: Pick<ListingRequestOwner, "userId" | "
 function jobHistoryMatchesOwner(job: any, owner: Pick<ListingRequestOwner, "userId" | "workspaceId" | "projectId">, nodeId: ListingGenerationNodeId) {
   return !!job && job.module === "listing" && typeof job.runId === "string" && job.userId === owner.userId && job.workspaceId === owner.workspaceId && job.projectId === owner.projectId
     && job.input?.projectId === owner.projectId && (job.input.operation === "batch" || job.input.nodeId === nodeId);
-}
-
-/** Review-ledger recovery never reads the project-only shared cache. Cache
- * invalidation is only a signal to reread under the current authenticated owner. */
-export function useOwnedListingReviewLedger(projectId: number) {
-  const auth = useAuth(), owner = listingRequestOwner(auth.user, projectId, auth.loading || !!auth.error);
-  const key = listingOwnerKey(owner), client = trpc.useUtils().client, queryClient = useQueryClient();
-  const epoch = useRef({ key });
-  if (epoch.current.key !== key) epoch.current = { key };
-  const token = epoch.current;
-  type Facts = Awaited<ReturnType<typeof client.listing.listReviewedFacts.query>>;
-  type Cores = Awaited<ReturnType<typeof client.listing.listCurrentCores.query>>;
-  const [state, setState] = useState<{ token: typeof token; loading: boolean; error: Error | null; facts?: Facts; cores?: Cores }>({ token, loading: !!key, error: null });
-  const request = useRef<AbortController | null>(null), mounted = useRef(false);
-  const current = state.token === token ? state : { token, loading: !!key, error: null, facts: undefined, cores: undefined };
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; request.current?.abort(); }; }, []);
-  const refetch = useCallback(async () => {
-    if (!key || !mounted.current || epoch.current !== token) return;
-    request.current?.abort(); const controller = new AbortController(); request.current = controller;
-    setState(previous => ({ ...previous, token, loading: true, error: null, ...(previous.token !== token ? { facts: undefined, cores: undefined } : {}) }));
-    try {
-      const [facts, cores] = await Promise.all([
-        client.listing.listReviewedFacts.query({ projectId }, { signal: controller.signal }),
-        client.listing.listCurrentCores.query({ projectId }, { signal: controller.signal }),
-      ]);
-      if (!mounted.current || controller.signal.aborted || epoch.current !== token) return;
-      if (!Array.isArray(facts) || !Array.isArray(cores)) throw new Error("INVALID_REVIEW_LEDGER");
-      setState({ token, loading: false, error: null, facts, cores });
-    } catch {
-      if (mounted.current && !controller.signal.aborted && epoch.current === token)
-        setState({ token, loading: false, error: new Error("当前身份的事实或核心账本读取失败，请重新读取") });
-    }
-  }, [client, key, projectId, token]);
-  useEffect(() => { void refetch(); return () => request.current?.abort(); }, [refetch]);
-  useEffect(() => queryClient.getQueryCache().subscribe(event => {
-    if (event.type === "updated" && event.action.type === "invalidate"
-      && listingReviewQueryMatches(event.query.queryKey, projectId, ["listReviewedFacts", "listCurrentCores"])) void refetch();
-  }), [projectId, queryClient, refetch]);
-  return {
-    facts: { data: current.facts, isLoading: current.loading, isError: !!current.error, error: current.error, refetch },
-    cores: { data: current.cores, isLoading: current.loading, isError: !!current.error, error: current.error, refetch },
-    refetch,
-  };
 }
 
 export function ListingGenerationJobStatus({

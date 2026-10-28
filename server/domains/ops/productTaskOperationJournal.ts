@@ -19,8 +19,10 @@ export function productTaskOperationRequestHash(raw: ProductTaskWriteExecuteInpu
   const { base64, ...rest } = command, bytes = decodeProductTaskAttachment(base64);
   return productTaskWriteHash({ ...rest, contentHash: createHash("sha256").update(bytes).digest("hex"), byteSize: bytes.length });
 }
-export const ProductTaskPreparedUploadSchema = z.object({ identity: ProductTaskWriteIdentitySchema, operationId: uuid, action: z.literal("upload"), requestHash: hash, taskId: id, expectedVersion: hash, name: ProductTaskAttachmentNameSchema, contentHash: hash, byteSize: z.number().int().min(1).max(PRODUCT_TASK_ATTACHMENT_MAX_BYTES), provider: z.enum(["s3", "oss"]), objectKey: z.string().min(1).max(300), storageUri: z.string().min(1).max(400) }).strict().superRefine((value, ctx) => {
-  const key = `ops-tasks/${value.identity.workspaceId}/${value.taskId}/${productTaskOperationKey(value.identity, value.operationId)}.${value.name.split(".").at(-1)!.toLowerCase()}`;
+export const ProductTaskPreparedUploadSchema = z.object({ identity: ProductTaskWriteIdentitySchema, operationId: uuid, action: z.literal("upload"), requestHash: hash, taskId: id, expectedVersion: hash, name: ProductTaskAttachmentNameSchema, contentHash: hash, byteSize: z.number().int().min(1).max(PRODUCT_TASK_ATTACHMENT_MAX_BYTES), provider: z.enum(["s3", "oss", "local"]), domainHash: hash.optional(), objectKey: z.string().min(1).max(300), storageUri: z.string().min(1).max(400) }).strict().superRefine((value, ctx) => {
+  const localPrefix = value.provider === "local" ? `${value.domainHash}-${value.contentHash}-${value.byteSize}-` : "";
+  if ((value.provider === "local") !== Boolean(value.domainHash)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Storage domain binding missing or unexpected" });
+  const key = `ops-tasks/${value.identity.workspaceId}/${value.taskId}/${localPrefix}${productTaskOperationKey(value.identity, value.operationId)}.${value.name.split(".").at(-1)!.toLowerCase()}`;
   const requestHash = productTaskWriteHash({ expectedWorkspaceId: value.identity.workspaceId, operationId: value.operationId, action: "upload", taskId: value.taskId, expectedVersion: value.expectedVersion, name: value.name, contentHash: value.contentHash, byteSize: value.byteSize });
   if (value.objectKey !== key || value.storageUri !== `storage://${value.provider}/${key}` || value.requestHash !== requestHash) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Prepared upload object binding mismatch" });
 });

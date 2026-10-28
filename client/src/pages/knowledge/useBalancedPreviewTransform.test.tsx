@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useBalancedPreviewTransform } from "./useBalancedPreviewTransform";
 import { AmazonStyleGallery } from "./AmazonStyleGallery";
+vi.mock("./KnowledgeAssetActions",()=>({default:()=>null}));
 
 class MockImage {
   static created: MockImage[] = [];
@@ -149,11 +150,10 @@ describe("gallery preview interactions", () => {
       aplusImages={[{ id: 3, imageUrl: "aplus", imagePosition: "aplus", tagComposition: "Long".repeat(100) }]}
       selectedImageId={null} onSelectImage={vi.fn()} renderTagEditor={() => <input aria-label="A+ tags" />} />);
     const image = container.querySelector<HTMLImageElement>("img[src=aplus]")!;
-    expect(image.parentElement!.classList.contains("overflow-hidden")).toBe(true);
-    expect(image.classList.contains("object-contain")).toBe(true);
-    expect(image.parentElement!.parentElement!.classList.contains("md:flex-row")).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-    expect(screen.getByRole("textbox", { name: "A+ tags" })).toBeTruthy();
+    expect(image.classList.contains("h-auto")).toBe(true);
+    expect(screen.getByRole("complementary", { name: "图片标签" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "查看图片与标签" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
     expect(image.getAttribute("src")).toBe("aplus");
   });
 });

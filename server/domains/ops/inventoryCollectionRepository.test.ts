@@ -104,6 +104,13 @@ describe("manual inventory durable lifecycle and recovery", () => {
   it("checks flags again before publication", async () => { const leased = await claim(), value = await collection(); enabled = false; await expect(repo.complete({ jobId: leased.jobId, leaseToken: leased.leaseToken, ...value })).rejects.toMatchObject({ message: "INVENTORY_COLLECTION_NOT_ENABLED" }); expect(snapshots).toEqual([]); });
 });
 describe("current permissions and schema admission", () => {
+  it("accepts a migrated 0900 inventory snapshot table while rejecting mixed column semantics", async () => {
+    engines.find(row => row.tableName === SNAPSHOTS)!.collation = "utf8mb4_0900_ai_ci";
+    for (const column of cols) if (column.tableName === SNAPSHOTS && column.collation) column.collation = "utf8mb4_0900_ai_ci";
+    expect(await inventoryCollectionSchemaReady({ execute })).toBe(true);
+    cols.find(row => row.tableName === SNAPSHOTS && row.columnName === "payload")!.collation = "utf8mb4_unicode_ci";
+    expect(await inventoryCollectionSchemaReady({ execute })).toBe(false);
+  });
   it("locks workspace before fresh actor and membership, with strict policies", async () => { await start(); expect(queries[0].sql).toBe("SELECT id,status FROM workspaces WHERE id=? FOR UPDATE"); expect(queries[1].sql).toContain("FROM users WHERE id=? FOR UPDATE"); expect(queries[2].sql).toContain("FROM workspace_memberships"); expect(permission).toHaveBeenCalledWith(expect.objectContaining({ resource: "ops_inventory_collection", action: "create", authorizationRead: { executor: { execute }, strict: true, lock: true } })); });
   it.each(["ops_specialist", "product_manager", "guest"])("does not give %s all-workspace collection", async role => { await expect(repo.refresh(ctx(3, 7, role), command())).rejects.toMatchObject({ code: "FORBIDDEN" }); expect(jobs).toEqual([]); });
   it.each(["status", "workspace", "membership"])("reloads %s on every readRun", async kind => { await start(); if (kind === "status") actors[0].status = "disabled"; if (kind === "workspace") actors[0].defaultWorkspaceId = 8; if (kind === "membership") memberships[0].status = "inactive"; await expect(repo.readRun(ctx(), { expectedWorkspaceId: 7, operationId: op })).rejects.toMatchObject({ code: "FORBIDDEN" }); });

@@ -1,0 +1,38 @@
+name: Linux file safety
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  file-safety:
+    name: Approval files and governed runtimes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ALLOW_REAL_NETWORK_IN_TESTS: "0"
+      RUN_REAL_LLM_TESTS: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      # This independent platform check supplements, and does not replace, QA Gate.
+      - name: Verify Linux permissions, symlinks and approval-file rejection
+        run: >-
+          node node_modules/vitest/vitest.mjs run
+          server/services/sourceApprovalFileLoader.test.ts
+          server/domains/ai_os/services/assistantConversationRuntime.test.ts
+          --maxWorkers=2 --minWorkers=1 --reporter=default --reporter=json
+          --outputFile=artifacts/linux-file-safety.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-file-safety
+          path: artifacts/linux-file-safety.json
+          retention-days: 14

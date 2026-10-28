@@ -1,49 +1,28 @@
-import { router } from "../../_core/trpc";
+import { emperorArtifactsRouter } from "./routers/artifacts";
 import { emperorAgentsRouter } from "./routers/agents";
+import { router } from "../../_core/trpc";
 import { assistantConfigurationsRouter } from "./routers/assistantConfigurations";
 import { assistantConversationsRouter } from "./routers/assistantConversations";
-import { emperorArtifactsRouter } from "./routers/artifacts";
 import { emperorDiagnosticsRouter } from "./routers/diagnostics";
-import { emperorConversationsRouter } from "./routers/conversations";
-import { emperorExternalKnowledgeAccessRouter } from "./routers/externalKnowledgeAccess";
-import { emperorKnowledgeRouter } from "./routers/knowledge";
-import { emperorMcpRouter } from "./routers/mcp";
 import { emperorModelsRouter } from "./routers/models";
-import { emperorObservabilityRouter } from "./routers/observability";
 import { emperorRunRouter } from "./routers/run";
-import { emperorScheduledRouter } from "./routers/scheduled";
 import { emperorSkillsRouter } from "./routers/skills";
-import { emperorToolsRouter } from "./routers/tools";
+import { skillWorkbenchRouter } from "./routers/skillWorkbench";
 
-export { emperorAgentsRouter } from "./routers/agents";
-export { emperorArtifactsRouter } from "./routers/artifacts";
 export { emperorDiagnosticsRouter } from "./routers/diagnostics";
-export { emperorConversationsRouter } from "./routers/conversations";
-export { emperorExternalKnowledgeAccessRouter } from "./routers/externalKnowledgeAccess";
-export { emperorKnowledgeRouter } from "./routers/knowledge";
-export { emperorMcpRouter } from "./routers/mcp";
 export { emperorModelsRouter } from "./routers/models";
-export { emperorObservabilityRouter } from "./routers/observability";
 export { emperorRunRouter } from "./routers/run";
-export { emperorScheduledRouter } from "./routers/scheduled";
 export { emperorSkillsRouter } from "./routers/skills";
-export { emperorToolsRouter } from "./routers/tools";
 export * from "./routerContext";
 
 export const emperorRouter = router({
+  artifacts: emperorArtifactsRouter,
+  agents: emperorAgentsRouter,
   assistantConfigurations: assistantConfigurationsRouter,
   assistantConversations: assistantConversationsRouter,
   skills: emperorSkillsRouter,
+  skillWorkbench: skillWorkbenchRouter,
   run: emperorRunRouter,
   models: emperorModelsRouter,
-  mcp: emperorMcpRouter,
-  tools: emperorToolsRouter,
-  agents: emperorAgentsRouter,
-  artifacts: emperorArtifactsRouter,
-  scheduled: emperorScheduledRouter,
   diagnostics: emperorDiagnosticsRouter,
-  conversations: emperorConversationsRouter,
-  externalKnowledgeAccess: emperorExternalKnowledgeAccessRouter,
-  knowledge: emperorKnowledgeRouter,
-  observability: emperorObservabilityRouter,
 });

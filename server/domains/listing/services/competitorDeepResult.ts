@@ -38,7 +38,7 @@ function freeze<T>(value: T): T {
 }
 function summaryText(summary: CompetitorDeepSummaryResult | null, reviews: { status: "available" | "unavailable"; total: number | null }): string | null {
   if (!summary) return null;
-  const labels = { seller_claim: "商家宣称", review_feedback: "评论反馈", inference: "分析推断" };
+  const labels = { seller_claim: "商家宣称", review_feedback: "评论反馈", buyer_question: "买家问题", inference: "分析推断" };
   const claim = (value: CompetitorDeepSummaryResult["data"]["positioning"]) =>
     `${value.text}（${labels[value.basis]}；依据：${value.references.join("、")}）`;
   const sections = [["优势", summary.data.advantages], ["劣势", summary.data.weaknesses],
@@ -96,7 +96,10 @@ export function buildCompetitorDeepResult(input: CompetitorDeepResultInput) {
     const examples = members.slice(0, COMPETITOR_DEEP_RESULT_SAMPLE_LIMIT).map(({ review }) => ({
       id: review.reviewId, reviewId: review.reviewId, sourceReviewId: review.sourceReviewId,
       title: review.title, body: review.body, rating: review.rating,
-      locations: review.occurrences.map(occurrence => ({ sheet: occurrence.sheet, row: occurrence.row })),
+      locations: "origins" in review
+        ? review.origins.map(origin => ({ sheet: `${origin.fileName} / ${origin.locator.part}`, row: origin.locator.row }))
+        : review.occurrences.map(occurrence => ({ sheet: occurrence.sheet, row: occurrence.row })),
+      ...("origins" in review ? { origins: review.origins } : {}),
     }));
     return { ...group, denominator: reviewState.total, reviewIds: members.map(({ review }) => review.reviewId), evidence: examples,
       evidenceSelection: { strategy: "first_three_in_original_order" as const, limit: COMPETITOR_DEEP_RESULT_SAMPLE_LIMIT,
@@ -122,7 +125,8 @@ export function buildCompetitorDeepResult(input: CompetitorDeepResultInput) {
         batchCount: reviewState.batches.length, validatedBatchCount: results.batches.length,
         noThemeReviewCount: reviewState.status === "available" ? noThemeReviewIds.length : null },
       images: { status: "unavailable" as const, reason: "not_included_no_ocr" as const, analyzedCount: 0 },
-      questions: { status: "unavailable" as const, reason: "unavailable_no_question_evidence" as const },
+      questions: evidence.questions ? { status: "available" as const, count: evidence.questions.items.length, setHash: evidence.questions.setHash }
+        : { status: "unavailable" as const, reason: "unavailable_no_question_evidence" as const },
       subtitle: { status: "unavailable" as const, reason: "not_included_in_evidence" as const },
     },
     title: { ...step("title"), keywords: results.title?.data.keywords ?? [], modifiers: results.title?.data.modifiers ?? [],
@@ -135,15 +139,16 @@ export function buildCompetitorDeepResult(input: CompetitorDeepResultInput) {
     buyers: { ...step("buyers_synthesis"), sampleCount: reviewState.total, accountedReviewCount,
       scope: reviewState.status === "available" ? reviewState.coverage.scope : null,
       groups, concerns: results.buyers?.data.concerns ?? [], noThemeReviewIds,
-      questions: "unavailable_no_question_evidence" as const },
+      questions: evidence.questions ? "adopted_question_evidence" as const : "unavailable_no_question_evidence" as const },
     summary: { ...step("summary"), positioning: summary?.positioning.text ?? null,
       advantages: summary?.advantages.map(claim => claim.text) ?? [], weaknesses: summary?.weaknesses.map(claim => claim.text) ?? [],
       learnings: summary?.learnings.map(claim => claim.text) ?? [], opportunities: summary?.opportunities.map(claim => claim.text) ?? [] },
     trace: {
       originalEvidenceLocation: "ai_jobs.input.evidence" as const,
       batchRawOutputLocation: "ai_jobs.input.journal.steps" as const,
-      independentPermanentOriginalStore: false as const,
+      independentPermanentOriginalStore: !!evidence.questions || reviewState.status === "available" && reviewState.parserVersion === "competitor-review-adopted/1",
       listingSources: evidence.listingSources,
+      ...(evidence.questions ? { questionSources: evidence.questions } : {}),
       reviewSource: reviewState.status === "available" ? { parserVersion: reviewState.parserVersion,
         parserCorpusHash: reviewState.parserCorpusHash, authorizedCorpusHash: reviewState.authorizedCorpusHash, source: reviewState.source } : null,
       validated: { title: results.title, selling: results.selling, buyers: results.buyers, summary: results.summary },

@@ -5,7 +5,7 @@ import { normalizeMarketplaceCode } from "./marketplaceIdentity";
 export const OPERATIONS_COST_SHEET_RULE_VERSION = "friend-383b69e-cost-v1" as const;
 export const OPERATIONS_COST_SHEET_PAYLOAD_MAX_BYTES = 1024 * 1024;
 export const OPERATIONS_COST_SHEET_RESULT_MAX_BYTES = 4 * 1024 * 1024;
-export const OPERATIONS_COST_SHEET_MAX_SOURCE_ROWS = 500;
+export const OPERATIONS_COST_SHEET_MAX_SOURCE_ROWS = 2000;
 export const OPERATIONS_COST_SHEET_MAX_DISPLAY_ROWS = 1000;
 export const OPERATIONS_COST_SHEET_MAX_OBSERVATIONS = 5000;
 export const OPERATIONS_COST_SHEET_PROFIT_LABEL = "固定15%佣金假设下的单件测算，非会计利润" as const;

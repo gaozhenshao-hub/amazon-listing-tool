@@ -1,3 +1,4 @@
+import { COMPOSITION_OPTIONS } from "@shared/imageTagConstants";
 import { useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 
@@ -18,7 +19,7 @@ const FALLBACK_IMAGE_BELONG_HIERARCHY: Record<string, string[]> = {
   "A+": ["图片轮播", "对比表格", "全宽图", "图文叠加", "四图文", "三图文", "热点交互", "视频模块", "导航轮播", "单图侧文", "技术参数表", "品牌故事卡"],
   "品牌故事": [],
 };
-const FALLBACK_COMPOSITION = ["居中构图", "三分法构图", "对角线构图", "模块化构图", "二分构图", "环绕构图", "层叠构图", "大面积留白"];
+const FALLBACK_COMPOSITION = [...COMPOSITION_OPTIONS];
 const FALLBACK_STYLE = ["大厂工业极简风","现代都市风","大胆图形风","美式复古风","北欧原木风","温馨家居风","INS生活风","轻奢高级风","运动活力风","健康生活风","户外探险风","庭院休闲风","亲和童趣风","工业硬核风","赛博科技风","田园自然风"];
 const FALLBACK_IMAGE_TYPE_HIERARCHY: Record<string, string[]> = {
   "对比": ["综合对比", "细节对比", "尺寸对比", "参数对比"],
@@ -125,7 +126,8 @@ export function useKBTagOptions(): TagOptions {
 
   const compositionOptions = useMemo(() => {
     if (!compositionTags || compositionTags.length === 0) return FALLBACK_COMPOSITION;
-    return compositionTags.map(t => t.value);
+    const retired = new Set(["居中构图", "三分法构图", "对角线构图", "模块化构图", "环绕构图", "层叠构图", "大面积留白"]);
+    return [...new Set([...FALLBACK_COMPOSITION, ...compositionTags.map(t => t.value).filter(value => !retired.has(value))])];
   }, [compositionTags]);
 
   const styleOptions = useMemo(() => {

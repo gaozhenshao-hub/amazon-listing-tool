@@ -116,3 +116,25 @@ temp/
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
 .project-config.json
+
+# Production secrets, live data and local diagnostics
+.env.*
+!.env.example
+!.env.template
+!.env.production
+*.pem
+*.key
+*.p12
+*.pfx
+.import-diagnostics/
+.manus/
+backups/
+data/
+uploads/
+*.zip
+*-files.txt
+*-deleted.txt
+tmp-*.json
+docs/inventory-source/
+
+/dist-slim-check/

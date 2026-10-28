@@ -37,14 +37,4 @@ describe("皇帝候选版本回放评测契约", () => {
     expect(router).toContain("replayResults: protectedProcedure");
     expect(router).toContain("versionSnapshots: protectedProcedure");
   });
-
-  it("质量门禁页面要求显式选择快照并把人工评分关联到回放版本", () => {
-    const page = read("client/src/pages/emperor/EmperorQualityGates.tsx");
-    expect(page).toContain("候选快照");
-    expect(page).toContain("回放候选");
-    expect(page).toContain("item.status !== \"approved\" || !snapshotId");
-    expect(page).toContain("候选回放报告");
-    expect(page).toContain("snapshotId: replayToReview?.snapshotId || null");
-    expect(page).toContain("回放不会发布、替换或回滚Skill");
-  });
 });

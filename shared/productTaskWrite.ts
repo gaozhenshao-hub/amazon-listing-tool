@@ -15,7 +15,8 @@ export type ProductTaskWriteIdentity = z.infer<typeof ProductTaskWriteIdentitySc
 const operationId = z.string().uuid().transform(value => value.toLowerCase());
 const title = z.string().trim().min(1).max(200);
 const category = z.string().max(100).nullable();
-const status = z.enum(PRODUCT_TASK_STATUSES);
+const status = z.enum(["todo", "in_progress", "done"]);
+const bodyText = z.string().max(65535).refine(value => productTaskWriteUtf8Bytes(value) <= PRODUCT_TASK_TEXT_MAX_BYTES).nullable();
 const dueDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).refine(value => {
   const date = new Date(`${value}T00:00:00Z`); return Number(value.slice(0, 4)) >= 1000 && !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }).nullable();
@@ -28,9 +29,9 @@ export const ProductTaskAttachmentBase64Schema = z.string().min(4).max(Math.ceil
 export const ProductTaskWriteOptionsInputSchema = z.object({ expectedWorkspaceId: id }).strict();
 export const ProductTaskWriteProductsInputSchema = ProductTaskWriteOptionsInputSchema.extend({ assigneeId: id, search: z.string().max(200), offset: z.number().int().min(0).max(5000), limit: z.number().int().min(1).max(50) }).strict();
 const operation = { expectedWorkspaceId: id, operationId };
-const patch = z.object({ title: title.optional(), category: category.optional(), status: status.optional(), dueDate: dueDate.optional(), completionNotes: z.string().max(65535).refine(value => productTaskWriteUtf8Bytes(value) <= PRODUCT_TASK_TEXT_MAX_BYTES).nullable().optional() }).strict().refine(value => Object.keys(value).length > 0 && Object.values(value).every(field => field !== undefined));
+const patch = z.object({ assigneeId: id.optional(), assistantId: id.nullable().optional(), description: bodyText.optional(), productKey: hash.nullable().optional(), priority: z.enum(["urgent", "high", "medium", "low"]).optional(), startDate: dueDate.optional(), title: title.optional(), category: category.optional(), status: status.optional(), dueDate: dueDate.optional(), completionNotes: z.string().max(65535).refine(value => productTaskWriteUtf8Bytes(value) <= PRODUCT_TASK_TEXT_MAX_BYTES).nullable().optional() }).strict().refine(value => Object.keys(value).length > 0 && Object.values(value).every(field => field !== undefined));
 export const ProductTaskWriteExecuteInputSchema = z.discriminatedUnion("action", [
-  z.object({ ...operation, action: z.literal("create"), title, assigneeId: id, category, status, dueDate, productKey: hash.nullable() }).strict(),
+  z.object({ ...operation, action: z.literal("create"), meetingSource: z.object({meetingId:id,suggestionId:z.string().uuid()}).strict().optional(), title, assigneeId: id, assistantId: id.nullable().optional(), description: bodyText.optional(), completionNotes: bodyText.optional(), priority: z.enum(["urgent", "high", "medium", "low"]).optional(), startDate: dueDate.optional(), category, status, dueDate, productKey: hash.nullable() }).strict(),
   z.object({ ...operation, action: z.literal("update"), taskId: id, expectedVersion: hash, patch }).strict(),
   z.object({ ...operation, action: z.literal("upload"), taskId: id, expectedVersion: hash, name: ProductTaskAttachmentNameSchema, base64: ProductTaskAttachmentBase64Schema }).strict(),
   z.object({ ...operation, action: z.literal("deleteAttachment"), taskId: id, expectedVersion: hash, attachmentId: id }).strict(),
@@ -66,7 +67,8 @@ export const ProductTaskWriteProductsResultSchema = z.object({ identity: Product
   if (!value.viewKey || total === null || value.items.length !== Math.min(value.page.limit, Math.max(0, (total ?? 0) - value.page.offset)) || value.page.hasMore !== (value.page.offset + value.items.length < (total ?? 0)) || value.page.nextOffset !== (value.page.hasMore ? value.page.offset + value.items.length : null)) bad();
 });
 export type ProductTaskWriteProductsResult = z.infer<typeof ProductTaskWriteProductsResultSchema>;
-export const ProductTaskWriteDownloadResultSchema = z.object({ identity: ProductTaskWriteIdentitySchema, taskId: id, attachmentId: id, name: ProductTaskAttachmentNameSchema, url: z.string().url().refine(value => { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password && !url.hash; }), expiresSeconds: z.number().int().min(60).max(300) }).strict();
+const taskDownloadIdentity = z.object({ identity: ProductTaskWriteIdentitySchema, taskId: id, attachmentId: id, name: ProductTaskAttachmentNameSchema });
+export const ProductTaskWriteDownloadResultSchema = z.union([taskDownloadIdentity.extend({ url: z.string().url().refine(value => { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password && !url.hash; }), expiresSeconds: z.number().int().min(60).max(300) }).strict(), taskDownloadIdentity.extend({ base64: z.string().min(1).max(Math.ceil(PRODUCT_TASK_ATTACHMENT_MAX_BYTES / 3) * 4), byteSize: z.number().int().positive().max(PRODUCT_TASK_ATTACHMENT_MAX_BYTES), contentHash: z.string().regex(/^[a-f0-9]{64}$/u) }).strict()]);
 export type ProductTaskWriteDownloadResult = z.infer<typeof ProductTaskWriteDownloadResultSchema>;
 
 /** Only plain bounded JSON is accepted; hashes bind content, never confer permission. */

@@ -6,19 +6,12 @@ const root = process.cwd();
 
 const layerFiles = {
   router: [
-    "server/domains/product_development/router.ts",
-    "server/domains/ads/router.ts",
     "server/domains/ops/router.ts",
     "server/domains/ops/routers/todosLogs.ts",
-    "server/domains/ops/routers/teamTasks.ts",
     "server/domains/ops/routers/keywordMonitors.ts",
-    "server/routers/devAnalysis.ts",
-    "server/routers/adAnalysisP2.ts",
     "server/routers/operations.ts",
   ],
   compatibilityRouter: [
-    "server/routers/adDeepAnalysis.ts",
-    "server/routers/adLocalAnalysis.ts",
     "server/domains/ops/routers/weeklyOps.ts",
     "server/domains/ops/routers/plans.ts",
     "server/domains/ops/routers/products.ts",
@@ -26,21 +19,12 @@ const layerFiles = {
     "server/domains/ops/routers/executionReviews.ts",
     "server/domains/ops/routers/conversion.ts",
     "server/domains/ops/routers/marketplaceSummaries.ts",
-    "server/domains/ops/operations/tags.ts",
     "server/domains/ops/operations/settings.ts",
-    "server/domains/ops/operations/inventory.ts",
-    "server/domains/ops/operations/competitors.ts",
-    "server/domains/ops/operations/profit.ts",
-    "server/domains/ops/operations/advertising.ts",
   ],
   service: [
-    "server/domains/product_development/service.ts",
-    "server/domains/ads/service.ts",
     "server/domains/ops/workManagement/service.ts",
   ],
   repository: [
-    "server/domains/product_development/repository.ts",
-    "server/domains/ads/repository.ts",
     "server/domains/ops/workManagement/repository.ts",
   ],
 };
@@ -98,11 +82,6 @@ function productionFiles(directory, extensions) {
 const violations = Object.entries(layerFiles).flatMap(([layer, files]) => (
   files.flatMap((file) => inspectLayerFile(layer, file))
 ));
-
-const compatibilityDevDb = fs.readFileSync(path.join(root, "server/devDb.ts"), "utf8");
-if (/drizzle-orm|repositories\/dbClient|getDb\s*\(/.test(compatibilityDevDb)) {
-  violations.push("server/devDb.ts: compatibility facade contains database implementation");
-}
 
 for (const file of productionFiles(path.join(root, "client/src"), [".ts", ".tsx"])) {
   const source = fs.readFileSync(file, "utf8");

@@ -164,3 +164,10 @@
     }
   }
 }
+
+/* Keep journal toolbar controls readable in compact windows. */
+[aria-label="运营日报与周计划"] button,
+[aria-label="运营日报与周计划"] label[for="journal-owner"] {
+  flex-shrink: 0;
+  white-space: nowrap;
+}

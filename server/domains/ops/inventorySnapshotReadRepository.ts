@@ -1,3 +1,5 @@
+import { readNorthAmericaOwnership } from "./northAmericaBoardSources";
+import { projectCurrentInventoryOwnership } from "./inventoryCurrentOwnership";
 import { TRPCError } from "@trpc/server";
 import { sql, type SQL } from "drizzle-orm";
 import type { TrpcContext } from "../../_core/context";
@@ -144,7 +146,7 @@ async function authorizeRows(tx: DbExecutor, identity: Identity, universe: Parse
 
 /** Independent snapshot-only adapter. No synchronization, ownership enrichment,
  * schema initialization, schedule inspection, source downloads, or mutations. */
-export function createInventorySnapshotReadRepository(dependencies: { database?: () => Promise<InventorySnapshotReadDatabase | null>; permission?: typeof assertResourceAction } = {}) {
+export function createInventorySnapshotReadRepository(dependencies: { database?: () => Promise<InventorySnapshotReadDatabase | null>; permission?: typeof assertResourceAction; ownership?: typeof readNorthAmericaOwnership; currentProductsEnabled?: () => boolean } = {}) {
   const database = dependencies.database ?? getDb, permission = dependencies.permission ?? assertResourceAction;
   async function get(ctx: TrpcContext, raw: InventorySnapshotReadInput) {
     try {
@@ -163,10 +165,16 @@ export function createInventorySnapshotReadRepository(dependencies: { database?:
           authorizationRead: { executor: tx, strict: true, lock: true } });
         const identity = { userId: actor.id as number, workspaceId }, manager = ["super_admin", "admin", "ops_manager"].includes(actor.role as string);
         const unavailableScope = () => buildInventorySnapshotReadFailure({ identity, input, status: "scope_unverifiable", reasonCode: "scope_unverifiable", missingReason: "缺少可核验的店铺、站点、账号、父体或完整当前负责人依据；不能按历史姓名或 ASIN 推断权限" });
-        if (!manager && !input.exactScope) return unavailableScope();
+        if (!manager && !input.exactScope && input.ownershipMode !== "current_us") return unavailableScope();
         try {
           const saved = await readLatest(tx, workspaceId);
           if (!saved) return buildInventorySnapshotReadFailure({ identity, input, status: "not_found", reasonCode: "snapshot_not_found", missingReason: "没有已保存的库存快照；未触发同步，也不代表库存为零" });
+          if (input.ownershipMode === "current_us") {
+            if (input.exactScope || !(dependencies.currentProductsEnabled?.() ?? process.env.ENABLE_CURRENT_US_INVENTORY === "true")) return unavailableScope();
+            const source = await (dependencies.ownership ?? readNorthAmericaOwnership)({ tx, identity, manager }, []);
+            const currentProducts = projectCurrentInventoryOwnership(source, saved.parsed.rows, { userId: identity.userId, manager }, input.operatorId);
+            return buildInventorySnapshotReadResult({ identity, input, record: saved.record, visibility: manager && input.operatorId === undefined ? "full" : "scoped", currentProducts });
+          }
           if (!manager && saved.parsed.version === 1) return unavailableScope();
           let rowIds: string[] | undefined;
           if (input.exactScope) {

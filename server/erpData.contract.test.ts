@@ -8,19 +8,19 @@ const detailPageSource = readFileSync(resolve(process.cwd(), "client/src/pages/o
 const appSource = readFileSync(resolve(process.cwd(), "client/src/App.tsx"), "utf8");
 
 describe("ERP 数据统一入口契约", () => {
-  it("后端统一查询可接收 ERP 请求并合并两类来源", () => {
+  it("后端保留文件来源兼容，统一总览默认使用赛狐", () => {
     expect(routerSource).toContain('sourceType: z.enum(["erp", "lingxing", "saihu"])');
-    expect(routerSource).toContain('if (input.sourceType === "erp")');
+    expect(routerSource).toContain('input.consolidateNorthAmerica');
     expect(routerSource).toContain("mergeErpProducts");
-    expect(routerSource).toContain('source: "lingxing"');
-    expect(routerSource).toContain('source: "saihu"');
+    expect(routerSource).toContain('input.sourceType === "lingxing"');
+    expect(routerSource).toContain('applyOperatorMappings(db!, products, "saihu")');
   });
 
   it("产品总览合并权威周报与 ERP 历史回退，而不让用户切换孤立来源", () => {
-    expect(productsPageSource).toContain('sourceType: "erp"');
+    expect(productsPageSource).toContain('sourceType: "saihu"');
     expect(productsPageSource).toContain("buildUnifiedProductOverview");
-    expect(productsPageSource).toContain("MCP parent-ASIN weeks are the primary facts");
-    expect(productsPageSource).toContain("ERP remains only as explicitly labelled historical fallback");
+    expect(productsPageSource).toContain("consolidateNorthAmerica: true");
+    expect(productsPageSource).toContain("赛狐未提供负责人");
   });
 
   it("详情页使用 ERP 路由且继续兼容旧导入链接", () => {

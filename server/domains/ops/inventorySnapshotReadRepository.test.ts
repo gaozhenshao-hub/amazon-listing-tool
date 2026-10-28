@@ -318,3 +318,45 @@ describe("inventory v2 complete scope and current numeric ownership", () => {
     expect(result.groups.flatMap(group => group.rows)).toHaveLength(2);
   });
 });
+
+
+describe("current US inventory ownership compatibility", () => {
+  const source = () => ({
+    bindings: [{ asin: "B000000002", parentAsin: "B000000099", storeName: "Current US Store", country: "US" as const, source: { table: "saihu_product_weekly" as const, rowId: 91 } }],
+    owners: [{ storeName: "Current US Store", parentAsin: "B000000099", title: "Current parent", ownerIds: [3, 4] }],
+    members: [{ id: 3, name: "Current operator" }, { id: 4, name: "Direct partner" }, { id: 9, name: "Other team" }],
+  });
+  const compatibility = (ownership = source()) => createInventorySnapshotReadRepository({ database, currentProductsEnabled: () => true, ownership: async () => ownership });
+  it("uses current parent and numeric owners, preserves every original amount and source provenance", async () => {
+    const original = legacyRow({ ownerIds: [9], operator: "Obsolete operator" });
+    records = [record({}, legacy({}, [original, legacyRow({ id: "row-2", msku: "MSKU-2", ownerIds: [9] })]))];
+    const before = JSON.stringify(records);
+    const result = await compatibility().get(regular(), { ...input, ownershipMode: "current_us" });
+    expect(result.status).toBe("ready");
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0]).toMatchObject({ parentAsin: "B000000099", name: "Current parent", scopeStatus: "unknown" });
+    expect(result.groups[0].rows).toHaveLength(2);
+    expect(result.totals?.total).toEqual(stock(20));
+    expect(result.snapshot).toMatchObject({ currency: "CNY", visibility: "scoped", sourceCounts: null, provenance: { status: "legacy_unverifiable" } });
+    expect(result.operators?.map(item => item.id)).toEqual([3, 4]);
+    expect(JSON.stringify(records)).toBe(before);
+  });
+  it("does not authorize old ownerIds, unknown ASINs, unrelated operators or revoked co-owners", async () => {
+    const ownership = source(); ownership.owners[0].ownerIds = [9];
+    const restricted = compatibility(ownership);
+    const result = await restricted.get(regular(), { ...input, ownershipMode: "current_us" });
+    expect(result.groups).toEqual([]);
+    expect(result.totals?.total).toEqual(stock(0));
+    await expect(restricted.get(regular(), { ...input, ownershipMode: "current_us", operatorId: 9 })).rejects.toThrow();
+    ownership.bindings = [];
+    expect((await compatibility(ownership).get(regular(), { ...input, ownershipMode: "current_us" })).groups).toEqual([]);
+  });
+  it("requires explicit deployment enablement; administrators retain unpaired quantities", async () => {
+    expect((await repo.get(regular(), { ...input, ownershipMode: "current_us" })).status).toBe("scope_unverifiable");
+    actors[0].role = "ops_manager";
+    records = [record({}, legacy({}, [legacyRow({ asin: "", unpaired: true })]))];
+    const result = await compatibility().get(context(), { ...input, ownershipMode: "current_us", unpaired: true });
+    expect(result.totals?.total).toEqual(stock(10));
+    expect(result.groups[0].rows[0].currentProduct).toBeUndefined();
+  });
+});

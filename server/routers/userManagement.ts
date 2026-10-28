@@ -68,7 +68,7 @@ export const userAuthRouter = router({
   // Password login
   login: publicProcedure
     .input(z.object({
-      identifier: z.string().min(1, "请输入邮箱或手机号"),
+      identifier: z.string().trim().min(1, "请输入账号、邮箱或手机号"),
       password: z.string().min(1, "请输入密码"),
     }))
     .mutation(async ({ input, ctx }) => {

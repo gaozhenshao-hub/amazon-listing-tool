@@ -378,7 +378,6 @@ export const opsConversionProcedures = {
         asin: normalizedAsin,
         capabilities: [...CONVERSION_COLLECTOR_ACQUISITION_CAPABILITIES],
         cachePolicy: "prefer_cache",
-        maxChargeUsd: 0.1,
       });
       acquisitionJobs.push({
         asin: normalizedAsin,

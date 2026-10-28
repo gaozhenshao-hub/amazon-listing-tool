@@ -5,6 +5,7 @@ import {
   isBlockedIpAddress,
   resolveAndValidateTarget,
   safeHttpRequest,
+  safeHttpResponseLimits,
 } from "./infrastructure/http/safeHttpClient";
 
 const servers: http.Server[] = [];
@@ -23,6 +24,34 @@ async function localServer(handler: http.RequestListener) {
 }
 
 describe("safe HTTP client", () => {
+  it("settles a truncated response instead of holding the request slot", async () => {
+    const endpoint = await localServer((_request, response) => {
+      response.writeHead(200, { "content-length": 1000 });
+      response.write("partial");
+      setTimeout(() => response.destroy(), 20);
+    });
+    await expect(safeHttpRequest(endpoint, { allowPrivateNetwork: true, allowTestNetwork: true, timeoutMs: 500 }))
+      .rejects.toMatchObject({ reason: "network" });
+  });
+  it("settles the absolute timeout while a response body is stalled", async () => {
+    const endpoint = await localServer((_request, response) => {
+      response.writeHead(200, { "content-length": 1000 });
+      response.write("partial");
+    });
+    await expect(safeHttpRequest(endpoint, { allowPrivateNetwork: true, allowTestNetwork: true, timeoutMs: 100 }))
+      .rejects.toMatchObject({ reason: "timeout" });
+  });
+  it("only raises the response ceiling for explicitly selected Amazon MP4 transfers", () => {
+    const options={responseBodyProfile:"amazon-video" as const,maxResponseBytes:400*1024*1024,timeoutMs:900000};
+    expect(safeHttpResponseLimits(new URL("https://m.media-amazon.com/example.mp4"),options)).toEqual({maxResponseBytes:200*1024*1024,timeoutMs:600000});
+    for(const url of ["https://m.media-amazon.com.evil.test/example.mp4","https://example.com/example.mp4","http://m.media-amazon.com/example.mp4","https://m.media-amazon.com/example.jpg"])
+      expect(safeHttpResponseLimits(new URL(url),options)).toEqual({maxResponseBytes:50*1024*1024,timeoutMs:120000});
+    expect(safeHttpResponseLimits(new URL("https://m.media-amazon.com/example.mp4"),{maxResponseBytes:400*1024*1024})).toEqual({maxResponseBytes:50*1024*1024,timeoutMs:30000});
+  });
+  it("keeps the ordinary ceiling on a non-Amazon request despite the media profile", async () => {
+    const endpoint=await localServer((_request,response)=>{response.writeHead(200,{"content-length":51*1024*1024});response.end();});
+    await expect(safeHttpRequest(endpoint,{responseBodyProfile:"amazon-video",maxResponseBytes:200*1024*1024,allowPrivateNetwork:true,allowTestNetwork:true})).rejects.toMatchObject({reason:"response_too_large"});
+  });
   it("blocks private, link-local, metadata, mapped IPv6, and reserved addresses", () => {
     for (const address of [
       "127.0.0.1", "0.0.0.0", "10.0.0.1", "172.16.0.1", "192.168.1.1",

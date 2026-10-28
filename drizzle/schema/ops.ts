@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, tinyint, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, mediumtext, text, timestamp, tinyint, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 import { currentOpsWorkspaceId } from "../../server/domains/ops/workspaceContext";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -649,6 +649,8 @@ export const teamTasks = mysqlTable("team_tasks", {
   category: varchar("category", { length: 100 }), // e.g. Listing优化, 广告调整, 图片更新
   assigneeId: int("assignee_id"), // assigned team member
   assigneeName: varchar("assignee_name", { length: 100 }),
+  assistantId: int("assistant_id"),
+  assistantName: varchar("assistant_name", { length: 100 }),
   startDate: varchar("start_date", { length: 20 }),
   dueDate: varchar("due_date", { length: 20 }),
   completedAt: timestamp("completed_at"),
@@ -1740,7 +1742,7 @@ export const meetingRecords = mysqlTable("meeting_records", {
   userId: int("user_id").notNull(),
   title: varchar("title", { length: 300 }),
   audioUrl: text("audio_url"), // S3 URL of the uploaded audio
-  transcript: text("transcript"), // Full transcription text
+  transcript: mediumtext("transcript"), // Full transcription text
   extractedTasks: text("extracted_tasks"), // JSON array of extracted tasks
   status: mysqlEnum("meeting_status", ["uploading", "transcribing", "extracting", "done", "error"]).default("uploading").notNull(),
   errorMessage: text("error_message"),

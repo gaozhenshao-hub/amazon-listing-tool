@@ -1,0 +1,1 @@
+import "./configure-knowledge-labels";

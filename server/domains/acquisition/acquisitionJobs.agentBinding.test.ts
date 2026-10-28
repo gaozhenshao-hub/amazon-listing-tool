@@ -3,14 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requireDb: vi.fn(),
   withDbTransaction: vi.fn(),
-  getApifyProviderProfile: vi.fn(),
-  isApiConnectionSecretConfigured: vi.fn(),
+  getBasicImagesProfile: vi.fn(),
   createAcquisitionJob: vi.fn(),
   startRegisteredAiJob: vi.fn(),
   registerAiJobHandler: vi.fn(),
   findAcquisitionJobByIdempotency: vi.fn(),
   findFreshConfirmedSnapshotCoveringCapabilities: vi.fn(),
-  createConfiguredApifyAmazonProvider: vi.fn(),
+  BasicAmazonImagesProvider: vi.fn(),
   storagePut: vi.fn(),
   activate: vi.fn(),
   post: vi.fn(),
@@ -26,10 +25,9 @@ vi.mock("../../services/aiJobRunner", () => ({
   updateAiJobProgress: vi.fn(),
 }));
 vi.mock("../../storage", () => ({ storagePut: mocks.storagePut }));
-vi.mock("../apiConnections/service", () => ({ isApiConnectionSecretConfigured: mocks.isApiConnectionSecretConfigured }));
-vi.mock("./providerProfileService", () => ({ getApifyProviderProfile: mocks.getApifyProviderProfile }));
-vi.mock("./apifyProvider", () => ({ createConfiguredApifyAmazonProvider: mocks.createConfiguredApifyAmazonProvider }));
-vi.mock("./amazonNormalizer", () => ({ normalizeApifyAmazonArtifact: vi.fn() }));
+vi.mock("./basicProviderProfile", () => ({ getBasicImagesProfile: mocks.getBasicImagesProfile }));
+vi.mock("./basicAmazonProvider", () => ({ BasicAmazonImagesProvider: mocks.BasicAmazonImagesProvider }));
+vi.mock("./amazonNormalizer", () => ({ normalizeAmazonArtifact: vi.fn() }));
 vi.mock("./assetIngestion", () => ({ ingestAcquisitionAssets: vi.fn() }));
 vi.mock("./consumerActivation", () => ({ activateConfirmedSnapshotForConsumer: mocks.activate }));
 vi.mock("./snapshotReview", () => ({ confirmSnapshotForDirectIngestion: vi.fn() }));
@@ -41,9 +39,8 @@ vi.mock("./repository", () => ({
   createSourceSnapshot: vi.fn(),
   findAcquisitionJobByIdempotency: mocks.findAcquisitionJobByIdempotency,
   findFreshConfirmedSnapshotCoveringCapabilities: mocks.findFreshConfirmedSnapshotCoveringCapabilities,
-  getAcquisitionBudgetUsage: vi.fn(),
   getAcquisitionJob: vi.fn(),
-  getActiveAcquisitionProfile: vi.fn(),
+  getBasicImagesProfile: vi.fn(),
   nextAcquisitionRunAttempt: vi.fn(),
   updateAcquisitionJob: vi.fn(),
   updateAcquisitionRun: vi.fn(),
@@ -61,24 +58,22 @@ const input: AcquisitionJobRequest = {
   asin: "B0DCTJLP9R",
   capabilities: ["catalog_basic", "image_gallery"],
   cachePolicy: "refresh",
-  maxChargeUsd: 0.1,
 };
 describe("Standalone Amazon acquisition explicit unbound job metadata", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.requireDb.mockResolvedValue({});
-    mocks.getApifyProviderProfile.mockResolvedValue({
+    mocks.getBasicImagesProfile.mockResolvedValue({
       id: 3, status: "active", capabilities: ["catalog_basic", "image_gallery"],
       perRunMaxUsd: "0.1000", dailyBudgetUsd: "5.0000", monthlyBudgetUsd: "100.0000", cacheTtlSeconds: 86400,
     });
-    mocks.isApiConnectionSecretConfigured.mockResolvedValue(true);
     mocks.findAcquisitionJobByIdempotency.mockResolvedValue(null);
     mocks.findFreshConfirmedSnapshotCoveringCapabilities.mockResolvedValue(null);
     mocks.createAcquisitionJob.mockResolvedValue(29);
     mocks.startRegisteredAiJob.mockResolvedValue({ runId: "ai-acquisition-29" });
   });
 
-  it("persists explicit null Agent fields without changing queue, budget or request ownership", async () => {
+  it("persists explicit null Agent fields with zero collection cost and preserved request ownership", async () => {
     const result = await startAmazonAcquisitionJob(input);
 
     expect(mocks.startRegisteredAiJob).toHaveBeenCalledTimes(1);
@@ -86,13 +81,13 @@ describe("Standalone Amazon acquisition explicit unbound job metadata", () => {
       kind: "amazon.acquisition.fetch", module: "amazonAcquisition", procedure: "amazonAcquisition.createJob",
       workspaceId: 11, userId: 17, skillSlug: "acquisition.amazon.catalog.fetch",
       input: { acquisitionJobId: 29, agentRunId: null, agentNodeId: null },
-      queueName: "external_provider", maxAttempts: 2, timeoutSeconds: 300,
+      queueName: "amazon_acquisition", maxAttempts: 2, timeoutSeconds: 900,
     });
     expect(mocks.createAcquisitionJob).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      workspaceId: 11, requestedBy: 17, consumerRef: input.consumerRef, maxChargeUsd: "0.1000",
+      workspaceId: 11, requestedBy: 17, consumerRef: input.consumerRef, maxChargeUsd: "0.0000",
     }));
     expect(result).toEqual({ jobId: 29, status: "queued", cacheHitSnapshotId: null, aiJobRunId: "ai-acquisition-29" });
-    expect(mocks.createConfiguredApifyAmazonProvider).not.toHaveBeenCalled();
+    expect(mocks.BasicAmazonImagesProvider).not.toHaveBeenCalled();
     expect(mocks.storagePut).not.toHaveBeenCalled();
   });
 
@@ -113,7 +108,7 @@ describe("Standalone Amazon acquisition explicit unbound job metadata", () => {
     expect(mocks.withDbTransaction).toHaveBeenCalledWith(expect.any(String), expect.any(Function), { required: true });
     expect(mocks.activate).toHaveBeenCalledWith(expect.objectContaining({ db: tx, confirmedSnapshotId: 37, job: expect.objectContaining({ consumerRef: "project-competitor:23:B0DCTJLP9R:capture-v1" }) }));
     expect(mocks.post).toHaveBeenCalledWith(projection);
-    expect(mocks.startRegisteredAiJob).not.toHaveBeenCalled(); expect(mocks.createConfiguredApifyAmazonProvider).not.toHaveBeenCalled();
+    expect(mocks.startRegisteredAiJob).not.toHaveBeenCalled(); expect(mocks.BasicAmazonImagesProvider).not.toHaveBeenCalled();
     expect(mocks.createAcquisitionJob).toHaveBeenCalledTimes(replay ? 0 : 1);
   });
 
@@ -128,13 +123,14 @@ describe("Standalone Amazon acquisition explicit unbound job metadata", () => {
 
   it("preserves the confirmed-cache early return without creating a worker job", async () => {
     mocks.findFreshConfirmedSnapshotCoveringCapabilities.mockResolvedValue({ complete: true, snapshot: { id: 37 } });
-    mocks.findAcquisitionJobByIdempotency.mockResolvedValue({ id: 19, status: "confirmed", cacheHitSnapshotId: 37 });
-    await expect(startAmazonAcquisitionJob({ ...input, cachePolicy: "prefer_cache" })).resolves.toEqual({
+    mocks.findAcquisitionJobByIdempotency.mockResolvedValue({ id: 19, status: "confirmed", cacheHitSnapshotId: 37, requestedBy: input.requestedBy });
+    mocks.withDbTransaction.mockImplementation(async (_context, callback) => callback({}));
+    await expect(startAmazonAcquisitionJob({ ...input, cachePolicy: "prefer_cache" })).resolves.toMatchObject({
       jobId: 19, status: "confirmed", cacheHitSnapshotId: 37, aiJobRunId: null,
     });
     expect(mocks.createAcquisitionJob).not.toHaveBeenCalled();
     expect(mocks.startRegisteredAiJob).not.toHaveBeenCalled();
-    expect(mocks.withDbTransaction).not.toHaveBeenCalled();
-    expect(mocks.createConfiguredApifyAmazonProvider).not.toHaveBeenCalled();
+    expect(mocks.withDbTransaction).toHaveBeenCalledTimes(1);
+    expect(mocks.BasicAmazonImagesProvider).not.toHaveBeenCalled();
   });
 });

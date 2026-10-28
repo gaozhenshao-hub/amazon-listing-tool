@@ -18,11 +18,11 @@ describe("All route files use requestWithMockFallback", () => {
   for (const file of routeFiles) {
     it(`${file} should use requestWithMockFallback for API calls`, () => {
       const content = fs.readFileSync(path.join(routersDir, file), "utf-8");
-      
+
       // Find all adapter.request( calls (not requestWithMockFallback)
       const directCalls = content.match(/adapter\.request\(/g) || [];
       const fallbackCalls = content.match(/adapter\.requestWithMockFallback\(/g) || [];
-      
+
       if (directCalls.length > 0) {
         // Check if the file is in the allowed list
         const allowed = allowedDirectRequest[file];
@@ -53,7 +53,7 @@ describe("All route files use requestWithMockFallback", () => {
           expect(directCalls.length).toBe(0);
         }
       }
-      
+
       // If file has any API calls, it should have at least some fallback calls
       // (unless it only uses allowed direct calls)
       if (content.includes("adapter.") && !allowedDirectRequest[file]) {
@@ -62,10 +62,7 @@ describe("All route files use requestWithMockFallback", () => {
     });
   }
 
-  it("lingxingAdapter should export getLingxingAdapter", async () => {
-    const mod = await import("./lingxingAdapter");
-    expect(mod.getLingxingAdapter).toBeDefined();
-  });
+
 
   it.skip("mock competitor data - deprecated", () => {});
 });

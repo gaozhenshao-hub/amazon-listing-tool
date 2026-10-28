@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { acquisitionReviewCanonical, AcquisitionReviewWriteResultSchema } from "../../../shared/acquisitionReview";
 import type { SafeHttpResponse } from "../../infrastructure/http/safeHttpClient";
 import { createManualSnapshotReviewTestFixture } from "./manualSnapshotReview.testFixture";
-import { normalizeApifyAmazonArtifact } from "./amazonNormalizer";
+import { normalizeAmazonArtifact } from "./amazonNormalizer";
 import { createManualSnapshotImageStorage, manualSnapshotImageBytesHash, type ManualSnapshotPreparedImage } from "./manualSnapshotImageStorage";
 import { createManualSnapshotImageRecovery, type ManualSnapshotImageRecoveryRepository } from "./manualSnapshotImageRecovery";
 
@@ -15,7 +15,7 @@ async function fixture() {
   const image = await sharp({ create: { width: 4, height: 3, channels: 4, background: "#246813" } }).png().toBuffer();
   const sourceUrl = "https://m.media-amazon.com/images/I/raw-original.png";
   const raw = Buffer.from(JSON.stringify([{ asin: f.state.snapshot.asin, title: "Original title", brand: "Original brand", highResolutionImages: [sourceUrl] }]));
-  const normalized = normalizeApifyAmazonArtifact({ bytes: raw, expectedAsin: f.state.snapshot.asin, marketplace: "US" });
+  const normalized = normalizeAmazonArtifact({ bytes: raw, expectedAsin: f.state.snapshot.asin, marketplace: "US" });
   Object.assign(f.state.snapshot, { normalizedData: { ...normalized.snapshot, research: f.state.snapshot.normalizedData.research }, sourceHash: normalized.sourceHash, fieldStatuses: normalized.snapshot.fieldEvidence });
   Object.assign(f.state.assets[0], { sourceJsonPath: normalized.sourceAssets[0].sourcePath, sourceUrlHash: normalized.sourceAssets[0].sourceUrlHash });
   const rawKey = `acquisition/7/runs/41/${manualSnapshotImageBytesHash(raw)}.json`;
@@ -100,7 +100,7 @@ describe("manual snapshot image durable recovery flow", () => {
   });
   it("refuses an arbitrary URL even when it is present inside the hash-verified original artifact", async () => {
     const f = await fixture(), raw = Buffer.from(JSON.stringify([{ asin: f.state.snapshot.asin, highResolutionImages: ["https://evil.example.test/image.png"] }]));
-    const normalized = normalizeApifyAmazonArtifact({ bytes: raw, expectedAsin: f.state.snapshot.asin, marketplace: "US" });
+    const normalized = normalizeAmazonArtifact({ bytes: raw, expectedAsin: f.state.snapshot.asin, marketplace: "US" });
     Object.assign(f.state.snapshot, { normalizedData: normalized.snapshot, sourceHash: normalized.sourceHash });
     Object.assign(f.state.assets[0], { storageKey: null, sourceJsonPath: normalized.sourceAssets[0].sourcePath, sourceUrlHash: normalized.sourceAssets[0].sourceUrlHash });
     const key = `acquisition/7/runs/41/${manualSnapshotImageBytesHash(raw)}.json`;
@@ -191,7 +191,7 @@ describe("manual snapshot image durable recovery flow", () => {
     if (kind === "wrong-url-hash") f.state.assets[0].sourceUrlHash = "e".repeat(64);
     if (kind === "missing-address") {
       const raw = Buffer.from(JSON.stringify([{ asin: f.state.snapshot.asin, title: "Original title" }]));
-      const normalized = normalizeApifyAmazonArtifact({ bytes: raw, expectedAsin: f.state.snapshot.asin, marketplace: "US" });
+      const normalized = normalizeAmazonArtifact({ bytes: raw, expectedAsin: f.state.snapshot.asin, marketplace: "US" });
       Object.assign(f.state.snapshot, { normalizedData: normalized.snapshot, sourceHash: normalized.sourceHash });
       const key = `acquisition/7/runs/41/${manualSnapshotImageBytesHash(raw)}.json`;
       Object.assign(f.state.artifact, { storageKey: `storage://s3/${key}`, contentHash: manualSnapshotImageBytesHash(raw), sizeBytes: raw.length }); f.objects.set(key, raw);

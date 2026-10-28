@@ -39,9 +39,10 @@ const execute = vi.fn(async (statement: SQL) => {
   }
   if (query.sql.includes("FROM team_tasks WHERE")) {
     let offset = 1;
-    const assigneeId = query.sql.includes("AND assignee_id IN") ? query.params[offset++] : undefined;
+    const assigneeCount = query.sql.match(/assignee_id IN \(([^)]+)\)/u)?.[1].split(",").length ?? 0;
+    const assigneeIds = query.params.slice(offset, offset + assigneeCount); offset += assigneeCount;
     const taskId = query.sql.includes("AND id=?") ? query.params[offset++] : undefined;
-    let selected = tasks.filter(row => row.workspaceId === query.params[0] && (assigneeId === undefined || row.assigneeId === assigneeId) && (taskId === undefined || row.id === taskId));
+    let selected = tasks.filter(row => row.workspaceId === query.params[0] && (!assigneeCount || assigneeIds.includes(row.assigneeId)) && (taskId === undefined || row.id === taskId));
     if (query.sql.includes("AND id IN")) selected = selected.filter(row => query.params.slice(offset).includes(row.id));
     selected = selected.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || Number(b.id) - Number(a.id));
     if (!query.sql.includes("product_profile_id AS productProfileId")) {
@@ -55,9 +56,11 @@ const execute = vi.fn(async (statement: SQL) => {
     return [profileOverride ?? selected.map(row => query.sql.includes("p.parent_asin AS") ? { ...row, bodyBytes: profileBytes(row) } : { id: row.id, workspaceId: row.workspaceId, bodyBytes: profileBytes(row) }), []];
   }
   if (query.sql.includes("FROM ops_task_attachments a")) {
-    const restricted = query.sql.includes("AND t.assignee_id IN"), taskCount = query.sql.match(/t.id IN \(([^)]+)\)/u)![1].split(",").length, ids = query.params.slice(2, 2 + taskCount), assigneeId = restricted ? query.params[2 + taskCount] : undefined;
-    const body = query.sql.includes("AS name,"), attachmentIds = query.params.slice(2 + taskCount + Number(restricted));
-    const selected = attachments.filter(row => row.workspaceId === query.params[0] && ids.includes(row.taskId) && (!body || attachmentIds.includes(row.id)) && tasks.some(t => t.id === row.taskId && t.workspaceId === query.params[1] && (assigneeId === undefined || t.assigneeId === assigneeId))).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)) || Number(a.id) - Number(b.id)).slice(0, 5001);
+    const taskCount = query.sql.match(/t.id IN \(([^)]+)\)/u)![1].split(",").length, ids = query.params.slice(2, 2 + taskCount);
+    const assigneeCount = query.sql.match(/t.assignee_id IN \(([^)]+)\)/u)?.[1].split(",").length ?? 0;
+    const assigneeIds = query.params.slice(2 + taskCount, 2 + taskCount + assigneeCount);
+    const body = query.sql.includes("AS name,"), attachmentIds = query.params.slice(2 + taskCount + assigneeCount);
+    const selected = attachments.filter(row => row.workspaceId === query.params[0] && ids.includes(row.taskId) && (!body || attachmentIds.includes(row.id)) && tasks.some(t => t.id === row.taskId && t.workspaceId === query.params[1] && (!assigneeCount || assigneeIds.includes(t.assigneeId)))).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)) || Number(a.id) - Number(b.id)).slice(0, 5001);
     const result = attachmentsOverride ?? selected.map(row => body ? { ...row, nameBytes: bytes([row.name]) } : { id: row.id, workspaceId: row.workspaceId, taskId: row.taskId, createdAt: row.createdAt, nameBytes: bytes([row.name]) });
     if (!body) afterAttachmentCandidates?.(); return [result, []];
   }
@@ -86,9 +89,9 @@ describe("product task fixed complete authorized source", () => {
   });
   it("retains all five states and full-source statistics before paging", async () => {
     tasks = ["backlog", "todo", "in_progress", "review", "done"].map((status, index) => task({ id: 11 + index, status, completedAt: status === "done" ? time : null }));
-    const result = await repo.list(ctx(), { ...input, limit: 1 }); expect(result.stats).toMatchObject({ total: 5, pending: 4, done: 1, byStatus: { backlog: 1, todo: 1, in_progress: 1, review: 1, done: 1 } });
+    const result = await repo.list(ctx(), { ...input, limit: 1 }); expect(result.stats).toMatchObject({ total: 5, pending: 4, done: 1, byStatus: { backlog: 0, todo: 2, in_progress: 2, review: 0, done: 1 } });
     expect(result.items).toHaveLength(1); expect(result.page.hasMore).toBe(true);
-    const next = await repo.list(ctx(), { ...input, limit: 1, cursor: result.page.nextCursor }); expect(next.items[0].status).toBe("review"); expect(next.stats?.total).toBe(5);
+    const next = await repo.list(ctx(), { ...input, limit: 1, cursor: result.page.nextCursor }); expect(next.items[0].status).toBe("in_progress"); expect(next.stats?.total).toBe(5);
   });
   it("retains unlinked tasks and exact product identity without cross-store/market matching", async () => {
     tasks = [task(), task({ id: 12, productProfileId: 0, title: "通用任务" }), task({ id: 13, productProfileId: 22, title: "另一店任务" }), task({ id: 14, productProfileId: 23, title: "加拿大任务" })];
@@ -139,6 +142,20 @@ describe("product task fixed complete authorized source", () => {
 });
 
 describe("product tasks exact task authority and directory permission", () => {
+  it("reads only currently confirmed direct partner tasks, including their attachment metadata", async () => {
+    const partners = vi.fn(async () => ({ available: true, ids: [3, 6] }));
+    const partnerRepo = createProductTaskReadRepository({ database, partners });
+    tasks.push(task({ id: 12, assigneeId: 6 }), task({ id: 13, assigneeId: 9, title: "OTHER_TEAM_SECRET" }), task({ id: 14, assigneeId: 6, workspaceId: 8, title: "OTHER_WORKSPACE_SECRET" }));
+    attachments.push(attachment({ id: 32, taskId: 12 }));
+    const result = await partnerRepo.list(ctx(), input);
+    expect(result.items.map(task => task.id)).toEqual([12, 11]);
+    expect(result.capabilities.partners).toBe("available");
+    expect(JSON.stringify(result)).not.toMatch(/OTHER_TEAM_SECRET|OTHER_WORKSPACE_SECRET/u);
+    expect((await partnerRepo.detail(ctx(), { ...detailInput, taskId: 12 })).attachments.map(file => file.id)).toEqual([32]);
+    partners.mockResolvedValue({ available: true, ids: [3] });
+    expect((await partnerRepo.list(ctx(), input)).items.map(task => task.id)).toEqual([11]);
+    expect((await partnerRepo.detail(ctx(), { ...detailInput, taskId: 12 })).task).toBeNull();
+  });
   it("ops_manager has only their current numeric assignee tasks, not every product-owner task", async () => {
     tasks.push(task({ id: 12, assigneeId: 9, assigneeName: "原始负责人", creatorId: 3, title: "OTHER_ASSIGNEE_SECRET" }), task({ id: 13, workspaceId: 8, title: "OTHER_WORKSPACE_SECRET" }));
     expect((await repo.list(ctx(), input)).stats?.total).toBe(1); expect(JSON.stringify(await repo.list(ctx(), input))).not.toMatch(/OTHER_ASSIGNEE_SECRET|OTHER_WORKSPACE_SECRET/u);
@@ -185,9 +202,13 @@ describe("product tasks exact task authority and directory permission", () => {
     await expect(repo.list(ctx(), { ...input, limit: 1, cursor: first.page.nextCursor })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(repo.detail(ctx(), detailInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
-  it("does not grant ops by default to a specialist absent a current override", async () => {
-    actors[0].role = "ops_specialist"; await expect(repo.list(ctx("ops_specialist"), input)).rejects.toMatchObject({ message: "PRODUCT_TASK_READ_DIRECTORY_DENIED" });
-    overrides = [roleOverride({ role: "ops_specialist" })]; expect((await repo.list(ctx("ops_specialist"), input)).status).toBe("ready");
+  it("lets operators read assigned tasks by default while retaining explicit role restrictions", async () => {
+    actors[0].role = "ops_specialist";
+    const result = await repo.list(ctx("ops_specialist"), input);
+    expect(result.status).toBe("ready");
+    expect(result.items.every(task => task.assigneeId === 3)).toBe(true);
+    overrides = [roleOverride({ role: "ops_specialist", modules: JSON.stringify(["listing", "knowledge"]) })];
+    await expect(repo.list(ctx("ops_specialist"), input)).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
 

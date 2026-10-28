@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
@@ -35,20 +36,18 @@ describe("standalone readonly source probe import boundary", () => {
   });
 
   it("bundles and evaluates only pure local dependencies without DB/env/runner or app initialization", async () => {
-    const result = await build({ entryPoints: ["server/domains/ai_os/services/assistantConversationSourceComparison.ts"], bundle: true, platform: "node", format: "cjs", packages: "external", write: false, metafile: true });
+    const result = await build({ entryPoints: [resolve("server/domains/ai_os/services/assistantConversationSourcePrimitives.ts")], bundle: true, platform: "node", format: "cjs", packages: "external", write: false, metafile: true });
     expect(Object.keys(result.metafile!.inputs).sort()).toEqual([
-      "server/domains/ai_os/services/assistantConversationSourceComparison.ts",
       "server/domains/ai_os/services/assistantConversationSourcePrimitives.ts",
-      "server/domains/ai_os/services/strictSkillRuntime.ts",
-      "shared/agentLibraryContracts.ts", "shared/assistantConfigurations.ts",
+      "shared/agentLibraryContracts.ts",
     ].sort());
     const loaded: string[] = [], require = createRequire(import.meta.url), module = { exports: {} as Record<string, unknown> };
     runInNewContext(result.outputFiles[0].text, { module, exports: module.exports, Buffer, URL, structuredClone, require: (name: string) => {
       loaded.push(name); if (!["node:crypto", "zod", "@trpc/server"].includes(name)) throw new Error(`IMPURE_IMPORT:${name}`); return require(name);
     } });
     expect([...new Set(loaded)].sort()).toEqual(["@trpc/server", "node:crypto", "zod"]);
-    expect(typeof module.exports.captureAssistantConversationSourceEvidence).toBe("function");
-    expect(typeof module.exports.compareAssistantConversationSources).toBe("function");
+    expect(typeof module.exports.assistantConversationCanonical).toBe("function");
+    expect(typeof module.exports.assistantConversationSkillSnapshotHash).toBe("function");
   });
 });
 

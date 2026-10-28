@@ -13,26 +13,29 @@ const time = "2026-10-18 10:20:30.000000", operationId = "11111111-1111-4111-811
 const ctx = (role = "ops_specialist") => ({ user: { id: 3, role, defaultWorkspaceId: 7 }, workspaceId: 7 }) as TrpcContext;
 const task = (patch: Partial<ProductTaskSourceRecord> = {}): ProductTaskSourceRecord => ({ id: 11, workspaceId: 7, creatorId: 3, productProfileId: null, title: "待办", description: "保留说明", status: "todo", priority: "medium", category: "原类型", assigneeId: 3, assigneeName: "成员3", startDate: null, dueDate: null, completedAt: null, estimatedHours: null, actualHours: null, tags: null, createdAt: time, updatedAt: time, completionNotes: null, boardProduct: null, ...patch });
 const member = (id: number, patch: Row = {}) => ({ membershipId: id + 20, workspaceId: 7, userId: id, membershipStatus: "active", id, status: "active", name: `成员${id}`, ...patch });
-const create: Extract<ProductTaskWriteExecuteInput, { action: "create" }> = { expectedWorkspaceId: 7, operationId, action: "create", title: "完整通用任务", assigneeId: 3, category: "原生自定义类型", status: "review", dueDate: "2026-10-19", productKey: null };
+const create: Extract<ProductTaskWriteExecuteInput, { action: "create" }> = { expectedWorkspaceId: 7, operationId, action: "create", title: "完整通用任务", assigneeId: 3, category: "原生自定义类型", status: "in_progress", dueDate: "2026-10-19", productKey: null };
+let meetingData: any;
 let actors: Row[], members: Row[], tasks: ProductTaskSourceRecord[], files: Row[], audit: Row[], queries: { sql: string; params: unknown[] }[], enabled: boolean, commitLost: boolean, journalFailure: boolean, denied: string[], engines: Row[], indexes: Row[], schemas: Record<string, Row[]>;
 const col = (columnName: string, patch: Row = {}) => ({ columnName, isNullable: "YES", dataType: "int", columnType: "int", extra: "", maxLength: null, defaultValue: null, ...patch });
 const index = (tableName: string, indexName: string, columnName: string) => ({ tableName, indexName, columnName, nonUnique: 0, sequence: 1, prefixLength: null });
 const permission = vi.fn(async ({ resource, action }: { resource: string; action: string }) => { if (denied.includes(`${resource}.${action}`)) throw new TRPCError({ code: "FORBIDDEN", message: "Denied" }); });
 const directory = vi.fn(async () => {});
-const loadSource = vi.fn(async (session: Row, taskId?: number): Promise<Omit<ProductTaskReadSource, "input">> => ({ identity: session.identity, access: { all: session.all, assigneeIds: session.assigneeIds }, capabilities: { completionNotes: "available", boardProduct: "available", profiles: "available", attachments: "available", partners: "unavailable" }, tasks: tasks.filter(row => row.workspaceId === session.identity.workspaceId && (!taskId || row.id === taskId) && (session.all || session.assigneeIds.includes(row.assigneeId))), profiles: [], attachments: files.filter(row => row.taskId === taskId).map(({ storageUri: _uri, ...row }) => row) as ProductTaskReadSource["attachments"], complete: true }));
+const loadSource = vi.fn(async (session: Row, taskId?: number): Promise<Omit<ProductTaskReadSource, "input">> => ({ identity: session.identity, access: { all: session.all, assigneeIds: session.assigneeIds }, capabilities: { completionNotes: "available", boardProduct: "available", profiles: "available", attachments: "available", partners: session.partnersAvailable ? "available" : "unavailable" }, tasks: tasks.filter(row => row.workspaceId === session.identity.workspaceId && (!taskId || row.id === taskId) && (session.all || (session.assigneeIds.includes(row.assigneeId) || session.assigneeIds.includes(row.assistantId)))), profiles: [], attachments: files.filter(row => row.taskId === taskId).map(({ storageUri: _uri, ...row }) => row) as ProductTaskReadSource["attachments"], complete: true }));
 const candidate = (() => { const value = { identity: { workspaceId: 7, parentAsin: "B000000001", storeName: "Exact Store", country: "US" }, profileId: null, source: "saihu" as const, sourceId: 22, sourceMode: "legacy_weekly" as const, versionKey: "c".repeat(64), title: "源产品", chineseName: null, imageUrl: null }; return { ...value, key: productTaskProductKey(value) }; })();
 const candidates = vi.fn(async () => ({ items: [candidate], capabilities: { profiles: "available" as const, saihu: "available" as const, mappings: "available" as const, manualOwners: "available" as const }, complete: false }));
 const storage = createProductTaskAttachmentStorage({ assertPrivate: () => {}, provider: () => "s3", configured: () => true });
 storage.putOnce = vi.fn(async () => {}); storage.verify = vi.fn(async () => {}); storage.download = vi.fn(async () => ({ url: "https://private.example.test/short", expiresSeconds: 60 }));
 const execute = vi.fn(async (statement: SQL) => {
   const query = new MySqlDialect().sqlToQuery(statement); queries.push(query); const q = query.sql, p = query.params;
+  if(q.startsWith("SELECT extracted_tasks AS data,user_id AS userId FROM meeting_records")) return [p[0]===7&&p[1]===21?[{data:JSON.stringify(meetingData),userId:99}]:[],[]];
+  if(q.startsWith("UPDATE meeting_records SET extracted_tasks")) {meetingData=JSON.parse(String(p[0]));return [{affectedRows:1},[]];}
   if (q.includes("FROM users WHERE")) return [actors, []];
   if (q.includes("FROM workspace_memberships")) return [members.filter(row => row.workspaceId === p[0] && (p.length === 1 || p.slice(1).includes(row.id))), []];
   if (q.includes("FROM information_schema.COLUMNS")) return [schemas[String(p[0])] ?? [], []];
   if (q.includes("FROM information_schema.TABLES")) return [engines, []];
   if (q.includes("FROM information_schema.STATISTICS")) return [indexes, []];
   if (q.startsWith("SELECT 1 AS probe")) throw { code: "ER_NO_SUCH_TABLE" };
-  if (q.startsWith("SELECT id,workspaceId,user_id AS creatorId")) return [tasks.filter(row => row.workspaceId === p[0] && row.id === p[1]).map(({ id, workspaceId, creatorId, assigneeId }) => ({ id, workspaceId, creatorId, assigneeId })), []];
+  if (q.startsWith("SELECT id,workspaceId,user_id AS creatorId")) return [tasks.filter(row => row.workspaceId === p[0] && row.id === p[1]).map(({ id, workspaceId, creatorId, assigneeId, assistantId }) => ({ id, workspaceId, creatorId, assigneeId, assistantId })), []];
   if (q.includes("FROM security_audit_logs")) return [audit.filter(row => p.includes(row.auditId)), []];
   if (q.startsWith("INSERT INTO security_audit_logs")) {
     if (journalFailure) throw new Error("journal write failed");
@@ -44,8 +47,8 @@ const execute = vi.fn(async (statement: SQL) => {
   }
   if (q.startsWith("UPDATE team_tasks SET")) {
     const target = tasks.find(row => row.workspaceId === p.at(-2) && row.id === p.at(-1))!; let offset = 0;
-    for (const [column, field] of [["title", "title"], ["category", "category"], ["due_date", "dueDate"], ["completion_notes", "completionNotes"]] as const) if (q.includes(`${column}=?`)) (target as Row)[field] = p[offset++];
-    if (q.includes("task_status=?")) { const status = p[offset++] as string; target.completedAt = status === "done" ? target.completedAt ?? time : null; target.status = p[offset] as string; }
+    const fieldMap: Record<string,string> = { title:"title",category:"category",due_date:"dueDate",completion_notes:"completionNotes",assignee_id:"assigneeId",assignee_name:"assigneeName",assistant_id:"assistantId",assistant_name:"assistantName",description:"description",task_priority_team:"priority",start_date:"startDate",product_profile_id:"productProfileId",board_product:"boardProduct" };
+    for(const match of q.matchAll(/(\w+)=\?/g)) { if(["workspaceId","id"].includes(match[1])) break; if(match[1]==="task_status") { const status=p[++offset] as string; target.completedAt=status==="done"?target.completedAt??time:null;target.status=status;offset++; } else (target as Row)[fieldMap[match[1]]] = p[offset++]; }
     return [{ affectedRows: 1 }, []];
   }
   if (q.startsWith("INSERT INTO ops_task_attachments")) {
@@ -56,12 +59,13 @@ const execute = vi.fn(async (statement: SQL) => {
   throw new Error(`Unmocked ${q}`);
 });
 const tx = { execute };
-const transaction = vi.fn(async <T>(body: (executor: typeof tx) => Promise<T>) => { const saved = structuredClone({ tasks, files, audit }); let value: T; try { value = await body(tx); } catch (error) { ({ tasks, files, audit } = saved); throw error; } if (commitLost) { commitLost = false; throw new Error("commit acknowledgement lost"); } return value; });
+const transaction = vi.fn(async <T>(body: (executor: typeof tx) => Promise<T>) => { const saved = structuredClone({ tasks, files, audit, meetingData }); let value: T; try { value = await body(tx); } catch (error) { ({ tasks, files, audit, meetingData } = saved); throw error; } if (commitLost) { commitLost = false; throw new Error("commit acknowledgement lost"); } return value; });
 const repo = createProductTaskWriteRepository({ database: async () => ({ transaction }), permission: permission as never, directory, loadSource, candidates, storage, enabled: () => enabled });
 async function version(id = 11, all = false) { const source = await loadSource({ identity: { userId: 3, workspaceId: 7 }, all, assigneeIds: [3] }, id); return buildProductTaskDetailResult({ ...source, input: { expectedWorkspaceId: 7, taskId: id, attachmentCursor: null, attachmentLimit: 1 } }).task!.versionKey; }
 const update = async (patch: Row = {}, id = 11) => ({ expectedWorkspaceId: 7, operationId, action: "update" as const, taskId: id, expectedVersion: await version(id), patch: { title: "更新", ...patch } });
 const upload = async () => ({ expectedWorkspaceId: 7, operationId, action: "upload" as const, taskId: 11, expectedVersion: await version(), name: "凭证.txt", base64: "eA==" });
 beforeEach(() => {
+  meetingData={version:2,date:"2026-10-21",summary:"纪要",tasksExtracted:true,tasks:[{operationId:op2,title:"测试建议"}]};
   vi.clearAllMocks(); actors = [{ id: 3, role: "ops_specialist", status: "active", defaultWorkspaceId: 7 }]; members = [member(3), member(4)]; tasks = [task()]; files = []; audit = []; queries = []; enabled = true; commitLost = false; journalFailure = false; denied = ["ops_task.assign"];
   schemas = {
     team_tasks: ["workspaceId", "user_id", "title", "task_status", "task_priority_team", "category", "assignee_id", "assignee_name", "due_date", "completed_at", "createdAt", "updatedAt", "completion_notes", "board_product", "product_profile_id", "reminder_enabled"].map(name => col(name)),
@@ -76,21 +80,21 @@ beforeEach(() => {
 });
 describe("real task mutation transaction and row authorization", () => {
   it("defaults disabled with explicit options and no mutation or candidate read", async () => { enabled = false; expect(await repo.options(ctx(), { expectedWorkspaceId: 7 })).toMatchObject({ members: [], capabilities: { create: { status: "unavailable", reasonCode: "not_enabled_before_release" } } }); await expect(repo.execute(ctx(), create)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" }); expect(tasks).toHaveLength(1); expect(audit).toEqual([]); expect(candidates).not.toHaveBeenCalled(); });
-  it("creates a genuine unlinked five-state task plus same-transaction receipt without reminders", async () => { const result = await repo.execute(ctx(), create); expect(result).toMatchObject({ status: "committed", action: "create", taskId: 12 }); expect(tasks[1]).toMatchObject({ productProfileId: null, boardProduct: null, status: "review", category: create.category }); expect(audit).toHaveLength(1); expect(queries.find(query => query.sql.startsWith("INSERT INTO team_tasks"))?.sql).toContain("ELSE NULL END,0,?,NULL"); expect(queries.some(query => /ALTER TABLE|CREATE TABLE|sync|monthly_profit/iu.test(query.sql))).toBe(false); });
+  it("creates a genuine unlinked five-state task plus same-transaction receipt without reminders", async () => { const result = await repo.execute(ctx(), create); expect(result).toMatchObject({ status: "committed", action: "create", taskId: 12 }); expect(tasks[1]).toMatchObject({ productProfileId: null, boardProduct: null, status: "in_progress", category: create.category }); expect(audit).toHaveLength(1); expect(queries.find(query => query.sql.startsWith("INSERT INTO team_tasks"))?.sql).toContain("ELSE NULL END,0,?,NULL"); expect(queries.some(query => /ALTER TABLE|CREATE TABLE|sync|monthly_profit/iu.test(query.sql))).toBe(false); });
   it("enforces current actor, membership, exact expected workspace and real transactions", async () => {
     await expect(repo.execute(ctx(), { ...create, expectedWorkspaceId: 8 })).rejects.toMatchObject({ code: "FORBIDDEN" }); actors[0].role = "admin"; await expect(repo.execute(ctx(), create)).rejects.toMatchObject({ code: "FORBIDDEN" }); actors[0].role = "ops_specialist"; members[0].membershipStatus = "disabled"; await expect(repo.execute(ctx(), create)).rejects.toMatchObject({ code: "FORBIDDEN" }); expect(tasks).toHaveLength(1);
     const noTx = createProductTaskWriteRepository({ database: async () => ({}) }); await expect(noTx.execute(ctx(), create)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
   });
-  it("strictly checks independent task actions with no owner bypass or ops_data.update", async () => { await repo.execute(ctx(), create); expect(permission.mock.calls.some(([input]) => input.resource === "ops_data" && input.action !== "read")).toBe(false); for (const [input] of permission.mock.calls) { expect(input).not.toHaveProperty("ownerUserId"); expect(input).toMatchObject({ authorizationRead: { executor: tx, strict: true, lock: true } }); } denied.push("ops_task.update"); await expect(repo.execute(ctx(), await update())).rejects.toMatchObject({ code: "FORBIDDEN" }); });
+  it("strictly checks independent task actions with no owner bypass or ops_data.update", async () => { await repo.execute(ctx(), create); expect(permission.mock.calls.some(([input]) => input.resource === "ops_data" && input.action !== "read")).toBe(false); for (const [input] of permission.mock.calls) { expect(input).not.toHaveProperty("ownerUserId"); expect(input).toMatchObject({ authorizationRead: { executor: tx, strict: true, lock: true } }); } denied.push("ops_task.read"); await expect(repo.execute(ctx(), await update())).rejects.toMatchObject({ code: "FORBIDDEN" }); });
   it("assigning another member requires assign and does not grant creator later read/update", async () => {
-    await expect(repo.execute(ctx(), { ...create, assigneeId: 4 })).rejects.toMatchObject({ code: "FORBIDDEN" }); denied = []; actors[0].role = "ops_manager";
+    denied = []; actors[0].role = "ops_manager";
     const receipt = await repo.execute(ctx("ops_manager"), { ...create, assigneeId: 4 }); expect(receipt.status).toBe("committed"); expect(tasks[1].assigneeId).toBe(4);
     await expect(repo.execute(ctx("ops_manager"), { expectedWorkspaceId: 7, operationId: op2, action: "update", taskId: 12, expectedVersion: receipt.taskVersion!, patch: { title: "不能借creator修改" } })).rejects.toMatchObject({ code: "NOT_FOUND" }); expect(tasks[1].title).toBe(create.title);
   });
   it("inactive target and duplicated active memberships fail closed", async () => { denied = []; members[1].status = "disabled"; await expect(repo.execute(ctx(), { ...create, assigneeId: 4 })).rejects.toMatchObject({ code: "BAD_REQUEST" }); members.push(member(3, { membershipId: 90 })); await expect(repo.options(ctx(), { expectedWorkspaceId: 7 })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" }); });
   it("ops_manager cannot write another task even when assign allowed; admin can", async () => { tasks[0].assigneeId = 4; actors[0].role = "ops_manager"; denied = []; const command = { expectedWorkspaceId: 7, operationId, action: "update" as const, taskId: 11, expectedVersion: await version(11, true), patch: { title: "管理" } }; await expect(repo.execute(ctx("ops_manager"), command)).rejects.toMatchObject({ code: "NOT_FOUND" }); actors[0].role = "admin"; expect((await repo.execute(ctx("admin"), command)).status).toBe("committed"); });
   it("uses full version including unchanged-second content and attachments", async () => { const command = await update(); tasks[0].description = "同秒被另一人改变"; await expect(repo.execute(ctx(), command)).rejects.toMatchObject({ code: "CONFLICT" }); expect(audit).toEqual([]); });
-  it("preserves description/legacy fields and updates done time including reopening", async () => { expect((await repo.execute(ctx(), await update({ status: "done", completionNotes: "完成说明" }))).status).toBe("committed"); expect(tasks[0]).toMatchObject({ description: "保留说明", completedAt: time, completionNotes: "完成说明", status: "done" }); expect((await repo.execute(ctx(), { ...await update({ status: "review" }), operationId: op2 })).status).toBe("committed"); expect(tasks[0].completedAt).toBeNull(); });
+  it("preserves description/legacy fields and updates done time including reopening", async () => { expect((await repo.execute(ctx(), await update({ status: "done", completionNotes: "完成说明" }))).status).toBe("committed"); expect(tasks[0]).toMatchObject({ description: "保留说明", completedAt: time, completionNotes: "完成说明", status: "done" }); expect((await repo.execute(ctx(), { ...await update({ status: "in_progress" }), operationId: op2 })).status).toBe("committed"); expect(tasks[0].completedAt).toBeNull(); });
   it("rejects merged row oversize before mutation even if individual notes fit", async () => { tasks[0].description = "a".repeat(65000); tasks[0].tags = "b".repeat(60000); await expect(repo.execute(ctx(), await update({ completionNotes: "c".repeat(10000) }))).rejects.toMatchObject({ code: "BAD_REQUEST" }); expect(tasks[0].completionNotes).toBeNull(); });
   it("retains exact source-only legacy product snapshot and refuses a stale candidate key", async () => { await expect(repo.execute(ctx(), { ...create, productKey: "f".repeat(64) })).rejects.toMatchObject({ code: "CONFLICT" }); expect((await repo.execute(ctx(), { ...create, productKey: candidate.key })).status).toBe("committed"); expect(JSON.parse(tasks[1].boardProduct as string)).toMatchObject({ id: null, sourceMode: "legacy_weekly", storeName: "Exact Store", site: "US" }); });
 });
@@ -124,6 +128,54 @@ describe("actual schema capability and source disclosure", () => {
     if (failure === "short_title") schemas.team_tasks.find(row => row.columnName === "title")!.maxLength = 100;
     expect((await repo.options(ctx(), { expectedWorkspaceId: 7 })).capabilities.create.status).toBe("unavailable"); await expect(repo.execute(ctx(), create)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" }); expect(audit).toEqual([]); expect(tasks).toHaveLength(1);
   });
-  it("exposes only self to unprivileged users and legacy partial source explicitly", async () => { expect((await repo.options(ctx(), { expectedWorkspaceId: 7 })).members).toEqual([{ id: 3, displayName: "成员3" }]); const result = await repo.products(ctx(), { expectedWorkspaceId: 7, assigneeId: 3, search: "Exact", offset: 0, limit: 20 }); expect(result).toMatchObject({ coverage: "partial", items: [{ sourceMode: "legacy_weekly" }], page: { total: 1 } }); await expect(repo.products(ctx(), { expectedWorkspaceId: 7, assigneeId: 4, search: "", offset: 0, limit: 20 })).rejects.toMatchObject({ code: "FORBIDDEN" }); });
+  it("exposes only self to unprivileged users and legacy partial source explicitly", async () => { expect((await repo.options(ctx(), { expectedWorkspaceId: 7 })).members).toEqual([{ id: 3, displayName: "成员3" }, { id: 4, displayName: "成员4" }]); const result = await repo.products(ctx(), { expectedWorkspaceId: 7, assigneeId: 3, search: "Exact", offset: 0, limit: 20 }); expect(result).toMatchObject({ coverage: "partial", items: [{ sourceMode: "legacy_weekly" }], page: { total: 1 } }); expect((await repo.products(ctx(), { expectedWorkspaceId: 7, assigneeId: 4, search: "", offset: 0, limit: 20 })).identity.workspaceId).toBe(7); });
   it("unavailable owner source does not present empty products as complete", async () => { candidates.mockResolvedValueOnce({ items: [], capabilities: { profiles: "available", saihu: "available", mappings: "available", manualOwners: "unavailable" }, complete: false }); const result = await repo.products(ctx(), { expectedWorkspaceId: 7, assigneeId: 3, search: "", offset: 0, limit: 20 }); expect(result).toMatchObject({ availability: { status: "unavailable" }, coverage: "unavailable", page: { total: null }, viewKey: null }); });
+});
+
+describe("shared task viewing and editing", () => {
+ const partnerRepo = () => createProductTaskWriteRepository({database: async()=>({transaction}),permission:permission as never,directory,loadSource,candidates,storage,enabled:()=>enabled,partners:async()=>({available:true,ids:[3,4]})});
+ it("lets a direct partner edit and rejects unrelated members", async()=>{
+  tasks[0].assigneeId=4;const command={expectedWorkspaceId:7,operationId,action:"update" as const,taskId:11,expectedVersion:buildProductTaskDetailResult({...await loadSource({identity:{userId:3,workspaceId:7},all:true,assigneeIds:[3,4],partnersAvailable:true},11),input:{expectedWorkspaceId:7,taskId:11,attachmentCursor:null,attachmentLimit:1}}).task!.versionKey,patch:{title:"搭档编辑"}};
+  expect((await partnerRepo().execute(ctx(),command)).status).toBe("committed");
+  tasks[0].assigneeId=9;await expect(partnerRepo().execute(ctx(),{...command,operationId:op2})).rejects.toMatchObject({code:"NOT_FOUND"});
+ });
+ it("reassigns the owner, adds an assistant, and saves description in one transaction",async()=>{
+  schemas.team_tasks.push(col("assistant_id"),col("assistant_name",{dataType:"varchar",maxLength:100}));
+  const result=await repo.execute(ctx(),await update({assigneeId:4,assistantId:3,description:"新说明",priority:"high",startDate:"2026-10-21"}));
+  expect(result.status).toBe("committed");expect(tasks[0]).toMatchObject({assigneeId:4,assigneeName:"成员4",assistantId:3,assistantName:"成员3",description:"新说明",priority:"high"});
+  expect((await repo.execute(ctx(),{...await update({title:"协助人编辑"}),operationId:op2})).status).toBe("committed");
+ });
+ it("rejects an inactive assistant without changing the task",async()=>{
+  schemas.team_tasks.push(col("assistant_id"),col("assistant_name",{dataType:"varchar",maxLength:100}));members[1].status="disabled";
+  await expect(repo.execute(ctx(),await update({title:"不能保存",assistantId:4}))).rejects.toMatchObject({code:"BAD_REQUEST"});expect(tasks[0].title).toBe("待办");
+ });
+ it("old backlog and review are read as the three user-facing statuses without rewriting old rows",async()=>{
+  tasks[0].status="backlog";const source=await loadSource({identity:{userId:3,workspaceId:7},all:true,assigneeIds:[3]},11);
+  expect(buildProductTaskDetailResult({...source,input:{expectedWorkspaceId:7,taskId:11,attachmentCursor:null,attachmentLimit:1}}).task?.status).toBe("todo");expect(tasks[0].status).toBe("backlog");
+ });
+});
+
+describe("confirmed meeting tasks",()=>{
+  it("allows an attending operator to confirm a meeting task within existing task permissions",async()=>{
+    meetingData.participants=[{id:3,name:"成员3"}];
+    const result=await repo.execute(ctx(),{...create,meetingSource:{meetingId:21,suggestionId:op2}});
+    expect(result.status).toBe("committed"); expect(meetingData.tasks[0].taskId).toBe(12);
+  });
+  it("links a confirmed suggestion and blocks a second operation from creating it again",async()=>{
+    actors[0].role="admin";denied=[];
+    const command={...create,meetingSource:{meetingId:21,suggestionId:op2}};
+    const result=await repo.execute(ctx("admin"),command);
+    expect(result.status).toBe("committed");expect(meetingData.tasks[0].taskId).toBe(12);
+    await expect(repo.execute(ctx("admin"),{...command,operationId:op2})).rejects.toMatchObject({code:"CONFLICT"});
+    expect(tasks).toHaveLength(2);
+  });
+  it("requires a deadline and rejects a foreign workspace meeting before inserting a task",async()=>{
+    actors[0].role="admin";denied=[];
+    await expect(repo.execute(ctx("admin"),{...create,dueDate:null,meetingSource:{meetingId:21,suggestionId:op2}})).rejects.toMatchObject({code:"BAD_REQUEST"});
+    await expect(repo.execute(ctx("admin"),{...create,meetingSource:{meetingId:22,suggestionId:op2}})).rejects.toMatchObject({code:"NOT_FOUND"});
+    expect(tasks).toHaveLength(1);
+  });
+  it("rejects unrelated operators even when task creation is allowed",async()=>{
+    await expect(repo.execute(ctx(),{...create,meetingSource:{meetingId:21,suggestionId:op2}})).rejects.toMatchObject({code:"FORBIDDEN"});expect(tasks).toHaveLength(1);
+  });
 });

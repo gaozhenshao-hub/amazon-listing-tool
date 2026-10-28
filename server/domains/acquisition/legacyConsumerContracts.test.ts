@@ -31,7 +31,7 @@ describe("legacy acquisition consumer contracts", () => {
   it("requests only the capabilities each consumer can safely project", () => {
     expect(KB_LISTING_ACQUISITION_CAPABILITIES).toEqual(["catalog_basic", "listing_content"]);
     expect(KB_PRODUCT_ACQUISITION_CAPABILITIES).toContain("image_gallery");
-    expect(PROJECT_COMPETITOR_ACQUISITION_CAPABILITIES).not.toContain("aplus");
+    expect(PROJECT_COMPETITOR_ACQUISITION_CAPABILITIES).toContain("aplus");
     expect(CONVERSION_COLLECTOR_ACQUISITION_CAPABILITIES).toEqual(expect.arrayContaining(["aplus", "brand_story", "ratings"]));
   });
 });

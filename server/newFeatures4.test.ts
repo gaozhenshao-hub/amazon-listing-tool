@@ -14,20 +14,7 @@ const routerFilePath = (fileName: string) => repoPath("server/routers", fileName
 // 1. Retired Crawler Protection
 // ═══════════════════════════════════════════════════════
 
-describe("Retired crawler protection", () => {
-  it("keeps the retired implementation absent and acquisition under managed jobs", async () => {
-    const fs = await import("node:fs");
-    const retiredFiles = ["scraper.ts", "crawlerEngine.ts", "antiBot.ts"];
-    for (const fileName of retiredFiles) {
-      expect(fs.existsSync(repoPath("server", fileName))).toBe(false);
-    }
 
-    const crawlerRoute = fs.readFileSync(routerFilePath("crawler.ts"), "utf-8");
-    expect(crawlerRoute).toContain("startAmazonMonitorJob");
-    expect(crawlerRoute).toContain("createHeartbeatJob");
-    expect(crawlerRoute).not.toContain("setInterval(");
-  });
-});
 
 // ═══════════════════════════════════════════════════════
 // 2. Seller Sprite CSV Importer Tests
@@ -45,7 +32,7 @@ describe("Seller Sprite CSV Importer", () => {
     const csv = `ASIN,标题,价格,评分,评论数
 B0F21JYKNT,Test Product Title,29.99,4.5,150
 B0ABCDEFGH,Another Product,19.99,4.2,80`;
-    
+
     const result = parseSellerSpriteData(csv);
     expect(result.success).toBe(true);
     expect(result.products).toBeDefined();
@@ -58,7 +45,7 @@ B0ABCDEFGH,Another Product,19.99,4.2,80`;
     const { parseSellerSpriteData } = await import("./routers/sellerSpriteImporter");
     const csv = `ASIN,Title,Price,Rating,Reviews
 B0F21JYKNT,Test Product,29.99,4.5,150`;
-    
+
     const result = parseSellerSpriteData(csv);
     expect(result.success).toBe(true);
     expect(result.products.length).toBe(1);
@@ -75,7 +62,7 @@ B0F21JYKNT,Test Product,29.99,4.5,150`;
     const { parseSellerSpriteData } = await import("./routers/sellerSpriteImporter");
     const csv = `Name,Price,Rating
 Product 1,29.99,4.5`;
-    
+
     const result = parseSellerSpriteData(csv);
     expect(result.success).toBe(false);
     // No ASIN column means no rows can be parsed
@@ -88,7 +75,7 @@ Product 1,29.99,4.5`;
 B0F21JYKNT,Product 1,$29.99
 B0ABCDEFGH,Product 2,¥199.00
 B0XYZXYZXY,Product 3,19.99`;
-    
+
     const result = parseSellerSpriteData(csv);
     expect(result.success).toBe(true);
     expect(result.products.length).toBe(3);
@@ -101,7 +88,7 @@ B0XYZXYZXY,Product 3,19.99`;
   it("should handle tab-separated values or return error gracefully", async () => {
     const { parseSellerSpriteData } = await import("./routers/sellerSpriteImporter");
     const tsv = `ASIN\t标题\t价格\nB0F21JYKNT\tTest Product\t29.99`;
-    
+
     const result = parseSellerSpriteData(tsv);
     // TSV may or may not be supported - either way should not crash
     expect(typeof result.success).toBe("boolean");
@@ -165,7 +152,7 @@ describe("ProductOps Router - New Procedures", () => {
     expect(procedures).toContain("parseSellerSpriteCSV");
     expect(procedures).toContain("applySellerSpriteData");
     expect(procedures).toContain("analyzeProductImages");
-    expect(procedures.length).toBe(100);
+    expect(procedures).not.toContain("syncFromLingxing");
   }, 15_000);
 });
 
@@ -175,7 +162,7 @@ describe("ProductOps Router - New Procedures", () => {
 
 describe("Data Flow Integration", () => {
   it("conversionDataCollector should not have createFallbackData generating fake data", async () => {
-    const collectorCode = await import("fs").then(fs => 
+    const collectorCode = await import("fs").then(fs =>
       fs.readFileSync(routerFilePath("conversionDataCollector.ts"), "utf-8")
     );
     // Should return null instead of fake data
@@ -185,7 +172,7 @@ describe("Data Flow Integration", () => {
   });
 
   it("conversionAiScorer should not default to score 3 on failure", async () => {
-    const scorerCode = await import("fs").then(fs => 
+    const scorerCode = await import("fs").then(fs =>
       fs.readFileSync(routerFilePath("conversionAiScorer.ts"), "utf-8")
     );
     // Should have null score handling
@@ -203,7 +190,7 @@ describe("Data Flow Integration", () => {
 
 describe("Data Coverage Dashboard Logic", () => {
   // Test the coverage calculation logic that the frontend uses
-  
+
   it("should calculate coverage rate correctly for fully scored ASIN", () => {
     const totalCheckItems = 129;
     const scores = Array.from({ length: 129 }, (_, i) => ({
@@ -212,12 +199,12 @@ describe("Data Coverage Dashboard Logic", () => {
       score: 4,
       source: "ai",
     }));
-    
+
     const scored = scores.filter(s => s.score && s.score > 0 && s.source !== "no_data").length;
     const noData = scores.filter(s => s.source === "no_data" || s.score === null).length;
     const pending = totalCheckItems - scored - noData;
     const coverageRate = totalCheckItems > 0 ? Math.round(scored / totalCheckItems * 100) : 0;
-    
+
     expect(scored).toBe(129);
     expect(noData).toBe(0);
     expect(pending).toBe(0);
@@ -240,12 +227,12 @@ describe("Data Coverage Dashboard Logic", () => {
         source: "no_data",
       })),
     ];
-    
+
     const scored = scores.filter(s => s.score && s.score > 0 && s.source !== "no_data").length;
     const noData = scores.filter(s => s.source === "no_data" || s.score === null).length;
     const pending = totalCheckItems - scored - noData;
     const coverageRate = totalCheckItems > 0 ? Math.round(scored / totalCheckItems * 100) : 0;
-    
+
     expect(scored).toBe(80);
     expect(noData).toBe(20);
     expect(pending).toBe(29);
@@ -255,12 +242,12 @@ describe("Data Coverage Dashboard Logic", () => {
   it("should calculate coverage rate as 0 for ASIN with no scores", () => {
     const totalCheckItems = 129;
     const scores: any[] = [];
-    
+
     const scored = scores.filter(s => s.score && s.score > 0 && s.source !== "no_data").length;
     const noData = scores.filter(s => s.source === "no_data" || s.score === null).length;
     const pending = totalCheckItems - scored - noData;
     const coverageRate = totalCheckItems > 0 ? Math.round(scored / totalCheckItems * 100) : 0;
-    
+
     expect(scored).toBe(0);
     expect(noData).toBe(0);
     expect(pending).toBe(129);
@@ -275,12 +262,12 @@ describe("Data Coverage Dashboard Logic", () => {
       { score: null, source: "no_data" },
       { score: null, source: "no_data" },
     ];
-    
+
     const validScores = scores.filter(s => s.score && s.score > 0 && s.source !== "no_data");
     const avgScore = validScores.length > 0
       ? Math.round(validScores.reduce((sum, s) => sum + (s.score || 0), 0) / validScores.length * 10) / 10
       : 0;
-    
+
     expect(validScores.length).toBe(3);
     expect(avgScore).toBe(4);
   });
@@ -292,7 +279,7 @@ describe("Data Coverage Dashboard Logic", () => {
       { name: "标题", items: [7, 8, 9, 10, 11] },
       { name: "广告", items: [12, 13, 14, 15] },
     ];
-    
+
     const scoreMap: Record<number, { score: number | null; source: string }> = {
       1: { score: 4, source: "ai" },
       2: { score: 5, source: "programmatic" },
@@ -307,7 +294,7 @@ describe("Data Coverage Dashboard Logic", () => {
       11: { score: 5, source: "programmatic" },
       // 12-15: no scores at all (pending)
     };
-    
+
     const catCoverage = categories.map(cat => {
       const catScored = cat.items.filter(id => {
         const s = scoreMap[id];
@@ -325,17 +312,17 @@ describe("Data Coverage Dashboard Logic", () => {
         rate: cat.items.length > 0 ? Math.round(catScored / cat.items.length * 100) : 0,
       };
     });
-    
+
     expect(catCoverage[0].name).toBe("首图");
     expect(catCoverage[0].scored).toBe(4);
     expect(catCoverage[0].noData).toBe(2);
     expect(catCoverage[0].rate).toBe(67);
-    
+
     expect(catCoverage[1].name).toBe("标题");
     expect(catCoverage[1].scored).toBe(5);
     expect(catCoverage[1].noData).toBe(0);
     expect(catCoverage[1].rate).toBe(100);
-    
+
     expect(catCoverage[2].name).toBe("广告");
     expect(catCoverage[2].scored).toBe(0);
     expect(catCoverage[2].noData).toBe(0);
@@ -345,12 +332,12 @@ describe("Data Coverage Dashboard Logic", () => {
   it("should correctly identify own ASIN vs competitor ASINs", () => {
     const ownAsin = "B0OWN12345";
     const allAsins = ["B0OWN12345", "B0COMP1111", "B0COMP2222"];
-    
+
     const asinCoverage = allAsins.map(asin => ({
       asin,
       isOwn: asin === ownAsin,
     }));
-    
+
     expect(asinCoverage[0].isOwn).toBe(true);
     expect(asinCoverage[1].isOwn).toBe(false);
     expect(asinCoverage[2].isOwn).toBe(false);
@@ -363,7 +350,7 @@ describe("Data Coverage Dashboard Logic", () => {
       if (rate >= 20) return "orange";
       return "red";
     };
-    
+
     expect(getColorClass(100)).toBe("emerald");
     expect(getColorClass(80)).toBe("emerald");
     expect(getColorClass(79)).toBe("yellow");

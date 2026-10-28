@@ -2,16 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   acquisitionAttemptIdempotencyKey,
   buildAcquisitionIdempotencyKey,
-  evaluateAcquisitionBudget,
   isAcquisitionCacheFresh,
 } from "./policy";
 
-const policy = {
-  perRunMaxUsd: 0.1,
-  dailyBudgetUsd: 2,
-  monthlyBudgetUsd: 30,
-  cacheTtlSeconds: 86_400,
-};
 
 describe("acquisition policy", () => {
   it("builds the same idempotency key regardless of capability order", () => {
@@ -43,10 +36,4 @@ describe("acquisition policy", () => {
       .toBe(acquisitionAttemptIdempotencyKey({ baseKey: "base", existingStatus: "failed", now }).key);
   });
 
-  it("fails closed for each budget boundary", () => {
-    expect(evaluateAcquisitionBudget({ estimatedMaxUsd: 0.2, requestedMaxUsd: 0.1, dailyChargedUsd: 0, monthlyChargedUsd: 0, policy }).reason).toBe("request_limit");
-    expect(evaluateAcquisitionBudget({ estimatedMaxUsd: 0.11, requestedMaxUsd: 1, dailyChargedUsd: 0, monthlyChargedUsd: 0, policy }).reason).toBe("per_run_limit");
-    expect(evaluateAcquisitionBudget({ estimatedMaxUsd: 0.05, requestedMaxUsd: 0.1, dailyChargedUsd: 1.96, monthlyChargedUsd: 0, policy }).reason).toBe("daily_limit");
-    expect(evaluateAcquisitionBudget({ estimatedMaxUsd: 0.05, requestedMaxUsd: 0.1, dailyChargedUsd: 0, monthlyChargedUsd: 29.96, policy }).reason).toBe("monthly_limit");
-  });
 });

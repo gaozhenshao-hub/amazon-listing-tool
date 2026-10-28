@@ -59,9 +59,8 @@ export function publishInventorySnapshotChange(notice: SnapshotChange) {
 }
 function Shell({ children }: { children: ReactNode }) {
   return <section aria-label="完整库存显式采集" className="manus-no-record min-w-0 max-w-full space-y-4 overflow-hidden rounded-xl border bg-card p-4 md:p-5">
-    <header className="space-y-2"><h2 className="text-lg font-semibold">完整库存 · 显式采集与恢复</h2>
-      <p className="text-sm text-muted-foreground">明确点击后采集工作区已配置的赛狐库存来源。排队不等于已发布，全部校验并保存成功才刷新库存快照；失败保留上一份已保存快照。</p>
-      <p className="text-xs text-muted-foreground">不会改写领星库存规划、人工本地库存或补货参数，不会启用定时同步。来源声明的分页采完不等于账号 / 店铺业务授权或业务覆盖完整；缺少范围映射仍标记不可核验。</p>
+    <header className="space-y-1"><h2 className="text-lg font-semibold">更新库存</h2>
+      <p className="text-sm text-muted-foreground">从赛狐获取最新库存，更新成功后自动刷新下方列表。</p>
     </header>{children}
   </section>;
 }
@@ -200,18 +199,17 @@ function OwnedInventorySnapshotRefresh({ owner }: { owner: InventorySnapshotRefr
   }
   poll.current = () => { void recover("read"); };
   return <Shell>
-    <div className="flex flex-wrap gap-2"><button type="button" className={buttonClass} disabled={busy} onClick={() => void checkOptions()}>检查库存采集权限与来源</button>
-      <button type="button" className={buttonClass} disabled={busy || storageError || !!pending || !hasPendingLocks() || options?.capabilities.refresh.status !== "available"} onClick={() => void refresh()}>明确开始全来源库存采集</button>
+    <div className="flex flex-wrap gap-2"><button type="button" aria-label="检查库存采集权限与来源" className={buttonClass} disabled={busy} onClick={() => void checkOptions()}>检查连接</button>
+      <button type="button" aria-label="明确开始全来源库存采集" className={`${buttonClass} bg-primary text-primary-foreground`} disabled={busy || storageError || !!pending || !hasPendingLocks() || options?.capabilities.refresh.status !== "available"} onClick={() => void refresh()}>刷新赛狐库存</button>
     </div>
-    {!options && <p className="text-sm">尚未核验当前采集权限与来源。不会因打开页面或读取旧快照自动采集。</p>}
+    {!options && <p className="text-xs text-muted-foreground">先检查连接，再刷新库存。</p>}
     {!hasPendingLocks() && <p role="alert">当前浏览器不支持安全跨窗口锁，禁止新采集；不会降级为无锁提交。已有编号仍可向服务端核对或取消，本机记录保留。</p>}
-    {options && <div className="space-y-2 text-sm"><p>采集能力：{options.capabilities.refresh.status === "available" ? "可用（需明确点击）" : `不可用 · ${options.capabilities.refresh.reasonCode}`}</p>
-      <p>{options.snapshot.status === "ready" ? `最近已保存快照 #${options.snapshot.id} · ${options.snapshot.runSource === "manual_collection" ? "显式采集" : "已有同步"}；采集时间见已保存快照。` : options.snapshot.status === "not_found" ? "尚无已保存快照，不代表零库存。" : "快照来源缺失或损坏，禁止采集覆盖，需先排查。"}</p>
+    {options && <div className="space-y-2 text-sm"><p>{options.capabilities.refresh.status === "available" ? "连接正常，可以更新库存。" : "暂时无法更新，请检查赛狐配置或联系管理员。"}</p>
+      {options.snapshot.status !== "ready" && <p>{options.snapshot.status === "not_found" ? "还没有库存数据，请先刷新。" : "现有库存数据需要核对，请联系管理员。"}</p>}
     </div>}
     {storageError && <p role="alert">本机恢复记录损坏、身份不一致或存储不可用，已禁止新采集。未删除或覆盖原记录；需要排查后重新打开。</p>}
     {pending && <section aria-label="库存采集操作恢复" className="min-w-0 space-y-3 rounded border p-3 text-sm">
-      <p className="break-all">原操作编号：{pending.operationId} · {pending.jobId === null ? "任务编号待核对" : `任务 #${pending.jobId}`}</p>
-      <p>只核对该编号。发布开关关闭或新建权限撤销后，仍可按当前恢复权限检查 / 取消；不会自动生成新编号重试。</p>
+      <p>有一次库存更新尚未完成，请先查看进度或核对结果。</p>
       <div className="flex flex-wrap gap-2"><button type="button" className={buttonClass} disabled={busy || storageError} onClick={() => void recover("read")}>读取本次采集进度</button>
         <button type="button" className={buttonClass} disabled={busy || storageError} onClick={() => void recover("check")}>检查原采集结果</button>
       </div>
@@ -223,8 +221,8 @@ function OwnedInventorySnapshotRefresh({ owner }: { owner: InventorySnapshotRefr
     {result && <section aria-label="本次库存采集状态" className="space-y-2 text-sm">
       <p>状态：{({ accepted: result.state === "queued" ? "后台排队中，尚未发布" : "采集中，尚未发布", committed: "已保存新快照", failed: "采集失败，旧快照保留", cancelled: "已永久取消", unknown: "结果未知，需核对" })[result.outcome]}</p>
       {result.outcome !== "unknown" && <><p>已完成来源：{result.progress.completedSources} / {result.progress.totalSources}；{result.progress.source ? `当前来源：${sourceLabels[result.progress.source]}` : "当前未指定来源"}</p><progress aria-label="库存来源采集进度" max={10} value={result.progress.completedSources} className="w-full max-w-md" /></>}
-      {result.outcome === "committed" && <p>新快照 ID：{result.snapshotId}。来源完成不替代业务授权、范围映射或财务对账。</p>}
-      {result.reasonCode && <><p>状态依据：{result.reasonCode}</p>{reasonLabels[result.reasonCode] && <p>{reasonLabels[result.reasonCode]}</p>}</>}
+      {result.outcome === "committed" && <p>库存已更新，下方列表将显示最新数据。</p>}
+      {result.reasonCode && <p>{reasonLabels[result.reasonCode] || "本次更新需要进一步核对，请联系管理员。"}</p>}
     </section>}
   </Shell>;
 }

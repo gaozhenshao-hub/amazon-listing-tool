@@ -32,6 +32,18 @@ function fixture(initial: SavedBatch[], options: { manager?: boolean; candidateP
 }
 
 describe("complete immutable shop/site edition source capture", () => {
+  it("reads a nine-month production-sized history above 32 MiB without losing January", async () => {
+    const records = Array.from({ length: 9 }, (_, i) => batch(9-i, Array.from({ length: 125 }, (_, j) => rawRow({
+      yearMonth: `2026-${String(9-i).padStart(2,"0")}`, asin: `SYN-${j}`, raw: { currency: "USD", originalText: "x".repeat(32000) },
+    }))));
+    const bytes = records.reduce((sum, r) => sum+r.payloadBytes+r.monthsBytes, 0);
+    expect(bytes).toBeGreaterThan(32*1024*1024);
+    expect(bytes).toBeLessThan(64*1024*1024);
+    const result = await selectMonthlyBoardHistory(fixture(records).session, input);
+    expect(result.history.complete).toBe(true);
+    expect(result.selections.map(s => s.month)).toEqual(Array.from({ length: 9 }, (_, i) => `2026-${String(i+1).padStart(2,"0")}`));
+    expect(result.selections.flatMap(s => s.selection.selected!.rows).length).toBe(1125);
+  }, 60000);
   it.each([
     { fileReferenceKind: "storage", sourceRunId: null, kind: "uploaded_file", hashBasis: "original_file_bytes" },
     { fileReferenceKind: "saihu_sync_run", sourceRunId: 17, kind: "saihu_sync", hashBasis: "mapped_json_bytes" },
@@ -105,7 +117,7 @@ describe("complete immutable shop/site edition source capture", () => {
     await expect(captureOperationsBoardEdition(source.session, input)).rejects.toBeInstanceOf(IncompleteScan);
   });
   it("enforces wire budget before loading an oversized candidate", async () => {
-    const source = fixture([batch(1)], { candidatePatch: rows => rows.map(row => ({ ...row, payloadBytes: 32 * 1024 * 1024 })) });
+    const source = fixture([batch(1)], { candidatePatch: rows => rows.map(row => ({ ...row, payloadBytes: 64 * 1024 * 1024 })) });
     await expect(captureOperationsBoardEdition(source.session, input)).rejects.toBeInstanceOf(IncompleteScan); expect(source.calls).toHaveLength(1);
   });
   it("keeps ordinary live reads on their existing selection without archive proof side effects", async () => {
@@ -139,7 +151,7 @@ describe("complete immutable shop/site edition source capture", () => {
     if (reason === "order") records.reverse();
     if (reason === "duplicate") records[1].id = 2;
     if (reason === "count") records = Array.from({ length: 201 }, (_, index) => batch(201 - index));
-    if (reason === "bytes") records[0].payload = " ".repeat(32 * 1024 * 1024);
+    if (reason === "bytes") records[0].payload = " ".repeat(64 * 1024 * 1024);
     expect(() => prepareOperationsBoardHistoryCapture(records, 11)).toThrow();
   });
 });

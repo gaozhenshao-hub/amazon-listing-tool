@@ -1,3 +1,4 @@
+import { exactMeetingAssignee, exactMeetingProduct, type MeetingTaskSuggestion } from "@shared/meetingNotes";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,12 +46,10 @@ type ProductScope = {
   country: string;
   parentAsin: string;
 };
-type Status = ProductTaskReadItem["status"];
-const STATUSES: Record<Status, string> = {
-  backlog: "待规划",
+type Status = "todo" | "in_progress" | "done";
+const STATUSES = {
   todo: "未开始",
   in_progress: "进行中",
-  review: "待审核",
   done: "已完成",
 };
 const CATEGORIES = ["listing优化", "广告优化", "绩效处理", "其他"];
@@ -70,6 +69,10 @@ type FileProgress = {
 type TaskDraft = {
   title: string;
   assigneeId: string;
+  assistantId: string;
+  description: string;
+  priority: "urgent"|"high"|"medium"|"low";
+  startDate: string;
   productKey: string;
   category: string;
   status: Status;
@@ -79,6 +82,7 @@ type TaskDraft = {
 const newDraft = (owner: ProductTaskActionOwner): TaskDraft => ({
   title: "",
   assigneeId: String(owner.userId),
+  assistantId: "", description: "", priority: "medium", startDate: "",
   productKey: "",
   category: "其他",
   status: "todo",
@@ -162,11 +166,11 @@ function DraftFields({
           onChange={event => onChange({ title: event.target.value })}
         />
       </Field>
-      {!editing && (
+      {(
         <>
           <Field label="运营负责人">
             <select
-              aria-label="新任务运营负责人"
+              aria-label={editing ? "编辑运营负责人" : "新任务运营负责人"}
               className={inputClass}
               value={draft.assigneeId}
               disabled={disabled}
@@ -174,22 +178,23 @@ function DraftFields({
                 onChange({ assigneeId: event.target.value, productKey: "" })
               }
             >
+              <option value="">请选择运营负责人</option>
               {members.map(member => (
                 <option key={member.id} value={member.id}>
-                  {member.name} · ID {member.id}
+                  {member.name}
                 </option>
               ))}
             </select>
           </Field>
           <Field label="关联商品（可选）">
             <select
-              aria-label="新任务关联商品"
+              aria-label={editing ? "编辑关联商品" : "新任务关联商品"}
               className={inputClass}
               value={draft.productKey}
               disabled={disabled || loadingProducts}
               onChange={event => onChange({ productKey: event.target.value })}
             >
-              <option value="">不关联商品</option>
+              <option value="">不关联商品</option>{editing && <option value="__keep__">保留当前关联商品</option>}
               {products.map(product => (
                 <option key={product.key} value={product.key}>
                   {product.label}
@@ -197,10 +202,10 @@ function DraftFields({
               ))}
             </select>
           </Field>
-          <p className="text-xs text-muted-foreground">
-            选择负责人会清除商品选择；通用任务可以不关联商品。商品仅来自当前负责人已核验的精确店铺、国家和父
-            ASIN 范围。
-          </p>
+          <Field label="协助人（可选）"><select aria-label="协助人" className={inputClass} value={draft.assistantId} disabled={disabled} onChange={event=>onChange({assistantId:event.target.value})}><option value="">不设置协助人</option>{members.map(member=><option key={member.id} value={member.id}>{member.name}</option>)}</select></Field>
+          <Field label="任务说明"><Textarea aria-label="任务说明" value={draft.description} disabled={disabled} onChange={event=>onChange({description:event.target.value})}/></Field>
+          <div className="grid grid-cols-2 gap-4"><Field label="优先级"><select aria-label="优先级" className={inputClass} value={draft.priority} disabled={disabled} onChange={event=>onChange({priority:event.target.value as TaskDraft["priority"]})}>{[["low","低"],["medium","普通"],["high","高"],["urgent","紧急"]].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></Field><Field label="开始日期"><Input aria-label="开始日期" type="date" value={draft.startDate} disabled={disabled} onChange={event=>onChange({startDate:event.target.value})}/></Field></div>
+
         </>
       )}
       <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
@@ -255,14 +260,14 @@ function DraftFields({
           清除截止日期
         </Button>
       </Field>
-      {editing && (
+      {(
         <Field label="完成说明">
           <Textarea
             aria-label="编辑完成说明"
             rows={5}
             maxLength={65535}
             value={draft.completionNotes}
-            disabled={disabled || !canComplete}
+            disabled={disabled || editing && !canComplete}
             onChange={event =>
               onChange({ completionNotes: event.target.value })
             }
@@ -274,7 +279,7 @@ function DraftFields({
               字节，必须自行缩短后保存；不会截断或覆盖原文。
             </span>
           )}
-          {!canComplete && (
+          {editing && !canComplete && (
             <span className="text-xs text-amber-700">
               完成说明能力尚未接通，不会以空值覆盖未知内容。
             </span>
@@ -443,7 +448,11 @@ const safeReason = (value: string | null) =>
   value && /^[A-Z0-9_]{1,100}$/i.test(value) ? value : "NOT_AVAILABLE";
 
 export type ProductTaskActionsProps = {
+  initialTitle?: string;
+  meetingSuggestion?: MeetingTaskSuggestion & {meetingId:number;suggestionId:string;participantIds?:number[]};
+  onCreated?: () => void;
   owner: ProductTaskActionOwner;
+  onMembers?: (members: {id:number;displayName:string}[]) => void;
   product?: ProductScope | null;
   detail?: ProductTaskDetailResult;
   onReadDetail?: (taskId: number) => void;
@@ -455,7 +464,10 @@ export type ProductTaskActionsProps = {
 /** One operation controller is shared by global and exact-product task entry
  * points. Every mutation is authorized by the server, not displayed names. */
 function OwnedProductTaskActions({
+  initialTitle = "",
+  meetingSuggestion, onCreated,
   owner,
+  onMembers,
   product = null,
   detail,
   onReadDetail,
@@ -511,6 +523,7 @@ function OwnedProductTaskActions({
       }
     };
     load();
+    void checkOptions();
     pendingListeners.add(load);
     const storage = (event: StorageEvent) => {
       if (event.key === pendingKey(recoveryOwner)) load();
@@ -565,6 +578,7 @@ function OwnedProductTaskActions({
         return;
       if (!identityMatches(data, owner)) throw new Error("SCOPE_CHANGED");
       setOptions(data);
+      onMembers?.(data.members);
     } catch {
       if (
         alive.current &&
@@ -572,7 +586,7 @@ function OwnedProductTaskActions({
         sequence.current === ticket
       ) {
         clearPrivate();
-        setError("操作权限读取失败，原数据已隐藏；请重新核验后再操作。");
+        setError("任务功能暂时无法加载，请刷新页面重试。");
       }
     } finally {
       if (alive.current && sequence.current === ticket) setChecking(false);
@@ -618,10 +632,8 @@ function OwnedProductTaskActions({
       )
         throw new Error("PRODUCT_SOURCE_CHANGED");
       setProducts(data);
-      if (allowPreselect && product) {
-        const match = data.items.find(item =>
-          sameProduct(item.identity, product)
-        );
+      if (allowPreselect && (product || meetingSuggestion?.productHint)) {
+        const match=product ? data.items.find(item=>sameProduct(item.identity,product)) : exactMeetingProduct(meetingSuggestion?.productHint,data.items);
         if (match) {
           setSelectedProduct(match);
           setDraft(value => ({ ...value, productKey: match.key }));
@@ -637,7 +649,7 @@ function OwnedProductTaskActions({
           "商品候选读取失败或来源变化，旧选择已清除；仍可明确选择不关联商品。"
         );
         setSelectedProduct(null);
-        setDraft(value => ({ ...value, productKey: "" }));
+        setDraft(value => ({ ...value, productKey: value.productKey === "__keep__" ? "__keep__" : "" }));
       }
     } finally {
       if (alive.current && candidatesSequence.current === ticket)
@@ -647,15 +659,16 @@ function OwnedProductTaskActions({
   function startCreate() {
     if (!available("create") || blocked || !options) return;
     const assignee =
-      options.members.find(member => member.id === owner.userId) ??
+      options.members.find(member => member.id === (meetingSuggestion ? exactMeetingAssignee(meetingSuggestion.assigneeName,options.members,meetingSuggestion.participantIds) : owner.userId)) ??
       options.members[0];
     if (!assignee) {
-      setError("没有当前可分配的有效数字成员，无法创建任务。");
+      setError("没有可选择的运营人员，请联系管理员。");
       return;
     }
     setMode("create");
     setTask(null);
-    setDraft({ ...newDraft(owner), assigneeId: String(assignee.id) });
+    const matchedId=meetingSuggestion?exactMeetingAssignee(meetingSuggestion.assigneeName,options.members,meetingSuggestion.participantIds):assignee.id;
+    setDraft({ ...newDraft(owner), title: initialTitle, assigneeId: matchedId ? String(matchedId) : "", ...(meetingSuggestion ? {description:meetingSuggestion.description,dueDate:meetingSuggestion.dueDate||"",category:meetingSuggestion.category} : {}) });
     setFiles([]);
     setSelectedProduct(null);
     setProducts(null);
@@ -664,12 +677,12 @@ function OwnedProductTaskActions({
     setMessage("");
     void loadProducts(
       assignee.id,
-      product?.parentAsin ?? "",
+      product?.parentAsin ?? meetingSuggestion?.productHint ?? "",
       0,
       undefined,
       true
     );
-    setProductSearch(product?.parentAsin ?? "");
+    setProductSearch(product?.parentAsin ?? meetingSuggestion?.productHint ?? "");
   }
   function startEdit(value: ProductTaskReadItem) {
     if (
@@ -685,12 +698,19 @@ function OwnedProductTaskActions({
     setDraft({
       ...newDraft(owner),
       title: value.title,
+      assistantId: String(value.assistantId ?? ""),
+      description: value.description ?? "",
+      priority: value.priority ?? "medium",
+      startDate: value.legacy.startDate?.slice(0,10) ?? "",
+      productKey: "__keep__",
       assigneeId: String(value.assigneeId ?? ""),
       category: value.category ?? "",
-      status: value.status,
+      status: value.status === "backlog" ? "todo" : value.status === "review" ? "in_progress" : value.status,
       dueDate: value.dueDate.value ?? "",
       completionNotes: value.completionNotes.value ?? "",
     });
+    setSelectedProduct(null); setProducts(null); setProductSearch("");
+    void loadProducts(value.assigneeId ?? owner.userId);
     setMode("edit");
     setFiles([]);
     setError("");
@@ -703,8 +723,8 @@ function OwnedProductTaskActions({
       setSelectedProduct(null);
       setProducts(null);
       setProductSearch("");
-      setDraft(value => ({ ...value, ...patch, productKey: "" }));
-      void loadProducts(Number(patch.assigneeId));
+      setDraft(value => ({ ...value, ...patch, productKey: mode === "edit" ? "__keep__" : "" }));
+      if(patch.assigneeId) {const hint=mode==="create"?meetingSuggestion?.productHint??"":"";setProductSearch(hint);void loadProducts(Number(patch.assigneeId),hint,0,undefined,!!hint);}
       return;
     }
     if (patch.productKey !== undefined)
@@ -770,7 +790,7 @@ function OwnedProductTaskActions({
       }
       setError(
         result.status === "cancelled"
-          ? "服务端已确认取消，本次没有继续执行；可重新核验后操作。"
+          ? "操作已取消。"
           : "操作结果尚未确认。请使用恢复操作，不要重复提交。"
       );
       return result;
@@ -778,7 +798,7 @@ function OwnedProductTaskActions({
       if (alive.current && !signal.aborted) {
         clearPrivate();
         setError(
-          "操作结果尚未确认或权限/版本已变化；已保留原操作 ID，请核查或取消，不能当作失败重新提交。"
+          "保存结果还未确认，请先查看保存结果，避免重复提交。"
         );
       }
       return null;
@@ -811,11 +831,12 @@ function OwnedProductTaskActions({
       ) {
         setMode(null);
         setTask(null);
+        if(payload.action === "create") onCreated?.();
         setDraft(newDraft(owner));
         setMessage(
           payload.action === "create"
-            ? "任务已创建。未关联或分配给他人的任务可能不在当前筛选内，请在相应授权范围查看。"
-            : "操作已保存，已刷新当前用户各任务入口的读取范围。"
+            ? "任务已创建。"
+            : "任务已保存。"
         );
       }
     } catch {
@@ -830,12 +851,18 @@ function OwnedProductTaskActions({
   }
   function saveDraft() {
     if (mode === "create") {
+      if (meetingSuggestion && (!draft.title.trim() || !draft.assigneeId || !draft.dueDate)) {setError("请补全任务内容、运营负责人和预计完成日期后保存。");return;}
       if (draft.productKey && selectedProduct?.key !== draft.productKey) {
         setError("商品选择已失效，请重新选择或明确不关联商品。");
         return;
       }
       void run({
         action: "create",
+        ...(meetingSuggestion ? {meetingSource:{meetingId:meetingSuggestion.meetingId,suggestionId:meetingSuggestion.suggestionId}} : {}),
+        assistantId: draft.assistantId ? Number(draft.assistantId) : null,
+        description: draft.description || null,
+        completionNotes: draft.completionNotes || null,
+        priority: draft.priority, startDate: draft.startDate || null,
         title: draft.title,
         assigneeId: Number(draft.assigneeId),
         category: draft.category,
@@ -850,6 +877,15 @@ function OwnedProductTaskActions({
       ProductTaskWriteExecuteInput,
       { action: "update" }
     >["patch"] = {};
+    if (draft.assigneeId !== String(task.assigneeId ?? "")) patch.assigneeId = Number(draft.assigneeId);
+    if (draft.assistantId !== String(task.assistantId ?? "")) patch.assistantId = draft.assistantId ? Number(draft.assistantId) : null;
+    if (draft.description !== (task.description ?? "")) patch.description = draft.description || null;
+    if (draft.priority !== (task.priority ?? "medium")) patch.priority = draft.priority;
+    if (draft.startDate !== (task.legacy.startDate?.slice(0,10) ?? "")) patch.startDate = draft.startDate || null;
+    if (draft.productKey !== "__keep__") {
+      if (draft.productKey && selectedProduct?.key !== draft.productKey) { setError("请重新选择关联商品。"); return; }
+      patch.productKey = draft.productKey || null;
+    }
     if (draft.title !== task.title) patch.title = draft.title;
     if (draft.status !== task.status) patch.status = draft.status;
     if (draft.category !== (task.category ?? ""))
@@ -877,7 +913,7 @@ function OwnedProductTaskActions({
     if (
       decision === "cancel" &&
       !window.confirm(
-        "取消这次未确认的任务操作？仅在服务端确认取消后才会释放原操作 ID。"
+        "取消这次尚未完成的保存？"
       )
     )
       return;
@@ -910,16 +946,16 @@ function OwnedProductTaskActions({
         setMessage(
           result.status === "committed"
             ? "服务端确认原操作已经保存，已刷新任务读取范围。"
-            : "服务端已确认取消并阻止该操作 ID 的迟到执行；现在可重新核验后操作。"
+            : "操作已取消，可以重新编辑。"
         );
       } else
         setError(
-          "服务端尚不能确认最终结果，原操作 ID 继续保留；请稍后核查或请求取消。"
+          "保存结果还未确认，请稍后查看或取消。"
         );
     } catch {
       if (alive.current && !abort.signal.aborted) {
         clearPrivate();
-        setError("恢复请求未得到有效确认；原操作 ID 仍被保留，不能重新提交。");
+        setError("暂时无法确认保存结果，请稍后重试。");
       }
     } finally {
       if (alive.current) {
@@ -1067,6 +1103,15 @@ function OwnedProductTaskActions({
         data.attachmentId !== attachmentId
       )
         throw new Error("DOWNLOAD_SCOPE_CHANGED");
+      let blob: Blob;
+      if ("base64" in data) {
+        const decoded = atob(data.base64);
+        if (decoded.length !== data.byteSize || btoa(decoded) !== data.base64) throw new Error("DOWNLOAD_CONTENT_INVALID");
+        const bytes = Uint8Array.from(decoded, value => value.charCodeAt(0));
+        const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), value => value.toString(16).padStart(2, "0")).join("");
+        if (hash !== data.contentHash) throw new Error("DOWNLOAD_CONTENT_INVALID");
+        blob = new Blob([bytes], { type: "application/octet-stream" });
+      } else {
       const response = await fetch(data.url, {
         signal: abort.signal,
         credentials: "omit",
@@ -1075,11 +1120,12 @@ function OwnedProductTaskActions({
         cache: "no-store",
       });
       if (!current()) return;
-      const blob = await readBoundedTaskDownload(
+      blob = await readBoundedTaskDownload(
         response,
         abort.signal,
         current
       );
+      }
       if (!current()) return;
       objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -1109,7 +1155,7 @@ function OwnedProductTaskActions({
       !blocked &&
       available("deleteAttachment") &&
       window.confirm(
-        `解除任务「${target.title}」（ID ${target.id}）的附件「${name}」关联？此操作不删除任务。`
+        `删除任务「${target.title}」的附件「${name}」？`
       )
     )
       void run({
@@ -1172,54 +1218,10 @@ function OwnedProductTaskActions({
     <div className="manus-no-record min-w-0 space-y-3">
       <section
         aria-label="任务操作权限与恢复"
-        className="space-y-2 rounded border bg-muted/20 p-3 text-sm"
+        className="space-y-2 text-sm"
       >
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={checking || busy}
-            onClick={() => void checkOptions()}
-          >
-            {checking ? "正在核验操作权限…" : "检查任务操作权限"}
-          </Button>
-          {options && (
-            <Button
-              type="button"
-              disabled={
-                !available("create") || blocked || !options.members.length
-              }
-              onClick={startCreate}
-            >
-              {product ? "添加产品任务" : "新增运营任务"}
-            </Button>
-          )}
-        </div>
-        {!options && (
-          <p className="text-xs">
-            读取不自动开启写入。请显式核验当前授权；功能受服务端发布开关和真实存储能力控制。
-          </p>
-        )}
-        {options && (
-          <ul className="space-y-1 text-xs">
-            {(
-              [
-                ["create", "创建"],
-                ["update", "编辑"],
-                ["upload", "上传附件"],
-                ["download", "授权下载"],
-                ["deleteAttachment", "解除附件关联"],
-              ] as const
-            ).map(([key, label]) => (
-              <li key={key}>
-                {label}：
-                {available(key)
-                  ? "当前可用，每次操作仍重新鉴权"
-                  : `未启用 / 尚未接通（${safeReason(options.capabilities[key].reasonCode)}）`}
-              </li>
-            ))}
-          </ul>
-        )}
+        <div className={children ? "absolute right-5 top-5" : "flex justify-end"}><Button type="button" className="min-h-11 bg-primary px-5 font-semibold text-primary-foreground shadow-sm" disabled={checking || !available("create") || blocked || !options?.members.length} onClick={startCreate}>＋ {meetingSuggestion ? "核对并保存任务" : product ? "添加产品任务" : "新增运营任务"}</Button></div>
+        {checking && <p role="status" className="text-sm text-muted-foreground">正在加载任务功能…</p>}
         {storageError && (
           <p role="alert">
             恢复标识无法安全读取或持久保存，已阻止新写入。不会丢弃未确认操作后重新提交。
@@ -1230,27 +1232,14 @@ function OwnedProductTaskActions({
             aria-label="未确认任务操作"
             className="space-y-2 rounded border border-amber-500 p-3"
           >
-            <p>
-              原操作 {pending.operationId} · {pending.action} ·{" "}
-              {pending.taskId ? `任务 ${pending.taskId}` : "新建任务"}{" "}
-              尚未确认。只保存身份、范围和操作 ID，不保存正文或附件内容。
-            </p>
-            <p className="text-xs">
-              在服务端返回“已保存”或“已取消”的最终回执前，不会释放此 ID
-              或发起重复操作。
-            </p>
-            {pending.action === "upload" && (
-              <p className="text-xs">
-                这里只恢复当前未确认附件；同批此前已确认保存的附件不会重传，剩余未提交文件需恢复后重新选择。权限或读取失败时，以重新授权后的附件列表核验已保存结果。
-              </p>
-            )}
+            <p>上一次保存还未确认，请先查看保存结果，避免重复提交。</p>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 disabled={busy || storageError}
                 onClick={() => void recover("check")}
               >
-                核查原操作结果
+                查看保存结果
               </Button>
               {pending.action === "upload" && (
                 <Button
@@ -1258,7 +1247,7 @@ function OwnedProductTaskActions({
                   disabled={busy || storageError}
                   onClick={() => void recover("complete_upload")}
                 >
-                  完成原附件入库
+                  继续保存附件
                 </Button>
               )}
               <Button
@@ -1267,12 +1256,12 @@ function OwnedProductTaskActions({
                 disabled={busy || storageError}
                 onClick={() => void recover("cancel")}
               >
-                请求取消原操作
+                取消未完成操作
               </Button>
             </div>
           </div>
         )}
-        {error && <p role="alert">{error}</p>}
+        {error && !mode && <p role="alert">{error}</p>}
         {message && <p role="status">{message}</p>}
       </section>
       {children?.(bindings)}
@@ -1300,8 +1289,8 @@ function OwnedProductTaskActions({
             </DialogTitle>
             <DialogDescription>
               {mode === "create"
-                ? "创建时选择数字负责人，商品可选；不会根据姓名扩展权限。"
-                : `任务 ${task?.id ?? ""}：只修改内容、五状态、类型、截止日期和完成说明，不重新分配或删除任务。`}
+                ? "填写任务内容，选择负责人和协助人。"
+                : "可以修改任务内容、人员、状态、日期、关联商品和完成情况。"}
             </DialogDescription>
           </DialogHeader>
           <DraftFields
@@ -1341,7 +1330,7 @@ function OwnedProductTaskActions({
               </label>
             </div>
           )}
-          {mode === "create" && (
+          {(
             <section
               aria-label="授权商品候选"
               className="space-y-2 rounded border p-3 text-sm"
@@ -1370,33 +1359,15 @@ function OwnedProductTaskActions({
                   void loadProducts(Number(draft.assigneeId), productSearch)
                 }
               >
-                搜索授权商品
+                搜索商品
               </Button>
               {productsLoading && (
-                <p role="status">正在核验该负责人的商品候选…</p>
+                <p role="status">正在查找商品…</p>
               )}
               {productError && <p role="alert">{productError}</p>}
               {products && (
                 <>
-                  <p>
-                    候选来源：
-                    {products.coverage === "complete"
-                      ? "已接通来源完整"
-                      : products.coverage === "partial"
-                        ? "仅部分可信来源，不能视作完整商品目录"
-                        : "来源尚未接通"}
-                    ；
-                    {products.page.total === null
-                      ? "总数未知"
-                      : `当前 ${products.items.length} / 共 ${products.page.total}`}
-                  </p>
-                  {products.availability.status !== "available" && (
-                    <p>
-                      商品候选不可用（
-                      {safeReason(products.availability.reasonCode)}
-                      ）；可明确创建不关联商品的通用任务。
-                    </p>
-                  )}
+                  <p className="text-muted-foreground">找到 {products.page.total ?? 0} 个商品</p>
                   <div className="flex gap-2">
                     <Button
                       type="button"
@@ -1483,14 +1454,14 @@ function OwnedProductTaskActions({
                 <p>附件来源未接通，数量和内容未知。</p>
               ) : !currentDetail ? (
                 <div>
-                  <p>附件详情尚未完成当前任务版本核验。</p>
+                  <p>正在加载附件。</p>
                   <Button
                     type="button"
                     variant="outline"
                     disabled={blocked}
                     onClick={() => onReadDetail?.(task.id)}
                   >
-                    核验附件列表
+                    刷新附件
                   </Button>
                 </div>
               ) : (
@@ -1548,7 +1519,7 @@ function OwnedProductTaskActions({
                           removeAttachment(task, file.id, file.name)
                         }
                       >
-                        解除附件 {file.name}
+                        删除 {file.name}
                       </Button>
                     </div>
                   ))}
@@ -1556,6 +1527,7 @@ function OwnedProductTaskActions({
               )}
             </section>
           )}
+          {error && <p role="alert" className="text-destructive">{error}</p>}
           <DialogFooter>
             <Button
               type="button"

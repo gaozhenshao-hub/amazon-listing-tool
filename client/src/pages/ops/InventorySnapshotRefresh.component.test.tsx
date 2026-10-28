@@ -35,7 +35,7 @@ function persistPending(jobId: number | null = null, extras: Record<string, unkn
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
 const checkButton = () => screen.getByRole("button", { name: "检查库存采集权限与来源" });
 const startButton = () => screen.getByRole("button", { name: "明确开始全来源库存采集" });
-async function check() { fireEvent.click(checkButton()); await screen.findByText(/采集能力：/); }
+async function check() { fireEvent.click(checkButton()); await screen.findByText(/连接正常，可以更新库存|暂时无法更新，请检查赛狐配置/); }
 async function start() { await check(); fireEvent.click(startButton()); await screen.findByText(/后台排队中，尚未发布/); }
 beforeEach(() => {
   cleanup(); localStorage.clear(); vi.restoreAllMocks();
@@ -60,8 +60,8 @@ describe("inventory collection entry and fresh authority", () => {
     expect(screen.getByRole("region", { name: "完整库存显式采集" })).toHaveClass("min-w-0", "max-w-full");
     await check(); expect(controls.options).toHaveBeenCalledWith({ expectedWorkspaceId: 11 }, { signal: expect.any(AbortSignal) });
     expect(startButton()).toBeEnabled(); expect(controls.refresh).not.toHaveBeenCalled();
-    expect(screen.getByText(/最近已保存快照 #41/)).toBeVisible();
-    expect(screen.getByText(/不会改写领星库存规划/)).toHaveTextContent("不等于账号 / 店铺业务授权");
+    expect(screen.queryByText(/快照 #41/)).not.toBeInTheDocument();
+    expect(screen.getByText(/从赛狐获取最新库存/)).toBeVisible();
   });
   it.each(["ops_dashboard", "ops_inventory"])("requires read directory %s", directory => {
     controls.permissions.canRead.mockImplementation((_module, menu) => menu !== directory); render(<InventorySnapshotRefresh />);
@@ -79,13 +79,13 @@ describe("inventory collection entry and fresh authority", () => {
   });
   it.each(["release_disabled", "create_permission_denied", "connection_missing", "mapping_invalid"])("shows unavailable reason %s and does not enable refresh", async reason => {
     const value = options(); value.capabilities.refresh = { status: "unavailable", reasonCode: reason }; controls.options.mockResolvedValue(value);
-    render(<InventorySnapshotRefresh />); await check(); expect(screen.getByText(`采集能力：不可用 · ${reason}`)).toBeVisible(); expect(startButton()).toBeDisabled();
+    render(<InventorySnapshotRefresh />); await check(); expect(screen.getByText("暂时无法更新，请检查赛狐配置或联系管理员。")).toBeVisible(); expect(screen.queryByText(reason)).not.toBeInTheDocument(); expect(startButton()).toBeDisabled();
   });
   it("distinguishes known absent snapshot from missing table and corrupt snapshot", async () => {
     const value = options(); value.snapshot = { status: "not_found", id: null, key: hash(), runSource: null }; controls.options.mockResolvedValue(value);
-    render(<InventorySnapshotRefresh />); await check(); expect(screen.getByText(/尚无已保存快照，不代表零库存/)).toBeVisible(); expect(startButton()).toBeEnabled();
+    render(<InventorySnapshotRefresh />); await check(); expect(screen.getByText(/还没有库存数据，请先刷新/)).toBeVisible(); expect(startButton()).toBeEnabled();
     value.snapshot = { status: "invalid", id: null, key: null, runSource: null }; value.capabilities.refresh = { status: "unavailable", reasonCode: "invalid_snapshot" };
-    await check(); expect(screen.getByText(/快照来源缺失或损坏/)).toBeVisible(); expect(startButton()).toBeDisabled();
+    await check(); expect(screen.getByText(/现有库存数据需要核对/)).toBeVisible(); expect(startButton()).toBeDisabled();
   });
   it.each(["identity", "capability", "missing_hash", "extra"])("rejects invalid options: %s", async scenario => {
     const value = options() as any;
@@ -118,7 +118,7 @@ describe("durable UUID, progress and final acknowledgements", () => {
     controls.readRun.mockResolvedValue(receipt("committed"));
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(controls.readRun).toHaveBeenLastCalledWith({ expectedWorkspaceId: 11, operationId: uuid }, { signal: expect.any(AbortSignal) });
-    expect(screen.getByText(/新快照 ID：42/)).toBeVisible(); expect(localStorage.getItem(key)).toBeNull();
+    expect(screen.getByText(/库存已更新，下方列表将显示最新数据/)).toBeVisible(); expect(localStorage.getItem(key)).toBeNull();
     expect(notice).toHaveBeenCalledTimes(1); expect(notice).toHaveBeenCalledWith({ ...identity, snapshotId: 42 });
     const calls = controls.readRun.mock.calls.length; await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
     expect(controls.readRun).toHaveBeenCalledTimes(calls); expect(startButton()).toBeDisabled(); unsub();
@@ -129,7 +129,7 @@ describe("durable UUID, progress and final acknowledgements", () => {
     view.unmount(); render(<InventorySnapshotRefresh />); await screen.findByRole("region", { name: "库存采集操作恢复" });
     expect(controls.refresh).toHaveBeenCalledTimes(1); expect(controls.recover).not.toHaveBeenCalled();
     controls.recover.mockResolvedValue(receipt("committed")); fireEvent.click(screen.getByRole("button", { name: "检查原采集结果" }));
-    await screen.findByText(/新快照 ID：42/); expect(controls.recover).toHaveBeenCalledWith({ expectedWorkspaceId: 11, operationId: uuid, decision: "check" }, { signal: expect.any(AbortSignal) });
+    await screen.findByText(/库存已更新，下方列表将显示最新数据/); expect(controls.recover).toHaveBeenCalledWith({ expectedWorkspaceId: 11, operationId: uuid, decision: "check" }, { signal: expect.any(AbortSignal) });
     expect(controls.refresh).toHaveBeenCalledTimes(1);
   });
   it("stops automatic polling after an unknown response and never resubmits", async () => {
@@ -149,7 +149,7 @@ describe("durable UUID, progress and final acknowledgements", () => {
   });
   it("treats cancel racing a commit as committed rather than claiming cancellation", async () => {
     persistPending(); render(<InventorySnapshotRefresh />); fireEvent.click(screen.getByRole("checkbox")); controls.recover.mockResolvedValue(receipt("committed"));
-    fireEvent.click(screen.getByRole("button", { name: "永久取消原采集操作" })); await screen.findByText(/新快照 ID：42/);
+    fireEvent.click(screen.getByRole("button", { name: "永久取消原采集操作" })); await screen.findByText(/库存已更新，下方列表将显示最新数据/);
     expect(screen.queryByText(/服务端已确认永久取消/)).not.toBeInTheDocument();
   });
   it("failed collection releases only the final operation, keeps old snapshot semantics, does not invalidate", async () => {
@@ -166,7 +166,7 @@ describe("durable UUID, progress and final acknowledgements", () => {
     const delayed = deferred<unknown>(); controls.refresh.mockReturnValue(delayed.promise); render(<InventorySnapshotRefresh />); await check(); fireEvent.click(startButton());
     await screen.findByRole("region", { name: "库存采集操作恢复" }); fireEvent.click(screen.getByRole("button", { name: "停止等待（不取消服务端）" }));
     expect(controls.refresh.mock.calls[0][1].signal.aborted).toBe(true); expect(readInventorySnapshotPending(owner)?.operationId).toBe(uuid);
-    await act(async () => { delayed.resolve(receipt("committed")); }); expect(screen.queryByText(/新快照 ID：42/)).not.toBeInTheDocument();
+    await act(async () => { delayed.resolve(receipt("committed")); }); expect(screen.queryByText(/库存已更新，下方列表将显示最新数据/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "检查原采集结果" })).toBeEnabled();
   });
   it.each(["wrong_actor", "wrong_workspace", "wrong_uuid", "wrong_job", "bad_progress", "fake_success", "extra"])("refuses mismatched or malformed receipt %s", async scenario => {
@@ -179,7 +179,7 @@ describe("durable UUID, progress and final acknowledgements", () => {
     if (scenario === "fake_success") value.snapshotKey = null;
     if (scenario === "extra") value.payload = "private-payload";
     controls.recover.mockResolvedValue(value); render(<InventorySnapshotRefresh />); fireEvent.click(screen.getByRole("button", { name: "检查原采集结果" }));
-    await screen.findByText(/进度或恢复核对失败/); expect(readInventorySnapshotPending(owner)?.operationId).toBe(uuid); expect(screen.queryByText(/新快照 ID：42/)).not.toBeInTheDocument(); expect(startButton()).toBeDisabled();
+    await screen.findByText(/进度或恢复核对失败/); expect(readInventorySnapshotPending(owner)?.operationId).toBe(uuid); expect(screen.queryByText(/库存已更新，下方列表将显示最新数据/)).not.toBeInTheDocument(); expect(startButton()).toBeDisabled();
   });
 });
 
@@ -193,7 +193,7 @@ describe("identity isolation and safe recovery storage", () => {
     if (scenario === "read_permission") controls.permissions.canRead.mockReturnValue(false);
     if (scenario === "permission_loading") controls.permissions.isLoading = true;
     view.rerender(<InventorySnapshotRefresh />); expect(controls.recover.mock.calls[0][1].signal.aborted).toBe(true);
-    await act(async () => { delayed.resolve(receipt("committed")); }); expect(screen.queryByText(/新快照 ID：42/)).not.toBeInTheDocument(); expect(readInventorySnapshotPending(owner)?.operationId).toBe(uuid);
+    await act(async () => { delayed.resolve(receipt("committed")); }); expect(screen.queryByText(/库存已更新，下方列表将显示最新数据/)).not.toBeInTheDocument(); expect(readInventorySnapshotPending(owner)?.operationId).toBe(uuid);
     expect(controls.refresh).not.toHaveBeenCalled();
   });
   it.each(["invalid_json", "extra_payload", "wrong_identity", "oversize"])("does not silently remove corrupted metadata %s", async scenario => {
@@ -211,14 +211,14 @@ describe("identity isolation and safe recovery storage", () => {
   it("honors another tab's pending UUID and will not replace it", async () => {
     render(<InventorySnapshotRefreshController owner={owner} />); await check(); persistPending(null, { operationId: differentUuid });
     act(() => window.dispatchEvent(new StorageEvent("storage", { key })));
-    expect(startButton()).toBeDisabled(); expect(screen.getByText(new RegExp(differentUuid))).toBeVisible(); expect(controls.refresh).not.toHaveBeenCalled();
+    expect(startButton()).toBeDisabled(); expect(screen.queryByText(new RegExp(differentUuid))).not.toBeInTheDocument(); expect(readInventorySnapshotPending(owner)?.operationId).toBe(differentUuid); expect(controls.refresh).not.toHaveBeenCalled();
   });
   it("binds cancellation acknowledgement to one UUID and clears old options when another tab switches it", async () => {
     persistPending(91); render(<InventorySnapshotRefresh />); await check(); fireEvent.click(screen.getByRole("checkbox"));
     expect(screen.getByRole("button", { name: "永久取消原采集操作" })).toBeEnabled();
     persistPending(99, { operationId: differentUuid }); act(() => window.dispatchEvent(new StorageEvent("storage", { key })));
     expect(screen.getByRole("button", { name: "永久取消原采集操作" })).toBeDisabled(); expect(screen.getByRole("checkbox")).not.toBeChecked();
-    expect(screen.queryByText(/采集能力：可用/)).not.toBeInTheDocument(); expect(screen.getByText(new RegExp(differentUuid))).toBeVisible();
+    expect(screen.queryByText(/连接正常，可以更新库存/)).not.toBeInTheDocument(); expect(screen.queryByText(new RegExp(differentUuid))).not.toBeInTheDocument(); expect(readInventorySnapshotPending(owner)?.operationId).toBe(differentUuid);
     localStorage.removeItem(key); act(() => window.dispatchEvent(new StorageEvent("storage", { key })));
     expect(startButton()).toBeDisabled(); expect(screen.queryByRole("region", { name: "库存采集操作恢复" })).not.toBeInTheDocument();
   });
@@ -248,12 +248,12 @@ describe("identity isolation and safe recovery storage", () => {
     persistPending(91); const delayed = deferred<unknown>(); controls.recover.mockReturnValue(delayed.promise); const view = render(<InventorySnapshotRefresh />);
     fireEvent.click(screen.getByRole("button", { name: "检查原采集结果" })); controls.permissions.canEdit.mockReturnValue(false); view.rerender(<InventorySnapshotRefresh />);
     expect(controls.recover.mock.calls[0][1].signal.aborted).toBe(false);
-    await act(async () => { delayed.resolve(receipt("committed")); }); await screen.findByText(/新快照 ID：42/);
+    await act(async () => { delayed.resolve(receipt("committed")); }); await screen.findByText(/库存已更新，下方列表将显示最新数据/);
   });
   it("never clears another operation when an old response arrives", async () => {
     persistPending(91); const delayed = deferred<unknown>(); controls.recover.mockReturnValue(delayed.promise); render(<InventorySnapshotRefresh />);
     fireEvent.click(screen.getByRole("button", { name: "检查原采集结果" })); persistPending(99, { operationId: differentUuid });
     await act(async () => { delayed.resolve(receipt("committed")); }); await screen.findByText(/进度或恢复核对失败/);
-    expect(readInventorySnapshotPending(owner)?.operationId).toBe(differentUuid); expect(screen.queryByText(/新快照 ID：42/)).not.toBeInTheDocument();
+    expect(readInventorySnapshotPending(owner)?.operationId).toBe(differentUuid); expect(screen.queryByText(/库存已更新，下方列表将显示最新数据/)).not.toBeInTheDocument();
   });
 });

@@ -1,3 +1,9 @@
+import { knowledgeAssetsRouter } from "./routers/knowledgeAssets";
+import { listingInputsRouter } from "./routers/listingInputs";
+import { taskManagementRouter } from "./routers/taskManagement";
+import { designStudioRouter } from "./domains/design/router";
+import { designPromptRouter } from "./domains/design/prompts";
+import { designMaterialsRouter } from "./domains/design/materials";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -14,44 +20,19 @@ import { keywordRouter, keywordAiRouter } from "./routers/keyword";
 import { adStructureRouter } from "./routers/adStructure";
 import { reviewAggregationRouter } from "./routers/reviewAggregation";
 // Module 1: Product Development
-import { devProjectRouter } from "./routers/devProject";
-import { devTaggingRouter } from "./routers/devTagging";
-import { devAnalysisRouter } from "./routers/devAnalysis";
-import { devScoringRouter } from "./routers/devScoring";
-import { devProfileRouter } from "./routers/devProfile";
-import { devBomRouter } from "./routers/devBom";
-import { devManualRouter } from "./routers/devManual";
-import { devLinkageRouter } from "./routers/devLinkage";
-import { devGlobalSupplierRouter } from "./routers/devGlobalSupplier";
-import { offsiteAnalysisRouter } from "./routers/offsiteAnalysis";
-import { devProjectTagsRouter } from "./routers/devProjectTags";
-import { devPanoramaRouter } from "./routers/devPanorama";
-import { devModuleLockRouter } from "./routers/devModuleLock";
 // Image Workflow
-import { imageWorkflowRouter } from "./routers/imageWorkflow";
 // Module 5: Knowledge Base
-import { kbProductsRouter } from "./routers/kbProducts";
-import { kbListingsRouter } from "./routers/kbListings";
 import { kbImagesRouter } from "./routers/kbImages";
-import { kbSkillsRouter } from "./routers/kbSkills";
 import { kbVideosRouter } from "./routers/kbVideos";
-import { kbSearchRouter } from "./routers/kbSearch";
 import { kbTagsRouter } from "./routers/kbTags";
-import { kbTransferRouter } from "./routers/kbTransfer";
 // System Settings
 import { systemSettingsRouter } from "./routers/systemSettings";
 import { apiConnectionsRouter } from "./routers/apiConnections";
 // KB Review & Access Control
 import { kbReviewRouter } from "./routers/kbReview";
-import { kbBotRouter } from "./routers/kbBot";
-import { kbIntelRouter } from "./routers/kbIntel";
-import { kbFeedbackRouter } from "./routers/kbFeedback";
-import { sopAccessRouter } from "./routers/sopAccess";
-import { projectAssignmentRouter } from "./routers/projectAssignment";
 // User Management
 import { userAuthRouter, userManagementRouter } from "./routers/userManagement";
 // Deployment & Sync
-import { deploymentConfigRouter } from "./routers/deploymentConfig";
 // Role Management
 import { roleManagementRouter } from "./routers/roleManagement";
 // Notifications
@@ -59,27 +40,11 @@ import { notificationRouter } from "./routers/notification";
 // Module 3: Operations AI Tools (Lingxing ERP)
 import { operationsRouter } from "./routers/operations";
 import { productOpsRouter } from "./routers/productOps";
-import { crawlerRouter } from "./routers/crawler";
 import { shippingBatchRouter } from "./routers/shippingBatch";
 import { logisticsRouter } from "./routers/logistics";
-import { adAnalysisRouter } from "./routers/adAnalysis";
-import { adAnalysisP2Router } from "./routers/adAnalysisP2";
-import { opsProductPlanRouter } from "./routers/opsProductPlan";
-import { afterSalesRouter } from "./routers/afterSales";
-import { dashboardUpgradeRouter } from "./routers/dashboardUpgrade";
-import { customDashboardRouter } from "./routers/customDashboard";
-import { customerProfileRouter } from "./routers/customerProfile";
 // Module 6: Off-site Marketing
-import { offInfluencerRouter } from "./routers/offInfluencer";
-import { offCampaignRouter } from "./routers/offCampaign";
-import { offOutreachRouter } from "./routers/offOutreach";
-import { offContentRouter } from "./routers/offContent";
-import { offSocialRouter } from "./routers/offSocial";
-import { offAnalyticsRouter } from "./routers/offAnalytics";
 // Module 2 Extension: Video Script Generation
-import { videoScriptRouter } from "./routers/videoScript";
 // Task Management
-import { taskManagementRouter } from "./routers/taskManagement";
 // Data Import Center
 import { dataImportRouter } from "./routers/dataImport";
 import { productCostsReadOnlyRouter } from "./routers/productCostsReadOnly";
@@ -88,37 +53,34 @@ import { monthlyFinancialReadRouter } from "./routers/monthlyFinancialRead";
 import { monthlyFinancialWriteRouter } from "./routers/monthlyFinancialWrite";
 import { saihuReportSyncRouter } from "./routers/saihuReportSync";
 import { saihuReportScheduleRouter } from "./routers/saihuReportSchedule";
+import { saihuLegacySyncRouter } from "./routers/saihuLegacySync";
 import { inventorySnapshotReadRouter } from "./routers/inventorySnapshotRead";
 import { inventorySnapshotRefreshRouter } from "./routers/inventorySnapshotRefresh";
-import { inventoryPlanningWriteRouter } from "./routers/inventoryPlanningWrite";
-import { inventoryGovernanceWriteRouter } from "./routers/inventoryGovernanceWrite";
 import { profitBoardReadRouter } from "./routers/profitBoardRead";
 import { profitAnalysisRouter } from "./routers/profitAnalysis";
 import { productBoardReadRouter } from "./routers/productBoardRead";
+import { northAmericaBoardRouter } from "./routers/northAmericaBoard";
 import { operationsBoardRouter } from "./routers/operationsBoard";
 import { productTaskReadRouter } from "./routers/productTaskRead";
+import { operationsJournalRouter } from "./routers/operationsJournal";
 import { productTaskWriteRouter } from "./routers/productTaskWrite";
-import { lingxingSyncRouter } from "./routers/lingxingSync";
 import { operatorMappingRouter } from "./routers/operatorMapping";
 import { inventoryOwnerAssignmentsRouter } from "./routers/inventoryOwnerAssignments";
-import { skillDistillationRouter } from "./routers/skillDistillation";
 // Ad Keyword Tracking
-import { adTrackingRouter } from "./routers/adTracking";
-import { adReportUploadRouter } from "./routers/adReportUpload";
-import { adLocalAnalysisRouter } from "./routers/adLocalAnalysis";
-import { adDailyReportUploadRouter } from "./routers/adDailyReportUpload";
-import { adDeepAnalysisRouter } from "./routers/adDeepAnalysis";
 // Emperor 皇帝 · AI能力中台
 import { emperorRouter } from "./routers/emperor";
 import { aiJobsRouter } from "./routers/aiJobs";
 import { amazonAcquisitionRouter } from "./domains/acquisition/router";
 import { performanceRouter } from "./routers/performance";
-import { qualityDashboardRouter } from "./domains/quality/router";
 
 export const appRouter = router({
+  listingInputs: listingInputsRouter,
+  taskManagement: taskManagementRouter,
+  designStudio: designStudioRouter,
+  designPrompts: designPromptRouter,
+  designMaterials: designMaterialsRouter,
   system: systemRouter,
   performance: performanceRouter,
-  quality: qualityDashboardRouter,
   auth: router({
     me: publicProcedure.query(opts => {
       if (!opts.ctx.user) return null;
@@ -144,72 +106,33 @@ export const appRouter = router({
   adStructure: adStructureRouter,
   reviewAggregation: reviewAggregationRouter,
   // Module 1: Product Development
-  devProject: devProjectRouter,
-  devTagging: devTaggingRouter,
-  devAnalysis: devAnalysisRouter,
-  devScoring: devScoringRouter,
-  devProfile: devProfileRouter,
-  devBom: devBomRouter,
-  devManual: devManualRouter,
-  devLinkage: devLinkageRouter,
-  devGlobalSupplier: devGlobalSupplierRouter,
-  offsiteAnalysis: offsiteAnalysisRouter,
-  devProjectTags: devProjectTagsRouter,
-  devPanorama: devPanoramaRouter,
-  devModuleLock: devModuleLockRouter,
   // Image Workflow
-  imageWorkflow: imageWorkflowRouter,
   // Module 5: Knowledge Base
-  kbProducts: kbProductsRouter,
-  kbListings: kbListingsRouter,
+  knowledgeAssets: knowledgeAssetsRouter,
   kbImages: kbImagesRouter,
-  kbSkills: kbSkillsRouter,
   kbVideos: kbVideosRouter,
-  kbSearch: kbSearchRouter,
   kbTags: kbTagsRouter,
-  kbTransfer: kbTransferRouter,
-  kbBot: kbBotRouter,
-  kbIntel: kbIntelRouter,
-  kbFeedback: kbFeedbackRouter,
   // System Settings
   systemSettings: systemSettingsRouter,
   apiConnections: apiConnectionsRouter,
   // KB Review & Access Control
   kbReview: kbReviewRouter,
-  sopAccess: sopAccessRouter,
-  projectAssignment: projectAssignmentRouter,
   // User Management
   userAuth: userAuthRouter,
   userManagement: userManagementRouter,
   // Deployment & Sync
-  deploymentConfig: deploymentConfigRouter,
   // Role Management
   roleManagement: roleManagementRouter,
   notification: notificationRouter,
   // Module 3: Operations AI Tools (Lingxing ERP)
   operations: operationsRouter,
   productOps: productOpsRouter,
-  crawler: crawlerRouter,
   shippingBatch: shippingBatchRouter,
   logistics: logisticsRouter,
-  adAnalysis: adAnalysisRouter,
-  adAnalysisP2: adAnalysisP2Router,
-  opsProductPlan: opsProductPlanRouter,
   // Module 4: After-Sales Management
-  afterSales: afterSalesRouter,
   // Phase 4: Dashboard Upgrade
-  dashboardUpgrade: dashboardUpgradeRouter,
-  customDashboard: customDashboardRouter,
-  customerProfile: customerProfileRouter,
   // Module 6: Off-site Marketing
-  offInfluencer: offInfluencerRouter,
-  offCampaign: offCampaignRouter,
-  offOutreach: offOutreachRouter,
-  offContent: offContentRouter,
-  offSocial: offSocialRouter,
-  offAnalytics: offAnalyticsRouter,
   // Module 2 Extension: Video Script Generation
-  videoScript: videoScriptRouter,
   // Data Import Center
   dataImport: dataImportRouter,
   productCostsReadOnly: productCostsReadOnlyRouter,
@@ -218,32 +141,25 @@ export const appRouter = router({
   monthlyFinancialWrite: monthlyFinancialWriteRouter,
   opsSaihuReport: saihuReportSyncRouter,
   opsSaihuSchedule: saihuReportScheduleRouter,
+  saihuLegacySync: saihuLegacySyncRouter,
   inventorySnapshotRead: inventorySnapshotReadRouter,
   inventorySnapshotRefresh: inventorySnapshotRefreshRouter,
-  inventoryPlanningWrite: inventoryPlanningWriteRouter,
-  inventoryGovernanceWrite: inventoryGovernanceWriteRouter,
   profitBoardRead: profitBoardReadRouter,
   profitAnalysis: profitAnalysisRouter,
   productBoardRead: productBoardReadRouter,
+  northAmericaBoard: northAmericaBoardRouter,
   operationsBoard: operationsBoardRouter,
   productTaskRead: productTaskReadRouter,
+  operationsJournal: operationsJournalRouter,
   productTaskWrite: productTaskWriteRouter,
-  lingxingSync: lingxingSyncRouter,
   operatorMapping: operatorMappingRouter,
   inventoryOwnerAssignments: inventoryOwnerAssignmentsRouter,
-  skillDistillation: skillDistillationRouter,
   // Ad Keyword Tracking
-  adTracking: adTrackingRouter,
   // Task Management
-  taskManagement: taskManagementRouter,
   // Ad Report Upload (replaces Lingxing API)
-  adReportUpload: adReportUploadRouter,
   // Ad Local Analysis (reads from local uploaded data)
-  adLocalAnalysis: adLocalAnalysisRouter,
   // Ad Daily Report Upload (5 daily report types for deep optimization)
-  adDailyReport: adDailyReportUploadRouter,
   // Ad Deep Analysis (6 sub-modules AI engines)
-  adDeepAnalysis: adDeepAnalysisRouter,
   // Emperor 皇帝 · AI能力中台
   emperor: emperorRouter,
   // Long-running AI Job infrastructure

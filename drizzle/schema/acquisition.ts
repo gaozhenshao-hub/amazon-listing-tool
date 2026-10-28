@@ -28,6 +28,12 @@ export const acquisitionProviderProfiles = mysqlTable("acquisition_provider_prof
 ]);
 
 export const acquisitionJobs = mysqlTable("acquisition_jobs", {
+  acceptedMissing: int("accepted_missing").default(0).notNull(),
+  ingestedSetId: int("ingested_set_id"),
+  cacheExpiredAt: timestamp("cache_expired_at"),
+  cacheCleanupRequestedAt: timestamp("cache_cleanup_requested_at"),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: int("deleted_by"),
   id: int("id").autoincrement().primaryKey(),
   workspaceId: int("workspace_id").$defaultFn(currentOpsWorkspaceId).notNull(),
   requestedBy: int("requested_by").notNull(),
@@ -127,6 +133,7 @@ export const acquisitionAssetCandidates = mysqlTable("acquisition_asset_candidat
   positionIndex: int("position_index").notNull(),
   sourceJsonPath: varchar("source_json_path", { length: 512 }).notNull(),
   sourceUrlHash: varchar("source_url_hash", { length: 64 }).notNull(),
+  thumbnailStorageKey: varchar("thumbnail_storage_key", { length: 1024 }),
   providerAssetId: varchar("provider_asset_id", { length: 255 }),
   storageKey: varchar("storage_key", { length: 1024 }),
   contentHash: varchar("content_hash", { length: 64 }),

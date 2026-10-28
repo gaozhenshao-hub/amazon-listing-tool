@@ -1,0 +1,12 @@
+import {it,expect,vi} from 'vitest';
+const m=vi.hoisted(()=>({calls:[] as any[]}));
+vi.mock('../../storage',()=>({resolveStoredObjectUrl:async(s:string)=>`https://test.invalid/${s}`}));
+vi.mock('../ai_os/services/skillRunner',()=>({safeParseSkillJSON:JSON.parse,runEmperorSkill:async(i:any)=>{const c=JSON.parse(i.context);m.calls.push({...c,attachments:i.attachments});let value:any;
+ if(i.skillSlug.endsWith('.title'))value={keywords:[{text:'Bee Suit',zh:'养蜂服'}],modifiers:[],scenarios:[],titleZh:'养蜂服'};
+ else if(c.mode==='image')value={images:c.images.map((x:any)=>({sourceId:x.sourceId,text:'Breathable'}))};
+ else if(c.mode==='selling')value={points:[{name:'透气',description:'透气',strength:'高',occurrences:[{sourceId:'五行第1条',quote:'Breathable'}],goldenQuote:'Breathable'}],bulletTranslations:['透气']};
+ else if(c.mode==='reviews')value={themes:[{name:'透气',sentiment:'positive',reviewIds:c.reviews.map((r:any)=>r.id)}]};
+ else if(c.mode==='synthesis')value={groups:[{name:'透气',sentiment:'positive',themeIds:c.themes.map((t:any)=>t.id)}],concerns:[]};
+ else value={positioning:'养蜂服',advantages:['透气'],weaknesses:[],learnings:['透气表达'],opportunities:[]};return {parsed:i.validate(JSON.stringify(value))};}}));
+import {analyzeCompetitorDeep} from './competitorDeepAnalysis';
+it('reads all review batches and all image roles before shared-context summary',async()=>{const result=await analyzeCompetitorDeep({userId:1,workspaceId:1,data:{asin:'B000000001',title:'Bee Suit',bulletPoints:['Breathable'],research:{reviews:[]}},raw:{productQuestions:[]},assets:['main','aplus','brand_story'].map(role=>({role,storageKey:role})),imported:Array.from({length:125},(_,i)=>({title:`Review ${i}`,body:'Breathable',rating:5}))});expect(result.buyers.sampleCount).toBe(125);expect(result.buyers.groups[0].count).toBe(125);expect(result.buyers.groups[0].percentage).toBe(100);expect(m.calls.filter(c=>c.mode==='reviews').flatMap(c=>c.reviews)).toHaveLength(125);expect(m.calls.find(c=>c.mode==='image').attachments).toHaveLength(3);expect(m.calls.at(-1)).toHaveProperty('buyers.sampleCount',125);});

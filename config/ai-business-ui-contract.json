@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "requiredForNewAiBusiness": true,
+  "resultActions": [
+    {
+      "label": "调整结果",
+      "behavior": "打开当前结果的侧边对话；修改仅作用于当前结果，未经用户操作不得修改共享技能或助手规则。"
+    },
+    {
+      "label": "用于改进",
+      "behavior": "携带本次输入、原始结果、修改结果、用户意见和来源，进入对应 Skill 或 Agent 的独立改进草稿。"
+    }
+  ],
+  "improvementPayload": [
+    "businessModule",
+    "sourceResultId",
+    "projectId",
+    "productAsin",
+    "input",
+    "originalResult",
+    "editedResult",
+    "feedback",
+    "targetType",
+    "targetKey",
+    "scope"
+  ],
+  "scopeChoices": ["current_result", "project", "category", "shared"],
+  "publishPolicy": "只有经过当前草稿测试并由有权限的人确认发布，才更新正式技能或助手规则。不得把重新生成、人工编辑或聊天自动当作训练完成。",
+  "existingDefinitions": "暂不重写现有 Agent 和 Skill 的业务内容；在对应业务开发时按用户要求优化基础版本。",
+  "currentScopeSupport": "Skill 工作台现支持独立草稿和正式技能发布。项目、类目范围的持久规则应在业务接入时实现；未实现前不得显示为已生效。"
+}

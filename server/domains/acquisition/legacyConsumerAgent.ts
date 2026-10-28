@@ -6,6 +6,7 @@ import {
 import { recordAgentTemplateVersion, startAgentRun } from "../ai_os/services/agentRunner";
 import type { EmperorAgentDag } from "../ai_os/services/agentRunner/runtimeCore";
 import { rawExecute } from "../ai_os/routerContext";
+import { ensureCompetitorWorkflow, syncCompetitorWorkflow } from '../listing/competitorWorkflow';
 
 export type LegacyAnalysisConsumerType = "kb_listing" | "kb_product" | "project_competitor";
 
@@ -103,9 +104,11 @@ export async function startLegacyConsumerAgentRun(input: {
   businessId: number;
   workspaceId: number;
   userId: number;
-  confirmedSnapshotId: number;
+  confirmedSnapshotId?: number;
+  analysisId?: number;
   asin: string;
 }) {
+  if (input.consumerType === 'project_competitor') return ensureCompetitorWorkflow(input);
   const item = config[input.consumerType];
   const dag = await ensureTemplate(input.consumerType);
   const detail = await startAgentRun({
@@ -114,6 +117,7 @@ export async function startLegacyConsumerAgentRun(input: {
       consumerType: input.consumerType,
       businessId: input.businessId,
       confirmedSnapshotId: input.confirmedSnapshotId,
+      analysisId: input.analysisId,
       asin: input.asin,
       executionOwner: "acquisition.consumer_activation",
     },
@@ -130,6 +134,7 @@ export async function markLegacyConsumerAgentRunning(input: {
   aiJobRunId: string;
   attempt: number;
 }) {
+  if (input.consumerType === 'project_competitor' && await syncCompetitorWorkflow({ ...input, phase: 'running' })) return true;
   return markBusinessManagedNodeRunning({
     runId: input.agentRunId,
     dag: legacyConsumerAgentDag(input.consumerType),
@@ -147,6 +152,7 @@ export async function markLegacyConsumerAgentWaitingHuman(input: {
   attempt: number;
   output: unknown;
 }) {
+  if (input.consumerType === 'project_competitor' && await syncCompetitorWorkflow({ ...input, phase: 'review' })) return true;
   return markBusinessManagedNodeWaitingHuman({
     runId: input.agentRunId,
     dag: legacyConsumerAgentDag(input.consumerType),
@@ -166,6 +172,7 @@ export async function markLegacyConsumerAgentFailed(input: {
   finalAttempt: boolean;
   error: unknown;
 }) {
+  if (input.consumerType === 'project_competitor' && await syncCompetitorWorkflow({ ...input, phase: input.finalAttempt ? 'failed' : 'running' })) return true;
   return markBusinessManagedNodeFailed({
     runId: input.agentRunId,
     dag: legacyConsumerAgentDag(input.consumerType),

@@ -6,7 +6,7 @@ const root = path.resolve(import.meta.dirname, "..");
 const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
 
 describe("Listing Agent 与新皇帝 Skill 完整性", () => {
-  it("保留Listing预览历史映射，但旧最终确认须失败关闭并引导完整人审", () => {
+  it("保留预览历史映射并要求锁定五步后人工确认", () => {
     const bridge = read("server/domains/listing/listingAgentBridge.ts");
     const generation = read("server/domains/listing/routers/generation.ts");
     const editing = read("server/domains/listing/routers/editing.ts");
@@ -18,9 +18,9 @@ describe("Listing Agent 与新皇帝 Skill 完整性", () => {
     expect(generation).toContain('nodeKey: "imageAdvice"');
     expect(editing).toContain("confirmPreview: protectedProcedure");
     expect(editing).toContain("syncListingPreviewWaitingHuman");
-    expect(editing).toContain("旧预览五步锁定不足以证明Listing已完成事实与候选人审");
-    expect(preview).toContain("前往人审工作台");
-    expect(preview).not.toContain("confirmPreview.mutate");
+    expect(editing).toContain("请先确认并锁定全部 5 个 Listing 步骤");
+    expect(preview).toContain("确认内容");
+    expect(preview).toContain("confirmPreview.mutate");
   });
 
   it("为五类 Listing 自检能力显式绑定对应的新皇帝 Skill", () => {
@@ -32,7 +32,7 @@ describe("Listing Agent 与新皇帝 Skill 完整性", () => {
       "listing.checklist.searchterms",
       "listing.checklist.qa",
     ]) {
-      expect(evaluation).toContain(`emperorSkill: { slug: "${skillSlug}", executionPreset: "quality_first" }`);
+      expect(evaluation).toContain(`emperorSkill: { slug: "${skillSlug}", executionPreset: "quality_first", userId: ctx.user.id, workspaceId: ctx.workspaceId }`);
     }
     expect(evaluation).toContain("requireCompleteChecklist");
   });

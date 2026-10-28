@@ -14,6 +14,6 @@ describe("merged read-only integration opt-in", () => {
     expect(PERMISSION_ROUTE_REGISTRY["/emperor/agent-library"]).toEqual({
       moduleId: "emperor", subModuleId: "emperor_agents", enforcement: "enforced",
     });
-    expect(PERMISSION_ROUTE_REGISTRY["/emperor/agents"].subModuleId).toBe("emperor_agents");
+    expect(PERMISSION_ROUTE_REGISTRY["/emperor/agents"]).toBeUndefined();
   });
 });

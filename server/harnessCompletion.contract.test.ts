@@ -35,9 +35,9 @@ describe("Harness剩余能力统一契约", () => {
     const executors = read("server/domains/ai_os/services/toolGateway/executors.ts");
     const compiler = read("server/domains/ai_os/services/agentRunner/contextCompiler.ts");
     expect(lifecycle).toContain("recordHarnessFeedback");
-    expect(registry).toContain("internal.lingxing.read");
+    expect(registry).not.toContain("internal.lingxing.read");
     expect(registry).not.toContain("internal.export.prepare");
-    expect(executors).toContain("requires at least one shop scope parameter");
+    expect(executors).not.toContain("invokeLingxingReadOnlyMcp");
     expect(compiler).toContain('preset === "quality_first"');
     expect(compiler).toContain('preset === "evaluation"');
   });
@@ -48,15 +48,6 @@ describe("Harness剩余能力统一契约", () => {
     expect(stateMachine).toContain('input.to === "waiting_human"');
     expect(stateMachine).toContain("normalizeReviewType");
     expect(stateMachine).toContain('"waiting_human"');
-  });
-
-  it("提供可操作的人审决定、模型策略可见证据和备案后验收清单", () => {
-    const governance = read("client/src/pages/emperor/EmperorHarnessGovernance.tsx");
-    expect(governance).toContain("resolveReviewRequest");
-    expect(governance).toContain("人工决定已写入审核账本");
-    expect(governance).toContain("模型策略：");
-    expect(governance).toContain("备案恢复后的真实业务验收清单");
-    expect(governance).toContain("确认选择");
   });
 
   it("将质量与评测Preset的模型策略接入实际Skill候选模型解析", () => {

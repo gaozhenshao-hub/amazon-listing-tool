@@ -12,6 +12,7 @@ import {
   getAiJobWorkerHealth,
   listAiJobDeadLetterRuns,
   recoverAiJob,
+  resolveAiJobHandler,
   registerAiJobHandler,
   startRegisteredAiJob,
   updateAiJobProgress,
@@ -33,7 +34,6 @@ import {
   type ScopedBusinessAgentKind,
 } from "../domains/ai_os/services/scopedBusinessAgent";
 import { cancelKeywordJob, confirmKeywordJob, retryKeywordJob } from "../domains/keyword/keywordGenerationJob";
-import { cancelVideoGenerationJob, retryVideoGenerationJob } from "../domains/video/videoGenerationJob";
 import { auditBusinessJobCheckpointBindings } from "../domains/ai_os/services/businessJobCheckpointBinder";
 
 const DEFAULT_FALLBACK_MODELS = [
@@ -66,28 +66,6 @@ const listingJobInput = z.object({
 
 const listingStepJobInput = listingJobInput.extend({ skillSlug: listingStepSchema });
 
-const adSearchTermJobInput = z.object({
-  searchTerms: z.array(z.record(z.string(), z.unknown())).max(50),
-  categoryId: z.number(),
-  categoryLabel: z.string().optional(),
-  campaignId: z.string().optional(),
-  agentRunId: z.string().min(1).optional(),
-}).merge(jobQueueOptionsSchema);
-
-const opsReplenishmentJobInput = z.object({
-  skuData: z.array(z.object({
-    seller_sku: z.string(),
-    product_name: z.string().optional(),
-    fulfillable_qty: z.number(),
-    avg_daily_sales: z.number(),
-    days_of_supply: z.number(),
-    lead_time_days: z.number().optional().default(30),
-    safety_stock_days: z.number().optional().default(14),
-    moq: z.number().optional().default(100),
-  })).max(20),
-  agentRunId: z.string().min(1).optional(),
-}).merge(jobQueueOptionsSchema);
-
 const jobStatusSchema = z.enum(["queued", "running", "succeeded", "failed", "canceled"]);
 
 function parseJsonOutput(content: string): unknown {
@@ -98,9 +76,11 @@ function parseJsonOutput(content: string): unknown {
   return parsed;
 }
 
-async function runListingFiveSteps(input: z.infer<typeof listingJobInput>, userId: number) {
+async function runListingFiveSteps(input: z.infer<typeof listingJobInput>, userId: number, workspaceId: number | null) {
+  if (!workspaceId) throw new Error("Listing 任务缺少工作区，请重新创建");
   const base = {
     userId,
+    workspaceId,
     context: input.context,
     emphasis: input.emphasis,
     modelOverride: input.modelOverride,
@@ -175,122 +155,6 @@ async function runListingFiveSteps(input: z.infer<typeof listingJobInput>, userI
   };
 }
 
-function anonymizeSearchTerms(searchTerms: Array<Record<string, unknown>>) {
-  return searchTerms.map((term, idx) => {
-    const { asin, advertised_asin, sku, campaign_id, ad_group_id, ...metrics } = term as Record<string, unknown>;
-    return {
-      ...metrics,
-      product_id: `Product_${String(idx + 1).padStart(3, "0")}`,
-    };
-  });
-}
-
-function normalizeAdAdviceOutput(parsed: unknown) {
-  if (!parsed || typeof parsed !== "object") return parsed;
-  const record = parsed as Record<string, any>;
-  if (Array.isArray(record.advice)) return record;
-  if (Array.isArray(record.recommendations)) {
-    return {
-      category_summary: record.summary || "AI 已生成搜索词优化建议。",
-      top_actions: record.recommendations.slice(0, 5).map((item: any) => item.reason || item.action).filter(Boolean),
-      advice: record.recommendations.map((item: any) => ({
-        search_term: item.keyword || item.search_term || "",
-        problem_analysis: item.reason || "",
-        ad_purpose: item.action || "",
-        ad_strategy: Array.isArray(item.strategy)
-          ? item.strategy.join("；")
-          : [item.suggestedBid ? `建议出价：${item.suggestedBid}` : item.action].filter(Boolean).join("；"),
-        expected_result: item.expected_result || "",
-        priority: item.priority || "medium",
-        suggested_action: item.suggested_action || item.action || "monitor",
-      })),
-    };
-  }
-  return record;
-}
-
-async function runAdSearchTermAdvice(input: z.infer<typeof adSearchTermJobInput>, job: AiJobSnapshot, signal: AbortSignal) {
-  const anonymizedTerms = anonymizeSearchTerms(input.searchTerms);
-  const categoryLabel = input.categoryLabel || `分类 ${input.categoryId}`;
-  const context = [
-    `分类：${categoryLabel}`,
-    input.campaignId ? `广告活动：${input.campaignId}` : "",
-    "请为搜索词生成可执行广告优化建议，输出 JSON。",
-    "",
-    JSON.stringify(anonymizedTerms),
-  ].filter(Boolean).join("\n");
-
-  const result = await runEmperorSkill({
-    skillSlug: "ad.searchterm.advice",
-    userId: job.userId,
-    workspaceId: job.workspaceId,
-    context,
-    variables: {
-      categoryId: input.categoryId,
-      categoryLabel,
-      campaignId: input.campaignId,
-      searchTerms: anonymizedTerms,
-    },
-    fallbackModels: DEFAULT_FALLBACK_MODELS,
-    validate: (content) => safeParseSkillJSON(content),
-    signal,
-  });
-
-  return {
-    ...result,
-    parsed: normalizeAdAdviceOutput(result.parsed),
-  };
-}
-
-function normalizeReplenishmentOutput(parsed: unknown, skuData: z.infer<typeof opsReplenishmentJobInput>["skuData"]) {
-  if (!parsed || typeof parsed !== "object") return parsed;
-  const record = parsed as Record<string, any>;
-  if (Array.isArray(record.suggestions)) return record;
-  if (Array.isArray(record.actions)) {
-    return {
-      suggestions: skuData.map((sku, index) => {
-        const action = record.actions[index] || record.actions[0] || {};
-        return {
-          seller_sku: sku.seller_sku,
-          urgency: record.riskLevel === "高" ? "urgent" : record.riskLevel === "中" ? "soon" : "plan",
-          suggested_qty: Number(action.suggested_qty || sku.moq || 0),
-          reason: action.action || record.reorderRecommendation || record.status || "建议结合库存周转继续观察。",
-          estimated_stockout_date: action.deadline || "",
-          notes: action.priority || record.summary || "",
-        };
-      }),
-    };
-  }
-  return record;
-}
-
-async function runOpsReplenishmentPlan(input: z.infer<typeof opsReplenishmentJobInput>, job: AiJobSnapshot, signal: AbortSignal) {
-  const context = [
-    "你是一位资深亚马逊 FBA 库存管理专家。请根据 SKU 数据生成结构化补货建议。",
-    "输出 JSON，优先包含 suggestions 数组。",
-    "",
-    JSON.stringify(input.skuData, null, 2),
-  ].join("\n");
-
-  const result = await runEmperorSkill({
-    skillSlug: "ops.inventory.analysis",
-    userId: job.userId,
-    workspaceId: job.workspaceId,
-    context,
-    variables: {
-      skuData: input.skuData,
-    },
-    fallbackModels: DEFAULT_FALLBACK_MODELS,
-    validate: (content) => safeParseSkillJSON(content),
-    signal,
-  });
-
-  return {
-    ...result,
-    parsed: normalizeReplenishmentOutput(result.parsed, input.skuData),
-  };
-}
-
 function assertCanReadJob(user: { id: number; role?: string }, job: { userId: number; kind?: string }) {
   if (isDedicatedOnlyAiJob(job.kind)) {
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: "IMAGE_TAGGING_USE_DEDICATED_ENDPOINT" });
@@ -315,72 +179,10 @@ function agentRunIdFromJob(job: { input: unknown }) {
   return typeof value === "string" && value ? value : null;
 }
 
-async function runScopedBusinessJob<TInput extends { agentRunId?: string }, TResult extends { parsed?: unknown }>(input: {
-  job: AiJobSnapshot;
-  signal: AbortSignal;
-  kind: ScopedBusinessAgentKind;
-  parsedInput: TInput;
-  execute: (parsedInput: TInput, job: AiJobSnapshot, signal: AbortSignal) => Promise<TResult>;
-}) {
-  const agentRunId = input.parsedInput.agentRunId || (await ensureScopedBusinessAgentRun({
-    kind: input.kind,
-    userId: input.job.userId,
-    workspaceId: input.job.workspaceId,
-  })).runId;
-  try {
-    await updateAiJobProgress(input.job.runId, 15, {
-      expectedWorkerId: input.job.lockedBy || undefined,
-      expectedAttempt: input.job.attempt,
-    });
-    await syncScopedBusinessAgentProgress({
-      kind: input.kind,
-      userId: input.job.userId,
-      workspaceId: input.job.workspaceId,
-      agentRunId,
-      aiJobRunId: input.job.runId,
-      aiJobAttempt: input.job.attempt,
-      maxAttempts: input.job.maxAttempts,
-      progress: 15,
-    });
-    const result = await input.execute(input.parsedInput, input.job, input.signal);
-    await updateAiJobProgress(input.job.runId, 90, {
-      expectedWorkerId: input.job.lockedBy || undefined,
-      expectedAttempt: input.job.attempt,
-    });
-    await syncScopedBusinessAgentWaitingHuman({
-      kind: input.kind,
-      userId: input.job.userId,
-      workspaceId: input.job.workspaceId,
-      agentRunId,
-      aiJobRunId: input.job.runId,
-      aiJobAttempt: input.job.attempt,
-      output: result.parsed ?? result,
-    });
-    return result;
-  } catch (error) {
-    const abortReason = input.signal.aborted ? String(input.signal.reason || "") : "";
-    const retryableTimeout = /timed?\s*out|timeout/i.test(abortReason);
-    const finalAttempt = input.job.attempt >= input.job.maxAttempts || (input.signal.aborted && !retryableTimeout);
-    await syncScopedBusinessAgentFailure({
-      kind: input.kind,
-      userId: input.job.userId,
-      workspaceId: input.job.workspaceId,
-      agentRunId,
-      aiJobRunId: input.job.runId,
-      aiJobAttempt: input.job.attempt,
-      maxAttempts: input.job.maxAttempts,
-      finalAttempt,
-      error,
-      failureKind: input.signal.aborted ? (retryableTimeout ? "timeout" : "cancel") : "error",
-    }).catch((syncError) => console.warn("[Scoped Business Agent] Failed to sync job failure", syncError));
-    throw error;
-  }
-}
-
 registerAiJobHandler({
   id: "listing.generateFiveSteps",
   match: (job) => job.kind === "listing.generateFiveSteps",
-  handler: (job) => runListingFiveSteps(listingJobInput.parse(job.input), job.userId),
+  handler: (job) => runListingFiveSteps(listingJobInput.parse(job.input), job.userId, job.workspaceId),
 });
 
 registerAiJobHandler({
@@ -388,9 +190,11 @@ registerAiJobHandler({
   match: (job) => job.procedure === "listingSkill.runStep",
   handler: (job) => {
     const input = listingStepJobInput.parse(job.input);
+    if (!job.workspaceId) throw new Error("Listing 任务缺少工作区，请重新创建");
     return runEmperorSkill({
       skillSlug: input.skillSlug,
       userId: job.userId,
+      workspaceId: job.workspaceId,
       context: input.context,
       emphasis: input.emphasis,
       variables: input.variables,
@@ -399,30 +203,6 @@ registerAiJobHandler({
       validate: parseJsonOutput,
     });
   },
-});
-
-registerAiJobHandler({
-  id: "ad.searchTermAdvice",
-  match: (job) => job.kind === "ad.searchTermAdvice",
-  handler: (job, context) => runScopedBusinessJob({
-    job,
-    signal: context.signal,
-    kind: "adSearchTerm",
-    parsedInput: adSearchTermJobInput.parse(job.input),
-    execute: runAdSearchTermAdvice,
-  }),
-});
-
-registerAiJobHandler({
-  id: "ops.replenishmentPlan",
-  match: (job) => job.kind === "ops.replenishmentPlan",
-  handler: (job, context) => runScopedBusinessJob({
-    job,
-    signal: context.signal,
-    kind: "opsReplenishment",
-    parsedInput: opsReplenishmentJobInput.parse(job.input),
-    execute: runOpsReplenishmentPlan,
-  }),
 });
 
 export const aiJobsRouter = router({
@@ -503,9 +283,7 @@ export const aiJobsRouter = router({
       assertCanReadJob(ctx.user, job);
       const result = job.module === "keywordWorkflow"
         ? await cancelKeywordJob({ runId: input.runId, userId: ctx.user.id })
-        : job.module === "videoScript"
-          ? await cancelVideoGenerationJob({ runId: input.runId, userId: ctx.user.id })
-          : await cancelAiJob(input.runId, input.reason || "User canceled AI job");
+        : await cancelAiJob(input.runId, input.reason || "User canceled AI job");
       const scopedKind = scopedAgentKindForJob(job);
       if (scopedKind) {
         await syncScopedBusinessAgentFailure({
@@ -544,11 +322,10 @@ export const aiJobsRouter = router({
       const job = await getAiJobRun(input.runId);
       if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "AI job not found" });
       assertCanReadJob(ctx.user, job);
+      if (!resolveAiJobHandler(job)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该任务所属功能已停用，历史记录仍可查看" });
       const result = job.module === "keywordWorkflow"
         ? await retryKeywordJob({ runId: input.runId, userId: ctx.user.id })
-        : job.module === "videoScript"
-          ? await retryVideoGenerationJob({ runId: input.runId, userId: ctx.user.id })
-          : await recoverAiJob(input.runId, input.reason || "User requested failure recovery");
+        : await recoverAiJob(input.runId, input.reason || "User requested failure recovery");
       const scopedKind = scopedAgentKindForJob(job);
       if (scopedKind) {
         await syncScopedBusinessAgentQueued({
@@ -616,7 +393,7 @@ export const aiJobsRouter = router({
     .input(listingJobInput)
     .mutation(async ({ ctx, input }) => {
       if (input.projectId) {
-        const project = await resolveProjectAccess(input.projectId, ctx.user);
+        const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
         ensureWriteAccess(project, ctx.user);
         return startListingJobForContext({
           projectId: input.projectId,
@@ -634,7 +411,7 @@ export const aiJobsRouter = router({
     .input(listingStepJobInput)
     .mutation(async ({ ctx, input }) => {
       if (input.projectId) {
-        const project = await resolveProjectAccess(input.projectId, ctx.user);
+        const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
         ensureWriteAccess(project, ctx.user);
         const stepMap = {
           "listing.sellingpoints.generate": ["sellingPoints", "G1"],
@@ -655,85 +432,5 @@ export const aiJobsRouter = router({
         });
       }
       throw new TRPCError({ code: "BAD_REQUEST", message: "Listing 后台任务必须关联项目和 Agent Run" });
-    }),
-
-  startAdSearchTermAdvice: protectedProcedure
-    .input(adSearchTermJobInput)
-    .mutation(async ({ ctx, input }) => {
-      const agent = await ensureScopedBusinessAgentRun({
-        kind: "adSearchTerm",
-        userId: ctx.user.id,
-        workspaceId: ctx.workspaceId ?? null,
-        inputs: { categoryId: input.categoryId, campaignId: input.campaignId || null },
-      });
-      const job = await startRegisteredAiJob({
-        kind: "ad.searchTermAdvice",
-        module: "adAnalysis",
-        procedure: "adAnalysis.aiSearchTermAdvice",
-        userId: ctx.user.id,
-        workspaceId: ctx.workspaceId ?? null,
-        skillSlug: "ad.searchterm.advice",
-        input: {
-          ...input,
-          agentRunId: agent.runId,
-          agentNodeId: SCOPED_BUSINESS_AGENT_CONFIG.adSearchTerm.nodeId,
-        },
-        progress: 5,
-        priority: input.jobPriority ?? 0,
-        queueName: input.queueName,
-        maxAttempts: 3,
-        timeoutSeconds: 420,
-      });
-      await syncScopedBusinessAgentQueued({
-        kind: "adSearchTerm",
-        userId: ctx.user.id,
-        workspaceId: ctx.workspaceId ?? null,
-        agentRunId: agent.runId,
-        aiJobRunId: job.runId,
-        aiJobAttempt: 0,
-        maxAttempts: job.maxAttempts,
-        progress: job.progress,
-      });
-      return { ...job, agentRunId: agent.runId };
-    }),
-
-  startOpsReplenishmentPlan: protectedProcedure
-    .input(opsReplenishmentJobInput)
-    .mutation(async ({ ctx, input }) => {
-      const agent = await ensureScopedBusinessAgentRun({
-        kind: "opsReplenishment",
-        userId: ctx.user.id,
-        workspaceId: ctx.workspaceId ?? null,
-        inputs: { skuCount: input.skuData.length },
-      });
-      const job = await startRegisteredAiJob({
-        kind: "ops.replenishmentPlan",
-        module: "operations",
-        procedure: "operations.aiReplenishmentPlan",
-        userId: ctx.user.id,
-        workspaceId: ctx.workspaceId ?? null,
-        skillSlug: "ops.inventory.analysis",
-        input: {
-          ...input,
-          agentRunId: agent.runId,
-          agentNodeId: SCOPED_BUSINESS_AGENT_CONFIG.opsReplenishment.nodeId,
-        },
-        progress: 5,
-        priority: input.jobPriority ?? 0,
-        queueName: input.queueName,
-        maxAttempts: 3,
-        timeoutSeconds: 420,
-      });
-      await syncScopedBusinessAgentQueued({
-        kind: "opsReplenishment",
-        userId: ctx.user.id,
-        workspaceId: ctx.workspaceId ?? null,
-        agentRunId: agent.runId,
-        aiJobRunId: job.runId,
-        aiJobAttempt: 0,
-        maxAttempts: job.maxAttempts,
-        progress: job.progress,
-      });
-      return { ...job, agentRunId: agent.runId };
     }),
 });

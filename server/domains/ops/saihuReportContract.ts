@@ -93,7 +93,8 @@ export const SaihuReportContractSchema = z
                 return (
                   u.protocol === "https:" &&
                   (u.hostname === "sellfox.com" ||
-                    u.hostname.endsWith(".sellfox.com")) &&
+                    u.hostname.endsWith(".sellfox.com") ||
+                    u.hostname === "sellfoxapi.apifox.cn") &&
                   !u.username &&
                   !u.password &&
                   !u.search &&

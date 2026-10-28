@@ -1,10 +1,11 @@
+import { projects, competitorAnalyses } from "../../../drizzle/schema/project";
+import { competitorRevision } from "../../repositories/project/competitorWritePolicy";
+import { analyzeCompetitorDeep } from '../listing/competitorDeepAnalysis';
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { kbListingCopywriting, kbProductInnovations } from "../../../drizzle/schema/knowledge";
-import { COMPETITOR_ANALYSIS_PROMPT } from "../../prompts";
 import * as projectDb from "../../repositories";
 import { requireDb } from "../../repositories/dbClient";
-import { formatCompetitorAnalysisSummary } from "../listing/competitorHumanReview";
 import { runEmperorSkill, safeParseSkillJSON } from "../ai_os/services/skillRunner";
 import { registerCompetitorAnalysisArtifact } from "../ai_os/services/businessArtifactRegistry";
 import {
@@ -12,6 +13,7 @@ import {
   startRegisteredAiJob,
   updateAiJobProgress,
   type AiJobSnapshot,
+  type AiJobHandlerContext,
 } from "../../services/aiJobRunner";
 import {
   legacyConsumerAgentConfig,
@@ -22,6 +24,8 @@ import {
   type LegacyAnalysisConsumerType,
 } from "./legacyConsumerAgent";
 import { loadConfirmedSnapshotForConsumer, type LegacyConsumerProjection } from "./legacyConsumerProjection";
+import { readJson } from '../../../shared/competitorPresentation';
+import { loadSupplementalReviews } from '../listing/supplementalReviews';
 
 const ListingAnalysisSchema = z.object({
   titleAnalysis: z.object({ structure: z.string().default(""), keywords: z.string().default(""), score: z.coerce.number().min(0).max(10) }).passthrough(),
@@ -54,6 +58,7 @@ const JobInputSchema = z.object({
   userId: z.number().int().positive(),
   asin: z.string().regex(/^[A-Z0-9]{10}$/),
   confirmedSnapshotId: z.number().int().positive(),
+  analysisId: z.number().int().positive().optional(),
   agentRunId: z.string().min(1),
   agentNodeId: z.string().min(1),
 });
@@ -69,6 +74,7 @@ function snapshotContext(data: Awaited<ReturnType<typeof loadConfirmedSnapshotFo
     data.reviewCount !== null ? `Review Count: ${data.reviewCount}` : null,
     data.bulletPoints.length ? `Bullet Points:\n${data.bulletPoints.map((item, index) => `${index + 1}. ${item}`).join("\n")}` : null,
     data.description ? `Description: ${data.description}` : null,
+    data.research ? `Supplementary evidence: ${JSON.stringify(data.research)}\nReview excerpts are a non-representative product-page sample; do not infer sentiment percentages or exact variant sales. customersSay is Amazon-generated AI review summary, not buyer review text; aspect mention counts are not independent review counts or sentiment percentages. Missing values mean unknown. Date First Available is the page's date, not a verified launch date.` : null,
   ].filter((item): item is string => Boolean(item)).join("\n\n");
 }
 
@@ -100,34 +106,38 @@ async function runProductAnalysis(input: z.infer<typeof JobInputSchema>, context
   return result.parsed;
 }
 
-async function runProjectCompetitorAnalysis(input: z.infer<typeof JobInputSchema>, context: string) {
-  const result = await runEmperorSkill<Record<string, unknown>>({
-    skillSlug: "listing.competitor.analyze",
-    userId: input.userId,
-    workspaceId: input.workspaceId,
-    context: `Analyze this competitor product from a system-confirmed, directly ingested Amazon snapshot:\n\n${context}`,
-    variables: { context },
-    legacySystemPrompt: COMPETITOR_ANALYSIS_PROMPT,
-    migrationSource: "server/domains/acquisition/legacyConsumerAnalysisJob.ts",
-    validate: content => {
-      const parsed = safeParseSkillJSON<Record<string, unknown>>(content);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || Object.keys(parsed).length === 0) {
-        throw new Error("竞品分析Skill返回空或非结构化JSON");
-      }
-      return parsed;
-    },
-  });
-  return result.parsed;
-}
-
-async function executeLegacyConsumerAnalysis(job: AiJobSnapshot) {
+async function executeLegacyConsumerAnalysis(job: AiJobSnapshot, jobContext: AiJobHandlerContext) {
   const input = JobInputSchema.parse(job.input);
   const db = await requireDb("Amazon confirmed snapshot consumer analysis");
   await markLegacyConsumerAgentRunning({ consumerType: input.consumerType, agentRunId: input.agentRunId, aiJobRunId: job.runId, attempt: job.attempt });
   try {
     const snapshot = await loadConfirmedSnapshotForConsumer({ db, workspaceId: input.workspaceId, confirmedSnapshotId: input.confirmedSnapshotId });
     if (snapshot.confirmed.asin !== input.asin) throw new Error("confirmed snapshot ASIN mismatch");
-    const context = snapshotContext(snapshot.data);
+    if (input.consumerType === "project_competitor" && !input.analysisId) {
+      await projectDb.assertLegacyCompetitorAcquisitionWritable(input.businessId, input.asin, { userId: input.userId, workspaceId: input.workspaceId, rejectCapturedSource: true });
+    }
+    const previousRecord = input.consumerType === 'project_competitor' ? await db.transaction(async tx => {
+      const [parent] = await tx.select().from(projects).where(and(
+        eq(projects.id, input.businessId), eq(projects.userId, input.userId), eq(projects.workspaceId, input.workspaceId),
+      )).limit(1).for('update');
+      if (!parent) throw new Error('项目不可访问');
+      const [record] = await tx.select().from(competitorAnalyses).where(and(
+        eq(competitorAnalyses.projectId, input.businessId), eq(competitorAnalyses.asin, input.asin),
+        input.analysisId ? eq(competitorAnalyses.id, input.analysisId) : undefined,
+      )).limit(1).for('update');
+      if (input.analysisId && readJson(record?.rawData)?.presentationJobRunId !== job.runId) {
+        throw new Error('分析任务尚未提交或已被替换，请重新分析');
+      }
+      return record;
+    }) : null;
+    const previousRaw = readJson(previousRecord?.rawData) || {};
+    if (input.consumerType === "project_competitor" && input.analysisId) {
+      const parent = await projectDb.getProjectById(input.businessId, input.userId, input.workspaceId);
+      if (!parent || !previousRecord || previousRecord.id !== input.analysisId || previousRecord.summaryStatus === "confirmed"
+        || previousRaw.confirmedSnapshotId !== input.confirmedSnapshotId) throw new Error("竞品资料或确认状态已变化，请重新分析");
+    }
+    const imported = previousRaw.supplementalReviewCount ? await loadSupplementalReviews(input.businessId,input.asin) : [];
+    const context = snapshotContext(snapshot.data) + (previousRaw.manualSales ? `\nUser-calibrated monthly total sales for this ASIN and its variants: ${previousRaw.manualSales.value}. Use this total instead of the scraped purchase badges. Do not distribute it to variants without evidence.` : '') + (imported.length ? `\nUploaded reviews: ${imported.length}. Initial excerpts (the dedicated review stage analyzes all uploaded reviews in batches): ${JSON.stringify(imported.slice(0,30))}` : '');
     await updateAiJobProgress(job.runId, 35);
     let output: unknown;
 
@@ -156,15 +166,14 @@ async function executeLegacyConsumerAnalysis(job: AiJobSnapshot) {
       ));
       output = { consumerType: input.consumerType, recordId: input.businessId, analysis };
     } else {
-      await projectDb.assertLegacyCompetitorAcquisitionWritable(input.businessId, input.asin,
-        { userId: input.userId, workspaceId: input.workspaceId, rejectCapturedSource: true });
-      const analysis = await runProjectCompetitorAnalysis(input, context);
+      const deepAnalysis = await analyzeCompetitorDeep({userId:input.userId,workspaceId:input.workspaceId,data:snapshot.data,raw:previousRaw,assets:snapshot.assets,imported,signal:jobContext.signal,onProgress:n=>updateAiJobProgress(job.runId,n)});
+      const analysis = {marketPositioning:deepAnalysis.summary.positioning,advantages:deepAnalysis.summary.advantages,weaknesses:deepAnalysis.summary.weaknesses,summary:deepAnalysis.summary.positioning};
       const gallery = snapshot.assets
         .filter((asset: any) => asset.role === "main" || asset.role === "secondary")
         .sort((a: any, b: any) => a.positionIndex - b.positionIndex)
         .map((asset: any) => asset.storageKey);
-      const summary = formatCompetitorAnalysisSummary(analysis);
-      const saved = await projectDb.upsertCompetitorAnalysis({
+      const summary = [deepAnalysis.summary.positioning,...['advantages','weaknesses','learnings','opportunities'].map(k=>`${({advantages:'优势',weaknesses:'劣势',learnings:'可借鉴',opportunities:'可超越'} as any)[k]}：${(deepAnalysis.summary as any)[k].join('；')}`)].join('\n');
+      const resultData = {
         projectId: input.businessId,
         asin: input.asin,
         title: snapshot.data.title,
@@ -174,18 +183,36 @@ async function executeLegacyConsumerAnalysis(job: AiJobSnapshot) {
         rating: snapshot.data.rating,
         reviewCount: snapshot.data.reviewCount === null ? null : String(snapshot.data.reviewCount),
         reviewAnalysis: null,
-        keywords: Array.isArray((analysis as any).keywords) ? JSON.stringify((analysis as any).keywords) : null,
+        keywords: (analysis as any).keywords ? JSON.stringify((analysis as any).keywords) : null,
         rawData: JSON.stringify({
+          ...previousRaw,
+          deepAnalysis,
+          subtitle: snapshot.data.subtitle || null,
+          manualSales: previousRaw.manualSales,
+          imageAssets: snapshot.assets.map(a=>({role:a.role,storageKey:a.storageKey})),
+          supplementalReviewCount: previousRaw.supplementalReviewCount,
+          productQuestions: previousRaw.productQuestions,
+          supplementalReviewRevision: previousRaw.supplementalReviewRevision,
           analysis,
+          brand: snapshot.data.brand,
+          description: snapshot.data.description,
+          captureOnly: false,
+          analysisStale: false,
+          research: snapshot.data.research,
+          presentationJobRunId: job.runId,
           source: "unified_amazon_acquisition",
           confirmedSnapshotId: input.confirmedSnapshotId,
           contentHash: snapshot.confirmed.contentHash,
         }),
         aiSummary: summary,
         summary,
-        summaryStatus: "draft",
-      }, { userId: input.userId, workspaceId: input.workspaceId, rejectCapturedSource: true });
+        summaryStatus: "draft" as const,
+      };
+      const saved = input.analysisId && previousRecord
+        ? await projectDb.saveCollectedCompetitorAnalysis(previousRecord.id, resultData, { projectId: input.businessId, userId: input.userId, workspaceId: input.workspaceId, expectedRevision: competitorRevision(previousRecord) })
+        : await projectDb.upsertCompetitorAnalysis(resultData, { userId: input.userId, workspaceId: input.workspaceId, rejectCapturedSource: true });
       await registerCompetitorAnalysisArtifact(saved.id, "ai_output");
+
       output = { consumerType: input.consumerType, projectId: input.businessId, analysisId: saved.id, analysis };
     }
     await updateAiJobProgress(job.runId, 90);
@@ -211,8 +238,7 @@ async function executeLegacyConsumerAnalysis(job: AiJobSnapshot) {
 }
 
 export async function startLegacyConsumerAnalysisJob(projection: LegacyConsumerProjection) {
-  if (projection.consumerType === "conversion_collector") return null;
-  if (projection.consumerType === "project_competitor" && projection.captureOnly) return null;
+  if (projection.consumerType === "conversion_collector" || (projection.consumerType === "project_competitor" && projection.captureOnly)) return null;
   const consumerType: LegacyAnalysisConsumerType = projection.consumerType;
   const businessId = projection.consumerType === "project_competitor"
     ? projection.projectId
@@ -229,7 +255,7 @@ export async function startLegacyConsumerAnalysisJob(projection: LegacyConsumerP
   return startRegisteredAiJob({
     kind: `amazon.consumer.${consumerType}.analyze`,
     module: consumerType === "kb_product" ? "productDevelopment" : "listing",
-    procedure: "amazonAcquisition.directIngestion",
+    procedure: "amazonAcquisition.confirmReview",
     workspaceId: projection.workspaceId,
     userId: projection.userId,
     projectId: businessId,
@@ -241,12 +267,13 @@ export async function startLegacyConsumerAnalysisJob(projection: LegacyConsumerP
       userId: projection.userId,
       asin: projection.asin,
       confirmedSnapshotId: projection.confirmedSnapshotId,
+      ...(projection.consumerType === "project_competitor" && projection.analysisId ? { analysisId: projection.analysisId } : {}),
       agentRunId: agent.agentRunId,
       agentNodeId: agent.agentNodeId,
     },
     queueName: "analysis",
     maxAttempts: 2,
-    timeoutSeconds: 600,
+    timeoutSeconds: 3600,
   });
 }
 

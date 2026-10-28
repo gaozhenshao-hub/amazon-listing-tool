@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { normalizeApifyAmazonArtifact } from "./amazonNormalizer";
+import { normalizeAmazonArtifact } from "./amazonNormalizer";
 
 function bytes(value: unknown) {
   return new TextEncoder().encode(JSON.stringify(value));
 }
 
-describe("normalizeApifyAmazonArtifact", () => {
+describe("normalizeAmazonArtifact", () => {
   it("keeps gallery, A+ and brand story roles separate without persisting source URLs", () => {
-    const result = normalizeApifyAmazonArtifact({
+    const result = normalizeAmazonArtifact({
       expectedAsin: "B000000001",
       marketplace: "US",
       bytes: bytes([{
@@ -42,7 +42,7 @@ describe("normalizeApifyAmazonArtifact", () => {
   });
 
   it("marks missing A+ and variants as not returned rather than confirmed absent", () => {
-    const result = normalizeApifyAmazonArtifact({
+    const result = normalizeAmazonArtifact({
       expectedAsin: "B000000001",
       marketplace: "US",
       bytes: bytes([{ asin: "B000000001", title: "Example", highResolutionImages: [] }]),
@@ -54,7 +54,7 @@ describe("normalizeApifyAmazonArtifact", () => {
 
   it("preserves separate semantic references when a gallery and A+ module use the same URL", () => {
     const sharedUrl = "https://m.media-amazon.com/images/I/shared.jpg";
-    const result = normalizeApifyAmazonArtifact({
+    const result = normalizeAmazonArtifact({
       expectedAsin: "B000000001",
       marketplace: "US",
       bytes: bytes([{
@@ -74,7 +74,7 @@ describe("normalizeApifyAmazonArtifact", () => {
   });
 
   it("fails closed when the returned ASIN does not match the requested ASIN", () => {
-    expect(() => normalizeApifyAmazonArtifact({
+    expect(() => normalizeAmazonArtifact({
       expectedAsin: "B000000001",
       marketplace: "US",
       bytes: bytes([{ asin: "B000000009" }]),

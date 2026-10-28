@@ -23,6 +23,21 @@ const build = (payload: unknown = legacy(), request: InventorySnapshotReadInput 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 describe("inventory snapshot readonly contracts and legacy fidelity", () => {
+  it("attention filters use the same stock and calculate totals before pagination", () => {
+    const payload=legacy([
+      oldRow("domestic", { fba:zero(), domestic:{quantity:3,value:30},total:{quantity:3,value:30} }),
+      oldRow("unpriced", { fba:{quantity:5,value:null},total:{quantity:5,value:null} }),
+      oldRow("empty", { fba:zero(),total:zero() }),
+      oldRow("regular"),
+    ]);
+    const emptyFba=build(payload,{...input,attention:"fba_empty"});
+    expect(emptyFba.groups.flatMap(group=>group.rows.map(row=>row.asin))).toEqual(["domestic"]);
+    expect(emptyFba.totals?.total.quantity).toBe(3);
+    const unpriced=build(payload,{...input,attention:"valuation_missing"});
+    expect(unpriced.groups.flatMap(group=>group.rows.map(row=>row.asin))).toEqual(["unpriced"]);
+    expect(unpriced.totals?.total.value).toBeNull();
+    expect(build(payload).totals?.total.quantity).toBe(18);
+  });
   it("preserves complete legacy values, but never fabricates scopes, components or current owner authority", () => {
     const parsed = parseInventorySnapshot(legacy());
     expect(parsed.provenance.status).toBe("legacy_unverifiable");

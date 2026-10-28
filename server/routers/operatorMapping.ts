@@ -142,7 +142,7 @@ export const operatorMappingRouter = router({
   listMappings: protectedProcedure.query(async () => {
     const db = await getDb();
     const mappings = await db!.select().from(operatorNameMappings)
-      .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId()))
+      .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), or(eq(operatorNameMappings.sourceType, "saihu"), eq(operatorNameMappings.sourceType, "all"))))
       .orderBy(operatorNameMappings.externalName);
     return mappings;
   }),
@@ -151,7 +151,7 @@ export const operatorMappingRouter = router({
   upsertMapping: protectedProcedure
     .input(z.object({
       externalName: z.string().min(1),
-      sourceType: z.enum(["lingxing", "saihu", "all"]).default("all"),
+      sourceType: z.enum(["saihu", "all"]).default("saihu"),
       systemUserName: z.string().nullable(),
       systemUserId: z.number().nullable(),
       isConfirmed: z.boolean().default(true),
@@ -195,7 +195,7 @@ export const operatorMappingRouter = router({
     .input(z.object({
       mappings: z.array(z.object({
         externalName: z.string().min(1),
-        sourceType: z.enum(["lingxing", "saihu", "all"]).default("all"),
+        sourceType: z.enum(["saihu", "all"]).default("saihu"),
         systemUserName: z.string().nullable(),
         systemUserId: z.number().nullable(),
       })),
@@ -260,7 +260,7 @@ export const operatorMappingRouter = router({
   resolveOperatorNames: protectedProcedure
     .input(z.object({
       externalNames: z.array(z.string()),
-      sourceType: z.enum(["lingxing", "saihu"]),
+      sourceType: z.literal("saihu"),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -365,7 +365,7 @@ export const operatorMappingRouter = router({
   getMappedName: protectedProcedure
     .input(z.object({
       externalName: z.string(),
-      sourceType: z.enum(["lingxing", "saihu", "all"]).default("all"),
+      sourceType: z.enum(["saihu", "all"]).default("saihu"),
     }))
     .query(async ({ input }) => {
       const db = await getDb();
@@ -394,7 +394,7 @@ export const operatorMappingRouter = router({
   batchGetMappedNames: protectedProcedure
     .input(z.object({
       externalNames: z.array(z.string()),
-      sourceType: z.enum(["lingxing", "saihu", "all"]).default("all"),
+      sourceType: z.enum(["saihu", "all"]).default("saihu"),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();

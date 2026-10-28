@@ -166,16 +166,6 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
     { productId }, { enabled: !!productId }
   );
 
-  // Mutations
-  const syncFromLingxing = trpc.productOps.syncWeeklyOpsFromLingxing.useMutation({
-    onSuccess: (data) => {
-      toast.success(`同步完成：${data.syncedWeeks} 周 + ${data.syncedMonths} 月数据`);
-      refetchWeekly();
-      refetchMonthly();
-    },
-    onError: (err) => toast.error(`同步失败: ${err.message}`),
-  });
-
   const upsertWeekly = trpc.productOps.upsertWeeklyOps.useMutation({
     onSuccess: () => {
       toast.success("已保存");
@@ -195,25 +185,6 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
     onSuccess: () => { toast.success("产品信息已保存"); refetchBasicInfo(); },
     onError: (err) => toast.error(`保存失败: ${err.message}`),
   });
-
-  const autoFillBasicInfo = trpc.productOps.autoFillBasicInfo.useMutation({
-    onSuccess: (data) => {
-      if (data.filled) {
-        toast.success("已从领星自动填充产品利润信息");
-        refetchBasicInfo();
-      }
-    },
-    onError: () => { /* silent fail for auto-fill */ },
-  });
-
-  // Auto-fill basic info on first visit if empty
-  const autoFillTriggered = useRef(false);
-  useEffect(() => {
-    if (basicInfo === null && !autoFillTriggered.current && productId) {
-      autoFillTriggered.current = true;
-      autoFillBasicInfo.mutate({ productId });
-    }
-  }, [basicInfo, productId]);
 
   // Group weekly data by month and insert monthly summary rows
   const tableRows = useMemo(() => {
@@ -725,14 +696,7 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
                 <AlertTriangle className="h-3 w-3 mr-1" />
                 {showAlertOnly ? "显示全部" : "仅预警周"}
               </Button>
-              <Button
-                size="sm" variant="outline"
-                onClick={() => syncFromLingxing.mutate({ productId, months: 6 })}
-                disabled={syncFromLingxing.isPending}
-              >
-                <RefreshCw className={`h-3.5 w-3.5 mr-1 ${syncFromLingxing.isPending ? "animate-spin" : ""}`} />
-                从领星同步
-              </Button>
+              <Button variant="outline" onClick={() => { window.location.href = "/ops/saihu-sync"; }}>赛狐数据同步</Button>
               <Button size="sm" variant="outline" onClick={() => setShowAddRow(true)}>
                 <Plus className="h-3.5 w-3.5 mr-1" /> 手动添加
               </Button>
@@ -746,10 +710,7 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
             <div className="text-center py-12">
               <p className="text-sm text-muted-foreground mb-3">暂无周度运营数据</p>
               <div className="flex items-center justify-center gap-2">
-                <Button size="sm" onClick={() => syncFromLingxing.mutate({ productId, months: 6 })} disabled={syncFromLingxing.isPending}>
-                  <RefreshCw className={`h-3.5 w-3.5 mr-1 ${syncFromLingxing.isPending ? "animate-spin" : ""}`} />
-                  从领星ERP同步数据
-                </Button>
+                <Button variant="outline" onClick={() => { window.location.href = "/ops/saihu-sync"; }}>赛狐数据同步</Button>
                 <Button size="sm" variant="outline" onClick={() => setShowAddRow(true)}>
                   <Plus className="h-3.5 w-3.5 mr-1" /> 手动录入
                 </Button>

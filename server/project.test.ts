@@ -28,7 +28,7 @@ vi.mock("./repositories/project/projectRepository", async importOriginal => ({
 }));
 vi.mock("./repositories/project/projectAssetRepository", async importOriginal => ({
   ...await importOriginal<typeof import("./repositories/project/projectAssetRepository")>(),
-  getCompetitorAnalysisById: io.getAnalysis,
+  getCompetitorAnalysisById: io.getAnalysis, getPersistedCompetitorAnalysisById: io.getAnalysis,
   deleteCompetitorAnalysis: io.deleteAnalysis,
 }));
 vi.mock("./repositories/dbClient", async importOriginal => ({
@@ -39,7 +39,7 @@ vi.mock("./repositories", async importOriginal => ({
   ...await importOriginal<typeof import("./repositories")>(),
   getProjectsByUser: io.projectList, getProjectById: io.getProject,
   createProject: io.createProject, updateProject: io.updateProject, deleteProject: io.deleteProject,
-  getCompetitorAnalysesByProject: vi.fn().mockResolvedValue([]), getCompetitorAnalysisById: io.getAnalysis,
+  getCompetitorAnalysesByProject: vi.fn().mockResolvedValue([]), getCompetitorAnalysisById: io.getAnalysis, getPersistedCompetitorAnalysisById: io.getAnalysis,
   deleteCompetitorAnalysis: io.deleteAnalysis, createCompetitorAnalysis: vi.fn().mockResolvedValue({ id: 1 }),
   getActiveListingByProject: vi.fn().mockResolvedValue(null), getListingsByProject: vi.fn().mockResolvedValue([]),
   getImageAnalysesByProject: vi.fn().mockResolvedValue([]), createListing: vi.fn().mockResolvedValue({ id: 1 }),
@@ -176,7 +176,7 @@ describe("analysis router", () => {
     const caller = appRouter.createCaller(ctx);
 
     await expect(
-      caller.analysis.analyzeAsin({
+      caller.analysis.collectAsin({
         projectId: 1,
         asin: "SHORT",
       })
@@ -196,7 +196,7 @@ describe("analysis router", () => {
     const caller = appRouter.createCaller(createAuthContext(workspaceId));
     expect(await caller.analysis.delete({ id: 1 })).toEqual({ success: true });
     expect(io.getProject).toHaveBeenCalledWith(1, 1, workspaceId);
-    expect(io.getAnalysis).toHaveBeenCalledTimes(2);
+    expect(io.getAnalysis).toHaveBeenCalledTimes(1);
     expect(io.deleteAnalysis).toHaveBeenCalledOnce();
     expect(io.deleteAnalysis).toHaveBeenCalledWith(1, { projectId: 1, userId: 1, workspaceId, expectedRevision: competitorRevision(io.analysis) });
     expect(io.unexpectedDb).not.toHaveBeenCalled();

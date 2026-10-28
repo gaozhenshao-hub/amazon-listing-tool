@@ -2,7 +2,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { databaseUnavailableError } from "../../../_core/domainError";
 import { getDb } from "../../../repositories/dbClient";
 import { opsWorkspaceCondition } from "../../../repositories/ops";
-import { keywordMonitors, keywordSnapshots, productLogs, productTodos, teamTasks } from "../schema";
+import { keywordMonitors, keywordSnapshots, productLogs, productTodos } from "../schema";
 import { currentOpsWorkspaceId } from "../workspaceContext";
 
 async function dbClient() {
@@ -48,27 +48,6 @@ export const opsWorkRepository = {
     const db = await dbClient();
     await db.delete(productLogs)
       .where(opsWorkspaceCondition(productLogs, currentOpsWorkspaceId(), eq(productLogs.id, id)));
-  },
-  async listTeamTasks(productProfileId: number) {
-    const db = await dbClient();
-    return db.select().from(teamTasks)
-      .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), eq(teamTasks.productProfileId, productProfileId)))
-      .orderBy(asc(teamTasks.sortOrder), desc(teamTasks.createdAt));
-  },
-  async createTeamTask(values: typeof teamTasks.$inferInsert) {
-    const db = await dbClient();
-    const [result] = await db.insert(teamTasks).values(values);
-    return Number(result.insertId);
-  },
-  async updateTeamTask(id: number, values: Record<string, unknown>) {
-    const db = await dbClient();
-    await db.update(teamTasks).set(values)
-      .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), eq(teamTasks.id, id)));
-  },
-  async deleteTeamTask(id: number) {
-    const db = await dbClient();
-    await db.delete(teamTasks)
-      .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), eq(teamTasks.id, id)));
   },
   async listKeywordMonitors(productId: number) {
     const db = await dbClient();

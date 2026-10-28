@@ -39,35 +39,35 @@ describe("productOps router module", () => {
   it("should have all original product CRUD procedures", async () => {
     const mod = await import("./productOps");
     const procedures = Object.keys(mod.productOpsRouter._def.procedures);
-    
+
     // Product CRUD
     expect(procedures).toContain("listProducts");
     expect(procedures).toContain("getProduct");
     expect(procedures).toContain("createProduct");
     expect(procedures).toContain("updateProduct");
     expect(procedures).toContain("deleteProduct");
-    
+
     // Variants
     expect(procedures).toContain("addVariant");
     expect(procedures).toContain("removeVariant");
-    
+
     // Todos
     expect(procedures).toContain("getTodos");
     expect(procedures).toContain("createTodo");
     expect(procedures).toContain("updateTodo");
     expect(procedures).toContain("deleteTodo");
-    
+
     // Logs
     expect(procedures).toContain("getLogs");
     expect(procedures).toContain("createLog");
     expect(procedures).toContain("deleteLog");
-    
+
     // Keyword monitors
     expect(procedures).toContain("getKeywordMonitors");
     expect(procedures).toContain("addKeywordMonitor");
     expect(procedures).toContain("removeKeywordMonitor");
     expect(procedures).toContain("addKeywordSnapshot");
-    
+
     // Data aggregation
     expect(procedures).toContain("getProductProfitSummary");
     expect(procedures).toContain("getProductInventorySummary");
@@ -78,21 +78,21 @@ describe("productOps router module", () => {
   it("should have all operations plan procedures", async () => {
     const mod = await import("./productOps");
     const procedures = Object.keys(mod.productOpsRouter._def.procedures);
-    
+
     // Ops Plans
     expect(procedures).toContain("listPlans");
     expect(procedures).toContain("getPlan");
     expect(procedures).toContain("createPlan");
     expect(procedures).toContain("updatePlan");
     expect(procedures).toContain("deletePlan");
-    
+
     // Plan Actions
     expect(procedures).toContain("listPlanActions");
     expect(procedures).toContain("createPlanAction");
     expect(procedures).toContain("updatePlanAction");
     expect(procedures).toContain("deletePlanAction");
     // syncActionToTodo is handled within createPlanAction
-    
+
     // Plan Summaries
     expect(procedures).toContain("listPlanSummaries");
     expect(procedures).toContain("createPlanSummary");
@@ -102,13 +102,13 @@ describe("productOps router module", () => {
   it("should have all conversion comparison procedures", async () => {
     const mod = await import("./productOps");
     const procedures = Object.keys(mod.productOpsRouter._def.procedures);
-    
+
     // Conversion Comparisons
     expect(procedures).toContain("listComparisons");
     expect(procedures).toContain("getComparison");
     expect(procedures).toContain("createComparison");
     expect(procedures).toContain("deleteComparison");
-    
+
     // Check Items
     expect(procedures).toContain("getCheckItems");
     expect(procedures).toContain("addCustomCheckItem");
@@ -117,13 +117,13 @@ describe("productOps router module", () => {
     expect(procedures).toContain("editCheckItem");
     expect(procedures).toContain("toggleCheckItemHidden");
     expect(procedures).toContain("resetCheckItemOverride");
-    
+
     // Scores
     expect(procedures).toContain("getScores");
     expect(procedures).toContain("updateScore");
     expect(procedures).toContain("batchUpdateScores");
     expect(procedures).toContain("triggerAiScoring");
-    
+
     // Suggestions
     expect(procedures).toContain("getSuggestions");
     expect(procedures).toContain("updateSuggestion");
@@ -134,7 +134,7 @@ describe("productOps router module", () => {
   it("should have all execution review procedures", async () => {
     const mod = await import("./productOps");
     const procedures = Object.keys(mod.productOpsRouter._def.procedures);
-    
+
     expect(procedures).toContain("listExecutionReviews");
     expect(procedures).toContain("createExecutionReview");
     expect(procedures).toContain("updateExecutionReview");
@@ -148,22 +148,17 @@ describe("productOps router module", () => {
     expect(procedures).toContain("syncPlanCurrentData");
   });
 
-  it("should have all team task procedures", async () => {
+  it("retires duplicate team task CRUD in favor of productTaskRead/productTaskWrite", async () => {
     const mod = await import("./productOps");
     const procedures = Object.keys(mod.productOpsRouter._def.procedures);
-    
-    expect(procedures).toContain("listTeamTasks");
-    expect(procedures).toContain("createTeamTask");
-    expect(procedures).toContain("updateTeamTask");
-    expect(procedures).toContain("moveTeamTask");
-    expect(procedures).toContain("deleteTeamTask");
-     expect(procedures).toContain("getTeamTaskStats");
-    expect(procedures).toContain("syncFromLingxing");
-  });
-  it("should have exactly 88 procedures", async () => {
-    const mod = await import("./productOps");
-    const procedures = Object.keys(mod.productOpsRouter._def.procedures);
-    expect(procedures.length).toBe(100);
+
+    expect(procedures).not.toContain("listTeamTasks");
+    expect(procedures).not.toContain("createTeamTask");
+    expect(procedures).not.toContain("updateTeamTask");
+    expect(procedures).not.toContain("moveTeamTask");
+    expect(procedures).not.toContain("deleteTeamTask");
+     expect(procedures).not.toContain("getTeamTaskStats");
+    expect(procedures).not.toContain("syncFromLingxing");
   });
 
   it("all procedures should be defined", async () => {

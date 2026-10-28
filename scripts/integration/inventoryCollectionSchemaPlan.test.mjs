@@ -15,6 +15,18 @@ function fixture() {
   ] };
 }
 const absent = t => ({ name: t.name, complete: true, exists: false });
+test("0900 legacy snapshots gain only a source namespace without rewriting payloads", () => {
+  const s = fixture(), table = s.tables[1]; table.collation = "utf8mb4_0900_ai_ci";
+  table.columns = table.columns.filter(c => c.name !== "run_source");
+  for (const c of table.columns) if (c.collation) c.collation = table.collation;
+  table.indexes[1] = idx("inventory_run", ["run_id"], true);
+  const statements = planInventoryCollectionSchema(s).statements;
+  assert.equal(statements.length, 1);
+  assert.match(statements[0], /ADD COLUMN run_source/);
+  assert.doesNotMatch(statements[0], /CONVERT|MODIFY|payload|UPDATE|DELETE|TRUNCATE/);
+  table.columns.find(c => c.name === "payload").collation = "utf8mb4_unicode_ci";
+  assert.throws(() => planInventoryCollectionSchema(s), /COLUMN_COLLATION/);
+});
 test("plans new tables but keeps P6, no execution/registration/seeding", () => { const s = fixture(); s.tables = s.tables.map(absent); const p = planInventoryCollectionSchema(s); assert.deepEqual(p.statements, INVENTORY_COLLECTION_SCHEMA_DDL); assert.equal(p.targetPhase, "P6"); assert.equal(p.executable, false); assert.equal(p.productionApproved, false); assert.equal(p.ledgerRegistration, "unchanged"); assert.equal(p.scheduleSeeding, "none"); for (const ddl of p.statements) assert.doesNotMatch(ddl, /schedules|sync_runs|INSERT|DELETE|TRUNCATE|DROP/); });
 test("new compatible schema has no DDL", () => { const p = planInventoryCollectionSchema(fixture()); assert.deepEqual(p.statements, []); assert.equal(p.state, "structure_ready"); assert.match(p.rollback, /never collapse/); });
 test("legacy namespace preserves all existing rows and old program default", () => {

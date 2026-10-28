@@ -59,7 +59,7 @@ export default function EmperorModels() {
   const healthCheckMutation = trpc.emperor.models.healthCheck.useMutation({
     onSuccess: (data) => {
       if (data.status === "active") {
-        toast.success(`健康检查通过，延迟 ${data.latencyMs}ms`);
+        toast.success(data.message || `健康检查通过，延迟 ${data.latencyMs}ms`);
       } else {
         toast.error(`健康检查失败：${data.error}`);
       }
@@ -85,6 +85,8 @@ export default function EmperorModels() {
   });
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [editingSlug,setEditingSlug]=useState<string|null>(null);
+  const updateMutation=trpc.emperor.models.update.useMutation({retry:false,onSuccess:()=>{toast.success("语音识别配置已保存");setShowCreateDialog(false);setEditingSlug(null);setForm(defaultForm);void refetch();},onError:e=>toast.error(e.message)});
   const [form, setForm] = useState(defaultForm);
   const [showApiKey, setShowApiKey] = useState(false);
   const [activeTab, setActiveTab] = useState<"models" | "cost" | "logs">("models");
@@ -116,10 +118,18 @@ export default function EmperorModels() {
   }, [modelQuery, models]);
 
   const handleCreate = () => {
-    if (!form.name || !form.modelId || !form.apiKey) {
+    if (!form.name || !form.modelId || !form.apiKey && !editingSlug) {
       return toast.error("请填写模型名称、Model ID 和 API Key");
     }
-    createMutation.mutate(form);
+    if(editingSlug)updateMutation.mutate({slug:editingSlug,name:form.name,apiBaseUrl:form.apiBaseUrl,...(form.apiKey?{apiKey:form.apiKey}:{}),isActive:true,isDefault:false,capabilityTags:["speech-to-text","meeting"]});
+    else createMutation.mutate(form);
+  };
+  const speechModel=form.modelId === "paraformer-v2";
+  const configureSpeech=()=>{
+    const existing=(models as any[])?.find(m=>m.modelId === "paraformer-v2");
+    setEditingSlug(existing?.slug || null);
+    setForm({...defaultForm,name:"会议语音识别 Paraformer-v2",modelId:"paraformer-v2",provider:"Custom",apiBaseUrl:existing?.baseUrl || "https://dashscope.aliyuncs.com/api/v1",capabilityTags:["speech-to-text","meeting"]});
+    setShowApiKey(false);setShowCreateDialog(true);
   };
 
   const toggleTag = (tag: string) => {
@@ -155,6 +165,7 @@ export default function EmperorModels() {
           </Button>
           {isAdmin && (
             <>
+              <Button variant="outline" onClick={configureSpeech} className="border-violet-500/30 text-violet-300">配置会议语音识别</Button>
               <Button
                 variant="outline"
                 disabled={syncTeamorouterCatalogMutation.isPending}
@@ -166,7 +177,7 @@ export default function EmperorModels() {
                 同步 TeamoRouter
               </Button>
               <Button
-                onClick={() => setShowCreateDialog(true)}
+                onClick={() => {setEditingSlug(null);setForm(defaultForm);setShowCreateDialog(true);}}
                 className="bg-violet-600 hover:bg-violet-500 text-white gap-2"
               >
                 <Plus className="h-4 w-4" />
@@ -277,7 +288,7 @@ export default function EmperorModels() {
                       : <XCircle className="h-3.5 w-3.5 text-red-400" />
                     }
                     <span className={`text-xs ${model.isActive ? "text-emerald-400" : "text-red-400"}`}>
-                      {model.isActive ? "正常" : "异常"}
+                      {model.modelId === "paraformer-v2" ? (model.isActive ? "已启用" : "待配置") : model.isActive ? "正常" : "异常"}
                     </span>
                   </div>
                   <div className="min-w-0 flex-1">
@@ -288,7 +299,7 @@ export default function EmperorModels() {
                       )}
                     </div>
                     <p className="text-xs text-slate-500 font-mono mt-0.5">
-                      {model.modelId} · {model.provider} {model.maxContextTokens ? `${Math.round((model.maxContextTokens||128000)/1000)}K ctx` : "128K ctx"}
+                      {model.modelId === "paraformer-v2" ? "阿里云百炼 · 会议录音转文字" : `${model.modelId} · ${model.provider} ${Math.round((model.maxContextTokens||128000)/1000)}K ctx`}
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap justify-end min-w-[180px]">
@@ -297,7 +308,7 @@ export default function EmperorModels() {
                     ))}
                   </div>
                   <div className="text-right text-xs text-slate-500 min-w-[120px]">
-                    <div>输入 / 输出</div>
+                    <div>{model.modelId === "paraformer-v2" ? "按音频时长计费" : "输入 / 输出"}</div>
                     {Number(model.costPer1kInputTokens || 0) || Number(model.costPer1kOutputTokens || 0) ? (
                       <>
                         <div className="text-slate-300 font-mono">${Number(model.costPer1kInputTokens || 0).toFixed(4)} / ${Number(model.costPer1kOutputTokens || 0).toFixed(4)}</div>
@@ -389,15 +400,16 @@ export default function EmperorModels() {
       </div>
 
       {/* Create Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      <Dialog open={showCreateDialog} onOpenChange={value=>{setShowCreateDialog(value);if(!value){setForm(defaultForm);setEditingSlug(null);setShowApiKey(false);}}}>
         <DialogContent className="bg-[#0d1117] border-white/10 text-white max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-white">
               <Brain className="h-5 w-5 text-violet-400" />
-              添加 LLM 模型
+              {speechModel ? "会议语音识别配置" : "添加 LLM 模型"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {speechModel && <p className="rounded-lg bg-violet-500/10 p-3 text-sm text-slate-300">使用阿里云百炼北京地域 API Key。用于会议录音转文字，按音频时长计费；会议纪要继续使用已配置的文字模型。{editingSlug?"密钥留空表示保留现有密钥。":""}</p>}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label className="text-slate-300 text-sm">模型名称 *</Label>
@@ -412,6 +424,7 @@ export default function EmperorModels() {
                 <Label className="text-slate-300 text-sm">Model ID *</Label>
                 <Input
                   value={form.modelId}
+                  disabled={speechModel}
                   onChange={(e) => setForm({ ...form, modelId: e.target.value })}
                   placeholder="如：gpt-4o"
                   className="mt-1.5 bg-white/5 border-white/10 text-white placeholder:text-slate-600 font-mono"
@@ -458,7 +471,7 @@ export default function EmperorModels() {
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            {!speechModel && <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label className="text-slate-300 text-sm">输入成本 ($/1K)</Label>
                 <Input
@@ -486,7 +499,7 @@ export default function EmperorModels() {
                   className="mt-1.5 bg-white/5 border-white/10 text-white"
                 />
               </div>
-            </div>
+            </div>}
             <div>
               <Label className="text-slate-300 text-sm">能力标签</Label>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -506,7 +519,7 @@ export default function EmperorModels() {
                 ))}
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            {!speechModel && <div className="flex items-center gap-3">
               <input
                 type="checkbox"
                 id="isDefault"
@@ -517,7 +530,7 @@ export default function EmperorModels() {
               <Label htmlFor="isDefault" className="text-slate-300 text-sm cursor-pointer">
                 设为默认模型（Skill 未指定模型时使用此模型）
               </Label>
-            </div>
+            </div>}
           </div>
           <DialogFooter>
             <Button
@@ -529,10 +542,10 @@ export default function EmperorModels() {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={createMutation.isPending}
+              disabled={createMutation.isPending || updateMutation.isPending}
               className="bg-violet-600 hover:bg-violet-500 text-white"
             >
-              {createMutation.isPending ? "添加中..." : "添加模型"}
+              {createMutation.isPending || updateMutation.isPending ? "保存中..." : speechModel ? "保存语音配置" : "添加模型"}
             </Button>
           </DialogFooter>
         </DialogContent>

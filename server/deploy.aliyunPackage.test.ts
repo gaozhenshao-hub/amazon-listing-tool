@@ -10,7 +10,7 @@ describe("阿里云独立部署包", () => {
     const dockerfile = readDeploymentFile("Dockerfile");
 
     expect(dockerfile).toContain("FROM node:22-bookworm-slim AS build");
-    expect(dockerfile).toContain("RUN pnpm run build && pnpm prune --prod");
+    expect(dockerfile).toContain("RUN pnpm run build && pnpm run release:check && pnpm prune --prod");
     expect(dockerfile).toContain('CMD ["node", "dist/index.js"]');
     expect(dockerfile).not.toContain("BUILT_IN_FORGE_API_KEY=");
   });

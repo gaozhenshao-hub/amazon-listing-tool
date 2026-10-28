@@ -1,3 +1,4 @@
+const ACTIVE_PAGE_PATTERNS = ["^/knowledge/images/[0-9]+$", "^/listing/acquisition/review/[^/]+$", "^/knowledge/acquisition/job/[^/]+$", "^/ops/products/erp/[^/]+/[^/]+$", "^/ops/products/import/[^/]+/[^/]+$", "^/ops/products/[^/]+$", "^/procurement/shipping/[^/]+$", "^/listing/project/[^/]+$", "^/knowledge/acquisition/review/[^/]+$", "^/ops/products/view/[^/]+$", "^/project/[^/]+$"].map(pattern => new RegExp(pattern));
 export interface WorkspaceTab {
   href: string;
   label: string;
@@ -5,6 +6,10 @@ export interface WorkspaceTab {
 }
 
 export const WORKSPACE_TABS_STORAGE_KEY = "amz-workspace-tabs-v1";
+export const WORKSPACE_CLOSE_AND_NAVIGATE = "workspace-close-and-navigate";
+export function closeCurrentWorkspaceTabAndNavigate(destination: string) {
+  window.dispatchEvent(new CustomEvent(WORKSPACE_CLOSE_AND_NAVIGATE, { detail: { destination } }));
+}
 export const MAX_WORKSPACE_TABS = 30;
 
 const LISTING_NODE_LABELS: Record<string, string> = {
@@ -27,9 +32,11 @@ const LISTING_NODE_LABELS: Record<string, string> = {
 };
 
 const EXACT_ROUTE_LABELS: Record<string, string> = {
+  "/design/images": "美工 · 生图",
+  "/design/prompts": "美工 · 提示词库",
+  "/design/materials": "美工 · 素材库",
   "/": "首页",
   "/listing": "项目管理",
-  "/listing/canvas": "工作流画布",
   "/listing/analysis": "竞品分析",
   "/listing/comparison": "竞品对比",
   "/listing/review-history": "导入历史",
@@ -41,73 +48,33 @@ const EXACT_ROUTE_LABELS: Record<string, string> = {
   "/listing/generate": "Listing生成",
   "/listing/preview": "结果预览",
   "/listing/score": "Listing评分",
-  "/listing/image-suggestions": "智能图片建议",
-  "/listing/image-workflow": "智能图片建议",
-  "/listing/video-script": "视频脚本生成",
-  "/dev": "产品开发仪表盘",
-  "/dev/new-project": "新建产品项目",
-  "/dev/projects": "产品项目列表",
-  "/dev/compare": "产品对比",
-  "/dev/supplier-library": "供应商库",
-  "/ops": "运营仪表盘",
-  "/ops/dashboard-upgrade": "智能运营中心",
+  "/dev": "产品开发",
+  "/ops": "运营总览",
   "/ops/products": "产品总览",
   "/ops/product-board": "产品看板",
   "/ops/profit-board": "利润看板",
-  "/ops/product-tasks": "产品任务",
-  "/ops/inventory": "库存预警",
-  "/ops/ads": "广告优化",
-  "/ops/ad-deep": "广告深度优化",
-  "/ops/custom-dashboard": "自定义看板",
-  "/ops/crawler": "爬虫引擎",
+  "/ops/product-tasks": "任务看板",
+  "/ops/inventory": "库存关注",
+  "/ops/inventory-details": "库存情况",
+  "/ops/ads": "广告看板",
   "/ops/logistics": "物流时效分析",
-  "/ops/data-import": "ERP 数据导入中心",
-  "/ops/ad-mapping": "广告组合映射",
-  "/ops/tasks": "任务管理",
-  "/service": "售后仪表盘",
-  "/service/reviews": "Review智能管理",
-  "/service/returns": "退货分析",
-  "/service/emails": "邮件管理与AI客服",
-  "/service/profiles": "客户画像",
+  "/ops/tasks": "任务看板",
+  "/ops/task-tools": "会议与任务辅助",
   "/knowledge": "知识库总览",
-  "/knowledge/bot": "AI知识助手",
-  "/knowledge/products": "智能产品创意库",
-  "/knowledge/listings": "智能Listing文案库",
   "/knowledge/images": "智能图片知识库",
-  "/knowledge/skills": "智能运营SOP库",
-  "/knowledge/videos": "智能视频知识库",
-  "/knowledge/intel": "情报推荐中心",
-  "/knowledge/transfer": "知识库流转",
-  "/offsite": "站外总览",
-  "/offsite/influencers": "达人管理",
-  "/offsite/campaigns": "活动管理",
-  "/offsite/outreach": "外联管理",
-  "/offsite/content-review": "内容审核",
-  "/offsite/social-accounts": "社媒账号",
-  "/offsite/content-calendar": "内容日历",
-  "/offsite/tiktok-matrix": "TikTok矩阵",
-  "/offsite/attribution": "归因追踪",
-  "/offsite/analytics": "全渠道分析",
   "/emperor": "Skill库",
   "/emperor/skills": "Skill库",
-  "/emperor/trace": "运行历史",
-  "/emperor/agents": "Agent编排",
   "/emperor/models": "模型路由",
-  "/emperor/mcp": "MCP连接器",
-  "/emperor/scheduled": "定时任务",
-  "/emperor/usage": "Token用量",
-  "/emperor/observability": "可观测看板",
-  "/emperor/diagnostics": "诊断中心",
   "/emperor/settings": "皇帝通用设置",
-  "/emperor/knowledge": "皇帝知识库",
-  "/settings": "系统设置",
   "/profile": "个人设置",
   "/admin/users": "用户管理",
-  "/admin/review": "审核中心",
-  "/admin/assignments": "项目分配",
-  "/admin/sop-access": "SOP权限",
   "/admin/roles": "角色管理",
-  "/admin/sync": "同步与监控",
+  "/procurement": "采购物流",
+  "/finance": "财务",
+  "/emperor/agent-library": "Agent 库",
+  "/knowledge/recycle": "回收站",
+  "/knowledge/acquisition": "受控采集与审核",
+  "/ops/saihu-sync": "赛狐数据同步",
 };
 
 export function normalizeWorkspaceHref(
@@ -128,7 +95,7 @@ export function normalizeWorkspaceHref(
 export function isWorkspaceHref(href: string): boolean {
   if (!href.startsWith("/") || href.startsWith("//")) return false;
   const pathname = new URL(href, "http://workspace.local").pathname;
-  return !["/login", "/404"].includes(pathname) && !pathname.startsWith("/__qa__/");
+  return Object.hasOwn(EXACT_ROUTE_LABELS, pathname) || ACTIVE_PAGE_PATTERNS.some(pattern => pattern.test(pathname));
 }
 
 export function resolveWorkspaceTabLabel(href: string, preferredLabel?: string): string {
@@ -140,6 +107,11 @@ export function resolveWorkspaceTabLabel(href: string, preferredLabel?: string):
     return `${nodeId} · ${LISTING_NODE_LABELS[nodeId]}`;
   }
 
+  if (/^\/knowledge\/images\/[0-9]+$/.test(parsed.pathname)) {
+    const asin = parsed.searchParams.get("asin");
+    return asin && /^(新)*[A-Z0-9]{10}$/.test(asin) ? `套图 · ${asin}` : "ASIN 套图详情";
+  }
+  if (/^\/knowledge\/acquisition\/job\/[0-9]+$/.test(parsed.pathname)) return "图片采集详情";
   const exact = EXACT_ROUTE_LABELS[parsed.pathname];
   if (exact) return exact;
 

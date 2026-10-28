@@ -19,26 +19,12 @@ describe("Product Overview With Weeks", () => {
       "productOps.getProductOverviewWithWeeks",
       "productOps.createProduct",
       "productOps.deleteProduct",
-      "productOps.syncFromLingxing",
-      "productOps.batchSyncWeeklyOps",
       "productOps.batchAssignOperator",
       "productOps.listOperators",
     ];
     for (const procName of requiredProcs) {
       expect(router._def.procedures, `${procName} should exist`).toHaveProperty(procName);
     }
-  });
-
-  it("should have syncWeeklyOpsFromLingxing as mutation", () => {
-    const proc = (router._def.procedures as any)["productOps.syncWeeklyOpsFromLingxing"];
-    expect(proc).toBeDefined();
-    expect(proc._def?.type || proc._type).toBe("mutation");
-  });
-
-  it("should have batchSyncWeeklyOps as mutation", () => {
-    const proc = (router._def.procedures as any)["productOps.batchSyncWeeklyOps"];
-    expect(proc).toBeDefined();
-    expect(proc._def?.type || proc._type).toBe("mutation");
   });
 
   it("should have listOperators as query", () => {

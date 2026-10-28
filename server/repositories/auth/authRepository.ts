@@ -172,9 +172,12 @@ export async function getUserByEmailOrPhone(identifier: string) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(users).where(
-    or(eq(users.email, identifier), eq(users.phone, identifier))
-  ).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+    or(eq(users.email, identifier), eq(users.phone, identifier),
+      /^[a-z][a-z0-9_.-]{2,31}$/i.test(identifier)
+        ? sql`EXISTS (SELECT 1 FROM user_login_aliases a WHERE a.userId=${users.id} AND a.username=${identifier.toLowerCase()})`
+        : undefined)
+  ).limit(2);
+  return result.length === 1 ? result[0] : undefined;
 }
 
 export async function getAllUsers() {
@@ -184,6 +187,7 @@ export async function getAllUsers() {
     id: users.id,
     openId: users.openId,
     name: users.name,
+    username: sql<string | null>`(SELECT a.username FROM user_login_aliases a WHERE a.userId=${users.id} LIMIT 1)`,
     email: users.email,
     phone: users.phone,
     role: users.role,

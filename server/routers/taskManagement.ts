@@ -1,3 +1,7 @@
+import { meetingProcedure } from "../domains/ops/meetingProcedure";
+import { meetingMembers, requireMeetingAccess, meetingReadCondition, validateMeetingParticipants } from "../domains/ops/meetingAccess";
+import { meetingDateSchema, meetingTitle, meetingParticipantIdsSchema, meetingSubjectSchema } from "../../shared/meetingNotes";
+import { analyzeMeetingNotes } from "../domains/ops/meetingNotes";
 import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
 import { opsWorkspaceCondition } from "../repositories/ops";
 import { z } from "zod";
@@ -5,272 +9,40 @@ import { TRPCError } from "@trpc/server";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
-import { teamTasks, meetingRecords, users, productProfiles } from "../../drizzle/schema";
-import { eq, desc, asc, and, inArray, like, or, sql, isNull } from "drizzle-orm";
+import { teamTasks, meetingRecords, users } from "../../drizzle/schema";
+import { eq, desc, asc, and, sql } from "drizzle-orm";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { transcribeAudio } from "../_core/voiceTranscription";
-import { storagePut } from "../storage";
+import { paraformerConfig } from "../domains/ops/paraformer";
+import { meetingAudioDirectory } from "../domains/ops/meetingAudioStorage";
+import { resumeMeetingAudio } from "../domains/ops/meetingAudioService";
 
-// ─── Task Management Router ───
-// Global task management that works with existing team_tasks table
-// but provides cross-product views and AI meeting extraction
+// Auxiliary meeting and reminder tools. Task reads and writes are owned by
+// productTaskRead/productTaskWrite; no second task CRUD implementation.
+
+import { ADMIN_ROLES } from "../../shared/const";
+const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (!(ADMIN_ROLES as readonly string[]).includes(ctx.user.role)) throw new TRPCError({ code: "FORBIDDEN", message: "管理员工具" });
+  return next();
+});
 
 export const taskManagementRouter = router({
+  meetingMembers: meetingProcedure.query(() => meetingMembers(currentOpsWorkspaceId())),
+  meetingAudioStatus: meetingProcedure.query(async () => {
+    try { await paraformerConfig(currentOpsWorkspaceId()); await meetingAudioDirectory(); return {configured:true}; }
+    catch { return {configured:false}; }
+  }),
+  resumeMeetingAudio: meetingProcedure.input(z.object({id:z.number().int().positive()})).mutation(async ({ctx,input})=>{ await requireMeetingAccess(ctx.user,currentOpsWorkspaceId(),input.id); return resumeMeetingAudio(currentOpsWorkspaceId(),input.id); }),
+  saveMeetingNotes: meetingProcedure.input(z.object({ date: meetingDateSchema, participantIds: meetingParticipantIdsSchema, title: meetingSubjectSchema, text: z.string().trim().min(10).max(18000) })).mutation(async ({ctx,input}) => {
+    const db=await getDb();
+    if(!db) throw new TRPCError({code:"INTERNAL_SERVER_ERROR",message:"会议服务暂不可用"});
+    const participants = await validateMeetingParticipants(currentOpsWorkspaceId(),input.participantIds);
+    const [result]=await db.insert(meetingRecords).values({workspaceId:currentOpsWorkspaceId(),userId:ctx.user.id,title:meetingTitle(input.date,input.title),transcript:input.text,status:"done",extractedTasks:JSON.stringify({version:2,date:input.date,participants,titleSource:input.title ? "manual" : "auto",summary:"",tasks:[],tasksExtracted:false})});
+    return {id:result.insertId};
+  }),
+  analyzeMeetingNotes: meetingProcedure.input(z.object({id:z.number().int().positive(),mode:z.enum(["summary","tasks"])})).mutation(async ({ctx,input}) => { await requireMeetingAccess(ctx.user,currentOpsWorkspaceId(),input.id); return analyzeMeetingNotes({userId:ctx.user.id,workspaceId:currentOpsWorkspaceId()},input.id,input.mode); }),
 
-  // ═══════════════════════════════════════════════════════
-  // ─── Global Task Queries ───
-  // ═══════════════════════════════════════════════════════
-
-  /** List all tasks across all products, with filters */
-  listAllTasks: protectedProcedure
-    .input(z.object({
-      assigneeName: z.string().optional(),
-      assigneeId: z.number().optional(),
-      category: z.string().optional(),
-      status: z.enum(["backlog", "todo", "in_progress", "review", "done"]).optional(),
-      priority: z.enum(["urgent", "high", "medium", "low"]).optional(),
-      productProfileId: z.number().optional(),
-      meetingRecordId: z.number().optional(),
-      search: z.string().optional(),
-      limit: z.number().min(1).max(200).optional().default(100),
-      offset: z.number().min(0).optional().default(0),
-    }))
-    .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
-
-      const conditions: any[] = [];
-      if (input.assigneeName) conditions.push(eq(teamTasks.assigneeName, input.assigneeName));
-      if (input.assigneeId) conditions.push(eq(teamTasks.assigneeId, input.assigneeId));
-      if (input.category) conditions.push(eq(teamTasks.category, input.category));
-      if (input.status) conditions.push(eq(teamTasks.status, input.status));
-      if (input.priority) conditions.push(eq(teamTasks.priority, input.priority));
-      if (input.productProfileId) conditions.push(eq(teamTasks.productProfileId, input.productProfileId));
-      if (input.meetingRecordId) conditions.push(eq(teamTasks.meetingRecordId, input.meetingRecordId));
-      if (input.search) {
-        conditions.push(or(
-          like(teamTasks.title, `%${input.search}%`),
-          like(teamTasks.description, `%${input.search}%`),
-        ));
-      }
-
-      const where = conditions.length > 0 ? and(...conditions) : undefined;
-
-      const tasks = await db.select({
-        id: teamTasks.id,
-        productProfileId: teamTasks.productProfileId,
-        userId: teamTasks.userId,
-        title: teamTasks.title,
-        description: teamTasks.description,
-        status: teamTasks.status,
-        priority: teamTasks.priority,
-        category: teamTasks.category,
-        assigneeId: teamTasks.assigneeId,
-        assigneeName: teamTasks.assigneeName,
-        startDate: teamTasks.startDate,
-        dueDate: teamTasks.dueDate,
-        completedAt: teamTasks.completedAt,
-        estimatedHours: teamTasks.estimatedHours,
-        actualHours: teamTasks.actualHours,
-        linkedTodoId: teamTasks.linkedTodoId,
-        linkedPlanActionId: teamTasks.linkedPlanActionId,
-        tags: teamTasks.tags,
-        sortOrder: teamTasks.sortOrder,
-        reminderDays: teamTasks.reminderDays,
-        reminderEnabled: teamTasks.reminderEnabled,
-        lastReminderSentAt: teamTasks.lastReminderSentAt,
-        meetingRecordId: teamTasks.meetingRecordId,
-        createdAt: teamTasks.createdAt,
-        updatedAt: teamTasks.updatedAt,
-        // Joined product info
-        productParentAsin: productProfiles.parentAsin,
-        productTitle: productProfiles.title,
-        productChineseName: productProfiles.chineseName,
-        productImageUrl: productProfiles.imageUrl,
-        productMarketplace: productProfiles.marketplace,
-      }).from(teamTasks)
-        .leftJoin(productProfiles, eq(teamTasks.productProfileId, productProfiles.id))
-        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), where))
-        .orderBy(desc(teamTasks.createdAt))
-        .limit(input.limit)
-        .offset(input.offset);
-
-      // Get total count
-      const [countResult] = await db.select({ count: sql<number>`count(*)` })
-        .from(teamTasks)
-        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), where));
-
-      return {
-        tasks,
-        total: countResult?.count ?? 0,
-        limit: input.limit,
-        offset: input.offset,
-      };
-    }),
-
-  /** Get unique assignees for filter dropdown */
-  getAssignees: protectedProcedure
-    .query(async () => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
-
-      const result = await db.selectDistinct({ assigneeName: teamTasks.assigneeName })
-        .from(teamTasks)
-        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), sql`${teamTasks.assigneeName} IS NOT NULL AND ${teamTasks.assigneeName} != ''`));
-
-      return result.map(r => r.assigneeName).filter(Boolean) as string[];
-    }),
-
-  /** Get unique categories for filter dropdown */
-  getCategories: protectedProcedure
-    .query(async () => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
-
-      const result = await db.selectDistinct({ category: teamTasks.category })
-        .from(teamTasks)
-        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), sql`${teamTasks.category} IS NOT NULL AND ${teamTasks.category} != ''`));
-
-      return result.map(r => r.category).filter(Boolean) as string[];
-    }),
-
-  /** Get task statistics summary */
-  getTaskStats: protectedProcedure
-    .query(async () => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
-
-      const tasks = await db.select().from(teamTasks);
-
-      const byStatus: Record<string, number> = { backlog: 0, todo: 0, in_progress: 0, review: 0, done: 0 };
-      const byPriority: Record<string, number> = { urgent: 0, high: 0, medium: 0, low: 0 };
-      const byAssignee: Record<string, { total: number; done: number; overdue: number }> = {};
-      const byCategory: Record<string, number> = {};
-
-      const now = new Date();
-      for (const t of tasks) {
-        byStatus[t.status] = (byStatus[t.status] || 0) + 1;
-        byPriority[t.priority] = (byPriority[t.priority] || 0) + 1;
-
-        const assignee = t.assigneeName || "未分配";
-        if (!byAssignee[assignee]) byAssignee[assignee] = { total: 0, done: 0, overdue: 0 };
-        byAssignee[assignee].total++;
-        if (t.status === "done") byAssignee[assignee].done++;
-        if (t.dueDate && new Date(t.dueDate) < now && t.status !== "done") {
-          byAssignee[assignee].overdue++;
-        }
-
-        if (t.category) {
-          byCategory[t.category] = (byCategory[t.category] || 0) + 1;
-        }
-      }
-
-      return {
-        total: tasks.length,
-        byStatus,
-        byPriority,
-        byAssignee,
-        byCategory,
-        overdue: tasks.filter(t => t.dueDate && new Date(t.dueDate) < now && t.status !== "done").length,
-      };
-    }),
-
-  /** Create a global task (not tied to a specific product) */
-  createGlobalTask: protectedProcedure
-    .input(z.object({
-      title: z.string().min(1),
-      description: z.string().optional(),
-      status: z.enum(["backlog", "todo", "in_progress", "review", "done"]).optional().default("todo"),
-      priority: z.enum(["urgent", "high", "medium", "low"]).optional().default("medium"),
-      category: z.string().optional(),
-      assigneeName: z.string().optional(),
-      assigneeId: z.number().optional(),
-      startDate: z.string().optional(),
-      dueDate: z.string().optional(),
-      estimatedHours: z.string().optional(),
-      productProfileId: z.number().optional(),
-      meetingRecordId: z.number().optional(),
-      tags: z.string().optional(),
-      reminderDays: z.string().optional(),
-      reminderEnabled: z.number().optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
-
-      // Use productProfileId 0 as "global" if not specified
-      const profileId = input.productProfileId ?? 0;
-
-      const [result] = await db.insert(teamTasks).values({
-        productProfileId: profileId,
-        userId: ctx.user.id,
-        title: input.title,
-        description: input.description,
-        status: input.status,
-        priority: input.priority,
-        category: input.category,
-        assigneeName: input.assigneeName,
-        assigneeId: input.assigneeId,
-        startDate: input.startDate,
-        dueDate: input.dueDate,
-        estimatedHours: input.estimatedHours,
-        meetingRecordId: input.meetingRecordId,
-        tags: input.tags,
-        reminderDays: input.reminderDays ?? "[1,3]",
-        reminderEnabled: input.reminderEnabled ?? 1,
-      });
-      return { id: result.insertId };
-    }),
-
-  /** Batch create tasks (from AI extraction) */
-  batchCreateTasks: protectedProcedure
-    .input(z.object({
-      tasks: z.array(z.object({
-        title: z.string().min(1),
-        description: z.string().optional(),
-        status: z.enum(["backlog", "todo", "in_progress", "review", "done"]).optional().default("todo"),
-        priority: z.enum(["urgent", "high", "medium", "low"]).optional().default("medium"),
-        category: z.string().optional(),
-        assigneeName: z.string().optional(),
-        startDate: z.string().optional(),
-        dueDate: z.string().optional(),
-        estimatedHours: z.string().optional(),
-        productProfileId: z.number().optional(),
-      })),
-      meetingRecordId: z.number().optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
-
-      const insertedIds: number[] = [];
-      for (const task of input.tasks) {
-        const [result] = await db.insert(teamTasks).values({
-          productProfileId: task.productProfileId ?? 0,
-          userId: ctx.user.id,
-          title: task.title,
-          description: task.description,
-          status: task.status ?? "todo",
-          priority: task.priority ?? "medium",
-          category: task.category,
-          assigneeName: task.assigneeName,
-          startDate: task.startDate,
-          dueDate: task.dueDate,
-          estimatedHours: task.estimatedHours,
-          meetingRecordId: input.meetingRecordId,
-        });
-        insertedIds.push(result.insertId);
-      }
-
-      return { insertedIds, count: insertedIds.length };
-    }),
-
-  // ═══════════════════════════════════════════════════════
-  // ─── Meeting Records & AI Extraction ───
-  // ═══════════════════════════════════════════════════════
-
-  /** Upload audio and create meeting record */
-  createMeetingRecord: protectedProcedure
+  createMeetingRecord: adminProcedure
     .input(z.object({
       title: z.string().optional(),
       audioUrl: z.string(), // S3 URL of uploaded audio
@@ -292,16 +64,17 @@ export const taskManagementRouter = router({
     }),
 
   /** List meeting records */
-  listMeetingRecords: protectedProcedure
+  listMeetingRecords: meetingProcedure
     .input(z.object({
       limit: z.number().min(1).max(50).optional().default(20),
       offset: z.number().min(0).optional().default(0),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
 
       const records = await db.select().from(meetingRecords)
+        .where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), meetingReadCondition(ctx.user, currentOpsWorkspaceId())))
         .orderBy(desc(meetingRecords.createdAt))
         .limit(input.limit)
         .offset(input.offset);
@@ -310,21 +83,21 @@ export const taskManagementRouter = router({
     }),
 
   /** Get a single meeting record */
-  getMeetingRecord: protectedProcedure
+  getMeetingRecord: meetingProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
 
       const [record] = await db.select().from(meetingRecords)
-        .where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), eq(meetingRecords.id, input.id)));
+        .where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), and(meetingReadCondition(ctx.user, currentOpsWorkspaceId()), eq(meetingRecords.id, input.id))));
 
       if (!record) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting record not found" });
       return record;
     }),
 
   /** Transcribe meeting audio */
-  transcribeMeeting: protectedProcedure
+  transcribeMeeting: adminProcedure
     .input(z.object({ meetingId: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -335,6 +108,7 @@ export const taskManagementRouter = router({
 
       if (!record) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting record not found" });
       if (!record.audioUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "No audio URL" });
+      if(record.audioUrl.startsWith("meeting-audio:"))throw new TRPCError({code:"BAD_REQUEST",message:"请使用会议记录中的继续语音识别按钮"});
 
       // Update status to transcribing
       await db.update(meetingRecords)
@@ -370,7 +144,7 @@ export const taskManagementRouter = router({
     }),
 
   /** Extract tasks from meeting transcript using AI */
-  extractTasksFromTranscript: protectedProcedure
+  extractTasksFromTranscript: adminProcedure
     .input(z.object({
       meetingId: z.number().optional(),
       transcript: z.string().min(10),
@@ -380,7 +154,8 @@ export const taskManagementRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
 
       // Get team members for assignee matching
-      const allUsers = await db.select({ id: users.id, name: users.name }).from(users);
+      const allUsers = await db.select({ id: users.id, name: users.name }).from(users)
+        .where(eq(users.defaultWorkspaceId, currentOpsWorkspaceId()));
       const teamMemberNames = allUsers.map(u => u.name).filter(Boolean);
 
       const systemPrompt = `你是一个专业的亚马逊运营团队会议助手。你的任务是从会议记录文本中提取出具体的行动任务。
@@ -491,7 +266,7 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
     }),
 
   /** Full pipeline: transcribe + extract in one call (for direct text input) */
-  extractTasksFromText: protectedProcedure
+  extractTasksFromText: adminProcedure
     .input(z.object({
       text: z.string().min(10),
       title: z.string().optional(),
@@ -510,7 +285,8 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
       const meetingId = record.insertId;
 
       // Get team members
-      const allUsers = await db.select({ id: users.id, name: users.name }).from(users);
+      const allUsers = await db.select({ id: users.id, name: users.name }).from(users)
+        .where(eq(users.defaultWorkspaceId, currentOpsWorkspaceId()));
       const teamMemberNames = allUsers.map(u => u.name).filter(Boolean);
 
       const systemPrompt = `你是一个专业的亚马逊运营团队会议助手。你的任务是从会议记录/笔记文本中提取出具体的行动任务。
@@ -594,7 +370,7 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
     }),
 
   /** Delete meeting record */
-  deleteMeetingRecord: protectedProcedure
+  deleteMeetingRecord: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -604,96 +380,26 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
       return { deleted: true };
     }),
 
-    /** Get products list for task assignment */
-  getProductsForAssignment: protectedProcedure
-    .query(async () => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
-      const products = await db.select({
-        id: productProfiles.id,
-        parentAsin: productProfiles.parentAsin,
-        title: productProfiles.title,
-        chineseName: productProfiles.chineseName,
-        imageUrl: productProfiles.imageUrl,
-        marketplace: productProfiles.marketplace,
-      }).from(productProfiles)
-        .orderBy(desc(productProfiles.createdAt))
-        .limit(200);
-      return products;
-    }),
-
-  /** Search products by name or ASIN (parent ASIN dimension) */
-  searchProducts: protectedProcedure
-    .input(z.object({
-      keyword: z.string().min(1).max(100),
-      limit: z.number().min(1).max(50).optional().default(20),
-    }))
-    .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
-      const kw = `%${input.keyword}%`;
-      const products = await db.select({
-        id: productProfiles.id,
-        parentAsin: productProfiles.parentAsin,
-        title: productProfiles.title,
-        chineseName: productProfiles.chineseName,
-        imageUrl: productProfiles.imageUrl,
-        marketplace: productProfiles.marketplace,
-      }).from(productProfiles)
-        .where(
-          opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), or(
-            like(productProfiles.parentAsin, kw),
-            like(productProfiles.title, kw),
-            like(productProfiles.chineseName, kw),
-          ))
-        )
-        .orderBy(desc(productProfiles.createdAt))
-        .limit(input.limit);
-      return products;
-    }),
-
-  /** Get products that have tasks associated (for filter dropdown) */
-  getProductsWithTasks: protectedProcedure
-    .query(async () => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
-      // Get distinct product IDs from tasks, then join with product info
-      const products = await db.selectDistinct({
-        id: productProfiles.id,
-        parentAsin: productProfiles.parentAsin,
-        title: productProfiles.title,
-        chineseName: productProfiles.chineseName,
-        imageUrl: productProfiles.imageUrl,
-        marketplace: productProfiles.marketplace,
-        taskCount: sql<number>`count(${teamTasks.id})`,
-      }).from(teamTasks)
-        .innerJoin(productProfiles, eq(teamTasks.productProfileId, productProfiles.id))
-        .groupBy(productProfiles.id, productProfiles.parentAsin, productProfiles.title, productProfiles.chineseName, productProfiles.imageUrl, productProfiles.marketplace)
-        .orderBy(sql`count(${teamTasks.id}) DESC`);
-      return products;
-    }),
-
-  // ═══════════════════════════════════════════════════════
-  // ─── Task Reminder & Notification ───
-  // ═══════════════════════════════════════════════════════
-
-  /** Manually trigger reminder check for all tasks */
-  triggerReminderCheck: protectedProcedure
+  /** Scheduled reminder execution remains available to administrators. */
+  triggerReminderCheck: adminProcedure
     .mutation(async () => {
       const { checkTodoReminders } = await import("../todoReminder");
       return checkTodoReminders();
     }),
 
   /** Update reminder settings for a task */
-  updateReminderSettings: protectedProcedure
+  updateReminderSettings: adminProcedure
     .input(z.object({
-      taskId: z.number(),
-      reminderEnabled: z.number().min(0).max(1),
-      reminderDays: z.array(z.number().min(0)).optional(),
+      taskId: z.number().int().positive().max(2147483647),
+      reminderEnabled: z.number().int().min(0).max(1),
+      reminderDays: z.array(z.number().int().min(0).max(365)).min(1).max(30).optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      const [task] = await db.select({ id: teamTasks.id }).from(teamTasks)
+        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), eq(teamTasks.id, input.taskId))).limit(1);
+      if (!task) throw new TRPCError({ code: "NOT_FOUND", message: "当前工作区不存在此任务" });
       const updates: Record<string, unknown> = {
         reminderEnabled: input.reminderEnabled,
       };
@@ -705,7 +411,7 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
     }),
 
   /** Get overdue and upcoming tasks summary for dashboard */
-  getReminderSummary: protectedProcedure
+  getReminderSummary: adminProcedure
     .query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
@@ -782,7 +488,7 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
     }),
 
   /** Get notification history for tasks */
-  getTaskNotifications: protectedProcedure
+  getTaskNotifications: adminProcedure
     .input(z.object({
       taskId: z.number().optional(),
       limit: z.number().min(1).max(100).default(20),
@@ -804,4 +510,5 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
         .limit(input?.limit || 20);
       return result;
     }),
+
 });

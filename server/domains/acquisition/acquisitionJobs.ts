@@ -10,15 +10,14 @@ import {
   updateAiJobProgress,
   type AiJobSnapshot,
 } from "../../services/aiJobRunner";
-import { createConfiguredApifyAmazonProvider } from "./apifyProvider";
-import { normalizeApifyAmazonArtifact } from "./amazonNormalizer";
+import { BasicAmazonImagesProvider } from "./basicAmazonProvider";
+import { getBasicImagesProfile } from "./basicProviderProfile";
+import { normalizeAmazonArtifact } from "./amazonNormalizer";
 import { ingestAcquisitionAssets } from "./assetIngestion";
 import { AmazonAcquisitionCapabilitySchema } from "./contracts";
 import {
   acquisitionAttemptIdempotencyKey,
   buildAcquisitionIdempotencyKey,
-  evaluateAcquisitionBudget,
-  type AcquisitionBudgetPolicy,
 } from "./policy";
 import {
   createAcquisitionJob,
@@ -27,20 +26,16 @@ import {
   createSourceSnapshot,
   findAcquisitionJobByIdempotency,
   findFreshConfirmedSnapshotCoveringCapabilities,
-  getAcquisitionBudgetUsage,
   getAcquisitionJob,
-  getActiveAcquisitionProfile,
   nextAcquisitionRunAttempt,
   updateAcquisitionJob,
   updateAcquisitionRun,
   updateSourceSnapshot,
 } from "./repository";
-import { getApifyProviderProfile } from "./providerProfileService";
 import { activateConfirmedSnapshotForConsumer } from "./consumerActivation";
 import { triggerConsumerPostConfirmation } from "./postConfirmation";
 import { confirmSnapshotForDirectIngestion } from "./snapshotReview";
 import { uncoveredCapabilitySummary } from "./capabilityCoverage";
-import { isApiConnectionSecretConfigured } from "../apiConnections/service";
 import { parseLegacySnapshotConsumerRef } from "./legacyConsumerContracts";
 
 export const AcquisitionJobRequestSchema = z.object({
@@ -52,7 +47,6 @@ export const AcquisitionJobRequestSchema = z.object({
   asin: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{10}$/),
   capabilities: z.array(AmazonAcquisitionCapabilitySchema).min(1),
   cachePolicy: z.enum(["prefer_cache", "refresh", "cache_only"]).default("prefer_cache"),
-  maxChargeUsd: z.number().positive().max(100),
 });
 export type AcquisitionJobRequest = z.infer<typeof AcquisitionJobRequestSchema>;
 
@@ -60,50 +54,21 @@ const AcquisitionWorkerInputSchema = z.object({
   acquisitionJobId: z.number().int().positive(),
 });
 
-function profileBudgetPolicy(profile: NonNullable<Awaited<ReturnType<typeof getApifyProviderProfile>>>): AcquisitionBudgetPolicy {
-  const perRunMaxUsd = Number(profile.perRunMaxUsd);
-  const dailyBudgetUsd = Number(profile.dailyBudgetUsd);
-  const monthlyBudgetUsd = Number(profile.monthlyBudgetUsd);
-  if (![perRunMaxUsd, dailyBudgetUsd, monthlyBudgetUsd].every(value => Number.isFinite(value) && value > 0)) {
-    throw new AppError({
-      code: APP_ERROR_CODES.PRECONDITION_FAILED,
-      statusCode: 412,
-      message: "采集Provider预算尚未配置完成，请由超级管理员检查采集任务中心的Provider治理设置后重试。",
-      details: { provider: "apify", reason: "budget_not_configured" },
-    });
-  }
-  return { perRunMaxUsd, dailyBudgetUsd, monthlyBudgetUsd, cacheTtlSeconds: profile.cacheTtlSeconds };
-}
-
-function requireEnabledAcquisitionProfile(profile: Awaited<ReturnType<typeof getApifyProviderProfile>>) {
-  if (!profile) {
-    throw new AppError({
-      code: APP_ERROR_CODES.PRECONDITION_FAILED,
-      statusCode: 412,
-      message: "采集Provider尚未配置。请由超级管理员在“采集任务与直接录入”的Provider治理区完成配置并启用后再创建任务。",
-      details: { provider: "apify", reason: "profile_not_configured" },
-    });
-  }
-  if (profile.status !== "active") {
-    throw new AppError({
-      code: APP_ERROR_CODES.PRECONDITION_FAILED,
-      statusCode: 412,
-      message: "采集Provider当前未启用。请由超级管理员完成资格验证并在“采集任务与直接录入”的Provider治理区设为“启用”后再创建任务。",
-      details: { provider: "apify", reason: "profile_not_active", status: profile.status },
-    });
-  }
+function requireEnabledAcquisitionProfile(profile: Awaited<ReturnType<typeof getBasicImagesProfile>>) {
+  if (!profile) throw new AppError({ code: APP_ERROR_CODES.PRECONDITION_FAILED, statusCode: 412,
+    message: "系统采集尚未启用，请联系管理员。" });
   return profile;
 }
 
-function requireQualifiedCapabilities(profile: NonNullable<Awaited<ReturnType<typeof getApifyProviderProfile>>>, capabilities: readonly string[]) {
+function requireQualifiedCapabilities(profile: NonNullable<Awaited<ReturnType<typeof getBasicImagesProfile>>>, capabilities: readonly string[]) {
   const qualified = new Set(Array.isArray(profile.capabilities) ? profile.capabilities : []);
   const missing = capabilities.filter(capability => !qualified.has(capability));
   if (missing.length > 0) {
     throw new AppError({
       code: APP_ERROR_CODES.PRECONDITION_FAILED,
       statusCode: 412,
-      message: `采集Provider尚未完成以下能力的资格验证：${missing.join("、")}。当前仅允许已验证能力创建任务。`,
-      details: { provider: "apify", reason: "capability_not_qualified", capabilities: missing },
+      message: "本次请求包含系统尚不支持的采集内容。",
+      details: { reason: "capability_not_supported", capabilities: missing },
     });
   }
 }
@@ -114,10 +79,20 @@ function providerRequestHash(input: unknown) {
 
 export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest) {
   const input = AcquisitionJobRequestSchema.parse(rawInput);
+  if (input.consumerType === "kb_images") {
+    const { startKnowledgeCollectionBatch } = await import("./knowledgeCollectionBatch");
+    const { randomUUID } = await import("node:crypto");
+    const receipt = await startKnowledgeCollectionBatch({ workspaceId: input.workspaceId, requestedBy: input.requestedBy,
+      asins: [input.asin], requestId: randomUUID(), mode: "normal" });
+    const item = receipt.items[0];
+    if (!item) throw new AppError({ code: APP_ERROR_CODES.RESOURCE_CONFLICT, statusCode: 409,
+      message: `ASIN ${input.asin} 已采集或正在采集中，已跳过。需要更新图片请使用“采集重复 ASIN”。` });
+    return { ...item, aiJobRunId: null };
+  }
   const target = input.consumerType === "project_competitor" ? parseLegacySnapshotConsumerRef("project_competitor", input.consumerRef) : null;
   const captureOnly = target?.type === "project_competitor" && target.captureOnly === true;
   const db = await requireDb("Amazon acquisition job");
-  const configuredProfile = await getApifyProviderProfile(db, input.workspaceId);
+  const configuredProfile = await getBasicImagesProfile(db, input.workspaceId);
   // Cache-only requests do not need a Provider profile or secret: a retained
   // snapshot is local evidence, not a new collection attempt.
   const cacheTtlSeconds = configuredProfile?.cacheTtlSeconds ?? 86_400;
@@ -135,7 +110,6 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
     if (cached?.complete) {
       const idempotencyKey = buildAcquisitionIdempotencyKey({ ...input, cachePolicy: captureOnly ? `confirmed_cache:${cached.snapshot.id}` : "confirmed_cache" });
       const existing = await findAcquisitionJobByIdempotency(db, input.workspaceId, idempotencyKey);
-      if (existing && !captureOnly) return { jobId: existing.id, status: existing.status, cacheHitSnapshotId: existing.cacheHitSnapshotId, aiJobRunId: null };
       if (existing && (existing.status !== "confirmed" || existing.requestedBy !== input.requestedBy || existing.cacheHitSnapshotId !== cached.snapshot.id)) {
         throw new Error("COMPETITOR_CAPTURE_CACHE_CHANGED");
       }
@@ -152,7 +126,7 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
           idempotencyKey,
           status: "confirmed",
           cachePolicy: input.cachePolicy,
-          maxChargeUsd: input.maxChargeUsd.toFixed(4),
+          maxChargeUsd: "0.0000",
           cacheHitSnapshotId: cached.snapshot.id,
           completedAt: new Date(),
         });
@@ -192,15 +166,6 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
 
   const profile = requireEnabledAcquisitionProfile(configuredProfile);
   requireQualifiedCapabilities(profile, input.capabilities);
-  if (!await isApiConnectionSecretConfigured("apify", "api_token")) {
-    throw new AppError({
-      code: APP_ERROR_CODES.PRECONDITION_FAILED,
-      statusCode: 412,
-      message: "Apify受控密钥尚未配置。请在系统设置的API连接管理中保存密钥后再创建任务。",
-      details: { provider: "apify", reason: "secret_not_configured" },
-    });
-  }
-  const policy = profileBudgetPolicy(profile);
 
   const baseIdempotencyKey = buildAcquisitionIdempotencyKey({ ...input, cachePolicy: input.cachePolicy });
   const existing = await findAcquisitionJobByIdempotency(db, input.workspaceId, baseIdempotencyKey);
@@ -222,7 +187,7 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
     idempotencyKey,
     status: "queued",
     cachePolicy: input.cachePolicy,
-    maxChargeUsd: input.maxChargeUsd.toFixed(4),
+    maxChargeUsd: "0.0000",
   });
   const aiJob = await startRegisteredAiJob({
     kind: "amazon.acquisition.fetch",
@@ -238,41 +203,34 @@ export async function startAmazonAcquisitionJob(rawInput: AcquisitionJobRequest)
       agentRunId: null,
       agentNodeId: null,
     },
-    queueName: "external_provider",
+    queueName: "amazon_acquisition",
     maxAttempts: 2,
-    timeoutSeconds: 300,
+      timeoutSeconds: 1800,
   });
   return { jobId, status: "queued" as const, cacheHitSnapshotId: null, aiJobRunId: aiJob.runId };
 }
 
-async function executeAmazonAcquisitionJob(aiJob: AiJobSnapshot) {
+export async function executeAmazonAcquisitionJob(aiJob: AiJobSnapshot, context?: { signal: AbortSignal }) {
   const workerInput = AcquisitionWorkerInputSchema.parse(aiJob.input);
   const db = await requireDb("Amazon acquisition worker");
   const workspaceId = aiJob.workspaceId;
   if (!workspaceId) throw new Error("Amazon acquisition worker missing workspace");
   const job = await getAcquisitionJob(db, workspaceId, workerInput.acquisitionJobId);
   if (!job) throw new Error("Amazon acquisition job not found");
-  const profile = await getActiveAcquisitionProfile(db, workspaceId);
-  if (!profile || profile.id !== job.providerProfileId) throw new Error("provider not configured");
+  const profile = await getBasicImagesProfile(db, workspaceId);
+  if (!profile || profile.id !== job.providerProfileId) {
+    await updateAcquisitionJob(db, workspaceId, job.id, { status: "failed", completedAt: new Date() });
+    return { acquisitionJobId: job.id, status: "failed", failureCategory: "provider_not_configured" };
+  }
   const capabilities = z.array(AmazonAcquisitionCapabilitySchema).parse(job.requestedCapabilities);
-  const maxChargeUsd = Number(job.maxChargeUsd);
   const providerRequest = {
     workspaceId,
     marketplace: "US" as const,
     asin: job.asin,
     capabilities,
-    maxChargeUsd,
     idempotencyKey: job.idempotencyKey,
   };
-  const provider = await createConfiguredApifyAmazonProvider();
-  const estimate = await provider.estimate(providerRequest);
-  const usage = await getAcquisitionBudgetUsage(db, workspaceId, new Date());
-  const decision = evaluateAcquisitionBudget({
-    estimatedMaxUsd: estimate.estimatedMaxUsd,
-    requestedMaxUsd: maxChargeUsd,
-    ...usage,
-    policy: profileBudgetPolicy(profile),
-  });
+  const provider = new BasicAmazonImagesProvider();
   const attempt = await nextAcquisitionRunAttempt(db, job.id);
   const runId = await createAcquisitionRun(db, {
     workspaceId,
@@ -280,20 +238,17 @@ async function executeAmazonAcquisitionJob(aiJob: AiJobSnapshot) {
     providerProfileId: profile.id,
     attempt,
     providerRequestHash: providerRequestHash(providerRequest),
-    status: decision.allowed ? "running" : "failed",
-    failureCategory: decision.allowed ? null : "budget_exceeded",
-    estimatedMaxUsd: estimate.estimatedMaxUsd.toFixed(4),
+    status: "running",
+    failureCategory: null,
+    estimatedMaxUsd: "0.0000",
     startedAt: new Date(),
-    completedAt: decision.allowed ? null : new Date(),
+    completedAt: null,
   });
-  if (!decision.allowed) {
-    await updateAcquisitionJob(db, workspaceId, job.id, { status: "failed", completedAt: new Date() });
-    return { acquisitionJobId: job.id, status: "failed", failureCategory: "budget_exceeded" };
-  }
 
   await updateAcquisitionJob(db, workspaceId, job.id, { status: "running", startedAt: new Date() });
   await updateAiJobProgress(aiJob.runId, 25);
   const result = await provider.fetch(providerRequest);
+  context?.signal.throwIfAborted();
   await updateAcquisitionRun(db, runId, {
     providerRunId: result.providerRunId || null,
     status: result.status,
@@ -323,9 +278,9 @@ async function executeAmazonAcquisitionJob(aiJob: AiJobSnapshot) {
     contentType: result.rawArtifact.contentType,
     sizeBytes: result.rawArtifact.bytes.byteLength,
   });
-  let normalized: ReturnType<typeof normalizeApifyAmazonArtifact>;
+  let normalized: ReturnType<typeof normalizeAmazonArtifact>;
   try {
-    normalized = normalizeApifyAmazonArtifact({
+    normalized = normalizeAmazonArtifact({
       bytes: result.rawArtifact.bytes,
       expectedAsin: job.asin,
       marketplace: "US",
@@ -359,10 +314,21 @@ async function executeAmazonAcquisitionJob(aiJob: AiJobSnapshot) {
     snapshotId,
     rawArtifactId,
     assets: normalized.sourceAssets,
+    signal: context?.signal,
+    onProgress: async summary => {
+      await updateSourceSnapshot(db, workspaceId, snapshotId, { completeness: { ...normalized.completeness, assetIngestion: summary } });
+      await updateAiJobProgress(aiJob.runId, 70 + Math.round(25 * summary.completed / Math.max(1, summary.total)));
+    },
   });
   await updateSourceSnapshot(db, workspaceId, snapshotId, {
     completeness: { ...normalized.completeness, assetIngestion: assetSummary },
   });
+  if (job.consumerType === "kb_images" && (assetSummary.failed > 0 || assetSummary.stored === 0)) {
+    await updateSourceSnapshot(db, workspaceId, snapshotId, {status:"pending_review",reviewNote:"missing_images_require_supplement_confirmation"});
+    await updateAcquisitionJob(db, workspaceId, job.id, {status:"review_required",completedAt:new Date()});
+    await updateAiJobProgress(aiJob.runId,100);
+    return {acquisitionJobId:job.id,snapshotId,status:"review_required",missingAssetCount:assetSummary.failed};
+  }
   try {
     const directIngestion = await confirmSnapshotForDirectIngestion({
       workspaceId,

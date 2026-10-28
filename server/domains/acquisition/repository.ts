@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql, isNull, like } from "drizzle-orm";
 import {
   acquisitionAssetCandidates,
   acquisitionConfirmedSnapshots,
@@ -51,7 +51,30 @@ export async function updateAcquisitionJob(
   ));
 }
 
-export async function listAcquisitionJobs(db: DbExecutor, workspaceId: number, limit = 50) {
+type ListedAcquisitionJob = Pick<typeof acquisitionJobs.$inferSelect, "id" | "consumerType" | "consumerRef" | "marketplace" | "asin" | "requestedCapabilities" | "status" | "cachePolicy" | "cacheHitSnapshotId" | "requestedAt" | "startedAt" | "completedAt"> & {
+  acceptedMissing: number;
+  missingMainVideos: number;
+  missingAplusVideos: number;
+};
+
+// Read the latest source, as the detail screen does. Cache expiry retains these
+// result rows, so an unresolved video remains visible after previews expire.
+function missingVideoCount(moduleType: "主图视频" | "A+视频") {
+  return sql<number>`(SELECT COUNT(*) FROM acquisition_asset_candidates a
+    WHERE a.workspace_id=acquisition_jobs.workspace_id AND a.role='video'
+      AND REPLACE(a.module_type,' ','')=${moduleType}
+      AND (a.storage_key IS NULL OR a.thumbnail_storage_key IS NULL)
+      AND a.snapshot_id=COALESCE(
+        (SELECT s.id FROM acquisition_source_snapshots s
+          WHERE s.workspace_id=acquisition_jobs.workspace_id AND s.job_id=acquisition_jobs.id
+          ORDER BY s.id DESC LIMIT 1),
+        (SELECT c.snapshot_id FROM acquisition_confirmed_snapshots c
+          WHERE c.workspace_id=acquisition_jobs.workspace_id AND c.id=acquisition_jobs.cache_hit_snapshot_id
+            AND c.asin=acquisition_jobs.asin AND c.marketplace=acquisition_jobs.marketplace AND c.revision_id IS NULL)
+      ))`.mapWith(Number);
+}
+
+export async function listAcquisitionJobs(db: DbExecutor, workspaceId: number, limit = 50, userId?: number, scope?: "knowledge" | "competitor", projectId?: number): Promise<ListedAcquisitionJob[]> {
   return db.select({
     id: acquisitionJobs.id,
     consumerType: acquisitionJobs.consumerType,
@@ -61,23 +84,30 @@ export async function listAcquisitionJobs(db: DbExecutor, workspaceId: number, l
     requestedCapabilities: acquisitionJobs.requestedCapabilities,
     status: acquisitionJobs.status,
     cachePolicy: acquisitionJobs.cachePolicy,
-    maxChargeUsd: acquisitionJobs.maxChargeUsd,
     cacheHitSnapshotId: acquisitionJobs.cacheHitSnapshotId,
     requestedAt: acquisitionJobs.requestedAt,
     startedAt: acquisitionJobs.startedAt,
     completedAt: acquisitionJobs.completedAt,
-  }).from(acquisitionJobs).where(eq(acquisitionJobs.workspaceId, workspaceId))
-    .orderBy(desc(acquisitionJobs.id)).limit(Math.min(Math.max(limit, 1), 100));
+    acceptedMissing: acquisitionJobs.acceptedMissing,
+    missingMainVideos: missingVideoCount("主图视频").as("missingMainVideos"),
+    missingAplusVideos: missingVideoCount("A+视频").as("missingAplusVideos"),
+  }).from(acquisitionJobs).where(and(
+    eq(acquisitionJobs.workspaceId, workspaceId), isNull(acquisitionJobs.deletedAt),
+    userId ? eq(acquisitionJobs.requestedBy, userId) : undefined,
+    scope === "knowledge" ? eq(acquisitionJobs.consumerType, "kb_images") : undefined,
+    scope === "competitor" ? eq(acquisitionJobs.consumerType, "project_competitor") : undefined,
+    projectId ? like(acquisitionJobs.consumerRef, `project-competitor:${projectId}:%`) : undefined,
+  ))
+    // Keep unresolved knowledge tasks visible even after newer successful runs
+    // exceed the history page size. Other consumers retain chronological order.
+    .orderBy(...(scope === "knowledge" ? [sql`CASE
+      WHEN ${acquisitionJobs.status} IN ('failed','review_required') THEN 0
+      WHEN ${acquisitionJobs.status} = 'confirmed' AND ${acquisitionJobs.acceptedMissing} = 0 AND (\`missingMainVideos\` + \`missingAplusVideos\`) > 0 THEN 0
+      WHEN ${acquisitionJobs.status} IN ('queued','running') THEN 1
+      WHEN ${acquisitionJobs.status} = 'canceled' THEN 2
+      ELSE 3 END`] : []), desc(acquisitionJobs.id)).limit(Math.min(Math.max(limit, 1), 100));
 }
 
-export async function getActiveAcquisitionProfile(db: DbExecutor, workspaceId: number) {
-  const rows = await db.select().from(acquisitionProviderProfiles).where(and(
-    eq(acquisitionProviderProfiles.workspaceId, workspaceId),
-    eq(acquisitionProviderProfiles.profileKey, "apify-amazon-primary"),
-    eq(acquisitionProviderProfiles.status, "active"),
-  )).limit(1);
-  return rows[0] ?? null;
-}
 
 export async function findFreshConfirmedSnapshot(input: {
   db: DbExecutor;
@@ -148,27 +178,6 @@ export async function updateAcquisitionRun(db: DbExecutor, runId: number, values
   await db.update(acquisitionRuns).set(values).where(eq(acquisitionRuns.id, runId));
 }
 
-export async function getAcquisitionBudgetUsage(db: DbExecutor, workspaceId: number, now: Date) {
-  const dayStart = new Date(now);
-  dayStart.setUTCHours(0, 0, 0, 0);
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const [daily] = await db.select({
-    amount: sql<string>`coalesce(sum(${acquisitionRuns.chargedUsd}), 0)`,
-  }).from(acquisitionRuns).where(and(
-    eq(acquisitionRuns.workspaceId, workspaceId),
-    gte(acquisitionRuns.createdAt, dayStart),
-  ));
-  const [monthly] = await db.select({
-    amount: sql<string>`coalesce(sum(${acquisitionRuns.chargedUsd}), 0)`,
-  }).from(acquisitionRuns).where(and(
-    eq(acquisitionRuns.workspaceId, workspaceId),
-    gte(acquisitionRuns.createdAt, monthStart),
-  ));
-  return {
-    dailyChargedUsd: Number(daily?.amount ?? 0),
-    monthlyChargedUsd: Number(monthly?.amount ?? 0),
-  };
-}
 
 export async function createRawArtifact(db: DbExecutor, values: typeof acquisitionRawArtifacts.$inferInsert) {
   const [created] = await db.insert(acquisitionRawArtifacts).values(values).$returningId();

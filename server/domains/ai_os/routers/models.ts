@@ -9,6 +9,7 @@ import {
   resolveGovernedModelApiKey,
 } from "../services/teamorouterCatalog";
 import { syncGovernedTeamorouterCatalog } from "../services/teamorouterCatalogRegistration";
+import { paraformerBaseUrl } from "../../ops/paraformer";
 
 export const emperorModelsRouter = router({
   list: protectedProcedure.query(async () => {
@@ -35,11 +36,16 @@ export const emperorModelsRouter = router({
       isDefault: z.boolean().optional().default(false),
     }))
     .mutation(async ({ input }) => {
+      if(input.modelId === "paraformer-v2") {
+        input.apiBaseUrl=paraformerBaseUrl(input.apiBaseUrl);
+        input.isDefault=false;input.capabilityTags=["speech-to-text","meeting"];
+      }
+      const provider = ["openai","deepseek","anthropic","manus_builtin"].includes(input.provider.toLowerCase()) ? input.provider.toLowerCase() : "custom";
       const slug = input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) + "-" + Date.now().toString(36);
       if (input.isDefault) await rawExecute("UPDATE emperor_model_providers SET isDefault=0");
       await rawExecute(
         `INSERT INTO emperor_model_providers (slug,name,provider,modelId,displayName,baseUrl,apiKeyRef,isDefault,isActive,capabilityTags,costPer1kInputTokens,costPer1kOutputTokens,maxContextTokens) VALUES (?,?,?,?,?,?,?,?,1,?,?,?,?)`,
-        [slug, input.name, input.provider, input.modelId, input.name, input.apiBaseUrl||null, input.apiKey||null, input.isDefault?1:0, JSON.stringify(input.capabilityTags), input.costPer1kInputTokens, input.costPer1kOutputTokens, input.maxContextTokens]
+        [slug, input.name, provider, input.modelId, input.name, input.apiBaseUrl||null, input.apiKey||null, input.isDefault?1:0, JSON.stringify(input.capabilityTags), input.costPer1kInputTokens, input.costPer1kOutputTokens, input.maxContextTokens]
       );
       return { success: true, slug };
     }),
@@ -64,6 +70,11 @@ export const emperorModelsRouter = router({
     }))
     .mutation(async ({ input }) => {
       const { slug, ...rest } = input;
+      const existing = await rawExecute("SELECT modelId FROM emperor_model_providers WHERE slug=?",[slug]);
+      if(existing[0]?.modelId === "paraformer-v2") {
+        if(rest.apiBaseUrl !== undefined)rest.apiBaseUrl=paraformerBaseUrl(rest.apiBaseUrl);
+        rest.isDefault=false;
+      }
       const sets: string[] = []; const vals: any[] = [];
       if (rest.name !== undefined) { sets.push("name=?"); vals.push(rest.name); }
       if (rest.apiBaseUrl !== undefined) { sets.push("baseUrl=?"); vals.push(rest.apiBaseUrl); }
@@ -90,6 +101,11 @@ export const emperorModelsRouter = router({
       if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
       const model = rows[0];
       const start = Date.now();
+      if(model.modelId === "paraformer-v2") {
+        try {paraformerBaseUrl(model.baseUrl);if(!resolveGovernedModelApiKey(model.apiKeyRef))throw Error("请填写百炼 API Key");}
+        catch {return {status:"error" as const,latencyMs:0,error:"请检查百炼北京地域的接口地址和 API Key",message:undefined};}
+        return {status:"active" as const,latencyMs:0,error:undefined,message:"语音配置已填写；请上传短录音验证密钥、额度与实际识别，不会在这里调用聊天模型"};
+      }
       let status: "active" | "error" = "active";
       let latencyMs = 0;
       let errorMsg = "";
@@ -115,7 +131,7 @@ export const emperorModelsRouter = router({
         status = "error"; latencyMs = Date.now() - start; errorMsg = e.message;
       }
       await rawExecute("UPDATE emperor_model_providers SET isActive=? WHERE slug=?", [status === "active" ? 1 : 0, input.slug]);
-      return { status, latencyMs, error: errorMsg || undefined };
+      return { status, latencyMs, error: errorMsg || undefined, message: undefined };
     }),
 
   getCostStats: protectedProcedure
@@ -163,6 +179,7 @@ export const emperorModelsRouter = router({
       maxContextTokens: z.number().min(1).optional().default(128000),
     }))
     .mutation(async ({ input }) => {
+      if(input.modelId === "paraformer-v2") {input.baseUrl=paraformerBaseUrl(input.baseUrl || "https://dashscope.aliyuncs.com");input.isDefault=false;}
       await rawExecute(
         `INSERT INTO emperor_model_providers (slug,name,provider,modelId,displayName,baseUrl,apiKeyRef,isDefault,isActive,capabilityTags,costPer1kInputTokens,costPer1kOutputTokens,maxContextTokens) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),provider=VALUES(provider),modelId=VALUES(modelId),displayName=VALUES(displayName),baseUrl=VALUES(baseUrl),apiKeyRef=VALUES(apiKeyRef),isDefault=VALUES(isDefault),isActive=VALUES(isActive),capabilityTags=VALUES(capabilityTags),costPer1kInputTokens=VALUES(costPer1kInputTokens),costPer1kOutputTokens=VALUES(costPer1kOutputTokens),maxContextTokens=VALUES(maxContextTokens)`,
         [input.slug, input.name, input.provider, input.modelId, input.displayName||null, input.baseUrl||null, input.apiKeyRef||null, input.isDefault?1:0, input.isActive?1:0, input.capabilityTags ? JSON.stringify(input.capabilityTags) : null, input.costPer1kInputTokens, input.costPer1kOutputTokens, input.maxContextTokens]
@@ -182,6 +199,7 @@ export const emperorModelsRouter = router({
     .mutation(async ({ input }) => {
       const rows = await rawExecute("SELECT * FROM emperor_model_providers WHERE slug = ? LIMIT 1", [input.slug]);
       if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
+      if(rows[0].modelId === "paraformer-v2")return {success:false,error:"请在会议记录上传短录音进行语音测试，此处不调用聊天模型"};
       try {
         const start = Date.now();
         const res = await invokeLLM({

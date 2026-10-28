@@ -224,7 +224,7 @@ describe("profit runtime trusted approval and complete capture", () => {
   });
 });
 
-describe("application profit singleton uses explicit server file approvals", () => {
+describe.skipIf(process.platform === "win32")("application profit singleton uses explicit server file approvals (POSIX file guarantees)", () => {
   it("loads a reviewed file configured after module construction without provider execution", async () => {
     const h = harness(); await configuredApprovalFile([h.getApproval()]);
     const { runtimeSnapshot } = await profitAnalysisRuntime.prepare(h.input);

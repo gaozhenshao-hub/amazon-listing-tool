@@ -69,16 +69,15 @@ export const listingEvaluationProcedures = {
       subtitle: z.string(),
       fullText: z.string(),
       bulletIndex: z.number(),
-      evidenceUsed: z.array(z.string().max(240)).max(20).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const bulletText = `${input.subtitle} ${input.fullText}`;
 
       const response = await invokeBusinessSkill({
-        emperorSkill: { slug: "listing.checklist.bullets", executionPreset: "quality_first" },
+        emperorSkill: { slug: "listing.checklist.bullets", executionPreset: "quality_first", userId: ctx.user.id, workspaceId: ctx.workspaceId },
         messages: [
           { role: "system", content: EVALUATE_BULLET_CHECKLIST_PROMPT },
-          { role: "user", content: `Evaluate this Amazon bullet point (Bullet #${input.bulletIndex + 1}):\n\n${bulletText}\n\nConfirmed generation evidence (if supplied; still verify each claim against the text): ${JSON.stringify(input.evidenceUsed || [])}` },
+          { role: "user", content: `Evaluate this Amazon bullet point (Bullet #${input.bulletIndex + 1}):\n\n${bulletText}` },
         ],
         response_format: { type: "json_object" },
       });
@@ -99,7 +98,7 @@ export const listingEvaluationProcedures = {
       scores: z.string(), // JSON string of { [bulletIndex]: { checkListScores, aiSemanticRelations } }
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
       let listing = await db.getActiveListingByProject(input.projectId);
@@ -123,9 +122,9 @@ export const listingEvaluationProcedures = {
     .input(z.object({
       title: z.string(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const response = await invokeBusinessSkill({
-        emperorSkill: { slug: "listing.checklist.title", executionPreset: "quality_first" },
+        emperorSkill: { slug: "listing.checklist.title", executionPreset: "quality_first", userId: ctx.user.id, workspaceId: ctx.workspaceId },
         messages: [
           { role: "system", content: EVALUATE_TITLE_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate this Amazon product title:\n\n${input.title}\n\nCharacter count: ${input.title.length}` },
@@ -143,9 +142,9 @@ export const listingEvaluationProcedures = {
     .input(z.object({
       description: z.string(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const response = await invokeBusinessSkill({
-        emperorSkill: { slug: "listing.checklist.description", executionPreset: "quality_first" },
+        emperorSkill: { slug: "listing.checklist.description", executionPreset: "quality_first", userId: ctx.user.id, workspaceId: ctx.workspaceId },
         messages: [
           { role: "system", content: EVALUATE_DESCRIPTION_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate this Amazon product description:\n\n${input.description}\n\nCharacter count: ${input.description.length}` },
@@ -165,7 +164,7 @@ export const listingEvaluationProcedures = {
       title: z.string().optional(),
       bulletPoints: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       // 构建完整上下文传给 Emperor Skill
       let stContext = `Search Terms:\n${input.searchTerms}`;
       if (input.title) stContext += `\n\nProduct Title (for duplication check):\n${input.title}`;
@@ -175,7 +174,7 @@ export const listingEvaluationProcedures = {
       if (input.title) userMsg += `\n\nProduct Title (for duplication check):\n${input.title}`;
       if (input.bulletPoints) userMsg += `\n\nBullet Points (for long-tail coverage check):\n${input.bulletPoints}`;
       const response = await invokeBusinessSkill({
-        emperorSkill: { slug: "listing.checklist.searchterms", executionPreset: "quality_first" },
+        emperorSkill: { slug: "listing.checklist.searchterms", executionPreset: "quality_first", userId: ctx.user.id, workspaceId: ctx.workspaceId },
         messages: [
           { role: "system", content: EVALUATE_SEARCH_TERMS_CHECKLIST_PROMPT },
           { role: "user", content: userMsg },
@@ -193,7 +192,7 @@ export const listingEvaluationProcedures = {
     .input(z.object({
       qaContent: z.string(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       let qaText = input.qaContent;
       try {
         const parsed = JSON.parse(input.qaContent);
@@ -208,7 +207,7 @@ export const listingEvaluationProcedures = {
         }
       } catch {}
       const response = await invokeBusinessSkill({
-        emperorSkill: { slug: "listing.checklist.qa", executionPreset: "quality_first" },
+        emperorSkill: { slug: "listing.checklist.qa", executionPreset: "quality_first", userId: ctx.user.id, workspaceId: ctx.workspaceId },
         messages: [
           { role: "system", content: EVALUATE_QA_CHECKLIST_PROMPT },
           { role: "user", content: `Evaluate these Amazon Q&A pairs:\n\n${qaText}` },

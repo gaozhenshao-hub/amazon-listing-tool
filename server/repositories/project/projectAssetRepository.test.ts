@@ -10,6 +10,7 @@ import {
   createCompetitorAnalysis, deleteCompetitorAnalysis, updateCompetitorAnalysisReviews,
   updateCompetitorAnalysisSummary, upsertCompetitorAnalysis,
   assertLegacyCompetitorAcquisitionWritable,
+  saveCollectedCompetitorAnalysis,
 } from "./projectAssetRepository";
 import { competitorRevision } from "./competitorWritePolicy";
 
@@ -124,6 +125,31 @@ const locks = (events: Event[]) => events.filter(event => event.type === "read" 
 const guard = (value: CompetitorAnalysis) => ({ projectId: value.projectId, expectedRevision: competitorRevision(value) });
 
 beforeEach(() => vi.clearAllMocks());
+
+describe("explicit analysis completion", () => {
+  it("saves a draft without replacing original facts or images", async () => {
+    const original = row({ title: "Original product", imageUrls: '["original.jpg"]' });
+    const store = database([original]); dbMock.getDb.mockResolvedValue(store.db);
+    await saveCollectedCompetitorAnalysis(original.id, { rawData: '{"deepAnalysis":{}}', summary: "New draft" },
+      { ...guard(original), userId: 7, workspaceId: 9 });
+    expect(store.rows()[0]).toMatchObject({ title: original.title, imageUrls: original.imageUrls,
+      summary: "New draft", summaryStatus: "draft", summaryVersion: 2 });
+  });
+  it("rejects a result after a user edited the source during the model call", async () => {
+    const original = row();
+    const store = database([row({ title: "Updated by user" })]); dbMock.getDb.mockResolvedValue(store.db);
+    await expect(saveCollectedCompetitorAnalysis(original.id, { rawData: '{}', summary: "Late result" },
+      { ...guard(original), userId: 7, workspaceId: 9 })).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(writes(store.events)).toHaveLength(0);
+  });
+  it.each(["confirmed", "wrong-owner", "wrong-workspace"])("rejects %s completion", async reason => {
+    const original = row({ summaryStatus: reason === "confirmed" ? "confirmed" : "draft" });
+    const store = database([original]); dbMock.getDb.mockResolvedValue(store.db);
+    await expect(saveCollectedCompetitorAnalysis(original.id, { rawData: '{}', summary: "Late result" },
+      { ...guard(original), userId: reason === "wrong-owner" ? 8 : 7, workspaceId: reason === "wrong-workspace" ? 10 : 9 })).rejects.toThrow();
+    expect(writes(store.events)).toHaveLength(0);
+  });
+});
 
 describe("competitor repository transaction and lock contract", () => {
   it.each([null, {}, { select: vi.fn() }])("refuses a missing real transaction: %j", async db => {

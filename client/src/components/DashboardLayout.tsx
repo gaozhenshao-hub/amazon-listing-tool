@@ -1,3 +1,4 @@
+import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -12,7 +13,6 @@ import { useMarketplace } from "@/contexts/MarketplaceContext";
 import NotificationBell from "@/components/NotificationBell";
 import { useIsMobile } from "@/hooks/useMobile";
 import { MERGED_READONLY_FEATURES_ENABLED } from "@/lib/mergedReadOnlyFeatures";
-import { MERGED_LISTING_WORKFLOW_ENABLED } from "@/lib/mergedListingWorkflow";
 import {
   LayoutDashboard,
   LogOut,
@@ -26,6 +26,7 @@ import {
   History,
   Database,
   DatabaseZap,
+  Trash2,
   FileSpreadsheet,
   Gauge,
   Key,
@@ -94,21 +95,18 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import {
-  ListingAgentNodeWorkbench,
-  parseListingAgentNodeContext,
-} from "@/components/workflow";
 import { WorkspaceTabs } from "@/components/workspace";
 import MergedOperationsMenuEntry from "@/components/MergedOperationsMenuEntry";
 
 // ─── Module definitions ────────────────────────────────────────
-type ModuleId = "home" | "dev" | "listing" | "ops" | "service" | "knowledge" | "admin" | "offsite" | "emperor";
+type ModuleId = "home" | "dev" | "procurement" | "ops" | "design" | "finance" | "knowledge" | "emperor" | "admin";
 
 interface MenuItem {
   icon: LucideIcon;
   label: string;
   path: string;
   requiredOpsDirectory?: "ops_tasks" | "ops_data_import";
+  adminOnly?: boolean;
 }
 
 interface MenuGroup {
@@ -116,6 +114,7 @@ interface MenuGroup {
   icon: LucideIcon;
   label: string;
   items: MenuItem[];
+  adminOnly?: boolean;
 }
 
 type MenuEntry = MenuItem | MenuGroup;
@@ -135,207 +134,50 @@ function isMenuGroup(entry: MenuEntry): entry is MenuGroup {
 }
 
 const modules: ModuleDef[] = [
-  {
-    id: "dev",
-    icon: Package,
-    label: "智能产品开发",
-    shortLabel: "产品开发",
-    prefix: "/dev",
-    enabled: true,
-    items: [
-      { icon: LayoutDashboard, label: "仪表盘", path: "/dev" },
-      { icon: PlusCircle, label: "新建项目", path: "/dev/new-project" },
-      { icon: FolderOpen, label: "项目列表", path: "/dev/projects" },
-      { icon: GitCompare, label: "产品对比", path: "/dev/compare" },
-      { icon: Building2, label: "供应商库", path: "/dev/supplier-library" },
-    ],
-  },
-  {
-    id: "listing",
-    icon: FileText,
-    label: "智能Listing生成",
-    shortLabel: "Listing",
-    prefix: "/listing",
-    enabled: true,
-    items: [
-      ...(MERGED_LISTING_WORKFLOW_ENABLED ? [
-        { icon: Search, label: "1. Listing 抓取", path: "/listing/analysis" },
-        { icon: GitCompareArrows, label: "2. Listing 对比及分析", path: "/listing/comparison" },
-        { icon: Sparkles, label: "3. 智能 Listing 生成", path: "/listing/generate" },
-      ] : []),
-      { icon: LayoutGrid, label: "工作流画布", path: "/listing/canvas" },
-      {
-        id: "listing-preparation",
-        icon: Layers,
-        label: MERGED_LISTING_WORKFLOW_ENABLED ? "项目与补充资料" : "前置准备层",
-        items: [
-          { icon: LayoutDashboard, label: "项目管理", path: "/listing" },
-          ...(!MERGED_LISTING_WORKFLOW_ENABLED ? [
-            { icon: Search, label: "竞品分析", path: "/listing/analysis" },
-            { icon: GitCompareArrows, label: "竞品对比", path: "/listing/comparison" },
-          ] : []),
-          { icon: History, label: "导入历史", path: "/listing/review-history" },
-          { icon: Key, label: "关键词管理", path: "/listing/keywords" },
-          { icon: Database, label: MERGED_LISTING_WORKFLOW_ENABLED ? "本品属性与补充资料" : "数据文件", path: "/listing/data-files" },
-          { icon: MessageSquareText, label: "评论聚合分析", path: "/listing/review-aggregation" },
-          { icon: HelpCircle, label: "买家问题库", path: "/listing/buyer-questions" },
-        ],
-      },
+  { id: "dev", icon: Package, label: "产品开发", shortLabel: "产品开发", prefix: "/dev", enabled: true, items: [{ icon: Package, label: "产品开发", path: "/dev" }] },
+  { id: "procurement", icon: Truck, label: "采购物流", shortLabel: "采购物流", prefix: "/procurement", enabled: true, items: [{ icon: Truck, label: "物流时效分析", path: "/procurement" }] },
+  { id: "ops", icon: TrendingUp, label: "运营", shortLabel: "运营", prefix: "/ops", enabled: true, items: [
+    { icon: ShoppingBag, label: "产品总览", path: "/ops/products" },
+    { icon: Package, label: "库存情况", path: "/ops/inventory-details", requiredOpsDirectory: "ops_data_import" },
+    { icon: ClipboardList, label: "任务看板", path: "/ops/product-tasks", requiredOpsDirectory: "ops_tasks" },
+    { icon: TrendingUp, label: "利润看板", path: "/ops/profit-board", requiredOpsDirectory: "ops_data_import" },
+    { icon: ShoppingBag, label: "产品看板", path: "/ops/product-board", requiredOpsDirectory: "ops_data_import" },
+    { icon: Target, label: "广告看板", path: "/ops/ads" },
+    { id: "listing-generation", icon: FileText, label: "智能 Listing 生成", items: [
+      { icon: FolderKanban, label: "项目管理", path: "/listing" },
+      { icon: Search, label: "Listing 抓取", path: "/listing/analysis" },
+      { icon: GitCompareArrows, label: "竞品对比及分析", path: "/listing/comparison" },
+      { icon: Sparkles, label: "Listing 生成", path: "/listing/generate" },
+    ] },
+    { id: "listing-advertising", icon: Target, label: "智能广告搭建", items: [
+      { icon: Key, label: "关键词管理", path: "/listing/keywords" },
       { icon: Target, label: "广告架构", path: "/listing/ad-structure" },
-      ...(!MERGED_LISTING_WORKFLOW_ENABLED ? [{ icon: Sparkles, label: "Listing生成", path: "/listing/generate" }] : []),
-      { icon: FileText, label: "结果预览", path: "/listing/preview" },
-      { icon: Gauge, label: "Listing评分", path: "/listing/score" },
-      { icon: Image, label: "智能图片建议", path: "/listing/image-workflow" },
-      { icon: ClipboardCheck, label: "Listing与图片质量概览", path: "/listing/quality" },
-      { icon: Video, label: "视频脚本生成", path: "/listing/video-script" },
-    ],
-  },
-  {
-    id: "ops",
-    icon: TrendingUp,
-    label: "智能运营提效",
-    shortLabel: "运营提效",
-    prefix: "/ops",
-    enabled: true,
-    items: [
-      { icon: LayoutDashboard, label: "运营仪表盘", path: "/ops" },
-      { icon: Sparkles, label: "智能运营中心", path: "/ops/dashboard-upgrade" },
-      { icon: ShoppingBag, label: "产品总览", path: "/ops/products" },
-      { icon: DatabaseZap, label: "领星同步预览", path: "/ops/lingxing-sync" },
-      { icon: Package, label: "库存预警", path: "/ops/inventory" },
-      ...(MERGED_READONLY_FEATURES_ENABLED
-        ? [
-          { icon: ClipboardList, label: "产品任务", path: "/ops/product-tasks", requiredOpsDirectory: "ops_tasks" as const },
-          { icon: TrendingUp, label: "利润看板", path: "/ops/profit-board", requiredOpsDirectory: "ops_data_import" as const },
-          { icon: ShoppingBag, label: "产品看板", path: "/ops/product-board", requiredOpsDirectory: "ops_data_import" as const },
-          { icon: FileSpreadsheet, label: "只读运营对账", path: "/ops/read-only-overview" },
-        ]
-        : []),
-      { icon: Target, label: "广告优化", path: "/ops/ads" },
-      { icon: Activity, label: "广告深度优化", path: "/ops/ad-deep" },
-      { icon: Layers, label: "自定义看板", path: "/ops/custom-dashboard" },
-      { icon: Bot, label: "Amazon监控", path: "/ops/crawler" },
-      { icon: Clock, label: "物流时效分析", path: "/ops/logistics" },
-      { icon: Upload, label: "ERP 数据导入", path: "/ops/data-import" },
-      { icon: Link2, label: "广告组合映射", path: "/ops/ad-mapping" },
-      { icon: ClipboardList, label: "任务管理", path: "/ops/tasks" },
-    ],
-  },
-  {
-    id: "service",
-    icon: Headphones,
-    label: "智能售后管理",
-    shortLabel: "售后管理",
-    prefix: "/service",
-    enabled: true,
-    items: [
-      { icon: LayoutDashboard, label: "售后仪表盘", path: "/service" },
-      { icon: Star, label: "Review智能管理", path: "/service/reviews" },
-      { icon: History, label: "退货分析", path: "/service/returns" },
-      { icon: MessageSquareText, label: "邮件管理 & AI客服", path: "/service/emails" },
-      { icon: Users, label: "客户画像", path: "/service/profiles" },
-    ],
-  },
-  {
-    id: "knowledge",
-    icon: BookOpen,
-    label: "智能知识库",
-    shortLabel: "知识库",
-    prefix: "/knowledge",
-    enabled: true,
-    items: [
-      { icon: LayoutDashboard, label: "知识库总览", path: "/knowledge" },
-      { icon: Bot, label: "AI知识助手", path: "/knowledge/bot" },
-      { icon: Lightbulb, label: "智能产品创意库", path: "/knowledge/products" },
-      { icon: FileText, label: "智能Listing文案库", path: "/knowledge/listings" },
-      { icon: Image, label: "智能图片知识库", path: "/knowledge/images" },
-      { icon: DatabaseZap, label: "受控采集与审核", path: "/knowledge/acquisition" },
-      { icon: BookOpen, label: "智能运营SOP库", path: "/knowledge/skills" },
-      { icon: Video, label: "智能视频知识库", path: "/knowledge/videos" },
-      { icon: Rss, label: "情报推荐中心", path: "/knowledge/intel" },
-    ],
-  },
-  {
-    id: "offsite",
-    icon: Share2,
-    label: "站外营销",
-    shortLabel: "站外",
-    prefix: "/offsite",
-    enabled: true,
-    items: [
-      { icon: LayoutDashboard, label: "站外总览", path: "/offsite" },
-      { icon: UserCheck, label: "达人管理", path: "/offsite/influencers" },
-      { icon: Target, label: "活动管理", path: "/offsite/campaigns" },
-      { icon: Send, label: "外联管理", path: "/offsite/outreach" },
-      { icon: CheckCircle, label: "内容审核", path: "/offsite/content-review" },
-      { icon: Globe, label: "社媒账号", path: "/offsite/social-accounts" },
-      { icon: CalendarDays, label: "内容日历", path: "/offsite/content-calendar" },
-      { icon: Video, label: "TikTok矩阵", path: "/offsite/tiktok-matrix" },
-      { icon: Link2, label: "归因追踪", path: "/offsite/attribution" },
-      { icon: Activity, label: "全渠道分析", path: "/offsite/analytics" },
-    ],
-  },
-  {
-    id: "emperor",
-    icon: BrainCircuit,
-    label: "皇帝·AI能力中台",
-    shortLabel: "皇帝",
-    prefix: "/emperor",
-    enabled: true,
-    items: [
-      { icon: LayoutDashboard, label: "Skill 库", path: "/emperor" },
-      { icon: FlaskConical, label: "知识蒸馏", path: "/emperor/skill-distillation" },
-      { icon: MessageSquareText, label: "对话任务管理器", path: "/emperor/conversations" },
-      { icon: Zap, label: "运行历史", path: "/emperor/trace" },
-      { icon: ClipboardCheck, label: "质量门禁", path: "/emperor/quality" },
-      { icon: Shield, label: "Harness 治理", path: "/emperor/governance" },
-      { icon: Network, label: "Agent 编排", path: "/emperor/agents" },
-      ...(MERGED_READONLY_FEATURES_ENABLED
-        ? [{ icon: Bot, label: "Agent 库", path: "/emperor/agent-library" }]
-        : []),
-      { icon: Cpu, label: "模型路由", path: "/emperor/models" },
-      { icon: Plug, label: "MCP 连接器", path: "/emperor/mcp" },
-      { icon: Key, label: "知识库外部访问", path: "/emperor/external-knowledge-access" },
-      { icon: Timer, label: "定时任务", path: "/emperor/scheduled" },
-      { icon: BarChart3, label: "Token 用量", path: "/emperor/usage" },
-      { icon: Activity, label: "可观测看板", path: "/emperor/observability" },
-      { icon: Wrench, label: "诊断中心", path: "/emperor/diagnostics" },
-      { icon: Settings, label: "通用设置", path: "/emperor/settings" },
-    ],
-  },
-  {
-    id: "admin",
-    icon: Users,
-    label: "系统管理",
-    shortLabel: "管理",
-    prefix: "/admin",
-    enabled: true,
-    items: [
-      { icon: Users, label: "用户管理", path: "/admin/users" },
-      { icon: ClipboardCheck, label: "审核中心", path: "/admin/review" },
-      { icon: FolderKanban, label: "项目分配", path: "/admin/assignments" },
-      { icon: Shield, label: "SOP权限", path: "/admin/sop-access" },
-      { icon: Shield, label: "角色管理", path: "/admin/roles" },
-      { icon: RefreshCw, label: "同步与监控", path: "/admin/sync" },
-    ],
-  },
+    ] },
+    { icon: Database, label: "赛狐数据同步", path: "/ops/saihu-sync", requiredOpsDirectory: "ops_data_import" },
+  ] },
+  { id: "design", icon: Image, label: "美工", shortLabel: "美工", prefix: "/design", enabled: true, items: [{ icon: Sparkles, label: "生图", path: "/design/images" }, { icon: BookOpen, label: "提示词库", path: "/design/prompts" }, { icon: FolderOpen, label: "素材库", path: "/design/materials" }] },
+  { id: "finance", icon: BarChart3, label: "财务", shortLabel: "财务", prefix: "/finance", enabled: true, items: [{ icon: BarChart3, label: "财务", path: "/finance" }] },
+  { id: "knowledge", icon: BookOpen, label: "知识库", shortLabel: "知识库", prefix: "/knowledge", enabled: true, items: [
+    { icon: Image, label: "图片知识库", path: "/knowledge/images" },
+    { icon: DatabaseZap, label: "受控采集与审核", path: "/knowledge/acquisition" },
+    { icon: Trash2, label: "回收站", path: "/knowledge/recycle", adminOnly: true },
+  ] },
+  { id: "emperor", icon: BrainCircuit, label: "AI 管理", shortLabel: "AI 管理", prefix: "/emperor", enabled: true, items: [
+    { icon: Layers, label: "Skill 库", path: "/emperor/skills" },
+    { icon: Bot, label: "Agent 库", path: "/emperor/agent-library" },
+    { icon: Cpu, label: "模型管理", path: "/emperor/models" },
+    { icon: Settings, label: "通用设置", path: "/emperor/settings" },
+  ] },
+  { id: "admin", icon: Users, label: "系统管理", shortLabel: "系统管理", prefix: "/admin", enabled: true, items: [
+    { icon: Shield, label: "角色管理", path: "/admin/roles" },
+    { icon: Users, label: "用户管理", path: "/admin/users" },
+  ] },
 ];
 
 // ─── Helpers ───────────────────────────────────────────────────
 function detectActiveModule(location: string): ModuleId {
-  if (location === "/") return "home";
-  if (location.startsWith("/listing") || location.startsWith("/project/")) return "listing";
-  if (location.startsWith("/dev")) return "dev";
-  if (location.startsWith("/ops")) return "ops";
-  if (location.startsWith("/service")) return "service";
-  if (location.startsWith("/knowledge")) return "knowledge";
-  if (location.startsWith("/offsite")) return "offsite";
-  if (location.startsWith("/emperor")) return "emperor";
-  if (location.startsWith("/admin")) return "admin";
-  // Legacy routes (before migration) - map to listing
-  const legacyPaths = ["/analysis", "/comparison", "/review-history", "/review-aggregation", "/keywords", "/ad-structure", "/data-files", "/generate", "/preview", "/score"];
-  if (legacyPaths.some(p => location.startsWith(p))) return "listing";
-  return "home"; // default
+  if (location.startsWith("/listing") || location.startsWith("/project/")) return "ops";
+  return modules.find(module => location === module.prefix || location.startsWith(`${module.prefix}/`))?.id || "home";
 }
 
 // Filter modules by user role
@@ -371,7 +213,7 @@ export default function DashboardLayout({
               AMZ 全链路
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm leading-relaxed">
-              基于AI的AMZ全链路运营工具，覆盖产品开发、Listing优化、运营提效、售后管理和知识库五大模块。
+              产品运营、美工与图片资料协作平台。
             </p>
           </div>
           <Button
@@ -420,24 +262,13 @@ function DashboardLayoutContent({
     () => modules.find(m => m.id === activeModuleId) || null,
     [activeModuleId]
   );
-  const listingAgentNodeContext = useMemo(
-    () => parseListingAgentNodeContext(
-      location,
-      typeof window === "undefined" ? "" : window.location.search,
-    ),
-    [location],
-  );
-  const pageContent = listingAgentNodeContext ? (
-    <ListingAgentNodeWorkbench context={listingAgentNodeContext}>
-      {children}
-    </ListingAgentNodeWorkbench>
-  ) : children;
+  const pageContent = children;
 
   // Filter modules based on user role
-  const accessibleModules = useMemo(
-    () => getAccessibleModules(user?.role),
-    [user?.role]
-  );
+  const permissions = usePermissions();
+  const accessibleModules = modules.filter(module => permissions.hasModuleAccess(module.id)
+    || module.id === "ops" && permissions.hasModuleAccess("listing")
+   );
 
   const isHomePage = activeModuleId === "home";
   const isAdmin = user?.role && (ADMIN_ROLES as readonly string[]).includes(user.role);
@@ -483,7 +314,7 @@ function DashboardLayoutContent({
     return location.startsWith(item.path);
   };
 
-  const renderMenuEntries = (mobile: boolean) => activeModule?.items.map((entry) => {
+  const renderMenuEntries = (mobile: boolean) => activeModule?.items.filter(entry => !entry.adminOnly || isAdmin).map((entry) => {
     if (!isMenuGroup(entry)) {
       const active = isMenuActive(entry);
       const button = (
@@ -878,7 +709,7 @@ function DashboardLayoutContent({
 // ─── Marketplace Selector (ops module only) ──────────────────
 function MarketplaceSelector() {
   const { marketplace, setMarketplace, marketplaces, isLoading } = useMarketplace();
-  
+
   if (isLoading) {
     return (
       <div className="px-3 py-3 border-t">
@@ -886,7 +717,7 @@ function MarketplaceSelector() {
       </div>
     );
   }
-  
+
   return (
     <div className="px-3 py-3 border-t shrink-0">
       <div className="flex items-center gap-2 mb-2">

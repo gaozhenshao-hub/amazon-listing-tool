@@ -26,9 +26,9 @@
         "sha256": "05a4205aecfa3e713f2f29fd91e8e37706727e8d8db0b943cc6b3e44d0cc9bd1"
       },
       "reviewed": {
-        "gitBlobSha1": "a2693b57ea1ea505387a5e8d355940f577a8094c",
-        "sha256": "36828f97b7fb5e2bfe51ad06fc6a39de7dd4356561e5cfeb279cbb2e76d083c2",
-        "reviewRef": "config/integration/reviews/20261018-operations-center-entry.json; config/integration/reviews/20261019-acquisition-manual-revisions.json"
+        "gitBlobSha1": "a9b91e74c878bbb7abc1f81d1350fb55f2d3bacf",
+        "sha256": "646427bee85e7e384eadebd71fe75055b5efdc3bbd1685771b2f2ad69bfeb9f2",
+        "reviewRef": "20261019 current US inventory compatibility: restore /ops/inventory-details behind existing merged feature flag and explicit ops_data_import read guard; no existing route removed or auth bypassed."
       }
     },
     {
@@ -119,9 +119,9 @@
         "sha256": "8fa7d463e662d16c20018f018e35f1d28ecab0f5acd18b13b847967149772ebf"
       },
       "reviewed": {
-        "gitBlobSha1": "f8e82118c40f91964cb36a0214a56657984c0b6d",
-        "sha256": "d18c3fe0839fef9c2e214e573c10e85c444153f298524e5e6bd97eade236f23d",
-        "reviewRef": "config/integration/reviews/20261018-operations-center-entry.json"
+        "gitBlobSha1": "3107bb378d53ece4a6444cd8e614ecf7d3fafbbd",
+        "sha256": "2156f4fd92606b8c5f0574aa9f7ee40be06a6eeba39981f08fe12506925f6d40",
+        "reviewRef": "20261019 restore inventory-details tab label only; tab identity, project parameters, storage and close behavior unchanged; workspaceTabs regression passed."
       }
     },
     {
@@ -529,6 +529,11 @@
       "baseline": {
         "gitBlobSha1": "02d19e9f29d24a44353f0c1b9bf9d0902252761f",
         "sha256": "f6f427865e11a854539bbcfac1ead4525933a93d7d59015343adb8d63682d44f"
+      },
+      "reviewed": {
+        "gitBlobSha1": "b4d61366445745cd39394c39d5d58af5c52b0de8",
+        "sha256": "9efd339b514587032144aae9c3bac2efde1bb01e81dd8715d1a5873d92d9e531",
+        "reviewRef": "9bc22f1 runtime startup review: lazy Vite development import; static serving, missing-asset 404 and no-store HTML unchanged. Production dependency test and isolated ECS image boot passed in release run 39273825666."
       }
     },
     {

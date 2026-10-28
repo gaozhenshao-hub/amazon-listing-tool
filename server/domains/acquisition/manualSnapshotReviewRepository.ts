@@ -129,8 +129,9 @@ export function createManualSnapshotReviewRepository(dependencies: Dependencies 
         }
         const hint = checkedRecord((await rows(tx, "SELECT job_id AS jobId FROM acquisition_source_snapshots WHERE id=? AND workspace_id=? LIMIT 1", [scope.snapshotId, identity.workspaceId], 1))[0], "SNAPSHOT_UNAVAILABLE");
         const jobId = id.parse(hint.jobId);
-        const lockedJob = checkedRecord((await rows(tx, `SELECT id FROM acquisition_jobs WHERE id=? AND workspace_id=? ${lock}`, [jobId, identity.workspaceId], 1))[0], "JOB_UNAVAILABLE");
+        const lockedJob = checkedRecord((await rows(tx, `SELECT id,cache_expired_at AS cacheExpiredAt FROM acquisition_jobs WHERE id=? AND workspace_id=? ${lock}`, [jobId, identity.workspaceId], 1))[0], "JOB_UNAVAILABLE");
         if (lockedJob.id !== jobId) fail("JOB_UNAVAILABLE");
+        if (lockedJob.cacheExpiredAt) fail("SNAPSHOT_UNAVAILABLE");
         const load = async () => {
           const snapshot = checkedRecord((await rows(tx, `SELECT id,workspace_id AS workspaceId,job_id AS jobId,run_id AS runId,raw_artifact_id AS rawArtifactId,marketplace,asin,source_hash AS sourceHash,${jsonColumn("normalized_data", "normalizedData")},${jsonColumn("field_statuses", "fieldStatuses")},${jsonColumn("completeness", "completeness")},status,reviewed_by AS reviewedBy,${date("reviewed_at", "reviewedAt")},review_note AS reviewNote,${date("created_at", "createdAt")},${date("updated_at", "updatedAt")} FROM acquisition_source_snapshots WHERE id=? AND workspace_id=? ${lock}`, [scope.snapshotId, identity.workspaceId], 1))[0], "SNAPSHOT_UNAVAILABLE") as ManualSnapshotLoadedSource;
           snapshot.normalizedData = decode(snapshot.normalizedData); snapshot.fieldStatuses = decode(snapshot.fieldStatuses); snapshot.completeness = snapshot.completeness === null ? null : decode(snapshot.completeness);

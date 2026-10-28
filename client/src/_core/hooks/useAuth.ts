@@ -13,6 +13,8 @@ export function useAuth(options?: UseAuthOptions) {
   const utils = trpc.useUtils();
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
+    // Authentication must not wait behind a large report in a batch response.
+    trpc: { context: { skipBatch: true } },
     // Retry on 503/network errors (Cloud Run cold start can take 5-10s)
     retry: (failureCount, error) => {
       return isRetryableAppError(error) && failureCount < 4;
@@ -47,9 +49,9 @@ export function useAuth(options?: UseAuthOptions) {
       JSON.stringify(meQuery.data)
     );
 
-    // Consider "loading" if the query is fetching (including retries)
-    // This prevents showing the login screen while retrying after 503
-    const isLoading = meQuery.isLoading || meQuery.isFetching || logoutMutation.isPending;
+    // Keep the mounted page during background session validation. Initial
+    // authentication and logout still block protected page rendering.
+    const isLoading = meQuery.isLoading || (!meQuery.data && meQuery.isFetching) || logoutMutation.isPending;
 
     return {
       user: meQuery.data ?? null,

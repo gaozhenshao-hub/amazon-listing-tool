@@ -4,6 +4,11 @@ x-app-base: &app-base
   build:
     context: ../..
     dockerfile: deploy/aliyun/Dockerfile
+    args:
+      VITE_AUTH_MODE: ${VITE_AUTH_MODE:-local}
+      VITE_ENABLE_MERGED_LISTING_WORKFLOW: ${VITE_ENABLE_MERGED_LISTING_WORKFLOW:-1}
+      VITE_ENABLE_MERGED_READONLY_FEATURES: ${VITE_ENABLE_MERGED_READONLY_FEATURES:-1}
+      VITE_ENABLE_NORTH_AMERICA_BOARD: ${VITE_ENABLE_NORTH_AMERICA_BOARD:-1}
   env_file:
     - .env
   restart: unless-stopped

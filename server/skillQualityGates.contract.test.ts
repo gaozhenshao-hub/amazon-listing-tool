@@ -32,14 +32,4 @@ describe("皇帝Skill质量评测与发布门禁契约", () => {
     expect(router).toContain("isHighQualitySkill");
     expect(router).toContain("targetModelOverride");
   });
-
-  it("默认门禁为建议式，且评测界面不生成或伪造质量结果", () => {
-    const service = read("server/domains/ai_os/services/skillQualityGates.ts");
-    const page = read("client/src/pages/emperor/EmperorQualityGates.tsx");
-    expect(service).toContain('mode === "enforced" ? "enforced" : "advisory"');
-    expect(service).toContain('"manual", "completed"');
-    expect(page).toContain("仅记录人工判断，不触发模型生成。");
-    expect(page).toContain("金标用例与候选回放");
-    expect(page).toContain("发布门禁策略");
-  });
 });

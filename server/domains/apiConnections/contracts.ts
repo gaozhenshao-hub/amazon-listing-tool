@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const ApiConnectionCodeSchema = z.enum(["apify", "lingxing", "saihu"]);
+export const ApiConnectionCodeSchema = z.enum(["saihu"]);
 export type ApiConnectionCode = z.infer<typeof ApiConnectionCodeSchema>;
 
 export type ApiConnectionSecretField = {
@@ -20,28 +20,6 @@ export type ApiConnectionDefinition = {
 };
 
 export const API_CONNECTION_DEFINITIONS: Record<ApiConnectionCode, ApiConnectionDefinition> = {
-  apify: {
-    code: "apify",
-    displayName: "Apify",
-    purpose: "Amazon受控采集与价格、Offer、BSR、关键词排名监控",
-    validationMode: "remote_read_only",
-    integrationStatus: "active",
-    secretFields: [
-      { key: "api_token", label: "API Token", requiredForReady: true, fallbackEnvironmentKey: "APIFY_API_TOKEN" },
-    ],
-  },
-  lingxing: {
-    code: "lingxing",
-    displayName: "领星",
-    purpose: "官方MCP只读产品、库存、广告与财务数据读取",
-    validationMode: "remote_read_only",
-    integrationStatus: "active",
-    secretFields: [
-      { key: "mcp_key", label: "MCP访问密钥", requiredForReady: true, fallbackEnvironmentKey: "LINGXING_MCP_KEY" },
-      { key: "app_id", label: "应用ID（可选）", requiredForReady: false, fallbackEnvironmentKey: "LINGXING_APP_ID" },
-      { key: "app_secret", label: "应用密钥（可选）", requiredForReady: false, fallbackEnvironmentKey: "LINGXING_APP_SECRET" },
-    ],
-  },
   saihu: {
     code: "saihu",
     displayName: "赛狐ERP",

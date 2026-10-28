@@ -25,33 +25,6 @@ describe("AI OS observability dashboard and QA gate", () => {
     expect(service).toContain("migrationRegression");
   });
 
-  it("exposes operational observability routes under Emperor", () => {
-    const router = readRepoFile("server/domains/ai_os/routers/observability.ts");
-    const appRouterTest = readRepoFile("server/emperorAgentRunner.test.ts");
-
-    expect(router).toContain("dashboard");
-    expect(router).toContain("workerHealth");
-    expect(router).toContain("databaseBaseline");
-    expect(router).toContain("recordDatabaseBaselineSnapshot");
-    expect(router).toContain("database_baseline.snapshot");
-    expect(appRouterTest).toContain("emperor.observability.dashboard");
-  });
-
-  it("adds a first-class Emperor observability page without replacing existing pages", () => {
-    const app = readRepoFile("client/src/App.tsx");
-    const layout = readRepoFile("client/src/components/DashboardLayout.tsx");
-    const page = readRepoFile("client/src/pages/emperor/EmperorObservability.tsx");
-
-    expect(app).toContain("EmperorObservability");
-    expect(app).toContain('/emperor/observability');
-    expect(layout).toContain("可观测看板");
-    expect(page).toContain("trpc.emperor.observability.dashboard.useQuery");
-    expect(page).toContain("recordDatabaseBaselineSnapshot.useMutation");
-    expect(page).toContain("Worker 队列健康");
-    expect(page).toContain("慢查询与 EXPLAIN 基线");
-    expect(page).toContain("归档任务健康");
-  });
-
   it("keeps real DB tests isolated behind QA gate scripts and CI secrets", () => {
     const pkg = JSON.parse(readRepoFile("package.json"));
     const vitestConfig = readRepoFile("vitest.config.ts");

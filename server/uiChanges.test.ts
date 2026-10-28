@@ -36,19 +36,7 @@ describe("DataFilesPage simplification", () => {
 });
 
 // Test: Sidebar navigation order
-describe("Sidebar navigation order", () => {
-  it("should have 关键词管理 before 数据文件 in DashboardLayout", async () => {
-    const fs = await import("fs");
-    const content = fs.readFileSync("client/src/components/DashboardLayout.tsx", "utf-8");
-    
-    const keywordIndex = content.indexOf("关键词管理");
-    const dataFileIndex = content.indexOf("数据文件");
-    
-    expect(keywordIndex).toBeGreaterThan(-1);
-    expect(dataFileIndex).toBeGreaterThan(-1);
-    expect(keywordIndex).toBeLessThan(dataFileIndex);
-  });
-});
+
 
 // Test: Image advice bilingual support
 describe("Image advice bilingual support", () => {

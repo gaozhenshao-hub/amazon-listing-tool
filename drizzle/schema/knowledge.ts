@@ -171,9 +171,22 @@ export type InsertKbOperationSkill = typeof kbOperationSkills.$inferInsert;
 
 // 智能视频知识库
 export const kbVideos = mysqlTable("kb_videos", {
+  recycleId: varchar("recycleId", { length: 36 }),
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
   workspaceId: int("workspaceId").notNull(),
+  imageSetId: int("imageSetId"),
+  sourceKey: varchar("sourceKey", { length: 191 }),
+  sourceHash: varchar("sourceHash", { length: 64 }),
+  videoRole: varchar("videoRole", { length: 16 }),
+  videoPosition: int("videoPosition").default(0).notNull(),
+  moduleId: varchar("moduleId", { length: 80 }),
+  labelStatus: varchar("labelStatus", { length: 20 }).default("unlabeled").notNull(),
+  labelRevision: int("labelRevision").default(0).notNull(),
+  labelRunId: varchar("labelRunId", { length: 80 }),
+  labelError: varchar("labelError", { length: 300 }),
+  processing: json("processing"),
+  aiOriginalAnalysis: text("aiOriginalAnalysis"),
   asin: varchar("asin", { length: 20 }),
   videoUrl: varchar("videoUrl", { length: 1024 }).notNull(),
   videoTitle: varchar("videoTitle", { length: 512 }),

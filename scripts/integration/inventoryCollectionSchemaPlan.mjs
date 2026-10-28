@@ -42,7 +42,8 @@ function structure(table) {
     requireValue((!own(table, "columns") || Array.isArray(table.columns) && !table.columns.length) && (!own(table, "indexes") || Array.isArray(table.indexes) && !table.indexes.length), "ABSENCE_CONFLICT");
     return null;
   }
-  requireValue(table.engine === "InnoDB" && table.collation === "utf8mb4_unicode_ci", "STORAGE_INCOMPATIBLE");
+  const allowedCollations = table.name === SNAPSHOTS ? ["utf8mb4_unicode_ci", "utf8mb4_0900_ai_ci"] : ["utf8mb4_unicode_ci"];
+  requireValue(table.engine === "InnoDB" && allowedCollations.includes(table.collation), "STORAGE_INCOMPATIBLE");
   requireValue(Array.isArray(table.columns) && table.columns.length > 0 && table.columns.length <= 100 && Array.isArray(table.indexes) && table.indexes.length > 0 && table.indexes.length <= 100, "INCOMPLETE");
   const columns = new Map();
   for (const c of table.columns) {
@@ -57,7 +58,7 @@ function structure(table) {
       && Array.isArray(i.prefixLengths) && i.prefixLengths.length === i.columns.length && i.prefixLengths.every(n => n === null || Number.isSafeInteger(n) && n > 0), "INDEX_INVALID");
     names.add(i.name);
   }
-  return { columns, indexes: table.indexes };
+  return { columns, indexes: table.indexes, collation: table.collation };
 }
 function matches(index, fields, unique, primary = false) {
   return index.unique === unique && same(index.columns, fields) && index.prefixLengths.every(n => n === null) && (!primary || index.name === "PRIMARY");
@@ -67,7 +68,7 @@ function validateColumns(parsed, types, optionalNullable = new Set()) {
     const c = parsed.columns.get(name);
     requireValue(c && c.nullable === optionalNullable.has(name) && (/^(int|bigint)$/u.test(type) ? new RegExp(`^${type}(?:\\(\\d+\\))?$`, "iu").test(c.type) : c.type.toLowerCase() === type), "COLUMN_INCOMPATIBLE");
     requireValue(c.extra.toLowerCase() === (name === "id" ? "auto_increment" : "") && c.defaultValue === (name === "run_source" ? "saihu_sync" : null), "DEFAULT_INCOMPATIBLE");
-    if (/^(char|varchar|longtext|enum)/u.test(type)) requireValue(c.collation === "utf8mb4_unicode_ci", "COLUMN_COLLATION");
+    if (/^(char|varchar|longtext|enum)/u.test(type)) requireValue(c.collation === parsed.collation, "COLUMN_COLLATION");
   }
   for (const [name, c] of parsed.columns) if (!own(types, name)) requireValue(c.nullable || c.defaultValue !== null || /generated/iu.test(c.extra), "REQUIRED_EXTENSION");
   requireValue(parsed.indexes.some(i => matches(i, ["id"], true, true)), "PRIMARY_INCOMPATIBLE");

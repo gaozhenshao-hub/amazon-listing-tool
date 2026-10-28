@@ -66,22 +66,6 @@ function hasAny(text: string, patterns: string[]): boolean {
   return patterns.some((pattern) => text.includes(pattern));
 }
 
-function inferImageWorkflowSkill(text: string): string {
-  if (hasAny(text, ["逐张分析", "竞品图片分析", "imageType", "expressionMethod"])) return "image.step0.competitor.analysis";
-  if (hasAny(text, ["整体总结报告", "sellingPointDistribution", "differentiationOpportunities"])) return "image.step0.competitor.summary";
-  if (hasAny(text, ["卖点体系", "核心卖点", "negativeReviewPoints"])) return "image.step1.sellingpoints";
-  if (hasAny(text, ["图片大纲", "规划每张图片", "aPlusModules"])) return "image.step2.outline";
-  if (hasAny(text, ["视觉风格方案", "styleOptions", "colorPalette"])) return "image.step3.style";
-  if (hasAny(text, ["构图参考", "效果图参考", "imageReferences"])) return "image.step4.reference";
-  if (hasAny(text, ["完整图片建议", "图片结构及内容建议", "aPlusContent"])) return "image.step5.final.suggestion";
-  if (hasAny(text, ["A+模块规格", "selectedModules"])) return "image.step5.aplus.optimize";
-  if (hasAny(text, ["某一个模块", "单独优化该模块"])) return "image.step5.aplus.single.optimize";
-  if (hasAny(text, ["3套最佳", "模块组合方案"])) return "image.step5.aplus.combo.recommend";
-  if (hasAny(text, ["AI提示词", "negativePrompt", "prompt和negativePrompt"])) return "image.step6.prompt";
-  if (hasAny(text, ["翻译", "中英文翻译"])) return "listing.translate.chinese";
-  return "image.workflow.general";
-}
-
 function inferListingSkill(text: string): string {
   if (hasAny(text, ["translate", "翻译", "中文"])) return "listing.translate.chinese";
   if (hasAny(text, ["Q&A", "QA", "question", "answer"])) return "listing.qa.generate";
@@ -121,32 +105,11 @@ function inferOpsSkill(file: string, text: string): string {
   return "ops.profit.analysis";
 }
 
-function inferOffsiteSkill(file: string): string {
-  if (file.endsWith("offSocial.ts")) return "off.social.content";
-  if (file.endsWith("offOutreach.ts")) return "off.outreach.email";
-  if (file.endsWith("offInfluencer.ts")) return "off.influencer.match";
-  if (file.endsWith("offContent.ts")) return "off.content.calendar";
-  if (file.endsWith("offCampaign.ts") || file.endsWith("offAnalytics.ts")) return "off.campaign.analysis";
-  return "offsite.summary";
-}
-
-function inferVideoSkill(text: string): string {
-  if (hasAny(text, ["分镜", "shots", "镜头"])) return "video.shot.detail";
-  if (hasAny(text, ["脚本", "timeline", "editingNotes"])) return "video.edit.script";
-  if (hasAny(text, ["竞品视频", "video.competitor"])) return "video.competitor.analysis";
-  return "video.section.plan";
-}
-
-function inferDevSkill(): string {
-  return "dev.analysis.product";
-}
-
 function inferKbSkill(file: string, text: string): string {
   if (file.endsWith("kbImages.ts") || file.endsWith("imageAiAnalyzer.ts") || hasAny(text, ["OCR", "图片", "image_url"])) {
     return "analysis.image.recognition";
   }
   if (file.endsWith("kbListings.ts")) return "listing.competitor.analyze";
-  if (file.endsWith("kbVideos.ts")) return "video.competitor.analysis";
   if (file.endsWith("kbIntel.ts")) return "analysis.competitor.multi";
   if (file.endsWith("kbSkills.ts")) return "analysis.competitor.single";
   return "analysis.competitor.single";
@@ -159,9 +122,6 @@ function inferSkillSlug(params: InvokeParams, callerFile: string, text: string):
   const source = callerFile.replace(/^.*\/server\//, "server/");
   if (!source) return null;
 
-  if (callerFile.endsWith("imageWorkflow.ts") || callerFile.includes("/domains/image/")) {
-    return { slug: inferImageWorkflowSkill(text), source };
-  }
   if (callerFile.endsWith("listing.ts") || callerFile.includes("/domains/listing/")) {
     return { slug: inferListingSkill(text), source };
   }
@@ -174,18 +134,7 @@ function inferSkillSlug(params: InvokeParams, callerFile: string, text: string):
   if (callerFile.includes("/routers/ad") || callerFile.includes("/domains/ads/") || callerFile.endsWith("adStructure.ts")) {
     return { slug: inferAdSkill(callerFile, text), source };
   }
-  if (callerFile.includes("/routers/off")) return { slug: inferOffsiteSkill(callerFile), source };
-  if (callerFile.endsWith("videoScript.ts")) return { slug: inferVideoSkill(text), source };
-  if (callerFile.includes("/routers/dev") || callerFile.includes("/domains/product_development/")) {
-    return { slug: inferDevSkill(), source };
-  }
   if (callerFile.includes("/routers/kb") || callerFile.endsWith("imageAiAnalyzer.ts")) return { slug: inferKbSkill(callerFile, text), source };
-  if (callerFile.endsWith("afterSales.ts")) {
-    if (hasAny(text, ["退货", "return"])) return { slug: "aftersales.return.diagnosis", source };
-    if (hasAny(text, ["邮件", "email", "reply"])) return { slug: "aftersales.email.reply", source };
-    if (hasAny(text, ["评论", "review"])) return { slug: "aftersales.review.analysis", source };
-    return { slug: "aftersales.service.briefing", source };
-  }
   if (callerFile.endsWith("buyerQuestions.ts")) return { slug: "analysis.rufus.attribute", source };
   if (callerFile.endsWith("conversionAiScorer.ts") || callerFile.endsWith("scoring.ts")) return { slug: "listing.scoring.overall", source };
   if (callerFile.endsWith("customerProfile.ts")) return { slug: "analysis.review.kano", source };
@@ -203,7 +152,6 @@ function inferSkillSlug(params: InvokeParams, callerFile: string, text: string):
   ) {
     return { slug: inferOpsSkill(callerFile, text), source };
   }
-  if (callerFile.endsWith("intelAutoCollect.ts")) return { slug: "analysis.competitor.multi", source };
 
   return null;
 }

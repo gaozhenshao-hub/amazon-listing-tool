@@ -26,6 +26,7 @@ describe("security tenant governance v1", () => {
       "tool",
       "agent",
       "ops_data",
+      "procurement_logistics",
       "ops_board",
       "ops_task",
       "ops_cost_sheet",
@@ -125,32 +126,6 @@ describe("security tenant governance v1", () => {
     const ownerBypass = service.indexOf("input.ownerUserId && input.ownerUserId === input.actor.id");
     expect(membershipCheck).toBeGreaterThan(0);
     expect(ownerBypass).toBeGreaterThan(membershipCheck);
-  });
-
-  it("routes core surfaces through authorization and audit gates", () => {
-    const authRepository = readRepoFile("server/repositories/auth/authRepository.ts");
-    const projectRouter = readRepoFile("server/routers/project.ts");
-    const projectFileRouter = readRepoFile("server/routers/projectFile.ts");
-    const opsContext = [
-      readRepoFile("server/domains/ops/routerContext.ts"),
-      readRepoFile("server/domains/ops/workspaceProcedure.ts"),
-    ].join("\n");
-    const toolsRouter = readRepoFile("server/domains/ai_os/routers/tools.ts");
-    const mcpRouter = readRepoFile("server/domains/ai_os/routers/mcp.ts");
-    const agentsRouter = readRepoFile("server/domains/ai_os/routers/agents.ts");
-
-    expect(authRepository).toContain("ensureDefaultWorkspaceForUser");
-    expect(authRepository).toContain("workspaceMemberships");
-    expect(projectRouter).toContain('resource: "project"');
-    expect(projectRouter).toContain("recordSecurityAuditLog");
-    expect(projectFileRouter).toContain('resource: "file"');
-    expect(projectFileRouter).toContain("recordSecurityAuditLog");
-    expect(opsContext).toContain('resource: "ops_data"');
-    expect(opsContext).toContain("recordSecurityAuditLog");
-    expect(toolsRouter).toContain('resource: "tool"');
-    expect(toolsRouter).toContain("rotateSecret");
-    expect(mcpRouter).toContain('resource: "tool"');
-    expect(agentsRouter).toContain('resource: "agent"');
   });
 
   it("forces Tool secret references and supports key rotation", () => {

@@ -44,14 +44,19 @@ export async function taskWriteMembers(tx: DbExecutor, workspaceId: number, only
 export type TaskWriteCandidate = ProductTaskWriteProduct;
 export type TaskWriteCandidateSource = { items: TaskWriteCandidate[]; capabilities: { profiles: "available" | "unavailable"; saihu: "available" | "unavailable"; mappings: "available" | "unavailable"; manualOwners: "available" | "unavailable" }; complete: boolean };
 const LIMIT = 5000, BYTES = 8 * 1024 * 1024, ROW_BYTES = 128 * 1024;
+// Daily/weekly history contains repeated observations of the same products.
+// Bound historical reads separately from the final, deduplicated product list.
+const HISTORY_LIMIT = 100000, HISTORY_BYTES = 64 * 1024 * 1024;
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const identityKey = (value: ProductTaskProductIdentity) => JSON.stringify([value.workspaceId, value.storeName, value.country, value.parentAsin]);
 const nullableText = (value: unknown, max = 4000): string | null => value === null ? null : typeof value === "string" && value.length <= max ? value : taskWriteFail("CANDIDATE_INVALID");
 /** Bounded two-phase reads: do not transfer unlimited source TEXT before checking budgets. */
 async function sourceRows(tx: DbExecutor, table: "product_profiles" | "saihu_product_weekly", workspaceId: number, fields: Record<string, string>, strings: string[]): Promise<Row[]> {
+  const sourceLimit = table === "saihu_product_weekly" ? HISTORY_LIMIT : LIMIT;
+  const sourceBytes = table === "saihu_product_weekly" ? HISTORY_BYTES : BYTES;
   const size = strings.map(field => `COALESCE(OCTET_LENGTH(CAST(${field} AS CHAR CHARACTER SET utf8mb4)),0)`).join("+");
-  const candidates = await taskWriteRows(tx, `SELECT id,workspaceId,${size} AS bodyBytes FROM ${table} WHERE workspaceId=? ORDER BY id LIMIT ${LIMIT + 1} FOR SHARE`, [workspaceId]);
-  if (candidates.length > LIMIT || candidates.reduce((sum, row) => sum + Number(row.bodyBytes), 0) > BYTES) taskWriteFail("CANDIDATES_INCOMPLETE");
+  const candidates = await taskWriteRows(tx, `SELECT id,workspaceId,${size} AS bodyBytes FROM ${table} WHERE workspaceId=? ORDER BY id LIMIT ${sourceLimit + 1} FOR SHARE`, [workspaceId]);
+  if (candidates.length > sourceLimit || candidates.reduce((sum, row) => sum + Number(row.bodyBytes), 0) > sourceBytes) taskWriteFail("CANDIDATES_INCOMPLETE");
   if (new Set(candidates.map(row => row.id)).size !== candidates.length || candidates.some(row => !taskWriteId(row.id) || row.workspaceId !== workspaceId || typeof row.bodyBytes !== "number" || !Number.isSafeInteger(row.bodyBytes) || row.bodyBytes < 0 || row.bodyBytes > ROW_BYTES)) taskWriteFail("CANDIDATES_INVALID");
   const result: Row[] = [];
   for (let offset = 0; offset < candidates.length; offset += 200) {
@@ -78,7 +83,7 @@ export async function loadTaskWriteCandidates(tx: DbExecutor, workspaceId: numbe
   for (const row of profiles) if (typeof row.updatedAt !== "string" || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$/u.test(row.updatedAt) || !dateValid(row.updatedAt.slice(0, 10))) taskWriteFail("PROFILES_INVALID");
   const owners = capabilities.manualOwners === "available" ? await taskWriteRows(tx, "SELECT id,workspaceId,IF(OCTET_LENGTH(parent_asin)<=2000,parent_asin,NULL) AS parentAsin,IF(OCTET_LENGTH(store_name)<=800,store_name,NULL) AS storeName,IF(OCTET_LENGTH(country)<=800,country,NULL) AS country,assignee_user_id AS assigneeId,is_active AS active FROM ops_inventory_owner_assignments WHERE workspaceId=? AND is_active=1 ORDER BY id LIMIT 5001 FOR SHARE", [workspaceId]) : [];
   const mappings = capabilities.mappings === "available" ? await taskWriteRows(tx, "SELECT id,workspaceId,IF(OCTET_LENGTH(external_name)<=800,external_name,NULL) AS externalName,IF(OCTET_LENGTH(source_type)<=40,source_type,NULL) AS sourceType,system_user_id AS userId,is_confirmed AS confirmed FROM operator_name_mappings WHERE workspaceId=? AND is_confirmed=1 ORDER BY id LIMIT 5001 FOR SHARE", [workspaceId]) : [];
-  if (owners.length > LIMIT || mappings.length > LIMIT || Buffer.byteLength(JSON.stringify([owners, mappings, profiles, daily]), "utf8") > BYTES) taskWriteFail("CANDIDATES_INCOMPLETE");
+  if (owners.length > LIMIT || mappings.length > LIMIT || Buffer.byteLength(JSON.stringify([owners, mappings, profiles]), "utf8") > BYTES || Buffer.byteLength(JSON.stringify(daily), "utf8") > HISTORY_BYTES) taskWriteFail("CANDIDATES_INCOMPLETE");
   const manual = new Map<string, number>();
   for (const row of owners) {
     const identity = canonicalTaskProductIdentity({ workspaceId: row.workspaceId, storeName: row.storeName, country: row.country, parentAsin: row.parentAsin });

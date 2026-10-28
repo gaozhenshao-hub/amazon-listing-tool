@@ -51,7 +51,11 @@ function checkTable(table, definition) {
       && (!own(table, "indexes") || Array.isArray(table.indexes) && !table.indexes.length), "MONTHLY_SCHEMA_ABSENCE_CONFLICT");
     return false;
   }
-  requireValue(table.engine === "InnoDB" && table.collation === "utf8mb4_unicode_ci", "MONTHLY_SCHEMA_STORAGE_INCOMPATIBLE");
+  // Qingdao's existing MySQL 8 reports use 0900. Preserve that table's
+  // comparison semantics; the additive artifact table keeps its own contract.
+  const allowedCollations = definition.name === "ops_monthly_profit_imports"
+    ? ["utf8mb4_unicode_ci", "utf8mb4_0900_ai_ci"] : ["utf8mb4_unicode_ci"];
+  requireValue(table.engine === "InnoDB" && allowedCollations.includes(table.collation), "MONTHLY_SCHEMA_STORAGE_INCOMPATIBLE");
   requireValue(Array.isArray(table.columns) && table.columns.length >= Object.keys(definition.types).length && table.columns.length <= 100
     && Array.isArray(table.indexes) && table.indexes.length > 0 && table.indexes.length <= 100, "MONTHLY_SCHEMA_INCOMPLETE");
   const columns = new Map();
@@ -66,7 +70,7 @@ function checkTable(table, definition) {
     const column = columns.get(name);
     requireValue(column && column.nullable === (name === "confirmedAt")
       && (type === "int" ? /^int(?:\(11\))?$/i.test(column.type) : column.type.toLowerCase() === type), "MONTHLY_SCHEMA_COLUMN_INCOMPATIBLE");
-    if (/^(?:varchar|char|text)/.test(type)) requireValue(column.collation === "utf8mb4_unicode_ci", "MONTHLY_SCHEMA_COLUMN_COLLATION");
+    if (/^(?:varchar|char|text)/.test(type)) requireValue(column.collation === table.collation, "MONTHLY_SCHEMA_COLUMN_COLLATION");
     if (name === definition.primary && definition.autoIncrement) {
       requireValue(column.extra.toLowerCase() === "auto_increment" && column.defaultValue === null, "MONTHLY_SCHEMA_PRIMARY_INCOMPATIBLE");
     } else if (name === definition.created) {

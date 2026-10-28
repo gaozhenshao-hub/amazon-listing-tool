@@ -1,14 +1,18 @@
-import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
+import { imageTaggingUnits } from "@shared/imageTaggingUnits";
+import ImageTagsPanel from "./ImageTagsPanel";
+import AmazonRichContent from "./AmazonRichContent";
+import { Fragment, useState, useCallback, useEffect, type ReactNode } from "react";
+import type { KnowledgeVideo } from "@shared/knowledgeVideos";
+import KnowledgeVideoPlayer from "./KnowledgeVideoPlayer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, X, GripVertical, Tag } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, GripVertical } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy, horizontalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { SortableContext, useSortable, horizontalListSortingStrategy, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useBalancedPreviewTransform } from "./useBalancedPreviewTransform";
 import { GalleryImagePreview } from "./GalleryImagePreview";
 import { SingleImagePreviewDialog } from "./SingleImagePreviewDialog";
-import { imageBelongLabel, imageTagLabel, joinImageTags } from "./kbImageLabels";
 import { activateGalleryItem, currentGalleryIndex } from "./galleryInteraction";
 import { MERGED_READONLY_FEATURES_ENABLED } from "@/lib/mergedReadOnlyFeatures";
 
@@ -33,6 +37,9 @@ interface GalleryImage {
 }
 
 interface AmazonStyleGalleryProps {
+  renderVideo?: (video: KnowledgeVideo) => ReactNode;
+  videos?: KnowledgeVideo[];
+  sourceLayout?: unknown;
   mainImages: GalleryImage[];
   secondaryImages: GalleryImage[];
   brandStoryImages: GalleryImage[];
@@ -57,34 +64,6 @@ function PreviewFitToggle({ mode, onToggle }: { mode: PreviewFitMode; onToggle: 
     >
       {mode === "balanced" ? "完整画布" : "平衡留白"}
     </button>
-  );
-}
-
-/** Inline tag display for an image — always visible, no click needed */
-function InlineTags({ img, compact = false }: { img: GalleryImage; compact?: boolean }) {
-  const tags: { label: string; color: string }[] = [];
-  const joinTags = MERGED_READONLY_FEATURES_ENABLED ? joinImageTags : (main?: string, sub?: string) => (main || "") + (sub ? `·${sub}` : "");
-  const belong = MERGED_READONLY_FEATURES_ENABLED ? imageBelongLabel(img) : img.tagImageBelong ? joinTags(img.tagImageBelong, img.tagImageBelongSub) : "";
-  if (belong) tags.push({ label: belong, color: "bg-indigo-500/80" });
-  if (img.tagImageTypeMain) tags.push({ label: joinTags(img.tagImageTypeMain, img.tagImageTypeSub), color: "bg-purple-500/80" });
-  if (img.tagSellingPointCategory) tags.push({ label: joinTags(img.tagSellingPointCategory, img.tagSellingPointDetail), color: "bg-green-500/80" });
-  if (img.tagComposition) tags.push({ label: img.tagComposition, color: "bg-orange-500/80" });
-  if (img.tagDesignStyleV2) tags.push({ label: img.tagDesignStyleV2, color: "bg-amber-500/80" });
-  if (img.tagColorSchemeV2) tags.push({ label: img.tagColorSchemeV2, color: "bg-pink-500/80" });
-  if (img.tagColorV2) tags.push({ label: img.tagColorV2, color: "bg-rose-400/80" });
-  if (img.singleImageScore) tags.push({ label: `评分 ${img.singleImageScore}/10`, color: "bg-primary/80" });
-
-  const uniqueTags = MERGED_READONLY_FEATURES_ENABLED ? tags.map(tag => ({ ...tag, label: imageTagLabel(tag.label) }))
-    .filter((tag, index, all) => tag.label && all.findIndex(other => other.label === tag.label) === index) : tags;
-  if (uniqueTags.length === 0) {
-    return <p className="text-xs text-muted-foreground italic">暂无标签</p>;
-  }
-  return (
-    <div className={`flex min-w-0 max-w-full flex-wrap gap-1 ${compact ? "" : "mt-1"}`}>
-      {uniqueTags.map((t, index) => (
-        <Badge key={index} className={`max-w-full whitespace-normal [overflow-wrap:anywhere] text-[9px] border-0 text-white ${t.color}`}>{t.label}</Badge>
-      ))}
-    </div>
   );
 }
 
@@ -129,124 +108,12 @@ function SortableThumbnail({ img, index, isActive, mainCount, onClick }: {
 }
 
 /** A+ row: left large image, right tag panel (always visible) */
-function AplusRow({ img, onDeleteImage, renderTagEditor, onReorder }: {
-  img: GalleryImage;
-  onDeleteImage?: (id: number) => void;
-  renderTagEditor?: (img: GalleryImage) => ReactNode;
-  onReorder?: boolean;
-}) {
-  const [showEditor, setShowEditor] = useState(false);
-  const [fitMode, setFitMode] = useState<PreviewFitMode>("balanced");
-  const { previewRef, transform: balancedTransform } = useBalancedPreviewTransform(img.imageUrl);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: img.id });
-  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
-
-  return (
-    <div ref={setNodeRef} style={style} className="flex w-full min-w-0 max-w-full flex-col gap-0 border rounded-lg overflow-hidden bg-white group/aprow md:flex-row">
-      {/* Left: image */}
-      <div ref={previewRef} className="relative w-full min-w-0 h-[320px] shrink-0 overflow-hidden bg-slate-50 md:w-auto md:flex-1">
-        <GalleryImagePreview
-          src={img.imageUrl}
-          accessError={img.imageAccessError}
-          alt="A+ 商品图片"
-          className="absolute inset-0 h-full w-full object-contain p-2"
-          style={{ transform: fitMode === "balanced" ? balancedTransform : undefined }}
-          loading="lazy"
-        />
-        <div className="absolute bottom-2 right-2 z-10"><PreviewFitToggle mode={fitMode} onToggle={() => setFitMode(mode => mode === "balanced" ? "full" : "balanced")} /></div>
-        {/* Drag handle */}
-        {onReorder && (
-          <div
-            {...attributes}
-            {...listeners}
-            className="absolute top-2 left-2 z-10 opacity-0 group-hover/aprow:opacity-100 transition-opacity cursor-grab active:cursor-grabbing bg-white/90 rounded p-1 shadow-sm"
-          >
-            <GripVertical className="h-4 w-4 text-muted-foreground" />
-          </div>
-        )}
-        {/* Delete button */}
-        {onDeleteImage && (
-          <button
-            className="absolute top-2 right-2 z-10 bg-destructive/90 hover:bg-destructive text-white rounded-full p-1 opacity-0 group-hover/aprow:opacity-100 transition-opacity shadow-sm"
-            onClick={() => { if (confirm("确定删除这张图片？")) onDeleteImage(img.id); }}
-          >
-            <X className="h-3 w-3" />
-          </button>
-        )}
-        {/* A+ sub-module badge */}
-        {(img.tagImageBelongSub || (img.aplusModuleType && img.aplusModuleType !== "unknown")) && (
-          <Badge className="absolute top-2 left-10 text-[9px] border-0 bg-purple-500/80 text-white">
-            {MERGED_READONLY_FEATURES_ENABLED ? imageTagLabel(img.tagImageBelongSub || img.aplusModuleType) : img.tagImageBelongSub || img.aplusModuleType}
-          </Badge>
-        )}
-      </div>
-
-      {/* Right: tag panel — always visible */}
-      <div className="w-full min-w-0 max-w-full shrink-0 border-t bg-muted/20 p-3 flex flex-col gap-2 md:w-[260px] md:border-t-0 md:border-l">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-            <Tag className="h-3 w-3" /> 标签
-          </span>
-          {renderTagEditor && (
-            <button
-              className="text-[10px] text-primary hover:underline"
-              onClick={() => setShowEditor((v) => !v)}
-            >
-              {showEditor ? "收起" : "编辑"}
-            </button>
-          )}
-        </div>
-        <InlineTags img={img} />
-        {showEditor && renderTagEditor && (
-          <div className="mt-1 min-w-0 max-w-full border-t pt-2 animate-in slide-in-from-top-2 duration-200">
-            {renderTagEditor(img)}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** Brand story horizontal scroll item */
-function BrandStoryItem({ img, isActive, onClick, onDeleteImage }: {
-  img: GalleryImage;
-  isActive: boolean;
-  onClick: () => void;
-  onDeleteImage?: (id: number) => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: img.id });
-  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
-  return (
-    <div ref={setNodeRef} style={style} className="relative flex-shrink-0 w-[280px] group/bsitem cursor-pointer"
-      role={MERGED_READONLY_FEATURES_ENABLED ? "button" : undefined} tabIndex={MERGED_READONLY_FEATURES_ENABLED ? 0 : undefined} aria-label={MERGED_READONLY_FEATURES_ENABLED ? `查看品牌故事图片 ${img.id}` : undefined} aria-pressed={MERGED_READONLY_FEATURES_ENABLED ? isActive : undefined}
-      onClick={onClick} onKeyDown={MERGED_READONLY_FEATURES_ENABLED ? event => activateGalleryItem(event, onClick) : undefined}>
-      <div className={`rounded-lg overflow-hidden border-2 transition-all ${isActive ? "border-primary ring-1 ring-primary/30" : "border-transparent hover:border-muted-foreground/30"}`}>
-        <GalleryImagePreview src={img.imageUrl} accessError={img.imageAccessError} alt="品牌故事图片" className="w-full h-[160px] object-contain bg-slate-50 p-1" loading="lazy" />
-      </div>
-      {/* Drag handle */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="absolute top-2 left-2 z-10 opacity-0 group-hover/bsitem:opacity-100 transition-opacity cursor-grab active:cursor-grabbing bg-white/90 rounded p-1 shadow-sm"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <GripVertical className="h-3 w-3 text-muted-foreground" />
-      </div>
-      {onDeleteImage && (
-        <button
-          className="absolute top-2 right-2 z-10 bg-destructive/90 hover:bg-destructive text-white rounded-full p-1 opacity-0 group-hover/bsitem:opacity-100 transition-opacity shadow-sm"
-          onClick={(e) => { e.stopPropagation(); if (confirm("确定删除这张图片？")) onDeleteImage(img.id); }}
-        >
-          <X className="h-3 w-3" />
-        </button>
-      )}
-    </div>
-  );
-}
-
 export function AmazonStyleGallery({
+  videos = [],
+  renderVideo,
   mainImages,
   secondaryImages,
+  sourceLayout,
   brandStoryImages,
   aplusImages,
   onSelectImage,
@@ -258,13 +125,12 @@ export function AmazonStyleGallery({
 }: AmazonStyleGalleryProps) {
   // Gallery = main + secondary ONLY (A+ and brand story have their own sections)
   const [galleryItems, setGalleryItems] = useState<GalleryImage[]>([]);
-  const [aplusItems, setAplusItems] = useState<GalleryImage[]>([]);
-  const [brandStoryItems, setBrandStoryItems] = useState<GalleryImage[]>([]);
   const [currentImageId, setCurrentImageId] = useState<number | null>(null);
+  const [videoActive, setVideoActive] = useState(false);
+  const mainVideo = videos.find(video=>video.role==="main");
   const [zoomedImage, setZoomedImage] = useState<GalleryImage | null>(null);
+  const selectRichImage = (image: GalleryImage) => setZoomedImage(image);
   const [galleryFitMode, setGalleryFitMode] = useState<PreviewFitMode>("balanced");
-  const [activeBrandStoryId, setActiveBrandStoryId] = useState<number | null>(null);
-  const brandStoryScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const items = [...mainImages, ...secondaryImages].sort((a, b) => (a.positionIndex || 0) - (b.positionIndex || 0));
@@ -272,21 +138,12 @@ export function AmazonStyleGallery({
     setCurrentImageId(id => items[currentGalleryIndex(items, id)]?.id ?? null);
   }, [mainImages, secondaryImages]);
 
-  useEffect(() => {
-    setAplusItems([...aplusImages].sort((a, b) => (a.positionIndex || 0) - (b.positionIndex || 0)));
-  }, [aplusImages]);
-
-  useEffect(() => {
-    setBrandStoryItems([...brandStoryImages].sort((a, b) => (a.positionIndex || 0) - (b.positionIndex || 0)));
-    if (brandStoryImages.length > 0 && !activeBrandStoryId) {
-      setActiveBrandStoryId(brandStoryImages[0].id);
-    }
-  }, [brandStoryImages, activeBrandStoryId]);
-
   const currentIndex = currentGalleryIndex(galleryItems, currentImageId);
+  const videoPosition = Math.min(mainVideo?.position ?? galleryItems.length, galleryItems.length);
+  const mediaIndex = videoActive ? videoPosition : currentIndex + (mainVideo && currentIndex >= videoPosition ? 1 : 0);
+  const mediaCount = galleryItems.length + (mainVideo ? 1 : 0);
   const currentImage = galleryItems[currentIndex];
   const { previewRef: galleryPreviewRef, transform: galleryBalancedTransform } = useBalancedPreviewTransform(currentImage?.imageUrl || "");
-  const activeBrandStoryImg = brandStoryItems.find((i) => i.id === activeBrandStoryId) || brandStoryItems[0];
 
   // Optimization 5/7: Preload adjacent images when currentIndex changes
   useEffect(() => {
@@ -310,22 +167,22 @@ export function AmazonStyleGallery({
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
-  const goToPrev = useCallback(() => {
-    setCurrentImageId(id => galleryItems[(currentGalleryIndex(galleryItems, id) - 1 + galleryItems.length) % galleryItems.length]?.id ?? null);
-  }, [galleryItems]);
-
-  const goToNext = useCallback(() => {
-    setCurrentImageId(id => galleryItems[(currentGalleryIndex(galleryItems, id) + 1) % galleryItems.length]?.id ?? null);
-  }, [galleryItems]);
+  const moveMedia = (direction: number) => {
+    const next = (mediaIndex + direction + mediaCount) % mediaCount;
+    setVideoActive(Boolean(mainVideo && next === videoPosition));
+    if (!mainVideo || next !== videoPosition) setCurrentImageId(galleryItems[next - (mainVideo && next > videoPosition ? 1 : 0)]?.id ?? null);
+  };
+  const goToPrev = () => moveMedia(-1), goToNext = () => moveMedia(1);
 
   const handleThumbnailClick = useCallback((index: number) => {
+    setVideoActive(false);
     const img = galleryItems[index];
     if (img) { setCurrentImageId(img.id); onSelectImage(selectedImageId === img.id ? null : img.id); }
   }, [galleryItems, onSelectImage, selectedImageId]);
 
   const handleMainImageClick = useCallback(() => {
-    if (currentImage) onSelectImage(selectedImageId === currentImage.id ? null : currentImage.id);
-  }, [currentImage, onSelectImage, selectedImageId]);
+    if (currentImage && !currentImage.missing) setZoomedImage(currentImage);
+  }, [currentImage]);
 
   const handleGalleryDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -338,67 +195,47 @@ export function AmazonStyleGallery({
     if (onReorder) onReorder(newItems.map((item, idx) => ({ id: item.id, positionIndex: idx })));
   }, [galleryItems, onReorder]);
 
-  const handleAplusDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = aplusItems.findIndex((i) => i.id === active.id);
-    const newIndex = aplusItems.findIndex((i) => i.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-    const newItems = arrayMove(aplusItems, oldIndex, newIndex);
-    setAplusItems(newItems);
-    if (onReorder) onReorder(newItems.map((item, idx) => ({ id: item.id, positionIndex: idx + 100 })));
-  }, [aplusItems, onReorder]);
-
-  const handleBrandStoryDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = brandStoryItems.findIndex((i) => i.id === active.id);
-    const newIndex = brandStoryItems.findIndex((i) => i.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-    const newItems = arrayMove(brandStoryItems, oldIndex, newIndex);
-    setBrandStoryItems(newItems);
-    if (onReorder) onReorder(newItems.map((item, idx) => ({ id: item.id, positionIndex: idx + 200 })));
-  }, [brandStoryItems, onReorder]);
+  const videoThumbnail = mainVideo && <button type="button" aria-label="查看主图视频" aria-pressed={videoActive} onClick={()=>{setVideoActive(true);onSelectImage(null);}} className={`relative h-[68px] w-[68px] shrink-0 overflow-hidden rounded border-2 ${videoActive ? "border-primary" : "border-transparent"}`}>
+    {mainVideo.posterUrl && <img src={mainVideo.posterUrl} alt="主图视频封面" loading="lazy" className="h-full w-full object-cover" />}<span className="absolute inset-x-0 bottom-0 bg-black/70 text-xs text-white">▶ 视频</span>
+  </button>;
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-6">
 
       {/* ═══ 1. Main + Secondary Gallery (Amazon Style) ═══ */}
-      {galleryItems.length > 0 && (
+      {mediaCount > 0 && (
         <div className="w-full min-w-0 max-w-full">
           <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
             <div className="w-1 h-4 bg-blue-500 rounded-full" />
-            副图 <Badge variant="secondary" className="text-[10px]">{galleryItems.length}张</Badge>
-            <span className="text-[10px] text-muted-foreground">（主图+副图，可拖拽排序）</span>
+            商品图片 <Badge variant="secondary" className="text-[10px]">{galleryItems.length}张</Badge>
+            <span className="text-[10px] text-muted-foreground">（主图与副图{mainVideo ? " · 1 个视频" : ""}）</span>
           </h4>
 
-          <div className="flex w-full min-w-0 max-w-full gap-3">
+          <div className="grid w-full min-w-0 max-w-full grid-cols-1 gap-3 md:grid-cols-[72px_minmax(0,1fr)_280px]">
             {/* Left: Vertical thumbnail strip */}
             <div className="hidden md:flex flex-col gap-1.5 w-[72px] shrink-0 max-h-[480px] overflow-y-auto scrollbar-thin">
               {onReorder ? (
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleGalleryDragEnd}>
                   <SortableContext items={galleryItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
                     {galleryItems.map((img, idx) => (
-                      <SortableThumbnail
-                        key={img.id}
+                      <Fragment key={img.id}>{mainVideo && idx === videoPosition && videoThumbnail}<SortableThumbnail
                         img={img}
                         index={idx}
-                        isActive={idx === currentIndex}
+                        isActive={!videoActive && idx === currentIndex}
                         mainCount={mainImages.length}
                         onClick={() => handleThumbnailClick(idx)}
-                      />
+                      /></Fragment>
                     ))}
                   </SortableContext>
                 </DndContext>
               ) : (
                 galleryItems.map((img, idx) => (
-                  <button
-                    key={img.id}
+                  <Fragment key={img.id}>{mainVideo && idx === videoPosition && videoThumbnail}<button
                     type="button"
                     aria-label={`查看商品图片 ${idx + 1}`}
-                    aria-pressed={idx === currentIndex}
+                    aria-pressed={!videoActive && idx === currentIndex}
                     className={`relative flex-shrink-0 w-[68px] h-[68px] rounded border-2 overflow-hidden transition-all ${
-                      idx === currentIndex ? "border-primary ring-1 ring-primary/30" : "border-transparent hover:border-muted-foreground/30"
+                      !videoActive && idx === currentIndex ? "border-primary ring-1 ring-primary/30" : "border-transparent hover:border-muted-foreground/30"
                     }`}
                     onClick={() => handleThumbnailClick(idx)}
                   >
@@ -409,14 +246,16 @@ export function AmazonStyleGallery({
                     {idx > 0 && idx < mainImages.length && mainImages.length > 1 && (
                       <span className="absolute bottom-0 left-0 right-0 bg-blue-400/70 text-white text-[8px] text-center py-0.5">主图{idx + 1}</span>
                     )}
-                  </button>
+                  </button></Fragment>
                 ))
               )}
+              {mainVideo && videoPosition === galleryItems.length && videoThumbnail}
             </div>
 
             {/* Center: Main display area */}
-            <div className="min-w-0 max-w-full flex-1 relative group">
-              {currentImage && (
+            <div className={`min-w-0 max-w-full flex-1 relative group ${videoActive && renderVideo ? "md:col-span-2" : ""}`}>
+              {videoActive && mainVideo && <>{renderVideo ? renderVideo(mainVideo) : <KnowledgeVideoPlayer key={mainVideo.hash} video={mainVideo} />}<div className="mt-2 flex items-center justify-center gap-4"><Button size="icon" variant="outline" aria-label="上一张商品图片" onClick={goToPrev}><ChevronLeft /></Button><span className="text-xs text-muted-foreground">{mediaIndex+1} / {mediaCount}</span><Button size="icon" variant="outline" aria-label="下一张商品图片" onClick={goToNext}><ChevronRight /></Button></div></>}
+              {!videoActive && currentImage && (
                 <>
                   <div
                     className={`relative w-full min-w-0 max-w-full bg-gray-50 rounded-lg overflow-hidden border cursor-pointer transition-all ${
@@ -426,7 +265,7 @@ export function AmazonStyleGallery({
                     style={{ height: "420px" }}
                     role={MERGED_READONLY_FEATURES_ENABLED ? "button" : undefined}
                     tabIndex={MERGED_READONLY_FEATURES_ENABLED ? 0 : undefined}
-                    aria-label={MERGED_READONLY_FEATURES_ENABLED ? "展开或收起当前图片标签" : undefined}
+                    aria-label="查看当前商品原图"
                     aria-pressed={MERGED_READONLY_FEATURES_ENABLED ? selectedImageId === currentImage.id : undefined}
                     onClick={handleMainImageClick}
                     onKeyDown={MERGED_READONLY_FEATURES_ENABLED ? event => activateGalleryItem(event, handleMainImageClick) : undefined}
@@ -449,21 +288,18 @@ export function AmazonStyleGallery({
                       </Badge>
                     )}
                     <div className="absolute top-2 right-2 z-10 flex gap-1">
-                      {MERGED_READONLY_FEATURES_ENABLED && <button type="button" className="rounded-full bg-black/45 px-2 py-1 text-[10px] text-white" onClick={event => { event.stopPropagation(); setZoomedImage(currentImage); }}>查看原图</button>}
+                      {!currentImage.missing && MERGED_READONLY_FEATURES_ENABLED && <button type="button" className="rounded-full bg-black/45 px-2 py-1 text-[10px] text-white" onClick={event => { event.stopPropagation(); setZoomedImage(currentImage); }}>查看原图</button>}
                       <PreviewFitToggle mode={galleryFitMode} onToggle={() => setGalleryFitMode(mode => mode === "balanced" ? "full" : "balanced")} />
                     </div>
-                    {/* Tags overlay at bottom */}
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent p-3">
-                      <InlineTags img={currentImage} compact />
-                    </div>
+
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                       <div className="bg-black/40 rounded-full px-3 py-1.5">
-                        <span className="text-white text-xs">{selectedImageId === currentImage.id ? "收起面板" : "展开标签"}</span>
+                        <span className="text-white text-xs">查看原图</span>
                       </div>
                     </div>
                   </div>
 
-                  {galleryItems.length > 1 && (
+                  {mediaCount > 1 && (
                     <>
                       <Button variant="outline" size="icon" aria-label="上一张商品图片" className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-white/90 shadow-md opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); goToPrev(); }}>
                         <ChevronLeft className="h-4 w-4" />
@@ -475,152 +311,38 @@ export function AmazonStyleGallery({
                   )}
 
                   <div className="text-center mt-2 text-xs text-muted-foreground">
-                    {currentIndex + 1} / {galleryItems.length}
+                    {mediaIndex + 1} / {mediaCount}
                   </div>
                 </>
               )}
             </div>
+            {videoActive ? !renderVideo && <aside className="rounded-lg border p-4 text-sm">归属：主图视频</aside> : currentImage && !currentImage.missing && <ImageTagsPanel key={currentImage.id} image={currentImage} canEdit={allowEdit} />}
           </div>
-
-          {/* Inline tag editor panel */}
-          {selectedImageId && currentImage && selectedImageId === currentImage.id && renderTagEditor && (
-            <div className="mt-3 min-w-0 max-w-full animate-in slide-in-from-top-2 duration-200">
-              {renderTagEditor(currentImage)}
-            </div>
-          )}
 
           {/* Mobile: Horizontal thumbnail strip */}
           <div className="flex w-full min-w-0 max-w-full md:hidden gap-1.5 mt-2 overflow-x-auto pb-2">
             {galleryItems.map((img, idx) => (
-              <button
-                key={img.id}
+              <Fragment key={img.id}>{mainVideo && idx === videoPosition && videoThumbnail}<button
                 type="button"
                 aria-label={`查看商品图片 ${idx + 1}`}
-                aria-pressed={idx === currentIndex}
+                aria-pressed={!videoActive && idx === currentIndex}
                 className={`relative flex-shrink-0 w-14 h-14 rounded border-2 overflow-hidden transition-all ${
-                  idx === currentIndex ? "border-primary ring-1 ring-primary/30" : "border-transparent hover:border-muted-foreground/30"
+                  !videoActive && idx === currentIndex ? "border-primary ring-1 ring-primary/30" : "border-transparent hover:border-muted-foreground/30"
                 }`}
                 onClick={() => handleThumbnailClick(idx)}
               >
                 <GalleryImagePreview src={img.imageUrl} accessError={img.imageAccessError} alt="商品缩略图" className={`w-full h-full ${MERGED_READONLY_FEATURES_ENABLED ? "object-contain" : "object-cover"}`} loading="lazy" />
-              </button>
+              </button></Fragment>
             ))}
+            {mainVideo && videoPosition === galleryItems.length && videoThumbnail}
           </div>
         </div>
       )}
 
-      {/* ═══ 2. A+ Content Section (left image, right tags, vertical stack) ═══ */}
-      {aplusItems.length > 0 && (
-        <div className="w-full min-w-0 max-w-full">
-          <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <div className="w-1 h-4 bg-purple-500 rounded-full" />
-            A+ 内容 <Badge variant="secondary" className="text-[10px]">{aplusItems.length}张</Badge>
-            {onReorder && <span className="text-[10px] text-muted-foreground">（可拖拽排序）</span>}
-          </h4>
-          {onReorder ? (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleAplusDragEnd}>
-              <SortableContext items={aplusItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                <div className="flex min-w-0 max-w-full flex-col gap-0">
-                  {aplusItems.map((img) => (
-                    <AplusRow
-                      key={img.id}
-                      img={img}
-                      onDeleteImage={onDeleteImage}
-                      renderTagEditor={renderTagEditor}
-                      onReorder={!!onReorder}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
-          ) : (
-            <div className="flex min-w-0 max-w-full flex-col gap-0">
-              {aplusItems.map((img) => (
-                <AplusRow
-                  key={img.id}
-                  img={img}
-                  onDeleteImage={onDeleteImage}
-                  renderTagEditor={renderTagEditor}
-                  onReorder={false}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {(aplusImages.length > 0 || videos.some(video=>video.role==="aplus") || (sourceLayout as any)?.modules?.some((m:any)=>m.section==="aplus")) && <section className="min-w-0"><h2 className="mb-3 font-semibold">A+ 内容</h2><AmazonRichContent layout={sourceLayout} images={aplusImages} videos={videos} section="aplus" renderVideo={renderVideo} renderTags={images => <div className="space-y-3">{images.map(image => <ImageTagsPanel key={image.id} image={image} canEdit={allowEdit} />)}</div>} onSelect={image => selectRichImage(image as GalleryImage)} /></section>}
+      {(brandStoryImages.length > 0 || (sourceLayout as any)?.modules?.some((m:any)=>m.section==="brand_story")) && <section className="min-w-0"><h2 className="mb-3 font-semibold">品牌故事</h2><AmazonRichContent layout={sourceLayout} images={brandStoryImages} section="brand_story" onSelect={image => selectRichImage(image as GalleryImage)} /></section>}
 
-      {/* ═══ 3. Brand Story Section (horizontal scroll, tags below) ═══ */}
-      {brandStoryItems.length > 0 && (
-        <div className="w-full min-w-0 max-w-full">
-          <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <div className="w-1 h-4 bg-amber-500 rounded-full" />
-            品牌故事 <Badge variant="secondary" className="text-[10px]">{brandStoryItems.length}张</Badge>
-            {onReorder && <span className="text-[10px] text-muted-foreground">（可拖拽排序）</span>}
-          </h4>
-
-          {/* Horizontal scroll strip */}
-          <div ref={brandStoryScrollRef} className="w-full min-w-0 max-w-full overflow-x-auto pb-2">
-            {onReorder ? (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleBrandStoryDragEnd}>
-                <SortableContext items={brandStoryItems.map(i => i.id)} strategy={horizontalListSortingStrategy}>
-                  <div className="flex gap-3 min-w-max">
-                    {brandStoryItems.map((img) => (
-                      <BrandStoryItem
-                        key={img.id}
-                        img={img}
-                        isActive={activeBrandStoryId === img.id}
-                        onClick={() => setActiveBrandStoryId(img.id)}
-                        onDeleteImage={onDeleteImage}
-                      />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            ) : (
-              <div className="flex gap-3 min-w-max">
-                {brandStoryItems.map((img) => (
-                  <BrandStoryItem
-                    key={img.id}
-                    img={img}
-                    isActive={activeBrandStoryId === img.id}
-                    onClick={() => setActiveBrandStoryId(img.id)}
-                    onDeleteImage={onDeleteImage}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Tags + editor for the selected brand story image */}
-          {activeBrandStoryImg && (
-            <div className="mt-3 min-w-0 max-w-full rounded-lg border bg-muted/20 p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
-                  <Tag className="h-3 w-3" />
-                  {activeBrandStoryImg === brandStoryItems[0] && brandStoryItems.length > 1
-                    ? `第 1 张标签`
-                    : `第 ${brandStoryItems.findIndex(i => i.id === activeBrandStoryImg.id) + 1} 张标签`}
-                </span>
-                {renderTagEditor && (
-                  <button
-                    className="text-[10px] text-primary hover:underline"
-                    onClick={() => onSelectImage(selectedImageId === activeBrandStoryImg.id ? null : activeBrandStoryImg.id)}
-                  >
-                    {selectedImageId === activeBrandStoryImg.id ? "收起编辑" : "编辑标签"}
-                  </button>
-                )}
-              </div>
-              <InlineTags img={activeBrandStoryImg} />
-              {selectedImageId === activeBrandStoryImg.id && renderTagEditor && (
-                <div className="mt-2 min-w-0 max-w-full border-t pt-2 animate-in slide-in-from-top-2 duration-200">
-                  {renderTagEditor(activeBrandStoryImg)}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-      {MERGED_READONLY_FEATURES_ENABLED && <SingleImagePreviewDialog image={zoomedImage} onClose={() => setZoomedImage(null)} />}
+      <SingleImagePreviewDialog image={zoomedImage ? (()=>{const original=[...mainImages,...secondaryImages,...aplusImages,...brandStoryImages].find(image=>image.id===zoomedImage.id) ?? zoomedImage;const unit=imageTaggingUnits(aplusImages,sourceLayout).find(unit=>unit.images.some(image=>image.id===zoomedImage.id));return unit?.module ? {...unit.primary,module:unit.module,moduleImages:unit.images} : original;})() : null} canEdit={allowEdit} onClose={() => setZoomedImage(null)} />
     </div>
   );
 }

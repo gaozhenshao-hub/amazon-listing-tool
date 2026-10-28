@@ -12,8 +12,8 @@ describe("Amazon acquisition direct-ingestion surface", () => {
     expect(router).toContain("confirmReview: protectedProcedure.input(AcquisitionReviewConfirmInputSchema)");
     expect(router).toContain("rejectReview: protectedProcedure.input(AcquisitionReviewRejectInputSchema)");
     expect(router).toContain("review: protectedProcedure.input(AcquisitionReviewReadInputSchema)");
-    expect(router).toContain("ingestLegacyPartialJob: protectedProcedure");
-    expect(router).toContain("confirmSnapshotForDirectIngestion({ workspaceId, snapshotId: snapshot.id, requestedBy: ctx.user.id })");
+    expect(router).toContain('supplementMissingImage: workspaceScopedProcedure("knowledge")');
+    expect(router).toContain('confirmCompletedCollection: workspaceScopedProcedure("knowledge")');
     expect(app).toContain('path="/knowledge/acquisition/review/:snapshotId"');
     expect(app).toContain('<PermissionGuard><AcquisitionReviewPage /></PermissionGuard>');
     expect(app).toContain('path="/knowledge/acquisition/job/:jobId"');
@@ -25,11 +25,11 @@ describe("Amazon acquisition direct-ingestion surface", () => {
 
   it("presents guarded direct ingestion instead of an acquisition review action", () => {
     const page = read("client/src/pages/acquisition/AcquisitionJobsPage.tsx");
-    expect(page).toContain("采集任务与直接录入");
-    expect(page).toContain("已安全保存的图片立即直接录入");
-    expect(page).toContain("缺失图片保留为可见缺口");
-    expect(page).toContain("历史任务：可直接录入已安全保存的图片");
-    expect(page).toContain("直接入库已保存图片");
+    expect(page).toContain("图片采集任务");
+    expect(page).toContain("全部素材齐全后自动入库并打标签");
+    expect(page).toContain("缺失的图片或视频可在对应位置单独补采、上传");
+    expect(page).toContain("采集重复 ASIN");
+    expect(page).toContain("KnowledgeCollectionForm");
     expect(page).toContain("自动安全校验中（无需人工审核）");
     expect(page).not.toContain("等待安全校验");
     expect(page).not.toContain("打开审核");

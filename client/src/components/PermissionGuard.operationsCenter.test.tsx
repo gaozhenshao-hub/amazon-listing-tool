@@ -69,21 +69,23 @@ describe.each(routes)("formal operations route $path", route => {
   });
   it("binds the actual App route, registry and flagged sidebar to the same directory", () => {
     const escapedPath = route.path.replaceAll("/", "\\/");
-    expect(appSource).toMatch(new RegExp(`MERGED_READONLY_FEATURES_ENABLED && \\(\\s*<Route path="${escapedPath}">`));
-    expect(appSource).toContain(`<PermissionGuard moduleId="ops" subModuleId="${route.directory}">\n              <OperationsCenter initialPanel="${route.panel}" />`);
+    expect(appSource).toContain(`<Route path="${route.path}">`);
+    expect(appSource.replace(/\s+/g, " ")).toContain(`<PermissionGuard moduleId="ops" subModuleId="${route.directory}"><OperationsCenter initialPanel="${route.panel}" />`);
     expect(PERMISSION_ROUTE_REGISTRY[route.path]).toEqual({ moduleId: "ops", subModuleId: route.directory, enforcement: "enforced" });
-    const flagStart = layoutSource.indexOf("...(MERGED_READONLY_FEATURES_ENABLED");
+    const flagStart = layoutSource.lastIndexOf("...(MERGED_READONLY_FEATURES_ENABLED", layoutSource.indexOf(`path: "${route.path}"`));
     const flagEnd = layoutSource.indexOf(": []),", flagStart);
-    expect(layoutSource.slice(flagStart, flagEnd)).toContain(`path: "${route.path}", requiredOpsDirectory: "${route.directory}"`);
+    expect(layoutSource).toContain(`path: "${route.path}", requiredOpsDirectory: "${route.directory}"`);
     expect(layoutSource).toContain('<MergedOperationsMenuEntry key={entry.path} directory={entry.requiredOpsDirectory}>{button}</MergedOperationsMenuEntry>');
   });
 });
-it("preserves legacy center, product overview, task management and diagnostic links", () => {
-  expect(appSource).toContain('<Route path="/ops/dashboard-upgrade">{() => <PermissionGuard><OperationsCenter /></PermissionGuard>}</Route>');
-  for (const [path, component] of [["/ops/products", "OpsProducts"], ["/ops/tasks", "OpsTaskManagement"]]) {
+it("redirects duplicate centers and tasks while preserving products and diagnostic access", () => {
+  expect(appSource).not.toContain('<Route path="/ops/dashboard-upgrade">');
+  expect(appSource).toContain('<Route path="/ops/tasks">{() => <Redirect to={`/ops/product-tasks${window.location.search}`} />}</Route>');
+  expect(appSource).not.toContain('import("./pages/ops/OpsTaskManagement")');
+  for (const [path, component] of [["/ops/products", "OpsProducts"]]) {
     expect(appSource).toContain(`<Route path="${path}">{() => <PermissionGuard><${component} /></PermissionGuard>}</Route>`);
     expect(layoutSource).toContain(`path: "${path}"`);
   }
-  expect(appSource).toContain('<OperationsReadOnlyOverview />');
-  expect(layoutSource).toContain('path: "/ops/read-only-overview"');
+  expect(appSource).not.toContain('<OperationsReadOnlyOverview />');
+  expect(layoutSource).not.toContain('path: "/ops/read-only-overview"');
 });

@@ -59,35 +59,4 @@ describe("Artifact source of truth v2", () => {
     expect(lifecycle).toContain("storagePending = true");
     expect(lifecycle).toContain("recordUnifiedArtifactConsumption");
   });
-
-  it("routes product, Listing, image, ads, and video inputs through current Artifacts", () => {
-    const sources = [
-      read("server/domains/product_development/analysis/informationSummaryService.ts"),
-      read("server/listingContext.ts"),
-      read("server/domains/image/routerContext.ts"),
-      read("server/routers/adStructure.ts"),
-      read("server/routers/videoScript.ts"),
-    ].join("\n");
-    expect(sources.match(/resolveCurrent(?:Business|DevAnalysis|ImageWorkflowStep)Artifact/g)?.length).toBeGreaterThanOrEqual(5);
-    expect(sources.match(/recordBusinessArtifactUse/g)?.length).toBeGreaterThanOrEqual(4);
-  });
-
-  it("uses governed complete snapshots on the Listing review surface while other review surfaces retain Artifact selection", () => {
-    for (const page of [
-      "client/src/pages/dev/DevAnalysisFlow.tsx",
-      "client/src/pages/ImageWorkflowPage.tsx",
-      "client/src/pages/AdStructurePage.tsx",
-      "client/src/pages/VideoScriptPage.tsx",
-    ]) {
-      expect(read(page)).toContain("BusinessArtifactVersionPicker");
-    }
-
-    const preview = read("client/src/pages/PreviewPage.tsx");
-    expect(preview).not.toContain("BusinessArtifactVersionPicker");
-    expect(preview).toContain("listGovernedCompleteRestoreSnapshots");
-    expect(preview).toContain("previewGovernedCompleteRestore");
-    expect(preview).toContain("restoreGovernedCompleteSnapshot");
-    expect(preview).toContain("旧版本历史（只读）");
-    expect(preview).toContain("不提供回滚操作");
-  });
 });

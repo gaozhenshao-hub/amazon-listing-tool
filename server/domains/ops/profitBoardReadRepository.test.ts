@@ -157,7 +157,7 @@ describe("profit board same-transaction fixed six-month source set", () => {
     expect(source).toHaveLength(2); expect(source[0].sql).toMatch(/status='completed' ORDER BY id DESC LIMIT 201 FOR SHARE$/u); expect(source[0].params).toEqual([7]);
     expect(source[0].sql).not.toMatch(/fileName|fileHash|CAST\(payload AS CHAR[^]* AS payload,/u);
     expect(source[1].params).toEqual([7, 11]); expect(source[1].sql).toMatch(/WHERE workspaceId=\? AND id=\? LIMIT 2 FOR SHARE$/u);
-    expect(source[1].sql).toContain("<=33554432"); expect(source[1].sql).toContain("DATE_FORMAT(createdAt,'%Y-%m-%d %H:%i:%s.%f')"); expect(source[1].sql).not.toContain("UNIX_TIMESTAMP");
+    expect(source[1].sql).toContain("<=67108864"); expect(source[1].sql).toContain("DATE_FORMAT(createdAt,'%Y-%m-%d %H:%i:%s.%f')"); expect(source[1].sql).not.toContain("UNIX_TIMESTAMP");
     const text = JSON.stringify(await repo.get(context(), input)); expect(text).toContain("2026-10-12 09:08:07.123000"); expect(text).not.toContain("2026-10-12T"); expect(text).not.toContain("fileUrl");
   });
   it("does not admit newly inserted or newly completed rows after locking candidate set", async () => {
@@ -196,7 +196,7 @@ describe("profit board same-transaction fixed six-month source set", () => {
     const result = await repo.get(context(), input); expect(result.status).toBe("ready"); expect(queries.filter(query => query.sql.includes("AND id=?"))).toHaveLength(1);
   });
   it("bounds cumulative payload before transfer and never slices a large latest candidate", async () => {
-    candidateOverride = [{ id: 11, workspaceId: 7, status: "completed", payloadBytes: 33_554_432, monthsBytes: 10 }];
+    candidateOverride = [{ id: 11, workspaceId: 7, status: "completed", payloadBytes: 67_108_864, monthsBytes: 10 }];
     const result = await repo.get(context(), input); expect(result).toMatchObject({ status: "invalid", reasonCode: "scan_incomplete" }); expect(queries.some(query => query.sql.includes("AND id=?"))).toBe(false);
   });
   it.each([{ id: 0 }, { id: "11" }, { workspaceId: 8 }, { status: "previewing" }, { payloadBytes: "5" }, { monthsBytes: -1 }])("rejects malformed frozen candidate metadata %j", async patch => {

@@ -7,7 +7,7 @@ export type AgentLibraryKey = z.infer<typeof AgentLibraryKeySchema>;
 
 export const AGENT_LIBRARY_ROLES = [
   { key: "finance", name: "爱看数据的小金", stages: ["月度利润变化分析"], requiresVision: false },
-  { key: "tagger", name: "打标签的小酷", stages: ["图片打标签"], requiresVision: true },
+  { key: "tagger", name: "打标签的小酷", stages: ["图片打标签", "视频打标签"], requiresVision: true },
   { key: "listing", name: "爱分析的小L", stages: ["竞品分析", "竞品对比", "Listing文案"], requiresVision: false },
   { key: "images", name: "图片策划助手", stages: ["图片策划"], requiresVision: true },
   { key: "knowledge", name: "知识问答助手", stages: ["知识问答"], requiresVision: false },

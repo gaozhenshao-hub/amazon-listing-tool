@@ -1,6 +1,6 @@
-import { TRPCError } from "@trpc/server";
+import { sanitizeSelectedSellingPoint, isTemplateOrEmptyFact } from "@shared/listingFactSafety";
 import { z } from "zod";
-import { containsTemplateFactInFreeText, excludeRawExamplesFromFactTree, formatSingleBulletIdentity, isTemplateOrEmptyFact, rawAttributeExampleValues, sanitizeListingFactTree, sanitizeListingProjectFacts, sanitizeSelectedSellingPoint, selectedPointContainsRawExamples } from "../../../../shared/listingFactSafety";
+import { syncCompetitorWorkflow } from '../competitorWorkflow';
 
 import {
   MAX_RETRIES,
@@ -34,17 +34,6 @@ import {
   type ListingAgentNodeId,
   type ListingGenerationNodeKey,
 } from "../listingAgentBridge";
-import { resolveWorkflowGuidance } from "../../knowledge/claimLedgerService";
-import { readCompleteAttributeText } from "./listingRawAttributeSource";
-import { resolveConfirmedListingCore } from "./listingConfirmedCore";
-import { persistGeneratedBulletCandidate } from "./listingCandidateProvenance";
-import { resolveCurrentConfirmedListingFacts } from "./listingFactSource";
-import { buildSellingPointPlanningResearch, formatSellingPointPlanningContext, normalizeSellingPointPlanningOutput, sellingPointResearchLimitations } from "./sellingPointPlanning";
-import { listingResearchBindingSchema, listingResearchIdsSchema, type ListingResearchBinding } from "../../../../shared/listingResearchSelection";
-import { assertListingResearchSelection, prepareListingResearchSelection } from "./listingResearchSelection";
-import { readActiveCompetitorResearch, renderActiveCompetitorResearchContext } from "./competitorActiveResearch";
-import { withListingLegacyJobEnqueueFence } from "./listingConfiguredAgentProjection";
-import { assertActiveCompetitorResearchScope } from "../../../services/competitorActiveResearch";
 
 export const LISTING_JOB_MODULE = "listing";
 
@@ -85,21 +74,12 @@ export const listingGenerationJobInput = z.object({
   agentRunId: z.string().max(80).optional(),
   agentNodeId: z.enum(["G1", "G2", "G3", "G4", "G5"]).optional(),
   emphasis: z.string().max(4_000).optional(),
-  analysisIds: listingResearchIdsSchema.optional(),
-  researchBinding: listingResearchBindingSchema.optional(),
   existingTitle: z.string().max(2_000).optional(),
   sellingPoint: sellingPointSchema.optional(),
-  coreRevisionId: z.number().int().positive().optional(),
-  coreInputHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   previousBullets: z.array(z.object({
     subtitle: z.string(),
     fullText: z.string(),
   })).max(9).optional(),
-  factBinding: z.object({
-    sourceFileId: z.number().int().positive(),
-    rawHash: z.string().regex(/^[a-f0-9]{64}$/),
-    factRevisionIds: z.array(z.number().int().positive()).min(1).max(100),
-  }).optional(),
   distillationBinding: z.object({
     ledgerKey: z.string().min(1).max(80).nullable().optional(),
     skillSlugs: z.array(z.string().min(1).max(128)).max(12).optional(),
@@ -107,37 +87,6 @@ export const listingGenerationJobInput = z.object({
 });
 
 export type ListingGenerationJobInput = z.infer<typeof listingGenerationJobInput>;
-
-/** Only the server-derived job snapshot can select research at execution time.
- * Old queued jobs must be re-created, never silently rebound to today's rows. */
-async function resolveBoundResearch(job: AiJobSnapshot, input: ListingGenerationJobInput) {
-  if (input.operation !== "sellingPoints") return null;
-  if (!input.researchBinding || !input.analysisIds
-    || job.projectId !== input.projectId
-    || JSON.stringify(input.analysisIds) !== JSON.stringify(input.researchBinding.analysisIds)) {
-    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "卖点方向任务缺少一致的竞品选集及来源版本，请重新选择并创建任务" });
-  }
-  return assertListingResearchSelection(input.researchBinding, {
-    projectId: input.projectId, workspaceId: job.workspaceId ?? null,
-  });
-}
-
-/** Admission check used both before Agent/Listing side effects and at enqueue. */
-export function assertListingResearchJobCompatible(active: AiJobSnapshot, input: {
-  projectId: number; userId: number; workspaceId?: number | null;
-  operation: ListingGenerationOperation; scopeKey?: string; researchBinding?: ListingResearchBinding;
-}) {
-  if (input.operation !== "sellingPoints") return;
-  const parsed = listingGenerationJobInput.safeParse(active.input);
-  if (!parsed.success || active.projectId !== input.projectId || active.userId !== input.userId
-    || (active.workspaceId ?? null) !== (input.workspaceId ?? null)
-    || parsed.data.operation !== input.operation || parsed.data.scopeKey !== (input.scopeKey || "main")
-    || !parsed.data.researchBinding || !input.researchBinding
-    || JSON.stringify(parsed.data.analysisIds) !== JSON.stringify(input.researchBinding.analysisIds)
-    || JSON.stringify(parsed.data.researchBinding) !== JSON.stringify(input.researchBinding)) {
-    throw new TRPCError({ code: "CONFLICT", message: "已有后台任务使用不同竞品范围或来源版本，请先查看或取消原任务，再提交新选集" });
-  }
-}
 
 const OPERATION_CONFIG: Record<Exclude<ListingGenerationOperation, "batch">, {
   nodeKey: ListingGenerationNodeKey;
@@ -155,39 +104,6 @@ const OPERATION_CONFIG: Record<Exclude<ListingGenerationOperation, "batch">, {
 };
 
 const NODE_ORDER: ListingAgentNodeId[] = ["G1", "G2", "G3", "G4", "G5"];
-
-const FACT_BOUND_OPERATIONS = new Set<ListingGenerationOperation>([
-  "sellingPoints", "title", "description", "searchTerms", "qa",
-]);
-
-function requiresCurrentFactBinding(operation: ListingGenerationOperation) {
-  return FACT_BOUND_OPERATIONS.has(operation);
-}
-
-function factBindingFromCurrentFacts(current: Awaited<ReturnType<typeof resolveCurrentConfirmedListingFacts>>) {
-  return {
-    sourceFileId: current.source.fileId,
-    rawHash: current.source.rawHash,
-    factRevisionIds: current.facts.map((fact) => fact.id).sort((left, right) => left - right),
-  };
-}
-
-async function resolveBoundFactsBeforeModel(input: ListingGenerationJobInput, workspaceId: number) {
-  if (!requiresCurrentFactBinding(input.operation)) return null;
-  const binding = input.factBinding;
-  if (!binding) {
-    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "旧AI任务缺少0204已审事实绑定；请先核对原始资料并重新创建候选" });
-  }
-  const current = await resolveCurrentConfirmedListingFacts({ projectId: input.projectId, workspaceId });
-  if (binding.sourceFileId !== current.source.fileId || binding.rawHash !== current.source.rawHash) {
-    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204事实账本或原始文件已变化；旧AI任务不得使用未绑定当前哈希的事实" });
-  }
-  const currentIds = new Set(current.facts.map((fact) => fact.id));
-  if (!binding.factRevisionIds.every((id) => currentIds.has(id))) {
-    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204已确认事实已变化或过期；请重新核对后再生成" });
-  }
-  return current.facts.filter((fact) => binding.factRevisionIds.includes(fact.id));
-}
 
 function compactText(value: unknown, maxChars: number) {
   const text = typeof value === "string" ? value : JSON.stringify(value ?? null);
@@ -340,27 +256,17 @@ export async function syncListingPreparationNodes(input: {
   userId: number;
   workspaceId?: number | null;
   agentRunId?: string | null;
-  researchBinding?: ListingResearchBinding;
 }) {
   if (!input.agentRunId) return;
-  const project = await db.getProjectByIdAdmin(input.projectId, input.workspaceId ?? null);
+  const project = await db.getProjectByIdAdmin(input.projectId, input.workspaceId);
   if (!project) return;
-  const selectedResearch = input.researchBinding ? await assertListingResearchSelection(input.researchBinding, {
-    projectId: input.projectId, workspaceId: input.workspaceId ?? null,
-  }) : null;
-  const [analyses, comparison, enrichedData, keywords, reviewAggregation, buyerQuestions] = await Promise.all([
-    selectedResearch ? Promise.resolve(selectedResearch.competitors) : db.getCompetitorAnalysesByProject(input.projectId),
-    selectedResearch ? Promise.resolve(selectedResearch.confirmedComparison) : db.getLatestConfirmedCompetitorComparisonReport(input.projectId),
+  const [analyses, comparison, enrichedData, keywords, buyerQuestions] = await Promise.all([
+    db.getCompetitorAnalysesByProject(input.projectId),
+    db.getLatestConfirmedCompetitorComparisonReport(input.projectId),
     loadEnrichedData(input.projectId),
     db.getKeywordsByProject(input.projectId),
-    selectedResearch ? Promise.resolve(null) : db.getReviewAggregationByProject(input.projectId),
     db.getActiveBuyerQuestionsByProject(input.projectId),
   ]);
-  // Reject private adopted research from another scope before any preparation
-  // checkpoint/artifact is written, including the legacy unbound path.
-  for (const analysis of analyses) assertActiveCompetitorResearchScope(analysis, readActiveCompetitorResearch(analysis), {
-    projectId: input.projectId, workspaceId: input.workspaceId ?? null, userId: input.userId,
-  });
   const shared = {
     agentRunId: input.agentRunId,
     projectId: input.projectId,
@@ -378,23 +284,14 @@ export async function syncListingPreparationNodes(input: {
       targetMarket: project.targetMarket,
     },
   });
-  await syncListingPreparationNodeConfirmed({
-    ...shared,
-    nodeId: "N1",
-    output: analyses.slice(0, 20).map((analysis: any) => ({
-      id: analysis.id,
-      asin: analysis.asin,
-      summary: readActiveCompetitorResearch(analysis).status === "legacy"
-        ? analysis.summary || compactText(analysis.analysisResult, 1_000) : renderActiveCompetitorResearchContext(analysis),
-      summaryStatus: readActiveCompetitorResearch(analysis).status === "unavailable" ? "unavailable" : analysis.summaryStatus,
-    })),
-  });
+  // N1 is shared with acquisition; drafts must not be implicitly approved here.
+  await syncCompetitorWorkflow({ agentRunId: input.agentRunId });
   await syncListingPreparationNodeConfirmed({
     ...shared,
     nodeId: "N2",
     output: comparison || { available: false, reason: "暂无已确认竞品对比" },
   });
-  const productAttributes = enrichedData?.productAttributes;
+  const productAttributes = enrichedData?.productAttributes || project.productSpecs;
   await syncListingPreparationNodeConfirmed({
     ...shared,
     nodeId: "N3",
@@ -408,16 +305,7 @@ export async function syncListingPreparationNodes(input: {
   await syncListingPreparationNodeConfirmed({
     ...shared,
     nodeId: "N5",
-    output: selectedResearch || analyses.some(analysis => readActiveCompetitorResearch(analysis).status !== "legacy") ? {
-      source: "current_competitor_review_research", researchSelection: selectedResearch?.binding ?? null,
-      projectAggregationExcluded: true,
-      records: analyses.slice(0, 20).map(analysis => ({ analysisId: analysis.id, asin: analysis.asin,
-        reviewAnalysis: readActiveCompetitorResearch(analysis).status === "legacy"
-          ? analysis.reviewAnalysis ? compactText(analysis.reviewAnalysis, 1_000) : null : null,
-        ...(readActiveCompetitorResearch(analysis).status !== "legacy"
-          ? { activeResearch: renderActiveCompetitorResearchContext(analysis) } : {}) })),
-      omittedRecordCount: Math.max(0, analyses.length - 20),
-    } : reviewAggregation || { available: false, reason: "暂无评论聚合分析" },
+    output: analyses.filter((a:any)=>a.summaryStatus==='confirmed').map((a:any)=>{const raw=JSON.parse(a.rawData||'{}');return {asin:a.asin,reviewReport:raw.presentation?.reviewReport||null};}),
   });
 }
 
@@ -437,9 +325,8 @@ function jobTargetsNode(job: AiJobSnapshot, nodeId: ListingAgentNodeId) {
     : parsed.data.nodeId === nodeId;
 }
 
-export async function listListingGenerationJobs(userId: number, projectId: number, workspaceId?: number | null) {
-  const jobs = await listAiJobRunsForUser(userId, { module: LISTING_JOB_MODULE, projectId, limit: 100 });
-  return workspaceId === undefined ? jobs : jobs.filter(job => job.workspaceId === workspaceId);
+export async function listListingGenerationJobs(userId: number, projectId: number) {
+  return listAiJobRunsForUser(userId, { module: LISTING_JOB_MODULE, projectId, limit: 100 });
 }
 
 export async function getLatestListingNodeJob(
@@ -447,9 +334,8 @@ export async function getLatestListingNodeJob(
   projectId: number,
   nodeId: ListingAgentNodeId,
   scopeKey?: string,
-  workspaceId?: number | null,
 ) {
-  const jobs = await listListingGenerationJobs(userId, projectId, workspaceId);
+  const jobs = await listListingGenerationJobs(userId, projectId);
   return jobs.find((job) => {
     if (!jobTargetsNode(job, nodeId)) return false;
     if (!scopeKey) return true;
@@ -481,115 +367,25 @@ async function confirmedArtifactContext(agentRunId: string | undefined, currentN
   )).join("\n\n");
 }
 
-async function buildJobContext(
-  job: AiJobSnapshot,
-  input: ListingGenerationJobInput,
-  operation: ListingGenerationOperation,
-  confirmedFacts: Awaited<ReturnType<typeof resolveCurrentConfirmedListingFacts>>["facts"] | null = null,
-) {
-  const project = await db.getProjectByIdAdmin(input.projectId, job.workspaceId ?? null);
-  if (!project) throw new Error("项目不存在");
-  if (requiresCurrentFactBinding(operation)) {
-    if (!confirmedFacts?.length) {
-      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204事实账本没有可用于AI的当前已确认产品事实" });
-    }
-    // Product identity is not product proof. Every product assertion must
-    // originate in this ledger; planning research is a separate, labeled input.
-    const identity = {
-      productName: project.productName || project.name || "",
-      brand: project.brand || "",
-      category: project.category || "",
-      targetMarket: project.targetMarket || "",
-    };
-    const sourceFacts = confirmedFacts.map((fact) => ({
-      id: fact.id,
-      attributeKey: fact.attributeKey,
-      value: fact.value,
-    }));
-    const factContext = [
-      "--- Product identity (not proof of specifications) ---",
-      JSON.stringify(identity),
-      "--- Current 0204 human-confirmed product facts; the only product-claim evidence ---",
-      JSON.stringify(sourceFacts),
-      "--- Mandatory fact boundary ---",
-      "Use only the confirmed facts above for any product specification, material, performance, certification, compatibility, warranty, pack quantity, comparison, or benefit claim. Do not infer our product facts from competitor data, reviews, keywords, historical Listing text, or general category knowledge. If the facts do not support a claim, omit it rather than guessing.",
-    ].join("\n");
-    if (operation === "sellingPoints") {
-      const selectedResearch = await resolveBoundResearch(job, input);
-      if (!selectedResearch) throw new Error("卖点方向缺少已绑定竞品研究");
-      const [keywords, buyerQuestions] = await Promise.all([
-        db.getKeywordsByProject(input.projectId),
-        db.getActiveBuyerQuestionsByProject(input.projectId),
-      ]);
-      const planningResearch = buildSellingPointPlanningResearch({
-        projectId: input.projectId, competitors: selectedResearch.competitors,
-        reviewAggregation: null, keywords, buyerQuestions,
-        confirmedComparison: selectedResearch.confirmedComparison, researchSelection: selectedResearch.binding,
-      });
-      return {
-        project: identity, analyses: [], enrichedData: {}, rawExamples: [],
-        context: formatSellingPointPlanningContext({ factContext, research: planningResearch, emphasis: input.emphasis }),
-        variables: { project: identity, confirmedFacts: sourceFacts, planningResearch },
-      };
-    }
-    return {
-      project: identity,
-      analyses: [],
-      enrichedData: {},
-      rawExamples: [],
-      context: factContext,
-      variables: { project: identity, confirmedFacts: sourceFacts },
-    };
-  }
-  const [analyses, enrichedData, artifactContext, distillationGuidance] = await Promise.all([
+async function buildJobContext(job: AiJobSnapshot, input: ListingGenerationJobInput) {
+  const project = await db.getProjectByIdAdmin(input.projectId, job.workspaceId);
+  if (!project || (project.workspaceId ?? null) !== job.workspaceId) throw new Error("项目不存在");
+  const [analyses, enrichedData, artifactContext] = await Promise.all([
     db.getCompetitorAnalysesByProject(input.projectId),
     loadEnrichedData(input.projectId),
     confirmedArtifactContext(input.agentRunId, input.nodeId),
-    input.distillationBinding
-      ? resolveWorkflowGuidance({ workspaceId: job.workspaceId || Number(project.workspaceId || 0), ...input.distillationBinding })
-      : Promise.resolve(null),
   ]);
-  const guardFacts = operation === "sellingPoints" || operation === "singleBullet" || operation === "bullets";
-  let safeProject = guardFacts ? sanitizeListingProjectFacts(project).project : project;
-  // Product attribute extraction is AI-generated and not a confirmation of
-  // facts. Pair the latest completed analysis with its own original upload:
-  // an extractor may have stripped the "example" tag while keeping its value.
-  let safeEnriched = enrichedData;
-  let rawExamples: string[] = [];
-  if (guardFacts) {
-    const files = await db.getProjectFilesByProject(input.projectId);
-    const latest = files.find((file) => file.fileType === "product_attributes"
-      && file.status === "completed" && file.analysisResult);
-    let attributes: unknown = null;
-    if (latest) {
-      const rawText = await readCompleteAttributeText(latest, job.workspaceId ?? null);
-      rawExamples = rawAttributeExampleValues(rawText);
-      try {
-        const parsed = JSON.parse(latest.analysisResult!);
-        const cleaned = sanitizeListingFactTree(parsed, "productAttributes").value;
-        attributes = excludeRawExamplesFromFactTree(cleaned, rawExamples, "productAttributes").value;
-      } catch { /* malformed analysis is not evidence */ }
-    }
-    safeProject = (excludeRawExamplesFromFactTree(safeProject, rawExamples, "project").value || safeProject) as typeof project;
-    safeEnriched = { ...enrichedData, productAttributes: attributes };
-  }
-  const safeGuidance = !guardFacts || !distillationGuidance || !containsTemplateFactInFreeText(JSON.stringify(distillationGuidance))
-    ? distillationGuidance : null;
-  let context = buildProductContext(safeProject, analyses, safeEnriched, {
-    projectId: input.projectId, workspaceId: job.workspaceId ?? null, userId: job.userId,
-  });
-  if (artifactContext && (!guardFacts || !containsTemplateFactInFreeText(artifactContext))) context += `\n\n${artifactContext}`;
-  if (safeGuidance) context += `\n\n--- 用户显式选择的知识蒸馏指导（只读） ---\n${compactText(safeGuidance, 6_000)}`;
+  let context = buildProductContext(project, analyses, enrichedData);
+  if (artifactContext) context += `\n\n${artifactContext}`;
   if (input.emphasis?.trim()) {
     context += `\n\n--- 用户重点强调 ---\n${input.emphasis.trim()}`;
   }
   return {
-    project: safeProject,
+    project,
     analyses,
-    enrichedData: safeEnriched,
-    rawExamples,
+    enrichedData,
     context: compactText(context, 28_000),
-    variables: { project: safeProject, analyses, enrichedData: safeEnriched, distillationGuidance: safeGuidance },
+    variables: { project, analyses, enrichedData },
   };
 }
 
@@ -600,122 +396,36 @@ async function callListingSkill(
   skillSlug: string,
   promptContext: string,
   variables: Record<string, unknown>,
-  onExecution?: (audit: { runId: string; modelSlug: string | null; fallbackCount: number | null; skillVersion: string | null; executionPreset: string }) => void,
 ) {
-  await resolveBoundResearch(job, input);
-  if (requiresCurrentFactBinding(input.operation)) {
-    if (!job.workspaceId) {
-      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204事实账本需要当前工作空间，Worker拒绝执行未绑定人审事实的AI任务" });
-    }
-    // Also applies to quality retries: a source replacement or invalidated fact
-    // after the first response must stop before another provider invocation.
-    await resolveBoundFactsBeforeModel(input, job.workspaceId);
-  }
-  const planningResearch = variables.planningResearch as ReturnType<typeof buildSellingPointPlanningResearch> | undefined;
-  if (input.operation === "sellingPoints" && !planningResearch) {
-    throw new Error("卖点方向缺少研究来源状态，不能调用模型");
-  }
   const result = await runEmperorSkill<any>({
     skillSlug,
     userId: job.userId,
     workspaceId: job.workspaceId,
-    // A manifest's qualityModelPolicy is only active for this explicit preset.
-    // Other Listing skills keep their existing route until separately reviewed.
-    ...(skillSlug === "listing.bullet.step.generate" ? { executionPreset: "quality_first" as const } : {}),
     context: promptContext,
-    // A free-text emphasis may be copied from a historical Listing or describe
-    // an unreviewed specification, so it cannot be a second evidence channel.
-    emphasis: requiresCurrentFactBinding(input.operation) ? undefined : input.emphasis,
+    emphasis: input.emphasis,
     variables: {
       context: promptContext,
-      emphasis: requiresCurrentFactBinding(input.operation) ? "" : input.emphasis || "",
+      emphasis: input.emphasis || "",
       ...variables,
     },
     signal: context.signal,
     maxModelAttempts: 3,
-    validate: (content) => {
-      const parsed = parseSkillJson(content);
-      return input.operation === "sellingPoints" ? normalizeSellingPointPlanningOutput(parsed, planningResearch) : parsed;
-    },
-  });
-  // The source file or a human-confirmed fact can change while inference runs.
-  // Never return a now-stale field result to the waiting-human checkpoint.
-  if (requiresCurrentFactBinding(input.operation)) {
-    await resolveBoundFactsBeforeModel(input, job.workspaceId!);
-  }
-  await resolveBoundResearch(job, input);
-  onExecution?.({
-    runId: result.runId,
-    modelSlug: result.modelSlug || null,
-    fallbackCount: Number.isInteger(result.fallbackCount) ? result.fallbackCount : null,
-    skillVersion: result.skillVersion == null ? null : String(result.skillVersion),
-    executionPreset: "quality_first",
+    validate: parseSkillJson,
   });
   return result.parsed;
 }
 
-function normalizeSellingPoints(parsed: any, research: ReturnType<typeof buildSellingPointPlanningResearch>) {
-  return {
-    ...normalizeSellingPointPlanningOutput(parsed, research),
-    // Server-derived provenance: a model cannot hide unavailable research.
-    researchLimitations: sellingPointResearchLimitations(research),
-  };
-}
-
-const generatedFieldOutputSchemas = {
-  title: z.object({
-    titles: z.array(z.object({ title: z.string().min(1), itemHighlights: z.string().min(1) })).min(1),
-  }).passthrough(),
-  description: z.object({
-    description: z.string().min(1),
-    htmlDescription: z.string().min(1),
-    characterCount: z.number().finite().optional(),
-    keywordsUsed: z.array(z.string()).optional(),
-  }).passthrough(),
-  searchTerms: z.object({
-    searchTerms: z.string().min(1),
-    byteCount: z.number().finite().optional(),
-    categories: z.object({
-      synonyms: z.array(z.string()), relatedTerms: z.array(z.string()),
-      alternateSpellings: z.array(z.string()), useCases: z.array(z.string()),
-    }).optional(),
-  }).passthrough(),
-  qa: z.object({
-    qaItems: z.array(z.object({
-      question: z.string().min(1), answer: z.string().min(1), category: z.string().min(1), priority: z.string().min(1),
-    }).passthrough()).min(1),
-  }).passthrough(),
-} as const;
-
-function assertGeneratedFieldOutputSchema(
-  operation: ListingGenerationOperation,
-  parsed: unknown,
-) {
-  if (!(operation in generatedFieldOutputSchemas)) return parsed;
-  const result = generatedFieldOutputSchemas[operation as keyof typeof generatedFieldOutputSchemas].safeParse(parsed);
-  if (!result.success) {
-    throw new Error(`${OPERATION_CONFIG[operation as Exclude<ListingGenerationOperation, "batch">].label}生成结果不符合当前JSON schema，候选不可展示或确认`);
+function normalizeSellingPoints(parsed: any) {
+  const sellingPoints = parsed?.sellingPoints || parsed?.selling_points || parsed?.points
+    || parsed?.bulletCores || parsed?.cores || parsed?.themes;
+  if (!Array.isArray(sellingPoints) || sellingPoints.length === 0) {
+    throw new Error("卖点核心生成结果缺少 sellingPoints");
   }
-  return result.data;
-}
-
-/** Pure validation shared by the configured lane. This does not run a Skill,
- * persist a candidate, retry a provider, or change legacy job behavior. */
-export function validateConfiguredListingOutput(operation: Exclude<ListingGenerationOperation, "batch">, raw: unknown,
-  input: ListingGenerationJobInput, research?: ReturnType<typeof buildSellingPointPlanningResearch>) {
-  let candidate: Record<string, unknown>;
-  try {
-    const parsed = assertGeneratedFieldOutputSchema(operation, raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("JSON object required");
-    candidate = parsed as Record<string, unknown>;
-    if (operation === "sellingPoints") {
-      if (!research) throw new Error("Research binding missing");
-      candidate = normalizeSellingPoints(parsed, research);
-    }
-  } catch { return { candidate: null, issues: ["OUTPUT_CONTRACT_INVALID"], formatInvalid: true }; }
-  const quality = operation === "singleBullet" ? validateSingleBulletQuality(candidate, input)
-    : operation === "title" ? validateTitles(candidate) : operation === "bullets" ? validateBullets(candidate) : { valid: true, issues: [] };
-  return { candidate, issues: quality.valid ? [] : quality.issues.map(String), formatInvalid: false };
+  return {
+    ...parsed,
+    sellingPoints,
+    overallStrategy: parsed.overallStrategy || parsed.overall_strategy || parsed.strategy || parsed.summary || "",
+  };
 }
 
 async function runOperation(
@@ -725,76 +435,26 @@ async function runOperation(
   operation: Exclude<ListingGenerationOperation, "batch">,
   transientOutputs: Record<string, unknown> = {},
 ) {
-  const selected = operation === "singleBullet" && input.sellingPoint
-    ? sanitizeSelectedSellingPoint(input.sellingPoint) : null;
-  if (operation === "singleBullet" && !selected?.canGenerate) {
-    throw new Error("卖点核心无可用产品事实；请先编辑并确认，空白与示例字段不可用于生成");
-  }
-  if ((operation === "sellingPoints" || operation === "singleBullet" || operation === "bullets")
-      && input.emphasis && containsTemplateFactInFreeText(input.emphasis)) {
-    throw new Error("重点强调含空白或示例数值；请确认真实数据后重试");
-  }
-  if (requiresCurrentFactBinding(operation) && !job.workspaceId) {
-    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204事实账本需要当前工作空间，Worker拒绝执行未绑定人审事实的AI任务" });
-  }
-  if (requiresCurrentFactBinding(operation)) {
-    // Scope validation precedes a ledger read so a job for a moved/deleted
-    // project cannot inspect another workspace's raw-upload metadata.
-    const project = await db.getProjectByIdAdmin(input.projectId, job.workspaceId!);
-    if (!project) throw new Error("项目不存在");
-  }
-  // Re-read raw file + confirmed revisions immediately before building the
-  // model prompt. Historical queued jobs without the binding fail closed.
-  const confirmedFacts = requiresCurrentFactBinding(operation)
-    ? await resolveBoundFactsBeforeModel(input, job.workspaceId!)
-    : null;
-  const built = await buildJobContext(job, input, operation, confirmedFacts);
-  if (operation === "singleBullet" && selectedPointContainsRawExamples(selected!.point, built.rawExamples)) {
-    throw new Error("卖点核心包含原始属性表的示例值；请核实真实参数并修改核心后再生成");
-  }
+  const built = await buildJobContext(job, input);
   const config = OPERATION_CONFIG[operation];
   let promptContext = built.context;
   const variables: Record<string, unknown> = { ...built.variables, ...transientOutputs };
 
   if (operation === "singleBullet") {
-    const previous = (input.previousBullets || []).filter((bullet) =>
-      !containsTemplateFactInFreeText(`${bullet.subtitle}\n${bullet.fullText}`));
-    promptContext = `${formatSingleBulletIdentity(built.project)}\n\n--- 人工选中的卖点核心；非示例事实 ---\n${JSON.stringify(selected!.point)}\n--- 其他已确认卖点；仅供避免重复，不作本品证据 ---\n${JSON.stringify(previous)}\n仅输出一条 {subtitle,fullText,evidenceUsed,keywordsUsed,distinctFromPrevious,qualityAudit} JSON。被过滤的空值/示例不得补全或写入文案；不足事实时请拒绝编造。`;
+    if (!input.sellingPoint) throw new Error("缺少待生成的卖点核心");
+    promptContext += `\n\n--- 单条五点描述任务 ---\n只生成一条五点描述。卖点核心：${JSON.stringify(input.sellingPoint)}\n已确认五点：${JSON.stringify(input.previousBullets || [])}\n输出可使用 {bulletPoints:[...]} 或单条 {subtitle,fullText} JSON。`;
     variables.mode = "single_bullet";
-    variables.sellingPoint = selected!.point;
-    variables.previousBullets = previous;
-    variables.excludedFactPaths = selected!.excludedFields;
-    delete variables.project;
-    delete variables.analyses;
-    delete variables.enrichedData;
-    delete variables.distillationGuidance;
-  } else if (operation === "searchTerms" && input.existingTitle && !requiresCurrentFactBinding(operation)) {
+    variables.sellingPoint = input.sellingPoint;
+    variables.previousBullets = input.previousBullets || [];
+  } else if (operation === "searchTerms" && input.existingTitle) {
     promptContext += `\n\n当前已确认标题（搜索词不得重复）：${input.existingTitle}`;
     variables.existingTitle = input.existingTitle;
   }
 
-  let executionAudit: { runId: string; modelSlug: string | null; fallbackCount: number | null; skillVersion: string | null; executionPreset: string } | undefined;
-  const captureExecution = operation === "singleBullet" ? (audit: NonNullable<typeof executionAudit>) => { executionAudit = audit; } : undefined;
-  let parsed = await callListingSkill(job, handlerContext, input, config.skillSlug, promptContext, variables, captureExecution);
-  parsed = assertGeneratedFieldOutputSchema(operation, parsed);
-  if ((operation === "sellingPoints" || operation === "bullets") && built.rawExamples.length
-      && excludeRawExamplesFromFactTree(parsed, built.rawExamples, "output").excludedFields.length) {
-    throw new Error("生成结果引用了原始产品属性表的示例值；此候选不可确认，请核实真实事实");
-  }
-  if (operation === "sellingPoints") {
-    if (!("planningResearch" in built.variables) || !built.variables.planningResearch) {
-      throw new Error("卖点方向缺少研究来源状态，不能展示未经核验的策划结果");
-    }
-    const selectedResearch = await resolveBoundResearch(job, input);
-    if (!selectedResearch) throw new Error("卖点方向缺少已绑定竞品研究");
-    return { ...normalizeSellingPoints(parsed, built.variables.planningResearch),
-      // Never trust a model-supplied selection or version label.
-      researchSelection: { ...selectedResearch.binding, analyzedAsins: [...new Set(selectedResearch.competitors
-        .map(row => row.asin).filter(asin => typeof asin === "string" && asin.trim().length > 0))] },
-    };
-  }
+  let parsed = await callListingSkill(job, handlerContext, input, config.skillSlug, promptContext, variables);
+  if (operation === "sellingPoints") return normalizeSellingPoints(parsed);
   if (operation === "singleBullet") {
-    let bullet = parsed;
+    let bullet = parsed?.bulletPoints?.[0] || parsed?.bullets?.[0] || parsed;
     let quality = validateSingleBulletQuality(bullet, input);
     for (let attempt = 0; attempt < MAX_RETRIES && !quality.valid; attempt += 1) {
       parsed = await callListingSkill(
@@ -804,28 +464,12 @@ async function runOperation(
         config.skillSlug,
         `${promptContext}\n\n上次逐条卖点质量门禁未通过：${quality.issues.join("；")}。请仅依据输入事实完整重写当前选中卖点的一条英文JSON Bullet，且不要解释。`,
         { ...variables, previousOutput: bullet, qualityIssues: quality.issues },
-        captureExecution,
       );
-      bullet = parsed;
+      bullet = parsed?.bulletPoints?.[0] || parsed?.bullets?.[0] || parsed;
       quality = validateSingleBulletQuality(bullet, input);
     }
     if (!quality.valid) throw new Error(`单条五点描述质量验证未通过：${quality.issues.join("；")}`);
-    if (!job.workspaceId || !input.coreRevisionId || !input.coreInputHash)
-      throw new Error("单条候选失去已审事实版本绑定，不能保存结果");
-    const approved = await resolveConfirmedListingCore({ projectId: input.projectId, workspaceId: job.workspaceId,
-      coreRevisionId: input.coreRevisionId, coreInputHash: input.coreInputHash });
-    if (!executionAudit) throw new Error("单条卖点缺少实际Skill Run审计，不能保存候选");
-    const candidate = await persistGeneratedBulletCandidate({
-      projectId: input.projectId, workspaceId: job.workspaceId, userId: job.userId,
-      jobRunId: job.runId, coreRevisionId: input.coreRevisionId, coreInputHash: input.coreInputHash,
-      execution: executionAudit, bullet,
-      factRevisions: approved.factRevisions, issues: quality.issues, characterCount: quality.characterCount,
-    });
-    return { ...bullet, factSafety: { excludedFields: selected!.excludedFields, requiresHumanReview: true },
-      characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true,
-      candidateId: candidate.id, candidateRevision: candidate.candidateRevision,
-      executionAudit: { modelSlug: executionAudit.modelSlug, fallbackCount: executionAudit.fallbackCount,
-        skillVersion: executionAudit.skillVersion, executionPreset: executionAudit.executionPreset } };
+    return { ...bullet, characterCount: quality.characterCount, actualCharacterCount: quality.characterCount, inRange: true };
   }
   if (operation === "title") {
     let validation = validateTitles(parsed);
@@ -838,7 +482,6 @@ async function runOperation(
         `${promptContext}\n\n上次标题校验未通过：${validation.issues.join("；")}。请修正并重新输出完整 JSON。`,
         { ...variables, previousOutput: parsed, validationIssues: validation.issues },
       );
-      parsed = assertGeneratedFieldOutputSchema(operation, parsed);
       validation = validateTitles(parsed);
     }
   }
@@ -854,9 +497,6 @@ async function runOperation(
         { ...variables, previousOutput: parsed, validationIssues: validation.issues },
       );
       validation = validateBullets(parsed);
-    }
-    if (built.rawExamples.length && excludeRawExamplesFromFactTree(parsed, built.rawExamples, "output").excludedFields.length) {
-      throw new Error("五点重试结果引用了原始产品属性表的示例值；此候选不可确认");
     }
   }
   return parsed;
@@ -878,7 +518,7 @@ async function reportNodeProgress(job: AiJobSnapshot, input: ListingGenerationJo
 }
 
 async function latestJobStillOwnsNode(job: AiJobSnapshot, nodeId: ListingAgentNodeId) {
-  const latest = await getLatestListingNodeJob(job.userId, Number(job.projectId), nodeId, undefined, job.workspaceId ?? null);
+  const latest = await getLatestListingNodeJob(job.userId, Number(job.projectId), nodeId);
   return latest?.runId === job.runId;
 }
 
@@ -932,75 +572,26 @@ async function runBatchJob(job: AiJobSnapshot, context: AiJobHandlerContext, inp
 
 export async function runListingGenerationJob(job: AiJobSnapshot, context: AiJobHandlerContext) {
   const input = listingGenerationJobInput.parse(job.input);
-  if (input.operation === "batch" || input.operation === "bullets") {
-    throw new Error("历史整套卖点任务未绑定逐条已审事实与核心版本，Worker拒绝执行模型调用；请从人审候选重新开始");
-  }
-  await resolveBoundResearch(job, input);
+  if (input.operation === "batch") return runBatchJob(job, context, input);
   await reportNodeProgress(job, input, input.nodeId, 15);
-  let executionInput = input;
-  if (input.operation === "singleBullet") {
-    if (!job.workspaceId || !input.coreRevisionId || !input.coreInputHash)
-      throw new Error("单条卖点须绑定当前已人工确认的核心版本和事实摘要，旧自由文本入口已停用");
-    const confirmedCore = await resolveConfirmedListingCore({ projectId: input.projectId, workspaceId: job.workspaceId,
-      coreRevisionId: input.coreRevisionId, coreInputHash: input.coreInputHash });
-    executionInput = { ...input, sellingPoint: confirmedCore.sellingPoint };
-  }
-  const result = await runOperation(job, context, executionInput, input.operation);
+  const result = await runOperation(job, context, input, input.operation);
   if (context.signal.aborted) throw new Error(`${OPERATION_CONFIG[input.operation].label}任务已取消`);
   if (!await latestJobStillOwnsNode(job, input.nodeId)) {
     return { skipped: true, reason: `${input.nodeId} 已有更新的任务` };
   }
   await reportNodeProgress(job, input, input.nodeId, 90);
-  await resolveBoundResearch(job, input);
   return result;
 }
 
 export async function startListingGenerationJob(input: ListingGenerationJobInput & {
   userId: number;
   workspaceId?: number | null;
-}, preparedResearchBinding?: ListingResearchBinding) {
-  if (input.operation === "batch" || input.operation === "bullets") {
-    throw new Error("旧整套卖点任务缺少逐条已审事实及核心版本绑定，拒绝创建模型任务；请使用单条候选人审流程");
-  }
-  if (input.operation === "singleBullet") {
-    if (!input.workspaceId || !input.coreRevisionId || !input.coreInputHash)
-      throw new Error("单条卖点须先确认事实和卖点核心版本，再创建生成任务");
-    await resolveConfirmedListingCore({ projectId: input.projectId, workspaceId: input.workspaceId,
-      coreRevisionId: input.coreRevisionId, coreInputHash: input.coreInputHash });
-  }
-  let jobInput: ListingGenerationJobInput & { userId: number; workspaceId?: number | null } = input;
-  if (requiresCurrentFactBinding(input.operation)) {
-    if (!input.workspaceId) {
-      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "0204事实账本需要当前工作空间，无法启动未绑定人审事实的AI任务" });
-    }
-    const currentFacts = await resolveCurrentConfirmedListingFacts({
-      projectId: input.projectId,
-      workspaceId: input.workspaceId,
-    });
-    // Never trust a browser-provided binding. The job snapshot records only the
-    // service-derived raw hash and current confirmed fact revisions.
-    jobInput = { ...input, factBinding: factBindingFromCurrentFacts(currentFacts) };
-  }
-  if (input.operation === "sellingPoints") {
-    // The optional second argument is internal preflight state, never part of
-    // the public RPC. It is revalidated, not accepted as browser authority.
-    const research = preparedResearchBinding
-      ? await assertListingResearchSelection(preparedResearchBinding, { projectId: input.projectId, workspaceId: input.workspaceId ?? null })
-      : await prepareListingResearchSelection({ projectId: input.projectId, workspaceId: input.workspaceId ?? null, analysisIds: input.analysisIds });
-    if (preparedResearchBinding && (research.binding.mode !== (input.analysisIds === undefined ? "legacy_all" : "explicit")
-      || (input.analysisIds !== undefined && JSON.stringify([...listingResearchIdsSchema.parse(input.analysisIds)].sort((a, b) => a - b)) !== JSON.stringify(research.binding.analysisIds)))) {
-      throw new TRPCError({ code: "CONFLICT", message: "竞品选集在提交过程中发生变化，请重新确认" });
-    }
-    jobInput = { ...jobInput, analysisIds: research.binding.analysisIds, researchBinding: research.binding };
-  }
-  const active = await getLatestListingNodeJob(input.userId, input.projectId, input.nodeId, input.scopeKey || "main", input.workspaceId ?? null);
-  if (active?.status === "queued" || active?.status === "running") {
-    assertListingResearchJobCompatible(active, jobInput);
-    return active;
-  }
-  const label = OPERATION_CONFIG[input.operation].label;
-  const skillSlug = OPERATION_CONFIG[input.operation].skillSlug;
-  const job = await withListingLegacyJobEnqueueFence({ projectId: input.projectId, userId: input.userId, workspaceId: input.workspaceId }, () => createAiJobRun({
+}) {
+  const active = await getLatestListingNodeJob(input.userId, input.projectId, input.nodeId);
+  if (active?.status === "queued" || active?.status === "running") return active;
+  const label = input.operation === "batch" ? "Listing 批量五步" : OPERATION_CONFIG[input.operation].label;
+  const skillSlug = input.operation === "batch" ? "listing.*" : OPERATION_CONFIG[input.operation].skillSlug;
+  const job = await createAiJobRun({
     kind: `listing.generation.${input.operation}`,
     module: LISTING_JOB_MODULE,
     procedure: "listing.startGenerationJob",
@@ -1008,11 +599,11 @@ export async function startListingGenerationJob(input: ListingGenerationJobInput
     userId: input.userId,
     projectId: input.projectId,
     skillSlug,
-    input: { ...jobInput, agentRunId: jobInput.agentRunId, agentNodeId: jobInput.nodeId },
+    input: { ...input, agentRunId: input.agentRunId, agentNodeId: input.nodeId },
     progress: 5,
     maxAttempts: 3,
-    timeoutSeconds: 20 * 60,
-  }));
+    timeoutSeconds: input.operation === "batch" ? 60 * 60 : 20 * 60,
+  });
   await syncListingNodeJobQueued({
     agentRunId: input.agentRunId,
     nodeId: input.nodeId,
@@ -1048,12 +639,11 @@ export async function startListingGenerationJob(input: ListingGenerationJobInput
 export async function cancelListingGenerationJob(input: {
   userId: number;
   projectId: number;
-  workspaceId: number | null;
   nodeId: ListingAgentNodeId;
   scopeKey?: string;
   agentRunId?: string | null;
 }) {
-  const job = await getLatestListingNodeJob(input.userId, input.projectId, input.nodeId, input.scopeKey, input.workspaceId);
+  const job = await getLatestListingNodeJob(input.userId, input.projectId, input.nodeId, input.scopeKey);
   if (!job || (job.status !== "queued" && job.status !== "running")) return job;
   const canceled = await cancelAiJob(job.runId, `用户取消 ${input.nodeId} Listing 生成任务`);
   await syncListingNodeJobFailed({

@@ -19,6 +19,7 @@ export type SafeHttpRequestOptions = {
   timeoutMs?: number;
   maxRedirects?: number;
   maxResponseBytes?: number;
+  responseBodyProfile?: "amazon-video";
   allowedHosts?: string[];
   allowedHostSuffixes?: string[];
   allowPrivateNetwork?: boolean;
@@ -249,10 +250,13 @@ function requestOnce(
       reject(error);
     };
     const transport = url.protocol === "https:" ? https : http;
-    const request = transport.request(url, {
+    const requestOptions: http.RequestOptions & { autoSelectFamilyAttemptTimeout: number } = {
       method,
       headers,
       agent: agent || false,
+      // Cross-region CDNs regularly need more than Node's 250 ms family-attempt
+      // default. Keep validated DNS candidates and the absolute request deadline.
+      autoSelectFamilyAttemptTimeout: Math.max(10, Math.min(2_000, timeoutMs)),
       lookup: ((_hostname: string, lookupOptions: any, callback: any) => {
         const requestedFamily = typeof lookupOptions === "number" ? lookupOptions : Number(lookupOptions?.family || 0);
         const candidates = requestedFamily ? addresses.filter((item) => item.family === requestedFamily) : addresses;
@@ -260,24 +264,28 @@ function requestOnce(
         if (lookupOptions?.all) callback(null, candidates.length > 0 ? candidates : addresses);
         else callback(null, selected.address, selected.family);
       }) as any,
-    }, (response) => {
+    };
+    const request = transport.request(url, requestOptions, (response) => {
+      response.on("error", error => rejectOnce(error instanceof SafeHttpError ? error
+        : new SafeHttpError("Safe HTTP response stream failed", "network", normalizedHostname(url), true, { cause: error })));
+      response.on("aborted", () => rejectOnce(new SafeHttpError("Safe HTTP response ended prematurely", "network", normalizedHostname(url), true)));
       const chunks: Buffer[] = [];
       let size = 0;
       const declaredSize = Number(response.headers["content-length"] || 0);
       if (declaredSize > maxResponseBytes) {
         const error = new SafeHttpError("Safe HTTP response exceeded size limit", "response_too_large", normalizedHostname(url));
+        rejectOnce(error);
         response.destroy(error);
         request.destroy(error);
-        rejectOnce(error);
         return;
       }
       response.on("data", (chunk: Buffer) => {
         size += chunk.length;
         if (size > maxResponseBytes) {
           const error = new SafeHttpError("Safe HTTP response exceeded size limit", "response_too_large", normalizedHostname(url));
+          rejectOnce(error);
           response.destroy(error);
           request.destroy(error);
-          rejectOnce(error);
           return;
         }
         chunks.push(Buffer.from(chunk));
@@ -291,12 +299,20 @@ function requestOnce(
       });
     });
     request.setTimeout(timeoutMs, () => {
-      request.destroy(new SafeHttpError("Safe HTTP request timed out", "timeout", normalizedHostname(url), true));
+      const error = new SafeHttpError("Safe HTTP request timed out", "timeout", normalizedHostname(url), true);
+      rejectOnce(error);
+      request.destroy(error);
     });
     absoluteTimeout = setTimeout(() => {
-      request.destroy(new SafeHttpError("Safe HTTP request exceeded absolute timeout", "timeout", normalizedHostname(url), true));
+      const error = new SafeHttpError("Safe HTTP request exceeded absolute timeout", "timeout", normalizedHostname(url), true);
+      rejectOnce(error);
+      request.destroy(error);
     }, timeoutMs);
-    const abort = () => request.destroy(new SafeHttpError("Safe HTTP request aborted", "aborted", normalizedHostname(url), true));
+    const abort = () => {
+      const error = new SafeHttpError("Safe HTTP request aborted", "aborted", normalizedHostname(url), true);
+      rejectOnce(error);
+      request.destroy(error);
+    };
     if (signal?.aborted) abort();
     else signal?.addEventListener("abort", abort, { once: true });
     request.on("error", (error) => {
@@ -348,12 +364,20 @@ function isUnitTestEnvironment() {
   return process.env.NODE_ENV === "test" || Boolean(process.env.VITEST);
 }
 
+/** Larger buffers are only enabled explicitly for Amazon MP4s; redirects are checked again. */
+export function safeHttpResponseLimits(url: URL, options: SafeHttpRequestOptions) {
+  const amazonVideo = options.responseBodyProfile === "amazon-video" && url.protocol === "https:"
+    && /\.mp4$/i.test(url.pathname)
+    && ["media-amazon.com", "ssl-images-amazon.com"].some(host => url.hostname === host || url.hostname.endsWith(`.${host}`));
+  return {
+    timeoutMs: Math.min(Math.max(1, options.timeoutMs || DEFAULT_TIMEOUT_MS), amazonVideo ? 600_000 : 120_000),
+    maxResponseBytes: Math.min(Math.max(1, options.maxResponseBytes || DEFAULT_MAX_RESPONSE_BYTES), (amazonVideo ? 200 : 50) * 1024 * 1024),
+  };
+}
+
 export async function safeHttpRequest(rawUrl: string | URL, options: SafeHttpRequestOptions = {}): Promise<SafeHttpResponse> {
   const release = await acquireRequestSlot();
-  const timeoutMs = Math.min(Math.max(1, options.timeoutMs || DEFAULT_TIMEOUT_MS), 120_000);
   const maxRedirects = Math.min(Math.max(0, options.maxRedirects ?? 3), 10);
-  const maxResponseBytes = Math.min(Math.max(1, options.maxResponseBytes || DEFAULT_MAX_RESPONSE_BYTES), 50 * 1024 * 1024);
-  const deadline = Date.now() + timeoutMs;
   let method = String(options.method || "GET").toUpperCase();
   const requestHeaders = { ...(options.headers || {}) };
   let body: string | Buffer | Uint8Array | undefined;
@@ -373,6 +397,7 @@ export async function safeHttpRequest(rawUrl: string | URL, options: SafeHttpReq
     throw safeError;
   }
 
+  const deadline = Date.now() + safeHttpResponseLimits(currentUrl, options).timeoutMs;
   if (
     isUnitTestEnvironment()
     && process.env.ALLOW_REAL_NETWORK_IN_TESTS !== "1"
@@ -407,7 +432,7 @@ export async function safeHttpRequest(rawUrl: string | URL, options: SafeHttpReq
         body,
         target.addresses,
         remainingMs,
-        maxResponseBytes,
+        safeHttpResponseLimits(currentUrl, options).maxResponseBytes,
         options.signal,
         options.agent,
       );

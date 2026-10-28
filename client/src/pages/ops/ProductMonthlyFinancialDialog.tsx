@@ -10,14 +10,8 @@ import ProfitAnalysisWorkflow from "./ProfitAnalysisWorkflow";
 import { subscribeMonthlyFinancialChanges } from "./monthlyFinancialWriteEvents";
 
 export type ProductMonthlyFinancialTarget = { identity: { userId: number; workspaceId: number }; storeName: string; country: string; parentAsin: string };
-/** Friend's Shanghai 16th-day display cutoff only. This does not freeze, import
- * or claim completeness for any financial month. Users may select other months. */
-export function defaultProductFinancialMonth(now = new Date()) {
-  if (!Number.isFinite(now.getTime())) throw new Error("INVALID_CALENDAR");
-  const local = new Date(now.getTime() + 8 * 3600000);
-  const end = local.getUTCMonth() - (local.getUTCDate() <= 15 ? 2 : 1);
-  return new Date(Date.UTC(local.getUTCFullYear(), end, 1)).toISOString().slice(0, 7);
-}
+import { defaultProductFinancialMonth } from "./productFinancialTrend";
+export { defaultProductFinancialMonth } from "./productFinancialTrend";
 const buttonClass = "rounded border px-3 py-2 text-sm disabled:opacity-50";
 const manager = (role: string) => ["admin", "super_admin", "ops_manager"].includes(role);
 function OwnedProductFinancial({ target, role }: { target: ProductMonthlyFinancialTarget; role: string }) {

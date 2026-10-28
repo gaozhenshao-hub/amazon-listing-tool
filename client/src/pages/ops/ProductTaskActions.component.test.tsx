@@ -163,7 +163,7 @@ function detail(
         creatorId: 7,
         title: "合成任务",
         description: "原完整说明",
-        status: "review",
+        status: "in_progress",
         priority: "medium",
         category: "历史类别",
         assigneeId: 7,
@@ -259,7 +259,7 @@ function Harness(props: Partial<ProductTaskActionsProps> = {}) {
             <button
               disabled={actions.busy}
               onClick={() =>
-                actions.quickUpdate?.(currentTask, { status: "backlog" })
+                actions.quickUpdate?.(currentTask, { status: "todo" })
               }
             >
               快速待规划
@@ -290,13 +290,13 @@ function Harness(props: Partial<ProductTaskActionsProps> = {}) {
   );
 }
 async function enable() {
-  fireEvent.click(screen.getByRole("button", { name: "检查任务操作权限" }));
-  await screen.findByRole("button", { name: /^(新增运营任务|添加产品任务)$/ });
+  await waitFor(() => expect(calls.options).toHaveBeenCalled());
+  await waitFor(() => expect(screen.queryByText("正在加载任务功能…")).not.toBeInTheDocument());
 }
 async function createForm() {
   await enable();
   fireEvent.click(
-    screen.getByRole("button", { name: /^(新增运营任务|添加产品任务)$/ })
+    screen.getByRole("button", { name: /新增运营任务|添加产品任务/ })
   );
   await waitFor(() => expect(calls.products).toHaveBeenCalled());
   return within(screen.getByRole("dialog"));
@@ -325,10 +325,10 @@ describe("explicit task capabilities and create flow", () => {
   it("does not query on mount and keeps disabled release capabilities visible", async () => {
     calls.options.mockResolvedValue(options(false));
     render(<Harness />);
-    expect(calls.options).not.toHaveBeenCalled();
+    expect(calls.options).toHaveBeenCalledTimes(1);
     await enable();
-    expect(screen.getByRole("button", { name: "新增运营任务" })).toBeDisabled();
-    expect(screen.getAllByText(/RELEASE_GATE_DISABLED/)).toHaveLength(5);
+    expect(screen.getByRole("button", { name: /新增运营任务/ })).toBeDisabled();
+    expect(screen.queryByText(/RELEASE_GATE_DISABLED/)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "打开编辑" })
     ).not.toBeInTheDocument();
@@ -344,7 +344,7 @@ describe("explicit task capabilities and create flow", () => {
       target: { value: "不得持久化的任务正文" },
     });
     fireEvent.change(dialog.getByLabelText("新任务状态"), {
-      target: { value: "review" },
+      target: { value: "in_progress" },
     });
     fireEvent.click(dialog.getByRole("button", { name: "创建任务" }));
     await waitFor(() => expect(calls.execute).toHaveBeenCalledTimes(1));
@@ -354,7 +354,7 @@ describe("explicit task capabilities and create flow", () => {
       expectedWorkspaceId: 11,
       assigneeId: 7,
       productKey: null,
-      status: "review",
+      status: "in_progress",
       dueDate: null,
     });
     expect(localStorage.getItem(storageKey)).not.toContain("不得持久化");
@@ -425,7 +425,7 @@ describe("explicit task capabilities and create flow", () => {
       }));
     render(<Harness />);
     const dialog = await createForm();
-    await dialog.findByText(/仅部分可信来源/);
+    await dialog.findByText(/找到 21 个商品/);
     fireEvent.click(dialog.getByRole("button", { name: "商品候选下一页" }));
     await dialog.findByText(/商品候选读取失败或来源变化/);
     expect(dialog.getByLabelText("新任务关联商品")).toHaveValue("");
@@ -434,7 +434,7 @@ describe("explicit task capabilities and create flow", () => {
     const old = deferred<ReturnType<typeof options>>();
     calls.options.mockReturnValue(old.promise);
     const view = render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "检查任务操作权限" }));
+    expect(calls.options).toHaveBeenCalled();
     view.rerender(
       <Harness
         owner={{ ...owner, userId: 8 }}
@@ -444,7 +444,7 @@ describe("explicit task capabilities and create flow", () => {
     expect(calls.options.mock.calls[0][1].signal.aborted).toBe(true);
     await act(async () => old.resolve(options()));
     expect(
-      screen.queryByRole("button", { name: "新增运营任务" })
+      screen.queryByRole("button", { name: /新增运营任务/ })
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -503,7 +503,7 @@ describe("edit, versions and irreversible uncertainty", () => {
     const dialog = await editForm();
     expect(dialog.getByLabelText("编辑任务类型")).toHaveValue("历史类别");
     fireEvent.change(dialog.getByLabelText("编辑任务状态"), {
-      target: { value: "backlog" },
+      target: { value: "todo" },
     });
     fireEvent.change(dialog.getByLabelText("编辑任务预计完成日期"), {
       target: { value: "" },
@@ -518,7 +518,7 @@ describe("edit, versions and irreversible uncertainty", () => {
       taskId: 28,
       expectedVersion: task.versionKey,
       patch: {
-        status: "backlog",
+        status: "todo",
         dueDate: null,
         completionNotes: "新完整说明",
       },
@@ -567,14 +567,14 @@ describe("edit, versions and irreversible uncertainty", () => {
     await screen.findByLabelText("未确认任务操作");
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "核查原操作结果" })
+        screen.getByRole("button", { name: "查看保存结果" })
       ).not.toBeDisabled()
     );
     const original = readProductTaskPending(owner)!;
     expect(screen.queryByText(/secret raw/)).not.toBeInTheDocument();
     calls.options.mockResolvedValue(options(false));
     await enable();
-    expect(screen.getByRole("button", { name: "新增运营任务" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /新增运营任务/ })).toBeDisabled();
     calls.recover.mockResolvedValue(
       ProductTaskWriteResultSchema.parse({
         identity,
@@ -587,7 +587,7 @@ describe("edit, versions and irreversible uncertainty", () => {
         reasonCode: "FENCED",
       })
     );
-    fireEvent.click(screen.getByRole("button", { name: "请求取消原操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消未完成操作" }));
     await waitFor(() => expect(readProductTaskPending(owner)).toBeNull());
     expect(calls.recover.mock.calls[0][0]).toMatchObject({
       operationId: original.operationId,
@@ -619,11 +619,11 @@ describe("edit, versions and irreversible uncertainty", () => {
         reasonCode: "FENCED",
       });
     render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "请求取消原操作" }));
-    await screen.findByText(/服务端尚不能确认/);
+    fireEvent.click(screen.getByRole("button", { name: "取消未完成操作" }));
+    await screen.findByText(/保存结果还未确认/);
     expect(readProductTaskPending(owner)?.operationId).toBe(operationId);
-    fireEvent.click(screen.getByRole("button", { name: "核查原操作结果" }));
-    await screen.findByText(/恢复请求未得到有效确认/);
+    fireEvent.click(screen.getByRole("button", { name: "查看保存结果" }));
+    await screen.findByText(/暂时无法确认保存结果/);
     expect(readProductTaskPending(owner)?.operationId).toBe(operationId);
   });
   it("persisted upload recovery exposes complete/check/cancel without requiring options", async () => {
@@ -639,9 +639,9 @@ describe("edit, versions and irreversible uncertainty", () => {
       reasonCode: null,
     });
     render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "完成原附件入库" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续保存附件" }));
     await waitFor(() => expect(readProductTaskPending(owner)).toBeNull());
-    expect(calls.options).not.toHaveBeenCalled();
+    expect(calls.options).toHaveBeenCalledTimes(1);
     expect(calls.execute).not.toHaveBeenCalled();
   });
   it("cancelled deletion confirmation sends nothing; confirmation targets only exact attachment", async () => {
@@ -777,6 +777,23 @@ describe("attachment upload and authorized bounded downloads", () => {
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(localStorage.getItem(storageKey)).toBeNull();
   });
+  it.each([false, true])("local private downloads verify bytes before saving (corrupt=%s)", async corrupt => {
+    const { createHash, webcrypto } = await import("node:crypto");
+    const bytes = Buffer.from("private local attachment");
+    calls.download.mockResolvedValue({ identity, taskId: 28, attachmentId: 1, name: "proof.pdf", base64: bytes.toString("base64"), byteSize: bytes.length, contentHash: corrupt ? "0".repeat(64) : createHash("sha256").update(bytes).digest("hex") });
+    vi.stubGlobal("crypto", webcrypto);
+    const fetchMock = vi.fn(), create = vi.fn().mockReturnValue("blob:local"), revoke = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: create });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revoke });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    render(<Harness />);
+    await enable();
+    fireEvent.click(screen.getByRole("button", { name: "下载测试附件" }));
+    if (corrupt) { await screen.findByText(/附件下载未通过当前授权/); expect(create).not.toHaveBeenCalled(); }
+    else await waitFor(() => expect(revoke).toHaveBeenCalledTimes(1));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("task switch discards a late authorized URL before fetch", async () => {
     const old = deferred<unknown>();
     calls.download.mockReturnValue(old.promise);
@@ -843,5 +860,46 @@ describe("attachment upload and authorized bounded downloads", () => {
       )
     ).rejects.toThrow("CANCELLED");
     expect(cancel).toHaveBeenCalled();
+  });
+});
+
+describe("editable personnel and complete task fields",()=>{
+ it("saves changed owner and assistant together with content",async()=>{
+  render(<Harness/>);const dialog=await editForm();
+  fireEvent.change(dialog.getByLabelText("编辑运营负责人"),{target:{value:"8"}});
+  fireEvent.change(dialog.getByLabelText("协助人"),{target:{value:"7"}});
+  fireEvent.change(dialog.getByLabelText("任务说明"),{target:{value:"补充工作内容"}});
+  fireEvent.change(dialog.getByLabelText("编辑任务状态"),{target:{value:"done"}});
+  fireEvent.click(dialog.getByRole("button",{name:"保存任务"}));
+  await waitFor(()=>expect(calls.execute).toHaveBeenCalledTimes(1));
+  expect(calls.execute.mock.calls[0][0].patch).toMatchObject({assigneeId:8,assistantId:7,description:"补充工作内容",status:"done"});
+  expect(calls.execute.mock.calls[0][0].patch).not.toHaveProperty("productKey");
+ });
+ it("keeps the existing product when candidate loading fails",async()=>{
+  calls.products.mockRejectedValue(new Error("offline"));render(<Harness/>);const dialog=await editForm();
+  await dialog.findByText(/商品候选读取失败/);expect(dialog.getByLabelText("编辑关联商品")).toHaveValue("__keep__");
+  fireEvent.change(dialog.getByLabelText("编辑任务内容"),{target:{value:"仅修改内容"}});fireEvent.click(dialog.getByRole("button",{name:"保存任务"}));
+  await waitFor(()=>expect(calls.execute).toHaveBeenCalledTimes(1));expect(calls.execute.mock.calls[0][0].patch).toEqual({title:"仅修改内容"});
+ });
+});
+
+describe("meeting suggestion review",()=>{
+  const suggestion={meetingId:21,suggestionId:"22222222-2222-4222-8222-222222222222",title:"核对尺寸",description:"按照会议要求核对",assigneeName:"合成乙",dueDate:"2026-10-22",productHint:"P001",category:"listing优化" as const,evidence:"合成乙明天核对尺寸"};
+  it("prefills a unique member, deadline and exact product before explicit confirmation",async()=>{
+    render(<ProductTaskActions owner={owner} initialTitle={suggestion.title} meetingSuggestion={suggestion}/>);
+    const button=await screen.findByRole("button",{name:/核对并保存任务/});await waitFor(()=>expect(button).toBeEnabled());fireEvent.click(button);
+    await waitFor(()=>expect(screen.getByLabelText("新任务运营负责人")).toHaveValue("8"));
+    expect(screen.getByLabelText("新任务预计完成日期")).toHaveValue("2026-10-22");
+    await waitFor(()=>expect(calls.products).toHaveBeenCalledWith(expect.objectContaining({assigneeId:8,search:"P001"}),expect.anything()));
+    fireEvent.click(screen.getByRole("button",{name:"创建任务"}));
+    await waitFor(()=>expect(calls.execute).toHaveBeenCalled());
+    expect(calls.execute.mock.calls[0][0]).toMatchObject({assigneeId:8,dueDate:"2026-10-22",description:suggestion.description,productKey:candidate().key,meetingSource:{meetingId:21,suggestionId:suggestion.suggestionId}});
+  });
+  it("leaves an unidentified assignee and deadline empty and blocks submission",async()=>{
+    render(<ProductTaskActions owner={owner} initialTitle={suggestion.title} meetingSuggestion={{...suggestion,assigneeName:null,dueDate:null}}/>);
+    const button=await screen.findByRole("button",{name:/核对并保存任务/});await waitFor(()=>expect(button).toBeEnabled());fireEvent.click(button);
+    expect(screen.getByLabelText("新任务运营负责人")).toHaveValue("");
+    expect(screen.getByLabelText("新任务预计完成日期")).toHaveValue("");
+    fireEvent.click(screen.getByRole("button",{name:"创建任务"}));expect(calls.execute).not.toHaveBeenCalled();
   });
 });

@@ -117,7 +117,7 @@ describe("fresh actor, workspace and dedicated board authorization", () => {
   it("honors exact workspace directory over a global grant and role-default fallback", async () => {
     directories.push(directory("ops_specialist", { id: 99, workspaceId: null })); directories[0].modules = [];
     await expect(session()).rejects.toThrow("DIRECTORY_DENIED");
-    directories = []; await expect(session()).rejects.toThrow("DIRECTORY_DENIED"); expect((await session(4)).manager).toBe(true);
+    directories = []; expect((await session()).manager).toBe(false); expect((await session(4)).manager).toBe(true);
   });
   it("fails closed and sanitizes a denied policy or failed database read", async () => {
     permission.mockRejectedValueOnce(new TRPCError({ code: "FORBIDDEN", message: "private policy" })); await expect(session()).rejects.toThrow("RESOURCE_DENIED");

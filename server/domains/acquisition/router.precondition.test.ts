@@ -14,7 +14,7 @@ describe("amazon acquisition createJob router preconditions", () => {
       code: APP_ERROR_CODES.PRECONDITION_FAILED,
       statusCode: 412,
       message: "采集Provider当前未启用。请由超级管理员完成资格审核后再试。",
-      details: { provider: "apify", reason: "profile_not_active" },
+      details: { provider: "builtin.amazon.public_images", reason: "profile_not_active" },
     }));
 
     const caller = amazonAcquisitionRouter.createCaller({
@@ -32,7 +32,6 @@ describe("amazon acquisition createJob router preconditions", () => {
       asin: "B000000000",
       capabilities: ["catalog_basic", "image_gallery"],
       cachePolicy: "prefer_cache",
-      maxChargeUsd: 0.1,
     })).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",
       message: expect.stringContaining("未启用"),

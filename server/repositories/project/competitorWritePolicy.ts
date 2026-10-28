@@ -99,9 +99,10 @@ function rawObject(value: string | null | undefined, incoming = false): JsonObje
 export function stripIncomingManualSales(data: InsertCompetitorAnalysis): InsertCompetitorAnalysis {
   if (data.rawData === null || data.rawData === undefined) return data;
   const raw = rawObject(data.rawData, true);
-  if (!Object.hasOwn(raw, "manualSales") && !Object.hasOwn(raw, "deepAdoptionRef")) return data;
+  if (!Object.hasOwn(raw, "manualSales") && !Object.hasOwn(raw, "deepAdoptionRef") && !Object.hasOwn(raw, "supplementAdoptionRefs")) return data;
   delete raw.manualSales;
   delete raw.deepAdoptionRef;
+  delete raw.supplementAdoptionRefs;
   return { ...data, rawData: canonical(raw) };
 }
 
@@ -109,6 +110,7 @@ function sourceRevision(row: Pick<CompetitorAnalysis, "projectId" | "asin" | typ
   const sources = Object.fromEntries(RAW_SOURCE_KEYS.filter(key => Object.hasOwn(raw, key)).map(key => [key, raw[key]]));
   // Human calibration is source evidence, but never an acquisition-writable key.
   if (Object.hasOwn(raw, "manualSales")) sources.manualSales = raw.manualSales;
+  if (Object.hasOwn(raw, "supplementAdoptionRefs")) sources.supplementAdoptionRefs = raw.supplementAdoptionRefs;
   // The upload digest, not an AI summary or display filename, identifies the
   // original review file. This does not claim original review text is persisted.
   const reviewImport = raw.reviewImport;
@@ -149,6 +151,8 @@ export function mergeCompetitorUpdate(
   // Only the dedicated, transactional human-adoption lane can mint/replace it.
   if (Object.hasOwn(oldRaw, "deepAdoptionRef")) raw.deepAdoptionRef = oldRaw.deepAdoptionRef;
   else delete raw.deepAdoptionRef;
+  if (Object.hasOwn(oldRaw, "supplementAdoptionRefs")) raw.supplementAdoptionRefs = oldRaw.supplementAdoptionRefs;
+  else delete raw.supplementAdoptionRefs;
   const update: Update = {};
   const confirmed = existing.summaryStatus === "confirmed";
   const humanEdited = Boolean(existing.summary?.trim()) && existing.summary !== existing.aiSummary;

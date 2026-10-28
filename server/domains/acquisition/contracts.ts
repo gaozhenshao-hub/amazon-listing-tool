@@ -1,3 +1,6 @@
+import { AmazonImageLayoutSchema } from "../../../shared/amazonImageLayout";
+import { AmazonVideoReferenceSchema } from "../../../shared/knowledgeVideos";
+import { CompetitorResearchSchema } from "../../../shared/competitorResearch";
 import { z } from "zod";
 import {
   ACQUISITION_ASSET_ROLES,
@@ -33,6 +36,15 @@ export const NormalizedAmazonAssetSchema = z.object({
 });
 
 export const NormalizedAmazonSnapshotSchema: z.ZodType<NormalizedAmazonSnapshot> = z.object({
+  videos: z.array(AmazonVideoReferenceSchema).max(21).optional(),
+  sourceLayout: AmazonImageLayoutSchema.optional(),
+  // Historical providers may store a different research envelope. Preserve it
+  // in the immutable source; only expose validated research to AI consumers.
+  research: z.preprocess(value => {
+    const result = CompetitorResearchSchema.safeParse(value);
+    return result.success ? result.data : undefined;
+  }, CompetitorResearchSchema.optional()),
+  subtitle: z.string().nullable().optional(),
   asin: z.string().regex(/^[A-Z0-9]{10}$/),
   marketplace: AcquisitionMarketplaceSchema,
   sourceUrlHash: z.string().min(32),
@@ -54,16 +66,10 @@ export const AmazonAcquisitionRequestSchema = z.object({
   marketplace: AcquisitionMarketplaceSchema,
   asin: z.string().regex(/^[A-Z0-9]{10}$/),
   capabilities: z.array(AmazonAcquisitionCapabilitySchema).min(1),
-  maxChargeUsd: z.number().nonnegative(),
   idempotencyKey: z.string().min(16).max(128),
 });
 export type AmazonAcquisitionRequest = z.infer<typeof AmazonAcquisitionRequestSchema>;
 
-export type ProviderCostEstimate = {
-  estimatedMaxUsd: number;
-  pricingModel: string;
-  cacheEligible: boolean;
-};
 
 export type ProviderRawArtifact = {
   contentType: "application/json";
@@ -85,7 +91,6 @@ export interface AmazonAcquisitionProvider {
   readonly providerCode: string;
   readonly supportedMarketplaces: readonly AcquisitionMarketplace[];
   readonly capabilities: readonly AmazonAcquisitionCapability[];
-  estimate(request: AmazonAcquisitionRequest): Promise<ProviderCostEstimate>;
   fetch(request: AmazonAcquisitionRequest): Promise<ProviderFetchResult>;
 }
 

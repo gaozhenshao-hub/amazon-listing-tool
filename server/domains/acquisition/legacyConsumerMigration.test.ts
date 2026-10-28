@@ -6,8 +6,6 @@ const read = (path: string) => readFileSync(`${root}/${path}`, "utf8");
 
 describe("A7 legacy Amazon consumer migration guard", () => {
   it.each([
-    "server/routers/kbListings.ts",
-    "server/routers/kbProducts.ts",
     "server/routers/analysis.ts",
     "server/routers/conversionDataCollector.ts",
   ])("removes direct old scraper runtime calls from %s", path => {
@@ -17,8 +15,6 @@ describe("A7 legacy Amazon consumer migration guard", () => {
   });
 
   it("routes every migrated consumer through the unified acquisition job", () => {
-    expect(read("server/routers/kbListings.ts")).toContain('consumerType: "kb_listing"');
-    expect(read("server/routers/kbProducts.ts")).toContain('consumerType: "kb_product"');
     expect(read("server/routers/analysis.ts")).toContain('consumerType: "project_competitor"');
     expect(read("server/domains/ops/routers/conversion.ts")).toContain('consumerType: "conversion_collector"');
   });

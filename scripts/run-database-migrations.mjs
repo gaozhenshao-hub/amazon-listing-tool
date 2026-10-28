@@ -123,6 +123,20 @@ const supplementalMigrations = [
 
 const dedicatedMigrationFiles = [
   "0203_external_knowledge_caller_bindings.sql",
+  "0235_operations_journals.sql",
+  "0236_task_assistants.sql",
+  "0237_design_prompt_library.sql",
+  "0238_user_login_aliases.sql",
+  "0240_meeting_transcript_capacity.sql",
+  "0241_skill_workbench.sql",
+  "0242_knowledge_native_layout.sql",
+  "0243_knowledge_collection_versions.sql",
+  "0244_knowledge_videos.sql",
+  "0245_knowledge_video_labels.sql",
+  "0246_standalone_knowledge_images.sql",
+  "0247_knowledge_asset_lifecycle.sql",
+  "0248_knowledge_cache_retention.sql",
+  "0249_knowledge_set_adjustments.sql",
 ];
 
 // Not executable by --plan, the general runner, or any dedicated release path.
@@ -132,6 +146,9 @@ const unreleasedDraftMigrationFiles = new Set([
   "0206_image_workflow_version_snapshots.sql",
   "0207_image_asset_trust_ledger.sql",
   "0230_assistant_configurations.sql",
+  "0232_design_studio.sql",
+  "0233_design_conversation_title.sql",
+  "0234_design_chat.sql",
 ]);
 
 // Byte-reviewed feature candidates, not executable migrations. These retain
@@ -235,7 +252,38 @@ export function loadMigrationPlan() {
 }
 
 export function loadExternalKnowledgeCallerBindingMigrationPlan() {
-  return migrationEntries(dedicatedMigrationFiles, 0);
+  return migrationEntries(dedicatedMigrationFiles.filter(name => name === "0203_external_knowledge_caller_bindings.sql"), 0);
+}
+
+export function loadTaskAssistantMigrationPlan() {
+  return migrationEntries(dedicatedMigrationFiles.filter(name => name === "0236_task_assistants.sql"), 0);
+}
+export function loadMeetingAudioMigrationPlan() {
+  return migrationEntries(dedicatedMigrationFiles.filter(name => name === "0240_meeting_transcript_capacity.sql"), 0);
+}
+
+/** Explicit release only; shared library records are preserved. */
+export function loadKnowledgeCollectionVersionsMigrationPlan() {
+  return migrationEntries(["0243_knowledge_collection_versions.sql"], 0);
+}
+
+export function loadKnowledgeVideosMigrationPlan() {
+  return migrationEntries(["0244_knowledge_videos.sql"], 0);
+}
+export function loadStandaloneKnowledgeImagesMigrationPlan() {
+  return migrationEntries(["0246_standalone_knowledge_images.sql"], 0);
+}
+
+export function loadKnowledgeNativeLayoutMigrationPlan() {
+  return migrationEntries(dedicatedMigrationFiles.filter(name => name === "0242_knowledge_native_layout.sql"), 0);
+}
+
+export function loadDesignPromptMigrationPlan() {
+  return migrationEntries(dedicatedMigrationFiles.filter(name => ["0237_design_prompt_library.sql", "0238_user_login_aliases.sql"].includes(name)), 0);
+}
+
+export function loadOperationsJournalMigrationPlan() {
+  return migrationEntries(dedicatedMigrationFiles.filter(name => name === "0235_operations_journals.sql"), 0);
 }
 
 export function loadImageQualityDevelopmentMigrationPlan() {
@@ -511,10 +559,11 @@ async function main() {
   const dedicatedCallerBindingPlan = args.has("--apply-external-knowledge-caller-bindings");
   const imageQualityDevelopmentPlan = args.has("--apply-image-quality-development");
   const imageQualityProductionPlan = args.has("--apply-image-quality-production");
-  if ([dedicatedCallerBindingPlan, imageQualityDevelopmentPlan, imageQualityProductionPlan].filter(Boolean).length > 1) {
+  const meetingAudioPlan = args.has("--apply-meeting-audio");
+  if ([dedicatedCallerBindingPlan, imageQualityDevelopmentPlan, imageQualityProductionPlan, meetingAudioPlan].filter(Boolean).length > 1) {
     throw new Error("Select exactly one dedicated migration plan");
   }
-  const plan = dedicatedCallerBindingPlan
+  const plan = meetingAudioPlan ? loadMeetingAudioMigrationPlan() : dedicatedCallerBindingPlan
     ? loadExternalKnowledgeCallerBindingMigrationPlan()
     : imageQualityDevelopmentPlan
       ? loadImageQualityDevelopmentMigrationPlan()
@@ -549,4 +598,16 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
   });
+}
+
+export function loadKnowledgeAssetLifecycleMigrationPlan() {
+  return migrationEntries(["0247_knowledge_asset_lifecycle.sql"], 0);
+}
+
+export function loadKnowledgeCacheRetentionMigrationPlan() {
+  return migrationEntries(["0248_knowledge_cache_retention.sql"], 0);
+}
+
+export function loadKnowledgeSetAdjustmentsMigrationPlan() {
+  return migrationEntries(["0249_knowledge_set_adjustments.sql"], 0);
 }

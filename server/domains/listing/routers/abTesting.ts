@@ -60,13 +60,13 @@ export const listingAbTestingProcedures = {
       }).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
-      const context = buildProductContext(project, analyses, enrichedData, { projectId: input.projectId, workspaceId: ctx.workspaceId ?? null, userId: ctx.user.id });
+      const context = buildProductContext(project, analyses, enrichedData);
 
       const styles: Array<{
         id: string; name: string; nameEn: string; description: string;
@@ -118,6 +118,7 @@ export const listingAbTestingProcedures = {
 
         if (input.components.includes("title")) {
           const titleResponse = await invokeBusinessSkill({
+            emperorSkill: { slug: "listing.title.generate", userId: ctx.user.id, workspaceId: ctx.workspaceId },
             messages: [
               { role: "system", content: TITLE_GENERATION_PROMPT },
               {
@@ -138,7 +139,7 @@ export const listingAbTestingProcedures = {
               let validation = validateTitles(titleData);
               if (!validation.valid) {
                 for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
-                  titleData = await refineTitles(titleData, validation.issues);
+                  titleData = await refineTitles(titleData, validation.issues, { userId: ctx.user.id, workspaceId: ctx.workspaceId });
                   validation = validateTitles(titleData);
                 }
               }
@@ -149,6 +150,7 @@ export const listingAbTestingProcedures = {
 
         if (input.components.includes("bulletPoints")) {
           const bulletResponse = await invokeBusinessSkill({
+            emperorSkill: { slug: "listing.bullets.generate", userId: ctx.user.id, workspaceId: ctx.workspaceId },
             messages: [
               { role: "system", content: BULLET_POINTS_PROMPT },
               {
@@ -169,7 +171,7 @@ export const listingAbTestingProcedures = {
               let validation = validateBullets(bulletData);
               if (!validation.valid) {
                 for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
-                  bulletData = await refineBullets(bulletData, validation.issues);
+                  bulletData = await refineBullets(bulletData, validation.issues, { userId: ctx.user.id, workspaceId: ctx.workspaceId });
                   validation = validateBullets(bulletData);
                 }
               }
@@ -201,21 +203,16 @@ export const listingAbTestingProcedures = {
       bulletPoints: z.string().optional(), // JSON string of bullet points array
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
-      if (input.bulletPoints !== undefined) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "A/B 卖点方案不能直接应用；请将候选提交人工审核，并通过受治理的完整快照同步流程发布",
-        });
-      }
 
       const listing = await db.getActiveListingByProject(input.projectId);
       if (!listing) throw new Error("No active listing found. Please generate a listing first.");
 
       const updateData: Record<string, any> = {};
       if (input.title) updateData.title = input.title;
+      if (input.bulletPoints) updateData.bulletPoints = input.bulletPoints;
 
       if (Object.keys(updateData).length === 0) {
         throw new Error("No data to apply");
@@ -225,22 +222,18 @@ export const listingAbTestingProcedures = {
       const newTitle = input.title || listing.title || "";
       let newBullets: any[] = [];
       try {
-        newBullets = listing.bulletPoints ? JSON.parse(listing.bulletPoints) : [];
+        newBullets = input.bulletPoints ? JSON.parse(input.bulletPoints) : (listing.bulletPoints ? JSON.parse(listing.bulletPoints) : []);
       } catch {
         newBullets = [];
       }
 
       try {
-        const cnData = await generateChineseTranslation(
-          newTitle,
-          newBullets,
-          listing.description || "",
-          listing.searchTerms || "",
-          undefined,
-          listing.itemHighlights || undefined,
-          ctx.user.id,
+        const cnData = await generateChineseTranslation(newTitle, newBullets, listing.description || "", listing.searchTerms || "", undefined, listing.itemHighlights || undefined, ctx.user.id, ctx.workspaceId
         );
         if (input.title && cnData.titleCn) updateData.titleCn = cnData.titleCn;
+        if (input.bulletPoints && cnData.bulletPointsCn?.length > 0) {
+          updateData.bulletPointsCn = JSON.stringify(cnData.bulletPointsCn);
+        }
       } catch (err) {
         console.error("Chinese translation for A/B variant failed:", err);
       }
@@ -251,6 +244,7 @@ export const listingAbTestingProcedures = {
       if (updated) {
         const appliedParts = [];
         if (input.title) appliedParts.push("标题");
+        if (input.bulletPoints) appliedParts.push("卖点");
         await saveListingVersion(updated, ctx.user.id, "ab_apply", `应用A/B测试方案: ${appliedParts.join("、")}`);
       }
 

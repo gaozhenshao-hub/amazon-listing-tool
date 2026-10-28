@@ -9,6 +9,7 @@ import { AmazonStyleGallery } from "./AmazonStyleGallery";
 import { imageTagLabel, imageBelongLabel, distinctImageTags, joinImageTags } from "./kbImageLabels";
 import { activateGalleryItem, currentGalleryIndex } from "./galleryInteraction";
 
+vi.mock("./KnowledgeAssetActions", () => ({ default: () => <div data-testid="image-actions">调整结果（AI）</div> }));
 const featureFlag = vi.hoisted(() => ({ enabled: true }));
 vi.mock("@/lib/mergedReadOnlyFeatures", () => ({
   get MERGED_READONLY_FEATURES_ENABLED() { return featureFlag.enabled; },
@@ -19,6 +20,10 @@ vi.mock("./useBalancedPreviewTransform", () => ({
 afterEach(() => { cleanup(); featureFlag.enabled = true; });
 
 describe("gallery display labels", () => {
+  it("does not infer a source role for an independent upload", () => {
+    expect(imageBelongLabel({imageSetId:null,imagePosition:"secondary"})).toBe("");
+    expect(imageBelongLabel({imageSetId:null,imagePosition:"secondary",tagImageBelong:"A+",tagImageBelongSub:"全宽图"})).toBe("A+·全宽图");
+  });
   it.each([[" main ", "主图"], ["SECONDARY", "套图"], ["brand_story", "品牌故事"],
     ["a_plus", "A+"], ["A+·A+", "A+"], ["自定义风格", "自定义风格"],
     ["__proto__", "__proto__"], ["constructor", "constructor"]])("normalizes %s without rewriting storage", (input, output) => {
@@ -89,39 +94,32 @@ describe("gallery interactions", () => {
     rerender(<AmazonStyleGallery {...props} mainImages={empty} secondaryImages={empty} />);
     expect(screen.queryByRole("img", { name: "当前商品图片" })).not.toBeInTheDocument();
   });
-  it("keeps tag selection separate from fit/zoom controls and supports keyboard activation", () => {
+  it("shows tags on the right and opens an original without hiding them", () => {
     const select = vi.fn();render(<AmazonStyleGallery {...props} onSelectImage={select} />);
-    const frame = screen.getByRole("button", { name: "展开或收起当前图片标签" });
-    fireEvent.keyDown(frame, { key: "Enter" });fireEvent.keyDown(frame, { key: " " });
-    expect(select).toHaveBeenCalledTimes(2);expect(select).toHaveBeenLastCalledWith(1);
-    const fit = screen.getByRole("button", { name: "完整画布" });
-    fireEvent.keyDown(fit, { key: "Enter" });fireEvent.click(fit);
-    fireEvent.click(screen.getByRole("button", { name: "查看原图" }));
-    expect(select).toHaveBeenCalledTimes(2);expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("complementary", {name:"图片标签"})).toBeInTheDocument();
+    const frame=screen.getByRole("button",{name:"查看当前商品原图"});
+    fireEvent.keyDown(frame,{key:"Enter"});
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(select).not.toHaveBeenCalled();
   });
-  it("keeps the original click/fit/tags when the merged-feature switch is off", () => {
-    featureFlag.enabled = false;
-    const select = vi.fn();
-    render(<AmazonStyleGallery {...props} mainImages={[{ ...a, tagImageBelong: "main", tagComposition: "main" }]} onSelectImage={select} />);
-    const image = screen.getByRole("img", { name: "当前商品图片" });
-    fireEvent.click(image);
-    expect(select).toHaveBeenCalledOnce();expect(select).toHaveBeenCalledWith(1);
-    expect(screen.queryByRole("button", { name: "展开或收起当前图片标签" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "查看原图" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(within(image.parentElement!).getAllByText("main")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "完整画布" })).toBeInTheDocument();
-    fireEvent.error(image);
-    expect(image).toHaveAttribute("src", "/a.jpg");
-    expect(screen.queryByRole("img", { name: "图片暂时不可访问" })).not.toBeInTheDocument();
+  it("keeps one single-image view with a shared preview and internal set navigation",()=>{
+    const source=readFileSync("client/src/pages/knowledge/SingleLibraryBrowse.tsx","utf8");
+    const root=readFileSync("client/src/pages/knowledge/KBImages.tsx","utf8");
+    expect(source).toContain("activateGalleryItem");expect(source).toContain("SingleImagePreviewDialog");
+    expect(source).not.toContain("window.open");expect(source).toContain("/knowledge/images/");
+    expect(root).not.toContain("Grid3X3");expect(root).not.toContain("activeMainTab");
   });
-  it("wires both browse views to the same preview and retains the existing detail-set state", () => {
-    const source = readFileSync("client/src/pages/knowledge/KBImages.tsx", "utf8");
-    expect(source.match(/onKeyDown=\{MERGED_READONLY_FEATURES_ENABLED \? event => activateGalleryItem\(event, \(\) => openBrowseImage\(item\)\) : undefined\}/g)).toHaveLength(2);
-    expect(source).toContain("if (MERGED_READONLY_FEATURES_ENABLED) setPreviewImage(item)");
-    expect(source).toContain('else if (item.imageSetId != null) { setDetailSetId(item.imageSetId); setEditingAnalysis(""); }');
-    expect(source).toContain("MERGED_READONLY_FEATURES_ENABLED && <SingleImagePreviewDialog");
-    expect(source).toContain("setDetailSetId(setId)");
-    expect(source).toContain('const [detailSetId, setDetailSetId] = useState<number | null>(null)');
+  it("opens a carousel slide as its own image with its own labels", () => {
+    const hash=(n:number)=>String(n).repeat(64);
+    const images=[1,2].map(n=>({id:10+n,imageUrl:`/slide-${n}.jpg`,imagePosition:"aplus",sourceUrlHash:hash(n),tagComposition:n===1?"一分构图":"一拖二"}));
+    const layout={version:1,modules:[{id:"nav",section:"aplus",kind:"carousel",subtype:"导航轮播",cards:[1,2].map(n=>({images:[{hash:hash(n),alt:`导航图${n}`}]}))}]};
+    render(<AmazonStyleGallery {...props} mainImages={[]} secondaryImages={[]} aplusImages={images} sourceLayout={layout}/>);
+    fireEvent.click(screen.getByRole("button",{name:"下一张"}));
+    expect(screen.getByText("一拖二")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button",{name:"导航图2"}));
+    const dialog=screen.getByRole("dialog");
+    expect(within(dialog).getByRole("img")).toHaveAttribute("src","/slide-2.jpg");
+    expect(within(dialog).getByText("一拖二")).toBeInTheDocument();
+    expect(within(dialog).queryByText("一分构图")).not.toBeInTheDocument();
   });
 });

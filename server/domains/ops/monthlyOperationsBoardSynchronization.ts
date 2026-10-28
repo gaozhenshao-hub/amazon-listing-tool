@@ -41,6 +41,10 @@ export function createMonthlyOperationsBoardSynchronization(dependencies: {
     // Deleting a preview changes no current financial fact or archive.
     if (action === "revoke" && beforeBatch.status === "previewing") return;
     try {
+      if (process.env.ENABLE_NORTH_AMERICA_BOARD === "true") {
+        const { captureNorthAmericaBoard } = await import("./northAmericaBoardArchive");
+        await captureNorthAmericaBoard({ tx, identity, manager: true });
+      }
       const syncEnabled = enabled();
       if (syncEnabled) await admit(tx);
       else {

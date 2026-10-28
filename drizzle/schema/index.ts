@@ -10,6 +10,7 @@ export * from "./imageAssetTrustLedger";
 export * from "./imageWorkflowVersions";
 export * from "./image";
 export * from "./ops";
+export * from "./operationsJournal";
 export * from "./ads";
 export * from "./video";
 export * from "./skillDistillation";

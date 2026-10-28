@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { intelScheduler } from "../intelAutoCollect";
+import { startKnowledgeCacheScheduler } from "../domains/knowledge/cacheScheduler";
 import {
   startTodoReminderScheduler,
   stopTodoReminderScheduler,
@@ -8,8 +8,8 @@ import { createSchedulerLeaderLock } from "./leaderLock";
 import { closeDbConnection } from "../repositories/dbClient";
 import { assertStartupConfig } from "./startupValidation";
 import { startAiOsOperationalScheduler } from "../domains/ai_os/services/operationalScheduler";
-import { startLocalLingxingScheduleRunner } from "../domains/ops/localLingxingScheduler";
 import { startSaihuReportScheduler } from "../domains/ops/saihuReportScheduler";
+import { startSaihuSyncScheduler } from "../domains/ops/saihuSyncExecutor";
 import { createSchedulerShutdown } from "./schedulerShutdown";
 
 const shutdownGraceMs = Math.min(
@@ -53,7 +53,7 @@ async function main() {
     `[Scheduler] started role=${report.role} lock=${result.lockName} owner=${result.ownerId}`
   );
 
-  const stops: Array<() => void | Promise<void>> = [() => intelScheduler.stop(), stopTodoReminderScheduler];
+  const stops: Array<() => void | Promise<void>> = [stopTodoReminderScheduler];
   const shutdown = createSchedulerShutdown({
     stops,
     graceMs: shutdownGraceMs,
@@ -82,11 +82,11 @@ async function main() {
   process.once("SIGTERM", () => void stop("SIGTERM"));
   try {
     if (leaderLost) { await stop("leader_lock_lost"); return; }
-    intelScheduler.start();
     startTodoReminderScheduler();
     stops.push(startAiOsOperationalScheduler());
-    stops.push(startLocalLingxingScheduleRunner());
+    stops.push(startKnowledgeCacheScheduler());
     stops.push(startSaihuReportScheduler());
+    stops.push(startSaihuSyncScheduler());
   } catch (error) {
     await stop("startup_failure");
     throw error;

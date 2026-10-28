@@ -63,7 +63,8 @@ describe("Listing generation job lifecycle", () => {
   });
 
   it("hydrates N0-N5 and maps G1-G5 to the same Listing Agent run", () => {
-    for (const nodeId of ["N0", "N1", "N2", "N3", "N4", "N5"]) {
+    expect(jobService).toContain("syncCompetitorWorkflow");
+    for (const nodeId of ["N0", "N2", "N3", "N4", "N5"]) {
       expect(jobService).toContain(`nodeId: "${nodeId}"`);
     }
     for (const [key, nodeId] of Object.entries({ sellingPoints: "G1", title: "G2", description: "G3", searchTerms: "G4", qa: "G5" })) {

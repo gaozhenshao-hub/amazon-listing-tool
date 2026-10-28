@@ -4,10 +4,11 @@ import { buildProductContext } from "./routerContext";
 
 // The actual pure context builder is exercised; no DB/provider/Agent bridge
 // module may be initialized or invoked for these source-projection tests.
-vi.mock("../../_core/trpc", () => ({ protectedProcedure: {}, router: vi.fn() }));
+vi.mock("../../_core/trpc", () => ({ router: vi.fn() }));
+vi.mock("./listingProcedure", () => ({ protectedProcedure: {} }));
 vi.mock("./repository", () => ({}));
 vi.mock("./service", () => ({ runEmperorSkill: vi.fn(), buildListingContext: vi.fn(), checkDataReadiness: vi.fn(), contextToPromptText: vi.fn() }));
-vi.mock("../ai_os/services/businessSkillGateway", () => ({ invokeBusinessSkill: vi.fn(() => { throw new Error("NO_MODEL_ALLOWED"); }) }));
+vi.mock("../ai_os/services/businessSkillGateway", () => ({ createBusinessSkillInvoker: () => vi.fn(() => { throw new Error("NO_MODEL_ALLOWED"); }) }));
 vi.mock("./listingAgentBridge", () => ({ ensureListingAgentRun: vi.fn(), syncGenerationToAgent: vi.fn(), syncListingPreviewConfirmed: vi.fn(),
   syncListingPreviewWaitingHuman: vi.fn(), syncStepLockToAgent: vi.fn(), syncStepUnlockToAgent: vi.fn() }));
 

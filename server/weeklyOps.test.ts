@@ -28,10 +28,6 @@ describe("Weekly Ops Data Procedures", () => {
     expect(router._def.procedures).toHaveProperty("productOps.upsertProductBasicInfo");
   });
 
-  it("should have syncWeeklyOpsFromLingxing procedure", () => {
-    expect(router._def.procedures).toHaveProperty("productOps.syncWeeklyOpsFromLingxing");
-  });
-
   it("should have upsertMonthlySummary procedure", () => {
     expect(router._def.procedures).toHaveProperty("productOps.upsertMonthlySummary");
   });
@@ -44,7 +40,6 @@ describe("Weekly Ops Data Procedures", () => {
       "productOps.upsertWeeklyOps",
       "productOps.deleteWeeklyOps",
       "productOps.upsertProductBasicInfo",
-      "productOps.syncWeeklyOpsFromLingxing",
       "productOps.upsertMonthlySummary",
     ];
 

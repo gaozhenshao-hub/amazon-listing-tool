@@ -1,4 +1,5 @@
 /** Source evidence only: no AI analysis, market-wide denominator or authorization. */
+import type { AdoptedReviewCorpus, AdoptedReviewItem, AdoptedReviewSource } from "./adoptedCompetitorEvidence";
 export const COMPETITOR_REVIEW_PARSER_VERSION = "competitor-review-corpus/1" as const;
 export type CompetitorReviewValue = string | number | boolean | null;
 export type CompetitorReviewField = "asin" | "sourceReviewId" | "body" | "title" | "rating" | "date" | "author" | "verifiedPurchase" | "variant" | "helpfulVotes";
@@ -57,17 +58,17 @@ export type CompetitorReviewCorpus = {
 export type CompetitorReviewPage = {
   status: "available";
   reason: null;
-  parserVersion: typeof COMPETITOR_REVIEW_PARSER_VERSION;
+  parserVersion: typeof COMPETITOR_REVIEW_PARSER_VERSION | "competitor-review-adopted/1";
   corpusHash: string;
   projectId: number;
   analysisId: number;
   asin: string;
-  source: { runId: string; fileName: string; fileHash: string };
-  items: CompetitorReviewItem[];
+  source: { runId: string; fileName: string; fileHash: string } | AdoptedReviewSource;
+  items: Array<CompetitorReviewItem | AdoptedReviewItem>;
   total: number;
   page: number;
   pageSize: number;
-  coverage: CompetitorReviewCorpusCoverage;
+  coverage: CompetitorReviewCorpusCoverage | AdoptedReviewCorpus["coverage"];
 } | {
   status: "unavailable";
   reason: string;

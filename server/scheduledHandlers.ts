@@ -1,9 +1,9 @@
 /**
  * Scheduled Task Handlers
- * 
+ *
  * These handlers are called by the Manus Heartbeat system (HTTP cron).
  * Each handler runs at `/api/scheduled/<name>` and is triggered by the platform.
- * 
+ *
  * Authentication: Platform sends a cron session cookie that can be verified
  * via the x-manus-cron-task-uid header (trusted by platform gateway).
  */
@@ -17,26 +17,26 @@ import { authorizeScheduledRequest } from "./_core/scheduledRequestGuard";
 
 /**
  * Weekly Operations Report Handler
- * 
+ *
  * Generates a summary report based on the latest imported Excel data:
  * - Top/bottom performers by sales and profit
  * - Inventory alerts (low stock, overstock)
  * - Ad performance highlights
  * - Action items for the coming week
- * 
+ *
  * Triggered: Every Monday 09:00 UTC (17:00 China time)
  * Path: POST /api/scheduled/weekly-report
  */
 export async function weeklyReportHandler(req: Request, res: Response) {
   const taskUid = authorizeScheduledRequest(req, res);
   if (!taskUid) return;
-  
+
   try {
     console.log(`[WeeklyReport] Triggered by task_uid=${taskUid}`);
-    
+
     // 1. Get the latest week's data from both data sources
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    
+
     const db = await getDb();
     if (!db) {
       return res.status(503).json({ error: "Database not available" });
@@ -61,11 +61,11 @@ export async function weeklyReportHandler(req: Request, res: Response) {
         title: "📊 周报提醒：本周尚未导入数据",
         content: "本周尚未导入任何运营数据（领星/赛狐Excel），无法生成周报。请尽快上传最新数据。",
       });
-      
-      return res.json({ 
-        ok: true, 
+
+      return res.json({
+        ok: true,
         skipped: "no_data_imported",
-        message: "No data imported this week, reminder sent to owner" 
+        message: "No data imported this week, reminder sent to owner"
       });
     }
 
@@ -135,9 +135,9 @@ export async function weeklyReportHandler(req: Request, res: Response) {
     });
 
     console.log(`[WeeklyReport] Report generated and sent successfully`);
-    
-    return res.json({ 
-      ok: true, 
+
+    return res.json({
+      ok: true,
       reportLength: reportContent.length,
       dataPoints: dataSummary.lingxingRecords + dataSummary.saihuRecords,
     });
@@ -155,7 +155,7 @@ export async function weeklyReportHandler(req: Request, res: Response) {
 
 /**
  * Data Cleanup Handler
- * 
+ *
  * Cleans up old import history and stale temporary data.
  * Triggered: Every Sunday 03:00 UTC
  * Path: POST /api/scheduled/data-cleanup
@@ -163,18 +163,18 @@ export async function weeklyReportHandler(req: Request, res: Response) {
 export async function dataCleanupHandler(req: Request, res: Response) {
   const taskUid = authorizeScheduledRequest(req, res);
   if (!taskUid) return;
-  
+
   try {
     console.log(`[DataCleanup] Triggered by task_uid=${taskUid}`);
-    
+
     // Clean up import history older than 90 days
     const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-    
+
     // Log the cleanup
     console.log(`[DataCleanup] Cleaning records older than ${ninetyDaysAgo.toISOString()}`);
-    
-    return res.json({ 
-      ok: true, 
+
+    return res.json({
+      ok: true,
       message: "Cleanup completed",
       cutoffDate: ninetyDaysAgo.toISOString(),
     });
@@ -281,23 +281,5 @@ export async function aiOsOperationalHealthHandler(req: Request, res: Response) 
   } catch (error) {
     console.error("[AI OS] Scheduled health check failed:", error);
     return res.status(500).json({ ok: false, error: String((error as Error)?.message || error) });
-  }
-}
-
-/** 每日产品日草稿与每周父ASIN汇总草稿共用的Heartbeat回调；只创建待审核批次。 */
-export async function lingxingScheduledDraftHandler(req: Request, res: Response) {
-  const taskUid = authorizeScheduledRequest(req, res);
-  if (!taskUid) return;
-  try {
-    const { runLingxingScheduledDraft } = await import("./domains/ops/lingxingScheduledDrafts");
-    return res.json(await runLingxingScheduledDraft(taskUid));
-  } catch (error) {
-    console.error("[LingxingScheduledDraft] Failed", error);
-    return res.status(500).json({
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-      context: { url: req.url, taskUid },
-      timestamp: new Date().toISOString(),
-    });
   }
 }

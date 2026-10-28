@@ -44,18 +44,18 @@ const COLUMN_MAPPINGS: Record<string, string[]> = {
   // Date
   date: [
     "date", "review date", "time", "created", "posted",
-    "日期", "评论日期", "评价日期", "时间", "Date", "Review Date", "Time",
+    "日期", "评论日期", "评论时间", "评价日期", "时间", "Date", "Review Date", "Time",
   ],
   // Author / Reviewer
   author: [
     "author", "reviewer", "name", "user", "customer", "profile name",
-    "评论者", "作者", "用户", "用户名", "Author", "Reviewer", "Name",
+    "评论者", "评论人", "作者", "用户", "用户名", "Author", "Reviewer", "Name",
     "Profile Name", "Customer",
   ],
   // Verified Purchase
   verifiedPurchase: [
     "verified purchase", "verified", "vp", "is verified",
-    "是否验证购买", "验证购买", "VP", "Verified Purchase", "Verified",
+    "是否验证购买", "验证购买", "VP评论", "VP", "Verified Purchase", "Verified",
   ],
   // Model / Variant
   model: [
@@ -65,7 +65,7 @@ const COLUMN_MAPPINGS: Record<string, string[]> = {
   // Helpful votes
   helpfulVotes: [
     "helpful", "helpful votes", "helpful count", "votes",
-    "有用投票", "有用", "投票数", "Helpful", "Helpful Votes",
+    "有用投票", "有用", "赞同数", "投票数", "Helpful", "Helpful Votes",
   ],
   // ASIN
   asin: [
@@ -121,8 +121,17 @@ function parseRating(val: any): number | undefined {
 /**
  * Parse an Excel/CSV buffer into structured review data
  */
+export function readSpreadsheetWorkbook(buffer: Buffer, filename: string) {
+  if (/\.(csv|tsv)$/i.test(filename)) {
+    let content: string;
+    try { content = new TextDecoder('utf-8', {fatal:true}).decode(buffer); }
+    catch { content = new TextDecoder('gb18030').decode(buffer); }
+    return XLSX.read(content, {type:'string',cellDates:true});
+  }
+  return XLSX.read(buffer, {type:'buffer',cellDates:true});
+}
 export function parseReviewFile(buffer: Buffer, filename: string): ParseResult {
-  const workbook = XLSX.read(buffer, { type: "buffer" });
+  const workbook = readSpreadsheetWorkbook(buffer,filename);
 
   // Use the first sheet
   const sheetName = workbook.SheetNames[0];
@@ -199,7 +208,7 @@ export function parseReviewFile(buffer: Buffer, filename: string): ParseResult {
     }
 
     const content = String(row[effectiveContentIdx] || "").trim();
-    if (!content || content.length < 3) {
+    if ((!content || content.length < 3) && !(titleIdx !== -1 && String(row[titleIdx] || '').trim())) {
       skippedRows++;
       continue;
     }
@@ -215,7 +224,7 @@ export function parseReviewFile(buffer: Buffer, filename: string): ParseResult {
       review.rating = parseRating(row[ratingIdx]);
     }
     if (dateIdx !== -1 && row[dateIdx]) {
-      review.date = String(row[dateIdx]).trim();
+      review.date = row[dateIdx] instanceof Date ? row[dateIdx].toISOString().slice(0,10) : String(row[dateIdx]).trim();
     }
     if (authorIdx !== -1 && row[authorIdx]) {
       review.author = String(row[authorIdx]).trim();
@@ -255,6 +264,17 @@ export function parseReviewFile(buffer: Buffer, filename: string): ParseResult {
     columns: headers,
     detectedAsins: Array.from(asinSet),
   };
+}
+
+/** Only review sheets qualify; exporter help/contact sheets must never become reviews. */
+export function parseReviewWorkbook(book: XLSX.WorkBook): ParsedReview[] {
+  return book.SheetNames.flatMap(name => {
+    const sheet = book.Sheets[name];
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {header:1});
+    const headers = (rows[0] || []).map(v => String(v).trim().toLowerCase());
+    if (!headers.some(h => COLUMN_MAPPINGS.content.some(alias => alias.toLowerCase() === h)) || rows.length < 2) return [];
+    return parseReviewFile(Buffer.from(XLSX.utils.sheet_to_csv(sheet)), 'reviews.csv').reviews;
+  });
 }
 
 /**

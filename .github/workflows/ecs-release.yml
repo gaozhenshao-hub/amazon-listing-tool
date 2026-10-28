@@ -1,0 +1,65 @@
+name: Build ECS release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Check interruption handling and Linux private storage
+        run: |
+          node --test scripts/check-client-runtime-identifiers.test.mjs
+          pnpm exec vitest run server/cryptoJsEsmRuntime.test.ts server/productionRuntimeDependencies.test.ts server/domains/listing/supplementSources/localStorage.test.ts server/domains/ops/saihuReportContract.test.ts
+        env:
+          ALLOW_REAL_NETWORK_IN_TESTS: "0"
+          RUN_REAL_LLM_TESTS: "0"
+      - name: Build on the isolated runner, without production credentials
+        run: |
+          docker build --build-arg VITE_AUTH_MODE=local \
+            --build-arg VITE_ENABLE_MERGED_LISTING_WORKFLOW=1 \
+            --build-arg VITE_ENABLE_MERGED_READONLY_FEATURES=1 \
+            --build-arg VITE_ENABLE_NORTH_AMERICA_BOARD=1 \
+            -f deploy/aliyun/Dockerfile -t amz-fullchain:merge-${GITHUB_SHA} .
+      - name: Verify the built runtime starts without external services
+        run: |
+          set -euo pipefail
+          docker run -d --name release-smoke --network none --memory 1g --cpus 1 \
+            -e APP_PROCESS_ROLE=web -e AI_JOB_IN_PROCESS=false -e AUTH_MODE=local \
+            -e DATABASE_URL=mysql://smoke@127.0.0.1:3306/smoke \
+            -e JWT_SECRET=isolated-build-smoke-only-not-a-production-key \
+            -e TOOL_SECRET_KEY=isolated-build-smoke-only-not-a-production-key \
+            amz-fullchain:merge-${GITHUB_SHA}
+          trap 'docker logs release-smoke; docker stop -t 5 release-smoke >/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if docker exec release-smoke node -e 'fetch("http://127.0.0.1:3000/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'; then
+              exit 0
+            fi
+            test "$(docker inspect -f '{{.State.Running}}' release-smoke)" = true
+            sleep 2
+          done
+          exit 1
+      - name: Package the verified runtime
+        run: |
+          mkdir -p release
+          docker save amz-fullchain:merge-${GITHUB_SHA} | gzip -1 > release/image.tar.gz
+          sha256sum release/image.tar.gz > release/image.sha256
+          printf '%s\n' "$GITHUB_SHA" > release/commit.txt
+      - name: Keep the image private for manual staged deployment
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecs-release-${{ github.sha }}
+          path: release/
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error

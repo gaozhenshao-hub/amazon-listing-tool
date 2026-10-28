@@ -1,4 +1,5 @@
 import type { DbExecutor } from "../../repositories/dbClient";
+import { lockAcquisitionCache } from "./cacheExpiry";
 import { AmazonAcquisitionCapabilitySchema } from "./contracts";
 import { createConsumerLink, supersedeConsumerLinks } from "./repository";
 import { projectConfirmedSnapshotToKbImages } from "./kbImagesProjection";
@@ -16,7 +17,9 @@ export async function activateConfirmedSnapshotForConsumer(input: {
     requestedCapabilities: unknown;
   };
   activatedBy: number;
+  repairedAssetIds?: number[];
 }) {
+  await lockAcquisitionCache(input.db, input.workspaceId, input.confirmedSnapshotId);
   const capabilities = AmazonAcquisitionCapabilitySchema.array().parse(input.job.requestedCapabilities);
   const projection = input.job.consumerType === "image_workflow"
     ? await projectConfirmedSnapshotToImageWorkflow({
@@ -35,6 +38,8 @@ export async function activateConfirmedSnapshotForConsumer(input: {
         confirmedSnapshotId: input.confirmedSnapshotId,
         requestedBy: input.job.requestedBy,
         requestedCapabilities: capabilities,
+        consumerRef: input.job.consumerRef,
+        repairedAssetIds: input.repairedAssetIds,
       })),
     }
     : ["kb_listing", "kb_product", "project_competitor", "conversion_collector"].includes(input.job.consumerType)

@@ -122,7 +122,7 @@ describe("source facts and compatibility", () => {
   it("rejects duplicate, cross-workspace and over-limit sources rather than filtering", () => {
     expect(() => mapOperationsCostSheetFacts(scope, [source(), source()])).toThrow("DUPLICATE");
     expect(() => mapOperationsCostSheetFacts(scope, [source({ scope: { ...scope, workspaceId: 2 } })])).toThrow("SCOPE");
-    expect(() => mapOperationsCostSheetFacts(scope, Array.from({ length: 501 }, (_, index) => source({ id: index + 1 })))).toThrow();
+    expect(() => mapOperationsCostSheetFacts(scope, Array.from({ length: 2001 }, (_, index) => source({ id: index + 1 })))).toThrow();
   });
   it("does not emit infinity for tiny same-row sales quantity", () => {
     expect(mapOperationsCostSheetFacts(scope, [source({ actualFbaUnitFee: null, actualFbaTotalFee: 10, fbaSalesQty: 5e-324 })])[0].actualFba).toBeNull();
@@ -217,7 +217,7 @@ describe("complete readonly builder", () => {
     expect(JSON.stringify(result)).not.toContain("privateBadRaw");
   });
   it("rejects the complete result for invalid/over-limit source data", () => {
-    const value = input(); value.sources = Array.from({ length: 501 }, (_, index) => source({ id: index + 1 }));
+    const value = input(); value.sources = Array.from({ length: 2001 }, (_, index) => source({ id: index + 1 }));
     expect(buildOperationsCostSheetReadResult(value)).toMatchObject({ status: "corrupt", reasonCode: "invalid_source", saved: null, sourceRecordCount: null, rows: [] });
   });
   it("rejects over-limit expanded output rather than silently dropping saved rows", () => {

@@ -10,7 +10,7 @@ describe("卖点定向再次优化皇帝Skill契约", () => {
     expect(editingRouter).toContain('skillSlug: "listing.bullet.step.generate"');
     expect(editingRouter).not.toContain('skillSlug: "listing.bullet.refine"');
     expect(editingRouter).toContain("validateSingleBulletQuality(parsed, validationInput");
-    expect(editingRouter).toContain("attempt <= MAX_RETRIES");
+    expect(editingRouter).toContain("maxModelAttempts: 3");
     expect(editingRouter).toContain("currentBullet");
     expect(editingRouter).toContain("optimizationNote");
     expect(editingRouter).toContain("候选与当前待优化原文相同");

@@ -6,7 +6,7 @@ import { readManualKbImageCoverage, type ManualKbImageCoverage } from "./kbManua
 
 type Owner = { userId: number; workspaceId: number };
 type SetIdentity = Parameters<typeof readManualKbImageCoverage>[2];
-type ImageIdentity = { id: number; imageSetId: number; imageUrl: string; imagePosition: string; positionIndex: number | null;
+type ImageIdentity = { id: number; imageSetId: number | null; imageUrl: string; imagePosition: string; positionIndex: number | null;
   aplusModuleType?: string | null; aplusModuleClass?: string | null };
 const denied = (): never => { throw new TRPCError({ code: "FORBIDDEN", message: "MANUAL_KB_IMAGE_SCOPE_UNAVAILABLE" }); };
 const unverified = (): never => { throw new TRPCError({ code: "PRECONDITION_FAILED", message: "MANUAL_KB_IMAGE_SOURCE_UNVERIFIED" }); };
@@ -60,8 +60,9 @@ export function createManualKbImageDeliveryGate(owner: Owner, dependencies: {
   async function selection<T extends ImageIdentity>(selected: T[]): Promise<T[]> {
     const groups = new Map<number, T[]>();
     for (const image of selected) {
-      if (!positive(image.id) || !positive(image.imageSetId)) denied();
-      const group = groups.get(image.imageSetId) ?? []; group.push(image); groups.set(image.imageSetId, group);
+      const setId=image.imageSetId;
+      if (!positive(image.id) || !positive(setId)) return denied();
+      const group = groups.get(setId) ?? []; group.push(image); groups.set(setId, group);
     }
     for (const [setId, group] of groups) {
       const set = await getSet(setId, owner.userId, owner.workspaceId);

@@ -31,19 +31,6 @@ describe("error contract architecture", () => {
     expect(clientSources).toContain("isAuthRequiredError");
   });
 
-  it("turns retired compatibility endpoints into explicit errors", () => {
-    const compatibilitySources = [
-      read("server/routers/dashboardUpgrade.ts"),
-      read("server/routers/customerProfile.ts"),
-      read("server/routers/systemSettings.ts"),
-      read("server/domains/ops/routers/sync.ts"),
-    ].join("\n");
-
-    expect(compatibilitySources).not.toContain('source: "deprecated"');
-    expect(compatibilitySources).toContain("retiredFeatureError");
-    expect(compatibilitySources).toContain("replacementProcedure");
-  });
-
   it("does not ship fabricated 200 responses from removed connectors", () => {
     const serverRoot = path.join(root, "server");
     const productionFiles = productionSourceFiles(serverRoot, [".ts"]);

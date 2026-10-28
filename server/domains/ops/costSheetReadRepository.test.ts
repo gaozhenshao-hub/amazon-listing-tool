@@ -216,13 +216,13 @@ describe("complete friend cost sheet read-only repository", () => {
     lingxing = [source(patch)]; await expect(read(context(), input)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
   });
   it("does not slice an oversized source set or choose duplicate IDs", async () => {
-    lingxing = Array.from({ length: 501 }, (_, index) => source({ id: index + 1 }));
+    lingxing = Array.from({ length: 2001 }, (_, index) => source({ id: index + 1 }));
     await expect(read(context(), input)).rejects.toMatchObject({ message: "COST_SHEET_READ_SOURCE_LIMIT" });
     lingxing = [source(), source()];
     await expect(read(context(), input)).rejects.toMatchObject({ message: "COST_SHEET_READ_SOURCE_LIMIT" });
   });
   it("applies the total source budget across both reports", async () => {
-    lingxing = Array.from({ length: 300 }, (_, index) => source({ id: index + 1 }));
+    lingxing = Array.from({ length: 1800 }, (_, index) => source({ id: index + 1 }));
     saihu = Array.from({ length: 201 }, (_, index) => source({ id: index + 1 }));
     await expect(read(context(), input)).rejects.toMatchObject({ message: "COST_SHEET_READ_SOURCE_LIMIT" });
   });

@@ -31,17 +31,4 @@ describe("皇帝Skill反馈闭环与有限灰度发布契约", () => {
     expect(runner).toContain("skill_rollout:${rollout.planId}");
     expect(runner).toContain("rollout: rollout ?");
   });
-
-  it("管理员路由与治理页面不提供自动发布入口", () => {
-    const router = read("server/domains/ai_os/routers/skills.ts");
-    const page = read("client/src/pages/emperor/EmperorQualityGates.tsx");
-    for (const procedure of ["createRolloutPlan: adminProcedure", "approveRolloutPlan: adminProcedure", "activateRolloutPlan: adminProcedure", "stopRolloutPlan: adminProcedure"]) {
-      expect(router).toContain(procedure);
-    }
-    expect(page).toContain("有限灰度计划");
-    expect(page).toContain("从候选快照创建灰度草稿");
-    expect(page).toContain("人工批准");
-    expect(page).toContain("回退");
-    expect(page).toContain("仅人工批准的候选可按稳定分桶");
-  });
 });

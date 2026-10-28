@@ -1,3 +1,5 @@
+import { displaySaihuOwner } from "../domains/ops/saihuOwnerMapping";
+import { buildNorthAmericaOverview } from '../domains/ops/productOverview/northAmericaOverview';
 import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
 import { opsWorkspaceCondition } from "../repositories/ops";
 /**
@@ -12,7 +14,7 @@ import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb, type AppDb } from "../repositories/dbClient";
 import { dataImports, lingxingProductWeekly, opsAdMcpCampaignDailyFacts, opsAdMcpProductDailyFacts, opsAdMcpProfiles, opsAsinDailySnapshots, opsAsinLifecycleStatuses, opsInventoryOwnerAssignments, opsInventoryPlanningParameters, opsLocalInventoryAdjustments, opsMonthlyFinancialProfits, saihuProductWeekly, operatorNameMappings, users, productionConfig, productProfiles, opsExternalSyncBatches, type InsertOpsInventoryPlanningParameter } from "../../drizzle/schema";
 import { MANAGER_ROLES } from "../../shared/const";
-import { eq, desc, and, inArray, sql, or, isNull, ne } from "drizzle-orm";
+import { eq, desc, and, inArray, sql, or, isNull, ne, getTableColumns } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
 import { storagePut } from "../storage";
 import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
@@ -242,6 +244,11 @@ async function applyOperatorMappings(
       currentOpsWorkspaceId(),
       eq(operatorNameMappings.isConfirmed, 1),
     ));
+
+  if (sourceType === "saihu") {
+    for (const item of items) item.operator = displaySaihuOwner(item.operator, allMappings);
+    return;
+  }
 
   // Build a lookup map: externalName -> systemUserName
   const mappingLookup = new Map<string, string>();
@@ -681,7 +688,8 @@ export const dataImportRouter = router({
   getProductOverviewFromImport: protectedProcedure
     .input(z.object({
       sourceType: z.enum(["erp", "lingxing", "saihu"]),
-      weeks: z.number().default(4),
+      weeks: z.number().int().min(1).max(26).default(4),
+      consolidateNorthAmerica: z.boolean().optional(),
       marketplace: z.string().default("US"),
     }))
     .query(async ({ ctx, input }) => {
@@ -690,19 +698,28 @@ export const dataImportRouter = router({
       // Resolve effective userId (non-admin users use admin's data)
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
 
+      if (input.consolidateNorthAmerica) {
+        const workspaceId = currentOpsWorkspaceId();
+        if (!workspaceId) throw new Error("缺少工作区");
+        // Read the legacy daily metadata explicitly; source facts are never rewritten.
+        const period = sql<string>`CASE WHEN report_date IS NOT NULL THEN DATE_FORMAT(DATE_SUB(report_date, INTERVAL MOD(WEEKDAY(report_date)+2,7) DAY), '%Y-%m-%d') ELSE week_start_date END`;
+        const ranges = await db!.selectDistinct({ start: period }).from(saihuProductWeekly)
+          .where(eq(saihuProductWeekly.workspaceId, workspaceId)).orderBy(desc(period)).limit(weeksToShow + 1);
+        if (!ranges.length) return [];
+        const facts = await db!.select({ ...getTableColumns(saihuProductWeekly), reportDate: sql<string | null>`report_date`, reportLevel: sql<string | null>`report_level` })
+          .from(saihuProductWeekly).where(and(eq(saihuProductWeekly.workspaceId, workspaceId), inArray(period, ranges.map(row => row.start))));
+        const [currentUs] = await db!.execute(sql`SELECT asin,parent_asin AS parentAsin,store_name AS storeName,operator FROM (
+          SELECT asin,parent_asin,store_name,operator,ROW_NUMBER() OVER(PARTITION BY BINARY asin ORDER BY import_id DESC,report_date DESC,id DESC) rn
+          FROM saihu_product_weekly WHERE workspaceId=${workspaceId} AND report_level<>'parent' AND asin IS NOT NULL
+          AND UPPER(TRIM(site)) IN ('US','美国','美国站','亚马逊美国站','AMAZON.COM')
+        ) latest WHERE rn=1 LIMIT 20001`);
+        if ((currentUs as unknown as any[]).length > 20000) throw new Error('产品归属数量超限');
+        const products = buildNorthAmericaOverview(facts, weeksToShow, currentUs as unknown as any[]);
+        await applyOperatorMappings(db!, products, "saihu");
+        return filterByOperatorPermission(products, ctx.user);
+      }
       let result: any[];
-      if (input.sourceType === "erp") {
-        const [lingxingProducts, saihuProducts] = await Promise.all([
-          buildOverviewFromLingxing(db!, effectiveUserId, weeksToShow, input.marketplace),
-          buildOverviewFromSaihu(db!, effectiveUserId, weeksToShow, input.marketplace, ctx.user.id),
-        ]);
-        // 日粒度领星数据和赛狐周度数据统一呈现；同店铺、同站点的同父 ASIN
-        // 优先保留领星记录，避免双 ERP 导入时重复累计。
-        result = mergeErpProducts([
-          { source: "lingxing", products: lingxingProducts },
-          { source: "saihu", products: saihuProducts },
-        ]);
-      } else if (input.sourceType === "lingxing") {
+      if (input.sourceType === "lingxing") {
         result = await buildOverviewFromLingxing(db!, effectiveUserId, weeksToShow, input.marketplace);
       } else {
         result = await buildOverviewFromSaihu(db!, effectiveUserId, weeksToShow, input.marketplace, ctx.user.id);

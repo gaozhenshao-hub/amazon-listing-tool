@@ -2,7 +2,7 @@ import { AcquisitionReviewIdentitySchema, AcquisitionReviewReadInputSchema, Acqu
   AcquisitionReviewWriteResultSchema, acquisitionReviewHash, acquisitionReviewImageRequestHash, type AcquisitionReviewIdentity, type AcquisitionReviewReadInput,
   type AcquisitionReviewImageInput, type AcquisitionReviewWriteResult } from "../../../shared/acquisitionReview";
 import type { AcquisitionMarketplace } from "../../../shared/acquisition";
-import { normalizeApifyAmazonArtifact } from "./amazonNormalizer";
+import { normalizeAmazonArtifact } from "./amazonNormalizer";
 import { createManualSnapshotReviewRepository } from "./manualSnapshotReviewRepository";
 import { decodeManualSnapshotImageBase64, inspectManualSnapshotImageBytes, manualSnapshotImageBytesHash, manualSnapshotImageStorage,
   ManualSnapshotPreparedImageSchema, ManualSnapshotRawArtifactSchema, type ManualSnapshotPreparedImage } from "./manualSnapshotImageStorage";
@@ -98,8 +98,8 @@ export function createManualSnapshotImageRecovery(dependencies: Partial<typeof d
       if (sourceAsset?.storageKey !== null) return fail("ACQUISITION_IMAGE_ORIGINAL_ALREADY_STORED");
       const artifact = ManualSnapshotRawArtifactSchema.parse(previous.artifact);
       if (artifact.id !== snapshot.rawArtifactId || artifact.workspaceId !== snapshot.workspaceId || artifact.runId !== snapshot.runId || !sourceAsset) return fail("ACQUISITION_IMAGE_SOURCE_SCOPE_MISMATCH");
-      let normalized: ReturnType<typeof normalizeApifyAmazonArtifact>;
-      try { normalized = normalizeApifyAmazonArtifact({ bytes: await deps.storage.readRawArtifact(artifact), expectedAsin: snapshot.asin, marketplace: snapshot.marketplace as AcquisitionMarketplace }); }
+      let normalized: ReturnType<typeof normalizeAmazonArtifact>;
+      try { normalized = normalizeAmazonArtifact({ bytes: await deps.storage.readRawArtifact(artifact), expectedAsin: snapshot.asin, marketplace: snapshot.marketplace as AcquisitionMarketplace }); }
       catch { return fail("ACQUISITION_IMAGE_ORIGINAL_ARTIFACT_UNVERIFIED"); }
       if (normalized.sourceHash !== snapshot.sourceHash) return fail("ACQUISITION_IMAGE_ORIGINAL_ARTIFACT_UNVERIFIED");
       const matches = normalized.sourceAssets.filter(asset => asset.role === sourceAsset.role && asset.positionIndex === sourceAsset.positionIndex

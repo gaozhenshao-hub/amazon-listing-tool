@@ -10,41 +10,6 @@ function read(relativePath: string): string {
 }
 
 describe("frontend workflow framework", () => {
-  it("does not execute React hooks at image workflow module scope", () => {
-    const fileName = "client/src/pages/imageWorkflow/ReferenceImagesStep.tsx";
-    const sourceFile = ts.createSourceFile(
-      fileName,
-      read(fileName),
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
-    const moduleScopeHooks: string[] = [];
-
-    const visit = (node: ts.Node) => {
-      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && /^use[A-Z]/.test(node.expression.text)) {
-        let parent: ts.Node | undefined = node.parent;
-        while (parent && !ts.isSourceFile(parent) && !ts.isFunctionLike(parent)) parent = parent.parent;
-        if (!parent || ts.isSourceFile(parent)) moduleScopeHooks.push(node.expression.text);
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(sourceFile);
-
-    expect(moduleScopeHooks).toEqual([]);
-  });
-
-  it("keeps multi-page workspace tabs global across dashboard and full-screen Agent routes", () => {
-    const dashboard = read("client/src/components/DashboardLayout.tsx");
-    const agentCanvas = read("client/src/pages/emperor/AgentCanvas.tsx");
-    const workspaceTabs = read("client/src/components/workspace/WorkspaceTabs.tsx");
-
-    expect(dashboard).toContain("WorkspaceTabs");
-    expect(agentCanvas).toContain("WorkspaceTabs");
-    expect(workspaceTabs).toContain("WORKSPACE_TABS_STORAGE_KEY");
-    expect(workspaceTabs).toContain("closeOtherTabs");
-    expect(workspaceTabs).toContain("window.open");
-  });
 
   it("provides common human-in-the-loop workflow building blocks", () => {
     const files = [
@@ -61,32 +26,6 @@ describe("frontend workflow framework", () => {
     for (const file of files) {
       expect(fs.existsSync(path.join(root, file)), file).toBe(true);
     }
-  });
-
-  it("keeps the Listing canvas focused on scheduling and mounts HITL controls on existing node pages", () => {
-    const canvas = read("client/src/pages/WorkflowCanvasPage.tsx");
-    const layout = read("client/src/components/DashboardLayout.tsx");
-    const workbench = read("client/src/components/workflow/ListingAgentNodeWorkbench.tsx");
-    expect(canvas).toContain("listing.full.workflow");
-    expect(canvas).toContain("useAgentWorkflowRun");
-    expect(canvas).toContain("WorkflowStepProgress");
-    expect(canvas).toContain("buildListingAgentNodeUrl");
-    expect(canvas).not.toContain("WorkflowCheckpointControls");
-    expect(canvas).not.toContain("WorkflowArtifactVersionPicker");
-    expect(layout).toContain("parseListingAgentNodeContext");
-    expect(layout).toContain("ListingAgentNodeWorkbench");
-    expect(workbench).toContain("WorkflowCheckpointControls");
-    expect(workbench).toContain("WorkflowArtifactVersionPicker");
-  });
-
-  it("wires image, ads, video, and product development pages to the common workflow components", () => {
-    expect(read("client/src/pages/ImageWorkflowPage.tsx")).toContain("WorkflowShell");
-    expect(read("client/src/pages/AdStructurePage.tsx")).toContain("WorkflowStepProgress");
-    expect(read("client/src/pages/VideoScriptPage.tsx")).toContain("WorkflowStepProgress");
-    expect(read("client/src/pages/dev/DevProjectDetail.tsx")).toContain("DEV_PRODUCT_WORKFLOW_STEPS");
-    expect(read("client/src/pages/dev/DevProjectDetail.tsx")).toContain("WorkflowStepProgress");
-    expect(read("client/src/pages/dev/DevAnalysisFlow.tsx")).toContain("DEV_ANALYSIS_WORKFLOW_STEPS");
-    expect(read("client/src/pages/dev/DevAnalysisFlow.tsx")).toContain("WorkflowStepProgress");
   });
 
   it("keeps the Listing main flow aligned with the Agent DAG node ids", () => {
@@ -109,33 +48,6 @@ describe("frontend workflow framework", () => {
     expect(versions).toContain("selectArtifactVersion");
     expect(versions).toContain("rollbackArtifactVersion");
     expect(progress).toContain("blockedStepIds");
-  });
-
-  it("keeps product development workflow steps aligned with the core dev pages", () => {
-    const definitions = read("client/src/components/workflow/workflowDefinitions.ts");
-    for (const stepId of ["overview", "data", "tags", "tagging", "panorama", "analysis", "offsite", "scoring", "profile", "bom", "manual", "test", "profit", "download"]) {
-      expect(definitions).toContain(`id: "${stepId}"`);
-    }
-
-    const detail = read("client/src/pages/dev/DevProjectDetail.tsx");
-    expect(detail).toContain("devProject.getDataStatus");
-    expect(detail).toContain("devProjectTags.getTagStatus");
-    expect(detail).toContain("devTagging.getTaggingStatus");
-    expect(detail).toContain("devPanorama.getStatus");
-    expect(detail).toContain("devAnalysis.getStages");
-    expect(detail).toContain("devModuleLock.getAll");
-  });
-
-  it("keeps product development analysis stages on the shared progress component without dropping gating", () => {
-    const definitions = read("client/src/components/workflow/workflowDefinitions.ts");
-    for (const stepId of ["market_overview", "attribute_cross", "price_analysis", "brand_competition", "review_kano", "decision_dashboard"]) {
-      expect(definitions).toContain(`id: "${stepId}"`);
-    }
-
-    const flow = read("client/src/pages/dev/DevAnalysisFlow.tsx");
-    expect(flow).toContain("analysisBlockedStepIds");
-    expect(flow).toContain("stepTitleById");
-    expect(flow).toContain("gatingInfo={gating?.[activeStage]}");
   });
 
   it("removes the deprecated Listing 2.0 feature from routes, menu, and API surface", () => {

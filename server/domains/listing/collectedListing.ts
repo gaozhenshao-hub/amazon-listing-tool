@@ -1,13 +1,22 @@
+import { requireDb } from '../../repositories/dbClient';
+import * as repository from '../../repositories';
+import { readJson } from '../../../shared/competitorPresentation';
+import { competitorAnalyses, projects } from '../../../drizzle/schema/project';
+import { getAiJobRun } from '../../services/aiJobRunner';
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { TRPCError } from "@trpc/server";
-import { sql } from "drizzle-orm";
+import { sql, and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { CompetitorAnalysis } from "../../../drizzle/schema/project";
 import type { DbExecutor } from "../../repositories/dbClient";
 import { competitorRevision } from "../../repositories/project/competitorWritePolicy";
 import { invalidateConfirmedCompetitorComparisons } from "../../repositories/project/projectAssetRepository";
-import { encodeResearchJson } from "../../repositories/listing/competitorResearchJobRepository";
+function encodeResearchJson(value: unknown, maximum = 8 * 1024 * 1024): string {
+  const encoded = JSON.stringify(value);
+  if (!encoded || Buffer.byteLength(encoded, "utf8") > maximum) throw new Error("资料内容过大或格式无效");
+  return encoded;
+}
 import { assertResourceAction } from "../../services/securityGovernance";
 import { NormalizedAmazonSnapshotSchema } from "../acquisition/contracts";
 import { getManualSnapshotPublication } from "../acquisition/manualSnapshotPublication";
@@ -123,7 +132,7 @@ export function createCollectedListingSaver(permission = assertResourceAction) {
         && oldRaw.source === "unified_amazon_acquisition" && oldRaw.confirmedSnapshotId === scope.confirmedSnapshotId && oldRaw.contentHash === confirmed.contentHash;
       if (sourceUnchanged) return { analysisId: existing.id };
       const rawData = encodeResearchJson({ ...oldRaw, source: "unified_amazon_acquisition", confirmedSnapshotId: scope.confirmedSnapshotId,
-        contentHash: confirmed.contentHash, acquisitionCapture: capture, captureOnly: true, analysisStale: true });
+        contentHash: confirmed.contentHash, acquisitionCapture: capture, captureOnly: true, analysisStale: true, subtitle: data.subtitle ?? null, brand: data.brand, description: data.description, research: data.research ?? oldRaw.research, imageAssets: approved.map(asset => ({role: asset.role, storageKey: asset.storageKey})) });
       const columns = { ...values, rawData };
       let analysisId: number;
       if (existing) {
@@ -151,3 +160,49 @@ export function createCollectedListingSaver(permission = assertResourceAction) {
 }
 
 export const saveCollectedListing = createCollectedListingSaver();
+
+export async function confirmCollectedAnalysis(input:{projectId:number;analysisId:number;userId:number;workspaceId:number|null;summary:string}){
+ const db=await requireDb('confirm competitor analysis');
+ return db.transaction(async tx=>{
+  const [parent] = await tx.select().from(projects).where(eq(projects.id, input.projectId)).limit(1).for('update');
+  if (!parent || parent.userId !== input.userId || (parent.workspaceId !== null && parent.workspaceId !== input.workspaceId)) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: '项目不可访问' });
+  }
+  const [record]=await tx.select().from(competitorAnalyses).where(and(eq(competitorAnalyses.id,input.analysisId),eq(competitorAnalyses.projectId,input.projectId))).for('update');
+  if(!record)throw new Error('竞品不存在');
+  const raw=readJson(record.rawData)||{};
+  const job=raw.presentationJobRunId?await getAiJobRun(raw.presentationJobRunId):null;
+  if(job&&['queued','running'].includes(job.status))throw new Error('分析尚未完成，请稍后确认');
+  if(raw.captureOnly||raw.analysisStale||!raw.deepAnalysis)throw new Error('请先完成当前资料的四项分析');
+  if(record.summary!==input.summary)throw new Error('分析结果已更新，请刷新后确认');
+  if (record.summaryStatus === 'confirmed') return record;
+  if (!Number.isSafeInteger(record.summaryVersion) || record.summaryVersion < 1 || record.summaryVersion >= 2147483647) throw new Error('分析版本无效，请联系管理员');
+  await tx.update(competitorAnalyses).set({summaryStatus:'confirmed',summaryConfirmedBy:input.userId,summaryConfirmedAt:new Date(),summaryVersion:record.summaryVersion+1}).where(eq(competitorAnalyses.id,record.id));
+  return {...record,summaryStatus:'confirmed' as const};
+ });
+}
+
+export async function analyzeCollectedListing(input: { projectId: number; workspaceId: number; userId: number; analysisId: number }) {
+  const project = await repository.getProjectById(input.projectId, input.userId, input.workspaceId);
+  if (!project || project.workspaceId !== input.workspaceId) throw new Error('项目不可访问');
+  const db = await requireDb('analyze collected Listing');
+  return db.transaction(async tx => {
+    const [parent] = await tx.select().from(projects).where(eq(projects.id, input.projectId)).limit(1).for('update');
+    if (!parent || parent.userId !== input.userId || parent.workspaceId !== input.workspaceId) throw new Error('项目不可访问');
+    const [record] = await tx.select().from(competitorAnalyses).where(and(eq(competitorAnalyses.id,input.analysisId),eq(competitorAnalyses.projectId,input.projectId))).for('update');
+    if (!record) throw new Error('抓取结果不存在');
+    const raw = readJson(record.rawData) || {};
+    if (raw.presentationJobRunId) {
+      const job = await getAiJobRun(raw.presentationJobRunId);
+      if (job && ['queued','running'].includes(job.status)) return { runId: job.runId, status: job.status };
+    }
+    if (!raw.confirmedSnapshotId) throw new Error('该旧记录缺少采集快照，请在 Listing 抓取中重新抓取并确认');
+    if (record.summaryStatus === 'confirmed') throw new Error('请先解锁已确认的分析，再重新分析');
+    const { startLegacyConsumerAnalysisJob } = await import('../acquisition/legacyConsumerAnalysisJob');
+    const job = await startLegacyConsumerAnalysisJob({ consumerType:'project_competitor',...input,asin:record.asin,confirmedSnapshotId:raw.confirmedSnapshotId });
+    if (!job) throw new Error('分析任务未创建');
+    await tx.update(competitorAnalyses).set({rawData:JSON.stringify({...raw,presentationJobRunId:job.runId})}).where(eq(competitorAnalyses.id,record.id));
+    return { runId: job.runId, status: job.status };
+  });
+}
+

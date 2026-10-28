@@ -156,10 +156,13 @@ function currencyFromRaw(raw: z.infer<typeof MonthlyFinancialRawSchema>) {
   const status = conflict ? "conflict" as const : values.length === 1 ? "explicit" as const : "unknown" as const;
   return { currency: status === "explicit" ? values[0] : null, currencyEvidence: { status, values, rawPaths: candidates.map(item => item.path), note: "只采用原字段明确币种；不从站点、文件名、$符号或页面 USD 文案推断" } };
 }
-export function parseMonthlyFinancialBatch(record: MonthlyFinancialBatchRecord): MonthlyFinancialParsedBatch {
+export function parseMonthlyFinancialBatch(record: MonthlyFinancialBatchRecord, options: { summaryOnly?: boolean } = {}): MonthlyFinancialParsedBatch {
   const batch = parseMonthlyFinancialBatchMetadata(record);
   try {
-    const payload = z.array(storedRowSchema).max(MONTHLY_FINANCIAL_LIMITS.rows).parse(parseMonthlyFinancialJson(record.payload, MONTHLY_FINANCIAL_LIMITS.payloadBytes, MONTHLY_FINANCIAL_LIMITS.payloadBytes * 8));
+    // The bounded JSON parser validates every raw node before either schema runs.
+    // Summary reads need no repeated deep traversal of the same original cells.
+    const rowSchema = options.summaryOnly ? storedRowSchema.extend({ raw: z.custom<MonthlyFinancialReadRow["raw"]>(value => value !== null && typeof value === "object" && !Array.isArray(value)) }) : storedRowSchema;
+    const payload = z.array(rowSchema).max(MONTHLY_FINANCIAL_LIMITS.rows).parse(parseMonthlyFinancialJson(record.payload, MONTHLY_FINANCIAL_LIMITS.payloadBytes, MONTHLY_FINANCIAL_LIMITS.payloadBytes * 8));
     if (payload.length !== batch.totalRows || payload.filter(row => !row.parentAsin).length !== batch.unallocatedRows || [...new Set(payload.map(row => row.yearMonth))].sort().join() !== [...batch.months].sort().join()) throw new MonthlyFinancialReadError("count_mismatch");
     const seen = new Set<string>();
     const rows = payload.map((row, rowIndex): MonthlyFinancialReadRow => {
@@ -172,10 +175,11 @@ export function parseMonthlyFinancialBatch(record: MonthlyFinancialBatchRecord):
       const api = row.raw.api && typeof row.raw.api === "object" && !Array.isArray(row.raw.api) ? row.raw.api : null;
       const parents = api && Array.isArray(api.parentAsinList) ? [...new Set(api.parentAsinList.filter(parent => typeof parent === "string" && parent !== row.asin && parent !== "-" && parent !== ""))] : [];
       const allocation = parents.length > 1 ? "ambiguous" : !row.parentAsin ? "unallocated" : row.asin ? "child" : "parent_only";
-      const details = buildMonthlyFinancialDetails(metrics, row.raw, currency !== null);
+      const raw = options.summaryOnly ? { ...(typeof row.raw.source === "string" ? { source: row.raw.source } : {}) } : row.raw;
+      const details = buildMonthlyFinancialDetails(metrics, raw, currency !== null);
       for (const metric of MONTHLY_FINANCIAL_METRICS) for (const component of details.fields[metric].components) component.rawPath = `${batch.id}:${rowIndex}:${component.rawPath}`;
       for (const metric of ["adOrders", "adSales"] as const) details[metric].rawPaths = details[metric].rawPaths.map(path => `${batch.id}:${rowIndex}:${path}`);
-      return MonthlyFinancialReadRowSchema.parse({ batchId: batch.id, rowIndex, yearMonth: row.yearMonth, parentAsin: row.parentAsin, asin: row.asin, sku: row.sku, title: row.title, storeName: row.storeName, site: row.site, country: market, operator: row.operator, currency, currencyEvidence, allocation, amountConvention: "stored_normalized_values_and_original_raw_signs", metrics, raw: row.raw, details });
+      return MonthlyFinancialReadRowSchema.parse({ batchId: batch.id, rowIndex, yearMonth: row.yearMonth, parentAsin: row.parentAsin, asin: row.asin, sku: row.sku, title: row.title, storeName: row.storeName, site: row.site, country: market, operator: row.operator, currency, currencyEvidence, allocation, amountConvention: "stored_normalized_values_and_original_raw_signs", metrics, raw, details });
     });
     return { batch, rows };
   } catch (error) { if (error instanceof MonthlyFinancialReadError) throw error; throw new MonthlyFinancialReadError("invalid_payload"); }

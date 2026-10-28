@@ -185,12 +185,6 @@ describe("Frontend Shipping Batch Pages", () => {
   const batchDetailPath = path.resolve(__dirname, "../client/src/pages/ops/OpsShippingBatchDetail.tsx");
   const inventoryPath = path.resolve(__dirname, "../client/src/pages/ops/OpsInventory.tsx");
 
-  it("should have OpsShippingBatch list page", () => {
-    const code = fs.readFileSync(batchListPath, "utf-8");
-    expect(code).toContain("trpc.shippingBatch.list");
-    expect(code).toContain("trpc.shippingBatch.create");
-  });
-
   it("should have OpsShippingBatchDetail page with 9-step progress", () => {
     const code = fs.readFileSync(batchDetailPath, "utf-8");
     expect(code).toContain("trpc.shippingBatch.getById");
@@ -201,12 +195,6 @@ describe("Frontend Shipping Batch Pages", () => {
     expect(code).toContain("已到亚马逊仓");
   });
 
-  it("should have enhanced OpsInventory with pipeline dashboard", () => {
-    const code = fs.readFileSync(inventoryPath, "utf-8");
-    expect(code).toContain("trpc.shippingBatch.getInventoryPipelineSummary");
-    expect(code).toContain("trpc.shippingBatch.getPredictions");
-    expect(code).toContain("trpc.shippingBatch.runPredictions");
-  });
 
   it("should have batch detail page with inventory tracking", () => {
     const code = fs.readFileSync(batchDetailPath, "utf-8");
@@ -235,12 +223,12 @@ describe("Route Registration", () => {
     // Batch list is now merged into OpsInventory pipeline tab
     // Only the detail route remains as a standalone page
     expect(appCode).toContain("OpsShippingBatchDetail");
-    expect(appCode).toContain("/ops/shipping/:id");
+    expect(appCode).toContain("/procurement/shipping/:id");
   });
 
   it("should have inventory nav item in sidebar (batch management merged into pipeline)", () => {
     // Batch management is now part of the inventory pipeline view
-    expect(layoutCode).toContain("库存预警");
+    expect(layoutCode).toContain("库存情况");
     expect(layoutCode).toContain("/ops/inventory");
   });
 });

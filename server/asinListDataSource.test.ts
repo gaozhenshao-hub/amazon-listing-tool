@@ -5,14 +5,6 @@ describe("asinList Data Source Integration", () => {
   const router = appRouter;
   const productOps = (router as any)._def.procedures;
 
-  it("syncWeeklyOpsFromLingxing procedure should exist", () => {
-    expect(productOps["productOps.syncWeeklyOpsFromLingxing"]).toBeDefined();
-  });
-
-  it("batchSyncWeeklyOps procedure should exist", () => {
-    expect(productOps["productOps.batchSyncWeeklyOps"]).toBeDefined();
-  });
-
   it("upsertWeeklyOps should accept adSales field", () => {
     const proc = productOps["productOps.upsertWeeklyOps"];
     expect(proc).toBeDefined();
@@ -22,16 +14,6 @@ describe("asinList Data Source Integration", () => {
 
   it("getProductOverviewWithWeeks procedure should exist", () => {
     expect(productOps["productOps.getProductOverviewWithWeeks"]).toBeDefined();
-  });
-
-  it("syncWeeklyOpsFromLingxing should be a protected mutation", () => {
-    const proc = productOps["productOps.syncWeeklyOpsFromLingxing"];
-    expect(proc._def.type).toBe("mutation");
-  });
-
-  it("batchSyncWeeklyOps should be a protected mutation", () => {
-    const proc = productOps["productOps.batchSyncWeeklyOps"];
-    expect(proc._def.type).toBe("mutation");
   });
 
   describe("ACOS Calculation Logic", () => {

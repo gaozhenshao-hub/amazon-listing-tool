@@ -1,0 +1,366 @@
+{
+  "date": "2026-10-23",
+  "rule": "Keep Skills for the approved modules only. Preserve historical run records; back up definitions before removal.",
+  "skills": [
+    {
+      "slug": "ad.structure.generate",
+      "decision": "retain"
+    },
+    {
+      "slug": "agent.library.coach",
+      "decision": "retain"
+    },
+    {
+      "slug": "agent.library.route",
+      "decision": "retain"
+    },
+    {
+      "slug": "analysis.a9.keyword",
+      "decision": "retain"
+    },
+    {
+      "slug": "analysis.comparison.summary",
+      "decision": "retain"
+    },
+    {
+      "slug": "analysis.competitor.multi",
+      "decision": "retain"
+    },
+    {
+      "slug": "analysis.competitor.single",
+      "decision": "retain"
+    },
+    {
+      "slug": "analysis.cosmo.scene",
+      "decision": "retain"
+    },
+    {
+      "slug": "analysis.image.recognition",
+      "decision": "retain"
+    },
+    {
+      "slug": "analysis.review.kano",
+      "decision": "retain"
+    },
+    {
+      "slug": "analysis.rufus.attribute",
+      "decision": "retain"
+    },
+    {
+      "slug": "dev.analysis.attribute_cross",
+      "decision": "remove"
+    },
+    {
+      "slug": "dev.analysis.brand_competition",
+      "decision": "remove"
+    },
+    {
+      "slug": "dev.analysis.decision_dashboard",
+      "decision": "remove"
+    },
+    {
+      "slug": "dev.analysis.information_summary",
+      "decision": "remove"
+    },
+    {
+      "slug": "dev.analysis.market_overview",
+      "decision": "remove"
+    },
+    {
+      "slug": "dev.analysis.price_analysis",
+      "decision": "remove"
+    },
+    {
+      "slug": "dev.analysis.review_kano",
+      "decision": "remove"
+    },
+    {
+      "slug": "dev.analysis.tag_cross",
+      "decision": "remove"
+    },
+    {
+      "slug": "dev.panorama.market_insights",
+      "decision": "remove"
+    },
+    {
+      "slug": "emperor.conversation.plan",
+      "decision": "remove"
+    },
+    {
+      "slug": "finance.monthly.profit",
+      "decision": "retain"
+    },
+    {
+      "slug": "image.step0.competitor.analysis",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step0.competitor.gallery.image-facts",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step0.competitor.gallery.summary",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step0.competitor.summary",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step0.composite.synthesis",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step0.expression.linked-analysis",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step1.sellingpoints",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step2.aplus.single.optimize",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step2.outline",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step3.style",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step4.reference",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step4.reoptimize",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step5.aplus.combo.recommend",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step5.aplus.optimize",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step5.aplus.segment",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step5.aplus.single.optimize",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step5.final.suggestion",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step5.main.segment",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step5.secondary.segment",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.step6.prompt",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.workflow.general",
+      "decision": "remove"
+    },
+    {
+      "slug": "image.workflow.step4.refine",
+      "decision": "remove"
+    },
+    {
+      "slug": "keyword.listing.layout",
+      "decision": "retain"
+    },
+    {
+      "slug": "keyword.root.classify",
+      "decision": "retain"
+    },
+    {
+      "slug": "keyword.scene.tag",
+      "decision": "retain"
+    },
+    {
+      "slug": "keyword.semantic.filter",
+      "decision": "retain"
+    },
+    {
+      "slug": "keyword.strategy.matrix",
+      "decision": "retain"
+    },
+    {
+      "slug": "keyword.traffic.classify",
+      "decision": "retain"
+    },
+    {
+      "slug": "knowledge.images.tag",
+      "decision": "retain"
+    },
+    {
+      "slug": "knowledge.images.tag.coach",
+      "decision": "retain"
+    },
+    {
+      "slug": "knowledge.qa.answer",
+      "decision": "remove"
+    },
+    {
+      "slug": "knowledge.qa.select",
+      "decision": "remove"
+    },
+    {
+      "slug": "listing.abtest.generate",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.bullet.refine",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.bullet.single",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.bullet.step.generate",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.bullets.generate",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.checklist.bullets",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.checklist.description",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.checklist.qa",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.checklist.searchterms",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.checklist.title",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.competitor.analyze",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.competitor.bilingual-reviews",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.competitor.buyers",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.competitor.selling",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.competitor.summary",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.competitor.title",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.description.generate",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.general",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.image.advice",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.keyword.fabe.expand",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.qa.generate",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.scoring.overall",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.searchterms.generate",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.sellingpoints.generate",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.title.generate",
+      "decision": "retain"
+    },
+    {
+      "slug": "listing.translate.chinese",
+      "decision": "retain"
+    },
+    {
+      "slug": "system.knowledge.distillation.manual",
+      "decision": "remove"
+    },
+    {
+      "slug": "video.competitor.analysis",
+      "decision": "remove"
+    },
+    {
+      "slug": "video.competitor.summary",
+      "decision": "remove"
+    },
+    {
+      "slug": "video.edit.script",
+      "decision": "remove"
+    },
+    {
+      "slug": "video.product.extract",
+      "decision": "remove"
+    },
+    {
+      "slug": "video.product.info",
+      "decision": "remove"
+    },
+    {
+      "slug": "video.section.plan",
+      "decision": "remove"
+    },
+    {
+      "slug": "video.shot.detail",
+      "decision": "remove"
+    },
+    {
+      "slug": "video.subtopic.expand",
+      "decision": "remove"
+    },
+    {
+      "slug": "ops.meeting.minutes",
+      "decision": "retain"
+    }
+  ]
+}

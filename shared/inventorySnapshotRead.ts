@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { INVENTORY_READ_LIMITS, INVENTORY_SOURCE_KEYS, INVENTORY_STOCK_KEYS, InventorySnapshotReadError, InventoryBusinessScopeSchema, InventoryStockSchema, InventoryReadRowSchema, InventoryLegacyRowSchema, InventoryCanonicalSnapshotSchema, inventoryCanonical, inventoryJsonBytes, parseInventoryJson, mapInventorySources, sumInventoryStock, type InventoryReadRow, type InventoryStock, type InventoryBusinessScope, type InventoryAux } from "./inventorySnapshotMapping";
+import { INVENTORY_READ_LIMITS, INVENTORY_SOURCE_KEYS, INVENTORY_STOCK_KEYS, InventorySnapshotReadError, InventoryBusinessScopeSchema, InventoryStockSchema, InventoryReadRowSchema, InventoryCurrentProductSchema, InventoryLegacyRowSchema, InventoryCanonicalSnapshotSchema, inventoryCanonical, inventoryJsonBytes, parseInventoryJson, mapInventorySources, sumInventoryStock, type InventoryReadRow, type InventoryStock, type InventoryBusinessScope, type InventoryAux } from "./inventorySnapshotMapping";
 export * from "./inventorySnapshotMapping";
 
 const id = z.number().int().positive().safe().max(2147483647);
 const identitySchema = z.object({ userId: id, workspaceId: id }).strict();
 export type InventoryReadIdentity = z.infer<typeof identitySchema>;
-export const InventorySnapshotReadInputSchema = z.object({ expectedWorkspaceId: id, search: z.string().max(200), unpaired: z.boolean(), ageThreshold: z.union([z.literal(180), z.literal(365)]), groupOffset: z.number().int().min(0).max(INVENTORY_READ_LIMITS.rows), groupLimit: z.number().int().min(1).max(50), agedGroupOffset: z.number().int().min(0).max(INVENTORY_READ_LIMITS.rows), agedGroupLimit: z.number().int().min(1).max(50), exactScope: InventoryBusinessScopeSchema.optional() }).strict();
+export const InventorySnapshotReadInputSchema = z.object({ expectedWorkspaceId: id, search: z.string().max(200), unpaired: z.boolean(), ageThreshold: z.union([z.literal(180), z.literal(365)]), groupOffset: z.number().int().min(0).max(INVENTORY_READ_LIMITS.rows), groupLimit: z.number().int().min(1).max(50), agedGroupOffset: z.number().int().min(0).max(INVENTORY_READ_LIMITS.rows), agedGroupLimit: z.number().int().min(1).max(50), exactScope: InventoryBusinessScopeSchema.optional(), ownershipMode: z.literal("current_us").optional(), operatorId: id.optional(), attention: z.enum(["fba_empty", "aged", "valuation_missing"]).optional() }).strict().refine(value => value.ownershipMode === "current_us" ? !value.exactScope : value.operatorId === undefined, "Incompatible inventory ownership filters");
 export type InventorySnapshotReadInput = z.infer<typeof InventorySnapshotReadInputSchema>;
 const provenanceSchema = z.object({ status: z.enum(["legacy_unverifiable", "replayed_v2"]), missingReasons: z.array(z.string()), sourceCoverage: z.enum(["legacy_saved_only", "provided_arrays_not_collection_attested"]) }).strict();
 export type ParsedInventorySnapshot = { version: 1 | 2; currency: "CNY"; capturedAt: number; startedAt: number; rows: InventoryReadRow[]; warnings: string[]; sourceCounts: Record<string, number>; provenance: z.infer<typeof provenanceSchema>; scopeUniverse: { scopes: InventoryBusinessScope[]; complete: boolean } };
@@ -77,17 +77,24 @@ export function inventorySnapshotTotals(rows: InventoryReadRow[]): InventoryTota
 }
 export const InventoryGroupSchema = z.object({ id: z.string(), parentAsin: z.string(), name: z.string(), operator: z.string(), rows: z.array(InventoryReadRowSchema).min(1).max(INVENTORY_READ_LIMITS.rows), aged: z.number().finite().nonnegative().nullable(), totals: InventoryTotalsSchema, scopes: z.array(InventoryBusinessScopeSchema), scopeStatus: z.enum(["verified", "unknown"]) }).strict();
 export type InventoryGroup = z.infer<typeof InventoryGroupSchema>;
+/** Attention is a view over the same validated stock, never another quantity ledger. */
+export function inventoryGroupNeedsAttention(group: InventoryGroup, attention?: "fba_empty" | "aged" | "valuation_missing") {
+  if (attention === "fba_empty") return group.rows.some(row => row.fba.quantity === 0 && row.total.quantity > 0);
+  if (attention === "aged") return group.aged !== null && group.aged > 0;
+  if (attention === "valuation_missing") return group.rows.some(row => [row.domestic,row.purchase,row.shipping,row.fba].some(stock => stock.quantity > 0 && (stock.value === null || stock.value <= 0)));
+  return true;
+}
 export function inventorySnapshotGroups(rows: InventoryReadRow[], threshold: 180 | 365): InventoryGroup[] {
   const groups = new Map<string, InventoryReadRow[]>();
   for (const row of rows) {
     // v1 / unknown scopes must not create a deceptively verified cross-shop
     // parent aggregate. Multi-scope pools remain distinct physical groups.
-    const key = row.scopeStatus === "verified" && row.scopes.length === 1 && row.parentAsin ? inventoryCanonical({ scope: row.scopes[0], parentAsin: row.parentAsin }) : `source-row:${row.id}`;
+    const key = row.currentProduct ? inventoryCanonical({ currentProduct: { storeName: row.currentProduct.storeName, parentAsin: row.currentProduct.parentAsin } }) : row.scopeStatus === "verified" && row.scopes.length === 1 && row.parentAsin ? inventoryCanonical({ scope: row.scopes[0], parentAsin: row.parentAsin }) : `source-row:${row.id}`;
     const values = groups.get(key) ?? []; values.push(row); groups.set(key, values);
   }
   return [...groups].map(([key, values]) => {
     const ages = values.map(row => inventoryAgeQuantity(row, threshold)), first = values[0];
-    return { id: key, parentAsin: first.parentAsin, name: first.parentName || first.name, operator: [...new Set(values.map(row => row.operator).filter(Boolean))].join(" / "), rows: [...values].sort((a, b) => a.asin.localeCompare(b.asin) || a.msku.localeCompare(b.msku) || a.id.localeCompare(b.id)), aged: ages.some(value => value === null) ? null : ages.reduce<number>((sum, value) => sum + value!, 0), totals: inventorySnapshotTotals(values), scopes: [...new Map(values.flatMap(row => row.scopes).map(scope => [inventoryCanonical(scope), scope])).values()], scopeStatus: values.every(row => row.scopeStatus === "verified") ? "verified" as const : "unknown" as const };
+    return { id: key, parentAsin: first.currentProduct?.parentAsin ?? first.parentAsin, name: first.currentProduct?.title || first.parentName || first.name, operator: [...new Set(values.map(row => row.currentProduct?.operator ?? row.operator).filter(Boolean))].join(" / "), rows: [...values].sort((a, b) => a.asin.localeCompare(b.asin) || a.msku.localeCompare(b.msku) || a.id.localeCompare(b.id)), aged: ages.some(value => value === null) ? null : ages.reduce<number>((sum, value) => sum + value!, 0), totals: inventorySnapshotTotals(values), scopes: [...new Map(values.flatMap(row => row.scopes).map(scope => [inventoryCanonical(scope), scope])).values()], scopeStatus: values.every(row => row.scopeStatus === "verified") ? "verified" as const : "unknown" as const };
   }).sort((a, b) => a.id.localeCompare(b.id));
 }
 export function planInventoryScopeAccess(parsed: ParsedInventorySnapshot, exactScope: InventoryBusinessScope): { rowIds: string[]; requiredRows: InventoryReadRow[]; scopeVerifiable: boolean; reasonCode: string | null } {
@@ -105,13 +112,14 @@ export function planInventoryScopeAccess(parsed: ParsedInventorySnapshot, exactS
 }
 const pageSchema = z.object({ offset: z.number().int().nonnegative(), limit: z.number().int().min(1).max(50), totalGroups: z.number().int().nonnegative(), totalRows: z.number().int().nonnegative(), nextOffset: z.number().int().nonnegative().nullable(), hasMore: z.boolean() }).strict();
 const metadataSchema = z.object({ id, runId: id, runSource: z.enum(["saihu_sync", "manual_collection"]).default("saihu_sync"), capturedAt: timestamp, startedAt: timestamp, version: z.union([z.literal(1), z.literal(2)]), currency: z.literal("CNY"), visibility: z.enum(["full", "scoped"]), provenance: provenanceSchema, sourceCounts: countsSchema.nullable(), warnings: z.array(z.string()) }).strict();
-const resultSchema = z.object({ identity: identitySchema, request: InventorySnapshotReadInputSchema, status: z.enum(["ready", "missing", "not_found", "invalid", "scope_unverifiable"]), reasonCode: z.string().nullable(), missingReason: z.string().nullable(), snapshot: metadataSchema.nullable(), totals: InventoryTotalsSchema.nullable(), groups: z.array(InventoryGroupSchema).max(50), page: pageSchema, agedTotals: InventoryTotalsSchema.nullable(), unknownAgeTotals: InventoryTotalsSchema.nullable(), agedGroups: z.array(InventoryGroupSchema).max(50), unknownAgeGroups: z.array(InventoryGroupSchema).max(50), agedPage: pageSchema.extend({ knownGroupCount: z.number().int().nonnegative(), unknownGroupCount: z.number().int().nonnegative() }).strict() }).strict();
+const inventoryOperatorSchema = z.object({ id, name: z.string().max(2000) }).strict();
+const resultSchema = z.object({ operators: z.array(inventoryOperatorSchema).max(10000).optional(), identity: identitySchema, request: InventorySnapshotReadInputSchema, status: z.enum(["ready", "missing", "not_found", "invalid", "scope_unverifiable"]), reasonCode: z.string().nullable(), missingReason: z.string().nullable(), snapshot: metadataSchema.nullable(), totals: InventoryTotalsSchema.nullable(), groups: z.array(InventoryGroupSchema).max(50), page: pageSchema, agedTotals: InventoryTotalsSchema.nullable(), unknownAgeTotals: InventoryTotalsSchema.nullable(), agedGroups: z.array(InventoryGroupSchema).max(50), unknownAgeGroups: z.array(InventoryGroupSchema).max(50), agedPage: pageSchema.extend({ knownGroupCount: z.number().int().nonnegative(), unknownGroupCount: z.number().int().nonnegative() }).strict() }).strict();
 export const InventorySnapshotReadResultSchema = resultSchema.superRefine((value, ctx) => {
   const issue = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message });
   if (value.identity.workspaceId !== value.request.expectedWorkspaceId) issue("Identity mismatch");
   if (value.status === "ready") {
     if (!value.snapshot || !value.totals || !value.agedTotals || !value.unknownAgeTotals || value.reasonCode !== null || value.missingReason !== null) issue("Ready result missing data");
-    if (value.snapshot?.visibility === "scoped" && (value.snapshot.version !== 2 || value.snapshot.sourceCounts !== null || !value.request.exactScope)) issue("Scoped metadata disclosure");
+    if (value.snapshot?.visibility === "scoped" && (value.snapshot.sourceCounts !== null || (value.request.ownershipMode !== "current_us" && (value.snapshot.version !== 2 || !value.request.exactScope)))) issue("Scoped metadata disclosure");
   } else if (value.snapshot || value.totals || value.agedTotals || value.unknownAgeTotals || value.groups.length || value.agedGroups.length || value.unknownAgeGroups.length || !value.reasonCode || !value.missingReason || value.page.totalGroups || value.agedPage.totalGroups) issue("Failure cannot contain partial data");
   for (const [page, groups, offset, limit] of [[value.page, value.groups, value.request.groupOffset, value.request.groupLimit], [value.agedPage, [...value.agedGroups, ...value.unknownAgeGroups], value.request.agedGroupOffset, value.request.agedGroupLimit]] as const) {
     if (page.offset !== offset || page.limit !== limit || groups.length !== Math.min(limit, Math.max(0, page.totalGroups - offset)) || page.hasMore !== (offset + groups.length < page.totalGroups) || page.nextOffset !== (page.hasMore ? offset + groups.length : null)) issue("Page continuity mismatch");
@@ -122,7 +130,9 @@ export const InventorySnapshotReadResultSchema = resultSchema.superRefine((value
     for (const group of groups) {
       for (const row of group.rows) {
         if (displayedRows.has(row.id)) issue("Duplicate displayed source row"); displayedRows.add(row.id);
-        if (value.snapshot?.visibility === "scoped" && (row.scopeStatus !== "verified" || !row.scopes.some(scope => inventoryCanonical(scope) === inventoryCanonical(value.request.exactScope)))) issue("Unrequested scoped source row");
+        if (value.snapshot?.visibility === "scoped" && value.request.ownershipMode === "current_us" && !row.currentProduct) issue("Current product authorization missing");
+        if (value.request.ownershipMode !== "current_us" && row.currentProduct) issue("Unexpected current product projection");
+        if (value.snapshot?.visibility === "scoped" && value.request.ownershipMode !== "current_us" && (row.scopeStatus !== "verified" || !row.scopes.some(scope => inventoryCanonical(scope) === inventoryCanonical(value.request.exactScope)))) issue("Unrequested scoped source row");
       }
       try {
         validateRows(group.rows);
@@ -152,14 +162,24 @@ export function buildInventorySnapshotReadFailure(value: { identity: InventoryRe
   const input = InventorySnapshotReadInputSchema.parse(value.input), identity = identitySchema.parse(value.identity);
   return checkedResult({ identity, request: input, status: value.status, reasonCode: value.reasonCode, missingReason: value.missingReason, snapshot: null, totals: null, groups: [], page: page([], input.groupOffset, input.groupLimit).page, agedTotals: null, unknownAgeTotals: null, agedGroups: [], unknownAgeGroups: [], agedPage: { ...page([], input.agedGroupOffset, input.agedGroupLimit).page, knownGroupCount: 0, unknownGroupCount: 0 } });
 }
-export function buildInventorySnapshotReadResult(value: { identity: InventoryReadIdentity; input: InventorySnapshotReadInput; record: InventorySnapshotRecord | null; visibility?: "full" | "scoped"; scopedRows?: string[]; tableMissing?: boolean }): InventorySnapshotReadResult {
+export function buildInventorySnapshotReadResult(value: { identity: InventoryReadIdentity; input: InventorySnapshotReadInput; record: InventorySnapshotRecord | null; visibility?: "full" | "scoped"; scopedRows?: string[]; tableMissing?: boolean; currentProducts?: { projections: Array<{ rowId: string; product: z.infer<typeof InventoryCurrentProductSchema> }>; rowIds: string[]; operators: Array<{ id: number; name: string }> } }): InventorySnapshotReadResult {
   const input = InventorySnapshotReadInputSchema.parse(value.input), identity = identitySchema.parse(value.identity);
   if (identity.workspaceId !== input.expectedWorkspaceId) throw new InventorySnapshotReadError("identity_mismatch");
   if (value.tableMissing || value.record === null) return buildInventorySnapshotReadFailure({ identity, input, status: value.tableMissing ? "missing" : "not_found", reasonCode: value.tableMissing ? "table_missing" : "snapshot_not_found", missingReason: value.tableMissing ? "保存库存快照表尚未接通，不表示库存为零" : "尚无保存库存快照；不会在线刷新或调用模型" });
   const record = value.record, parsed = parseInventorySnapshot(record.payload), visibility = value.visibility ?? "full";
   if (!id.safeParse(record.id).success || !id.safeParse(record.runId).success || record.workspaceId !== identity.workspaceId || typeof record.capturedAt === "string" && !/^(?:0|[1-9]\d*)$/u.test(record.capturedAt) || !timestamp.safeParse(Number(record.capturedAt)).success || Number(record.capturedAt) !== parsed.capturedAt) throw new InventorySnapshotReadError("record_identity_or_capture");
   let rows = parsed.rows;
-  if (input.exactScope || visibility === "scoped") {
+  if (input.ownershipMode === "current_us") {
+    if (input.exactScope || !value.currentProducts || value.scopedRows) throw new InventorySnapshotReadError("current_product_authorization_required");
+    const projection = value.currentProducts;
+    if (new Set(projection.rowIds).size !== projection.rowIds.length || new Set(projection.projections.map(item => item.rowId)).size !== projection.projections.length) throw new InventorySnapshotReadError("duplicate_current_product");
+    const availableIds = new Set(rows.map(row => row.id)), allowedIds = new Set(projection.rowIds);
+    if (projection.rowIds.some(id => !availableIds.has(id)) || projection.projections.some(item => !availableIds.has(item.rowId))) throw new InventorySnapshotReadError("unknown_current_product");
+    const products = new Map(projection.projections.map(item => [item.rowId, InventoryCurrentProductSchema.parse(item.product)]));
+    rows = rows.filter(row => allowedIds.has(row.id)).map(row => products.has(row.id) ? { ...row, currentProduct: products.get(row.id)! } : row);
+    if (visibility === "scoped" && rows.some(row => !row.currentProduct)) throw new InventorySnapshotReadError("unassigned_current_product");
+  } else if (value.currentProducts || input.operatorId !== undefined) throw new InventorySnapshotReadError("unexpected_current_product");
+  else if (input.exactScope || visibility === "scoped") {
     if (!input.exactScope) throw new InventorySnapshotReadError("exact_scope_required");
     const plan = planInventoryScopeAccess(parsed, input.exactScope);
     if (!plan.scopeVerifiable) return buildInventorySnapshotReadFailure({ identity, input, status: "scope_unverifiable", reasonCode: plan.reasonCode!, missingReason: "保存来源无法证明此完整账号/店铺/站点/父体范围；未使用旧负责人或筛选值补造" });
@@ -168,8 +188,8 @@ export function buildInventorySnapshotReadResult(value: { identity: InventoryRea
   } else if (value.scopedRows) throw new InventorySnapshotReadError("unexpected_authorized_rows");
   const search = input.search.trim().toLocaleLowerCase();
   rows = rows.filter(row => !input.unpaired || row.unpaired);
-  const groups = inventorySnapshotGroups(rows, input.ageThreshold).filter(group => !search || group.rows.some(row => [row.parentAsin, row.parentName, row.asin, row.msku, row.localSku, row.name, row.operator].some(text => text.toLocaleLowerCase().includes(search))));
+  const groups = inventorySnapshotGroups(rows, input.ageThreshold).filter(group => inventoryGroupNeedsAttention(group,input.attention)).filter(group => !search || group.rows.some(row => [row.currentProduct?.parentAsin ?? row.parentAsin, row.currentProduct?.title ?? row.parentName, row.asin, row.msku, row.localSku, row.name, row.currentProduct?.operator ?? row.operator].some(text => text.toLocaleLowerCase().includes(search))));
   rows = groups.flatMap(group => group.rows);
   const known = groups.filter(group => group.aged !== null && group.aged > 0).sort((a, b) => b.aged! - a.aged! || a.id.localeCompare(b.id)), unknown = groups.filter(group => group.aged === null), regularPage = page(groups, input.groupOffset, input.groupLimit), agePage = page([...known, ...unknown], input.agedGroupOffset, input.agedGroupLimit);
-  return checkedResult({ identity, request: input, status: "ready", reasonCode: null, missingReason: null, snapshot: { id: record.id, runId: record.runId, runSource: record.runSource ?? "saihu_sync", capturedAt: parsed.capturedAt, startedAt: parsed.startedAt, version: parsed.version, currency: "CNY", visibility, provenance: parsed.provenance, sourceCounts: visibility === "full" ? parsed.sourceCounts : null, warnings: visibility === "full" ? parsed.warnings : [...new Set(rows.flatMap(row => row.notes))] }, totals: inventorySnapshotTotals(rows), groups: regularPage.groups, page: regularPage.page, agedTotals: inventorySnapshotTotals(known.flatMap(group => group.rows)), unknownAgeTotals: inventorySnapshotTotals(unknown.flatMap(group => group.rows)), agedGroups: agePage.groups.filter(group => group.aged !== null), unknownAgeGroups: agePage.groups.filter(group => group.aged === null), agedPage: { ...agePage.page, knownGroupCount: known.length, unknownGroupCount: unknown.length } });
+  return checkedResult({ ...(value.currentProducts ? { operators: value.currentProducts.operators } : {}), identity, request: input, status: "ready", reasonCode: null, missingReason: null, snapshot: { id: record.id, runId: record.runId, runSource: record.runSource ?? "saihu_sync", capturedAt: parsed.capturedAt, startedAt: parsed.startedAt, version: parsed.version, currency: "CNY", visibility, provenance: parsed.provenance, sourceCounts: visibility === "full" ? parsed.sourceCounts : null, warnings: visibility === "full" ? parsed.warnings : [...new Set(rows.flatMap(row => row.notes))] }, totals: inventorySnapshotTotals(rows), groups: regularPage.groups, page: regularPage.page, agedTotals: inventorySnapshotTotals(known.flatMap(group => group.rows)), unknownAgeTotals: inventorySnapshotTotals(unknown.flatMap(group => group.rows)), agedGroups: agePage.groups.filter(group => group.aged !== null), unknownAgeGroups: agePage.groups.filter(group => group.aged === null), agedPage: { ...agePage.page, knownGroupCount: known.length, unknownGroupCount: unknown.length } });
 }

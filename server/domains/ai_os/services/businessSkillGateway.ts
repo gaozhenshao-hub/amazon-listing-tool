@@ -8,6 +8,13 @@ export class BusinessSkillRouteError extends Error {
   }
 }
 
+export function createBusinessSkillInvoker(source: string, defaultSkill?: string) {
+  return (params: InvokeParams) => invokeBusinessSkill({
+    ...params,
+    emperorSkill: { ...params.emperorSkill, slug: params.emperorSkill?.slug || params.skillSlug || defaultSkill, migrationSource: params.emperorSkill?.migrationSource || source },
+  });
+}
+
 /**
  * Strict business-facing AI entry point. The system prompt always comes from
  * emperor_skills (scheme A); business code cannot fall back to the raw model.

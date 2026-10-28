@@ -28,6 +28,24 @@ beforeEach(() => {
   columns = { product_profiles: ["id", "workspaceId", "user_id", "parent_asin", "store_name", "marketplace", "title", "chinese_name", "image_url", "operator", "updatedAt"], saihu_product_weekly: ["id", "workspaceId", "import_id", "report_date", "report_level", "week_start_date", "week_end_date", "asin", "parent_asin", "store_name", "site", "title", "product_name", "image_url", "operator"], operator_name_mappings: ["id", "workspaceId", "external_name", "source_type", "system_user_id", "is_confirmed"], ops_inventory_owner_assignments: ["id", "workspaceId", "parent_asin", "store_name", "country", "assignee_user_id", "is_active"] };
 });
 describe("real bounded product candidate repository", () => {
+  it("reads historical observations beyond 5000 in bounded batches and keeps only the latest owner", async () => {
+    profiles = [];
+    days = Array.from({ length: 6001 }, (_, index) => daily({ id: index + 1, importId: index + 1, operator: index === 6000 ? "外部乙" : "外部甲" }));
+    mappings.push(mapping({ id: 32, externalName: "外部乙", userId: 4 }));
+    expect((await loadTaskWriteCandidates(tx, 7, 3)).items).toEqual([]);
+    const result = await loadTaskWriteCandidates(tx, 7, 4);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].sourceId).toBe(6001);
+    const batches = queries.filter(q => q.sql.includes("FROM saihu_product_weekly") && q.sql.includes("id IN"));
+    expect(batches.length).toBeGreaterThan(30);
+    expect(batches.every(q => q.params.length <= 201)).toBe(true);
+  });
+  it("still rejects oversized historical sources before loading any bodies", async () => {
+    delete columns.product_profiles;
+    candidateOverride = Array.from({ length: 100001 }, (_, index) => ({ id: index + 1, workspaceId: 7, bodyBytes: 1 }));
+    await expect(loadTaskWriteCandidates(tx, 7, 3)).rejects.toThrow("CANDIDATES_INCOMPLETE");
+    expect(queries.some(q => q.sql.includes("id IN"))).toBe(false);
+  });
   it("retains full source fields and exact workspace/store/site/parent identity with verifiable key", async () => { const result = await loadTaskWriteCandidates(tx, 7, 3); expect(result.complete).toBe(true); expect(result.items).toHaveLength(2); for (const value of result.items) { expect(ProductTaskWriteProductSchema.safeParse(value).success).toBe(true); expect(value.key).toBe(productTaskProductKey(value)); } expect(queries.every(q => q.sql.startsWith("SELECT "))).toBe(true); expect(queries.map(q => q.sql).join("\n")).not.toMatch(/gross_profit|sales_amount|monthly|sync|SELECT \*/u); });
   it("does not deduplicate another store or Canada/Mexico into the US parent", async () => { profiles.push(profile({ id: 12, site: "CA" }), profile({ id: 13, site: "MX" }), profile({ id: 14, storeName: "Other Store" })); const result = await loadTaskWriteCandidates(tx, 7, 3); expect(result.items.filter(item => item.identity.parentAsin === "B000000001")).toHaveLength(4); });
   it("selects latest ownership before filtering historical name matches", async () => { profiles = []; days.push(daily({ id: 22, importId: 31, operator: "外部乙" })); mappings.push(mapping({ id: 32, externalName: "外部乙", userId: 4 })); expect((await loadTaskWriteCandidates(tx, 7, 3)).items).toEqual([]); expect((await loadTaskWriteCandidates(tx, 7, 4)).items[0].sourceId).toBe(22); });

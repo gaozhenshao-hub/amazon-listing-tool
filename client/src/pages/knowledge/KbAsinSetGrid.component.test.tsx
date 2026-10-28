@@ -38,7 +38,7 @@ describe("KbAsinSetGrid", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /工业品\s*1/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /工业品（1）/ })).toBeInTheDocument();
     expect(screen.getByLabelText("ASIN 集标签")).toHaveTextContent("类目工业品风格工业极简主色黑色提亮金色");
     expect(container.querySelector("[style*='312px']")).toHaveStyle({ gridTemplateColumns: "repeat(auto-fill, 312px)" });
     expect(container.querySelector(".aspect-square")).toBeInTheDocument();
@@ -57,7 +57,7 @@ describe("KbAsinSetGrid", () => {
       />,
     );
 
-    const groupButton = screen.getByRole("button", { name: /工业品\s*1/ });
+    const groupButton = screen.getByRole("button", { name: /工业品（1）/ });
     fireEvent.click(groupButton);
     expect(screen.queryByText("测试产品")).not.toBeInTheDocument();
 

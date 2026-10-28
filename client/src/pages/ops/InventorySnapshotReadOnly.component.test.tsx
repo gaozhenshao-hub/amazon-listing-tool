@@ -48,7 +48,7 @@ function legacyPayload() {
   return { version: 1, currency: "CNY", startedAt: STARTED, capturedAt: CAPTURED, rows: [row, { ...row, id: "legacy-2", name: "旧版第二行" }], warnings: ["仅历史保存来源"], sourceCounts: { warehouses: 0, warehouse: 0, fba: 0, commodities: 0, aux: 0, listings: 0, shipping: 0, shippingItems: 0, details: 0 } };
 }
 const readButton = () => screen.getByRole("button", { name: "读取已有库存快照" });
-async function readReady() { fireEvent.click(readButton()); await screen.findByText(/快照 ID：41/); }
+async function readReady() { fireEvent.click(readButton()); await screen.findByText(/上次更新：/); }
 function fillScope() {
   for (const [label, value] of [["库存父 ASIN", "P00"], ["库存店铺", scope.storeName], ["库存站点 / 国家代码", "美国"], ["库存来源账号 ID", scope.accountId]]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
@@ -66,13 +66,13 @@ describe("committed collection refreshes already opened inventory only", () => {
     fireEvent.change(screen.getByLabelText("库存超龄口径"), { target: { value: "365" } });
     await readReady(); fireEvent.click(screen.getByRole("button", { name: "库存父组下一页" }));
     await waitFor(() => expect(controls.query.mock.calls.at(-1)?.[0].groupOffset).toBe(12));
-    await screen.findByText(/快照 ID：41/);
+    await screen.findByText(/上次更新：/);
     const delayed = deferred<InventorySnapshotReadResult>(); controls.query.mockReturnValueOnce(delayed.promise);
     act(() => publishInventorySnapshotChange({ userId: 7, workspaceId: 11, snapshotId: 42 }));
-    expect(screen.queryByText(/快照 ID：41/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/上次更新：/)).not.toBeInTheDocument();
     const request = controls.query.mock.calls.at(-1)![0] as InventorySnapshotReadInput;
     expect(request).toEqual(input({ search: "ASIN", ageThreshold: 365 }));
-    await act(async () => { delayed.resolve(result(request)); }); await screen.findByText(/快照 ID：41/);
+    await act(async () => { delayed.resolve(result(request)); }); await screen.findByText(/上次更新：/);
   });
   it("keeps an opened exact scope and unpaired filter", async () => {
     controls.query.mockImplementation((request: InventorySnapshotReadInput) => Promise.resolve(result(request)));
@@ -125,20 +125,42 @@ describe("inventory snapshot read ownership gates", () => {
 });
 
 describe("complete saved inventory presentation", () => {
+  it.each([
+    { quantity: 0, value: 0, expected: "单价 ¥0" },
+    { quantity: 0, value: null, expected: "单价 ¥0" },
+    { quantity: 3, value: 0, expected: "单价 待核对" },
+    { quantity: 3, value: null, expected: "单价 待核对" },
+    { quantity: 3, value: 30, expected: "单价 ¥10" },
+  ])("uses the agreed unit-price display for quantity $quantity and value $value", ({ quantity, value, expected }) => {
+    const saved = legacyPayload();
+    const data = { ...saved, rows: saved.rows.map((row, index) => index === 0 ? {
+      ...row, domestic: { quantity, value }, total: { quantity: quantity + row.purchase.quantity, value: null },
+    } : row) };
+    render(<InventorySnapshotReadOnlyContent result={result(input(), data)} />);
+    const table = screen.getByRole("region", { name: "库存明细横向表" });
+    const row = table.querySelector("tbody tr")!;
+    const domestic = row.querySelectorAll("td")[5];
+    expect(within(domestic).getByText(expected)).toBeVisible();
+    expect(domestic).toHaveTextContent(value === null ? "货值 待核对" : `货值 ¥${value.toFixed(2)}`);
+    if (quantity === 0) expect(within(domestic).getByText("单价 ¥0")).toBeVisible();
+  });
   it("renders both full grouped tables, all stock components and capture timezone without RPC", () => {
     render(<InventorySnapshotReadOnlyContent result={result()} />);
     expect(controls.query).not.toHaveBeenCalled();
     expect(screen.getByRole("region", { name: "库存明细横向表" })).toHaveClass("overflow-x-auto");
     expect(screen.getByRole("region", { name: "库存明细横向表" })).toHaveAttribute("tabindex", "0");
     const table = within(screen.getByRole("region", { name: "库存明细横向表" }));
-    for (const label of ["计划数量", "国内仓", "采购在途（已下单）", "FBA 在途（已发出 / 接收中）", "FBA 仓", "商品总库存", "辅料（共享独立）"]) expect(table.getByRole("columnheader", { name: label })).toBeInTheDocument();
-    expect(screen.getByText(/2026\/10\/17 08:01:02/)).toHaveTextContent("Asia/Shanghai");
-    expect(screen.getByText(/采集完成原值/)).toHaveTextContent(String(CAPTURED));
-    expect(screen.getByText(/工作区管理可见范围/)).toBeInTheDocument();
-    for (const key of ["available", "reservedTransfer", "reservedProcessing", "reservedCustomerorders", "unfulfillable", "research", "inboundShipped", "inboundReceiving", "inTransit", "inboundWorking", "totalInventory"]) expect(table.getAllByText(new RegExp(`（${key}）`)).length).toBeGreaterThan(0);
-    expect(table.getAllByText(/已核验来源字段映射/)).toHaveLength(2);
-    expect(table.getAllByText(/来源市场 ID：ATVPDKIKX0DER/)).toHaveLength(3);
-    expect(within(screen.getByRole("region", { name: "全筛选库存与货值合计" })).getByText("300", { selector: "p" })).toBeInTheDocument();
+    for (const label of ["计划数量", "国内仓", "采购在途", "FBA 在途", "FBA 仓", "商品总库存", "辅料"]) expect(table.getByRole("columnheader", { name: label })).toBeInTheDocument();
+    expect(screen.getByText(/2026\/10\/17 08:01:02/)).toHaveTextContent("北京时间");
+    expect(screen.queryByText(/采集完成原值/)).not.toBeInTheDocument();
+    expect(document.querySelector("pre")).toBeNull();
+    expect(screen.getByText("赛狐库存 · 人民币")).toBeInTheDocument();
+    expect(table.queryByRole("columnheader", { name: "来源、分项和分配证据" })).not.toBeInTheDocument();
+    for (const disclosure of screen.getByRole("region", { name: "库存明细横向表" }).querySelectorAll("details")) {
+      expect(disclosure.closest("td")).toBe(disclosure.closest("tr")!.lastElementChild);
+      expect(disclosure.querySelector("summary")).toHaveTextContent("辅料明细");
+    }
+    expect(within(screen.getByRole("region", { name: "全筛选库存与货值合计" })).getByText("FBA 待发货计划：300", { selector: "p" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "已知超龄库存横向表" })).toBeInTheDocument();
   });
   it("keeps complete parent groups together and shows whole-filter totals, not current page", () => {
@@ -147,23 +169,26 @@ describe("complete saved inventory presentation", () => {
     const region = screen.getByRole("region", { name: "库存明细横向表" });
     expect(region.querySelectorAll("tbody")).toHaveLength(1); expect(region.querySelectorAll("tbody tr")).toHaveLength(2);
     expect(region.querySelector("td[rowspan]" )).toHaveAttribute("rowspan", "2");
-    expect(within(screen.getByRole("region", { name: "全筛选库存与货值合计" })).getByText("数量 42")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "全筛选库存与货值合计" })).getByText((_, element) => element?.tagName === "P" && element.textContent === "数量 42")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "库存父组下一页" })); expect(onPage).toHaveBeenLastCalledWith(1, 0);
     fireEvent.click(screen.getByRole("button", { name: "库龄父组下一页" })); expect(onPage).toHaveBeenLastCalledWith(0, 1);
   });
   it("preserves legacy unknowns, zero values, original decimal precision and deduplicated accessories", () => {
-    const { container } = render(<InventorySnapshotReadOnlyContent result={result(input(), legacyPayload())} />);
-    expect(screen.getAllByText(/未保存完整范围 \/ 不可核验/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/未保存 FBA 原始分项/).length).toBeGreaterThan(0);
+    const saved = legacyPayload();
+    saved.rows[0].aux[0].name = "<img src=x onerror=alert(1)>";
+    const data = result(input(), saved);
+    const { container } = render(<InventorySnapshotReadOnlyContent result={data} />);
+    expect(data.groups.every(group => group.scopeStatus === "unknown")).toBe(true);
+    expect(data.groups.flatMap(group => group.rows).every(row => row.fbaComponents.length === 0)).toBe(true);
     expect(screen.getAllByText("2.1235").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("单价 0.3333 CNY / 件").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("单价 0 CNY / 件").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/有数量但货值为 0/).length).toBeGreaterThan(0);
-    expect(container.textContent).toContain("2.123456789");
+    expect(screen.getAllByText("单价 ¥0.3333").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("单价 ¥0").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("单价 待核对").length).toBeGreaterThan(0);
+    expect(data.groups[0].rows[0].plan).toBe(2.123456789);
     const totals = within(screen.getByRole("region", { name: "全筛选库存与货值合计" }));
-    expect(totals.getByText("数量 2")).toBeInTheDocument();
-    expect(totals.getAllByText(/货值 未知/).length).toBeGreaterThan(0);
-    expect(screen.getByRole("region", { name: "全部库龄未知父组的完整库存独立合计" })).toHaveTextContent("数量 10");
+    expect(totals.getByText((_, element) => element?.tagName === "P" && element.textContent === "数量 2")).toBeInTheDocument();
+    expect(totals.getAllByText(/货值 待核对/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("region", { name: "全部库龄未知父组的完整库存独立合计", hidden: true })).toHaveTextContent("数量 10");
     expect(screen.getByText(/库龄未知父组 2 个/)).toBeInTheDocument();
     expect(container.querySelector("a,img,script")).toBeNull();
     expect(screen.getAllByText("<img src=x onerror=alert(1)>").length).toBeGreaterThan(0);
@@ -185,7 +210,7 @@ describe("complete saved inventory presentation", () => {
     render(<InventorySnapshotReadOnlyContent result={result(input(), mixed)} />);
     expect(within(screen.getByRole("region", { name: "已知超龄库存横向表" })).getByText("不适用（非 FBA），不是已测库龄为零")).toBeInTheDocument();
     expect(screen.getByText(/库龄未知父组 0 个/)).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "全筛选库存与货值合计" })).toHaveTextContent("货值 6.00 CNY");
+    expect(screen.getByRole("region", { name: "全筛选库存与货值合计" })).toHaveTextContent("货值 ¥6.00");
   });
   it("retains zero realtime FBA with missing age as unknown, not an empty snapshot", () => {
     render(<InventorySnapshotReadOnlyContent result={result(input(), payload(2, { zero: true, unknown: true }))} />);
@@ -196,15 +221,16 @@ describe("complete saved inventory presentation", () => {
     const data = payload(2, { unknown: true });
     const view = render(<InventorySnapshotReadOnlyContent result={result(input({ agedGroupLimit: 1 }), data)} />);
     expect(screen.queryByRole("region", { name: "库龄未知组" })).not.toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "全部库龄未知父组的完整库存独立合计" })).toHaveTextContent("数量 14");
+    expect(screen.getByRole("region", { name: "全部库龄未知父组的完整库存独立合计", hidden: true })).toHaveTextContent("数量 14");
     view.rerender(<InventorySnapshotReadOnlyContent result={result(input({ agedGroupLimit: 1, agedGroupOffset: 1 }), data)} />);
     expect(screen.getByRole("region", { name: "库龄未知组" })).toHaveTextContent("ASIN-1-0");
-    expect(screen.getByRole("region", { name: "全部库龄未知父组的完整库存独立合计" })).toHaveTextContent("数量 14");
+    expect(screen.getByRole("region", { name: "全部库龄未知父组的完整库存独立合计", hidden: true })).toHaveTextContent("数量 14");
   });
   it.each(["missing", "not_found", "invalid", "scope_unverifiable"] as const)("keeps %s distinct from zero inventory", status => {
     const data = buildInventorySnapshotReadFailure({ input: input(), identity: { userId: 7, workspaceId: 11 }, status, reasonCode: status, missingReason: "明确无结果，不补零" });
     render(<InventorySnapshotReadOnlyContent result={data} />);
-    expect(screen.getByText("明确无结果，不补零")).toBeInTheDocument();
+    expect(screen.queryByText("明确无结果，不补零")).not.toBeInTheDocument();
+    expect(screen.queryByText(`状态依据：${status}`)).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "全筛选库存与货值合计" })).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
@@ -217,15 +243,15 @@ describe("explicit scope, pagination and stale-response isolation", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("范围");
     fillScope(); expect(controls.query).not.toHaveBeenCalled(); await readReady();
     expect(controls.query.mock.calls[0][0]).toEqual(input({ exactScope: scope }));
-    expect(screen.getByText(/当前已授权精确业务范围/)).toBeInTheDocument();
+    expect(screen.getByText("赛狐库存 · 人民币")).toBeInTheDocument();
     expect(screen.queryByText("ASIN-1-0")).not.toBeInTheDocument();
-    expect(screen.getByText("原始来源记录数（缺失为未知）").parentElement).toHaveTextContent("null");
+    expect(screen.queryByText("原始来源记录数（缺失为未知）")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/读取工作区可见的全部/)).not.toBeInTheDocument();
   });
   it("rejects a full metadata response for an ordinary reader even if its requested row scope matches", async () => {
     controls.auth.user!.role = "member"; controls.query.mockImplementation((request: InventorySnapshotReadInput) => Promise.resolve(result(request)));
     render(<InventorySnapshotReadOnly />); fillScope(); fireEvent.click(readButton()); await screen.findByRole("alert");
-    expect(screen.queryByText(/快照 ID/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/上次更新：/)).not.toBeInTheDocument();
   });
   it.each(["super_admin", "admin", "ops_manager"])("only the exact manager role %s has the optional all-scope control", role => {
     controls.auth.user!.role = role; render(<InventorySnapshotReadOnly />);
@@ -235,10 +261,10 @@ describe("explicit scope, pagination and stale-response isolation", () => {
     const data = payload(13); controls.query.mockImplementation((request: InventorySnapshotReadInput) => Promise.resolve(result(request, data)));
     render(<InventorySnapshotReadOnly />); await readReady();
     fireEvent.click(screen.getByRole("button", { name: "库存父组下一页" }));
-    await waitFor(() => expect(controls.query).toHaveBeenCalledTimes(2)); await screen.findByText(/快照 ID：41/);
+    await waitFor(() => expect(controls.query).toHaveBeenCalledTimes(2)); await screen.findByText(/上次更新：/);
     expect(controls.query.mock.calls[1][0]).toEqual(input({ groupOffset: 12 }));
     fireEvent.click(screen.getByRole("button", { name: "库龄父组下一页" }));
-    await waitFor(() => expect(controls.query).toHaveBeenCalledTimes(3)); await screen.findByText(/快照 ID：41/);
+    await waitFor(() => expect(controls.query).toHaveBeenCalledTimes(3)); await screen.findByText(/上次更新：/);
     expect(controls.query.mock.calls[2][0]).toEqual(input({ groupOffset: 12, agedGroupOffset: 12 }));
     await readReady(); expect(controls.query.mock.calls[3][0]).toEqual(input());
   });
@@ -249,7 +275,7 @@ describe("explicit scope, pagination and stale-response isolation", () => {
       return Promise.resolve(next);
     });
     render(<InventorySnapshotReadOnly />); await readReady(); fireEvent.click(screen.getByRole("button", { name: "库存父组下一页" }));
-    await screen.findByRole("alert"); expect(screen.queryByText(/快照 ID/)).not.toBeInTheDocument(); expect(controls.query).toHaveBeenCalledTimes(2);
+    await screen.findByRole("alert"); expect(screen.queryByText(/上次更新：/)).not.toBeInTheDocument(); expect(controls.query).toHaveBeenCalledTimes(2);
     await readReady(); expect(controls.query.mock.calls[2][0].groupOffset).toBe(0);
   });
   it.each([
@@ -259,15 +285,15 @@ describe("explicit scope, pagination and stale-response isolation", () => {
   ] as const)("clears saved results on %s change and makes no automatic query", async (_name, change, patch) => {
     controls.query.mockImplementation((request: InventorySnapshotReadInput) => Promise.resolve(result(request)));
     render(<InventorySnapshotReadOnly />); await readReady(); change();
-    expect(screen.queryByText(/快照 ID/)).not.toBeInTheDocument(); expect(controls.query).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/上次更新：/)).not.toBeInTheDocument(); expect(controls.query).toHaveBeenCalledTimes(1);
     await readReady(); expect(controls.query.mock.calls[1][0]).toMatchObject(patch);
   });
   it("clears results when the manager switches to exact scope or edits any scope field", async () => {
     controls.query.mockImplementation((request: InventorySnapshotReadInput) => Promise.resolve(result(request)));
     render(<InventorySnapshotReadOnly />); await readReady(); fireEvent.click(screen.getByLabelText(/读取工作区可见的全部/));
-    expect(screen.queryByText(/快照 ID/)).not.toBeInTheDocument(); fillScope(); await readReady();
+    expect(screen.queryByText(/上次更新：/)).not.toBeInTheDocument(); fillScope(); await readReady();
     fireEvent.change(screen.getByLabelText("库存店铺"), { target: { value: "other" } });
-    expect(screen.queryByText(/快照 ID/)).not.toBeInTheDocument(); expect(controls.query).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/上次更新：/)).not.toBeInTheDocument(); expect(controls.query).toHaveBeenCalledTimes(2);
   });
   it.each([
     ["user", (value: InventorySnapshotReadResult) => { value.identity.userId++; }],
@@ -280,18 +306,18 @@ describe("explicit scope, pagination and stale-response isolation", () => {
   ] as const)("rejects malformed or mismatched %s replies without showing source data", async (_name, mutate) => {
     const data = result(); mutate(data); controls.query.mockResolvedValue(data);
     render(<InventorySnapshotReadOnly />); fireEvent.click(readButton()); await screen.findByRole("alert");
-    expect(screen.queryByText(/快照 ID/)).not.toBeInTheDocument(); expect(screen.queryByText("ASIN-0-0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/上次更新：/)).not.toBeInTheDocument(); expect(screen.queryByText("ASIN-0-0")).not.toBeInTheDocument();
   });
   it("clears prior data and hides raw server errors after an explicit refresh fails", async () => {
     controls.query.mockResolvedValueOnce(result()).mockRejectedValueOnce(new Error("secret SQL account token"));
     render(<InventorySnapshotReadOnly />); await readReady(); fireEvent.click(readButton()); await screen.findByRole("alert");
-    expect(screen.queryByText(/快照 ID/)).not.toBeInTheDocument(); expect(screen.queryByText(/secret SQL/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/上次更新：/)).not.toBeInTheDocument(); expect(screen.queryByText(/secret SQL/)).not.toBeInTheDocument();
   });
   it("aborts and ignores an old request after cancellation", async () => {
     const old = deferred<InventorySnapshotReadResult>(); controls.query.mockReturnValue(old.promise); render(<InventorySnapshotReadOnly />);
     fireEvent.click(readButton()); const signal = controls.query.mock.calls[0][1].signal as AbortSignal;
     fireEvent.click(screen.getByRole("button", { name: "取消并清除库存" })); expect(signal.aborted).toBe(true);
-    await act(async () => old.resolve(result())); expect(screen.queryByText(/快照 ID/)).not.toBeInTheDocument();
+    await act(async () => old.resolve(result())); expect(screen.queryByText(/上次更新：/)).not.toBeInTheDocument();
   });
   it("accepts only the newest refresh even when the old transport ignores abort", async () => {
     const old = deferred<InventorySnapshotReadResult>(); controls.query.mockReturnValueOnce(old.promise).mockResolvedValueOnce(result(input(), payload(2, { label: "NEWEST" })));
@@ -309,8 +335,8 @@ describe("explicit scope, pagination and stale-response isolation", () => {
     const old = deferred<InventorySnapshotReadResult>(); controls.query.mockResolvedValueOnce(result()).mockReturnValueOnce(old.promise);
     const view = render(<InventorySnapshotReadOnly />); await readReady(); fireEvent.click(readButton());
     const signal = controls.query.mock.calls[1][1].signal as AbortSignal; change(); view.rerender(<InventorySnapshotReadOnly />);
-    expect(signal.aborted).toBe(true); expect(screen.queryByText(/快照 ID/)).not.toBeInTheDocument();
-    await act(async () => old.resolve(result())); expect(screen.queryByText(/快照 ID/)).not.toBeInTheDocument();
+    expect(signal.aborted).toBe(true); expect(screen.queryByText(/上次更新：/)).not.toBeInTheDocument();
+    await act(async () => old.resolve(result())); expect(screen.queryByText(/上次更新：/)).not.toBeInTheDocument();
     expect(controls.query).toHaveBeenCalledTimes(2);
   });
   it.each([
@@ -322,12 +348,38 @@ describe("explicit scope, pagination and stale-response isolation", () => {
     controls.query.mockResolvedValue(result()); const view = render(<InventorySnapshotReadOnly />); await readReady();
     expect(screen.getAllByText("ASIN-0-0").length).toBeGreaterThan(0);
     change(); view.rerender(<InventorySnapshotReadOnly />);
-    expect(screen.queryByText(/快照 ID/)).not.toBeInTheDocument(); expect(screen.queryByText("ASIN-0-0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/上次更新：/)).not.toBeInTheDocument(); expect(screen.queryByText("ASIN-0-0")).not.toBeInTheDocument();
     expect(controls.query).toHaveBeenCalledTimes(1);
   });
   it("unmount aborts pending work and does not schedule a retry", async () => {
     const pending = deferred<InventorySnapshotReadResult>(); controls.query.mockReturnValue(pending.promise);
     const view = render(<InventorySnapshotReadOnly />); fireEvent.click(readButton()); const signal = controls.query.mock.calls[0][1].signal as AbortSignal;
     view.unmount(); expect(signal.aborted).toBe(true); await act(async () => pending.resolve(result())); expect(controls.query).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe("current product inventory screen", () => {
+  it("loads without account fields, groups by current parent and filters by numeric operator", async () => {
+    controls.auth.user!.role = "ops_specialist";
+    controls.query.mockImplementation(async (request: InventorySnapshotReadInput) => {
+      const data = legacyPayload();
+      return buildInventorySnapshotReadResult({ identity: { userId: 7, workspaceId: 11 }, input: request,
+        record: { id: 41, workspaceId: 11, runId: 82, capturedAt: CAPTURED, payload: data }, visibility: "scoped",
+        currentProducts: { rowIds: data.rows.map(row => row.id), operators: [{ id: 7, name: "本人" }, { id: 8, name: "搭档" }],
+          projections: data.rows.map(row => ({ rowId: row.id, product: { parentAsin: "CURRENT-P", storeName: "US Store", title: "当前父体", ownerIds: [7, 8], operator: "本人 / 搭档", sourceRowId: 12 } })) } });
+    });
+    render(<InventorySnapshotReadOnly currentProducts />);
+    await screen.findByText(/上次更新：/);
+    expect(controls.query.mock.calls[0][0]).toMatchObject({ ownershipMode: "current_us" });
+    expect(controls.query.mock.calls[0][0]).not.toHaveProperty("exactScope");
+    expect(screen.queryByLabelText("库存来源账号 ID")).not.toBeInTheDocument();
+    const table = screen.getByRole("region", { name: "库存明细横向表" });
+    expect(within(table).getByText("当前父体").closest("td")).toHaveAttribute("rowspan", "2");
+    fireEvent.change(screen.getByLabelText("库存运营负责人"), { target: { value: "8" } });
+    expect(screen.queryByText(/上次更新：/)).not.toBeInTheDocument();
+    fireEvent.click(readButton());
+    await screen.findByText(/上次更新：/);
+    expect(controls.query.mock.calls[1][0]).toMatchObject({ operatorId: 8, ownershipMode: "current_us" });
   });
 });

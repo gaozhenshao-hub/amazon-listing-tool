@@ -5,6 +5,7 @@ import { ROLE_MODULE_ACCESS } from "../../../shared/const";
 import type { TrpcContext } from "../../_core/context";
 import { getDb, type DbExecutor } from "../../repositories/dbClient";
 import { assertResourceAction } from "../../services/securityGovernance";
+import { currentTaskPartners } from "./productTaskPartners";
 import { ProductTaskListInputSchema, ProductTaskDetailInputSchema, ProductTaskReadError,
   buildProductTaskListResult, buildProductTaskDetailResult, buildProductTaskReadFailure,
   type ProductTaskListInput, type ProductTaskDetailInput, type ProductTaskListResult, type ProductTaskDetailResult, type ProductTaskReadSource } from "../../../shared/productTaskRead";
@@ -12,7 +13,7 @@ import { ProductTaskListInputSchema, ProductTaskDetailInputSchema, ProductTaskRe
 type Row = Record<string, unknown>;
 type Code = "UNAUTHORIZED" | "FORBIDDEN" | "BAD_REQUEST" | "PRECONDITION_FAILED" | "INTERNAL_SERVER_ERROR";
 type Identity = { userId: number; workspaceId: number };
-export type ProductTaskReadSession = { tx: DbExecutor; identity: Identity; all: boolean; assigneeIds: number[] };
+export type ProductTaskReadSession = { tx: DbExecutor; identity: Identity; all: boolean; assigneeIds: number[]; partnersAvailable?: boolean };
 type Session = ProductTaskReadSession;
 type Table = "team_tasks" | "product_profiles" | "ops_task_attachments";
 export interface ProductTaskReadDatabase { transaction?<T>(body: (tx: DbExecutor) => Promise<T>): Promise<T> }
@@ -105,22 +106,27 @@ type Capabilities = ProductTaskReadSource["capabilities"];
 function emptyCapabilities(): Capabilities {
   return { completionNotes: "unavailable", boardProduct: "unavailable", profiles: "unavailable", attachments: "unavailable", partners: "unavailable" };
 }
-const canReadTask = (session: Session, row: Row) => row.workspaceId === session.identity.workspaceId && (session.all || typeof row.assigneeId === "number" && session.assigneeIds.includes(row.assigneeId));
+const canReadTask = (session: Session, row: Row) => row.workspaceId === session.identity.workspaceId && (session.all || typeof row.assigneeId === "number" && session.assigneeIds.includes(row.assigneeId) || typeof row.assistantId === "number" && session.assigneeIds.includes(row.assistantId));
 /** Callers must authorize the session first. Write callers also lock the target
  * task FOR UPDATE before using this same complete source for a version CAS. */
 export async function loadProductTaskReadSource(session: Session, taskId?: number): Promise<SourceData> {
   const taskColumns = await columns(session.tx, "team_tasks"), capabilities = emptyCapabilities();
+  capabilities.partners = session.partnersAvailable ? "available" : "unavailable";
   if (!taskColumns) throw new MissingSource();
   required(taskColumns, ["id", "workspaceId", ...Object.values(taskFields), "completed_at", "createdAt", "updatedAt"]);
   capabilities.completionNotes = taskColumns.has("completion_notes") ? "available" : "unavailable";
   capabilities.boardProduct = taskColumns.has("board_product") ? "available" : "unavailable";
+  const hasAssistant = taskColumns.has("assistant_id") && taskColumns.has("assistant_name");
+  const assistantFields = hasAssistant ? "assistant_id AS assistantId,assistant_name AS assistantName," : "NULL AS assistantId,NULL AS assistantName,";
+  const accessSql = (prefix = "") => session.all ? "" : ` AND (${prefix}assignee_id IN (${session.assigneeIds.map(() => "?").join(",")})${hasAssistant ? ` OR ${prefix}assistant_id IN (${session.assigneeIds.map(() => "?").join(",")})` : ""})`;
+  const accessParams = session.all ? [] : [...session.assigneeIds, ...(hasAssistant ? session.assigneeIds : [])];
   const wireFields = [...taskTextFields, ...(capabilities.completionNotes === "available" ? ["completion_notes"] : []), ...(capabilities.boardProduct === "available" ? ["board_product"] : [])];
   const size = byteExpression(wireFields);
-  const scope = `workspaceId=?${session.all ? "" : ` AND assignee_id IN (${session.assigneeIds.map(() => "?").join(",")})`}${taskId === undefined ? "" : " AND id=?"}`;
-  const params: unknown[] = [session.identity.workspaceId, ...(session.all ? [] : session.assigneeIds), ...(taskId === undefined ? [] : [taskId])];
+  const scope = `workspaceId=?${accessSql()}${taskId === undefined ? "" : " AND id=?"}`;
+  const params: unknown[] = [session.identity.workspaceId, ...accessParams, ...(taskId === undefined ? [] : [taskId])];
   // Freeze the authorized candidate identities before loading bodies. All
   // filters/counts are subsequently computed from this complete fixed set.
-  const candidates = await query(session.tx, `SELECT id,workspaceId,assignee_id AS assigneeId,${timestamp("createdAt")},${size} AS bodyBytes FROM team_tasks WHERE ${scope} ORDER BY createdAt DESC,id DESC LIMIT ${TASK_LIMIT + 1} FOR SHARE`, params);
+  const candidates = await query(session.tx, `SELECT id,workspaceId,assignee_id AS assigneeId,${assistantFields}${timestamp("createdAt")},${size} AS bodyBytes FROM team_tasks WHERE ${scope} ORDER BY createdAt DESC,id DESC LIMIT ${TASK_LIMIT + 1} FOR SHARE`, params);
   if (candidates.length > TASK_LIMIT) throw new IncompleteSource();
   if (new Set(candidates.map(row => row.id)).size !== candidates.length || candidates.some((row, index) => !positiveId(row.id) || !canReadTask(session, row)
     || typeof row.createdAt !== "string" || index > 0 && (String(row.createdAt) > String(candidates[index - 1].createdAt) || row.createdAt === candidates[index - 1].createdAt && Number(row.id) >= Number(candidates[index - 1].id))
@@ -130,7 +136,7 @@ export async function loadProductTaskReadSource(session: Session, taskId?: numbe
   const tasks: ProductTaskReadSource["tasks"] = [];
   const conditional = (available: boolean, field: string, alias: string) => available ? `CAST(${field} AS CHAR CHARACTER SET utf8mb4) AS ${alias}` : `NULL AS ${alias}`;
   for (const group of chunks(candidates)) {
-    const found = await query(session.tx, `SELECT id,workspaceId,${Object.entries(taskFields).map(([alias, field]) => `${field} AS ${alias}`).join(",")},
+    const found = await query(session.tx, `SELECT id,workspaceId,${assistantFields}${Object.entries(taskFields).map(([alias, field]) => `${field} AS ${alias}`).join(",")},
       ${timestamp("createdAt")},${timestamp("updatedAt")},${timestamp("completed_at", "completedAt")},
       ${conditional(capabilities.completionNotes === "available", "completion_notes", "completionNotes")},${conditional(capabilities.boardProduct === "available", "board_product", "boardProduct")},${size} AS bodyBytes
       FROM team_tasks WHERE ${scope} AND id IN (${group.map(() => "?").join(",")}) ORDER BY createdAt DESC,id DESC LIMIT ${CHUNK + 1} FOR SHARE`, [...params, ...group.map(row => row.id)]);
@@ -172,8 +178,8 @@ export async function loadProductTaskReadSource(session: Session, taskId?: numbe
   const attachments: ProductTaskReadSource["attachments"] = [];
   if (capabilities.attachments === "available" && tasks.length) {
     const taskIds = tasks.map(row => row.id), nameSize = "OCTET_LENGTH(CAST(a.file_name AS CHAR CHARACTER SET utf8mb4))";
-    const attachmentScope = `a.workspace_id=? AND t.workspaceId=? AND t.id IN (${taskIds.map(() => "?").join(",")})${session.all ? "" : ` AND t.assignee_id IN (${session.assigneeIds.map(() => "?").join(",")})`}`;
-    const attachmentParams = [session.identity.workspaceId, session.identity.workspaceId, ...taskIds, ...(session.all ? [] : session.assigneeIds)];
+    const attachmentScope = `a.workspace_id=? AND t.workspaceId=? AND t.id IN (${taskIds.map(() => "?").join(",")})${accessSql("t.")}`;
+    const attachmentParams = [session.identity.workspaceId, session.identity.workspaceId, ...taskIds, ...accessParams];
     const attachmentCandidates = await query(session.tx, `SELECT a.id,a.workspace_id AS workspaceId,a.task_id AS taskId,${timestamp("a.created_at", "createdAt")},${nameSize} AS nameBytes
       FROM ops_task_attachments a JOIN team_tasks t ON t.id=a.task_id AND t.workspaceId=a.workspace_id
       WHERE ${attachmentScope} ORDER BY a.created_at ASC,a.id ASC LIMIT ${TASK_LIMIT + 1} FOR SHARE`, attachmentParams);
@@ -205,7 +211,7 @@ function sanitized(error: unknown): never {
 
 /** Current saved tasks only. No task creation, assignment, mutations, object
  * resolution, directory expansion, financial queries or scheduler invocation. */
-export function createProductTaskReadRepository(dependencies: { database?: () => Promise<ProductTaskReadDatabase | null>; permission?: typeof assertResourceAction } = {}) {
+export function createProductTaskReadRepository(dependencies: { database?: () => Promise<ProductTaskReadDatabase | null>; permission?: typeof assertResourceAction; partners?: typeof currentTaskPartners } = {}) {
   const database = dependencies.database ?? getDb, permission = dependencies.permission ?? assertResourceAction;
   async function read(ctx: TrpcContext, raw: ProductTaskListInput, kind: "list"): Promise<ProductTaskListResult>;
   async function read(ctx: TrpcContext, raw: ProductTaskDetailInput, kind: "detail"): Promise<ProductTaskDetailResult>;
@@ -224,6 +230,9 @@ export function createProductTaskReadRepository(dependencies: { database?: () =>
         await permission({ actor: { id: actor.id as number, role: actor.role as string, defaultWorkspaceId: workspaceId }, resource: "ops_data", action: "read", workspaceId, authorizationRead: { executor: tx, strict: true, lock: true } });
         await strictTaskDirectory(tx, actor.role as string, workspaceId);
         const session: Session = { tx, identity: { userId: actor.id as number, workspaceId }, all: ["admin", "super_admin"].includes(actor.role as string), assigneeIds: [actor.id as number] };
+        const partners = await (dependencies.partners ?? currentTaskPartners)(session);
+        session.assigneeIds = partners.ids;
+        session.partnersAvailable = partners.available;
         function failure(status: "missing" | "invalid", reasonCode: string, missingReason: string) {
           const base = { identity: session.identity, status, reasonCode, missingReason, capabilities: emptyCapabilities() };
           return kind === "list" ? buildProductTaskReadFailure({ ...base, input: input as ProductTaskListInput, kind: "list" }) : buildProductTaskReadFailure({ ...base, input: input as ProductTaskDetailInput, kind: "detail" });

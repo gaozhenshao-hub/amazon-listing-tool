@@ -81,6 +81,9 @@ const ACTIVE_STATUSES = new Set<AiJobStatus>(["queued", "running"]);
 const handlerRegistrations = new Map<string, AiJobHandlerRegistration>();
 const runningRunIds = new Set<string>();
 const pendingScheduleRunIds = new Set<string>();
+// Capacity waiters have no reserved execution slot. Counting them as pending
+// reservations makes a burst of child jobs keep one another blocked forever.
+const waitingForCapacityRunIds = new Set<string>();
 const activeAbortControllers = new Map<string, AbortController>();
 let aiJobQueueDraining = false;
 const DEFAULT_WORKER_LEASE_SECONDS = 15 * 60;
@@ -773,7 +776,7 @@ export async function scheduleAiJobRun(runId: string, handler?: AiJobHandler) {
   const existing = await getAiJobRun(runId);
   if (!existing) throw new Error(`AI job not found: ${runId}`);
   if (!isActiveAiJob(existing.status) || runningRunIds.has(runId)) return existing;
-  if (pendingScheduleRunIds.has(runId)) return existing;
+  if (pendingScheduleRunIds.has(runId) || waitingForCapacityRunIds.has(runId)) return existing;
 
   const resolvedHandler = handler || resolveAiJobHandler(existing);
   if (!resolvedHandler) {
@@ -787,10 +790,12 @@ export async function scheduleAiJobRun(runId: string, handler?: AiJobHandler) {
   }
 
   if (getAvailableAiJobSlots() <= 0) {
-    if (!pendingScheduleRunIds.has(runId)) {
-      pendingScheduleRunIds.add(runId);
+    // Dedicated workers will claim the durable queued row on a later poll.
+    if (getWorkerRole() === "worker") return existing;
+    if (!waitingForCapacityRunIds.has(runId)) {
+      waitingForCapacityRunIds.add(runId);
       setTimeout(() => {
-        pendingScheduleRunIds.delete(runId);
+        waitingForCapacityRunIds.delete(runId);
         void scheduleAiJobRun(runId, resolvedHandler).catch((error) => {
           console.error(`[AI Job] ${runId} reschedule failed:`, error);
         });

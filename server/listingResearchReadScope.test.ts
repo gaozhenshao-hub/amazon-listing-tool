@@ -41,7 +41,8 @@ const analyses: CompetitorAnalysis[] = [{ id: 11, projectId: 3, asin: "B00000001
   summaryConfirmedAt: null, summaryConfirmedBy: null, createdAt: new Date("2026-01-01"), updatedAt: new Date("2026-01-01"),
   rawData: '{"count":0,"enabled":false}' }];
 const delivery = () => analyses.map(row => ({ ...row, revision: competitorRevision(row),
-  salesCalibrationWritable: false, activeResearch: { status: "legacy" } }));
+  imageUrls: "[]", rawData: '{"count":0,"enabled":false,"imageAssets":[]}',
+  presentationJob: null, presentationNeedsUpdate: true }));
 
 function caller(options: { id?: number; role?: string; workspaceId?: number | null; defaultWorkspaceId?: number | null; authenticated?: boolean } = {}) {
   const workspaceId = options.workspaceId === undefined ? 9 : options.workspaceId;

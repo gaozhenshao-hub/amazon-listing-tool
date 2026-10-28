@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, mediumtext, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
 // Projects table - each project represents one product listing task
 export const projects = mysqlTable("projects", {
@@ -1022,3 +1022,25 @@ export const devManualAssets = mysqlTable("dev_manual_assets", {
 export type DevManualAsset = typeof devManualAssets.$inferSelect;
 
 export type InsertDevManualAsset = typeof devManualAssets.$inferInsert;
+
+export const listingSupplementalReviews = mysqlTable('listing_supplemental_reviews', {
+  id: int('id').autoincrement().primaryKey(),
+  projectId: int('projectId').notNull(),
+  asin: varchar('asin', {length: 20}).notNull(),
+  reviewHash: varchar('reviewHash', {length: 64}).notNull(),
+  reviewJson: mediumtext('reviewJson').notNull(),
+  filename: varchar('filename', {length: 500}).notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+}, t => [uniqueIndex('listing_review_identity').on(t.projectId,t.asin,t.reviewHash)]);
+
+// Projects table - each project represents one product listing task
+
+export const listingUploadedFiles = mysqlTable('listing_uploaded_files', {
+ id:int('id').autoincrement().primaryKey(),projectId:int('projectId').notNull(),
+ kind:varchar('kind',{length:20}).notNull(),filename:varchar('filename',{length:500}).notNull(),
+ contentHash:varchar('contentHash',{length:64}).notNull(),size:int('size').notNull(),
+ originalBase64:mediumtext('originalBase64').notNull(),status:varchar('status',{length:20}).notNull(),
+ resultJson:text('resultJson'),error:text('error'),
+ createdAt:timestamp('createdAt').defaultNow().notNull(),updatedAt:timestamp('updatedAt').defaultNow().onUpdateNow().notNull(),
+},t=>[uniqueIndex('listing_file_identity').on(t.projectId,t.kind,t.contentHash)]);
+

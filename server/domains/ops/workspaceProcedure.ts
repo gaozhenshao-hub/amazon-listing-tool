@@ -21,6 +21,7 @@ function inferOpsSecurityAction(path: string, type: string): SecurityAction {
 
 export const protectedProcedure = baseProtectedProcedure.use(async ({ ctx, next, path, type }) => {
   const action = inferOpsSecurityAction(path, type);
+  const resource = /^(logistics|shippingBatch)\./.test(path) ? "procurement_logistics" as const : "ops_data" as const;
   const workspaceId = workspaceIdFromContext(ctx);
   if (!workspaceId) {
     throw new TRPCError({
@@ -30,7 +31,7 @@ export const protectedProcedure = baseProtectedProcedure.use(async ({ ctx, next,
   }
   await assertResourceAction({
     actor: actorFromContext(ctx),
-    resource: "ops_data",
+    resource,
     action,
     workspaceId,
   }, ctx);
@@ -45,8 +46,8 @@ export const protectedProcedure = baseProtectedProcedure.use(async ({ ctx, next,
       void recordSecurityAuditLog({
         ctx,
         workspaceId,
-        action: `ops_data.${action}`,
-        resourceType: "ops_data",
+        action: `${resource}.${action}`,
+        resourceType: resource,
         status: "success",
         riskLevel: ["delete", "sync", "import"].includes(action) ? "high" : "medium",
         metadata: { path },
@@ -58,8 +59,8 @@ export const protectedProcedure = baseProtectedProcedure.use(async ({ ctx, next,
       void recordSecurityAuditLog({
         ctx,
         workspaceId,
-        action: `ops_data.${action}`,
-        resourceType: "ops_data",
+        action: `${resource}.${action}`,
+        resourceType: resource,
         status: "failed",
         riskLevel: ["delete", "sync", "import"].includes(action) ? "high" : "medium",
         reason: error instanceof Error ? error.message : String(error),

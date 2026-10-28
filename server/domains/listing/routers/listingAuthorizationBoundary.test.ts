@@ -19,6 +19,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../repository", () => mocks);
+vi.mock("../../../services/securityGovernance", async original => ({
+  ...await original<typeof import("../../../services/securityGovernance")>(),
+  assertResourceAction: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("../listingAgentBridge", () => ({
   LISTING_STEP_NODE_MAP: { 1: "G1", 2: "G2", 3: "G3", 4: "G4", 5: "G5" },
   ensureListingAgentRun: vi.fn(),

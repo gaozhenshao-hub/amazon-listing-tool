@@ -125,12 +125,34 @@ export async function upsertCompetitorAnalysis(data: InsertCompetitorAnalysis, l
   return saveCompetitor(data, false, legacyGuard);
 }
 
+/** Explicit analysis of a saved capture. A long model call may only update the
+ * exact source it read, and must never replace a human-confirmed result. */
+export async function saveCollectedCompetitorAnalysis(id: number, data: { rawData: string; summary: string }, guard: CompetitorWriteGuard) {
+  return withLockedCompetitor(id, guard, async (tx, row) => {
+    if (row.summaryStatus === "confirmed") throw new TRPCError({ code: "CONFLICT", message: "分析已确认，请先解锁" });
+    if (!Number.isSafeInteger(row.summaryVersion) || row.summaryVersion < 1 || row.summaryVersion >= 2147483647) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "竞品摘要版本无效或已达上限" });
+    }
+    await tx.update(competitorAnalyses).set({ rawData: data.rawData, summary: data.summary, aiSummary: data.summary,
+      summaryStatus: "draft", summaryVersion: row.summaryVersion + 1, summaryConfirmedBy: null, summaryConfirmedAt: null,
+    }).where(and(eq(competitorAnalyses.id, id), eq(competitorAnalyses.projectId, guard.projectId)));
+    return readLockedCompetitor(tx, id, guard.projectId);
+  });
+}
+
 export async function getCompetitorAnalysesByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const rows = await db.select().from(competitorAnalyses).where(eq(competitorAnalyses.projectId, projectId)).orderBy(desc(competitorAnalyses.createdAt));
   for (const row of rows) await hydrateActiveCompetitorResearch(row);
   return rows;
+}
+
+export async function getPersistedCompetitorAnalysisById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(competitorAnalyses).where(eq(competitorAnalyses.id, id)).limit(1);
+  return rows[0] ?? null;
 }
 
 export async function getCompetitorAnalysisById(id: number) {

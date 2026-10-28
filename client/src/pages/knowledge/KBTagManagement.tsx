@@ -13,6 +13,8 @@ import { Loader2, PlusCircle, Edit3, Trash2, Tag, BarChart3, RefreshCw, ChevronR
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ADMIN_ROLES } from "@shared/const";
+import { VIDEO_TYPES, VIDEO_TYPE_DESCRIPTIONS, VIDEO_CONTENT_TAGS } from "@shared/videoLabels";
+import { KnowledgeTag } from "./KnowledgeTag";
 
 // Dimension metadata for display
 const DIMENSION_META: Record<string, { label: string; icon: string; level: string; hasParent: boolean; description: string }> = {
@@ -23,7 +25,11 @@ const DIMENSION_META: Record<string, { label: string; icon: string; level: strin
   sellingPoint: { label: "卖点分类", icon: "💡", level: "单图", hasParent: true, description: "卖点大类→明细（二级联动）" },
   composition: { label: "构图类型", icon: "📐", level: "单图", hasParent: false, description: "图片构图方式（8种）" },
   imageBelong: { label: "图片归属", icon: "📋", level: "单图", hasParent: true, description: "图片位置归属（主图/套图/A+/品牌故事），A+下含12个子模块" },
+  videoType: { label: "视频类型", icon: "🎬", level: "视频", hasParent: false, description: "每条视频选择一个主要类型，与小酷打标及视频筛选使用同一套分类。" },
+  videoRole: { label: "视频归属", icon: "📍", level: "视频", hasParent: false, description: "采集视频按亚马逊原位置归属，独立上传的视频可以手动设置。" },
+  videoContent: { label: "视频内容", icon: "⏱️", level: "视频片段", hasParent: false, description: "沿用已确定的十项内容标签，每个标签可对应多个起止时间段。" },
 };
+const VIDEO_TAGS: Record<string, readonly string[]> = { videoType: VIDEO_TYPES, videoRole: ["主图视频", "A+ 视频"], videoContent: VIDEO_CONTENT_TAGS };
 
 interface StyleParams {
   lightType?: string;
@@ -36,12 +42,13 @@ interface StyleParams {
   styleFeature?: string;
 }
 
-export function KBTagManagement() {
+export function KBTagManagement({initialDimension="category"}:{initialDimension?:string} = {}) {
   const utils = trpc.useUtils();
   const { user } = useAuth();
   const isAdmin = user?.role && (ADMIN_ROLES as readonly string[]).includes(user.role);
 
-  const [selectedDimension, setSelectedDimension] = useState("category");
+  const [selectedDimension, setSelectedDimension] = useState(initialDimension);
+  const videoChoices = VIDEO_TAGS[selectedDimension];
   const [selectedParent, setSelectedParent] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -53,7 +60,7 @@ export function KBTagManagement() {
 
   // Queries
   const { data: tags, isLoading: tagsLoading } = trpc.kbTags.listAllForDimension.useQuery(
-    { dimension: selectedDimension }
+    { dimension: selectedDimension }, {enabled: !videoChoices}
   );
   const { data: stats, isLoading: statsLoading } = trpc.kbTags.getUsageStats.useQuery();
 
@@ -175,7 +182,7 @@ export function KBTagManagement() {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold">标签体系管理</h3>
-          <p className="text-sm text-muted-foreground">管理图片知识库的7维标签分类体系</p>
+          <p className="text-sm text-muted-foreground">图片与视频共用套图分类，分别管理图片标签和视频内容。</p>
         </div>
         <div className="flex gap-2">
           {isAdmin && (
@@ -282,13 +289,13 @@ export function KBTagManagement() {
                     <p className="text-xs text-muted-foreground mt-0.5">{DIMENSION_META[selectedDimension]?.description}</p>
                   </div>
                 </div>
-                <Button size="sm" className="gap-1.5" onClick={() => openAddDialog()}>
+                {!videoChoices && <Button size="sm" className="gap-1.5" onClick={() => openAddDialog()}>
                   <PlusCircle className="h-3.5 w-3.5" /> 新增标签
-                </Button>
+                </Button>}
               </div>
             </CardHeader>
             <CardContent>
-              {tagsLoading ? (
+              {videoChoices ? <div className="space-y-3">{videoChoices.map(value=><div key={value} className="rounded-xl border p-4"><KnowledgeTag tone={selectedDimension === "videoType" ? "video" : "local"}>{value}</KnowledgeTag>{selectedDimension === "videoType" && <p className="mt-2 text-sm text-muted-foreground">{VIDEO_TYPE_DESCRIPTIONS[value as typeof VIDEO_TYPES[number]]}</p>}</div>)}</div> : tagsLoading ? (
                 <div className="flex justify-center py-8">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>

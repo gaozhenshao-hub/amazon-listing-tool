@@ -1,3 +1,5 @@
+import { canReadMeeting } from "./meetingAccess";
+import { readMeetingNotes, type MeetingNotesData } from "../../../shared/meetingNotes";
 import { TRPCError } from "@trpc/server";
 import type { TrpcContext } from "../../_core/context";
 import { getDb, type DbExecutor } from "../../repositories/dbClient";
@@ -14,6 +16,7 @@ import { loadProductTaskReadSource, strictTaskDirectory, type ProductTaskReadSes
 import { loadTaskWriteCandidates, taskWriteColumns, taskWriteMembers, taskWriteRows, taskWriteSql, taskWriteFail, taskWriteId } from "./productTaskWriteCandidates";
 import { createProductTaskOperationJournal, productTaskOperationRequestHash, type ProductTaskPreparedUpload } from "./productTaskOperationJournal";
 import { createProductTaskAttachmentStorage } from "./productTaskAttachmentStorage";
+import { currentTaskPartners } from "./productTaskPartners";
 
 type Session = ProductTaskReadSession & { actor: { id: number; role: string; defaultWorkspaceId: number } };
 export interface ProductTaskWriteDatabase { transaction?<T>(body: (tx: DbExecutor) => Promise<T>): Promise<T> }
@@ -33,6 +36,7 @@ export function createProductTaskWriteRepository(deps: {
   journal?: typeof createProductTaskOperationJournal;
   storage?: ReturnType<typeof createProductTaskAttachmentStorage>;
   enabled?: () => boolean;
+  partners?: typeof currentTaskPartners;
 } = {}) {
   const database = deps.database ?? getDb, permission = deps.permission ?? assertResourceAction, directory = deps.directory ?? strictTaskDirectory,
     loadSource = deps.loadSource ?? loadProductTaskReadSource, candidates = deps.candidates ?? loadTaskWriteCandidates,
@@ -54,12 +58,15 @@ export function createProductTaskWriteRepository(deps: {
       await permission({ actor: current.actor, workspaceId, resource: "ops_data", action: "read", authorizationRead: { executor: tx, strict: true, lock: true } });
       await directory(tx, current.actor.role, workspaceId);
       await authorize(current, "read");
+      const partners = await (deps.partners ?? currentTaskPartners)(current);
+      current.assigneeIds = partners.ids; current.partnersAvailable = partners.available;
       return body(current);
     });
   }
   async function authorize(current: Session, action: SecurityAction) {
-    await permission({ actor: current.actor, workspaceId: current.identity.workspaceId, resource: "ops_task", action, authorizationRead: { executor: current.tx, strict: true, lock: true } });
-    await directory(current.tx, current.actor.role, current.identity.workspaceId, ["read", "export"].includes(action) ? "read" : action === "delete" ? "delete" : "edit");
+    // Task visibility is also edit authority; row scope is checked under lock.
+    await permission({ actor: current.actor, workspaceId: current.identity.workspaceId, resource: "ops_task", action: "read", authorizationRead: { executor: current.tx, strict: true, lock: true } });
+    await directory(current.tx, current.actor.role, current.identity.workspaceId, "read");
   }
   function deployment() { if (!enabled()) taskWriteFail("NOT_ENABLED"); }
   async function capability(current: Session, action: SecurityAction): Promise<ProductTaskWriteCapability> {
@@ -96,12 +103,12 @@ export function createProductTaskWriteRepository(deps: {
     const state = await schema(current); if (!state.base || action === "create" && !state.unlinked || ["upload", "deleteAttachment"].includes(action) && !state.attachment) taskWriteFail("SCHEMA_NOT_READY");
   }
   async function assignee(current: Session, id: number) {
-    if (id !== current.identity.userId) await authorize(current, "assign");
     const members = await taskWriteMembers(current.tx, current.identity.workspaceId, [id]); if (members.length !== 1) taskWriteFail("ASSIGNEE_UNAVAILABLE", "BAD_REQUEST"); return members[0];
   }
   async function lockTask(current: Session, taskId: number, createdReceipt = false) {
-    const rows = await taskWriteRows(current.tx, "SELECT id,workspaceId,user_id AS creatorId,assignee_id AS assigneeId FROM team_tasks WHERE workspaceId=? AND id=? FOR UPDATE", [current.identity.workspaceId, taskId]), row = rows[0];
-    if (rows.length !== 1 || row.id !== taskId || row.workspaceId !== current.identity.workspaceId || !current.all && row.assigneeId !== current.identity.userId && !(createdReceipt && row.creatorId === current.identity.userId)) taskWriteFail("TASK_NOT_FOUND", "NOT_FOUND");
+    const columns = await taskWriteColumns(current.tx, "team_tasks");
+    const rows = await taskWriteRows(current.tx, `SELECT id,workspaceId,user_id AS creatorId,assignee_id AS assigneeId,${columns?.has("assistant_id") ? "assistant_id" : "NULL"} AS assistantId FROM team_tasks WHERE workspaceId=? AND id=? FOR UPDATE`, [current.identity.workspaceId, taskId]), row = rows[0];
+    if (rows.length !== 1 || row.id !== taskId || row.workspaceId !== current.identity.workspaceId || !current.all && !current.assigneeIds.includes(Number(row.assigneeId)) && !current.assigneeIds.includes(Number(row.assistantId)) && !(createdReceipt && row.creatorId === current.identity.userId)) taskWriteFail("TASK_NOT_FOUND", "NOT_FOUND");
     if (createdReceipt && row.assigneeId !== current.identity.userId) { if (!taskWriteId(row.assigneeId)) taskWriteFail("TASK_NOT_FOUND", "NOT_FOUND"); await assignee(current, row.assigneeId); }
     return row;
   }
@@ -112,6 +119,30 @@ export function createProductTaskWriteRepository(deps: {
   }
   async function currentVersion(current: Session, taskId: number, expectedVersion: string) {
     await lockTask(current, taskId); const value = await item(current, taskId); if (value.versionKey !== expectedVersion) taskWriteFail("VERSION_CONFLICT", "CONFLICT"); return value;
+  }
+  async function updateExtra(current: Session, taskId: number, patch: { assigneeId?: number; assistantId?: number | null; description?: string | null; completionNotes?: string | null; priority?: string; startDate?: string | null; productKey?: string | null; action?: string }) {
+    const fields: string[] = [], values: unknown[] = [];
+    const add = (column: string, value: unknown) => { fields.push(`${column}=?`); values.push(value); };
+    if (patch.assigneeId !== undefined) { const member = await assignee(current, patch.assigneeId); add("assignee_id", member.id); add("assignee_name", member.displayName); }
+    if (patch.assistantId !== undefined) {
+      const columns = await taskWriteColumns(current.tx, "team_tasks");
+      if (!columns?.has("assistant_id") || !columns.has("assistant_name")) taskWriteFail("SCHEMA_NOT_READY");
+      const member = patch.assistantId === null ? null : await assignee(current, patch.assistantId);
+      add("assistant_id", member?.id ?? null); add("assistant_name", member?.displayName ?? null);
+    }
+    if (patch.description !== undefined) add("description", patch.description);
+    if (patch.priority !== undefined) add("task_priority_team", patch.priority);
+    if (patch.startDate !== undefined) add("start_date", patch.startDate);
+    if (patch.action === "create" && patch.completionNotes !== undefined) add("completion_notes", patch.completionNotes);
+    if (patch.action !== "create" && patch.productKey !== undefined) {
+      const locked = await lockTask(current, taskId);
+      const ownerId = patch.assigneeId ?? Number(locked.assigneeId);
+      let product: ProductTaskWriteProduct | null = null;
+      if (patch.productKey) { const source = await candidates(current.tx, current.identity.workspaceId, ownerId); product = source.items.find(value => value.key === patch.productKey) ?? null; if (!product) taskWriteFail("PRODUCT_CHANGED", "CONFLICT"); }
+      add("product_profile_id", product?.profileId ?? null);
+      add("board_product", product ? JSON.stringify({ workspaceId: current.identity.workspaceId, parentAsin: product.identity.parentAsin, storeName: product.identity.storeName, site: product.identity.country, title: product.title, chineseName: product.chineseName, imageUrl: product.imageUrl }) : null);
+    }
+    if (fields.length) await change(current, `UPDATE team_tasks SET ${fields.join(",")} WHERE workspaceId=? AND id=?`, [...values, current.identity.workspaceId, taskId], true);
   }
   async function checkUpdatedBody(current: Session, taskId: number, patch: Extract<ProductTaskWriteExecuteInput, { action: "update" }>["patch"]) {
     const source = await loadSource(current, taskId), record = source.tasks.find(task => task.id === taskId);
@@ -128,7 +159,7 @@ export function createProductTaskWriteRepository(deps: {
   async function replay(current: Session, receipt: ProductTaskWriteResult, requireWritePermission = true) {
     if (receipt.status === "committed") {
       if (requireWritePermission) await authorize(current, actionPermission(receipt.action!));
-      await lockTask(current, receipt.taskId!, receipt.action === "create");
+      if (receipt.action !== "update") await lockTask(current, receipt.taskId!, receipt.action === "create");
     }
     return ProductTaskWriteResultSchema.parse(receipt);
   }
@@ -162,6 +193,7 @@ export function createProductTaskWriteRepository(deps: {
       if (!enabled()) return ProductTaskWriteOptionsResultSchema.parse({ identity: current.identity, members: [], capabilities: Object.fromEntries(keys.map(key => [key, unavailable("not_enabled_before_release")])) });
       const state = await schema(current), capabilities: ProductTaskWriteCapabilities = { create: state.base && state.unlinked ? await capability(current, "create") : unavailable("schema_not_ready"), update: state.base ? await capability(current, "update") : unavailable("schema_not_ready"), upload: state.base && state.attachment ? await capability(current, "upload") : unavailable("schema_not_ready"), deleteAttachment: state.base && state.attachment ? await capability(current, "delete") : unavailable("schema_not_ready"), download: state.base && state.attachment ? await capability(current, "export") : unavailable("schema_not_ready"), partners: unavailable("numeric_partner_source_unavailable") };
       try { storage.assertAvailable(); } catch { capabilities.upload = unavailable("private_storage_unavailable"); capabilities.download = unavailable("private_storage_unavailable"); }
+      if (current.partnersAvailable) capabilities.partners = available();
       const mayAssign = await capability(current, "assign"), members = await taskWriteMembers(current.tx, current.identity.workspaceId, mayAssign.status === "available" ? undefined : [current.identity.userId]);
       return ProductTaskWriteOptionsResultSchema.parse({ identity: current.identity, members, capabilities });
     }); } catch (error) { return safeError(error); }
@@ -199,26 +231,43 @@ export function createProductTaskWriteRepository(deps: {
         }
         let taskId: number, attachmentId: number | null = null;
         if (input.action === "create") {
+          let meetingData: MeetingNotesData | null = null;
+          if (input.meetingSource) {
+            if (!input.dueDate) taskWriteFail("MEETING_DATE_REQUIRED", "BAD_REQUEST");
+            const rows = await taskWriteRows(current.tx, "SELECT extracted_tasks AS data,user_id AS userId FROM meeting_records WHERE workspaceId=? AND id=? FOR UPDATE", [current.identity.workspaceId,input.meetingSource.meetingId]);
+            if (rows[0] && !canReadMeeting({id:current.identity.userId,role:current.actor.role},{userId:Number(rows[0].userId),extractedTasks:rows[0].data})) taskWriteFail("MEETING_FORBIDDEN", "FORBIDDEN");
+            meetingData=readMeetingNotes(rows[0]?.data);
+            const suggestion=meetingData?.tasks.find(item=>item.operationId===input.meetingSource!.suggestionId);
+            if(!suggestion) taskWriteFail("MEETING_SUGGESTION_NOT_FOUND", "NOT_FOUND");
+            if(suggestion.taskId) taskWriteFail("MEETING_TASK_ALREADY_SAVED", "CONFLICT");
+          }
           const member = await assignee(current, input.assigneeId); let product: ProductTaskWriteProduct | null = null;
           if (input.productKey) { const source = await candidates(current.tx, current.identity.workspaceId, input.assigneeId); product = source.items.find(value => value.key === input.productKey) ?? null; if (!product) taskWriteFail("PRODUCT_CHANGED", "CONFLICT"); }
           const snapshot = product ? JSON.stringify({ workspaceId: current.identity.workspaceId, key: product.key, id: product.profileId, parentAsin: product.identity.parentAsin, storeName: product.identity.storeName, site: product.identity.country, title: product.title, chineseName: product.chineseName, imageUrl: product.imageUrl, source: product.source, sourceId: product.sourceId, sourceMode: product.sourceMode, versionKey: product.versionKey }) : null;
           if (Buffer.byteLength(snapshot ?? "", "utf8") > 256 * 1024 || [input.title, input.status, "medium", input.category, member.displayName, input.dueDate, snapshot].reduce((sum, value) => sum + Buffer.byteLength(value ?? "", "utf8"), 0) > 128 * 1024) taskWriteFail("TASK_BODY_TOO_LARGE", "BAD_REQUEST");
           taskId = await insertId(current, "INSERT INTO team_tasks (workspaceId,product_profile_id,user_id,title,task_status,task_priority_team,category,assignee_id,assignee_name,due_date,completed_at,reminder_enabled,board_product,completion_notes) VALUES (?,?,?,?,?,'medium',?,?,?,?,CASE WHEN ?='done' THEN CURRENT_TIMESTAMP ELSE NULL END,0,?,NULL)", [current.identity.workspaceId, product?.profileId ?? null, current.identity.userId, input.title, input.status, input.category, member.id, member.displayName, input.dueDate, input.status, snapshot]);
+          await updateExtra(current, taskId, input);
+          if(meetingData && input.meetingSource) {
+            meetingData.tasks.find(item=>item.operationId===input.meetingSource!.suggestionId)!.taskId=taskId;
+            await change(current,"UPDATE meeting_records SET extracted_tasks=? WHERE workspaceId=? AND id=?",[JSON.stringify(meetingData),current.identity.workspaceId,input.meetingSource.meetingId],true);
+          }
+
         } else {
           taskId = input.taskId; await currentVersion(current, taskId, input.expectedVersion);
           if (input.action === "update") {
             if (input.patch.completionNotes && Buffer.byteLength(input.patch.completionNotes, "utf8") > 65535) taskWriteFail("NOTES_TOO_LARGE", "BAD_REQUEST");
             await checkUpdatedBody(current, taskId, input.patch);
+            await updateExtra(current, taskId, input.patch);
             const fields: string[] = [], values: unknown[] = [];
             for (const [key, column] of Object.entries({ title: "title", category: "category", dueDate: "due_date", completionNotes: "completion_notes" }) as [keyof typeof input.patch, string][]) if (input.patch[key] !== undefined) { fields.push(`${column}=?`); values.push(input.patch[key]); }
             if (input.patch.status !== undefined) { fields.push("completed_at=CASE WHEN ?='done' THEN COALESCE(completed_at,CURRENT_TIMESTAMP) ELSE NULL END", "task_status=?"); values.push(input.patch.status, input.patch.status); }
-            await change(current, `UPDATE team_tasks SET ${fields.join(",")} WHERE workspaceId=? AND id=?`, [...values, current.identity.workspaceId, taskId], true);
+            if (fields.length) await change(current, `UPDATE team_tasks SET ${fields.join(",")} WHERE workspaceId=? AND id=?`, [...values, current.identity.workspaceId, taskId], true);
           } else {
             await attachment(current, taskId, input.attachmentId); attachmentId = input.attachmentId;
             await change(current, "DELETE FROM ops_task_attachments WHERE workspace_id=? AND task_id=? AND id=?", [current.identity.workspaceId, taskId, attachmentId]);
           }
         }
-        const updated = await item(current, taskId, input.action === "create");
+        const updated = await item(current, taskId, true); // Already authorized and locked before mutation, including reassignment.
         return { receipt: await log.finalize({ identity: current.identity, operationId: input.operationId, action: input.action, status: "committed", taskId, attachmentId, taskVersion: updated.versionKey, reasonCode: null }, requestHash) };
       });
       if (result.receipt) return result.receipt;

@@ -4,55 +4,14 @@ import { appRouter } from "./routers";
 describe("Weekly Ops Sync Features", () => {
   const router = appRouter;
 
-  // ─── Procedure existence checks ───
-
-  it("should have syncWeeklyOpsFromLingxing procedure", () => {
-    expect(router._def.procedures).toHaveProperty("productOps.syncWeeklyOpsFromLingxing");
-  });
-
-  it("should have batchSyncWeeklyOps procedure", () => {
-    expect(router._def.procedures).toHaveProperty("productOps.batchSyncWeeklyOps");
-  });
-
-  it("should have triggerAutoSync procedure", () => {
-    expect(router._def.procedures).toHaveProperty("productOps.triggerAutoSync");
-  });
-
   it("should have getProductsWeeklySummary procedure", () => {
     expect(router._def.procedures).toHaveProperty("productOps.getProductsWeeklySummary");
-  });
-
-  it("should have autoFillBasicInfo procedure", () => {
-    expect(router._def.procedures).toHaveProperty("productOps.autoFillBasicInfo");
-  });
-
-  // ─── Sync procedures should be mutations ───
-
-  it("syncWeeklyOpsFromLingxing should be a mutation", () => {
-    const proc = (router._def.procedures as any)["productOps.syncWeeklyOpsFromLingxing"];
-    expect(proc).toBeDefined();
-    expect(proc._def?.type || proc._type).toBe("mutation");
-  });
-
-  it("batchSyncWeeklyOps should be a mutation", () => {
-    const proc = (router._def.procedures as any)["productOps.batchSyncWeeklyOps"];
-    expect(proc).toBeDefined();
-    expect(proc._def?.type || proc._type).toBe("mutation");
-  });
-
-  it("triggerAutoSync should be a mutation", () => {
-    const proc = (router._def.procedures as any)["productOps.triggerAutoSync"];
-    expect(proc).toBeDefined();
-    expect(proc._def?.type || proc._type).toBe("mutation");
   });
 
   // ─── All sync procedures should be protected ───
 
   it("all sync procedures should be protected (require auth)", () => {
     const syncProcedures = [
-      "productOps.syncWeeklyOpsFromLingxing",
-      "productOps.batchSyncWeeklyOps",
-      "productOps.triggerAutoSync",
     ];
     for (const procName of syncProcedures) {
       const proc = (router._def.procedures as any)[procName];
@@ -165,9 +124,9 @@ describe("Weekly Ops Sync Features", () => {
       (k) => k.startsWith("productOps.")
     );
     // Should include batchSyncWeeklyOps and triggerAutoSync
-    expect(productOpsProcs).toContain("productOps.batchSyncWeeklyOps");
-    expect(productOpsProcs).toContain("productOps.triggerAutoSync");
-    expect(productOpsProcs).toContain("productOps.syncWeeklyOpsFromLingxing");
+    expect(productOpsProcs).not.toContain("productOps.batchSyncWeeklyOps");
+    expect(productOpsProcs).not.toContain("productOps.triggerAutoSync");
+    expect(productOpsProcs).not.toContain("productOps.syncWeeklyOpsFromLingxing");
     expect(productOpsProcs).toContain("productOps.getProductsWeeklySummary");
   });
 });

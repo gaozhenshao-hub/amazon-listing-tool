@@ -50,7 +50,7 @@ describe("acquisition job coverage read-only view", () => {
   it("reports safely saved gallery count without claiming a missing A+ is absent", async () => {
     const result = await caller(3).jobCoverage({ jobId: 12 });
     expect(result).toEqual({
-      status: "confirmed", isCurrent: true,
+      status: "confirmed", isCurrent: true, cacheExpired: false,
       coverage: [
         { capability: "image_gallery", state: "returned", storedCount: 1, failedCount: 0 },
         { capability: "aplus", state: "not_returned", storedCount: 0, failedCount: 0 },

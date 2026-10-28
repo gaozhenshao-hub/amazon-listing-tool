@@ -120,12 +120,12 @@ describe("Generic AI Job infrastructure", () => {
     const handlers = listAiJobHandlerRegistrations().map((handler) => handler.id);
     expect(handlers).toContain("listing.generateFiveSteps");
     expect(handlers).toContain("listing.runStep");
-    expect(handlers).toContain("ad.searchTermAdvice");
-    expect(handlers).toContain("ops.replenishmentPlan");
-    expect(handlers).toContain("imageWorkflow.step5FinalSuggestion");
+    expect(handlers).not.toContain("ad.searchTermAdvice");
+    expect(handlers).not.toContain("ops.replenishmentPlan");
+    expect(handlers).not.toContain("imageWorkflow.step5FinalSuggestion");
     expect(handlers).toContain("emperorAgent.nodeSkill");
-    expect(handlers).toContain("productDevelopment.informationSummary");
-    expect(handlers).toContain("productDevelopment.analysisStage");
+    expect(handlers).not.toContain("productDevelopment.informationSummary");
+    expect(handlers).not.toContain("productDevelopment.analysisStage");
 
     const now = new Date();
     const handler = resolveAiJobHandler({
@@ -171,7 +171,7 @@ describe("Generic AI Job infrastructure", () => {
     expect(procedures["aiJobs.retry"]).toBeDefined();
     expect(procedures["aiJobs.operationalAlerts"]).toBeDefined();
     expect(procedures["aiJobs.startListingFiveSteps"]).toBeDefined();
-    expect(procedures["aiJobs.startAdSearchTermAdvice"]).toBeDefined();
-    expect(procedures["aiJobs.startOpsReplenishmentPlan"]).toBeDefined();
+    expect(procedures["aiJobs.startAdSearchTermAdvice"]).toBeUndefined();
+    expect(procedures["aiJobs.startOpsReplenishmentPlan"]).toBeUndefined();
   });
 });

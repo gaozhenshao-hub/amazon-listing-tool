@@ -43,6 +43,14 @@ function parseModulePermissions(value: string | null | undefined): ModulePermiss
   try { return JSON.parse(value) as ModulePermission[]; } catch { return null; }
 }
 
+function visibleRolePermissions(modules: string[], details: ModulePermission[] | null) {
+  const known = new Set<string>(ALL_MODULES.map(module => module.id));
+  const retained = modules.filter(module => known.has(module));
+  return { modules: retained, detailedPermissions: details?.filter(item => retained.includes(item.moduleId)).map(item => ({ ...item,
+    ...(item.subModules ? { subModules: item.subModules.filter(sub => (SUB_MODULES[item.moduleId] || []).some(known => known.id === sub.subModuleId)) } : {}),
+  })) ?? null };
+}
+
 function validateRoleUpdate(input: z.infer<typeof roleUpdateSchema>) {
   if (!ALL_ROLES.includes(input.role as any)) throw new TRPCError({ code: "BAD_REQUEST", message: "无效的角色标识" });
   const validModuleIds = new Set<string>(ALL_MODULES.map(m => m.id));
@@ -112,8 +120,7 @@ export const roleManagementRouter = router({
       return {
         role,
         label: ROLE_LABELS[role] || role,
-        modules,
-        detailedPermissions,
+        ...visibleRolePermissions(modules, detailedPermissions),
         description: dbPerm?.description || null,
         updatedAt: dbPerm?.updatedAt || null,
         isSystem: role === "super_admin",

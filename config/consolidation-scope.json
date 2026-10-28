@@ -1,0 +1,48 @@
+{
+  "approvedAt": "2026-10-23",
+  "baseline": "bc121f07b46e4ebfaba13a43a2905d864f5c8ac1",
+  "topLevelModules": [
+    "首页",
+    "产品开发",
+    "采购物流",
+    "运营",
+    "美工",
+    "财务",
+    "知识库",
+    "AI 管理",
+    "系统管理"
+  ],
+  "listingPlacement": "运营",
+  "emptyModules": [
+    "产品开发",
+    "财务",
+    "广告看板",
+    "通用设置（旧页面未实现保存）"
+  ],
+  "retainedBusiness": [
+    "products",
+    "inventory",
+    "tasks-journals-meetings",
+    "profit-board",
+    "product-board",
+    "listing-capture-analysis-generation",
+    "keyword-ad-building",
+    "sellfox-sync",
+    "design-images-prompts-materials",
+    "image-knowledge-and-acquisition",
+    "agents-skills-models",
+    "roles-users",
+    "logistics"
+  ],
+  "protectedData": [
+    "financial-history",
+    "inventory-history",
+    "uploaded-originals",
+    "tasks-meetings-attachments",
+    "projects-and-generated-results",
+    "credentials",
+    "monthly-snapshots"
+  ],
+  "restoreBehaviorFrom": "383b69e6",
+  "dataDeletionAllowed": false
+}

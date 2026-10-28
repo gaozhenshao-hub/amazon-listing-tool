@@ -1,3 +1,4 @@
+import { parseKnowledgeAsins } from "../../../shared/knowledgeCollection";
 import { z } from "zod";
 import type { AmazonAcquisitionCapability } from "../../../shared/acquisition";
 
@@ -22,24 +23,9 @@ export function kbImagesConsumerRef(asin: string): string {
 }
 
 export function parseAmazonUsAsins(raw: string): string[] {
-  const values = raw.split(/[\s,;]+/).map(value => value.trim()).filter(Boolean);
-  const asins = values.map(value => {
-    if (/^[A-Z0-9]{10}$/i.test(value)) return value.toUpperCase();
-    let url: URL;
-    try {
-      url = new URL(value);
-    } catch {
-      throw new Error("存在无法识别的亚马逊链接或ASIN");
-    }
-    const hostname = url.hostname.toLowerCase();
-    if (hostname !== "amazon.com" && !hostname.endsWith(".amazon.com")) {
-      throw new Error("首期仅支持Amazon美国站链接");
-    }
-    const match = url.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:[/?]|$)/i);
-    if (!match?.[1]) throw new Error("无法从链接中提取ASIN");
-    return match[1].toUpperCase();
-  });
-  return [...new Set(asins)];
+  const result = parseKnowledgeAsins(raw);
+  if (result.invalid.length) throw new Error("存在无法识别的美国站链接或 ASIN，请检查后重试");
+  return result.asins;
 }
 
 export function capabilitiesForKbPositions(positions: readonly KbImagePosition[]): AmazonAcquisitionCapability[] {

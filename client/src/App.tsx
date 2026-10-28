@@ -1,3 +1,4 @@
+import ListingWorkspace from "./pages/listing/ListingWorkspace";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { claimLazyRecovery } from "@/lib/lazyRecovery";
@@ -11,7 +12,6 @@ import { lazy, Suspense, useCallback, type ComponentType } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePerformanceVitals, type PerformanceVital } from "@/lib/performanceVitals";
-import { MERGED_READONLY_FEATURES_ENABLED } from "@/lib/mergedReadOnlyFeatures";
 
 function lazyWithRecovery<T extends ComponentType<any>>(
   loader: () => Promise<{ default: T }>,
@@ -33,136 +33,47 @@ function lazyWithRecovery<T extends ComponentType<any>>(
   });
 }
 
-// ─── Module 2: Listing (existing pages) ────────────────────────
-const Home = lazy(() => import("./pages/Home"));
-const AnalysisPage = lazy(() => import("./pages/AnalysisPage"));
-const GeneratePage = lazy(() => import("./pages/GeneratePage"));
-const PreviewPage = lazy(() => import("./pages/PreviewPage"));
-const ProjectDetailPage = lazy(() => import("./pages/ProjectDetailPage"));
-const ComparisonPage = lazy(() => import("./pages/ComparisonPage"));
-const ReviewHistoryPage = lazy(() => import("./pages/ReviewHistoryPage"));
-const DataFilesPage = lazy(() => import("./pages/DataFilesPage"));
-const CompetitorReviewsPage = lazy(() => import("./pages/listing/CompetitorReviewsPage"));
-const ScorePage = lazy(() => import("./pages/ScorePage"));
-const ImageSuggestionsPage = lazy(() => import("./pages/ImageSuggestionsPage"));
-const ImageWorkflowPage = lazyWithRecovery(
-  () => import("./pages/ImageWorkflowPage"),
-  "lazy-recovery:image-workflow",
-);
-const QualityDashboard = lazy(() => import("./pages/QualityDashboard"));
-const KeywordPage = lazy(() => import("./pages/KeywordPage"));
-const AdStructurePage = lazy(() => import("./pages/AdStructurePage"));
-const ReviewAggregationPage = lazy(() => import("./pages/ReviewAggregationPage"));
-const VideoScriptPage = lazy(() => import("./pages/VideoScriptPage"));
-const BuyerQuestionsPage = lazy(() => import("./pages/BuyerQuestionsPage"));
-const WorkflowCanvasPage = lazy(() => import("./pages/WorkflowCanvasPage"));
-
-// ─── Module 1: Product Development ─────────────────────────────
-const DevDashboard = lazy(() => import("./pages/dev/DevDashboard"));
-const DevNewProject = lazy(() => import("./pages/dev/DevNewProject"));
-const DevProjects = lazy(() => import("./pages/dev/DevProjects"));
-const DevProjectDetail = lazy(() => import("./pages/dev/DevProjectDetail"));
-const DevCompare = lazy(() => import("./pages/dev/DevCompare"));
-const DevSupplierLibrary = lazy(() => import("./pages/dev/DevSupplierLibrary"));
-const DevAnalysisFlow = lazy(() => import("./pages/dev/DevAnalysisFlow"));
-const DevOffsiteAnalysis = lazy(() => import("./pages/dev/DevOffsiteAnalysis"));
-
-// ─── Module 5: Knowledge Base ───────────────────────────────────
-const KBOverview = lazyWithRecovery(
-  () => import("./pages/knowledge/KBOverview"),
-  "lazy-recovery:kb-overview",
-);
-const KBProducts = lazy(() => import("./pages/knowledge/KBProducts"));
-const KBListings = lazy(() => import("./pages/knowledge/KBListings"));
-const KBImages = lazy(() => import("./pages/knowledge/KBImages"));
-const KBSkills = lazy(() => import("./pages/knowledge/KBSkills"));
-const KBVideos = lazy(() => import("./pages/knowledge/KBVideos"));
-const KBBot = lazy(() => import("./pages/knowledge/KBBot"));
-const KBIntel = lazy(() => import("./pages/knowledge/KBIntel"));
-const KBTransfer = lazy(() => import("./pages/knowledge/KBTransfer"));
-const AcquisitionJobsPage = lazy(() => import("./pages/acquisition/AcquisitionJobsPage"));
-const AcquisitionReviewPage = lazy(() => import("./pages/acquisition/AcquisitionReviewPage"));
-
-// ─── Module 3: Operations AI Tools ─────────────────────────────
-const OpsDashboard = lazy(() => import("./pages/ops/OpsDashboard"));
-const OpsInventory = lazy(() => import("./pages/ops/OpsInventory"));
-const OperationsReadOnlyOverview = lazy(() => import("./pages/ops/OperationsReadOnlyOverview"));
-const OpsAds = lazy(() => import("./pages/ops/OpsAds"));
-const OpsProducts = lazy(() => import("./pages/ops/OpsProducts"));
-const OpsProductDetail = lazy(() => import("./pages/ops/OpsProductDetail"));
-const OpsCrawlerManager = lazy(() => import("./pages/ops/OpsCrawlerManager"));
-const OpsShippingBatchDetail = lazy(() => import("./pages/ops/OpsShippingBatchDetail"));
-const OpsLogistics = lazy(() => import("./pages/ops/OpsLogistics"));
-const OperationsCenter = lazy(() => import("./pages/ops/OperationsCenter"));
-const OpsCustomDashboard = lazy(() => import("./pages/ops/OpsCustomDashboard"));
-const OpsTaskManagement = lazy(() => import("./pages/ops/OpsTaskManagement"));
-const OpsDataImport = lazy(() => import("./pages/ops/OpsDataImport"));
-const OpsAdMapping = lazy(() => import("./pages/ops/OpsAdMapping"));
-const OpsAdDeep = lazy(() => import("./pages/ops/OpsAdDeep"));
-const OpsLingxingSync = lazy(() => import("./pages/ops/OpsLingxingSync"));
-
-// ─── Module 4: After-sales Management ──────────────────────────
-const ComingSoonPage = lazy(() => import("./pages/ComingSoonPage"));
-const ServiceDashboard = lazy(() => import("./pages/service/ServiceDashboard"));
-const ServiceReviews = lazy(() => import("./pages/service/ServiceReviews"));
-const ServiceReturns = lazy(() => import("./pages/service/ServiceReturns"));
-const ServiceEmails = lazy(() => import("./pages/service/ServiceEmails"));
-const ServiceProfiles = lazy(() => import("./pages/service/ServiceProfiles"));
-
-// ─── Module 6: Off-site Marketing ──────────────────────────────
-const OffsiteOverview = lazy(() => import("./pages/offsite/OffsiteOverview"));
-const OffsiteInfluencers = lazy(() => import("./pages/offsite/OffsiteInfluencers"));
-const OffsiteCampaigns = lazy(() => import("./pages/offsite/OffsiteCampaigns"));
-const OffsiteOutreach = lazy(() => import("./pages/offsite/OffsiteOutreach"));
-const OffsiteContentReview = lazy(() => import("./pages/offsite/OffsiteContentReview"));
-const OffsiteSocialAccounts = lazy(() => import("./pages/offsite/OffsiteSocialAccounts"));
-const OffsiteContentCalendar = lazy(() => import("./pages/offsite/OffsiteContentCalendar"));
-const OffsiteTikTokMatrix = lazy(() => import("./pages/offsite/OffsiteTikTokMatrix"));
-const OffsiteAttribution = lazy(() => import("./pages/offsite/OffsiteAttribution"));
-const OffsiteAnalytics = lazy(() => import("./pages/offsite/OffsiteAnalytics"));
-
-// ─── Platform Home ──────────────────────────────────────────────
-const PlatformHome = lazyWithRecovery(
-  () => import("./pages/PlatformHome"),
-  "lazy-recovery:platform-home",
-);
-
-// ─── System Settings ────────────────────────────────────────────
-const SystemSettings = lazy(() => import("./pages/SystemSettings"));
-
-// ─── User Management ────────────────────────────────────────────
-const LoginPage = lazy(() => import("./pages/LoginPage"));
-const UserManagement = lazy(() => import("./pages/UserManagement"));
-const ProfilePage = lazy(() => import("./pages/ProfilePage"));
-const ReviewCenter = lazy(() => import("./pages/ReviewCenter"));
-const SopAccessPage = lazy(() => import("./pages/SopAccessPage"));
-const ProjectAssignmentPage = lazy(() => import("./pages/ProjectAssignmentPage"));
-const SyncManagement = lazy(() => import("./pages/SyncManagement"));
-const RoleManagement = lazy(() => import("./pages/RoleManagement"));
 import { PermissionGuard } from "./components/PermissionGuard";
-
-// ─── Module 7: Emperor AI 能力中台 ────────────────────────────────────────────────────────
-const EmperorSkillLibrary = lazy(() => import("./pages/emperor/EmperorSkillLibrary"));
-const EmperorConversations = lazy(() => import("./pages/emperor/EmperorConversations"));
-const EmperorTrace = lazy(() => import("./pages/emperor/EmperorTrace"));
-const EmperorQualityGates = lazy(() => import("./pages/emperor/EmperorQualityGates"));
-const EmperorHarnessGovernance = lazy(() => import("./pages/emperor/EmperorHarnessGovernance"));
-const EmperorModels = lazy(() => import("./pages/emperor/EmperorModels"));
-const EmperorMCP = lazy(() => import("./pages/emperor/EmperorMCP"));
-const EmperorAgents = lazy(() => import("./pages/emperor/EmperorAgents"));
-const EmperorAgentLibrary = lazy(() => import("./pages/emperor/EmperorAgentLibrary"));
-const EmperorUsage = lazy(() => import("./pages/emperor/EmperorUsage"));
-const EmperorDiagnostics = lazy(() => import("./pages/emperor/EmperorDiagnostics"));
-const EmperorExternalKnowledgeAccess = lazy(() => import("./pages/emperor/EmperorExternalKnowledgeAccess"));
-const EmperorSettings = lazy(() => import("./pages/emperor/EmperorSettings"));
-const EmperorScheduled = lazy(() => import("./pages/emperor/EmperorScheduled"));
-const AgentCanvas = lazy(() => import("./pages/emperor/AgentCanvas"));
-const EmperorKnowledge = lazy(() => import("./pages/emperor/EmperorKnowledge"));
-const EmperorObservability = lazy(() => import("./pages/emperor/EmperorObservability"));
-const EmperorSkillDistillation = lazy(() => import("./pages/emperor/EmperorSkillDistillation"));
-const CoreWorkflowQaPage = import.meta.env.MODE === "e2e"
-  ? lazy(() => import("./pages/qa/CoreWorkflowQaPage"))
-  : null;
+const Home = lazyWithRecovery(() => import("./pages/Home"), "lazy-recovery:Home");
+const AnalysisPage = lazyWithRecovery(() => import("./pages/AnalysisPage"), "lazy-recovery:AnalysisPage");
+const ComparisonPage = lazyWithRecovery(() => import("./pages/ComparisonPage"), "lazy-recovery:ComparisonPage");
+const GeneratePage = lazyWithRecovery(() => import("./pages/GeneratePage"), "lazy-recovery:GeneratePage");
+const PreviewPage = lazyWithRecovery(() => import("./pages/PreviewPage"), "lazy-recovery:PreviewPage");
+const ProjectDetailPage = lazyWithRecovery(() => import("./pages/ProjectDetailPage"), "lazy-recovery:ProjectDetailPage");
+const ReviewHistoryPage = lazyWithRecovery(() => import("./pages/ReviewHistoryPage"), "lazy-recovery:ReviewHistoryPage");
+const DataFilesPage = lazyWithRecovery(() => import("./pages/DataFilesPage"), "lazy-recovery:DataFilesPage");
+const ScorePage = lazyWithRecovery(() => import("./pages/ScorePage"), "lazy-recovery:ScorePage");
+const KeywordPage = lazyWithRecovery(() => import("./pages/KeywordPage"), "lazy-recovery:KeywordPage");
+const AdStructurePage = lazyWithRecovery(() => import("./pages/AdStructurePage"), "lazy-recovery:AdStructurePage");
+const ReviewAggregationPage = lazyWithRecovery(() => import("./pages/ReviewAggregationPage"), "lazy-recovery:ReviewAggregationPage");
+const BuyerQuestionsPage = lazyWithRecovery(() => import("./pages/BuyerQuestionsPage"), "lazy-recovery:BuyerQuestionsPage");
+const KnowledgeRecycleBin = lazyWithRecovery(() => import("./pages/knowledge/KnowledgeRecycleBin"), "lazy-recovery:KnowledgeRecycleBin");
+const KBImageSetPage = lazyWithRecovery(() => import("./pages/knowledge/KBImageSetPage"), "lazy-recovery:KBImageSetPage");
+const KBImages = lazyWithRecovery(() => import("./pages/knowledge/KBImages"), "lazy-recovery:KBImages");
+const AcquisitionJobDetailsPage = lazyWithRecovery(() => import("./pages/acquisition/AcquisitionJobDetailsPage"), "lazy-recovery:AcquisitionJobDetailsPage");
+const AcquisitionJobsPage = lazyWithRecovery(() => import("./pages/acquisition/AcquisitionJobsPage"), "lazy-recovery:AcquisitionJobsPage");
+const AcquisitionReviewPage = lazyWithRecovery(() => import("./pages/acquisition/AcquisitionReviewPage"), "lazy-recovery:AcquisitionReviewPage");
+const DesignStudio = lazyWithRecovery(() => import("./pages/design/DesignStudio"), "lazy-recovery:DesignStudio");
+const DesignPromptLibrary = lazyWithRecovery(() => import("./pages/design/DesignPromptLibrary"), "lazy-recovery:DesignPromptLibrary");
+const DesignMaterials = lazyWithRecovery(() => import("./pages/design/DesignMaterials"), "lazy-recovery:DesignMaterials");
+const InventorySnapshotReadOnly = lazyWithRecovery(() => import("./pages/ops/InventorySnapshotReadOnly"), "lazy-recovery:InventorySnapshotReadOnly");
+const SaihuSyncSchedules = lazyWithRecovery(() => import("./pages/ops/SaihuSyncSchedules"), "lazy-recovery:SaihuSyncSchedules");
+const OpsProducts = lazyWithRecovery(() => import("./pages/ops/OpsProducts"), "lazy-recovery:OpsProducts");
+const OpsProductDetail = lazyWithRecovery(() => import("./pages/ops/OpsProductDetail"), "lazy-recovery:OpsProductDetail");
+const OperationsCenter = lazyWithRecovery(() => import("./pages/ops/OperationsCenter"), "lazy-recovery:OperationsCenter");
+const TaskMeetingTools = lazyWithRecovery(() => import("./pages/ops/TaskMeetingTools"), "lazy-recovery:TaskMeetingTools");
+const OpsLogistics = lazyWithRecovery(() => import("./pages/ops/OpsLogistics"), "lazy-recovery:OpsLogistics");
+const OpsShippingBatchDetail = lazyWithRecovery(() => import("./pages/ops/OpsShippingBatchDetail"), "lazy-recovery:OpsShippingBatchDetail");
+const PlatformHome = lazyWithRecovery(() => import("./pages/PlatformHome"), "lazy-recovery:PlatformHome");
+const ComingSoonPage = lazyWithRecovery(() => import("./pages/ComingSoonPage"), "lazy-recovery:ComingSoonPage");
+const LoginPage = lazyWithRecovery(() => import("./pages/LoginPage"), "lazy-recovery:LoginPage");
+const UserManagement = lazyWithRecovery(() => import("./pages/UserManagement"), "lazy-recovery:UserManagement");
+const RoleManagement = lazyWithRecovery(() => import("./pages/RoleManagement"), "lazy-recovery:RoleManagement");
+const ProfilePage = lazyWithRecovery(() => import("./pages/ProfilePage"), "lazy-recovery:ProfilePage");
+const EmperorSkillLibrary = lazyWithRecovery(() => import("./pages/emperor/EmperorSkillLibrary"), "lazy-recovery:EmperorSkillLibrary");
+const EmperorAgentLibrary = lazyWithRecovery(() => import("./pages/emperor/EmperorAgentLibrary"), "lazy-recovery:EmperorAgentLibrary");
+const EmperorModels = lazyWithRecovery(() => import("./pages/emperor/EmperorModels"), "lazy-recovery:EmperorModels");
+const EmperorSettings = lazyWithRecovery(() => import("./pages/emperor/EmperorSettings"), "lazy-recovery:EmperorSettings");
 
 export function RouteLoadingFallback() {
   return (
@@ -187,174 +98,71 @@ function Router() {
     <DashboardLayout>
       <PerformanceVitalsReporter />
       <Switch>
-        {/* Platform root → redirect to listing (default module) */}
-        <Route path="/" component={PlatformHome} />
-
-        {/* ─── Module 2: Listing (with /listing prefix) ─── */}
-        <Route path="/listing">{() => <PermissionGuard><Home /></PermissionGuard>}</Route>
-        <Route path="/listing/analysis">{() => <PermissionGuard><AnalysisPage /></PermissionGuard>}</Route>
-        <Route path="/listing/generate">{() => <PermissionGuard><GeneratePage /></PermissionGuard>}</Route>
-        <Route path="/listing/preview">{() => <PermissionGuard><PreviewPage /></PermissionGuard>}</Route>
-        <Route path="/listing/comparison">{() => <PermissionGuard><ComparisonPage /></PermissionGuard>}</Route>
-        <Route path="/listing/competitors/:analysisId/reviews">{() => <PermissionGuard moduleId="listing" subModuleId="listing_analysis"><CompetitorReviewsPage /></PermissionGuard>}</Route>
-        <Route path="/listing/review-history">{() => <PermissionGuard><ReviewHistoryPage /></PermissionGuard>}</Route>
-        <Route path="/listing/data-files">{() => <PermissionGuard><DataFilesPage /></PermissionGuard>}</Route>
-        <Route path="/listing/score">{() => <PermissionGuard><ScorePage /></PermissionGuard>}</Route>
-        <Route path="/listing/image-suggestions">{() => <PermissionGuard><ImageSuggestionsPage /></PermissionGuard>}</Route>
-        <Route path="/listing/image-workflow">{() => <PermissionGuard><ImageWorkflowPage /></PermissionGuard>}</Route>
-        <Route path="/listing/quality">{() => <PermissionGuard><QualityDashboard /></PermissionGuard>}</Route>
-        <Route path="/listing/keywords">{() => <PermissionGuard><KeywordPage /></PermissionGuard>}</Route>
-        <Route path="/listing/ad-structure">{() => <PermissionGuard><AdStructurePage /></PermissionGuard>}</Route>
-        <Route path="/listing/review-aggregation">{() => <PermissionGuard><ReviewAggregationPage /></PermissionGuard>}</Route>
-        <Route path="/listing/video-script">{() => <PermissionGuard><VideoScriptPage /></PermissionGuard>}</Route>
-        <Route path="/listing/video-script/:id">{() => <PermissionGuard><VideoScriptPage /></PermissionGuard>}</Route>
-        <Route path="/listing/buyer-questions">{() => <PermissionGuard><BuyerQuestionsPage /></PermissionGuard>}</Route>
-        <Route path="/listing/project/:id">{() => <PermissionGuard><ProjectDetailPage /></PermissionGuard>}</Route>
-        <Route path="/listing/canvas">{() => <PermissionGuard><WorkflowCanvasPage /></PermissionGuard>}</Route>
-
-        {/* Legacy routes → redirect to /listing/* */}
-        <Route path="/analysis">{() => <Redirect to="/listing/analysis" />}</Route>
-        <Route path="/comparison">{() => <Redirect to="/listing/comparison" />}</Route>
-        <Route path="/review-history">{() => <Redirect to="/listing/review-history" />}</Route>
-        <Route path="/review-aggregation">{() => <Redirect to="/listing/review-aggregation" />}</Route>
-        <Route path="/keywords">{() => <Redirect to="/listing/keywords" />}</Route>
-        <Route path="/ad-structure">{() => <Redirect to="/listing/ad-structure" />}</Route>
-        <Route path="/data-files">{() => <Redirect to="/listing/data-files" />}</Route>
-        <Route path="/generate">{() => <Redirect to="/listing/generate" />}</Route>
-        <Route path="/preview">{() => <Redirect to="/listing/preview" />}</Route>
-        <Route path="/score">{() => <Redirect to="/listing/score" />}</Route>
-        <Route path="/project/:id">{(params) => <Redirect to={`/listing/project/${params.id}`} />}</Route>
-
-        {/* ─── Module 1: Product Development ─── */}
-        <Route path="/dev">{() => <PermissionGuard><DevDashboard /></PermissionGuard>}</Route>
-        <Route path="/dev/new-project">{() => <PermissionGuard><DevNewProject /></PermissionGuard>}</Route>
-        <Route path="/dev/projects">{() => <PermissionGuard><DevProjects /></PermissionGuard>}</Route>
-        <Route path="/dev/project/:id">{() => <PermissionGuard><DevProjectDetail /></PermissionGuard>}</Route>
-        <Route path="/dev/compare">{() => <PermissionGuard><DevCompare /></PermissionGuard>}</Route>
-        <Route path="/dev/supplier-library">{() => <PermissionGuard><DevSupplierLibrary /></PermissionGuard>}</Route>
-        <Route path="/dev/project/:id/analysis">{() => <PermissionGuard><DevAnalysisFlow /></PermissionGuard>}</Route>
-        <Route path="/dev/project/:id/offsite">{() => <PermissionGuard><DevOffsiteAnalysis /></PermissionGuard>}</Route>
-
-        {/* ─── Module 5: Knowledge Base ─── */}
-        <Route path="/knowledge">{() => <PermissionGuard><KBOverview /></PermissionGuard>}</Route>
-        <Route path="/knowledge/bot">{() => <PermissionGuard><KBBot /></PermissionGuard>}</Route>
-        <Route path="/knowledge/products">{() => <PermissionGuard><KBProducts /></PermissionGuard>}</Route>
-        <Route path="/knowledge/listings">{() => <PermissionGuard><KBListings /></PermissionGuard>}</Route>
+        <Route path="/">{() => <PlatformHome />}</Route>
+        <Route path="/listing">{() => <PermissionGuard><ListingWorkspace><Home /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/acquisition/review/:snapshotId">{() => <PermissionGuard moduleId="listing"><AcquisitionReviewPage /></PermissionGuard>}</Route>
+        <Route path="/listing/analysis">{() => <PermissionGuard><ListingWorkspace><AnalysisPage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/comparison">{() => <PermissionGuard><ListingWorkspace><ComparisonPage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/generate">{() => <PermissionGuard><ListingWorkspace><GeneratePage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/preview">{() => <PermissionGuard><ListingWorkspace><PreviewPage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/review-history">{() => <PermissionGuard><ListingWorkspace><ReviewHistoryPage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/data-files">{() => <PermissionGuard><ListingWorkspace><DataFilesPage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/score">{() => <PermissionGuard><ListingWorkspace><ScorePage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/keywords">{() => <PermissionGuard><ListingWorkspace><KeywordPage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/ad-structure">{() => <PermissionGuard><ListingWorkspace><AdStructurePage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/review-aggregation">{() => <PermissionGuard><ListingWorkspace><ReviewAggregationPage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/buyer-questions">{() => <PermissionGuard><ListingWorkspace><BuyerQuestionsPage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/project/:id">{() => <PermissionGuard><ListingWorkspace><ProjectDetailPage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/analysis">{() => <Redirect to={`/listing/analysis${window.location.search}`} />}</Route>
+        <Route path="/comparison">{() => <Redirect to={`/listing/comparison${window.location.search}`} />}</Route>
+        <Route path="/generate">{() => <Redirect to={`/listing/generate${window.location.search}`} />}</Route>
+        <Route path="/preview">{() => <Redirect to={`/listing/preview${window.location.search}`} />}</Route>
+        <Route path="/review-history">{() => <Redirect to={`/listing/review-history${window.location.search}`} />}</Route>
+        <Route path="/review-aggregation">{() => <Redirect to={`/listing/review-aggregation${window.location.search}`} />}</Route>
+        <Route path="/keywords">{() => <Redirect to={`/listing/keywords${window.location.search}`} />}</Route>
+        <Route path="/ad-structure">{() => <Redirect to={`/listing/ad-structure${window.location.search}`} />}</Route>
+        <Route path="/data-files">{() => <Redirect to={`/listing/data-files${window.location.search}`} />}</Route>
+        <Route path="/score">{() => <Redirect to={`/listing/score${window.location.search}`} />}</Route>
+        <Route path="/project/:id">{params => <Redirect to={`/listing/project/${params.id}`} />}</Route>
+        <Route path="/dev">{() => <PermissionGuard><ComingSoonPage moduleName="产品开发" /></PermissionGuard>}</Route>
+        <Route path="/procurement">{() => <PermissionGuard moduleId="procurement" subModuleId="procurement_logistics"><OpsLogistics /></PermissionGuard>}</Route>
+        <Route path="/procurement/shipping/:id">{() => <PermissionGuard moduleId="procurement" subModuleId="procurement_logistics"><OpsShippingBatchDetail /></PermissionGuard>}</Route>
+        <Route path="/finance">{() => <PermissionGuard><ComingSoonPage moduleName="财务" /></PermissionGuard>}</Route>
+        <Route path="/knowledge">{() => <Redirect to="/knowledge/images" />}</Route>
+        <Route path="/knowledge/recycle"><PermissionGuard><KnowledgeRecycleBin /></PermissionGuard></Route>
+        <Route path="/knowledge/images/:id">{() => <PermissionGuard><KBImageSetPage /></PermissionGuard>}</Route>
         <Route path="/knowledge/images">{() => <PermissionGuard><KBImages /></PermissionGuard>}</Route>
-        <Route path="/knowledge/skills">{() => <PermissionGuard><KBSkills /></PermissionGuard>}</Route>
-        <Route path="/knowledge/videos">{() => <PermissionGuard><KBVideos /></PermissionGuard>}</Route>
-        <Route path="/knowledge/intel">{() => <PermissionGuard><KBIntel /></PermissionGuard>}</Route>
-        <Route path="/knowledge/transfer">{() => <PermissionGuard><KBTransfer /></PermissionGuard>}</Route>
         <Route path="/knowledge/acquisition/review/:snapshotId">{() => <PermissionGuard><AcquisitionReviewPage /></PermissionGuard>}</Route>
-        <Route path="/knowledge/acquisition/job/:jobId">{() => <PermissionGuard><AcquisitionReviewPage /></PermissionGuard>}</Route>
+        <Route path="/knowledge/acquisition/job/:jobId">{() => <PermissionGuard><AcquisitionJobDetailsPage /></PermissionGuard>}</Route>
         <Route path="/knowledge/acquisition">{() => <PermissionGuard><AcquisitionJobsPage /></PermissionGuard>}</Route>
-
-        {/* ─── Module 3: Operations AI Tools ─── */}
-        <Route path="/ops">{() => <PermissionGuard><OpsDashboard /></PermissionGuard>}</Route>
+        <Route path="/design/images">{() => <PermissionGuard moduleId="design" subModuleId="design_images"><DesignStudio /></PermissionGuard>}</Route>
+        <Route path="/design/prompts">{() => <PermissionGuard moduleId="design" subModuleId="design_prompts"><DesignPromptLibrary /></PermissionGuard>}</Route>
+        <Route path="/design/materials">{() => <PermissionGuard moduleId="design" subModuleId="design_materials"><DesignMaterials /></PermissionGuard>}</Route>
+        <Route path="/ops">{() => <Redirect to="/ops/products" />}</Route>
         <Route path="/ops/products">{() => <PermissionGuard><OpsProducts /></PermissionGuard>}</Route>
         <Route path="/ops/products/view/:parentAsin">{() => <PermissionGuard><OpsProductDetail /></PermissionGuard>}</Route>
         <Route path="/ops/products/erp/:source/:parentAsin">{() => <PermissionGuard><OpsProductDetail /></PermissionGuard>}</Route>
         <Route path="/ops/products/import/:source/:parentAsin">{() => <PermissionGuard><OpsProductDetail /></PermissionGuard>}</Route>
         <Route path="/ops/products/:id">{() => <PermissionGuard><OpsProductDetail /></PermissionGuard>}</Route>
-        <Route path="/ops/inventory">{() => <PermissionGuard><OpsInventory /></PermissionGuard>}</Route>
-        {MERGED_READONLY_FEATURES_ENABLED && (
-          <Route path="/ops/read-only-overview">{() => (
-            <PermissionGuard moduleId="ops" subModuleId="ops_data_import">
-              <OperationsReadOnlyOverview />
-            </PermissionGuard>
-          )}</Route>
-        )}
-        {MERGED_READONLY_FEATURES_ENABLED && (
-          <Route path="/ops/product-board">{() => (
-            <PermissionGuard moduleId="ops" subModuleId="ops_data_import">
-              <OperationsCenter initialPanel="products" />
-            </PermissionGuard>
-          )}</Route>
-        )}
-        {MERGED_READONLY_FEATURES_ENABLED && (
-          <Route path="/ops/profit-board">{() => (
-            <PermissionGuard moduleId="ops" subModuleId="ops_data_import">
-              <OperationsCenter initialPanel="profit" />
-            </PermissionGuard>
-          )}</Route>
-        )}
-        {MERGED_READONLY_FEATURES_ENABLED && (
-          <Route path="/ops/product-tasks">{() => (
-            <PermissionGuard moduleId="ops" subModuleId="ops_tasks">
-              <OperationsCenter initialPanel="tasks" />
-            </PermissionGuard>
-          )}</Route>
-        )}
-        <Route path="/ops/ads">{() => <PermissionGuard><OpsAds /></PermissionGuard>}</Route>
-        <Route path="/ops/crawler">{() => <PermissionGuard><OpsCrawlerManager /></PermissionGuard>}</Route>
-        <Route path="/ops/shipping/:id">{() => <PermissionGuard><OpsShippingBatchDetail /></PermissionGuard>}</Route>
-        <Route path="/ops/logistics">{() => <PermissionGuard><OpsLogistics /></PermissionGuard>}</Route>
-        <Route path="/ops/dashboard-upgrade">{() => <PermissionGuard><OperationsCenter /></PermissionGuard>}</Route>
-        <Route path="/ops/custom-dashboard">{() => <PermissionGuard><OpsCustomDashboard /></PermissionGuard>}</Route>
-        <Route path="/ops/data-import">{() => <PermissionGuard><OpsDataImport /></PermissionGuard>}</Route>
-        <Route path="/ops/lingxing-sync">{() => <PermissionGuard><OpsLingxingSync /></PermissionGuard>}</Route>
-        <Route path="/ops/ad-mapping">{() => <PermissionGuard><OpsAdMapping /></PermissionGuard>}</Route>
-        <Route path="/ops/ad-deep">{() => <PermissionGuard><OpsAdDeep /></PermissionGuard>}</Route>
-        <Route path="/ops/tasks">{() => <PermissionGuard><OpsTaskManagement /></PermissionGuard>}</Route>
-
-        {/* ─── Module 4: After-sales Management ─── */}
-        <Route path="/service">{() => <PermissionGuard><ServiceDashboard /></PermissionGuard>}</Route>
-        <Route path="/service/reviews">{() => <PermissionGuard><ServiceReviews /></PermissionGuard>}</Route>
-        <Route path="/service/returns">{() => <PermissionGuard><ServiceReturns /></PermissionGuard>}</Route>
-        <Route path="/service/emails">{() => <PermissionGuard><ServiceEmails /></PermissionGuard>}</Route>
-        <Route path="/service/profiles">{() => <PermissionGuard><ServiceProfiles /></PermissionGuard>}</Route>
-
-        {/* ─── Module 6: Off-site Marketing ─── */}
-        <Route path="/offsite">{() => <PermissionGuard><OffsiteOverview /></PermissionGuard>}</Route>
-        <Route path="/offsite/influencers">{() => <PermissionGuard><OffsiteInfluencers /></PermissionGuard>}</Route>
-        <Route path="/offsite/campaigns">{() => <PermissionGuard><OffsiteCampaigns /></PermissionGuard>}</Route>
-        <Route path="/offsite/outreach">{() => <PermissionGuard><OffsiteOutreach /></PermissionGuard>}</Route>
-        <Route path="/offsite/content-review">{() => <PermissionGuard><OffsiteContentReview /></PermissionGuard>}</Route>
-        <Route path="/offsite/social-accounts">{() => <PermissionGuard><OffsiteSocialAccounts /></PermissionGuard>}</Route>
-        <Route path="/offsite/content-calendar">{() => <PermissionGuard><OffsiteContentCalendar /></PermissionGuard>}</Route>
-        <Route path="/offsite/tiktok-matrix">{() => <PermissionGuard><OffsiteTikTokMatrix /></PermissionGuard>}</Route>
-        <Route path="/offsite/attribution">{() => <PermissionGuard><OffsiteAttribution /></PermissionGuard>}</Route>
-        <Route path="/offsite/analytics">{() => <PermissionGuard><OffsiteAnalytics /></PermissionGuard>}</Route>
-
-        {/* ─── Module 7: Emperor AI 能力中台 ─── */}
-        <Route path="/emperor">{() => <PermissionGuard><EmperorSkillLibrary /></PermissionGuard>}</Route>
+        <Route path="/ops/inventory">{() => <Redirect to="/ops/inventory-details" />}</Route>
+        <Route path="/ops/inventory-details">{() => <PermissionGuard moduleId="ops" subModuleId="ops_data_import"><InventorySnapshotReadOnly withRefresh currentProducts /></PermissionGuard>}</Route>
+        <Route path="/ops/saihu-sync">{() => <PermissionGuard moduleId="ops" subModuleId="ops_data_import"><SaihuSyncSchedules /></PermissionGuard>}</Route>
+        <Route path="/ops/product-tasks">{() => <PermissionGuard moduleId="ops" subModuleId="ops_tasks"><OperationsCenter initialPanel="tasks" /></PermissionGuard>}</Route>
+        <Route path="/ops/profit-board">{() => <PermissionGuard moduleId="ops" subModuleId="ops_data_import"><OperationsCenter initialPanel="profit" /></PermissionGuard>}</Route>
+        <Route path="/ops/product-board">{() => <PermissionGuard moduleId="ops" subModuleId="ops_data_import"><OperationsCenter initialPanel="products" /></PermissionGuard>}</Route>
+        <Route path="/ops/ads">{() => <PermissionGuard><ComingSoonPage moduleName="广告看板" /></PermissionGuard>}</Route>
+        <Route path="/ops/task-tools">{() => <PermissionGuard moduleId="ops" subModuleId="ops_tasks"><TaskMeetingTools /></PermissionGuard>}</Route>
+        <Route path="/ops/tasks">{() => <Redirect to={`/ops/product-tasks${window.location.search}`} />}</Route>
+        <Route path="/ops/logistics">{() => <Redirect to="/procurement" />}</Route>
+        <Route path="/emperor">{() => <Redirect to="/emperor/skills" />}</Route>
         <Route path="/emperor/skills">{() => <PermissionGuard><EmperorSkillLibrary /></PermissionGuard>}</Route>
-        <Route path="/emperor/conversations">{() => <PermissionGuard><EmperorConversations /></PermissionGuard>}</Route>
-        <Route path="/emperor/trace">{() => <PermissionGuard><EmperorTrace /></PermissionGuard>}</Route>
-        <Route path="/emperor/quality">{() => <PermissionGuard><EmperorQualityGates /></PermissionGuard>}</Route>
-        <Route path="/emperor/governance">{() => <PermissionGuard><EmperorHarnessGovernance /></PermissionGuard>}</Route>
+        <Route path="/emperor/agent-library">{() => <PermissionGuard moduleId="emperor" subModuleId="emperor_agents"><EmperorAgentLibrary /></PermissionGuard>}</Route>
         <Route path="/emperor/models">{() => <PermissionGuard><EmperorModels /></PermissionGuard>}</Route>
-        <Route path="/emperor/mcp">{() => <PermissionGuard><EmperorMCP /></PermissionGuard>}</Route>
-        <Route path="/emperor/agents">{() => <PermissionGuard><EmperorAgents /></PermissionGuard>}</Route>
-        {MERGED_READONLY_FEATURES_ENABLED && (
-          <Route path="/emperor/agent-library">{() => (
-            <PermissionGuard moduleId="emperor" subModuleId="emperor_agents">
-              <EmperorAgentLibrary />
-            </PermissionGuard>
-          )}</Route>
-        )}
-        <Route path="/emperor/usage">{() => <PermissionGuard><EmperorUsage /></PermissionGuard>}</Route>
-        <Route path="/emperor/diagnostics">{() => <PermissionGuard><EmperorDiagnostics /></PermissionGuard>}</Route>
-        <Route path="/emperor/external-knowledge-access">{() => <PermissionGuard><EmperorExternalKnowledgeAccess /></PermissionGuard>}</Route>
         <Route path="/emperor/settings">{() => <PermissionGuard><EmperorSettings /></PermissionGuard>}</Route>
-        <Route path="/emperor/scheduled">{() => <PermissionGuard><EmperorScheduled /></PermissionGuard>}</Route>
-        <Route path="/emperor/knowledge">{() => <PermissionGuard><EmperorKnowledge /></PermissionGuard>}</Route>
-        <Route path="/emperor/skill-distillation">{() => <PermissionGuard><EmperorSkillDistillation /></PermissionGuard>}</Route>
-        <Route path="/emperor/observability">{() => <PermissionGuard><EmperorObservability /></PermissionGuard>}</Route>
-
-        {/* ─── System Settings ─── */}
-        <Route path="/settings" component={SystemSettings} />
-
-        {/* ─── User Management & Admin ─── */}
         <Route path="/admin">{() => <Redirect to="/admin/users" />}</Route>
         <Route path="/admin/users">{() => <PermissionGuard><UserManagement /></PermissionGuard>}</Route>
-        <Route path="/admin/review">{() => <PermissionGuard><ReviewCenter /></PermissionGuard>}</Route>
-        <Route path="/admin/sop-access">{() => <PermissionGuard><SopAccessPage /></PermissionGuard>}</Route>
-        <Route path="/admin/assignments">{() => <PermissionGuard><ProjectAssignmentPage /></PermissionGuard>}</Route>
-        <Route path="/admin/sync">{() => <PermissionGuard><SyncManagement /></PermissionGuard>}</Route>
         <Route path="/admin/roles">{() => <PermissionGuard><RoleManagement /></PermissionGuard>}</Route>
-        <Route path="/profile" component={ProfilePage} />
-
+        <Route path="/profile">{() => <ProfilePage />}</Route>
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>
@@ -371,12 +179,7 @@ function App() {
           <Toaster />
           <Suspense fallback={<RouteLoadingFallback />}>
             <Switch>
-              {CoreWorkflowQaPage ? (
-                <Route path="/__qa__/workflows/:domain">{() => <CoreWorkflowQaPage />}</Route>
-              ) : null}
               <Route path="/login" component={LoginPage} />
-              {/* AgentCanvas is full-screen, outside DashboardLayout */}
-              <Route path="/emperor/agents/:slug/canvas">{() => <AgentCanvas />}</Route>
               <Route>{() => <Router />}</Route>
             </Switch>
           </Suspense>

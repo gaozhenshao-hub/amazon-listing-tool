@@ -18,7 +18,9 @@ export type Code = "UNAUTHORIZED" | "FORBIDDEN" | "BAD_REQUEST" | "PRECONDITION_
 export type Identity = { userId: number; workspaceId: number };
 export type Session = { tx: DbExecutor; identity: Identity; manager: boolean };
 export const positiveId = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= 2_147_483_647;
-export const PAYLOAD_WIRE_MAX = 64 * 1024 * 1024, MONTHS_WIRE_MAX = 64 * 1024, SCAN_BYTES_MAX = 32 * 1024 * 1024, SCAN_BATCHES_MAX = 200, OWNER_CHUNK = 500;
+// The production January–September history, including one superseded import,
+// exceeds 32 MiB. Keep a bounded complete scan instead of dropping old months.
+export const PAYLOAD_WIRE_MAX = 64 * 1024 * 1024, MONTHS_WIRE_MAX = 64 * 1024, SCAN_BYTES_MAX = 64 * 1024 * 1024, SCAN_BATCHES_MAX = 200, OWNER_CHUNK = 500;
 function fail(message: string, code: Code = "PRECONDITION_FAILED"): never { throw new MonthlyBoardReadGuardError(message, code); }
 export class SourceTableMissing extends Error {}
 export class InvalidSource extends Error {}

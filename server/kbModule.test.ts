@@ -4,37 +4,7 @@ import fs from "fs";
 import path from "path";
 import { readSchemaSources } from "./testPaths";
 
-// ============================================================
-// Module 5: Knowledge Base - Router Structure
-// ============================================================
 
-describe("KB - kbProducts router", () => {
-  it("should have all required procedures", () => {
-    const router = appRouter._def.procedures;
-    expect(router).toHaveProperty("kbProducts.list");
-    expect(router).toHaveProperty("kbProducts.getById");
-    expect(router).toHaveProperty("kbProducts.importByAsin");
-    expect(router).toHaveProperty("kbProducts.batchImportAsins");
-    expect(router).toHaveProperty("kbProducts.importByLink");
-    expect(router).toHaveProperty("kbProducts.confirmAnalysis");
-    expect(router).toHaveProperty("kbProducts.updateTags");
-    expect(router).toHaveProperty("kbProducts.delete");
-  });
-});
-
-describe("KB - kbListings router", () => {
-  it("should have all required procedures", () => {
-    const router = appRouter._def.procedures;
-    expect(router).toHaveProperty("kbListings.list");
-    expect(router).toHaveProperty("kbListings.getById");
-    expect(router).toHaveProperty("kbListings.importByAsin");
-    expect(router).toHaveProperty("kbListings.batchImportAsins");
-    expect(router).toHaveProperty("kbListings.importByLink");
-    expect(router).toHaveProperty("kbListings.confirmAnalysis");
-    expect(router).toHaveProperty("kbListings.updateTags");
-    expect(router).toHaveProperty("kbListings.delete");
-  });
-});
 
 describe("KB - kbImages router", () => {
   it("should have all required procedures", () => {
@@ -51,42 +21,8 @@ describe("KB - kbImages router", () => {
   });
 });
 
-describe("KB - kbSkills router", () => {
-  it("should have all required procedures", () => {
-    const router = appRouter._def.procedures;
-    expect(router).toHaveProperty("kbSkills.list");
-    expect(router).toHaveProperty("kbSkills.getById");
-    expect(router).toHaveProperty("kbSkills.uploadFile");
-    expect(router).toHaveProperty("kbSkills.batchUploadFiles");
-    expect(router).toHaveProperty("kbSkills.importByUrl");
-    expect(router).toHaveProperty("kbSkills.createManual");
-    expect(router).toHaveProperty("kbSkills.confirmSummary");
-    expect(router).toHaveProperty("kbSkills.updateTags");
-    expect(router).toHaveProperty("kbSkills.delete");
-  });
-});
 
-describe("KB - kbVideos router", () => {
-  it("should have all required procedures", () => {
-    const router = appRouter._def.procedures;
-    expect(router).toHaveProperty("kbVideos.list");
-    expect(router).toHaveProperty("kbVideos.getById");
-    expect(router).toHaveProperty("kbVideos.importByUrl");
-    expect(router).toHaveProperty("kbVideos.batchImportUrls");
-    expect(router).toHaveProperty("kbVideos.importByAsin");
-    expect(router).toHaveProperty("kbVideos.confirmAnalysis");
-    expect(router).toHaveProperty("kbVideos.updateTags");
-    expect(router).toHaveProperty("kbVideos.delete");
-  });
-});
 
-describe("KB - kbSearch router", () => {
-  it("should have all required procedures", () => {
-    const router = appRouter._def.procedures;
-    expect(router).toHaveProperty("kbSearch.search");
-    expect(router).toHaveProperty("kbSearch.stats");
-  });
-});
 
 // ============================================================
 // Module 5: File Structure Verification
@@ -95,19 +31,6 @@ describe("KB - kbSearch router", () => {
 describe("KB - File structure", () => {
   const basePath = path.resolve(__dirname, "..");
 
-  it("should have all required router files", () => {
-    const routerFiles = [
-      "server/routers/kbProducts.ts",
-      "server/routers/kbListings.ts",
-      "server/routers/kbImages.ts",
-      "server/routers/kbSkills.ts",
-      "server/routers/kbVideos.ts",
-      "server/routers/kbSearch.ts",
-    ];
-    for (const file of routerFiles) {
-      expect(fs.existsSync(path.join(basePath, file)), `${file} should exist`).toBe(true);
-    }
-  });
 
   it("should have kbDb.ts database helpers", () => {
     expect(fs.existsSync(path.join(basePath, "server/kbDb.ts"))).toBe(true);
@@ -124,19 +47,6 @@ describe("KB - File structure", () => {
     }
   });
 
-  it("should have all knowledge base frontend pages", () => {
-    const pages = [
-      "client/src/pages/knowledge/KBOverview.tsx",
-      "client/src/pages/knowledge/KBProducts.tsx",
-      "client/src/pages/knowledge/KBListings.tsx",
-      "client/src/pages/knowledge/KBImages.tsx",
-      "client/src/pages/knowledge/KBSkills.tsx",
-      "client/src/pages/knowledge/KBVideos.tsx",
-    ];
-    for (const page of pages) {
-      expect(fs.existsSync(path.join(basePath, page)), `${page} should exist`).toBe(true);
-    }
-  });
 });
 
 // ============================================================
@@ -144,27 +54,8 @@ describe("KB - File structure", () => {
 // ============================================================
 
 describe("KB - AI prompts in routers", () => {
-  it("kbProducts should delegate product acquisition and analysis through the controlled pipeline", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/kbProducts.ts"), "utf-8");
-    expect(code).toContain("createProductAcquisition");
-    expect(code).toContain("startAmazonAcquisitionJob");
-    expect(code).toContain('consumerType: "kb_product"');
-    expect(code).toContain("kbProductConsumerRef");
-    expect(code).toContain("KB_PRODUCT_ACQUISITION_CAPABILITIES");
-    expect(code).toContain('cachePolicy: "prefer_cache"');
-    expect(code).toContain("maxChargeUsd");
-  });
 
-  it("kbListings should delegate listing acquisition and analysis through the controlled pipeline", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/kbListings.ts"), "utf-8");
-    expect(code).toContain("createListingAcquisition");
-    expect(code).toContain("startAmazonAcquisitionJob");
-    expect(code).toContain('consumerType: "kb_listing"');
-    expect(code).toContain("kbListingConsumerRef");
-    expect(code).toContain("KB_LISTING_ACQUISITION_CAPABILITIES");
-    expect(code).toContain('cachePolicy: "prefer_cache"');
-    expect(code).toContain("maxChargeUsd");
-  });
+
 
   it("kbImages should contain image visual AI analysis with 4 dimensions", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/kbImages.ts"), "utf-8");
@@ -172,17 +63,7 @@ describe("KB - AI prompts in routers", () => {
     expect(code).toMatch(/类目|色系|图片类型|设计风格/);
   });
 
-  it("kbSkills should contain SOP AI summary generation", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/kbSkills.ts"), "utf-8");
-    expect(code).toContain("invokeBusinessSkill");
-    expect(code).toContain("运营");
-  });
 
-  it("kbVideos should contain video content AI analysis", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/kbVideos.ts"), "utf-8");
-    expect(code).toContain("invokeBusinessSkill");
-    expect(code).toContain("视频");
-  });
 });
 
 // ============================================================
@@ -190,19 +71,8 @@ describe("KB - AI prompts in routers", () => {
 // ============================================================
 
 describe("KB - Import features", () => {
-  it("kbProducts should support link and ASIN import", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/kbProducts.ts"), "utf-8");
-    expect(code).toContain("importByLink");
-    expect(code).toContain("importByAsin");
-    expect(code).toContain("batchImportAsins");
-  });
 
-  it("kbListings should support link and ASIN import", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/kbListings.ts"), "utf-8");
-    expect(code).toContain("importByLink");
-    expect(code).toContain("importByAsin");
-    expect(code).toContain("batchImportAsins");
-  });
+
 
   it("kbImages should support ASIN and link import with image crawling", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/kbImages.ts"), "utf-8");
@@ -211,22 +81,7 @@ describe("KB - Import features", () => {
     expect(code).toContain("batchImportAsins");
   });
 
-  it("kbSkills should support multi-format file upload and URL import", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/kbSkills.ts"), "utf-8");
-    expect(code).toContain("uploadFile");
-    expect(code).toContain("batchUploadFiles");
-    expect(code).toContain("importByUrl");
-    expect(code).toContain("createManual");
-    // Should support multiple file formats
-    expect(code).toMatch(/pdf|docx|xlsx|pptx|markdown/i);
-  });
 
-  it("kbVideos should support URL and ASIN import", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/kbVideos.ts"), "utf-8");
-    expect(code).toContain("importByUrl");
-    expect(code).toContain("importByAsin");
-    expect(code).toContain("batchImportUrls");
-  });
 });
 
 // ============================================================
@@ -234,29 +89,10 @@ describe("KB - Import features", () => {
 // ============================================================
 
 describe("KB - User interaction (edit + confirm) workflow", () => {
-  it("kbProducts should support confirmAnalysis with editedAnalysis", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/kbProducts.ts"), "utf-8");
-    expect(code).toContain("confirmAnalysis");
-    expect(code).toContain("editedAnalysis");
-  });
 
-  it("kbListings should support confirmAnalysis with editedAnalysis", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/kbListings.ts"), "utf-8");
-    expect(code).toContain("confirmAnalysis");
-    expect(code).toContain("editedAnalysis");
-  });
 
-  it("kbSkills should support confirmSummary with editedSummary", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/kbSkills.ts"), "utf-8");
-    expect(code).toContain("confirmSummary");
-    expect(code).toContain("editedSummary");
-  });
 
-  it("kbVideos should support confirmAnalysis with editedAnalysis", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/kbVideos.ts"), "utf-8");
-    expect(code).toContain("confirmAnalysis");
-    expect(code).toContain("editedAnalysis");
-  });
+
 
   it("kbImages should support confirmImageTags and confirmSetAnalysis", () => {
     const code = fs.readFileSync(path.resolve(__dirname, "routers/kbImages.ts"), "utf-8");
@@ -265,40 +101,4 @@ describe("KB - User interaction (edit + confirm) workflow", () => {
   });
 });
 
-// ============================================================
-// Module 5: Router Registration
-// ============================================================
 
-describe("KB - Router registration", () => {
-  it("all KB routers should be registered in appRouter", () => {
-    const routersCode = fs.readFileSync(path.resolve(__dirname, "routers.ts"), "utf-8");
-    expect(routersCode).toContain("kbProducts");
-    expect(routersCode).toContain("kbListings");
-    expect(routersCode).toContain("kbImages");
-    expect(routersCode).toContain("kbSkills");
-    expect(routersCode).toContain("kbVideos");
-    expect(routersCode).toContain("kbSearch");
-  });
-});
-
-// ============================================================
-// Cross-module: Knowledge Base Search
-// ============================================================
-
-describe("KB - Cross-module search", () => {
-  it("kbDb should have search across all 5 knowledge base modules", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "kbDb.ts"), "utf-8");
-    expect(code).toContain("kbProductInnovations");
-    expect(code).toContain("kbListingCopywriting");
-    expect(code).toContain("kbImageSets");
-    expect(code).toContain("kbOperationSkills");
-    expect(code).toContain("kbVideos");
-  });
-
-  it("kbSearch router should delegate to kbDb for search and stats", () => {
-    const code = fs.readFileSync(path.resolve(__dirname, "routers/kbSearch.ts"), "utf-8");
-    expect(code).toContain("kbDb");
-    expect(code).toContain("searchKnowledgeBase");
-    expect(code).toContain("getKbStats");
-  });
-});

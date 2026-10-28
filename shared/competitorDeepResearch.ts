@@ -34,8 +34,9 @@ const buyerBatchSchema = z.object({ themes: z.array(z.object({ name: text, senti
   noThemeReviewIds: z.array(text) }).strict();
 const buyersSchema = z.object({ groups: z.array(z.object({ name: text, sentiment, themeIds: z.array(text).min(1) }).strict()),
   concerns: z.array(z.object({ question: text, status: z.enum(["已满足", "未满足", "评价不一", "证据不足"]),
-    explanation: text, themeIds: z.array(text).min(1) }).strict()).max(8) }).strict();
-const claimSchema = z.object({ text, basis: z.enum(["seller_claim", "review_feedback", "inference"]),
+    explanation: text, themeIds: z.array(text), questionIds: z.array(text).min(1).optional(),
+    questionCitations: z.array(citationSchema).min(1).optional() }).strict()).max(8) }).strict();
+const claimSchema = z.object({ text, basis: z.enum(["seller_claim", "review_feedback", "buyer_question", "inference"]),
   references: z.array(text).min(1) }).strict();
 const summarySchema = z.object({ positioning: claimSchema, advantages: z.array(claimSchema).max(5),
   weaknesses: z.array(claimSchema).max(5), learnings: z.array(claimSchema).max(5),
@@ -69,9 +70,10 @@ export type CompetitorDeepBuyerBatchResult = CompetitorDeepValidatedResult<`buye
 }>;
 export type CompetitorDeepBuyersResult = CompetitorDeepValidatedResult<"buyers_synthesis", {
   groups: Array<Entry<CompetitorDeepBuyersOutput["groups"][number]> & { count: number; percentage: number }>;
-  concerns: Array<Entry<CompetitorDeepBuyersOutput["concerns"][number]> & { origin: "derived_from_review_themes" }>;
+  concerns: Array<Entry<CompetitorDeepBuyersOutput["concerns"][number]> & { origin: "derived_from_review_themes" | "derived_from_reviews_and_questions" }>;
   sampleCount: number; accountedReviewCount: number; noThemeReviewCount: number;
-  scope: "complete_file_not_market_total"; questions: "unavailable_no_question_evidence";
+  scope: "complete_file_not_market_total" | "complete_adopted_sources_not_market_total" | "adopted_questions_only";
+  questions: "unavailable_no_question_evidence" | "adopted_question_evidence";
 }>;
 export type CompetitorDeepSummaryResult = CompetitorDeepValidatedResult<"summary", CompetitorDeepSummaryOutput & {
   incompleteSources: Array<"title" | "selling" | "reviews" | "images" | "questions">;
@@ -104,7 +106,7 @@ function freeze<T>(value: T): T {
 function unique(values: string[], code: string) {
   if (new Set(values).size !== values.length) fail(code);
 }
-type IndexedSource = { text: string; kind: "title" | "bullet" | "review"; reviewId?: string };
+type IndexedSource = { text: string; kind: "title" | "bullet" | "review" | "question"; reviewId?: string; questionId?: string };
 function exactCitation(citation: CompetitorDeepCitation, sources: Map<string, IndexedSource>): IndexedSource {
   const source = sources.get(citation.sourceId), s = source?.text;
   const splitPair = (at: number) => s !== undefined && /[\uD800-\uDBFF]/u.test(s.charAt(at - 1)) && /[\uDC00-\uDFFF]/u.test(s.charAt(at));
@@ -205,14 +207,21 @@ export function createCompetitorDeepResearchValidator(evidence: unknown, sha256:
       accountedReviewCount: ids.size, themes, noThemeReviewIds: data.noThemeReviewIds });
   }
   function validateBuyers(raw: unknown, batchResults: CompetitorDeepBuyerBatchResult[]): CompetitorDeepBuyersResult {
-    if (plan.reviews.status !== "available") fail("DEEP_REVIEW_SOURCE_UNAVAILABLE");
+    if (plan.reviews.status !== "available" && !plan.questions?.items.length) fail("DEEP_REVIEW_SOURCE_UNAVAILABLE");
     if (batchResults.length !== batches.length) fail("DEEP_BATCH_COVERAGE_INCOMPLETE");
     const themeMap = new Map<string, CompetitorDeepBuyerBatchResult["data"]["themes"][number]>();
     batchResults.forEach((result, i) => {
       previous(result, `buyers:${i}`);
       for (const theme of result.data.themes) themeMap.set(theme.themeId, theme);
     });
-    const data = parse(buyersSchema, raw), used = new Set<string>(), sampleCount = plan.reviews.total;
+    const data = parse(buyersSchema, raw), used = new Set<string>(), sampleCount = plan.reviews.total ?? 0;
+    const questionSources = new Map<string, IndexedSource>();
+    for (const question of plan.questions?.items ?? []) {
+      for (const part of ["question", "answer", "parentQuestion"] as const) {
+        const value = question[part];
+        if (value) questionSources.set(`${question.questionId}:${part}`, { kind: "question", questionId: question.questionId, text: value });
+      }
+    }
     const groups = data.groups.map((group, index) => {
       unique(group.themeIds, "DEEP_THEME_GROUP_DUPLICATE");
       const reviewIds = new Set<string>();
@@ -230,14 +239,27 @@ export function createCompetitorDeepResearchValidator(evidence: unknown, sha256:
     const concerns = data.concerns.map((concern, index) => {
       unique(concern.themeIds, "DEEP_CONCERN_DUPLICATE_THEME");
       if (concern.themeIds.some(id => !themeMap.has(id))) fail("DEEP_THEME_UNKNOWN");
-      return { ...concern, entryId: `buyers:concern:${index + 1}`, origin: "derived_from_review_themes" as const };
+      const questionIds = concern.questionIds ?? [], citations = concern.questionCitations ?? [];
+      unique(questionIds, "DEEP_CONCERN_DUPLICATE_QUESTION");
+      if (!concern.themeIds.length && !questionIds.length) fail("DEEP_CONCERN_EVIDENCE_REQUIRED");
+      if (questionIds.some(id => !plan.questions?.items.some(question => question.questionId === id))) fail("DEEP_QUESTION_UNKNOWN");
+      const cited = new Set<string>();
+      for (const citation of citations) {
+        const source = exactCitation(citation, questionSources);
+        if (!source.questionId || !questionIds.includes(source.questionId)) fail("DEEP_QUESTION_CITATION_SCOPE");
+        cited.add(source.questionId);
+      }
+      if (cited.size !== questionIds.length) fail("DEEP_QUESTION_CITATION_COVERAGE");
+      return { ...concern, entryId: `buyers:concern:${index + 1}`,
+        origin: questionIds.length ? "derived_from_reviews_and_questions" as const : "derived_from_review_themes" as const };
     });
     return receipt("buyers_synthesis", { groups, concerns, sampleCount, accountedReviewCount: sampleCount,
       noThemeReviewCount: batchResults.reduce((sum, result) => sum + result.data.noThemeReviewIds.length, 0),
-      scope: "complete_file_not_market_total" as const, questions: "unavailable_no_question_evidence" as const });
+      scope: plan.reviews.status === "available" ? plan.reviews.coverage.scope : "adopted_questions_only" as const,
+      questions: plan.questions ? "adopted_question_evidence" as const : "unavailable_no_question_evidence" as const });
   }
   function validateSummary(raw: unknown, prior: CompetitorDeepPreviousResults): CompetitorDeepSummaryResult {
-    const entries = new Map<string, "seller_claim" | "review_feedback">();
+    const entries = new Map<string, "seller_claim" | "review_feedback" | "buyer_question">();
     if (prior.title !== null) {
       previous(prior.title, "title");
       for (const item of [...prior.title.data.keywords, ...prior.title.data.modifiers, ...prior.title.data.scenarios, prior.title.data.translation]) entries.set(item.entryId, "seller_claim");
@@ -248,7 +270,9 @@ export function createCompetitorDeepResearchValidator(evidence: unknown, sha256:
     }
     if (prior.buyers !== null) {
       previous(prior.buyers, "buyers_synthesis");
-      for (const item of [...prior.buyers.data.groups, ...prior.buyers.data.concerns]) entries.set(item.entryId, "review_feedback");
+      for (const item of prior.buyers.data.groups) entries.set(item.entryId, "review_feedback");
+      for (const item of prior.buyers.data.concerns) entries.set(item.entryId,
+        item.origin === "derived_from_reviews_and_questions" ? "buyer_question" : "review_feedback");
     }
     if (entries.size === 0) fail("DEEP_SUMMARY_SOURCE_UNAVAILABLE");
     const data = parse(summarySchema, raw);
@@ -263,8 +287,9 @@ export function createCompetitorDeepResearchValidator(evidence: unknown, sha256:
     const incompleteSources: CompetitorDeepSummaryResult["data"]["incompleteSources"] = [];
     if (prior.title === null) incompleteSources.push("title");
     if (prior.selling === null) incompleteSources.push("selling");
-    if (prior.buyers === null) incompleteSources.push("reviews");
-    incompleteSources.push("images", "questions");
+    if (prior.buyers === null || plan.reviews.status === "unavailable") incompleteSources.push("reviews");
+    incompleteSources.push("images");
+    if (!plan.questions) incompleteSources.push("questions");
     return receipt("summary", { ...data, incompleteSources, scope: "listing_text_and_imported_review_sample" as const });
   }
   return { validateTitle, validateSelling, validateBuyerBatch, validateBuyers, validateSummary };

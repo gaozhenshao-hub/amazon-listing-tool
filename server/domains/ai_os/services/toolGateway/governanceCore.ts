@@ -174,10 +174,6 @@ const SECRET_TEMPLATE_PATTERN = /\$\{(env:[A-Z0-9_]+|secret:[a-z0-9._:-]+)\}/gi;
  * 既有受管环境变量。此映射只在服务端解析；从不下发到客户端或审计日志。
  */
 const SECRET_REFERENCE_ENV_FALLBACKS: Record<string, string> = {
-  "integration.apify.api_token": "APIFY_API_TOKEN",
-  "integration.lingxing.mcp_key": "LINGXING_MCP_KEY",
-  "integration.lingxing.app_id": "LINGXING_APP_ID",
-  "integration.lingxing.app_secret": "LINGXING_APP_SECRET",
   "integration.saihu.api_token": "SAIHU_API_TOKEN",
   "integration.saihu.app_id": "SAIHU_APP_ID",
   "integration.saihu.app_secret": "SAIHU_APP_SECRET",

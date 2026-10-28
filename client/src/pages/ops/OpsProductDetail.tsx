@@ -2,7 +2,6 @@ import { useState, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import OpsProductPlan from "./OpsProductPlan";
 import OpsProductConversion from "./OpsProductConversion";
 import OpsProductReview from "./OpsProductReview";
 import OpsProductTeam from "./OpsProductTeam";
@@ -214,7 +213,7 @@ export default function OpsProductDetail() {
         category: product.category,
         status: product.status,
         operator: null as string | null,
-        storeName: null as string | null,
+        storeName: product.storeName ?? null,
         chineseName: null as string | null,
         variants: product.variants,
       };
@@ -385,7 +384,6 @@ export default function OpsProductDetail() {
       <Tabs defaultValue="dashboard" className="w-full">
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="dashboard">数据看板</TabsTrigger>
-          <TabsTrigger value="plan" disabled={!productId}>运营计划</TabsTrigger>
           <TabsTrigger value="conversion" disabled={!productId}>转化率对比</TabsTrigger>
           <TabsTrigger value="review" disabled={!productId}>执行复盘</TabsTrigger>
           <TabsTrigger value="team" disabled={!productId}>团队协作</TabsTrigger>
@@ -1168,9 +1166,6 @@ export default function OpsProductDetail() {
       </TabsContent>
 
         {/* ═══ Tab: 运营计划 ═══ */}
-        <TabsContent value="plan" className="mt-4">
-          <OpsProductPlan productId={productId} parentAsin={derivedProduct.parentAsin} productTitle={derivedProduct.title} />
-        </TabsContent>
 
         {/* ═══ Tab: 转化率对比 ═══ */}
         <TabsContent value="conversion" className="mt-4">
@@ -1184,7 +1179,7 @@ export default function OpsProductDetail() {
 
         {/* ═══ Tab: 团队协作 ═══ */}
         <TabsContent value="team" className="mt-4">
-          <OpsProductTeam productId={productId} parentAsin={derivedProduct.parentAsin} />
+          <OpsProductTeam parentAsin={derivedProduct.parentAsin} storeName={derivedProduct.storeName} country={derivedProduct.marketplace} />
         </TabsContent>
       </Tabs>
 

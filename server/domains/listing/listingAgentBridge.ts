@@ -36,7 +36,6 @@ import {
 import { normalizeAgentDag } from "../ai_os/services/agentRunner/runtimeCore";
 import { getAgentBySlug } from "../ai_os/services/agentRunner/templateGovernance";
 import { getCheckpoint } from "../ai_os/services/agentRunner/checkpointStore";
-import { withListingLegacyProjectionFence } from "./services/listingConfiguredAgentProjection";
 
 export const LISTING_WORKFLOW_AGENT_SLUG = "listing.full.workflow";
 
@@ -62,7 +61,7 @@ export const LISTING_GENERATION_NODE_MAP = {
 } as const;
 
 export type ListingGenerationNodeKey = keyof typeof LISTING_GENERATION_NODE_MAP;
-export type ListingAgentNodeId = `N${0 | 1 | 2 | 3 | 4 | 5}` | `G${1 | 2 | 3 | 4 | 5}` | "E1" | "O1";
+export type ListingAgentNodeId = 'C1' | `N${0 | 1 | 2 | 3 | 4 | 5}` | `G${1 | 2 | 3 | 4 | 5}` | "E1" | "O1";
 
 /**
  * Ensure Agent Run exists for the listing project.
@@ -141,7 +140,7 @@ type ListingNodeJobSyncInput = {
   output?: unknown;
 };
 
-async function syncListingNodeJobQueuedUnfenced(input: ListingNodeJobSyncInput) {
+export async function syncListingNodeJobQueued(input: ListingNodeJobSyncInput) {
   try {
     const context = await resolveListingNodeContext(input);
     if (!context) return;
@@ -176,7 +175,7 @@ async function syncListingNodeJobQueuedUnfenced(input: ListingNodeJobSyncInput) 
   }
 }
 
-async function syncListingNodeJobRunningUnfenced(input: ListingNodeJobSyncInput) {
+export async function syncListingNodeJobRunning(input: ListingNodeJobSyncInput) {
   try {
     const context = await resolveListingNodeContext(input);
     if (!context) return;
@@ -211,7 +210,7 @@ async function syncListingNodeJobRunningUnfenced(input: ListingNodeJobSyncInput)
   }
 }
 
-async function syncListingNodeJobWaitingHumanUnfenced(input: ListingNodeJobSyncInput) {
+export async function syncListingNodeJobWaitingHuman(input: ListingNodeJobSyncInput) {
   try {
     const context = await resolveListingNodeContext(input);
     if (!context) return;
@@ -237,7 +236,7 @@ async function syncListingNodeJobWaitingHumanUnfenced(input: ListingNodeJobSyncI
   }
 }
 
-async function syncListingNodeJobFailedUnfenced(input: ListingNodeJobSyncInput & {
+export async function syncListingNodeJobFailed(input: ListingNodeJobSyncInput & {
   finalAttempt: boolean;
   failureKind?: "error" | "timeout" | "cancel";
 }) {
@@ -274,27 +273,6 @@ async function syncListingNodeJobFailedUnfenced(input: ListingNodeJobSyncInput &
   }
 }
 
-async function guardedLegacyJobProjection(input: ListingNodeJobSyncInput, work: () => Promise<void>) {
-  try { await withListingLegacyProjectionFence(input, work); }
-  catch (error) {
-    // Projection remains best-effort, but an unavailable/corrupt fence must
-    // never fall through to the unfenced old helper or trigger another fee.
-    console.warn(`[ListingBridge] ${input.nodeId} legacy projection fenced:`, error);
-  }
-}
-export async function syncListingNodeJobQueued(input: ListingNodeJobSyncInput) {
-  await guardedLegacyJobProjection(input, () => syncListingNodeJobQueuedUnfenced(input));
-}
-export async function syncListingNodeJobRunning(input: ListingNodeJobSyncInput) {
-  await guardedLegacyJobProjection(input, () => syncListingNodeJobRunningUnfenced(input));
-}
-export async function syncListingNodeJobWaitingHuman(input: ListingNodeJobSyncInput) {
-  await guardedLegacyJobProjection(input, () => syncListingNodeJobWaitingHumanUnfenced(input));
-}
-export async function syncListingNodeJobFailed(input: ListingNodeJobSyncInput & { finalAttempt: boolean; failureKind?: "error" | "timeout" | "cancel" }) {
-  await guardedLegacyJobProjection(input, () => syncListingNodeJobFailedUnfenced(input));
-}
-
 export async function syncListingNodeDraft(input: {
   agentRunId?: string | null;
   nodeId: ListingAgentNodeId;
@@ -322,7 +300,7 @@ export async function syncListingNodeDraft(input: {
 
 export async function syncListingPreparationNodeConfirmed(input: {
   agentRunId?: string | null;
-  nodeId: `N${0 | 1 | 2 | 3 | 4 | 5}`;
+  nodeId: `N${0 | 1 | 2 | 3 | 4 | 5}` | 'C1';
   projectId: number;
   userId: number;
   workspaceId?: number | null;

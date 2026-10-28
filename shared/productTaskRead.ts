@@ -5,6 +5,7 @@ import { monthlyFinancialJsonBytes, parseMonthlyFinancialJson } from "./monthlyF
 
 export const PRODUCT_TASK_READ_LIMITS = { tasks: 5000, attachments: 5000, sourceBytes: 8 * 1024 * 1024, resultBytes: 4 * 1024 * 1024 } as const;
 export const PRODUCT_TASK_STATUSES = ["backlog", "todo", "in_progress", "review", "done"] as const;
+export const taskDisplayStatus = (value: string) => value === "backlog" ? "todo" : value === "review" ? "in_progress" : value;
 export type ProductTaskStatus = typeof PRODUCT_TASK_STATUSES[number];
 export class ProductTaskReadError extends Error { constructor(public readonly code: string) { super("任务来源、范围或完整性无法核验；不截断、不改变状态、不扩展权限"); this.name = "ProductTaskReadError"; } }
 const id = z.number().int().positive().max(2147483647);
@@ -40,7 +41,7 @@ const attachmentSummarySchema = z.object({ status: availability, total: z.number
 export const ProductTaskAttachmentSchema = z.object({ id, workspaceId: id, taskId: id, name: z.string().min(1).max(500), byteSize: z.number().int().nonnegative().safe(), uploadedBy: id.nullable(), createdAt: timestamp }).strict();
 export type ProductTaskAttachment = z.infer<typeof ProductTaskAttachmentSchema>;
 const decimal = z.union([z.number().finite(), z.string().max(100)]).nullable();
-export const ProductTaskItemSchema = z.object({ id, workspaceId: id, creatorId: id, title: z.string().min(1).max(200), description: nullableText(65535), status: statusSchema, priority: z.enum(["urgent", "high", "medium", "low"]).nullable(), category: nullableText(100), assigneeId: id.nullable(), assigneeName: nullableText(100), product: ProductTaskAssociationSchema, createdAt: timestamp, updatedAt: timestamp, dueDate: sourceDateSchema, completedAt: timestamp.nullable(), completionNotes: notesSchema, attachments: attachmentSummarySchema, legacy: z.object({ startDate: nullableText(100), estimatedHours: decimal, actualHours: decimal, tags: nullableText(65535) }).strict(), versionKey: z.string().regex(/^[a-f0-9]{64}$/u) }).strict();
+export const ProductTaskItemSchema = z.object({ id, workspaceId: id, creatorId: id, title: z.string().min(1).max(200), description: nullableText(65535), status: statusSchema, priority: z.enum(["urgent", "high", "medium", "low"]).nullable(), category: nullableText(100), assigneeId: id.nullable(), assigneeName: nullableText(100), assistantId: id.nullable().optional(), assistantName: nullableText(100).optional(), product: ProductTaskAssociationSchema, createdAt: timestamp, updatedAt: timestamp, dueDate: sourceDateSchema, completedAt: timestamp.nullable(), completionNotes: notesSchema, attachments: attachmentSummarySchema, legacy: z.object({ startDate: nullableText(100), estimatedHours: decimal, actualHours: decimal, tags: nullableText(65535) }).strict(), versionKey: z.string().regex(/^[a-f0-9]{64}$/u) }).strict();
 export type ProductTaskReadItem = z.infer<typeof ProductTaskItemSchema>;
 const count = z.number().int().min(0).max(PRODUCT_TASK_READ_LIMITS.tasks);
 const statusCounts = z.object({ backlog: count, todo: count, in_progress: count, review: count, done: count }).strict();
@@ -56,7 +57,7 @@ export const ProductTaskDetailResultSchema = detailResult.superRefine((value, ct
 export type ProductTaskListResult = z.infer<typeof ProductTaskListResultSchema>;
 export type ProductTaskDetailResult = z.infer<typeof ProductTaskDetailResultSchema>;
 
-export type ProductTaskSourceRecord = { id: number; workspaceId: number; productProfileId: number | null; creatorId: number; title: string; description: string | null; status: string; priority: string | null; category: string | null; assigneeId: number | null; assigneeName: string | null; startDate: string | null; dueDate: string | null; completedAt: string | null; estimatedHours: string | number | null; actualHours: string | number | null; tags: string | null; createdAt: string; updatedAt: string; completionNotes: string | null; boardProduct: unknown };
+export type ProductTaskSourceRecord = { id: number; workspaceId: number; productProfileId: number | null; creatorId: number; title: string; description: string | null; status: string; priority: string | null; category: string | null; assigneeId: number | null; assigneeName: string | null; assistantId?: number | null; assistantName?: string | null; startDate: string | null; dueDate: string | null; completedAt: string | null; estimatedHours: string | number | null; actualHours: string | number | null; tags: string | null; createdAt: string; updatedAt: string; completionNotes: string | null; boardProduct: unknown };
 export type ProductTaskProfileSource = { id: number; workspaceId: number; parentAsin: string | null; storeName: string | null; site: string | null; title: string | null; chineseName: string | null; imageUrl: string | null };
 export type ProductTaskReadSource<I = ProductTaskListInput> = { identity: ProductTaskReadIdentity; input: I; capabilities: ProductTaskCapabilities; access: { all: boolean; assigneeIds: number[] }; tasks: ProductTaskSourceRecord[]; profiles: ProductTaskProfileSource[]; attachments: ProductTaskAttachment[]; complete: boolean };
 
@@ -103,6 +104,11 @@ function associationFromEvidence(productProfileId: number | null, snapshot: z.in
   return { ...base, status: snapshot?.status === "unavailable" || currentProfile?.status === "unavailable" ? "unavailable" : currentProfile?.reasonCode === "product_scope_conflict" ? "conflict" : "incomplete", identity: null, basis: null, reasonCode: currentProfile?.reasonCode ?? snapshot?.reasonCode ?? "product_source_incomplete" };
 }
 function sourceDate(raw: string | null): z.infer<typeof sourceDateSchema> { const value = raw !== null && dateSchema.safeParse(raw).success ? raw : null; return { raw, value, status: raw === null || raw === "" ? "missing" : value ? "valid" : "invalid" }; }
+// Protocol ordering must not depend on server/browser language.
+const compareTaskCategory = (a: string | null, b: string | null) => {
+  const left = JSON.stringify(a), right = JSON.stringify(b);
+  return left < right ? -1 : left > right ? 1 : 0;
+};
 export function compareTaskOrder(a: ProductTaskCursor, b: ProductTaskCursor): number { return b.createdAt.localeCompare(a.createdAt) || b.id - a.id; }
 const afterCursor = (item: ProductTaskCursor, cursor: ProductTaskCursor | null) => cursor === null || compareTaskOrder(item, cursor) > 0;
 const cursorFor = ({ createdAt, id }: ProductTaskCursor) => ({ createdAt, id });
@@ -116,10 +122,10 @@ function sourceItems<I>(source: ProductTaskReadSource<I>): ProductTaskReadItem[]
   for (const attachment of source.attachments) { ProductTaskAttachmentSchema.parse(attachment); if (attachment.workspaceId !== source.identity.workspaceId || !taskIds.has(attachment.taskId) || source.capabilities.attachments !== "available") throw new ProductTaskReadError("attachment_scope_mismatch"); }
   if (source.capabilities.profiles === "unavailable" && source.profiles.length) throw new ProductTaskReadError("unavailable_profile_payload");
   return source.tasks.map(record => {
-    if (record.workspaceId !== source.identity.workspaceId || !source.access.all && (record.assigneeId === null || !source.access.assigneeIds.includes(record.assigneeId))) throw new ProductTaskReadError("task_scope_mismatch");
+    if (record.workspaceId !== source.identity.workspaceId || !source.access.all && (!source.access.assigneeIds.includes(record.assigneeId ?? 0) && !source.access.assigneeIds.includes(record.assistantId ?? 0))) throw new ProductTaskReadError("task_scope_mismatch");
     if (source.capabilities.completionNotes === "unavailable" && record.completionNotes !== null || source.capabilities.boardProduct === "unavailable" && record.boardProduct !== null) throw new ProductTaskReadError("unavailable_field_payload");
     const attachments = source.attachments.filter(file => file.taskId === record.id).sort(compareTaskOrder);
-    const item = { id: record.id, workspaceId: record.workspaceId, creatorId: record.creatorId, title: record.title, description: record.description, status: record.status, priority: record.priority, category: record.category, assigneeId: record.assigneeId, assigneeName: record.assigneeName, product: resolveTaskProductAssociation(record, profiles.get(record.productProfileId ?? 0) ?? null, source.capabilities), createdAt: record.createdAt, updatedAt: record.updatedAt, dueDate: sourceDate(record.dueDate), completedAt: record.completedAt, completionNotes: { status: source.capabilities.completionNotes, value: record.completionNotes }, attachments: { status: source.capabilities.attachments, total: source.capabilities.attachments === "available" ? attachments.length : null }, legacy: { startDate: record.startDate, estimatedHours: record.estimatedHours, actualHours: record.actualHours, tags: record.tags } };
+    const item = { id: record.id, workspaceId: record.workspaceId, creatorId: record.creatorId, title: record.title, description: record.description, status: taskDisplayStatus(record.status), priority: record.priority, category: record.category, assigneeId: record.assigneeId, assigneeName: record.assigneeName, assistantId: record.assistantId ?? null, assistantName: record.assistantName ?? null, product: resolveTaskProductAssociation(record, profiles.get(record.productProfileId ?? 0) ?? null, source.capabilities), createdAt: record.createdAt, updatedAt: record.updatedAt, dueDate: sourceDate(record.dueDate), completedAt: record.completedAt, completionNotes: { status: source.capabilities.completionNotes, value: record.completionNotes }, attachments: { status: source.capabilities.attachments, total: source.capabilities.attachments === "available" ? attachments.length : null }, legacy: { startDate: record.startDate, estimatedHours: record.estimatedHours, actualHours: record.actualHours, tags: record.tags } };
     return ProductTaskItemSchema.parse({ ...item, versionKey: digest({ item, attachments, capabilities: source.capabilities }) });
   }).sort(compareTaskOrder);
 }
@@ -131,7 +137,7 @@ export function matchesTaskFilters(task: ProductTaskReadItem, input: ProductTask
 export function buildTaskStatistics(tasks: ProductTaskReadItem[]): ProductTaskStatistics {
   const byStatus = { backlog: 0, todo: 0, in_progress: 0, review: 0, done: 0 }, byAssociation = { linked: 0, unlinked: 0, incomplete: 0, conflict: 0, unavailable: 0 }, categories = new Map<string | null, number>(), assignees = new Map<number | null, number>();
   for (const task of tasks) { byStatus[task.status]++; byAssociation[task.product.status]++; categories.set(task.category, (categories.get(task.category) ?? 0) + 1); assignees.set(task.assigneeId, (assignees.get(task.assigneeId) ?? 0) + 1); }
-  return { total: tasks.length, pending: tasks.length - byStatus.done, done: byStatus.done, inProgress: byStatus.in_progress, byStatus, byAssociation, byCategory: [...categories].sort(([a], [b]) => JSON.stringify(a).localeCompare(JSON.stringify(b))).map(([category, count]) => ({ category, count })), byAssignee: [...assignees].sort(([a], [b]) => (a ?? 0) - (b ?? 0)).map(([assigneeId, count]) => ({ assigneeId, count })), basis: "all_authorized_matching_tasks_before_pagination" };
+  return { total: tasks.length, pending: tasks.length - byStatus.done, done: byStatus.done, inProgress: byStatus.in_progress, byStatus, byAssociation, byCategory: [...categories].sort(([a], [b]) => compareTaskCategory(a, b)).map(([category, count]) => ({ category, count })), byAssignee: [...assignees].sort(([a], [b]) => (a ?? 0) - (b ?? 0)).map(([assigneeId, count]) => ({ assigneeId, count })), basis: "all_authorized_matching_tasks_before_pagination" };
 }
 function taskGroup(task: ProductTaskReadItem, groupBy: ProductTaskListInput["groupBy"]): { key: string; label: string } {
   if (groupBy === "none") return { key: "all", label: "全部任务" };

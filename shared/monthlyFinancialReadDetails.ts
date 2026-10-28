@@ -5,7 +5,10 @@ export type MonthlyFinancialMetric = typeof MONTHLY_FINANCIAL_METRICS[number];
 export const MONTHLY_FINANCIAL_AVERAGE_FIELDS = ["purchaseCost", "freight", "fbaFee", "commission"] as const;
 export type MonthlyFinancialJson = string | number | boolean | null | MonthlyFinancialJson[] | { [key: string]: MonthlyFinancialJson };
 export type MonthlyFinancialJsonObject = { [key: string]: MonthlyFinancialJson };
-export const MONTHLY_FINANCIAL_LIMITS = { payloadBytes: 8 * 1024 * 1024, rows: 10_000, jsonDepth: 16, jsonNodes: 200_000, stringLength: 32768, resultBytes: 12 * 1024 * 1024, scanBatches: 200 } as const;
+// Complete Sellfox reports carry hundreds of raw cells per product. A verified
+// 508-row monthly report contains 220,132 nodes in 4.5 MB, exceeding the former
+// 200k limit. Keep byte, depth, row and string bounds, with room for full reports.
+export const MONTHLY_FINANCIAL_LIMITS = { payloadBytes: 8 * 1024 * 1024, rows: 10_000, jsonDepth: 16, jsonNodes: 500_000, stringLength: 32768, resultBytes: 12 * 1024 * 1024, scanBatches: 200 } as const;
 export type MonthlyFinancialJsonLimits = { jsonDepth: number; jsonNodes: number; stringLength: number };
 
 /** Optional limits are for internal derived response envelopes only. Raw
@@ -48,7 +51,8 @@ export function parseMonthlyFinancialJson(value: unknown, maxBytes: number = MON
     value = JSON.parse(value);
   }
   assertMonthlyFinancialJson(value);
-  if (monthlyFinancialJsonBytes(value) > maxBytes) throw new Error("PAYLOAD_BYTE_LIMIT");
+  // Already validated above; serializing a second time must not traverse descriptors again.
+  if (new TextEncoder().encode(JSON.stringify(value)).byteLength > maxBytes) throw new Error("PAYLOAD_BYTE_LIMIT");
   return value;
 }
 export const MonthlyFinancialRawSchema = z.custom<MonthlyFinancialJsonObject>(value => {

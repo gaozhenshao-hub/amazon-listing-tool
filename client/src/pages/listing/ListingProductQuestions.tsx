@@ -1,0 +1,8 @@
+import {useState} from 'react';
+import {trpc} from '@/lib/trpc';
+import {Button} from '@/components/ui/button';
+export default function ListingProductQuestions({projectId,asin}:{projectId:number;asin:string}){
+ const query=trpc.listingInputs.questions.useQuery({projectId,asin});
+ const [limit,setLimit]=useState(10);
+ return <section className="space-y-4 border-t pt-4"><h3 className="font-medium">产品问题</h3>{query.error&&<p role="alert" className="text-sm text-destructive">{query.error.message}</p>}{(['alexa','follow_up'] as const).map(type=>{const rows=(query.data||[]).filter(q=>q.type===type);return <div key={type}><h4 className="mb-2 text-sm font-medium">{type==='alexa'?'Alexa 问题':'更多问题 · Follow-up questions'} · {rows.length}</h4>{rows.length?<ol className="list-decimal space-y-2 pl-5 text-sm">{rows.slice(0,limit).map((q,i)=><li key={i} className="whitespace-pre-wrap break-words">{q.question}{q.questionCn&&<p className="mt-1 text-xs text-muted-foreground">{q.questionCn}</p>}{q.answer&&<details className="mt-2 rounded border p-2"><summary className="cursor-pointer text-xs">查看回答</summary><p className="mt-2">{q.answer}</p>{q.answerCn&&<p className="mt-2 text-xs text-muted-foreground">{q.answerCn}</p>}</details>}{q.parentQuestion&&<p className="mt-1 text-xs text-muted-foreground">相关 Alexa 问题：{q.parentQuestion}</p>}</li>)}</ol>:<p className="text-xs text-muted-foreground">{query.isLoading?'正在读取…':'暂无补充，请在左侧上传该 ASIN 的问题表格。'}</p>}{rows.length>limit&&<Button size="sm" variant="outline" className="mt-3" onClick={()=>setLimit(limit+20)}>查看更多问题</Button>}</div>;})}</section>;
+}

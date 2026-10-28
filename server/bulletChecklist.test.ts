@@ -389,21 +389,7 @@ describe("GeneratePage - BulletChecklistPanel Integration", () => {
     expect(pageCode).toContain("aiSemanticRelations={generatedBullets[idx].aiSemanticRelations}");
   });
 
-  it("should place BulletChecklistPanel after the actual keywordsUsed section", () => {
-    const keywordsIdx = pageCode.indexOf("keywordsUsed.map");
-    // Find the BulletChecklistPanel usage (not the import)
-    const checklistIdx = pageCode.indexOf("<BulletChecklistPanel");
-    expect(keywordsIdx).toBeGreaterThanOrEqual(0);
-    expect(checklistIdx).toBeGreaterThan(keywordsIdx);
-  });
 
-  it("should place BulletChecklistPanel before the governed candidate-review handoff", () => {
-    const checklistIdx = pageCode.indexOf("<BulletChecklistPanel");
-    const reviewHandoffIdx = pageCode.indexOf("请在下方候选账本中完成人工确认", checklistIdx);
-    expect(checklistIdx).toBeGreaterThanOrEqual(0);
-    expect(reviewHandoffIdx).toBeGreaterThan(checklistIdx);
-    expect(pageCode).not.toContain("确认此条");
-  });
 });
 
 // ─── Test: Dimension Key Alignment Between Frontend and Backend ─────

@@ -23,10 +23,10 @@ describe("统一权限目录同步", () => {
     }
   });
 
-  it("覆盖站外和皇帝子模块，并在角色编辑、前台守卫中使用同一目录", () => {
-    expect(PERMISSION_MODULES.map((module) => module.id)).toContain("offsite");
+  it("覆盖精简模块和 AI 子模块，并在角色编辑、前台守卫中使用同一目录", () => {
+    expect(PERMISSION_MODULES.map((module) => module.id)).not.toContain("offsite");
     expect(PERMISSION_MODULES.map((module) => module.id)).toContain("emperor");
-    expect(PERMISSION_ROUTE_REGISTRY["/offsite/analytics"]?.subModuleId).toBe("offsite_analytics");
+    expect(PERMISSION_ROUTE_REGISTRY["/offsite/analytics"]).toBeUndefined();
     expect(PERMISSION_ROUTE_REGISTRY["/emperor/skills"]?.subModuleId).toBe("emperor_skills");
 
     expect(source("server/routers/roleManagement.ts")).toContain("PERMISSION_MODULES");
@@ -45,8 +45,8 @@ describe("统一权限目录同步", () => {
 
   it("不改变旧运营路由的兼容执行策略", () => {
     expect(PERMISSION_ROUTE_REGISTRY["/ops/products"]).toEqual({ moduleId: "ops", subModuleId: "ops_products", enforcement: "catalog_only" });
-    expect(PERMISSION_ROUTE_REGISTRY["/ops/tasks"]).toEqual({ moduleId: "ops", subModuleId: "ops_tasks", enforcement: "catalog_only" });
-    expect(PERMISSION_ROUTE_REGISTRY["/ops/read-only-overview"]).toEqual({ moduleId: "ops", subModuleId: "ops_data_import", enforcement: "enforced" });
+    expect(PERMISSION_ROUTE_REGISTRY["/ops/tasks"]).toEqual({ moduleId: "ops", subModuleId: "ops_tasks", enforcement: "enforced" });
+    expect(PERMISSION_ROUTE_REGISTRY["/ops/read-only-overview"]).toBeUndefined();
   });
 
   it("从同一资源目录派生后端资源级授权映射，并覆盖站外和皇帝资源", () => {

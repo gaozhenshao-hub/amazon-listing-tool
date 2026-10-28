@@ -15,17 +15,12 @@ const overviewSource = fs.readFileSync(
   "utf8",
 );
 
-describe("产品总览父ASIN周报适配", () => {
-  it("系统总览直接消费父ASIN周报权威构建器，而不再由前端日快照适配层构造周指标", () => {
-    expect(routerSource).toContain("from(lingxingProductWeekly)");
-    expect(routerSource).toContain('eq(lingxingProductWeekly.sourceKind, "lingxing_mcp_parent_asin_weekly")');
-    expect(routerSource).toContain("buildParentWeeklyOverview(weeklyFacts, profileSeeds, weeksToShow, manualOwnerAssignments)");
-    expect(overviewSource).toContain('fact.sourceKind === "lingxing_mcp_parent_asin_weekly"');
-    expect(overviewSource).toContain("variantCount: childAsins.length");
-  });
-
-  it("页面明确提示周度权威来源及ASIN日数据的受限用途", () => {
-    expect(pageSource).toContain("权威周度来源：领星ASIN周数据·系统父ASIN汇总");
-    expect(pageSource).toContain("ASIN日数据用于单ASIN详情与库存规划，不参与本页周度累计");
-  });
+describe("产品总览赛狐来源",()=>{
+ it("使用赛狐统一北美美元口径",()=>{
+  expect(routerSource).toContain('sourceType:"saihu"');
+  expect(routerSource).toContain('consolidateNorthAmerica:true');
+  expect(routerSource).not.toContain('from(lingxingProductWeekly)');
+  expect(pageSource).toContain('sourceType: "saihu"');
+  expect(pageSource).toContain('consolidateNorthAmerica: true');
+ });
 });

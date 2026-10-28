@@ -151,7 +151,7 @@ function vitePluginManusDebugCollector(): Plugin {
 }
 
 const isProductionBuild = process.env.NODE_ENV === "production";
-const plugins = [
+const plugins = [releaseFeatureManifestPlugin(),
   react(),
   tailwindcss(),
   // JSX定位属性只服务于开发期定位。生产保留它会扩大每个组件的输出与构建峰值内存。
@@ -159,6 +159,28 @@ const plugins = [
   vitePluginManusRuntime(),
   vitePluginManusDebugCollector(),
 ];
+
+// Capture the resolved public flags in the artifact, so deployment checks the
+// actual build instead of assuming shell environment settings survived.
+function releaseFeatureManifestPlugin(): Plugin {
+  let flags: Record<string, string> = {};
+  let authMode = "";
+  return {
+    name: "release-feature-manifest",
+    apply: "build",
+    configResolved(config) {
+      authMode = String(config.env.VITE_AUTH_MODE ?? "");
+      flags = Object.fromEntries([
+        "VITE_ENABLE_MERGED_LISTING_WORKFLOW",
+        "VITE_ENABLE_MERGED_READONLY_FEATURES",
+        "VITE_ENABLE_NORTH_AMERICA_BOARD",
+      ].map(key => [key, String(config.env[key] ?? "")]));
+    },
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: "release-features.json", source: JSON.stringify({ edition: "slim-20261023", authMode, flags }) });
+    },
+  };
+}
 
 export default defineConfig({
   plugins,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { buildProductTaskListResult, buildProductTaskDetailResult, buildProductTaskReadFailure, sameTaskProductIdentity, ProductTaskListInputSchema, ProductTaskDetailInputSchema, ProductTaskListResultSchema, ProductTaskDetailResultSchema, ProductTaskReadError, PRODUCT_TASK_STATUSES, type ProductTaskReadSource, type ProductTaskSourceRecord, type ProductTaskProfileSource, type ProductTaskAttachment, type ProductTaskListInput, type ProductTaskDetailInput, type ProductTaskListResult } from "./productTaskRead";
 
@@ -13,6 +13,17 @@ const list = (patch: Partial<ProductTaskReadSource> = {}) => buildProductTaskLis
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 function detail(value = source(), patch: Partial<ProductTaskDetailInput> = {}) { return buildProductTaskDetailResult({ ...value, input: { expectedWorkspaceId: 11, taskId: 1, attachmentCursor: null, attachmentLimit: 20, ...patch } }); }
 const exact = { workspaceId: 11, parentAsin: "P", storeName: "Exact Store", country: "US" };
+
+it("replays task statistics across server English and browser Chinese locales", () => {
+  const compare = String.prototype.localeCompare;
+  const locale = vi.spyOn(String.prototype, "localeCompare");
+  try {
+    locale.mockImplementation(function (this: string, other: string) { return compare.call(this, other, "en-US"); });
+    const response = list({ tasks: ["listing优化", "广告优化", "绩效处理", "其他"].map((category, i) => task({ id: i + 1, category })) });
+    locale.mockImplementation(function (this: string, other: string) { return compare.call(this, other, "zh-CN"); });
+    expect(ProductTaskListResultSchema.safeParse(clone(response)).success).toBe(true);
+  } finally { locale.mockRestore(); }
+});
 
 describe("exact task product identity and saved association", () => {
   it("canonicalizes parent and country but requires all four identity dimensions", () => {
@@ -60,10 +71,10 @@ describe("exact task product identity and saved association", () => {
 });
 
 describe("complete task records, original states and source text", () => {
-  it("retains all five statuses and treats four of them as pending", () => {
+  it("normalizes legacy statuses into three visible states while retaining all tasks", () => {
     const result = list({ tasks: PRODUCT_TASK_STATUSES.map((status, index) => task({ id: index + 1, status })) });
-    expect(result.stats).toMatchObject({ total: 5, pending: 4, done: 1, inProgress: 1, byStatus: { backlog: 1, todo: 1, in_progress: 1, review: 1, done: 1 } });
-    expect(result.items.map(task => task.status)).toEqual([...PRODUCT_TASK_STATUSES].reverse());
+    expect(result.stats).toMatchObject({ total: 5, pending: 4, done: 1, inProgress: 2, byStatus: { backlog: 0, todo: 2, in_progress: 2, review: 0, done: 1 } });
+    expect(result.items.map(task => task.status)).toEqual(["done", "in_progress", "in_progress", "todo", "todo"]);
   });
   it("preserves custom category, full description/notes and HTML-like text without normalization", () => {
     const original = " <img src=x onerror=alert(1)> ", result = list({ tasks: [task({ title: original, description: "<script>not code</script>\n".repeat(100), completionNotes: "full notes\n".repeat(1000) })] }).items[0];
@@ -104,7 +115,7 @@ describe("all authorized matching task statistics, filtering, grouping and stabl
   });
   it("filters the full authorized matching set, including raw categories and all status values", () => {
     const tasks = [task({ id: 1, status: "review" }), task({ id: 2, status: "review", assigneeId: 8 }), task({ id: 3, status: "todo" }), task({ id: 4, status: "review", category: "其他" })];
-    const result = list({ tasks, input: { ...input, assigneeId: 7, status: "review", category: "旧版自定义分类", search: "中文商品", limit: 1 } }); expect(result.stats?.total).toBe(1); expect(result.items[0].id).toBe(1);
+    const result = list({ tasks, input: { ...input, assigneeId: 7, status: "in_progress", category: "旧版自定义分类", search: "中文商品", limit: 1 } }); expect(result.stats?.total).toBe(1); expect(result.items[0].id).toBe(1);
   });
   it("does not merge identical assignee names with different numeric identities", () => {
     const result = list({ tasks: [task(), task({ id: 2, assigneeId: 8 })] }); expect(result.stats?.byAssignee).toEqual([{ assigneeId: 7, count: 1 }, { assigneeId: 8, count: 1 }]);

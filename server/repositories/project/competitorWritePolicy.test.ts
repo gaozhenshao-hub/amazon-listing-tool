@@ -73,6 +73,14 @@ describe("competitorRevision full persisted row", () => {
 });
 
 describe("locked competitor update merge", () => {
+  it.each(["upsert", "reviews"] as const)("%s preserves supplemental source authority and rejects forged references", kind => {
+    const ref = { reviews: { operationId: "verified", version: 2, setHash: "a".repeat(64), entriesHash: "b".repeat(64) } };
+    const incoming = { rawData: JSON.stringify({ supplementAdoptionRefs: { questions: { forged: true } } }) };
+    expect(merged(record({ rawData: JSON.stringify({ supplementAdoptionRefs: ref }) }), incoming, kind).raw.supplementAdoptionRefs).toEqual(ref);
+    expect(merged(record({ rawData: JSON.stringify({ supplementAdoptionRefs: ref }) }), { rawData: "{}" }, kind).raw.supplementAdoptionRefs).toEqual(ref);
+    expect(merged(record({ rawData: "{}" }), incoming, kind).raw).not.toHaveProperty("supplementAdoptionRefs");
+    expect(JSON.parse(stripIncomingManualSales({ projectId: 11, asin: "B000000001", ...incoming }).rawData!)).not.toHaveProperty("supplementAdoptionRefs");
+  });
   it.each(["upsert", "reviews"] as const)("%s cannot create, replace or erase server-owned adoption proof", kind => {
     const ref = { artifactId: "server-verified-original", preserved: true }, incoming = { rawData: JSON.stringify({ deepAdoptionRef: { artifactId: "forged" } }) };
     expect(merged(record({ rawData: JSON.stringify({ deepAdoptionRef: ref }) }), incoming, kind).raw.deepAdoptionRef).toEqual(ref);

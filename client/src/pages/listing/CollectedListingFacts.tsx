@@ -1,0 +1,15 @@
+import { readJson, sumVariantPurchases } from '../../../../shared/competitorPresentation';
+import CompetitorResearchDetails from '../acquisition/CompetitorResearchDetails';
+export default function CollectedListingFacts({data,images=[],hideReviews=false}:{data:any;images?:string[];hideReviews?:boolean}) {
+ const facts=data.research;
+ const sales=sumVariantPurchases(facts,data.asin||'',data.manualSales?.value);
+ return <div className="space-y-4 text-sm">
+  <dl className="grid grid-cols-2 gap-3"><div><dt className="text-muted-foreground">品牌</dt><dd>{data.brand||'未采到'}</dd></div><div><dt className="text-muted-foreground">价格</dt><dd>{typeof data.price==='object'&&data.price?`${data.price.value} ${data.price.currency}`:data.price||'未采到'}</dd></div><div><dt className="text-muted-foreground">评分 / 评价数</dt><dd>{data.rating??'未采到'} / {data.reviewCount??'未采到'}</dd></div><div><dt className="text-muted-foreground">销量（子体合计）</dt><dd>{sales.value===null?'未采到':`${sales.value.toLocaleString()}${sales.lowerBound?'+':''}`}</dd><p className="text-xs text-muted-foreground">{data.manualSales?'人工校准的月销量合计':`${sales.covered}/${sales.total} 个子体有数据，按 ASIN 去重合计；页面购买量提示非精确销量。`}</p></div></dl>
+  <section><h3 className="mb-1 font-medium">标题</h3><p className="whitespace-pre-wrap break-words">{data.title||'未采到'}</p>{data.subtitle&&<p className="mt-1 text-sm text-muted-foreground">{data.subtitle}</p>}</section>
+  <section><h3 className="mb-1 font-medium">五点描述</h3>{(data.bulletPoints||[]).length?<ol className="list-decimal space-y-2 pl-5">{data.bulletPoints.map((b:string,i:number)=><li key={i} className="whitespace-pre-wrap break-words">{b}</li>)}</ol>:<p className="text-muted-foreground">未采到</p>}</section>
+  <details><summary className="cursor-pointer font-medium">长描述</summary><p className="mt-2 whitespace-pre-wrap break-words">{data.description||'本次未采到长描述'}</p></details>
+  {(['gallery','aplus','brand_story'] as const).map(role=>{const assets=(data.imageAssets||[]).filter((a:any)=>role==='gallery'?['main','secondary'].includes(a.role):a.role===role).map((a:any)=>a.url).filter(Boolean);const urls=role==='gallery'&&!assets.length?images:assets;return <section key={role}><h3 className="mb-2 font-medium">{role==='gallery'?'主图 / 副图':role==='aplus'?'A+ 图片':'品牌故事'} · {urls.length} 张</h3>{urls.length?<div className="flex gap-2 overflow-x-auto">{urls.map((url:string,i:number)=><a key={i} href={url} target="_blank" rel="noreferrer"><img src={url} alt={`${role} 图片 ${i+1}`} loading="lazy" className="h-24 w-24 shrink-0 rounded border object-contain"/></a>)}</div>:<p className="text-xs text-muted-foreground">本次未采到</p>}</section>;})}
+  <details><summary className="cursor-pointer font-medium">变体、上架时间与页面评论总结</summary><div className="mt-3"><CompetitorResearchDetails hideReviews={hideReviews} data={{...data,research:facts}}/></div></details>
+ </div>;
+}
+export function collectedRecordFacts(record:any){const raw=readJson(record.rawData)||{};return {...raw.scrapedData,...raw,asin:record.asin,title:record.title,bulletPoints:readJson(record.bulletPoints)||[],price:record.price,rating:record.rating,reviewCount:record.reviewCount};}

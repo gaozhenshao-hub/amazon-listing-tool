@@ -30,6 +30,21 @@ const batch = (payload = [source()]) => buildMonthlyFinancialBatchResult({ ident
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 describe("complete monthly source contracts", () => {
+  it("summary parsing preserves financial facts, currency evidence and allocation without expensive raw drilldown", () => {
+    const input = record([source({ raw: { source: "sellfox_monthly_api", currency: "USD", api: { currency: "USD", commission: -12.5, parentAsinList: ["PARENT", "OLDPARENT"] }, "5:订单支出/销售佣金": -12.5 } })]);
+    const full = parseMonthlyFinancialBatch(input).rows[0];
+    const summary = parseMonthlyFinancialBatch(input, {summaryOnly: true}).rows[0];
+    const facts = ({raw, details, ...row}: typeof full) => row;
+    expect(facts(summary)).toEqual(facts(full));
+    expect(summary.raw).toEqual({source: "sellfox_monthly_api"});
+    expect(full.details.fields.commission.components).toContainEqual(expect.objectContaining({rawPath: "90:0:api.commission", rawValue: -12.5, value: 12.5}));
+    expect(summary.details.fields.commission.components).toEqual([]);
+    for (const raw of [{ invalid: Infinity }, [], { deep: { bad: undefined } }]) {
+      expect(() => parseMonthlyFinancialBatch(record([source({raw})]), {summaryOnly: true})).toThrow();
+    }
+    expect(() => parseMonthlyFinancialBatch(record([source(), source()]), {summaryOnly: true})).toThrow();
+    expect(() => parseMonthlyFinancialBatch({...input, totalRows: 2}, {summaryOnly: true})).toThrow();
+  });
   it("accepts exact readonly inputs and canonicalizes marketplace aliases", () => {
     expect(MonthlyFinancialHistoryInputSchema.parse(historyInput)).toEqual(historyInput);
     expect(MonthlyFinancialBatchInputSchema.parse({ ...batchInput, scope: { ...exactScope, country: "英国站" } }).scope?.country).toBe("UK");
@@ -328,12 +343,23 @@ describe("latest completed whole-scope snapshot before parent/actor filtering", 
 });
 
 describe("bounded, lossless JSON and output self-consistency", () => {
-  it("keeps the raw 200k-node budget unchanged when an internal derived envelope explicitly uses a larger budget", () => {
+  it("keeps a bounded raw budget separate from the larger derived response budget", () => {
     const value = Array(MONTHLY_FINANCIAL_LIMITS.jsonNodes).fill(0), responseLimits = { jsonNodes: 1_000_000, jsonDepth: 24, stringLength: MONTHLY_FINANCIAL_LIMITS.stringLength };
     expect(() => monthlyFinancialJsonBytes(value)).toThrow("JSON_LIMIT");
-    expect(monthlyFinancialJsonBytes(value, responseLimits)).toBe(400001);
+    expect(monthlyFinancialJsonBytes(value, responseLimits)).toBe(2 * MONTHLY_FINANCIAL_LIMITS.jsonNodes + 1);
     expect(() => parseMonthlyFinancialJson(value)).toThrow("JSON_LIMIT");
-    expect(MONTHLY_FINANCIAL_LIMITS).toMatchObject({ jsonNodes: 200000, jsonDepth: 16, stringLength: 32768 });
+    expect(MONTHLY_FINANCIAL_LIMITS).toMatchObject({ jsonNodes: 500000, jsonDepth: 16, stringLength: 32768 });
+  });
+  it("reads a complete 508-product report with over 200k raw cells without dropping products or amounts", () => {
+    const raw = { currency: "USD", api: Object.fromEntries(Array.from({ length: 430 }, (_, index) => [`sourceField${index}`, index])) };
+    const payload = Array.from({ length: 508 }, (_, index) => source({ asin: `CHILD-${index}`, sku: `SKU-${index}`, raw }));
+    for (const input of [payload, JSON.stringify(payload)]) {
+      const parsed = parseMonthlyFinancialBatch(record(payload, { payload: input }));
+      expect(parsed.rows).toHaveLength(508);
+      expect(parsed.rows.at(-1)?.raw).toEqual(raw);
+      const parent = aggregateMonthlyFinancialRows(parsed.rows).find(row => row.dimension === "parent");
+      expect(parent?.metrics).toMatchObject({ salesQty: 5080, salesAmount: 50800, financialProfit: 10160 });
+    }
   });
   it.each([0, -1, 1.5, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1])("rejects invalid internal JSON boundary %s without disabling checks", value => {
     for (const field of ["jsonNodes", "jsonDepth", "stringLength"] as const) expect(() => monthlyFinancialJsonBytes({ valid: true }, { ...MONTHLY_FINANCIAL_LIMITS, [field]: value })).toThrow("INVALID_JSON_LIMITS");

@@ -1,135 +1,44 @@
+import { actorFromContext, assertResourceAction } from "../services/securityGovernance";
+import { layoutWithoutDeletedImages } from "../../shared/knowledgeAssetLayout";
+import { queryRows } from "../domains/knowledge/assetTargets";
+import { deleteAsset } from "../domains/knowledge/assetLifecycle";
+import { randomUUID } from "node:crypto";
+import { uploadStandaloneImage, saveStandaloneTags, enqueueStandaloneTags, requireStandaloneImage } from "../domains/knowledge/standaloneImages";
+import { StandaloneImageUploadSchema } from "../../shared/standaloneImage";
+import { resolveKnowledgeVideos } from "../domains/knowledge/videoDelivery";
+import { startKnowledgeCollectionBatch } from "../domains/acquisition/knowledgeCollectionBatch";
+import { inheritSetImageTags } from "../../shared/imageSetTags";
+import { sharedImageTags, imageTaggingUnits } from "../../shared/imageTaggingUnits";
+import { taggingUnitPreview } from "../domains/knowledge/taggingUnitPreview";
+import { buildSingleImageAnalysisPrompt } from "../domains/knowledge/imageAnalysisPrompt";
+import { imageBelongForPosition, validImageBelongSubtype } from "../../shared/imageBelong";
+import { parseKnowledgeImageAnalysis, parseKnowledgeAnalysisJson } from "../domains/knowledge/legacyImageAnalysis";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router } from "../_core/trpc";
 import { workspaceScopedProcedure } from "../domains/ai_os/workspaceScopedProcedure";
 import * as kbDb from "../kbDb";
 import { invokeBusinessSkill } from "../domains/ai_os/services/businessSkillGateway";
 import { resolveStoredObjectUrl, storagePut } from "../storage";
-import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { resourceConflictError } from "@shared/_core/errors";
 import { requireDb } from "../repositories/dbClient";
 import { acquisitionAssetCandidates, acquisitionConfirmedSnapshots } from "../../drizzle/schema/acquisition";
 import { startAmazonAcquisitionJob } from "../domains/acquisition/acquisitionJobs";
 import { readManualKbImageCoverage, type ManualKbImageCoverage } from "../domains/acquisition/kbManualImageCoverage";
 import { createManualKbImageDeliveryGate } from "../domains/acquisition/kbManualImageDelivery";
-import { ImageTaggingPreviewInputSchema, ImageTaggingSubmitInputSchema, ImageTaggingOperationInputSchema,
-  ImageTaggingApplyInputSchema, ImageTaggingApplyOperationInputSchema, ImageTaggingHistoryInputSchema,
-  ImageTaggingPreviewSchema, ImageTaggingJobViewSchema, ImageTaggingApplyReceiptSchema, ImageTaggingHistorySchema } from "../../shared/imageTagging";
 import {
   KB_IMAGE_IMPORT_CAPABILITIES,
   KbImageImportAsinSchema,
-  capabilitiesForKbPositions,
   kbImagesConsumerRef,
   parseAmazonUsAsins,
   type KbImageAcquisitionCapability,
-  type KbImagePosition,
 } from "../domains/acquisition/kbImagesAcquisition";
 import {
   STYLE_NAME_OPTIONS, IMAGE_BELONG_OPTIONS, IMAGE_BELONG_HIERARCHY, IMAGE_TYPE_HIERARCHY,
   IMAGE_TYPE_MAIN_OPTIONS, SELLING_POINT_HIERARCHY, SELLING_POINT_MAIN_OPTIONS,
   COLOR_SCHEME_OPTIONS, COMPOSITION_OPTIONS, CATEGORY_OPTIONS, COLOR_TAG_OPTIONS, getStyleParams
 } from "../constants/imageTagConstants";
-
-type ProductImage = {
-  url: string;
-  position: "main" | "secondary" | "aplus" | "brand_story";
-  positionIndex: number;
-  aplusModuleType?: string;
-  aplusModuleClass?: string;
-};
-
-type RetiredAmazonProductData = {
-  title: string;
-  brand: string;
-  category: string;
-  images: ProductImage[];
-  imageUrls: string[];
-};
-
-async function rejectRetiredAmazonScrape(): Promise<RetiredAmazonProductData> {
-  throw new TRPCError({
-    code: "PRECONDITION_FAILED",
-    message: "旧Amazon HTML爬虫已退役；请创建统一Acquisition Job，系统仅在完整安全校验通过后自动直接录入。",
-  });
-}
-
-/**
- * Build the upgraded single-image analysis prompt with 7-dimension constrained enum tags
- */
-function buildSingleImageAnalysisPrompt(): string {
-  const imageTypeOptions = Object.entries(IMAGE_TYPE_HIERARCHY)
-    .map(([k, v]) => `${k}: [${(v as readonly string[]).join(", ")}]`).join("; ");
-  const sellingPointOptions = Object.entries(SELLING_POINT_HIERARCHY)
-    .map(([k, v]) => `${k}: [${(v as readonly string[]).join(", ")}]`).join("; ");
-
-  return `你是一位资深的亚马逊产品图片分析专家。请从以下12个维度分析这张产品图片：
-1. 构图与布局 2. 色彩搭配 3. 产品展示角度 4. 场景化程度 5. 文字/信息图层
-6. 品牌一致性 7. 目标受众匹配度 8. 情感传达 9. 技术质量 10. 差异化程度
-11. 转化驱动力 12. 合规性
-
-同时请为图片打上以下标签（必须从给定选项中选择）：
-
-【图片归属】从以下选项中选一个：${IMAGE_BELONG_OPTIONS.join("、")}（如果是A+内容，请进一步选择A+子模块类型：${(IMAGE_BELONG_HIERARCHY["A+"] as readonly string[]).join("、")}，填入tagImageBelongSub字段）
-【图片类型-大类】从以下选项中选一个：${IMAGE_TYPE_MAIN_OPTIONS.join("、")}
-【图片类型-子类】根据大类选择对应子类型：${imageTypeOptions}
-【卖点分类-大类】从以下选项中选一个：${SELLING_POINT_MAIN_OPTIONS.join("、")}（如果图片没有明确卖点可留空）
-【卖点分类-子类】根据大类选择对应子选项：${sellingPointOptions}
-【主颜色】从以下颜色中选一个：${COLOR_TAG_OPTIONS.join("、")}
-【构图类型】从以下选项中选一个：${COMPOSITION_OPTIONS.join("、")}
-【设计风格】从以下选项中选一个：${STYLE_NAME_OPTIONS.join("、")}
-
-返回JSON：
-{
-  "dimensions": {
-    "composition": {"score": 8, "comment": ""},
-    "colorScheme": {"score": 8, "comment": ""},
-    "productAngle": {"score": 8, "comment": ""},
-    "sceneSetting": {"score": 7, "comment": ""},
-    "textOverlay": {"score": 7, "comment": ""},
-    "brandConsistency": {"score": 8, "comment": ""},
-    "audienceMatch": {"score": 8, "comment": ""},
-    "emotionalImpact": {"score": 7, "comment": ""},
-    "technicalQuality": {"score": 8, "comment": ""},
-    "differentiation": {"score": 7, "comment": ""},
-    "conversionPower": {"score": 8, "comment": ""},
-    "compliance": {"score": 9, "comment": ""}
-  },
-  "tagColorScheme": "配色方案（旧字段兼容）",
-  "tagImageType": "图片类型（旧字段兼容）",
-  "tagDesignStyle": "设计风格（旧字段兼容）",
-  "tagImageBelong": "图片归属",
-  "tagImageBelongSub": "A+子模块类型（仅当tagImageBelong为A+时填写，否则为空字符串）",
-  "tagImageTypeMain": "图片类型大类",
-  "tagImageTypeSub": "图片类型子类",
-  "tagSellingPointCategory": "卖点大类（可为空字符串）",
-  "tagSellingPointDetail": "卖点子类（可为空字符串）",
-  "tagComposition": "构图类型",
-  "tagColorSchemeV2": "主颜色",
-  "tagDesignStyleV2": "设计风格",
-  "highlights": ["亮点1", "亮点2"],
-  "singleImageScore": 8,
-  "summary": "一句话总结"
-}`;
-}
-
-async function downloadAndStoreImage(imageUrl: string, asin: string, index: number, prefix = "kb-images"): Promise<string> {
-  try {
-    const response = await safeHttpRequest(imageUrl, {
-      timeoutMs: 15_000,
-      maxResponseBytes: 25 * 1024 * 1024,
-      auditContext: { operation: "knowledge_base.image_import" },
-    });
-    if (!response.ok) throw new Error(`Image download failed with HTTP ${response.status}`);
-    const buffer = response.body;
-    const ext = imageUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)?.[1] || "jpg";
-    const key = `${prefix}/${asin}/${Date.now()}-${index}.${ext}`;
-    const { storageUri } = await storagePut(key, buffer, `image/${ext}`);
-    return storageUri;
-  } catch {
-    return imageUrl; // Fallback to original URL
-  }
-}
 
 async function resolveImageForDelivery<T extends { imageUrl: string }>(image: T): Promise<T & { imageAccessError?: string }> {
   try {
@@ -151,7 +60,6 @@ async function resolveImagesForDelivery<T extends { imageUrl: string }>(images: 
   return Promise.all(images.map(resolveImageForDelivery));
 }
 
-const KB_IMAGE_ACQUISITION_MAX_USD = 0.1;
 
 async function startKbImagesAcquisition(input: {
   workspaceId: number;
@@ -169,236 +77,28 @@ async function startKbImagesAcquisition(input: {
     asin: input.asin,
     capabilities: [...(input.capabilities ?? KB_IMAGE_IMPORT_CAPABILITIES)],
     cachePolicy: input.cachePolicy ?? "prefer_cache",
-    maxChargeUsd: KB_IMAGE_ACQUISITION_MAX_USD,
   });
 }
 
 /**
- * Shared import logic: scrape, download, classify, and analyze images.
- * Used by importByAsin, batchImportAsins, and importByLink.
- */
-async function processImport(setId: number, asin: string, userId: number, runAnalysis: boolean) {
-  try {
-    const data = await rejectRetiredAmazonScrape();
-    await kbDb.updateImageSet(setId, userId, {
-      productTitle: data.title, brand: data.brand, category: data.category,
-    });
-
-    // Use the new structured images array (includes product + A+ + brand story)
-    const allImages = data.images || [];
-    console.log(`[KB Images] Processing ${allImages.length} images for ASIN ${asin}`);
-
-    // Download and store all images
-    for (let i = 0; i < allImages.length; i++) {
-      const img = allImages[i];
-      const prefix = img.position === "aplus" ? "kb-aplus" : img.position === "brand_story" ? "kb-brand-story" : "kb-images";
-      const storedUrl = await downloadAndStoreImage(img.url, asin, i, prefix);
-      await kbDb.createImage({
-        imageSetId: setId,
-        imageUrl: storedUrl,
-        imagePosition: img.position as any,
-        positionIndex: img.positionIndex,
-        aplusModuleType: img.aplusModuleType || null,
-        aplusModuleClass: img.aplusModuleClass || null,
-      });
-    }
-
-    // If no structured images, fall back to legacy imageUrls
-    if (allImages.length === 0 && data.imageUrls?.length > 0) {
-      console.log(`[KB Images] Falling back to legacy imageUrls for ASIN ${asin}`);
-      for (let i = 0; i < data.imageUrls.length; i++) {
-        const storedUrl = await downloadAndStoreImage(data.imageUrls[i], asin, i);
-        await kbDb.createImage({
-          imageSetId: setId,
-          imageUrl: storedUrl,
-          imagePosition: i === 0 ? "main" as const : "secondary" as const,
-          positionIndex: i,
-        });
-      }
-    }
-
-    await kbDb.updateImageSet(setId, userId, { status: "analyzing" });
-
-    if (runAnalysis) {
-      // AI analysis for each image
-      const images = await kbDb.listImagesBySet(setId);
-      for (const img of images) {
-        try {
-          const posIdx = img.positionIndex ?? 0;
-          const posLabel = img.imagePosition === "main" ? "主图"
-            : img.imagePosition === "aplus" ? `A+内容图#${posIdx + 1}`
-            : img.imagePosition === "brand_story" ? `品牌故事图#${posIdx + 1}`
-            : `副图#${posIdx}`;
-
-      // [Emperor] 优先调用 Emperor Skill: analysis.image.recognition
-
-
-
-
-
-          const resolvedImageUrl = await resolveStoredObjectUrl(img.imageUrl);
-          const response = await invokeBusinessSkill({
-            messages: [
-              { role: "system", content: buildSingleImageAnalysisPrompt() },
-              { role: "user", content: [{ type: "image_url" as const, image_url: { url: resolvedImageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}，图片位置: ${img.imagePosition}` }] }
-            ],
-            response_format: { type: "json_object" as const },
-          });
-          const analysis = String(response.choices?.[0]?.message?.content || "{}");
-          const parsed = JSON.parse(analysis);
-          await kbDb.updateImage(img.id, {
-            aiDimensionAnalysis: analysis,
-            tagCategory: parsed.tagCategory || null,
-            tagColorScheme: parsed.tagColorScheme || null,
-            tagImageType: parsed.tagImageType || null,
-            tagDesignStyle: parsed.tagDesignStyle || null,
-            // New v2 tags
-            tagImageBelong: parsed.tagImageBelong || null,
-            tagImageBelongSub: parsed.tagImageBelongSub || null,
-            tagImageTypeMain: parsed.tagImageTypeMain || null,
-            tagImageTypeSub: parsed.tagImageTypeSub || null,
-            tagSellingPointCategory: parsed.tagSellingPointCategory || null,
-            tagSellingPointDetail: parsed.tagSellingPointDetail || null,
-            tagComposition: parsed.tagComposition || null,
-            tagColorSchemeV2: parsed.tagColorSchemeV2 || null,
-            tagDesignStyleV2: parsed.tagDesignStyleV2 || null,
-            singleImageScore: parsed.singleImageScore || null,
-            highlights: JSON.stringify(parsed.highlights || []),
-          });
-        } catch (err: any) {
-          console.error(`[KB Images] Image analysis failed for image ${img.id}:`, err.message);
-      }
-      }
-
-      // Overall analysis including A+ and brand story
-      const allDbImages = await kbDb.listImagesBySet(setId);
-      const productImgs = allDbImages.filter(i => i.imagePosition === "main" || i.imagePosition === "secondary");
-      const aplusImgs = allDbImages.filter(i => i.imagePosition === "aplus");
-      const brandImgs = allDbImages.filter(i => i.imagePosition === "brand_story");
-
-      const overallResponse = await invokeBusinessSkill({
-        messages: [
-          { role: "system", content: `你是亚马逊产品图片策略分析专家。请对这组产品图片进行整体评估。
-
-同时请判断该产品属于以下哪个类目：${CATEGORY_OPTIONS.join("、")}
-并判断套图的主颜色和提亮色（从以下选项中选）：${COLOR_TAG_OPTIONS.join("、")}
-
-返回JSON：
-{
-  "overallStrategy": "整体图片策略评价",
-  "mainImageAssessment": "主图评估",
-  "secondaryImageFlow": "副图叙事流评估",
-  "aplusAssessment": "A+内容图片评估（如有）",
-  "brandStoryAssessment": "品牌故事图片评估（如有）",
-  "missingImageTypes": ["缺少的图片类型"],
-  "improvementSuggestions": ["改进建议"],
-  "overallScore": 75,
-  "setCategory": "产品类目",
-  "setPrimaryColor": "主颜色",
-  "setAccentColor": "提亮色",
-  "summary": ""
-}` },
-          { role: "user", content: `ASIN: ${asin}
-产品图: ${productImgs.length}张 (${productImgs.map(i => `${i.imagePosition}#${i.positionIndex}: ${i.singleImageScore}/10`).join(", ")})
-A+图: ${aplusImgs.length}张
-品牌故事图: ${brandImgs.length}张` }
-        ],
-        response_format: { type: "json_object" as const },
-      });
-      const overallAnalysis = String(overallResponse.choices?.[0]?.message?.content || "{}");
-      const overallParsed = JSON.parse(overallAnalysis);
-      await kbDb.updateImageSet(setId, userId, {
-        overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "confirmed",
-        ...(overallParsed.setCategory && { setCategory: overallParsed.setCategory }),
-        ...(overallParsed.setPrimaryColor && { setPrimaryColor: overallParsed.setPrimaryColor }),
-        ...(overallParsed.setAccentColor && { setAccentColor: overallParsed.setAccentColor }),
-      });
-    } else {
-      await kbDb.updateImageSet(setId, userId, { status: "confirmed" });
-    }
-  } catch (err: any) {
-    console.error(`[KB Images] Import failed for ${asin}:`, err.message);
-    await kbDb.updateImageSet(setId, userId, { status: "archived" });
-  }
-}
-
-/**
- * Re-crawl only specific image positions for an existing set.
- * Deletes old images for those positions first, then scrapes and stores new ones.
- */
-async function processPartialReCrawl(
-  setId: number, asin: string, userId: number,
-  positions: ("main" | "secondary" | "aplus" | "brand_story")[]
-) {
-  try {
-    const data = await rejectRetiredAmazonScrape();
-    // Update product info
-    await kbDb.updateImageSet(setId, userId, {
-      productTitle: data.title, brand: data.brand, category: data.category,
-    });
-
-    const allImages = data.images || [];
-    // Filter to only the requested positions
-    const targetImages = allImages.filter(img => positions.includes(img.position as any));
-    console.log(`[KB Images] Re-crawl ${positions.join(",")} for ASIN ${asin}: found ${targetImages.length} images`);
-
-    for (let i = 0; i < targetImages.length; i++) {
-      const img = targetImages[i];
-      const prefix = img.position === "aplus" ? "kb-aplus" : img.position === "brand_story" ? "kb-brand-story" : "kb-images";
-      const storedUrl = await downloadAndStoreImage(img.url, asin, i, prefix);
-      await kbDb.createImage({
-        imageSetId: setId,
-        imageUrl: storedUrl,
-        imagePosition: img.position as any,
-        positionIndex: img.positionIndex,
-        aplusModuleType: img.aplusModuleType || null,
-        aplusModuleClass: img.aplusModuleClass || null,
-      });
-    }
-
-    // If no structured images found for requested positions, try legacy fallback for main/secondary
-    if (targetImages.length === 0 && data.imageUrls?.length > 0) {
-      const needsMain = positions.includes("main");
-      const needsSecondary = positions.includes("secondary");
-      if (needsMain || needsSecondary) {
-        console.log(`[KB Images] Falling back to legacy imageUrls for re-crawl`);
-        for (let i = 0; i < data.imageUrls.length; i++) {
-          const isMain = i === 0;
-          if (isMain && !needsMain) continue;
-          if (!isMain && !needsSecondary) continue;
-          const storedUrl = await downloadAndStoreImage(data.imageUrls[i], asin, i);
-          await kbDb.createImage({
-            imageSetId: setId,
-            imageUrl: storedUrl,
-            imagePosition: isMain ? "main" as const : "secondary" as const,
-            positionIndex: i,
-          });
-        }
-      }
-    }
-
-    // Set status to pending_review (user can then trigger re-analysis)
-    await kbDb.updateImageSet(setId, userId, { status: "confirmed" });
-  } catch (err: any) {
-    console.error(`[KB Images] Re-crawl failed for ${asin}:`, err.message);
-    await kbDb.updateImageSet(setId, userId, { status: "confirmed" });
-  }
-}
-
-/**
  * Run AI analysis only (no scraping) on all images in a set.
- * Reuses the same analysis logic from processImport.
+ * Existing confirmed tags remain protected.
  */
-async function runAnalysisOnly(setId: number, asin: string, userId: number) {
+async function runAnalysisOnly(setId: number, asin: string, userId: number, workspaceId: number) {
   try {
     const images = await kbDb.listImagesBySet(setId);
-    // Per-image analysis
-    for (const img of images) {
+    const set = await kbDb.getOwnedImageSet(setId, userId, workspaceId);
+    if (!set) throw new Error("图片集不可编辑");
+    let failedImages = 0;
+    for (const unit of imageTaggingUnits(images, set.sourceLayout)) {
+      if (!unit.complete) continue;
+      const img = unit.primary;
+      if (img.tagsConfirmed || img.analysisConfirmed || img.imagePosition === "brand_story") continue;
       try {
+        if (!await kbDb.getOwnedImageSet(setId, userId, workspaceId)) throw new Error("图片集不可编辑");
         const posIdx = img.positionIndex ?? 0;
         const posLabel = img.imagePosition === "main" ? "主图"
           : img.imagePosition === "aplus" ? `A+内容图#${posIdx + 1}`
-          : img.imagePosition === "brand_story" ? `品牌故事图#${posIdx + 1}`
           : `副图#${posIdx}`;
 
       // [Emperor] 优先调用 Emperor Skill: analysis.image.recognition
@@ -407,24 +107,26 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
 
 
 
-        const resolvedImageUrl = await resolveStoredObjectUrl(img.imageUrl);
+        const resolvedImageUrl = unit.module ? `data:image/jpeg;base64,${(await taggingUnitPreview(unit)).toString("base64")}` : await resolveStoredObjectUrl(img.imageUrl);
         const response = await invokeBusinessSkill({
+          emperorSkill: { slug: "analysis.image.recognition", userId, workspaceId, migrationSource: "knowledge.images.analysis" },
           messages: [
             { role: "system", content: buildSingleImageAnalysisPrompt() },
-            { role: "user", content: [{ type: "image_url" as const, image_url: { url: resolvedImageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}，图片位置: ${img.imagePosition}` }] }
+            { role: "user", content: [{ type: "image_url" as const, image_url: { url: resolvedImageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}，图片位置: ${img.imagePosition}。${unit.module ? "这是完整 A+ 模块，多张图共用一组标签，请按整个模块分析。模块类型：" + (unit.module.subtype || unit.module.kind) : ""}` }] }
           ],
           response_format: { type: "json_object" as const },
         });
         const analysis = String(response.choices?.[0]?.message?.content || "{}");
-        const parsed = JSON.parse(analysis);
-        await kbDb.updateImage(img.id, {
-          aiDimensionAnalysis: analysis,
+        const parsed = parseKnowledgeImageAnalysis(analysis);
+        await kbDb.updateUnconfirmedOwnedImage(img.id, userId, workspaceId, img.imageUrl, {
+          aiDimensionAnalysis: JSON.stringify(parsed),
           tagCategory: parsed.tagCategory || null,
           tagColorScheme: parsed.tagColorScheme || null,
           tagImageType: parsed.tagImageType || null,
           tagDesignStyle: parsed.tagDesignStyle || null,
-          tagImageBelong: parsed.tagImageBelong || null,
-          tagImageBelongSub: parsed.tagImageBelongSub || null,
+          // Ownership/module structure comes from the captured page, not visual guesses.
+          tagImageBelong: img.tagImageBelong || imageBelongForPosition(img.imagePosition),
+          tagImageBelongSub: validImageBelongSubtype(img.tagImageBelong || imageBelongForPosition(img.imagePosition), img.tagImageBelongSub),
           tagImageTypeMain: parsed.tagImageTypeMain || null,
           tagImageTypeSub: parsed.tagImageTypeSub || null,
           tagSellingPointCategory: parsed.tagSellingPointCategory || null,
@@ -436,9 +138,12 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
           highlights: JSON.stringify(parsed.highlights || []),
         });
       } catch (err: any) {
+        failedImages++;
         console.error(`[KB Images] Re-analysis failed for image ${img.id}:`, err.message);
       }
     }
+
+    if (failedImages) throw new Error(`${failedImages} 张图片分析失败，已有标签保留`);
 
     // Overall analysis
     const allDbImages = await kbDb.listImagesBySet(setId);
@@ -447,7 +152,8 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
     const brandImgs = allDbImages.filter(i => i.imagePosition === "brand_story");
 
     // Build tag coverage summary for overall analysis
-    const tagCoverage = allDbImages.map(i => ({
+    const currentSet = await kbDb.getOwnedImageSet(setId, userId, workspaceId);
+    const tagCoverage = imageTaggingUnits(allDbImages, currentSet?.sourceLayout).map(({primary:i}) => ({
       pos: `${i.imagePosition}#${i.positionIndex}`,
       score: i.singleImageScore,
       belong: (i as any).tagImageBelong || "unknown",
@@ -455,10 +161,13 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
       typeSub: (i as any).tagImageTypeSub || "",
       sellingPoint: (i as any).tagSellingPointCategory || "",
       composition: (i as any).tagComposition || "",
+      category: i.tagCategory || "",
+      color: i.tagColorSchemeV2 || i.tagColorScheme || "",
       style: (i as any).tagDesignStyleV2 || (i as any).tagDesignStyle || "",
     }));
 
     const overallResponse = await invokeBusinessSkill({
+          emperorSkill: { slug: "analysis.image.recognition", userId, workspaceId, migrationSource: "knowledge.images.analysis" },
       messages: [
         { role: "system", content: `你是亚马逊产品图片策略分析专家。请对这组产品图片进行整体评估。
 
@@ -491,7 +200,8 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
   "overallScore": 75,
   "summary": ""
 }` },
-        { role: "user", content: `ASIN: ${asin}
+        { role: "user", content: `套图类目、主颜色、提亮色必须从下面各图的实际标签归纳，不能用建议风格的配色替代实际颜色；证据不足时留空。没有采集到的图片只能说明本次资料缺失，不能断言商品页面没有这些内容。
+ASIN: ${asin}
 产品图: ${productImgs.length}张 (${productImgs.map(i => `${i.imagePosition}#${i.positionIndex}: ${i.singleImageScore}/10`).join(", ")})
 A+图: ${aplusImgs.length}张
 品牌故事图: ${brandImgs.length}张
@@ -502,9 +212,9 @@ ${JSON.stringify(tagCoverage, null, 1)}` }
       response_format: { type: "json_object" as const },
     });
     const overallAnalysis = String(overallResponse.choices?.[0]?.message?.content || "{}");
-    const overallParsed = JSON.parse(overallAnalysis);
-    await kbDb.updateImageSet(setId, userId, {
-      overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "confirmed",
+    const overallParsed = parseKnowledgeAnalysisJson(overallAnalysis) as any;
+    await kbDb.updateOwnedImageSet(setId, userId, workspaceId, {
+      overallAnalysis: JSON.stringify(overallParsed), overallScore: overallParsed.overallScore ?? 70, status: "confirmed",
       setStyle: overallParsed.recommendedStyle || null,
       ...(overallParsed.setCategory && { setCategory: overallParsed.setCategory }),
       ...(overallParsed.setPrimaryColor && { setPrimaryColor: overallParsed.setPrimaryColor }),
@@ -512,7 +222,7 @@ ${JSON.stringify(tagCoverage, null, 1)}` }
     });
   } catch (err: any) {
     console.error(`[KB Images] Re-analysis failed for set ${setId}:`, err.message);
-    await kbDb.updateImageSet(setId, userId, { status: "confirmed" });
+    await kbDb.updateOwnedImageSet(setId, userId, workspaceId, { status: "pending_review" });
   }
 }
 
@@ -520,14 +230,15 @@ ${JSON.stringify(tagCoverage, null, 1)}` }
  * Run ONLY the overall set-level analysis (no per-image tag re-scoring).
  * Uses existing image tags to build the summary, much faster than full re-analysis.
  */
-async function runSummaryOnly(setId: number, asin: string, userId: number) {
+async function runSummaryOnly(setId: number, asin: string, userId: number, workspaceId: number) {
   try {
     const allDbImages = await kbDb.listImagesBySet(setId);
     const productImgs = allDbImages.filter(i => i.imagePosition === "main" || i.imagePosition === "secondary");
     const aplusImgs = allDbImages.filter(i => i.imagePosition === "aplus");
     const brandImgs = allDbImages.filter(i => i.imagePosition === "brand_story");
 
-    const tagCoverage = allDbImages.map(i => ({
+    const currentSet = await kbDb.getOwnedImageSet(setId, userId, workspaceId);
+    const tagCoverage = imageTaggingUnits(allDbImages, currentSet?.sourceLayout).map(({primary:i}) => ({
       pos: `${i.imagePosition}#${i.positionIndex}`,
       score: i.singleImageScore,
       belong: (i as any).tagImageBelong || "unknown",
@@ -535,20 +246,23 @@ async function runSummaryOnly(setId: number, asin: string, userId: number) {
       typeSub: (i as any).tagImageTypeSub || "",
       sellingPoint: (i as any).tagSellingPointCategory || "",
       composition: (i as any).tagComposition || "",
+      category: i.tagCategory || "",
+      color: i.tagColorSchemeV2 || i.tagColorScheme || "",
       style: (i as any).tagDesignStyleV2 || (i as any).tagDesignStyle || "",
     }));
 
     const overallResponse = await invokeBusinessSkill({
+          emperorSkill: { slug: "analysis.image.recognition", userId, workspaceId, migrationSource: "knowledge.images.analysis" },
       messages: [
         { role: "system", content: `你是亚马逊产品图片策略分析专家。请对这组产品图片进行整体评估。\n\n评估维度：\n1. 图片类型覆盖率：是否涵盖了对比/细节/场景/特效/必要信息等关键类型\n2. 卖点覆盖率：图片是否充分展示了产品的各类卖点（质量/功能/设计/操作/安全/附加值）\n3. 构图多样性：是否使用了多种构图方式避免单调\n4. 风格一致性：套图整体风格是否统一\n5. 叙事流逻辑：副图排序是否有清晰的叙事逻辑\n\n返回JSON：\n{\n  "overallStrategy": "整体图片策略评价",\n  "mainImageAssessment": "主图评估",\n  "secondaryImageFlow": "副图叙事流评估",\n  "aplusAssessment": "A+内容图片评估（如有）",\n  "brandStoryAssessment": "品牌故事图片评估（如有）",\n  "tagCoverageAnalysis": {\n    "imageTypeCoverage": "图片类型覆盖分析",\n    "sellingPointCoverage": "卖点覆盖分析",\n    "compositionDiversity": "构图多样性分析",\n    "styleConsistency": "风格一致性分析"\n  },\n  "recommendedStyle": "建议的套图风格名称",\n  "setCategory": "产品类目",\n  "setPrimaryColor": "主颜色",\n  "setAccentColor": "提亮色",\n  "missingImageTypes": ["缺少的图片类型"],\n  "improvementSuggestions": ["改进建议"],\n  "overallScore": 75,\n  "summary": ""\n}` },
-        { role: "user", content: `ASIN: ${asin}\n产品图: ${productImgs.length}张 (${productImgs.map(i => `${i.imagePosition}#${i.positionIndex}: ${i.singleImageScore}/10`).join(", ")})\nA+图: ${aplusImgs.length}张\n品牌故事图: ${brandImgs.length}张\n\n各图标签详情:\n${JSON.stringify(tagCoverage, null, 1)}` }
+        { role: "user", content: `套图类目、主颜色、提亮色必须从下面各图的实际标签归纳，不能用建议风格的配色替代实际颜色；证据不足时留空。没有采集到的图片只能说明本次资料缺失，不能断言商品页面没有这些内容。\nASIN: ${asin}\n产品图: ${productImgs.length}张 (${productImgs.map(i => `${i.imagePosition}#${i.positionIndex}: ${i.singleImageScore}/10`).join(", ")})\nA+图: ${aplusImgs.length}张\n品牌故事图: ${brandImgs.length}张\n\n各图标签详情:\n${JSON.stringify(tagCoverage, null, 1)}` }
       ],
       response_format: { type: "json_object" as const },
     });
     const overallAnalysis = String(overallResponse.choices?.[0]?.message?.content || "{}");
-    const overallParsed = JSON.parse(overallAnalysis);
-    await kbDb.updateImageSet(setId, userId, {
-      overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "confirmed",
+    const overallParsed = parseKnowledgeAnalysisJson(overallAnalysis) as any;
+    await kbDb.updateOwnedImageSet(setId, userId, workspaceId, {
+      overallAnalysis: JSON.stringify(overallParsed), overallScore: overallParsed.overallScore ?? 70, status: "confirmed",
       setStyle: overallParsed.recommendedStyle || null,
       ...(overallParsed.setCategory && { setCategory: overallParsed.setCategory }),
       ...(overallParsed.setPrimaryColor && { setPrimaryColor: overallParsed.setPrimaryColor }),
@@ -556,41 +270,42 @@ async function runSummaryOnly(setId: number, asin: string, userId: number) {
     });
   } catch (err: any) {
     console.error(`[KB Images] Summary-only re-analysis failed for set ${setId}:`, err.message);
-    await kbDb.updateImageSet(setId, userId, { status: "confirmed" });
+    await kbDb.updateOwnedImageSet(setId, userId, workspaceId, { status: "pending_review" });
   }
 }
 
-// Keep the optional business lane inert when legacy image endpoints are used.
-// This is module loading only, never a model call or configuration fallback.
-const taggingService = async () => (await import("../domains/knowledge/imageTaggingService")).imageTaggingService;
 export const kbImagesRouter = router({
-  taggingPreview: workspaceScopedProcedure("knowledge").input(ImageTaggingPreviewInputSchema).output(ImageTaggingPreviewSchema)
-    .query(async ({ ctx, input }) => (await taggingService()).preview(ctx, input)),
-  taggingStart: workspaceScopedProcedure("knowledge").input(ImageTaggingSubmitInputSchema).output(ImageTaggingJobViewSchema)
-    .mutation(async ({ ctx, input }) => (await taggingService()).start(ctx, input)),
-  taggingCheck: workspaceScopedProcedure("knowledge").input(ImageTaggingOperationInputSchema).output(ImageTaggingJobViewSchema)
-    .query(async ({ ctx, input }) => (await taggingService()).check(ctx, input)),
-  taggingCancel: workspaceScopedProcedure("knowledge").input(ImageTaggingOperationInputSchema).output(ImageTaggingJobViewSchema)
-    .mutation(async ({ ctx, input }) => (await taggingService()).cancel(ctx, input)),
-  taggingHistory: workspaceScopedProcedure("knowledge").input(ImageTaggingHistoryInputSchema).output(ImageTaggingHistorySchema)
-    .query(async ({ ctx, input }) => (await taggingService()).history(ctx, input)),
-  taggingApply: workspaceScopedProcedure("knowledge").input(ImageTaggingApplyInputSchema).output(ImageTaggingApplyReceiptSchema)
-    .mutation(async ({ ctx, input }) => (await taggingService()).apply(ctx, input)),
-  taggingApplyCheck: workspaceScopedProcedure("knowledge").input(ImageTaggingApplyOperationInputSchema).output(ImageTaggingApplyReceiptSchema)
-    .query(async ({ ctx, input }) => (await taggingService()).applyCheck(ctx, input)),
-  taggingApplyCancel: workspaceScopedProcedure("knowledge").input(ImageTaggingApplyOperationInputSchema).output(ImageTaggingApplyReceiptSchema)
-    .mutation(async ({ ctx, input }) => (await taggingService()).applyCancel(ctx, input)),
+  facets: workspaceScopedProcedure("knowledge").input(z.object({scope:z.enum(["mine","shared","all"]),query:z.string().max(200).optional(),filters:z.record(z.string().max(64),z.string().max(100)),groupBy:z.string().max(32)}))
+    .query(({ctx,input})=>kbDb.imageBrowseFacets(ctx.user.id,ctx.workspaceId!,input.scope,input)),
+  uploadStandalone: workspaceScopedProcedure("knowledge").input(StandaloneImageUploadSchema).mutation(async ({ctx,input})=>{
+    await assertResourceAction({actor:actorFromContext(ctx),resource:"knowledge",action:"upload",workspaceId:ctx.workspaceId!},ctx);
+    return uploadStandaloneImage({userId:ctx.user.id,workspaceId:ctx.workspaceId!,role:ctx.user.role},input);
+  }),
+  saveStandaloneTags: workspaceScopedProcedure("knowledge").input(z.object({id:z.number().int().positive(),revision:z.number().int().nonnegative(),tags:z.record(z.string(),z.string().max(200))})).mutation(({ctx,input})=>
+    saveStandaloneTags({userId:ctx.user.id,workspaceId:ctx.workspaceId!,role:ctx.user.role},input.id,input.revision,input.tags)),
+  runStandaloneTags: workspaceScopedProcedure("knowledge").input(z.object({id:z.number().int().positive(),revision:z.number().int().nonnegative(),feedback:z.string().max(4000).optional()})).mutation(({ctx,input})=>
+    enqueueStandaloneTags({userId:ctx.user.id,workspaceId:ctx.workspaceId!,role:ctx.user.role},input.id,input.revision,input.feedback)),
+
   // List all image sets
   listSets: workspaceScopedProcedure("knowledge")
-    .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
+    .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional(), includeThumbnails: z.boolean().optional() }).optional())
     .query(async ({ ctx, input }) => {
-    const sets = await kbDb.listImageSetsWithThumbnails(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine");
+    const sets = await kbDb.listImageSetsWithThumbnails(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine", { thumbnails: input?.includeThumbnails });
     const delivery = createManualKbImageDeliveryGate({ userId: ctx.user.id, workspaceId: ctx.workspaceId! });
     return Promise.all(sets.map(async set => {
       const checked = await delivery.forSet(set, set.thumbnailImages);
       return { ...set, thumbnailImages: await resolveImagesForDelivery(checked.images), sourceCoverage: checked.sourceCoverage };
     }));
   }),
+
+  setThumbnails: workspaceScopedProcedure("knowledge")
+    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(50), scope: z.enum(["mine", "shared", "all"]).default("shared") }))
+    .query(async ({ ctx, input }) => {
+      const sets = await kbDb.listImageSetsWithThumbnails(ctx.user.id, ctx.workspaceId!, input.scope, {setIds: [...new Set(input.ids)]});
+      const delivery = createManualKbImageDeliveryGate({userId:ctx.user.id,workspaceId:ctx.workspaceId!});
+      return Promise.all(sets.map(async set => {const checked=await delivery.forSet(set,set.thumbnailImages);return {id:set.id,thumbnailImages:await resolveImagesForDelivery(checked.images)};}));
+    }),
+  contributions: workspaceScopedProcedure("knowledge").query(async ({ctx}) => kbDb.imageContributions(ctx.workspaceId!)),
 
   // Get image set with all images (lightweight: excludes large analysis fields for fast load)
   getSet: workspaceScopedProcedure("knowledge")
@@ -611,7 +326,8 @@ export const kbImagesRouter = router({
       // A private set alone does not authorize a corrupted storage pointer.
       // Manual versions must bind every delivered image to durable provenance
       // before signing; unavailable proof never degrades to unchecked URLs.
-      const images = manual && sourceCoverage?.status !== "verified" ? [] : await resolveImagesForDelivery(rawImages);
+      const images = manual && sourceCoverage?.status !== "verified" ? [] : await resolveImagesForDelivery(sharedImageTags(rawImages, set.sourceLayout).map(image => inheritSetImageTags(image,set)));
+      const missingGallery: Array<{id:number;imagePosition:string;positionIndex:number}> = [];
       let acquisitionCoverage: { stored: number; missing: number; total: number; partial: boolean } | null = null;
       if (set.originInstanceId === "unified_amazon_acquisition" && set.remoteId) {
         const db = await requireDb("image acquisition coverage");
@@ -624,11 +340,16 @@ export const kbImagesRouter = router({
             eq(acquisitionAssetCandidates.workspaceId, ctx.workspaceId!),
             eq(acquisitionAssetCandidates.snapshotId, confirmed.snapshotId),
           ));
-          const stored = candidates.filter(candidate => Boolean(candidate.storageKey) && candidate.fieldStatus === "pending_review").length;
+          missingGallery.push(...candidates.filter(c=>!c.storageKey && ["main","secondary"].includes(c.role)).map(c=>({id:-c.id,imagePosition:c.role,positionIndex:c.positionIndex})));
+          const stored = candidates.filter(candidate => Boolean(candidate.storageKey) && (candidate.role !== "video" || candidate.thumbnailStorageKey)).length;
           acquisitionCoverage = { stored, missing: candidates.length - stored, total: candidates.length, partial: stored < candidates.length };
         }
       }
-      return { ...set, images, acquisitionCoverage, sourceCoverage };
+      const db=await requireDb();
+      const trashedImages=await queryRows<{sourceUrlHash:string|null}>(db,sql`SELECT sourceUrlHash FROM kb_images WHERE imageSetId=${set.id} AND recycleId IS NOT NULL`);
+      const trashedVideos=await queryRows<{sourceHash:string;videoRole:string;moduleId:string|null}>(db,sql`SELECT sourceHash,videoRole,moduleId FROM kb_videos WHERE imageSetId=${set.id} AND workspaceId=${ctx.workspaceId!} AND recycleId IS NOT NULL`);
+      const visibleVideos=(set.videos||[]).filter(v=>!trashedVideos.some(t=>t.sourceHash===v.hash&&t.videoRole===v.role&&(t.moduleId||"")===(v.moduleId||"")));
+      return { ...set, sourceLayout:layoutWithoutDeletedImages(set.sourceLayout,trashedImages.flatMap(i=>i.sourceUrlHash?[i.sourceUrlHash]:[])), videos: manual ? [] : await resolveKnowledgeVideos(visibleVideos, ctx.workspaceId!), images, missingGallery, acquisitionCoverage, sourceCoverage, canEditTags: set.userId === ctx.user.id || (!manual && set.visibility !== "private" && ["admin", "super_admin"].includes(ctx.user.role)) };
     }),
 
   // Get single image's full analysis data on-demand (lazy load when user expands tag panel)
@@ -641,6 +362,9 @@ export const kbImagesRouter = router({
   // List all images with 7-dimension filters (waterfall view)
   listAllImages: workspaceScopedProcedure("knowledge")
     .input(z.object({
+      page: z.number().int().min(1).max(10000).optional(),
+      query: z.string().max(200).optional(),
+      groupBy: z.enum(["none","type","style","category","primaryColor","accentColor","belong","sellingPoint","composition"]).optional(),
       scope: z.enum(["mine", "shared", "all"]).optional(),
       // Legacy filters
       tagCategory: z.string().optional(),
@@ -656,13 +380,22 @@ export const kbImagesRouter = router({
       tagSellingPointCategory: z.string().optional(),
       tagSellingPointDetail: z.string().optional(),
       tagComposition: z.string().optional(),
+      tagAccentColor: z.string().max(30).optional(),
       tagColorSchemeV2: z.string().optional(),
       tagDesignStyleV2: z.string().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
       const rawImages = await kbDb.listAllImages(ctx.user.id, ctx.workspaceId!, input?.scope ?? "mine", input);
       const delivery = createManualKbImageDeliveryGate({ userId: ctx.user.id, workspaceId: ctx.workspaceId! });
-      return resolveImagesForDelivery(await delivery.selection(rawImages));
+      // Independent assets already passed their own workspace/visibility predicate.
+      const collectionImages=rawImages.filter(image=>image.imageSetId!==null);
+      await delivery.selection(collectionImages);
+      const selected = rawImages;
+      return Promise.all(selected.map(async image => ({...await resolveImageForDelivery(image),
+        thumbnailUrl:image.thumbnailUrl ? await resolveStoredObjectUrl(image.thumbnailUrl).catch(()=>null) : null,
+        moduleImages:await Promise.all((await delivery.selection(image.moduleImages)).map(async member => ({...await resolveImageForDelivery(member),
+          thumbnailUrl:member.thumbnailUrl ? await resolveStoredObjectUrl(member.thumbnailUrl).catch(()=>null):null}))),
+      })));
     }),
 
   // Import by ASIN through the governed acquisition job. Projection occurs only after guarded direct ingestion.
@@ -679,41 +412,20 @@ export const kbImagesRouter = router({
     }),
 
   batchImportAsins: workspaceScopedProcedure("knowledge")
-    .input(z.object({ asins: z.array(z.string()).min(1).max(20) }))
+    .input(z.object({ asins: z.array(KbImageImportAsinSchema).min(1).max(10) }))
     .mutation(async ({ ctx, input }) => {
-      const asins = [...new Set(input.asins.map(value => KbImageImportAsinSchema.parse(value)))];
-      const results: Array<{ asin: string; jobId: number; status: string; cacheHitSnapshotId: number | null }> = [];
-      const skipped: Array<{ asin: string; existingId: number }> = [];
-      for (const asin of asins) {
-        const dupSet = await kbDb.findImageSetByAsin(asin, ctx.workspaceId!);
-        if (dupSet) {
-          skipped.push({ asin, existingId: dupSet.id });
-          continue;
-        }
-        const job = await startKbImagesAcquisition({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin });
-        results.push({ asin, jobId: job.jobId, status: job.status, cacheHitSnapshotId: job.cacheHitSnapshotId });
-      }
-      return { imported: results.length, skipped: skipped.length, items: results, skippedItems: skipped };
+      const receipt = await startKnowledgeCollectionBatch({ workspaceId: ctx.workspaceId!, requestedBy: ctx.user.id,
+        requestId: randomUUID(), asins: input.asins, mode: "normal" });
+      return { ...receipt, imported: receipt.items.length, skipped: receipt.skippedItems.length };
     }),
-
   importByLink: workspaceScopedProcedure("knowledge")
     .input(z.object({ url: z.string().trim().min(1).max(20_000) }))
     .mutation(async ({ ctx, input }) => {
       const asins = parseAmazonUsAsins(input.url);
-      if (asins.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "未找到可导入的美国站ASIN" });
-      if (asins.length > 20) throw new TRPCError({ code: "BAD_REQUEST", message: "每次最多导入20个ASIN" });
-      const results = [];
-      const skipped: Array<{ asin: string; existingId: number }> = [];
-      for (const asin of asins) {
-        const dupSet = await kbDb.findImageSetByAsin(asin, ctx.workspaceId!);
-        if (dupSet) {
-          skipped.push({ asin, existingId: dupSet.id });
-          continue;
-        }
-        const job = await startKbImagesAcquisition({ workspaceId: ctx.workspaceId!, userId: ctx.user.id, asin });
-        results.push({ asin, jobId: job.jobId, status: job.status, cacheHitSnapshotId: job.cacheHitSnapshotId });
-      }
-      return { imported: results.length, skipped: skipped.length, items: results, skippedItems: skipped };
+      if (!asins.length || asins.length > 10) throw new TRPCError({ code: "BAD_REQUEST", message: "每次请输入 1 至 10 个美国站 ASIN" });
+      const receipt = await startKnowledgeCollectionBatch({ workspaceId: ctx.workspaceId!, requestedBy: ctx.user.id,
+        requestId: randomUUID(), asins, mode: "normal" });
+      return { ...receipt, imported: receipt.items.length, skipped: receipt.skippedItems.length };
     }),
 
   // Confirm image tags (v2: supports 7-dimension tags)
@@ -733,18 +445,22 @@ export const kbImagesRouter = router({
       tagSellingPointCategory: z.string().optional(),
       tagSellingPointDetail: z.string().optional(),
       tagComposition: z.string().optional(),
+      tagAccentColor: z.string().max(30).optional(),
       tagColorSchemeV2: z.string().optional(),
       tagDesignStyleV2: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { imageId, ...tags } = input;
-      const image = await kbDb.getOwnedImage(imageId, ctx.user.id, ctx.workspaceId!);
+      const admin = ["admin", "super_admin"].includes(ctx.user.role);
+      const image = await kbDb.getImageForTagEditing(imageId, ctx.user.id, ctx.workspaceId!, admin);
       if (!image) throw new TRPCError({ code: "NOT_FOUND", message: "图片不存在或无权限" });
       // Filter out undefined values
       const cleanTags = Object.fromEntries(
         Object.entries(tags).filter(([_, v]) => v !== undefined)
       );
-      await kbDb.updateOwnedImage(imageId, ctx.user.id, ctx.workspaceId!, { ...cleanTags, tagsConfirmed: 1 } as any);
+      if (["tagCategory","tagDesignStyleV2","tagColorSchemeV2","tagAccentColor","tagDesignStyle","tagColorScheme"].some(key=>key in cleanTags))
+        throw new TRPCError({code:"BAD_REQUEST",message:"类目、风格、主色和提亮色请在 ASIN 集总标签中修改"});
+      await kbDb.updateImageTagsForEditor(imageId, ctx.user.id, ctx.workspaceId!, admin, {...cleanTags, ...(Object.keys(cleanTags).length ? {tagsConfirmed:1} : {})});
       return { success: true };
     }),
 
@@ -766,7 +482,7 @@ export const kbImagesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const image = await kbDb.getOwnedImage(input.imageId, ctx.user.id, ctx.workspaceId!);
       if (!image) throw new TRPCError({ code: "NOT_FOUND", message: "图片不存在或无权限" });
-      await kbDb.updateOwnedImage(input.imageId, ctx.user.id, ctx.workspaceId!, { singleImageScore: input.score });
+      await kbDb.updateImageTagsForEditor(input.imageId, ctx.user.id, ctx.workspaceId!, false, { singleImageScore: input.score });
       return { success: true };
     }),
 
@@ -779,15 +495,12 @@ export const kbImagesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const set = await kbDb.getOwnedImageSet(input.setId, ctx.user.id, ctx.workspaceId!);
       if (!set) throw new TRPCError({ code: "NOT_FOUND", message: "图片集不存在或无权限" });
-      const capabilities = capabilitiesForKbPositions(input.positions as KbImagePosition[]);
-      const job = await startKbImagesAcquisition({
-        workspaceId: ctx.workspaceId!,
-        userId: ctx.user.id,
-        asin: set.asin,
-        capabilities,
-        cachePolicy: "refresh",
-      });
-      return { success: true, ...job, requestedCapabilities: capabilities, directIngestion: true, reviewRequired: false };
+      const asin = KbImageImportAsinSchema.parse(set.sourceAsin || set.asin);
+      const receipt = await startKnowledgeCollectionBatch({ workspaceId: ctx.workspaceId!, requestedBy: ctx.user.id,
+        requestId: randomUUID(), asins: [asin], mode: "new_version" });
+      const job = receipt.items[0];
+      if (!job) throw new TRPCError({ code: "CONFLICT", message: "该 ASIN 正在采集中或等待补图，请先处理已有任务" });
+      return { success: true, ...job, directIngestion: true, reviewRequired: false };
     }),
 
   // Upload images manually to a specific position
@@ -823,18 +536,18 @@ export const kbImagesRouter = router({
       }
       // Reset status to pending_review so user can re-analyze
       await kbDb.updateOwnedImageSet(set.id, ctx.user.id, ctx.workspaceId!, { status: "confirmed" });
-      return { success: true, uploaded: input.images.length };
+      const { triggerConsumerPostConfirmation } = await import("../domains/acquisition/postConfirmation");
+      const tagging = await triggerConsumerPostConfirmation({consumerType:"kb_images",imageSetId:set.id,workspaceId:ctx.workspaceId!,userId:ctx.user.id});
+      return { success: true, uploaded: input.images.length, ...tagging };
     }),
 
   // Delete a single image from a set
   deleteImage: workspaceScopedProcedure("knowledge")
     .input(z.object({ imageId: z.number(), setId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const set = await kbDb.getOwnedImageSet(input.setId, ctx.user.id, ctx.workspaceId!);
-      if (!set) throw new TRPCError({ code: "NOT_FOUND", message: "图片集不存在或无权限" });
-      const image = await kbDb.getImageInOwnedSet(input.imageId, set.id, ctx.user.id, ctx.workspaceId!);
-      if (!image) throw new TRPCError({ code: "NOT_FOUND", message: "图片不存在于该图片集或无权限" });
-      await kbDb.deleteImageInOwnedSet(input.imageId, set.id, ctx.user.id, ctx.workspaceId!);
+      const image = await kbDb.getReadableImage(input.imageId,ctx.user.id,ctx.workspaceId!);
+       if(!image||image.imageSetId!==input.setId)throw new TRPCError({code:"NOT_FOUND",message:"图片不存在或无权限"});
+      await deleteAsset({workspaceId:ctx.workspaceId!,userId:ctx.user.id,role:ctx.user.role},"image",input.imageId);
       return { success: true };
     }),
 
@@ -865,7 +578,7 @@ export const kbImagesRouter = router({
       if (images.length === 0) throw new Error("没有图片可供分析");
       await kbDb.updateOwnedImageSet(set.id, ctx.user.id, ctx.workspaceId!, { status: "analyzing" });
       // Fire-and-forget: run full AI analysis
-      runAnalysisOnly(set.id, set.asin, ctx.user.id);
+      void runAnalysisOnly(set.id, set.asin, ctx.user.id, ctx.workspaceId!);
       return { success: true };
     }),
 
@@ -879,16 +592,14 @@ export const kbImagesRouter = router({
       if (images.length === 0) throw new Error("没有图片可供分析");
       await kbDb.updateOwnedImageSet(set.id, ctx.user.id, ctx.workspaceId!, { status: "analyzing" });
       // Fire-and-forget: run summary-only analysis
-      runSummaryOnly(set.id, set.asin, ctx.user.id);
+      void runSummaryOnly(set.id, set.asin, ctx.user.id, ctx.workspaceId!);
       return { success: true };
     }),
 
   deleteSet: workspaceScopedProcedure("knowledge")
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const set = await kbDb.getOwnedImageSet(input.id, ctx.user.id, ctx.workspaceId!);
-      if (!set) throw new TRPCError({ code: "NOT_FOUND", message: "图片集不存在或无权限" });
-      await kbDb.deleteOwnedImageSet(input.id, ctx.user.id, ctx.workspaceId!);
+      await deleteAsset({workspaceId:ctx.workspaceId!,userId:ctx.user.id,role:ctx.user.role},"set",input.id);
       return { success: true };
     }),
 
@@ -955,11 +666,8 @@ export const kbImagesRouter = router({
           positionIndex: i,
         });
       }
-      // Optionally trigger AI analysis
-      if (input.autoAnalyze) {
-        await kbDb.updateOwnedImageSet(numericSetId, ctx.user.id, ctx.workspaceId!, { status: "analyzing" });
-        runAnalysisOnly(numericSetId, asin, ctx.user.id).catch(() => {});
-      }
-      return { id: numericSetId, asin, imageCount: input.images.length };
+      const { triggerConsumerPostConfirmation } = await import("../domains/acquisition/postConfirmation");
+      const tagging = await triggerConsumerPostConfirmation({consumerType:"kb_images",imageSetId:numericSetId,workspaceId:ctx.workspaceId!,userId:ctx.user.id});
+      return { id: numericSetId, asin, imageCount: input.images.length, ...tagging };
     }),
 });

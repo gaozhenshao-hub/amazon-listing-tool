@@ -17,6 +17,14 @@ function snapshot() {
   ] };
 }
 const absent = table => ({ name: table.name, complete: true, exists: false });
+test("preserves Qingdao 0900 reports and creates only the missing artifact table", () => {
+  const s = snapshot(); s.tables[0].collation = "utf8mb4_0900_ai_ci";
+  for (const c of s.tables[0].columns) if (c.collation) c.collation = "utf8mb4_0900_ai_ci";
+  s.tables[1] = absent(s.tables[1]);
+  assert.deepEqual(planMonthlyFinancialSchema(s).statements, [MONTHLY_FINANCIAL_SCHEMA_DDL[1]]);
+  s.tables[0].columns.find(c => c.name === "status").collation = "utf8mb4_unicode_ci";
+  assert.throws(() => planMonthlyFinancialSchema(s), /COLUMN_COLLATION/);
+});
 test("only the existing0308 reservation plans both transactional tables without execution", () => {
   const s = snapshot(); s.tables = s.tables.map(absent);
   const p = planMonthlyFinancialSchema(s);

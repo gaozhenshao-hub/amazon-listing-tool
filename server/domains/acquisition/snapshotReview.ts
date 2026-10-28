@@ -1,4 +1,6 @@
+import { assertNoCollectionRepair } from "./collectionRepairState";
 import { createHash } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { NormalizedAmazonSnapshotSchema } from "./contracts";
 import { withDbTransaction, type DbExecutor } from "../../repositories/dbClient";
@@ -51,11 +53,15 @@ export function isRecoverableDirectIngestionSnapshot(snapshot: { status: string;
  */
 export function directIngestionBlockReason(input: {
   requestedCapabilities: unknown;
+  requireComplete?: boolean;
+  acceptMissing?: boolean;
   assets: AcquisitionAssetCandidate[];
 }) {
+  if (input.requireComplete && (!input.assets.length || input.assets.some(asset => !asset.storageKey || (asset.role === "video" && !asset.thumbnailStorageKey) || !["pending_review","confirmed"].includes(asset.fieldStatus)))) return "仍有图片或视频未取得，请在采集情况中补齐或确认接受缺失后入库";
+  if (input.acceptMissing && input.assets.length) return null;
   if (requestedImageGallery(input.requestedCapabilities)) {
     const hasGallery = input.assets.some(asset => (
-      Boolean(asset.storageKey) && asset.fieldStatus === "pending_review"
+      Boolean(asset.storageKey) && ["pending_review","confirmed"].includes(asset.fieldStatus)
         && (asset.role === "main" || asset.role === "secondary")
     ));
     if (!hasGallery) return "采集结果未包含可用主图或副图";
@@ -78,17 +84,24 @@ export async function confirmSnapshotForDirectIngestion(input: {
   workspaceId: number;
   snapshotId: number;
   requestedBy: number;
+  expectedPendingJobId?: number;
+  repairedAssetIds?: number[];
 }) {
   return withDbTransaction("Directly ingest Amazon acquisition snapshot", async tx => {
+    const hint = await getSourceSnapshot(tx, input.workspaceId, input.snapshotId);
+    if (!hint) throw new Error("采集记录不存在");
+    await tx.execute(sql`SELECT id FROM acquisition_jobs WHERE workspace_id=${input.workspaceId} AND id=${hint.jobId} FOR UPDATE`);
     const snapshot = await getSourceSnapshot(tx, input.workspaceId, input.snapshotId);
     if (!snapshot) throw new Error("snapshot not found");
-    if (!isRecoverableDirectIngestionSnapshot(snapshot)) throw new Error("snapshot cannot be directly ingested");
+    if (!isRecoverableDirectIngestionSnapshot(snapshot) && !(input.repairedAssetIds?.length && snapshot.status === "confirmed")) throw new Error("snapshot cannot be directly ingested");
     const job = await loadJobForSnapshot(tx, input.workspaceId, snapshot.jobId);
+    if (input.expectedPendingJobId && (job.id !== input.expectedPendingJobId || job.requestedBy !== input.requestedBy || job.deletedAt || job.consumerType !== "kb_images" || job.status !== "review_required")) throw new Error("采集任务已变化，请刷新后重试");
+    if (input.expectedPendingJobId) await assertNoCollectionRepair(tx,{workspaceId:input.workspaceId,userId:input.requestedBy,jobId:job.id});
     const assets = await listAssetCandidates(tx, input.workspaceId, snapshot.id) as AcquisitionAssetCandidate[];
-    const reason = directIngestionBlockReason({ requestedCapabilities: job.requestedCapabilities, assets });
+    const reason = directIngestionBlockReason({ requestedCapabilities: job.requestedCapabilities, assets, acceptMissing:Boolean(input.expectedPendingJobId), requireComplete: job.consumerType === "kb_images" && !input.expectedPendingJobId && !input.repairedAssetIds });
     if (reason) throw new Error(`直接录入已安全关闭：${reason}`);
 
-    const approvedAssets = assets.filter(asset => Boolean(asset.storageKey) && asset.fieldStatus === "pending_review");
+    const approvedAssets = assets.filter(asset => Boolean(asset.storageKey) && (asset.role !== "video" || asset.thumbnailStorageKey) && ["pending_review","confirmed"].includes(asset.fieldStatus));
     for (const asset of approvedAssets) {
       await updateAssetCandidateReview({
         db: tx,
@@ -128,6 +141,7 @@ export async function confirmSnapshotForDirectIngestion(input: {
       confirmedSnapshotId,
       job,
       activatedBy: input.requestedBy,
+      repairedAssetIds: input.repairedAssetIds,
     });
     const missingAssetCount = assets.length - approvedAssets.length;
     await updateSourceSnapshot(tx, input.workspaceId, snapshot.id, {
@@ -135,10 +149,10 @@ export async function confirmSnapshotForDirectIngestion(input: {
       reviewedBy: input.requestedBy,
       reviewedAt: new Date(),
       reviewNote: missingAssetCount > 0
-        ? `system_partial_direct_ingestion: ${approvedAssets.length} safely stored, ${missingAssetCount} unavailable; manual upload or governed refresh may supplement missing assets`
+        ? `${input.expectedPendingJobId ? "manual_partial_ingestion" : "system_partial_direct_ingestion"}: ${approvedAssets.length} safely stored, ${missingAssetCount} unavailable; manual upload or governed refresh may supplement missing assets`
         : "system_direct_ingestion: provider completed, normalized data passed, and every returned asset was safely stored",
     });
-    await updateAcquisitionJob(tx, input.workspaceId, job.id, { status: "confirmed", completedAt: new Date() });
+    await updateAcquisitionJob(tx, input.workspaceId, job.id, { status: "confirmed", acceptedMissing: input.expectedPendingJobId && missingAssetCount > 0 ? 1 : job.acceptedMissing, completedAt: new Date() });
     return {
       snapshotId: snapshot.id,
       confirmedSnapshotId,

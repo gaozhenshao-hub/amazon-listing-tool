@@ -29,15 +29,4 @@ describe("皇帝Context Compiler契约", () => {
     expect(runtime).toContain('"knowledge"');
     expect(runtime).toContain("compilerPolicy?: AgentContextCompilerPolicy");
   });
-
-  it("提供显式启用入口和可视化回放，且默认不扩展既有节点的知识或Tool边界", () => {
-    const canvas = read("client/src/pages/emperor/AgentCanvas.tsx");
-    const ledger = read("client/src/pages/emperor/components/RunLedgerPanel.tsx");
-    expect(canvas).toContain("启用 Context Compiler");
-    expect(canvas).toContain("checked={d.contextCompilerPolicy?.enabled === true}");
-    expect(canvas).toContain('toolStrategy: "governed_only"');
-    expect(ledger).toContain("上下文编译");
-    expect(ledger).toContain("已编译知识来源");
-    expect(ledger).toContain("Shell：");
-  });
 });

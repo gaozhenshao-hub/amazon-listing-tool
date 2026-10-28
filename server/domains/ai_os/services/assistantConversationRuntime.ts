@@ -131,7 +131,7 @@ function refs(input: AssistantConversationRuntimePrepareInput) {
 function friendStageLabel(slug: string): string {
   if (/comparison|competitor\.multi/u.test(slug)) return "竞品对比";
   if (/^listing\.(?!competitor)|^keyword\./u.test(slug)) return "Listing文案";
-  const agent = slug === "finance.monthly.profit" ? "finance" : ["knowledge.images.tag", "knowledge.images.tag.coach"].includes(slug) ? "tagger"
+  const agent = slug === "finance.monthly.profit" ? "finance" : ["knowledge.sets.tag", "knowledge.images.tag", "knowledge.videos.tag", "knowledge.images.tag.coach"].includes(slug) ? "tagger"
     : /^image\./u.test(slug) ? "images" : /^video\./u.test(slug) ? "video" : /^(dev|product\.development)\./u.test(slug) ? "development"
       : slug === "ad.structure.generate" || /^(listing|analysis|keyword)\./u.test(slug) ? "listing"
         : /^(knowledge\.(chat|qa|ask)|kb\.(chat|qa)|system\.knowledge\.chat)/u.test(slug) ? "knowledge" : null;

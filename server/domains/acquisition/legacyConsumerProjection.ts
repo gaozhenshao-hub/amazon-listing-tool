@@ -36,7 +36,7 @@ export async function loadConfirmedSnapshotForConsumer(input: {
   if (!confirmed) throw new Error("confirmed snapshot not found");
   const data = NormalizedAmazonSnapshotSchema.parse(confirmed.confirmedData);
   const confirmedAssetIds = new Set(ConfirmedAssetIdsSchema.parse(confirmed.confirmedAssetIds));
-  const assets = (await input.db.select().from(acquisitionAssetCandidates).where(and(
+  const assets: AcquisitionAssetCandidate[] = (await input.db.select().from(acquisitionAssetCandidates).where(and(
     eq(acquisitionAssetCandidates.workspaceId, input.workspaceId),
     eq(acquisitionAssetCandidates.snapshotId, confirmed.snapshotId),
   ))).filter((asset: AcquisitionAssetCandidate) => confirmedAssetIds.has(asset.id) && Boolean(asset.storageKey));

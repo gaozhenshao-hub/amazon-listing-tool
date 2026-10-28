@@ -38,6 +38,16 @@ describe("Aliyun low-cost single-node deployment package", () => {
     expect(compose).toContain('MYSQL_ROOT_HOST: "%"');
   });
 
+  it("builds the retained Listing and image knowledge features by default", async () => {
+    const [compose, docker, env] = await Promise.all([read("compose.yaml"), read("Dockerfile"), read("environment.template.txt")]);
+    for (const flag of ["VITE_ENABLE_MERGED_LISTING_WORKFLOW", "VITE_ENABLE_MERGED_READONLY_FEATURES"]) {
+      expect(compose).toContain(`${flag}: \${${flag}:-1}`);
+      expect(docker).toContain(`ARG ${flag}=1`);
+      expect(docker.indexOf(`ARG ${flag}=1`)).toBeLessThan(docker.indexOf("RUN pnpm run build"));
+      expect(env).toContain(`${flag}=1`);
+    }
+  });
+
   it("requires the application to target the internal MySQL service and supplies backup configuration", async () => {
     const [env, preflight, readme] = await Promise.all([
       read("environment.template.txt"),

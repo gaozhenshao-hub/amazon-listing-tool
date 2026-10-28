@@ -205,7 +205,7 @@ export const IMAGE_BELONG_HIERARCHY = {
   "主图": [] as string[],
   "套图": [] as string[],
   "A+": ["图片轮播", "对比表格", "全宽图", "图文叠加", "四图文", "三图文", "热点交互", "视频模块", "导航轮播", "单图侧文", "技术参数表", "品牌故事卡"],
-  "品牌故事": [] as string[],
+  "品牌故事": ["单图", "四图组合"],
 } as const;
 
 export const IMAGE_BELONG_OPTIONS = Object.keys(IMAGE_BELONG_HIERARCHY) as Array<keyof typeof IMAGE_BELONG_HIERARCHY>;
@@ -251,8 +251,8 @@ export type ColorScheme = typeof COLOR_SCHEME_OPTIONS[number];
 // ============ 构图类型 ============
 
 export const COMPOSITION_OPTIONS = [
-  "居中构图", "三分法构图", "对角线构图", "模块化构图",
-  "二分构图", "环绕构图", "层叠构图", "大面积留白"
+  "一分构图", "二分构图", "三分构图", "多分构图",
+  "一拖一", "一拖二", "一拖三", "一拖多"
 ] as const;
 export type CompositionType = typeof COMPOSITION_OPTIONS[number];
 
@@ -296,3 +296,5 @@ export function getImageSubTypes(mainType: string): readonly string[] {
 export function getSellingPointDetails(category: string): readonly string[] {
   return SELLING_POINT_HIERARCHY[category as SellingPointCategory] ?? [];
 }
+
+export const COMPOSITION_GUIDANCE = "构图按画面信息区域划分：一分构图是一张完整画面；二分、三分、多分构图是2、3、4个以上并列区域，横排、竖排、不规则分区均可。一拖一、一拖二、一拖三、一拖多是一个主画面加1、2、3、4个以上辅助小图。只数独立画面，不数产品件数、文字、图标；三分构图不是摄影三分法。无法确定时留空，保留人工确认标签。";

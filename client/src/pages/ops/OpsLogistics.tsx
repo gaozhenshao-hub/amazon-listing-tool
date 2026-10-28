@@ -5,6 +5,7 @@
  * 并显示与库存预警模块的联动状态。
  */
 
+import { usePermissions } from "@/hooks/usePermissions";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +33,8 @@ import {
 } from "lucide-react";
 
 export default function OpsLogistics() {
+  const { canEdit } = usePermissions();
+  const editable = canEdit("procurement", "procurement_logistics");
   const [selectedCountry, setSelectedCountry] = useState<string>("all");
 
   // Queries
@@ -79,7 +82,7 @@ export default function OpsLogistics() {
           <Button
             size="sm"
             onClick={() => refreshMut.mutate({})}
-            disabled={refreshMut.isPending || !isConfigured}
+            disabled={refreshMut.isPending || !isConfigured || !editable}
             className="gap-1.5"
           >
             {refreshMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
@@ -97,7 +100,7 @@ export default function OpsLogistics() {
               <div>
                 <p className="font-medium text-amber-800 dark:text-amber-300">物流API未配置</p>
                 <p className="text-sm text-amber-700 dark:text-amber-400">
-                  请先在 <a href="/settings" className="underline font-medium">系统设置 → 物流API</a> 中配置NextSLS凭证，才能获取真实物流时效数据。
+                  请先在 管理员处 中配置NextSLS凭证，才能获取真实物流时效数据。
                 </p>
               </div>
             </div>
