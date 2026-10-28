@@ -3,15 +3,21 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const deploymentDir = resolve(process.cwd(), "deploy", "aliyun");
-const readDeploymentFile = (name: string) => readFileSync(resolve(deploymentDir, name), "utf8");
+const readDeploymentFile = (name: string) =>
+  readFileSync(resolve(deploymentDir, name), "utf8");
 
 describe("阿里云独立部署包", () => {
   it("Docker镜像构建当前应用，并以生产Web入口运行", () => {
     const dockerfile = readDeploymentFile("Dockerfile");
 
     expect(dockerfile).toContain("FROM node:22-bookworm-slim AS build");
-    expect(dockerfile).toContain("RUN pnpm run build && pnpm run release:check && pnpm prune --prod");
+    expect(dockerfile).toContain(
+      "RUN pnpm run build && pnpm run release:check && pnpm prune --prod"
+    );
     expect(dockerfile).toContain('CMD ["node", "dist/index.js"]');
+    expect(dockerfile).toContain("ENV HOST=0.0.0.0");
+    expect(dockerfile).toContain("ffmpeg chromium");
+    expect(dockerfile).toContain("install -d -o app -g app -m 0700 /app/data");
     expect(dockerfile).not.toContain("BUILT_IN_FORGE_API_KEY=");
   });
 
@@ -25,6 +31,10 @@ describe("阿里云独立部署包", () => {
     expect(compose).toContain("scheduler:");
     expect(compose).toContain('command: ["node", "dist/scheduler.js"]');
     expect(compose).toContain('"127.0.0.1:3000:3000"');
+    expect(compose).toContain("HOST: 0.0.0.0");
+    expect(compose).toContain("app-data:/app/data");
+    expect(compose).toContain("http://127.0.0.1:3000/readyz");
+    expect(compose).toContain("h.ready===true");
   });
 
   it("环境模板启用本地认证、OSS和外部模型网关，且只含占位值", () => {
@@ -36,6 +46,15 @@ describe("阿里云独立部署包", () => {
     expect(template).toContain("LLM_PROVIDER=external");
     expect(template).toContain("REPLACE_WITH_RAM_ACCESS_KEY_ID");
     expect(template).toContain("REPLACE_WITH_MODEL_GATEWAY_KEY");
+    expect(template).toContain(
+      "MEETING_AUDIO_PUBLIC_ORIGIN=https://YOUR_QINGDAO_DOMAIN"
+    );
+    expect(template).toContain(
+      "DESIGN_STUDIO_STORAGE_ROOT=/app/data/design-studio"
+    );
+    expect(template).toContain(
+      "MEETING_AUDIO_STORAGE_ROOT=/app/data/meeting-audio"
+    );
     expect(template).not.toMatch(/sk-[a-zA-Z0-9]{16,}/);
   });
 

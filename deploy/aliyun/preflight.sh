@@ -46,6 +46,8 @@ required_keys=(
   SCHEDULED_TASK_SECRET
   AUTH_MODE
   VITE_AUTH_MODE
+  APP_PUBLIC_URL
+  MEETING_AUDIO_PUBLIC_ORIGIN
   STORAGE_PROVIDER
   S3_ENDPOINT
   S3_PUBLIC_ENDPOINT
@@ -72,7 +74,10 @@ grep -q '^LLM_PROVIDER=external$' "${ENV_FILE}" || fail "LLM_PROVIDER must be ex
 grep -qE '^DATABASE_URL=mysql://[^@]+@mysql:3306/.+' "${ENV_FILE}" || fail "DATABASE_URL must target the private mysql Compose service on port 3306"
 grep -qE '^S3_ENDPOINT=https://oss-[a-z0-9-]+-internal\.aliyuncs\.com$' "${ENV_FILE}" || fail "S3_ENDPOINT must use an Aliyun internal OSS endpoint for ECS service traffic"
 grep -qE '^S3_PUBLIC_ENDPOINT=https://oss-[a-z0-9-]+\.aliyuncs\.com$' "${ENV_FILE}" || fail "S3_PUBLIC_ENDPOINT must use an Aliyun public OSS endpoint for browser presigned URLs"
-! grep -qE 'REPLACE_WITH|CHANGE_ME|YOUR_LLM_GATEWAY|GENERATE_A_LONG' "${ENV_FILE}" || fail "Environment file still contains template placeholders"
+! grep -qE 'REPLACE_WITH|CHANGE_ME|YOUR_LLM_GATEWAY|YOUR_QINGDAO_DOMAIN|GENERATE_A_' "${ENV_FILE}" || fail "Environment file still contains template placeholders"
+for key in APP_PUBLIC_URL MEETING_AUDIO_PUBLIC_ORIGIN; do
+  grep -qE "^${key}=https://[A-Za-z0-9][A-Za-z0-9.-]*(:[0-9]+)?/?$" "${ENV_FILE}" || fail "${key} must be this site's HTTPS origin without a path"
+done
 tool_secret_key="$(sed -n 's/^TOOL_SECRET_KEY=//p' "${ENV_FILE}" | tail -1)"
 [[ "${#tool_secret_key}" -ge 32 ]] || fail "TOOL_SECRET_KEY must contain at least 32 characters"
 backup_retention_days="$(sed -n 's/^BACKUP_RETENTION_DAYS=//p' "${ENV_FILE}" | tail -1)"
@@ -98,8 +103,9 @@ fi
 
 if [[ "${CHECK_HEALTH}" == "true" ]]; then
   command -v curl >/dev/null 2>&1 || fail "curl is required for --check-health"
-  curl --fail --silent --show-error --max-time 10 http://127.0.0.1:3000/health >/dev/null || fail "Health endpoint is not reachable"
-  pass "Existing web health endpoint is reachable"
+  curl --fail --silent --show-error --max-time 10 http://127.0.0.1:3000/healthz >/dev/null || fail "Web liveness endpoint is not reachable"
+  curl --fail --silent --show-error --max-time 10 http://127.0.0.1:3000/readyz >/dev/null || fail "Web is not ready (check database and runtime configuration)"
+  pass "Existing web health endpoint is reachable and database readiness passed"
 fi
 
 echo "Preflight completed. No database migration, container startup, firewall change, or DNS change was performed."

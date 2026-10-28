@@ -20,7 +20,7 @@ jobs:
       - name: Check interruption handling and Linux private storage
         run: |
           node --test scripts/check-client-runtime-identifiers.test.mjs
-          pnpm exec vitest run server/cryptoJsEsmRuntime.test.ts server/productionRuntimeDependencies.test.ts server/domains/listing/supplementSources/localStorage.test.ts server/domains/ops/saihuReportContract.test.ts
+          pnpm exec vitest run server/productionRuntimeDependencies.test.ts server/infrastructure/localObjectStorage.test.ts server/_core/runtimeHealth.draining.test.ts server/domains/ops/saihuReportContract.test.ts server/deploy.aliyunPackage.test.ts server/deploy.aliyunPreflight.test.ts
         env:
           ALLOW_REAL_NETWORK_IN_TESTS: "0"
           RUN_REAL_LLM_TESTS: "0"
@@ -41,25 +41,41 @@ jobs:
             -e TOOL_SECRET_KEY=isolated-build-smoke-only-not-a-production-key \
             amz-fullchain:merge-${GITHUB_SHA}
           trap 'docker logs release-smoke; docker stop -t 5 release-smoke >/dev/null || true' EXIT
+          docker exec release-smoke ffmpeg -version >/dev/null
+          docker exec release-smoke ffprobe -version >/dev/null
+          docker exec release-smoke chromium --version
+          docker exec release-smoke node --input-type=module -e 'import sharp from "sharp"; await sharp({create:{width:1,height:1,channels:3,background:"white"}}).png().toBuffer()'
           for attempt in $(seq 1 30); do
-            if docker exec release-smoke node -e 'fetch("http://127.0.0.1:3000/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'; then
+            if docker exec release-smoke node -e 'fetch("http://127.0.0.1:3000/healthz").then(async r=>{const h=await r.json();process.exit(r.ok&&h.ok===true&&h.draining===false&&h.service==="web"&&h.role==="web"?0:1)}).catch(()=>process.exit(1))'; then
               exit 0
             fi
             test "$(docker inspect -f '{{.State.Running}}' release-smoke)" = true
             sleep 2
           done
           exit 1
-      - name: Package the verified runtime
+      - name: Package the verified image and native Node 22 runtime
         run: |
-          mkdir -p release
+          set -euo pipefail
+          mkdir -p release/runtime
           docker save amz-fullchain:merge-${GITHUB_SHA} | gzip -1 > release/image.tar.gz
+          docker cp release-smoke:/app/. release/runtime/
+          # Qingdao already uses systemd. Export only code and Linux dependencies;
+          # keep production .env, database, uploads and private data on the host.
+          tar -C release/runtime -czf release/runtime.tar.gz \
+            package.json node_modules dist drizzle scripts config
           sha256sum release/image.tar.gz > release/image.sha256
+          sha256sum release/runtime.tar.gz > release/runtime.sha256
           printf '%s\n' "$GITHUB_SHA" > release/commit.txt
-      - name: Keep the image private for manual staged deployment
+      - name: Save the release artifacts for staged deployment
         uses: actions/upload-artifact@v4
         with:
           name: ecs-release-${{ github.sha }}
-          path: release/
+          path: |
+            release/image.tar.gz
+            release/image.sha256
+            release/runtime.tar.gz
+            release/runtime.sha256
+            release/commit.txt
           compression-level: 0
           retention-days: 7
           if-no-files-found: error

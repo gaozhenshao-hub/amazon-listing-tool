@@ -12,7 +12,9 @@ describe("阿里云部署前置检查脚本", () => {
     expect(script).toContain("STORAGE_PROVIDER=oss");
     expect(script).toContain("LLM_PROVIDER=external");
     expect(script).toContain("--check-health");
-    expect(script).toContain("http://127.0.0.1:3000/health");
+    expect(script).toContain("http://127.0.0.1:3000/healthz");
+    expect(script).toContain("http://127.0.0.1:3000/readyz");
+    expect(script).toContain("MEETING_AUDIO_PUBLIC_ORIGIN");
     expect(script).toContain("Existing web health endpoint is reachable");
     expect(script).not.toMatch(/docker compose[^\n]*(up|run|down|restart)/);
     expect(script).not.toContain("run-database-migrations");

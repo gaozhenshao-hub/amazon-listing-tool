@@ -6,8 +6,13 @@ NODE_ENV=production
 VITE_ENABLE_MERGED_LISTING_WORKFLOW=1
 VITE_ENABLE_MERGED_READONLY_FEATURES=1
 PORT=3000
-# Bind the Node process to loopback; Nginx is the only public HTTP/HTTPS entry.
-HOST=127.0.0.1
+# Inside Docker the process must accept traffic from the container network.
+# Compose publishes port 3000 on host loopback only; Nginx is the public entry.
+# For an existing host/systemd deployment, retain HOST=127.0.0.1 instead.
+HOST=0.0.0.0
+# Set both origins to this Qingdao site's own HTTPS origin, without a path.
+APP_PUBLIC_URL=https://YOUR_QINGDAO_DOMAIN
+MEETING_AUDIO_PUBLIC_ORIGIN=https://YOUR_QINGDAO_DOMAIN
 # MySQL runs on the private Docker network and is never published to the ECS network.
 # URL-encode MYSQL_APP_PASSWORD in DATABASE_URL if it contains @, :, /, ?, # or %.
 MYSQL_DATABASE=amz_fullchain
@@ -39,13 +44,14 @@ S3_SECRET_ACCESS_KEY=REPLACE_WITH_RAM_ACCESS_KEY_SECRET
 S3_FORCE_PATH_STYLE=false
 STORAGE_PRESIGN_EXPIRES_SECONDS=900
 
-# Alternative for supplemental review/question/attribute originals on an ECS
-# private persistent volume when STORAGE_PROVIDER=local. This does not configure
-# other S3-only features. Mount outside all static/public directories on web and
-# worker at the same absolute path; app-owned directory 0700, files 0600.
-# Initialize .storage-id once with a random UUID v4; preserve it with backups.
-# Do not use ephemeral container storage or recreate the marker on restart.
-LISTING_SUPPLEMENT_LOCAL_ROOT=
+# Private persistent storage for new local objects, design files and recordings.
+# Compose shares the app-data volume across web/worker/scheduler at /app/data.
+# Keep STORAGE_PROVIDER=oss and the existing bucket for historical OSS objects;
+# these local directories do not change or migrate existing object references.
+# For systemd deployments use existing absolute private directories instead.
+LOCAL_STORAGE_DIR=/app/data/objects
+DESIGN_STUDIO_STORAGE_ROOT=/app/data/design-studio
+MEETING_AUDIO_STORAGE_ROOT=/app/data/meeting-audio
 
 # Encrypted MySQL logical backup to the same private OSS Bucket.
 # Generate with: openssl rand -base64 48
