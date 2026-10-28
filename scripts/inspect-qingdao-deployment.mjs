@@ -46,7 +46,7 @@ try {
   const digest = crypto.createHash('sha256').update(fs.readFileSync(output)).digest('hex');
   console.log(JSON.stringify({output, sha256: digest, bytes: fs.statSync(output).size, tables: tables.length, columns: columns.length, indexes: indexes.length, ledger: ledger.length, identity: identity[0], configuration: metadata.configuration}, null, 2));
 } catch (error) {
-  console.error(JSON.stringify({error: error.code || 'METADATA_COLLECTION_FAILED'}));
+  console.error(JSON.stringify({error: error.code || 'METADATA_COLLECTION_FAILED', type: error.name, location: String(error.stack || '').split('\n').slice(1, 5), knownReason: ['DATABASE_NOT_SELECTED'].includes(error.message) ? error.message : undefined}));
   process.exitCode = 1;
 } finally {
   await connection?.end();
