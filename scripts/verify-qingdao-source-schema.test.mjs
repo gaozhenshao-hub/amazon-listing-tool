@@ -45,6 +45,21 @@ test('accepts exactly additive tables/columns and the reviewed widening while pr
   assert.equal(JSON.stringify(x.before), baseline);
 });
 
+test('atomic Saihu widening parses DEFAULT NULL separately from the following ADD INDEX', () => {
+  const name = 'saihu_product_weekly';
+  const before = { tables: [table(name)], columns: [column(name, 'asin', 'varchar(500)', 1), column(name, 'week_start_date', 'date', 2)],
+    indexes: [idx(name, 'idx_sh_asin_week', 'asin'), idx(name, 'idx_sh_asin_week', 'week_start_date', false, null, 2)], foreignKeys: [] };
+  const after = structuredClone(before);
+  after.columns[0].COLUMN_TYPE = 'varchar(2000)';
+  after.indexes[0].SUB_PART = 191;
+  const plan = { steps: [{ id: '093', kind: 'widen-saihu-list', table: name, column: 'asin',
+    sql: 'ALTER TABLE `saihu_product_weekly` DROP INDEX `idx_sh_asin_week`, MODIFY COLUMN `asin` VARCHAR(2000) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL DEFAULT NULL, ADD INDEX `idx_sh_asin_week` (`asin`(191),`week_start_date`);' }] };
+  const contract = { tables: [{ name, columns: ['asin', 'week_start_date'], indexes: [] }], approvedLegacyDifferences: [] };
+  assert.equal(verifyMetadata(after, before, plan, contract).status, 'source_schema_verified');
+  after.columns[0].COLUMN_DEFAULT = 'unexpected';
+  assert.ok(verifyMetadata(after, before, plan, contract).findings.some(f => f.code === 'PLANNED_COLUMN_SHAPE_MISMATCH' && f.name === 'asin' && f.detail === 'default'));
+});
+
 test('reports required table/column/index gaps, unplanned columns and old column loss', () => {
   const x = fixture(); x.after.columns = x.after.columns.filter(c => c.COLUMN_NAME !== 'status' && c.COLUMN_NAME !== 'kept');
   x.after.columns.push(column('old', 'surprise', 'int', 4));

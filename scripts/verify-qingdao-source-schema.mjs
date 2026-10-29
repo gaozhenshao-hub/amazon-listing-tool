@@ -153,9 +153,10 @@ export function verifyMetadata(after, before, plan, contract = sourceContract())
       expectColumn(step.table, parseColumn(clause.replace(/;$/, '')));
     }
     if (['widen-or-nullable', 'append-enum', 'finalize-status', 'widen-saihu-list'].includes(step.kind)) {
-      const clause = step.sql.match(/MODIFY COLUMN\s+([\s\S]+?)(?:, ADD INDEX|;)$/i)?.[1];
+      const clause = step.sql.replace(/;\s*$/, '').match(/MODIFY COLUMN\s+([\s\S]+)$/i)?.[1];
       if (!clause) throw fail('UNPARSEABLE_MODIFY_COLUMN');
-      expectColumn(step.table, parseColumn(clause));
+      // Atomic ALTERs may continue with ADD INDEX; only a top-level comma ends this column.
+      expectColumn(step.table, parseColumn(splitSqlParts(clause)[0]));
     }
     if (['create-index', 'create-unique-index'].includes(step.kind) && !sameIndex(indexes.get(`${step.table}.${step.index}`), { unique: step.unique ?? true, columns: step.columns || [step.column] })) add('PLANNED_INDEX_MISMATCH', step.table, step.index);
   }
