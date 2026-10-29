@@ -182,19 +182,61 @@ export function assertNoImplicitLocalObjects(configuration, appDirectory) {
   throw fail('IMPLICIT_LOCAL_STORAGE_REQUIRES_REVIEW');
 }
 
-function verifyExtractedLinks(directory) {
+function prunedHoistAlias(directory, full) {
+  const relative = path.relative(directory, full).split(path.sep).join('/');
+  if (!/^node_modules\/\.pnpm\/node_modules\/(?:@[^/]+\/)?[^/]+$/.test(relative)) return undefined;
+  const target = fs.readlinkSync(full);
+  if (path.isAbsolute(target) || /[\\\0\r\n\t]/.test(target)) return undefined;
+  const resolved = path.resolve(path.dirname(full), target);
+  const relativeTarget = path.relative(directory, resolved).split(path.sep).join('/');
+  const match = relativeTarget.match(/^node_modules\/\.pnpm\/([^/]+)\/node_modules\/(?:@[^/]+\/)?[^/]+$/);
+  if (!match || ['.', '..', 'node_modules'].includes(match[1])) return undefined;
+  // Only a completely pruned virtual-store package may leave this alias behind.
+  // Missing files within a retained package are still real packaging failures.
+  const storeRoot = path.join(directory, 'node_modules', '.pnpm');
+  for (const base of [storeRoot, path.join(storeRoot, 'node_modules')]) {
+    if (!fs.lstatSync(base).isDirectory() || fs.realpathSync(base) !== base) return undefined;
+  }
+  const missingStore = path.join(storeRoot, match[1]);
+  try { fs.lstatSync(missingStore); return undefined; }
+  catch (error) { if (error.code !== 'ENOENT') return undefined; }
+  return { path: relative, target, missingVirtualStorePath: path.relative(directory, missingStore).split(path.sep).join('/') };
+}
+
+export function verifyExtractedLinks(directory) {
+  directory = fs.realpathSync(directory);
+  const allowedPrunedHoistAliases = [];
   const visit = current => {
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
       const full = path.join(current, entry.name);
       if (entry.isSymbolicLink()) {
         let target;
-        try { target = fs.realpathSync(full); } catch { throw fail('EXTRACTED_LINK_UNRESOLVED'); }
+        try { target = fs.realpathSync(full); }
+        catch (error) {
+          const alias = error.code === 'ENOENT' ? prunedHoistAlias(directory, full) : undefined;
+          if (!alias) throw fail('EXTRACTED_LINK_UNRESOLVED');
+          allowedPrunedHoistAliases.push(alias);
+          continue;
+        }
         if (!target.startsWith(`${directory}/`)) throw fail('EXTRACTED_LINK_OUTSIDE_CANDIDATE');
       } else if (entry.isDirectory()) visit(full);
       else if (!entry.isFile()) throw fail('EXTRACTED_FILE_TYPE_UNEXPECTED');
     }
   };
   visit(directory);
+  const packageJson = JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8'));
+  const productionDependencies = Object.keys(packageJson.dependencies || {}).sort();
+  for (const name of productionDependencies) {
+    if (!/^(?:@[a-zA-Z0-9_.-]+\/)?[a-zA-Z0-9_.-]+$/.test(name) || ['.', '..'].includes(name)) throw fail('PRODUCTION_DEPENDENCY_NAME_INVALID');
+    try {
+      const resolved = fs.realpathSync(path.join(directory, 'node_modules', name));
+      if (!resolved.startsWith(`${directory}/node_modules/`) || !fs.statSync(resolved).isDirectory()) throw fail('PRODUCTION_DEPENDENCY_INVALID');
+      const manifest = JSON.parse(fs.readFileSync(path.join(resolved, 'package.json'), 'utf8'));
+      if (!manifest || typeof manifest.name !== 'string' || !manifest.name) throw fail('PRODUCTION_DEPENDENCY_INVALID');
+    } catch { throw fail('PRODUCTION_DEPENDENCY_INVALID'); }
+  }
+  allowedPrunedHoistAliases.sort((left, right) => left.path.localeCompare(right.path));
+  return { allowedPrunedHoistAliasCount: allowedPrunedHoistAliases.length, allowedPrunedHoistAliases, validatedProductionDependencyCount: productionDependencies.length, validatedProductionDependencies: productionDependencies };
 }
 
 function prepareNewDirectory(directory, uid, gid, created) {
@@ -249,13 +291,13 @@ export async function stageRelease({ archive, expectedHash, commit, stageParent,
     // A fresh directory, no --keep-directory-symlink, no inherited ownership,
     // no overwriting prior entries. The archive was validated before extraction.
     await command('/usr/bin/tar', ['--extract', '--gzip', '--file', archive, '--directory', candidateApp, '--no-same-owner', '--no-same-permissions', '--keep-old-files', '--delay-directory-restore']);
-    verifyExtractedLinks(candidateApp);
+    const linkInspection = verifyExtractedLinks(candidateApp);
     for (const relative of ['package.json', 'dist/index.js', 'dist/aiWorker.js', 'dist/scheduler.js']) if (!fs.statSync(path.join(candidateApp, relative)).isFile()) throw fail('REQUIRED_RUNTIME_FILE_MISSING');
     await command('/usr/bin/chown', ['-R', '-P', '--no-dereference', `${uid}:${gid}`, candidateApp]);
     for (const directory of configuration.newRoots) prepareNewDirectory(directory, uid, gid, createdStorageDirectories);
     fs.writeFileSync(candidateConfig, configuration.text, { flag: 'wx', mode: 0o600 });
     if (await digest(configPath) !== sourceConfigHash) throw fail('ACTIVE_CONFIG_CHANGED_DURING_STAGE');
-    const manifest = { status: 'staged_not_deployed', stagedAt: new Date().toISOString(), sourceCommit: commit, archive, archiveSha256: expectedHash, archiveInspection, activeAppUnchanged: appDirectory, activeConfigUnchanged: configPath, candidateApp, candidateConfig, candidateConfigSha256: await digest(candidateConfig), activeConfigSha256: sourceConfigHash, changedConfigurationKeys: configuration.changedKeys, createdStorageDirectories, codeOwner: { user: 'ecs-user', uid, gid }, productionServicesTouched: false, productionDatabaseTouched: false, productTaskStorageTouched: false };
+    const manifest = { status: 'staged_not_deployed', stagedAt: new Date().toISOString(), sourceCommit: commit, archive, archiveSha256: expectedHash, archiveInspection, linkInspection, activeAppUnchanged: appDirectory, activeConfigUnchanged: configPath, candidateApp, candidateConfig, candidateConfigSha256: await digest(candidateConfig), activeConfigSha256: sourceConfigHash, changedConfigurationKeys: configuration.changedKeys, createdStorageDirectories, codeOwner: { user: 'ecs-user', uid, gid }, productionServicesTouched: false, productionDatabaseTouched: false, productTaskStorageTouched: false };
     fs.writeFileSync(path.join(outputDirectory, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
     fs.writeFileSync(path.join(outputDirectory, 'CUTOVER-AND-ROLLBACK.txt'), `STAGED ONLY — no running service, database, active config, old app, node_modules link, PRODUCT_TASK_LOCAL_ROOT or .storage-id was changed.\n\nCandidate app: ${candidateApp}\nCandidate config: ${candidateConfig}\nCommit label (bound to the provided CI artifact/hash by the operator): ${commit}\n\nBefore any cutover: finish verified DB/config/unit backups and necessary additive schema migration; inspect actual unit ExecStart/EnvironmentFile and Nginx paths; install and verify browser/media dependencies separately; verify native module compatibility on this host. The root-only staging parent intentionally prevents ecs-user access until a reviewed move/permission plan. No new Chromium setting was inserted.\n\nManual reviewed cutover sequence (not executed):\n1. Record exact active app/config paths and prepare timestamped rollback destinations on the SAME filesystem. Preserve the original real app directory and its node_modules symlink to /opt/amz-runtime-candidate-b8f4003/node_modules. Do not delete that target.\n2. Stop scheduler, worker, then web in the planned maintenance window.\n3. Rename the original /opt/amazon-listing-tool to its recorded rollback path; rename candidate app into /opt/amazon-listing-tool. Back up and atomically install candidate runtime config with root ownership and mode 0600. Do not replace /var/lib/app, PRODUCT_TASK_LOCAL_ROOT, .storage-id, OSS configuration, buckets or uploaded objects.\n4. Start web and require /healthz and /readyz; then worker and scheduler, watching logs and real site responses. Keep KNOWLEDGE_CACHE_CLEANUP_ENABLED=false during initial rollout.\n\nIf cutover fails: stop those units, move the failed app aside without deletion, rename the preserved original app back to /opt/amazon-listing-tool, restore the saved config with its recorded ownership/mode, then restart and verify. Additive DB changes should ordinarily remain; restoring the full DB snapshot requires a separate maintenance/reconciliation decision to avoid losing newer writes. Do not run any generic database migration train or automatic full restore.\n\nThis file is guidance only. It deliberately provides no executable stop/switch/rollback automation.\n`, { flag: 'wx', mode: 0o600 });
     return manifest;
@@ -268,6 +310,10 @@ export async function stageRelease({ archive, expectedHash, commit, stageParent,
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   process.umask(0o077);
   const [archive, expectedHash, commit, stageParent, appDirectory, configPath] = process.argv.slice(2);
-  try { console.log(JSON.stringify(await stageRelease({ archive, expectedHash, commit, stageParent, appDirectory, configPath }), null, 2)); }
+  try {
+    const result = await stageRelease({ archive, expectedHash, commit, stageParent, appDirectory, configPath });
+    const { allowedPrunedHoistAliases, validatedProductionDependencies, ...linkSummary } = result.linkInspection;
+    console.log(JSON.stringify({ ...result, linkInspection: linkSummary, completeManifest: path.join(path.dirname(result.candidateApp), 'manifest.json') }, null, 2));
+  }
   catch (error) { console.error(JSON.stringify({ error: error.safeCode || 'STAGING_FAILED', outputDirectory: error.outputDirectory })); process.exitCode = 1; }
 }

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import dotenv from 'dotenv';
-import { archivePath, validateArchiveEntry, inspectArchive, candidateConfiguration, assertNoImplicitLocalObjects } from './stage-qingdao-friend-release.mjs';
+import { archivePath, validateArchiveEntry, inspectArchive, candidateConfiguration, assertNoImplicitLocalObjects, verifyExtractedLinks } from './stage-qingdao-friend-release.mjs';
 
 test('archive paths and link targets cannot leave the six allowed runtime roots', () => {
   assert.equal(archivePath('./dist/index.js'), 'dist/index.js');
@@ -71,6 +71,68 @@ test('implicit object files and even dangling symlinks also require review', t =
   fs.mkdirSync(path.join(linkApp, 'data'), { recursive: true });
   fs.symlinkSync(path.join(directory, 'missing-target'), path.join(linkApp, 'data', 'objects'));
   assert.throws(() => assertNoImplicitLocalObjects({}, linkApp), /IMPLICIT_LOCAL_STORAGE_REQUIRES_REVIEW/);
+});
+
+function linkCandidate(t) {
+  const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'qingdao-stage-test-')));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(directory, 'node_modules', '.pnpm', 'node_modules'), { recursive: true });
+  const production = path.join(directory, 'node_modules', '.pnpm', 'production@1.0.0', 'node_modules', 'production');
+  fs.mkdirSync(production, { recursive: true });
+  fs.writeFileSync(path.join(production, 'package.json'), JSON.stringify({ name: 'production', version: '1.0.0' }));
+  fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ dependencies: { production: '1.0.0' } }));
+  fs.symlinkSync('.pnpm/production@1.0.0/node_modules/production', path.join(directory, 'node_modules', 'production'));
+  return directory;
+}
+
+test('only missing hidden-hoist virtual-store aliases are allowed and recorded', t => {
+  const directory = linkCandidate(t);
+  const hoist = path.join(directory, 'node_modules', '.pnpm', 'node_modules');
+  fs.symlinkSync('../old-dev@1.0.0/node_modules/old-dev', path.join(hoist, 'old-dev'));
+  fs.mkdirSync(path.join(hoist, '@test'));
+  fs.symlinkSync('../../@test+dev@1.0.0/node_modules/@test/dev', path.join(hoist, '@test', 'dev'));
+  const result = verifyExtractedLinks(directory);
+  assert.equal(result.allowedPrunedHoistAliasCount, 2);
+  assert.deepEqual(result.validatedProductionDependencies, ['production']);
+  assert.equal(result.validatedProductionDependencyCount, 1);
+  assert.deepEqual(result.allowedPrunedHoistAliases.find(alias => alias.path.endsWith('/old-dev')), {
+    path: 'node_modules/.pnpm/node_modules/old-dev', target: '../old-dev@1.0.0/node_modules/old-dev', missingVirtualStorePath: 'node_modules/.pnpm/old-dev@1.0.0',
+  });
+  assert.ok(fs.lstatSync(path.join(hoist, 'old-dev')).isSymbolicLink());
+});
+
+test('broken direct production and retained-package dependency links remain rejected', t => {
+  const direct = linkCandidate(t);
+  fs.symlinkSync('.pnpm/missing@1/node_modules/missing', path.join(direct, 'node_modules', 'missing'));
+  assert.throws(() => verifyExtractedLinks(direct), /EXTRACTED_LINK_UNRESOLVED/);
+  const transitive = linkCandidate(t);
+  fs.symlinkSync('../../missing@1/node_modules/missing', path.join(transitive, 'node_modules', '.pnpm', 'production@1.0.0', 'node_modules', 'missing'));
+  assert.throws(() => verifyExtractedLinks(transitive), /EXTRACTED_LINK_UNRESOLVED/);
+});
+
+test('hoist aliases cannot hide missing contents of retained packages or point elsewhere', t => {
+  const retained = linkCandidate(t);
+  fs.symlinkSync('../production@1.0.0/node_modules/absent', path.join(retained, 'node_modules', '.pnpm', 'node_modules', 'absent'));
+  assert.throws(() => verifyExtractedLinks(retained), /EXTRACTED_LINK_UNRESOLVED/);
+  const wrongRoot = linkCandidate(t);
+  fs.symlinkSync('../../../missing', path.join(wrongRoot, 'node_modules', '.pnpm', 'node_modules', 'missing'));
+  assert.throws(() => verifyExtractedLinks(wrongRoot), /EXTRACTED_LINK_UNRESOLVED/);
+  const outside = linkCandidate(t);
+  fs.symlinkSync('/definitely-missing-outside-candidate', path.join(outside, 'node_modules', '.pnpm', 'node_modules', 'outside'));
+  assert.throws(() => verifyExtractedLinks(outside), /EXTRACTED_LINK_UNRESOLVED/);
+});
+
+test('existing outside links and declared packages with missing manifests remain rejected', t => {
+  const outside = linkCandidate(t);
+  fs.symlinkSync(os.tmpdir(), path.join(outside, 'node_modules', 'external'));
+  assert.throws(() => verifyExtractedLinks(outside), /EXTRACTED_LINK_OUTSIDE_CANDIDATE/);
+  const missing = linkCandidate(t);
+  fs.writeFileSync(path.join(missing, 'package.json'), JSON.stringify({ dependencies: { absent: '1' } }));
+  assert.throws(() => verifyExtractedLinks(missing), /PRODUCTION_DEPENDENCY_INVALID/);
+  const invalid = linkCandidate(t);
+  fs.mkdirSync(path.join(invalid, 'node_modules', 'invalid'));
+  fs.writeFileSync(path.join(invalid, 'package.json'), JSON.stringify({ dependencies: { invalid: '1' } }));
+  assert.throws(() => verifyExtractedLinks(invalid), /PRODUCTION_DEPENDENCY_INVALID/);
 });
 
 function header(name, body = Buffer.alloc(0), type = '0', linkname = '') {
