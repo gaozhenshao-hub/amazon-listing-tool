@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE users SET password = 'scrypt:8a1a78d61a7436f0031243aee049c980:e0ab0864033881cf239e16503800d5d034f4dfed19ceee811a250aa800d15705f4e9bd2ea436025be9f8af067f7d07c100019564202b124247595acb5d4d2a70' WHERE email = '970032132@qq.com';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute UPDATE users SET password = 'scrypt:8a1a78d61a7436f0031243aee049c980:e0ab0864033881cf239e16503800d5d034f4dfed19ceee811a250aa800d15705f4e9bd2ea436025be9f8af067f7d07c100019564202b124247595acb5d4d2a70' WHERE email = '970032132@qq.com';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1752
+}

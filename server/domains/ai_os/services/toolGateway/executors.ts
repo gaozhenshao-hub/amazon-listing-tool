@@ -282,6 +282,105 @@ async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown, 
   };
 }
 
+const LINGXING_READ_ONLY_CAPABILITIES = new Set([
+  "query_product_performance_asin_lists",
+  "get_fba_stock_list",
+  "query_order_profit_list",
+  "get_my_sids",
+  "ad_auth_shops",
+  "erp_listing",
+  "query_erp_keyword_ranking_keyword",
+  "ad_campaign_report",
+  "ad_campaign_keyword_report",
+  "ad_campaign_search_term_report",
+  "ad_campaign_targeting_report",
+]);
+
+const LINGXING_SCOPE_EXEMPT_CAPABILITIES = new Set(["get_my_sids", "ad_auth_shops"]);
+
+function parseLingxingMcpText(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
+/** 兼容官方MCP在JSON-RPC result.content.text和直接data两种返回封装。 */
+export function unwrapLingxingMcpEnvelope(value: unknown): Record<string, any> {
+  const root = toRecord(value);
+  const content = Array.isArray(root.content) ? root.content : [];
+  const textItem = content.map(toRecord).find((item) => typeof item.text === "string");
+  const parsed = parseLingxingMcpText(textItem?.text ?? root);
+  const envelope = toRecord(parsed);
+  return toRecord(envelope.data ?? envelope.result ?? envelope);
+}
+
+function assertLingxingSchemaEnvelopeIsNotProviderError(value: Record<string, any>) {
+  const errorText = [value.message, value.error, value.msg, value.code]
+    .filter((item) => item !== null && item !== undefined)
+    .map((item) => typeof item === "string" ? item : JSON.stringify(item))
+    .join(" ")
+    .toLowerCase();
+  if (/mcp[ _-]?key|api[ _-]?key|access[ _-]?key|token|unauthori[sz]ed|forbidden|认证|鉴权|密钥/.test(errorText)) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "领星MCP认证失败：访问密钥无效、已失效或无权访问。请由超级管理员在系统设置 → API连接管理中替换领星MCP访问密钥，再执行无费用轻量校验。",
+    });
+  }
+}
+
+export function buildLingxingActionInvocation(capability: string, args: unknown, schemaEnvelope: unknown) {
+  if (!LINGXING_READ_ONLY_CAPABILITIES.has(capability)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: `领星能力${capability || "(empty)"}不在只读白名单中` });
+  }
+  const argumentsRecord = toRecord(args);
+  if (!LINGXING_SCOPE_EXEMPT_CAPABILITIES.has(capability)) {
+    const scopeKeys = ["shop_id", "shopId", "sid", "sids", "profile_id", "profileId", "profile_ids"];
+    if (!scopeKeys.some((key) => argumentsRecord[key] !== undefined && argumentsRecord[key] !== null && String(argumentsRecord[key]).trim())) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: `领星能力${capability}缺少店铺或广告Profile范围` });
+    }
+  }
+  const schema = unwrapLingxingMcpEnvelope(schemaEnvelope);
+  assertLingxingSchemaEnvelopeIsNotProviderError(schema);
+  const toolId = String(schema.toolId || "");
+  const catalogVersion = String(schema.catalogVersion || "");
+  const schemaVersion = String(schema.schemaVersion || "");
+  const toolVersionId = Number(schema.toolVersionId);
+  if (toolId !== capability || !catalogVersion || !schemaVersion || !Number.isInteger(toolVersionId) || toolVersionId < 1 || schema.toolType !== "read") {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `领星能力${capability}的最新只读Schema无效或不匹配` });
+  }
+  return {
+    toolName: "action",
+    // 官方MCP v20260904要求action携带不可变toolVersionId和对象型params；
+    // 旧paramsJson契约会被服务端解释为params=null并以400失败。
+    arguments: { toolId, catalogVersion, schemaVersion, toolVersionId, params: argumentsRecord },
+  };
+}
+
+async function invokeLingxingReadOnlyMcp(params: unknown, resolvedSecretRefs: string[] = [], workspaceId?: number | null) {
+  const request = toRecord(params);
+  const capability = String(request.capability || request.toolName || "").trim();
+  const args = request.arguments || request.params || request.payload || {};
+  if (!capability) throw new TRPCError({ code: "BAD_REQUEST", message: "领星读取请求缺少能力名称" });
+  const config = {
+    mcpEndpoint: process.env.LINGXING_MCP_ENDPOINT || "https://openmcp.lingxing.com/mcp-servers/lingxing-mcp",
+    headers: { "X-Mcp-Key": "secret://integration.lingxing.mcp_key" },
+    allowedHosts: ["openmcp.lingxing.com"],
+    timeoutMs: 30_000,
+    maxResponseBytes: 2 * 1024 * 1024,
+    rateLimitPolicy: { scope: "tool", perSecond: 1, perMinute: 60, concurrency: 1 },
+    initializeBeforeCall: true,
+    protocolVersion: "2025-03-26",
+    requireShopScope: false,
+    scopeExemptTools: ["search", "action"],
+    allowedTools: ["search", "action"],
+  };
+  const tool = { slug: "internal.lingxing.read", name: "领星官方MCP只读数据源", type: "mcp" as const, config };
+  const schema = await invokeMcpHttpTool(tool, { toolName: "search", arguments: { toolId: capability } }, resolvedSecretRefs, workspaceId);
+  // 官方新版MCP将目录查询和实际读取视为两次请求；间隔超过1秒避免突破已声明的QPS=1边界。
+  await new Promise((resolve) => setTimeout(resolve, 1_100));
+  const actionRequest = buildLingxingActionInvocation(capability, args, schema.output);
+  return invokeMcpHttpTool(tool, actionRequest, resolvedSecretRefs, workspaceId);
+}
+
 async function invokeInternalTool(slug: string, params: unknown, resolvedSecretRefs: string[] = [], workspaceId?: number | null) {
   switch (slug) {
     case "internal.agent.capture_input":
@@ -299,6 +398,8 @@ async function invokeInternalTool(slug: string, params: unknown, resolvedSecretR
         type: "api",
         config: {},
       }, params, resolvedSecretRefs, workspaceId);
+    case "internal.lingxing.read":
+      return invokeLingxingReadOnlyMcp(params, resolvedSecretRefs, workspaceId);
     default:
       throw new TRPCError({ code: "BAD_REQUEST", message: `Unsupported internal tool: ${slug}` });
   }
@@ -340,6 +441,7 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
   const startedAt = Date.now();
   const tool = await getToolDefinition(input.toolSlug, input.workspaceId ?? null);
   const toolRunId = generateToolRunId();
+  const isLingxingOfficialRead = tool.slug === "internal.lingxing.read" || tool.slug === "mcp.lingxing-mcp";
   const riskLevel = inferToolRisk(tool, input.params);
   const publicRefs = [
     ...publicSecretRefs(tool.secretRefs),
@@ -366,6 +468,9 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
   });
   if (input.runId) {
     await appendRunLedgerEvent({ traceId: input.runId, eventType: "tool.started", entityType: "tool_run", entityId: toolRunId, nodeId: input.nodeId || null, toolSlug: tool.slug, actorUserId: input.userId, payload: { type: tool.type, riskLevel, governanceDecision } }).catch(() => null);
+    if (isLingxingOfficialRead) {
+      await appendRunLedgerEvent({ traceId: input.runId, eventType: "tool.lingxing_mcp.start", entityType: "tool_run", entityId: toolRunId, nodeId: input.nodeId || null, toolSlug: tool.slug, actorUserId: input.userId, payload: { riskLevel, governanceDecision } }).catch(() => null);
+    }
   }
 
   let output: unknown;
@@ -433,6 +538,9 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
       durationMs: Date.now() - startedAt,
       httpStatus: status,
     });
+    if (input.runId && isLingxingOfficialRead) {
+      await appendRunLedgerEvent({ traceId: input.runId, eventType: "tool.lingxing_mcp.success", entityType: "tool_run", entityId: toolRunId, nodeId: input.nodeId || null, toolSlug: tool.slug, actorUserId: input.userId, payload: { httpStatus: status, durationMs: Date.now() - startedAt, requestHost } }).catch(() => null);
+    }
     void recordAiOsMetric({
       entityType: "tool",
       entityId: toolRunId,
@@ -482,6 +590,9 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
       durationMs: Date.now() - startedAt,
       httpStatus: status,
     });
+    if (input.runId && isLingxingOfficialRead) {
+      await appendRunLedgerEvent({ traceId: input.runId, eventType: "tool.lingxing_mcp.failed", entityType: "tool_run", entityId: toolRunId, nodeId: input.nodeId || null, toolSlug: tool.slug, actorUserId: input.userId, payload: { httpStatus: status, durationMs: Date.now() - startedAt, requestHost, failureKind: classified.kind, error: serializeToolError(error) } }).catch(() => null);
+    }
     void recordAiOsMetric({
       entityType: "tool",
       entityId: toolRunId,

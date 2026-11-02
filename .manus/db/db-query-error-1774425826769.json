@@ -1,0 +1,8 @@
+{
+  "query": "ALTER TABLE `image_workflow_sessions` ADD `step6LovartConfirmed` int DEFAULT 0 NOT NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute ALTER TABLE `image_workflow_sessions` ADD `step6LovartConfirmed` int DEFAULT 0 NOT NULL;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1060 (42S21) at line 1: Duplicate column name 'step6LovartConfirmed'"
+  ]
+}

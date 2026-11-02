@@ -14,6 +14,8 @@ export type ChecklistScore = {
   suggestion: string;
   /** Short quote or observable fact from the submitted content, when available. */
   evidenceQuote?: string;
+  /** A factual, human-editable revision; never automatically applied to the listing. */
+  suggestedRevision?: string;
 };
 
 export type ChecklistResult = {
@@ -78,6 +80,7 @@ export function parseCompleteListingChecklist(
     const reason = candidate.reason.trim();
     const suggestion = candidate.suggestion.trim();
     if (!candidate.pass && (!reason || !suggestion)) return null;
+    if (kind === "bullets" && !candidate.pass && (typeof candidate.evidenceQuote !== "string" || !candidate.evidenceQuote.trim())) return null;
     scores[key] = {
       pass: candidate.pass,
       notes: candidate.notes.trim(),
@@ -85,6 +88,9 @@ export function parseCompleteListingChecklist(
       suggestion,
       ...(typeof candidate.evidenceQuote === "string" && candidate.evidenceQuote.trim()
         ? { evidenceQuote: candidate.evidenceQuote.trim() }
+        : {}),
+      ...(kind === "bullets" && typeof candidate.suggestedRevision === "string" && candidate.suggestedRevision.trim()
+        ? { suggestedRevision: candidate.suggestedRevision.trim() }
         : {}),
     };
   }

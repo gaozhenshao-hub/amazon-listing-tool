@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `conversion_check_items` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`user_id` int,\n\t`category_index` int NOT NULL,\n\t`category_name` varchar(100) NOT NULL,\n\t`sub_dimension` varchar(200),\n\t`standard` text,\n\t`sort_order` int DEFAULT 0,\n\t`is_custom` int DEFAULT 0,\n\t`is_active` int DEFAULT 1,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `conversion_check_items_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE `conversion_check_items` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`user_id` int,\n\t`category_index` int NOT NULL,\n\t`category_name` varchar(100) NOT NULL,\n\t`sub_dimension` varchar(200),\n\t`standard` text,\n\t`sort_order` int DEFAULT 0,\n\t`is_custom` int DEFAULT 0,\n\t`is_active` int DEFAULT 1,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `conversion_check_items_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 153
+}

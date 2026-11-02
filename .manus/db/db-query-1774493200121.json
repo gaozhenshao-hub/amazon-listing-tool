@@ -1,0 +1,15 @@
+{
+  "query": "SELECT COUNT(*) as total, SUM(CASE WHEN user_id IS NULL THEN 1 ELSE 0 END) as system_defaults, SUM(CASE WHEN user_id IS NOT NULL THEN 1 ELSE 0 END) as custom FROM conversion_check_items;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT COUNT(*) as total, SUM(CASE WHEN user_id IS NULL THEN 1 ELSE 0 END) as system_defaults, SUM(CASE WHEN user_id IS NOT NULL THEN 1 ELSE 0 END) as custom FROM conversion_check_items;",
+  "rows": [
+    {
+      "total": "0",
+      "system_defaults": "NULL",
+      "custom": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "total\tsystem_defaults\tcustom\n0\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 398
+}

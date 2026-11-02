@@ -579,11 +579,10 @@ export function createImageAssetTrustLedgerService(
 
   async function ledgerTransaction<T>(
     operation: string,
-    callback: (tx: DbExecutor) => Promise<T>,
-    existingTx?: DbExecutor
+    callback: (tx: DbExecutor) => Promise<T>
   ) {
     try {
-      return existingTx ? await callback(existingTx) : await store.transaction(callback);
+      return await store.transaction(callback);
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       console.error(`[image trust ledger] ${operation} failed`, error);
@@ -855,10 +854,7 @@ export function createImageAssetTrustLedgerService(
     }
   }
 
-  async function verifyLicenseEvidenceWithExecutor(
-    input: Parameters<LicenseEvidenceVerifier>[0],
-    existingTx?: DbExecutor
-  ): Promise<boolean> {
+  const verifyLicenseEvidence: LicenseEvidenceVerifier = async input => {
     // A malformed client JSON must simply be unusable; never turn it into an
     // inferred entitlement or reveal whether an arbitrary proof id exists.
     if (!input.evidence || !isTrustedLedgerReceiptAsset(input.asset))
@@ -918,10 +914,8 @@ export function createImageAssetTrustLedgerService(
       } catch {
         return false;
       }
-    }, existingTx);
-  }
-
-  const verifyLicenseEvidence: LicenseEvidenceVerifier = input => verifyLicenseEvidenceWithExecutor(input);
+    });
+  };
 
   /**
    * Policy approval is not a permanent entitlement. Re-read the controlled
@@ -929,9 +923,8 @@ export function createImageAssetTrustLedgerService(
    * to be consumed, so expiry/revocation and a substituted storage reference
    * fail closed instead of leaving a stale approval usable.
    */
-  async function verifyCurrentPolicyEvidenceWithExecutor(
-    input: VerifyCurrentPolicyEvidenceInput,
-    existingTx?: DbExecutor
+  async function verifyCurrentPolicyEvidence(
+    input: VerifyCurrentPolicyEvidenceInput
   ): Promise<boolean> {
     if (
       input.originRecordType !== "controlled_upload_receipt" ||
@@ -968,29 +961,15 @@ export function createImageAssetTrustLedgerService(
       } catch {
         return null;
       }
-    }, existingTx);
+    });
     if (!trustedAsset) return false;
 
-    return verifyLicenseEvidenceWithExecutor({
+    return verifyLicenseEvidence({
       evidence: input.evidence,
       asset: trustedAsset,
       originKind: input.originKind,
       projectId: input.projectId,
-    }, existingTx);
-  }
-
-  async function verifyCurrentPolicyEvidence(input: VerifyCurrentPolicyEvidenceInput): Promise<boolean> {
-    return verifyCurrentPolicyEvidenceWithExecutor(input);
-  }
-
-  /** Internal read bridge. The caller owns the transaction and project lock;
-   * receipt and latest license evidence use that same executor, never a new
-   * transaction. All original expiry, revocation and byte/scope checks apply. */
-  async function verifyCurrentPolicyEvidenceInTransaction(
-    tx: DbExecutor, input: VerifyCurrentPolicyEvidenceInput
-  ): Promise<boolean> {
-    if (!tx || typeof tx !== "object") return false;
-    return verifyCurrentPolicyEvidenceWithExecutor(input, tx);
+    });
   }
 
   return {
@@ -1003,7 +982,6 @@ export function createImageAssetTrustLedgerService(
     resolveReceiptAsset,
     verifyLicenseEvidence,
     verifyCurrentPolicyEvidence,
-    verifyCurrentPolicyEvidenceInTransaction,
   };
 }
 

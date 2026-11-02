@@ -1,0 +1,14 @@
+{
+  "query": "SELECT COUNT(*) as total, COUNT(DISTINCT category_name) as categories FROM conversion_check_items WHERE user_id IS NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT COUNT(*) as total, COUNT(DISTINCT category_name) as categories FROM conversion_check_items WHERE user_id IS NULL;",
+  "rows": [
+    {
+      "total": "132",
+      "categories": "20"
+    }
+  ],
+  "messages": [],
+  "stdout": "total\tcategories\n132\t20\n",
+  "stderr": "",
+  "execution_time_ms": 410
+}

@@ -2,18 +2,13 @@ import { bigint, boolean, decimal, index, int, json, longtext, mysqlEnum, mysqlT
 
 // 智能图片知识库 - 图片集（以ASIN为单位）
 export const kbImageSets = mysqlTable("kb_image_sets", {
-  recycleId: varchar("recycleId", { length: 36 }),
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
   workspaceId: int("workspaceId").notNull(),
   asin: varchar("asin", { length: 20 }).notNull(),
-  sourceAsin: varchar("sourceAsin", { length: 10 }),
-  collectionVersion: int("collectionVersion").default(1).notNull(),
   productTitle: varchar("productTitle", { length: 512 }),
   category: varchar("category", { length: 128 }),
   brand: varchar("brand", { length: 128 }),
-  sourceLayout: json("sourceLayout").$type<import("../../shared/amazonImageLayout").AmazonImageLayout>(),
-  videos: json("videos").$type<import("../../shared/knowledgeVideos").KnowledgeVideo[]>(),
   overallAnalysis: text("overallAnalysis"), // Overall visual analysis JSON
   userEditedOverallAnalysis: text("userEditedOverallAnalysis"),
   overallScore: int("overallScore"), // 1-100
@@ -31,7 +26,7 @@ export const kbImageSets = mysqlTable("kb_image_sets", {
   reviewNote: text("reviewNote"),
   reviewedAt: timestamp("reviewedAt"),
   submittedAt: timestamp("submittedAt"),
-  visibility: mysqlEnum("visibility", ["private", "team", "public"]).default("private").notNull(),
+  visibility: mysqlEnum("visibility", ["private", "team", "public"]).default("team").notNull(),
   confirmedAt: timestamp("confirmedAt"),
   // Sync metadata
   originInstanceId: varchar("origin_instance_id", { length: 100 }),
@@ -48,22 +43,8 @@ export type InsertKbImageSet = typeof kbImageSets.$inferInsert;
 
 // 智能图片知识库 - 单张图片分析
 export const kbImages = mysqlTable("kb_images", {
-  recycleId: varchar("recycleId", { length: 36 }),
   id: int("id").autoincrement().primaryKey(),
-  imageSetId: int("imageSetId"),
-  // Independent uploads have no synthetic ASIN; collection images retain their existing scope.
-  userId: int("userId"),
-  workspaceId: int("workspaceId"),
-  uploadTitle: varchar("uploadTitle", { length: 512 }),
-  uploadHash: varchar("uploadHash", { length: 64 }),
-  visibility: mysqlEnum("visibility", ["private", "team"]).default("team").notNull(),
-  tagAccentColor: varchar("tagAccentColor", { length: 30 }),
-  labelStatus: mysqlEnum("labelStatus", ["pending", "queued", "running", "complete", "failed"]).default("pending").notNull(),
-  labelRevision: int("labelRevision").default(0).notNull(),
-  labelRunId: varchar("labelRunId", { length: 100 }),
-  labelError: varchar("labelError", { length: 512 }),
-  sourceUrlHash: varchar("sourceUrlHash", { length: 64 }),
-  thumbnailUrl: varchar("thumbnailUrl", { length: 1024 }),
+  imageSetId: int("imageSetId").notNull(),
   imageUrl: varchar("imageUrl", { length: 1024 }).notNull(), // S3 URL
   imagePosition: mysqlEnum("imagePosition", ["main", "secondary", "aplus", "brand_story"]).notNull(),
   positionIndex: int("positionIndex"), // e.g. secondary image #2
@@ -93,10 +74,7 @@ export const kbImages = mysqlTable("kb_images", {
   analysisConfirmed: int("analysisConfirmed").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, table => ({
-  uploadIdentity: uniqueIndex("kb_image_upload_identity").on(table.workspaceId,table.userId,table.uploadHash),
-  uploadScope: index("kb_image_upload_scope").on(table.workspaceId,table.imageSetId,table.createdAt,table.id),
-}));
+});
 
 export type KbImage = typeof kbImages.$inferSelect;
 

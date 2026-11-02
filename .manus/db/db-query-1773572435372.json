@@ -1,0 +1,9 @@
+{
+  "query": "\nALTER TABLE dev_products\n  ADD COLUMN monthlyRevenue DECIMAL(12,2) COMMENT '月销售额',\n  ADD COLUMN listingDate VARCHAR(50) COMMENT '上架时间',\n  ADD COLUMN fulfillment VARCHAR(20) COMMENT 'FBA/FBM',\n  ADD COLUMN sellerName VARCHAR(255) COMMENT '卖家名称',\n  ADD COLUMN sellerLocation VARCHAR(100) COMMENT '卖家所在地',\n  ADD COLUMN variantCount INT COMMENT '变体数量',\n  ADD COLUMN category VARCHAR(255) COMMENT '类目',\n  ADD COLUMN subcategory VARCHAR(255) COMMENT '子类目',\n  ADD COLUMN monthlyRevenueHistory TEXT COMMENT 'JSON: 月度销售额历史',\n  ADD COLUMN specifications TEXT COMMENT 'JSON: 详细参数键值对',\n  ADD COLUMN description TEXT COMMENT '产品描述',\n  ADD COLUMN imageUrl TEXT COMMENT '产品图片URL',\n  ADD COLUMN searchRank INT COMMENT '搜索排名';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute \nALTER TABLE dev_products\n  ADD COLUMN monthlyRevenue DECIMAL(12,2) COMMENT '月销售额',\n  ADD COLUMN listingDate VARCHAR(50) COMMENT '上架时间',\n  ADD COLUMN fulfillment VARCHAR(20) COMMENT 'FBA/FBM',\n  ADD COLUMN sellerName VARCHAR(255) COMMENT '卖家名称',\n  ADD COLUMN sellerLocation VARCHAR(100) COMMENT '卖家所在地',\n  ADD COLUMN variantCount INT COMMENT '变体数量',\n  ADD COLUMN category VARCHAR(255) COMMENT '类目',\n  ADD COLUMN subcategory VARCHAR(255) COMMENT '子类目',\n  ADD COLUMN monthlyRevenueHistory TEXT COMMENT 'JSON: 月度销售额历史',\n  ADD COLUMN specifications TEXT COMMENT 'JSON: 详细参数键值对',\n  ADD COLUMN description TEXT COMMENT '产品描述',\n  ADD COLUMN imageUrl TEXT COMMENT '产品图片URL',\n  ADD COLUMN searchRank INT COMMENT '搜索排名';\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 6828
+}

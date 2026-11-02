@@ -1,8 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { APP_ERROR_CODES } from "@shared/_core/errors";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, httpLink, TRPCClientError } from "@trpc/client";
-import type { AppRouter } from "../../server/routers";
+import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
@@ -11,8 +10,6 @@ import { MarketplaceProvider } from "./contexts/MarketplaceContext";
 import { getLoginUrl } from "./const";
 import "./index.css";
 import { ClientTransportError, isAuthRequiredError, isRetryableAppError } from "./lib/appError";
-import { getRequestTimeoutMs } from "./lib/requestTimeout";
-import { singleRequestOptInLink } from "./lib/singleRequestOptInLink";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -111,13 +108,24 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
-const httpOptions = {
+const trpcClient = trpc.createClient({
+  links: [
+    httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
       async fetch(input, init) {
         const controller = new AbortController();
+        // Determine timeout based on request type
+        // AI-heavy mutations (imageWorkflow, generate, evaluate, analyze) need longer timeout
         const inputUrl = typeof input === 'string' ? input : (input as Request).url || '';
-        const timeoutMs = getRequestTimeoutMs(inputUrl);
+        const isAiMutation = inputUrl.includes('imageWorkflow') || 
+          inputUrl.includes('generate') || 
+          inputUrl.includes('evaluate') || 
+          inputUrl.includes('analyze') ||
+          inputUrl.includes('adDeep') ||
+          inputUrl.includes('runStage') ||
+          inputUrl.includes('Checklist');
+        const timeoutMs = isAiMutation ? 180000 : 30000; // 180s for AI, 30s for others
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         try {
           const res = await globalThis.fetch(input, {
@@ -140,15 +148,13 @@ const httpOptions = {
         } catch (err) {
           clearTimeout(timeoutId);
           if (err instanceof DOMException && err.name === 'AbortError') {
-            throw new ClientTransportError("请求等待超时；已提交的导入任务可在任务列表查看进度", APP_ERROR_CODES.REQUEST_TIMEOUT, true);
+            throw new ClientTransportError("请求超时，正在重试...", APP_ERROR_CODES.REQUEST_TIMEOUT, true);
           }
           throw err;
         }
       },
-} satisfies Parameters<typeof httpBatchLink<AppRouter>>[0];
-
-const trpcClient = trpc.createClient({
-  links: [singleRequestOptInLink(httpLink<AppRouter>(httpOptions), httpBatchLink<AppRouter>(httpOptions))],
+    }),
+  ],
 });
 
 function installAnalytics() {

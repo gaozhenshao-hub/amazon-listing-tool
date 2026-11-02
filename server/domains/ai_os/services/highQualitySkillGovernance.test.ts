@@ -10,11 +10,11 @@ import {
 } from "./highQualitySkillGovernance";
 
 describe("high-quality Skill governance contract", () => {
-  it("pins the retained governed Skill boundary", () => {
-    expect(HIGH_QUALITY_SKILL_SLUGS.size).toBe(23);
+  it("pins the reviewed 80-Skill boundary", () => {
+    expect(HIGH_QUALITY_SKILL_SLUGS.size).toBe(80);
     expect(HIGH_QUALITY_SKILL_SLUGS.has("listing.bullets.generate")).toBe(true);
-    expect(HIGH_QUALITY_SKILL_SLUGS.has("ad.structure.generate")).toBe(true);
-    expect(HIGH_QUALITY_SKILL_SLUGS.has("dev.analysis.product")).toBe(false);
+    expect(HIGH_QUALITY_SKILL_SLUGS.has("ad.budget.allocation")).toBe(true);
+    expect(HIGH_QUALITY_SKILL_SLUGS.has("dev.analysis.product")).toBe(true);
   });
 
   it("adds governance as manifest metadata without appending it to task prompts", () => {
@@ -71,12 +71,15 @@ describe("high-quality Skill governance contract", () => {
   });
 
   it("classifies operational and decision Skills as review-only", () => {
-    expect(getHighQualitySkillGovernance("ad.structure.generate")).toMatchObject({
+    expect(getHighQualitySkillGovernance("ad.budget.allocation")).toMatchObject({
       kind: "operational_recommendation",
       humanReviewRequired: true,
       automaticExecution: "prohibited",
     });
-    expect(getHighQualitySkillGovernance("dev.market.opportunity")).toBeNull();
+    expect(getHighQualitySkillGovernance("dev.market.opportunity")).toMatchObject({
+      kind: "decision_advisory",
+      humanReviewRequired: true,
+    });
     expect(getHighQualitySkillGovernance("unmanaged.skill")).toBeNull();
   });
 });

@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `conversion_scores` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`comparison_id` int NOT NULL,\n\t`check_item_id` int NOT NULL,\n\t`asin` varchar(20) NOT NULL,\n\t`score` int,\n\t`ai_score` int,\n\t`reason` text,\n\t`ai_reason` text,\n\t`raw_data` text,\n\t`is_locked` int DEFAULT 0,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `conversion_scores_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE `conversion_scores` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`comparison_id` int NOT NULL,\n\t`check_item_id` int NOT NULL,\n\t`asin` varchar(20) NOT NULL,\n\t`score` int,\n\t`ai_score` int,\n\t`reason` text,\n\t`ai_reason` text,\n\t`raw_data` text,\n\t`is_locked` int DEFAULT 0,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `conversion_scores_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 198
+}

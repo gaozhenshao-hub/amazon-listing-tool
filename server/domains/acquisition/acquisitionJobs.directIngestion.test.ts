@@ -4,12 +4,13 @@ const mocks = vi.hoisted(() => ({
   requireDb: vi.fn(),
   registerAiJobHandler: vi.fn(),
   updateAiJobProgress: vi.fn(),
-  BasicAmazonImagesProvider: vi.fn(),
-  normalizeAmazonArtifact: vi.fn(),
+  createConfiguredApifyAmazonProvider: vi.fn(),
+  normalizeApifyAmazonArtifact: vi.fn(),
   ingestAcquisitionAssets: vi.fn(),
   storagePut: vi.fn(),
   getAcquisitionJob: vi.fn(),
-  getBasicImagesProfile: vi.fn(),
+  getActiveAcquisitionProfile: vi.fn(),
+  getAcquisitionBudgetUsage: vi.fn(),
   nextAcquisitionRunAttempt: vi.fn(),
   createAcquisitionRun: vi.fn(),
   updateAcquisitionRun: vi.fn(),
@@ -28,13 +29,18 @@ vi.mock("../../services/aiJobRunner", () => ({
   updateAiJobProgress: mocks.updateAiJobProgress,
 }));
 vi.mock("../../storage", () => ({ storagePut: mocks.storagePut }));
-vi.mock("./basicAmazonProvider", () => ({ BasicAmazonImagesProvider: mocks.BasicAmazonImagesProvider }));
-vi.mock("./amazonNormalizer", () => ({ normalizeAmazonArtifact: mocks.normalizeAmazonArtifact }));
+vi.mock("./apifyProvider", () => ({ createConfiguredApifyAmazonProvider: mocks.createConfiguredApifyAmazonProvider }));
+vi.mock("./amazonNormalizer", () => ({ normalizeApifyAmazonArtifact: mocks.normalizeApifyAmazonArtifact }));
 vi.mock("./assetIngestion", () => ({ ingestAcquisitionAssets: mocks.ingestAcquisitionAssets }));
-vi.mock("./basicProviderProfile", () => ({ getBasicImagesProfile: mocks.getBasicImagesProfile }));
+vi.mock("./providerProfileService", () => ({ getApifyProviderProfile: vi.fn() }));
 vi.mock("./consumerActivation", () => ({ activateConfirmedSnapshotForConsumer: vi.fn() }));
 vi.mock("./snapshotReview", () => ({ confirmSnapshotForDirectIngestion: mocks.confirmSnapshotForDirectIngestion }));
 vi.mock("./postConfirmation", () => ({ triggerConsumerPostConfirmation: mocks.triggerConsumerPostConfirmation }));
+vi.mock("../apiConnections/service", () => ({ isApiConnectionSecretConfigured: vi.fn() }));
+vi.mock("./policy", async () => {
+  const actual = await vi.importActual<typeof import("./policy")>("./policy");
+  return { ...actual, evaluateAcquisitionBudget: vi.fn(() => ({ allowed: true })) };
+});
 vi.mock("./repository", () => ({
   createAcquisitionJob: vi.fn(),
   createAcquisitionRun: mocks.createAcquisitionRun,
@@ -42,8 +48,9 @@ vi.mock("./repository", () => ({
   createSourceSnapshot: mocks.createSourceSnapshot,
   findAcquisitionJobByIdempotency: vi.fn(),
   findFreshConfirmedSnapshot: vi.fn(),
+  getAcquisitionBudgetUsage: mocks.getAcquisitionBudgetUsage,
   getAcquisitionJob: mocks.getAcquisitionJob,
-  getBasicImagesProfile: mocks.getBasicImagesProfile,
+  getActiveAcquisitionProfile: mocks.getActiveAcquisitionProfile,
   nextAcquisitionRunAttempt: mocks.nextAcquisitionRunAttempt,
   updateAcquisitionJob: mocks.updateAcquisitionJob,
   updateAcquisitionRun: mocks.updateAcquisitionRun,
@@ -69,10 +76,10 @@ const aiJob = {
 
 const job = {
   id: 8,
-  consumerType: "kb_images",
   providerProfileId: 3,
   requestedBy: 7,
   requestedCapabilities: ["catalog_basic", "image_gallery"],
+  maxChargeUsd: "0.1000",
   idempotencyKey: "acquisition-job-idempotency-key",
   asin: "B012345678",
 };
@@ -109,14 +116,15 @@ const normalized = {
 
 function arrangeSucceededProvider() {
   mocks.getAcquisitionJob.mockResolvedValue(job);
-  mocks.getBasicImagesProfile.mockResolvedValue(profile);
+  mocks.getActiveAcquisitionProfile.mockResolvedValue(profile);
+  mocks.getAcquisitionBudgetUsage.mockResolvedValue({ dailyChargedUsd: 0, monthlyChargedUsd: 0 });
   mocks.nextAcquisitionRunAttempt.mockResolvedValue(1);
   mocks.createAcquisitionRun.mockResolvedValue(12);
   mocks.updateAcquisitionRun.mockResolvedValue(undefined);
   mocks.updateAcquisitionJob.mockResolvedValue(undefined);
   mocks.storagePut.mockResolvedValue({ storageUri: "s3://artifact" });
   mocks.createRawArtifact.mockResolvedValue(13);
-  mocks.normalizeAmazonArtifact.mockReturnValue(normalized);
+  mocks.normalizeApifyAmazonArtifact.mockReturnValue(normalized);
   mocks.createSourceSnapshot.mockResolvedValue(14);
   mocks.ingestAcquisitionAssets.mockResolvedValue({ total: 1, stored: 1, failed: 0, results: [] });
   mocks.confirmSnapshotForDirectIngestion.mockResolvedValue({
@@ -124,7 +132,8 @@ function arrangeSucceededProvider() {
     projection: { consumerType: "kb_images" },
   });
   mocks.triggerConsumerPostConfirmation.mockResolvedValue({ analysisJobRunId: null, analysisJobStatus: null, analysisJobError: null });
-  mocks.BasicAmazonImagesProvider.mockReturnValue({
+  mocks.createConfiguredApifyAmazonProvider.mockResolvedValue({
+    estimate: vi.fn().mockResolvedValue({ estimatedMaxUsd: 0.1 }),
     fetch: vi.fn().mockResolvedValue({
       status: "succeeded",
       failureCategory: null,
@@ -152,22 +161,14 @@ describe("Amazon acquisition worker direct ingestion", () => {
     expect(result).toMatchObject({ acquisitionJobId: 8, confirmedSnapshotId: 15, status: "confirmed", directIngestion: true });
   });
 
-  it("keeps failed downloads for supplementation without admitting or tagging a partial set", async () => {
-    arrangeSucceededProvider();
-    mocks.ingestAcquisitionAssets.mockResolvedValue({total:4,stored:3,failed:1,imageFailed:0,videoFailed:1,results:[]});
-    const result=await worker()(aiJob);
-    expect(result.status).toBe("review_required");
-    expect(mocks.confirmSnapshotForDirectIngestion).not.toHaveBeenCalled();
-    expect(mocks.triggerConsumerPostConfirmation).not.toHaveBeenCalled();
-    expect(mocks.updateSourceSnapshot).toHaveBeenCalledWith(expect.anything(),1,14,expect.objectContaining({status:"pending_review"}));
-  });
-
   it("fails closed for a partial provider result and does not create a direct ingestion snapshot", async () => {
     mocks.getAcquisitionJob.mockResolvedValue(job);
-    mocks.getBasicImagesProfile.mockResolvedValue(profile);
+    mocks.getActiveAcquisitionProfile.mockResolvedValue(profile);
+    mocks.getAcquisitionBudgetUsage.mockResolvedValue({ dailyChargedUsd: 0, monthlyChargedUsd: 0 });
     mocks.nextAcquisitionRunAttempt.mockResolvedValue(1);
     mocks.createAcquisitionRun.mockResolvedValue(12);
-    mocks.BasicAmazonImagesProvider.mockReturnValue({
+    mocks.createConfiguredApifyAmazonProvider.mockResolvedValue({
+      estimate: vi.fn().mockResolvedValue({ estimatedMaxUsd: 0.1 }),
       fetch: vi.fn().mockResolvedValue({
         status: "partial",
         failureCategory: "partial_result",

@@ -1,0 +1,58 @@
+{
+  "query": "SELECT TABLE_NAME, GROUP_CONCAT(COLUMN_NAME ORDER BY ORDINAL_POSITION SEPARATOR ', ') AS columns FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'off_%' GROUP BY TABLE_NAME ORDER BY TABLE_NAME;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT TABLE_NAME, GROUP_CONCAT(COLUMN_NAME ORDER BY ORDINAL_POSITION SEPARATOR ', ') AS columns FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'off_%' GROUP BY TABLE_NAME ORDER BY TABLE_NAME;",
+  "rows": [
+    {
+      "TABLE_NAME": "off_ai_analysis_logs",
+      "columns": "id, user_id, analysis_type, entity_type, entity_id, input_data, output_data, prompt_used, tokens_used, duration_ms, status, error_message, createdAt"
+    },
+    {
+      "TABLE_NAME": "off_attribution_links",
+      "columns": "id, user_id, campaign_id, collaboration_id, influencer_id, original_url, short_url, amazon_tag, utm_source, utm_medium, utm_campaign, utm_content, click_count, conversion_count, revenue, brb_amount, last_click_at, createdAt, updatedAt"
+    },
+    {
+      "TABLE_NAME": "off_campaign_analytics",
+      "columns": "id, campaign_id, date, impressions, reach, clicks, conversions, revenue, spend, engagements, video_views, shares, comments, saves, brb_revenue, createdAt"
+    },
+    {
+      "TABLE_NAME": "off_campaigns",
+      "columns": "id, user_id, name, description, type, status, target_marketplace, target_asin, target_product_name, budget, spent_amount, start_date, end_date, goals, kpi_targets, tags, createdAt, updatedAt"
+    },
+    {
+      "TABLE_NAME": "off_collaborations",
+      "columns": "id, campaign_id, influencer_id, user_id, stage, agreed_price, payment_status, deliverables, deadline, content_url, tracking_link, notes, createdAt, updatedAt"
+    },
+    {
+      "TABLE_NAME": "off_content_calendar",
+      "columns": "id, user_id, social_account_id, campaign_id, title, content_type, platform, status, scheduled_date, scheduled_time, published_at, content, media_urls, hashtags, ai_generated_content, metrics, notes, createdAt, updatedAt"
+    },
+    {
+      "TABLE_NAME": "off_content_submissions",
+      "columns": "id, collaboration_id, influencer_id, user_id, content_type, content_url, thumbnail_url, caption, status, ai_review_result, human_review_notes, revision_count, published_at, metrics, createdAt, updatedAt"
+    },
+    {
+      "TABLE_NAME": "off_influencer_scores",
+      "columns": "id, influencer_id, overall_score, relevance_score, engagement_score, authenticity_score, cost_efficiency_score, audience_match_score, ai_analysis, scored_for_product, scored_at"
+    },
+    {
+      "TABLE_NAME": "off_influencers",
+      "columns": "id, user_id, platform, handle, display_name, profile_url, avatar_url, email, phone, country, language, category, tags, follower_count, avg_views, avg_likes, engagement_rate, estimated_cpm, price_range, notes, status, source, createdAt, updatedAt"
+    },
+    {
+      "TABLE_NAME": "off_matrix_groups",
+      "columns": "id, user_id, name, description, platform, strategy, account_count, total_followers, total_views, status, ai_content_strategy, createdAt, updatedAt"
+    },
+    {
+      "TABLE_NAME": "off_outreach_messages",
+      "columns": "id, user_id, influencer_id, campaign_id, collaboration_id, channel, direction, subject, body, ai_generated, status, scheduled_at, sent_at, sequence_step, template_id, createdAt"
+    },
+    {
+      "TABLE_NAME": "off_social_accounts",
+      "columns": "id, user_id, platform, account_name, account_id, profile_url, avatar_url, follower_count, following_count, post_count, matrix_group_id, status, access_token, refresh_token, token_expires_at, last_sync_at, notes, createdAt, updatedAt"
+    }
+  ],
+  "messages": [],
+  "stdout": "TABLE_NAME\tcolumns\noff_ai_analysis_logs\tid, user_id, analysis_type, entity_type, entity_id, input_data, output_data, prompt_used, tokens_used, duration_ms, status, error_message, createdAt\noff_attribution_links\tid, user_id, campaign_id, collaboration_id, influencer_id, original_url, short_url, amazon_tag, utm_source, utm_medium, utm_campaign, utm_content, click_count, conversion_count, revenue, brb_amount, last_click_at, createdAt, updatedAt\noff_campaign_analytics\tid, campaign_id, date, impressions, reach, clicks, conversions, revenue, spend, engagements, video_views, shares, comments, saves, brb_revenue, createdAt\noff_campaigns\tid, user_id, name, description, type, status, target_marketplace, target_asin, target_product_name, budget, spent_amount, start_date, end_date, goals, kpi_targets, tags, createdAt, updatedAt\noff_collaborations\tid, campaign_id, influencer_id, user_id, stage, agreed_price, payment_status, deliverables, deadline, content_url, tracking_link, notes, createdAt, updatedAt\noff_content_calendar\tid, user_id, social_account_id, campaign_id, title, content_type, platform, status, scheduled_date, scheduled_time, published_at, content, media_urls, hashtags, ai_generated_content, metrics, notes, createdAt, updatedAt\noff_content_submissions\tid, collaboration_id, influencer_id, user_id, content_type, content_url, thumbnail_url, caption, status, ai_review_result, human_review_notes, revision_count, published_at, metrics, createdAt, updatedAt\noff_influencer_scores\tid, influencer_id, overall_score, relevance_score, engagement_score, authenticity_score, cost_efficiency_score, audience_match_score, ai_analysis, scored_for_product, scored_at\noff_influencers\tid, user_id, platform, handle, display_name, profile_url, avatar_url, email, phone, country, language, category, tags, follower_count, avg_views, avg_likes, engagement_rate, estimated_cpm, price_range, notes, status, source, createdAt, updatedAt\noff_matrix_groups\tid, user_id, name, description, platform, strategy, account_count, total_followers, total_views, status, ai_content_strategy, createdAt, updatedAt\noff_outreach_messages\tid, user_id, influencer_id, campaign_id, collaboration_id, channel, direction, subject, body, ai_generated, status, scheduled_at, sent_at, sequence_step, template_id, createdAt\noff_social_accounts\tid, user_id, platform, account_name, account_id, profile_url, avatar_url, follower_count, following_count, post_count, matrix_group_id, status, access_token, refresh_token, token_expires_at, last_sync_at, notes, createdAt, updatedAt\n",
+  "stderr": "",
+  "execution_time_ms": 1646
+}

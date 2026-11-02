@@ -1,0 +1,26 @@
+{
+  "query": "SHOW COLUMNS FROM dev_projects WHERE Field IN ('phase', 'status');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SHOW COLUMNS FROM dev_projects WHERE Field IN ('phase', 'status');",
+  "rows": [
+    {
+      "Field": "status",
+      "Type": "enum('draft','data_collection','analyzing','scoring','completed','archived')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "draft",
+      "Extra": ""
+    },
+    {
+      "Field": "phase",
+      "Type": "enum('market_analysis','project_execution')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "market_analysis",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nstatus\tenum('draft','data_collection','analyzing','scoring','completed','archived')\tNO\t\tdraft\t\nphase\tenum('market_analysis','project_execution')\tNO\t\tmarket_analysis\t\n",
+  "stderr": "",
+  "execution_time_ms": 56
+}

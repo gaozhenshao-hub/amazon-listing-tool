@@ -1,17 +1,13 @@
 import { z } from "zod";
-import { analyzeCollectedListing, confirmCollectedAnalysis } from '../domains/listing/collectedListing';
-import { ensureCompetitorWorkflow, syncCompetitorWorkflow } from '../domains/listing/competitorWorkflow';
-import { hydrateCompetitorEvidence, startCompetitorPresentation, needsCompetitorPresentation } from '../domains/listing/competitorPresentation';
-import { readJson } from '../../shared/competitorPresentation';
-import { getAiJobRun } from '../services/aiJobRunner';
-import { router } from "../_core/trpc";
-import { protectedProcedure } from "../domains/listing/listingProcedure";
+import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import type { TrpcContext } from "../_core/context";
-import { competitorRevision } from "../repositories/project/competitorWritePolicy";
 import * as db from "../repositories";
-import { COMPARISON_SUMMARY_PROMPT } from "../prompts";
+import { COMPETITOR_ANALYSIS_PROMPT, REVIEW_ANALYSIS_PROMPT, COMPARISON_SUMMARY_PROMPT } from "../prompts";
+import { parseReviewFile, reviewsToText, type ParseResult } from "../reviewParser";
+import { requireDb } from "../repositories/dbClient";
 import { startAmazonAcquisitionJob } from "../domains/acquisition/acquisitionJobs";
+import { findFreshConfirmedSnapshot } from "../domains/acquisition/repository";
+import { loadConfirmedSnapshotForConsumer } from "../domains/acquisition/legacyConsumerProjection";
 import {
   PROJECT_COMPETITOR_ACQUISITION_CAPABILITIES,
   projectCompetitorConsumerRef,
@@ -25,6 +21,7 @@ import {
   comparisonSelectionKey,
   comparisonSellingPointRowsSchema,
   formatComparisonSummary,
+  formatCompetitorAnalysisSummary,
   normalizeSellingPointRows,
   serializeComparisonReport,
 } from "../domains/listing/competitorHumanReview";
@@ -32,7 +29,15 @@ import {
   runEmperorSkill,
   safeParseSkillJSON,
 } from "../domains/ai_os/services/skillRunner";
-type AnalysisSkillSlug = "analysis.competitor.multi";
+import {
+  classifySellerSpriteBatchFailure,
+  type SellerSpriteBatchFailure,
+} from "./sellerSpriteBatchFailure";
+
+type AnalysisSkillSlug =
+  | "listing.competitor.analyze"
+  | "analysis.competitor.multi"
+  | "analysis.review.extract";
 
 async function runAnalysisSkill<T>(input: {
   skillSlug: AnalysisSkillSlug;
@@ -66,90 +71,59 @@ async function runAnalysisSkill<T>(input: {
   return result.parsed;
 }
 
-
-async function scopedProject(ctx: TrpcContext & { user: NonNullable<TrpcContext["user"]> }, projectId: number) {
-  const workspaceId = ctx.workspaceId ?? null;
-  const project = await db.getProjectById(projectId, ctx.user.id, workspaceId);
-  if (!project || project.id !== projectId || project.userId !== ctx.user.id
-    || (project.workspaceId !== null && project.workspaceId !== workspaceId)) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
-  }
-  return project;
-}
+const PROJECT_COMPETITOR_MAX_USD = 0.1;
 
 async function startProjectCompetitorAcquisition(input: {
   projectId: number;
   workspaceId: number;
   userId: number;
   asin: string;
-  refresh?: boolean;
 }) {
   const asin = input.asin.trim().toUpperCase();
   const job = await startAmazonAcquisitionJob({
     workspaceId: input.workspaceId,
     requestedBy: input.userId,
     consumerType: "project_competitor",
-    consumerRef: projectCompetitorConsumerRef(input.projectId, asin, true),
+    consumerRef: projectCompetitorConsumerRef(input.projectId, asin),
     marketplace: "US",
     asin,
     capabilities: [...PROJECT_COMPETITOR_ACQUISITION_CAPABILITIES],
-    cachePolicy: input.refresh ? 'refresh' : 'prefer_cache',
+    cachePolicy: "prefer_cache",
+    maxChargeUsd: PROJECT_COMPETITOR_MAX_USD,
   });
-  if (["failed", "canceled"].includes(job.status)) {
-    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "采集未成功，请查看采集记录后重试" });
-  }
   return {
     asin,
-    status: job.status === "confirmed" ? "captured" as const : "review_required" as const,
+    status: job.status === "confirmed" ? "analysis_queued" as const : "direct_ingestion_pending" as const,
     jobId: job.jobId,
     cacheHitSnapshotId: job.cacheHitSnapshotId,
     analysisJobRunId: "analysisJobRunId" in job ? job.analysisJobRunId : null,
-    reviewRequired: job.status !== "confirmed",
+    directIngestion: true,
+    directIngestionPending: job.status !== "confirmed",
+    reviewRequired: false,
   };
 }
 
-async function resolveCompetitorImagesForDelivery<T extends { imageUrls?: string | null; rawData?:string|null }>(analysis: T) {
+async function resolveCompetitorImagesForDelivery<T extends { imageUrls?: string | null }>(analysis: T) {
+  if (!analysis.imageUrls) return analysis;
   try {
-    const refs = JSON.parse(analysis.imageUrls||'[]');
+    const refs = JSON.parse(analysis.imageUrls);
     if (!Array.isArray(refs)) return analysis;
     const urls = await Promise.all(refs.map((ref: unknown) => typeof ref === "string" ? resolveStoredObjectUrl(ref) : Promise.resolve("")));
-    const raw=readJson(analysis.rawData)||{};
-    const imageAssets=await Promise.all((raw.imageAssets||[]).map(async(a:any)=>({...a,url:await resolveStoredObjectUrl(a.storageKey).catch(()=>'' )})));
-    return { ...analysis, rawData:JSON.stringify({...raw,imageAssets}), imageUrls: JSON.stringify(urls.filter(Boolean)) };
+    return { ...analysis, imageUrls: JSON.stringify(urls.filter(Boolean)) };
   } catch {
     return analysis;
   }
 }
 
 export const analysisRouter = router({
-  analyzeCollected: protectedProcedure.input(z.object({projectId:z.number().int().positive(),analysisId:z.number().int().positive()})).mutation(({ctx,input})=>{
-    if(!ctx.workspaceId)throw new Error('当前工作空间不可用');
-    return analyzeCollectedListing({...input,workspaceId:ctx.workspaceId,userId:ctx.user.id});
-  }),
-  preparePresentation: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), analysisId: z.number().int().positive(), retry: z.boolean().optional() }))
-    .mutation(({ ctx, input }) => {
-      if (!ctx.workspaceId) throw new Error('当前工作空间不可用');
-      return startCompetitorPresentation({ ...input, workspaceId: ctx.workspaceId, userId: ctx.user.id });
-    }),
   // Get all analyses for a project
   listByProject: protectedProcedure
-    .input(z.object({ projectId: z.number().int().positive(),
-      expectedUserId: z.number().int().positive().safe().optional(),
-      expectedWorkspaceId: z.number().int().positive().safe().nullable().optional() }))
+    .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      if (input.expectedUserId !== undefined && input.expectedUserId !== ctx.user.id
-        || input.expectedWorkspaceId !== undefined && input.expectedWorkspaceId !== (ctx.workspaceId ?? null)) {
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "当前身份或工作区已变化，请刷新后重试" });
-      }
-      await scopedProject(ctx, input.projectId);
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      return Promise.all(analyses.map(async record => {
-        const revision = competitorRevision(record);
-        const hydrated = ctx.workspaceId ? await hydrateCompetitorEvidence(record, ctx.workspaceId) : record;
-        const raw = readJson(hydrated.rawData) || {};
-        const job = raw.presentationJobRunId ? await getAiJobRun(raw.presentationJobRunId) : null;
-        return { ...await resolveCompetitorImagesForDelivery(hydrated), revision, presentationNeedsUpdate: needsCompetitorPresentation(record), presentationJob: job ? { status: job.status, progress: job.progress, errorMessage: job.error } : null };
-      }));
+      return Promise.all(analyses.map(resolveCompetitorImagesForDelivery));
     }),
 
   updateSummary: protectedProcedure
@@ -159,20 +133,18 @@ export const analysisRouter = router({
       summary: z.string().trim().min(1).max(20000),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await scopedProject(ctx, input.projectId);
-      const analysis = await db.getPersistedCompetitorAnalysisById(input.analysisId);
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const analysis = await db.getCompetitorAnalysisById(input.analysisId);
       if (!analysis || analysis.projectId !== input.projectId) throw new Error("Competitor analysis not found");
       if (analysis.summaryStatus === "confirmed") throw new Error("已确认的竞品分析需要先解锁才能编辑");
       const updated = await db.updateCompetitorAnalysisSummary(input.analysisId, {
         summary: input.summary,
         incrementVersion: true,
-      }, { projectId: input.projectId, expectedRevision: competitorRevision(analysis), userId: ctx.user.id, workspaceId: ctx.workspaceId ?? null });
+      });
       await registerCompetitorAnalysisArtifact(input.analysisId, "user_edit").catch(error => {
         console.warn("[Analysis] Failed to register analysis draft artifact", error);
       });
-      await ensureCompetitorWorkflow({ businessId: input.projectId, workspaceId: ctx.workspaceId ?? project.workspaceId, userId: ctx.user.id })
-        .then(agent => syncCompetitorWorkflow({ agentRunId: agent.agentRunId }))
-        .catch(error => console.warn('[Analysis] Workflow snapshot sync failed', error));
       return updated;
     }),
 
@@ -183,39 +155,41 @@ export const analysisRouter = router({
       summary: z.string().trim().min(1).max(20000),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await scopedProject(ctx, input.projectId);
-      const analysis = await db.getPersistedCompetitorAnalysisById(input.analysisId);
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const analysis = await db.getCompetitorAnalysisById(input.analysisId);
       if (!analysis || analysis.projectId !== input.projectId) throw new Error("Competitor analysis not found");
       if (analysis.summaryStatus === "confirmed" && analysis.summary !== input.summary) {
         throw new Error("已确认的竞品分析需要先解锁才能修改");
       }
-      const updated = await confirmCollectedAnalysis({...input,userId:ctx.user.id,workspaceId:ctx.workspaceId ?? null});
+      const updated = await db.updateCompetitorAnalysisSummary(input.analysisId, {
+        summary: input.summary,
+        summaryStatus: "confirmed",
+        summaryConfirmedBy: ctx.user.id,
+        summaryConfirmedAt: new Date(),
+        incrementVersion: analysis.summaryStatus !== "confirmed" || analysis.summary !== input.summary,
+      });
       await registerCompetitorAnalysisArtifact(input.analysisId, analysis.summary === input.summary ? "system" : "user_edit").catch(error => {
         console.warn("[Analysis] Failed to register confirmed analysis artifact", error);
       });
-      await ensureCompetitorWorkflow({ businessId: input.projectId, workspaceId: ctx.workspaceId ?? project.workspaceId, userId: ctx.user.id })
-        .then(agent => syncCompetitorWorkflow({ agentRunId: agent.agentRunId }))
-        .catch(error => console.warn('[Analysis] Workflow snapshot sync failed', error));
       return updated;
     }),
 
   unlockSummary: protectedProcedure
     .input(z.object({ projectId: z.number(), analysisId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await scopedProject(ctx, input.projectId);
-      const analysis = await db.getPersistedCompetitorAnalysisById(input.analysisId);
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const analysis = await db.getCompetitorAnalysisById(input.analysisId);
       if (!analysis || analysis.projectId !== input.projectId) throw new Error("Competitor analysis not found");
       const updated = await db.updateCompetitorAnalysisSummary(input.analysisId, {
         summaryStatus: "draft",
         summaryConfirmedBy: null,
         summaryConfirmedAt: null,
-      }, { projectId: input.projectId, expectedRevision: competitorRevision(analysis), userId: ctx.user.id, workspaceId: ctx.workspaceId ?? null });
+      });
       await registerCompetitorAnalysisArtifact(input.analysisId, "user_edit").catch(error => {
         console.warn("[Analysis] Failed to register unlocked analysis artifact", error);
       });
-      await ensureCompetitorWorkflow({ businessId: input.projectId, workspaceId: ctx.workspaceId ?? project.workspaceId, userId: ctx.user.id })
-        .then(agent => syncCompetitorWorkflow({ agentRunId: agent.agentRunId }))
-        .catch(error => console.warn('[Analysis] Workflow snapshot sync failed', error));
       return updated;
     }),
 
@@ -225,7 +199,8 @@ export const analysisRouter = router({
       analysisIds: z.array(z.number()).min(2).max(8),
     }))
     .query(async ({ ctx, input }) => {
-      const project = await scopedProject(ctx, input.projectId);
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
       const report = await db.getLatestCompetitorComparisonReport(
         input.projectId,
         comparisonSelectionKey(input.analysisIds),
@@ -241,7 +216,8 @@ export const analysisRouter = router({
       sellingPointRows: comparisonSellingPointRowsSchema,
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await scopedProject(ctx, input.projectId);
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
       const report = await db.getCompetitorComparisonReportById(input.reportId);
       if (!report || report.projectId !== input.projectId) throw new Error("Competitor comparison report not found");
       if (report.status === "confirmed") throw new Error("已确认的竞品对比需要先解锁才能编辑");
@@ -264,7 +240,8 @@ export const analysisRouter = router({
       sellingPointRows: comparisonSellingPointRowsSchema,
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await scopedProject(ctx, input.projectId);
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
       const report = await db.getCompetitorComparisonReportById(input.reportId);
       if (!report || report.projectId !== input.projectId) throw new Error("Competitor comparison report not found");
       const serializedRows = JSON.stringify(input.sellingPointRows);
@@ -293,7 +270,8 @@ export const analysisRouter = router({
   unlockComparisonReport: protectedProcedure
     .input(z.object({ projectId: z.number(), reportId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await scopedProject(ctx, input.projectId);
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
       const report = await db.getCompetitorComparisonReportById(input.reportId);
       if (!report || report.projectId !== input.projectId) throw new Error("Competitor comparison report not found");
       const updated = await db.updateCompetitorComparisonReport(input.reportId, {
@@ -308,18 +286,53 @@ export const analysisRouter = router({
     }),
 
   // Preview only from an already confirmed controlled snapshot; never calls a provider.
-  collectAsin: protectedProcedure
+  scrapeAsin: protectedProcedure
+    .input(z.object({
+      asin: z.string().min(10).max(10),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.workspaceId) throw new TRPCError({ code: "BAD_REQUEST", message: "当前工作空间不可用" });
+      const database = await requireDb("Confirmed Amazon competitor preview");
+      const confirmed = await findFreshConfirmedSnapshot({
+        db: database,
+        workspaceId: ctx.workspaceId,
+        marketplace: "US",
+        asin: input.asin.toUpperCase(),
+        freshAfter: new Date(0),
+      });
+      if (!confirmed) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该ASIN尚无已直接录入的采集快照，请先创建采集任务并等待完整安全校验完成" });
+      }
+      const snapshot = await loadConfirmedSnapshotForConsumer({
+        db: database,
+        workspaceId: ctx.workspaceId,
+        confirmedSnapshotId: confirmed.id,
+      });
+      const imageUrls = await Promise.all(snapshot.assets
+        .filter((asset: any) => asset.role === "main" || asset.role === "secondary")
+        .sort((a: any, b: any) => a.positionIndex - b.positionIndex)
+        .map((asset: any) => resolveStoredObjectUrl(asset.storageKey)));
+      return {
+        ...snapshot.data,
+        price: snapshot.data.price ? `${snapshot.data.price.value} ${snapshot.data.price.currency}` : null,
+        imageUrls,
+        reviews: [],
+        confirmedSnapshotId: confirmed.id,
+        source: "unified_amazon_acquisition" as const,
+      };
+    }),
+
+  // Analyze a single competitor ASIN - auto-scrape + LLM analysis
+  analyzeAsin: protectedProcedure
     .input(z.object({
       projectId: z.number(),
       asin: z.string().min(10).max(10),
-      refresh: z.boolean().optional(),
-      expectedWorkspaceId: z.number().int().positive().safe().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (!ctx.workspaceId || input.expectedWorkspaceId !== undefined && input.expectedWorkspaceId !== ctx.workspaceId) {
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "当前工作区已变化，请刷新后重试" });
-      }
-      const project = await scopedProject(ctx, input.projectId);
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      await db.updateProject(input.projectId, ctx.user.id, { status: "analyzing" });
 
       if (!project.workspaceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "项目尚未绑定工作空间" });
       return startProjectCompetitorAcquisition({
@@ -327,18 +340,164 @@ export const analysisRouter = router({
         workspaceId: project.workspaceId,
         userId: ctx.user.id,
         asin: input.asin,
-        refresh: input.refresh,
       });
     }),
 
   // Batch analyze multiple ASINs - process sequentially
+  batchAnalyze: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      asins: z.array(z.string().min(10).max(10)).min(1).max(20),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      await db.updateProject(input.projectId, ctx.user.id, { status: "analyzing" });
+
+      // Deduplicate ASINs
+      const uniqueAsins = Array.from(new Set(input.asins));
+
+      if (!project.workspaceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "项目尚未绑定工作空间" });
+      const results: Array<{
+        asin: string;
+        status: "analysis_queued" | "direct_ingestion_pending" | "failed";
+        jobId?: number;
+        directIngestionPending?: boolean;
+        error?: string;
+      }> = [];
+
+      // Process each ASIN sequentially to avoid rate limiting
+      for (const asin of uniqueAsins) {
+        try {
+          const result = await startProjectCompetitorAcquisition({
+            projectId: input.projectId,
+            asin,
+            userId: ctx.user.id,
+            workspaceId: project.workspaceId,
+          });
+          results.push(result);
+        } catch (error: any) {
+          console.error(`[BatchAnalysis] Failed for ${asin}: ${error.message}`);
+          results.push({
+            asin,
+            status: "failed",
+            error: error.message || "Unknown error",
+          });
+        }
+
+      }
+
+      const successCount = results.filter(r => r.status === "analysis_queued").length;
+      const partialCount = results.filter(r => r.status === "direct_ingestion_pending").length;
+      const failedCount = results.filter(r => r.status === "failed").length;
+
+      return {
+        total: uniqueAsins.length,
+        successCount,
+        partialCount,
+        failedCount,
+        results,
+      };
+    }),
+
+  // Manual input analysis - fallback when auto-scrape fails
+  analyzeManual: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      asin: z.string().min(10).max(10),
+      title: z.string().optional(),
+      bulletPoints: z.string().optional(),
+      price: z.string().optional(),
+      rating: z.string().optional(),
+      reviews: z.string().optional(),
+      description: z.string().optional(),
+      brand: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      await db.updateProject(input.projectId, ctx.user.id, { status: "analyzing" });
+
+      // Build context from manual input
+      const contextParts: string[] = [];
+      contextParts.push(`ASIN: ${input.asin}`);
+      if (input.title) contextParts.push(`Title: ${input.title}`);
+      if (input.brand) contextParts.push(`Brand: ${input.brand}`);
+      if (input.bulletPoints) contextParts.push(`Bullet Points:\n${input.bulletPoints}`);
+      if (input.price) contextParts.push(`Price: ${input.price}`);
+      if (input.rating) contextParts.push(`Rating: ${input.rating}/5`);
+      if (input.description) contextParts.push(`Description: ${input.description}`);
+
+      const analysisData = await runAnalysisSkill<any>({
+        skillSlug: "listing.competitor.analyze",
+        userId: ctx.user.id,
+        workspaceId: project.workspaceId,
+        context: `Analyze this competitor product:\n\n${contextParts.join("\n\n")}`,
+        legacySystemPrompt: COMPETITOR_ANALYSIS_PROMPT,
+      });
+      const structuredSummary = formatCompetitorAnalysisSummary(analysisData);
+
+      // Analyze reviews if provided
+      let reviewAnalysis: any = null;
+      if (input.reviews && input.reviews.trim().length > 0) {
+        reviewAnalysis = await runAnalysisSkill<any>({
+          skillSlug: "analysis.review.extract",
+          userId: ctx.user.id,
+          workspaceId: project.workspaceId,
+          context: `Analyze these customer reviews:\n\n${input.reviews}`,
+          legacySystemPrompt: REVIEW_ANALYSIS_PROMPT,
+        });
+      }
+
+      // Parse bullet points into array
+      const bulletPointsArray = input.bulletPoints
+        ? input.bulletPoints.split("\n").filter((line: string) => line.trim().length > 0)
+        : [];
+
+      // Save analysis to database (upsert to prevent duplicates)
+      const saved = await db.upsertCompetitorAnalysis({
+        projectId: input.projectId,
+        asin: input.asin,
+        title: input.title ?? null,
+        bulletPoints: bulletPointsArray.length > 0 ? JSON.stringify(bulletPointsArray) : null,
+        price: input.price ?? null,
+        rating: input.rating ?? null,
+        reviewCount: null,
+        reviewAnalysis: reviewAnalysis ? JSON.stringify(reviewAnalysis) : null,
+        keywords: analysisData.keywords ? JSON.stringify(analysisData.keywords) : null,
+        imageUrls: null,
+        rawData: JSON.stringify({
+          ...analysisData,
+          manualInput: true,
+        }),
+        aiSummary: structuredSummary,
+        summary: structuredSummary,
+        summaryStatus: "draft",
+      });
+      await registerCompetitorAnalysisArtifact(saved.id, "ai_output").catch(error => {
+        console.warn("[Analysis] Failed to register manual competitor artifact", error);
+      });
+
+      return {
+        asin: input.asin,
+        status: "success" as const,
+        analysisId: saved.id,
+        title: input.title,
+        manualInput: true,
+      };
+    }),
+
+  // AI comparison summary - generate diff report and optimization suggestions
   comparisonSummary: protectedProcedure
     .input(z.object({
       projectId: z.number(),
       analysisIds: z.array(z.number()).min(2).max(8),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await scopedProject(ctx, input.projectId);
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
 
       // Fetch all selected analyses
       const allAnalyses = await db.getCompetitorAnalysesByProject(input.projectId);
@@ -347,9 +506,6 @@ export const analysisRouter = router({
 
       if (selectedAnalyses.length !== requestedAnalysisIds.length) {
         throw new Error("部分竞品分析不存在或不属于当前项目");
-      }
-      if (selectedAnalyses.some(a => { const raw=readJson(a.rawData)||{}; return raw.captureOnly || raw.analysisStale || (!a.aiSummary && !a.summary); })) {
-        throw new Error('请先完成所选 Listing 的分析，再生成结构化对比');
       }
 
       // Build comprehensive context for LLM
@@ -366,10 +522,6 @@ export const analysisRouter = router({
         parts.push(`- Price: ${a.price || "N/A"}`);
         parts.push(`- Rating: ${a.rating || "N/A"}`);
         parts.push(`- Review Count: ${a.reviewCount || "N/A"}`);
-        parts.push(`- Long description: ${rawData?.description || rawData?.scrapedData?.description || 'N/A'}`);
-        parts.push(`- Listing analysis: ${a.summary || a.aiSummary || 'N/A'}`);
-        parts.push(`- Review evidence and analysis: ${JSON.stringify(rawData?.presentation?.reviewReport || reviewAnalysis || null)}`);
-        parts.push(`- Sales and variants: ${JSON.stringify(rawData?.research || null)}`);
 
         if (bulletPoints.length > 0) {
           parts.push(`- Bullet Points (${bulletPoints.length}):`);
@@ -451,16 +603,524 @@ export const analysisRouter = router({
       };
     }),
 
-  // Delete a project record.
-  delete: protectedProcedure
-    .input(z.object({ id: z.number().int().positive() }))
+  // Import reviews from Excel/CSV file (base64 encoded)
+  importReviews: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      fileBase64: z.string(),
+      filename: z.string(),
+      // Legacy: optional ASIN for backward compatibility (ignored if file contains ASIN column)
+      asin: z.string().optional(),
+    }))
     .mutation(async ({ ctx, input }) => {
-      const analysis = await db.getPersistedCompetitorAnalysisById(input.id);
-      if (!analysis) throw new TRPCError({ code: "NOT_FOUND", message: "竞品不存在" });
-      await scopedProject(ctx, analysis.projectId);
-      return db.deleteCompetitorAnalysis(input.id, { projectId: analysis.projectId,
-        userId: ctx.user.id, workspaceId: ctx.workspaceId ?? null, expectedRevision: competitorRevision(analysis) });
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      // Decode base64 file
+      const buffer = Buffer.from(input.fileBase64, "base64");
+
+      // Parse the file
+      let parseResult: ParseResult;
+      try {
+        parseResult = parseReviewFile(buffer, input.filename);
+      } catch (error: any) {
+        throw new Error(`\u6587\u4ef6\u89e3\u6790\u5931\u8d25: ${error.message}`);
+      }
+
+      if (parseResult.reviews.length === 0) {
+        throw new Error("\u6587\u4ef6\u4e2d\u672a\u627e\u5230\u6709\u6548\u7684\u8bc4\u8bba\u6570\u636e\u3002\u8bf7\u786e\u4fdd\u6587\u4ef6\u5305\u542b\u8bc4\u8bba\u5185\u5bb9\u5217\u3002");
+      }
+
+      // Get existing competitor analyses for ASIN matching
+      const existingAnalyses = await db.getCompetitorAnalysesByProject(input.projectId);
+      const existingAsinMap = new Map<string, typeof existingAnalyses[0]>();
+      for (const a of existingAnalyses) {
+        existingAsinMap.set(a.asin.toUpperCase(), a);
+      }
+
+      // Group reviews by ASIN (from file or fallback)
+      const reviewsByAsin = new Map<string, typeof parseResult.reviews>();
+      let noAsinReviews: typeof parseResult.reviews = [];
+
+      for (const review of parseResult.reviews) {
+        if (review.asin) {
+          const asinKey = review.asin.toUpperCase();
+          if (!reviewsByAsin.has(asinKey)) reviewsByAsin.set(asinKey, []);
+          reviewsByAsin.get(asinKey)!.push(review);
+        } else {
+          noAsinReviews.push(review);
+        }
+      }
+
+      // If no ASIN column detected, treat all reviews as one group
+      // Use the legacy asin input or "UNKNOWN" as fallback
+      if (reviewsByAsin.size === 0) {
+        const fallbackAsin = input.asin?.toUpperCase() || "UNKNOWN";
+        reviewsByAsin.set(fallbackAsin, parseResult.reviews);
+        noAsinReviews = [];
+      } else if (noAsinReviews.length > 0) {
+        // Assign reviews without ASIN to the most common ASIN in the file
+        const largestAsin = Array.from(reviewsByAsin.entries()).sort((a, b) => b[1].length - a[1].length)[0][0];
+        reviewsByAsin.get(largestAsin)!.push(...noAsinReviews);
+        noAsinReviews = [];
+      }
+
+      // Process each ASIN group
+      const results: Array<{
+        asin: string;
+        status: "matched" | "new" | "failed";
+        reviewCount: number;
+        analysisId?: number;
+        importId?: number;
+        error?: string;
+      }> = [];
+
+      for (const [asin, reviews] of Array.from(reviewsByAsin.entries())) {
+        try {
+          const reviewText = reviewsToText(reviews);
+          const existingAnalysis = existingAsinMap.get(asin);
+
+          const reviewAnalysis = await runAnalysisSkill<any>({
+            skillSlug: "analysis.review.extract",
+            userId: ctx.user.id,
+            workspaceId: project.workspaceId,
+            context: `Analyze these ${reviews.length} customer reviews for ASIN ${asin} imported from a seller tool (\u5356\u5bb6\u7cbe\u7075/SellerSprite):\n\n${reviewText.substring(0, 12000)}`,
+            legacySystemPrompt: REVIEW_ANALYSIS_PROMPT,
+          });
+
+          let analysisId: number;
+
+          if (existingAnalysis) {
+            // ASIN matches existing competitor analysis -> update review data
+            const existingRawData = existingAnalysis.rawData ? JSON.parse(existingAnalysis.rawData) : {};
+            await db.updateCompetitorAnalysisReviews(existingAnalysis.id, {
+              reviewCount: String(reviews.length),
+              reviewAnalysis: reviewAnalysis ? JSON.stringify(reviewAnalysis) : (existingAnalysis.reviewAnalysis ?? undefined),
+              rawData: JSON.stringify({
+                ...existingRawData,
+                importedReviews: true,
+                reviewImport: {
+                  filename: input.filename,
+                  totalRows: parseResult.totalRows,
+                  parsedRows: reviews.length,
+                  skippedRows: 0,
+                  detectedFormat: parseResult.detectedFormat,
+                  columns: parseResult.columns,
+                },
+              }),
+            });
+            analysisId = existingAnalysis.id;
+
+            results.push({ asin, status: "matched", reviewCount: reviews.length, analysisId });
+          } else {
+            // No existing analysis for this ASIN -> run full competitor analysis and create new
+            const analysisData = await runAnalysisSkill<any>({
+              skillSlug: "listing.competitor.analyze",
+              userId: ctx.user.id,
+              workspaceId: project.workspaceId,
+              context: `Analyze this competitor product:\n\nASIN: ${asin}\n\nCustomer Reviews Summary (${reviews.length} reviews imported from file):\n${reviewText.substring(0, 8000)}`,
+              legacySystemPrompt: COMPETITOR_ANALYSIS_PROMPT,
+            });
+            const structuredSummary = formatCompetitorAnalysisSummary(analysisData);
+
+            const saved = await db.upsertCompetitorAnalysis({
+              projectId: input.projectId,
+              asin,
+              title: null,
+              bulletPoints: null,
+              price: null,
+              rating: null,
+              reviewCount: String(reviews.length),
+              reviewAnalysis: reviewAnalysis ? JSON.stringify(reviewAnalysis) : null,
+              keywords: analysisData.keywords ? JSON.stringify(analysisData.keywords) : null,
+              imageUrls: null,
+              rawData: JSON.stringify({
+                ...analysisData,
+                manualInput: true,
+                importedReviews: true,
+                reviewImport: {
+                  filename: input.filename,
+                  totalRows: parseResult.totalRows,
+                  parsedRows: reviews.length,
+                  skippedRows: 0,
+                  detectedFormat: parseResult.detectedFormat,
+                  columns: parseResult.columns,
+                },
+              }),
+              aiSummary: structuredSummary,
+              summary: structuredSummary,
+              summaryStatus: "draft",
+            });
+            await registerCompetitorAnalysisArtifact(saved.id, "ai_output").catch(error => {
+              console.warn("[Analysis] Failed to register imported competitor artifact", error);
+            });
+            analysisId = saved.id;
+
+            results.push({ asin, status: "new", reviewCount: reviews.length, analysisId });
+          }
+
+          // Save import record
+          const importRecord = await db.createReviewImport({
+            projectId: input.projectId,
+            userId: ctx.user.id,
+            asin,
+            filename: input.filename,
+            fileSize: buffer.length,
+            totalRows: parseResult.totalRows,
+            parsedRows: reviews.length,
+            skippedRows: 0,
+            detectedFormat: parseResult.detectedFormat,
+            columns: JSON.stringify(parseResult.columns),
+            analysisId,
+            status: "completed",
+            metadata: JSON.stringify({ autoMatched: !!existingAnalysis }),
+          });
+
+          // Update importId in result
+          const lastResult = results[results.length - 1];
+          if (lastResult) lastResult.importId = importRecord.id;
+        } catch (error: any) {
+          results.push({ asin, status: "failed", reviewCount: reviews.length, error: error.message });
+        }
+      }
+
+      return {
+        status: "success" as const,
+        totalReviews: parseResult.reviews.length,
+        totalAsins: reviewsByAsin.size,
+        detectedAsins: parseResult.detectedAsins,
+        results,
+        reviewStats: {
+          totalRows: parseResult.totalRows,
+          parsedRows: parseResult.parsedRows,
+          skippedRows: parseResult.skippedRows,
+          detectedFormat: parseResult.detectedFormat,
+          columns: parseResult.columns,
+        },
+      };
     }),
 
+  // Preview review file parsing (without running analysis)
+  previewReviewFile: protectedProcedure
+    .input(z.object({
+      fileBase64: z.string(),
+      filename: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const buffer = Buffer.from(input.fileBase64, "base64");
 
+      let parseResult: ParseResult;
+      try {
+        parseResult = parseReviewFile(buffer, input.filename);
+      } catch (error: any) {
+        throw new Error(`文件解析失败: ${error.message}`);
+      }
+
+      // Return preview with first 5 reviews and detected ASINs
+      return {
+        totalRows: parseResult.totalRows,
+        parsedRows: parseResult.parsedRows,
+        skippedRows: parseResult.skippedRows,
+        detectedFormat: parseResult.detectedFormat,
+        columns: parseResult.columns,
+        detectedAsins: parseResult.detectedAsins,
+        previewReviews: parseResult.reviews.slice(0, 5).map(r => ({
+          title: r.title,
+          content: r.content.substring(0, 200) + (r.content.length > 200 ? "..." : ""),
+          rating: r.rating,
+          date: r.date,
+          author: r.author,
+          asin: r.asin,
+        })),
+      };
+    }),
+
+  // Delete an analysis
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      return db.deleteCompetitorAnalysis(input.id);
+    }),
+
+  // ─── Review Import History ─────────────────────────────────────
+
+  // List all review imports for a project
+  listReviewImports: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      return db.getReviewImportsByProject(input.projectId);
+    }),
+
+  // Get a single review import detail
+  getReviewImport: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const record = await db.getReviewImportById(input.id);
+      if (!record) throw new Error("Review import not found");
+      return record;
+    }),
+
+  // Delete a review import record
+  deleteReviewImport: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      return db.deleteReviewImport(input.id);
+    }),
+
+  // Re-analyze reviews from a previous import (uses stored analysisId to find reviews)
+  reAnalyzeImport: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const record = await db.getReviewImportById(input.id);
+      if (!record) throw new Error("Review import not found");
+
+      const project = await db.getProjectById(record.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      // Get the linked analysis to access review data
+      if (!record.analysisId) throw new Error("No linked analysis found for this import");
+
+      const analysis = await db.getCompetitorAnalysesByProject(record.projectId);
+      const linkedAnalysis = analysis.find(a => a.id === record.analysisId);
+      if (!linkedAnalysis) throw new Error("Linked analysis not found");
+
+      // Re-run review analysis with LLM
+      const rawData = linkedAnalysis.rawData ? JSON.parse(linkedAnalysis.rawData) : {};
+      const contextParts: string[] = [];
+      contextParts.push(`ASIN: ${record.asin}`);
+      if (linkedAnalysis.title) contextParts.push(`Title: ${linkedAnalysis.title}`);
+      if (linkedAnalysis.bulletPoints) contextParts.push(`Bullet Points: ${linkedAnalysis.bulletPoints}`);
+      if (linkedAnalysis.price) contextParts.push(`Price: ${linkedAnalysis.price}`);
+      if (linkedAnalysis.rating) contextParts.push(`Rating: ${linkedAnalysis.rating}`);
+
+      await runAnalysisSkill<any>({
+        skillSlug: "listing.competitor.analyze",
+        userId: ctx.user.id,
+        workspaceId: project.workspaceId,
+        context: `Re-analyze this competitor product with updated insights:\n\n${contextParts.join("\n\n")}`,
+        legacySystemPrompt: COMPETITOR_ANALYSIS_PROMPT,
+      });
+
+       // Update the review import status
+      await db.updateReviewImport(input.id, { status: "completed" });
+      return {
+        success: true,
+        importId: input.id,
+        analysisId: record.analysisId,
+        asin: record.asin,
+      };
+    }),
+
+  // ─── Analyze from SellerSprite Excel (产品搜索结果文件) ───────────────
+  analyzeFromSellerSprite: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      fileBase64: z.string(),
+      filename: z.string(),
+      // Optional: only import selected ASINs (empty = import all)
+      selectedAsins: z.array(z.string()).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      // Decode base64 and convert Excel → CSV text for SellerSprite parser
+      const buffer = Buffer.from(input.fileBase64, "base64");
+      const { parseSellerSpriteData } = await import("./sellerSpriteImporter");
+      let csvText: string;
+      const lowerName = input.filename.toLowerCase();
+      if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+        const XLSX = await import("xlsx");
+        const wb = XLSX.read(buffer, { type: "buffer", cellText: true, raw: false });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        csvText = XLSX.utils.sheet_to_csv(ws, { forceQuotes: true });
+      } else {
+        csvText = buffer.toString("utf-8");
+      }
+      const parseResult = parseSellerSpriteData(csvText, undefined);
+
+      if (!parseResult.success || parseResult.products.length === 0) {
+        throw new Error(`文件解析失败: ${parseResult.errors.join("; ") || "未找到有效产品数据"}`);
+      }
+
+      // Filter by selected ASINs if provided
+      const productsToProcess = input.selectedAsins && input.selectedAsins.length > 0
+        ? parseResult.products.filter(p => input.selectedAsins!.includes(p.asin))
+        : parseResult.products;
+
+      if (productsToProcess.length === 0) {
+        throw new Error("没有选中的产品数据可导入");
+      }
+
+      const results: Array<{
+        asin: string;
+        status: "success" | "failed";
+        analysisId?: number;
+        title?: string;
+        error?: string;
+        failure?: SellerSpriteBatchFailure;
+      }> = [];
+
+      for (const product of productsToProcess) {
+        try {
+          // Build context for LLM analysis from SellerSprite data
+          const contextParts: string[] = [];
+          contextParts.push(`ASIN: ${product.asin}`);
+          if (product.title) contextParts.push(`Title: ${product.title}`);
+          if (product.brand) contextParts.push(`Brand: ${product.brand}`);
+          if (product.bulletPoints && product.bulletPoints.length > 0) {
+            contextParts.push(`Bullet Points:\n${product.bulletPoints.map((bp, i) => `${i + 1}. ${bp}`).join("\n")}`);
+          }
+          if (product.price) contextParts.push(`Price: $${product.price}`);
+          if (product.rating) contextParts.push(`Rating: ${product.rating}/5 (${product.reviewCount || 0} reviews)`);
+          if (product.monthlySales) contextParts.push(`Monthly Sales: ${product.monthlySales} units`);
+          if (product.monthlyRevenue) contextParts.push(`Monthly Revenue: $${product.monthlyRevenue}`);
+          if (product.bsrRank) contextParts.push(`BSR: #${product.bsrRank} in ${product.category || "main category"}`);
+          if (product.subCategoryRank) contextParts.push(`Sub-category BSR: #${product.subCategoryRank}`);
+          if (product.launchDate) contextParts.push(`Launch Date: ${product.launchDate}`);
+          if (product.variationCount) contextParts.push(`Variations: ${product.variationCount}`);
+          if (product.fulfillment) contextParts.push(`Fulfillment: ${product.fulfillment}`);
+          if (product.grossMargin) contextParts.push(`Gross Margin: ${(product.grossMargin * 100).toFixed(1)}%`);
+          if (product.hasSPAd) contextParts.push(`SP Ads: Yes`);
+          if (product.hasBrandAd) contextParts.push(`Brand Ads: Yes`);
+          if (product.hasAplus) contextParts.push(`A+ Content: Yes`);
+          if (product.hasBestSeller) contextParts.push(`Badge: Best Seller`);
+          if (product.hasAmazonChoice) contextParts.push(`Badge: Amazon's Choice`);
+          if (product.imageCount) contextParts.push(`Image Count: ${product.imageCount}`);
+
+          const analysisData = await runAnalysisSkill<any>({
+            skillSlug: "listing.competitor.analyze",
+            userId: ctx.user.id,
+            workspaceId: project.workspaceId,
+            context: `Analyze this competitor product from SellerSprite data:\n\n${contextParts.join("\n\n")}`,
+            legacySystemPrompt: COMPETITOR_ANALYSIS_PROMPT,
+          });
+          const structuredSummary = formatCompetitorAnalysisSummary(analysisData);
+
+          const bulletPointsArray = product.bulletPoints || [];
+
+          const saved = await db.upsertCompetitorAnalysis({
+            projectId: input.projectId,
+            asin: product.asin,
+            title: product.title ?? null,
+            bulletPoints: bulletPointsArray.length > 0 ? JSON.stringify(bulletPointsArray) : null,
+            price: product.price ? String(product.price) : null,
+            rating: product.rating ? String(product.rating) : null,
+            reviewCount: product.reviewCount ? String(product.reviewCount) : null,
+            reviewAnalysis: null,
+            keywords: analysisData.keywords ? JSON.stringify(analysisData.keywords) : null,
+            imageUrls: null,
+            rawData: JSON.stringify({
+              ...analysisData,
+              sellerSpriteData: {
+                monthlySales: product.monthlySales,
+                monthlyRevenue: product.monthlyRevenue,
+                bsrRank: product.bsrRank,
+                subCategoryRank: product.subCategoryRank,
+                launchDate: product.launchDate,
+                variationCount: product.variationCount,
+                fulfillment: product.fulfillment,
+                grossMargin: product.grossMargin,
+                fbaFee: product.fbaFee,
+                sellerCount: product.sellerCount,
+                hasSPAd: product.hasSPAd,
+                hasBrandAd: product.hasBrandAd,
+                hasAplus: product.hasAplus,
+                hasBestSeller: product.hasBestSeller,
+                hasAmazonChoice: product.hasAmazonChoice,
+                brand: product.brand,
+                category: product.category,
+                imageCount: product.imageCount,
+              },
+              importSource: "sellersprite_search",
+            }),
+            aiSummary: structuredSummary,
+            summary: structuredSummary,
+            summaryStatus: "draft",
+          });
+          await registerCompetitorAnalysisArtifact(saved.id, "ai_output").catch(error => {
+            console.warn("[Analysis] Failed to register SellerSprite competitor artifact", error);
+          });
+
+          results.push({ asin: product.asin, status: "success", analysisId: saved.id, title: product.title });
+        } catch (err: unknown) {
+          const failure = classifySellerSpriteBatchFailure(err);
+          console.warn("[SellerSpriteBatch] Competitor analysis failed", {
+            asin: product.asin,
+            failureCode: failure.code,
+            retryable: failure.retryable,
+          });
+          results.push({
+            asin: product.asin,
+            status: "failed",
+            error: failure.message,
+            failure,
+          });
+        }
+      }
+
+      return {
+        success: true,
+        totalParsed: parseResult.products.length,
+        processed: results.length,
+        succeeded: results.filter(r => r.status === "success").length,
+        failed: results.filter(r => r.status === "failed").length,
+        results,
+        warnings: parseResult.warnings,
+      };
+    }),
+
+  // Preview SellerSprite Excel file before import (no DB write)
+  previewSellerSpriteFile: protectedProcedure
+    .input(z.object({
+      fileBase64: z.string(),
+      filename: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const buffer = Buffer.from(input.fileBase64, "base64");
+      const { parseSellerSpriteData } = await import("./sellerSpriteImporter");
+      let csvText: string;
+      const lowerName = input.filename.toLowerCase();
+      if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+        const XLSX = await import("xlsx");
+        const wb = XLSX.read(buffer, { type: "buffer", cellText: true, raw: false });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        csvText = XLSX.utils.sheet_to_csv(ws, { forceQuotes: true });
+      } else {
+        csvText = buffer.toString("utf-8");
+      }
+      const parseResult = parseSellerSpriteData(csvText, undefined);
+
+      return {
+        success: parseResult.success,
+        fileType: parseResult.fileType,
+        totalRows: parseResult.totalRows,
+        parsedRows: parseResult.parsedRows,
+        warnings: parseResult.warnings,
+        errors: parseResult.errors,
+        // Return preview of first 60 products with key fields only
+        products: parseResult.products.slice(0, 60).map(p => ({
+          asin: p.asin,
+          title: p.title,
+          brand: p.brand,
+          price: p.price,
+          rating: p.rating,
+          reviewCount: p.reviewCount,
+          monthlySales: p.monthlySales,
+          monthlyRevenue: p.monthlyRevenue,
+          bsrRank: p.bsrRank,
+          subCategoryRank: p.subCategoryRank,
+          launchDate: p.launchDate,
+          fulfillment: p.fulfillment,
+          grossMargin: p.grossMargin,
+          hasSPAd: p.hasSPAd,
+          hasAplus: p.hasAplus,
+          hasBestSeller: p.hasBestSeller,
+          hasAmazonChoice: p.hasAmazonChoice,
+          category: p.category,
+        })),
+      };
+    }),
 });

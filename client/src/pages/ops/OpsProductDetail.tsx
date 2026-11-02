@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import OpsProductPlan from "./OpsProductPlan";
 import OpsProductConversion from "./OpsProductConversion";
 import OpsProductReview from "./OpsProductReview";
 import OpsProductTeam from "./OpsProductTeam";
@@ -87,7 +88,7 @@ export default function OpsProductDetail() {
   const importCountry = importSearch.get("country") || undefined;
 
   // ─── Source-backed unified data query ───
-  const { data: importDetail, isLoading: loadingImport, error: importSourceError } = trpc.dataImport.getProductDetailFromImport.useQuery(
+  const { data: importDetail, isLoading: loadingImport } = trpc.dataImport.getProductDetailFromImport.useQuery(
     { parentAsin: importParentAsin || "", sourceType: sourceType || "lingxing", marketplace: "ALL", storeName: importStoreName, country: importCountry },
     { enabled: isSourceBackedView && !!importParentAsin && !!sourceType }
   );
@@ -213,7 +214,7 @@ export default function OpsProductDetail() {
         category: product.category,
         status: product.status,
         operator: null as string | null,
-        storeName: product.storeName ?? null,
+        storeName: null as string | null,
         chineseName: null as string | null,
         variants: product.variants,
       };
@@ -232,7 +233,6 @@ export default function OpsProductDetail() {
     );
   }
 
-  if (isSourceBackedView && importSourceError) return <section role="alert" className="space-y-3 rounded border p-4"><p>来源数据目前无法安全展示；未将异常、店铺歧义或旧周与受控日的重叠当成空数据／零值。请在赛狐受控同步页查看覆盖与缺口，或指定准确店铺和站点后重新读取。</p><Button variant="outline" onClick={() => navigate("/ops/data-import")}>查看受控来源</Button></section>;
   if (!derivedProduct) {
     return (
       <div className="text-center py-12">
@@ -384,6 +384,7 @@ export default function OpsProductDetail() {
       <Tabs defaultValue="dashboard" className="w-full">
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="dashboard">数据看板</TabsTrigger>
+          <TabsTrigger value="plan" disabled={!productId}>运营计划</TabsTrigger>
           <TabsTrigger value="conversion" disabled={!productId}>转化率对比</TabsTrigger>
           <TabsTrigger value="review" disabled={!productId}>执行复盘</TabsTrigger>
           <TabsTrigger value="team" disabled={!productId}>团队协作</TabsTrigger>
@@ -1166,6 +1167,9 @@ export default function OpsProductDetail() {
       </TabsContent>
 
         {/* ═══ Tab: 运营计划 ═══ */}
+        <TabsContent value="plan" className="mt-4">
+          <OpsProductPlan productId={productId} parentAsin={derivedProduct.parentAsin} productTitle={derivedProduct.title} />
+        </TabsContent>
 
         {/* ═══ Tab: 转化率对比 ═══ */}
         <TabsContent value="conversion" className="mt-4">
@@ -1179,7 +1183,7 @@ export default function OpsProductDetail() {
 
         {/* ═══ Tab: 团队协作 ═══ */}
         <TabsContent value="team" className="mt-4">
-          <OpsProductTeam parentAsin={derivedProduct.parentAsin} storeName={derivedProduct.storeName} country={derivedProduct.marketplace} />
+          <OpsProductTeam productId={productId} parentAsin={derivedProduct.parentAsin} />
         </TabsContent>
       </Tabs>
 

@@ -61,7 +61,7 @@ export const LISTING_GENERATION_NODE_MAP = {
 } as const;
 
 export type ListingGenerationNodeKey = keyof typeof LISTING_GENERATION_NODE_MAP;
-export type ListingAgentNodeId = 'C1' | `N${0 | 1 | 2 | 3 | 4 | 5}` | `G${1 | 2 | 3 | 4 | 5}` | "E1" | "O1";
+export type ListingAgentNodeId = `N${0 | 1 | 2 | 3 | 4 | 5}` | `G${1 | 2 | 3 | 4 | 5}` | "E1" | "O1";
 
 /**
  * Ensure Agent Run exists for the listing project.
@@ -300,7 +300,7 @@ export async function syncListingNodeDraft(input: {
 
 export async function syncListingPreparationNodeConfirmed(input: {
   agentRunId?: string | null;
-  nodeId: `N${0 | 1 | 2 | 3 | 4 | 5}` | 'C1';
+  nodeId: `N${0 | 1 | 2 | 3 | 4 | 5}`;
   projectId: number;
   userId: number;
   workspaceId?: number | null;

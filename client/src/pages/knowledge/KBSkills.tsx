@@ -1,0 +1,947 @@
+import { useState, useRef, useMemo, useEffect } from "react";
+import { trpc } from "@/lib/trpc";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
+import { Loader2, PlusCircle, Link2, Upload, BookOpen, CheckCircle, Edit3, Trash2, Sparkles, Search, FileText, FileSpreadsheet, Presentation, Image as ImageIcon, File, AlertCircle, FolderOpen, Tag, Send, Camera, X, Check, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
+import { toast } from "sonner";
+import { TagEditor } from "@/components/TagEditor";
+import { usePermissions } from "@/hooks/usePermissions";
+import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
+import { SopContentRenderer, isSopContent } from "@/components/SopContentRenderer";
+
+const SOP_TAG_SUGGESTIONS = [
+  "广告投放", "库存管理", "Listing优化", "财务分析", "选品方法",
+  "物流仓储", "评论管理", "品牌运营", "新品上架", "促销活动",
+  "PPC策略", "SP广告", "SB广告", "SD广告", "DSP广告",
+  "关键词研究", "竞品分析", "价格策略", "A+内容", "品牌旗舰店",
+  "FBA补货", "FBM运营", "客服模板", "差评处理", "账号安全",
+];
+
+const FILE_TYPE_ICONS: Record<string, any> = {
+  pdf: FileText, doc: FileText, docx: FileText,
+  xls: FileSpreadsheet, xlsx: FileSpreadsheet, csv: FileSpreadsheet,
+  ppt: Presentation, pptx: Presentation,
+  md: FileText, txt: FileText, xmind: FolderOpen, mm: FolderOpen, opml: FolderOpen,
+  png: ImageIcon, jpg: ImageIcon, jpeg: ImageIcon, gif: ImageIcon, webp: ImageIcon,
+};
+
+const FORMAT_GROUPS = [
+  { label: "文档", formats: ["PDF", "Word", "Markdown", "TXT"], color: "text-blue-600" },
+  { label: "表格", formats: ["Excel", "CSV"], color: "text-emerald-600" },
+  { label: "演示", formats: ["PPT", "PPTX"], color: "text-orange-600" },
+  { label: "思维导图", formats: ["XMind", "FreeMind"], color: "text-purple-600" },
+  { label: "图片", formats: ["PNG", "JPG", "WebP"], color: "text-rose-600" },
+];
+
+const SUPPORTED_FORMATS = ".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.xmind,.mm,.opml";
+
+const CATEGORY_OPTIONS = [
+  { value: "all", label: "全部分类" },
+  { value: "advertising", label: "广告投放" },
+  { value: "inventory", label: "库存管理" },
+  { value: "listing", label: "Listing优化" },
+  { value: "finance", label: "财务分析" },
+  { value: "selection", label: "选品方法" },
+  { value: "logistics", label: "物流仓储" },
+  { value: "review", label: "评论管理" },
+  { value: "brand", label: "品牌运营" },
+  { value: "other", label: "其他" },
+];
+
+/** Count how many OCR image sections exist in extractedContent */
+function countOcrImages(extractedContent: string | null | undefined): number {
+  if (!extractedContent) return 0;
+  const matches = extractedContent.match(/=== 补充图片内容（AI识别）===/g);
+  if (matches) return matches.length; // each merge appends one section
+  // Also count individual image entries within sections
+  const imgMatches = extractedContent.match(/\[图片\d+\]:|^\[.+?\]:/gm);
+  return imgMatches ? imgMatches.length : 0;
+}
+
+/** Count images from a single OCR section more accurately */
+function countOcrImagesAccurate(extractedContent: string | null | undefined): number {
+  if (!extractedContent) return 0;
+  // Count lines matching "[filename]: text" pattern inside OCR sections
+  const sectionStart = extractedContent.indexOf("=== 补充图片内容（AI识别）===");
+  if (sectionStart === -1) return 0;
+  const ocrSection = extractedContent.slice(sectionStart);
+  // Count entries like "[图片1]: " or "[filename.jpg]: "
+  const entries = ocrSection.match(/^\[.+?\]:/gm);
+  return entries ? entries.length : 0;
+}
+
+export default function KBSkills() {
+  const { canEdit, canDelete } = usePermissions();
+  const allowEdit = canEdit('knowledge', 'kb_skills');
+  const allowDelete = canDelete('knowledge', 'kb_skills');
+  const utils = trpc.useUtils();
+  const [scope, setScope] = useState<KBScope>("mine");
+  const { data: items, isLoading } = trpc.kbSkills.list.useQuery({ scope });
+  const [showImport, setShowImport] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualContent, setManualContent] = useState("");
+  const [manualTags, setManualTags] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterCategory, setFilterCategory] = useState("all");
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [editingAnalysis, setEditingAnalysis] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadingFileName, setUploadingFileName] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<globalThis.File[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Image enrichment state — two-step OCR flow
+  const [showImageUpload, setShowImageUpload] = useState(false);
+  const [enrichImages, setEnrichImages] = useState<{ file: File; preview: string }[]>([]);
+  const [isOcring, setIsOcring] = useState(false);
+  const [enrichDragOver, setEnrichDragOver] = useState(false);
+  const enrichFileRef = useRef<HTMLInputElement>(null);
+
+  // Step 2: OCR result review state
+  const [ocrResults, setOcrResults] = useState<{ index: number; fileName: string; ocrText: string }[]>([]);
+  const [showOcrReview, setShowOcrReview] = useState(false);
+  const [isMerging, setIsMerging] = useState(false);
+
+  // Regenerate summaries state
+  const [showRegenDialog, setShowRegenDialog] = useState(false);
+  const [regenForceAll, setRegenForceAll] = useState(false);
+  const [regenProgress, setRegenProgress] = useState<null | { total: number; processed: number; succeeded: number; failed: number; hasMore: boolean; remainingCount: number; results: { id: number; title: string; success: boolean; error?: string }[] }>(null);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [regenRound, setRegenRound] = useState(0); // increments to trigger next batch
+
+  const { data: detail } = trpc.kbSkills.getById.useQuery({ id: detailId! }, { enabled: !!detailId });
+
+  // Migration stats query
+  const migrationStatsQuery = trpc.kbSkills.getSummaryMigrationStats.useQuery(undefined, {
+    enabled: showRegenDialog,
+    refetchOnWindowFocus: false,
+  });
+
+  const importUrl = trpc.kbSkills.importByUrl.useMutation({
+    onSuccess: () => { toast.success("已导入链接，AI正在分析..."); utils.kbSkills.list.invalidate(); setShowImport(false); setUrlInput(""); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const uploadFile = trpc.kbSkills.uploadFile.useMutation({
+    onSuccess: () => { toast.success("文件上传成功，AI正在分析..."); utils.kbSkills.list.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const batchUpload = trpc.kbSkills.batchUploadFiles.useMutation({
+    onSuccess: (r: any) => { toast.success(`已上传 ${r.uploaded} 个文件`); utils.kbSkills.list.invalidate(); setShowImport(false); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const createManual = trpc.kbSkills.createManual.useMutation({
+    onSuccess: () => { toast.success("已创建SOP文档"); utils.kbSkills.list.invalidate(); setShowImport(false); setManualTitle(""); setManualContent(""); setManualTags(""); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const submitReviewMutation = trpc.kbReview.submitForReview.useMutation({
+    onSuccess: () => { toast.success("已提交审核，等待管理员审批"); utils.kbSkills.getById.invalidate({ id: detailId! }); utils.kbSkills.list.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const confirmMutation = trpc.kbSkills.confirmSummary.useMutation({
+    onSuccess: () => { toast.success("已确认入库"); utils.kbSkills.list.invalidate(); utils.kbSkills.getById.invalidate({ id: detailId! }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const deleteMutation = trpc.kbSkills.delete.useMutation({
+    onSuccess: () => { toast.success("已删除"); utils.kbSkills.list.invalidate(); setDetailId(null); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const regenerateMutation = trpc.kbSkills.regenerateSummaries.useMutation({
+    onSuccess: (r: any) => {
+      setRegenProgress(r);
+      setIsRegenerating(false);
+      if (r.succeeded > 0) {
+        utils.kbSkills.list.invalidate();
+        migrationStatsQuery.refetch();
+      }
+      if (r.hasMore) {
+        // Auto-continue next batch after short delay
+        setTimeout(() => setRegenRound(prev => prev + 1), 800);
+      } else {
+        toast.success(`摘要重新生成完成：成功 ${r.succeeded} 条，失败 ${r.failed} 条`);
+      }
+    },
+    onError: (e: any) => { toast.error(e.message); setIsRegenerating(false); },
+  });
+
+  // Auto-continue batches
+  useEffect(() => {
+    if (regenRound === 0) return;
+    if (!isRegenerating) return;
+    regenerateMutation.mutate({ forceAll: regenForceAll });
+  }, [regenRound]);
+
+  // Step 1: OCR only — returns results for user review
+  const ocrImagesMutation = trpc.kbSkills.ocrImages.useMutation({
+    onSuccess: (r: any) => {
+      setIsOcring(false);
+      if (!r.results || r.results.length === 0) {
+        toast.warning("所有图片均未识别到有效文字内容");
+        return;
+      }
+      setOcrResults(r.results);
+      setShowOcrReview(true);
+      toast.success(`已识别 ${r.recognizedCount}/${r.results.length} 张图片，请确认后合并`);
+    },
+    onError: (e: any) => { toast.error(e.message); setIsOcring(false); },
+  });
+
+  // Step 2: Merge confirmed OCR texts
+  const mergeOcrMutation = trpc.kbSkills.mergeOcrTexts.useMutation({
+    onSuccess: (r: any) => {
+      toast.success(r.message || `已合并 ${r.mergedCount} 张图片内容，正在重新分析...`);
+      utils.kbSkills.getById.invalidate({ id: detailId! });
+      utils.kbSkills.list.invalidate();
+      setEnrichImages([]);
+      setOcrResults([]);
+      setShowOcrReview(false);
+      setShowImageUpload(false);
+      setIsMerging(false);
+    },
+    onError: (e: any) => { toast.error(e.message); setIsMerging(false); },
+  });
+
+  const addEnrichImages = (files: File[]) => {
+    const newImgs = files.slice(0, 20).map(file => ({
+      file,
+      preview: URL.createObjectURL(file),
+    }));
+    setEnrichImages(prev => [...prev, ...newImgs].slice(0, 20));
+  };
+
+  const removeEnrichImage = (idx: number) => {
+    setEnrichImages(prev => {
+      URL.revokeObjectURL(prev[idx].preview);
+      return prev.filter((_, i) => i !== idx);
+    });
+  };
+
+  const handleOcrSubmit = async () => {
+    if (!enrichImages.length || !detailId) return;
+    setIsOcring(true);
+    const images = await Promise.all(enrichImages.map(({ file }) =>
+      new Promise<{ base64: string; mimeType: string; fileName: string }>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve({
+          base64: (e.target?.result as string).split(",")[1],
+          mimeType: file.type,
+          fileName: file.name,
+        });
+        reader.readAsDataURL(file);
+      })
+    ));
+    ocrImagesMutation.mutate({ id: detailId, images });
+  };
+
+  const handleMergeConfirm = () => {
+    if (!detailId) return;
+    const validTexts = ocrResults.filter(r => r.ocrText.trim());
+    if (validTexts.length === 0) {
+      toast.warning("没有有效的图片内容可合并，请编辑识别文本后再确认");
+      return;
+    }
+    setIsMerging(true);
+    mergeOcrMutation.mutate({
+      id: detailId,
+      confirmedTexts: validTexts.map(r => ({ fileName: r.fileName, ocrText: r.ocrText })),
+    });
+  };
+
+  const updateTagsMutation = trpc.kbSkills.updateTags?.useMutation?.({
+    onSuccess: () => { toast.success("标签已更新"); utils.kbSkills.getById.invalidate({ id: detailId! }); utils.kbSkills.list.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+    uploading: { label: "上传中", variant: "secondary" },
+    parsing: { label: "解析中", variant: "secondary" },
+    analyzing: { label: "AI分析中", variant: "secondary" },
+    pending_review: { label: "待确认", variant: "default" },
+    confirmed: { label: "已入库", variant: "outline" },
+  };
+
+  const getFileIcon = (filename: string) => {
+    const ext = (filename || "").split(".").pop()?.toLowerCase() || "";
+    const Icon = FILE_TYPE_ICONS[ext] || File;
+    return <Icon className="h-4 w-4" />;
+  };
+
+  const getFileSize = (size: number) => {
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const oversized = files.filter(f => f.size > 10 * 1024 * 1024);
+    if (oversized.length > 0) {
+      toast.error(`${oversized.length} 个文件超过10MB限制: ${oversized.map(f => f.name).join(", ")}`);
+      const valid = files.filter(f => f.size <= 10 * 1024 * 1024);
+      setSelectedFiles(prev => [...prev, ...valid]);
+    } else {
+      setSelectedFiles(prev => [...prev, ...files]);
+    }
+    toast.success(`已选择 ${files.length} 个文件`);
+  };
+
+  const handleFileUpload = async () => {
+    if (selectedFiles.length === 0) return;
+    setUploading(true);
+    setUploadProgress(0);
+    try {
+      const fileDataArray: { filename: string; base64: string; mimeType: string }[] = [];
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        setUploadingFileName(file.name);
+        setUploadProgress(Math.round(((i) / selectedFiles.length) * 50));
+        const buffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let j = 0; j < bytes.length; j++) binary += String.fromCharCode(bytes[j]);
+        const base64 = btoa(binary);
+        fileDataArray.push({ filename: file.name, base64, mimeType: file.type || "application/octet-stream" });
+      }
+      setUploadProgress(60);
+      setUploadingFileName("正在上传到服务器...");
+      if (fileDataArray.length === 1) {
+        uploadFile.mutate({ title: fileDataArray[0].filename, fileName: fileDataArray[0].filename, fileBase64: fileDataArray[0].base64, mimeType: fileDataArray[0].mimeType });
+      } else {
+        batchUpload.mutate({ files: fileDataArray.map(f => ({ title: f.filename, fileName: f.filename, mimeType: f.mimeType, fileBase64: f.base64 })) });
+      }
+      setUploadProgress(100);
+      setSelectedFiles([]);
+      setShowImport(false);
+    } catch (err: any) {
+      toast.error("文件读取失败: " + err.message);
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+      setUploadingFileName("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const filtered = useMemo(() => {
+    return (items as any[] || []).filter((item: any) => {
+      if (filterCategory !== "all") {
+        const tags = (item.tags || "").toLowerCase();
+        const category = (item.category || "").toLowerCase();
+        if (!tags.includes(filterCategory) && category !== filterCategory) return true;
+      }
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      let summaryText = item.aiSummary || "";
+      try { const p = JSON.parse(summaryText); summaryText = (p.briefSummary || "") + " " + (p.summary || ""); } catch {}
+      return (item.title || "").toLowerCase().includes(q) || (item.tags || "").toLowerCase().includes(q) || (item.sourceType || "").toLowerCase().includes(q) || summaryText.toLowerCase().includes(q);
+    });
+  }, [items, searchQuery, filterCategory]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <BookOpen className="h-6 w-6 text-green-500" />
+            智能运营SOP知识库
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">支持文档/表格/PPT/PDF/思维导图/图片批量导入，AI自动提取摘要和关键步骤</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowRegenDialog(true)} className="gap-2 text-amber-700 border-amber-300 hover:bg-amber-50">
+            <RefreshCw className="h-4 w-4" /> 重新生成摘要
+          </Button>
+          <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 添加SOP</Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-3 items-center">
+        <KBScopeToggle value={scope} onChange={setScope} />
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="搜索标题、标签、内容..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+        </div>
+        <Select value={filterCategory} onValueChange={setFilterCategory}>
+          <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {CATEGORY_OPTIONS.map(opt => (
+              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Badge variant="secondary" className="h-9 px-3 flex items-center">{filtered.length} 条</Badge>
+      </div>
+
+      {/* ── Regenerate Summaries Dialog ───────────────────────────────────── */}
+      <Dialog open={showRegenDialog} onOpenChange={(v) => { if (!isRegenerating) setShowRegenDialog(v); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5 text-amber-600" />
+              批量重新生成AI摘要
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Stats */}
+            {migrationStatsQuery.isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> 正在检测旧格式条目...
+              </div>
+            ) : migrationStatsQuery.data ? (
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div>
+                    <div className="text-2xl font-bold">{migrationStatsQuery.data.total}</div>
+                    <div className="text-xs text-muted-foreground">总条目</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-amber-600">{migrationStatsQuery.data.needsMigration}</div>
+                    <div className="text-xs text-muted-foreground">需更新</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-green-600">{migrationStatsQuery.data.alreadyMigrated}</div>
+                    <div className="text-xs text-muted-foreground">已是新格式</div>
+                  </div>
+                </div>
+                {migrationStatsQuery.data.needsMigration > 0 && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    旧格式条目缺少 briefSummary、actionSteps、applicableScenarios 等字段
+                  </p>
+                )}
+              </div>
+            ) : null}
+
+            {/* Options */}
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={regenForceAll}
+                  onChange={e => setRegenForceAll(e.target.checked)}
+                  className="rounded"
+                  disabled={isRegenerating}
+                />
+                <span className="text-sm">强制重新生成所有条目（包括已是新格式的）</span>
+              </label>
+              <p className="text-xs text-muted-foreground pl-6">
+                默认只更新旧格式条目，每批最多处理20条，有更多时自动继续
+              </p>
+            </div>
+
+            {/* Progress */}
+            {regenProgress && (
+              <div className="rounded-lg border p-4 space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">处理进度</span>
+                  <span className="text-muted-foreground">
+                    {regenProgress.succeeded + regenProgress.failed} / {regenProgress.total}
+                  </span>
+                </div>
+                <Progress
+                  value={regenProgress.total > 0 ? ((regenProgress.succeeded + regenProgress.failed) / regenProgress.total) * 100 : 0}
+                  className="h-2"
+                />
+                <div className="flex gap-4 text-xs">
+                  <span className="text-green-600">✓ 成功 {regenProgress.succeeded}</span>
+                  <span className="text-red-500">✗ 失败 {regenProgress.failed}</span>
+                  {regenProgress.hasMore && (
+                    <span className="text-amber-600 flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      还剩 {regenProgress.remainingCount} 条...
+                    </span>
+                  )}
+                </div>
+                {/* Result details */}
+                {regenProgress.results.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {regenProgress.results.map(r => (
+                      <div key={r.id} className="flex items-center gap-2 text-xs">
+                        {r.success
+                          ? <CheckCircle className="h-3 w-3 text-green-500 shrink-0" />
+                          : <AlertCircle className="h-3 w-3 text-red-400 shrink-0" />}
+                        <span className="truncate flex-1">{r.title}</span>
+                        {!r.success && r.error && <span className="text-red-400 shrink-0">{r.error}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => { setShowRegenDialog(false); setRegenProgress(null); }} disabled={isRegenerating}>
+                {regenProgress && !regenProgress.hasMore ? "关闭" : "取消"}
+              </Button>
+              <Button
+                onClick={() => {
+                  setIsRegenerating(true);
+                  setRegenProgress(null);
+                  setRegenRound(0);
+                  regenerateMutation.mutate({ forceAll: regenForceAll });
+                }}
+                disabled={isRegenerating || (migrationStatsQuery.data?.needsMigration === 0 && !regenForceAll)}
+                className="gap-2"
+              >
+                {isRegenerating ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> 生成中...</>
+                ) : (
+                  <><RefreshCw className="h-4 w-4" /> 开始生成</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Supported formats info */}
+      <div className="flex flex-wrap gap-4 items-center text-xs">
+        {FORMAT_GROUPS.map(group => (
+          <div key={group.label} className="flex items-center gap-1">
+            <span className={`font-medium ${group.color}`}>{group.label}:</span>
+            {group.formats.map(f => (
+              <Badge key={f} variant="outline" className="text-[10px] h-5">{f}</Badge>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
+      ) : filtered.length === 0 ? (
+        <Card>
+          <CardContent className="py-16 text-center">
+            <BookOpen className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+            <p className="text-sm font-medium text-muted-foreground">暂无SOP文档</p>
+            <p className="text-xs text-muted-foreground mt-1">上传文件或手动创建SOP，AI将自动提取摘要</p>
+            <Button variant="outline" className="mt-4 gap-2" onClick={() => setShowImport(true)}><PlusCircle className="h-4 w-4" /> 添加第一个SOP</Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((item: any) => {
+            const status = statusMap[item.status] || { label: item.status, variant: "secondary" as const };
+            const ocrCount = countOcrImagesAccurate(item.extractedContent);
+            return (
+              <Card key={item.id} className="cursor-pointer hover:shadow-md transition-all" onClick={() => { setDetailId(item.id); setEditingAnalysis(""); }}>
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 text-muted-foreground">{getFileIcon(item.originalFilename || item.title || "")}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <h3 className="font-medium text-sm truncate">{item.title}</h3>
+                        <Badge variant={status.variant} className="text-xs shrink-0">{status.label}</Badge>
+                        {/* Image OCR badge */}
+                        {ocrCount > 0 && (
+                          <Badge variant="outline" className="text-[10px] shrink-0 gap-1 border-amber-300 text-amber-700 bg-amber-50">
+                            <Camera className="h-3 w-3" />
+                            {ocrCount}张图片已识别
+                          </Badge>
+                        )}
+                      </div>
+                      {item.aiSummary && (() => {
+                        try {
+                          const parsed = JSON.parse(item.aiSummary);
+                          const text = parsed.briefSummary || parsed.summary || "";
+                          return text ? <p className="text-xs text-muted-foreground line-clamp-2">{text}</p> : null;
+                        } catch {
+                          // Fallback: show raw text if not valid JSON (legacy data)
+                          return <p className="text-xs text-muted-foreground line-clamp-2">{item.aiSummary}</p>;
+                        }
+                      })()}
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {item.sourceType && <Badge variant="outline" className="text-[10px]">{item.sourceType}</Badge>}
+                        {item.tags && (item.tags as string).split(",").filter(Boolean).map((tag: string) => (
+                          <Badge key={tag} variant="secondary" className="text-[10px]">{tag.trim()}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0">{item.createdAt ? new Date(item.createdAt).toLocaleDateString() : ""}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Import Dialog */}
+      <Dialog open={showImport} onOpenChange={setShowImport}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>添加SOP文档</DialogTitle></DialogHeader>
+          <Tabs defaultValue="upload">
+            <TabsList className="w-full">
+              <TabsTrigger value="upload" className="flex-1 gap-1.5"><Upload className="h-3.5 w-3.5" /> 文件上传</TabsTrigger>
+              <TabsTrigger value="url" className="flex-1 gap-1.5"><Link2 className="h-3.5 w-3.5" /> 链接导入</TabsTrigger>
+              <TabsTrigger value="manual" className="flex-1 gap-1.5"><Edit3 className="h-3.5 w-3.5" /> 手动创建</TabsTrigger>
+            </TabsList>
+            <TabsContent value="upload" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>选择文件（支持批量上传，拖拽或点击）</Label>
+                <div
+                  className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${isDragOver ? "border-primary bg-primary/5 scale-[1.01]" : "hover:border-primary/50"}`}
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); }}
+                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); const files = Array.from(e.dataTransfer.files); setSelectedFiles(prev => [...prev, ...files]); toast.success(`已添加 ${files.length} 个文件`); }}
+                >
+                  <Upload className={`h-8 w-8 mx-auto mb-2 ${isDragOver ? "text-primary" : "text-muted-foreground/50"}`} />
+                  <p className="text-sm font-medium">{isDragOver ? "释放文件到此处" : "点击或拖拽文件到此处"}</p>
+                  <p className="text-xs text-muted-foreground mt-1.5">支持 PDF、Word、Excel、PPT、Markdown、TXT、思维导图、图片</p>
+                  <p className="text-[10px] text-muted-foreground mt-1 flex items-center justify-center gap-1">
+                    <AlertCircle className="h-3 w-3" /> 单文件最大10MB
+                  </p>
+                </div>
+                <input ref={fileInputRef} type="file" accept={SUPPORTED_FORMATS} multiple className="hidden" onChange={handleFileSelect} />
+                {selectedFiles.length > 0 && (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto border rounded-lg p-2">
+                    {selectedFiles.map((file, i) => (
+                      <div key={i} className="flex items-center gap-2 px-2 py-1.5 bg-muted/50 rounded-md text-sm">
+                        <span className="text-muted-foreground">{getFileIcon(file.name)}</span>
+                        <span className="truncate flex-1 text-xs">{file.name}</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">{getFileSize(file.size)}</span>
+                        {file.size > 10 * 1024 * 1024 && <AlertCircle className="h-3 w-3 text-destructive shrink-0" />}
+                        <button onClick={(e) => { e.stopPropagation(); removeFile(i); }} className="text-destructive hover:text-destructive/80 text-xs shrink-0">删除</button>
+                      </div>
+                    ))}
+                    <div className="text-xs text-muted-foreground text-right pt-1">
+                      共 {selectedFiles.length} 个文件，{getFileSize(selectedFiles.reduce((s, f) => s + f.size, 0))}
+                    </div>
+                  </div>
+                )}
+                {uploading && (
+                  <div className="space-y-2">
+                    <Progress value={uploadProgress} className="h-2" />
+                    <p className="text-xs text-muted-foreground text-center">{uploadingFileName} ({uploadProgress}%)</p>
+                  </div>
+                )}
+              </div>
+              <Button onClick={handleFileUpload} disabled={uploading || uploadFile.isPending || batchUpload.isPending || selectedFiles.length === 0} className="w-full gap-2">
+                {(uploading || uploadFile.isPending || batchUpload.isPending) && <Loader2 className="h-4 w-4 animate-spin" />}
+                <Sparkles className="h-4 w-4" /> 上传并AI分析 ({selectedFiles.length} 个文件)
+              </Button>
+            </TabsContent>
+            <TabsContent value="url" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>输入文档链接（每行一个）</Label>
+                <Textarea placeholder={"https://example.com/sop-document.pdf\nhttps://docs.google.com/...\nhttps://www.notion.so/..."} value={urlInput} onChange={(e) => setUrlInput(e.target.value)} rows={4} />
+                <p className="text-xs text-muted-foreground">支持直链PDF、Google Docs、Notion页面等在线文档链接</p>
+              </div>
+              <Button onClick={() => importUrl.mutate({ url: urlInput })} disabled={importUrl.isPending || !urlInput} className="w-full gap-2">
+                {importUrl.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                <Sparkles className="h-4 w-4" /> 导入并AI分析
+              </Button>
+            </TabsContent>
+            <TabsContent value="manual" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>SOP标题</Label>
+                <Input placeholder="例：亚马逊新品上架SOP" value={manualTitle} onChange={(e) => setManualTitle(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>SOP内容</Label>
+                <Textarea placeholder="输入SOP详细内容..." value={manualContent} onChange={(e) => setManualContent(e.target.value)} rows={8} />
+              </div>
+              <div className="space-y-2">
+                <Label>标签（逗号分隔）</Label>
+                <Input placeholder="新品,上架,运营" value={manualTags} onChange={(e) => setManualTags(e.target.value)} />
+              </div>
+              <Button onClick={() => createManual.mutate({ title: manualTitle, content: manualContent })} disabled={createManual.isPending || !manualTitle || !manualContent} className="w-full gap-2">
+                {createManual.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                <Sparkles className="h-4 w-4" /> 创建并AI分析
+              </Button>
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detail Dialog */}
+      <Dialog open={!!detailId} onOpenChange={(open) => !open && setDetailId(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          {detail ? (() => {
+            const d = detail as any;
+            const status = statusMap[d.status] || { label: d.status, variant: "secondary" as const };
+            const ocrCount = countOcrImagesAccurate(d.extractedContent);
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 flex-wrap">
+                    {getFileIcon(d.originalFilename || d.title || "")}
+                    <span>{d.title}</span>
+                    <Badge variant={status.variant}>{status.label}</Badge>
+                    {ocrCount > 0 && (
+                      <Badge variant="outline" className="gap-1 border-amber-300 text-amber-700 bg-amber-50 text-xs">
+                        <Camera className="h-3 w-3" />
+                        {ocrCount}张图片已识别
+                      </Badge>
+                    )}
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    {d.sourceType && <Badge variant="outline">{d.sourceType}</Badge>}
+                    {d.originalFilename && <span>文件: {d.originalFilename}</span>}
+                    {d.createdAt && <span>创建: {new Date(d.createdAt).toLocaleString()}</span>}
+                  </div>
+                  {/* Tag Editor */}
+                  <Card>
+                    <CardHeader className="pb-2 pt-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Tag className="h-4 w-4 text-green-500" />
+                        标签管理
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3">
+                      <TagEditor
+                        tags={(d.tags || "").split(",").filter(Boolean).map((t: string) => t.trim())}
+                        onChange={(newTags) => {
+                          if (updateTagsMutation) {
+                            updateTagsMutation.mutate({ id: d.id, tags: newTags.join(",") });
+                          } else {
+                            toast.info("标签更新功能即将上线");
+                          }
+                        }}
+                        suggestions={SOP_TAG_SUGGESTIONS}
+                        placeholder="添加标签（回车确认）..."
+                      />
+                    </CardContent>
+                  </Card>
+                  {/* AI Summary */}
+                  {d.aiSummary && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-green-500" /> AI摘要分析
+                          {d.status === "pending_review" && <Badge className="ml-auto text-xs">待确认</Badge>}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {editingAnalysis ? (
+                          <Textarea rows={10} value={editingAnalysis} onChange={(e) => setEditingAnalysis(e.target.value)} className="text-xs" />
+                        ) : (
+                          <div className="text-sm whitespace-pre-wrap">{d.aiSummary}</div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+                  {/* Key Steps */}
+                  {d.aiKeySteps && (
+                    <Card>
+                      <CardHeader className="pb-2"><CardTitle className="text-sm">关键步骤</CardTitle></CardHeader>
+                      <CardContent>
+                        <div className="text-sm whitespace-pre-wrap">{d.aiKeySteps}</div>
+                      </CardContent>
+                    </Card>
+                  )}
+                  {/* SOP Structured Content */}
+                  {isSopContent(d.extractedContent) && (
+                    <SopContentRenderer extractedContent={d.extractedContent} />
+                  )}
+                  {/* Content preview - only shown for non-SOP content */}
+                  {!isSopContent(d.extractedContent) && d.extractedContent && (
+                    <Card>
+                      <CardHeader className="pb-2"><CardTitle className="text-sm">原文内容</CardTitle></CardHeader>
+                      <CardContent>
+                        <div className="text-xs text-muted-foreground whitespace-pre-wrap max-h-48 overflow-y-auto">{d.extractedContent.slice(0, 2000)}{d.extractedContent.length > 2000 ? '...' : ''}</div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* ── Image Enrichment Panel (Two-step OCR) ── */}
+                  <Card className="border-dashed border-2 border-amber-200 bg-amber-50/30">
+                    <CardHeader className="pb-2 pt-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <ImageIcon className="h-4 w-4 text-amber-500" />
+                        补充图片内容（OCR识别）
+                        <span className="text-xs font-normal text-muted-foreground ml-1">— 识别后可编辑确认再合并</span>
+                        <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => setShowImageUpload(v => !v)}>
+                          {showImageUpload ? "收起" : "展开上传"}
+                        </Button>
+                      </CardTitle>
+                    </CardHeader>
+                    {showImageUpload && (
+                      <CardContent className="px-4 pb-4 space-y-3">
+                        {/* Step indicator */}
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${!showOcrReview ? "bg-amber-100 text-amber-700 font-medium" : "bg-muted"}`}>
+                            <span className="w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] flex items-center justify-center">1</span>
+                            上传图片
+                          </span>
+                          <span className="text-muted-foreground/50">→</span>
+                          <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${showOcrReview ? "bg-amber-100 text-amber-700 font-medium" : "bg-muted"}`}>
+                            <span className="w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] flex items-center justify-center">2</span>
+                            确认识别结果
+                          </span>
+                          <span className="text-muted-foreground/50">→</span>
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted">
+                            <span className="w-4 h-4 rounded-full bg-green-500 text-white text-[10px] flex items-center justify-center">3</span>
+                            合并入库
+                          </span>
+                        </div>
+
+                        {/* Step 1: Image upload area */}
+                        {!showOcrReview && (
+                          <>
+                            <div
+                              className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                                enrichDragOver ? "border-amber-400 bg-amber-50" : "border-muted-foreground/30 hover:border-amber-300"
+                              }`}
+                              onDragOver={(e) => { e.preventDefault(); setEnrichDragOver(true); }}
+                              onDragLeave={() => setEnrichDragOver(false)}
+                              onDrop={(e) => { e.preventDefault(); setEnrichDragOver(false); addEnrichImages(Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"))); }}
+                              onClick={() => enrichFileRef.current?.click()}
+                            >
+                              <ImageIcon className="h-8 w-8 mx-auto mb-2 text-amber-400" />
+                              <p className="text-sm font-medium">拖拽或点击上传图片</p>
+                              <p className="text-xs text-muted-foreground mt-1">支持 JPG、PNG、WebP，最多20张</p>
+                              <input ref={enrichFileRef} type="file" accept="image/*" multiple className="hidden"
+                                onChange={(e) => addEnrichImages(Array.from(e.target.files || []))}
+                              />
+                            </div>
+                            {enrichImages.length > 0 && (
+                              <div className="grid grid-cols-4 gap-2">
+                                {enrichImages.map((img, idx) => (
+                                  <div key={idx} className="relative group">
+                                    <img src={img.preview} alt={img.file.name} className="w-full h-20 object-cover rounded border" />
+                                    <button
+                                      className="absolute top-0.5 right-0.5 bg-red-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                      onClick={() => removeEnrichImage(idx)}
+                                    >×</button>
+                                    <p className="text-xs text-muted-foreground truncate mt-0.5">{img.file.name}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {enrichImages.length > 0 && (
+                              <div className="flex items-center gap-2">
+                                <Button size="sm" className="gap-1.5 bg-amber-500 hover:bg-amber-600" onClick={handleOcrSubmit} disabled={isOcring}>
+                                  {isOcring ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+                                  {isOcring ? `识别中 (${enrichImages.length}张)...` : `AI识别 ${enrichImages.length} 张图片`}
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => setEnrichImages([])} disabled={isOcring}>清空</Button>
+                                <span className="text-xs text-muted-foreground">识别后可逐张编辑确认</span>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {/* Step 2: OCR result review and edit */}
+                        {showOcrReview && ocrResults.length > 0 && (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-medium text-amber-700">
+                                已识别 {ocrResults.filter(r => r.ocrText.trim()).length}/{ocrResults.length} 张图片，请检查并编辑识别结果
+                              </p>
+                              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => { setShowOcrReview(false); setOcrResults([]); }}>
+                                <X className="h-3.5 w-3.5 mr-1" /> 重新上传
+                              </Button>
+                            </div>
+                            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                              {ocrResults.map((result, idx) => (
+                                <div key={idx} className="border rounded-lg p-3 space-y-2 bg-background">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-medium flex items-center gap-1.5">
+                                      <Camera className="h-3.5 w-3.5 text-amber-500" />
+                                      {result.fileName}
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      {result.ocrText.trim() ? (
+                                        <Badge variant="outline" className="text-[10px] border-green-300 text-green-700 bg-green-50">已识别</Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-[10px] border-gray-300 text-gray-500">无文字</Badge>
+                                      )}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                                        title="删除此图片识别结果"
+                                        onClick={() => setOcrResults(prev => prev.map((r, i) => i === idx ? { ...r, ocrText: "" } : r))}
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <Textarea
+                                    value={result.ocrText}
+                                    onChange={(e) => setOcrResults(prev => prev.map((r, i) => i === idx ? { ...r, ocrText: e.target.value } : r))}
+                                    placeholder="识别结果为空，可手动输入内容..."
+                                    rows={3}
+                                    className="text-xs resize-none"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex items-center gap-2 pt-1">
+                              <Button
+                                size="sm"
+                                className="gap-1.5 bg-green-600 hover:bg-green-700"
+                                onClick={handleMergeConfirm}
+                                disabled={isMerging || ocrResults.every(r => !r.ocrText.trim())}
+                              >
+                                {isMerging ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                                {isMerging ? "合并中..." : `确认合并 ${ocrResults.filter(r => r.ocrText.trim()).length} 张图片内容`}
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => { setShowOcrReview(false); setOcrResults([]); setEnrichImages([]); }} disabled={isMerging}>
+                                取消
+                              </Button>
+                              <span className="text-xs text-muted-foreground ml-auto">合并后将触发重新AI分析</span>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    )}
+                  </Card>
+
+                  <Separator />
+
+                  <div className="flex gap-2 justify-end">
+                    {d.status === "pending_review" && (
+                      <>
+                        <Button variant="outline" size="sm" onClick={() => setEditingAnalysis(editingAnalysis ? "" : (d.aiSummary || ""))} className="gap-1.5">
+                          <Edit3 className="h-3.5 w-3.5" /> {editingAnalysis ? "取消编辑" : "编辑摘要"}
+                        </Button>
+                        <Button size="sm" onClick={() => confirmMutation.mutate({ id: detailId!, editedSummary: editingAnalysis || undefined })} disabled={confirmMutation.isPending} className="gap-1.5">
+                          {confirmMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                          确认入库
+                        </Button>
+                      </>
+                    )}
+                    {allowEdit && (d.status === "confirmed" || d.reviewStatus === "draft" || d.reviewStatus === "rejected") && (
+                      <Button variant="outline" size="sm" onClick={() => submitReviewMutation.mutate({ type: "skill", id: detailId!, visibility: "team" })} disabled={submitReviewMutation.isPending} className="gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50">
+                        {submitReviewMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                        提交审核
+                      </Button>
+                    )}
+                    {allowDelete && (
+                      <Button variant="destructive" size="sm" onClick={() => { if (confirm("确定删除？")) deleteMutation.mutate({ id: detailId! }); }} className="gap-1.5">
+                        <Trash2 className="h-3.5 w-3.5" /> 删除
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </>
+            );
+          })() : (
+            <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

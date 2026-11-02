@@ -17,7 +17,6 @@ import {
   uniqueInventoryOwnerAssignmentScopes,
 } from "../domains/ops/inventoryOwnerAssignmentKeys";
 import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
-import { assertLegacyInventoryGovernanceWriteAllowed } from "../domains/ops/inventoryGovernanceLegacyGate";
 import { getDb, withDbTransaction } from "../repositories/dbClient";
 import { recordSecurityAuditLog } from "../services/securityGovernance";
 import { router } from "../_core/trpc";
@@ -50,7 +49,6 @@ async function listEligibleUsers(db: any, workspaceId: number) {
 
 export const inventoryOwnerAssignmentsRouter = router({
   listEligibleUsers: protectedProcedure.query(async ({ ctx }) => {
-    assertLegacyInventoryGovernanceWriteAllowed();
     assertInventoryOwnerAssignmentAdmin(ctx);
     const db = await getDb();
     if (!db) throw new Error("数据库不可用");
@@ -59,7 +57,6 @@ export const inventoryOwnerAssignmentsRouter = router({
   }),
 
   listRules: protectedProcedure.query(async ({ ctx }) => {
-    assertLegacyInventoryGovernanceWriteAllowed();
     assertInventoryOwnerAssignmentAdmin(ctx);
     const workspaceId = ctx.user.defaultWorkspaceId ?? currentOpsWorkspaceId();
     return withDbTransaction("list inventory owner rules", async (db) => db.select()
@@ -73,7 +70,6 @@ export const inventoryOwnerAssignmentsRouter = router({
     targets: z.array(assignmentScopeSchema).min(1).max(500),
     reason: z.string().trim().max(500).optional(),
   })).mutation(async ({ ctx, input }) => {
-    assertLegacyInventoryGovernanceWriteAllowed();
     assertInventoryOwnerAssignmentAdmin(ctx);
     const workspaceId = ctx.user.defaultWorkspaceId ?? currentOpsWorkspaceId();
     const targets = uniqueInventoryOwnerAssignmentScopes(input.targets);
@@ -176,7 +172,6 @@ export const inventoryOwnerAssignmentsRouter = router({
 
   revoke: protectedProcedure.input(z.object({ id: z.number().int().positive(), reason: z.string().trim().max(500).optional() }))
     .mutation(async ({ ctx, input }) => {
-      assertLegacyInventoryGovernanceWriteAllowed();
       assertInventoryOwnerAssignmentAdmin(ctx);
       const workspaceId = ctx.user.defaultWorkspaceId ?? currentOpsWorkspaceId();
       const result = await withDbTransaction("revoke inventory owner rule", async (db) => {

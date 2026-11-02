@@ -17,7 +17,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [mustChangePassword, setMustChangePassword] = useState(false);
-  const [loginDestination, setLoginDestination] = useState("/");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
@@ -47,14 +46,12 @@ export default function LoginPage() {
 
   const loginMutation = trpc.userAuth.login.useMutation({
     onSuccess: (data) => {
-      const destination = data.user.role === "designer" ? "/design/images" : "/";
-      setLoginDestination(destination);
       if (data.mustChangePassword) {
         setMustChangePassword(true);
         toast.info("首次登录请修改密码");
       } else {
         toast.success("登录成功");
-        window.location.href = destination;
+        window.location.href = "/";
       }
     },
     onError: (error) => {
@@ -72,7 +69,7 @@ export default function LoginPage() {
   const changePasswordMutation = trpc.userAuth.changePassword.useMutation({
     onSuccess: () => {
       toast.success("密码修改成功，正在跳转...");
-      setTimeout(() => { window.location.href = loginDestination; }, 1000);
+      setTimeout(() => { window.location.href = "/"; }, 1000);
     },
     onError: (error) => {
       toast.error(error.message);
@@ -82,7 +79,7 @@ export default function LoginPage() {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (!identifier.trim() || !password.trim()) {
-      toast.error("请输入账号、邮箱或手机号和密码");
+      toast.error("请输入邮箱/手机号和密码");
       return;
     }
     loginMutation.mutate({ identifier: identifier.trim(), password });
@@ -182,13 +179,13 @@ export default function LoginPage() {
           {/* Password Login Form */}
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="identifier">账号 / 邮箱 / 手机号</Label>
+              <Label htmlFor="identifier">邮箱 / 手机号</Label>
               <Input
                 id="identifier"
                 type="text"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="请输入账号、邮箱或手机号"
+                placeholder="请输入邮箱或手机号"
                 autoComplete="username"
               />
             </div>

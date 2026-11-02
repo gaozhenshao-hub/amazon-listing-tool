@@ -21,7 +21,6 @@ function inferOpsSecurityAction(path: string, type: string): SecurityAction {
 
 export const protectedProcedure = baseProtectedProcedure.use(async ({ ctx, next, path, type }) => {
   const action = inferOpsSecurityAction(path, type);
-  const resource = /^(logistics|shippingBatch)\./.test(path) ? "procurement_logistics" as const : "ops_data" as const;
   const workspaceId = workspaceIdFromContext(ctx);
   if (!workspaceId) {
     throw new TRPCError({
@@ -31,23 +30,22 @@ export const protectedProcedure = baseProtectedProcedure.use(async ({ ctx, next,
   }
   await assertResourceAction({
     actor: actorFromContext(ctx),
-    resource,
+    resource: "ops_data",
     action,
     workspaceId,
-  }, ctx);
+  });
   try {
     const result = await runWithOpsWorkspace({
       workspaceId,
       tenantId: (ctx.user as any).organizationId ?? `workspace-${workspaceId}`,
       userId: ctx.user.id,
     }, () => next({ ctx: { ...ctx, workspaceId } }));
-    if (!result.ok) throw result.error;
     if (type === "mutation") {
       void recordSecurityAuditLog({
         ctx,
         workspaceId,
-        action: `${resource}.${action}`,
-        resourceType: resource,
+        action: `ops_data.${action}`,
+        resourceType: "ops_data",
         status: "success",
         riskLevel: ["delete", "sync", "import"].includes(action) ? "high" : "medium",
         metadata: { path },
@@ -59,8 +57,8 @@ export const protectedProcedure = baseProtectedProcedure.use(async ({ ctx, next,
       void recordSecurityAuditLog({
         ctx,
         workspaceId,
-        action: `${resource}.${action}`,
-        resourceType: resource,
+        action: `ops_data.${action}`,
+        resourceType: "ops_data",
         status: "failed",
         riskLevel: ["delete", "sync", "import"].includes(action) ? "high" : "medium",
         reason: error instanceof Error ? error.message : String(error),

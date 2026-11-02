@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `product_todos` ADD `reminder_days` varchar(100);\nALTER TABLE `product_todos` ADD `reminder_enabled` int DEFAULT 1;\nALTER TABLE `product_todos` ADD `last_reminder_sent_at` timestamp;\nALTER TABLE `team_tasks` ADD `reminder_days` varchar(100);\nALTER TABLE `team_tasks` ADD `reminder_enabled` int DEFAULT 1;\nALTER TABLE `team_tasks` ADD `last_reminder_sent_at` timestamp;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute ALTER TABLE `product_todos` ADD `reminder_days` varchar(100);\nALTER TABLE `product_todos` ADD `reminder_enabled` int DEFAULT 1;\nALTER TABLE `product_todos` ADD `last_reminder_sent_at` timestamp;\nALTER TABLE `team_tasks` ADD `reminder_days` varchar(100);\nALTER TABLE `team_tasks` ADD `reminder_enabled` int DEFAULT 1;\nALTER TABLE `team_tasks` ADD `last_reminder_sent_at` timestamp;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 2583
+}

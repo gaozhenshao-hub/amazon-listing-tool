@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `product_profiles` ADD `operator` varchar(200);\nALTER TABLE `product_profiles` ADD `store_name` varchar(255);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute ALTER TABLE `product_profiles` ADD `operator` varchar(200);\nALTER TABLE `product_profiles` ADD `store_name` varchar(255);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1498
+}

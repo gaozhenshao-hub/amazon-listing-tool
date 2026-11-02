@@ -1,6 +1,5 @@
 import fs from "fs";
 import path from "path";
-import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
@@ -25,41 +24,44 @@ describe("AI OS observability dashboard and QA gate", () => {
     expect(service).toContain("migrationRegression");
   });
 
+  it("exposes operational observability routes under Emperor", () => {
+    const router = readRepoFile("server/domains/ai_os/routers/observability.ts");
+    const appRouterTest = readRepoFile("server/emperorAgentRunner.test.ts");
+
+    expect(router).toContain("dashboard");
+    expect(router).toContain("workerHealth");
+    expect(router).toContain("databaseBaseline");
+    expect(router).toContain("recordDatabaseBaselineSnapshot");
+    expect(router).toContain("database_baseline.snapshot");
+    expect(appRouterTest).toContain("emperor.observability.dashboard");
+  });
+
+  it("adds a first-class Emperor observability page without replacing existing pages", () => {
+    const app = readRepoFile("client/src/App.tsx");
+    const layout = readRepoFile("client/src/components/DashboardLayout.tsx");
+    const page = readRepoFile("client/src/pages/emperor/EmperorObservability.tsx");
+
+    expect(app).toContain("EmperorObservability");
+    expect(app).toContain('/emperor/observability');
+    expect(layout).toContain("可观测看板");
+    expect(page).toContain("trpc.emperor.observability.dashboard.useQuery");
+    expect(page).toContain("recordDatabaseBaselineSnapshot.useMutation");
+    expect(page).toContain("Worker 队列健康");
+    expect(page).toContain("慢查询与 EXPLAIN 基线");
+    expect(page).toContain("归档任务健康");
+  });
+
   it("keeps real DB tests isolated behind QA gate scripts and CI secrets", () => {
     const pkg = JSON.parse(readRepoFile("package.json"));
     const vitestConfig = readRepoFile("vitest.config.ts");
     const workflowTemplate = readRepoFile("docs/qa-gate-ci.md");
 
     expect(pkg.scripts["test:unit"]).toBe("vitest run");
-    expect(pkg.scripts["test:real-db"]).toBe("node scripts/test-real-database.mjs");
-    expect(pkg.scripts["test:real-db"]).not.toContain("RUN_REAL_DB_TESTS=1");
+    expect(pkg.scripts["test:real-db"]).toContain("RUN_REAL_DB_TESTS=1");
     expect(pkg.scripts["qa:gate"]).toContain("pnpm check");
     expect(vitestConfig).toContain("RUN_REAL_DB_TESTS");
     expect(workflowTemplate).toContain("CI_DATABASE_URL");
     expect(workflowTemplate).toContain("pnpm qa:gate");
     expect(workflowTemplate).toContain("pnpm test:real-db");
-  });
-
-  it("an inherited real-DB flag cannot bypass the wrapper's explicit target gates", () => {
-    // All cases refuse before resolving or spawning Vitest; no driver/DB is used.
-    const cases = [
-      { args: [], extra: {}, code: "REAL_DB_EXPLICIT_LOCAL_ENVIRONMENT_REQUIRED" },
-      { args: ["--environment", "ci", "--schema", "amazon_listing_ci"], extra: {}, code: "REAL_DB_EXPLICIT_URL_REQUIRED" },
-      { args: ["--environment", "ci", "--schema", "amazon_listing_ci"],
-        extra: { DATABASE_URL: "synthetic-inherited-target-must-not-be-used" }, code: "REAL_DB_INHERITED_DATABASE_URL_FORBIDDEN" },
-    ];
-    for (const entry of cases) {
-      const result = spawnSync(process.execPath, [path.join(root, "scripts/test-real-database.mjs"), ...entry.args], {
-        cwd: root, encoding: "utf8", timeout: 10_000, shell: false,
-        env: { PATH: "/usr/bin:/bin", NODE_ENV: "test", DOTENV_CONFIG_PATH: "/dev/null",
-          RUN_REAL_DB_TESTS: "1", RUN_REAL_LLM_TESTS: "0", ALLOW_REAL_NETWORK_IN_TESTS: "0", ...entry.extra },
-      });
-      expect(result.error).toBeUndefined();
-      expect(result.signal).toBeNull();
-      expect(result.status).toBe(1);
-      expect(result.stdout).toBe("");
-      expect(JSON.parse(result.stderr)).toEqual({ ok: false, code: entry.code });
-      expect(result.stderr).not.toContain("synthetic-inherited-target-must-not-be-used");
-    }
   });
 });

@@ -17,8 +17,6 @@ import {
   resolveWorkspaceTabLabel,
   upsertWorkspaceTab,
   WORKSPACE_TABS_STORAGE_KEY,
-  WORKSPACE_CLOSE_AND_NAVIGATE,
-  isWorkspaceHref,
   type WorkspaceTab,
 } from "./workspaceTabState";
 
@@ -82,19 +80,6 @@ export function WorkspaceTabs({
     }
   };
 
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const destination = (event as CustomEvent<{destination:string}>).detail?.destination;
-      if (!destination || !isWorkspaceHref(destination)) return;
-      setTabs(current => upsertWorkspaceTab(removeWorkspaceTab(current, currentHref), {
-        href: destination, label: resolveWorkspaceTabLabel(destination), lastActiveAt: Date.now(),
-      }));
-      navigate(destination);
-    };
-    window.addEventListener(WORKSPACE_CLOSE_AND_NAVIGATE, handler);
-    return () => window.removeEventListener(WORKSPACE_CLOSE_AND_NAVIGATE, handler);
-  }, [currentHref, navigate]);
-
   const closeOtherTabs = () => {
     const active = tabs.find((tab) => tab.href === currentHref) || {
       href: currentHref,
@@ -115,13 +100,13 @@ export function WorkspaceTabs({
   return (
     <div
       className={cn(
-        "flex h-16 shrink-0 items-stretch border-b",
+        "flex h-10 shrink-0 items-stretch border-b",
         isDark ? "border-white/10 bg-[#0d1117] text-slate-300" : "border-border bg-muted/30",
       )}
       data-testid="workspace-tabs"
     >
       <div className="min-w-0 flex-1 overflow-x-auto">
-        <div className="flex h-12 min-w-max items-center gap-1 px-2">
+        <div className="flex h-full min-w-max items-end px-2">
           {tabs.map((tab) => {
             const active = tab.href === currentHref;
             return (
@@ -129,7 +114,7 @@ export function WorkspaceTabs({
                 key={tab.href}
                 role="presentation"
                 className={cn(
-                  "group flex h-11 min-w-[170px] max-w-[280px] shrink-0 items-center rounded-lg border",
+                  "group flex h-9 max-w-[220px] items-center border border-b-0",
                   active
                     ? isDark
                       ? "border-white/15 bg-[#080b11] text-white"
@@ -146,7 +131,7 @@ export function WorkspaceTabs({
                   aria-selected={active}
                   title={tab.label}
                   onClick={() => navigate(tab.href)}
-                  className="h-full min-w-0 flex-1 truncate px-3 text-left text-sm font-medium leading-6"
+                  className="min-w-0 flex-1 truncate px-3 text-left text-xs font-medium"
                 >
                   {tab.label}
                 </button>
@@ -158,7 +143,7 @@ export function WorkspaceTabs({
                       disabled={tabs.length <= 1}
                       onClick={() => closeTab(tab.href)}
                       className={cn(
-                        "mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md disabled:cursor-default disabled:opacity-20",
+                        "mr-1 flex h-6 w-6 shrink-0 items-center justify-center disabled:cursor-default disabled:opacity-20",
                         isDark ? "hover:bg-white/10" : "hover:bg-muted",
                       )}
                     >

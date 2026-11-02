@@ -1,6 +1,5 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { EmperorSkillReadInputSchema } from "../../../../shared/emperorSkillRead";
 import { adminProcedure, protectedProcedure, router } from "../../../_core/trpc";
 import { workspaceIdFromContext } from "../../../services/securityGovernance";
 import { getSkillBySlug, normalizeSkillVersionForDb, parseManifest, rawExecute } from "../routerContext";
@@ -40,22 +39,18 @@ import {
   buildGovernedHighQualityManifest,
   isHighQualitySkill,
 } from "../services/highQualitySkillGovernance";
-import { skillReadonlyService } from "../services/skillReadonly";
 
 export const emperorSkillsRouter = router({
-  getReadonly: protectedProcedure.input(EmperorSkillReadInputSchema)
-    .query(({ ctx, input }) => skillReadonlyService.read(ctx, input)),
-
   list: protectedProcedure
     .input(z.object({
       category: z.string().optional(),
       status: z.string().optional(),
       search: z.string().optional(),
-      page: z.number().int().min(1).default(1),
-      pageSize: z.number().int().min(1).max(100).default(50),
+      page: z.number().default(1),
+      pageSize: z.number().default(50),
     }))
     .query(async ({ input }) => {
-      let sql = "SELECT id,slug,name,description,category,owner,riskTier,status,scope,version,isSystem,callCount,modelOverride,createdAt,updatedAt FROM emperor_skills WHERE 1=1";
+      let sql = "SELECT id,slug,name,description,category,owner,riskTier,status,scope,version,isSystem,callCount,modelOverride,when_to_use,timeout_seconds,execution_mode,allowed_tools,disallowed_tools,model_override,createdAt,updatedAt FROM emperor_skills WHERE 1=1";
       const params: any[] = [];
       if (input.category) { sql += " AND category = ?"; params.push(input.category); }
       if (input.status) { sql += " AND status = ?"; params.push(input.status); }

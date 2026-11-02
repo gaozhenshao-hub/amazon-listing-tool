@@ -1,0 +1,52 @@
+{
+  "query": "SELECT id, name, email, role, status FROM users WHERE role = 'product_dev';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT id, name, email, role, status FROM users WHERE role = 'product_dev';",
+  "rows": [
+    {
+      "id": "3783296",
+      "name": "泥雯倩（Vickie） ",
+      "email": "2103587501@qq.com",
+      "role": "product_dev",
+      "status": "active"
+    },
+    {
+      "id": "3783311",
+      "name": "许鑫瑶（Cindy） ",
+      "email": "2926794856@qq.com",
+      "role": "product_dev",
+      "status": "active"
+    },
+    {
+      "id": "3783327",
+      "name": "郁洋(Carl) ",
+      "email": "970032132@qq.com",
+      "role": "product_dev",
+      "status": "active"
+    },
+    {
+      "id": "3783335",
+      "name": "王俊财(Jace) ",
+      "email": "2835872291@qq.com",
+      "role": "product_dev",
+      "status": "active"
+    },
+    {
+      "id": "3783347",
+      "name": "常文龙（Rick） ",
+      "email": "1432454731@qq.com",
+      "role": "product_dev",
+      "status": "active"
+    },
+    {
+      "id": "3783362",
+      "name": "胡波帆（Elvi） ",
+      "email": "757608764@qq.com",
+      "role": "product_dev",
+      "status": "active"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\trole\tstatus\n3783296\t泥雯倩（Vickie） \t2103587501@qq.com\tproduct_dev\tactive\n3783311\t许鑫瑶（Cindy） \t2926794856@qq.com\tproduct_dev\tactive\n3783327\t郁洋(Carl) \t970032132@qq.com\tproduct_dev\tactive\n3783335\t王俊财(Jace) \t2835872291@qq.com\tproduct_dev\tactive\n3783347\t常文龙（Rick） \t1432454731@qq.com\tproduct_dev\tactive\n3783362\t胡波帆（Elvi） \t757608764@qq.com\tproduct_dev\tactive\n",
+  "stderr": "",
+  "execution_time_ms": 361
+}

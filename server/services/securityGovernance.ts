@@ -10,7 +10,7 @@ import {
   type SecurityAction,
   type SecurityResource,
 } from "@shared/const";
-import { getDb, type DbExecutor } from "../repositories/dbClient";
+import { getDb } from "../repositories/dbClient";
 import type { TrpcContext } from "../_core/context";
 
 export type { SecurityAction, SecurityResource } from "@shared/const";
@@ -32,10 +32,6 @@ export type ResourceActionCheck = {
   projectId?: number | null;
   resourceId?: string | number | null;
   ownerUserId?: number | null;
-  /** Strict authorization reads policy on the caller's existing transaction.
-   * The caller locks/reloads its actor and resource. Read-only participants
-   * may opt into SHARE; the omitted mode preserves existing UPDATE locks. */
-  authorizationRead?: { executor: DbExecutor; strict: true; lock: true; lockMode?: "share" | "update" };
 };
 
 export type SecurityAuditInput = {
@@ -89,11 +85,9 @@ function sanitizeForSecurityAudit(value: unknown, depth = 0): unknown {
   );
 }
 
-async function rawSecurityQuery(sqlStr: string, params: unknown[] = [], read?: ResourceActionCheck["authorizationRead"]): Promise<any[]> {
-  const db = read ? read.executor : await getDb();
-  if (read && (!db || typeof db.execute !== "function")) throw new Error("Strict authorization requires a transaction executor");
+async function rawSecurityQuery(sqlStr: string, params: unknown[] = []): Promise<any[]> {
+  const db = await getDb();
   if (!db) return [];
-  if (read?.lock) sqlStr += read.lockMode === "share" ? " FOR SHARE" : " FOR UPDATE";
   let result: any;
   if (params.length > 0) {
     const parts = sqlStr.split("?");
@@ -110,7 +104,7 @@ async function rawSecurityQuery(sqlStr: string, params: unknown[] = [], read?: R
   return Array.isArray(rows) ? rows : [];
 }
 
-async function actorCanUseWorkspace(actor: SecurityActor, workspaceId: number | null, read?: ResourceActionCheck["authorizationRead"]): Promise<boolean> {
+async function actorCanUseWorkspace(actor: SecurityActor, workspaceId: number | null): Promise<boolean> {
   if (!workspaceId) return true;
   if (actor.role === "super_admin") return true;
   if (actor.defaultWorkspaceId === workspaceId) return true;
@@ -121,11 +115,9 @@ async function actorCanUseWorkspace(actor: SecurityActor, workspaceId: number | 
        WHERE workspaceId=? AND userId=? AND status='active'
        LIMIT 1`,
       [workspaceId, actor.id],
-      read,
     );
     return Boolean(rows[0]);
   } catch (error) {
-    if (read?.strict) throw error;
     if (!isMissingGovernanceSchema(error)) {
       console.warn("[Security] Failed to verify workspace membership:", error);
     }
@@ -161,7 +153,7 @@ function modulePermissionAllows(
   return modulePermission.operations.includes(operation);
 }
 
-async function getRolePermissionOverride(role: string, workspaceId: number | null, read?: ResourceActionCheck["authorizationRead"]) {
+async function getRolePermissionOverride(role: string, workspaceId: number | null) {
   try {
     const rows = await rawSecurityQuery(
       `SELECT modules,detailedPermissions
@@ -170,11 +162,9 @@ async function getRolePermissionOverride(role: string, workspaceId: number | nul
        ORDER BY workspaceId IS NULL ASC
        LIMIT 1`,
       [role, workspaceId],
-      read,
     );
     return rows[0] || null;
   } catch (error) {
-    if (read?.strict) throw error;
     if (!isMissingGovernanceSchema(error)) {
       console.warn("[Security] Failed to load role permission override:", error);
     }
@@ -202,17 +192,15 @@ async function evaluateAccessPolicy(input: ResourceActionCheck): Promise<boolean
       [
         input.resource,
         input.action,
-        input.authorizationRead && input.workspaceId !== undefined ? input.workspaceId : normalizeWorkspaceId(input.actor, input.workspaceId),
+        normalizeWorkspaceId(input.actor, input.workspaceId),
         input.resourceId === undefined || input.resourceId === null ? null : String(input.resourceId),
         String(input.actor.id),
         input.actor.role,
       ],
-      input.authorizationRead,
     );
     if (!rows[0]) return null;
     return rows[0].effect === "allow";
   } catch (error) {
-    if (input.authorizationRead?.strict) throw error;
     if (!isMissingGovernanceSchema(error)) {
       console.warn("[Security] Failed to evaluate access policy:", error);
     }
@@ -225,26 +213,16 @@ function baseMatrixAllows(role: string, resource: SecurityResource, action: Secu
 }
 
 export async function hasResourceAction(input: ResourceActionCheck): Promise<boolean> {
-  const read = input.authorizationRead;
-  if (read && (!read.executor || typeof read.executor.execute !== "function")) {
-    throw new Error("Strict authorization requires a transaction executor");
-  }
-  // Shared authorization is opt-in for read-only transaction participants.
-  // Existing strict writers retain UPDATE locks; unknown modes cannot silently
-  // weaken locking, including on administrator/owner permission fast paths.
-  if (read && read.lockMode !== undefined && read.lockMode !== "share" && read.lockMode !== "update") {
-    throw new Error("Strict authorization requires a valid lock mode");
-  }
   if (isAdminRole(input.actor.role) && input.actor.role === "super_admin") return true;
 
-  const workspaceId = read && input.workspaceId !== undefined ? input.workspaceId : normalizeWorkspaceId(input.actor, input.workspaceId);
-  if (!(await actorCanUseWorkspace(input.actor, workspaceId, read))) return false;
+  const workspaceId = normalizeWorkspaceId(input.actor, input.workspaceId);
+  if (!(await actorCanUseWorkspace(input.actor, workspaceId))) return false;
   if (input.ownerUserId && input.ownerUserId === input.actor.id && input.action !== "delete") return true;
 
   const policyDecision = await evaluateAccessPolicy(input);
   if (policyDecision !== null) return policyDecision;
 
-  const override = await getRolePermissionOverride(input.actor.role, workspaceId, read);
+  const override = await getRolePermissionOverride(input.actor.role, workspaceId);
   if (override) {
     const detailedPermissions = parseJsonArray<ModulePermission>(override.detailedPermissions, []);
     const detailedDecision = modulePermissionAllows(detailedPermissions, input.resource, input.action);
@@ -258,15 +236,11 @@ export async function hasResourceAction(input: ResourceActionCheck): Promise<boo
   return baseMatrixAllows(input.actor.role, input.resource, input.action);
 }
 
-export async function assertResourceAction(input: ResourceActionCheck, ctx?: TrpcContext): Promise<void> {
+export async function assertResourceAction(input: ResourceActionCheck): Promise<void> {
   const allowed = await hasResourceAction(input);
   if (allowed) return;
   const message = `没有权限执行 ${input.resource}.${input.action}`;
-  // Never take an independent connection while a strict caller holds row locks.
-  // The business caller may audit the rejection after its transaction rolls back.
-  if (input.authorizationRead) throw new TRPCError({ code: "FORBIDDEN", message });
   await recordSecurityAuditLog({
-    ctx,
     actorUserId: input.actor.id,
     actorRole: input.actor.role,
     workspaceId: normalizeWorkspaceId(input.actor, input.workspaceId),

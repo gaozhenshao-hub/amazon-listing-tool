@@ -1,0 +1,18 @@
+{
+  "query": "SELECT COLUMN_NAME, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'dev_projects' AND COLUMN_NAME IN ('phase', 'status');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT COLUMN_NAME, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'dev_projects' AND COLUMN_NAME IN ('phase', 'status');",
+  "rows": [
+    {
+      "COLUMN_NAME": "status",
+      "COLUMN_TYPE": "enum('draft','data_collection','analyzing','scoring','completed','archived')"
+    },
+    {
+      "COLUMN_NAME": "phase",
+      "COLUMN_TYPE": "enum('market_analysis','project_execution')"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\tCOLUMN_TYPE\nstatus\tenum('draft','data_collection','analyzing','scoring','completed','archived')\nphase\tenum('market_analysis','project_execution')\n",
+  "stderr": "",
+  "execution_time_ms": 58
+}

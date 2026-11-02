@@ -8,45 +8,6 @@ function lines(relativePath: string) {
   return fs.readFileSync(repoPath(relativePath), "utf8").split("\n").length;
 }
 
-type MenuSnapshot = { id?: string; label?: string; path?: string; items?: MenuSnapshot[] };
-
-// Resolve only the Listing menu's declarative AST; never import the application
-// or execute arbitrary source. Icons do not affect route/branch semantics.
-function listingMenuSnapshot(source: string, merged: boolean): MenuSnapshot {
-  const file = ts.createSourceFile("DashboardLayout.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  let listing: ts.ObjectLiteralExpression | undefined;
-  const visit = (node: ts.Node) => {
-    if (ts.isObjectLiteralExpression(node) && node.properties.some(property =>
-      ts.isPropertyAssignment(property) && property.name.getText(file) === "id"
-      && ts.isStringLiteral(property.initializer) && property.initializer.text === "ops")) listing = node;
-    ts.forEachChild(node, visit);
-  };
-  visit(file);
-  if (!listing) throw new Error("Listing menu is missing");
-  const read = (expression: ts.Expression): unknown => {
-    if (ts.isStringLiteral(expression)) return expression.text;
-    if (expression.kind === ts.SyntaxKind.TrueKeyword) return true;
-    if (expression.kind === ts.SyntaxKind.FalseKeyword) return false;
-    if (ts.isIdentifier(expression) && expression.text === "MERGED_LISTING_WORKFLOW_ENABLED") return merged;
-    if (ts.isParenthesizedExpression(expression)) return read(expression.expression);
-    if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.ExclamationToken) return !read(expression.operand);
-    if (ts.isConditionalExpression(expression)) return read(read(expression.condition) ? expression.whenTrue : expression.whenFalse);
-    if (ts.isArrayLiteralExpression(expression)) return expression.elements.flatMap(element => {
-      if (!ts.isSpreadElement(element)) return [read(element)];
-      const value = read(element.expression);
-      if (!Array.isArray(value)) throw new Error("Menu spread is not an array");
-      return value;
-    });
-    if (ts.isObjectLiteralExpression(expression)) return Object.fromEntries(expression.properties.flatMap(property => {
-      if (!ts.isPropertyAssignment(property)) throw new Error("Unsupported menu property");
-      const name = property.name.getText(file);
-      return name === "icon" ? [] : [[name, read(property.initializer)]];
-    }));
-    throw new Error(`Unsupported Listing menu expression: ${expression.getText(file)}`);
-  };
-  return read(listing) as MenuSnapshot;
-}
-
 function tableFromQueryExpression(expression: ts.Expression, sourceFile: ts.SourceFile): string | null {
   if (ts.isCallExpression(expression)) {
     if (
@@ -74,14 +35,26 @@ describe("platform architecture regression", () => {
 
     expect(nestedLayoutPages).toEqual([]);
   });
-it("keeps Listing routes unique under the operations menu",()=>{
- const layout=fs.readFileSync(repoPath("client/src/components/DashboardLayout.tsx"),"utf8");
- const listing=listingMenuSnapshot(layout,false);
- const flatten=(nodes:MenuSnapshot[]):MenuSnapshot[]=>nodes.flatMap(n=>[n,...flatten(n.items||[])]);
- const paths=flatten(listing.items||[]).flatMap(n=>n.path?[n.path]:[]);
- for(const route of ["/listing","/listing/analysis","/listing/comparison","/listing/generate","/listing/keywords","/listing/ad-structure"]) expect(paths).toContain(route);
- expect(new Set(paths).size).toBe(paths.length);
-});
+
+  it("groups Listing preparation routes into one collapsible sidebar layer", () => {
+    const layout = fs.readFileSync(repoPath("client/src/components/DashboardLayout.tsx"), "utf8");
+    expect(layout).toContain('id: "listing-preparation"');
+    expect(layout).toContain('label: "前置准备层"');
+    expect(layout).toContain("aria-expanded={expanded}");
+
+    for (const route of [
+      "/listing",
+      "/listing/analysis",
+      "/listing/comparison",
+      "/listing/review-history",
+      "/listing/data-files",
+      "/listing/keywords",
+      "/listing/review-aggregation",
+      "/listing/buyer-questions",
+    ]) {
+      expect(layout.match(new RegExp(`path: "${route}"`, "g")), route).toHaveLength(1);
+    }
+  });
 
   it("keeps removed compatibility roots absent and domain schemas canonical", () => {
     expect(fs.existsSync(repoPath("server/db.ts"))).toBe(false);
@@ -98,7 +71,7 @@ it("keeps Listing routes unique under the operations menu",()=>{
     expect(lines("server/domains/ai_os/services/agentRunner.ts")).toBeLessThan(120);
     expect(lines("server/domains/ai_os/services/toolGateway.ts")).toBeLessThan(120);
     expect(fs.existsSync(repoPath("server/domains/ads/adAnalysis/searchTerms.ts"))).toBe(true);
-    expect(fs.existsSync(repoPath("server/domains/ops/operations/inventory.ts"))).toBe(false);
+    expect(fs.existsSync(repoPath("server/domains/ops/operations/inventory.ts"))).toBe(true);
     expect(fs.existsSync(repoPath("server/domains/ai_os/services/agentRunner/execution.ts"))).toBe(true);
     expect(fs.existsSync(repoPath("server/domains/ai_os/services/toolGateway/executors.ts"))).toBe(true);
   });
@@ -110,7 +83,11 @@ it("keeps Listing routes unique under the operations menu",()=>{
     expect(workspaceColumns.length).toBeGreaterThan(80);
     expect(contextualDefaults.length).toBe(workspaceColumns.length);
 
-    const governedRouters = ["shippingBatch", "logistics", "dataImport"];
+    const governedRouters = [
+      "shippingBatch", "logistics", "opsProductPlan", "afterSales", "dashboardUpgrade",
+      "customDashboard", "customerProfile", "dataImport", "operatorMapping", "taskManagement", "crawler",
+      "adDailyReportUpload", "adLocalAnalysis", "adReportUpload", "adTracking",
+    ];
     for (const router of governedRouters) {
       expect(fs.readFileSync(repoPath(`server/routers/${router}.ts`), "utf8")).toContain("domains/ops/workspaceProcedure");
     }
@@ -156,7 +133,41 @@ it("keeps Listing routes unique under the operations menu",()=>{
 
     expect(unscopedQueries).toEqual([]);
   });
-it("preserves Listing artifact registration",()=>{expect(fs.readFileSync(repoPath("server/repositories/listing/listingRepository.ts"),"utf8")).toContain("registerListingArtifact");});
+
+  it("registers listing, image, ads, and video writes as unified artifacts", () => {
+    const registry = fs.readFileSync(repoPath("server/domains/ai_os/services/businessArtifactRegistry.ts"), "utf8");
+    for (const domain of ["listing", "image", "ads", "video"]) {
+      expect(registry).toContain(`domain: "${domain}"`);
+    }
+    const sources = readRepoSources(
+      "server/repositories/listing/listingRepository.ts",
+      "server/repositories/image/imageRepository.ts",
+      "server/routers/adDeepAnalysis.ts",
+      "server/domains/ads/legacyAnalysis/service.ts",
+      "server/videoScriptDb.ts",
+    );
+    expect(sources).toContain("registerListingArtifact");
+    expect(sources).toContain("registerImageWorkflowArtifact");
+    expect(sources).toContain("registerAdArtifact");
+    expect(sources).toContain("registerVideoArtifact");
+  });
+
+  it("embeds Agent Run and Checkpoint controls in long workflow pages", () => {
+    const pages = [
+      "client/src/pages/AdStructurePage.tsx",
+      "client/src/pages/VideoScriptPage.tsx",
+      "client/src/pages/ops/OpsAds.tsx",
+      "client/src/pages/ops/OpsAdDeep.tsx",
+      "client/src/pages/dev/DevProjectDetail.tsx",
+      "client/src/pages/dev/DevAnalysisFlow.tsx",
+    ];
+    for (const page of pages) {
+      expect(fs.readFileSync(repoPath(page), "utf8"), page).toContain("EmbeddedAgentRunPanel");
+    }
+    const panel = fs.readFileSync(repoPath("client/src/components/workflow/EmbeddedAgentRunPanel.tsx"), "utf8");
+    expect(panel).toContain("WorkflowCheckpointControls");
+    expect(panel).toContain("WorkflowArtifactVersionPicker");
+  });
 
   it("samples real normalized MySQL statement digests", () => {
     const sampler = fs.readFileSync(repoPath("server/repositories/database/slowQueryRepository.ts"), "utf8");

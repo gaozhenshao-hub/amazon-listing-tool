@@ -8,14 +8,6 @@ import {
 } from "./workspaceTabState";
 
 describe("global workspace tabs", () => {
-  it("retains separate ASIN details as internal workspace tabs", () => {
-    const tabs = readWorkspaceTabs(JSON.stringify([
-      { href: "/knowledge/images/44?asin=B0FKN88MFL", label: "套图 · B0FKN88MFL" },
-      { href: "/knowledge/images/48?asin=B0G3WN7CL2", label: "套图 · B0G3WN7CL2" },
-    ]));
-    expect(tabs).toHaveLength(2);
-    expect(resolveWorkspaceTabLabel(tabs[0].href)).toBe("套图 · B0FKN88MFL");
-  });
   it("preserves route parameters used by projects and Agent nodes", () => {
     expect(normalizeWorkspaceHref(
       "/listing/analysis",
@@ -24,40 +16,17 @@ describe("global workspace tabs", () => {
   });
 
   it("resolves labels across normal, dynamic, and Agent routes", () => {
-    expect(resolveWorkspaceTabLabel("/ops/inventory")).toBe("库存关注");
+    expect(resolveWorkspaceTabLabel("/ops/inventory")).toBe("库存预警");
     expect(resolveWorkspaceTabLabel("/dev/project/12/analysis")).toBe("市场分析工作台");
     expect(resolveWorkspaceTabLabel("/listing/generate?agentRunId=run_1&nodeId=G3")).toBe("G3 · 产品描述");
     expect(resolveWorkspaceTabLabel("/emperor/agents/listing.full.workflow/canvas"))
       .toBe("Agent画布 · listing.full.workflow");
   });
 
-  it.each([
-    ["/ops/product-board", "产品看板"],
-    ["/ops/profit-board", "利润看板"],
-    ["/ops/product-tasks", "任务看板"],
-  ])("uses the exact operations title for %s including query and hash", (path, label) => {
-    for (const suffix of ["", "?month=2026-10&operatorId=7", "#details", "?storeName=Store%20A&country=US#details"]) {
-      const href = `${path}${suffix}`;
-      expect(resolveWorkspaceTabLabel(href)).toBe(label);
-      expect(readWorkspaceTabs(JSON.stringify([{ href, lastActiveAt: 1 }]))).toEqual([{ href, label, lastActiveAt: 1 }]);
-      expect(upsertWorkspaceTab([], { href, label: "", lastActiveAt: 1 })).toEqual([{ href, label, lastActiveAt: 1 }]);
-    }
-    const href = normalizeWorkspaceHref(path, "month=2026-10", "details");
-    expect(href).toBe(`${path}?month=2026-10#details`);
-    expect(resolveWorkspaceTabLabel(href)).toBe(label);
-  });
-
-  it("keeps existing operations labels and preferred labels unchanged", () => {
-    expect(resolveWorkspaceTabLabel("/ops/products?country=US#history")).toBe("产品总览");
-    expect(resolveWorkspaceTabLabel("/ops/tasks?status=pending")).toBe("任务看板");
-    expect(resolveWorkspaceTabLabel("/ops/product-board", " 自定义标签 ")).toBe("自定义标签");
-    expect(resolveWorkspaceTabLabel("/ops/product-board-other")).toBe("product board other");
-  });
-
   it("adds, revisits, and removes tabs without losing the other open pages", () => {
     const first = upsertWorkspaceTab([], {
-      href: "/listing/comparison",
-      label: "竞品对比分析",
+      href: "/listing/canvas",
+      label: "工作流画布",
       lastActiveAt: 1,
     });
     const second = upsertWorkspaceTab(first, {
@@ -66,15 +35,15 @@ describe("global workspace tabs", () => {
       lastActiveAt: 2,
     });
     const revisited = upsertWorkspaceTab(second, {
-      href: "/listing/comparison",
-      label: "竞品对比分析",
+      href: "/listing/canvas",
+      label: "工作流画布",
       lastActiveAt: 3,
     });
 
     expect(revisited).toHaveLength(2);
     expect(revisited[0].lastActiveAt).toBe(3);
     expect(removeWorkspaceTab(revisited, "/ops/ads").map((tab) => tab.href))
-      .toEqual(["/listing/comparison"]);
+      .toEqual(["/listing/canvas"]);
   });
 
   it("rejects malformed and public-page entries when restoring storage", () => {

@@ -3,19 +3,19 @@ import { readFileSync } from "node:fs";
 
 const routerSource = readFileSync(new URL("./routers/kbImages.ts", import.meta.url), "utf8");
 const repositorySource = readFileSync(new URL("./kbDb.ts", import.meta.url), "utf8");
+const exportRouterSource = readFileSync(new URL("./domains/image/routers/knowledgeExport.ts", import.meta.url), "utf8");
 
 describe("图片知识库工作空间范围契约", () => {
   it("图片集和瀑布流读取将当前请求工作空间传给仓储层", () => {
     expect(routerSource).toContain("listImageSetsWithThumbnails(ctx.user.id, ctx.workspaceId!");
     expect(routerSource).toContain("listAllImages(ctx.user.id, ctx.workspaceId!");
+    expect(exportRouterSource).toContain("listAllImages(ctx.user.id, ctx.workspaceId!");
   });
 
   it("仓储层将图片集与图片范围同时约束在workspaceId内", () => {
     expect(repositorySource).toContain("imageSetScopeCondition(userId, workspaceId, scope)");
     expect(repositorySource).toContain("eq(kbImageSets.workspaceId, workspaceId)");
     expect(repositorySource).toContain("imageSetIdsMatching(imageSetScopeCondition(userId, workspaceId, scope))");
-    const listProjection = repositorySource.slice(repositorySource.indexOf("const SET_LIST_FIELDS ="), repositorySource.indexOf("export async function listImageSetsWithThumbnails"));
-    expect(listProjection).toContain("workspaceId: kbImageSets.workspaceId");
   });
 
   it("所有图片知识库接口均经过knowledge工作空间授权", () => {
@@ -42,23 +42,22 @@ describe("图片知识库工作空间范围契约", () => {
     expect(repositorySource).toContain("ownedImageSetCondition(imageSetId, userId, workspaceId)");
     expect(repositorySource).toContain("deleteImageInOwnedSet(imageId: number, imageSetId: number, userId: number, workspaceId: number)");
     expect(repositorySource).toContain("reorderImagesInOwnedSet(imageSetId: number, userId: number, workspaceId: number");
-    expect(routerSource).toContain("getImageInOwnedSet(item.id, set.id, ctx.user.id, ctx.workspaceId!)");
+    expect(routerSource).toContain("getImageInOwnedSet(input.imageId, set.id, ctx.user.id, ctx.workspaceId!)");
     expect(routerSource).toContain("reorderImagesInOwnedSet(set.id, ctx.user.id, ctx.workspaceId!, input.imageOrders)");
   });
 
-  it("旧删除入口也委托给有管理员与工作空间校验的回收站服务", () => {
-    expect(routerSource).toContain('"set",input.id');
-    expect(routerSource).toContain('"image",input.imageId');
-    expect(routerSource).toContain('workspaceId:ctx.workspaceId!,userId:ctx.user.id,role:ctx.user.role');
-    expect(routerSource).not.toContain("deleteOwnedImageSet(input.id");
-    expect(routerSource).not.toContain("deleteImageInOwnedSet(input.imageId");
+  it("删除集合在删子图前先校验当前工作空间所有权，子图删除也带同一复合谓词", () => {
+    expect(routerSource).toContain("getOwnedImageSet(input.id, ctx.user.id, ctx.workspaceId!)");
+    expect(routerSource).toContain("deleteOwnedImageSet(input.id, ctx.user.id, ctx.workspaceId!)");
+    expect(repositorySource).toContain("const rows = await _d.select({ id: kbImageSets.id }).from(kbImageSets).where(condition).limit(1)");
+    expect(repositorySource).toContain("await _d.delete(kbImages).where(and(eq(kbImages.imageSetId, id), imageSetIdsMatching(condition)))");
   });
 
   it("刷新、上传、确认、风格与重分析均不会越过当前工作空间", () => {
     expect(routerSource).toContain("getOwnedImageSet(input.setId, ctx.user.id, ctx.workspaceId!)");
     expect(routerSource).toContain("updateOwnedImageSet(set.id, ctx.user.id, ctx.workspaceId!, { status: \"analyzing\" })");
-    expect(routerSource).toContain("getImageForTagEditing(imageId, ctx.user.id, ctx.workspaceId!, admin)");
-    expect(routerSource).toContain("updateImageTagsForEditor(imageId, ctx.user.id, ctx.workspaceId!, admin");
+    expect(routerSource).toContain("getOwnedImage(imageId, ctx.user.id, ctx.workspaceId!)");
+    expect(routerSource).toContain("updateOwnedImage(imageId, ctx.user.id, ctx.workspaceId!");
     expect(routerSource).toContain("updateOwnedImageSet(id, ctx.user.id, ctx.workspaceId!, update)");
     expect(repositorySource).toContain("imageInOwnedWorkspaceCondition(imageId, userId, workspaceId)");
   });
@@ -71,23 +70,15 @@ describe("图片知识库工作空间范围契约", () => {
   });
 
   it("列表和详情交付前动态刷新图片对象访问地址", () => {
-    expect(routerSource).toContain("delivery.forSet(set, set.thumbnailImages)");
-    expect(routerSource).toContain("resolveImagesForDelivery(checked.images)");
-    expect(routerSource).toContain("const rawImages = await kbDb.listImagesBySetLight(set.id)");
-    expect(routerSource).toContain("resolveImagesForDelivery(sharedImageTags(rawImages, set.sourceLayout).map(image => inheritSetImageTags(image,set)))");
-    expect(routerSource).toContain('manual && sourceCoverage?.status !== "verified" ? [] : await resolveImagesForDelivery(sharedImageTags(rawImages, set.sourceLayout).map(image => inheritSetImageTags(image,set)))');
-    expect(routerSource.indexOf("readManualKbImageCoverage(db")).toBeLessThan(routerSource.indexOf("resolveImagesForDelivery(sharedImageTags(rawImages, set.sourceLayout).map(image => inheritSetImageTags(image,set)))"));
-    expect(routerSource).toContain("await delivery.selection(collectionImages)");
-    expect(routerSource).toContain("rawImages.filter(image=>image.imageSetId!==null)");
-    expect(routerSource).toContain("await delivery.selection(image.moduleImages)");
-    expect(routerSource).toContain("await resolveImageForDelivery(member)");
+    expect(routerSource).toContain("resolveImagesForDelivery(set.thumbnailImages)");
+    expect(routerSource).toContain("resolveImagesForDelivery(await kbDb.listImagesBySetLight(set.id))");
+    expect(routerSource).toContain("resolveImagesForDelivery(await kbDb.listAllImages");
   });
 
   it("Amazon导入通过统一采集Job且刷新确认前保留旧图片", () => {
     expect(routerSource).toContain("startAmazonAcquisitionJob");
     expect(routerSource).toContain('consumerType: "kb_images"');
-    expect(routerSource).toContain('mode: "new_version"');
-    expect(readFileSync(new URL("./domains/acquisition/knowledgeCollectionBatch.ts", import.meta.url), "utf8")).toContain('cachePolicy: "refresh"');
+    expect(routerSource).toContain('cachePolicy: "refresh"');
     const importSection = routerSource.slice(routerSource.indexOf("importByAsin:"), routerSource.indexOf("confirmImageTags:"));
     expect(importSection).not.toContain("processImport(");
     const refreshSection = routerSource.slice(routerSource.indexOf("reCrawlByPosition:"), routerSource.indexOf("uploadImages:"));

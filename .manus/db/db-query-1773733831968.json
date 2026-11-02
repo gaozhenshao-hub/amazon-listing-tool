@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `dev_bom_items` ADD `parentId` int;\nALTER TABLE `dev_bom_items` ADD `level` int DEFAULT 0;\nALTER TABLE `dev_bom_items` ADD `sortOrder` int DEFAULT 0;\nALTER TABLE `dev_time_plans` ADD `status` varchar(50) DEFAULT 'pending';\nALTER TABLE `dev_time_plans` ADD `color` varchar(20);\nALTER TABLE `dev_time_plans` ADD `dependsOn` int;\nALTER TABLE `dev_time_plans` ADD `sortOrder` int DEFAULT 0;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute ALTER TABLE `dev_bom_items` ADD `parentId` int;\nALTER TABLE `dev_bom_items` ADD `level` int DEFAULT 0;\nALTER TABLE `dev_bom_items` ADD `sortOrder` int DEFAULT 0;\nALTER TABLE `dev_time_plans` ADD `status` varchar(50) DEFAULT 'pending';\nALTER TABLE `dev_time_plans` ADD `color` varchar(20);\nALTER TABLE `dev_time_plans` ADD `dependsOn` int;\nALTER TABLE `dev_time_plans` ADD `sortOrder` int DEFAULT 0;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 2909
+}

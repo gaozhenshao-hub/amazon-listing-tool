@@ -1,14 +1,10 @@
-import { ProductCostSummary } from "./ProductCostSummary";
 import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import ProductMonthlyFinancialDialog, { type ProductMonthlyFinancialTarget } from "./ProductMonthlyFinancialDialog";
 import { MANAGER_ROLES } from "@shared/const";
 import { buildUnifiedProductOverview } from "@shared/unifiedProductOverview";
-import { hasVerifiedSourceScope, shouldWaitForProductOverviewFallback } from "./productOverviewScope";
-import { buildProductFinancialTrend, type ProductFinancialTrendPoint } from "./productFinancialTrend";
-import { subscribeMonthlyFinancialChanges } from "./monthlyFinancialWriteEvents";
+import { countLegacyFinancialProfitMonths, hasVerifiedSourceScope, isSameSourceProductScope, selectFinancialProfitsForProduct, shouldWaitForProductOverviewFallback } from "./productOverviewScope";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -42,8 +38,6 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { asFiniteMetric, formatMetricFixed } from "./productOverviewMetricSafety";
-
-const PRODUCTS_PER_PAGE = 12;
 
 const MARKETPLACE_OPTIONS = [
   { value: "ALL", label: "全部站点" },
@@ -279,35 +273,59 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 }
 
 // ─── Product Row Component ───
-function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, isManagerOrAbove = false, sortKey, sortDir, onSort, productionConfig, profitTrend, financialLoading = false, financialError = false, onViewFinancialReport }: {
+function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, ownerCandidates = [], isManagerOrAbove = false, onAssignSourceOwner, isAssigningSourceOwner = false, sortKey, sortDir, onSort, productionConfig, planningRows, financialProfits = [], legacyFinancialProfitMonths = 0, onSaveCostParameters, onSaveFinancialProfits }: {
   product: ProductOverview;
   onNavigate: (product: ProductOverview) => void;
   onDelete: (id: number) => void;
   onSync: (productId: number) => void;
   isSyncing: boolean;
+  operatorList: string[];
+  onAssign: (productId: number, operator: string) => void;
+  ownerCandidates?: Array<{ id: number; name: string; role: string }>;
   isManagerOrAbove?: boolean;
+  onAssignSourceOwner?: (target: { parentAsin: string; storeName: string; country: string }, assigneeUserId: number) => void;
+  isAssigningSourceOwner?: boolean;
   sortKey: SortKey;
   sortDir: SortDir;
   onSort: (key: SortKey) => void;
   productionConfig?: { productionTimeDays: number; shippingTimeDays: number; notes: string | null };
-  profitTrend: ProductFinancialTrendPoint[];
-  financialLoading?: boolean;
-  financialError?: boolean;
-  onViewFinancialReport?: () => void;
+  planningRows?: any[];
+  financialProfits?: any[];
+  onSaveCostParameters?: (row: any, values: Record<string, string>) => void;
+  legacyFinancialProfitMonths?: number;
+  onSaveFinancialProfits?: (scope: { parentAsin: string; storeName?: string; country?: string; entries: Array<{ yearMonth: string; financialProfit: number }> }) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const [assignOpen, setAssignOpen] = useState(false);
   const [newOp, setNewOp] = useState("");
   const [editingProduction, setEditingProduction] = useState(false);
   const [prodDays, setProdDays] = useState(productionConfig?.productionTimeDays ?? 15);
   const [shipDays, setShipDays] = useState(productionConfig?.shippingTimeDays ?? 30);
+  const [costPanelOpen, setCostPanelOpen] = useState(false);
+  const [costDrafts, setCostDrafts] = useState<Record<string, Record<string, string>>>({});
+  const [financialProfitOpen, setFinancialProfitOpen] = useState(false);
+  const [financialProfitDrafts, setFinancialProfitDrafts] = useState<Record<string, string>>({});
   const hasManagedProfile = product.id > 0;
   const hasScopedSourceIdentity = hasVerifiedSourceScope(product);
   // A manually assigned source product is not promoted to a product profile.
   // Its exact parent/store/site scope is sufficient for source-derived costs and
-  // scoped operational editing, without changing source facts.
+  // user-maintained financial trend records, without changing source facts.
   const canMaintainScopedOperations = hasManagedProfile || hasScopedSourceIdentity;
+  const canAssignSourceOwner = Boolean(isManagerOrAbove && product.parentAsin && product.storeName && product.marketplace && ownerCandidates.length && onAssignSourceOwner);
   const bi = product.basicInfo;
+  const profitTrend = useMemo(() => Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(); date.setMonth(date.getMonth() - 5 + index);
+    const yearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const saved = financialProfits.find((item: any) => item.yearMonth === yearMonth);
+    const value = financialProfitDrafts[yearMonth] ?? (saved?.financialProfit == null ? "" : String(saved.financialProfit));
+    return { yearMonth, month: yearMonth.slice(2), financialProfit: value === "" ? null : Number(value) };
+  }), [financialProfits, financialProfitDrafts]);
+  const productPlanningRows = useMemo(() => (planningRows || []).filter((row: any) => isSameSourceProductScope(row, product)), [planningRows, product]);
 
+  const getCostValue = (row: any, field: string) => costDrafts[row.asin]?.[field] ?? (row[field] == null ? "" : String(row[field]));
+  const updateCostDraft = (asin: string, field: string, value: string) => {
+    setCostDrafts(current => ({ ...current, [asin]: { ...(current[asin] || {}), [field]: value } }));
+  };
 
   // Compute inventory status
   const inventoryStatus = useMemo(() => {
@@ -397,8 +415,6 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, isMana
           </div>
         </div>
 
-        {hasScopedSourceIdentity && <ProductCostSummary parentAsin={product.parentAsin} storeName={product.storeName!} country="US" name={product.chineseName || product.title} />}
-
         {/* Basic Info Pills */}
         <div className="flex items-center gap-4 shrink-0 text-xs" onClick={e => e.stopPropagation()}>
           {bi && (
@@ -434,16 +450,11 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, isMana
             </>
           )}
 
-          {canMaintainScopedOperations && <div className="min-h-16 w-[260px] shrink-0" onClick={e => e.stopPropagation()}>
-            <p className="mb-0.5 text-[10px] text-muted-foreground">近6个月财务利润 · USD</p>
-            {financialLoading ? <p className="text-xs text-muted-foreground">正在读取月报…</p> : financialError ? <p className="text-xs text-red-600">月报读取失败，请刷新重试</p> : <>
-              <ResponsiveContainer width="100%" height={45}><LineChart data={profitTrend} margin={{ top: 2, right: 2, left: 2, bottom: 0 }}><XAxis dataKey="month" interval={0} padding={{ left: 15, right: 15 }} tick={{ fontSize: 9 }} axisLine={false} tickLine={false} /><YAxis hide /><RechartsTooltip formatter={(value) => [value == null ? "未同步月报" : `$${Number(value).toFixed(2)}`, "财务利润"]} /><Line connectNulls={false} type="monotone" dataKey="financialProfit" name="财务利润" stroke="#7c3aed" strokeWidth={2} dot={{ r: 2 }} /></LineChart></ResponsiveContainer>
-              {profitTrend.every(point => point.financialProfit === null) && <p className="text-[10px] text-muted-foreground">近6个月暂无可用月报</p>}
-            </>}
+          {canMaintainScopedOperations && <div className="h-14 w-[260px] shrink-0" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between"><p className="mb-0.5 text-[10px] text-muted-foreground">近6个月财务利润</p><button className="text-[10px] text-primary hover:underline" onClick={() => setFinancialProfitOpen(open => !open)}>填写</button></div>
+            <ResponsiveContainer width="100%" height="100%"><LineChart data={profitTrend} margin={{ top: 0, right: 2, left: 2, bottom: 0 }}><XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} /><YAxis hide /><RechartsTooltip formatter={(value) => [value == null ? "待填写" : `$${Number(value).toFixed(2)}`, "财务利润"]} /><Line connectNulls type="monotone" dataKey="financialProfit" name="财务利润" stroke="#7c3aed" strokeWidth={2} dot={{ r: 2 }} /></LineChart></ResponsiveContainer>
           </div>
           }
-
-          {hasScopedSourceIdentity && product.marketplace !== "ALL" && onViewFinancialReport && <Button variant="outline" size="sm" className="shrink-0 text-xs" aria-label={`查看 ${product.parentAsin} 已确认月报与分析`} onClick={onViewFinancialReport}>月报与利润分析</Button>}
 
           {/* Product Name (品名) */}
           {product.chineseName && (
@@ -452,9 +463,82 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, isMana
             </div>
           )}
 
-          <span className="shrink-0 rounded border bg-blue-50 px-2 py-1 text-xs" title="按赛狐产品负责人及已确认的人员映射显示">
-            <User className="mr-1 inline h-3 w-3" />{product.operator || "赛狐未提供负责人"}
-          </span>
+          {/* Operator (运营负责人) */}
+          {/* Operator display & assign popover */}
+          {hasManagedProfile ? (() => {
+            const assignedNames = (product.operator || "").split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean);
+            return (
+              <Popover open={assignOpen} onOpenChange={setAssignOpen}>
+                <PopoverTrigger asChild>
+                  <button className={`text-xs rounded px-2 py-1 transition-colors border ${
+                    assignedNames.length > 0
+                      ? "text-foreground bg-blue-50 border-blue-200 hover:bg-blue-100"
+                      : "text-muted-foreground/60 bg-orange-50 border-orange-200 hover:bg-orange-100 italic"
+                  }`}>
+                    <User className="h-3 w-3 inline mr-1" />
+                    {assignedNames.length > 0 ? assignedNames.join("/") : "分配运营"}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-52 p-2" align="end">
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">分配运营（可多选）</p>
+                    <div className="max-h-40 overflow-y-auto space-y-0.5">
+                      {operatorList.map((name: string) => {
+                        const isAssigned = assignedNames.includes(name);
+                        return (
+                          <button key={name}
+                            className={`w-full text-left text-xs px-2 py-1.5 rounded flex items-center gap-1.5 ${
+                              isAssigned ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-muted"
+                            }`}
+                            onClick={() => {
+                              onAssign(product.id, name);
+                              // don't close — allow multi-select
+                            }}
+                          >
+                            {isAssigned ? <UserCheck className="h-3 w-3" /> : <User className="h-3 w-3 text-muted-foreground" />}
+                            {name}
+                            {isAssigned && <span className="ml-auto text-[10px] text-blue-400">点击移除</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex gap-1 pt-1 border-t">
+                      <Input placeholder="新名称..." value={newOp} onChange={e => setNewOp(e.target.value)}
+                        className="h-7 text-xs"
+                        onKeyDown={e => { if (e.key === "Enter" && newOp.trim()) { onAssign(product.id, newOp.trim()); setNewOp(""); } }}
+                      />
+                      <Button size="sm" className="h-7 px-2" disabled={!newOp.trim()}
+                        onClick={() => { onAssign(product.id, newOp.trim()); setNewOp(""); }}>
+                        <UserPlus className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <Button size="sm" variant="outline" className="w-full h-7 text-xs" onClick={() => setAssignOpen(false)}>完成</Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            );
+          })() : canAssignSourceOwner ? (
+            <Popover open={assignOpen} onOpenChange={setAssignOpen}>
+              <PopoverTrigger asChild>
+                <button className={`text-xs rounded px-2 py-1 transition-colors border ${product.operatorSource === "manual_assignment" ? "text-foreground bg-blue-50 border-blue-200 hover:bg-blue-100" : "text-muted-foreground/80 bg-orange-50 border-orange-200 hover:bg-orange-100"}`}>
+                  <User className="h-3 w-3 inline mr-1" />{product.operatorSource === "manual_assignment" && product.operator ? product.operator : "分配负责人"}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-60 p-2" align="end">
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">分配负责人</p>
+                  <p className="text-[11px] text-muted-foreground">保存为父ASIN、店铺与站点的人工规则，不改写领星原始数据。</p>
+                  <div className="max-h-44 overflow-y-auto space-y-0.5">
+                    {ownerCandidates.map((candidate) => <button key={candidate.id} disabled={isAssigningSourceOwner} className={`w-full text-left text-xs px-2 py-1.5 rounded flex items-center gap-1.5 ${product.operatorSource === "manual_assignment" && product.operator === candidate.name ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-muted"}`} onClick={() => onAssignSourceOwner?.({ parentAsin: product.parentAsin, storeName: product.storeName!, country: product.marketplace! }, candidate.id)}>
+                      {product.operatorSource === "manual_assignment" && product.operator === candidate.name ? <UserCheck className="h-3 w-3" /> : <User className="h-3 w-3 text-muted-foreground" />}{candidate.name}<span className="ml-auto text-[10px] text-muted-foreground">{candidate.role}</span>
+                    </button>)}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          ) : (
+            <TooltipProvider><Tooltip><TooltipTrigger asChild><span className="text-xs rounded px-2 py-1 border text-muted-foreground bg-muted/40">未绑定档案</span></TooltipTrigger><TooltipContent>{isManagerOrAbove ? "该行缺少可验证的父ASIN、店铺或站点身份，不能执行负责人分配。" : "需要运营管理员权限才能为来源行分配负责人。"}</TooltipContent></Tooltip></TooltipProvider>
+          )}
 
           {/* Actions */}
           <div className="flex items-center gap-1">
@@ -499,6 +583,49 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, isMana
       {/* ═══ Weekly Data Table ═══ */}
       {expanded && (
         <div>
+          {canMaintainScopedOperations && financialProfitOpen && <section className="border-b bg-violet-50/50 px-3 py-2.5"><div className="flex items-center justify-between gap-3"><div><span className="text-xs font-semibold text-violet-800">最近6个月财务利润（USD）</span><span className="ml-2 text-[11px] text-muted-foreground">{hasScopedSourceIdentity ? "按父ASIN、店铺与站点手动维护；仅用于本卡片财务利润趋势。" : "历史手工档案记录按父ASIN维护。"}</span>{hasScopedSourceIdentity && legacyFinancialProfitMonths > 0 && <p className="mt-1 text-[11px] text-amber-700">存在 {legacyFinancialProfitMonths} 个月旧版未限定店铺/站点的记录，系统不会自动归属到本卡片。</p>}</div><Button size="sm" className="h-7 text-[11px]" onClick={() => onSaveFinancialProfits?.({ parentAsin: product.parentAsin, ...(hasScopedSourceIdentity ? { storeName: product.storeName!, country: product.marketplace! } : {}), entries: profitTrend.filter(item => item.financialProfit !== null).map(item => ({ yearMonth: item.yearMonth, financialProfit: item.financialProfit! })) })}>保存财务利润</Button></div><div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">{profitTrend.map(item => <label key={item.yearMonth} className="text-[11px] text-muted-foreground">{item.yearMonth}<Input type="number" step="0.01" className="mt-1 h-7 text-xs" value={financialProfitDrafts[item.yearMonth] ?? (item.financialProfit == null ? "" : String(item.financialProfit))} placeholder="0.00" onChange={event => setFinancialProfitDrafts(current => ({ ...current, [item.yearMonth]: event.target.value }))} /></label>)}</div></section>}
+          {canMaintainScopedOperations && productPlanningRows.length > 0 && (
+            <section className="border-b bg-slate-50/70 px-3 py-2.5">
+              <button className="flex w-full items-center justify-between text-left" onClick={() => setCostPanelOpen(open => !open)}>
+                <span>
+                  <span className="text-xs font-semibold text-slate-700">产品基本信息（USD）</span>
+                  <span className="ml-2 text-[11px] text-muted-foreground">按子 ASIN 维护；成本会同步用于库存规划和月度采购资金。</span>
+                </span>
+                {costPanelOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+              </button>
+              {costPanelOpen && (
+                <div className="mt-2 overflow-x-auto rounded-md border bg-background">
+                  <table className="w-full min-w-[1510px] text-[11px]">
+                    <thead className="border-b bg-muted/40 text-muted-foreground">
+                      <tr><th className="px-2 py-1.5 text-left">子 ASIN / SKU</th><th className="px-2 py-1.5 text-right">产品成本</th><th className="px-2 py-1.5 text-right">预估头程</th><th className="px-2 py-1.5 text-right">实际头程</th><th className="px-2 py-1.5 text-right">预估 FBA</th><th className="px-2 py-1.5 text-right">实际 FBA</th><th className="px-2 py-1.5 text-right">售价</th><th className="px-2 py-1.5 text-left">预估尺寸 (in/cm)</th><th className="px-2 py-1.5 text-left">实际尺寸 (in/cm)</th><th className="px-2 py-1.5 text-right">预估重量 (lb/kg)</th><th className="px-2 py-1.5 text-right">实际重量 (lb/kg)</th><th className="px-2 py-1.5 text-right">预估平手价</th><th className="px-2 py-1.5 text-right">实际平手价</th><th className="px-2 py-1.5 text-center">操作</th></tr>
+                    </thead>
+                    <tbody>
+                      {productPlanningRows.map((row: any) => {
+                        const toNumber = (field: string) => Number(getCostValue(row, field) || 0);
+                        const sellingPrice = toNumber("sellingPrice");
+                        const estimatedBreakEven = sellingPrice * 0.85 - toNumber("productCost") - toNumber("estimatedFirstLegCost") - toNumber("estimatedFbaFee");
+                        const actualBreakEven = sellingPrice * 0.85 - toNumber("productCost") - toNumber("actualFirstLegCost") - toNumber("actualFbaFee");
+                        const fields = [
+                          ["productCost", "产品成本"], ["estimatedFirstLegCost", "预估头程"], ["actualFirstLegCost", "实际头程"], ["estimatedFbaFee", "预估 FBA"], ["actualFbaFee", "实际 FBA"], ["sellingPrice", "售价"],
+                        ] as const;
+                        return <tr key={`${row.asin}-${row.storeName}-${row.country}`} className="border-b last:border-0">
+                          <td className="px-2 py-1.5"><div className="font-medium">{row.asin}</div><div className="text-muted-foreground">{row.sku || "—"}</div></td>
+                          {fields.map(([field, label]) => <td key={field} className="px-1 py-1 text-right"><Input aria-label={`${row.asin}${label}`} type="number" min="0" step="0.01" className="h-7 w-[88px] text-right text-[11px]" value={getCostValue(row, field)} placeholder="0.00" onChange={event => updateCostDraft(row.asin, field, event.target.value)} /></td>)}
+                          <td className="px-1 py-1"><Input aria-label={`${row.asin}预估尺寸`} className="h-7 w-[120px] text-[11px]" value={getCostValue(row, "estimatedDimensions")} placeholder="长×宽×高" onChange={event => updateCostDraft(row.asin, "estimatedDimensions", event.target.value)} /></td>
+                          <td className="px-1 py-1"><Input aria-label={`${row.asin}实际尺寸`} className="h-7 w-[120px] text-[11px]" value={getCostValue(row, "actualDimensions")} placeholder="长×宽×高" onChange={event => updateCostDraft(row.asin, "actualDimensions", event.target.value)} /></td>
+                          <td className="px-1 py-1 text-right"><Input aria-label={`${row.asin}预估重量`} type="number" min="0" step="0.001" className="h-7 w-[92px] text-right text-[11px]" value={getCostValue(row, "estimatedWeight")} placeholder="0.000" onChange={event => updateCostDraft(row.asin, "estimatedWeight", event.target.value)} /></td>
+                          <td className="px-1 py-1 text-right"><Input aria-label={`${row.asin}实际重量`} type="number" min="0" step="0.001" className="h-7 w-[92px] text-right text-[11px]" value={getCostValue(row, "actualWeight")} placeholder="0.000" onChange={event => updateCostDraft(row.asin, "actualWeight", event.target.value)} /></td>
+                          <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${estimatedBreakEven < 0 ? "text-red-600" : "text-emerald-700"}`}>${estimatedBreakEven.toFixed(2)}</td>
+                          <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${actualBreakEven < 0 ? "text-red-600" : "text-emerald-700"}`}>${actualBreakEven.toFixed(2)}</td>
+                          <td className="px-2 py-1 text-center"><Button size="sm" className="h-7 text-[11px]" onClick={() => onSaveCostParameters?.(row, costDrafts[row.asin] || {})}>保存</Button></td>
+                        </tr>;
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-[11px]">
             <thead>
@@ -677,10 +804,8 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, isMana
 export default function OpsProducts() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
-  const [financialTarget, setFinancialTarget] = useState<ProductMonthlyFinancialTarget | null>(null);
   const isManagerOrAbove = user?.role && (MANAGER_ROLES as readonly string[]).includes(user.role);
-  const marketplaceFilter = "ALL";
-  const [page, setPage] = useState(0);
+  const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("active");
 
   // Mutations
@@ -693,6 +818,13 @@ export default function OpsProducts() {
     onSuccess: () => { utils.productOps.getProductOverviewWithWeeks.invalidate(); toast.success("产品已删除"); },
     onError: (e: any) => toast.error(e.message),
   });
+  const batchSyncWeeklyMut = trpc.productOps.batchSyncWeeklyOps.useMutation({
+    onSuccess: (data) => {
+      utils.productOps.getProductOverviewWithWeeks.invalidate();
+      toast.success(`批量同步完成：${data.total}个产品，${data.synced}周数据已同步${data.errors > 0 ? `，${data.errors}个失败` : ""}`);
+    },
+    onError: (e: any) => toast.error("批量同步失败", { description: e.message }),
+  });
   const batchAssignMut = trpc.productOps.batchAssignOperator.useMutation({
     onSuccess: (data) => {
       utils.productOps.getProductOverviewWithWeeks.invalidate();
@@ -703,7 +835,33 @@ export default function OpsProducts() {
     },
     onError: (e: any) => toast.error(e.message),
   });
+  const singleAssignMut = trpc.productOps.batchAssignOperator.useMutation({
+    onSuccess: (data) => {
+      utils.productOps.getProductOverviewWithWeeks.invalidate();
+      toast.success(`已分配给 ${data.operator}`);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const { data: ownerCandidates = [] } = trpc.inventoryOwnerAssignments.listEligibleUsers.useQuery(undefined, { enabled: Boolean(isManagerOrAbove) });
+  const assignSourceOwnerMut = trpc.inventoryOwnerAssignments.assignBatch.useMutation({
+    onSuccess: (data) => {
+      utils.productOps.getProductOverviewWithWeeks.invalidate();
+      toast.success(`已保存负责人规则：${data.assigneeName}`);
+    },
+    onError: (error: any) => toast.error("负责人分配保存失败", { description: error.message }),
+  });
   const [syncingProductId, setSyncingProductId] = useState<number | null>(null);
+  const syncSingleProductMut = trpc.productOps.syncWeeklyOpsFromLingxing.useMutation({
+    onSuccess: (data) => {
+      utils.productOps.getProductOverviewWithWeeks.invalidate();
+      setSyncingProductId(null);
+      toast.success(`同步完成：${data.syncedWeeks}周数据已更新`);
+    },
+    onError: (e: any) => {
+      setSyncingProductId(null);
+      toast.error("同步失败", { description: e.message });
+    },
+  });
   const { data: operatorList } = trpc.productOps.listOperators.useQuery();
 
   // State
@@ -726,12 +884,12 @@ export default function OpsProducts() {
   const [syncWeeks, setSyncWeeks] = useState(1); // weeks to sync: 1-26
   const [showSyncPopover, setShowSyncPopover] = useState(false);
 
-  // Read the Sellfox projection for the current US/USD parent identities.
+  // The MCP parent-ASIN weeks are the primary facts; ERP is historical fallback.
   const systemOverviewQuery = trpc.productOps.getProductOverviewWithWeeks.useQuery({
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "all",
     statusFilter: "all",
     weeks: 4,
-  }, { enabled: false });
+  });
   const {
     data: systemProducts,
     isLoading: systemLoading,
@@ -741,35 +899,45 @@ export default function OpsProducts() {
   } = systemOverviewQuery;
 
   // Import data query (lingxing or saihu)
-  const { data: importProducts, isLoading: importLoading, error: importSourceError, refetch: refetchImportOverview } = trpc.dataImport.getProductOverviewFromImport.useQuery({
-    sourceType: "saihu",
-    consolidateNorthAmerica: true,
+  const { data: importProducts, isLoading: importLoading } = trpc.dataImport.getProductOverviewFromImport.useQuery({
+    sourceType: "erp",
     weeks: 4,
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "ALL",
-  }, { staleTime: 120_000, retry: false, trpc: { context: { skipBatch: true } } });
+  });
 
-  const monthlyFinancialQuery = trpc.northAmericaBoard.trends.useQuery(
-    { expectedWorkspaceId: user?.defaultWorkspaceId ?? 0 },
-    { enabled: !!user?.defaultWorkspaceId, staleTime: 300_000, retry: false, trpc: { context: { skipBatch: true } } },
-  );
-  const financialPayload = !monthlyFinancialQuery.isError && monthlyFinancialQuery.data?.identity.userId === user?.id
-    && monthlyFinancialQuery.data?.identity.workspaceId === user?.defaultWorkspaceId ? monthlyFinancialQuery.data?.payload : null;
-  useEffect(() => subscribeMonthlyFinancialChanges(notice => {
-    if (notice.workspaceId === user?.defaultWorkspaceId) void utils.northAmericaBoard.trends.invalidate();
-  }), [user?.defaultWorkspaceId, utils]);
+  const { data: inventoryPlanning } = trpc.dataImport.getInventoryPlanningFromImport.useQuery({
+    marketplace: marketplaceFilter,
+  });
+  const { data: monthlyFinancialProfits } = trpc.dataImport.getMonthlyFinancialProfits.useQuery();
 
   // Production config for inventory status
   const { data: productionConfigs } = trpc.dataImport.getProductionConfigs.useQuery({
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "US",
   });
 
-  // One Sellfox parent card includes US, CA and MX data converted to USD.
+  const savePlanningParametersMut = trpc.dataImport.saveInventoryPlanningParameters.useMutation({
+    onSuccess: () => {
+      void utils.dataImport.getInventoryPlanningFromImport.invalidate();
+      toast.success("产品基本信息已保存，平手价和采购成本已同步更新");
+    },
+    onError: (error) => toast.error("产品基本信息保存失败", { description: error.message }),
+  });
+  const saveMonthlyFinancialProfitsMut = trpc.dataImport.saveMonthlyFinancialProfits.useMutation({
+    onSuccess: () => { void utils.dataImport.getMonthlyFinancialProfits.invalidate(); toast.success("财务利润已保存，趋势图已更新"); },
+    onError: (error) => toast.error("财务利润保存失败", { description: error.message }),
+  });
+
+  // Same parent ASIN/store/site belongs to one card. MCP facts win for overlapping
+  // natural weeks and ERP remains only as explicitly labelled historical fallback.
   const products = useMemo(() => {
-    const primary: ProductOverview[] = [];
+    const primary = (systemProducts || []) as ProductOverview[];
     const fallback = (importProducts || []) as ProductOverview[];
     return buildUnifiedProductOverview(primary, fallback);
-  }, [importProducts]);
-  const isLoading = importLoading;
+  }, [systemProducts, importProducts]);
+  // ERP history is an opportunistic fallback. When authoritative MCP facts
+  // already yield cards, do not delay them. When they yield none, wait for the
+  // fallback query instead of prematurely rendering a misleading empty state.
+  const isLoading = systemLoading || shouldWaitForProductOverviewFallback(systemProducts?.length ?? 0, importLoading);
 
   const [form, setForm] = useState({
     parentAsin: "", title: "", brand: "", category: "", marketplace: "US",
@@ -779,8 +947,6 @@ export default function OpsProducts() {
   function resetForm() {
     setForm({ parentAsin: "", title: "", brand: "", category: "", marketplace: "US", budgetRevenue: "", budgetProfit: "", budgetAcos: "", notes: "", operator: "", storeName: "" });
   }
-
-  useEffect(() => { setPage(0); }, [searchTerm, operatorFilter, storeFilter, statusFilter]);
 
   // Filtering + sorting
   const filtered = useMemo(() => {
@@ -852,12 +1018,10 @@ export default function OpsProducts() {
 
   return (
     <div className="space-y-4">
-      {importSourceError && <section role="alert" className="space-y-2 rounded border border-amber-400 p-3 text-sm"><p>ERP 历史来源暂不可合并展示，不代表销量为零或没有产品。赛狐受控日数据与旧整周相交时，旧周总额不能拆分；请到受控同步页查看覆盖日、排除周及缺口。</p><Button variant="outline" onClick={() => navigate("/ops/data-import")}>查看赛狐日／月报受控来源</Button></section>}
-
-      <ProductMonthlyFinancialDialog target={financialTarget} onClose={() => setFinancialTarget(null)} />
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-xs text-blue-800">
         <Badge variant="outline" className="border-blue-200 bg-white text-blue-700">统一产品视图</Badge>
-        <span>同一父ASIN仅显示一张美国站卡片；加拿大、墨西哥已按 USD 合并。赛狐按天数据汇总为周六至周五，同日重复导入只计一次。</span>
+        <span>同一父ASIN、店铺和站点仅显示一张卡片；领星ASIN周数据经系统汇总为父ASIN自然周事实，ERP仅补充未覆盖的历史周。</span>
+        <Button variant="link" size="sm" className="h-auto px-0 text-xs text-blue-700" onClick={() => navigate("/ops/inventory")}>进入库存规划</Button>
       </div>
 
       {/* Header */}
@@ -865,14 +1029,66 @@ export default function OpsProducts() {
         <div>
           <h1 className="text-2xl font-bold">产品运营总览</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            赛狐产品数据 · 美国站 USD（合并加拿大、墨西哥），同日重复导入只计一次。
+            权威周度来源：领星ASIN周数据·系统父ASIN汇总；ERP仅作为未覆盖历史的来源化参考。ASIN日数据用于单ASIN详情与库存规划，不参与本页周度累计。
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate("/ops/data-import")}>
             <Upload className="h-3.5 w-3.5" /> 导入数据
           </Button>
-          <Button variant="outline" onClick={() => navigate("/ops/saihu-sync")}><RefreshCw className="mr-2 h-4 w-4" />赛狐数据同步</Button>
+          <Popover open={showSyncPopover} onOpenChange={setShowSyncPopover}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={batchSyncWeeklyMut.isPending}
+                className="gap-2"
+              >
+                {batchSyncWeeklyMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {batchSyncWeeklyMut.isPending ? "同步中..." : "批量同步周度数据"}
+                <ChevronDown className="h-3 w-3 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72 p-4" align="end">
+              <div className="space-y-3">
+                <div>
+                  <h4 className="font-medium text-sm">同步周数设置</h4>
+                  <p className="text-xs text-muted-foreground mt-1">选择需要同步的历史数据周数，周数越多耗时越长</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select value={String(syncWeeks)} onValueChange={(v) => setSyncWeeks(Number(v))}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">最近 1 周</SelectItem>
+                      <SelectItem value="2">最近 2 周</SelectItem>
+                      <SelectItem value="4">最近 4 周（1个月）</SelectItem>
+                      <SelectItem value="8">最近 8 周（2个月）</SelectItem>
+                      <SelectItem value="13">最近 13 周（1季度）</SelectItem>
+                      <SelectItem value="26">最近 26 周（半年）</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {syncWeeks > 4 && (
+                  <div className="flex items-start gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-md px-2.5 py-2">
+                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    <span>同步 {syncWeeks} 周数据预计需要 {Math.ceil(syncWeeks * 0.5)} 分钟，请耐心等待</span>
+                  </div>
+                )}
+                <Button
+                  className="w-full gap-2"
+                  onClick={() => {
+                    setShowSyncPopover(false);
+                    batchSyncWeeklyMut.mutate({ weeks: syncWeeks });
+                  }}
+                  disabled={batchSyncWeeklyMut.isPending}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  开始同步 {syncWeeks} 周数据
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
           <Button onClick={() => setShowCreate(true)} className="gap-2">
             <Plus className="h-4 w-4" /> 添加产品
           </Button>
@@ -904,7 +1120,17 @@ export default function OpsProducts() {
         </div>
         <div className="flex items-center gap-1">
           <Globe className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm">美国站 · USD（含加拿大、墨西哥）</span>
+          <Select value={marketplaceFilter} onValueChange={setMarketplaceFilter}>
+            <SelectTrigger className="w-[120px]">
+              <SelectValue placeholder="站点" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">全部站点</SelectItem>
+              {availableMarketplaces.map(m => (
+                <SelectItem key={m} value={m}>{m}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[110px]">
@@ -992,7 +1218,7 @@ export default function OpsProducts() {
       )}
 
       {/* ═══ Product Blocks ═══ */}
-      {importSourceError ? (
+      {systemOverviewError ? (
         <Card className="border-amber-200 bg-amber-50/40">
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <AlertCircle className="h-10 w-10 text-amber-600" />
@@ -1001,11 +1227,11 @@ export default function OpsProducts() {
               <p className="max-w-xl text-sm text-amber-800">
                 当前不会将请求失败显示为“0个产品”。请重试；若问题持续，请保留页面时间并联系管理员核对服务日志。
               </p>
-              {importSourceError?.message && (
-                <p className="text-xs text-amber-700">错误摘要：{importSourceError.message}</p>
+              {systemOverviewErrorDetail?.message && (
+                <p className="text-xs text-amber-700">错误摘要：{systemOverviewErrorDetail.message}</p>
               )}
             </div>
-            <Button variant="outline" className="gap-2 border-amber-300 bg-white" onClick={() => void refetchImportOverview()}>
+            <Button variant="outline" className="gap-2 border-amber-300 bg-white" onClick={() => void refetchSystemOverview()}>
               <RefreshCw className="h-4 w-4" /> 重试加载
             </Button>
           </CardContent>
@@ -1043,8 +1269,7 @@ export default function OpsProducts() {
         </Card>
       ) : (
         <div className="space-y-3">
-          <div className="flex items-center justify-end gap-3 text-sm"><Button variant="outline" disabled={page === 0} onClick={() => setPage(value => value - 1)}>上一页</Button><span className="text-muted-foreground">每页 {PRODUCTS_PER_PAGE} 个产品</span><span>第 {Math.min(page, Math.max(0, Math.ceil(filtered.length / PRODUCTS_PER_PAGE) - 1)) + 1} / {Math.max(1, Math.ceil(filtered.length / PRODUCTS_PER_PAGE))} 页</span><Button variant="outline" disabled={(page + 1) * PRODUCTS_PER_PAGE >= filtered.length} onClick={() => setPage(value => value + 1)}>下一页</Button></div>
-          {filtered.slice(Math.min(page, Math.max(0, Math.ceil(filtered.length / PRODUCTS_PER_PAGE) - 1)) * PRODUCTS_PER_PAGE, (Math.min(page, Math.max(0, Math.ceil(filtered.length / PRODUCTS_PER_PAGE) - 1)) + 1) * PRODUCTS_PER_PAGE).map(product => (
+          {filtered.map(product => (
             <ProductBlock
               key={`${product.parentAsin}-${product.storeName || ""}-${product.marketplace || ""}`}
               product={product}
@@ -1056,9 +1281,20 @@ export default function OpsProducts() {
                 navigate(`/ops/products/view/${encodeURIComponent(item.parentAsin)}${query.size ? `?${query.toString()}` : ""}`);
               }}
               onDelete={(id) => deleteMut.mutate({ id })}
-              onSync={() => navigate("/ops/saihu-sync")}
-              isSyncing={false}
+              onSync={(id) => { setSyncingProductId(id); syncSingleProductMut.mutate({ productId: id }); }}
+              isSyncing={syncingProductId === product.id && syncSingleProductMut.isPending}
+              operatorList={[...(operatorList || [])]}
+              onAssign={(pid, op) => {
+                // Find current product to determine if operator is already assigned
+                const prod = products?.find((p: any) => p.id === pid);
+                const currentOps = (prod?.operator || "").split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean);
+                const mode = currentOps.includes(op) ? "remove" : "add";
+                singleAssignMut.mutate({ productIds: [pid], operator: op, mode });
+              }}
+              ownerCandidates={ownerCandidates}
               isManagerOrAbove={Boolean(isManagerOrAbove)}
+              isAssigningSourceOwner={assignSourceOwnerMut.isPending}
+              onAssignSourceOwner={(target, assigneeUserId) => assignSourceOwnerMut.mutate({ assigneeUserId, targets: [target] })}
               sortKey={sortKey}
               sortDir={sortDir}
               onSort={(key) => {
@@ -1070,10 +1306,36 @@ export default function OpsProducts() {
                 }
               }}
               productionConfig={productionConfigs?.[product.parentAsin]}
-              profitTrend={buildProductFinancialTrend(financialPayload, product)}
-              financialLoading={monthlyFinancialQuery.isLoading}
-              financialError={monthlyFinancialQuery.isError}
-              onViewFinancialReport={user?.defaultWorkspaceId && product.parentAsin && product.storeName && product.marketplace ? () => setFinancialTarget({ identity: { userId: user.id, workspaceId: user.defaultWorkspaceId! }, parentAsin: product.parentAsin, storeName: product.storeName!, country: product.marketplace! }) : undefined}
+              planningRows={inventoryPlanning?.rows || []}
+              financialProfits={selectFinancialProfitsForProduct(monthlyFinancialProfits || [], product)}
+              legacyFinancialProfitMonths={countLegacyFinancialProfitMonths(monthlyFinancialProfits || [], product)}
+              onSaveFinancialProfits={(scope) => saveMonthlyFinancialProfitsMut.mutate(scope)}
+              onSaveCostParameters={(row, values) => savePlanningParametersMut.mutate({
+                scopeType: "asin",
+                asin: row.asin,
+                parentAsin: row.parentAsin,
+                storeName: row.storeName,
+                country: row.country,
+                productionDays: Number(row.productionDays ?? 30),
+                shippingDays: Number(row.shippingDays ?? 30),
+                bufferDays: Number(row.bufferDays ?? 10),
+                targetCoverDays: Number(row.targetCoverDays ?? 30),
+                moq: Number(row.moq ?? 0),
+                packSize: Number(row.packSize ?? 1),
+                productCost: Number(values.productCost ?? row.productCost ?? 0),
+                estimatedFirstLegCost: Number(values.estimatedFirstLegCost ?? row.estimatedFirstLegCost ?? 0),
+                actualFirstLegCost: Number(values.actualFirstLegCost ?? row.actualFirstLegCost ?? 0),
+                estimatedFbaFee: Number(values.estimatedFbaFee ?? row.estimatedFbaFee ?? 0),
+                actualFbaFee: Number(values.actualFbaFee ?? row.actualFbaFee ?? 0),
+                sellingPrice: Number(values.sellingPrice ?? row.sellingPrice ?? 0),
+                estimatedDimensions: String(values.estimatedDimensions ?? row.estimatedDimensions ?? "") || undefined,
+                actualDimensions: String(values.actualDimensions ?? row.actualDimensions ?? "") || undefined,
+                estimatedWeight: values.estimatedWeight === "" ? undefined : Number(values.estimatedWeight ?? row.estimatedWeight ?? 0),
+                actualWeight: values.actualWeight === "" ? undefined : Number(values.actualWeight ?? row.actualWeight ?? 0),
+                dimensionUnit: "in",
+                weightUnit: "lb",
+                currency: "USD",
+              })}
             />
           ))}
         </div>

@@ -1,5 +1,4 @@
 import type { AiJob, AiJobDeadLetter, AiJobWorker, InsertAiJob } from "../../../../drizzle/schema";
-import { isCheckpointedListingJob, checkpointedListingJobError } from "../../../../shared/checkpointedListingJob";
 import os from "os";
 import {
   claimAiJobByRunId,
@@ -16,12 +15,10 @@ import {
   releaseAiJobLease,
   retryAiJobByRunId,
   updateAiJobByRunId,
-  updateOwnedProfileImportJob,
 } from "../../../repositories/ai_os";
 import { shouldProcessAiJobs } from "../../../_core/runtime";
 import { recordAiOsMetric } from "./observability";
 import { assertBusinessJobAgentBinding } from "./businessJobBindingPolicy";
-import { assertGenericAiJobKind, isDedicatedOnlyAiJob } from "../../../repositories/ai_os/dedicatedJobPolicy";
 
 export type AiJobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
 
@@ -81,9 +78,6 @@ const ACTIVE_STATUSES = new Set<AiJobStatus>(["queued", "running"]);
 const handlerRegistrations = new Map<string, AiJobHandlerRegistration>();
 const runningRunIds = new Set<string>();
 const pendingScheduleRunIds = new Set<string>();
-// Capacity waiters have no reserved execution slot. Counting them as pending
-// reservations makes a burst of child jobs keep one another blocked forever.
-const waitingForCapacityRunIds = new Set<string>();
 const activeAbortControllers = new Map<string, AbortController>();
 let aiJobQueueDraining = false;
 const DEFAULT_WORKER_LEASE_SECONDS = 15 * 60;
@@ -109,7 +103,6 @@ export function listAiJobHandlerRegistrations() {
 }
 
 export function resolveAiJobHandler(job: AiJobSnapshot): AiJobHandler | null {
-  if (isDedicatedOnlyAiJob(job.kind)) return null;
   for (const registration of handlerRegistrations.values()) {
     if (registration.match(job)) return registration.handler;
   }
@@ -330,7 +323,7 @@ function buildDeadLetterSnapshot(row: AiJobDeadLetter) {
 
 export async function listAiJobDeadLetterRuns(opts: { limit?: number } = {}) {
   const rows = await listAiJobDeadLetters({ limit: opts.limit });
-  return rows.filter(row => !isDedicatedOnlyAiJob(row.kind)).map(buildDeadLetterSnapshot);
+  return rows.map(buildDeadLetterSnapshot);
 }
 
 export function calculateAiJobRetryDelayMs(attempt: number): number {
@@ -349,7 +342,6 @@ function normalizeJsonValue(value: unknown): unknown {
 }
 
 export function buildAiJobSnapshot(job: AiJob): AiJobSnapshot {
-  assertGenericAiJobKind(job.kind);
   return {
     runId: job.runId,
     kind: job.kind,
@@ -404,8 +396,6 @@ export async function createAiJobRun(input: {
   recoveryOfRunId?: string | null;
   recoveryReason?: string | null;
 }) {
-  assertGenericAiJobKind(input.kind);
-  if (isCheckpointedListingJob(input.kind)) throw new Error(checkpointedListingJobError(input.kind, "USE_DEDICATED_ENDPOINT"));
   assertBusinessJobAgentBinding({
     module: input.module,
     kind: input.kind,
@@ -462,10 +452,6 @@ export async function updateAiJobProgress(
 ) {
   const existing = await getAiJobRun(runId);
   if (!existing || existing.status !== "running") return existing;
-  if (isCheckpointedListingJob(existing.kind)) {
-    const updated = await updateOwnedProfileImportJob(runId, { type: "progress", progress }, guard);
-    return updated ? buildAiJobSnapshot(updated) : getAiJobRun(runId);
-  }
   if (!aiJobMutationAllowed(existing, guard)) return existing;
 
   const job = await updateAiJobByRunId(runId, {
@@ -477,13 +463,6 @@ export async function updateAiJobProgress(
 
 export async function completeAiJob(runId: string, output: unknown, guard: AiJobMutationGuard = {}) {
   const existing = await getAiJobRun(runId);
-  if (isCheckpointedListingJob(existing?.kind) && existing) {
-    // Only the domain transaction may publish a committed checkpoint + succeeded.
-    // Never replace its receipt with a handler's return value.
-    if (existing.status === "succeeded") return existing;
-    if (existing.status !== "running" || !aiJobMutationAllowed(existing, guard)) return existing;
-    throw new Error(checkpointedListingJobError(existing.kind, "COMMIT_REQUIRED"));
-  }
   if (existing?.status === "canceled") return existing;
   if (!aiJobMutationAllowed(existing, guard)) return existing;
   if (existing?.status !== "running") return existing;
@@ -545,14 +524,6 @@ export async function failAiJob(runId: string, error: unknown, guard: AiJobMutat
   const existing = await getAiJobRun(runId);
   if (existing?.status === "canceled") return existing;
   if (existing?.status === "succeeded") return existing;
-  if (isCheckpointedListingJob(existing?.kind) && existing) {
-    const updated = await updateOwnedProfileImportJob(runId, {
-      type: "fail", errorMessage: checkpointedListingJobError(existing.kind, "FAILED_REVIEW_REQUIRED"),
-    }, guard);
-    // The private checkpoint is retained only on the original anchor. Do not
-    // copy model results into generic dead-letter or metrics payloads.
-    return updated ? buildAiJobSnapshot(updated) : getAiJobRun(runId);
-  }
   if (!aiJobMutationAllowed(existing, guard)) return existing;
   const errorMessage = serializeAiJobError(error);
 
@@ -592,7 +563,6 @@ export async function retryAiJob(runId: string, error: unknown, guard: AiJobMuta
   const existing = await getAiJobRun(runId);
   if (!existing || existing.status === "canceled") return existing;
   if (!isActiveAiJob(existing.status)) return existing;
-  if (isCheckpointedListingJob(existing.kind)) return failAiJob(runId, error, guard);
   if (!aiJobMutationAllowed(existing, guard)) return existing;
   const failure = classifyAiJobFailure(error);
   void recordAiOsMetric({
@@ -623,8 +593,6 @@ export async function retryAiJob(runId: string, error: unknown, guard: AiJobMuta
 }
 
 export async function cancelAiJob(runId: string, reason = "AI job canceled") {
-  const existing = await getAiJobRun(runId);
-  if (isCheckpointedListingJob(existing?.kind)) throw new Error(checkpointedListingJobError(existing?.kind, "USE_DEDICATED_ENDPOINT"));
   activeAbortControllers.get(runId)?.abort(reason);
   const job = await updateAiJobByRunId(runId, {
     status: "canceled",
@@ -657,7 +625,6 @@ export async function cancelAiJob(runId: string, reason = "AI job canceled") {
 export async function recoverAiJob(runId: string, reason = "User requested failure recovery") {
   const existing = await getAiJobRun(runId);
   if (!existing) throw new Error("AI job not found");
-  if (isCheckpointedListingJob(existing.kind)) throw new Error(checkpointedListingJobError(existing.kind, "USE_DEDICATED_ENDPOINT"));
   if (existing.status !== "failed" && existing.status !== "canceled") {
     throw new Error("Only failed or canceled AI jobs can be recovered");
   }
@@ -696,7 +663,7 @@ export async function recoverAiJob(runId: string, reason = "User requested failu
 
 export async function getAiJobRun(runId: string) {
   const job = await getAiJobByRunId(runId);
-  return job && !isDedicatedOnlyAiJob(job.kind) ? buildAiJobSnapshot(job) : null;
+  return job ? buildAiJobSnapshot(job) : null;
 }
 
 export async function listAiJobRunsForUser(
@@ -704,7 +671,7 @@ export async function listAiJobRunsForUser(
   opts: { module?: string; projectId?: number; status?: InsertAiJob["status"]; limit?: number } = {},
 ) {
   const jobs = await listAiJobsForUser(userId, opts);
-  return jobs.filter(job => !isDedicatedOnlyAiJob(job.kind)).map(buildAiJobSnapshot);
+  return jobs.map(buildAiJobSnapshot);
 }
 
 export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<T>) {
@@ -728,13 +695,8 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
     if (current.status === "canceled") return current;
 
     const leaseSeconds = Math.min(Math.max(current.timeoutSeconds || DEFAULT_JOB_TIMEOUT_SECONDS, 5), 7200);
-    const ownedGuard = { expectedWorkerId: WORKER_ID, expectedAttempt: current.attempt };
-    const checkpointedListingJob = isCheckpointedListingJob(current.kind);
     heartbeat = setInterval(() => {
-      const refresh = checkpointedListingJob
-        ? updateOwnedProfileImportJob(runId, { type: "heartbeat", leaseSeconds }, ownedGuard)
-        : heartbeatAiJobLease(runId, WORKER_ID, leaseSeconds);
-      void refresh.catch((error) => {
+      void heartbeatAiJobLease(runId, WORKER_ID, leaseSeconds).catch((error) => {
         console.warn(`[AI Job] Failed to heartbeat ${runId}:`, error);
       });
     }, Math.min(Math.max(Math.floor(leaseSeconds * 1000 / 3), 5_000), 60_000));
@@ -757,13 +719,7 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
   } finally {
     if (heartbeat) clearInterval(heartbeat);
     if (timeoutHandle) clearTimeout(timeoutHandle);
-    if (isCheckpointedListingJob(existing.kind)) {
-      await updateOwnedProfileImportJob(runId, { type: "release" }, {
-        expectedWorkerId: WORKER_ID, expectedAttempt: current?.attempt,
-      }).catch(() => null);
-    } else {
-      await releaseAiJobLease(runId, WORKER_ID).catch(() => null);
-    }
+    await releaseAiJobLease(runId, WORKER_ID).catch(() => null);
     activeAbortControllers.delete(runId);
     runningRunIds.delete(runId);
     void reportAiJobWorkerHeartbeat().catch(() => null);
@@ -776,7 +732,7 @@ export async function scheduleAiJobRun(runId: string, handler?: AiJobHandler) {
   const existing = await getAiJobRun(runId);
   if (!existing) throw new Error(`AI job not found: ${runId}`);
   if (!isActiveAiJob(existing.status) || runningRunIds.has(runId)) return existing;
-  if (pendingScheduleRunIds.has(runId) || waitingForCapacityRunIds.has(runId)) return existing;
+  if (pendingScheduleRunIds.has(runId)) return existing;
 
   const resolvedHandler = handler || resolveAiJobHandler(existing);
   if (!resolvedHandler) {
@@ -790,12 +746,10 @@ export async function scheduleAiJobRun(runId: string, handler?: AiJobHandler) {
   }
 
   if (getAvailableAiJobSlots() <= 0) {
-    // Dedicated workers will claim the durable queued row on a later poll.
-    if (getWorkerRole() === "worker") return existing;
-    if (!waitingForCapacityRunIds.has(runId)) {
-      waitingForCapacityRunIds.add(runId);
+    if (!pendingScheduleRunIds.has(runId)) {
+      pendingScheduleRunIds.add(runId);
       setTimeout(() => {
-        waitingForCapacityRunIds.delete(runId);
+        pendingScheduleRunIds.delete(runId);
         void scheduleAiJobRun(runId, resolvedHandler).catch((error) => {
           console.error(`[AI Job] ${runId} reschedule failed:`, error);
         });

@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `role_permissions` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `role` varchar(50) NOT NULL,\n  `modules` text NOT NULL,\n  `description` varchar(200),\n  `updatedBy` int,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `role_permissions_id` PRIMARY KEY(`id`),\n  CONSTRAINT `role_permissions_role_unique` UNIQUE(`role`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE IF NOT EXISTS `role_permissions` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `role` varchar(50) NOT NULL,\n  `modules` text NOT NULL,\n  `description` varchar(200),\n  `updatedBy` int,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `role_permissions_id` PRIMARY KEY(`id`),\n  CONSTRAINT `role_permissions_role_unique` UNIQUE(`role`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 383
+}

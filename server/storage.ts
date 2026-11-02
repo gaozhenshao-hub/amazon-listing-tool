@@ -3,24 +3,14 @@
 
 import { ENV } from './_core/env';
 import { safeHttpRequest } from './infrastructure/http/safeHttpClient';
-import { GetObjectCommand, PutObjectCommand, DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { unlink } from 'node:fs/promises';
-import { verifiedLocalObjectPath } from './infrastructure/localObjectStorage';
-import { putLocalObject, signedLocalObjectUrl } from './infrastructure/localObjectStorage';
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 type StorageConfig = { baseUrl: string; apiKey: string };
 export type StorageProvider = "forge" | "s3" | "oss" | "local" | "external";
-export type StoragePutOptions = {
-  /** Server-controlled durable upload protocols may forbid SDK-level retries.
-   * Omission keeps every existing caller's configured/default retry behavior. */
-  maxAttempts?: 1;
-};
 type StorageGetOptions = {
   /** Only server-controlled callers may select this shorter S3/OSS signature TTL. */
   expiresSeconds?: number;
-  /** Persisted provider identity must not be silently rebound to the active provider. */
-  expectedProvider?: string;
 };
 type S3CompatibleStorageConfig = {
   provider: "s3" | "oss";
@@ -44,78 +34,43 @@ export function parseStorageUri(uri: string): { provider: StorageProvider | stri
   return { provider: match[1], key: normalizeKey(match[2]) };
 }
 
-/** Server-owned garbage collection only, after checking all live references. */
-export async function storageDeleteOwnedObject(reference: string): Promise<void> {
-  const parsed = parseStorageUri(reference);
-  if (!parsed || parsed.provider !== getActiveStorageProvider()) throw new Error("Object storage provider mismatch");
-  if (parsed.provider === "local") {
-    try { await unlink(await verifiedLocalObjectPath(parsed.key)); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-    return;
-  }
-  if (parsed.provider === "s3" || parsed.provider === "oss") {
-    const config = getS3CompatibleStorageConfig();
-    await createS3CompatibleClient(config).send(new DeleteObjectCommand({Bucket:config.bucket,Key:parsed.key}));
-    return;
-  }
-  throw new Error("Object storage does not support deletion");
-}
-
-function parseUnambiguousStorageHttpUrl(reference: string): { url: URL; segments: string[] } | null {
-  // Inspect the original path before URL normalizes dot segments or backslashes.
-  if (Array.from(reference).some(character => character.charCodeAt(0) <= 32 || character === "\\")) return null;
-  const parts = /^https?:\/\/([^/?#]+)([^?#]*)/i.exec(reference);
-  if (!parts || parts[1].includes("%")) return null;
-  const url = new URL(reference);
-  if (url.username || url.password || url.hash) return null;
-  const path = parts[2];
-  const segments = !path || path === "/" ? [] : path.slice(1).split("/").map(decodeURIComponent);
-  if (segments.some(segment => !segment || segment === "." || segment === ".."
-    || /[/\\]/u.test(segment)
-    || Array.from(segment).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127))) return null;
-  return { url, segments };
+function getConfiguredStorageHosts(): string[] {
+  return [ENV.s3Endpoint, ENV.s3PublicEndpoint]
+    .filter(Boolean)
+    .flatMap((endpoint) => {
+      try {
+        return [new URL(endpoint).hostname.toLowerCase()];
+      } catch {
+        return [];
+      }
+    });
 }
 
 /**
  * Extract an object key only from a legacy S3-compatible pre-signed URL that
- * identifies the configured bucket at a configured endpoint. Regional endpoint
- * suffixes alone do not identify a bucket and must never authorize re-signing.
+ * points to a configured storage endpoint. The strict host check prevents an
+ * arbitrary external URL from being reinterpreted as a private object key.
  */
 export function parseLegacyPresignedObjectKey(reference: string): string | null {
   try {
-    const provider = getActiveStorageProvider();
-    if (provider !== "s3" && provider !== "oss") return null;
-    const bucket = ENV.s3Bucket.trim();
-    if (!bucket || !/^[a-z0-9][a-z0-9.-]*$/u.test(bucket) || bucket.endsWith(".") || bucket.includes("..")) return null;
-    const parsed = parseUnambiguousStorageHttpUrl(reference);
-    if (!parsed) return null;
-    const { url, segments } = parsed;
+    const url = new URL(reference);
     const queryKeys = Array.from(url.searchParams.keys()).map((key) => key.toLowerCase());
     const isPresigned = queryKeys.some((key) =>
       key.startsWith("x-amz-") || key === "signature" || key === "ossaccesskeyid" || key === "expires"
     );
     if (!isPresigned) return null;
 
-    for (const endpoint of [ENV.s3Endpoint, ENV.s3PublicEndpoint].filter(Boolean)) {
-      let configured: ReturnType<typeof parseUnambiguousStorageHttpUrl>;
-      try { configured = parseUnambiguousStorageHttpUrl(endpoint.endsWith("/") ? endpoint.slice(0, -1) : endpoint); } catch { continue; }
-      if (!configured || configured.url.search || url.protocol !== configured.url.protocol || url.port !== configured.url.port) continue;
-      // Only the endpoint root or an explicitly bucket-qualified path is known.
-      // Custom path prefixes must not be guessed into the current private bucket.
-      if (configured.segments.length > 1 || (configured.segments.length === 1 && configured.segments[0] !== bucket)) continue;
-      const host = configured.url.hostname;
-      const bucketInHost = host.startsWith(`${bucket}.`);
-      let objectSegments: string[] | null = null;
-      if (!configured.segments.length && (url.hostname === (bucketInHost ? host : `${bucket}.${host}`))) {
-        objectSegments = segments;
-      } else if (!bucketInHost && url.hostname === host && segments[0] === bucket) {
-        objectSegments = segments.slice(1);
-      }
-      // Decode exactly once. Literal '%' (including text such as '%2f') is
-      // part of the object key; GetObjectCommand receives it without re-decoding.
-      if (objectSegments?.length) return objectSegments.join("/");
-    }
-    return null;
+    const hostname = url.hostname.toLowerCase();
+    const configuredHosts = getConfiguredStorageHosts();
+    const matchesConfiguredEndpoint = configuredHosts.some((host) =>
+      hostname === host || hostname.endsWith(`.${host}`)
+    );
+    if (!matchesConfiguredEndpoint) return null;
+
+    const segments = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    const bucket = ENV.s3Bucket.trim();
+    if (bucket && segments[0] === bucket) segments.shift();
+    return segments.length > 0 ? normalizeKey(segments.join("/")) : null;
   } catch {
     return null;
   }
@@ -128,10 +83,10 @@ export function parseLegacyPresignedObjectKey(reference: string): string | null 
  */
 export async function resolveStoredObjectUrl(reference: string): Promise<string> {
   const parsed = parseStorageUri(reference);
-  if (parsed) return (await storageGet(parsed.key, { expectedProvider: parsed.provider })).url;
+  if (parsed) return (await storageGet(parsed.key)).url;
 
   const legacyKey = parseLegacyPresignedObjectKey(reference);
-  if (legacyKey) return (await storageGet(legacyKey, { expectedProvider: getActiveStorageProvider() })).url;
+  if (legacyKey) return (await storageGet(legacyKey)).url;
 
   return reference;
 }
@@ -202,7 +157,7 @@ function getS3CompatibleStorageConfig(): S3CompatibleStorageConfig {
   };
 }
 
-function createS3CompatibleClient(config: S3CompatibleStorageConfig, endpoint = config.endpoint, options: StoragePutOptions = {}): S3Client {
+function createS3CompatibleClient(config: S3CompatibleStorageConfig, endpoint = config.endpoint): S3Client {
   return new S3Client({
     region: config.region,
     endpoint,
@@ -211,7 +166,6 @@ function createS3CompatibleClient(config: S3CompatibleStorageConfig, endpoint = 
       accessKeyId: config.accessKeyId,
       secretAccessKey: config.secretAccessKey,
     },
-    ...(options.maxAttempts === 1 ? { maxAttempts: 1 } : {}),
   });
 }
 
@@ -271,23 +225,13 @@ function buildAuthHeaders(apiKey: string): HeadersInit {
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
-  contentType = "application/octet-stream",
-  options: StoragePutOptions = {}
+  contentType = "application/octet-stream"
 ): Promise<{ key: string; url: string; storageUri: string }> {
-  if (!options || typeof options !== "object" || Array.isArray(options)
-    || Object.keys(options).some(key => key !== "maxAttempts")
-    || options.maxAttempts !== undefined && options.maxAttempts !== 1) {
-    throw new Error("Storage PUT only supports the explicit maxAttempts: 1 override");
-  }
   const provider = getActiveStorageProvider();
-  if (options.maxAttempts === 1 && provider !== "s3" && provider !== "oss") {
-    throw new Error("Single-attempt storage PUT requires S3/OSS");
-  }
-  if (provider === "local") return putLocalObject(normalizeKey(relKey), data);
   if (provider === "s3" || provider === "oss") {
     const config = getS3CompatibleStorageConfig();
     const key = normalizeKey(relKey);
-    const serverClient = createS3CompatibleClient(config, config.endpoint, options);
+    const serverClient = createS3CompatibleClient(config);
     await serverClient.send(new PutObjectCommand({
       Bucket: config.bucket,
       Key: key,
@@ -334,13 +278,6 @@ export async function storageGet(
   options: StorageGetOptions = {}
 ): Promise<{ key: string; url: string; }> {
   const provider = getActiveStorageProvider();
-  if (options.expectedProvider !== undefined && options.expectedProvider !== provider) {
-    throw new Error("Stored object provider does not match the active storage provider");
-  }
-  if (provider === "local") {
-    const key = normalizeKey(relKey);
-    return { key, url: signedLocalObjectUrl(key, options.expiresSeconds) };
-  }
   if (provider === "s3" || provider === "oss") {
     const config = getS3CompatibleStorageConfig();
     const key = normalizeKey(relKey);

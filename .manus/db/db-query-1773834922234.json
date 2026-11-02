@@ -1,0 +1,9 @@
+{
+  "query": "\nALTER TABLE users ADD COLUMN phone VARCHAR(20) NULL AFTER email;\nALTER TABLE users ADD COLUMN password VARCHAR(256) NULL AFTER phone;\nALTER TABLE users ADD COLUMN department VARCHAR(100) NULL AFTER loginMethod;\nALTER TABLE users ADD COLUMN jobTitle VARCHAR(100) NULL AFTER department;\nALTER TABLE users ADD COLUMN status ENUM('active', 'disabled', 'pending') DEFAULT 'active' NOT NULL AFTER jobTitle;\nALTER TABLE users ADD COLUMN mustChangePassword INT DEFAULT 1 AFTER status;\nALTER TABLE users ADD COLUMN failedLoginAttempts INT DEFAULT 0 AFTER mustChangePassword;\nALTER TABLE users ADD COLUMN lockedUntil TIMESTAMP NULL AFTER failedLoginAttempts;\nALTER TABLE users ADD COLUMN invitedBy INT NULL AFTER lockedUntil;\nALTER TABLE users ADD COLUMN lastPasswordChangedAt TIMESTAMP NULL AFTER invitedBy;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute \nALTER TABLE users ADD COLUMN phone VARCHAR(20) NULL AFTER email;\nALTER TABLE users ADD COLUMN password VARCHAR(256) NULL AFTER phone;\nALTER TABLE users ADD COLUMN department VARCHAR(100) NULL AFTER loginMethod;\nALTER TABLE users ADD COLUMN jobTitle VARCHAR(100) NULL AFTER department;\nALTER TABLE users ADD COLUMN status ENUM('active', 'disabled', 'pending') DEFAULT 'active' NOT NULL AFTER jobTitle;\nALTER TABLE users ADD COLUMN mustChangePassword INT DEFAULT 1 AFTER status;\nALTER TABLE users ADD COLUMN failedLoginAttempts INT DEFAULT 0 AFTER mustChangePassword;\nALTER TABLE users ADD COLUMN lockedUntil TIMESTAMP NULL AFTER failedLoginAttempts;\nALTER TABLE users ADD COLUMN invitedBy INT NULL AFTER lockedUntil;\nALTER TABLE users ADD COLUMN lastPasswordChangedAt TIMESTAMP NULL AFTER invitedBy;\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 9702
+}

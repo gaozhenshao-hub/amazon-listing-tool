@@ -11,6 +11,7 @@ const request = AmazonAcquisitionRequestSchema.parse({
   marketplace: "US",
   asin: "B0H1VCSGWK",
   capabilities: ["catalog_basic", "image_gallery"],
+  maxChargeUsd: 0.1,
   idempotencyKey: "workspace:1:US:B0H1VCSGWK:catalog+images",
 });
 
@@ -18,21 +19,24 @@ const provider: AmazonAcquisitionProvider = {
   providerCode: "qualified-provider",
   supportedMarketplaces: ["US"],
   capabilities: ["catalog_basic", "image_gallery"],
+  async estimate() {
+    return { estimatedMaxUsd: 0.01, pricingModel: "pay_per_event", cacheEligible: true };
+  },
   async fetch() {
     return {
       providerCode: "qualified-provider",
       providerRunId: "run-1",
       status: "succeeded",
       failureCategory: null,
-      chargedUsd: 0,
+      chargedUsd: 0.005,
       rawArtifact: null,
     };
   },
 };
 
 describe("统一Amazon采集核心合同", () => {
-  it("接受精确站点、ASIN、能力请求", () => {
-    expect(request).toMatchObject({ marketplace: "US", asin: "B0H1VCSGWK" });
+  it("接受精确站点、ASIN、能力和预算请求", () => {
+    expect(request).toMatchObject({ marketplace: "US", asin: "B0H1VCSGWK", maxChargeUsd: 0.1 });
     expect(() => assertProviderSupportsRequest(provider, request)).not.toThrow();
   });
 

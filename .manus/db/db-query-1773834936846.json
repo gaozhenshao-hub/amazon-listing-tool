@@ -1,0 +1,9 @@
+{
+  "query": "\nALTER TABLE users MODIFY COLUMN role ENUM('super_admin','admin','ops_manager','ops_specialist','product_dev','finance','purchaser','designer') DEFAULT 'ops_specialist' NOT NULL;\nALTER TABLE users MODIFY COLUMN openId VARCHAR(64) NULL;\nUPDATE users SET role = 'super_admin', mustChangePassword = 0, status = 'active';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute \nALTER TABLE users MODIFY COLUMN role ENUM('super_admin','admin','ops_manager','ops_specialist','product_dev','finance','purchaser','designer') DEFAULT 'ops_specialist' NOT NULL;\nALTER TABLE users MODIFY COLUMN openId VARCHAR(64) NULL;\nUPDATE users SET role = 'super_admin', mustChangePassword = 0, status = 'active';\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1703
+}

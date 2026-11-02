@@ -10,13 +10,6 @@ async function db() {
   return d;
 }
 
-function activeTagDefinitions<T extends { metadata: string | null }>(tags: T[]): T[] {
-  return tags.filter(tag => {
-    try { return JSON.parse(tag.metadata || "{}").retiredFromChoices !== true; }
-    catch { return true; }
-  });
-}
-
 // Dimension definitions for the tag system
 const DIMENSIONS = [
   { key: "category", label: "产品类目", level: "set", hasParent: false },
@@ -49,7 +42,7 @@ export const kbTagsRouter = router({
       const tags = await d.select().from(kbTagDefinitions)
         .where(and(...conditions))
         .orderBy(asc(kbTagDefinitions.sortOrder), asc(kbTagDefinitions.id));
-      return activeTagDefinitions(tags);
+      return tags;
     }),
 
   // List all tags for a dimension (including all parent groups for hierarchical)
@@ -60,7 +53,7 @@ export const kbTagsRouter = router({
       const tags = await d.select().from(kbTagDefinitions)
         .where(eq(kbTagDefinitions.dimension, input.dimension))
         .orderBy(asc(kbTagDefinitions.parentValue), asc(kbTagDefinitions.sortOrder), asc(kbTagDefinitions.id));
-      return activeTagDefinitions(tags);
+      return tags;
     }),
 
   // Create a new tag (admin for system tags, any user for custom tags)

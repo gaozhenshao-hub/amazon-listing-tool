@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `image_workflow_sessions` ADD `step6LovartResult` text;\nALTER TABLE `image_workflow_sessions` ADD `step6LovartResultEn` text;\nALTER TABLE `image_workflow_sessions` ADD `step6LovartUserEdit` text;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute ALTER TABLE `image_workflow_sessions` ADD `step6LovartResult` text;\nALTER TABLE `image_workflow_sessions` ADD `step6LovartResultEn` text;\nALTER TABLE `image_workflow_sessions` ADD `step6LovartUserEdit` text;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1710
+}

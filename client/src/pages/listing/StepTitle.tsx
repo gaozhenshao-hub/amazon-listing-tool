@@ -23,8 +23,6 @@ import {
   Layers,
 } from "lucide-react";
 import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
-import { useListingConfiguredGeneration } from "./ListingConfiguredGenerationContext";
-import { useListingAuxiliaryCheck } from "./useListingAuxiliaryCheck";
 
 // ─── Title 10 Dimensions Definition (Updated for Two-Stage) ─────────────────
 const TITLE_CHECKLIST_DIMENSIONS = [
@@ -90,7 +88,6 @@ interface TitleCandidate {
 }
 
 export default function StepTitle({ projectId, emphasis, locked, savedContent, savedItemHighlights, onLock, onUnlock, onComplete }: StepTitleProps) {
-  const configured = useListingConfiguredGeneration();
   const [candidates, setCandidates] = useState<TitleCandidate[]>([]);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -101,7 +98,6 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
   const [holidayTerm, setHolidayTerm] = useState("");
   const [titleCheckScores, setTitleCheckScores] = useState<Record<string, { pass: boolean; notes: string }> | undefined>(undefined);
   const autoCheckTriggered = useRef(false);
-  const auxiliaryCheck = useListingAuxiliaryCheck("checkTitle", { operation: "checkTitle", payload: { title: isEditing ? editingTitle : candidates[selectedIdx ?? -1]?.title || "", itemHighlights: isEditing ? editingHighlights : candidates[selectedIdx ?? -1]?.itemHighlights || "" } }, { selectedIdx, isEditing, locked: !!locked, candidates }, !locked && (isEditing ? !!editingTitle.trim() : selectedIdx !== null));
 
   const evaluateTitleCheck = trpc.listing.evaluateTitleChecklist.useMutation({
     onSuccess: (data) => {
@@ -114,17 +110,16 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
 
   // Auto-trigger title checklist when candidates are generated
   useEffect(() => {
-    if (!configured?.enabled && candidates.length > 0 && selectedIdx !== null && !autoCheckTriggered.current) {
+    if (candidates.length > 0 && selectedIdx !== null && !autoCheckTriggered.current) {
       const c = candidates[selectedIdx];
       if (c?.title && !titleCheckScores) {
         autoCheckTriggered.current = true;
         evaluateTitleCheck.mutate({ title: `${c.title} | ${c.itemHighlights || ""}` });
       }
     }
-  }, [candidates, selectedIdx, configured?.enabled, evaluateTitleCheck, titleCheckScores]);
+  }, [candidates, selectedIdx]);
 
   const handleRunTitleCheck = () => {
-    if (configured?.enabled) { auxiliaryCheck.run(); return; }
     let titleForCheck: string;
     if (isEditing) {
       titleForCheck = `${editingTitle} | ${editingHighlights}`;
@@ -143,7 +138,6 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
     projectId,
     nodeId: "G2",
     operation: "title",
-    draftFingerprint: JSON.stringify([candidates, selectedIdx, editingTitle, editingHighlights, isEditing, locked]),
     onSucceeded: (data: any) => {
       try {
         const content = data.title || data;
@@ -176,8 +170,7 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
           setSelectedIdx(null);
           setConfirmed(false);
           setTitleCheckScores(undefined);
-          if (configured?.enabled) autoCheckTriggered.current = true;
-          else autoCheckTriggered.current = false;
+          autoCheckTriggered.current = false;
           toast.success(`已生成 ${normalizedTitles.length} 个候选标题（两段式）`);
         } else {
           // Fallback: single title
@@ -612,14 +605,7 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
 
             {/* Title 10-Dimension Checklist Panel */}
             {selectedIdx !== null && (
-              configured?.enabled ? <ChecklistPanel
-                dimensions={TITLE_CHECKLIST_DIMENSIONS}
-                checkListScores={auxiliaryCheck.scores}
-                panelTitle="标题 - 10维度质量自检（两段式）"
-                checkLabel="10维度自检"
-                onRunCheck={handleRunTitleCheck}
-                isRunningCheck={false}
-              /> : <ChecklistPanel
+              <ChecklistPanel
                 dimensions={TITLE_CHECKLIST_DIMENSIONS}
                 checkListScores={titleCheckScores}
                 panelTitle="标题 - 10维度质量自检（两段式）"

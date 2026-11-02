@@ -1,0 +1,8 @@
+{
+  "query": "CREATE TABLE `product_profiles` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`user_id` int NOT NULL,\n\t`parent_asin` varchar(20) NOT NULL,\n\t`title` varchar(500) NOT NULL,\n\t`brand` varchar(200),\n\t`category` varchar(300),\n\t`marketplace` varchar(10) DEFAULT 'US',\n\t`image_url` text,\n\t`status` enum('active','inactive','discontinued') NOT NULL DEFAULT 'active',\n\t`budget_revenue` decimal(12,2),\n\t`budget_profit` decimal(12,2),\n\t`budget_acos` decimal(5,1),\n\t`notes` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `product_profiles_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE `product_profiles` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`user_id` int NOT NULL,\n\t`parent_asin` varchar(20) NOT NULL,\n\t`title` varchar(500) NOT NULL,\n\t`brand` varchar(200),\n\t`category` varchar(300),\n\t`marketplace` varchar(10) DEFAULT 'US',\n\t`image_url` text,\n\t`status` enum('active','inactive','discontinued') NOT NULL DEFAULT 'active',\n\t`budget_revenue` decimal(12,2),\n\t`budget_profit` decimal(12,2),\n\t`budget_acos` decimal(5,1),\n\t`notes` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `product_profiles_id` PRIMARY KEY(`id`)\n);",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1050 (42S01) at line 1: Table 'a79tkwusxJ5HWpLxCXSSXN.product_profiles' already exists"
+  ]
+}

@@ -1,6 +1,5 @@
 export * from "./auth";
 export * from "./ai_os";
-export * from "./assistantConfigurations";
 export * from "./knowledge";
 export * from "./project";
 export * from "./listing";
@@ -10,7 +9,6 @@ export * from "./imageAssetTrustLedger";
 export * from "./imageWorkflowVersions";
 export * from "./image";
 export * from "./ops";
-export * from "./operationsJournal";
 export * from "./ads";
 export * from "./video";
 export * from "./skillDistillation";
@@ -19,7 +17,6 @@ export * from "./monitoring";
 
 export * as authSchema from "./auth";
 export * as aiOsSchema from "./ai_os";
-export * as assistantConfigurationsSchema from "./assistantConfigurations";
 export * as knowledgeSchema from "./knowledge";
 export * as projectSchema from "./project";
 export * as listingSchema from "./listing";

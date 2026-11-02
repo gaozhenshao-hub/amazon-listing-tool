@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE role_permissions SET detailedPermissions = REPLACE(REPLACE(detailedPermissions, '\"listing_create\"', '\"listing_generate\"'), '\"listing_optimize\"', '\"listing_score\"') WHERE detailedPermissions LIKE '%listing_create%' OR detailedPermissions LIKE '%listing_optimize%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute UPDATE role_permissions SET detailedPermissions = REPLACE(REPLACE(detailedPermissions, '\"listing_create\"', '\"listing_generate\"'), '\"listing_optimize\"', '\"listing_score\"') WHERE detailedPermissions LIKE '%listing_create%' OR detailedPermissions LIKE '%listing_optimize%';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 70
+}

@@ -18,8 +18,6 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
-import { useListingConfiguredGeneration } from "./ListingConfiguredGenerationContext";
-import { useListingAuxiliaryCheck } from "./useListingAuxiliaryCheck";
 
 // ─── Search Terms 5 Dimensions Definition ─────────────────────────────────
 const SEARCH_TERMS_CHECKLIST_DIMENSIONS = [
@@ -35,21 +33,18 @@ interface StepSearchTermsProps {
   emphasis: string;
   locked?: boolean;
   savedContent?: string | null;
-  checkContext?: { title: string; bulletPoints: Array<{ subtitle: string; fullText: string }>; basis: string; ready?: boolean };
   onLock?: () => void;
   onUnlock?: () => void;
   onComplete: () => void;
 }
 
-export default function StepSearchTerms({ projectId, emphasis, locked, savedContent, checkContext, onLock, onUnlock, onComplete }: StepSearchTermsProps) {
-  const configured = useListingConfiguredGeneration();
+export default function StepSearchTerms({ projectId, emphasis, locked, savedContent, onLock, onUnlock, onComplete }: StepSearchTermsProps) {
   const [searchTerms, setSearchTerms] = useState("");
   const [categories, setCategories] = useState<any[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [generated, setGenerated] = useState(false);
   const [checkScores, setCheckScores] = useState<Record<string, { pass: boolean; notes: string }> | undefined>(undefined);
   const autoCheckTriggered = useRef(false);
-  const auxiliaryCheck = useListingAuxiliaryCheck("checkSearchTerms", { operation: "checkSearchTerms", payload: { searchTerms, title: checkContext?.title ?? "", bulletPoints: checkContext?.bulletPoints ?? [] } }, { locked: !!locked, confirmed, contextBasis: checkContext?.basis ?? "未提供跨步骤上下文" }, !locked && !!searchTerms.trim() && checkContext?.ready !== false);
 
   const evaluateCheck = trpc.listing.evaluateSearchTermsChecklist.useMutation({
     onSuccess: (data) => {
@@ -62,14 +57,13 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
 
   // Auto-trigger checklist when search terms are generated
   useEffect(() => {
-    if (!configured?.enabled && generated && searchTerms && !autoCheckTriggered.current && !checkScores) {
+    if (generated && searchTerms && !autoCheckTriggered.current && !checkScores) {
       autoCheckTriggered.current = true;
       evaluateCheck.mutate({ searchTerms });
     }
-  }, [generated, searchTerms, configured?.enabled, checkScores, evaluateCheck]);
+  }, [generated, searchTerms]);
 
   const handleRunCheck = () => {
-    if (configured?.enabled) { auxiliaryCheck.run(); return; }
     if (!searchTerms.trim()) {
       toast.error("请先生成搜索词");
       return;
@@ -82,7 +76,6 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
     projectId,
     nodeId: "G4",
     operation: "searchTerms",
-    draftFingerprint: JSON.stringify([searchTerms, categories, confirmed, locked]),
     onSucceeded: (data: any) => {
       try {
         const content = data.searchTerms || data;
@@ -109,16 +102,14 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
         setCategories(cats);
         setGenerated(true);
         setCheckScores(undefined);
-        if (configured?.enabled) autoCheckTriggered.current = true;
-        else autoCheckTriggered.current = false;
+        autoCheckTriggered.current = false;
         toast.success("搜索词已生成");
       } catch {
         const text = typeof data === "string" ? data : JSON.stringify(data);
         setSearchTerms(text);
         setGenerated(true);
         setCheckScores(undefined);
-        if (configured?.enabled) autoCheckTriggered.current = true;
-        else autoCheckTriggered.current = false;
+        autoCheckTriggered.current = false;
         toast.success("搜索词已生成");
       }
     },
@@ -288,10 +279,9 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
             )}
 
             {/* 5-Dimension Checklist Panel */}
-            {configured?.enabled && <p className="text-xs text-muted-foreground">自检上下文：{checkContext?.basis ?? "未提供标题或卖点；不会声称完成跨字段去重"}</p>}
             <ChecklistPanel
               dimensions={SEARCH_TERMS_CHECKLIST_DIMENSIONS}
-              checkListScores={configured?.enabled ? auxiliaryCheck.scores : checkScores}
+              checkListScores={checkScores}
               panelTitle="搜索词 - 5维度质量自检"
               checkLabel="5维度自检"
               onRunCheck={handleRunCheck}

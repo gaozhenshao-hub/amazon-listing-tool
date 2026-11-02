@@ -1,0 +1,18 @@
+{
+  "query": "SHOW COLUMNS FROM listingVersions LIKE 'changeDescription';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SHOW COLUMNS FROM listingVersions LIKE 'changeDescription';",
+  "rows": [
+    {
+      "Field": "changeDescription",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nchangeDescription\ttext\tYES\t\tNULL\t\n",
+  "stderr": "",
+  "execution_time_ms": 87
+}

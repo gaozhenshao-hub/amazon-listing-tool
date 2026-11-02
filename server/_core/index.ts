@@ -2,9 +2,12 @@ import "dotenv/config";
 // AI Job Handler registrations — must be imported so registerAiJobHandler() runs
 // in the Web process when AI_JOB_IN_PROCESS=true (in-process Worker mode).
 import "../domains/listing/services/generationJob";
+import "../domains/product_development/analysis/informationSummaryService";
+import "../domains/product_development/analysis/analysisStageJobService";
+import "../domains/product_development/panorama/marketInsightService";
 import "../domains/keyword/keywordGenerationJob";
+import "../domains/video/videoGenerationJob";
 import express from "express";
-import { registerLocalObjectRoutes } from "../infrastructure/localObjectStorage";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -12,6 +15,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { ENV } from "./env";
 import { appRouter } from "../routers";
 import { expressAppErrorHandler, requestContextMiddleware } from "./requestContext";
+import { syncRouter } from "../syncRoutes";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { startUsageTracking, stopUsageTracking } from "../usageTracking";
@@ -21,14 +25,13 @@ import {
   dataLifecycleSweepHandler,
   databaseObservabilitySnapshotHandler,
   dataCleanupHandler,
+  lingxingScheduledDraftHandler,
   weeklyReportHandler,
 } from "../scheduledHandlers";
-import { designAssetsRouter } from "../domains/design/assets";
-import { meetingAudioHttpRouter } from "../domains/ops/meetingAudioHttp";
-import { startMeetingAudioWorker } from "../domains/ops/meetingAudioService";
-import { designMaterialsHttpRouter } from "../domains/design/materialsStorage";
+import { kbExternalApiRouter } from "../kbExternalApi";
 import { imageUploadRouter } from "../imageUploadRouter";
-import { knowledgeVideoUploadRouter } from "../domains/knowledge/videoUpload";
+import { kbTransferUploadRouter } from "../kbTransferUploadRouter";
+import { amazonMonitorHeartbeatHandler } from "../domains/acquisition/monitorHeartbeat";
 import {
   getRuntimeRole,
   shouldProcessAiJobs,
@@ -38,7 +41,6 @@ import {
 import { assertStartupConfig } from "./startupValidation";
 import { registerRuntimeHealthRoutes, setRuntimeDraining } from "./runtimeHealth";
 import { resolveListenHost } from "./listenHost";
-import { startInventoryCollectionWorker } from "../domains/ops/inventoryCollectionWorker";
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
     const server = net.createServer();
@@ -66,7 +68,6 @@ async function startServer() {
   const server = createServer(app);
   app.use(requestContextMiddleware);
   registerRuntimeHealthRoutes(app, { service: "web" });
-  registerLocalObjectRoutes(app);
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -75,14 +76,13 @@ async function startServer() {
     registerOAuthRoutes(app);
   }
   // Knowledge base P2P sync routes
+  app.use("/api/sync", syncRouter);
   // Knowledge base external API for Emperor platform (no OAuth, uses EMPEROR_KB_API_KEY)
+  app.use("/api/external/kb", kbExternalApiRouter);
   // Fast image upload endpoint (multipart/form-data, avoids base64 overhead)
   app.use("/api/upload", imageUploadRouter);
-  app.use("/api/knowledge/videos", knowledgeVideoUploadRouter);
-  app.use("/api/design/materials", designMaterialsHttpRouter);
-  app.use("/api/design", designAssetsRouter);
-  app.use("/api/meeting-audio", meetingAudioHttpRouter);
   // Product knowledge base transfer ZIP preflight (session-authenticated multipart upload)
+  app.use("/api/kb-transfer", kbTransferUploadRouter);
   // Scheduled task handlers (Heartbeat HTTP cron)
   app.post("/api/scheduled/weekly-report", weeklyReportHandler);
   app.post("/api/scheduled/data-cleanup", dataCleanupHandler);
@@ -91,6 +91,8 @@ async function startServer() {
   app.post("/api/scheduled/database-observability-snapshot", databaseObservabilitySnapshotHandler);
   app.post("/api/scheduled/data-lifecycle-sweep", dataLifecycleSweepHandler);
   app.post("/api/scheduled/ai-os-operational-health", aiOsOperationalHealthHandler);
+  app.post("/api/scheduled/lingxing-sync-draft", lingxingScheduledDraftHandler);
+  app.post("/api/scheduled/amazon-monitor", amazonMonitorHeartbeatHandler);
   // tRPC API
   app.use(
     "/api/trpc",
@@ -119,8 +121,6 @@ async function startServer() {
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
   const listenHost = resolveListenHost();
-  let stopInventoryCollectionWorker: (() => Promise<void>) | null = null;
-  let stopMeetingAudio: (() => Promise<void>) | null = null;
 
   if (port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
@@ -128,13 +128,14 @@ async function startServer() {
 
   server.listen(port, listenHost, () => {
     console.log(`Server running on http://localhost:${port}/ role=${role}`);
-    stopInventoryCollectionWorker = startInventoryCollectionWorker(role);
-    stopMeetingAudio = startMeetingAudioWorker();
     // Start usage tracking background flush
     if (shouldStartWebLocalTasks(role)) {
       startUsageTracking();
     }
     if (shouldStartSchedulerTasks(role)) {
+      import("../intelAutoCollect")
+        .then(m => m.intelScheduler.start())
+        .catch(err => console.error("[IntelScheduler] Failed to start:", err));
       // Start todo reminder scheduler (check every hour)
       import("../todoReminder")
         .then(m => m.startTodoReminderScheduler())
@@ -232,8 +233,6 @@ async function startServer() {
     shutdownPromise = (async () => {
     console.log(`[Server] received ${signal}, shutting down gracefully`);
     setRuntimeDraining(true);
-    const inventoryDrain = stopInventoryCollectionWorker?.();
-    const meetingDrain = stopMeetingAudio?.();
     const graceMs = Math.min(Math.max(Number(process.env.SHUTDOWN_GRACE_MS || 20_000), 5_000), 60_000);
     const forceCloseTimer = setTimeout(() => {
       console.warn(`[Server] grace period ${graceMs}ms reached; closing idle connections`);
@@ -248,8 +247,6 @@ async function startServer() {
       });
     });
     clearTimeout(forceCloseTimer);
-    await inventoryDrain;
-    await meetingDrain;
     if (shouldStartWebLocalTasks(role)) {
       await stopUsageTracking().catch(error =>
         console.error("[UsageTracking] Stop failed:", error)

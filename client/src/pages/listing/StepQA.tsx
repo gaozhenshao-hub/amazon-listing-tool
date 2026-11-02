@@ -23,8 +23,6 @@ import {
   ArrowDown,
 } from "lucide-react";
 import { ListingGenerationJobStatus, useListingGenerationJob } from "./useListingGenerationJob";
-import { useListingConfiguredGeneration } from "./ListingConfiguredGenerationContext";
-import { useListingAuxiliaryCheck } from "./useListingAuxiliaryCheck";
 
 // ─── QA 8 Dimensions Definition ─────────────────────────────────────
 const QA_CHECKLIST_DIMENSIONS = [
@@ -57,7 +55,6 @@ interface QAItem {
 }
 
 export default function StepQA({ projectId, emphasis, locked, savedContent, onLock, onUnlock, onComplete }: StepQAProps) {
-  const configured = useListingConfiguredGeneration();
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [generated, setGenerated] = useState(false);
@@ -69,9 +66,6 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
   const [newA, setNewA] = useState("");
   const [checkScores, setCheckScores] = useState<Record<string, { pass: boolean; notes: string }> | undefined>(undefined);
   const autoCheckTriggered = useRef(false);
-  const auxiliaryItems = qaItems.map((item, i) => i === editingIdx ? { ...item, question: editQ, answer: editA } : item);
-  if (showAddForm && (newQ || newA)) auxiliaryItems.push({ question: newQ, answer: newA, category: "custom", priority: qaItems.length + 1, sourceInsight: "手动添加（未保存稿）" });
-  const auxiliaryCheck = useListingAuxiliaryCheck("checkQa", { operation: "checkQa", payload: { items: auxiliaryItems } }, { locked: !!locked, confirmed, editingIdx, showAddForm, newQ, newA }, !locked && auxiliaryItems.length > 0 && auxiliaryItems.every(item => item.question.trim() && item.answer.trim()));
 
   const evaluateCheck = trpc.listing.evaluateQAChecklist.useMutation({
     onSuccess: (data) => {
@@ -84,14 +78,13 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
 
   // Auto-trigger checklist when QA items are generated
   useEffect(() => {
-    if (!configured?.enabled && generated && qaItems.length > 0 && !autoCheckTriggered.current && !checkScores) {
+    if (generated && qaItems.length > 0 && !autoCheckTriggered.current && !checkScores) {
       autoCheckTriggered.current = true;
       evaluateCheck.mutate({ qaContent: JSON.stringify(qaItems) });
     }
-  }, [generated, qaItems, configured?.enabled, checkScores, evaluateCheck]);
+  }, [generated, qaItems.length]);
 
   const handleRunCheck = () => {
-    if (configured?.enabled) { auxiliaryCheck.run(); return; }
     if (qaItems.length === 0) {
       toast.error("请先生成QA问答");
       return;
@@ -124,7 +117,6 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
     projectId,
     nodeId: "G5",
     operation: "qa",
-    draftFingerprint: JSON.stringify([qaItems, editingIdx, editQ, editA, newQ, newA, locked]),
     onSucceeded: (data: any) => {
       try {
         const content = data.qa || data;
@@ -156,8 +148,7 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
           })));
           setGenerated(true);
           setCheckScores(undefined);
-          if (configured?.enabled) autoCheckTriggered.current = true;
-          else autoCheckTriggered.current = false;
+          autoCheckTriggered.current = false;
           toast.success(`已生成 ${items.length} 组QA`);
         } else {
           toast.error("QA生成结果格式异常");
@@ -481,7 +472,7 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
             {/* QA 8-Dimension Checklist Panel */}
             <ChecklistPanel
               dimensions={QA_CHECKLIST_DIMENSIONS}
-              checkListScores={configured?.enabled ? auxiliaryCheck.scores : checkScores}
+              checkListScores={checkScores}
               panelTitle="QA问答 - 8维度质量自检"
               checkLabel="8维度自检"
               onRunCheck={handleRunCheck}

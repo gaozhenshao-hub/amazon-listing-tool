@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `system_settings` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`settingKey` varchar(100) NOT NULL,\n\t`settingValue` text,\n\t`description` varchar(500),\n\t`category` varchar(50) DEFAULT 'general',\n\t`isEncrypted` boolean DEFAULT false,\n\t`updatedBy` int,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `system_settings_id` PRIMARY KEY(`id`),\n\tCONSTRAINT `system_settings_settingKey_unique` UNIQUE(`settingKey`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE `system_settings` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`settingKey` varchar(100) NOT NULL,\n\t`settingValue` text,\n\t`description` varchar(500),\n\t`category` varchar(50) DEFAULT 'general',\n\t`isEncrypted` boolean DEFAULT false,\n\t`updatedBy` int,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `system_settings_id` PRIMARY KEY(`id`),\n\tCONSTRAINT `system_settings_settingKey_unique` UNIQUE(`settingKey`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 448
+}

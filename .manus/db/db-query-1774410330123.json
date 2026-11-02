@@ -1,0 +1,25 @@
+{
+  "query": "SHOW TABLES LIKE 'user_settings'; SHOW TABLES LIKE 'asin_status_cache'; SHOW TABLES LIKE 'asin_permissions';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SHOW TABLES LIKE 'user_settings'; SHOW TABLES LIKE 'asin_status_cache'; SHOW TABLES LIKE 'asin_permissions';",
+  "rows": [
+    {
+      "Tables_in_a79tkwusxJ5HWpLxCXSSXN (user_settings)": "user_settings"
+    },
+    {
+      "Tables_in_a79tkwusxJ5HWpLxCXSSXN (user_settings)": "Tables_in_a79tkwusxJ5HWpLxCXSSXN (asin_status_cache)"
+    },
+    {
+      "Tables_in_a79tkwusxJ5HWpLxCXSSXN (user_settings)": "asin_status_cache"
+    },
+    {
+      "Tables_in_a79tkwusxJ5HWpLxCXSSXN (user_settings)": "Tables_in_a79tkwusxJ5HWpLxCXSSXN (asin_permissions)"
+    },
+    {
+      "Tables_in_a79tkwusxJ5HWpLxCXSSXN (user_settings)": "asin_permissions"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_a79tkwusxJ5HWpLxCXSSXN (user_settings)\nuser_settings\nTables_in_a79tkwusxJ5HWpLxCXSSXN (asin_status_cache)\nasin_status_cache\nTables_in_a79tkwusxJ5HWpLxCXSSXN (asin_permissions)\nasin_permissions\n",
+  "stderr": "",
+  "execution_time_ms": 135
+}

@@ -1,7 +1,5 @@
 import type { Page, Route } from "@playwright/test";
 
-type FixtureError = { message: string; code: number; data: { code: string; httpStatus: number; appCode?: string; retryable?: boolean } };
-
 const USER = {
   id: 1,
   name: "E2E 管理员",
@@ -9,18 +7,12 @@ const USER = {
   role: "super_admin",
 };
 
-function fixtureFor(procedure: string, overrides: Record<string, unknown>): unknown {
-  if (Object.prototype.hasOwnProperty.call(overrides, procedure)) return overrides[procedure];
+function fixtureFor(procedure: string): unknown {
   const fixtures: Record<string, unknown> = {
     "auth.me": USER,
     "roleManagement.myPermissions": { modules: [], detailedPermissions: [] },
     "operations.getMarketplaces": [{ code: "US", name: "美国", region: "NA", sids: [], storeNames: [] }],
     "operations.getUserSettings": { default_marketplace: "US" },
-    "dataImport.getInventoryPlanningFromImport": { asOfDate: null, rows: [] },
-    "operations.listTagDefinitions": [],
-    "operations.listTagAssignments": [],
-    "shippingBatch.getInventoryPipelineSummary": { batches: [], batchCount: 0 },
-    "shippingBatch.getPredictions": [],
     "project.getById": { id: 1, name: "E2E 空气套件", brand: "E2E Brand", marketplace: "US" },
     "devProject.getById": { id: 1, name: "E2E 空气套件", status: "analyzing" },
     "devProject.getProducts": [],
@@ -53,13 +45,13 @@ function fixtureFor(procedure: string, overrides: Record<string, unknown>): unkn
   return null;
 }
 
-async function fulfillTrpc(route: Route, overrides: Record<string, unknown>, errors: Record<string, FixtureError>) {
+async function fulfillTrpc(route: Route) {
   const requestUrl = new URL(route.request().url());
   const encodedPath = requestUrl.pathname.split("/api/trpc/")[1] || "";
   const procedures = decodeURIComponent(encodedPath).split(",").filter(Boolean);
-  const payload = procedures.map((procedure) => Object.prototype.hasOwnProperty.call(errors, procedure)
-    ? { error: { json: errors[procedure] } }
-    : { result: { data: { json: fixtureFor(procedure, overrides) } } });
+  const payload = procedures.map((procedure) => ({
+    result: { data: { json: fixtureFor(procedure) } },
+  }));
   await route.fulfill({
     status: 200,
     contentType: "application/json",
@@ -67,9 +59,9 @@ async function fulfillTrpc(route: Route, overrides: Record<string, unknown>, err
   });
 }
 
-export async function installRealPageFixtures(page: Page, overrides: Record<string, unknown> = {}, errors: Record<string, FixtureError> = {}) {
+export async function installRealPageFixtures(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem("selectedProjectId", "1");
   });
-  await page.route("**/api/trpc/**", route => fulfillTrpc(route, overrides, errors));
+  await page.route("**/api/trpc/**", fulfillTrpc);
 }

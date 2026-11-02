@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `analysisVersions` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`projectFileId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`version` int NOT NULL DEFAULT 1,\n\t`analysisResult` text NOT NULL,\n\t`changeType` enum('auto_analysis','manual_edit','re_analysis') NOT NULL DEFAULT 'auto_analysis',\n\t`changeNote` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `analysisVersions_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE `analysisVersions` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`projectFileId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`version` int NOT NULL DEFAULT 1,\n\t`analysisResult` text NOT NULL,\n\t`changeType` enum('auto_analysis','manual_edit','re_analysis') NOT NULL DEFAULT 'auto_analysis',\n\t`changeNote` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `analysisVersions_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 287
+}

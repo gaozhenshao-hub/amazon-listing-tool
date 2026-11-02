@@ -57,7 +57,6 @@ export function AiJobHistoryPanel({
     { enabled: open, refetchInterval: open ? 8_000 : false },
   );
   const cancelJob = trpc.aiJobs.cancel.useMutation({
-    retry: false,
     onSuccess: async () => {
       toast.success("任务已取消");
       await utils.aiJobs.list.invalidate();
@@ -65,19 +64,13 @@ export function AiJobHistoryPanel({
     onError: (error) => toast.error(error.message || "取消失败"),
   });
   const retryJob = trpc.aiJobs.retry.useMutation({
-    // Recovery creates a new associated task; a lost response must not create another automatically.
-    retry: false,
     onSuccess: async () => {
       toast.success("已创建恢复任务，原失败记录仍会保留");
       await utils.aiJobs.list.invalidate();
     },
     onError: (error) => toast.error(error.message || "恢复失败"),
   });
-  const historyFailed = jobsQuery.isError || (jobsQuery.isSuccess && !Array.isArray(jobsQuery.data));
-  const historyLoading = jobsQuery.isLoading || jobsQuery.isFetching;
-  const historyReady = jobsQuery.isSuccess && !historyFailed && !historyLoading;
-  // A failed/refetching query can still retain old data. It is not a fresh authority to act on a job.
-  const jobs = useMemo(() => historyReady ? jobsQuery.data! : [], [historyReady, jobsQuery.data]);
+  const jobs = useMemo(() => jobsQuery.data || [], [jobsQuery.data]);
   const activeCount = useMemo(
     () => jobs.filter((job) => job.status === "queued" || job.status === "running").length,
     [jobs],
@@ -118,7 +111,6 @@ export function AiJobHistoryPanel({
         <span className="flex min-w-0 items-center gap-2">
           <History className="h-4 w-4 text-primary" />
           <span className="text-sm font-semibold">{title}</span>
-          {historyFailed && <Badge variant="outline" className="border-red-200 text-red-700">读取失败</Badge>}
           {activeCount > 0 && <Badge variant="outline">进行中 {activeCount}</Badge>}
           {failedJobSummary.blocking > 0 && (
             <Badge variant="outline" className="border-red-200 text-red-700">待处理失败 {failedJobSummary.blocking}</Badge>
@@ -138,10 +130,7 @@ export function AiJobHistoryPanel({
               <RefreshCw className={cn("h-4 w-4", jobsQuery.isFetching && "animate-spin")} />
             </Button>
           </div>
-          <p className="text-xs text-amber-800">恢复会新建关联任务，可能重新调用AI产生费用，不是原回执查询。</p>
-          {historyFailed && <p role="alert" className="text-sm text-red-700">任务历史读取失败，未展示旧缓存，当前不可恢复或取消任务。请刷新任务历史后再试。</p>}
-          {historyLoading && <p role="status" className="py-3 text-sm text-muted-foreground">正在读取任务历史，读取完成前不可恢复或取消。</p>}
-          {historyReady && bindingIntegrity.isSuccess && bindingIntegrity.data && !bindingIntegrity.data.healthy && (
+          {bindingIntegrity.data && !bindingIntegrity.data.healthy && (
             <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               <div className="flex items-center gap-2 font-medium">
                 <AlertCircle className="h-4 w-4" />
@@ -184,7 +173,7 @@ export function AiJobHistoryPanel({
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={!historyReady || cancelJob.isPending}
+                        disabled={cancelJob.isPending}
                         onClick={() => cancelJob.mutate({ runId: job.runId, reason: "用户从任务历史取消" })}
                       >
                         <Square className="h-4 w-4" />取消
@@ -194,7 +183,7 @@ export function AiJobHistoryPanel({
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={!historyReady || retryJob.isPending}
+                        disabled={retryJob.isPending}
                         onClick={() => retryJob.mutate({ runId: job.runId, reason: "用户从任务历史恢复" })}
                       >
                         <RotateCcw className="h-4 w-4" />恢复任务
@@ -223,7 +212,7 @@ export function AiJobHistoryPanel({
               </div>
             );
           })}
-          {historyReady && jobs.length === 0 && (
+          {!jobsQuery.isLoading && jobs.length === 0 && (
             <p className="py-5 text-center text-sm text-muted-foreground">暂无后台任务记录</p>
           )}
         </div>

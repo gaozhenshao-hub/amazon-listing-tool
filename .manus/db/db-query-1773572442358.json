@@ -1,0 +1,9 @@
+{
+  "query": "\nALTER TABLE dev_reviews\n  ADD COLUMN isVine INT DEFAULT 0 COMMENT 'Vine评论',\n  ADD COLUMN hasImage INT DEFAULT 0 COMMENT '含图片',\n  ADD COLUMN hasVideo INT DEFAULT 0 COMMENT '含视频',\n  ADD COLUMN reviewerName VARCHAR(255) COMMENT '评论人';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute \nALTER TABLE dev_reviews\n  ADD COLUMN isVine INT DEFAULT 0 COMMENT 'Vine评论',\n  ADD COLUMN hasImage INT DEFAULT 0 COMMENT '含图片',\n  ADD COLUMN hasVideo INT DEFAULT 0 COMMENT '含视频',\n  ADD COLUMN reviewerName VARCHAR(255) COMMENT '评论人';\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 2199
+}

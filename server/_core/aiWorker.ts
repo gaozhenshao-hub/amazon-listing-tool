@@ -1,18 +1,18 @@
-import "../domains/acquisition/missingAssetRepair";
-import "../domains/knowledge/assetLifecycle";
-import "../domains/knowledge/adjustmentChat";
 import "dotenv/config";
-import { startDesignWorker } from "../domains/design/worker";
 import "../routers/aiJobs";
+import "../routers/imageWorkflow";
 import "../domains/listing/services/generationJob";
-import "../services/analysisImportJob";
 import "../services/emperorAgentRunner";
+import "../domains/product_development/analysis/informationSummaryService";
+import "../domains/product_development/analysis/analysisStageJobService";
+import "../domains/product_development/panorama/marketInsightService";
 import "../domains/keyword/keywordGenerationJob";
+import "../domains/video/videoGenerationJob";
 import "../domains/acquisition/acquisitionJobs";
-import "../domains/acquisition/knowledgeCollectionBatch";
-import "../domains/knowledge/videoTagging";
-import "../domains/knowledge/standaloneImages";
 import "../domains/acquisition/legacyConsumerAnalysisJob";
+import "../domains/acquisition/monitorJob";
+import "../domains/image/services/competitorGalleryJob";
+import "../domains/image/services/expressionLinkageJob";
 import {
   drainAiJobQueue,
   getAiJobWorkerId,
@@ -25,11 +25,6 @@ import {
 } from "../services/aiJobRunner";
 import { recoverTimedOutAgentNodes } from "../services/emperorAgentRunner";
 import { assertStartupConfig } from "./startupValidation";
-import { startInventoryCollectionWorker } from "../domains/ops/inventoryCollectionWorker";
-import { startAssistantConversationWorker } from "../domains/ai_os/services/assistantConversationWorker";
-import { startProfitAnalysisWorker } from "../domains/ops/profitAnalysisWorker";
-import { startSaihuReportCaptureWorker } from "../domains/ops/saihuReportCaptureWorker";
-import { observeDedicatedWorkerDrains } from "./dedicatedWorkerDrain";
 
 const pollMs = Math.min(
   Math.max(Number(process.env.AI_JOB_WORKER_POLL_MS || 5000), 1000),
@@ -85,11 +80,6 @@ async function main() {
   process.env.AI_JOB_RUNNER_MODE = process.env.AI_JOB_RUNNER_MODE || "worker";
   process.env.APP_PROCESS_ROLE = process.env.APP_PROCESS_ROLE || "worker";
   assertStartupConfig({ entrypoint: "worker", role: "worker" });
-  const stopDesignWorker = startDesignWorker();
-  const stopInventoryCollectionWorker = startInventoryCollectionWorker("worker");
-  const stopAssistantConversationWorker = startAssistantConversationWorker("worker");
-  const stopProfitAnalysisWorker = startProfitAnalysisWorker("worker");
-  const stopSaihuReportCaptureWorker = startSaihuReportCaptureWorker("worker");
   const handlers = listAiJobHandlerRegistrations()
     .map(handler => handler.id)
     .join(", ");
@@ -115,18 +105,10 @@ async function main() {
     if (stopped) return;
     stopped = true;
     clearInterval(interval);
-    const inventoryDrain = stopInventoryCollectionWorker();
-    const conversationDrain = stopAssistantConversationWorker();
-    const profitDrain = stopProfitAnalysisWorker();
-    const saihuReportDrain = stopSaihuReportCaptureWorker();
-    // Observe every dedicated drain immediately: a timeout may reject while
-    // the draining-status write is still pending. Preserve that rejection for
-    // the awaited aggregate below instead of an unhandled premature exit.
-    const dedicatedDrain = observeDedicatedWorkerDrains([stopDesignWorker(), inventoryDrain, conversationDrain, profitDrain, saihuReportDrain]);
     console.log(`[AI Worker] received ${signal}, draining in-flight jobs`);
     try {
       await markAiJobWorkerDraining({ signal });
-      const [drainResult] = await Promise.all([waitForAiJobsToDrain(shutdownGraceMs), dedicatedDrain]);
+      const drainResult = await waitForAiJobsToDrain(shutdownGraceMs);
       if (!drainResult.drained) {
         console.warn(
           `[AI Worker] shutdown grace elapsed; running=${drainResult.runningRunIds.join(",") || "none"} ` +

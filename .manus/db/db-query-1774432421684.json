@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `asin_tag_assignments` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`user_id` int NOT NULL,\n\t`tag_id` int NOT NULL,\n\t`asin` varchar(20) NOT NULL,\n\t`msku` varchar(100),\n\t`sid` varchar(20),\n\t`created_at` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `asin_tag_assignments_id` PRIMARY KEY(`id`)\n);\nCREATE TABLE `asin_tag_definitions` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`user_id` int NOT NULL,\n\t`name` varchar(50) NOT NULL,\n\t`color` varchar(20) NOT NULL DEFAULT '#6366f1',\n\t`is_system` int NOT NULL DEFAULT 0,\n\t`hide_from_inventory` int NOT NULL DEFAULT 0,\n\t`created_at` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `asin_tag_definitions_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE `asin_tag_assignments` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`user_id` int NOT NULL,\n\t`tag_id` int NOT NULL,\n\t`asin` varchar(20) NOT NULL,\n\t`msku` varchar(100),\n\t`sid` varchar(20),\n\t`created_at` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `asin_tag_assignments_id` PRIMARY KEY(`id`)\n);\nCREATE TABLE `asin_tag_definitions` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`user_id` int NOT NULL,\n\t`name` varchar(50) NOT NULL,\n\t`color` varchar(20) NOT NULL DEFAULT '#6366f1',\n\t`is_system` int NOT NULL DEFAULT 0,\n\t`hide_from_inventory` int NOT NULL DEFAULT 0,\n\t`created_at` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `asin_tag_definitions_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 547
+}

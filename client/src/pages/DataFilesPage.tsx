@@ -796,6 +796,202 @@ function AnalysisResultCard({
 }
 
 // ─── Import from Product Profile Button ─────────────────────────
+function ImportFromProfileButton({ projectId }: { projectId: number }) {
+  const [open, setOpen] = useState(false);
+  const [selectedDevProjectId, setSelectedDevProjectId] = useState<string>("");
+  const utils = trpc.useUtils();
+
+  // Query available dev projects for import
+  const { data: importableProjects, isLoading: loadingProjects } = trpc.projectAssignment.listImportableDevProjects.useQuery(
+    undefined,
+    { enabled: open }
+  );
+
+  // Get profile preview when a project is selected
+  const { data: profilePreview, isLoading: loadingPreview } = trpc.projectAssignment.getDevProjectProfile.useQuery(
+    { devProjectId: Number(selectedDevProjectId) },
+    { enabled: !!selectedDevProjectId && open }
+  );
+
+  const importMutation = trpc.projectFile.importFromProfile.useMutation({
+    onSuccess: () => {
+      utils.projectFile.listByType.invalidate({ projectId, fileType: "product_attributes" });
+      utils.projectFile.listByProject.invalidate({ projectId });
+      utils.projectFile.getAnalysisSummary.invalidate({ projectId });
+      toast.success("产品画像数据已成功导入并完成AI分析");
+      setOpen(false);
+      setSelectedDevProjectId("");
+    },
+    onError: (err) => toast.error(`导入失败: ${err.message}`),
+  });
+
+  const handleImport = () => {
+    if (!selectedDevProjectId) {
+      toast.error("请先选择一个产品开发项目");
+      return;
+    }
+    importMutation.mutate({
+      listingProjectId: projectId,
+      devProjectId: Number(selectedDevProjectId),
+    });
+  };
+
+  const hasProfile = profilePreview?.profile !== null;
+
+  // Build profile summary for preview
+  const profileSummary = useMemo(() => {
+    if (!profilePreview?.profile) return null;
+    const p = profilePreview.profile;
+    const sections: string[] = [];
+    const checkField = (field: string, label: string) => {
+      const val = (p as any)[field];
+      if (val) {
+        try {
+          const parsed = typeof val === "string" ? JSON.parse(val) : val;
+          if (parsed && (Array.isArray(parsed) ? parsed.length > 0 : Object.keys(parsed).length > 0)) {
+            sections.push(label);
+          }
+        } catch {
+          if (typeof val === "string" && val.trim()) sections.push(label);
+        }
+      }
+    };
+    checkField("appearanceColors", "外观设计");
+    checkField("appearanceAiSuggestion", "外观设计(AI)");
+    checkField("mainFunctions", "功能特点");
+    checkField("functionsAiSuggestion", "功能特点(AI)");
+    checkField("costBreakdown", "产品成本");
+    checkField("packageDimensions", "包装尺寸");
+    checkField("userPersona", "用户画像");
+    checkField("usageScenarios", "使用场景");
+    checkField("productMap", "产品地图");
+    return sections;
+  }, [profilePreview?.profile]);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSelectedDevProjectId(""); }}>
+      <DialogTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full border-dashed border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+        >
+          <Import className="h-3.5 w-3.5 mr-2" />
+          从产品画像导入
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5 text-blue-600" />
+            从产品画像导入
+          </DialogTitle>
+          <DialogDescription>
+            选择已分配给您的产品开发项目，将其产品画像数据自动转换为本品属性表并进行AI分析
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          {/* Project Selector */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">选择产品开发项目</label>
+            <Select value={selectedDevProjectId} onValueChange={setSelectedDevProjectId}>
+              <SelectTrigger>
+                <SelectValue placeholder={loadingProjects ? "加载中..." : "请选择项目"} />
+              </SelectTrigger>
+              <SelectContent>
+                {importableProjects?.map((p: any) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    <div className="flex items-center gap-2">
+                      <span>{p.name}</span>
+                      {p.targetMarket && (
+                        <Badge variant="outline" className="text-[10px] ml-1">{p.targetMarket}</Badge>
+                      )}
+                    </div>
+                  </SelectItem>
+                ))}
+                {importableProjects?.length === 0 && (
+                  <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                    <AlertTriangle className="h-5 w-5 mx-auto mb-2 text-amber-500" />
+                    <p>暂无可导入的项目</p>
+                    <p className="text-xs mt-1">请联系管理员分配产品开发项目</p>
+                  </div>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Profile Preview */}
+          {selectedDevProjectId && (
+            <div className="space-y-2">
+              {loadingPreview ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-4 justify-center">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  加载产品画像...
+                </div>
+              ) : hasProfile ? (
+                <Card className="border-blue-200 bg-blue-50/50">
+                  <CardContent className="p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <span className="text-sm font-medium">产品画像数据可用</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      项目: {profilePreview?.project?.name}
+                    </p>
+                    {profileSummary && profileSummary.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {profileSummary.map((s, i) => (
+                          <Badge key={i} variant="secondary" className="text-[10px]">{s}</Badge>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-xs text-blue-600">
+                      导入后将自动运行Rufus属性分析，提取核心规格、材质、性能等参数
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="border-amber-200 bg-amber-50/50">
+                  <CardContent className="p-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-500" />
+                      <span className="text-sm font-medium text-amber-700">该项目尚未创建产品画像</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      请先在产品开发模块中完成产品画像的创建
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>取消</Button>
+          <Button
+            onClick={handleImport}
+            disabled={!selectedDevProjectId || !hasProfile || importMutation.isPending}
+          >
+            {importMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                导入并分析中...
+              </>
+            ) : (
+              <>
+                <Import className="h-4 w-4 mr-2" />
+                确认导入
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId: number }) {
   const config = FILE_TYPE_CONFIG[fileType];
   const Icon = config.icon;
@@ -953,6 +1149,11 @@ function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId
           </Button>
         </div>
 
+        {/* Import from Product Profile */}
+        {fileType === "product_attributes" && (
+          <ImportFromProfileButton projectId={projectId} />
+        )}
+
         {latestFile && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
@@ -1030,6 +1231,196 @@ function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId
   );
 }
 
+// ─── BuyerQuestionsCard ──────────────────────────────────────────
+function BuyerQuestionsCard({ projectId }: { projectId: number }) {
+  const utils = trpc.useUtils();
+  const xlsxRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editCategory, setEditCategory] = useState("");
+  const [editPriority, setEditPriority] = useState<"high" | "medium" | "low">("medium");
+
+  const { data: readiness } = trpc.buyerQuestions.getReadiness.useQuery(
+    { projectId },
+    { enabled: !!projectId }
+  );
+
+  const { data: questions, isLoading } = trpc.buyerQuestions.list.useQuery(
+    { projectId },
+    { enabled: !!projectId }
+  );
+
+  const importFromXlsx = trpc.buyerQuestions.importFromXlsx.useMutation({
+    onSuccess: (data: { inserted: number; skipped: number; total: number }) => {
+      utils.buyerQuestions.list.invalidate({ projectId });
+      utils.buyerQuestions.getReadiness.invalidate({ projectId });
+      toast.success(`导入完成：${data.inserted} 条新增，${data.skipped} 条跳过（重复）`);
+      setImporting(false);
+    },
+    onError: (err: any) => {
+      toast.error("导入失败: " + err.message);
+      setImporting(false);
+    },
+  });
+
+  const updateQuestion = trpc.buyerQuestions.update.useMutation({
+    onSuccess: () => {
+      utils.buyerQuestions.list.invalidate({ projectId });
+      setEditingId(null);
+      toast.success("已更新");
+    },
+    onError: (err: any) => toast.error("更新失败: " + err.message),
+  });
+
+  const deleteQuestion = trpc.buyerQuestions.delete.useMutation({
+    onSuccess: () => {
+      utils.buyerQuestions.list.invalidate({ projectId });
+      utils.buyerQuestions.getReadiness.invalidate({ projectId });
+      toast.success("已删除");
+    },
+    onError: (err: any) => toast.error("删除失败: " + err.message),
+  });
+
+  const handleXlsxSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { toast.error("文件大小不能超过10MB"); return; }
+    setImporting(true);
+    try {
+      const XLSX = await import("xlsx");
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+      if (rows.length === 0) { toast.error("文件为空或格式不正确"); setImporting(false); return; }
+      const questions = rows
+        .map((row: any) => {
+          const q = String(row.question || row.Question || row.QUESTION || row["问题"] || "").trim();
+          const qCn = String(row.question_cn || row.questionCn || row["中文翻译"] || "").trim();
+          const cat = String(row.category || row.Category || row["分类"] || "").trim();
+          const pri = String(row.priority || row.Priority || row["优先级"] || "medium").trim();
+          return { question: q, questionCn: qCn || undefined, category: cat || undefined, priority: (["high","medium","low"].includes(pri) ? pri : "medium") as "high"|"medium"|"low" };
+        })
+        .filter((q: any) => q.question.length > 0);
+      if (questions.length === 0) { toast.error("未找到有效问题，请确认列名包含 'question' 字段"); setImporting(false); return; }
+      importFromXlsx.mutate({ projectId, questions });
+    } catch (err: any) {
+      toast.error("文件解析失败: " + (err?.message || "未知错误"));
+      setImporting(false);
+    }
+    e.target.value = "";
+  }, [projectId, importFromXlsx]);
+
+  const priorityConfig: Record<string, { label: string; className: string }> = {
+    high: { label: "高", className: "bg-red-100 text-red-700 border-red-200" },
+    medium: { label: "中", className: "bg-yellow-100 text-yellow-700 border-yellow-200" },
+    low: { label: "低", className: "bg-gray-100 text-gray-600 border-gray-200" },
+  };
+
+  return (
+    <Card className="border-amber-200">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="p-2 rounded-lg bg-amber-50"><HelpCircle className="h-5 w-5 text-amber-600" /></div>
+            <div>
+              <CardTitle className="text-base">买家问题库</CardTitle>
+              <CardDescription className="text-xs mt-0.5">上传买家常见问题（xlsx），AI在生成QA时将优先覆盖这些问题</CardDescription>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {readiness?.hasQuestions ? (
+              <Badge className="bg-green-600 text-xs"><CheckCircle2 className="h-3 w-3 mr-1" />{readiness.count} 条问题</Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs text-amber-600 border-amber-300"><AlertTriangle className="h-3 w-3 mr-1" />未上传</Badge>
+            )}
+            <input ref={xlsxRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleXlsxSelect} />
+            <Button size="sm" variant="outline" onClick={() => xlsxRef.current?.click()} disabled={importing} className="text-amber-700 border-amber-300 hover:bg-amber-50">
+              {importing ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />导入中...</> : <><Upload className="h-4 w-4 mr-1" />上传问题库 (.xlsx)</>}
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="rounded-md bg-amber-50 border border-amber-100 p-3 mb-4">
+          <p className="text-xs text-amber-800 font-medium mb-1">📋 Excel 模板格式（支持 .xlsx / .xls / .csv）</p>
+          <p className="text-xs text-amber-700">
+            必填列：<code className="bg-amber-100 px-1 rounded">question</code>（问题原文）&nbsp;｜
+            可选列：<code className="bg-amber-100 px-1 rounded">category</code>（分类）、<code className="bg-amber-100 px-1 rounded">priority</code>（high/medium/low）、<code className="bg-amber-100 px-1 rounded">question_cn</code>（中文翻译）
+          </p>
+        </div>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+        ) : !questions || (questions as any[]).length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+            <MessageSquare className="h-8 w-8 mb-2 opacity-40" />
+            <p className="text-sm">暂无问题，请上传 Excel 文件导入</p>
+          </div>
+        ) : (
+          <div className="rounded-md border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40">
+                  <TableHead className="text-xs w-8">#</TableHead>
+                  <TableHead className="text-xs">问题</TableHead>
+                  <TableHead className="text-xs w-24">分类</TableHead>
+                  <TableHead className="text-xs w-16">优先级</TableHead>
+                  <TableHead className="text-xs w-20">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(questions as any[]).map((q: any, idx: number) => (
+                  <TableRow key={q.id}>
+                    <TableCell className="text-muted-foreground text-xs">{idx + 1}</TableCell>
+                    <TableCell>
+                      <p className="text-sm">{q.question}</p>
+                      {q.questionCn && <p className="text-xs text-muted-foreground mt-0.5">{q.questionCn}</p>}
+                    </TableCell>
+                    <TableCell>
+                      {editingId === q.id ? (
+                        <Input value={editCategory} onChange={(e) => setEditCategory(e.target.value)} className="h-7 text-xs w-20" placeholder="分类" />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">{q.category || "—"}</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {editingId === q.id ? (
+                        <Select value={editPriority} onValueChange={(v) => setEditPriority(v as "high"|"medium"|"low")}>
+                          <SelectTrigger className="h-7 text-xs w-16"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="high">高</SelectItem>
+                            <SelectItem value="medium">中</SelectItem>
+                            <SelectItem value="low">低</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Badge variant="outline" className={`text-xs ${priorityConfig[q.priority]?.className || ""}`}>{priorityConfig[q.priority]?.label || q.priority}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {editingId === q.id ? (
+                        <div className="flex gap-1">
+                          <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => updateQuestion.mutate({ id: q.id, category: editCategory || undefined, priority: editPriority })}><Save className="h-3 w-3" /></Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingId(null)}><X className="h-3 w-3" /></Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-1">
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingId(q.id); setEditCategory(q.category || ""); setEditPriority(q.priority || "medium"); }}><Pencil className="h-3 w-3" /></Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => deleteQuestion.mutate({ id: q.id })}><Trash2 className="h-3 w-3" /></Button>
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function DataFilesPage() {
   const { selectedProjectId } = useProject();
 
@@ -1096,7 +1487,7 @@ export default function DataFilesPage() {
           </div>
 
           {/* 买家问题库上传 */}
-          
+          <BuyerQuestionsCard projectId={selectedProjectId} />
         </div>
       )}
     </div>

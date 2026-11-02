@@ -82,10 +82,6 @@ export type NormalizedAmazonAsset = {
 };
 
 export type NormalizedAmazonSnapshot = {
-  videos?: import("./knowledgeVideos").AmazonVideoReference[];
-  sourceLayout?: import("./amazonImageLayout").AmazonImageLayout;
-  research?: import("./competitorResearch").CompetitorResearch;
-  subtitle?: string | null;
   asin: string;
   marketplace: AcquisitionMarketplace;
   sourceUrlHash: string;

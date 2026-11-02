@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE inventory_config ADD COLUMN production_time_days INT DEFAULT 15 AFTER lead_time_days;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute ALTER TABLE inventory_config ADD COLUMN production_time_days INT DEFAULT 15 AFTER lead_time_days;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 2069
+}

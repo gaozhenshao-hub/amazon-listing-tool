@@ -17,8 +17,6 @@ export const PROJECT_COMPETITOR_ACQUISITION_CAPABILITIES = [
   "listing_content",
   "ratings",
   "image_gallery",
-  "aplus",
-  "brand_story",
 ] as const satisfies readonly AmazonAcquisitionCapability[];
 
 export const CONVERSION_COLLECTOR_ACQUISITION_CAPABILITIES = [
@@ -44,8 +42,8 @@ export function kbProductConsumerRef(recordId: number): string {
   return `kb-product:${recordId}`;
 }
 
-export function projectCompetitorConsumerRef(projectId: number, asin: string, captureOnly = false): string {
-  return `project-competitor:${projectId}:${asin.trim().toUpperCase()}${captureOnly ? ":capture-v1" : ""}`;
+export function projectCompetitorConsumerRef(projectId: number, asin: string): string {
+  return `project-competitor:${projectId}:${asin.trim().toUpperCase()}`;
 }
 
 export function conversionCollectorConsumerRef(asin: string): string {
@@ -54,7 +52,7 @@ export function conversionCollectorConsumerRef(asin: string): string {
 
 function positiveInteger(value: string, label: string): number {
   const parsed = Number(value);
-  if (!/^[1-9]\d*$/u.test(value) || !Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`invalid ${label} consumer reference`);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`invalid ${label} consumer reference`);
   return parsed;
 }
 
@@ -66,10 +64,10 @@ export function parseLegacySnapshotConsumerRef(type: LegacySnapshotConsumerType,
   if (type === "kb_product" && parts.length === 2 && parts[0] === "kb-product") {
     return { type, recordId: positiveInteger(parts[1], "kb product") } as const;
   }
-  if (type === "project_competitor" && (parts.length === 3 || (parts.length === 4 && parts[3] === "capture-v1")) && parts[0] === "project-competitor") {
+  if (type === "project_competitor" && parts.length === 3 && parts[0] === "project-competitor") {
     const asin = parts[2].toUpperCase();
     if (!/^[A-Z0-9]{10}$/.test(asin)) throw new Error("invalid project competitor ASIN reference");
-    return { type, projectId: positiveInteger(parts[1], "project competitor"), asin, ...(parts.length === 4 ? { captureOnly: true as const } : {}) } as const;
+    return { type, projectId: positiveInteger(parts[1], "project competitor"), asin } as const;
   }
   if (type === "conversion_collector" && parts.length === 3 && parts[0] === "conversion-collector" && parts[1] === "US") {
     const asin = parts[2].toUpperCase();

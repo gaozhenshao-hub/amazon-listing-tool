@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  getJob: vi.fn(), getSnapshot: vi.fn(), listAssets: vi.fn(), requireDb: vi.fn(), getDb: vi.fn(),
+  getJob: vi.fn(), getSnapshot: vi.fn(), listAssets: vi.fn(), requireDb: vi.fn(),
 }));
-vi.mock("../../repositories/dbClient", () => ({ requireDb: mocks.requireDb, getDb: mocks.getDb }));
+vi.mock("../../repositories/dbClient", () => ({ requireDb: mocks.requireDb }));
 vi.mock("./repository", async importOriginal => ({
   ...await importOriginal<typeof import("./repository")>(),
   getAcquisitionJob: mocks.getJob,
@@ -24,9 +24,6 @@ const caller = (workspaceId: number) => amazonAcquisitionRouter.createCaller({
 describe("acquisition job coverage read-only view", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Imported research repositories may capture getDb, but this read-only
-    // coverage route must never enter their database/execution path.
-    mocks.getDb.mockImplementation(() => { throw new Error("Unexpected research database access during coverage read"); });
     const db = {
       select: () => ({ from: () => ({ where: () => ({ orderBy: () => ({ limit: async () => [{
         id: 88, workspaceId: 3, snapshotId: 23, marketplace: "US", asin: "B000000000",
@@ -45,12 +42,10 @@ describe("acquisition job coverage read-only view", () => {
     mocks.listAssets.mockResolvedValue([{ id: 1, role: "main", storageKey: "private-reference", fieldStatus: "pending_review" }]);
   });
 
-  afterEach(() => { expect(mocks.getDb).not.toHaveBeenCalled(); });
-
   it("reports safely saved gallery count without claiming a missing A+ is absent", async () => {
     const result = await caller(3).jobCoverage({ jobId: 12 });
     expect(result).toEqual({
-      status: "confirmed", isCurrent: true, cacheExpired: false,
+      status: "confirmed", isCurrent: true,
       coverage: [
         { capability: "image_gallery", state: "returned", storedCount: 1, failedCount: 0 },
         { capability: "aplus", state: "not_returned", storedCount: 0, failedCount: 0 },

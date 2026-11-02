@@ -1,0 +1,37 @@
+{
+  "query": "SELECT * FROM project_assignments ORDER BY createdAt DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT * FROM project_assignments ORDER BY createdAt DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "3",
+      "projectId": "60002",
+      "projectType": "dev_project",
+      "assignedUserId": "20",
+      "assignedBy": "1",
+      "permission": "read",
+      "createdAt": "2026-03-18 15:11:51"
+    },
+    {
+      "id": "2",
+      "projectId": "60002",
+      "projectType": "dev_project",
+      "assignedUserId": "1",
+      "assignedBy": "1",
+      "permission": "read",
+      "createdAt": "2026-03-18 15:09:27"
+    },
+    {
+      "id": "1",
+      "projectId": "60001",
+      "projectType": "dev_project",
+      "assignedUserId": "1",
+      "assignedBy": "1",
+      "permission": "read",
+      "createdAt": "2026-03-18 15:09:05"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tprojectId\tprojectType\tassignedUserId\tassignedBy\tpermission\tcreatedAt\n3\t60002\tdev_project\t20\t1\tread\t2026-03-18 15:11:51\n2\t60002\tdev_project\t1\t1\tread\t2026-03-18 15:09:27\n1\t60001\tdev_project\t1\t1\tread\t2026-03-18 15:09:05\n",
+  "stderr": "",
+  "execution_time_ms": 86
+}

@@ -542,25 +542,6 @@ function convertValue(val: any, fieldType: FieldType): any {
   }
 }
 
-/**
- * 领星的父 ASIN 周报在部分导出批次中会带有“日期”列，但每一行的值都是同一个
- * 周区间（例如 2026-10-19~2026-10-25），而非每日事实。只有每个有效数据行
- * 都明确给出一个单独的日历日时，才允许进入日快照写入路径。
- */
-function isSingleCalendarDay(value: unknown): boolean {
-  if (value instanceof Date) return !Number.isNaN(value.getTime());
-  return /^\d{4}[-/]\d{2}[-/]\d{2}$/.test(String(value ?? "").trim());
-}
-
-function inferLingxingDataGranularity(headers: string[], rawData: any[][]): "weekly" | "daily" {
-  const dateColumnIndex = headers.indexOf("日期");
-  if (dateColumnIndex < 0) return "weekly";
-
-  const dataRows = rawData.slice(1).filter(row => row && !row.every((cell: any) => cell == null || cell === ""));
-  const dateValues = dataRows.map(row => row[dateColumnIndex]);
-  return dateValues.length > 0 && dateValues.every(isSingleCalendarDay) ? "daily" : "weekly";
-}
-
 // ─── Main Parse Function ───
 export interface ParseResult {
   sourceType: SourceType;
@@ -600,9 +581,7 @@ export function parseExcelBuffer(buffer: Buffer, filename: string): ParseResult 
 
   const columnMap = sourceType === "lingxing" ? LINGXING_COLUMN_MAP : SAIHU_COLUMN_MAP;
   const fieldTypes = sourceType === "lingxing" ? LINGXING_FIELD_TYPES : SAIHU_FIELD_TYPES;
-  const dataGranularity = sourceType === "lingxing"
-    ? inferLingxingDataGranularity(headers, rawData)
-    : "weekly";
+  const dataGranularity = sourceType === "lingxing" && headers.includes("日期") ? "daily" : "weekly";
 
   // Build header index → field name mapping
   const headerMapping: { colIndex: number; fieldName: string }[] = [];

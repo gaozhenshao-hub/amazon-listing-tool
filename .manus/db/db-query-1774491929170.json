@@ -1,0 +1,90 @@
+{
+  "query": "SELECT id, parent_asin, marketplace, LEFT(title, 50) as title_short, store_name, status FROM product_profiles LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT id, parent_asin, marketplace, LEFT(title, 50) as title_short, store_name, status FROM product_profiles LIMIT 10;",
+  "rows": [
+    {
+      "id": "30001",
+      "parent_asin": "B0D3DXMTWN",
+      "marketplace": "US",
+      "title_short": "USQ1152 Pool Pump Motor Kit 1.5HP Replacement with",
+      "store_name": "2店-US",
+      "status": "inactive"
+    },
+    {
+      "id": "30002",
+      "parent_asin": "B0D3F2GS3D",
+      "marketplace": "US",
+      "title_short": "UST1202 Pool Pump Motor 2 HP Replacement for Haywa",
+      "store_name": "2店-US",
+      "status": "inactive"
+    },
+    {
+      "id": "30003",
+      "parent_asin": "B0D3ZZD83K",
+      "marketplace": "US",
+      "title_short": "2 Inch Suction Hose Pump Kit for Water/Trash Pump ",
+      "store_name": "2店-US",
+      "status": "active"
+    },
+    {
+      "id": "30004",
+      "parent_asin": "B0D4CZ7BK9",
+      "marketplace": "US",
+      "title_short": "B2855 Pool Pump Motor 2 HP with Square Flange 230V",
+      "store_name": "2店-US",
+      "status": "inactive"
+    },
+    {
+      "id": "30005",
+      "parent_asin": "B0D59Y9PSD",
+      "marketplace": "US",
+      "title_short": "SP1610Z1MBK Pool Pump Motor 1 HP, C-Flange, 1 HP S",
+      "store_name": "2店-US",
+      "status": "inactive"
+    },
+    {
+      "id": "30006",
+      "parent_asin": "B0D5CJGXJZ",
+      "marketplace": "US",
+      "title_short": "B2853 Pool Pump Motor Compatible with 340038 A.O. ",
+      "store_name": "2店-US",
+      "status": "inactive"
+    },
+    {
+      "id": "30007",
+      "parent_asin": "B0D5CW5YWV",
+      "marketplace": "US",
+      "title_short": "RV Air Conditioner Motor with Capacitor Replacemen",
+      "store_name": "2店-US",
+      "status": "inactive"
+    },
+    {
+      "id": "30008",
+      "parent_asin": "B0D7HMP4ZH",
+      "marketplace": "US",
+      "title_short": "3/4\"×100&200&300ft Compressed Air Line Kit for Sho",
+      "store_name": "2店-US",
+      "status": "active"
+    },
+    {
+      "id": "30009",
+      "parent_asin": "B0D7HGCSN2",
+      "marketplace": "US",
+      "title_short": "3/4\"×100&200&300ft Compressed Air Line Kit for Sho",
+      "store_name": "2店-US",
+      "status": "active"
+    },
+    {
+      "id": "30010",
+      "parent_asin": "B0D877FRDK",
+      "marketplace": "US",
+      "title_short": "83544 Fryer Filter Replacement 2FV803 2FR00801Perf",
+      "store_name": "2店-US",
+      "status": "inactive"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tparent_asin\tmarketplace\ttitle_short\tstore_name\tstatus\n30001\tB0D3DXMTWN\tUS\tUSQ1152 Pool Pump Motor Kit 1.5HP Replacement with\t2店-US\tinactive\n30002\tB0D3F2GS3D\tUS\tUST1202 Pool Pump Motor 2 HP Replacement for Haywa\t2店-US\tinactive\n30003\tB0D3ZZD83K\tUS\t2 Inch Suction Hose Pump Kit for Water/Trash Pump \t2店-US\tactive\n30004\tB0D4CZ7BK9\tUS\tB2855 Pool Pump Motor 2 HP with Square Flange 230V\t2店-US\tinactive\n30005\tB0D59Y9PSD\tUS\tSP1610Z1MBK Pool Pump Motor 1 HP, C-Flange, 1 HP S\t2店-US\tinactive\n30006\tB0D5CJGXJZ\tUS\tB2853 Pool Pump Motor Compatible with 340038 A.O. \t2店-US\tinactive\n30007\tB0D5CW5YWV\tUS\tRV Air Conditioner Motor with Capacitor Replacemen\t2店-US\tinactive\n30008\tB0D7HMP4ZH\tUS\t3/4\"×100&200&300ft Compressed Air Line Kit for Sho\t2店-US\tactive\n30009\tB0D7HGCSN2\tUS\t3/4\"×100&200&300ft Compressed Air Line Kit for Sho\t2店-US\tactive\n30010\tB0D877FRDK\tUS\t83544 Fryer Filter Replacement 2FV803 2FR00801Perf\t2店-US\tinactive\n",
+  "stderr": "",
+  "execution_time_ms": 368
+}

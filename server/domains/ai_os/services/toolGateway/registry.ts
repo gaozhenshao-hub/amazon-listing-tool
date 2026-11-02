@@ -1,5 +1,4 @@
 import { TRPCError, buildWorkspaceScopeFilter, EmperorToolDefinition, rawExecute, parseJson, sanitizeForAudit } from "./governanceCore";
-const retiredErpTool = (slug: string) => /lingxing/i.test(slug);
 const BUILTIN_TOOLS: EmperorToolDefinition[] = [
   {
     slug: "internal.agent.capture_input",
@@ -35,6 +34,18 @@ const BUILTIN_TOOLS: EmperorToolDefinition[] = [
     description: "通过 Tool Gateway 发起受控 HTTP API 请求。",
     type: "internal",
     config: { handler: "http_request" },
+  },
+  {
+    slug: "internal.lingxing.read",
+    name: "领星官方MCP只读数据源",
+    description: "仅通过领星官方MCP读取产品表现、FBA库存、订单利润、Listing、关键词与广告报表；强制店铺范围并拒绝写入、资金或提交操作。",
+    type: "internal",
+    config: {
+      handler: "lingxing_read",
+      capability: "read_only",
+      rateLimitPolicy: { scope: "tool", perSecond: 1, perMinute: 60, concurrency: 1 },
+      governancePolicy: { readOnly: true, requireShopScope: true },
+    },
   },
 ];
 
@@ -95,13 +106,12 @@ export async function listEmperorTools(workspaceId?: number | null) {
 
   return [
     ...BUILTIN_TOOLS.map((tool) => ({ ...tool, source: "builtin" as const })),
-    ...dbTools.filter(tool => !retiredErpTool(tool.slug)),
-    ...connectorTools.filter(tool => !retiredErpTool(tool.slug)),
+    ...dbTools,
+    ...connectorTools,
   ];
 }
 
 async function getToolDefinition(slug: string, workspaceId?: number | null): Promise<EmperorToolDefinition & { source: "builtin" | "emperor_tools" | "mcp_connector" }> {
-  if (retiredErpTool(slug)) throw new TRPCError({code:"NOT_FOUND", message:"该 ERP 连接已移除，请使用赛狐或报表上传"});
   const builtin = builtinBySlug(slug);
   if (builtin) return { ...builtin, source: "builtin" };
 

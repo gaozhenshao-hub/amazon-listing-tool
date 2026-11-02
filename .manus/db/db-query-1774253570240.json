@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `conversion_suggestions` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`comparison_id` int NOT NULL,\n\t`user_id` int NOT NULL,\n\t`category_name` varchar(100) NOT NULL,\n\t`own_score` decimal(5,2),\n\t`best_competitor_score` decimal(5,2),\n\t`gap_analysis` text,\n\t`suggestion` text,\n\t`suggestion_priority` enum('high','medium','low') NOT NULL DEFAULT 'medium',\n\t`expected_effect` text,\n\t`is_locked` int DEFAULT 0,\n\t`linked_plan_action_id` int,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `conversion_suggestions_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE `conversion_suggestions` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`comparison_id` int NOT NULL,\n\t`user_id` int NOT NULL,\n\t`category_name` varchar(100) NOT NULL,\n\t`own_score` decimal(5,2),\n\t`best_competitor_score` decimal(5,2),\n\t`gap_analysis` text,\n\t`suggestion` text,\n\t`suggestion_priority` enum('high','medium','low') NOT NULL DEFAULT 'medium',\n\t`expected_effect` text,\n\t`is_locked` int DEFAULT 0,\n\t`linked_plan_action_id` int,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `conversion_suggestions_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 156
+}

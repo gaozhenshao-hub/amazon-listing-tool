@@ -1,0 +1,34 @@
+{
+  "query": "SELECT \n  projectId,\n  COUNT(*) as total_products,\n  SUM(CASE WHEN title IS NOT NULL AND title != '' THEN 1 ELSE 0 END) as has_title,\n  SUM(CASE WHEN bulletPoints IS NOT NULL AND bulletPoints != '' THEN 1 ELSE 0 END) as has_bulletPoints,\n  SUM(CASE WHEN monthlySalesHistory IS NOT NULL AND monthlySalesHistory != '' THEN 1 ELSE 0 END) as has_history,\n  SUM(CASE WHEN price IS NOT NULL THEN 1 ELSE 0 END) as has_price,\n  SUM(CASE WHEN bsr IS NOT NULL THEN 1 ELSE 0 END) as has_bsr,\n  SUM(CASE WHEN parentAsin IS NOT NULL AND parentAsin != '' THEN 1 ELSE 0 END) as has_parentAsin,\n  SUM(CASE WHEN fbaFee IS NOT NULL AND fbaFee != '' THEN 1 ELSE 0 END) as has_fbaFee,\n  SUM(CASE WHEN grossMargin IS NOT NULL AND grossMargin != '' THEN 1 ELSE 0 END) as has_grossMargin\nFROM dev_products \nGROUP BY projectId \nORDER BY projectId DESC \nLIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT \n  projectId,\n  COUNT(*) as total_products,\n  SUM(CASE WHEN title IS NOT NULL AND title != '' THEN 1 ELSE 0 END) as has_title,\n  SUM(CASE WHEN bulletPoints IS NOT NULL AND bulletPoints != '' THEN 1 ELSE 0 END) as has_bulletPoints,\n  SUM(CASE WHEN monthlySalesHistory IS NOT NULL AND monthlySalesHistory != '' THEN 1 ELSE 0 END) as has_history,\n  SUM(CASE WHEN price IS NOT NULL THEN 1 ELSE 0 END) as has_price,\n  SUM(CASE WHEN bsr IS NOT NULL THEN 1 ELSE 0 END) as has_bsr,\n  SUM(CASE WHEN parentAsin IS NOT NULL AND parentAsin != '' THEN 1 ELSE 0 END) as has_parentAsin,\n  SUM(CASE WHEN fbaFee IS NOT NULL AND fbaFee != '' THEN 1 ELSE 0 END) as has_fbaFee,\n  SUM(CASE WHEN grossMargin IS NOT NULL AND grossMargin != '' THEN 1 ELSE 0 END) as has_grossMargin\nFROM dev_products \nGROUP BY projectId \nORDER BY projectId DESC \nLIMIT 5;",
+  "rows": [
+    {
+      "projectId": "60002",
+      "total_products": "53",
+      "has_title": "53",
+      "has_bulletPoints": "53",
+      "has_history": "53",
+      "has_price": "53",
+      "has_bsr": "0",
+      "has_parentAsin": "0",
+      "has_fbaFee": "0",
+      "has_grossMargin": "0"
+    },
+    {
+      "projectId": "60001",
+      "total_products": "53",
+      "has_title": "0",
+      "has_bulletPoints": "0",
+      "has_history": "53",
+      "has_price": "53",
+      "has_bsr": "0",
+      "has_parentAsin": "0",
+      "has_fbaFee": "0",
+      "has_grossMargin": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "projectId\ttotal_products\thas_title\thas_bulletPoints\thas_history\thas_price\thas_bsr\thas_parentAsin\thas_fbaFee\thas_grossMargin\n60002\t53\t53\t53\t53\t53\t0\t0\t0\t0\n60001\t53\t0\t0\t53\t53\t0\t0\t0\t0\n",
+  "stderr": "",
+  "execution_time_ms": 111
+}

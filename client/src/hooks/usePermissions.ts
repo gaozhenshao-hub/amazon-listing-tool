@@ -15,8 +15,6 @@ interface ModulePermission {
   subModules?: SubModulePermission[];
 }
 
-
-
 const FULL_ACCESS_ROLES = ['super_admin'];
 
 export function usePermissions() {

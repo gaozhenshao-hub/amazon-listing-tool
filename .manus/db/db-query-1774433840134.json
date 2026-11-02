@@ -1,0 +1,31 @@
+{
+  "query": "SELECT id, name, openId, role, status FROM users WHERE role = 'product_dev' LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT id, name, openId, role, status FROM users WHERE role = 'product_dev' LIMIT 3;",
+  "rows": [
+    {
+      "id": "3783296",
+      "name": "泥雯倩（Vickie） ",
+      "openId": "NULL",
+      "role": "product_dev",
+      "status": "active"
+    },
+    {
+      "id": "3783311",
+      "name": "许鑫瑶（Cindy） ",
+      "openId": "NULL",
+      "role": "product_dev",
+      "status": "active"
+    },
+    {
+      "id": "3783327",
+      "name": "郁洋(Carl) ",
+      "openId": "NULL",
+      "role": "product_dev",
+      "status": "active"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\topenId\trole\tstatus\n3783296\t泥雯倩（Vickie） \tNULL\tproduct_dev\tactive\n3783311\t许鑫瑶（Cindy） \tNULL\tproduct_dev\tactive\n3783327\t郁洋(Carl) \tNULL\tproduct_dev\tactive\n",
+  "stderr": "",
+  "execution_time_ms": 360
+}

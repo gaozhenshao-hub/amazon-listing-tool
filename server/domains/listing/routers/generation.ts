@@ -54,7 +54,7 @@ const legacyListingGenerationProcedures = {
   generateTitle: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -65,12 +65,17 @@ const legacyListingGenerationProcedures = {
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
-      let parsed = await executeListingSkill<any>("listing.title.generate", ctx.user.id, context, { project, analyses, enrichedData }, input.emphasis, ctx.workspaceId
+      let parsed = await executeListingSkill<any>(
+        "listing.title.generate",
+        ctx.user.id,
+        context,
+        { project, analyses, enrichedData },
+        input.emphasis,
       );
       let validation = validateTitles(parsed);
       if (!validation.valid) {
         for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
-          parsed = await refineTitles(parsed, validation.issues, { userId: ctx.user.id, workspaceId: ctx.workspaceId });
+          parsed = await refineTitles(parsed, validation.issues);
           validation = validateTitles(parsed);
         }
       }
@@ -91,7 +96,7 @@ const legacyListingGenerationProcedures = {
   generateBulletPoints: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -102,12 +107,17 @@ const legacyListingGenerationProcedures = {
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
-      let parsed = await executeListingSkill<any>("listing.bullets.generate", ctx.user.id, context, { project, analyses, enrichedData }, input.emphasis, ctx.workspaceId
+      let parsed = await executeListingSkill<any>(
+        "listing.bullets.generate",
+        ctx.user.id,
+        context,
+        { project, analyses, enrichedData },
+        input.emphasis,
       );
       let validation = validateBullets(parsed);
       if (!validation.valid) {
         for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
-          parsed = await refineBullets(parsed, validation.issues, { userId: ctx.user.id, workspaceId: ctx.workspaceId });
+          parsed = await refineBullets(parsed, validation.issues);
           validation = validateBullets(parsed);
         }
       }
@@ -128,7 +138,7 @@ const legacyListingGenerationProcedures = {
   generateDescription: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -139,7 +149,12 @@ const legacyListingGenerationProcedures = {
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
-      const descParsed = await executeListingSkill<any>("listing.description.generate", ctx.user.id, context, { project, analyses, enrichedData }, input.emphasis, ctx.workspaceId
+      const descParsed = await executeListingSkill<any>(
+        "listing.description.generate",
+        ctx.user.id,
+        context,
+        { project, analyses, enrichedData },
+        input.emphasis,
       );
       // Sync to Agent DAG: G3 description node waiting for user review
       const descListing = await db.getActiveListingByProject(input.projectId);
@@ -162,7 +177,7 @@ const legacyListingGenerationProcedures = {
       emphasis: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -179,7 +194,12 @@ const legacyListingGenerationProcedures = {
       }
 
       const fullContext = context + extraContext;
-      const stParsed = await executeListingSkill<any>("listing.searchterms.generate", ctx.user.id, fullContext, { project, analyses, enrichedData, existingTitle: input.existingTitle || "" }, input.emphasis, ctx.workspaceId
+      const stParsed = await executeListingSkill<any>(
+        "listing.searchterms.generate",
+        ctx.user.id,
+        fullContext,
+        { project, analyses, enrichedData, existingTitle: input.existingTitle || "" },
+        input.emphasis,
       );
       // Sync to Agent DAG: G4 searchTerms node waiting for user review
       const stListing = await db.getActiveListingByProject(input.projectId);
@@ -198,7 +218,7 @@ const legacyListingGenerationProcedures = {
   generateImageAdvice: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       if (!project) throw new Error("Project not found");
       ensureWriteAccess(project, ctx.user);
 
@@ -209,7 +229,12 @@ const legacyListingGenerationProcedures = {
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
-      const imageData = await executeListingSkill<any>("listing.image.advice", ctx.user.id, context, { project, analyses, enrichedData }, input.emphasis, ctx.workspaceId
+      const imageData = await executeListingSkill<any>(
+        "listing.image.advice",
+        ctx.user.id,
+        context,
+        { project, analyses, enrichedData },
+        input.emphasis,
       );
 
       // Save image advice to the active listing (or create one if none exists)
@@ -220,7 +245,7 @@ const legacyListingGenerationProcedures = {
       // Also generate Chinese translation
       let imageAdviceCnStr: string | null = null;
       try {
-        imageAdviceCnStr = await translateImageAdviceToChinese(imageAdviceJsonStr, { userId: ctx.user.id, workspaceId: ctx.workspaceId });
+        imageAdviceCnStr = await translateImageAdviceToChinese(imageAdviceJsonStr);
       } catch (err) {
         console.error("Image advice CN translation failed:", err);
       }
@@ -255,180 +280,30 @@ const legacyListingGenerationProcedures = {
     }),
 
 
-  // Generate full listing (all components at once) with AI retry for char limits
+  // Legacy full generation published model output directly; preserve the endpoint
+  // name but refuse before any model call or Listing write until governed review exists.
   generateFull: protectedProcedure
-    .input(z.object({
-      projectId: z.number(),
-      emphasis: z.string().optional(),
-    }))
+    .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
-      if (!project) throw new Error("Project not found");
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       ensureWriteAccess(project, ctx.user);
-
-      await db.updateProject(input.projectId, ctx.user.id, { status: "generating" });
-
-      const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const enrichedData = await loadEnrichedData(input.projectId);
-      let context = buildProductContext(project, analyses, enrichedData);
-
-      // Inject user emphasis into context
-      if (input.emphasis?.trim()) {
-        context += `\n\n--- [User Emphasis / 用户重点强调] ---\n用户希望在Listing中重点突出以下卖点或场景，请在标题、五点、描述中优先体现这些内容：\n${input.emphasis.trim()}`;
-      }
-
-      const commonVariables = { project, analyses, enrichedData };
-      const [titleDataRaw, bulletDataRaw, descData, searchData, imageData] = await Promise.all([
-        executeListingSkill<any>("listing.title.generate", ctx.user.id, context, commonVariables, input.emphasis, ctx.workspaceId),
-        executeListingSkill<any>("listing.bullets.generate", ctx.user.id, context, commonVariables, input.emphasis, ctx.workspaceId),
-        executeListingSkill<any>("listing.description.generate", ctx.user.id, context, commonVariables, input.emphasis, ctx.workspaceId),
-        executeListingSkill<any>("listing.searchterms.generate", ctx.user.id, context, commonVariables, input.emphasis, ctx.workspaceId),
-        executeListingSkill<any>("listing.image.advice", ctx.user.id, context, commonVariables, input.emphasis, ctx.workspaceId),
-      ]);
-
-      let titleData = titleDataRaw;
-      let bulletData = bulletDataRaw;
-
-      // Validate titles and retry if needed
-      let titleValidation = validateTitles(titleData);
-      if (!titleValidation.valid) {
-        for (let retry = 0; retry < MAX_RETRIES && !titleValidation.valid; retry++) {
-          titleData = await refineTitles(titleData, titleValidation.issues, { userId: ctx.user.id, workspaceId: ctx.workspaceId });
-          titleValidation = validateTitles(titleData);
-        }
-      }
-
-      // Validate bullets and retry if needed
-      let bulletValidation = validateBullets(bulletData);
-      if (!bulletValidation.valid) {
-        for (let retry = 0; retry < MAX_RETRIES && !bulletValidation.valid; retry++) {
-          bulletData = await refineBullets(bulletData, bulletValidation.issues, { userId: ctx.user.id, workspaceId: ctx.workspaceId });
-          bulletValidation = validateBullets(bulletData);
-        }
-      }
-
-      // Generate Chinese translation
-      const englishTitle = titleData.recommendedTitle || titleData.titles?.[0]?.title || "";
-      const englishItemHighlights = titleData.recommendedItemHighlights || titleData.titles?.[0]?.itemHighlights || "";
-      const englishBullets = bulletData.bulletPoints || [];
-      const englishDesc = descData.description || descData.htmlDescription || "";
-      const englishSearchTerms = searchData.searchTerms || "";
-
-      let cnData = { titleCn: "", itemHighlightsCn: "", bulletPointsCn: [] as any[], descriptionCn: "", searchTermsCn: "" };
-      try {
-        cnData = await generateChineseTranslation(englishTitle, englishBullets, englishDesc, englishSearchTerms, undefined, englishItemHighlights, ctx.user.id, ctx.workspaceId
-        );
-      } catch (err) {
-        console.error("Chinese translation failed:", err);
-        // Continue without Chinese translation - it can be generated later
-      }
-
-      // Get existing listings count for versioning
-      const existingListings = await db.getListingsByProject(input.projectId);
-      const nextVersion = existingListings.length + 1;
-
-      // Deactivate previous listings
-      for (const listing of existingListings) {
-        if (listing.isActive) {
-          await db.updateListing(listing.id, { isActive: 0 });
-        }
-      }
-
-      // Translate image advice to Chinese
-      const imageAdviceJsonStr = JSON.stringify(imageData);
-      const imageAdviceCnStr = await translateImageAdviceToChinese(imageAdviceJsonStr, { userId: ctx.user.id, workspaceId: ctx.workspaceId });
-
-      // Save the new listing with Chinese translations
-      const savedListing = await db.createListing({
-        projectId: input.projectId,
-        title: englishTitle,
-        itemHighlights: englishItemHighlights || null,
-        bulletPoints: JSON.stringify(bulletData.bulletPoints || []),
-        description: englishDesc,
-        searchTerms: englishSearchTerms,
-        imageAdvice: imageAdviceJsonStr,
-        imageAdviceCn: imageAdviceCnStr || null,
-        titleCn: cnData.titleCn || null,
-        itemHighlightsCn: cnData.itemHighlightsCn || null,
-        bulletPointsCn: cnData.bulletPointsCn.length > 0 ? JSON.stringify(cnData.bulletPointsCn) : null,
-        descriptionCn: cnData.descriptionCn || null,
-        searchTermsCn: cnData.searchTermsCn || null,
-        version: nextVersion,
-        isActive: 1,
-      });
-
-      await db.updateProject(input.projectId, ctx.user.id, { status: "completed" });
-
-      // Save version snapshot
-      await saveListingVersion(savedListing, ctx.user.id, "generate", `全量生成 v${nextVersion}`);
-
-      return {
-        listing: savedListing,
-        titleOptions: titleData,
-        bulletPointsData: bulletData,
-        descriptionData: descData,
-        searchTermsData: searchData,
-        imageAdviceData: imageData,
-        chineseTranslation: cnData,
-      };
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "旧全量AI入口会绕过事实、候选人审和完整快照，现已停用；请逐条审核候选后预览并确认同步" });
     }),
 
-
-  // Translate existing listing to Chinese
+  // The old translation path wrote AI output into the live English/Chinese
+  // Listing without a human decision or complete CAS snapshot.
   translateToChinese: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
-      if (!project) throw new Error("Project not found");
+      const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
       ensureWriteAccess(project, ctx.user);
-
-      const listing = await db.getActiveListingByProject(input.projectId);
-      if (!listing) throw new Error("No active listing found. Please generate a listing first.");
-
-      let bulletPoints: any[] = [];
-      try {
-        bulletPoints = listing.bulletPoints ? JSON.parse(listing.bulletPoints) : [];
-      } catch {
-        bulletPoints = [];
-      }
-
-      const cnData = await generateChineseTranslation(listing.title || "", bulletPoints, listing.description || "", listing.searchTerms || "", listing.qaContent || undefined, listing.itemHighlights || undefined, ctx.user.id, ctx.workspaceId
-      );
-
-      // Translate image advice to Chinese if available
-      let imageAdviceCnStr: string | null = null;
-      if (listing.imageAdvice) {
-        imageAdviceCnStr = await translateImageAdviceToChinese(listing.imageAdvice, { userId: ctx.user.id, workspaceId: ctx.workspaceId });
-      }
-
-      // Save Chinese translations to the listing
-      const updateData: any = {
-        titleCn: cnData.titleCn,
-        bulletPointsCn: JSON.stringify(cnData.bulletPointsCn),
-        descriptionCn: cnData.descriptionCn,
-        searchTermsCn: cnData.searchTermsCn,
-        imageAdviceCn: imageAdviceCnStr,
-      };
-      if (cnData.qaContentCn) {
-        updateData.qaContentCn = cnData.qaContentCn;
-      }
-      const updated = await db.updateListing(listing.id, updateData);
-
-      // Save version snapshot after translation
-      await saveListingVersion(
-        { ...listing, titleCn: cnData.titleCn, bulletPointsCn: JSON.stringify(cnData.bulletPointsCn), descriptionCn: cnData.descriptionCn, searchTermsCn: cnData.searchTermsCn },
-        ctx.user.id, "translate", "添加中文翻译"
-      );
-
-      return {
-        ...cnData,
-        listing: updated,
-      };
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "旧一键翻译会把未经人工审核的AI结果覆盖正式Listing，现已停用；请保留旧内容，待受治理译文候选与人工确认流程接入" });
     }),
+
 };
 
 async function queueListingJob(ctx: any, input: { projectId: number; emphasis?: string; existingTitle?: string }, operation: "bullets" | "title" | "description" | "searchTerms" | "batch", nodeId: "G1" | "G2" | "G3" | "G4") {
-  const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId);
+  const project = await resolveProjectAccess(input.projectId, ctx.user, ctx.workspaceId ?? null);
   ensureWriteAccess(project, ctx.user);
   return startListingJobForContext({
     ...input,

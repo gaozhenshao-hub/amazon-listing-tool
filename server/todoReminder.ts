@@ -9,7 +9,6 @@
 import { getDb } from "./repositories/dbClient";
 import { productTodos, teamTasks, notifications, productProfiles } from "../drizzle/schema";
 import { eq, and, lte, gte, isNull, ne, sql } from "drizzle-orm";
-import { createTrackedSchedulerWork } from "./_core/trackedSchedulerWork";
 
 // ─── Default reminder presets ───
 export const REMINDER_PRESETS = [
@@ -236,24 +235,20 @@ export async function checkTodoReminders() {
 // ─── Scheduler ───
 
 let reminderInterval: ReturnType<typeof setInterval> | null = null;
-let reminderWork = createTrackedSchedulerWork();
-let reminderDraining: Promise<void> | null = null;
 
 export function startTodoReminderScheduler(intervalMs: number = 60 * 60 * 1000) {
-  if (reminderDraining) return;
-  if (!reminderWork.accepting) reminderWork = createTrackedSchedulerWork();
   if (reminderInterval) {
     clearInterval(reminderInterval);
   }
 
   // Run immediately on start
-  void reminderWork.run(checkTodoReminders).catch(err => {
+  checkTodoReminders().catch(err => {
     console.error("[TodoReminder] Error on initial check:", err);
   });
 
   // Then run periodically
   reminderInterval = setInterval(() => {
-    void reminderWork.run(checkTodoReminders).catch(err => {
+    checkTodoReminders().catch(err => {
       console.error("[TodoReminder] Error:", err);
     });
   }, intervalMs);
@@ -262,11 +257,8 @@ export function startTodoReminderScheduler(intervalMs: number = 60 * 60 * 1000) 
 }
 
 export function stopTodoReminderScheduler() {
-  reminderWork.stop();
   if (reminderInterval) {
     clearInterval(reminderInterval);
     reminderInterval = null;
   }
-  if (!reminderDraining) reminderDraining = reminderWork.drain().finally(() => { reminderDraining = null; });
-  return reminderDraining;
 }

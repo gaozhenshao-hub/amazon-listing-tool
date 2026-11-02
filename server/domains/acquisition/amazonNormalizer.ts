@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { imageSubtypeFromLayout } from "../../../shared/imageBelong";
 import type {
   AcquisitionAssetRole,
   AcquisitionFieldEvidence,
@@ -7,8 +6,6 @@ import type {
   NormalizedAmazonSnapshot,
 } from "../../../shared/acquisition";
 import { NormalizedAmazonSnapshotSchema } from "./contracts";
-import { AmazonVideoReferenceSchema } from "../../../shared/knowledgeVideos";
-import { amazonMediaUrl } from "./amazonVideos";
 
 type JsonObject = Record<string, unknown>;
 
@@ -20,7 +17,6 @@ export type SourceAssetReference = {
   sourceUrlHash: string;
   moduleType: string | null;
   moduleClass: string | null;
-  posterUrl?: string | null;
 };
 
 export type NormalizedAmazonResult = {
@@ -55,13 +51,11 @@ function stringArray(value: unknown): string[] {
 }
 
 function numberOrNull(value: unknown): number | null {
-  if (value === null || value === undefined || typeof value === 'string' && !value.trim()) return null;
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function decimalString(value: unknown): string | null {
-  if (value === null || value === undefined || typeof value === 'string' && !value.trim()) return null;
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? String(parsed) : null;
 }
@@ -121,7 +115,7 @@ function addAssets(input: {
       sourcePath: item.path,
       sourceUrl: item.url,
       sourceUrlHash,
-      moduleType: null,
+      moduleType: input.role === "aplus" ? "a_plus" : input.role === "brand_story" ? "brand_story" : null,
       moduleClass: null,
     });
   }
@@ -135,7 +129,7 @@ function extractPrice(item: JsonObject): { value: string; currency: string } | n
   return value && currency && currency.length === 3 ? { value, currency: currency.toUpperCase() } : null;
 }
 
-export function normalizeAmazonArtifact(input: {
+export function normalizeApifyAmazonArtifact(input: {
   bytes: Uint8Array;
   expectedAsin: string;
   marketplace: AcquisitionMarketplace;
@@ -171,16 +165,6 @@ export function normalizeAmazonArtifact(input: {
   const brandStoryImages: Array<{ url: string; path: string }> = [];
   collectNestedImages(item.brandStory, "$.brandStory", brandStoryImages);
   addAssets({ urls: brandStoryImages, role: "brand_story", output: sourceAssets });
-  for (const asset of sourceAssets) asset.moduleType = imageSubtypeFromLayout(item.sourceLayout, asset.role, asset.sourceUrlHash);
-  const videos: import("../../../shared/knowledgeVideos").AmazonVideoReference[] = [];
-  for (const raw of Array.isArray(item.videos) ? item.videos.slice(0,21) : []) {
-    const entry=asObject(raw), parsed=AmazonVideoReferenceSchema.safeParse(entry), url=amazonMediaUrl(entry?.url,"video");
-    if(!parsed.success || !url || parsed.data.hash!==hash(url) || videos.some(v=>v.hash===parsed.data.hash && v.moduleId===parsed.data.moduleId)
-      || parsed.data.role==='main' && videos.some(v=>v.role==='main')) continue;
-    videos.push(parsed.data);
-    sourceAssets.push({role:"video",positionIndex:videos.length-1,sourcePath:`$.videos[${videos.length-1}]`,sourceUrl:url,sourceUrlHash:parsed.data.hash,
-      moduleType:parsed.data.role==="main"?"主图视频":"A+视频",moduleClass:parsed.data.moduleId,posterUrl:amazonMediaUrl(entry?.poster,"poster")});
-  }
 
   const variantAsins = Array.from(new Set([
     ...stringArray(item.variantAsins),
@@ -208,7 +192,7 @@ export function normalizeAmazonArtifact(input: {
     rating: valueEvidence(rating, item.stars !== undefined ? "$.stars" : "$.rating"),
     reviewCount: valueEvidence(reviewCount, item.reviewsCount !== undefined ? "$.reviewsCount" : "$.reviewCount"),
     imageGallery: valueEvidence(gallery, "$.highResolutionImages"),
-    aplus: valueEvidence(videos.some(v=>v.role==="aplus") ? [item.aPlusContent,...videos.filter(v=>v.role==="aplus")] : item.aPlusContent, "$.aPlusContent"),
+    aplus: valueEvidence(item.aPlusContent, "$.aPlusContent"),
     brandStory: valueEvidence(item.brandStory, "$.brandStory"),
     variants: valueEvidence(variantAsins, "$.variantAsins"),
   };
@@ -218,10 +202,6 @@ export function normalizeAmazonArtifact(input: {
     marketplace: input.marketplace,
     sourceUrlHash: hash(sourceUrl),
     title,
-    subtitle: nonEmptyString(item.subtitle),
-    research: item.research,
-    sourceLayout: item.sourceLayout,
-    videos,
     brand,
     category,
     description,

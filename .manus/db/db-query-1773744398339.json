@@ -1,0 +1,100 @@
+{
+  "query": "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'dev_product_profiles' ORDER BY ORDINAL_POSITION;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'dev_product_profiles' ORDER BY ORDINAL_POSITION;",
+  "rows": [
+    {
+      "COLUMN_NAME": "id"
+    },
+    {
+      "COLUMN_NAME": "projectId"
+    },
+    {
+      "COLUMN_NAME": "userId"
+    },
+    {
+      "COLUMN_NAME": "appearanceColors"
+    },
+    {
+      "COLUMN_NAME": "mainFunctions"
+    },
+    {
+      "COLUMN_NAME": "costBreakdown"
+    },
+    {
+      "COLUMN_NAME": "packageDimensions"
+    },
+    {
+      "COLUMN_NAME": "packageDesign"
+    },
+    {
+      "COLUMN_NAME": "userPersona"
+    },
+    {
+      "COLUMN_NAME": "usageScenarios"
+    },
+    {
+      "COLUMN_NAME": "productMap"
+    },
+    {
+      "COLUMN_NAME": "status"
+    },
+    {
+      "COLUMN_NAME": "createdAt"
+    },
+    {
+      "COLUMN_NAME": "updatedAt"
+    },
+    {
+      "COLUMN_NAME": "appearanceAiSuggestion"
+    },
+    {
+      "COLUMN_NAME": "appearanceConfirmed"
+    },
+    {
+      "COLUMN_NAME": "functionsAiSuggestion"
+    },
+    {
+      "COLUMN_NAME": "functionsConfirmed"
+    },
+    {
+      "COLUMN_NAME": "costAiSuggestion"
+    },
+    {
+      "COLUMN_NAME": "costConfirmed"
+    },
+    {
+      "COLUMN_NAME": "packageAiSuggestion"
+    },
+    {
+      "COLUMN_NAME": "packageConfirmed"
+    },
+    {
+      "COLUMN_NAME": "packageDesignAiSuggestion"
+    },
+    {
+      "COLUMN_NAME": "packageDesignConfirmed"
+    },
+    {
+      "COLUMN_NAME": "userPersonaAiSuggestion"
+    },
+    {
+      "COLUMN_NAME": "userPersonaConfirmed"
+    },
+    {
+      "COLUMN_NAME": "usageScenariosAiSuggestion"
+    },
+    {
+      "COLUMN_NAME": "usageScenariosConfirmed"
+    },
+    {
+      "COLUMN_NAME": "productMapAiSuggestion"
+    },
+    {
+      "COLUMN_NAME": "productMapConfirmed"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\nid\nprojectId\nuserId\nappearanceColors\nmainFunctions\ncostBreakdown\npackageDimensions\npackageDesign\nuserPersona\nusageScenarios\nproductMap\nstatus\ncreatedAt\nupdatedAt\nappearanceAiSuggestion\nappearanceConfirmed\nfunctionsAiSuggestion\nfunctionsConfirmed\ncostAiSuggestion\ncostConfirmed\npackageAiSuggestion\npackageConfirmed\npackageDesignAiSuggestion\npackageDesignConfirmed\nuserPersonaAiSuggestion\nuserPersonaConfirmed\nusageScenariosAiSuggestion\nusageScenariosConfirmed\nproductMapAiSuggestion\nproductMapConfirmed\n",
+  "stderr": "",
+  "execution_time_ms": 56
+}

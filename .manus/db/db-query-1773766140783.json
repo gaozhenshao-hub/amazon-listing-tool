@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `image_workflow_sessions` ADD `step4CompositionRefs` text;\nALTER TABLE `image_workflow_sessions` ADD `step4EffectRefs` text;\nALTER TABLE `image_workflow_sessions` ADD `step5SelectedModule` text;\nALTER TABLE `image_workflow_sessions` ADD `step5OptimizedResult` text;\nALTER TABLE `image_workflow_sessions` ADD `step5OptimizedResultCn` text;\nALTER TABLE `image_workflow_sessions` ADD `step6AiResult` text;\nALTER TABLE `image_workflow_sessions` ADD `step6AiResultCn` text;\nALTER TABLE `image_workflow_sessions` ADD `step6UserEdit` text;\nALTER TABLE `image_workflow_sessions` ADD `step6Confirmed` int DEFAULT 0 NOT NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute ALTER TABLE `image_workflow_sessions` ADD `step4CompositionRefs` text;\nALTER TABLE `image_workflow_sessions` ADD `step4EffectRefs` text;\nALTER TABLE `image_workflow_sessions` ADD `step5SelectedModule` text;\nALTER TABLE `image_workflow_sessions` ADD `step5OptimizedResult` text;\nALTER TABLE `image_workflow_sessions` ADD `step5OptimizedResultCn` text;\nALTER TABLE `image_workflow_sessions` ADD `step6AiResult` text;\nALTER TABLE `image_workflow_sessions` ADD `step6AiResultCn` text;\nALTER TABLE `image_workflow_sessions` ADD `step6UserEdit` text;\nALTER TABLE `image_workflow_sessions` ADD `step6Confirmed` int DEFAULT 0 NOT NULL;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 10150
+}

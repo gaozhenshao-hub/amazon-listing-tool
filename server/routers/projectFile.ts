@@ -17,10 +17,11 @@ import {
   COSMO_SCENE_MAPPING_PROMPT,
   A9_KEYWORD_GRADING_PROMPT,
 } from "../analysisPrompts";
-import { TRPCError } from "@trpc/server";
-import { startProfileImportJob, getProfileImportJob, listProfileImportJobs, resumeProfileImportJob } from "../domains/listing/services/profileImportJob";
+import { eq, and, desc, inArray } from "drizzle-orm";
+import { projectAssignments, devProjects, devProductProfiles } from "../../drizzle/schema";
+import { getDb } from "../repositories/dbClient";
 import { buildProjectFileEmperorSkill } from "./projectFileSkillRoutes";
-import { buildCompletedAnalysisUpdate, buildProjectFileAnalysisSummary } from "./projectFileAnalysisState";
+import { buildCompletedAnalysisUpdate } from "./projectFileAnalysisState";
 import { normalizeRufusProductIdentity } from "./projectFileRufusIdentity";
 
 // ─── File Parsers ─────────────────────────────────────────────────
@@ -928,52 +929,218 @@ export const projectFileRouter = router({
 
       const files = await db.getProjectFilesByProject(input.projectId);
 
-      return buildProjectFileAnalysisSummary(files);
+      const summary: Record<string, any> = {
+        productAttributes: null,
+        competitorListings: null,
+        cosmoScenes: null,
+        a9Keywords: null,
+        hasAllFiles: false,
+        fileCount: files.length,
+      };
+
+      for (const file of files) {
+        if (file.status !== "completed" || !file.analysisResult) continue;
+
+        try {
+          const result = JSON.parse(file.analysisResult);
+          switch (file.fileType) {
+            case "product_attributes":
+              summary.productAttributes = result;
+              break;
+            case "competitor_listings":
+              summary.competitorListings = result;
+              break;
+            case "search_term_report":
+              summary.cosmoScenes = result;
+              break;
+            case "aba_keywords":
+              summary.a9Keywords = result;
+              break;
+          }
+        } catch {}
+      }
+
+      // N3 readiness: only product_attributes is required (v2 architecture)
+      summary.n3Ready = !!summary.productAttributes;
+      // Legacy compat: hasAllFiles now equals n3Ready
+      summary.hasAllFiles = summary.n3Ready;
+
+      return summary;
     }),
 
-  // Legacy callers expect a synchronously saved file. Do not return a job as if
-  // it were that file, or let an old client bypass persistent deduplication.
+  // ─── Import from Product Profile (模块一产品画像导入) ─────────────
   importFromProfile: protectedProcedure
     .input(z.object({
-      listingProjectId: z.number().int().positive(),
-      devProjectId: z.number().int().positive(),
-      expectedWorkspaceId: z.number().int().positive().nullable().optional(),
-      expectedSourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-    }).strict())
-    .mutation(() => {
-      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "产品画像生成已升级为后台任务，请刷新页面后重新选择画像并确认生成" });
+      listingProjectId: z.number(),
+      devProjectId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // 1. Verify listing project exists and belongs to user
+      const { workspaceId } = await assertProjectFileAccess(ctx, input.listingProjectId, "import");
+
+      // 2. Verify user has access to the dev project
+      const dbConn = await getDb();
+      if (!dbConn) throw new Error("Database not available");
+
+      const isAdmin = ["super_admin", "admin", "ops_manager"].includes(ctx.user.role);
+      if (!isAdmin) {
+        const assignment = await dbConn.select().from(projectAssignments).where(
+          and(
+            eq(projectAssignments.projectId, input.devProjectId),
+            eq(projectAssignments.projectType, "dev_project"),
+            eq(projectAssignments.assignedUserId, ctx.user.id)
+          )
+        ).limit(1);
+        if (!assignment.length) throw new Error("您没有该产品开发项目的访问权限");
+      }
+
+      // 3. Get dev project info
+      const devProject = await dbConn.select().from(devProjects)
+        .where(eq(devProjects.id, input.devProjectId))
+        .limit(1);
+      if (!devProject.length) throw new Error("产品开发项目不存在");
+
+      // 4. Get product profile
+      const profile = await dbConn.select().from(devProductProfiles)
+        .where(eq(devProductProfiles.projectId, input.devProjectId))
+        .limit(1);
+      if (!profile.length) throw new Error("该项目尚未创建产品画像数据");
+
+      const p = profile[0];
+
+      // 5. Convert product profile to text format for Rufus analysis
+      const profileText = convertProfileToText(p, devProject[0].name);
+
+      // 6. Run Rufus attribute analysis on the profile text
+      const analysisResult = await analyzeRufusAttributes(profileText);
+      const parsedProfileData = { type: "text", lineCount: profileText.split("\n").length, charCount: profileText.length, source: "product_profile_import" };
+
+      // 7. Save as a projectFile record
+      const record = await db.createProjectFile({
+        workspaceId,
+        projectId: input.listingProjectId,
+        userId: ctx.user.id,
+        fileType: "product_attributes",
+        filename: `产品画像导入_${devProject[0].name}.txt`,
+        fileUrl: "",
+        fileSize: Buffer.byteLength(profileText, "utf-8"),
+        rawContentHash: createContentHash(profileText),
+        parsedDataHash: createContentHash(parsedProfileData),
+        rawContent: databaseTextPreview(profileText),
+        parsedData: databaseParsedPreview(parsedProfileData),
+        ...buildCompletedAnalysisUpdate(analysisResult),
+      });
+      await registerProjectFileArtifacts({
+        workspaceId,
+        projectId: input.listingProjectId,
+        userId: ctx.user.id,
+        projectFileId: record.id,
+        fileType: "product_attributes",
+        filename: record.filename,
+        fileSizeBytes: Buffer.byteLength(profileText, "utf-8"),
+        rawContent: profileText,
+        parsedData: parsedProfileData,
+        analysisResult,
+        analysisSourceType: "ai_output",
+        changeNote: `从产品画像导入 (${devProject[0].name})`,
+      });
+
+      // 8. Save initial version history
+      await db.createAnalysisVersion({
+        projectFileId: record.id,
+        userId: ctx.user.id,
+        version: 1,
+        analysisResult: JSON.stringify(analysisResult),
+        changeType: "auto_analysis",
+        changeNote: `从产品画像导入 (${devProject[0].name})`,
+      });
+      await recordSecurityAuditLog({
+        ctx,
+        workspaceId,
+        action: "file.import_from_profile",
+        resourceType: "file",
+        resourceId: record.id,
+        resourceName: record.filename,
+        projectId: input.listingProjectId,
+        status: "success",
+        riskLevel: "medium",
+        metadata: { devProjectId: input.devProjectId },
+      });
+
+      return record;
     }),
-
-  startProfileImportJob: protectedProcedure
-    .input(z.object({
-      listingProjectId: z.number().int().positive(),
-      devProjectId: z.number().int().positive(),
-      expectedWorkspaceId: z.number().int().positive().nullable(),
-      expectedSourceHash: z.string().regex(/^[a-f0-9]{64}$/),
-    }).strict())
-    .mutation(({ ctx, input }) => startProfileImportJob(ctx, input)),
-
-  listProfileImportJobs: protectedProcedure
-    .input(z.object({
-      listingProjectId: z.number().int().positive(),
-      expectedWorkspaceId: z.number().int().positive().nullable(),
-    }).strict())
-    .query(({ ctx, input }) => listProfileImportJobs(ctx, input)),
-
-  getProfileImportJob: protectedProcedure
-    .input(z.object({
-      listingProjectId: z.number().int().positive(),
-      runId: z.string().min(1).max(80),
-      expectedWorkspaceId: z.number().int().positive().nullable(),
-    }).strict())
-    .query(({ ctx, input }) => getProfileImportJob(ctx, input)),
-
-  resumeProfileImportJob: protectedProcedure
-    .input(z.object({
-      listingProjectId: z.number().int().positive(),
-      runId: z.string().min(1).max(80),
-      expectedWorkspaceId: z.number().int().positive().nullable(),
-      expectedSourceHash: z.string().regex(/^[a-f0-9]{64}$/),
-    }).strict())
-    .mutation(({ ctx, input }) => resumeProfileImportJob(ctx, input)),
 });
+
+// ─── Helper: Convert product profile to text for Rufus analysis ───
+function convertProfileToText(profile: any, projectName: string): string {
+  const sections: string[] = [];
+  sections.push(`产品名称: ${projectName}`);
+  sections.push("");
+
+  // Parse each profile section
+  const moduleMap: { field: string; aiField: string; label: string }[] = [
+    { field: "appearanceColors", aiField: "appearanceAiSuggestion", label: "外观设计" },
+    { field: "mainFunctions", aiField: "functionsAiSuggestion", label: "功能特点" },
+    { field: "costBreakdown", aiField: "costAiSuggestion", label: "产品成本" },
+    { field: "packageDimensions", aiField: "packageAiSuggestion", label: "包装尺寸" },
+    { field: "packageDesign", aiField: "packageDesignAiSuggestion", label: "包装设计" },
+    { field: "userPersona", aiField: "userPersonaAiSuggestion", label: "用户画像" },
+    { field: "usageScenarios", aiField: "usageScenariosAiSuggestion", label: "使用场景" },
+    { field: "productMap", aiField: "productMapAiSuggestion", label: "产品地图" },
+  ];
+
+  for (const mod of moduleMap) {
+    // Prefer user-edited data, fallback to AI suggestion
+    const rawData = (profile as any)[mod.field] || (profile as any)[mod.aiField];
+    if (!rawData) continue;
+
+    try {
+      const data = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
+      sections.push(`【${mod.label}】`);
+      sections.push(flattenProfileData(data));
+      sections.push("");
+    } catch {
+      if (typeof rawData === "string" && rawData.trim()) {
+        sections.push(`【${mod.label}】`);
+        sections.push(rawData);
+        sections.push("");
+      }
+    }
+  }
+
+  return sections.join("\n");
+}
+
+function flattenProfileData(data: any, indent = 0): string {
+  if (!data) return "";
+  const prefix = "  ".repeat(indent);
+
+  if (typeof data === "string") return `${prefix}${data}`;
+  if (typeof data === "number" || typeof data === "boolean") return `${prefix}${data}`;
+
+  if (Array.isArray(data)) {
+    return data.map((item, i) => {
+      if (typeof item === "string") return `${prefix}- ${item}`;
+      if (typeof item === "object" && item !== null) {
+        const parts = Object.entries(item)
+          .filter(([_, v]) => v !== null && v !== undefined && v !== "")
+          .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`);
+        return `${prefix}- ${parts.join(", ")}`;
+      }
+      return `${prefix}- ${JSON.stringify(item)}`;
+    }).join("\n");
+  }
+
+  if (typeof data === "object") {
+    return Object.entries(data)
+      .filter(([_, v]) => v !== null && v !== undefined && v !== "")
+      .map(([k, v]) => {
+        if (typeof v === "object") {
+          return `${prefix}${k}:\n${flattenProfileData(v, indent + 1)}`;
+        }
+        return `${prefix}${k}: ${v}`;
+      }).join("\n");
+  }
+
+  return `${prefix}${JSON.stringify(data)}`;
+}

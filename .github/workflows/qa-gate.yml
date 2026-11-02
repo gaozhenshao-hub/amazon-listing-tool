@@ -11,7 +11,6 @@ jobs:
     timeout-minutes: 25
     env:
       ALLOW_REAL_NETWORK_IN_TESTS: "0"
-      RUN_REAL_LLM_TESTS: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -68,9 +67,7 @@ jobs:
     needs: unit-gate
     services:
       mysql:
-        # Candidate tag only: the verified local server was Ubuntu MySQL 8.0.46.
-        # Container availability and full CI still require separate validation.
-        image: mysql:8.0.46
+        image: mysql:8.0
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: amazon_listing_ci
@@ -82,11 +79,7 @@ jobs:
           --health-timeout=5s
           --health-retries=12
     env:
-      REAL_DB_TEST_DATABASE_URL: mysql://root:root@127.0.0.1:3306/amazon_listing_ci
-      FRESH_BOOTSTRAP_DATABASE_URL: mysql://root:root@127.0.0.1:3306/amazon_listing_ci
-      DOTENV_CONFIG_PATH: /dev/null
-      RUN_REAL_LLM_TESTS: "0"
-      ALLOW_REAL_NETWORK_IN_TESTS: "0"
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/amazon_listing_ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -94,12 +87,6 @@ jobs:
           node-version: 22
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      - name: Inspect offline fresh bootstrap plan
-        run: pnpm db:bootstrap:fresh:plan
-      # Do not bypass the approved full-contract gate or fall back to db:migrate.
-      - name: Initialize empty CI schema through the independently approved current-source contract
-        run: node scripts/bootstrap-fresh-database-current-source.mjs --execute --contract current-source-20261019 --environment ci --schema amazon_listing_ci
-      - name: Verify repeat without migrations or reseeding
-        run: node scripts/bootstrap-fresh-database-current-source.mjs --execute --contract current-source-20261019 --environment ci --schema amazon_listing_ci
+      - run: pnpm db:migrate
       - name: Run migrated MySQL, Worker and lifecycle integration tests
-        run: pnpm test:real-db --environment ci --schema amazon_listing_ci
+        run: pnpm test:real-db

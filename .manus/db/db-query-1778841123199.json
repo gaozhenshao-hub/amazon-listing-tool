@@ -1,0 +1,21 @@
+{
+  "query": "SELECT id, name, email, phone, role, status, password IS NOT NULL as has_password, failedLoginAttempts, lockedUntil FROM users WHERE email = '970032132@qq.com' OR phone = '970032132';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT id, name, email, phone, role, status, password IS NOT NULL as has_password, failedLoginAttempts, lockedUntil FROM users WHERE email = '970032132@qq.com' OR phone = '970032132';",
+  "rows": [
+    {
+      "id": "3783327",
+      "name": "郁洋(Carl) ",
+      "email": "970032132@qq.com",
+      "phone": "18339967596",
+      "role": "product_dev",
+      "status": "active",
+      "has_password": "1",
+      "failedLoginAttempts": "0",
+      "lockedUntil": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tphone\trole\tstatus\thas_password\tfailedLoginAttempts\tlockedUntil\n3783327\t郁洋(Carl) \t970032132@qq.com\t18339967596\tproduct_dev\tactive\t1\t0\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 1835
+}

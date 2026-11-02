@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE users SET openId = CONCAT('pwd_', id) WHERE openId IS NULL AND password IS NOT NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute UPDATE users SET openId = CONCAT('pwd_', id) WHERE openId IS NULL AND password IS NOT NULL;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1772
+}

@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, mediumtext, text, timestamp, tinyint, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 import { currentOpsWorkspaceId } from "../../server/domains/ops/workspaceContext";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -115,7 +115,7 @@ export const opsLingxingSyncSchedules = mysqlTable("ops_lingxing_sync_schedules"
   timezone: varchar("timezone", { length: 64 }).notNull().default("Asia/Shanghai"),
   cronExpression: varchar("cron_expression", { length: 64 }).notNull(),
   enabled: int("enabled").notNull().default(0),
-  autoApply: tinyint("auto_apply").notNull().default(0),
+  autoApply: int("auto_apply").notNull().default(0),
   scheduleCronTaskUid: varchar("schedule_cron_task_uid", { length: 65 }),
   ownerUserId: int("owner_user_id").notNull(),
   lastRunKey: varchar("last_run_key", { length: 80 }),
@@ -649,8 +649,6 @@ export const teamTasks = mysqlTable("team_tasks", {
   category: varchar("category", { length: 100 }), // e.g. Listing优化, 广告调整, 图片更新
   assigneeId: int("assignee_id"), // assigned team member
   assigneeName: varchar("assignee_name", { length: 100 }),
-  assistantId: int("assistant_id"),
-  assistantName: varchar("assistant_name", { length: 100 }),
   startDate: varchar("start_date", { length: 20 }),
   dueDate: varchar("due_date", { length: 20 }),
   completedAt: timestamp("completed_at"),
@@ -1742,7 +1740,7 @@ export const meetingRecords = mysqlTable("meeting_records", {
   userId: int("user_id").notNull(),
   title: varchar("title", { length: 300 }),
   audioUrl: text("audio_url"), // S3 URL of the uploaded audio
-  transcript: mediumtext("transcript"), // Full transcription text
+  transcript: text("transcript"), // Full transcription text
   extractedTasks: text("extracted_tasks"), // JSON array of extracted tasks
   status: mysqlEnum("meeting_status", ["uploading", "transcribing", "extracting", "done", "error"]).default("uploading").notNull(),
   errorMessage: text("error_message"),

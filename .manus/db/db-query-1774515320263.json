@@ -1,0 +1,70 @@
+{
+  "query": "SELECT COUNT(*) as total FROM conversion_check_items WHERE user_id IS NULL;\nSELECT category_index, category_name, COUNT(*) as item_count FROM conversion_check_items WHERE user_id IS NULL GROUP BY category_index, category_name ORDER BY category_index;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT COUNT(*) as total FROM conversion_check_items WHERE user_id IS NULL;\nSELECT category_index, category_name, COUNT(*) as item_count FROM conversion_check_items WHERE user_id IS NULL GROUP BY category_index, category_name ORDER BY category_index;",
+  "rows": [
+    {
+      "total": "129"
+    },
+    {
+      "total": "category_index\tcategory_name\titem_count"
+    },
+    {
+      "total": "1\t标题\t10"
+    },
+    {
+      "total": "2\t五点\t15"
+    },
+    {
+      "total": "3\t标\t6"
+    },
+    {
+      "total": "4\t价格\t11"
+    },
+    {
+      "total": "5\t限购\t3"
+    },
+    {
+      "total": "6\t配送\t3"
+    },
+    {
+      "total": "7\t变体\t5"
+    },
+    {
+      "total": "8\t产品信息\t3"
+    },
+    {
+      "total": "9\t商品文档\t2"
+    },
+    {
+      "total": "10\t主图\t22"
+    },
+    {
+      "total": "11\t流量闭环\t6"
+    },
+    {
+      "total": "12\t品牌故事\t4"
+    },
+    {
+      "total": "13\tA+\t13"
+    },
+    {
+      "total": "14\tVideo\t4"
+    },
+    {
+      "total": "15\tQ&A\t7"
+    },
+    {
+      "total": "16\tReview\t5"
+    },
+    {
+      "total": "17\t店铺介绍页面\t2"
+    },
+    {
+      "total": "18\t广告\t8"
+    }
+  ],
+  "messages": [],
+  "stdout": "total\n129\ncategory_index\tcategory_name\titem_count\n1\t标题\t10\n2\t五点\t15\n3\t标\t6\n4\t价格\t11\n5\t限购\t3\n6\t配送\t3\n7\t变体\t5\n8\t产品信息\t3\n9\t商品文档\t2\n10\t主图\t22\n11\t流量闭环\t6\n12\t品牌故事\t4\n13\tA+\t13\n14\tVideo\t4\n15\tQ&A\t7\n16\tReview\t5\n17\t店铺介绍页面\t2\n18\t广告\t8\n",
+  "stderr": "",
+  "execution_time_ms": 407
+}

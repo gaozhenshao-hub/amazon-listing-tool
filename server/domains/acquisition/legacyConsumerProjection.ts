@@ -13,7 +13,6 @@ import {
   type LegacySnapshotConsumerType,
 } from "./legacyConsumerContracts";
 import type { DbExecutor } from "../../repositories/dbClient";
-import { saveCollectedListing } from "../listing/collectedListing";
 
 const ConfirmedAssetIdsSchema = z.array(z.number().int().positive());
 
@@ -36,7 +35,7 @@ export async function loadConfirmedSnapshotForConsumer(input: {
   if (!confirmed) throw new Error("confirmed snapshot not found");
   const data = NormalizedAmazonSnapshotSchema.parse(confirmed.confirmedData);
   const confirmedAssetIds = new Set(ConfirmedAssetIdsSchema.parse(confirmed.confirmedAssetIds));
-  const assets: AcquisitionAssetCandidate[] = (await input.db.select().from(acquisitionAssetCandidates).where(and(
+  const assets = (await input.db.select().from(acquisitionAssetCandidates).where(and(
     eq(acquisitionAssetCandidates.workspaceId, input.workspaceId),
     eq(acquisitionAssetCandidates.snapshotId, confirmed.snapshotId),
   ))).filter((asset: AcquisitionAssetCandidate) => confirmedAssetIds.has(asset.id) && Boolean(asset.storageKey));
@@ -67,7 +66,7 @@ function catalogProjection(data: ReturnType<typeof NormalizedAmazonSnapshotSchem
 export type LegacyConsumerProjection =
   | { consumerType: "kb_listing"; recordId: number; workspaceId: number; userId: number; asin: string; confirmedSnapshotId: number }
   | { consumerType: "kb_product"; recordId: number; workspaceId: number; userId: number; asin: string; confirmedSnapshotId: number }
-  | { consumerType: "project_competitor"; projectId: number; workspaceId: number; userId: number; asin: string; confirmedSnapshotId: number; captureOnly?: true; analysisId?: number }
+  | { consumerType: "project_competitor"; projectId: number; workspaceId: number; userId: number; asin: string; confirmedSnapshotId: number }
   | { consumerType: "conversion_collector"; workspaceId: number; userId: number; asin: string; confirmedSnapshotId: number };
 
 export async function projectConfirmedSnapshotToLegacyConsumer(input: {
@@ -79,12 +78,6 @@ export async function projectConfirmedSnapshotToLegacyConsumer(input: {
   consumerRef: string;
 }): Promise<LegacyConsumerProjection> {
   const target = parseLegacySnapshotConsumerRef(input.consumerType, input.consumerRef);
-  if (target.type === "project_competitor" && target.captureOnly) {
-    const saved = await saveCollectedListing({ db: input.db, workspaceId: input.workspaceId, userId: input.requestedBy,
-      projectId: target.projectId, asin: target.asin, confirmedSnapshotId: input.confirmedSnapshotId });
-    return { consumerType: target.type, projectId: target.projectId, workspaceId: input.workspaceId, userId: input.requestedBy,
-      asin: target.asin, confirmedSnapshotId: input.confirmedSnapshotId, captureOnly: true, analysisId: saved.analysisId };
-  }
   const { confirmed, data, assets } = await loadConfirmedSnapshotForConsumer(input);
   const sourceRef = acquisitionReference({
     confirmedSnapshotId: confirmed.id,
