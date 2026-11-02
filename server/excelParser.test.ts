@@ -28,4 +28,22 @@ describe("领星 ASIN 日粒度产品表现解析", () => {
       salesQty: 3,
     });
   });
+
+  it("将每行均为同一周区间的日期列保留为父ASIN周粒度", () => {
+    const buffer = createWorkbookBuffer([
+      ["日期", "ASIN", "父ASIN", "店铺", "国家", "销量", "结算毛利润", "Sessions-Browser", "SBV广告费"],
+      ["2026-10-19~2026-10-25", "B0TESTASIN", "B0PARENT", "美国店", "US", 3, "$9.5", 20, "$1"],
+      ["2026-10-19~2026-10-25", "B0TESTASIN2", "B0PARENT2", "美国店", "US", 4, "$8.5", 21, "$2"],
+    ]);
+
+    const result = parseExcelBuffer(buffer, "产品表现父ASIN（2026-10-19~2026-10-25，全部广告）.xlsx");
+
+    expect(result.sourceType).toBe("lingxing");
+    expect(result.dataGranularity).toBe("weekly");
+    expect(result.allRows).toHaveLength(2);
+    expect(result.allRows[0]).toMatchObject({
+      reportDate: "2026-10-19~2026-10-25",
+      parentAsin: "B0PARENT",
+    });
+  });
 });
