@@ -2,6 +2,9 @@ name: Build ECS release
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - deploy/qingdao-9c6e8a86-20261107
 
 permissions:
   contents: read
