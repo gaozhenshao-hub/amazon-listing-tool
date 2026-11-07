@@ -68,8 +68,8 @@ export const SUB_MODULES: Record<string, { id: string; label: string }[]> = {
   ],
   "dev": [
     {
-      "id": "dev_dashboard",
-      "label": "产品开发（待开发）"
+      "id": "dev_projects",
+      "label": "待调研产品库"
     }
   ],
   "procurement": [
@@ -266,13 +266,20 @@ export type PermissionRouteRule = {
  */
 export const PERMISSION_ROUTE_REGISTRY: Record<string, PermissionRouteRule> = {
   '/design/images': { moduleId: 'design', subModuleId: 'design_images', enforcement: 'enforced' },
+  '/design/chat': { moduleId: 'design', subModuleId: 'design_images', enforcement: 'enforced' },
+  '/design/scene': { moduleId: 'design', subModuleId: 'design_images', enforcement: 'enforced' },
   '/design/prompts': { moduleId: 'design', subModuleId: 'design_prompts', enforcement: 'enforced' },
   '/design/materials': { moduleId: 'design', subModuleId: 'design_materials', enforcement: 'enforced' },
-  '/dev': { moduleId: 'dev', subModuleId: 'dev_dashboard', enforcement: 'enforced' },
+  '/dev': { moduleId: 'dev', subModuleId: 'dev_projects', enforcement: 'enforced' },
+  '/dev/library': { moduleId: 'dev', subModuleId: 'dev_projects', enforcement: 'enforced' },
+  '/dev/selection': { moduleId: 'dev', subModuleId: 'dev_projects', enforcement: 'enforced' },
+  '/dev/selection/:id': { moduleId: 'dev', subModuleId: 'dev_projects', enforcement: 'enforced' },
+  '/dev/library/connect': { moduleId: 'dev', subModuleId: 'dev_projects', enforcement: 'enforced' },
 
   '/listing': { moduleId: 'listing', subModuleId: 'listing_projects', enforcement: 'enforced' },
   '/listing/analysis': { moduleId: 'listing', subModuleId: 'listing_analysis', enforcement: 'enforced' },
   '/listing/comparison': { moduleId: 'listing', subModuleId: 'listing_comparison', enforcement: 'enforced' },
+  '/listing/aggregation': { moduleId: 'listing', subModuleId: 'listing_comparison', enforcement: 'enforced' },
   '/listing/review-history': { moduleId: 'listing', subModuleId: 'listing_review_history', enforcement: 'enforced' },
   '/listing/review-aggregation': { moduleId: 'listing', subModuleId: 'listing_review_aggregation', enforcement: 'enforced' },
   '/listing/buyer-questions': { moduleId: 'listing', subModuleId: 'listing_analysis', enforcement: 'enforced' },
@@ -280,6 +287,7 @@ export const PERMISSION_ROUTE_REGISTRY: Record<string, PermissionRouteRule> = {
   '/listing/ad-structure': { moduleId: 'listing', subModuleId: 'listing_ad_structure', enforcement: 'enforced' },
   '/listing/data-files': { moduleId: 'listing', subModuleId: 'listing_data_files', enforcement: 'enforced' },
   '/listing/generate': { moduleId: 'listing', subModuleId: 'listing_generate', enforcement: 'enforced' },
+  '/listing/image-planning': { moduleId: 'listing', subModuleId: 'listing_generate', enforcement: 'enforced' },
   '/listing/preview': { moduleId: 'listing', subModuleId: 'listing_preview', enforcement: 'enforced' },
   '/listing/score': { moduleId: 'listing', subModuleId: 'listing_score', enforcement: 'enforced' },
   '/listing/project/:id': { moduleId: 'listing', subModuleId: 'listing_projects', enforcement: 'enforced' },

@@ -87,20 +87,22 @@ function crc32(bytes: Buffer): number {
   return (value ^ 0xffffffff) >>> 0;
 }
 type OfficeAdmission = { entries: number; expandedBytes: number; externalReferences: boolean };
-async function admitOffice(bytes: Buffer, format: "docx" | "xlsx"): Promise<OfficeAdmission> {
+export async function admitOffice(
+  bytes: Buffer, format: "docx" | "xlsx", entryLimit: number = LIMIT.officeEntries
+): Promise<OfficeAdmission> {
   if (bytes.length < 4 || bytes.readUInt32LE(0) !== 0x04034b50) fail("TYPE_MISMATCH");
   const { fromBufferPromise } = await import("yauzl");
   let zip: Awaited<ReturnType<typeof fromBufferPromise>> | undefined;
   try {
     zip = await fromBufferPromise(bytes, { lazyEntries: true, autoClose: false, decodeStrings: true, strictFileNames: true, validateEntrySizes: true });
-    if (!positive(zip.entryCount) || zip.entryCount > LIMIT.officeEntries) fail("OFFICE_ENTRY_LIMIT");
+    if (!positive(zip.entryCount) || zip.entryCount > entryLimit) fail("OFFICE_ENTRY_LIMIT");
     const names = new Set<string>(), ranges: Array<[number, number]> = [];
     let entries = 0, expandedBytes = 0, externalReferences = false, contentTypes = "", document = "";
     const mainName = format === "docx" ? "word/document.xml" : "xl/workbook.xml";
     for await (const entry of zip.eachEntry()) {
       entries++;
       const name = entry.fileName;
-      if (entries > LIMIT.officeEntries || !name || name.length > 1024 || /[\\\u0000-\u001f\u007f]/u.test(name) || name.startsWith("/") || /^[A-Za-z]:/u.test(name)
+      if (entries > entryLimit || !name || name.length > 1024 || /[\\\u0000-\u001f\u007f]/u.test(name) || name.startsWith("/") || /^[A-Za-z]:/u.test(name)
         || name.replace(/\/$/u, "").split("/").some(part => !part || part === "." || part === "..")) fail("UNSAFE_ZIP_PATH");
       const normalized = name.normalize("NFKC").toLowerCase();
       if (names.has(normalized)) fail("DUPLICATE_ZIP_ENTRY"); names.add(normalized);

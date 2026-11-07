@@ -5,7 +5,7 @@ import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { createContext } from "../../_core/context";
 import { validateImageBytes } from "../image/services/validateImageBytes";
-import { authorizeDesign } from "./access";
+import { authorizeDesign, authorizeListingDesign } from "./access";
 import { execute, ownAsset, type Scope } from "./repository";
 
 export async function assetDirectory() {
@@ -70,13 +70,20 @@ const uploader = multer({
 designAssetsRouter.use(async (req, res, next) => {
   try {
     const ctx = await createContext({ req, res } as any);
-    res.locals.designScope = await authorizeDesign(
-      ctx.user,
-      req.method === "GET" ? "read" : "edit",
-      req.path.startsWith("/prompt-examples/")
-        ? "design_prompts"
-        : "design_images"
-    );
+    const listing = /^\/listing\/(\d+)\/(?:upload|assets\/)/.exec(req.path);
+    res.locals.designScope = listing
+      ? await authorizeListingDesign(
+          ctx.user,
+          Number(listing[1]),
+          req.method === "GET" ? "read" : "edit"
+        )
+      : await authorizeDesign(
+          ctx.user,
+          req.method === "GET" ? "read" : "edit",
+          req.path.startsWith("/prompt-examples/")
+            ? "design_prompts"
+            : "design_images"
+        );
     if (req.method !== "GET") {
       const origin = req.get("origin");
       if (origin && new URL(origin).host !== req.get("host"))
@@ -111,45 +118,52 @@ designAssetsRouter.get("/prompt-examples/:id", async (req, res) => {
     res.status(404).json({ error: "示例图暂时无法读取" });
   }
 });
-designAssetsRouter.post("/upload", (req, res) => {
-  uploader.single("image")(req, res, async error => {
-    if (error || !req.file)
-      return void res
-        .status(400)
-        .json({ error: "请选择图片，每张不超过 10MB" });
-    try {
-      res.json(
-        await saveAsset(
-          res.locals.designScope,
-          req.file.buffer,
-          req.file.originalname,
-          "reference"
-        )
-      );
-    } catch {
-      res.status(400).json({
-        error:
-          "图片无法保存，请使用有效 PNG、JPEG、WebP 或 GIF 图片；若仍失败请检查存储配置",
-      });
-    }
-  });
-});
-designAssetsRouter.get("/assets/:id", async (req, res) => {
-  try {
-    if (!/^[0-9a-f-]{36}$/.test(req.params.id)) return void res.sendStatus(404);
-    const asset = await ownAsset(req.params.id, res.locals.designScope);
-    if (!asset) return void res.sendStatus(404);
-    const bytes = await assetBytes(asset);
-    res.set("Content-Type", asset.mime);
-    res.set("Cache-Control", "private, no-store");
-    res.set("X-Content-Type-Options", "nosniff");
-    if (req.query.download === "1")
-      res.set(
-        "Content-Disposition",
-        `attachment; filename="${asset.fileName}"`
-      );
-    res.send(bytes);
-  } catch {
-    res.status(404).json({ error: "图片暂时无法读取" });
+designAssetsRouter.post(
+  ["/upload", "/listing/:projectId/upload"],
+  (req, res) => {
+    uploader.single("image")(req, res, async error => {
+      if (error || !req.file)
+        return void res
+          .status(400)
+          .json({ error: "请选择图片，每张不超过 10MB" });
+      try {
+        res.json(
+          await saveAsset(
+            res.locals.designScope,
+            req.file.buffer,
+            req.file.originalname,
+            "reference"
+          )
+        );
+      } catch {
+        res.status(400).json({
+          error:
+            "图片无法保存，请使用有效 PNG、JPEG、WebP 或 GIF 图片；若仍失败请检查存储配置",
+        });
+      }
+    });
   }
-});
+);
+designAssetsRouter.get(
+  ["/assets/:id", "/listing/:projectId/assets/:id"],
+  async (req, res) => {
+    try {
+      if (!/^[0-9a-f-]{36}$/.test(req.params.id))
+        return void res.sendStatus(404);
+      const asset = await ownAsset(req.params.id, res.locals.designScope);
+      if (!asset) return void res.sendStatus(404);
+      const bytes = await assetBytes(asset);
+      res.set("Content-Type", asset.mime);
+      res.set("Cache-Control", "private, no-store");
+      res.set("X-Content-Type-Options", "nosniff");
+      if (req.query.download === "1")
+        res.set(
+          "Content-Disposition",
+          `attachment; filename="${asset.fileName}"`
+        );
+      res.send(bytes);
+    } catch {
+      res.status(404).json({ error: "图片暂时无法读取" });
+    }
+  }
+);

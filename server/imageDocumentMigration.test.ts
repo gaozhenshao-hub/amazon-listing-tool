@@ -1,0 +1,5 @@
+import { it,expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+it("新增设置与文档只走独立迁移，不能与其他发布计划混用",()=>{const plan=execFileSync(process.execPath,["scripts/run-database-migrations.mjs","--apply-image-document","--plan"],{encoding:"utf8"});expect(plan).toContain("0328_image_document_and_settings.sql");expect(plan).toContain("1 migrations; no database changes");expect(plan).not.toContain("0327_explicit_preview");expect(()=>execFileSync(process.execPath,["scripts/run-database-migrations.mjs","--apply-image-document","--apply-explicit-preview","--plan"],{stdio:"pipe"})).toThrow();});
+it("迁移仅新增数据结构与中文新技能，不重写已有业务资料",()=>{const sql=readFileSync("drizzle/0328_image_document_and_settings.sql","utf8");expect(sql).toContain("DEDICATED RELEASE ONLY");expect(sql).toContain("套图文档策划");expect(sql.match(/CREATE TABLE IF NOT EXISTS/g)).toHaveLength(4);expect(sql).not.toMatch(/\b(UPDATE|DELETE|DROP|ALTER)\s+(listing_aggregations|listing_image_plans|kb_images|kb_image_sets|projects|emperor_skills)\b/i);});

@@ -8,6 +8,12 @@ const ref=(n:number)=>({hash:hash(n),alt:`picture${n}`});
 const card=(...ns:number[])=>({images:ns.map(ref),title:'',text:''});
 const images=[1,2,3,4,5].map(n=>({id:n,imageUrl:`/stored/${n}.jpg`,sourceUrlHash:hash(n),imagePosition:'aplus'}));
 describe('Amazon rich content',()=>{
+ it('hides previously captured page navigation but retains copy and carousel controls',()=>{
+   const layout={version:2,modules:[{id:'carousel',section:'aplus',kind:'carousel',blocks:[{id:'title',text:'Material details',kind:'heading'},{id:'prev',text:'Previous page'},{id:'next',text:'Next page'}],cards:[card(1),card(2)]}]};
+   render(<AmazonRichContent layout={layout} images={images.slice(0,2)} section="aplus" onSelect={()=>{}}/>);
+   expect(screen.getByText('Material details')).toBeTruthy();expect(screen.queryByText('Previous page')).toBeNull();expect(screen.queryByText('Next page')).toBeNull();
+   fireEvent.click(screen.getByRole('button',{name:'下一张'}));expect(screen.getByRole('img',{name:'picture2'})).toBeTruthy();
+ });
  it('switches real carousel slides without loading every original',()=>{
    const layout={version:1,modules:[{id:'carousel',section:'aplus',kind:'carousel',title:'',background:null,cards:[card(1),card(2)],rows:[]}]};
    render(<AmazonRichContent layout={layout} images={images.slice(0,2)} section="aplus" onSelect={()=>{}}/>);
@@ -44,6 +50,16 @@ describe('Amazon rich content',()=>{
    expect(container.querySelector('[style*="grid-template-columns"]')?.querySelectorAll('img')).toHaveLength(count);
    expect(tags).toHaveBeenCalledTimes(1);expect(tags.mock.calls[0][0].map(i=>i.id)).toEqual([1]);
    expect(screen.getByText(`Body ${count}`)).toBeTruthy();
+ });
+ it('exposes all images in a multi-image module to competitor analysis while preserving carousel selection',()=>{
+   const layout={version:1,modules:[{id:'grid',section:'aplus',kind:'grid',cards:[card(1),card(2),card(3)]}]};
+   const tags=vi.fn((visible:any[])=><aside>{visible.map(i=>`分析${i.id}`).join(' ')}</aside>);
+   const {rerender}=render(<AmazonRichContent layout={layout} images={images.slice(0,3)} section="aplus" onSelect={()=>{}} renderTagsForAllImages renderTags={tags}/>);
+   expect(tags.mock.calls.at(-1)?.[0].map(i=>i.id)).toEqual([1,2,3]);
+   const carousel={version:1,modules:[{id:'carousel',section:'aplus',kind:'carousel',cards:[card(1),card(2)]}]};
+   rerender(<AmazonRichContent layout={carousel} images={images.slice(0,2)} section="aplus" onSelect={()=>{}} renderTagsForAllImages renderTags={tags}/>);
+   expect(tags.mock.calls.at(-1)?.[0].map(i=>i.id)).toEqual([1]);
+   fireEvent.click(screen.getByRole('button',{name:'下一张'}));expect(tags.mock.calls.at(-1)?.[0].map(i=>i.id)).toEqual([2]);
  });
  it('renders small comparison images in one table row with aligned values',()=>{
    const layout={version:1,modules:[{id:'compare',section:'aplus',kind:'comparison',title:'Compare',background:null,cards:[card(1),card(2)],rows:[{label:'Size',cells:['.aplus-v2 .aplus-review-right-padding { padding-right: 0.1rem; } 10','20']}]}]};

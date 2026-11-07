@@ -10,10 +10,10 @@ vi.mock("@/hooks/usePermissions", () => ({ usePermissions: () => ({ isLoading: s
 import ListingWorkspace from "./ListingWorkspace";
 afterEach(() => { cleanup(); state.path = "/listing/comparison"; state.project = 17; state.loading = false; state.denied = ""; });
 describe("contextual listing navigation", () => {
-  it("places buyer and review evidence beside analysis with the selected project", () => {
+  it("does not render the obsolete research navigation above comparison", () => {
     render(<ListingWorkspace><p>原文与分析</p></ListingWorkspace>);
-    expect(screen.getByRole("link", { name: "评论证据" })).toHaveAttribute("href", "/listing/review-aggregation?projectId=17");
-    expect(screen.getByRole("link", { name: "买家问题证据" })).toHaveAttribute("href", "/listing/buyer-questions?projectId=17");
+    expect(screen.queryByRole("link", { name: "评论证据" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "买家问题证据" })).not.toBeInTheDocument();
     expect(screen.getByText("原文与分析")).toBeInTheDocument();
   });
   it("hides unauthorized and not-yet-authorized links without unmounting the guarded page", () => {

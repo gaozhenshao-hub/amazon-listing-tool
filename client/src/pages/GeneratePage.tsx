@@ -1,3 +1,6 @@
+import { flushListingPage,useListingPageFlush } from "./listing/listingPageFlush";
+import { useResearchLock,ResearchLockButton } from "./listing/ResearchLock";
+import ResearchReadOnly from "./listing/ResearchReadOnly";
 import { trpc } from "@/lib/trpc";
 import ListingStages from './listing/ListingStages';
 import { Button } from "@/components/ui/button";
@@ -61,6 +64,7 @@ import { LISTING_STEPS, ListingWorkflowNavigation } from "./listing/ListingWorkf
 
 export default function GeneratePage() {
   const { selectedProjectId } = useProject();
+  const pageLock=useResearchLock(selectedProjectId,"listing");
   const [, setLocation] = useLocation();
   const [emphasis, setEmphasis] = useState("");
 
@@ -215,6 +219,9 @@ export default function GeneratePage() {
     { projectId: selectedProjectId! },
     { enabled: !!selectedProjectId }
   );
+  const { data: productAttributes } = trpc.listingInputs.attributes.useQuery(
+    { projectId: selectedProjectId! }, { enabled: !!selectedProjectId },
+  );
 
   const { data: keywordStats } = trpc.keyword.stats.useQuery(
     { projectId: selectedProjectId! },
@@ -338,17 +345,6 @@ export default function GeneratePage() {
 
   const handleGenerateCores = () => {
     if (!selectedProjectId) return;
-    // 强制前置检查：产品属性表必须已上传
-    if (!fileSummary?.productAttributes) {
-      toast.error("请先在『数据文件』上传『产品属性表』，才能开始生成卖点", {
-        action: {
-          label: "前往上传",
-          onClick: () => window.location.href = "/listing/data-files",
-        },
-        duration: 6000,
-      });
-      return;
-    }
     setStepBulletPhase("idle");
     void sellingPointsJob.start({ emphasis: emphasis.trim() || undefined });
   };
@@ -739,6 +735,15 @@ export default function GeneratePage() {
     }
   };
 
+  const flushBullets=trpc.listing.updateByProject.useMutation();
+  useListingPageFlush(selectedProjectId,async()=>{
+    if(pageLock.locked || !selectedProjectId || activeStep!==1)return;
+    const entries=Object.entries(generatedBullets).sort(([a],[b])=>Number(a)-Number(b));
+    if(!entries.length)return;
+    const bullets=entries.map(([index,b])=>lockedFineTuneIdx===Number(index) && lockedFineTuneData ? lockedFineTuneData : b).map(b=>`${b.subtitle || ""} ${b.fullText || ""}`.trim());
+    if(bullets.some(b=>!b))throw new Error("请补全当前五点内容后再锁定");
+    await flushBullets.mutateAsync({projectId:selectedProjectId,field:"bulletPoints",value:JSON.stringify(bullets)});
+  });
   // Sync confirmed bullets to listing preview
   const syncBulletsMut = trpc.listing.syncBulletsFromSellingPoints.useMutation({
     onSuccess: (data) => {
@@ -857,9 +862,10 @@ export default function GeneratePage() {
             5步引导式Listing创建：AI生成 → 人工编辑 → 确认锁定 → 结果预览
           </p>
         </div>
-        <ProjectSelector />
+        <div className="flex gap-2"><ProjectSelector /><ResearchLockButton state={pageLock} beforeLock={()=>flushListingPage(selectedProjectId)}/></div>
       </div>
 
+      <ResearchReadOnly locked={pageLock.locked}>
       {!selectedProjectId ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-16">
@@ -2035,7 +2041,7 @@ export default function GeneratePage() {
             <StepTitle
               projectId={selectedProjectId}
               emphasis={emphasis}
-              locked={lockedSteps.has(2)}
+              locked={pageLock.locked || lockedSteps.has(2)}
               savedContent={activeListing?.title || null}
               savedItemHighlights={activeListing?.itemHighlights || null}
               onLock={() => handleLockStep(2)}
@@ -2049,7 +2055,7 @@ export default function GeneratePage() {
             <StepDescription
               projectId={selectedProjectId}
               emphasis={emphasis}
-              locked={lockedSteps.has(3)}
+              locked={pageLock.locked || lockedSteps.has(3)}
               savedContent={activeListing?.description || null}
               onLock={() => handleLockStep(3)}
               onUnlock={() => { handleUnlockStep(3); toast.info("描述已解锁，可重新编辑"); }}
@@ -2062,7 +2068,7 @@ export default function GeneratePage() {
             <StepSearchTerms
               projectId={selectedProjectId}
               emphasis={emphasis}
-              locked={lockedSteps.has(4)}
+              locked={pageLock.locked || lockedSteps.has(4)}
               savedContent={activeListing?.searchTerms || null}
               onLock={() => handleLockStep(4)}
               onUnlock={() => { handleUnlockStep(4); toast.info("搜索词已解锁，可重新编辑"); }}
@@ -2075,7 +2081,7 @@ export default function GeneratePage() {
             <StepQA
               projectId={selectedProjectId}
               emphasis={emphasis}
-              locked={lockedSteps.has(5)}
+              locked={pageLock.locked || lockedSteps.has(5)}
               savedContent={activeListing?.qaContent || null}
               onLock={() => handleLockStep(5)}
               onUnlock={() => { handleUnlockStep(5); toast.info("QA已解锁，可重新编辑"); }}
@@ -2094,6 +2100,7 @@ export default function GeneratePage() {
           />
         </div>
       )}
+        </ResearchReadOnly>
     </div>
   );
 }

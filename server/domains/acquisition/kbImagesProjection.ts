@@ -10,7 +10,9 @@ import type { AmazonAcquisitionCapability, AcquisitionAssetRole } from "../../..
 import { NormalizedAmazonSnapshotSchema, AmazonAcquisitionCapabilitySchema } from "./contracts";
 import type { DbExecutor } from "../../repositories/dbClient";
 import { AmazonImageLayoutSchema } from "../../../shared/amazonImageLayout";
-import { imageSubtypeFromLayout, validImageBelongSubtype } from "../../../shared/imageBelong";
+import {imageLibraryLayout,presentationForImages} from '../../../shared/knowledgeImagePresentation';
+import {brandBackgroundHashes} from '../../../shared/richContentPresentation';
+import { imageSubtypeFromLayout, validImageBelongSubtype,imageBelongFromSource } from "../../../shared/imageBelong";
 
 import { collectionDisplayAsin, knowledgeCollectionVersion } from "../../../shared/knowledgeCollection";
 
@@ -61,6 +63,7 @@ export async function projectConfirmedSnapshotToKbImages(input: {
   requestedCapabilities: unknown;
   consumerRef?: string;
   repairedAssetIds?: number[];
+  imagesOnly?: boolean;
 }) {
   const [confirmed] = await input.db.select().from(acquisitionConfirmedSnapshots).where(and(
     eq(acquisitionConfirmedSnapshots.workspaceId, input.workspaceId),
@@ -105,8 +108,11 @@ export async function projectConfirmedSnapshotToKbImages(input: {
     ...(oldLayout.success ? oldLayout.data.modules.filter(module => !updatedSections.has(module.section)) : []),
     ...(nextLayout.success ? nextLayout.data.modules.filter(module => updatedSections.has(module.section)) : []),
   ];
+  const nextPresentation=presentationForImages(existingSet?.contentPresentation,{version:2,modules},new Set(assets.map((a:AcquisitionAssetCandidate)=>a.sourceUrlHash)));
+  if(nextPresentation)nextPresentation.images=nextPresentation.images.filter(i=>assets.some((a:AcquisitionAssetCandidate)=>a.sourceUrlHash===i.sourceHash&&(!a.contentHash||a.contentHash===i.contentHash)));
   const setValues = {
-    ...(data.videos ? { videos: data.videos.map(video => {
+    contentPresentation:nextPresentation,
+    ...(input.imagesOnly ? {videos:[]} : data.videos ? { videos: data.videos.map(video => {
       const asset = allAssets.find((asset: AcquisitionAssetCandidate) => asset.role === "video" && asset.sourceUrlHash === video.hash && asset.moduleClass === video.moduleId);
       const ready = asset && confirmedAssetIds.has(asset.id) && asset.storageKey && asset.thumbnailStorageKey;
       return { ...video, videoUrl: ready ? asset.storageKey : null, posterUrl: asset?.thumbnailStorageKey ?? null, status: ready ? "ready" as const : "failed" as const };
@@ -114,7 +120,7 @@ export async function projectConfirmedSnapshotToKbImages(input: {
     sourceAsin: confirmed.asin,
     collectionVersion: refreshId ? existingSet!.collectionVersion : collectionVersion,
     ...(refreshId ? {setCategory:null,setStyle:null,setPrimaryColor:null,setAccentColor:null} : {}),
-    sourceLayout: modules.length ? {version: 1 as const, modules} : null,
+    sourceLayout: modules.length ? input.imagesOnly?imageLibraryLayout({version:2,modules}):{version:2 as const,modules} : null,
     productTitle: data.title?.slice(0, 512) ?? existingSet?.productTitle ?? null,
     brand: data.brand?.slice(0, 128) ?? existingSet?.brand ?? null,
     category: data.category?.slice(0, 128) ?? existingSet?.category ?? null,
@@ -157,6 +163,7 @@ export async function projectConfirmedSnapshotToKbImages(input: {
     const match = previous.find(image => !retained.has(image.id) && image.imagePosition === asset.role
       && (image.sourceUrlHash === asset.sourceUrlHash || image.imageUrl === asset.storageKey
         || Boolean(asset.contentHash && image.imageUrl.includes(asset.contentHash))));
+    const sourceBelong=imageBelongFromSource(asset.role,data.sourceLayout,asset.sourceUrlHash);
     const location = {
       imageSetId,
       imageUrl: asset.storageKey!,
@@ -164,16 +171,17 @@ export async function projectConfirmedSnapshotToKbImages(input: {
       thumbnailUrl: asset.thumbnailStorageKey ?? null,
       imagePosition: asset.role as "main" | "secondary" | "aplus" | "brand_story",
       positionIndex: asset.positionIndex,
+      ...(brandBackgroundHashes(data.sourceLayout).has(asset.sourceUrlHash)?{imageTranslation:{version:1 as const,sourceHash:asset.sourceUrlHash,status:'excluded_background' as const,regions:[],notes:''},aplusModuleType:'品牌背景'}:{}),
     };
     if (match) {
       retained.add(match.id);
       const subtype = imageSubtypeFromLayout(data.sourceLayout, asset.role, asset.sourceUrlHash);
-      await input.db.update(kbImages).set({...location, ...(refreshId ? {tagImageTypeMain:null,tagImageTypeSub:null,tagSellingPointCategory:null,tagSellingPointDetail:null,tagComposition:null,tagsConfirmed:0,analysisConfirmed:0,aiDimensionAnalysis:null,userEditedDimensionAnalysis:null,labelRevision:match.labelRevision+1} : {}), ...(!match.tagsConfirmed && !match.analysisConfirmed && subtype
-        ? {tagImageBelongSub:subtype,aplusModuleType:subtype} : {})}).where(and(eq(kbImages.id, match.id), eq(kbImages.imageSetId, imageSetId)));
+      await input.db.update(kbImages).set({...location,...(!brandBackgroundHashes(data.sourceLayout).has(asset.sourceUrlHash)&&(match.imageUrl!==asset.storageKey||asset.contentHash&&match.imageTranslation?.contentHash!==asset.contentHash)?{imageTranslation:null}:{}), ...(refreshId ? {tagImageTypeMain:null,tagImageTypeSub:null,tagSellingPointCategory:null,tagSellingPointDetail:null,tagComposition:null,tagsConfirmed:0,analysisConfirmed:0,aiDimensionAnalysis:null,userEditedDimensionAnalysis:null,labelRevision:match.labelRevision+1} : {}), ...(!match.tagsConfirmed && !match.analysisConfirmed && (subtype||sourceBelong)
+        ? {tagImageBelong:sourceBelong?.belong||match.tagImageBelong,tagImageBelongSub:sourceBelong?.sub||subtype,aplusModuleType:subtype||match.aplusModuleType} : {})}).where(and(eq(kbImages.id, match.id), eq(kbImages.imageSetId, imageSetId)));
     } else await input.db.insert(kbImages).values({
       ...location,
-      tagImageBelong: imageBelongForRole(asset.role),
-      tagImageBelongSub: imageSubtypeFromLayout(data.sourceLayout, asset.role, asset.sourceUrlHash)
+      tagImageBelong: sourceBelong?.belong||imageBelongForRole(asset.role),
+      tagImageBelongSub: sourceBelong?.sub||imageSubtypeFromLayout(data.sourceLayout, asset.role, asset.sourceUrlHash)
         || validImageBelongSubtype(imageBelongForRole(asset.role) || "", asset.moduleType),
       aplusModuleType: asset.moduleType,
       aplusModuleClass: asset.moduleClass,

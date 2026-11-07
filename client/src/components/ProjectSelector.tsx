@@ -10,7 +10,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { FolderOpen } from "lucide-react";
 
-export default function ProjectSelector() {
+export default function ProjectSelector({ beforeChange }: { beforeChange?: () => boolean | Promise<boolean> } = {}) {
   const { data: projects, isLoading } = trpc.project.list.useQuery();
   const { selectedProjectId, setSelectedProjectId } = useProject();
 
@@ -30,7 +30,7 @@ export default function ProjectSelector() {
   return (
     <Select
       value={selectedProjectId?.toString() || ""}
-      onValueChange={(val) => setSelectedProjectId(parseInt(val, 10))}
+      onValueChange={async(val) => { if (!beforeChange || await beforeChange()) setSelectedProjectId(parseInt(val, 10)); }}
     >
       <SelectTrigger className="w-64">
         <SelectValue placeholder="选择项目..." />

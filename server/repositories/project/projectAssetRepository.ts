@@ -140,6 +140,18 @@ export async function saveCollectedCompetitorAnalysis(id: number, data: { rawDat
   });
 }
 
+/** New comparison output is independent of previously confirmed human summaries. */
+export async function saveCompetitorStudyV2(id:number, data:{rawData:string;aiSummary:string}, guard:CompetitorWriteGuard) {
+  return withLockedCompetitor(id,guard,async(tx,row)=>{
+    if(!Number.isSafeInteger(row.summaryVersion)||row.summaryVersion<1||row.summaryVersion>=2147483647)throw new TRPCError({code:"PRECONDITION_FAILED",message:"竞品摘要版本无效或已达上限"});
+    const preserveSummary=row.summaryStatus==='confirmed'||Boolean(row.summary&&row.summary!==row.aiSummary);
+    await tx.update(competitorAnalyses).set({rawData:data.rawData,aiSummary:data.aiSummary,
+      ...(preserveSummary?{}:{summary:data.aiSummary}),summaryVersion:row.summaryVersion+1})
+      .where(and(eq(competitorAnalyses.id,id),eq(competitorAnalyses.projectId,guard.projectId)));
+    return readLockedCompetitor(tx,id,guard.projectId);
+  });
+}
+
 export async function getCompetitorAnalysesByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

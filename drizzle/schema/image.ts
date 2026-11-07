@@ -13,6 +13,7 @@ export const kbImageSets = mysqlTable("kb_image_sets", {
   category: varchar("category", { length: 128 }),
   brand: varchar("brand", { length: 128 }),
   sourceLayout: json("sourceLayout").$type<import("../../shared/amazonImageLayout").AmazonImageLayout>(),
+  contentPresentation: json("contentPresentation").$type<import("../../shared/richContentPresentation").RichContentPresentation>(),
   videos: json("videos").$type<import("../../shared/knowledgeVideos").KnowledgeVideo[]>(),
   overallAnalysis: text("overallAnalysis"), // Overall visual analysis JSON
   userEditedOverallAnalysis: text("userEditedOverallAnalysis"),
@@ -63,6 +64,7 @@ export const kbImages = mysqlTable("kb_images", {
   labelRunId: varchar("labelRunId", { length: 100 }),
   labelError: varchar("labelError", { length: 512 }),
   sourceUrlHash: varchar("sourceUrlHash", { length: 64 }),
+  imageTranslation: json("imageTranslation").$type<import("../../shared/richContentPresentation").ImageTranslation>(),
   thumbnailUrl: varchar("thumbnailUrl", { length: 1024 }),
   imageUrl: varchar("imageUrl", { length: 1024 }).notNull(), // S3 URL
   imagePosition: mysqlEnum("imagePosition", ["main", "secondary", "aplus", "brand_story"]).notNull(),
@@ -101,6 +103,13 @@ export const kbImages = mysqlTable("kb_images", {
 export type KbImage = typeof kbImages.$inferSelect;
 
 export type InsertKbImage = typeof kbImages.$inferInsert;
+
+// Prepared translations are scoped to their authorized processor and immutable source bytes/text.
+export const mediaPretranslations=mysqlTable("media_pretranslations",{
+  id:int("id").autoincrement().primaryKey(),workspaceId:int("workspaceId").notNull(),userId:int("userId").notNull(),
+  kind:varchar("kind",{length:10}).notNull(),sourceHash:varchar("sourceHash",{length:64}).notNull(),version:int("version").notNull(),
+  payload:json("payload").notNull(),createdAt:timestamp("createdAt").defaultNow().notNull(),updatedAt:timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+},table=>({identity:uniqueIndex("media_pretranslation_identity").on(table.workspaceId,table.userId,table.kind,table.sourceHash,table.version)}));
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── Image Workflow (5-Step Image Suggestion Pipeline) ────────────

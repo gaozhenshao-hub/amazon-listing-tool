@@ -3,14 +3,17 @@ import type { AmazonImageModule } from "@shared/amazonImageLayout";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { KnowledgeImagePreview } from "@/components/KnowledgeImagePreview";
 import { distinctImageTags, imageBelongLabel, joinImageTags } from "./kbImageLabels";
 import ImageTagsPanel from "./ImageTagsPanel";
 import KnowledgeAssetActions from "./KnowledgeAssetActions";
+import {PreparedImage} from '@/components/PreparedImage';
+import type {RichContentPresentation} from '@shared/richContentPresentation';
 
 export type BrowseImage = {
+  imageTranslation?:unknown;
+  sourceUrlHash?:string|null;
   module?: AmazonImageModule | null;
-  moduleImages?: Array<{id:number;imageUrl:string;sourceUrlHash?:string|null;imagePosition:string}>;
+  moduleImages?: Array<{id:number;imageUrl:string;sourceUrlHash?:string|null;imagePosition:string;imageTranslation?:unknown}>;
   id: number;
   imageSetId?: number | null;
   labelStatus?: string;
@@ -37,11 +40,12 @@ export type BrowseImage = {
   tagCategory?: string | null;
 };
 
-export function SingleImagePreviewDialog({ image, onClose, onOpenSet, canEdit = false }: {
+export function SingleImagePreviewDialog({ image, onClose, onOpenSet, canEdit = false,presentation }: {
   image: BrowseImage | null;
   onClose: () => void;
   onOpenSet?: (setId: number) => void;
   canEdit?: boolean;
+  presentation?:RichContentPresentation|null;
 }) {
   const tags = image ? distinctImageTags([
     imageBelongLabel(image), joinImageTags(image.tagImageTypeMain || image.tagImageType, image.tagImageTypeSub),
@@ -52,14 +56,14 @@ export function SingleImagePreviewDialog({ image, onClose, onOpenSet, canEdit = 
     <DialogContent className="flex max-h-[94vh] w-[94vw] max-w-[94vw] flex-col gap-3 overflow-hidden p-4 sm:max-w-[94vw]" aria-describedby={undefined}>
       <DialogHeader className="pr-8"><DialogTitle>{image?.module ? "完整 A+ 模块预览" : "单张图片原图预览"}{image?.asin ? ` · ${image.asin}` : ""}</DialogTitle></DialogHeader>
       {image && <>
-        <div className={image.imagePosition !== "brand_story" ? "grid min-h-0 gap-4 overflow-auto md:grid-cols-[minmax(0,1fr)_280px]" : "min-h-0 overflow-auto"}>
+        <div className="grid min-h-0 gap-4 overflow-auto md:grid-cols-[minmax(0,1fr)_280px]">
         <div className="min-h-0 min-w-0 rounded-lg bg-muted/30">
-          {image.module && image.moduleImages?.length ? <AmazonRichContent layout={{version:1,modules:[image.module]}} images={image.moduleImages} section="aplus" onSelect={()=>{}} /> : <KnowledgeImagePreview key={`${image.id}:${image.imageUrl}`} src={image.imageUrl}
+          {image.module && image.moduleImages?.length ? <AmazonRichContent layout={{version:2,modules:[image.module]}} images={image.moduleImages} section={image.module.section} presentation={presentation} onSelect={()=>{}} /> : <PreparedImage key={`${image.id}:${image.imageUrl}`} src={image.imageUrl} translation={image.imageTranslation} sourceHash={image.sourceUrlHash}
             alt={image.productTitle || "知识库图片原图"} loading="eager" accessError={image.imageAccessError}
-            className="mx-auto block h-auto max-h-[72vh] max-w-full object-contain" fallbackClassName="h-[50vh] w-full" />}
-          <KnowledgeAssetActions id={image.id} onDeleted={onClose}/>
+            imageClassName="mx-auto block h-auto max-h-[72vh] max-w-full object-contain" />}
+          <KnowledgeAssetActions id={image.id} translation={image.imageTranslation} onDeleted={onClose}/>
         </div>
-        {image.imagePosition !== "brand_story" && <div><ImageTagsPanel image={{...image, imagePosition:image.imagePosition || "secondary"}} canEdit={canEdit && image.tagOwnerId !== null} /></div>}
+        <div><ImageTagsPanel image={{...image, imagePosition:image.imagePosition || "secondary"}} canEdit={canEdit && image.tagOwnerId !== null} /></div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap gap-1.5" aria-label="图片标签">

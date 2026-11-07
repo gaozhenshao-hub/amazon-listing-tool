@@ -81,7 +81,7 @@ describe("Standalone Amazon acquisition explicit unbound job metadata", () => {
       kind: "amazon.acquisition.fetch", module: "amazonAcquisition", procedure: "amazonAcquisition.createJob",
       workspaceId: 11, userId: 17, skillSlug: "acquisition.amazon.catalog.fetch",
       input: { acquisitionJobId: 29, agentRunId: null, agentNodeId: null },
-      queueName: "amazon_acquisition", maxAttempts: 2, timeoutSeconds: 900,
+      queueName: "amazon_acquisition", maxAttempts: 2, timeoutSeconds: 1800,
     });
     expect(mocks.createAcquisitionJob).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       workspaceId: 11, requestedBy: 17, consumerRef: input.consumerRef, maxChargeUsd: "0.0000",

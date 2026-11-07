@@ -15,6 +15,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { ADMIN_ROLES } from "@shared/const";
 import { VIDEO_TYPES, VIDEO_TYPE_DESCRIPTIONS, VIDEO_CONTENT_TAGS } from "@shared/videoLabels";
 import { KnowledgeTag } from "./KnowledgeTag";
+import ImageBelongCatalog from "./ImageBelongCatalog";
 
 // Dimension metadata for display
 const DIMENSION_META: Record<string, { label: string; icon: string; level: string; hasParent: boolean; description: string }> = {
@@ -24,7 +25,7 @@ const DIMENSION_META: Record<string, { label: string; icon: string; level: strin
   imageType: { label: "图片类型", icon: "🖼️", level: "单图", hasParent: true, description: "图片大类→子类（二级联动）" },
   sellingPoint: { label: "卖点分类", icon: "💡", level: "单图", hasParent: true, description: "卖点大类→明细（二级联动）" },
   composition: { label: "构图类型", icon: "📐", level: "单图", hasParent: false, description: "图片构图方式（8种）" },
-  imageBelong: { label: "图片归属", icon: "📋", level: "单图", hasParent: true, description: "图片位置归属（主图/套图/A+/品牌故事），A+下含12个子模块" },
+  imageBelong: { label: "图片归属", icon: "📋", level: "单图", hasParent: true, description: "主图、普通A+、高级A+、品牌故事 → 官方模块，两级分类与图片规划共用规格。" },
   videoType: { label: "视频类型", icon: "🎬", level: "视频", hasParent: false, description: "每条视频选择一个主要类型，与小酷打标及视频筛选使用同一套分类。" },
   videoRole: { label: "视频归属", icon: "📍", level: "视频", hasParent: false, description: "采集视频按亚马逊原位置归属，独立上传的视频可以手动设置。" },
   videoContent: { label: "视频内容", icon: "⏱️", level: "视频片段", hasParent: false, description: "沿用已确定的十项内容标签，每个标签可对应多个起止时间段。" },
@@ -48,6 +49,7 @@ export function KBTagManagement({initialDimension="category"}:{initialDimension?
   const isAdmin = user?.role && (ADMIN_ROLES as readonly string[]).includes(user.role);
 
   const [selectedDimension, setSelectedDimension] = useState(initialDimension);
+  const [manageImageBelong,setManageImageBelong]=useState(false);
   const videoChoices = VIDEO_TAGS[selectedDimension];
   const [selectedParent, setSelectedParent] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -289,13 +291,14 @@ export function KBTagManagement({initialDimension="category"}:{initialDimension?
                     <p className="text-xs text-muted-foreground mt-0.5">{DIMENSION_META[selectedDimension]?.description}</p>
                   </div>
                 </div>
-                {!videoChoices && <Button size="sm" className="gap-1.5" onClick={() => openAddDialog()}>
+                {selectedDimension==="imageBelong"&&<Button size="sm" variant="outline" onClick={()=>setManageImageBelong(!manageImageBelong)}>{manageImageBelong?"返回官方目录":"管理标签"}</Button>}
+                {!videoChoices && (selectedDimension!=="imageBelong"||manageImageBelong) && <Button size="sm" className="gap-1.5" onClick={() => openAddDialog()}>
                   <PlusCircle className="h-3.5 w-3.5" /> 新增标签
                 </Button>}
               </div>
             </CardHeader>
             <CardContent>
-              {videoChoices ? <div className="space-y-3">{videoChoices.map(value=><div key={value} className="rounded-xl border p-4"><KnowledgeTag tone={selectedDimension === "videoType" ? "video" : "local"}>{value}</KnowledgeTag>{selectedDimension === "videoType" && <p className="mt-2 text-sm text-muted-foreground">{VIDEO_TYPE_DESCRIPTIONS[value as typeof VIDEO_TYPES[number]]}</p>}</div>)}</div> : tagsLoading ? (
+              {selectedDimension === "imageBelong" && !manageImageBelong ? <ImageBelongCatalog/> : videoChoices ? <div className="space-y-3">{videoChoices.map(value=><div key={value} className="rounded-xl border p-4"><KnowledgeTag tone={selectedDimension === "videoType" ? "video" : "local"}>{value}</KnowledgeTag>{selectedDimension === "videoType" && <p className="mt-2 text-sm text-muted-foreground">{VIDEO_TYPE_DESCRIPTIONS[value as typeof VIDEO_TYPES[number]]}</p>}</div>)}</div> : tagsLoading ? (
                 <div className="flex justify-center py-8">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>

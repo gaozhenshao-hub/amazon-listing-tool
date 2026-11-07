@@ -1,6 +1,8 @@
 import { imageTaggingUnits } from "@shared/imageTaggingUnits";
 import ImageTagsPanel from "./ImageTagsPanel";
 import AmazonRichContent from "./AmazonRichContent";
+import {PreparedImage} from "@/components/PreparedImage";
+import type {RichContentPresentation} from "@shared/richContentPresentation";
 import { Fragment, useState, useCallback, useEffect, type ReactNode } from "react";
 import type { KnowledgeVideo } from "@shared/knowledgeVideos";
 import KnowledgeVideoPlayer from "./KnowledgeVideoPlayer";
@@ -37,6 +39,7 @@ interface GalleryImage {
 }
 
 interface AmazonStyleGalleryProps {
+  presentation?:RichContentPresentation|null;
   renderVideo?: (video: KnowledgeVideo) => ReactNode;
   videos?: KnowledgeVideo[];
   sourceLayout?: unknown;
@@ -111,6 +114,7 @@ function SortableThumbnail({ img, index, isActive, mainCount, onClick }: {
 export function AmazonStyleGallery({
   videos = [],
   renderVideo,
+  presentation,
   mainImages,
   secondaryImages,
   sourceLayout,
@@ -270,15 +274,7 @@ export function AmazonStyleGallery({
                     onClick={handleMainImageClick}
                     onKeyDown={MERGED_READONLY_FEATURES_ENABLED ? event => activateGalleryItem(event, handleMainImageClick) : undefined}
                   >
-                    <GalleryImagePreview
-                      src={currentImage.imageUrl}
-                      accessError={currentImage.imageAccessError}
-                      alt="当前商品图片"
-                      className="absolute inset-0 h-full w-full object-contain p-2"
-                      style={{ transform: galleryFitMode === "balanced" ? galleryBalancedTransform : undefined }}
-                      loading="eager"
-                      fetchPriority="high"
-                    />
+                    <PreparedImage src={currentImage.imageUrl} alt="当前商品图片" fetchPriority="high" accessError={currentImage.imageAccessError} sourceHash={currentImage.sourceUrlHash||currentImage.uploadHash} translation={currentImage.imageTranslation} className="absolute inset-0 h-full w-full" imageClassName="h-full w-full object-contain p-2" imageStyle={{transform:galleryFitMode==='balanced'?galleryBalancedTransform:undefined}} loading="eager"/>
                     <Badge variant="outline" className="absolute top-2 left-2 text-[10px] bg-white/90 backdrop-blur-sm">
                       {currentIndex === 0 ? "主图" : `#${currentIndex}`}
                     </Badge>
@@ -339,10 +335,10 @@ export function AmazonStyleGallery({
         </div>
       )}
 
-      {(aplusImages.length > 0 || videos.some(video=>video.role==="aplus") || (sourceLayout as any)?.modules?.some((m:any)=>m.section==="aplus")) && <section className="min-w-0"><h2 className="mb-3 font-semibold">A+ 内容</h2><AmazonRichContent layout={sourceLayout} images={aplusImages} videos={videos} section="aplus" renderVideo={renderVideo} renderTags={images => <div className="space-y-3">{images.map(image => <ImageTagsPanel key={image.id} image={image} canEdit={allowEdit} />)}</div>} onSelect={image => selectRichImage(image as GalleryImage)} /></section>}
-      {(brandStoryImages.length > 0 || (sourceLayout as any)?.modules?.some((m:any)=>m.section==="brand_story")) && <section className="min-w-0"><h2 className="mb-3 font-semibold">品牌故事</h2><AmazonRichContent layout={sourceLayout} images={brandStoryImages} section="brand_story" onSelect={image => selectRichImage(image as GalleryImage)} /></section>}
+      {(aplusImages.length > 0 || videos.some(video=>video.role==="aplus") || (sourceLayout as any)?.modules?.some((m:any)=>m.section==="aplus")) && <section className="min-w-0"><h2 className="mb-3 font-semibold">A+ 内容</h2><AmazonRichContent layout={sourceLayout} presentation={presentation} images={aplusImages} videos={videos} section="aplus" renderVideo={renderVideo} renderTags={images => <div className="space-y-3">{images.map(image => <ImageTagsPanel key={image.id} image={image} canEdit={allowEdit} />)}</div>} onSelect={image => selectRichImage(image as GalleryImage)} /></section>}
+      {(brandStoryImages.length > 0 || (sourceLayout as any)?.modules?.some((m:any)=>m.section==="brand_story")) && <section className="min-w-0"><h2 className="mb-3 font-semibold">品牌故事</h2><AmazonRichContent layout={sourceLayout} presentation={presentation} images={brandStoryImages} section="brand_story" renderTags={images=><div className="space-y-3">{images.map(image=><ImageTagsPanel key={image.id} image={image} canEdit={allowEdit}/>)}</div>} onSelect={image => selectRichImage(image as GalleryImage)} /></section>}
 
-      <SingleImagePreviewDialog image={zoomedImage ? (()=>{const original=[...mainImages,...secondaryImages,...aplusImages,...brandStoryImages].find(image=>image.id===zoomedImage.id) ?? zoomedImage;const unit=imageTaggingUnits(aplusImages,sourceLayout).find(unit=>unit.images.some(image=>image.id===zoomedImage.id));return unit?.module ? {...unit.primary,module:unit.module,moduleImages:unit.images} : original;})() : null} canEdit={allowEdit} onClose={() => setZoomedImage(null)} />
+      <SingleImagePreviewDialog presentation={presentation} image={zoomedImage ? (()=>{const original=[...mainImages,...secondaryImages,...aplusImages,...brandStoryImages].find(image=>image.id===zoomedImage.id) ?? zoomedImage;const unit=imageTaggingUnits([...aplusImages,...brandStoryImages],sourceLayout).find(unit=>unit.images.some(image=>image.id===zoomedImage.id));return unit?.module ? {...unit.primary,module:unit.module,moduleImages:unit.images} : original;})() : null} canEdit={allowEdit} onClose={() => setZoomedImage(null)} />
     </div>
   );
 }

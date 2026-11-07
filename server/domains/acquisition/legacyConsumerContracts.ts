@@ -19,6 +19,7 @@ export const PROJECT_COMPETITOR_ACQUISITION_CAPABILITIES = [
   "image_gallery",
   "aplus",
   "brand_story",
+  "product_video",
 ] as const satisfies readonly AmazonAcquisitionCapability[];
 
 export const CONVERSION_COLLECTOR_ACQUISITION_CAPABILITIES = [

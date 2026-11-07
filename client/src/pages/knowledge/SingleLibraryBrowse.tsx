@@ -15,10 +15,8 @@ import {
   EMPTY_COMMON_FILTERS,
   groupLibraryItems,
 } from "./LibraryToolbar";
-import {
-  SingleImagePreviewDialog,
-  type BrowseImage,
-} from "./SingleImagePreviewDialog";
+import type {BrowseImage} from "./SingleImagePreviewDialog";
+import {PreparedImagePreviewDialog as SingleImagePreviewDialog} from "./PreparedImagePreviewDialog";
 import BrowseUnitThumbnail from "./BrowseUnitThumbnail";
 import { CollectionTags, KnowledgeTag } from "./KnowledgeTag";
 import { imageBelongLabel, distinctImageTags } from "./kbImageLabels";

@@ -19,6 +19,8 @@ const f = vi.hoisted(() => ({
   save: vi.fn(),
   download: vi.fn(),
   chatRequest: vi.fn(),
+  createDraft: vi.fn(),
+  saveDraft: vi.fn(),
 }));
 vi.mock("./repository", async original => ({
   ...(await original<any>()),
@@ -46,6 +48,7 @@ vi.mock("./chatProvider", async original => ({
   designChatModel: vi.fn().mockResolvedValue({ id: 8, key: "chat-test" }),
   requestDesignChat: f.chatRequest,
 }));
+vi.mock("../ai_os/services/skillWorkbench", () => ({ skillWorkbench: { create: f.createDraft, save: f.saveDraft } }));
 import { authorizeDesign, designRoleAllows } from "./access";
 import {
   designGenerationPayload,
@@ -62,6 +65,8 @@ import { buildChatHistory, runDesignChatStep } from "./chatWorker";
 import { collectChatReferences } from "./chatReferences";
 import { assetBytes } from "./assets";
 import sharp from "sharp";
+import { snapshotSceneSkill } from "./sceneSkill";
+import { configurationHash, skillManifestHash } from "../ai_os/services/assistantConversationSourcePrimitives";
 
 it("compares persisted JSON parameters independently of MySQL key ordering", () => {
   const stored = Object.fromEntries(
@@ -160,6 +165,49 @@ describe("input contracts", () => {
     ).toBe(false));
 });
 describe("permissions and isolation", () => {
+  it("loads only the enabled, version-matched scene skill bound to the image assistant", async () => {
+    const manifest = { implementation: { systemPrompt: "保留产品细节", userPromptTemplate: "{{context}}" } };
+    const config = { name: "图片策划助手", description: "", enabled: true, modelSlug: "", instructions: "", rules: [], skills: [{ slug: "design.scene.plan", enabled: true, trigger: "场景图", instructions: "", version: 1, manifestSha256: skillManifestHash(manifest) }] };
+    f.execute.mockImplementation(async (q: string) => q.includes("emperor_assistant_configurations") ? [{ revision: 3, config, configHash: configurationHash(config) }] : q.includes("emperor_skills") ? [{ slug: "design.scene.plan", version: 1, manifest }] : []);
+    expect(await snapshotSceneSkill({ workspaceId: 3, userId: 2 }, {})).toMatchObject({ slug: "design.scene.plan", instruction: "保留产品细节", revision: 3 });
+    config.skills[0].enabled = false;
+    await expect(snapshotSceneSkill({ workspaceId: 3, userId: 2 }, {})).rejects.toThrow("配置已变更");
+  });
+  it("keeps private chat lists scoped to both user and workspace and their own mode", async () => {
+    await designStudioRouter.createCaller({ user } as any).conversations({ kind: "chat", limit: 60 });
+    const call = f.execute.mock.calls.find(([q]: [string]) => q.includes("FROM design_conversations WHERE"));
+    expect(call?.[0]).toContain("workspaceId=? AND userId=? AND kind=?");
+    expect(call?.[1]).toEqual([3, 2, "chat", 61]);
+  });
+  it("does not expose a different user's conversation", async () => {
+    f.ownConversation.mockResolvedValueOnce(undefined);
+    await expect(designStudioRouter.createCaller({ user } as any).history({ id })).rejects.toThrow("无权访问");
+    expect(f.ownConversation).toHaveBeenCalledWith(id, { workspaceId: 3, userId: 2 }, undefined, false);
+  });
+  it("does not let a pure chat submit an image generation", async () => {
+    f.ownConversation.mockResolvedValue({ id, kind: "chat" });
+    await expect(designStudioRouter.createCaller({ user } as any).generateDirect(payload)).rejects.toThrow("不能直接提交");
+  });
+  it("only creates an improvement draft from the caller's own scene generation", async () => {
+    const original = f.execute.getMockImplementation()!;
+    f.execute.mockImplementation(async (q, ...rest) => q.startsWith("SELECT g.id,g.conversationId") ? [] : original(q, ...rest));
+    await expect(designStudioRouter.createCaller({ user } as any).sceneImprovement({ generationId: id, feedback: "标识变形" })).rejects.toThrow("无权访问");
+    expect(f.createDraft).not.toHaveBeenCalled();
+  });
+  it("saves the source input, result, references and feedback in a private skill draft", async () => {
+    const original = f.execute.getMockImplementation()!;
+    f.execute.mockImplementation(async (q, ...rest) => q.startsWith("SELECT g.id,g.conversationId") ? [{ id, kind: "scene", prompt: "原提示词", referenceIds: [id], assetIds: [payload.requestId] }] : q.startsWith("SELECT userText,plan") ? [{ userText: "客厅场景" }] : original(q, ...rest));
+    f.createDraft.mockResolvedValue({ id, revision: 1, content: { systemPrompt: "保持细节", userPromptTemplate: "{{context}}" } });
+    f.saveDraft.mockResolvedValue({ id });
+    await designStudioRouter.createCaller({ user } as any).sceneImprovement({ generationId: id, feedback: "标识变形" });
+    expect(f.createDraft).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 3, userId: 2 }), "design.scene.plan");
+    const input = f.saveDraft.mock.calls[0][4];
+    expect(JSON.parse(input.context)).toMatchObject({ userInput: "客厅场景", originalPrompt: "原提示词", originalResult: [payload.requestId], references: [id], feedback: "标识变形" });
+  });
+  it("rejects scene requests without all three reference roles", async () => {
+    f.ownConversation.mockResolvedValue({ id, kind: "scene" });
+    await expect(designStudioRouter.createCaller({ user } as any).chat(payload)).rejects.toThrow("产品主体");
+  });
   it("allows designers but not unrelated roles by default", () => {
     expect(designRoleAllows("designer", null, "edit")).toBe(true);
     expect(designRoleAllows("finance", null, "read")).toBe(false);
@@ -519,6 +567,7 @@ describe("provider boundaries and durable execution", () => {
       "http://tos.lingkeai.vip/a.png",
       "https://127.0.0.1/a.png",
       "https://tos.lingkeai.vip.evil.test/a.png",
+      "https://tos-hk.lingkeai.vip.evil.test/a.png",
       "https://key@tos.lingkeai.vip/a.png",
     ])
       expect(() => resultUrls({ result_url: url })).toThrow();
@@ -530,6 +579,9 @@ describe("provider boundaries and durable execution", () => {
         ],
       })
     ).toHaveLength(1);
+    expect(resultUrls({ result_url: "https://tos-hk.lingkeai.vip/result.png" })).toEqual([
+      "https://tos-hk.lingkeai.vip/result.png",
+    ]);
   });
   it("never re-submits an interrupted POST", async () => {
     f.execute.mockImplementation(async q =>
@@ -1017,6 +1069,25 @@ describe("conversation-wide reference images and translated prompts", () => {
     expect(JSON.parse(history[1].parts[0].text).planReferenceIndexes).toEqual([
       2,
     ]);
+  });
+  it("passes each scene reference in order with the bound skill to the planner", async () => {
+    const original = f.execute.getMockImplementation()!;
+    const refs = [id, second, third];
+    f.execute.mockImplementation(async (q, ...rest) => q.startsWith("SELECT * FROM design_chat_turns") ? [{ ...job("queued"), conversationId: id, userText: "客厅", referenceIds: refs, params: { ...defaultDesignParams, designMode: "scene", scene: { products: [id], composition: second, effect: third }, sceneSkill: { instruction: "不得改变产品标识" } } }] : original(q, ...rest));
+    f.ownAsset.mockResolvedValue({ bytes: 100 });
+    const png = await sharp({ create: { width: 2, height: 2, channels: 3, background: "red" } }).png().toBuffer();
+    vi.mocked(assetBytes).mockResolvedValue(png);
+    f.chatRequest.mockResolvedValue({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ reply: "已整理", ready: true, prompt: "保留标识", promptTranslation: "", referenceIndexes: [1, 2, 3] }) }] } }] });
+    await runDesignChatStep();
+    const [, contents, mode, instruction] = f.chatRequest.mock.calls[0];
+    expect(mode).toBe("scene");
+    expect(instruction).toContain("不得改变产品标识");
+    expect(instruction).toContain("产品主体参考图编号：1");
+    expect(instruction).toContain("构图参考图编号：2");
+    expect(instruction).toContain("效果参考图编号：3");
+    expect(contents.at(-1).parts.filter((p: any) => p.inlineData)).toHaveLength(3);
+    const saved = f.execute.mock.calls.find(([q]) => q.includes("status='succeeded',reply="));
+    expect(JSON.parse(saved![1][1]).referenceIds).toEqual(refs);
   });
   it("sends both image bytes to the vision model and persists the exact selected IDs and Chinese translation", async () => {
     const original = f.execute.getMockImplementation()!;

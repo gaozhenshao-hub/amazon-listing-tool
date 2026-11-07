@@ -246,6 +246,8 @@ export async function enqueueStandaloneTags(
       timeoutSeconds: 300,
       maxAttempts: 1,
       input: {
+        agentRunId: null,
+        agentNodeId: null,
         id,
         revision: row.labelRevision,
         configurationRevision: revision,

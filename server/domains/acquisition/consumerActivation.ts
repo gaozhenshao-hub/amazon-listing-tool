@@ -17,6 +17,7 @@ export async function activateConfirmedSnapshotForConsumer(input: {
     requestedCapabilities: unknown;
   };
   activatedBy: number;
+  imagesOnly?: boolean;
   repairedAssetIds?: number[];
 }) {
   await lockAcquisitionCache(input.db, input.workspaceId, input.confirmedSnapshotId);
@@ -40,6 +41,7 @@ export async function activateConfirmedSnapshotForConsumer(input: {
         requestedCapabilities: capabilities,
         consumerRef: input.job.consumerRef,
         repairedAssetIds: input.repairedAssetIds,
+        imagesOnly: true,
       })),
     }
     : ["kb_listing", "kb_product", "project_competitor", "conversion_collector"].includes(input.job.consumerType)

@@ -1,3 +1,6 @@
+import { sql } from "drizzle-orm";
+import { requireDb } from "./repositories/dbClient";
+import { listingAggregationSchema } from "../shared/listingAggregation";
 /**
  * Listing Context Builder — Unified 4-module data aggregation layer
  * 
@@ -93,7 +96,18 @@ function safeParseJSON(str: string | null | undefined, fallback: any = null): an
   try { return JSON.parse(str); } catch { return fallback; }
 }
 
+async function confirmedProductResearch(projectId:number){
+  const database=await requireDb("read confirmed product research");
+  const [rows]=await database.execute(sql`SELECT data FROM listing_aggregations WHERE project_id=${projectId}`);
+  const row=(rows as unknown as any[])[0];
+  return row ? listingAggregationSchema.parse(typeof row.data==="string"?JSON.parse(row.data):row.data) : null;
+}
 async function buildModule1(projectId: number, consumerId: string): Promise<RufusAttributes | null> {
+  const research=await confirmedProductResearch(projectId);
+  if(research && ((research.features?.length || 0)+research.selling.length)>0){
+    const current=(n:any)=>n.availability!=="planned" && n.group!=="improve";
+    return {rawText:"本品资料以运营保存后的卖点梳理为准，人工修改优先。待改进/待实现不属于当前能力。\n"+(research.productNotes || ""),uniqueSellingPoints:research.selling.filter(current).map(n=>n.text+"："+n.note),coreSpecs:(research.features || []).filter(current).map(n=>({attribute:n.text,value:n.note || n.text})),materialBuild:[],performance:[],safetyCompliance:[],rufusFriendlyAttributes:[],suggestedKeywords:[]};
+  }
   const files = await db.getProjectFilesByProject(projectId);
   const attrFile = files.find(f => f.fileType === "product_attributes" && f.status === "completed" && f.analysisResult);
   if (!attrFile) return null;
@@ -355,6 +369,8 @@ export async function buildListingContext(
 // ─── Data Readiness Check ────────────────────────────────────────
 
 export async function checkDataReadiness(projectId: number): Promise<DataReadiness> {
+  const research=await confirmedProductResearch(projectId);
+  const researchReady=!!((research?.features?.length || 0)+(research?.selling.length || 0));
   const files = await db.getProjectFilesByProject(projectId);
   const attrFile = files.find(f => f.fileType === "product_attributes" && f.status === "completed");
 
@@ -370,8 +386,8 @@ export async function checkDataReadiness(projectId: number): Promise<DataReadine
 
   return {
     module1: {
-      ready: !!attrFile,
-      detail: attrFile ? "本品属性表已上传并解析" : "本品属性表未上传",
+      ready: researchReady || !!attrFile,
+      detail: researchReady ? "本品卖点资料已保存" : attrFile ? "已有本品资料可用" : "请先保存聚合分析中的卖点梳理",
     },
     module2: {
       ready: analyses.length > 0,

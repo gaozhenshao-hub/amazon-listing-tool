@@ -5,15 +5,6 @@ import { useProject } from "@/contexts/ProjectContext";
 import { PERMISSION_ROUTE_REGISTRY } from "@shared/const";
 
 export const LISTING_WORKSPACES = [
-  { label: "项目资料", entries: [
-    ["/listing", "项目管理"], ["/listing/data-files", "项目资料与上传原件"], ["/listing/review-history", "资料导入记录"],
-  ] },
-  { label: "采集与资料", entries: [
-    ["/listing/analysis", "Listing 抓取"], ["/listing/data-files", "项目资料与上传原件"], ["/listing/review-history", "资料导入记录"],
-  ] },
-  { label: "竞品研究", entries: [
-    ["/listing/comparison", "竞品对比及分析"], ["/listing/review-aggregation", "评论证据"], ["/listing/buyer-questions", "买家问题证据"],
-  ] },
   { label: "生成结果", entries: [
     ["/listing/generate", "智能 Listing 生成"], ["/listing/preview", "生成结果与预览"], ["/listing/score", "结果评分"],
   ] },
@@ -26,8 +17,10 @@ export default function ListingWorkspace({ children }: { children: ReactNode }) 
   const { selectedProjectId } = useProject();
   const permissions = usePermissions();
   const path = location.split(/[?#]/, 1)[0];
-  const group = path.startsWith("/listing/project/") ? LISTING_WORKSPACES[0]
-    : LISTING_WORKSPACES.find(item => item.entries.some(([href]) => href === path));
+  // Project, capture and comparison already have their own navigation. The
+  // obsolete materials/research strip duplicated those controls.
+  if (path === "/listing" || path.startsWith("/listing/project/") || path === "/listing/analysis" || path === "/listing/comparison") return <>{children}</>;
+  const group = LISTING_WORKSPACES.find(item => item.entries.some(([href]) => href === path));
   const query = Number.isSafeInteger(selectedProjectId) && Number(selectedProjectId) > 0 ? `?projectId=${selectedProjectId}` : "";
   if (!group) return <>{children}</>;
   const entries = permissions.isLoading ? [] : group.entries.filter(([href]) => {

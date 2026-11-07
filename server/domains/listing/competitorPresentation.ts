@@ -32,11 +32,12 @@ export function validateTranslations(value: unknown, ids: number[]) {
 
 export async function hydrateCompetitorEvidence<T extends { asin: string; rawData: string | null }>(record: T, workspaceId: number) {
   const raw = readJson(record.rawData) || {};
-  if (!raw.confirmedSnapshotId || (raw.research && raw.description !== undefined && raw.imageAssets)) return record;
+  if (!raw.confirmedSnapshotId || (raw.research && raw.description !== undefined && raw.imageAssets && raw.sourceLayout !== undefined)) return record;
   const db = await requireDb('competitor evidence');
   const snapshot = await loadConfirmedSnapshotForConsumer({ db, workspaceId, confirmedSnapshotId: raw.confirmedSnapshotId });
   if (snapshot.data.asin !== record.asin) throw new Error('竞品数据来源不匹配');
-  return { ...record, rawData: JSON.stringify({ ...raw, imageAssets:snapshot.assets.map(a=>({role:a.role,storageKey:a.storageKey})), subtitle: snapshot.data.subtitle || null, brand: snapshot.data.brand, research: snapshot.data.research, description: snapshot.data.description }) };
+  return { ...record, rawData: JSON.stringify({ ...raw, imageAssets:snapshot.assets.map(a=>({role:a.role,storageKey:a.storageKey,positionIndex:a.positionIndex,sourceUrlHash:a.sourceUrlHash,thumbnailStorageKey:a.thumbnailStorageKey,moduleType:a.moduleType,moduleClass:a.moduleClass})),
+    sourceLayout:snapshot.data.sourceLayout ?? null, videos:snapshot.data.videos ?? [], subtitle: snapshot.data.subtitle || null, brand: snapshot.data.brand, research: snapshot.data.research, description: snapshot.data.description }) };
 }
 
 function sourceFingerprint(record: any) {

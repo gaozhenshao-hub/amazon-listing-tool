@@ -4,19 +4,8 @@ import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import * as db from "../repositories";
 import { sdk } from "../_core/sdk";
 import { getSessionCookieOptions } from "../_core/cookies";
-import bcrypt from "bcryptjs";
-import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
-
-// Cloud Run (1vCPU, 512MB) makes bcrypt very slow at high rounds.
-// Use 8 rounds for acceptable security with fast response times.
-const BCRYPT_ROUNDS = 8;
-
-// Fast password hashing using Node.js native scrypt (much faster than bcrypt on low-resource environments)
-function hashPasswordFast(password: string): string {
-  const salt = randomBytes(16).toString("hex");
-  const hash = scryptSync(password, salt, 64).toString("hex");
-  return `scrypt:${salt}:${hash}`;
-}
+import { randomBytes } from "crypto";
+import { hashPasswordFast, verifyPasswordFast, authenticatePasswordCredentials } from "../services/passwordAuthentication";
 
 function secureRandomCharacter(alphabet: string) {
   const ceiling = 256 - (256 % alphabet.length);
@@ -41,24 +30,11 @@ export function generateTemporaryPassword() {
   ].join("");
 }
 
-function verifyPasswordFast(password: string, stored: string): boolean {
-  if (stored.startsWith("scrypt:")) {
-    const [, salt, hash] = stored.split(":");
-    const hashBuf = Buffer.from(hash, "hex");
-    const derivedBuf = scryptSync(password, salt, 64);
-    return timingSafeEqual(hashBuf, derivedBuf);
-  }
-  // Legacy bcrypt hash - verify with bcrypt (slow but only once)
-  return bcrypt.compareSync(password, stored);
-}
-
 import {
   COOKIE_NAME, ONE_YEAR_MS,
   ALL_ROLES, ADMIN_ROLES, ROLE_LABELS,
   PASSWORD_MIN_LENGTH, PASSWORD_REGEX,
-  MAX_LOGIN_ATTEMPTS, LOCK_DURATION_MS,
-  ACCOUNT_DISABLED_MSG, ACCOUNT_LOCKED_MSG,
-  INVALID_CREDENTIALS_MSG, MUST_CHANGE_PASSWORD_MSG,
+  MUST_CHANGE_PASSWORD_MSG,
 } from "@shared/const";
 import type { UserRole } from "../../drizzle/schema";
 import { buildPasswordSessionIdentity } from "./passwordSessionIdentity";
@@ -72,83 +48,10 @@ export const userAuthRouter = router({
       password: z.string().min(1, "请输入密码"),
     }))
     .mutation(async ({ input, ctx }) => {
-      const user = await db.getUserByEmailOrPhone(input.identifier);
-
-      if (!user) {
-        await db.insertLoginLog({
-          loginMethod: "password",
-          loginIdentifier: input.identifier,
-          ipAddress: ctx.req.ip || null,
-          userAgent: ctx.req.headers["user-agent"]?.substring(0, 512) || null,
-          success: 0,
-          failReason: "user_not_found",
-        });
-        throw new TRPCError({ code: "UNAUTHORIZED", message: INVALID_CREDENTIALS_MSG });
-      }
-
-      // Check account status
-      if (user.status === "disabled") {
-        throw new TRPCError({ code: "FORBIDDEN", message: ACCOUNT_DISABLED_MSG });
-      }
-
-      // Check lock status
-      if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
-        throw new TRPCError({ code: "FORBIDDEN", message: ACCOUNT_LOCKED_MSG });
-      }
-
-      // Check password
-      if (!user.password) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "该账号未设置密码，请使用其他方式登录" });
-      }
-
-      const passwordMatch = verifyPasswordFast(input.password, user.password);
-      if (!passwordMatch) {
-        const attempts = (user.failedLoginAttempts || 0) + 1;
-        const lockedUntil = attempts >= MAX_LOGIN_ATTEMPTS
-          ? new Date(Date.now() + LOCK_DURATION_MS)
-          : null;
-
-        await db.updateLoginAttempts(user.id, attempts, lockedUntil);
-        await db.insertLoginLog({
-          userId: user.id,
-          loginMethod: "password",
-          loginIdentifier: input.identifier,
-          ipAddress: ctx.req.ip || null,
-          userAgent: ctx.req.headers["user-agent"]?.substring(0, 512) || null,
-          success: 0,
-          failReason: `wrong_password_attempt_${attempts}`,
-        });
-
-        if (lockedUntil) {
-          throw new TRPCError({ code: "FORBIDDEN", message: ACCOUNT_LOCKED_MSG });
-        }
-        throw new TRPCError({
-          code: "UNAUTHORIZED",
-          message: `${INVALID_CREDENTIALS_MSG}，还剩 ${MAX_LOGIN_ATTEMPTS - attempts} 次尝试机会`,
-        });
-      }
-
-      // Login success - run DB updates in parallel for speed
-      const loginUpdates = Promise.all([
-        db.updateLoginAttempts(user.id, 0, null),
-        db.updateUserById(user.id, { lastSignedIn: new Date() }),
-        db.insertLoginLog({
-          userId: user.id,
-          loginMethod: "password",
-          loginIdentifier: input.identifier,
-          ipAddress: ctx.req.ip || null,
-          userAgent: ctx.req.headers["user-agent"]?.substring(0, 512) || null,
-          success: 1,
-        }),
-      ]);
-
-      // Migrate from bcrypt to scrypt if needed (background, don't block response)
-      if (!user.password.startsWith("scrypt:")) {
-        const newHash = hashPasswordFast(input.password);
-        db.updateUserById(user.id, { password: newHash }).catch(() => {});
-      }
-
-      await loginUpdates;
+      const user = await authenticatePasswordCredentials(input, {
+        ip: ctx.req.ip,
+        userAgent: ctx.req.headers["user-agent"],
+      });
 
       // Create session token using a pseudo openId for password users
       const sessionIdentity = buildPasswordSessionIdentity(user, process.env.VITE_APP_ID);

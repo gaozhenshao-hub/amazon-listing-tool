@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { ImageTaggingTagsSchema, IMAGE_TAGGING_OPTIONS } from "./imageTagging";
 import { IMAGE_BELONG_HIERARCHY } from "./imageTagConstants";
+import { LEGACY_IMAGE_BELONG_HIERARCHY } from "./imageModuleSpecs";
+import { validImageBelongSubtype } from "./imageBelong";
 
 export const IMAGE_UPLOAD_LIMIT = 20 * 1024 * 1024;
 export const StandaloneImageUploadSchema = z.object({
@@ -21,15 +23,11 @@ export const StandaloneImageTagsSchema = z
       ),
     tagImageBelong: z
       .string()
-      .refine(v => !v || Object.keys(IMAGE_BELONG_HIERARCHY).includes(v)),
+      .refine(v => !v || [...Object.keys(IMAGE_BELONG_HIERARCHY),...Object.keys(LEGACY_IMAGE_BELONG_HIERARCHY)].includes(v)),
     tagImageBelongSub: z.string().max(30),
   })
   .superRefine((value, ctx) => {
-    const subs =
-      (IMAGE_BELONG_HIERARCHY as Record<string, readonly string[]>)[
-        value.tagImageBelong
-      ] || [];
-    if (value.tagImageBelongSub && !subs.includes(value.tagImageBelongSub))
+    if (value.tagImageBelongSub && !validImageBelongSubtype(value.tagImageBelong,value.tagImageBelongSub))
       ctx.addIssue({
         code: "custom",
         path: ["tagImageBelongSub"],

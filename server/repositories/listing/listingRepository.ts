@@ -1,4 +1,5 @@
-import { and, desc, eq } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../dbClient";
 import {
   registerAdStructureArtifact,
@@ -21,6 +22,13 @@ import {
   reviewAggregations,
 } from "../../../drizzle/schema/listing";
 
+async function lockListingPage(tx:any,projectId:number){
+  const [parents]=await tx.execute(sql`SELECT id FROM projects WHERE id=${projectId} FOR UPDATE`);
+  if(!parents.length)throw new TRPCError({code:"NOT_FOUND",message:"项目不存在"});
+  const [rows]=await tx.execute(sql`SELECT data FROM listing_aggregations WHERE project_id=${projectId} FOR UPDATE`);
+  const data=rows[0]?(typeof rows[0].data==="string"?JSON.parse(rows[0].data):rows[0].data):null;
+  if(data?.pageLocks?.listing)throw new TRPCError({code:"PRECONDITION_FAILED",message:"此页面已锁定，请先点击编辑解锁"});
+}
 async function captureListingProject(projectId: number | null | undefined) {
   if (!projectId) return;
   const listing = await getActiveListingByProject(projectId);
@@ -32,7 +40,7 @@ async function captureListingProject(projectId: number | null | undefined) {
 export async function createListing(data: InsertListing) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(listings).values(data);
+  const result = await db.transaction(async tx=>{await lockListingPage(tx,data.projectId);return tx.insert(listings).values(data);});
   const insertId = result[0].insertId;
   const rows = await db
     .select()
@@ -96,7 +104,12 @@ export async function updateListing(
     projectId === undefined
       ? eq(listings.id, id)
       : and(eq(listings.id, id), eq(listings.projectId, projectId));
-  await db.update(listings).set(data).where(where);
+  await db.transaction(async tx=>{
+    const [record]=await tx.select({projectId:listings.projectId}).from(listings).where(where).limit(1);
+    if(!record)return;
+    await lockListingPage(tx,record.projectId);
+    await tx.update(listings).set(data).where(where);
+  });
   const rows = await db.select().from(listings).where(where).limit(1);
   if (!rows[0]) return null;
   await registerListingArtifact(id, "user_edit");

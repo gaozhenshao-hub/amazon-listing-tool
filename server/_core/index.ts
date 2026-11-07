@@ -23,6 +23,8 @@ import {
   dataCleanupHandler,
   weeklyReportHandler,
 } from "../scheduledHandlers";
+import { researchExtensionHttp } from "../domains/development/researchExtension";
+import { compositionSketchHttp } from "../domains/listing/compositionSketches";
 import { designAssetsRouter } from "../domains/design/assets";
 import { meetingAudioHttpRouter } from "../domains/ops/meetingAudioHttp";
 import { startMeetingAudioWorker } from "../domains/ops/meetingAudioService";
@@ -81,6 +83,8 @@ async function startServer() {
   app.use("/api/knowledge/videos", knowledgeVideoUploadRouter);
   app.use("/api/design/materials", designMaterialsHttpRouter);
   app.use("/api/design", designAssetsRouter);
+  app.use("/api/research-extension", researchExtensionHttp);
+  app.use("/api/listing/composition-sketches", compositionSketchHttp);
   app.use("/api/meeting-audio", meetingAudioHttpRouter);
   // Product knowledge base transfer ZIP preflight (session-authenticated multipart upload)
   // Scheduled task handlers (Heartbeat HTTP cron)

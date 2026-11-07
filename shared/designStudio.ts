@@ -154,6 +154,7 @@ export const designChatRequestSchema = designDraftSchema
     conversationId: z.string().uuid(),
     requestId: z.string().uuid(),
     referenceMode: z.enum(["append", "replace"]).default("append"),
+    scene: z.object({ products: z.array(z.string().uuid()).min(1).max(14), composition: z.string().uuid(), effect: z.string().uuid(), revision: z.string().uuid().optional() }).optional(),
   })
   .refine(validReferenceCount, "当前模型的参考图数量超出限制");
 export const designConfirmSchema = z.object({

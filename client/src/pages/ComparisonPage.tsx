@@ -1,24 +1,77 @@
-import {useEffect,useState} from 'react';
-import {trpc} from '@/lib/trpc';
-import {Button} from '@/components/ui/button';
-import {useProject} from '@/contexts/ProjectContext';
-import ProjectSelector from '@/components/ProjectSelector';
-import {toast} from 'sonner';
-import ListingStages from './listing/ListingStages';
-import CompetitorStudyColumn from './listing/CompetitorStudyColumn';
-import {readJson,sumVariantPurchases} from '../../../shared/competitorPresentation';
-export default function ComparisonPage(){
- const {selectedProjectId}=useProject();const[selected,setSelected]=useState<number[]>([]);const[busy,setBusy]=useState(false);
- useEffect(()=>setSelected([]),[selectedProjectId]);
- const query=trpc.analysis.listByProject.useQuery({projectId:selectedProjectId!},{enabled:!!selectedProjectId,staleTime:30_000,refetchInterval:q=>q.state.data?.some(r=>["queued","running"].includes(r.presentationJob?.status||""))?5000:false});
- const analyze=trpc.analysis.analyzeCollected.useMutation(),confirm=trpc.analysis.confirmSummary.useMutation(),unlock=trpc.analysis.unlockSummary.useMutation();
- const all=query.data||[],shown=all.filter(r=>selected.includes(r.id));
- const act=async(fn:()=>Promise<unknown>)=>{setBusy(true);try{await fn();await query.refetch();}catch(e){toast.error(e instanceof Error?e.message:'操作失败');}finally{setBusy(false);}};
- const bulk=()=>act(async()=>{let count=0;const errors:string[]=[];for(const r of all){if(r.summaryStatus==='confirmed'||['queued','running'].includes(r.presentationJob?.status||''))continue;try{await analyze.mutateAsync({projectId:selectedProjectId!,analysisId:r.id});count++;}catch(e){errors.push(`${r.asin}：${e instanceof Error?e.message:'失败'}`);}}if(count)toast.success(`已提交 ${count} 个分析任务，已确认的商品自动跳过`);if(errors.length)toast.error(errors.join('；'),{duration:15000});});
- return <div className="min-w-0 space-y-5"><ListingStages/><header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-bold">Listing 对比及分析</h1><p className="mt-1 text-sm text-muted-foreground">选择竞品并排查看。爱分析的小L依据原始资料分析，浅灰区域为分析结果。</p></div><ProjectSelector/><Button disabled={busy||!all.some(r=>r.summaryStatus!=='confirmed'&&!['queued','running'].includes(r.presentationJob?.status||''))} onClick={bulk}>{busy?'正在提交…':'一键分析所有竞品'}</Button></header>
- {query.error&&<p role="alert">{query.error.message}</p>}{!selectedProjectId?<p>请先选择项目。</p>:<><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">{all.map(r=>{const raw=readJson(r.rawData)||{},img=readJson(r.imageUrls)?.[0],running=['queued','running'].includes(r.presentationJob?.status||''),status=r.summaryStatus==='confirmed'?'已确认':running?'分析中':raw.deepAnalysis&&!raw.analysisStale?'已分析未确认':'未分析',sales=sumVariantPurchases(raw.research,r.asin,raw.manualSales?.value);return <button key={r.id} type="button" aria-pressed={selected.includes(r.id)} onClick={()=>setSelected(s=>s.includes(r.id)?s.filter(id=>id!==r.id):[...s,r.id])} className={`rounded-xl border-2 p-3 text-left transition-colors ${selected.includes(r.id)?'border-primary bg-primary/5':'border-border bg-background hover:border-primary/40'}`}><div className="flex gap-3">{img&&<img src={img} alt="主图" className="h-16 w-16 shrink-0 rounded bg-white object-contain"/>}<div className="min-w-0"><strong className="text-sm">{r.asin}</strong><p className="line-clamp-2 text-xs">{r.title}</p><p className="mt-1 text-xs text-muted-foreground">{raw.brand} · 月销量 {sales.value===null?'未知':`${sales.value}${sales.lowerBound?'+':''}`}</p></div></div><div className={`mt-3 border-t pt-2 text-xs ${status==='已确认'?'text-emerald-700':'text-primary'}`}>{status}{running?` · ${r.presentationJob?.progress||0}%`:''}{r.presentationJob?.status==='failed'?' · 上次分析失败':''}</div></button>;})}</div>
- {!all.length&&!query.isLoading&&<p className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">请先在 Listing 抓取中保存竞品资料。</p>}
- {!!all.length&&!shown.length&&<p className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">点击上方卡片选择竞品，可同时选择任意数量。</p>}
- {!!shown.length&&<><p className="text-xs text-muted-foreground">已选择 {shown.length} 个竞品{shown.length>1?'，横向滚动查看其他竞品':''}</p><div className="overflow-x-auto pb-4"><div className="grid items-start gap-4" style={{gridTemplateColumns:`repeat(${shown.length}, minmax(${shown.length===1?'0':'560px'}, 1fr))`}}>{shown.map(r=><CompetitorStudyColumn key={r.id} projectId={selectedProjectId} record={r} busy={busy} onAnalyze={()=>act(async()=>{await analyze.mutateAsync({projectId:selectedProjectId,analysisId:r.id});toast.success('分析任务已提交，可离开页面');})} onConfirm={()=>act(async()=>{await confirm.mutateAsync({projectId:selectedProjectId,analysisId:r.id,summary:r.summary||r.aiSummary||''});toast.success('分析结果已确认并锁定');})} onUnlock={()=>act(async()=>{await unlock.mutateAsync({projectId:selectedProjectId,analysisId:r.id});toast.success('已解锁，可以重新分析');})}/>)}</div></div></>}
- </>}</div>;
+import { useState } from "react";
+import { trpc } from "@/lib/trpc";
+import { useProject } from "@/contexts/ProjectContext";
+import ProjectSelector from "@/components/ProjectSelector";
+import { toast } from "sonner";
+import ListingStages from "./listing/ListingStages";
+import CompetitorStudyColumn from "./listing/CompetitorStudyColumn";
+import { readJson } from "@shared/competitorPresentation";
+import { competitorRichSlots } from "./listing/competitorLayout";
+
+export default function ComparisonPage() {
+  const { selectedProjectId } = useProject();
+  const [busy, setBusy] = useState(false);
+  const query = trpc.analysis.listByProject.useQuery({ projectId: selectedProjectId! }, {
+    enabled: !!selectedProjectId,
+    refetchInterval: q => q.state.data?.some(r => ["queued", "running"].includes(r.presentationJob?.status || "") ||
+            ["queued", "running"].includes(r.videoJob?.status || "")) ? 5000 : false,
+  });
+  const analyze = trpc.analysis.analyzeCollected.useMutation();
+  const aggregate = trpc.analysis.getAggregation.useQuery({projectId:selectedProjectId!},{enabled:!!selectedProjectId});
+  const mark = trpc.analysis.markCompetitor.useMutation();
+  const utils = trpc.useUtils();
+  const all = query.data || [];
+  async function act(fn: () => Promise<unknown>) {
+    setBusy(true);
+    try { await fn(); await query.refetch(); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "操作失败"); }
+    finally { setBusy(false); }
+  }
+  async function reanalyze(row: (typeof all)[number]) {
+    if (!selectedProjectId) return;
+    await act(async () => {
+      await analyze.mutateAsync({ projectId: selectedProjectId, analysisId: row.id,
+      });
+      toast.success(`${row.asin} 已提交重新分析`);
+    });
+  }
+  const rowCounts=all.reduce((counts,row)=>{
+    const raw=readJson(row.rawData)||{}, assets=raw.imageAssets||[];
+    const gallery=assets.filter((a:any)=>["main", "secondary"].includes(a.role)&&a.url).length+((raw.videos||[]).some((v:any)=>v.role=== "main")?1:0);
+    return {gallery:Math.max(counts.gallery,gallery),bullets:Math.max(counts.bullets,(readJson(row.bulletPoints)||[]).length),aplus:Math.max(counts.aplus,competitorRichSlots(raw.sourceLayout,assets, "aplus").length),brand:Math.max(counts.brand,competitorRichSlots(raw.sourceLayout,assets, "brand_story").length),
+      };
+  },{gallery:0,bullets:0,aplus:0,brand:0});
+  return (
+    <div className="min-w-0 space-y-5">
+    <ListingStages />
+    <header className="flex flex-wrap items-center justify-between gap-3">
+      <div>
+          <h1 className="text-2xl font-bold">Listing 对比及分析</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            所有已采集的竞品并排显示，可横向滚动对比。
+          </p>
+        </div>
+      <ProjectSelector />
+    </header>
+    {query.error && <p role="alert">{query.error.message}</p>}
+    {!selectedProjectId ? (
+        <p>请先选择项目。</p>
+      ) : !all.length && !query.isLoading ? (
+        <p className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">
+          请先在 Listing 抓取中采集竞品。
+        </p>
+      ) : (
+        <div className="overflow-x-auto pb-4">
+          <div className="grid gap-x-4" style={{ gridTemplateColumns: `repeat(${all.length}, minmax(${all.length === 1 ? "0" : "900px"}, 1fr))`,
+            }}>
+        {all.map((row,index) => (
+              <CompetitorStudyColumn key={row.id} projectId={selectedProjectId} record={row} busy={busy || mark.isPending} rowCounts={rowCounts} columnIndex={index} onReanalyze={()=>reanalyze(row)}
+          marks={aggregate.data?.data.marks.find(item=>item.analysisId===row.id)}
+          onMark={async change=>{try{const result=await mark.mutateAsync({projectId:selectedProjectId,analysisId:row.id,change,
+                    });utils.analysis.getAggregation.setData({projectId:selectedProjectId},result);}catch(error){toast.error(error instanceof Error?error.message:"保存标记失败");throw error;}}} />))}
+      </div>
+        </div>
+      )}
+  </div>
+  );
 }

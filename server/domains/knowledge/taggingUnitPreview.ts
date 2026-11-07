@@ -24,7 +24,7 @@ export async function taggingUnitPreview(unit: ImageTaggingUnit<{id:number;image
 
 export async function composeTaggingPreview(originals: Buffer[], module?: AmazonImageModule) {
   if (!originals.length || originals.length > 80) throw new Error("模块图片数量不正确");
-  const columns = module?.kind === "grid" || module?.kind === "comparison" ? Math.max(1,module.cards.length) : 1;
+  const columns = module?.kind === "grid" || module?.kind === "comparison" ? module.variant?.columns || Math.max(1,module.cards.length) : 1;
   const width = Math.floor(1600 / Math.max(1,columns)), height = Math.min(width,600);
   const buffers: Buffer[] = [];
   for (const bytes of originals) {

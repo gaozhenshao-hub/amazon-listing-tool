@@ -1,3 +1,4 @@
+import { assertResearchEditable } from "../researchLocks";
 import { sanitizeSelectedSellingPoint, isTemplateOrEmptyFact } from "@shared/listingFactSafety";
 import { z } from "zod";
 import { syncCompetitorWorkflow } from '../competitorWorkflow';
@@ -435,6 +436,7 @@ async function runOperation(
   operation: Exclude<ListingGenerationOperation, "batch">,
   transientOutputs: Record<string, unknown> = {},
 ) {
+  if(job.workspaceId)await assertResearchEditable({projectId:input.projectId,workspaceId:job.workspaceId,userId:job.userId},"listing");
   const built = await buildJobContext(job, input);
   const config = OPERATION_CONFIG[operation];
   let promptContext = built.context;
@@ -452,6 +454,7 @@ async function runOperation(
   }
 
   let parsed = await callListingSkill(job, handlerContext, input, config.skillSlug, promptContext, variables);
+  if(job.workspaceId)await assertResearchEditable({projectId:input.projectId,workspaceId:job.workspaceId,userId:job.userId},"listing");
   if (operation === "sellingPoints") return normalizeSellingPoints(parsed);
   if (operation === "singleBullet") {
     let bullet = parsed?.bulletPoints?.[0] || parsed?.bullets?.[0] || parsed;

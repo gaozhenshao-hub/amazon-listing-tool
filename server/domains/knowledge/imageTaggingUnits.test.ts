@@ -13,7 +13,7 @@ describe('module tagging units',()=>{
    expect(sharedImageTags(tagged,carousel).map(i=>[i.id,i.tagOwnerId,i.tagComposition])).toEqual(tagged.map(i=>[i.id,i.id,i.tagComposition]));
  });
  it('uses source order, not database insertion order, and retains unmatched images',()=>{
-   const units=imageTaggingUnits([...images,{id:5,imagePosition:'brand_story'}],layout);
+   const units=imageTaggingUnits([...images,{id:5,imagePosition:'brand_story',imageTranslation:{status:'excluded_background'}}],layout);
    expect(units.map(u=>u.primary.id)).toEqual([1,4]);expect(units[0].images.map(i=>i.id)).toEqual([1,2,3]);
  });
  it('does not tag a partial module as a complete image',()=>{
@@ -24,6 +24,12 @@ describe('module tagging units',()=>{
    const units=imageTaggingUnits(images,{...layout,modules:[layout.modules[0],{...layout.modules[0],id:'other',cards:[{images:[{hash:hash(4)}]}]}]});
    expect(units.map(u=>u.primary.id)).toEqual([1,4]);
  });
+});
+
+it('tags brand cards independently while excluding their background and retaining a four-image card',()=>{
+ const items=[1,2,3,4,5,6].map(n=>({id:n,imagePosition:'brand_story',sourceUrlHash:hash(n)}));
+ const story={version:2,modules:[{id:'brand',section:'brand_story',kind:'brand_story',background:{hash:hash(6)},cards:[{images:[1,2,3,4].map(n=>({hash:hash(n)}))},{images:[{hash:hash(5)}]}]}]};
+ const units=imageTaggingUnits(items,story);expect(units.map(u=>u.images.map(i=>i.id))).toEqual([[1,2,3,4],[5]]);expect(units[0].module?.variant?.columns).toBe(2);
 });
 
 

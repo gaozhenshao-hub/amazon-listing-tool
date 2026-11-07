@@ -23,7 +23,7 @@ type Scope = z.infer<typeof scopeSchema>;
 type Image = KbImage & SetTags & { asin: string; productTitle: string | null; sourceLayout: unknown };
 type Unit = ImageTaggingUnit<Image>;
 export function needsAutomaticTags(image: Pick<KbImage, "imagePosition" | "tagsConfirmed" | "analysisConfirmed"> & Partial<KbImage>) {
-  return image.imagePosition !== "brand_story" && !image.tagsConfirmed && !image.analysisConfirmed && !hasCompleteImageTags(image);
+  return image.imageTranslation?.status !== 'excluded_background' && image.aplusModuleType !== '品牌背景' && !image.tagsConfirmed && !image.analysisConfirmed && !hasCompleteImageTags(image);
 }
 /** Only fill empty fields. In particular, A+ module ownership and human edits are not AI guesses. */
 export function missingTagPatch(image: Partial<KbImage>, candidate: ImageTaggingCandidate) {
@@ -71,7 +71,7 @@ export async function enqueueAutomaticTags(raw: Scope) {
   try {
     return await startRegisteredAiJob({ runId, kind: AUTOMATIC_TAGGING_KIND, module: "knowledge", procedure: "acquisition.autoTag",
       workspaceId: scope.workspaceId, userId: scope.userId, skillSlug: SKILL, queueName: "knowledge_tags", timeoutSeconds: 1800,
-      maxAttempts: 1, input: { imageSetId: scope.imageSetId, configurationRevision: revision } });
+      maxAttempts: 1, input: { agentRunId:null,agentNodeId:null,imageSetId: scope.imageSetId, configurationRevision: revision } });
   } catch (error) {
     const raced = await getAiJobRun(runId);
     if (raced) return raced;
@@ -152,7 +152,7 @@ export async function runAutomaticTags(scope: Scope, options: { signal: AbortSig
   // Retry only malformed/missing model answers once, individually. Network/unknown outcomes are not blindly charged again.
   for (const unit of pending.filter(unit => unresolved.has(unit.primary.id))) await dispatch([unit]);
   if (unresolved.size) throw new Error(`还有 ${unresolved.size} 个图片或模块标签未完成，已完成的标签保留`);
-  return { imageSetId: scope.imageSetId, completed, skipped: (await imagesFor(scope)).filter(image => image.imagePosition === "brand_story").length };
+  return { imageSetId: scope.imageSetId, completed, skipped: (await imagesFor(scope)).filter(image => image.aplusModuleType === "品牌背景" || image.imageTranslation?.status === "excluded_background").length };
 }
 
 registerAiJobHandler({ id: AUTOMATIC_TAGGING_KIND, match: job => job.kind === AUTOMATIC_TAGGING_KIND, handler: async (job, context) => {

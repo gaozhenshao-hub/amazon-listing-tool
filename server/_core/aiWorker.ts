@@ -1,3 +1,8 @@
+import "../domains/listing/competitorVideos";
+import "../domains/listing/imagePlanning";
+import "../domains/listing/imageDocument";
+import "../domains/listing/imageBriefing";
+import "../domains/listing/researchOrganization";
 import "../domains/acquisition/missingAssetRepair";
 import "../domains/knowledge/assetLifecycle";
 import "../domains/knowledge/adjustmentChat";
@@ -12,6 +17,7 @@ import "../domains/acquisition/acquisitionJobs";
 import "../domains/acquisition/knowledgeCollectionBatch";
 import "../domains/knowledge/videoTagging";
 import "../domains/knowledge/standaloneImages";
+import "../domains/knowledge/pretranslationJob";
 import "../domains/acquisition/legacyConsumerAnalysisJob";
 import {
   drainAiJobQueue,
@@ -122,11 +128,13 @@ async function main() {
     // Observe every dedicated drain immediately: a timeout may reject while
     // the draining-status write is still pending. Preserve that rejection for
     // the awaited aggregate below instead of an unhandled premature exit.
-    const dedicatedDrain = observeDedicatedWorkerDrains([stopDesignWorker(), inventoryDrain, conversationDrain, profitDrain, saihuReportDrain]);
+    const dedicatedDrain = observeDedicatedWorkerDrains([stopDesignWorker(), inventoryDrain, conversationDrain, profitDrain, saihuReportDrain,
+    ]);
     console.log(`[AI Worker] received ${signal}, draining in-flight jobs`);
     try {
       await markAiJobWorkerDraining({ signal });
-      const [drainResult] = await Promise.all([waitForAiJobsToDrain(shutdownGraceMs), dedicatedDrain]);
+      const [drainResult] = await Promise.all([waitForAiJobsToDrain(shutdownGraceMs), dedicatedDrain,
+      ]);
       if (!drainResult.drained) {
         console.warn(
           `[AI Worker] shutdown grace elapsed; running=${drainResult.runningRunIds.join(",") || "none"} ` +

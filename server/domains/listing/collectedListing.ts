@@ -44,6 +44,16 @@ function stable(value: unknown): unknown {
   return value;
 }
 
+// Raw execute() results retain MySQL timestamp strings. Use the same column
+// decoder as typed Drizzle selects before validating or hashing persisted rows.
+function decodeCollectedCompetitor(row: Record<string, unknown>): CompetitorAnalysis {
+  const decoded = { ...row };
+  for (const key of ["createdAt", "updatedAt", "summaryConfirmedAt"] as const) {
+    if (typeof decoded[key] === "string") decoded[key] = competitorAnalyses[key].mapFromDriverValue(decoded[key]);
+  }
+  return decoded as CompetitorAnalysis;
+}
+
 /** Called ONLY inside the acquisition admission/cache transaction. No model,
  * file upload, independent connection, or generic upsert is involved. */
 export function createCollectedListingSaver(permission = assertResourceAction) {
@@ -111,7 +121,11 @@ export function createCollectedListingSaver(permission = assertResourceAction) {
       const capture = { version: 1 as const, confirmedSnapshotId: scope.confirmedSnapshotId, contentHash: confirmed.contentHash as string, sourceHash };
       const matches = await rows("SELECT * FROM competitorAnalyses WHERE projectId=? AND asin=? LIMIT 2 FOR UPDATE", [scope.projectId, scope.asin]);
       if (matches.length > 1) fail("DUPLICATE_RECORD", "CONFLICT");
-      const existing = matches[0] as CompetitorAnalysis | undefined;
+      const existing = matches[0] ? decodeCollectedCompetitor(matches[0]) : undefined;
+      if (!existing) {
+        const [count] = await rows("SELECT COUNT(DISTINCT asin) AS total FROM competitorAnalyses WHERE projectId=?", [scope.projectId]);
+        if (Number(count?.total) >= 5) throw new TRPCError({code:"PRECONDITION_FAILED",message:"每个项目最多采集 5 个竞品"});
+      }
       const oldRaw = existing?.rawData ? object(existing.rawData) : {};
       if (existing) {
         competitorRevision(existing);
@@ -131,8 +145,13 @@ export function createCollectedListingSaver(permission = assertResourceAction) {
         && Object.entries(values).every(([key, value]) => existing[key as keyof CompetitorAnalysis] === value)
         && oldRaw.source === "unified_amazon_acquisition" && oldRaw.confirmedSnapshotId === scope.confirmedSnapshotId && oldRaw.contentHash === confirmed.contentHash;
       if (sourceUnchanged) return { analysisId: existing.id };
+      const metadata = await rows("SELECT id,thumbnail_storage_key AS thumbnailStorageKey,module_type AS moduleType,module_class AS moduleClass,content_hash AS contentHash FROM acquisition_asset_candidates WHERE snapshot_id=? AND workspace_id=? FOR SHARE", [confirmed.snapshotId, scope.workspaceId]);
       const rawData = encodeResearchJson({ ...oldRaw, source: "unified_amazon_acquisition", confirmedSnapshotId: scope.confirmedSnapshotId,
-        contentHash: confirmed.contentHash, acquisitionCapture: capture, captureOnly: true, analysisStale: true, subtitle: data.subtitle ?? null, brand: data.brand, description: data.description, research: data.research ?? oldRaw.research, imageAssets: approved.map(asset => ({role: asset.role, storageKey: asset.storageKey})) });
+        contentHash: confirmed.contentHash, acquisitionCapture: capture, captureOnly: true, analysisStale: true, subtitle: data.subtitle ?? null, brand: data.brand, description: data.description, research: data.research ?? oldRaw.research,
+        sourceLayout: data.sourceLayout ?? null, videos: data.videos ?? [],
+        imageAssets: approved.map(asset => {const meta = metadata.find(row => row.id === asset.id); return {role: asset.role, storageKey: asset.storageKey,
+          positionIndex: asset.positionIndex, sourceUrlHash: asset.sourceUrlHash, thumbnailStorageKey: meta?.thumbnailStorageKey ?? null,
+          moduleType: meta?.moduleType ?? null, moduleClass: meta?.moduleClass ?? null,contentHash:meta?.contentHash??null};}) });
       const columns = { ...values, rawData };
       let analysisId: number;
       if (existing) {
@@ -144,13 +163,15 @@ export function createCollectedListingSaver(permission = assertResourceAction) {
         if (result?.[0]?.affectedRows !== 1 || result[0].warningStatus !== 0 || !id.safeParse(result[0].insertId).success) fail("WRITE_NOT_ACKNOWLEDGED", "CONFLICT");
         analysisId = result[0].insertId;
       }
-      const [saved] = await rows("SELECT * FROM competitorAnalyses WHERE id=? AND projectId=? FOR UPDATE", [analysisId, scope.projectId]);
-      if (!saved || saved.id !== analysisId || saved.projectId !== scope.projectId || saved.asin !== scope.asin || Object.entries(columns).some(([key, value]) => saved[key] !== value)) fail("READBACK_FAILED", "CONFLICT");
+      const [savedRow] = await rows("SELECT * FROM competitorAnalyses WHERE id=? AND projectId=? FOR UPDATE", [analysisId, scope.projectId]);
+      const saved = savedRow ? decodeCollectedCompetitor(savedRow) : undefined;
+      if (!saved || saved.id !== analysisId || saved.projectId !== scope.projectId || saved.asin !== scope.asin || Object.entries(columns).some(([key, value]) => saved[key as keyof CompetitorAnalysis] !== value)) fail("READBACK_FAILED", "CONFLICT");
       competitorRevision(saved as CompetitorAnalysis);
-      if (existing && ["reviewAnalysis", "keywords", "aiSummary", "summary", "summaryStatus", "summaryVersion", "summaryConfirmedBy", "summaryConfirmedAt"].some(key => !isDeepStrictEqual(existing[key as keyof CompetitorAnalysis], saved[key]))) fail("HISTORY_CHANGED", "CONFLICT");
+      if (existing && ["reviewAnalysis", "keywords", "aiSummary", "summary", "summaryStatus", "summaryVersion", "summaryConfirmedBy", "summaryConfirmedAt"].some(key => !isDeepStrictEqual(existing[key as keyof CompetitorAnalysis], saved[key as keyof CompetitorAnalysis]))) fail("HISTORY_CHANGED", "CONFLICT");
       if (manual) await invalidateConfirmedCompetitorComparisons(db, { workspaceId: scope.workspaceId, userId: scope.userId, projectId: scope.projectId }, analysisId, new Date(Math.floor(Date.now() / 1000) * 1000));
       return { analysisId };
     } catch (error) {
+      if (error instanceof TRPCError && error.message === "每个项目最多采集 5 个竞品") throw error;
       if (error instanceof TRPCError && error.message.startsWith("COMPETITOR_CAPTURE_")) throw error;
       if (error instanceof TRPCError && error.code === "FORBIDDEN") fail("ACCESS_DENIED", "FORBIDDEN");
       if (error instanceof z.ZodError || error instanceof SyntaxError) fail("SOURCE_INVALID");
@@ -173,7 +194,7 @@ export async function confirmCollectedAnalysis(input:{projectId:number;analysisI
   const raw=readJson(record.rawData)||{};
   const job=raw.presentationJobRunId?await getAiJobRun(raw.presentationJobRunId):null;
   if(job&&['queued','running'].includes(job.status))throw new Error('分析尚未完成，请稍后确认');
-  if(raw.captureOnly||raw.analysisStale||!raw.deepAnalysis)throw new Error('请先完成当前资料的四项分析');
+  if(raw.captureOnly||raw.analysisStale||(!raw.comparisonAnalysis && !raw.deepAnalysis))throw new Error('请先完成竞品分析');
   if(record.summary!==input.summary)throw new Error('分析结果已更新，请刷新后确认');
   if (record.summaryStatus === 'confirmed') return record;
   if (!Number.isSafeInteger(record.summaryVersion) || record.summaryVersion < 1 || record.summaryVersion >= 2147483647) throw new Error('分析版本无效，请联系管理员');
@@ -197,12 +218,23 @@ export async function analyzeCollectedListing(input: { projectId: number; worksp
       if (job && ['queued','running'].includes(job.status)) return { runId: job.runId, status: job.status };
     }
     if (!raw.confirmedSnapshotId) throw new Error('该旧记录缺少采集快照，请在 Listing 抓取中重新抓取并确认');
-    if (record.summaryStatus === 'confirmed') throw new Error('请先解锁已确认的分析，再重新分析');
     const { startLegacyConsumerAnalysisJob } = await import('../acquisition/legacyConsumerAnalysisJob');
     const job = await startLegacyConsumerAnalysisJob({ consumerType:'project_competitor',...input,asin:record.asin,confirmedSnapshotId:raw.confirmedSnapshotId });
     if (!job) throw new Error('分析任务未创建');
-    await tx.update(competitorAnalyses).set({rawData:JSON.stringify({...raw,presentationJobRunId:job.runId})}).where(eq(competitorAnalyses.id,record.id));
+    await tx.update(competitorAnalyses).set({rawData:JSON.stringify({...raw,presentationJobRunId:job.runId,analysisQueueError:null})}).where(eq(competitorAnalyses.id,record.id));
     return { runId: job.runId, status: job.status };
+  });
+}
+
+export async function recordCompetitorAnalysisQueueFailure(input:{projectId:number;workspaceId:number;userId:number;analysisId:number}) {
+  const db=await requireDb('record competitor analysis failure');
+  await db.transaction(async tx=>{
+    const [parent]=await tx.select().from(projects).where(and(eq(projects.id,input.projectId),eq(projects.workspaceId,input.workspaceId),eq(projects.userId,input.userId))).limit(1).for('update');
+    if(!parent)return;
+    const [record]=await tx.select().from(competitorAnalyses).where(and(eq(competitorAnalyses.id,input.analysisId),eq(competitorAnalyses.projectId,input.projectId))).limit(1).for('update');
+    if(!record)return;const raw=readJson(record.rawData)||{};
+    if(raw.presentationJobRunId){const active=await getAiJobRun(raw.presentationJobRunId);if(active&&['queued','running'].includes(active.status))return;}
+    await tx.update(competitorAnalyses).set({rawData:JSON.stringify({...raw,analysisQueueError:'自动分析未能启动，请点击重新分析'})}).where(eq(competitorAnalyses.id,record.id));
   });
 }
 

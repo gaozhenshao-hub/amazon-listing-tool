@@ -1,3 +1,4 @@
+import { useListingPageFlush } from "./listingPageFlush";
 import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -230,6 +231,11 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, s
     setIsEditing(false);
   };
 
+  useListingPageFlush(projectId,async()=>{
+    if(locked || selectedIdx===null)return;
+    await updateListing.mutateAsync({projectId,field:"title",value:isEditing?editingTitle:candidates[selectedIdx].title});
+    await updateItemHighlights.mutateAsync({projectId,field:"itemHighlights",value:(isEditing?editingHighlights:candidates[selectedIdx].itemHighlights)||""});
+  });
   const handleConfirm = () => {
     if (selectedIdx === null) {
       toast.error("请先选择一个标题");

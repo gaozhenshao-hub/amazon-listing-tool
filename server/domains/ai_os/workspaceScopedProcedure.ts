@@ -27,13 +27,13 @@ function inferAction(path: string, type: "query" | "mutation" | "subscription"):
  * 平台公共的工作空间边界与动作授权过程。领域路由仍可在此基础上
  * 增加项目/文件等资源级检查，但不能省略工作空间与审计约束。
  */
-export function workspaceScopedProcedure(resource: SecurityResource) {
+export function workspaceScopedProcedure(resource: SecurityResource, explicitAction?: SecurityAction) {
   return baseProtectedProcedure.use(async ({ ctx, next, path, type }) => {
     const workspaceId = workspaceIdFromContext(ctx);
     if (!workspaceId) {
       throw new TRPCError({ code: "PRECONDITION_FAILED", message: "当前用户尚未绑定工作空间，无法访问该资源" });
     }
-    const action = inferAction(path, type);
+    const action = type === "query" ? "read" : explicitAction ?? inferAction(path, type);
     await assertResourceAction({ actor: actorFromContext(ctx), resource, action, workspaceId }, ctx);
     try {
       const result = await next({ ctx: { ...ctx, workspaceId } });

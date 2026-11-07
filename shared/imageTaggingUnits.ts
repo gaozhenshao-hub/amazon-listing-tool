@@ -1,15 +1,23 @@
 import { AmazonImageLayoutSchema, type AmazonImageModule } from "./amazonImageLayout";
 
-type Image = { id: number; imagePosition: string; sourceUrlHash?: string | null; positionIndex?: number | null };
+type Image = { id: number; imagePosition: string; sourceUrlHash?: string | null; positionIndex?: number | null;imageTranslation?:{status?:string}|null };
 export type ImageTaggingUnit<T extends Image> = { primary: T; images: T[]; module?: AmazonImageModule; complete: boolean };
 
 /** Composite A+ modules share labels; carousel slides remain independent images. */
 export function imageTaggingUnits<T extends Image>(images: readonly T[], layout: unknown): ImageTaggingUnit<T>[] {
   const parsed = AmazonImageLayoutSchema.safeParse(layout);
-  const byHash = new Map(images.filter(i => i.imagePosition === "aplus" && i.sourceUrlHash).map(i => [i.sourceUrlHash!, i]));
+  const byHash = new Map(images.filter(i => ["aplus","brand_story"].includes(i.imagePosition) && i.sourceUrlHash).map(i => [i.sourceUrlHash!, i]));
+  const backgrounds=new Set(parsed.success?parsed.data.modules.filter(m=>m.section==='brand_story').flatMap(m=>m.background?[m.background.hash]:[]):[]);
   const used = new Set<number>(), units: ImageTaggingUnit<T>[] = [];
   for (const module of parsed.success ? parsed.data.modules : []) {
-    if (module.section !== "aplus") continue;
+    if(module.section==='brand_story'){
+      for(const card of module.cards){
+        const hashes=[...new Set(card.images.map(i=>i.hash).filter(h=>!backgrounds.has(h)))],members=hashes.map(h=>byHash.get(h)).filter((i):i is T=>!!i);
+        if(!members.length)continue;members.forEach(i=>used.add(i.id));const primary=byHash.get(hashes[0])||members[0];
+        units.push({primary,images:members,complete:members.length===hashes.length,...(members.length>1?{module:{...module,kind:'grid' as const,background:null,cards:[card],variant:{columns:members.length===4?2:Math.min(4,members.length)}}}:{})});
+      }
+      continue;
+    }
     const hashes = [...new Set(module.cards.flatMap(c => c.images.map(i => i.hash)))];
     const members = hashes.map(hash => byHash.get(hash)).filter((i): i is T => Boolean(i));
     if (module.kind === "carousel") {
@@ -27,7 +35,7 @@ export function imageTaggingUnits<T extends Image>(images: readonly T[], layout:
   }
   const standalone = [...images].sort((a,b) => (a.positionIndex ?? a.id) - (b.positionIndex ?? b.id));
   for (const image of standalone) {
-    if (image.imagePosition !== "brand_story" && !used.has(image.id)) units.push({primary:image,images:[image],complete:true});
+    if (!used.has(image.id)&&!backgrounds.has(image.sourceUrlHash||'')&&image.imageTranslation?.status!=='excluded_background') units.push({primary:image,images:[image],complete:true});
   }
   return units;
 }

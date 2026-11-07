@@ -3,7 +3,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import { ArrowRight, Package, Truck, TrendingUp, Image, BarChart3, BookOpen, BrainCircuit, Users } from "lucide-react";
 const modules = [
-  { id: "dev", title: "产品开发", href: "/dev", description: "此模块待开发", icon: Package },
+  { id: "dev", title: "产品开发", href: "/dev/library", description: "收集待调研产品与有价值的店铺", icon: Package },
   { id: "procurement", title: "采购物流", href: "/procurement", description: "物流进度与时效", icon: Truck },
   { id: "ops", title: "运营", href: "/ops/products", description: "产品、库存、任务、利润和 Listing", icon: TrendingUp },
   { id: "design", title: "美工", href: "/design/images", description: "AI 生图、提示词与素材", icon: Image },

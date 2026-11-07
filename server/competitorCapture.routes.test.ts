@@ -3,6 +3,7 @@ import type { TrpcContext } from "./_core/context";
 const calls = vi.hoisted(() => ({ getProject: vi.fn(), update: vi.fn(), acquisition: vi.fn() }));
 vi.mock("./repositories", async original => ({ ...await original<typeof import("./repositories")>(), getProjectById: calls.getProject, updateProject: calls.update }));
 vi.mock("./domains/acquisition/acquisitionJobs", () => ({ startAmazonAcquisitionJob: calls.acquisition }));
+vi.mock("./domains/listing/competitorCaptureAdmission", () => ({ withCompetitorCaptureAdmission: (_scope: unknown, work: () => Promise<unknown>) => work() }));
 vi.mock("./services/securityGovernance", async original => ({ ...await original<typeof import("./services/securityGovernance")>(), assertResourceAction: vi.fn().mockResolvedValue(undefined) }));
 import { analysisRouter } from "./routers/analysis";
 const ctx = { user: { id: 7, role: "ops_specialist", defaultWorkspaceId: 3 }, workspaceId: 3, req: {}, res: {}, requestId: "capture-route" } as TrpcContext;

@@ -1,3 +1,4 @@
+import {enqueuePretranslation} from '../domains/knowledge/pretranslationJob';
 import { getSetTags, saveSetTags, SetTagsSchema } from "../domains/knowledge/setTags";
 import { z } from "zod";
 import { router } from "../_core/trpc";
@@ -19,6 +20,7 @@ import {
 } from "../domains/knowledge/adjustmentChat";
 import { loadAsset, isLibraryAdmin } from "../domains/knowledge/assetTargets";
 import { refreshCollection } from "../domains/knowledge/refreshCollection";
+import {improveKnowledgeTranslation} from '../domains/knowledge/translationImprovement';
 const scope = (ctx: TrpcContext) => ({
   workspaceId: ctx.workspaceId!,
   userId: ctx.user!.id,
@@ -38,7 +40,7 @@ export const knowledgeAssetsRouter = router({
     const target = await loadAsset(scope(ctx), input.kind, input.id);
     return {
       canDelete: isLibraryAdmin(scope(ctx)),
-      canTag: target.unit?.primary.imagePosition !== "brand_story",
+      canTag: target.unit?.primary.imageTranslation?.status !== 'excluded_background',
       count: target.unit?.images.length || 1,
       kind: input.kind,
       canEdit:
@@ -51,6 +53,8 @@ export const knowledgeAssetsRouter = router({
     .mutation(({ ctx, input }) =>
       startAdjustment(scope(ctx), input.kind, input.id)
     ),
+  retryTranslation:procedure.input(z.object({kind:z.enum(['image','set']),id:z.number().int().positive()})).mutation(async({ctx,input})=>{const target=await loadAsset(scope(ctx),input.kind,input.id,{edit:true});return enqueuePretranslation({workspaceId:ctx.workspaceId!,userId:target.ownerId,kind:target.set?'set':'image',id:target.set?.id||input.id});}),
+  improveTranslation:procedure.input(z.object({kind:z.enum(['image','set']),id:z.number().int().positive(),feedback:z.string().trim().min(2).max(4000)})).mutation(({ctx,input})=>improveKnowledgeTranslation(scope(ctx),input.kind,input.id,input.feedback)),
   adjustment: procedure
     .input(draft)
     .query(({ ctx, input }) => getAdjustment(scope(ctx), input.id)),

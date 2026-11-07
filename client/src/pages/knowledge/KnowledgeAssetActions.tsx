@@ -1,3 +1,4 @@
+import {imageTranslationsForEditing} from '@shared/knowledgeTranslationEdits';
 import { useCallback, useEffect, useState } from "react";
 import { MessageSquare, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -5,6 +6,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import KnowledgeAdjustmentDialog from "./KnowledgeAdjustmentDialog";
 import AssetDeleteButton from "./AssetDeleteButton";
+import KnowledgeTranslationActions from './KnowledgeTranslationActions';
 
 export function AdjustResultButton({
   kind,
@@ -43,9 +45,11 @@ export function AdjustResultButton({
 export default function KnowledgeAssetActions({
   id,
   onDeleted,
+  translation,
 }: {
   id: number;
   onDeleted: () => void;
+  translation?:unknown;
 }) {
   const utils = trpc.useUtils(),
     access = trpc.knowledgeAssets.access.useQuery({ kind: "image", id });
@@ -83,6 +87,7 @@ export default function KnowledgeAssetActions({
       {access.data?.canEdit && access.data.canTag && (
         <>
           <AdjustResultButton kind="image" id={id} onSaved={refresh} />
+          {(imageTranslationsForEditing([{id,imageTranslation:translation}]).length>0||(translation as {status?:string})?.status==='failed')&&<KnowledgeTranslationActions kind="image" id={id} value={translation}/>}
           <Button
             variant="outline"
             disabled={run.isPending || Boolean(retag)}

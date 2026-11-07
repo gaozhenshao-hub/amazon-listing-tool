@@ -50,7 +50,8 @@
     "listing.sellingpoints.generate",
     "listing.title.generate",
     "listing.translate.chinese",
-    "ops.meeting.minutes"
+    "ops.meeting.minutes",
+    "listing.images.outline.v1"
   ],
   "remove": [
     "dev.analysis.attribute_cross",

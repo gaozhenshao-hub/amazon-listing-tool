@@ -111,6 +111,18 @@ export async function openAmazonBrowser() {
             remember(await page.content());
           }
         }
+        // Bring each module into view; a single scroll to the section can leave
+        // lower text/FAQ modules unhydrated. Only expand read-only in-page controls.
+        const richModules=page.locator('#aplus_feature_div .aplus-module, #aplus .aplus-module');
+        for(let index=0,count=Math.min(30,await richModules.count());index<count&&remaining()>1200;index++){
+          const module=richModules.nth(index);
+          await module.scrollIntoViewIfNeeded({timeout:Math.min(1000,remaining())}).catch(()=>{});
+          const questions=module.locator('button[aria-expanded="false"][aria-controls]');
+          for(let q=0,n=Math.min(20,await questions.count());q<n&&remaining()>1000;q++){
+            // The selector is reevaluated after each expanded button leaves it.
+            const button=questions.first();if(await button.isVisible())await button.click({timeout:Math.min(750,remaining())}).catch(()=>{});else break;
+          }
+        }
         if (options.includeResearch !== false) {
         const reviewArea = page.locator('#customerReviews, #customer-reviews_feature_div, #reviewsMedley').first();
         await reviewArea.waitFor({state:'attached',timeout:Math.min(8000,remaining())}).catch(()=>{});

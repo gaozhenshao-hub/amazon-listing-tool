@@ -1,0 +1,20 @@
+{
+  "verifiedDate": "2026-11-04",
+  "repository": "kangboningSteve/amazon-ai-system",
+  "branch": "codex/agent-skill-workbench-20261024",
+  "sourceCommit": "e4ee6d3e89dbd4d12c3cebe51cc651d1d782de31",
+  "githubBranchVerifiedThroughAuthenticatedBrowser": true,
+  "githubMainBehindDevelopmentBranch": 45,
+  "productionImage": "amz-fullchain:image-document-e4ee6d3e",
+  "productionImageId": "sha256:c3de58ccf10964f46e9574d7b9fadc38a4e40c2cf3efe03837fe05af27e54d35",
+  "manifestFiles": 519,
+  "manifestFilesDigest": "58c6139fbf10252c60cb3b0ac7bf4db1caf3217f042b1df1783f2d68fd61cb14",
+  "cloudManifestMatchesLocalHandoff": true,
+  "webFiles": {"matched":519,"changed":[],"missing":[]},
+  "workerFiles": {"matched":519,"changed":[],"missing":[]},
+  "webHealthy": true,
+  "schedulerImage": "amz-fullchain:merge-55f7a9eb140bea4dd86ff5228d2c694a230ae406",
+  "cloudReadonlyExecutions": ["t-qd0723cyb6pk1z4","t-qd0723dbqjc8glc"],
+  "liveIssue": "已登录项目1并打开图片内容结果预览；确认按钮不可用，提示本品资料、大纲或参考素材已有更新。只观察，没有确认、生成或修改该项目。",
+  "scope": "核对既有部署基线，不代表本次新功能已经上线"
+}

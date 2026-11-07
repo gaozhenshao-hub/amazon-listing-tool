@@ -74,52 +74,52 @@ const supplementalMigrations = [
   "0148_knowledge_workspace_scope.sql",
   "0149_dev_import_batch_governance.sql",
   "0150_step5_complete_result_longtext.sql",
-    "0151_step5_segment_run_status.sql",
-    "0152_dev_panorama_competitor_selection_persistence.sql",
-    "0153_emperor_run_ledger_v2.sql",
-    "0154_emperor_skill_quality_gates.sql",
-    "0155_emperor_skill_feedback_rollouts.sql",
-    "0156_emperor_harness_completion.sql",
-    "0157_ops_external_sync_drafts.sql",
-    "0158_emperor_conversation_task_manager.sql",
-    "0159_emperor_conversation_planner_skill.sql",
-    "0160_emperor_conversation_knowledge_refs.sql",
-    "0161_ai_storage_objects_oss_provider.sql",
-    "0162_emperor_conversation_planner_model_policy.sql",
-    "0163_emperor_conversation_message_skill_run.sql",
-    "0164_emperor_execution_recovery_lifecycle.sql",
-    "0165_emperor_agent_run_recovery_state.sql",
-    "0166_emperor_skill_run_recovery_state.sql",
-    "0167_emperor_conversation_plan_recovery_state.sql",
-    "0168_emperor_context_provenance_projection.sql",
-    "0171_listing_bullet_step_skill_v3.sql",
-    "0172_ops_asin_daily_source_provenance.sql",
-    "0173_ops_asin_daily_source_provenance_indexes.sql",
-    "0174_ops_asin_daily_source_provenance_indexes.sql",
-    "0175_ops_lingxing_sync_schedules.sql",
-    "0176_ops_lingxing_daily_auto_apply.sql",
-    "0177_ops_lingxing_sync_schedule_cadence_length.sql",
-    "0178_backfill_legacy_ads_workspace.sql",
-    "0179_ad_keyword_source_identity.sql",
-    "0180_emperor_lingxing_scheduled_task_unification.sql",
-    "0181_product_knowledge_transfer.sql",
-    "0182_product_knowledge_transfer_receipts.sql",
-    "0183_backfill_lingxing_weekly_workspace.sql",
-    "0184_backfill_lingxing_daily_operators.sql",
-    "0185_ops_inventory_owner_assignments.sql",
-    "0186_backfill_lingxing_daily_operators_by_normalized_identity.sql",
-    "0187_skill_distillation_foundation.sql",
-    "0188_manual_knowledge_distillation_executor.sql",
-    "0189_claim_ledger_consistency_decisions.sql",
-    "0190_parent_asin_weekly_mcp_source.sql",
-    "0191_parent_asin_weekly_mcp_source_forward_repair.sql",
-    "0192_parent_asin_weekly_source_columns_forward_repair.sql",
-    "0193_parent_asin_weekly_mcp_control_plane_forward_repair.sql",
-    "0194_parent_asin_weekly_mcp_auto_apply.sql",
-    "0195_parent_asin_weekly_mcp_emperor_projection.sql",
-    "0204_listing_revision_governance.sql",
-    "0205_image_asset_policy.sql",
-  ];
+  "0151_step5_segment_run_status.sql",
+  "0152_dev_panorama_competitor_selection_persistence.sql",
+  "0153_emperor_run_ledger_v2.sql",
+  "0154_emperor_skill_quality_gates.sql",
+  "0155_emperor_skill_feedback_rollouts.sql",
+  "0156_emperor_harness_completion.sql",
+  "0157_ops_external_sync_drafts.sql",
+  "0158_emperor_conversation_task_manager.sql",
+  "0159_emperor_conversation_planner_skill.sql",
+  "0160_emperor_conversation_knowledge_refs.sql",
+  "0161_ai_storage_objects_oss_provider.sql",
+  "0162_emperor_conversation_planner_model_policy.sql",
+  "0163_emperor_conversation_message_skill_run.sql",
+  "0164_emperor_execution_recovery_lifecycle.sql",
+  "0165_emperor_agent_run_recovery_state.sql",
+  "0166_emperor_skill_run_recovery_state.sql",
+  "0167_emperor_conversation_plan_recovery_state.sql",
+  "0168_emperor_context_provenance_projection.sql",
+  "0171_listing_bullet_step_skill_v3.sql",
+  "0172_ops_asin_daily_source_provenance.sql",
+  "0173_ops_asin_daily_source_provenance_indexes.sql",
+  "0174_ops_asin_daily_source_provenance_indexes.sql",
+  "0175_ops_lingxing_sync_schedules.sql",
+  "0176_ops_lingxing_daily_auto_apply.sql",
+  "0177_ops_lingxing_sync_schedule_cadence_length.sql",
+  "0178_backfill_legacy_ads_workspace.sql",
+  "0179_ad_keyword_source_identity.sql",
+  "0180_emperor_lingxing_scheduled_task_unification.sql",
+  "0181_product_knowledge_transfer.sql",
+  "0182_product_knowledge_transfer_receipts.sql",
+  "0183_backfill_lingxing_weekly_workspace.sql",
+  "0184_backfill_lingxing_daily_operators.sql",
+  "0185_ops_inventory_owner_assignments.sql",
+  "0186_backfill_lingxing_daily_operators_by_normalized_identity.sql",
+  "0187_skill_distillation_foundation.sql",
+  "0188_manual_knowledge_distillation_executor.sql",
+  "0189_claim_ledger_consistency_decisions.sql",
+  "0190_parent_asin_weekly_mcp_source.sql",
+  "0191_parent_asin_weekly_mcp_source_forward_repair.sql",
+  "0192_parent_asin_weekly_source_columns_forward_repair.sql",
+  "0193_parent_asin_weekly_mcp_control_plane_forward_repair.sql",
+  "0194_parent_asin_weekly_mcp_auto_apply.sql",
+  "0195_parent_asin_weekly_mcp_emperor_projection.sql",
+  "0204_listing_revision_governance.sql",
+  "0205_image_asset_policy.sql",
+];
 
 const dedicatedMigrationFiles = [
   "0203_external_knowledge_caller_bindings.sql",
@@ -137,6 +137,31 @@ const dedicatedMigrationFiles = [
   "0247_knowledge_asset_lifecycle.sql",
   "0248_knowledge_cache_retention.sql",
   "0249_knowledge_set_adjustments.sql",
+  "0310_design_conversation_kind.sql",
+  "0311_design_scene_skill.sql",
+  "0312_listing_aggregation.sql",
+  "0313_competitor_study_skill.sql",
+  "0314_listing_aggregate_skill.sql",
+  "0315_competitor_content_review_skills.sql",
+  "0316_competitor_concise_points_skill.sql",
+  "0317_builtin_product_video_capability.sql",
+  "0318_rich_content_pretranslations.sql",
+  "0319_listing_research_skills.sql",
+  "0320_listing_aggregation_output_budget.sql",
+  "0321_listing_aggregation_classification.sql",
+  "0322_listing_image_planning.sql",
+  "0323_image_planning_skill_and_tags.sql",
+  "0324_image_planning_hotspot_counts.sql",
+  "0325_research_workflow.sql",
+  "0326_question_consolidation.sql",
+  "0327_explicit_preview_workflow.sql",
+  "0328_image_document_and_settings.sql",
+  "0329_image_document_fact_priority.sql",
+  "0330_module_document_and_research_library.sql",
+  "0331_module_planning_skills.sql",
+  "0332_image_plan_copy_wireframe.sql",
+  "0333_listing_image_production.sql",
+  "0334_product_selection.sql",
 ];
 
 // Not executable by --plan, the general runner, or any dedicated release path.
@@ -154,8 +179,14 @@ const unreleasedDraftMigrationFiles = new Set([
 // Byte-reviewed feature candidates, not executable migrations. These retain
 // their original candidate-only SQL; classification is not release approval.
 const unreleasedFeatureMigrationFiles = new Map([
-  ["0231_assistant_conversations.sql", "104137a6178b5a69ce5c849249e9c27c5c2691349fe2377ef1753657f5ac85e5"],
-  ["0309_integration_profit_analysis.sql", "1b681081b730fbfea014357fe11d5f4e0d440fcbc8bd29df4adb20088fd0c8c9"],
+  [
+    "0231_assistant_conversations.sql",
+    "104137a6178b5a69ce5c849249e9c27c5c2691349fe2377ef1753657f5ac85e5",
+  ],
+  [
+    "0309_integration_profit_analysis.sql",
+    "1b681081b730fbfea014357fe11d5f4e0d440fcbc8bd29df4adb20088fd0c8c9",
+  ],
 ]);
 
 // Separate from the general release train: these two additive migrations are
@@ -198,7 +229,8 @@ const retiredMigrationFiles = new Set([
 function migrationEntries(files, officialCount) {
   return files.map((fileName, order) => {
     const filePath = join(drizzleDir, fileName);
-    if (!existsSync(filePath)) throw new Error(`Migration file is missing: ${fileName}`);
+    if (!existsSync(filePath))
+      throw new Error(`Migration file is missing: ${fileName}`);
     const sql = readFileSync(filePath, "utf8");
     return {
       order,
@@ -212,54 +244,105 @@ function migrationEntries(files, officialCount) {
 }
 
 export function loadMigrationPlan() {
-  const journal = JSON.parse(readFileSync(join(drizzleDir, "meta/_journal.json"), "utf8"));
+  const journal = JSON.parse(
+    readFileSync(join(drizzleDir, "meta/_journal.json"), "utf8")
+  );
   const files = [
-    ...journal.entries.map((entry) => `${entry.tag}.sql`),
+    ...journal.entries.map(entry => `${entry.tag}.sql`),
     ...supplementalMigrations,
   ];
-  if (new Set(files).size !== files.length) throw new Error("Migration plan contains duplicate files");
+  if (new Set(files).size !== files.length)
+    throw new Error("Migration plan contains duplicate files");
   for (const fileName of unreleasedDraftMigrationFiles) {
     const filePath = join(drizzleDir, fileName);
-    if (!existsSync(filePath) || !/dedicated release only/i.test(readFileSync(filePath, "utf8"))) {
-      throw new Error(`Dedicated migration is missing its explicit DEDICATED RELEASE ONLY marker: ${fileName}`);
+    if (
+      !existsSync(filePath) ||
+      !/dedicated release only/i.test(readFileSync(filePath, "utf8"))
+    ) {
+      throw new Error(
+        `Dedicated migration is missing its explicit DEDICATED RELEASE ONLY marker: ${fileName}`
+      );
     }
-    if (files.includes(fileName) || dedicatedMigrationFiles.includes(fileName)) {
-      throw new Error(`Dedicated migration must not be included in the default plan: ${fileName}`);
+    if (
+      files.includes(fileName) ||
+      dedicatedMigrationFiles.includes(fileName)
+    ) {
+      throw new Error(
+        `Dedicated migration must not be included in the default plan: ${fileName}`
+      );
     }
   }
   for (const [fileName, checksum] of unreleasedFeatureMigrationFiles) {
     const filePath = join(drizzleDir, fileName);
-    if (!existsSync(filePath) || createHash("sha256").update(readFileSync(filePath)).digest("hex") !== checksum) {
-      throw new Error(`Unreleased feature migration source changed: ${fileName}`);
+    if (
+      !existsSync(filePath) ||
+      createHash("sha256").update(readFileSync(filePath)).digest("hex") !==
+        checksum
+    ) {
+      throw new Error(
+        `Unreleased feature migration source changed: ${fileName}`
+      );
     }
-    if (files.includes(fileName) || dedicatedMigrationFiles.includes(fileName)
-      || imageQualityDevelopmentMigrationFiles.includes(fileName) || imageQualityProductionMigrationFiles.includes(fileName)) {
-      throw new Error(`Unreleased feature migration must not be executable: ${fileName}`);
+    if (
+      files.includes(fileName) ||
+      dedicatedMigrationFiles.includes(fileName) ||
+      imageQualityDevelopmentMigrationFiles.includes(fileName) ||
+      imageQualityProductionMigrationFiles.includes(fileName)
+    ) {
+      throw new Error(
+        `Unreleased feature migration must not be executable: ${fileName}`
+      );
     }
   }
   const unmanagedFiles = readdirSync(drizzleDir)
-    .filter((fileName) => fileName.endsWith(".sql"))
-    .filter((fileName) => !files.includes(fileName)
-      && !retiredMigrationFiles.has(fileName)
-      && !dedicatedMigrationFiles.includes(fileName)
-      && !legacyManuallyReleasedMigrationFiles.has(fileName)
-      && !unreleasedDraftMigrationFiles.has(fileName)
-      && !unreleasedFeatureMigrationFiles.has(fileName));
+    .filter(fileName => fileName.endsWith(".sql"))
+    .filter(
+      fileName =>
+        !files.includes(fileName) &&
+        !retiredMigrationFiles.has(fileName) &&
+        !dedicatedMigrationFiles.includes(fileName) &&
+        !legacyManuallyReleasedMigrationFiles.has(fileName) &&
+        !unreleasedDraftMigrationFiles.has(fileName) &&
+        !unreleasedFeatureMigrationFiles.has(fileName)
+    );
   if (unmanagedFiles.length > 0) {
-    throw new Error(`Migration files are not registered in the release plan: ${unmanagedFiles.sort().join(", ")}`);
+    throw new Error(
+      `Migration files are not registered in the release plan: ${unmanagedFiles.sort().join(", ")}`
+    );
   }
   return migrationEntries(files, journal.entries.length);
 }
 
+export function loadImageProductionMigrationPlan() {
+  return migrationEntries(["0333_listing_image_production.sql"], 0);
+}
+
+export function loadProductSelectionMigrationPlan() {
+  return migrationEntries(["0334_product_selection.sql"], 0);
+}
+
 export function loadExternalKnowledgeCallerBindingMigrationPlan() {
-  return migrationEntries(dedicatedMigrationFiles.filter(name => name === "0203_external_knowledge_caller_bindings.sql"), 0);
+  return migrationEntries(
+    dedicatedMigrationFiles.filter(
+      name => name === "0203_external_knowledge_caller_bindings.sql"
+    ),
+    0
+  );
 }
 
 export function loadTaskAssistantMigrationPlan() {
-  return migrationEntries(dedicatedMigrationFiles.filter(name => name === "0236_task_assistants.sql"), 0);
+  return migrationEntries(
+    dedicatedMigrationFiles.filter(name => name === "0236_task_assistants.sql"),
+    0
+  );
 }
 export function loadMeetingAudioMigrationPlan() {
-  return migrationEntries(dedicatedMigrationFiles.filter(name => name === "0240_meeting_transcript_capacity.sql"), 0);
+  return migrationEntries(
+    dedicatedMigrationFiles.filter(
+      name => name === "0240_meeting_transcript_capacity.sql"
+    ),
+    0
+  );
 }
 
 /** Explicit release only; shared library records are preserved. */
@@ -275,15 +358,97 @@ export function loadStandaloneKnowledgeImagesMigrationPlan() {
 }
 
 export function loadKnowledgeNativeLayoutMigrationPlan() {
-  return migrationEntries(dedicatedMigrationFiles.filter(name => name === "0242_knowledge_native_layout.sql"), 0);
+  return migrationEntries(
+    dedicatedMigrationFiles.filter(
+      name => name === "0242_knowledge_native_layout.sql"
+    ),
+    0
+  );
 }
 
 export function loadDesignPromptMigrationPlan() {
-  return migrationEntries(dedicatedMigrationFiles.filter(name => ["0237_design_prompt_library.sql", "0238_user_login_aliases.sql"].includes(name)), 0);
+  return migrationEntries(
+    dedicatedMigrationFiles.filter(name =>
+      [
+        "0237_design_prompt_library.sql",
+        "0238_user_login_aliases.sql",
+      ].includes(name)
+    ),
+    0
+  );
+}
+
+export function loadDesignSceneMigrationPlan() {
+  return migrationEntries(
+    dedicatedMigrationFiles.filter(name =>
+      [
+        "0310_design_conversation_kind.sql",
+        "0311_design_scene_skill.sql",
+      ].includes(name)
+    ),
+    0
+  );
+}
+
+export function loadListingAggregationMigrationPlan() {
+  return migrationEntries(
+    dedicatedMigrationFiles.filter(name =>
+      [
+        "0312_listing_aggregation.sql",
+        "0313_competitor_study_skill.sql",
+        "0314_listing_aggregate_skill.sql",
+      ].includes(name)
+    ),
+    0
+  );
+}
+
+export function loadRichContentTranslationMigrationPlan() {
+  return migrationEntries(["0318_rich_content_pretranslations.sql"], 0);
+}
+
+export function loadImagePlanningMigrationPlan() {
+  return migrationEntries(
+    [
+      "0322_listing_image_planning.sql",
+      "0323_image_planning_skill_and_tags.sql",
+      "0324_image_planning_hotspot_counts.sql",
+    ],
+    0
+  );
+}
+
+export function loadListingResearchSkillsMigrationPlan() {
+  return migrationEntries(
+    [
+      "0319_listing_research_skills.sql",
+      "0320_listing_aggregation_output_budget.sql",
+      "0321_listing_aggregation_classification.sql",
+    ],
+    0
+  );
+}
+
+export function loadCompetitorReviewSkillsMigrationPlan() {
+  return migrationEntries(
+    dedicatedMigrationFiles.filter(name =>
+      [
+        "0315_competitor_content_review_skills.sql",
+        "0316_competitor_concise_points_skill.sql",
+        "0317_builtin_product_video_capability.sql",
+      ].includes(name)
+    ),
+    0
+  );
 }
 
 export function loadOperationsJournalMigrationPlan() {
-  return migrationEntries(dedicatedMigrationFiles.filter(name => name === "0235_operations_journals.sql"), 0);
+  return migrationEntries(
+    dedicatedMigrationFiles.filter(
+      name => name === "0235_operations_journals.sql"
+    ),
+    0
+  );
 }
 
 export function loadImageQualityDevelopmentMigrationPlan() {
@@ -301,51 +466,78 @@ export function loadAssistantConfigurationMigrationPlan() {
 
 function printPlan(plan) {
   for (const item of plan) {
-    console.log(`${String(item.order + 1).padStart(3, "0")}  ${item.fileName}  ${item.checksum.slice(0, 12)}`);
+    console.log(
+      `${String(item.order + 1).padStart(3, "0")}  ${item.fileName}  ${item.checksum.slice(0, 12)}`
+    );
   }
   console.log(`\n${plan.length} migrations; no database changes were made.`);
 }
 
 function assertExecutionEnvironment() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
-  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PRODUCTION_MIGRATIONS !== "true") {
-    throw new Error("Production migrations require ALLOW_PRODUCTION_MIGRATIONS=true in the one-off migration process");
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.ALLOW_PRODUCTION_MIGRATIONS !== "true"
+  ) {
+    throw new Error(
+      "Production migrations require ALLOW_PRODUCTION_MIGRATIONS=true in the one-off migration process"
+    );
   }
 }
 
 async function assertImageQualityDevelopmentTarget(connection) {
   if (process.env.NODE_ENV === "production") {
-    throw new Error("0206/0207 are development-only here; production migration requires a separately reviewed release path");
+    throw new Error(
+      "0206/0207 are development-only here; production migration requires a separately reviewed release path"
+    );
   }
   if (process.env.ALLOW_IMAGE_QUALITY_DEVELOPMENT_MIGRATIONS !== "true") {
-    throw new Error("0206/0207 require ALLOW_IMAGE_QUALITY_DEVELOPMENT_MIGRATIONS=true");
+    throw new Error(
+      "0206/0207 require ALLOW_IMAGE_QUALITY_DEVELOPMENT_MIGRATIONS=true"
+    );
   }
-  const expectedSchema = String(process.env.WEBDEV_DEVELOPMENT_SCHEMA || "").trim();
+  const expectedSchema = String(
+    process.env.WEBDEV_DEVELOPMENT_SCHEMA || ""
+  ).trim();
   if (!/^[A-Za-z0-9_]+$/.test(expectedSchema)) {
-    throw new Error("0206/0207 require a safe WEBDEV_DEVELOPMENT_SCHEMA identifier");
+    throw new Error(
+      "0206/0207 require a safe WEBDEV_DEVELOPMENT_SCHEMA identifier"
+    );
   }
   const [rows] = await connection.query("SELECT DATABASE() AS schemaName");
   const actualSchema = String(rows?.[0]?.schemaName || "");
   if (actualSchema !== expectedSchema) {
-    throw new Error(`Refusing 0206/0207: connected schema ${actualSchema || "(none)"} does not equal WEBDEV_DEVELOPMENT_SCHEMA`);
+    throw new Error(
+      `Refusing 0206/0207: connected schema ${actualSchema || "(none)"} does not equal WEBDEV_DEVELOPMENT_SCHEMA`
+    );
   }
 }
 
 async function assertImageQualityProductionTarget(connection) {
   if (process.env.NODE_ENV !== "production") {
-    throw new Error("0206/0207 production release requires NODE_ENV=production");
+    throw new Error(
+      "0206/0207 production release requires NODE_ENV=production"
+    );
   }
   if (process.env.ALLOW_IMAGE_QUALITY_PRODUCTION_MIGRATIONS !== "true") {
-    throw new Error("0206/0207 require ALLOW_IMAGE_QUALITY_PRODUCTION_MIGRATIONS=true");
+    throw new Error(
+      "0206/0207 require ALLOW_IMAGE_QUALITY_PRODUCTION_MIGRATIONS=true"
+    );
   }
-  const expectedSchema = String(process.env.QINGDAO_PRODUCTION_SCHEMA || "").trim();
+  const expectedSchema = String(
+    process.env.QINGDAO_PRODUCTION_SCHEMA || ""
+  ).trim();
   if (!/^[A-Za-z0-9_]+$/.test(expectedSchema)) {
-    throw new Error("0206/0207 require a safe QINGDAO_PRODUCTION_SCHEMA identifier");
+    throw new Error(
+      "0206/0207 require a safe QINGDAO_PRODUCTION_SCHEMA identifier"
+    );
   }
   const [rows] = await connection.query("SELECT DATABASE() AS schemaName");
   const actualSchema = String(rows?.[0]?.schemaName || "");
   if (actualSchema !== expectedSchema) {
-    throw new Error(`Refusing 0206/0207: connected schema ${actualSchema || "(none)"} does not equal QINGDAO_PRODUCTION_SCHEMA`);
+    throw new Error(
+      `Refusing 0206/0207: connected schema ${actualSchema || "(none)"} does not equal QINGDAO_PRODUCTION_SCHEMA`
+    );
   }
 }
 
@@ -371,34 +563,44 @@ export async function ensureLedger(connection) {
 export async function importLegacyJournal(connection, plan) {
   let legacyRows = [];
   try {
-    [legacyRows] = await connection.query("SELECT hash FROM __drizzle_migrations");
+    [legacyRows] = await connection.query(
+      "SELECT hash FROM __drizzle_migrations"
+    );
   } catch (error) {
-    if (!/doesn't exist|unknown table/i.test(String(error?.message))) throw error;
+    if (!/doesn't exist|unknown table/i.test(String(error?.message)))
+      throw error;
   }
-  const hashes = new Set(legacyRows.map((row) => String(row.hash)));
-  for (const migration of plan.filter((item) => item.official && hashes.has(item.checksum))) {
+  const hashes = new Set(legacyRows.map(row => String(row.hash)));
+  for (const migration of plan.filter(
+    item => item.official && hashes.has(item.checksum)
+  )) {
     await connection.execute(
       `INSERT INTO app_schema_migrations
          (migrationName,checksum,status,executionId,startedAt,finishedAt,metadata)
        VALUES (?,?,'succeeded','legacy-drizzle-import',NOW(),NOW(),JSON_OBJECT('source','__drizzle_migrations'))
        ON DUPLICATE KEY UPDATE migrationName=migrationName`,
-      [migration.fileName, migration.checksum],
+      [migration.fileName, migration.checksum]
     );
   }
 }
 
 export async function readLedger(connection) {
   const [rows] = await connection.query(
-    "SELECT migrationName,checksum,status,error,updatedAt FROM app_schema_migrations ORDER BY createdAt",
+    "SELECT migrationName,checksum,status,error,updatedAt FROM app_schema_migrations ORDER BY createdAt"
   );
-  return new Map(rows.map((row) => [String(row.migrationName), row]));
+  return new Map(rows.map(row => [String(row.migrationName), row]));
 }
 
 export async function prepareExecutableSql(connection, sql) {
   const ambiguousNoOpUpsertPattern =
     /INSERT\s+INTO\s+`?([A-Za-z0-9_$]+)`?[\s\S]*?ON\s+DUPLICATE\s+KEY\s+UPDATE\s+`updatedAt`\s*=\s*`updatedAt`/gi;
-  const upsertSafeSql = sql.replace(ambiguousNoOpUpsertPattern, (statement, tableName) =>
-    statement.replace(/`updatedAt`\s*=\s*`updatedAt`$/i, `\`updatedAt\` = \`${tableName}\`.\`updatedAt\``),
+  const upsertSafeSql = sql.replace(
+    ambiguousNoOpUpsertPattern,
+    (statement, tableName) =>
+      statement.replace(
+        /`updatedAt`\s*=\s*`updatedAt`$/i,
+        `\`updatedAt\` = \`${tableName}\`.\`updatedAt\``
+      )
   );
 
   // Old tables use utf8mb4_unicode_ci while fresh MySQL 8 databases default to
@@ -407,12 +609,14 @@ export async function prepareExecutableSql(connection, sql) {
   const collationSafeSql = upsertSafeSql.replace(
     /ua\.`sourceRowId`\s*=\s*CAST\(aa\.`id`\s+AS\s+CHAR\)/gi,
     "CONVERT(ua.`sourceRowId` USING utf8mb4) COLLATE utf8mb4_unicode_ci = " +
-      "CONVERT(CAST(aa.`id` AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci",
+      "CONVERT(CAST(aa.`id` AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci"
   );
 
   const workspaceBackfillPattern =
     /UPDATE\s+`?([A-Za-z0-9_$]+)`?\s+t\s+LEFT\s+JOIN\s+`?users`?\s+u\b[\s\S]*?;/gi;
-  const backfillMatches = [...collationSafeSql.matchAll(workspaceBackfillPattern)];
+  const backfillMatches = [
+    ...collationSafeSql.matchAll(workspaceBackfillPattern),
+  ];
   let normalizedSql = "";
   let backfillCursor = 0;
   for (const match of backfillMatches) {
@@ -424,14 +628,19 @@ export async function prepareExecutableSql(connection, sql) {
         `SELECT column_name AS columnName
            FROM information_schema.columns
           WHERE table_schema = DATABASE() AND table_name = ? AND column_name IN ('userId','user_id')`,
-        [tableName],
+        [tableName]
       );
-      const columnNames = new Set(rows.map((row) => String(row.columnName)));
+      const columnNames = new Set(rows.map(row => String(row.columnName)));
       if (!columnNames.has("userId") && columnNames.has("user_id")) {
-        normalizedStatement = statement.replaceAll(/t\.`?userId`?/g, "t.`user_id`");
+        normalizedStatement = statement.replaceAll(
+          /t\.`?userId`?/g,
+          "t.`user_id`"
+        );
       }
     }
-    normalizedSql += collationSafeSql.slice(backfillCursor, statementIndex) + normalizedStatement;
+    normalizedSql +=
+      collationSafeSql.slice(backfillCursor, statementIndex) +
+      normalizedStatement;
     backfillCursor = statementIndex + statement.length;
   }
   normalizedSql += collationSafeSql.slice(backfillCursor);
@@ -439,7 +648,8 @@ export async function prepareExecutableSql(connection, sql) {
   const conditionalDropPattern =
     /ALTER\s+TABLE\s+`?([A-Za-z0-9_$]+)`?\s+DROP\s+COLUMN\s+IF\s+EXISTS\s+`?([A-Za-z0-9_$]+)`?\s*;/gi;
   const matches = [...normalizedSql.matchAll(conditionalDropPattern)];
-  if (matches.length === 0) return normalizedSql.replaceAll("--> statement-breakpoint", "");
+  if (matches.length === 0)
+    return normalizedSql.replaceAll("--> statement-breakpoint", "");
 
   let executableSql = "";
   let cursor = 0;
@@ -449,7 +659,7 @@ export async function prepareExecutableSql(connection, sql) {
       `SELECT COUNT(*) AS columnCount
          FROM information_schema.columns
         WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
-      [tableName, columnName],
+      [tableName, columnName]
     );
     const columnExists = Number(rows?.[0]?.columnCount ?? 0) > 0;
     const statementIndex = match.index ?? cursor;
@@ -465,17 +675,34 @@ export async function prepareExecutableSql(connection, sql) {
 
 export async function baselineExistingSchema(connection, plan, options = {}) {
   const confirm = options.confirm ?? process.env.MIGRATION_BASELINE_CONFIRM;
-  const allowProduction = options.allowProduction ?? process.env.ALLOW_PRODUCTION_MIGRATION_BASELINE === "true";
-  const through = String(options.through ?? process.env.MIGRATION_BASELINE_THROUGH ?? "").trim();
-  const reason = String(options.reason ?? process.env.MIGRATION_BASELINE_REASON ?? "").trim();
+  const allowProduction =
+    options.allowProduction ??
+    process.env.ALLOW_PRODUCTION_MIGRATION_BASELINE === "true";
+  const through = String(
+    options.through ?? process.env.MIGRATION_BASELINE_THROUGH ?? ""
+  ).trim();
+  const reason = String(
+    options.reason ?? process.env.MIGRATION_BASELINE_REASON ?? ""
+  ).trim();
   if (confirm !== "I_UNDERSTAND_SCHEMA_BASELINE") {
-    throw new Error("Baselining requires MIGRATION_BASELINE_CONFIRM=I_UNDERSTAND_SCHEMA_BASELINE");
+    throw new Error(
+      "Baselining requires MIGRATION_BASELINE_CONFIRM=I_UNDERSTAND_SCHEMA_BASELINE"
+    );
   }
   if (process.env.NODE_ENV === "production" && !allowProduction) {
-    throw new Error("Production baselining additionally requires ALLOW_PRODUCTION_MIGRATION_BASELINE=true");
+    throw new Error(
+      "Production baselining additionally requires ALLOW_PRODUCTION_MIGRATION_BASELINE=true"
+    );
   }
-  if (!through || !reason) throw new Error("MIGRATION_BASELINE_THROUGH and MIGRATION_BASELINE_REASON are required");
-  const endIndex = plan.findIndex((item) => item.fileName === through || item.fileName.replace(/\.sql$/, "") === through);
+  if (!through || !reason)
+    throw new Error(
+      "MIGRATION_BASELINE_THROUGH and MIGRATION_BASELINE_REASON are required"
+    );
+  const endIndex = plan.findIndex(
+    item =>
+      item.fileName === through ||
+      item.fileName.replace(/\.sql$/, "") === through
+  );
   if (endIndex < 0) throw new Error(`Unknown baseline migration: ${through}`);
   for (const migration of plan.slice(0, endIndex + 1)) {
     await connection.execute(
@@ -486,10 +713,17 @@ export async function baselineExistingSchema(connection, plan, options = {}) {
          checksum=IF(status IN ('succeeded','baselined'),checksum,VALUES(checksum)),
          status=IF(status='succeeded','succeeded','baselined'),
          finishedAt=NOW(),error=NULL,metadata=VALUES(metadata)`,
-      [migration.fileName, migration.checksum, `baseline-${randomUUID()}`, reason],
+      [
+        migration.fileName,
+        migration.checksum,
+        `baseline-${randomUUID()}`,
+        reason,
+      ]
     );
   }
-  console.log(`Baselined ${endIndex + 1} migrations through ${plan[endIndex].fileName}.`);
+  console.log(
+    `Baselined ${endIndex + 1} migrations through ${plan[endIndex].fileName}.`
+  );
 }
 
 export async function applyMigrations(connection, plan, options = {}) {
@@ -498,15 +732,30 @@ export async function applyMigrations(connection, plan, options = {}) {
   let applied = 0;
   for (const migration of plan) {
     const existing = ledger.get(migration.fileName);
-    if (!canRepairFailedMigrationChecksum(existing, migration.checksum, retryFailed) && existing && existing.checksum !== migration.checksum) {
-      throw new Error(`Checksum mismatch for ${migration.fileName}; applied migrations are immutable`);
+    if (
+      !canRepairFailedMigrationChecksum(
+        existing,
+        migration.checksum,
+        retryFailed
+      ) &&
+      existing &&
+      existing.checksum !== migration.checksum
+    ) {
+      throw new Error(
+        `Checksum mismatch for ${migration.fileName}; applied migrations are immutable`
+      );
     }
-    if (existing?.status === "succeeded" || existing?.status === "baselined") continue;
+    if (existing?.status === "succeeded" || existing?.status === "baselined")
+      continue;
     if (existing?.status === "started") {
-      throw new Error(`${migration.fileName} has an interrupted migration record; inspect the schema and create a forward repair`);
+      throw new Error(
+        `${migration.fileName} has an interrupted migration record; inspect the schema and create a forward repair`
+      );
     }
     if (existing?.status === "failed" && !retryFailed) {
-      throw new Error(`${migration.fileName} previously failed; inspect the error and rerun with --retry-failed after repair`);
+      throw new Error(
+        `${migration.fileName} previously failed; inspect the error and rerun with --retry-failed after repair`
+      );
     }
 
     const executionId = `migration-${randomUUID()}`;
@@ -515,14 +764,17 @@ export async function applyMigrations(connection, plan, options = {}) {
          (migrationName,checksum,status,executionId,startedAt,finishedAt,error,metadata)
        VALUES (?,?,'started',?,NOW(),NULL,NULL,JSON_OBJECT('order',?))
        ON DUPLICATE KEY UPDATE checksum=VALUES(checksum),status='started',executionId=VALUES(executionId),startedAt=NOW(),finishedAt=NULL,error=NULL`,
-      [migration.fileName, migration.checksum, executionId, migration.order],
+      [migration.fileName, migration.checksum, executionId, migration.order]
     );
     try {
-      const executableSql = await prepareExecutableSql(connection, migration.sql);
+      const executableSql = await prepareExecutableSql(
+        connection,
+        migration.sql
+      );
       await connection.query(executableSql);
       await connection.execute(
         "UPDATE app_schema_migrations SET status='succeeded',finishedAt=NOW(),error=NULL WHERE migrationName=? AND executionId=?",
-        [migration.fileName, executionId],
+        [migration.fileName, executionId]
       );
       console.log(`applied ${migration.fileName}`);
       applied += 1;
@@ -530,20 +782,32 @@ export async function applyMigrations(connection, plan, options = {}) {
       const message = String(error?.message || error).slice(0, 8000);
       await connection.execute(
         "UPDATE app_schema_migrations SET status='failed',finishedAt=NOW(),error=? WHERE migrationName=? AND executionId=?",
-        [message, migration.fileName, executionId],
+        [message, migration.fileName, executionId]
       );
-      throw new Error(`Migration failed at ${migration.fileName}: ${message}`, { cause: error });
+      throw new Error(`Migration failed at ${migration.fileName}: ${message}`, {
+        cause: error,
+      });
     }
     ledger = await readLedger(connection);
   }
-  console.log(applied === 0 ? "Database is already up to date." : `Applied ${applied} migrations.`);
+  console.log(
+    applied === 0
+      ? "Database is already up to date."
+      : `Applied ${applied} migrations.`
+  );
 }
 
 export async function acquireMigrationLock(
   connection,
-  { lockName = "amazon_listing_tool_schema_migrations", timeoutSeconds = 30 } = {},
+  {
+    lockName = "amazon_listing_tool_schema_migrations",
+    timeoutSeconds = 30,
+  } = {}
 ) {
-  const [rows] = await connection.execute("SELECT GET_LOCK(?, ?) AS acquired", [lockName, timeoutSeconds]);
+  const [rows] = await connection.execute("SELECT GET_LOCK(?, ?) AS acquired", [
+    lockName,
+    timeoutSeconds,
+  ]);
   if (Number(rows?.[0]?.acquired) !== 1) {
     throw new Error("Could not acquire the database migration advisory lock");
   }
@@ -556,20 +820,103 @@ export async function acquireMigrationLock(
 }
 
 async function main() {
-  const dedicatedCallerBindingPlan = args.has("--apply-external-knowledge-caller-bindings");
-  const imageQualityDevelopmentPlan = args.has("--apply-image-quality-development");
-  const imageQualityProductionPlan = args.has("--apply-image-quality-production");
+  const dedicatedCallerBindingPlan = args.has(
+    "--apply-external-knowledge-caller-bindings"
+  );
+  const imageQualityDevelopmentPlan = args.has(
+    "--apply-image-quality-development"
+  );
+  const imageQualityProductionPlan = args.has(
+    "--apply-image-quality-production"
+  );
   const meetingAudioPlan = args.has("--apply-meeting-audio");
-  if ([dedicatedCallerBindingPlan, imageQualityDevelopmentPlan, imageQualityProductionPlan, meetingAudioPlan].filter(Boolean).length > 1) {
+  const designScenePlan = args.has("--apply-design-scene");
+  const listingAggregationPlan = args.has("--apply-listing-aggregation");
+  const competitorReviewSkillsPlan = args.has(
+    "--apply-competitor-review-skills"
+  );
+  const explicitPreviewPlan = args.has("--apply-explicit-preview");
+  const imageDocumentPlan = args.has("--apply-image-document");
+  const imagePlanCopyPlan = args.has("--apply-image-plan-copy");
+  const imageProductionPlan = args.has("--apply-image-production");
+  const productSelectionPlan = args.has("--apply-product-selection");
+  const moduleDocumentPlan = args.has("--apply-module-document");
+  const imageDocumentFactsPlan = args.has("--apply-image-document-facts");
+  const questionConsolidationPlan = args.has("--apply-question-consolidation");
+  const researchWorkflowPlan = args.has("--apply-research-workflow");
+  const imagePlanningPlan = args.has("--apply-image-planning");
+  const listingResearchSkillsPlan = args.has("--apply-listing-research-skills");
+  const richContentTranslationPlan = args.has(
+    "--apply-rich-content-translations"
+  );
+  if (
+    [
+      dedicatedCallerBindingPlan,
+      imageQualityDevelopmentPlan,
+      imageQualityProductionPlan,
+      meetingAudioPlan,
+      designScenePlan,
+      listingAggregationPlan,
+      competitorReviewSkillsPlan,
+      richContentTranslationPlan,
+      listingResearchSkillsPlan,
+      imagePlanningPlan,
+      researchWorkflowPlan,
+      questionConsolidationPlan,
+      explicitPreviewPlan,
+      imageDocumentPlan,
+      imageDocumentFactsPlan,
+      moduleDocumentPlan,
+      imagePlanCopyPlan,
+      imageProductionPlan,
+      productSelectionPlan,
+    ].filter(Boolean).length > 1
+  ) {
     throw new Error("Select exactly one dedicated migration plan");
   }
-  const plan = meetingAudioPlan ? loadMeetingAudioMigrationPlan() : dedicatedCallerBindingPlan
-    ? loadExternalKnowledgeCallerBindingMigrationPlan()
-    : imageQualityDevelopmentPlan
-      ? loadImageQualityDevelopmentMigrationPlan()
-      : imageQualityProductionPlan
-        ? loadImageQualityProductionMigrationPlan()
-        : loadMigrationPlan();
+  const plan = productSelectionPlan ? loadProductSelectionMigrationPlan() : imageProductionPlan
+    ? loadImageProductionMigrationPlan()
+    : imagePlanCopyPlan
+      ? migrationEntries(["0332_image_plan_copy_wireframe.sql"], 0)
+      : moduleDocumentPlan
+        ? migrationEntries(
+            [
+              "0330_module_document_and_research_library.sql",
+              "0331_module_planning_skills.sql",
+            ],
+            0
+          )
+        : imageDocumentFactsPlan
+          ? migrationEntries(["0329_image_document_fact_priority.sql"], 0)
+          : imageDocumentPlan
+            ? migrationEntries(["0328_image_document_and_settings.sql"], 0)
+            : explicitPreviewPlan
+              ? migrationEntries(["0327_explicit_preview_workflow.sql"], 0)
+              : questionConsolidationPlan
+                ? migrationEntries(["0326_question_consolidation.sql"], 0)
+                : researchWorkflowPlan
+                  ? migrationEntries(["0325_research_workflow.sql"], 0)
+                  : imagePlanningPlan
+                    ? loadImagePlanningMigrationPlan()
+                    : listingResearchSkillsPlan
+                      ? loadListingResearchSkillsMigrationPlan()
+                      : richContentTranslationPlan
+                        ? loadRichContentTranslationMigrationPlan()
+                        : competitorReviewSkillsPlan
+                          ? loadCompetitorReviewSkillsMigrationPlan()
+                          : listingAggregationPlan
+                            ? loadListingAggregationMigrationPlan()
+                            : designScenePlan
+                              ? loadDesignSceneMigrationPlan()
+                              : meetingAudioPlan
+                                ? loadMeetingAudioMigrationPlan()
+                                : dedicatedCallerBindingPlan
+                                  ? loadExternalKnowledgeCallerBindingMigrationPlan()
+                                  : imageQualityDevelopmentPlan
+                                    ? loadImageQualityDevelopmentMigrationPlan()
+                                    : imageQualityProductionPlan
+                                      ? loadImageQualityProductionMigrationPlan()
+                                      : loadMigrationPlan();
   if (args.has("--plan")) return printPlan(plan);
   assertExecutionEnvironment();
 
@@ -579,8 +926,10 @@ async function main() {
   });
   let releaseLock;
   try {
-    if (imageQualityDevelopmentPlan) await assertImageQualityDevelopmentTarget(connection);
-    if (imageQualityProductionPlan) await assertImageQualityProductionTarget(connection);
+    if (imageQualityDevelopmentPlan)
+      await assertImageQualityDevelopmentTarget(connection);
+    if (imageQualityProductionPlan)
+      await assertImageQualityProductionTarget(connection);
     releaseLock = await acquireMigrationLock(connection);
     await ensureLedger(connection);
     await importLegacyJournal(connection, plan);
@@ -592,9 +941,8 @@ async function main() {
   }
 }
 
-
 if (fileURLToPath(import.meta.url) === process.argv[1]) {
-  main().catch((error) => {
+  main().catch(error => {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
   });

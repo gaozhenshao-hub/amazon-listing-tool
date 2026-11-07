@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { competitorVideoAnalysisSchema } from "./competitorVideoAnalysis";
 
 export const AmazonVideoReferenceSchema = z.object({
   hash: z.string().regex(/^[a-f0-9]{64}$/),
@@ -13,6 +14,7 @@ export const StoredKnowledgeVideoSchema = AmazonVideoReferenceSchema.extend({
   videoUrl: z.string().max(2048).nullable(),
   posterUrl: z.string().max(2048).nullable(),
   status: z.enum(["ready", "failed"]),
+  analysis: competitorVideoAnalysisSchema.optional(),
 });
 export const StoredKnowledgeVideosSchema = z.array(StoredKnowledgeVideoSchema).max(21);
 export type KnowledgeVideo = z.infer<typeof StoredKnowledgeVideoSchema>;

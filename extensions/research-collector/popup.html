@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>星启产品收藏</title>
+    <style>
+      body {
+        width: 340px;
+        margin: 0;
+        padding: 22px;
+        font:
+          14px/1.7 system-ui,
+          sans-serif;
+        color: #263342;
+        background: #faf9f7;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 10px;
+      }
+      h2 {
+        font-size: 19px;
+      }
+      p {
+        font-size: 13px;
+        color: #5d6776;
+      }
+      button,
+      input {
+        box-sizing: border-box;
+        width: 100%;
+        margin-top: 9px;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background: white;
+        font: 14px system-ui;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+      #login,
+      #submit {
+        color: white;
+        background: #8c371b;
+        border-color: #8c371b;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      dialog {
+        width: 290px;
+        max-height: 90vh;
+        border: 1px solid #ddd;
+        border-radius: 14px;
+        padding: 20px;
+      }
+      dialog::backdrop {
+        background: #26334288;
+      }
+      label {
+        display: block;
+        margin-top: 12px;
+      }
+      #login-error {
+        color: #b42318;
+        min-height: 20px;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>星启产品收藏</h1>
+    <p>把值得研究的亚马逊产品和店铺，收藏到自己的产品库。</p>
+    <p id="status" role="status">正在检查登录状态…</p>
+    <button id="login">登录系统账号</button
+    ><button id="check">检查连接状态</button
+    ><button id="library">打开待调研产品库</button
+    ><button id="logout" hidden>退出插件登录</button>
+    <dialog id="login-dialog" aria-labelledby="login-title">
+      <form id="login-form">
+        <h2 id="login-title">登录产品收藏插件</h2>
+        <p>
+          使用系统的账号和密码，登录保留30天。密码仅用于本次登录，不在插件保存。
+        </p>
+        <label
+          >账号、邮箱或手机号<input
+            id="identifier"
+            autocomplete="username"
+            maxlength="200"
+            required /></label
+        ><label
+          >密码<input
+            id="password"
+            type="password"
+            autocomplete="current-password"
+            maxlength="1000"
+            required
+        /></label>
+        <p id="login-error" role="alert"></p>
+        <div class="actions">
+          <button id="cancel" type="button">取消</button
+          ><button id="submit" type="submit">登录</button>
+        </div>
+      </form>
+    </dialog>
+    <script src="popup.js"></script>
+  </body>
+</html>

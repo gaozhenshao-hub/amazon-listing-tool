@@ -1,3 +1,4 @@
+import { normalizedBelongSql, normalizedBelongSubSql } from "./domains/knowledge/sharedImageTagsSql";
 import { libraryFacets, type FacetSelection } from "../shared/libraryFacets";
 import { sharedImageTags, imageTaggingUnits } from "../shared/imageTaggingUnits";
 import { tagOwner, tagOwnerJoin } from "./domains/knowledge/sharedImageTagsSql";
@@ -314,6 +315,7 @@ export async function listImagesBySetLight(imageSetId: number) {
     imageSetId: kbImages.imageSetId,
     imageUrl: kbImages.imageUrl,
     sourceUrlHash: kbImages.sourceUrlHash,
+    imageTranslation:kbImages.imageTranslation,
     imagePosition: kbImages.imagePosition,
     positionIndex: kbImages.positionIndex,
     tagCategory: kbImages.tagCategory,
@@ -370,6 +372,7 @@ export async function getReadableImage(imageId: number, userId: number, workspac
     imageSetId: kbImages.imageSetId,
     imageUrl: kbImages.imageUrl,
     sourceUrlHash: kbImages.sourceUrlHash,
+    imageTranslation:kbImages.imageTranslation,
     imagePosition: kbImages.imagePosition,
   }).from(kbImages).where(imageInReadableSetCondition(imageId, userId, workspaceId)).limit(1);
   return rows[0] ?? null;
@@ -495,8 +498,8 @@ export async function listAllImages(userId: number, workspaceId: number, scope: 
   if (filters?.tagDesignStyle) conditions.push(eq(style, filters.tagDesignStyle));
   if (filters?.imagePosition) conditions.push(eq(kbImages.imagePosition, filters.imagePosition as any));
   // V2 filters
-  if (filters?.tagImageBelong) conditions.push(eq(tagOwner.tagImageBelong, filters.tagImageBelong));
-  if (filters?.tagImageBelongSub) conditions.push(eq(tagOwner.tagImageBelongSub, filters.tagImageBelongSub));
+  if (filters?.tagImageBelong) conditions.push(eq(normalizedBelongSql, filters.tagImageBelong));
+  if (filters?.tagImageBelongSub) conditions.push(eq(normalizedBelongSubSql, filters.tagImageBelongSub));
   if (filters?.tagImageTypeMain) conditions.push(eq(tagOwner.tagImageTypeMain, filters.tagImageTypeMain));
   if (filters?.tagImageTypeSub) conditions.push(eq(tagOwner.tagImageTypeSub, filters.tagImageTypeSub));
   if (filters?.tagSellingPointCategory) conditions.push(eq(tagOwner.tagSellingPointCategory, filters.tagSellingPointCategory));
@@ -510,7 +513,7 @@ export async function listAllImages(userId: number, workspaceId: number, scope: 
     conditions.push(eq(style,filters.tagDesignStyleV2));
   }
   if (filters?.tagAccentColor) conditions.push(eq(accentColor,filters.tagAccentColor === "__none" ? "" : filters.tagAccentColor));
-  const groupFields = {type:tagOwner.tagImageTypeMain,style,category,primaryColor,accentColor,belong:tagOwner.tagImageBelong,sellingPoint:tagOwner.tagSellingPointCategory,composition:tagOwner.tagComposition};
+  const groupFields = {type:tagOwner.tagImageTypeMain,style,category,primaryColor,accentColor,belong:normalizedBelongSql,sellingPoint:tagOwner.tagSellingPointCategory,composition:tagOwner.tagComposition};
   const grouping=groupFields[filters?.groupBy as keyof typeof groupFields];
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -526,6 +529,7 @@ export async function listAllImages(userId: number, workspaceId: number, scope: 
     imageSetId: kbImages.imageSetId,
     imageUrl: kbImages.imageUrl,
     sourceUrlHash: kbImages.sourceUrlHash,
+    imageTranslation:kbImages.imageTranslation,
     imagePosition: kbImages.imagePosition,
     positionIndex: kbImages.positionIndex,
     tagCategory: category,
@@ -705,7 +709,7 @@ export async function imageContributions(workspaceId: number) {
 export async function imageBrowseFacets(userId:number,workspaceId:number,scope:Scope,input:{query?:string;filters:FacetSelection;groupBy?:string}) {
   const {category,style,primaryColor,accentColor,conditions}=imageBrowseBase(userId,workspaceId,scope,input);
   const fields={category,style,primaryColor,accentColor,type:tagOwner.tagImageTypeMain,typeSub:tagOwner.tagImageTypeSub,
-    belong:tagOwner.tagImageBelong,belongSub:tagOwner.tagImageBelongSub,sellingPoint:tagOwner.tagSellingPointCategory,
+    belong:normalizedBelongSql,belongSub:normalizedBelongSubSql,sellingPoint:tagOwner.tagSellingPointCategory,
     sellingPointDetail:tagOwner.tagSellingPointDetail,composition:tagOwner.tagComposition};
   const rows=await (await db()).select(fields).from(kbImages).leftJoin(kbImageSets,eq(kbImages.imageSetId,kbImageSets.id)).leftJoin(tagOwner,tagOwnerJoin).where(and(...conditions));
   return libraryFacets(rows,input.filters,Object.keys(fields),input.groupBy);

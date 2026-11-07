@@ -1,3 +1,4 @@
+import { useListingPageFlush } from "./listingPageFlush";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -184,6 +185,11 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
     });
   };
 
+  useListingPageFlush(projectId,async()=>{
+    if(locked || !auxiliaryItems.length)return;
+    if(auxiliaryItems.some(i=>!i.question.trim() || !i.answer.trim()))throw new Error("请补全当前问题及答案后再锁定");
+    await updateListing.mutateAsync({projectId,field:"qaContent",value:JSON.stringify(auxiliaryItems)});
+  });
   const handleConfirm = () => {
     if (qaItems.length === 0) {
       toast.error("请至少添加一组QA");

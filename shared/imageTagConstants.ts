@@ -1,3 +1,4 @@
+import { CURRENT_IMAGE_BELONG_HIERARCHY } from "./imageModuleSpecs";
 /**
  * 图片知识库标签常量定义（共享纯数据，不依赖服务端）
  * 基于优化后的标签体系：套图风格结构化参数 + 单图7维标签 + 图片归属分类
@@ -201,12 +202,7 @@ export const STYLE_NAME_OPTIONS = IMAGE_STYLES.map(s => s.name);
 
 // ============ 图片归属（二级分类） ============
 
-export const IMAGE_BELONG_HIERARCHY = {
-  "主图": [] as string[],
-  "套图": [] as string[],
-  "A+": ["图片轮播", "对比表格", "全宽图", "图文叠加", "四图文", "三图文", "热点交互", "视频模块", "导航轮播", "单图侧文", "技术参数表", "品牌故事卡"],
-  "品牌故事": ["单图", "四图组合"],
-} as const;
+export const IMAGE_BELONG_HIERARCHY = CURRENT_IMAGE_BELONG_HIERARCHY;
 
 export const IMAGE_BELONG_OPTIONS = Object.keys(IMAGE_BELONG_HIERARCHY) as Array<keyof typeof IMAGE_BELONG_HIERARCHY>;
 export type ImageBelong = keyof typeof IMAGE_BELONG_HIERARCHY;

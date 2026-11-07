@@ -3,6 +3,7 @@ import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb } from "../repositories/dbClient";
 import { eq, and, desc, asc, sql, like, or, inArray } from "drizzle-orm";
 import { kbTagDefinitions, kbImageSets, kbImages } from "../../drizzle/schema";
+import { moduleSpec } from "../../shared/imageModuleSpecs";
 
 async function db() {
   const d = await getDb();
@@ -460,7 +461,7 @@ export const kbTagsRouter = router({
       for (const [belong, subs] of Object.entries(IMAGE_BELONG_HIERARCHY)) {
         await upsertTag("imageBelong", belong); // parent entry
         for (const sub of subs as string[]) {
-          await upsertTag("imageBelong", sub, belong); // child entry
+          await upsertTag("imageBelong", sub, belong, JSON.stringify(moduleSpec(belong,sub))); // child entry
         }
       }
 

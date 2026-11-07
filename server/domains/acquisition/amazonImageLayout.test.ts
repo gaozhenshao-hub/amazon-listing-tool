@@ -1,10 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { parseAmazonImageLayout, amazonImageUrl } from "./amazonImageLayout";
-import { parseBasicAmazonImages } from "./basicAmazonProvider";
+import { mergeRichCapture, parseBasicAmazonImages } from "./basicAmazonProvider";
 import { normalizeAmazonArtifact } from "./amazonNormalizer";
 const img=(name:string)=>`<img src="https://m.media-amazon.com/images/I/${name}.jpg" alt="${name}">`;
 
 describe("native Amazon image layout",()=>{
+  it("preserves rich A+ and brand-story structure when another sample only contains more video",()=>{
+    const base=`<input id="ASIN" value="B012345678"><span id="productTitle">Test</span><img id="landingImage" src="https://m.media-amazon.com/images/I/main.jpg">`;
+    const rich=parseBasicAmazonImages(`${base}<div id="aplus"><div class="aplus-module"><div class="a-carousel-card">${img('first')}</div><div class="a-carousel-card">${img('second')}</div></div></div><div id="aplusBrandStory_feature_div"><div class="apm-brand-story-background">${img('background')}</div><div class="a-carousel-card">${['a','b','c','d'].map(img).join('')}</div></div>`,'B012345678');
+    const partial=parseBasicAmazonImages(`${base}<div id="aplus"><div class="aplus-module">${img('only')}</div></div>`,'B012345678');
+    partial.videos=[{hash:'a'.repeat(64),role:'main',position:0,moduleId:null,title:'',duration:null,sourceUrl:'https://m.media-amazon.com/test.mp4',posterUrl:null}];
+    mergeRichCapture(rich,partial);
+    expect(rich.sourceLayout.modules.find(m=>m.section==='aplus')?.kind).toBe('carousel');
+    expect(rich.sourceLayout.modules.find(m=>m.section==='brand_story')?.cards[0].images).toHaveLength(4);
+    expect(rich.videos[0].role).toBe('main');
+  });
   it.each([3,4])("groups Premium A+ %s-column images with their individual headings and text",count=>{
     const result=parseAmazonImageLayout(`<div id="aplus"><div class="aplus-module premium-module-3-${count===3?'three':'four'}-column-images"><div class="premium-aplus-${count===3?'three':'four'}-column">${Array.from({length:count},(_,i)=>`<div class="premium-aplus-column"><div class="column-image">${img(String(i))}</div><div class="column-heading"><h1>Heading ${i}</h1></div><div class="column-description"><p>Body ${i}</p></div></div>`).join('')}</div></div></div>`);
     expect(result.layout.modules).toHaveLength(1);
@@ -23,7 +33,7 @@ describe("native Amazon image layout",()=>{
     const result=parseAmazonImageLayout(html);
     expect(result.layout.modules.map(m=>m.kind)).toEqual(['image','carousel','comparison']);
     expect(result.layout.modules[1].cards.map(c=>c.images[0].alt)).toEqual(['first','second']);
-    expect(result.layout.modules[2].rows).toEqual([{label:'Size',cells:['10','20']}]);
+    expect(result.layout.modules[2].rows).toMatchObject([{label:'Size',cells:['10','20']}]);
     expect(result.urls.aplus).toHaveLength(5);
   });
   it("does not include inline CSS in comparison values",()=>{

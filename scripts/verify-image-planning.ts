@@ -1,0 +1,30 @@
+import { sql } from "drizzle-orm";
+import { imagePlanningSources } from "../server/domains/listing/imagePlanningSources";
+import { readImagePlan,planningRows,planningJson } from "../server/domains/listing/imagePlanningStore";
+import { assistantConfigurationService } from "../server/domains/ai_os/services/assistantConfigurations";
+import { requireDb,closeDbConnection } from "../server/repositories/dbClient";
+import { IMAGE_PLANNING_SKILL,IMAGE_PLANNING_PROMPT } from "../server/domains/listing/imagePlanningPrompt";
+import { imageOutlineSchema } from "../shared/imagePlanning";
+import { planningModelSources,planningModelCatalog } from "../server/domains/listing/imagePlanningContext";
+const [project]=await planningRows(await requireDb(),sql`SELECT userId,workspaceId FROM projects WHERE id=1`);
+if(!project||Number(project.workspaceId)!==1)throw new Error("Project workspace changed");
+const scope={projectId:1,workspaceId:1,userId:Number(project.userId)};
+const sources=await imagePlanningSources(scope),plan=await readImagePlan(scope),assistant=await assistantConfigurationService.get(1,"images");
+if(assistant.status!=="configured"||!assistant.record.config.enabled||!assistant.record.config.skills.some(s=>s.slug===IMAGE_PLANNING_SKILL&&s.enabled))throw new Error("Image planner is not configured");
+const [skill]=await planningRows(await requireDb(),sql`SELECT name,status,version,manifest FROM emperor_skills WHERE slug=${IMAGE_PLANNING_SKILL}`);
+if(skill?.name!=="图片大纲规划"||skill?.status!=="Released")throw new Error("Planning Skill is missing");
+if(planningJson(skill.manifest)?.implementation?.systemPrompt!==IMAGE_PLANNING_PROMPT)throw new Error("Planning prompt differs from this release");
+const tags=await planningRows(await requireDb(),sql`SELECT parentValue,COUNT(*) AS n FROM kb_tag_definitions WHERE dimension='imageBelong' AND parentValue IN ('主图','普通A+','高级A+','品牌故事') GROUP BY parentValue`);
+const sizes=Object.fromEntries(tags.map(t=>[t.parentValue,Number(t.n)]));
+if(sizes['主图']<2||sizes['普通A+']<15||sizes['高级A+']<19||sizes['品牌故事']<5)throw new Error("Official module tags are incomplete");
+const hotspots=await planningRows(await requireDb(),sql`SELECT value,metadata FROM kb_tag_definitions WHERE dimension='imageBelong' AND parentValue='高级A+' AND value IN ('热点图片','热点图文') AND isSystem=1`);
+if(hotspots.length!==2||hotspots.some(h=>{const m=planningJson(h.metadata);return m?.min!==3||m?.max!==7||m?.defaultCount!==4;}))throw new Error("Hotspot image counts differ from the official specification");
+const [candidate]=await planningRows(await requireDb(),sql`SELECT data,input_data,status FROM listing_image_plan_candidates WHERE project_id=1 AND workspace_id=1 AND user_id=${scope.userId} ORDER BY created_at DESC LIMIT 1`);
+if(process.argv.includes("--check-generated")){
+  if(!candidate)throw new Error("Planning preview has not been produced");
+  imageOutlineSchema.parse(planningJson(candidate.data));
+  const original=planningJson(candidate.input_data);
+  if(!original.upstream?.selling||!original.upstream?.reviews||!original.upstream?.questions)throw new Error("Missing upstream input snapshot");
+}
+console.log(JSON.stringify({status:"VERIFIED",upstream:{features:sources.upstream.features?.length||0,benefits:sources.upstream.selling.length,reviews:sources.upstream.reviews.length,questions:sources.upstream.questions.length,contextCharacters:JSON.stringify(sources.input).length,modelContextCharacters:JSON.stringify(planningModelSources(sources.input)).length,catalogCharacters:JSON.stringify(planningModelCatalog).length},planRevision:plan.revision,skill:{name:skill.name,version:skill.version},moduleTags:sizes,hasPreview:!!candidate}));
+await closeDbConnection();

@@ -24,8 +24,27 @@
     "targetKey",
     "scope"
   ],
-  "scopeChoices": ["current_result", "project", "category", "shared"],
+  "scopeChoices": [
+    "current_result",
+    "project",
+    "category",
+    "shared"
+  ],
   "publishPolicy": "只有经过当前草稿测试并由有权限的人确认发布，才更新正式技能或助手规则。不得把重新生成、人工编辑或聊天自动当作训练完成。",
   "existingDefinitions": "暂不重写现有 Agent 和 Skill 的业务内容；在对应业务开发时按用户要求优化基础版本。",
-  "currentScopeSupport": "Skill 工作台现支持独立草稿和正式技能发布。项目、类目范围的持久规则应在业务接入时实现；未实现前不得显示为已生效。"
+  "currentScopeSupport": "Skill 工作台现支持独立草稿和正式技能发布。项目、类目范围的持久规则应在业务接入时实现；未实现前不得显示为已生效。",
+  "singleEntryBusinesses": [
+    "listing.competitor",
+    "knowledge",
+    "listing.aggregation"
+  ],
+  "singleEntryFlow": {
+    "entry": "调整结果（AI）",
+    "behavior": "侧边多轮对话与修改预览；确认前保留原结果。",
+    "confirmationActions": [
+      "确认本次调整",
+      "确认并用于改进"
+    ],
+    "improvementBehavior": "确认后保存本次结果并建立包含真实输入、原始结果、确认结果、意见和来源的独立改进草稿。"
+  }
 }

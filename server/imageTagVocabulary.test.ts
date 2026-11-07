@@ -6,7 +6,7 @@ describe("established image library vocabulary", () => {
   it("keeps the established categories, two-level image/selling-point tags and sixteen styles", () => {
     expect(IMAGE_TAGGING_OPTIONS.categories).toHaveLength(18);
     expect(IMAGE_STYLES).toHaveLength(16);
-    expect(Object.keys(IMAGE_BELONG_HIERARCHY)).toEqual(["主图", "套图", "A+", "品牌故事"]);
+    expect(Object.keys(IMAGE_BELONG_HIERARCHY)).toEqual(["主图", "普通A+", "高级A+", "品牌故事"]);
     expect(IMAGE_TAGGING_OPTIONS.imageTypes["对比"]).toContain("细节对比");
     expect(IMAGE_TAGGING_OPTIONS.sellingPoints["质量"]).toContain("防水");
   });

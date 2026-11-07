@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
+import { productionConversationContext } from "../listing/imageProduction";
 import { assetBytes } from "./assets";
 import {
   designChatModel,
@@ -102,17 +103,42 @@ export async function runDesignChatStep() {
     );
     // A bounded recent context is intentional; preserve the complete latest plan.
     const refs = jsonValue<string[]>(job.referenceIds, []);
-    const contents: any[] = buildChatHistory(history.reverse(), refs);
+    const params = jsonValue<any>(job.params, {});
+    if (params.productionSkill) {
+      const current = await productionConversationContext(
+        scope,
+        job.conversationId
+      );
+      if (
+        current.skill.version !== params.productionSkill.version ||
+        current.skill.hash !== params.productionSkill.hash
+      )
+        throw new Error("制作技能已更新，请重新打开步骤");
+    }
+    const mode =
+      params.designMode === "chat" || params.designMode === "scene"
+        ? params.designMode
+        : "studio";
+    const contents: any[] =
+      mode === "chat"
+        ? history.reverse().flatMap((turn: any) => [
+            { role: "user", parts: [{ text: String(turn.userText) }] },
+            { role: "model", parts: [{ text: String(turn.reply) }] },
+          ])
+        : buildChatHistory(history.reverse(), refs);
     const parts: any[] = [
       {
-        text: `${job.userText}\n\n界面生图参数：${JSON.stringify(jsonValue(job.params, {}))}\n本对话可用参考图共${refs.length}张，下方统一编号，包含此前上传的图片。本轮新上传图号：${
-          jsonValue<string[]>(
-            jsonValue<any>(job.params, {}).chatNewReferenceIds,
-            []
-          )
-            .map(id => refs.indexOf(id) + 1)
-            .join("、") || "无"
-        }。请结合历史需求使用，不要只参考最后一张。`,
+        text:
+          mode === "chat"
+            ? String(job.userText)
+            : `${job.userText}\n\n界面生图参数：${JSON.stringify(jsonValue(job.params, {}))}\n本对话可用参考图共${refs.length}张，下方统一编号，包含此前上传的图片。本轮新上传图号：${
+                jsonValue<string[]>(
+                  jsonValue<any>(job.params, {}).chatNewReferenceIds,
+                  []
+                )
+                  .map(id => refs.indexOf(id) + 1)
+                  .join("、") || "无"
+              }。请结合历史需求使用，不要只参考最后一张。`,
       },
     ];
     for (let i = 0; i < refs.length; i++) {
@@ -144,8 +170,45 @@ export async function runDesignChatStep() {
       "UPDATE design_chat_turns SET status='submitting' WHERE id=? AND leaseToken=?",
       [job.id, token]
     );
-    const response = await requestDesignChat(model, contents);
-    const result = parseDesignChatResponse(response, refs);
+    const scene = params.scene;
+    if (mode === "scene" && (!scene || !params.sceneSkill?.instruction))
+      throw new Error("场景策划配置不可用");
+    const sceneInstruction =
+      mode === "scene"
+        ? `技能要求：${params.sceneSkill.instruction}\n${params.sceneSkill.bindingInstruction || ""}\n本次任务是生成场景图。产品主体参考图编号：${scene.products.map((id: string) => refs.indexOf(id) + 1).join("、")}；构图参考图编号：${refs.indexOf(scene.composition) + 1}；效果参考图编号：${refs.indexOf(scene.effect) + 1}。${scene.revision ? `待调整的已有结果是参考图${refs.indexOf(scene.revision) + 1}，按用户意见调整，并保留未要求修改的部分。` : ""}产品图决定产品本身，构图图决定位置和画面，效果图决定风格。将所有参考图按原顺序用于方案，使用选中后的对应编号，给出完整提示词。`
+        : "";
+    const productionInstruction = params.productionSkill?.instruction
+      ? `本轮独立制作技能要求：${params.productionSkill.instruction}\n阶段：${params.productionStage}。只完成本步骤；用户在此对话的指导只调整当前结果，不自动发布或修改正式Skill。方案必须保留所有输入参考图片及编号顺序。`
+      : "";
+    const response = await requestDesignChat(
+      model,
+      contents,
+      mode,
+      [sceneInstruction, productionInstruction].filter(Boolean).join("\n")
+    );
+    if (mode === "chat" && response?.candidates?.[0]?.finishReason !== "STOP")
+      throw new Error("模型回答未完整返回");
+    const result =
+      mode === "chat"
+        ? {
+            reply: (response?.candidates?.[0]?.content?.parts || [])
+              .filter((p: any) => typeof p.text === "string" && !p.thought)
+              .map((p: any) => p.text)
+              .join("")
+              .trim(),
+            plan: null,
+          }
+        : parseDesignChatResponse(response, refs);
+    if (!result.reply) throw new Error("模型未返回回答");
+    if (
+      (mode === "scene" || productionInstruction) &&
+      result.plan?.ready &&
+      (result.plan.referenceIds.length !== refs.length ||
+        result.plan.referenceIds.some(
+          (id: string, i: number) => id !== refs[i]
+        ))
+    )
+      throw new Error("场景策划未保留完整参考图");
     await update(
       "status='succeeded',reply=?,plan=?,usageInfo=?,errorText=NULL",
       [

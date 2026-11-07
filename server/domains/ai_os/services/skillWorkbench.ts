@@ -7,6 +7,7 @@ import {
   type SkillDraftContent,
   type SkillWorkbenchDraft,
   type SkillWorkbenchInput,
+  SkillWorkbenchInputSchema,
 } from "../../../../shared/skillWorkbench";
 import {
   assertWorkbenchPublishable,
@@ -188,6 +189,18 @@ async function productInput(
     variables: { ...source, context },
     name: String(product.asin),
   };
+}
+
+/** Business confirmations can save their correction and its private improvement draft in one transaction. */
+export async function createSkillImprovementDraft(actor: Actor, slug: string, id: string, input: SkillWorkbenchInput, db: Executor) {
+  const skill = await skillFor(db, actor, slug);
+  const draft: SkillWorkbenchDraft = {
+    id, revision: 1, baseHash: baseHash(skill), baseVersion: skill.version,
+    skillSlug: slug, name: skill.name, content: SkillDraftContentSchema.parse(skill.manifest.implementation),
+    input: SkillWorkbenchInputSchema.parse(input), tests: [], feedback: [], status: "draft",
+  };
+  await write(db, "INSERT INTO emperor_skill_workbench_drafts (id,workspaceId,userId,skillSlug,payload) VALUES (?,?,?,?,?)", [id, actor.workspaceId, actor.userId, slug, JSON.stringify(draft)]);
+  return draft;
 }
 
 export const skillWorkbench = {

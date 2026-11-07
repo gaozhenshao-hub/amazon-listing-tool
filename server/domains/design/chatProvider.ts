@@ -65,7 +65,9 @@ export function parseDesignChatResponse(body: any, referenceIds: string[]) {
 
 export async function requestDesignChat(
   model: { key: string },
-  contents: unknown[]
+  contents: unknown[],
+  mode: "studio" | "chat" | "scene" = "studio",
+  sceneInstruction = ""
 ) {
   const response = await safeHttpRequest(
     "https://api.lk888.ai/v1beta/models/gem-3.8-flash:generateContent",
@@ -76,29 +78,47 @@ export async function requestDesignChat(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: designChatInstruction }] },
+        systemInstruction: {
+          parts: [
+            {
+              text:
+                mode === "chat"
+                  ? "你是一个友善、可靠的中文对话助手。自然回答用户的问题，承认不确定之处。"
+                  : mode === "scene"
+                    ? `${designChatInstruction}\n\n${sceneInstruction}`
+                    : `${designChatInstruction}\n\n${sceneInstruction}`,
+            },
+          ],
+        },
         contents,
         generationConfig: {
           maxOutputTokens: 8192,
           thinkingConfig: { thinkingLevel: "LOW" },
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              reply: { type: "STRING" },
-              ready: { type: "BOOLEAN" },
-              prompt: { type: "STRING" },
-              promptTranslation: { type: "STRING" },
-              referenceIndexes: { type: "ARRAY", items: { type: "INTEGER" } },
-            },
-            required: [
-              "reply",
-              "ready",
-              "prompt",
-              "promptTranslation",
-              "referenceIndexes",
-            ],
-          },
+          ...(mode === "chat"
+            ? {}
+            : {
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: "OBJECT",
+                  properties: {
+                    reply: { type: "STRING" },
+                    ready: { type: "BOOLEAN" },
+                    prompt: { type: "STRING" },
+                    promptTranslation: { type: "STRING" },
+                    referenceIndexes: {
+                      type: "ARRAY",
+                      items: { type: "INTEGER" },
+                    },
+                  },
+                  required: [
+                    "reply",
+                    "ready",
+                    "prompt",
+                    "promptTranslation",
+                    "referenceIndexes",
+                  ],
+                },
+              }),
         },
       }),
       timeoutMs: 120_000,

@@ -1,3 +1,4 @@
+import { productionConversationContext } from "../listing/imageProduction";
 import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -11,11 +12,17 @@ import {
   type DesignChatPlan,
 } from "../../../shared/designStudio";
 import { protectedProcedure, router } from "../../_core/trpc";
-import { authorizeDesign } from "./access";
+import {
+  authorizeDesign,
+  authorizeDesignConversation,
+  authorizeDesignGeneration,
+} from "./access";
 import { assetDirectory } from "./assets";
 import { designModel } from "./provider";
 import { designChatModel } from "./chatProvider";
 import { collectChatReferences } from "./chatReferences";
+import { snapshotSceneSkill } from "./sceneSkill";
+import { skillWorkbench } from "../ai_os/services/skillWorkbench";
 import {
   execute,
   ownAsset,
@@ -114,14 +121,17 @@ export const designStudioRouter = router({
   conversations: protectedProcedure
     .input(
       z
-        .object({ limit: z.number().int().min(1).max(200).default(60) })
-        .default({ limit: 60 })
+        .object({
+          limit: z.number().int().min(1).max(200).default(60),
+          kind: z.enum(["studio", "chat", "scene"]).default("studio"),
+        })
+        .default({ limit: 60, kind: "studio" })
     )
     .query(async ({ ctx, input }) => {
       const s = await authorizeDesign(ctx.user, "read");
       const rows: any[] = await execute(
-        "SELECT id,title,updatedAt FROM design_conversations WHERE workspaceId=? AND userId=? AND deletedAt IS NULL ORDER BY updatedAt DESC,id DESC LIMIT ?",
-        [s.workspaceId, s.userId, input.limit + 1]
+        "SELECT id,title,updatedAt FROM design_conversations WHERE workspaceId=? AND userId=? AND kind=? AND deletedAt IS NULL ORDER BY updatedAt DESC,id DESC LIMIT ?",
+        [s.workspaceId, s.userId, input.kind, input.limit + 1]
       );
       return {
         items: rows.slice(0, input.limit).map((r: any) => ({
@@ -133,12 +143,17 @@ export const designStudioRouter = router({
       };
     }),
   create: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        kind: z.enum(["studio", "chat", "scene"]).default("studio"),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const s = await authorizeDesign(ctx.user, "edit");
       await execute(
-        "INSERT IGNORE INTO design_conversations(id,workspaceId,userId,title) VALUES(?,?,?,?)",
-        [input.id, s.workspaceId, s.userId, "新对话"]
+        "INSERT IGNORE INTO design_conversations(id,workspaceId,userId,title,kind) VALUES(?,?,?,?,?)",
+        [input.id, s.workspaceId, s.userId, "新对话", input.kind]
       );
       await requireConversation(input.id, s);
       return { id: input.id };
@@ -146,7 +161,7 @@ export const designStudioRouter = router({
   rename: protectedProcedure
     .input(uuidInput.extend({ title: z.string().trim().min(1).max(120) }))
     .mutation(async ({ ctx, input }) => {
-      const s = await authorizeDesign(ctx.user, "edit");
+      const s = await authorizeDesignConversation(ctx.user, "edit", input.id);
       await requireConversation(input.id, s);
       await execute(
         "UPDATE design_conversations SET title=?,updatedAt=NOW(3) WHERE id=? AND workspaceId=? AND userId=?",
@@ -159,7 +174,7 @@ export const designStudioRouter = router({
       uuidInput.extend({ limit: z.number().int().min(1).max(500).default(60) })
     )
     .query(async ({ ctx, input }) => {
-      const s = await authorizeDesign(ctx.user, "read");
+      const s = await authorizeDesignConversation(ctx.user, "read", input.id);
       const conversation = await requireConversation(input.id, s);
       const rows: any[] = await execute(
         "SELECT * FROM design_generations WHERE conversationId=? AND workspaceId=? AND userId=? AND deletedAt IS NULL ORDER BY createdAt DESC,id DESC LIMIT ?",
@@ -193,14 +208,68 @@ export const designStudioRouter = router({
   chat: protectedProcedure
     .input(designChatRequestSchema)
     .mutation(async ({ ctx, input }) => {
-      const s = await authorizeDesign(ctx.user, "edit");
+      const s = await authorizeDesignConversation(
+        ctx.user,
+        "edit",
+        input.conversationId
+      );
       return transaction(async tx => {
         await execute(
           "SELECT id FROM users WHERE id=? FOR UPDATE",
           [s.userId],
           tx
         );
-        await requireConversation(input.conversationId, s, tx, true);
+        const conversation = await requireConversation(
+          input.conversationId,
+          s,
+          tx,
+          true
+        );
+        const kind = String(conversation.kind || "studio");
+        if (kind === "chat" && (input.references.length || input.scene))
+          busy("纯聊天不支持上传图片");
+        if (kind === "scene") {
+          if (!input.scene) busy("请上传产品主体、构图参考和效果参考");
+          const grouped = [
+            ...input.scene!.products,
+            input.scene!.composition,
+            input.scene!.effect,
+            ...(input.scene!.revision ? [input.scene!.revision] : []),
+          ];
+          if (
+            new Set(grouped).size !== grouped.length ||
+            grouped.length !== input.references.length ||
+            grouped.some((id, i) => id !== input.references[i])
+          )
+            busy("请检查三组参考图");
+          if (input.scene!.revision) {
+            const generated = await execute(
+              "SELECT assetIds FROM design_generations WHERE conversationId=? AND workspaceId=? AND userId=? AND status='succeeded' AND deletedAt IS NULL",
+              [input.conversationId, s.workspaceId, s.userId],
+              tx
+            );
+            if (
+              !generated.some((row: any) =>
+                jsonValue<string[]>(row.assetIds, []).includes(
+                  input.scene!.revision!
+                )
+              )
+            )
+              busy("待调整图片不存在或无权访问");
+          }
+        } else if (input.scene) busy("参考图分组不适用于当前对话");
+        const production =
+          kind === "listing"
+            ? await productionConversationContext(s, input.conversationId)
+            : null;
+        if (
+          production &&
+          (!production.step.references.every(id =>
+            input.references.includes(id)
+          ) ||
+            input.referenceMode !== "replace")
+        )
+          busy("请保留本步骤的输入参考图");
         const existing = (
           await execute(
             "SELECT id FROM design_chat_turns WHERE workspaceId=? AND userId=? AND requestId=?",
@@ -238,13 +307,15 @@ export const designStudioRouter = router({
         const references = collectChatReferences(
           previous,
           [...generated, ...input.references],
-          input.referenceMode === "replace"
+          input.referenceMode === "replace" || kind === "scene"
         );
         if (references.length > designReferenceLimit(input.params))
           busy(
             `多轮参考图合计 ${references.length} 张，当前模型最多支持 ${designReferenceLimit(input.params)} 张。请勾选“仅使用本次参考图”，重新选择需要的图片，或新建对话。`
           );
         await validateReferences(references, s);
+        const sceneSkill =
+          kind === "scene" ? await snapshotSceneSkill(s, tx) : undefined;
         const model = await designChatModel(s);
         const id = randomUUID();
         await execute(
@@ -261,6 +332,15 @@ export const designStudioRouter = router({
               ...input.params,
               chatReferenceReset: input.referenceMode === "replace",
               chatNewReferenceIds: input.references,
+              designMode: kind,
+              ...(input.scene ? { scene: input.scene } : {}),
+              ...(sceneSkill ? { sceneSkill } : {}),
+              ...(production
+                ? {
+                    productionSkill: production.skill,
+                    productionStage: production.stage,
+                  }
+                : {}),
             }),
             model.id,
           ],
@@ -277,7 +357,11 @@ export const designStudioRouter = router({
   generate: protectedProcedure
     .input(designConfirmSchema)
     .mutation(async ({ ctx, input }) => {
-      const s = await authorizeDesign(ctx.user, "edit");
+      const s = await authorizeDesignConversation(
+        ctx.user,
+        "edit",
+        input.conversationId
+      );
       // Serialize submissions per user, including concurrent tabs/conversations.
       return transaction(async tx => {
         await execute(
@@ -285,7 +369,17 @@ export const designStudioRouter = router({
           [s.userId],
           tx
         );
-        await requireConversation(input.conversationId, s, tx, true);
+        const conversation = await requireConversation(
+          input.conversationId,
+          s,
+          tx,
+          true
+        );
+        if (conversation.kind === "chat") busy("纯聊天不能生成图片");
+        const production =
+          conversation.kind === "listing"
+            ? await productionConversationContext(s, input.conversationId)
+            : null;
         const existing = (
           await execute(
             "SELECT id FROM design_generations WHERE workspaceId=? AND userId=? AND requestId=?",
@@ -321,6 +415,22 @@ export const designStudioRouter = router({
           conversationId: input.conversationId,
           requestId: input.requestId,
         });
+        if (
+          production &&
+          (!production.step.references.every(id =>
+            accepted.references.includes(id)
+          ) ||
+            accepted.params.model !== "tt-image-2.5-token")
+        )
+          busy("请使用当前步骤参考图与 Image 2.5 模型");
+        if (conversation.kind === "scene" || production) {
+          const original = jsonValue<string[]>(planTurn.referenceIds, []);
+          if (
+            accepted.references.length !== original.length ||
+            accepted.references.some((id, i) => id !== original[i])
+          )
+            busy("场景图需要保留全部参考图及原顺序，请重新策划");
+        }
         const result = await enqueueImage(accepted, s, tx);
         await execute(
           "UPDATE design_chat_turns SET generationId=?,plan=?,params=? WHERE id=?",
@@ -349,14 +459,29 @@ export const designStudioRouter = router({
   generateDirect: protectedProcedure
     .input(designRequestSchema)
     .mutation(async ({ ctx, input }) => {
-      const s = await authorizeDesign(ctx.user, "edit");
+      const s = await authorizeDesignConversation(
+        ctx.user,
+        "edit",
+        input.conversationId
+      );
       return transaction(async tx => {
         await execute(
           "SELECT id FROM users WHERE id=? FOR UPDATE",
           [s.userId],
           tx
         );
-        await requireConversation(input.conversationId, s, tx, true);
+        const conversation = await requireConversation(
+          input.conversationId,
+          s,
+          tx,
+          true
+        );
+        if (
+          conversation.kind === "chat" ||
+          conversation.kind === "scene" ||
+          conversation.kind === "listing"
+        )
+          busy("当前功能不能直接提交图片生成");
         const existing = (
           await execute(
             "SELECT id FROM design_generations WHERE workspaceId=? AND userId=? AND requestId=?",
@@ -373,6 +498,48 @@ export const designStudioRouter = router({
         if (chatting.length) busy("正在整理需求，请等待回答后继续");
         return enqueueImage(input, s, tx);
       });
+    }),
+  sceneImprovement: protectedProcedure
+    .input(
+      z.object({
+        generationId: z.string().uuid(),
+        feedback: z.string().trim().min(2).max(4000),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const s = await authorizeDesign(ctx.user, "edit");
+      const rows = await execute(
+        "SELECT g.id,g.conversationId,g.prompt,g.referenceIds,g.assetIds,c.kind FROM design_generations g JOIN design_conversations c ON c.id=g.conversationId AND c.workspaceId=g.workspaceId AND c.userId=g.userId WHERE g.id=? AND g.workspaceId=? AND g.userId=? AND g.status='succeeded' AND g.deletedAt IS NULL AND c.deletedAt IS NULL",
+        [input.generationId, s.workspaceId, s.userId]
+      );
+      if (rows.length !== 1 || rows[0].kind !== "scene") missing();
+      const turns = await execute(
+        "SELECT userText,plan FROM design_chat_turns WHERE generationId=? AND workspaceId=? AND userId=? LIMIT 1",
+        [input.generationId, s.workspaceId, s.userId]
+      );
+      if (turns.length !== 1) missing();
+      const actor = {
+        workspaceId: s.workspaceId,
+        userId: s.userId,
+        admin: ["admin", "super_admin"].includes(ctx.user.role),
+        superAdmin: ctx.user.role === "super_admin",
+      };
+      const draft = await skillWorkbench.create(actor, "design.scene.plan");
+      const context = JSON.stringify({
+        userInput: turns[0].userText,
+        originalPrompt: rows[0].prompt,
+        originalResult: jsonValue(rows[0].assetIds, []),
+        references: jsonValue(rows[0].referenceIds, []),
+        feedback: input.feedback,
+      });
+      const saved = await skillWorkbench.save(
+        actor,
+        draft.id,
+        draft.revision,
+        draft.content,
+        { context, productId: null }
+      );
+      return { id: saved.id };
     }),
   remove: protectedProcedure
     .input(uuidInput.extend({ kind: z.enum(["conversation", "generation"]) }))
@@ -434,7 +601,7 @@ export const designStudioRouter = router({
   check: protectedProcedure
     .input(uuidInput)
     .mutation(async ({ ctx, input }) => {
-      const s = await authorizeDesign(ctx.user, "edit");
+      const s = await authorizeDesignGeneration(ctx.user, "edit", input.id);
       const result = await execute(
         "UPDATE design_generations g JOIN design_conversations c ON c.id=g.conversationId SET g.status='running',g.errorText=NULL,g.nextPollAt=NOW(3),g.submittedAt=NOW(3) WHERE g.id=? AND g.workspaceId=? AND g.userId=? AND g.status='unknown' AND g.providerTaskId IS NOT NULL AND g.deletedAt IS NULL AND c.deletedAt IS NULL",
         [input.id, s.workspaceId, s.userId]

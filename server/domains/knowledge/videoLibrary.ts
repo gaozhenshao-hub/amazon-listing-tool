@@ -1,4 +1,6 @@
-import { libraryFacets, type FacetSelection } from "../../../shared/libraryFacets";
+import { competitorVideoAnalysisSchema } from "../../../shared/competitorVideoAnalysis";
+import { libraryFacets, type FacetSelection,
+} from "../../../shared/libraryFacets";
 import { sql, type SQL } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { requireDb } from "../../repositories/dbClient";
@@ -101,6 +103,19 @@ export function videoObjectAllowed(
   );
 }
 async function deliver(row: VideoRow, scope: VideoScope) {
+  let preparation: any;
+  try {
+    preparation =
+      typeof row.processing === "string"
+        ? JSON.parse(row.processing)
+        : row.processing;
+  } catch {
+    preparation = null;
+  }
+  const prepared = competitorVideoAnalysisSchema.safeParse(
+    preparation?.competitorPresentation
+  );
+
   const videoUrl = videoObjectAllowed(row.videoUrl, scope)
     ? await resolveStoredObjectUrl(row.videoUrl).catch(() => null)
     : null;
@@ -115,6 +130,7 @@ async function deliver(row: VideoRow, scope: VideoScope) {
     duration: row.duration,
     video: {
       hash: row.sourceHash,
+      analysis: prepared.success ? prepared.data : undefined,
       role: row.videoRole,
       position: row.videoPosition,
       moduleId: row.moduleId,
@@ -158,10 +174,13 @@ export async function listLibraryVideos(
   if (input.role) where.push(sql`v.videoRole=${input.role}`);
   if (input.imageSetId) where.push(sql`v.imageSetId=${input.imageSetId}`);
   const labels = sql`COALESCE(v.userEditedAnalysis,v.aiAnalysis,'{}')`;
-  const inherited={category:sql`s.setCategory`,style:sql`s.setStyle`,primaryColor:sql`s.setPrimaryColor`,accentColor:sql`s.setAccentColor`};
-  const effective=Object.fromEntries(Object.entries(inherited).map(([key,column])=>[key,sql`IF(v.imageSetId IS NULL,JSON_UNQUOTE(JSON_EXTRACT(${labels},${'$.'.concat(key)})),${column})`])) as Record<keyof typeof inherited,SQL>;
+  const inherited={category:sql`s.setCategory`,style:sql`s.setStyle`,primaryColor:sql`s.setPrimaryColor`,accentColor:sql`s.setAccentColor`,
+  };
+  const effective=Object.fromEntries(Object.entries(inherited).map(([key,column])=>[key,sql`IF(v.imageSetId IS NULL,JSON_UNQUOTE(JSON_EXTRACT(${labels},${"$.".concat(key)})),${column})`,
+    ])) as Record<keyof typeof inherited,SQL>;
   for(const key of Object.keys(inherited) as Array<keyof typeof inherited>) if(input[key]) where.push(sql`${effective[key]}=${input[key]==="__none"?"":input[key]}`);
-  const groupFields={...effective,type:sql`JSON_UNQUOTE(JSON_EXTRACT(${labels},'$.type'))`,role:sql`v.videoRole`};
+  const groupFields={...effective,type:sql`JSON_UNQUOTE(JSON_EXTRACT(${labels},'$.type'))`,role:sql`v.videoRole`,
+  };
   const groupField=groupFields[input.groupBy as keyof typeof groupFields];
   const order=groupField?sql`${groupField} IS NULL,${groupField},`:sql``;
   if (input.type)
@@ -188,7 +207,8 @@ export async function saveVideoLabels(
   role: "main" | "aplus" | null
 ) {
   const row = await requireVideo(scope, id, true);
-  if (row.imageSetId) labels = {...labels, category:row.setCategory || "",style:row.setStyle || "",primaryColor:row.setPrimaryColor || "",accentColor:row.setAccentColor || ""};
+  if (row.imageSetId) labels = {...labels, category:row.setCategory || "",style:row.setStyle || "",primaryColor:row.setPrimaryColor || "",accentColor:row.setAccentColor || "",
+    };
   const result = await (
     await requireDb("save video labels")
   ).execute(
@@ -218,11 +238,14 @@ export async function syncCapturedVideos(
 
 }
 
-export async function videoBrowseFacets(scope:VideoScope,input:{scope:"mine"|"shared"|"all";query?:string;filters:FacetSelection;groupBy?:string}) {
+export async function videoBrowseFacets(scope:VideoScope,input:{scope:"mine"|"shared"|"all";query?:string;filters:FacetSelection;groupBy?:string;
+  }) {
   const where=[videoAccess(scope,input.scope)];
   if(input.query)where.push(sql`(v.videoTitle LIKE ${"%"+input.query+"%"} OR s.asin LIKE ${"%"+input.query+"%"})`);
   const labels=sql`COALESCE(v.userEditedAnalysis,v.aiAnalysis,'{}')`;
-  const common={category:sql`s.setCategory`,style:sql`s.setStyle`,primaryColor:sql`s.setPrimaryColor`,accentColor:sql`s.setAccentColor`};
-  const rows=await videoRows<Record<string,string|null>>(sql`SELECT ${sql.join(Object.entries(common).map(([key,column])=>sql`IF(v.imageSetId IS NULL,JSON_UNQUOTE(JSON_EXTRACT(${labels},${'$.'.concat(key)})),${column}) AS ${sql.identifier(key)}`),sql`,`)},v.videoRole AS role,JSON_UNQUOTE(JSON_EXTRACT(${labels},'$.type')) AS type,JSON_EXTRACT(${labels},'$.segments[*].label') AS content FROM kb_videos v LEFT JOIN kb_image_sets s ON s.id=v.imageSetId AND s.workspaceId=v.workspaceId WHERE ${sql.join(where,sql` AND `)}`);
-  return libraryFacets(rows.map(row=>({...row,content:typeof row.content==="string"?JSON.parse(row.content):row.content})),input.filters,[...Object.keys(common),"role","type","content"],input.groupBy);
+  const common={category:sql`s.setCategory`,style:sql`s.setStyle`,primaryColor:sql`s.setPrimaryColor`,accentColor:sql`s.setAccentColor`,
+  };
+  const rows=await videoRows<Record<string,string|null>>(sql`SELECT ${sql.join(Object.entries(common).map(([key,column])=>sql`IF(v.imageSetId IS NULL,JSON_UNQUOTE(JSON_EXTRACT(${labels},${"$.".concat(key)})),${column}) AS ${sql.identifier(key)}`),sql`,`)},v.videoRole AS role,JSON_UNQUOTE(JSON_EXTRACT(${labels},'$.type')) AS type,JSON_EXTRACT(${labels},'$.segments[*].label') AS content FROM kb_videos v LEFT JOIN kb_image_sets s ON s.id=v.imageSetId AND s.workspaceId=v.workspaceId WHERE ${sql.join(where,sql` AND `)}`);
+  return libraryFacets(rows.map(row=>({...row,content:typeof row.content==="string"?JSON.parse(row.content):row.content,
+    })),input.filters,[...Object.keys(common),"role","type","content"],input.groupBy);
 }

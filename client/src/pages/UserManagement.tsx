@@ -231,6 +231,7 @@ function BulkImportDialog({ onSuccess }: { onSuccess: () => void }) {
 function EditUserDialog({ user, currentUserId, onSuccess }: { user: any; currentUserId?: string; onSuccess: () => void }) {
   const isSelf = currentUserId && user.id === currentUserId;
   const [open, setOpen] = useState(false);
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: user.name || "",
     email: user.email || "",
@@ -245,6 +246,7 @@ function EditUserDialog({ user, currentUserId, onSuccess }: { user: any; current
     onSuccess: () => {
       toast.success("用户信息已更新");
       setOpen(false);
+      setTemporaryPassword(null);
       onSuccess();
     },
     onError: (err) => toast.error(err.message),
@@ -252,23 +254,52 @@ function EditUserDialog({ user, currentUserId, onSuccess }: { user: any; current
 
   const resetPwdMutation = trpc.userManagement.resetPassword.useMutation({
     onSuccess: (data) => {
-      toast.success(`密码已重置为: ${data.newPassword}`);
+      setTemporaryPassword(data.newPassword);
     },
     onError: (err) => toast.error(err.message),
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen && resetPwdMutation.isPending) return;
+      setOpen(nextOpen);
+      if (!nextOpen) setTemporaryPassword(null);
+    }}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1.5">
           <Pencil className="h-3.5 w-3.5" />
           编辑
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg" onInteractOutside={(event) => {
+        if (temporaryPassword || resetPwdMutation.isPending) event.preventDefault();
+      }} onEscapeKeyDown={(event) => {
+        if (temporaryPassword || resetPwdMutation.isPending) event.preventDefault();
+      }}>
         <DialogHeader>
           <DialogTitle>编辑用户: {user.name}</DialogTitle>
         </DialogHeader>
+        {temporaryPassword && (
+          <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm">
+            <div>
+              <p className="font-semibold text-amber-950">密码重置成功</p>
+              <p className="mt-1 text-xs text-amber-800">请复制并保存账号和临时密码。关闭窗口后不能再次查看，用户首次登录需要修改密码。</p>
+            </div>
+            <div className="space-y-1 rounded-md bg-background p-3 break-all select-text">
+              <p>姓名：{user.name}</p>
+              <p>账号：{user.username || user.email || user.phone || "未设置"}</p>
+              <p>临时密码：{temporaryPassword}</p>
+            </div>
+            <Button size="sm" variant="outline" onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(`姓名：${user.name}\n账号：${user.username || user.email || user.phone || "未设置"}\n临时密码：${temporaryPassword}`);
+                toast.success("账号和临时密码已复制");
+              } catch {
+                toast.error("复制失败，请手动选中并复制上方内容");
+              }
+            }}><Copy className="mr-1 h-3.5 w-3.5" />复制账号和密码</Button>
+          </div>
+        )}
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -324,14 +355,14 @@ function EditUserDialog({ user, currentUserId, onSuccess }: { user: any; current
             variant="outline"
             size="sm"
             onClick={() => resetPwdMutation.mutate({ userId: user.id })}
-            disabled={resetPwdMutation.isPending}
+            disabled={resetPwdMutation.isPending || !!temporaryPassword}
           >
             <RotateCcw className="mr-2 h-3 w-3" />
             {resetPwdMutation.isPending ? "重置中..." : "重置密码"}
           </Button>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setOpen(false)}>取消</Button>
-            <Button onClick={() => updateMutation.mutate({ userId: user.id, ...form })} disabled={updateMutation.isPending}>
+            <Button variant="outline" onClick={() => { setOpen(false); setTemporaryPassword(null); }} disabled={resetPwdMutation.isPending}>关闭</Button>
+            <Button onClick={() => updateMutation.mutate({ userId: user.id, ...form })} disabled={updateMutation.isPending || resetPwdMutation.isPending}>
               {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               保存
             </Button>

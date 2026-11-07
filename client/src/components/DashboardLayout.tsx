@@ -97,6 +97,7 @@ import {
 import { toast } from "sonner";
 import { WorkspaceTabs } from "@/components/workspace";
 import MergedOperationsMenuEntry from "@/components/MergedOperationsMenuEntry";
+import { researchExtensionLoginUrl } from "@/lib/researchExtensionReturn";
 
 // ─── Module definitions ────────────────────────────────────────
 type ModuleId = "home" | "dev" | "procurement" | "ops" | "design" | "finance" | "knowledge" | "emperor" | "admin";
@@ -134,7 +135,7 @@ function isMenuGroup(entry: MenuEntry): entry is MenuGroup {
 }
 
 const modules: ModuleDef[] = [
-  { id: "dev", icon: Package, label: "产品开发", shortLabel: "产品开发", prefix: "/dev", enabled: true, items: [{ icon: Package, label: "产品开发", path: "/dev" }] },
+  { id: "dev", icon: Package, label: "产品开发", shortLabel: "产品开发", prefix: "/dev", enabled: true, items: [{ icon: Package, label: "待调研产品库", path: "/dev/library" }, { icon: Package, label: "选品表", path: "/dev/selection" }] },
   { id: "procurement", icon: Truck, label: "采购物流", shortLabel: "采购物流", prefix: "/procurement", enabled: true, items: [{ icon: Truck, label: "物流时效分析", path: "/procurement" }] },
   { id: "ops", icon: TrendingUp, label: "运营", shortLabel: "运营", prefix: "/ops", enabled: true, items: [
     { icon: ShoppingBag, label: "产品总览", path: "/ops/products" },
@@ -147,7 +148,9 @@ const modules: ModuleDef[] = [
       { icon: FolderKanban, label: "项目管理", path: "/listing" },
       { icon: Search, label: "Listing 抓取", path: "/listing/analysis" },
       { icon: GitCompareArrows, label: "竞品对比及分析", path: "/listing/comparison" },
+      { icon: BarChart3, label: "聚合分析", path: "/listing/aggregation" },
       { icon: Sparkles, label: "Listing 生成", path: "/listing/generate" },
+      { icon: Sparkles, label: "智能图片生成", path: "/listing/image-planning" },
     ] },
     { id: "listing-advertising", icon: Target, label: "智能广告搭建", items: [
       { icon: Key, label: "关键词管理", path: "/listing/keywords" },
@@ -155,7 +158,7 @@ const modules: ModuleDef[] = [
     ] },
     { icon: Database, label: "赛狐数据同步", path: "/ops/saihu-sync", requiredOpsDirectory: "ops_data_import" },
   ] },
-  { id: "design", icon: Image, label: "美工", shortLabel: "美工", prefix: "/design", enabled: true, items: [{ icon: Sparkles, label: "生图", path: "/design/images" }, { icon: BookOpen, label: "提示词库", path: "/design/prompts" }, { icon: FolderOpen, label: "素材库", path: "/design/materials" }] },
+  { id: "design", icon: Image, label: "美工", shortLabel: "美工", prefix: "/design", enabled: true, items: [{ icon: Sparkles, label: "AI 对话", path: "/design/chat" }, { icon: Image, label: "场景图生成", path: "/design/scene" }, { icon: Sparkles, label: "生图", path: "/design/images" }, { icon: BookOpen, label: "提示词库", path: "/design/prompts" }, { icon: FolderOpen, label: "素材库", path: "/design/materials" }] },
   { id: "finance", icon: BarChart3, label: "财务", shortLabel: "财务", prefix: "/finance", enabled: true, items: [{ icon: BarChart3, label: "财务", path: "/finance" }] },
   { id: "knowledge", icon: BookOpen, label: "知识库", shortLabel: "知识库", prefix: "/knowledge", enabled: true, items: [
     { icon: Image, label: "图片知识库", path: "/knowledge/images" },
@@ -218,7 +221,7 @@ export default function DashboardLayout({
           </div>
           <Button
             onClick={() => {
-              window.location.href = "/login";
+              window.location.href = researchExtensionLoginUrl(window.location.pathname,window.location.search);
             }}
             size="lg"
             className="w-full shadow-md hover:shadow-lg transition-all"
@@ -233,7 +236,8 @@ export default function DashboardLayout({
   // 已登录但需要修改初始密码：重定向到登录页进行密码修改
   if ((user as any).mustChangePassword === 1 || (user as any).mustChangePassword === true) {
     if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-      window.location.href = "/login?must_change=1";
+      const login=researchExtensionLoginUrl(window.location.pathname,window.location.search);
+      window.location.href=login+(login.includes("?")?"&":"?")+"must_change=1";
     }
     return null;
   }

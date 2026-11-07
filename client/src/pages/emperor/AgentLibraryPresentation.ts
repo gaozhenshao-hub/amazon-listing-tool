@@ -3,7 +3,7 @@ import { AGENT_LIBRARY_ROLES, type AgentLibraryKey } from "@shared/agentLibraryC
 /** Presentation categories, not saved bindings, permissions, or execution routing. */
 export function libraryRoleForSkill(slug: string): AgentLibraryKey | null {
   if (slug === "finance.monthly.profit") return "finance";
-  if (slug === "knowledge.images.tag" || slug === "knowledge.images.tag.coach") return "tagger";
+  if (["knowledge.images.tag", "knowledge.images.tag.coach", "dev.selection.competitor-tags"].includes(slug)) return "tagger";
   if (/^image\./.test(slug)) return "images";
   if (/^video\./.test(slug)) return "video";
   if (/^(dev|product\.development)\./.test(slug)) return "development";

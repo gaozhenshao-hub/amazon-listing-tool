@@ -32,6 +32,7 @@ describe("legacy acquisition consumer contracts", () => {
     expect(KB_LISTING_ACQUISITION_CAPABILITIES).toEqual(["catalog_basic", "listing_content"]);
     expect(KB_PRODUCT_ACQUISITION_CAPABILITIES).toContain("image_gallery");
     expect(PROJECT_COMPETITOR_ACQUISITION_CAPABILITIES).toContain("aplus");
+    expect(PROJECT_COMPETITOR_ACQUISITION_CAPABILITIES).toContain("product_video");
     expect(CONVERSION_COLLECTOR_ACQUISITION_CAPABILITIES).toEqual(expect.arrayContaining(["aplus", "brand_story", "ratings"]));
   });
 });

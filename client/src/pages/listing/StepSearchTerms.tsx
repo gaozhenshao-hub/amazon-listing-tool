@@ -1,3 +1,4 @@
+import { useListingPageFlush } from "./listingPageFlush";
 import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -140,6 +141,9 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
     });
   };
 
+  useListingPageFlush(projectId,async()=>{
+    if(!locked && searchTerms.trim())await updateListing.mutateAsync({projectId,field:"searchTerms",value:searchTerms});
+  });
   const handleConfirm = () => {
     if (!searchTerms.trim()) {
       toast.error("搜索词不能为空");

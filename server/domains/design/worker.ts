@@ -3,6 +3,7 @@ import { designParamsSchema } from "../../../shared/designStudio";
 import { execute, jsonValue, ownAsset, transaction } from "./repository";
 import { assetBytes, saveAsset } from "./assets";
 import { runDesignChatStep } from "./chatWorker";
+import { productionConversationContext } from "../listing/imageProduction";
 import {
   designGenerationPayload,
   designModel,
@@ -67,6 +68,20 @@ export async function runDesignStep() {
         ])
       )[0];
       if (!user) throw new Error("账号已停用");
+      const conversations = await execute(
+        "SELECT kind FROM design_conversations WHERE id=? AND workspaceId=? AND userId=? AND deletedAt IS NULL",
+        [job.conversationId, scope.workspaceId, scope.userId]
+      );
+      if (conversations[0]?.kind === "listing")
+        await productionConversationContext(scope, job.conversationId);
+      const planningSketch = jsonValue<any>(job.params, {}).planningSketch;
+      if (planningSketch) {
+        const projects = await execute(
+          "SELECT p.id FROM projects p JOIN users u ON u.id=p.userId JOIN workspace_memberships m ON m.userId=u.id AND m.workspaceId=p.workspaceId AND m.status='active' WHERE p.id=? AND p.workspaceId=? AND p.userId=? AND u.status='active' AND u.defaultWorkspaceId=p.workspaceId",
+          [planningSketch.projectId, scope.workspaceId, scope.userId]
+        );
+        if (!projects.length) throw new Error("图片策划项目已不可访问");
+      }
       const images: string[] = [];
       for (const id of jsonValue<string[]>(job.referenceIds, [])) {
         const asset = await ownAsset(id, scope);

@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { normalizeAmazonArtifact } from "./amazonNormalizer";
+import { createHash } from "node:crypto";
 
 function bytes(value: unknown) {
   return new TextEncoder().encode(JSON.stringify(value));
 }
 
 describe("normalizeAmazonArtifact", () => {
+  it.each(["main", "aplus"] as const)("records product-video evidence only for a validated main video (%s)", role => {
+    const url = "https://m.media-amazon.com/images/S/example/main.mp4";
+    const video = { hash: createHash("sha256").update(url).digest("hex"), url, role, position: 0, moduleId: null };
+    const result = normalizeAmazonArtifact({ expectedAsin: "B000000001", marketplace: "US", bytes: bytes([{ asin: "B000000001", title: "Example", videos: [video] }]) });
+    expect(result.snapshot.fieldEvidence.productVideo.status).toBe(role === "main" ? "pending_review" : "not_returned");
+  });
   it("keeps gallery, A+ and brand story roles separate without persisting source URLs", () => {
     const result = normalizeAmazonArtifact({
       expectedAsin: "B000000001",

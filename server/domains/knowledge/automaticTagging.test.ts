@@ -38,16 +38,16 @@ describe("automatic acquisition tags",()=>{
     expect(mocks.run.mock.calls[0][0].attachments[0].text).toContain('由 4 张图片组合');
     const updates=statements.filter(q=>q.sql.startsWith('UPDATE'));expect(updates).toHaveLength(1);expect(updates[0].params).toContain(701);expect(updates[0].params).not.toContain(702);
   });
-  it("enqueues durably once and does not enqueue brand-story or confirmed images",async()=>{
+  it("enqueues durably once and does not enqueue brand backgrounds or confirmed images",async()=>{
     const job=await enqueueAutomaticTags(scope); expect(mocks.startJob).toHaveBeenCalledWith(expect.objectContaining({kind:"knowledge.images.autotag",workspaceId:1,userId:2,maxAttempts:1}));
     mocks.getJob.mockResolvedValue(job);expect(await enqueueAutomaticTags(scope)).toEqual(job);expect(mocks.startJob).toHaveBeenCalledTimes(1);
-    images=[{...base,imagePosition:"brand_story"},{...base,id:702,tagsConfirmed:1}];expect(await enqueueAutomaticTags(scope)).toBeNull();
+    images=[{...base,imagePosition:"brand_story",imageTranslation:{status:'excluded_background'}},{...base,id:702,tagsConfirmed:1}];expect(await enqueueAutomaticTags(scope)).toBeNull();
   });
   it("rejects missing configuration without calling a model",async()=>{
     mocks.config.mockResolvedValue({status:"unconfigured"});await expect(enqueueAutomaticTags(scope)).rejects.toThrow("小酷");expect(mocks.run).not.toHaveBeenCalled();
   });
   it("fills missing labels while preserving module subtype and human labels with a database comparison guard",async()=>{
-    images=[{...base,tagCategory:"existing",tagImageBelongSub:"图片轮播"},{...base,id:702,imagePosition:"brand_story"}];
+    images=[{...base,tagCategory:"existing",tagImageBelongSub:"图片轮播"},{...base,id:702,imagePosition:"brand_story",imageTranslation:{status:'excluded_background'}}];
     await runAutomaticTags(scope,{runId:"job-1",configurationRevision:2,signal:new AbortController().signal});
     expect(mocks.run).toHaveBeenCalledTimes(1);expect(mocks.run.mock.calls[0][0].attachments).toHaveLength(2);
     const update=statements.find(q=>q.sql.startsWith("UPDATE"))!;expect(update.sql).toContain("i.tagsConfirmed=0");expect(update.sql).toContain("<=>");

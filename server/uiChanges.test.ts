@@ -6,32 +6,12 @@ const listingSource = readRepoSources(
   "server/domains/listing/routers/generation.ts"
 );
 
-// Test: DataFilesPage only supports product_attributes file type
-describe("DataFilesPage simplification", () => {
-  it("should only have product_attributes file type config", async () => {
+describe("Listing material entry", () => {
+  it("keeps product attribute input in Listing capture", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("client/src/pages/DataFilesPage.tsx", "utf-8");
-    
-    // product_attributes should exist
-    expect(content).toContain("product_attributes");
-    
-    // Other file types should NOT exist in FILE_TYPE_CONFIG
-    expect(content).not.toContain('"competitor_listings"');
-    expect(content).not.toContain('"search_term_report"');
-    expect(content).not.toContain('"aba_keywords"');
-  });
-
-  it("FILE_TYPES should only contain product_attributes", async () => {
-    const fs = await import("fs");
-    const content = fs.readFileSync("client/src/pages/DataFilesPage.tsx", "utf-8");
-    
-    // Check FILE_TYPES definition line
-    const fileTypesLine = content.split("\n").find(l => l.includes("const FILE_TYPES"));
-    expect(fileTypesLine).toBeTruthy();
-    expect(fileTypesLine).toContain("product_attributes");
-    expect(fileTypesLine).not.toContain("competitor_listings");
-    expect(fileTypesLine).not.toContain("search_term_report");
-    expect(fileTypesLine).not.toContain("aba_keywords");
+    const source = fs.readFileSync("client/src/pages/listing/ListingInputPanels.tsx", "utf8");
+    expect(source).toContain("本品属性表");
+    expect(source).not.toContain("ListingUploadedFiles");
   });
 });
 

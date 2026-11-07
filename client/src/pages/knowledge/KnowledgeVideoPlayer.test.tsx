@@ -88,3 +88,5 @@ it("seeks after metadata arrives and supports repeat clicks on the same segment"
   );
   expect(player.currentTime).toBeLessThan(30);
 });
+
+it("keeps an evidence clip quiet until selected and then seeks to its saved moment",()=>{const play=vi.spyOn(HTMLMediaElement.prototype,"play").mockResolvedValue(undefined);const {container}=render(<KnowledgeVideoPlayer video={{hash:"a".repeat(64),role:"main",status:"ready",videoUrl:"/saved.mp4",posterUrl:null,duration:40} as any} seek={{seconds:12,nonce:1}} autoplayOnSeek={false}/>);expect(container.querySelector("video")).toBeNull();fireEvent.click(screen.getByRole("button",{name:"播放主图视频"}));const element=container.querySelector("video")!;Object.defineProperty(element,"readyState",{value:1,configurable:true});Object.defineProperty(element,"duration",{value:40,configurable:true});fireEvent.loadedMetadata(element);expect(element.currentTime).toBe(12);expect(play).toHaveBeenCalledTimes(1);});

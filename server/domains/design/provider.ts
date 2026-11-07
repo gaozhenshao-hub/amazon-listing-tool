@@ -78,6 +78,7 @@ export function parseProviderTaskId(body: any) {
     throw new Error("服务未返回有效任务编号，请核对服务端记录");
   return id;
 }
+const RESULT_HOSTS = ["tos.lingkeai.vip", "tos-hk.lingkeai.vip"];
 export function resultUrls(body: any): string[] {
   const urls = Array.isArray(body?.result_urls)
     ? body.result_urls
@@ -89,7 +90,7 @@ export function resultUrls(body: any): string[] {
     const url = new URL(value);
     if (
       url.protocol !== "https:" ||
-      url.hostname !== "tos.lingkeai.vip" ||
+      !RESULT_HOSTS.includes(url.hostname) ||
       url.port ||
       url.username ||
       url.password
@@ -103,7 +104,7 @@ export async function downloadResult(url: string) {
     timeoutMs: 30_000,
     maxRedirects: 0,
     maxResponseBytes: 20 * 1024 * 1024,
-    allowedHosts: ["tos.lingkeai.vip"],
+    allowedHosts: RESULT_HOSTS,
   });
   if (!response.ok) throw new Error("生成成功，图片保存暂未完成");
   return response.body;

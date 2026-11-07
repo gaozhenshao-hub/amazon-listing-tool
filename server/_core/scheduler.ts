@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { startKnowledgeCacheScheduler } from "../domains/knowledge/cacheScheduler";
+import { startSelectionFxScheduler } from "../domains/development/productSelectionFx";
 import {
   startTodoReminderScheduler,
   stopTodoReminderScheduler,
@@ -85,6 +86,7 @@ async function main() {
     startTodoReminderScheduler();
     stops.push(startAiOsOperationalScheduler());
     stops.push(startKnowledgeCacheScheduler());
+    stops.push(startSelectionFxScheduler());
     stops.push(startSaihuReportScheduler());
     stops.push(startSaihuSyncScheduler());
   } catch (error) {

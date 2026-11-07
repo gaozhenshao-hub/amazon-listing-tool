@@ -208,6 +208,7 @@ export function normalizeAmazonArtifact(input: {
     rating: valueEvidence(rating, item.stars !== undefined ? "$.stars" : "$.rating"),
     reviewCount: valueEvidence(reviewCount, item.reviewsCount !== undefined ? "$.reviewsCount" : "$.reviewCount"),
     imageGallery: valueEvidence(gallery, "$.highResolutionImages"),
+    productVideo: valueEvidence(videos.filter(v => v.role === "main"), "$.videos"),
     aplus: valueEvidence(videos.some(v=>v.role==="aplus") ? [item.aPlusContent,...videos.filter(v=>v.role==="aplus")] : item.aPlusContent, "$.aPlusContent"),
     brandStory: valueEvidence(item.brandStory, "$.brandStory"),
     variants: valueEvidence(variantAsins, "$.variantAsins"),

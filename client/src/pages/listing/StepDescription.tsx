@@ -1,3 +1,4 @@
+import { useListingPageFlush } from "./listingPageFlush";
 import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { sanitizeListingHtml } from "@/lib/sanitizeListingHtml";
@@ -139,6 +140,9 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
     });
   };
 
+  useListingPageFlush(projectId,async()=>{
+    if(!locked && description.trim())await updateListing.mutateAsync({projectId,field:"description",value:description});
+  });
   const handleConfirm = () => {
     if (!description.trim()) {
       toast.error("描述内容不能为空");

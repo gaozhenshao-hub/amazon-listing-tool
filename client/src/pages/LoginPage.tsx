@@ -10,6 +10,7 @@ import { APP_ERROR_CODES } from "@shared/_core/errors";
 import { getLoginUrl, isLocalAuthMode } from "@/const";
 import { toast } from "sonner";
 import { Sparkles, Eye, EyeOff, Loader2, Shield } from "lucide-react";
+import { researchExtensionReturn } from "@/lib/researchExtensionReturn";
 
 export default function LoginPage() {
   const isLocalAuth = isLocalAuthMode();
@@ -17,7 +18,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [mustChangePassword, setMustChangePassword] = useState(false);
-  const [loginDestination, setLoginDestination] = useState("/");
+  const [returnTo] = useState(()=>researchExtensionReturn(new URLSearchParams(window.location.search).get("returnTo")));
+  const [loginDestination, setLoginDestination] = useState(returnTo||"/");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
@@ -47,7 +49,7 @@ export default function LoginPage() {
 
   const loginMutation = trpc.userAuth.login.useMutation({
     onSuccess: (data) => {
-      const destination = data.user.role === "designer" ? "/design/images" : "/";
+      const destination = returnTo || (data.user.role === "designer" ? "/design/images" : "/");
       setLoginDestination(destination);
       if (data.mustChangePassword) {
         setMustChangePassword(true);

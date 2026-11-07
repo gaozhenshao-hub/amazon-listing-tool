@@ -4,7 +4,8 @@ import { useProject } from "@/contexts/ProjectContext";
 const stages = [
   ["/listing/analysis", "1. Listing 抓取"],
   ["/listing/comparison", "2. Listing 对比及分析"],
-  ["/listing/generate", "3. 智能 Listing 生成"],
+  ["/listing/aggregation", "3. 聚合分析"],
+  ["/listing/generate", "4. 智能 Listing 生成"],
 ] as const;
 
 /** Stage links never select a project or start a background task. */

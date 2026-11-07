@@ -1,5 +1,6 @@
 export const SET_ADJUSTMENT_LABELS: Record<string, string> = {
   setCategory: "类目", setStyle: "风格", setPrimaryColor: "主色", setAccentColor: "提亮色",
+  contentTranslations:'模块文案翻译',
 };
 export const IMAGE_ADJUSTMENT_LABELS: Record<string, string> = {
   tagCategory: "类目",
@@ -13,6 +14,7 @@ export const IMAGE_ADJUSTMENT_LABELS: Record<string, string> = {
   tagSellingPointCategory: "卖点",
   tagSellingPointDetail: "卖点细分",
   tagComposition: "构图",
+  imageTranslations:'图片中文翻译',
 };
 export const VIDEO_ADJUSTMENT_LABELS: Record<string, string> = {
   category: "类目",

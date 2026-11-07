@@ -2,6 +2,7 @@ import { beforeEach,afterEach,describe, expect, it, vi } from "vitest";
 import { parseBasicAmazonImages, BasicAmazonImagesProvider, isAmazonShoppingLanding } from "./basicAmazonProvider";
 import { safeHttpRequest } from "../../infrastructure/http/safeHttpClient";
 import { openAmazonBrowser } from "./amazonBrowser";
+import { PROJECT_COMPETITOR_ACQUISITION_CAPABILITIES } from "./legacyConsumerContracts";
 vi.mock("../../infrastructure/http/safeHttpClient", () => ({ safeHttpRequest: vi.fn() }));
 vi.mock("./amazonBrowser", () => ({ openAmazonBrowser: vi.fn() }));
 const header = '<input id="ASIN" value="B089LDX88M"><span id="productTitle">Phone mount</span>';
@@ -10,6 +11,17 @@ const b = "https://m.media-amazon.com/images/I/second.jpg";
 describe("basic Amazon images", () => {
   beforeEach(()=>{vi.clearAllMocks();vi.stubEnv('AMAZON_BROWSER_ENABLED','false');});
   afterEach(()=>vi.unstubAllEnvs());
+  it("supports every capability requested by project competitor capture", () => {
+    const provider = new BasicAmazonImagesProvider();
+    expect(PROJECT_COMPETITOR_ACQUISITION_CAPABILITIES.every(capability => (provider.capabilities as readonly string[]).includes(capability))).toBe(true);
+  });
+  it("accepts explicit product-video capture and returns the first main video", async () => {
+    const url = 'https://m.media-amazon.com/images/S/example/main.mp4';
+    vi.mocked(safeHttpRequest).mockReset().mockResolvedValue({ ok: true, text: () => header + `<img id="landingImage" src="${a}"><div id="altImages"><div class="videoThumbnail"></div></div><script>var imageBlock={"videos":[{"url":"${url}"}]};</script>` } as any);
+    const result = await new BasicAmazonImagesProvider().fetch({ workspaceId: 1, marketplace: "US", asin: "B089LDX88M", capabilities: ["image_gallery", "product_video"], idempotencyKey: "explicit-product-video" });
+    expect(result.status).toBe("succeeded");
+    expect(JSON.parse(Buffer.from(result.rawArtifact!.bytes).toString())[0].videos).toMatchObject([{ role: "main", url }]);
+  });
   it('preserves a separate subtitle without including the brand byline',()=>{const d=parseBasicAmazonImages(header+`<span id="productSubtitle">Full Body Protection</span><span id="bylineInfo">Visit Brand Store</span><img id="landingImage" src="${a}">`,'B089LDX88M');expect(d.title).toBe('Phone mount');expect(d.subtitle).toBe('Full Body Protection');});
   it("extracts competitor listing and ratings without inventing missing values", () => {
     const base=header+`<img id="landingImage" src="${a}">`;

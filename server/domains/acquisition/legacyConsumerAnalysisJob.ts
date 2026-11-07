@@ -1,12 +1,15 @@
+import { videoSourceFingerprint } from "../../../shared/competitorVideoAnalysis";
 import { projects, competitorAnalyses } from "../../../drizzle/schema/project";
 import { competitorRevision } from "../../repositories/project/competitorWritePolicy";
-import { analyzeCompetitorDeep } from '../listing/competitorDeepAnalysis';
+import { analyzeCompetitorStudyV2 } from "../listing/competitorStudyV2";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { kbListingCopywriting, kbProductInnovations } from "../../../drizzle/schema/knowledge";
+import { kbListingCopywriting, kbProductInnovations,
+} from "../../../drizzle/schema/knowledge";
 import * as projectDb from "../../repositories";
 import { requireDb } from "../../repositories/dbClient";
-import { runEmperorSkill, safeParseSkillJSON } from "../ai_os/services/skillRunner";
+import { runEmperorSkill, safeParseSkillJSON,
+} from "../ai_os/services/skillRunner";
 import { registerCompetitorAnalysisArtifact } from "../ai_os/services/businessArtifactRegistry";
 import {
   registerAiJobHandler,
@@ -23,15 +26,20 @@ import {
   startLegacyConsumerAgentRun,
   type LegacyAnalysisConsumerType,
 } from "./legacyConsumerAgent";
-import { loadConfirmedSnapshotForConsumer, type LegacyConsumerProjection } from "./legacyConsumerProjection";
-import { readJson } from '../../../shared/competitorPresentation';
-import { loadSupplementalReviews } from '../listing/supplementalReviews';
+import { loadConfirmedSnapshotForConsumer, type LegacyConsumerProjection,
+} from "./legacyConsumerProjection";
+import { readJson } from "../../../shared/competitorPresentation";
+import { loadSupplementalReviews } from "../listing/supplementalReviews";
 
 const ListingAnalysisSchema = z.object({
-  titleAnalysis: z.object({ structure: z.string().default(""), keywords: z.string().default(""), score: z.coerce.number().min(0).max(10) }).passthrough(),
-  bulletPointsAnalysis: z.object({ highlights: z.string().default(""), keywordDensity: z.string().default(""), structure: z.string().default(""), score: z.coerce.number().min(0).max(10) }).passthrough(),
-  descriptionAnalysis: z.object({ storytelling: z.string().default(""), seoOptimization: z.string().default(""), score: z.coerce.number().min(0).max(10) }).passthrough(),
-  keywordCoverage: z.object({ primaryKeywords: z.array(z.string()).default([]), missingKeywords: z.array(z.string()).default([]), score: z.coerce.number().min(0).max(10) }).passthrough(),
+  titleAnalysis: z.object({ structure: z.string().default(""), keywords: z.string().default(""), score: z.coerce.number().min(0).max(10),
+      }).passthrough(),
+  bulletPointsAnalysis: z.object({ highlights: z.string().default(""), keywordDensity: z.string().default(""), structure: z.string().default(""), score: z.coerce.number().min(0).max(10),
+      }).passthrough(),
+  descriptionAnalysis: z.object({ storytelling: z.string().default(""), seoOptimization: z.string().default(""), score: z.coerce.number().min(0).max(10),
+      }).passthrough(),
+  keywordCoverage: z.object({ primaryKeywords: z.array(z.string()).default([]), missingKeywords: z.array(z.string()).default([]), score: z.coerce.number().min(0).max(10),
+      }).passthrough(),
   conversionTips: z.array(z.string()).default([]),
   competitiveHighlights: z.array(z.string()).default([]),
   copywritingTechniques: z.array(z.string()).default([]),
@@ -109,35 +117,39 @@ async function runProductAnalysis(input: z.infer<typeof JobInputSchema>, context
 async function executeLegacyConsumerAnalysis(job: AiJobSnapshot, jobContext: AiJobHandlerContext) {
   const input = JobInputSchema.parse(job.input);
   const db = await requireDb("Amazon confirmed snapshot consumer analysis");
-  await markLegacyConsumerAgentRunning({ consumerType: input.consumerType, agentRunId: input.agentRunId, aiJobRunId: job.runId, attempt: job.attempt });
+  await markLegacyConsumerAgentRunning({ consumerType: input.consumerType, agentRunId: input.agentRunId, aiJobRunId: job.runId, attempt: job.attempt,
+  });
   try {
-    const snapshot = await loadConfirmedSnapshotForConsumer({ db, workspaceId: input.workspaceId, confirmedSnapshotId: input.confirmedSnapshotId });
+    const snapshot = await loadConfirmedSnapshotForConsumer({ db, workspaceId: input.workspaceId, confirmedSnapshotId: input.confirmedSnapshotId,
+    });
     if (snapshot.confirmed.asin !== input.asin) throw new Error("confirmed snapshot ASIN mismatch");
     if (input.consumerType === "project_competitor" && !input.analysisId) {
-      await projectDb.assertLegacyCompetitorAcquisitionWritable(input.businessId, input.asin, { userId: input.userId, workspaceId: input.workspaceId, rejectCapturedSource: true });
+      await projectDb.assertLegacyCompetitorAcquisitionWritable(input.businessId, input.asin, { userId: input.userId, workspaceId: input.workspaceId, rejectCapturedSource: true,
+        });
     }
-    const previousRecord = input.consumerType === 'project_competitor' ? await db.transaction(async tx => {
+    const previousRecord = input.consumerType === "project_competitor"
+        ? await db.transaction(async tx => {
       const [parent] = await tx.select().from(projects).where(and(
-        eq(projects.id, input.businessId), eq(projects.userId, input.userId), eq(projects.workspaceId, input.workspaceId),
-      )).limit(1).for('update');
-      if (!parent) throw new Error('项目不可访问');
+        eq(projects.id, input.businessId), eq(projects.userId, input.userId), eq(projects.workspaceId, input.workspaceId)
+                )).limit(1).for("update");
+      if (!parent) throw new Error("项目不可访问");
       const [record] = await tx.select().from(competitorAnalyses).where(and(
         eq(competitorAnalyses.projectId, input.businessId), eq(competitorAnalyses.asin, input.asin),
-        input.analysisId ? eq(competitorAnalyses.id, input.analysisId) : undefined,
-      )).limit(1).for('update');
+        input.analysisId ? eq(competitorAnalyses.id, input.analysisId) : undefined
+                )).limit(1).for("update");
       if (input.analysisId && readJson(record?.rawData)?.presentationJobRunId !== job.runId) {
-        throw new Error('分析任务尚未提交或已被替换，请重新分析');
+        throw new Error("分析任务尚未提交或已被替换，请重新分析");
       }
       return record;
     }) : null;
     const previousRaw = readJson(previousRecord?.rawData) || {};
     if (input.consumerType === "project_competitor" && input.analysisId) {
       const parent = await projectDb.getProjectById(input.businessId, input.userId, input.workspaceId);
-      if (!parent || !previousRecord || previousRecord.id !== input.analysisId || previousRecord.summaryStatus === "confirmed"
+      if (!parent || !previousRecord || previousRecord.id !== input.analysisId
         || previousRaw.confirmedSnapshotId !== input.confirmedSnapshotId) throw new Error("竞品资料或确认状态已变化，请重新分析");
     }
     const imported = previousRaw.supplementalReviewCount ? await loadSupplementalReviews(input.businessId,input.asin) : [];
-    const context = snapshotContext(snapshot.data) + (previousRaw.manualSales ? `\nUser-calibrated monthly total sales for this ASIN and its variants: ${previousRaw.manualSales.value}. Use this total instead of the scraped purchase badges. Do not distribute it to variants without evidence.` : '') + (imported.length ? `\nUploaded reviews: ${imported.length}. Initial excerpts (the dedicated review stage analyzes all uploaded reviews in batches): ${JSON.stringify(imported.slice(0,30))}` : '');
+    const context = snapshotContext(snapshot.data) + (previousRaw.manualSales ? `\nUser-calibrated monthly total sales for this ASIN and its variants: ${previousRaw.manualSales.value}. Use this total instead of the scraped purchase badges. Do not distribute it to variants without evidence.` : "") + (imported.length ? `\nUploaded reviews: ${imported.length}. Initial excerpts (the dedicated review stage analyzes all uploaded reviews in batches): ${JSON.stringify(imported.slice(0,30))}` : "");
     await updateAiJobProgress(job.runId, 35);
     let output: unknown;
 
@@ -150,9 +162,10 @@ async function executeLegacyConsumerAnalysis(job: AiJobSnapshot, jobContext: AiJ
       }).where(and(
         eq(kbListingCopywriting.workspaceId, input.workspaceId),
         eq(kbListingCopywriting.id, input.businessId),
-        eq(kbListingCopywriting.remoteId, input.confirmedSnapshotId),
-      ));
-      output = { consumerType: input.consumerType, recordId: input.businessId, analysis };
+        eq(kbListingCopywriting.remoteId, input.confirmedSnapshotId)
+          ));
+      output = { consumerType: input.consumerType, recordId: input.businessId, analysis,
+      };
     } else if (input.consumerType === "kb_product") {
       const analysis = await runProductAnalysis(input, context);
       await db.update(kbProductInnovations).set({
@@ -162,17 +175,35 @@ async function executeLegacyConsumerAnalysis(job: AiJobSnapshot, jobContext: AiJ
       }).where(and(
         eq(kbProductInnovations.workspaceId, input.workspaceId),
         eq(kbProductInnovations.id, input.businessId),
-        eq(kbProductInnovations.remoteId, input.confirmedSnapshotId),
-      ));
-      output = { consumerType: input.consumerType, recordId: input.businessId, analysis };
+        eq(kbProductInnovations.remoteId, input.confirmedSnapshotId)
+          ));
+      output = { consumerType: input.consumerType, recordId: input.businessId, analysis,
+      };
     } else {
-      const deepAnalysis = await analyzeCompetitorDeep({userId:input.userId,workspaceId:input.workspaceId,data:snapshot.data,raw:previousRaw,assets:snapshot.assets,imported,signal:jobContext.signal,onProgress:n=>updateAiJobProgress(job.runId,n)});
-      const analysis = {marketPositioning:deepAnalysis.summary.positioning,advantages:deepAnalysis.summary.advantages,weaknesses:deepAnalysis.summary.weaknesses,summary:deepAnalysis.summary.positioning};
+      const comparisonAnalysis = await analyzeCompetitorStudyV2({userId:input.userId,workspaceId:input.workspaceId,data:snapshot.data,assets:snapshot.assets,previous:previousRaw.comparisonAnalysis?.richContent,imported,signal:jobContext.signal,onProgress:n=>updateAiJobProgress(job.runId,n),
+      });
+      Object.assign(comparisonAnalysis, {
+        videoAnalyses: (
+          previousRaw.comparisonAnalysis?.videoAnalyses || []
+        ).filter((v: any) => {
+          const a = snapshot.assets.find(
+            a => a.role === "video" && a.sourceUrlHash === v.hash
+          );
+          return (
+            a?.storageKey &&
+            videoSourceFingerprint(v.hash, a.storageKey, a.contentHash) ===
+              v.sourceHash
+          );
+        }),
+      });
+      const analysis = {summary:comparisonAnalysis.listing.titleTranslation};
       const gallery = snapshot.assets
         .filter((asset: any) => asset.role === "main" || asset.role === "secondary")
         .sort((a: any, b: any) => a.positionIndex - b.positionIndex)
         .map((asset: any) => asset.storageKey);
-      const summary = [deepAnalysis.summary.positioning,...['advantages','weaknesses','learnings','opportunities'].map(k=>`${({advantages:'优势',weaknesses:'劣势',learnings:'可借鉴',opportunities:'可超越'} as any)[k]}：${(deepAnalysis.summary as any)[k].join('；')}`)].join('\n');
+      const summary = comparisonAnalysis.listing.titleTranslation || snapshot.data.title ||
+        "";
+      const humanSummary = previousRecord?.summary && previousRecord.summary !== previousRecord.aiSummary ? previousRecord.summary : summary;
       const resultData = {
         projectId: input.businessId,
         asin: input.asin,
@@ -186,10 +217,13 @@ async function executeLegacyConsumerAnalysis(job: AiJobSnapshot, jobContext: AiJ
         keywords: (analysis as any).keywords ? JSON.stringify((analysis as any).keywords) : null,
         rawData: JSON.stringify({
           ...previousRaw,
-          deepAnalysis,
+          comparisonAnalysis,
           subtitle: snapshot.data.subtitle || null,
           manualSales: previousRaw.manualSales,
-          imageAssets: snapshot.assets.map(a=>({role:a.role,storageKey:a.storageKey})),
+          imageAssets: snapshot.assets.map(a=>({role:a.role,storageKey:a.storageKey,positionIndex:a.positionIndex,sourceUrlHash:a.sourceUrlHash,thumbnailStorageKey:a.thumbnailStorageKey,moduleType:a.moduleType,moduleClass:a.moduleClass,contentHash:a.contentHash,
+          })),
+          sourceLayout:snapshot.data.sourceLayout ?? null,
+          videos:snapshot.data.videos ?? [],
           supplementalReviewCount: previousRaw.supplementalReviewCount,
           productQuestions: previousRaw.productQuestions,
           supplementalReviewRevision: previousRaw.supplementalReviewRevision,
@@ -205,15 +239,32 @@ async function executeLegacyConsumerAnalysis(job: AiJobSnapshot, jobContext: AiJ
           contentHash: snapshot.confirmed.contentHash,
         }),
         aiSummary: summary,
-        summary,
+        summary:humanSummary,
         summaryStatus: "draft" as const,
       };
       const saved = input.analysisId && previousRecord
-        ? await projectDb.saveCollectedCompetitorAnalysis(previousRecord.id, resultData, { projectId: input.businessId, userId: input.userId, workspaceId: input.workspaceId, expectedRevision: competitorRevision(previousRecord) })
-        : await projectDb.upsertCompetitorAnalysis(resultData, { userId: input.userId, workspaceId: input.workspaceId, rejectCapturedSource: true });
+        ? await projectDb.saveCompetitorStudyV2(previousRecord.id, resultData, { projectId: input.businessId, userId: input.userId, workspaceId: input.workspaceId, expectedRevision: competitorRevision(previousRecord),
+              })
+        : await projectDb.upsertCompetitorAnalysis(resultData, { userId: input.userId, workspaceId: input.workspaceId, rejectCapturedSource: true,
+            });
       await registerCompetitorAnalysisArtifact(saved.id, "ai_output");
+      if (snapshot.data.videos?.length)
+        try {
+          const { startCompetitorVideos } = await import(
+            "../listing/competitorVideos"
+          );
+          await startCompetitorVideos({
+            projectId: input.businessId,
+            analysisId: saved.id,
+            workspaceId: input.workspaceId,
+            userId: input.userId,
+          });
+        } catch {
+          console.warn("[竞品视频] 自动字幕任务尚未启动，可在视频旁继续准备");
+        }
 
-      output = { consumerType: input.consumerType, projectId: input.businessId, analysisId: saved.id, analysis };
+      output = { consumerType: input.consumerType, projectId: input.businessId, analysisId: saved.id, analysis,
+      };
     }
     await updateAiJobProgress(job.runId, 90);
     await markLegacyConsumerAgentWaitingHuman({

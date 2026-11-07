@@ -11,6 +11,7 @@ import {
   updateCompetitorAnalysisSummary, upsertCompetitorAnalysis,
   assertLegacyCompetitorAcquisitionWritable,
   saveCollectedCompetitorAnalysis,
+  saveCompetitorStudyV2,
 } from "./projectAssetRepository";
 import { competitorRevision } from "./competitorWritePolicy";
 
@@ -127,6 +128,13 @@ const guard = (value: CompetitorAnalysis) => ({ projectId: value.projectId, expe
 beforeEach(() => vi.clearAllMocks());
 
 describe("explicit analysis completion", () => {
+  it("preserves confirmed human summaries while updating new AI comparison data", async () => {
+    const original=row({summary:'人工确认的结论',aiSummary:'此前 AI',summaryStatus:'confirmed',summaryConfirmedBy:7,summaryConfirmedAt:now});
+    const store=database([original]);dbMock.getDb.mockResolvedValue(store.db);
+    const saved=await saveCompetitorStudyV2(original.id,{rawData:'{"comparisonAnalysis":{"version":2}}',aiSummary:'新的 AI 结论'},
+      {...guard(original),userId:7,workspaceId:9});
+    expect(saved).toMatchObject({summary:'人工确认的结论',aiSummary:'新的 AI 结论',summaryStatus:'confirmed',summaryConfirmedBy:7});
+  });
   it("saves a draft without replacing original facts or images", async () => {
     const original = row({ title: "Original product", imageUrls: '["original.jpg"]' });
     const store = database([original]); dbMock.getDb.mockResolvedValue(store.db);

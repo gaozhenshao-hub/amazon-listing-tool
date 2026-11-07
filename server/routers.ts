@@ -1,5 +1,11 @@
+import { imageProductionRouter } from "./routers/imageProduction";
 import { knowledgeAssetsRouter } from "./routers/knowledgeAssets";
+import { researchLibraryRouter } from "./routers/researchLibrary";
+import { productSelectionRouter } from "./routers/productSelection";
 import { listingInputsRouter } from "./routers/listingInputs";
+import { imagePlanningRouter } from "./routers/imagePlanning";
+import { workspaceSettingsRouter } from "./routers/workspaceSettings";
+import { imageDocumentRouter } from "./routers/imageDocument";
 import { taskManagementRouter } from "./routers/taskManagement";
 import { designStudioRouter } from "./domains/design/router";
 import { designPromptRouter } from "./domains/design/prompts";
@@ -74,7 +80,11 @@ import { amazonAcquisitionRouter } from "./domains/acquisition/router";
 import { performanceRouter } from "./routers/performance";
 
 export const appRouter = router({
+  workspaceSettings: workspaceSettingsRouter,
+  imageDocument: imageDocumentRouter,
+  imageProduction: imageProductionRouter,
   listingInputs: listingInputsRouter,
+  imagePlanning: imagePlanningRouter,
   taskManagement: taskManagementRouter,
   designStudio: designStudioRouter,
   designPrompts: designPromptRouter,
@@ -106,6 +116,8 @@ export const appRouter = router({
   adStructure: adStructureRouter,
   reviewAggregation: reviewAggregationRouter,
   // Module 1: Product Development
+  researchLibrary: researchLibraryRouter,
+  productSelection: productSelectionRouter,
   // Image Workflow
   // Module 5: Knowledge Base
   knowledgeAssets: knowledgeAssetsRouter,

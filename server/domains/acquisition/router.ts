@@ -67,11 +67,10 @@ export const amazonAcquisitionRouter = router({
       capabilities: z.array(AmazonAcquisitionCapabilitySchema).min(1),
       cachePolicy: z.enum(["prefer_cache", "refresh", "cache_only"]).default("prefer_cache"),
     }))
-    .mutation(async ({ ctx, input }) => startAmazonAcquisitionJob({
-      ...input,
-      workspaceId: workspaceIdOf(ctx),
-      requestedBy: ctx.user.id,
-    })),
+    .mutation(async ({ ctx, input }) => {
+      if (input.consumerType === "project_competitor") throw new TRPCError({code:"PRECONDITION_FAILED",message:"请在 Listing 抓取页面提交竞品采集"});
+      return startAmazonAcquisitionJob({ ...input, workspaceId: workspaceIdOf(ctx), requestedBy: ctx.user.id });
+    }),
 
   listJobs: protectedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(100).default(50), scope: z.enum(["knowledge", "competitor"]).optional(), projectId: z.number().int().positive().optional() }).optional())

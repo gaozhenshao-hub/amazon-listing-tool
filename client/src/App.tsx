@@ -37,11 +37,14 @@ import { PermissionGuard } from "./components/PermissionGuard";
 const Home = lazyWithRecovery(() => import("./pages/Home"), "lazy-recovery:Home");
 const AnalysisPage = lazyWithRecovery(() => import("./pages/AnalysisPage"), "lazy-recovery:AnalysisPage");
 const ComparisonPage = lazyWithRecovery(() => import("./pages/ComparisonPage"), "lazy-recovery:ComparisonPage");
+const ImagePlanningPage = lazyWithRecovery(() => import("./pages/ImagePlanningPage"), "lazy-recovery:ImagePlanningPage");
+const ResearchLibrary = lazyWithRecovery(() => import("./pages/development/ResearchLibrary"), "lazy-recovery:ResearchLibrary");
+const ProductSelection = lazyWithRecovery(() => import("./pages/development/ProductSelection"), "lazy-recovery:ProductSelection");
+const ResearchExtensionConnect = lazyWithRecovery(() => import("./pages/development/ResearchExtensionConnect"), "lazy-recovery:ResearchExtensionConnect");
+const ListingAggregationPage = lazyWithRecovery(() => import("./pages/ListingAggregationPage"), "lazy-recovery:ListingAggregationPage");
 const GeneratePage = lazyWithRecovery(() => import("./pages/GeneratePage"), "lazy-recovery:GeneratePage");
 const PreviewPage = lazyWithRecovery(() => import("./pages/PreviewPage"), "lazy-recovery:PreviewPage");
 const ProjectDetailPage = lazyWithRecovery(() => import("./pages/ProjectDetailPage"), "lazy-recovery:ProjectDetailPage");
-const ReviewHistoryPage = lazyWithRecovery(() => import("./pages/ReviewHistoryPage"), "lazy-recovery:ReviewHistoryPage");
-const DataFilesPage = lazyWithRecovery(() => import("./pages/DataFilesPage"), "lazy-recovery:DataFilesPage");
 const ScorePage = lazyWithRecovery(() => import("./pages/ScorePage"), "lazy-recovery:ScorePage");
 const KeywordPage = lazyWithRecovery(() => import("./pages/KeywordPage"), "lazy-recovery:KeywordPage");
 const AdStructurePage = lazyWithRecovery(() => import("./pages/AdStructurePage"), "lazy-recovery:AdStructurePage");
@@ -54,6 +57,7 @@ const AcquisitionJobDetailsPage = lazyWithRecovery(() => import("./pages/acquisi
 const AcquisitionJobsPage = lazyWithRecovery(() => import("./pages/acquisition/AcquisitionJobsPage"), "lazy-recovery:AcquisitionJobsPage");
 const AcquisitionReviewPage = lazyWithRecovery(() => import("./pages/acquisition/AcquisitionReviewPage"), "lazy-recovery:AcquisitionReviewPage");
 const DesignStudio = lazyWithRecovery(() => import("./pages/design/DesignStudio"), "lazy-recovery:DesignStudio");
+const DesignAssistant = lazyWithRecovery(() => import("./pages/design/DesignAssistant"), "lazy-recovery:DesignAssistant");
 const DesignPromptLibrary = lazyWithRecovery(() => import("./pages/design/DesignPromptLibrary"), "lazy-recovery:DesignPromptLibrary");
 const DesignMaterials = lazyWithRecovery(() => import("./pages/design/DesignMaterials"), "lazy-recovery:DesignMaterials");
 const InventorySnapshotReadOnly = lazyWithRecovery(() => import("./pages/ops/InventorySnapshotReadOnly"), "lazy-recovery:InventorySnapshotReadOnly");
@@ -74,6 +78,7 @@ const EmperorSkillLibrary = lazyWithRecovery(() => import("./pages/emperor/Emper
 const EmperorAgentLibrary = lazyWithRecovery(() => import("./pages/emperor/EmperorAgentLibrary"), "lazy-recovery:EmperorAgentLibrary");
 const EmperorModels = lazyWithRecovery(() => import("./pages/emperor/EmperorModels"), "lazy-recovery:EmperorModels");
 const EmperorSettings = lazyWithRecovery(() => import("./pages/emperor/EmperorSettings"), "lazy-recovery:EmperorSettings");
+const SystemSettingsPage = lazyWithRecovery(() => import("./pages/SystemSettingsPage"), "lazy-recovery:SystemSettingsPage");
 
 export function RouteLoadingFallback() {
   return (
@@ -103,10 +108,12 @@ function Router() {
         <Route path="/listing/acquisition/review/:snapshotId">{() => <PermissionGuard moduleId="listing"><AcquisitionReviewPage /></PermissionGuard>}</Route>
         <Route path="/listing/analysis">{() => <PermissionGuard><ListingWorkspace><AnalysisPage /></ListingWorkspace></PermissionGuard>}</Route>
         <Route path="/listing/comparison">{() => <PermissionGuard><ListingWorkspace><ComparisonPage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/image-planning">{() => <PermissionGuard><ListingWorkspace><ImagePlanningPage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/aggregation">{() => <PermissionGuard><ListingAggregationPage /></PermissionGuard>}</Route>
         <Route path="/listing/generate">{() => <PermissionGuard><ListingWorkspace><GeneratePage /></ListingWorkspace></PermissionGuard>}</Route>
         <Route path="/listing/preview">{() => <PermissionGuard><ListingWorkspace><PreviewPage /></ListingWorkspace></PermissionGuard>}</Route>
-        <Route path="/listing/review-history">{() => <PermissionGuard><ListingWorkspace><ReviewHistoryPage /></ListingWorkspace></PermissionGuard>}</Route>
-        <Route path="/listing/data-files">{() => <PermissionGuard><ListingWorkspace><DataFilesPage /></ListingWorkspace></PermissionGuard>}</Route>
+        <Route path="/listing/review-history">{() => <Redirect to={`/listing/analysis${window.location.search}`} />}</Route>
+        <Route path="/listing/data-files">{() => <Redirect to={`/listing/analysis${window.location.search}`} />}</Route>
         <Route path="/listing/score">{() => <PermissionGuard><ListingWorkspace><ScorePage /></ListingWorkspace></PermissionGuard>}</Route>
         <Route path="/listing/keywords">{() => <PermissionGuard><ListingWorkspace><KeywordPage /></ListingWorkspace></PermissionGuard>}</Route>
         <Route path="/listing/ad-structure">{() => <PermissionGuard><ListingWorkspace><AdStructurePage /></ListingWorkspace></PermissionGuard>}</Route>
@@ -117,14 +124,18 @@ function Router() {
         <Route path="/comparison">{() => <Redirect to={`/listing/comparison${window.location.search}`} />}</Route>
         <Route path="/generate">{() => <Redirect to={`/listing/generate${window.location.search}`} />}</Route>
         <Route path="/preview">{() => <Redirect to={`/listing/preview${window.location.search}`} />}</Route>
-        <Route path="/review-history">{() => <Redirect to={`/listing/review-history${window.location.search}`} />}</Route>
+        <Route path="/review-history">{() => <Redirect to={`/listing/analysis${window.location.search}`} />}</Route>
         <Route path="/review-aggregation">{() => <Redirect to={`/listing/review-aggregation${window.location.search}`} />}</Route>
         <Route path="/keywords">{() => <Redirect to={`/listing/keywords${window.location.search}`} />}</Route>
         <Route path="/ad-structure">{() => <Redirect to={`/listing/ad-structure${window.location.search}`} />}</Route>
-        <Route path="/data-files">{() => <Redirect to={`/listing/data-files${window.location.search}`} />}</Route>
+        <Route path="/data-files">{() => <Redirect to={`/listing/analysis${window.location.search}`} />}</Route>
         <Route path="/score">{() => <Redirect to={`/listing/score${window.location.search}`} />}</Route>
         <Route path="/project/:id">{params => <Redirect to={`/listing/project/${params.id}`} />}</Route>
-        <Route path="/dev">{() => <PermissionGuard><ComingSoonPage moduleName="产品开发" /></PermissionGuard>}</Route>
+        <Route path="/dev/library/connect">{() => <PermissionGuard><ResearchExtensionConnect /></PermissionGuard>}</Route>
+        <Route path="/dev/library">{() => <PermissionGuard><ResearchLibrary /></PermissionGuard>}</Route>
+        <Route path="/dev/selection/:id">{params => <PermissionGuard><ProductSelection id={params.id} /></PermissionGuard>}</Route>
+        <Route path="/dev/selection">{() => <PermissionGuard><ProductSelection /></PermissionGuard>}</Route>
+        <Route path="/dev">{() => <PermissionGuard><ResearchLibrary /></PermissionGuard>}</Route>
         <Route path="/procurement">{() => <PermissionGuard moduleId="procurement" subModuleId="procurement_logistics"><OpsLogistics /></PermissionGuard>}</Route>
         <Route path="/procurement/shipping/:id">{() => <PermissionGuard moduleId="procurement" subModuleId="procurement_logistics"><OpsShippingBatchDetail /></PermissionGuard>}</Route>
         <Route path="/finance">{() => <PermissionGuard><ComingSoonPage moduleName="财务" /></PermissionGuard>}</Route>
@@ -136,6 +147,8 @@ function Router() {
         <Route path="/knowledge/acquisition/job/:jobId">{() => <PermissionGuard><AcquisitionJobDetailsPage /></PermissionGuard>}</Route>
         <Route path="/knowledge/acquisition">{() => <PermissionGuard><AcquisitionJobsPage /></PermissionGuard>}</Route>
         <Route path="/design/images">{() => <PermissionGuard moduleId="design" subModuleId="design_images"><DesignStudio /></PermissionGuard>}</Route>
+        <Route path="/design/chat">{() => <PermissionGuard moduleId="design" subModuleId="design_images"><DesignAssistant key="chat" mode="chat" /></PermissionGuard>}</Route>
+        <Route path="/design/scene">{() => <PermissionGuard moduleId="design" subModuleId="design_images"><DesignAssistant key="scene" mode="scene" /></PermissionGuard>}</Route>
         <Route path="/design/prompts">{() => <PermissionGuard moduleId="design" subModuleId="design_prompts"><DesignPromptLibrary /></PermissionGuard>}</Route>
         <Route path="/design/materials">{() => <PermissionGuard moduleId="design" subModuleId="design_materials"><DesignMaterials /></PermissionGuard>}</Route>
         <Route path="/ops">{() => <Redirect to="/ops/products" />}</Route>
@@ -163,6 +176,7 @@ function Router() {
         <Route path="/admin/users">{() => <PermissionGuard><UserManagement /></PermissionGuard>}</Route>
         <Route path="/admin/roles">{() => <PermissionGuard><RoleManagement /></PermissionGuard>}</Route>
         <Route path="/profile">{() => <ProfilePage />}</Route>
+        <Route path="/settings">{() => <PermissionGuard><SystemSettingsPage /></PermissionGuard>}</Route>
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

@@ -1,4 +1,5 @@
-import { COMPOSITION_OPTIONS } from "@shared/imageTagConstants";
+import { COMPOSITION_OPTIONS, IMAGE_BELONG_HIERARCHY } from "@shared/imageTagConstants";
+import { LEGACY_IMAGE_BELONG_HIERARCHY } from "@shared/imageModuleSpecs";
 import { useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 
@@ -12,13 +13,8 @@ import { trpc } from "@/lib/trpc";
 // Hardcoded fallbacks (used when DB has no tags yet)
 const FALLBACK_CATEGORY = ["家居","餐厨","庭院花园","房车户外","泳池","玩具","个护","大小家电","3C数码","五金工具","家电配件","母婴（儿童）","老人","运动健身","宠物","工业品","农业品","实验室品"];
 const FALLBACK_COLOR = ["红色","绿色","蓝色","黄色","橙色","紫色","金色","浅灰","深灰","浅棕","深棕","白色","黑色"];
-const FALLBACK_IMAGE_BELONG = ["主图", "套图", "A+", "品牌故事"];
-const FALLBACK_IMAGE_BELONG_HIERARCHY: Record<string, string[]> = {
-  "主图": [],
-  "套图": [],
-  "A+": ["图片轮播", "对比表格", "全宽图", "图文叠加", "四图文", "三图文", "热点交互", "视频模块", "导航轮播", "单图侧文", "技术参数表", "品牌故事卡"],
-  "品牌故事": [],
-};
+const FALLBACK_IMAGE_BELONG = Object.keys(IMAGE_BELONG_HIERARCHY);
+const FALLBACK_IMAGE_BELONG_HIERARCHY: Record<string, string[]> = IMAGE_BELONG_HIERARCHY;
 const FALLBACK_COMPOSITION = [...COMPOSITION_OPTIONS];
 const FALLBACK_STYLE = ["大厂工业极简风","现代都市风","大胆图形风","美式复古风","北欧原木风","温馨家居风","INS生活风","轻奢高级风","运动活力风","健康生活风","户外探险风","庭院休闲风","亲和童趣风","工业硬核风","赛博科技风","田园自然风"];
 const FALLBACK_IMAGE_TYPE_HIERARCHY: Record<string, string[]> = {
@@ -109,17 +105,18 @@ export function useKBTagOptions(): TagOptions {
   const imageBelongOptions = useMemo(() => {
     if (!imageBelongTags || imageBelongTags.length === 0) return FALLBACK_IMAGE_BELONG;
     // Only return top-level tags (no parentValue) — sub-tags like A+ modules should not appear in the dropdown
-    return imageBelongTags.filter(t => !t.parentValue).map(t => t.value);
+    return [...new Set([...FALLBACK_IMAGE_BELONG,...imageBelongTags.filter(t => !t.parentValue && t.value !== "套图").map(t => t.value)])];
   }, [imageBelongTags]);
 
   const imageBelongHierarchy = useMemo(() => {
     if (!imageBelongTags || imageBelongTags.length === 0) return FALLBACK_IMAGE_BELONG_HIERARCHY;
     const parents = imageBelongTags.filter(t => !t.parentValue);
-    const hierarchy: Record<string, string[]> = {};
+    const hierarchy: Record<string, string[]> = {...FALLBACK_IMAGE_BELONG_HIERARCHY};
     parents.forEach(p => {
-      hierarchy[p.value] = imageBelongTags
+      if(p.value === "套图")return;
+      hierarchy[p.value] = [...new Set([...(hierarchy[p.value]||[]),...(LEGACY_IMAGE_BELONG_HIERARCHY[p.value]||[]),...imageBelongTags
         .filter(t => t.parentValue === p.value)
-        .map(t => t.value);
+        .map(t => t.value)])];
     });
     return hierarchy;
   }, [imageBelongTags]);

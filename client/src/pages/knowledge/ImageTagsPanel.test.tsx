@@ -22,8 +22,8 @@ it("edits a draft and saves it only on confirmation",async()=>{
   fireEvent.click(screen.getByRole("button",{name:"保存标签"}));
   await waitFor(()=>expect(calls.save).toHaveBeenCalledWith(expect.objectContaining({imageId:7,tagComposition:"三分构图"})));
 });
-it("shows only structural labels for brand stories",()=>{
-  render(<ImageTagsPanel image={{...image,imagePosition:"brand_story",tagImageBelongSub:"四图组合"}}/>);
+it("shows only structural labels for a brand background",()=>{
+  render(<ImageTagsPanel image={{...image,imagePosition:"brand_story",tagImageBelongSub:"四图组合",aplusModuleType:"品牌背景"}}/>);
   expect(screen.getByText("四图组合")).toBeTruthy();
   expect(screen.queryByText("构图")).toBeNull();
 });
@@ -42,3 +42,5 @@ it("edits independent labels without changing an ASIN set",async()=>{
   fireEvent.click(screen.getByRole("button",{name:"保存标签"}));
   await waitFor(()=>expect(calls.save).toHaveBeenCalledWith({id:7,revision:3,tags:{tagCategory:"宠物"}}));
 });
+
+it("allows normal image labels on a brand story card",()=>{render(<ImageTagsPanel image={{...image,imagePosition:"brand_story",tagImageBelongSub:"四图组合"}}/>);expect(screen.getByText("构图")).toBeTruthy();expect(screen.getByText("二分构图")).toBeTruthy();});

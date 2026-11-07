@@ -8,7 +8,7 @@ import { parseAmazonResearch, fetchWithBoundedRetries, mergeAmazonResearch } fro
 import { openAmazonBrowser } from './amazonBrowser';
 
 export const BASIC_AMAZON_PROVIDER = "builtin.amazon.public_images";
-export const BASIC_IMAGE_CAPABILITIES = ["catalog_basic", "listing_content", "ratings", "image_gallery", "aplus", "brand_story"] as const;
+export const BASIC_IMAGE_CAPABILITIES = ["catalog_basic", "listing_content", "ratings", "image_gallery", "aplus", "brand_story", "product_video"] as const;
 
 export function isAmazonShoppingLanding(html: string) {
   const $ = load(html);
@@ -120,11 +120,35 @@ export function parseBasicAmazonImages(html: string, asin: string) {
   };
 }
 
+/** Choose each captured section by useful structure, not by video count or raw module count. */
+export function mergeRichCapture(current: ReturnType<typeof parseBasicAmazonImages>, extra: ReturnType<typeof parseBasicAmazonImages>) {
+  const words=(m:typeof current.sourceLayout.modules[number])=>[...(m.blocks||[]),...m.cards.flatMap(c=>c.blocks||[]),...(m.questions||[]).flatMap(q=>[q.question,q.answer]),...(m.hotspots||[]).flatMap(h=>h.blocks)].map(b=>b.text).concat(m.rows.flatMap(r=>[r.label,...r.cells]));
+  const score=(modules:typeof current.sourceLayout.modules)=>modules.reduce((sum,m)=>sum+1+m.cards.reduce((n,c)=>n+c.images.length,0)+words(m).length+m.rows.length*2+(m.kind==='carousel'||m.kind==='grid'||m.kind==='comparison'?3:0)+(m.background?2:0)+(m.kind==='video'?2:0),0);
+  const a=current.sourceLayout.modules.filter(m=>m.section==='aplus'),b=extra.sourceLayout.modules.filter(m=>m.section==='aplus');
+  const oldBrand=current.sourceLayout.modules.filter(m=>m.section==='brand_story'),newBrand=extra.sourceLayout.modules.filter(m=>m.section==='brand_story');
+  const useExtraAplus=score(b)>score(a),useExtraBrand=score(newBrand)>score(oldBrand);
+  const primary=[...(useExtraAplus?b:a)],secondary=useExtraAplus?a:b;
+  // Different hydration samples may expose additional pure text/FAQ modules.
+  // Keep them even when another sample is richer in images, without duplicating photo modules.
+  for(const candidate of secondary){
+    if(candidate.cards.some(c=>c.images.length)||candidate.videoHashes?.length)continue;
+    const texts=words(candidate),present=new Set(primary.flatMap(words));
+    if(!texts.length||texts.every(t=>present.has(t)))continue;
+    const originalIndex=secondary.indexOf(candidate),next=secondary.slice(originalIndex+1).find(m=>primary.some(p=>p.cards.some(c=>c.images.some(i=>m.cards.some(mc=>mc.images.some(mi=>mi.hash===i.hash))))));
+    const at=next?primary.findIndex(p=>p.cards.some(c=>c.images.some(i=>next.cards.some(nc=>nc.images.some(ni=>ni.hash===i.hash))))):-1;
+    const copy={...candidate,id:primary.some(m=>m.id===candidate.id)?`${candidate.id}-text-${primary.length}`:candidate.id};
+    if(at>=0)primary.splice(at,0,copy);else primary.push(copy);
+  }
+  current.sourceLayout={version:2,modules:[...primary,...(useExtraBrand?newBrand:oldBrand)]};
+  const main=current.videos.find(v=>v.role==='main')||extra.videos.find(v=>v.role==='main');
+  const aplusVideos=(useExtraAplus?extra:current).videos.filter(v=>v.role==='aplus');
+  current.videos=[...(main?[main]:[]),...aplusVideos];
+}
+
 function mergeProductSupplement(current: ReturnType<typeof parseBasicAmazonImages>, extra: ReturnType<typeof parseBasicAmazonImages>) {
   if (current.asin !== extra.asin) return;
   mergeAmazonResearch(current.research,extra.research,current.asin);
-  if (extra.sourceLayout.modules.length > current.sourceLayout.modules.length) current.sourceLayout = extra.sourceLayout;
-  if (extra.videos.length > current.videos.length) { current.videos = extra.videos; current.sourceLayout = extra.sourceLayout; }
+  mergeRichCapture(current,extra);
   for (const [key,limit] of [['highResolutionImages',20],['aPlusContent',40],['brandStory',40]] as const) {
     current[key] = [...new Set([...current[key],...extra[key]])].slice(0,limit);
   }
@@ -165,8 +189,7 @@ export class BasicAmazonImagesProvider implements AmazonAcquisitionProvider {
             const sample = parseBasicAmazonImages(html,asin);
             // Rich-content samples have the same validated ASIN. Preserve
             // layout/images that hydration later removes, without changing price.
-            if (sample.sourceLayout.modules.length > product.sourceLayout.modules.length) product.sourceLayout = sample.sourceLayout;
-            if (sample.videos.length > product.videos.length) { product.videos=sample.videos;product.sourceLayout=sample.sourceLayout; }
+            mergeRichCapture(product,sample);
             product.aPlusContent = [...new Set([...product.aPlusContent,...sample.aPlusContent])];
             product.brandStory = [...new Set([...product.brandStory,...sample.brandStory])];
             if (sample.research.reviews.length) mergeAmazonResearch(product.research, {

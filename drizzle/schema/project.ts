@@ -34,7 +34,7 @@ export const competitorAnalyses = mysqlTable("competitorAnalyses", {
   reviewCount: varchar("reviewCount", { length: 20 }),
   reviewAnalysis: text("reviewAnalysis"), // JSON: pain points, itch points, delight points
   keywords: text("keywords"), // JSON: core, long-tail, traffic
-  rawData: text("rawData"), // Full raw data for reference
+  rawData: mediumtext("rawData"), // Full raw data for reference
   aiSummary: text("aiSummary"), // Original AI-generated structured markdown summary
   summary: text("summary"), // Current user-editable structured markdown summary
   summaryStatus: mysqlEnum("summaryStatus", ["draft", "confirmed"]).default("draft").notNull(),

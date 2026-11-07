@@ -17,7 +17,7 @@ function row(overrides: Partial<CompetitorAnalysis> = {}): CompetitorAnalysis {
     reviewCount: null, reviewAnalysis: "Retained review analysis", keywords: "[]", rawData: JSON.stringify({ reviewImport: { sourceHash: "c".repeat(64) }, research: { previous: true } }),
     aiSummary: "Old AI", summary: "Human edited", summaryStatus: "confirmed", summaryVersion: 4, summaryConfirmedBy: 7, summaryConfirmedAt: now, createdAt: now, updatedAt: now, ...overrides };
 }
-function fixture(initial: CompetitorAnalysis[] = []) {
+function fixture(initial: CompetitorAnalysis[] = [], driverTimestampStrings = false) {
   const state = { actor: { id: 7, role: "ops_specialist", status: "active", defaultWorkspaceId: 3 }, parent: { id: 11, userId: 7, workspaceId: 3 },
     confirmed: { id: 9, workspaceId: 3, snapshotId: 8, revisionId: null, asin: scope.asin, marketplace: "US", contentHash: "b".repeat(64), confirmedData: structuredClone(normalized), confirmedAssetIds: [] as number[], isCurrent: 1 },
     source: { id: 8, workspaceId: 3, asin: scope.asin, marketplace: "US", rawArtifactId: 5, normalizedData: structuredClone(normalized) },
@@ -31,7 +31,11 @@ function fixture(initial: CompetitorAnalysis[] = []) {
     if (q.sql.includes("FROM acquisition_confirmed")) return [[state.confirmed]];
     if (q.sql.includes("FROM acquisition_source")) return [[state.source]];
     if (q.sql.includes("FROM acquisition_asset")) return [state.assets];
-    if (q.sql.startsWith("SELECT * FROM competitorAnalyses")) return [state.breakReadback && calls.some(c => c.sql.startsWith("INSERT") || c.sql.startsWith("UPDATE")) ? [] : structuredClone(state.competitors)];
+    if (q.sql.startsWith("SELECT COUNT(DISTINCT asin)")) return [[{ total: new Set(state.competitors.map(row => row.asin)).size }]];
+    if (q.sql.startsWith("SELECT * FROM competitorAnalyses")) {
+      const found = state.breakReadback && calls.some(c => c.sql.startsWith("INSERT") || c.sql.startsWith("UPDATE")) ? [] : structuredClone(state.competitors.filter(row => q.sql.includes("WHERE projectId=? AND asin=?") ? row.asin === q.params[1] : row.id === q.params[0]));
+      return [driverTimestampStrings ? found.map(row => ({ ...row, ...Object.fromEntries(["createdAt", "updatedAt", "summaryConfirmedAt"].map(key => { const value=row[key as keyof CompetitorAnalysis]; return [key, value instanceof Date ? value.toISOString().replace('T',' ').replace('Z','') : value]; })) })) : found];
+    }
     const fields = ["title", "bulletPoints", "imageUrls", "price", "rating", "reviewCount", "rawData"];
     if (q.sql.startsWith("UPDATE competitorAnalyses")) {
       state.competitors[0] = { ...state.competitors[0], ...Object.fromEntries(fields.map((key, index) => [key, q.params[index]])) };
@@ -51,6 +55,18 @@ const save = createCollectedListingSaver(permission);
 beforeEach(() => permission.mockReset().mockResolvedValue(undefined));
 
 describe("capture-only competitor projection (offline transaction-executor fixture)", () => {
+  it.each([false, true])("saves raw-driver timestamps for %s existing record and preserves human history", async existing => {
+    const original = row();
+    const f = fixture(existing ? [original] : [], true);
+    await expect(save({ db: f.db, ...scope })).resolves.toEqual({ analysisId: 20 });
+    if (existing) for (const field of ["summary", "summaryConfirmedAt", "summaryConfirmedBy", "reviewAnalysis", "keywords"] as const) expect(f.state.competitors[0][field]).toEqual(original[field]);
+    expect(JSON.parse(f.state.competitors[0].rawData!)).toMatchObject({ captureOnly: true, analysisStale: true });
+  });
+  it("does not admit a sixth distinct competitor even through another capture path", async () => {
+    const f=fixture(Array.from({length:5},(_,i)=>row({id:30+i,asin:`B00000000${i}`})));
+    await expect(save({db:f.db,...scope})).rejects.toThrow("最多采集 5 个竞品");
+    expect(f.writeCalls()).toHaveLength(0);
+  });
   it("uses only approved same-snapshot image storage references", async () => {
     const f = fixture();
     const ref = { role: "main" as const, positionIndex: 0, sourcePath: "$.images[0]", sourceUrlHash: "d".repeat(64), providerAssetId: null, moduleType: null, moduleClass: null };

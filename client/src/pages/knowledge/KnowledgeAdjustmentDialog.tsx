@@ -28,6 +28,7 @@ import { videoTime } from "@shared/videoLabels";
 import { KnowledgeTag } from "./KnowledgeTag";
 
 export function ResultValue({ value }: { value: unknown }) {
+  if(Array.isArray(value)&&value.some(v=>v&&typeof v==='object'&&('translation' in v||'imageId' in v)))return <div className="space-y-3">{value.map((entry:any,i)=><div key={entry.id||entry.imageId||i} className="rounded border p-2 text-xs">{entry.imageId?<><p className="font-medium">图片 {i+1}</p>{entry.translation?.regions?.map((r:any,j:number)=><div key={j} className="mt-2"><p>{r.source}</p><p className="text-muted-foreground">{r.translation}</p></div>)}</>:<><p>{entry.source}</p><p className="mt-1 text-muted-foreground">{entry.translation}</p></>}</div>)}</div>;
   if (Array.isArray(value))
     return (
       <div className="space-y-2">
@@ -76,9 +77,9 @@ export default function KnowledgeAdjustmentDialog({
     onError: e => toast.error(e.message),
   });
   const confirm = trpc.knowledgeAssets.confirmAdjustment.useMutation({
-    onSuccess: () => {
+    onSuccess: result => {
       toast.success(
-        improve ? "调整已保存，小酷会参考这次纠正继续打标" : "本次调整已保存"
+        "translationImprovementId" in result && result.translationImprovementId ? "调整已保存，翻译技能改进草稿已建立" : improve ? "调整已保存，小酷会参考这次纠正继续打标" : "本次调整已保存"
       );
       onSaved();
       onClose();
@@ -133,7 +134,7 @@ export default function KnowledgeAdjustmentDialog({
             close();
           }}
           onPointerDownOutside={e => e.preventDefault()}
-          className="flex h-[88vh] max-h-[900px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1100px]"
+          className="left-auto right-0 top-0 flex h-dvh w-full max-w-full translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:max-w-[1100px]"
         >
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle className="flex items-center gap-2">
@@ -226,7 +227,7 @@ export default function KnowledgeAdjustmentDialog({
                 </div>
                 <aside className="hidden min-h-0 overflow-y-auto border-l bg-muted/15 p-5 md:block">
                   <h3 className="mb-4 font-semibold">当前调整预览</h3>
-                  {draft.kind === "set" && draft.changes.length > 0 && (
+                  {draft.kind === "set" && draft.changes.some(c=>!['imageTranslations','contentTranslations'].includes(c.key)) && (
                       <p className="mb-4 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
                         类目、风格、主色和提亮色的修改会同步到整个 ASIN 集。
                       </p>
@@ -242,7 +243,7 @@ export default function KnowledgeAdjustmentDialog({
                               <span className="text-primary">已调整</span>
                             )}
                           </div>
-                          {key === "segments" || key === "summary" ? (
+                          {["segments","summary","imageTranslations","contentTranslations"].includes(key) ? (
                             <div className="text-sm">
                               <ResultValue value={draft.result?.[key]} />
                             </div>

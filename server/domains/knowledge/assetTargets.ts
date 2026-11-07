@@ -6,6 +6,7 @@ import { imageTaggingUnits } from "../../../shared/imageTaggingUnits";
 import { IMAGE_TAGGING_TAG_FIELDS } from "../../../shared/imageTagging";
 import { inheritedVideoLabels, type VideoRow } from "./videoLibrary";
 import { requireDb } from "../../repositories/dbClient";
+import {imageTranslationsForEditing,contentTranslationsForEditing} from '../../../shared/knowledgeTranslationEdits';
 
 export type AssetScope = { workspaceId: number; userId: number; role?: string };
 export type AssetKind = "set" | "image" | "video";
@@ -74,6 +75,7 @@ export async function loadAsset(
     const images = await queryRows<KbImage>(db, sql`SELECT * FROM kb_images WHERE imageSetId=${id} AND recycleId IS NULL ORDER BY positionIndex,id${lock}`);
     return {kind, id, set, images, video:null, unit:null, result: {
       setCategory:set.setCategory || "", setStyle:set.setStyle || "", setPrimaryColor:set.setPrimaryColor || "", setAccentColor:set.setAccentColor || "",
+      ...(contentTranslationsForEditing(set.contentPresentation).length?{contentTranslations:contentTranslationsForEditing(set.contentPresentation)}:{}),
     } as Record<string, unknown>, title:set.productTitle || set.asin, visibility:set.visibility, ownerId:set.userId};
   }
   const table = kind === "image" ? "kb_images" : "kb_videos";
@@ -151,7 +153,7 @@ export async function loadAsset(
     video: null,
     images,
     unit,
-    result: imageResult(unit.primary, set) as Record<string, unknown>,
+    result: {...imageResult(unit.primary,set),...(imageTranslationsForEditing(unit.images).length?{imageTranslations:imageTranslationsForEditing(unit.images)}:{})} as Record<string, unknown>,
     title: set?.productTitle || row.uploadTitle || "图片",
     visibility: set?.visibility || row.visibility,
     ownerId: set?.userId || row.userId!,
@@ -165,11 +167,12 @@ export function assetFingerprint(asset: LoadedAsset) {
         kind: asset.kind,
         id: asset.id,
         result: asset.result,
-        set: asset.set && [asset.set.id, asset.set.sourceLayout],
+        set: asset.set && [asset.set.id, asset.set.sourceLayout,asset.set.contentPresentation],
         images: (asset.kind === "set" ? asset.images : asset.unit?.images)?.map(i => [
           i.id,
           i.imageUrl,
           i.labelRevision,
+          i.imageTranslation,
         ]),
         video: asset.video && [
           asset.video.videoUrl,

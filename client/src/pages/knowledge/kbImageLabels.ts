@@ -1,3 +1,4 @@
+import { normalizedImageBelong } from "@shared/imageBelong";
 /** Display-only aliases: stored tags and filter values are never rewritten. */
 export function imageTagLabel(value?: string | null): string {
   const label = value?.trim() || "";
@@ -21,5 +22,6 @@ export function imageBelongLabel(image: {
   tagImageBelongSub?: string | null;
   imagePosition?: string | null;
 }): string {
-  return joinImageTags(imageTagLabel(image.tagImageBelong) || (image.imageSetId === null ? "" : image.imagePosition), image.tagImageBelongSub);
+  const normalized=normalizedImageBelong(imageTagLabel(image.tagImageBelong),image.tagImageBelongSub,image.imageSetId===null?undefined:image.imagePosition||undefined);
+  return joinImageTags(normalized.belong,normalized.sub);
 }

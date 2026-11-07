@@ -4,7 +4,7 @@ export const LISTING_AGENT_NODE_PATHS: Record<string, string> = {
   N0: "/listing",
   N1: "/listing/analysis",
   N2: "/listing/comparison",
-  N3: "/listing/data-files",
+  N3: "/listing/analysis",
   N4: "/listing/keywords",
   N5: "/listing/review-aggregation",
   G1: "/listing/generate",

@@ -6,7 +6,8 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { IMAGE_TAGGING_OPTIONS } from "@shared/imageTagging";
 import { IMAGE_BELONG_HIERARCHY } from "@shared/imageTagConstants";
-import { imageBelongForPosition, validImageBelongSubtype } from "@shared/imageBelong";
+import { normalizedImageBelong } from "@shared/imageBelong";
+import { moduleSpec,moduleSpecLabel,LEGACY_IMAGE_BELONG_HIERARCHY } from "@shared/imageModuleSpecs";
 
 type TaggedImage = { id: number; imageSetId?: number | null; imagePosition: string; labelRevision?:number; [key: string]: unknown };
 const setFields = [["tagCategory","类目"],["tagDesignStyleV2","风格"],["tagColorSchemeV2","主色"],["tagAccentColor","提亮色"]] as const;
@@ -14,8 +15,8 @@ const localFields = [["tagImageBelong","图片归属"],["tagImageBelongSub","归
 const fields = [...setFields,...localFields];
 function initial(image: TaggedImage) {
   const values = Object.fromEntries(fields.map(([key]) => [key, typeof image[key] === "string" ? image[key] as string : ""]));
-  if (image.imageSetId !== null) values.tagImageBelong ||= imageBelongForPosition(image.imagePosition);
-  values.tagImageBelongSub = validImageBelongSubtype(values.tagImageBelong, values.tagImageBelongSub) || "";
+  const normalized=normalizedImageBelong(values.tagImageBelong,values.tagImageBelongSub,image.imageSetId===null?undefined:image.imagePosition);
+  values.tagImageBelong=normalized.belong;values.tagImageBelongSub=normalized.sub;
   return values;
 }
 
@@ -23,12 +24,11 @@ function TagsPanel({ image, onSave }: { image: TaggedImage; onSave?: (draft: Rec
   const [editing, setEditing] = useState(false), [draft, setDraft] = useState(() => initial(image));
   const [saving, setSaving] = useState(false);
   async function save() { if (!onSave) return; setSaving(true); try { const original=initial(image); await onSave(Object.fromEntries(Object.entries(draft).filter(([key,value])=>value!==original[key]))); setEditing(false); } catch { toast.error("标签未保存，请重试或确认编辑权限"); } finally { setSaving(false); } }
-  // Story cards have source structure labels only; do not request creative AI tags.
-  const visibleFields = image.imagePosition === "brand_story" ? [...setFields,...localFields.slice(0,2)] : fields;
+  const visibleFields = ((image.imageTranslation as {status?:string}|undefined)?.status === 'excluded_background'||image.aplusModuleType==='品牌背景') ? [...setFields,...localFields.slice(0,2)] : fields;
   const values = editing ? draft : initial(image);
   const options: Record<string, readonly string[]> = {
     tagImageBelong: Object.keys(IMAGE_BELONG_HIERARCHY),
-    tagImageBelongSub: (IMAGE_BELONG_HIERARCHY as Record<string, readonly string[]>)[values.tagImageBelong] || [],
+    tagImageBelongSub: [...(Array.isArray(IMAGE_BELONG_HIERARCHY[values.tagImageBelong])?IMAGE_BELONG_HIERARCHY[values.tagImageBelong]:[]),...(values.tagImageBelong==="A+"?LEGACY_IMAGE_BELONG_HIERARCHY["A+"]:[])],
     tagCategory: IMAGE_TAGGING_OPTIONS.categories,
     tagImageTypeMain: Object.keys(IMAGE_TAGGING_OPTIONS.imageTypes),
     tagImageTypeSub: (IMAGE_TAGGING_OPTIONS.imageTypes as Record<string, readonly string[]>)[values.tagImageTypeMain] || [],
@@ -47,6 +47,7 @@ function TagsPanel({ image, onSave }: { image: TaggedImage; onSave?: (draft: Rec
     <div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">图片标签</h3>
       {onSave && !editing && <Button size="sm" variant="ghost" onClick={() => { setDraft(initial(image)); setEditing(true); }}><Pencil className="mr-1 h-3.5 w-3.5" />编辑</Button>}
     </div>
+    {moduleSpec(values.tagImageBelong,values.tagImageBelongSub)&&<p className="mb-3 text-xs text-muted-foreground">{moduleSpecLabel(moduleSpec(values.tagImageBelong,values.tagImageBelongSub)!)}</p>}
     <dl className="space-y-2.5">{visibleFields.map(([key, label]) => <div key={key} className="grid grid-cols-[64px_minmax(0,1fr)] items-start gap-2">
       <dt className="pt-1 text-xs text-muted-foreground">{label}</dt><dd className="min-w-0 break-words">
         {editing && (image.imageSetId === null || !setFields.some(([field])=>field===key)) ? <select aria-label={label} className="w-full rounded border bg-background p-1 text-sm" value={draft[key]} onChange={e => change(key, e.target.value)}>
